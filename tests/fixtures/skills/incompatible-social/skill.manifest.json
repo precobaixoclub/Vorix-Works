@@ -1,0 +1,20 @@
+{
+  "id": "incompatible-social",
+  "name": "Incompatible Social Test Double",
+  "version": "0.1.0",
+  "description": "Dublê incompatível por versão.",
+  "author": "Zuno Tests",
+  "capabilities": ["social_publishing"],
+  "inputs": [{ "name": "post", "description": "Post fake." }],
+  "outputs": [{ "name": "publication", "description": "Publicação fake." }],
+  "dependencies": [],
+  "status": "experimental",
+  "enabled": true,
+  "compatibility": { "zuno": ">=99.0.0" },
+  "runtime": { "entrypoint": "./skill.mjs" },
+  "responsibilityBoundary": {
+    "allowed": ["Testar incompatibilidade."],
+    "forbidden": ["Ser carregada nesta versão."]
+  },
+  "owner": "helena-managed"
+}

@@ -1,0 +1,73 @@
+{
+  "id": "sofia-art-direction",
+  "name": "Sofia",
+  "version": "0.2.0",
+  "description": "Especialista em Direção de Arte responsável por transformar a estratégia de marketing do João em uma direção visual estruturada — conceito criativo, identidade visual, paleta, tipografia, moodboard, estilo e emoção — que orienta a futura Bianca na definição do layout.",
+  "author": "Zuno",
+  "capabilities": ["art_direction"],
+  "inputs": [
+    {
+      "name": "art_direction_request",
+      "description": "Solicitação de direção de arte contendo identificação do cliente (clientId ou tenantId), pedido original, estratégia do João, briefing preliminar do João para Sofia, canal, formato e objetivo visual."
+    }
+  ],
+  "outputs": [
+    {
+      "name": "structured_art_direction",
+      "description": "Direção visual estruturada com conceito criativo, estilo recomendado, emoção a transmitir, paleta de cores, tipografia, moodboard, referências de design, formato recomendado, proporção recomendada, restrições visuais, riscos visuais, briefing estruturado para Bianca, observações e próximos passos."
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "ValentinaTenantPort",
+      "version": "0.1.0",
+      "optional": false
+    },
+    {
+      "name": "ClaraKnowledgePort",
+      "version": "0.1.0",
+      "optional": false
+    },
+    {
+      "name": "IcaroBrainPort",
+      "version": "0.1.0",
+      "optional": true
+    }
+  ],
+  "status": "experimental",
+  "enabled": true,
+  "compatibility": {
+    "zuno": "^0.1.0"
+  },
+  "runtime": {
+    "entrypoint": "./index.js"
+  },
+  "responsibilityBoundary": {
+    "allowed": [
+      "Consultar Valentina para identificar e resolver o cliente.",
+      "Consultar Clara para obter identidade visual, marca, público, conteúdo e publicação.",
+      "Solicitar apoio opcional ao Ícaro para aprimorar a direção visual.",
+      "Definir conceito criativo, identidade visual, paleta de cores, tipografia, moodboard, estilo visual, linguagem estética, referências de design e a emoção que o material deve transmitir.",
+      "Definir formato e proporção recomendados.",
+      "Registrar restrições e riscos visuais e observações.",
+      "Montar o briefing estruturado que será enviado para a futura Bianca."
+    ],
+    "forbidden": [
+      "Definir layout de slides, grid, hierarquia visual detalhada, alinhamentos, espaçamentos, margens ou posicionamento de elementos.",
+      "Definir tamanho de títulos, subtítulos ou texto, cards, ícones, botões, boxes, separadores, sombras ou bordas.",
+      "Definir sequência visual entre slides ou consistência de carrossel.",
+      "Gerar imagens finais.",
+      "Publicar em redes sociais.",
+      "Criar campanhas.",
+      "Consultar métricas.",
+      "Chamar Meta.",
+      "Chamar Instagram.",
+      "Chamar Facebook.",
+      "Acessar storage diretamente.",
+      "Conversar diretamente com OpenAI, Gemini, Claude ou qualquer provider de IA.",
+      "Executar a Bianca ou o Pedro.",
+      "Chamar outra Skill diretamente."
+    ]
+  },
+  "owner": "helena-managed"
+}

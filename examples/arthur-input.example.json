@@ -1,0 +1,9 @@
+{
+  "command": "Quero criar uma publicação para Instagram e Facebook sobre o Rumo ao Altar, explicando que os convidados podem enviar presentes via PIX direto para os noivos.",
+  "locale": "pt-BR",
+  "dryRun": true,
+  "constraints": [
+    "Arthur deve apenas planejar.",
+    "Nenhuma Skill real deve ser executada."
+  ]
+}

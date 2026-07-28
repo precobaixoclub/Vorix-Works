@@ -1,0 +1,15 @@
+{
+  "runtime": "local",
+  "locale": "pt-BR",
+  "orchestrator": {
+    "name": "Arthur",
+    "mode": "planning-only"
+  },
+  "skills": {
+    "autoload": false,
+    "directory": "dist/skills"
+  },
+  "integrations": {
+    "enabled": false
+  }
+}

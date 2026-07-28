@@ -1,0 +1,55 @@
+{
+  "id": "maria-copywriting",
+  "name": "Maria",
+  "version": "0.1.0",
+  "description": "Especialista em Copywriting responsável exclusivamente por transformar briefings estruturados em copies de marketing.",
+  "author": "Zuno",
+  "capabilities": ["copywriting"],
+  "inputs": [
+    {
+      "name": "structured_briefing",
+      "description": "Briefing estruturado contendo objetivo, canal, público, tom, CTA, mensagem-chave, limitações da plataforma, termos proibidos, palavras obrigatórias e hashtags preferidas."
+    }
+  ],
+  "outputs": [
+    {
+      "name": "structured_copy",
+      "description": "Copy estruturada com título, legenda, CTA, hashtags, palavras-chave, resumo, objetivo, tom, público, sugestões e observações, acompanhada de relatório de qualidade (incluindo checagem de termos proibidos e palavras obrigatórias) e histórico de tentativas."
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "IcaroBrainPort",
+      "version": "0.1.0",
+      "optional": false
+    }
+  ],
+  "status": "experimental",
+  "enabled": true,
+  "compatibility": {
+    "zuno": "^0.1.0"
+  },
+  "runtime": {
+    "entrypoint": "./index.js"
+  },
+  "responsibilityBoundary": {
+    "allowed": [
+      "Interpretar briefing estruturado.",
+      "Montar estratégia de copy.",
+      "Montar prompt para o Ícaro.",
+      "Solicitar geração textual ao Ícaro usando IcaroBrainPort.",
+      "Validar qualidade da copy textual.",
+      "Retornar copy estruturada."
+    ],
+    "forbidden": [
+      "Criar imagens.",
+      "Criar vídeos.",
+      "Criar campanhas.",
+      "Publicar em redes sociais.",
+      "Consultar métricas.",
+      "Chamar Meta, Facebook, Instagram, OpenAI, Gemini, Claude ou qualquer provider concreto diretamente.",
+      "Chamar outra Skill diretamente."
+    ]
+  },
+  "owner": "helena-managed"
+}

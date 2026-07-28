@@ -1,0 +1,7 @@
+{
+  "name": "Invalid Test Double",
+  "version": "0.1",
+  "description": "Manifesto propositalmente inválido.",
+  "capabilities": ["unknown_capability"],
+  "enabled": true
+}

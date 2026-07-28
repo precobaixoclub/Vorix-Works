@@ -1,0 +1,80 @@
+{
+  "id": "bianca-social-media-design",
+  "name": "Bianca",
+  "version": "0.1.0",
+  "description": "Especialista em Layout e Composição Visual responsável por transformar a direção de arte da Sofia em um layout extremamente detalhado e completo — grid, hierarquia visual, espaçamentos, tipografia (incluindo CTA), posição e destaque de CTA e logo, composição por formato (feed, stories, carrossel, capa de Reels), regras de contraste, acessibilidade visual e padronização entre peças/slides — que orienta o Pedro na geração final das imagens. É a referência definitiva de layout e composição do Zuno: toda decisão estrutural da peça é centralizada aqui, nunca no Pedro.",
+  "author": "Zuno",
+  "capabilities": ["social_media_design"],
+  "inputs": [
+    {
+      "name": "social_media_design_request",
+      "description": "Solicitação de design contendo identificação do cliente (clientId ou tenantId), pedido original, resumo da estratégia do João (ângulo, promessa central, mensagens principais, CTA), a direção de arte completa da Sofia e o briefing que a Sofia preparou para Bianca, canal e formato."
+    }
+  ],
+  "outputs": [
+    {
+      "name": "structured_design_spec",
+      "description": "Especificação de design estruturada com conceito de design, grid, estratégia de hierarquia visual, escala tipográfica (headline, subheadline, body, caption e CTA), aplicação de cor, sistema de espaçamento, estilo de componentes (cards, ícones, botões, boxes, separadores, sombras, bordas), estilo de ilustração e de mockup, posicionamento de logo, posição e destaque do CTA (geral e por slide), composição dedicada para capa de Reels quando aplicável, regras dedicadas de contraste, diretrizes de acessibilidade visual, regras de padronização visual sempre presentes, layout detalhado de cada slide, fluxo do carrossel quando aplicável, restrições e riscos de design, observações, próximos passos e briefing estruturado para o Pedro."
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "ValentinaTenantPort",
+      "version": "0.1.0",
+      "optional": false
+    },
+    {
+      "name": "ClaraKnowledgePort",
+      "version": "0.1.0",
+      "optional": false
+    },
+    {
+      "name": "IcaroBrainPort",
+      "version": "0.1.0",
+      "optional": true
+    }
+  ],
+  "status": "experimental",
+  "enabled": true,
+  "compatibility": {
+    "zuno": "^0.1.0"
+  },
+  "runtime": {
+    "entrypoint": "./index.js"
+  },
+  "responsibilityBoundary": {
+    "allowed": [
+      "Consultar Valentina para identificar e resolver o cliente.",
+      "Consultar Clara para obter identidade visual (logo, fontes) e regras de publicação.",
+      "Solicitar apoio opcional ao Ícaro para aprimorar a especificação de design.",
+      "Definir grid, hierarquia visual, alinhamentos, espaçamentos, margens, proporção e distribuição dos elementos.",
+      "Definir peso visual, tamanho de títulos, subtítulos, texto e CTA, destaques, cards, ícones, botões, boxes, separadores, sombras e bordas.",
+      "Definir posição e nível de destaque do CTA, geral e por slide.",
+      "Definir estilo de ilustrações e de mockups e o posicionamento da logo.",
+      "Definir área de respiro, ponto focal de cada slide, elementos de apoio, o que deve chamar mais atenção e o que deve ficar em segundo plano.",
+      "Definir composição específica por formato: feed, stories, carrossel e capa de Reels.",
+      "Definir a sequência visual entre slides, a consistência do carrossel e o fluxo de leitura.",
+      "Definir regras dedicadas de contraste visual (texto/fundo, CTA/fundo).",
+      "Definir diretrizes de acessibilidade visual (legibilidade, leitura por daltonismo, tamanho mínimo de fonte, texto alternativo).",
+      "Definir regras de padronização visual entre slides do carrossel e entre peças da marca.",
+      "Montar o briefing estruturado e detalhado que será enviado para o Pedro."
+    ],
+    "forbidden": [
+      "Criar estratégia de marketing.",
+      "Criar copy.",
+      "Definir conceito criativo, identidade visual, paleta de cores, tipografia, moodboard, estilo visual ou emoção — isso é responsabilidade exclusiva da Sofia.",
+      "Gerar imagens finais.",
+      "Publicar em redes sociais.",
+      "Criar campanhas.",
+      "Consultar métricas.",
+      "Chamar Meta.",
+      "Chamar Instagram.",
+      "Chamar Facebook.",
+      "Acessar storage diretamente.",
+      "Conversar diretamente com OpenAI, Gemini, Claude ou qualquer provider de IA.",
+      "Executar o Pedro.",
+      "Chamar outra Skill diretamente."
+    ]
+  },
+  "owner": "helena-managed"
+}

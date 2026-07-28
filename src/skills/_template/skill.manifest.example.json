@@ -1,0 +1,24 @@
+{
+  "id": "future-skill-id",
+  "name": "Nome da Skill futura",
+  "version": "0.1.0",
+  "description": "Descrição objetiva da responsabilidade única desta Skill.",
+  "author": "Zuno",
+  "capabilities": [],
+  "inputs": [],
+  "outputs": [],
+  "dependencies": [],
+  "status": "experimental",
+  "enabled": false,
+  "compatibility": {
+    "zuno": "^0.1.0"
+  },
+  "runtime": {
+    "entrypoint": "./index.js"
+  },
+  "responsibilityBoundary": {
+    "allowed": [],
+    "forbidden": []
+  },
+  "owner": "helena-managed"
+}

@@ -1,0 +1,34 @@
+node_modules/
+dist/
+coverage/
+artifacts/
+.zuno-data/
+.env
+.env.local
+.env.*.local
+.DS_Store
+*.log
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Ferramentas locais (não é configuração do produto)
+.claude/
+
+# Mídia baixada/enviada/gerada — grande demais para git, reproduzível ou pertence a um storage
+# real (S3/R2/GCS) no futuro, nunca a controle de versão. Bibliotecas de referência pequenas em
+# assets/visual/ e assets/audio/ permanecem versionadas propositalmente.
+assets/media/acquired/
+assets/media/campaign-uploads/
+assets/media/campaign-frames/
+assets/media/composited/
+assets/media/review-artifacts/
+
+# Dado de treino do Tesseract OCR, baixado automaticamente por tesseract.js no primeiro uso.
+*.traineddata
+
+# Rascunhos/depuração manual — nunca devem ser versionados.
+.tmp-*/
+tmp-*.txt
+tmp-*.json
+tmp-*.log

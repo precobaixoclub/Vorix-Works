@@ -1,0 +1,78 @@
+import type { SkillManifest } from "../../domain/skills/skill-manifest.contract.js";
+
+export const brunoVideoScriptManifest: SkillManifest = {
+  id: "bruno-video-script",
+  name: "Bruno",
+  version: "0.1.0",
+  description: "Especialista em Estratégia e Roteirização de Vídeos Curtos, primeiro componente da pipeline de vídeo do Zuno, responsável por transformar a estratégia de marketing do João em um roteiro profissional para Reels, TikTok, Shorts e vídeos verticais — estrutura narrativa, gancho, cenas, texto falado, texto na tela, B-roll, enquadramentos, movimentos de câmera, ritmo, pausas, transições, efeitos sonoros, trilha e CTA final.",
+  author: "Zuno",
+  capabilities: ["video_script"],
+  inputs: [
+    {
+      name: "video_script_request",
+      description: "Solicitação de roteiro de vídeo contendo identificação do cliente (clientId ou tenantId), pedido original, estratégia do João, canal, formato, objetivo do vídeo e, opcionalmente, duração desejada em segundos.",
+    },
+  ],
+  outputs: [
+    {
+      name: "structured_video_script",
+      description: "Roteiro de vídeo estruturado com estrutura narrativa, gancho inicial, duração total, cenas (texto falado, texto na tela, B-roll, enquadramento, movimento de câmera, ritmo, pausas, transição e efeitos sonoros por cena), ritmo geral, sugestões de trilha, CTA final, observações de gravação, observações de edição, riscos, observações gerais, briefing estruturado para a futura Vanessa e próximos passos.",
+    },
+  ],
+  dependencies: [
+    {
+      name: "ValentinaTenantPort",
+      version: "0.1.0",
+      optional: false,
+    },
+    {
+      name: "ClaraKnowledgePort",
+      version: "0.1.0",
+      optional: false,
+    },
+    {
+      name: "IcaroBrainPort",
+      version: "0.1.0",
+      optional: true,
+    },
+  ],
+  status: "experimental",
+  enabled: true,
+  compatibility: {
+    zuno: "^0.1.0",
+  },
+  runtime: {
+    entrypoint: "./index.js",
+  },
+  responsibilityBoundary: {
+    allowed: [
+      "Consultar Valentina para identificar e resolver o cliente.",
+      "Consultar Clara para obter marca, público, conteúdo e publicação.",
+      "Solicitar apoio opcional ao Ícaro para aprimorar o roteiro.",
+      "Funcionar totalmente sem Ícaro, apenas com heurística e contexto da Clara.",
+      "Definir estrutura narrativa, gancho inicial, tempo total do vídeo, divisão em cenas, texto falado, texto na tela, sugestões de B-roll, enquadramentos, movimentos de câmera, ritmo, pausas, transições sugeridas, efeitos sonoros sugeridos, sugestões de trilha e CTA final.",
+      "Registrar observações para gravação e observações para edição.",
+      "Registrar riscos e observações.",
+      "Montar o briefing estruturado que será enviado para a futura Vanessa.",
+    ],
+    forbidden: [
+      "Gerar vídeo.",
+      "Editar vídeo.",
+      "Renderizar vídeo.",
+      "Publicar vídeo.",
+      "Criar imagens.",
+      "Definir layout, grid, paleta ou tipografia de peças visuais estáticas.",
+      "Publicar em redes sociais.",
+      "Criar campanhas.",
+      "Consultar métricas.",
+      "Chamar Meta.",
+      "Chamar Instagram.",
+      "Chamar Facebook.",
+      "Acessar storage diretamente.",
+      "Conversar diretamente com OpenAI, Gemini, Claude ou qualquer provider de IA.",
+      "Executar a Vanessa ou qualquer outra Skill futura da pipeline de vídeo.",
+      "Chamar outra Skill diretamente.",
+    ],
+  },
+  owner: "helena-managed",
+};

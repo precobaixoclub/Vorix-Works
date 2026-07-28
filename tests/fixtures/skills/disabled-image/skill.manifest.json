@@ -1,0 +1,20 @@
+{
+  "id": "disabled-image",
+  "name": "Disabled Image Test Double",
+  "version": "0.1.0",
+  "description": "Dublê desabilitado para capability de imagem.",
+  "author": "Zuno Tests",
+  "capabilities": ["image_generation"],
+  "inputs": [{ "name": "prompt", "description": "Prompt visual." }],
+  "outputs": [{ "name": "image", "description": "Imagem fake." }],
+  "dependencies": [],
+  "status": "experimental",
+  "enabled": false,
+  "compatibility": { "zuno": "^0.1.0" },
+  "runtime": { "entrypoint": "./skill.mjs" },
+  "responsibilityBoundary": {
+    "allowed": ["Ficar desabilitada em teste."],
+    "forbidden": ["Ser executada."]
+  },
+  "owner": "helena-managed"
+}

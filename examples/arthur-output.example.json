@@ -1,0 +1,30 @@
+{
+  "interpretedIntent": {
+    "detectedChannels": ["instagram", "facebook"],
+    "detectedAudience": "convidados",
+    "requiredCapabilities": [
+      "strategy",
+      "copywriting",
+      "quality_review",
+      "art_direction",
+      "image_generation",
+      "social_publishing"
+    ],
+    "notes": [
+      "Arthur apenas criou o plano; nenhuma Skill foi executada.",
+      "As capacidades indicam especialistas futuros, não implementações existentes."
+    ]
+  },
+  "executionPlan": {
+    "createdBy": "arthur",
+    "steps": [
+      "Estratégia de marketing",
+      "Criação da copy",
+      "Direção de arte",
+      "Geração de imagem",
+      "Revisão",
+      "Aprovação",
+      "Publicação Meta"
+    ]
+  }
+}

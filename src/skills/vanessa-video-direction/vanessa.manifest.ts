@@ -1,0 +1,79 @@
+import type { SkillManifest } from "../../domain/skills/skill-manifest.contract.js";
+
+export const vanessaVideoDirectionManifest: SkillManifest = {
+  id: "vanessa-video-direction",
+  name: "Vanessa",
+  version: "0.1.0",
+  description: "Especialista em Direção de Vídeo, segunda etapa da pipeline de vídeo do Zuno, posicionada depois do Bruno, responsável por transformar o roteiro de Bruno em uma direção audiovisual completa para Reels, TikTok, Shorts e vídeos verticais — mapa de cenas, enquadramentos, composição visual, movimentos de câmera, ritmo visual, transições, estilo de legenda, efeitos visuais e sonoros, trilha recomendada, orientação de B-roll, direção de luz e cor, e orientação para gravação e edição.",
+  author: "Zuno",
+  capabilities: ["video_direction"],
+  inputs: [
+    {
+      name: "video_direction_request",
+      description: "Solicitação de direção audiovisual contendo identificação do cliente (clientId ou tenantId), pedido original, estratégia do João, roteiro estruturado de Bruno, canal, formato e objetivo do vídeo.",
+    },
+  ],
+  outputs: [
+    {
+      name: "structured_video_direction",
+      description: "Direção audiovisual estruturada com mapa de cenas (enquadramento, composição visual, movimento de câmera, transição e efeitos visuais por cena), ritmo visual, estilo de legenda na tela, orientação de sonorização, trilha recomendada, orientação de B-roll, direção de luz, direção de cor, orientação para gravação, orientação para edição, riscos, observações, próximos passos e briefing estruturado para o futuro Diego.",
+    },
+  ],
+  dependencies: [
+    {
+      name: "ValentinaTenantPort",
+      version: "0.1.0",
+      optional: false,
+    },
+    {
+      name: "ClaraKnowledgePort",
+      version: "0.1.0",
+      optional: false,
+    },
+    {
+      name: "IcaroBrainPort",
+      version: "0.1.0",
+      optional: true,
+    },
+  ],
+  status: "experimental",
+  enabled: true,
+  compatibility: {
+    zuno: "^0.1.0",
+  },
+  runtime: {
+    entrypoint: "./index.js",
+  },
+  responsibilityBoundary: {
+    allowed: [
+      "Consultar Valentina para identificar e resolver o cliente.",
+      "Consultar Clara para obter identidade visual, marca, público, conteúdo e publicação.",
+      "Solicitar apoio opcional ao Ícaro para aprimorar a direção audiovisual.",
+      "Funcionar totalmente sem Ícaro, apenas com heurística, o roteiro de Bruno e o contexto da Clara.",
+      "Transformar o roteiro de Bruno em direção audiovisual: mapa de cenas, enquadramentos, composição visual por cena, movimentos de câmera, ritmo visual, transições, estilo de legenda na tela, efeitos visuais sugeridos, efeitos sonoros sugeridos, trilha recomendada, orientação de B-roll, direção de luz, direção de cor.",
+      "Registrar orientação para gravação e orientação para edição.",
+      "Registrar riscos e observações.",
+      "Montar o briefing estruturado que será enviado para o futuro Diego.",
+    ],
+    forbidden: [
+      "Criar roteiro.",
+      "Redefinir cenas, tempo por cena, texto falado ou texto na tela definidos pelo Bruno.",
+      "Editar vídeo.",
+      "Renderizar vídeo.",
+      "Publicar vídeo.",
+      "Criar imagens finais.",
+      "Definir layout, grid, paleta ou tipografia de peças visuais estáticas.",
+      "Publicar em redes sociais.",
+      "Criar campanhas.",
+      "Consultar métricas.",
+      "Chamar Meta.",
+      "Chamar Instagram.",
+      "Chamar Facebook.",
+      "Acessar storage diretamente.",
+      "Conversar diretamente com OpenAI, Gemini, Claude ou qualquer provider de IA.",
+      "Executar o Diego ou qualquer outra Skill futura da pipeline de vídeo.",
+      "Chamar outra Skill diretamente.",
+    ],
+  },
+  owner: "helena-managed",
+};

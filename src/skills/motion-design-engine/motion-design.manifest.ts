@@ -1,0 +1,55 @@
+import type { SkillManifest } from "../../domain/skills/skill-manifest.contract.js";
+
+export const motionDesignEngineManifest: SkillManifest = {
+  id: "motion-design-engine",
+  name: "Motion Design Engine",
+  version: "0.1.0",
+  description:
+    "Nova capacidade do Zuno responsável por transformar uma sequência de imagens já geradas em um Motion Plan estruturado — decide um Motion Preset (catálogo de estilos de animação), monta a Motion Timeline por cena (fundo, texto, ícones, CTA, entrada, saída, transição, intensidade, velocidade) e valida o plano resultante. Não renderiza vídeo: produz exclusivamente o plano que um futuro Render Engine consumirá.",
+  author: "Zuno",
+  capabilities: ["motion_design"],
+  inputs: [
+    {
+      name: "motion_design_request",
+      description:
+        "Imagens já geradas, duração da campanha, formato de destino (Reels, TikTok, Stories, Feed etc.), storyboard (sequência narrativa apontando para as imagens), identidade visual e ritmo desejado.",
+    },
+  ],
+  outputs: [
+    {
+      name: "motion_plan",
+      description:
+        "Motion Plan estruturado: preset escolhido (com justificativa e pontuação auditável), uma cena por imagem com animação de fundo/texto/ícones/CTA/entrada/saída/transição, metadados (Motion Metadata) e resultado da validação (Motion Validator).",
+    },
+  ],
+  dependencies: [],
+  status: "experimental",
+  enabled: false,
+  compatibility: {
+    zuno: "^0.1.0",
+  },
+  runtime: {
+    entrypoint: "./index.js",
+  },
+  responsibilityBoundary: {
+    allowed: [
+      "Receber imagens já geradas por outra Skill (ex.: Pedro) e um storyboard apontando para elas.",
+      "Decidir um Motion Preset a partir de tipo de campanha, público, emoção dominante, branding e plataforma de destino (Motion Strategy).",
+      "Montar a Motion Timeline: uma cena por imagem, com animação de fundo, texto, ícones, CTA, entrada, saída e transição, e duração compatível com a duração total da campanha.",
+      "Validar o Motion Plan resultante (Motion Validator) e reportar erros e avisos.",
+      "Produzir metadados descritivos do plano (Motion Metadata), incluindo `renderingEngine: not_assigned` enquanto nenhum motor de renderização estiver integrado.",
+      "Funcionar de forma totalmente determinística e offline, sem nenhuma dependência de IA, Clara ou Valentina.",
+    ],
+    forbidden: [
+      "Gerar imagens.",
+      "Renderizar vídeo.",
+      "Chamar FFmpeg, Remotion, CapCut ou qualquer provider de renderização.",
+      "Publicar vídeo ou conteúdo em qualquer rede social.",
+      "Criar roteiro, direção audiovisual, copy ou estratégia de marketing.",
+      "Alterar a pipeline de vídeo existente (João, Bruno, Vanessa, Diego, Nora, Rafa, Lucas, Ana) ou qualquer Skill, Engine ou algoritmo já existente.",
+      "Chamar outra Skill diretamente.",
+      "Decidir sozinha quando/se será usada por um workflow — isso é responsabilidade de uma futura integração explícita com o Render Engine, fora do escopo desta sprint.",
+    ],
+  },
+  owner: "helena-managed",
+};

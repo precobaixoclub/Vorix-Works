@@ -1,0 +1,76 @@
+{
+  "id": "lucas-quality-review",
+  "name": "Lucas",
+  "version": "0.3.0",
+  "description": "Especialista em Revisão de Qualidade responsável por revisar o pacote de publicação (estratégia do João, copy da Maria, direção visual da Sofia, design da Bianca e imagens do Pedro) e, quando presente, o pacote de vídeo (roteiro do Bruno, direção audiovisual da Vanessa, plano de edição do Diego e vídeo final do Rafa) antes da aprovação humana ou publicação.",
+  "author": "Zuno",
+  "capabilities": ["quality_review"],
+  "inputs": [
+    {
+      "name": "quality_review_request",
+      "description": "Solicitação de revisão contendo identificação do cliente (clientId ou tenantId), pedido original, estratégia do João, copy da Maria, direção visual da Sofia, especificação de design da Bianca, imagens/artefatos do Pedro, roteiro do Bruno, direção audiovisual da Vanessa, plano de edição do Diego, artefato de vídeo do Rafa, canal e formato."
+    }
+  ],
+  "outputs": [
+    {
+      "name": "structured_quality_review",
+      "description": "Revisão estruturada com status da revisão, score geral, aprovação recomendada, problemas encontrados com severidade (incluindo coerência, duração, formato vertical, proporção 9:16, CTA, gancho, ritmo, legibilidade de texto na tela e qualidade técnica do arquivo de vídeo, quando aplicável), sugestões de ajuste, riscos, checklist validado, observações e próximos passos."
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "ValentinaTenantPort",
+      "version": "0.1.0",
+      "optional": false
+    },
+    {
+      "name": "ClaraKnowledgePort",
+      "version": "0.1.0",
+      "optional": false
+    },
+    {
+      "name": "IcaroBrainPort",
+      "version": "0.1.0",
+      "optional": true
+    }
+  ],
+  "status": "experimental",
+  "enabled": true,
+  "compatibility": {
+    "zuno": "^0.1.0"
+  },
+  "runtime": {
+    "entrypoint": "./index.js"
+  },
+  "responsibilityBoundary": {
+    "allowed": [
+      "Consultar Valentina para identificar e resolver o cliente.",
+      "Consultar Clara para obter regras de marca, tom de voz, palavras proibidas, CTAs, identidade e publicação.",
+      "Solicitar apoio opcional ao Ícaro para complementar a revisão.",
+      "Validar estratégia, copy, direção visual, design da Bianca, imagens, coerência entre texto e visual, tom de voz, CTA, regras da marca, riscos e qualidade geral.",
+      "Validar, quando presente, o pacote de vídeo: coerência entre roteiro/direção/edição/vídeo final, duração, formato vertical, proporção 9:16, presença e consistência do CTA, clareza do gancho inicial, ritmo, legibilidade dos textos na tela e qualidade técnica mínima do arquivo de vídeo.",
+      "Calcular score geral e status de revisão.",
+      "Apontar problemas, severidade e sugestões de ajuste."
+    ],
+    "forbidden": [
+      "Criar estratégia.",
+      "Criar copy.",
+      "Criar imagens.",
+      "Criar roteiro.",
+      "Dirigir vídeo.",
+      "Editar vídeo.",
+      "Renderizar vídeo.",
+      "Publicar em redes sociais.",
+      "Criar campanhas.",
+      "Consultar métricas.",
+      "Acessar storage diretamente.",
+      "Conversar diretamente com OpenAI, Gemini, Claude ou qualquer provider de IA concreto.",
+      "Alterar automaticamente a copy.",
+      "Alterar automaticamente a imagem.",
+      "Alterar automaticamente o vídeo.",
+      "Chamar Maria, Sofia, Bianca, Pedro, Bruno, Vanessa, Diego ou Rafa.",
+      "Chamar outra Skill diretamente."
+    ]
+  },
+  "owner": "helena-managed"
+}

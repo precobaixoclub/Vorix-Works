@@ -1,0 +1,432 @@
+[
+  {
+    "id": "rumo-site-oficial-mobile-mockup",
+    "path": "rumo-ao-altar/site-official-mobile-mockup.png",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/site-official-mobile-mockup.png",
+    "license": {
+      "name": "Mockup local proprio do produto Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "site",
+      "oficial",
+      "produto-real",
+      "mockup",
+      "interface",
+      "screenshot",
+      "celular",
+      "casal",
+      "convidados",
+      "informacoes"
+    ],
+    "theme": "Mockup realista do site oficial de casamento Rumo ao Altar em celular, com convite online, informacoes e experiencia organizada",
+    "emotion": "confianca",
+    "kind": "mockup",
+    "authenticityClass": "synthetic_unverified",
+    "authenticityNotes": "Mockup gerado manualmente numa sprint anterior à existência do Company/Campaign Intelligence — nunca capturado de um ambiente real. Mantido por compatibilidade histórica (seção 7), nunca tratado como material oficial."
+  },
+  {
+    "id": "rumo-site-overview-desktop-mockup",
+    "path": "rumo-ao-altar/site-overview-desktop-mockup.png",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/site-overview-desktop-mockup.png",
+    "license": {
+      "name": "Mockup local proprio do produto Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "site",
+      "overview",
+      "visao-geral",
+      "produto-real",
+      "mockup",
+      "interface",
+      "screenshot",
+      "desktop",
+      "convidados"
+    ],
+    "theme": "Mockup realista de visao geral do site oficial Rumo ao Altar, mostrando a experi?ncia completa em um unico lugar",
+    "emotion": "confianca",
+    "kind": "mockup",
+    "authenticityClass": "synthetic_unverified",
+    "authenticityNotes": "Mockup gerado manualmente numa sprint anterior à existência do Company/Campaign Intelligence — nunca capturado de um ambiente real."
+  },
+  {
+    "id": "rumo-rsvp-mobile-mockup",
+    "path": "rumo-ao-altar/rsvp-mobile-mockup.png",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/rsvp-mobile-mockup.png",
+    "license": {
+      "name": "Mockup local proprio do produto Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "rsvp",
+      "confirmacao",
+      "presenca",
+      "produto-real",
+      "mockup",
+      "interface",
+      "screenshot",
+      "celular",
+      "convidados",
+      "site"
+    ],
+    "theme": "Mockup realista do RSVP do Rumo ao Altar em celular, mostrando confirmacao de presenca organizada",
+    "emotion": "confianca",
+    "kind": "mockup",
+    "authenticityClass": "synthetic_unverified",
+    "authenticityNotes": "Mockup gerado manualmente numa sprint anterior à existência do Company/Campaign Intelligence — nunca capturado de um ambiente real. Hoje existe material oficial real equivalente (Campaign Intelligence: frame do vídeo enviado mostrando RSVP)."
+  },
+  {
+    "id": "rumo-gifts-pix-mobile-mockup",
+    "path": "rumo-ao-altar/gifts-pix-mobile-mockup.png",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/gifts-pix-mobile-mockup.png",
+    "license": {
+      "name": "Mockup local proprio do produto Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "presentes",
+      "pix",
+      "taxa-zero",
+      "produto-real",
+      "mockup",
+      "interface",
+      "screenshot",
+      "celular",
+      "site"
+    ],
+    "theme": "Mockup realista da lista de presentes com Pix direto para os noivos no Rumo ao Altar",
+    "emotion": "confianca",
+    "kind": "mockup",
+    "authenticityClass": "synthetic_unverified",
+    "authenticityNotes": "Mockup gerado manualmente numa sprint anterior à existência do Company/Campaign Intelligence — nunca capturado de um ambiente real. Hoje existe captura oficial real equivalente (site-demo-presentes.png, Company/Campaign Intelligence)."
+  },
+  {
+    "id": "rumo-album-schedule-mobile-mockup",
+    "path": "rumo-ao-altar/album-schedule-mobile-mockup.png",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/album-schedule-mobile-mockup.png",
+    "license": {
+      "name": "Mockup local proprio do produto Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "album",
+      "fotos",
+      "cronograma",
+      "google-drive",
+      "produto-real",
+      "mockup",
+      "interface",
+      "screenshot",
+      "celular",
+      "site"
+    ],
+    "theme": "Mockup realista do album colaborativo, cronograma e informacoes do site Rumo ao Altar",
+    "emotion": "tranquilidade",
+    "kind": "mockup",
+    "authenticityClass": "synthetic_unverified",
+    "authenticityNotes": "Mockup gerado manualmente numa sprint anterior à existência do Company/Campaign Intelligence — nunca capturado de um ambiente real."
+  },
+  {
+    "id": "rumo-end-card-site-official",
+    "path": "rumo-ao-altar/end-card-site-official.png",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/end-card-site-official.png",
+    "license": {
+      "name": "End card local proprio do produto Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "cta",
+      "site",
+      "marca",
+      "logo",
+      "url",
+      "produto-real",
+      "mockup",
+      "interface"
+    ],
+    "theme": "End card profissional do Rumo ao Altar com chamada para site oficial, URL e mockup do produto",
+    "emotion": "convite",
+    "kind": "mockup",
+    "authenticityClass": "synthetic_unverified",
+    "authenticityNotes": "Peça gráfica gerada manualmente, nunca capturada de um ambiente real."
+  },
+  {
+    "id": "rumo-album-colaborativo",
+    "path": "rumo-ao-altar/default-collaborative-album.jpg",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/default-collaborative-album.jpg",
+    "license": {
+      "name": "Asset local proprio do projeto Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "album",
+      "convidados",
+      "celular",
+      "site",
+      "casal",
+      "pessoa",
+      "contexto-humano",
+      "foto-contexto",
+      "pessoa-usando-produto",
+      "produto-real",
+      "interface",
+      "fotos"
+    ],
+    "theme": "Convidados registrando fotos do casamento pelo celular, album colaborativo e experiencia do site oficial",
+    "emotion": "curiosidade",
+    "kind": "photo",
+    "authenticityClass": "stock_contextual",
+    "authenticityNotes": "Fotografia de contexto humano/ambiental (pessoa usando celular), não uma captura da interface real do produto — apesar da tag \"produto-real\" herdada de uma sprint anterior, não representa nenhuma tela real confirmada."
+  },
+  {
+    "id": "rumo-party-actions",
+    "path": "rumo-ao-altar/default-party-actions.jpg",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/default-party-actions.jpg",
+    "license": {
+      "name": "Asset local proprio do projeto Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "festa",
+      "convidados",
+      "casal",
+      "pessoa",
+      "contexto-humano",
+      "foto-contexto",
+      "recepcao",
+      "evento"
+    ],
+    "theme": "Festa de casamento elegante com convidados e acoes do evento",
+    "emotion": "confianca",
+    "kind": "photo",
+    "authenticityClass": "stock_contextual",
+    "authenticityNotes": "Fotografia de contexto humano/ambiental, sem vínculo com nenhuma tela ou funcionalidade real do produto."
+  },
+  {
+    "id": "rumo-presente-evidencia-fotos",
+    "path": "rumo-ao-altar/photo-evidence.jpg",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/photo-evidence.jpg",
+    "license": {
+      "name": "Asset local proprio do projeto Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "album",
+      "convidados",
+      "celular",
+      "site",
+      "casal",
+      "pessoa",
+      "contexto-humano",
+      "foto-contexto",
+      "fotos"
+    ],
+    "theme": "Registro de fotos e lembrancas do casamento pelo celular",
+    "emotion": "confianca",
+    "kind": "photo",
+    "authenticityClass": "stock_contextual",
+    "authenticityNotes": "Fotografia de contexto humano/ambiental, sem vínculo com nenhuma tela real do produto."
+  },
+  {
+    "id": "rumo-lista-presentes",
+    "path": "rumo-ao-altar/ring-reminder.jpg",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/ring-reminder.jpg",
+    "license": {
+      "name": "Asset local proprio do projeto Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "presentes",
+      "pix",
+      "casal",
+      "contexto-humano",
+      "foto-contexto",
+      "site",
+      "cta",
+      "convidados"
+    ],
+    "theme": "Lista de presentes do casamento com sensacao elegante e memoravel",
+    "emotion": "convite",
+    "kind": "photo",
+    "authenticityClass": "stock_contextual",
+    "authenticityNotes": "Fotografia de contexto humano/ambiental (aliança), não uma captura da tela real de lista de presentes."
+  },
+  {
+    "id": "rumo-contexto-album-vertical",
+    "path": "rumo-ao-altar/context-album-vertical.jpg",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/context-album-vertical.jpg",
+    "license": {
+      "name": "Recorte vertical de asset local proprio do projeto Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "album",
+      "fotos",
+      "celular",
+      "site",
+      "pessoa",
+      "contexto-humano",
+      "foto-contexto",
+      "pessoa-usando-produto",
+      "produto-real",
+      "interface"
+    ],
+    "theme": "Cena vertical premium de álbum colaborativo com celular e lembranças do casamento",
+    "emotion": "tranquilidade",
+    "kind": "photo",
+    "authenticityClass": "stock_contextual",
+    "authenticityNotes": "Fotografia de contexto humano/ambiental (pessoa com celular), não uma captura da interface real do produto — apesar da tag \"produto-real\" herdada de uma sprint anterior."
+  },
+  {
+    "id": "rumo-contexto-festa-vertical",
+    "path": "rumo-ao-altar/context-party-vertical.jpg",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/context-party-vertical.jpg",
+    "license": {
+      "name": "Recorte vertical de asset local proprio do projeto Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "festa",
+      "recepcao",
+      "evento",
+      "convidados",
+      "contexto-humano",
+      "foto-contexto",
+      "cronograma",
+      "convite"
+    ],
+    "theme": "Cena vertical premium de recepção de casamento com profundidade, luz quente e organização do evento",
+    "emotion": "tranquilidade",
+    "kind": "photo",
+    "authenticityClass": "stock_contextual",
+    "authenticityNotes": "Fotografia de contexto humano/ambiental, sem vínculo com nenhuma tela real do produto."
+  },
+  {
+    "id": "rumo-contexto-presentes-vertical",
+    "path": "rumo-ao-altar/context-gifts-vertical.jpg",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/context-gifts-vertical.jpg",
+    "license": {
+      "name": "Recorte vertical de asset local proprio do projeto Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "presentes",
+      "pix",
+      "taxa-zero",
+      "contexto-humano",
+      "foto-contexto",
+      "convite",
+      "site"
+    ],
+    "theme": "Cena vertical premium de presentes de casamento, alianças e lembrança elegante para lista via Pix",
+    "emotion": "convite",
+    "kind": "photo",
+    "authenticityClass": "stock_contextual",
+    "authenticityNotes": "Fotografia de contexto humano/ambiental, sem vínculo com nenhuma tela real do produto."
+  },
+  {
+    "id": "rumo-brand-mark",
+    "path": "rumo-ao-altar/rumo-ao-altar-mark.png",
+    "provider": "local-visual-library",
+    "origin": "local_library",
+    "author": "Rumo ao Altar",
+    "sourceUrl": "local://rumo-ao-altar/rumo-ao-altar-mark.png",
+    "license": {
+      "name": "Marca propria Rumo ao Altar",
+      "allowsCommercialUse": true,
+      "requiresAttribution": false
+    },
+    "tags": [
+      "casamento",
+      "rumo-ao-altar",
+      "cta",
+      "site",
+      "marca",
+      "logo"
+    ],
+    "theme": "Assinatura final do Rumo ao Altar com sensacao premium, clara e memoravel",
+    "emotion": "confianca",
+    "kind": "graphic",
+    "authenticityClass": "synthetic_unverified",
+    "authenticityNotes": "Provenance anterior ao Company Intelligence — não há hash/captura verificável ligando este arquivo ao logo real do site. Existe hoje um logo oficial verificado (recortado de uma captura real do Company Intelligence) na Campaign Media Library; preferir aquele para qualquer Shot de marca/identidade."
+  }
+]

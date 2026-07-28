@@ -1,4 +1,4 @@
-import type { Workspace, WorkspaceSettings } from "../../domain/workspace/workspace.model.js";
+import type { Workspace, WorkspaceSettings, WorkspaceStatus } from "../../domain/workspace/workspace.model.js";
 
 export type CreateWorkspaceInput = {
   tenantId: string;
@@ -12,17 +12,27 @@ export type UpdateWorkspaceInput = Partial<{
   settings: WorkspaceSettings;
 }>;
 
+export type ListWorkspacesFilter = {
+  status?: WorkspaceStatus;
+};
+
 /**
- * Contrato de persistência do Workspace — Sprint 02 (Fase 3). Sem implementação real ainda (a
- * migração para banco real é escopo da Sprint 03); o único adapter hoje é
- * `InMemoryWorkspaceRepository` (`src/infrastructure/storage/`), só para manter o contrato
- * testável. Assinatura deliberadamente enxuta — sem regra de negócio (limites de plano, validação
- * cruzada com Valentina etc.), que fica para quando o Workspace precisar de fato impor alguma.
+ * Contrato de persistência do Workspace — Sprint 02 (Fase 3), evoluído na Sprint 03 (Fase 4/6:
+ * persistência real + transições de status). Dois adapters reais agora:
+ * `InMemoryWorkspaceRepository` (`src/infrastructure/storage/`) e
+ * `PostgresWorkspaceRepository` (`src/infrastructure/storage/postgres/`).
+ *
+ * `activate`/`deactivate`/`archive` são mutações INCONDICIONAIS — não validam se a transição é
+ * legal a partir do status atual. Essa regra vive no domínio
+ * (`assertValidWorkspaceTransition`, `workspace.model.ts`) e é aplicada pelos casos de uso
+ * (`src/application/workspace/`), nunca pelo repositório nem pelo handler HTTP.
  */
 export type WorkspaceRepositoryPort = {
   create(input: CreateWorkspaceInput): Promise<Workspace>;
   getById(id: string): Promise<Workspace | undefined>;
-  listByTenant(tenantId: string): Promise<Workspace[]>;
+  listByTenant(tenantId: string, filter?: ListWorkspacesFilter): Promise<Workspace[]>;
   update(id: string, patch: UpdateWorkspaceInput): Promise<Workspace>;
+  activate(id: string): Promise<Workspace>;
+  deactivate(id: string): Promise<Workspace>;
   archive(id: string): Promise<Workspace>;
 };

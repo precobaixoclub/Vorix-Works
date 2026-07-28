@@ -1,4 +1,4 @@
-import type { CreateWorkspaceInput, UpdateWorkspaceInput, WorkspaceRepositoryPort } from "../../application/ports/workspace-repository.port.js";
+import type { CreateWorkspaceInput, ListWorkspacesFilter, UpdateWorkspaceInput, WorkspaceRepositoryPort } from "../../application/ports/workspace-repository.port.js";
 import type { Workspace } from "../../domain/workspace/workspace.model.js";
 
 export type WorkspaceIdGenerator = () => string;
@@ -44,9 +44,10 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     return clone(this.workspaces.get(id));
   }
 
-  async listByTenant(tenantId: string): Promise<Workspace[]> {
+  async listByTenant(tenantId: string, filter?: ListWorkspacesFilter): Promise<Workspace[]> {
     return Array.from(this.workspaces.values())
       .filter((workspace) => workspace.tenantId === tenantId)
+      .filter((workspace) => (filter?.status ? workspace.status === filter.status : true))
       .map(clone);
   }
 
@@ -66,6 +67,14 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     return clone(updated);
   }
 
+  async activate(id: string): Promise<Workspace> {
+    return this.setStatus(id, "active");
+  }
+
+  async deactivate(id: string): Promise<Workspace> {
+    return this.setStatus(id, "inactive");
+  }
+
   async archive(id: string): Promise<Workspace> {
     const existing = this.workspaces.get(id);
     if (!existing) {
@@ -75,6 +84,16 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     const archived: Workspace = { ...existing, status: "archived", archivedAt: timestamp, updatedAt: timestamp };
     this.workspaces.set(id, clone(archived));
     return clone(archived);
+  }
+
+  private setStatus(id: string, status: "active" | "inactive"): Workspace {
+    const existing = this.workspaces.get(id);
+    if (!existing) {
+      throw new Error(`WORKSPACE_NOT_FOUND: workspace "${id}" não existe.`);
+    }
+    const updated: Workspace = { ...existing, status, updatedAt: this.now().toISOString() };
+    this.workspaces.set(id, clone(updated));
+    return clone(updated);
   }
 
   clear(): void {

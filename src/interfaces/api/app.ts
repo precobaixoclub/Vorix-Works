@@ -7,6 +7,7 @@ import { registerAuthMiddleware } from "./middleware/auth.middleware.js";
 import { registerDiPlugin } from "./plugins/di.plugin.js";
 import { buildApiContainer, type ApiContainer } from "./di/container.js";
 import { registerV1Routes } from "./routes/v1/index.js";
+import { registerVersionRoute } from "./routes/version.route.js";
 import { successEnvelope } from "./http/response-envelope.js";
 
 export type BuildAppOptions = {
@@ -21,12 +22,19 @@ export type BuildAppOptions = {
  */
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const config = options.config ?? loadApiConfig();
-  const container = options.container ?? buildApiContainer();
+  const container = options.container ?? buildApiContainer(config);
 
   const app = Fastify({
     logger: { level: config.logLevel },
     genReqId: () => randomUUID(),
   });
+
+  if (container.pool) {
+    const pool = container.pool;
+    app.addHook("onClose", async () => {
+      await pool.end();
+    });
+  }
 
   registerDiPlugin(app, container);
   registerRequestContext(app);
@@ -34,6 +42,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   registerErrorHandler(app);
 
   app.get("/health", async (request, _reply) => successEnvelope({ status: "ok" as const }, request.id));
+  await registerVersionRoute(app);
 
   await app.register(registerV1Routes, { prefix: "/v1" });
 

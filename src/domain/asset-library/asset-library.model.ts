@@ -43,10 +43,18 @@ export type AssetLibrary = {
  * `storageRef` é opcional e nunca preenchido nesta sprint — nenhum adapter de storage real existe
  * ainda por trás. O registro de metadados (o quê, que tipo, quando) já é útil por si só para
  * organizar a biblioteca antes mesmo de qualquer upload funcionar.
+ *
+ * CORREÇÃO OBRIGATÓRIA (Sprint 03, #4): `storageRef` NUNCA pode conter segredo — nada de API
+ * keys, access/refresh tokens, credenciais ou URLs assinadas temporárias (elas expiram e vazam
+ * em backups/logs). Só referência DURÁVEL: provedor, bucket/container, caminho do objeto e
+ * metadados técnicos não sensíveis. Resolver a URL de acesso de verdade (assinada, com TTL) é
+ * responsabilidade do adapter de storage real no momento do uso, nunca um dado persistido aqui.
  */
 export type AssetStorageRef = {
   provider: string;
-  uri: string;
+  bucket?: string;
+  objectKey: string;
+  metadata?: Record<string, string>;
 };
 
 export type AssetRecord = {

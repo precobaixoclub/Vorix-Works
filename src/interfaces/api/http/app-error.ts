@@ -41,6 +41,14 @@ export class UnauthorizedError extends AppError {
   }
 }
 
+/** Estado atual do recurso não permite a operação pedida (ex.: transição de status inválida) — nunca um erro de formato de entrada. */
+export class ConflictError extends AppError {
+  constructor(message = "Conflito de estado.", details?: Record<string, unknown>) {
+    super({ code: "CONFLICT", message, statusCode: 409, recoverable: true, details });
+    this.name = "ConflictError";
+  }
+}
+
 export class NotImplementedError extends AppError {
   constructor(message = "Ainda não implementado.", details?: Record<string, unknown>) {
     super({ code: "NOT_IMPLEMENTED", message, statusCode: 501, recoverable: false, details });

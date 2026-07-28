@@ -13,7 +13,7 @@ import { CHAT_MESSAGE_ROLES, CHAT_ATTACHMENT_KINDS, CHAT_SESSION_STATUSES } from
 // ---------------------------------------------------------------------------------------------
 
 test("Workspace: vocabulário de status e papéis de membro existe conforme pedido", () => {
-  assert.deepEqual(WORKSPACE_STATUSES, ["active", "archived"]);
+  assert.deepEqual(WORKSPACE_STATUSES, ["active", "inactive", "archived"]);
   assert.deepEqual(WORKSPACE_MEMBER_ROLES, ["owner", "admin", "editor", "viewer"]);
 });
 
@@ -80,6 +80,25 @@ test("Workspace: update()/archive() em id inexistente lança erro claro", async 
   const repo = makeWorkspaceRepo();
   await assert.rejects(() => repo.update("nao-existe", { name: "x" }), /WORKSPACE_NOT_FOUND/);
   await assert.rejects(() => repo.archive("nao-existe"), /WORKSPACE_NOT_FOUND/);
+});
+
+test("Workspace: activate()/deactivate() mudam o status incondicionalmente (adapter não valida transição)", async () => {
+  const repo = makeWorkspaceRepo();
+  const created = await repo.create({ tenantId: "tenant-1", name: "X" });
+  const deactivated = await repo.deactivate(created.id);
+  assert.equal(deactivated.status, "inactive");
+  const activated = await repo.activate(created.id);
+  assert.equal(activated.status, "active");
+});
+
+test("Workspace: listByTenant() aceita filtro opcional por status", async () => {
+  const repo = makeWorkspaceRepo();
+  const active = await repo.create({ tenantId: "tenant-filtro", name: "Ativo" });
+  const toDeactivate = await repo.create({ tenantId: "tenant-filtro", name: "Vai inativar" });
+  await repo.deactivate(toDeactivate.id);
+
+  const onlyActive = await repo.listByTenant("tenant-filtro", { status: "active" });
+  assert.deepEqual(onlyActive.map((w) => w.id), [active.id]);
 });
 
 test("Workspace: registros retornados são cópias independentes (mutar o retorno não afeta o repositório)", async () => {

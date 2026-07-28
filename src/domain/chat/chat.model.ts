@@ -20,10 +20,16 @@ export type ChatMessageRole = (typeof CHAT_MESSAGE_ROLES)[number];
 export const CHAT_ATTACHMENT_KINDS = ["image", "video", "document", "audio"] as const;
 export type ChatAttachmentKind = (typeof CHAT_ATTACHMENT_KINDS)[number];
 
-/** Mesmo padrão de `AssetStorageRef` (Fase 4) — preparado, nunca preenchido nesta sprint (sem upload real). */
+/**
+ * Mesmo padrão de `AssetStorageRef` (Fase 4) — preparado, nunca preenchido nesta sprint (sem
+ * upload real). Mesma regra de segurança (Sprint 03, correção obrigatória #4): apenas referência
+ * durável (provedor/bucket/caminho), nunca token, credencial ou URL assinada temporária.
+ */
 export type ChatAttachmentStorageRef = {
   provider: string;
-  uri: string;
+  bucket?: string;
+  objectKey: string;
+  metadata?: Record<string, string>;
 };
 
 export type ChatAttachment = {

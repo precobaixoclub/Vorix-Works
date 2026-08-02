@@ -19,25 +19,27 @@ export function TurnBubble({ turn }: { turn: ConversationTurn }) {
         </div>
       </div>
 
-      {turn.decision ? (
+      {turn.systemMessageText || turn.decision ? (
         <div className="flex justify-start">
           <div className="max-w-lg rounded-2xl border border-border bg-surface-raised px-4 py-3 text-sm">
             <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Vorix</p>
-            {turn.systemMessageText ? <p className="mt-1 text-ink">{turn.systemMessageText}</p> : null}
+            {turn.systemMessageText ? <p className="mt-1 whitespace-pre-wrap text-ink">{turn.systemMessageText}</p> : null}
 
-            <details className="group mt-2">
-              <summary className="cursor-pointer select-none text-xs text-ink-muted hover:text-ink">Ver detalhes técnicos</summary>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
-                {turn.intent ? (
-                  <span className="rounded-full bg-surface-sunken px-2 py-0.5">
-                    Intenção: {INTENT_LABEL[turn.intent.type]} ({Math.round(turn.intent.confidence * 100)}%)
-                  </span>
-                ) : null}
-                <span className="rounded-full bg-surface-sunken px-2 py-0.5">Ação: {ACTION_LABEL[turn.decision.action]}</span>
-                {turn.state ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-accent">Estado: {STATE_LABEL[turn.state]}</span> : null}
-              </div>
-              <p className="mt-2 text-xs text-ink-faint">{turn.decision.reason}</p>
-            </details>
+            {turn.decision ? (
+              <details className="group mt-2">
+                <summary className="cursor-pointer select-none text-xs text-ink-muted hover:text-ink">Ver detalhes técnicos</summary>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
+                  {turn.intent ? (
+                    <span className="rounded-full bg-surface-sunken px-2 py-0.5">
+                      Intenção: {INTENT_LABEL[turn.intent.type]} ({Math.round(turn.intent.confidence * 100)}%)
+                    </span>
+                  ) : null}
+                  <span className="rounded-full bg-surface-sunken px-2 py-0.5">Ação: {ACTION_LABEL[turn.decision.action]}</span>
+                  {turn.state ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-accent">Estado: {STATE_LABEL[turn.state]}</span> : null}
+                </div>
+                <p className="mt-2 text-xs text-ink-faint">{turn.decision.reason}</p>
+              </details>
+            ) : null}
           </div>
         </div>
       ) : null}

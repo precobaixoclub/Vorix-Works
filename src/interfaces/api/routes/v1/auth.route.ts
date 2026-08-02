@@ -91,10 +91,15 @@ function clearAuthCookies(reply: FastifyReply, config: ApiConfig): void {
   reply.clearCookie(CSRF_COOKIE_NAME, { path: "/", domain: config.cookieDomain });
 }
 
-function assertCsrf(request: FastifyRequest): void {
+// Limpa cookies em 403 para quebrar loops de refresh silencioso quando o cookie CSRF fica
+// dessincronizado (ex.: duas cópias em `domain=vorixworks.com` e `domain=.vorixworks.com` de
+// deploys/sessões anteriores). Sem isso, o navegador entra em ciclo /workspaces → refresh 403 →
+// /login → middleware vê refresh cookie e volta para /workspaces.
+function assertCsrf(request: FastifyRequest, reply: FastifyReply, config: ApiConfig): void {
   const cookieToken = request.cookies[CSRF_COOKIE_NAME];
   const headerToken = request.headers[CSRF_HEADER_NAME];
   if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+    clearAuthCookies(reply, config);
     throw new ForbiddenError("CSRF_TOKEN_MISMATCH: cabeçalho X-CSRF-Token ausente ou não confere com o cookie.");
   }
 }
@@ -151,7 +156,7 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?
 
   app.post("/auth/logout", async (request, reply) => {
     const identity = requireIdentity(deps.identity);
-    assertCsrf(request);
+    assertCsrf(request, reply, deps.config);
 
     const principal = request.zunoContext.principal;
     const refreshTokenCookie = request.cookies[REFRESH_COOKIE_NAME];
@@ -166,7 +171,7 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?
 
   app.post("/auth/refresh", async (request, reply) => {
     const identity = requireIdentity(deps.identity);
-    assertCsrf(request);
+    assertCsrf(request, reply, deps.config);
 
     const refreshTokenCookie = request.cookies[REFRESH_COOKIE_NAME];
     if (!refreshTokenCookie) {

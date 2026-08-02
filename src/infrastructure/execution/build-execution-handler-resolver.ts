@@ -1,0 +1,90 @@
+import { join } from "node:path";
+import { DeterministicExecutionTaskHandler } from "../../application/execution/deterministic-handlers.js";
+import { ExecutionHandlerRegistry } from "../../application/execution/handler-registry.js";
+import { ExecutionHandlerResolver } from "../../application/execution/handler-resolver.js";
+import type { ExecutionFeatureFlags } from "../../application/execution/feature-flags.js";
+import { EXECUTION_CAPABILITIES } from "../../domain/planning/planning.model.js";
+import { HelenaSkillManager, SkillManifestValidator, SkillRegistry } from "../../application/skills/index.js";
+import { FileSystemSkillDiscovery } from "../skills/file-system-skill-discovery.js";
+import { FileSystemSkillModuleLoader } from "../skills/file-system-skill-module-loader.js";
+import { SingleSkillExecutionTaskHandler, VisualPipelineExecutionTaskHandler } from "./real-skill-execution-handlers.js";
+
+export async function buildExecutionHandlerResolver(input: {
+  featureFlags: ExecutionFeatureFlags;
+  skillsRoot?: string;
+  runtimeDependencies?: Record<string, unknown>;
+}): Promise<ExecutionHandlerResolver> {
+  const registry = new ExecutionHandlerRegistry();
+  registry.register({
+    id: "deterministic-execution-handler",
+    provider: "deterministic",
+    version: "1",
+    priority: 0,
+    handler: new DeterministicExecutionTaskHandler(),
+    executionModes: ["dry_run"],
+    enabled: true,
+      supportedCapabilities: EXECUTION_CAPABILITIES,
+      fallbackPolicy: "deterministic_fallback",
+      sideEffectPolicy: "none",
+      retryPolicy: { supportsRetry: true, maxAttempts: 2, backoffStrategy: "fixed" },
+      executionTimeoutMs: 5_000,
+    });
+
+  if (input.featureFlags.realExecutionEnabled) {
+    const helena = new HelenaSkillManager({
+      discovery: new FileSystemSkillDiscovery({ rootDirectories: [input.skillsRoot ?? join(process.cwd(), "dist", "skills")] }),
+      loader: new FileSystemSkillModuleLoader({ runtimeDependencies: input.runtimeDependencies }),
+      validator: new SkillManifestValidator(),
+      registry: new SkillRegistry(),
+    });
+    await helena.discoverAndLoadSkills();
+
+    registry.register(realSingle("helena-skill-research-handler", helena, "editorial_research", "research", "editorial_planning", "context", ["realExecutionEnabled", "realExecutionResearchEnabled"]));
+    registry.register(realSingle("helena-skill-planning-handler", helena, "strategic_planning", "campaign_structure", "marketing_strategy", "structure", ["realExecutionEnabled", "realPlanningEnabled"]));
+    registry.register(realSingle("helena-skill-copy-handler", helena, "copywriting", "copy_generation", "copywriting", "copy", ["realExecutionEnabled", "realCopyEnabled"]));
+    registry.register({
+      id: "helena-skill-visual-pipeline-handler",
+      provider: "helena",
+      version: "1",
+      priority: 100,
+      handler: new VisualPipelineExecutionTaskHandler({ helena, provider: "helena" }),
+      executionModes: ["real"],
+      enabled: true,
+      supportedCapabilities: ["visual_design"],
+      fallbackPolicy: "fail_closed",
+      sideEffectPolicy: "external_write",
+      retryPolicy: { supportsRetry: true, maxAttempts: 2, backoffStrategy: "fixed" },
+      executionTimeoutMs: 30_000,
+      requiredFeatureFlags: ["realExecutionEnabled", "realVisualEnabled"],
+    });
+    registry.register(realSingle("helena-skill-distribution-handler", helena, "distribution", "publication", "social_publishing", "manifest", ["realExecutionEnabled", "realDistributionEnabled"]));
+  }
+
+  return new ExecutionHandlerResolver(registry);
+}
+
+function realSingle(
+  id: string,
+  helena: HelenaSkillManager,
+  capability: (typeof EXECUTION_CAPABILITIES)[number],
+  taskType: "research" | "campaign_structure" | "copy_generation" | "publication",
+  skillCapability: string,
+  outputPort: string,
+  requiredFeatureFlags: readonly (keyof ExecutionFeatureFlags)[],
+) {
+  return {
+    id,
+    provider: "helena",
+    version: "1",
+    priority: 100,
+    handler: new SingleSkillExecutionTaskHandler({ helena, capability, taskType, skillCapability, outputPort, provider: "helena" }),
+    executionModes: ["real"] as const,
+    enabled: true,
+    supportedCapabilities: [capability],
+    fallbackPolicy: "fail_closed" as const,
+    sideEffectPolicy: capability === "distribution" ? "publication_preview" as const : "external_read" as const,
+    retryPolicy: { supportsRetry: true, maxAttempts: 2, backoffStrategy: "fixed" as const },
+    executionTimeoutMs: 30_000,
+    requiredFeatureFlags,
+  };
+}

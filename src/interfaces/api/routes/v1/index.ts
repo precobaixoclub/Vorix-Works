@@ -1,15 +1,151 @@
 import type { FastifyInstance } from "fastify";
+import { registerAnalyticsRoutes } from "./analytics.route.js";
+import { registerAuthRoutes } from "./auth.route.js";
+import { registerBriefingRoutes } from "./briefings.route.js";
+import { registerConversationRoutes } from "./conversations.route.js";
+import { registerCredentialRoutes } from "./credentials.route.js";
 import { registerHealthRoutes } from "./health.route.js";
+import { registerPlanningRoutes } from "./planning.route.js";
+import { registerProviderRoutes } from "./providers.route.js";
+import { registerRuntimeRoutes } from "./runtime.route.js";
+import { registerSchedulingRoutes } from "./scheduling.route.js";
+import { registerSystemRoutes } from "./system.route.js";
+import { registerExecutionRunRoutes } from "./execution-runs.route.js";
+import { registerPublicationRoutes } from "./publications.route.js";
+import { registerWebhookRoutes } from "./webhooks.route.js";
 import { registerWorkspaceRoutes } from "./workspaces.route.js";
 
 /**
  * Grupo de rotas `v1` — esqueleto de versionamento. Registrado sob o prefixo `/v1` (ver `app.ts`),
- * para que uma futura `v2` conviva lado a lado sem quebrar clientes existentes. `app.zunoContainer`
- * (decorado por `registerDiPlugin` na instância pai) chega aqui por herança de decorators do
- * Fastify — nenhuma rota importa um adapter diretamente, cada uma recebe só os Ports de que
- * precisa (Workspace hoje; Asset Library/Chat entram quando ganharem endpoints próprios).
+ * para que uma futura `v2` conviva lado a lado sem quebrar clientes existentes. `app.zunoContainer`/
+ * `app.zunoConfig` (decorados por `registerDiPlugin` na instância pai) chegam aqui por herança de
+ * decorators do Fastify — nenhuma rota importa um adapter diretamente.
  */
 export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   await registerHealthRoutes(app);
   await registerWorkspaceRoutes(app, { workspaceRepository: app.zunoContainer.workspaceRepository });
+  await registerAuthRoutes(app, { identity: app.zunoContainer.identity, config: app.zunoConfig });
+  await registerConversationRoutes(app, {
+    conversationRepository: app.zunoContainer.conversationRepository,
+    eventRepository: app.zunoContainer.conversationEventRepository,
+    memoryRepository: app.zunoContainer.conversationMemoryRepository,
+    workspaceRepository: app.zunoContainer.workspaceRepository,
+    briefingRepository: app.zunoContainer.briefingRepository,
+    fieldValueRepository: app.zunoContainer.briefingFieldValueRepository,
+    questionRepository: app.zunoContainer.briefingQuestionRepository,
+    preparedCommandRepository: app.zunoContainer.preparedCommandRepository,
+    companyKnowledgeSource: app.zunoContainer.companyKnowledgeSource,
+    assetMetadataSource: app.zunoContainer.assetMetadataSource,
+    aiGateway: app.zunoContainer.aiGateway,
+    aiExtractionEnabled: app.zunoContainer.aiExtractionEnabled,
+    planningEngine: app.zunoContainer.planningEngineHook,
+  });
+  await registerBriefingRoutes(app, {
+    briefingRepository: app.zunoContainer.briefingRepository,
+    fieldValueRepository: app.zunoContainer.briefingFieldValueRepository,
+    questionRepository: app.zunoContainer.briefingQuestionRepository,
+    preparedCommandRepository: app.zunoContainer.preparedCommandRepository,
+    eventRepository: app.zunoContainer.conversationEventRepository,
+    planningEngine: app.zunoContainer.planningEngineHook,
+  });
+  await registerPlanningRoutes(app, {
+    planningRepository: app.zunoContainer.planningRepository,
+    executionGraphRepository: app.zunoContainer.executionGraphRepository,
+    executionTaskRepository: app.zunoContainer.executionTaskRepository,
+    artifactRepository: app.zunoContainer.planningArtifactRepository,
+    decisionRepository: app.zunoContainer.planningDecisionRepository,
+  });
+  await registerRuntimeRoutes(app, {
+    runtimeRepository: app.zunoContainer.runtimeRepository,
+    planningRepository: app.zunoContainer.planningRepository,
+  });
+  const executionHandlerResolver = await app.zunoContainer.createExecutionHandlerResolver();
+  await registerExecutionRunRoutes(app, {
+    executionRepository: app.zunoContainer.executionRepository,
+    runtimeRepository: app.zunoContainer.runtimeRepository,
+    planningRepository: app.zunoContainer.planningRepository,
+    executionTaskRepository: app.zunoContainer.executionTaskRepository,
+    executionGraphRepository: app.zunoContainer.executionGraphRepository,
+    artifactRepository: app.zunoContainer.planningArtifactRepository,
+    handlers: app.zunoContainer.executionHandlers,
+    handlerResolver: executionHandlerResolver,
+    featureFlags: app.zunoContainer.executionFeatureFlags,
+    contractRegistry: app.zunoContainer.executionContractRegistry,
+    sideEffectGuard: app.zunoContainer.executionSideEffectGuard,
+    circuitBreaker: app.zunoContainer.executionCircuitBreaker,
+    executionFeatureFlags: app.zunoContainer.executionFeatureFlags,
+    executionEnvironmentPolicy: app.zunoContainer.executionEnvironmentPolicy,
+    idGenerator: () => `execution-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  });
+  await registerPublicationRoutes(app, {
+    publicationRepository: app.zunoContainer.publicationRepository,
+    credentialRepository: app.zunoContainer.credentialRepository,
+    executionRepository: app.zunoContainer.executionRepository,
+    providers: app.zunoContainer.publicationProviders,
+    providerRegistry: app.zunoContainer.publicationProviderRegistry,
+    providerPolicy: app.zunoContainer.publicationProviderPolicy,
+    publicationGovernancePolicy: app.zunoContainer.publicationGovernancePolicy,
+    secretResolver: app.zunoContainer.publicationSecretResolver,
+    metaPagesOAuthService: app.zunoContainer.metaPagesOAuthService,
+    queue: app.zunoContainer.publicationQueue,
+    providerCircuitBreaker: app.zunoContainer.operationalCircuitBreaker,
+    backpressure: app.zunoContainer.operationalBackpressure,
+    idGenerator: () => `publication-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  });
+  await registerCredentialRoutes(app, {
+    credentialGovernanceService: app.zunoContainer.credentialGovernanceService,
+    auditRepository: app.zunoContainer.operationalAuditRepository,
+    complianceService: app.zunoContainer.complianceService,
+    metaPagesOAuthService: app.zunoContainer.metaPagesOAuthService,
+    idGenerator: () => `audit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  });
+  await registerProviderRoutes(app, {
+    providerRegistry: app.zunoContainer.publicationProviderRegistry,
+    credentialGovernanceService: app.zunoContainer.credentialGovernanceService,
+    credentialRepository: app.zunoContainer.credentialRepository,
+    auditRepository: app.zunoContainer.operationalAuditRepository,
+    webhookRepository: app.zunoContainer.webhookEventRepository,
+    secretStore: app.zunoContainer.publicationSecretStore,
+    metaPagesOAuthService: app.zunoContainer.metaPagesOAuthService,
+    idGenerator: () => `provider-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  });
+  await registerWebhookRoutes(app, {
+    webhookRepository: app.zunoContainer.webhookEventRepository,
+    synchronizationService: app.zunoContainer.publicationSynchronizationService,
+  });
+  await registerSchedulingRoutes(app, {
+    schedulingRepository: app.zunoContainer.schedulingRepository,
+    schedulingUseCases: app.zunoContainer.schedulingUseCases,
+    temporalDispatcher: app.zunoContainer.schedulingTemporalDispatcher,
+    recoveryService: app.zunoContainer.schedulingRecoveryService,
+    healthService: app.zunoContainer.schedulingHealthService,
+  });
+  await registerAnalyticsRoutes(app, {
+    repository: app.zunoContainer.analyticsRepository,
+    auditRepository: app.zunoContainer.operationalAuditRepository,
+    metricRegistry: app.zunoContainer.analyticsMetricRegistry,
+    ingestionService: app.zunoContainer.analyticsIngestionService,
+    queryService: app.zunoContainer.analyticsQueryService,
+    snapshotRebuilder: app.zunoContainer.analyticsSnapshotRebuilder,
+    dataQualityService: app.zunoContainer.analyticsDataQualityService,
+    insightEngine: app.zunoContainer.analyticsInsightEngine,
+    alertService: app.zunoContainer.analyticsAlertService,
+    exportService: app.zunoContainer.analyticsExportService,
+    healthService: app.zunoContainer.analyticsHealthService,
+    idGenerator: () => `analytics-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    defaultTimezone: app.zunoConfig.analytics.defaultTimezone,
+  });
+  await registerSystemRoutes(app, {
+    healthService: app.zunoContainer.operationalHealthService,
+    circuitBreaker: app.zunoContainer.operationalCircuitBreaker,
+    rateLimiter: app.zunoContainer.operationalRateLimiter,
+    backpressure: app.zunoContainer.operationalBackpressure,
+    productionGuard: app.zunoContainer.productionGuard,
+    secretManager: app.zunoContainer.secretManager,
+    publicationQueue: app.zunoContainer.publicationQueue,
+    auditRepository: app.zunoContainer.operationalAuditRepository,
+    schedulingRecoveryService: app.zunoContainer.schedulingRecoveryService,
+    backupRestorePlanner: app.zunoContainer.backupRestorePlanner,
+    idGenerator: () => `system-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  });
 }

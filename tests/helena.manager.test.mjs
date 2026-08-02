@@ -124,7 +124,7 @@ test("Helena trata erro de execução e marca Skill como FAILED", async () => {
   assert.ok(events.list().some((event) => event.name === "SkillFailed"));
 });
 
-test("Helena bloqueia solicitação de execução que não veio do Arthur", async () => {
+test("Helena bloqueia solicitação de execução que não veio de Arthur, Caio ou Execution", async () => {
   const { helena } = createHelena();
   await helena.discoverAndLoadSkills();
 
@@ -141,6 +141,6 @@ test("Helena bloqueia solicitação de execução que não veio do Arthur", asyn
         dryRun: true,
       },
     }),
-    /apenas do Arthur ou do Caio/,
+    /apenas do Arthur, do Caio ou do Execution/,
   );
 });

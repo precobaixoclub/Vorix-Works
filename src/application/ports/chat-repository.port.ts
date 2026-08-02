@@ -14,9 +14,10 @@ export type AppendChatMessageInput = {
 };
 
 /**
- * Contrato de persistência do Chat — Sprint 02 (Fase 5). Só armazenamento de sessão/mensagem;
- * nenhuma geração de resposta, nenhuma chamada a Icaro/Arthur. Único adapter hoje:
- * `InMemoryChatRepository`.
+ * @deprecated Substituído por `ConversationRepositoryPort`/`BriefingRepositoryPort` (Sprint 06/07).
+ * Nenhum consumidor novo — ver `chat.model.ts`. Contrato de persistência do Chat — Sprint 02
+ * (Fase 5). Só armazenamento de sessão/mensagem; nenhuma geração de resposta, nenhuma chamada a
+ * Icaro/Arthur.
  */
 export type ChatRepositoryPort = {
   createSession(input: CreateChatSessionInput): Promise<ChatSession>;

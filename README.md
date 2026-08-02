@@ -6,6 +6,17 @@ O CEO conceitual do projeto se chama Zuno. Zuno representa a identidade da agên
 
 Esta base foi estruturada com Clean Architecture, SOLID e contratos explícitos para permitir que futuras Skills sejam adicionadas sem reescrever o núcleo do sistema.
 
+## Plataforma nova (Conversation → Operations)
+
+Além do pipeline `LOCAL_PRODUCTION` descrito abaixo, este repositório contém, desde a Sprint 08, uma segunda arquitetura completa — uma API HTTP (Fastify, `/v1`) multi-tenant com RBAC + frontend Next.js, cobrindo Conversation, Briefing, AI Gateway, Planning, Runtime, Execution, Publication (com outbox/dispatch/reconciliação), Credential/Governance/Compliance, Webhooks, Scheduling/Calendário Editorial, Analytics e uma camada Operacional transversal (Production Guard, circuit breakers, health/readiness, backpressure, rate limiting). As duas arquiteturas nunca se importam entre si (`npm run architecture:check` garante isso). **Production permanece bloqueada por padrão** nesta plataforma nova — ver `docs/sprint-24-final-report.md` (certificação de Release Candidate 1.0) e:
+
+- `docs/architecture.md` — visão C4 (contexto/containers/componentes) e mapa de domínios
+- `docs/event-catalog.md` — todos os eventos, origem, consumidores, versionamento, idempotência
+- `docs/contract-catalog.md` — Ports, Adapters, Repositories, Policies
+- `docs/runbook.md` / `docs/troubleshooting.md` / `docs/deployment.md`
+
+Rodar localmente: `npm run zuno:api` (API) e `cd web && npm run dev` (frontend).
+
 ## Estado atual
 
 O projeto contém estrutura, documentação, contratos, portas arquiteturais, Arthur como planejador de execução, Helena como gerente de Skills, Caio como executor de Workflows, Valentina como Gerente de Clientes, Clara como Centro de Conhecimento, Eduardo como Skill de planejamento editorial, João como Skill de estratégia de marketing, Maria como Skill de copywriting, Sofia como Skill de direção de arte, Bianca como Skill de design para redes sociais, Pedro como Skill de geração de imagens, Lucas como Skill de revisão de qualidade, Ana como Skill de publicação social, Bruno como Skill de estratégia e roteirização de vídeos curtos, Vanessa como Skill de direção de vídeo, Diego como Skill de edição de vídeo, Rafa como Skill de renderização/geração de vídeo e Ícaro como cérebro central de comunicação com IA. Não existe integração concreta com OpenAI, Google, banco de dados, servidor ou SaaS; a integração com Meta/Instagram existe como adaptador real (`src/infrastructure/social-networks`), mas ainda sem credenciais configuradas.

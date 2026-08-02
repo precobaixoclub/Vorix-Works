@@ -1,23 +1,17 @@
-/**
- * Porta de autenticação — Sprint 02 (Fase 2), preparada para crescer, nunca aplicada de verdade
- * ainda. Não existe login, não existe usuário, não existe sessão nesta sprint (explicitamente
- * fora de escopo). Esta porta só define o formato que a Sprint 04 (identidade/autenticação real)
- * vai preencher, para que o middleware HTTP já tenha um lugar certo para plugar isso sem precisar
- * ser reescrito depois.
- *
- * O único adapter real hoje é `NoopAuthAdapter` (`src/infrastructure/auth/`), que nunca rejeita
- * uma requisição — sempre devolve `principal: null` (visitante anônimo). Nenhuma rota depende de
- * autenticação nesta sprint; a porta existe para o middleware ter uma dependência real a chamar,
- * não uma decisão hardcoded.
- */
+import type { AuthPrincipal } from "../../domain/identity/identity.model.js";
 
-/** O que a autenticação real (Sprint 04) vai identificar por trás de uma requisição. Vazio de propósito além do essencial — cresce quando usuários existirem de verdade. */
-export type AuthPrincipal = {
-  /** Referência ao futuro usuário autenticado — nunca preenchido nesta sprint. */
-  userId: string;
-  /** Referência ao Workspace/Tenant ativo na sessão — nunca preenchido nesta sprint. */
-  tenantId?: string;
-};
+/**
+ * Porta de autenticação — desenhada na Sprint 02, preenchida de verdade na Sprint 05
+ * (`src/infrastructure/auth/jwt-auth-adapter.ts`, usando `JwtPort` + os repositórios de
+ * Identidade). `AuthPrincipal` agora vem do domínio (`identity.model.ts`) — carrega `tenantId`/
+ * `role`/`sessionId` reais, reconstruídos a partir de um JWT válido, nunca de uma sessão em
+ * memória do servidor.
+ *
+ * `NoopAuthAdapter` (`src/infrastructure/auth/`) continua existindo como válvula de escape
+ * explícita para desenvolvimento/teste (`AUTH_MODE=noop`) — nunca o padrão em produção a partir
+ * desta sprint (ver `api-config.ts`).
+ */
+export type { AuthPrincipal };
 
 export type AuthVerificationResult =
   | { authenticated: true; principal: AuthPrincipal }

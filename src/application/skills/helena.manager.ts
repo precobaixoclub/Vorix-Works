@@ -150,8 +150,8 @@ export class HelenaSkillManager implements HelenaSkillManagerPort {
   async executeSkill<TInput = unknown, TOutput = unknown>(
     request: HelenaSkillExecutionRequest<TInput>,
   ): Promise<HelenaSkillExecutionResult<TOutput>> {
-    if (!["arthur", "caio"].includes(request.requestedBy)) {
-      throw new Error("Helena aceita solicitações de execução apenas do Arthur ou do Caio.");
+    if (!["arthur", "caio", "execution"].includes(request.requestedBy)) {
+      throw new Error("Helena aceita solicitações de execução apenas do Arthur, do Caio ou do Execution.");
     }
 
     const record = await this.findSkillByCapability(request.capability);

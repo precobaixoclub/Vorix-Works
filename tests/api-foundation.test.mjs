@@ -11,29 +11,45 @@ import { NoopAuthAdapter } from "../dist/infrastructure/auth/noop-auth-adapter.j
 // api-config
 // ---------------------------------------------------------------------------------------------
 
-test("loadApiConfig: usa padrões seguros quando nenhuma variável de ambiente está definida", () => {
-  const config = loadApiConfig({});
+test("loadApiConfig: usa padrões seguros quando AUTH_MODE=noop (sem variável nenhuma além dela)", () => {
+  const config = loadApiConfig({ AUTH_MODE: "noop" });
   assert.equal(config.port, 3000);
   assert.equal(config.host, "0.0.0.0");
   assert.equal(config.jwtSecret, undefined);
   assert.equal(config.databaseUrl, undefined);
   assert.equal(config.logLevel, "info");
+  assert.equal(config.authMode, "noop");
 });
 
 test("loadApiConfig: respeita variáveis de ambiente válidas", () => {
-  const config = loadApiConfig({ API_PORT: "8080", API_HOST: "127.0.0.1", ZUNO_LOG_LEVEL: "debug", JWT_SECRET: "x", DATABASE_URL: "postgres://x" });
+  const config = loadApiConfig({
+    API_PORT: "8080",
+    API_HOST: "127.0.0.1",
+    ZUNO_LOG_LEVEL: "debug",
+    JWT_SECRET: "x",
+    DATABASE_URL: "postgres://x",
+  });
   assert.equal(config.port, 8080);
   assert.equal(config.host, "127.0.0.1");
   assert.equal(config.logLevel, "debug");
   assert.equal(config.jwtSecret, "x");
   assert.equal(config.databaseUrl, "postgres://x");
+  assert.equal(config.authMode, "jwt");
 });
 
 test("loadApiConfig: ignora porta inválida e cai no padrão", () => {
   for (const invalid of ["0", "-1", "abc", "99999999"]) {
-    const config = loadApiConfig({ API_PORT: invalid });
+    const config = loadApiConfig({ API_PORT: invalid, AUTH_MODE: "noop" });
     assert.equal(config.port, 3000, `porta ${invalid} deveria cair no padrão`);
   }
+});
+
+test("loadApiConfig: AUTH_MODE=jwt (padrão) sem JWT_SECRET lança erro claro", () => {
+  assert.throws(() => loadApiConfig({}), /JWT_SECRET/);
+});
+
+test("loadApiConfig: AUTH_MODE=jwt com JWT_SECRET mas sem DATABASE_URL lança erro claro", () => {
+  assert.throws(() => loadApiConfig({ JWT_SECRET: "x" }), /DATABASE_URL/);
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -80,7 +96,7 @@ test("NoopAuthAdapter: nunca autentica, independente do token", async () => {
 // ---------------------------------------------------------------------------------------------
 
 test("GET /health responde 200 com envelope de sucesso", async () => {
-  const app = await buildApp({ config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent" }) });
+  const app = await buildApp({ config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop" }) });
   const response = await app.inject({ method: "GET", url: "/health" });
   assert.equal(response.statusCode, 200);
   const body = response.json();
@@ -90,7 +106,7 @@ test("GET /health responde 200 com envelope de sucesso", async () => {
 });
 
 test("GET /v1/health responde 200 com status/uptime/version", async () => {
-  const app = await buildApp({ config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent" }) });
+  const app = await buildApp({ config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop" }) });
   const response = await app.inject({ method: "GET", url: "/v1/health" });
   assert.equal(response.statusCode, 200);
   const body = response.json();
@@ -102,7 +118,7 @@ test("GET /v1/health responde 200 com status/uptime/version", async () => {
 });
 
 test("Rota inexistente responde 404 com envelope de erro padrão (nunca um corpo solto do Fastify)", async () => {
-  const app = await buildApp({ config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent" }) });
+  const app = await buildApp({ config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop" }) });
   const response = await app.inject({ method: "GET", url: "/v1/isso-nao-existe" });
   assert.equal(response.statusCode, 404);
   const body = response.json();
@@ -112,7 +128,7 @@ test("Rota inexistente responde 404 com envelope de erro padrão (nunca um corpo
 });
 
 test("Requisição sem Authorization continua funcionando (autenticação nunca bloqueia nesta sprint)", async () => {
-  const app = await buildApp({ config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent" }) });
+  const app = await buildApp({ config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop" }) });
   const withAuthHeader = await app.inject({ method: "GET", url: "/health", headers: { authorization: "Bearer qualquer-token-invalido" } });
   const withoutAuthHeader = await app.inject({ method: "GET", url: "/health" });
   assert.equal(withAuthHeader.statusCode, 200);
@@ -121,7 +137,7 @@ test("Requisição sem Authorization continua funcionando (autenticação nunca 
 });
 
 test("Cada requisição recebe um requestId único (rastreável em log/erro)", async () => {
-  const app = await buildApp({ config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent" }) });
+  const app = await buildApp({ config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop" }) });
   const a = await app.inject({ method: "GET", url: "/health" });
   const b = await app.inject({ method: "GET", url: "/health" });
   assert.notEqual(a.headers["x-request-id"] ?? a.json().meta, b.headers["x-request-id"] ?? b.json().meta);
@@ -136,7 +152,7 @@ test("buildApp aceita um container customizado (composição substituível para 
       return { authenticated: false, reason: "not_implemented" };
     },
   };
-  const app = await buildApp({ config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent" }), container: { authPort: fakeAuthPort } });
+  const app = await buildApp({ config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop" }), container: { authPort: fakeAuthPort } });
   await app.inject({ method: "GET", url: "/health" });
   assert.equal(called, 1);
   await app.close();

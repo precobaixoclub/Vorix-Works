@@ -40,6 +40,7 @@ type AttachmentRow = {
  * todos os anexos delas via `= any($1::text[])`). Nenhuma IA/LLM aqui — só persistência da
  * estrutura já definida na Sprint 02.
  */
+/** @deprecated Ver `chat.model.ts` — nenhum consumidor novo. */
 export class PostgresChatRepository implements ChatRepositoryPort {
   private readonly pool: Pool;
   private readonly idGenerator: ChatIdGenerator;

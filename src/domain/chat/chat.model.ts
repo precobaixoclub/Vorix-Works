@@ -1,17 +1,19 @@
 /**
- * Chat — Sprint 02 (Fase 5), fundação de domínio. Nenhuma IA aqui: só a arquitetura (sessão,
- * mensagem, anexo, "pergunta inteligente" como formato de dado). O Chat vive dentro de um
- * Workspace (Fase 3) — é o ponto de entrada de praticamente toda ação futura do usuário, mas
- * nesta sprint é só um modelo de conversa persistível, sem nenhum motor por trás decidindo o que
- * responder.
+ * @deprecated Chat — Sprint 02 (Fase 5), fundação de domínio, NUNCA ligada a um endpoint real
+ * (confirmado na Sprint 04). Substituída pelo domínio `Conversation` (Sprint 06,
+ * `src/domain/conversation/conversation.model.ts`), que por sua vez ganhou coleta estruturada de
+ * contexto na Sprint 07 (`src/domain/briefing/briefing.model.ts`). Este módulo continua existindo
+ * só para não descartar dado histórico já persistido em `chat_*` — NENHUM consumidor novo deve
+ * importar daqui (ver `scripts/check-legacy-chat-imports.mjs`, que falha o build se isso acontecer
+ * fora da allowlist). Remoção depende de: (1) confirmar que não há dado de produção real em
+ * `chat_sessions`/`chat_messages`, (2) um plano de migração explícito — nenhum dos dois foi feito
+ * ainda.
  *
- * `SmartQuestion` é o formato que uma "pergunta inteligente" teria quando a IA não tiver contexto
- * suficiente — ligado diretamente a um gap real já diagnosticado na Sprint 01: `needs_more_context`
- * é um status genuíno que várias Skills já emitem (`SkillResponse.status`), mas
- * `caio.executor.ts` não tem um branch dedicado para ele — cai direto em falha dura, não
- * retomável. Ter o tipo `SmartQuestion` pronto aqui NÃO resolve esse gap; só garante que o Chat já
- * nasce com o lugar certo para receber a pergunta no dia em que o gap for corrigido (fora do
- * escopo desta sprint — Workflows não podem ser alterados aqui).
+ * Nenhuma IA aqui: só a arquitetura (sessão, mensagem, anexo, "pergunta inteligente" como formato
+ * de dado). `SmartQuestion` é o formato que uma "pergunta inteligente" teria quando a IA não
+ * tivesse contexto suficiente — ligado ao gap real diagnosticado na Sprint 01
+ * (`needs_more_context` sem branch dedicado em `caio.executor.ts`); a Sprint 07 resolveu esse gap
+ * de verdade, mas pelo lado do `Conversation`/`Briefing`, não deste módulo.
  */
 
 export const CHAT_MESSAGE_ROLES = ["user", "assistant", "system"] as const;

@@ -1,6 +1,9 @@
 node_modules/
 dist/
 coverage/
+.next/
+web/next-env.d.ts
+*.tsbuildinfo
 artifacts/
 .zuno-data/
 .env

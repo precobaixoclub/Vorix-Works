@@ -1,0 +1,28 @@
+{
+  "name": "zuno-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Workspace Experience — primeira interface web do Zuno (Sprint 04). Consome exclusivamente a API em src/interfaces/api; nunca acessa banco ou motor de conteúdo diretamente.",
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "next": "16.2.12",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "swr": "^2.3.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^20.14.12",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.5.4",
+    "vitest": "^3.2.7"
+  }
+}

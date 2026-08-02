@@ -5,6 +5,7 @@ export type ChatIdGenerator = (prefix: string) => string;
 
 const defaultIdGenerator: ChatIdGenerator = (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+/** @deprecated Ver `chat.model.ts` — nenhum consumidor novo. */
 export class InMemoryChatRepository implements ChatRepositoryPort {
   private readonly sessions = new Map<string, ChatSession>();
   private readonly messagesBySession = new Map<string, ChatMessage[]>();

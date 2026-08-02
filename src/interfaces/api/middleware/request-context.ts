@@ -12,6 +12,10 @@ export type RequestContext = {
   requestId: string;
   principal: AuthPrincipal | null;
   tenantId: string | null;
+  /** Preenchido quando `principal` é `null` — por que a autenticação falhou (Sprint 05). Deixa o
+   * handler de rota devolver 401 com um código específico (`TOKEN_EXPIRED` vs `UNAUTHORIZED`), o
+   * que o frontend usa para decidir se tenta um refresh silencioso ou manda para `/login` direto. */
+  authFailureReason: "missing_token" | "invalid_token" | "expired_token" | "not_implemented" | null;
 };
 
 declare module "fastify" {
@@ -28,6 +32,7 @@ export function registerRequestContext(app: FastifyInstance): void {
       requestId: request.id,
       principal: null,
       tenantId: null,
+      authFailureReason: null,
     };
   });
 }

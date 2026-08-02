@@ -25,7 +25,7 @@ export type RegisteredSkillRecord = {
   updatedAt: string;
 };
 
-export type HelenaExecutionCaller = "arthur" | "caio";
+export type HelenaExecutionCaller = "arthur" | "caio" | "execution";
 
 export type HelenaSkillExecutionRequest<TInput = unknown> = {
   requestedBy: HelenaExecutionCaller;

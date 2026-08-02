@@ -35,8 +35,8 @@ export class ValidationError extends AppError {
 }
 
 export class UnauthorizedError extends AppError {
-  constructor(message = "Autenticação necessária.", details?: Record<string, unknown>) {
-    super({ code: "UNAUTHORIZED", message, statusCode: 401, recoverable: true, details });
+  constructor(message = "Autenticação necessária.", code: string = "UNAUTHORIZED", details?: Record<string, unknown>) {
+    super({ code, message, statusCode: 401, recoverable: true, details });
     this.name = "UnauthorizedError";
   }
 }
@@ -46,6 +46,14 @@ export class ConflictError extends AppError {
   constructor(message = "Conflito de estado.", details?: Record<string, unknown>) {
     super({ code: "CONFLICT", message, statusCode: 409, recoverable: true, details });
     this.name = "ConflictError";
+  }
+}
+
+/** Autenticado, mas sem permissão para a ação — distinto de `UnauthorizedError` (401, sem autenticação nenhuma). Sprint 05 (RBAC). */
+export class ForbiddenError extends AppError {
+  constructor(message = "Sem permissão para esta ação.", details?: Record<string, unknown>) {
+    super({ code: "FORBIDDEN", message, statusCode: 403, recoverable: true, details });
+    this.name = "ForbiddenError";
   }
 }
 

@@ -1,0 +1,119 @@
+name: zuno
+
+# Stack isolada do Zuno (API + Web + Postgres próprio) — rede e volumes dedicados, nunca toca em
+# nenhum container/rede/volume já existente no host (cmdesk-*, rumoaoaltar-*, saas_*). Roteado via
+# Traefik (labels, auto-discovery — mesmo padrão do rumoaoaltar-app) na rede externa
+# `cmdesk_cmdesk-network`, sem precisar reiniciar o Traefik nem tocar em nenhum router existente.
+# Portas diretas (8090/8091) continuam expostas como caminho de depuração/fallback.
+
+services:
+  zuno-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zuno
+      POSTGRES_PASSWORD: ${ZUNO_POSTGRES_PASSWORD}
+      POSTGRES_DB: zuno
+    volumes:
+      - zuno_postgres_data:/var/lib/postgresql/data
+    networks: [zuno_network]
+    mem_limit: 512m
+    mem_reservation: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zuno -d zuno"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zuno-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      zuno-postgres:
+        condition: service_healthy
+    environment:
+      API_PORT: "3000"
+      API_HOST: "0.0.0.0"
+      AUTH_MODE: jwt
+      JWT_SECRET: ${ZUNO_JWT_SECRET}
+      DATABASE_URL: postgres://zuno:${ZUNO_POSTGRES_PASSWORD}@zuno-postgres:5432/zuno
+      PERSISTENCE_DRIVER: postgres
+      API_CORS_ORIGIN: ${ZUNO_WEB_ORIGIN}
+      COOKIE_SECURE: ${ZUNO_COOKIE_SECURE:-false}
+      COOKIE_DOMAIN: ${ZUNO_COOKIE_DOMAIN:-}
+      ZUNO_LOG_LEVEL: info
+      # AI Gateway, Meta OAuth e produção real ficam desligados por padrão (ProductionGuard) —
+      # nunca habilitar aqui sem decisão explícita e as credenciais reais correspondentes.
+    ports:
+      - "${ZUNO_API_PORT:-8090}:3000"
+    networks: [zuno_network, cmdesk_cmdesk-network]
+    init: true
+    mem_limit: 512m
+    mem_reservation: 256m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=cmdesk_cmdesk-network
+      - traefik.http.middlewares.zuno-api-https.redirectscheme.permanent=true
+      - traefik.http.middlewares.zuno-api-https.redirectscheme.scheme=https
+      - traefik.http.routers.zuno-api-http.entrypoints=web
+      - traefik.http.routers.zuno-api-http.middlewares=zuno-api-https
+      - traefik.http.routers.zuno-api-http.rule=Host(`api.vorixworks.com`)
+      - traefik.http.routers.zuno-api.entrypoints=websecure
+      - traefik.http.routers.zuno-api.rule=Host(`api.vorixworks.com`)
+      - traefik.http.routers.zuno-api.tls=true
+      - traefik.http.routers.zuno-api.tls.certresolver=letsencrypt
+      - traefik.http.services.zuno-api.loadbalancer.server.port=3000
+
+  zuno-web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${ZUNO_API_ORIGIN}
+    restart: unless-stopped
+    depends_on:
+      zuno-api:
+        condition: service_healthy
+    environment:
+      # O servidor "standalone" do Next.js respeita HOSTNAME para decidir a interface de bind.
+      # Docker define HOSTNAME=<container id> por padrão em todo container — com duas redes
+      # anexadas (zuno_network + cmdesk_cmdesk-network), isso resolvia para o IP de só UMA delas,
+      # nunca 0.0.0.0, e ninguém de fora dessa rede específica (Traefik incluído) conseguia
+      # alcançar o container. Forçar aqui evita esse conflito.
+      HOSTNAME: "0.0.0.0"
+    ports:
+      - "${ZUNO_WEB_PORT:-8091}:3001"
+    networks: [zuno_network, cmdesk_cmdesk-network]
+    init: true
+    mem_limit: 512m
+    mem_reservation: 256m
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=cmdesk_cmdesk-network
+      - traefik.http.middlewares.zuno-web-https.redirectscheme.permanent=true
+      - traefik.http.middlewares.zuno-web-https.redirectscheme.scheme=https
+      - traefik.http.routers.zuno-web-http.entrypoints=web
+      - traefik.http.routers.zuno-web-http.middlewares=zuno-web-https
+      - traefik.http.routers.zuno-web-http.rule=Host(`vorixworks.com`) || Host(`www.vorixworks.com`)
+      - traefik.http.routers.zuno-web.entrypoints=websecure
+      - traefik.http.routers.zuno-web.rule=Host(`vorixworks.com`) || Host(`www.vorixworks.com`)
+      - traefik.http.routers.zuno-web.tls=true
+      - traefik.http.routers.zuno-web.tls.certresolver=letsencrypt
+      - traefik.http.services.zuno-web.loadbalancer.server.port=3001
+
+networks:
+  zuno_network:
+    name: zuno_network
+  cmdesk_cmdesk-network:
+    external: true
+
+volumes:
+  zuno_postgres_data:
+    name: zuno_postgres_data

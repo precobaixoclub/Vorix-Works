@@ -7,8 +7,8 @@ import { Logo } from "@/components/Logo";
 const NAV_ITEMS = [
   { href: "", label: "Início", icon: "◆" },
   { href: "/chat", label: "Chat", icon: "💬" },
-  { href: "/assets", label: "Ativos", icon: "🗂" },
-  { href: "/campaigns", label: "Campanhas", icon: "📣" },
+  { href: "/assets", label: "Materiais", icon: "📂" },
+  { href: "/campaigns", label: "Publicações", icon: "📣" },
   { href: "/planning", label: "Planejamento", icon: "🧭" },
   { href: "/runtime", label: "Runtime", icon: "⚙" },
   { href: "/execution", label: "Execução", icon: "▶" },

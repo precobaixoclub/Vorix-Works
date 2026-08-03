@@ -24,10 +24,19 @@ export default function AssetsPage() {
   return (
     <main className="mx-auto max-w-5xl px-6 py-8">
       <PageHeader
-        title="Biblioteca de Ativos"
-        description="Logos, fotos, vídeos, documentos e outros materiais deste Espaço de Trabalho."
-        actions={<Button onClick={() => setIsRegistering(true)}>+ Enviar Ativo</Button>}
+        title="Materiais da Marca"
+        description="Logo, fotos, vídeos, brand book, fontes e referências que a IA vai usar para criar campanhas, roteiros e artes automaticamente."
+        actions={<Button onClick={() => setIsRegistering(true)}>+ Enviar Material</Button>}
       />
+
+      <div className="mb-6 rounded-lg border border-surface-raised bg-surface-raised/40 p-4 text-sm text-ink-muted">
+        <p className="mb-1 font-medium text-ink">Para que serve esta biblioteca?</p>
+        <p>
+          Tudo o que você sobe aqui vira memória visual da marca. Quando você pedir no Chat “faça um post com o logo”
+          ou “usa aquela foto do produto”, a IA busca automaticamente nesta biblioteca — sem precisar reexplicar cores,
+          fontes ou reenviar arquivos a cada campanha.
+        </p>
+      </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input
@@ -67,7 +76,10 @@ export default function AssetsPage() {
       ) : error ? (
         <ErrorState error={error} onRetry={() => mutate()} />
       ) : !assets || assets.length === 0 ? (
-        <EmptyState title="Nenhum ativo encontrado" description="Envie o primeiro ativo deste Espaço de Trabalho." />
+        <EmptyState
+          title="Nenhum material cadastrado"
+          description="Envie o primeiro material da marca (logo, foto, brand book...) para que a IA possa usá-lo ao criar campanhas."
+        />
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {assets.map((asset) => (

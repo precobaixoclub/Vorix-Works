@@ -41,10 +41,10 @@ export function NewCampaignModal({
   }
 
   return (
-    <Modal title="Nova Campanha" onClose={onClose}>
+    <Modal title="Nova Publicação" onClose={onClose}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <p className="rounded-lg bg-surface-sunken px-3 py-2 text-xs text-ink-muted">
-          Sem geração de conteúdo por IA ainda — isto só cria a estrutura da campanha, como rascunho.
+          Sem geração de conteúdo por IA ainda — isto só cria a estrutura da publicação, como rascunho.
         </p>
         <div>
           <Label htmlFor="campaign-name">Nome</Label>
@@ -70,7 +70,7 @@ export function NewCampaignModal({
             Cancelar
           </Button>
           <Button type="submit" disabled={submitting}>
-            {submitting ? "Criando…" : "Criar Campanha"}
+            {submitting ? "Criando…" : "Criar Publicação"}
           </Button>
         </div>
       </form>

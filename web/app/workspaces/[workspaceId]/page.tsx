@@ -39,14 +39,14 @@ export default function WorkspaceHomePage() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <span className="text-sm font-semibold text-ink">Últimas campanhas</span>
+            <span className="text-sm font-semibold text-ink">Últimas publicações</span>
             <Link href={`/workspaces/${workspace.id}/campaigns`} className="text-xs font-medium text-accent hover:underline">
               Ver todas
             </Link>
           </CardHeader>
           <CardBody>
             {!campaigns ? null : campaigns.length === 0 ? (
-              <EmptyState title="Nenhuma campanha ainda" />
+              <EmptyState title="Nenhuma publicação ainda" />
             ) : (
               <ul className="flex flex-col gap-3">
                 {campaigns.slice(0, 3).map((campaign) => (
@@ -87,14 +87,14 @@ export default function WorkspaceHomePage() {
 
         <Card>
           <CardHeader>
-            <span className="text-sm font-semibold text-ink">Ativos</span>
+            <span className="text-sm font-semibold text-ink">Materiais da Marca</span>
             <Link href={`/workspaces/${workspace.id}/assets`} className="text-xs font-medium text-accent hover:underline">
               Ver biblioteca
             </Link>
           </CardHeader>
           <CardBody>
             <p className="text-2xl font-semibold text-ink">{assets?.length ?? "—"}</p>
-            <p className="text-sm text-ink-muted">ativos registrados</p>
+            <p className="text-sm text-ink-muted">materiais disponíveis para a IA</p>
           </CardBody>
         </Card>
 

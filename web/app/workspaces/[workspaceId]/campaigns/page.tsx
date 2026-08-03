@@ -24,9 +24,9 @@ export default function CampaignsPage() {
   return (
     <main className="mx-auto max-w-5xl px-6 py-8">
       <PageHeader
-        title="Central de Campanhas"
-        description="Campanhas deste Espaço de Trabalho — ainda sem geração automática de conteúdo."
-        actions={<Button onClick={() => setIsCreating(true)}>+ Nova Campanha</Button>}
+        title="Central de Publicações"
+        description="Postagens deste Espaço de Trabalho — ainda sem geração automática de conteúdo."
+        actions={<Button onClick={() => setIsCreating(true)}>+ Nova Publicação</Button>}
       />
 
       {isLoading ? (
@@ -36,13 +36,13 @@ export default function CampaignsPage() {
       ) : error ? (
         <ErrorState error={error} onRetry={() => mutate()} />
       ) : !campaigns || campaigns.length === 0 ? (
-        <EmptyState title="Nenhuma campanha ainda" action={<Button onClick={() => setIsCreating(true)}>+ Nova Campanha</Button>} />
+        <EmptyState title="Nenhuma publicação ainda" action={<Button onClick={() => setIsCreating(true)}>+ Nova Publicação</Button>} />
       ) : (
         <Card className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-border text-xs text-ink-muted">
-                <th className="px-4 py-3 font-medium">Campanha</th>
+                <th className="px-4 py-3 font-medium">Publicação</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Formato</th>
                 <th className="px-4 py-3 font-medium">Data</th>

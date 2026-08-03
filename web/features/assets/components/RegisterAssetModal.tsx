@@ -45,10 +45,10 @@ export function RegisterAssetModal({
   }
 
   return (
-    <Modal title="Novo Ativo" onClose={onClose}>
+    <Modal title="Novo Material da Marca" onClose={onClose}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <p className="rounded-lg bg-surface-sunken px-3 py-2 text-xs text-ink-muted">
-          Upload de arquivo ainda não está disponível — isto registra só o nome e o tipo do ativo.
+          Upload de arquivo ainda não está disponível — isto registra só o nome e o tipo do material.
         </p>
         <div>
           <Label htmlFor="asset-name">Nome do arquivo</Label>
@@ -78,7 +78,7 @@ export function RegisterAssetModal({
             Cancelar
           </Button>
           <Button type="submit" disabled={submitting}>
-            {submitting ? "Registrando…" : "Registrar Ativo"}
+            {submitting ? "Registrando…" : "Registrar Material"}
           </Button>
         </div>
       </form>

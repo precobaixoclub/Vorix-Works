@@ -35,7 +35,7 @@ export type MetaOAuthComplete = {
   accounts: readonly MetaConnectedAccount[];
 };
 
-export type InstagramPost = {
+export type MetaPost = {
   publicationId: string;
   target: MetaTarget;
   placement: "feed" | "story";

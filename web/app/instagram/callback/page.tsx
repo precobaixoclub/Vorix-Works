@@ -4,22 +4,27 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/Card";
 import { Spinner } from "@/components/Spinner";
-import { completeMetaOAuth } from "@/features/instagram/api";
+import { completeMetaOAuth } from "@/features/meta/api";
+
+/** Chave de sessão compartilhada — tanto a tela do Instagram quanto a da Página do Facebook
+ * gravam o próprio caminho aqui antes de redirecionar pro Meta, já que os dois usam o mesmo
+ * fluxo OAuth (uma conexão resolve Instagram e Página juntos). */
+export const META_RETURN_PATH_KEY = "meta:return-path";
 
 function MetaOAuthCallbackContent() {
   const params = useSearchParams();
   const router = useRouter();
-  const [message, setMessage] = useState("Conectando a conta do Instagram/Facebook...");
+  const [message, setMessage] = useState("Conectando a conta do Meta...");
   const started = useRef(false);
 
   useEffect(() => {
     if (started.current) return;
     started.current = true;
 
-    const workspaceId = window.sessionStorage.getItem("instagram:return-workspace");
+    const returnPath = window.sessionStorage.getItem(META_RETURN_PATH_KEY);
     const back = () => {
-      window.sessionStorage.removeItem("instagram:return-workspace");
-      if (workspaceId) router.replace(`/workspaces/${workspaceId}/instagram`);
+      window.sessionStorage.removeItem(META_RETURN_PATH_KEY);
+      if (returnPath) router.replace(returnPath);
     };
 
     const error = params.get("error");

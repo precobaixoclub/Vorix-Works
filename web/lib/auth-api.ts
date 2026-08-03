@@ -61,3 +61,21 @@ export async function apiLogout(): Promise<void> {
     headers: csrfToken ? { "X-CSRF-Token": csrfToken } : {},
   }).catch(() => undefined);
 }
+
+export type SignupInput = {
+  email: string;
+  password: string;
+  name: string;
+  workspaceName?: string;
+};
+
+/** Cadastro público — Fase 2. Devolve o mesmo envelope de `/auth/login` já autenticado. */
+export async function apiSignup(input: SignupInput): Promise<LoginResult> {
+  const response = await fetch(`${getApiBaseUrl()}/v1/auth/signup`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return parseEnvelope<LoginResult>(response);
+}

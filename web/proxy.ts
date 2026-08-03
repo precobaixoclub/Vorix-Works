@@ -22,6 +22,15 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // "/signup" é público. Se já logado, mandar direto para workspaces em vez de mostrar cadastro.
+  if (pathname === "/signup") {
+    if (hasRefreshCookie) return NextResponse.redirect(new URL("/workspaces", request.url));
+    return NextResponse.next();
+  }
+
+  // "/pricing" é a página pública de planos. Nunca exige sessão.
+  if (pathname === "/pricing") return NextResponse.next();
+
   if (!hasRefreshCookie) {
     return NextResponse.redirect(new URL("/login", request.url));
   }

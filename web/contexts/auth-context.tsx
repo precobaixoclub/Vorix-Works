@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { switchTenant as apiSwitchTenant, getMe } from "@/features/auth/api";
 import type { AuthUser, TenantRole } from "@/features/auth/types";
-import { apiLogin, apiLogout, apiRefresh } from "@/lib/auth-api";
+import { apiLogin, apiLogout, apiRefresh, apiSignup, type SignupInput } from "@/lib/auth-api";
 import { setAccessToken } from "@/lib/auth-token";
 
 /**
@@ -21,6 +21,7 @@ export type AuthState =
 type AuthContextValue = {
   state: AuthState;
   login: (email: string, password: string) => Promise<void>;
+  signup: (input: SignupInput) => Promise<void>;
   logout: () => Promise<void>;
   switchTenant: (tenantId: string) => Promise<void>;
 };
@@ -86,6 +87,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [scheduleProactiveRefresh],
   );
 
+  const signup = useCallback(
+    async (input: SignupInput) => {
+      const result = await apiSignup(input);
+      setAccessToken(result.accessToken);
+      setState({ status: "authenticated", user: result.user, tenantId: result.tenantId, role: result.role });
+      scheduleProactiveRefresh(result.expiresIn);
+    },
+    [scheduleProactiveRefresh],
+  );
+
   const logout = useCallback(async () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     await apiLogout();
@@ -103,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [scheduleProactiveRefresh],
   );
 
-  const value = useMemo<AuthContextValue>(() => ({ state, login, logout, switchTenant }), [state, login, logout, switchTenant]);
+  const value = useMemo<AuthContextValue>(() => ({ state, login, signup, logout, switchTenant }), [state, login, signup, logout, switchTenant]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -7,6 +7,7 @@ import { registerConversationRoutes } from "./conversations.route.js";
 import { registerCredentialRoutes } from "./credentials.route.js";
 import { registerHealthRoutes } from "./health.route.js";
 import { registerPlanningRoutes } from "./planning.route.js";
+import { registerPlatformPlansRoutes } from "./platform-plans.route.js";
 import { registerProviderRoutes } from "./providers.route.js";
 import { registerRuntimeRoutes } from "./runtime.route.js";
 import { registerSchedulingRoutes } from "./scheduling.route.js";
@@ -25,7 +26,12 @@ import { registerWorkspaceRoutes } from "./workspaces.route.js";
 export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   await registerHealthRoutes(app);
   await registerWorkspaceRoutes(app, { workspaceRepository: app.zunoContainer.workspaceRepository });
-  await registerAuthRoutes(app, { identity: app.zunoContainer.identity, config: app.zunoConfig });
+  await registerAuthRoutes(app, {
+    identity: app.zunoContainer.identity,
+    config: app.zunoConfig,
+    workspaceRepository: app.zunoContainer.workspaceRepository,
+  });
+  await registerPlatformPlansRoutes(app);
   await registerConversationRoutes(app, {
     conversationRepository: app.zunoContainer.conversationRepository,
     eventRepository: app.zunoContainer.conversationEventRepository,

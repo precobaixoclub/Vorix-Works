@@ -31,6 +31,9 @@ export function translateIdentityError(error: unknown): never {
     if (error.message.startsWith("USER_EMAIL_ALREADY_EXISTS")) {
       throw new ConflictError(error.message);
     }
+    if (error.message.startsWith("SIGNUP_EMAIL_ALREADY_REGISTERED")) {
+      throw new ConflictError(error.message);
+    }
   }
   throw error;
 }

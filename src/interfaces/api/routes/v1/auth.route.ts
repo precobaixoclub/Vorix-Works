@@ -5,9 +5,12 @@ import {
   login,
   logout,
   refresh,
+  signupPublic,
   switchTenant,
   type IdentityUseCaseDeps,
 } from "../../../../application/identity/index.js";
+import type { PlatformBillingRepositoryPort } from "../../../../application/ports/platform-billing-repository.port.js";
+import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
 import type { ApiConfig } from "../../config/api-config.js";
 import type { ApiContainer } from "../../di/container.js";
 import { ForbiddenError, NotImplementedError, UnauthorizedError } from "../../http/app-error.js";
@@ -120,6 +123,18 @@ const LOGIN_BODY_SCHEMA = {
   },
 } as const;
 
+const SIGNUP_BODY_SCHEMA = {
+  type: "object",
+  required: ["email", "password", "name"],
+  additionalProperties: false,
+  properties: {
+    email: { type: "string", format: "email", minLength: 3, maxLength: 254 },
+    password: { type: "string", minLength: 8, maxLength: 200 },
+    name: { type: "string", minLength: 1, maxLength: 120 },
+    workspaceName: { type: "string", maxLength: 120 },
+  },
+} as const;
+
 const SWITCH_TENANT_BODY_SCHEMA = {
   type: "object",
   required: ["tenantId"],
@@ -129,7 +144,7 @@ const SWITCH_TENANT_BODY_SCHEMA = {
   },
 } as const;
 
-export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?: IdentityDeps; config: ApiConfig }): Promise<void> {
+export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?: IdentityDeps; config: ApiConfig; workspaceRepository?: WorkspaceRepositoryPort }): Promise<void> {
   app.post("/auth/login", { schema: { body: LOGIN_BODY_SCHEMA } }, async (request, reply) => {
     const identity = requireIdentity(deps.identity);
     const body = request.body as { email: string; password: string };
@@ -142,6 +157,48 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?
     }).catch(translateIdentityError);
 
     setAuthCookies(reply, deps.config, result);
+    return successEnvelope(
+      {
+        accessToken: result.accessToken,
+        expiresIn: identity.accessTokenTtlSeconds,
+        user: result.user,
+        tenantId: result.tenantId,
+        role: result.role,
+      },
+      request.id,
+    );
+  });
+
+  // Cadastro público (Fase 2). Cria User + Tenant + Workspace + tenant_billing FREE em uma
+  // única chamada, e devolve o mesmo envelope de /auth/login já autenticado. Sem verificação de
+  // email nesta fase — rate limiting HTTP + email opaco error protegem contra abuso básico.
+  app.post("/auth/signup", { schema: { body: SIGNUP_BODY_SCHEMA } }, async (request, reply) => {
+    const identity = requireIdentity(deps.identity);
+    if (!deps.workspaceRepository) {
+      throw new NotImplementedError("Signup público indisponível: workspaceRepository não configurado.");
+    }
+    const body = request.body as { email: string; password: string; name: string; workspaceName?: string };
+
+    const result = await signupPublic(
+      {
+        ...toUseCaseDeps(identity),
+        workspaceRepository: deps.workspaceRepository,
+        platformBillingRepository: identity.platformBillingRepository,
+        idGenerator: (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        now: () => new Date(),
+      },
+      {
+        email: body.email,
+        password: body.password,
+        name: body.name,
+        workspaceName: body.workspaceName,
+        userAgent: request.headers["user-agent"],
+        ipAddress: request.ip,
+      },
+    ).catch(translateIdentityError);
+
+    setAuthCookies(reply, deps.config, result);
+    reply.code(201);
     return successEnvelope(
       {
         accessToken: result.accessToken,

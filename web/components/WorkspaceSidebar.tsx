@@ -9,7 +9,6 @@ const NAV_ITEMS = [
   { href: "/chat", label: "Chat", icon: "💬" },
   { href: "/assets", label: "Materiais", icon: "📂" },
   { href: "/campaigns", label: "Publicações", icon: "📣" },
-  { href: "/planning", label: "Planejamento", icon: "🧭" },
   { href: "/runtime", label: "Runtime", icon: "⚙" },
   { href: "/execution", label: "Execução", icon: "▶" },
   { href: "/providers", label: "Provedores", icon: "◇" },

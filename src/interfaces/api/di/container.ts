@@ -75,6 +75,8 @@ import { SchedulingRecoveryService } from "../../../application/scheduling/sched
 import { SchedulingUseCases } from "../../../application/scheduling/schedule-use-cases.js";
 import { TemporalDispatcher } from "../../../application/scheduling/temporal-queue.js";
 import { MetaPagesOAuthService } from "../../../infrastructure/publication/meta-pages-oauth-service.js";
+import { MetaInstagramOAuthService, META_INSTAGRAM_REQUIRED_SCOPES } from "../../../infrastructure/publication/meta-instagram-oauth-service.js";
+import { MetaContentPostingProvider } from "../../../infrastructure/publication/meta-instagram-content-posting-provider.js";
 import { FailClosedProductionSecretManager, InMemorySecretManager } from "../../../infrastructure/operations/secret-managers.js";
 import { PostgresSecretManager } from "../../../infrastructure/operations/postgres-secret-manager.js";
 import { MetaPagesSandboxProvider } from "../../../infrastructure/publication/meta-pages-sandbox-provider.js";
@@ -104,6 +106,8 @@ const PROVIDER_REQUIRED_SCOPES = {
   linkedin_sandbox: ["w_member_social", "r_liteprofile"],
   x_sandbox: ["tweet.write", "tweet.read", "users.read"],
   tiktok: TIKTOK_REQUIRED_SCOPES,
+  instagram: META_INSTAGRAM_REQUIRED_SCOPES,
+  facebook: META_INSTAGRAM_REQUIRED_SCOPES,
 } as const;
 const DEFAULT_WEBHOOK_SECRETS = {
   meta_pages_sandbox: "meta-pages-sandbox-webhook-secret",
@@ -198,6 +202,9 @@ export type ApiContainer = {
   metaPagesOAuthService: MetaPagesOAuthService;
   tiktokOAuthService: TikTokOAuthService;
   tiktokProvider: TikTokContentPostingProvider;
+  metaInstagramOAuthService: MetaInstagramOAuthService;
+  instagramProvider: MetaContentPostingProvider;
+  facebookProvider: MetaContentPostingProvider;
   publicationQueue: PublicationQueuePort;
   executionHandlers: [DeterministicExecutionTaskHandler];
   executionFeatureFlags: ExecutionFeatureFlags;
@@ -323,12 +330,20 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     fetch,
     (input) => (tiktokOAuthServiceRef ? tiktokOAuthServiceRef.refresh(input) : Promise.resolve(undefined)),
   );
+  // O provider precisa renovar o Page Access Token antes de publicar, mas o serviço OAuth só nasce
+  // adiante (depende da governança de credenciais) — daí a referência tardia, igual ao TikTok.
+  let metaInstagramOAuthServiceRef: MetaInstagramOAuthService | undefined;
+  const metaRefresh = (input: { tenantId: string; workspaceId: string; credentialReferenceId: string }) =>
+    metaInstagramOAuthServiceRef ? metaInstagramOAuthServiceRef.refresh(input) : Promise.resolve(undefined);
+  const instagramProvider = new MetaContentPostingProvider("instagram", { graphBaseUrl: config?.publication.metaGraphBaseUrl }, fetch, metaRefresh);
+  const facebookProvider = new MetaContentPostingProvider("facebook", { graphBaseUrl: config?.publication.metaGraphBaseUrl }, fetch, metaRefresh);
   const publicationProviderAdapters: readonly PublicationProviderAdapterPort[] = [
     ...publicationProviders,
     ...(config?.publication.metaPagesSandboxEnabled ? [metaPagesSandboxProvider] : []),
     linkedInSandboxProvider,
     xSandboxProvider,
     ...(config?.publication.tiktokEnabled ? [tiktokProvider] : []),
+    ...(config?.publication.metaInstagramEnabled ? [instagramProvider, facebookProvider] : []),
   ];
   const publicationProviderRegistry = createDefaultPublicationProviderRegistry(publicationProviderAdapters);
   const publicationSecretStore = new SecretManagerPublicationSecretStore(secretManager);
@@ -400,6 +415,20 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     credentialGovernanceService,
   });
   tiktokOAuthServiceRef = tiktokOAuthService;
+  const metaInstagramOAuthService = new MetaInstagramOAuthService({
+    config: {
+      enabled: config?.publication.metaInstagramEnabled ?? false,
+      appId: config?.publication.metaAppId,
+      appSecret: config?.publication.metaAppSecret,
+      redirectUri: config?.publication.metaInstagramRedirectUri,
+      graphBaseUrl: config?.publication.metaGraphBaseUrl,
+      scopes: META_INSTAGRAM_REQUIRED_SCOPES,
+    },
+    repository: repositories.publicationRepository,
+    secretStore: publicationSecretStore,
+    credentialGovernanceService,
+  });
+  metaInstagramOAuthServiceRef = metaInstagramOAuthService;
   const publicationQueue = new InMemoryPublicationQueue();
   const clock = new SystemClock();
   const scheduleOccurrenceGenerator = new ScheduleOccurrenceGenerator({
@@ -559,6 +588,9 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       metaPagesOAuthService,
       tiktokOAuthService,
       tiktokProvider,
+      metaInstagramOAuthService,
+      instagramProvider,
+      facebookProvider,
       publicationQueue,
       clock,
       createExecutionHandlerResolver,
@@ -622,6 +654,9 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     metaPagesOAuthService,
     tiktokOAuthService,
     tiktokProvider,
+    metaInstagramOAuthService,
+    instagramProvider,
+    facebookProvider,
     publicationQueue,
     clock,
     createExecutionHandlerResolver,

@@ -225,7 +225,11 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?
     const user = await identity.userRepository.getById(principal.userId);
     if (!user) throw new UnauthorizedError("Usuário não encontrado.", "UNAUTHORIZED");
     return successEnvelope(
-      { user: { id: user.id, email: user.email, name: user.name }, tenantId: principal.tenantId, role: principal.role },
+      {
+        user: { id: user.id, email: user.email, name: user.name, isPlatformAdmin: user.isPlatformAdmin === true },
+        tenantId: principal.tenantId,
+        role: principal.role,
+      },
       request.id,
     );
   });

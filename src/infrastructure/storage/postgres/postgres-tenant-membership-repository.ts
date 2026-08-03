@@ -61,6 +61,14 @@ export class PostgresTenantMembershipRepository implements TenantMembershipRepos
     return result.rows.map((row) => this.toDomain(row));
   }
 
+  async listByTenant(tenantId: string): Promise<TenantMembership[]> {
+    const result = await this.pool.query<MembershipRow>(
+      "select * from tenant_members where tenant_id = $1 order by created_at asc",
+      [tenantId],
+    );
+    return result.rows.map((row) => this.toDomain(row));
+  }
+
   private toDomain(row: MembershipRow): TenantMembership {
     return {
       id: row.id,

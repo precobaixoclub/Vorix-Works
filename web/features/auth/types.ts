@@ -7,6 +7,8 @@ export type AuthUser = {
   id: string;
   email: string;
   name: string;
+  /** Superadmin da plataforma — Sprint 25. Único papel que abre `/admin`. */
+  isPlatformAdmin: boolean;
 };
 
 export type TenantMembership = {

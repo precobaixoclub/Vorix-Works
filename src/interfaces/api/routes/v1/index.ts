@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { registerAnalyticsRoutes } from "./analytics.route.js";
+import { registerAdminRoutes } from "./admin.route.js";
 import { registerAuthRoutes } from "./auth.route.js";
 import { registerBriefingRoutes } from "./briefings.route.js";
 import { registerConversationRoutes } from "./conversations.route.js";
@@ -148,4 +149,19 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     backupRestorePlanner: app.zunoContainer.backupRestorePlanner,
     idGenerator: () => `system-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
   });
+
+  // Sprint 25 — Painel administrativo de plataforma. Só registrado quando há `identity` (modo JWT
+  // real + Postgres); no modo noop/testes, `/v1/admin/*` fica inexistente. `requirePlatformAdmin`
+  // dentro das rotas cuida do 403 quando o usuário logado não é superadmin.
+  if (app.zunoContainer.identity) {
+    const identity = app.zunoContainer.identity;
+    await registerAdminRoutes(app, {
+      platformBillingRepository: identity.platformBillingRepository,
+      membershipRepository: identity.membershipRepository,
+      userRepository: identity.userRepository,
+      workspaceRepository: app.zunoContainer.workspaceRepository,
+      idGenerator: () => `credit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      now: () => new Date(),
+    });
+  }
 }

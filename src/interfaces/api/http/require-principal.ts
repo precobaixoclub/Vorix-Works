@@ -26,3 +26,16 @@ export function requirePermission(request: FastifyRequest, permission: Permissio
   }
   return principal;
 }
+
+/**
+ * Guard das rotas cross-tenant `/v1/admin/*` — Sprint 25. Exige `isPlatformAdmin` no principal
+ * (que vem do JWT). Sem 401 aqui: se o usuário não é platform admin, é 403 direto — se ele nem
+ * tem token, `requirePrincipal` já explodiu com 401 antes.
+ */
+export function requirePlatformAdmin(request: FastifyRequest): AuthPrincipal {
+  const principal = requirePrincipal(request);
+  if (!principal.isPlatformAdmin) {
+    throw new ForbiddenError("Acesso restrito a administradores da plataforma.");
+  }
+  return principal;
+}

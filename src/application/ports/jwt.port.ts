@@ -7,6 +7,9 @@ export type JwtAccessTokenPayload = {
   tenantId: string;
   role: TenantRole;
   sessionId: string;
+  /** Sprint 25 — opcional no verify (tokens antigos não têm). Sempre `false` como default
+   * quando ausente; para virar `true`, o usuário precisa fazer novo login/refresh. */
+  isPlatformAdmin?: boolean;
 };
 
 export type JwtVerificationResult =

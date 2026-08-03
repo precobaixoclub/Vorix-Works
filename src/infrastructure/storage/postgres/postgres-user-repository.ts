@@ -16,6 +16,7 @@ type UserRow = {
   created_at: Date;
   updated_at: Date;
   last_login_at: Date | null;
+  is_platform_admin: boolean;
 };
 
 export class PostgresUserRepository implements UserRepositoryPort {
@@ -69,6 +70,7 @@ export class PostgresUserRepository implements UserRepositoryPort {
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
       lastLoginAt: row.last_login_at ? row.last_login_at.toISOString() : undefined,
+      isPlatformAdmin: row.is_platform_admin === true,
     };
   }
 }

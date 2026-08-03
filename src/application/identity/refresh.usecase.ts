@@ -56,6 +56,13 @@ export async function refresh(deps: IdentityUseCaseDeps, input: RefreshUseCaseIn
     throw new Error("IDENTITY_NO_TENANT_ACCESS: usuário perdeu acesso ao tenant ativo desta sessão.");
   }
 
+  // isPlatformAdmin também é revalidado (Sprint 25) — se um platform admin for revogado, o
+  // próximo refresh já emite um token sem o claim. Fetch barato (mesma tabela `users`).
+  const currentUser = await deps.userRepository.getById(existing.userId);
+  if (!currentUser || currentUser.status !== "active") {
+    throw new Error("IDENTITY_USER_INACTIVE: usuário não existe ou está desativado.");
+  }
+
   const rawRefreshToken = generateRefreshTokenValue();
   const refreshTokenExpiresAt = new Date(now.getTime() + deps.refreshTokenTtlSeconds * 1000).toISOString();
   const newToken = await deps.refreshTokenRepository.create({
@@ -68,7 +75,13 @@ export async function refresh(deps: IdentityUseCaseDeps, input: RefreshUseCaseIn
   await deps.sessionRepository.touch(session.id);
 
   const accessToken = deps.jwt.sign(
-    { userId: existing.userId, tenantId: membership.tenantId, role: membership.role, sessionId: session.id },
+    {
+      userId: existing.userId,
+      tenantId: membership.tenantId,
+      role: membership.role,
+      sessionId: session.id,
+      isPlatformAdmin: currentUser.isPlatformAdmin === true,
+    },
     deps.accessTokenTtlSeconds,
   );
 

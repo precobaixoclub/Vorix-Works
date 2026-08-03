@@ -26,7 +26,7 @@ async function parseEnvelope<T>(response: Response): Promise<T> {
 export type LoginResult = {
   accessToken: string;
   expiresIn: number;
-  user: { id: string; email: string; name: string };
+  user: { id: string; email: string; name: string; isPlatformAdmin: boolean };
   tenantId: string;
   role: TenantRole;
 };

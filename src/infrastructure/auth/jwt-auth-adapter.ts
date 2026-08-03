@@ -17,6 +17,17 @@ export class JwtAuthAdapter implements AuthPort {
     if (!result.valid) {
       return { authenticated: false, reason: result.reason === "expired" ? "expired_token" : "invalid_token" };
     }
-    return { authenticated: true, principal: result.payload };
+    // Normaliza `isPlatformAdmin` para boolean estrito — `AuthPrincipal` exige sempre bool,
+    // mesmo que o JWT tenha vindo de um cliente antigo sem o claim.
+    return {
+      authenticated: true,
+      principal: {
+        userId: result.payload.userId,
+        tenantId: result.payload.tenantId,
+        role: result.payload.role,
+        sessionId: result.payload.sessionId,
+        isPlatformAdmin: result.payload.isPlatformAdmin === true,
+      },
+    };
   }
 }

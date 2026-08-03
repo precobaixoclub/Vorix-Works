@@ -176,6 +176,10 @@ export type User = {
   createdAt: string;
   updatedAt: string;
   lastLoginAt?: string;
+  /** Superadmin da plataforma — cross-tenant. ÚNICO papel que enxerga `/admin` e mexe em
+   * billing/plano/créditos de outros tenants. Ortogonal ao `TenantRole` (que é escopo
+   * Tenant/Workspace). Sprint 25. */
+  isPlatformAdmin: boolean;
 };
 
 export type TenantMembership = {
@@ -226,4 +230,7 @@ export type AuthPrincipal = {
   tenantId: string;
   role: TenantRole;
   sessionId: string;
+  /** Superadmin da plataforma — propaga do JWT para rotas `/v1/admin/*`. Default `false`
+   * quando o claim não veio no token (compatibilidade com tokens antigos). Sprint 25. */
+  isPlatformAdmin: boolean;
 };

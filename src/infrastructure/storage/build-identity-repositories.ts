@@ -1,10 +1,12 @@
 import pg from "pg";
 import type { AuditLogPort } from "../../application/ports/audit-log.port.js";
+import type { PlatformBillingRepositoryPort } from "../../application/ports/platform-billing-repository.port.js";
 import type { RefreshTokenRepositoryPort } from "../../application/ports/refresh-token-repository.port.js";
 import type { SessionRepositoryPort } from "../../application/ports/session-repository.port.js";
 import type { TenantMembershipRepositoryPort } from "../../application/ports/tenant-membership-repository.port.js";
 import type { UserRepositoryPort } from "../../application/ports/user-repository.port.js";
 import { PostgresAuditLogRepository } from "./postgres/postgres-audit-log-repository.js";
+import { PostgresPlatformBillingRepository } from "./postgres/postgres-platform-billing-repository.js";
 import { PostgresRefreshTokenRepository } from "./postgres/postgres-refresh-token-repository.js";
 import { PostgresSessionRepository } from "./postgres/postgres-session-repository.js";
 import { PostgresTenantMembershipRepository } from "./postgres/postgres-tenant-membership-repository.js";
@@ -18,6 +20,8 @@ export type IdentityRepositories = {
   sessionRepository: SessionRepositoryPort;
   refreshTokenRepository: RefreshTokenRepositoryPort;
   auditLog: AuditLogPort;
+  /** Sprint 25 — painel admin + cotas/consumo/lucro por tenant. Reusa o mesmo pool de identidade. */
+  platformBillingRepository: PlatformBillingRepositoryPort;
   pool: InstanceType<typeof Pool>;
 };
 
@@ -37,6 +41,7 @@ export function buildIdentityRepositories(options: { databaseUrl: string }): Ide
     sessionRepository: new PostgresSessionRepository(pool),
     refreshTokenRepository: new PostgresRefreshTokenRepository(pool),
     auditLog: new PostgresAuditLogRepository(pool),
+    platformBillingRepository: new PostgresPlatformBillingRepository(pool),
     pool,
   };
 }

@@ -25,6 +25,7 @@ import type { PasswordHasherPort } from "../../../application/ports/password-has
 import type { PlanningArtifactRepositoryPort } from "../../../application/ports/planning-artifact-repository.port.js";
 import type { PlanningDecisionRepositoryPort } from "../../../application/ports/planning-decision-repository.port.js";
 import type { PlanningRepositoryPort } from "../../../application/ports/planning-repository.port.js";
+import type { PlatformBillingRepositoryPort } from "../../../application/ports/platform-billing-repository.port.js";
 import type { PublicationRepositoryPort } from "../../../application/ports/publication-repository.port.js";
 import type { PreparedCommandRepositoryPort } from "../../../application/ports/prepared-command-repository.port.js";
 import type { RefreshTokenRepositoryPort } from "../../../application/ports/refresh-token-repository.port.js";
@@ -206,6 +207,7 @@ export type ApiContainer = {
     sessionRepository: SessionRepositoryPort;
     refreshTokenRepository: RefreshTokenRepositoryPort;
     auditLog: AuditLogPort;
+    platformBillingRepository: PlatformBillingRepositoryPort;
     passwordHasher: PasswordHasherPort;
     jwt: JwtPort;
     accessTokenTtlSeconds: number;

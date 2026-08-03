@@ -277,6 +277,7 @@ function parseDevPrincipal(env: NodeJS.ProcessEnv): AuthPrincipal | undefined {
     tenantId,
     role: (["owner", "admin", "editor", "viewer"] as const).includes(role as never) ? (role as AuthPrincipal["role"]) : "owner",
     sessionId: "dev-session",
+    isPlatformAdmin: env.DEV_PRINCIPAL_PLATFORM_ADMIN?.trim() === "true",
   };
 }
 

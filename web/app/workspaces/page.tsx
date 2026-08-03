@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
@@ -7,6 +8,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Spinner } from "@/components/Spinner";
+import { useAuth } from "@/contexts/auth-context";
 import { CreateWorkspaceModal } from "@/features/workspace/components/CreateWorkspaceModal";
 import { WorkspaceCard } from "@/features/workspace/components/WorkspaceCard";
 import { useWorkspaces } from "@/features/workspace/hooks";
@@ -23,13 +25,27 @@ function WorkspacesPageContent() {
   const { data: workspaces, error, isLoading, mutate } = useWorkspaces();
   const [isCreating, setIsCreating] = useState(false);
   const router = useRouter();
+  const { state } = useAuth();
+  const isPlatformAdmin = state.status === "authenticated" && state.user.isPlatformAdmin;
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <PageHeader
         title="Espaços de Trabalho"
         description="Cada Espaço de Trabalho é uma empresa, marca ou cliente — o centro de tudo no Vorix."
-        actions={<Button onClick={() => setIsCreating(true)}>+ Novo Espaço de Trabalho</Button>}
+        actions={
+          <div className="flex items-center gap-2">
+            {isPlatformAdmin ? (
+              <Link
+                href="/admin"
+                className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-sm font-medium text-accent hover:bg-accent/20"
+              >
+                Painel administrativo
+              </Link>
+            ) : null}
+            <Button onClick={() => setIsCreating(true)}>+ Novo Espaço de Trabalho</Button>
+          </div>
+        }
       />
 
       {isLoading ? (

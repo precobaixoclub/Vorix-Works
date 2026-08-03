@@ -13,7 +13,7 @@ export type LoginUseCaseOutput = {
   accessToken: string;
   refreshToken: string;
   refreshTokenExpiresAt: string;
-  user: { id: string; email: string; name: string };
+  user: { id: string; email: string; name: string; isPlatformAdmin: boolean };
   tenantId: string;
   role: TenantRole;
 };
@@ -64,7 +64,13 @@ export async function login(deps: IdentityUseCaseDeps, input: LoginUseCaseInput)
   });
 
   const accessToken = deps.jwt.sign(
-    { userId: user.id, tenantId: activeMembership.tenantId, role: activeMembership.role, sessionId: session.id },
+    {
+      userId: user.id,
+      tenantId: activeMembership.tenantId,
+      role: activeMembership.role,
+      sessionId: session.id,
+      isPlatformAdmin: user.isPlatformAdmin === true,
+    },
     deps.accessTokenTtlSeconds,
   );
 
@@ -75,7 +81,7 @@ export async function login(deps: IdentityUseCaseDeps, input: LoginUseCaseInput)
     accessToken,
     refreshToken: rawRefreshToken,
     refreshTokenExpiresAt,
-    user: { id: user.id, email: user.email, name: user.name },
+    user: { id: user.id, email: user.email, name: user.name, isPlatformAdmin: user.isPlatformAdmin === true },
     tenantId: activeMembership.tenantId,
     role: activeMembership.role,
   };

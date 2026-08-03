@@ -2,6 +2,7 @@ import type { PersistenceDriver } from "../../../infrastructure/storage/build-pl
 import type { AuthPrincipal } from "../../../domain/identity/identity.model.js";
 import { isModelRegisteredAndActive } from "../../../application/ai-gateway/model-registry.js";
 import type { ExecutionEnvironment } from "../../../application/execution/execution-operational-policy.js";
+import { PUBLICATION_PROVIDERS, type PublicationProvider } from "../../../domain/publication/publication.model.js";
 
 const DEFAULT_ANTHROPIC_BRIEFING_EXTRACTION_MODEL = "claude-haiku-4-5-20251001";
 
@@ -75,7 +76,17 @@ export type ApiConfig = {
     metaAppSecret?: string;
     metaRedirectUri?: string;
     metaGraphBaseUrl?: string;
+    tiktokEnabled: boolean;
+    tiktokClientKey?: string;
+    tiktokClientSecret?: string;
+    tiktokRedirectUri?: string;
+    tiktokApiBaseUrl?: string;
+    tiktokAuthorizeBaseUrl?: string;
+    /** Loop em processo que dispara os agendamentos vencidos. */
+    schedulerEnabled: boolean;
+    schedulerIntervalMs: number;
     canaryEnabled: boolean;
+    canaryProviderIds: readonly PublicationProvider[];
     canaryTenantIds: readonly string[];
     canaryWorkspaceIds: readonly string[];
     webhookSecrets: Partial<Record<"meta_pages_sandbox" | "linkedin_sandbox" | "x_sandbox", string>>;
@@ -162,7 +173,16 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const metaAppSecret = env.META_APP_SECRET?.trim() || undefined;
   const metaRedirectUri = env.META_OAUTH_REDIRECT_URI?.trim() || undefined;
   const metaGraphBaseUrl = env.META_GRAPH_BASE_URL?.trim() || undefined;
+  const tiktokEnabled = env.TIKTOK_ENABLED?.trim() === "true";
+  const tiktokClientKey = env.TIKTOK_CLIENT_KEY?.trim() || undefined;
+  const tiktokClientSecret = env.TIKTOK_CLIENT_SECRET?.trim() || undefined;
+  const tiktokRedirectUri = env.TIKTOK_OAUTH_REDIRECT_URI?.trim() || undefined;
+  const tiktokApiBaseUrl = env.TIKTOK_API_BASE_URL?.trim() || undefined;
+  const tiktokAuthorizeBaseUrl = env.TIKTOK_AUTHORIZE_BASE_URL?.trim() || undefined;
+  const publicationSchedulerEnabled = env.PUBLICATION_SCHEDULER_ENABLED?.trim() !== "false";
+  const publicationSchedulerIntervalMs = parsePositiveInt(env.PUBLICATION_SCHEDULER_INTERVAL_MS) ?? 30_000;
   const publicationCanaryEnabled = env.PUBLICATION_CANARY_ENABLED?.trim() === "true";
+  const publicationCanaryProviderIds = parsePublicationProviders(env.PUBLICATION_CANARY_PROVIDER_IDS);
   const publicationCanaryTenantIds = parseCsv(env.PUBLICATION_CANARY_TENANT_IDS);
   const publicationCanaryWorkspaceIds = parseCsv(env.PUBLICATION_CANARY_WORKSPACE_IDS);
   const schedulingOccurrenceWindowDays = parsePositiveInt(env.SCHEDULING_OCCURRENCE_WINDOW_DAYS) ?? 30;
@@ -230,7 +250,16 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       metaAppSecret,
       metaRedirectUri,
       metaGraphBaseUrl,
+      tiktokEnabled,
+      tiktokClientKey,
+      tiktokClientSecret,
+      tiktokRedirectUri,
+      tiktokApiBaseUrl,
+      tiktokAuthorizeBaseUrl,
+      schedulerEnabled: publicationSchedulerEnabled,
+      schedulerIntervalMs: publicationSchedulerIntervalMs,
       canaryEnabled: publicationCanaryEnabled,
+      canaryProviderIds: publicationCanaryProviderIds,
       canaryTenantIds: publicationCanaryTenantIds,
       canaryWorkspaceIds: publicationCanaryWorkspaceIds,
       webhookSecrets: {
@@ -310,6 +339,12 @@ function parsePositiveInt(raw: string | undefined): number | undefined {
 
 function parseCsv(raw: string | undefined): readonly string[] {
   return raw?.split(",").map((item) => item.trim()).filter(Boolean) ?? [];
+}
+
+/** Ignora silenciosamente ids desconhecidos para não derrubar o boot por typo em variável. */
+function parsePublicationProviders(raw: string | undefined): readonly PublicationProvider[] {
+  const known = new Set<string>(PUBLICATION_PROVIDERS);
+  return parseCsv(raw).filter((item): item is PublicationProvider => known.has(item));
 }
 
 function parseExecutionEnvironment(raw: string | undefined): ExecutionEnvironment {

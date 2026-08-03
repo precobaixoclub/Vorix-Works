@@ -12,7 +12,7 @@ export type PublicationMode = (typeof PUBLICATION_MODES)[number];
 export const PUBLICATION_CHANNELS = ["instagram", "facebook", "threads", "linkedin", "x", "tiktok", "pinterest", "youtube", "google_business"] as const;
 export type PublicationChannel = (typeof PUBLICATION_CHANNELS)[number];
 
-export const PUBLICATION_PROVIDERS = ["dry_run", "fake", "meta_pages_sandbox", "linkedin_sandbox", "x_sandbox", "instagram", "facebook", "linkedin", "x"] as const;
+export const PUBLICATION_PROVIDERS = ["dry_run", "fake", "meta_pages_sandbox", "linkedin_sandbox", "x_sandbox", "instagram", "facebook", "linkedin", "x", "tiktok"] as const;
 export type PublicationProvider = (typeof PUBLICATION_PROVIDERS)[number];
 export type PublicationContentType = "text" | "image" | "carousel" | "video" | "document";
 export type PublicationProviderStatus = "enabled" | "disabled" | "sandbox_only" | "degraded";

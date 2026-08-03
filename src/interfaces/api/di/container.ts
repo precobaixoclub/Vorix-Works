@@ -76,7 +76,10 @@ import { SchedulingUseCases } from "../../../application/scheduling/schedule-use
 import { TemporalDispatcher } from "../../../application/scheduling/temporal-queue.js";
 import { MetaPagesOAuthService } from "../../../infrastructure/publication/meta-pages-oauth-service.js";
 import { FailClosedProductionSecretManager, InMemorySecretManager } from "../../../infrastructure/operations/secret-managers.js";
+import { PostgresSecretManager } from "../../../infrastructure/operations/postgres-secret-manager.js";
 import { MetaPagesSandboxProvider } from "../../../infrastructure/publication/meta-pages-sandbox-provider.js";
+import { TikTokContentPostingProvider } from "../../../infrastructure/publication/tiktok-content-posting-provider.js";
+import { TikTokOAuthService, TIKTOK_REQUIRED_SCOPES } from "../../../infrastructure/publication/tiktok-oauth-service.js";
 import { createLinkedInSandboxProvider, createXSandboxProvider } from "../../../infrastructure/publication/sandbox-social-providers.js";
 import { buildExecutionHandlerResolver } from "../../../infrastructure/execution/build-execution-handler-resolver.js";
 import { PlanningEngineBriefingHook } from "../../../infrastructure/planning/planning-engine-briefing-hook.js";
@@ -100,6 +103,7 @@ const PROVIDER_REQUIRED_SCOPES = {
   meta_pages_sandbox: META_PAGES_REQUIRED_SCOPES,
   linkedin_sandbox: ["w_member_social", "r_liteprofile"],
   x_sandbox: ["tweet.write", "tweet.read", "users.read"],
+  tiktok: TIKTOK_REQUIRED_SCOPES,
 } as const;
 const DEFAULT_WEBHOOK_SECRETS = {
   meta_pages_sandbox: "meta-pages-sandbox-webhook-secret",
@@ -192,6 +196,8 @@ export type ApiContainer = {
   publicationSecretStore: PublicationSecretStoragePort;
   publicationSecretResolver: PublicationSecretResolverPort;
   metaPagesOAuthService: MetaPagesOAuthService;
+  tiktokOAuthService: TikTokOAuthService;
+  tiktokProvider: TikTokContentPostingProvider;
   publicationQueue: PublicationQueuePort;
   executionHandlers: [DeterministicExecutionTaskHandler];
   executionFeatureFlags: ExecutionFeatureFlags;
@@ -270,7 +276,9 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   const executionSideEffectGuard = new SideEffectGuard(executionEnvironmentPolicy);
   const executionCircuitBreaker = new InMemoryHandlerCircuitBreaker({ now: () => new Date() });
   const secretManager = config?.operations.secretManagerProvider === "production"
-    ? new FailClosedProductionSecretManager()
+    ? repositories.pool && config.jwtSecret
+      ? new PostgresSecretManager(repositories.pool, config.jwtSecret)
+      : new FailClosedProductionSecretManager()
     : new InMemorySecretManager();
   const productionGuard = new ProductionGuard(
     {
@@ -280,7 +288,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       canaryEnabled: config?.publication.canaryEnabled ?? false,
       canaryTenantIds: config?.publication.canaryTenantIds ?? [],
       canaryWorkspaceIds: config?.publication.canaryWorkspaceIds ?? [],
-      allowedProductionProviders: ["instagram", "facebook", "linkedin", "x"],
+      allowedProductionProviders: ["instagram", "facebook", "linkedin", "x", "tiktok"],
     },
     secretManager,
   );
@@ -307,19 +315,31 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   const metaPagesSandboxProvider = new MetaPagesSandboxProvider({ graphBaseUrl: config?.publication.metaGraphBaseUrl });
   const linkedInSandboxProvider = createLinkedInSandboxProvider();
   const xSandboxProvider = createXSandboxProvider();
-  const publicationProviderAdapters: readonly PublicationProviderAdapterPort[] = config?.publication.metaPagesSandboxEnabled
-    ? [...publicationProviders, metaPagesSandboxProvider, linkedInSandboxProvider, xSandboxProvider]
-    : [...publicationProviders, linkedInSandboxProvider, xSandboxProvider];
+  // O provider precisa renovar o token antes de publicar, mas o serviço OAuth só nasce adiante
+  // (depende da governança de credenciais) — daí a referência tardia resolvida no momento da chamada.
+  let tiktokOAuthServiceRef: TikTokOAuthService | undefined;
+  const tiktokProvider = new TikTokContentPostingProvider(
+    { apiBaseUrl: config?.publication.tiktokApiBaseUrl },
+    fetch,
+    (input) => (tiktokOAuthServiceRef ? tiktokOAuthServiceRef.refresh(input) : Promise.resolve(undefined)),
+  );
+  const publicationProviderAdapters: readonly PublicationProviderAdapterPort[] = [
+    ...publicationProviders,
+    ...(config?.publication.metaPagesSandboxEnabled ? [metaPagesSandboxProvider] : []),
+    linkedInSandboxProvider,
+    xSandboxProvider,
+    ...(config?.publication.tiktokEnabled ? [tiktokProvider] : []),
+  ];
   const publicationProviderRegistry = createDefaultPublicationProviderRegistry(publicationProviderAdapters);
   const publicationSecretStore = new SecretManagerPublicationSecretStore(secretManager);
   const publicationSecretResolver = new CompositePublicationSecretResolver(new StoredPublicationSecretResolver(publicationSecretStore), new FakePublicationSecretResolver());
   const publicationProviderPolicy = new PublicationProviderPolicy(
     { environment: config?.publication.providerEnvironment ?? "sandbox", productionEnabled: config?.publication.productionEnabled ?? false },
-    { enabled: config?.publication.canaryEnabled ?? false, providerId: "meta_pages_sandbox", tenantIds: config?.publication.canaryTenantIds ?? [], workspaceIds: config?.publication.canaryWorkspaceIds ?? [] },
+    { enabled: config?.publication.canaryEnabled ?? false, providerId: "meta_pages_sandbox", providerIds: config?.publication.canaryProviderIds ?? [], tenantIds: config?.publication.canaryTenantIds ?? [], workspaceIds: config?.publication.canaryWorkspaceIds ?? [] },
   );
   const publicationGovernancePolicy = new PublicationGovernancePolicy(
     { environment: config?.publication.providerEnvironment ?? "sandbox", productionEnabled: config?.publication.productionEnabled ?? false },
-    { enabled: config?.publication.canaryEnabled ?? false, providerId: "meta_pages_sandbox", tenantIds: config?.publication.canaryTenantIds ?? [], workspaceIds: config?.publication.canaryWorkspaceIds ?? [] },
+    { enabled: config?.publication.canaryEnabled ?? false, providerId: "meta_pages_sandbox", providerIds: config?.publication.canaryProviderIds ?? [], tenantIds: config?.publication.canaryTenantIds ?? [], workspaceIds: config?.publication.canaryWorkspaceIds ?? [] },
   );
   const credentialGovernanceService = new CredentialGovernanceService({
     credentialRepository: repositories.credentialRepository,
@@ -364,6 +384,22 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     secretStore: publicationSecretStore,
     credentialGovernanceService,
   });
+  const tiktokOAuthService = new TikTokOAuthService({
+    config: {
+      enabled: config?.publication.tiktokEnabled ?? false,
+      clientKey: config?.publication.tiktokClientKey,
+      clientSecret: config?.publication.tiktokClientSecret,
+      redirectUri: config?.publication.tiktokRedirectUri,
+      apiBaseUrl: config?.publication.tiktokApiBaseUrl,
+      authorizeBaseUrl: config?.publication.tiktokAuthorizeBaseUrl,
+      scopes: TIKTOK_REQUIRED_SCOPES,
+      environment: config?.publication.providerEnvironment ?? "sandbox",
+    },
+    repository: repositories.publicationRepository,
+    secretStore: publicationSecretStore,
+    credentialGovernanceService,
+  });
+  tiktokOAuthServiceRef = tiktokOAuthService;
   const publicationQueue = new InMemoryPublicationQueue();
   const clock = new SystemClock();
   const scheduleOccurrenceGenerator = new ScheduleOccurrenceGenerator({
@@ -521,6 +557,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       publicationSecretStore,
       publicationSecretResolver,
       metaPagesOAuthService,
+      tiktokOAuthService,
+      tiktokProvider,
       publicationQueue,
       clock,
       createExecutionHandlerResolver,
@@ -582,6 +620,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     publicationSecretStore,
     publicationSecretResolver,
     metaPagesOAuthService,
+    tiktokOAuthService,
+    tiktokProvider,
     publicationQueue,
     clock,
     createExecutionHandlerResolver,

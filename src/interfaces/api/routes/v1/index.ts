@@ -12,6 +12,7 @@ import { registerProviderRoutes } from "./providers.route.js";
 import { registerRuntimeRoutes } from "./runtime.route.js";
 import { registerSchedulingRoutes } from "./scheduling.route.js";
 import { registerSystemRoutes } from "./system.route.js";
+import { registerTikTokRoutes } from "./tiktok.route.js";
 import { registerExecutionRunRoutes } from "./execution-runs.route.js";
 import { registerPublicationRoutes } from "./publications.route.js";
 import { registerWebhookRoutes } from "./webhooks.route.js";
@@ -98,6 +99,16 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     providerCircuitBreaker: app.zunoContainer.operationalCircuitBreaker,
     backpressure: app.zunoContainer.operationalBackpressure,
     idGenerator: () => `publication-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  });
+  await registerTikTokRoutes(app, {
+    publicationRepository: app.zunoContainer.publicationRepository,
+    providers: app.zunoContainer.publicationProviders,
+    providerRegistry: app.zunoContainer.publicationProviderRegistry,
+    secretResolver: app.zunoContainer.publicationSecretResolver,
+    queue: app.zunoContainer.publicationQueue,
+    tiktokOAuthService: app.zunoContainer.tiktokOAuthService,
+    providerCircuitBreaker: app.zunoContainer.operationalCircuitBreaker,
+    idGenerator: () => `tiktok-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
   });
   await registerCredentialRoutes(app, {
     credentialGovernanceService: app.zunoContainer.credentialGovernanceService,

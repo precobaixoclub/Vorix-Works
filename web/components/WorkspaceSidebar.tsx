@@ -12,6 +12,7 @@ const MAIN_NAV: readonly NavItem[] = [
   { href: "/chat", label: "Chat", icon: "💬" },
   { href: "/assets", label: "Materiais", icon: "📂" },
   { href: "/campaigns", label: "Publicações", icon: "📣" },
+  { href: "/tiktok", label: "TikTok", icon: "🎵" },
   { href: "/knowledge", label: "Conhecimento", icon: "🧠" },
   { href: "/calendar", label: "Calendário", icon: "🗓" },
   { href: "/analytics", label: "Análises", icon: "◈" },

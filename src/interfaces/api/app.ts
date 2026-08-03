@@ -12,6 +12,7 @@ import { registerSecurityHeadersMiddleware } from "./middleware/security-headers
 import { registerDiPlugin } from "./plugins/di.plugin.js";
 import { buildApiContainer, type ApiContainer } from "./di/container.js";
 import { registerV1Routes } from "./routes/v1/index.js";
+import { registerPublicationScheduler } from "./scheduler/publication-scheduler.js";
 import { registerVersionRoute } from "./routes/version.route.js";
 import { registerWebhookReceiverRoutes } from "./routes/webhook-receiver.route.js";
 import { successEnvelope } from "./http/response-envelope.js";
@@ -80,6 +81,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await registerWebhookReceiverRoutes(app, { ingestionService: container.webhookIngestionService });
 
   await app.register(registerV1Routes, { prefix: "/v1" });
+
+  registerPublicationScheduler(app, container, { enabled: config.publication.schedulerEnabled, intervalMs: config.publication.schedulerIntervalMs });
 
   return app;
 }

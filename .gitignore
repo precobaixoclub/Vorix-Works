@@ -36,3 +36,7 @@ assets/media/review-artifacts/
 tmp-*.txt
 tmp-*.json
 tmp-*.log
+
+ping-api.mjs
+signup-test.json
+zuno-fase2.tgz

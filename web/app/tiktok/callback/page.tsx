@@ -1,16 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/Card";
 import { Spinner } from "@/components/Spinner";
 import { completeTikTokOAuth } from "@/features/tiktok/api";
 
-/**
- * Destino do `redirect_uri` do TikTok. A página só repassa `code`/`state` para a API já
- * autenticada — o token de acesso nunca é manipulado pelo navegador.
- */
-export default function TikTokOAuthCallbackPage() {
+function TikTokOAuthCallbackContent() {
   const params = useSearchParams();
   const router = useRouter();
   const [message, setMessage] = useState("Conectando a conta do TikTok...");
@@ -55,5 +51,25 @@ export default function TikTokOAuthCallbackPage() {
         <p className="text-center text-sm text-ink">{message}</p>
       </Card>
     </main>
+  );
+}
+
+/**
+ * Destino do `redirect_uri` do TikTok. A página só repassa `code`/`state` para a API já
+ * autenticada — o token de acesso nunca é manipulado pelo navegador.
+ */
+export default function TikTokOAuthCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto flex max-w-lg flex-col items-center px-6 py-20">
+          <Card className="flex w-full flex-col items-center gap-4 p-8">
+            <Spinner />
+          </Card>
+        </main>
+      }
+    >
+      <TikTokOAuthCallbackContent />
+    </Suspense>
   );
 }

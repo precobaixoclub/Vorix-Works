@@ -43,6 +43,7 @@ import { JsonWebTokenJwtAdapter } from "../../../infrastructure/auth/jsonwebtoke
 import { JwtAuthAdapter } from "../../../infrastructure/auth/jwt-auth-adapter.js";
 import { createNoopAuthAdapter } from "../../../infrastructure/auth/noop-auth-adapter.js";
 import { buildAiGateway } from "../../../infrastructure/ai-gateway/build-ai-gateway.js";
+import { CreditGatedAiGateway } from "../../../application/ai-gateway/credit-gated-ai-gateway.js";
 import { DeterministicExecutionTaskHandler } from "../../../application/execution/deterministic-handlers.js";
 import type { ExecutionHandlerResolver } from "../../../application/execution/handler-resolver.js";
 import type { ExecutionFeatureFlags } from "../../../application/execution/feature-flags.js";
@@ -456,9 +457,19 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     const identityRepositories = buildIdentityRepositories({ databaseUrl: config.databaseUrl });
     const jwtPort = new JsonWebTokenJwtAdapter(config.jwtSecret);
 
+    // Sprint 25/Fase 2 — envolve o AI Gateway real com controle de créditos por Tenant. Só no
+    // modo "jwt" (produção) porque só nesse modo temos `platform_billing_repository` real
+    // configurado; em "noop"/testes locais o Gateway roda "cru" para não exigir setup extra.
+    const gatedAiGateway = new CreditGatedAiGateway({
+      inner: aiGateway,
+      platformBillingRepository: identityRepositories.platformBillingRepository,
+      idGenerator: (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      now: () => new Date(),
+    });
+
     return {
       authPort: new JwtAuthAdapter(jwtPort),
-      aiGateway,
+      aiGateway: gatedAiGateway,
       aiExtractionEnabled,
       executionHandlers,
       executionFeatureFlags,

@@ -29,7 +29,7 @@ export default function RootPage() {
   return (
     <main className="flex min-h-dvh flex-col bg-surface">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6">
-        <Logo className="h-7 w-auto text-ink" />
+        <Logo className="h-12 w-auto text-ink" />
         <Link href="/login">
           <Button variant="secondary">Entrar</Button>
         </Link>

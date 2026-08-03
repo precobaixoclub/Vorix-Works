@@ -32,7 +32,7 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
   return (
     <nav className="flex w-56 shrink-0 flex-col gap-1 border-r border-border bg-surface-raised p-3">
       <Link href="/workspaces" className="mb-4 flex items-center px-2 py-1 text-ink" aria-label="Vonix — Workspaces">
-        <Logo className="h-6 w-auto" />
+        <Logo className="h-10 w-auto" />
       </Link>
       <Link
         href="/workspaces"

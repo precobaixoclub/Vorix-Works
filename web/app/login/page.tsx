@@ -42,7 +42,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardBody className="flex flex-col gap-5 py-8">
           <div className="flex flex-col items-center gap-3 text-center">
-            <Logo className="h-10 w-auto text-ink" />
+            <Logo className="h-16 w-auto text-ink" />
             <div>
               <h1 className="text-base font-semibold text-ink">Entrar no Vorix</h1>
               <p className="mt-1 text-sm text-ink-muted">Use o email e senha da sua conta.</p>

@@ -26,24 +26,51 @@ import type {
 export class AnthropicAiModelProvider implements AiModelProviderPort {
   readonly id = "anthropic";
   readonly capabilities: readonly AiCapability[] = ["structured_text", "tool_calling", "free_text"];
-  private readonly client?: Anthropic;
+  private staticClient?: Anthropic;
+  private cachedDynamicKey?: string;
+  private cachedDynamicClient?: Anthropic;
+  private cachedAt = 0;
+  private static readonly CACHE_TTL_MS = 60_000;
 
-  constructor(options: { apiKey?: string }) {
-    this.client = options.apiKey ? new Anthropic({ apiKey: options.apiKey }) : undefined;
+  constructor(private readonly options: {
+    apiKey?: string;
+    /** Se fornecido, o provider consulta esta função a cada chamada (com cache TTL 60s) para
+     * pegar a API key vigente — permite que o painel admin altere a chave em tempo de execução
+     * sem restart. Se retornar `undefined`, o provider comporta-se como "não configurado". */
+    getApiKey?: () => Promise<string | undefined>;
+  }) {
+    this.staticClient = options.apiKey ? new Anthropic({ apiKey: options.apiKey }) : undefined;
   }
 
   isConfigured(): boolean {
-    return this.client !== undefined;
+    return this.staticClient !== undefined || this.options.getApiKey !== undefined;
+  }
+
+  private async resolveClient(): Promise<Anthropic | undefined> {
+    if (this.options.getApiKey) {
+      const now = Date.now();
+      if (now - this.cachedAt > AnthropicAiModelProvider.CACHE_TTL_MS) {
+        const key = await this.options.getApiKey();
+        this.cachedAt = now;
+        if (key !== this.cachedDynamicKey) {
+          this.cachedDynamicKey = key;
+          this.cachedDynamicClient = key ? new Anthropic({ apiKey: key }) : undefined;
+        }
+      }
+      return this.cachedDynamicClient ?? this.staticClient;
+    }
+    return this.staticClient;
   }
 
   async execute(request: AiModelProviderRequest): Promise<AiModelProviderResult> {
-    if (!this.client) {
+    const client = await this.resolveClient();
+    if (!client) {
       return { ok: false, category: "not_configured", message: "AnthropicAiModelProvider sem credencial configurada.", latencyMs: 0 };
     }
 
     const startedAt = Date.now();
     try {
-      const response = await this.client.messages.create(
+      const response = await client.messages.create(
         {
           model: request.model,
           max_tokens: request.maxOutputTokens,

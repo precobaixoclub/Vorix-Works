@@ -26,6 +26,7 @@ import type { PlanningArtifactRepositoryPort } from "../../../application/ports/
 import type { PlanningDecisionRepositoryPort } from "../../../application/ports/planning-decision-repository.port.js";
 import type { PlanningRepositoryPort } from "../../../application/ports/planning-repository.port.js";
 import type { PlatformBillingRepositoryPort } from "../../../application/ports/platform-billing-repository.port.js";
+import type { PlatformAiSettingsRepositoryPort } from "../../../application/ports/platform-ai-settings-repository.port.js";
 import type { PublicationRepositoryPort } from "../../../application/ports/publication-repository.port.js";
 import type { PreparedCommandRepositoryPort } from "../../../application/ports/prepared-command-repository.port.js";
 import type { RefreshTokenRepositoryPort } from "../../../application/ports/refresh-token-repository.port.js";
@@ -209,6 +210,7 @@ export type ApiContainer = {
     refreshTokenRepository: RefreshTokenRepositoryPort;
     auditLog: AuditLogPort;
     platformBillingRepository: PlatformBillingRepositoryPort;
+    platformAiSettingsRepository: PlatformAiSettingsRepositoryPort;
     passwordHasher: PasswordHasherPort;
     jwt: JwtPort;
     accessTokenTtlSeconds: number;
@@ -224,9 +226,17 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     databaseUrl: config?.databaseUrl,
   });
 
+  const authMode = config?.authMode ?? "noop";
+  // Repos de identidade (inclui `platformAiSettingsRepository`) só existem em modo "jwt". Precisam
+  // ser construídos ANTES do buildAiGateway para permitir gestão dinâmica das configs de IA.
+  const identityRepositories = authMode === "jwt" && config?.databaseUrl && config?.jwtSecret
+    ? buildIdentityRepositories({ databaseUrl: config.databaseUrl, secretsMasterKey: config.jwtSecret })
+    : undefined;
+
   const { aiGateway, aiExtractionEnabled } = buildAiGateway({
     aiConfig: config?.aiGateway ?? DISABLED_AI_GATEWAY_CONFIG,
     executionRepository: repositories.aiExecutionRepository,
+    platformAiSettingsRepository: identityRepositories?.platformAiSettingsRepository,
   });
 
   const runtimeEngineHook = new RuntimeEnginePlanningHook({
@@ -447,14 +457,12 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // Sem config nenhuma (ex.: alguns testes chamam buildApiContainer() sem argumento) equivale a
   // "noop" por segurança — só uma config REAL carregada via loadApiConfig() pode pedir "jwt"
   // (e loadApiConfig já valida jwtSecret/databaseUrl antes de chegar aqui).
-  const authMode = config?.authMode ?? "noop";
 
   if (authMode === "jwt") {
-    if (!config?.jwtSecret || !config.databaseUrl) {
+    if (!config?.jwtSecret || !config.databaseUrl || !identityRepositories) {
       throw new Error('buildApiContainer: authMode "jwt" exige jwtSecret e databaseUrl configurados.');
     }
 
-    const identityRepositories = buildIdentityRepositories({ databaseUrl: config.databaseUrl });
     const jwtPort = new JsonWebTokenJwtAdapter(config.jwtSecret);
 
     // Sprint 25/Fase 2 — envolve o AI Gateway real com controle de créditos por Tenant. Só no

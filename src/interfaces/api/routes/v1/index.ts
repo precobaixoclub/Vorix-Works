@@ -168,6 +168,10 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       workspaceRepository: app.zunoContainer.workspaceRepository,
       idGenerator: () => `credit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       now: () => new Date(),
+      platformAiSettings: {
+        platformAiSettingsRepository: identity.platformAiSettingsRepository,
+        now: () => new Date(),
+      },
     });
   }
 }

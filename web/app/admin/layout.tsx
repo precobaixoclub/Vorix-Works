@@ -44,6 +44,9 @@ function AdminShell({ children }: { children: ReactNode }) {
           <SidebarLink href="/admin/tenants" active={isActive("/admin/tenants")}>
             Contas de clientes
           </SidebarLink>
+          <SidebarLink href="/admin/settings" active={isActive("/admin/settings")}>
+            Configurações de IA
+          </SidebarLink>
         </nav>
         <div className="mt-8 border-t border-border pt-4 text-xs text-ink-muted">
           <div className="mb-3">

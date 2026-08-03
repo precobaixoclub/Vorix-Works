@@ -10,6 +10,11 @@ import {
   suspendTenant,
   type PlatformAdminUseCaseDeps,
 } from "../../../../application/platform-admin/index.js";
+import {
+  getPlatformAiSettings,
+  updatePlatformAiSettings,
+  type PlatformAiSettingsUseCaseDeps,
+} from "../../../../application/platform-admin/platform-ai-settings.usecases.js";
 import { PLATFORM_PLAN_CODES } from "../../../../domain/platform-billing/platform-plan-catalog.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePlatformAdmin } from "../../http/require-principal.js";
@@ -56,6 +61,17 @@ const MULTIPLIER_BODY_SCHEMA = {
   properties: { multiplier: { type: "number", minimum: 1, maximum: 100 } },
 } as const;
 
+const AI_SETTINGS_BODY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    gatewayEnabled: { type: "boolean" },
+    briefingExtractionEnabled: { type: "boolean" },
+    anthropicApiKey: { type: "string", maxLength: 200 },
+    anthropicBriefingExtractionModel: { type: "string", maxLength: 120 },
+  },
+} as const;
+
 function translatePlatformError(error: unknown): never {
   if (error instanceof Error) {
     if (error.message.startsWith("PLATFORM_ADMIN_TENANT_NOT_FOUND")) throw new NotFoundError(error.message);
@@ -63,11 +79,16 @@ function translatePlatformError(error: unknown): never {
     if (error.message.startsWith("PLATFORM_ADMIN_INVALID_DELTA")) throw new ValidationError(error.message);
     if (error.message.startsWith("PLATFORM_ADMIN_INVALID_MULTIPLIER")) throw new ValidationError(error.message);
     if (error.message.startsWith("PLATFORM_BILLING_INVALID_MULTIPLIER")) throw new ValidationError(error.message);
+    if (error.message.startsWith("PLATFORM_AI_SETTINGS_INVALID_KEY")) throw new ValidationError(error.message);
+    if (error.message.startsWith("PLATFORM_AI_SETTINGS_INVALID_MODEL")) throw new ValidationError(error.message);
   }
   throw error;
 }
 
-export async function registerAdminRoutes(app: FastifyInstance, deps: PlatformAdminUseCaseDeps): Promise<void> {
+export async function registerAdminRoutes(
+  app: FastifyInstance,
+  deps: PlatformAdminUseCaseDeps & { platformAiSettings?: PlatformAiSettingsUseCaseDeps },
+): Promise<void> {
   // Dashboard geral \u2014 receita/lucro agregado do m\u00eas + top clientes.
   app.get("/admin/dashboard", async (request) => {
     requirePlatformAdmin(request);
@@ -170,4 +191,32 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: PlatformAd
       return successEnvelope(billing, request.id);
     },
   );
+
+  if (deps.platformAiSettings) {
+    const settingsDeps = deps.platformAiSettings;
+    app.get("/admin/platform-ai-settings", async (request) => {
+      requirePlatformAdmin(request);
+      const settings = await getPlatformAiSettings(settingsDeps).catch(translatePlatformError);
+      return successEnvelope(settings, request.id);
+    });
+
+    app.put(
+      "/admin/platform-ai-settings",
+      { schema: { body: AI_SETTINGS_BODY_SCHEMA } },
+      async (request) => {
+        const principal = requirePlatformAdmin(request);
+        const body = request.body as {
+          gatewayEnabled?: boolean;
+          briefingExtractionEnabled?: boolean;
+          anthropicApiKey?: string;
+          anthropicBriefingExtractionModel?: string;
+        };
+        const settings = await updatePlatformAiSettings(settingsDeps, {
+          ...body,
+          actor: { userId: principal.userId },
+        }).catch(translatePlatformError);
+        return successEnvelope(settings, request.id);
+      },
+    );
+  }
 }

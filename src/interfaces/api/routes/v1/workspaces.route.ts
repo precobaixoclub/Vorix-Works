@@ -9,7 +9,7 @@ import {
   updateWorkspace,
   type WorkspaceUseCaseDeps,
 } from "../../../../application/workspace/index.js";
-import { ConflictError, NotFoundError, ValidationError } from "../../http/app-error.js";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 
@@ -28,6 +28,7 @@ function translateWorkspaceError(error: unknown): never {
     if (error.message.startsWith("WORKSPACE_NOT_FOUND")) throw new NotFoundError(error.message);
     if (error.message.startsWith("WORKSPACE_VALIDATION_ERROR")) throw new ValidationError(error.message);
     if (error.message.startsWith("WORKSPACE_INVALID_TRANSITION")) throw new ConflictError(error.message);
+    if (error.message.startsWith("WORKSPACE_LIMIT_EXCEEDED")) throw new ForbiddenError(error.message);
   }
   throw error;
 }

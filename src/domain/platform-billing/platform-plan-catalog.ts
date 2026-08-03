@@ -33,6 +33,8 @@ export type PlatformPlanDefinition = {
   monthlyTokenQuota: number;
   /** Cota de publica\u00e7\u00f5es reais (Meta/etc.) no m\u00eas. */
   monthlyPublicationsQuota: number;
+  /** N\u00famero m\u00e1ximo de Workspaces do Tenant. `null` = ilimitado. */
+  maxWorkspaces: number | null;
   /** Se `true`, o plano \u00e9 apresentado com destaque na landing. */
   highlighted?: boolean;
   /** Descri\u00e7\u00f5es livres para exibir na p\u00e1gina de planos. */
@@ -54,6 +56,7 @@ export const PLATFORM_PLAN_CATALOG: Readonly<Record<PlatformPlanCode, PlatformPl
     monthlyPriceUsd: 0,
     monthlyTokenQuota: 100_000,
     monthlyPublicationsQuota: 5,
+    maxWorkspaces: 1,
     features: [
       "100 mil tokens de IA por m\u00eas",
       "5 publica\u00e7\u00f5es reais no m\u00eas",
@@ -68,6 +71,7 @@ export const PLATFORM_PLAN_CATALOG: Readonly<Record<PlatformPlanCode, PlatformPl
     monthlyPriceUsd: 29,
     monthlyTokenQuota: 1_500_000,
     monthlyPublicationsQuota: 60,
+    maxWorkspaces: null,
     features: [
       "1,5 milh\u00e3o de tokens de IA por m\u00eas",
       "60 publica\u00e7\u00f5es reais no m\u00eas",
@@ -82,6 +86,7 @@ export const PLATFORM_PLAN_CATALOG: Readonly<Record<PlatformPlanCode, PlatformPl
     monthlyPriceUsd: 89,
     monthlyTokenQuota: 6_000_000,
     monthlyPublicationsQuota: 300,
+    maxWorkspaces: null,
     highlighted: true,
     features: [
       "6 milh\u00f5es de tokens de IA por m\u00eas",
@@ -98,6 +103,7 @@ export const PLATFORM_PLAN_CATALOG: Readonly<Record<PlatformPlanCode, PlatformPl
     monthlyPriceUsd: 249,
     monthlyTokenQuota: 20_000_000,
     monthlyPublicationsQuota: 1_500,
+    maxWorkspaces: null,
     features: [
       "20 milh\u00f5es de tokens de IA por m\u00eas",
       "1.500 publica\u00e7\u00f5es reais no m\u00eas",
@@ -113,6 +119,7 @@ export const PLATFORM_PLAN_CATALOG: Readonly<Record<PlatformPlanCode, PlatformPl
     monthlyPriceUsd: 0,
     monthlyTokenQuota: Number.MAX_SAFE_INTEGER,
     monthlyPublicationsQuota: Number.MAX_SAFE_INTEGER,
+    maxWorkspaces: null,
     features: [
       "Cotas negociadas",
       "SLA cont\u00e1bil e jur\u00eddico",

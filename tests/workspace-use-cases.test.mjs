@@ -147,3 +147,50 @@ test("listWorkspaces: nunca vaza workspaces de outro tenant", async () => {
   assert.equal(listA.length, 1);
   assert.equal(listA[0].name, "A1");
 });
+
+// ---------------------------------------------------------------------------------------------
+// Limite de Workspaces por plano (Sprint 25+)
+// ---------------------------------------------------------------------------------------------
+
+function fakeBillingRepository(rows) {
+  return { async getTenantBilling(tenantId) { return rows[tenantId]; } };
+}
+
+test("createWorkspace: sem platformBillingRepository, criação permanece ilimitada (compat)", async () => {
+  const deps = makeDeps();
+  await createWorkspace(deps, { tenantId: "tenant-1", name: "A" });
+  await createWorkspace(deps, { tenantId: "tenant-1", name: "B" });
+  const listed = await listWorkspaces(deps, { tenantId: "tenant-1" });
+  assert.equal(listed.length, 2);
+});
+
+test("createWorkspace: plano FREE bloqueia o segundo workspace", async () => {
+  const deps = { ...makeDeps(), platformBillingRepository: fakeBillingRepository({ "tenant-1": { planCode: "FREE" } }) };
+  await createWorkspace(deps, { tenantId: "tenant-1", name: "Único" });
+  await assert.rejects(() => createWorkspace(deps, { tenantId: "tenant-1", name: "Segundo" }), /WORKSPACE_LIMIT_EXCEEDED/);
+});
+
+test("createWorkspace: plano pago (maxWorkspaces null) permanece ilimitado", async () => {
+  const deps = { ...makeDeps(), platformBillingRepository: fakeBillingRepository({ "tenant-1": { planCode: "PRO" } }) };
+  await createWorkspace(deps, { tenantId: "tenant-1", name: "A" });
+  await createWorkspace(deps, { tenantId: "tenant-1", name: "B" });
+  await createWorkspace(deps, { tenantId: "tenant-1", name: "C" });
+  const listed = await listWorkspaces(deps, { tenantId: "tenant-1" });
+  assert.equal(listed.length, 3);
+});
+
+test("createWorkspace: workspace arquivado não conta contra o limite do FREE", async () => {
+  const deps = { ...makeDeps(), platformBillingRepository: fakeBillingRepository({ "tenant-1": { planCode: "FREE" } }) };
+  const first = await createWorkspace(deps, { tenantId: "tenant-1", name: "Único" });
+  await archiveWorkspace(deps, { tenantId: "tenant-1", id: first.id });
+  const second = await createWorkspace(deps, { tenantId: "tenant-1", name: "Substituto" });
+  assert.equal(second.name, "Substituto");
+});
+
+test("createWorkspace: tenant sem linha de billing ainda (ex.: provisionado fora do signup público) não é limitado", async () => {
+  const deps = { ...makeDeps(), platformBillingRepository: fakeBillingRepository({}) };
+  await createWorkspace(deps, { tenantId: "tenant-sem-billing", name: "A" });
+  await createWorkspace(deps, { tenantId: "tenant-sem-billing", name: "B" });
+  const listed = await listWorkspaces(deps, { tenantId: "tenant-sem-billing" });
+  assert.equal(listed.length, 2);
+});

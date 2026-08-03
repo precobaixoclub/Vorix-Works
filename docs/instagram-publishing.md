@@ -89,6 +89,7 @@ POST /v1/instagram/posts
 {
   "workspaceId": "workspace-1",
   "target": "instagram",
+  "placement": "feed",
   "caption": "Lançamento da coleção de verão ☀️",
   "imageUrls": ["https://cdn.seudominio.com/1.jpg", "https://cdn.seudominio.com/2.jpg"],
   "scheduledAt": "2026-03-01T18:00:00.000Z",
@@ -100,7 +101,14 @@ POST /v1/instagram/posts
 `videoUrl`; mais de uma imagem vira carrossel (Instagram) ou post multi-foto (Página). No Facebook,
 `target: "facebook"` também aceita um post só de texto (sem `videoUrl`/`imageUrls`). Omitir
 `scheduledAt` publica imediatamente. As URLs precisam ser **HTTPS públicas** — endereços
-privados/internos são recusados para evitar SSRF.
+privados/internos são recusados para evitar SSRF. Sem uma URL pública em mãos, use
+`POST /v1/publication-media/upload` primeiro (ver `docs/media-upload.md`) para enviar o arquivo
+direto do computador do cliente e obter a URL.
+
+`placement` é `"feed"` (padrão) ou `"story"`. Stories não têm legenda nem carrossel na Graph API —
+`imageUrls` aceita só uma imagem quando `placement: "story"`, e vídeo em Story do Facebook ainda
+não é suportado por esta integração (rejeitado com `META_FACEBOOK_VIDEO_STORY_UNSUPPORTED`; use
+`placement: "feed"` ou publique a foto).
 
 ## 5. Como o agendamento dispara
 
@@ -123,6 +131,12 @@ no horário certo. Para operar por cron externo, desligue o loop e chame `POST /
   `POST /{page-id}/feed` com `attached_media`.
 - **Facebook — vídeo**: `POST /{page-id}/videos` com `file_url` + `description`.
 - **Facebook — texto**: `POST /{page-id}/feed` com `message`.
+- **Instagram — Story**: `POST /{ig-user-id}/media` com `media_type: STORIES` (`image_url` ou
+  `video_url`, sem `caption` — a Graph API não aceita legenda em Story).
+- **Facebook — Story de foto**: upload da foto com `published=false`, depois
+  `POST /{page-id}/photo_stories` com `photo_id`. **Story de vídeo no Facebook ainda não está
+  implementada** (a API usa um protocolo de upload resumível mais complexo) — publicar retorna
+  `permanent_failure`/`META_FACEBOOK_VIDEO_STORY_UNSUPPORTED` em vez de tentar silenciosamente.
 - Token expirado/inválido (`OAuthException`, código 190) dispara uma renovação do Page Access Token
   antes de repetir a chamada.
 

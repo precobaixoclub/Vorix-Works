@@ -13,6 +13,7 @@ import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { beginTikTokOAuth, cancelTikTokPost, disconnectTikTokAccount, scheduleTikTokPost } from "@/features/tiktok/api";
 import { useTikTokOAuthStatus, useTikTokPosts } from "@/features/tiktok/hooks";
 import type { TikTokPrivacyLevel } from "@/features/tiktok/types";
+import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { formatDateTime } from "@/lib/format";
 
 const PRIVACY_OPTIONS: readonly { value: TikTokPrivacyLevel; label: string }[] = [
@@ -30,6 +31,7 @@ export default function TikTokPage() {
   const { data: posts, isLoading, error, mutate: mutatePosts } = useTikTokPosts(workspace.id);
 
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [feedback, setFeedback] = useState<string | undefined>();
   const [mediaKind, setMediaKind] = useState<"video" | "photo">("video");
   const [videoUrl, setVideoUrl] = useState("");
@@ -68,6 +70,32 @@ export default function TikTokPage() {
       setFeedback(messageOf(cause));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function uploadVideoFile(file: File) {
+    setUploading(true);
+    setFeedback(undefined);
+    try {
+      const uploaded = await uploadPublicationMedia(workspace.id, file);
+      setVideoUrl(uploaded.url);
+    } catch (cause) {
+      setFeedback(messageOf(cause));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function uploadImageFile(file: File) {
+    setUploading(true);
+    setFeedback(undefined);
+    try {
+      const uploaded = await uploadPublicationMedia(workspace.id, file);
+      setImageUrls((current) => (current.trim() ? `${current.trim()}\n${uploaded.url}` : uploaded.url));
+    } catch (cause) {
+      setFeedback(messageOf(cause));
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -169,11 +197,21 @@ export default function TikTokPage() {
             <div>
               <Label htmlFor="tiktok-video-url">URL do vídeo (HTTPS pública)</Label>
               <Input id="tiktok-video-url" type="url" required value={videoUrl} placeholder="https://cdn.exemplo.com/video.mp4" onChange={(event) => setVideoUrl(event.target.value)} />
+              <p className="mt-1 text-xs text-ink-muted">
+                ou envie um arquivo:{" "}
+                <input type="file" accept="video/mp4,video/quicktime" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadVideoFile(event.target.files[0])} />
+                {uploading ? " enviando..." : ""}
+              </p>
             </div>
           ) : (
             <div>
               <Label htmlFor="tiktok-image-urls">URLs das imagens (uma por linha)</Label>
               <Textarea id="tiktok-image-urls" required rows={3} value={imageUrls} placeholder={"https://cdn.exemplo.com/1.jpg\nhttps://cdn.exemplo.com/2.jpg"} onChange={(event) => setImageUrls(event.target.value)} />
+              <p className="mt-1 text-xs text-ink-muted">
+                ou envie um arquivo:{" "}
+                <input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadImageFile(event.target.files[0])} />
+                {uploading ? " enviando..." : ""}
+              </p>
             </div>
           )}
 

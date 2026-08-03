@@ -43,6 +43,8 @@ export type InstagramRoutesDeps = {
 type SchedulePostBody = {
   workspaceId: string;
   target?: "instagram" | "facebook";
+  /** "story" só existe de verdade no Instagram; no Facebook só foto (vídeo ainda não suportado — ver docs). */
+  placement?: "feed" | "story";
   caption: string;
   videoUrl?: string;
   imageUrls?: readonly string[];
@@ -59,6 +61,7 @@ const SCHEDULE_POST_BODY_SCHEMA = {
   properties: {
     workspaceId: { type: "string", minLength: 1 },
     target: { type: "string", enum: ["instagram", "facebook"] },
+    placement: { type: "string", enum: ["feed", "story"] },
     caption: { type: "string", minLength: 0, maxLength: 4000 },
     videoUrl: { type: "string", format: "uri" },
     imageUrls: { type: "array", items: { type: "string", format: "uri" }, minItems: 1, maxItems: 10 },
@@ -129,6 +132,7 @@ export async function registerInstagramRoutes(app: FastifyInstance, deps: Instag
     const posts = plans.map((plan) => ({
       publicationId: plan.id,
       target: (plan.policy.allowedProviders.includes("instagram") ? "instagram" : "facebook") as "instagram" | "facebook",
+      placement: placementOf(plan),
       state: plan.state,
       caption: captionOf(plan),
       media: mediaOf(plan),
@@ -146,8 +150,11 @@ export async function registerInstagramRoutes(app: FastifyInstance, deps: Instag
     const principal = requirePermission(request, "publication:create");
     const body = request.body as SchedulePostBody;
     const target = body.target ?? "instagram";
+    const placement = body.placement ?? "feed";
     const media = requireMedia(body, target);
     if (body.scheduledAt && Number.isNaN(Date.parse(body.scheduledAt))) throw new Error("META_SCHEDULED_AT_INVALID: scheduledAt deve ser uma data ISO-8601.");
+    if (placement === "story" && media.imageUrls.length > 1) throw new Error("META_STORY_CAROUSEL_UNSUPPORTED: Stories aceitam só uma imagem ou um vídeo, nunca carrossel.");
+    if (placement === "story" && target === "facebook" && media.videoUrl) throw new Error("META_FACEBOOK_VIDEO_STORY_UNSUPPORTED: Stories de vídeo no Facebook ainda não são suportadas por esta integração — use foto ou publique no feed.");
 
     const detail = await createPublication(engineDeps, {
       tenantId: principal.tenantId,
@@ -164,6 +171,7 @@ export async function registerInstagramRoutes(app: FastifyInstance, deps: Instag
           videoUrl: media.videoUrl,
           imageUrls: media.imageUrls,
           thumbnailUrl: body.thumbnailUrl,
+          placement,
           credentialReferenceId: body.credentialReferenceId,
         },
       }],
@@ -269,6 +277,14 @@ function captionOf(plan: PublicationPlan): string {
     if (typeof caption === "string") return caption;
   }
   return "";
+}
+
+function placementOf(plan: PublicationPlan): "feed" | "story" {
+  for (const artifact of plan.sourceArtifacts) {
+    const placement = (artifact.payload as { placement?: unknown } | undefined)?.placement;
+    if (placement === "story") return "story";
+  }
+  return "feed";
 }
 
 function mediaOf(plan: PublicationPlan): { videoUrl?: string; imageUrls: readonly string[] } {

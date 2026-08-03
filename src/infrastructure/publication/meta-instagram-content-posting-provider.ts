@@ -30,11 +30,14 @@ export type MetaProviderTelemetry = {
   lastErrorCode?: string;
 };
 
+export type MetaPlacement = "feed" | "story";
+
 export type MetaPostContent = {
   caption: string;
   videoUrl?: string;
   imageUrls: readonly string[];
   thumbnailUrl?: string;
+  placement: MetaPlacement;
 };
 
 type GraphErrorPayload = { error?: { message?: string; type?: string; code?: number; error_subcode?: number } };
@@ -103,6 +106,14 @@ export class MetaContentPostingProvider implements PublicationProviderAdapterPor
       this.recordCall(startedAt, "META_MEDIA_MISSING");
       return { kind: "rejected", errorCode: "META_MEDIA_MISSING", safeMessage: "Publicação no Instagram exige videoUrl ou ao menos uma imagem." };
     }
+    if (post.placement === "story" && !post.videoUrl && post.imageUrls.length === 0) {
+      this.recordCall(startedAt, "META_STORY_MEDIA_MISSING");
+      return { kind: "rejected", errorCode: "META_STORY_MEDIA_MISSING", safeMessage: "Story exige videoUrl ou uma imagem — não existe Story só de texto." };
+    }
+    if (post.placement === "story" && post.imageUrls.length > 1) {
+      this.recordCall(startedAt, "META_STORY_CAROUSEL_UNSUPPORTED");
+      return { kind: "rejected", errorCode: "META_STORY_CAROUSEL_UNSUPPORTED", safeMessage: "Stories aceitam só uma imagem ou um vídeo, nunca carrossel." };
+    }
 
     try {
       const result = this.target === "instagram"
@@ -166,11 +177,16 @@ export class MetaContentPostingProvider implements PublicationProviderAdapterPor
     const igUserId = request.secret?.value.instagramBusinessAccountId;
     if (!igUserId) throw new GraphApiError({ kind: "authentication_failure", errorCode: "META_IG_ACCOUNT_MISSING", safeMessage: "Credencial sem Instagram Business Account vinculado." }, 401);
 
-    const creationId = post.videoUrl
-      ? await this.createInstagramContainer(igUserId, accessToken, { video_url: post.videoUrl, media_type: "REELS", caption: post.caption, cover_url: post.thumbnailUrl })
-      : post.imageUrls.length > 1
-        ? await this.createInstagramCarousel(igUserId, accessToken, post)
-        : await this.createInstagramContainer(igUserId, accessToken, { image_url: post.imageUrls[0], caption: post.caption });
+    // Stories não têm legenda nem carrossel na Graph API — só um container image/video com media_type: STORIES.
+    const creationId = post.placement === "story"
+      ? await this.createInstagramContainer(igUserId, accessToken, post.videoUrl
+          ? { video_url: post.videoUrl, media_type: "STORIES", cover_url: post.thumbnailUrl }
+          : { image_url: post.imageUrls[0], media_type: "STORIES" })
+      : post.videoUrl
+        ? await this.createInstagramContainer(igUserId, accessToken, { video_url: post.videoUrl, media_type: "REELS", caption: post.caption, cover_url: post.thumbnailUrl })
+        : post.imageUrls.length > 1
+          ? await this.createInstagramCarousel(igUserId, accessToken, post)
+          : await this.createInstagramContainer(igUserId, accessToken, { image_url: post.imageUrls[0], caption: post.caption });
 
     await this.waitUntilContainerReady(creationId, accessToken);
     const media = await this.graphPost(`${igUserId}/media_publish`, { creation_id: creationId }, accessToken);
@@ -183,6 +199,17 @@ export class MetaContentPostingProvider implements PublicationProviderAdapterPor
   private async publishToFacebookPage(post: MetaPostContent, accessToken: string, request: PublicationProviderAdapterPublishRequest): Promise<PublicationProviderCallResult> {
     const pageId = request.secret?.value.pageId;
     if (!pageId) throw new GraphApiError({ kind: "authentication_failure", errorCode: "META_PAGE_ID_MISSING", safeMessage: "Credencial sem Página do Facebook vinculada." }, 401);
+
+    if (post.placement === "story") {
+      if (post.videoUrl) {
+        throw new GraphApiError({ kind: "permanent_failure", errorCode: "META_FACEBOOK_VIDEO_STORY_UNSUPPORTED", safeMessage: "Stories de vídeo no Facebook ainda não são suportadas por esta integração.", rawResponseReference: "meta:facebook:story_unsupported" }, 200);
+      }
+      // Story de foto: sobe a imagem sem publicar no feed (published=false) e a referencia em /photo_stories.
+      const uploaded = await this.graphPost(`${pageId}/photos`, { url: post.imageUrls[0], published: "false" }, accessToken);
+      const story = await this.graphPost(`${pageId}/photo_stories`, { photo_id: uploaded.id as string }, accessToken);
+      const storyId = (story.post_id ?? story.id) as string;
+      return { kind: "published", providerPublicationId: storyId, publishedAt: new Date().toISOString(), rawResponseReference: "meta:facebook:story_publish" };
+    }
 
     let node: Record<string, unknown>;
     if (post.videoUrl) {
@@ -334,8 +361,9 @@ export function extractMetaPost(content: Record<string, unknown>, assets: readon
   const videoUrl = firstString(payloads, ["videoUrl", "video_url"]);
   const imageUrls = firstStringArray(payloads, ["imageUrls", "image_urls"]) ?? compact([firstString(payloads, ["imageUrl", "image_url"])]);
   const thumbnailUrl = firstString(payloads, ["thumbnailUrl", "thumbnail_url", "coverUrl", "cover_url"]);
+  const placement = firstString(payloads, ["placement"]) === "story" ? "story" : "feed";
 
-  return { caption, videoUrl, imageUrls, thumbnailUrl };
+  return { caption, videoUrl, imageUrls, thumbnailUrl, placement };
 }
 
 function firstString(payloads: readonly Record<string, unknown>[], keys: readonly string[]): string | undefined {

@@ -165,6 +165,47 @@ test("Instagram Provider: carrossel cria containers filhos + pai, e mídia ausen
   assert.equal(empty.errorCode, "META_MEDIA_MISSING");
 });
 
+test("Instagram Provider: Story de imagem usa media_type STORIES sem legenda, e carrossel em Story é rejeitado", async () => {
+  const calls = [];
+  const provider = new MetaContentPostingProvider("instagram", { graphBaseUrl: "https://graph.test/v21.0", containerPollAttempts: 1 }, async (url, init) => {
+    const href = String(url);
+    if (init.method === "POST" && href.includes("/ig-123/media")) {
+      const body = new URLSearchParams(init.body);
+      calls.push(Object.fromEntries(body.entries()));
+      return jsonResponse({ id: "container-story" });
+    }
+    if (href.includes("status_code")) return jsonResponse({ status_code: "FINISHED" });
+    if (href.includes("media_publish")) return jsonResponse({ id: "media-story" });
+    if (href.includes("/media-story?")) return jsonResponse({ permalink: "https://instagram.com/stories/abc" });
+    return jsonResponse({ error: { message: "unexpected" } }, 400);
+  });
+
+  const result = await provider.publish(publishRequest("instagram", { content: { artifacts: [captionArtifact("Legenda ignorada", { imageUrls: ["https://cdn.test/1.jpg"], placement: "story" })] } }));
+  assert.equal(result.kind, "published");
+  assert.equal(calls[0].media_type, "STORIES");
+  assert.equal(calls[0].caption, undefined);
+
+  const carouselStory = await provider.publish(publishRequest("instagram", { content: { artifacts: [captionArtifact("x", { imageUrls: ["https://cdn.test/1.jpg", "https://cdn.test/2.jpg"], placement: "story" })] } }));
+  assert.equal(carouselStory.kind, "rejected");
+});
+
+test("Facebook Provider: Story de foto usa photo_stories, e Story de vídeo é rejeitada com erro claro", async () => {
+  const provider = new MetaContentPostingProvider("facebook", { graphBaseUrl: "https://graph.test/v21.0" }, async (url, init) => {
+    const href = String(url);
+    if (href.includes("/page-123/photos")) return jsonResponse({ id: "photo-story-1" });
+    if (href.includes("/page-123/photo_stories")) return jsonResponse({ post_id: "page-123_story-1" });
+    return jsonResponse({ error: { message: "unexpected" } }, 400);
+  });
+
+  const result = await provider.publish(publishRequest("facebook", { content: { artifacts: [captionArtifact("Story da loja", { imageUrls: ["https://cdn.test/1.jpg"], placement: "story" })] } }));
+  assert.equal(result.kind, "published");
+  assert.equal(result.providerPublicationId, "page-123_story-1");
+
+  const videoStory = await provider.publish(publishRequest("facebook", { content: { artifacts: [captionArtifact("x", { videoUrl: "https://cdn.test/v.mp4", placement: "story" })] } }));
+  assert.equal(videoStory.kind, "permanent_failure");
+  assert.equal(videoStory.errorCode, "META_FACEBOOK_VIDEO_STORY_UNSUPPORTED");
+});
+
 test("Facebook Provider: foto única publica direto na Página, texto-only funciona sem mídia", async () => {
   const provider = new MetaContentPostingProvider("facebook", { graphBaseUrl: "https://graph.test/v21.0" }, async (url, init) => {
     const href = String(url);

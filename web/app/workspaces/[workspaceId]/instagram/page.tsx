@@ -13,6 +13,7 @@ import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { beginMetaOAuth, cancelInstagramPost, disconnectMetaAccount, scheduleInstagramPost } from "@/features/instagram/api";
 import { useMetaOAuthStatus, useInstagramPosts } from "@/features/instagram/hooks";
 import type { MetaTarget } from "@/features/instagram/types";
+import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { formatDateTime } from "@/lib/format";
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
@@ -23,8 +24,10 @@ export default function InstagramPage() {
   const { data: posts, isLoading, error, mutate: mutatePosts } = useInstagramPosts(workspace.id);
 
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [feedback, setFeedback] = useState<string | undefined>();
   const [target, setTarget] = useState<MetaTarget>("instagram");
+  const [placement, setPlacement] = useState<"feed" | "story">("feed");
   const [mediaKind, setMediaKind] = useState<"image" | "video" | "none">("image");
   const [videoUrl, setVideoUrl] = useState("");
   const [imageUrls, setImageUrls] = useState("");
@@ -65,6 +68,32 @@ export default function InstagramPage() {
     }
   }
 
+  async function uploadVideoFile(file: File) {
+    setUploading(true);
+    setFeedback(undefined);
+    try {
+      const uploaded = await uploadPublicationMedia(workspace.id, file);
+      setVideoUrl(uploaded.url);
+    } catch (cause) {
+      setFeedback(messageOf(cause));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function uploadImageFile(file: File) {
+    setUploading(true);
+    setFeedback(undefined);
+    try {
+      const uploaded = await uploadPublicationMedia(workspace.id, file);
+      setImageUrls((current) => (current.trim() ? `${current.trim()}\n${uploaded.url}` : uploaded.url));
+    } catch (cause) {
+      setFeedback(messageOf(cause));
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function submitPost(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -74,6 +103,7 @@ export default function InstagramPage() {
       const result = await scheduleInstagramPost({
         workspaceId: workspace.id,
         target,
+        placement,
         caption,
         videoUrl: mediaKind === "video" ? videoUrl.trim() : undefined,
         imageUrls: mediaKind === "image" ? images : undefined,
@@ -159,10 +189,24 @@ export default function InstagramPage() {
             <Button type="button" variant={target === "facebook" ? "primary" : "secondary"} onClick={() => setTarget("facebook")}>Página do Facebook</Button>
           </div>
 
+          <div>
+            <Label htmlFor="meta-placement">Onde publicar</Label>
+            <div className="flex gap-2">
+              <Button type="button" id="meta-placement" variant={placement === "feed" ? "primary" : "secondary"} onClick={() => setPlacement("feed")}>Feed</Button>
+              <Button type="button" variant={placement === "story" ? "primary" : "secondary"} onClick={() => setPlacement("story")}>Story</Button>
+            </div>
+            {placement === "story" ? (
+              <p className="mt-1 text-xs text-ink-muted">
+                Story aceita só uma imagem ou um vídeo (sem carrossel, sem legenda exibida no Story).
+                {target === "facebook" ? " Story de vídeo na Página ainda não é suportado — use foto." : ""}
+              </p>
+            ) : null}
+          </div>
+
           <div className="flex gap-2">
-            <Button type="button" variant={mediaKind === "image" ? "primary" : "secondary"} onClick={() => setMediaKind("image")}>Imagem/carrossel</Button>
-            <Button type="button" variant={mediaKind === "video" ? "primary" : "secondary"} onClick={() => setMediaKind("video")}>Vídeo/Reels</Button>
-            {target === "facebook" ? (
+            <Button type="button" variant={mediaKind === "image" ? "primary" : "secondary"} onClick={() => setMediaKind("image")}>Imagem{placement === "feed" ? "/carrossel" : ""}</Button>
+            <Button type="button" variant={mediaKind === "video" ? "primary" : "secondary"} onClick={() => setMediaKind("video")}>{placement === "feed" ? "Vídeo/Reels" : "Vídeo"}</Button>
+            {target === "facebook" && placement === "feed" ? (
               <Button type="button" variant={mediaKind === "none" ? "primary" : "secondary"} onClick={() => setMediaKind("none")}>Somente texto</Button>
             ) : null}
           </div>
@@ -171,11 +215,21 @@ export default function InstagramPage() {
             <div>
               <Label htmlFor="meta-video-url">URL do vídeo (HTTPS pública)</Label>
               <Input id="meta-video-url" type="url" required value={videoUrl} placeholder="https://cdn.exemplo.com/video.mp4" onChange={(event) => setVideoUrl(event.target.value)} />
+              <p className="mt-1 text-xs text-ink-muted">
+                ou envie um arquivo:{" "}
+                <input type="file" accept="video/mp4,video/quicktime" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadVideoFile(event.target.files[0])} />
+                {uploading ? " enviando..." : ""}
+              </p>
             </div>
           ) : mediaKind === "image" ? (
             <div>
-              <Label htmlFor="meta-image-urls">URLs das imagens (uma por linha — mais de uma vira carrossel)</Label>
-              <Textarea id="meta-image-urls" required rows={3} value={imageUrls} placeholder={"https://cdn.exemplo.com/1.jpg\nhttps://cdn.exemplo.com/2.jpg"} onChange={(event) => setImageUrls(event.target.value)} />
+              <Label htmlFor="meta-image-urls">{placement === "story" ? "URL da imagem" : "URLs das imagens (uma por linha — mais de uma vira carrossel)"}</Label>
+              <Textarea id="meta-image-urls" required rows={placement === "story" ? 1 : 3} value={imageUrls} placeholder={placement === "story" ? "https://cdn.exemplo.com/1.jpg" : "https://cdn.exemplo.com/1.jpg\nhttps://cdn.exemplo.com/2.jpg"} onChange={(event) => setImageUrls(event.target.value)} />
+              <p className="mt-1 text-xs text-ink-muted">
+                ou envie um arquivo:{" "}
+                <input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadImageFile(event.target.files[0])} />
+                {uploading ? " enviando..." : ""}
+              </p>
             </div>
           ) : null}
 
@@ -226,6 +280,7 @@ export default function InstagramPage() {
             <thead>
               <tr className="border-b border-border">
                 <th className="px-4 py-3 font-medium">Destino</th>
+                <th className="px-4 py-3 font-medium">Onde</th>
                 <th className="px-4 py-3 font-medium">Legenda</th>
                 <th className="px-4 py-3 font-medium">Mídia</th>
                 <th className="px-4 py-3 font-medium">Agendado</th>
@@ -237,6 +292,7 @@ export default function InstagramPage() {
               {posts.map((post) => (
                 <tr key={post.publicationId} className="border-b border-border last:border-0">
                   <td className="px-4 py-3 text-xs text-ink-muted">{post.target === "instagram" ? "Instagram" : "Página"}</td>
+                  <td className="px-4 py-3 text-xs text-ink-muted">{post.placement === "story" ? "Story" : "Feed"}</td>
                   <td className="max-w-xs px-4 py-3 text-ink">{post.caption || "—"}</td>
                   <td className="px-4 py-3 text-xs text-ink-muted">{post.media.videoUrl ? "Vídeo" : post.media.imageUrls.length > 0 ? `${post.media.imageUrls.length} imagem(ns)` : "Texto"}</td>
                   <td className="px-4 py-3 text-xs text-ink-muted">{post.scheduledAt ? `${formatDateTime(post.scheduledAt)}${post.timezone ? ` (${post.timezone})` : ""}` : "Imediato"}</td>

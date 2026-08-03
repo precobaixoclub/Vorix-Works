@@ -120,6 +120,20 @@ export type ApiConfig = {
     schedulingLateMsMax: number;
     analyticsDeadLetterMax: number;
   };
+  /** Upload de mídia (foto/vídeo) para posts — hospeda num bucket S3-compatível (AWS S3, Cloudflare
+   * R2, DigitalOcean Spaces, MinIO) para gerar a URL pública que TikTok/Meta exigem. */
+  objectStorage: {
+    enabled: boolean;
+    endpoint?: string;
+    region: string;
+    bucket?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    publicBaseUrl?: string;
+    forcePathStyle: boolean;
+    acl?: string;
+    maxUploadBytes: number;
+  };
 };
 
 const DEFAULT_PORT = 3000;
@@ -210,6 +224,16 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const publicationDeadLetterMax = parsePositiveInt(env.OPERATIONAL_PUBLICATION_DEAD_LETTER_MAX) ?? 25;
   const schedulingLateMsMax = parsePositiveInt(env.OPERATIONAL_SCHEDULING_LATE_MS_MAX) ?? 15 * 60_000;
   const analyticsDeadLetterMax = parsePositiveInt(env.OPERATIONAL_ANALYTICS_DEAD_LETTER_MAX) ?? 25;
+  const objectStorageEnabled = env.OBJECT_STORAGE_ENABLED?.trim() === "true";
+  const objectStorageEndpoint = env.OBJECT_STORAGE_ENDPOINT?.trim() || undefined;
+  const objectStorageRegion = env.OBJECT_STORAGE_REGION?.trim() || "auto";
+  const objectStorageBucket = env.OBJECT_STORAGE_BUCKET?.trim() || undefined;
+  const objectStorageAccessKeyId = env.OBJECT_STORAGE_ACCESS_KEY_ID?.trim() || undefined;
+  const objectStorageSecretAccessKey = env.OBJECT_STORAGE_SECRET_ACCESS_KEY?.trim() || undefined;
+  const objectStoragePublicBaseUrl = env.OBJECT_STORAGE_PUBLIC_BASE_URL?.trim() || undefined;
+  const objectStorageForcePathStyle = env.OBJECT_STORAGE_FORCE_PATH_STYLE?.trim() !== "false";
+  const objectStorageAcl = env.OBJECT_STORAGE_ACL?.trim() || undefined;
+  const objectStorageMaxUploadBytes = parsePositiveInt(env.MEDIA_UPLOAD_MAX_BYTES) ?? 100_000_000;
 
   if (aiGatewayEnabled && !isModelRegisteredAndActive("anthropic", anthropicBriefingExtractionModel)) {
     throw new Error(
@@ -300,6 +324,18 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       publicationDeadLetterMax,
       schedulingLateMsMax,
       analyticsDeadLetterMax,
+    },
+    objectStorage: {
+      enabled: objectStorageEnabled,
+      endpoint: objectStorageEndpoint,
+      region: objectStorageRegion,
+      bucket: objectStorageBucket,
+      accessKeyId: objectStorageAccessKeyId,
+      secretAccessKey: objectStorageSecretAccessKey,
+      publicBaseUrl: objectStoragePublicBaseUrl,
+      forcePathStyle: objectStorageForcePathStyle,
+      acl: objectStorageAcl,
+      maxUploadBytes: objectStorageMaxUploadBytes,
     },
   };
 }

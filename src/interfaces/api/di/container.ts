@@ -79,6 +79,9 @@ import { MetaInstagramOAuthService, META_INSTAGRAM_REQUIRED_SCOPES } from "../..
 import { MetaContentPostingProvider } from "../../../infrastructure/publication/meta-instagram-content-posting-provider.js";
 import { FailClosedProductionSecretManager, InMemorySecretManager } from "../../../infrastructure/operations/secret-managers.js";
 import { PostgresSecretManager } from "../../../infrastructure/operations/postgres-secret-manager.js";
+import type { ObjectStoragePort } from "../../../application/ports/object-storage.port.js";
+import { S3ObjectStorage } from "../../../infrastructure/storage/s3-object-storage.js";
+import { DisabledObjectStorage } from "../../../infrastructure/storage/disabled-object-storage.js";
 import { MetaPagesSandboxProvider } from "../../../infrastructure/publication/meta-pages-sandbox-provider.js";
 import { TikTokContentPostingProvider } from "../../../infrastructure/publication/tiktok-content-posting-provider.js";
 import { TikTokOAuthService, TIKTOK_REQUIRED_SCOPES } from "../../../infrastructure/publication/tiktok-oauth-service.js";
@@ -205,6 +208,7 @@ export type ApiContainer = {
   metaInstagramOAuthService: MetaInstagramOAuthService;
   instagramProvider: MetaContentPostingProvider;
   facebookProvider: MetaContentPostingProvider;
+  objectStorage: ObjectStoragePort;
   publicationQueue: PublicationQueuePort;
   executionHandlers: [DeterministicExecutionTaskHandler];
   executionFeatureFlags: ExecutionFeatureFlags;
@@ -287,6 +291,22 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       ? new PostgresSecretManager(repositories.pool, config.jwtSecret)
       : new FailClosedProductionSecretManager()
     : new InMemorySecretManager();
+  const objectStorage: ObjectStoragePort = (() => {
+    const oss = config?.objectStorage;
+    if (oss?.enabled && oss.bucket && oss.accessKeyId && oss.secretAccessKey) {
+      return new S3ObjectStorage({
+        endpoint: oss.endpoint,
+        region: oss.region,
+        bucket: oss.bucket,
+        accessKeyId: oss.accessKeyId,
+        secretAccessKey: oss.secretAccessKey,
+        publicBaseUrl: oss.publicBaseUrl,
+        forcePathStyle: oss.forcePathStyle,
+        acl: oss.acl,
+      });
+    }
+    return new DisabledObjectStorage();
+  })();
   const productionGuard = new ProductionGuard(
     {
       environment: config?.execution.environment ?? "development",
@@ -591,6 +611,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       metaInstagramOAuthService,
       instagramProvider,
       facebookProvider,
+      objectStorage,
       publicationQueue,
       clock,
       createExecutionHandlerResolver,
@@ -657,6 +678,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     metaInstagramOAuthService,
     instagramProvider,
     facebookProvider,
+    objectStorage,
     publicationQueue,
     clock,
     createExecutionHandlerResolver,

@@ -36,8 +36,11 @@ async function refreshOnce(): Promise<string | undefined> {
 
 async function request<T>(path: string, init: RequestInit = {}, isRetry = false): Promise<T> {
   const token = getAccessToken();
+  // FormData (upload de arquivo) precisa que o navegador defina o Content-Type (com o boundary do
+  // multipart) sozinho — setar "application/json" aqui quebraria o parsing no servidor.
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(init.headers as Record<string, string> | undefined),
   };
@@ -71,6 +74,7 @@ export const apiClient = {
     request<T>(path, { method: "PUT", body: payload !== undefined ? JSON.stringify(payload) : undefined }),
   patch: <T>(path: string, payload?: unknown) =>
     request<T>(path, { method: "PATCH", body: payload !== undefined ? JSON.stringify(payload) : undefined }),
+  upload: <T>(path: string, formData: FormData) => request<T>(path, { method: "POST", body: formData }),
 };
 
 export { ApiError } from "./api-error";

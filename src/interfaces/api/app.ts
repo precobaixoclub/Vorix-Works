@@ -1,5 +1,6 @@
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { loadApiConfig, type ApiConfig } from "./config/api-config.js";
@@ -46,6 +47,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   await app.register(cookie);
+  await app.register(multipart, { limits: { fileSize: config.objectStorage.maxUploadBytes, files: 1 } });
 
   registerSecurityHeadersMiddleware(app, { cookieSecure: config.cookieSecure });
 

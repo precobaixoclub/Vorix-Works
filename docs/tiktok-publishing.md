@@ -98,7 +98,9 @@ POST /v1/tiktok/posts
 
 Para carrossel de fotos, troque `videoUrl` por `imageUrls: ["https://...", "https://..."]`
 (máximo de 35). Omitir `scheduledAt` publica imediatamente. As URLs precisam ser **HTTPS
-públicas** — endereços privados/internos são recusados para evitar SSRF.
+públicas** — endereços privados/internos são recusados para evitar SSRF. Sem uma URL pública em
+mãos, use `POST /v1/publication-media/upload` primeiro (ver `docs/media-upload.md`) para enviar o
+arquivo direto do computador do cliente e obter a URL.
 
 ## 5. Como o agendamento dispara
 

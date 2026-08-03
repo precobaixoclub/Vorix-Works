@@ -38,6 +38,7 @@ export type MetaOAuthComplete = {
 export type InstagramPost = {
   publicationId: string;
   target: MetaTarget;
+  placement: "feed" | "story";
   state: string;
   caption: string;
   media: { videoUrl?: string; imageUrls: readonly string[] };
@@ -52,6 +53,7 @@ export type InstagramPost = {
 export type SchedulePostInput = {
   workspaceId: string;
   target?: MetaTarget;
+  placement?: "feed" | "story";
   caption: string;
   videoUrl?: string;
   imageUrls?: string[];

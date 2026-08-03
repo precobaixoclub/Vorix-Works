@@ -23,5 +23,12 @@ export class ApiError extends Error {
 }
 
 export function getApiBaseUrl(): string {
+  // SSR: prefere a URL interna do Docker (`API_INTERNAL_URL=http://zuno-api:3000`) — sem
+  // depender de DNS público/HTTPS externo e sem passar pelo Traefik. Cai no valor público
+  // (`NEXT_PUBLIC_API_URL`) para o browser, que é embedded no bundle em build time.
+  if (typeof window === "undefined") {
+    const internal = process.env.API_INTERNAL_URL?.trim();
+    if (internal) return internal;
+  }
   return process.env.NEXT_PUBLIC_API_URL?.trim() || "http://localhost:3000";
 }

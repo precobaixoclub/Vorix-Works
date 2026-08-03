@@ -88,6 +88,11 @@ services:
       # nunca 0.0.0.0, e ninguém de fora dessa rede específica (Traefik incluído) conseguia
       # alcançar o container. Forçar aqui evita esse conflito.
       HOSTNAME: "0.0.0.0"
+      # SSR — o Next.js consumir a API pela rede interna do Docker evita depender de DNS
+      # público e do TLS do Traefik toda vez que server-render precisa buscar dado público
+      # (ex.: `/pricing`, `/`). Vale só para requisições feitas do processo Node do container;
+      # o bundle do client continua indo por `NEXT_PUBLIC_API_URL` (embedded em build time).
+      API_INTERNAL_URL: "http://zuno-api:3000"
     ports:
       - "${ZUNO_WEB_PORT:-8091}:3001"
     networks: [zuno_network, cmdesk_cmdesk-network]

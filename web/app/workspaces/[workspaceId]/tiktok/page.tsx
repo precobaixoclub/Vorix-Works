@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
@@ -10,7 +11,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { beginTikTokOAuth, cancelTikTokPost, disconnectTikTokAccount, scheduleTikTokPost } from "@/features/tiktok/api";
+import { cancelTikTokPost, scheduleTikTokPost } from "@/features/tiktok/api";
 import { useTikTokOAuthStatus, useTikTokPosts } from "@/features/tiktok/hooks";
 import type { TikTokPrivacyLevel } from "@/features/tiktok/types";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
@@ -27,7 +28,7 @@ const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 
 export default function TikTokPage() {
   const workspace = useCurrentWorkspace();
-  const { data: oauth, mutate: mutateOAuth } = useTikTokOAuthStatus(workspace.id);
+  const { data: oauth } = useTikTokOAuthStatus(workspace.id);
   const { data: posts, isLoading, error, mutate: mutatePosts } = useTikTokPosts(workspace.id);
 
   const [busy, setBusy] = useState(false);
@@ -44,34 +45,6 @@ export default function TikTokPage() {
 
   const accounts = oauth?.accounts ?? [];
   const connected = oauth?.connected ?? false;
-
-  async function connectAccount() {
-    setBusy(true);
-    setFeedback(undefined);
-    try {
-      const result = await beginTikTokOAuth(workspace.id);
-      // O callback do TikTok volta sem contexto de workspace — guardamos para retomar a página certa.
-      window.sessionStorage.setItem("tiktok:return-workspace", workspace.id);
-      window.location.assign(result.authorizationUrl);
-    } catch (cause) {
-      setFeedback(messageOf(cause));
-      setBusy(false);
-    }
-  }
-
-  async function disconnectAccount(credentialId: string) {
-    setBusy(true);
-    setFeedback(undefined);
-    try {
-      await disconnectTikTokAccount(workspace.id, credentialId);
-      await mutateOAuth();
-      setFeedback("Conta desconectada.");
-    } catch (cause) {
-      setFeedback(messageOf(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function uploadVideoFile(file: File) {
     setUploading(true);
@@ -147,42 +120,17 @@ export default function TikTokPage() {
 
       {feedback ? <Card className="mb-6 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
 
-      <Card className="mb-6 p-5">
-        <div className="mb-3 flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-ink">Conta conectada</p>
-            <p className="text-xs text-ink-muted">
-              {oauth?.configured === false
-                ? "Integração ainda não configurada no servidor (TIKTOK_CLIENT_KEY/TIKTOK_CLIENT_SECRET)."
-                : connected
-                  ? "As publicações deste workspace vão para a conta abaixo."
-                  : "Nenhuma conta do TikTok conectada a este workspace."}
-            </p>
-          </div>
-          <Button disabled={busy || oauth?.configured === false} onClick={connectAccount}>
-            {connected ? "Conectar outra conta" : "Conectar conta do TikTok"}
-          </Button>
-        </div>
-
-        {accounts.length === 0 ? null : (
-          <div className="space-y-2">
-            {accounts.map((account) => (
-              <div key={account.credentialReferenceId} className="flex items-center justify-between gap-4 rounded border border-border px-3 py-2">
-                <div>
-                  <p className="text-sm text-ink">{account.displayName ?? account.openId}</p>
-                  <p className="text-xs text-ink-muted">
-                    {account.scopes.join(", ") || "sem escopos"}
-                    {account.expiresAt ? ` · token expira em ${formatDateTime(account.expiresAt)}` : ""}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <StatusBadge status={account.status} />
-                  <Button variant="secondary" disabled={busy} onClick={() => disconnectAccount(account.credentialReferenceId)}>Desconectar</Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      <Card className="mb-6 flex items-center justify-between gap-4 p-4">
+        <p className="text-sm text-ink-muted">
+          {oauth?.configured === false
+            ? "Integração ainda não configurada no servidor."
+            : connected
+              ? `Publicando na conta: ${accounts[0]?.displayName ?? accounts[0]?.openId}${accounts.length > 1 ? ` (+${accounts.length - 1})` : ""}`
+              : "Nenhuma conta do TikTok conectada a este workspace."}
+        </p>
+        <Link href={`/workspaces/${workspace.id}/connections`} className="text-sm font-medium text-accent hover:underline">
+          Gerenciar conexão →
+        </Link>
       </Card>
 
       <Card className="mb-6 p-5">

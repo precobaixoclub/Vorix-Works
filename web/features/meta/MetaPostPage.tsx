@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
@@ -10,24 +11,22 @@ import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { beginMetaOAuth, cancelMetaPost, disconnectMetaAccount, scheduleMetaPost } from "@/features/meta/api";
+import { cancelMetaPost, scheduleMetaPost } from "@/features/meta/api";
 import { useMetaOAuthStatus, useMetaPosts } from "@/features/meta/hooks";
 import type { MetaTarget } from "@/features/meta/types";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { formatDateTime } from "@/lib/format";
-import { META_RETURN_PATH_KEY } from "@/app/instagram/callback/page";
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 
 /**
  * Compartilhado por `/workspaces/[workspaceId]/instagram` e `.../facebook` — as duas telas usam o
  * mesmo fluxo OAuth (uma conexão do Meta resolve Instagram e Página juntos), só filtram pelo
- * `target` fixo da tela. Ver `docs/instagram-publishing.md`.
+ * `target` fixo da tela. Conectar/desconectar agora é só em `/connections`. Ver `docs/instagram-publishing.md`.
  */
 export function MetaPostPage({ target }: { target: MetaTarget }) {
   const workspace = useCurrentWorkspace();
-  const returnPath = `/workspaces/${workspace.id}/${target}`;
-  const { data: oauth, mutate: mutateOAuth } = useMetaOAuthStatus(workspace.id);
+  const { data: oauth } = useMetaOAuthStatus(workspace.id);
   const { data: allPosts, isLoading, error, mutate: mutatePosts } = useMetaPosts(workspace.id);
   const posts = allPosts?.filter((post) => post.target === target);
 
@@ -45,34 +44,6 @@ export function MetaPostPage({ target }: { target: MetaTarget }) {
 
   const accounts = (oauth?.accounts ?? []).filter((account) => account.providerId === target);
   const connected = accounts.some((account) => account.status === "active");
-
-  async function connectAccount() {
-    setBusy(true);
-    setFeedback(undefined);
-    try {
-      const result = await beginMetaOAuth(workspace.id);
-      // O callback do Meta volta sem contexto de workspace/tela — guardamos pra retomar a certa.
-      window.sessionStorage.setItem(META_RETURN_PATH_KEY, returnPath);
-      window.location.assign(result.authorizationUrl);
-    } catch (cause) {
-      setFeedback(messageOf(cause));
-      setBusy(false);
-    }
-  }
-
-  async function disconnectAccount(credentialId: string) {
-    setBusy(true);
-    setFeedback(undefined);
-    try {
-      await disconnectMetaAccount(workspace.id, credentialId);
-      await mutateOAuth();
-      setFeedback("Conta desconectada.");
-    } catch (cause) {
-      setFeedback(messageOf(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function uploadVideoFile(file: File) {
     setUploading(true);
@@ -156,39 +127,17 @@ export function MetaPostPage({ target }: { target: MetaTarget }) {
 
       {feedback ? <Card className="mb-6 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
 
-      <Card className="mb-6 p-5">
-        <div className="mb-3 flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-ink">Conta conectada</p>
-            <p className="text-xs text-ink-muted">
-              {oauth?.configured === false
-                ? "Integração ainda não configurada no servidor (META_APP_ID/META_APP_SECRET/META_INSTAGRAM_ENABLED)."
-                : connected
-                  ? "As publicações deste workspace vão para as contas abaixo."
-                  : `Nenhuma conta do ${label} conectada a este workspace.`}
-            </p>
-          </div>
-          <Button disabled={busy || oauth?.configured === false} onClick={connectAccount}>
-            {connected ? "Conectar outra conta" : "Conectar conta do Meta"}
-          </Button>
-        </div>
-
-        {accounts.length === 0 ? null : (
-          <div className="space-y-2">
-            {accounts.map((account) => (
-              <div key={account.credentialReferenceId} className="flex items-center justify-between gap-4 rounded border border-border px-3 py-2">
-                <div>
-                  <p className="text-sm text-ink">{account.displayName ?? account.providerSubjectId}</p>
-                  <p className="text-xs text-ink-muted">{account.scopes.join(", ") || "sem escopos"}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <StatusBadge status={account.status} />
-                  <Button variant="secondary" disabled={busy} onClick={() => disconnectAccount(account.credentialReferenceId)}>Desconectar</Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      <Card className="mb-6 flex items-center justify-between gap-4 p-4">
+        <p className="text-sm text-ink-muted">
+          {oauth?.configured === false
+            ? "Integração ainda não configurada no servidor."
+            : connected
+              ? `Publicando na conta: ${accounts[0]?.displayName ?? accounts[0]?.providerSubjectId}${accounts.length > 1 ? ` (+${accounts.length - 1})` : ""}`
+              : `Nenhuma conta do ${label} conectada a este workspace.`}
+        </p>
+        <Link href={`/workspaces/${workspace.id}/connections`} className="text-sm font-medium text-accent hover:underline">
+          Gerenciar conexão →
+        </Link>
       </Card>
 
       <Card className="mb-6 p-5">

@@ -6,6 +6,10 @@ import { Card } from "@/components/Card";
 import { Spinner } from "@/components/Spinner";
 import { completeTikTokOAuth } from "@/features/tiktok/api";
 
+/** Chave de sessão — a tela que iniciou o connect (TikTok ou Conexões) grava o próprio caminho
+ * aqui antes de redirecionar pro TikTok, pra sabermos pra onde voltar depois do callback. */
+export const TIKTOK_RETURN_PATH_KEY = "tiktok:return-path";
+
 function TikTokOAuthCallbackContent() {
   const params = useSearchParams();
   const router = useRouter();
@@ -16,10 +20,10 @@ function TikTokOAuthCallbackContent() {
     if (started.current) return;
     started.current = true;
 
-    const workspaceId = window.sessionStorage.getItem("tiktok:return-workspace");
+    const returnPath = window.sessionStorage.getItem(TIKTOK_RETURN_PATH_KEY);
     const back = () => {
-      window.sessionStorage.removeItem("tiktok:return-workspace");
-      if (workspaceId) router.replace(`/workspaces/${workspaceId}/tiktok`);
+      window.sessionStorage.removeItem(TIKTOK_RETURN_PATH_KEY);
+      if (returnPath) router.replace(returnPath);
     };
 
     const error = params.get("error");

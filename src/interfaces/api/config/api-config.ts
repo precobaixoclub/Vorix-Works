@@ -85,6 +85,11 @@ export type ApiConfig = {
     tiktokRedirectUri?: string;
     tiktokApiBaseUrl?: string;
     tiktokAuthorizeBaseUrl?: string;
+    kwaiEnabled: boolean;
+    kwaiAppId?: string;
+    kwaiAppSecret?: string;
+    kwaiRedirectUri?: string;
+    kwaiApiBaseUrl?: string;
     /** Loop em processo que dispara os agendamentos vencidos. */
     schedulerEnabled: boolean;
     schedulerIntervalMs: number;
@@ -198,6 +203,11 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const tiktokRedirectUri = env.TIKTOK_OAUTH_REDIRECT_URI?.trim() || undefined;
   const tiktokApiBaseUrl = env.TIKTOK_API_BASE_URL?.trim() || undefined;
   const tiktokAuthorizeBaseUrl = env.TIKTOK_AUTHORIZE_BASE_URL?.trim() || undefined;
+  const kwaiEnabled = env.KWAI_ENABLED?.trim() === "true";
+  const kwaiAppId = env.KWAI_APP_ID?.trim() || undefined;
+  const kwaiAppSecret = env.KWAI_APP_SECRET?.trim() || undefined;
+  const kwaiRedirectUri = env.KWAI_OAUTH_REDIRECT_URI?.trim() || undefined;
+  const kwaiApiBaseUrl = env.KWAI_API_BASE_URL?.trim() || undefined;
   const publicationSchedulerEnabled = env.PUBLICATION_SCHEDULER_ENABLED?.trim() !== "false";
   const publicationSchedulerIntervalMs = parsePositiveInt(env.PUBLICATION_SCHEDULER_INTERVAL_MS) ?? 30_000;
   const publicationCanaryEnabled = env.PUBLICATION_CANARY_ENABLED?.trim() === "true";
@@ -287,6 +297,11 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       tiktokRedirectUri,
       tiktokApiBaseUrl,
       tiktokAuthorizeBaseUrl,
+      kwaiEnabled,
+      kwaiAppId,
+      kwaiAppSecret,
+      kwaiRedirectUri,
+      kwaiApiBaseUrl,
       schedulerEnabled: publicationSchedulerEnabled,
       schedulerIntervalMs: publicationSchedulerIntervalMs,
       canaryEnabled: publicationCanaryEnabled,

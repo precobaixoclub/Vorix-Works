@@ -13,6 +13,7 @@ import { registerRuntimeRoutes } from "./runtime.route.js";
 import { registerSchedulingRoutes } from "./scheduling.route.js";
 import { registerSystemRoutes } from "./system.route.js";
 import { registerTikTokRoutes } from "./tiktok.route.js";
+import { registerKwaiRoutes } from "./kwai.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
 import { registerPublicationMediaRoutes } from "./publication-media.route.js";
 import { registerExecutionRunRoutes } from "./execution-runs.route.js";
@@ -114,6 +115,16 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     tiktokOAuthService: app.zunoContainer.tiktokOAuthService,
     providerCircuitBreaker: app.zunoContainer.operationalCircuitBreaker,
     idGenerator: () => `tiktok-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  });
+  await registerKwaiRoutes(app, {
+    publicationRepository: app.zunoContainer.publicationRepository,
+    providers: app.zunoContainer.publicationProviders,
+    providerRegistry: app.zunoContainer.publicationProviderRegistry,
+    secretResolver: app.zunoContainer.publicationSecretResolver,
+    queue: app.zunoContainer.publicationQueue,
+    kwaiOAuthService: app.zunoContainer.kwaiOAuthService,
+    providerCircuitBreaker: app.zunoContainer.operationalCircuitBreaker,
+    idGenerator: () => `kwai-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
   });
   await registerInstagramRoutes(app, {
     publicationRepository: app.zunoContainer.publicationRepository,

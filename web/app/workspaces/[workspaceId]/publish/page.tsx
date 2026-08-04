@@ -15,20 +15,23 @@ import { cancelTikTokPost, scheduleTikTokPost } from "@/features/tiktok/api";
 import { useTikTokOAuthStatus, useTikTokPosts } from "@/features/tiktok/hooks";
 import { cancelMetaPost, scheduleMetaPost } from "@/features/meta/api";
 import { useMetaOAuthStatus, useMetaPosts } from "@/features/meta/hooks";
+import { cancelKwaiPost, scheduleKwaiPost } from "@/features/kwai/api";
+import { useKwaiOAuthStatus, useKwaiPosts } from "@/features/kwai/hooks";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { formatDateTime } from "@/lib/format";
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 
-type Platform = "tiktok" | "instagram" | "facebook";
+type Platform = "tiktok" | "instagram" | "facebook" | "kwai";
 
 const PLATFORMS: readonly { id: Platform; label: string; icon: string }[] = [
   { id: "tiktok", label: "TikTok", icon: "🎵" },
   { id: "instagram", label: "Instagram", icon: "📷" },
   { id: "facebook", label: "Facebook", icon: "👍" },
+  { id: "kwai", label: "Kwai", icon: "🎬" },
 ];
 
-/** Linha normalizada pra combinar posts do TikTok e do Meta numa lista só. */
+/** Linha normalizada pra combinar posts do TikTok, Meta e Kwai numa lista só. */
 type UnifiedPost = {
   id: string;
   platform: Platform;
@@ -50,8 +53,10 @@ export default function PublishPage() {
   const workspace = useCurrentWorkspace();
   const { data: tiktokOAuth } = useTikTokOAuthStatus(workspace.id);
   const { data: metaOAuth } = useMetaOAuthStatus(workspace.id);
+  const { data: kwaiOAuth } = useKwaiOAuthStatus(workspace.id);
   const { data: tiktokPosts, mutate: mutateTikTokPosts } = useTikTokPosts(workspace.id);
   const { data: metaPosts, isLoading: metaLoading, error: metaError, mutate: mutateMetaPosts } = useMetaPosts(workspace.id);
+  const { data: kwaiPosts, mutate: mutateKwaiPosts } = useKwaiPosts(workspace.id);
 
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -61,6 +66,7 @@ export default function PublishPage() {
   const [mediaKind, setMediaKind] = useState<"image" | "video">("image");
   const [videoUrl, setVideoUrl] = useState("");
   const [imageUrls, setImageUrls] = useState("");
+  const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [caption, setCaption] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
@@ -69,9 +75,11 @@ export default function PublishPage() {
     tiktok: tiktokOAuth?.connected ?? false,
     instagram: (metaOAuth?.accounts ?? []).some((a) => a.providerId === "instagram" && a.status === "active"),
     facebook: (metaOAuth?.accounts ?? []).some((a) => a.providerId === "facebook" && a.status === "active"),
+    kwai: kwaiOAuth?.connected ?? false,
   };
   const anyConnected = Object.values(connectedByPlatform).some(Boolean);
   const hasStoryUnsupported = selected.has("tiktok") && placement === "story";
+  const kwaiNeedsVideo = selected.has("kwai") && mediaKind !== "video";
 
   function togglePlatform(platform: Platform) {
     setSelected((current) => {
@@ -80,6 +88,7 @@ export default function PublishPage() {
       else next.add(platform);
       return next;
     });
+    if (platform === "kwai") setMediaKind("video");
   }
 
   async function uploadVideoFile(file: File) {
@@ -108,11 +117,33 @@ export default function PublishPage() {
     }
   }
 
+  async function uploadThumbnailFile(file: File) {
+    setUploading(true);
+    setFeedback(undefined);
+    try {
+      const uploaded = await uploadPublicationMedia(workspace.id, file);
+      setThumbnailUrl(uploaded.url);
+    } catch (cause) {
+      setFeedback(messageOf(cause));
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function submitPost(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true);
     setFeedback(undefined);
 
+    if (kwaiNeedsVideo) {
+      setFeedback("Kwai só publica vídeo — desmarque Kwai ou troque a mídia para Vídeo.");
+      return;
+    }
+    if (selected.has("kwai") && !thumbnailUrl.trim()) {
+      setFeedback("Kwai exige uma capa (imagem de thumbnail) além do vídeo.");
+      return;
+    }
+
+    setBusy(true);
     const images = imageUrls.split(/[\n,]/).map((url) => url.trim()).filter(Boolean);
     const scheduledAtIso = scheduledAt ? new Date(scheduledAt).toISOString() : undefined;
     const targets = PLATFORMS.filter((platform) => selected.has(platform.id));
@@ -128,6 +159,16 @@ export default function PublishPage() {
           timezone: scheduledAtIso ? timezone : undefined,
         });
       }
+      if (platform.id === "kwai") {
+        return scheduleKwaiPost({
+          workspaceId: workspace.id,
+          caption,
+          videoUrl: videoUrl.trim(),
+          thumbnailUrl: thumbnailUrl.trim(),
+          scheduledAt: scheduledAtIso,
+          timezone: scheduledAtIso ? timezone : undefined,
+        });
+      }
       return scheduleMetaPost({
         workspaceId: workspace.id,
         target: platform.id as "instagram" | "facebook",
@@ -135,6 +176,7 @@ export default function PublishPage() {
         caption,
         videoUrl: mediaKind === "video" ? videoUrl.trim() : undefined,
         imageUrls: mediaKind === "image" ? images : undefined,
+        thumbnailUrl: thumbnailUrl.trim() || undefined,
         scheduledAt: scheduledAtIso,
         timezone: scheduledAtIso ? timezone : undefined,
       });
@@ -151,8 +193,9 @@ export default function PublishPage() {
       setCaption("");
       setVideoUrl("");
       setImageUrls("");
+      setThumbnailUrl("");
       setScheduledAt("");
-      await Promise.all([mutateTikTokPosts(), mutateMetaPosts()]);
+      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateKwaiPosts()]);
     }
     setBusy(false);
   }
@@ -162,8 +205,9 @@ export default function PublishPage() {
     setFeedback(undefined);
     try {
       if (post.platform === "tiktok") await cancelTikTokPost(workspace.id, post.id);
+      else if (post.platform === "kwai") await cancelKwaiPost(workspace.id, post.id);
       else await cancelMetaPost(workspace.id, post.id);
-      await Promise.all([mutateTikTokPosts(), mutateMetaPosts()]);
+      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateKwaiPosts()]);
     } catch (cause) {
       setFeedback(messageOf(cause));
     } finally {
@@ -194,9 +238,21 @@ export default function PublishPage() {
       state: post.state,
       createdAt: post.createdAt,
     })),
+    ...(kwaiPosts ?? []).map((post): UnifiedPost => ({
+      id: post.publicationId,
+      platform: "kwai",
+      placement: "feed",
+      text: post.caption,
+      media: { videoUrl: post.media.videoUrl, imageUrls: [] },
+      scheduledAt: post.scheduledAt,
+      timezone: post.timezone,
+      state: post.state,
+      createdAt: post.createdAt,
+    })),
   ].sort((a, b) => (b.scheduledAt ?? b.createdAt).localeCompare(a.scheduledAt ?? a.createdAt));
 
-  const platformIcon: Record<Platform, string> = { tiktok: "🎵", instagram: "📷", facebook: "👍" };
+  const platformIcon: Record<Platform, string> = { tiktok: "🎵", instagram: "📷", facebook: "👍", kwai: "🎬" };
+  const platformLabel: Record<Platform, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", kwai: "Kwai" };
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8">
@@ -251,9 +307,10 @@ export default function PublishPage() {
           ) : null}
 
           <div className="flex gap-2">
-            <Button type="button" variant={mediaKind === "image" ? "primary" : "secondary"} onClick={() => setMediaKind("image")}>Imagem/carrossel</Button>
+            <Button type="button" variant={mediaKind === "image" ? "primary" : "secondary"} disabled={selected.has("kwai")} onClick={() => setMediaKind("image")}>Imagem/carrossel</Button>
             <Button type="button" variant={mediaKind === "video" ? "primary" : "secondary"} onClick={() => setMediaKind("video")}>Vídeo</Button>
           </div>
+          {selected.has("kwai") ? <p className="-mt-2 text-xs text-ink-muted">Kwai só publica vídeo (sem imagem/carrossel).</p> : null}
 
           {mediaKind === "video" ? (
             <div>
@@ -276,6 +333,18 @@ export default function PublishPage() {
               </p>
             </div>
           )}
+
+          {mediaKind === "video" ? (
+            <div>
+              <Label htmlFor="publish-thumbnail-url">{`Capa do vídeo (JPG)${selected.has("kwai") ? " — obrigatória para o Kwai" : " — opcional"}`}</Label>
+              <Input id="publish-thumbnail-url" type="url" required={selected.has("kwai")} value={thumbnailUrl} placeholder="https://cdn.exemplo.com/capa.jpg" onChange={(event) => setThumbnailUrl(event.target.value)} />
+              <p className="mt-1 text-xs text-ink-muted">
+                ou envie um arquivo:{" "}
+                <input type="file" accept="image/jpeg" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadThumbnailFile(event.target.files[0])} />
+                {uploading ? " enviando..." : ""}
+              </p>
+            </div>
+          ) : null}
 
           <div>
             <Label htmlFor="publish-caption">Legenda/descrição</Label>
@@ -321,7 +390,7 @@ export default function PublishPage() {
             <tbody>
               {unified.map((post) => (
                 <tr key={`${post.platform}-${post.id}`} className="border-b border-border last:border-0">
-                  <td className="px-4 py-3 text-xs text-ink-muted">{platformIcon[post.platform]} {post.platform === "tiktok" ? "TikTok" : post.platform === "instagram" ? "Instagram" : "Facebook"}</td>
+                  <td className="px-4 py-3 text-xs text-ink-muted">{platformIcon[post.platform]} {platformLabel[post.platform]}</td>
                   <td className="px-4 py-3 text-xs text-ink-muted">{post.placement === "story" ? "Story" : "Feed"}</td>
                   <td className="max-w-xs px-4 py-3 text-ink">{post.text || "—"}</td>
                   <td className="px-4 py-3 text-xs text-ink-muted">{post.media.videoUrl ? "Vídeo" : post.media.imageUrls.length > 0 ? `${post.media.imageUrls.length} imagem(ns)` : "Texto"}</td>

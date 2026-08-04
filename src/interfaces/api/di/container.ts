@@ -85,6 +85,8 @@ import { DisabledObjectStorage } from "../../../infrastructure/storage/disabled-
 import { MetaPagesSandboxProvider } from "../../../infrastructure/publication/meta-pages-sandbox-provider.js";
 import { TikTokContentPostingProvider } from "../../../infrastructure/publication/tiktok-content-posting-provider.js";
 import { TikTokOAuthService, TIKTOK_REQUIRED_SCOPES } from "../../../infrastructure/publication/tiktok-oauth-service.js";
+import { KwaiContentPostingProvider } from "../../../infrastructure/publication/kwai-content-posting-provider.js";
+import { KwaiOAuthService, KWAI_REQUIRED_SCOPES } from "../../../infrastructure/publication/kwai-oauth-service.js";
 import { createLinkedInSandboxProvider, createXSandboxProvider } from "../../../infrastructure/publication/sandbox-social-providers.js";
 import { buildExecutionHandlerResolver } from "../../../infrastructure/execution/build-execution-handler-resolver.js";
 import { PlanningEngineBriefingHook } from "../../../infrastructure/planning/planning-engine-briefing-hook.js";
@@ -109,6 +111,7 @@ const PROVIDER_REQUIRED_SCOPES = {
   linkedin_sandbox: ["w_member_social", "r_liteprofile"],
   x_sandbox: ["tweet.write", "tweet.read", "users.read"],
   tiktok: TIKTOK_REQUIRED_SCOPES,
+  kwai: KWAI_REQUIRED_SCOPES,
   instagram: META_INSTAGRAM_REQUIRED_SCOPES,
   facebook: META_INSTAGRAM_REQUIRED_SCOPES,
 } as const;
@@ -205,6 +208,8 @@ export type ApiContainer = {
   metaPagesOAuthService: MetaPagesOAuthService;
   tiktokOAuthService: TikTokOAuthService;
   tiktokProvider: TikTokContentPostingProvider;
+  kwaiOAuthService: KwaiOAuthService;
+  kwaiProvider: KwaiContentPostingProvider;
   metaInstagramOAuthService: MetaInstagramOAuthService;
   instagramProvider: MetaContentPostingProvider;
   facebookProvider: MetaContentPostingProvider;
@@ -357,12 +362,19 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     metaInstagramOAuthServiceRef ? metaInstagramOAuthServiceRef.refresh(input) : Promise.resolve(undefined);
   const instagramProvider = new MetaContentPostingProvider("instagram", { graphBaseUrl: config?.publication.metaGraphBaseUrl }, fetch, metaRefresh);
   const facebookProvider = new MetaContentPostingProvider("facebook", { graphBaseUrl: config?.publication.metaGraphBaseUrl }, fetch, metaRefresh);
+  let kwaiOAuthServiceRef: KwaiOAuthService | undefined;
+  const kwaiProvider = new KwaiContentPostingProvider(
+    { appId: config?.publication.kwaiAppId, apiBaseUrl: config?.publication.kwaiApiBaseUrl },
+    fetch,
+    (input) => (kwaiOAuthServiceRef ? kwaiOAuthServiceRef.refresh(input) : Promise.resolve(undefined)),
+  );
   const publicationProviderAdapters: readonly PublicationProviderAdapterPort[] = [
     ...publicationProviders,
     ...(config?.publication.metaPagesSandboxEnabled ? [metaPagesSandboxProvider] : []),
     linkedInSandboxProvider,
     xSandboxProvider,
     ...(config?.publication.tiktokEnabled ? [tiktokProvider] : []),
+    ...(config?.publication.kwaiEnabled ? [kwaiProvider] : []),
     ...(config?.publication.metaInstagramEnabled ? [instagramProvider, facebookProvider] : []),
   ];
   const publicationProviderRegistry = createDefaultPublicationProviderRegistry(publicationProviderAdapters);
@@ -435,6 +447,21 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     credentialGovernanceService,
   });
   tiktokOAuthServiceRef = tiktokOAuthService;
+  const kwaiOAuthService = new KwaiOAuthService({
+    config: {
+      enabled: config?.publication.kwaiEnabled ?? false,
+      appId: config?.publication.kwaiAppId,
+      appSecret: config?.publication.kwaiAppSecret,
+      redirectUri: config?.publication.kwaiRedirectUri,
+      apiBaseUrl: config?.publication.kwaiApiBaseUrl,
+      scopes: KWAI_REQUIRED_SCOPES,
+      environment: config?.publication.providerEnvironment ?? "sandbox",
+    },
+    repository: repositories.publicationRepository,
+    secretStore: publicationSecretStore,
+    credentialGovernanceService,
+  });
+  kwaiOAuthServiceRef = kwaiOAuthService;
   const metaInstagramOAuthService = new MetaInstagramOAuthService({
     config: {
       enabled: config?.publication.metaInstagramEnabled ?? false,
@@ -608,6 +635,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       metaPagesOAuthService,
       tiktokOAuthService,
       tiktokProvider,
+      kwaiOAuthService,
+      kwaiProvider,
       metaInstagramOAuthService,
       instagramProvider,
       facebookProvider,
@@ -675,6 +704,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     metaPagesOAuthService,
     tiktokOAuthService,
     tiktokProvider,
+    kwaiOAuthService,
+    kwaiProvider,
     metaInstagramOAuthService,
     instagramProvider,
     facebookProvider,

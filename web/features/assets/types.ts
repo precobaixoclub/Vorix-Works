@@ -29,13 +29,22 @@ export const ASSET_KIND_LABEL: Record<AssetKind, string> = {
 
 export type AssetStatus = "active" | "archived";
 
+export type AssetStorageRef = {
+  provider: string;
+  bucket?: string;
+  objectKey: string;
+  metadata?: Record<string, string>;
+};
+
 export type Asset = {
   id: string;
-  workspaceId: string;
+  libraryId: string;
   kind: AssetKind;
   name: string;
   status: AssetStatus;
   tags: string[];
   createdAt: string;
   updatedAt: string;
+  archivedAt?: string;
+  storageRef?: AssetStorageRef;
 };

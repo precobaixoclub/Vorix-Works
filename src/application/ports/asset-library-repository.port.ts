@@ -1,4 +1,4 @@
-import type { AssetKind, AssetLibrary, AssetRecord } from "../../domain/asset-library/asset-library.model.js";
+import type { AssetKind, AssetLibrary, AssetRecord, AssetStorageRef } from "../../domain/asset-library/asset-library.model.js";
 
 export type CreateAssetLibraryInput = {
   workspaceId: string;
@@ -9,12 +9,15 @@ export type RegisterAssetInput = {
   kind: AssetKind;
   name: string;
   tags?: string[];
+  /** Presente quando o material foi de fato enviado (`ObjectStoragePort` real) — ver
+   * `assets.route.ts`. Continua opcional: um registro de metadados sem arquivo é válido. */
+  storageRef?: AssetStorageRef;
 };
 
 /**
- * Contrato de persistência da Asset Library — Sprint 02 (Fase 4). Só organização de metadados
- * (`registerAsset` só cria o REGISTRO do ativo, nunca recebe ou grava bytes de arquivo — upload
- * real é explicitamente fora de escopo desta sprint). Único adapter hoje: `InMemoryAssetLibraryRepository`.
+ * Contrato de persistência da Asset Library — Sprint 02 (Fase 4), upload real ligado depois
+ * (`registerAsset` agora aceita `storageRef` quando o arquivo passou pelo Object Storage real).
+ * Adapters: `InMemoryAssetLibraryRepository` (dev/teste) e `PostgresAssetLibraryRepository` (produção).
  */
 export type AssetLibraryRepositoryPort = {
   createLibrary(input: CreateAssetLibraryInput): Promise<AssetLibrary>;
@@ -24,4 +27,7 @@ export type AssetLibraryRepositoryPort = {
   listAssets(libraryId: string, filter?: { kind?: AssetKind }): Promise<AssetRecord[]>;
   getAsset(assetId: string): Promise<AssetRecord | undefined>;
   archiveAsset(assetId: string): Promise<AssetRecord>;
+  /** Exclusão definitiva (diferente de `archiveAsset`, que é reversível) — usada quando o cliente
+   * escolhe "Excluir" em vez de "Arquivar". */
+  deleteAsset(assetId: string): Promise<void>;
 };

@@ -10,7 +10,7 @@ import { Spinner } from "@/components/Spinner";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { AssetCard } from "@/features/assets/components/AssetCard";
 import { RegisterAssetModal } from "@/features/assets/components/RegisterAssetModal";
-import { archiveAsset, deleteAsset } from "@/features/assets/data";
+import { archiveAsset, deleteAsset } from "@/features/assets/api";
 import { useAssets } from "@/features/assets/hooks";
 import { ASSET_KINDS, ASSET_KIND_LABEL, type AssetKind } from "@/features/assets/types";
 

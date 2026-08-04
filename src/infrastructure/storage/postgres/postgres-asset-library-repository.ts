@@ -70,10 +70,10 @@ export class PostgresAssetLibraryRepository implements AssetLibraryRepositoryPor
     const id = this.idGenerator("asset");
     try {
       const result = await this.pool.query<AssetRow>(
-        `insert into assets (id, library_id, kind, name, status, created_at, updated_at, tags)
-         values ($1, $2, $3, $4, 'active', now(), now(), $5)
+        `insert into assets (id, library_id, kind, name, status, created_at, updated_at, tags, storage_ref)
+         values ($1, $2, $3, $4, 'active', now(), now(), $5, $6::jsonb)
          returning *`,
-        [id, input.libraryId, input.kind, input.name, input.tags ?? []],
+        [id, input.libraryId, input.kind, input.name, input.tags ?? [], input.storageRef ? JSON.stringify(input.storageRef) : null],
       );
       return this.toAssetDomain(result.rows[0]);
     } catch (error) {
@@ -82,6 +82,10 @@ export class PostgresAssetLibraryRepository implements AssetLibraryRepositoryPor
       }
       throw error;
     }
+  }
+
+  async deleteAsset(assetId: string): Promise<void> {
+    await this.pool.query("delete from assets where id = $1", [assetId]);
   }
 
   async listAssets(libraryId: string, filter?: { kind?: AssetKind }): Promise<AssetRecord[]> {

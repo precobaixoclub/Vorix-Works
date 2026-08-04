@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { registerAnalyticsRoutes } from "./analytics.route.js";
 import { registerAdminRoutes } from "./admin.route.js";
 import { registerAiProvidersRoutes } from "./ai-providers.route.js";
+import { registerAssetsRoutes } from "./assets.route.js";
 import { registerAuthRoutes } from "./auth.route.js";
 import { registerBriefingRoutes } from "./briefings.route.js";
 import { registerConversationRoutes } from "./conversations.route.js";
@@ -138,6 +139,11 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     idGenerator: () => `instagram-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
   });
   await registerPublicationMediaRoutes(app, {
+    objectStorage: app.zunoContainer.objectStorage,
+    maxUploadBytes: app.zunoConfig.objectStorage.maxUploadBytes,
+  });
+  await registerAssetsRoutes(app, {
+    assetLibraryRepository: app.zunoContainer.assetLibraryRepository,
     objectStorage: app.zunoContainer.objectStorage,
     maxUploadBytes: app.zunoConfig.objectStorage.maxUploadBytes,
   });

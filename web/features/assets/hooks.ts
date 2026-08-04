@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import { listAssets } from "./data";
+import { listAssets } from "./api";
 import type { AssetKind } from "./types";
 
 export function useAssets(workspaceId: string, filter?: { kind?: AssetKind; search?: string }) {

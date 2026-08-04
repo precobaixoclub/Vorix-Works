@@ -53,6 +53,7 @@ export class InMemoryAssetLibraryRepository implements AssetLibraryRepositoryPor
       createdAt: timestamp,
       updatedAt: timestamp,
       tags: input.tags ?? [],
+      storageRef: input.storageRef,
     };
     this.assets.set(asset.id, clone(asset));
     return clone(asset);
@@ -78,6 +79,10 @@ export class InMemoryAssetLibraryRepository implements AssetLibraryRepositoryPor
     const archived: AssetRecord = { ...existing, status: "archived", archivedAt: timestamp, updatedAt: timestamp };
     this.assets.set(assetId, clone(archived));
     return clone(archived);
+  }
+
+  async deleteAsset(assetId: string): Promise<void> {
+    this.assets.delete(assetId);
   }
 
   clear(): void {

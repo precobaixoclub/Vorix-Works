@@ -15,11 +15,24 @@ const KIND_ICON: Record<string, string> = {
   document: "📄",
 };
 
+const PREVIEWABLE_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/svg+xml"]);
+
 export function AssetCard({ asset, onArchive, onDelete }: { asset: Asset; onArchive: () => void; onDelete: () => void }) {
+  const previewUrl = asset.storageRef?.metadata?.url;
+  const contentType = asset.storageRef?.metadata?.contentType;
+  const canPreview = previewUrl && contentType && PREVIEWABLE_CONTENT_TYPES.has(contentType);
+
   return (
     <Card>
       <CardBody className="flex flex-col gap-3">
-        <div className="flex h-24 items-center justify-center rounded-lg bg-surface-sunken text-3xl">{KIND_ICON[asset.kind] ?? "📁"}</div>
+        <div className="flex h-24 items-center justify-center overflow-hidden rounded-lg bg-surface-sunken text-3xl">
+          {canPreview ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={previewUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            KIND_ICON[asset.kind] ?? "📁"
+          )}
+        </div>
         <div>
           <p className="truncate text-sm font-medium text-ink">{asset.name}</p>
           <p className="text-xs text-ink-muted">{ASSET_KIND_LABEL[asset.kind]}</p>

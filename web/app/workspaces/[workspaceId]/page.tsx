@@ -9,7 +9,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { listConversations } from "@/features/conversation/api";
-import { listAssets } from "@/features/assets/data";
+import { listAssets } from "@/features/assets/api";
 import { useTikTokOAuthStatus } from "@/features/tiktok/hooks";
 import { useMetaOAuthStatus } from "@/features/meta/hooks";
 import { useKwaiOAuthStatus } from "@/features/kwai/hooks";
@@ -20,9 +20,8 @@ import { formatDate, formatRelativeTime } from "@/lib/format";
 const NETWORK_LABEL: Record<string, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", kwai: "Kwai" };
 
 /**
- * Workspace Home. O card "Conexões", o bloco de primeiros passos e "Últimas publicações" usam
- * dado real de publicação (TikTok/Meta/Kwai) — "Materiais" ainda vem do módulo simulado
- * (`features/assets/data.ts`).
+ * Workspace Home. Todos os cards ("Conexões", "Últimas publicações", "Materiais da Marca") usam
+ * dado real hoje.
  */
 export default function WorkspaceHomePage() {
   const workspace = useCurrentWorkspace();

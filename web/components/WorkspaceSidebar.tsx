@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
+import { useAuth } from "@/contexts/auth-context";
 
 type NavItem = { href: string; label: string; icon: string };
 
@@ -31,11 +32,15 @@ const BACKSTAGE_STORAGE_KEY = "zuno.sidebar.backstageOpen";
 
 /**
  * Navegação fixa dentro de um Workspace. Itens divididos em "principais" (jornada do usuário
- * final) e "bastidor" (observabilidade técnica) — este último fica colapsável e persistido em
- * localStorage para o dev/admin manter aberto entre sessões.
+ * final) e "bastidor" (observabilidade técnica — disjuntores, credenciais, filas, saúde do
+ * sistema) — este último só aparece pra `owner`/`admin` do tenant, nunca pra `editor`/`viewer`
+ * (nenhum desses controles faz sentido pra quem só usa o produto pra publicar conteúdo), e fica
+ * colapsável e persistido em localStorage para quem tem acesso manter aberto entre sessões.
  */
 export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
   const pathname = usePathname();
+  const { state } = useAuth();
+  const canSeeBackstage = state.status === "authenticated" && (state.role === "owner" || state.role === "admin");
   const base = `/workspaces/${workspaceId}`;
 
   const isBackstagePathActive = BACKSTAGE_NAV.some((item) => pathname.startsWith(`${base}${item.href}`));
@@ -86,21 +91,25 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
 
       {MAIN_NAV.map(renderLink)}
 
-      <div className="my-2 border-t border-border/60" />
+      {canSeeBackstage ? (
+        <>
+          <div className="my-2 border-t border-border/60" />
 
-      <button
-        type="button"
-        onClick={toggleBackstage}
-        aria-expanded={backstageOpen}
-        className="flex items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-ink-faint transition-colors hover:bg-surface-sunken hover:text-ink-muted"
-      >
-        <span>Bastidor</span>
-        <span aria-hidden="true" className={`transition-transform ${backstageOpen ? "rotate-90" : ""}`}>
-          ›
-        </span>
-      </button>
+          <button
+            type="button"
+            onClick={toggleBackstage}
+            aria-expanded={backstageOpen}
+            className="flex items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-ink-faint transition-colors hover:bg-surface-sunken hover:text-ink-muted"
+          >
+            <span>Bastidor</span>
+            <span aria-hidden="true" className={`transition-transform ${backstageOpen ? "rotate-90" : ""}`}>
+              ›
+            </span>
+          </button>
 
-      {backstageOpen ? <div className="flex flex-col gap-1">{BACKSTAGE_NAV.map(renderLink)}</div> : null}
+          {backstageOpen ? <div className="flex flex-col gap-1">{BACKSTAGE_NAV.map(renderLink)}</div> : null}
+        </>
+      ) : null}
     </nav>
   );
 }

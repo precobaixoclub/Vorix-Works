@@ -59,7 +59,11 @@ export type SchedulePostInput = {
   scheduledAt?: string;
   timezone?: string;
   privacyLevel?: TikTokPrivacyLevel;
+  photoCoverIndex?: number;
   disableComment?: boolean;
+  disableDuet?: boolean;
+  disableStitch?: boolean;
+  autoAddMusic?: boolean;
   credentialReferenceId?: string;
 };
 

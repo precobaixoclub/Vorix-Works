@@ -8,33 +8,31 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { listCampaigns } from "@/features/campaigns/data";
 import { listConversations } from "@/features/conversation/api";
 import { listAssets } from "@/features/assets/data";
-import { useTikTokOAuthStatus, useTikTokPosts } from "@/features/tiktok/hooks";
-import { useMetaOAuthStatus, useMetaPosts } from "@/features/meta/hooks";
-import { useKwaiOAuthStatus, useKwaiPosts } from "@/features/kwai/hooks";
+import { useTikTokOAuthStatus } from "@/features/tiktok/hooks";
+import { useMetaOAuthStatus } from "@/features/meta/hooks";
+import { useKwaiOAuthStatus } from "@/features/kwai/hooks";
+import { useUnifiedPublications } from "@/features/publication-history/hooks";
+import { derivePublicationStatus } from "@/features/publication-history/types";
 import { formatDate, formatRelativeTime } from "@/lib/format";
 
+const NETWORK_LABEL: Record<string, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", kwai: "Kwai" };
+
 /**
- * Workspace Home. O card "Conexões" e o bloco de primeiros passos usam o status real de
- * OAuth/posts (TikTok/Meta/Kwai) — substituem o antigo card "Integrações" que dizia
- * "conectar redes sociais chega em uma sprint futura" (defasado desde que Conexões/Publicar
- * existem). "Últimas publicações"/"Materiais" ainda vêm dos módulos simulados
- * (`features/*data.ts`) — só "Conexões" e o onboarding usam dado real de publicação.
+ * Workspace Home. O card "Conexões", o bloco de primeiros passos e "Últimas publicações" usam
+ * dado real de publicação (TikTok/Meta/Kwai) — "Materiais" ainda vem do módulo simulado
+ * (`features/assets/data.ts`).
  */
 export default function WorkspaceHomePage() {
   const workspace = useCurrentWorkspace();
-  const { data: campaigns } = useSWR(["home-campaigns", workspace.id], () => listCampaigns(workspace.id));
+  const { data: publications } = useUnifiedPublications(workspace.id);
   const { data: conversations, error: conversationsError, mutate: mutateConversations } = useSWR(["home-conversations", workspace.id], () => listConversations(workspace.id));
   const { data: assets } = useSWR(["home-assets", workspace.id], () => listAssets(workspace.id));
 
   const { data: tiktokOAuth } = useTikTokOAuthStatus(workspace.id);
   const { data: metaOAuth } = useMetaOAuthStatus(workspace.id);
   const { data: kwaiOAuth } = useKwaiOAuthStatus(workspace.id);
-  const { data: tiktokPosts } = useTikTokPosts(workspace.id);
-  const { data: metaPosts } = useMetaPosts(workspace.id);
-  const { data: kwaiPosts } = useKwaiPosts(workspace.id);
 
   const oauthLoaded = tiktokOAuth !== undefined && metaOAuth !== undefined && kwaiOAuth !== undefined;
   const connectedAccounts = [
@@ -43,8 +41,7 @@ export default function WorkspaceHomePage() {
     ...(kwaiOAuth?.accounts ?? []).filter((account) => account.status === "active").map((account) => ({ network: "Kwai", name: account.displayName ?? account.openId })),
   ];
   const hasAnyConnection = connectedAccounts.length > 0;
-  const totalRealPosts = (tiktokPosts?.length ?? 0) + (metaPosts?.length ?? 0) + (kwaiPosts?.length ?? 0);
-  const showOnboarding = oauthLoaded && totalRealPosts === 0;
+  const showOnboarding = oauthLoaded && (publications?.length ?? 0) === 0;
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8">
@@ -95,14 +92,14 @@ export default function WorkspaceHomePage() {
             </Link>
           </CardHeader>
           <CardBody>
-            {!campaigns ? null : campaigns.length === 0 ? (
+            {!publications ? null : publications.length === 0 ? (
               <EmptyState title="Nenhuma publicação ainda" />
             ) : (
               <ul className="flex flex-col gap-3">
-                {campaigns.slice(0, 3).map((campaign) => (
-                  <li key={campaign.id} className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm text-ink">{campaign.name}</span>
-                    <StatusBadge status={campaign.status} />
+                {publications.slice(0, 3).map((post) => (
+                  <li key={`${post.network}-${post.id}`} className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm text-ink">{NETWORK_LABEL[post.network]} · {post.text || "Sem legenda"}</span>
+                    <StatusBadge status={derivePublicationStatus(post)} />
                   </li>
                 ))}
               </ul>

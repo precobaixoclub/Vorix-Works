@@ -4,20 +4,22 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
-import { EmptyState } from "@/components/EmptyState";
-import { ErrorState } from "@/components/ErrorState";
 import { Input, Label, Textarea } from "@/components/Field";
 import { PageHeader } from "@/components/PageHeader";
-import { Spinner } from "@/components/Spinner";
+import { PostPreview } from "@/components/PostPreview";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { cancelTikTokPost, scheduleTikTokPost } from "@/features/tiktok/api";
+import { scheduleTikTokPost } from "@/features/tiktok/api";
 import { useTikTokOAuthStatus, useTikTokPosts } from "@/features/tiktok/hooks";
-import { cancelMetaPost, scheduleMetaPost } from "@/features/meta/api";
+import type { TikTokPrivacyLevel } from "@/features/tiktok/types";
+import { scheduleMetaPost } from "@/features/meta/api";
 import { useMetaOAuthStatus, useMetaPosts } from "@/features/meta/hooks";
-import { cancelKwaiPost, scheduleKwaiPost } from "@/features/kwai/api";
+import { scheduleKwaiPost } from "@/features/kwai/api";
 import { useKwaiOAuthStatus, useKwaiPosts } from "@/features/kwai/hooks";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
+import { cancelUnifiedPublication } from "@/features/publication-history/api";
+import { useUnifiedPublications } from "@/features/publication-history/hooks";
+import { derivePublicationStatus, type UnifiedPublication } from "@/features/publication-history/types";
 import { formatDateTime } from "@/lib/format";
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
@@ -31,32 +33,30 @@ const PLATFORMS: readonly { id: Platform; label: string; icon: string }[] = [
   { id: "kwai", label: "Kwai", icon: "🎬" },
 ];
 
-/** Linha normalizada pra combinar posts do TikTok, Meta e Kwai numa lista só. */
-type UnifiedPost = {
-  id: string;
-  platform: Platform;
-  placement: "feed" | "story";
-  text: string;
-  media: { videoUrl?: string; imageUrls: readonly string[] };
-  scheduledAt?: string;
-  timezone?: string;
-  state: string;
-  createdAt: string;
-};
+const TIKTOK_PRIVACY_OPTIONS: readonly { value: TikTokPrivacyLevel; label: string }[] = [
+  { value: "PUBLIC_TO_EVERYONE", label: "Todos" },
+  { value: "MUTUAL_FOLLOW_FRIENDS", label: "Amigos (seguem um ao outro)" },
+  { value: "FOLLOWER_OF_CREATOR", label: "Seguidores" },
+  { value: "SELF_ONLY", label: "Só eu" },
+];
 
 /**
  * Tela única de publicação: escolha o conteúdo, marque em quais redes vai publicar e agende —
- * cada rede recebe seu próprio post (mesmo conteúdo, adaptado às regras de cada uma). Pra ajustes
- * finos por rede (privacidade do TikTok, conta específica), use a tela dedicada de cada uma.
+ * cada rede recebe seu próprio post (mesmo conteúdo, adaptado às regras de cada uma). A prévia ao
+ * lado mostra como cada post vai aparecer na rede de destino, e as opções do TikTok (privacidade,
+ * comentário/duet/stitch, música) ficam expostas aqui — antes só existiam no backend, sem
+ * controle nenhum na tela. O histórico completo de tudo que já foi publicado/agendado vive em
+ * "Publicações" (`/campaigns`); aqui mostramos só os últimos como referência rápida.
  */
 export default function PublishPage() {
   const workspace = useCurrentWorkspace();
   const { data: tiktokOAuth } = useTikTokOAuthStatus(workspace.id);
   const { data: metaOAuth } = useMetaOAuthStatus(workspace.id);
   const { data: kwaiOAuth } = useKwaiOAuthStatus(workspace.id);
-  const { data: tiktokPosts, mutate: mutateTikTokPosts } = useTikTokPosts(workspace.id);
-  const { data: metaPosts, isLoading: metaLoading, error: metaError, mutate: mutateMetaPosts } = useMetaPosts(workspace.id);
-  const { data: kwaiPosts, mutate: mutateKwaiPosts } = useKwaiPosts(workspace.id);
+  const { mutate: mutateTikTokPosts } = useTikTokPosts(workspace.id);
+  const { mutate: mutateMetaPosts } = useMetaPosts(workspace.id);
+  const { mutate: mutateKwaiPosts } = useKwaiPosts(workspace.id);
+  const { data: unified, mutate: mutateUnified } = useUnifiedPublications(workspace.id);
 
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -71,11 +71,24 @@ export default function PublishPage() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
 
+  // Opções do TikTok — existiam no backend desde sempre, mas nunca tinham controle na tela.
+  const [tiktokPrivacy, setTiktokPrivacy] = useState<TikTokPrivacyLevel>("PUBLIC_TO_EVERYONE");
+  const [tiktokDisableComment, setTiktokDisableComment] = useState(false);
+  const [tiktokDisableDuet, setTiktokDisableDuet] = useState(false);
+  const [tiktokDisableStitch, setTiktokDisableStitch] = useState(false);
+  const [tiktokAutoAddMusic, setTiktokAutoAddMusic] = useState(true);
+
   const connectedByPlatform: Record<Platform, boolean> = {
     tiktok: tiktokOAuth?.connected ?? false,
     instagram: (metaOAuth?.accounts ?? []).some((a) => a.providerId === "instagram" && a.status === "active"),
     facebook: (metaOAuth?.accounts ?? []).some((a) => a.providerId === "facebook" && a.status === "active"),
     kwai: kwaiOAuth?.connected ?? false,
+  };
+  const accountLabelByPlatform: Partial<Record<Platform, string>> = {
+    tiktok: tiktokOAuth?.accounts[0]?.displayName,
+    instagram: metaOAuth?.accounts.find((a) => a.providerId === "instagram")?.displayName,
+    facebook: metaOAuth?.accounts.find((a) => a.providerId === "facebook")?.displayName,
+    kwai: kwaiOAuth?.accounts[0]?.displayName,
   };
   const anyConnected = Object.values(connectedByPlatform).some(Boolean);
   const hasStoryUnsupported = selected.has("tiktok") && placement === "story";
@@ -157,6 +170,11 @@ export default function PublishPage() {
           imageUrls: mediaKind === "image" ? images : undefined,
           scheduledAt: scheduledAtIso,
           timezone: scheduledAtIso ? timezone : undefined,
+          privacyLevel: tiktokPrivacy,
+          disableComment: tiktokDisableComment,
+          disableDuet: tiktokDisableDuet,
+          disableStitch: tiktokDisableStitch,
+          autoAddMusic: tiktokAutoAddMusic,
         });
       }
       if (platform.id === "kwai") {
@@ -195,19 +213,17 @@ export default function PublishPage() {
       setImageUrls("");
       setThumbnailUrl("");
       setScheduledAt("");
-      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateKwaiPosts()]);
+      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateKwaiPosts(), mutateUnified()]);
     }
     setBusy(false);
   }
 
-  async function cancelPost(post: UnifiedPost) {
+  async function cancelPost(post: UnifiedPublication) {
     setBusy(true);
     setFeedback(undefined);
     try {
-      if (post.platform === "tiktok") await cancelTikTokPost(workspace.id, post.id);
-      else if (post.platform === "kwai") await cancelKwaiPost(workspace.id, post.id);
-      else await cancelMetaPost(workspace.id, post.id);
-      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateKwaiPosts()]);
+      await cancelUnifiedPublication(workspace.id, post.network, post.id);
+      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateKwaiPosts(), mutateUnified()]);
     } catch (cause) {
       setFeedback(messageOf(cause));
     } finally {
@@ -215,47 +231,11 @@ export default function PublishPage() {
     }
   }
 
-  const unified: UnifiedPost[] = [
-    ...(tiktokPosts ?? []).map((post): UnifiedPost => ({
-      id: post.publicationId,
-      platform: "tiktok",
-      placement: "feed",
-      text: post.description,
-      media: post.media,
-      scheduledAt: post.scheduledAt,
-      timezone: post.timezone,
-      state: post.state,
-      createdAt: post.createdAt,
-    })),
-    ...(metaPosts ?? []).map((post): UnifiedPost => ({
-      id: post.publicationId,
-      platform: post.target,
-      placement: post.placement,
-      text: post.caption,
-      media: post.media,
-      scheduledAt: post.scheduledAt,
-      timezone: post.timezone,
-      state: post.state,
-      createdAt: post.createdAt,
-    })),
-    ...(kwaiPosts ?? []).map((post): UnifiedPost => ({
-      id: post.publicationId,
-      platform: "kwai",
-      placement: "feed",
-      text: post.caption,
-      media: { videoUrl: post.media.videoUrl, imageUrls: [] },
-      scheduledAt: post.scheduledAt,
-      timezone: post.timezone,
-      state: post.state,
-      createdAt: post.createdAt,
-    })),
-  ].sort((a, b) => (b.scheduledAt ?? b.createdAt).localeCompare(a.scheduledAt ?? a.createdAt));
-
-  const platformIcon: Record<Platform, string> = { tiktok: "🎵", instagram: "📷", facebook: "👍", kwai: "🎬" };
-  const platformLabel: Record<Platform, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", kwai: "Kwai" };
+  const images = imageUrls.split(/[\n,]/).map((url) => url.trim()).filter(Boolean);
+  const recent = (unified ?? []).slice(0, 5);
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
+    <main className="mx-auto max-w-6xl px-6 py-8">
       <PageHeader title="Publicar" description="Envie o conteúdo, marque em quais redes vai publicar e agende data e horário." />
 
       {feedback ? <Card className="mb-6 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
@@ -269,144 +249,210 @@ export default function PublishPage() {
         </Card>
       ) : null}
 
-      <Card className="mb-6 p-5">
-        <form className="space-y-4" onSubmit={submitPost}>
-          <div>
-            <Label htmlFor="publish-platforms">Onde publicar</Label>
-            <div id="publish-platforms" className="flex flex-wrap gap-2">
-              {PLATFORMS.map((platform) => (
-                <Button
-                  key={platform.id}
-                  type="button"
-                  variant={selected.has(platform.id) ? "primary" : "secondary"}
-                  disabled={!connectedByPlatform[platform.id]}
-                  onClick={() => togglePlatform(platform.id)}
-                  title={connectedByPlatform[platform.id] ? undefined : "Conecte esta conta em Conexões primeiro"}
-                >
-                  {platform.icon} {platform.label}{connectedByPlatform[platform.id] ? "" : " (desconectado)"}
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          {selected.has("instagram") || selected.has("facebook") ? (
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_260px]">
+        <Card className="p-5">
+          <form className="space-y-4" onSubmit={submitPost}>
             <div>
-              <Label htmlFor="publish-placement">Feed ou Story (Instagram/Facebook)</Label>
-              <div id="publish-placement" className="flex gap-2">
-                <Button type="button" variant={placement === "feed" ? "primary" : "secondary"} onClick={() => setPlacement("feed")}>Feed</Button>
-                <Button type="button" variant={placement === "story" ? "primary" : "secondary"} onClick={() => setPlacement("story")}>Story</Button>
+              <Label htmlFor="publish-platforms">Onde publicar</Label>
+              <div id="publish-platforms" className="flex flex-wrap gap-2">
+                {PLATFORMS.map((platform) => (
+                  <Button
+                    key={platform.id}
+                    type="button"
+                    variant={selected.has(platform.id) ? "primary" : "secondary"}
+                    disabled={!connectedByPlatform[platform.id]}
+                    onClick={() => togglePlatform(platform.id)}
+                    title={connectedByPlatform[platform.id] ? undefined : "Conecte esta conta em Conexões primeiro"}
+                  >
+                    {platform.icon} {platform.label}{connectedByPlatform[platform.id] ? "" : " (desconectado)"}
+                  </Button>
+                ))}
               </div>
-              {placement === "story" ? (
+            </div>
+
+            {selected.has("instagram") || selected.has("facebook") ? (
+              <div>
+                <Label htmlFor="publish-placement">Feed ou Story (Instagram/Facebook)</Label>
+                <div id="publish-placement" className="flex gap-2">
+                  <Button type="button" variant={placement === "feed" ? "primary" : "secondary"} onClick={() => setPlacement("feed")}>Feed</Button>
+                  <Button type="button" variant={placement === "story" ? "primary" : "secondary"} onClick={() => setPlacement("story")}>Story</Button>
+                </div>
+                {placement === "story" ? (
+                  <p className="mt-1 text-xs text-ink-muted">
+                    Story aceita só uma imagem ou um vídeo, sem carrossel e sem legenda visível.
+                    {selected.has("facebook") ? " Story de vídeo no Facebook ainda não é suportado — use foto." : ""}
+                  </p>
+                ) : null}
+                {hasStoryUnsupported ? <p className="mt-1 text-xs text-ink-muted">TikTok não tem Story — o post do TikTok sempre vai pro feed.</p> : null}
+              </div>
+            ) : null}
+
+            <div className="flex gap-2">
+              <Button type="button" variant={mediaKind === "image" ? "primary" : "secondary"} disabled={selected.has("kwai")} onClick={() => setMediaKind("image")}>Imagem/carrossel</Button>
+              <Button type="button" variant={mediaKind === "video" ? "primary" : "secondary"} onClick={() => setMediaKind("video")}>Vídeo</Button>
+            </div>
+            {selected.has("kwai") ? <p className="-mt-2 text-xs text-ink-muted">Kwai só publica vídeo (sem imagem/carrossel).</p> : null}
+
+            {mediaKind === "video" ? (
+              <div>
+                <Label htmlFor="publish-video-url">URL do vídeo (HTTPS pública)</Label>
+                <Input id="publish-video-url" type="url" required value={videoUrl} placeholder="https://cdn.exemplo.com/video.mp4" onChange={(event) => setVideoUrl(event.target.value)} />
                 <p className="mt-1 text-xs text-ink-muted">
-                  Story aceita só uma imagem ou um vídeo, sem carrossel e sem legenda visível.
-                  {selected.has("facebook") ? " Story de vídeo no Facebook ainda não é suportado — use foto." : ""}
+                  ou envie um arquivo:{" "}
+                  <input type="file" accept="video/mp4,video/quicktime" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadVideoFile(event.target.files[0])} />
+                  {uploading ? " enviando..." : ""}
                 </p>
-              ) : null}
-              {hasStoryUnsupported ? <p className="mt-1 text-xs text-ink-muted">TikTok não tem Story — o post do TikTok sempre vai pro feed.</p> : null}
-            </div>
-          ) : null}
+              </div>
+            ) : (
+              <div>
+                <Label htmlFor="publish-image-urls">URLs das imagens (uma por linha)</Label>
+                <Textarea id="publish-image-urls" required rows={3} value={imageUrls} placeholder={"https://cdn.exemplo.com/1.jpg\nhttps://cdn.exemplo.com/2.jpg"} onChange={(event) => setImageUrls(event.target.value)} />
+                <p className="mt-1 text-xs text-ink-muted">
+                  ou envie um arquivo:{" "}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadImageFile(event.target.files[0])} />
+                  {uploading ? " enviando..." : ""}
+                </p>
+              </div>
+            )}
 
-          <div className="flex gap-2">
-            <Button type="button" variant={mediaKind === "image" ? "primary" : "secondary"} disabled={selected.has("kwai")} onClick={() => setMediaKind("image")}>Imagem/carrossel</Button>
-            <Button type="button" variant={mediaKind === "video" ? "primary" : "secondary"} onClick={() => setMediaKind("video")}>Vídeo</Button>
-          </div>
-          {selected.has("kwai") ? <p className="-mt-2 text-xs text-ink-muted">Kwai só publica vídeo (sem imagem/carrossel).</p> : null}
+            {mediaKind === "video" ? (
+              <div>
+                <Label htmlFor="publish-thumbnail-url">{`Capa do vídeo (JPG)${selected.has("kwai") ? " — obrigatória para o Kwai" : " — opcional"}`}</Label>
+                <Input id="publish-thumbnail-url" type="url" required={selected.has("kwai")} value={thumbnailUrl} placeholder="https://cdn.exemplo.com/capa.jpg" onChange={(event) => setThumbnailUrl(event.target.value)} />
+                <p className="mt-1 text-xs text-ink-muted">
+                  ou envie um arquivo:{" "}
+                  <input type="file" accept="image/jpeg" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadThumbnailFile(event.target.files[0])} />
+                  {uploading ? " enviando..." : ""}
+                </p>
+              </div>
+            ) : null}
 
-          {mediaKind === "video" ? (
             <div>
-              <Label htmlFor="publish-video-url">URL do vídeo (HTTPS pública)</Label>
-              <Input id="publish-video-url" type="url" required value={videoUrl} placeholder="https://cdn.exemplo.com/video.mp4" onChange={(event) => setVideoUrl(event.target.value)} />
-              <p className="mt-1 text-xs text-ink-muted">
-                ou envie um arquivo:{" "}
-                <input type="file" accept="video/mp4,video/quicktime" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadVideoFile(event.target.files[0])} />
-                {uploading ? " enviando..." : ""}
-              </p>
+              <Label htmlFor="publish-caption">Legenda/descrição</Label>
+              <Textarea id="publish-caption" required rows={4} maxLength={2200} value={caption} onChange={(event) => setCaption(event.target.value)} />
             </div>
+
+            {selected.has("tiktok") ? (
+              <div className="rounded-lg border border-border p-3">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">Opções do TikTok</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="tiktok-privacy">Quem pode ver</Label>
+                    <select
+                      id="tiktok-privacy"
+                      value={tiktokPrivacy}
+                      onChange={(event) => setTiktokPrivacy(event.target.value as TikTokPrivacyLevel)}
+                      className="w-full rounded-md border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                    >
+                      {TIKTOK_PRIVACY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col justify-end gap-1.5">
+                    <label className="flex items-center gap-2 text-sm text-ink">
+                      <input type="checkbox" checked={tiktokAutoAddMusic} onChange={(e) => setTiktokAutoAddMusic(e.target.checked)} className="h-4 w-4" />
+                      Adicionar música automaticamente
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-ink">
+                      <input type="checkbox" checked={tiktokDisableComment} onChange={(e) => setTiktokDisableComment(e.target.checked)} className="h-4 w-4" />
+                      Desativar comentários
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-ink">
+                      <input type="checkbox" checked={tiktokDisableDuet} onChange={(e) => setTiktokDisableDuet(e.target.checked)} className="h-4 w-4" />
+                      Desativar Duet
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-ink">
+                      <input type="checkbox" checked={tiktokDisableStitch} onChange={(e) => setTiktokDisableStitch(e.target.checked)} className="h-4 w-4" />
+                      Desativar Stitch
+                    </label>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label htmlFor="publish-scheduled-at">Agendar para (vazio publica agora)</Label>
+                <Input id="publish-scheduled-at" type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} />
+              </div>
+              <div>
+                <Label htmlFor="publish-timezone">Fuso horário</Label>
+                <Input id="publish-timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} />
+              </div>
+            </div>
+
+            <Button type="submit" disabled={busy || selected.size === 0}>{scheduledAt ? "Agendar publicação" : "Publicar agora"}</Button>
+            {selected.size === 0 ? <p className="text-xs text-ink-muted">Marque ao menos uma rede social conectada para publicar.</p> : null}
+          </form>
+        </Card>
+
+        <div className="flex flex-col gap-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Prévia</p>
+          {selected.size === 0 ? (
+            <p className="text-sm text-ink-muted">Marque uma rede social pra ver como o post vai ficar.</p>
           ) : (
-            <div>
-              <Label htmlFor="publish-image-urls">URLs das imagens (uma por linha)</Label>
-              <Textarea id="publish-image-urls" required rows={3} value={imageUrls} placeholder={"https://cdn.exemplo.com/1.jpg\nhttps://cdn.exemplo.com/2.jpg"} onChange={(event) => setImageUrls(event.target.value)} />
-              <p className="mt-1 text-xs text-ink-muted">
-                ou envie um arquivo:{" "}
-                <input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadImageFile(event.target.files[0])} />
-                {uploading ? " enviando..." : ""}
-              </p>
+            <div className="flex flex-col gap-6">
+              {PLATFORMS.filter((platform) => selected.has(platform.id)).map((platform) => (
+                <PostPreview
+                  key={platform.id}
+                  network={platform.id}
+                  placement={platform.id === "tiktok" || platform.id === "kwai" ? "feed" : placement}
+                  caption={caption}
+                  mediaKind={mediaKind}
+                  imageUrls={images}
+                  videoUrl={videoUrl.trim() || undefined}
+                  thumbnailUrl={thumbnailUrl.trim() || undefined}
+                  autoAddMusic={platform.id === "tiktok" ? tiktokAutoAddMusic : undefined}
+                  accountLabel={accountLabelByPlatform[platform.id]}
+                />
+              ))}
             </div>
           )}
+        </div>
+      </div>
 
-          {mediaKind === "video" ? (
-            <div>
-              <Label htmlFor="publish-thumbnail-url">{`Capa do vídeo (JPG)${selected.has("kwai") ? " — obrigatória para o Kwai" : " — opcional"}`}</Label>
-              <Input id="publish-thumbnail-url" type="url" required={selected.has("kwai")} value={thumbnailUrl} placeholder="https://cdn.exemplo.com/capa.jpg" onChange={(event) => setThumbnailUrl(event.target.value)} />
-              <p className="mt-1 text-xs text-ink-muted">
-                ou envie um arquivo:{" "}
-                <input type="file" accept="image/jpeg" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadThumbnailFile(event.target.files[0])} />
-                {uploading ? " enviando..." : ""}
-              </p>
-            </div>
-          ) : null}
-
-          <div>
-            <Label htmlFor="publish-caption">Legenda/descrição</Label>
-            <Textarea id="publish-caption" required rows={4} maxLength={2200} value={caption} onChange={(event) => setCaption(event.target.value)} />
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <Label htmlFor="publish-scheduled-at">Agendar para (vazio publica agora)</Label>
-              <Input id="publish-scheduled-at" type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} />
-            </div>
-            <div>
-              <Label htmlFor="publish-timezone">Fuso horário</Label>
-              <Input id="publish-timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} />
-            </div>
-          </div>
-
-          <Button type="submit" disabled={busy || selected.size === 0}>{scheduledAt ? "Agendar publicação" : "Publicar agora"}</Button>
-          {selected.size === 0 ? <p className="text-xs text-ink-muted">Marque ao menos uma rede social conectada para publicar.</p> : null}
-        </form>
-      </Card>
-
-      {metaLoading ? (
-        <div className="flex justify-center py-14"><Spinner /></div>
-      ) : metaError ? (
-        <ErrorState error={metaError} onRetry={() => mutateMetaPosts()} />
-      ) : unified.length === 0 ? (
-        <EmptyState title="Nenhuma publicação ainda" description="Publique o primeiro conteúdo usando o formulário acima." />
-      ) : (
-        <Card className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="px-4 py-3 font-medium">Rede</th>
-                <th className="px-4 py-3 font-medium">Onde</th>
-                <th className="px-4 py-3 font-medium">Conteúdo</th>
-                <th className="px-4 py-3 font-medium">Mídia</th>
-                <th className="px-4 py-3 font-medium">Agendado</th>
-                <th className="px-4 py-3 font-medium">Estado</th>
-                <th className="px-4 py-3 font-medium">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {unified.map((post) => (
-                <tr key={`${post.platform}-${post.id}`} className="border-b border-border last:border-0">
-                  <td className="px-4 py-3 text-xs text-ink-muted">{platformIcon[post.platform]} {platformLabel[post.platform]}</td>
-                  <td className="px-4 py-3 text-xs text-ink-muted">{post.placement === "story" ? "Story" : "Feed"}</td>
-                  <td className="max-w-xs px-4 py-3 text-ink">{post.text || "—"}</td>
-                  <td className="px-4 py-3 text-xs text-ink-muted">{post.media.videoUrl ? "Vídeo" : post.media.imageUrls.length > 0 ? `${post.media.imageUrls.length} imagem(ns)` : "Texto"}</td>
-                  <td className="px-4 py-3 text-xs text-ink-muted">{post.scheduledAt ? `${formatDateTime(post.scheduledAt)}${post.timezone ? ` (${post.timezone})` : ""}` : "Imediato"}</td>
-                  <td className="px-4 py-3"><StatusBadge status={post.state} /></td>
-                  <td className="px-4 py-3">
-                    {post.state === "published" || post.state === "cancelled" ? null : (
-                      <Button variant="secondary" disabled={busy} onClick={() => cancelPost(post)}>Cancelar</Button>
-                    )}
-                  </td>
+      <div className="mt-8">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-sm font-semibold text-ink">Últimas publicações</p>
+          <Link href={`/workspaces/${workspace.id}/campaigns`} className="text-xs font-medium text-accent hover:underline">Ver histórico completo →</Link>
+        </div>
+        {recent.length === 0 ? (
+          <p className="text-sm text-ink-muted">Nenhuma publicação ainda — o que você agendar acima aparece aqui.</p>
+        ) : (
+          <Card className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-4 py-3 font-medium">Rede</th>
+                  <th className="px-4 py-3 font-medium">Conteúdo</th>
+                  <th className="px-4 py-3 font-medium">Agendado</th>
+                  <th className="px-4 py-3 font-medium">Estado</th>
+                  <th className="px-4 py-3 font-medium">Ações</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
+              </thead>
+              <tbody>
+                {recent.map((post) => {
+                  const status = derivePublicationStatus(post);
+                  return (
+                    <tr key={`${post.network}-${post.id}`} className="border-b border-border last:border-0">
+                      <td className="px-4 py-3 text-xs text-ink-muted">{PLATFORMS.find((p) => p.id === post.network)?.icon} {PLATFORMS.find((p) => p.id === post.network)?.label}</td>
+                      <td className="max-w-xs px-4 py-3 text-ink">{post.text || "—"}</td>
+                      <td className="px-4 py-3 text-xs text-ink-muted">{post.scheduledAt ? `${formatDateTime(post.scheduledAt)}${post.timezone ? ` (${post.timezone})` : ""}` : "Imediato"}</td>
+                      <td className="px-4 py-3"><StatusBadge status={status} /></td>
+                      <td className="px-4 py-3">
+                        {status === "published" || status === "cancelled" ? null : (
+                          <Button variant="secondary" disabled={busy} onClick={() => cancelPost(post)}>Cancelar</Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Card>
+        )}
+      </div>
     </main>
   );
 }

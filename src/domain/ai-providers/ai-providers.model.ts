@@ -80,9 +80,9 @@ export type AiGenerationStatus = (typeof AI_GENERATION_STATUSES)[number];
 
 /**
  * Uma linha por geração — o registro de auditoria financeira. `providerCostUsd` é o custo real
- * pago ao provedor (nunca exposto ao cliente); `estimatedRevenueUsd` é `creditsConsumed *
- * creditUnitValueUsd` (parâmetro admin em `platform_ai_settings`) — estimativa de receita, não
- * pagamento real (não existe gateway de pagamento ainda).
+ * pago ao provedor (nunca exposto ao cliente); `estimatedRevenueUsd` é `providerCostUsd *
+ * TenantBilling.priceMultiplier` (o "% de lucro" configurado por tenant em `/admin/tenants/:id`)
+ * — estimativa de receita, não pagamento real (não existe gateway de pagamento ainda).
  */
 export type AiGenerationLedgerEntry = {
   id: string;
@@ -100,11 +100,3 @@ export type AiGenerationLedgerEntry = {
   occurredAt: string;
   metadata: Record<string, unknown>;
 };
-
-export function estimatedRevenueUsd(creditsConsumed: number, creditUnitValueUsd: number): number {
-  return roundToMicroCent(Math.max(0, creditsConsumed) * Math.max(0, creditUnitValueUsd));
-}
-
-function roundToMicroCent(value: number): number {
-  return Math.round(value * 1_000_000) / 1_000_000;
-}

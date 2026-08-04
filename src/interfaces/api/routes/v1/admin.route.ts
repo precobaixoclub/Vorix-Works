@@ -69,7 +69,6 @@ const AI_SETTINGS_BODY_SCHEMA = {
     briefingExtractionEnabled: { type: "boolean" },
     anthropicApiKey: { type: "string", maxLength: 200 },
     anthropicBriefingExtractionModel: { type: "string", maxLength: 120 },
-    creditUnitValueUsd: { type: "number", minimum: 0, maximum: 1000 },
   },
 } as const;
 
@@ -82,7 +81,6 @@ function translatePlatformError(error: unknown): never {
     if (error.message.startsWith("PLATFORM_BILLING_INVALID_MULTIPLIER")) throw new ValidationError(error.message);
     if (error.message.startsWith("PLATFORM_AI_SETTINGS_INVALID_KEY")) throw new ValidationError(error.message);
     if (error.message.startsWith("PLATFORM_AI_SETTINGS_INVALID_MODEL")) throw new ValidationError(error.message);
-    if (error.message.startsWith("PLATFORM_AI_SETTINGS_INVALID_CREDIT_VALUE")) throw new ValidationError(error.message);
   }
   throw error;
 }
@@ -212,7 +210,6 @@ export async function registerAdminRoutes(
           briefingExtractionEnabled?: boolean;
           anthropicApiKey?: string;
           anthropicBriefingExtractionModel?: string;
-          creditUnitValueUsd?: number;
         };
         const settings = await updatePlatformAiSettings(settingsDeps, {
           ...body,

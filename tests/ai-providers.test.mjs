@@ -97,19 +97,15 @@ function makeAiProvidersRepo(operationType, models = [], providerStatus = "activ
   };
 }
 
-function fakeSettingsRepo(creditUnitValueUsd = 0.05) {
-  return { async get() { return { creditUnitValueUsd }; } };
-}
-
 test("MediaGenerationService: bloqueia quando saldo de créditos é insuficiente, sem chamar o provider", async () => {
-  const billing = { tenantId: "t1", subscriptionStatus: "trial", monthlyCreditsQuota: 1, creditsExtra: 0 };
+  const billing = { tenantId: "t1", subscriptionStatus: "trial", monthlyCreditsQuota: 1, creditsExtra: 0, priceMultiplier: 2 };
   const { repo: billingRepo } = makeBillingRepo(billing);
   const { repo: aiProvidersRepo } = makeAiProvidersRepo(IMAGE_OPERATION_TYPE, []);
   let calls = 0;
   const openai = fakeAdapter("openai", "image_generation", async () => { calls++; return { ok: true, mediaUrl: "https://x", billableUnits: 1, latencyMs: 1 }; });
   const registry = createDefaultAiMediaProviderRegistry([openai]);
 
-  const creditAccounting = new CreditAccountingService({ platformBillingRepository: billingRepo, platformAiSettingsRepository: fakeSettingsRepo(), aiProvidersRepository: aiProvidersRepo, idGenerator: (p) => `${p}-1` });
+  const creditAccounting = new CreditAccountingService({ platformBillingRepository: billingRepo, aiProvidersRepository: aiProvidersRepo, idGenerator: (p) => `${p}-1` });
   const service = new MediaGenerationService({ registry, creditAccounting, aiProvidersRepository: aiProvidersRepo, now: () => new Date("2026-08-01T10:00:00Z") });
 
   const result = await service.generate({ tenantId: "t1", operationTypeCode: "image_generation", prompt: "um gato", params: {} });
@@ -119,7 +115,7 @@ test("MediaGenerationService: bloqueia quando saldo de créditos é insuficiente
 });
 
 test("MediaGenerationService: bloqueia quando o provider está desabilitado em ai_providers.status, mesmo com o adapter registrado e créditos disponíveis", async () => {
-  const billing = { tenantId: "t1", subscriptionStatus: "trial", monthlyCreditsQuota: 100, creditsExtra: 0 };
+  const billing = { tenantId: "t1", subscriptionStatus: "trial", monthlyCreditsQuota: 100, creditsExtra: 0, priceMultiplier: 2 };
   const { repo: billingRepo } = makeBillingRepo(billing);
   // status "disabled" no banco — o toggle "Habilitado" do painel admin.
   const { repo: aiProvidersRepo } = makeAiProvidersRepo(IMAGE_OPERATION_TYPE, [], "disabled");
@@ -127,7 +123,7 @@ test("MediaGenerationService: bloqueia quando o provider está desabilitado em a
   const openai = fakeAdapter("openai", "image_generation", async () => { calls++; return { ok: true, mediaUrl: "https://x", billableUnits: 1, latencyMs: 1 }; });
   const registry = createDefaultAiMediaProviderRegistry([openai]);
 
-  const creditAccounting = new CreditAccountingService({ platformBillingRepository: billingRepo, platformAiSettingsRepository: fakeSettingsRepo(), aiProvidersRepository: aiProvidersRepo, idGenerator: (p) => `${p}-1` });
+  const creditAccounting = new CreditAccountingService({ platformBillingRepository: billingRepo, aiProvidersRepository: aiProvidersRepo, idGenerator: (p) => `${p}-1` });
   const service = new MediaGenerationService({ registry, creditAccounting, aiProvidersRepository: aiProvidersRepo, now: () => new Date("2026-08-01T10:00:00Z") });
 
   const result = await service.generate({ tenantId: "t1", operationTypeCode: "image_generation", prompt: "um gato", params: {} });
@@ -136,15 +132,15 @@ test("MediaGenerationService: bloqueia quando o provider está desabilitado em a
   assert.equal(calls, 0, "nunca chama o adapter quando o provider está desabilitado no banco, independente do registry");
 });
 
-test("MediaGenerationService: gera com sucesso, calcula custo real pela pricing do modelo e grava o ledger", async () => {
-  const billing = { tenantId: "t1", subscriptionStatus: "trial", monthlyCreditsQuota: 100, creditsExtra: 0 };
+test("MediaGenerationService: gera com sucesso, calcula custo real pela pricing do modelo e a receita pelo % de lucro do tenant", async () => {
+  const billing = { tenantId: "t1", subscriptionStatus: "trial", monthlyCreditsQuota: 100, creditsExtra: 0, priceMultiplier: 2 };
   const { repo: billingRepo, usageMap } = makeBillingRepo(billing);
   const models = [{ id: "m1", providerCode: "openai", modelId: "gpt-image-1", capability: "image_generation", active: true, pricing: { kind: "per_image", usdPerImage: 0.04 } }];
   const { repo: aiProvidersRepo, generationLedger } = makeAiProvidersRepo(IMAGE_OPERATION_TYPE, models);
   const openai = fakeAdapter("openai", "image_generation", async () => ({ ok: true, mediaUrl: "https://cdn/x.png", billableUnits: 1, latencyMs: 20 }));
   const registry = createDefaultAiMediaProviderRegistry([openai]);
 
-  const creditAccounting = new CreditAccountingService({ platformBillingRepository: billingRepo, platformAiSettingsRepository: fakeSettingsRepo(0.05), aiProvidersRepository: aiProvidersRepo, idGenerator: (p) => `${p}-1` });
+  const creditAccounting = new CreditAccountingService({ platformBillingRepository: billingRepo, aiProvidersRepository: aiProvidersRepo, idGenerator: (p) => `${p}-1` });
   const service = new MediaGenerationService({ registry, creditAccounting, aiProvidersRepository: aiProvidersRepo, now: () => new Date("2026-08-01T10:00:00Z") });
 
   const result = await service.generate({ tenantId: "t1", operationTypeCode: "image_generation", prompt: "um gato", params: {} });
@@ -154,20 +150,37 @@ test("MediaGenerationService: gera com sucesso, calcula custo real pela pricing 
   assert.equal(generationLedger.length, 1);
   assert.equal(generationLedger[0].creditsConsumed, 2);
   assert.equal(generationLedger[0].providerCostUsd, 0.04);
-  assert.equal(generationLedger[0].estimatedRevenueUsd, 0.1); // 2 créditos * 0.05
+  assert.equal(generationLedger[0].estimatedRevenueUsd, 0.08, "custo real (0.04) * priceMultiplier do tenant (2x = 100% de lucro)");
 
   const usage = usageMap.get("t1:2026-08");
   assert.equal(usage.creditsConsumed, 2);
 });
 
+test("MediaGenerationService: tenant com priceMultiplier 1 (0% de lucro) tem receita estimada igual ao custo", async () => {
+  const billing = { tenantId: "t1", subscriptionStatus: "trial", monthlyCreditsQuota: 100, creditsExtra: 0, priceMultiplier: 1 };
+  const { repo: billingRepo } = makeBillingRepo(billing);
+  const models = [{ id: "m1", providerCode: "openai", modelId: "gpt-image-1", capability: "image_generation", active: true, pricing: { kind: "per_image", usdPerImage: 0.04 } }];
+  const { repo: aiProvidersRepo, generationLedger } = makeAiProvidersRepo(IMAGE_OPERATION_TYPE, models);
+  const openai = fakeAdapter("openai", "image_generation", async () => ({ ok: true, mediaUrl: "https://cdn/x.png", billableUnits: 1, latencyMs: 20 }));
+  const registry = createDefaultAiMediaProviderRegistry([openai]);
+
+  const creditAccounting = new CreditAccountingService({ platformBillingRepository: billingRepo, aiProvidersRepository: aiProvidersRepo, idGenerator: (p) => `${p}-1` });
+  const service = new MediaGenerationService({ registry, creditAccounting, aiProvidersRepository: aiProvidersRepo, now: () => new Date("2026-08-01T10:00:00Z") });
+
+  const result = await service.generate({ tenantId: "t1", operationTypeCode: "image_generation", prompt: "um gato", params: {} });
+  assert.equal(result.ok, true);
+  assert.equal(generationLedger[0].providerCostUsd, 0.04);
+  assert.equal(generationLedger[0].estimatedRevenueUsd, 0.04, "0% de lucro (conta interna própria) — receita fica igual ao custo real");
+});
+
 test("MediaGenerationService: falha do provider não consome crédito, mas registra a falha", async () => {
-  const billing = { tenantId: "t1", subscriptionStatus: "trial", monthlyCreditsQuota: 100, creditsExtra: 0 };
+  const billing = { tenantId: "t1", subscriptionStatus: "trial", monthlyCreditsQuota: 100, creditsExtra: 0, priceMultiplier: 2 };
   const { repo: billingRepo, usageMap } = makeBillingRepo(billing);
   const { repo: aiProvidersRepo, generationLedger } = makeAiProvidersRepo(IMAGE_OPERATION_TYPE, []);
   const openai = fakeAdapter("openai", "image_generation", async () => ({ ok: false, category: "content_blocked", message: "bloqueado", latencyMs: 5 }));
   const registry = createDefaultAiMediaProviderRegistry([openai]);
 
-  const creditAccounting = new CreditAccountingService({ platformBillingRepository: billingRepo, platformAiSettingsRepository: fakeSettingsRepo(), aiProvidersRepository: aiProvidersRepo, idGenerator: (p) => `${p}-1` });
+  const creditAccounting = new CreditAccountingService({ platformBillingRepository: billingRepo, aiProvidersRepository: aiProvidersRepo, idGenerator: (p) => `${p}-1` });
   const service = new MediaGenerationService({ registry, creditAccounting, aiProvidersRepository: aiProvidersRepo, now: () => new Date("2026-08-01T10:00:00Z") });
 
   const result = await service.generate({ tenantId: "t1", operationTypeCode: "image_generation", prompt: "algo", params: {} });

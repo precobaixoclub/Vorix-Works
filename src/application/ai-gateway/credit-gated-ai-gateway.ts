@@ -64,6 +64,7 @@ export class CreditGatedAiGateway implements AiGatewayPort {
         providerCode: result.data.provider as "anthropic" | "openai" | "google",
         modelId: result.data.model,
         providerCostUsd: result.data.usage.estimatedCost,
+        priceMultiplier: availability.priceMultiplier,
         monthlyRemainingBefore: availability.monthlyRemainingBefore,
         creditsExtraBefore: availability.creditsExtraBefore,
         requestedByUserId: request.userId,

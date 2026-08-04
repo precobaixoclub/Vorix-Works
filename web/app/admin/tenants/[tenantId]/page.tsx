@@ -81,7 +81,7 @@ export default function AdminTenantDetailPage() {
       </div>
       <PageHeader
         title={tenantId}
-        description={`Plano ${planName} · status ${billing.subscriptionStatus} · multiplicador ${billing.priceMultiplier}x`}
+        description={`Plano ${planName} · status ${billing.subscriptionStatus} · ${formatProfitPercent(billing.priceMultiplier)}% de lucro sobre o custo`}
       />
 
       {message ? (
@@ -158,16 +158,17 @@ export default function AdminTenantDetailPage() {
 
         <Card>
           <CardHeader>
-            <div className="text-base font-semibold text-ink">Multiplicador de preço</div>
+            <div className="text-base font-semibold text-ink">Percentual de lucro</div>
           </CardHeader>
           <CardBody>
-            <MultiplierForm
+            <ProfitPercentForm
               current={billing.priceMultiplier}
               busy={busy}
               onSubmit={(multiplier) => run(() => setTenantMultiplier(tenantId, multiplier))}
             />
             <p className="mt-3 text-xs text-ink-muted">
-              Padrão da plataforma é 2x (100% de margem sobre o custo dos provedores).
+              Quanto cobramos de lucro em cima do custo real dos provedores para este cliente. Padrão da plataforma é 100%
+              (cobramos o dobro do custo) — para uma conta interna própria, use 0% (fica só no custo, sem margem).
             </p>
           </CardBody>
         </Card>
@@ -361,7 +362,23 @@ function PlanForm({
   );
 }
 
-function MultiplierForm({
+/** Armazenamos internamente como multiplicador (1.00–100.00, `TenantBilling.priceMultiplier`) —
+ * o admin pensa em "% de lucro", não em "multiplicador", então a conversão fica só aqui na borda:
+ * `percent = (multiplier - 1) * 100`, `multiplier = 1 + percent / 100`. 0% = multiplicador 1.00 =
+ * cobra exatamente o custo, sem margem. */
+function multiplierToPercent(multiplier: number): number {
+  return Math.round((multiplier - 1) * 100 * 100) / 100;
+}
+
+function percentToMultiplier(percent: number): number {
+  return 1 + percent / 100;
+}
+
+function formatProfitPercent(multiplier: number): string {
+  return multiplierToPercent(multiplier).toString();
+}
+
+function ProfitPercentForm({
   current,
   busy,
   onSubmit,
@@ -370,28 +387,31 @@ function MultiplierForm({
   busy: boolean;
   onSubmit: (multiplier: number) => void;
 }) {
-  const [value, setValue] = useState<string>(current.toString());
+  const [value, setValue] = useState<string>(multiplierToPercent(current).toString());
   return (
     <form
       className="flex flex-col gap-2"
       onSubmit={(event) => {
         event.preventDefault();
-        const parsed = Number.parseFloat(value);
-        if (!Number.isFinite(parsed) || parsed < 1 || parsed > 100) return;
-        onSubmit(parsed);
+        const parsedPercent = Number.parseFloat(value);
+        if (!Number.isFinite(parsedPercent) || parsedPercent < 0 || parsedPercent > 9900) return;
+        onSubmit(percentToMultiplier(parsedPercent));
       }}
     >
-      <input
-        type="number"
-        step="0.1"
-        min="1"
-        max="100"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        className="rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-sm"
-      />
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          step="1"
+          min="0"
+          max="9900"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          className="w-full rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-sm"
+        />
+        <span className="text-sm text-ink-muted">%</span>
+      </div>
       <Button type="submit" disabled={busy}>
-        Aplicar multiplicador
+        Aplicar percentual
       </Button>
     </form>
   );

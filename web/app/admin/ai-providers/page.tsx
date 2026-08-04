@@ -17,8 +17,6 @@ import {
   type AiProviderOverview,
   type AiProvidersFinanceSummary,
 } from "@/features/platform-admin/ai-providers-api";
-import { fetchPlatformAiSettings, updatePlatformAiSettings } from "@/features/platform-admin/ai-settings-api";
-
 const CAPABILITY_LABELS: Record<string, string> = {
   text_generation: "Texto",
   image_generation: "Imagem",
@@ -35,7 +33,6 @@ export default function AdminAiProvidersPage() {
   const [providers, setProviders] = useState<AiProviderOverview[] | undefined>();
   const [operationTypes, setOperationTypes] = useState<AiOperationType[] | undefined>();
   const [finance, setFinance] = useState<AiProvidersFinanceSummary | undefined>();
-  const [creditUnitValueUsd, setCreditUnitValueUsd] = useState("0.05");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | undefined>();
@@ -46,16 +43,14 @@ export default function AdminAiProvidersPage() {
     setLoading(true);
     setError(undefined);
     try {
-      const [providersData, operationTypesData, financeData, aiSettings] = await Promise.all([
+      const [providersData, operationTypesData, financeData] = await Promise.all([
         fetchAiProviders(),
         fetchAiOperationTypes(),
         fetchAiProvidersFinance(),
-        fetchPlatformAiSettings(),
       ]);
       setProviders(providersData);
       setOperationTypes(operationTypesData);
       setFinance(financeData);
-      setCreditUnitValueUsd(String(aiSettings.creditUnitValueUsd));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao carregar Provedores de IA.");
     } finally {
@@ -223,35 +218,14 @@ export default function AdminAiProvidersPage() {
 
         <Card>
           <CardHeader>
-            <div className="text-base font-semibold text-ink">Valor de referência do crédito</div>
-          </CardHeader>
-          <CardBody className="flex flex-col gap-3">
-            <p className="text-sm text-ink-muted">
-              Usado só para estimar receita/lucro no painel abaixo — não é o preço real cobrado do cliente (ainda não existe gateway de pagamento).
-            </p>
-            <div className="flex gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-ink-muted">US$</span>
-                <input
-                  type="number"
-                  step="0.001"
-                  min="0"
-                  value={creditUnitValueUsd}
-                  onChange={(e) => setCreditUnitValueUsd(e.target.value)}
-                  className="w-32 rounded-md border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
-                />
-                <span className="text-sm text-ink-muted">por crédito</span>
+            <div>
+              <div className="text-base font-semibold text-ink">Percentual de lucro por cliente</div>
+              <div className="text-xs text-ink-muted">
+                A receita estimada de cada geração é <code>custo real × (1 + % de lucro)</code>, configurado por conta em{" "}
+                <Link href="/admin/tenants" className="text-accent hover:underline">/admin/tenants/:id</Link>. Uma conta interna própria pode ficar em 0% (fica só no custo).
               </div>
-              <button
-                type="button"
-                disabled={busyKey === "credit-unit-value"}
-                onClick={() => run("credit-unit-value", () => updatePlatformAiSettings({ creditUnitValueUsd: Number(creditUnitValueUsd) }))}
-                className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent/90 disabled:opacity-50"
-              >
-                Salvar
-              </button>
             </div>
-          </CardBody>
+          </CardHeader>
         </Card>
 
         <Card>

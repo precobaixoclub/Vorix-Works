@@ -106,6 +106,7 @@ export class MediaGenerationService {
         providerCode,
         modelId,
         providerCostUsd,
+        priceMultiplier: availability.priceMultiplier,
         monthlyRemainingBefore: availability.monthlyRemainingBefore,
         creditsExtraBefore: availability.creditsExtraBefore,
         requestedByUserId: request.userId,

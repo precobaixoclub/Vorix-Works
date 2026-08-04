@@ -1,26 +1,29 @@
 import type { PlatformBillingRepositoryPort } from "../ports/platform-billing-repository.port.js";
-import type { PlatformAiSettingsRepositoryPort } from "../ports/platform-ai-settings-repository.port.js";
 import type { AiProvidersRepositoryPort } from "../ports/ai-providers-repository.port.js";
-import { periodOf } from "../../domain/platform-billing/tenant-billing.model.js";
-import { estimatedRevenueUsd, type AiOperationType, type AiProviderCode } from "../../domain/ai-providers/index.js";
+import { applyMarkup, periodOf } from "../../domain/platform-billing/tenant-billing.model.js";
+import type { AiOperationType, AiProviderCode } from "../../domain/ai-providers/index.js";
 
 export type CreditAccountingDeps = {
   platformBillingRepository: PlatformBillingRepositoryPort;
-  platformAiSettingsRepository: PlatformAiSettingsRepositoryPort;
   aiProvidersRepository: AiProvidersRepositoryPort;
   idGenerator: (prefix: string) => string;
 };
 
 export type CreditAvailability =
-  | { ok: true; operationType: AiOperationType; monthlyRemainingBefore: number; creditsExtraBefore: number }
+  | { ok: true; operationType: AiOperationType; monthlyRemainingBefore: number; creditsExtraBefore: number; priceMultiplier: number }
   | { ok: false; reason: "operation_unknown" | "not_configured" | "account_blocked" | "quota_exceeded"; message: string };
 
 /**
  * Lógica de crédito compartilhada entre `CreditGatedAiGateway` (texto) e `MediaGenerationService`
- * (imagem/vídeo) — Sprint 26. Único lugar que sabe "quanto custa em crédito" e "quanto sobrou" —
+ * (imagem/vídeo) — Sprint 26/27. Único lugar que sabe "quanto custa em crédito" e "quanto sobrou" —
  * nenhum caso de uso calcula isso na mão. Crédito é sempre um número FIXO por `AiOperationType`,
  * nunca proporcional a token/segundo real gasto no provider (essa proporcionalidade só afeta
  * `providerCostUsd`, nunca o que é debitado do tenant).
+ *
+ * Receita/lucro estimados (`estimatedRevenueUsd`) usam o markup POR TENANT
+ * (`TenantBilling.priceMultiplier`, editável em `/admin/tenants/:id` como "% de lucro sobre o
+ * custo") — `revenue = providerCostUsd * priceMultiplier`. Um tenant com `priceMultiplier = 1.00`
+ * (0% de lucro) tem receita estimada igual ao custo real, de propósito (ex.: conta interna própria).
  */
 export class CreditAccountingService {
   constructor(private readonly deps: CreditAccountingDeps) {}
@@ -50,7 +53,7 @@ export class CreditAccountingService {
       return { ok: false, reason: "quota_exceeded", message: "Saldo de créditos Vorix insuficiente para esta operação. Faça upgrade de plano ou compre créditos avulsos." };
     }
 
-    return { ok: true, operationType, monthlyRemainingBefore, creditsExtraBefore: billing.creditsExtra };
+    return { ok: true, operationType, monthlyRemainingBefore, creditsExtraBefore: billing.creditsExtra, priceMultiplier: billing.priceMultiplier };
   }
 
   /** Registra uma geração bem-sucedida: ledger financeiro + agregado mensal + dedução de crédito
@@ -63,6 +66,9 @@ export class CreditAccountingService {
     providerCode: AiProviderCode;
     modelId: string;
     providerCostUsd: number;
+    /** Markup do tenant (ver `TenantBilling.priceMultiplier`, editável em `/admin/tenants/:id` como
+     * "% de lucro") — `1.00` = cobra exatamente o custo, sem margem. */
+    priceMultiplier: number;
     monthlyRemainingBefore: number;
     creditsExtraBefore: number;
     requestedByUserId?: string;
@@ -70,9 +76,8 @@ export class CreditAccountingService {
     metadata?: Record<string, unknown>;
     now: Date;
   }): Promise<void> {
-    const settings = await this.deps.platformAiSettingsRepository.get();
     const creditsConsumed = input.operationType.creditsCost;
-    const revenueUsd = estimatedRevenueUsd(creditsConsumed, settings.creditUnitValueUsd);
+    const revenueUsd = applyMarkup(input.providerCostUsd, input.priceMultiplier);
     const period = periodOf(input.now);
     const nowIso = input.now.toISOString();
 

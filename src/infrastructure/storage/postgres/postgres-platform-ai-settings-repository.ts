@@ -12,7 +12,6 @@ type Row = {
   anthropic_api_key_encrypted: string | null;
   anthropic_api_key_last4: string | null;
   anthropic_briefing_extraction_model: string;
-  credit_unit_value_usd: string;
   updated_at: Date;
   updated_by: string | null;
 };
@@ -37,7 +36,6 @@ export class PostgresPlatformAiSettingsRepository implements PlatformAiSettingsR
     const gatewayEnabled = input.gatewayEnabled ?? current.gatewayEnabled;
     const briefingExtractionEnabled = input.briefingExtractionEnabled ?? current.briefingExtractionEnabled;
     const model = input.anthropicBriefingExtractionModel ?? current.anthropicBriefingExtractionModel;
-    const creditUnitValueUsd = input.creditUnitValueUsd ?? current.creditUnitValueUsd;
 
     let encrypted: string | null;
     let last4Value: string | null;
@@ -59,9 +57,8 @@ export class PostgresPlatformAiSettingsRepository implements PlatformAiSettingsR
            anthropic_api_key_encrypted = $3,
            anthropic_api_key_last4 = $4,
            anthropic_briefing_extraction_model = $5,
-           credit_unit_value_usd = $6,
-           updated_at = $7,
-           updated_by = $8
+           updated_at = $6,
+           updated_by = $7
        where id = 'singleton'
        returning *`,
       [
@@ -70,7 +67,6 @@ export class PostgresPlatformAiSettingsRepository implements PlatformAiSettingsR
         encrypted,
         last4Value,
         model,
-        creditUnitValueUsd,
         input.now,
         input.actorUserId ?? null,
       ],
@@ -93,7 +89,6 @@ export class PostgresPlatformAiSettingsRepository implements PlatformAiSettingsR
       briefingExtractionEnabled: row.briefing_extraction_enabled,
       anthropicApiKeyLast4: row.anthropic_api_key_last4 ?? undefined,
       anthropicBriefingExtractionModel: row.anthropic_briefing_extraction_model,
-      creditUnitValueUsd: Number(row.credit_unit_value_usd),
       updatedAt: row.updated_at.toISOString(),
       updatedBy: row.updated_by ?? undefined,
       resolvedAnthropicApiKey: resolvedKey,

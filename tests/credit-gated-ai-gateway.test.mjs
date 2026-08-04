@@ -95,25 +95,9 @@ function makeFakeAiProvidersRepo(operationType = OPERATION_TYPE) {
   };
 }
 
-function fakePlatformAiSettingsRepo(creditUnitValueUsd = 0.05) {
-  return {
-    async get() {
-      return {
-        gatewayEnabled: true,
-        briefingExtractionEnabled: true,
-        anthropicBriefingExtractionModel: "claude-fake",
-        creditUnitValueUsd,
-        updatedAt: "2026-01-01T00:00:00Z",
-      };
-    },
-    async update() { throw new Error("não usado"); },
-  };
-}
-
-function buildGated({ billingRepo, aiProvidersRepo, platformAiSettingsRepo, now, idGenerator }) {
+function buildGated({ billingRepo, aiProvidersRepo, now, idGenerator }) {
   const creditAccounting = new CreditAccountingService({
     platformBillingRepository: billingRepo,
-    platformAiSettingsRepository: platformAiSettingsRepo ?? fakePlatformAiSettingsRepo(),
     aiProvidersRepository: aiProvidersRepo,
     idGenerator: idGenerator ?? ((p) => `${p}-1`),
   });
@@ -243,7 +227,7 @@ test("CreditGatedAiGateway: chama inner e registra consumo dentro da cota mensal
   assert.equal(row.outputTokens, 200);
   assert.equal(row.creditsConsumed, 1, "1 crédito fixo, independente de quantos tokens o provider gastou");
   assert.equal(row.providerCostUsd, 0.001);
-  assert.equal(row.customerPriceUsd, 0.05, "1 crédito * creditUnitValueUsd (0.05) — não mais providerCost * multiplier");
+  assert.equal(row.customerPriceUsd, 0.002, "receita = custo real (0.001) * priceMultiplier do tenant (2x = 100% de lucro)");
   assert.equal(row.requestsCount, 1);
 
   assert.equal(generationLedger.length, 1, "grava uma linha no ledger de geração (auditoria financeira) mesmo sem estourar a cota");
@@ -251,6 +235,25 @@ test("CreditGatedAiGateway: chama inner e registra consumo dentro da cota mensal
   assert.equal(generationLedger[0].providerCode, "anthropic");
 
   assert.equal(billingsMap.get("tenant-1").creditsExtra, 10, "não toca creditsExtra porque a cota mensal cobriu tudo");
+});
+
+test("CreditGatedAiGateway: tenant com priceMultiplier 1 (0% de lucro, ex.: conta interna própria) tem receita igual ao custo", async () => {
+  const billings = new Map([["tenant-1", {
+    tenantId: "tenant-1", planCode: "FREE", subscriptionStatus: "trial",
+    monthlyCreditsQuota: 100, monthlyPublicationsQuota: 5,
+    creditsExtra: 10, priceMultiplier: 1,
+    createdAt: "2026-08-01", updatedAt: "2026-08-01",
+  }]]);
+  const { repo: billingRepo, usage } = makeFakeBillingRepo(billings);
+  const { repo: aiProvidersRepo } = makeFakeAiProvidersRepo();
+  const gated = buildGated({ billingRepo, aiProvidersRepo, now: () => new Date("2026-08-01T10:00:00Z") });
+
+  const result = await gated.execute(REQUEST);
+  assert.equal(result.ok, true);
+
+  const row = usage.get("tenant-1:2026-08");
+  assert.equal(row.providerCostUsd, 0.001);
+  assert.equal(row.customerPriceUsd, 0.001, "0% de lucro — receita estimada fica exatamente no custo real, sem margem");
 });
 
 test("CreditGatedAiGateway: consumo estoura a cota mensal e sangra em creditsExtra via applyCreditDelta", async () => {

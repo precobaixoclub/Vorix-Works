@@ -13,7 +13,6 @@ export type UpdatePlatformAiSettingsInput = {
    * valor → substitui a atual (criptografando e guardando últimos 4). */
   anthropicApiKey?: string;
   anthropicBriefingExtractionModel?: string;
-  creditUnitValueUsd?: number;
   actorUserId?: string;
   now: string;
 };

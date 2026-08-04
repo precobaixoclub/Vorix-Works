@@ -37,7 +37,7 @@ export default function AdminDashboardPage() {
             <MetricCard label="Contas totais" value={data.totalTenants.toString()} hint={`${data.activeTenants} ativas · ${data.suspendedTenants} suspensas`} />
             <MetricCard label="Receita do mês" value={formatUsd(data.totalRevenueUsd)} hint={`Período ${data.currentPeriod}`} />
             <MetricCard label="Custo dos provedores" value={formatUsd(data.totalProviderCostUsd)} hint={`${formatNumber(data.totalRequestsCount)} requisições`} />
-            <MetricCard label="Lucro consolidado" value={formatUsd(data.totalProfitUsd)} hint={`${formatNumber(data.totalTokensUsed)} tokens processados`} highlight />
+            <MetricCard label="Lucro consolidado" value={formatUsd(data.totalProfitUsd)} hint={`${formatNumber(data.totalCreditsConsumed)} créditos consumidos`} highlight />
           </div>
 
           <Card>

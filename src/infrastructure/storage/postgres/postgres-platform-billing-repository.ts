@@ -22,11 +22,11 @@ export class PostgresPlatformBillingRepository implements PlatformBillingReposit
   async ensureTenantBilling(input: { tenantId: string; now: string }): Promise<TenantBilling> {
     const freePlan = getPlatformPlan("FREE");
     const result = await this.pool.query<BillingRow>(
-      `insert into tenant_billing (tenant_id, plan_code, subscription_status, monthly_token_quota, monthly_publications_quota)
+      `insert into tenant_billing (tenant_id, plan_code, subscription_status, monthly_credits_quota, monthly_publications_quota)
        values ($1, 'FREE', 'trial', $2, $3)
        on conflict (tenant_id) do update set updated_at = tenant_billing.updated_at
        returning *`,
-      [input.tenantId, freePlan.monthlyTokenQuota, freePlan.monthlyPublicationsQuota],
+      [input.tenantId, freePlan.monthlyCreditsQuota, freePlan.monthlyPublicationsQuota],
     );
     return toBillingDomain(result.rows[0]);
   }
@@ -83,7 +83,7 @@ export class PostgresPlatformBillingRepository implements PlatformBillingReposit
 
   async updateTenantBilling(input: {
     tenantId: string;
-    patch: Partial<Pick<TenantBilling, "planCode" | "subscriptionStatus" | "monthlyTokenQuota" | "monthlyPublicationsQuota" | "priceMultiplier" | "activatedAt" | "suspendedAt" | "expiresAt">>;
+    patch: Partial<Pick<TenantBilling, "planCode" | "subscriptionStatus" | "monthlyCreditsQuota" | "monthlyPublicationsQuota" | "priceMultiplier" | "activatedAt" | "suspendedAt" | "expiresAt">>;
     now: string;
   }): Promise<TenantBilling> {
     const sets: string[] = ["updated_at = now()"];
@@ -94,7 +94,7 @@ export class PostgresPlatformBillingRepository implements PlatformBillingReposit
     };
     if (input.patch.planCode !== undefined) push("plan_code", input.patch.planCode);
     if (input.patch.subscriptionStatus !== undefined) push("subscription_status", input.patch.subscriptionStatus);
-    if (input.patch.monthlyTokenQuota !== undefined) push("monthly_token_quota", input.patch.monthlyTokenQuota);
+    if (input.patch.monthlyCreditsQuota !== undefined) push("monthly_credits_quota", input.patch.monthlyCreditsQuota);
     if (input.patch.monthlyPublicationsQuota !== undefined) push("monthly_publications_quota", input.patch.monthlyPublicationsQuota);
     if (input.patch.priceMultiplier !== undefined) push("price_multiplier", input.patch.priceMultiplier);
     if ("activatedAt" in input.patch) push("activated_at", input.patch.activatedAt ?? null);
@@ -111,7 +111,7 @@ export class PostgresPlatformBillingRepository implements PlatformBillingReposit
   async applyCreditDelta(input: {
     id: string;
     tenantId: string;
-    deltaTokens: number;
+    deltaCredits: number;
     reason: TenantCreditLedgerReason;
     actorUserId?: string;
     metadata?: Record<string, unknown>;
@@ -122,21 +122,21 @@ export class PostgresPlatformBillingRepository implements PlatformBillingReposit
       await client.query("begin");
       const billingRes = await client.query<BillingRow>(
         `update tenant_billing
-         set credits_extra_tokens = credits_extra_tokens + $1, updated_at = now()
+         set credits_extra = credits_extra + $1, updated_at = now()
          where tenant_id = $2
          returning *`,
-        [input.deltaTokens, input.tenantId],
+        [input.deltaCredits, input.tenantId],
       );
       if (!billingRes.rows[0]) throw new Error(`PLATFORM_BILLING_TENANT_NOT_FOUND: tenant "${input.tenantId}" n\u00e3o tem billing configurado.`);
 
       const entryRes = await client.query<LedgerRow>(
-        `insert into tenant_credit_ledger (id, tenant_id, delta_tokens, reason, actor_user_id, metadata)
+        `insert into tenant_credit_ledger (id, tenant_id, delta_credits, reason, actor_user_id, metadata)
          values ($1, $2, $3, $4, $5, $6::jsonb)
          returning *`,
         [
           input.id,
           input.tenantId,
-          input.deltaTokens,
+          input.deltaCredits,
           input.reason,
           input.actorUserId ?? null,
           JSON.stringify(input.metadata ?? {}),
@@ -169,6 +169,7 @@ export class PostgresPlatformBillingRepository implements PlatformBillingReposit
     inputTokens: number;
     outputTokens: number;
     cachedInputTokens: number;
+    creditsConsumed: number;
     providerCostUsd: number;
     customerPriceUsd: number;
     requestsDelta: number;
@@ -177,12 +178,13 @@ export class PostgresPlatformBillingRepository implements PlatformBillingReposit
     const result = await this.pool.query<UsageRow>(
       `insert into tenant_ai_usage_monthly
         (tenant_id, period, input_tokens, output_tokens, cached_input_tokens,
-         provider_cost_usd, customer_price_usd, requests_count)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)
+         credits_consumed, provider_cost_usd, customer_price_usd, requests_count)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        on conflict (tenant_id, period) do update set
         input_tokens        = tenant_ai_usage_monthly.input_tokens        + excluded.input_tokens,
         output_tokens       = tenant_ai_usage_monthly.output_tokens       + excluded.output_tokens,
         cached_input_tokens = tenant_ai_usage_monthly.cached_input_tokens + excluded.cached_input_tokens,
+        credits_consumed    = tenant_ai_usage_monthly.credits_consumed    + excluded.credits_consumed,
         provider_cost_usd   = tenant_ai_usage_monthly.provider_cost_usd   + excluded.provider_cost_usd,
         customer_price_usd  = tenant_ai_usage_monthly.customer_price_usd  + excluded.customer_price_usd,
         requests_count      = tenant_ai_usage_monthly.requests_count      + excluded.requests_count,
@@ -194,6 +196,7 @@ export class PostgresPlatformBillingRepository implements PlatformBillingReposit
         input.inputTokens,
         input.outputTokens,
         input.cachedInputTokens,
+        input.creditsConsumed,
         input.providerCostUsd,
         input.customerPriceUsd,
         input.requestsDelta,
@@ -214,6 +217,7 @@ export class PostgresPlatformBillingRepository implements PlatformBillingReposit
     totalTenants: number;
     totalInputTokens: number;
     totalOutputTokens: number;
+    totalCreditsConsumed: number;
     totalRequestsCount: number;
     totalProviderCostUsd: number;
     totalCustomerPriceUsd: number;
@@ -234,6 +238,7 @@ export class PostgresPlatformBillingRepository implements PlatformBillingReposit
         count(distinct tenant_id)::int as total_tenants,
         coalesce(sum(input_tokens), 0)::bigint as total_input,
         coalesce(sum(output_tokens), 0)::bigint as total_output,
+        coalesce(sum(credits_consumed), 0)::bigint as total_credits,
         coalesce(sum(requests_count), 0)::int as total_requests,
         coalesce(sum(provider_cost_usd), 0) as total_provider_cost,
         coalesce(sum(customer_price_usd), 0) as total_customer_price
@@ -245,6 +250,7 @@ export class PostgresPlatformBillingRepository implements PlatformBillingReposit
       totalTenants: row?.total_tenants ?? 0,
       totalInputTokens: Number(row?.total_input ?? 0),
       totalOutputTokens: Number(row?.total_output ?? 0),
+      totalCreditsConsumed: Number(row?.total_credits ?? 0),
       totalRequestsCount: row?.total_requests ?? 0,
       totalProviderCostUsd: Number(row?.total_provider_cost ?? 0),
       totalCustomerPriceUsd: Number(row?.total_customer_price ?? 0),
@@ -256,9 +262,9 @@ type BillingRow = {
   tenant_id: string;
   plan_code: string;
   subscription_status: string;
-  monthly_token_quota: string;
+  monthly_credits_quota: string;
   monthly_publications_quota: number;
-  credits_extra_tokens: string;
+  credits_extra: string;
   price_multiplier: string;
   activated_at: Date | null;
   suspended_at: Date | null;
@@ -270,7 +276,7 @@ type BillingRow = {
 type LedgerRow = {
   id: string;
   tenant_id: string;
-  delta_tokens: string;
+  delta_credits: string;
   reason: string;
   actor_user_id: string | null;
   metadata: Record<string, unknown>;
@@ -283,6 +289,7 @@ type UsageRow = {
   input_tokens: string;
   output_tokens: string;
   cached_input_tokens: string;
+  credits_consumed: string;
   provider_cost_usd: string;
   customer_price_usd: string;
   requests_count: number;
@@ -293,6 +300,7 @@ type AggregateRow = {
   total_tenants: number;
   total_input: string;
   total_output: string;
+  total_credits: string;
   total_requests: number;
   total_provider_cost: string;
   total_customer_price: string;
@@ -303,9 +311,9 @@ function toBillingDomain(row: BillingRow): TenantBilling {
     tenantId: row.tenant_id,
     planCode: row.plan_code as TenantBilling["planCode"],
     subscriptionStatus: row.subscription_status as TenantBilling["subscriptionStatus"],
-    monthlyTokenQuota: Number(row.monthly_token_quota),
+    monthlyCreditsQuota: Number(row.monthly_credits_quota),
     monthlyPublicationsQuota: row.monthly_publications_quota,
-    creditsExtraTokens: Number(row.credits_extra_tokens),
+    creditsExtra: Number(row.credits_extra),
     priceMultiplier: Number(row.price_multiplier),
     activatedAt: row.activated_at ? row.activated_at.toISOString() : undefined,
     suspendedAt: row.suspended_at ? row.suspended_at.toISOString() : undefined,
@@ -319,7 +327,7 @@ function toLedgerDomain(row: LedgerRow): TenantCreditLedgerEntry {
   return {
     id: row.id,
     tenantId: row.tenant_id,
-    deltaTokens: Number(row.delta_tokens),
+    deltaCredits: Number(row.delta_credits),
     reason: row.reason as TenantCreditLedgerEntry["reason"],
     actorUserId: row.actor_user_id ?? undefined,
     metadata: row.metadata ?? {},
@@ -334,6 +342,7 @@ function toUsageDomain(row: UsageRow): TenantAiUsageMonthly {
     inputTokens: Number(row.input_tokens),
     outputTokens: Number(row.output_tokens),
     cachedInputTokens: Number(row.cached_input_tokens),
+    creditsConsumed: Number(row.credits_consumed),
     providerCostUsd: Number(row.provider_cost_usd),
     customerPriceUsd: Number(row.customer_price_usd),
     requestsCount: row.requests_count,

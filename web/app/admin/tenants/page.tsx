@@ -115,7 +115,7 @@ export default function AdminTenantsPage() {
                   <th className="px-5 py-2 font-medium">Conta (tenant)</th>
                   <th className="px-5 py-2 font-medium">Plano</th>
                   <th className="px-5 py-2 font-medium">Status</th>
-                  <th className="px-5 py-2 text-right font-medium">Tokens usados</th>
+                  <th className="px-5 py-2 text-right font-medium">Créditos usados</th>
                   <th className="px-5 py-2 text-right font-medium">% da cota</th>
                   <th className="px-5 py-2 text-right font-medium">Lucro do mês</th>
                 </tr>
@@ -134,7 +134,7 @@ export default function AdminTenantsPage() {
                     <td className="px-5 py-2">
                       <StatusBadge status={row.billing.subscriptionStatus} />
                     </td>
-                    <td className="px-5 py-2 text-right text-ink-muted">{formatNumber(row.totalTokensUsedThisMonth)}</td>
+                    <td className="px-5 py-2 text-right text-ink-muted">{formatNumber(row.totalCreditsUsedThisMonth)}</td>
                     <td className="px-5 py-2 text-right">{row.quotaUsagePercent.toFixed(1)}%</td>
                     <td className="px-5 py-2 text-right font-semibold text-emerald-700">{formatUsd(row.currentProfitUsd)}</td>
                   </tr>

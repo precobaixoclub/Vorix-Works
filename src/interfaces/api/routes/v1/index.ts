@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { registerAnalyticsRoutes } from "./analytics.route.js";
 import { registerAdminRoutes } from "./admin.route.js";
+import { registerAiProvidersRoutes } from "./ai-providers.route.js";
 import { registerAuthRoutes } from "./auth.route.js";
 import { registerBriefingRoutes } from "./briefings.route.js";
 import { registerConversationRoutes } from "./conversations.route.js";
@@ -213,6 +214,13 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         platformAiSettingsRepository: identity.platformAiSettingsRepository,
         now: () => new Date(),
       },
+    });
+
+    await registerAiProvidersRoutes(app, {
+      aiProvidersRepository: identity.aiProvidersRepository,
+      aiMediaProviderRegistry: app.zunoContainer.aiMediaProviderRegistry,
+      secretManager: app.zunoContainer.secretManager,
+      now: () => new Date(),
     });
   }
 }

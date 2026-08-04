@@ -5,6 +5,7 @@ export type PlatformAiSettingsPublic = {
   briefingExtractionEnabled: boolean;
   anthropicApiKeyLast4?: string;
   anthropicBriefingExtractionModel: string;
+  creditUnitValueUsd: number;
   updatedAt: string;
   updatedBy?: string;
   hasAnthropicApiKey: boolean;
@@ -16,6 +17,7 @@ export type UpdatePlatformAiSettingsPayload = {
   /** `undefined` = mantém, `""` = remove, qualquer outro valor substitui. */
   anthropicApiKey?: string;
   anthropicBriefingExtractionModel?: string;
+  creditUnitValueUsd?: number;
 };
 
 export async function fetchPlatformAiSettings(): Promise<PlatformAiSettingsPublic> {

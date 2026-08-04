@@ -18,9 +18,9 @@ export type TenantBilling = {
   tenantId: string;
   planCode: PlatformPlanCode;
   subscriptionStatus: PlatformSubscriptionStatus;
-  monthlyTokenQuota: number;
+  monthlyCreditsQuota: number;
   monthlyPublicationsQuota: number;
-  creditsExtraTokens: number;
+  creditsExtra: number;
   priceMultiplier: number;
   activatedAt?: string;
   suspendedAt?: string;
@@ -35,6 +35,7 @@ export type TenantAiUsageMonthly = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  creditsConsumed: number;
   providerCostUsd: number;
   customerPriceUsd: number;
   requestsCount: number;
@@ -47,14 +48,14 @@ export type TenantAdminOverview = {
   currentPeriod: string;
   currentUsage: TenantAiUsageMonthly;
   currentProfitUsd: number;
-  totalTokensUsedThisMonth: number;
+  totalCreditsUsedThisMonth: number;
   quotaUsagePercent: number;
 };
 
 export type TenantCreditLedgerEntry = {
   id: string;
   tenantId: string;
-  deltaTokens: number;
+  deltaCredits: number;
   reason: string;
   actorUserId?: string;
   metadata: Record<string, unknown>;
@@ -79,7 +80,7 @@ export type PlatformDashboardSummary = {
   totalProviderCostUsd: number;
   totalProfitUsd: number;
   totalRequestsCount: number;
-  totalTokensUsed: number;
+  totalCreditsConsumed: number;
   topTenantsByRevenue: Array<{
     tenantId: string;
     planCode: PlatformPlanCode;

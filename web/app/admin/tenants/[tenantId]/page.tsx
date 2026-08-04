@@ -97,8 +97,8 @@ export default function AdminTenantDetailPage() {
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <MetricCard label="Tokens usados no mês" value={formatNumber(overview.totalTokensUsedThisMonth)} hint={`Cota mensal: ${formatNumber(billing.monthlyTokenQuota)}`} />
-        <MetricCard label="Créditos extras" value={formatNumber(billing.creditsExtraTokens)} hint="Somam à cota do plano" />
+        <MetricCard label="Créditos usados no mês" value={formatNumber(overview.totalCreditsUsedThisMonth)} hint={`Cota mensal: ${formatNumber(billing.monthlyCreditsQuota)}`} />
+        <MetricCard label="Créditos extras" value={formatNumber(billing.creditsExtra)} hint="Somam à cota do plano" />
         <MetricCard
           label="Lucro do mês"
           value={formatUsd(overview.currentProfitUsd)}
@@ -240,9 +240,9 @@ export default function AdminTenantDetailPage() {
                     <tr key={entry.id} className="border-b border-border/60 last:border-b-0">
                       <td className="px-5 py-1.5 text-xs text-ink-muted">{formatDate(entry.occurredAt)}</td>
                       <td className="px-5 py-1.5 text-xs">{entry.reason}</td>
-                      <td className={`px-5 py-1.5 text-right font-semibold ${entry.deltaTokens >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                        {entry.deltaTokens >= 0 ? "+" : ""}
-                        {formatNumber(entry.deltaTokens)}
+                      <td className={`px-5 py-1.5 text-right font-semibold ${entry.deltaCredits >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                        {entry.deltaCredits >= 0 ? "+" : ""}
+                        {formatNumber(entry.deltaCredits)}
                       </td>
                     </tr>
                   ))}

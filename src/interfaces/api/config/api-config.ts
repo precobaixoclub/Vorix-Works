@@ -59,6 +59,19 @@ export type ApiConfig = {
     anthropicApiKey?: string;
     anthropicBriefingExtractionModel: string;
   };
+  /** Provedores de IA de mídia (imagem/vídeo) — Sprint 26. Chave estática só serve de bootstrap;
+   * o painel admin (`/admin/ai-providers`) pode substituir em runtime (mesmo padrão de
+   * `platformAiSettingsRepository` para Anthropic). */
+  mediaProviders: {
+    openaiEnabled: boolean;
+    openaiApiKey?: string;
+    openaiApiBaseUrl?: string;
+    openaiImageModel: string;
+    googleEnabled: boolean;
+    googleApiKey?: string;
+    googleApiBaseUrl?: string;
+    googleVeoModel: string;
+  };
   execution: {
     realExecutionEnabled: boolean;
     realExecutionResearchEnabled: boolean;
@@ -244,6 +257,14 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const objectStorageForcePathStyle = env.OBJECT_STORAGE_FORCE_PATH_STYLE?.trim() !== "false";
   const objectStorageAcl = env.OBJECT_STORAGE_ACL?.trim() || undefined;
   const objectStorageMaxUploadBytes = parsePositiveInt(env.MEDIA_UPLOAD_MAX_BYTES) ?? 100_000_000;
+  const openaiEnabled = env.OPENAI_IMAGE_ENABLED?.trim() === "true";
+  const openaiApiKey = env.OPENAI_API_KEY?.trim() || undefined;
+  const openaiApiBaseUrl = env.OPENAI_API_BASE_URL?.trim() || undefined;
+  const openaiImageModel = env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-1";
+  const googleEnabled = env.GOOGLE_VEO_ENABLED?.trim() === "true";
+  const googleApiKey = env.GOOGLE_AI_API_KEY?.trim() || undefined;
+  const googleApiBaseUrl = env.GOOGLE_AI_API_BASE_URL?.trim() || undefined;
+  const googleVeoModel = env.GOOGLE_VEO_MODEL?.trim() || "veo-3";
 
   if (aiGatewayEnabled && !isModelRegisteredAndActive("anthropic", anthropicBriefingExtractionModel)) {
     throw new Error(
@@ -271,6 +292,16 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       briefingExtractionEnabled: aiBriefingExtractionEnabled,
       anthropicApiKey,
       anthropicBriefingExtractionModel,
+    },
+    mediaProviders: {
+      openaiEnabled,
+      openaiApiKey,
+      openaiApiBaseUrl,
+      openaiImageModel,
+      googleEnabled,
+      googleApiKey,
+      googleApiBaseUrl,
+      googleVeoModel,
     },
     execution: {
       realExecutionEnabled,

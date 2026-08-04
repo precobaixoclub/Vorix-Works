@@ -11,7 +11,7 @@ export type PublicPlan = {
   name: string;
   tagline: string;
   monthlyPriceUsd: number;
-  monthlyTokenQuota: number;
+  monthlyCreditsQuota: number;
   monthlyPublicationsQuota: number;
   highlighted?: boolean;
   features: readonly string[];
@@ -36,8 +36,8 @@ export function formatPlanPrice(plan: PublicPlan): string {
   return `US$ ${plan.monthlyPriceUsd}`;
 }
 
-export function formatTokenQuota(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}M tokens`;
-  if (tokens >= 1_000) return `${(tokens / 1_000).toLocaleString("pt-BR")}k tokens`;
-  return `${tokens.toLocaleString("pt-BR")} tokens`;
+export function formatCreditsQuota(credits: number): string {
+  if (credits >= 1_000_000) return `${(credits / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}M créditos`;
+  if (credits >= 1_000) return `${(credits / 1_000).toLocaleString("pt-BR")}k créditos`;
+  return `${credits.toLocaleString("pt-BR")} créditos`;
 }

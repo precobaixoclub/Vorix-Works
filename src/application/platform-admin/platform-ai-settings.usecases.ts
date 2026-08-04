@@ -15,6 +15,7 @@ export type UpdatePlatformAiSettingsCommand = {
   briefingExtractionEnabled?: boolean;
   anthropicApiKey?: string;
   anthropicBriefingExtractionModel?: string;
+  creditUnitValueUsd?: number;
   actor: { userId: string };
 };
 
@@ -35,12 +36,16 @@ export async function updatePlatformAiSettings(
       `PLATFORM_AI_SETTINGS_INVALID_MODEL: "${command.anthropicBriefingExtractionModel}" não está registrado ou ativo no Model Registry.`,
     );
   }
+  if (command.creditUnitValueUsd !== undefined && command.creditUnitValueUsd < 0) {
+    throw new Error("PLATFORM_AI_SETTINGS_INVALID_CREDIT_VALUE: creditUnitValueUsd não pode ser negativo.");
+  }
 
   const patch: UpdatePlatformAiSettingsInput = {
     gatewayEnabled: command.gatewayEnabled,
     briefingExtractionEnabled: command.briefingExtractionEnabled,
     anthropicApiKey: command.anthropicApiKey,
     anthropicBriefingExtractionModel: command.anthropicBriefingExtractionModel,
+    creditUnitValueUsd: command.creditUnitValueUsd,
     actorUserId: command.actor.userId,
     now: deps.now().toISOString(),
   };

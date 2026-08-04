@@ -28,9 +28,9 @@ import {
 // Domínio puro — cotas, plano, markup, lucro, período.
 // -------------------------------------------------------------------------------------------------
 
-test("plan catalog: FREE tem 100k tokens; PRO tem cota maior; PRO destacado; ENTERPRISE fora do público", () => {
-  assert.equal(PLATFORM_PLAN_CATALOG.FREE.monthlyTokenQuota, 100_000);
-  assert.ok(PLATFORM_PLAN_CATALOG.PRO.monthlyTokenQuota > PLATFORM_PLAN_CATALOG.START.monthlyTokenQuota);
+test("plan catalog: FREE tem 50 créditos; PRO tem cota maior; PRO destacado; ENTERPRISE fora do público", () => {
+  assert.equal(PLATFORM_PLAN_CATALOG.FREE.monthlyCreditsQuota, 50);
+  assert.ok(PLATFORM_PLAN_CATALOG.PRO.monthlyCreditsQuota > PLATFORM_PLAN_CATALOG.START.monthlyCreditsQuota);
   assert.equal(PLATFORM_PLAN_CATALOG.PRO.highlighted, true);
   const publics = listPublicPlans().map((plan) => plan.code);
   assert.equal(publics.includes("ENTERPRISE"), false);
@@ -82,9 +82,9 @@ function makeInMemoryDeps() {
         tenantId,
         planCode: "FREE",
         subscriptionStatus: "trial",
-        monthlyTokenQuota: plan.monthlyTokenQuota,
+        monthlyCreditsQuota: plan.monthlyCreditsQuota,
         monthlyPublicationsQuota: plan.monthlyPublicationsQuota,
-        creditsExtraTokens: 0,
+        creditsExtra: 0,
         priceMultiplier: 2,
         createdAt: now,
         updatedAt: now,
@@ -116,14 +116,14 @@ function makeInMemoryDeps() {
       billings.set(tenantId, updated);
       return updated;
     },
-    async applyCreditDelta({ id, tenantId, deltaTokens, reason, actorUserId, metadata, now }) {
+    async applyCreditDelta({ id, tenantId, deltaCredits, reason, actorUserId, metadata, now }) {
       const current = billings.get(tenantId);
       if (!current) throw new Error("PLATFORM_BILLING_TENANT_NOT_FOUND");
-      const nextBalance = current.creditsExtraTokens + deltaTokens;
+      const nextBalance = current.creditsExtra + deltaCredits;
       if (nextBalance < 0) throw new Error("PLATFORM_BILLING_INSUFFICIENT_CREDITS");
-      const updated = { ...current, creditsExtraTokens: nextBalance, updatedAt: now };
+      const updated = { ...current, creditsExtra: nextBalance, updatedAt: now };
       billings.set(tenantId, updated);
-      const entry = { id, tenantId, deltaTokens, reason, actorUserId, metadata: metadata ?? {}, occurredAt: now };
+      const entry = { id, tenantId, deltaCredits, reason, actorUserId, metadata: metadata ?? {}, occurredAt: now };
       ledger.push(entry);
       return { billing: updated, entry };
     },
@@ -139,6 +139,7 @@ function makeInMemoryDeps() {
         inputTokens: existing.inputTokens + entry.inputTokens,
         outputTokens: existing.outputTokens + entry.outputTokens,
         cachedInputTokens: existing.cachedInputTokens + entry.cachedInputTokens,
+        creditsConsumed: existing.creditsConsumed + (entry.creditsConsumed ?? 0),
         providerCostUsd: existing.providerCostUsd + entry.providerCostUsd,
         customerPriceUsd: existing.customerPriceUsd + entry.customerPriceUsd,
         requestsCount: existing.requestsCount + (entry.requestsDelta ?? 0),
@@ -161,6 +162,7 @@ function makeInMemoryDeps() {
         totalTenants: new Set(relevant.map((r) => r.tenantId)).size,
         totalInputTokens: relevant.reduce((s, r) => s + r.inputTokens, 0),
         totalOutputTokens: relevant.reduce((s, r) => s + r.outputTokens, 0),
+        totalCreditsConsumed: relevant.reduce((s, r) => s + r.creditsConsumed, 0),
         totalRequestsCount: relevant.reduce((s, r) => s + r.requestsCount, 0),
         totalProviderCostUsd: relevant.reduce((s, r) => s + r.providerCostUsd, 0),
         totalCustomerPriceUsd: relevant.reduce((s, r) => s + r.customerPriceUsd, 0),
@@ -208,7 +210,7 @@ test("changeTenantPlan aplica cotas do plano do catálogo", async () => {
   await deps.platformBillingRepository.ensureTenantBilling({ tenantId: "t-a", now: "2026-04-01" });
   const updated = await changeTenantPlan(deps, { tenantId: "t-a", planCode: "PRO", actor: { userId: "admin" } });
   assert.equal(updated.planCode, "PRO");
-  assert.equal(updated.monthlyTokenQuota, PLATFORM_PLAN_CATALOG.PRO.monthlyTokenQuota);
+  assert.equal(updated.monthlyCreditsQuota, PLATFORM_PLAN_CATALOG.PRO.monthlyCreditsQuota);
   assert.equal(updated.subscriptionStatus, "active");
 });
 
@@ -217,12 +219,12 @@ test("adjustTenantCredits soma delta positivo e escreve ledger", async () => {
   await deps.platformBillingRepository.ensureTenantBilling({ tenantId: "t-b", now: "2026-04-01" });
   const result = await adjustTenantCredits(deps, {
     tenantId: "t-b",
-    deltaTokens: 500_000,
-    reason: "Pix R$ 90 — extra tokens",
+    deltaCredits: 500,
+    reason: "Pix R$ 90 — créditos extras",
     actor: { userId: "admin" },
   });
-  assert.equal(result.billing.creditsExtraTokens, 500_000);
-  assert.equal(result.entry.deltaTokens, 500_000);
+  assert.equal(result.billing.creditsExtra, 500);
+  assert.equal(result.entry.deltaCredits, 500);
   assert.equal(result.entry.reason, "manual_adjustment");
 });
 
@@ -230,7 +232,7 @@ test("adjustTenantCredits recusa delta = 0", async () => {
   const deps = makeInMemoryDeps();
   await deps.platformBillingRepository.ensureTenantBilling({ tenantId: "t-c", now: "2026-04-01" });
   await assert.rejects(
-    () => adjustTenantCredits(deps, { tenantId: "t-c", deltaTokens: 0, reason: "x", actor: { userId: "admin" } }),
+    () => adjustTenantCredits(deps, { tenantId: "t-c", deltaCredits: 0, reason: "x", actor: { userId: "admin" } }),
     /PLATFORM_ADMIN_INVALID_DELTA/,
   );
 });
@@ -268,6 +270,7 @@ test("listTenantsOverview retorna items com quotaUsagePercent computado", async 
     inputTokens: 30_000,
     outputTokens: 20_000,
     cachedInputTokens: 0,
+    creditsConsumed: 25,
     providerCostUsd: 0.5,
     customerPriceUsd: 1.0,
     requestsDelta: 1,
@@ -290,6 +293,7 @@ test("getPlatformDashboard soma receita/custo/lucro do mês corrente", async () 
     inputTokens: 100_000,
     outputTokens: 50_000,
     cachedInputTokens: 0,
+    creditsConsumed: 80,
     providerCostUsd: 4,
     customerPriceUsd: 8,
     requestsDelta: 2,

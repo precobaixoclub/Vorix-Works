@@ -14,14 +14,18 @@ export type TenantBilling = {
   tenantId: string;
   planCode: PlatformPlanCode;
   subscriptionStatus: PlatformSubscriptionStatus;
-  /** Cota mensal de tokens de IA (input + output somados) inclu\u00edda no plano contratado. */
-  monthlyTokenQuota: number;
+  /** Cota mensal de cr\u00e9ditos Vorix inclu\u00edda no plano contratado. Cr\u00e9dito \u00e9 uma unidade
+   * abstrata, fixa por funcionalidade (ver `AiOperationType.creditsCost` em `ai-providers.model.ts`)
+   * \u2014 nunca proporcional a tokens/segundos reais gastos no provider. */
+  monthlyCreditsQuota: number;
   /** Cota mensal de publica\u00e7\u00f5es reais (Meta/etc.) inclu\u00edda no plano contratado. */
   monthlyPublicationsQuota: number;
-  /** Tokens comprados avulsos ainda n\u00e3o consumidos \u2014 rolam entre meses. */
-  creditsExtraTokens: number;
-  /** Markup aplicado sobre o custo real do provider para calcular o pre\u00e7o cobrado do cliente.
-   * `2.00` = cobramos o dobro do custo. Sempre >= 1.00. */
+  /** Cr\u00e9ditos comprados avulsos ainda n\u00e3o consumidos \u2014 rolam entre meses. */
+  creditsExtra: number;
+  /** Markup hist\u00f3rico (era usado para `customerPrice = providerCost * multiplier`). Desde a
+   * migra\u00e7\u00e3o para cr\u00e9ditos fixos por opera\u00e7\u00e3o, a receita estimada usa
+   * `creditUnitValueUsd` (`platform_ai_settings`) \u2014 este campo fica mantido s\u00f3 para eventual
+   * desconto/markup negociado por tenant, n\u00e3o \u00e9 mais lido pelo fluxo de consumo de IA. */
   priceMultiplier: number;
   activatedAt?: string;
   suspendedAt?: string;
@@ -31,8 +35,8 @@ export type TenantBilling = {
 };
 
 /**
- * Entrada no ledger de cr\u00e9ditos. Todo delta em `creditsExtraTokens` deixa uma linha aqui \u2014
- * audit\u00e1vel, imut\u00e1vel. `deltaTokens` positivo = adicionado; negativo = consumido/estornado.
+ * Entrada no ledger de cr\u00e9ditos. Todo delta em `creditsExtra` deixa uma linha aqui \u2014
+ * audit\u00e1vel, imut\u00e1vel. `deltaCredits` positivo = adicionado; negativo = consumido/estornado.
  */
 export const TENANT_CREDIT_LEDGER_REASONS = [
   "manual_adjustment",
@@ -49,7 +53,7 @@ export type TenantCreditLedgerReason = (typeof TENANT_CREDIT_LEDGER_REASONS)[num
 export type TenantCreditLedgerEntry = {
   id: string;
   tenantId: string;
-  deltaTokens: number;
+  deltaCredits: number;
   reason: TenantCreditLedgerReason;
   actorUserId?: string;
   metadata: Record<string, unknown>;
@@ -58,8 +62,11 @@ export type TenantCreditLedgerEntry = {
 
 /**
  * Consumo mensal agregado. Uma linha por (tenant, per\u00edodo YYYY-MM). \u00c9 a fonte de verdade das
- * m\u00e9tricas de neg\u00f3cio: quanto pagamos ao provedor real (`providerCostUsd`) vs. quanto cobramos
- * do cliente (`customerPriceUsd`) \u2014 a diferen\u00e7a \u00e9 o lucro bruto.
+ * m\u00e9tricas de neg\u00f3cio: quanto pagamos ao(s) provedor(es) real(is) (`providerCostUsd`, somado de
+ * Anthropic/OpenAI/Google conforme a opera\u00e7\u00e3o) vs. a receita estimada (`customerPriceUsd` =
+ * `creditsConsumed * creditUnitValueUsd`, ver `platform_ai_settings`) \u2014 a diferen\u00e7a \u00e9 o lucro
+ * bruto. `inputTokens`/`outputTokens` seguem espec\u00edficos do consumo de texto (Anthropic); gera\u00e7\u00e3o
+ * de imagem/v\u00eddeo n\u00e3o usa token, s\u00f3 incrementa `creditsConsumed` e `providerCostUsd`.
  */
 export type TenantAiUsageMonthly = {
   tenantId: string;
@@ -68,9 +75,11 @@ export type TenantAiUsageMonthly = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
-  /** Custo real pago ao provider real (Anthropic). */
+  /** Cr\u00e9ditos Vorix consumidos no per\u00edodo \u2014 soma de todas as opera\u00e7\u00f5es (texto, imagem, v\u00eddeo). */
+  creditsConsumed: number;
+  /** Custo real pago ao(s) provider(s) real(is), somado independente de qual foi usado. */
   providerCostUsd: number;
-  /** Pre\u00e7o cobrado do cliente = providerCost * priceMultiplier. */
+  /** Receita estimada = creditsConsumed * creditUnitValueUsd (n\u00e3o \u00e9 pagamento real \u2014 ainda n\u00e3o existe gateway de pagamento). */
   customerPriceUsd: number;
   requestsCount: number;
   updatedAt: string;
@@ -83,7 +92,7 @@ export type TenantAdminOverview = {
   currentPeriod: string;
   currentUsage: TenantAiUsageMonthly;
   currentProfitUsd: number;
-  totalTokensUsedThisMonth: number;
+  totalCreditsUsedThisMonth: number;
   quotaUsagePercent: number;
 };
 
@@ -101,6 +110,7 @@ export function emptyMonthlyUsage(tenantId: string, period: string, now: string)
     inputTokens: 0,
     outputTokens: 0,
     cachedInputTokens: 0,
+    creditsConsumed: 0,
     providerCostUsd: 0,
     customerPriceUsd: 0,
     requestsCount: 0,

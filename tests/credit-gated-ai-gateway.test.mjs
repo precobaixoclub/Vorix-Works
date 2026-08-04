@@ -2,17 +2,30 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { CreditGatedAiGateway } from "../dist/application/ai-gateway/credit-gated-ai-gateway.js";
+import { CreditAccountingService } from "../dist/application/ai-providers/credit-accounting.service.js";
 import { emptyMonthlyUsage } from "../dist/domain/platform-billing/tenant-billing.model.js";
+
+const OPERATION_TYPE = {
+  code: "briefing_field_extraction",
+  label: "Extração de campos do briefing",
+  capability: "text_generation",
+  creditsCost: 1,
+  defaultProviderCode: "anthropic",
+  defaultModelId: "claude-fake",
+  active: true,
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
+};
 
 function makeFakeBillingRepo(initialBillings = new Map()) {
   const billings = new Map(initialBillings);
   const usage = new Map();
-  const ledger = [];
+  const creditLedger = [];
 
   return {
     billings,
     usage,
-    ledger,
+    creditLedger,
     repo: {
       async ensureTenantBilling({ tenantId }) {
         return billings.get(tenantId);
@@ -28,6 +41,7 @@ function makeFakeBillingRepo(initialBillings = new Map()) {
           inputTokens: existing.inputTokens + entry.inputTokens,
           outputTokens: existing.outputTokens + entry.outputTokens,
           cachedInputTokens: existing.cachedInputTokens + entry.cachedInputTokens,
+          creditsConsumed: existing.creditsConsumed + entry.creditsConsumed,
           providerCostUsd: existing.providerCostUsd + entry.providerCostUsd,
           customerPriceUsd: existing.customerPriceUsd + entry.customerPriceUsd,
           requestsCount: existing.requestsCount + (entry.requestsDelta ?? 0),
@@ -39,12 +53,12 @@ function makeFakeBillingRepo(initialBillings = new Map()) {
       async getAiUsage({ tenantId, period }) {
         return usage.get(`${tenantId}:${period}`);
       },
-      async applyCreditDelta({ id, tenantId, deltaTokens, reason, metadata, now }) {
+      async applyCreditDelta({ id, tenantId, deltaCredits, reason, metadata, now }) {
         const current = billings.get(tenantId);
-        const updated = { ...current, creditsExtraTokens: current.creditsExtraTokens + deltaTokens, updatedAt: now };
+        const updated = { ...current, creditsExtra: current.creditsExtra + deltaCredits, updatedAt: now };
         billings.set(tenantId, updated);
-        const entry = { id, tenantId, deltaTokens, reason, metadata: metadata ?? {}, occurredAt: now };
-        ledger.push(entry);
+        const entry = { id, tenantId, deltaCredits, reason, metadata: metadata ?? {}, occurredAt: now };
+        creditLedger.push(entry);
         return { billing: updated, entry };
       },
       async updateTenantBilling() { throw new Error("não usado"); },
@@ -54,6 +68,56 @@ function makeFakeBillingRepo(initialBillings = new Map()) {
       async aggregateUsage() { throw new Error("não usado"); },
     },
   };
+}
+
+function makeFakeAiProvidersRepo(operationType = OPERATION_TYPE) {
+  const generationLedger = [];
+  return {
+    generationLedger,
+    repo: {
+      async getOperationType(code) {
+        return code === operationType.code ? operationType : undefined;
+      },
+      async recordGeneration(entry) {
+        generationLedger.push(entry);
+        return entry;
+      },
+      async listProviders() { throw new Error("não usado"); },
+      async getProvider() { throw new Error("não usado"); },
+      async updateProvider() { throw new Error("não usado"); },
+      async listModels() { throw new Error("não usado"); },
+      async updateModel() { throw new Error("não usado"); },
+      async listOperationTypes() { throw new Error("não usado"); },
+      async updateOperationType() { throw new Error("não usado"); },
+      async listGenerations() { throw new Error("não usado"); },
+      async aggregateGenerationsByProvider() { throw new Error("não usado"); },
+    },
+  };
+}
+
+function fakePlatformAiSettingsRepo(creditUnitValueUsd = 0.05) {
+  return {
+    async get() {
+      return {
+        gatewayEnabled: true,
+        briefingExtractionEnabled: true,
+        anthropicBriefingExtractionModel: "claude-fake",
+        creditUnitValueUsd,
+        updatedAt: "2026-01-01T00:00:00Z",
+      };
+    },
+    async update() { throw new Error("não usado"); },
+  };
+}
+
+function buildGated({ billingRepo, aiProvidersRepo, platformAiSettingsRepo, now, idGenerator }) {
+  const creditAccounting = new CreditAccountingService({
+    platformBillingRepository: billingRepo,
+    platformAiSettingsRepository: platformAiSettingsRepo ?? fakePlatformAiSettingsRepo(),
+    aiProvidersRepository: aiProvidersRepo,
+    idGenerator: idGenerator ?? ((p) => `${p}-1`),
+  });
+  return new CreditGatedAiGateway({ inner: fakeSuccessGateway(), creditAccounting, now });
 }
 
 function fakeSuccessGateway(usageOverride = {}) {
@@ -110,122 +174,109 @@ const REQUEST = {
 };
 
 test("CreditGatedAiGateway: bloqueia quando tenant sem billing", async () => {
-  const { repo } = makeFakeBillingRepo();
-  const inner = fakeSuccessGateway();
-  const gated = new CreditGatedAiGateway({
-    inner,
-    platformBillingRepository: repo,
-    idGenerator: () => "id-1",
-    now: () => new Date("2026-08-01T10:00:00Z"),
-  });
+  const { repo: billingRepo } = makeFakeBillingRepo();
+  const { repo: aiProvidersRepo } = makeFakeAiProvidersRepo();
+  const gated = buildGated({ billingRepo, aiProvidersRepo, now: () => new Date("2026-08-01T10:00:00Z") });
 
   const result = await gated.execute(REQUEST);
   assert.equal(result.ok, false);
   assert.equal(result.error.category, "quota_exceeded");
-  assert.equal(inner.calls, 0);
 });
 
 test("CreditGatedAiGateway: bloqueia quando subscription_status é 'suspended'", async () => {
   const billings = new Map([["tenant-1", {
     tenantId: "tenant-1", planCode: "FREE", subscriptionStatus: "suspended",
-    monthlyTokenQuota: 100_000, monthlyPublicationsQuota: 5,
-    creditsExtraTokens: 50_000, priceMultiplier: 2,
+    monthlyCreditsQuota: 100, monthlyPublicationsQuota: 5,
+    creditsExtra: 50, priceMultiplier: 2,
     createdAt: "2026-08-01", updatedAt: "2026-08-01",
   }]]);
-  const { repo } = makeFakeBillingRepo(billings);
-  const inner = fakeSuccessGateway();
-  const gated = new CreditGatedAiGateway({
-    inner, platformBillingRepository: repo, idGenerator: () => "id", now: () => new Date("2026-08-01T10:00:00Z"),
-  });
+  const { repo: billingRepo } = makeFakeBillingRepo(billings);
+  const { repo: aiProvidersRepo } = makeFakeAiProvidersRepo();
+  const gated = buildGated({ billingRepo, aiProvidersRepo, now: () => new Date("2026-08-01T10:00:00Z") });
 
   const result = await gated.execute(REQUEST);
   assert.equal(result.ok, false);
   assert.equal(result.error.category, "quota_exceeded");
   assert.match(result.error.message, /suspensa/i);
-  assert.equal(inner.calls, 0);
 });
 
-test("CreditGatedAiGateway: bloqueia quando saldo total = 0", async () => {
+test("CreditGatedAiGateway: bloqueia quando saldo total de créditos é insuficiente", async () => {
   const billings = new Map([["tenant-1", {
     tenantId: "tenant-1", planCode: "FREE", subscriptionStatus: "trial",
-    monthlyTokenQuota: 100_000, monthlyPublicationsQuota: 5,
-    creditsExtraTokens: 0, priceMultiplier: 2,
+    monthlyCreditsQuota: 1, monthlyPublicationsQuota: 5,
+    creditsExtra: 0, priceMultiplier: 2,
     createdAt: "2026-08-01", updatedAt: "2026-08-01",
   }]]);
-  const { repo, usage } = makeFakeBillingRepo(billings);
-  // Simula 100k tokens já consumidos no mês corrente:
+  const { repo: billingRepo, usage } = makeFakeBillingRepo(billings);
+  // 1 crédito já consumido no mês corrente — não sobra nada, nem na cota nem em extra.
   usage.set("tenant-1:2026-08", {
     tenantId: "tenant-1", period: "2026-08",
-    inputTokens: 60_000, outputTokens: 40_000, cachedInputTokens: 0,
-    providerCostUsd: 0.3, customerPriceUsd: 0.6, requestsCount: 5,
+    inputTokens: 100, outputTokens: 200, cachedInputTokens: 0, creditsConsumed: 1,
+    providerCostUsd: 0.001, customerPriceUsd: 0.05, requestsCount: 1,
     updatedAt: "2026-08-01T09:00:00Z",
   });
-  const inner = fakeSuccessGateway();
-  const gated = new CreditGatedAiGateway({
-    inner, platformBillingRepository: repo, idGenerator: () => "id", now: () => new Date("2026-08-01T10:00:00Z"),
-  });
+  const { repo: aiProvidersRepo } = makeFakeAiProvidersRepo();
+  const gated = buildGated({ billingRepo, aiProvidersRepo, now: () => new Date("2026-08-01T10:00:00Z") });
 
   const result = await gated.execute(REQUEST);
   assert.equal(result.ok, false);
   assert.equal(result.error.category, "quota_exceeded");
-  assert.match(result.error.message, /esgotado/i);
-  assert.equal(inner.calls, 0);
+  assert.match(result.error.message, /insuficiente/i);
 });
 
-test("CreditGatedAiGateway: chama inner e registra consumo dentro da cota mensal (sem tocar creditsExtraTokens)", async () => {
+test("CreditGatedAiGateway: chama inner e registra consumo dentro da cota mensal (sem tocar creditsExtra)", async () => {
   const billings = new Map([["tenant-1", {
     tenantId: "tenant-1", planCode: "FREE", subscriptionStatus: "trial",
-    monthlyTokenQuota: 100_000, monthlyPublicationsQuota: 5,
-    creditsExtraTokens: 10_000, priceMultiplier: 2,
+    monthlyCreditsQuota: 100, monthlyPublicationsQuota: 5,
+    creditsExtra: 10, priceMultiplier: 2,
     createdAt: "2026-08-01", updatedAt: "2026-08-01",
   }]]);
-  const { repo, usage, ledger } = makeFakeBillingRepo(billings);
-  const inner = fakeSuccessGateway();
-  const gated = new CreditGatedAiGateway({
-    inner, platformBillingRepository: repo, idGenerator: (p) => `${p}-1`, now: () => new Date("2026-08-01T10:00:00Z"),
-  });
+  const { repo: billingRepo, usage, billings: billingsMap } = makeFakeBillingRepo(billings);
+  const { repo: aiProvidersRepo, generationLedger } = makeFakeAiProvidersRepo();
+  const gated = buildGated({ billingRepo, aiProvidersRepo, now: () => new Date("2026-08-01T10:00:00Z") });
 
   const result = await gated.execute(REQUEST);
   assert.equal(result.ok, true);
-  assert.equal(inner.calls, 1);
 
   const row = usage.get("tenant-1:2026-08");
   assert.equal(row.inputTokens, 100);
   assert.equal(row.outputTokens, 200);
+  assert.equal(row.creditsConsumed, 1, "1 crédito fixo, independente de quantos tokens o provider gastou");
   assert.equal(row.providerCostUsd, 0.001);
-  assert.equal(row.customerPriceUsd, 0.002); // 2x markup
+  assert.equal(row.customerPriceUsd, 0.05, "1 crédito * creditUnitValueUsd (0.05) — não mais providerCost * multiplier");
   assert.equal(row.requestsCount, 1);
 
-  assert.equal(ledger.length, 0, "não toca creditsExtraTokens porque a cota mensal cobriu tudo");
-  assert.equal(billings.get("tenant-1").creditsExtraTokens, 10_000);
+  assert.equal(generationLedger.length, 1, "grava uma linha no ledger de geração (auditoria financeira) mesmo sem estourar a cota");
+  assert.equal(generationLedger[0].creditsConsumed, 1);
+  assert.equal(generationLedger[0].providerCode, "anthropic");
+
+  assert.equal(billingsMap.get("tenant-1").creditsExtra, 10, "não toca creditsExtra porque a cota mensal cobriu tudo");
 });
 
-test("CreditGatedAiGateway: consumo estoura a cota mensal e sangra em creditsExtraTokens via applyCreditDelta", async () => {
+test("CreditGatedAiGateway: consumo estoura a cota mensal e sangra em creditsExtra via applyCreditDelta", async () => {
   const initial = new Map([["tenant-1", {
     tenantId: "tenant-1", planCode: "FREE", subscriptionStatus: "trial",
-    monthlyTokenQuota: 100_000, monthlyPublicationsQuota: 5,
-    creditsExtraTokens: 500, priceMultiplier: 2,
+    monthlyCreditsQuota: 100, monthlyPublicationsQuota: 5,
+    creditsExtra: 500, priceMultiplier: 2,
     createdAt: "2026-08-01", updatedAt: "2026-08-01",
   }]]);
-  const { repo, ledger, billings } = makeFakeBillingRepo(initial);
-  // 99_800 já usados => sobram 200 na cota mensal antes da chamada
-  await repo.addAiUsage({
+  const { repo: billingRepo, creditLedger, billings } = makeFakeBillingRepo(initial);
+  // 100 créditos já usados => cota mensal esgotada antes da chamada.
+  await billingRepo.addAiUsage({
     tenantId: "tenant-1", period: "2026-08",
-    inputTokens: 60_000, outputTokens: 39_800, cachedInputTokens: 0,
-    providerCostUsd: 0.5, customerPriceUsd: 1.0, requestsDelta: 3,
+    inputTokens: 60_000, outputTokens: 39_800, cachedInputTokens: 0, creditsConsumed: 100,
+    providerCostUsd: 0.5, customerPriceUsd: 5, requestsDelta: 3,
     now: "2026-08-01T09:00:00Z",
   });
-  const inner = fakeSuccessGateway(); // consome 300 tokens
-  const gated = new CreditGatedAiGateway({
-    inner, platformBillingRepository: repo, idGenerator: (p) => `${p}-99`, now: () => new Date("2026-08-01T10:00:00Z"),
-  });
+  const { repo: aiProvidersRepo } = makeFakeAiProvidersRepo();
+  const gated = buildGated({ billingRepo, aiProvidersRepo, now: () => new Date("2026-08-01T10:00:00Z"), idGenerator: (p) => `${p}-99` });
 
   const result = await gated.execute(REQUEST);
   assert.equal(result.ok, true);
-  assert.equal(ledger.length, 1);
-  const entry = ledger[0];
+  assert.equal(creditLedger.length, 1);
+  const entry = creditLedger[0];
   assert.equal(entry.reason, "ai_consumption");
-  assert.equal(entry.deltaTokens, -100, "sangram 100 tokens em creditsExtras (300 usados - 200 restante na cota)");
+  assert.equal(entry.deltaCredits, -1, "o único crédito da operação sangra inteiro de creditsExtra, já que a cota mensal está zerada");
   const updated = billings.get("tenant-1");
-  assert.equal(updated.creditsExtraTokens, 400);
+  assert.equal(updated.creditsExtra, 499);
 });

@@ -53,7 +53,7 @@ export type PlatformDashboardSummary = {
   totalProviderCostUsd: number;
   totalProfitUsd: number;
   totalRequestsCount: number;
-  totalTokensUsed: number;
+  totalCreditsConsumed: number;
   topTenantsByRevenue: Array<{
     tenantId: string;
     planCode: PlatformPlanCode;
@@ -89,8 +89,8 @@ export async function listTenantsOverview(
     billings.map(async (billing) => {
       const usage = (await deps.platformBillingRepository.getAiUsage({ tenantId: billing.tenantId, period }))
         ?? emptyMonthlyUsage(billing.tenantId, period, deps.now().toISOString());
-      const quotaUsagePercent = billing.monthlyTokenQuota > 0
-        ? Math.min(100, ((usage.inputTokens + usage.outputTokens) / billing.monthlyTokenQuota) * 100)
+      const quotaUsagePercent = billing.monthlyCreditsQuota > 0
+        ? Math.min(100, (usage.creditsConsumed / billing.monthlyCreditsQuota) * 100)
         : 0;
       return {
         tenantId: billing.tenantId,
@@ -98,7 +98,7 @@ export async function listTenantsOverview(
         currentPeriod: period,
         currentUsage: usage,
         currentProfitUsd: profitOfMonthly(usage),
-        totalTokensUsedThisMonth: usage.inputTokens + usage.outputTokens,
+        totalCreditsUsedThisMonth: usage.creditsConsumed,
         quotaUsagePercent,
       };
     }),
@@ -125,8 +125,8 @@ export async function getTenantDetail(
   ]);
 
   const currentUsage = usage ?? emptyMonthlyUsage(input.tenantId, period, deps.now().toISOString());
-  const quotaUsagePercent = billing.monthlyTokenQuota > 0
-    ? Math.min(100, ((currentUsage.inputTokens + currentUsage.outputTokens) / billing.monthlyTokenQuota) * 100)
+  const quotaUsagePercent = billing.monthlyCreditsQuota > 0
+    ? Math.min(100, (currentUsage.creditsConsumed / billing.monthlyCreditsQuota) * 100)
     : 0;
 
   const memberDetails = await Promise.all(
@@ -148,7 +148,7 @@ export async function getTenantDetail(
       currentPeriod: period,
       currentUsage,
       currentProfitUsd: profitOfMonthly(currentUsage),
-      totalTokensUsedThisMonth: currentUsage.inputTokens + currentUsage.outputTokens,
+      totalCreditsUsedThisMonth: currentUsage.creditsConsumed,
       quotaUsagePercent,
     },
     planName: getPlatformPlan(billing.planCode).name,
@@ -162,13 +162,13 @@ export async function getTenantDetail(
 /** Ajuste manual de cr\u00e9ditos (o admin libera/subtrai tokens avulsos). */
 export async function adjustTenantCredits(
   deps: PlatformAdminUseCaseDeps,
-  input: { tenantId: string; deltaTokens: number; reason: string; actor: PlatformAdminActor },
+  input: { tenantId: string; deltaCredits: number; reason: string; actor: PlatformAdminActor },
 ): Promise<{ billing: TenantBilling; entry: TenantCreditLedgerEntry }> {
-  if (input.deltaTokens === 0) throw new Error("PLATFORM_ADMIN_INVALID_DELTA: o delta n\u00e3o pode ser zero.");
+  if (input.deltaCredits === 0) throw new Error("PLATFORM_ADMIN_INVALID_DELTA: o delta n\u00e3o pode ser zero.");
   const result = await deps.platformBillingRepository.applyCreditDelta({
     id: deps.idGenerator(),
     tenantId: input.tenantId,
-    deltaTokens: input.deltaTokens,
+    deltaCredits: input.deltaCredits,
     reason: "manual_adjustment",
     actorUserId: input.actor.userId,
     metadata: { note: input.reason.slice(0, 500) },
@@ -187,7 +187,7 @@ export async function changeTenantPlan(
     tenantId: input.tenantId,
     patch: {
       planCode: input.planCode,
-      monthlyTokenQuota: plan.monthlyTokenQuota,
+      monthlyCreditsQuota: plan.monthlyCreditsQuota,
       monthlyPublicationsQuota: plan.monthlyPublicationsQuota,
       subscriptionStatus: input.planCode === "FREE" ? "trial" : "active",
       activatedAt: input.planCode === "FREE" ? undefined : deps.now().toISOString(),
@@ -269,7 +269,7 @@ export async function getPlatformDashboard(deps: PlatformAdminUseCaseDeps): Prom
     totalProviderCostUsd: aggregate.totalProviderCostUsd,
     totalProfitUsd: Math.max(0, aggregate.totalCustomerPriceUsd - aggregate.totalProviderCostUsd),
     totalRequestsCount: aggregate.totalRequestsCount,
-    totalTokensUsed: aggregate.totalInputTokens + aggregate.totalOutputTokens,
+    totalCreditsConsumed: aggregate.totalCreditsConsumed,
     topTenantsByRevenue: top.slice(0, 10),
   };
 }

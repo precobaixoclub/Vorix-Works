@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { fetchPublicPlans, formatPlanPrice, formatTokenQuota, type PublicPlan } from "@/features/platform-plans/api";
+import { fetchPublicPlans, formatPlanPrice, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
 import { Button } from "@/components/Button";
 import { Logo } from "@/components/Logo";
 
@@ -101,7 +101,7 @@ function PlanCard({ plan }: { plan: PublicPlan }) {
           {formatPlanPrice(plan)}
           {!isFree ? <span className="ml-1 text-sm font-normal text-ink-muted">/mês</span> : null}
         </p>
-        <p className="mt-1 text-xs text-ink-muted">{formatTokenQuota(plan.monthlyTokenQuota)} · {plan.monthlyPublicationsQuota} publicações</p>
+        <p className="mt-1 text-xs text-ink-muted">{formatCreditsQuota(plan.monthlyCreditsQuota)} · {plan.monthlyPublicationsQuota} publicações</p>
       </div>
       <ul className="mt-4 flex flex-1 flex-col gap-2 text-sm text-ink">
         {plan.features.map((feature) => (

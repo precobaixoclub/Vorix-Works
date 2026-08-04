@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Logo } from "@/components/Logo";
-import { fetchPublicPlans, formatPlanPrice, formatTokenQuota, type PublicPlan } from "@/features/platform-plans/api";
+import { fetchPublicPlans, formatPlanPrice, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
 
 export const revalidate = 300;
 
@@ -115,7 +115,7 @@ export default async function RootPage() {
                   {formatPlanPrice(plan)}
                   {plan.monthlyPriceUsd > 0 ? <span className="ml-1 text-sm font-normal text-ink-muted">/mês</span> : null}
                 </p>
-                <p className="mt-1 text-xs text-ink-muted">{formatTokenQuota(plan.monthlyTokenQuota)}</p>
+                <p className="mt-1 text-xs text-ink-muted">{formatCreditsQuota(plan.monthlyCreditsQuota)}</p>
               </div>
             ))}
           </div>

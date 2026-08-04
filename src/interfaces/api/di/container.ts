@@ -27,6 +27,13 @@ import type { PlanningDecisionRepositoryPort } from "../../../application/ports/
 import type { PlanningRepositoryPort } from "../../../application/ports/planning-repository.port.js";
 import type { PlatformBillingRepositoryPort } from "../../../application/ports/platform-billing-repository.port.js";
 import type { PlatformAiSettingsRepositoryPort } from "../../../application/ports/platform-ai-settings-repository.port.js";
+import type { AiProvidersRepositoryPort } from "../../../application/ports/ai-providers-repository.port.js";
+import type { AiMediaProviderAdapterPort } from "../../../application/ports/ai-media-provider-adapter.port.js";
+import { createDefaultAiMediaProviderRegistry, type AiMediaProviderRegistry } from "../../../application/ai-providers/ai-media-provider-registry.js";
+import { CreditAccountingService } from "../../../application/ai-providers/credit-accounting.service.js";
+import { MediaGenerationService } from "../../../application/ai-providers/media-generation.service.js";
+import { OpenAiImageProviderAdapter } from "../../../infrastructure/ai-providers/openai-image-provider-adapter.js";
+import { GoogleVeoProviderAdapter } from "../../../infrastructure/ai-providers/google-veo-provider-adapter.js";
 import type { PublicationRepositoryPort } from "../../../application/ports/publication-repository.port.js";
 import type { PreparedCommandRepositoryPort } from "../../../application/ports/prepared-command-repository.port.js";
 import type { RefreshTokenRepositoryPort } from "../../../application/ports/refresh-token-repository.port.js";
@@ -215,6 +222,12 @@ export type ApiContainer = {
   facebookProvider: MetaContentPostingProvider;
   objectStorage: ObjectStoragePort;
   publicationQueue: PublicationQueuePort;
+  /** Sprint 26 — Provedores de IA (imagem/vídeo). Registro sempre existe; adapters só entram
+   * habilitados quando configurados via env/painel admin. */
+  aiMediaProviderAdapters: readonly AiMediaProviderAdapterPort[];
+  aiMediaProviderRegistry: AiMediaProviderRegistry;
+  /** Só existe em modo "jwt" (precisa de `aiProvidersRepository` real via Postgres). */
+  mediaGenerationService?: MediaGenerationService;
   executionHandlers: [DeterministicExecutionTaskHandler];
   executionFeatureFlags: ExecutionFeatureFlags;
   executionContractRegistry: ExecutionContractRegistry;
@@ -233,6 +246,7 @@ export type ApiContainer = {
     auditLog: AuditLogPort;
     platformBillingRepository: PlatformBillingRepositoryPort;
     platformAiSettingsRepository: PlatformAiSettingsRepositoryPort;
+    aiProvidersRepository: AiProvidersRepositoryPort;
     passwordHasher: PasswordHasherPort;
     jwt: JwtPort;
     accessTokenTtlSeconds: number;
@@ -378,6 +392,37 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     ...(config?.publication.metaInstagramEnabled ? [instagramProvider, facebookProvider] : []),
   ];
   const publicationProviderRegistry = createDefaultPublicationProviderRegistry(publicationProviderAdapters);
+
+  // Sprint 26 — Provedores de IA de mídia (imagem/vídeo). Mesma filosofia da chave dinâmica da
+  // Anthropic (`AnthropicAiModelProvider.getApiKey`): quando há Postgres real, a chave configurada
+  // pelo painel admin (`ai_providers.secret_reference`, via `secretManager`) tem prioridade sobre a
+  // variável de ambiente — permite trocar/ligar sem restart.
+  const resolveMediaProviderKey = (envKey: string | undefined, secretReference: string) => async (): Promise<string | undefined> => {
+    const stored = await secretManager.get(secretReference).catch(() => undefined);
+    const storedKey = stored?.value?.apiKey;
+    return storedKey ?? envKey;
+  };
+  const openaiImageProvider = new OpenAiImageProviderAdapter({
+    enabled: config?.mediaProviders.openaiEnabled ?? false,
+    apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
+    getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
+    persistGeneratedImage: async ({ base64, tenantId }) => {
+      const result = await objectStorage.put({
+        key: `ai-generated/${tenantId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.png`,
+        body: Buffer.from(base64, "base64"),
+        contentType: "image/png",
+      });
+      return result.url;
+    },
+  });
+  const googleVeoProvider = new GoogleVeoProviderAdapter({
+    enabled: config?.mediaProviders.googleEnabled ?? false,
+    apiBaseUrl: config?.mediaProviders.googleApiBaseUrl,
+    getApiKey: resolveMediaProviderKey(config?.mediaProviders.googleApiKey, "ai-provider:google"),
+  });
+  const aiMediaProviderAdapters: readonly AiMediaProviderAdapterPort[] = [openaiImageProvider, googleVeoProvider];
+  const aiMediaProviderRegistry = createDefaultAiMediaProviderRegistry(aiMediaProviderAdapters);
+
   const publicationSecretStore = new SecretManagerPublicationSecretStore(secretManager);
   const publicationSecretResolver = new CompositePublicationSecretResolver(new StoredPublicationSecretResolver(publicationSecretStore), new FakePublicationSecretResolver());
   const publicationProviderPolicy = new PublicationProviderPolicy(
@@ -577,13 +622,25 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
 
     const jwtPort = new JsonWebTokenJwtAdapter(config.jwtSecret);
 
-    // Sprint 25/Fase 2 — envolve o AI Gateway real com controle de créditos por Tenant. Só no
-    // modo "jwt" (produção) porque só nesse modo temos `platform_billing_repository` real
-    // configurado; em "noop"/testes locais o Gateway roda "cru" para não exigir setup extra.
+    // Sprint 25/Fase 2 (migrado na Sprint 26 para crédito fixo por operação) — envolve o AI
+    // Gateway real com controle de créditos Vorix por Tenant. Só no modo "jwt" (produção) porque
+    // só nesse modo temos os repositórios reais configurados; em "noop"/testes locais o Gateway
+    // roda "cru" para não exigir setup extra.
+    const creditAccounting = new CreditAccountingService({
+      platformBillingRepository: identityRepositories.platformBillingRepository,
+      platformAiSettingsRepository: identityRepositories.platformAiSettingsRepository,
+      aiProvidersRepository: identityRepositories.aiProvidersRepository,
+      idGenerator: (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    });
     const gatedAiGateway = new CreditGatedAiGateway({
       inner: aiGateway,
-      platformBillingRepository: identityRepositories.platformBillingRepository,
-      idGenerator: (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      creditAccounting,
+      now: () => new Date(),
+    });
+    const mediaGenerationService = new MediaGenerationService({
+      registry: aiMediaProviderRegistry,
+      creditAccounting,
+      aiProvidersRepository: identityRepositories.aiProvidersRepository,
       now: () => new Date(),
     });
 
@@ -591,6 +648,9 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       authPort: new JwtAuthAdapter(jwtPort),
       aiGateway: gatedAiGateway,
       aiExtractionEnabled,
+      aiMediaProviderAdapters,
+      aiMediaProviderRegistry,
+      mediaGenerationService,
       executionHandlers,
       executionFeatureFlags,
       executionContractRegistry,
@@ -660,6 +720,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     authPort: createNoopAuthAdapter({ devPrincipal: config?.devPrincipal }),
     aiGateway,
     aiExtractionEnabled,
+    aiMediaProviderAdapters,
+    aiMediaProviderRegistry,
     executionHandlers,
     executionFeatureFlags,
     executionContractRegistry,

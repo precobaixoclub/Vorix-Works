@@ -29,8 +29,10 @@ export type PlatformPlanDefinition = {
   tagline: string;
   /** Pre\u00e7o mensal cobrado do cliente (USD). `0` no FREE. */
   monthlyPriceUsd: number;
-  /** Cota de tokens Anthropic inclu\u00eddos no plano (input + output somados). */
-  monthlyTokenQuota: number;
+  /** Cota de cr\u00e9ditos Vorix inclu\u00eddos no plano. Cr\u00e9dito \u00e9 unidade fixa por opera\u00e7\u00e3o (texto=1,
+   * imagem=2, v\u00eddeo=20 por padr\u00e3o \u2014 ver `ai_operation_types`), nunca proporcional a token/segundo
+   * real gasto no provider. */
+  monthlyCreditsQuota: number;
   /** Cota de publica\u00e7\u00f5es reais (Meta/etc.) no m\u00eas. */
   monthlyPublicationsQuota: number;
   /** N\u00famero m\u00e1ximo de Workspaces do Tenant. `null` = ilimitado. */
@@ -42,11 +44,10 @@ export type PlatformPlanDefinition = {
 };
 
 /**
- * Precifica\u00e7\u00e3o inicial \u2014 valores conservadores. A cota de tokens do FREE (100k) foi calibrada
- * para permitir experimentar o produto sem virar canal de custo (100k de tokens do Claude
- * Sonnet 4.5 = ~$0.30 de custo real com margem embutida no markup do avulso). Os planos pagos
- * ficam com preferencia clara por assinatura vs. tokens avulsos (o "extra pack" custa 2x o custo,
- * o plano PRO cobra ~1.5x \u2014 desconto de atacado deliberado).
+ * Precifica\u00e7\u00e3o inicial \u2014 valores conservadores. A cota do FREE (50 cr\u00e9ditos) foi calibrada para
+ * permitir experimentar o produto (chat + algumas imagens) sem virar canal de custo \u2014 o cliente
+ * nunca v\u00ea o custo real em USD, s\u00f3 o saldo de cr\u00e9ditos. Custo em cr\u00e9dito por opera\u00e7\u00e3o \u00e9
+ * admin-configur\u00e1vel em `ai_operation_types` (padr\u00e3o: texto=1, imagem=2, v\u00eddeo curto=20).
  */
 export const PLATFORM_PLAN_CATALOG: Readonly<Record<PlatformPlanCode, PlatformPlanDefinition>> = Object.freeze({
   FREE: {
@@ -54,11 +55,11 @@ export const PLATFORM_PLAN_CATALOG: Readonly<Record<PlatformPlanCode, PlatformPl
     name: "Gratuito",
     tagline: "Para conhecer o Vorix",
     monthlyPriceUsd: 0,
-    monthlyTokenQuota: 100_000,
+    monthlyCreditsQuota: 50,
     monthlyPublicationsQuota: 5,
     maxWorkspaces: 1,
     features: [
-      "100 mil tokens de IA por m\u00eas",
+      "50 cr\u00e9ditos de IA por m\u00eas",
       "5 publica\u00e7\u00f5es reais no m\u00eas",
       "1 Workspace",
       "Suporte por comunidade",
@@ -69,11 +70,11 @@ export const PLATFORM_PLAN_CATALOG: Readonly<Record<PlatformPlanCode, PlatformPl
     name: "Start",
     tagline: "Para consultores e influenciadores",
     monthlyPriceUsd: 29,
-    monthlyTokenQuota: 1_500_000,
+    monthlyCreditsQuota: 500,
     monthlyPublicationsQuota: 60,
     maxWorkspaces: null,
     features: [
-      "1,5 milh\u00e3o de tokens de IA por m\u00eas",
+      "500 cr\u00e9ditos de IA por m\u00eas",
       "60 publica\u00e7\u00f5es reais no m\u00eas",
       "Workspaces ilimitados",
       "Suporte por e-mail",
@@ -84,12 +85,12 @@ export const PLATFORM_PLAN_CATALOG: Readonly<Record<PlatformPlanCode, PlatformPl
     name: "Pro",
     tagline: "Para ag\u00eancias em opera\u00e7\u00e3o",
     monthlyPriceUsd: 89,
-    monthlyTokenQuota: 6_000_000,
+    monthlyCreditsQuota: 2_500,
     monthlyPublicationsQuota: 300,
     maxWorkspaces: null,
     highlighted: true,
     features: [
-      "6 milh\u00f5es de tokens de IA por m\u00eas",
+      "2.500 cr\u00e9ditos de IA por m\u00eas",
       "300 publica\u00e7\u00f5es reais no m\u00eas",
       "Workspaces ilimitados",
       "Integra\u00e7\u00f5es sociais completas",
@@ -101,11 +102,11 @@ export const PLATFORM_PLAN_CATALOG: Readonly<Record<PlatformPlanCode, PlatformPl
     name: "Business",
     tagline: "Para opera\u00e7\u00f5es multi-marca",
     monthlyPriceUsd: 249,
-    monthlyTokenQuota: 20_000_000,
+    monthlyCreditsQuota: 10_000,
     monthlyPublicationsQuota: 1_500,
     maxWorkspaces: null,
     features: [
-      "20 milh\u00f5es de tokens de IA por m\u00eas",
+      "10.000 cr\u00e9ditos de IA por m\u00eas",
       "1.500 publica\u00e7\u00f5es reais no m\u00eas",
       "Workspaces ilimitados",
       "SLA de disponibilidade",
@@ -117,7 +118,7 @@ export const PLATFORM_PLAN_CATALOG: Readonly<Record<PlatformPlanCode, PlatformPl
     name: "Enterprise",
     tagline: "Volume corporativo",
     monthlyPriceUsd: 0,
-    monthlyTokenQuota: Number.MAX_SAFE_INTEGER,
+    monthlyCreditsQuota: Number.MAX_SAFE_INTEGER,
     monthlyPublicationsQuota: Number.MAX_SAFE_INTEGER,
     maxWorkspaces: null,
     features: [

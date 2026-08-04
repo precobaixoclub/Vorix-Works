@@ -34,11 +34,11 @@ export async function fetchTenantDetail(tenantId: string): Promise<PlatformTenan
   return apiClient.get<PlatformTenantDetail>(`/v1/admin/tenants/${encodeURIComponent(tenantId)}`);
 }
 
-export async function adjustTenantCredits(tenantId: string, deltaTokens: number, reason: string): Promise<{
+export async function adjustTenantCredits(tenantId: string, deltaCredits: number, reason: string): Promise<{
   billing: TenantBilling;
   entry: TenantCreditLedgerEntry;
 }> {
-  return apiClient.post(`/v1/admin/tenants/${encodeURIComponent(tenantId)}/credits`, { deltaTokens, reason });
+  return apiClient.post(`/v1/admin/tenants/${encodeURIComponent(tenantId)}/credits`, { deltaCredits, reason });
 }
 
 export async function changeTenantPlan(tenantId: string, planCode: PlatformPlanCode): Promise<TenantBilling> {

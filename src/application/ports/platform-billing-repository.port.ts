@@ -32,16 +32,16 @@ export type PlatformBillingRepositoryPort = {
   updateTenantBilling(input: {
     tenantId: string;
     patch: Partial<Pick<TenantBilling,
-      "planCode" | "subscriptionStatus" | "monthlyTokenQuota" | "monthlyPublicationsQuota"
+      "planCode" | "subscriptionStatus" | "monthlyCreditsQuota" | "monthlyPublicationsQuota"
       | "priceMultiplier" | "activatedAt" | "suspendedAt" | "expiresAt">>;
     now: string;
   }): Promise<TenantBilling>;
 
-  /** Ajusta `creditsExtraTokens` E grava uma linha em `tenant_credit_ledger` na mesma transa\u00e7\u00e3o. */
+  /** Ajusta `creditsExtra` E grava uma linha em `tenant_credit_ledger` na mesma transa\u00e7\u00e3o. */
   applyCreditDelta(input: {
     id: string;
     tenantId: string;
-    deltaTokens: number;
+    deltaCredits: number;
     reason: TenantCreditLedgerReason;
     actorUserId?: string;
     metadata?: Record<string, unknown>;
@@ -50,14 +50,15 @@ export type PlatformBillingRepositoryPort = {
 
   listCreditLedger(input: { tenantId: string; limit?: number }): Promise<TenantCreditLedgerEntry[]>;
 
-  /** Upserta a linha de consumo do m\u00eas corrente somando os deltas. Chamado toda vez que o AI
-   * Gateway completa uma execu\u00e7\u00e3o. Nunca DIMINUI valores \u2014 s\u00f3 incrementa. */
+  /** Upserta a linha de consumo do m\u00eas corrente somando os deltas. Chamado toda vez que uma
+   * opera\u00e7\u00e3o de IA (texto/imagem/v\u00eddeo) completa. Nunca DIMINUI valores \u2014 s\u00f3 incrementa. */
   addAiUsage(input: {
     tenantId: string;
     period: string;
     inputTokens: number;
     outputTokens: number;
     cachedInputTokens: number;
+    creditsConsumed: number;
     providerCostUsd: number;
     customerPriceUsd: number;
     requestsDelta: number;
@@ -71,6 +72,7 @@ export type PlatformBillingRepositoryPort = {
     totalTenants: number;
     totalInputTokens: number;
     totalOutputTokens: number;
+    totalCreditsConsumed: number;
     totalRequestsCount: number;
     totalProviderCostUsd: number;
     totalCustomerPriceUsd: number;

@@ -9,6 +9,10 @@ export type PlatformAiSettings = {
   briefingExtractionEnabled: boolean;
   anthropicApiKeyLast4?: string;
   anthropicBriefingExtractionModel: string;
+  /** Valor de referência (USD) de 1 crédito Vorix — usado só para estimar receita/lucro no painel
+   * financeiro (`creditsConsumed * creditUnitValueUsd`). Não é preço real cobrado do cliente
+   * (ainda não existe gateway de pagamento) — admin-configurável em `/admin/ai-providers`. */
+  creditUnitValueUsd: number;
   updatedAt: string;
   updatedBy?: string;
 };

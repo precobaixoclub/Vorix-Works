@@ -39,10 +39,10 @@ const TENANT_ID_PARAMS_SCHEMA = {
 
 const CREDITS_BODY_SCHEMA = {
   type: "object",
-  required: ["deltaTokens", "reason"],
+  required: ["deltaCredits", "reason"],
   additionalProperties: false,
   properties: {
-    deltaTokens: { type: "integer" },
+    deltaCredits: { type: "integer" },
     reason: { type: "string", minLength: 3, maxLength: 500 },
   },
 } as const;
@@ -69,6 +69,7 @@ const AI_SETTINGS_BODY_SCHEMA = {
     briefingExtractionEnabled: { type: "boolean" },
     anthropicApiKey: { type: "string", maxLength: 200 },
     anthropicBriefingExtractionModel: { type: "string", maxLength: 120 },
+    creditUnitValueUsd: { type: "number", minimum: 0, maximum: 1000 },
   },
 } as const;
 
@@ -81,6 +82,7 @@ function translatePlatformError(error: unknown): never {
     if (error.message.startsWith("PLATFORM_BILLING_INVALID_MULTIPLIER")) throw new ValidationError(error.message);
     if (error.message.startsWith("PLATFORM_AI_SETTINGS_INVALID_KEY")) throw new ValidationError(error.message);
     if (error.message.startsWith("PLATFORM_AI_SETTINGS_INVALID_MODEL")) throw new ValidationError(error.message);
+    if (error.message.startsWith("PLATFORM_AI_SETTINGS_INVALID_CREDIT_VALUE")) throw new ValidationError(error.message);
   }
   throw error;
 }
@@ -124,10 +126,10 @@ export async function registerAdminRoutes(
     async (request) => {
       const principal = requirePlatformAdmin(request);
       const { tenantId } = request.params as { tenantId: string };
-      const body = request.body as { deltaTokens: number; reason: string };
+      const body = request.body as { deltaCredits: number; reason: string };
       const result = await adjustTenantCredits(deps, {
         tenantId,
-        deltaTokens: body.deltaTokens,
+        deltaCredits: body.deltaCredits,
         reason: body.reason,
         actor: { userId: principal.userId },
       }).catch(translatePlatformError);
@@ -210,6 +212,7 @@ export async function registerAdminRoutes(
           briefingExtractionEnabled?: boolean;
           anthropicApiKey?: string;
           anthropicBriefingExtractionModel?: string;
+          creditUnitValueUsd?: number;
         };
         const settings = await updatePlatformAiSettings(settingsDeps, {
           ...body,

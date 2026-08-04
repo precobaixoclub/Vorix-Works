@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import useSWR from "swr";
+import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -10,19 +11,40 @@ import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { listCampaigns } from "@/features/campaigns/data";
 import { listConversations } from "@/features/conversation/api";
 import { listAssets } from "@/features/assets/data";
+import { useTikTokOAuthStatus, useTikTokPosts } from "@/features/tiktok/hooks";
+import { useMetaOAuthStatus, useMetaPosts } from "@/features/meta/hooks";
+import { useKwaiOAuthStatus, useKwaiPosts } from "@/features/kwai/hooks";
 import { formatDate, formatRelativeTime } from "@/lib/format";
 
 /**
- * Workspace Home — Sprint 04, Fase 2. `campaignIds`/status de integração vêm do Workspace real
- * (API); campanhas/quantidade de assets ainda vêm dos módulos simulados (`features/*data.ts`,
- * Sprint 04). "Últimas conversas" passou a usar dados REAIS a partir da Sprint 06
- * (`features/conversation/api.ts`) — Conversation ganhou endpoint próprio, Chat (mock) não.
+ * Workspace Home. O card "Conexões" e o bloco de primeiros passos usam o status real de
+ * OAuth/posts (TikTok/Meta/Kwai) — substituem o antigo card "Integrações" que dizia
+ * "conectar redes sociais chega em uma sprint futura" (defasado desde que Conexões/Publicar
+ * existem). "Últimas publicações"/"Materiais" ainda vêm dos módulos simulados
+ * (`features/*data.ts`) — só "Conexões" e o onboarding usam dado real de publicação.
  */
 export default function WorkspaceHomePage() {
   const workspace = useCurrentWorkspace();
   const { data: campaigns } = useSWR(["home-campaigns", workspace.id], () => listCampaigns(workspace.id));
   const { data: conversations, error: conversationsError, mutate: mutateConversations } = useSWR(["home-conversations", workspace.id], () => listConversations(workspace.id));
   const { data: assets } = useSWR(["home-assets", workspace.id], () => listAssets(workspace.id));
+
+  const { data: tiktokOAuth } = useTikTokOAuthStatus(workspace.id);
+  const { data: metaOAuth } = useMetaOAuthStatus(workspace.id);
+  const { data: kwaiOAuth } = useKwaiOAuthStatus(workspace.id);
+  const { data: tiktokPosts } = useTikTokPosts(workspace.id);
+  const { data: metaPosts } = useMetaPosts(workspace.id);
+  const { data: kwaiPosts } = useKwaiPosts(workspace.id);
+
+  const oauthLoaded = tiktokOAuth !== undefined && metaOAuth !== undefined && kwaiOAuth !== undefined;
+  const connectedAccounts = [
+    ...(tiktokOAuth?.accounts ?? []).filter((account) => account.status === "active").map((account) => ({ network: "TikTok", name: account.displayName ?? account.openId })),
+    ...(metaOAuth?.accounts ?? []).filter((account) => account.status === "active").map((account) => ({ network: account.providerId === "instagram" ? "Instagram" : "Facebook", name: account.displayName ?? account.providerSubjectId })),
+    ...(kwaiOAuth?.accounts ?? []).filter((account) => account.status === "active").map((account) => ({ network: "Kwai", name: account.displayName ?? account.openId })),
+  ];
+  const hasAnyConnection = connectedAccounts.length > 0;
+  const totalRealPosts = (tiktokPosts?.length ?? 0) + (metaPosts?.length ?? 0) + (kwaiPosts?.length ?? 0);
+  const showOnboarding = oauthLoaded && totalRealPosts === 0;
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8">
@@ -35,6 +57,34 @@ export default function WorkspaceHomePage() {
           <p className="mt-1 text-sm text-ink-muted">Criado em {formatDate(workspace.createdAt)}</p>
         </div>
       </div>
+
+      {showOnboarding ? (
+        <Card className="mb-6 p-5">
+          <p className="mb-4 text-sm font-semibold text-ink">Primeiros passos</p>
+          <ol className="space-y-3">
+            <li className="flex items-center justify-between gap-3 rounded border border-border px-3 py-2.5">
+              <div className="flex items-center gap-3">
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ${hasAnyConnection ? "bg-accent text-white" : "bg-surface-sunken text-ink-muted"}`}>
+                  {hasAnyConnection ? "✓" : "1"}
+                </span>
+                <span className="text-sm text-ink">Conectar uma rede social (TikTok, Instagram, Facebook ou Kwai)</span>
+              </div>
+              {!hasAnyConnection ? (
+                <Link href={`/workspaces/${workspace.id}/connections`}><Button>Conectar</Button></Link>
+              ) : null}
+            </li>
+            <li className="flex items-center justify-between gap-3 rounded border border-border px-3 py-2.5">
+              <div className="flex items-center gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-sunken text-xs font-medium text-ink-muted">2</span>
+                <span className={`text-sm ${hasAnyConnection ? "text-ink" : "text-ink-muted"}`}>Publicar seu primeiro conteúdo</span>
+              </div>
+              {hasAnyConnection ? (
+                <Link href={`/workspaces/${workspace.id}/publish`}><Button>Publicar</Button></Link>
+              ) : null}
+            </li>
+          </ol>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
@@ -100,17 +150,24 @@ export default function WorkspaceHomePage() {
 
         <Card>
           <CardHeader>
-            <span className="text-sm font-semibold text-ink">Integrações</span>
+            <span className="text-sm font-semibold text-ink">Conexões</span>
+            <Link href={`/workspaces/${workspace.id}/connections`} className="text-xs font-medium text-accent hover:underline">
+              Gerenciar →
+            </Link>
           </CardHeader>
           <CardBody>
-            {workspace.integrations.length === 0 ? (
-              <EmptyState title="Nenhuma integração conectada" description="Conectar redes sociais chega em uma sprint futura." />
+            {!oauthLoaded ? null : connectedAccounts.length === 0 ? (
+              <EmptyState
+                title="Nenhuma rede social conectada"
+                description="Conecte TikTok, Instagram, Facebook ou Kwai para publicar direto pelo Vorix."
+                action={<Link href={`/workspaces/${workspace.id}/connections`}><Button>Conectar rede social</Button></Link>}
+              />
             ) : (
               <ul className="flex flex-col gap-3">
-                {workspace.integrations.map((integration) => (
-                  <li key={integration.id} className="flex items-center justify-between gap-2">
-                    <span className="text-sm capitalize text-ink">{integration.channel}</span>
-                    <StatusBadge status={integration.status} />
+                {connectedAccounts.map((account, index) => (
+                  <li key={`${account.network}-${index}`} className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm text-ink">{account.network} · {account.name}</span>
+                    <StatusBadge status="active" />
                   </li>
                 ))}
               </ul>

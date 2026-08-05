@@ -92,6 +92,7 @@ export type ApiConfig = {
     /** Instagram/Facebook reais (não sandbox) — mesmo app do Meta, redirect_uri e produto (Content Publishing API) próprios. */
     metaInstagramEnabled: boolean;
     metaInstagramRedirectUri?: string;
+    metaLoginConfigId?: string;
     tiktokEnabled: boolean;
     tiktokClientKey?: string;
     tiktokClientSecret?: string;
@@ -210,6 +211,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const metaGraphBaseUrl = env.META_GRAPH_BASE_URL?.trim() || undefined;
   const metaInstagramEnabled = env.META_INSTAGRAM_ENABLED?.trim() === "true";
   const metaInstagramRedirectUri = env.META_INSTAGRAM_OAUTH_REDIRECT_URI?.trim() || undefined;
+  const metaLoginConfigId = env.META_LOGIN_CONFIG_ID?.trim() || undefined;
   const tiktokEnabled = env.TIKTOK_ENABLED?.trim() === "true";
   const tiktokClientKey = env.TIKTOK_CLIENT_KEY?.trim() || undefined;
   const tiktokClientSecret = env.TIKTOK_CLIENT_SECRET?.trim() || undefined;
@@ -322,6 +324,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       metaGraphBaseUrl,
       metaInstagramEnabled,
       metaInstagramRedirectUri,
+      metaLoginConfigId,
       tiktokEnabled,
       tiktokClientKey,
       tiktokClientSecret,

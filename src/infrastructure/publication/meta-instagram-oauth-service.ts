@@ -19,6 +19,7 @@ export type MetaInstagramOAuthConfig = {
   appSecret?: string;
   redirectUri?: string;
   graphBaseUrl?: string;
+  loginConfigId?: string;
   scopes: readonly string[];
 };
 
@@ -105,7 +106,11 @@ export class MetaInstagramOAuthService {
     url.searchParams.set("redirect_uri", this.input.config.redirectUri!);
     url.searchParams.set("state", state);
     url.searchParams.set("response_type", "code");
-    url.searchParams.set("scope", this.input.config.scopes.join(","));
+    if (this.input.config.loginConfigId) {
+      url.searchParams.set("config_id", this.input.config.loginConfigId);
+    } else {
+      url.searchParams.set("scope", this.input.config.scopes.join(","));
+    }
     url.searchParams.set("code_challenge", createHash("sha256").update(codeVerifier).digest("base64url"));
     url.searchParams.set("code_challenge_method", "S256");
     return { authorizationUrl: url.toString(), state, expiresAt };
@@ -459,7 +464,7 @@ async function safeJson(response: Response): Promise<Record<string, unknown>> {
   }
 }
 
-export const META_INSTAGRAM_REQUIRED_SCOPES = ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "instagram_basic", "instagram_content_publish"] as const;
+export const META_INSTAGRAM_REQUIRED_SCOPES = ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "instagram_business_basic", "instagram_business_content_publish"] as const;
 
 export function createDisabledMetaInstagramOAuthService(input: { repository: PublicationRepositoryPort; secretStore: PublicationSecretStoragePort }): MetaInstagramOAuthService {
   return new MetaInstagramOAuthService({ config: { enabled: false, scopes: META_INSTAGRAM_REQUIRED_SCOPES }, repository: input.repository, secretStore: input.secretStore });

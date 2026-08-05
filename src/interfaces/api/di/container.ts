@@ -514,6 +514,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       appSecret: config?.publication.metaAppSecret,
       redirectUri: config?.publication.metaInstagramRedirectUri,
       graphBaseUrl: config?.publication.metaGraphBaseUrl,
+      loginConfigId: config?.publication.metaLoginConfigId,
       scopes: META_INSTAGRAM_REQUIRED_SCOPES,
     },
     repository: repositories.publicationRepository,

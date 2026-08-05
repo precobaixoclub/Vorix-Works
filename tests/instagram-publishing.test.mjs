@@ -94,6 +94,21 @@ test("Meta OAuth: conecta e resolve múltiplas Páginas, cada uma com facebook e
   assert.equal(afterDisconnect.connected, false);
 });
 
+test("Meta OAuth: usa Facebook Login for Business config_id quando configurado", async () => {
+  const repository = new InMemoryPublicationRepository();
+  const secretStore = new LocalPublicationSecretStore();
+  const service = new MetaInstagramOAuthService({
+    config: { enabled: true, appId: "app-1", appSecret: "secret-1", redirectUri: "https://app.test/instagram/callback", loginConfigId: "config-1", scopes: ["pages_show_list"] },
+    repository,
+    secretStore,
+  });
+
+  const begin = service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
+  const url = new URL(begin.authorizationUrl);
+  assert.equal(url.searchParams.get("config_id"), "config-1");
+  assert.equal(url.searchParams.has("scope"), false);
+});
+
 test("Meta OAuth: sem Página encontrada falha, e state expirado é recusado", async () => {
   const repository = new InMemoryPublicationRepository();
   const secretStore = new LocalPublicationSecretStore();

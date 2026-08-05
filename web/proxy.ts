@@ -28,8 +28,10 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // "/pricing" é a página pública de planos. Nunca exige sessão.
-  if (pathname === "/pricing") return NextResponse.next();
+  // Páginas públicas exigidas por plataformas externas (Meta/TikTok/Kwai) e por visitantes.
+  if (pathname === "/pricing" || pathname === "/privacy" || pathname === "/terms" || pathname === "/data-deletion") {
+    return NextResponse.next();
+  }
 
   if (!hasRefreshCookie) {
     return NextResponse.redirect(new URL("/login", request.url));

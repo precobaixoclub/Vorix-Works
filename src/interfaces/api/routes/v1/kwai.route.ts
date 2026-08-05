@@ -7,7 +7,8 @@ import type { PublicationProviderRegistry } from "../../../../application/public
 import type { PublicationQueuePort } from "../../../../application/publication/publication-queue.js";
 import type { PublicationSecretResolverPort } from "../../../../application/publication/publication-secret-resolver.js";
 import type { OperationalCircuitBreaker } from "../../../../application/operations/operational-services.js";
-import type { PublicationPlan, PublicationPolicy } from "../../../../domain/publication/publication.model.js";
+import type { PublicationProviderPolicy } from "../../../../application/publication/publication-provider-policy.js";
+import type { PublicationPlan, PublicationPolicy, PublicationProvider } from "../../../../domain/publication/publication.model.js";
 import type { KwaiOAuthService } from "../../../../infrastructure/publication/kwai-oauth-service.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -31,6 +32,7 @@ export type KwaiRoutesDeps = {
   publicationRepository: PublicationRepositoryPort;
   providers: readonly PublicationProviderPort[];
   providerRegistry: PublicationProviderRegistry;
+  providerPolicy: PublicationProviderPolicy;
   secretResolver: PublicationSecretResolverPort;
   queue: PublicationQueuePort;
   kwaiOAuthService: KwaiOAuthService;
@@ -141,6 +143,15 @@ export async function registerKwaiRoutes(app: FastifyInstance, deps: KwaiRoutesD
     if (body.scheduledAt && Number.isNaN(Date.parse(body.scheduledAt))) throw new Error("KWAI_SCHEDULED_AT_INVALID: scheduledAt deve ser uma data ISO-8601.");
     assertPublicHttpsUrls([body.videoUrl, body.thumbnailUrl]);
 
+    // Mesmo portão de ambiente/canário que a rota genérica de publicação já aplica — antes, esta
+    // rota ignorava PUBLICATION_PROVIDER_ENVIRONMENT/PRODUCTION_ENABLED/CANARY_* por completo.
+    const fallbackToDryRun = deps.providerPolicy.shouldFallbackToDryRun({ tenantId: principal.tenantId, workspaceId: body.workspaceId, providerId: "kwai" });
+    const effectiveProvider: PublicationProvider = fallbackToDryRun ? "dry_run" : "kwai";
+    const effectiveMode = fallbackToDryRun ? "dry_run" : "real";
+    const policy: PublicationPolicy = fallbackToDryRun
+      ? { ...KWAI_POLICY, allowedProviders: ["dry_run"], publishMode: "dry_run" }
+      : KWAI_POLICY;
+
     const detail = await createPublication(engineDeps, {
       tenantId: principal.tenantId,
       workspaceId: body.workspaceId,
@@ -159,9 +170,9 @@ export async function registerKwaiRoutes(app: FastifyInstance, deps: KwaiRoutesD
         },
       }],
       channels: ["kwai"],
-      mode: "real",
-      provider: "kwai",
-      policy: KWAI_POLICY,
+      mode: effectiveMode,
+      provider: effectiveProvider,
+      policy,
       scheduledAt: body.scheduledAt,
       timezone: body.timezone,
       causationId: principal.userId,

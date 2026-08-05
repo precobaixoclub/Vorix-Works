@@ -7,6 +7,7 @@ import type { PublicationProviderRegistry } from "../../../../application/public
 import type { PublicationQueuePort } from "../../../../application/publication/publication-queue.js";
 import type { PublicationSecretResolverPort } from "../../../../application/publication/publication-secret-resolver.js";
 import type { OperationalCircuitBreaker } from "../../../../application/operations/operational-services.js";
+import type { PublicationProviderPolicy } from "../../../../application/publication/publication-provider-policy.js";
 import type { PublicationPlan, PublicationPolicy, PublicationProvider } from "../../../../domain/publication/publication.model.js";
 import type { MetaInstagramOAuthService } from "../../../../infrastructure/publication/meta-instagram-oauth-service.js";
 import { requirePermission } from "../../http/require-principal.js";
@@ -33,6 +34,7 @@ export type InstagramRoutesDeps = {
   publicationRepository: PublicationRepositoryPort;
   providers: readonly PublicationProviderPort[];
   providerRegistry: PublicationProviderRegistry;
+  providerPolicy: PublicationProviderPolicy;
   secretResolver: PublicationSecretResolverPort;
   queue: PublicationQueuePort;
   metaInstagramOAuthService: MetaInstagramOAuthService;
@@ -156,6 +158,15 @@ export async function registerInstagramRoutes(app: FastifyInstance, deps: Instag
     if (placement === "story" && media.imageUrls.length > 1) throw new Error("META_STORY_CAROUSEL_UNSUPPORTED: Stories aceitam só uma imagem ou um vídeo, nunca carrossel.");
     if (placement === "story" && target === "facebook" && media.videoUrl) throw new Error("META_FACEBOOK_VIDEO_STORY_UNSUPPORTED: Stories de vídeo no Facebook ainda não são suportadas por esta integração — use foto ou publique no feed.");
 
+    // Mesmo portão de ambiente/canário que a rota genérica de publicação já aplica — antes, esta
+    // rota ignorava PUBLICATION_PROVIDER_ENVIRONMENT/PRODUCTION_ENABLED/CANARY_* por completo.
+    const fallbackToDryRun = deps.providerPolicy.shouldFallbackToDryRun({ tenantId: principal.tenantId, workspaceId: body.workspaceId, providerId: target });
+    const effectiveProvider: PublicationProvider = fallbackToDryRun ? "dry_run" : target;
+    const effectiveMode = fallbackToDryRun ? "dry_run" : "real";
+    const policy: PublicationPolicy = fallbackToDryRun
+      ? { ...metaPolicy(target), allowedProviders: ["dry_run"], publishMode: "dry_run" }
+      : metaPolicy(target);
+
     const detail = await createPublication(engineDeps, {
       tenantId: principal.tenantId,
       workspaceId: body.workspaceId,
@@ -176,9 +187,9 @@ export async function registerInstagramRoutes(app: FastifyInstance, deps: Instag
         },
       }],
       channels: [target],
-      mode: "real",
-      provider: target,
-      policy: metaPolicy(target),
+      mode: effectiveMode,
+      provider: effectiveProvider,
+      policy,
       scheduledAt: body.scheduledAt,
       timezone: body.timezone,
       causationId: principal.userId,

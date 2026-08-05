@@ -10,6 +10,7 @@ import type { OperationalCircuitBreaker } from "../../../../application/operatio
 import type { PublicationProviderPolicy } from "../../../../application/publication/publication-provider-policy.js";
 import type { PublicationPlan, PublicationPolicy, PublicationProvider } from "../../../../domain/publication/publication.model.js";
 import type { MetaInstagramOAuthService } from "../../../../infrastructure/publication/meta-instagram-oauth-service.js";
+import { AppError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 
@@ -103,12 +104,25 @@ export async function registerInstagramRoutes(app: FastifyInstance, deps: Instag
   app.post("/publication-providers/meta/oauth/callback", { schema: { body: { type: "object", required: ["state", "code"], properties: { state: { type: "string", minLength: 1 }, code: { type: "string", minLength: 1 } } } } }, async (request) => {
     const principal = requirePermission(request, "publication:admin");
     const body = request.body as { state: string; code: string };
-    const result = await deps.metaInstagramOAuthService.complete({
-      state: body.state,
-      code: body.code,
-      actor: { tenantId: principal.tenantId, userId: principal.userId, role: principal.role, sessionId: principal.sessionId },
-      context: requestContext(request),
-    });
+    let result: Awaited<ReturnType<MetaInstagramOAuthService["complete"]>>;
+    try {
+      result = await deps.metaInstagramOAuthService.complete({
+        state: body.state,
+        code: body.code,
+        actor: { tenantId: principal.tenantId, userId: principal.userId, role: principal.role, sessionId: principal.sessionId },
+        context: requestContext(request),
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("META_NO_PAGES_FOUND")) {
+        throw new AppError({
+          code: "META_NO_PAGES_FOUND",
+          message: "Nenhuma Página do Facebook foi encontrada para essa conta. Entre com um perfil que tenha controle total de uma Página vinculada ao Instagram profissional.",
+          statusCode: 400,
+          recoverable: true,
+        });
+      }
+      throw error;
+    }
     return successEnvelope(result, request.id);
   });
 

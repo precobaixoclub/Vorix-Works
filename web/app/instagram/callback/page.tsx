@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/Card";
 import { Spinner } from "@/components/Spinner";
+import { useAuth } from "@/contexts/auth-context";
 import { completeMetaOAuth } from "@/features/meta/api";
 
 /** Chave de sessão compartilhada — tanto a tela do Instagram quanto a da Página do Facebook
@@ -14,10 +15,19 @@ export const META_RETURN_PATH_KEY = "meta:return-path";
 function MetaOAuthCallbackContent() {
   const params = useSearchParams();
   const router = useRouter();
+  const { state: authState } = useAuth();
   const [message, setMessage] = useState("Conectando a conta do Meta...");
   const started = useRef(false);
 
   useEffect(() => {
+    if (authState.status === "loading") {
+      setMessage("Autenticando sessão do Vorix...");
+      return;
+    }
+    if (authState.status === "unauthenticated") {
+      setMessage("Sessão do Vorix expirada. Entre novamente e tente conectar o Meta outra vez.");
+      return;
+    }
     if (started.current) return;
     started.current = true;
 
@@ -48,7 +58,7 @@ function MetaOAuthCallbackContent() {
       .catch((cause: unknown) => {
         setMessage(cause instanceof Error ? cause.message : "Não foi possível concluir a conexão com o Meta.");
       });
-  }, [params, router]);
+  }, [authState.status, params, router]);
 
   return (
     <main className="mx-auto flex max-w-lg flex-col items-center px-6 py-20">

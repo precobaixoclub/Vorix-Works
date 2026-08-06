@@ -106,6 +106,13 @@ export type ApiConfig = {
     kwaiAppSecret?: string;
     kwaiRedirectUri?: string;
     kwaiApiBaseUrl?: string;
+    youtubeEnabled: boolean;
+    youtubeClientId?: string;
+    youtubeClientSecret?: string;
+    youtubeRedirectUri?: string;
+    youtubeApiBaseUrl?: string;
+    youtubeUploadBaseUrl?: string;
+    youtubeScopes: readonly string[];
     /** Loop em processo que dispara os agendamentos vencidos. */
     schedulerEnabled: boolean;
     schedulerIntervalMs: number;
@@ -227,6 +234,13 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const kwaiAppSecret = env.KWAI_APP_SECRET?.trim() || undefined;
   const kwaiRedirectUri = env.KWAI_OAUTH_REDIRECT_URI?.trim() || undefined;
   const kwaiApiBaseUrl = env.KWAI_API_BASE_URL?.trim() || undefined;
+  const youtubeEnabled = env.YOUTUBE_ENABLED?.trim() === "true";
+  const youtubeClientId = env.YOUTUBE_CLIENT_ID?.trim() || undefined;
+  const youtubeClientSecret = env.YOUTUBE_CLIENT_SECRET?.trim() || undefined;
+  const youtubeRedirectUri = env.YOUTUBE_OAUTH_REDIRECT_URI?.trim() || undefined;
+  const youtubeApiBaseUrl = env.YOUTUBE_API_BASE_URL?.trim() || undefined;
+  const youtubeUploadBaseUrl = env.YOUTUBE_UPLOAD_BASE_URL?.trim() || undefined;
+  const youtubeScopes = parseCsv(env.YOUTUBE_SCOPES);
   const publicationSchedulerEnabled = env.PUBLICATION_SCHEDULER_ENABLED?.trim() !== "false";
   const publicationSchedulerIntervalMs = parsePositiveInt(env.PUBLICATION_SCHEDULER_INTERVAL_MS) ?? 30_000;
   const publicationCanaryEnabled = env.PUBLICATION_CANARY_ENABLED?.trim() === "true";
@@ -342,6 +356,13 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       kwaiAppSecret,
       kwaiRedirectUri,
       kwaiApiBaseUrl,
+      youtubeEnabled,
+      youtubeClientId,
+      youtubeClientSecret,
+      youtubeRedirectUri,
+      youtubeApiBaseUrl,
+      youtubeUploadBaseUrl,
+      youtubeScopes,
       schedulerEnabled: publicationSchedulerEnabled,
       schedulerIntervalMs: publicationSchedulerIntervalMs,
       canaryEnabled: publicationCanaryEnabled,

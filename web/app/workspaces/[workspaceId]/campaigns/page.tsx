@@ -22,8 +22,8 @@ import {
 } from "@/features/publication-history/types";
 import { formatDateTime } from "@/lib/format";
 
-const NETWORK_LABEL: Record<PublicationNetwork, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", kwai: "Kwai" };
-const NETWORK_ICON: Record<PublicationNetwork, string> = { tiktok: "🎵", instagram: "📷", facebook: "👍", kwai: "🎬" };
+const NETWORK_LABEL: Record<PublicationNetwork, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", kwai: "Kwai", youtube: "YouTube Shorts" };
+const NETWORK_ICON: Record<PublicationNetwork, string> = { tiktok: "🎵", instagram: "📷", facebook: "👍", kwai: "🎬", youtube: "▶" };
 const FORMAT_LABEL: Record<PublicationContentType, string> = { image: "Imagem", video: "Vídeo", carousel: "Carrossel", text: "Texto" };
 const FORMAT_ICON: Record<PublicationContentType, string> = { image: "🖼", video: "🎬", carousel: "🔄", text: "📝" };
 const FORMAT_GRADIENT: Record<PublicationContentType, string> = {
@@ -39,6 +39,7 @@ const NETWORK_FILTERS: Array<{ value: PublicationNetwork | "all"; label: string 
   { value: "instagram", label: "📷 Instagram" },
   { value: "facebook", label: "👍 Facebook" },
   { value: "kwai", label: "🎬 Kwai" },
+  { value: "youtube", label: "▶ YouTube Shorts" },
 ];
 
 const STATUS_FILTERS: Array<{ value: PublicationDisplayStatus | "all"; label: string }> = [

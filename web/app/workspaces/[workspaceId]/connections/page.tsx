@@ -15,6 +15,9 @@ import { META_RETURN_PATH_KEY } from "@/app/instagram/callback/page";
 import { beginKwaiOAuth, disconnectKwaiAccount } from "@/features/kwai/api";
 import { useKwaiOAuthStatus } from "@/features/kwai/hooks";
 import { KWAI_RETURN_PATH_KEY } from "@/app/kwai/callback/page";
+import { beginYouTubeOAuth, disconnectYouTubeAccount } from "@/features/youtube/api";
+import { useYouTubeOAuthStatus } from "@/features/youtube/hooks";
+import { YOUTUBE_RETURN_PATH_KEY } from "@/app/youtube/callback/page";
 
 /**
  * Um único lugar pra conectar/desconectar cada rede social — as telas de TikTok/Instagram/Facebook
@@ -33,6 +36,7 @@ export default function ConnectionsPage() {
       <div className="space-y-4">
         <TikTokConnection workspaceId={workspace.id} onFeedback={setFeedback} />
         <MetaConnection workspaceId={workspace.id} onFeedback={setFeedback} />
+        <YouTubeConnection workspaceId={workspace.id} onFeedback={setFeedback} />
         <KwaiConnection workspaceId={workspace.id} onFeedback={setFeedback} />
       </div>
     </main>
@@ -128,6 +132,52 @@ function MetaConnection({ workspaceId, onFeedback }: { workspaceId: string; onFe
         label: `${account.providerId === "instagram" ? "Instagram" : "Página"} · ${account.displayName ?? account.providerSubjectId}`,
         status: account.status,
       }))}
+      onConnect={connect}
+      onDisconnect={disconnect}
+    />
+  );
+}
+
+function YouTubeConnection({ workspaceId, onFeedback }: { workspaceId: string; onFeedback: (message: string | undefined) => void }) {
+  const { data: oauth, mutate } = useYouTubeOAuthStatus(workspaceId);
+  const [busy, setBusy] = useState(false);
+  const accounts = oauth?.accounts.filter((account) => account.status !== "revoked") ?? [];
+
+  async function connect() {
+    setBusy(true);
+    onFeedback(undefined);
+    try {
+      const result = await beginYouTubeOAuth(workspaceId);
+      window.sessionStorage.setItem(YOUTUBE_RETURN_PATH_KEY, `/workspaces/${workspaceId}/connections`);
+      window.location.assign(result.authorizationUrl);
+    } catch (cause) {
+      onFeedback(messageOf(cause));
+      setBusy(false);
+    }
+  }
+
+  async function disconnect(credentialReferenceId: string) {
+    setBusy(true);
+    onFeedback(undefined);
+    try {
+      await disconnectYouTubeAccount(workspaceId, credentialReferenceId);
+      await mutate();
+      onFeedback("Canal do YouTube desconectado.");
+    } catch (cause) {
+      onFeedback(messageOf(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ConnectionCard
+      icon="▶"
+      name="YouTube Shorts"
+      description="Conecta um canal do YouTube para publicar Shorts em vídeo."
+      configured={oauth?.configured !== false}
+      busy={busy}
+      accounts={accounts.map((account) => ({ id: account.credentialReferenceId, label: account.displayName ?? account.channelId, status: account.status }))}
       onConnect={connect}
       onDisconnect={disconnect}
     />

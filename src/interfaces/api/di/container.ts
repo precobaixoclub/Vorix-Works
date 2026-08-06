@@ -94,6 +94,8 @@ import { TikTokContentPostingProvider } from "../../../infrastructure/publicatio
 import { TikTokOAuthService, TIKTOK_REQUIRED_SCOPES } from "../../../infrastructure/publication/tiktok-oauth-service.js";
 import { KwaiContentPostingProvider } from "../../../infrastructure/publication/kwai-content-posting-provider.js";
 import { KwaiOAuthService, KWAI_REQUIRED_SCOPES } from "../../../infrastructure/publication/kwai-oauth-service.js";
+import { YouTubeContentPostingProvider } from "../../../infrastructure/publication/youtube-content-posting-provider.js";
+import { YouTubeOAuthService, YOUTUBE_REQUIRED_SCOPES } from "../../../infrastructure/publication/youtube-oauth-service.js";
 import { createLinkedInSandboxProvider, createXSandboxProvider } from "../../../infrastructure/publication/sandbox-social-providers.js";
 import { buildExecutionHandlerResolver } from "../../../infrastructure/execution/build-execution-handler-resolver.js";
 import { PlanningEngineBriefingHook } from "../../../infrastructure/planning/planning-engine-briefing-hook.js";
@@ -119,6 +121,7 @@ const PROVIDER_REQUIRED_SCOPES = {
   x_sandbox: ["tweet.write", "tweet.read", "users.read"],
   tiktok: TIKTOK_REQUIRED_SCOPES,
   kwai: KWAI_REQUIRED_SCOPES,
+  youtube: YOUTUBE_REQUIRED_SCOPES,
   instagram: META_INSTAGRAM_REQUIRED_SCOPES,
   facebook: META_INSTAGRAM_REQUIRED_SCOPES,
 } as const;
@@ -217,6 +220,8 @@ export type ApiContainer = {
   tiktokProvider: TikTokContentPostingProvider;
   kwaiOAuthService: KwaiOAuthService;
   kwaiProvider: KwaiContentPostingProvider;
+  youtubeOAuthService: YouTubeOAuthService;
+  youtubeProvider: YouTubeContentPostingProvider;
   metaInstagramOAuthService: MetaInstagramOAuthService;
   instagramProvider: MetaContentPostingProvider;
   facebookProvider: MetaContentPostingProvider;
@@ -334,7 +339,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       canaryEnabled: config?.publication.canaryEnabled ?? false,
       canaryTenantIds: config?.publication.canaryTenantIds ?? [],
       canaryWorkspaceIds: config?.publication.canaryWorkspaceIds ?? [],
-      allowedProductionProviders: ["instagram", "facebook", "linkedin", "x", "tiktok"],
+      allowedProductionProviders: ["instagram", "facebook", "linkedin", "x", "tiktok", "youtube"],
     },
     secretManager,
   );
@@ -382,6 +387,12 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     fetch,
     (input) => (kwaiOAuthServiceRef ? kwaiOAuthServiceRef.refresh(input) : Promise.resolve(undefined)),
   );
+  let youtubeOAuthServiceRef: YouTubeOAuthService | undefined;
+  const youtubeProvider = new YouTubeContentPostingProvider(
+    { apiBaseUrl: config?.publication.youtubeApiBaseUrl, uploadBaseUrl: config?.publication.youtubeUploadBaseUrl },
+    fetch,
+    (input) => (youtubeOAuthServiceRef ? youtubeOAuthServiceRef.refresh(input) : Promise.resolve(undefined)),
+  );
   const publicationProviderAdapters: readonly PublicationProviderAdapterPort[] = [
     ...publicationProviders,
     ...(config?.publication.metaPagesSandboxEnabled ? [metaPagesSandboxProvider] : []),
@@ -389,6 +400,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     xSandboxProvider,
     ...(config?.publication.tiktokEnabled ? [tiktokProvider] : []),
     ...(config?.publication.kwaiEnabled ? [kwaiProvider] : []),
+    ...(config?.publication.youtubeEnabled ? [youtubeProvider] : []),
     ...(config?.publication.metaInstagramEnabled ? [instagramProvider, facebookProvider] : []),
   ];
   const publicationProviderRegistry = createDefaultPublicationProviderRegistry(publicationProviderAdapters);
@@ -398,6 +410,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   const providerRequiredScopes = {
     ...PROVIDER_REQUIRED_SCOPES,
     tiktok: tiktokRequiredScopes,
+    youtube: config?.publication.youtubeScopes.length ? config.publication.youtubeScopes : YOUTUBE_REQUIRED_SCOPES,
   };
 
   // Sprint 26 — Provedores de IA de mídia (imagem/vídeo). Mesma filosofia da chave dinâmica da
@@ -515,6 +528,21 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     credentialGovernanceService,
   });
   kwaiOAuthServiceRef = kwaiOAuthService;
+  const youtubeOAuthService = new YouTubeOAuthService({
+    config: {
+      enabled: config?.publication.youtubeEnabled ?? false,
+      clientId: config?.publication.youtubeClientId,
+      clientSecret: config?.publication.youtubeClientSecret,
+      redirectUri: config?.publication.youtubeRedirectUri,
+      apiBaseUrl: config?.publication.youtubeApiBaseUrl,
+      scopes: config?.publication.youtubeScopes.length ? config.publication.youtubeScopes : YOUTUBE_REQUIRED_SCOPES,
+      environment: config?.publication.providerEnvironment ?? "sandbox",
+    },
+    repository: repositories.publicationRepository,
+    secretStore: publicationSecretStore,
+    credentialGovernanceService,
+  });
+  youtubeOAuthServiceRef = youtubeOAuthService;
   const metaInstagramOAuthService = new MetaInstagramOAuthService({
     config: {
       enabled: config?.publication.metaInstagramEnabled ?? false,
@@ -705,6 +733,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       tiktokProvider,
       kwaiOAuthService,
       kwaiProvider,
+      youtubeOAuthService,
+      youtubeProvider,
       metaInstagramOAuthService,
       instagramProvider,
       facebookProvider,
@@ -776,6 +806,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     tiktokProvider,
     kwaiOAuthService,
     kwaiProvider,
+    youtubeOAuthService,
+    youtubeProvider,
     metaInstagramOAuthService,
     instagramProvider,
     facebookProvider,

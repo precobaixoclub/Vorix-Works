@@ -16,6 +16,9 @@ import { scheduleMetaPost } from "@/features/meta/api";
 import { useMetaOAuthStatus, useMetaPosts } from "@/features/meta/hooks";
 import { scheduleKwaiPost } from "@/features/kwai/api";
 import { useKwaiOAuthStatus, useKwaiPosts } from "@/features/kwai/hooks";
+import { scheduleYouTubePost } from "@/features/youtube/api";
+import { useYouTubeOAuthStatus, useYouTubePosts } from "@/features/youtube/hooks";
+import type { YouTubePrivacyStatus } from "@/features/youtube/types";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { cancelUnifiedPublication } from "@/features/publication-history/api";
 import { useUnifiedPublications } from "@/features/publication-history/hooks";
@@ -24,12 +27,13 @@ import { formatDateTime } from "@/lib/format";
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 
-type Platform = "tiktok" | "instagram" | "facebook" | "kwai";
+type Platform = "tiktok" | "instagram" | "facebook" | "kwai" | "youtube";
 
 const PLATFORMS: readonly { id: Platform; label: string; icon: string }[] = [
   { id: "tiktok", label: "TikTok", icon: "🎵" },
   { id: "instagram", label: "Instagram", icon: "📷" },
   { id: "facebook", label: "Facebook", icon: "👍" },
+  { id: "youtube", label: "YouTube Shorts", icon: "▶" },
   { id: "kwai", label: "Kwai", icon: "🎬" },
 ];
 
@@ -53,9 +57,11 @@ export default function PublishPage() {
   const { data: tiktokOAuth } = useTikTokOAuthStatus(workspace.id);
   const { data: metaOAuth } = useMetaOAuthStatus(workspace.id);
   const { data: kwaiOAuth } = useKwaiOAuthStatus(workspace.id);
+  const { data: youtubeOAuth } = useYouTubeOAuthStatus(workspace.id);
   const { mutate: mutateTikTokPosts } = useTikTokPosts(workspace.id);
   const { mutate: mutateMetaPosts } = useMetaPosts(workspace.id);
   const { mutate: mutateKwaiPosts } = useKwaiPosts(workspace.id);
+  const { mutate: mutateYouTubePosts } = useYouTubePosts(workspace.id);
   const { data: unified, mutate: mutateUnified } = useUnifiedPublications(workspace.id);
 
   const [busy, setBusy] = useState(false);
@@ -77,22 +83,26 @@ export default function PublishPage() {
   const [tiktokDisableDuet, setTiktokDisableDuet] = useState(false);
   const [tiktokDisableStitch, setTiktokDisableStitch] = useState(false);
   const [tiktokAutoAddMusic, setTiktokAutoAddMusic] = useState(true);
+  const [youtubePrivacy, setYouTubePrivacy] = useState<YouTubePrivacyStatus>("public");
 
   const connectedByPlatform: Record<Platform, boolean> = {
     tiktok: tiktokOAuth?.connected ?? false,
     instagram: (metaOAuth?.accounts ?? []).some((a) => a.providerId === "instagram" && a.status === "active"),
     facebook: (metaOAuth?.accounts ?? []).some((a) => a.providerId === "facebook" && a.status === "active"),
     kwai: kwaiOAuth?.connected ?? false,
+    youtube: youtubeOAuth?.connected ?? false,
   };
   const accountLabelByPlatform: Partial<Record<Platform, string>> = {
     tiktok: tiktokOAuth?.accounts[0]?.displayName,
     instagram: metaOAuth?.accounts.find((a) => a.providerId === "instagram")?.displayName,
     facebook: metaOAuth?.accounts.find((a) => a.providerId === "facebook")?.displayName,
     kwai: kwaiOAuth?.accounts[0]?.displayName,
+    youtube: youtubeOAuth?.accounts[0]?.displayName,
   };
   const anyConnected = Object.values(connectedByPlatform).some(Boolean);
   const hasStoryUnsupported = selected.has("tiktok") && placement === "story";
   const kwaiNeedsVideo = selected.has("kwai") && mediaKind !== "video";
+  const youtubeNeedsVideo = selected.has("youtube") && mediaKind !== "video";
 
   function togglePlatform(platform: Platform) {
     setSelected((current) => {
@@ -101,7 +111,7 @@ export default function PublishPage() {
       else next.add(platform);
       return next;
     });
-    if (platform === "kwai") setMediaKind("video");
+    if (platform === "kwai" || platform === "youtube") setMediaKind("video");
   }
 
   async function uploadVideoFile(file: File) {
@@ -151,6 +161,10 @@ export default function PublishPage() {
       setFeedback("Kwai só publica vídeo — desmarque Kwai ou troque a mídia para Vídeo.");
       return;
     }
+    if (youtubeNeedsVideo) {
+      setFeedback("YouTube Shorts só publica vídeo — desmarque YouTube ou troque a mídia para Vídeo.");
+      return;
+    }
     if (selected.has("kwai") && !thumbnailUrl.trim()) {
       setFeedback("Kwai exige uma capa (imagem de thumbnail) além do vídeo.");
       return;
@@ -187,6 +201,18 @@ export default function PublishPage() {
           timezone: scheduledAtIso ? timezone : undefined,
         });
       }
+      if (platform.id === "youtube") {
+        return scheduleYouTubePost({
+          workspaceId: workspace.id,
+          title: caption.split(/\r?\n/).find((line) => line.trim())?.slice(0, 100) || "Short",
+          description: caption,
+          videoUrl: videoUrl.trim(),
+          scheduledAt: scheduledAtIso,
+          timezone: scheduledAtIso ? timezone : undefined,
+          privacyStatus: youtubePrivacy,
+          tags: ["Shorts"],
+        });
+      }
       return scheduleMetaPost({
         workspaceId: workspace.id,
         target: platform.id as "instagram" | "facebook",
@@ -213,7 +239,7 @@ export default function PublishPage() {
       setImageUrls("");
       setThumbnailUrl("");
       setScheduledAt("");
-      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateKwaiPosts(), mutateUnified()]);
+      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateKwaiPosts(), mutateYouTubePosts(), mutateUnified()]);
     }
     setBusy(false);
   }
@@ -223,7 +249,7 @@ export default function PublishPage() {
     setFeedback(undefined);
     try {
       await cancelUnifiedPublication(workspace.id, post.network, post.id);
-      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateKwaiPosts(), mutateUnified()]);
+      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateKwaiPosts(), mutateYouTubePosts(), mutateUnified()]);
     } catch (cause) {
       setFeedback(messageOf(cause));
     } finally {
@@ -288,10 +314,11 @@ export default function PublishPage() {
             ) : null}
 
             <div className="flex gap-2">
-              <Button type="button" variant={mediaKind === "image" ? "primary" : "secondary"} disabled={selected.has("kwai")} onClick={() => setMediaKind("image")}>Imagem/carrossel</Button>
+              <Button type="button" variant={mediaKind === "image" ? "primary" : "secondary"} disabled={selected.has("kwai") || selected.has("youtube")} onClick={() => setMediaKind("image")}>Imagem/carrossel</Button>
               <Button type="button" variant={mediaKind === "video" ? "primary" : "secondary"} onClick={() => setMediaKind("video")}>Vídeo</Button>
             </div>
             {selected.has("kwai") ? <p className="-mt-2 text-xs text-ink-muted">Kwai só publica vídeo (sem imagem/carrossel).</p> : null}
+            {selected.has("youtube") ? <p className="-mt-2 text-xs text-ink-muted">YouTube Shorts só publica vídeo. Use vídeo vertical curto para o YouTube reconhecer como Short.</p> : null}
 
             {mediaKind === "video" ? (
               <div>
@@ -371,6 +398,23 @@ export default function PublishPage() {
               </div>
             ) : null}
 
+            {selected.has("youtube") ? (
+              <div className="rounded-lg border border-border p-3">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">Opções do YouTube</p>
+                <Label htmlFor="youtube-privacy">Visibilidade</Label>
+                <select
+                  id="youtube-privacy"
+                  value={youtubePrivacy}
+                  onChange={(event) => setYouTubePrivacy(event.target.value as YouTubePrivacyStatus)}
+                  className="w-full rounded-md border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                >
+                  <option value="public">Público</option>
+                  <option value="unlisted">Não listado</option>
+                  <option value="private">Privado</option>
+                </select>
+              </div>
+            ) : null}
+
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <Label htmlFor="publish-scheduled-at">Agendar para (vazio publica agora)</Label>
@@ -397,7 +441,7 @@ export default function PublishPage() {
                 <PostPreview
                   key={platform.id}
                   network={platform.id}
-                  placement={platform.id === "tiktok" || platform.id === "kwai" ? "feed" : placement}
+                  placement={platform.id === "tiktok" || platform.id === "kwai" || platform.id === "youtube" ? "feed" : placement}
                   caption={caption}
                   mediaKind={mediaKind}
                   imageUrls={images}

@@ -1,4 +1,4 @@
-export type PostPreviewNetwork = "tiktok" | "instagram" | "facebook" | "kwai";
+export type PostPreviewNetwork = "tiktok" | "instagram" | "facebook" | "kwai" | "youtube";
 export type PostPreviewPlacement = "feed" | "story";
 
 export type PostPreviewProps = {
@@ -13,7 +13,7 @@ export type PostPreviewProps = {
   accountLabel?: string;
 };
 
-const NETWORK_LABEL: Record<PostPreviewNetwork, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", kwai: "Kwai" };
+const NETWORK_LABEL: Record<PostPreviewNetwork, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", kwai: "Kwai", youtube: "YouTube Shorts" };
 
 /**
  * Mockup compacto de como o post vai aparecer na rede escolhida — nunca pixel-perfect (não é o
@@ -22,7 +22,7 @@ const NETWORK_LABEL: Record<PostPreviewNetwork, string> = { tiktok: "TikTok", in
  * frame vertical 9:16, já que os três sempre ocupam a tela inteira do app de origem.
  */
 export function PostPreview({ network, placement, caption, mediaKind, imageUrls, videoUrl, thumbnailUrl, autoAddMusic, accountLabel }: PostPreviewProps) {
-  const isShortVideoNetwork = network === "tiktok" || network === "kwai";
+  const isShortVideoNetwork = network === "tiktok" || network === "kwai" || network === "youtube";
   const isVertical = placement === "story" || isShortVideoNetwork;
   const cover = mediaKind === "video" ? thumbnailUrl : imageUrls[0];
   const extraImages = mediaKind === "image" ? Math.max(0, imageUrls.length - 1) : 0;
@@ -49,7 +49,7 @@ export function PostPreview({ network, placement, caption, mediaKind, imageUrls,
 
         {!isVertical ? (
           <div className="absolute inset-x-0 top-0 flex items-center gap-1.5 bg-gradient-to-b from-black/50 to-transparent px-2 py-1.5 text-[10px] font-medium text-white">
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20">{network === "instagram" ? "📷" : "👍"}</span>
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20">{network === "instagram" ? "📷" : network === "youtube" ? "▶" : "👍"}</span>
             {label}
           </div>
         ) : null}

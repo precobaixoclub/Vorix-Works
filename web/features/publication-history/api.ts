@@ -1,6 +1,7 @@
 import { cancelTikTokPost } from "@/features/tiktok/api";
 import { cancelMetaPost } from "@/features/meta/api";
 import { cancelKwaiPost } from "@/features/kwai/api";
+import { cancelYouTubePost } from "@/features/youtube/api";
 import type { PublicationNetwork } from "./types";
 
 /** Despacha o cancelamento pro endpoint certo conforme a rede — cada rede tem sua própria rota
@@ -8,5 +9,6 @@ import type { PublicationNetwork } from "./types";
 export function cancelUnifiedPublication(workspaceId: string, network: PublicationNetwork, publicationId: string): Promise<{ publicationId: string; state: string }> {
   if (network === "tiktok") return cancelTikTokPost(workspaceId, publicationId);
   if (network === "kwai") return cancelKwaiPost(workspaceId, publicationId);
+  if (network === "youtube") return cancelYouTubePost(workspaceId, publicationId);
   return cancelMetaPost(workspaceId, publicationId);
 }

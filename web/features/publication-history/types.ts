@@ -1,4 +1,4 @@
-export type PublicationNetwork = "tiktok" | "instagram" | "facebook" | "kwai";
+export type PublicationNetwork = "tiktok" | "instagram" | "facebook" | "kwai" | "youtube";
 export type PublicationPlacement = "feed" | "story";
 
 /** Linha normalizada de publicação real — combina TikTok/Instagram/Facebook/Kwai numa lista só,

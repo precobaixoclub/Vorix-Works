@@ -60,6 +60,7 @@ test("TikTok OAuth: cada workspace conecta a própria conta e o token fica só n
   const begin = service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
   assert.ok(begin.authorizationUrl.startsWith("https://www.tiktok.com/v2/auth/authorize/"));
   assert.ok(begin.authorizationUrl.includes("code_challenge_method=S256"));
+  assert.ok(begin.authorizationUrl.includes("disable_auto_auth=1"));
   assert.ok(begin.authorizationUrl.includes(`state=${encodeURIComponent(begin.state)}`));
 
   const completed = await service.complete({ state: begin.state, code: "auth-code" });
@@ -105,6 +106,7 @@ test("TikTok OAuth: Web inicia autorização sem PKCE por padrão", async () => 
   });
 
   const begin = service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
+  assert.ok(begin.authorizationUrl.includes("disable_auto_auth=1"));
   assert.equal(begin.authorizationUrl.includes("code_challenge"), false);
   assert.equal(begin.authorizationUrl.includes("code_challenge_method"), false);
 

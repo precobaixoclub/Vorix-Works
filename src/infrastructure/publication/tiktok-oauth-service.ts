@@ -106,6 +106,7 @@ export class TikTokOAuthService {
     url.searchParams.set("response_type", "code");
     url.searchParams.set("scope", this.input.config.scopes.join(","));
     url.searchParams.set("state", state);
+    url.searchParams.set("disable_auto_auth", "1");
     if (codeVerifier) {
       url.searchParams.set("code_challenge", createHash("sha256").update(codeVerifier).digest("base64url"));
       url.searchParams.set("code_challenge_method", "S256");

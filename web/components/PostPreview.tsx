@@ -49,7 +49,7 @@ export function PostPreview({ network, placement, caption, mediaKind, imageUrls,
 
         {!isVertical ? (
           <div className="absolute inset-x-0 top-0 flex items-center gap-1.5 bg-gradient-to-b from-black/50 to-transparent px-2 py-1.5 text-[10px] font-medium text-white">
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20">{network === "instagram" ? "📷" : network === "youtube" ? "▶" : "👍"}</span>
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20">{network === "instagram" ? "📷" : "👍"}</span>
             {label}
           </div>
         ) : null}

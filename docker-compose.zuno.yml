@@ -57,6 +57,7 @@ services:
       TIKTOK_API_BASE_URL: "${TIKTOK_API_BASE_URL:-https://open.tiktokapis.com}"
       TIKTOK_AUTHORIZE_BASE_URL: "${TIKTOK_AUTHORIZE_BASE_URL:-https://www.tiktok.com}"
       TIKTOK_SCOPES: "${TIKTOK_SCOPES:-}"
+      TIKTOK_PKCE_ENABLED: "${TIKTOK_PKCE_ENABLED:-false}"
       KWAI_ENABLED: "${KWAI_ENABLED:-false}"
       KWAI_APP_ID: "${KWAI_APP_ID:-}"
       KWAI_APP_SECRET: "${KWAI_APP_SECRET:-}"

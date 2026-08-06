@@ -51,7 +51,7 @@ test("TikTok OAuth: cada workspace conecta a própria conta e o token fica só n
     return jsonResponse({ error: { code: "unexpected" } }, 400);
   };
   const service = new TikTokOAuthService({
-    config: { enabled: true, clientKey: "key-1", clientSecret: "secret-1", redirectUri: "https://app.test/tiktok/callback", scopes: ["user.info.basic", "video.publish"], environment: "production" },
+    config: { enabled: true, clientKey: "key-1", clientSecret: "secret-1", redirectUri: "https://app.test/tiktok/callback", scopes: ["user.info.basic", "video.publish"], environment: "production", pkceEnabled: true },
     repository,
     secretStore,
     httpClient,
@@ -81,6 +81,34 @@ test("TikTok OAuth: cada workspace conecta a própria conta e o token fica só n
 
   // State é de uso único: reaproveitar o mesmo callback tem que falhar.
   await assert.rejects(() => service.complete({ state: begin.state, code: "auth-code" }), /TIKTOK_OAUTH_STATE_INVALID/);
+});
+
+test("TikTok OAuth: Web inicia autorização sem PKCE por padrão", async () => {
+  const repository = new InMemoryPublicationRepository();
+  const secretStore = new LocalPublicationSecretStore();
+  const httpClient = async (url, init) => {
+    const href = String(url);
+    if (href.includes("/v2/oauth/token/")) {
+      const body = String(init.body);
+      assert.ok(body.includes("grant_type=authorization_code"));
+      assert.equal(body.includes("code_verifier="), false);
+      return jsonResponse({ access_token: "tt-access", refresh_token: "tt-refresh", open_id: "open-123", scope: "user.info.basic,video.upload", expires_in: 86400 });
+    }
+    if (href.includes("/v2/user/info/")) return jsonResponse({ data: { user: { display_name: "Loja Vorix" } } });
+    return jsonResponse({ error: { code: "unexpected" } }, 400);
+  };
+  const service = new TikTokOAuthService({
+    config: { enabled: true, clientKey: "key-1", clientSecret: "secret-1", redirectUri: "https://app.test/tiktok/callback", scopes: ["user.info.basic", "video.upload"], environment: "sandbox" },
+    repository,
+    secretStore,
+    httpClient,
+  });
+
+  const begin = service.begin({ tenantId: "tenant-1", workspaceId: "workspace-1" });
+  assert.equal(begin.authorizationUrl.includes("code_challenge"), false);
+  assert.equal(begin.authorizationUrl.includes("code_challenge_method"), false);
+
+  await service.complete({ state: begin.state, code: "auth-code" });
 });
 
 test("TikTok OAuth: state expirado é recusado e serviço sem credenciais não inicia fluxo", async () => {

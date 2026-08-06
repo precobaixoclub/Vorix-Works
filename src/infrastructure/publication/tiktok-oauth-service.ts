@@ -19,13 +19,14 @@ export type TikTokOAuthConfig = {
   authorizeBaseUrl?: string;
   scopes: readonly string[];
   environment?: "sandbox" | "production";
+  pkceEnabled?: boolean;
 };
 
 export type TikTokOAuthState = {
   state: string;
   tenantId: string;
   workspaceId: string;
-  codeVerifier: string;
+  codeVerifier?: string;
   createdAt: string;
   expiresAt: string;
 };
@@ -95,7 +96,7 @@ export class TikTokOAuthService {
     const now = this.now();
     this.pruneExpiredStates(now);
     const state = randomBytes(24).toString("base64url");
-    const codeVerifier = randomBytes(48).toString("base64url");
+    const codeVerifier = this.input.config.pkceEnabled ? randomBytes(48).toString("base64url") : undefined;
     const expiresAt = new Date(now.getTime() + STATE_TTL_MS).toISOString();
     this.states.set(state, { state, tenantId: input.tenantId, workspaceId: input.workspaceId, codeVerifier, createdAt: now.toISOString(), expiresAt });
 
@@ -105,8 +106,10 @@ export class TikTokOAuthService {
     url.searchParams.set("response_type", "code");
     url.searchParams.set("scope", this.input.config.scopes.join(","));
     url.searchParams.set("state", state);
-    url.searchParams.set("code_challenge", createHash("sha256").update(codeVerifier).digest("base64url"));
-    url.searchParams.set("code_challenge_method", "S256");
+    if (codeVerifier) {
+      url.searchParams.set("code_challenge", createHash("sha256").update(codeVerifier).digest("base64url"));
+      url.searchParams.set("code_challenge_method", "S256");
+    }
     return { authorizationUrl: url.toString(), state, expiresAt };
   }
 
@@ -288,8 +291,8 @@ export class TikTokOAuthService {
     });
   }
 
-  private async exchangeCode(code: string, codeVerifier: string): Promise<TikTokTokenSet> {
-    return this.tokenRequest({ grant_type: "authorization_code", code, redirect_uri: this.input.config.redirectUri!, code_verifier: codeVerifier });
+  private async exchangeCode(code: string, codeVerifier?: string): Promise<TikTokTokenSet> {
+    return this.tokenRequest(definedStrings({ grant_type: "authorization_code", code, redirect_uri: this.input.config.redirectUri!, code_verifier: codeVerifier }));
   }
 
   private async tokenRequest(fields: Record<string, string>): Promise<TikTokTokenSet> {

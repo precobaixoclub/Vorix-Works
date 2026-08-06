@@ -493,6 +493,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       authorizeBaseUrl: config?.publication.tiktokAuthorizeBaseUrl,
       scopes: tiktokRequiredScopes,
       environment: config?.publication.providerEnvironment ?? "sandbox",
+      pkceEnabled: config?.publication.tiktokPkceEnabled ?? false,
     },
     repository: repositories.publicationRepository,
     secretStore: publicationSecretStore,

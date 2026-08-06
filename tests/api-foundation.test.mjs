@@ -41,8 +41,10 @@ test("loadApiConfig: lê escopos configuráveis do TikTok", () => {
   const config = loadApiConfig({
     AUTH_MODE: "noop",
     TIKTOK_SCOPES: "user.info.basic, video.upload, user.info.profile",
+    TIKTOK_PKCE_ENABLED: "true",
   });
   assert.deepEqual(config.publication.tiktokScopes, ["user.info.basic", "video.upload", "user.info.profile"]);
+  assert.equal(config.publication.tiktokPkceEnabled, true);
 });
 
 test("loadApiConfig: ignora porta inválida e cai no padrão", () => {

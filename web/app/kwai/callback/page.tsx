@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/Card";
 import { Spinner } from "@/components/Spinner";
+import { useAuth } from "@/contexts/auth-context";
 import { completeKwaiOAuth } from "@/features/kwai/api";
 
 /** Chave de sessão — a tela que iniciou o connect grava o próprio caminho aqui antes de redirecionar pro Kwai. */
@@ -12,10 +13,19 @@ export const KWAI_RETURN_PATH_KEY = "kwai:return-path";
 function KwaiOAuthCallbackContent() {
   const params = useSearchParams();
   const router = useRouter();
+  const { state: authState } = useAuth();
   const [message, setMessage] = useState("Conectando a conta do Kwai...");
   const started = useRef(false);
 
   useEffect(() => {
+    if (authState.status === "loading") {
+      setMessage("Autenticando sessão do Vorix...");
+      return;
+    }
+    if (authState.status === "unauthenticated") {
+      setMessage("Sessão do Vorix expirada. Entre novamente e tente conectar o Kwai outra vez.");
+      return;
+    }
     if (started.current) return;
     started.current = true;
 
@@ -45,7 +55,7 @@ function KwaiOAuthCallbackContent() {
       .catch((cause: unknown) => {
         setMessage(cause instanceof Error ? cause.message : "Não foi possível concluir a conexão com o Kwai.");
       });
-  }, [params, router]);
+  }, [authState.status, params, router]);
 
   return (
     <main className="mx-auto flex max-w-lg flex-col items-center px-6 py-20">

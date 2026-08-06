@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/Card";
 import { Spinner } from "@/components/Spinner";
+import { useAuth } from "@/contexts/auth-context";
 import { completeTikTokOAuth } from "@/features/tiktok/api";
 
 /** Chave de sessão — a tela que iniciou o connect (TikTok ou Conexões) grava o próprio caminho
@@ -13,10 +14,19 @@ export const TIKTOK_RETURN_PATH_KEY = "tiktok:return-path";
 function TikTokOAuthCallbackContent() {
   const params = useSearchParams();
   const router = useRouter();
+  const { state: authState } = useAuth();
   const [message, setMessage] = useState("Conectando a conta do TikTok...");
   const started = useRef(false);
 
   useEffect(() => {
+    if (authState.status === "loading") {
+      setMessage("Autenticando sessão do Vorix...");
+      return;
+    }
+    if (authState.status === "unauthenticated") {
+      setMessage("Sessão do Vorix expirada. Entre novamente e tente conectar o TikTok outra vez.");
+      return;
+    }
     if (started.current) return;
     started.current = true;
 
@@ -46,7 +56,7 @@ function TikTokOAuthCallbackContent() {
       .catch((cause: unknown) => {
         setMessage(cause instanceof Error ? cause.message : "Não foi possível concluir a conexão com o TikTok.");
       });
-  }, [params, router]);
+  }, [authState.status, params, router]);
 
   return (
     <main className="mx-auto flex max-w-lg flex-col items-center px-6 py-20">

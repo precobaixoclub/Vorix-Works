@@ -99,6 +99,7 @@ export type ApiConfig = {
     tiktokRedirectUri?: string;
     tiktokApiBaseUrl?: string;
     tiktokAuthorizeBaseUrl?: string;
+    tiktokScopes: readonly string[];
     kwaiEnabled: boolean;
     kwaiAppId?: string;
     kwaiAppSecret?: string;
@@ -218,6 +219,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const tiktokRedirectUri = env.TIKTOK_OAUTH_REDIRECT_URI?.trim() || undefined;
   const tiktokApiBaseUrl = env.TIKTOK_API_BASE_URL?.trim() || undefined;
   const tiktokAuthorizeBaseUrl = env.TIKTOK_AUTHORIZE_BASE_URL?.trim() || undefined;
+  const tiktokScopes = parseCsv(env.TIKTOK_SCOPES);
   const kwaiEnabled = env.KWAI_ENABLED?.trim() === "true";
   const kwaiAppId = env.KWAI_APP_ID?.trim() || undefined;
   const kwaiAppSecret = env.KWAI_APP_SECRET?.trim() || undefined;
@@ -331,6 +333,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       tiktokRedirectUri,
       tiktokApiBaseUrl,
       tiktokAuthorizeBaseUrl,
+      tiktokScopes,
       kwaiEnabled,
       kwaiAppId,
       kwaiAppSecret,

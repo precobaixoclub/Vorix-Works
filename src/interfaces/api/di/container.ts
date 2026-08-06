@@ -392,6 +392,13 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     ...(config?.publication.metaInstagramEnabled ? [instagramProvider, facebookProvider] : []),
   ];
   const publicationProviderRegistry = createDefaultPublicationProviderRegistry(publicationProviderAdapters);
+  const tiktokRequiredScopes = config?.publication.tiktokScopes.length
+    ? config.publication.tiktokScopes
+    : TIKTOK_REQUIRED_SCOPES;
+  const providerRequiredScopes = {
+    ...PROVIDER_REQUIRED_SCOPES,
+    tiktok: tiktokRequiredScopes,
+  };
 
   // Sprint 26 — Provedores de IA de mídia (imagem/vídeo). Mesma filosofia da chave dinâmica da
   // Anthropic (`AnthropicAiModelProvider.getApiKey`): quando há Postgres real, a chave configurada
@@ -439,7 +446,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     publicationRepository: repositories.publicationRepository,
     secretStore: publicationSecretStore,
     idGenerator: defaultGovernanceIdGenerator,
-    requiredScopes: PROVIDER_REQUIRED_SCOPES,
+    requiredScopes: providerRequiredScopes,
   });
   const complianceService = new ComplianceService({
     credentialRepository: repositories.credentialRepository,
@@ -484,7 +491,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       redirectUri: config?.publication.tiktokRedirectUri,
       apiBaseUrl: config?.publication.tiktokApiBaseUrl,
       authorizeBaseUrl: config?.publication.tiktokAuthorizeBaseUrl,
-      scopes: TIKTOK_REQUIRED_SCOPES,
+      scopes: tiktokRequiredScopes,
       environment: config?.publication.providerEnvironment ?? "sandbox",
     },
     repository: repositories.publicationRepository,

@@ -37,6 +37,14 @@ test("loadApiConfig: respeita variáveis de ambiente válidas", () => {
   assert.equal(config.authMode, "jwt");
 });
 
+test("loadApiConfig: lê escopos configuráveis do TikTok", () => {
+  const config = loadApiConfig({
+    AUTH_MODE: "noop",
+    TIKTOK_SCOPES: "user.info.basic, video.upload, user.info.profile",
+  });
+  assert.deepEqual(config.publication.tiktokScopes, ["user.info.basic", "video.upload", "user.info.profile"]);
+});
+
 test("loadApiConfig: ignora porta inválida e cai no padrão", () => {
   for (const invalid of ["0", "-1", "abc", "99999999"]) {
     const config = loadApiConfig({ API_PORT: invalid, AUTH_MODE: "noop" });

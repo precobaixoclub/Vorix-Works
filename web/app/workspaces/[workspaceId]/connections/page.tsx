@@ -12,9 +12,6 @@ import { TIKTOK_RETURN_PATH_KEY } from "@/app/tiktok/callback/page";
 import { beginMetaOAuth, disconnectMetaAccount } from "@/features/meta/api";
 import { useMetaOAuthStatus } from "@/features/meta/hooks";
 import { META_RETURN_PATH_KEY } from "@/app/instagram/callback/page";
-import { beginKwaiOAuth, disconnectKwaiAccount } from "@/features/kwai/api";
-import { useKwaiOAuthStatus } from "@/features/kwai/hooks";
-import { KWAI_RETURN_PATH_KEY } from "@/app/kwai/callback/page";
 import { beginYouTubeOAuth, disconnectYouTubeAccount } from "@/features/youtube/api";
 import { useYouTubeOAuthStatus } from "@/features/youtube/hooks";
 import { YOUTUBE_RETURN_PATH_KEY } from "@/app/youtube/callback/page";
@@ -37,7 +34,6 @@ export default function ConnectionsPage() {
         <TikTokConnection workspaceId={workspace.id} onFeedback={setFeedback} />
         <MetaConnection workspaceId={workspace.id} onFeedback={setFeedback} />
         <YouTubeConnection workspaceId={workspace.id} onFeedback={setFeedback} />
-        <KwaiConnection workspaceId={workspace.id} onFeedback={setFeedback} />
       </div>
     </main>
   );
@@ -178,52 +174,6 @@ function YouTubeConnection({ workspaceId, onFeedback }: { workspaceId: string; o
       configured={oauth?.configured !== false}
       busy={busy}
       accounts={accounts.map((account) => ({ id: account.credentialReferenceId, label: account.displayName ?? account.channelId, status: account.status }))}
-      onConnect={connect}
-      onDisconnect={disconnect}
-    />
-  );
-}
-
-function KwaiConnection({ workspaceId, onFeedback }: { workspaceId: string; onFeedback: (message: string | undefined) => void }) {
-  const { data: oauth, mutate } = useKwaiOAuthStatus(workspaceId);
-  const [busy, setBusy] = useState(false);
-  const accounts = oauth?.accounts.filter((account) => account.status !== "revoked") ?? [];
-
-  async function connect() {
-    setBusy(true);
-    onFeedback(undefined);
-    try {
-      const result = await beginKwaiOAuth(workspaceId);
-      window.sessionStorage.setItem(KWAI_RETURN_PATH_KEY, `/workspaces/${workspaceId}/connections`);
-      window.location.assign(result.authorizationUrl);
-    } catch (cause) {
-      onFeedback(messageOf(cause));
-      setBusy(false);
-    }
-  }
-
-  async function disconnect(credentialReferenceId: string) {
-    setBusy(true);
-    onFeedback(undefined);
-    try {
-      await disconnectKwaiAccount(workspaceId, credentialReferenceId);
-      await mutate();
-      onFeedback("Conta do Kwai desconectada.");
-    } catch (cause) {
-      onFeedback(messageOf(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <ConnectionCard
-      icon="🎬"
-      name="Kwai"
-      description="Só publica vídeo (a API do Kwai não tem foto/carrossel)."
-      configured={oauth?.configured !== false}
-      busy={busy}
-      accounts={accounts.map((account) => ({ id: account.credentialReferenceId, label: account.displayName ?? account.openId, status: account.status }))}
       onConnect={connect}
       onDisconnect={disconnect}
     />

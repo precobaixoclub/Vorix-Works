@@ -12,13 +12,12 @@ import { listConversations } from "@/features/conversation/api";
 import { listAssets } from "@/features/assets/api";
 import { useTikTokOAuthStatus } from "@/features/tiktok/hooks";
 import { useMetaOAuthStatus } from "@/features/meta/hooks";
-import { useKwaiOAuthStatus } from "@/features/kwai/hooks";
 import { useYouTubeOAuthStatus } from "@/features/youtube/hooks";
 import { useUnifiedPublications } from "@/features/publication-history/hooks";
 import { derivePublicationStatus } from "@/features/publication-history/types";
 import { formatDate, formatRelativeTime } from "@/lib/format";
 
-const NETWORK_LABEL: Record<string, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", kwai: "Kwai", youtube: "YouTube Shorts" };
+const NETWORK_LABEL: Record<string, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", youtube: "YouTube Shorts" };
 
 /**
  * Workspace Home. Todos os cards ("Conexões", "Últimas publicações", "Materiais da Marca") usam
@@ -32,14 +31,12 @@ export default function WorkspaceHomePage() {
 
   const { data: tiktokOAuth } = useTikTokOAuthStatus(workspace.id);
   const { data: metaOAuth } = useMetaOAuthStatus(workspace.id);
-  const { data: kwaiOAuth } = useKwaiOAuthStatus(workspace.id);
   const { data: youtubeOAuth } = useYouTubeOAuthStatus(workspace.id);
 
-  const oauthLoaded = tiktokOAuth !== undefined && metaOAuth !== undefined && kwaiOAuth !== undefined && youtubeOAuth !== undefined;
+  const oauthLoaded = tiktokOAuth !== undefined && metaOAuth !== undefined && youtubeOAuth !== undefined;
   const connectedAccounts = [
     ...(tiktokOAuth?.accounts ?? []).filter((account) => account.status === "active").map((account) => ({ network: "TikTok", name: account.displayName ?? account.openId })),
     ...(metaOAuth?.accounts ?? []).filter((account) => account.status === "active").map((account) => ({ network: account.providerId === "instagram" ? "Instagram" : "Facebook", name: account.displayName ?? account.providerSubjectId })),
-    ...(kwaiOAuth?.accounts ?? []).filter((account) => account.status === "active").map((account) => ({ network: "Kwai", name: account.displayName ?? account.openId })),
     ...(youtubeOAuth?.accounts ?? []).filter((account) => account.status === "active").map((account) => ({ network: "YouTube Shorts", name: account.displayName ?? account.channelId })),
   ];
   const hasAnyConnection = connectedAccounts.length > 0;
@@ -66,7 +63,7 @@ export default function WorkspaceHomePage() {
                 <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ${hasAnyConnection ? "bg-accent text-white" : "bg-surface-sunken text-ink-muted"}`}>
                   {hasAnyConnection ? "✓" : "1"}
                 </span>
-                <span className="text-sm text-ink">Conectar uma rede social (TikTok, Instagram, Facebook, YouTube ou Kwai)</span>
+                <span className="text-sm text-ink">Conectar uma rede social (TikTok, Instagram, Facebook ou YouTube)</span>
               </div>
               {!hasAnyConnection ? (
                 <Link href={`/workspaces/${workspace.id}/connections`}><Button>Conectar</Button></Link>
@@ -158,7 +155,7 @@ export default function WorkspaceHomePage() {
             {!oauthLoaded ? null : connectedAccounts.length === 0 ? (
               <EmptyState
                 title="Nenhuma rede social conectada"
-                description="Conecte TikTok, Instagram, Facebook ou Kwai para publicar direto pelo Vorix."
+                description="Conecte TikTok, Instagram, Facebook ou YouTube para publicar direto pelo Vorix."
                 action={<Link href={`/workspaces/${workspace.id}/connections`}><Button>Conectar rede social</Button></Link>}
               />
             ) : (

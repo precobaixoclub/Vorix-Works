@@ -1,7 +1,7 @@
-export type PublicationNetwork = "tiktok" | "instagram" | "facebook" | "kwai" | "youtube";
+export type PublicationNetwork = "tiktok" | "instagram" | "facebook" | "youtube";
 export type PublicationPlacement = "feed" | "story";
 
-/** Linha normalizada de publicação real — combina TikTok/Instagram/Facebook/Kwai numa lista só,
+/** Linha normalizada de publicação real — combina TikTok/Instagram/Facebook/YouTube numa lista só,
  * a mesma forma que já era montada localmente em `publish/page.tsx`, agora reaproveitável pela
  * tela de histórico e por qualquer outro lugar que precise do retrato real das publicações. */
 export type UnifiedPublication = {

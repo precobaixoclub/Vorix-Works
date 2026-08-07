@@ -28,7 +28,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Páginas públicas exigidas por plataformas externas (Meta/TikTok/Kwai) e por visitantes.
+  // Páginas públicas exigidas por plataformas externas (Meta/TikTok/YouTube) e por visitantes.
   if (pathname === "/pricing" || pathname === "/privacy" || pathname === "/terms" || pathname === "/data-deletion") {
     return NextResponse.next();
   }

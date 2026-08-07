@@ -1,4 +1,4 @@
-export type PostPreviewNetwork = "tiktok" | "instagram" | "facebook" | "kwai" | "youtube";
+export type PostPreviewNetwork = "tiktok" | "instagram" | "facebook" | "youtube";
 export type PostPreviewPlacement = "feed" | "story";
 
 export type PostPreviewProps = {
@@ -13,16 +13,16 @@ export type PostPreviewProps = {
   accountLabel?: string;
 };
 
-const NETWORK_LABEL: Record<PostPreviewNetwork, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", kwai: "Kwai", youtube: "YouTube Shorts" };
+const NETWORK_LABEL: Record<PostPreviewNetwork, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", youtube: "YouTube Shorts" };
 
 /**
  * Mockup compacto de como o post vai aparecer na rede escolhida — nunca pixel-perfect (não é o
  * objetivo), só o suficiente pra tirar a "caixa preta" de agendar sem saber o resultado. Feed
- * (Instagram/Facebook) vira um quadrado com cabeçalho de conta; Story e TikTok/Kwai viram um
- * frame vertical 9:16, já que os três sempre ocupam a tela inteira do app de origem.
+ * (Instagram/Facebook) vira um quadrado com cabeçalho de conta; Story, TikTok e YouTube viram um
+ * frame vertical 9:16, já que ocupam a tela inteira do app de origem.
  */
 export function PostPreview({ network, placement, caption, mediaKind, imageUrls, videoUrl, thumbnailUrl, autoAddMusic, accountLabel }: PostPreviewProps) {
-  const isShortVideoNetwork = network === "tiktok" || network === "kwai" || network === "youtube";
+  const isShortVideoNetwork = network === "tiktok" || network === "youtube";
   const isVertical = placement === "story" || isShortVideoNetwork;
   const cover = mediaKind === "video" ? thumbnailUrl : imageUrls[0];
   const extraImages = mediaKind === "image" ? Math.max(0, imageUrls.length - 1) : 0;

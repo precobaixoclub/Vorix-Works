@@ -14,8 +14,6 @@ import { useTikTokOAuthStatus, useTikTokPosts } from "@/features/tiktok/hooks";
 import type { TikTokPrivacyLevel } from "@/features/tiktok/types";
 import { scheduleMetaPost } from "@/features/meta/api";
 import { useMetaOAuthStatus, useMetaPosts } from "@/features/meta/hooks";
-import { scheduleKwaiPost } from "@/features/kwai/api";
-import { useKwaiOAuthStatus, useKwaiPosts } from "@/features/kwai/hooks";
 import { scheduleYouTubePost } from "@/features/youtube/api";
 import { useYouTubeOAuthStatus, useYouTubePosts } from "@/features/youtube/hooks";
 import type { YouTubePrivacyStatus } from "@/features/youtube/types";
@@ -27,14 +25,13 @@ import { formatDateTime } from "@/lib/format";
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 
-type Platform = "tiktok" | "instagram" | "facebook" | "kwai" | "youtube";
+type Platform = "tiktok" | "instagram" | "facebook" | "youtube";
 
 const PLATFORMS: readonly { id: Platform; label: string; icon: string }[] = [
   { id: "tiktok", label: "TikTok", icon: "🎵" },
   { id: "instagram", label: "Instagram", icon: "📷" },
   { id: "facebook", label: "Facebook", icon: "👍" },
   { id: "youtube", label: "YouTube Shorts", icon: "▶" },
-  { id: "kwai", label: "Kwai", icon: "🎬" },
 ];
 
 const TIKTOK_PRIVACY_OPTIONS: readonly { value: TikTokPrivacyLevel; label: string }[] = [
@@ -56,11 +53,9 @@ export default function PublishPage() {
   const workspace = useCurrentWorkspace();
   const { data: tiktokOAuth } = useTikTokOAuthStatus(workspace.id);
   const { data: metaOAuth } = useMetaOAuthStatus(workspace.id);
-  const { data: kwaiOAuth } = useKwaiOAuthStatus(workspace.id);
   const { data: youtubeOAuth } = useYouTubeOAuthStatus(workspace.id);
   const { mutate: mutateTikTokPosts } = useTikTokPosts(workspace.id);
   const { mutate: mutateMetaPosts } = useMetaPosts(workspace.id);
-  const { mutate: mutateKwaiPosts } = useKwaiPosts(workspace.id);
   const { mutate: mutateYouTubePosts } = useYouTubePosts(workspace.id);
   const { data: unified, mutate: mutateUnified } = useUnifiedPublications(workspace.id);
 
@@ -89,19 +84,16 @@ export default function PublishPage() {
     tiktok: tiktokOAuth?.connected ?? false,
     instagram: (metaOAuth?.accounts ?? []).some((a) => a.providerId === "instagram" && a.status === "active"),
     facebook: (metaOAuth?.accounts ?? []).some((a) => a.providerId === "facebook" && a.status === "active"),
-    kwai: kwaiOAuth?.connected ?? false,
     youtube: youtubeOAuth?.connected ?? false,
   };
   const accountLabelByPlatform: Partial<Record<Platform, string>> = {
     tiktok: tiktokOAuth?.accounts[0]?.displayName,
     instagram: metaOAuth?.accounts.find((a) => a.providerId === "instagram")?.displayName,
     facebook: metaOAuth?.accounts.find((a) => a.providerId === "facebook")?.displayName,
-    kwai: kwaiOAuth?.accounts[0]?.displayName,
     youtube: youtubeOAuth?.accounts[0]?.displayName,
   };
   const anyConnected = Object.values(connectedByPlatform).some(Boolean);
   const hasStoryUnsupported = selected.has("tiktok") && placement === "story";
-  const kwaiNeedsVideo = selected.has("kwai") && mediaKind !== "video";
   const youtubeNeedsVideo = selected.has("youtube") && mediaKind !== "video";
 
   function togglePlatform(platform: Platform) {
@@ -111,7 +103,7 @@ export default function PublishPage() {
       else next.add(platform);
       return next;
     });
-    if (platform === "kwai" || platform === "youtube") setMediaKind("video");
+    if (platform === "youtube") setMediaKind("video");
   }
 
   async function uploadVideoFile(file: File) {
@@ -157,16 +149,8 @@ export default function PublishPage() {
     event.preventDefault();
     setFeedback(undefined);
 
-    if (kwaiNeedsVideo) {
-      setFeedback("Kwai só publica vídeo — desmarque Kwai ou troque a mídia para Vídeo.");
-      return;
-    }
     if (youtubeNeedsVideo) {
       setFeedback("YouTube Shorts só publica vídeo — desmarque YouTube ou troque a mídia para Vídeo.");
-      return;
-    }
-    if (selected.has("kwai") && !thumbnailUrl.trim()) {
-      setFeedback("Kwai exige uma capa (imagem de thumbnail) além do vídeo.");
       return;
     }
 
@@ -189,16 +173,6 @@ export default function PublishPage() {
           disableDuet: tiktokDisableDuet,
           disableStitch: tiktokDisableStitch,
           autoAddMusic: tiktokAutoAddMusic,
-        });
-      }
-      if (platform.id === "kwai") {
-        return scheduleKwaiPost({
-          workspaceId: workspace.id,
-          caption,
-          videoUrl: videoUrl.trim(),
-          thumbnailUrl: thumbnailUrl.trim(),
-          scheduledAt: scheduledAtIso,
-          timezone: scheduledAtIso ? timezone : undefined,
         });
       }
       if (platform.id === "youtube") {
@@ -239,7 +213,7 @@ export default function PublishPage() {
       setImageUrls("");
       setThumbnailUrl("");
       setScheduledAt("");
-      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateKwaiPosts(), mutateYouTubePosts(), mutateUnified()]);
+      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateYouTubePosts(), mutateUnified()]);
     }
     setBusy(false);
   }
@@ -249,7 +223,7 @@ export default function PublishPage() {
     setFeedback(undefined);
     try {
       await cancelUnifiedPublication(workspace.id, post.network, post.id);
-      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateKwaiPosts(), mutateYouTubePosts(), mutateUnified()]);
+      await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateYouTubePosts(), mutateUnified()]);
     } catch (cause) {
       setFeedback(messageOf(cause));
     } finally {
@@ -314,10 +288,9 @@ export default function PublishPage() {
             ) : null}
 
             <div className="flex gap-2">
-              <Button type="button" variant={mediaKind === "image" ? "primary" : "secondary"} disabled={selected.has("kwai") || selected.has("youtube")} onClick={() => setMediaKind("image")}>Imagem/carrossel</Button>
+              <Button type="button" variant={mediaKind === "image" ? "primary" : "secondary"} disabled={selected.has("youtube")} onClick={() => setMediaKind("image")}>Imagem/carrossel</Button>
               <Button type="button" variant={mediaKind === "video" ? "primary" : "secondary"} onClick={() => setMediaKind("video")}>Vídeo</Button>
             </div>
-            {selected.has("kwai") ? <p className="-mt-2 text-xs text-ink-muted">Kwai só publica vídeo (sem imagem/carrossel).</p> : null}
             {selected.has("youtube") ? <p className="-mt-2 text-xs text-ink-muted">YouTube Shorts só publica vídeo. Use vídeo vertical curto para o YouTube reconhecer como Short.</p> : null}
 
             {mediaKind === "video" ? (
@@ -344,8 +317,8 @@ export default function PublishPage() {
 
             {mediaKind === "video" ? (
               <div>
-                <Label htmlFor="publish-thumbnail-url">{`Capa do vídeo (JPG)${selected.has("kwai") ? " — obrigatória para o Kwai" : " — opcional"}`}</Label>
-                <Input id="publish-thumbnail-url" type="url" required={selected.has("kwai")} value={thumbnailUrl} placeholder="https://cdn.exemplo.com/capa.jpg" onChange={(event) => setThumbnailUrl(event.target.value)} />
+                <Label htmlFor="publish-thumbnail-url">Capa do vídeo (JPG) — opcional</Label>
+                <Input id="publish-thumbnail-url" type="url" value={thumbnailUrl} placeholder="https://cdn.exemplo.com/capa.jpg" onChange={(event) => setThumbnailUrl(event.target.value)} />
                 <p className="mt-1 text-xs text-ink-muted">
                   ou envie um arquivo:{" "}
                   <input type="file" accept="image/jpeg" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadThumbnailFile(event.target.files[0])} />
@@ -441,7 +414,7 @@ export default function PublishPage() {
                 <PostPreview
                   key={platform.id}
                   network={platform.id}
-                  placement={platform.id === "tiktok" || platform.id === "kwai" || platform.id === "youtube" ? "feed" : placement}
+                  placement={platform.id === "tiktok" || platform.id === "youtube" ? "feed" : placement}
                   caption={caption}
                   mediaKind={mediaKind}
                   imageUrls={images}

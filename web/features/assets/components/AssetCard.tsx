@@ -20,7 +20,14 @@ const PREVIEWABLE_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/web
 export function AssetCard({ asset, onArchive, onDelete }: { asset: Asset; onArchive: () => void; onDelete: () => void }) {
   const previewUrl = asset.storageRef?.metadata?.url;
   const contentType = asset.storageRef?.metadata?.contentType;
-  const canPreview = previewUrl && contentType && PREVIEWABLE_CONTENT_TYPES.has(contentType);
+  const canPreview =
+    Boolean(previewUrl) &&
+    (asset.kind === "logo" ||
+      asset.kind === "photo" ||
+      asset.kind === "product" ||
+      asset.kind === "mockup" ||
+      asset.kind === "visual_identity" ||
+      Boolean(contentType && PREVIEWABLE_CONTENT_TYPES.has(contentType)));
 
   return (
     <Card>
@@ -28,7 +35,7 @@ export function AssetCard({ asset, onArchive, onDelete }: { asset: Asset; onArch
         <div className="flex h-24 items-center justify-center overflow-hidden rounded-lg bg-surface-sunken text-3xl">
           {canPreview ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={previewUrl} alt="" className="h-full w-full object-cover" />
+            <img src={previewUrl} alt="" className="h-full w-full object-contain" />
           ) : (
             KIND_ICON[asset.kind] ?? "📁"
           )}

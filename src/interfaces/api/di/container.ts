@@ -88,6 +88,7 @@ import { FailClosedProductionSecretManager, InMemorySecretManager } from "../../
 import { PostgresSecretManager } from "../../../infrastructure/operations/postgres-secret-manager.js";
 import type { ObjectStoragePort } from "../../../application/ports/object-storage.port.js";
 import { S3ObjectStorage } from "../../../infrastructure/storage/s3-object-storage.js";
+import { LocalObjectStorage } from "../../../infrastructure/storage/local-object-storage.js";
 import { DisabledObjectStorage } from "../../../infrastructure/storage/disabled-object-storage.js";
 import { MetaPagesSandboxProvider } from "../../../infrastructure/publication/meta-pages-sandbox-provider.js";
 import { TikTokContentPostingProvider } from "../../../infrastructure/publication/tiktok-content-posting-provider.js";
@@ -317,6 +318,12 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     : new InMemorySecretManager();
   const objectStorage: ObjectStoragePort = (() => {
     const oss = config?.objectStorage;
+    if (oss?.enabled && oss.driver === "local" && oss.localDir && oss.publicBaseUrl) {
+      return new LocalObjectStorage({
+        rootDir: oss.localDir,
+        publicBaseUrl: oss.publicBaseUrl,
+      });
+    }
     if (oss?.enabled && oss.bucket && oss.accessKeyId && oss.secretAccessKey) {
       return new S3ObjectStorage({
         endpoint: oss.endpoint,

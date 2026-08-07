@@ -1,10 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 import { buildApp } from "../dist/interfaces/api/app.js";
 import { loadApiConfig } from "../dist/interfaces/api/config/api-config.js";
 import { resolvePublicUrl } from "../dist/infrastructure/storage/s3-object-storage.js";
 import { DisabledObjectStorage } from "../dist/infrastructure/storage/disabled-object-storage.js";
+import { LocalObjectStorage } from "../dist/infrastructure/storage/local-object-storage.js";
 
 class TestTokenAuthPort {
   async verifyToken(token) {
@@ -73,6 +77,44 @@ test("DisabledObjectStorage: falha fechado com mensagem clara em put/delete, hea
   assert.equal(health.ok, false);
   await assert.rejects(() => storage.put({ key: "x", body: Buffer.from(""), contentType: "image/jpeg" }), /OBJECT_STORAGE_NOT_CONFIGURED/);
   await assert.rejects(() => storage.delete("x"), /OBJECT_STORAGE_NOT_CONFIGURED/);
+});
+
+test("LocalObjectStorage: salva em disco e devolve URL pública codificada", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "zuno-upload-"));
+  try {
+    const storage = new LocalObjectStorage({ rootDir, publicBaseUrl: "https://api.test/uploads/" });
+    const result = await storage.put({ key: "tenant/workspace/minha foto.jpg", body: Buffer.from("img"), contentType: "image/jpeg" });
+
+    assert.equal(result.url, "https://api.test/uploads/tenant/workspace/minha%20foto.jpg");
+    assert.equal(await readFile(join(rootDir, "tenant", "workspace", "minha foto.jpg"), "utf8"), "img");
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("GET /uploads/*: serve arquivo salvo no storage local", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "zuno-upload-route-"));
+  try {
+    await writeFile(join(rootDir, "foto.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const config = loadApiConfig({
+      AUTH_MODE: "noop",
+      OBJECT_STORAGE_ENABLED: "true",
+      OBJECT_STORAGE_DRIVER: "local",
+      OBJECT_STORAGE_LOCAL_DIR: rootDir,
+      OBJECT_STORAGE_PUBLIC_BASE_URL: "https://api.test/uploads",
+      MEDIA_UPLOAD_MAX_BYTES: "5000000",
+    });
+    const app = await buildApp({ config, container: { authPort: new TestTokenAuthPort() } });
+
+    const response = await app.inject({ method: "GET", url: "/uploads/foto.png" });
+
+    assert.equal(response.statusCode, 200);
+    assert.match(response.headers["content-type"], /^image\/png/);
+    assert.deepEqual(response.rawPayload, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    await app.close();
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------------------------

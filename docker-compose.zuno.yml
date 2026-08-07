@@ -70,6 +70,11 @@ services:
       YOUTUBE_API_BASE_URL: "${YOUTUBE_API_BASE_URL:-https://www.googleapis.com/youtube/v3}"
       YOUTUBE_UPLOAD_BASE_URL: "${YOUTUBE_UPLOAD_BASE_URL:-https://www.googleapis.com/upload/youtube/v3}"
       YOUTUBE_SCOPES: "${YOUTUBE_SCOPES:-}"
+      OBJECT_STORAGE_ENABLED: "${OBJECT_STORAGE_ENABLED:-true}"
+      OBJECT_STORAGE_DRIVER: "${OBJECT_STORAGE_DRIVER:-local}"
+      OBJECT_STORAGE_LOCAL_DIR: "${OBJECT_STORAGE_LOCAL_DIR:-/app/uploads}"
+      OBJECT_STORAGE_PUBLIC_BASE_URL: "${OBJECT_STORAGE_PUBLIC_BASE_URL:-https://api.vorixworks.com/uploads}"
+      MEDIA_UPLOAD_MAX_BYTES: "${MEDIA_UPLOAD_MAX_BYTES:-100000000}"
       PUBLICATION_PROVIDER_ENVIRONMENT: "${PUBLICATION_PROVIDER_ENVIRONMENT:-sandbox}"
       PUBLICATION_PRODUCTION_ENABLED: "${PUBLICATION_PRODUCTION_ENABLED:-false}"
       PUBLICATION_CANARY_ENABLED: "${PUBLICATION_CANARY_ENABLED:-false}"
@@ -80,6 +85,8 @@ services:
       # nunca habilitar aqui sem decisão explícita e as credenciais reais correspondentes.
     ports:
       - "${ZUNO_API_PORT:-8090}:3000"
+    volumes:
+      - zuno_uploads:/app/uploads
     networks: [zuno_network, cmdesk_cmdesk-network]
     init: true
     mem_limit: 512m
@@ -154,3 +161,5 @@ networks:
 volumes:
   zuno_postgres_data:
     name: zuno_postgres_data
+  zuno_uploads:
+    name: zuno_uploads

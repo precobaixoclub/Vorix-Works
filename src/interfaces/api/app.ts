@@ -17,6 +17,7 @@ import { registerPublicationScheduler } from "./scheduler/publication-scheduler.
 import { registerVersionRoute } from "./routes/version.route.js";
 import { registerWebhookReceiverRoutes } from "./routes/webhook-receiver.route.js";
 import { successEnvelope } from "./http/response-envelope.js";
+import { registerUploadedObjectRoutes } from "./routes/uploads.route.js";
 
 export type BuildAppOptions = {
   config?: ApiConfig;
@@ -48,6 +49,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   await app.register(cookie);
   await app.register(multipart, { limits: { fileSize: config.objectStorage.maxUploadBytes, files: 1 } });
+  if (config.objectStorage.enabled && config.objectStorage.driver === "local" && config.objectStorage.localDir) {
+    await registerUploadedObjectRoutes(app, { rootDir: config.objectStorage.localDir });
+  }
 
   registerSecurityHeadersMiddleware(app, { cookieSecure: config.cookieSecure });
 

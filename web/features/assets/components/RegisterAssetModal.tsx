@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/Button";
 import { Input, Label } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { registerAsset, uploadAssetFile } from "../api";
 import { ASSET_KINDS, ASSET_KIND_LABEL, type Asset, type AssetKind } from "../types";
+
+const FILE_REQUIRED_KINDS = new Set<AssetKind>(["logo", "photo", "video", "product", "mockup", "visual_identity"]);
 
 /** Envia o arquivo pro Object Storage (`POST /v1/assets/upload`) e só depois registra o material
  * com o `storageRef` real — antes disso só existia o registro de metadados, sem nenhum arquivo. */
@@ -24,6 +26,18 @@ export function RegisterAssetModal({
   const [tags, setTags] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const fileRequired = FILE_REQUIRED_KINDS.has(kind);
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (!file?.type.startsWith("image/")) {
+      setLocalPreviewUrl(undefined);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setLocalPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
 
   function pickFile(selected: File | undefined) {
     setFile(selected);
@@ -33,6 +47,10 @@ export function RegisterAssetModal({
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
+    if (fileRequired && !file) {
+      setError(`Envie um arquivo para cadastrar ${ASSET_KIND_LABEL[kind].toLowerCase()}.`);
+      return;
+    }
     setSubmitting(true);
     setError(undefined);
     try {
@@ -60,10 +78,20 @@ export function RegisterAssetModal({
             id="asset-file"
             type="file"
             accept="image/jpeg,image/png,image/webp,image/svg+xml,video/mp4,video/quicktime,application/pdf,font/ttf,font/otf,font/woff,font/woff2"
+            required={fileRequired}
             onChange={(e) => pickFile(e.target.files?.[0])}
             className="w-full text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-accent"
           />
-          <p className="mt-1 text-xs text-ink-muted">JPEG, PNG, WEBP, SVG, MP4, MOV, PDF ou fontes (TTF/OTF/WOFF). Opcional — sem arquivo, registra só o nome e o tipo.</p>
+          <p className="mt-1 text-xs text-ink-muted">
+            JPEG, PNG, WEBP, SVG, MP4, MOV, PDF ou fontes (TTF/OTF/WOFF).
+            {fileRequired ? " Obrigatório para este tipo." : " Opcional para documentos e referências."}
+          </p>
+          {localPreviewUrl ? (
+            <div className="mt-3 overflow-hidden rounded-lg border border-border bg-surface-sunken">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={localPreviewUrl} alt="Prévia do material selecionado" className="max-h-56 w-full object-contain" />
+            </div>
+          ) : null}
         </div>
         <div>
           <Label htmlFor="asset-name">Nome do arquivo</Label>
@@ -93,7 +121,7 @@ export function RegisterAssetModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={submitting || !name.trim()}>
+          <Button type="submit" disabled={submitting || !name.trim() || (fileRequired && !file)}>
             {submitting ? (file ? "Enviando…" : "Registrando…") : "Registrar Material"}
           </Button>
         </div>

@@ -152,11 +152,13 @@ export type ApiConfig = {
    * R2, DigitalOcean Spaces, MinIO) para gerar a URL pública que TikTok/Meta exigem. */
   objectStorage: {
     enabled: boolean;
+    driver: "s3" | "local";
     endpoint?: string;
     region: string;
     bucket?: string;
     accessKeyId?: string;
     secretAccessKey?: string;
+    localDir?: string;
     publicBaseUrl?: string;
     forcePathStyle: boolean;
     acl?: string;
@@ -268,11 +270,13 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const schedulingLateMsMax = parsePositiveInt(env.OPERATIONAL_SCHEDULING_LATE_MS_MAX) ?? 15 * 60_000;
   const analyticsDeadLetterMax = parsePositiveInt(env.OPERATIONAL_ANALYTICS_DEAD_LETTER_MAX) ?? 25;
   const objectStorageEnabled = env.OBJECT_STORAGE_ENABLED?.trim() === "true";
+  const objectStorageDriver = env.OBJECT_STORAGE_DRIVER?.trim() === "local" ? "local" : "s3";
   const objectStorageEndpoint = env.OBJECT_STORAGE_ENDPOINT?.trim() || undefined;
   const objectStorageRegion = env.OBJECT_STORAGE_REGION?.trim() || "auto";
   const objectStorageBucket = env.OBJECT_STORAGE_BUCKET?.trim() || undefined;
   const objectStorageAccessKeyId = env.OBJECT_STORAGE_ACCESS_KEY_ID?.trim() || undefined;
   const objectStorageSecretAccessKey = env.OBJECT_STORAGE_SECRET_ACCESS_KEY?.trim() || undefined;
+  const objectStorageLocalDir = env.OBJECT_STORAGE_LOCAL_DIR?.trim() || undefined;
   const objectStoragePublicBaseUrl = env.OBJECT_STORAGE_PUBLIC_BASE_URL?.trim() || undefined;
   const objectStorageForcePathStyle = env.OBJECT_STORAGE_FORCE_PATH_STYLE?.trim() !== "false";
   const objectStorageAcl = env.OBJECT_STORAGE_ACL?.trim() || undefined;
@@ -403,11 +407,13 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     },
     objectStorage: {
       enabled: objectStorageEnabled,
+      driver: objectStorageDriver,
       endpoint: objectStorageEndpoint,
       region: objectStorageRegion,
       bucket: objectStorageBucket,
       accessKeyId: objectStorageAccessKeyId,
       secretAccessKey: objectStorageSecretAccessKey,
+      localDir: objectStorageLocalDir,
       publicBaseUrl: objectStoragePublicBaseUrl,
       forcePathStyle: objectStorageForcePathStyle,
       acl: objectStorageAcl,

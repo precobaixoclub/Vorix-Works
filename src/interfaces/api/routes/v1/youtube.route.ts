@@ -10,6 +10,7 @@ import type { OperationalCircuitBreaker } from "../../../../application/operatio
 import type { PublicationProviderPolicy } from "../../../../application/publication/publication-provider-policy.js";
 import type { PublicationPlan, PublicationPolicy, PublicationProvider } from "../../../../domain/publication/publication.model.js";
 import type { YouTubeOAuthService } from "../../../../infrastructure/publication/youtube-oauth-service.js";
+import { ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 
@@ -102,6 +103,8 @@ export async function registerYouTubeRoutes(app: FastifyInstance, deps: YouTubeR
       code: body.code,
       actor: { tenantId: principal.tenantId, userId: principal.userId, role: principal.role, sessionId: principal.sessionId },
       context: requestContext(request),
+    }).catch((error: unknown) => {
+      throw youtubeOAuthError(error);
     });
     return successEnvelope(result, request.id);
   });
@@ -270,4 +273,22 @@ function mediaOf(plan: PublicationPlan): { videoUrl?: string; imageUrls: readonl
 function requestContext(request: { id: string; ip?: string; headers: Record<string, string | string[] | undefined> }): { requestId: string; ip?: string; userAgent?: string } {
   const userAgent = request.headers["user-agent"];
   return { requestId: request.id, ip: request.ip, userAgent: typeof userAgent === "string" ? userAgent : undefined };
+}
+
+function youtubeOAuthError(error: unknown): ValidationError {
+  const message = error instanceof Error ? error.message : "YOUTUBE_OAUTH_FAILED: falha ao conectar o YouTube.";
+  const [code, detail = ""] = message.split(/:\s(.+)/, 2);
+  if (code === "YOUTUBE_CHANNEL_NOT_FOUND" && detail.includes("disabled")) {
+    return new ValidationError("Ative a YouTube Data API v3 no Google Cloud deste projeto e tente conectar novamente.", { code, providerMessage: detail });
+  }
+  if (code === "YOUTUBE_CHANNEL_NOT_FOUND") {
+    return new ValidationError("Não encontrei um canal do YouTube nessa conta Google. Entre com uma conta que tenha um canal criado.", { code, providerMessage: detail });
+  }
+  if (code === "YOUTUBE_OAUTH_TOKEN_FAILED") {
+    return new ValidationError("O Google recusou a troca do código OAuth. Confira Client ID, Client Secret e URL de redirecionamento.", { code, providerMessage: detail });
+  }
+  if (code === "YOUTUBE_OAUTH_STATE_INVALID") {
+    return new ValidationError("A autorização expirou. Volte em Conexões e tente conectar o YouTube novamente.", { code });
+  }
+  return new ValidationError("Não foi possível concluir a conexão com o YouTube. Confira a configuração do Google Cloud e tente novamente.", { code, providerMessage: detail });
 }

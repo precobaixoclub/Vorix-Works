@@ -95,6 +95,7 @@ export default function PublishPage() {
   const anyConnected = Object.values(connectedByPlatform).some(Boolean);
   const hasStoryUnsupported = selected.has("tiktok") && placement === "story";
   const youtubeNeedsVideo = selected.has("youtube") && mediaKind !== "video";
+  const hasMedia = mediaKind === "video" ? Boolean(videoUrl.trim()) : imageUrls.split(/[\n,]/).some((url) => url.trim().length > 0);
 
   function togglePlatform(platform: Platform) {
     setSelected((current) => {
@@ -119,12 +120,13 @@ export default function PublishPage() {
     }
   }
 
-  async function uploadImageFile(file: File) {
+  async function uploadImageFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
     setUploading(true);
     setFeedback(undefined);
     try {
-      const uploaded = await uploadPublicationMedia(workspace.id, file);
-      setImageUrls((current) => (current.trim() ? `${current.trim()}\n${uploaded.url}` : uploaded.url));
+      const uploaded = await Promise.all(Array.from(files).map((file) => uploadPublicationMedia(workspace.id, file)));
+      setImageUrls((current) => [...current.split(/[\n,]/).map((url) => url.trim()).filter(Boolean), ...uploaded.map((item) => item.url)].join("\n"));
     } catch (cause) {
       setFeedback(messageOf(cause));
     } finally {
@@ -148,6 +150,11 @@ export default function PublishPage() {
   async function submitPost(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFeedback(undefined);
+
+    if (!hasMedia) {
+      setFeedback(mediaKind === "video" ? "Envie um vídeo para publicar." : "Envie ao menos uma imagem para publicar.");
+      return;
+    }
 
     if (youtubeNeedsVideo) {
       setFeedback("YouTube Shorts só publica vídeo — desmarque YouTube ou troque a mídia para Vídeo.");
@@ -294,37 +301,41 @@ export default function PublishPage() {
             {selected.has("youtube") ? <p className="-mt-2 text-xs text-ink-muted">YouTube Shorts só publica vídeo. Use vídeo vertical curto para o YouTube reconhecer como Short.</p> : null}
 
             {mediaKind === "video" ? (
-              <div>
-                <Label htmlFor="publish-video-url">URL do vídeo (HTTPS pública)</Label>
-                <Input id="publish-video-url" type="url" required value={videoUrl} placeholder="https://cdn.exemplo.com/video.mp4" onChange={(event) => setVideoUrl(event.target.value)} />
-                <p className="mt-1 text-xs text-ink-muted">
-                  ou envie um arquivo:{" "}
-                  <input type="file" accept="video/mp4,video/quicktime" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadVideoFile(event.target.files[0])} />
-                  {uploading ? " enviando..." : ""}
-                </p>
-              </div>
+              <MediaUploadPanel
+                id="publish-video-file"
+                label="Vídeo"
+                helper="MP4 ou MOV. Para YouTube Shorts, use vídeo vertical curto."
+                accept="video/mp4,video/quicktime"
+                uploading={uploading}
+                urls={videoUrl.trim() ? [videoUrl.trim()] : []}
+                onPick={(files) => files?.[0] && uploadVideoFile(files[0])}
+                onRemove={() => setVideoUrl("")}
+              />
             ) : (
-              <div>
-                <Label htmlFor="publish-image-urls">URLs das imagens (uma por linha)</Label>
-                <Textarea id="publish-image-urls" required rows={3} value={imageUrls} placeholder={"https://cdn.exemplo.com/1.jpg\nhttps://cdn.exemplo.com/2.jpg"} onChange={(event) => setImageUrls(event.target.value)} />
-                <p className="mt-1 text-xs text-ink-muted">
-                  ou envie um arquivo:{" "}
-                  <input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadImageFile(event.target.files[0])} />
-                  {uploading ? " enviando..." : ""}
-                </p>
-              </div>
+              <MediaUploadPanel
+                id="publish-image-files"
+                label={placement === "story" ? "Imagem" : "Imagens"}
+                helper={placement === "story" ? "Envie uma imagem JPG, PNG ou WEBP." : "Envie uma ou mais imagens. Mais de uma vira carrossel/multi-foto quando a rede suportar."}
+                accept="image/jpeg,image/png,image/webp"
+                multiple={placement !== "story"}
+                uploading={uploading}
+                urls={images}
+                onPick={uploadImageFiles}
+                onRemove={(url) => setImageUrls((current) => current.split(/[\n,]/).map((item) => item.trim()).filter((item) => item && item !== url).join("\n"))}
+              />
             )}
 
             {mediaKind === "video" ? (
-              <div>
-                <Label htmlFor="publish-thumbnail-url">Capa do vídeo (JPG) — opcional</Label>
-                <Input id="publish-thumbnail-url" type="url" value={thumbnailUrl} placeholder="https://cdn.exemplo.com/capa.jpg" onChange={(event) => setThumbnailUrl(event.target.value)} />
-                <p className="mt-1 text-xs text-ink-muted">
-                  ou envie um arquivo:{" "}
-                  <input type="file" accept="image/jpeg" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadThumbnailFile(event.target.files[0])} />
-                  {uploading ? " enviando..." : ""}
-                </p>
-              </div>
+              <MediaUploadPanel
+                id="publish-thumbnail-file"
+                label="Capa do vídeo"
+                helper="Opcional. Use JPG se quiser definir uma capa para redes que aceitam thumbnail."
+                accept="image/jpeg"
+                uploading={uploading}
+                urls={thumbnailUrl.trim() ? [thumbnailUrl.trim()] : []}
+                onPick={(files) => files?.[0] && uploadThumbnailFile(files[0])}
+                onRemove={() => setThumbnailUrl("")}
+              />
             ) : null}
 
             <div>
@@ -399,8 +410,9 @@ export default function PublishPage() {
               </div>
             </div>
 
-            <Button type="submit" disabled={busy || selected.size === 0}>{scheduledAt ? "Agendar publicação" : "Publicar agora"}</Button>
+            <Button type="submit" disabled={busy || uploading || selected.size === 0 || !hasMedia}>{scheduledAt ? "Agendar publicação" : "Publicar agora"}</Button>
             {selected.size === 0 ? <p className="text-xs text-ink-muted">Marque ao menos uma rede social conectada para publicar.</p> : null}
+            {!hasMedia ? <p className="text-xs text-ink-muted">Envie a mídia antes de publicar ou agendar.</p> : null}
           </form>
         </Card>
 
@@ -476,4 +488,69 @@ export default function PublishPage() {
 
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : "Não foi possível concluir a operação.";
+}
+
+function MediaUploadPanel({
+  id,
+  label,
+  helper,
+  accept,
+  multiple,
+  uploading,
+  urls,
+  onPick,
+  onRemove,
+}: {
+  id: string;
+  label: string;
+  helper: string;
+  accept: string;
+  multiple?: boolean;
+  uploading: boolean;
+  urls: readonly string[];
+  onPick: (files: FileList | null) => void;
+  onRemove: (url: string) => void;
+}) {
+  return (
+    <div>
+      <Label htmlFor={id}>{label}</Label>
+      <div className="rounded-lg border border-border bg-surface-sunken p-3">
+        <input
+          id={id}
+          type="file"
+          accept={accept}
+          multiple={multiple}
+          disabled={uploading}
+          onChange={(event) => {
+            onPick(event.target.files);
+            event.currentTarget.value = "";
+          }}
+          className="w-full text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-accent"
+        />
+        <p className="mt-2 text-xs text-ink-muted">{uploading ? "Enviando arquivo..." : helper}</p>
+        {urls.length > 0 ? (
+          <div className="mt-3 grid gap-2">
+            {urls.map((url) => (
+              <div key={url} className="flex items-center gap-3 rounded-md border border-border bg-surface p-2">
+                {isImageUrl(url) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={url} alt="" className="h-14 w-14 rounded object-cover" />
+                ) : (
+                  <div className="flex h-14 w-14 items-center justify-center rounded bg-surface-raised text-lg">▶</div>
+                )}
+                <p className="min-w-0 flex-1 truncate text-xs text-ink-muted">{url}</p>
+                <button type="button" className="text-xs font-medium text-red-600 hover:text-red-700" onClick={() => onRemove(url)}>
+                  Remover
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function isImageUrl(url: string): boolean {
+  return /\.(jpe?g|png|webp)(?:\?|#|$)/i.test(url);
 }

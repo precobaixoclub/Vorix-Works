@@ -67,7 +67,7 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
       <Link
         key={item.href}
         href={href}
-        className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+        className={`flex min-h-10 shrink-0 items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors md:w-full md:shrink ${
           isActive ? "bg-accent-soft text-accent" : "text-ink-muted hover:bg-surface-sunken hover:text-ink"
         }`}
       >
@@ -78,28 +78,32 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
   }
 
   return (
-    <nav className="flex w-56 shrink-0 flex-col gap-1 border-r border-border bg-surface-raised p-3">
-      <Link href="/workspaces" className="mb-4 flex items-center px-2 py-1 text-ink" aria-label="Vonix — Workspaces">
-        <Logo className="h-10 w-auto" />
-      </Link>
-      <Link
-        href="/workspaces"
-        className="mb-3 flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-ink-muted hover:text-ink"
-      >
-        ← Espaços de Trabalho
-      </Link>
+    <nav className="sticky top-0 z-30 flex w-full shrink-0 flex-col gap-2 border-b border-border bg-surface-raised/95 p-2 backdrop-blur md:h-dvh md:w-56 md:gap-1 md:border-b-0 md:border-r md:p-3">
+      <div className="flex items-center justify-between gap-2 md:block">
+        <Link href="/workspaces" className="flex items-center px-2 py-1 text-ink md:mb-4" aria-label="Vonix — Workspaces">
+          <Logo className="h-8 w-auto md:h-10" />
+        </Link>
+        <Link
+          href="/workspaces"
+          className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-ink-muted hover:bg-surface-sunken hover:text-ink md:mb-3 md:min-h-0 md:rounded-none md:hover:bg-transparent"
+        >
+          ← Espaços
+        </Link>
+      </div>
 
-      {MAIN_NAV.map(renderLink)}
+      <div className="flex gap-1 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] md:flex-col md:overflow-visible md:pb-0">
+        {MAIN_NAV.map(renderLink)}
+      </div>
 
       {canSeeBackstage ? (
         <>
-          <div className="my-2 border-t border-border/60" />
+          <div className="my-1 border-t border-border/60 md:my-2" />
 
           <button
             type="button"
             onClick={toggleBackstage}
             aria-expanded={backstageOpen}
-            className="flex items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-ink-faint transition-colors hover:bg-surface-sunken hover:text-ink-muted"
+            className="flex min-h-10 w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-ink-faint transition-colors hover:bg-surface-sunken hover:text-ink-muted"
           >
             <span>Bastidor</span>
             <span aria-hidden="true" className={`transition-transform ${backstageOpen ? "rotate-90" : ""}`}>
@@ -107,7 +111,11 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
             </span>
           </button>
 
-          {backstageOpen ? <div className="flex flex-col gap-1">{BACKSTAGE_NAV.map(renderLink)}</div> : null}
+          {backstageOpen ? (
+            <div className="flex gap-1 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] md:flex-col md:overflow-visible md:pb-0">
+              {BACKSTAGE_NAV.map(renderLink)}
+            </div>
+          ) : null}
         </>
       ) : null}
     </nav>

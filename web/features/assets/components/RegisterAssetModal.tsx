@@ -117,11 +117,11 @@ export function RegisterAssetModal({
           <Input id="asset-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Ex.: campanha, verão" />
         </div>
         {error ? <p className="text-xs text-red-600">{error}</p> : null}
-        <div className="flex justify-end gap-2 pt-1">
-          <Button type="button" variant="secondary" onClick={onClose}>
+        <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+          <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={submitting || !name.trim() || (fileRequired && !file)}>
+          <Button type="submit" className="w-full sm:w-auto" disabled={submitting || !name.trim() || (fileRequired && !file)}>
             {submitting ? (file ? "Enviando…" : "Registrando…") : "Registrar Material"}
           </Button>
         </div>

@@ -32,7 +32,7 @@ export function AssetCard({ asset, onArchive, onDelete }: { asset: Asset; onArch
   return (
     <Card>
       <CardBody className="flex flex-col gap-3">
-        <div className="flex h-24 items-center justify-center overflow-hidden rounded-lg bg-surface-sunken text-3xl">
+        <div className="flex aspect-video min-h-28 items-center justify-center overflow-hidden rounded-lg bg-surface-sunken text-3xl sm:h-24 sm:min-h-0 sm:aspect-auto">
           {canPreview ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={previewUrl} alt="" className="h-full w-full object-contain" />
@@ -54,11 +54,11 @@ export function AssetCard({ asset, onArchive, onDelete }: { asset: Asset; onArch
           </div>
         ) : null}
         <p className="text-[11px] text-ink-faint">Adicionado em {formatDate(asset.createdAt)}</p>
-        <div className="flex gap-2 border-t border-border pt-2 text-xs">
-          <button type="button" onClick={onArchive} className="cursor-pointer font-medium text-ink-muted hover:text-ink">
+        <div className="flex flex-wrap gap-3 border-t border-border pt-2 text-xs">
+          <button type="button" onClick={onArchive} className="min-h-9 cursor-pointer font-medium text-ink-muted hover:text-ink">
             Arquivar
           </button>
-          <button type="button" onClick={onDelete} className="cursor-pointer font-medium text-red-600 hover:text-red-700">
+          <button type="button" onClick={onDelete} className="min-h-9 cursor-pointer font-medium text-red-600 hover:text-red-700">
             Excluir
           </button>
         </div>

@@ -25,7 +25,7 @@ export default function ConnectionsPage() {
   const [feedback, setFeedback] = useState<string | undefined>();
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
+    <main className="mx-auto max-w-3xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Conexões" description="Conecte as contas das redes sociais deste workspace. Cada uma faz login com a própria conta." />
 
       {feedback ? <Card className="mb-6 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
@@ -194,9 +194,9 @@ type ConnectionCardProps = {
 function ConnectionCard({ icon, name, description, configured, busy, accounts, onConnect, onDisconnect }: ConnectionCardProps) {
   const connected = accounts.some((account) => account.status === "active");
   return (
-    <Card className="p-5">
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <div>
+    <Card className="p-4 sm:p-5">
+      <div className="mb-3 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <p className="text-sm font-medium text-ink">{icon} {name}</p>
           <p className="text-xs text-ink-muted">
             {!configured
@@ -204,7 +204,7 @@ function ConnectionCard({ icon, name, description, configured, busy, accounts, o
               : description ?? (connected ? "Conectado." : "Nenhuma conta conectada.")}
           </p>
         </div>
-        <Button disabled={busy || !configured} onClick={onConnect}>
+        <Button className="w-full sm:w-auto" disabled={busy || !configured} onClick={onConnect}>
           {connected ? "Conectar outra conta" : "Conectar"}
         </Button>
       </div>
@@ -212,9 +212,9 @@ function ConnectionCard({ icon, name, description, configured, busy, accounts, o
       {accounts.length === 0 ? null : (
         <div className="space-y-2">
           {accounts.map((account) => (
-            <div key={account.id} className="flex items-center justify-between gap-4 rounded border border-border px-3 py-2">
-              <p className="text-sm text-ink">{account.label}</p>
-              <div className="flex items-center gap-3">
+            <div key={account.id} className="flex flex-col gap-3 rounded border border-border px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <p className="min-w-0 break-words text-sm text-ink">{account.label}</p>
+              <div className="flex flex-wrap items-center gap-3">
                 <StatusBadge status={account.status} />
                 <Button variant="secondary" disabled={busy} onClick={() => onDisconnect(account.id)}>Desconectar</Button>
               </div>

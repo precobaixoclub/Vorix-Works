@@ -22,7 +22,7 @@ export default function AssetsPage() {
   const { data: assets, isLoading, error, mutate } = useAssets(workspace.id, { search: search || undefined, kind: kindFilter });
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
+    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title="Materiais da Marca"
         description="Logo, fotos, vídeos, brand book, fontes e referências que a IA vai usar para criar campanhas, roteiros e artes automaticamente."
@@ -44,7 +44,7 @@ export default function AssetsPage() {
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Pesquisar por nome…"
           aria-label="Pesquisar ativos por nome"
-          className="max-w-xs"
+          className="w-full sm:max-w-xs"
         />
         <button
           type="button"
@@ -81,7 +81,7 @@ export default function AssetsPage() {
           description="Envie o primeiro material da marca (logo, foto, brand book...) para que a IA possa usá-lo ao criar campanhas."
         />
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {assets.map((asset) => (
             <AssetCard
               key={asset.id}

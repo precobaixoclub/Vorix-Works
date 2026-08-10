@@ -242,7 +242,7 @@ export default function PublishPage() {
   const recent = (unified ?? []).slice(0, 5);
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
+    <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Publicar" description="Envie o conteúdo, marque em quais redes vai publicar e agende data e horário." />
 
       {feedback ? <Card className="mb-6 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
@@ -257,7 +257,7 @@ export default function PublishPage() {
       ) : null}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_260px]">
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <form className="space-y-4" onSubmit={submitPost}>
             <div>
               <Label htmlFor="publish-platforms">Onde publicar</Label>
@@ -268,6 +268,7 @@ export default function PublishPage() {
                     type="button"
                     variant={selected.has(platform.id) ? "primary" : "secondary"}
                     disabled={!connectedByPlatform[platform.id]}
+                    className="flex-1 whitespace-nowrap sm:flex-none"
                     onClick={() => togglePlatform(platform.id)}
                     title={connectedByPlatform[platform.id] ? undefined : "Conecte esta conta em Conexões primeiro"}
                   >
@@ -281,8 +282,8 @@ export default function PublishPage() {
               <div>
                 <Label htmlFor="publish-placement">Feed ou Story (Instagram/Facebook)</Label>
                 <div id="publish-placement" className="flex gap-2">
-                  <Button type="button" variant={placement === "feed" ? "primary" : "secondary"} onClick={() => setPlacement("feed")}>Feed</Button>
-                  <Button type="button" variant={placement === "story" ? "primary" : "secondary"} onClick={() => setPlacement("story")}>Story</Button>
+                  <Button type="button" className="flex-1 sm:flex-none" variant={placement === "feed" ? "primary" : "secondary"} onClick={() => setPlacement("feed")}>Feed</Button>
+                  <Button type="button" className="flex-1 sm:flex-none" variant={placement === "story" ? "primary" : "secondary"} onClick={() => setPlacement("story")}>Story</Button>
                 </div>
                 {placement === "story" ? (
                   <p className="mt-1 text-xs text-ink-muted">
@@ -294,9 +295,9 @@ export default function PublishPage() {
               </div>
             ) : null}
 
-            <div className="flex gap-2">
-              <Button type="button" variant={mediaKind === "image" ? "primary" : "secondary"} disabled={selected.has("youtube")} onClick={() => setMediaKind("image")}>Imagem/carrossel</Button>
-              <Button type="button" variant={mediaKind === "video" ? "primary" : "secondary"} onClick={() => setMediaKind("video")}>Vídeo</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" className="flex-1 sm:flex-none" variant={mediaKind === "image" ? "primary" : "secondary"} disabled={selected.has("youtube")} onClick={() => setMediaKind("image")}>Imagem/carrossel</Button>
+              <Button type="button" className="flex-1 sm:flex-none" variant={mediaKind === "video" ? "primary" : "secondary"} onClick={() => setMediaKind("video")}>Vídeo</Button>
             </div>
             {selected.has("youtube") ? <p className="-mt-2 text-xs text-ink-muted">YouTube Shorts só publica vídeo. Use vídeo vertical curto para o YouTube reconhecer como Short.</p> : null}
 
@@ -410,7 +411,7 @@ export default function PublishPage() {
               </div>
             </div>
 
-            <Button type="submit" disabled={busy || uploading || selected.size === 0 || !hasMedia}>{scheduledAt ? "Agendar publicação" : "Publicar agora"}</Button>
+            <Button type="submit" className="w-full sm:w-auto" disabled={busy || uploading || selected.size === 0 || !hasMedia}>{scheduledAt ? "Agendar publicação" : "Publicar agora"}</Button>
             {selected.size === 0 ? <p className="text-xs text-ink-muted">Marque ao menos uma rede social conectada para publicar.</p> : null}
             {!hasMedia ? <p className="text-xs text-ink-muted">Envie a mídia antes de publicar ou agendar.</p> : null}
           </form>
@@ -450,7 +451,7 @@ export default function PublishPage() {
           <p className="text-sm text-ink-muted">Nenhuma publicação ainda — o que você agendar acima aparece aqui.</p>
         ) : (
           <Card className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[720px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className="px-4 py-3 font-medium">Rede</th>
@@ -531,15 +532,15 @@ function MediaUploadPanel({
         {urls.length > 0 ? (
           <div className="mt-3 grid gap-2">
             {urls.map((url) => (
-              <div key={url} className="flex items-center gap-3 rounded-md border border-border bg-surface p-2">
+              <div key={url} className="flex flex-col gap-3 rounded-md border border-border bg-surface p-2 sm:flex-row sm:items-center">
                 {isImageUrl(url) ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={url} alt="" className="h-14 w-14 rounded object-cover" />
+                  <img src={url} alt="" className="h-32 w-full rounded object-contain sm:h-14 sm:w-14 sm:object-cover" />
                 ) : (
-                  <div className="flex h-14 w-14 items-center justify-center rounded bg-surface-raised text-lg">▶</div>
+                  <div className="flex h-14 w-full items-center justify-center rounded bg-surface-raised text-lg sm:w-14">▶</div>
                 )}
                 <p className="min-w-0 flex-1 truncate text-xs text-ink-muted">{url}</p>
-                <button type="button" className="text-xs font-medium text-red-600 hover:text-red-700" onClick={() => onRemove(url)}>
+                <button type="button" className="min-h-9 text-left text-xs font-medium text-red-600 hover:text-red-700 sm:text-center" onClick={() => onRemove(url)}>
                   Remover
                 </button>
               </div>

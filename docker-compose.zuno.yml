@@ -40,6 +40,7 @@ services:
       JWT_SECRET: "${ZUNO_JWT_SECRET}"
       DATABASE_URL: "postgres://zuno:${ZUNO_POSTGRES_PASSWORD}@zuno-postgres:5432/zuno"
       PERSISTENCE_DRIVER: postgres
+      SECRET_MANAGER_PROVIDER: "${SECRET_MANAGER_PROVIDER:-production}"
       API_CORS_ORIGIN: "${ZUNO_WEB_ORIGIN}"
       COOKIE_SECURE: "${ZUNO_COOKIE_SECURE:-false}"
       COOKIE_DOMAIN: "${ZUNO_COOKIE_DOMAIN:-}"

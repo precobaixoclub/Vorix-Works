@@ -10,8 +10,10 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { Spinner } from "@/components/Spinner";
 import { useAuth } from "@/contexts/auth-context";
 import { CreateWorkspaceModal } from "@/features/workspace/components/CreateWorkspaceModal";
+import { EditWorkspaceModal } from "@/features/workspace/components/EditWorkspaceModal";
 import { WorkspaceCard } from "@/features/workspace/components/WorkspaceCard";
 import { useWorkspaces } from "@/features/workspace/hooks";
+import type { Workspace } from "@/features/workspace/types";
 
 export default function WorkspacesPage() {
   return (
@@ -24,6 +26,7 @@ export default function WorkspacesPage() {
 function WorkspacesPageContent() {
   const { data: workspaces, error, isLoading, mutate } = useWorkspaces();
   const [isCreating, setIsCreating] = useState(false);
+  const [editingWorkspace, setEditingWorkspace] = useState<Workspace | undefined>();
   const router = useRouter();
   const { state } = useAuth();
   const isPlatformAdmin = state.status === "authenticated" && state.user.isPlatformAdmin;
@@ -66,7 +69,7 @@ function WorkspacesPageContent() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {workspaces.map((workspace) => (
-            <WorkspaceCard key={workspace.id} workspace={workspace} />
+            <WorkspaceCard key={workspace.id} workspace={workspace} onEdit={() => setEditingWorkspace(workspace)} />
           ))}
         </div>
       )}
@@ -78,6 +81,17 @@ function WorkspacesPageContent() {
             setIsCreating(false);
             mutate();
             router.push(`/workspaces/${workspace.id}`);
+          }}
+        />
+      ) : null}
+
+      {editingWorkspace ? (
+        <EditWorkspaceModal
+          workspace={editingWorkspace}
+          onClose={() => setEditingWorkspace(undefined)}
+          onUpdated={() => {
+            setEditingWorkspace(undefined);
+            mutate();
           }}
         />
       ) : null}

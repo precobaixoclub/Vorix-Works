@@ -43,11 +43,11 @@ export function CreateWorkspaceModal({ onClose, onCreated }: { onClose: () => vo
           <Input id="workspace-kind" value={kind} onChange={(e) => setKind(e.target.value)} placeholder="Ex.: cliente, marca" />
         </div>
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <div className="flex justify-end gap-2 pt-1">
-          <Button type="button" variant="secondary" onClick={onClose}>
+        <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+          <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" className="w-full sm:w-auto" disabled={submitting}>
             {submitting ? "Criando…" : "Criar Espaço de Trabalho"}
           </Button>
         </div>

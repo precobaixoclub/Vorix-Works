@@ -192,7 +192,10 @@ type ConnectionCardProps = {
 };
 
 function ConnectionCard({ icon, name, description, configured, busy, accounts, onConnect, onDisconnect }: ConnectionCardProps) {
-  const connected = accounts.some((account) => account.status === "active");
+  const activeAccounts = accounts.filter((account) => account.status === "active");
+  const inactiveAccounts = accounts.filter((account) => account.status !== "active");
+  const connected = activeAccounts.length > 0;
+  const hasStaleCredentials = !connected && inactiveAccounts.length > 0;
   return (
     <Card className="p-4 sm:p-5">
       <div className="mb-3 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -201,17 +204,19 @@ function ConnectionCard({ icon, name, description, configured, busy, accounts, o
           <p className="text-xs text-ink-muted">
             {!configured
               ? "Integração ainda não configurada no servidor."
+              : hasStaleCredentials
+                ? "Credencial salva sem token válido. Reconecte a conta."
               : description ?? (connected ? "Conectado." : "Nenhuma conta conectada.")}
           </p>
         </div>
         <Button className="w-full sm:w-auto" disabled={busy || !configured} onClick={onConnect}>
-          {connected ? "Conectar outra conta" : "Conectar"}
+          {connected ? "Conectar outra conta" : hasStaleCredentials ? "Reconectar" : "Conectar"}
         </Button>
       </div>
 
-      {accounts.length === 0 ? null : (
+      {activeAccounts.length === 0 ? null : (
         <div className="space-y-2">
-          {accounts.map((account) => (
+          {activeAccounts.map((account) => (
             <div key={account.id} className="flex flex-col gap-3 rounded border border-border px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <p className="min-w-0 break-words text-sm text-ink">{account.label}</p>
               <div className="flex flex-wrap items-center gap-3">

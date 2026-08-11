@@ -26,12 +26,18 @@ import { formatDateTime } from "@/lib/format";
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 
 type Platform = "tiktok" | "instagram" | "facebook" | "youtube";
+type MetaPlacement = "feed" | "story";
 
 const PLATFORMS: readonly { id: Platform; label: string; icon: string }[] = [
   { id: "tiktok", label: "TikTok", icon: "🎵" },
   { id: "instagram", label: "Instagram", icon: "📷" },
   { id: "facebook", label: "Facebook", icon: "👍" },
   { id: "youtube", label: "YouTube Shorts", icon: "▶" },
+];
+
+const META_PLACEMENTS: readonly { id: MetaPlacement; label: string }[] = [
+  { id: "feed", label: "Feed" },
+  { id: "story", label: "Story" },
 ];
 
 const TIKTOK_PRIVACY_OPTIONS: readonly { value: TikTokPrivacyLevel; label: string }[] = [
@@ -63,7 +69,7 @@ export default function PublishPage() {
   const [uploading, setUploading] = useState(false);
   const [feedback, setFeedback] = useState<string | undefined>();
   const [selected, setSelected] = useState<Set<Platform>>(new Set());
-  const [placement, setPlacement] = useState<"feed" | "story">("feed");
+  const [metaPlacements, setMetaPlacements] = useState<Set<MetaPlacement>>(new Set(["feed"]));
   const [mediaKind, setMediaKind] = useState<"image" | "video">("image");
   const [videoUrl, setVideoUrl] = useState("");
   const [imageUrls, setImageUrls] = useState("");
@@ -99,7 +105,12 @@ export default function PublishPage() {
     youtube: youtubeOAuth?.accounts.find((a) => a.status === "active")?.credentialReferenceId,
   };
   const anyConnected = Object.values(connectedByPlatform).some(Boolean);
-  const hasStoryUnsupported = selected.has("tiktok") && placement === "story";
+  const hasMetaSelection = selected.has("instagram") || selected.has("facebook");
+  const selectedMetaPlacements = META_PLACEMENTS.map((item) => item.id).filter((item) => metaPlacements.has(item));
+  const feedSelected = metaPlacements.has("feed");
+  const storySelected = metaPlacements.has("story");
+  const storyOnly = storySelected && !feedSelected;
+  const hasStoryUnsupported = storySelected && (selected.has("tiktok") || selected.has("youtube"));
   const youtubeNeedsVideo = selected.has("youtube") && mediaKind !== "video";
   const hasMedia = mediaKind === "video" ? Boolean(videoUrl.trim()) : imageUrls.split(/[\n,]/).some((url) => url.trim().length > 0);
 
@@ -111,6 +122,15 @@ export default function PublishPage() {
       return next;
     });
     if (platform === "youtube") setMediaKind("video");
+  }
+
+  function toggleMetaPlacement(placement: MetaPlacement) {
+    setMetaPlacements((current) => {
+      const next = new Set(current);
+      if (next.has(placement) && next.size > 1) next.delete(placement);
+      else next.add(placement);
+      return next;
+    });
   }
 
   async function uploadVideoFile(file: File) {
@@ -171,56 +191,85 @@ export default function PublishPage() {
     const images = imageUrls.split(/[\n,]/).map((url) => url.trim()).filter(Boolean);
     const scheduledAtIso = scheduledAt ? new Date(scheduledAt).toISOString() : undefined;
     const targets = PLATFORMS.filter((platform) => selected.has(platform.id));
+    const skippedSummaries: string[] = [];
+    const publicationTasks: { label: string; run: () => Promise<unknown> }[] = [];
 
-    const outcomes = await Promise.allSettled(targets.map((platform) => {
+    for (const platform of targets) {
       if (platform.id === "tiktok") {
-        return scheduleTikTokPost({
-          workspaceId: workspace.id,
-          description: caption,
-          videoUrl: mediaKind === "video" ? videoUrl.trim() : undefined,
-          imageUrls: mediaKind === "image" ? images : undefined,
-          scheduledAt: scheduledAtIso,
-          timezone: scheduledAtIso ? timezone : undefined,
-          privacyLevel: tiktokPrivacy,
-          disableComment: tiktokDisableComment,
-          disableDuet: tiktokDisableDuet,
-          disableStitch: tiktokDisableStitch,
-          autoAddMusic: tiktokAutoAddMusic,
-          credentialReferenceId: credentialReferenceByPlatform.tiktok,
+        publicationTasks.push({
+          label: platform.label,
+          run: () => scheduleTikTokPost({
+            workspaceId: workspace.id,
+            description: caption,
+            videoUrl: mediaKind === "video" ? videoUrl.trim() : undefined,
+            imageUrls: mediaKind === "image" ? images : undefined,
+            scheduledAt: scheduledAtIso,
+            timezone: scheduledAtIso ? timezone : undefined,
+            privacyLevel: tiktokPrivacy,
+            disableComment: tiktokDisableComment,
+            disableDuet: tiktokDisableDuet,
+            disableStitch: tiktokDisableStitch,
+            autoAddMusic: tiktokAutoAddMusic,
+            credentialReferenceId: credentialReferenceByPlatform.tiktok,
+          }),
         });
+        continue;
       }
       if (platform.id === "youtube") {
-        return scheduleYouTubePost({
-          workspaceId: workspace.id,
-          title: caption.split(/\r?\n/).find((line) => line.trim())?.slice(0, 100) || "Short",
-          description: caption,
-          videoUrl: videoUrl.trim(),
-          scheduledAt: scheduledAtIso,
-          timezone: scheduledAtIso ? timezone : undefined,
-          privacyStatus: youtubePrivacy,
-          tags: ["Shorts"],
-          credentialReferenceId: credentialReferenceByPlatform.youtube,
+        publicationTasks.push({
+          label: platform.label,
+          run: () => scheduleYouTubePost({
+            workspaceId: workspace.id,
+            title: caption.split(/\r?\n/).find((line) => line.trim())?.slice(0, 100) || "Short",
+            description: caption,
+            videoUrl: videoUrl.trim(),
+            scheduledAt: scheduledAtIso,
+            timezone: scheduledAtIso ? timezone : undefined,
+            privacyStatus: youtubePrivacy,
+            tags: ["Shorts"],
+            credentialReferenceId: credentialReferenceByPlatform.youtube,
+          }),
+        });
+        continue;
+      }
+      const metaTarget = platform.id as "instagram" | "facebook";
+      for (const metaPlacement of selectedMetaPlacements) {
+        if (metaPlacement === "story" && metaTarget === "facebook" && mediaKind === "video") {
+          skippedSummaries.push("Facebook Story: ignorado (vídeo em Story ainda não é suportado)");
+          continue;
+        }
+        const placementLabel = metaPlacement === "story" ? "Story" : "Feed";
+        publicationTasks.push({
+          label: `${platform.label} ${placementLabel}`,
+          run: () => scheduleMetaPost({
+            workspaceId: workspace.id,
+            target: metaTarget,
+            placement: metaPlacement,
+            caption: metaPlacement === "story" ? "" : caption,
+            videoUrl: mediaKind === "video" ? videoUrl.trim() : undefined,
+            imageUrls: mediaKind === "image" ? (metaPlacement === "story" ? images.slice(0, 1) : images) : undefined,
+            thumbnailUrl: thumbnailUrl.trim() || undefined,
+            scheduledAt: scheduledAtIso,
+            timezone: scheduledAtIso ? timezone : undefined,
+            credentialReferenceId: credentialReferenceByPlatform[platform.id],
+          }),
         });
       }
-      return scheduleMetaPost({
-        workspaceId: workspace.id,
-        target: platform.id as "instagram" | "facebook",
-        placement,
-        caption,
-        videoUrl: mediaKind === "video" ? videoUrl.trim() : undefined,
-        imageUrls: mediaKind === "image" ? images : undefined,
-        thumbnailUrl: thumbnailUrl.trim() || undefined,
-        scheduledAt: scheduledAtIso,
-        timezone: scheduledAtIso ? timezone : undefined,
-        credentialReferenceId: credentialReferenceByPlatform[platform.id],
-      });
-    }));
+    }
+
+    if (publicationTasks.length === 0) {
+      setFeedback(skippedSummaries.join(" · ") || "Nenhuma publicação pôde ser criada com essa combinação.");
+      setBusy(false);
+      return;
+    }
+
+    const outcomes = await Promise.allSettled(publicationTasks.map((task) => task.run()));
 
     const summary = outcomes.map((outcome, index) => {
-      const platform = targets[index].label;
-      if (outcome.status === "fulfilled") return `${platform}: ok`;
-      return `${platform}: ${messageOf(outcome.reason)}`;
-    }).join(" · ");
+      const label = publicationTasks[index].label;
+      if (outcome.status === "fulfilled") return `${label}: ok`;
+      return `${label}: ${messageOf(outcome.reason)}`;
+    }).concat(skippedSummaries).join(" · ");
     setFeedback(summary);
 
     if (outcomes.some((outcome) => outcome.status === "fulfilled")) {
@@ -287,20 +336,29 @@ export default function PublishPage() {
               </div>
             </div>
 
-            {selected.has("instagram") || selected.has("facebook") ? (
+            {hasMetaSelection ? (
               <div>
-                <Label htmlFor="publish-placement">Feed ou Story (Instagram/Facebook)</Label>
+                <Label htmlFor="publish-placement">Feed e/ou Story (Instagram/Facebook)</Label>
                 <div id="publish-placement" className="flex gap-2">
-                  <Button type="button" className="flex-1 sm:flex-none" variant={placement === "feed" ? "primary" : "secondary"} onClick={() => setPlacement("feed")}>Feed</Button>
-                  <Button type="button" className="flex-1 sm:flex-none" variant={placement === "story" ? "primary" : "secondary"} onClick={() => setPlacement("story")}>Story</Button>
+                  {META_PLACEMENTS.map((item) => (
+                    <Button
+                      key={item.id}
+                      type="button"
+                      className="flex-1 sm:flex-none"
+                      variant={metaPlacements.has(item.id) ? "primary" : "secondary"}
+                      onClick={() => toggleMetaPlacement(item.id)}
+                    >
+                      {item.label}
+                    </Button>
+                  ))}
                 </div>
-                {placement === "story" ? (
+                {storySelected ? (
                   <p className="mt-1 text-xs text-ink-muted">
-                    Story aceita só uma imagem ou um vídeo, sem carrossel e sem legenda visível.
-                    {selected.has("facebook") ? " Story de vídeo no Facebook ainda não é suportado — use foto." : ""}
+                    Story vai usar só o que é permitido: primeira imagem ou vídeo, sem legenda visível e sem carrossel.
+                    {selected.has("facebook") && mediaKind === "video" ? " O Facebook Story de vídeo será ignorado porque ainda não é suportado." : ""}
                   </p>
                 ) : null}
-                {hasStoryUnsupported ? <p className="mt-1 text-xs text-ink-muted">TikTok não tem Story — o post do TikTok sempre vai pro feed.</p> : null}
+                {hasStoryUnsupported ? <p className="mt-1 text-xs text-ink-muted">Story vale só para Instagram/Facebook. TikTok e YouTube continuam como publicação normal.</p> : null}
               </div>
             ) : null}
 
@@ -324,10 +382,10 @@ export default function PublishPage() {
             ) : (
               <MediaUploadPanel
                 id="publish-image-files"
-                label={placement === "story" ? "Imagem" : "Imagens"}
-                helper={placement === "story" ? "Envie uma imagem JPG, PNG ou WEBP." : "Envie uma ou mais imagens. Mais de uma vira carrossel/multi-foto quando a rede suportar."}
+                label={storyOnly ? "Imagem" : "Imagens"}
+                helper={storyOnly ? "Envie uma imagem JPG, PNG ou WEBP." : "Envie uma ou mais imagens. Feed usa todas; Story usa só a primeira."}
                 accept="image/jpeg,image/png,image/webp"
-                multiple={placement !== "story"}
+                multiple={!storyOnly}
                 uploading={uploading}
                 urls={images}
                 onPick={uploadImageFiles}
@@ -432,20 +490,37 @@ export default function PublishPage() {
             <p className="text-sm text-ink-muted">Marque uma rede social pra ver como o post vai ficar.</p>
           ) : (
             <div className="flex flex-col gap-6">
-              {PLATFORMS.filter((platform) => selected.has(platform.id)).map((platform) => (
-                <PostPreview
-                  key={platform.id}
-                  network={platform.id}
-                  placement={platform.id === "tiktok" || platform.id === "youtube" ? "feed" : placement}
-                  caption={caption}
-                  mediaKind={mediaKind}
-                  imageUrls={images}
-                  videoUrl={videoUrl.trim() || undefined}
-                  thumbnailUrl={thumbnailUrl.trim() || undefined}
-                  autoAddMusic={platform.id === "tiktok" ? tiktokAutoAddMusic : undefined}
-                  accountLabel={accountLabelByPlatform[platform.id]}
-                />
-              ))}
+              {PLATFORMS.filter((platform) => selected.has(platform.id)).flatMap((platform) => {
+                if (platform.id === "instagram" || platform.id === "facebook") {
+                  return selectedMetaPlacements.map((metaPlacement) => (
+                    <PostPreview
+                      key={`${platform.id}-${metaPlacement}`}
+                      network={platform.id}
+                      placement={metaPlacement}
+                      caption={metaPlacement === "story" ? "" : caption}
+                      mediaKind={mediaKind}
+                      imageUrls={metaPlacement === "story" ? images.slice(0, 1) : images}
+                      videoUrl={videoUrl.trim() || undefined}
+                      thumbnailUrl={thumbnailUrl.trim() || undefined}
+                      accountLabel={`${accountLabelByPlatform[platform.id] ?? platform.label} · ${metaPlacement === "story" ? "Story" : "Feed"}`}
+                    />
+                  ));
+                }
+                return (
+                  <PostPreview
+                    key={platform.id}
+                    network={platform.id}
+                    placement="feed"
+                    caption={caption}
+                    mediaKind={mediaKind}
+                    imageUrls={images}
+                    videoUrl={videoUrl.trim() || undefined}
+                    thumbnailUrl={thumbnailUrl.trim() || undefined}
+                    autoAddMusic={platform.id === "tiktok" ? tiktokAutoAddMusic : undefined}
+                    accountLabel={accountLabelByPlatform[platform.id]}
+                  />
+                );
+              })}
             </div>
           )}
         </div>

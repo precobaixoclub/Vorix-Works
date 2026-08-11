@@ -99,22 +99,22 @@ export default function CalendarPage() {
       </div>
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:w-auto">
           <Button variant="secondary" aria-label="Período anterior" onClick={() => setCursor(shiftCursor(cursor, view, -1))}>{"<"}</Button>
-          <span className="w-56 text-center text-sm font-medium text-ink">{range.label}</span>
+          <span className="min-w-0 text-center text-sm font-medium text-ink">{range.label}</span>
           <Button variant="secondary" aria-label="Próximo período" onClick={() => setCursor(shiftCursor(cursor, view, 1))}>{">"}</Button>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
           {(Object.keys(VIEW_LABELS) as (keyof typeof VIEW_LABELS)[]).map((mode) => (
             <button key={mode} className={`rounded-md px-3 py-1.5 text-xs font-medium ${view === mode ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:text-ink"}`} onClick={() => setView(mode)} type="button">
               {VIEW_LABELS[mode]}
             </button>
           ))}
-          <select className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink" value={providerId} onChange={(event) => setProviderId(event.target.value)}>
+          <select className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink sm:flex-none" value={providerId} onChange={(event) => setProviderId(event.target.value)}>
             <option value="">Todos os provedores</option>
             {(providers ?? []).map((provider) => <option key={provider.providerId} value={provider.providerId}>{provider.displayName}</option>)}
           </select>
-          <select className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink" value={status} onChange={(event) => setStatus(event.target.value)}>
+          <select className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink sm:flex-none" value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="">Todos os status</option>
             {STATUS_OPTIONS.map((item) => <option key={item} value={item}>{STATUS_OPTION_LABEL[item]}</option>)}
           </select>

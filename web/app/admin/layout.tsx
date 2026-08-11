@@ -31,7 +31,32 @@ function AdminShell({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="flex min-h-dvh bg-surface-sunken text-ink">
+    <div className="flex min-h-dvh min-w-0 flex-col bg-surface-sunken text-ink md:flex-row">
+      <div className="border-b border-border bg-surface-raised p-3 md:hidden">
+        <div className="mb-3 flex min-w-0 items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-wider text-ink-muted">Painel</div>
+            <div className="truncate text-sm font-semibold text-ink">Admin da Plataforma</div>
+          </div>
+          <Link href="/workspaces" className="shrink-0 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-surface-sunken">
+            Vorix
+          </Link>
+        </div>
+        <nav className="grid grid-cols-2 gap-2 text-xs">
+          <SidebarLink href="/admin" active={isActive("/admin") && pathname === "/admin"}>
+            Visão geral
+          </SidebarLink>
+          <SidebarLink href="/admin/tenants" active={isActive("/admin/tenants")}>
+            Contas
+          </SidebarLink>
+          <SidebarLink href="/admin/ai-providers" active={isActive("/admin/ai-providers")}>
+            IA
+          </SidebarLink>
+          <SidebarLink href="/admin/settings" active={isActive("/admin/settings")}>
+            Configurações
+          </SidebarLink>
+        </nav>
+      </div>
       <aside className="hidden w-60 shrink-0 border-r border-border bg-surface-raised p-4 md:block">
         <div className="mb-6">
           <div className="text-[11px] uppercase tracking-wider text-ink-muted">Painel</div>
@@ -69,7 +94,7 @@ function AdminShell({ children }: { children: ReactNode }) {
           </button>
         </div>
       </aside>
-      <main className="flex-1 overflow-x-hidden">{children}</main>
+      <main className="min-w-0 flex-1 overflow-x-hidden">{children}</main>
     </div>
   );
 }

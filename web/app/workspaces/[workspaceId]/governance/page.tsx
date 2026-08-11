@@ -157,7 +157,7 @@ function CredentialRow({ credential, busy, workspaceId, runAction, showExport }:
       </td>
       <td className="px-4 py-3 text-xs text-ink-muted">{credential.expiresAt ? formatDateTime(credential.expiresAt) : "Sem expiração"}</td>
       <td className="px-4 py-3">
-        <div className="flex min-w-96 flex-wrap gap-2">
+        <div className="flex min-w-0 flex-wrap gap-2">
           <Button variant="secondary" disabled={actionDisabled} onClick={() => runAction(`health:${credential.id}`, () => checkCredentialHealth(workspaceId, credential.id))}>Saúde</Button>
           <Button variant="secondary" disabled={actionDisabled || credential.status === "revoked"} onClick={() => runAction(`rotate:${credential.id}`, () => rotateCredential(workspaceId, credential.id, "Rotação manual via Governança"))}>Rotacionar</Button>
           <Button variant="secondary" disabled={actionDisabled || credential.status === "disabled"} onClick={() => runAction(`disable:${credential.id}`, () => disableCredential(workspaceId, credential.id, "Desativação operacional via Governança"))}>Desabilitar</Button>

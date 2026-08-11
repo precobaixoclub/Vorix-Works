@@ -58,7 +58,7 @@ function YouTubeOAuthCallbackContent() {
 
   return (
     <main className="mx-auto flex max-w-lg flex-col items-center px-3 py-12 sm:px-6 sm:py-20">
-      <Card className="flex w-full flex-col items-center gap-4 p-8">
+      <Card className="flex w-full flex-col items-center gap-4 p-4 sm:p-8">
         <Spinner />
         <p className="text-center text-sm text-ink">{message}</p>
       </Card>
@@ -71,7 +71,7 @@ export default function YouTubeOAuthCallbackPage() {
     <Suspense
       fallback={
         <main className="mx-auto flex max-w-lg flex-col items-center px-3 py-12 sm:px-6 sm:py-20">
-          <Card className="flex w-full flex-col items-center gap-4 p-8">
+          <Card className="flex w-full flex-col items-center gap-4 p-4 sm:p-8">
             <Spinner />
           </Card>
         </main>

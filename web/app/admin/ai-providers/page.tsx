@@ -169,24 +169,26 @@ export default function AdminAiProvidersPage() {
                 </button>
               </div>
               {provider.models.length > 0 ? (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
-                      <th className="py-1">Modelo</th>
-                      <th className="py-1">Ativo</th>
-                      <th className="py-1 text-right">Preço real (não exibido ao cliente)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {provider.models.map((model) => (
-                      <tr key={model.id} className="border-t border-border/60">
-                        <td className="py-1.5 font-mono text-ink">{model.modelId}</td>
-                        <td className="py-1.5">{model.active ? "Sim" : "Não"}</td>
-                        <td className="py-1.5 text-right text-ink-muted">{formatPricing(model.pricing)}</td>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
+                        <th className="py-1">Modelo</th>
+                        <th className="py-1">Ativo</th>
+                        <th className="py-1 text-right">Preço real (não exibido ao cliente)</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {provider.models.map((model) => (
+                        <tr key={model.id} className="border-t border-border/60">
+                          <td className="py-1.5 font-mono text-ink">{model.modelId}</td>
+                          <td className="py-1.5">{model.active ? "Sim" : "Não"}</td>
+                          <td className="py-1.5 text-right text-ink-muted">{formatPricing(model.pricing)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : null}
             </CardBody>
           </Card>
@@ -197,22 +199,24 @@ export default function AdminAiProvidersPage() {
             <div className="text-base font-semibold text-ink">Custo em crédito por operação</div>
           </CardHeader>
           <CardBody>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
-                  <th className="py-1">Operação</th>
-                  <th className="py-1">Provedor padrão</th>
-                  <th className="py-1 text-right">Créditos</th>
-                  <th className="py-1 text-right">Ativo</th>
-                  <th className="py-1"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {operationTypes.map((op) => (
-                  <OperationTypeRow key={op.code} operationType={op} busy={busyKey === `op-${op.code}`} onSave={(patch) => run(`op-${op.code}`, () => updateAiOperationType(op.code, patch))} />
-                ))}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
+                    <th className="py-1">Operação</th>
+                    <th className="py-1">Provedor padrão</th>
+                    <th className="py-1 text-right">Créditos</th>
+                    <th className="py-1 text-right">Ativo</th>
+                    <th className="py-1"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {operationTypes.map((op) => (
+                    <OperationTypeRow key={op.code} operationType={op} busy={busyKey === `op-${op.code}`} onSave={(patch) => run(`op-${op.code}`, () => updateAiOperationType(op.code, patch))} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </CardBody>
         </Card>
 
@@ -239,38 +243,40 @@ export default function AdminAiProvidersPage() {
             {finance.byProvider.length === 0 ? (
               <EmptyState title="Sem gerações neste período" />
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
-                    <th className="py-1">Provedor</th>
-                    <th className="py-1 text-right">Gerações</th>
-                    <th className="py-1 text-right">Créditos</th>
-                    <th className="py-1 text-right">Custo real</th>
-                    <th className="py-1 text-right">Receita estimada</th>
-                    <th className="py-1 text-right">Lucro</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {finance.byProvider.map((row) => (
-                    <tr key={row.providerCode} className="border-t border-border/60">
-                      <td className="py-1.5 text-ink">{row.providerCode}</td>
-                      <td className="py-1.5 text-right text-ink-muted">{row.totalGenerations}</td>
-                      <td className="py-1.5 text-right text-ink-muted">{row.totalCreditsConsumed}</td>
-                      <td className="py-1.5 text-right text-ink-muted">{formatUsd(row.totalProviderCostUsd)}</td>
-                      <td className="py-1.5 text-right text-ink-muted">{formatUsd(row.totalEstimatedRevenueUsd)}</td>
-                      <td className="py-1.5 text-right font-semibold text-emerald-700">{formatUsd(row.totalProfitUsd)}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
+                      <th className="py-1">Provedor</th>
+                      <th className="py-1 text-right">Gerações</th>
+                      <th className="py-1 text-right">Créditos</th>
+                      <th className="py-1 text-right">Custo real</th>
+                      <th className="py-1 text-right">Receita estimada</th>
+                      <th className="py-1 text-right">Lucro</th>
                     </tr>
-                  ))}
-                  <tr className="border-t border-border font-semibold">
-                    <td className="py-1.5 text-ink">Total</td>
-                    <td className="py-1.5 text-right text-ink">{finance.totals.generations}</td>
-                    <td className="py-1.5 text-right text-ink">{finance.totals.creditsConsumed}</td>
-                    <td className="py-1.5 text-right text-ink">{formatUsd(finance.totals.providerCostUsd)}</td>
-                    <td className="py-1.5 text-right text-ink">{formatUsd(finance.totals.estimatedRevenueUsd)}</td>
-                    <td className="py-1.5 text-right text-emerald-700">{formatUsd(finance.totals.profitUsd)}</td>
-                  </tr>
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {finance.byProvider.map((row) => (
+                      <tr key={row.providerCode} className="border-t border-border/60">
+                        <td className="py-1.5 text-ink">{row.providerCode}</td>
+                        <td className="py-1.5 text-right text-ink-muted">{row.totalGenerations}</td>
+                        <td className="py-1.5 text-right text-ink-muted">{row.totalCreditsConsumed}</td>
+                        <td className="py-1.5 text-right text-ink-muted">{formatUsd(row.totalProviderCostUsd)}</td>
+                        <td className="py-1.5 text-right text-ink-muted">{formatUsd(row.totalEstimatedRevenueUsd)}</td>
+                        <td className="py-1.5 text-right font-semibold text-emerald-700">{formatUsd(row.totalProfitUsd)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-border font-semibold">
+                      <td className="py-1.5 text-ink">Total</td>
+                      <td className="py-1.5 text-right text-ink">{finance.totals.generations}</td>
+                      <td className="py-1.5 text-right text-ink">{finance.totals.creditsConsumed}</td>
+                      <td className="py-1.5 text-right text-ink">{formatUsd(finance.totals.providerCostUsd)}</td>
+                      <td className="py-1.5 text-right text-ink">{formatUsd(finance.totals.estimatedRevenueUsd)}</td>
+                      <td className="py-1.5 text-right text-emerald-700">{formatUsd(finance.totals.profitUsd)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             )}
           </CardBody>
         </Card>

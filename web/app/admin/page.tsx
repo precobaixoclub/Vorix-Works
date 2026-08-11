@@ -53,34 +53,36 @@ export default function AdminDashboardPage() {
                   Ainda não há consumo neste período.
                 </div>
               ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-muted">
-                      <th className="px-5 py-2 font-medium">Conta (tenant)</th>
-                      <th className="px-5 py-2 font-medium">Plano</th>
-                      <th className="px-5 py-2 text-right font-medium">Receita</th>
-                      <th className="px-5 py-2 text-right font-medium">Custo</th>
-                      <th className="px-5 py-2 text-right font-medium">Lucro</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.topTenantsByRevenue.map((row) => (
-                      <tr key={row.tenantId} className="border-b border-border/60 last:border-b-0 hover:bg-surface-sunken">
-                        <td className="px-5 py-2">
-                          <Link href={`/admin/tenants/${encodeURIComponent(row.tenantId)}`} className="text-accent hover:underline">
-                            {row.tenantId}
-                          </Link>
-                        </td>
-                        <td className="px-5 py-2">
-                          <PlanBadge code={row.planCode} />
-                        </td>
-                        <td className="px-5 py-2 text-right font-medium">{formatUsd(row.customerPriceUsd)}</td>
-                        <td className="px-5 py-2 text-right text-ink-muted">{formatUsd(row.providerCostUsd)}</td>
-                        <td className="px-5 py-2 text-right font-semibold text-emerald-700">{formatUsd(row.profitUsd)}</td>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[680px] text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-muted">
+                        <th className="px-5 py-2 font-medium">Conta (tenant)</th>
+                        <th className="px-5 py-2 font-medium">Plano</th>
+                        <th className="px-5 py-2 text-right font-medium">Receita</th>
+                        <th className="px-5 py-2 text-right font-medium">Custo</th>
+                        <th className="px-5 py-2 text-right font-medium">Lucro</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {data.topTenantsByRevenue.map((row) => (
+                        <tr key={row.tenantId} className="border-b border-border/60 last:border-b-0 hover:bg-surface-sunken">
+                          <td className="px-5 py-2">
+                            <Link href={`/admin/tenants/${encodeURIComponent(row.tenantId)}`} className="text-accent hover:underline">
+                              {row.tenantId}
+                            </Link>
+                          </td>
+                          <td className="px-5 py-2">
+                            <PlanBadge code={row.planCode} />
+                          </td>
+                          <td className="px-5 py-2 text-right font-medium">{formatUsd(row.customerPriceUsd)}</td>
+                          <td className="px-5 py-2 text-right text-ink-muted">{formatUsd(row.providerCostUsd)}</td>
+                          <td className="px-5 py-2 text-right font-semibold text-emerald-700">{formatUsd(row.profitUsd)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </CardBody>
           </Card>

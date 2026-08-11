@@ -57,7 +57,7 @@ export default async function PricingPage() {
       </section>
 
       <section className="mx-auto w-full max-w-4xl px-3 pb-16 text-center sm:px-6">
-        <div className="rounded-2xl border border-border bg-surface-raised p-8">
+        <div className="rounded-2xl border border-border bg-surface-raised p-5 sm:p-8">
           <p className="text-sm font-semibold uppercase tracking-wide text-ink-muted">Volume corporativo</p>
           <h2 className="mt-2 text-2xl font-semibold text-ink">Precisa de mais?</h2>
           <p className="mt-2 text-sm text-ink-muted">

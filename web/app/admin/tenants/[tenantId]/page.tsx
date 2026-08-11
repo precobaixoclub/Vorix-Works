@@ -228,27 +228,29 @@ export default function AdminTenantDetailPage() {
             {recentCreditEntries.length === 0 ? (
               <div className="px-5 py-4 text-sm text-ink-muted">Sem movimentações.</div>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-muted">
-                    <th className="px-5 py-2 font-medium">Quando</th>
-                    <th className="px-5 py-2 font-medium">Motivo</th>
-                    <th className="px-5 py-2 text-right font-medium">Δ tokens</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentCreditEntries.map((entry) => (
-                    <tr key={entry.id} className="border-b border-border/60 last:border-b-0">
-                      <td className="px-5 py-1.5 text-xs text-ink-muted">{formatDate(entry.occurredAt)}</td>
-                      <td className="px-5 py-1.5 text-xs">{entry.reason}</td>
-                      <td className={`px-5 py-1.5 text-right font-semibold ${entry.deltaCredits >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                        {entry.deltaCredits >= 0 ? "+" : ""}
-                        {formatNumber(entry.deltaCredits)}
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[520px] text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-muted">
+                      <th className="px-5 py-2 font-medium">Quando</th>
+                      <th className="px-5 py-2 font-medium">Motivo</th>
+                      <th className="px-5 py-2 text-right font-medium">Δ tokens</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {recentCreditEntries.map((entry) => (
+                      <tr key={entry.id} className="border-b border-border/60 last:border-b-0">
+                        <td className="px-5 py-1.5 text-xs text-ink-muted">{formatDate(entry.occurredAt)}</td>
+                        <td className="px-5 py-1.5 text-xs">{entry.reason}</td>
+                        <td className={`px-5 py-1.5 text-right font-semibold ${entry.deltaCredits >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                          {entry.deltaCredits >= 0 ? "+" : ""}
+                          {formatNumber(entry.deltaCredits)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </CardBody>
         </Card>
@@ -261,28 +263,30 @@ export default function AdminTenantDetailPage() {
             {usageHistory.length === 0 ? (
               <div className="px-5 py-4 text-sm text-ink-muted">Ainda sem histórico.</div>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-muted">
-                    <th className="px-5 py-2 font-medium">Período</th>
-                    <th className="px-5 py-2 text-right font-medium">Tokens</th>
-                    <th className="px-5 py-2 text-right font-medium">Receita</th>
-                    <th className="px-5 py-2 text-right font-medium">Lucro</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {usageHistory.map((row) => (
-                    <tr key={row.period} className="border-b border-border/60 last:border-b-0">
-                      <td className="px-5 py-1.5">{row.period}</td>
-                      <td className="px-5 py-1.5 text-right text-ink-muted">{formatNumber(row.inputTokens + row.outputTokens)}</td>
-                      <td className="px-5 py-1.5 text-right">{formatUsd(row.customerPriceUsd)}</td>
-                      <td className="px-5 py-1.5 text-right font-semibold text-emerald-700">
-                        {formatUsd(row.customerPriceUsd - row.providerCostUsd)}
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[620px] text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-muted">
+                      <th className="px-5 py-2 font-medium">Período</th>
+                      <th className="px-5 py-2 text-right font-medium">Tokens</th>
+                      <th className="px-5 py-2 text-right font-medium">Receita</th>
+                      <th className="px-5 py-2 text-right font-medium">Lucro</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {usageHistory.map((row) => (
+                      <tr key={row.period} className="border-b border-border/60 last:border-b-0">
+                        <td className="px-5 py-1.5">{row.period}</td>
+                        <td className="px-5 py-1.5 text-right text-ink-muted">{formatNumber(row.inputTokens + row.outputTokens)}</td>
+                        <td className="px-5 py-1.5 text-right">{formatUsd(row.customerPriceUsd)}</td>
+                        <td className="px-5 py-1.5 text-right font-semibold text-emerald-700">
+                          {formatUsd(row.customerPriceUsd - row.providerCostUsd)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </CardBody>
         </Card>

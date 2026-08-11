@@ -109,38 +109,40 @@ export default function AdminTenantsPage() {
               <EmptyState title="Nenhuma conta encontrada" description="Ajuste os filtros ou aguarde novos cadastros." />
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-muted">
-                  <th className="px-5 py-2 font-medium">Conta (tenant)</th>
-                  <th className="px-5 py-2 font-medium">Plano</th>
-                  <th className="px-5 py-2 font-medium">Status</th>
-                  <th className="px-5 py-2 text-right font-medium">Créditos usados</th>
-                  <th className="px-5 py-2 text-right font-medium">% da cota</th>
-                  <th className="px-5 py-2 text-right font-medium">Lucro do mês</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((row) => (
-                  <tr key={row.tenantId} className="border-b border-border/60 last:border-b-0 hover:bg-surface-sunken">
-                    <td className="px-5 py-2">
-                      <Link href={`/admin/tenants/${encodeURIComponent(row.tenantId)}`} className="text-accent hover:underline">
-                        {row.tenantId}
-                      </Link>
-                    </td>
-                    <td className="px-5 py-2">
-                      <PlanBadge code={row.billing.planCode} />
-                    </td>
-                    <td className="px-5 py-2">
-                      <StatusBadge status={row.billing.subscriptionStatus} />
-                    </td>
-                    <td className="px-5 py-2 text-right text-ink-muted">{formatNumber(row.totalCreditsUsedThisMonth)}</td>
-                    <td className="px-5 py-2 text-right">{row.quotaUsagePercent.toFixed(1)}%</td>
-                    <td className="px-5 py-2 text-right font-semibold text-emerald-700">{formatUsd(row.currentProfitUsd)}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-muted">
+                    <th className="px-5 py-2 font-medium">Conta (tenant)</th>
+                    <th className="px-5 py-2 font-medium">Plano</th>
+                    <th className="px-5 py-2 font-medium">Status</th>
+                    <th className="px-5 py-2 text-right font-medium">Créditos usados</th>
+                    <th className="px-5 py-2 text-right font-medium">% da cota</th>
+                    <th className="px-5 py-2 text-right font-medium">Lucro do mês</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.items.map((row) => (
+                    <tr key={row.tenantId} className="border-b border-border/60 last:border-b-0 hover:bg-surface-sunken">
+                      <td className="px-5 py-2">
+                        <Link href={`/admin/tenants/${encodeURIComponent(row.tenantId)}`} className="text-accent hover:underline">
+                          {row.tenantId}
+                        </Link>
+                      </td>
+                      <td className="px-5 py-2">
+                        <PlanBadge code={row.billing.planCode} />
+                      </td>
+                      <td className="px-5 py-2">
+                        <StatusBadge status={row.billing.subscriptionStatus} />
+                      </td>
+                      <td className="px-5 py-2 text-right text-ink-muted">{formatNumber(row.totalCreditsUsedThisMonth)}</td>
+                      <td className="px-5 py-2 text-right">{row.quotaUsagePercent.toFixed(1)}%</td>
+                      <td className="px-5 py-2 text-right font-semibold text-emerald-700">{formatUsd(row.currentProfitUsd)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardBody>
       </Card>

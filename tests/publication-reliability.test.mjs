@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createPublication, approvePublication } from "../dist/application/publication/publication-engine.js";
+import { createPublication, approvePublication, cancelPublication } from "../dist/application/publication/publication-engine.js";
 import { PublicationDispatchService } from "../dist/application/publication/publication-dispatch-service.js";
 import { DryRunPublicationProvider, FakePublicationProvider } from "../dist/application/publication/fake-publication-providers.js";
 import { ensurePublicationOutboxIntents } from "../dist/application/publication/publication-outbox-intent.js";
@@ -134,6 +134,34 @@ test("Dispatch durável: valida capability usando o tipo real da mídia", async 
   const detail = await shared.repository.getDetail(created.plan.id);
   assert.equal(detail.plan.state, "published");
   assert.equal(detail.outbox[0].status, "dispatched");
+});
+
+test("Dispatch durável: outbox de publicação cancelada não chama provider", async () => {
+  const provider = new FakePublicationProvider();
+  let calls = 0;
+  provider.publish = async () => {
+    calls += 1;
+    return { kind: "published", providerPublicationId: "should-not-publish", publishedAt: new Date().toISOString() };
+  };
+  const shared = deps({ providers: [provider] });
+  const created = await createPublication(shared, {
+    tenantId: "tenant-1",
+    workspaceId: "workspace-1",
+    idempotencyKey: "rel-idem-cancelled-outbox",
+    sourceArtifacts: [artifact("a-cancelled-outbox")],
+    channels: ["instagram"],
+    provider: "fake",
+    policy: { requireApproval: false, approvalPolicy: "optional", allowedProviders: ["fake"] },
+  });
+  await ensurePublicationOutboxIntents(shared, { tenantId: "tenant-1", workspaceId: "workspace-1", publicationId: created.plan.id });
+  await cancelPublication(shared, { tenantId: "tenant-1", workspaceId: "workspace-1", publicationId: created.plan.id });
+  const result = await new PublicationDispatchService({ repository: shared.repository, providerRegistry: shared.providerRegistry, secretResolver: shared.secretResolver, idGenerator: nextId }).dispatchAvailable("worker-cancelled-outbox");
+
+  assert.equal(result.dispatched, 0);
+  assert.equal(calls, 0);
+  const detail = await shared.repository.getDetail(created.plan.id);
+  assert.equal(detail.outbox[0].status, "dead_lettered");
+  assert.equal(detail.outbox[0].lastFailureCode, "PUBLICATION_CANCELLED");
 });
 
 test("Fencing: worker antigo perde lease e commit tardio é rejeitado", async () => {

@@ -38,6 +38,12 @@ export class PublicationDispatchService {
     const payload = await this.deps.repository.getPayloadReference(message.payloadReference);
     const detail = await this.deps.repository.getDetail(message.publicationId);
     if (!payload || !detail) return "failed";
+    if (detail.plan.state === "cancelled") {
+      return (await this.commitFailure(message, workerId, { code: "PUBLICATION_CANCELLED", message: "Publicação cancelada antes do dispatch.", category: "internal", retryable: false }, true)) ? "failed" : "fencing_rejected";
+    }
+    if (detail.plan.state === "published") {
+      return (await this.commitFailure(message, workerId, { code: "PUBLICATION_ALREADY_PUBLISHED", message: "Outbox obsoleto para publicação já concluída.", category: "internal", retryable: false }, true)) ? "failed" : "fencing_rejected";
+    }
     const contentChecksum = checksumPublicationPayload({ content: payload.payload, assets: payload.assets, targetId: payload.targetId, providerId: message.providerId });
     if (payload.contentChecksum !== contentChecksum) {
       return (await this.commitFailure(message, workerId, { code: "PAYLOAD_CHECKSUM_MISMATCH", message: "PayloadReference com checksum divergente.", category: "invalid_content", retryable: false }, true)) ? "failed" : "fencing_rejected";

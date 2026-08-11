@@ -115,7 +115,10 @@ export async function executeQueuedPublication(deps: PublicationOrchestratorDeps
     const secretResolver = deps.secretResolver ?? new InMemoryPublicationSecretResolver();
     await new PublicationDispatchService({ repository: deps.repository, providerRegistry, secretResolver, providerCircuitBreaker: deps.providerCircuitBreaker, idGenerator: deps.idGenerator }).dispatchAvailable(workerId);
     const result = await deps.repository.getDetail(job.publicationId);
-    if (result) await deps.repository.appendEvent({ id: deps.idGenerator(), publicationId: job.publicationId, eventType: "worker_completed", correlationId: result.plan.correlationId, traceId: result.plan.traceId, payload: { workerId } });
+    if (result) {
+      await finalizeRunningSchedules(deps, result);
+      await deps.repository.appendEvent({ id: deps.idGenerator(), publicationId: job.publicationId, eventType: "worker_completed", correlationId: result.plan.correlationId, traceId: result.plan.traceId, payload: { workerId } });
+    }
     return result;
   } finally {
     await deps.repository.releaseLock(job.publicationId, lockOwner);
@@ -180,6 +183,20 @@ async function requireOwnedDetail(deps: PublicationOrchestratorDeps, input: { te
   const detail = await deps.repository.getDetail(input.publicationId);
   if (!detail || detail.plan.tenantId !== input.tenantId || detail.plan.workspaceId !== input.workspaceId) throw new Error("PUBLICATION_NOT_FOUND: publicação não pertence ao tenant/workspace informado.");
   return detail;
+}
+
+async function finalizeRunningSchedules(deps: PublicationOrchestratorDeps, detail: PublicationDetail): Promise<void> {
+  const status = detail.plan.state === "published"
+    ? "completed"
+    : detail.plan.state === "failed"
+      ? "failed"
+      : detail.plan.state === "cancelled"
+        ? "cancelled"
+        : undefined;
+  if (!status) return;
+  for (const schedule of detail.schedules.filter((item) => item.status === "running")) {
+    await deps.repository.updateScheduleStatus({ id: schedule.id, status });
+  }
 }
 
 function failureFromScheduleError(error: unknown): PublicationFailure {

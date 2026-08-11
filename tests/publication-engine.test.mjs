@@ -63,6 +63,7 @@ test("Publication Orchestrator: agenda, enfileira, worker executa e lock impede 
   const detail = await shared.repository.getDetail(created.plan.id);
   assert.equal(detail.plan.state, "published");
   assert.equal(detail.receipts.length, 1);
+  assert.equal(detail.schedules[0].status, "completed");
 });
 
 test("Publication Orchestrator: falha de credencial em uma agenda não bloqueia as demais", async () => {

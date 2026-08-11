@@ -106,6 +106,36 @@ test("Dispatch durável: worker faz claim, lease/fencing, provider fake publica,
   assert.equal(detail.outbox[0].status, "dispatched");
 });
 
+test("Dispatch durável: valida capability usando o tipo real da mídia", async () => {
+  const provider = new FakePublicationProvider();
+  provider.descriptor.supportedContentTypes = ["video"];
+  const shared = deps({ providers: [provider] });
+  const videoArtifact = {
+    artifactId: "video-rel",
+    artifactType: "video",
+    schemaId: "publication.video",
+    schemaVersion: 1,
+    checksum: "checksum-video-rel",
+    payload: { videoUrl: "https://cdn.zuno.local/video.mp4", caption: "Oferta em video" },
+  };
+  const created = await createPublication(shared, {
+    tenantId: "tenant-1",
+    workspaceId: "workspace-1",
+    idempotencyKey: "rel-idem-video-capability",
+    sourceArtifacts: [videoArtifact],
+    channels: ["instagram"],
+    provider: "fake",
+    policy: { requireApproval: false, approvalPolicy: "optional", allowedProviders: ["fake"] },
+  });
+  await ensurePublicationOutboxIntents(shared, { tenantId: "tenant-1", workspaceId: "workspace-1", publicationId: created.plan.id });
+  const result = await new PublicationDispatchService({ repository: shared.repository, providerRegistry: shared.providerRegistry, secretResolver: shared.secretResolver, idGenerator: nextId }).dispatchAvailable("worker-video-capability");
+
+  assert.equal(result.dispatched, 1);
+  const detail = await shared.repository.getDetail(created.plan.id);
+  assert.equal(detail.plan.state, "published");
+  assert.equal(detail.outbox[0].status, "dispatched");
+});
+
 test("Fencing: worker antigo perde lease e commit tardio é rejeitado", async () => {
   const shared = deps();
   const created = await createPublication(shared, { tenantId: "tenant-1", workspaceId: "workspace-1", idempotencyKey: "rel-idem-3", sourceArtifacts: [artifact("a3")], channels: ["instagram"], policy: { requireApproval: false, approvalPolicy: "optional" } });

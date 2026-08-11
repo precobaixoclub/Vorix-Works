@@ -65,6 +65,39 @@ test("Publication Orchestrator: agenda, enfileira, worker executa e lock impede 
   assert.equal(detail.receipts.length, 1);
 });
 
+test("Publication Orchestrator: falha de credencial em uma agenda não bloqueia as demais", async () => {
+  const shared = deps();
+  const missingCredential = await createPublication(shared, {
+    tenantId: "tenant-1",
+    workspaceId: "workspace-1",
+    idempotencyKey: "idem-missing-credential",
+    sourceArtifacts: [artifact("artifact-missing-credential")],
+    channels: ["instagram"],
+    mode: "real",
+    provider: "instagram",
+    policy: { requireApproval: false, approvalPolicy: "optional", allowedChannels: ["instagram"], allowedProviders: ["instagram"] },
+  });
+  const validDryRun = await createPublication(shared, {
+    tenantId: "tenant-1",
+    workspaceId: "workspace-1",
+    idempotencyKey: "idem-valid-dry-run",
+    sourceArtifacts: [artifact("artifact-valid-dry-run")],
+    channels: ["instagram"],
+    policy: { requireApproval: false, approvalPolicy: "optional" },
+  });
+  await schedulePublication(shared, { tenantId: "tenant-1", workspaceId: "workspace-1", publicationId: missingCredential.plan.id, scheduledAt: "2026-01-01T00:00:00.000Z", timezone: "America/Sao_Paulo" });
+  await schedulePublication(shared, { tenantId: "tenant-1", workspaceId: "workspace-1", publicationId: validDryRun.plan.id, scheduledAt: "2026-01-01T00:00:00.000Z", timezone: "America/Sao_Paulo" });
+
+  assert.equal(await runDueSchedules(shared, "2026-01-01T00:00:01.000Z"), 1);
+  assert.equal(await shared.queue.size(), 1);
+
+  const failed = await shared.repository.getDetail(missingCredential.plan.id);
+  const enqueued = await shared.repository.getDetail(validDryRun.plan.id);
+  assert.equal(failed.plan.state, "failed");
+  assert.equal(failed.schedules[0].status, "failed");
+  assert.equal(enqueued.schedules[0].status, "running");
+});
+
 test("Publication: retry automático para falha transitória e recovery/dead letter para falha não retentável", async () => {
   let transientCalls = 0;
   const transientProvider = {

@@ -3,7 +3,7 @@ import type { OperationalCircuitBreaker } from "../operations/operational-servic
 import type { PublicationProviderRegistry } from "./publication-provider-registry.js";
 import type { PublicationSecretResolverPort } from "./publication-secret-resolver.js";
 import { checksumPublicationPayload, isRetryablePublicationFailure } from "./publication-utils.js";
-import type { PublicationFailure, PublicationOutboxMessage, PublicationProviderCallResult } from "../../domain/publication/publication.model.js";
+import type { PublicationContentType, PublicationFailure, PublicationOutboxMessage, PublicationProviderCallResult, PublicationSourceArtifact } from "../../domain/publication/publication.model.js";
 
 export type PublicationDispatchDeps = {
   repository: PublicationRepositoryPort;
@@ -45,7 +45,13 @@ export class PublicationDispatchService {
     const target = detail.targets.find((item) => item.id === message.targetId);
     if (!target) return "failed";
     const provider = this.deps.providerRegistry.resolve(message.providerId);
-    this.deps.providerRegistry.validateCapability({ providerId: message.providerId, channel: target.channel, contentType: "document", mode: target.mode, payloadBytes: payload.sizeBytes, assetCount: payload.assets.length });
+    const contentType = inferPublicationContentType(payload.payload, payload.assets);
+    try {
+      this.deps.providerRegistry.validateCapability({ providerId: message.providerId, channel: target.channel, contentType, mode: target.mode, payloadBytes: payload.sizeBytes, assetCount: payload.assets.length });
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : "Provider não suporta este conteúdo.";
+      return (await this.commitFailure(message, workerId, { code: "PUBLICATION_PROVIDER_CAPABILITY_UNSUPPORTED", message: messageText, category: "invalid_content", retryable: false }, true)) ? "failed" : "fencing_rejected";
+    }
     const circuitKey = { tenantId: message.tenantId, workspaceId: message.workspaceId, scope: "publication_provider" as const, target: message.providerId };
     const circuit = await this.deps.providerCircuitBreaker?.canExecute(circuitKey);
     if (circuit && !circuit.allowed) {
@@ -182,6 +188,47 @@ export class PublicationDispatchService {
   private now(): string {
     return (this.deps.now ?? (() => new Date()))().toISOString();
   }
+}
+
+function inferPublicationContentType(payload: Record<string, unknown>, assets: readonly PublicationSourceArtifact[]): PublicationContentType {
+  const assetTypes = assets.map((asset) => normalizeContentType(asset.artifactType)).filter((type): type is PublicationContentType => !!type);
+  if (assetTypes.includes("video")) return "video";
+  if (assetTypes.filter((type) => type === "image").length > 1) return "carousel";
+  if (assetTypes.includes("image")) return "image";
+  if (assetTypes.includes("carousel")) return "carousel";
+  if (assetTypes.includes("text")) return "text";
+  if (assetTypes.includes("document")) return "document";
+
+  const inlineArtifacts = Array.isArray(payload.artifacts) ? payload.artifacts : [];
+  const inlineTypes = inlineArtifacts
+    .map((artifact) => (isRecord(artifact) ? normalizeContentType(String(artifact.artifactType ?? "")) : undefined))
+    .filter((type): type is PublicationContentType => !!type);
+  if (inlineTypes.includes("video")) return "video";
+  if (inlineTypes.filter((type) => type === "image").length > 1) return "carousel";
+  if (inlineTypes.includes("image")) return "image";
+  if (inlineTypes.includes("carousel")) return "carousel";
+
+  if (hasNestedPayloadKey(payload, "videoUrl")) return "video";
+  if (hasNestedPayloadKey(payload, "photoUrls") || hasNestedPayloadKey(payload, "imageUrls")) return "carousel";
+  if (hasNestedPayloadKey(payload, "imageUrl") || hasNestedPayloadKey(payload, "photoUrl")) return "image";
+  return "document";
+}
+
+function normalizeContentType(value: string): PublicationContentType | undefined {
+  if (value === "text" || value === "image" || value === "carousel" || value === "video" || value === "document") return value;
+  if (value === "photo") return "image";
+  if (value === "reel" || value === "short" || value === "shorts") return "video";
+  return undefined;
+}
+
+function hasNestedPayloadKey(payload: Record<string, unknown>, key: string): boolean {
+  if (Object.prototype.hasOwnProperty.call(payload, key)) return true;
+  const artifacts = Array.isArray(payload.artifacts) ? payload.artifacts : [];
+  return artifacts.some((artifact) => isRecord(artifact) && isRecord(artifact.payload) && Object.prototype.hasOwnProperty.call(artifact.payload, key));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function failureForCircuit(result: PublicationProviderCallResult): { code: string; category: string; retryable: boolean } {

@@ -7,7 +7,7 @@ import { ensurePublicationOutboxIntents } from "./publication-outbox-intent.js";
 import type { PublicationQueuePort } from "./publication-queue.js";
 import { InMemoryPublicationSecretResolver, type PublicationSecretResolverPort } from "./publication-secret-resolver.js";
 import { isRetryablePublicationFailure } from "./publication-utils.js";
-import type { PublicationDeadLetter, PublicationDetail } from "../../domain/publication/publication.model.js";
+import type { PublicationDeadLetter, PublicationDetail, PublicationFailure } from "../../domain/publication/publication.model.js";
 
 export type PublicationConcurrencyPolicy = {
   maxWorkers: number;
@@ -44,12 +44,46 @@ export async function enqueuePublication(deps: PublicationOrchestratorDeps, inpu
 }
 
 export async function runDueSchedules(deps: PublicationOrchestratorDeps, now = new Date().toISOString()): Promise<number> {
+  await deps.repository.releaseExpiredOutbox(now);
   const due = await deps.repository.listDueSchedules({ now, limit: deps.concurrency.maxConcurrentPublications });
+  let enqueued = 0;
   for (const schedule of due) {
-    await deps.repository.updateScheduleStatus({ id: schedule.id, status: "running" });
-    await enqueuePublication(deps, { tenantId: schedule.tenantId, workspaceId: schedule.workspaceId, publicationId: schedule.publicationId, kind: "scheduled" });
+    const detail = await deps.repository.getDetail(schedule.publicationId);
+    if (!detail) {
+      await deps.repository.updateScheduleStatus({ id: schedule.id, status: "failed" });
+      continue;
+    }
+    if (detail.plan.state === "cancelled") {
+      await deps.repository.updateScheduleStatus({ id: schedule.id, status: "cancelled" });
+      continue;
+    }
+    if (detail.plan.state === "published") {
+      await deps.repository.updateScheduleStatus({ id: schedule.id, status: "completed" });
+      continue;
+    }
+    try {
+      await deps.repository.updateScheduleStatus({ id: schedule.id, status: "running" });
+      await enqueuePublication(deps, { tenantId: schedule.tenantId, workspaceId: schedule.workspaceId, publicationId: schedule.publicationId, kind: "scheduled" });
+      enqueued += 1;
+    } catch (error) {
+      const failure = failureFromScheduleError(error);
+      await deps.repository.appendFailure({ publicationId: schedule.publicationId, failure });
+      for (const target of detail.targets.filter((item) => item.status !== "published" && item.status !== "cancelled")) {
+        await deps.repository.updateTargetStatus({ id: target.id, status: "failed" });
+      }
+      await deps.repository.updatePlanState({ id: schedule.publicationId, state: "failed" });
+      await deps.repository.updateScheduleStatus({ id: schedule.id, status: "failed" });
+      await deps.repository.appendEvent({
+        id: deps.idGenerator(),
+        publicationId: schedule.publicationId,
+        eventType: "publication_failed",
+        correlationId: detail.plan.correlationId,
+        traceId: detail.plan.traceId,
+        payload: { scheduleId: schedule.id, failure },
+      });
+    }
   }
-  return due.length;
+  return enqueued;
 }
 
 export async function rebuildPublicationQueueFromOutbox(deps: PublicationOrchestratorDeps, filter: { tenantId: string; workspaceId: string }, now = new Date().toISOString()): Promise<number> {
@@ -146,4 +180,17 @@ async function requireOwnedDetail(deps: PublicationOrchestratorDeps, input: { te
   const detail = await deps.repository.getDetail(input.publicationId);
   if (!detail || detail.plan.tenantId !== input.tenantId || detail.plan.workspaceId !== input.workspaceId) throw new Error("PUBLICATION_NOT_FOUND: publicação não pertence ao tenant/workspace informado.");
   return detail;
+}
+
+function failureFromScheduleError(error: unknown): PublicationFailure {
+  const message = error instanceof Error ? error.message : String(error);
+  const rawCode = message.includes(":") ? message.slice(0, message.indexOf(":")).trim() : "";
+  const code = /^[A-Z0-9_]+$/.test(rawCode) ? rawCode : "SCHEDULE_ENQUEUE_FAILED";
+  const upper = `${code} ${message}`.toUpperCase();
+  const category = upper.includes("CREDENTIAL") || upper.includes("TOKEN") || upper.includes("AUTH") || upper.includes("OAUTH")
+    ? "authentication"
+    : upper.includes("CONTENT") || upper.includes("PAYLOAD") || upper.includes("MEDIA")
+      ? "invalid_content"
+      : "internal";
+  return { code, message: message.slice(0, 500), category, retryable: false };
 }

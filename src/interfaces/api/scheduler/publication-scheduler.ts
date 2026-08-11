@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { PublicationWorker, runDueSchedules, type PublicationOrchestratorDeps } from "../../../application/publication/publication-orchestrator.js";
+import { PublicationWorker, rebuildPublicationQueueFromOutbox, runDueSchedules, type PublicationOrchestratorDeps } from "../../../application/publication/publication-orchestrator.js";
 import type { ApiContainer } from "../di/container.js";
 
 /**
@@ -34,8 +34,9 @@ export function registerPublicationScheduler(app: FastifyInstance, container: Ap
     running = true;
     try {
       const enqueued = await runDueSchedules(deps);
+      const recovered = await rebuildPublicationQueueFromOutbox(deps);
       const processed = await new PublicationWorker(deps, "publication-scheduler").runUntilIdle();
-      if (enqueued > 0 || processed > 0) app.log.info({ enqueued, processed }, "publication scheduler tick");
+      if (enqueued > 0 || recovered > 0 || processed > 0) app.log.info({ enqueued, recovered, processed }, "publication scheduler tick");
     } catch (error) {
       app.log.error({ err: error }, "publication scheduler tick failed");
     } finally {

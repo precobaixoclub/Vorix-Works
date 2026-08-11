@@ -300,7 +300,7 @@ test("Recovery após restart: fila vazia é reconstruída da outbox sem duplicar
   const created = await createPublication(shared, { tenantId: "tenant-1", workspaceId: "workspace-1", idempotencyKey: "rel-idem-6", sourceArtifacts: [artifact("a6")], channels: ["instagram"], policy: { requireApproval: false, approvalPolicy: "optional" } });
   await ensurePublicationOutboxIntents(shared, { tenantId: "tenant-1", workspaceId: "workspace-1", publicationId: created.plan.id });
   shared.queue = new InMemoryPublicationQueue();
-  const rebuilt = await rebuildPublicationQueueFromOutbox(shared, { tenantId: "tenant-1", workspaceId: "workspace-1" });
+  const rebuilt = await rebuildPublicationQueueFromOutbox(shared);
   assert.equal(rebuilt, 1);
   assert.equal(await shared.queue.size(), 1);
   await new PublicationWorker(shared, "worker-restart").runUntilIdle();

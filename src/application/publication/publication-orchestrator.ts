@@ -86,15 +86,20 @@ export async function runDueSchedules(deps: PublicationOrchestratorDeps, now = n
   return enqueued;
 }
 
-export async function rebuildPublicationQueueFromOutbox(deps: PublicationOrchestratorDeps, filter: { tenantId: string; workspaceId: string }, now = new Date().toISOString()): Promise<number> {
+export async function rebuildPublicationQueueFromOutbox(deps: PublicationOrchestratorDeps, filter: { tenantId?: string; workspaceId?: string } = {}, now = new Date().toISOString()): Promise<number> {
   await deps.repository.releaseExpiredOutbox(now);
   const messages = (await deps.repository.listOutbox({ tenantId: filter.tenantId, workspaceId: filter.workspaceId }))
     .filter((message) => (message.status === "pending" || message.status === "failed") && message.lastFailureCode !== "UNKNOWN_OUTCOME" && message.availableAt <= now);
-  const publicationIds = new Set(messages.map((message) => message.publicationId));
-  for (const publicationId of publicationIds) {
-    await deps.queue.enqueue({ id: `${publicationId}:outbox-recovery:${now}`, publicationId, tenantId: filter.tenantId, workspaceId: filter.workspaceId, kind: "retry", enqueuedAt: now });
+  const jobsByPublicationId = new Map<string, { publicationId: string; tenantId: string; workspaceId: string }>();
+  for (const message of messages) {
+    if (!jobsByPublicationId.has(message.publicationId)) {
+      jobsByPublicationId.set(message.publicationId, { publicationId: message.publicationId, tenantId: message.tenantId, workspaceId: message.workspaceId });
+    }
   }
-  return publicationIds.size;
+  for (const job of jobsByPublicationId.values()) {
+    await deps.queue.enqueue({ id: `${job.publicationId}:outbox-recovery:${now}`, publicationId: job.publicationId, tenantId: job.tenantId, workspaceId: job.workspaceId, kind: "retry", enqueuedAt: now });
+  }
+  return jobsByPublicationId.size;
 }
 
 export async function executeQueuedPublication(deps: PublicationOrchestratorDeps, workerId = deps.workerId ?? "publication-worker"): Promise<PublicationDetail | undefined> {

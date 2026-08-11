@@ -50,8 +50,21 @@ export class PublicationDispatchService {
     }
     const target = detail.targets.find((item) => item.id === message.targetId);
     if (!target) return "failed";
-    const provider = this.deps.providerRegistry.resolve(message.providerId);
     const contentType = inferPublicationContentType(payload.payload, payload.assets);
+    const provider = (() => {
+      try {
+        return this.deps.providerRegistry.resolve(message.providerId);
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : "Provider de publicação indisponível.";
+        const code = messageText.includes("PUBLICATION_PROVIDER_DISABLED")
+          ? "PUBLICATION_PROVIDER_DISABLED"
+          : "PUBLICATION_PROVIDER_UNKNOWN";
+        return { failure: { code, message: messageText, category: "provider_unavailable" as const, retryable: false } };
+      }
+    })();
+    if ("failure" in provider) {
+      return (await this.commitFailure(message, workerId, provider.failure, true)) ? "failed" : "fencing_rejected";
+    }
     try {
       this.deps.providerRegistry.validateCapability({ providerId: message.providerId, channel: target.channel, contentType, mode: target.mode, payloadBytes: payload.sizeBytes, assetCount: payload.assets.length });
     } catch (error) {

@@ -164,6 +164,37 @@ test("Dispatch durável: valida capability usando o tipo real da mídia", async 
   assert.equal(detail.outbox[0].status, "dispatched");
 });
 
+test("Dispatch durável: provider externo não registrado vira dead letter sem derrubar worker", async () => {
+  const shared = deps();
+  await shared.repository.createCredentialReference({
+    credentialReferenceId: "cred-provider-missing",
+    tenantId: "tenant-1",
+    workspaceId: "workspace-1",
+    providerId: "tiktok",
+    status: "active",
+    scopes: ["user.info.basic"],
+    expiresAt: "2027-01-01T00:00:00.000Z",
+  });
+  const created = await createPublication(shared, {
+    tenantId: "tenant-1",
+    workspaceId: "workspace-1",
+    idempotencyKey: "rel-idem-provider-missing",
+    sourceArtifacts: [artifact("a-provider-missing")],
+    channels: ["tiktok"],
+    provider: "tiktok",
+    mode: "real",
+    policy: { requireApproval: false, approvalPolicy: "optional", allowedChannels: ["tiktok"], allowedProviders: ["tiktok"] },
+  });
+  await ensurePublicationOutboxIntents(shared, { tenantId: "tenant-1", workspaceId: "workspace-1", publicationId: created.plan.id });
+  const result = await new PublicationDispatchService({ repository: shared.repository, providerRegistry: shared.providerRegistry, secretResolver: shared.secretResolver, idGenerator: nextId }).dispatchAvailable("worker-provider-missing");
+
+  assert.equal(result.dispatched, 0);
+  const detail = await shared.repository.getDetail(created.plan.id);
+  assert.equal(detail.outbox[0].status, "dead_lettered");
+  assert.equal(detail.outbox[0].lastFailureCode, "PUBLICATION_PROVIDER_UNKNOWN");
+  assert.equal(detail.attempts[0].state, "failed");
+});
+
 test("Dispatch durável: outbox de publicação cancelada não chama provider", async () => {
   const provider = new FakePublicationProvider();
   let calls = 0;

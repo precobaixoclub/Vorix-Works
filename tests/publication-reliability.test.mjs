@@ -121,6 +121,42 @@ test("Outbox: mantém credencial ativa mesmo com access token expirado para refr
   assert.equal(detail.outbox[0].credentialReferenceId, "cred-expired-refreshable");
 });
 
+test("Outbox: escolhe a credencial ativa mais recente ao agendar", async () => {
+  const shared = deps();
+  await shared.repository.createCredentialReference({
+    credentialReferenceId: "cred-old-active",
+    tenantId: "tenant-1",
+    workspaceId: "workspace-1",
+    providerId: "youtube",
+    status: "active",
+    scopes: ["https://www.googleapis.com/auth/youtube.upload"],
+    lastRefreshedAt: "2026-01-01T00:00:00.000Z",
+  });
+  await shared.repository.createCredentialReference({
+    credentialReferenceId: "cred-new-active",
+    tenantId: "tenant-1",
+    workspaceId: "workspace-1",
+    providerId: "youtube",
+    status: "active",
+    scopes: ["https://www.googleapis.com/auth/youtube.upload"],
+    lastRefreshedAt: "2026-02-01T00:00:00.000Z",
+  });
+  const created = await createPublication(shared, {
+    tenantId: "tenant-1",
+    workspaceId: "workspace-1",
+    idempotencyKey: "rel-idem-newest-credential",
+    sourceArtifacts: [artifact("a-newest-credential")],
+    channels: ["youtube"],
+    mode: "real",
+    provider: "youtube",
+    policy: { requireApproval: false, approvalPolicy: "optional", allowedChannels: ["youtube"], allowedProviders: ["youtube"] },
+  });
+
+  const detail = await ensurePublicationOutboxIntents(shared, { tenantId: "tenant-1", workspaceId: "workspace-1", publicationId: created.plan.id });
+
+  assert.equal(detail.outbox[0].credentialReferenceId, "cred-new-active");
+});
+
 test("Dispatch durável: worker faz claim, lease/fencing, provider fake publica, receipt e outbox dispatched", async () => {
   const shared = deps();
   const created = await createPublication(shared, { tenantId: "tenant-1", workspaceId: "workspace-1", idempotencyKey: "rel-idem-2", sourceArtifacts: [artifact("a2")], channels: ["instagram"], policy: { requireApproval: false, approvalPolicy: "optional" } });

@@ -93,9 +93,16 @@ async function resolveCredentialReference(repository: PublicationRepositoryPort,
   // OAuth access tokens can expire before the scheduled publication runs; providers with refresh
   // support receive the reference and refresh the token during dispatch. Revoked/disabled refs are
   // still rejected here.
-  const active = references.find((reference) => reference.status === "active");
+  const active = references
+    .filter((reference) => reference.status === "active")
+    .sort((left, right) => timestamp(right) - timestamp(left))[0];
   if (!active) throw new Error(`CREDENTIAL_REFERENCE_REQUIRED: provider "${providerId}" exige credencial ativa para publicar.`);
   return active.credentialReferenceId;
+}
+
+function timestamp(reference: { lastRefreshedAt?: string; updatedAt?: string; createdAt?: string }): number {
+  const parsed = Date.parse(reference.lastRefreshedAt ?? reference.updatedAt ?? reference.createdAt ?? "");
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function extractCredentialReferenceId(content: Record<string, unknown>): string | undefined {

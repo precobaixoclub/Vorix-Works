@@ -231,7 +231,7 @@ export class MetaInstagramOAuthService {
         providerSubjectId: reference.providerSubjectId ?? "",
         displayName: secret?.value.displayName,
         avatarUrl: secret?.value.avatarUrl,
-        status: reference.status,
+        status: secret ? reference.status : "disabled",
         scopes: reference.scopes ?? [],
         expiresAt: reference.expiresAt,
         connectedAt: reference.lastRefreshedAt,

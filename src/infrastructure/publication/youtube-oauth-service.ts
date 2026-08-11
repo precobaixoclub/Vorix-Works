@@ -180,7 +180,7 @@ export class YouTubeOAuthService {
         channelId: reference.providerSubjectId ?? secret?.value.channelId ?? "",
         displayName: secret?.value.displayName,
         avatarUrl: secret?.value.avatarUrl,
-        status: reference.status,
+        status: secret ? reference.status : "disabled",
         scopes: reference.scopes ?? [],
         expiresAt: reference.expiresAt,
         connectedAt: reference.lastRefreshedAt,

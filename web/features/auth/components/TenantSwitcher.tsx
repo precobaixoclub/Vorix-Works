@@ -40,7 +40,7 @@ export function TenantSwitcher() {
       onChange={handleChange}
       disabled={switching}
       aria-label="Trocar de conta"
-      className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-ink outline-none focus:border-accent"
+      className="max-w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-ink outline-none focus:border-accent sm:max-w-xs"
     >
       {memberships.map((membership) => (
         <option key={membership.tenantId} value={membership.tenantId}>

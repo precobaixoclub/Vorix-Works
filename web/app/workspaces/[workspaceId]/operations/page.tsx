@@ -32,7 +32,7 @@ export default function OperationsPage() {
   }
 
   return (
-    <main className="px-8 py-6">
+    <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Operação" description="Saúde, limites, filas, disjuntores, prontidão e plano de recuperação." />
 
       <div className="mb-5 flex flex-wrap gap-2">
@@ -213,4 +213,3 @@ function countBy(items: readonly string[]): Record<string, number> {
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleString("pt-BR") : "-";
 }
-

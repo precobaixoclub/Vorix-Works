@@ -41,7 +41,7 @@ export default function AdminTenantsPage() {
   const hasNext = (page + 1) * PAGE_SIZE < total;
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Contas de clientes" description="Cada linha é um tenant. Clique para ver o consumo, ajustar créditos e trocar de plano." />
 
       <Card className="mb-4">

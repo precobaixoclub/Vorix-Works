@@ -78,7 +78,7 @@ export default function AdminAiProvidersPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-8">
+      <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
         <div className="flex items-center gap-2 py-14 text-sm text-ink-muted">
           <Spinner className="h-4 w-4" /> Carregando…
         </div>
@@ -88,14 +88,14 @@ export default function AdminAiProvidersPage() {
 
   if (error || !providers || !operationTypes || !finance) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-8">
+      <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
         <EmptyState title="Não foi possível carregar Provedores de IA" description={error ?? "Tente novamente."} />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title="Provedores de IA"
         description="Cadastre cada provedor (chave, status), defina quanto cada operação custa em crédito Vorix, e acompanhe gasto/receita/lucro por provedor."

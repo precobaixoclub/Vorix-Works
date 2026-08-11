@@ -51,7 +51,7 @@ export default function PublicationsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
+    <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Publicação" description="Planos, fila, receipts e painel operacional de publicação com canário Meta Pages Sandbox." />
       <div className="mb-6 grid gap-4 md:grid-cols-4">
         <Card className="p-4"><p className="text-xs text-ink-muted">Fila</p><p className="text-2xl font-semibold text-ink">{queue?.size ?? 0}</p></Card>

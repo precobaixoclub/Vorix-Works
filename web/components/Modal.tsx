@@ -14,7 +14,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 px-3 py-4 sm:px-4" onClick={onClose}>
       <div
-        className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-surface-raised shadow-xl"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-border bg-surface-raised shadow-xl sm:max-w-md"
         role="dialog"
         aria-modal="true"
         aria-label={title}

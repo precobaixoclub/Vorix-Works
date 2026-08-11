@@ -22,7 +22,7 @@ export default async function PricingPage() {
 
   return (
     <main className="flex min-h-dvh flex-col bg-surface">
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6">
+      <header className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-3 py-4 sm:px-6 sm:py-6">
         <Link href="/">
           <Logo className="h-12 w-auto text-ink" />
         </Link>
@@ -36,7 +36,7 @@ export default async function PricingPage() {
         </div>
       </header>
 
-      <section className="mx-auto w-full max-w-6xl px-6 pb-6 pt-12 text-center">
+      <section className="mx-auto w-full max-w-6xl px-3 pb-6 pt-10 text-center sm:px-6 sm:pt-12">
         <span className="rounded-full bg-accent-soft px-3 py-1 text-xs font-medium text-accent">Planos e preços</span>
         <h1 className="mt-4 text-balance text-4xl font-semibold tracking-tight text-ink sm:text-5xl">
           Escolha o plano que combina com seu volume.
@@ -46,7 +46,7 @@ export default async function PricingPage() {
         </p>
       </section>
 
-      <section className="mx-auto grid w-full max-w-6xl gap-4 px-6 pb-12 md:grid-cols-2 lg:grid-cols-4">
+      <section className="mx-auto grid w-full max-w-6xl gap-4 px-3 pb-12 sm:px-6 md:grid-cols-2 lg:grid-cols-4">
         {loadError ? (
           <div className="col-span-full rounded-xl border border-red-300 bg-red-50 p-6 text-center text-sm text-red-700">
             {loadError}
@@ -56,7 +56,7 @@ export default async function PricingPage() {
         )}
       </section>
 
-      <section className="mx-auto w-full max-w-4xl px-6 pb-16 text-center">
+      <section className="mx-auto w-full max-w-4xl px-3 pb-16 text-center sm:px-6">
         <div className="rounded-2xl border border-border bg-surface-raised p-8">
           <p className="text-sm font-semibold uppercase tracking-wide text-ink-muted">Volume corporativo</p>
           <h2 className="mt-2 text-2xl font-semibold text-ink">Precisa de mais?</h2>
@@ -69,7 +69,7 @@ export default async function PricingPage() {
         </div>
       </section>
 
-      <footer className="border-t border-border px-6 py-6 text-center text-xs text-ink-faint">
+      <footer className="border-t border-border px-3 py-5 text-center text-xs text-ink-faint sm:px-6 sm:py-6">
         © {new Date().getFullYear()} Vorix. Todos os direitos reservados.
       </footer>
     </main>

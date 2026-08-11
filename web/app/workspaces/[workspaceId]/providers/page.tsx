@@ -51,7 +51,7 @@ export default function ProvidersPage() {
 
   if (isLoadingProviders) {
     return (
-      <main className="mx-auto flex max-w-7xl justify-center px-6 py-16">
+      <main className="mx-auto flex max-w-7xl justify-center px-3 py-10 sm:px-6 sm:py-16">
         <Spinner />
       </main>
     );
@@ -59,14 +59,14 @@ export default function ProvidersPage() {
 
   if (providersError) {
     return (
-      <main className="mx-auto max-w-7xl px-6 py-16">
+      <main className="mx-auto max-w-7xl px-3 py-10 sm:px-6 sm:py-16">
         <ErrorState error={providersError} onRetry={() => mutateProviders()} />
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-7xl px-6 py-8">
+    <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Provedores" description="Registro multiprovedor, OAuth, webhooks, credenciais, saúde e sincronização de publicação." />
 
       <div className="mb-6 grid gap-4 md:grid-cols-4">
@@ -76,7 +76,7 @@ export default function ProvidersPage() {
         <Card className="p-4"><p className="text-xs text-ink-muted">Sync pendente</p><p className="text-2xl font-semibold text-ink">{sync?.pending.length ?? 0}</p></Card>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
         <Card className="overflow-hidden">
           <div className="border-b border-border px-4 py-3">
             <p className="text-sm font-medium text-ink">Registro</p>

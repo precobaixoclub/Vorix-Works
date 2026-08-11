@@ -16,7 +16,7 @@ export default function ExecutionRunsPage() {
   const { data: runs, isLoading, error, mutate } = useExecutionRuns(workspace.id);
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
+    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Execuções" description="Simulações determinísticas criadas a partir de RuntimePlans validados." />
       {isLoading ? (
         <div className="flex justify-center py-14">

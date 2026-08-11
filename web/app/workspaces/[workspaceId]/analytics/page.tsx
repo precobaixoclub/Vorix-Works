@@ -52,7 +52,7 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Análises" description="KPIs editoriais, operacionais, publicação, calendário, insights e qualidade de dados." />
 
       <div className="mb-5 grid gap-3 md:grid-cols-[220px_220px_1fr]">
@@ -73,7 +73,7 @@ export default function AnalyticsPage() {
           <Label htmlFor="timezone">Fuso horário</Label>
           <Input id="timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} />
         </div>
-        <div className="flex items-end justify-end gap-2">
+        <div className="flex flex-wrap items-end justify-start gap-2 md:justify-end">
           <Button variant="secondary" onClick={() => exportFormat("csv")}>CSV</Button>
           <Button variant="secondary" onClick={() => exportFormat("json")}>JSON</Button>
         </div>

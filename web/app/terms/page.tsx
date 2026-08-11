@@ -8,7 +8,7 @@ export const metadata = {
 
 export default function TermsPage() {
   return (
-    <main className="min-h-dvh bg-surface px-6 py-8 text-ink">
+    <main className="min-h-dvh bg-surface px-3 py-6 text-ink sm:px-6 sm:py-8">
       <div className="mx-auto max-w-3xl">
         <header className="mb-10 flex items-center justify-between border-b border-border pb-6">
           <Link href="/" aria-label="Vorix">

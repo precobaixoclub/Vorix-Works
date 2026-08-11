@@ -29,7 +29,7 @@ export function ConversationList({ workspaceId }: { workspaceId: string }) {
   }
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-surface-raised">
+    <aside className="flex max-h-72 w-full shrink-0 flex-col border-b border-border bg-surface-raised md:max-h-none md:w-72 md:border-b-0 md:border-r">
       <div className="border-b border-border p-3">
         <Button className="w-full" onClick={handleNewConversation} disabled={creating}>
           {creating ? "Criando…" : "+ Nova conversa"}

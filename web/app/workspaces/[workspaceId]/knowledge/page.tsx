@@ -12,7 +12,7 @@ export default function KnowledgePage() {
   const { data: knowledge, isLoading } = useSWR(["knowledge", workspace.id], () => getKnowledgeSnapshot(workspace.name));
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-8">
+    <main className="mx-auto max-w-4xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Central de Conhecimento" description="O que o Vorix sabe sobre esta marca — base para futuras campanhas e conversas." />
 
       {isLoading || !knowledge ? (

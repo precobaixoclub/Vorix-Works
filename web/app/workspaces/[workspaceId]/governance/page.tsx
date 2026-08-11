@@ -55,7 +55,7 @@ export default function GovernancePage() {
   }
 
   return (
-    <main className="mx-auto max-w-7xl px-6 py-8">
+    <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Governança" description="Credenciais externas, rotação, auditoria operacional e checks de compliance do workspace." />
 
       <div className="mb-6 grid gap-4 md:grid-cols-4">

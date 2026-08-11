@@ -43,7 +43,7 @@ export default function WorkspaceHomePage() {
   const showOnboarding = oauthLoaded && (publications?.length ?? 0) === 0;
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
+    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2.5">

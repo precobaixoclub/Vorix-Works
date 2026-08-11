@@ -12,12 +12,12 @@ export function WorkspaceTopBar({ name, status }: { name: string; status: string
   const isPlatformAdmin = state.status === "authenticated" && state.user.isPlatformAdmin;
 
   return (
-    <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-raised px-3 py-2 sm:px-5">
-      <div className="flex min-w-0 items-center gap-2.5">
+    <header className="flex min-h-14 shrink-0 flex-col items-stretch gap-2 border-b border-border bg-surface-raised px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <div className="flex min-w-0 items-center justify-between gap-2.5 sm:justify-start">
         <span className="truncate text-sm font-semibold text-ink">{name}</span>
         <StatusBadge status={status} />
       </div>
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 sm:justify-end sm:gap-3">
         <TenantSwitcher />
         {isPlatformAdmin ? (
           <Link
@@ -28,7 +28,7 @@ export function WorkspaceTopBar({ name, status }: { name: string; status: string
             Admin
           </Link>
         ) : null}
-        {state.status === "authenticated" ? <span className="max-w-32 truncate text-xs text-ink-muted sm:max-w-none">{state.user.name}</span> : null}
+        {state.status === "authenticated" ? <span className="max-w-full truncate text-xs text-ink-muted sm:max-w-48">{state.user.name}</span> : null}
         <button
           type="button"
           onClick={async () => {

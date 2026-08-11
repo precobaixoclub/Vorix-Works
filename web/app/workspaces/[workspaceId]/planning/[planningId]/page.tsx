@@ -23,7 +23,7 @@ export default function PlanningDetailPage() {
 
   if (isLoadingPlanning || isLoadingTasks) {
     return (
-      <main className="mx-auto flex max-w-5xl justify-center px-6 py-16">
+      <main className="mx-auto flex max-w-5xl justify-center px-3 py-10 sm:px-6 sm:py-16">
         <Spinner />
       </main>
     );
@@ -31,7 +31,7 @@ export default function PlanningDetailPage() {
 
   if (planningError || tasksError) {
     return (
-      <main className="mx-auto max-w-5xl px-6 py-16">
+      <main className="mx-auto max-w-5xl px-3 py-10 sm:px-6 sm:py-16">
         <ErrorState
           error={planningError ?? tasksError}
           onRetry={() => {
@@ -45,7 +45,7 @@ export default function PlanningDetailPage() {
 
   if (!planningData || !tasksData) {
     return (
-      <main className="mx-auto flex max-w-5xl justify-center px-6 py-16">
+      <main className="mx-auto flex max-w-5xl justify-center px-3 py-10 sm:px-6 sm:py-16">
         <Spinner />
       </main>
     );
@@ -57,7 +57,7 @@ export default function PlanningDetailPage() {
   const issues = planning.validationReport.issues;
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
+    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title={planning.planningTemplate}
         description={`Estratégia ${planning.plannerStrategy} · versão ${planning.plannerVersion} · grafo v${planning.graphVersion}`}

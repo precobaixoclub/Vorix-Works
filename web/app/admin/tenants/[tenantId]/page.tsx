@@ -47,7 +47,7 @@ export default function AdminTenantDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 px-6 py-14 text-sm text-ink-muted">
+      <div className="flex items-center gap-2 px-3 py-10 text-sm text-ink-muted sm:px-6 sm:py-14">
         <Spinner className="h-4 w-4" /> Carregando conta…
       </div>
     );
@@ -55,7 +55,7 @@ export default function AdminTenantDetailPage() {
 
   if (error || !data) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-8">
+      <div className="mx-auto max-w-4xl px-3 py-5 sm:px-6 sm:py-8">
         <EmptyState
           title="Não foi possível carregar essa conta"
           description={error instanceof Error ? error.message : "Verifique o tenantId ou tente novamente."}
@@ -73,7 +73,7 @@ export default function AdminTenantDetailPage() {
   const { billing, currentUsage } = overview;
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <div className="mb-4 text-sm">
         <Link href="/admin/tenants" className="text-accent hover:underline">
           ← Todas as contas

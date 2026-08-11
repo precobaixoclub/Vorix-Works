@@ -117,7 +117,7 @@ export function MetaPostPage({ target }: { target: MetaTarget }) {
   const label = target === "instagram" ? "Instagram" : "Página do Facebook";
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
+    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title={target === "instagram" ? "Instagram" : "Facebook"}
         description={target === "instagram"

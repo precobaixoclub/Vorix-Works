@@ -40,7 +40,7 @@ export default function ExecutionRunDetailPage() {
 
   if (isLoading) {
     return (
-      <main className="mx-auto flex max-w-5xl justify-center px-6 py-16">
+      <main className="mx-auto flex max-w-5xl justify-center px-3 py-10 sm:px-6 sm:py-16">
         <Spinner />
       </main>
     );
@@ -48,7 +48,7 @@ export default function ExecutionRunDetailPage() {
 
   if (error) {
     return (
-      <main className="mx-auto max-w-5xl px-6 py-16">
+      <main className="mx-auto max-w-5xl px-3 py-10 sm:px-6 sm:py-16">
         <ErrorState error={error} onRetry={refresh} />
       </main>
     );
@@ -56,7 +56,7 @@ export default function ExecutionRunDetailPage() {
 
   if (!detail) {
     return (
-      <main className="mx-auto flex max-w-5xl justify-center px-6 py-16">
+      <main className="mx-auto flex max-w-5xl justify-center px-3 py-10 sm:px-6 sm:py-16">
         <Spinner />
       </main>
     );
@@ -67,7 +67,7 @@ export default function ExecutionRunDetailPage() {
   const canCancel = !["completed", "failed", "cancelled"].includes(detail.run.state);
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
+    <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title={detail.run.id}
         description={`Runtime ${detail.run.runtimePlanId} · criado em ${formatDateTime(detail.run.createdAt)}`}

@@ -29,7 +29,7 @@ export default function RuntimeDetailPage() {
 
   if (isLoadingDetail || isLoadingBindings) {
     return (
-      <main className="mx-auto flex max-w-5xl justify-center px-6 py-16">
+      <main className="mx-auto flex max-w-5xl justify-center px-3 py-10 sm:px-6 sm:py-16">
         <Spinner />
       </main>
     );
@@ -37,7 +37,7 @@ export default function RuntimeDetailPage() {
 
   if (detailError || bindingsError) {
     return (
-      <main className="mx-auto max-w-5xl px-6 py-16">
+      <main className="mx-auto max-w-5xl px-3 py-10 sm:px-6 sm:py-16">
         <ErrorState
           error={detailError ?? bindingsError}
           onRetry={() => {
@@ -51,7 +51,7 @@ export default function RuntimeDetailPage() {
 
   if (!detail || !bindingsView) {
     return (
-      <main className="mx-auto flex max-w-5xl justify-center px-6 py-16">
+      <main className="mx-auto flex max-w-5xl justify-center px-3 py-10 sm:px-6 sm:py-16">
         <Spinner />
       </main>
     );
@@ -87,7 +87,7 @@ export default function RuntimeDetailPage() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
+    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title={runtimePlan.translationTemplate}
         description={`Estratégia ${runtimePlan.translatorStrategy} · versão ${runtimePlan.translatorVersion} · schema v${runtimePlan.runtimeSchemaVersion}`}

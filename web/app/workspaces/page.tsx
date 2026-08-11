@@ -32,7 +32,7 @@ function WorkspacesPageContent() {
   const isPlatformAdmin = state.status === "authenticated" && state.user.isPlatformAdmin;
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-10">
+    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-10">
       <PageHeader
         title="Espaços de Trabalho"
         description="Cada Espaço de Trabalho é uma empresa, marca ou cliente — o centro de tudo no Vorix."

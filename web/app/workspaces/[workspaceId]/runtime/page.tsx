@@ -21,7 +21,7 @@ export default function RuntimeListPage() {
   const { data: runtimes, isLoading, error, mutate } = useRuntimeList(workspace.id);
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
+    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Runtime" description="Planos traduzidos e validados a partir de Plannings prontos — nada aqui é executado." />
 
       {isLoading ? (

@@ -56,7 +56,7 @@ export default function ConversationThreadPage() {
 
   return (
     <>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-6">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 sm:p-6">
         <div className="mx-auto flex max-w-2xl flex-col gap-4">
           {isLoading ? (
             <div className="flex justify-center py-14">
@@ -87,7 +87,7 @@ export default function ConversationThreadPage() {
         </div>
       </div>
       {lastResult ? (
-        <div className="mx-auto w-full max-w-2xl px-6 pb-2">
+        <div className="mx-auto w-full max-w-2xl px-3 pb-2 sm:px-6">
           <BriefingPanel
             summary={lastResult.briefingSummary}
             nextQuestion={lastResult.nextQuestion}
@@ -100,7 +100,7 @@ export default function ConversationThreadPage() {
           />
         </div>
       ) : null}
-      <div className="mx-auto w-full max-w-2xl">
+      <div className="mx-auto w-full max-w-2xl px-3 pb-3 sm:px-0 sm:pb-0">
         <ConversationComposer onSend={handleSend} disabled={sending} />
       </div>
     </>

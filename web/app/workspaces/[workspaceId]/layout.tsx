@@ -53,7 +53,7 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
         <WorkspaceSidebar workspaceId={workspace.id} />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col md:min-h-dvh">
           <WorkspaceTopBar name={workspace.name} status={workspace.status} />
-          <div className="min-w-0 flex-1 overflow-y-auto bg-surface-sunken">{children}</div>
+          <div className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-surface-sunken">{children}</div>
         </div>
       </div>
     </WorkspaceProvider>

@@ -268,7 +268,7 @@ export default function PublishPage() {
                     type="button"
                     variant={selected.has(platform.id) ? "primary" : "secondary"}
                     disabled={!connectedByPlatform[platform.id]}
-                    className="flex-1 whitespace-nowrap sm:flex-none"
+                    className="flex-1 min-w-0 sm:flex-none"
                     onClick={() => togglePlatform(platform.id)}
                     title={connectedByPlatform[platform.id] ? undefined : "Conecte esta conta em Conexões primeiro"}
                   >

@@ -21,7 +21,7 @@ export default function PlanningListPage() {
   const { data: plans, isLoading, error, mutate } = usePlanningList(workspace.id);
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
+    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Planejamento" description="Planos operacionais gerados automaticamente a partir de comandos confirmados — nada aqui é executado." />
 
       {isLoading ? (

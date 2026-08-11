@@ -115,7 +115,7 @@ export default function TikTokPage() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
+    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="TikTok" description="Conecte a conta do cliente e agende publicações de vídeo ou foto com descrição." />
 
       {feedback ? <Card className="mb-6 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}

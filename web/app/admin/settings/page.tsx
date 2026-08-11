@@ -70,7 +70,7 @@ export default function AdminSettingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
+    <div className="mx-auto max-w-4xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title="Configurações do AI Gateway"
         description="Gerencie flags globais e a chave da Anthropic. Alterações se aplicam sem restart."

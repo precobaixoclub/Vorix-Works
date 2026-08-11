@@ -16,7 +16,7 @@ export default function AdminDashboardPage() {
   const { data, error, isLoading } = usePlatformDashboard();
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title="Visão geral da plataforma"
         description="Números do mês corrente — receita, custo dos provedores de IA e lucro consolidado."

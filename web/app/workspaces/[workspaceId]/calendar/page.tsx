@@ -88,7 +88,7 @@ export default function CalendarPage() {
   const visibleEntries = entries ?? [];
 
   return (
-    <main className="mx-auto max-w-7xl px-6 py-8">
+    <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Calendário Editorial" description="Agendamento, recorrência, fila temporal, conflitos e operação de publicações sandbox." />
 
       <div className="mb-5 grid gap-4 md:grid-cols-4">

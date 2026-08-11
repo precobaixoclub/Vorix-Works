@@ -28,7 +28,7 @@ export async function ensurePublicationOutboxIntents(deps: PublicationOutboxInte
     const payloadReferenceId = deps.idGenerator();
     const attemptId = deps.idGenerator();
     const outboxMessageId = deps.idGenerator();
-    const credentialReferenceId = await resolveCredentialReference(deps.repository, detail, target.provider);
+    const credentialReferenceId = await resolveCredentialReference(deps.repository, detail, target.provider, candidate.content);
     await deps.repository.createAttemptWithOutbox({
       attempt: {
         id: attemptId,
@@ -81,11 +81,32 @@ export async function ensurePublicationOutboxIntents(deps: PublicationOutboxInte
   return (await deps.repository.getDetail(detail.plan.id)) ?? detail;
 }
 
-async function resolveCredentialReference(repository: PublicationRepositoryPort, detail: PublicationDetail, providerId: PublicationProvider): Promise<string | undefined> {
+async function resolveCredentialReference(repository: PublicationRepositoryPort, detail: PublicationDetail, providerId: PublicationProvider, content: Record<string, unknown>): Promise<string | undefined> {
   if (providerId === "dry_run" || providerId === "fake") return undefined;
   const references = await repository.listCredentialReferences({ tenantId: detail.plan.tenantId, workspaceId: detail.plan.workspaceId, providerId });
-  const now = Date.now();
-  const active = references.find((reference) => reference.status === "active" && (!reference.expiresAt || new Date(reference.expiresAt).getTime() > now));
+  const requestedCredentialReferenceId = extractCredentialReferenceId(content);
+  if (requestedCredentialReferenceId) {
+    const requested = references.find((reference) => reference.credentialReferenceId === requestedCredentialReferenceId && reference.status === "active");
+    if (requested) return requested.credentialReferenceId;
+  }
+
+  // OAuth access tokens can expire before the scheduled publication runs; providers with refresh
+  // support receive the reference and refresh the token during dispatch. Revoked/disabled refs are
+  // still rejected here.
+  const active = references.find((reference) => reference.status === "active");
   if (!active) throw new Error(`CREDENTIAL_REFERENCE_REQUIRED: provider "${providerId}" exige credencial ativa para publicar.`);
   return active.credentialReferenceId;
+}
+
+function extractCredentialReferenceId(content: Record<string, unknown>): string | undefined {
+  const artifacts = content.artifacts;
+  if (!Array.isArray(artifacts)) return undefined;
+  for (const artifact of artifacts) {
+    if (!artifact || typeof artifact !== "object") continue;
+    const payload = (artifact as { payload?: unknown }).payload;
+    if (!payload || typeof payload !== "object") continue;
+    const credentialReferenceId = (payload as { credentialReferenceId?: unknown }).credentialReferenceId;
+    if (typeof credentialReferenceId === "string" && credentialReferenceId.trim()) return credentialReferenceId;
+  }
+  return undefined;
 }

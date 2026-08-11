@@ -93,6 +93,34 @@ test("Outbox: PublicationAttempt + Event + PayloadReference + Outbox são criado
   assert.equal(detail.outbox[0].attemptId, detail.attempts[0].id);
 });
 
+test("Outbox: mantém credencial ativa mesmo com access token expirado para refresh no dispatch", async () => {
+  const shared = deps();
+  await shared.repository.createCredentialReference({
+    credentialReferenceId: "cred-expired-refreshable",
+    tenantId: "tenant-1",
+    workspaceId: "workspace-1",
+    providerId: "youtube",
+    status: "active",
+    scopes: ["https://www.googleapis.com/auth/youtube.upload"],
+    expiresAt: "2026-01-01T00:00:00.000Z",
+  });
+  const created = await createPublication(shared, {
+    tenantId: "tenant-1",
+    workspaceId: "workspace-1",
+    idempotencyKey: "rel-idem-expired-credential",
+    sourceArtifacts: [artifact("a-expired-credential")],
+    channels: ["youtube"],
+    mode: "real",
+    provider: "youtube",
+    policy: { requireApproval: false, approvalPolicy: "optional", allowedChannels: ["youtube"], allowedProviders: ["youtube"] },
+  });
+
+  const detail = await ensurePublicationOutboxIntents(shared, { tenantId: "tenant-1", workspaceId: "workspace-1", publicationId: created.plan.id });
+
+  assert.equal(detail.outbox.length, 1);
+  assert.equal(detail.outbox[0].credentialReferenceId, "cred-expired-refreshable");
+});
+
 test("Dispatch durável: worker faz claim, lease/fencing, provider fake publica, receipt e outbox dispatched", async () => {
   const shared = deps();
   const created = await createPublication(shared, { tenantId: "tenant-1", workspaceId: "workspace-1", idempotencyKey: "rel-idem-2", sourceArtifacts: [artifact("a2")], channels: ["instagram"], policy: { requireApproval: false, approvalPolicy: "optional" } });

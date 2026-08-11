@@ -92,6 +92,12 @@ export default function PublishPage() {
     facebook: metaOAuth?.accounts.find((a) => a.providerId === "facebook")?.displayName,
     youtube: youtubeOAuth?.accounts[0]?.displayName,
   };
+  const credentialReferenceByPlatform: Partial<Record<Platform, string>> = {
+    tiktok: tiktokOAuth?.accounts.find((a) => a.status === "active")?.credentialReferenceId,
+    instagram: metaOAuth?.accounts.find((a) => a.providerId === "instagram" && a.status === "active")?.credentialReferenceId,
+    facebook: metaOAuth?.accounts.find((a) => a.providerId === "facebook" && a.status === "active")?.credentialReferenceId,
+    youtube: youtubeOAuth?.accounts.find((a) => a.status === "active")?.credentialReferenceId,
+  };
   const anyConnected = Object.values(connectedByPlatform).some(Boolean);
   const hasStoryUnsupported = selected.has("tiktok") && placement === "story";
   const youtubeNeedsVideo = selected.has("youtube") && mediaKind !== "video";
@@ -180,6 +186,7 @@ export default function PublishPage() {
           disableDuet: tiktokDisableDuet,
           disableStitch: tiktokDisableStitch,
           autoAddMusic: tiktokAutoAddMusic,
+          credentialReferenceId: credentialReferenceByPlatform.tiktok,
         });
       }
       if (platform.id === "youtube") {
@@ -192,6 +199,7 @@ export default function PublishPage() {
           timezone: scheduledAtIso ? timezone : undefined,
           privacyStatus: youtubePrivacy,
           tags: ["Shorts"],
+          credentialReferenceId: credentialReferenceByPlatform.youtube,
         });
       }
       return scheduleMetaPost({
@@ -204,6 +212,7 @@ export default function PublishPage() {
         thumbnailUrl: thumbnailUrl.trim() || undefined,
         scheduledAt: scheduledAtIso,
         timezone: scheduledAtIso ? timezone : undefined,
+        credentialReferenceId: credentialReferenceByPlatform[platform.id],
       });
     }));
 

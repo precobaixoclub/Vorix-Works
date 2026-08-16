@@ -4,13 +4,14 @@ import {
   archiveWorkspace,
   createWorkspace,
   deactivateWorkspace,
+  getTenantCredits,
   getWorkspace,
   listWorkspaces,
   updateWorkspace,
   type WorkspaceUseCaseDeps,
 } from "../../../../application/workspace/index.js";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../../http/app-error.js";
-import { requirePermission } from "../../http/require-principal.js";
+import { requirePermission, requirePrincipal } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 
 /**
@@ -93,6 +94,15 @@ export async function registerWorkspaceRoutes(app: FastifyInstance, deps: Worksp
     );
     reply.status(201);
     return successEnvelope(workspace, request.id);
+  });
+
+  // Saldo de créditos do tenant do usuário logado — autosserviço (qualquer papel), estático antes
+  // de "/workspaces/:id" para não colidir com o parâmetro (find-my-way já resolveria certo, mas
+  // deixamos explícito pela ordem de leitura do arquivo).
+  app.get("/workspaces/credits", async (request) => {
+    const principal = requirePrincipal(request);
+    const credits = await getTenantCredits(deps, { tenantId: principal.tenantId });
+    return successEnvelope(credits ?? null, request.id);
   });
 
   app.get("/workspaces/:id", { schema: { params: ID_PARAMS_SCHEMA } }, async (request) => {

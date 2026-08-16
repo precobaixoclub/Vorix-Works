@@ -27,6 +27,14 @@ export type WorkspaceSettings = {
   defaultAspectRatio?: string;
 };
 
+export type TenantCreditsSummary = {
+  period: string;
+  monthlyCreditsQuota: number;
+  creditsExtra: number;
+  creditsConsumedThisMonth: number;
+  remainingCredits: number;
+};
+
 export type Workspace = {
   id: string;
   tenantId: string;

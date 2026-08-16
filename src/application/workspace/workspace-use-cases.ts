@@ -1,6 +1,6 @@
 import { assertValidWorkspaceTransition } from "../../domain/workspace/workspace.model.js";
 import type { Workspace, WorkspaceSettings, WorkspaceStatus } from "../../domain/workspace/workspace.model.js";
-import { getPlatformPlan } from "../../domain/platform-billing/index.js";
+import { emptyMonthlyUsage, getPlatformPlan, periodOf } from "../../domain/platform-billing/index.js";
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
 import type { PlatformBillingRepositoryPort } from "../ports/platform-billing-repository.port.js";
 
@@ -106,4 +106,36 @@ export async function archiveWorkspace(deps: WorkspaceUseCaseDeps, input: Worksp
   const workspace = await mustBelongToTenant(deps.workspaceRepository, input.id, input.tenantId);
   assertValidWorkspaceTransition(workspace.status, "archive");
   return deps.workspaceRepository.archive(input.id);
+}
+
+export type TenantCreditsSummary = {
+  period: string;
+  monthlyCreditsQuota: number;
+  creditsExtra: number;
+  creditsConsumedThisMonth: number;
+  /** Cota mensal restante + créditos avulsos ainda não usados. Nunca negativo. */
+  remainingCredits: number;
+};
+
+/** Saldo de créditos do tenant do usuário logado — autosserviço, qualquer papel pode ver o
+ * próprio saldo (só platform admin pode AJUSTAR, ver `admin.route.ts`). `undefined` quando
+ * `platformBillingRepository` não está configurado (modo noop/testes) — o front trata como
+ * "sem informação de créditos", nunca como zero. */
+export async function getTenantCredits(deps: WorkspaceUseCaseDeps, input: { tenantId: string }): Promise<TenantCreditsSummary | undefined> {
+  if (!deps.platformBillingRepository) return undefined;
+  const billing = await deps.platformBillingRepository.getTenantBilling(input.tenantId);
+  if (!billing) return undefined;
+
+  const period = periodOf(new Date());
+  const usage = (await deps.platformBillingRepository.getAiUsage({ tenantId: input.tenantId, period }))
+    ?? emptyMonthlyUsage(input.tenantId, period, new Date().toISOString());
+
+  const remainingQuota = Math.max(0, billing.monthlyCreditsQuota - usage.creditsConsumed);
+  return {
+    period,
+    monthlyCreditsQuota: billing.monthlyCreditsQuota,
+    creditsExtra: billing.creditsExtra,
+    creditsConsumedThisMonth: usage.creditsConsumed,
+    remainingCredits: remainingQuota + billing.creditsExtra,
+  };
 }

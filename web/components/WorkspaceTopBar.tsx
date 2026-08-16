@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { TenantSwitcher } from "@/features/auth/components/TenantSwitcher";
+import { useTenantCredits } from "@/features/workspace/hooks";
 import { StatusBadge } from "./StatusBadge";
 
 export function WorkspaceTopBar({ name, status }: { name: string; status: string }) {
@@ -11,6 +12,7 @@ export function WorkspaceTopBar({ name, status }: { name: string; status: string
   const { state, logout } = useAuth();
   const isPlatformAdmin = state.status === "authenticated" && state.user.isPlatformAdmin;
   const user = state.status === "authenticated" ? state.user : null;
+  const { data: credits } = useTenantCredits();
 
   return (
     <header className="flex min-h-14 shrink-0 flex-col items-stretch gap-2 border-b border-border bg-surface-raised px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -19,6 +21,14 @@ export function WorkspaceTopBar({ name, status }: { name: string; status: string
         <StatusBadge status={status} />
       </div>
       <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 sm:justify-end sm:gap-3">
+        {credits ? (
+          <span
+            className="rounded-md border border-border bg-surface-sunken px-2.5 py-1 text-xs font-medium text-ink-muted"
+            title={`Cota mensal: ${credits.monthlyCreditsQuota} · Usado este mês: ${credits.creditsConsumedThisMonth} · Extras: ${credits.creditsExtra}`}
+          >
+            {credits.remainingCredits.toLocaleString("pt-BR")} créditos
+          </span>
+        ) : null}
         <TenantSwitcher />
         {isPlatformAdmin ? (
           <Link

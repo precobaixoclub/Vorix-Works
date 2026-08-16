@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { Workspace, WorkspaceStatus } from "./types";
+import type { TenantCreditsSummary, Workspace, WorkspaceStatus } from "./types";
 
 /**
  * Única porta de entrada para dados de Workspace — todos reais, contra a API da Sprint 03
@@ -34,4 +34,9 @@ export async function deactivateWorkspace(id: string): Promise<Workspace> {
 
 export async function archiveWorkspace(id: string): Promise<Workspace> {
   return apiClient.post<Workspace>(`/v1/workspaces/${id}/archive`);
+}
+
+/** `null` quando o backend não tem billing configurado para o tenant (modo noop/testes). */
+export async function getTenantCredits(): Promise<TenantCreditsSummary | null> {
+  return apiClient.get<TenantCreditsSummary | null>("/v1/workspaces/credits");
 }

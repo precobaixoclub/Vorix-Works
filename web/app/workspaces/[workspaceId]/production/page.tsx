@@ -4,10 +4,9 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { Input, Label, Textarea } from "@/components/Field";
-import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
-import { CHANNEL_LABEL, DEFAULT_PRODUCTION_CONFIG, FORMAT_LABEL, PRODUCTION_STAGES } from "@/features/production-line/defaults";
+import { CHANNEL_LABEL, DEFAULT_PRODUCTION_CONFIG, FORMAT_LABEL } from "@/features/production-line/defaults";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
 import type { ContentBlueprint, IdeaProductionMode, PostingRule, ProductionChannel, ProductionFormat, ProductionLineConfig, ProductionWeekday, WeeklyFormatQuota } from "@/features/production-line/types";
 
@@ -34,6 +33,95 @@ const MINUTE_OPTIONS = ["00", "15", "30", "45"];
 
 type ProductionView = "dashboard" | "schedule";
 type IdeaFilter = (typeof IDEA_FILTERS)[number]["id"];
+
+const CHANNEL_SHORT: Record<ProductionChannel, string> = {
+  instagram: "IG",
+  facebook: "FB",
+  tiktok: "TT",
+  youtube: "YT",
+};
+
+function IconPlus({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+      <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconLayer({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+      <rect x="3" y="3" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconSliders({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+      <line x1="2" y1="4" x2="14" y2="4" stroke="currentColor" strokeWidth="1.4" />
+      <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" strokeWidth="1.4" />
+      <line x1="2" y1="12" x2="14" y2="12" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="6" cy="4" r="1.6" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="10" cy="8" r="1.6" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="5" cy="12" r="1.6" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function IconSearch({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+      <circle cx="7" cy="7" r="4.2" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M10.2 10.2L14 14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconWarn({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+      <path d="M8 1.5l7 12.5H1L8 1.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M8 6.2v3.3M8 11.6h.01" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconTray({ className = "h-7 w-7" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 28 28" fill="none" className={className} aria-hidden="true">
+      <path d="M4 16l3-9h14l3 9" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M4 16h6.2c.4 1.6 1.8 2.7 3.8 2.7s3.4-1.1 3.8-2.7H24v6a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 22v-6z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconFormat({ format, className = "h-3.5 w-3.5" }: { format: ProductionFormat; className?: string }) {
+  if (format === "carousel") {
+    return (
+      <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+        <rect x="1.5" y="4.5" width="9" height="9" rx="1.6" stroke="currentColor" strokeWidth="1.3" />
+        <rect x="4.5" y="1.5" width="9" height="9" rx="1.6" stroke="currentColor" strokeWidth="1.3" />
+      </svg>
+    );
+  }
+  if (format === "video") {
+    return (
+      <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+        <rect x="1.5" y="2.5" width="13" height="11" rx="2" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M6.5 5.6l4 2.4-4 2.4V5.6z" fill="currentColor" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+      <rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M3.5 11.2L6.8 8l2 2 3.7-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 function newId(prefix: string) {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return `${prefix}-${crypto.randomUUID()}`;
@@ -88,6 +176,8 @@ export default function ProductionLinePage() {
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ProductionView>("dashboard");
   const [ideaFilter, setIdeaFilter] = useState<IdeaFilter>("available");
+  const [ideaSearch, setIdeaSearch] = useState("");
+  const [formatFilter, setFormatFilter] = useState<ProductionFormat | "all">("all");
   const [draftIdea, setDraftIdea] = useState<ContentBlueprint | null>(null);
   const [ideaEditorOpen, setIdeaEditorOpen] = useState(false);
 
@@ -106,7 +196,18 @@ export default function ProductionLinePage() {
 
   const selectedBlueprint = draftIdea && selectedBlueprintId === draftIdea.id ? draftIdea : config.blueprints.find((blueprint) => blueprint.id === selectedBlueprintId) ?? config.blueprints[0];
   const selectedRule = config.postingRules.find((rule) => rule.id === selectedRuleId) ?? config.postingRules[0];
-  const visibleBlueprints = useMemo(() => config.blueprints.filter((idea) => matchesIdeaFilter(idea, ideaFilter)), [config.blueprints, ideaFilter]);
+  const visibleBlueprints = useMemo(() => {
+    const query = ideaSearch.trim().toLowerCase();
+    return config.blueprints.filter((idea) => {
+      if (!matchesIdeaFilter(idea, ideaFilter)) return false;
+      if (formatFilter !== "all" && idea.format !== formatFilter) return false;
+      if (query) {
+        const haystack = `${idea.name} ${idea.ideaText} ${idea.objective}`.toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      return true;
+    });
+  }, [config.blueprints, ideaFilter, formatFilter, ideaSearch]);
   const routineBlueprints = useMemo(() => config.blueprints.filter(isRoutineIdea), [config.blueprints]);
 
   const productionSummary = useMemo(() => {
@@ -121,12 +222,18 @@ export default function ProductionLinePage() {
     const dailyCapacity = config.postingRules.reduce((total, rule) => total + rule.maxPostsPerDay, 0);
     return { ideas, availableIdeas, usedIdeas, standaloneIdeas, pendingReview, weeklyTotal, channels: channels.size, dailyCapacity };
   }, [config]);
-  const tankByFormat = useMemo(() => FORMATS.map((format) => ({
-    format,
-    available: routineBlueprints.filter((idea) => idea.format === format && idea.status !== "used").length,
-    used: routineBlueprints.filter((idea) => idea.format === format && idea.status === "used").length,
-  })), [routineBlueprints]);
   const emptyIdeas = useMemo(() => config.blueprints.filter(isEffectivelyEmptyIdea), [config.blueprints]);
+  const formatAlerts = useMemo(() => {
+    if (!selectedRule) return [];
+    return selectedRule.weeklyMix
+      .filter((item) => scheduledQuantity(item) > 0)
+      .map((item) => ({
+        format: item.format,
+        needed: scheduledQuantity(item),
+        available: routineBlueprints.filter((idea) => idea.format === item.format && idea.status !== "used").length,
+      }))
+      .filter((row) => row.available < row.needed);
+  }, [selectedRule, routineBlueprints]);
 
   function save(next: ProductionLineConfig, options: { manual?: boolean } = {}) {
     setConfig(next);
@@ -262,27 +369,56 @@ export default function ProductionLinePage() {
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-          <Button onClick={addBlueprint}>{draftIdea ? "Continuar rascunho" : "Nova ideia"}</Button>
-          <Button variant="secondary" onClick={addStandaloneBlueprint}>Conteúdo avulso</Button>
-          <Button variant="secondary" onClick={() => setActiveView("schedule")}>Configurar rotina</Button>
-          <Button variant="ghost" onClick={() => save(DEFAULT_PRODUCTION_CONFIG)}>Restaurar padrão</Button>
+          <Button onClick={addBlueprint}><IconPlus /> {draftIdea ? "Continuar rascunho" : "Nova ideia"}</Button>
+          <Button variant="secondary" onClick={addStandaloneBlueprint}><IconLayer /> Conteúdo avulso</Button>
+          <Button variant="secondary" onClick={() => setActiveView("schedule")}><IconSliders /> Configurar rotina</Button>
         </div>
       </div>
 
-      {savedAt ? <p className="mb-4 text-xs text-ink-muted">Último salvamento: {savedAt}</p> : null}
+      <div className="mb-4 flex items-center justify-end gap-3">
+        {savedAt ? <p className="text-xs text-ink-muted">Último salvamento: {savedAt}</p> : null}
+        <button type="button" onClick={() => save(DEFAULT_PRODUCTION_CONFIG)} className="text-xs font-medium text-ink-faint hover:text-ink-muted">
+          Restaurar padrão
+        </button>
+      </div>
 
       {activeView === "dashboard" ? (
-        <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
           <Card>
             <CardHeader>
               <div>
                 <p className="text-sm font-semibold text-ink">Tanque de ideias</p>
-                <p className="text-xs text-ink-muted">Ideias da rotina entram no sorteio automático. Avulsas ficam separadas.</p>
+                <p className="text-xs text-ink-muted">Briefing para a próxima geração. Ideias da rotina entram no sorteio; avulsas ficam de fora.</p>
+              </div>
+              <div className="relative">
+                <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-faint" />
+                <input
+                  type="search"
+                  value={ideaSearch}
+                  onChange={(event) => setIdeaSearch(event.target.value)}
+                  placeholder="Buscar por nome ou descrição"
+                  className="w-56 max-w-full rounded-lg border border-border bg-surface py-2 pl-8 pr-3 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+                />
               </div>
             </CardHeader>
             <CardBody>
-              <TankSummary summary={productionSummary} byFormat={tankByFormat} />
-              <IdeaFilterTabs value={ideaFilter} onChange={changeIdeaFilter} />
+              <TankMetrics summary={productionSummary} />
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <IdeaFilterTabs value={ideaFilter} onChange={changeIdeaFilter} />
+                <label className="flex items-center gap-2 text-xs text-ink-muted">
+                  Formato
+                  <select
+                    value={formatFilter}
+                    onChange={(event) => setFormatFilter(event.target.value as ProductionFormat | "all")}
+                    className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs font-medium text-ink outline-none focus:border-accent"
+                  >
+                    <option value="all">Todos</option>
+                    {FORMATS.map((format) => (
+                      <option key={format} value={format}>{FORMAT_LABEL[format]}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <IdeaInventory
                 ideas={visibleBlueprints}
                 totalIdeas={config.blueprints.length}
@@ -297,15 +433,9 @@ export default function ProductionLinePage() {
           </Card>
 
           <aside className="space-y-4">
-            <RoutineStatusCard
-              rule={selectedRule}
-              ideas={routineBlueprints}
-              summary={productionSummary}
-              onConfigure={() => setActiveView("schedule")}
-            />
-            <ReviewQueue
-              totalPending={productionSummary.pendingReview}
-            />
+            <RoutineStatusCard rule={selectedRule} onConfigure={() => setActiveView("schedule")} />
+            <FormatAlertsCard alerts={formatAlerts} />
+            <ReviewQueue totalPending={productionSummary.pendingReview} />
           </aside>
         </section>
       ) : null}
@@ -442,6 +572,12 @@ function IdeaFormDialog({
         </header>
 
         <div className="overflow-y-auto bg-surface-raised px-4 py-4 sm:px-5">
+          {standalone ? (
+            <div className="mb-4 flex items-start gap-2.5 rounded-lg border border-blue-500/25 bg-blue-500/10 px-3.5 py-3 text-sm text-blue-300">
+              <IconLayer className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>Este conteúdo fica fora da rotina automática — não entra no sorteio semanal.</p>
+            </div>
+          ) : null}
           <BlueprintEditor
             workspaceId={workspaceId}
             blueprint={blueprint}
@@ -472,53 +608,70 @@ function IdeaFormDialog({
   );
 }
 
-function DraftIdeaActions({ canSave, onSave, onDiscard }: { canSave: boolean; onSave: () => void; onDiscard: () => void }) {
-  return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-amber-900">Rascunho de ideia</p>
-          <p className="text-xs text-amber-800">Ainda não entrou no tanque. Preencha a ideia e clique em Salvar ideia.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button disabled={!canSave} onClick={onSave}>Salvar ideia</Button>
-          <Button variant="secondary" onClick={onDiscard}>Descartar</Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RoutineStatusCard({
-  rule,
-  ideas,
-  summary,
-  onConfigure,
-}: {
-  rule?: PostingRule;
-  ideas: ContentBlueprint[];
-  summary: { availableIdeas: number; standaloneIdeas: number; pendingReview: number; weeklyTotal: number; channels: number };
-  onConfigure: () => void;
-}) {
+function RoutineStatusCard({ rule, onConfigure }: { rule?: PostingRule; onConfigure: () => void }) {
+  const activeRows = rule ? rule.weeklyMix.filter((item) => scheduledQuantity(item) > 0) : [];
   return (
     <Card className="h-fit">
       <CardHeader>
         <div>
           <p className="text-sm font-semibold text-ink">Rotina ativa</p>
-          <p className="text-xs text-ink-muted">O que entra no automático e quando sai.</p>
+          <p className="text-xs text-ink-muted">{rule?.name ?? "Nenhuma rotina configurada"}</p>
         </div>
         <Button variant="secondary" className="min-h-8 px-3 py-1.5 text-xs" onClick={onConfigure}>Configurar</Button>
       </CardHeader>
-      <CardBody className="space-y-3">
-        <div className="grid grid-cols-2 gap-2">
-          <Metric label="No tanque" value={summary.availableIdeas} />
-          <Metric label="Revisar" value={summary.pendingReview} />
-          <Metric label="Posts/semana" value={summary.weeklyTotal} />
-          <Metric label="Avulsos" value={summary.standaloneIdeas} />
-        </div>
-        {rule ? <SchedulePreview rule={rule} ideas={ideas} /> : (
+      <CardBody>
+        {rule ? (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <Metric label="Posts/semana" value={totalWeeklyPosts(rule)} />
+              <Metric label="Canais" value={rule.channels.length} />
+            </div>
+            {activeRows.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {activeRows.map((row) => (
+                  <div key={row.id} className="flex items-center justify-between gap-3 text-xs">
+                    <span className="flex items-center gap-1.5 font-medium text-ink"><IconFormat format={row.format} className="h-3.5 w-3.5 text-ink-faint" />{FORMAT_LABEL[row.format]}</span>
+                    <span className="text-ink-muted">{formatScheduleLabel(row)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-ink-muted">Nenhum formato ativo ainda.</p>
+            )}
+          </>
+        ) : (
           <div className="rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-sm text-ink-muted">
             Nenhuma rotina configurada.
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+function FormatAlertsCard({ alerts }: { alerts: { format: ProductionFormat; needed: number; available: number }[] }) {
+  return (
+    <Card className="h-fit">
+      <CardHeader>
+        <div>
+          <p className="text-sm font-semibold text-ink">Alertas do tanque</p>
+          <p className="text-xs text-ink-muted">O que precisa de atenção antes da rotina rodar.</p>
+        </div>
+      </CardHeader>
+      <CardBody>
+        {alerts.length === 0 ? (
+          <p className="text-sm text-ink-muted">Estoque em dia para todos os formatos ativos na rotina.</p>
+        ) : (
+          <div className="space-y-3">
+            {alerts.map((alert) => (
+              <div key={alert.format} className="flex items-start gap-2.5">
+                <IconWarn className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-ink">{FORMAT_LABEL[alert.format]} sem estoque suficiente</p>
+                  <p className="text-xs text-ink-muted">{alert.available} no tanque para {alert.needed} por semana.</p>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </CardBody>
@@ -536,34 +689,25 @@ function ReviewQueue({ totalPending }: { totalPending: number }) {
         </div>
       </CardHeader>
       <CardBody>
-        <div className="rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-sm text-ink-muted">
-          Nenhuma imagem, carrossel ou vídeo foi gerado ainda. Quando uma rotina ou um conteúdo avulso gerar uma peça final, ela aparece aqui para aprovação.
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-surface px-4 py-6 text-center">
+          <IconTray className="h-7 w-7 text-ink-faint" />
+          <p className="text-sm font-medium text-ink">Nada para revisar ainda</p>
+          <p className="text-xs text-ink-muted">
+            Nenhuma imagem, carrossel ou vídeo foi gerado ainda. Quando uma rotina ou um conteúdo avulso gerar uma peça final, ela aparece aqui para aprovação.
+          </p>
         </div>
       </CardBody>
     </Card>
   );
 }
 
-function TankSummary({ summary, byFormat }: { summary: { ideas: number; availableIdeas: number; usedIdeas: number; standaloneIdeas: number }; byFormat: { format: ProductionFormat; available: number; used: number }[] }) {
+function TankMetrics({ summary }: { summary: { ideas: number; availableIdeas: number; usedIdeas: number; standaloneIdeas: number } }) {
   return (
-    <div className="mb-4 grid gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(280px,0.7fr)]">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Metric label="No tanque" value={summary.availableIdeas} />
-        <Metric label="Usadas" value={summary.usedIdeas} />
-        <Metric label="Rotina" value={summary.ideas} />
-        <Metric label="Avulsas" value={summary.standaloneIdeas} />
-      </div>
-      <div className="rounded-lg border border-border bg-surface p-3">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">Falta usar por formato</p>
-        <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
-          {byFormat.map((row) => (
-            <div key={row.format} className="flex items-center justify-between gap-3 text-sm">
-              <span className="font-medium text-ink">{FORMAT_LABEL[row.format]}</span>
-              <span className="text-xs text-ink-muted">{row.available} no tanque · {row.used} usadas</span>
-            </div>
-          ))}
-        </div>
-      </div>
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <Metric label="No tanque" value={summary.availableIdeas} />
+      <Metric label="Usadas" value={summary.usedIdeas} />
+      <Metric label="Rotina" value={summary.ideas} />
+      <Metric label="Avulsas" value={summary.standaloneIdeas} />
     </div>
   );
 }
@@ -587,80 +731,67 @@ function IdeaInventory({
   onRemove: (id: string) => void;
   onCleanEmpty: () => void;
 }) {
-  const available = ideas.filter((idea) => idea.status !== "used").length;
-  const used = ideas.length - available;
-
   return (
-    <section className="mt-4 rounded-lg border border-border bg-surface-raised p-3">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-ink">Inventário do tanque</p>
-          <p className="mt-0.5 text-xs text-ink-muted">
-            Mostrando {ideas.length} de {totalIdeas} ideia(s). Use os filtros para não precisar percorrer um tanque grande.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs">
-          <span className="rounded-full bg-accent-soft px-2.5 py-1 font-medium text-accent">{available} no tanque</span>
-          <span className="rounded-full bg-surface-sunken px-2.5 py-1 font-medium text-ink-muted">{used} usadas</span>
-          <span className="rounded-full bg-surface-sunken px-2.5 py-1 font-medium text-ink-muted">{ideas.length} total</span>
-        </div>
+    <section className="mt-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-ink-muted">Mostrando {ideas.length} de {totalIdeas} ideia(s).</p>
+        {emptyCount > 0 ? (
+          <button type="button" onClick={onCleanEmpty} className="text-xs font-medium text-amber-400 hover:text-amber-300">
+            Limpar {emptyCount} ideia(s) sem descrição
+          </button>
+        ) : null}
       </div>
 
-      {emptyCount > 0 ? (
-        <div className="mt-3 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-amber-800">
-            {emptyCount} ideia(s) sem descrição foram encontradas. Elas podem ter sido criadas antes do ajuste do botão Nova ideia.
-          </p>
-          <Button variant="secondary" className="min-h-8 px-3 py-1.5 text-xs" onClick={onCleanEmpty}>
-            Limpar vazias
-          </Button>
+      <div className="mt-3 max-h-[620px] overflow-y-auto rounded-lg border border-border">
+        <div className="hidden grid-cols-[2.1fr_0.9fr_1.3fr_0.85fr_0.85fr_1.3fr] gap-3 border-b border-border bg-surface-sunken px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint sm:grid">
+          <span>Ideia</span>
+          <span>Formato</span>
+          <span>Canais</span>
+          <span>Tipo</span>
+          <span>Status</span>
+          <span className="text-right">Ações</span>
         </div>
-      ) : null}
 
-      <div className="mt-3 max-h-[640px] space-y-2 overflow-y-auto pr-1">
         {ideas.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-sm text-ink-muted">
-            O tanque ainda não tem ideias salvas.
-          </div>
-        ) : ideas.map((idea, index) => {
+          <div className="px-3 py-8 text-center text-sm text-ink-muted">O tanque ainda não tem ideias para este filtro.</div>
+        ) : ideas.map((idea) => {
           const selected = selectedId === idea.id;
           const preview = idea.ideaText.trim() || idea.objective.trim() || "Sem descrição preenchida.";
-          const referenceCount = idea.sourceLinks.length + idea.referenceImages.length;
           return (
-            <article
+            <div
               key={idea.id}
-              className={`rounded-lg border p-3 transition-colors ${selected ? "border-accent bg-accent-soft" : "border-border bg-surface"}`}
+              className={`grid grid-cols-1 gap-2 border-b border-border px-3 py-3 last:border-b-0 sm:grid-cols-[2.1fr_0.9fr_1.3fr_0.85fr_0.85fr_1.3fr] sm:items-center sm:gap-3 ${selected ? "bg-accent-soft" : "hover:bg-surface-sunken"}`}
             >
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] font-semibold text-ink-muted">#{index + 1}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${idea.status === "used" ? "bg-surface-sunken text-ink-muted" : "bg-emerald-50 text-emerald-700"}`}>
-                      {idea.status === "used" ? "usada" : "no tanque"}
-                    </span>
-                    <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] font-semibold text-ink-muted">
-                      {isStandaloneIdea(idea) ? "avulso" : "rotina"}
-                    </span>
-                    <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] font-semibold text-ink-muted">{FORMAT_LABEL[idea.format]}</span>
-                    {referenceCount > 0 ? (
-                      <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] font-semibold text-ink-muted">{referenceCount} referência(s)</span>
-                    ) : null}
-                  </div>
-                  <p className="mt-2 truncate text-sm font-semibold text-ink">{idea.name.trim() || "Ideia sem nome"}</p>
-                  <p className="mt-1 line-clamp-2 text-sm text-ink-muted">{preview}</p>
-                  <p className="mt-1 text-xs text-ink-muted">{idea.channels.map((channel) => CHANNEL_LABEL[channel]).join(", ")}</p>
-                </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  <Button className="min-h-8 px-3 py-1.5 text-xs" onClick={() => onOpen(idea.id)}>Abrir</Button>
-                  <Button variant="secondary" className="min-h-8 px-3 py-1.5 text-xs" onClick={() => onToggleStatus(idea)}>
-                    {idea.status === "used" ? "Voltar ao tanque" : "Marcar usada"}
-                  </Button>
-                  <Button variant="danger" className="min-h-8 px-3 py-1.5 text-xs" onClick={() => onRemove(idea.id)}>
-                    Remover
-                  </Button>
-                </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-ink">{idea.name.trim() || "Ideia sem nome"}</p>
+                <p className="mt-0.5 line-clamp-1 text-xs text-ink-muted">{preview}</p>
               </div>
-            </article>
+              <div className="flex items-center gap-1.5 text-xs text-ink-muted">
+                <IconFormat format={idea.format} className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
+                {FORMAT_LABEL[idea.format]}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {idea.channels.map((channel) => (
+                  <span key={channel} title={CHANNEL_LABEL[channel]} className="flex h-5 w-5 items-center justify-center rounded-md border border-border bg-surface-sunken font-mono text-[9px] font-bold text-ink-faint">
+                    {CHANNEL_SHORT[channel]}
+                  </span>
+                ))}
+              </div>
+              <span className="inline-flex w-fit items-center rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-ink-muted">
+                {isStandaloneIdea(idea) ? "avulsa" : "rotina"}
+              </span>
+              <span className="inline-flex w-fit items-center gap-1.5 text-[11px] font-medium text-ink-muted">
+                <span className={`h-1.5 w-1.5 rounded-full ${idea.status === "used" ? "bg-ink-faint" : "bg-accent"}`} />
+                {idea.status === "used" ? "usada" : "no tanque"}
+              </span>
+              <div className="flex flex-wrap justify-start gap-1.5 sm:justify-end">
+                <Button className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onOpen(idea.id)}>Abrir</Button>
+                <Button variant="ghost" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onToggleStatus(idea)}>
+                  {idea.status === "used" ? "Voltar" : "Marcar usada"}
+                </Button>
+                <Button variant="danger" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onRemove(idea.id)}>Remover</Button>
+              </div>
+            </div>
           );
         })}
       </div>
@@ -848,9 +979,12 @@ function WeeklyMixEditor({ rule, ideas, onChange }: { rule: PostingRule; ideas: 
                 }`}
               >
                 <span className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold text-ink">{FORMAT_LABEL[item.format]}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${enabled ? "bg-ink text-surface" : "border border-border text-ink-muted"}`}>
-                    {enabled ? "✓ Ativo" : "Desligado"}
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-ink"><IconFormat format={item.format} className="h-3.5 w-3.5 text-ink-faint" />{FORMAT_LABEL[item.format]}</span>
+                  <span className="flex items-center gap-1.5">
+                    {enabled && available < scheduledQuantity(item) ? <IconWarn className="h-3.5 w-3.5 text-amber-400" /> : null}
+                    <span className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${enabled ? "bg-accent" : "border border-border bg-surface-sunken"}`}>
+                      <span className={`absolute h-3 w-3 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-3.5" : "translate-x-0.5"}`} />
+                    </span>
                   </span>
                 </span>
                 <span className="mt-2 block text-xs text-ink-muted">
@@ -911,7 +1045,14 @@ function FormatSchedulePanel({
     <div className="rounded-lg border border-border bg-surface-raised p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-sm font-semibold text-ink">Configurar {FORMAT_LABEL[item.format].toLowerCase()}</p>
+          <p className="flex items-center gap-2 text-sm font-semibold text-ink">
+            Configurar {FORMAT_LABEL[item.format].toLowerCase()}
+            {!hasEnough ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                <IconWarn className="h-2.5 w-2.5" /> faltam ideias
+              </span>
+            ) : null}
+          </p>
           <p className="mt-0.5 text-xs text-ink-muted">
             {quantity} por semana · {available} no tanque · {used} usadas
           </p>
@@ -1215,97 +1356,6 @@ function hourOptions(currentTime: string): string[] {
 function minuteOptions(currentTime: string): string[] {
   const current = timePart(currentTime, "minute");
   return MINUTE_OPTIONS.includes(current) ? MINUTE_OPTIONS : [current, ...MINUTE_OPTIONS].sort();
-}
-
-function ReviewPanel({ summary, config, onBackToContent, onBackToSchedule }: { summary: { ideas: number; availableIdeas: number; usedIdeas: number; weeklyTotal: number; channels: number; dailyCapacity: number }; config: ProductionLineConfig; onBackToContent: () => void; onBackToSchedule: () => void }) {
-  const firstRule = config.postingRules[0];
-  const ideasByFormat = FORMATS.map((format) => ({
-    format,
-    available: config.blueprints.filter((idea) => idea.format === format && idea.status !== "used").length,
-    used: config.blueprints.filter((idea) => idea.format === format && idea.status === "used").length,
-    mix: firstRule?.weeklyMix.find((item) => item.format === format),
-  }));
-  return (
-    <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(320px,0.7fr)]">
-      <div className="space-y-4">
-        <Card>
-          <CardHeader>
-            <div>
-              <p className="text-sm font-semibold text-ink">Revisão e aprovação</p>
-              <p className="text-xs text-ink-muted">Confira se o começo, meio e fim estão corretos.</p>
-            </div>
-            <StatusBadge status="active" />
-          </CardHeader>
-          <CardBody>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <Metric label="Ideias no tanque" value={summary.availableIdeas} />
-              <Metric label="Ideias usadas" value={summary.usedIdeas} />
-              <Metric label="Posts/semana" value={summary.weeklyTotal} />
-              <Metric label="Canais" value={summary.channels} />
-            </div>
-
-            <div className="mt-4 grid gap-3 lg:grid-cols-3">
-              <SummaryBlock title="Começo" text={`${summary.availableIdeas} ideias disponíveis para sorteio automático.`} />
-              <SummaryBlock title="Meio" text={`${summary.weeklyTotal} posts por semana seguindo o padrão por formato.`} />
-              <SummaryBlock title="Fim" text={`${firstRule?.times.join(", ") || "sem horário"} com publicação ${firstRule?.publishMode === "auto" ? "automática" : "manual"}.`} />
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={onBackToContent}>Editar conteúdo</Button>
-              <Button variant="secondary" onClick={onBackToSchedule}>Editar agenda</Button>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader><p className="text-sm font-semibold text-ink">Tanque por formato</p></CardHeader>
-          <CardBody className="space-y-2">
-            {ideasByFormat.map((row) => (
-              <div key={row.format} className="rounded-lg border border-border bg-surface p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-ink">{FORMAT_LABEL[row.format]}</p>
-                  <span className="text-xs text-ink-muted">{row.mix ? scheduledQuantity(row.mix) : 0}/semana</span>
-                </div>
-                <p className="mt-1 text-xs text-ink-muted">{row.available} disponíveis · {row.used} usadas</p>
-                {row.mix ? <p className="mt-1 text-xs text-ink-muted">{formatScheduleLabel(row.mix)}</p> : null}
-              </div>
-            ))}
-          </CardBody>
-        </Card>
-      </div>
-
-      <Card className="h-fit">
-        <CardHeader>
-          <div>
-            <p className="text-sm font-semibold text-ink">Skills trabalhando</p>
-            <p className="text-xs text-ink-muted">O operador não configura isso; é o bastidor da linha.</p>
-          </div>
-        </CardHeader>
-        <CardBody>
-          <div className="space-y-2">
-            {PRODUCTION_STAGES.map((stage, index) => (
-              <div key={stage.id} className="flex items-start gap-3 rounded-lg border border-border bg-surface px-3 py-2">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-sunken text-xs font-semibold text-ink-muted">{index + 1}</span>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-ink">{stage.name} · {stage.role}</p>
-                  <p className="text-xs text-ink-muted">{stage.outputs}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardBody>
-      </Card>
-    </section>
-  );
-}
-
-function SummaryBlock({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-surface px-3 py-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-accent">{title}</p>
-      <p className="mt-1 text-sm text-ink-muted">{text}</p>
-    </div>
-  );
 }
 
 function Metric({ label, value }: { label: string; value: number }) {

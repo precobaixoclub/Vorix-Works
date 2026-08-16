@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PlanningGraph } from "@/features/planning/components/PlanningGraph";
@@ -62,6 +63,18 @@ export default function PlanningDetailPage() {
         title={planning.planningTemplate}
         description={`Estratégia ${planning.plannerStrategy} · versão ${planning.plannerVersion} · grafo v${planning.graphVersion}`}
         actions={<StatusBadge status={planning.status} />}
+      />
+
+      <ScreenGuide
+        title="Como interpretar este plano"
+        description="Este detalhe mostra o roteiro que a automação preparou antes de gerar ou publicar conteúdo."
+        items={[
+          "Relatório de validação mostra avisos e erros.",
+          "Grafo mostra a ordem das tarefas.",
+          "Tarefas mostram o que cada etapa espera produzir.",
+          "Decisões explicam por que o sistema escolheu esse caminho.",
+        ]}
+        aside={<p>Se houver erro de validação, ajuste a regra em Produção antes de seguir.</p>}
       />
 
       {issues.length > 0 ? (

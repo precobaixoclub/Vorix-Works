@@ -7,6 +7,7 @@ import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { approvePublication, cancelPublication, publishPublication, reconcilePublication, reprocessPublicationDeadLetter, retryPublication, runPublicationWorker } from "@/features/publication/api";
@@ -59,7 +60,19 @@ export default function PublicationDetailPage() {
       <PageHeader
         title={detail.plan.id}
         description={`Criado em ${formatDateTime(detail.plan.createdAt)} · trace ${detail.plan.traceId}`}
-        actions={<div className="flex items-center gap-2"><span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">{detail.plan.mode === "dry_run" ? "Simulação" : "Real"}</span><StatusBadge status={detail.plan.state} /></div>}
+        actions={<div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">{detail.plan.mode === "dry_run" ? "Simulação" : "Real"}</span><StatusBadge status={detail.plan.state} /></div>}
+      />
+
+      <ScreenGuide
+        title="Investigação de publicação"
+        description="Esta é uma tela técnica para corrigir uma postagem específica quando ela não saiu como esperado."
+        items={[
+          "Aprovar libera uma publicação em rascunho.",
+          "Publicar via outbox envia pelo fluxo normal.",
+          "Repetir tenta novamente depois de uma falha.",
+          "Reconciliar busca o status real no provedor.",
+        ]}
+        aside={<p>Para criar post novo, use Publicar. Para ver resultados gerais, use Postagens Publicadas.</p>}
       />
 
       <div className="mb-6 flex flex-wrap gap-2">
@@ -92,7 +105,7 @@ export default function PublicationDetailPage() {
         <Card>
           <CardHeader><p className="text-sm font-medium text-ink">Destinos</p></CardHeader>
           <CardBody className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[680px] text-left text-sm">
               <thead><tr className="border-b border-border text-xs text-ink-muted"><th className="py-2 pr-3">Canal</th><th className="py-2 pr-3">Provedor</th><th className="py-2 pr-3">Estado</th></tr></thead>
               <tbody>{detail.targets.map((target) => <tr key={target.id} className="border-b border-border last:border-0"><td className="py-2 pr-3">{target.channel}</td><td className="py-2 pr-3">{target.provider}</td><td className="py-2 pr-3"><StatusBadge status={target.status} /></td></tr>)}</tbody>
             </table>

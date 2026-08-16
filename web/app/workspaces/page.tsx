@@ -7,6 +7,7 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { RequireAuth } from "@/components/RequireAuth";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { useAuth } from "@/contexts/auth-context";
 import { CreateWorkspaceModal } from "@/features/workspace/components/CreateWorkspaceModal";
@@ -28,16 +29,36 @@ function WorkspacesPageContent() {
   const [isCreating, setIsCreating] = useState(false);
   const [editingWorkspace, setEditingWorkspace] = useState<Workspace | undefined>();
   const router = useRouter();
-  const { state } = useAuth();
+  const { state, logout } = useAuth();
   const isPlatformAdmin = state.status === "authenticated" && state.user.isPlatformAdmin;
+  const user = state.status === "authenticated" ? state.user : null;
 
   return (
     <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-10">
+      {user ? (
+        <div className="mb-5 flex flex-col gap-3 rounded-xl border border-border bg-surface-raised p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 text-sm">
+            <div className="font-medium text-ink">Logado como {user.name}</div>
+            <div className="truncate text-xs text-ink-muted">{user.email}</div>
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              await logout();
+              router.push("/login");
+            }}
+            className="min-h-9 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface-sunken"
+          >
+            Sair
+          </button>
+        </div>
+      ) : null}
+
       <PageHeader
         title="Espaços de Trabalho"
         description="Cada Espaço de Trabalho é uma empresa, marca ou cliente — o centro de tudo no Vorix."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             {isPlatformAdmin ? (
               <Link
                 href="/admin"
@@ -49,6 +70,18 @@ function WorkspacesPageContent() {
             <Button onClick={() => setIsCreating(true)}>+ Novo Espaço de Trabalho</Button>
           </div>
         }
+      />
+
+      <ScreenGuide
+        title="Por onde começar"
+        description="Escolha o espaço da marca que você quer operar. Tudo dentro dele fica separado das outras marcas."
+        items={[
+          "Crie um espaço para cada cliente ou marca.",
+          "Entre no espaço para conectar redes sociais.",
+          "Configure produção automática dentro do espaço.",
+          "Use o painel administrativo só para conta, plano e chaves.",
+        ]}
+        aside={<p>O botão Sair fica no topo desta tela caso precise trocar de usuário.</p>}
       />
 
       {isLoading ? (
@@ -63,7 +96,7 @@ function WorkspacesPageContent() {
       ) : !workspaces || workspaces.length === 0 ? (
         <EmptyState
           title="Nenhum espaço de trabalho ainda"
-          description="Crie o primeiro espaço de trabalho para começar a organizar campanhas, conversas e ativos."
+          description="Crie o primeiro espaço de trabalho para organizar campanhas, produção e ativos."
           action={<Button onClick={() => setIsCreating(true)}>+ Novo Espaço de Trabalho</Button>}
         />
       ) : (

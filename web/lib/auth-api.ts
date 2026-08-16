@@ -55,11 +55,13 @@ export async function apiRefresh(): Promise<RefreshResult> {
 
 export async function apiLogout(): Promise<void> {
   const csrfToken = readCsrfCookie();
-  await fetch(`${getApiBaseUrl()}/v1/auth/logout`, {
+  const request = fetch(`${getApiBaseUrl()}/v1/auth/logout`, {
     method: "POST",
     credentials: "include",
+    keepalive: true,
     headers: csrfToken ? { "X-CSRF-Token": csrfToken } : {},
   }).catch(() => undefined);
+  await Promise.race([request, new Promise((resolve) => setTimeout(resolve, 2500))]);
 }
 
 export type SignupInput = {

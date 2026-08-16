@@ -7,6 +7,7 @@ import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { ProgressivePanel, ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -19,6 +20,7 @@ export default function ProvidersPage() {
   const workspace = useCurrentWorkspace();
   const [selectedProviderId, setSelectedProviderId] = useState<string | undefined>();
   const [busy, setBusy] = useState<string | undefined>();
+  const [eventsOpen, setEventsOpen] = useState(false);
   const { data: providers, isLoading: isLoadingProviders, error: providersError, mutate: mutateProviders } = useProviders();
   const selected = providers?.find((provider) => provider.providerId === selectedProviderId) ?? providers?.find((provider) => provider.providerId === "meta_pages_sandbox") ?? providers?.[0];
   const { data: health } = useProviderHealth(selected?.providerId, workspace.id);
@@ -67,7 +69,19 @@ export default function ProvidersPage() {
 
   return (
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Provedores" description="Registro multiprovedor, OAuth, webhooks, credenciais, saúde e sincronização de publicação." />
+      <PageHeader title="Provedores" description="Painel técnico das integrações que publicam, recebem retorno e sincronizam status." />
+
+      <ScreenGuide
+        title="Tela de diagnóstico"
+        description="Para conectar contas, use Conexões. Aqui você confere se cada provedor está saudável."
+        items={[
+          "Escolha um provedor na lista da esquerda.",
+          "Veja se credenciais e webhooks estão saudáveis.",
+          "Rode sincronização quando o status não atualizar.",
+          "Desconecte apenas se precisar refazer a autorização.",
+        ]}
+        aside={<p>Os nomes internos aparecem para facilitar suporte. No uso normal, basta observar o status e os avisos.</p>}
+      />
 
       <div className="mb-6 grid gap-4 md:grid-cols-4">
         <Card className="p-4"><p className="text-xs text-ink-muted">Provedores</p><p className="text-2xl font-semibold text-ink">{providers?.length ?? 0}</p></Card>
@@ -133,21 +147,29 @@ export default function ProvidersPage() {
               </Card>
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card className="p-4">
-                <p className="mb-3 text-sm font-medium text-ink">Webhooks recentes</p>
-                <EventList events={(webhooks?.events ?? []).map((event) => ({ id: event.id, title: event.status, detail: `${event.providerId} · ${event.rejectionReason ?? event.rawPayloadDigest.slice(0, 12)} · ${formatDateTime(event.receivedAt)}`, status: event.status }))} />
-              </Card>
-              <Card className="p-4">
-                <p className="mb-3 text-sm font-medium text-ink">Eventos normalizados</p>
-                <EventList events={(webhooks?.normalized ?? []).map((event) => ({ id: event.id, title: event.type, detail: `${event.publicationId ?? "sem publication"} · ${event.externalStatus ?? "sem status"} · ${formatDateTime(event.createdAt)}`, status: event.status }))} />
-              </Card>
-            </div>
+            <ProgressivePanel
+              title="Eventos técnicos"
+              description="Webhooks, eventos normalizados e sincronização. Abra para investigar erro de publicação."
+              open={eventsOpen}
+              onToggle={() => setEventsOpen(!eventsOpen)}
+              badge={(webhooks?.events.length ?? 0) + (sync?.events.length ?? 0)}
+            >
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Card className="p-4">
+                  <p className="mb-3 text-sm font-medium text-ink">Webhooks recentes</p>
+                  <EventList events={(webhooks?.events ?? []).map((event) => ({ id: event.id, title: event.status, detail: `${event.providerId} · ${event.rejectionReason ?? event.rawPayloadDigest.slice(0, 12)} · ${formatDateTime(event.receivedAt)}`, status: event.status }))} />
+                </Card>
+                <Card className="p-4">
+                  <p className="mb-3 text-sm font-medium text-ink">Eventos normalizados</p>
+                  <EventList events={(webhooks?.normalized ?? []).map((event) => ({ id: event.id, title: event.type, detail: `${event.publicationId ?? "sem publication"} · ${event.externalStatus ?? "sem status"} · ${formatDateTime(event.createdAt)}`, status: event.status }))} />
+                </Card>
+              </div>
 
-            <Card className="p-4">
-              <p className="mb-3 text-sm font-medium text-ink">Sincronização</p>
-              <EventList events={(sync?.events ?? []).map((event) => ({ id: event.id, title: event.safeMessage, detail: `${event.providerId} · ${event.publicationId ?? "sem publication"} · ${formatDateTime(event.createdAt)}`, status: event.status }))} />
-            </Card>
+              <Card className="mt-4 p-4">
+                <p className="mb-3 text-sm font-medium text-ink">Sincronização</p>
+                <EventList events={(sync?.events ?? []).map((event) => ({ id: event.id, title: event.safeMessage, detail: `${event.providerId} · ${event.publicationId ?? "sem publication"} · ${formatDateTime(event.createdAt)}`, status: event.status }))} />
+              </Card>
+            </ProgressivePanel>
           </div>
         )}
       </div>

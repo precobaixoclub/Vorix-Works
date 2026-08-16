@@ -4,17 +4,13 @@ import type { RuntimeContext } from "../types";
 const ID_LABEL: Record<string, string> = {
   tenantId: "Organização",
   workspaceId: "Espaço de Trabalho",
-  conversationId: "Conversa",
+  conversationId: "Fluxo",
   briefingId: "Briefing",
   preparedCommandId: "Comando Preparado",
   planningId: "Planejamento",
 };
 
-/** Mostra só identificadores (nunca entidades completas persistidas — decisão obrigatória da
- * Sprint 10) e a versão resolvida do Planning de origem, que o Runtime já precisa ler para
- * existir. Nenhum campo de usuário: nenhum identificador de usuário existe em nenhum ponto da
- * cadeia (Conversation/Briefing/PreparedCommand/Planning) — não é uma omissão, é honestidade
- * sobre o que o sistema de fato sabe. */
+/** Mostra só identificadores de origem e a versão resolvida do planejamento que alimentou a execução. */
 export function RuntimeContextPanel({ context }: { context: RuntimeContext }) {
   return (
     <div className="flex flex-col gap-4">

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { fetchPlatformAiSettings, updatePlatformAiSettings, type PlatformAiSettingsPublic } from "@/features/platform-admin/ai-settings-api";
 
@@ -76,6 +77,18 @@ export default function AdminSettingsPage() {
         description="Gerencie flags globais e a chave da Anthropic. Alterações se aplicam sem restart."
       />
 
+      <ScreenGuide
+        title="O que mexer aqui"
+        description="Esta tela controla a IA de texto usada para leitura de briefing e automações internas."
+        items={[
+          "Ligue o AI Gateway para permitir chamadas reais de IA.",
+          "Ligue extração de briefing se quiser preencher dados com IA.",
+          "Cole a chave Anthropic quando usar Claude.",
+          "Salve e aguarde até 60 segundos para aplicar.",
+        ]}
+        aside={<p>OpenAI e Gemini ficam na tela Chaves OpenAI/Gemini.</p>}
+      />
+
       {loading ? (
         <div className="flex items-center gap-2 py-14 text-sm text-ink-muted">
           <Spinner className="h-4 w-4" /> Carregando…
@@ -112,7 +125,7 @@ export default function AdminSettingsPage() {
                 />
                 <span>
                   <span className="font-medium">Extração de briefing por IA</span>
-                  <span className="ml-1 text-ink-muted">— usa IA para preencher campos de briefing a partir da conversa.</span>
+                  <span className="ml-1 text-ink-muted">— usa IA para preencher campos de briefing a partir dos dados da produção.</span>
                 </span>
               </label>
             </CardBody>

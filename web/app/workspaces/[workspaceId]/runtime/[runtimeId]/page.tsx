@@ -7,6 +7,7 @@ import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RuntimeBindingGraph } from "@/features/runtime/components/RuntimeBindingGraph";
@@ -92,16 +93,28 @@ export default function RuntimeDetailPage() {
         title={runtimePlan.translationTemplate}
         description={`Estratégia ${runtimePlan.translatorStrategy} · versão ${runtimePlan.translatorVersion} · schema v${runtimePlan.runtimeSchemaVersion}`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={runtimePlan.status} />
             <Button disabled={runtimePlan.status !== "validated" || isCreatingRun} onClick={handleCreateDryRun}>
-              Criar dry run
+              Criar simulação
             </Button>
             <Button variant="secondary" disabled={runtimePlan.status !== "validated" || isCreatingRun} onClick={handleCreateRealExecution}>
-              Criar real execution
+              Criar execução real
             </Button>
           </div>
         }
+      />
+
+      <ScreenGuide
+        title="Antes de executar"
+        description="Use esta tela para transformar um plano validado em simulação ou execução real."
+        items={[
+          "Confira se o status está validado.",
+          "Crie simulação para testar sem publicar.",
+          "Crie execução real só quando estiver pronto.",
+          "Revise contexto, contratos e tarefas antes de iniciar.",
+        ]}
+        aside={<p>Simulação é o caminho mais seguro para testar uma regra nova.</p>}
       />
 
       <Card className="mb-6">

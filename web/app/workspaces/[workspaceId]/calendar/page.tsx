@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label } from "@/components/Field";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useProviders } from "@/features/providers/hooks";
@@ -89,7 +90,19 @@ export default function CalendarPage() {
 
   return (
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Calendário Editorial" description="Agendamento, recorrência, fila temporal, conflitos e operação de publicações sandbox." />
+      <PageHeader title="Calendário Editorial" description="Acompanhe o que está agendado, publicado, cancelado ou com falha." />
+
+      <ScreenGuide
+        title="Quando usar"
+        description="Use esta tela para conferir datas e resolver pendências. Para criar a linha automática, use Produção."
+        items={[
+          "Troque entre mês, semana e dia.",
+          "Filtre por rede ou status.",
+          "Clique em um item do calendário para ver detalhes.",
+          "Use processar pendentes somente se a fila estiver parada.",
+        ]}
+        aside={<p>Campos com ID são de diagnóstico. Normalmente o próprio sistema preenche esses dados quando cria uma publicação.</p>}
+      />
 
       <div className="mb-5 grid gap-4 md:grid-cols-4">
         <Card className="p-4"><p className="text-xs text-ink-muted">Agendamentos ativos</p><p className="text-2xl font-semibold text-ink">{health?.metrics.schedulesActiveTotal ?? 0}</p></Card>

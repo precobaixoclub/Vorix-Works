@@ -10,7 +10,7 @@ type NavItem = { href: string; label: string; icon: string };
 
 const MAIN_NAV: readonly NavItem[] = [
   { href: "", label: "Início", icon: "◆" },
-  { href: "/chat", label: "Chat", icon: "💬" },
+  { href: "/production", label: "Produção", icon: "▤" },
   { href: "/connections", label: "Conexões", icon: "🔗" },
   { href: "/publish", label: "Publicar", icon: "🚀" },
   { href: "/assets", label: "Materiais", icon: "📂" },

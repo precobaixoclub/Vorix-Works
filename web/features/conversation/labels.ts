@@ -8,7 +8,7 @@ export const INTENT_LABEL: Record<UserIntentType, string> = {
   query_assets: "Consultar Ativos",
   query_knowledge: "Consultar Conhecimento",
   start_briefing: "Iniciar briefing",
-  free_chat: "Conversa livre",
+  free_chat: "Fluxo livre",
   unknown: "Não identificada",
 };
 

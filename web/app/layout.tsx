@@ -8,6 +8,9 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 export const metadata: Metadata = {
   title: "Vorix",
   description: "Experiência de Espaço de Trabalho — a plataforma de Marketing com IA da Vorix.",
+  other: {
+    "facebook-domain-verification": "0slbgshopmsabjin5tk6xt2ylbi4eg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

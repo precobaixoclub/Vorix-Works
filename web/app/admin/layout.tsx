@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { RequirePlatformAdmin } from "@/components/RequirePlatformAdmin";
 import { useAuth } from "@/contexts/auth-context";
@@ -22,6 +22,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
 function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { state, logout } = useAuth();
   const user = state.status === "authenticated" ? state.user : null;
 
@@ -38,9 +39,25 @@ function AdminShell({ children }: { children: ReactNode }) {
             <div className="text-[11px] uppercase tracking-wider text-ink-muted">Painel</div>
             <div className="truncate text-sm font-semibold text-ink">Admin da Plataforma</div>
           </div>
-          <Link href="/workspaces" className="shrink-0 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-surface-sunken">
-            Vorix
-          </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link href="/workspaces" className="rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-surface-sunken">
+              Vorix
+            </Link>
+            <button
+              type="button"
+              onClick={async () => {
+                await logout();
+                router.push("/login");
+              }}
+              className="rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-surface-sunken"
+            >
+              Sair
+            </button>
+          </div>
+        </div>
+        <div className="mb-3 min-w-0 rounded-md bg-surface-sunken px-2.5 py-2 text-xs">
+          <div className="truncate font-medium text-ink">{user?.name ?? "—"}</div>
+          <div className="truncate text-ink-muted">{user?.email}</div>
         </div>
         <nav className="grid grid-cols-2 gap-2 text-xs">
           <SidebarLink href="/admin" active={isActive("/admin") && pathname === "/admin"}>
@@ -50,7 +67,7 @@ function AdminShell({ children }: { children: ReactNode }) {
             Contas
           </SidebarLink>
           <SidebarLink href="/admin/ai-providers" active={isActive("/admin/ai-providers")}>
-            IA
+            Chaves IA
           </SidebarLink>
           <SidebarLink href="/admin/settings" active={isActive("/admin/settings")}>
             Configurações
@@ -70,7 +87,7 @@ function AdminShell({ children }: { children: ReactNode }) {
             Contas de clientes
           </SidebarLink>
           <SidebarLink href="/admin/ai-providers" active={isActive("/admin/ai-providers")}>
-            Provedores de IA
+            Chaves OpenAI/Gemini
           </SidebarLink>
           <SidebarLink href="/admin/settings" active={isActive("/admin/settings")}>
             Configurações (Anthropic)
@@ -87,7 +104,10 @@ function AdminShell({ children }: { children: ReactNode }) {
           </Link>
           <button
             type="button"
-            onClick={() => void logout()}
+            onClick={async () => {
+              await logout();
+              router.push("/login");
+            }}
             className="w-full rounded-md border border-border px-2.5 py-1.5 text-center text-ink hover:bg-surface-sunken"
           >
             Sair

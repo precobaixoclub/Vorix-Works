@@ -5,6 +5,7 @@ import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -22,7 +23,19 @@ export default function RuntimeListPage() {
 
   return (
     <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Runtime" description="Planos traduzidos e validados a partir de Plannings prontos — nada aqui é executado." />
+      <PageHeader title="Runtime" description="Bastidor técnico da linha de produção: mostra planos preparados pelo sistema antes da execução." />
+
+      <ScreenGuide
+        title="Tela de bastidor"
+        description="Você não precisa usar esta tela no fluxo normal. Ela existe para conferir se a automação preparou tudo corretamente."
+        items={[
+          "Produção cria as regras.",
+          "Planejamento transforma regras em plano.",
+          "Runtime valida o plano antes de executar.",
+          "Execuções mostra o teste ou processamento final.",
+        ]}
+        aside={<p>Se a lista estiver vazia, volte em Produção e crie uma linha ou aguarde a automação preparar o próximo lote.</p>}
+      />
 
       {isLoading ? (
         <div className="flex justify-center py-14">
@@ -33,34 +46,23 @@ export default function RuntimeListPage() {
       ) : !runtimes || runtimes.length === 0 ? (
         <EmptyState title="Nenhum runtime ainda" description="Um runtime nasce automaticamente quando um plano de campanha fica pronto." />
       ) : (
-        <Card className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-border text-xs text-ink-muted">
-                <th className="px-4 py-3 font-medium">Template de tradução</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Estratégia</th>
-                <th className="px-4 py-3 font-medium">Atualizado em</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runtimes.map((runtime) => (
-                <tr key={runtime.id} className="border-b border-border last:border-0">
-                  <td className="px-4 py-3 font-medium text-ink">
-                    <Link href={`/workspaces/${workspace.id}/runtime/${runtime.id}`} className="hover:text-accent">
-                      {runtime.translationTemplate}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={runtime.status} />
-                  </td>
-                  <td className="px-4 py-3 text-ink-muted">{runtime.translatorStrategy}</td>
-                  <td className="px-4 py-3 text-ink-muted">{formatDateTime(runtime.updatedAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+        <div className="grid gap-3">
+          {runtimes.map((runtime) => (
+            <Card key={runtime.id} className="p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="mb-2"><StatusBadge status={runtime.status} /></div>
+                  <p className="break-words text-sm font-semibold text-ink">{runtime.translationTemplate}</p>
+                  <p className="mt-1 text-sm text-ink-muted">{runtime.translatorStrategy}</p>
+                  <p className="mt-1 text-xs text-ink-muted">Atualizado em {formatDateTime(runtime.updatedAt)}</p>
+                </div>
+                <Link href={`/workspaces/${workspace.id}/runtime/${runtime.id}`} className="inline-flex min-h-10 items-center justify-center rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white hover:bg-accent-hover">
+                  Abrir runtime
+                </Link>
+              </div>
+            </Card>
+          ))}
+        </div>
       )}
     </main>
   );

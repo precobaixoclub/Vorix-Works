@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label } from "@/components/Field";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -53,7 +54,19 @@ export default function AnalyticsPage() {
 
   return (
     <main className="px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Análises" description="KPIs editoriais, operacionais, publicação, calendário, insights e qualidade de dados." />
+      <PageHeader title="Análises" description="Veja resultados, gargalos e alertas das publicações sem precisar abrir relatórios técnicos." />
+
+      <ScreenGuide
+        title="Como ler esta tela"
+        description="Comece pela Visão Geral. Use as outras abas só quando quiser investigar um ponto específico."
+        items={[
+          "Escolha o período no topo.",
+          "Use Visão Geral para entender o resultado rápido.",
+          "Abra Publicações, Calendário ou Execução quando houver queda ou falha.",
+          "Use Alertas e Qualidade para saber o que precisa de ação.",
+        ]}
+        aside={<p>CSV e JSON são exportações. Se você só quer acompanhar desempenho, não precisa mexer neles.</p>}
+      />
 
       <div className="mb-5 grid gap-3 md:grid-cols-[220px_220px_1fr]">
         <div>

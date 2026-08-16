@@ -5,6 +5,7 @@ import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -22,7 +23,19 @@ export default function PlanningListPage() {
 
   return (
     <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Planejamento" description="Planos operacionais gerados automaticamente a partir de comandos confirmados — nada aqui é executado." />
+      <PageHeader title="Planejamento" description="Planos criados automaticamente a partir das regras da linha de produção." />
+
+      <ScreenGuide
+        title="Tela de acompanhamento"
+        description="Aqui você vê o que o sistema planejou. Para configurar o que deve ser criado, use Produção."
+        items={[
+          "Cada linha representa um plano gerado.",
+          "Status pronto indica que pode seguir para runtime.",
+          "Abra um plano para conferir detalhes.",
+          "Se não houver plano, crie ou ajuste uma linha em Produção.",
+        ]}
+        aside={<p>Esta tela não cria conteúdo manualmente; ela mostra o resultado da automação.</p>}
+      />
 
       {isLoading ? (
         <div className="flex justify-center py-14">
@@ -33,37 +46,26 @@ export default function PlanningListPage() {
       ) : !plans || plans.length === 0 ? (
         <EmptyState
           title="Nenhum plano ainda"
-          description="Um plano nasce automaticamente quando um Briefing é confirmado no Chat."
+          description="Um plano nasce automaticamente quando a linha de produção prepara um lote de conteúdo."
         />
       ) : (
-        <Card className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-border text-xs text-ink-muted">
-                <th className="px-4 py-3 font-medium">Modelo</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Estratégia</th>
-                <th className="px-4 py-3 font-medium">Atualizado em</th>
-              </tr>
-            </thead>
-            <tbody>
-              {plans.map((plan) => (
-                <tr key={plan.id} className="border-b border-border last:border-0">
-                  <td className="px-4 py-3 font-medium text-ink">
-                    <Link href={`/workspaces/${workspace.id}/planning/${plan.id}`} className="hover:text-accent">
-                      {plan.planningTemplate}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={plan.status} />
-                  </td>
-                  <td className="px-4 py-3 text-ink-muted">{plan.plannerStrategy}</td>
-                  <td className="px-4 py-3 text-ink-muted">{formatDateTime(plan.updatedAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+        <div className="grid gap-3">
+          {plans.map((plan) => (
+            <Card key={plan.id} className="p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="mb-2"><StatusBadge status={plan.status} /></div>
+                  <p className="break-words text-sm font-semibold text-ink">{plan.planningTemplate}</p>
+                  <p className="mt-1 text-sm text-ink-muted">{plan.plannerStrategy}</p>
+                  <p className="mt-1 text-xs text-ink-muted">Atualizado em {formatDateTime(plan.updatedAt)}</p>
+                </div>
+                <Link href={`/workspaces/${workspace.id}/planning/${plan.id}`} className="inline-flex min-h-10 items-center justify-center rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white hover:bg-accent-hover">
+                  Abrir plano
+                </Link>
+              </div>
+            </Card>
+          ))}
+        </div>
       )}
     </main>
   );

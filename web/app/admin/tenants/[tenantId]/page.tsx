@@ -7,6 +7,7 @@ import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import {
   activateTenant,
@@ -82,6 +83,18 @@ export default function AdminTenantDetailPage() {
       <PageHeader
         title={tenantId}
         description={`Plano ${planName} · status ${billing.subscriptionStatus} · ${formatProfitPercent(billing.priceMultiplier)}% de lucro sobre o custo`}
+      />
+
+      <ScreenGuide
+        title="Cuidados nesta conta"
+        description="Aqui ficam ações manuais que afetam cobrança, limite e acesso do cliente."
+        items={[
+          "Ajuste créditos extras após pagamento confirmado.",
+          "Troque plano quando houver upgrade ou downgrade.",
+          "Suspenda apenas por bloqueio administrativo.",
+          "Revise consumo antes de mudar multiplicador.",
+        ]}
+        aside={<p>Alterações feitas aqui valem para todos os espaços de trabalho deste cliente.</p>}
       />
 
       {message ? (

@@ -40,7 +40,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   await app.register(cors, {
     origin: config.corsOrigin,
-    methods: ["GET", "POST", "PATCH", "DELETE"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token", "X-Zuno-Signature", "X-Zuno-Timestamp", "X-Zuno-Nonce"],
     // Obrigatório para o cookie HttpOnly do refresh token (Sprint 05) atravessar a origem
     // diferente do frontend (`web/`, porta 3001) — sem isto o navegador nunca envia o cookie.

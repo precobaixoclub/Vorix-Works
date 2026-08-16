@@ -7,6 +7,7 @@ import { Card } from "@/components/Card";
 import { Input, Label, Textarea } from "@/components/Field";
 import { PageHeader } from "@/components/PageHeader";
 import { PostPreview } from "@/components/PostPreview";
+import { ProgressivePanel, ScreenGuide } from "@/components/ScreenGuide";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { scheduleTikTokPost } from "@/features/tiktok/api";
@@ -85,6 +86,8 @@ export default function PublishPage() {
   const [tiktokDisableStitch, setTiktokDisableStitch] = useState(false);
   const [tiktokAutoAddMusic, setTiktokAutoAddMusic] = useState(true);
   const [youtubePrivacy, setYouTubePrivacy] = useState<YouTubePrivacyStatus>("public");
+  const [networkOptionsOpen, setNetworkOptionsOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
 
   const connectedByPlatform: Record<Platform, boolean> = {
     tiktok: tiktokOAuth?.connected ?? false,
@@ -303,6 +306,18 @@ export default function PublishPage() {
     <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Publicar" description="Envie o conteúdo, marque em quais redes vai publicar e agende data e horário." />
 
+      <ScreenGuide
+        title="Publicação manual"
+        description="Use esta tela quando você já tem a mídia pronta e quer publicar ou agendar diretamente."
+        items={[
+          "Escolha as redes conectadas.",
+          "Envie imagem, carrossel ou vídeo.",
+          "Revise a legenda e as opções específicas de cada rede.",
+          "Use a prévia para conferir antes de publicar.",
+        ]}
+        aside={<p>Para produção automática por sequência, use a tela Produção. Esta tela é para uma postagem pontual.</p>}
+      />
+
       {feedback ? <Card className="mb-6 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
 
       {!anyConnected ? (
@@ -314,7 +329,7 @@ export default function PublishPage() {
         </Card>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_260px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(240px,280px)]">
         <Card className="p-4 sm:p-5">
           <form className="space-y-4" onSubmit={submitPost}>
             <div>
@@ -411,72 +426,78 @@ export default function PublishPage() {
               <Textarea id="publish-caption" required rows={4} maxLength={2200} value={caption} onChange={(event) => setCaption(event.target.value)} />
             </div>
 
-            {selected.has("tiktok") ? (
-              <div className="rounded-lg border border-border p-3">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">Opções do TikTok</p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <Label htmlFor="tiktok-privacy">Quem pode ver</Label>
-                    <select
-                      id="tiktok-privacy"
-                      value={tiktokPrivacy}
-                      onChange={(event) => setTiktokPrivacy(event.target.value as TikTokPrivacyLevel)}
-                      className="w-full rounded-md border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
-                    >
-                      {TIKTOK_PRIVACY_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="flex flex-col justify-end gap-1.5">
-                    <label className="flex items-center gap-2 text-sm text-ink">
-                      <input type="checkbox" checked={tiktokAutoAddMusic} onChange={(e) => setTiktokAutoAddMusic(e.target.checked)} className="h-4 w-4" />
-                      Adicionar música automaticamente
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-ink">
-                      <input type="checkbox" checked={tiktokDisableComment} onChange={(e) => setTiktokDisableComment(e.target.checked)} className="h-4 w-4" />
-                      Desativar comentários
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-ink">
-                      <input type="checkbox" checked={tiktokDisableDuet} onChange={(e) => setTiktokDisableDuet(e.target.checked)} className="h-4 w-4" />
-                      Desativar Duet
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-ink">
-                      <input type="checkbox" checked={tiktokDisableStitch} onChange={(e) => setTiktokDisableStitch(e.target.checked)} className="h-4 w-4" />
-                      Desativar Stitch
-                    </label>
-                  </div>
+            {selected.has("tiktok") || selected.has("youtube") ? (
+              <ProgressivePanel
+                title="Opções avançadas das redes"
+                description="Abra apenas se quiser mudar privacidade, música automática ou interação."
+                open={networkOptionsOpen}
+                onToggle={() => setNetworkOptionsOpen(!networkOptionsOpen)}
+              >
+                <div className="grid gap-3">
+                  {selected.has("tiktok") ? (
+                    <div className="rounded-lg border border-border bg-surface p-3">
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">TikTok</p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <Label htmlFor="tiktok-privacy">Quem pode ver</Label>
+                          <select
+                            id="tiktok-privacy"
+                            value={tiktokPrivacy}
+                            onChange={(event) => setTiktokPrivacy(event.target.value as TikTokPrivacyLevel)}
+                            className="w-full rounded-md border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                          >
+                            {TIKTOK_PRIVACY_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex flex-col justify-end gap-1.5">
+                          <CheckboxLine checked={tiktokAutoAddMusic} onChange={setTiktokAutoAddMusic} label="Adicionar música automaticamente" />
+                          <CheckboxLine checked={tiktokDisableComment} onChange={setTiktokDisableComment} label="Desativar comentários" />
+                          <CheckboxLine checked={tiktokDisableDuet} onChange={setTiktokDisableDuet} label="Desativar Duet" />
+                          <CheckboxLine checked={tiktokDisableStitch} onChange={setTiktokDisableStitch} label="Desativar Stitch" />
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {selected.has("youtube") ? (
+                    <div className="rounded-lg border border-border bg-surface p-3">
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">YouTube</p>
+                      <Label htmlFor="youtube-privacy">Visibilidade</Label>
+                      <select
+                        id="youtube-privacy"
+                        value={youtubePrivacy}
+                        onChange={(event) => setYouTubePrivacy(event.target.value as YouTubePrivacyStatus)}
+                        className="w-full rounded-md border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                      >
+                        <option value="public">Público</option>
+                        <option value="unlisted">Não listado</option>
+                        <option value="private">Privado</option>
+                      </select>
+                    </div>
+                  ) : null}
+                </div>
+              </ProgressivePanel>
+            ) : null}
+
+            <ProgressivePanel
+              title={scheduledAt ? "Agendamento configurado" : "Agendar para depois"}
+              description={scheduledAt ? "Abra para alterar data, horário ou fuso." : "Deixe fechado para publicar agora."}
+              open={scheduleOpen}
+              onToggle={() => setScheduleOpen(!scheduleOpen)}
+            >
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="publish-scheduled-at">Data e horário</Label>
+                  <Input id="publish-scheduled-at" type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="publish-timezone">Fuso horário</Label>
+                  <Input id="publish-timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} />
                 </div>
               </div>
-            ) : null}
-
-            {selected.has("youtube") ? (
-              <div className="rounded-lg border border-border p-3">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">Opções do YouTube</p>
-                <Label htmlFor="youtube-privacy">Visibilidade</Label>
-                <select
-                  id="youtube-privacy"
-                  value={youtubePrivacy}
-                  onChange={(event) => setYouTubePrivacy(event.target.value as YouTubePrivacyStatus)}
-                  className="w-full rounded-md border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
-                >
-                  <option value="public">Público</option>
-                  <option value="unlisted">Não listado</option>
-                  <option value="private">Privado</option>
-                </select>
-              </div>
-            ) : null}
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <Label htmlFor="publish-scheduled-at">Agendar para (vazio publica agora)</Label>
-                <Input id="publish-scheduled-at" type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="publish-timezone">Fuso horário</Label>
-                <Input id="publish-timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} />
-              </div>
-            </div>
+            </ProgressivePanel>
 
             <Button type="submit" className="w-full sm:w-auto" disabled={busy || uploading || selected.size === 0 || !hasMedia}>{scheduledAt ? "Agendar publicação" : "Publicar agora"}</Button>
             {selected.size === 0 ? <p className="text-xs text-ink-muted">Marque ao menos uma rede social conectada para publicar.</p> : null}
@@ -534,37 +555,11 @@ export default function PublishPage() {
         {recent.length === 0 ? (
           <p className="text-sm text-ink-muted">Nenhuma publicação ainda — o que você agendar acima aparece aqui.</p>
         ) : (
-          <Card className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="px-4 py-3 font-medium">Rede</th>
-                  <th className="px-4 py-3 font-medium">Conteúdo</th>
-                  <th className="px-4 py-3 font-medium">Agendado</th>
-                  <th className="px-4 py-3 font-medium">Estado</th>
-                  <th className="px-4 py-3 font-medium">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map((post) => {
-                  const status = derivePublicationStatus(post);
-                  return (
-                    <tr key={`${post.network}-${post.id}`} className="border-b border-border last:border-0">
-                      <td className="px-4 py-3 text-xs text-ink-muted">{PLATFORMS.find((p) => p.id === post.network)?.icon} {PLATFORMS.find((p) => p.id === post.network)?.label}</td>
-                      <td className="max-w-xs px-4 py-3 text-ink">{post.text || "—"}</td>
-                      <td className="px-4 py-3 text-xs text-ink-muted">{post.scheduledAt ? `${formatDateTime(post.scheduledAt)}${post.timezone ? ` (${post.timezone})` : ""}` : "Imediato"}</td>
-                      <td className="px-4 py-3"><StatusBadge status={status} /></td>
-                      <td className="px-4 py-3">
-                        {status === "published" || status === "cancelled" ? null : (
-                          <Button variant="secondary" disabled={busy} onClick={() => cancelPost(post)}>Cancelar</Button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </Card>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {recent.map((post) => (
+              <RecentPublicationCard key={`${post.network}-${post.id}`} post={post} busy={busy} onCancel={() => cancelPost(post)} />
+            ))}
+          </div>
         )}
       </div>
     </main>
@@ -638,4 +633,35 @@ function MediaUploadPanel({
 
 function isImageUrl(url: string): boolean {
   return /\.(jpe?g|png|webp)(?:\?|#|$)/i.test(url);
+}
+
+function CheckboxLine({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
+  return (
+    <label className="flex items-center gap-2 text-sm text-ink">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4" />
+      {label}
+    </label>
+  );
+}
+
+function RecentPublicationCard({ post, busy, onCancel }: { post: UnifiedPublication; busy: boolean; onCancel: () => void }) {
+  const status = derivePublicationStatus(post);
+  const platform = PLATFORMS.find((item) => item.id === post.network);
+  const when = post.scheduledAt ? `${formatDateTime(post.scheduledAt)}${post.timezone ? ` (${post.timezone})` : ""}` : "Imediato";
+
+  return (
+    <Card className="p-3">
+      <div className="mb-2 flex min-w-0 items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-ink">{platform?.icon} {platform?.label ?? post.network}</p>
+          <p className="mt-0.5 text-xs text-ink-muted">{when}</p>
+        </div>
+        <StatusBadge status={status} />
+      </div>
+      <p className="line-clamp-3 min-h-[3.75rem] break-words text-sm text-ink">{post.text || "Sem legenda"}</p>
+      {status === "published" || status === "cancelled" ? null : (
+        <Button variant="secondary" disabled={busy} onClick={onCancel} className="mt-3 w-full">Cancelar</Button>
+      )}
+    </Card>
+  );
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { usePlatformDashboard } from "@/features/platform-admin/hooks";
 
@@ -20,6 +21,18 @@ export default function AdminDashboardPage() {
       <PageHeader
         title="Visão geral da plataforma"
         description="Números do mês corrente — receita, custo dos provedores de IA e lucro consolidado."
+      />
+
+      <ScreenGuide
+        title="Para que serve"
+        description="Esta é a visão do dono da plataforma, não de uma marca específica."
+        items={[
+          "Veja contas ativas e suspensas.",
+          "Compare receita, custo e lucro do mês.",
+          "Abra uma conta para ajustar plano e créditos.",
+          "Use Chaves OpenAI/Gemini para liberar geração por IA.",
+        ]}
+        aside={<p>Os números são consolidados de todos os clientes e ajudam a acompanhar operação e margem.</p>}
       />
 
       {isLoading ? (

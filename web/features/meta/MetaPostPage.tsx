@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label, Textarea } from "@/components/Field";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -125,6 +126,18 @@ export function MetaPostPage({ target }: { target: MetaTarget }) {
           : "Conecte a Página do Facebook do cliente e publique feed, foto, vídeo, texto ou Stories."}
       />
 
+      <ScreenGuide
+        title={`Publicar no ${label}`}
+        description="Use esta tela para posts manuais. Para uma linha automática com sequência e horários, use Produção."
+        items={[
+          "Confira se a conta conectada é a correta.",
+          "Escolha Feed ou Story.",
+          "Envie imagem, carrossel, vídeo ou texto conforme a rede permitir.",
+          "Defina data e hora ou deixe vazio para publicar agora.",
+        ]}
+        aside={<p>Quando houver várias contas conectadas, o seletor Publicar na conta define exatamente onde o post será enviado.</p>}
+      />
+
       {feedback ? <Card className="mb-6 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
 
       <Card className="mb-6 flex items-center justify-between gap-4 p-4">
@@ -230,7 +243,7 @@ export function MetaPostPage({ target }: { target: MetaTarget }) {
         <EmptyState title={`Nenhuma publicação no ${label}`} description="Agende o primeiro post usando o formulário acima." />
       ) : (
         <Card className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full min-w-[680px] text-left text-sm">
             <thead>
               <tr className="border-b border-border">
                 <th className="px-4 py-3 font-medium">Onde</th>

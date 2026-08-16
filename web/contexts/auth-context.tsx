@@ -98,10 +98,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    await apiLogout();
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
     setAccessToken(undefined);
     setState({ status: "unauthenticated" });
+    await apiLogout();
   }, []);
 
   const switchTenant = useCallback(

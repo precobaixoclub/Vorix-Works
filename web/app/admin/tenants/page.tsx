@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { useTenantsList } from "@/features/platform-admin/hooks";
 import {
@@ -43,6 +44,18 @@ export default function AdminTenantsPage() {
   return (
     <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Contas de clientes" description="Cada linha é um tenant. Clique para ver o consumo, ajustar créditos e trocar de plano." />
+
+      <ScreenGuide
+        title="Como operar clientes"
+        description="Use esta lista para localizar uma conta e abrir os ajustes financeiros e de acesso."
+        items={[
+          "Filtre por plano ou status.",
+          "Clique na conta para ver detalhes.",
+          "Ajuste créditos após pagamento manual.",
+          "Suspenda ou reative somente quando necessário.",
+        ]}
+        aside={<p>Tenant significa a conta do cliente dentro da plataforma.</p>}
+      />
 
       <Card className="mb-4">
         <CardBody className="flex flex-wrap items-end gap-3">

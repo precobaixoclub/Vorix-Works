@@ -7,6 +7,7 @@ import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { cancelExecutionRun, decideExecutionGate, startExecutionRun } from "@/features/execution/api";
@@ -72,13 +73,24 @@ export default function ExecutionRunDetailPage() {
         title={detail.run.id}
         description={`Runtime ${detail.run.runtimePlanId} · criado em ${formatDateTime(detail.run.createdAt)}`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">{detail.run.mode === "real" ? "Real" : "Simulação"}</span>
             <StatusBadge status={detail.run.state} />
           </div>
         }
       />
-      <p className="mb-4 text-xs text-ink-muted">traceId {detail.run.traceId} · correlationId {detail.run.correlationId}</p>
+      <ScreenGuide
+        title="Acompanhar execução"
+        description="Aqui você vê cada etapa que rodou, o que foi aprovado e onde uma falha aconteceu."
+        items={[
+          "Inicie a simulação ou execução quando estiver pronta.",
+          "Aprove um gate somente se o conteúdo estiver correto.",
+          "Use Cancelar para interromper execuções não finalizadas.",
+          "Leia Tarefas e Artefatos para entender o resultado.",
+        ]}
+        aside={<p>IDs de rastreio aparecem para suporte técnico e não precisam ser copiados no uso normal.</p>}
+      />
+      <p className="mb-4 break-words text-xs text-ink-muted">traceId {detail.run.traceId} · correlationId {detail.run.correlationId}</p>
 
       <div className="mb-6 flex flex-wrap gap-2">
         <Button disabled={!canStart || busy} onClick={handleStart}>
@@ -105,7 +117,7 @@ export default function ExecutionRunDetailPage() {
             <p className="text-sm font-medium text-ink">Tarefas</p>
           </CardHeader>
           <CardBody className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[680px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border text-xs text-ink-muted">
                   <th className="py-2 pr-3 font-medium">Tipo</th>
@@ -186,7 +198,7 @@ export default function ExecutionRunDetailPage() {
           {detail.handlerResolution.length === 0 ? (
             <p className="text-sm text-ink-muted">Nenhum handler resolvido ainda.</p>
           ) : (
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[680px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border text-xs text-ink-muted">
                   <th className="py-2 pr-3 font-medium">Capacidade</th>
@@ -229,7 +241,7 @@ export default function ExecutionRunDetailPage() {
           {detail.traces.length === 0 ? (
             <p className="text-sm text-ink-muted">Nenhum trace registrado ainda.</p>
           ) : (
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[680px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border text-xs text-ink-muted">
                   <th className="py-2 pr-3 font-medium">Capacidade</th>

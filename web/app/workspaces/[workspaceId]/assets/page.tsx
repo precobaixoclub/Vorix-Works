@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input } from "@/components/Field";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { AssetCard } from "@/features/assets/components/AssetCard";
@@ -29,14 +30,17 @@ export default function AssetsPage() {
         actions={<Button onClick={() => setIsRegistering(true)}>+ Enviar Material</Button>}
       />
 
-      <div className="mb-6 rounded-lg border border-surface-raised bg-surface-raised/40 p-4 text-sm text-ink-muted">
-        <p className="mb-1 font-medium text-ink">Para que serve esta biblioteca?</p>
-        <p>
-          Tudo o que você sobe aqui vira memória visual da marca. Quando você pedir no Chat “faça um post com o logo”
-          ou “usa aquela foto do produto”, a IA busca automaticamente nesta biblioteca — sem precisar reexplicar cores,
-          fontes ou reenviar arquivos a cada campanha.
-        </p>
-      </div>
+      <ScreenGuide
+        title="Como usar a biblioteca"
+        description="Tudo que entra aqui vira referência da marca para a linha de produção."
+        items={[
+          "Envie logo, fotos reais, vídeos, produtos e brand book.",
+          "Use nomes claros para encontrar rápido depois.",
+          "Arquive o que não deve mais ser usado.",
+          "Remova arquivos errados para evitar criação fora da marca.",
+        ]}
+        aside={<p>Quanto melhor esta biblioteca, menos você precisa explicar estilo, cores e produto em cada postagem.</p>}
+      />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input

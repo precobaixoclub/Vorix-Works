@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input } from "@/components/Field";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -128,7 +129,19 @@ export default function PublicationsHistoryPage() {
         actions={<Link href={`/workspaces/${workspace.id}/publish`}><Button>+ Nova Publicação</Button></Link>}
       />
 
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <ScreenGuide
+        title="Como acompanhar"
+        description="Esta é a visão operacional das postagens: o que está agendado, publicado, cancelado ou com falha."
+        items={[
+          "Use os números do topo para ver o estado geral.",
+          "Filtre por rede, status, formato ou período.",
+          "Abra os cards para identificar legenda, data e formato.",
+          "Cancele apenas publicações que ainda estão agendadas.",
+        ]}
+        aside={<p>Se uma publicação falhar, confira primeiro a conexão da rede social e depois tente reagendar.</p>}
+      />
+
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard label="Total" value={stats.total} tone="neutral" />
         <StatCard label="Agendado" value={stats.scheduled} tone="warning" />
         <StatCard label="Publicado" value={stats.published} tone="success" />
@@ -136,19 +149,19 @@ export default function PublicationsHistoryPage() {
         <StatCard label="Cancelado" value={stats.cancelled} tone="muted" />
       </div>
 
-      <div className="mb-6 flex flex-col gap-3 rounded-xl border border-border bg-surface-raised/40 p-4">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="mb-6 flex flex-col gap-3 rounded-xl border border-border bg-surface-raised/40 p-3 sm:p-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_180px_160px]">
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por legenda…"
             aria-label="Buscar publicações"
-            className="max-w-xs"
+            className="w-full"
           />
           <select
             value={networkFilter}
             onChange={(e) => setNetworkFilter(e.target.value as PublicationNetwork | "all")}
-            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
             aria-label="Filtrar por rede social"
           >
             {NETWORK_FILTERS.map((f) => (
@@ -158,7 +171,7 @@ export default function PublicationsHistoryPage() {
           <select
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value as DateFilter)}
-            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
             aria-label="Filtrar por data"
           >
             {DATE_FILTERS.map((f) => (
@@ -233,7 +246,7 @@ function StatCard({ label, value, tone }: { label: string; value: number; tone: 
     danger: "border-red-300/40 bg-red-50 text-red-700",
   };
   return (
-    <div className={`rounded-xl border px-4 py-3 ${toneClasses[tone]}`}>
+    <div className={`min-w-0 rounded-xl border px-3 py-3 sm:px-4 ${toneClasses[tone]}`}>
       <p className="text-xs font-medium uppercase tracking-wide opacity-80">{label}</p>
       <p className="mt-1 text-2xl font-semibold">{value}</p>
     </div>
@@ -248,7 +261,7 @@ function PublicationCard({ post, busy, onCancel }: { post: UnifiedPublication; b
   const when = post.scheduledAt ?? post.publishedAt ?? post.createdAt;
 
   return (
-    <article className="group overflow-hidden rounded-xl border border-border bg-surface-raised/40 transition hover:border-accent hover:shadow-lg">
+    <article className="group min-w-0 overflow-hidden rounded-xl border border-border bg-surface-raised/40 transition hover:border-accent hover:shadow-lg">
       <div className={`relative flex aspect-square items-center justify-center bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
         {thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -267,11 +280,11 @@ function PublicationCard({ post, busy, onCancel }: { post: UnifiedPublication; b
           <span className="absolute bottom-3 right-3 rounded-full bg-black/40 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur">+{extraImages}</span>
         ) : null}
       </div>
-      <div className="flex flex-col gap-1 p-4">
-        <p className="line-clamp-2 min-h-[2.5rem] text-sm text-ink" title={post.text}>{post.text || "Sem legenda"}</p>
-        <div className="flex items-center justify-between text-xs text-ink-muted">
+      <div className="flex min-w-0 flex-col gap-1 p-3 sm:p-4">
+        <p className="line-clamp-3 min-h-[3.75rem] break-words text-sm text-ink" title={post.text}>{post.text || "Sem legenda"}</p>
+        <div className="flex min-w-0 items-center justify-between gap-2 text-xs text-ink-muted">
           <span>{when ? formatDateTime(when) : "Sem data"}</span>
-          <span>{FORMAT_LABEL[format]}</span>
+          <span className="shrink-0">{FORMAT_LABEL[format]}</span>
         </div>
         {status === "scheduled" ? (
           <Button variant="secondary" disabled={busy} onClick={onCancel} className="mt-2">Cancelar</Button>

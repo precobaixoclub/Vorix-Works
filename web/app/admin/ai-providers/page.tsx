@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import {
   fetchAiOperationTypes,
@@ -24,10 +25,9 @@ const CAPABILITY_LABELS: Record<string, string> = {
 };
 
 /**
- * Módulo admin "Provedores de IA" (`/admin/ai-providers`) — Sprint 26. Um único lugar para:
- * cadastrar/ligar/desligar cada provedor (OpenAI para imagem, Google Gemini/Veo para vídeo;
- * Anthropic aparece como card informativo, gerido em `/admin/settings`), editar quanto cada
- * operação custa em crédito Vorix, e ver gasto/receita/lucro por provedor no mês corrente.
+ * Módulo admin "Chaves OpenAI/Gemini" (`/admin/ai-providers`). Mantém as credenciais de geração
+ * em um lugar claro: OpenAI para imagem/texto quando habilitado, Google Gemini/Veo para vídeo, e
+ * Anthropic em `/admin/settings`. Abaixo ficam custos e financeiro para operação da plataforma.
  */
 export default function AdminAiProvidersPage() {
   const [providers, setProviders] = useState<AiProviderOverview[] | undefined>();
@@ -97,8 +97,20 @@ export default function AdminAiProvidersPage() {
   return (
     <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
-        title="Provedores de IA"
-        description="Cadastre cada provedor (chave, status), defina quanto cada operação custa em crédito Vorix, e acompanhe gasto/receita/lucro por provedor."
+        title="Chaves OpenAI/Gemini"
+        description="Configure as chaves usadas pela linha de produção para gerar imagem, texto e vídeo. Sem chave ativa, a geração cai para fallback ou fica indisponível."
+      />
+
+      <ScreenGuide
+        title="Como configurar"
+        description="Cole a chave no provedor correto e marque Ativo para a linha de produção poder usar."
+        items={[
+          "OpenAI habilita geração de imagem e recursos de texto configurados.",
+          "Gemini/Veo habilita geração de vídeo.",
+          "Anthropic fica em Configurações.",
+          "Depois de salvar, confira o selo com chave e o status Ativo.",
+        ]}
+        aside={<p>Use uma chave de produção da conta correta. A chave salva não aparece inteira novamente por segurança.</p>}
       />
 
       {message ? (
@@ -108,19 +120,35 @@ export default function AdminAiProvidersPage() {
       ) : null}
 
       <div className="flex flex-col gap-6">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {providers.map((provider) => (
+            <ProviderSetupCard
+              key={provider.code}
+              provider={provider}
+              inputValue={apiKeyInputs[provider.code] ?? ""}
+              busy={busyKey === `key-${provider.code}` || busyKey === `status-${provider.code}`}
+              onInput={(value) => setApiKeyInputs((prev) => ({ ...prev, [provider.code]: value }))}
+              onSaveKey={() => run(`key-${provider.code}`, async () => {
+                await setAiProviderApiKey(provider.code, apiKeyInputs[provider.code].trim());
+                setApiKeyInputs((prev) => ({ ...prev, [provider.code]: "" }));
+              })}
+              onToggle={(enabled) => run(`status-${provider.code}`, () => setAiProviderStatus(provider.code, enabled ? "active" : "disabled"))}
+            />
+          ))}
+        </div>
+
         <Card>
           <CardHeader>
-            <div className="text-base font-semibold text-ink">Anthropic (Claude)</div>
+            <div className="text-base font-semibold text-ink">Modelos e custos reais</div>
           </CardHeader>
           <CardBody>
             <p className="text-sm text-ink-muted">
-              Usado para texto (chat, extração de briefing). Chave e modelo padrão são gerenciados em{" "}
-              <Link href="/admin/settings" className="text-accent hover:underline">/admin/settings</Link>.
+              Esta seção é operacional. As chaves principais ficam nos cards acima; aqui você confere modelos ativos e preço real de cada provedor.
             </p>
           </CardBody>
         </Card>
 
-        {providers.filter((p) => !p.externallyManaged).map((provider) => (
+        {providers.filter((p) => !p.externallyManaged && p.models.length > 0).map((provider) => (
           <Card key={provider.code}>
             <CardHeader>
               <div>
@@ -129,67 +157,31 @@ export default function AdminAiProvidersPage() {
                   {provider.capabilities.map((c) => CAPABILITY_LABELS[c] ?? c).join(", ")} · {provider.health.ok ? "Saudável" : provider.health.safeMessage ?? "Indisponível"}
                 </div>
               </div>
-              <label className="flex items-center gap-2 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={provider.status === "active"}
-                  disabled={busyKey === `status-${provider.code}`}
-                  onChange={(e) => run(`status-${provider.code}`, () => setAiProviderStatus(provider.code, e.target.checked ? "active" : "disabled"))}
-                  className="h-4 w-4"
-                />
-                Habilitado
-              </label>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${provider.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-surface-sunken text-ink-muted"}`}>
+                {provider.status === "active" ? "Ativo" : "Desativado"}
+              </span>
             </CardHeader>
             <CardBody className="flex flex-col gap-4">
-              <div className="text-sm">
-                <div className="text-ink-muted">API key</div>
-                <div className="mt-1 font-mono text-ink">
-                  {provider.hasSecretConfigured ? "Configurada" : <span className="text-error">Nenhuma chave configurada</span>}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  autoComplete="off"
-                  placeholder="Colar nova chave"
-                  value={apiKeyInputs[provider.code] ?? ""}
-                  onChange={(e) => setApiKeyInputs((prev) => ({ ...prev, [provider.code]: e.target.value }))}
-                  className="w-full rounded-md border border-border bg-surface-raised px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
-                />
-                <button
-                  type="button"
-                  disabled={!apiKeyInputs[provider.code]?.trim() || busyKey === `key-${provider.code}`}
-                  onClick={() => run(`key-${provider.code}`, async () => {
-                    await setAiProviderApiKey(provider.code, apiKeyInputs[provider.code].trim());
-                    setApiKeyInputs((prev) => ({ ...prev, [provider.code]: "" }));
-                  })}
-                  className="shrink-0 rounded-md bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent/90 disabled:opacity-50"
-                >
-                  Salvar
-                </button>
-              </div>
-              {provider.models.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[640px] text-sm">
-                    <thead>
-                      <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
-                        <th className="py-1">Modelo</th>
-                        <th className="py-1">Ativo</th>
-                        <th className="py-1 text-right">Preço real (não exibido ao cliente)</th>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
+                      <th className="py-1">Modelo</th>
+                      <th className="py-1">Ativo</th>
+                      <th className="py-1 text-right">Preço real</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {provider.models.map((model) => (
+                      <tr key={model.id} className="border-t border-border/60">
+                        <td className="py-1.5 font-mono text-ink">{model.modelId}</td>
+                        <td className="py-1.5">{model.active ? "Sim" : "Não"}</td>
+                        <td className="py-1.5 text-right text-ink-muted">{formatPricing(model.pricing)}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {provider.models.map((model) => (
-                        <tr key={model.id} className="border-t border-border/60">
-                          <td className="py-1.5 font-mono text-ink">{model.modelId}</td>
-                          <td className="py-1.5">{model.active ? "Sim" : "Não"}</td>
-                          <td className="py-1.5 text-right text-ink-muted">{formatPricing(model.pricing)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </CardBody>
           </Card>
         ))}
@@ -282,6 +274,73 @@ export default function AdminAiProvidersPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+function ProviderSetupCard({
+  provider,
+  inputValue,
+  busy,
+  onInput,
+  onSaveKey,
+  onToggle,
+}: {
+  provider: AiProviderOverview;
+  inputValue: string;
+  busy: boolean;
+  onInput: (value: string) => void;
+  onSaveKey: () => void;
+  onToggle: (enabled: boolean) => void;
+}) {
+  const providerHint: Record<string, string> = {
+    openai: "Cole uma chave da OpenAI Platform para geração de imagens e recursos de texto configurados.",
+    google: "Cole a chave do Google AI Studio/Gemini para Gemini e Veo.",
+    anthropic: "Claude é configurado na tela Configurações (Anthropic).",
+  };
+
+  return (
+    <Card className="p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-base font-semibold text-ink">{provider.displayName}</p>
+          <p className="mt-1 text-xs text-ink-muted">{provider.capabilities.map((c) => CAPABILITY_LABELS[c] ?? c).join(", ")}</p>
+        </div>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${provider.hasSecretConfigured ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+          {provider.hasSecretConfigured ? "com chave" : "sem chave"}
+        </span>
+      </div>
+      <p className="mb-4 text-sm text-ink-muted">{providerHint[provider.code] ?? "Configure a chave deste provedor."}</p>
+      {provider.externallyManaged ? (
+        <Link href="/admin/settings" className="inline-flex min-h-10 items-center rounded-md border border-border px-3 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+          Abrir Anthropic
+        </Link>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <input
+            type="password"
+            autoComplete="off"
+            placeholder={provider.code === "openai" ? "sk-..." : "AIza..."}
+            value={inputValue}
+            onChange={(event) => onInput(event.target.value)}
+            className="w-full rounded-md border border-border bg-surface-raised px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
+          />
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              disabled={!inputValue.trim() || busy}
+              onClick={onSaveKey}
+              className="min-h-10 flex-1 rounded-md bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent/90 disabled:opacity-50"
+            >
+              Salvar chave
+            </button>
+            <label className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-ink">
+              <input type="checkbox" checked={provider.status === "active"} disabled={busy} onChange={(event) => onToggle(event.target.checked)} className="h-4 w-4" />
+              Ativo
+            </label>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 

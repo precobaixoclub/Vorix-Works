@@ -7,6 +7,7 @@ import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -56,7 +57,19 @@ export default function GovernancePage() {
 
   return (
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Governança" description="Credenciais externas, rotação, auditoria operacional e checks de compliance do workspace." />
+      <PageHeader title="Governança" description="Controle de credenciais, auditoria e segurança das integrações do workspace." />
+
+      <ScreenGuide
+        title="O que conferir"
+        description="Esta tela é para manutenção e suporte. Ela mostra se as conexões ainda estão válidas e auditáveis."
+        items={[
+          "Credenciais ativas indicam integrações conectadas.",
+          "Atenção maior que zero pede revisão.",
+          "Conectar provedor refaz autorização externa.",
+          "Auditoria mostra mudanças recentes e ações sensíveis.",
+        ]}
+        aside={<p>Não rotacione ou revogue credenciais sem necessidade; isso pode exigir conectar a rede social novamente.</p>}
+      />
 
       <div className="mb-6 grid gap-4 md:grid-cols-4">
         <Card className="p-4"><p className="text-xs text-ink-muted">Credenciais</p><p className="text-2xl font-semibold text-ink">{credentials?.length ?? 0}</p></Card>
@@ -81,7 +94,7 @@ export default function GovernancePage() {
         <EmptyState title="Nenhuma credencial" description="Conecte o provider sandbox para registrar Credential, CredentialReference e binding governado." />
       ) : (
         <Card className="mb-6 overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full min-w-[680px] text-left text-sm">
             <thead>
               <tr className="border-b border-border text-xs text-ink-muted">
                 <th className="px-4 py-3 font-medium">Provedor</th>

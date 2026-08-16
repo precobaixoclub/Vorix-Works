@@ -10,6 +10,7 @@ export function WorkspaceTopBar({ name, status }: { name: string; status: string
   const router = useRouter();
   const { state, logout } = useAuth();
   const isPlatformAdmin = state.status === "authenticated" && state.user.isPlatformAdmin;
+  const user = state.status === "authenticated" ? state.user : null;
 
   return (
     <header className="flex min-h-14 shrink-0 flex-col items-stretch gap-2 border-b border-border bg-surface-raised px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -28,14 +29,19 @@ export function WorkspaceTopBar({ name, status }: { name: string; status: string
             Admin
           </Link>
         ) : null}
-        {state.status === "authenticated" ? <span className="max-w-full truncate text-xs text-ink-muted sm:max-w-48">{state.user.name}</span> : null}
+        {user ? (
+          <div className="min-w-0 text-xs leading-tight text-ink-muted sm:max-w-56">
+            <div className="truncate font-medium text-ink">{user.name}</div>
+            <div className="truncate">{user.email}</div>
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={async () => {
             await logout();
             router.push("/login");
           }}
-          className="cursor-pointer text-xs font-medium text-ink-muted hover:text-ink"
+          className="min-h-9 cursor-pointer rounded-md border border-border px-3 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-sunken hover:text-ink"
         >
           Sair
         </button>

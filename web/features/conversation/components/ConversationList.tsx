@@ -32,7 +32,7 @@ export function ConversationList({ workspaceId }: { workspaceId: string }) {
     <aside className="flex max-h-72 w-full shrink-0 flex-col border-b border-border bg-surface-raised md:max-h-none md:w-72 md:border-b-0 md:border-r">
       <div className="border-b border-border p-3">
         <Button className="w-full" onClick={handleNewConversation} disabled={creating}>
-          {creating ? "Criando…" : "+ Nova conversa"}
+          {creating ? "Criando…" : "+ Novo fluxo"}
         </Button>
       </div>
       <div className="flex-1 overflow-y-auto p-2">
@@ -54,7 +54,7 @@ export function ConversationList({ workspaceId }: { workspaceId: string }) {
                   isActive ? "bg-accent-soft text-accent" : "text-ink hover:bg-surface-sunken"
                 }`}
               >
-                <p className="truncate font-medium">{conversation.title ?? "Conversa sem título"}</p>
+                <p className="truncate font-medium">{conversation.title ?? "Fluxo sem título"}</p>
                 <p className="text-xs text-ink-faint">
                   {STATE_LABEL[conversation.state]} · {formatRelativeTime(conversation.updatedAt)}
                 </p>

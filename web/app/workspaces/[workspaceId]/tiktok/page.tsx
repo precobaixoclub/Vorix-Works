@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label, Textarea } from "@/components/Field";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -118,6 +119,18 @@ export default function TikTokPage() {
     <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="TikTok" description="Conecte a conta do cliente e agende publicações de vídeo ou foto com descrição." />
 
+      <ScreenGuide
+        title="Publicar no TikTok"
+        description="Use esta tela para posts manuais. Para uma sequência automática, configure em Produção."
+        items={[
+          "Confirme se a conta conectada é a correta.",
+          "Escolha vídeo ou foto.",
+          "Envie o arquivo ou cole uma URL pública HTTPS.",
+          "Defina horário ou deixe vazio para publicar agora.",
+        ]}
+        aside={<p>Se o botão ficar bloqueado, falta conectar o TikTok em Conexões ou a conta ainda está sem permissão aprovada.</p>}
+      />
+
       {feedback ? <Card className="mb-6 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
 
       <Card className="mb-6 flex items-center justify-between gap-4 p-4">
@@ -217,7 +230,7 @@ export default function TikTokPage() {
         <EmptyState title="Nenhuma publicação no TikTok" description="Agende o primeiro post usando o formulário acima." />
       ) : (
         <Card className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full min-w-[680px] text-left text-sm">
             <thead>
               <tr className="border-b border-border">
                 <th className="px-4 py-3 font-medium">Descrição</th>

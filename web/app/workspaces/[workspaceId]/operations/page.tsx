@@ -6,6 +6,7 @@ import { Card, CardBody, CardHeader } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -33,7 +34,19 @@ export default function OperationsPage() {
 
   return (
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Operação" description="Saúde, limites, filas, disjuntores, prontidão e plano de recuperação." />
+      <PageHeader title="Operação" description="Monitore a saúde do sistema e veja rapidamente se algo impede as publicações." />
+
+      <ScreenGuide
+        title="Leitura rápida"
+        description="Use esta tela quando uma geração, agendamento ou publicação parecer travada."
+        items={[
+          "Resumo mostra se o sistema está pronto.",
+          "Circuitos mostra integrações bloqueadas por falha repetida.",
+          "Pressão e Limites indicam excesso de uso ou espera.",
+          "Restauração mostra o plano de recuperação se algo parar.",
+        ]}
+        aside={<p>Se tudo estiver saudável aqui, investigue a publicação específica em Postagens Publicadas.</p>}
+      />
 
       <div className="mb-5 flex flex-wrap gap-2">
         {TABS.map((item) => (

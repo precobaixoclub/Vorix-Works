@@ -7,8 +7,8 @@ export const revalidate = 300;
 
 const FEATURES = [
   {
-    title: "Conversa vira briefing",
-    description: "Chat com IA que extrai objetivo, público e contexto da campanha automaticamente, sem formulário.",
+    title: "Linha de produção",
+    description: "Modelos, sequências e regras transformam ideias em conteúdo sem depender de prompt.",
   },
   {
     title: "Planejamento automático",
@@ -61,11 +61,11 @@ export default async function RootPage() {
       <section className="mx-auto flex w-full max-w-4xl flex-col items-center justify-center gap-6 px-3 py-12 text-center sm:px-6 sm:py-20">
         <span className="rounded-full bg-accent-soft px-3 py-1 text-xs font-medium text-accent">Marketing com IA</span>
         <h1 className="text-balance text-4xl font-semibold tracking-tight text-ink sm:text-5xl">
-          Da conversa ao post publicado, sem sair de um só lugar.
+          Da produção ao post publicado, sem sair de um só lugar.
         </h1>
         <p className="max-w-2xl text-balance text-base text-ink-muted sm:text-lg">
-          O Vorix transforma uma conversa em briefing, o briefing em plano de campanha e o plano em conteúdo
-          publicado — com governança e histórico completo em cada etapa.
+          O Vorix organiza modelos, sequências e regras de postagem para gerar campanhas em uma linha de produção
+          com governança e histórico completo em cada etapa.
         </p>
         <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
           <Link href="/signup">

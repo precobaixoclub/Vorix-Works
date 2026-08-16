@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { beginTikTokOAuth, disconnectTikTokAccount } from "@/features/tiktok/api";
@@ -27,6 +28,18 @@ export default function ConnectionsPage() {
   return (
     <main className="mx-auto max-w-3xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Conexões" description="Conecte as contas das redes sociais deste workspace. Cada uma faz login com a própria conta." />
+
+      <ScreenGuide
+        title="Para que serve"
+        description="Aqui você autoriza o Vorix a publicar nas contas certas. Remover uma conta desta tela impede novas postagens nela."
+        items={[
+          "Conecte TikTok, Instagram/Facebook ou YouTube.",
+          "Confira se a conta exibida é a conta correta.",
+          "Use Desconectar apenas quando não quiser mais publicar nela.",
+          "Volte para Publicar ou Produção depois de conectar.",
+        ]}
+        aside={<p>Instagram e Facebook usam o mesmo login da Meta. O sistema só publica nas contas que ficarem ativas aqui.</p>}
+      />
 
       {feedback ? <Card className="mb-6 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
 

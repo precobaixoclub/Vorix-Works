@@ -12,7 +12,7 @@ import { useWorkspace } from "@/features/workspace/hooks";
 /**
  * Casca de todo Workspace — Sprint 04, protegida por autenticação real a partir da Sprint 05
  * (`RequireAuth`). Busca o Workspace UMA VEZ aqui (via API real) e o disponibiliza para toda a
- * árvore de rotas abaixo via `WorkspaceProvider`, para que Home/Chat/Assets/Campaigns/Knowledge/
+ * árvore de rotas abaixo via `WorkspaceProvider`, para que Home/Production/Assets/Campaigns/Knowledge/
  * Calendar nunca precisem buscá-lo de novo. `WorkspaceSidebar` é a navegação fixa entre essas
  * áreas — nunca aparece fora daqui.
  */

@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { PageHeader } from "@/components/PageHeader";
+import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { getKnowledgeSnapshot } from "@/features/knowledge/data";
@@ -13,7 +14,19 @@ export default function KnowledgePage() {
 
   return (
     <main className="mx-auto max-w-4xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Central de Conhecimento" description="O que o Vorix sabe sobre esta marca — base para futuras campanhas e conversas." />
+      <PageHeader title="Central de Conhecimento" description="O que o Vorix sabe sobre esta marca — base para futuras campanhas e produção automática." />
+
+      <ScreenGuide
+        title="O que olhar aqui"
+        description="Esta tela resume a memória estratégica da marca: posicionamento, público, diferenciais, objetivos e direção criativa."
+        items={[
+          "Confira se nicho e posicionamento estão corretos.",
+          "Revise tom de voz, cores e fontes.",
+          "Use Produtos e Diferenciais como base para novos modelos.",
+          "Se algo estiver errado, atualize os dados da marca antes de gerar conteúdo.",
+        ]}
+        aside={<p>Esta tela é leitura rápida. Ela ajuda a entender se a IA está partindo das informações certas.</p>}
+      />
 
       {isLoading || !knowledge ? (
         <div className="flex items-center gap-2 py-14 text-sm text-ink-muted">

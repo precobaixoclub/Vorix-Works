@@ -246,7 +246,7 @@ export class MetaInstagramOAuthService {
     };
   }
 
-  /** Revoga a permissão no Meta e marca a credencial como revogada. */
+  /** Remove a conta/página deste workspace sem revogar a autorização global do app no Meta. */
   async disconnect(input: { tenantId: string; workspaceId: string; credentialReferenceId: string; actor?: CredentialGovernanceActor; context?: AuditContext; reason?: string }): Promise<boolean> {
     const providerId = providerIdFromReference(input.credentialReferenceId);
     if (!providerId) return false;
@@ -254,10 +254,6 @@ export class MetaInstagramOAuthService {
     const reference = references.find((candidate) => candidate.credentialReferenceId === input.credentialReferenceId);
     if (!reference) return false;
 
-    const secret = await this.input.secretStore.get({ tenantId: input.tenantId, workspaceId: input.workspaceId, providerId, credentialReferenceId: input.credentialReferenceId });
-    if (secret?.value.userAccessToken && this.isConfigured()) {
-      await this.revokePermissions(secret.value.userAccessToken).catch(() => undefined);
-    }
     await this.input.secretStore.delete({ tenantId: input.tenantId, workspaceId: input.workspaceId, providerId, credentialReferenceId: input.credentialReferenceId });
     await this.input.repository.createCredentialReference({ ...reference, status: "revoked", revokedAt: this.now().toISOString() });
 

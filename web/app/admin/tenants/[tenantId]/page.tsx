@@ -110,7 +110,7 @@ export default function AdminTenantDetailPage() {
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <MetricCard label="Créditos usados no mês" value={formatNumber(overview.totalCreditsUsedThisMonth)} hint={`Cota mensal: ${formatNumber(billing.monthlyCreditsQuota)}`} />
+        <MetricCard label="Créditos usados no mês" value={formatNumber(overview.totalCreditsUsedThisMonth)} hint={`Cota mensal: ${formatQuota(billing.monthlyCreditsQuota)}`} />
         <MetricCard label="Créditos extras" value={formatNumber(billing.creditsExtra)} hint="Somam à cota do plano" />
         <MetricCard
           label="Lucro do mês"
@@ -452,6 +452,12 @@ function formatUsd(value: number): string {
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("pt-BR").format(value);
+}
+
+/** `monthlyCreditsQuota` do plano ENTERPRISE é `Number.MAX_SAFE_INTEGER` (ver `platform-plan-catalog.ts`)
+ * — mostrar esse número cru confundiria mais do que ajudaria. */
+function formatQuota(value: number): string {
+  return value >= Number.MAX_SAFE_INTEGER ? "Ilimitada" : formatNumber(value);
 }
 
 function formatDate(value: string): string {

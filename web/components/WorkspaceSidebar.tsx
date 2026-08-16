@@ -11,12 +11,13 @@ type NavItem = { href: string; label: string; icon: string };
 const MAIN_NAV: readonly NavItem[] = [
   { href: "", label: "Início", icon: "◆" },
   { href: "/production", label: "Produção", icon: "▤" },
-  { href: "/connections", label: "Conexões", icon: "🔗" },
+  { href: "/review", label: "Revisão", icon: "✓" },
   { href: "/publish", label: "Publicar", icon: "🚀" },
-  { href: "/assets", label: "Materiais", icon: "📂" },
   { href: "/campaigns", label: "Publicações", icon: "📣" },
+  { href: "/assets", label: "Materiais", icon: "📂" },
   { href: "/knowledge", label: "Conhecimento", icon: "🧠" },
   { href: "/calendar", label: "Calendário", icon: "🗓" },
+  { href: "/connections", label: "Conexões", icon: "🔗" },
   { href: "/analytics", label: "Análises", icon: "◈" },
 ] as const;
 

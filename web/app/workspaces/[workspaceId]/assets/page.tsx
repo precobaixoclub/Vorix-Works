@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input } from "@/components/Field";
@@ -10,17 +11,30 @@ import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { AssetCard } from "@/features/assets/components/AssetCard";
+import { EditAssetModal } from "@/features/assets/components/EditAssetModal";
 import { RegisterAssetModal } from "@/features/assets/components/RegisterAssetModal";
 import { archiveAsset, deleteAsset } from "@/features/assets/api";
 import { useAssets } from "@/features/assets/hooks";
-import { ASSET_KINDS, ASSET_KIND_LABEL, type AssetKind } from "@/features/assets/types";
+import { ASSET_KINDS, ASSET_KIND_LABEL, type Asset, type AssetKind } from "@/features/assets/types";
 
 export default function AssetsPage() {
   const workspace = useCurrentWorkspace();
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<AssetKind | undefined>(undefined);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [editingAsset, setEditingAsset] = useState<Asset | undefined>();
+  const [actionError, setActionError] = useState<string | undefined>();
   const { data: assets, isLoading, error, mutate } = useAssets(workspace.id, { search: search || undefined, kind: kindFilter });
+
+  async function runAction(action: () => Promise<unknown>) {
+    setActionError(undefined);
+    try {
+      await action();
+      mutate();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Não foi possível concluir a ação.");
+    }
+  }
 
   return (
     <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
@@ -73,6 +87,12 @@ export default function AssetsPage() {
         ))}
       </div>
 
+      {actionError ? (
+        <Card className="mb-4 border-red-200 p-4">
+          <p className="text-sm text-red-600">{actionError}</p>
+        </Card>
+      ) : null}
+
       {isLoading ? (
         <div className="flex justify-center py-14">
           <Spinner />
@@ -90,14 +110,9 @@ export default function AssetsPage() {
             <AssetCard
               key={asset.id}
               asset={asset}
-              onArchive={async () => {
-                await archiveAsset(workspace.id, asset.id);
-                mutate();
-              }}
-              onDelete={async () => {
-                await deleteAsset(workspace.id, asset.id);
-                mutate();
-              }}
+              onEdit={() => setEditingAsset(asset)}
+              onArchive={() => runAction(() => archiveAsset(workspace.id, asset.id))}
+              onDelete={() => runAction(() => deleteAsset(workspace.id, asset.id))}
             />
           ))}
         </div>
@@ -109,6 +124,17 @@ export default function AssetsPage() {
           onClose={() => setIsRegistering(false)}
           onRegistered={() => {
             setIsRegistering(false);
+            mutate();
+          }}
+        />
+      ) : null}
+
+      {editingAsset ? (
+        <EditAssetModal
+          asset={editingAsset}
+          onClose={() => setEditingAsset(undefined)}
+          onUpdated={() => {
+            setEditingAsset(undefined);
             mutate();
           }}
         />

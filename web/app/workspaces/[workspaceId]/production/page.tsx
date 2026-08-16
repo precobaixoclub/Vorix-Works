@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { Input, Label, Textarea } from "@/components/Field";
@@ -12,11 +13,14 @@ import type { ContentBlueprint, IdeaProductionMode, PostingRule, ProductionChann
 
 const CHANNELS: ProductionChannel[] = ["instagram", "facebook", "tiktok", "youtube"];
 const FORMATS: ProductionFormat[] = ["single_image", "carousel", "video"];
-const IDEA_FILTERS = [
+const IDEA_TYPE_FILTERS = [
   { id: "all", label: "Todas" },
   { id: "routine", label: "Rotina" },
-  { id: "available", label: "No tanque" },
   { id: "standalone", label: "Avulsas" },
+] as const;
+const IDEA_STATUS_FILTERS = [
+  { id: "all", label: "Todas" },
+  { id: "available", label: "No tanque" },
   { id: "used", label: "Usadas" },
 ] as const;
 const WEEKDAYS: { id: ProductionWeekday; short: string; label: string }[] = [
@@ -32,7 +36,8 @@ const QUICK_TIMES = ["08:00", "09:00", "12:00", "13:30", "18:30", "20:00"];
 const MINUTE_OPTIONS = ["00", "15", "30", "45"];
 
 type ProductionView = "dashboard" | "schedule";
-type IdeaFilter = (typeof IDEA_FILTERS)[number]["id"];
+type IdeaTypeFilter = (typeof IDEA_TYPE_FILTERS)[number]["id"];
+type IdeaStatusFilter = (typeof IDEA_STATUS_FILTERS)[number]["id"];
 
 const CHANNEL_SHORT: Record<ProductionChannel, string> = {
   instagram: "IG",
@@ -175,7 +180,8 @@ export default function ProductionLinePage() {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ProductionView>("dashboard");
-  const [ideaFilter, setIdeaFilter] = useState<IdeaFilter>("available");
+  const [ideaTypeFilter, setIdeaTypeFilter] = useState<IdeaTypeFilter>("all");
+  const [ideaStatusFilter, setIdeaStatusFilter] = useState<IdeaStatusFilter>("available");
   const [ideaSearch, setIdeaSearch] = useState("");
   const [formatFilter, setFormatFilter] = useState<ProductionFormat | "all">("all");
   const [draftIdea, setDraftIdea] = useState<ContentBlueprint | null>(null);
@@ -199,7 +205,9 @@ export default function ProductionLinePage() {
   const visibleBlueprints = useMemo(() => {
     const query = ideaSearch.trim().toLowerCase();
     return config.blueprints.filter((idea) => {
-      if (!matchesIdeaFilter(idea, ideaFilter)) return false;
+      if (ideaTypeFilter === "routine" && !isRoutineIdea(idea)) return false;
+      if (ideaTypeFilter === "standalone" && !isStandaloneIdea(idea)) return false;
+      if (ideaStatusFilter !== "all" && idea.status !== ideaStatusFilter) return false;
       if (formatFilter !== "all" && idea.format !== formatFilter) return false;
       if (query) {
         const haystack = `${idea.name} ${idea.ideaText} ${idea.objective}`.toLowerCase();
@@ -207,7 +215,7 @@ export default function ProductionLinePage() {
       }
       return true;
     });
-  }, [config.blueprints, ideaFilter, formatFilter, ideaSearch]);
+  }, [config.blueprints, ideaTypeFilter, ideaStatusFilter, formatFilter, ideaSearch]);
   const routineBlueprints = useMemo(() => config.blueprints.filter(isRoutineIdea), [config.blueprints]);
 
   const productionSummary = useMemo(() => {
@@ -258,30 +266,22 @@ export default function ProductionLinePage() {
   function addBlueprint() {
     const nextDraft = draftIdea ?? emptyBlueprint("routine");
     setDraftIdea(nextDraft);
-    setIdeaFilter("available");
     setSelectedBlueprintId(nextDraft.id);
     setIdeaEditorOpen(true);
   }
 
-  function addStandaloneBlueprint() {
-    const nextDraft = emptyBlueprint("standalone");
-    setDraftIdea(nextDraft);
-    setIdeaFilter("standalone");
-    setSelectedBlueprintId(nextDraft.id);
-    setIdeaEditorOpen(true);
-  }
-
-  function saveDraftIdea() {
+  function saveDraftIdea(mode: IdeaProductionMode) {
     if (!draftIdea || !canPersistIdea(draftIdea)) return;
     const normalizedDraft: ContentBlueprint = {
       ...draftIdea,
       name: draftIdea.name.trim() && draftIdea.name.trim() !== "Nova ideia" ? draftIdea.name.trim() : draftIdea.ideaText.trim().slice(0, 60),
       objective: draftIdea.objective || draftIdea.ideaText,
-      productionMode: draftIdea.productionMode === "standalone" ? "standalone" : "routine",
+      productionMode: mode,
     };
     save({ ...config, blueprints: [...config.blueprints, normalizedDraft] });
     setDraftIdea(null);
-    setIdeaFilter("available");
+    setIdeaTypeFilter(mode === "standalone" ? "standalone" : "routine");
+    setIdeaStatusFilter("available");
     setSelectedBlueprintId(normalizedDraft.id);
     setIdeaEditorOpen(false);
   }
@@ -290,6 +290,20 @@ export default function ProductionLinePage() {
     setDraftIdea(null);
     setSelectedBlueprintId(config.blueprints[0]?.id ?? "");
     setIdeaEditorOpen(false);
+  }
+
+  function generateFromIdea(idea: ContentBlueprint) {
+    const duplicate: ContentBlueprint = {
+      ...idea,
+      id: newId("blueprint"),
+      productionMode: "standalone",
+      status: "available",
+      usedAt: undefined,
+    };
+    save({ ...config, blueprints: [...config.blueprints, duplicate] });
+    setIdeaTypeFilter("standalone");
+    setIdeaStatusFilter("available");
+    setSelectedBlueprintId(duplicate.id);
   }
 
   function removeBlueprint(id: string) {
@@ -306,8 +320,6 @@ export default function ProductionLinePage() {
 
   function openBlueprint(id: string) {
     setSelectedBlueprintId(id);
-    const target = config.blueprints.find((idea) => idea.id === id);
-    if (target) setIdeaFilter(target.productionMode === "standalone" ? "standalone" : target.status === "used" ? "used" : "available");
     setActiveView("dashboard");
     setIdeaEditorOpen(true);
   }
@@ -328,7 +340,8 @@ export default function ProductionLinePage() {
     }));
     save({ blueprints: nextBlueprints, postingRules: nextRules });
     setSelectedBlueprintId(fallbackId);
-    setIdeaFilter("available");
+    setIdeaTypeFilter("all");
+    setIdeaStatusFilter("available");
   }
 
   function updateRule(id: string, patch: Partial<PostingRule>) {
@@ -352,12 +365,6 @@ export default function ProductionLinePage() {
     updateRule(rule.id, { weeklyMix: rule.weeklyMix.map((item) => (item.id === itemId ? { ...item, ...patch } : item)) });
   }
 
-  function changeIdeaFilter(filter: IdeaFilter) {
-    setIdeaFilter(filter);
-    const first = config.blueprints.find((idea) => matchesIdeaFilter(idea, filter));
-    if (first) setSelectedBlueprintId(first.id);
-  }
-
   return (
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -365,12 +372,11 @@ export default function ProductionLinePage() {
           <p className="text-xs font-medium uppercase tracking-wide text-accent">Produção automática</p>
           <h1 className="mt-1 text-2xl font-semibold text-ink">Produção de conteúdo</h1>
           <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-            Abasteça o tanque, crie conteúdos avulsos e acompanhe o que precisa revisar antes de postar.
+            Abasteça o tanque de ideias e acompanhe o que precisa revisar antes de postar.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
           <Button onClick={addBlueprint}><IconPlus /> {draftIdea ? "Continuar rascunho" : "Nova ideia"}</Button>
-          <Button variant="secondary" onClick={addStandaloneBlueprint}><IconLayer /> Conteúdo avulso</Button>
           <Button variant="secondary" onClick={() => setActiveView("schedule")}><IconSliders /> Configurar rotina</Button>
         </div>
       </div>
@@ -397,15 +403,22 @@ export default function ProductionLinePage() {
                   value={ideaSearch}
                   onChange={(event) => setIdeaSearch(event.target.value)}
                   placeholder="Buscar por nome ou descrição"
-                  className="w-56 max-w-full rounded-lg border border-border bg-surface py-2 pl-8 pr-3 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+                  className="w-64 max-w-full rounded-lg border border-border bg-surface py-2 pl-8 pr-3 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft sm:w-72"
                 />
               </div>
             </CardHeader>
             <CardBody>
               <TankMetrics summary={productionSummary} />
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <IdeaFilterTabs value={ideaFilter} onChange={changeIdeaFilter} />
-                <label className="flex items-center gap-2 text-xs text-ink-muted">
+              <div className="mt-4 flex flex-wrap items-end gap-x-6 gap-y-3">
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-ink-muted">Tipo</p>
+                  <SegmentedFilter value={ideaTypeFilter} options={IDEA_TYPE_FILTERS} onChange={setIdeaTypeFilter} />
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-ink-muted">Status</p>
+                  <SegmentedFilter value={ideaStatusFilter} options={IDEA_STATUS_FILTERS} onChange={setIdeaStatusFilter} />
+                </div>
+                <label className="ml-auto flex items-center gap-2 text-xs text-ink-muted">
                   Formato
                   <select
                     value={formatFilter}
@@ -428,14 +441,15 @@ export default function ProductionLinePage() {
                 onToggleStatus={toggleBlueprintStatus}
                 onRemove={removeBlueprint}
                 onCleanEmpty={removeEmptyIdeas}
+                onGenerateNow={generateFromIdea}
               />
             </CardBody>
           </Card>
 
           <aside className="space-y-4">
-            <RoutineStatusCard rule={selectedRule} onConfigure={() => setActiveView("schedule")} />
+            <RoutineStatusCard rule={selectedRule} />
             <FormatAlertsCard alerts={formatAlerts} />
-            <ReviewQueue totalPending={productionSummary.pendingReview} />
+            <ReviewQueue workspaceId={workspace.id} totalPending={productionSummary.pendingReview} />
           </aside>
         </section>
       ) : null}
@@ -548,7 +562,7 @@ function IdeaFormDialog({
   canSaveDraft: boolean;
   onChange: (patch: Partial<ContentBlueprint>) => void;
   onClose: () => void;
-  onSaveDraft: () => void;
+  onSaveDraft: (mode: IdeaProductionMode) => void;
   onDiscardDraft: () => void;
   onRemove: () => void;
 }) {
@@ -559,10 +573,10 @@ function IdeaFormDialog({
         <header className="border-b border-border bg-surface-raised px-4 py-3 sm:px-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-accent">{isDraft ? standalone ? "Conteúdo avulso" : "Nova ideia" : "Editar ideia"}</p>
-              <h2 className="mt-1 text-lg font-semibold text-ink">{isDraft ? standalone ? "Criar conteúdo fora da rotina" : "Abastecer tanque de conteúdo" : blueprint.name || "Ideia sem nome"}</h2>
+              <p className="text-xs font-semibold uppercase tracking-wide text-accent">{isDraft ? "Nova ideia" : "Editar ideia"}</p>
+              <h2 className="mt-1 text-lg font-semibold text-ink">{isDraft ? "Abastecer tanque de conteúdo" : blueprint.name || "Ideia sem nome"}</h2>
               <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-                {standalone ? "Use para criar uma peça única sem entrar no sorteio da rotina." : "Preencha primeiro a ideia e o formato. Referências e detalhes aparecem separados para não poluir o fluxo."}
+                {isDraft ? "Preencha a ideia e o formato. No final, escolha se ela fica só no tanque ou se já deve gerar uma peça agora, fora da agenda." : "Preencha primeiro a ideia e o formato. Referências e detalhes aparecem separados para não poluir o fluxo."}
               </p>
             </div>
             <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-xl leading-none text-ink-muted hover:bg-surface-sunken hover:text-ink" aria-label="Fechar">
@@ -572,7 +586,7 @@ function IdeaFormDialog({
         </header>
 
         <div className="overflow-y-auto bg-surface-raised px-4 py-4 sm:px-5">
-          {standalone ? (
+          {!isDraft && standalone ? (
             <div className="mb-4 flex items-start gap-2.5 rounded-lg border border-blue-500/25 bg-blue-500/10 px-3.5 py-3 text-sm text-blue-300">
               <IconLayer className="mt-0.5 h-4 w-4 shrink-0" />
               <p>Este conteúdo fica fora da rotina automática — não entra no sorteio semanal.</p>
@@ -590,10 +604,11 @@ function IdeaFormDialog({
         <footer className="border-t border-border bg-surface-raised px-4 py-3 sm:px-5">
           {isDraft ? (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-ink-muted">{standalone ? "Conteúdo avulso fica separado do tanque automático." : "Só entra no tanque depois de salvar. O campo obrigatório é a ideia da postagem."}</p>
+              <p className="text-xs text-ink-muted">Escolha uma das opções para salvar. O campo obrigatório é a ideia da postagem.</p>
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" onClick={onDiscardDraft}>Descartar</Button>
-                <Button disabled={!canSaveDraft} onClick={onSaveDraft}>{standalone ? "Criar avulso" : "Salvar no tanque"}</Button>
+                <Button variant="secondary" disabled={!canSaveDraft} onClick={() => onSaveDraft("routine")}>Salvar no tanque</Button>
+                <Button disabled={!canSaveDraft} onClick={() => onSaveDraft("standalone")}>Salvar e gerar agora</Button>
               </div>
             </div>
           ) : (
@@ -608,7 +623,7 @@ function IdeaFormDialog({
   );
 }
 
-function RoutineStatusCard({ rule, onConfigure }: { rule?: PostingRule; onConfigure: () => void }) {
+function RoutineStatusCard({ rule }: { rule?: PostingRule }) {
   const activeRows = rule ? rule.weeklyMix.filter((item) => scheduledQuantity(item) > 0) : [];
   return (
     <Card className="h-fit">
@@ -617,7 +632,6 @@ function RoutineStatusCard({ rule, onConfigure }: { rule?: PostingRule; onConfig
           <p className="text-sm font-semibold text-ink">Rotina ativa</p>
           <p className="text-xs text-ink-muted">{rule?.name ?? "Nenhuma rotina configurada"}</p>
         </div>
-        <Button variant="secondary" className="min-h-8 px-3 py-1.5 text-xs" onClick={onConfigure}>Configurar</Button>
       </CardHeader>
       <CardBody>
         {rule ? (
@@ -679,7 +693,7 @@ function FormatAlertsCard({ alerts }: { alerts: { format: ProductionFormat; need
   );
 }
 
-function ReviewQueue({ totalPending }: { totalPending: number }) {
+function ReviewQueue({ workspaceId, totalPending }: { workspaceId: string; totalPending: number }) {
   return (
     <Card className="h-fit">
       <CardHeader>
@@ -687,6 +701,7 @@ function ReviewQueue({ totalPending }: { totalPending: number }) {
           <p className="text-sm font-semibold text-ink">Para revisar e aprovar</p>
           <p className="text-xs text-ink-muted">{totalPending} peça(s) gerada(s) aguardando decisão.</p>
         </div>
+        <Link href={`/workspaces/${workspaceId}/review`} className="text-xs font-medium text-accent hover:underline">Ver tudo</Link>
       </CardHeader>
       <CardBody>
         <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-surface px-4 py-6 text-center">
@@ -721,6 +736,7 @@ function IdeaInventory({
   onToggleStatus,
   onRemove,
   onCleanEmpty,
+  onGenerateNow,
 }: {
   ideas: ContentBlueprint[];
   totalIdeas: number;
@@ -730,6 +746,7 @@ function IdeaInventory({
   onToggleStatus: (idea: ContentBlueprint) => void;
   onRemove: (id: string) => void;
   onCleanEmpty: () => void;
+  onGenerateNow: (idea: ContentBlueprint) => void;
 }) {
   return (
     <section className="mt-4">
@@ -786,6 +803,11 @@ function IdeaInventory({
               </span>
               <div className="flex flex-wrap justify-start gap-1.5 sm:justify-end">
                 <Button className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onOpen(idea.id)}>Abrir</Button>
+                {!isStandaloneIdea(idea) ? (
+                  <Button variant="ghost" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onGenerateNow(idea)} title="Cria uma cópia avulsa desta ideia, pronta para gerar fora do cronograma">
+                    Gerar agora
+                  </Button>
+                ) : null}
                 <Button variant="ghost" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onToggleStatus(idea)}>
                   {idea.status === "used" ? "Voltar" : "Marcar usada"}
                 </Button>
@@ -799,22 +821,19 @@ function IdeaInventory({
   );
 }
 
-function IdeaFilterTabs({ value, onChange }: { value: IdeaFilter; onChange: (value: IdeaFilter) => void }) {
+function SegmentedFilter<T extends string>({ value, options, onChange }: { value: T; options: readonly { id: T; label: string }[]; onChange: (value: T) => void }) {
   return (
-    <div>
-      <p className="mb-1.5 text-xs font-medium text-ink-muted">Ideias</p>
-      <div className="inline-flex rounded-lg border border-border bg-surface p-1">
-        {IDEA_FILTERS.map((filter) => (
-          <button
-            key={filter.id}
-            type="button"
-            onClick={() => onChange(filter.id)}
-            className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === filter.id ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}
-          >
-            {filter.label}
-          </button>
-        ))}
-      </div>
+    <div className="inline-flex rounded-lg border border-border bg-surface p-1">
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          onClick={() => onChange(option.id)}
+          className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === option.id ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -1676,14 +1695,6 @@ function isEffectivelyEmptyIdea(idea: ContentBlueprint): boolean {
     .map((value) => value.trim())
     .filter(Boolean);
   return textFields.length === 0 && idea.sourceLinks.length === 0 && idea.referenceImages.length === 0;
-}
-
-function matchesIdeaFilter(idea: ContentBlueprint, filter: IdeaFilter): boolean {
-  if (filter === "all") return true;
-  if (filter === "routine") return isRoutineIdea(idea);
-  if (filter === "standalone") return isStandaloneIdea(idea);
-  if (filter === "used") return idea.status === "used";
-  return idea.status !== "used" && isRoutineIdea(idea);
 }
 
 function isRoutineIdea(idea: ContentBlueprint): boolean {

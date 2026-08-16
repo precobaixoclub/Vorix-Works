@@ -31,6 +31,10 @@ export function registerAsset(
   });
 }
 
+export function updateAsset(assetId: string, patch: { name?: string; kind?: AssetKind; tags?: string[] }): Promise<Asset> {
+  return apiClient.post<Asset>(`/v1/assets/${encodeURIComponent(assetId)}/update`, patch);
+}
+
 export function archiveAsset(_workspaceId: string, assetId: string): Promise<Asset> {
   return apiClient.post<Asset>(`/v1/assets/${encodeURIComponent(assetId)}/archive`);
 }

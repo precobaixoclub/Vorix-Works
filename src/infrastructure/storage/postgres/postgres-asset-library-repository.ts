@@ -104,6 +104,19 @@ export class PostgresAssetLibraryRepository implements AssetLibraryRepositoryPor
     return result.rows[0] ? this.toAssetDomain(result.rows[0]) : undefined;
   }
 
+  async updateAsset(assetId: string, patch: { name?: string; kind?: AssetKind; tags?: string[] }): Promise<AssetRecord> {
+    const existing = await this.pool.query("select id from assets where id = $1", [assetId]);
+    if (existing.rows.length === 0) {
+      throw new Error(`ASSET_NOT_FOUND: asset "${assetId}" não existe.`);
+    }
+    const result = await this.pool.query<AssetRow>(
+      `update assets set name = coalesce($2, name), kind = coalesce($3, kind), tags = coalesce($4, tags), updated_at = now()
+       where id = $1 returning *`,
+      [assetId, patch.name ?? null, patch.kind ?? null, patch.tags ?? null],
+    );
+    return this.toAssetDomain(result.rows[0]);
+  }
+
   async archiveAsset(assetId: string): Promise<AssetRecord> {
     const existing = await this.pool.query("select id from assets where id = $1", [assetId]);
     if (existing.rows.length === 0) {

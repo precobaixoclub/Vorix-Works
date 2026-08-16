@@ -26,6 +26,16 @@ const WORKSPACE_QUERY_SCHEMA = {
 const UPLOAD_QUERY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 } } } as const;
 const ID_PARAMS_SCHEMA = { type: "object", required: ["id"], properties: { id: { type: "string", minLength: 1 } } } as const;
 
+const UPDATE_BODY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    name: { type: "string", minLength: 1, maxLength: 200 },
+    kind: { type: "string", enum: [...ASSET_KINDS] },
+    tags: { type: "array", items: { type: "string", maxLength: 60 }, maxItems: 20 },
+  },
+} as const;
+
 const REGISTER_BODY_SCHEMA = {
   type: "object",
   required: ["workspaceId", "kind", "name"],
@@ -147,6 +157,14 @@ export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRou
     const asset = await deps.assetLibraryRepository
       .registerAsset({ libraryId, kind: body.kind, name: body.name, tags: body.tags, storageRef: body.storageRef })
       .catch(translateAssetError);
+    return successEnvelope(asset, request.id);
+  });
+
+  app.post("/assets/:id/update", { schema: { params: ID_PARAMS_SCHEMA, body: UPDATE_BODY_SCHEMA } }, async (request) => {
+    requirePermission(request, "asset:update");
+    const { id } = request.params as { id: string };
+    const patch = request.body as { name?: string; kind?: AssetKind; tags?: string[] };
+    const asset = await deps.assetLibraryRepository.updateAsset(id, patch).catch(translateAssetError);
     return successEnvelope(asset, request.id);
   });
 

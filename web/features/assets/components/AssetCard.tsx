@@ -17,7 +17,7 @@ const KIND_ICON: Record<string, string> = {
 
 const PREVIEWABLE_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/svg+xml"]);
 
-export function AssetCard({ asset, onArchive, onDelete }: { asset: Asset; onArchive: () => void; onDelete: () => void }) {
+export function AssetCard({ asset, onEdit, onArchive, onDelete }: { asset: Asset; onEdit: () => void; onArchive: () => void; onDelete: () => void }) {
   const previewUrl = asset.storageRef?.metadata?.url;
   const contentType = asset.storageRef?.metadata?.contentType;
   const canPreview =
@@ -55,6 +55,9 @@ export function AssetCard({ asset, onArchive, onDelete }: { asset: Asset; onArch
         ) : null}
         <p className="text-[11px] text-ink-faint">Adicionado em {formatDate(asset.createdAt)}</p>
         <div className="flex flex-wrap gap-3 border-t border-border pt-2 text-xs">
+          <button type="button" onClick={onEdit} className="min-h-9 cursor-pointer font-medium text-accent hover:underline">
+            Editar
+          </button>
           <button type="button" onClick={onArchive} className="min-h-9 cursor-pointer font-medium text-ink-muted hover:text-ink">
             Arquivar
           </button>

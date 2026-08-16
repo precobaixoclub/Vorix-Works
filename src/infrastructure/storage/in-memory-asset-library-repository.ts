@@ -70,6 +70,23 @@ export class InMemoryAssetLibraryRepository implements AssetLibraryRepositoryPor
     return clone(this.assets.get(assetId));
   }
 
+  async updateAsset(assetId: string, patch: { name?: string; kind?: AssetKind; tags?: string[] }): Promise<AssetRecord> {
+    const existing = this.assets.get(assetId);
+    if (!existing) {
+      throw new Error(`ASSET_NOT_FOUND: asset "${assetId}" não existe.`);
+    }
+    const timestamp = this.now().toISOString();
+    const updated: AssetRecord = {
+      ...existing,
+      name: patch.name ?? existing.name,
+      kind: patch.kind ?? existing.kind,
+      tags: patch.tags ?? existing.tags,
+      updatedAt: timestamp,
+    };
+    this.assets.set(assetId, clone(updated));
+    return clone(updated);
+  }
+
   async archiveAsset(assetId: string): Promise<AssetRecord> {
     const existing = this.assets.get(assetId);
     if (!existing) {

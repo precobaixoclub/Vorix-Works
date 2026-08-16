@@ -26,6 +26,9 @@ export type AssetLibraryRepositoryPort = {
   registerAsset(input: RegisterAssetInput): Promise<AssetRecord>;
   listAssets(libraryId: string, filter?: { kind?: AssetKind }): Promise<AssetRecord[]>;
   getAsset(assetId: string): Promise<AssetRecord | undefined>;
+  /** Edita metadados de um material já cadastrado (nome, tipo, tags) — não substitui o arquivo em
+   * si, que continua imutável uma vez enviado ao Object Storage. */
+  updateAsset(assetId: string, patch: { name?: string; kind?: AssetKind; tags?: string[] }): Promise<AssetRecord>;
   archiveAsset(assetId: string): Promise<AssetRecord>;
   /** Exclusão definitiva (diferente de `archiveAsset`, que é reversível) — usada quando o cliente
    * escolhe "Excluir" em vez de "Arquivar". */

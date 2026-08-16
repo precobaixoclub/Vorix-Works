@@ -19,6 +19,7 @@ import { registerYouTubeRoutes } from "./youtube.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
 import { registerPublicationMediaRoutes } from "./publication-media.route.js";
 import { registerExecutionRunRoutes } from "./execution-runs.route.js";
+import { registerProductionRoutes } from "./production.route.js";
 import { registerPublicationRoutes } from "./publications.route.js";
 import { registerWebhookRoutes } from "./webhooks.route.js";
 import { registerWorkspaceRoutes } from "./workspaces.route.js";
@@ -92,6 +93,29 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     executionFeatureFlags: app.zunoContainer.executionFeatureFlags,
     executionEnvironmentPolicy: app.zunoContainer.executionEnvironmentPolicy,
     idGenerator: () => `execution-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  });
+  await registerProductionRoutes(app, {
+    conversationRepository: app.zunoContainer.conversationRepository,
+    briefingRepository: app.zunoContainer.briefingRepository,
+    fieldValueRepository: app.zunoContainer.briefingFieldValueRepository,
+    questionRepository: app.zunoContainer.briefingQuestionRepository,
+    preparedCommandRepository: app.zunoContainer.preparedCommandRepository,
+    eventRepository: app.zunoContainer.conversationEventRepository,
+    planningEngine: app.zunoContainer.planningEngineHook,
+    planningRepository: app.zunoContainer.planningRepository,
+    runtimeRepository: app.zunoContainer.runtimeRepository,
+    executionRepository: app.zunoContainer.executionRepository,
+    executionTaskRepository: app.zunoContainer.executionTaskRepository,
+    executionGraphRepository: app.zunoContainer.executionGraphRepository,
+    artifactRepository: app.zunoContainer.planningArtifactRepository,
+    handlers: app.zunoContainer.executionHandlers,
+    handlerResolver: executionHandlerResolver,
+    featureFlags: app.zunoContainer.executionFeatureFlags,
+    contractRegistry: app.zunoContainer.executionContractRegistry,
+    sideEffectGuard: app.zunoContainer.executionSideEffectGuard,
+    circuitBreaker: app.zunoContainer.executionCircuitBreaker,
+    idGenerator: () => `execution-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    ensureHouseTenantProfile: app.zunoContainer.ensureHouseTenantProfile,
   });
   await registerPublicationRoutes(app, {
     publicationRepository: app.zunoContainer.publicationRepository,

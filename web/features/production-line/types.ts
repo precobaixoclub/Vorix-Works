@@ -14,6 +14,9 @@ export type ContentBlueprint = {
   theme: string;
   captionDirection: string;
   creativeDirection: string;
+  /** Opcional — usado só quando a ideia é enviada para geração real (ver "Gerar imagem real").
+   * Sem isso, a geração usa um público genérico como fallback. */
+  targetAudience?: string;
   mediaCount: number;
   channels: ProductionChannel[];
   approvalMode: ApprovalMode;

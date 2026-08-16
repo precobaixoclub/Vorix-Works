@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { Input, Label, Textarea } from "@/components/Field";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { CHANNEL_LABEL, DEFAULT_PRODUCTION_CONFIG, FORMAT_LABEL } from "@/features/production-line/defaults";
+import { generateFromIdea as generateRealImageFromIdea } from "@/features/production-line/api";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
 import type { ContentBlueprint, IdeaProductionMode, PostingRule, ProductionChannel, ProductionFormat, ProductionLineConfig, ProductionWeekday, WeeklyFormatQuota } from "@/features/production-line/types";
 
@@ -174,6 +176,7 @@ function emptyRule(blueprintId: string): PostingRule {
 
 export default function ProductionLinePage() {
   const workspace = useCurrentWorkspace();
+  const router = useRouter();
   const [config, setConfig] = useState<ProductionLineConfig>(DEFAULT_PRODUCTION_CONFIG);
   const [selectedBlueprintId, setSelectedBlueprintId] = useState(DEFAULT_PRODUCTION_CONFIG.blueprints[0]?.id ?? "");
   const [selectedRuleId, setSelectedRuleId] = useState(DEFAULT_PRODUCTION_CONFIG.postingRules[0]?.id ?? "");
@@ -186,6 +189,8 @@ export default function ProductionLinePage() {
   const [formatFilter, setFormatFilter] = useState<ProductionFormat | "all">("all");
   const [draftIdea, setDraftIdea] = useState<ContentBlueprint | null>(null);
   const [ideaEditorOpen, setIdeaEditorOpen] = useState(false);
+  const [generatingIdeaId, setGeneratingIdeaId] = useState<string | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = readProductionConfig(workspace.id);
@@ -304,6 +309,28 @@ export default function ProductionLinePage() {
     setIdeaTypeFilter("standalone");
     setIdeaStatusFilter("available");
     setSelectedBlueprintId(duplicate.id);
+  }
+
+  async function handleGenerateRealImage(idea: ContentBlueprint) {
+    if (idea.format === "video") return;
+    setGenerateError(null);
+    setGeneratingIdeaId(idea.id);
+    try {
+      const { executionRunId } = await generateRealImageFromIdea({
+        workspaceId: workspace.id,
+        name: idea.name || "Ideia sem nome",
+        objective: idea.objective || idea.ideaText,
+        ideaText: idea.ideaText,
+        format: idea.format,
+        channel: idea.channels[0] ?? "instagram",
+        targetAudience: idea.targetAudience,
+      });
+      router.push(`/workspaces/${workspace.id}/execution/${executionRunId}`);
+    } catch (error) {
+      setGenerateError(error instanceof Error ? error.message : "Não foi possível iniciar a geração.");
+    } finally {
+      setGeneratingIdeaId(null);
+    }
   }
 
   function removeBlueprint(id: string) {
@@ -465,6 +492,9 @@ export default function ProductionLinePage() {
           onSaveDraft={saveDraftIdea}
           onDiscardDraft={discardDraftIdea}
           onRemove={() => selectedBlueprint.id === draftIdea?.id ? discardDraftIdea() : removeBlueprint(selectedBlueprint.id)}
+          onGenerate={() => handleGenerateRealImage(selectedBlueprint)}
+          isGenerating={generatingIdeaId === selectedBlueprint.id}
+          generateError={generateError}
         />
       ) : null}
 
@@ -555,6 +585,9 @@ function IdeaFormDialog({
   onSaveDraft,
   onDiscardDraft,
   onRemove,
+  onGenerate,
+  isGenerating,
+  generateError,
 }: {
   workspaceId: string;
   blueprint: ContentBlueprint;
@@ -565,6 +598,9 @@ function IdeaFormDialog({
   onSaveDraft: (mode: IdeaProductionMode) => void;
   onDiscardDraft: () => void;
   onRemove: () => void;
+  onGenerate: () => void;
+  isGenerating: boolean;
+  generateError: string | null;
 }) {
   const standalone = isStandaloneIdea(blueprint);
   return (
@@ -612,9 +648,19 @@ function IdeaFormDialog({
               </div>
             </div>
           ) : (
-            <div className="flex flex-wrap justify-between gap-2">
-              <Button variant="danger" onClick={onRemove}>Remover ideia</Button>
-              <Button onClick={onClose}>Concluir</Button>
+            <div className="flex flex-col gap-2">
+              {generateError ? <p className="text-xs text-red-600">{generateError}</p> : null}
+              <div className="flex flex-wrap justify-between gap-2">
+                <Button variant="danger" onClick={onRemove}>Remover ideia</Button>
+                <div className="flex flex-wrap gap-2">
+                  {blueprint.format !== "video" ? (
+                    <Button variant="secondary" disabled={isGenerating} onClick={onGenerate} title="Chama a OpenAI de verdade — gera custo real">
+                      {isGenerating ? "Gerando…" : "Gerar imagem real"}
+                    </Button>
+                  ) : null}
+                  <Button onClick={onClose}>Concluir</Button>
+                </div>
+              </div>
             </div>
           )}
         </footer>
@@ -1543,6 +1589,17 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
             <Label htmlFor="blueprint-creative">Direção visual</Label>
             <Textarea id="blueprint-creative" rows={3} value={blueprint.creativeDirection} onChange={(event) => onChange({ creativeDirection: event.target.value })} />
           </div>
+        </div>
+
+        <div className="mt-3">
+          <Label htmlFor="blueprint-audience">Público-alvo</Label>
+          <Input
+            id="blueprint-audience"
+            value={blueprint.targetAudience ?? ""}
+            placeholder="Ex.: mulheres de 25-40 anos interessadas em moda sustentável"
+            onChange={(event) => onChange({ targetAudience: event.target.value })}
+          />
+          <p className="mt-1 text-xs text-ink-muted">Usado só na geração real de imagem — sem isso, entra um público genérico.</p>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">

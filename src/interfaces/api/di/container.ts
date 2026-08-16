@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type pg from "pg";
 import type { AiGatewayPort } from "../../../application/ports/ai-gateway.port.js";
 import type { AnalyticsRepositoryPort } from "../../../application/ports/analytics-repository.port.js";
@@ -33,7 +34,14 @@ import { createDefaultAiMediaProviderRegistry, type AiMediaProviderRegistry } fr
 import { CreditAccountingService } from "../../../application/ai-providers/credit-accounting.service.js";
 import { MediaGenerationService } from "../../../application/ai-providers/media-generation.service.js";
 import { OpenAiImageProviderAdapter } from "../../../infrastructure/ai-providers/openai-image-provider-adapter.js";
+import { OpenAiIcaroImageProvider } from "../../../infrastructure/ai-providers/openai-icaro-image-provider.js";
 import { GoogleVeoProviderAdapter } from "../../../infrastructure/ai-providers/google-veo-provider-adapter.js";
+import { IcaroAIBrain } from "../../../application/ai/icaro-brain.js";
+import { ValentinaTenantManager } from "../../../application/tenancy/valentina-tenant-manager.js";
+import type { ValentinaTenantPort } from "../../../application/tenancy/valentina-tenant.port.js";
+import { ClaraKnowledgeCenter } from "../../../application/knowledge/clara-knowledge-center.js";
+import { LocalJsonValentinaTenantRepository } from "../../../infrastructure/storage/local-json-valentina-tenant-repository.js";
+import { LocalJsonClaraKnowledgeRepository } from "../../../infrastructure/storage/local-json-clara-knowledge-repository.js";
 import type { PublicationRepositoryPort } from "../../../application/ports/publication-repository.port.js";
 import type { PreparedCommandRepositoryPort } from "../../../application/ports/prepared-command-repository.port.js";
 import type { RefreshTokenRepositoryPort } from "../../../application/ports/refresh-token-repository.port.js";
@@ -241,6 +249,14 @@ export type ApiContainer = {
   executionSideEffectGuard: SideEffectGuard;
   executionCircuitBreaker: HandlerCircuitBreakerPort;
   createExecutionHandlerResolver(): Promise<ExecutionHandlerResolver>;
+  /** Perfil "Valentina" (tenant/plano/limites) que os skills reais (Sofia/Bianca/Pedro) exigem —
+   * sistema separado do tenant de billing HTTP principal (`identity.platformBillingRepository`).
+   * Usado por `production.route.ts` para garantir que a conta interna tenha um perfil antes da
+   * primeira geração real. */
+  valentina: ValentinaTenantPort;
+  /** Garante (idempotente) que a conta interna tenha um perfil Valentina antes da primeira geração
+   * real — ver comentário junto da implementação. */
+  ensureHouseTenantProfile(tenantId: string): Promise<void>;
   /** Presente quando `persistenceDriver === "postgres"` — `app.ts` fecha isto no hook `onClose`. */
   pool?: pg.Pool;
 
@@ -368,7 +384,6 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   });
   const operationalCache = new InMemoryTtlCache();
   const backupRestorePlanner = new BackupRestorePlanner();
-  const createExecutionHandlerResolver = () => buildExecutionHandlerResolver({ featureFlags: executionFeatureFlags });
   const publicationProviders = [new DryRunPublicationProvider(), new FakePublicationProvider()];
   const metaPagesSandboxProvider = new MetaPagesSandboxProvider({ graphBaseUrl: config?.publication.metaGraphBaseUrl });
   const linkedInSandboxProvider = createLinkedInSandboxProvider();
@@ -448,6 +463,72 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     getApiKey: resolveMediaProviderKey(config?.mediaProviders.googleApiKey, "ai-provider:google"),
   });
   const aiMediaProviderAdapters: readonly AiMediaProviderAdapterPort[] = [openaiImageProvider, googleVeoProvider];
+
+  // Ponte real para os skills (Sofia/Bianca/Pedro) rodarem via HTTP — antes disso, nenhuma
+  // dependência era passada para `buildExecutionHandlerResolver` e Pedro caía num Proxy que
+  // lançava erro no primeiro uso ("IcaroBrainPort não configurado"). `valentina`/`clara` usam
+  // armazenamento em JSON (mesma classe que a CLI já usa), dentro do volume de uploads já
+  // existente — sem infraestrutura nova. `icaro` reaproveita o `openaiImageProvider` já wireado
+  // acima (chave/objectStorage já resolvidos) via `OpenAiIcaroImageProvider`.
+  const tenantDataDir = join(config?.objectStorage?.localDir ?? "./data", "vorix-tenant-data");
+  const valentinaRepository = new LocalJsonValentinaTenantRepository(join(tenantDataDir, "tenants.json"));
+  const valentina = new ValentinaTenantManager({ repository: valentinaRepository });
+  const clara = new ClaraKnowledgeCenter({
+    repository: new LocalJsonClaraKnowledgeRepository(join(tenantDataDir, "knowledge.json")),
+  });
+  const icaro = new IcaroAIBrain({ providers: [new OpenAiIcaroImageProvider(openaiImageProvider)] });
+  const createExecutionHandlerResolver = () =>
+    buildExecutionHandlerResolver({ featureFlags: executionFeatureFlags, runtimeDependencies: { valentina, clara, icaro } });
+  // `ValentinaTenantManager.createTenant` sempre gera um `id` novo (nunca aceita um `id`
+  // explícito) — mas os skills reais (Pedro/Sofia/Bianca...) chamam
+  // `valentina.getClientContext(input.tenantId)` usando o tenantId REAL da plataforma (o mesmo
+  // de `principal.tenantId`), que precisa bater exatamente com `TenantRecord.id`. Por isso este
+  // bootstrap grava o registro direto no repositório (que aceita `save(record)` com `id` livre)
+  // em vez de passar por `createTenant`. Idempotente — não faz nada se o registro já existir.
+  const ensureHouseTenantProfile = async (tenantId: string): Promise<void> => {
+    const existing = await valentinaRepository.findById(tenantId);
+    if (existing) return;
+    const now = new Date().toISOString();
+    await valentinaRepository.save({
+      id: tenantId,
+      clientId: tenantId,
+      displayName: "Vorix",
+      status: "active",
+      subscriptionStatus: "active",
+      plan: "ENTERPRISE",
+      planLimits: {
+        monthlyAiTokens: "unlimited",
+        dailyAiTokens: "unlimited",
+        specialists: "all",
+        features: "all",
+        integrations: "all",
+        monthlyPublications: "unlimited",
+        monthlyCampaigns: "unlimited",
+        monthlyImages: "unlimited",
+        monthlyVideos: "unlimited",
+      },
+      createdAt: now,
+      updatedAt: now,
+      mainObjectives: [],
+      connectedSocialNetworks: [],
+      integrations: {},
+      credits: { addedAiTokens: 0, consumedExtraAiTokens: 0, availableExtraAiTokens: 0 },
+      usage: { monthly: [] },
+      enabledSpecialists: "all",
+      enabledFeatures: "all",
+      permissions: {
+        canPublish: true,
+        canCreateCampaigns: true,
+        canUsePaidAds: true,
+        canUseImageGeneration: true,
+        canUseVideoGeneration: true,
+      },
+      settings: { timezone: "America/Sao_Paulo", language: "pt-BR", country: "BR", environment: "production", preferences: {} },
+      currentVersion: 1,
+      versions: [],
+      history: [],
+    });
+  };
   const aiMediaProviderRegistry = createDefaultAiMediaProviderRegistry(aiMediaProviderAdapters);
 
   const publicationSecretStore = new SecretManagerPublicationSecretStore(secretManager);
@@ -749,6 +830,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       publicationQueue,
       clock,
       createExecutionHandlerResolver,
+      valentina,
+      ensureHouseTenantProfile,
       planningEngineHook,
       ...repositories,
       identity: {
@@ -822,6 +905,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     publicationQueue,
     clock,
     createExecutionHandlerResolver,
+    valentina,
+    ensureHouseTenantProfile,
     planningEngineHook,
     ...repositories,
   };

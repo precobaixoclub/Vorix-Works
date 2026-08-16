@@ -576,7 +576,7 @@ function IdeaFormDialog({
               <p className="text-xs font-semibold uppercase tracking-wide text-accent">{isDraft ? "Nova ideia" : "Editar ideia"}</p>
               <h2 className="mt-1 text-lg font-semibold text-ink">{isDraft ? "Abastecer tanque de conteúdo" : blueprint.name || "Ideia sem nome"}</h2>
               <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-                {isDraft ? "Preencha a ideia e o formato. No final, escolha se ela fica só no tanque ou se já deve gerar uma peça agora, fora da agenda." : "Preencha primeiro a ideia e o formato. Referências e detalhes aparecem separados para não poluir o fluxo."}
+                {isDraft ? "Preencha a ideia e o formato. No final, escolha se ela entra na rotina ou se já sai como avulsa, fora da agenda." : "Preencha primeiro a ideia e o formato. Referências e detalhes aparecem separados para não poluir o fluxo."}
               </p>
             </div>
             <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-xl leading-none text-ink-muted hover:bg-surface-sunken hover:text-ink" aria-label="Fechar">
@@ -608,7 +608,7 @@ function IdeaFormDialog({
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" onClick={onDiscardDraft}>Descartar</Button>
                 <Button variant="secondary" disabled={!canSaveDraft} onClick={() => onSaveDraft("routine")}>Salvar no tanque</Button>
-                <Button disabled={!canSaveDraft} onClick={() => onSaveDraft("standalone")}>Salvar e gerar agora</Button>
+                <Button disabled={!canSaveDraft} onClick={() => onSaveDraft("standalone")}>Salvar como avulsa</Button>
               </div>
             </div>
           ) : (
@@ -804,8 +804,8 @@ function IdeaInventory({
               <div className="flex flex-wrap justify-start gap-1.5 sm:justify-end">
                 <Button className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onOpen(idea.id)}>Abrir</Button>
                 {!isStandaloneIdea(idea) ? (
-                  <Button variant="ghost" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onGenerateNow(idea)} title="Cria uma cópia avulsa desta ideia, pronta para gerar fora do cronograma">
-                    Gerar agora
+                  <Button variant="ghost" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onGenerateNow(idea)} title="Cria uma cópia avulsa desta ideia, fora da agenda da rotina">
+                    Usar como avulsa
                   </Button>
                 ) : null}
                 <Button variant="ghost" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onToggleStatus(idea)}>

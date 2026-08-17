@@ -7,12 +7,17 @@ Use este fluxo para atualizar Git e o servidor `vorixworks.com` a partir do work
 Valores operacionais documentados em `.env.zuno.example`:
 
 - `DEPLOY_GIT_BRANCH=main`
+- `DEPLOY_SSH_HOST=209.97.152.212`
+- `DEPLOY_SSH_USER=root`
 - `DEPLOY_SSH_TARGET=root@209.97.152.212`
+- `DEPLOY_SSH_AUTH=ssh-key`
+- `DEPLOY_SSH_PASSWORD=` — preencher somente no `.env.zuno` privado se o acesso for por senha; nunca commitar valor real.
 - `DEPLOY_REMOTE_DIR=/opt/zuno`
 - `DEPLOY_COMPOSE_FILE=docker-compose.zuno.yml`
 - `DEPLOY_ENV_FILE=.env.zuno`
 - `DEPLOY_API_HEALTH_URL=https://api.vorixworks.com/v1/health`
 - `DEPLOY_WEB_HEALTH_URL=https://vorixworks.com`
+- `DEPLOY_COMMAND=cd /opt/zuno && docker compose --env-file .env.zuno -f docker-compose.zuno.yml up -d --build`
 
 Passo a passo:
 
@@ -97,6 +102,7 @@ Passo a passo:
 Regras:
 
 - Nunca commitar `.env.zuno` real.
+- Nunca commitar senha SSH, token, chave privada ou segredo operacional.
 - Nunca sobrescrever `.env.zuno` do servidor durante deploy.
 - Sempre criar backup em `/opt/zuno/deploy_backups/` antes de substituir código.
 - Se `git status --short` estiver vazio, não criar commit vazio; deployar o HEAD atual.

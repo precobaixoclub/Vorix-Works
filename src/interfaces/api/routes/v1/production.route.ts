@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { createExecution, startExecution, type ExecutionUseCaseDeps } from "../../../../application/execution/execution-use-cases.js";
 import { generateVisualFromIdea, type GenerateVisualFromIdeaDeps } from "../../../../application/production/generate-visual-from-idea.js";
+import { NotImplementedError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 import { translateExecutionError } from "./execution-error-translator.js";
@@ -36,6 +37,13 @@ export type ProductionRoutesDeps = GenerateVisualFromIdeaDeps &
 export async function registerProductionRoutes(app: FastifyInstance, deps: ProductionRoutesDeps): Promise<void> {
   app.post("/production/ideas/generate", { schema: { body: GENERATE_BODY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "execution:create");
+    // Sem isso, `createExecution` aceitaria a requisição e silenciosamente rebaixaria
+    // `executionMode: "real"` para `dry_run` (ver `execution-engine.ts`) — o cliente pensaria que
+    // pediu uma geração de verdade e receberia um resultado determinístico/vazio sem nenhum aviso.
+    // Falhar aqui, cedo e com mensagem clara, é melhor que fingir sucesso.
+    if (!deps.featureFlags?.realExecutionEnabled || !deps.featureFlags.realVisualEnabled) {
+      throw new NotImplementedError("Geração real de imagem ainda não está ligada neste servidor (REAL_EXECUTION_ENABLED/REAL_VISUAL_ENABLED).");
+    }
     const body = request.body as {
       workspaceId: string;
       name: string;

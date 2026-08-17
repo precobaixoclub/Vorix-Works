@@ -297,20 +297,6 @@ export default function ProductionLinePage() {
     setIdeaEditorOpen(false);
   }
 
-  function generateFromIdea(idea: ContentBlueprint) {
-    const duplicate: ContentBlueprint = {
-      ...idea,
-      id: newId("blueprint"),
-      productionMode: "standalone",
-      status: "available",
-      usedAt: undefined,
-    };
-    save({ ...config, blueprints: [...config.blueprints, duplicate] });
-    setIdeaTypeFilter("standalone");
-    setIdeaStatusFilter("available");
-    setSelectedBlueprintId(duplicate.id);
-  }
-
   async function handleGenerateRealImage(idea: ContentBlueprint) {
     if (idea.format === "video") return;
     setGenerateError(null);
@@ -468,7 +454,6 @@ export default function ProductionLinePage() {
                 onToggleStatus={toggleBlueprintStatus}
                 onRemove={removeBlueprint}
                 onCleanEmpty={removeEmptyIdeas}
-                onGenerateNow={generateFromIdea}
               />
             </CardBody>
           </Card>
@@ -782,7 +767,6 @@ function IdeaInventory({
   onToggleStatus,
   onRemove,
   onCleanEmpty,
-  onGenerateNow,
 }: {
   ideas: ContentBlueprint[];
   totalIdeas: number;
@@ -792,7 +776,6 @@ function IdeaInventory({
   onToggleStatus: (idea: ContentBlueprint) => void;
   onRemove: (id: string) => void;
   onCleanEmpty: () => void;
-  onGenerateNow: (idea: ContentBlueprint) => void;
 }) {
   return (
     <section className="mt-4">
@@ -849,11 +832,6 @@ function IdeaInventory({
               </span>
               <div className="flex flex-wrap justify-start gap-1.5 sm:justify-end">
                 <Button className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onOpen(idea.id)}>Abrir</Button>
-                {!isStandaloneIdea(idea) ? (
-                  <Button variant="ghost" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onGenerateNow(idea)} title="Cria uma cópia avulsa desta ideia, fora da agenda da rotina">
-                    Usar como avulsa
-                  </Button>
-                ) : null}
                 <Button variant="ghost" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onToggleStatus(idea)}>
                   {idea.status === "used" ? "Voltar" : "Marcar usada"}
                 </Button>
@@ -1606,6 +1584,7 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
           <div className="flex flex-wrap items-center gap-3">
             <ModeToggle value={blueprint.approvalMode} onChange={(approvalMode) => onChange({ approvalMode })} label="Aprovação" />
             <IdeaStatusToggle value={blueprint.status} onChange={(status) => onChange({ status, usedAt: status === "used" ? new Date().toISOString() : undefined })} />
+            <IdeaModeToggle value={blueprint.productionMode ?? "routine"} onChange={(productionMode) => onChange({ productionMode })} />
           </div>
           <Button variant="danger" disabled={!canRemove} onClick={onRemove}>Remover ideia</Button>
         </div>
@@ -1661,6 +1640,27 @@ function ModeToggle({ value, onChange, label }: { value: "manual" | "auto"; onCh
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function IdeaModeToggle({ value, onChange }: { value: IdeaProductionMode; onChange: (value: IdeaProductionMode) => void }) {
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-medium text-ink-muted">Tipo</p>
+      <div className="inline-flex rounded-lg border border-border bg-surface p-1">
+        {(["routine", "standalone"] as const).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => onChange(mode)}
+            className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === mode ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}
+          >
+            {mode === "routine" ? "Rotina" : "Avulsa"}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1 text-xs text-ink-muted">Muda o tipo desta mesma ideia — não cria cópia.</p>
     </div>
   );
 }

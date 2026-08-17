@@ -572,25 +572,32 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // direção visual (`status: "needs_more_context"`) se a Clara não tiver NENHUM registro
   // "IdentityContext" nem "BrandContext" para o `clientId` — sem isso a geração real falha sempre,
   // mesmo com tudo mais correto. Bootstrap idempotente do mínimo necessário (um BrandContext
-  // genérico), mesmo espírito de `ensureHouseValentinaProfile` acima.
+  // genérico), mesmo espírito de `ensureHouseValentinaProfile` acima. NÃO idempotente-para-sempre
+  // de propósito: se o registro ainda está com o texto genérico (`GENERIC_BRAND_POSITIONING`) e uma
+  // logo passou a existir em Materiais depois da primeira chamada, atualiza uma vez — achado real:
+  // o bootstrap tinha rodado antes da logo ser cadastrada e nunca mais olhava de novo.
+  const GENERIC_BRAND_POSITIONING = "Plataforma de marketing com IA para pequenos e médios negócios.";
   const ensureHouseBrandContext = async (tenantId: string, workspaceId: string): Promise<void> => {
     const existing = await clara.list({ clientId: tenantId, module: "BrandContext", status: "active" });
-    if (existing.length > 0) return;
+    const currentlyGeneric = existing.length === 0 || (existing[0].payload as { positioning?: string }).positioning === GENERIC_BRAND_POSITIONING;
     const logoUrl = await findLogoAssetUrl(workspaceId);
+    if (existing.length > 0 && (!currentlyGeneric || !logoUrl)) return;
+
     const brandDescription = logoUrl
       ? await imageDescriber.describe(logoUrl, "Descreva esta logo de marca em português: personalidade e sensação transmitida (ex.: moderna, acolhedora, premium), em até 2 frases objetivas. Não descreva cores.")
       : undefined;
-    await clara.create({
-      module: "BrandContext",
-      title: "Identidade de marca",
-      payload: {
-        clientId: tenantId,
-        brandName: "Vorix",
-        positioning: brandDescription ?? "Plataforma de marketing com IA para pequenos e médios negócios.",
-        toneOfVoice: "claro, direto e confiável",
-      },
-      audit: { actor: { id: "system", type: "system" }, reason: logoUrl ? "Bootstrap automático a partir da logo cadastrada em Materiais." : "Bootstrap automático do tenant interno para geração real de imagem (sem logo cadastrada ainda)." },
-    });
+    const payload = {
+      clientId: tenantId,
+      brandName: "Vorix",
+      positioning: brandDescription ?? GENERIC_BRAND_POSITIONING,
+      toneOfVoice: "claro, direto e confiável",
+    };
+    const audit = { actor: { id: "system", type: "system" as const }, reason: logoUrl ? "Bootstrap automático a partir da logo cadastrada em Materiais." : "Bootstrap automático do tenant interno para geração real de imagem (sem logo cadastrada ainda)." };
+    if (existing.length > 0) {
+      await clara.update({ id: existing[0].id, patch: payload, audit });
+    } else {
+      await clara.create({ module: "BrandContext", title: "Identidade de marca", payload, audit });
+    }
   };
   // Bianca (`bianca-social-media-design.skill.ts`, `evaluateDesignContextCompleteness`) exige
   // "IdentityContext" especificamente — diferente de Sofia, não aceita "BrandContext" como
@@ -599,8 +606,12 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // de contexto da Clara.
   const ensureHouseIdentityContext = async (tenantId: string, workspaceId: string): Promise<void> => {
     const existing = await clara.list({ clientId: tenantId, module: "IdentityContext", status: "active" });
-    if (existing.length > 0) return;
     const logoUrl = await findLogoAssetUrl(workspaceId);
+    // `logoUri` já guarda a URL usada da última vez — se bate com a atual (ou não há logo ainda),
+    // não há nada novo a refletir. Evita rechamar a visão computacional a cada geração depois que
+    // já está em dia (custo real de API) e ainda assim se recupera sozinho se uma logo cadastrada
+    // depois nunca tiver sido vista.
+    if (existing.length > 0 && ((existing[0].payload as { logoUri?: string }).logoUri === logoUrl || !logoUrl)) return;
 
     let colors = ["#4338CA", "#F5F5F4", "#111827"];
     let imageStyle = "Fotografia limpa e moderna, com boa legibilidade de texto sobreposto.";
@@ -623,12 +634,13 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       }
     }
 
-    await clara.create({
-      module: "IdentityContext",
-      title: "Identidade visual",
-      payload: { clientId: tenantId, colors, fonts: ["Inter"], imageStyle, visualGuidelines, logoUri: logoUrl },
-      audit: { actor: { id: "system", type: "system" }, reason: logoUrl ? "Bootstrap automático a partir da logo cadastrada em Materiais." : "Bootstrap automático do tenant interno para geração real de imagem (sem logo cadastrada ainda)." },
-    });
+    const payload = { clientId: tenantId, colors, fonts: ["Inter"], imageStyle, visualGuidelines, logoUri: logoUrl };
+    const audit = { actor: { id: "system", type: "system" as const }, reason: logoUrl ? "Bootstrap automático a partir da logo cadastrada em Materiais." : "Bootstrap automático do tenant interno para geração real de imagem (sem logo cadastrada ainda)." };
+    if (existing.length > 0) {
+      await clara.update({ id: existing[0].id, patch: payload, audit });
+    } else {
+      await clara.create({ module: "IdentityContext", title: "Identidade visual", payload, audit });
+    }
   };
   const aiMediaProviderRegistry = createDefaultAiMediaProviderRegistry(aiMediaProviderAdapters);
 

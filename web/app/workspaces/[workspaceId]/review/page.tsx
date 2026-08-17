@@ -70,6 +70,16 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
   });
   const openGate = detail?.gates.find((gate) => gate.state === "open");
   const record = getGenerationRecord(workspaceId, run.id);
+  // Fonte principal: o artefato "structure" (produzido pelo content_brief) já vem do servidor e
+  // reflete a ideia real que gerou esta peça — funciona em qualquer navegador/dispositivo. O
+  // registro local (`record`, localStorage) só cobre o que o servidor não guarda (o vínculo com a
+  // ideia do tanque, para "voltar pro tanque") — nunca a fonte de título/descrição, que quebrava
+  // sempre que a revisão acontecia num navegador diferente de onde a peça foi gerada.
+  const structureOutput = (detail?.artifacts ?? [])
+    .find((artifact) => artifact.outputPort === "structure")
+    ?.payload as { output?: { valueProposition?: string; objective?: string } } | undefined;
+  const title = structureOutput?.output?.valueProposition || record?.name || "Peça gerada";
+  const description = structureOutput?.output?.objective || record?.ideaText || record?.objective || "Sem descrição.";
 
   async function approve() {
     if (!openGate) return;
@@ -146,7 +156,7 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
           <div className="grid grid-cols-2 gap-2">
             {images.map((image, index) => (
               // eslint-disable-next-line @next/next/no-img-element
-              <img key={`${image.uri}-${index}`} src={image.uri} alt={record?.name ?? "Peça gerada"} className="aspect-square w-full rounded-lg border border-border object-cover" />
+              <img key={`${image.uri}-${index}`} src={image.uri} alt={title} className="aspect-square w-full rounded-lg border border-border object-cover" />
             ))}
           </div>
         ) : (
@@ -154,8 +164,8 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
         )}
 
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-ink">{record?.name || "Peça gerada"}</p>
-          <p className="line-clamp-2 text-xs text-ink-muted">{record?.ideaText || record?.objective || "Sem descrição."}</p>
+          <p className="truncate text-sm font-semibold text-ink">{title}</p>
+          <p className="line-clamp-2 text-xs text-ink-muted">{description}</p>
         </div>
 
         {error ? <p className="text-xs text-red-600">{error}</p> : null}

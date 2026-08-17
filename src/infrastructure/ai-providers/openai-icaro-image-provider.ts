@@ -59,12 +59,23 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
     const imageCount = typeof request.context?.imageCount === "number" && request.context.imageCount > 0 ? request.context.imageCount : 1;
     const modelId = request.model || this.profile.models[0].id;
 
+    // Reforço no início do prompt (sobrevive ao corte de 32000 caracteres do adapter — ver
+    // `openai-image-provider-adapter.ts` — diferente de um sufixo, que seria cortado num prompt
+    // grande). Necessário porque nenhum pipeline real hoje (nem o reduzido `content_request`, nem
+    // o `campaign_creation` completo) alimenta `workflowContext.mariaCopy`/título/CTA de verdade —
+    // então `extractVisibleTextContext` (Pedro) sempre conclui "nenhum texto autorizado" e pede pra
+    // não inventar texto, mas o modelo às vezes ainda renderiza a ideia/objetivo do usuário como se
+    // fosse manchete, por causa de como esses campos aparecem entre aspas no resto do prompt (ex.:
+    // "ângulo" e "promessa central" da Sofia). Isto é rede de segurança extra, não substitui aquela
+    // instrução — só a repete com mais força logo no começo, onde o modelo dá mais peso.
+    const noTextGuard = "REGRA OBRIGATÓRIA E INEGOCIÁVEL: a imagem gerada não deve conter NENHUM texto, letra, palavra, número, legenda ou elemento tipográfico legível. Comunicar tudo só por composição visual. Nunca escrever o objetivo, a oferta ou qualquer frase da campanha dentro da imagem.\n\n";
+
     const images: Array<{ uri: string; mimeType: string }> = [];
     for (let index = 0; index < imageCount; index += 1) {
       const result = await this.mediaProvider.generate({
         operationTypeCode: "image_generation",
         modelId,
-        prompt: request.prompt,
+        prompt: `${noTextGuard}${request.prompt}`,
         tenantId,
         workspaceId,
         params: { size: "1024x1024" },

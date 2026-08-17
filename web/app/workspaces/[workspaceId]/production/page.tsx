@@ -305,9 +305,10 @@ export default function ProductionLinePage() {
     setGenerateError(null);
     setGeneratingIdeaId(idea.id);
     try {
+      const fallbackName = (idea.objective || idea.ideaText || "Ideia sem nome").slice(0, 60);
       const generateInput = {
         workspaceId: workspace.id,
-        name: idea.name || "Ideia sem nome",
+        name: idea.name.trim() || fallbackName,
         objective: idea.objective || idea.ideaText,
         ideaText: idea.ideaText,
         format: idea.format,

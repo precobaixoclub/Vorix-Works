@@ -66,10 +66,14 @@ export async function buildExecutionHandlerResolver(input: {
     if (input.runtimeRepository && input.preparedCommandRepository) {
       registry.register({
         id: "content-brief-deterministic-handler",
-        // Precisa ser um provider da allowlist do SideEffectGuard (`execution-operational-policy.ts`
-        // — só "deterministic"/"helena" passam em qualquer ambiente); um nome fora dessa lista é
-        // barrado com PROVIDER_BLOCKED_BY_ENVIRONMENT antes mesmo do handler rodar.
-        provider: "deterministic",
+        // "helena" é o único nome que sobrevive aos dois filtros pra um handler REAL: precisa estar
+        // na allowlist do SideEffectGuard (`execution-operational-policy.ts` — só "deterministic"/
+        // "helena" em qualquer ambiente) E não pode ser "deterministic", que o próprio
+        // `ExecutionHandlerResolver.resolve()` filtra fora explicitamente em mode="real" (linha
+        // reservada pro fallback determinístico de dry_run). Todo outro handler real deste arquivo
+        // (SingleSkillExecutionTaskHandler/VisualPipelineExecutionTaskHandler) já usa "helena" pelo
+        // mesmo motivo, mesmo quando — como aqui — não chama nenhuma Skill de verdade.
+        provider: "helena",
         version: "1",
         priority: 100,
         handler: new ContentBriefExecutionTaskHandler({ runtimeRepository: input.runtimeRepository, preparedCommandRepository: input.preparedCommandRepository }),

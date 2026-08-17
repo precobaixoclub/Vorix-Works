@@ -246,8 +246,12 @@ export const DEFAULT_EXECUTION_CONTRACTS: readonly ExecutionContract[] = [
     // Bianca (`visualPipeline.artDirection`/`designSpec`) — os defaults de 64KB/8000 caracteres
     // (pensados para texto/copy) estouram sempre em produção real, mesmo com uma única imagem
     // (`finalPrompt` sozinho já passa de 100000 caracteres). Carrossel (até 4 imagens) tem a
-    // margem mais folgada de propósito.
-    limits: { maxOutputBytes: 2_000_000, maxStringLength: 150_000 },
+    // margem mais folgada de propósito. `maxInputBytes` também precisou subir (achado ao vivo,
+    // "EXECUTION_INPUT_LIMIT_EXCEEDED") — desde que `copy_generation` passou a alimentar
+    // `visual_generation` no grafo `content_request-visual-only-v2`, o input combinado inclui as
+    // até 3 tentativas de Maria (`attempts[].prompt`, cada uma já embutindo briefing+estratégia
+    // inteiros), que sozinhas estouram os 32KB default.
+    limits: { maxInputBytes: 500_000, maxOutputBytes: 2_000_000, maxStringLength: 150_000 },
   }),
   contract({
     schemaId: "content_brief.structure",
@@ -277,6 +281,10 @@ export const DEFAULT_EXECUTION_CONTRACTS: readonly ExecutionContract[] = [
     optionalFields: ["issues", "suggestions", "checklist"],
     sideEffectPolicy: "external_read",
     skillCapabilities: ["quality_review"],
+    // Input combina structure + copy + visual — visual sozinho já carrega o prompt final de Pedro
+    // (100KB+, ver contrato `visual_generation` acima) mais os outputs inteiros de Sofia/Bianca;
+    // mesma folga aplicada aqui.
+    limits: { maxInputBytes: 2_500_000, maxStringLength: 150_000 },
   }),
   contract({
     schemaId: "publication.manifest",

@@ -202,17 +202,25 @@ function buildContentBriefStructure(validatedInputs: Record<string, string>): Re
   const channel = stringValue(validatedInputs.channel, "instagram");
   const format = stringValue(validatedInputs.contentFormat, "image");
   const centralPromise = `${subject} — ${objective}`;
+  // Escrito por IA (`OpenAiCopywriter`, ver `generate-visual-from-idea.ts`) — nunca o texto bruto
+  // que o usuário digitou como ideia/sugestão (achado ao vivo: "não era pra ser aplicado
+  // exatamente o que escrevi"). `adTitle` vira o único texto autorizado na própria imagem
+  // (`displayTitle`/`buildPedroInput`); `adDescription` é a legenda pronta pra postar, exposta só
+  // no artefato para a tela de Revisão mostrar — nunca chega no prompt de imagem. Cai para
+  // `offerOrSubject` bruto só se a chamada de copy falhar (best-effort, nunca trava a geração).
+  const adTitle = validatedInputs.adTitle?.trim() || offerOrSubject.slice(0, 50);
+  const adDescription = validatedInputs.adDescription?.trim() || objective;
   return {
     overallStrategy: `Gerar peça visual para "${subject}" com foco em: ${objective}.`,
     objective,
     targetAudience,
     channel,
     format,
-    // Curto e limpo de propósito (sem o sufixo de referência visual, que é só para orientar a IA,
-    // nunca para aparecer na imagem) — vira o único texto autorizado que Pedro pode escrever na
-    // peça (ver `buildPedroInput`/`extractVisibleTextContext`). Sem isto, ou é texto nenhum, ou o
-    // modelo inventa CTA/headline por conta própria — as duas coisas já dando problema ao vivo.
-    displayTitle: offerOrSubject.slice(0, 50),
+    // Vira o único texto autorizado que Pedro pode escrever na peça (ver
+    // `buildPedroInput`/`extractVisibleTextContext`). Sem isto, ou é texto nenhum, ou o modelo
+    // inventa CTA/headline por conta própria — as duas coisas já dando problema ao vivo.
+    displayTitle: adTitle,
+    adDescription,
     toneOfVoice: "claro e persuasivo",
     angle: subject,
     centralPromise,

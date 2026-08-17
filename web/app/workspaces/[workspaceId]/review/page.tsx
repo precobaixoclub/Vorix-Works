@@ -77,9 +77,13 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
   // sempre que a revisão acontecia num navegador diferente de onde a peça foi gerada.
   const structureOutput = (detail?.artifacts ?? [])
     .find((artifact) => artifact.outputPort === "structure")
-    ?.payload as { output?: { valueProposition?: string; objective?: string } } | undefined;
-  const title = structureOutput?.output?.valueProposition || record?.name || "Peça gerada";
-  const description = structureOutput?.output?.objective || record?.ideaText || record?.objective || "Sem descrição.";
+    ?.payload as { output?: { displayTitle?: string; adDescription?: string; valueProposition?: string; objective?: string } } | undefined;
+  // `displayTitle`/`adDescription` são escritos por IA, prontos para postar (ver
+  // `generate-visual-from-idea.ts`, `OpenAiCopywriter`) — nunca o texto bruto que o usuário
+  // digitou como ideia/sugestão. `valueProposition`/`objective` só entram como fallback se a
+  // chamada de copy tiver falhado (best-effort, nunca bloqueia a geração).
+  const title = structureOutput?.output?.displayTitle || structureOutput?.output?.valueProposition || record?.name || "Peça gerada";
+  const description = structureOutput?.output?.adDescription || structureOutput?.output?.objective || record?.ideaText || record?.objective || "Sem descrição.";
 
   async function approve() {
     if (!openGate) return;
@@ -163,9 +167,15 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
           <div className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-xs text-ink-muted">Sem imagem</div>
         )}
 
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-ink">{title}</p>
-          <p className="line-clamp-2 text-xs text-ink-muted">{description}</p>
+        <div className="min-w-0 space-y-1.5">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm font-semibold text-ink">{title}</p>
+            <CopyButton text={title} label="Copiar título" />
+          </div>
+          <div className="flex items-start justify-between gap-2">
+            <p className="whitespace-pre-wrap text-xs text-ink-muted">{description}</p>
+            <CopyButton text={description} label="Copiar descrição" />
+          </div>
         </div>
 
         {error ? <p className="text-xs text-red-600">{error}</p> : null}
@@ -231,5 +241,31 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
         </Modal>
       ) : null}
     </Card>
+  );
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Sem permissão de clipboard (ex.: contexto não seguro) — sem fallback, só não marca "copiado".
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title={label}
+      aria-label={label}
+      className="shrink-0 rounded-md p-1 text-ink-faint hover:bg-surface-sunken hover:text-ink"
+    >
+      {copied ? "✓" : "⧉"}
+    </button>
   );
 }

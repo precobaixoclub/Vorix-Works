@@ -40,6 +40,7 @@ export type GenerateVisualFromIdeaDeps = BriefingUseCaseDeps & {
   planningRepository: PlanningRepositoryPort;
   runtimeRepository: RuntimeRepositoryPort;
   imageDescriber?: { describe(imageUrl: string, instruction: string): Promise<string | undefined> };
+  copywriter?: { composeAdCopy(input: { objective: string; offerOrSubject: string; targetAudience: string; channel: string; referenceContext?: string }): Promise<{ title: string; description: string } | undefined> };
 };
 
 const REFERENCE_IMAGE_DESCRIBE_INSTRUCTION =
@@ -104,6 +105,20 @@ export async function generateVisualFromIdea(
 
   const referenceContext = await describeReferenceImages(deps, input.referenceImageUrls);
   if (referenceContext) fields.push({ key: "referenceContext", value: referenceContext });
+
+  // Título e descrição prontos para postar — o usuário precisa deles pra publicar de verdade
+  // (achado ao vivo: "preciso de uma descrição para postar o produto"), nunca o texto bruto que
+  // ele digitou como ideia. Best-effort: se falhar, `buildContentBriefStructure` cai para o
+  // offerOrSubject original em vez de travar a geração por causa da copy.
+  if (deps.copywriter) {
+    const adCopy = await deps.copywriter
+      .composeAdCopy({ objective: input.objective.trim(), offerOrSubject: input.ideaText.trim(), targetAudience, channel, referenceContext })
+      .catch(() => undefined);
+    if (adCopy) {
+      fields.push({ key: "adTitle", value: adCopy.title });
+      fields.push({ key: "adDescription", value: adCopy.description });
+    }
+  }
 
   for (const field of fields) {
     await deps.fieldValueRepository.append({

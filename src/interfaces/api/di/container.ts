@@ -36,6 +36,7 @@ import { MediaGenerationService } from "../../../application/ai-providers/media-
 import { OpenAiImageProviderAdapter } from "../../../infrastructure/ai-providers/openai-image-provider-adapter.js";
 import { OpenAiIcaroImageProvider } from "../../../infrastructure/ai-providers/openai-icaro-image-provider.js";
 import { OpenAiVisionDescriber } from "../../../infrastructure/ai-providers/openai-vision-describer.js";
+import { OpenAiCopywriter, type AdCopy, type AdCopyInput } from "../../../infrastructure/ai-providers/openai-copywriter.js";
 import { GoogleVeoProviderAdapter } from "../../../infrastructure/ai-providers/google-veo-provider-adapter.js";
 import { IcaroAIBrain } from "../../../application/ai/icaro-brain.js";
 import { ValentinaTenantManager } from "../../../application/tenancy/valentina-tenant-manager.js";
@@ -263,6 +264,9 @@ export type ApiContainer = {
    * usado tanto pelo bootstrap de marca acima quanto por `generate-visual-from-idea.ts` para
    * enriquecer o briefing com o que uma imagem de referência mostra. */
   imageDescriber: { describe(imageUrl: string, instruction: string): Promise<string | undefined> };
+  /** Redator: título + descrição prontos para postar, a partir da ideia e (quando houver) do que
+   * as imagens de referência mostram — nunca o texto bruto que o usuário digitou como sugestão. */
+  copywriter: { composeAdCopy(input: AdCopyInput): Promise<AdCopy | undefined> };
   /** Presente quando `persistenceDriver === "postgres"` — `app.ts` fecha isto no hook `onClose`. */
   pool?: pg.Pool;
 
@@ -464,6 +468,10 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     },
   });
   const imageDescriber = new OpenAiVisionDescriber({
+    apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
+    getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
+  });
+  const copywriter = new OpenAiCopywriter({
     apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
     getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
   });
@@ -946,6 +954,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       valentina,
       ensureHouseTenantProfile,
       imageDescriber,
+      copywriter,
       planningEngineHook,
       ...repositories,
       identity: {
@@ -1022,6 +1031,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     valentina,
     ensureHouseTenantProfile,
     imageDescriber,
+    copywriter,
     planningEngineHook,
     ...repositories,
   };

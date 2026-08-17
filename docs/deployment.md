@@ -1,5 +1,106 @@
 # Deployment — Plataforma Zuno (RC 1.0)
 
+## Commit e Deploy Vorix Atual
+
+Use este fluxo para atualizar Git e o servidor `vorixworks.com` a partir do workspace local.
+
+Valores operacionais documentados em `.env.zuno.example`:
+
+- `DEPLOY_GIT_BRANCH=main`
+- `DEPLOY_SSH_TARGET=root@209.97.152.212`
+- `DEPLOY_REMOTE_DIR=/opt/zuno`
+- `DEPLOY_COMPOSE_FILE=docker-compose.zuno.yml`
+- `DEPLOY_ENV_FILE=.env.zuno`
+- `DEPLOY_API_HEALTH_URL=https://api.vorixworks.com/v1/health`
+- `DEPLOY_WEB_HEALTH_URL=https://vorixworks.com`
+
+Passo a passo:
+
+1. Conferir pendências:
+
+   ```bash
+   git status --short
+   ```
+
+2. Validar frontend antes de commitar/deployar:
+
+   ```bash
+   cd web
+   npm run typecheck
+   npm test
+   npm run build
+   cd ..
+   ```
+
+3. Se houver mudanças, commitar e enviar ao Git:
+
+   ```bash
+   git add -A
+   git commit -m "Mensagem objetiva do ajuste"
+   git push origin main
+   ```
+
+4. Empacotar e enviar o código local ao servidor sem secrets/runtime:
+
+   ```bash
+   tar -czf /tmp/zuno-local-sync.tgz \
+     --exclude='.git' \
+     --exclude='node_modules' \
+     --exclude='dist' \
+     --exclude='web/node_modules' \
+     --exclude='web/.next' \
+     --exclude='zuno-deploy.tar' \
+     --exclude='*.tgz' \
+     --exclude='*.tar' \
+     --exclude='.env.zuno' \
+     --exclude='.env.zuno.bak*' \
+     -C . .
+
+   scp /tmp/zuno-local-sync.tgz root@209.97.152.212:/tmp/zuno-local-sync.tgz
+   ```
+
+5. No servidor, criar backup, preservar `.env.zuno` e substituir só o código:
+
+   ```bash
+   ssh root@209.97.152.212 'set -euo pipefail; cd /opt/zuno; \
+     stamp=$(date +%Y%m%d%H%M%S); \
+     mkdir -p deploy_backups; \
+     tar -czf "deploy_backups/pre-local-sync-$stamp.tgz" \
+       --exclude="./deploy_backups" \
+       --exclude="./node_modules" \
+       --exclude="./web/node_modules" \
+       --exclude="./web/.next" \
+       --exclude="./dist" .; \
+     rm -rf assets db docs examples scripts src tests web \
+       .dockerignore .editorconfig .env.example .env.zuno.example .gitignore \
+       CHANGELOG.md Dockerfile README.md docker-compose.zuno.yml \
+       package.json package-lock.json tsconfig.json; \
+     tar -xzf /tmp/zuno-local-sync.tgz -C /opt/zuno; \
+     chown -R root:root /opt/zuno'
+   ```
+
+6. Rebuild/restart completo:
+
+   ```bash
+   ssh root@209.97.152.212 \
+     'cd /opt/zuno && docker compose --env-file .env.zuno -f docker-compose.zuno.yml up -d --build'
+   ```
+
+7. Checar saúde:
+
+   ```bash
+   curl -I https://vorixworks.com
+   curl -s https://api.vorixworks.com/v1/health
+   ssh root@209.97.152.212 'docker ps | grep zuno'
+   ```
+
+Regras:
+
+- Nunca commitar `.env.zuno` real.
+- Nunca sobrescrever `.env.zuno` do servidor durante deploy.
+- Sempre criar backup em `/opt/zuno/deploy_backups/` antes de substituir código.
+- Se `git status --short` estiver vazio, não criar commit vazio; deployar o HEAD atual.
+
 **Production permanece bloqueada por padrão** (`ProductionGuard`, ver `docs/sprint-24-final-report.md`). Este documento descreve como implantar um ambiente controlado (sandbox/staging) — não um passo a passo de ativação de produção real, que exige aprovação explícita fora do escopo desta sprint.
 
 ## Pré-requisitos

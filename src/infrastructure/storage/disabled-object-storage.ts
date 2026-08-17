@@ -13,4 +13,8 @@ export class DisabledObjectStorage implements ObjectStoragePort {
   async delete(): Promise<void> {
     throw new Error("OBJECT_STORAGE_NOT_CONFIGURED: upload de mídia não está habilitado neste servidor.");
   }
+
+  resolvePublicUrl(): string {
+    throw new Error("OBJECT_STORAGE_NOT_CONFIGURED: upload de mídia não está habilitado neste servidor.");
+  }
 }

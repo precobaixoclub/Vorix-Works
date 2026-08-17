@@ -30,6 +30,10 @@ export class LocalObjectStorage implements ObjectStoragePort {
     const absolutePath = resolveObjectPath(this.rootDir, key);
     await import("node:fs/promises").then((fs) => fs.rm(absolutePath, { force: true }));
   }
+
+  resolvePublicUrl(key: string): string {
+    return `${this.config.publicBaseUrl.replace(/\/$/, "")}/${encodeKey(key)}`;
+  }
 }
 
 export function resolveObjectPath(rootDir: string, key: string): string {

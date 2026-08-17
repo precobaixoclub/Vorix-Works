@@ -35,6 +35,7 @@ import { CreditAccountingService } from "../../../application/ai-providers/credi
 import { MediaGenerationService } from "../../../application/ai-providers/media-generation.service.js";
 import { OpenAiImageProviderAdapter } from "../../../infrastructure/ai-providers/openai-image-provider-adapter.js";
 import { OpenAiIcaroImageProvider } from "../../../infrastructure/ai-providers/openai-icaro-image-provider.js";
+import { OpenAiVisionDescriber } from "../../../infrastructure/ai-providers/openai-vision-describer.js";
 import { GoogleVeoProviderAdapter } from "../../../infrastructure/ai-providers/google-veo-provider-adapter.js";
 import { IcaroAIBrain } from "../../../application/ai/icaro-brain.js";
 import { ValentinaTenantManager } from "../../../application/tenancy/valentina-tenant-manager.js";
@@ -254,9 +255,14 @@ export type ApiContainer = {
    * Usado por `production.route.ts` para garantir que a conta interna tenha um perfil antes da
    * primeira geração real. */
   valentina: ValentinaTenantPort;
-  /** Garante (idempotente) que a conta interna tenha um perfil Valentina antes da primeira geração
+  /** Garante (idempotente) que a conta interna tenha um perfil Valentina + identidade de marca
+   * (a partir da logo real cadastrada em Materiais, quando existir) antes da primeira geração
    * real — ver comentário junto da implementação. */
-  ensureHouseTenantProfile(tenantId: string): Promise<void>;
+  ensureHouseTenantProfile(tenantId: string, workspaceId: string): Promise<void>;
+  /** Descreve uma imagem pública (referência anexada numa ideia, logo em Materiais) em texto —
+   * usado tanto pelo bootstrap de marca acima quanto por `generate-visual-from-idea.ts` para
+   * enriquecer o briefing com o que uma imagem de referência mostra. */
+  imageDescriber: { describe(imageUrl: string, instruction: string): Promise<string | undefined> };
   /** Presente quando `persistenceDriver === "postgres"` — `app.ts` fecha isto no hook `onClose`. */
   pool?: pg.Pool;
 
@@ -457,6 +463,10 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       return result.url;
     },
   });
+  const imageDescriber = new OpenAiVisionDescriber({
+    apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
+    getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
+  });
   const googleVeoProvider = new GoogleVeoProviderAdapter({
     enabled: config?.mediaProviders.googleEnabled ?? false,
     apiBaseUrl: config?.mediaProviders.googleApiBaseUrl,
@@ -490,10 +500,29 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // de `principal.tenantId`), que precisa bater exatamente com `TenantRecord.id`. Por isso este
   // bootstrap grava o registro direto no repositório (que aceita `save(record)` com `id` livre)
   // em vez de passar por `createTenant`. Idempotente — não faz nada se o registro já existir.
-  const ensureHouseTenantProfile = async (tenantId: string): Promise<void> => {
+  const ensureHouseTenantProfile = async (tenantId: string, workspaceId: string): Promise<void> => {
     await ensureHouseValentinaProfile(tenantId);
-    await ensureHouseBrandContext(tenantId);
-    await ensureHouseIdentityContext(tenantId);
+    await ensureHouseBrandContext(tenantId, workspaceId);
+    await ensureHouseIdentityContext(tenantId, workspaceId);
+  };
+  // Resolve a logo cadastrada em Materiais (Asset Library, `kind: "logo"`) do workspace — usada
+  // para descrever a marca de verdade (estilo, cores) em vez de um placeholder genérico, ver
+  // `ensureHouseBrandContext`/`ensureHouseIdentityContext` abaixo. `AssetStorageRef` nunca guarda
+  // a URL em si (decisão obrigatória do domínio), só `objectKey` — por isso a resolução via
+  // `objectStorage.resolvePublicUrl`. Best-effort: qualquer ausência (sem library, sem logo, sem
+  // storageRef) devolve `undefined` em vez de lançar — a geração real nunca deveria falhar só
+  // porque a marca ainda não tem logo cadastrada.
+  const findLogoAssetUrl = async (workspaceId: string): Promise<string | undefined> => {
+    const library = await repositories.assetLibraryRepository.getLibraryByWorkspace(workspaceId);
+    if (!library) return undefined;
+    const logos = await repositories.assetLibraryRepository.listAssets(library.id, { kind: "logo" });
+    const active = logos.find((asset) => asset.status === "active" && asset.storageRef);
+    if (!active?.storageRef) return undefined;
+    try {
+      return objectStorage.resolvePublicUrl(active.storageRef.objectKey);
+    } catch {
+      return undefined;
+    }
   };
   const ensureHouseValentinaProfile = async (tenantId: string): Promise<void> => {
     const existing = await valentinaRepository.findById(tenantId);
@@ -544,19 +573,23 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // "IdentityContext" nem "BrandContext" para o `clientId` — sem isso a geração real falha sempre,
   // mesmo com tudo mais correto. Bootstrap idempotente do mínimo necessário (um BrandContext
   // genérico), mesmo espírito de `ensureHouseValentinaProfile` acima.
-  const ensureHouseBrandContext = async (tenantId: string): Promise<void> => {
+  const ensureHouseBrandContext = async (tenantId: string, workspaceId: string): Promise<void> => {
     const existing = await clara.list({ clientId: tenantId, module: "BrandContext", status: "active" });
     if (existing.length > 0) return;
+    const logoUrl = await findLogoAssetUrl(workspaceId);
+    const brandDescription = logoUrl
+      ? await imageDescriber.describe(logoUrl, "Descreva esta logo de marca em português: personalidade e sensação transmitida (ex.: moderna, acolhedora, premium), em até 2 frases objetivas. Não descreva cores.")
+      : undefined;
     await clara.create({
       module: "BrandContext",
-      title: "Identidade de marca — Vorix (interno)",
+      title: "Identidade de marca",
       payload: {
         clientId: tenantId,
         brandName: "Vorix",
-        positioning: "Plataforma de marketing com IA para pequenos e médios negócios.",
+        positioning: brandDescription ?? "Plataforma de marketing com IA para pequenos e médios negócios.",
         toneOfVoice: "claro, direto e confiável",
       },
-      audit: { actor: { id: "system", type: "system" }, reason: "Bootstrap automático do tenant interno para geração real de imagem." },
+      audit: { actor: { id: "system", type: "system" }, reason: logoUrl ? "Bootstrap automático a partir da logo cadastrada em Materiais." : "Bootstrap automático do tenant interno para geração real de imagem (sem logo cadastrada ainda)." },
     });
   };
   // Bianca (`bianca-social-media-design.skill.ts`, `evaluateDesignContextCompleteness`) exige
@@ -564,20 +597,37 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // alternativa. Pedro (`evaluateVisualContextCompleteness`, mesmo formato de Sofia) também
   // consulta os dois; com ambos os registros seed, os três (Sofia/Bianca/Pedro) passam pelo gate
   // de contexto da Clara.
-  const ensureHouseIdentityContext = async (tenantId: string): Promise<void> => {
+  const ensureHouseIdentityContext = async (tenantId: string, workspaceId: string): Promise<void> => {
     const existing = await clara.list({ clientId: tenantId, module: "IdentityContext", status: "active" });
     if (existing.length > 0) return;
+    const logoUrl = await findLogoAssetUrl(workspaceId);
+
+    let colors = ["#4338CA", "#F5F5F4", "#111827"];
+    let imageStyle = "Fotografia limpa e moderna, com boa legibilidade de texto sobreposto.";
+    let visualGuidelines = ["Priorizar contraste alto entre texto e fundo.", "Manter identidade consistente entre peças."];
+
+    if (logoUrl) {
+      const [colorsText, styleText] = await Promise.all([
+        imageDescriber.describe(logoUrl, "Liste de 2 a 4 cores predominantes desta logo, em português, separadas só por vírgula (ex.: azul marinho, branco, dourado). Responda só com a lista, sem mais nada."),
+        imageDescriber.describe(logoUrl, "Descreva o estilo visual desta logo/marca em português (ex.: moderno e minimalista, divertido, elegante e sério) em uma frase objetiva."),
+      ]);
+      const parsedColors = colorsText?.split(",").map((color) => color.trim()).filter(Boolean).slice(0, 5);
+      if (parsedColors && parsedColors.length > 0) colors = parsedColors;
+      if (styleText) {
+        imageStyle = styleText;
+        visualGuidelines = [
+          `Manter consistência com a identidade visual da marca: ${styleText}`,
+          "Reservar uma área visualmente limpa (sem elementos importantes) para a logo poder ser posicionada depois.",
+          "Priorizar contraste alto entre texto e fundo.",
+        ];
+      }
+    }
+
     await clara.create({
       module: "IdentityContext",
-      title: "Identidade visual — Vorix (interno)",
-      payload: {
-        clientId: tenantId,
-        colors: ["#4338CA", "#F5F5F4", "#111827"],
-        fonts: ["Inter"],
-        imageStyle: "Fotografia limpa e moderna, com boa legibilidade de texto sobreposto.",
-        visualGuidelines: ["Priorizar contraste alto entre texto e fundo.", "Manter identidade consistente entre peças."],
-      },
-      audit: { actor: { id: "system", type: "system" }, reason: "Bootstrap automático do tenant interno para geração real de imagem." },
+      title: "Identidade visual",
+      payload: { clientId: tenantId, colors, fonts: ["Inter"], imageStyle, visualGuidelines, logoUri: logoUrl },
+      audit: { actor: { id: "system", type: "system" }, reason: logoUrl ? "Bootstrap automático a partir da logo cadastrada em Materiais." : "Bootstrap automático do tenant interno para geração real de imagem (sem logo cadastrada ainda)." },
     });
   };
   const aiMediaProviderRegistry = createDefaultAiMediaProviderRegistry(aiMediaProviderAdapters);
@@ -883,6 +933,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       createExecutionHandlerResolver,
       valentina,
       ensureHouseTenantProfile,
+      imageDescriber,
       planningEngineHook,
       ...repositories,
       identity: {
@@ -958,6 +1009,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     createExecutionHandlerResolver,
     valentina,
     ensureHouseTenantProfile,
+    imageDescriber,
     planningEngineHook,
     ...repositories,
   };

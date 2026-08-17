@@ -16,4 +16,8 @@ export type ObjectStoragePort = {
   health(): Promise<{ ok: boolean; safeMessage?: string }>;
   put(input: ObjectStoragePutInput): Promise<{ url: string }>;
   delete(key: string): Promise<void>;
+  /** Deriva a URL pública de um objeto já enviado a partir só da `key` — necessário porque
+   * `AssetStorageRef` (Asset Library) nunca persiste a URL em si (decisão obrigatória, ver
+   * `asset-library.model.ts`), só `objectKey`. Sempre a mesma fórmula que `put()` usaria. */
+  resolvePublicUrl(key: string): string;
 };

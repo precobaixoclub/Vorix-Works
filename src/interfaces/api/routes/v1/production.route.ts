@@ -18,12 +18,13 @@ const GENERATE_BODY_SCHEMA = {
     format: { type: "string", enum: ["single_image", "carousel"] },
     channel: { type: "string", minLength: 1 },
     targetAudience: { type: "string", maxLength: 300 },
+    referenceImages: { type: "array", items: { type: "string" }, maxItems: 10 },
   },
 } as const;
 
 export type ProductionRoutesDeps = GenerateVisualFromIdeaDeps &
   ExecutionUseCaseDeps & {
-    ensureHouseTenantProfile(tenantId: string): Promise<void>;
+    ensureHouseTenantProfile(tenantId: string, workspaceId: string): Promise<void>;
   };
 
 /**
@@ -54,9 +55,10 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
       format: "single_image" | "carousel";
       channel: string;
       targetAudience?: string;
+      referenceImages?: string[];
     };
 
-    await deps.ensureHouseTenantProfile(principal.tenantId);
+    await deps.ensureHouseTenantProfile(principal.tenantId, body.workspaceId);
 
     const { runtimePlanId } = await generateVisualFromIdea(deps, {
       tenantId: principal.tenantId,
@@ -67,6 +69,7 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
       format: body.format,
       channel: body.channel,
       targetAudience: body.targetAudience,
+      referenceImageUrls: body.referenceImages,
     });
 
     const idempotencyKey = `production-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;

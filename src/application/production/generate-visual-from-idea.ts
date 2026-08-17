@@ -29,16 +29,38 @@ export type GenerateVisualFromIdeaInput = {
   format: "single_image" | "carousel";
   channel: string;
   targetAudience?: string;
+  /** URLs de imagens de referência já públicas (upload prévio da própria ideia) — descritas via
+   * `deps.imageDescriber` e enviadas adiante como `referenceContext`, nunca a imagem em si (o
+   * pipeline de geração real só aceita texto no prompt). */
+  referenceImageUrls?: string[];
 };
 
 export type GenerateVisualFromIdeaDeps = BriefingUseCaseDeps & {
   conversationRepository: ConversationRepositoryPort;
   planningRepository: PlanningRepositoryPort;
   runtimeRepository: RuntimeRepositoryPort;
+  imageDescriber?: { describe(imageUrl: string, instruction: string): Promise<string | undefined> };
 };
+
+const REFERENCE_IMAGE_DESCRIBE_INSTRUCTION =
+  "Descreva objetivamente esta imagem de referência em português para orientar uma geração de imagem por IA: tipo de produto/cena, cores predominantes e estilo visual. No máximo 2 frases curtas.";
+const MAX_REFERENCE_IMAGES = 3;
 
 function normalize(value: string): string {
   return value.trim().toLowerCase();
+}
+
+/** Best-effort: qualquer falha (sem `imageDescriber` configurado, timeout, resposta vazia) devolve
+ * `undefined` — a geração nunca deveria travar por causa de uma descrição de referência que não
+ * saiu. Corta em 800 caracteres pra nunca violar `referenceContext.validation.maxLength`. */
+async function describeReferenceImages(deps: GenerateVisualFromIdeaDeps, urls: string[] | undefined): Promise<string | undefined> {
+  if (!deps.imageDescriber || !urls?.length) return undefined;
+  const descriptions = await Promise.all(
+    urls.slice(0, MAX_REFERENCE_IMAGES).map((url) => deps.imageDescriber!.describe(url, REFERENCE_IMAGE_DESCRIBE_INSTRUCTION).catch(() => undefined)),
+  );
+  const valid = descriptions.filter((description): description is string => Boolean(description));
+  if (valid.length === 0) return undefined;
+  return valid.join(" ").slice(0, 800);
 }
 
 /**
@@ -79,6 +101,9 @@ export async function generateVisualFromIdea(
     { key: "channel", value: channel },
     { key: "contentFormat", value: contentFormat },
   ];
+
+  const referenceContext = await describeReferenceImages(deps, input.referenceImageUrls);
+  if (referenceContext) fields.push({ key: "referenceContext", value: referenceContext });
 
   for (const field of fields) {
     await deps.fieldValueRepository.append({

@@ -60,4 +60,8 @@ export class S3ObjectStorage implements ObjectStoragePort {
   async delete(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.config.bucket, Key: key }));
   }
+
+  resolvePublicUrl(key: string): string {
+    return resolvePublicUrl(this.config, key);
+  }
 }

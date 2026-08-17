@@ -167,28 +167,36 @@ export class ContentBriefExecutionTaskHandler implements ExecutionTaskHandlerPor
 function buildContentBriefStructure(validatedInputs: Record<string, string>): Record<string, unknown> {
   const objective = stringValue(validatedInputs.objective, "Criar peça visual atrativa.");
   const offerOrSubject = stringValue(validatedInputs.offerOrSubject, objective);
+  // Descrição derivada por visão computacional das imagens de referência anexadas na ideia (ver
+  // `generate-visual-from-idea.ts`, `describeReferenceImages`) — sem isto, a IA nunca sabia o que
+  // as imagens de referência mostravam (ex.: "tênis unissex"), só o texto da ideia. Dobrado em
+  // `offerOrSubject`/`objective` porque são exatamente os campos que `buildSofiaInput`
+  // (`real-skill-execution-handlers.ts`) usa como `visualObjective`/`angle` — a base real da cena
+  // que Sofia descreve para Pedro.
+  const referenceContext = validatedInputs.referenceContext?.trim();
+  const subject = referenceContext ? `${offerOrSubject} (referência visual: ${referenceContext})` : offerOrSubject;
   const targetAudience = stringValue(validatedInputs.targetAudience, "público principal do workspace");
   const channel = stringValue(validatedInputs.channel, "instagram");
   const format = stringValue(validatedInputs.contentFormat, "image");
-  const centralPromise = `${offerOrSubject} — ${objective}`;
+  const centralPromise = `${subject} — ${objective}`;
   return {
-    overallStrategy: `Gerar peça visual para "${offerOrSubject}" com foco em: ${objective}.`,
+    overallStrategy: `Gerar peça visual para "${subject}" com foco em: ${objective}.`,
     objective,
     targetAudience,
     channel,
     format,
     toneOfVoice: "claro e persuasivo",
-    angle: offerOrSubject,
+    angle: subject,
     centralPromise,
-    valueProposition: offerOrSubject,
-    keyMessages: [objective, offerOrSubject].filter((value, index, all) => Boolean(value) && all.indexOf(value) === index),
+    valueProposition: subject,
+    keyMessages: [objective, subject].filter((value, index, all) => Boolean(value) && all.indexOf(value) === index),
     recommendedCta: "Saiba mais",
     recommendedSlideCount: format === "carousel" ? 4 : undefined,
     sofiaBriefing: {
       status: "ready",
       channel,
       format,
-      angle: offerOrSubject,
+      angle: subject,
       centralPromise,
       keyMessages: [objective],
       visualDirectionNotes: [] as string[],

@@ -70,5 +70,21 @@ export const CONTENT_REQUEST_SCHEMA_V1: BriefingSchema = {
       sensitivity: "normal",
       confirmationPolicy: "required_for_external_source",
     },
+    {
+      // Sem isto, imagens de referência anexadas na ideia (`ContentBlueprint.referenceImages`)
+      // nunca chegavam à geração real — só o texto seguia adiante. `offerOrSubject` tem só 200
+      // caracteres de limite (apertado demais para uma descrição de imagem via visão computacional
+      // sem risco de estourar), por isso um campo próprio, com mais espaço, nunca perguntado
+      // interativamente (`never_required` — só preenchido por `generate-visual-from-idea.ts`).
+      key: "referenceContext",
+      label: "Contexto de referência",
+      description: "Descrição derivada de imagens de referência anexadas pelo usuário (produto, cores, estilo).",
+      required: false,
+      dataType: "string",
+      sourcePriority: ["user_message"],
+      validation: { maxLength: 800 },
+      sensitivity: "normal",
+      confirmationPolicy: "never_required",
+    },
   ],
 };

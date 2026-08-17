@@ -314,6 +314,7 @@ export default function ProductionLinePage() {
         format: idea.format,
         channel: idea.channels[0] ?? ("instagram" as ProductionChannel),
         targetAudience: idea.targetAudience,
+        referenceImages: idea.referenceImages,
       };
       const result = await generateRealImageFromIdea(generateInput);
       if (result.state === "failed") {

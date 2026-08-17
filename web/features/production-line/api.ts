@@ -10,6 +10,7 @@ export type GenerateFromIdeaInput = {
   format: Exclude<ProductionFormat, "video">;
   channel: ProductionChannel;
   targetAudience?: string;
+  referenceImages?: string[];
 };
 
 export type GenerateFromIdeaResult = {

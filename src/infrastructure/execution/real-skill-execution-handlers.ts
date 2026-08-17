@@ -561,6 +561,16 @@ function buildCopyInput(request: ExecutionTaskHandlerRequest): Record<string, un
 }
 
 function buildSofiaInput(request: ExecutionTaskHandlerRequest, strategy: Record<string, unknown>): Record<string, unknown> {
+  // `enrichVisualConcept` (sofia-art-direction.skill.ts) deriva a CENA a partir só deste campo —
+  // se ele for só o objetivo abstrato ("vender X com desconto"), a cena nunca reflete o produto/
+  // referência de verdade, mesmo quando `strategy.valueProposition` já os carrega (achado ao vivo:
+  // imagem gerada "nada a ver" com a referência anexada na ideia). `objective` continua primeiro,
+  // de propósito, pra manter a intenção declarada como âncora principal.
+  const objective = stringValue(strategy.objective, "");
+  const valueProposition = stringValue(strategy.valueProposition, "");
+  const visualObjective = [objective, valueProposition]
+    .filter((value, index, all) => Boolean(value) && all.indexOf(value) === index)
+    .join(" — ") || "Criar peça visual da campanha.";
   return {
     ...baseInput(request),
     originalRequest: "Execution real controlada a partir de RuntimePlan validado.",
@@ -568,7 +578,7 @@ function buildSofiaInput(request: ExecutionTaskHandlerRequest, strategy: Record<
     joaoSofiaBriefing: normalizeObject(strategy.sofiaBriefing),
     channel: stringValue(strategy.channel, "instagram"),
     format: stringValue(strategy.format, "carrossel"),
-    visualObjective: stringValue(strategy.objective, "Criar peça visual da campanha."),
+    visualObjective,
   };
 }
 

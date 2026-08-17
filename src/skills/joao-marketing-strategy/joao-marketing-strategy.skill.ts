@@ -418,10 +418,23 @@ export function buildBaselineStrategy(
   const marketingObjective = classifyMarketingObjective(input.desiredObjective, input.originalRequest);
   const guidance = structuralGuidanceFor(marketingObjective);
   const angle = guidance.angleDescription;
+  // Sem produto real cadastrado na Clara (caso comum do tanque de Produção — uma ideia pontual,
+  // nunca um ProductContext registrado), o único lugar onde o assunto específico (produto, cor,
+  // descrição das imagens de referência anexadas) sobrevive é `originalRequest` — ver
+  // `buildStrategyInput`/`buildContentBriefStructure`, real-skill-execution-handlers.ts, que
+  // embutem `offerOrSubject`+`referenceContext` ali. Sem isto, `centralPromise`/`valueProposition`
+  // caíam num texto genérico que nunca chegava a Sofia/Pedro (achado ao vivo: imagem gerada "nada
+  // a ver" com a referência anexada) — o produto real cadastrado, quando existir, continua tendo
+  // prioridade.
+  const specificOriginalRequest = isSpecificOriginalRequest(input);
   const centralPromise = product?.payload.benefits?.[0]
     ? `${product.payload.benefits[0]}.`
-    : `Entregar ${input.desiredObjective} com clareza e consistência de marca.`;
-  const valueProposition = product?.payload.description ?? brand?.payload.promise ?? "Proposta de valor a ser refinada com mais dados de produto na Clara.";
+    : specificOriginalRequest
+      ? input.originalRequest.trim()
+      : `Entregar ${input.desiredObjective} com clareza e consistência de marca.`;
+  const valueProposition = product?.payload.description
+    ?? brand?.payload.promise
+    ?? (specificOriginalRequest ? input.originalRequest.trim() : "Proposta de valor a ser refinada com mais dados de produto na Clara.");
   const keyMessages = buildKeyMessages(input, brand, product, campaign);
   // O formato e o CTA deixaram de ser decididos por Arthur/João sozinhos: quando o Eduardo já
   // planejou o Editorial Brief, sua decisão é autoritativa. Sem o brief (ex.: João chamado
@@ -669,6 +682,17 @@ function toMariaBriefingChannel(channel: JoaoSupportedChannel): JoaoMariaBriefin
   if (channel === "meta_ads") return "instagram";
   if (channel === "google_ads") return "google_business";
   return channel;
+}
+
+// Espelha por convenção (mesmo padrão do resto do arquivo) o texto fixo que
+// `real-skill-execution-handlers.ts` usa quando não há um pedido específico de verdade (caminho de
+// `campaign_creation` com Editorial Brief — pesquisa já resumiu tudo que importa em
+// `campaignObjective`/`recommendedFormatLabel`, `originalRequest` fica só como preenchimento).
+const GENERIC_ORIGINAL_REQUEST_PLACEHOLDER = "Execution real controlada a partir de RuntimePlan validado.";
+
+function isSpecificOriginalRequest(input: JoaoStrategyRequestInput): boolean {
+  const trimmed = input.originalRequest?.trim();
+  return Boolean(trimmed) && trimmed !== GENERIC_ORIGINAL_REQUEST_PLACEHOLDER && trimmed !== input.desiredObjective.trim();
 }
 
 function buildKeyMessages(

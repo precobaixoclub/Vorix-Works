@@ -493,6 +493,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   const ensureHouseTenantProfile = async (tenantId: string): Promise<void> => {
     await ensureHouseValentinaProfile(tenantId);
     await ensureHouseBrandContext(tenantId);
+    await ensureHouseIdentityContext(tenantId);
   };
   const ensureHouseValentinaProfile = async (tenantId: string): Promise<void> => {
     const existing = await valentinaRepository.findById(tenantId);
@@ -554,6 +555,27 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
         brandName: "Vorix",
         positioning: "Plataforma de marketing com IA para pequenos e médios negócios.",
         toneOfVoice: "claro, direto e confiável",
+      },
+      audit: { actor: { id: "system", type: "system" }, reason: "Bootstrap automático do tenant interno para geração real de imagem." },
+    });
+  };
+  // Bianca (`bianca-social-media-design.skill.ts`, `evaluateDesignContextCompleteness`) exige
+  // "IdentityContext" especificamente — diferente de Sofia, não aceita "BrandContext" como
+  // alternativa. Pedro (`evaluateVisualContextCompleteness`, mesmo formato de Sofia) também
+  // consulta os dois; com ambos os registros seed, os três (Sofia/Bianca/Pedro) passam pelo gate
+  // de contexto da Clara.
+  const ensureHouseIdentityContext = async (tenantId: string): Promise<void> => {
+    const existing = await clara.list({ clientId: tenantId, module: "IdentityContext", status: "active" });
+    if (existing.length > 0) return;
+    await clara.create({
+      module: "IdentityContext",
+      title: "Identidade visual — Vorix (interno)",
+      payload: {
+        clientId: tenantId,
+        colors: ["#4338CA", "#F5F5F4", "#111827"],
+        fonts: ["Inter"],
+        imageStyle: "Fotografia limpa e moderna, com boa legibilidade de texto sobreposto.",
+        visualGuidelines: ["Priorizar contraste alto entre texto e fundo.", "Manter identidade consistente entre peças."],
       },
       audit: { actor: { id: "system", type: "system" }, reason: "Bootstrap automático do tenant interno para geração real de imagem." },
     });

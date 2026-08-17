@@ -284,6 +284,10 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
       aiResponse = await this.icaro.request({
         taskType: "image_generation",
         prompt: finalPrompt,
+        // Geração real de imagem (ex.: gpt-image-1) rotineiramente passa dos 30s padrão do Ícaro
+        // (`icaro-brain.ts`, pensado para texto) — sem isto, toda chamada real estoura
+        // SKILL_TIMEOUT antes da OpenAI sequer responder.
+        timeoutMs: 90_000,
         specialistId: this.manifest.id,
         executionId: request.context.executionId,
         taskId: request.context.taskId,

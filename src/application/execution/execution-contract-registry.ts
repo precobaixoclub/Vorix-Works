@@ -234,6 +234,14 @@ export const DEFAULT_EXECUTION_CONTRACTS: readonly ExecutionContract[] = [
     featureFlag: "realVisualEnabled",
     sideEffectPolicy: "external_write",
     skillCapabilities: ["art_direction", "social_media_design", "image_generation"],
+    // O payload real embute o prompt final completo e NÃO truncado (`image.prompt` — Pedro guarda
+    // o `finalPrompt` original para auditoria; só o adapter da OpenAI corta o que de fato envia,
+    // ver `openai-image-provider-adapter.ts`) por imagem, mais os outputs inteiros de Sofia e
+    // Bianca (`visualPipeline.artDirection`/`designSpec`) — os defaults de 64KB/8000 caracteres
+    // (pensados para texto/copy) estouram sempre em produção real, mesmo com uma única imagem
+    // (`finalPrompt` sozinho já passa de 100000 caracteres). Carrossel (até 4 imagens) tem a
+    // margem mais folgada de propósito.
+    limits: { maxOutputBytes: 2_000_000, maxStringLength: 150_000 },
   }),
   contract({
     schemaId: "content_brief.structure",
@@ -267,7 +275,10 @@ export const DEFAULT_EXECUTION_CONTRACTS: readonly ExecutionContract[] = [
   }),
 ] as const;
 
-function contract(input: Omit<ExecutionContract, "schemaVersion" | "inputSchema" | "executionOutputSchema" | "limits"> & Partial<Pick<ExecutionContract, "limits" | "inputSchema" | "executionOutputSchema">>): ExecutionContract {
+function contract(
+  input: Omit<ExecutionContract, "schemaVersion" | "inputSchema" | "executionOutputSchema" | "limits"> &
+    Partial<Pick<ExecutionContract, "inputSchema" | "executionOutputSchema">> & { limits?: Partial<ExecutionContractLimits> },
+): ExecutionContract {
   return {
     ...input,
     schemaVersion: 1,

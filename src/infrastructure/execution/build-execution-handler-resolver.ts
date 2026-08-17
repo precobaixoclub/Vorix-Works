@@ -58,7 +58,9 @@ export async function buildExecutionHandlerResolver(input: {
       fallbackPolicy: "fail_closed",
       sideEffectPolicy: "external_write",
       retryPolicy: { supportsRetry: true, maxAttempts: 2, backoffStrategy: "fixed" },
-      executionTimeoutMs: 30_000,
+      // Sofia + Bianca são rápidas, mas Pedro chama a OpenAI de verdade (geração de imagem
+      // rotineiramente passa de 30s) — precisa cobrir a cadeia inteira, não só o texto.
+      executionTimeoutMs: 120_000,
       requiredFeatureFlags: ["realExecutionEnabled", "realVisualEnabled"],
     });
     registry.register(realSingle("helena-skill-distribution-handler", helena, "distribution", "publication", "social_publishing", "manifest", ["realExecutionEnabled", "realDistributionEnabled"]));

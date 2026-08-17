@@ -20,6 +20,12 @@ export type OpenAiImageProviderConfig = {
 
 const DEFAULT_BASE_URL = "https://api.openai.com";
 const CACHE_TTL_MS = 60_000;
+/** A OpenAI rejeita `prompt` acima de 32000 caracteres (`string_above_max_length`). Alguns
+ * chamadores (ex.: Pedro, `pedro-image-generation.skill.ts`) constroem prompts muito mais longos —
+ * um brief técnico completo pensado para um modelo de raciocínio, não para o parâmetro `prompt` de
+ * `POST /v1/images/generations` — então cortar aqui é a defesa genérica do adapter contra QUALQUER
+ * chamador que exceda o limite, sem precisar mudar a lógica de construção do prompt de cada Skill. */
+const MAX_PROMPT_LENGTH = 32_000;
 
 /**
  * Adapter OpenAI (`gpt-image-1`) — só capability `image_generation`. Documentação estável e bem
@@ -58,6 +64,7 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
 
     const size = typeof request.params.size === "string" ? request.params.size : "1024x1024";
     const baseUrl = this.config.apiBaseUrl ?? DEFAULT_BASE_URL;
+    const prompt = truncatePrompt(request.prompt, MAX_PROMPT_LENGTH);
 
     try {
       const controller = new AbortController();
@@ -65,7 +72,7 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
       const response = await this.httpClient(`${baseUrl}/v1/images/generations`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ model: request.modelId, prompt: request.prompt, size, n: 1 }),
+        body: JSON.stringify({ model: request.modelId, prompt, size, n: 1 }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -116,9 +123,22 @@ async function classifyOpenAiError(response: Response): Promise<{ category: AiMe
   if (response.status === 429) return { category: "rate_limited", message: "Rate limit da OpenAI." };
   if (response.status >= 500) return { category: "provider_unavailable", message: "Erro interno da OpenAI." };
   if (response.status === 400) {
-    const body = await response.json().catch(() => undefined) as { error?: { code?: string } } | undefined;
+    const body = await response.json().catch(() => undefined) as { error?: { code?: string; message?: string; type?: string } } | undefined;
     if (body?.error?.code === "content_policy_violation") return { category: "content_blocked", message: "Prompt bloqueado pela política de conteúdo da OpenAI." };
-    return { category: "invalid_request", message: "Requisição inválida para a OpenAI." };
+    return { category: "invalid_request", message: body?.error?.message ? `Requisição inválida para a OpenAI: ${body.error.message}` : "Requisição inválida para a OpenAI." };
   }
   return { category: "internal_error", message: "Erro inesperado ao chamar a OpenAI." };
+}
+
+/** Corta em fronteira de palavra (nunca no meio de um caractere multibyte) e deixa claro no fim do
+ * prompt que houve corte — mais seguro que truncar cegamente no limite exato de caracteres, que
+ * poderia deixar uma instrução pela metade logo antes do corte. */
+function truncatePrompt(prompt: string, maxLength: number): string {
+  if (prompt.length <= maxLength) return prompt;
+  const marker = "\n\n[...prompt truncado por limite da OpenAI...]";
+  const budget = maxLength - marker.length;
+  const cut = prompt.slice(0, budget);
+  const lastSpace = cut.lastIndexOf(" ");
+  const safeCut = lastSpace > budget * 0.9 ? cut.slice(0, lastSpace) : cut;
+  return `${safeCut}${marker}`;
 }

@@ -266,6 +266,10 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
 
     const finalPrompt = buildFinalImagePrompt(request.input, claraContext, qualityReport);
     const visibleText = extractVisibleTextContext(request.input);
+    // Mesma lógica de `buildNegativePrompt` (abaixo) — repetida aqui só pra virar dado estruturado
+    // repassado ao Ícaro, pelo mesmo motivo do `authorizedVisibleTitle`: a menção às cores dentro do
+    // prompt gigante pode não sobreviver ao corte de 31000 caracteres antes de chegar na OpenAI.
+    const brandColors = request.input.biancaPedroBriefing.suggestedPalette ?? request.input.biancaDesign.suggestedPalette ?? [];
     const visualEnrichments = buildVisualEnrichments(request.input);
     await this.log("PromptBuilt", "Prompt final de imagem criado com critérios de qualidade profissional.", request, { clientId: tenant.clientId });
     await this.emit("ImagePromptBuilt", request, { clientId: tenant.clientId, prompt: finalPrompt, qualityReport });
@@ -303,6 +307,7 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
           // uma instrução curta e confiável, já que o texto autorizado pode acabar cortado dentro
           // de um prompt de 100k+ caracteres antes de chegar na seção "TEXTOS VISÍVEIS AUTORIZADOS".
           authorizedVisibleTitle: visibleText.title,
+          authorizedBrandColors: brandColors,
         },
         constraints: [
           "Retornar apenas JSON válido.",

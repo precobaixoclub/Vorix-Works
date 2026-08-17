@@ -171,12 +171,24 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
     <Card>
       <CardBody className="space-y-3">
         {images.length > 0 ? (
-          <div className="grid grid-cols-2 gap-2">
-            {images.map((image, index) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={`${image.uri}-${index}`} src={image.uri} alt={title} className="aspect-square w-full rounded-lg border border-border object-cover" />
-            ))}
-          </div>
+          images.length === 1 ? (
+            // Peça única: imagem inteira sem corte (achado ao vivo — `object-cover` com
+            // `aspect-square` cortava peças que não são quadradas) e clicável pra abrir em
+            // tamanho real numa aba nova.
+            <a href={images[0].uri} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border bg-surface-sunken">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={images[0].uri} alt={title} className="mx-auto max-h-[520px] w-full object-contain" />
+            </a>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {images.map((image, index) => (
+                <a key={`${image.uri}-${index}`} href={image.uri} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border bg-surface-sunken">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={image.uri} alt={title} className="aspect-square w-full object-contain" />
+                </a>
+              ))}
+            </div>
+          )
         ) : (
           <div className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-xs text-ink-muted">Sem imagem</div>
         )}

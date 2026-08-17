@@ -491,6 +491,10 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // bootstrap grava o registro direto no repositório (que aceita `save(record)` com `id` livre)
   // em vez de passar por `createTenant`. Idempotente — não faz nada se o registro já existir.
   const ensureHouseTenantProfile = async (tenantId: string): Promise<void> => {
+    await ensureHouseValentinaProfile(tenantId);
+    await ensureHouseBrandContext(tenantId);
+  };
+  const ensureHouseValentinaProfile = async (tenantId: string): Promise<void> => {
     const existing = await valentinaRepository.findById(tenantId);
     if (existing) return;
     const now = new Date().toISOString();
@@ -532,6 +536,26 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       currentVersion: 1,
       versions: [],
       history: [],
+    });
+  };
+  // Sofia (`sofia-art-direction.skill.ts`, `evaluateVisualContextCompleteness`) recusa gerar
+  // direção visual (`status: "needs_more_context"`) se a Clara não tiver NENHUM registro
+  // "IdentityContext" nem "BrandContext" para o `clientId` — sem isso a geração real falha sempre,
+  // mesmo com tudo mais correto. Bootstrap idempotente do mínimo necessário (um BrandContext
+  // genérico), mesmo espírito de `ensureHouseValentinaProfile` acima.
+  const ensureHouseBrandContext = async (tenantId: string): Promise<void> => {
+    const existing = await clara.list({ clientId: tenantId, module: "BrandContext", status: "active" });
+    if (existing.length > 0) return;
+    await clara.create({
+      module: "BrandContext",
+      title: "Identidade de marca — Vorix (interno)",
+      payload: {
+        clientId: tenantId,
+        brandName: "Vorix",
+        positioning: "Plataforma de marketing com IA para pequenos e médios negócios.",
+        toneOfVoice: "claro, direto e confiável",
+      },
+      audit: { actor: { id: "system", type: "system" }, reason: "Bootstrap automático do tenant interno para geração real de imagem." },
     });
   };
   const aiMediaProviderRegistry = createDefaultAiMediaProviderRegistry(aiMediaProviderAdapters);

@@ -10,6 +10,8 @@ import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { CHANNEL_LABEL, DEFAULT_PRODUCTION_CONFIG, FORMAT_LABEL } from "@/features/production-line/defaults";
 import { generateFromIdea as generateRealImageFromIdea } from "@/features/production-line/api";
+import { recordGeneration } from "@/features/production-line/generation-log";
+import { useExecutionRuns } from "@/features/execution/hooks";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
 import type { ContentBlueprint, IdeaProductionMode, PostingRule, ProductionChannel, ProductionFormat, ProductionLineConfig, ProductionWeekday, WeeklyFormatQuota } from "@/features/production-line/types";
 
@@ -191,6 +193,8 @@ export default function ProductionLinePage() {
   const [ideaEditorOpen, setIdeaEditorOpen] = useState(false);
   const [generatingIdeaId, setGeneratingIdeaId] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const { data: executionRuns } = useExecutionRuns(workspace.id);
+  const pendingReviewCount = (executionRuns ?? []).filter((run) => run.mode === "real" && run.state === "waiting_for_approval").length;
 
   useEffect(() => {
     const stored = readProductionConfig(workspace.id);
@@ -229,11 +233,10 @@ export default function ProductionLinePage() {
     const availableIdeas = routineIdeas.filter((idea) => idea.status !== "used").length;
     const usedIdeas = routineIdeas.filter((idea) => idea.status === "used").length;
     const standaloneIdeas = config.blueprints.filter(isStandaloneIdea).length;
-    const pendingReview = 0;
     const weeklyTotal = config.postingRules.reduce((total, rule) => total + totalWeeklyPosts(rule), 0);
     const channels = new Set(config.postingRules.flatMap((rule) => rule.channels));
     const dailyCapacity = config.postingRules.reduce((total, rule) => total + rule.maxPostsPerDay, 0);
-    return { ideas, availableIdeas, usedIdeas, standaloneIdeas, pendingReview, weeklyTotal, channels: channels.size, dailyCapacity };
+    return { ideas, availableIdeas, usedIdeas, standaloneIdeas, weeklyTotal, channels: channels.size, dailyCapacity };
   }, [config]);
   const emptyIdeas = useMemo(() => config.blueprints.filter(isEffectivelyEmptyIdea), [config.blueprints]);
   const formatAlerts = useMemo(() => {
@@ -302,21 +305,23 @@ export default function ProductionLinePage() {
     setGenerateError(null);
     setGeneratingIdeaId(idea.id);
     try {
-      const result = await generateRealImageFromIdea({
+      const generateInput = {
         workspaceId: workspace.id,
         name: idea.name || "Ideia sem nome",
         objective: idea.objective || idea.ideaText,
         ideaText: idea.ideaText,
         format: idea.format,
-        channel: idea.channels[0] ?? "instagram",
+        channel: idea.channels[0] ?? ("instagram" as ProductionChannel),
         targetAudience: idea.targetAudience,
-      });
+      };
+      const result = await generateRealImageFromIdea(generateInput);
       if (result.state === "failed") {
         // Fica em Produção de propósito — falha não é conteúdo pronto pra revisar, e a ideia
         // continua disponível no tanque para tentar de novo.
         setGenerateError(result.failureMessage || "A geração falhou. Tente novamente.");
         return;
       }
+      recordGeneration(workspace.id, { ...generateInput, executionRunId: result.executionRunId, ideaId: idea.id, createdAt: new Date().toISOString() });
       updateBlueprint(idea.id, { status: "used", usedAt: new Date().toISOString() });
       router.push(`/workspaces/${workspace.id}/review`);
     } catch (error) {
@@ -473,7 +478,7 @@ export default function ProductionLinePage() {
           <aside className="space-y-4">
             <RoutineStatusCard rule={selectedRule} />
             <FormatAlertsCard alerts={formatAlerts} />
-            <ReviewQueue workspaceId={workspace.id} totalPending={productionSummary.pendingReview} />
+            <ReviewQueue workspaceId={workspace.id} totalPending={pendingReviewCount} />
           </aside>
         </section>
       ) : null}
@@ -739,21 +744,17 @@ function FormatAlertsCard({ alerts }: { alerts: { format: ProductionFormat; need
 function ReviewQueue({ workspaceId, totalPending }: { workspaceId: string; totalPending: number }) {
   return (
     <Card className="h-fit">
-      <CardHeader>
-        <div>
-          <p className="text-sm font-semibold text-ink">Para revisar e aprovar</p>
-          <p className="text-xs text-ink-muted">{totalPending} peça(s) gerada(s) aguardando decisão.</p>
+      <CardBody className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <IconTray className="h-6 w-6 shrink-0 text-ink-faint" />
+          <div>
+            <p className="text-sm font-semibold text-ink">{totalPending} peça(s) para revisar</p>
+            <p className="text-xs text-ink-muted">{totalPending > 0 ? "Aguardando sua aprovação." : "Nada pendente no momento."}</p>
+          </div>
         </div>
-        <Link href={`/workspaces/${workspaceId}/review`} className="text-xs font-medium text-accent hover:underline">Ver tudo</Link>
-      </CardHeader>
-      <CardBody>
-        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-surface px-4 py-6 text-center">
-          <IconTray className="h-7 w-7 text-ink-faint" />
-          <p className="text-sm font-medium text-ink">Nada para revisar ainda</p>
-          <p className="text-xs text-ink-muted">
-            Nenhuma imagem, carrossel ou vídeo foi gerado ainda. Quando uma rotina ou um conteúdo avulso gerar uma peça final, ela aparece aqui para aprovação.
-          </p>
-        </div>
+        <Link href={`/workspaces/${workspaceId}/review`} className="shrink-0 text-xs font-medium text-accent hover:underline">
+          Ir para Revisão
+        </Link>
       </CardBody>
     </Card>
   );

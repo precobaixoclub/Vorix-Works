@@ -208,6 +208,11 @@ function buildContentBriefStructure(validatedInputs: Record<string, string>): Re
     targetAudience,
     channel,
     format,
+    // Curto e limpo de propósito (sem o sufixo de referência visual, que é só para orientar a IA,
+    // nunca para aparecer na imagem) — vira o único texto autorizado que Pedro pode escrever na
+    // peça (ver `buildPedroInput`/`extractVisibleTextContext`). Sem isto, ou é texto nenhum, ou o
+    // modelo inventa CTA/headline por conta própria — as duas coisas já dando problema ao vivo.
+    displayTitle: offerOrSubject.slice(0, 50),
     toneOfVoice: "claro e persuasivo",
     angle: subject,
     centralPromise,
@@ -358,8 +363,15 @@ function buildBiancaInput(request: ExecutionTaskHandlerRequest, strategy: Record
 
 function buildPedroInput(request: ExecutionTaskHandlerRequest, strategy: Record<string, unknown>, bianca: Record<string, unknown>): Record<string, unknown> {
   const imageCount = numberValue(strategy.recommendedSlideCount, 1) ?? 1;
+  const displayTitle = stringValue(strategy.displayTitle, "");
+  const base = baseInput(request);
   return {
-    ...baseInput(request),
+    ...base,
+    // `extractVisibleTextContext` (pedro-image-generation.skill.ts) só trata um texto como
+    // "autorizado" se estiver aqui — sem isto, `hasAuthorizedVisibleText` fica falso e a peça sai
+    // sem nenhum texto (ou, pior, o modelo inventa um CTA sozinho). Só `title`, de propósito — sem
+    // `cta`, pra não reabrir o problema do botão inventado ("Saiba mais").
+    workflowContext: { ...normalizeObject(base.workflowContext), ...(displayTitle ? { title: displayTitle } : {}) },
     originalRequest: "Execution real controlada a partir de RuntimePlan validado.",
     biancaDesign: bianca,
     biancaPedroBriefing: normalizeObject(bianca.pedroBriefing),

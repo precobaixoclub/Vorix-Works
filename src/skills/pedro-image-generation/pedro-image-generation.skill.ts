@@ -265,6 +265,7 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
     });
 
     const finalPrompt = buildFinalImagePrompt(request.input, claraContext, qualityReport);
+    const visibleText = extractVisibleTextContext(request.input);
     const visualEnrichments = buildVisualEnrichments(request.input);
     await this.log("PromptBuilt", "Prompt final de imagem criado com critérios de qualidade profissional.", request, { clientId: tenant.clientId });
     await this.emit("ImagePromptBuilt", request, { clientId: tenant.clientId, prompt: finalPrompt, qualityReport });
@@ -297,6 +298,11 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
           clientId: tenant.clientId,
           channel: request.input.channel,
           imageCount: request.input.imageCount,
+          // Repassa o único texto autorizado (se houver) como dado estruturado, não só embutido no
+          // prompt gigante — o adapter da OpenAI (`OpenAiIcaroImageProvider`) usa isto pra montar
+          // uma instrução curta e confiável, já que o texto autorizado pode acabar cortado dentro
+          // de um prompt de 100k+ caracteres antes de chegar na seção "TEXTOS VISÍVEIS AUTORIZADOS".
+          authorizedVisibleTitle: visibleText.title,
         },
         constraints: [
           "Retornar apenas JSON válido.",

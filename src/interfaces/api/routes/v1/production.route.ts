@@ -31,8 +31,10 @@ export type ProductionRoutesDeps = GenerateVisualFromIdeaDeps &
  * de gerar uma peça visual de verdade hoje é via `runtimePlanId`, que só nasce de um briefing
  * conversacional completo (ver `generate-visual-from-idea.ts`). Esta rota faz o caminho inteiro
  * numa chamada só: ideia → briefing sintético → planning/runtime (automáticos) → execução real
- * criada e iniciada. Devolve o `executionRunId` para o cliente acompanhar em
- * `GET /execution-runs/:id` (já existente).
+ * criada, iniciada e rodada até o fim (aprovação ou falha) — nada continua em background depois
+ * que a resposta HTTP volta. Devolve `state` já resolvido para o cliente decidir na hora (sem
+ * poll) se marca a ideia como usada e navega para Revisão, ou mostra erro e mantém o usuário em
+ * Produção.
  */
 export async function registerProductionRoutes(app: FastifyInstance, deps: ProductionRoutesDeps): Promise<void> {
   app.post("/production/ideas/generate", { schema: { body: GENERATE_BODY_SCHEMA } }, async (request) => {
@@ -77,6 +79,17 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
     }).catch(translateExecutionError);
     const started = await startExecution(deps, { tenantId: principal.tenantId, workspaceId: body.workspaceId, id: run.id }).catch(translateExecutionError);
 
-    return successEnvelope({ executionRunId: started.id }, request.id);
+    // A execução real roda de ponta a ponta dentro desta mesma requisição (nada é assíncrono em
+    // background) — por isso já sabemos aqui, sem poll nenhum, se terminou em falha. Devolver isso
+    // já pronto evita que o cliente precise descobrir sozinho (ou pior, navegar para uma tela de
+    // revisão como se tivesse dado certo quando na verdade falhou).
+    let failureMessage: string | undefined;
+    if (started.state === "failed") {
+      const detail = await deps.executionRepository.getDetail(started.id);
+      const failedAttempt = [...(detail?.attempts ?? [])].reverse().find((attempt) => attempt.failure);
+      failureMessage = failedAttempt?.failure?.message;
+    }
+
+    return successEnvelope({ executionRunId: started.id, state: started.state, failureMessage }, request.id);
   });
 }

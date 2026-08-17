@@ -302,7 +302,7 @@ export default function ProductionLinePage() {
     setGenerateError(null);
     setGeneratingIdeaId(idea.id);
     try {
-      const { executionRunId } = await generateRealImageFromIdea({
+      const result = await generateRealImageFromIdea({
         workspaceId: workspace.id,
         name: idea.name || "Ideia sem nome",
         objective: idea.objective || idea.ideaText,
@@ -311,7 +311,14 @@ export default function ProductionLinePage() {
         channel: idea.channels[0] ?? "instagram",
         targetAudience: idea.targetAudience,
       });
-      router.push(`/workspaces/${workspace.id}/execution/${executionRunId}`);
+      if (result.state === "failed") {
+        // Fica em Produção de propósito — falha não é conteúdo pronto pra revisar, e a ideia
+        // continua disponível no tanque para tentar de novo.
+        setGenerateError(result.failureMessage || "A geração falhou. Tente novamente.");
+        return;
+      }
+      updateBlueprint(idea.id, { status: "used", usedAt: new Date().toISOString() });
+      router.push(`/workspaces/${workspace.id}/review`);
     } catch (error) {
       setGenerateError(error instanceof Error ? error.message : "Não foi possível iniciar a geração.");
     } finally {

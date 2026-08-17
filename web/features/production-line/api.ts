@@ -1,4 +1,5 @@
 import { apiClient } from "@/lib/api-client";
+import type { ExecutionRunState } from "@/features/execution/types";
 import type { ProductionChannel, ProductionFormat } from "./types";
 
 export type GenerateFromIdeaInput = {
@@ -11,9 +12,15 @@ export type GenerateFromIdeaInput = {
   targetAudience?: string;
 };
 
+export type GenerateFromIdeaResult = {
+  executionRunId: string;
+  state: ExecutionRunState;
+  failureMessage?: string;
+};
+
 /** Aciona o pipeline real de geração (Sofia → Bianca → Pedro) a partir de uma ideia do tanque —
- * ver `src/interfaces/api/routes/v1/production.route.ts`. Devolve o id da execução para
- * acompanhar em `/workspaces/[workspaceId]/execution/[runId]`, já existente. */
-export function generateFromIdea(input: GenerateFromIdeaInput): Promise<{ executionRunId: string }> {
-  return apiClient.post<{ executionRunId: string }>("/v1/production/ideas/generate", input);
+ * roda até o fim dentro da própria chamada (sem nada em background), então `state` já vem
+ * resolvido — ver `src/interfaces/api/routes/v1/production.route.ts`. */
+export function generateFromIdea(input: GenerateFromIdeaInput): Promise<GenerateFromIdeaResult> {
+  return apiClient.post<GenerateFromIdeaResult>("/v1/production/ideas/generate", input);
 }

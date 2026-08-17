@@ -421,6 +421,9 @@ export default function ProductionLinePage() {
               </div>
             </CardHeader>
             <CardBody>
+              {generateError ? (
+                <div className="mb-3 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-500">{generateError}</div>
+              ) : null}
               <TankMetrics summary={productionSummary} />
               <div className="mt-4 flex flex-wrap items-end gap-x-6 gap-y-3">
                 <div>
@@ -454,6 +457,8 @@ export default function ProductionLinePage() {
                 onToggleStatus={toggleBlueprintStatus}
                 onRemove={removeBlueprint}
                 onCleanEmpty={removeEmptyIdeas}
+                onGenerate={handleGenerateRealImage}
+                generatingIdeaId={generatingIdeaId}
               />
             </CardBody>
           </Card>
@@ -767,6 +772,8 @@ function IdeaInventory({
   onToggleStatus,
   onRemove,
   onCleanEmpty,
+  onGenerate,
+  generatingIdeaId,
 }: {
   ideas: ContentBlueprint[];
   totalIdeas: number;
@@ -776,6 +783,8 @@ function IdeaInventory({
   onToggleStatus: (idea: ContentBlueprint) => void;
   onRemove: (id: string) => void;
   onCleanEmpty: () => void;
+  onGenerate: (idea: ContentBlueprint) => void;
+  generatingIdeaId: string | null;
 }) {
   return (
     <section className="mt-4">
@@ -832,6 +841,17 @@ function IdeaInventory({
               </span>
               <div className="flex flex-wrap justify-start gap-1.5 sm:justify-end">
                 <Button className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onOpen(idea.id)}>Abrir</Button>
+                {idea.format !== "video" ? (
+                  <Button
+                    variant="secondary"
+                    className="min-h-8 px-2.5 py-1.5 text-xs"
+                    disabled={generatingIdeaId === idea.id}
+                    onClick={() => onGenerate(idea)}
+                    title="Chama a OpenAI de verdade — gera custo real"
+                  >
+                    {generatingIdeaId === idea.id ? "Gerando…" : "Gerar imagem real"}
+                  </Button>
+                ) : null}
                 <Button variant="ghost" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onToggleStatus(idea)}>
                   {idea.status === "used" ? "Voltar" : "Marcar usada"}
                 </Button>

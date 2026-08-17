@@ -79,6 +79,14 @@ services:
       PUBLICATION_CANARY_WORKSPACE_IDS: "${PUBLICATION_CANARY_WORKSPACE_IDS:-}"
       # AI Gateway, Meta OAuth e produção real ficam desligados por padrão (ProductionGuard) —
       # nunca habilitar aqui sem decisão explícita e as credenciais reais correspondentes.
+      # Skills reais (Sofia/Bianca/Pedro) via execution-runs — desligado por padrão; ligar só
+      # com REAL_EXECUTION_ENABLED=true no .env.zuno do servidor (ver docs/deployment.md).
+      REAL_EXECUTION_ENABLED: "${REAL_EXECUTION_ENABLED:-false}"
+      REAL_EXECUTION_RESEARCH_ENABLED: "${REAL_EXECUTION_RESEARCH_ENABLED:-false}"
+      REAL_PLANNING_ENABLED: "${REAL_PLANNING_ENABLED:-false}"
+      REAL_COPY_ENABLED: "${REAL_COPY_ENABLED:-false}"
+      REAL_VISUAL_ENABLED: "${REAL_VISUAL_ENABLED:-false}"
+      REAL_DISTRIBUTION_ENABLED: "${REAL_DISTRIBUTION_ENABLED:-false}"
     ports:
       - "${ZUNO_API_PORT:-8090}:3000"
     volumes:

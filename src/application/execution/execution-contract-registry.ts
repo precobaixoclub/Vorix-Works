@@ -283,8 +283,11 @@ export const DEFAULT_EXECUTION_CONTRACTS: readonly ExecutionContract[] = [
     skillCapabilities: ["quality_review"],
     // Input combina structure + copy + visual — visual sozinho já carrega o prompt final de Pedro
     // (100KB+, ver contrato `visual_generation` acima) mais os outputs inteiros de Sofia/Bianca;
-    // mesma folga aplicada aqui.
-    limits: { maxInputBytes: 2_500_000, maxStringLength: 150_000 },
+    // mesma folga aplicada aqui. `maxOutputBytes` também precisa da mesma folga: o payload de
+    // execução (`buildExecutionPayload`) embute `upstreamInputs` — os MESMOS inputs gigantes —
+    // dentro do próprio artefato de saída desta task (achado ao vivo, "EXECUTION_OUTPUT_LIMIT_
+    // EXCEEDED" mesmo com a saída do Lucas em si sendo pequena).
+    limits: { maxInputBytes: 2_500_000, maxOutputBytes: 2_500_000, maxStringLength: 150_000 },
   }),
   contract({
     schemaId: "publication.manifest",

@@ -155,7 +155,7 @@ export class ContentBriefExecutionTaskHandler implements ExecutionTaskHandlerPor
             artifacts: [],
             warnings: [],
             upstreamInputs: request.inputs,
-            provider: "deterministic-real",
+            provider: "deterministic",
             real: true,
           },
         }],

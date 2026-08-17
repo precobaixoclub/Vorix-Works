@@ -66,7 +66,10 @@ export async function buildExecutionHandlerResolver(input: {
     if (input.runtimeRepository && input.preparedCommandRepository) {
       registry.register({
         id: "content-brief-deterministic-handler",
-        provider: "deterministic-real",
+        // Precisa ser um provider da allowlist do SideEffectGuard (`execution-operational-policy.ts`
+        // — só "deterministic"/"helena" passam em qualquer ambiente); um nome fora dessa lista é
+        // barrado com PROVIDER_BLOCKED_BY_ENVIRONMENT antes mesmo do handler rodar.
+        provider: "deterministic",
         version: "1",
         priority: 100,
         handler: new ContentBriefExecutionTaskHandler({ runtimeRepository: input.runtimeRepository, preparedCommandRepository: input.preparedCommandRepository }),

@@ -30,6 +30,12 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    # TEMPORÁRIO — remover depois que "0055_content_brief_capability" for confirmada aplicada em
+    # produção (ver scripts/apply-content-brief-migration.mjs: idempotente, checa schema_migrations
+    # antes de agir, então é seguro rodar em todo boot até lá). Existe porque o runner genérico de
+    # migrations recusa aplicar QUALQUER migration pendente enquanto houver divergência de checksum
+    # em migrations mais antigas já aplicadas (achado separado, pré-existente).
+    command: sh -c "node scripts/apply-content-brief-migration.mjs && node dist/interfaces/api/server.js"
     depends_on:
       zuno-postgres:
         condition: service_healthy

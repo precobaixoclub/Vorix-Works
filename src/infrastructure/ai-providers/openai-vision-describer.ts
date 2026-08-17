@@ -46,12 +46,17 @@ export class OpenAiVisionDescriber {
         signal: controller.signal,
       });
       clearTimeout(timeout);
-      if (!response.ok) return undefined;
+      if (!response.ok) {
+        if (process.env.DEBUG_VISION_DESCRIBER) console.error("[DEBUG vision] HTTP", response.status, await response.text().catch(() => ""));
+        return undefined;
+      }
 
       const body = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
       const text = body.choices?.[0]?.message?.content?.trim();
+      if (process.env.DEBUG_VISION_DESCRIBER) console.error("[DEBUG vision] body", JSON.stringify(body));
       return text || undefined;
-    } catch {
+    } catch (error) {
+      if (process.env.DEBUG_VISION_DESCRIBER) console.error("[DEBUG vision] exception", error);
       return undefined;
     }
   }

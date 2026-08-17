@@ -80,7 +80,7 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       const structure = unwrapExecutionPayload(firstPayload(request.inputs, "structure"));
       const sofia = await callSkill(this.deps.helena, "art_direction", buildSofiaInput(request, structure), request);
       const bianca = await callSkill(this.deps.helena, "social_media_design", buildBiancaInput(request, structure, sofia.output), request);
-      const pedro = await callSkill(this.deps.helena, "image_generation", buildPedroInput(request, structure, bianca.output), request);
+      const pedro = await callSkill(this.deps.helena, "image_generation", buildPedroInput(request, structure, suppressUnauthorizedCta(bianca.output)), request);
       const invalid = validateOutputContract(contract, pedro.output);
       if (invalid) return failure("SKILL_OUTPUT_SCHEMA_INVALID", invalid, "invalid_output");
       const warnings = [...sofia.warnings, ...bianca.warnings, ...pedro.warnings];
@@ -106,6 +106,29 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       return { ok: false, error: classifySkillError(error) };
     }
   }
+}
+
+const NO_CTA_INSTRUCTION = "Nenhum — não incluir nenhum botão, texto ou elemento de CTA nesta peça. Comunicar apenas por composição visual, sem nenhum texto legível.";
+
+/**
+ * Bianca sempre projeta um CTA visível (`ctaPlacement`, `typographyScale.cta` — campos
+ * obrigatórios em `evaluateProductionReadiness`, Pedro nunca aceita omiti-los) porque seu design
+ * pressupõe que sempre existe uma copy real definindo o texto do botão. Hoje NENHUM pipeline real
+ * (nem o reduzido `content_request`, nem `campaign_creation`) alimenta `workflowContext.mariaCopy`
+ * de verdade — não existe copy autorizada em lugar nenhum ainda — então um CTA sempre acaba sendo
+ * texto inventado renderizado na imagem (achado ao vivo: gerou um botão "Saiba mais" sem que
+ * ninguém tivesse pedido isso). Sobrescreve só os campos de CTA com uma instrução explícita de "não
+ * incluir", preservando o resto do design de Bianca (grid, cor, logo, tipografia) intacto. Reavaliar
+ * quando um pipeline real de copy existir — aí o CTA autorizado deveria fluir por aqui de verdade,
+ * não ser suprimido.
+ */
+function suppressUnauthorizedCta(design: Record<string, unknown>): Record<string, unknown> {
+  const typographyScale = normalizeObject(design.typographyScale);
+  return {
+    ...design,
+    ctaPlacement: NO_CTA_INSTRUCTION,
+    ...(Object.keys(typographyScale).length > 0 ? { typographyScale: { ...typographyScale, cta: "Sem CTA nesta peça" } } : {}),
+  };
 }
 
 /**
@@ -190,7 +213,12 @@ function buildContentBriefStructure(validatedInputs: Record<string, string>): Re
     centralPromise,
     valueProposition: subject,
     keyMessages: [objective, subject].filter((value, index, all) => Boolean(value) && all.indexOf(value) === index),
-    recommendedCta: "Saiba mais",
+    // Nunca "Saiba mais" (ou qualquer CTA de verdade) aqui — este valor propaga verbatim para
+    // Sofia E Bianca (as duas recebem `joaoStrategy` inteiro), e sem uma etapa de copy real
+    // autorizando um CTA de verdade, qualquer texto aqui vira botão/texto renderizado na imagem
+    // (achado ao vivo: "Saiba mais" apareceu na peça sem que ninguém tivesse pedido). Ver também
+    // `suppressUnauthorizedCta` (rede de segurança adicional no output final de Bianca).
+    recommendedCta: NO_CTA_INSTRUCTION,
     recommendedSlideCount: format === "carousel" ? 4 : undefined,
     sofiaBriefing: {
       status: "ready",

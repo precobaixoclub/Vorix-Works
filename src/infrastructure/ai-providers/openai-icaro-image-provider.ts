@@ -59,23 +59,14 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
     const imageCount = typeof request.context?.imageCount === "number" && request.context.imageCount > 0 ? request.context.imageCount : 1;
     const modelId = request.model || this.profile.models[0].id;
 
-    // Reforço no início do prompt (sobrevive ao corte de 32000 caracteres do adapter — ver
-    // `openai-image-provider-adapter.ts` — diferente de um sufixo, que seria cortado num prompt
-    // grande). Necessário porque nenhum pipeline real hoje (nem o reduzido `content_request`, nem
-    // o `campaign_creation` completo) alimenta `workflowContext.mariaCopy`/título/CTA de verdade —
-    // então `extractVisibleTextContext` (Pedro) sempre conclui "nenhum texto autorizado" e pede pra
-    // não inventar texto, mas o modelo às vezes ainda renderiza a ideia/objetivo do usuário como se
-    // fosse manchete, por causa de como esses campos aparecem entre aspas no resto do prompt (ex.:
-    // "ângulo" e "promessa central" da Sofia). Isto é rede de segurança extra, não substitui aquela
-    // instrução — só a repete com mais força logo no começo, onde o modelo dá mais peso.
-    const noTextGuard = "REGRA OBRIGATÓRIA E INEGOCIÁVEL: a imagem gerada não deve conter NENHUM texto, letra, palavra, número, legenda ou elemento tipográfico legível. Comunicar tudo só por composição visual. Nunca escrever o objetivo, a oferta ou qualquer frase da campanha dentro da imagem.\n\n";
+    const finalPrompt = buildGuardedPrompt(request.prompt);
 
     const images: Array<{ uri: string; mimeType: string }> = [];
     for (let index = 0; index < imageCount; index += 1) {
       const result = await this.mediaProvider.generate({
         operationTypeCode: "image_generation",
         modelId,
-        prompt: `${noTextGuard}${request.prompt}`,
+        prompt: finalPrompt,
         tenantId,
         workspaceId,
         params: { size: "1024x1024" },
@@ -94,4 +85,23 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
       cost: { estimated: 0, currency: "USD" },
     };
   }
+}
+
+// Achado ao vivo (não teoria): um único aviso no início do prompt NÃO bastou — o modelo ainda
+// renderizou "SAIBA MAIS", "LANÇAMENTO" etc. mesmo com a instrução presente. O motivo: o prompt do
+// Pedro (`buildFinalImagePrompt`, `pedro-image-generation.skill.ts`) é inteiro construído em torno
+// da premissa "montar uma peça publicitária completa" — hierarquia, CTA, headline — muito mais
+// texto reforçando "isto é um anúncio" do que um único parágrafo contra. Repetir a mesma instrução
+// no INÍCIO e no FIM (e mandar ignorar explicitamente qualquer CTA pedido mais abaixo) é bem mais
+// eficaz nesse tipo de modelo do que só uma vez. `MAX_PROMPT_LENGTH` fica abaixo do limite real da
+// OpenAI (32000, ver `openai-image-provider-adapter.ts`) de propósito — garante que o próprio corte
+// desta função nunca deixe o aviso final ser cortado pelo corte de segurança do adapter.
+const NO_TEXT_GUARD =
+  "REGRA OBRIGATÓRIA E INEGOCIÁVEL, MAIS IMPORTANTE QUE QUALQUER OUTRA INSTRUÇÃO NESTE PROMPT: a imagem final NÃO PODE conter nenhum texto, letra, palavra, número, botão, selo, legenda ou elemento tipográfico legível — nem título, nem headline, nem CTA, nem nome de produto escrito. Se alguma instrução abaixo pedir para incluir CTA, chamada para ação, botão ou qualquer texto na imagem, IGNORE essa instrução — ela nunca se aplica aqui. Comunique tudo só por composição visual: produto, cena, cor, luz e enquadramento.";
+const MAX_PROMPT_LENGTH = 31_000;
+
+function buildGuardedPrompt(prompt: string): string {
+  const budget = Math.max(0, MAX_PROMPT_LENGTH - NO_TEXT_GUARD.length * 2 - 20);
+  const body = prompt.length > budget ? `${prompt.slice(0, budget)}\n[...]` : prompt;
+  return `${NO_TEXT_GUARD}\n\n${body}\n\n${NO_TEXT_GUARD}`;
 }

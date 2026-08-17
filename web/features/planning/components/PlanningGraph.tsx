@@ -12,6 +12,7 @@ const TASK_TYPE_LABEL: Record<TaskType, string> = {
   approval: "Aprovação",
   publication: "Publicação",
   content_brief: "Briefing da peça",
+  quality_review: "Revisão de qualidade",
 };
 
 const TASK_TYPE_COLOR: Record<TaskType, string> = {
@@ -22,6 +23,7 @@ const TASK_TYPE_COLOR: Record<TaskType, string> = {
   approval: "border-l-rose-500",
   publication: "border-l-emerald-500",
   content_brief: "border-l-violet-500",
+  quality_review: "border-l-rose-500",
 };
 
 const COLUMN_WIDTH = 232;

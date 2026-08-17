@@ -9,6 +9,7 @@ const TASK_TYPE_LABEL: Record<TaskType, string> = {
   approval: "Aprovação",
   publication: "Publicação",
   content_brief: "Briefing da peça",
+  quality_review: "Revisão de qualidade",
 };
 
 const CAPABILITY_LABEL: Record<ExecutionCapability, string> = {

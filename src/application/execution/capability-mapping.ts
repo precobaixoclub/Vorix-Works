@@ -15,6 +15,9 @@ const MAPPING_BY_EXECUTION_CAPABILITY: Record<ExecutionCapability, string> = {
   visual_design: "image_generation",
   human_review: "quality_review",
   distribution: "social_publishing",
+  // "content_brief" nunca chama uma Skill (`ContentBriefExecutionTaskHandler` é 100%
+  // determinístico) — entrada só para satisfazer o `Record` exaustivo; nunca resolvida de verdade.
+  content_brief: "content_brief",
 };
 
 export function mapExecutionCapabilityToSkillCapability(capability: ExecutionCapability): ExecutionCapabilityMapping {

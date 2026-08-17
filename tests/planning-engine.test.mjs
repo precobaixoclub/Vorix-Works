@@ -79,7 +79,7 @@ test("createPlanningFromPreparedCommand: revisões diferentes do MESMO PreparedC
 
 test("PreparedCommand inválido (tipo sem template) -> Planning nasce 'failed', SEM tarefas/grafo/artefatos/decisões", async () => {
   const deps = makeDeps();
-  const planning = await createPlanningFromPreparedCommand(deps, preparedCommand({ type: "content_request" }));
+  const planning = await createPlanningFromPreparedCommand(deps, preparedCommand({ type: "knowledge_query" }));
 
   assert.equal(planning.status, "failed");
   assert.equal(planning.validationReport.valid, false);

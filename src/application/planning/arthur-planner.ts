@@ -13,10 +13,10 @@ export const TASK_CONTRACT_VERSION = 1;
  * independente do `ArthurOrchestrator` legado (`src/application/orchestration/*`) — nunca o
  * importa, nunca é importado por ele.
  *
- * 100% determinístico nesta sprint (decisão obrigatória) — nunca chama o AI Gateway. Só
- * `campaign_creation` tem template (`templates.ts`); quem chama já garantiu isso via
- * `ValidationReport` antes de chegar aqui. Nunca cita um especialista (Maria/Sofia/Pedro/...) —
- * só `ExecutionCapability`, o vocabulário próprio deste domínio.
+ * 100% determinístico nesta sprint (decisão obrigatória) — nunca chama o AI Gateway.
+ * `campaign_creation` e `content_request` têm template (`templates.ts`); quem chama já garantiu
+ * isso via `ValidationReport` antes de chegar aqui. Nunca cita um especialista (Maria/Sofia/
+ * Pedro/...) — só `ExecutionCapability`, o vocabulário próprio deste domínio.
  */
 
 export const PLANNER_VERSION = 1;
@@ -53,12 +53,26 @@ function visualArtifactTypeFor(contentFormat: string | undefined): "image" | "vi
  * (aprovação), exatamente o pedido da Fase 6.
  */
 export function planFromPreparedCommand(preparedCommand: PreparedCommand, planningId: string, deps: ArthurPlannerDeps): ArthurPlanningResult {
-  const now = deps.now ?? (() => new Date());
   const templateId = getPlanningTemplateId(preparedCommand.type);
   if (!templateId) {
     throw new Error(`PLANNING_TEMPLATE_NOT_FOUND: nenhum template para "${preparedCommand.type}" — o chamador deveria ter checado o ValidationReport antes.`);
   }
+  if (preparedCommand.type === "content_request") {
+    return planContentRequestVisualOnly(preparedCommand, planningId, templateId, deps);
+  }
+  return planCampaignCreationPipeline(preparedCommand, planningId, templateId, deps);
+}
 
+/**
+ * Decompõe um `PreparedCommand.type === "campaign_creation"` num pipeline fixo de 6 tarefas —
+ * mesma estrutura para todo Planning desta sprint (sem variação condicional por canal/formato
+ * além do tipo do artefato visual). `research → campaign_structure → {copy_generation,
+ * visual_generation} (paralelas) → approval → publication` — demonstra dependência simples,
+ * execução paralela genuína (as duas do meio não dependem uma da outra) e um ponto de bloqueio
+ * (aprovação), exatamente o pedido da Fase 6.
+ */
+function planCampaignCreationPipeline(preparedCommand: PreparedCommand, planningId: string, templateId: string, deps: ArthurPlannerDeps): ArthurPlanningResult {
+  const now = deps.now ?? (() => new Date());
   const createdAt = now().toISOString();
   const nextId = deps.idGenerator;
 
@@ -197,6 +211,115 @@ export function planFromPreparedCommand(preparedCommand: PreparedCommand, planni
       "parallel_tracks_identified",
       "copy_generation e visual_generation não dependem uma da outra — podem ser tratadas em paralelo quando execução real existir (nenhuma execução acontece nesta sprint).",
       [copyGeneration.id, visualGeneration.id],
+    ),
+  ];
+
+  return { planningTemplate: templateId, tasks, edges, artifacts, decisions };
+}
+
+/**
+ * Decompõe um `PreparedCommand.type === "content_request"` num pipeline reduzido de 3 tarefas —
+ * `content_brief → visual_generation → approval`, sem `research`/`campaign_structure`/
+ * `copy_generation`/`publication`. Existe para gerar uma peça visual real a partir de uma ideia do
+ * tanque de Produção sem nenhum risco de publicação acidental (nenhuma tarefa `distribution` neste
+ * grafo) e sem depender de flags reais além de `REAL_EXECUTION_ENABLED`/`REAL_VISUAL_ENABLED` (já
+ * ligadas em produção) — `content_brief` nunca chama IA nem exige flag própria, só empacota
+ * `PreparedCommand.validatedInputs` (ver `ContentBriefExecutionTaskHandler`,
+ * `real-skill-execution-handlers.ts`) na mesma forma de "structure" que `campaign_structure`
+ * produz, para que `VisualPipelineExecutionTaskHandler` funcione idêntico nos dois pipelines.
+ */
+function planContentRequestVisualOnly(preparedCommand: PreparedCommand, planningId: string, templateId: string, deps: ArthurPlannerDeps): ArthurPlanningResult {
+  const now = deps.now ?? (() => new Date());
+  const createdAt = now().toISOString();
+  const nextId = deps.idGenerator;
+
+  function outputContract(ports: TaskOutputContract["ports"]): TaskOutputContract {
+    return { version: TASK_CONTRACT_VERSION, ports };
+  }
+  function inputContract(ports: TaskInputContract["ports"]): TaskInputContract {
+    return { version: TASK_CONTRACT_VERSION, ports };
+  }
+  function outputPort(portKey: string, artifactType: PlanningArtifactType, description: string) {
+    return { portKey, artifactType, description };
+  }
+  function inputPort(portKey: string, acceptedArtifactTypes: readonly PlanningArtifactType[], required: boolean, description: string) {
+    return { portKey, acceptedArtifactTypes, required, description };
+  }
+
+  function task(
+    type: TaskType,
+    name: string,
+    description: string,
+    capability: ExecutionTask["capability"],
+    expectedArtifactType: ExecutionTask["expectedArtifactType"],
+    sequenceHint: number,
+    input: TaskInputContract,
+    output: TaskOutputContract,
+  ): ExecutionTask {
+    return { id: nextId(), planningId, type, name, description, capability, expectedArtifactType, status: "planned", sequenceHint, inputContract: input, outputContract: output, createdAt };
+  }
+
+  const contentBrief = task(
+    "content_brief",
+    "Briefing da peça",
+    "Empacotar objetivo, oferta/assunto, público-alvo e canal informados diretamente pelo usuário — sem pesquisa nem estratégia adicional.",
+    "content_brief",
+    "document",
+    1,
+    inputContract([]),
+    outputContract([outputPort("structure", "document", "Briefing mínimo (objetivo, oferta/assunto, público-alvo, canal, formato) para orientar a geração visual.")]),
+  );
+
+  const visualArtifactType = visualArtifactTypeFor(preparedCommand.validatedInputs.contentFormat);
+  const visualGeneration = task(
+    "visual_generation",
+    "Geração visual",
+    "Produzir a peça visual a partir do briefing informado pelo usuário.",
+    "visual_design",
+    visualArtifactType,
+    2,
+    inputContract([inputPort("structure", ["document"], true, "Briefing da peça já definido.")]),
+    outputContract([outputPort("visual", visualArtifactType, "Peça visual produzida para o canal informado.")]),
+  );
+
+  const approval = task(
+    "approval",
+    "Aprovação",
+    "Revisão humana da peça visual gerada — nenhuma publicação acontece neste pipeline.",
+    "human_review",
+    "document",
+    3,
+    inputContract([inputPort("visual", ["image", "video", "carousel"], true, "Peça visual produzida.")]),
+    outputContract([outputPort("decision", "document", "Registro da decisão de aprovação humana.")]),
+  );
+
+  const tasks = [contentBrief, visualGeneration, approval];
+
+  const edges: PlannedEdge[] = [
+    { fromTaskId: contentBrief.id, toTaskId: visualGeneration.id },
+    { fromTaskId: visualGeneration.id, toTaskId: approval.id },
+  ];
+
+  function artifact(executionTaskId: string, expectedType: PlanningArtifact["contract"]["expectedType"], description: string, expectedFields: readonly string[]): PlanningArtifact {
+    return { id: nextId(), planningId, executionTaskId, contract: { expectedType, description, expectedFields }, status: "expected", createdAt };
+  }
+
+  const artifacts = [
+    artifact(contentBrief.id, "document", "Briefing mínimo (objetivo, oferta/assunto, público-alvo, canal, formato).", ["objective", "channel", "format"]),
+    artifact(visualGeneration.id, visualArtifactType, "Peça visual produzida para o canal informado.", ["assetUri", "format", "dimensions"]),
+    artifact(approval.id, "document", "Registro da decisão de aprovação humana sobre a peça gerada.", ["decision", "reviewer", "notes"]),
+  ];
+
+  function decision(decisionCode: string, reason: string, relatedTaskIds: readonly string[]): PlanningDecision {
+    return { id: nextId(), planningId, decisionCode, reason, relatedTaskIds, createdAt };
+  }
+
+  const decisions = [
+    decision("template_selected", `PreparedCommand.type="${preparedCommand.type}" mapeado para o template reduzido "${templateId}" (sem publicação).`, []),
+    decision(
+      "visual_artifact_type_selected",
+      `Tipo de artefato visual definido como "${visualArtifactType}" a partir de contentFormat="${preparedCommand.validatedInputs.contentFormat ?? "não informado"}".`,
+      [visualGeneration.id],
     ),
   ];
 

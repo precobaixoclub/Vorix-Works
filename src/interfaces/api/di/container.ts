@@ -478,7 +478,12 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   });
   const icaro = new IcaroAIBrain({ providers: [new OpenAiIcaroImageProvider(openaiImageProvider)] });
   const createExecutionHandlerResolver = () =>
-    buildExecutionHandlerResolver({ featureFlags: executionFeatureFlags, runtimeDependencies: { valentina, clara, icaro } });
+    buildExecutionHandlerResolver({
+      featureFlags: executionFeatureFlags,
+      runtimeDependencies: { valentina, clara, icaro },
+      runtimeRepository: repositories.runtimeRepository,
+      preparedCommandRepository: repositories.preparedCommandRepository,
+    });
   // `ValentinaTenantManager.createTenant` sempre gera um `id` novo (nunca aceita um `id`
   // explícito) — mas os skills reais (Pedro/Sofia/Bianca...) chamam
   // `valentina.getClientContext(input.tenantId)` usando o tenantId REAL da plataforma (o mesmo

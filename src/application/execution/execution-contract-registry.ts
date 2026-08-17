@@ -87,6 +87,12 @@ const visualOutputSchema = baseSkillOutput.extend({
   images: z.array(z.record(z.string(), z.unknown())).min(1),
 });
 
+const contentBriefOutputSchema = baseSkillOutput.extend({
+  objective: z.string().min(1),
+  channel: z.string().min(1),
+  format: z.string().min(1),
+});
+
 const distributionOutputSchema = baseSkillOutput.extend({
   overallStatus: z.string().min(1),
   publishMode: z.literal("dry_run"),
@@ -228,6 +234,20 @@ export const DEFAULT_EXECUTION_CONTRACTS: readonly ExecutionContract[] = [
     featureFlag: "realVisualEnabled",
     sideEffectPolicy: "external_write",
     skillCapabilities: ["art_direction", "social_media_design", "image_generation"],
+  }),
+  contract({
+    schemaId: "content_brief.structure",
+    capability: "content_brief",
+    taskType: "content_brief",
+    outputPort: "structure",
+    artifactType: "document",
+    cardinality: { min: 0, max: 0 },
+    acceptedArtifactTypes: [],
+    skillOutputSchema: contentBriefOutputSchema,
+    requiredFields: ["objective", "channel", "format"],
+    optionalFields: ["targetAudience", "offerOrSubject", "recommendedSlideCount"],
+    sideEffectPolicy: "external_read",
+    skillCapabilities: [],
   }),
   contract({
     schemaId: "publication.manifest",

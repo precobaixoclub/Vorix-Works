@@ -7,6 +7,7 @@ const declaredOutputByTaskType: Partial<Record<TaskType, string>> = {
   copy_generation: "copy",
   visual_generation: "visual",
   publication: "manifest",
+  content_brief: "structure",
 };
 
 export class DeterministicExecutionTaskHandler implements ExecutionTaskHandlerPort {

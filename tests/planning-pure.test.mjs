@@ -10,11 +10,11 @@ import { GRAPH_VERSION, PLANNER_STRATEGY, PLANNER_VERSION, planFromPreparedComma
 // Fase 2 — templates
 // ---------------------------------------------------------------------------------------------
 
-test("templates: só campaign_creation tem template registrado nesta sprint", () => {
+test("templates: campaign_creation e content_request têm template registrado", () => {
   assert.equal(getPlanningTemplateId("campaign_creation"), "campaign_creation-standard-pipeline-v1");
-  assert.equal(getPlanningTemplateId("content_request"), undefined);
+  assert.equal(getPlanningTemplateId("content_request"), "content_request-visual-only-v1");
   assert.equal(getPlanningTemplateId("knowledge_query"), undefined);
-  assert.equal(Object.keys(PLANNING_TEMPLATES_BY_PREPARED_COMMAND_TYPE).length, 1);
+  assert.equal(Object.keys(PLANNING_TEMPLATES_BY_PREPARED_COMMAND_TYPE).length, 2);
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -53,7 +53,7 @@ test("ValidationReport: status != prepared -> error, bloqueia (valid: false)", (
 });
 
 test("ValidationReport: tipo sem template registrado -> error, bloqueia", () => {
-  const report = validatePreparedCommandForPlanning(basePreparedCommand({ type: "content_request" }));
+  const report = validatePreparedCommandForPlanning(basePreparedCommand({ type: "knowledge_query" }));
   assert.equal(report.valid, false);
   assert.ok(report.issues.some((issue) => issue.code === "no_planning_template_for_type" && issue.severity === "error"));
 });
@@ -105,7 +105,7 @@ test("Arthur Planner: PLANNER_VERSION/PLANNER_STRATEGY/GRAPH_VERSION são consta
 });
 
 test("Arthur Planner: lança se chamado para um tipo sem template — só defesa, quem chama já deveria ter checado o ValidationReport", () => {
-  assert.throws(() => planFromPreparedCommand(basePreparedCommand({ type: "content_request" }), "planning-1", { idGenerator: makeIdGenerator("task") }));
+  assert.throws(() => planFromPreparedCommand(basePreparedCommand({ type: "knowledge_query" }), "planning-1", { idGenerator: makeIdGenerator("task") }));
 });
 
 // ---------------------------------------------------------------------------------------------

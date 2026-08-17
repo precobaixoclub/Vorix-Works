@@ -82,14 +82,18 @@ export type Planning = {
 // ExecutionCapability — vocabulário PRÓPRIO do Planning, nunca SkillCapability
 // -------------------------------------------------------------------------------------------
 
-export const EXECUTION_CAPABILITIES = ["editorial_research", "strategic_planning", "copywriting", "visual_design", "human_review", "distribution"] as const;
+/** "content_brief" acrescentado nesta sprint (decisão aditiva, mesmo espírito documentado acima) —
+ * empacota `PreparedCommand.validatedInputs` num artefato "structure" sem chamar nenhuma Skill,
+ * usado só pelo template reduzido `content_request-visual-only-v1` (ver `arthur-planner.ts`), que
+ * gera uma peça visual sem nenhuma etapa de pesquisa/estratégia/copy/publicação. */
+export const EXECUTION_CAPABILITIES = ["editorial_research", "strategic_planning", "copywriting", "visual_design", "human_review", "distribution", "content_brief"] as const;
 export type ExecutionCapability = (typeof EXECUTION_CAPABILITIES)[number];
 
 // -------------------------------------------------------------------------------------------
 // ExecutionTask
 // -------------------------------------------------------------------------------------------
 
-export const TASK_TYPES = ["research", "campaign_structure", "copy_generation", "visual_generation", "approval", "publication"] as const;
+export const TASK_TYPES = ["research", "campaign_structure", "copy_generation", "visual_generation", "approval", "publication", "content_brief"] as const;
 export type TaskType = (typeof TASK_TYPES)[number];
 
 /** Único valor alcançável nesta sprint — nada é executado, então nenhuma tarefa nunca sai de

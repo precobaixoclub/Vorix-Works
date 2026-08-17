@@ -3,16 +3,20 @@ import { DeterministicExecutionTaskHandler } from "../../application/execution/d
 import { ExecutionHandlerRegistry } from "../../application/execution/handler-registry.js";
 import { ExecutionHandlerResolver } from "../../application/execution/handler-resolver.js";
 import type { ExecutionFeatureFlags } from "../../application/execution/feature-flags.js";
+import type { PreparedCommandRepositoryPort } from "../../application/ports/prepared-command-repository.port.js";
+import type { RuntimeRepositoryPort } from "../../application/ports/runtime-repository.port.js";
 import { EXECUTION_CAPABILITIES } from "../../domain/planning/planning.model.js";
 import { HelenaSkillManager, SkillManifestValidator, SkillRegistry } from "../../application/skills/index.js";
 import { FileSystemSkillDiscovery } from "../skills/file-system-skill-discovery.js";
 import { FileSystemSkillModuleLoader } from "../skills/file-system-skill-module-loader.js";
-import { SingleSkillExecutionTaskHandler, VisualPipelineExecutionTaskHandler } from "./real-skill-execution-handlers.js";
+import { ContentBriefExecutionTaskHandler, SingleSkillExecutionTaskHandler, VisualPipelineExecutionTaskHandler } from "./real-skill-execution-handlers.js";
 
 export async function buildExecutionHandlerResolver(input: {
   featureFlags: ExecutionFeatureFlags;
   skillsRoot?: string;
   runtimeDependencies?: Record<string, unknown>;
+  runtimeRepository?: RuntimeRepositoryPort;
+  preparedCommandRepository?: PreparedCommandRepositoryPort;
 }): Promise<ExecutionHandlerResolver> {
   const registry = new ExecutionHandlerRegistry();
   registry.register({
@@ -58,6 +62,24 @@ export async function buildExecutionHandlerResolver(input: {
       requiredFeatureFlags: ["realExecutionEnabled", "realVisualEnabled"],
     });
     registry.register(realSingle("helena-skill-distribution-handler", helena, "distribution", "publication", "social_publishing", "manifest", ["realExecutionEnabled", "realDistributionEnabled"]));
+
+    if (input.runtimeRepository && input.preparedCommandRepository) {
+      registry.register({
+        id: "content-brief-deterministic-handler",
+        provider: "deterministic-real",
+        version: "1",
+        priority: 100,
+        handler: new ContentBriefExecutionTaskHandler({ runtimeRepository: input.runtimeRepository, preparedCommandRepository: input.preparedCommandRepository }),
+        executionModes: ["real"],
+        enabled: true,
+        supportedCapabilities: ["content_brief"],
+        fallbackPolicy: "fail_closed",
+        sideEffectPolicy: "external_read",
+        retryPolicy: { supportsRetry: true, maxAttempts: 2, backoffStrategy: "fixed" },
+        executionTimeoutMs: 5_000,
+        requiredFeatureFlags: ["realExecutionEnabled"],
+      });
+    }
   }
 
   return new ExecutionHandlerResolver(registry);

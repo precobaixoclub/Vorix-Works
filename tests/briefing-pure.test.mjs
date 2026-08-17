@@ -42,11 +42,12 @@ test("evaluateBriefingCondition: equals/not_equals/in/exists/contains/all/any", 
   );
 });
 
-test("BRIEFING_TYPES: 6 tipos válidos, só campaign_creation tem schema registrado (escopo aprovado)", () => {
+test("BRIEFING_TYPES: 6 tipos válidos, campaign_creation e content_request têm schema registrado", () => {
   assert.equal(BRIEFING_TYPES.length, 6);
   assert.equal(hasBriefingSchema("campaign_creation"), true);
+  assert.equal(hasBriefingSchema("content_request"), true);
   for (const type of BRIEFING_TYPES) {
-    if (type === "campaign_creation") continue;
+    if (type === "campaign_creation" || type === "content_request") continue;
     assert.equal(hasBriefingSchema(type), false, `${type} não deveria ter schema nesta sprint`);
     assert.equal(getBriefingSchema(type), undefined);
   }

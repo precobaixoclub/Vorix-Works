@@ -2,6 +2,8 @@ import type { ExecutionTaskHandlerPort, ExecutionTaskHandlerRequest, ExecutionTa
 import { createDefaultExecutionContractRegistry, type ExecutionContract } from "../../application/execution/execution-contract-registry.js";
 import { mapExecutionCapabilityToSkillCapability } from "../../application/execution/capability-mapping.js";
 import type { HelenaSkillManagerPort } from "../../application/skills/helena.contract.js";
+import type { PreparedCommandRepositoryPort } from "../../application/ports/prepared-command-repository.port.js";
+import type { RuntimeRepositoryPort } from "../../application/ports/runtime-repository.port.js";
 import type { SkillCapability } from "../../domain/skills/skill-capability.contract.js";
 import type { SkillArtifact, SkillResponse } from "../../domain/skills/skill.contract.js";
 import type { ExecutionCapability, TaskType } from "../../domain/planning/planning.model.js";
@@ -104,6 +106,96 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       return { ok: false, error: classifySkillError(error) };
     }
   }
+}
+
+/**
+ * Empacota `PreparedCommand.validatedInputs` (o que o usuário realmente digitou — objective,
+ * offerOrSubject, targetAudience, channel, contentFormat) num "structure" no mesmo formato que
+ * `campaign_structure` produz, sem chamar nenhuma Skill nem IA. Existe só para o pipeline reduzido
+ * `content_request-visual-only-v1` (ver `arthur-planner.ts`) — permite `VisualPipelineExecutionTaskHandler`
+ * funcionar sem depender de `campaign_structure`/`REAL_PLANNING_ENABLED`, e é também a correção do
+ * problema mais profundo descoberto nesta sprint: os outros handlers "reais" deste arquivo nunca
+ * liam o conteúdo de verdade do usuário (`buildResearchInput`/`buildStrategyInput` usam texto fixo)
+ * — este handler lê `PreparedCommand.validatedInputs` de verdade via `runtimeRepository`/
+ * `preparedCommandRepository` (a cadeia `RuntimeTask.runtimePlanId` → `RuntimePlan.sourceContext.
+ * preparedCommandId` → `PreparedCommand.validatedInputs`, já modelada desde a Sprint 10).
+ */
+export class ContentBriefExecutionTaskHandler implements ExecutionTaskHandlerPort {
+  constructor(private readonly deps: { runtimeRepository: RuntimeRepositoryPort; preparedCommandRepository: PreparedCommandRepositoryPort }) {}
+
+  canHandle(capability: ExecutionCapability, taskType: TaskType): boolean {
+    return capability === "content_brief" && taskType === "content_brief";
+  }
+
+  async execute(request: ExecutionTaskHandlerRequest): Promise<ExecutionTaskHandlerResult> {
+    if (request.context.mode !== "real") return failure("REAL_HANDLER_REQUIRES_REAL_MODE", "Handler real só executa em mode real.", "policy_violation");
+    const contract = requireContract(request.task.capability, request.task.type);
+    const runtimePlan = await this.deps.runtimeRepository.getById(request.task.runtimePlanId);
+    if (!runtimePlan) {
+      return { ok: false, error: { code: "CONTENT_BRIEF_RUNTIME_PLAN_NOT_FOUND", message: `RuntimePlan "${request.task.runtimePlanId}" não encontrado.`, category: "internal", retryable: false } };
+    }
+    const preparedCommand = await this.deps.preparedCommandRepository.getById(runtimePlan.sourceContext.preparedCommandId);
+    if (!preparedCommand) {
+      return { ok: false, error: { code: "CONTENT_BRIEF_PREPARED_COMMAND_NOT_FOUND", message: `PreparedCommand "${runtimePlan.sourceContext.preparedCommandId}" não encontrado.`, category: "internal", retryable: false } };
+    }
+
+    const structure = buildContentBriefStructure(preparedCommand.validatedInputs);
+    const invalid = validateOutputContract(contract, structure);
+    if (invalid) return failure("SKILL_OUTPUT_SCHEMA_INVALID", invalid, "invalid_output");
+
+    return {
+      ok: true,
+      value: {
+        outputs: [{
+          outputPort: contract.outputPort,
+          payload: {
+            skillId: "content-brief-deterministic",
+            taskId: request.task.id,
+            output: structure,
+            artifacts: [],
+            warnings: [],
+            upstreamInputs: request.inputs,
+            provider: "deterministic-real",
+            real: true,
+          },
+        }],
+      },
+    };
+  }
+}
+
+function buildContentBriefStructure(validatedInputs: Record<string, string>): Record<string, unknown> {
+  const objective = stringValue(validatedInputs.objective, "Criar peça visual atrativa.");
+  const offerOrSubject = stringValue(validatedInputs.offerOrSubject, objective);
+  const targetAudience = stringValue(validatedInputs.targetAudience, "público principal do workspace");
+  const channel = stringValue(validatedInputs.channel, "instagram");
+  const format = stringValue(validatedInputs.contentFormat, "image");
+  const centralPromise = `${offerOrSubject} — ${objective}`;
+  return {
+    overallStrategy: `Gerar peça visual para "${offerOrSubject}" com foco em: ${objective}.`,
+    objective,
+    targetAudience,
+    channel,
+    format,
+    toneOfVoice: "claro e persuasivo",
+    angle: offerOrSubject,
+    centralPromise,
+    valueProposition: offerOrSubject,
+    keyMessages: [objective, offerOrSubject].filter((value, index, all) => Boolean(value) && all.indexOf(value) === index),
+    recommendedCta: "Saiba mais",
+    recommendedSlideCount: format === "carousel" ? 4 : undefined,
+    sofiaBriefing: {
+      status: "ready",
+      channel,
+      format,
+      angle: offerOrSubject,
+      centralPromise,
+      keyMessages: [objective],
+      visualDirectionNotes: [] as string[],
+      brandIdentityNotes: [] as string[],
+      notes: ["Peça gerada a partir de uma ideia real informada pelo usuário — sem etapa de pesquisa/estratégia."],
+    },
+  };
 }
 
 async function validateSkillsAvailable(helena: HelenaSkillManagerPort, capabilities: readonly string[]): Promise<{ ok: true } | { ok: false; code: string; message: string }> {

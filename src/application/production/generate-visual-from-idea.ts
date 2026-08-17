@@ -1,17 +1,21 @@
 import type { UserIntentType } from "../../domain/conversation/conversation.model.js";
-import { CAMPAIGN_CREATION_SCHEMA_V1 } from "../../domain/briefing/schemas/campaign-creation.schema.js";
+import { CONTENT_REQUEST_SCHEMA_V1 } from "../../domain/briefing/schemas/content-request.schema.js";
 import { confirmBriefingAndPrepareCommand, startBriefing, type BriefingUseCaseDeps } from "../briefing/briefing-use-cases.js";
 import type { ConversationRepositoryPort } from "../ports/conversation-repository.port.js";
 import type { PlanningRepositoryPort } from "../ports/planning-repository.port.js";
 import type { RuntimeRepositoryPort } from "../ports/runtime-repository.port.js";
 
-const CREATE_CAMPAIGN_INTENT: UserIntentType = "create_campaign";
+// Nenhum `UserIntentType` dedicado existe para "gerar só uma peça visual" (o enum é fechado —
+// `create_campaign`/`edit_campaign`/.../`start_briefing`) — `intent` é só metadado guardado no
+// PreparedCommand (nunca gate de comportamento, ver `prepare-command.ts`), então "start_briefing"
+// é o valor mais honesto disponível: isto nunca vira uma campanha completa.
+const CONTENT_REQUEST_INTENT: UserIntentType = "start_briefing";
 
 const CHANNEL_MAP: Record<string, string> = {
   instagram: "instagram",
   facebook: "facebook",
   tiktok: "tiktok",
-  // O schema de briefing (campaign_creation) não tem "youtube" no enum de canal — mapeia para
+  // O schema de briefing (content_request) não tem "youtube" no enum de canal — mapeia para
   // "other" em vez de rejeitar a ideia.
   youtube: "other",
 };
@@ -60,8 +64,8 @@ export async function generateVisualFromIdea(
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
     conversationId: conversation.id,
-    type: "campaign_creation",
-    schemaVersion: CAMPAIGN_CREATION_SCHEMA_V1.version,
+    type: "content_request",
+    schemaVersion: CONTENT_REQUEST_SCHEMA_V1.version,
   });
 
   const channel = CHANNEL_MAP[normalize(input.channel)] ?? "other";
@@ -91,8 +95,8 @@ export async function generateVisualFromIdea(
 
   const { briefing: readyBriefing, command } = await confirmBriefingAndPrepareCommand(deps, {
     briefing,
-    schema: CAMPAIGN_CREATION_SCHEMA_V1,
-    intent: CREATE_CAMPAIGN_INTENT,
+    schema: CONTENT_REQUEST_SCHEMA_V1,
+    intent: CONTENT_REQUEST_INTENT,
   });
 
   const planning = await deps.planningRepository.getByPreparedCommand(command.id, readyBriefing.revision);

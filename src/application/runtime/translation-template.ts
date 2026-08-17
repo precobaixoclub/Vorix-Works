@@ -19,9 +19,9 @@ export const TRANSLATOR_VERSION = 1;
 export const TRANSLATOR_STRATEGY = "deterministic-port-binding-v1";
 export const RUNTIME_SCHEMA_VERSION = 1;
 
-/** Mesmo padrão `Partial<Record<...>>` de `PLANNING_TEMPLATES_BY_PREPARED_COMMAND_TYPE` — só
- * `campaign_creation-standard-pipeline-v1` (o único `planningTemplate` que a Sprint 09 produz)
- * tem tradução registrada. */
+/** Mesmo padrão `Partial<Record<...>>` de `PLANNING_TEMPLATES_BY_PREPARED_COMMAND_TYPE`.
+ * `content_request-visual-only-v1` acrescentado depois (caminho reduzido, sem publicação — ver
+ * `arthur-planner.ts`). */
 export const TRANSLATION_TEMPLATES_BY_PLANNING_TEMPLATE: Partial<Record<string, readonly TranslationBindingSpec[]>> = {
   "campaign_creation-standard-pipeline-v1": [
     { fromTaskType: "research", fromOutputPort: "context", toTaskType: "campaign_structure", toInputPort: "context" },
@@ -30,6 +30,10 @@ export const TRANSLATION_TEMPLATES_BY_PLANNING_TEMPLATE: Partial<Record<string, 
     { fromTaskType: "copy_generation", fromOutputPort: "copy", toTaskType: "approval", toInputPort: "copy" },
     { fromTaskType: "visual_generation", fromOutputPort: "visual", toTaskType: "approval", toInputPort: "visual" },
     { fromTaskType: "approval", fromOutputPort: "decision", toTaskType: "publication", toInputPort: "decision" },
+  ],
+  "content_request-visual-only-v1": [
+    { fromTaskType: "content_brief", fromOutputPort: "structure", toTaskType: "visual_generation", toInputPort: "structure" },
+    { fromTaskType: "visual_generation", fromOutputPort: "visual", toTaskType: "approval", toInputPort: "visual" },
   ],
 };
 

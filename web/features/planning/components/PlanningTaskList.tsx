@@ -8,6 +8,7 @@ const TASK_TYPE_LABEL: Record<TaskType, string> = {
   visual_generation: "Geração visual",
   approval: "Aprovação",
   publication: "Publicação",
+  content_brief: "Briefing da peça",
 };
 
 const CAPABILITY_LABEL: Record<ExecutionCapability, string> = {
@@ -17,6 +18,7 @@ const CAPABILITY_LABEL: Record<ExecutionCapability, string> = {
   visual_design: "Design visual",
   human_review: "Revisão humana",
   distribution: "Distribuição",
+  content_brief: "Briefing da peça",
 };
 
 const ARTIFACT_TYPE_LABEL: Record<PlanningArtifactType, string> = {

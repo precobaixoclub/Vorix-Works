@@ -11,6 +11,7 @@ const TASK_TYPE_LABEL: Record<TaskType, string> = {
   visual_generation: "Geração visual",
   approval: "Aprovação",
   publication: "Publicação",
+  content_brief: "Briefing da peça",
 };
 
 const TASK_TYPE_COLOR: Record<TaskType, string> = {
@@ -20,6 +21,7 @@ const TASK_TYPE_COLOR: Record<TaskType, string> = {
   visual_generation: "border-l-amber-500",
   approval: "border-l-rose-500",
   publication: "border-l-emerald-500",
+  content_brief: "border-l-violet-500",
 };
 
 const COLUMN_WIDTH = 232;

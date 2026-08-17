@@ -35,7 +35,7 @@ services:
     # antes de agir, então é seguro rodar em todo boot até lá). Existe porque o runner genérico de
     # migrations recusa aplicar QUALQUER migration pendente enquanto houver divergência de checksum
     # em migrations mais antigas já aplicadas (achado separado, pré-existente).
-    command: sh -c "node scripts/apply-content-brief-migration.mjs && node dist/interfaces/api/server.js"
+    command: sh -c "node scripts/apply-content-brief-migration.mjs && node scripts/apply-quality-review-migration.mjs && node dist/interfaces/api/server.js"
     depends_on:
       zuno-postgres:
         condition: service_healthy

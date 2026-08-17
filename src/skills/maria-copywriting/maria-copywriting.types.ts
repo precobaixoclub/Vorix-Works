@@ -38,6 +38,14 @@ export type MariaCopyBriefing = {
   preferredHashtags?: string[];
   language?: "pt-BR" | "en-US" | string;
   additionalContext?: string;
+  /** Classificação de objetivo de marketing (João, ver `marketing-objective-classifier.ts`) —
+   * influencia a estrutura pedida no prompt (ex.: prova social abre com resultado real, engajamento
+   * evita tom de venda). Opcional para não quebrar chamadas antigas/testes que não a informam. */
+  marketingObjective?: string;
+  /** Memória editorial (headlines/CTAs/conceitos recentes deste workspace) — texto compacto pronto
+   * para prompt, injetado por `ContentBriefExecutionTaskHandler`. Ausente = comportamento idêntico
+   * ao atual. */
+  avoidRepeating?: string;
 };
 
 export type MariaCopyStrategy = {
@@ -54,6 +62,12 @@ export type MariaCopyStrategy = {
 
 export type MariaStructuredCopy = {
   title: string;
+  /** Texto curto e único destinado a aparecer DENTRO da imagem gerada (Pedro lê isto via
+   * `workflowContext.headline`/`extractVisibleTextContext`) — nunca um parágrafo, nunca repete
+   * `title` literalmente. Requisito de "separar as funções de cada texto": texto da imagem ≠
+   * título ≠ legenda. Opcional só por compatibilidade com respostas antigas do provider de IA
+   * (`chooseBestAttempt` trata ausência como "sem texto autorizado na imagem", nunca como erro). */
+  imageHeadline?: string;
   caption: string;
   cta: string;
   hashtags: string[];
@@ -91,7 +105,10 @@ export type MariaQualityIssueCode =
   // curiosidade e CTA curto) — nunca disparam para o perfil "feed" (comportamento anterior).
   | "MISSING_HOOK"
   | "MISSING_CURIOSITY_TRIGGER"
-  | "CTA_TOO_LONG_FOR_FORMAT";
+  | "CTA_TOO_LONG_FOR_FORMAT"
+  // Requisitos de "eliminar conteúdo genérico" e "separar as funções de cada texto":
+  | "GENERIC_CLICHE_PHRASE_DETECTED"
+  | "IMAGE_HEADLINE_DUPLICATES_TITLE";
 
 export type MariaQualityIssue = {
   code: MariaQualityIssueCode;

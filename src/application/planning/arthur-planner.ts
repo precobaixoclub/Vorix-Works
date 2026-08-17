@@ -218,15 +218,16 @@ function planCampaignCreationPipeline(preparedCommand: PreparedCommand, planning
 }
 
 /**
- * Decompõe um `PreparedCommand.type === "content_request"` num pipeline reduzido de 3 tarefas —
- * `content_brief → visual_generation → approval`, sem `research`/`campaign_structure`/
- * `copy_generation`/`publication`. Existe para gerar uma peça visual real a partir de uma ideia do
- * tanque de Produção sem nenhum risco de publicação acidental (nenhuma tarefa `distribution` neste
- * grafo) e sem depender de flags reais além de `REAL_EXECUTION_ENABLED`/`REAL_VISUAL_ENABLED` (já
- * ligadas em produção) — `content_brief` nunca chama IA nem exige flag própria, só empacota
- * `PreparedCommand.validatedInputs` (ver `ContentBriefExecutionTaskHandler`,
- * `real-skill-execution-handlers.ts`) na mesma forma de "structure" que `campaign_structure`
- * produz, para que `VisualPipelineExecutionTaskHandler` funcione idêntico nos dois pipelines.
+ * Decompõe um `PreparedCommand.type === "content_request"` num pipeline reduzido de 6 tarefas —
+ * `content_brief → campaign_structure(João) → copy_generation(Maria) → visual_generation(Sofia+
+ * Bianca+Pedro) → quality_review(Lucas) → approval`, sem `research`/`publication`. Antes (v1) só
+ * tinha 3 tasks (`content_brief → visual_generation → approval`) e não passava por João/Maria/
+ * Lucas de verdade — a raiz do problema de conteúdo genérico/repetitivo diagnosticada na auditoria
+ * desta rodada. `visual_generation` depende de `copy_generation` ter terminado (sequencial, não
+ * paralelo como em `campaign_creation`) porque Pedro usa `copy.imageHeadline` como texto
+ * autorizado da imagem. Sem `distribution` neste grafo — nenhum risco de publicação acidental.
+ * `campaign_structure`/`copy_generation` reaproveitam os MESMOS handlers reais já registrados para
+ * `campaign_creation` (`build-execution-handler-resolver.ts`) — nenhum handler novo para eles.
  */
 function planContentRequestVisualOnly(preparedCommand: PreparedCommand, planningId: string, templateId: string, deps: ArthurPlannerDeps): ArthurPlanningResult {
   const now = deps.now ?? (() => new Date());
@@ -262,24 +263,64 @@ function planContentRequestVisualOnly(preparedCommand: PreparedCommand, planning
   const contentBrief = task(
     "content_brief",
     "Briefing da peça",
-    "Empacotar objetivo, oferta/assunto, público-alvo e canal informados diretamente pelo usuário — sem pesquisa nem estratégia adicional.",
+    "Empacotar objetivo, oferta/assunto, público-alvo e canal informados diretamente pelo usuário — sem pesquisa adicional.",
     "content_brief",
     "document",
     1,
     inputContract([]),
-    outputContract([outputPort("structure", "document", "Briefing mínimo (objetivo, oferta/assunto, público-alvo, canal, formato) para orientar a geração visual.")]),
+    outputContract([outputPort("structure", "document", "Briefing mínimo (objetivo, oferta/assunto, público-alvo, canal, formato) para orientar a estratégia.")]),
+  );
+
+  const campaignStructure = task(
+    "campaign_structure",
+    "Estratégia de marketing",
+    "Classificar o objetivo de marketing e definir ângulo, CTA e creative brief a partir do briefing do usuário (João).",
+    "strategic_planning",
+    "document",
+    2,
+    inputContract([inputPort("context", ["document"], true, "Briefing da peça já definido.")]),
+    outputContract([outputPort("structure", "document", "Estratégia estruturada (ângulo, CTA, creative brief, briefing para Maria/Sofia).")]),
+  );
+
+  const copyGeneration = task(
+    "copy_generation",
+    "Copy real",
+    "Escrever título, headline da imagem, legenda e CTA prontos para postar, alinhados à estratégia (Maria).",
+    "copywriting",
+    "text",
+    3,
+    inputContract([inputPort("structure", ["document"], true, "Estratégia já definida.")]),
+    outputContract([outputPort("copy", "text", "Título, headline da imagem, legenda e CTA prontos para postar.")]),
   );
 
   const visualArtifactType = visualArtifactTypeFor(preparedCommand.validatedInputs.contentFormat);
   const visualGeneration = task(
     "visual_generation",
     "Geração visual",
-    "Produzir a peça visual a partir do briefing informado pelo usuário.",
+    "Produzir a peça visual a partir da estratégia e da copy real (Sofia → Bianca → Pedro).",
     "visual_design",
     visualArtifactType,
-    2,
-    inputContract([inputPort("structure", ["document"], true, "Briefing da peça já definido.")]),
+    4,
+    inputContract([
+      inputPort("structure", ["document"], true, "Estratégia já definida."),
+      inputPort("copy", ["text"], true, "Copy real já escrita — fonte do texto autorizado na imagem."),
+    ]),
     outputContract([outputPort("visual", visualArtifactType, "Peça visual produzida para o canal informado.")]),
+  );
+
+  const qualityReview = task(
+    "quality_review",
+    "Quality gate",
+    "Avaliar a peça (genericidade, repetição, CTA, coerência de marca) antes de apresentar ao usuário (Lucas).",
+    "human_review",
+    "document",
+    5,
+    inputContract([
+      inputPort("structure", ["document"], true, "Estratégia já definida."),
+      inputPort("copy", ["text"], true, "Copy real já escrita."),
+      inputPort("visual", ["image", "video", "carousel"], true, "Peça visual produzida."),
+    ]),
+    outputContract([outputPort("review", "document", "Avaliação de qualidade estruturada (score, status, issues).")]),
   );
 
   const approval = task(
@@ -288,16 +329,26 @@ function planContentRequestVisualOnly(preparedCommand: PreparedCommand, planning
     "Revisão humana da peça visual gerada — nenhuma publicação acontece neste pipeline.",
     "human_review",
     "document",
-    3,
-    inputContract([inputPort("visual", ["image", "video", "carousel"], true, "Peça visual produzida.")]),
+    6,
+    inputContract([
+      inputPort("visual", ["image", "video", "carousel"], true, "Peça visual produzida."),
+      inputPort("review", ["document"], true, "Avaliação de qualidade que aprovou a peça."),
+    ]),
     outputContract([outputPort("decision", "document", "Registro da decisão de aprovação humana.")]),
   );
 
-  const tasks = [contentBrief, visualGeneration, approval];
+  const tasks = [contentBrief, campaignStructure, copyGeneration, visualGeneration, qualityReview, approval];
 
   const edges: PlannedEdge[] = [
-    { fromTaskId: contentBrief.id, toTaskId: visualGeneration.id },
+    { fromTaskId: contentBrief.id, toTaskId: campaignStructure.id },
+    { fromTaskId: campaignStructure.id, toTaskId: copyGeneration.id },
+    { fromTaskId: campaignStructure.id, toTaskId: visualGeneration.id },
+    { fromTaskId: copyGeneration.id, toTaskId: visualGeneration.id },
+    { fromTaskId: campaignStructure.id, toTaskId: qualityReview.id },
+    { fromTaskId: copyGeneration.id, toTaskId: qualityReview.id },
+    { fromTaskId: visualGeneration.id, toTaskId: qualityReview.id },
     { fromTaskId: visualGeneration.id, toTaskId: approval.id },
+    { fromTaskId: qualityReview.id, toTaskId: approval.id },
   ];
 
   function artifact(executionTaskId: string, expectedType: PlanningArtifact["contract"]["expectedType"], description: string, expectedFields: readonly string[]): PlanningArtifact {
@@ -306,7 +357,10 @@ function planContentRequestVisualOnly(preparedCommand: PreparedCommand, planning
 
   const artifacts = [
     artifact(contentBrief.id, "document", "Briefing mínimo (objetivo, oferta/assunto, público-alvo, canal, formato).", ["objective", "channel", "format"]),
+    artifact(campaignStructure.id, "document", "Estratégia estruturada (ângulo, CTA, creative brief).", ["angle", "recommendedCta", "creativeBrief"]),
+    artifact(copyGeneration.id, "text", "Copy real pronta para postar.", ["title", "imageHeadline", "caption", "cta"]),
     artifact(visualGeneration.id, visualArtifactType, "Peça visual produzida para o canal informado.", ["assetUri", "format", "dimensions"]),
+    artifact(qualityReview.id, "document", "Avaliação de qualidade estruturada.", ["reviewStatus", "overallScore"]),
     artifact(approval.id, "document", "Registro da decisão de aprovação humana sobre a peça gerada.", ["decision", "reviewer", "notes"]),
   ];
 
@@ -315,7 +369,7 @@ function planContentRequestVisualOnly(preparedCommand: PreparedCommand, planning
   }
 
   const decisions = [
-    decision("template_selected", `PreparedCommand.type="${preparedCommand.type}" mapeado para o template reduzido "${templateId}" (sem publicação).`, []),
+    decision("template_selected", `PreparedCommand.type="${preparedCommand.type}" mapeado para o template "${templateId}" (com estratégia/copy/quality gate reais, sem publicação).`, []),
     decision(
       "visual_artifact_type_selected",
       `Tipo de artefato visual definido como "${visualArtifactType}" a partir de contentFormat="${preparedCommand.validatedInputs.contentFormat ?? "não informado"}".`,

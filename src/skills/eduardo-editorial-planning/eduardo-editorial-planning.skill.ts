@@ -659,6 +659,17 @@ const CATEGORY_LABELS: Record<QualityFeedbackCategory, string> = {
   tempo: "tempo",
   reels: "Reels",
   qualidade_geral: "qualidade geral",
+  // Motivos de rejeição estruturada (ver review/page.tsx) — Eduardo só precisa de um rótulo
+  // legível para eles quando aparecerem em `lowScoringCategories`/`recurringComplaints`; nenhuma
+  // lógica nova é necessária além do rótulo.
+  imagem_ruim: "imagem ruim",
+  muito_texto_na_imagem: "muito texto na imagem",
+  copy_generica: "copy genérica",
+  estilo_visual_nao_gostei: "estilo visual",
+  produto_incorreto: "produto incorreto",
+  informacao_incorreta: "informação incorreta",
+  conteudo_repetitivo: "conteúdo repetitivo",
+  cta_fraco: "CTA fraco",
 };
 
 // Formatos considerados "vídeo" para efeito de comparação de desempenho com carrossel.

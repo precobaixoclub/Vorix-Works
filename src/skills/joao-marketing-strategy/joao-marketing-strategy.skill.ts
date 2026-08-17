@@ -5,13 +5,15 @@ import type { ValentinaTenantPort } from "../../application/tenancy/valentina-te
 import type { TenantClientContext } from "../../application/tenancy/valentina.types.js";
 import type { ZunoEventName, ZunoEventRecorderPort } from "../../application/events/zuno-event.contract.js";
 import type { Skill, SkillRequest, SkillResponse } from "../../domain/skills/skill.contract.js";
-import { extractJson, latest, normalize, normalizeStringArray } from "../../shared/utils/skill-parsing.js";
+import { extractJson, latest, normalizeStringArray } from "../../shared/utils/skill-parsing.js";
 import { buildDeveloperAiPendingResponse, isDeveloperAssistancePending } from "../../shared/utils/developer-ai-assistance.js";
 import { deriveCampaignCreativeDNA } from "../../shared/utils/creative-director-engine.js";
+import { classifyMarketingObjective, structuralGuidanceFor } from "../../shared/utils/marketing-objective-classifier.js";
 import type { DeveloperAssistancePendingOutput } from "../../application/ai/developer-assistance.types.js";
 import { joaoMarketingStrategyManifest } from "./joao.manifest.js";
 import type { JoaoLogAction, JoaoLoggerPort } from "./joao-log.contract.js";
 import type {
+  JoaoCreativeBrief,
   JoaoEditorialBriefSummary,
   JoaoMariaBriefing,
   JoaoMariaBriefingChannel,
@@ -285,6 +287,7 @@ export class JoaoMarketingStrategySkill implements Skill<JoaoStrategyRequestInpu
 
     const mariaBriefing = buildMariaBriefing(strategy, tenant, claraContext);
     const sofiaBriefing = buildSofiaBriefing(strategy, request.input, claraContext);
+    const creativeBrief = buildCreativeBrief(strategy, request.input, claraContext);
 
     await this.log("MariaBriefingCreated", "Briefing estruturado para Maria criado.", request, {
       clientId: tenant.clientId,
@@ -296,6 +299,7 @@ export class JoaoMarketingStrategySkill implements Skill<JoaoStrategyRequestInpu
       ...strategy,
       mariaBriefing,
       sofiaBriefing,
+      creativeBrief,
       aiSupportUsed,
       aiProviderId,
     };
@@ -408,7 +412,12 @@ export function buildBaselineStrategy(
 
   const targetAudience = audience?.payload.targetAudience ?? "Público-alvo ainda não detalhado pela Clara.";
   const toneOfVoice = brand?.payload.toneOfVoice ?? "Tom consultivo, claro e confiável.";
-  const angle = inferAngle(input.desiredObjective, input.originalRequest);
+  // Inteligência de marketing: classifica o objetivo real (venda, promoção, engajamento, branding,
+  // educativo, prova social, lançamento, relacionamento, leads) e deriva ângulo/CTA/estrutura a
+  // partir dessa classificação — a publicação deixa de usar a mesma fórmula para tudo.
+  const marketingObjective = classifyMarketingObjective(input.desiredObjective, input.originalRequest);
+  const guidance = structuralGuidanceFor(marketingObjective);
+  const angle = guidance.angleDescription;
   const centralPromise = product?.payload.benefits?.[0]
     ? `${product.payload.benefits[0]}.`
     : `Entregar ${input.desiredObjective} com clareza e consistência de marca.`;
@@ -418,7 +427,7 @@ export function buildBaselineStrategy(
   // planejou o Editorial Brief, sua decisão é autoritativa. Sem o brief (ex.: João chamado
   // isoladamente em teste), João mantém seu próprio comportamento heurístico de sempre.
   const format = input.editorialBrief?.recommendedFormatLabel ?? input.desiredFormat;
-  const recommendedCta = input.editorialBrief?.recommendedCta ?? brand?.payload.preferredCtas?.[0] ?? defaultCtaFor(input.desiredObjective);
+  const recommendedCta = input.editorialBrief?.recommendedCta ?? brand?.payload.preferredCtas?.[0] ?? guidance.defaultCta;
   const risks = buildRisks(brand, publishing);
   const nextSteps = buildNextSteps(input);
   const overallStrategy = `Estratégia para ${input.desiredChannel} com foco em ${input.desiredObjective}, direcionada a ${targetAudience}, usando ${angle.charAt(0).toLowerCase()}${angle.slice(1)}`;
@@ -441,11 +450,13 @@ export function buildBaselineStrategy(
     ...buildObservations(context, campaign, content, input.editorialBrief),
     `Creative DNA — Big Idea: ${creativeDna.bigIdea}`,
     `Creative DNA — Hero Scene: ${creativeDna.heroScene}`,
+    ...(input.avoidRepeating ? [`Memória editorial — evitar repetir: ${input.avoidRepeating}`] : []),
   ];
 
   return {
     overallStrategy,
     objective: input.desiredObjective,
+    marketingObjective,
     targetAudience,
     channel: input.desiredChannel,
     format,
@@ -459,6 +470,52 @@ export function buildBaselineStrategy(
     risks,
     nextSteps,
     creativeDna,
+  };
+}
+
+/**
+ * Creative brief estruturado (requisito de "etapa obrigatória de planejamento" antes de copy e
+ * imagem) — função pura, montada a partir da mesma estratégia e do mesmo contexto da Clara já
+ * consultado, sem nenhuma chamada extra de IA ou de rede. `nonInventableInfo` é computado por
+ * ausência real de dado (nunca uma lista fixa): só entra na lista o que de fato falta na Clara.
+ */
+export function buildCreativeBrief(
+  strategy: JoaoMarketingStrategyCore,
+  input: JoaoStrategyRequestInput,
+  context: ClaraContextResponse,
+): JoaoCreativeBrief {
+  const brand = latest(context.modules.BrandContext);
+  const product = latest(context.modules.ProductContext);
+  const guidance = structuralGuidanceFor(strategy.marketingObjective);
+
+  const nonInventableInfo: string[] = [];
+  if (!product?.payload.priceRange) nonInventableInfo.push("preço");
+  if (!product?.payload.differentiators?.length) nonInventableInfo.push("diferencial");
+  if (!brand?.payload.preferredCtas?.length && !input.editorialBrief?.recommendedCta) nonInventableInfo.push("CTA fixo da marca");
+  nonInventableInfo.push("depoimento ou avaliação de cliente");
+  nonInventableInfo.push("prazo ou condição de oferta");
+
+  const mandatoryInfo: string[] = [];
+  if (brand?.payload.mandatoryWords?.length) mandatoryInfo.push(...brand.payload.mandatoryWords);
+  if (product?.payload.productName) mandatoryInfo.push(product.payload.productName);
+
+  return {
+    brand: brand?.payload.brandName,
+    productOrService: product?.payload.productName ?? input.originalRequest,
+    publicationObjective: input.desiredObjective,
+    marketingObjective: strategy.marketingObjective,
+    targetAudience: strategy.targetAudience,
+    channel: strategy.channel,
+    funnelStage: guidance.funnelStage,
+    differentiator: product?.payload.differentiators?.[0],
+    offer: product?.payload.priceRange ? `Faixa de preço: ${product.payload.priceRange}` : undefined,
+    mainBenefit: product?.payload.benefits?.[0],
+    toneOfVoice: strategy.toneOfVoice,
+    cta: strategy.recommendedCta,
+    creativeConcept: strategy.centralPromise,
+    communicationAngle: strategy.angle,
+    mandatoryInfo,
+    nonInventableInfo,
   };
 }
 
@@ -545,9 +602,16 @@ export function buildMariaBriefing(
   context: ClaraContextResponse,
 ): JoaoMariaBriefing {
   const brand = latest(context.modules.BrandContext);
+  const guidance = structuralGuidanceFor(strategy.marketingObjective);
+  const additionalContext = [
+    strategy.overallStrategy,
+    `Estrutura da legenda para este objetivo (${strategy.marketingObjective}): ${guidance.captionStructureHint}.`,
+    `Estilo do CTA para este objetivo: ${guidance.ctaStyle}.`,
+  ].join(" ");
 
   return {
     objective: strategy.objective,
+    marketingObjective: strategy.marketingObjective,
     channel: toMariaBriefingChannel(strategy.channel),
     format: strategy.format,
     targetAudience: strategy.targetAudience,
@@ -559,7 +623,7 @@ export function buildMariaBriefing(
     mandatoryWords: brand?.payload.mandatoryWords?.length ? brand.payload.mandatoryWords : undefined,
     preferredHashtags: brand?.payload.preferredHashtags?.length ? brand.payload.preferredHashtags : undefined,
     language: tenant.language,
-    additionalContext: strategy.overallStrategy,
+    additionalContext,
   };
 }
 
@@ -607,23 +671,6 @@ function toMariaBriefingChannel(channel: JoaoSupportedChannel): JoaoMariaBriefin
   return channel;
 }
 
-function inferAngle(objective: string, originalRequest: string): string {
-  const normalized = normalize(`${objective} ${originalRequest}`);
-  if (containsAny(normalized, ["vender", "conversao", "comprar", "assinar"])) {
-    return "Ângulo de conversão com benefício direto e chamada clara para ação.";
-  }
-  if (containsAny(normalized, ["educar", "explicar", "ensinar", "informar"])) {
-    return "Ângulo educativo com clareza, exemplo prático e autoridade.";
-  }
-  if (containsAny(normalized, ["engajar", "interacao", "comunidade"])) {
-    return "Ângulo de identificação e conversa próxima com o público.";
-  }
-  if (containsAny(normalized, ["lancar", "lancamento", "novidade"])) {
-    return "Ângulo de novidade e expectativa em torno do lançamento.";
-  }
-  return "Ângulo de valor percebido, clareza e proximidade com o público.";
-}
-
 function buildKeyMessages(
   input: JoaoStrategyRequestInput,
   brand?: ClaraKnowledgeRecord<"BrandContext">,
@@ -639,14 +686,6 @@ function buildKeyMessages(
   if (messages.length < 2) messages.push(`Adequar mensagem ao formato ${input.desiredFormat} no canal ${input.desiredChannel}.`);
 
   return messages;
-}
-
-function defaultCtaFor(objective: string): string {
-  const normalized = normalize(objective);
-  if (containsAny(normalized, ["vender", "comprar", "assinar", "conversao"])) return "Compre agora";
-  if (containsAny(normalized, ["saiba", "educar", "conhecer"])) return "Saiba mais";
-  if (containsAny(normalized, ["cadastr", "lead"])) return "Cadastre-se";
-  return "Fale com a gente";
 }
 
 function buildRisks(brand?: ClaraKnowledgeRecord<"BrandContext">, publishing?: ClaraKnowledgeRecord<"PublishingContext">): string[] {
@@ -682,10 +721,6 @@ function buildNextSteps(input: JoaoStrategyRequestInput): string[] {
     "Validar a estratégia com o time responsável antes da criação de conteúdo visual.",
     `Reavaliar a estratégia caso o canal ${input.desiredChannel} ou o objetivo mudem.`,
   ];
-}
-
-function containsAny(text: string, terms: string[]): boolean {
-  return terms.some((term) => text.includes(normalize(term)));
 }
 
 export function createJoaoMarketingStrategySkill(

@@ -5,11 +5,13 @@ import { ExecutionHandlerResolver } from "../../application/execution/handler-re
 import type { ExecutionFeatureFlags } from "../../application/execution/feature-flags.js";
 import type { PreparedCommandRepositoryPort } from "../../application/ports/prepared-command-repository.port.js";
 import type { RuntimeRepositoryPort } from "../../application/ports/runtime-repository.port.js";
+import type { ContentGenerationHistoryPort } from "../../application/ports/content-generation-history.port.js";
+import type { QualityFeedbackPort } from "../../application/quality-feedback/quality-feedback.port.js";
 import { EXECUTION_CAPABILITIES } from "../../domain/planning/planning.model.js";
 import { HelenaSkillManager, SkillManifestValidator, SkillRegistry } from "../../application/skills/index.js";
 import { FileSystemSkillDiscovery } from "../skills/file-system-skill-discovery.js";
 import { FileSystemSkillModuleLoader } from "../skills/file-system-skill-module-loader.js";
-import { ContentBriefExecutionTaskHandler, SingleSkillExecutionTaskHandler, VisualPipelineExecutionTaskHandler } from "./real-skill-execution-handlers.js";
+import { ContentBriefExecutionTaskHandler, QualityGateExecutionTaskHandler, SingleSkillExecutionTaskHandler, VisualPipelineExecutionTaskHandler } from "./real-skill-execution-handlers.js";
 
 export async function buildExecutionHandlerResolver(input: {
   featureFlags: ExecutionFeatureFlags;
@@ -17,6 +19,8 @@ export async function buildExecutionHandlerResolver(input: {
   runtimeDependencies?: Record<string, unknown>;
   runtimeRepository?: RuntimeRepositoryPort;
   preparedCommandRepository?: PreparedCommandRepositoryPort;
+  contentGenerationHistory?: ContentGenerationHistoryPort;
+  qualityFeedback?: QualityFeedbackPort;
 }): Promise<ExecutionHandlerResolver> {
   const registry = new ExecutionHandlerRegistry();
   registry.register({
@@ -64,6 +68,28 @@ export async function buildExecutionHandlerResolver(input: {
       requiredFeatureFlags: ["realExecutionEnabled", "realVisualEnabled"],
     });
     registry.register(realSingle("helena-skill-distribution-handler", helena, "distribution", "publication", "social_publishing", "manifest", ["realExecutionEnabled", "realDistributionEnabled"]));
+    registry.register({
+      id: "helena-skill-quality-gate-handler",
+      // "helena" pelo mesmo motivo de todos os outros handlers reais deste arquivo — único provider
+      // que sobrevive ao SideEffectGuard em modo real além de "deterministic".
+      provider: "helena",
+      version: "1",
+      priority: 100,
+      handler: new QualityGateExecutionTaskHandler({ helena, provider: "helena", contentGenerationHistory: input.contentGenerationHistory }),
+      executionModes: ["real"],
+      enabled: true,
+      supportedCapabilities: ["human_review"],
+      fallbackPolicy: "fail_closed",
+      // Reprovação não é "erro transitório" (Lucas com as mesmas entradas reprova de novo) — sem
+      // retry automático aqui; a regeneração de verdade acontece uma execução inteira nova, no
+      // caller HTTP (`production.route.ts`), não como retry da mesma task.
+      sideEffectPolicy: "external_read",
+      retryPolicy: { supportsRetry: false, maxAttempts: 1, backoffStrategy: "none" },
+      // Lucas é heurístico e rápido — timeout curto é suficiente, nenhuma chamada de imagem
+      // acontece aqui.
+      executionTimeoutMs: 30_000,
+      requiredFeatureFlags: ["realExecutionEnabled", "realVisualEnabled"],
+    });
 
     if (input.runtimeRepository && input.preparedCommandRepository) {
       registry.register({
@@ -78,7 +104,12 @@ export async function buildExecutionHandlerResolver(input: {
         provider: "helena",
         version: "1",
         priority: 100,
-        handler: new ContentBriefExecutionTaskHandler({ runtimeRepository: input.runtimeRepository, preparedCommandRepository: input.preparedCommandRepository }),
+        handler: new ContentBriefExecutionTaskHandler({
+          runtimeRepository: input.runtimeRepository,
+          preparedCommandRepository: input.preparedCommandRepository,
+          contentGenerationHistory: input.contentGenerationHistory,
+          qualityFeedback: input.qualityFeedback,
+        }),
         executionModes: ["real"],
         enabled: true,
         supportedCapabilities: ["content_brief"],

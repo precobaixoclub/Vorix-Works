@@ -57,6 +57,10 @@ export type SofiaArtDirectionRequestInput = {
   format: string;
   visualObjective: string;
   workflowContext?: Record<string, unknown>;
+  /** Memória editorial (conceitos/enquadramentos visuais recentes deste workspace) — texto
+   * compacto pronto para prompt, injetado por `ContentBriefExecutionTaskHandler`. Ausente =
+   * comportamento idêntico ao atual. */
+  avoidRepeating?: string;
 };
 
 /**

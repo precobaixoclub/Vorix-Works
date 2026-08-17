@@ -18,6 +18,17 @@ export const QUALITY_FEEDBACK_CATEGORIES = [
   "tempo",
   "reels",
   "qualidade_geral",
+  // Motivos de rejeição estruturada na tela de Revisão (ver review/page.tsx e o endpoint
+  // POST /v1/production/executions/:runId/reject) — usados por `getRecentRejectionSignalsForWorkspace`
+  // para alimentar a memória editorial (avoidRepeating) da próxima geração do workspace.
+  "imagem_ruim",
+  "muito_texto_na_imagem",
+  "copy_generica",
+  "estilo_visual_nao_gostei",
+  "produto_incorreto",
+  "informacao_incorreta",
+  "conteudo_repetitivo",
+  "cta_fraco",
 ] as const;
 
 export type QualityFeedbackCategory = (typeof QUALITY_FEEDBACK_CATEGORIES)[number];

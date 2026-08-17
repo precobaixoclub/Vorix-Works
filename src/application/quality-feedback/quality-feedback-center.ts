@@ -1,5 +1,5 @@
 import type { ZunoEventName, ZunoEventRecorderPort } from "../events/zuno-event.contract.js";
-import type { QualityFeedbackPort } from "./quality-feedback.port.js";
+import type { QualityFeedbackPort, QualityFeedbackRejectionSignals } from "./quality-feedback.port.js";
 import type { QualityFeedbackLoggerPort } from "./quality-feedback-log.contract.js";
 import type { QualityFeedbackRepositoryPort } from "./quality-feedback-repository.port.js";
 import {
@@ -163,6 +163,27 @@ export class QualityFeedbackCenter implements QualityFeedbackPort {
       lowScoringCategories: insights.lowScoringCategories,
     });
     return clone(insights);
+  }
+
+  /**
+   * Sinais de rejeição recentes de um workspace (motivos marcados em `categoriesNeedingImprovement`,
+   * ex.: pelo endpoint de rejeição estruturada da tela de Revisão), consumidos pelo pipeline real
+   * de Produção para compor `structure.editorialMemory.recentRejectionReasons` — texto aditivo
+   * injetado no prompt de João/Maria/Sofia (`avoidRepeating`), nunca uma decisão automática.
+   */
+  async getRecentRejectionSignalsForWorkspace(clientId: string, limit = DEFAULT_INSIGHTS_LIMIT): Promise<QualityFeedbackRejectionSignals> {
+    if (!clientId?.trim()) throw new Error("clientId é obrigatório para consultar sinais de rejeição.");
+
+    const allRecords = await this.repository.list();
+    const recent = allRecords
+      .filter((record) => record.clientId === clientId && record.categoriesNeedingImprovement.length > 0)
+      .sort((left, right) => Date.parse(right.submittedAt) - Date.parse(left.submittedAt))
+      .slice(0, Math.max(1, limit));
+
+    const recurringReasons = buildComplaints(recent).map((complaint) => complaint.category);
+    const comments = recent.map((record) => record.comment).filter((comment): comment is string => Boolean(comment));
+
+    return { recurringReasons, comments };
   }
 
   private async log(

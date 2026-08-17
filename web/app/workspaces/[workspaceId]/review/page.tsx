@@ -12,7 +12,7 @@ import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { decideExecutionGate } from "@/features/execution/api";
 import { useExecutionRun, useExecutionRuns } from "@/features/execution/hooks";
 import type { ExecutionRun, ExecutionRunState } from "@/features/execution/types";
-import { generateFromIdea } from "@/features/production-line/api";
+import { generateFromIdea, rejectExecutionWithFeedback, REJECTION_REASONS, REJECTION_REASON_LABELS, type RejectionReason } from "@/features/production-line/api";
 import { getGenerationRecord, recordGeneration, type GenerationRecord } from "@/features/production-line/generation-log";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
 
@@ -63,6 +63,8 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
   const [rejectStep, setRejectStep] = useState<RejectStep>("closed");
   const [busy, setBusy] = useState(false);
   const [changeText, setChangeText] = useState("");
+  const [rejectReasons, setRejectReasons] = useState<RejectionReason[]>([]);
+  const [rejectComment, setRejectComment] = useState("");
 
   const images = (detail?.artifacts ?? []).flatMap((artifact) => {
     const payload = artifact.payload as { output?: { images?: Array<{ uri?: string }> } } | undefined;
@@ -77,13 +79,17 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
   // sempre que a revisão acontecia num navegador diferente de onde a peça foi gerada.
   const structureOutput = (detail?.artifacts ?? [])
     .find((artifact) => artifact.outputPort === "structure")
-    ?.payload as { output?: { displayTitle?: string; adDescription?: string; valueProposition?: string; objective?: string } } | undefined;
-  // `displayTitle`/`adDescription` são escritos por IA, prontos para postar (ver
-  // `generate-visual-from-idea.ts`, `OpenAiCopywriter`) — nunca o texto bruto que o usuário
-  // digitou como ideia/sugestão. `valueProposition`/`objective` só entram como fallback se a
-  // chamada de copy tiver falhado (best-effort, nunca bloqueia a geração).
-  const title = structureOutput?.output?.displayTitle || structureOutput?.output?.valueProposition || record?.name || "Peça gerada";
-  const description = structureOutput?.output?.adDescription || structureOutput?.output?.objective || record?.ideaText || record?.objective || "Sem descrição.";
+    ?.payload as { output?: { angle?: string; centralPromise?: string; objective?: string } } | undefined;
+  // Fonte principal: o artefato "copy" (Maria real, grafo content_request-visual-only-v2) — título/
+  // legenda/CTA escritos por IA de verdade, com loop de qualidade e anti-clichê, prontos para
+  // postar. `structureOutput` (João) só entra como fallback para execuções antigas.
+  const copyOutput = (detail?.artifacts ?? [])
+    .find((artifact) => artifact.outputPort === "copy")
+    ?.payload as { output?: { title?: string; caption?: string; cta?: string; publication?: string } } | undefined;
+  const title = copyOutput?.output?.title || structureOutput?.output?.angle || record?.name || "Peça gerada";
+  // `publication` já é a legenda + CTA + hashtags prontos para colar no post — mais útil aqui do
+  // que só `caption` sozinha, já que o usuário pediu explicitamente "uma descrição para postar".
+  const description = copyOutput?.output?.publication || copyOutput?.output?.caption || structureOutput?.output?.centralPromise || record?.ideaText || record?.objective || "Sem descrição.";
 
   async function approve() {
     if (!openGate) return;
@@ -100,12 +106,18 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
     }
   }
 
+  function toggleRejectReason(reason: RejectionReason) {
+    setRejectReasons((current) => (current.includes(reason) ? current.filter((candidate) => candidate !== reason) : [...current, reason]));
+  }
+
   async function rejectAndResolveTank(returnToTank: boolean) {
-    if (!openGate) return;
+    if (!openGate || rejectReasons.length === 0) return;
     setBusy(true);
     setError(null);
     try {
-      await decideExecutionGate({ workspaceId, runId: run.id, gateId: openGate.id, decision: "rejected" });
+      // Rejeição estruturada: decide o gate E registra o(s) motivo(s) escolhido(s), consumidos
+      // pela memória editorial da próxima geração deste workspace.
+      await rejectExecutionWithFeedback({ workspaceId, runId: run.id, gateId: openGate.id, reasons: rejectReasons, comment: rejectComment.trim() || undefined });
       if (returnToTank && record) {
         const config = readProductionConfig(workspaceId);
         writeProductionConfig(workspaceId, {
@@ -114,6 +126,8 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
         });
       }
       setRejectStep("closed");
+      setRejectReasons([]);
+      setRejectComment("");
       onDecided();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível registrar a rejeição.");
@@ -214,13 +228,30 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
       {rejectStep === "confirm_tank" ? (
         <Modal title="Rejeitar por completo" onClose={() => setRejectStep("closed")}>
           <div className="space-y-3">
+            <div className="space-y-1.5">
+              <p className="text-sm text-ink-muted">Por que essa peça não serve? (escolha ao menos um motivo — ajuda a próxima geração a não repetir o mesmo problema)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {REJECTION_REASONS.map((reason) => (
+                  <label
+                    key={reason}
+                    className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
+                      rejectReasons.includes(reason) ? "border-ink bg-ink text-surface" : "border-border text-ink-muted hover:bg-surface-sunken"
+                    }`}
+                  >
+                    <input type="checkbox" className="sr-only" checked={rejectReasons.includes(reason)} onChange={() => toggleRejectReason(reason)} />
+                    {REJECTION_REASON_LABELS[reason]}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <Textarea value={rejectComment} onChange={(event) => setRejectComment(event.target.value)} rows={2} placeholder="Comentário opcional" />
             <p className="text-sm text-ink-muted">Quer que a ideia volte disponível no tanque, ou prefere mantê-la como já usada?</p>
             {error ? <p className="text-xs text-red-600">{error}</p> : null}
             <div className="flex flex-col gap-2">
-              <Button disabled={busy} onClick={() => rejectAndResolveTank(true)}>
+              <Button disabled={busy || rejectReasons.length === 0} onClick={() => rejectAndResolveTank(true)}>
                 {busy ? "Enviando…" : "Voltar ideia para o tanque"}
               </Button>
-              <Button variant="secondary" disabled={busy} onClick={() => rejectAndResolveTank(false)}>
+              <Button variant="secondary" disabled={busy || rejectReasons.length === 0} onClick={() => rejectAndResolveTank(false)}>
                 Manter como usada
               </Button>
             </div>

@@ -5,6 +5,7 @@ import { extractJson, normalize, normalizeStringArray } from "../../shared/utils
 import { buildDeveloperAiPendingResponse, isDeveloperAssistancePending } from "../../shared/utils/developer-ai-assistance.js";
 import type { DeveloperAssistancePendingOutput } from "../../application/ai/developer-assistance.types.js";
 import { resolveContentQualityProfile, type ContentQualityProfile } from "../../shared/utils/content-quality-profile.js";
+import { detectGenericPhrases } from "../../shared/utils/generic-phrase-detector.js";
 import { mariaCopywritingManifest } from "./maria.manifest.js";
 import type { MariaLogAction, MariaLoggerPort } from "./maria-log.contract.js";
 import type {
@@ -376,7 +377,15 @@ export function buildMariaPrompt(
       "- incluir hashtags da marca quando preferredHashtags existir e criar variações de nicho relacionadas ao briefing;",
       "- tom de voz consistente do início ao fim, sem mudança de registro;",
       "- zero repetição excessiva de palavras e zero hashtag duplicada;",
-      "- evitar frases genéricas, clichês e construções repetidas.",
+      "- evitar frases genéricas, clichês e construções repetidas (ex.: \"descubra um novo jeito de\", \"qualidade e estilo para você\", \"não perca essa oportunidade\") — só usar uma frase desse tipo se ela for literalmente justificada pelo briefing.",
+    ].join("\n"),
+    "",
+    "SEPARAÇÃO DE FUNÇÃO ENTRE OS TEXTOS (obrigatório, não repetir a mesma mensagem em dois lugares):",
+    [
+      "- imageHeadline: texto CURTO (no máximo ~6 palavras) que vai DENTRO da imagem gerada — uma mensagem só, sem parágrafo, impacto imediato. NUNCA repete title literalmente e nunca é uma frase completa com sujeito+predicado longo.",
+      "- title: complementa a imagem e gera interesse por conta própria — nunca copia imageHeadline.",
+      "- caption: desenvolve a ideia, contextualiza, apresenta o benefício/oferta quando existir, e termina com o cta.",
+      "- cta: relacionado ao objetivo real da publicação (ver marketingObjective abaixo), nunca genérico.",
     ].join("\n"),
     "",
     "RESTRIÇÕES NEGATIVAS:",
@@ -395,13 +404,17 @@ export function buildMariaPrompt(
     "ESTRATÉGIA DE COPY:",
     JSON.stringify(strategy, null, 2),
     "",
+    ...(briefing.avoidRepeating
+      ? ["MEMÓRIA EDITORIAL — evitar repetir headline, CTA ou conceito recentes deste cliente:", briefing.avoidRepeating, ""]
+      : []),
     `TENTATIVA: ${attempt}`,
     "AJUSTES NECESSÁRIOS:",
     issueGuidance,
     "",
     "FORMATO OBRIGATÓRIO DO JSON:",
     JSON.stringify({
-      title: "Título curto e forte",
+      title: "Título curto e forte, complementar à imagem",
+      imageHeadline: "Texto curtíssimo para dentro da imagem, diferente do título",
       caption: "Legenda pronta para o canal",
       cta: briefing.cta,
       hashtags: ["#exemplo1", "#exemplo2", "#exemplo3", "#exemplo4", "#exemplo5", "#exemplo6", "#exemplo7", "#exemplo8", "#exemplo9", "#exemplo10", "#exemplo11", "#exemplo12", "#exemplo13", "#exemplo14", "#exemplo15"],
@@ -492,6 +505,15 @@ export function evaluateCopyQuality(
 
   if (hasBasicGrammarRisk(copy.caption)) {
     issues.push(issue("SPELLING_GRAMMAR_RISK", "A copy apresenta possível risco básico de ortografia, gramática ou pontuação.", "medium"));
+  }
+
+  const genericPhrases = [...detectGenericPhrases(copy.title), ...detectGenericPhrases(copy.caption)];
+  if (genericPhrases.length > 0) {
+    issues.push(issue("GENERIC_CLICHE_PHRASE_DETECTED", `Frase genérica/clichê detectada, sem justificativa no briefing: "${genericPhrases[0]}".`, "medium"));
+  }
+
+  if (copy.imageHeadline?.trim() && isSameMessage(copy.imageHeadline, copy.title)) {
+    issues.push(issue("IMAGE_HEADLINE_DUPLICATES_TITLE", "imageHeadline repete o título literalmente — texto da imagem e título precisam cumprir funções diferentes.", "medium"));
   }
 
   const score = Math.max(0, 100 - issues.reduce((total, current) => {
@@ -618,6 +640,7 @@ function parseStructuredCopy(content: string, briefing: MariaCopyBriefing): Mari
   const hashtags = normalizeHashtags(parsed.hashtags);
   return {
     title: String(parsed.title ?? ""),
+    imageHeadline: typeof parsed.imageHeadline === "string" && parsed.imageHeadline.trim() ? parsed.imageHeadline.trim() : undefined,
     caption,
     cta,
     hashtags,
@@ -766,6 +789,15 @@ function hasBasicGrammarRisk(text: string): boolean {
   if (/\s{2,}/.test(trimmed)) return true;
   if (/[,.!?]{2,}/.test(trimmed)) return true;
   return false;
+}
+
+/** Considera "mesma mensagem" quando um texto contém o outro por inteiro (após normalização) — a
+ * checagem que importa é literal-idêntico ou um-contido-no-outro, não similaridade semântica. */
+function isSameMessage(left: string, right: string): boolean {
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  return normalizedLeft === normalizedRight || normalizedLeft.includes(normalizedRight) || normalizedRight.includes(normalizedLeft);
 }
 
 function containsComparable(text: string, expected: string): boolean {

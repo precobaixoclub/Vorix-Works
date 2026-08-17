@@ -47,7 +47,7 @@ export type Planning = {
 export const EXECUTION_CAPABILITIES = ["editorial_research", "strategic_planning", "copywriting", "visual_design", "human_review", "distribution", "content_brief"] as const;
 export type ExecutionCapability = (typeof EXECUTION_CAPABILITIES)[number];
 
-export const TASK_TYPES = ["research", "campaign_structure", "copy_generation", "visual_generation", "approval", "publication", "content_brief"] as const;
+export const TASK_TYPES = ["research", "campaign_structure", "copy_generation", "visual_generation", "approval", "publication", "content_brief", "quality_review"] as const;
 export type TaskType = (typeof TASK_TYPES)[number];
 
 export const TASK_STATUSES = ["planned"] as const;

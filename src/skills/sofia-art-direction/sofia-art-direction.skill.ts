@@ -416,7 +416,10 @@ export function buildBaselineDirection(
   const recommendedAspectRatio = resolveAspectRatio(input.channel, input.format);
   const visualConstraints = buildVisualConstraints(identity, publishing);
   const visualRisks = buildVisualRisks(identity, input.channel, input.format);
-  const observations = buildObservations(context, content);
+  const observations = [
+    ...buildObservations(context, content),
+    ...(input.avoidRepeating ? [`Memória editorial — evitar repetir conceito/enquadramento: ${input.avoidRepeating}`] : []),
+  ];
   const nextSteps = buildNextSteps(input);
 
   return {

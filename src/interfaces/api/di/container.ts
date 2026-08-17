@@ -35,8 +35,9 @@ import { CreditAccountingService } from "../../../application/ai-providers/credi
 import { MediaGenerationService } from "../../../application/ai-providers/media-generation.service.js";
 import { OpenAiImageProviderAdapter } from "../../../infrastructure/ai-providers/openai-image-provider-adapter.js";
 import { OpenAiIcaroImageProvider } from "../../../infrastructure/ai-providers/openai-icaro-image-provider.js";
+import { OpenAiIcaroTextProvider } from "../../../infrastructure/ai-providers/openai-icaro-text-provider.js";
+import { createQualityFeedbackCenter, type QualityFeedbackCenter } from "../../../application/quality-feedback/quality-feedback-center.js";
 import { OpenAiVisionDescriber } from "../../../infrastructure/ai-providers/openai-vision-describer.js";
-import { OpenAiCopywriter, type AdCopy, type AdCopyInput } from "../../../infrastructure/ai-providers/openai-copywriter.js";
 import { GoogleVeoProviderAdapter } from "../../../infrastructure/ai-providers/google-veo-provider-adapter.js";
 import { IcaroAIBrain } from "../../../application/ai/icaro-brain.js";
 import { ValentinaTenantManager } from "../../../application/tenancy/valentina-tenant-manager.js";
@@ -264,9 +265,9 @@ export type ApiContainer = {
    * usado tanto pelo bootstrap de marca acima quanto por `generate-visual-from-idea.ts` para
    * enriquecer o briefing com o que uma imagem de referência mostra. */
   imageDescriber: { describe(imageUrl: string, instruction: string): Promise<string | undefined> };
-  /** Redator: título + descrição prontos para postar, a partir da ideia e (quando houver) do que
-   * as imagens de referência mostram — nunca o texto bruto que o usuário digitou como sugestão. */
-  copywriter: { composeAdCopy(input: AdCopyInput): Promise<AdCopy | undefined> };
+  /** Registra avaliações/rejeições de peças geradas (endpoint de rejeição estruturada da tela de
+   * Revisão) e alimenta a memória editorial via `getRecentRejectionSignalsForWorkspace`. */
+  qualityFeedback: QualityFeedbackCenter;
   /** Presente quando `persistenceDriver === "postgres"` — `app.ts` fecha isto no hook `onClose`. */
   pool?: pg.Pool;
 
@@ -471,10 +472,6 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
     getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
   });
-  const copywriter = new OpenAiCopywriter({
-    apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
-    getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
-  });
   const googleVeoProvider = new GoogleVeoProviderAdapter({
     enabled: config?.mediaProviders.googleEnabled ?? false,
     apiBaseUrl: config?.mediaProviders.googleApiBaseUrl,
@@ -494,13 +491,33 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   const clara = new ClaraKnowledgeCenter({
     repository: new LocalJsonClaraKnowledgeRepository(join(tenantDataDir, "knowledge.json")),
   });
-  const icaro = new IcaroAIBrain({ providers: [new OpenAiIcaroImageProvider(openaiImageProvider)] });
+  // Sem o Provider de texto, João/Maria/Lucas nunca tinham NENHUM Provider que respondesse
+  // "analysis"/"text_generation"/"review" — só "image_generation" (Pedro) estava registrado. João
+  // degrada bem sem IA, mas Maria exige Ícaro (não é opcional na Skill dela): sem isto, toda
+  // chamada de copy_generation no grafo `content_request-visual-only-v2` falhava sempre.
+  const icaro = new IcaroAIBrain({
+    providers: [
+      new OpenAiIcaroImageProvider(openaiImageProvider),
+      new OpenAiIcaroTextProvider({
+        apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
+        getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
+      }),
+    ],
+  });
+  // Módulo de Quality Feedback (`src/application/quality-feedback/*`) já existia mas nunca tinha
+  // sido ligado à API/produção — só CLI. Reaproveitado aqui em vez de criar um mecanismo novo,
+  // tanto para o endpoint de rejeição estruturada quanto para alimentar a memória editorial
+  // (`getRecentRejectionSignalsForWorkspace`).
+  const qualityFeedback = createQualityFeedbackCenter({ repository: repositories.qualityFeedbackRepository });
+  const contentGenerationHistory = repositories.contentGenerationHistoryRepository;
   const createExecutionHandlerResolver = () =>
     buildExecutionHandlerResolver({
       featureFlags: executionFeatureFlags,
       runtimeDependencies: { valentina, clara, icaro },
       runtimeRepository: repositories.runtimeRepository,
       preparedCommandRepository: repositories.preparedCommandRepository,
+      contentGenerationHistory,
+      qualityFeedback,
     });
   // `ValentinaTenantManager.createTenant` sempre gera um `id` novo (nunca aceita um `id`
   // explícito) — mas os skills reais (Pedro/Sofia/Bianca...) chamam
@@ -954,7 +971,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       valentina,
       ensureHouseTenantProfile,
       imageDescriber,
-      copywriter,
+      qualityFeedback,
       planningEngineHook,
       ...repositories,
       identity: {
@@ -1031,7 +1048,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     valentina,
     ensureHouseTenantProfile,
     imageDescriber,
-    copywriter,
+    qualityFeedback,
     planningEngineHook,
     ...repositories,
   };

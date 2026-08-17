@@ -86,33 +86,5 @@ export const CONTENT_REQUEST_SCHEMA_V1: BriefingSchema = {
       sensitivity: "normal",
       confirmationPolicy: "never_required",
     },
-    {
-      // Título pronto para postar, escrito por IA a partir da ideia — nunca o texto bruto que o
-      // usuário digitou (esse é um briefing/sugestão, não copy final). Usado tanto no card de
-      // Revisão quanto como o único texto autorizado na própria imagem gerada (ver
-      // `real-skill-execution-handlers.ts`, `buildContentBriefStructure`/`buildPedroInput`).
-      key: "adTitle",
-      label: "Título do anúncio",
-      description: "Título curto pronto para postar, escrito pela IA a partir da ideia.",
-      required: false,
-      dataType: "string",
-      sourcePriority: ["user_message"],
-      validation: { maxLength: 100 },
-      sensitivity: "normal",
-      confirmationPolicy: "never_required",
-    },
-    {
-      // Descrição/legenda pronta para postar — o que o usuário pediu explicitamente ("preciso de
-      // uma descrição para postar o produto"). Nunca aparece na imagem, só no card de Revisão.
-      key: "adDescription",
-      label: "Descrição do anúncio",
-      description: "Legenda pronta para postar, escrita pela IA a partir da ideia.",
-      required: false,
-      dataType: "string",
-      sourcePriority: ["user_message"],
-      validation: { maxLength: 500 },
-      sensitivity: "normal",
-      confirmationPolicy: "never_required",
-    },
   ],
 };

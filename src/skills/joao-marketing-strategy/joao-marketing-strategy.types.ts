@@ -1,4 +1,5 @@
 import type { CampaignCreativeDNA } from "../../shared/utils/creative-director-engine.js";
+import type { MarketingObjective } from "../../shared/utils/marketing-objective-classifier.js";
 
 export type JoaoSupportedChannel =
   | "instagram"
@@ -55,10 +56,46 @@ export type JoaoStrategyRequestInput = {
   // unitários de João isolado). Quando presente, sobrescreve a decisão de formato/CTA de João.
   editorialBrief?: JoaoEditorialBriefSummary;
   workflowContext?: Record<string, unknown>;
+  /** Memória editorial (headlines/CTAs/conceitos recentes deste workspace, já aprovados ou
+   * rejeitados) — texto compacto pronto para prompt, montado por
+   * `ContentBriefExecutionTaskHandler` (real-skill-execution-handlers.ts) a partir de
+   * `ContentGenerationHistoryPort`/`QualityFeedbackPort`. Ausente = comportamento idêntico ao
+   * atual (nenhuma instrução de "evitar repetir" é adicionada). */
+  avoidRepeating?: string;
+};
+
+/**
+ * Creative brief estruturado (requisito de "etapa obrigatória de planejamento" antes de copy/
+ * imagem) — interno, nunca exposto ao usuário, serve de contexto compartilhado para Maria/Sofia/
+ * Bianca/Pedro/Lucas. `nonInventableInfo` é computado por AUSÊNCIA real de dado na Clara (ex.: sem
+ * preço cadastrado em ProductContext → entra na lista) — nunca uma lista fixa.
+ */
+export type JoaoCreativeBrief = {
+  brand?: string;
+  segment?: string;
+  productOrService: string;
+  publicationObjective: string;
+  marketingObjective: MarketingObjective;
+  targetAudience: string;
+  channel: JoaoSupportedChannel;
+  funnelStage: "topo" | "meio" | "fundo";
+  differentiator?: string;
+  offer?: string;
+  mainBenefit?: string;
+  toneOfVoice: string;
+  cta: string;
+  creativeConcept: string;
+  communicationAngle: string;
+  mandatoryInfo: string[];
+  nonInventableInfo: string[];
 };
 
 export type JoaoMariaBriefing = {
   objective: string;
+  /** Classificação de objetivo de marketing (ver `marketing-objective-classifier.ts`) — Maria usa
+   * para variar estrutura/CTA da copy conforme o tipo real de publicação, em vez de uma fórmula
+   * única para tudo. */
+  marketingObjective?: MarketingObjective;
   channel: JoaoMariaBriefingChannel;
   /** Rótulo do formato da peça (`strategy.format`, herdado de `recommendedFormatLabel` do Eduardo) — usado pela Maria para escolher o perfil de avaliação de qualidade correspondente. */
   format?: string;
@@ -91,6 +128,11 @@ export type JoaoSofiaBriefing = {
 export type JoaoMarketingStrategyCore = {
   overallStrategy: string;
   objective: string;
+  /** Classificação estruturada do objetivo (requisito de "inteligência de marketing" — venda,
+   * promoção, engajamento, branding, educativo, prova social, lançamento, relacionamento, leads).
+   * A estrutura da publicação (ângulo, CTA, tom) muda conforme este campo — ver
+   * `marketing-objective-classifier.ts`. */
+  marketingObjective: MarketingObjective;
   targetAudience: string;
   channel: JoaoSupportedChannel;
   format: string;
@@ -110,6 +152,7 @@ export type JoaoMarketingStrategyCore = {
 export type JoaoMarketingStrategyOutput = JoaoMarketingStrategyCore & {
   mariaBriefing: JoaoMariaBriefing;
   sofiaBriefing: JoaoSofiaBriefing;
+  creativeBrief: JoaoCreativeBrief;
   aiSupportUsed: boolean;
   /**
    * `provider.id` devolvido pelo Ícaro quando `aiSupportUsed` é `true` — permite ao relatório

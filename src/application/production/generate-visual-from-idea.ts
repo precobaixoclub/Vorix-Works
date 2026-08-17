@@ -40,7 +40,6 @@ export type GenerateVisualFromIdeaDeps = BriefingUseCaseDeps & {
   planningRepository: PlanningRepositoryPort;
   runtimeRepository: RuntimeRepositoryPort;
   imageDescriber?: { describe(imageUrl: string, instruction: string): Promise<string | undefined> };
-  copywriter?: { composeAdCopy(input: { objective: string; offerOrSubject: string; targetAudience: string; channel: string; referenceContext?: string }): Promise<{ title: string; description: string } | undefined> };
 };
 
 const REFERENCE_IMAGE_DESCRIBE_INSTRUCTION =
@@ -106,20 +105,11 @@ export async function generateVisualFromIdea(
   const referenceContext = await describeReferenceImages(deps, input.referenceImageUrls);
   if (referenceContext) fields.push({ key: "referenceContext", value: referenceContext });
 
-  // Título e descrição prontos para postar — o usuário precisa deles pra publicar de verdade
-  // (achado ao vivo: "preciso de uma descrição para postar o produto"), nunca o texto bruto que
-  // ele digitou como ideia. Best-effort: se falhar, `buildContentBriefStructure` cai para o
-  // offerOrSubject original em vez de travar a geração por causa da copy.
-  if (deps.copywriter) {
-    const adCopy = await deps.copywriter
-      .composeAdCopy({ objective: input.objective.trim(), offerOrSubject: input.ideaText.trim(), targetAudience, channel, referenceContext })
-      .catch(() => undefined);
-    if (adCopy) {
-      fields.push({ key: "adTitle", value: adCopy.title });
-      fields.push({ key: "adDescription", value: adCopy.description });
-    }
-  }
-
+  // Título/headline/legenda/CTA prontos para postar agora são escritos pela Maria de verdade, via
+  // o grafo `content_request-visual-only-v2` (campaign_structure → copy_generation, ver
+  // `arthur-planner.ts`) — não mais por um redator paralelo mais fraco rodando aqui, antes do
+  // Planning sequer começar (achado da auditoria: dois redatores desconectados, um deles sem loop
+  // de qualidade nem inteligência de objetivo de marketing).
   for (const field of fields) {
     await deps.fieldValueRepository.append({
       briefingId: briefing.id,

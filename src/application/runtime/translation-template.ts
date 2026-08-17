@@ -20,8 +20,8 @@ export const TRANSLATOR_STRATEGY = "deterministic-port-binding-v1";
 export const RUNTIME_SCHEMA_VERSION = 1;
 
 /** Mesmo padrão `Partial<Record<...>>` de `PLANNING_TEMPLATES_BY_PREPARED_COMMAND_TYPE`.
- * `content_request-visual-only-v1` acrescentado depois (caminho reduzido, sem publicação — ver
- * `arthur-planner.ts`). */
+ * `content_request-visual-only-v1` mantido por compatibilidade histórica (RuntimePlans antigos já
+ * traduzidos não recriam bindings) — `templates.ts` não aponta mais para ela, só para a v2. */
 export const TRANSLATION_TEMPLATES_BY_PLANNING_TEMPLATE: Partial<Record<string, readonly TranslationBindingSpec[]>> = {
   "campaign_creation-standard-pipeline-v1": [
     { fromTaskType: "research", fromOutputPort: "context", toTaskType: "campaign_structure", toInputPort: "context" },
@@ -34,6 +34,20 @@ export const TRANSLATION_TEMPLATES_BY_PLANNING_TEMPLATE: Partial<Record<string, 
   "content_request-visual-only-v1": [
     { fromTaskType: "content_brief", fromOutputPort: "structure", toTaskType: "visual_generation", toInputPort: "structure" },
     { fromTaskType: "visual_generation", fromOutputPort: "visual", toTaskType: "approval", toInputPort: "visual" },
+  ],
+  // Ver `arthur-planner.ts` (`planContentRequestVisualOnly`) para o desenho completo do grafo:
+  // content_brief → campaign_structure(João) → copy_generation(Maria) → visual_generation(Sofia+
+  // Bianca+Pedro) → quality_review(Lucas) → approval.
+  "content_request-visual-only-v2": [
+    { fromTaskType: "content_brief", fromOutputPort: "structure", toTaskType: "campaign_structure", toInputPort: "context" },
+    { fromTaskType: "campaign_structure", fromOutputPort: "structure", toTaskType: "copy_generation", toInputPort: "structure" },
+    { fromTaskType: "campaign_structure", fromOutputPort: "structure", toTaskType: "visual_generation", toInputPort: "structure" },
+    { fromTaskType: "copy_generation", fromOutputPort: "copy", toTaskType: "visual_generation", toInputPort: "copy" },
+    { fromTaskType: "campaign_structure", fromOutputPort: "structure", toTaskType: "quality_review", toInputPort: "structure" },
+    { fromTaskType: "copy_generation", fromOutputPort: "copy", toTaskType: "quality_review", toInputPort: "copy" },
+    { fromTaskType: "visual_generation", fromOutputPort: "visual", toTaskType: "quality_review", toInputPort: "visual" },
+    { fromTaskType: "visual_generation", fromOutputPort: "visual", toTaskType: "approval", toInputPort: "visual" },
+    { fromTaskType: "quality_review", fromOutputPort: "review", toTaskType: "approval", toInputPort: "review" },
   ],
 };
 

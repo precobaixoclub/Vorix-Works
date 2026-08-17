@@ -4,6 +4,8 @@ import { mapExecutionCapabilityToSkillCapability } from "../../application/execu
 import type { HelenaSkillManagerPort } from "../../application/skills/helena.contract.js";
 import type { PreparedCommandRepositoryPort } from "../../application/ports/prepared-command-repository.port.js";
 import type { RuntimeRepositoryPort } from "../../application/ports/runtime-repository.port.js";
+import type { ContentGenerationHistoryPort } from "../../application/ports/content-generation-history.port.js";
+import type { QualityFeedbackPort } from "../../application/quality-feedback/quality-feedback.port.js";
 import type { SkillCapability } from "../../domain/skills/skill-capability.contract.js";
 import type { SkillArtifact, SkillResponse } from "../../domain/skills/skill.contract.js";
 import type { ExecutionCapability, TaskType } from "../../domain/planning/planning.model.js";
@@ -78,9 +80,14 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
     const contract = requireContract(request.task.capability, request.task.type);
     try {
       const structure = unwrapExecutionPayload(firstPayload(request.inputs, "structure"));
+      // "copy" só existe no grafo novo `content_request-visual-only-v2` (Maria rodando antes da
+      // imagem) — em `campaign_creation`, copy_generation e visual_generation rodam em paralelo e
+      // este input fica vazio, preservando o comportamento anterior (Pedro cai no fallback de
+      // `strategy.displayTitle`, hoje inexistente também, então sem texto autorizado — igual antes).
+      const copy = unwrapExecutionPayload(firstPayload(request.inputs, "copy"));
       const sofia = await callSkill(this.deps.helena, "art_direction", buildSofiaInput(request, structure), request);
       const bianca = await callSkill(this.deps.helena, "social_media_design", buildBiancaInput(request, structure, sofia.output), request);
-      const pedro = await callSkill(this.deps.helena, "image_generation", buildPedroInput(request, structure, suppressUnauthorizedCta(bianca.output)), request);
+      const pedro = await callSkill(this.deps.helena, "image_generation", buildPedroInput(request, structure, copy, suppressUnauthorizedCta(bianca.output)), request);
       const invalid = validateOutputContract(contract, pedro.output);
       if (invalid) return failure("SKILL_OUTPUT_SCHEMA_INVALID", invalid, "invalid_output");
       const warnings = [...sofia.warnings, ...bianca.warnings, ...pedro.warnings];
@@ -108,19 +115,190 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
   }
 }
 
+/** `reviewStatus` que o gate considera aprovado — mesmos thresholds que Lucas já usa internamente
+ * (`warningScoreThreshold`), sem reinventar um novo número. */
+const QUALITY_GATE_APPROVED_STATUSES = new Set(["approved", "approved_with_warnings"]);
+
+/**
+ * Quality gate real (requisito "não apresentar ao usuário se não atingir o padrão mínimo") —
+ * reaproveita Lucas integralmente (`quality_review`, capability `human_review` já mapeada para a
+ * skill capability "quality_review" em `capability-mapping.ts`, nunca antes exercitada porque
+ * `approval` é hardcoded no motor de execução e nunca passa por aqui). Roda uma única vez por
+ * execução; se reprovar, a TASK falha (`QUALITY_GATE_NOT_PASSED`) e a execução inteira vai para
+ * `state:"failed"` — a "regeneração automática" (no máximo 1 tentativa extra) acontece um nível
+ * acima, no caller HTTP (`production.route.ts`), disparando uma execução nova do zero: Lucas roda
+ * DEPOIS de `visual_generation` já ter produzido seu único artefato por task (`execution_artifacts_
+ * task_output_uq`), então não há como esta task "consertar e reemitir" a copy/imagem de uma task
+ * anterior sem violar essa invariante — regenerar a execução inteira é o jeito correto de tentar de
+ * novo com conteúdo realmente diferente.
+ */
+export class QualityGateExecutionTaskHandler implements ExecutionTaskHandlerPort {
+  constructor(
+    private readonly deps: {
+      helena: HelenaSkillManagerPort;
+      provider?: string;
+      contentGenerationHistory?: ContentGenerationHistoryPort;
+    },
+  ) {}
+
+  canHandle(capability: ExecutionCapability, taskType: TaskType): boolean {
+    return capability === "human_review" && taskType === "quality_review";
+  }
+
+  async validateAvailability(): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+    return validateSkillsAvailable(this.deps.helena, ["quality_review"]);
+  }
+
+  async execute(request: ExecutionTaskHandlerRequest): Promise<ExecutionTaskHandlerResult> {
+    if (request.context.mode !== "real") return failure("REAL_HANDLER_REQUIRES_REAL_MODE", "Handler real só executa em mode real.", "policy_violation");
+    const contract = requireContract(request.task.capability, request.task.type);
+    try {
+      const structure = unwrapExecutionPayload(firstPayload(request.inputs, "structure"));
+      const copy = unwrapExecutionPayload(firstPayload(request.inputs, "copy"));
+      // Raw (não `unwrapExecutionPayload`) de propósito: `visualPipeline.artDirection`/`.designSpec`
+      // (saída de Sofia/Bianca) só existe no payload bruto de `visual_generation`, não em `.output`
+      // (que é só a saída do Pedro).
+      const visualRaw = firstPayload(request.inputs, "visual");
+      const lucas = await callSkill(this.deps.helena, "quality_review", buildLucasInput(request, structure, copy, visualRaw), request);
+
+      if (!passesQualityGate(lucas.output)) {
+        return failure("QUALITY_GATE_NOT_PASSED", summarizeTopIssues(lucas.output), "invalid_output");
+      }
+
+      const invalid = validateOutputContract(contract, lucas.output);
+      if (invalid) return failure("SKILL_OUTPUT_SCHEMA_INVALID", invalid, "invalid_output");
+
+      // Memória editorial: só grava peças que passaram no quality gate (nunca ensina o sistema a
+      // repetir algo reprovado). Best-effort — falha aqui nunca deveria derrubar uma geração que já
+      // passou no gate.
+      if (this.deps.contentGenerationHistory) {
+        const visualPipeline = normalizeObject(visualRaw.visualPipeline);
+        const sofiaOutput = normalizeObject(visualPipeline.artDirection);
+        await this.deps.contentGenerationHistory
+          .recordGeneration({
+            tenantId: request.context.tenantId,
+            workspaceId: request.context.workspaceId,
+            executionRunId: request.context.executionRunId,
+            marketingObjective: valueOrUndefined(structure.marketingObjective),
+            headline: valueOrUndefined(copy.imageHeadline),
+            title: valueOrUndefined(copy.title),
+            caption: valueOrUndefined(copy.caption),
+            cta: valueOrUndefined(copy.cta),
+            visualConcept: valueOrUndefined(sofiaOutput.visualConcept),
+            qualityScore: numberValue(lucas.output.overallScore, undefined),
+            reviewStatus: valueOrUndefined(lucas.output.reviewStatus),
+          })
+          .catch(() => undefined);
+      }
+
+      return {
+        ok: true,
+        value: {
+          outputs: [{
+            outputPort: contract.outputPort,
+            payload: buildExecutionPayload(lucas, request.inputs, this.deps.provider ?? "helena"),
+          }],
+          warnings: lucas.warnings,
+        },
+      };
+    } catch (error) {
+      return { ok: false, error: classifySkillError(error) };
+    }
+  }
+}
+
+function passesQualityGate(output: Record<string, unknown>): boolean {
+  return typeof output.reviewStatus === "string" && QUALITY_GATE_APPROVED_STATUSES.has(output.reviewStatus);
+}
+
+function summarizeTopIssues(output: Record<string, unknown>): string {
+  const status = stringValue(output.reviewStatus, "rejected");
+  const score = numberValue(output.overallScore, undefined);
+  const issues = Array.isArray(output.issues) ? (output.issues as Array<{ message?: unknown }>) : [];
+  const topMessages = issues
+    .slice(0, 3)
+    .map((issueItem) => (typeof issueItem.message === "string" ? issueItem.message : undefined))
+    .filter((message): message is string => Boolean(message));
+  const scoreLabel = score === undefined ? "" : ` (nota ${score}/100)`;
+  return `Peça não passou no quality gate — status "${status}"${scoreLabel}.${topMessages.length ? ` Principais motivos: ${topMessages.join(" | ")}` : ""}`;
+}
+
+/**
+ * Monta o input de Lucas a partir das saídas reais de João/Maria/Sofia/Bianca/Pedro já produzidas
+ * nesta execução — espelha por convenção (mesmo padrão do resto do arquivo) o formato real de
+ * `LucasQualityReviewRequestInput`, sem importar nada do skill do Lucas.
+ */
+function buildLucasInput(request: ExecutionTaskHandlerRequest, structure: Record<string, unknown>, copy: Record<string, unknown>, visualRaw: Record<string, unknown>): Record<string, unknown> {
+  const visualOutput = normalizeObject(visualRaw.output);
+  const visualPipeline = normalizeObject(visualRaw.visualPipeline);
+  const sofiaOutput = normalizeObject(visualPipeline.artDirection);
+  const biancaOutput = normalizeObject(visualPipeline.designSpec);
+  const copyQuality = normalizeObject(copy.quality);
+
+  return {
+    ...baseInput(request),
+    originalRequest: "Execution real controlada a partir de RuntimePlan validado.",
+    joaoStrategy: {
+      objective: stringValue(structure.objective, ""),
+      targetAudience: stringValue(structure.targetAudience, ""),
+      channel: stringValue(structure.channel, "instagram"),
+      toneOfVoice: stringValue(structure.toneOfVoice, ""),
+      angle: stringValue(structure.angle, ""),
+      centralPromise: stringValue(structure.centralPromise, ""),
+      valueProposition: stringValue(structure.valueProposition, ""),
+      keyMessages: stringArray(structure.keyMessages),
+      recommendedCta: stringValue(structure.recommendedCta, ""),
+      risks: stringArray(structure.risks),
+    },
+    mariaCopy: {
+      title: stringValue(copy.title, ""),
+      caption: stringValue(copy.caption, ""),
+      cta: stringValue(copy.cta, ""),
+      hashtags: stringArray(copy.hashtags),
+      keywords: stringArray(copy.keywords),
+      summary: stringValue(copy.summary, ""),
+      objective: stringValue(copy.objective, ""),
+      toneUsed: stringValue(copy.toneUsed, ""),
+      identifiedAudience: stringValue(copy.identifiedAudience, ""),
+      qualityScore: numberValue(copyQuality.score, undefined),
+      qualityPassed: typeof copyQuality.passed === "boolean" ? copyQuality.passed : undefined,
+    },
+    sofiaDirection: Object.keys(sofiaOutput).length > 0 ? {
+      visualConcept: stringValue(sofiaOutput.visualConcept, ""),
+      recommendedStyle: stringValue(sofiaOutput.recommendedStyle, ""),
+      suggestedPalette: stringArray(sofiaOutput.suggestedPalette),
+      recommendedFormat: stringValue(sofiaOutput.recommendedFormat, ""),
+      recommendedAspectRatio: stringValue(sofiaOutput.recommendedAspectRatio, ""),
+      visualConstraints: stringArray(sofiaOutput.visualConstraints),
+      visualRisks: stringArray(sofiaOutput.visualRisks),
+    } : undefined,
+    biancaDesign: Object.keys(biancaOutput).length > 0 ? {
+      designConcept: stringValue(biancaOutput.designConcept, ""),
+      gridSystem: stringValue(biancaOutput.gridSystem, ""),
+      slides: Array.isArray(biancaOutput.slides) ? biancaOutput.slides : [],
+      designRisks: stringArray(biancaOutput.designRisks),
+    } : undefined,
+    pedroImages: Object.keys(visualOutput).length > 0 ? {
+      imageCount: numberValue(visualOutput.imageCount, 0) ?? 0,
+      images: Array.isArray(visualOutput.images) ? visualOutput.images : [],
+    } : undefined,
+    channel: stringValue(structure.channel, "instagram"),
+    format: stringValue(structure.format, "carrossel"),
+  };
+}
+
 const NO_CTA_INSTRUCTION = "Nenhum — não incluir nenhum botão, texto ou elemento de CTA nesta peça. Comunicar apenas por composição visual, sem nenhum texto legível.";
 
 /**
  * Bianca sempre projeta um CTA visível (`ctaPlacement`, `typographyScale.cta` — campos
  * obrigatórios em `evaluateProductionReadiness`, Pedro nunca aceita omiti-los) porque seu design
- * pressupõe que sempre existe uma copy real definindo o texto do botão. Hoje NENHUM pipeline real
- * (nem o reduzido `content_request`, nem `campaign_creation`) alimenta `workflowContext.mariaCopy`
- * de verdade — não existe copy autorizada em lugar nenhum ainda — então um CTA sempre acaba sendo
- * texto inventado renderizado na imagem (achado ao vivo: gerou um botão "Saiba mais" sem que
- * ninguém tivesse pedido isso). Sobrescreve só os campos de CTA com uma instrução explícita de "não
- * incluir", preservando o resto do design de Bianca (grid, cor, logo, tipografia) intacto. Reavaliar
- * quando um pipeline real de copy existir — aí o CTA autorizado deveria fluir por aqui de verdade,
- * não ser suprimido.
+ * pressupõe que sempre existe uma copy real definindo o texto do botão. Maria já roda de verdade
+ * no grafo `content_request-visual-only-v2` e produz um CTA real (`copy.cta`) — mas ele fica só na
+ * legenda/publicação, nunca dentro da imagem: decisão de produto (não técnica), pra não repetir o
+ * bug já corrigido de CTA/botão inventado aparecendo renderizado na peça. Sobrescreve só os campos
+ * de CTA do design de Bianca com uma instrução explícita de "não incluir", preservando o resto
+ * (grid, cor, logo, tipografia) intacto — ver também `buildPedroInput`, que nunca repassa
+ * `workflowContext.mariaCopy`/`.cta` pelo mesmo motivo.
  */
 function suppressUnauthorizedCta(design: Record<string, unknown>): Record<string, unknown> {
   const typographyScale = normalizeObject(design.typographyScale);
@@ -144,7 +322,14 @@ function suppressUnauthorizedCta(design: Record<string, unknown>): Record<string
  * preparedCommandId` → `PreparedCommand.validatedInputs`, já modelada desde a Sprint 10).
  */
 export class ContentBriefExecutionTaskHandler implements ExecutionTaskHandlerPort {
-  constructor(private readonly deps: { runtimeRepository: RuntimeRepositoryPort; preparedCommandRepository: PreparedCommandRepositoryPort }) {}
+  constructor(
+    private readonly deps: {
+      runtimeRepository: RuntimeRepositoryPort;
+      preparedCommandRepository: PreparedCommandRepositoryPort;
+      contentGenerationHistory?: ContentGenerationHistoryPort;
+      qualityFeedback?: QualityFeedbackPort;
+    },
+  ) {}
 
   canHandle(capability: ExecutionCapability, taskType: TaskType): boolean {
     return capability === "content_brief" && taskType === "content_brief";
@@ -163,6 +348,11 @@ export class ContentBriefExecutionTaskHandler implements ExecutionTaskHandlerPor
     }
 
     const structure = buildContentBriefStructure(preparedCommand.validatedInputs);
+    // Memória editorial (requisito "antes de gerar uma peça nova, consultar as últimas peças
+    // geradas/aprovadas") — best-effort: qualquer falha aqui (repositório indisponível, etc.)
+    // nunca deveria travar a geração, só deixar de avisar sobre repetição.
+    const editorialMemory = await buildEditorialMemoryText(this.deps, request.context.workspaceId).catch(() => undefined);
+    if (editorialMemory) structure.editorialMemory = editorialMemory;
     const invalid = validateOutputContract(contract, structure);
     if (invalid) return failure("SKILL_OUTPUT_SCHEMA_INVALID", invalid, "invalid_output");
 
@@ -187,63 +377,70 @@ export class ContentBriefExecutionTaskHandler implements ExecutionTaskHandlerPor
   }
 }
 
+/**
+ * Empacota o que o usuário digitou de verdade num "context" flat, consumido só por
+ * `campaign_structure` (João) — desde a introdução do grafo `content_request-visual-only-v2`,
+ * `content_brief` não alimenta mais Sofia/Bianca/Pedro diretamente (isso agora passa por
+ * `campaign_structure` → `copy_generation` de verdade). Sem CTA/displayTitle/sofiaBriefing
+ * pré-computados aqui: quem decide ângulo, CTA e texto da imagem agora é João/Maria reais, não
+ * mais este empacotador determinístico.
+ */
+const EDITORIAL_MEMORY_HISTORY_LIMIT = 5;
+const EDITORIAL_MEMORY_REJECTION_LIMIT = 5;
+
+/**
+ * Texto compacto pronto para prompt (mesmo padrão de `referenceContext`) com headlines/CTAs/
+ * conceitos das últimas peças aprovadas deste workspace e os motivos de rejeição recentes —
+ * propagado como `avoidRepeating` para João/Maria/Sofia (`buildStrategyInput`/`buildCopyInput`/
+ * `buildSofiaInput`). `undefined` quando não há nada a evitar ainda (workspace novo) ou quando os
+ * dois ports não foram configurados — nesse caso o comportamento é idêntico ao de antes desta
+ * memória existir.
+ */
+async function buildEditorialMemoryText(
+  deps: { contentGenerationHistory?: ContentGenerationHistoryPort; qualityFeedback?: QualityFeedbackPort },
+  workspaceId: string,
+): Promise<string | undefined> {
+  const parts: string[] = [];
+
+  if (deps.contentGenerationHistory) {
+    const recent = await deps.contentGenerationHistory.getRecentForWorkspace(workspaceId, EDITORIAL_MEMORY_HISTORY_LIMIT);
+    const headlines = recent.map((entry) => entry.headline).filter((value): value is string => Boolean(value?.trim()));
+    const ctas = [...new Set(recent.map((entry) => entry.cta).filter((value): value is string => Boolean(value?.trim())))];
+    const concepts = recent.map((entry) => entry.visualConcept).filter((value): value is string => Boolean(value?.trim()));
+    if (headlines.length) parts.push(`Headlines recentes já usadas (não repetir): ${headlines.join(" | ")}.`);
+    if (ctas.length) parts.push(`CTAs recentes já usados (variar): ${ctas.join(" | ")}.`);
+    if (concepts.length) parts.push(`Conceitos visuais recentes já usados (não repetir enquadramento/composição): ${concepts.join(" | ")}.`);
+  }
+
+  if (deps.qualityFeedback) {
+    const signals = await deps.qualityFeedback.getRecentRejectionSignalsForWorkspace(workspaceId, EDITORIAL_MEMORY_REJECTION_LIMIT);
+    if (signals.recurringReasons.length) parts.push(`O usuário já rejeitou peças recentes por: ${signals.recurringReasons.join(", ")}.`);
+    if (signals.comments.length) parts.push(`Comentários de rejeição recentes: ${signals.comments.slice(0, 3).join(" | ")}.`);
+  }
+
+  return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
 function buildContentBriefStructure(validatedInputs: Record<string, string>): Record<string, unknown> {
   const objective = stringValue(validatedInputs.objective, "Criar peça visual atrativa.");
   const offerOrSubject = stringValue(validatedInputs.offerOrSubject, objective);
   // Descrição derivada por visão computacional das imagens de referência anexadas na ideia (ver
   // `generate-visual-from-idea.ts`, `describeReferenceImages`) — sem isto, a IA nunca sabia o que
   // as imagens de referência mostravam (ex.: "tênis unissex"), só o texto da ideia. Dobrado em
-  // `offerOrSubject`/`objective` porque são exatamente os campos que `buildSofiaInput`
-  // (`real-skill-execution-handlers.ts`) usa como `visualObjective`/`angle` — a base real da cena
-  // que Sofia descreve para Pedro.
+  // `offerOrSubject` porque é exatamente o campo que `buildStrategyInput` usa como parte do
+  // `originalRequest` real entregue a João.
   const referenceContext = validatedInputs.referenceContext?.trim();
   const subject = referenceContext ? `${offerOrSubject} (referência visual: ${referenceContext})` : offerOrSubject;
   const targetAudience = stringValue(validatedInputs.targetAudience, "público principal do workspace");
   const channel = stringValue(validatedInputs.channel, "instagram");
   const format = stringValue(validatedInputs.contentFormat, "image");
-  const centralPromise = `${subject} — ${objective}`;
-  // Escrito por IA (`OpenAiCopywriter`, ver `generate-visual-from-idea.ts`) — nunca o texto bruto
-  // que o usuário digitou como ideia/sugestão (achado ao vivo: "não era pra ser aplicado
-  // exatamente o que escrevi"). `adTitle` vira o único texto autorizado na própria imagem
-  // (`displayTitle`/`buildPedroInput`); `adDescription` é a legenda pronta pra postar, exposta só
-  // no artefato para a tela de Revisão mostrar — nunca chega no prompt de imagem. Cai para
-  // `offerOrSubject` bruto só se a chamada de copy falhar (best-effort, nunca trava a geração).
-  const adTitle = validatedInputs.adTitle?.trim() || offerOrSubject.slice(0, 50);
-  const adDescription = validatedInputs.adDescription?.trim() || objective;
   return {
-    overallStrategy: `Gerar peça visual para "${subject}" com foco em: ${objective}.`,
     objective,
+    offerOrSubject: subject,
     targetAudience,
     channel,
     format,
-    // Vira o único texto autorizado que Pedro pode escrever na peça (ver
-    // `buildPedroInput`/`extractVisibleTextContext`). Sem isto, ou é texto nenhum, ou o modelo
-    // inventa CTA/headline por conta própria — as duas coisas já dando problema ao vivo.
-    displayTitle: adTitle,
-    adDescription,
-    toneOfVoice: "claro e persuasivo",
-    angle: subject,
-    centralPromise,
-    valueProposition: subject,
-    keyMessages: [objective, subject].filter((value, index, all) => Boolean(value) && all.indexOf(value) === index),
-    // Nunca "Saiba mais" (ou qualquer CTA de verdade) aqui — este valor propaga verbatim para
-    // Sofia E Bianca (as duas recebem `joaoStrategy` inteiro), e sem uma etapa de copy real
-    // autorizando um CTA de verdade, qualquer texto aqui vira botão/texto renderizado na imagem
-    // (achado ao vivo: "Saiba mais" apareceu na peça sem que ninguém tivesse pedido). Ver também
-    // `suppressUnauthorizedCta` (rede de segurança adicional no output final de Bianca).
-    recommendedCta: NO_CTA_INSTRUCTION,
     recommendedSlideCount: format === "carousel" ? 4 : undefined,
-    sofiaBriefing: {
-      status: "ready",
-      channel,
-      format,
-      angle: subject,
-      centralPromise,
-      keyMessages: [objective],
-      visualDirectionNotes: [] as string[],
-      brandIdentityNotes: [] as string[],
-      notes: ["Peça gerada a partir de uma ideia real informada pelo usuário — sem etapa de pesquisa/estratégia."],
-    },
   };
 }
 
@@ -312,15 +509,29 @@ function buildResearchInput(request: ExecutionTaskHandlerRequest): Record<string
   };
 }
 
+/**
+ * `context` para `campaign_creation` vem sempre de `research` (Eduardo — forma "editorial brief":
+ * `campaignObjective`/`recommendedFormatLabel`/`recommendedChannel`). Para `content_request`,
+ * `context` vem de `content_brief` (forma flat: `objective`/`channel`/`format`, sem etapa de
+ * pesquisa) — o `??` cai para essa forma sem alterar em nada o caminho de `campaign_creation`,
+ * onde `recommendedFormatLabel`/`campaignObjective` sempre existem.
+ */
 function buildStrategyInput(request: ExecutionTaskHandlerRequest): Record<string, unknown> {
-  const editorialBrief = unwrapExecutionPayload(firstPayload(request.inputs, "context"));
+  const upstream = unwrapExecutionPayload(firstPayload(request.inputs, "context"));
+  const isEditorialBrief = typeof upstream.recommendedFormatLabel === "string" && typeof upstream.campaignObjective === "string";
+  const flatSubject = stringValue(upstream.offerOrSubject, "");
+  const flatObjective = stringValue(upstream.objective, "");
+  const originalRequest = isEditorialBrief
+    ? "Execution real controlada a partir de RuntimePlan validado."
+    : [flatSubject, flatObjective].filter(Boolean).join(" — ") || "Execution real controlada a partir de RuntimePlan validado.";
   return {
     ...baseInput(request),
-    originalRequest: "Execution real controlada a partir de RuntimePlan validado.",
-    desiredChannel: stringValue(editorialBrief.recommendedChannel, "instagram"),
-    desiredFormat: stringValue(editorialBrief.recommendedFormatLabel, "carrossel"),
-    desiredObjective: stringValue(editorialBrief.campaignObjective, "Criar campanha de marketing."),
-    editorialBrief,
+    originalRequest,
+    desiredChannel: stringValue(upstream.recommendedChannel ?? upstream.channel, "instagram"),
+    desiredFormat: stringValue(upstream.recommendedFormatLabel ?? upstream.format, "carrossel"),
+    desiredObjective: stringValue(upstream.campaignObjective ?? upstream.objective, "Criar campanha de marketing."),
+    editorialBrief: isEditorialBrief ? upstream : undefined,
+    avoidRepeating: typeof upstream.editorialMemory === "string" ? upstream.editorialMemory : undefined,
   };
 }
 
@@ -340,7 +551,12 @@ function buildCopyInput(request: ExecutionTaskHandlerRequest): Record<string, un
     mandatoryWords: stringArray(briefing.mandatoryWords),
     preferredHashtags: stringArray(briefing.preferredHashtags),
     language: "pt-BR",
-    additionalContext: JSON.stringify({ executionRunId: request.context.executionRunId }),
+    // João já monta `mariaBriefing.marketingObjective`/`.additionalContext` (com a orientação
+    // estrutural por objetivo) — antes disto, `additionalContext` era sobrescrito por um JSON sem
+    // valor nenhum pra Maria, descartando o texto real que João preparou.
+    marketingObjective: valueOrUndefined(briefing.marketingObjective ?? strategy.marketingObjective),
+    avoidRepeating: typeof strategy.editorialMemory === "string" ? strategy.editorialMemory : undefined,
+    additionalContext: stringValue(briefing.additionalContext, JSON.stringify({ executionRunId: request.context.executionRunId })),
   };
 }
 
@@ -369,17 +585,27 @@ function buildBiancaInput(request: ExecutionTaskHandlerRequest, strategy: Record
   };
 }
 
-function buildPedroInput(request: ExecutionTaskHandlerRequest, strategy: Record<string, unknown>, bianca: Record<string, unknown>): Record<string, unknown> {
+function buildPedroInput(request: ExecutionTaskHandlerRequest, strategy: Record<string, unknown>, copy: Record<string, unknown>, bianca: Record<string, unknown>): Record<string, unknown> {
   const imageCount = numberValue(strategy.recommendedSlideCount, 1) ?? 1;
-  const displayTitle = stringValue(strategy.displayTitle, "");
+  // `imageHeadline` (Maria, requisito de "separar as funções de cada texto") é o texto CURTO
+  // pensado especificamente para dentro da imagem — nunca o título do post, nunca a legenda.
+  // Fallback pra `title`/`displayTitle` só quando `imageHeadline` não veio (copy ausente —
+  // `campaign_creation`, onde copy/visual rodam em paralelo — ou provider de IA não retornou o
+  // campo novo).
+  const headline = stringValue(copy.imageHeadline ?? copy.title ?? strategy.displayTitle, "");
   const base = baseInput(request);
   return {
     ...base,
     // `extractVisibleTextContext` (pedro-image-generation.skill.ts) só trata um texto como
     // "autorizado" se estiver aqui — sem isto, `hasAuthorizedVisibleText` fica falso e a peça sai
-    // sem nenhum texto (ou, pior, o modelo inventa um CTA sozinho). Só `title`, de propósito — sem
-    // `cta`, pra não reabrir o problema do botão inventado ("Saiba mais").
-    workflowContext: { ...normalizeObject(base.workflowContext), ...(displayTitle ? { title: displayTitle } : {}) },
+    // sem nenhum texto (ou, pior, o modelo inventa um CTA sozinho). Só headline, de propósito — sem
+    // `cta`, pra não reabrir o problema do botão inventado ("Saiba mais"). `workflowContext.headline`
+    // (não `.title`) porque `extractVisibleTextContext` dá prioridade mais alta a `context.title`/
+    // `.copyTitle` — usar uma chave diferente evita colidir com essa prioridade. Deliberadamente
+    // NUNCA passa `workflowContext.mariaCopy` — essa função lê `mariaCopy?.cta` como último
+    // fallback de "CTA autorizado" (`extractVisibleTextContext`), então repassar a copy inteira
+    // reabriria o botão inventado que motivou suprimir o CTA da imagem.
+    workflowContext: { ...normalizeObject(base.workflowContext), ...(headline ? { headline } : {}) },
     originalRequest: "Execution real controlada a partir de RuntimePlan validado.",
     biancaDesign: bianca,
     biancaPedroBriefing: normalizeObject(bianca.pedroBriefing),
@@ -467,6 +693,10 @@ function normalizeObject(value: unknown): Record<string, unknown> {
 
 function stringValue(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function valueOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 function stringArray(value: unknown): string[] {

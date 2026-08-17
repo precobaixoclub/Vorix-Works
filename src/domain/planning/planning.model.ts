@@ -93,7 +93,12 @@ export type ExecutionCapability = (typeof EXECUTION_CAPABILITIES)[number];
 // ExecutionTask
 // -------------------------------------------------------------------------------------------
 
-export const TASK_TYPES = ["research", "campaign_structure", "copy_generation", "visual_generation", "approval", "publication", "content_brief"] as const;
+/** "quality_review" acrescentado nesta sprint — roda o skill Lucas (capability já existente
+ * "human_review", nunca antes exercitada — ver capability-mapping.ts) entre `visual_generation` e
+ * `approval` no template `content_request-visual-only-v2` (arthur-planner.ts). `taskType ===
+ * "approval"` é hardcoded no motor de execução para pausar e criar gate (execution-engine.ts) —
+ * por isso o quality gate precisa de um TaskType próprio, não pode reaproveitar "approval". */
+export const TASK_TYPES = ["research", "campaign_structure", "copy_generation", "visual_generation", "approval", "publication", "content_brief", "quality_review"] as const;
 export type TaskType = (typeof TASK_TYPES)[number];
 
 /** Único valor alcançável nesta sprint — nada é executado, então nenhuma tarefa nunca sai de

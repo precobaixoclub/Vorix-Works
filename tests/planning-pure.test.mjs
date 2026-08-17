@@ -12,7 +12,7 @@ import { GRAPH_VERSION, PLANNER_STRATEGY, PLANNER_VERSION, planFromPreparedComma
 
 test("templates: campaign_creation e content_request têm template registrado", () => {
   assert.equal(getPlanningTemplateId("campaign_creation"), "campaign_creation-standard-pipeline-v1");
-  assert.equal(getPlanningTemplateId("content_request"), "content_request-visual-only-v1");
+  assert.equal(getPlanningTemplateId("content_request"), "content_request-visual-only-v2");
   assert.equal(getPlanningTemplateId("knowledge_query"), undefined);
   assert.equal(Object.keys(PLANNING_TEMPLATES_BY_PREPARED_COMMAND_TYPE).length, 2);
 });

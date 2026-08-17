@@ -93,6 +93,12 @@ const contentBriefOutputSchema = baseSkillOutput.extend({
   format: z.string().min(1),
 });
 
+const qualityReviewOutputSchema = baseSkillOutput.extend({
+  reviewStatus: z.string().min(1),
+  overallScore: z.number(),
+  approvalRecommended: z.boolean(),
+});
+
 const distributionOutputSchema = baseSkillOutput.extend({
   overallStatus: z.string().min(1),
   publishMode: z.literal("dry_run"),
@@ -256,6 +262,21 @@ export const DEFAULT_EXECUTION_CONTRACTS: readonly ExecutionContract[] = [
     optionalFields: ["targetAudience", "offerOrSubject", "recommendedSlideCount"],
     sideEffectPolicy: "external_read",
     skillCapabilities: [],
+  }),
+  contract({
+    schemaId: "quality_review.review",
+    capability: "human_review",
+    taskType: "quality_review",
+    inputPort: "visual",
+    outputPort: "review",
+    artifactType: "document",
+    cardinality: { min: 1, max: 1 },
+    acceptedArtifactTypes: ["image", "video", "carousel"],
+    skillOutputSchema: qualityReviewOutputSchema,
+    requiredFields: ["reviewStatus", "overallScore", "approvalRecommended"],
+    optionalFields: ["issues", "suggestions", "checklist"],
+    sideEffectPolicy: "external_read",
+    skillCapabilities: ["quality_review"],
   }),
   contract({
     schemaId: "publication.manifest",

@@ -15,6 +15,8 @@ import type { CredentialRepositoryPort } from "../../application/ports/credentia
 import type { ExecutionGraphRepositoryPort } from "../../application/ports/execution-graph-repository.port.js";
 import type { ExecutionRepositoryPort } from "../../application/ports/execution-repository.port.js";
 import type { ExecutionTaskRepositoryPort } from "../../application/ports/execution-task-repository.port.js";
+import type { ContentGenerationHistoryPort } from "../../application/ports/content-generation-history.port.js";
+import type { QualityFeedbackRepositoryPort } from "../../application/quality-feedback/quality-feedback-repository.port.js";
 import type { OperationalAuditRepositoryPort } from "../../application/ports/operational-audit-repository.port.js";
 import type { OperationalStateRepositoryPort } from "../../application/ports/operational-state-repository.port.js";
 import type { PlanningArtifactRepositoryPort } from "../../application/ports/planning-artifact-repository.port.js";
@@ -31,6 +33,8 @@ import { createNotConnectedCompanyKnowledgeSource } from "../briefing/not-connec
 import { InMemoryAiExecutionRepository } from "./in-memory-ai-execution-repository.js";
 import { InMemoryAnalyticsRepository } from "./in-memory-analytics-repository.js";
 import { InMemoryAssetLibraryRepository } from "./in-memory-asset-library-repository.js";
+import { InMemoryContentGenerationHistoryRepository } from "./in-memory-content-generation-history-repository.js";
+import { InMemoryQualityFeedbackRepository } from "./in-memory-quality-feedback-repository.js";
 import { InMemoryBriefingFieldValueRepository } from "./in-memory-briefing-field-value-repository.js";
 import { InMemoryBriefingQuestionRepository } from "./in-memory-briefing-question-repository.js";
 import { InMemoryBriefingRepository } from "./in-memory-briefing-repository.js";
@@ -56,6 +60,8 @@ import { InMemoryWorkspaceRepository } from "./in-memory-workspace-repository.js
 import { PostgresAiExecutionRepository } from "./postgres/postgres-ai-execution-repository.js";
 import { PostgresAnalyticsRepository } from "./postgres/postgres-analytics-repository.js";
 import { PostgresAssetLibraryRepository } from "./postgres/postgres-asset-library-repository.js";
+import { PostgresContentGenerationHistoryRepository } from "./postgres/postgres-content-generation-history-repository.js";
+import { PostgresQualityFeedbackRepository } from "./postgres/postgres-quality-feedback-repository.js";
 import { PostgresBriefingFieldValueRepository } from "./postgres/postgres-briefing-field-value-repository.js";
 import { PostgresBriefingQuestionRepository } from "./postgres/postgres-briefing-question-repository.js";
 import { PostgresBriefingRepository } from "./postgres/postgres-briefing-repository.js";
@@ -122,6 +128,10 @@ export type PlatformRepositories = {
   analyticsRepository: AnalyticsRepositoryPort;
   /** Sprint 23 — estado operacional transversal, sem pertencer a Publication/Scheduling/Analytics. */
   operationalStateRepository: OperationalStateRepositoryPort;
+  /** Memória editorial (peças aprovadas recentes) + feedback de qualidade (avaliações/rejeições) —
+   * ver `ContentBriefExecutionTaskHandler`/`QualityGateExecutionTaskHandler`. */
+  contentGenerationHistoryRepository: ContentGenerationHistoryPort;
+  qualityFeedbackRepository: QualityFeedbackRepositoryPort;
   /** Só existe quando `driver === "postgres"` — quem chama esta função é responsável por fechar (`pool.end()`) no shutdown. */
   pool?: InstanceType<typeof Pool>;
 };
@@ -168,6 +178,8 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       schedulingRepository: new InMemorySchedulingRepository(),
       analyticsRepository: new InMemoryAnalyticsRepository(),
       operationalStateRepository: new InMemoryOperationalStateRepository(),
+      contentGenerationHistoryRepository: new InMemoryContentGenerationHistoryRepository(),
+      qualityFeedbackRepository: new InMemoryQualityFeedbackRepository(),
     };
   }
 
@@ -206,6 +218,8 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     schedulingRepository: new PostgresSchedulingRepository(pool),
     analyticsRepository: new PostgresAnalyticsRepository(pool),
     operationalStateRepository: new PostgresOperationalStateRepository(pool),
+    contentGenerationHistoryRepository: new PostgresContentGenerationHistoryRepository(pool),
+    qualityFeedbackRepository: new PostgresQualityFeedbackRepository(pool),
     pool,
   };
 }

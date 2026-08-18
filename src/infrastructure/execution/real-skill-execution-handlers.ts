@@ -13,6 +13,8 @@ import type { SkillArtifact, SkillResponse } from "../../domain/skills/skill.con
 import type { ExecutionCapability, TaskType } from "../../domain/planning/planning.model.js";
 import { compositeLogoOntoImage, type LogoCorner } from "../media/logo-compositor.js";
 import { parseReferenceIntelligence, type ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
+import { RENDERER_OWNED_ZONE_TYPES, type AdLayoutSpec, type AdLayoutZoneType, type PerformanceCreativePlan } from "../../shared/utils/ad-layout.types.js";
+import { renderAdCreativeOverlay } from "../rendering/ad-creative-renderer.js";
 
 type SkillCallResult = {
   output: Record<string, unknown>;
@@ -105,20 +107,30 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       // então é lida direto do banco aqui — best-effort, nunca trava a geração.
       const referenceImageUrl = await lookupReferenceImageUrl(this.deps, request).catch(() => undefined);
       const sofia = await callSkill(this.deps.helena, "art_direction", buildSofiaInput(request, structure), request);
-      const bianca = await callSkill(this.deps.helena, "social_media_design", buildBiancaInput(request, structure, sofia.output), request);
+      const bianca = await callSkill(this.deps.helena, "social_media_design", buildBiancaInput(request, structure, sofia.output, copy), request);
       const pedro = await callSkill(this.deps.helena, "image_generation", buildPedroInput(request, structure, copy, suppressUnauthorizedCta(bianca.output), referenceImageUrl), request);
+      // Performance Creative Engine (Fase 7): compõe preço/desconto/headline/CTA/etc como pixels
+      // reais sobre a imagem do Pedro, ANTES da logo — best-effort por imagem (uma falha aqui
+      // nunca derruba a geração inteira), mas deliberadamente NUNCA volta a deixar o modelo
+      // desenhar esses elementos como fallback (o Pedro já foi instruído a deixar essas áreas
+      // limpas, ver `buildCleanZoneInstruction`) — uma falha aqui produz uma imagem visivelmente
+      // incompleta (sem preço/CTA), nunca uma imagem com um valor comercial errado ou inventado.
+      const overlayResult = await applyAdCreativeOverlay(this.deps, request, pedro.output, bianca.output).catch((error) => ({
+        output: pedro.output,
+        warnings: [`Não foi possível compor os elementos comerciais determinísticos: ${error instanceof Error ? error.message : "erro desconhecido"}.`],
+      }));
       // Logo real colada por cima (requisito "não foi aplicada a logo") — Sofia/Bianca já sabem a
       // cor/estilo da marca (contexto pro modelo), mas a IA nunca desenha o arquivo da logo em si
       // com fidelidade; isto cola o arquivo de verdade, best-effort (nunca derruba a geração se a
       // logo não estiver cadastrada ou o download/composição falhar).
-      const logoResult = await applyLogoToGeneratedImages(this.deps, request, pedro.output, bianca.output).catch((error) => ({
-        output: pedro.output,
+      const logoResult = await applyLogoToGeneratedImages(this.deps, request, overlayResult.output, bianca.output).catch((error) => ({
+        output: overlayResult.output,
         warnings: [`Não foi possível aplicar a logo: ${error instanceof Error ? error.message : "erro desconhecido"}.`],
       }));
       const finalPedroOutput = logoResult.output;
       const invalid = validateOutputContract(contract, finalPedroOutput);
       if (invalid) return failure("SKILL_OUTPUT_SCHEMA_INVALID", invalid, "invalid_output");
-      const warnings = [...sofia.warnings, ...bianca.warnings, ...pedro.warnings, ...logoResult.warnings];
+      const warnings = [...sofia.warnings, ...bianca.warnings, ...pedro.warnings, ...overlayResult.warnings, ...logoResult.warnings];
       return {
         ok: true,
         value: {
@@ -152,6 +164,52 @@ async function lookupReferenceImageUrl(
   if (!runtimePlan) return undefined;
   const preparedCommand = await deps.preparedCommandRepository.getById(runtimePlan.sourceContext.preparedCommandId);
   return preparedCommand?.validatedInputs.referenceImageUrl?.trim() || undefined;
+}
+
+/**
+ * Performance Creative Engine (Fase 7): baixa cada imagem gerada pelo Pedro e compõe as zonas
+ * "renderer-owned" de `adLayoutSpec` (preço, desconto, headline, CTA, avaliação, prova social,
+ * benefícios, specs, badge) como pixels reais, via `renderAdCreativeOverlay`. Só roda quando
+ * Bianca produziu `performanceCreativePlan`/`adLayoutSpec` (ausência = mesmo comportamento de
+ * antes desta funcionalidade existir, texto continua saindo do modelo). Anexa
+ * `typographyGeometry` a cada imagem — insumo determinístico do quality gate de tipografia do
+ * Lucas (Fase 16), sem precisar de nenhuma chamada de IA.
+ */
+async function applyAdCreativeOverlay(
+  deps: { objectStorage?: ObjectStoragePort },
+  request: ExecutionTaskHandlerRequest,
+  pedroOutput: Record<string, unknown>,
+  biancaOutput: Record<string, unknown>,
+): Promise<{ output: Record<string, unknown>; warnings: string[] }> {
+  const plan = biancaOutput.performanceCreativePlan as PerformanceCreativePlan | undefined;
+  const adLayoutSpec = biancaOutput.adLayoutSpec as AdLayoutSpec | undefined;
+  if (!deps.objectStorage || !plan || !adLayoutSpec) return { output: pedroOutput, warnings: [] };
+  const images = Array.isArray(pedroOutput.images) ? (pedroOutput.images as Record<string, unknown>[]) : [];
+  if (images.length === 0) return { output: pedroOutput, warnings: [] };
+
+  const palette = Array.isArray(biancaOutput.suggestedPalette) ? (biancaOutput.suggestedPalette as unknown[]).filter((color): color is string => typeof color === "string") : [];
+  const brandColors = palette.length > 0 ? { accentColor: palette[0] } : undefined;
+
+  const warnings: string[] = [];
+  const updatedImages: Record<string, unknown>[] = [];
+  for (const image of images) {
+    const uri = typeof image.uri === "string" ? image.uri : undefined;
+    if (!uri) {
+      updatedImages.push(image);
+      continue;
+    }
+    try {
+      const imageBuffer = await fetchAsBuffer(uri);
+      const result = await renderAdCreativeOverlay({ baseImageBuffer: imageBuffer, adLayoutSpec, plan, brandColors });
+      const key = `ai-generated/${request.context.tenantId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-overlay.png`;
+      const uploaded = await deps.objectStorage.put({ key, body: result.buffer, contentType: "image/png" });
+      updatedImages.push({ ...image, uri: uploaded.url, typographyGeometry: result.typographyGeometry });
+    } catch (error) {
+      warnings.push(`Não foi possível compor os elementos comerciais determinísticos numa das imagens: ${error instanceof Error ? error.message : "erro desconhecido"}.`);
+      updatedImages.push(image);
+    }
+  }
+  return { output: { ...pedroOutput, images: updatedImages }, warnings };
 }
 
 /**
@@ -364,11 +422,17 @@ function buildLucasInput(
   const copyQuality = normalizeObject(copy.quality);
   const creativeBrief = normalizeObject(structure.creativeBrief);
   const base = baseInput(request);
+  // Geometria exata que o renderer determinístico usou (Performance Creative Engine, Fase 16) —
+  // só a primeira imagem por ora (peça única é o caso comum; carrossel fica pra uma rodada
+  // futura). Ausente quando o overlay não rodou nesta geração (mesmo comportamento de antes).
+  const firstImage = Array.isArray(visualOutput.images) ? (visualOutput.images as Record<string, unknown>[])[0] : undefined;
+  const typographyGeometry = Array.isArray(firstImage?.typographyGeometry) ? firstImage.typographyGeometry : undefined;
 
   return {
     ...base,
     workflowContext: { ...normalizeObject(base.workflowContext), ...(referenceImageUrl ? { referenceImageUrl } : {}) },
     originalRequest: "Execution real controlada a partir de RuntimePlan validado.",
+    typographyGeometry,
     joaoStrategy: {
       objective: stringValue(structure.objective, ""),
       targetAudience: stringValue(structure.targetAudience, ""),
@@ -758,17 +822,60 @@ function buildSofiaInput(request: ExecutionTaskHandlerRequest, strategy: Record<
   };
 }
 
-function buildBiancaInput(request: ExecutionTaskHandlerRequest, strategy: Record<string, unknown>, sofia: Record<string, unknown>): Record<string, unknown> {
+function buildBiancaInput(request: ExecutionTaskHandlerRequest, strategy: Record<string, unknown>, sofia: Record<string, unknown>, copy: Record<string, unknown>): Record<string, unknown> {
+  const hasCopy = Object.keys(copy).length > 0;
   return {
     ...baseInput(request),
     originalRequest: "Execution real controlada a partir de RuntimePlan validado.",
     joaoStrategy: strategy,
     sofiaDirection: sofia,
     sofiaBriefing: normalizeObject(sofia.biancaBriefing),
+    // Requisito do Performance Creative Engine (Fase 2): Bianca precisa da copy real da Maria pra
+    // montar `performanceCreativePlan`/`adLayoutSpec` — antes disto ela nunca recebia `copy`.
+    // Ausente em `campaign_creation` (copy/visual rodam em paralelo lá) — `hasCopy` reflete isso,
+    // igual ao resto deste handler nunca fingir dado que não existe.
+    mariaCopy: hasCopy ? {
+      title: stringValue(copy.title, ""),
+      cta: stringValue(copy.cta, ""),
+      imageHeadline: valueOrUndefined(copy.imageHeadline),
+      claims: Array.isArray(copy.claims) ? copy.claims : undefined,
+    } : undefined,
     channel: stringValue(strategy.channel, "instagram"),
     format: stringValue(strategy.format, "carrossel"),
     recommendedSlideCount: numberValue(strategy.recommendedSlideCount, undefined),
   };
+}
+
+const ZONE_TYPE_LABEL: Record<AdLayoutZoneType, string> = {
+  price: "o preço",
+  discount: "o selo de desconto",
+  headline: "a manchete/título",
+  cta: "o botão de chamada para ação",
+  rating: "a avaliação",
+  salesProof: "a prova social/quantidade vendida",
+  benefits: "a lista de benefícios",
+  specs: "as especificações",
+  badge: "o selo de urgência/promoção",
+  logo: "a logo",
+  heroProduct: "o produto",
+};
+
+function describeZonePosition(position: AdLayoutSpec["zones"][number]["position"]): string {
+  const verticalThird = position.yPct < 33 ? "superior" : position.yPct < 66 ? "central" : "inferior";
+  const horizontalThird = position.xPct < 33 ? "esquerda" : position.xPct < 66 ? "central" : "direita";
+  return `região ${verticalThird}-${horizontalThird} (${Math.round(position.xPct)}-${Math.round(position.xPct + position.widthPct)}% da largura, ${Math.round(position.yPct)}-${Math.round(position.yPct + position.heightPct)}% da altura)`;
+}
+
+/** Fase 7: instrução em linguagem natural pro Pedro deixar as zonas "renderer-owned" visualmente
+ * limpas — sem texto, sem elemento gráfico pesado, sem alto contraste — porque o renderer
+ * determinístico (`ad-creative-renderer.ts`) vai compor preço/desconto/CTA/etc ali depois, como
+ * pixels reais. `undefined` quando não há nenhuma zona renderer-owned com conteúdo (nada a
+ * comunicar ao Pedro, comportamento idêntico a antes desta funcionalidade existir). */
+function buildCleanZoneInstruction(adLayoutSpec: AdLayoutSpec): string | undefined {
+  const ownedZones = adLayoutSpec.zones.filter((zone) => RENDERER_OWNED_ZONE_TYPES.includes(zone.type));
+  if (ownedZones.length === 0) return undefined;
+  const descriptions = ownedZones.map((zone) => `${ZONE_TYPE_LABEL[zone.type]} na ${describeZonePosition(zone.position)}`);
+  return descriptions.join("; ");
 }
 
 function buildPedroInput(
@@ -784,7 +891,15 @@ function buildPedroInput(
   // Fallback pra `title`/`displayTitle` só quando `imageHeadline` não veio (copy ausente —
   // `campaign_creation`, onde copy/visual rodam em paralelo — ou provider de IA não retornou o
   // campo novo).
-  const headline = stringValue(copy.imageHeadline ?? copy.title ?? strategy.displayTitle, "");
+  // Performance Creative Engine (Fase 7): quando existe `adLayoutSpec` com ao menos uma zona
+  // "renderer-owned" com conteúdo real, o headline passa a ser desenhado pelo renderer
+  // determinístico (`ad-creative-renderer.ts`), NUNCA mais pelo modelo — repassar `headline` pro
+  // Pedro aqui faria os dois desenharem o mesmo texto (ou textos conflitantes). Suprimir aqui é o
+  // mesmo raciocínio de `suppressUnauthorizedCta`, um degrau antes na cadeia.
+  const adLayoutSpec = bianca.adLayoutSpec as AdLayoutSpec | undefined;
+  const rendererOwnsHeadline = Boolean(adLayoutSpec?.zones.some((zone) => zone.type === "headline"));
+  const headline = rendererOwnsHeadline ? "" : stringValue(copy.imageHeadline ?? copy.title ?? strategy.displayTitle, "");
+  const cleanZoneInstruction = adLayoutSpec ? buildCleanZoneInstruction(adLayoutSpec) : undefined;
   const base = baseInput(request);
   return {
     ...base,
@@ -801,11 +916,14 @@ function buildPedroInput(
     // verdade, não só uma descrição em texto dela. `referenceIntelligence` (repassado de
     // `strategy.referenceIntelligence`, que João já carrega no próprio output) vira a guarda de
     // fidelidade de produto — ver `pedro-image-generation.skill.ts`/`openai-icaro-image-provider.ts`.
+    // `cleanZoneInstruction` diz ao Pedro onde NÃO colocar texto/elementos gráficos pesados —
+    // essas áreas vão ser preenchidas depois pelo renderer determinístico.
     workflowContext: {
       ...normalizeObject(base.workflowContext),
       ...(headline ? { headline } : {}),
       ...(referenceImageUrl ? { referenceImageUrl } : {}),
       ...(strategy.referenceIntelligence ? { referenceIntelligence: strategy.referenceIntelligence } : {}),
+      ...(cleanZoneInstruction ? { cleanZoneInstruction } : {}),
     },
     originalRequest: "Execution real controlada a partir de RuntimePlan validado.",
     biancaDesign: bianca,

@@ -592,6 +592,7 @@ test("Ciclo orgânico roda de ponta a ponta por Arthur -> Caio -> Helena -> Skil
         "bianca-social-media-design",
         "pedro-image-generation",
         "lucas-quality-review",
+        "lucas-quality-review",
       ],
     );
     assert.equal(icaro.calls.find((call) => call.specialistId === "pedro-image-generation").taskType, "image_generation");

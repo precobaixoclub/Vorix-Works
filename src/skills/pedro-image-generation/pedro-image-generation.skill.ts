@@ -318,6 +318,11 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
           // `authorizedBrandColors` — uma menção perdida no meio do prompt de 100k+ caracteres não
           // sobrevive ao corte de 31000 antes de chegar na OpenAI).
           referenceProductFidelity: buildReferenceProductFidelityText(request.input.workflowContext?.referenceIntelligence),
+          // Performance Creative Engine (Fase 7): zonas que o renderer determinístico vai
+          // preencher depois (preço, desconto, headline, CTA, etc.) — o Pedro precisa deixar essas
+          // áreas visualmente limpas em vez de desenhar texto nelas. Mesmo motivo estrutural dos
+          // guards acima.
+          authorizedCleanZones: typeof request.input.workflowContext?.cleanZoneInstruction === "string" ? request.input.workflowContext.cleanZoneInstruction : undefined,
         },
         constraints: [
           "Retornar apenas JSON válido.",

@@ -15,6 +15,7 @@ import { MIN_ACCEPTABLE_HUMAN_COVERAGE, MIN_ACCEPTABLE_ASSET_VARIETY } from "../
 import { detectGenericPhrases } from "../../shared/utils/generic-phrase-detector.js";
 import { detectUnconfirmedCommercialClaims } from "../../shared/utils/commercial-hallucination-detector.js";
 import { hasStrongCommercialFact } from "../../shared/utils/reference-intelligence.types.js";
+import { computeContrastRatio } from "../../shared/utils/color-contrast.js";
 import { lucasQualityReviewManifest } from "./lucas.manifest.js";
 import type { LucasLogAction, LucasLoggerPort } from "./lucas-log.contract.js";
 import type {
@@ -81,6 +82,10 @@ const BLOCKING_ISSUE_CODES = new Set<LucasIssueCode>([
   // independente da nota agregada.
   "PRODUCT_FIDELITY_MISMATCH",
   "COMMERCIAL_HALLUCINATION_DETECTED",
+  // Typography Quality Gate (Fase 16) — texto cortado ou ilegível por baixo contraste é defeito
+  // objetivo, calculado a partir da geometria REAL do renderer, nunca opinião de IA.
+  "TYPOGRAPHY_TEXT_CLIPPED",
+  "TYPOGRAPHY_CONTRAST_LOW",
 ]);
 
 const SEVERITY_PENALTY: Record<LucasIssueSeverity, number> = {
@@ -280,12 +285,14 @@ export class LucasQualityReviewSkill implements Skill<LucasQualityReviewRequestI
     // `icaro`, sem `referenceIntelligence` ou sem imagem gerada, fica `undefined` — "não verificado"
     // nunca é tratado como "reprovado".
     const productFidelityVerdict = await this.checkProductFidelity(request);
+    // Visual Composition Quality Gate (Fase 17) — mesma passada, mesmo raciocínio best-effort.
+    const visualCompositionVerdict = await this.checkVisualComposition(request);
 
     let review = buildBaselineReview(request.input, claraContext, {
       approvalScoreThreshold: this.approvalScoreThreshold,
       warningScoreThreshold: this.warningScoreThreshold,
       adjustmentScoreThreshold: this.adjustmentScoreThreshold,
-    }, productFidelityVerdict);
+    }, productFidelityVerdict, visualCompositionVerdict);
 
     await this.log("ChecklistValidated", "Checklist de revisão validado.", request, {
       clientId: tenant.clientId,
@@ -459,6 +466,52 @@ export class LucasQualityReviewSkill implements Skill<LucasQualityReviewRequestI
     }
   }
 
+  /**
+   * Visual Composition Quality Gate (Fase 17): olha a imagem final de verdade e julga hierarquia,
+   * equilíbrio, contraste, protagonismo do produto, excesso de elementos, alinhamento,
+   * espaçamento, coerência de paleta, legibilidade e profissionalismo — não fidelidade factual
+   * (isso é `checkProductFidelity`), julgamento visual/estético. Mesmo padrão best-effort: qualquer
+   * falha devolve `undefined`, nunca reprova por conta própria — só um veredito EXPLÍCITO de
+   * "não profissional" reprova. Custo/latência: mais uma chamada de visão por geração, além da
+   * checagem de fidelidade (quando ambas se aplicam).
+   */
+  private async checkVisualComposition(request: SkillRequest<LucasQualityReviewRequestInput>): Promise<{ unprofessional: boolean; reasoning?: string } | undefined> {
+    const generatedImageUrl = request.input.pedroImages?.images?.[0]?.uri;
+    if (!this.icaro || !generatedImageUrl) return undefined;
+
+    try {
+      const prompt = [
+        "Avalie a COMPOSIÇÃO VISUAL desta peça publicitária (a imagem anexada), como um diretor de arte sênior revisando antes da publicação.",
+        "Responda apenas com JSON válido, sem markdown, no formato exato: {\"unprofessional\": true|false, \"reasoning\": \"1 frase objetiva\"}.",
+        "Avalie: hierarquia visual clara, equilíbrio da composição, contraste suficiente, produto como protagonista (quando aplicável), ausência de excesso de elementos/poluição visual, alinhamento e espaçamento consistentes, paleta coerente, legibilidade geral.",
+        "\"unprofessional\": true quando a peça parece claramente amadora, desequilibrada, poluída visualmente, ou sem hierarquia perceptível em poucos segundos. \"unprofessional\": false quando a peça tem aparência de anúncio profissional produzido intencionalmente, mesmo que não seja perfeita.",
+      ].join("\n");
+
+      const response = await this.icaro.request({
+        taskType: "review",
+        prompt,
+        specialistId: this.manifest.id,
+        executionId: request.context.executionId,
+        taskId: request.context.taskId,
+        correlationId: request.context.correlationId,
+        context: { skillId: this.manifest.id, clientId: request.input.clientId },
+        imageUrls: [generatedImageUrl],
+        expectedOutput: "json",
+        priority: "quality",
+        temperature: 0.2,
+        maxTokens: 200,
+        timeoutMs: 25_000,
+      });
+
+      if (response.status !== "completed") return undefined;
+      const parsed = JSON.parse(extractJson(String(response.content ?? ""), "Lucas (composição visual)")) as { unprofessional?: unknown; reasoning?: unknown };
+      if (typeof parsed.unprofessional !== "boolean") return undefined;
+      return { unprofessional: parsed.unprofessional, reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : undefined };
+    } catch {
+      return undefined;
+    }
+  }
+
   private async log(
     action: LucasLogAction,
     message: string,
@@ -584,6 +637,7 @@ export function buildBaselineReview(
   context: ClaraContextResponse,
   thresholds: ReviewThresholds,
   productFidelityVerdict?: { mismatch: boolean; reasoning?: string },
+  visualCompositionVerdict?: { unprofessional: boolean; reasoning?: string },
 ): LucasReviewCore {
   const brand = latest(context.modules.BrandContext);
   const issues: LucasIssue[] = [];
@@ -595,9 +649,11 @@ export function buildBaselineReview(
   evaluateImages(input, issues);
   evaluateCoherence(input, issues);
   evaluateProductFidelity(productFidelityVerdict, issues);
+  evaluateVisualComposition(visualCompositionVerdict, issues);
   evaluateCommercialHallucination(input, issues);
   evaluateCommercialFactUtilization(input, issues);
   evaluateCopySpecificity(input, issues);
+  evaluateTypographyQuality(input, issues);
   evaluateTone(input, brand, issues);
   evaluateCta(input, issues);
   evaluateBrandRules(input, brand, issues);
@@ -767,6 +823,20 @@ function evaluateProductFidelity(verdict: { mismatch: boolean; reasoning?: strin
   ));
 }
 
+/** Visual Composition Quality Gate (Fase 17) — `verdict` vem de `checkVisualComposition`, já
+ * resolvido de forma best-effort antes de `buildBaselineReview`. Não-bloqueante de propósito: ao
+ * contrário de fidelidade/alucinação (fatos objetivos), "parece amador" é julgamento estético —
+ * empurra pra baixo a nota agregada em vez de reprovar automaticamente sozinho. */
+function evaluateVisualComposition(verdict: { unprofessional: boolean; reasoning?: string } | undefined, issues: LucasIssue[]): void {
+  if (!verdict?.unprofessional) return;
+  issues.push(issue(
+    "VISUAL_COMPOSITION_UNPROFESSIONAL",
+    "composition",
+    `A composição visual não parece uma peça publicitária profissional${verdict.reasoning ? `: ${verdict.reasoning}` : "."}`,
+    "high",
+  ));
+}
+
 /** Alucinação comercial: condição comercial afirmada na copy sem confirmação (estoque limitado,
  * garantia, frete grátis sem evidência, avaliações, etc.) — proibido inventar. */
 function evaluateCommercialHallucination(input: LucasQualityReviewRequestInput, issues: LucasIssue[]): void {
@@ -818,6 +888,52 @@ function evaluateCopySpecificity(input: LucasQualityReviewRequestInput, issues: 
     `Copy genérica detectada — poderia pertencer a qualquer outra empresa: "${genericPhrases[0]}".`,
     "high",
   ));
+}
+
+// PERFORMANCE CREATIVE ENGINE — Typography Quality Gate (Fase 16). Todas as checagens partem de
+// `input.typographyGeometry`, a geometria EXATA que o renderer determinístico usou por zona
+// (`ad-creative-renderer.ts`) — nunca uma estimativa de IA. Guarda de ausência única no topo:
+// sem `typographyGeometry` (Performance Creative Engine não rodou nesta geração), nenhuma
+// checagem dispara — comportamento idêntico a antes desta funcionalidade existir.
+const MIN_FONT_SIZE_PX = 24;
+const MIN_CONTRAST_RATIO = 4.5;
+const CLIPPED_LINE_COUNT_THRESHOLD = 4;
+const SINGLE_LINE_ZONE_TYPES = new Set(["price", "discount", "cta", "badge", "rating", "salesProof"]);
+const EXPECTED_MAX_LINES_MULTI_LINE_ZONE = 3;
+const ALL_CAPS_MIN_LENGTH = 15;
+
+function isAllCapsOveruse(text: string): boolean {
+  const letters = text.replace(/[^\p{Letter}]/gu, "");
+  if (letters.length < ALL_CAPS_MIN_LENGTH) return false;
+  return letters === letters.toUpperCase() && letters !== letters.toLowerCase();
+}
+
+function evaluateTypographyQuality(input: LucasQualityReviewRequestInput, issues: LucasIssue[]): void {
+  const geometry = input.typographyGeometry;
+  if (!geometry?.length) return;
+
+  for (const entry of geometry) {
+    if (entry.fontSizePx < MIN_FONT_SIZE_PX) {
+      issues.push(issue("TYPOGRAPHY_MIN_SIZE_VIOLATION", "typography", `Zona "${entry.type}" com fonte de ${entry.fontSizePx}px, abaixo do mínimo legível recomendado (${MIN_FONT_SIZE_PX}px).`, "medium"));
+    }
+
+    const contrastRatio = computeContrastRatio(entry.textColor, entry.backgroundColor);
+    if (contrastRatio !== undefined && contrastRatio < MIN_CONTRAST_RATIO) {
+      issues.push(issue("TYPOGRAPHY_CONTRAST_LOW", "typography", `Zona "${entry.type}" com contraste de ${contrastRatio.toFixed(2)}:1 entre texto e fundo, abaixo do mínimo WCAG AA (${MIN_CONTRAST_RATIO}:1) — texto pode ficar ilegível.`, "high"));
+    }
+
+    if (entry.lineCount > CLIPPED_LINE_COUNT_THRESHOLD) {
+      issues.push(issue("TYPOGRAPHY_TEXT_CLIPPED", "typography", `Zona "${entry.type}" precisaria de ${entry.lineCount} linhas para caber — sinal de que o texto não coube na caixa e pode aparecer cortado.`, "high"));
+    } else if (SINGLE_LINE_ZONE_TYPES.has(entry.type) && entry.lineCount > 1) {
+      issues.push(issue("TYPOGRAPHY_LINE_COUNT_EXCEEDED", "typography", `Zona "${entry.type}" deveria ser uma linha única, mas quebrou em ${entry.lineCount} linhas.`, "medium"));
+    } else if (!SINGLE_LINE_ZONE_TYPES.has(entry.type) && entry.lineCount > EXPECTED_MAX_LINES_MULTI_LINE_ZONE) {
+      issues.push(issue("TYPOGRAPHY_LINE_COUNT_EXCEEDED", "typography", `Zona "${entry.type}" com ${entry.lineCount} linhas, acima do recomendado (${EXPECTED_MAX_LINES_MULTI_LINE_ZONE}) para leitura rápida.`, "medium"));
+    }
+
+    if (isAllCapsOveruse(entry.text)) {
+      issues.push(issue("TYPOGRAPHY_ALL_CAPS_OVERUSE", "typography", `Zona "${entry.type}" em caixa alta e longa demais — lê como "gritando" em vez de destaque intencional.`, "low"));
+    }
+  }
 }
 
 function evaluateTone(input: LucasQualityReviewRequestInput, brand: ClaraKnowledgeRecord<"BrandContext"> | undefined, issues: LucasIssue[]): void {

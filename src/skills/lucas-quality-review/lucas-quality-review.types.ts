@@ -1,5 +1,20 @@
 import type { ContentQualityProfile } from "../../shared/utils/content-quality-profile.js";
 import type { ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
+import type { AdLayoutZoneType } from "../../shared/utils/ad-layout.types.js";
+
+/** Espelha por convenção `TypographyGeometryEntry` (`ad-creative-renderer.ts`) — a geometria EXATA
+ * que o renderer determinístico usou por zona (Performance Creative Engine, Fase 16). Fonte de
+ * verdade determinística pro quality gate de tipografia, nunca uma estimativa de IA. */
+export type LucasTypographyGeometryEntry = {
+  type: AdLayoutZoneType;
+  text: string;
+  fontSizePx: number;
+  lineCount: number;
+  widthPx: number;
+  heightPx: number;
+  textColor: string;
+  backgroundColor: string;
+};
 
 export type LucasSupportedChannel =
   | "instagram"
@@ -396,6 +411,10 @@ export type LucasQualityReviewRequestInput = {
    * fidelidade visual (comparar a imagem gerada com a referência) quanto pela checagem comercial
    * (fato forte disponível mas ignorado na copy). Ausente = mesmo comportamento de antes. */
   referenceIntelligence?: ReferenceIntelligence;
+  /** Geometria exata que o renderer determinístico usou (Fase 16) — presente só quando o
+   * Performance Creative Engine rodou (`performanceCreativePlan`/`adLayoutSpec` na Bianca).
+   * Ausente = mesmo comportamento de antes (nenhuma checagem de tipografia nova dispara). */
+  typographyGeometry?: LucasTypographyGeometryEntry[];
 };
 
 export const LUCAS_REVIEW_STATUSES = ["approved", "approved_with_warnings", "needs_adjustments", "rejected"] as const;
@@ -404,7 +423,7 @@ export type LucasReviewStatus = (typeof LUCAS_REVIEW_STATUSES)[number];
 
 export type LucasIssueSeverity = "low" | "medium" | "high";
 
-export type LucasIssueCategory = "strategy" | "copy" | "visual" | "coherence" | "tone" | "cta" | "brand" | "risk" | "fidelity" | "commercial";
+export type LucasIssueCategory = "strategy" | "copy" | "visual" | "coherence" | "tone" | "cta" | "brand" | "risk" | "fidelity" | "commercial" | "typography" | "composition";
 
 export type LucasIssueCode =
   | "NO_IMAGES_GENERATED"
@@ -523,7 +542,19 @@ export type LucasIssueCode =
   | "PRODUCT_FIDELITY_MISMATCH"
   | "COMMERCIAL_HALLUCINATION_DETECTED"
   | "COMMERCIAL_FACT_IGNORED"
-  | "GENERIC_CLICHE_IN_COPY";
+  | "GENERIC_CLICHE_IN_COPY"
+  // PERFORMANCE CREATIVE ENGINE — Typography Quality Gate (Fase 16): geometria EXATA que o
+  // renderer determinístico usou por zona, nunca uma estimativa de IA. `TYPOGRAPHY_TEXT_CLIPPED`/
+  // `TYPOGRAPHY_CONTRAST_LOW` entram em `BLOCKING_ISSUE_CODES` — texto ilegível ou cortado é
+  // defeito objetivo, mesma classe de `PRODUCT_FIDELITY_MISMATCH`.
+  | "TYPOGRAPHY_MIN_SIZE_VIOLATION"
+  | "TYPOGRAPHY_CONTRAST_LOW"
+  | "TYPOGRAPHY_TEXT_CLIPPED"
+  | "TYPOGRAPHY_LINE_COUNT_EXCEEDED"
+  | "TYPOGRAPHY_ALL_CAPS_OVERUSE"
+  // Visual Composition Quality Gate (Fase 17) — veredito assíncrono via visão (mesmo padrão de
+  // `evaluateProductFidelity`).
+  | "VISUAL_COMPOSITION_UNPROFESSIONAL";
 
 export type LucasIssue = {
   code: LucasIssueCode;

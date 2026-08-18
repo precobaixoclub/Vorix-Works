@@ -2,6 +2,7 @@ import type { AICostReport, AITokenUsage } from "../../application/ports/ai-prov
 import type { SkillArtifact } from "../../domain/skills/skill.contract.js";
 import type { EnrichedVisualScene } from "../../shared/utils/visual-reference-library.js";
 import type { CampaignCreativeDNA } from "../../shared/utils/creative-director-engine.js";
+import type { AdLayoutSpec, PerformanceCreativePlan } from "../../shared/utils/ad-layout.types.js";
 
 /**
  * Saída do estágio interno "Visual Enrichment" de Pedro (`buildVisualEnrichments`, em
@@ -204,6 +205,15 @@ export type PedroBiancaBriefing = {
   technicalJustification: string;
   channel: string;
   notes: string[];
+  /**
+   * Reaproveitado diretamente de `src/shared/utils/ad-layout.types.ts` — não é uma Skill,
+   * mesmo padrão já usado por `PedroVisualEnrichment` (ADR 0002 permite importar de `shared`).
+   * Pedro não lê estes campos diretamente hoje (a instrução de área limpa chega via
+   * `workflowContext.cleanZoneInstruction`); declarados aqui só para manter o contrato
+   * espelhado com `BiancaPedroBriefing`.
+   */
+  performanceCreativePlan?: PerformanceCreativePlan;
+  adLayoutSpec?: AdLayoutSpec;
 };
 
 export type PedroImageGenerationRequestInput = {

@@ -7,6 +7,8 @@ import {
   BiancaSocialMediaDesignSkill,
   buildBaselineDesign,
   buildPedroBriefing,
+  buildPerformanceCreativePlan,
+  buildAdLayoutSpec,
   biancaSocialMediaDesignManifest,
 } from "../dist/skills/bianca-social-media-design/index.js";
 
@@ -736,6 +738,117 @@ test("buildBaselineDesign e buildPedroBriefing são puros e reutilizáveis", asy
 
   const briefing = buildPedroBriefing(design, input);
   assert.equal(briefing.status, "structured");
+});
+
+function tenisReferenceIntelligence(overrides = {}) {
+  return {
+    imagesAnalyzed: 2,
+    primaryImageIndex: 0,
+    multiImageRelationship: "same_product",
+    verifiedFacts: { productType: "tênis", productName: "Tênis Casual Unissex Skatista RV", category: "calçados" },
+    visualFacts: { colors: ["preto", "branco"], visualCharacteristics: [], relevantText: [], ctaPresent: false, elementsToPreserve: [] },
+    commercialFacts: {
+      currentPrice: "R$ 39,99",
+      previousPrice: "R$ 79,99",
+      discountPercent: "50%",
+      promotion: "Oferta Relâmpago",
+      commercialConditions: ["até 7x de R$6,41"],
+      shippingInfo: "grátis com cupom",
+    },
+    uncertainFacts: [],
+    claimSourceMap: {},
+    ...overrides,
+  };
+}
+
+function tenisCreativeBrief(overrides = {}) {
+  return {
+    productOrService: "Tênis Casual Unissex Skatista RV",
+    offer: "R$ 39,99 (de R$ 79,99), 50% de desconto — Oferta Relâmpago",
+    commercialFactsSource: "reference_image",
+    nonInventableInfo: [],
+    marketingObjective: "promocao_oferta",
+    ...overrides,
+  };
+}
+
+test("buildPerformanceCreativePlan: sem nenhum sinal comercial/copy, devolve undefined (regressão — campaign_creation)", () => {
+  const plan = buildPerformanceCreativePlan(createInput());
+  assert.equal(plan, undefined);
+});
+
+test("buildPerformanceCreativePlan: com creativeBrief + referenceIntelligence + copy real, monta o plano com os fatos REAIS (caso do tênis RV)", () => {
+  const input = createInput({
+    joaoStrategy: createJoaoStrategy({ creativeBrief: tenisCreativeBrief(), referenceIntelligence: tenisReferenceIntelligence() }),
+    mariaCopy: { title: "Tênis Casual Unissex por R$39,99!", cta: "Aproveite agora", imageHeadline: "50% OFF - R$39,99", claims: [] },
+  });
+
+  const plan = buildPerformanceCreativePlan(input);
+
+  assert.ok(plan);
+  assert.equal(plan.price, "R$ 39,99");
+  assert.equal(plan.oldPrice, "R$ 79,99");
+  assert.equal(plan.discount, "50%");
+  assert.equal(plan.heroProduct, "Tênis Casual Unissex Skatista RV");
+  assert.equal(plan.primaryHook, "50% OFF - R$39,99");
+  assert.equal(plan.layoutFamily, "flash_sale");
+  assert.ok(plan.informationPriority.includes("price"));
+  assert.ok(plan.informationPriority.includes("discount"));
+});
+
+test("buildPerformanceCreativePlan: nunca inventa um fato — sem preço/desconto na referência, o plano não tem price/discount", () => {
+  const input = createInput({
+    joaoStrategy: createJoaoStrategy({ creativeBrief: { productOrService: "Buquê de flores", commercialFactsSource: "none", nonInventableInfo: ["preço"] } }),
+    mariaCopy: { title: "Buquês para todas as ocasiões", cta: "Conheça a coleção" },
+  });
+
+  const plan = buildPerformanceCreativePlan(input);
+
+  assert.ok(plan);
+  assert.equal(plan.price, undefined);
+  assert.equal(plan.discount, undefined);
+  assert.equal(plan.offer, undefined);
+});
+
+test("buildAdLayoutSpec: sem plano criativo, devolve undefined", () => {
+  assert.equal(buildAdLayoutSpec(undefined, createInput()), undefined);
+});
+
+test("buildAdLayoutSpec: monta zonas price/discount/cta/headline pro caso flash_sale, todas dentro da área segura do formato", () => {
+  const input = createInput({
+    joaoStrategy: createJoaoStrategy({ creativeBrief: tenisCreativeBrief(), referenceIntelligence: tenisReferenceIntelligence() }),
+    mariaCopy: { title: "Tênis Casual Unissex por R$39,99!", cta: "Aproveite agora", imageHeadline: "50% OFF - R$39,99", claims: [] },
+  });
+  const plan = buildPerformanceCreativePlan(input);
+
+  const spec = buildAdLayoutSpec(plan, input);
+
+  assert.ok(spec);
+  assert.equal(spec.layoutFamily, "flash_sale");
+  assert.equal(spec.aspectRatio, "4:5");
+  const zoneTypes = spec.zones.map((zone) => zone.type);
+  assert.ok(zoneTypes.includes("price"));
+  assert.ok(zoneTypes.includes("discount"));
+  assert.ok(zoneTypes.includes("cta"));
+  for (const zone of spec.zones) {
+    assert.ok(zone.position.xPct >= 0 && zone.position.xPct + zone.position.widthPct <= 100, `zona ${zone.type} sai da largura da peça`);
+    assert.ok(zone.position.yPct >= 0 && zone.position.yPct + zone.position.heightPct <= 100, `zona ${zone.type} sai da altura da peça`);
+  }
+});
+
+test("buildAdLayoutSpec: respeita o orçamento de informação — número de zonas nunca excede o limite do formato/densidade", () => {
+  const input = createInput({
+    joaoStrategy: createJoaoStrategy({
+      creativeBrief: tenisCreativeBrief({ differentiator: "Solado antiderrapante", mainBenefit: "Conforto o dia todo" }),
+      referenceIntelligence: tenisReferenceIntelligence(),
+    }),
+    mariaCopy: { title: "Tênis Casual Unissex por R$39,99!", cta: "Aproveite agora", imageHeadline: "50% OFF - R$39,99", claims: [] },
+  });
+  const plan = buildPerformanceCreativePlan(input);
+
+  const spec = buildAdLayoutSpec(plan, input);
+
+  assert.ok(spec.zones.length <= 8, "max_performance nunca deveria passar do teto superior de zonas");
 });
 
 test("Bianca não importa providers concretos de IA e usa exclusivamente Ícaro", async () => {

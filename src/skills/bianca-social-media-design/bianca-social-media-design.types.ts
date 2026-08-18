@@ -1,3 +1,6 @@
+import type { ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
+import type { PerformanceCreativePlan, AdLayoutSpec } from "../../shared/utils/ad-layout.types.js";
+
 export type BiancaSupportedChannel =
   | "instagram"
   | "facebook"
@@ -20,6 +23,31 @@ export type BiancaJoaoStrategySummary = {
   centralPromise: string;
   keyMessages: string[];
   recommendedCta: string;
+  /** Espelha `JoaoCreativeBrief` — já chega aqui em tempo de execução (`buildBiancaInput` passa o
+   * objeto `strategy` inteiro), só não era lido por Bianca até agora. Fonte dos fatos comerciais
+   * REAIS (`offer`/`commercialFactsSource`) que `buildPerformanceCreativePlan` usa — nunca inventa
+   * um valor que não esteja aqui. */
+  creativeBrief?: {
+    productOrService: string;
+    offer?: string;
+    commercialFactsSource: "reference_image" | "registered_product" | "none";
+    nonInventableInfo: string[];
+    marketingObjective?: string;
+    mainBenefit?: string;
+    differentiator?: string;
+  };
+  /** Espelha `ReferenceIntelligence` — mesmo raciocínio acima. */
+  referenceIntelligence?: ReferenceIntelligence;
+};
+
+/** Espelha por convenção o subconjunto de `MariaStructuredCopy` (saída real de Maria) relevante
+ * pra estruturar o plano criativo — Bianca NUNCA cria copy nova a partir disto, só decide como
+ * organizar visualmente o que Maria já escreveu. */
+export type BiancaMariaCopySummary = {
+  title: string;
+  cta: string;
+  imageHeadline?: string;
+  claims?: Array<{ text: string; source: string }>;
 };
 
 /**
@@ -69,6 +97,10 @@ export type BiancaDesignRequestInput = {
   joaoStrategy: BiancaJoaoStrategySummary;
   sofiaDirection: BiancaSofiaDirectionSummary;
   sofiaBriefing: BiancaSofiaBriefing;
+  /** Copy real da Maria — primeira vez que Bianca recebe isto (antes só via `content_request-
+   * visual-only-v2`, nunca lido). Ausente em `campaign_creation` (copy/visual rodam em paralelo
+   * lá) — `performanceCreativePlan` degrada graciosamente sem isto. */
+  mariaCopy?: BiancaMariaCopySummary;
   channel: BiancaSupportedChannel;
   format: string;
   /**
@@ -199,6 +231,14 @@ export type BiancaDesignCore = {
   observations: string[];
   nextSteps: string[];
   technicalJustification: string;
+  /** Plano criativo de performance (Fase 2) — transforma creative_brief + fatos comerciais + copy
+   * numa estratégia visual de conversão. `undefined` quando não há sinal comercial algum
+   * disponível (sem `creativeBrief`/`referenceIntelligence`/`mariaCopy`) — degrada para o
+   * comportamento de sempre (só o design-spec em prosa). */
+  performanceCreativePlan?: PerformanceCreativePlan;
+  /** Layout estruturado (Fase 5-6) — zonas com tipo/prioridade/posição, derivado do plano acima.
+   * `undefined` nas mesmas condições de `performanceCreativePlan`. */
+  adLayoutSpec?: AdLayoutSpec;
 };
 
 /**
@@ -264,6 +304,8 @@ export type BiancaPedroBriefing = {
   observations: string[];
   nextSteps: string[];
   technicalJustification: string;
+  performanceCreativePlan?: PerformanceCreativePlan;
+  adLayoutSpec?: AdLayoutSpec;
   channel: BiancaSupportedChannel;
   notes: string[];
 };

@@ -8,6 +8,12 @@ import type { Skill, SkillRequest, SkillResponse } from "../../domain/skills/ski
 import { extractJson, latest, normalize, normalizeStringArray } from "../../shared/utils/skill-parsing.js";
 import { buildDeveloperAiPendingResponse, isDeveloperAssistancePending } from "../../shared/utils/developer-ai-assistance.js";
 import { ANTI_GENERIC_VISUAL_CONSTRAINTS } from "../../shared/utils/visual-reference-library.js";
+import { hasStrongCommercialFact } from "../../shared/utils/reference-intelligence.types.js";
+import { rankCommercialArguments, type CommercialArgumentInputs } from "../../shared/utils/commercial-argument-ranking.js";
+import { selectLayoutFamily, resolveCompatibleDensity, LAYOUT_FAMILY_RULES } from "../../shared/utils/layout-family-rules.js";
+import { resolveInformationBudget, applyInformationBudget } from "../../shared/utils/information-budget.js";
+import { clampZoneToSafeArea, type AdSafeZonePlatform } from "../../shared/utils/ad-safe-zones.js";
+import type { AdLayoutSpec, AdLayoutZone, AdLayoutZoneType, PerformanceCreativePlan, VisualDensity } from "../../shared/utils/ad-layout.types.js";
 import type { DeveloperAssistancePendingOutput } from "../../application/ai/developer-assistance.types.js";
 import { biancaSocialMediaDesignManifest } from "./bianca.manifest.js";
 import type { BiancaLogAction, BiancaLoggerPort } from "./bianca-log.contract.js";
@@ -384,12 +390,185 @@ function evaluateDesignContextCompleteness(context: ClaraContextResponse): { suf
   return { sufficient: missing.length === 0, missing };
 }
 
+// Fase 4 — pelo menos 3 níveis de densidade, escolhidos pelo objetivo e pela quantidade de
+// argumentos comerciais realmente disponíveis (nunca por preferência estética isolada).
+function resolveVisualDensity(objective: string | undefined, argumentCount: number): VisualDensity {
+  if (argumentCount <= 1) return "clean";
+  if (argumentCount >= 5) return "max_performance";
+  return "performance";
+}
+
+// Fase 2 — plano criativo de performance: transforma creative_brief + Reference Intelligence +
+// copy real numa estratégia visual de conversão. Função DETERMINÍSTICA e pura — nunca passa pelo
+// aprimoramento de IA da Bianca (`buildIcaroDesignPrompt`), só lê fatos já confirmados a montante.
+// `undefined` quando não há sinal comercial/copy algum disponível (ex.: `campaign_creation`) —
+// degrada para o comportamento de sempre (só o design-spec em prosa).
+export function buildPerformanceCreativePlan(input: BiancaDesignRequestInput): PerformanceCreativePlan | undefined {
+  const creativeBrief = input.joaoStrategy.creativeBrief;
+  const referenceIntelligence = input.joaoStrategy.referenceIntelligence;
+  const commercialFacts = referenceIntelligence?.commercialFacts;
+  const mariaCopy = input.mariaCopy;
+
+  const hasAnySignal = Boolean(creativeBrief || hasStrongCommercialFact(commercialFacts) || mariaCopy);
+  if (!hasAnySignal) return undefined;
+
+  const price = commercialFacts?.currentPrice;
+  const oldPrice = commercialFacts?.previousPrice;
+  const discount = commercialFacts?.discountPercent;
+  const offer = creativeBrief?.offer ?? commercialFacts?.promotion;
+  const urgency = commercialFacts?.promotion;
+  const cta = mariaCopy?.cta ?? input.joaoStrategy.recommendedCta;
+  const primaryHook = mariaCopy?.imageHeadline ?? mariaCopy?.title;
+  const secondaryHook = mariaCopy?.title && mariaCopy.title !== primaryHook ? mariaCopy.title : undefined;
+  const benefits = [creativeBrief?.mainBenefit].filter((value): value is string => Boolean(value?.trim()));
+  const trustSignals = [commercialFacts?.shippingInfo].filter((value): value is string => Boolean(value?.trim()));
+  const specifications = (commercialFacts?.commercialConditions ?? []).filter((value) => Boolean(value?.trim()));
+
+  const commercialArguments: CommercialArgumentInputs = {
+    price,
+    discount,
+    promotion: offer,
+    mainBenefit: creativeBrief?.mainBenefit,
+    shipping: commercialFacts?.shippingInfo,
+    paymentTerms: commercialFacts?.commercialConditions?.[0],
+    differentiator: creativeBrief?.differentiator,
+    cta,
+  };
+  const informationPriority = rankCommercialArguments(commercialArguments);
+
+  const objective = creativeBrief?.marketingObjective ?? "performance";
+  const preferredDensity = resolveVisualDensity(objective, informationPriority.length);
+  const layoutFamily = selectLayoutFamily({
+    objective,
+    infoQuantity: informationPriority.length,
+    hasStrongPrice: Boolean(price),
+    hasDiscount: Boolean(discount),
+    hasSocialProof: false,
+    hasUrgency: Boolean(urgency),
+    hasManyBenefits: benefits.length >= 2,
+    format: input.sofiaDirection.recommendedAspectRatio,
+    hasReferenceImage: Boolean(referenceIntelligence),
+  });
+  const visualDensity = resolveCompatibleDensity(layoutFamily, preferredDensity);
+
+  return {
+    objective,
+    creativeType: hasStrongCommercialFact(commercialFacts) ? "oferta" : "produto",
+    primaryHook,
+    secondaryHook,
+    heroProduct: creativeBrief?.productOrService,
+    offer,
+    price,
+    oldPrice,
+    discount,
+    socialProof: undefined,
+    benefits,
+    trustSignals,
+    specifications,
+    urgency,
+    cta: cta ?? "Saiba mais",
+    brandElements: [],
+    visualDensity,
+    layoutFamily,
+    informationPriority,
+  };
+}
+
+const DEFAULT_ZONE_POSITIONS: Record<AdLayoutZoneType, { xPct: number; yPct: number; widthPct: number; heightPct: number }> = {
+  headline: { xPct: 6, yPct: 6, widthPct: 88, heightPct: 18 },
+  price: { xPct: 6, yPct: 62, widthPct: 44, heightPct: 16 },
+  discount: { xPct: 6, yPct: 40, widthPct: 30, heightPct: 14 },
+  cta: { xPct: 6, yPct: 84, widthPct: 88, heightPct: 10 },
+  benefits: { xPct: 52, yPct: 40, widthPct: 42, heightPct: 36 },
+  specs: { xPct: 52, yPct: 40, widthPct: 42, heightPct: 36 },
+  badge: { xPct: 68, yPct: 6, widthPct: 26, heightPct: 12 },
+  rating: { xPct: 68, yPct: 20, widthPct: 26, heightPct: 10 },
+  salesProof: { xPct: 68, yPct: 32, widthPct: 26, heightPct: 10 },
+  logo: { xPct: 6, yPct: 6, widthPct: 18, heightPct: 10 },
+  heroProduct: { xPct: 0, yPct: 0, widthPct: 100, heightPct: 100 },
+};
+
+// Mapeia cada argumento comercial ranqueado (Fase 3) pro tipo de zona correspondente no layout.
+const COMMERCIAL_ARGUMENT_TO_ZONE_TYPE: Partial<Record<keyof CommercialArgumentInputs, AdLayoutZoneType>> = {
+  price: "price",
+  discount: "discount",
+  promotion: "badge",
+  mainBenefit: "benefits",
+  socialProof: "salesProof",
+  rating: "rating",
+  salesCount: "salesProof",
+  shipping: "specs",
+  paymentTerms: "specs",
+  specification: "specs",
+  differentiator: "benefits",
+  cta: "cta",
+};
+
+function resolveSafeZonePlatform(channel: string, format: string, aspectRatio: string): AdSafeZonePlatform | undefined {
+  const normalizedChannel = normalize(channel);
+  const normalizedFormat = normalize(format);
+  if (normalizedChannel.includes("tiktok")) return "tiktok";
+  if (aspectRatio === "9:16" || containsAny(normalizedFormat, ["story", "stories"])) {
+    if (containsAny(normalizedFormat, ["reels"]) || normalizedChannel.includes("reels")) return "instagram_reels";
+    return "instagram_stories";
+  }
+  if (normalizedChannel.includes("facebook")) return "facebook_feed";
+  return "instagram_feed";
+}
+
+// Fase 5-6 — Layout Spec estruturado: zonas com tipo/prioridade/posição, escolhidas pela família
+// de layout (regras, não template fixo) e cortadas pelo orçamento de informação (Fase 14) +
+// safe zones (Fase 15). `undefined` quando não há plano criativo (mesma condição de ausência de
+// `performanceCreativePlan`).
+export function buildAdLayoutSpec(plan: PerformanceCreativePlan | undefined, input: BiancaDesignRequestInput): AdLayoutSpec | undefined {
+  if (!plan) return undefined;
+
+  const rule = LAYOUT_FAMILY_RULES[plan.layoutFamily];
+  const aspectRatio = input.sofiaDirection.recommendedAspectRatio;
+  const platform = resolveSafeZonePlatform(input.channel, input.format, aspectRatio);
+
+  const candidateTypes = new Set<AdLayoutZoneType>();
+  if (plan.primaryHook) candidateTypes.add("headline");
+  for (const argument of plan.informationPriority as Array<keyof CommercialArgumentInputs>) {
+    const zoneType = COMMERCIAL_ARGUMENT_TO_ZONE_TYPE[argument];
+    if (zoneType && rule.allowedZoneTypes.includes(zoneType)) candidateTypes.add(zoneType);
+  }
+  // CTA sempre entra quando a família permite, mesmo que não tenha "vencido" o ranking de
+  // argumentos comerciais — uma peça de conversão sem CTA visível não cumpre a função.
+  if (rule.allowedZoneTypes.includes("cta") && plan.cta) candidateTypes.add("cta");
+
+  const rankedTypes = Array.from(candidateTypes).sort((left, right) => {
+    const leftPriority = rule.defaultZonePriority[left] ?? 9;
+    const rightPriority = rule.defaultZonePriority[right] ?? 9;
+    return leftPriority - rightPriority;
+  });
+
+  const zones: AdLayoutZone[] = rankedTypes.map((type, index) => ({
+    type,
+    priority: rule.defaultZonePriority[type] ?? index + 1,
+    position: clampZoneToSafeArea(DEFAULT_ZONE_POSITIONS[type], platform),
+  }));
+
+  const budget = resolveInformationBudget(plan.visualDensity, aspectRatio);
+  const budgetedZones = applyInformationBudget(zones, budget);
+
+  return {
+    format: input.format,
+    aspectRatio,
+    layoutFamily: plan.layoutFamily,
+    density: plan.visualDensity,
+    zones: budgetedZones,
+  };
+}
+
 export function buildBaselineDesign(input: BiancaDesignRequestInput, context: ClaraContextResponse): BiancaDesignCore {
   const identity = latest(context.modules.IdentityContext);
   const publishing = latest(context.modules.PublishingContext);
 
   const designConcept = `Layout que traduz o conceito visual "${input.sofiaDirection.visualConcept}" em uma peça extremamente escaneável para ${input.channel}.`;
   const slides = buildSlides(input);
+  const performanceCreativePlan = buildPerformanceCreativePlan(input);
+  const adLayoutSpec = buildAdLayoutSpec(performanceCreativePlan, input);
 
   return {
     designConcept,
@@ -450,6 +629,8 @@ export function buildBaselineDesign(input: BiancaDesignRequestInput, context: Cl
     observations: buildObservations(input, context),
     nextSteps: buildNextSteps(input),
     technicalJustification: buildTechnicalJustification(input, slides),
+    performanceCreativePlan,
+    adLayoutSpec,
   };
 }
 

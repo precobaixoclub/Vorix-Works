@@ -676,9 +676,10 @@ test("Sem Reference Intelligence, nenhuma das checagens novas dispara (regressã
   assert.equal(review.issues.some((entry) => entry.code === "COMMERCIAL_FACT_IGNORED"), false);
 });
 
-test("Lucas.execute: com Ícaro + Reference Intelligence + imagem gerada, checkProductFidelity chama o Ícaro com as DUAS imagens (referência e gerada) antes do apoio de IA de sempre", async () => {
+test("Lucas.execute: com Ícaro + Reference Intelligence + imagem gerada, roda fidelidade E composição visual (imagens certas em cada uma) antes do apoio de IA de sempre", async () => {
   const icaro = new FakeIcaroBrain([
     JSON.stringify({ mismatch: false }),
+    JSON.stringify({ unprofessional: false }),
     enhancementJson(),
   ]);
   const { lucas } = createLucas({ icaro });
@@ -686,18 +687,114 @@ test("Lucas.execute: com Ícaro + Reference Intelligence + imagem gerada, checkP
   const response = await lucas.execute(createRequest(referenceInput()));
 
   assert.equal(response.status, "completed");
-  assert.equal(icaro.calls.length, 2, `esperava 2 chamadas ao Ícaro (fidelidade + apoio de IA), veio ${icaro.calls.length}`);
+  assert.equal(icaro.calls.length, 3, `esperava 3 chamadas ao Ícaro (fidelidade + composição + apoio de IA), veio ${icaro.calls.length}`);
   assert.deepEqual(icaro.calls[0].imageUrls, ["https://x/referencia.png", "https://x/gerada.png"]);
+  assert.deepEqual(icaro.calls[1].imageUrls, ["https://x/gerada.png"]);
   assert.equal(response.output.issues.some((entry) => entry.code === "PRODUCT_FIDELITY_MISMATCH"), false);
+  assert.equal(response.output.issues.some((entry) => entry.code === "VISUAL_COMPOSITION_UNPROFESSIONAL"), false);
 });
 
-test("Lucas.execute: sem workflowContext.referenceImageUrl, checkProductFidelity nunca chama o Ícaro (só o apoio de IA de sempre, 1 chamada)", async () => {
+test("Lucas.execute: sem workflowContext.referenceImageUrl e sem uri na imagem gerada, nem fidelidade nem composição chamam o Ícaro (só o apoio de IA de sempre, 1 chamada)", async () => {
   const icaro = new FakeIcaroBrain([enhancementJson()]);
   const { lucas } = createLucas({ icaro });
 
   await lucas.execute(createRequest(createInput({ referenceIntelligence: tenisReferenceIntelligence() })));
 
   assert.equal(icaro.calls.length, 1);
+});
+
+test("Lucas.execute: composição visual reprovada (unprofessional: true) vira VISUAL_COMPOSITION_UNPROFESSIONAL, não bloqueante", async () => {
+  const icaro = new FakeIcaroBrain([
+    JSON.stringify({ unprofessional: true, reasoning: "sem hierarquia visual clara, elementos amontoados" }),
+    enhancementJson(),
+  ]);
+  const { lucas } = createLucas({ icaro });
+
+  const response = await lucas.execute(createRequest(createInput({ pedroImages: createPedroImages({ images: [{ id: "image-1", uri: "https://x/gerada.png" }] }) })));
+
+  const found = response.output.issues.find((entry) => entry.code === "VISUAL_COMPOSITION_UNPROFESSIONAL");
+  assert.ok(found);
+  assert.equal(found.severity, "high");
+  assert.equal(found.category, "composition");
+});
+
+function typographyEntry(overrides = {}) {
+  return {
+    type: "price",
+    text: "R$ 39,99",
+    fontSizePx: 48,
+    lineCount: 1,
+    widthPx: 400,
+    heightPx: 120,
+    textColor: "#111111",
+    backgroundColor: "#FFFFFF",
+    ...overrides,
+  };
+}
+
+test("evaluateTypographyQuality (via buildBaselineReview): sem typographyGeometry, nenhuma checagem nova dispara (regressão)", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const review = buildBaselineReview(createInput(), context, REVIEW_THRESHOLDS);
+
+  assert.equal(review.issues.some((entry) => entry.code.startsWith("TYPOGRAPHY_")), false);
+});
+
+test("evaluateTypographyQuality: fonte abaixo do mínimo legível vira TYPOGRAPHY_MIN_SIZE_VIOLATION (não bloqueante)", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const input = createInput({ typographyGeometry: [typographyEntry({ fontSizePx: 14 })] });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS);
+
+  const found = review.issues.find((entry) => entry.code === "TYPOGRAPHY_MIN_SIZE_VIOLATION");
+  assert.ok(found);
+  assert.equal(found.severity, "medium");
+});
+
+test("evaluateTypographyQuality: contraste abaixo de WCAG AA vira TYPOGRAPHY_CONTRAST_LOW bloqueante e reprova automaticamente", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const input = createInput({ typographyGeometry: [typographyEntry({ textColor: "#FACC15", backgroundColor: "#FFFFFF" })] });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS);
+
+  const found = review.issues.find((entry) => entry.code === "TYPOGRAPHY_CONTRAST_LOW");
+  assert.ok(found);
+  assert.equal(found.severity, "high");
+  assert.equal(review.reviewStatus, "rejected");
+});
+
+test("evaluateTypographyQuality: contraste alto o suficiente não dispara nada", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const input = createInput({ typographyGeometry: [typographyEntry({ textColor: "#000000", backgroundColor: "#FFFFFF" })] });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS);
+
+  assert.equal(review.issues.some((entry) => entry.code === "TYPOGRAPHY_CONTRAST_LOW"), false);
+});
+
+test("evaluateTypographyQuality: texto que precisaria de muitas linhas vira TYPOGRAPHY_TEXT_CLIPPED bloqueante (sinal de corte)", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const input = createInput({ typographyGeometry: [typographyEntry({ type: "headline", lineCount: 6 })] });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS);
+
+  const found = review.issues.find((entry) => entry.code === "TYPOGRAPHY_TEXT_CLIPPED");
+  assert.ok(found);
+  assert.equal(review.reviewStatus, "rejected");
+});
+
+test("evaluateTypographyQuality: zona de linha única (price/cta/discount) que quebrou em 2 linhas vira TYPOGRAPHY_LINE_COUNT_EXCEEDED", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const input = createInput({ typographyGeometry: [typographyEntry({ type: "cta", lineCount: 2 })] });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS);
+
+  assert.ok(review.issues.some((entry) => entry.code === "TYPOGRAPHY_LINE_COUNT_EXCEEDED"));
+});
+
+test("evaluateTypographyQuality: texto longo em caixa alta vira TYPOGRAPHY_ALL_CAPS_OVERUSE; CTA curto em caixa alta não dispara", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const shouting = createInput({ typographyGeometry: [typographyEntry({ type: "headline", text: "COMPRE AGORA ANTES QUE ACABE TUDO" })] });
+  const shoutingReview = buildBaselineReview(shouting, context, REVIEW_THRESHOLDS);
+  assert.ok(shoutingReview.issues.some((entry) => entry.code === "TYPOGRAPHY_ALL_CAPS_OVERUSE"));
+
+  const shortCta = createInput({ typographyGeometry: [typographyEntry({ type: "cta", text: "COMPRE JÁ" })] });
+  const shortCtaReview = buildBaselineReview(shortCta, context, REVIEW_THRESHOLDS);
+  assert.equal(shortCtaReview.issues.some((entry) => entry.code === "TYPOGRAPHY_ALL_CAPS_OVERUSE"), false);
 });
 
 test("Lucas revisa um pacote completo e devolve checklist, issues, riscos e próximos passos", async () => {

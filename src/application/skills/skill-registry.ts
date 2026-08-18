@@ -58,7 +58,13 @@ export class SkillRegistry implements SkillRegistryPort {
   }
 
   findByCapability(capability: SkillCapability): RegisteredSkillRecord | undefined {
-    return this.list().find((record) => ["READY", "COMPLETED"].includes(record.state) && record.manifest?.capabilities.includes(capability));
+    // `state` reflete só o resultado da execução MAIS RECENTE (mutado a cada `executeSkill`, sem
+    // controle de concorrência) — nunca usar como gate de disponibilidade, ou uma segunda geração
+    // concorrente vê a Skill como "RUNNING" e falha com SKILL_NOT_FOUND, e uma Skill cuja última
+    // chamada falhou fica permanentemente indisponível até o processo reiniciar. `skill` só é
+    // atribuído uma vez, em `attachSkill`, e nunca é removido depois — é o sinal correto e estável
+    // de "carregou com sucesso e nunca foi desabilitada".
+    return this.list().find((record) => record.skill !== undefined && record.manifest?.capabilities.includes(capability));
   }
 
   getBySkillId(skillId: string): RegisteredSkillRecord | undefined {

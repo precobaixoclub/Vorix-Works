@@ -69,6 +69,33 @@ test("Helena localiza Skill pronta por capability", async () => {
   assert.ok(logger.list().some((entry) => entry.action === "CapabilityFound" && entry.capability === "copywriting"));
 });
 
+test("Helena continua encontrando a Skill por capability enquanto uma execução concorrente está em andamento (RUNNING)", async () => {
+  // Regressão: `findByCapability` costumava exigir state em ["READY","COMPLETED"] — como
+  // `executeSkill` marca a Skill como RUNNING assim que começa a executar, uma segunda geração
+  // concorrente para a MESMA capability recebia "SKILL_NOT_FOUND" em vez de rodar em paralelo
+  // (a Skill em si não guarda estado mutável por chamada, então não há razão real pra bloquear).
+  const { helena, registry } = createHelena();
+  await helena.discoverAndLoadSkills();
+
+  registry.updateState("ready-copy", "RUNNING", new Date().toISOString());
+
+  const record = await helena.findSkillByCapability("copywriting");
+  assert.equal(record?.manifest.id, "ready-copy");
+});
+
+test("Helena continua encontrando a Skill por capability depois que uma execução anterior falhou (FAILED)", async () => {
+  // Regressão: sem isto, a PRIMEIRA falha de execução de uma Skill (timeout, erro do provider,
+  // etc.) a deixava marcada como FAILED para sempre no processo — todo pedido seguinte pra mesma
+  // capability recebia "SKILL_NOT_FOUND" mesmo a Skill estando perfeitamente carregada e pronta.
+  const { helena, registry } = createHelena();
+  await helena.discoverAndLoadSkills();
+
+  registry.updateState("failing-review", "FAILED", new Date().toISOString(), { validationErrors: ["falha simulada de uma execução anterior"] });
+
+  const record = await helena.findSkillByCapability("quality_review");
+  assert.equal(record?.manifest.id, "failing-review");
+});
+
 test("Helena executa Skill solicitada por Arthur, controla estados e registra eventos", async () => {
   const { helena, registry, events } = createHelena();
   await helena.discoverAndLoadSkills();

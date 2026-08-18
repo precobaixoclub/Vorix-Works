@@ -618,6 +618,14 @@ function buildStrategyInput(request: ExecutionTaskHandlerRequest): Record<string
 function buildCopyInput(request: ExecutionTaskHandlerRequest): Record<string, unknown> {
   const strategy = unwrapExecutionPayload(firstPayload(request.inputs, "structure"));
   const briefing = normalizeObject(strategy.mariaBriefing);
+  // `creativeBrief.productOrService` (função pura, nunca passa pelo aprimoramento de IA de João —
+  // ver o mesmo raciocínio em `buildSofiaInput`) é o sinal mais confiável do produto/assunto real.
+  // Anexado ao `additionalContext` como reforço: `keyMessage` (abaixo) já deveria carregar isso via
+  // `buildKeyMessages`, mas depende de `keyMessages[0]` sobreviver ao aprimoramento de IA — esta é
+  // uma segunda via, determinística, pro caso de a primeira falhar.
+  const creativeBrief = normalizeObject(strategy.creativeBrief);
+  const productOrService = valueOrUndefined(creativeBrief.productOrService);
+  const baseAdditionalContext = stringValue(briefing.additionalContext, JSON.stringify({ executionRunId: request.context.executionRunId }));
   return {
     objective: stringValue(briefing.objective ?? strategy.objective, "Criar campanha de marketing."),
     channel: stringValue(briefing.channel ?? strategy.channel, "instagram"),
@@ -636,19 +644,28 @@ function buildCopyInput(request: ExecutionTaskHandlerRequest): Record<string, un
     // valor nenhum pra Maria, descartando o texto real que João preparou.
     marketingObjective: valueOrUndefined(briefing.marketingObjective ?? strategy.marketingObjective),
     avoidRepeating: typeof strategy.editorialMemory === "string" ? strategy.editorialMemory : undefined,
-    additionalContext: stringValue(briefing.additionalContext, JSON.stringify({ executionRunId: request.context.executionRunId })),
+    additionalContext: productOrService ? `${baseAdditionalContext} Produto/assunto real: ${productOrService}.` : baseAdditionalContext,
   };
 }
 
 function buildSofiaInput(request: ExecutionTaskHandlerRequest, strategy: Record<string, unknown>): Record<string, unknown> {
   // `enrichVisualConcept` (sofia-art-direction.skill.ts) deriva a CENA a partir só deste campo —
   // se ele for só o objetivo abstrato ("vender X com desconto"), a cena nunca reflete o produto/
-  // referência de verdade, mesmo quando `strategy.valueProposition` já os carrega (achado ao vivo:
-  // imagem gerada "nada a ver" com a referência anexada na ideia). `objective` continua primeiro,
-  // de propósito, pra manter a intenção declarada como âncora principal.
+  // referência de verdade (achado ao vivo: imagem gerada "nada a ver" com a referência anexada).
+  // `objective` continua primeiro, de propósito, pra manter a intenção declarada como âncora
+  // principal. `creativeBrief.productOrService` (`buildCreativeBrief`, joao-marketing-strategy.
+  // skill.ts) é o sinal mais confiável do assunto real: função pura, nunca passa pelo
+  // aprimoramento de IA — que preserva o detalhe específico de forma inconsistente entre
+  // `centralPromise`/`valueProposition`/`keyMessages" a cada chamada (achado ao vivo: uma geração
+  // saiu com `centralPromise` específico mas `valueProposition` genérico). Combinar os quatro
+  // garante que a cena não perca o produto/referência mesmo quando a IA variar em qual campo
+  // preservou o detalhe.
   const objective = stringValue(strategy.objective, "");
+  const creativeBrief = normalizeObject(strategy.creativeBrief);
+  const productOrService = stringValue(creativeBrief.productOrService, "");
+  const centralPromise = stringValue(strategy.centralPromise, "");
   const valueProposition = stringValue(strategy.valueProposition, "");
-  const visualObjective = [objective, valueProposition]
+  const visualObjective = [objective, productOrService, centralPromise, valueProposition]
     .filter((value, index, all) => Boolean(value) && all.indexOf(value) === index)
     .join(" — ") || "Criar peça visual da campanha.";
   return {

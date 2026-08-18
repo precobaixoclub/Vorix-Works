@@ -701,9 +701,19 @@ function buildKeyMessages(
   product?: ClaraKnowledgeRecord<"ProductContext">,
   campaign?: ClaraKnowledgeRecord<"CampaignContext">,
 ): string[] {
-  const messages: string[] = [`Comunicar objetivo: ${input.desiredObjective}.`];
-
-  if (product?.payload.description) messages.push(`Reforçar: ${product.payload.description}`);
+  const messages: string[] = [];
+  // `keyMessages[0]` é o que de fato chega em Maria como `keyMessage` (buildMariaBriefing) — o
+  // campo mais influente do prompt dela, mais até que `centralPromise`. Sem produto real
+  // cadastrado (achado ao vivo: mesmo com `centralPromise` já corrigido, `keyMessages` continuava
+  // 100% genérico — "Comunicar objetivo: Crie uma imagem divulgando o produto." — porque nunca
+  // olhava pra `originalRequest`, que é onde o assunto específico e a descrição da imagem de
+  // referência realmente vivem), prioriza o assunto específico sobre o objetivo abstrato.
+  if (product?.payload.description) {
+    messages.push(`Reforçar: ${product.payload.description}`);
+  } else if (isSpecificOriginalRequest(input)) {
+    messages.push(input.originalRequest.trim());
+  }
+  messages.push(`Comunicar objetivo: ${input.desiredObjective}.`);
   if (product?.payload.differentiators?.length) messages.push(`Destacar diferencial: ${product.payload.differentiators[0]}.`);
   if (brand?.payload.mandatoryWords?.length) messages.push(`Utilizar termos obrigatórios da marca: ${brand.payload.mandatoryWords.join(", ")}.`);
   if (campaign?.payload.objective) messages.push(`Alinhar com a campanha ativa: ${campaign.payload.campaignName} (${campaign.payload.objective}).`);

@@ -11,7 +11,7 @@ import type { ClaraKnowledgePort } from "../../application/knowledge/clara-knowl
 import type { SkillCapability } from "../../domain/skills/skill-capability.contract.js";
 import type { SkillArtifact, SkillResponse } from "../../domain/skills/skill.contract.js";
 import type { ExecutionCapability, TaskType } from "../../domain/planning/planning.model.js";
-import { compositeLogoOntoImage } from "../media/logo-compositor.js";
+import { compositeLogoOntoImage, type LogoCorner } from "../media/logo-compositor.js";
 
 type SkillCallResult = {
   output: Record<string, unknown>;
@@ -74,6 +74,8 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       provider?: string;
       clara?: ClaraKnowledgePort;
       objectStorage?: ObjectStoragePort;
+      runtimeRepository?: RuntimeRepositoryPort;
+      preparedCommandRepository?: PreparedCommandRepositoryPort;
     },
   ) {}
 
@@ -95,14 +97,20 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       // este input fica vazio, preservando o comportamento anterior (Pedro cai no fallback de
       // `strategy.displayTitle`, hoje inexistente também, então sem texto autorizado — igual antes).
       const copy = unwrapExecutionPayload(firstPayload(request.inputs, "copy"));
+      // URL da imagem de referência (`PreparedCommand.validatedInputs.referenceImageUrl`, ver
+      // `generate-visual-from-idea.ts`) — mesma cadeia `RuntimeTask.runtimePlanId →
+      // RuntimePlan.sourceContext.preparedCommandId → PreparedCommand.validatedInputs` já usada por
+      // `ContentBriefExecutionTaskHandler`. Não passa pelo grafo (não é saída de nenhuma Skill),
+      // então é lida direto do banco aqui — best-effort, nunca trava a geração.
+      const referenceImageUrl = await lookupReferenceImageUrl(this.deps, request).catch(() => undefined);
       const sofia = await callSkill(this.deps.helena, "art_direction", buildSofiaInput(request, structure), request);
       const bianca = await callSkill(this.deps.helena, "social_media_design", buildBiancaInput(request, structure, sofia.output), request);
-      const pedro = await callSkill(this.deps.helena, "image_generation", buildPedroInput(request, structure, copy, suppressUnauthorizedCta(bianca.output)), request);
+      const pedro = await callSkill(this.deps.helena, "image_generation", buildPedroInput(request, structure, copy, suppressUnauthorizedCta(bianca.output), referenceImageUrl), request);
       // Logo real colada por cima (requisito "não foi aplicada a logo") — Sofia/Bianca já sabem a
       // cor/estilo da marca (contexto pro modelo), mas a IA nunca desenha o arquivo da logo em si
       // com fidelidade; isto cola o arquivo de verdade, best-effort (nunca derruba a geração se a
       // logo não estiver cadastrada ou o download/composição falhar).
-      const logoResult = await applyLogoToGeneratedImages(this.deps, request, pedro.output).catch((error) => ({
+      const logoResult = await applyLogoToGeneratedImages(this.deps, request, pedro.output, bianca.output).catch((error) => ({
         output: pedro.output,
         warnings: [`Não foi possível aplicar a logo: ${error instanceof Error ? error.message : "erro desconhecido"}.`],
       }));
@@ -134,6 +142,17 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
   }
 }
 
+async function lookupReferenceImageUrl(
+  deps: { runtimeRepository?: RuntimeRepositoryPort; preparedCommandRepository?: PreparedCommandRepositoryPort },
+  request: ExecutionTaskHandlerRequest,
+): Promise<string | undefined> {
+  if (!deps.runtimeRepository || !deps.preparedCommandRepository) return undefined;
+  const runtimePlan = await deps.runtimeRepository.getById(request.task.runtimePlanId);
+  if (!runtimePlan) return undefined;
+  const preparedCommand = await deps.preparedCommandRepository.getById(runtimePlan.sourceContext.preparedCommandId);
+  return preparedCommand?.validatedInputs.referenceImageUrl?.trim() || undefined;
+}
+
 /**
  * Baixa a logo real da marca (`IdentityContext.logoUri`, Clara) e cada imagem gerada, cola a logo
  * por cima (`compositeLogoOntoImage`) e reenvia pro Object Storage, substituindo `image.uri` pela
@@ -145,6 +164,7 @@ async function applyLogoToGeneratedImages(
   deps: { clara?: ClaraKnowledgePort; objectStorage?: ObjectStoragePort },
   request: ExecutionTaskHandlerRequest,
   pedroOutput: Record<string, unknown>,
+  biancaOutput: Record<string, unknown>,
 ): Promise<{ output: Record<string, unknown>; warnings: string[] }> {
   if (!deps.clara || !deps.objectStorage) return { output: pedroOutput, warnings: [] };
   const images = Array.isArray(pedroOutput.images) ? (pedroOutput.images as Record<string, unknown>[]) : [];
@@ -161,6 +181,7 @@ async function applyLogoToGeneratedImages(
   if (!logoUri) return { output: pedroOutput, warnings: [] };
 
   const logoBuffer = await fetchAsBuffer(logoUri);
+  const corner = resolveLogoCorner(typeof biancaOutput.logoPlacement === "string" ? biancaOutput.logoPlacement : undefined);
   const warnings: string[] = [];
   const updatedImages: Record<string, unknown>[] = [];
   for (const image of images) {
@@ -171,7 +192,7 @@ async function applyLogoToGeneratedImages(
     }
     try {
       const imageBuffer = await fetchAsBuffer(uri);
-      const composited = await compositeLogoOntoImage({ imageBuffer, logoBuffer });
+      const composited = await compositeLogoOntoImage({ imageBuffer, logoBuffer, corner });
       const key = `ai-generated/${request.context.tenantId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-logo.png`;
       const result = await deps.objectStorage.put({ key, body: composited, contentType: "image/png" });
       updatedImages.push({ ...image, uri: result.url });
@@ -181,6 +202,20 @@ async function applyLogoToGeneratedImages(
     }
   }
   return { output: { ...pedroOutput, images: updatedImages }, warnings };
+}
+
+/**
+ * Bianca já planeja `logoPlacement` como texto livre ("canto superior esquerdo", "inferior
+ * direito"...) — extrai canto/borda por palavra-chave em vez de tentar parsear a frase inteira.
+ * Padrão "top-left" quando não há sinal claro: convenção mais comum de marca em anúncio de
+ * e-commerce (bottom-right é mais convenção de "marca d'água de foto") e o que o próprio usuário
+ * pediu explicitamente para o Preço Baixo Club.
+ */
+function resolveLogoCorner(logoPlacementHint: string | undefined): LogoCorner {
+  const normalized = (logoPlacementHint ?? "").toLowerCase();
+  const isBottom = /inferior|abaixo|embaixo|bottom|baixo/.test(normalized);
+  const isRight = /direit|right/.test(normalized);
+  return `${isBottom ? "bottom" : "top"}-${isRight ? "right" : "left"}`;
 }
 
 function latestByUpdatedAt<TRecord extends { updatedAt: string }>(records?: TRecord[]): TRecord | undefined {
@@ -692,7 +727,13 @@ function buildBiancaInput(request: ExecutionTaskHandlerRequest, strategy: Record
   };
 }
 
-function buildPedroInput(request: ExecutionTaskHandlerRequest, strategy: Record<string, unknown>, copy: Record<string, unknown>, bianca: Record<string, unknown>): Record<string, unknown> {
+function buildPedroInput(
+  request: ExecutionTaskHandlerRequest,
+  strategy: Record<string, unknown>,
+  copy: Record<string, unknown>,
+  bianca: Record<string, unknown>,
+  referenceImageUrl?: string,
+): Record<string, unknown> {
   const imageCount = numberValue(strategy.recommendedSlideCount, 1) ?? 1;
   // `imageHeadline` (Maria, requisito de "separar as funções de cada texto") é o texto CURTO
   // pensado especificamente para dentro da imagem — nunca o título do post, nunca a legenda.
@@ -711,8 +752,10 @@ function buildPedroInput(request: ExecutionTaskHandlerRequest, strategy: Record<
     // `.copyTitle` — usar uma chave diferente evita colidir com essa prioridade. Deliberadamente
     // NUNCA passa `workflowContext.mariaCopy` — essa função lê `mariaCopy?.cta` como último
     // fallback de "CTA autorizado" (`extractVisibleTextContext`), então repassar a copy inteira
-    // reabriria o botão inventado que motivou suprimir o CTA da imagem.
-    workflowContext: { ...normalizeObject(base.workflowContext), ...(headline ? { headline } : {}) },
+    // reabriria o botão inventado que motivou suprimir o CTA da imagem. `referenceImageUrl` vira a
+    // entrada visual real de `/v1/images/edits` (ver `openai-icaro-image-provider.ts`) — a foto de
+    // verdade, não só uma descrição em texto dela.
+    workflowContext: { ...normalizeObject(base.workflowContext), ...(headline ? { headline } : {}), ...(referenceImageUrl ? { referenceImageUrl } : {}) },
     originalRequest: "Execution real controlada a partir de RuntimePlan validado.",
     biancaDesign: bianca,
     biancaPedroBriefing: normalizeObject(bianca.pedroBriefing),

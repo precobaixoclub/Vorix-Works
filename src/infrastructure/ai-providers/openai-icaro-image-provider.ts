@@ -65,6 +65,11 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
       : undefined;
     const finalPrompt = buildGuardedPrompt(request.prompt, authorizedTitle, brandColors);
     const size = resolveOpenAiImageSize(typeof request.context?.imageAspectRatio === "string" ? request.context.imageAspectRatio : undefined);
+    // Baixa a foto de referência UMA vez (mesma referência vale para todas as imagens do
+    // carrossel) — best-effort: se o download falhar, segue com geração só-texto em vez de travar
+    // a peça inteira por causa da referência.
+    const referenceImageUrl = typeof request.context?.referenceImageUrl === "string" ? request.context.referenceImageUrl.trim() : undefined;
+    const referenceImageBuffer = referenceImageUrl ? await fetchAsBuffer(referenceImageUrl).catch(() => undefined) : undefined;
 
     const images: Array<{ uri: string; mimeType: string }> = [];
     for (let index = 0; index < imageCount; index += 1) {
@@ -74,7 +79,7 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
         prompt: finalPrompt,
         tenantId,
         workspaceId,
-        params: { size, quality: "high" },
+        params: { size, quality: "high", ...(referenceImageBuffer ? { referenceImageBuffer } : {}) },
         timeoutMs: request.timeoutMs,
       });
       if (!result.ok) {
@@ -90,6 +95,13 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
       cost: { estimated: 0, currency: "USD" },
     };
   }
+}
+
+async function fetchAsBuffer(url: string): Promise<Buffer> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar ${url}`);
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
 }
 
 // `gpt-image-1` só aceita 3 tamanhos fixos (mais "auto"): quadrado, retrato e paisagem — nunca a

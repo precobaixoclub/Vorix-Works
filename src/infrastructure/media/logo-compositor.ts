@@ -1,17 +1,24 @@
 import sharp from "sharp";
 
+export type LogoCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
 export type CompositeLogoInput = {
   imageBuffer: Buffer;
   logoBuffer: Buffer;
+  /** Canto onde a logo é colada. Padrão "top-left" — convenção mais comum de marca em anúncios de
+   * e-commerce (o canto inferior direito é mais um padrão de "marca d'água de foto"). Ver
+   * `resolveLogoCorner` em real-skill-execution-handlers.ts para como isto é decidido a partir do
+   * `logoPlacement` que a Bianca já planeja. */
+  corner?: LogoCorner;
 };
 
 /**
- * Cola a logo real da marca sobre a imagem gerada, como um selo/watermark no canto inferior
- * direito — a técnica padrão de agência para peças de anúncio (nunca a IA "desenha" a logo, ela é
- * um arquivo real colado por cima). Sempre dentro de um cartão branco semi-opaco com cantos
- * arredondados: mesmo quando o arquivo da logo é um JPG opaco sem transparência (não um PNG com
- * fundo transparente), o resultado ainda fica limpo sobre qualquer fundo de foto, porque o cartão
- * garante contraste e uma borda previsível em vez de um retângulo colado sem acabamento.
+ * Cola a logo real da marca sobre a imagem gerada, como um selo/watermark — a técnica padrão de
+ * agência para peças de anúncio (nunca a IA "desenha" a logo, ela é um arquivo real colado por
+ * cima). Sempre dentro de um cartão branco semi-opaco com cantos arredondados: mesmo quando o
+ * arquivo da logo é um JPG opaco sem transparência (não um PNG com fundo transparente), o
+ * resultado ainda fica limpo sobre qualquer fundo de foto, porque o cartão garante contraste e uma
+ * borda previsível em vez de um retângulo colado sem acabamento.
  *
  * Dimensões são todas calculadas a partir dos metadados REAIS da imagem baixada (nunca de um
  * tamanho hardcoded) — funciona igual não importa o `size` pedido à OpenAI.
@@ -39,8 +46,9 @@ export async function compositeLogoOntoImage(input: CompositeLogoInput): Promise
   const cornerRadius = Math.round(cardHeight * 0.16);
   const margin = Math.max(16, Math.round(imageWidth * 0.04));
 
-  const cardLeft = imageWidth - margin - cardWidth;
-  const cardTop = imageHeight - margin - cardHeight;
+  const corner = input.corner ?? "top-left";
+  const cardLeft = corner.endsWith("right") ? imageWidth - margin - cardWidth : margin;
+  const cardTop = corner.startsWith("bottom") ? imageHeight - margin - cardHeight : margin;
 
   const cardSvg = Buffer.from(
     `<svg width="${cardWidth}" height="${cardHeight}" xmlns="http://www.w3.org/2000/svg">` +

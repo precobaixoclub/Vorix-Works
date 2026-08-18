@@ -104,6 +104,10 @@ export async function generateVisualFromIdea(
 
   const referenceContext = await describeReferenceImages(deps, input.referenceImageUrls);
   if (referenceContext) fields.push({ key: "referenceContext", value: referenceContext });
+  // A PRIMEIRA imagem de referência também vai como URL crua — usada como entrada visual real na
+  // geração (`POST /v1/images/edits`), não só como texto descritivo (`referenceContext` acima).
+  const primaryReferenceImageUrl = input.referenceImageUrls?.[0]?.trim();
+  if (primaryReferenceImageUrl) fields.push({ key: "referenceImageUrl", value: primaryReferenceImageUrl });
 
   // Título/headline/legenda/CTA prontos para postar agora são escritos pela Maria de verdade, via
   // o grafo `content_request-visual-only-v2` (campaign_structure → copy_generation, ver

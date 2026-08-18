@@ -309,6 +309,10 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
           authorizedVisibleTitle: visibleText.title,
           authorizedBrandColors: brandColors,
           imageAspectRatio: request.input.desiredAspectRatio,
+          // URL pública da imagem de referência real (ver `buildPedroInput`, real-skill-execution-
+          // handlers.ts) — o `OpenAiIcaroImageProvider` baixa e usa como entrada visual de verdade
+          // (`POST /v1/images/edits`) em vez de só texto, quando presente.
+          referenceImageUrl: typeof request.input.workflowContext?.referenceImageUrl === "string" ? request.input.workflowContext.referenceImageUrl : undefined,
         },
         constraints: [
           "Retornar apenas JSON válido.",

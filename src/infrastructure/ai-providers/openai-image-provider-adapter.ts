@@ -69,16 +69,32 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
     const quality = typeof request.params.quality === "string" ? request.params.quality : "high";
     const baseUrl = this.config.apiBaseUrl ?? DEFAULT_BASE_URL;
     const prompt = truncatePrompt(request.prompt, MAX_PROMPT_LENGTH);
+    // Achado ao vivo (comparado com o fluxo do próprio usuário no ChatGPT, que anexa a foto real
+    // do produto): descrever a imagem de referência só em TEXTO (via visão computacional) perde
+    // toda a fidelidade de forma/proporção/detalhe — o produto gerado nunca bate exatamente com o
+    // exemplo. Quando há uma imagem de referência de verdade disponível, usa `POST
+    // /v1/images/edits` (multipart, aceita uma imagem de entrada real) em vez de `/generations`
+    // (só texto) — o modelo passa a enxergar o produto de verdade, não uma paráfrase dele.
+    const referenceImageBuffer = Buffer.isBuffer(request.params.referenceImageBuffer) ? (request.params.referenceImageBuffer as Buffer) : undefined;
 
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), request.timeoutMs);
-      const response = await this.httpClient(`${baseUrl}/v1/images/generations`, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ model: request.modelId, prompt, size, quality, n: 1 }),
-        signal: controller.signal,
-      });
+      const response = referenceImageBuffer
+        ? await this.httpClient(`${baseUrl}/v1/images/edits`, {
+            method: "POST",
+            headers: { authorization: `Bearer ${apiKey}` },
+            // Sem "content-type" de propósito — o `fetch`/`undici` calcula o boundary do
+            // multipart automaticamente a partir do `FormData`; setar manualmente quebra o parse.
+            body: buildEditsFormData({ modelId: request.modelId, prompt, size, quality, referenceImageBuffer }),
+            signal: controller.signal,
+          })
+        : await this.httpClient(`${baseUrl}/v1/images/generations`, {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({ model: request.modelId, prompt, size, quality, n: 1 }),
+            signal: controller.signal,
+          });
       clearTimeout(timeout);
       const latencyMs = Date.now() - startedAt;
 
@@ -120,6 +136,17 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
     const apiKey = await this.resolveApiKey();
     return { ok: Boolean(apiKey), safeMessage: apiKey ? undefined : "API key da OpenAI não configurada." };
   }
+}
+
+function buildEditsFormData(input: { modelId: string; prompt: string; size: string; quality: string; referenceImageBuffer: Buffer }): FormData {
+  const formData = new FormData();
+  formData.append("model", input.modelId);
+  formData.append("prompt", input.prompt);
+  formData.append("size", input.size);
+  formData.append("quality", input.quality);
+  formData.append("n", "1");
+  formData.append("image", new Blob([input.referenceImageBuffer], { type: "image/png" }), "reference.png");
+  return formData;
 }
 
 async function classifyOpenAiError(response: Response): Promise<{ category: AiMediaGenerationFailureCategory; message: string }> {

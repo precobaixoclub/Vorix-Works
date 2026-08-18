@@ -86,5 +86,21 @@ export const CONTENT_REQUEST_SCHEMA_V1: BriefingSchema = {
       sensitivity: "normal",
       confirmationPolicy: "never_required",
     },
+    {
+      // URL pública da PRIMEIRA imagem de referência anexada — usada de verdade como entrada
+      // visual na geração (`POST /v1/images/edits`, não só `/generations` por texto), diferente de
+      // `referenceContext` (que é só a descrição em texto, via visão computacional). Sem isto, o
+      // produto gerado nunca batia com o exemplo anexado (achado ao vivo comparando com o fluxo do
+      // usuário no ChatGPT, que sempre anexa a foto real do produto).
+      key: "referenceImageUrl",
+      label: "URL da imagem de referência",
+      description: "URL pública da imagem de referência principal, usada como entrada visual real na geração.",
+      required: false,
+      dataType: "string",
+      sourcePriority: ["user_message"],
+      validation: { maxLength: 2000 },
+      sensitivity: "normal",
+      confirmationPolicy: "never_required",
+    },
   ],
 };

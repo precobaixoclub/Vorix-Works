@@ -246,6 +246,53 @@ test("OpenAiImageProviderAdapter: sem API key retorna not_configured sem chamar 
   assert.equal(called, false);
 });
 
+test("OpenAiImageProviderAdapter: sem referenceImageBuffer chama /generations com JSON", async () => {
+  let capturedUrl;
+  let capturedInit;
+  const httpClient = async (url, init) => {
+    capturedUrl = url;
+    capturedInit = init;
+    return jsonResponse(200, { data: [{ url: "https://openai/img.png" }] });
+  };
+  const adapter = new OpenAiImageProviderAdapter({ enabled: true, getApiKey: async () => "sk-test", persistGeneratedImage: async () => { throw new Error("não deveria chamar"); } }, httpClient);
+
+  await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-1", prompt: "um gato", tenantId: "t1", params: {}, timeoutMs: 5000 });
+  assert.match(capturedUrl, /\/v1\/images\/generations$/);
+  assert.equal(capturedInit.headers["content-type"], "application/json");
+  assert.equal(JSON.parse(capturedInit.body).prompt, "um gato");
+});
+
+test("OpenAiImageProviderAdapter: com referenceImageBuffer chama /edits com multipart (sem imagem de referência = fidelidade menor)", async () => {
+  let capturedUrl;
+  let capturedInit;
+  const httpClient = async (url, init) => {
+    capturedUrl = url;
+    capturedInit = init;
+    return jsonResponse(200, { data: [{ url: "https://openai/img-edit.png" }] });
+  };
+  const adapter = new OpenAiImageProviderAdapter({ enabled: true, getApiKey: async () => "sk-test", persistGeneratedImage: async () => { throw new Error("não deveria chamar"); } }, httpClient);
+
+  const referenceImageBuffer = Buffer.from([137, 80, 78, 71]);
+  const result = await adapter.generate({
+    operationTypeCode: "image_generation",
+    modelId: "gpt-image-1",
+    prompt: "um tênis igual ao da referência",
+    tenantId: "t1",
+    params: { referenceImageBuffer },
+    timeoutMs: 5000,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mediaUrl, "https://openai/img-edit.png");
+  assert.match(capturedUrl, /\/v1\/images\/edits$/);
+  // Nunca setar content-type manualmente em multipart — o fetch/undici calcula o boundary sozinho
+  // a partir do FormData; um content-type fixo quebraria o parse no servidor.
+  assert.equal(capturedInit.headers["content-type"], undefined);
+  assert.ok(capturedInit.body instanceof FormData, "body deveria ser um FormData (multipart), não JSON");
+  assert.equal(capturedInit.body.get("prompt"), "um tênis igual ao da referência");
+  assert.ok(capturedInit.body.get("image") instanceof Blob, "a imagem de referência deveria ir como Blob no campo 'image'");
+});
+
 test("OpenAiImageProviderAdapter: 401 vira authentication_failed", async () => {
   const httpClient = async () => jsonResponse(401, {});
   const adapter = new OpenAiImageProviderAdapter({ enabled: true, getApiKey: async () => "sk-test", persistGeneratedImage: async () => "x" }, httpClient);

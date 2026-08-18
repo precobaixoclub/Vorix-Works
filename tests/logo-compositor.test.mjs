@@ -37,12 +37,25 @@ test("compositeLogoOntoImage: o resultado difere do original (a logo foi de fato
   const result = await compositeLogoOntoImage({ imageBuffer, logoBuffer });
   assert.notEqual(Buffer.compare(result, imageBuffer), 0);
 
-  // O canto inferior direito deveria ter ficado mais claro (cartão branco + logo), não mais preto.
+  // Padrão é "top-left" — o canto superior esquerdo deveria ter ficado mais claro (cartão branco +
+  // logo), não mais preto.
   const cornerPixel = await sharp(result)
-    .extract({ left: 750, top: 750, width: 1, height: 1 })
+    .extract({ left: 50, top: 50, width: 1, height: 1 })
     .raw()
     .toBuffer();
   assert.ok(cornerPixel[0] > 100, `esperava canal vermelho claro no canto, veio ${cornerPixel[0]}`);
+});
+
+test("compositeLogoOntoImage: respeita o canto pedido (bottom-right)", async () => {
+  const imageBuffer = await makeSolidPng(800, 800, { r: 0, g: 0, b: 0, alpha: 1 });
+  const logoBuffer = await makeSolidPng(200, 200, { r: 255, g: 255, b: 255, alpha: 1 });
+
+  const result = await compositeLogoOntoImage({ imageBuffer, logoBuffer, corner: "bottom-right" });
+
+  const bottomRightPixel = await sharp(result).extract({ left: 750, top: 750, width: 1, height: 1 }).raw().toBuffer();
+  const topLeftPixel = await sharp(result).extract({ left: 50, top: 50, width: 1, height: 1 }).raw().toBuffer();
+  assert.ok(bottomRightPixel[0] > 100, `esperava canal vermelho claro no canto inferior direito, veio ${bottomRightPixel[0]}`);
+  assert.equal(topLeftPixel[0], 0, "canto superior esquerdo deveria continuar preto (sem logo)");
 });
 
 test("compositeLogoOntoImage: rejeita quando a imagem base não tem metadados de dimensão válidos", async () => {

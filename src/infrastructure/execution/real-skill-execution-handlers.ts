@@ -193,8 +193,8 @@ async function applyLogoToGeneratedImages(
     try {
       const imageBuffer = await fetchAsBuffer(uri);
       const composited = await compositeLogoOntoImage({ imageBuffer, logoBuffer, corner });
-      const key = `ai-generated/${request.context.tenantId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-logo.png`;
-      const result = await deps.objectStorage.put({ key, body: composited, contentType: "image/png" });
+      const key = `ai-generated/${request.context.tenantId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-logo.jpg`;
+      const result = await deps.objectStorage.put({ key, body: composited, contentType: "image/jpeg" });
       updatedImages.push({ ...image, uri: result.url });
     } catch (error) {
       warnings.push(`Não foi possível aplicar a logo em uma das imagens: ${error instanceof Error ? error.message : "erro desconhecido"}.`);

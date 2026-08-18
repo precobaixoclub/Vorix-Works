@@ -57,11 +57,16 @@ export async function compositeLogoOntoImage(input: CompositeLogoInput): Promise
   );
   const cardBuffer = await sharp(cardSvg).png().toBuffer();
 
+  // JPEG, não PNG: a saída é uma peça publicitária fotográfica (sem necessidade de transparência),
+  // e PNG é sem perdas — cada imagem saía com 3-4MB, deixando a tela de Revisão lenta pra carregar
+  // com várias peças ao mesmo tempo. `flatten` garante fundo branco caso sobre algum canal alpha
+  // residual em vez de compor sobre preto (padrão do sharp ao descartar transparência).
   return baseImage
     .composite([
       { input: cardBuffer, left: Math.max(0, cardLeft), top: Math.max(0, cardTop) },
       { input: resizedLogo, left: Math.max(0, cardLeft) + padding, top: Math.max(0, cardTop) + padding },
     ])
-    .png()
+    .flatten({ background: "#ffffff" })
+    .jpeg({ quality: 90 })
     .toBuffer();
 }

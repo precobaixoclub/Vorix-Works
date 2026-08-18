@@ -7,14 +7,16 @@ async function makeSolidPng(width, height, color) {
   return sharp({ create: { width, height, channels: 4, background: color } }).png().toBuffer();
 }
 
-test("compositeLogoOntoImage: mantém as dimensões da imagem original e devolve PNG válido", async () => {
+test("compositeLogoOntoImage: mantém as dimensões da imagem original e devolve JPEG válido", async () => {
+  // JPEG, não PNG: peça publicitária fotográfica não precisa de transparência, e PNG (sem perdas)
+  // deixava cada imagem com 3-4MB, tornando a tela de Revisão lenta pra carregar.
   const imageBuffer = await makeSolidPng(1024, 1024, { r: 20, g: 20, b: 20, alpha: 1 });
   const logoBuffer = await makeSolidPng(300, 120, { r: 10, g: 200, b: 80, alpha: 1 });
 
   const result = await compositeLogoOntoImage({ imageBuffer, logoBuffer });
   const meta = await sharp(result).metadata();
 
-  assert.equal(meta.format, "png");
+  assert.equal(meta.format, "jpeg");
   assert.equal(meta.width, 1024);
   assert.equal(meta.height, 1024);
 });
@@ -56,6 +58,20 @@ test("compositeLogoOntoImage: respeita o canto pedido (bottom-right)", async () 
   const topLeftPixel = await sharp(result).extract({ left: 50, top: 50, width: 1, height: 1 }).raw().toBuffer();
   assert.ok(bottomRightPixel[0] > 100, `esperava canal vermelho claro no canto inferior direito, veio ${bottomRightPixel[0]}`);
   assert.equal(topLeftPixel[0], 0, "canto superior esquerdo deveria continuar preto (sem logo)");
+});
+
+test("compositeLogoOntoImage: saída JPEG é bem menor que a equivalente em PNG (carregamento rápido na Revisão)", async () => {
+  // Um gradiente aleatório aproxima melhor uma foto real do que um bloco de cor sólida (onde PNG e
+  // JPEG ficam parecidos em tamanho) — é exatamente em conteúdo fotográfico que PNG pesa muito mais.
+  const noisyImageBuffer = await sharp({ create: { width: 1024, height: 1024, channels: 3, noise: { type: "gaussian", mean: 128, sigma: 40 } } })
+    .png()
+    .toBuffer();
+  const logoBuffer = await makeSolidPng(150, 150, { r: 255, g: 255, b: 255, alpha: 1 });
+
+  const jpegResult = await compositeLogoOntoImage({ imageBuffer: noisyImageBuffer, logoBuffer });
+  const pngEquivalent = await sharp(noisyImageBuffer).png().toBuffer();
+
+  assert.ok(jpegResult.length < pngEquivalent.length / 2, `esperava JPEG bem menor que PNG; JPEG=${jpegResult.length} PNG=${pngEquivalent.length}`);
 });
 
 test("compositeLogoOntoImage: rejeita quando a imagem base não tem metadados de dimensão válidos", async () => {

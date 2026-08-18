@@ -177,14 +177,14 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
             // tamanho real numa aba nova.
             <a href={images[0].uri} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border bg-surface-sunken">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={images[0].uri} alt={title} className="mx-auto max-h-[520px] w-full object-contain" />
+              <img src={images[0].uri} alt={title} loading="lazy" className="mx-auto max-h-[520px] w-full object-contain" />
             </a>
           ) : (
             <div className="grid grid-cols-2 gap-2">
               {images.map((image, index) => (
                 <a key={`${image.uri}-${index}`} href={image.uri} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border bg-surface-sunken">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={image.uri} alt={title} className="aspect-square w-full object-contain" />
+                  <img src={image.uri} alt={title} loading="lazy" className="aspect-square w-full object-contain" />
                 </a>
               ))}
             </div>
@@ -194,6 +194,9 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
         )}
 
         <div className="min-w-0 space-y-1.5">
+          <p className="text-[11px] text-ink-faint" title={run.createdAt}>
+            Gerado em {formatGeneratedAt(run.createdAt)}
+          </p>
           <div className="flex items-start justify-between gap-2">
             <p className="text-sm font-semibold text-ink">{title}</p>
             <CopyButton text={title} label="Copiar título" />
@@ -285,6 +288,14 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
       ) : null}
     </Card>
   );
+}
+
+// Local do navegador de quem revisa, não UTC — é quem decide aprovar/rejeitar que precisa
+// controlar "de quando é essa peça", não o fuso do servidor.
+function formatGeneratedAt(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "data desconhecida";
+  return `${date.toLocaleDateString("pt-BR")} às ${date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 function CopyButton({ text, label }: { text: string; label: string }) {

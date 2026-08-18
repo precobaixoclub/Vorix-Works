@@ -535,7 +535,7 @@ test("VisualPipelineExecutionTaskHandler: cola a logo real da marca sobre a imag
   const fakeObjectStorage = {
     put: async (input) => {
       putCalls.push(input);
-      return { url: `${baseUrl}/uploaded-with-logo.png` };
+      return { url: `${baseUrl}/uploaded-with-logo.jpg` };
     },
     delete: async () => undefined,
     resolvePublicUrl: (key) => `${baseUrl}/${key}`,
@@ -570,12 +570,13 @@ test("VisualPipelineExecutionTaskHandler: cola a logo real da marca sobre a imag
     const result = await handler.execute(request);
     assert.equal(result.ok, true, JSON.stringify(result));
     const images = result.value.outputs[0].payload.output.images;
-    assert.equal(images[0].uri, `${baseUrl}/uploaded-with-logo.png`);
+    assert.equal(images[0].uri, `${baseUrl}/uploaded-with-logo.jpg`);
     assert.equal(putCalls.length, 1);
-    assert.equal(putCalls[0].contentType, "image/png");
-    // O buffer reenviado precisa ser uma imagem PNG válida e diferente da original (logo colada).
+    assert.equal(putCalls[0].contentType, "image/jpeg");
+    // O buffer reenviado precisa ser uma imagem JPEG válida e diferente da original (logo colada) —
+    // JPEG (não PNG) porque a peça é fotográfica e sem perdas deixava a Revisão lenta pra carregar.
     const uploadedMeta = await sharp(putCalls[0].body).metadata();
-    assert.equal(uploadedMeta.format, "png");
+    assert.equal(uploadedMeta.format, "jpeg");
     assert.notEqual(Buffer.compare(putCalls[0].body, baseImagePng), 0);
   } finally {
     await new Promise((resolve) => server.close(resolve));

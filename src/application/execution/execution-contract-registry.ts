@@ -224,6 +224,12 @@ export const DEFAULT_EXECUTION_CONTRACTS: readonly ExecutionContract[] = [
     featureFlag: "realCopyEnabled",
     sideEffectPolicy: "external_read",
     skillCapabilities: ["copywriting"],
+    // `attempts[].prompt` guarda o prompt COMPLETO de cada tentativa (até 3), e desde a Reference
+    // Intelligence (fatos estruturados de imagens de referência embutidos no briefing via
+    // `JSON.stringify`) esse único campo de string passou a estourar com folga o
+    // `maxStringLength` default de 8000 (achado ao vivo, "output excede tamanho máximo de
+    // string" — mesma classe de problema já corrigida para `visual_generation`/`quality_review`).
+    limits: { maxOutputBytes: 200_000, maxStringLength: 40_000 },
   }),
   contract({
     schemaId: "visual_generation.visual",

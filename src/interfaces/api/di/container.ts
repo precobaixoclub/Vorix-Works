@@ -38,6 +38,8 @@ import { OpenAiIcaroImageProvider } from "../../../infrastructure/ai-providers/o
 import { OpenAiIcaroTextProvider } from "../../../infrastructure/ai-providers/openai-icaro-text-provider.js";
 import { createQualityFeedbackCenter, type QualityFeedbackCenter } from "../../../application/quality-feedback/quality-feedback-center.js";
 import { OpenAiVisionDescriber } from "../../../infrastructure/ai-providers/openai-vision-describer.js";
+import { OpenAiReferenceIntelligenceExtractor } from "../../../infrastructure/ai-providers/openai-reference-intelligence-extractor.js";
+import type { ReferenceIntelligence } from "../../../shared/utils/reference-intelligence.types.js";
 import { GoogleVeoProviderAdapter } from "../../../infrastructure/ai-providers/google-veo-provider-adapter.js";
 import { IcaroAIBrain } from "../../../application/ai/icaro-brain.js";
 import { ValentinaTenantManager } from "../../../application/tenancy/valentina-tenant-manager.js";
@@ -265,6 +267,10 @@ export type ApiContainer = {
    * usado tanto pelo bootstrap de marca acima quanto por `generate-visual-from-idea.ts` para
    * enriquecer o briefing com o que uma imagem de referência mostra. */
   imageDescriber: { describe(imageUrl: string, instruction: string): Promise<string | undefined> };
+  /** Extração ESTRUTURADA de fatos de referência (produto, preço, desconto, oferta, o que
+   * preservar) — diferente de `imageDescriber`, que só produz prosa de estilo visual. Usado por
+   * `generate-visual-from-idea.ts` para popular `referenceIntelligence`. */
+  referenceIntelligenceExtractor: { extract(imageUrls: string[]): Promise<ReferenceIntelligence | undefined> };
   /** Registra avaliações/rejeições de peças geradas (endpoint de rejeição estruturada da tela de
    * Revisão) e alimenta a memória editorial via `getRecentRejectionSignalsForWorkspace`. */
   qualityFeedback: QualityFeedbackCenter;
@@ -469,6 +475,13 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     },
   });
   const imageDescriber = new OpenAiVisionDescriber({
+    apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
+    getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
+  });
+  // Reference Intelligence — extração ESTRUTURADA de fatos de referência (produto, preço,
+  // desconto, oferta), separada de `imageDescriber` (que só produz prosa de estilo visual). Mesma
+  // config/credencial, provider distinto por ter contrato de saída (JSON estruturado) diferente.
+  const referenceIntelligenceExtractor = new OpenAiReferenceIntelligenceExtractor({
     apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
     getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
   });
@@ -973,6 +986,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       valentina,
       ensureHouseTenantProfile,
       imageDescriber,
+      referenceIntelligenceExtractor,
       qualityFeedback,
       planningEngineHook,
       ...repositories,
@@ -1050,6 +1064,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     valentina,
     ensureHouseTenantProfile,
     imageDescriber,
+    referenceIntelligenceExtractor,
     qualityFeedback,
     planningEngineHook,
     ...repositories,

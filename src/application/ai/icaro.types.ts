@@ -21,6 +21,8 @@ export type IcaroAIRequest = {
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
+  /** Ver `AIProviderRequest.imageUrls` — repassado sem alteração até o provider concreto. */
+  imageUrls?: string[];
 };
 
 export type IcaroAIResponseStatus = "completed" | "failed";

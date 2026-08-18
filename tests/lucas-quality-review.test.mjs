@@ -568,6 +568,138 @@ test("Lucas segue com a checklist heurística quando o Ícaro falha, sem interro
   assert.ok(logger.list().some((entry) => entry.action === "AISupportFailed"));
 });
 
+function tenisReferenceIntelligence(overrides = {}) {
+  return {
+    imagesAnalyzed: 2,
+    primaryImageIndex: 0,
+    multiImageRelationship: "same_product",
+    verifiedFacts: { productType: "tênis", productName: "Tênis Casual Unissex Skatista RV", category: "calçados" },
+    visualFacts: { colors: ["preto", "branco"], visualCharacteristics: [], relevantText: [], ctaPresent: false, elementsToPreserve: [] },
+    commercialFacts: {
+      currentPrice: "R$ 39,99",
+      previousPrice: "R$ 79,99",
+      discountPercent: "50%",
+      promotion: "Oferta Relâmpago",
+      commercialConditions: ["até 7x de R$6,41"],
+    },
+    uncertainFacts: [],
+    claimSourceMap: {},
+    ...overrides,
+  };
+}
+
+function tenisCreativeBrief(overrides = {}) {
+  return {
+    productOrService: "Tênis Casual Unissex Skatista RV",
+    offer: "R$ 39,99 (de R$ 79,99), 50% de desconto — Oferta Relâmpago",
+    commercialFactsSource: "reference_image",
+    nonInventableInfo: [],
+    ...overrides,
+  };
+}
+
+function referenceInput(overrides = {}) {
+  return createInput({
+    referenceIntelligence: tenisReferenceIntelligence(),
+    creativeBrief: tenisCreativeBrief(),
+    workflowContext: { referenceImageUrl: "https://x/referencia.png" },
+    pedroImages: createPedroImages({ images: [{ id: "image-1", mimeType: "image/png", extension: "png", width: 1080, height: 1350, aspectRatio: "4:5", altText: "Slide 1", uri: "https://x/gerada.png" }] }),
+    ...overrides,
+  });
+}
+
+test("evaluateProductFidelity (via buildBaselineReview): veredito de incompatibilidade vira PRODUCT_FIDELITY_MISMATCH bloqueante", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const review = buildBaselineReview(referenceInput(), context, REVIEW_THRESHOLDS, { mismatch: true, reasoning: "a imagem gerada mostra um tênis amarelo, não preto e branco" });
+
+  const found = review.issues.find((entry) => entry.code === "PRODUCT_FIDELITY_MISMATCH");
+  assert.ok(found, `esperava PRODUCT_FIDELITY_MISMATCH, issues: ${JSON.stringify(review.issues.map((i) => i.code))}`);
+  assert.equal(found.severity, "high");
+  assert.equal(found.category, "fidelity");
+  assert.equal(review.reviewStatus, "rejected");
+});
+
+test("evaluateProductFidelity: veredito 'não é incompatível' não gera issue nenhuma", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const review = buildBaselineReview(referenceInput(), context, REVIEW_THRESHOLDS, { mismatch: false });
+
+  assert.equal(review.issues.some((entry) => entry.code === "PRODUCT_FIDELITY_MISMATCH"), false);
+});
+
+test("evaluateProductFidelity: veredito indisponível (undefined — não foi possível verificar) nunca reprova por conta disso", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const review = buildBaselineReview(referenceInput(), context, REVIEW_THRESHOLDS, undefined);
+
+  assert.equal(review.issues.some((entry) => entry.code === "PRODUCT_FIDELITY_MISMATCH"), false);
+});
+
+test("evaluateCommercialHallucination (via buildBaselineReview): condição comercial não confirmada na copy vira COMMERCIAL_HALLUCINATION_DETECTED bloqueante", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const input = referenceInput({ mariaCopy: createMariaCopy({ caption: "Corre, estoque limitado! " + createMariaCopy().caption }) });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS);
+
+  const found = review.issues.find((entry) => entry.code === "COMMERCIAL_HALLUCINATION_DETECTED");
+  assert.ok(found, `esperava COMMERCIAL_HALLUCINATION_DETECTED, issues: ${JSON.stringify(review.issues.map((i) => i.code))}`);
+  assert.equal(review.reviewStatus, "rejected");
+});
+
+test("evaluateCommercialFactUtilization: fato comercial forte disponível mas ignorado pela copy vira COMMERCIAL_FACT_IGNORED", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  // createMariaCopy() padrão não menciona nenhum dos fatos comerciais do tênis.
+  const review = buildBaselineReview(referenceInput(), context, REVIEW_THRESHOLDS);
+
+  assert.ok(review.issues.some((entry) => entry.code === "COMMERCIAL_FACT_IGNORED"));
+});
+
+test("evaluateCommercialFactUtilization: copy que de fato usa o fato comercial forte NÃO é sinalizada", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const input = referenceInput({ mariaCopy: createMariaCopy({ title: "R$ 39,99 — Oferta Relâmpago!" }) });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS);
+
+  assert.equal(review.issues.some((entry) => entry.code === "COMMERCIAL_FACT_IGNORED"), false);
+});
+
+test("evaluateCopySpecificity: clichê genérico na copy vira GENERIC_CLICHE_IN_COPY (teste da 'logo removida')", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const input = createInput({ mariaCopy: createMariaCopy({ title: "Descubra um novo jeito de comprar" }) });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS);
+
+  assert.ok(review.issues.some((entry) => entry.code === "GENERIC_CLICHE_IN_COPY"));
+});
+
+test("Sem Reference Intelligence, nenhuma das checagens novas dispara (regressão total)", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const review = buildBaselineReview(createInput(), context, REVIEW_THRESHOLDS, undefined);
+
+  assert.equal(review.issues.some((entry) => entry.code === "PRODUCT_FIDELITY_MISMATCH"), false);
+  assert.equal(review.issues.some((entry) => entry.code === "COMMERCIAL_HALLUCINATION_DETECTED"), false);
+  assert.equal(review.issues.some((entry) => entry.code === "COMMERCIAL_FACT_IGNORED"), false);
+});
+
+test("Lucas.execute: com Ícaro + Reference Intelligence + imagem gerada, checkProductFidelity chama o Ícaro com as DUAS imagens (referência e gerada) antes do apoio de IA de sempre", async () => {
+  const icaro = new FakeIcaroBrain([
+    JSON.stringify({ mismatch: false }),
+    enhancementJson(),
+  ]);
+  const { lucas } = createLucas({ icaro });
+
+  const response = await lucas.execute(createRequest(referenceInput()));
+
+  assert.equal(response.status, "completed");
+  assert.equal(icaro.calls.length, 2, `esperava 2 chamadas ao Ícaro (fidelidade + apoio de IA), veio ${icaro.calls.length}`);
+  assert.deepEqual(icaro.calls[0].imageUrls, ["https://x/referencia.png", "https://x/gerada.png"]);
+  assert.equal(response.output.issues.some((entry) => entry.code === "PRODUCT_FIDELITY_MISMATCH"), false);
+});
+
+test("Lucas.execute: sem workflowContext.referenceImageUrl, checkProductFidelity nunca chama o Ícaro (só o apoio de IA de sempre, 1 chamada)", async () => {
+  const icaro = new FakeIcaroBrain([enhancementJson()]);
+  const { lucas } = createLucas({ icaro });
+
+  await lucas.execute(createRequest(createInput({ referenceIntelligence: tenisReferenceIntelligence() })));
+
+  assert.equal(icaro.calls.length, 1);
+});
+
 test("Lucas revisa um pacote completo e devolve checklist, issues, riscos e próximos passos", async () => {
   const { lucas } = createLucas();
 

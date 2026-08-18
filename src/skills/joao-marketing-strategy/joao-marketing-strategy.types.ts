@@ -1,5 +1,6 @@
 import type { CampaignCreativeDNA } from "../../shared/utils/creative-director-engine.js";
 import type { MarketingObjective } from "../../shared/utils/marketing-objective-classifier.js";
+import type { ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
 
 export type JoaoSupportedChannel =
   | "instagram"
@@ -62,6 +63,11 @@ export type JoaoStrategyRequestInput = {
    * `ContentGenerationHistoryPort`/`QualityFeedbackPort`. Ausente = comportamento idêntico ao
    * atual (nenhuma instrução de "evitar repetir" é adicionada). */
   avoidRepeating?: string;
+  /** Fatos estruturados (produto, preço, desconto, oferta, o que preservar) extraídos das imagens
+   * de referência anexadas na ideia — ver `reference-intelligence.types.ts`. Ausente = mesmo
+   * comportamento de sempre (nenhum fato de referência disponível, ex.: `campaign_creation`, que
+   * nunca tem imagens de referência). */
+  referenceIntelligence?: ReferenceIntelligence;
 };
 
 /**
@@ -88,6 +94,10 @@ export type JoaoCreativeBrief = {
   communicationAngle: string;
   mandatoryInfo: string[];
   nonInventableInfo: string[];
+  /** De onde `offer` veio — permite a Maria/Lucas saber se a oferta é evidência real (imagem de
+   * referência) ou só uma faixa de preço cadastrada na Clara (menos específica). Requisito de
+   * "toda afirmação relevante precisa ser rastreável até uma fonte". */
+  commercialFactsSource: "reference_image" | "registered_product" | "none";
 };
 
 export type JoaoMariaBriefing = {
@@ -147,6 +157,10 @@ export type JoaoMarketingStrategyCore = {
   nextSteps: string[];
   /** Identidade criativa da campanha (Creative Director Engine) — enriquece o contexto entregue a Bruno/Vanessa/Diego/Nora/Rafa, nunca decide roteiro/direção sozinho. */
   creativeDna: CampaignCreativeDNA;
+  /** Repassado de `JoaoStrategyRequestInput.referenceIntelligence` sem alteração — existe aqui só
+   * para que Maria/Lucas (que recebem a SAÍDA de João, não o input original) também tenham acesso
+   * aos fatos de referência, sem precisar reler/reparsear do banco. */
+  referenceIntelligence?: ReferenceIntelligence;
 };
 
 export type JoaoMarketingStrategyOutput = JoaoMarketingStrategyCore & {

@@ -12,6 +12,9 @@ import type { DeveloperAssistancePendingOutput } from "../../application/ai/deve
 import { resolveContentQualityProfile, type ContentQualityProfile } from "../../shared/utils/content-quality-profile.js";
 import { deriveCampaignCreativeDNA, isWeddingOrganizationTheme } from "../../shared/utils/creative-director-engine.js";
 import { MIN_ACCEPTABLE_HUMAN_COVERAGE, MIN_ACCEPTABLE_ASSET_VARIETY } from "../../shared/utils/coverage/requirement-evaluator.js";
+import { detectGenericPhrases } from "../../shared/utils/generic-phrase-detector.js";
+import { detectUnconfirmedCommercialClaims } from "../../shared/utils/commercial-hallucination-detector.js";
+import { hasStrongCommercialFact } from "../../shared/utils/reference-intelligence.types.js";
 import { lucasQualityReviewManifest } from "./lucas.manifest.js";
 import type { LucasLogAction, LucasLoggerPort } from "./lucas-log.contract.js";
 import type {
@@ -73,6 +76,11 @@ const BLOCKING_ISSUE_CODES = new Set<LucasIssueCode>([
   // INTENT-BASED FOOTAGE ACQUISITION — um Shot cuja intenção real não foi atendida nunca deveria
   // passar só porque a nota geral do vídeo ficou alta.
   "SHOT_INTENT_NOT_SATISFIED",
+  // REFERENCE INTELLIGENCE — requisito "REJECT_AUTOMATICALLY" para falha crítica de fidelidade ao
+  // produto de referência ou alucinação comercial. A peça não deve chegar ao usuário nesses casos,
+  // independente da nota agregada.
+  "PRODUCT_FIDELITY_MISMATCH",
+  "COMMERCIAL_HALLUCINATION_DETECTED",
 ]);
 
 const SEVERITY_PENALTY: Record<LucasIssueSeverity, number> = {
@@ -266,11 +274,18 @@ export class LucasQualityReviewSkill implements Skill<LucasQualityReviewRequestI
 
     await this.log("ReviewStarted", "Revisão de qualidade iniciada.", request, { clientId: tenant.clientId });
 
+    // Checagem REAL de fidelidade visual (requisito "o produto gerado corresponde ao produto
+    // enviado?") — roda ANTES do baseline pra entrar como mais um sinal na mesma passada síncrona
+    // de scoring/status/checklist, em vez de precisar recalcular tudo depois. Best-effort: sem
+    // `icaro`, sem `referenceIntelligence` ou sem imagem gerada, fica `undefined` — "não verificado"
+    // nunca é tratado como "reprovado".
+    const productFidelityVerdict = await this.checkProductFidelity(request);
+
     let review = buildBaselineReview(request.input, claraContext, {
       approvalScoreThreshold: this.approvalScoreThreshold,
       warningScoreThreshold: this.warningScoreThreshold,
       adjustmentScoreThreshold: this.adjustmentScoreThreshold,
-    });
+    }, productFidelityVerdict);
 
     await this.log("ChecklistValidated", "Checklist de revisão validado.", request, {
       clientId: tenant.clientId,
@@ -392,6 +407,56 @@ export class LucasQualityReviewSkill implements Skill<LucasQualityReviewRequestI
     }
 
     return this.valentina.getClientContext(tenant.id);
+  }
+
+  /**
+   * Checagem REAL de fidelidade visual: compara a imagem GERADA com a(s) imagem(ns) de
+   * REFERÊNCIA de verdade, via visão (`imageUrls` no pedido ao Ícaro — ver `AIProviderRequest.
+   * imageUrls`/`OpenAiIcaroTextProvider`), não um proxy estrutural. Best-effort: qualquer falha
+   * (sem `icaro`, sem referência, sem imagem gerada, erro de rede, resposta ilegível) devolve
+   * `undefined` — "não foi possível verificar" nunca vira "reprovado automaticamente", só
+   * `PRODUCT_FIDELITY_MISMATCH` (um veredito EXPLÍCITO de incompatibilidade) reprova.
+   */
+  private async checkProductFidelity(request: SkillRequest<LucasQualityReviewRequestInput>): Promise<{ mismatch: boolean; reasoning?: string } | undefined> {
+    const referenceIntelligence = request.input.referenceIntelligence;
+    const generatedImageUrl = request.input.pedroImages?.images?.[0]?.uri;
+    if (!this.icaro || !referenceIntelligence || !generatedImageUrl) return undefined;
+
+    const referenceImageUrl = typeof request.input.workflowContext?.referenceImageUrl === "string" ? request.input.workflowContext.referenceImageUrl : undefined;
+    if (!referenceImageUrl) return undefined;
+
+    try {
+      const facts = referenceIntelligence.verifiedFacts;
+      const productLabel = facts.productName ?? facts.productType ?? "o produto da primeira imagem";
+      const prompt = [
+        `Compare as DUAS imagens anexadas: a PRIMEIRA é a imagem de REFERÊNCIA real do produto (${productLabel}); a SEGUNDA é uma imagem GERADA por IA que deveria retratar fielmente o MESMO produto.`,
+        "Responda apenas com JSON válido, sem markdown, no formato exato: {\"mismatch\": true|false, \"reasoning\": \"1 frase objetiva\"}.",
+        "\"mismatch\": true quando a imagem gerada mostra um produto de cor, formato, categoria ou marca claramente DIFERENTE do produto de referência (ex.: cor errada, tipo de produto errado, modelo diferente). \"mismatch\": false quando o produto gerado é reconhecivelmente o MESMO produto, mesmo com cenário/fundo/composição diferentes (isso é esperado e correto).",
+      ].join("\n");
+
+      const response = await this.icaro.request({
+        taskType: "review",
+        prompt,
+        specialistId: this.manifest.id,
+        executionId: request.context.executionId,
+        taskId: request.context.taskId,
+        correlationId: request.context.correlationId,
+        context: { skillId: this.manifest.id, clientId: request.input.clientId },
+        imageUrls: [referenceImageUrl, generatedImageUrl],
+        expectedOutput: "json",
+        priority: "quality",
+        temperature: 0.2,
+        maxTokens: 200,
+        timeoutMs: 25_000,
+      });
+
+      if (response.status !== "completed") return undefined;
+      const parsed = JSON.parse(extractJson(String(response.content ?? ""), "Lucas (fidelidade de produto)")) as { mismatch?: unknown; reasoning?: unknown };
+      if (typeof parsed.mismatch !== "boolean") return undefined;
+      return { mismatch: parsed.mismatch, reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : undefined };
+    } catch {
+      return undefined;
+    }
   }
 
   private async log(
@@ -518,6 +583,7 @@ export function buildBaselineReview(
   input: LucasQualityReviewRequestInput,
   context: ClaraContextResponse,
   thresholds: ReviewThresholds,
+  productFidelityVerdict?: { mismatch: boolean; reasoning?: string },
 ): LucasReviewCore {
   const brand = latest(context.modules.BrandContext);
   const issues: LucasIssue[] = [];
@@ -528,6 +594,10 @@ export function buildBaselineReview(
   evaluateVisual(input, issues);
   evaluateImages(input, issues);
   evaluateCoherence(input, issues);
+  evaluateProductFidelity(productFidelityVerdict, issues);
+  evaluateCommercialHallucination(input, issues);
+  evaluateCommercialFactUtilization(input, issues);
+  evaluateCopySpecificity(input, issues);
   evaluateTone(input, brand, issues);
   evaluateCta(input, issues);
   evaluateBrandRules(input, brand, issues);
@@ -675,6 +745,79 @@ function evaluateCoherence(input: LucasQualityReviewRequestInput, issues: LucasI
   ) {
     issues.push(issue("ASPECT_RATIO_MISMATCH", "coherence", `Proporção da imagem gerada ("${firstImage.aspectRatio}") diverge da proporção recomendada pela Sofia ("${input.sofiaDirection.recommendedAspectRatio}").`, "low"));
   }
+}
+
+// REFERENCE INTELLIGENCE — requisito "quality gate obrigatório": fidelidade ao produto, alucinação
+// comercial, fato comercial ignorado e genericidade da copy. Todas com guarda de ausência no
+// início (mesmo padrão de `evaluateVisual`/`sofiaDirection`) — sem Reference Intelligence
+// disponível, nenhuma delas dispara, comportamento idêntico a antes desta funcionalidade existir.
+
+/** Fidelidade ao produto (checagem REAL de visão, não proxy) — `verdict` vem de
+ * `LucasQualityReviewSkill.checkProductFidelity`, já resolvido de forma best-effort antes de
+ * `buildBaselineReview` ser chamado. `undefined` = não foi possível verificar (sem Ícaro, sem
+ * Reference Intelligence, sem imagem gerada, ou a própria chamada falhou) — nunca tratado como
+ * reprovação, só um veredito EXPLÍCITO de incompatibilidade reprova. */
+function evaluateProductFidelity(verdict: { mismatch: boolean; reasoning?: string } | undefined, issues: LucasIssue[]): void {
+  if (!verdict?.mismatch) return;
+  issues.push(issue(
+    "PRODUCT_FIDELITY_MISMATCH",
+    "fidelity",
+    `O produto na imagem gerada não corresponde ao produto da imagem de referência${verdict.reasoning ? `: ${verdict.reasoning}` : "."}`,
+    "high",
+  ));
+}
+
+/** Alucinação comercial: condição comercial afirmada na copy sem confirmação (estoque limitado,
+ * garantia, frete grátis sem evidência, avaliações, etc.) — proibido inventar. */
+function evaluateCommercialHallucination(input: LucasQualityReviewRequestInput, issues: LucasIssue[]): void {
+  const facts = input.referenceIntelligence?.commercialFacts;
+  const found = [
+    ...detectUnconfirmedCommercialClaims(input.mariaCopy.title, facts),
+    ...detectUnconfirmedCommercialClaims(input.mariaCopy.caption, facts),
+  ];
+  if (found.length === 0) return;
+  issues.push(issue(
+    "COMMERCIAL_HALLUCINATION_DETECTED",
+    "commercial",
+    `Condição comercial não confirmada na copy, sem evidência na referência: "${found[0]}".`,
+    "high",
+  ));
+}
+
+/** Fato comercial ignorado: havia um argumento comercial forte (preço/desconto/oferta) disponível
+ * na referência, mas o título/legenda ficou genérico em vez de usar o dado concreto — requisito de
+ * hierarquia de fatos comerciais ("nunca usar manchete genérica quando existir argumento comercial
+ * concreto muito mais forte"). */
+function evaluateCommercialFactUtilization(input: LucasQualityReviewRequestInput, issues: LucasIssue[]): void {
+  const facts = input.referenceIntelligence?.commercialFacts;
+  if (!hasStrongCommercialFact(facts)) return;
+
+  const titleAndCaption = `${input.mariaCopy.title} ${input.mariaCopy.caption}`;
+  const mentionsCommercialFact = [facts?.currentPrice, facts?.discountPercent, facts?.promotion]
+    .filter((value): value is string => Boolean(value))
+    .some((value) => titleAndCaption.includes(value));
+  if (mentionsCommercialFact) return;
+
+  issues.push(issue(
+    "COMMERCIAL_FACT_IGNORED",
+    "commercial",
+    "Havia um fato comercial forte disponível na referência (preço/desconto/oferta), mas a copy não o utilizou.",
+    "high",
+  ));
+}
+
+/** Teste da "logo removida": título/legenda dominados por clichê e sem nenhuma especificidade de
+ * produto/marca poderiam pertencer a qualquer outra empresa — reaproveita `detectGenericPhrases`
+ * (já usado pela Maria no próprio loop de regeneração; aqui é a segunda camada, no quality gate). */
+function evaluateCopySpecificity(input: LucasQualityReviewRequestInput, issues: LucasIssue[]): void {
+  const genericPhrases = [...detectGenericPhrases(input.mariaCopy.title), ...detectGenericPhrases(input.mariaCopy.caption)];
+  if (genericPhrases.length === 0) return;
+  issues.push(issue(
+    "GENERIC_CLICHE_IN_COPY",
+    "copy",
+    `Copy genérica detectada — poderia pertencer a qualquer outra empresa: "${genericPhrases[0]}".`,
+    "high",
+  ));
 }
 
 function evaluateTone(input: LucasQualityReviewRequestInput, brand: ClaraKnowledgeRecord<"BrandContext"> | undefined, issues: LucasIssue[]): void {

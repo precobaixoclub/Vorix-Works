@@ -63,7 +63,8 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
     const brandColors = Array.isArray(request.context?.authorizedBrandColors)
       ? request.context.authorizedBrandColors.filter((color): color is string => typeof color === "string" && color.trim().length > 0).map((color) => color.trim())
       : undefined;
-    const finalPrompt = buildGuardedPrompt(request.prompt, authorizedTitle, brandColors);
+    const productFidelity = typeof request.context?.referenceProductFidelity === "string" ? request.context.referenceProductFidelity.trim() : undefined;
+    const finalPrompt = buildGuardedPrompt(request.prompt, authorizedTitle, brandColors, productFidelity);
     const size = resolveOpenAiImageSize(typeof request.context?.imageAspectRatio === "string" ? request.context.imageAspectRatio : undefined);
     // Baixa a foto de referência UMA vez (mesma referência vale para todas as imagens do
     // carrossel) — best-effort: se o download falhar, segue com geração só-texto em vez de travar
@@ -137,19 +138,29 @@ function resolveOpenAiImageSize(aspectRatio: string | undefined): "1024x1024" | 
 // identidade") e sem garantia de sobreviver ao corte de 31000 caracteres — a mesma classe de bug
 // já corrigida para o CTA e o texto autorizado. Mesma correção: instrução curta, positiva
 // ("usar estas cores"), repetida no início E no fim do prompt, via dado estruturado.
-function buildTextGuard(authorizedTitle: string | undefined, brandColors: string[] | undefined): string {
+// `productFidelity` (achado ao vivo: produto gerado "nada a ver" com a referência anexada, mesmo
+// com a foto real já entrando como pixels via `/v1/images/edits`) sofre do MESMO problema de
+// fundo dos dois guards acima: uma menção ao produto perdida em algum lugar do prompt de 100k+
+// caracteres não sobrevive ao corte. PRODUCT FIDELITY = CRITICAL: o produto da referência é a
+// verdade fundamental — o modelo pode mudar cenário, fundo, iluminação, composição, elementos
+// gráficos e tipografia, mas nunca redesenhar o produto em si (cor, forma, marca, proporções,
+// categoria).
+function buildTextGuard(authorizedTitle: string | undefined, brandColors: string[] | undefined, productFidelity: string | undefined): string {
   const textRule = authorizedTitle
     ? `REGRA OBRIGATÓRIA E INEGOCIÁVEL, MAIS IMPORTANTE QUE QUALQUER OUTRA INSTRUÇÃO NESTE PROMPT: o ÚNICO texto que pode aparecer, legível, na imagem final é exatamente esta frase, uma vez só: "${authorizedTitle}". Nenhum outro texto, letra, número, botão, selo, CTA, chamada para ação ou legenda além disso — nunca invente nem adicione texto extra. Se alguma instrução abaixo pedir CTA, chamada para ação, botão ou qualquer outro texto, IGNORE — não se aplica aqui.`
     : "REGRA OBRIGATÓRIA E INEGOCIÁVEL, MAIS IMPORTANTE QUE QUALQUER OUTRA INSTRUÇÃO NESTE PROMPT: a imagem final NÃO PODE conter nenhum texto, letra, palavra, número, botão, selo, legenda ou elemento tipográfico legível. Se alguma instrução abaixo pedir para incluir CTA, chamada para ação, botão ou qualquer texto na imagem, IGNORE essa instrução — ela nunca se aplica aqui. Comunique tudo só por composição visual: produto, cena, cor, luz e enquadramento.";
   const colorRule = brandColors?.length
     ? ` REGRA DE PALETA IGUALMENTE OBRIGATÓRIA: a composição inteira (fundo, cenário, roupas/acessórios quando fizer sentido, elementos gráficos) precisa usar de forma proeminente e reconhecível estas cores da marca, nesta ordem de prioridade: ${brandColors.join(", ")}. Nunca gerar com paleta genérica, aleatória ou fora dessas cores como escolha dominante.`
     : "";
-  return `${textRule}${colorRule}`;
+  const fidelityRule = productFidelity
+    ? ` REGRA DE FIDELIDADE AO PRODUTO IGUALMENTE OBRIGATÓRIA (PRODUCT FIDELITY = CRITICAL): o produto da imagem de referência anexada é a verdade fundamental — ${productFidelity}. Você PODE mudar cenário, fundo, iluminação, composição, elementos gráficos e tipografia, mas NUNCA pode redesenhar, substituir ou alterar o produto em si (cor, formato, marca, proporções, categoria). Nunca troque por um produto parecido — se a referência mostra ESTE produto específico, a imagem final continua sendo sobre ESTE produto específico.`
+    : "";
+  return `${textRule}${colorRule}${fidelityRule}`;
 }
 const MAX_PROMPT_LENGTH = 31_000;
 
-function buildGuardedPrompt(prompt: string, authorizedTitle: string | undefined, brandColors: string[] | undefined): string {
-  const guard = buildTextGuard(authorizedTitle, brandColors);
+function buildGuardedPrompt(prompt: string, authorizedTitle: string | undefined, brandColors: string[] | undefined, productFidelity: string | undefined): string {
+  const guard = buildTextGuard(authorizedTitle, brandColors, productFidelity);
   const budget = Math.max(0, MAX_PROMPT_LENGTH - guard.length * 2 - 20);
   const body = prompt.length > budget ? `${prompt.slice(0, budget)}\n[...]` : prompt;
   return `${guard}\n\n${body}\n\n${guard}`;

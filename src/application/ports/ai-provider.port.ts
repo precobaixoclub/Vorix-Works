@@ -61,6 +61,12 @@ export type AIProviderRequest = {
   context?: Record<string, unknown>;
   constraints?: string[];
   expectedOutput?: "text" | "json" | "image" | "structured";
+  /** URLs de imagens públicas a enviar junto com o prompt, para providers de texto com capacidade
+   * multimodal (ex.: `gpt-4o-mini`) — usado por checagens de visão dentro de uma análise de texto
+   * (ex.: Lucas comparando a imagem gerada com a imagem de referência), nunca por geração de
+   * imagem em si (isso continua exclusivo de `taskType: "image_generation"`). Providers que não
+   * suportam entrada de imagem devem ignorar este campo, nunca lançar erro por causa dele. */
+  imageUrls?: string[];
 };
 
 export type AIProviderResponse = {

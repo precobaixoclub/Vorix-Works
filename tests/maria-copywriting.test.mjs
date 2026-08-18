@@ -356,6 +356,70 @@ test("Maria instrui o Ícaro a priorizar hashtags preferidas e incluir palavras 
   assert.ok(prompt.includes("preferredHashtags"));
 });
 
+function tenisReferenceIntelligence() {
+  return {
+    imagesAnalyzed: 2,
+    primaryImageIndex: 0,
+    multiImageRelationship: "same_product",
+    verifiedFacts: { productType: "tênis", productName: "Tênis Casual Unissex Skatista RV", category: "calçados" },
+    visualFacts: { colors: ["preto", "branco"], visualCharacteristics: [], relevantText: [], ctaPresent: false, elementsToPreserve: [] },
+    commercialFacts: {
+      currentPrice: "R$ 39,99",
+      previousPrice: "R$ 79,99",
+      discountPercent: "50%",
+      promotion: "Oferta Relâmpago",
+      commercialConditions: ["até 7x de R$6,41"],
+    },
+    uncertainFacts: [],
+    claimSourceMap: {},
+  };
+}
+
+test("buildMariaPrompt: inclui seção de FATOS COMERCIAIS VERIFICADOS com prioridade máxima quando a referência traz oferta real", () => {
+  const briefing = createBriefing({ referenceIntelligence: tenisReferenceIntelligence() });
+  const strategy = createCopyStrategy(briefing);
+  const prompt = buildMariaPrompt(briefing, strategy, [], 1);
+
+  assert.ok(prompt.includes("FATOS COMERCIAIS VERIFICADOS"));
+  assert.ok(prompt.includes("R$ 39,99"));
+  assert.ok(prompt.includes("R$ 79,99"));
+  assert.ok(prompt.includes("50%"));
+  assert.ok(prompt.includes("Oferta Relâmpago"));
+  assert.ok(prompt.includes("PRIORIDADE MÁXIMA"));
+});
+
+test("buildMariaPrompt: sem Reference Intelligence, nenhuma seção de fatos comerciais aparece (regressão)", () => {
+  const briefing = createBriefing();
+  const strategy = createCopyStrategy(briefing);
+  const prompt = buildMariaPrompt(briefing, strategy, [], 1);
+
+  assert.equal(prompt.includes("FATOS COMERCIAIS VERIFICADOS"), false);
+});
+
+test("evaluateCopyQuality: reprova copy que afirma condição comercial não confirmada (alucinação)", () => {
+  const copy = { ...JSON.parse(goodCopyJson()), caption: "Corre que o estoque é limitado e a garantia é total! " + JSON.parse(goodCopyJson()).caption };
+  const quality = evaluateCopyQuality(copy, createBriefing(), 1);
+
+  const found = quality.issues.find((entry) => entry.code === "UNVERIFIED_COMMERCIAL_CLAIM");
+  assert.ok(found, `esperava UNVERIFIED_COMMERCIAL_CLAIM, issues: ${JSON.stringify(quality.issues.map((i) => i.code))}`);
+  assert.equal(found.severity, "high");
+});
+
+test("evaluateCopyQuality: 'frete grátis' na copy é aprovado quando a Reference Intelligence confirma o frete", () => {
+  const copy = { ...JSON.parse(goodCopyJson()), caption: "Aproveite o frete grátis! " + JSON.parse(goodCopyJson()).caption };
+  const briefing = createBriefing({ referenceIntelligence: { ...tenisReferenceIntelligence(), commercialFacts: { ...tenisReferenceIntelligence().commercialFacts, shippingInfo: "grátis com cupom" } } });
+  const quality = evaluateCopyQuality(copy, briefing, 1);
+
+  assert.equal(quality.issues.some((entry) => entry.code === "UNVERIFIED_COMMERCIAL_CLAIM"), false);
+});
+
+test("evaluateCopyQuality: 'frete grátis' sem nenhuma confirmação continua sendo reprovado (regressão do comportamento atual)", () => {
+  const copy = { ...JSON.parse(goodCopyJson()), caption: "Aproveite o frete grátis! " + JSON.parse(goodCopyJson()).caption };
+  const quality = evaluateCopyQuality(copy, createBriefing(), 1);
+
+  assert.ok(quality.issues.some((entry) => entry.code === "UNVERIFIED_COMMERCIAL_CLAIM"));
+});
+
 test("Maria valida o briefing recebido antes de chamar o Ícaro", async () => {
   const provider = new FakeIcaroBrain([goodCopyJson()]);
   const logger = new InMemoryMariaLogger();

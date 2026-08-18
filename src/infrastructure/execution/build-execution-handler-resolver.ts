@@ -86,7 +86,13 @@ export async function buildExecutionHandlerResolver(input: {
       provider: "helena",
       version: "1",
       priority: 100,
-      handler: new QualityGateExecutionTaskHandler({ helena, provider: "helena", contentGenerationHistory: input.contentGenerationHistory }),
+      handler: new QualityGateExecutionTaskHandler({
+        helena,
+        provider: "helena",
+        contentGenerationHistory: input.contentGenerationHistory,
+        runtimeRepository: input.runtimeRepository,
+        preparedCommandRepository: input.preparedCommandRepository,
+      }),
       executionModes: ["real"],
       enabled: true,
       supportedCapabilities: ["human_review"],
@@ -96,9 +102,11 @@ export async function buildExecutionHandlerResolver(input: {
       // caller HTTP (`production.route.ts`), não como retry da mesma task.
       sideEffectPolicy: "external_read",
       retryPolicy: { supportsRetry: false, maxAttempts: 1, backoffStrategy: "none" },
-      // Lucas é heurístico e rápido — timeout curto é suficiente, nenhuma chamada de imagem
-      // acontece aqui.
-      executionTimeoutMs: 30_000,
+      // Lucas é heurístico e rápido no geral, mas quando há Reference Intelligence disponível faz
+      // uma chamada real de visão pra checar fidelidade de produto (`checkProductFidelity`) —
+      // precisa de mais fôlego que os 30s antigos (puramente heurísticos, sem nenhuma chamada de
+      // IA).
+      executionTimeoutMs: 60_000,
       requiredFeatureFlags: ["realExecutionEnabled", "realVisualEnabled"],
     });
 

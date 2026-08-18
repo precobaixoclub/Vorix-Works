@@ -117,6 +117,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     idGenerator: () => `execution-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     ensureHouseTenantProfile: app.zunoContainer.ensureHouseTenantProfile,
     imageDescriber: app.zunoContainer.imageDescriber,
+    referenceIntelligenceExtractor: app.zunoContainer.referenceIntelligenceExtractor,
     qualityFeedback: app.zunoContainer.qualityFeedback,
   });
   await registerPublicationRoutes(app, {

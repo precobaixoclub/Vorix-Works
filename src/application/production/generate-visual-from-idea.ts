@@ -4,6 +4,7 @@ import { confirmBriefingAndPrepareCommand, startBriefing, type BriefingUseCaseDe
 import type { ConversationRepositoryPort } from "../ports/conversation-repository.port.js";
 import type { PlanningRepositoryPort } from "../ports/planning-repository.port.js";
 import type { RuntimeRepositoryPort } from "../ports/runtime-repository.port.js";
+import type { ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
 
 // Nenhum `UserIntentType` dedicado existe para "gerar só uma peça visual" (o enum é fechado —
 // `create_campaign`/`edit_campaign`/.../`start_briefing`) — `intent` é só metadado guardado no
@@ -40,6 +41,11 @@ export type GenerateVisualFromIdeaDeps = BriefingUseCaseDeps & {
   planningRepository: PlanningRepositoryPort;
   runtimeRepository: RuntimeRepositoryPort;
   imageDescriber?: { describe(imageUrl: string, instruction: string): Promise<string | undefined> };
+  /** Reference Intelligence — extração ESTRUTURADA de fatos (produto, categoria, preço, desconto,
+   * oferta, o que preservar), diferente de `imageDescriber` (que só produz prosa de estilo visual).
+   * Opcional: sem isto configurado, o comportamento é idêntico ao de antes desta funcionalidade
+   * existir (só `referenceContext` em texto livre). */
+  referenceIntelligenceExtractor?: { extract(imageUrls: string[]): Promise<ReferenceIntelligence | undefined> };
 };
 
 const REFERENCE_IMAGE_DESCRIBE_INSTRUCTION =
@@ -104,9 +110,23 @@ export async function generateVisualFromIdea(
 
   const referenceContext = await describeReferenceImages(deps, input.referenceImageUrls);
   if (referenceContext) fields.push({ key: "referenceContext", value: referenceContext });
-  // A PRIMEIRA imagem de referência também vai como URL crua — usada como entrada visual real na
-  // geração (`POST /v1/images/edits`), não só como texto descritivo (`referenceContext` acima).
-  const primaryReferenceImageUrl = input.referenceImageUrls?.[0]?.trim();
+
+  // Reference Intelligence (requisito "toda imagem fornecida deve ser analisada ANTES do
+  // planejamento", extraindo fatos verificáveis — produto, preço, desconto, oferta, o que
+  // preservar) — best-effort, roda em paralelo à descrição de estilo acima, nunca bloqueia a
+  // geração se falhar (ver `OpenAiReferenceIntelligenceExtractor.extract`, que nunca lança).
+  const referenceUrls = (input.referenceImageUrls ?? []).map((url) => url.trim()).filter(Boolean);
+  const referenceIntelligence = await deps.referenceIntelligenceExtractor?.extract(referenceUrls).catch(() => undefined);
+  if (referenceUrls.length > 0) fields.push({ key: "referenceImageUrls", value: JSON.stringify(referenceUrls) });
+  if (referenceIntelligence) fields.push({ key: "referenceIntelligence", value: JSON.stringify(referenceIntelligence) });
+
+  // Imagem de entrada real pro `/v1/images/edits` (pixels de verdade, não só texto descritivo) —
+  // usa `primaryImageIndex` da Reference Intelligence quando disponível (a imagem mais limpa/
+  // representativa do produto, que pode não ser a primeira anexada — achado ao vivo: um print de
+  // grade com vários produtos foi anexado antes da foto limpa do produto). Sem Reference
+  // Intelligence, cai no comportamento de sempre: a primeira imagem da lista.
+  const primaryImageIndex = referenceIntelligence && referenceIntelligence.primaryImageIndex < referenceUrls.length ? referenceIntelligence.primaryImageIndex : 0;
+  const primaryReferenceImageUrl = referenceUrls[primaryImageIndex];
   if (primaryReferenceImageUrl) fields.push({ key: "referenceImageUrl", value: primaryReferenceImageUrl });
 
   // Título/headline/legenda/CTA prontos para postar agora são escritos pela Maria de verdade, via

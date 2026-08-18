@@ -56,6 +56,13 @@ export class OpenAiIcaroTextProvider implements AIProviderPort {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), request.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     try {
+      // `imageUrls` (ver `AIProviderRequest.imageUrls`) — quando presente, envia o prompt como
+      // blocos multimodais (texto + `image_url`) em vez de uma string simples; `gpt-4o-mini` já é
+      // multimodal, então isto não exige um provider novo. Usado por checagens de visão dentro de
+      // uma análise de texto (ex.: Lucas comparando a imagem gerada com a de referência).
+      const requestContent = request.imageUrls?.length
+        ? [{ type: "text", text: request.prompt }, ...request.imageUrls.map((url) => ({ type: "image_url", image_url: { url } }))]
+        : request.prompt;
       const response = await this.httpClient(`${this.config.apiBaseUrl ?? DEFAULT_BASE_URL}/v1/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
@@ -64,7 +71,7 @@ export class OpenAiIcaroTextProvider implements AIProviderPort {
           temperature: request.temperature,
           max_tokens: request.maxTokens,
           ...(request.expectedOutput === "json" ? { response_format: { type: "json_object" } } : {}),
-          messages: [{ role: "user", content: request.prompt }],
+          messages: [{ role: "user", content: requestContent }],
         }),
         signal: controller.signal,
       });

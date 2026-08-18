@@ -6,6 +6,7 @@ import { InMemoryZunoEventRecorder } from "../dist/infrastructure/telemetry/in-m
 import {
   JoaoMarketingStrategySkill,
   buildBaselineStrategy,
+  buildCreativeBrief,
   buildMariaBriefing,
   buildSofiaBriefing,
   mergeStrategyEnhancement,
@@ -540,6 +541,78 @@ test("João deriva o Creative DNA da campanha e o usa para enriquecer as observa
   assert.ok(strategy.creativeDna.heroScene.length > 0);
   assert.ok(strategy.observations.some((observation) => observation.includes("Creative DNA — Big Idea")));
   assert.ok(strategy.observations.some((observation) => observation.includes("Creative DNA — Hero Scene")));
+});
+
+function tenisReferenceIntelligence(overrides = {}) {
+  return {
+    imagesAnalyzed: 2,
+    primaryImageIndex: 0,
+    multiImageRelationship: "same_product",
+    verifiedFacts: { productType: "tênis", productName: "Tênis Casual Unissex Skatista RV", category: "calçados" },
+    visualFacts: { colors: ["preto", "branco"], visualCharacteristics: [], relevantText: [], ctaPresent: false, elementsToPreserve: [] },
+    commercialFacts: {
+      currentPrice: "R$ 39,99",
+      previousPrice: "R$ 79,99",
+      discountPercent: "50%",
+      promotion: "Oferta Relâmpago",
+      commercialConditions: ["até 7x de R$6,41", "frete grátis com cupom"],
+      shippingInfo: "grátis com cupom",
+    },
+    uncertainFacts: [],
+    claimSourceMap: {},
+    ...overrides,
+  };
+}
+
+test("buildCreativeBrief: prioriza a oferta REAL da imagem de referência sobre a faixa de preço cadastrada na Clara", async () => {
+  const clara = new FakeClara(fullKnowledgeBase());
+  const context = await clara.requestContext({ requester: { id: "joao-marketing-strategy", type: "specialist" }, clientId: CLIENT_ID });
+  const input = createInput({ referenceIntelligence: tenisReferenceIntelligence() });
+  const strategy = buildBaselineStrategy(input, context);
+
+  const brief = buildCreativeBrief(strategy, input, context);
+
+  assert.match(brief.offer, /R\$ 39,99/);
+  assert.match(brief.offer, /R\$ 79,99/);
+  assert.match(brief.offer, /50%/);
+  assert.equal(brief.commercialFactsSource, "reference_image");
+});
+
+test("buildCreativeBrief: NÃO trata 'prazo ou condição de oferta' como não-confirmado quando a referência traz uma promoção/condição real", async () => {
+  const clara = new FakeClara(fullKnowledgeBase());
+  const context = await clara.requestContext({ requester: { id: "joao-marketing-strategy", type: "specialist" }, clientId: CLIENT_ID });
+  const input = createInput({ referenceIntelligence: tenisReferenceIntelligence() });
+  const strategy = buildBaselineStrategy(input, context);
+
+  const brief = buildCreativeBrief(strategy, input, context);
+
+  assert.ok(!brief.nonInventableInfo.includes("prazo ou condição de oferta"), `nonInventableInfo não deveria conter "prazo ou condição de oferta": ${JSON.stringify(brief.nonInventableInfo)}`);
+});
+
+test("buildCreativeBrief: sem Reference Intelligence, comportamento idêntico a antes (regressão) — oferta cadastrada na Clara e prazo/condição sempre não-confirmados", async () => {
+  const clara = new FakeClara(fullKnowledgeBase());
+  const context = await clara.requestContext({ requester: { id: "joao-marketing-strategy", type: "specialist" }, clientId: CLIENT_ID });
+  const input = createInput();
+  const strategy = buildBaselineStrategy(input, context);
+
+  const brief = buildCreativeBrief(strategy, input, context);
+
+  assert.equal(brief.commercialFactsSource, "none");
+  assert.equal(brief.offer, undefined);
+  assert.ok(brief.nonInventableInfo.includes("prazo ou condição de oferta"));
+  assert.ok(brief.nonInventableInfo.includes("preço"));
+});
+
+test("buildCreativeBrief: produto identificado na referência visual vira productOrService/mandatoryInfo, para o produto certo permanecer protagonista", async () => {
+  const clara = new FakeClara(fullKnowledgeBase());
+  const context = await clara.requestContext({ requester: { id: "joao-marketing-strategy", type: "specialist" }, clientId: CLIENT_ID });
+  const input = createInput({ referenceIntelligence: tenisReferenceIntelligence() });
+  const strategy = buildBaselineStrategy(input, context);
+
+  const brief = buildCreativeBrief(strategy, input, context);
+
+  assert.equal(brief.productOrService, "Tênis Casual Unissex Skatista RV");
+  assert.ok(brief.mandatoryInfo.includes("Tênis Casual Unissex Skatista RV"));
 });
 
 test("mergeStrategyEnhancement recalcula o Creative DNA quando o apoio de IA reescreve a promessa central, para não ficar com um DNA desatualizado", async () => {

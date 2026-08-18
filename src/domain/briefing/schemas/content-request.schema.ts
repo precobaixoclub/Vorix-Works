@@ -102,5 +102,39 @@ export const CONTENT_REQUEST_SCHEMA_V1: BriefingSchema = {
       sensitivity: "normal",
       confirmationPolicy: "never_required",
     },
+    {
+      // Todas as URLs de referência anexadas (JSON stringificado), não só a primeira —
+      // `referenceImageUrl` acima continua sendo o fallback/valor padrão quando não há
+      // `referenceIntelligence` (ex.: falha na extração). Existe pra `primaryImageIndex` (ver
+      // `referenceIntelligence` abaixo) ter em que indexar quando a Reference Intelligence decide
+      // que a imagem mais representativa não é a primeira da lista.
+      key: "referenceImageUrls",
+      label: "URLs das imagens de referência",
+      description: "Lista (JSON) de todas as URLs de imagens de referência anexadas pelo usuário, na ordem original.",
+      required: false,
+      dataType: "string",
+      sourcePriority: ["user_message"],
+      validation: { maxLength: 4000 },
+      sensitivity: "normal",
+      confirmationPolicy: "never_required",
+    },
+    {
+      // Fatos estruturados extraídos das imagens de referência (produto, categoria, cor, preço,
+      // desconto, condição comercial, texto visível, o que preservar) — JSON stringificado de
+      // `ReferenceIntelligence` (`src/shared/utils/reference-intelligence.types.ts`). Correção da
+      // falha crítica encontrada ao vivo: sem isto, preço/desconto/oferta visíveis numa foto de
+      // referência eram completamente ignorados — só existia descrição de ESTILO visual
+      // (`referenceContext`), nunca fato comercial. `never_required`: só preenchido
+      // automaticamente por `generate-visual-from-idea.ts`, nunca perguntado ao usuário.
+      key: "referenceIntelligence",
+      label: "Inteligência de referência",
+      description: "Fatos estruturados (produto, categoria, preço, desconto, oferta, o que preservar) extraídos das imagens de referência.",
+      required: false,
+      dataType: "string",
+      sourcePriority: ["user_message"],
+      validation: { maxLength: 4000 },
+      sensitivity: "normal",
+      confirmationPolicy: "never_required",
+    },
   ],
 };

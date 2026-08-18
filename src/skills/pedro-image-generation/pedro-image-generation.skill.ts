@@ -313,6 +313,11 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
           // handlers.ts) — o `OpenAiIcaroImageProvider` baixa e usa como entrada visual de verdade
           // (`POST /v1/images/edits`) em vez de só texto, quando presente.
           referenceImageUrl: typeof request.input.workflowContext?.referenceImageUrl === "string" ? request.input.workflowContext.referenceImageUrl : undefined,
+          // PRODUCT FIDELITY = CRITICAL: o que não pode mudar no produto da imagem de referência,
+          // como dado estruturado curto (mesmo motivo de `authorizedVisibleTitle`/
+          // `authorizedBrandColors` — uma menção perdida no meio do prompt de 100k+ caracteres não
+          // sobrevive ao corte de 31000 antes de chegar na OpenAI).
+          referenceProductFidelity: buildReferenceProductFidelityText(request.input.workflowContext?.referenceIntelligence),
         },
         constraints: [
           "Retornar apenas JSON válido.",
@@ -1427,6 +1432,34 @@ function extractVisibleTextContext(input: PedroImageGenerationRequestInput): Rec
     hasAuthorizedCta: Boolean(cta),
     instruction: "Pedro pode usar somente estes textos como texto legível na imagem; qualquer texto ausente não deve ser inventado.",
   };
+}
+
+/**
+ * PRODUCT FIDELITY = CRITICAL — texto curto e estruturado com o que NÃO pode mudar no produto da
+ * imagem de referência (cor, formato, marca, detalhes visíveis, categoria). `undefined` quando não
+ * há Reference Intelligence disponível (comportamento idêntico a antes desta funcionalidade
+ * existir — nenhuma instrução nova). Mesmo padrão de `authorizedVisibleTitle`/
+ * `authorizedBrandColors`: dado estruturado curto, não uma menção perdida no meio do prompt
+ * gigante.
+ */
+function buildReferenceProductFidelityText(referenceIntelligence: unknown): string | undefined {
+  const record = valueAsRecord(referenceIntelligence);
+  if (!record) return undefined;
+
+  const verifiedFacts = valueAsRecord(record.verifiedFacts);
+  const visualFacts = valueAsRecord(record.visualFacts);
+  const elementsToPreserve = valueAsStringArray(visualFacts?.elementsToPreserve) ?? [];
+  const colors = valueAsStringArray(visualFacts?.colors) ?? [];
+
+  const productLabel = valueAsString(verifiedFacts?.productName) ?? valueAsString(verifiedFacts?.productType);
+  if (!productLabel && elementsToPreserve.length === 0 && colors.length === 0) return undefined;
+
+  const parts: string[] = [];
+  if (productLabel) parts.push(`o produto é: ${productLabel}`);
+  if (colors.length) parts.push(`cores reais: ${colors.join(", ")}`);
+  if (elementsToPreserve.length) parts.push(`preservar sem alteração: ${elementsToPreserve.join(", ")}`);
+
+  return parts.join("; ");
 }
 
 /**

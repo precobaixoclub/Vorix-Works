@@ -1,4 +1,5 @@
 import type { ContentQualityProfile } from "../../shared/utils/content-quality-profile.js";
+import type { ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
 
 export type LucasSupportedChannel =
   | "instagram"
@@ -26,6 +27,16 @@ export type LucasJoaoStrategySummary = {
   risks?: string[];
 };
 
+/** Espelha por convenção o formato real de `JoaoCreativeBrief`, sem importar o tipo da Skill do
+ * João — requisito de "quality gate obrigatório" precisa saber de onde a oferta realmente veio
+ * (`commercialFactsSource`) para checar se um fato comercial forte disponível foi ignorado. */
+export type LucasJoaoCreativeBriefSummary = {
+  productOrService: string;
+  offer?: string;
+  commercialFactsSource: "reference_image" | "registered_product" | "none";
+  nonInventableInfo: string[];
+};
+
 /** Espelha por convenção o formato real de saída da Maria, sem importar o tipo da Skill da Maria. */
 export type LucasMariaCopy = {
   title: string;
@@ -38,6 +49,8 @@ export type LucasMariaCopy = {
   toneUsed: string;
   identifiedAudience: string;
   qualityScore?: number;
+  /** Rastreabilidade `claim -> source` que a Maria produziu — ver `MariaStructuredCopy.claims`. */
+  claims?: Array<{ text: string; source: string }>;
   qualityPassed?: boolean;
 };
 
@@ -375,6 +388,14 @@ export type LucasQualityReviewRequestInput = {
   channel: LucasSupportedChannel;
   format: string;
   workflowContext?: Record<string, unknown>;
+  /** Creative brief do João (produto/oferta/fonte da oferta) — requisito de "quality gate
+   * obrigatório" (fidelidade e checagem comercial). Ausente = mesmo comportamento de antes (todas
+   * as checagens novas que dependem disto ficam inaplicáveis, nunca reprovam por ausência). */
+  creativeBrief?: LucasJoaoCreativeBriefSummary;
+  /** Fatos estruturados extraídos da(s) imagem(ns) de referência — usado tanto pela checagem de
+   * fidelidade visual (comparar a imagem gerada com a referência) quanto pela checagem comercial
+   * (fato forte disponível mas ignorado na copy). Ausente = mesmo comportamento de antes. */
+  referenceIntelligence?: ReferenceIntelligence;
 };
 
 export const LUCAS_REVIEW_STATUSES = ["approved", "approved_with_warnings", "needs_adjustments", "rejected"] as const;
@@ -383,7 +404,7 @@ export type LucasReviewStatus = (typeof LUCAS_REVIEW_STATUSES)[number];
 
 export type LucasIssueSeverity = "low" | "medium" | "high";
 
-export type LucasIssueCategory = "strategy" | "copy" | "visual" | "coherence" | "tone" | "cta" | "brand" | "risk";
+export type LucasIssueCategory = "strategy" | "copy" | "visual" | "coherence" | "tone" | "cta" | "brand" | "risk" | "fidelity" | "commercial";
 
 export type LucasIssueCode =
   | "NO_IMAGES_GENERATED"
@@ -492,7 +513,17 @@ export type LucasIssueCode =
   | "STORY_MISSING_CURIOSITY"
   | "CARROSSEL_INSUFFICIENT_PROGRESSION"
   | "CARROSSEL_MISSING_FINAL_CTA"
-  | "MISSING_VIDEO_PACKAGE_FOR_FORMAT";
+  | "MISSING_VIDEO_PACKAGE_FOR_FORMAT"
+  // REFERENCE INTELLIGENCE — fidelidade ao produto de referência e uso correto de fatos
+  // comerciais reais (ver `evaluateProductFidelity`/`evaluateCommercialHallucination`/
+  // `evaluateCommercialFactUtilization`/`evaluateCopySpecificity` em
+  // `lucas-quality-review.skill.ts`). `PRODUCT_FIDELITY_MISMATCH`/`COMMERCIAL_HALLUCINATION_
+  // DETECTED` entram em `BLOCKING_ISSUE_CODES` (reprovação automática — requisito
+  // "REJECT_AUTOMATICALLY" para falha crítica de fidelidade ou alucinação comercial).
+  | "PRODUCT_FIDELITY_MISMATCH"
+  | "COMMERCIAL_HALLUCINATION_DETECTED"
+  | "COMMERCIAL_FACT_IGNORED"
+  | "GENERIC_CLICHE_IN_COPY";
 
 export type LucasIssue = {
   code: LucasIssueCode;

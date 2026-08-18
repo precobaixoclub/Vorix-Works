@@ -12,6 +12,7 @@ import type { SkillCapability } from "../../domain/skills/skill-capability.contr
 import type { SkillArtifact, SkillResponse } from "../../domain/skills/skill.contract.js";
 import type { ExecutionCapability, TaskType } from "../../domain/planning/planning.model.js";
 import { compositeLogoOntoImage, type LogoCorner } from "../media/logo-compositor.js";
+import { parseReferenceIntelligence, type ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
 
 type SkillCallResult = {
   output: Record<string, unknown>;
@@ -253,6 +254,8 @@ export class QualityGateExecutionTaskHandler implements ExecutionTaskHandlerPort
       helena: HelenaSkillManagerPort;
       provider?: string;
       contentGenerationHistory?: ContentGenerationHistoryPort;
+      runtimeRepository?: RuntimeRepositoryPort;
+      preparedCommandRepository?: PreparedCommandRepositoryPort;
     },
   ) {}
 
@@ -274,7 +277,11 @@ export class QualityGateExecutionTaskHandler implements ExecutionTaskHandlerPort
       // (saída de Sofia/Bianca) só existe no payload bruto de `visual_generation`, não em `.output`
       // (que é só a saída do Pedro).
       const visualRaw = firstPayload(request.inputs, "visual");
-      const lucas = await callSkill(this.deps.helena, "quality_review", buildLucasInput(request, structure, copy, visualRaw), request);
+      // Mesma busca best-effort de `VisualPipelineExecutionTaskHandler` — precisa de novo aqui
+      // porque a checagem de fidelidade visual de Lucas (`checkProductFidelity`) precisa da URL da
+      // imagem de referência REAL, não só da descrição em texto dela.
+      const referenceImageUrl = await lookupReferenceImageUrl(this.deps, request).catch(() => undefined);
+      const lucas = await callSkill(this.deps.helena, "quality_review", buildLucasInput(request, structure, copy, visualRaw, referenceImageUrl), request);
 
       if (!passesQualityGate(lucas.output)) {
         return failure("QUALITY_GATE_NOT_PASSED", summarizeTopIssues(lucas.output), "invalid_output");
@@ -343,15 +350,24 @@ function summarizeTopIssues(output: Record<string, unknown>): string {
  * nesta execução — espelha por convenção (mesmo padrão do resto do arquivo) o formato real de
  * `LucasQualityReviewRequestInput`, sem importar nada do skill do Lucas.
  */
-function buildLucasInput(request: ExecutionTaskHandlerRequest, structure: Record<string, unknown>, copy: Record<string, unknown>, visualRaw: Record<string, unknown>): Record<string, unknown> {
+function buildLucasInput(
+  request: ExecutionTaskHandlerRequest,
+  structure: Record<string, unknown>,
+  copy: Record<string, unknown>,
+  visualRaw: Record<string, unknown>,
+  referenceImageUrl?: string,
+): Record<string, unknown> {
   const visualOutput = normalizeObject(visualRaw.output);
   const visualPipeline = normalizeObject(visualRaw.visualPipeline);
   const sofiaOutput = normalizeObject(visualPipeline.artDirection);
   const biancaOutput = normalizeObject(visualPipeline.designSpec);
   const copyQuality = normalizeObject(copy.quality);
+  const creativeBrief = normalizeObject(structure.creativeBrief);
+  const base = baseInput(request);
 
   return {
-    ...baseInput(request),
+    ...base,
+    workflowContext: { ...normalizeObject(base.workflowContext), ...(referenceImageUrl ? { referenceImageUrl } : {}) },
     originalRequest: "Execution real controlada a partir de RuntimePlan validado.",
     joaoStrategy: {
       objective: stringValue(structure.objective, ""),
@@ -365,6 +381,16 @@ function buildLucasInput(request: ExecutionTaskHandlerRequest, structure: Record
       recommendedCta: stringValue(structure.recommendedCta, ""),
       risks: stringArray(structure.risks),
     },
+    // Requisito de "quality gate obrigatório" (fidelidade + checagem comercial) — Lucas nunca
+    // recebia o creative brief do João antes disto, então não tinha como saber se a oferta é
+    // evidência real (imagem de referência) ou catálogo genérico, nem o que não pode ser inventado.
+    creativeBrief: Object.keys(creativeBrief).length > 0 ? {
+      productOrService: stringValue(creativeBrief.productOrService, ""),
+      offer: valueOrUndefined(creativeBrief.offer),
+      commercialFactsSource: stringValue(creativeBrief.commercialFactsSource, "none"),
+      nonInventableInfo: stringArray(creativeBrief.nonInventableInfo),
+    } : undefined,
+    referenceIntelligence: structure.referenceIntelligence && typeof structure.referenceIntelligence === "object" ? structure.referenceIntelligence : undefined,
     mariaCopy: {
       title: stringValue(copy.title, ""),
       caption: stringValue(copy.caption, ""),
@@ -377,6 +403,7 @@ function buildLucasInput(request: ExecutionTaskHandlerRequest, structure: Record
       identifiedAudience: stringValue(copy.identifiedAudience, ""),
       qualityScore: numberValue(copyQuality.score, undefined),
       qualityPassed: typeof copyQuality.passed === "boolean" ? copyQuality.passed : undefined,
+      claims: Array.isArray(copy.claims) ? copy.claims : undefined,
     },
     sofiaDirection: Object.keys(sofiaOutput).length > 0 ? {
       visualConcept: stringValue(sofiaOutput.visualConcept, ""),
@@ -556,6 +583,11 @@ function buildContentBriefStructure(validatedInputs: Record<string, string>): Re
     channel,
     format,
     recommendedSlideCount: format === "carousel" ? 4 : undefined,
+    // Fatos estruturados extraídos das imagens de referência (produto, preço, desconto, oferta) —
+    // repassado como JSON bruto (mesmo padrão de `referenceContext`); João é quem faz o parse
+    // (`parseReferenceIntelligence`) e decide como usar. Sem isto, preço/desconto visíveis numa
+    // foto de referência nunca chegavam a nenhum lugar do pipeline (achado ao vivo).
+    referenceIntelligence: validatedInputs.referenceIntelligence,
   };
 }
 
@@ -647,6 +679,10 @@ function buildStrategyInput(request: ExecutionTaskHandlerRequest): Record<string
     desiredObjective: stringValue(upstream.campaignObjective ?? upstream.objective, "Criar campanha de marketing."),
     editorialBrief: isEditorialBrief ? upstream : undefined,
     avoidRepeating: typeof upstream.editorialMemory === "string" ? upstream.editorialMemory : undefined,
+    // Fatos estruturados da(s) imagem(ns) de referência (preço, desconto, oferta, o que preservar)
+    // — só existe no caminho `content_request` (content_brief nunca alimenta `campaign_creation`
+    // com isto), `undefined` preserva o comportamento de sempre nesse caminho.
+    referenceIntelligence: parseReferenceIntelligence(typeof upstream.referenceIntelligence === "string" ? upstream.referenceIntelligence : undefined),
   };
 }
 
@@ -661,6 +697,13 @@ function buildCopyInput(request: ExecutionTaskHandlerRequest): Record<string, un
   const creativeBrief = normalizeObject(strategy.creativeBrief);
   const productOrService = valueOrUndefined(creativeBrief.productOrService);
   const baseAdditionalContext = stringValue(briefing.additionalContext, JSON.stringify({ executionRunId: request.context.executionRunId }));
+  // Repassado de `strategy.referenceIntelligence` (João já carrega isto no próprio output, ver
+  // `JoaoMarketingStrategyCore.referenceIntelligence`) — objeto já validado/parseado, nunca uma
+  // string bruta aqui. `undefined` quando João não tinha Reference Intelligence disponível
+  // (comportamento idêntico a antes desta funcionalidade existir).
+  const referenceIntelligence = strategy.referenceIntelligence && typeof strategy.referenceIntelligence === "object"
+    ? (strategy.referenceIntelligence as ReferenceIntelligence)
+    : undefined;
   return {
     objective: stringValue(briefing.objective ?? strategy.objective, "Criar campanha de marketing."),
     channel: stringValue(briefing.channel ?? strategy.channel, "instagram"),
@@ -680,6 +723,7 @@ function buildCopyInput(request: ExecutionTaskHandlerRequest): Record<string, un
     marketingObjective: valueOrUndefined(briefing.marketingObjective ?? strategy.marketingObjective),
     avoidRepeating: typeof strategy.editorialMemory === "string" ? strategy.editorialMemory : undefined,
     additionalContext: productOrService ? `${baseAdditionalContext} Produto/assunto real: ${productOrService}.` : baseAdditionalContext,
+    referenceIntelligence,
   };
 }
 
@@ -754,8 +798,15 @@ function buildPedroInput(
     // fallback de "CTA autorizado" (`extractVisibleTextContext`), então repassar a copy inteira
     // reabriria o botão inventado que motivou suprimir o CTA da imagem. `referenceImageUrl` vira a
     // entrada visual real de `/v1/images/edits` (ver `openai-icaro-image-provider.ts`) — a foto de
-    // verdade, não só uma descrição em texto dela.
-    workflowContext: { ...normalizeObject(base.workflowContext), ...(headline ? { headline } : {}), ...(referenceImageUrl ? { referenceImageUrl } : {}) },
+    // verdade, não só uma descrição em texto dela. `referenceIntelligence` (repassado de
+    // `strategy.referenceIntelligence`, que João já carrega no próprio output) vira a guarda de
+    // fidelidade de produto — ver `pedro-image-generation.skill.ts`/`openai-icaro-image-provider.ts`.
+    workflowContext: {
+      ...normalizeObject(base.workflowContext),
+      ...(headline ? { headline } : {}),
+      ...(referenceImageUrl ? { referenceImageUrl } : {}),
+      ...(strategy.referenceIntelligence ? { referenceIntelligence: strategy.referenceIntelligence } : {}),
+    },
     originalRequest: "Execution real controlada a partir de RuntimePlan validado.",
     biancaDesign: bianca,
     biancaPedroBriefing: normalizeObject(bianca.pedroBriefing),

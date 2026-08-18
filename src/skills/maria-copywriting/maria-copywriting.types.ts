@@ -1,4 +1,5 @@
 import type { ContentQualityProfile } from "../../shared/utils/content-quality-profile.js";
+import type { ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
 
 export type MariaSupportedChannel =
   | "instagram"
@@ -46,6 +47,11 @@ export type MariaCopyBriefing = {
    * para prompt, injetado por `ContentBriefExecutionTaskHandler`. Ausente = comportamento idêntico
    * ao atual. */
   avoidRepeating?: string;
+  /** Fatos estruturados (produto, preço, desconto, oferta) extraídos das imagens de referência —
+   * requisito de "copy baseada em evidência": Maria usa isto com prioridade sobre qualquer
+   * benefício genérico, e nunca deve inventar um dado comercial que não esteja aqui. Ausente =
+   * comportamento idêntico a antes desta funcionalidade existir. */
+  referenceIntelligence?: ReferenceIntelligence;
 };
 
 export type MariaCopyStrategy = {
@@ -79,6 +85,14 @@ export type MariaStructuredCopy = {
   identifiedAudience: string;
   futureSuggestions: string[];
   observations: string[];
+  /** Rastreabilidade `claim -> source` (requisito "toda afirmação relevante precisa ser
+   * rastreável até uma fonte") — cada afirmação comercial/factual relevante da copy (preço,
+   * desconto, condição) precisa de uma entrada aqui indicando de onde veio (ex.: dado do
+   * workspace, `referenceIntelligence`, informação explicitamente autorizada). Vazio por padrão —
+   * `evaluateCopyQuality`/Lucas tratam ausência de fonte para uma afirmação comercial como sinal
+   * de possível alucinação. Opcional só por compatibilidade com respostas antigas do provider de
+   * IA. */
+  claims?: Array<{ text: string; source: string }>;
 };
 
 export type MariaQualityIssueCode =
@@ -108,7 +122,10 @@ export type MariaQualityIssueCode =
   | "CTA_TOO_LONG_FOR_FORMAT"
   // Requisitos de "eliminar conteúdo genérico" e "separar as funções de cada texto":
   | "GENERIC_CLICHE_PHRASE_DETECTED"
-  | "IMAGE_HEADLINE_DUPLICATES_TITLE";
+  | "IMAGE_HEADLINE_DUPLICATES_TITLE"
+  // Requisito de "copy baseada em evidência" — uma afirmação comercial na copy (preço, desconto,
+  // condição) sem fonte correspondente em `claims`/`referenceIntelligence`/`briefing.offer`.
+  | "UNVERIFIED_COMMERCIAL_CLAIM";
 
 export type MariaQualityIssue = {
   code: MariaQualityIssueCode;

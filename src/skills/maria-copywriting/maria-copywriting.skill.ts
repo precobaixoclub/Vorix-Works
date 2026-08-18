@@ -6,6 +6,8 @@ import { buildDeveloperAiPendingResponse, isDeveloperAssistancePending } from ".
 import type { DeveloperAssistancePendingOutput } from "../../application/ai/developer-assistance.types.js";
 import { resolveContentQualityProfile, type ContentQualityProfile } from "../../shared/utils/content-quality-profile.js";
 import { detectGenericPhrases } from "../../shared/utils/generic-phrase-detector.js";
+import { hasStrongCommercialFact } from "../../shared/utils/reference-intelligence.types.js";
+import { detectUnconfirmedCommercialClaims } from "../../shared/utils/commercial-hallucination-detector.js";
 import { mariaCopywritingManifest } from "./maria.manifest.js";
 import type { MariaLogAction, MariaLoggerPort } from "./maria-log.contract.js";
 import type {
@@ -393,11 +395,13 @@ export function buildMariaPrompt(
       "- nunca usar qualquer termo listado em forbiddenTerms, em nenhuma variação;",
       "- nunca omitir uma palavra listada em mandatoryWords — cada uma precisa aparecer no título ou na legenda;",
       "- nunca inventar oferta, preço, prazo ou garantia que não estejam no briefing;",
+      "- PROIBIDO inventar qualquer uma destas condições comerciais sem confirmação explícita no briefing: estoque limitado, últimas unidades, promoção terminando/prazo de encerramento, frete grátis, garantia, qualidade/conforto/material do produto, benefício técnico, popularidade, exclusividade, avaliações/reviews de clientes, quantidade vendida;",
       "- ao escolher hashtags, priorizar preferredHashtags quando existirem, antes de sugerir novas.",
       "- não colocar hashtags dentro do campo caption; hashtags devem ficar somente no campo hashtags;",
       "- não colocar o CTA dentro do campo hashtags; CTA deve ficar somente no campo cta e na publication.",
     ].join("\n"),
     "",
+    ...buildCommercialFactsSection(briefing.referenceIntelligence, briefing.marketingObjective),
     "BRIEFING ESTRUTURADO:",
     JSON.stringify(briefing, null, 2),
     "",
@@ -426,8 +430,47 @@ export function buildMariaPrompt(
       identifiedAudience: briefing.targetAudience,
       futureSuggestions: ["Sugestão futura"],
       observations: ["Observação relevante"],
+      claims: [{ text: "afirmação comercial/factual relevante feita na copy, ex.: 'R$ 39,99'", source: "de onde veio, ex.: 'referenceIntelligence.commercialFacts' ou 'briefing.offer'" }],
     }, null, 2),
   ].join("\n");
+}
+
+/**
+ * Seção dedicada de prompt com os fatos comerciais REAIS extraídos da(s) imagem(ns) de referência
+ * — requisito de hierarquia de fatos comerciais ("nunca usar manchete genérica quando existir
+ * argumento comercial concreto muito mais forte"). Só aparece quando existe Reference Intelligence
+ * com pelo menos um fato comercial forte; ausência = comportamento idêntico a antes desta
+ * funcionalidade existir (nenhuma seção nova no prompt).
+ */
+// Objetivos onde preço/desconto no PRÓPRIO imageHeadline (texto dentro da imagem, não só na
+// legenda) faz sentido — decisão de produto: para os demais objetivos (engajamento, branding,
+// educativo...), preço apareceria fora de contexto numa peça que não é sobre vender agora.
+const COMMERCIAL_ON_IMAGE_OBJECTIVES = new Set(["promocao_oferta", "venda_conversao"]);
+
+function buildCommercialFactsSection(referenceIntelligence: MariaCopyBriefing["referenceIntelligence"], marketingObjective: string | undefined): string[] {
+  const facts = referenceIntelligence?.commercialFacts;
+  if (!hasStrongCommercialFact(facts)) return [];
+
+  const lines: string[] = [];
+  if (facts?.currentPrice) lines.push(`- Preço atual real: ${facts.currentPrice}`);
+  if (facts?.previousPrice) lines.push(`- Preço anterior real: ${facts.previousPrice}`);
+  if (facts?.discountPercent) lines.push(`- Desconto real: ${facts.discountPercent}`);
+  if (facts?.promotion) lines.push(`- Promoção real: ${facts.promotion}`);
+  if (facts?.commercialConditions?.length) lines.push(`- Condições comerciais reais: ${facts.commercialConditions.join(", ")}`);
+  if (facts?.shippingInfo) lines.push(`- Frete real: ${facts.shippingInfo}`);
+
+  const allowOnImage = marketingObjective ? COMMERCIAL_ON_IMAGE_OBJECTIVES.has(marketingObjective) : false;
+  const imageHeadlineGuidance = allowOnImage
+    ? "Como o objetivo desta publicação é promoção/oferta ou venda/conversão, o imageHeadline PODE (e deve, quando ficar curto e forte) incorporar o preço e/ou desconto reais acima — ex.: \"R$ 39,99 -50%\" — em vez de um texto só conceitual."
+    : "Não inclua preço/desconto dentro do imageHeadline nesta publicação (objetivo não é promoção/venda) — mantenha o imageHeadline conceitual e deixe os fatos comerciais só na caption/publication.";
+
+  return [
+    "FATOS COMERCIAIS VERIFICADOS (extraídos de verdade da imagem de referência anexada):",
+    lines.join("\n"),
+    "Use estes fatos comerciais reais com PRIORIDADE MÁXIMA sobre qualquer benefício genérico — nunca escreva uma manchete/título genérico quando um destes dados concretos estiver disponível. Ordem de prioridade do gancho: oferta/preço real > desconto real > benefício concreto > diferencial > novidade > conceito genérico. Cada um destes fatos usado na copy precisa de uma entrada correspondente em `claims`.",
+    imageHeadlineGuidance,
+    "",
+  ];
 }
 
 export function evaluateCopyQuality(
@@ -514,6 +557,14 @@ export function evaluateCopyQuality(
 
   if (copy.imageHeadline?.trim() && isSameMessage(copy.imageHeadline, copy.title)) {
     issues.push(issue("IMAGE_HEADLINE_DUPLICATES_TITLE", "imageHeadline repete o título literalmente — texto da imagem e título precisam cumprir funções diferentes.", "medium"));
+  }
+
+  const unconfirmedClaims = [
+    ...detectUnconfirmedCommercialClaims(copy.title, briefing.referenceIntelligence?.commercialFacts),
+    ...detectUnconfirmedCommercialClaims(copy.caption, briefing.referenceIntelligence?.commercialFacts),
+  ];
+  if (unconfirmedClaims.length > 0) {
+    issues.push(issue("UNVERIFIED_COMMERCIAL_CLAIM", `Condição comercial não confirmada na copy, sem evidência no briefing/referência: "${unconfirmedClaims[0]}".`, "high"));
   }
 
   const score = Math.max(0, 100 - issues.reduce((total, current) => {
@@ -652,6 +703,12 @@ function parseStructuredCopy(content: string, briefing: MariaCopyBriefing): Mari
     identifiedAudience: String(parsed.identifiedAudience ?? briefing.targetAudience),
     futureSuggestions: normalizeStringArray(parsed.futureSuggestions),
     observations: normalizeStringArray(parsed.observations),
+    claims: Array.isArray(parsed.claims)
+      ? (parsed.claims as unknown[])
+          .filter((claim): claim is Record<string, unknown> => Boolean(claim) && typeof claim === "object")
+          .map((claim) => ({ text: String(claim.text ?? ""), source: String(claim.source ?? "") }))
+          .filter((claim) => claim.text.trim() && claim.source.trim())
+      : [],
   };
 }
 

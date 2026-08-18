@@ -329,6 +329,7 @@ export class IcaroAIBrain implements IcaroBrainPort {
       },
       constraints: request.constraints,
       expectedOutput: request.expectedOutput,
+      imageUrls: request.imageUrls,
     };
   }
 

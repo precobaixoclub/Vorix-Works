@@ -9,6 +9,7 @@ import { extractJson, latest, normalizeStringArray } from "../../shared/utils/sk
 import { buildDeveloperAiPendingResponse, isDeveloperAssistancePending } from "../../shared/utils/developer-ai-assistance.js";
 import { deriveCampaignCreativeDNA } from "../../shared/utils/creative-director-engine.js";
 import { classifyMarketingObjective, structuralGuidanceFor } from "../../shared/utils/marketing-objective-classifier.js";
+import type { ReferenceCommercialFacts } from "../../shared/utils/reference-intelligence.types.js";
 import type { DeveloperAssistancePendingOutput } from "../../application/ai/developer-assistance.types.js";
 import { joaoMarketingStrategyManifest } from "./joao.manifest.js";
 import type { JoaoLogAction, JoaoLoggerPort } from "./joao-log.contract.js";
@@ -483,6 +484,7 @@ export function buildBaselineStrategy(
     risks,
     nextSteps,
     creativeDna,
+    referenceIntelligence: input.referenceIntelligence,
   };
 }
 
@@ -501,27 +503,48 @@ export function buildCreativeBrief(
   const product = latest(context.modules.ProductContext);
   const guidance = structuralGuidanceFor(strategy.marketingObjective);
 
+  // Hierarquia de fatos comerciais (requisito "concreto vindo de evidência real bate faixa de
+  // preço genérica cadastrada"): a oferta REAL vista na imagem de referência tem prioridade sobre
+  // o `priceRange` cadastrado na Clara — corrige a falha crítica encontrada ao vivo, onde
+  // `offer` só era populado a partir da Clara e NUNCA da imagem de referência, mesmo com
+  // preço/desconto claramente visíveis na foto.
+  const commercialOffer = formatCommercialOffer(strategy.referenceIntelligence?.commercialFacts);
+  const offer = commercialOffer ?? (product?.payload.priceRange ? `Faixa de preço: ${product.payload.priceRange}` : undefined);
+  const commercialFactsSource: JoaoCreativeBrief["commercialFactsSource"] = commercialOffer ? "reference_image" : product?.payload.priceRange ? "registered_product" : "none";
+
+  // Fato comercial (prazo, condição de oferta) presente na referência visual OU nas condições
+  // comerciais extraídas conta como confirmado — antes disto, `"prazo ou condição de oferta"`
+  // entrava SEMPRE na lista, mesmo quando a oferta estava claramente visível na foto anexada
+  // (achado ao vivo: "Oferta Relâmpago", "7x de R$6,41" e "frete grátis com cupom" eram tratados
+  // como não-confirmados apesar de visíveis).
+  const referenceCommercialFacts = strategy.referenceIntelligence?.commercialFacts;
+  const hasConfirmedOfferCondition = Boolean(
+    referenceCommercialFacts?.promotion || referenceCommercialFacts?.commercialConditions?.length || referenceCommercialFacts?.shippingInfo,
+  );
+
   const nonInventableInfo: string[] = [];
-  if (!product?.payload.priceRange) nonInventableInfo.push("preço");
+  if (!offer) nonInventableInfo.push("preço");
   if (!product?.payload.differentiators?.length) nonInventableInfo.push("diferencial");
   if (!brand?.payload.preferredCtas?.length && !input.editorialBrief?.recommendedCta) nonInventableInfo.push("CTA fixo da marca");
   nonInventableInfo.push("depoimento ou avaliação de cliente");
-  nonInventableInfo.push("prazo ou condição de oferta");
+  if (!hasConfirmedOfferCondition) nonInventableInfo.push("prazo ou condição de oferta");
 
   const mandatoryInfo: string[] = [];
   if (brand?.payload.mandatoryWords?.length) mandatoryInfo.push(...brand.payload.mandatoryWords);
   if (product?.payload.productName) mandatoryInfo.push(product.payload.productName);
+  if (strategy.referenceIntelligence?.verifiedFacts.productName) mandatoryInfo.push(strategy.referenceIntelligence.verifiedFacts.productName);
 
   return {
     brand: brand?.payload.brandName,
-    productOrService: product?.payload.productName ?? input.originalRequest,
+    productOrService: strategy.referenceIntelligence?.verifiedFacts.productName ?? product?.payload.productName ?? input.originalRequest,
     publicationObjective: input.desiredObjective,
     marketingObjective: strategy.marketingObjective,
     targetAudience: strategy.targetAudience,
     channel: strategy.channel,
     funnelStage: guidance.funnelStage,
     differentiator: product?.payload.differentiators?.[0],
-    offer: product?.payload.priceRange ? `Faixa de preço: ${product.payload.priceRange}` : undefined,
+    offer,
+    commercialFactsSource,
     mainBenefit: product?.payload.benefits?.[0],
     toneOfVoice: strategy.toneOfVoice,
     cta: strategy.recommendedCta,
@@ -695,6 +718,22 @@ function isSpecificOriginalRequest(input: JoaoStrategyRequestInput): boolean {
   return Boolean(trimmed) && trimmed !== GENERIC_ORIGINAL_REQUEST_PLACEHOLDER && trimmed !== input.desiredObjective.trim();
 }
 
+/** Formata os fatos comerciais extraídos da referência visual num argumento único, pronto para
+ * mensagem-chave (ex.: "R$ 39,99 (de R$ 79,99, -50%) — Oferta Relâmpago"). Hierarquia de fatos
+ * comerciais (requisito "nunca usar manchete genérica quando existir argumento comercial concreto
+ * muito mais forte"): preço/desconto reais SEMPRE vêm antes de qualquer benefício genérico. */
+function formatCommercialOffer(facts: ReferenceCommercialFacts | undefined): string | undefined {
+  if (!facts) return undefined;
+  const parts: string[] = [];
+  if (facts.currentPrice) {
+    parts.push(facts.previousPrice ? `${facts.currentPrice} (de ${facts.previousPrice})` : facts.currentPrice);
+  }
+  if (facts.discountPercent) parts.push(`${facts.discountPercent} de desconto`);
+  if (parts.length === 0 && facts.promotion) return facts.promotion;
+  if (parts.length === 0) return undefined;
+  return facts.promotion ? `${parts.join(", ")} — ${facts.promotion}` : parts.join(", ");
+}
+
 function buildKeyMessages(
   input: JoaoStrategyRequestInput,
   brand?: ClaraKnowledgeRecord<"BrandContext">,
@@ -702,6 +741,11 @@ function buildKeyMessages(
   campaign?: ClaraKnowledgeRecord<"CampaignContext">,
 ): string[] {
   const messages: string[] = [];
+  // Fato comercial real (preço/desconto/oferta) extraído da imagem de referência vem ANTES de
+  // qualquer outra mensagem — é o argumento mais concreto disponível, sempre mais forte que um
+  // benefício genérico (requisito de hierarquia de fatos comerciais).
+  const commercialOffer = formatCommercialOffer(input.referenceIntelligence?.commercialFacts);
+  if (commercialOffer) messages.push(`Destacar oferta real visível na referência: ${commercialOffer}.`);
   // `keyMessages[0]` é o que de fato chega em Maria como `keyMessage` (buildMariaBriefing) — o
   // campo mais influente do prompt dela, mais até que `centralPromise`. Sem produto real
   // cadastrado (achado ao vivo: mesmo com `centralPromise` já corrigido, `keyMessages` continuava

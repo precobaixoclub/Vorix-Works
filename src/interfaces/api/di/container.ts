@@ -518,6 +518,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       preparedCommandRepository: repositories.preparedCommandRepository,
       contentGenerationHistory,
       qualityFeedback,
+      clara,
+      objectStorage,
     });
   // `ValentinaTenantManager.createTenant` sempre gera um `id` novo (nunca aceita um `id`
   // explícito) — mas os skills reais (Pedro/Sofia/Bianca...) chamam

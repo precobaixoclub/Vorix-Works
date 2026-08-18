@@ -7,6 +7,8 @@ import type { PreparedCommandRepositoryPort } from "../../application/ports/prep
 import type { RuntimeRepositoryPort } from "../../application/ports/runtime-repository.port.js";
 import type { ContentGenerationHistoryPort } from "../../application/ports/content-generation-history.port.js";
 import type { QualityFeedbackPort } from "../../application/quality-feedback/quality-feedback.port.js";
+import type { ObjectStoragePort } from "../../application/ports/object-storage.port.js";
+import type { ClaraKnowledgePort } from "../../application/knowledge/clara-knowledge.port.js";
 import { EXECUTION_CAPABILITIES } from "../../domain/planning/planning.model.js";
 import { HelenaSkillManager, SkillManifestValidator, SkillRegistry } from "../../application/skills/index.js";
 import { FileSystemSkillDiscovery } from "../skills/file-system-skill-discovery.js";
@@ -21,6 +23,8 @@ export async function buildExecutionHandlerResolver(input: {
   preparedCommandRepository?: PreparedCommandRepositoryPort;
   contentGenerationHistory?: ContentGenerationHistoryPort;
   qualityFeedback?: QualityFeedbackPort;
+  clara?: ClaraKnowledgePort;
+  objectStorage?: ObjectStoragePort;
 }): Promise<ExecutionHandlerResolver> {
   const registry = new ExecutionHandlerRegistry();
   registry.register({
@@ -55,7 +59,7 @@ export async function buildExecutionHandlerResolver(input: {
       provider: "helena",
       version: "1",
       priority: 100,
-      handler: new VisualPipelineExecutionTaskHandler({ helena, provider: "helena" }),
+      handler: new VisualPipelineExecutionTaskHandler({ helena, provider: "helena", clara: input.clara, objectStorage: input.objectStorage }),
       executionModes: ["real"],
       enabled: true,
       supportedCapabilities: ["visual_design"],

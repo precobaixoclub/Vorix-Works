@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import sharp from "sharp";
 
 import { createPlanningFromPreparedCommand } from "../dist/application/planning/planning-engine.js";
 import { ensureRuntimeForPlanning } from "../dist/application/runtime/runtime-engine.js";
@@ -485,4 +487,97 @@ test("Traceability: correlationId e traceId propagam para run, task, attempt, ev
   assert.equal(detail.events.every((event) => !event.correlationId || event.correlationId === "corr-explicit"), true);
   assert.equal(detail.handlerResolution.every((event) => event.traceId === detail.run.traceId), true);
   assert.equal(detail.traces.every((trace) => trace.traceId === detail.run.traceId), true);
+});
+
+test("VisualPipelineExecutionTaskHandler: cola a logo real da marca sobre a imagem gerada quando clara+objectStorage estão configurados", async () => {
+  const baseImagePng = await sharp({ create: { width: 512, height: 512, channels: 4, background: { r: 30, g: 30, b: 30, alpha: 1 } } }).png().toBuffer();
+  const logoPng = await sharp({ create: { width: 100, height: 100, channels: 4, background: { r: 200, g: 20, b: 20, alpha: 1 } } }).png().toBuffer();
+
+  const server = createServer((req, res) => {
+    if (req.url === "/generated-image.png") {
+      res.writeHead(200, { "content-type": "image/png" });
+      res.end(baseImagePng);
+      return;
+    }
+    if (req.url === "/logo.png") {
+      res.writeHead(200, { "content-type": "image/png" });
+      res.end(logoPng);
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  const helena = fakeHelena();
+  const originalExecuteSkill = helena.manager.executeSkill;
+  helena.manager.executeSkill = async (request) => {
+    if (request.capability === "image_generation") {
+      return {
+        skillId: "fake-image_generation",
+        state: "COMPLETED",
+        response: {
+          skillId: "fake-image_generation",
+          taskId: request.context.taskId,
+          status: "completed",
+          output: { generationSummary: "ok", imageCount: 1, images: [{ id: "img-1", uri: `${baseUrl}/generated-image.png` }] },
+          artifacts: [],
+          warnings: [],
+        },
+      };
+    }
+    return originalExecuteSkill(request);
+  };
+
+  const putCalls = [];
+  const fakeObjectStorage = {
+    put: async (input) => {
+      putCalls.push(input);
+      return { url: `${baseUrl}/uploaded-with-logo.png` };
+    },
+    delete: async () => undefined,
+    resolvePublicUrl: (key) => `${baseUrl}/${key}`,
+    health: async () => ({ ok: true }),
+  };
+  const fakeClara = {
+    requestContext: async () => ({
+      clientId: "tenant-1",
+      deliveredAt: FIXED_NOW,
+      modules: { IdentityContext: [{ id: "id-1", module: "IdentityContext", clientId: "tenant-1", updatedAt: FIXED_NOW, payload: { clientId: "tenant-1", logoUri: `${baseUrl}/logo.png` } }] },
+      records: [],
+    }),
+  };
+
+  const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    helena: helena.manager,
+    provider: "helena",
+    clara: fakeClara,
+    objectStorage: fakeObjectStorage,
+  });
+
+  const request = {
+    task: { id: "task-1", runtimePlanId: "runtime-1", capability: "visual_design", type: "visual_generation" },
+    inputs: {
+      structure: [{ artifactId: "a-structure", checksum: "c1", payload: { output: { objective: "vender", channel: "instagram", format: "carrossel" } } }],
+    },
+    context: { executionRunId: "exec-1", tenantId: "tenant-1", workspaceId: "workspace-1", mode: "real" },
+    attempt: { total: 1, providerAttempt: 1 },
+  };
+
+  try {
+    const result = await handler.execute(request);
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const images = result.value.outputs[0].payload.output.images;
+    assert.equal(images[0].uri, `${baseUrl}/uploaded-with-logo.png`);
+    assert.equal(putCalls.length, 1);
+    assert.equal(putCalls[0].contentType, "image/png");
+    // O buffer reenviado precisa ser uma imagem PNG válida e diferente da original (logo colada).
+    const uploadedMeta = await sharp(putCalls[0].body).metadata();
+    assert.equal(uploadedMeta.format, "png");
+    assert.notEqual(Buffer.compare(putCalls[0].body, baseImagePng), 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });

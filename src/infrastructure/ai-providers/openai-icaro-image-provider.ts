@@ -64,6 +64,7 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
       ? request.context.authorizedBrandColors.filter((color): color is string => typeof color === "string" && color.trim().length > 0).map((color) => color.trim())
       : undefined;
     const finalPrompt = buildGuardedPrompt(request.prompt, authorizedTitle, brandColors);
+    const size = resolveOpenAiImageSize(typeof request.context?.imageAspectRatio === "string" ? request.context.imageAspectRatio : undefined);
 
     const images: Array<{ uri: string; mimeType: string }> = [];
     for (let index = 0; index < imageCount; index += 1) {
@@ -73,7 +74,7 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
         prompt: finalPrompt,
         tenantId,
         workspaceId,
-        params: { size: "1024x1024" },
+        params: { size, quality: "high" },
         timeoutMs: request.timeoutMs,
       });
       if (!result.ok) {
@@ -89,6 +90,18 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
       cost: { estimated: 0, currency: "USD" },
     };
   }
+}
+
+// `gpt-image-1` só aceita 3 tamanhos fixos (mais "auto"): quadrado, retrato e paisagem — nunca a
+// resolução exata que Sofia calcula por formato (`resolveAspectRatio`/`KNOWN_RESOLUTIONS`, ex.:
+// 1080x1920 para Story). Achado ao vivo: antes disto, TODA imagem saía "1024x1024" fixo, mesmo
+// quando o formato pedido era Story (9:16) ou carrossel vertical (4:5) — a peça ficava quadrada
+// quando deveria ser vertical. Mapeia para o tamanho suportado mais próximo da proporção real.
+function resolveOpenAiImageSize(aspectRatio: string | undefined): "1024x1024" | "1024x1536" | "1536x1024" {
+  const normalized = (aspectRatio ?? "").trim();
+  if (normalized === "16:9") return "1536x1024";
+  if (normalized === "9:16" || normalized === "4:5") return "1024x1536";
+  return "1024x1024";
 }
 
 // Achado ao vivo (não teoria): um único aviso no início do prompt NÃO bastou — o modelo ainda

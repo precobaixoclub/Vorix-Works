@@ -63,6 +63,10 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
     }
 
     const size = typeof request.params.size === "string" ? request.params.size : "1024x1024";
+    // "high" (suportado pelo `gpt-image-1`) — sem isto a OpenAI usava a qualidade padrão dela
+    // silenciosamente; peça pedida explicitamente para ficar "extremamente profissional" precisa
+    // do parâmetro pedido, não só de um prompt melhor.
+    const quality = typeof request.params.quality === "string" ? request.params.quality : "high";
     const baseUrl = this.config.apiBaseUrl ?? DEFAULT_BASE_URL;
     const prompt = truncatePrompt(request.prompt, MAX_PROMPT_LENGTH);
 
@@ -72,7 +76,7 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
       const response = await this.httpClient(`${baseUrl}/v1/images/generations`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ model: request.modelId, prompt, size, n: 1 }),
+        body: JSON.stringify({ model: request.modelId, prompt, size, quality, n: 1 }),
         signal: controller.signal,
       });
       clearTimeout(timeout);

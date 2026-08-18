@@ -6,9 +6,12 @@ import type { PreparedCommandRepositoryPort } from "../../application/ports/prep
 import type { RuntimeRepositoryPort } from "../../application/ports/runtime-repository.port.js";
 import type { ContentGenerationHistoryPort } from "../../application/ports/content-generation-history.port.js";
 import type { QualityFeedbackPort } from "../../application/quality-feedback/quality-feedback.port.js";
+import type { ObjectStoragePort } from "../../application/ports/object-storage.port.js";
+import type { ClaraKnowledgePort } from "../../application/knowledge/clara-knowledge.port.js";
 import type { SkillCapability } from "../../domain/skills/skill-capability.contract.js";
 import type { SkillArtifact, SkillResponse } from "../../domain/skills/skill.contract.js";
 import type { ExecutionCapability, TaskType } from "../../domain/planning/planning.model.js";
+import { compositeLogoOntoImage } from "../media/logo-compositor.js";
 
 type SkillCallResult = {
   output: Record<string, unknown>;
@@ -65,7 +68,14 @@ export class SingleSkillExecutionTaskHandler implements ExecutionTaskHandlerPort
 }
 
 export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerPort {
-  constructor(private readonly deps: { helena: HelenaSkillManagerPort; provider?: string }) {}
+  constructor(
+    private readonly deps: {
+      helena: HelenaSkillManagerPort;
+      provider?: string;
+      clara?: ClaraKnowledgePort;
+      objectStorage?: ObjectStoragePort;
+    },
+  ) {}
 
   canHandle(capability: ExecutionCapability, taskType: TaskType): boolean {
     return capability === "visual_design" && taskType === "visual_generation";
@@ -88,20 +98,29 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       const sofia = await callSkill(this.deps.helena, "art_direction", buildSofiaInput(request, structure), request);
       const bianca = await callSkill(this.deps.helena, "social_media_design", buildBiancaInput(request, structure, sofia.output), request);
       const pedro = await callSkill(this.deps.helena, "image_generation", buildPedroInput(request, structure, copy, suppressUnauthorizedCta(bianca.output)), request);
-      const invalid = validateOutputContract(contract, pedro.output);
+      // Logo real colada por cima (requisito "não foi aplicada a logo") — Sofia/Bianca já sabem a
+      // cor/estilo da marca (contexto pro modelo), mas a IA nunca desenha o arquivo da logo em si
+      // com fidelidade; isto cola o arquivo de verdade, best-effort (nunca derruba a geração se a
+      // logo não estiver cadastrada ou o download/composição falhar).
+      const logoResult = await applyLogoToGeneratedImages(this.deps, request, pedro.output).catch((error) => ({
+        output: pedro.output,
+        warnings: [`Não foi possível aplicar a logo: ${error instanceof Error ? error.message : "erro desconhecido"}.`],
+      }));
+      const finalPedroOutput = logoResult.output;
+      const invalid = validateOutputContract(contract, finalPedroOutput);
       if (invalid) return failure("SKILL_OUTPUT_SCHEMA_INVALID", invalid, "invalid_output");
-      const warnings = [...sofia.warnings, ...bianca.warnings, ...pedro.warnings];
+      const warnings = [...sofia.warnings, ...bianca.warnings, ...pedro.warnings, ...logoResult.warnings];
       return {
         ok: true,
         value: {
           outputs: [{
             outputPort: contract.outputPort,
             payload: {
-              ...buildExecutionPayload(pedro, request.inputs, this.deps.provider ?? "helena"),
+              ...buildExecutionPayload({ ...pedro, output: finalPedroOutput }, request.inputs, this.deps.provider ?? "helena"),
               visualPipeline: {
                 artDirection: sofia.output,
                 designSpec: bianca.output,
-                imageGeneration: pedro.output,
+                imageGeneration: finalPedroOutput,
                 skillIds: [sofia.skillId, bianca.skillId, pedro.skillId],
               },
             },
@@ -113,6 +132,67 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       return { ok: false, error: classifySkillError(error) };
     }
   }
+}
+
+/**
+ * Baixa a logo real da marca (`IdentityContext.logoUri`, Clara) e cada imagem gerada, cola a logo
+ * por cima (`compositeLogoOntoImage`) e reenvia pro Object Storage, substituindo `image.uri` pela
+ * versão com logo. Best-effort em cada camada — sem `clara`/`objectStorage` configurados, sem logo
+ * cadastrada, ou qualquer falha de rede/composição numa imagem específica, a imagem ORIGINAL segue
+ * adiante sem logo em vez de travar a geração inteira.
+ */
+async function applyLogoToGeneratedImages(
+  deps: { clara?: ClaraKnowledgePort; objectStorage?: ObjectStoragePort },
+  request: ExecutionTaskHandlerRequest,
+  pedroOutput: Record<string, unknown>,
+): Promise<{ output: Record<string, unknown>; warnings: string[] }> {
+  if (!deps.clara || !deps.objectStorage) return { output: pedroOutput, warnings: [] };
+  const images = Array.isArray(pedroOutput.images) ? (pedroOutput.images as Record<string, unknown>[]) : [];
+  if (images.length === 0) return { output: pedroOutput, warnings: [] };
+
+  const context = await deps.clara.requestContext({
+    requester: { id: "visual-pipeline-logo-compositor", type: "system", name: "Logo Compositor" },
+    clientId: request.context.tenantId,
+    modules: ["IdentityContext"],
+    reason: "Compor a logo real da marca sobre a peça gerada.",
+  });
+  const identity = latestByUpdatedAt(context.modules.IdentityContext);
+  const logoUri = typeof identity?.payload.logoUri === "string" ? identity.payload.logoUri : undefined;
+  if (!logoUri) return { output: pedroOutput, warnings: [] };
+
+  const logoBuffer = await fetchAsBuffer(logoUri);
+  const warnings: string[] = [];
+  const updatedImages: Record<string, unknown>[] = [];
+  for (const image of images) {
+    const uri = typeof image.uri === "string" ? image.uri : undefined;
+    if (!uri) {
+      updatedImages.push(image);
+      continue;
+    }
+    try {
+      const imageBuffer = await fetchAsBuffer(uri);
+      const composited = await compositeLogoOntoImage({ imageBuffer, logoBuffer });
+      const key = `ai-generated/${request.context.tenantId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-logo.png`;
+      const result = await deps.objectStorage.put({ key, body: composited, contentType: "image/png" });
+      updatedImages.push({ ...image, uri: result.url });
+    } catch (error) {
+      warnings.push(`Não foi possível aplicar a logo em uma das imagens: ${error instanceof Error ? error.message : "erro desconhecido"}.`);
+      updatedImages.push(image);
+    }
+  }
+  return { output: { ...pedroOutput, images: updatedImages }, warnings };
+}
+
+function latestByUpdatedAt<TRecord extends { updatedAt: string }>(records?: TRecord[]): TRecord | undefined {
+  if (!records || records.length === 0) return undefined;
+  return [...records].sort((left, right) => (left.updatedAt < right.updatedAt ? 1 : -1))[0];
+}
+
+async function fetchAsBuffer(url: string): Promise<Buffer> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar ${url}`);
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
 }
 
 /** `reviewStatus` que o gate considera aprovado — mesmos thresholds que Lucas já usa internamente

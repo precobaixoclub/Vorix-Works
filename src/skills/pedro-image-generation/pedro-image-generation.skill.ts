@@ -308,6 +308,7 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
           // de um prompt de 100k+ caracteres antes de chegar na seção "TEXTOS VISÍVEIS AUTORIZADOS".
           authorizedVisibleTitle: visibleText.title,
           authorizedBrandColors: brandColors,
+          imageAspectRatio: request.input.desiredAspectRatio,
         },
         constraints: [
           "Retornar apenas JSON válido.",

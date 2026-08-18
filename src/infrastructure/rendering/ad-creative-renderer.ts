@@ -5,6 +5,12 @@ import satori from "satori";
 import sharp from "sharp";
 import type { AdLayoutSpec, AdLayoutZone, AdLayoutZoneType, PerformanceCreativePlan } from "../../shared/utils/ad-layout.types.js";
 import { RENDERER_OWNED_ZONE_TYPES } from "../../shared/utils/ad-layout.types.js";
+import { computeContrastRatio, pickReadableTextColor } from "../../shared/utils/color-contrast.js";
+
+/** Razão mínima aceitável (WCAG AA para texto normal) — mesmo limiar já usado pelo quality gate
+ * de tipografia do Lucas (`MIN_CONTRAST_RATIO`), para nunca entregar deliberadamente uma zona que
+ * o próprio gate reprovaria. */
+const MIN_READABLE_CONTRAST = 4.5;
 import type { SatoriNode } from "./components/satori-node.js";
 import { PriceBlock } from "./components/price-block.js";
 import { DiscountBadge } from "./components/discount-badge.js";
@@ -82,14 +88,26 @@ function resolveZoneText(zone: AdLayoutZone, plan: PerformanceCreativePlan): str
 
 function resolveZoneContent(zone: AdLayoutZone, plan: PerformanceCreativePlan, widthPx: number, heightPx: number, colors: BrandRenderColors): ComponentRenderResult | undefined {
   switch (zone.type) {
-    case "price":
-      return plan.price ? PriceBlock({ price: plan.price, oldPrice: plan.oldPrice, variant: "dominant", widthPx, heightPx, accentColor: colors.accentColor, textColor: colors.textColor, backgroundColor: colors.backgroundColor }) : undefined;
+    case "price": {
+      if (!plan.price) return undefined;
+      // O preço é desenhado na cor de destaque da marca (`accentColor`) sobre `backgroundColor` —
+      // como ambas vêm de um perfil de marca variável (pode ser um accent claro sobre fundo
+      // claro), cair para preto/branco (o que render mais contraste) quando o par escolhido pela
+      // marca não atinge WCAG AA evita reprovação do quality gate de tipografia (Fase 16).
+      const priceAccentContrast = computeContrastRatio(colors.backgroundColor, colors.accentColor);
+      const priceAccentColor = priceAccentContrast !== undefined && priceAccentContrast < MIN_READABLE_CONTRAST
+        ? pickReadableTextColor(colors.backgroundColor)
+        : colors.accentColor;
+      return PriceBlock({ price: plan.price, oldPrice: plan.oldPrice, variant: "dominant", widthPx, heightPx, accentColor: priceAccentColor, textColor: colors.textColor, backgroundColor: colors.backgroundColor });
+    }
     case "discount":
       return plan.discount ? DiscountBadge({ discount: plan.discount.includes("%") ? plan.discount : `${plan.discount}%`, widthPx, heightPx, textColor: "#FFFFFF", backgroundColor: "#DC2626" }) : undefined;
     case "headline":
       return plan.primaryHook ? Headline({ text: plan.primaryHook, widthPx, heightPx, textColor: colors.textColor }) : undefined;
     case "cta":
-      return plan.cta ? CTA({ text: plan.cta, widthPx, heightPx, textColor: "#111111", backgroundColor: colors.accentColor }) : undefined;
+      // Texto do CTA precisa se adaptar ao brilho do `accentColor` da marca (pode ser claro ou
+      // escuro) — texto escuro fixo sobre um accent escuro (ex.: indigo/roxo) fica ilegível.
+      return plan.cta ? CTA({ text: plan.cta, widthPx, heightPx, textColor: pickReadableTextColor(colors.accentColor), backgroundColor: colors.accentColor }) : undefined;
     case "rating":
       return plan.socialProof ? RatingBlock({ rating: plan.socialProof, widthPx, heightPx, textColor: colors.textColor, backgroundColor: colors.backgroundColor }) : undefined;
     case "salesProof":

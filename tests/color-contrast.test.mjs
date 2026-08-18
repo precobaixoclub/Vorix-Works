@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computeContrastRatio } from "../dist/shared/utils/color-contrast.js";
+import { computeContrastRatio, pickReadableTextColor } from "../dist/shared/utils/color-contrast.js";
 
 test("computeContrastRatio: preto sobre branco tem contraste máximo (21:1)", () => {
   const ratio = computeContrastRatio("#000000", "#FFFFFF");
@@ -25,4 +25,20 @@ test("computeContrastRatio: cor não-hex (ex.: nome de cor livre da paleta da ma
 test("computeContrastRatio: aceita hex de 3 dígitos", () => {
   const ratio = computeContrastRatio("#000", "#FFF");
   assert.ok(Math.abs(ratio - 21) < 0.01);
+});
+
+test("pickReadableTextColor: escolhe branco sobre fundo escuro (indigo — caso real que reprovou o quality gate)", () => {
+  assert.equal(pickReadableTextColor("#4338CA"), "#FFFFFF");
+});
+
+test("pickReadableTextColor: escolhe preto sobre fundo claro (amarelo)", () => {
+  assert.equal(pickReadableTextColor("#FACC15"), "#111111");
+});
+
+test("pickReadableTextColor: cor de fundo não-hex cai para o padrão escuro, nunca lança", () => {
+  assert.equal(pickReadableTextColor("transparent"), "#111111");
+});
+
+test("pickReadableTextColor: aceita cores light/dark customizadas", () => {
+  assert.equal(pickReadableTextColor("#000000", "#EEEEEE", "#222222"), "#EEEEEE");
 });

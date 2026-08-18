@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import sharp from "sharp";
 import { renderAdCreativeOverlay } from "../dist/infrastructure/rendering/ad-creative-renderer.js";
+import { computeContrastRatio } from "../dist/shared/utils/color-contrast.js";
 
 async function makeSolidPng(width, height, color) {
   return sharp({ create: { width, height, channels: 4, background: color } }).png().toBuffer();
@@ -115,6 +116,38 @@ test("renderAdCreativeOverlay: nenhuma zona renderer-owned resolvida devolve a i
 
   assert.equal(Buffer.compare(result.buffer, baseImageBuffer), 0);
   assert.deepEqual(result.typographyGeometry, []);
+});
+
+test("renderAdCreativeOverlay: CTA se adapta a um accentColor escuro (regressão achada em geração real — texto escuro sobre indigo reprovava o quality gate de contraste)", async () => {
+  const baseImageBuffer = await makeSolidPng(1024, 1280, { r: 30, g: 90, b: 60, alpha: 1 });
+  const plan = tenisPlan({ price: undefined, oldPrice: undefined, discount: undefined, primaryHook: undefined, urgency: undefined });
+  const spec = { format: "4:5", aspectRatio: "4:5", layoutFamily: "flash_sale", density: "performance", zones: [
+    { type: "cta", priority: 1, position: { xPct: 6, yPct: 84, widthPct: 88, heightPct: 10 } },
+  ] };
+
+  const result = await renderAdCreativeOverlay({ baseImageBuffer, adLayoutSpec: spec, plan, brandColors: { accentColor: "#4338CA" } });
+
+  const ctaEntry = result.typographyGeometry.find((entry) => entry.type === "cta");
+  assert.ok(ctaEntry);
+  assert.equal(ctaEntry.backgroundColor, "#4338CA");
+  const ratio = computeContrastRatio(ctaEntry.textColor, ctaEntry.backgroundColor);
+  assert.ok(ratio >= 4.5, `contraste do CTA (${ratio}:1) deveria atingir WCAG AA (4.5:1) mesmo com accent escuro`);
+});
+
+test("renderAdCreativeOverlay: preço cai para preto/branco quando accentColor não contrasta com backgroundColor", async () => {
+  const baseImageBuffer = await makeSolidPng(1024, 1280, { r: 30, g: 90, b: 60, alpha: 1 });
+  const plan = tenisPlan({ discount: undefined, primaryHook: undefined, cta: undefined, urgency: undefined });
+  const spec = { format: "4:5", aspectRatio: "4:5", layoutFamily: "flash_sale", density: "performance", zones: [
+    { type: "price", priority: 1, position: { xPct: 6, yPct: 60, widthPct: 44, heightPct: 16 } },
+  ] };
+
+  // Accent quase branco sobre fundo branco — par que a marca poderia escolher e que não contrasta.
+  const result = await renderAdCreativeOverlay({ baseImageBuffer, adLayoutSpec: spec, plan, brandColors: { accentColor: "#FDFDFD", backgroundColor: "#FFFFFF" } });
+
+  const priceEntry = result.typographyGeometry.find((entry) => entry.type === "price");
+  assert.ok(priceEntry);
+  const ratio = computeContrastRatio(priceEntry.textColor, priceEntry.backgroundColor);
+  assert.ok(ratio >= 4.5, `contraste do preço (${ratio}:1) deveria atingir WCAG AA (4.5:1) mesmo com accent quase idêntico ao fundo`);
 });
 
 test("renderAdCreativeOverlay: rejeita quando a imagem base não tem metadados de dimensão válidos", async () => {

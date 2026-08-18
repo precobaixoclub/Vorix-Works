@@ -35,3 +35,14 @@ export function computeContrastRatio(colorA: string, colorB: string): number | u
   const darker = Math.min(luminanceA, luminanceB);
   return (lighter + 0.05) / (darker + 0.05);
 }
+
+/** Escolhe entre `lightColor`/`darkColor` a que rende MAIS contraste sobre `backgroundColor`
+ * (ex.: uma cor de marca escolhida em tempo real pode ser clara ou escura — texto fixo nunca é
+ * seguro). Cai em `darkColor` (o padrão histórico do renderer) quando `backgroundColor` não é um
+ * hex válido, nunca lança. */
+export function pickReadableTextColor(backgroundColor: string, lightColor = "#FFFFFF", darkColor = "#111111"): string {
+  const contrastWithLight = computeContrastRatio(backgroundColor, lightColor);
+  const contrastWithDark = computeContrastRatio(backgroundColor, darkColor);
+  if (contrastWithLight === undefined || contrastWithDark === undefined) return darkColor;
+  return contrastWithLight >= contrastWithDark ? lightColor : darkColor;
+}

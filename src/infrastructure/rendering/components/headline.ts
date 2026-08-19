@@ -22,6 +22,7 @@ function estimateLineCount(text: string, widthPx: number, fontSizePx: number): n
 export function Headline(props: HeadlineProps): ComponentRenderResult {
   const fontSize = Math.round(props.heightPx * 0.32);
   const lineCount = estimateLineCount(props.text, props.widthPx, fontSize);
+  const padding = Math.round(props.heightPx * 0.12);
   const node = el(
     "div",
     {
@@ -30,6 +31,7 @@ export function Headline(props: HeadlineProps): ComponentRenderResult {
       justifyContent: "flex-start",
       width: props.widthPx,
       height: props.heightPx,
+      padding,
       ...(props.backgroundColor ? { background: props.backgroundColor } : {}),
       fontSize,
       fontWeight: 700,

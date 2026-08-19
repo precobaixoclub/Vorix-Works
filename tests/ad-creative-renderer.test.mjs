@@ -150,6 +150,21 @@ test("renderAdCreativeOverlay: preço cai para preto/branco quando accentColor n
   assert.ok(ratio >= 4.5, `contraste do preço (${ratio}:1) deveria atingir WCAG AA (4.5:1) mesmo com accent quase idêntico ao fundo`);
 });
 
+test("renderAdCreativeOverlay: headline sempre usa scrim escuro + texto branco (regressão achada em geração real — texto escuro direto sobre foto ficava quase invisível)", async () => {
+  const baseImageBuffer = await makeSolidPng(1024, 1280, { r: 10, g: 20, b: 80, alpha: 1 });
+  const plan = tenisPlan({ price: undefined, oldPrice: undefined, discount: undefined, cta: undefined, urgency: undefined });
+  const spec = { format: "4:5", aspectRatio: "4:5", layoutFamily: "flash_sale", density: "performance", zones: [
+    { type: "headline", priority: 1, position: { xPct: 6, yPct: 6, widthPct: 88, heightPct: 16 } },
+  ] };
+
+  const result = await renderAdCreativeOverlay({ baseImageBuffer, adLayoutSpec: spec, plan });
+
+  const headlineEntry = result.typographyGeometry.find((entry) => entry.type === "headline");
+  assert.ok(headlineEntry);
+  assert.equal(headlineEntry.textColor, "#FFFFFF");
+  assert.ok(headlineEntry.backgroundColor.includes("rgba(0, 0, 0"), `headline deveria ter um scrim escuro, veio "${headlineEntry.backgroundColor}"`);
+});
+
 test("renderAdCreativeOverlay: rejeita quando a imagem base não tem metadados de dimensão válidos", async () => {
   await assert.rejects(() =>
     renderAdCreativeOverlay({ baseImageBuffer: Buffer.from("not an image"), adLayoutSpec: flashSaleLayoutSpec(), plan: tenisPlan() }),

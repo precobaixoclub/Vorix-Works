@@ -103,7 +103,12 @@ function resolveZoneContent(zone: AdLayoutZone, plan: PerformanceCreativePlan, w
     case "discount":
       return plan.discount ? DiscountBadge({ discount: plan.discount.includes("%") ? plan.discount : `${plan.discount}%`, widthPx, heightPx, textColor: "#FFFFFF", backgroundColor: "#DC2626" }) : undefined;
     case "headline":
-      return plan.primaryHook ? Headline({ text: plan.primaryHook, widthPx, heightPx, textColor: colors.textColor }) : undefined;
+      // Headline é desenhado diretamente sobre a foto gerada pelo Pedro (fundo imprevisível,
+      // nunca uma cor sólida) — sem um scrim (véu escuro translúcido) atrás do texto, a
+      // legibilidade depende do que a foto tem embaixo, o que já produziu texto quase invisível
+      // numa geração real. Scrim escuro + texto branco é a técnica padrão de design (Stories,
+      // templates de anúncio) para garantir contraste em qualquer fundo fotográfico.
+      return plan.primaryHook ? Headline({ text: plan.primaryHook, widthPx, heightPx, textColor: "#FFFFFF", backgroundColor: "rgba(0, 0, 0, 0.55)" }) : undefined;
     case "cta":
       // Texto do CTA precisa se adaptar ao brilho do `accentColor` da marca (pode ser claro ou
       // escuro) — texto escuro fixo sobre um accent escuro (ex.: indigo/roxo) fica ilegível.

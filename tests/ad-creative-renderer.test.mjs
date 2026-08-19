@@ -254,6 +254,27 @@ test("renderAdCreativeOverlay: skins diferentes produzem buffers de imagem difer
   assert.notEqual(Buffer.compare(cleanResult.buffer, marketplaceResult.buffer), 0);
 });
 
+test("renderAdCreativeOverlay: badge com texto longo (\"OFERTA RELAMPAGO\") nunca quebra em 2 linhas nem vaza da própria caixa (achado ao vivo, Caso A de produção)", async () => {
+  const baseImageBuffer = await makeSolidPng(1024, 1280, { r: 30, g: 90, b: 60, alpha: 1 });
+  // Mesma posição/tamanho de DEFAULT_ZONE_POSITIONS.badge (bianca-social-media-design.skill.ts) —
+  // 26% de largura, 12% de altura — largura estreita o bastante pra reproduzir o vazamento real.
+  const spec = flashSaleLayoutSpec({
+    zones: [{ type: "badge", priority: 1, position: { xPct: 68, yPct: 6, widthPct: 26, heightPct: 12 } }],
+  });
+  const plan = tenisPlan({ urgency: "OFERTA RELAMPAGO", discount: undefined, oldPrice: undefined });
+
+  const result = await renderAdCreativeOverlay({ baseImageBuffer, adLayoutSpec: spec, plan });
+
+  const badgeGeometry = result.typographyGeometry.find((entry) => entry.type === "badge");
+  assert.ok(badgeGeometry, "zona badge deveria ter resolvido geometria de tipografia");
+  assert.equal(badgeGeometry.lineCount, 1, "badge nunca deveria quebrar em mais de uma linha");
+  // A fonte precisa ter encolhido o bastante pra "OFERTA RELAMPAGO" (16 caracteres) caber na
+  // largura real da zona (widthPx ~266px em 1024px de imagem) — antes do fix, o componente usava
+  // um tamanho fixo (heightPx * 0.36 ~= 55px) que nunca considerava a largura disponível.
+  const widthPx = Math.round((26 / 100) * 1024);
+  assert.ok(badgeGeometry.fontSizePx < widthPx / (badgeGeometry.text.length * 0.5), `fontSizePx (${badgeGeometry.fontSizePx}) deveria ter encolhido pra caber em widthPx (${widthPx})`);
+});
+
 test("renderAdCreativeOverlay: sem componentSkins no plano, comportamento idêntico ao skin \"clean\" explícito (sem regressão para geração sem perfil de marca)", async () => {
   const baseImageBuffer = await makeSolidPng(1024, 1280, { r: 30, g: 90, b: 60, alpha: 1 });
 

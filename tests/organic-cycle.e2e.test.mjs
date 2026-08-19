@@ -593,6 +593,9 @@ test("Ciclo orgânico roda de ponta a ponta por Arthur -> Caio -> Helena -> Skil
         "pedro-image-generation",
         "lucas-quality-review",
         "lucas-quality-review",
+        // Rodada 2, Fatia 3 — Semantic Occlusion Check oficial (`checkSemanticOcclusion`), 3ª
+        // chamada ao Ícaro em nome de Lucas (composição visual + oclusão semântica + apoio de IA).
+        "lucas-quality-review",
       ],
     );
     assert.equal(icaro.calls.find((call) => call.specialistId === "pedro-image-generation").taskType, "image_generation");

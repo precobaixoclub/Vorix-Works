@@ -80,3 +80,41 @@ test("computeCreativeQualityScore: reasoning cita os motivos da falha dura quand
   });
   assert.match(result.reasoning, /Texto do CTA cortado/);
 });
+
+test("computeCreativeQualityScore: scoreCeiling (Rodada 2, Fatia 3) limita o score mesmo com dimensões perfeitas, mesmo sem falha dura", () => {
+  const result = computeCreativeQualityScore({
+    dimensions: perfectDimensions(),
+    hasHardFailure: false,
+    hardFailureReasons: [],
+    scoreCeiling: 55,
+  });
+  assert.equal(result.score, 55);
+  assert.equal(result.verdict, "reject");
+  assert.equal(result.blockedByHardFailure, false);
+  assert.match(result.reasoning, /teto de 55/);
+  assert.match(result.reasoning, /soma bruta das dimensões seria 100/);
+});
+
+test("computeCreativeQualityScore: scoreCeiling não faz nada quando a soma bruta já fica abaixo do teto", () => {
+  const result = computeCreativeQualityScore({
+    dimensions: dimsWithTotal(50),
+    hasHardFailure: false,
+    hardFailureReasons: [],
+    scoreCeiling: 78,
+  });
+  assert.equal(result.score, 50);
+  assert.doesNotMatch(result.reasoning, /limitado por teto/);
+});
+
+test("computeCreativeQualityScore: falha dura + scoreCeiling — verdict continua \"reject\" e o score reportado respeita o teto", () => {
+  const result = computeCreativeQualityScore({
+    dimensions: perfectDimensions(),
+    hasHardFailure: true,
+    hardFailureReasons: ["Headline cobre o rosto do modelo, deixando os olhos irreconhecíveis."],
+    scoreCeiling: 55,
+  });
+  assert.equal(result.score, 55);
+  assert.equal(result.verdict, "reject");
+  assert.equal(result.blockedByHardFailure, true);
+  assert.match(result.reasoning, /nunca mascara/);
+});

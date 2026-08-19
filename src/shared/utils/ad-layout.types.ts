@@ -10,6 +10,7 @@ import type { ProductRenderMode } from "./product-asset.types.js";
 import type { CommercialFactResolution } from "./commercial-fact-normalizer.js";
 import type { ComponentSkin } from "./brand-visual-profile.types.js";
 import type { VisualGrammar } from "./visual-grammar.types.js";
+import type { RepairInstructionType } from "./repair-instructions.js";
 
 export const LAYOUT_FAMILIES = [
   "hero_offer",
@@ -65,6 +66,19 @@ export type CandidateScoreEntry = {
   score: number;
   dimensions: CandidateScoreDimensions;
   penalties: string[];
+};
+
+// Fatia 3 — Repair Loop: registro de cada tentativa automática de reparo (nunca mais de 2 por
+// geração). Nunca decide silenciosamente — toda tentativa fica registrada, resolvida ou não.
+export type RepairAttemptResult = "resolved" | "still_violated" | "verification_unavailable" | "zone_removed";
+
+export type RepairAttemptRecord = {
+  attempt: number;
+  issueType: RepairInstructionType;
+  zoneType?: AdLayoutZoneType;
+  reasoning: string;
+  correctionApplied: string;
+  result: RepairAttemptResult;
 };
 
 /**
@@ -134,6 +148,14 @@ export type PerformanceCreativePlan = {
   /** Fatia 2, Prioridade 8 — diversidade real entre os candidatos (0-100; ver
    * `computeCandidateDiversity`) — nunca aceita "mesma família com 10px de diferença". */
   candidateDiversityScore?: number;
+  /** Fatia 3 — Repair Loop: toda tentativa automática de reparo desta geração, resolvida ou não
+   * (nunca mais de 2). Lista vazia = nenhuma violação reparável foi detectada (não significa que
+   * o Repair Loop não rodou — ver `repairLoopRan` pra distinguir os dois casos). */
+  repairAttempts?: RepairAttemptRecord[];
+  /** `true` quando a checagem de oclusão semântica do Repair Loop de fato rodou (best-effort —
+   * `false`/`undefined` quando `semanticOcclusionChecker` não estava configurado ou a verificação
+   * falhou antes de produzir qualquer veredito). */
+  repairLoopRan?: boolean;
 };
 
 export const AD_LAYOUT_ZONE_TYPES = [

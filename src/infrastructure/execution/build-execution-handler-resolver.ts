@@ -10,6 +10,7 @@ import type { QualityFeedbackPort } from "../../application/quality-feedback/qua
 import type { ObjectStoragePort } from "../../application/ports/object-storage.port.js";
 import type { ClaraKnowledgePort } from "../../application/knowledge/clara-knowledge.port.js";
 import type { BrandVisualProfile } from "../../shared/utils/brand-visual-profile.types.js";
+import type { OpenAiSemanticOcclusionChecker } from "../ai-providers/openai-semantic-occlusion-checker.js";
 import { EXECUTION_CAPABILITIES } from "../../domain/planning/planning.model.js";
 import { HelenaSkillManager, SkillManifestValidator, SkillRegistry } from "../../application/skills/index.js";
 import { FileSystemSkillDiscovery } from "../skills/file-system-skill-discovery.js";
@@ -27,6 +28,7 @@ export async function buildExecutionHandlerResolver(input: {
   clara?: ClaraKnowledgePort;
   objectStorage?: ObjectStoragePort;
   ensureBrandVisualProfile?: (workspaceId: string) => Promise<BrandVisualProfile>;
+  semanticOcclusionChecker?: OpenAiSemanticOcclusionChecker;
 }): Promise<ExecutionHandlerResolver> {
   const registry = new ExecutionHandlerRegistry();
   registry.register({
@@ -55,7 +57,12 @@ export async function buildExecutionHandlerResolver(input: {
 
     registry.register(realSingle("helena-skill-research-handler", helena, "editorial_research", "research", "editorial_planning", "context", ["realExecutionEnabled", "realExecutionResearchEnabled"]));
     registry.register(realSingle("helena-skill-planning-handler", helena, "strategic_planning", "campaign_structure", "marketing_strategy", "structure", ["realExecutionEnabled", "realPlanningEnabled"]));
-    registry.register(realSingle("helena-skill-copy-handler", helena, "copywriting", "copy_generation", "copywriting", "copy", ["realExecutionEnabled", "realCopyEnabled"]));
+    // 30_000 (o padrão de `realSingle`) achado ao vivo como apertado demais pra copy_generation
+    // especificamente (Rodada 2, Fatia 3, Caso B de produção): variância real de latência da
+    // OpenAI para completions de texto passa de 30s com alguma frequência, mesmo sem estar "fora
+    // do ar" — cada estouro derrubava a execução inteira (Bianca/Pedro nem chegavam a rodar).
+    // 60s dá margem real sem mudar o comportamento das outras capabilities que usam `realSingle`.
+    registry.register(realSingle("helena-skill-copy-handler", helena, "copywriting", "copy_generation", "copywriting", "copy", ["realExecutionEnabled", "realCopyEnabled"], 60_000));
     registry.register({
       id: "helena-skill-visual-pipeline-handler",
       provider: "helena",
@@ -69,6 +76,7 @@ export async function buildExecutionHandlerResolver(input: {
         runtimeRepository: input.runtimeRepository,
         preparedCommandRepository: input.preparedCommandRepository,
         ensureBrandVisualProfile: input.ensureBrandVisualProfile,
+        semanticOcclusionChecker: input.semanticOcclusionChecker,
       }),
       executionModes: ["real"],
       enabled: true,
@@ -155,6 +163,7 @@ function realSingle(
   skillCapability: string,
   outputPort: string,
   requiredFeatureFlags: readonly (keyof ExecutionFeatureFlags)[],
+  executionTimeoutMs = 30_000,
 ) {
   return {
     id,
@@ -168,7 +177,7 @@ function realSingle(
     fallbackPolicy: "fail_closed" as const,
     sideEffectPolicy: capability === "distribution" ? "publication_preview" as const : "external_read" as const,
     retryPolicy: { supportsRetry: true, maxAttempts: 2, backoffStrategy: "fixed" as const },
-    executionTimeoutMs: 30_000,
+    executionTimeoutMs,
     requiredFeatureFlags,
   };
 }

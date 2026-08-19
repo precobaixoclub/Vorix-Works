@@ -1,4 +1,4 @@
-import type { AdLayoutZone, AdLayoutZonePosition } from "./ad-layout.types.js";
+import type { AdLayoutZone, AdLayoutZonePosition, AdLayoutZoneType } from "./ad-layout.types.js";
 
 /**
  * Colisão/reflow de zonas (Rodada 2, Fatia 2, Bloco 0.2) — achado ao vivo: `DEFAULT_ZONE_POSITIONS`
@@ -65,6 +65,81 @@ function shrinkToAvoidOverlap(moving: AdLayoutZonePosition, fixed: AdLayoutZoneP
  * Determinístico, sem IA, sem reduzir fonte — só geometria. Zonas que não colidem com nada saem
  * inalteradas.
  */
+// Fatia 3 — ladder de posições alternativas por tipo de zona: 1ª troca de banda vertical
+// (topo↔base), 2ª muda de canto/lado. Usado tanto pelo posicionamento inicial da Bianca (evita
+// zona-vs-zona antes mesmo de precisar de reflow) quanto pelo Repair Loop (reposiciona uma zona
+// específica apontada por uma violação de oclusão semântica — rosto, mãos, produto). Nunca uma
+// garantia de posição livre — só uma lista de candidatos plausíveis pra tentar em ordem antes de
+// cair pro reflow por encolhimento (`shrinkToAvoidOverlap`) e, em último caso, remoção por
+// prioridade (`applyInformationBudget`, aplicado por quem chama).
+export const DEFAULT_ZONE_ALTERNATIVES: Partial<Record<AdLayoutZoneType, AdLayoutZonePosition[]>> = {
+  headline: [
+    { xPct: 6, yPct: 76, widthPct: 88, heightPct: 16 },
+    { xPct: 6, yPct: 6, widthPct: 58, heightPct: 14 },
+  ],
+  badge: [
+    { xPct: 6, yPct: 6, widthPct: 26, heightPct: 12 },
+    { xPct: 68, yPct: 82, widthPct: 26, heightPct: 12 },
+  ],
+  price: [
+    { xPct: 50, yPct: 62, widthPct: 44, heightPct: 16 },
+    { xPct: 6, yPct: 78, widthPct: 44, heightPct: 14 },
+  ],
+  discount: [
+    { xPct: 6, yPct: 6, widthPct: 30, heightPct: 14 },
+    { xPct: 64, yPct: 40, widthPct: 30, heightPct: 14 },
+  ],
+  cta: [
+    { xPct: 6, yPct: 6, widthPct: 88, heightPct: 10 },
+  ],
+  logo: [
+    { xPct: 76, yPct: 6, widthPct: 18, heightPct: 10 },
+    { xPct: 6, yPct: 84, widthPct: 18, heightPct: 10 },
+  ],
+  rating: [
+    { xPct: 6, yPct: 20, widthPct: 26, heightPct: 10 },
+  ],
+  salesProof: [
+    { xPct: 6, yPct: 32, widthPct: 26, heightPct: 10 },
+  ],
+};
+
+export type ZonePlacementStrategy = "preferred" | "alternative" | "reflow";
+
+export type ZonePlacementResult = {
+  position: AdLayoutZonePosition;
+  strategy: ZonePlacementStrategy;
+  /** Índice (0-based) da alternativa usada, só quando `strategy === "alternative"`. */
+  alternativeIndex?: number;
+};
+
+/**
+ * Resolve a posição de UMA zona contra uma lista de obstáculos (outras zonas já posicionadas,
+ * ou uma região semanticamente protegida reportada pelo Repair Loop) — tenta a posição
+ * preferencial, depois cada alternativa em ordem, e só cai pro reflow por encolhimento (contra o
+ * primeiro obstáculo real) se nenhuma posição inteira estiver livre. Nunca reduz fonte — a
+ * função nem conhece tipografia, só geometria.
+ */
+export function resolveZonePlacement(
+  zoneType: AdLayoutZoneType,
+  preferredPosition: AdLayoutZonePosition,
+  obstacles: AdLayoutZonePosition[],
+  alternatives: Partial<Record<AdLayoutZoneType, AdLayoutZonePosition[]>> = DEFAULT_ZONE_ALTERNATIVES,
+): ZonePlacementResult {
+  const candidates = [preferredPosition, ...(alternatives[zoneType] ?? [])];
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
+    const hasConflict = obstacles.some((obstacle) => rectanglesOverlap(candidate, obstacle));
+    if (!hasConflict) {
+      return index === 0 ? { position: candidate, strategy: "preferred" } : { position: candidate, strategy: "alternative", alternativeIndex: index - 1 };
+    }
+  }
+
+  const firstObstacle = obstacles.find((obstacle) => rectanglesOverlap(preferredPosition, obstacle));
+  const reflowed = firstObstacle ? shrinkToAvoidOverlap(preferredPosition, firstObstacle) : preferredPosition;
+  return { position: reflowed, strategy: "reflow" };
+}
+
 export function resolveZoneCollisions(zones: AdLayoutZone[]): AdLayoutZone[] {
   const result = zones.map((zone) => ({ ...zone, position: { ...zone.position } }));
 

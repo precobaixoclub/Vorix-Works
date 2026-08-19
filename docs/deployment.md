@@ -47,22 +47,27 @@ Passo a passo:
 
 4. Empacotar e enviar o código local ao servidor sem secrets/runtime:
 
+   **Usar `git archive`, nunca `tar` sobre a working tree crua.** Achado ao vivo (Rodada 2,
+   Fatia 3): um `tar -C . .` embarca os bytes exatos que estiverem no disco local no momento —
+   inclusive line endings CRLF que um checkout Windows com `core.autocrlf=true` pode ter
+   introduzido silenciosamente (`git status` fica limpo porque o autocrlf normaliza para o diff
+   do próprio git, mas os bytes crus no disco divergem). O runner de migrations calcula checksum
+   sobre esses bytes crus sem normalização — um CRLF a mais já quebra o checksum de uma migration
+   já aplicada e bloqueia qualquer migration nova (`MIGRATION_CHECKSUM_MISMATCH`, ver
+   `docs/*-final-report*.md` desta fatia para o diagnóstico completo). `git archive` sempre emite
+   o conteúdo CANÔNICO do commit (LF, igual ao que está no repositório), nunca o estado do
+   checkout local, e já exclui `.git`/arquivos não rastreados automaticamente — não precisa mais
+   de `--exclude` manual por diretório.
+
    ```bash
-   tar -czf /tmp/zuno-local-sync.tgz \
-     --exclude='.git' \
-     --exclude='node_modules' \
-     --exclude='dist' \
-     --exclude='web/node_modules' \
-     --exclude='web/.next' \
-     --exclude='zuno-deploy.tar' \
-     --exclude='*.tgz' \
-     --exclude='*.tar' \
-     --exclude='.env.zuno' \
-     --exclude='.env.zuno.bak*' \
-     -C . .
+   git archive --format=tar HEAD | gzip > /tmp/zuno-local-sync.tgz
 
    scp /tmp/zuno-local-sync.tgz root@209.97.152.212:/tmp/zuno-local-sync.tgz
    ```
+
+   `.gitattributes` (`* text=auto eol=lf`) na raiz do repositório garante que isto continue valendo
+   mesmo que alguém rode `git archive` a partir de um checkout Windows — o próprio Git normaliza
+   pra LF na hora de gerar o archive, independente do `core.autocrlf` de quem roda o comando.
 
 5. No servidor, criar backup, preservar `.env.zuno` e substituir só o código:
 

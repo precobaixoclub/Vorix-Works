@@ -16,6 +16,8 @@ import { detectGenericPhrases } from "../../shared/utils/generic-phrase-detector
 import { detectUnconfirmedCommercialClaims } from "../../shared/utils/commercial-hallucination-detector.js";
 import { hasStrongCommercialFact } from "../../shared/utils/reference-intelligence.types.js";
 import { computeContrastRatio } from "../../shared/utils/color-contrast.js";
+import { SEMANTIC_OCCLUSION_PROMPT, parseSemanticOcclusionVerdict, type SemanticOcclusionVerdict } from "../../shared/utils/semantic-occlusion.types.js";
+import { buildRepairInstructionFromOcclusion, type RepairInstructionType } from "../../shared/utils/repair-instructions.js";
 import { computeCreativeQualityScore, type CreativeQualityDimensions, type CreativeQualityScoreResult } from "../../shared/utils/creative-quality-score.js";
 import { lucasQualityReviewManifest } from "./lucas.manifest.js";
 import type { LucasLogAction, LucasLoggerPort } from "./lucas-log.contract.js";
@@ -48,7 +50,20 @@ export type LucasQualityReviewSkillDependencies = {
   adjustmentScoreThreshold?: number;
 };
 
+// Semantic Occlusion Check (Rodada 2, Fatia 3) — só a variante "_SEVERE" (rosto irreconhecível ou
+// olhos escondidos) força reprovação automática; "_PARTIAL" só reduz a nota (ver
+// `buildCreativeQualityDimensions`/`occlusionSeverityLevel`). Declarado ANTES de
+// `BLOCKING_ISSUE_CODES`/`CREATIVE_HARD_FAILURE_CODES` para poder alimentar os dois por spread.
+const SEMANTIC_OCCLUSION_SEVERE_CODES = new Set<LucasIssueCode>([
+  "SEMANTIC_OCCLUSION_HEADLINE_OVER_FACE_SEVERE",
+  "SEMANTIC_OCCLUSION_BADGE_OVER_FACE_SEVERE",
+  "SEMANTIC_OCCLUSION_PRICE_OVER_FACE_SEVERE",
+  "SEMANTIC_OCCLUSION_CTA_OVER_FACE_SEVERE",
+  "SEMANTIC_OCCLUSION_PRODUCT_OVER_FACE_SEVERE",
+]);
+
 const BLOCKING_ISSUE_CODES = new Set<LucasIssueCode>([
+  ...SEMANTIC_OCCLUSION_SEVERE_CODES,
   "NO_IMAGES_GENERATED",
   "FORBIDDEN_WORD_FOUND",
   "FORBIDDEN_HASHTAG_FOUND",
@@ -98,6 +113,7 @@ const CREATIVE_HARD_FAILURE_CODES = new Set<LucasIssueCode>([
   "COMMERCIAL_HALLUCINATION_DETECTED",
   "TYPOGRAPHY_TEXT_CLIPPED",
   "TYPOGRAPHY_CONTRAST_LOW",
+  ...SEMANTIC_OCCLUSION_SEVERE_CODES,
 ]);
 
 const SEVERITY_PENALTY: Record<LucasIssueSeverity, number> = {
@@ -299,12 +315,14 @@ export class LucasQualityReviewSkill implements Skill<LucasQualityReviewRequestI
     const productFidelityVerdict = await this.checkProductFidelity(request);
     // Visual Composition Quality Gate (Fase 17) — mesma passada, mesmo raciocínio best-effort.
     const visualCompositionVerdict = await this.checkVisualComposition(request);
+    // Oclusão Semântica (Rodada 2, Fatia 3) — registro OFICIAL, mesma passada.
+    const semanticOcclusionVerdict = await this.checkSemanticOcclusion(request);
 
     let review = buildBaselineReview(request.input, claraContext, {
       approvalScoreThreshold: this.approvalScoreThreshold,
       warningScoreThreshold: this.warningScoreThreshold,
       adjustmentScoreThreshold: this.adjustmentScoreThreshold,
-    }, productFidelityVerdict, visualCompositionVerdict);
+    }, productFidelityVerdict, visualCompositionVerdict, semanticOcclusionVerdict);
 
     await this.log("ChecklistValidated", "Checklist de revisão validado.", request, {
       clientId: tenant.clientId,
@@ -524,6 +542,41 @@ export class LucasQualityReviewSkill implements Skill<LucasQualityReviewRequestI
     }
   }
 
+  /**
+   * Oclusão Semântica (Rodada 2, Fatia 3) — registro OFICIAL do Quality Gate (distinto da checagem
+   * barata que o Repair Loop já roda dentro do próprio pipeline visual, `semantic-occlusion.
+   * types.ts` compartilha o MESMO prompt/critério pra nunca divergir). Mesmo padrão best-effort:
+   * `undefined` quando não dá pra verificar, nunca reprova por ausência de sinal — só uma violação
+   * EXPLÍCITA (`hasViolation: true`) vira `LucasIssue`.
+   */
+  private async checkSemanticOcclusion(request: SkillRequest<LucasQualityReviewRequestInput>): Promise<SemanticOcclusionVerdict | undefined> {
+    const generatedImageUrl = request.input.pedroImages?.images?.[0]?.uri;
+    if (!this.icaro || !generatedImageUrl) return undefined;
+
+    try {
+      const response = await this.icaro.request({
+        taskType: "review",
+        prompt: SEMANTIC_OCCLUSION_PROMPT,
+        specialistId: this.manifest.id,
+        executionId: request.context.executionId,
+        taskId: request.context.taskId,
+        correlationId: request.context.correlationId,
+        context: { skillId: this.manifest.id, clientId: request.input.clientId },
+        imageUrls: [generatedImageUrl],
+        expectedOutput: "json",
+        priority: "quality",
+        temperature: 0.2,
+        maxTokens: 400,
+        timeoutMs: 25_000,
+      });
+
+      if (response.status !== "completed") return undefined;
+      return parseSemanticOcclusionVerdict(extractJson(String(response.content ?? ""), "Lucas (oclusão semântica)"));
+    } catch {
+      return undefined;
+    }
+  }
+
   private async log(
     action: LucasLogAction,
     message: string,
@@ -650,6 +703,7 @@ export function buildBaselineReview(
   thresholds: ReviewThresholds,
   productFidelityVerdict?: { mismatch: boolean; reasoning?: string },
   visualCompositionVerdict?: { unprofessional: boolean; reasoning?: string },
+  semanticOcclusionVerdict?: SemanticOcclusionVerdict,
 ): LucasReviewCore {
   const brand = latest(context.modules.BrandContext);
   const issues: LucasIssue[] = [];
@@ -662,6 +716,7 @@ export function buildBaselineReview(
   evaluateCoherence(input, issues);
   evaluateProductFidelity(productFidelityVerdict, issues);
   evaluateVisualComposition(visualCompositionVerdict, issues);
+  evaluateSemanticOcclusion(semanticOcclusionVerdict, issues);
   evaluateCommercialHallucination(input, issues);
   evaluateCommercialFactUtilization(input, issues);
   evaluateCopySpecificity(input, issues);
@@ -849,6 +904,44 @@ function evaluateVisualComposition(verdict: { unprofessional: boolean; reasoning
     `A composição visual não parece uma peça publicitária profissional${verdict.reasoning ? `: ${verdict.reasoning}` : "."}`,
     "high",
   ));
+}
+
+/** Traduz cada `RepairInstructionType` derivado de uma violação de oclusão semântica no
+ * `LucasIssueCode` correspondente, já separado por severidade (só as combinações "over_face" têm
+ * variante "_SEVERE"/"_PARTIAL" — as demais nunca bloqueiam sozinhas, então usam um único código
+ * independente de severidade). `undefined` só para tipos de reparo que nunca vêm de oclusão
+ * (`cta_low_contrast`/`badge_collision`/`product_not_prominent`/`safe_zone_violation`/
+ * `excessive_density` — produzidos por outras fontes, não por `buildRepairInstructionFromOcclusion`). */
+function occlusionIssueCode(type: RepairInstructionType, severity: "severe" | "partial"): LucasIssueCode | undefined {
+  switch (type) {
+    case "headline_over_face": return severity === "severe" ? "SEMANTIC_OCCLUSION_HEADLINE_OVER_FACE_SEVERE" : "SEMANTIC_OCCLUSION_HEADLINE_OVER_FACE_PARTIAL";
+    case "badge_over_face": return severity === "severe" ? "SEMANTIC_OCCLUSION_BADGE_OVER_FACE_SEVERE" : "SEMANTIC_OCCLUSION_BADGE_OVER_FACE_PARTIAL";
+    case "price_over_face": return severity === "severe" ? "SEMANTIC_OCCLUSION_PRICE_OVER_FACE_SEVERE" : "SEMANTIC_OCCLUSION_PRICE_OVER_FACE_PARTIAL";
+    case "cta_over_face": return severity === "severe" ? "SEMANTIC_OCCLUSION_CTA_OVER_FACE_SEVERE" : "SEMANTIC_OCCLUSION_CTA_OVER_FACE_PARTIAL";
+    case "product_over_face": return severity === "severe" ? "SEMANTIC_OCCLUSION_PRODUCT_OVER_FACE_SEVERE" : "SEMANTIC_OCCLUSION_PRODUCT_OVER_FACE_PARTIAL";
+    case "logo_over_subject": return "SEMANTIC_OCCLUSION_LOGO_OVER_SUBJECT";
+    case "text_over_product": return "SEMANTIC_OCCLUSION_TEXT_OVER_PRODUCT";
+    case "cta_over_important_subject": return "SEMANTIC_OCCLUSION_CTA_OVER_IMPORTANT_SUBJECT";
+    default: return undefined;
+  }
+}
+
+/** Semantic Occlusion Check (Rodada 2, Fatia 3) — `verdict` vem de `checkSemanticOcclusion`, já
+ * resolvido de forma best-effort antes de `buildBaselineReview`. Ao contrário de
+ * `evaluateVisualComposition` (julgamento estético, nunca bloqueia sozinho), uma violação "severe"
+ * sobre rosto/olhos É um defeito objetivo (a pessoa fica irreconhecível ou ilegível na peça) — por
+ * isso os códigos "_SEVERE" entram em `BLOCKING_ISSUE_CODES`/`CREATIVE_HARD_FAILURE_CODES`. Uma
+ * peça pode ter múltiplas violações na mesma geração — cada uma vira um `LucasIssue` próprio,
+ * nunca agregadas silenciosamente em uma só. */
+function evaluateSemanticOcclusion(verdict: SemanticOcclusionVerdict | undefined, issues: LucasIssue[]): void {
+  if (!verdict?.hasViolation || verdict.violations.length === 0) return;
+
+  for (const violation of verdict.violations) {
+    const repairInstruction = buildRepairInstructionFromOcclusion(violation.element, violation.subject, violation.severity, violation.reasoning);
+    const code = repairInstruction ? occlusionIssueCode(repairInstruction.type, violation.severity) : undefined;
+    const message = `Elemento "${violation.element}" sobre "${violation.subject}" (${violation.severity})${violation.reasoning ? `: ${violation.reasoning}` : "."}`;
+    issues.push(issue(code ?? "SEMANTIC_OCCLUSION_OTHER", "composition", message, violation.severity === "severe" ? "high" : "medium"));
+  }
 }
 
 /** Alucinação comercial: condição comercial afirmada na copy sem confirmação (estoque limitado,
@@ -2031,14 +2124,46 @@ function evaluateVideoFile(input: LucasQualityReviewRequestInput, issues: LucasI
  * `heroProduct` e o `BrandVisualProfile` usado não chegam a Lucas hoje) — ficam num neutro
  * documentado (7/10), nunca inventado como "ótimo" nem penalizado por ausência de dado.
  */
+// Usado por `buildCreativeQualityDimensions`/`buildCreativeQualityScore` pra decidir penalidade de
+// dimensão e teto de score — "severe" quando QUALQUER violação de oclusão semântica reportada
+// nesta geração foi "_SEVERE" (rosto/olhos comprometidos), "partial" quando só houve violações
+// leves, "none" quando nenhuma foi detectada.
+const SEMANTIC_OCCLUSION_ISSUE_CODES = new Set<LucasIssueCode>([
+  ...SEMANTIC_OCCLUSION_SEVERE_CODES,
+  "SEMANTIC_OCCLUSION_HEADLINE_OVER_FACE_PARTIAL",
+  "SEMANTIC_OCCLUSION_BADGE_OVER_FACE_PARTIAL",
+  "SEMANTIC_OCCLUSION_PRICE_OVER_FACE_PARTIAL",
+  "SEMANTIC_OCCLUSION_CTA_OVER_FACE_PARTIAL",
+  "SEMANTIC_OCCLUSION_PRODUCT_OVER_FACE_PARTIAL",
+  "SEMANTIC_OCCLUSION_LOGO_OVER_SUBJECT",
+  "SEMANTIC_OCCLUSION_TEXT_OVER_PRODUCT",
+  "SEMANTIC_OCCLUSION_CTA_OVER_IMPORTANT_SUBJECT",
+  "SEMANTIC_OCCLUSION_OTHER",
+]);
+
+function occlusionSeverityLevel(issues: LucasIssue[]): "severe" | "partial" | "none" {
+  const relevant = issues.filter((current) => SEMANTIC_OCCLUSION_ISSUE_CODES.has(current.code));
+  if (relevant.length === 0) return "none";
+  return relevant.some((current) => SEMANTIC_OCCLUSION_SEVERE_CODES.has(current.code)) ? "severe" : "partial";
+}
+
+/**
+ * Rodada 2, Fatia 3 — recalibrado para que oclusão semântica tenha penalidade REAL, não cosmética:
+ * antes desta mudança uma headline cobrindo o rosto do modelo não afetava nenhuma das 10 dimensões
+ * e a peça podia sair com `creativeQualityScore` de 86-89 (bug de produção confirmado). Agora
+ * `visualHierarchy`/`layoutBalance`/`professionalPolish`/`productProminence` caem de verdade com
+ * qualquer violação (severa OU parcial) — e `buildCreativeQualityScore` ainda aplica um teto
+ * explícito por cima, como segunda camada de proteção.
+ */
 function buildCreativeQualityDimensions(issues: LucasIssue[]): CreativeQualityDimensions {
   const hasIssue = (code: LucasIssueCode) => issues.some((current) => current.code === code);
+  const occlusion = occlusionSeverityLevel(issues);
 
   return {
     productFidelity: hasIssue("PRODUCT_FIDELITY_MISMATCH") ? 0 : 10,
     factualAccuracy: hasIssue("COMMERCIAL_HALLUCINATION_DETECTED") ? 0 : hasIssue("COMMERCIAL_FACT_IGNORED") ? 6 : 10,
     commercialClarity: hasIssue("COMMERCIAL_FACT_IGNORED") ? 5 : 9,
-    visualHierarchy: hasIssue("TYPOGRAPHY_LINE_COUNT_EXCEEDED") ? 6 : 9,
+    visualHierarchy: occlusion === "severe" ? 1 : occlusion === "partial" ? 5 : hasIssue("TYPOGRAPHY_LINE_COUNT_EXCEEDED") ? 6 : 9,
     typography: hasIssue("TYPOGRAPHY_TEXT_CLIPPED") || hasIssue("TYPOGRAPHY_CONTRAST_LOW")
       ? 0
       : hasIssue("TYPOGRAPHY_MIN_SIZE_VIOLATION") || hasIssue("TYPOGRAPHY_ALL_CAPS_OVERUSE") ? 6 : 10,
@@ -2046,11 +2171,12 @@ function buildCreativeQualityDimensions(issues: LucasIssue[]): CreativeQualityDi
     // neutro documentado, nunca inventado.
     brandConsistency: 7,
     // Sem geometria real da zona heroProduct disponível neste handler (excluída deliberadamente de
-    // `typographyGeometry` — não é tipografia) — neutro documentado, nunca inventado.
-    productProminence: 7,
-    layoutBalance: hasIssue("VISUAL_COMPOSITION_UNPROFESSIONAL") ? 3 : 9,
+    // `typographyGeometry` — não é tipografia) — neutro documentado, nunca inventado, exceto
+    // quando a própria oclusão semântica reporta o produto comprometido.
+    productProminence: occlusion === "severe" ? 2 : occlusion === "partial" ? 6 : 7,
+    layoutBalance: occlusion === "severe" ? 1 : hasIssue("VISUAL_COMPOSITION_UNPROFESSIONAL") ? 3 : occlusion === "partial" ? 5 : 9,
     specificity: hasIssue("GENERIC_CLICHE_IN_COPY") ? 4 : 9,
-    professionalPolish: hasIssue("VISUAL_COMPOSITION_UNPROFESSIONAL") ? 2 : 9,
+    professionalPolish: occlusion === "severe" ? 1 : hasIssue("VISUAL_COMPOSITION_UNPROFESSIONAL") ? 2 : occlusion === "partial" ? 5 : 9,
   };
 }
 
@@ -2061,10 +2187,17 @@ function buildCreativeQualityScore(input: LucasQualityReviewRequestInput, issues
   if (!input.typographyGeometry || input.typographyGeometry.length === 0) return undefined;
 
   const hardFailures = issues.filter((current) => CREATIVE_HARD_FAILURE_CODES.has(current.code));
+  // Teto explícito (Rodada 2, Fatia 3) — segunda camada de proteção além da penalidade de
+  // dimensão acima: mesmo se as outras 9 dimensões saírem no máximo, uma violação severa nunca
+  // ultrapassa 55/100 (abaixo do limiar de "repair", força reject via score OU via hard failure) e
+  // uma parcial nunca ultrapassa 78/100 (abaixo de "approved", nunca sai como "excellent"/"approved").
+  const occlusion = occlusionSeverityLevel(issues);
+  const scoreCeiling = occlusion === "severe" ? 55 : occlusion === "partial" ? 78 : undefined;
   return computeCreativeQualityScore({
     dimensions: buildCreativeQualityDimensions(issues),
     hasHardFailure: hardFailures.length > 0,
     hardFailureReasons: hardFailures.map((current) => current.message),
+    scoreCeiling,
   });
 }
 

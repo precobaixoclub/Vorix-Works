@@ -14,11 +14,15 @@ import type { ExecutionCapability, TaskType } from "../../domain/planning/planni
 import { compositeLogoOntoImage, type LogoCorner } from "../media/logo-compositor.js";
 import { parseReferenceIntelligence, type ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
 import { parseCommercialFacts, type CommercialFact } from "../../shared/utils/commercial-fact-normalizer.js";
-import { RENDERER_OWNED_ZONE_TYPES, type AdLayoutSpec, type AdLayoutZoneType, type PerformanceCreativePlan } from "../../shared/utils/ad-layout.types.js";
+import { RENDERER_OWNED_ZONE_TYPES, type AdLayoutSpec, type AdLayoutZoneType, type PerformanceCreativePlan, type RepairAttemptRecord } from "../../shared/utils/ad-layout.types.js";
 import { renderAdCreativeOverlay } from "../rendering/ad-creative-renderer.js";
 import { resolveProductRenderMode, type ProductRenderMode, type AssetSuitabilityScore } from "../../shared/utils/product-asset.types.js";
 import { computeAssetSuitabilityScore, extractProductAsset } from "../image-processing/product-background.js";
 import type { BrandVisualProfile } from "../../shared/utils/brand-visual-profile.types.js";
+import type { OpenAiSemanticOcclusionChecker } from "../ai-providers/openai-semantic-occlusion-checker.js";
+import { buildRepairInstructionFromOcclusion, type RepairInstruction } from "../../shared/utils/repair-instructions.js";
+import { DEFAULT_ZONE_ALTERNATIVES } from "../../shared/utils/zone-collision.js";
+import { clampZoneToSafeArea } from "../../shared/utils/ad-safe-zones.js";
 
 type SkillCallResult = {
   output: Record<string, unknown>;
@@ -84,6 +88,7 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       runtimeRepository?: RuntimeRepositoryPort;
       preparedCommandRepository?: PreparedCommandRepositoryPort;
       ensureBrandVisualProfile?: (workspaceId: string) => Promise<BrandVisualProfile>;
+      semanticOcclusionChecker?: OpenAiSemanticOcclusionChecker;
     },
   ) {}
 
@@ -134,6 +139,8 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       const overlayResult = await applyAdCreativeOverlay(this.deps, request, pedro.output, bianca.output, brandVisualProfile).catch((error) => ({
         output: pedro.output,
         warnings: [`Não foi possível compor os elementos comerciais determinísticos: ${error instanceof Error ? error.message : "erro desconhecido"}.`],
+        repairAttempts: [] as RepairAttemptRecord[],
+        repairLoopRan: false,
       }));
       // Logo real colada por cima (requisito "não foi aplicada a logo") — Sofia/Bianca já sabem a
       // cor/estilo da marca (contexto pro modelo), mas a IA nunca desenha o arquivo da logo em si
@@ -147,6 +154,19 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       const invalid = validateOutputContract(contract, finalPedroOutput);
       if (invalid) return failure("SKILL_OUTPUT_SCHEMA_INVALID", invalid, "invalid_output");
       const warnings = [...sofia.warnings, ...bianca.warnings, ...pedro.warnings, ...overlayResult.warnings, ...logoResult.warnings];
+      // Repair Loop (Rodada 2, Fatia 3) — registra no MESMO plano que já carrega o resto da
+      // auditoria (`commercialFactResolutions`/`creativeCandidates`) qualquer tentativa de reparo,
+      // resolvida ou não; nunca decidido silenciosamente.
+      const biancaOutputWithRepairAudit = overlayResult.repairLoopRan && bianca.output.performanceCreativePlan && typeof bianca.output.performanceCreativePlan === "object"
+        ? {
+            ...bianca.output,
+            performanceCreativePlan: {
+              ...(bianca.output.performanceCreativePlan as Record<string, unknown>),
+              repairAttempts: overlayResult.repairAttempts,
+              repairLoopRan: overlayResult.repairLoopRan,
+            },
+          }
+        : bianca.output;
       return {
         ok: true,
         value: {
@@ -156,7 +176,7 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
               ...buildExecutionPayload({ ...pedro, output: finalPedroOutput }, request.inputs, this.deps.provider ?? "helena"),
               visualPipeline: {
                 artDirection: sofia.output,
-                designSpec: bianca.output,
+                designSpec: biancaOutputWithRepairAudit,
                 imageGeneration: finalPedroOutput,
                 skillIds: [sofia.skillId, bianca.skillId, pedro.skillId],
               },
@@ -247,18 +267,54 @@ async function resolveProductAssetPipeline(
  * `typographyGeometry` a cada imagem — insumo determinístico do quality gate de tipografia do
  * Lucas (Fase 16), sem precisar de nenhuma chamada de IA.
  */
+// Repair Loop (Rodada 2, Fatia 3) — nunca mais de 2 tentativas automáticas por imagem (requisito
+// explícito, evita loop). Cada tentativa gasta 1 chamada de verificação (barata, texto+imagem) +
+// 1 re-render determinístico (Satori+sharp, sem nova chamada a Pedro) — nunca gera imagem de novo
+// aqui; correções que exigem nova fotografia (`layer: "photo"`) são registradas mas não aplicadas
+// nesta função, ficam pro Quality Gate oficial decidir se pede regeneração.
+const MAX_REPAIR_ATTEMPTS = 2;
+
+function buildOverlayObjectKey(request: ExecutionTaskHandlerRequest, suffix: string): string {
+  return `ai-generated/${request.context.tenantId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${suffix}.png`;
+}
+
+/** Reposiciona a zona implicada pra próxima alternativa ainda não tentada; quando as alternativas
+ * já se esgotaram, REMOVE a zona inteira — nunca deixa um elemento comercial cobrindo rosto/olhos
+ * só porque não sobrou posição alternativa pra tentar (a mesma lógica de "redução por prioridade"
+ * do orçamento de informação, aplicada aqui a UMA zona específica). */
+function applyDeterministicZoneRepair(spec: AdLayoutSpec, zoneType: AdLayoutZoneType, triedAlternativeCount: number): { spec: AdLayoutSpec; correctionApplied: string; zoneRemoved: boolean } {
+  const alternatives = DEFAULT_ZONE_ALTERNATIVES[zoneType] ?? [];
+  const nextAlternative = alternatives[triedAlternativeCount];
+  if (!nextAlternative) {
+    return {
+      spec: { ...spec, zones: spec.zones.filter((zone) => zone.type !== zoneType) },
+      correctionApplied: `Zona "${zoneType}" removida da peça — sem posição alternativa segura disponível.`,
+      zoneRemoved: true,
+    };
+  }
+  return {
+    spec: { ...spec, zones: spec.zones.map((zone) => (zone.type === zoneType ? { ...zone, position: nextAlternative } : zone)) },
+    correctionApplied: `Zona "${zoneType}" reposicionada (alternativa ${triedAlternativeCount + 1}/${alternatives.length}).`,
+    zoneRemoved: false,
+  };
+}
+
+function pickMostSevereViolation<T extends { severity: "severe" | "partial" }>(violations: T[]): T | undefined {
+  return [...violations].sort((a, b) => (a.severity === "severe" ? -1 : 1) - (b.severity === "severe" ? -1 : 1))[0];
+}
+
 async function applyAdCreativeOverlay(
-  deps: { objectStorage?: ObjectStoragePort },
+  deps: { objectStorage?: ObjectStoragePort; semanticOcclusionChecker?: OpenAiSemanticOcclusionChecker },
   request: ExecutionTaskHandlerRequest,
   pedroOutput: Record<string, unknown>,
   biancaOutput: Record<string, unknown>,
   brandVisualProfile: BrandVisualProfile | undefined,
-): Promise<{ output: Record<string, unknown>; warnings: string[] }> {
+): Promise<{ output: Record<string, unknown>; warnings: string[]; repairAttempts: RepairAttemptRecord[]; repairLoopRan: boolean }> {
   const plan = biancaOutput.performanceCreativePlan as PerformanceCreativePlan | undefined;
   const adLayoutSpec = biancaOutput.adLayoutSpec as AdLayoutSpec | undefined;
-  if (!deps.objectStorage || !plan || !adLayoutSpec) return { output: pedroOutput, warnings: [] };
+  if (!deps.objectStorage || !plan || !adLayoutSpec) return { output: pedroOutput, warnings: [], repairAttempts: [], repairLoopRan: false };
   const images = Array.isArray(pedroOutput.images) ? (pedroOutput.images as Record<string, unknown>[]) : [];
-  if (images.length === 0) return { output: pedroOutput, warnings: [] };
+  if (images.length === 0) return { output: pedroOutput, warnings: [], repairAttempts: [], repairLoopRan: false };
 
   // Brand Visual Profile (Rodada 2, Fatia 2, Prioridade 5) — quando existe, é a fonte de cor
   // preferida (identidade PERSISTENTE do workspace, nunca regenerada por peça); sem perfil, cai no
@@ -274,6 +330,9 @@ async function applyAdCreativeOverlay(
 
   const warnings: string[] = [];
   const updatedImages: Record<string, unknown>[] = [];
+  const repairAttempts: RepairAttemptRecord[] = [];
+  let repairLoopRan = false;
+
   for (const image of images) {
     const uri = typeof image.uri === "string" ? image.uri : undefined;
     if (!uri) {
@@ -282,16 +341,73 @@ async function applyAdCreativeOverlay(
     }
     try {
       const imageBuffer = await fetchAsBuffer(uri);
-      const result = await renderAdCreativeOverlay({ baseImageBuffer: imageBuffer, adLayoutSpec, plan, brandColors });
-      const key = `ai-generated/${request.context.tenantId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-overlay.png`;
-      const uploaded = await deps.objectStorage.put({ key, body: result.buffer, contentType: "image/png" });
+      let currentSpec = adLayoutSpec;
+      let result = await renderAdCreativeOverlay({ baseImageBuffer: imageBuffer, adLayoutSpec: currentSpec, plan, brandColors });
+      let uploaded = await deps.objectStorage.put({ key: buildOverlayObjectKey(request, "overlay"), body: result.buffer, contentType: "image/png" });
+
+      if (deps.semanticOcclusionChecker) {
+        const zoneAttemptsUsed = new Map<AdLayoutZoneType, number>();
+        let pendingAttempt: { attempt: number; instruction: RepairInstruction; reasoning: string; correctionApplied: string } | undefined;
+
+        for (let attempt = 1; attempt <= MAX_REPAIR_ATTEMPTS + 1; attempt += 1) {
+          repairLoopRan = true;
+          const verdict = await deps.semanticOcclusionChecker.check(uploaded.url).catch(() => undefined);
+
+          if (pendingAttempt) {
+            const settledAttempt = pendingAttempt;
+            const stillViolated = verdict?.hasViolation && verdict.violations.some((violation) => violation.element === settledAttempt.instruction.zoneType);
+            repairAttempts.push({
+              attempt: settledAttempt.attempt,
+              issueType: settledAttempt.instruction.type,
+              zoneType: settledAttempt.instruction.zoneType,
+              reasoning: settledAttempt.reasoning,
+              correctionApplied: settledAttempt.correctionApplied,
+              result: !verdict ? "verification_unavailable" : stillViolated ? "still_violated" : "resolved",
+            });
+            pendingAttempt = undefined;
+          }
+
+          if (attempt > MAX_REPAIR_ATTEMPTS) break;
+          if (!verdict || !verdict.hasViolation || verdict.violations.length === 0) break;
+
+          const violation = pickMostSevereViolation(verdict.violations);
+          if (!violation) break;
+          const instruction = buildRepairInstructionFromOcclusion(violation.element, violation.subject, violation.severity, violation.reasoning);
+          if (!instruction || instruction.layer !== "deterministic" || !instruction.zoneType) {
+            repairAttempts.push({
+              attempt,
+              issueType: instruction?.type ?? "product_not_prominent",
+              zoneType: instruction?.zoneType,
+              reasoning: violation.reasoning,
+              correctionApplied: "Nenhuma — defeito exige nova geração fotográfica (fora do escopo do reflow determinístico deste reparo).",
+              result: "still_violated",
+            });
+            break;
+          }
+
+          const triedCount = zoneAttemptsUsed.get(instruction.zoneType) ?? 0;
+          const repair = applyDeterministicZoneRepair(currentSpec, instruction.zoneType, triedCount);
+          zoneAttemptsUsed.set(instruction.zoneType, triedCount + 1);
+          currentSpec = repair.spec;
+
+          result = await renderAdCreativeOverlay({ baseImageBuffer: imageBuffer, adLayoutSpec: currentSpec, plan, brandColors });
+          uploaded = await deps.objectStorage.put({ key: buildOverlayObjectKey(request, "overlay-repaired"), body: result.buffer, contentType: "image/png" });
+
+          if (repair.zoneRemoved) {
+            repairAttempts.push({ attempt, issueType: instruction.type, zoneType: instruction.zoneType, reasoning: violation.reasoning, correctionApplied: repair.correctionApplied, result: "zone_removed" });
+            break;
+          }
+          pendingAttempt = { attempt, instruction, reasoning: violation.reasoning, correctionApplied: repair.correctionApplied };
+        }
+      }
+
       updatedImages.push({ ...image, uri: uploaded.url, typographyGeometry: result.typographyGeometry });
     } catch (error) {
       warnings.push(`Não foi possível compor os elementos comerciais determinísticos numa das imagens: ${error instanceof Error ? error.message : "erro desconhecido"}.`);
       updatedImages.push(image);
     }
   }
-  return { output: { ...pedroOutput, images: updatedImages }, warnings };
+  return { output: { ...pedroOutput, images: updatedImages }, warnings, repairAttempts, repairLoopRan };
 }
 
 /**

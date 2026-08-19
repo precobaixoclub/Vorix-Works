@@ -732,6 +732,239 @@ test("VisualPipelineExecutionTaskHandler: campos de auditoria do Multi-Candidate
   assert.equal(finalDesignSpec.performanceCreativePlan.creativeCandidates.length, 1);
 });
 
+test("VisualPipelineExecutionTaskHandler: Repair Loop reposiciona a zona (headline_over_face) num reflow determinístico, sem chamar Pedro de novo, e registra a tentativa como resolvida", async () => {
+  const baseImagePng = await sharp({ create: { width: 1024, height: 1280, channels: 4, background: { r: 30, g: 90, b: 60, alpha: 1 } } }).png().toBuffer();
+
+  const adLayoutSpec = {
+    format: "9:16",
+    aspectRatio: "9:16",
+    layoutFamily: "premium_product",
+    density: "clean",
+    zones: [{ type: "headline", priority: 1, position: { xPct: 6, yPct: 6, widthPct: 88, heightPct: 18 } }],
+  };
+  const performanceCreativePlan = {
+    objective: "reconhecimento_marca",
+    creativeType: "produto",
+    primaryHook: "Seu novo favorito",
+    benefits: [],
+    trustSignals: [],
+    specifications: [],
+    cta: "",
+    brandElements: [],
+    visualDensity: "clean",
+    layoutFamily: "premium_product",
+    informationPriority: [],
+  };
+
+  // `fetchAsBuffer` (real-skill-execution-handlers.js) baixa a URI da imagem — precisa de um
+  // servidor real servindo os bytes, mesmo padrão dos outros testes deste arquivo. Criado ANTES
+  // do mock de Pedro pra poder embutir a URL real (com a porta já conhecida) na resposta dele.
+  const server = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "image/png" });
+    res.end(baseImagePng);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+
+  const helena = fakeHelena();
+  let pedroCallCount = 0;
+  const originalExecuteSkill = helena.manager.executeSkill;
+  helena.manager.executeSkill = async (request) => {
+    if (request.capability === "image_generation") {
+      pedroCallCount += 1;
+      return {
+        skillId: "fake-image_generation",
+        state: "COMPLETED",
+        response: {
+          skillId: "fake-image_generation",
+          taskId: request.context.taskId,
+          status: "completed",
+          output: { generationSummary: "ok", imageCount: 1, images: [{ id: "img-1", uri: `http://127.0.0.1:${port}/generated-image.png` }] },
+          artifacts: [],
+          warnings: [],
+        },
+      };
+    }
+    if (request.capability === "social_media_design") {
+      return {
+        skillId: "fake-social_media_design",
+        state: "COMPLETED",
+        response: {
+          skillId: "fake-social_media_design",
+          taskId: request.context.taskId,
+          status: "completed",
+          output: { designConcept: "teste", gridSystem: "grid", ctaPlacement: "base", performanceCreativePlan, adLayoutSpec },
+          artifacts: [],
+          warnings: [],
+        },
+      };
+    }
+    return originalExecuteSkill(request);
+  };
+
+  let putCount = 0;
+  const fakeObjectStorage = {
+    put: async (input) => {
+      putCount += 1;
+      return { url: `https://x/uploaded-${putCount}.png` };
+    },
+    delete: async () => undefined,
+    resolvePublicUrl: (key) => `https://x/${key}`,
+    health: async () => ({ ok: true }),
+  };
+  const fakeClara = { requestContext: async () => ({ clientId: "tenant-1", deliveredAt: FIXED_NOW, modules: {}, records: [] }) };
+
+  let checkCount = 0;
+  const fakeSemanticOcclusionChecker = {
+    check: async () => {
+      checkCount += 1;
+      // 1ª checagem: headline cobre o rosto. 2ª checagem (depois do reflow): resolvido.
+      if (checkCount === 1) {
+        return { hasViolation: true, violations: [{ element: "headline", subject: "face", severity: "severe", reasoning: "Headline cobre o rosto do modelo." }] };
+      }
+      return { hasViolation: false, violations: [] };
+    },
+  };
+
+  const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    helena: helena.manager,
+    provider: "helena",
+    clara: fakeClara,
+    objectStorage: fakeObjectStorage,
+    semanticOcclusionChecker: fakeSemanticOcclusionChecker,
+  });
+
+  const request = {
+    task: { id: "task-1", runtimePlanId: "runtime-1", capability: "visual_design", type: "visual_generation" },
+    inputs: {
+      structure: [{ artifactId: "a-structure", checksum: "c1", payload: { output: { objective: "vender", channel: "tiktok", format: "single_image" } } }],
+    },
+    context: { executionRunId: "exec-1", tenantId: "tenant-1", workspaceId: "workspace-1", mode: "real" },
+    attempt: { total: 1, providerAttempt: 1 },
+  };
+
+  try {
+    const result = await handler.execute(request);
+    assert.equal(result.ok, true, JSON.stringify(result));
+
+    // Pedro rodou exatamente 1 vez — o Repair Loop nunca chama Pedro de novo (só reflow
+    // determinístico), mesmo com uma violação detectada e reparada.
+    assert.equal(pedroCallCount, 1);
+    // 2 checagens de oclusão: a 1ª acha a violação, a 2ª confirma que o reflow resolveu.
+    assert.equal(checkCount, 2);
+
+    const plan = result.value.outputs[0].payload.visualPipeline.designSpec.performanceCreativePlan;
+    assert.equal(plan.repairLoopRan, true);
+    assert.equal(plan.repairAttempts.length, 1);
+    assert.equal(plan.repairAttempts[0].issueType, "headline_over_face");
+    assert.equal(plan.repairAttempts[0].zoneType, "headline");
+    assert.equal(plan.repairAttempts[0].result, "resolved");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("VisualPipelineExecutionTaskHandler: Repair Loop nunca ultrapassa 2 tentativas, mesmo com a violação persistindo — registra \"still_violated\" e segue adiante (nunca trava a geração)", async () => {
+  const baseImagePng = await sharp({ create: { width: 1024, height: 1280, channels: 4, background: { r: 30, g: 90, b: 60, alpha: 1 } } }).png().toBuffer();
+  const adLayoutSpec = { format: "9:16", aspectRatio: "9:16", layoutFamily: "premium_product", density: "clean", zones: [{ type: "headline", priority: 1, position: { xPct: 6, yPct: 6, widthPct: 88, heightPct: 18 } }] };
+  const performanceCreativePlan = {
+    objective: "reconhecimento_marca",
+    creativeType: "produto",
+    primaryHook: "Seu novo favorito",
+    benefits: [],
+    trustSignals: [],
+    specifications: [],
+    cta: "",
+    brandElements: [],
+    visualDensity: "clean",
+    layoutFamily: "premium_product",
+    informationPriority: [],
+  };
+
+  const server = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "image/png" });
+    res.end(baseImagePng);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+
+  const helena = fakeHelena();
+  let pedroCallCount = 0;
+  const originalExecuteSkill = helena.manager.executeSkill;
+  helena.manager.executeSkill = async (request) => {
+    if (request.capability === "image_generation") {
+      pedroCallCount += 1;
+      return {
+        skillId: "fake-image_generation",
+        state: "COMPLETED",
+        response: { skillId: "fake-image_generation", taskId: request.context.taskId, status: "completed", output: { generationSummary: "ok", imageCount: 1, images: [{ id: "img-1", uri: `http://127.0.0.1:${port}/generated-image.png` }] }, artifacts: [], warnings: [] },
+      };
+    }
+    if (request.capability === "social_media_design") {
+      return {
+        skillId: "fake-social_media_design",
+        state: "COMPLETED",
+        response: { skillId: "fake-social_media_design", taskId: request.context.taskId, status: "completed", output: { designConcept: "teste", gridSystem: "grid", ctaPlacement: "base", performanceCreativePlan, adLayoutSpec }, artifacts: [], warnings: [] },
+      };
+    }
+    return originalExecuteSkill(request);
+  };
+
+  const fakeObjectStorage = {
+    put: async () => ({ url: "https://x/uploaded.png" }),
+    delete: async () => undefined,
+    resolvePublicUrl: (key) => `https://x/${key}`,
+    health: async () => ({ ok: true }),
+  };
+  const fakeClara = { requestContext: async () => ({ clientId: "tenant-1", deliveredAt: FIXED_NOW, modules: {}, records: [] }) };
+
+  // A violação NUNCA se resolve — headline continua "cobrindo o rosto" em toda checagem.
+  let checkCount = 0;
+  const fakeSemanticOcclusionChecker = {
+    check: async () => {
+      checkCount += 1;
+      return { hasViolation: true, violations: [{ element: "headline", subject: "face", severity: "severe", reasoning: "Headline ainda cobre o rosto do modelo." }] };
+    },
+  };
+
+  const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    helena: helena.manager,
+    provider: "helena",
+    clara: fakeClara,
+    objectStorage: fakeObjectStorage,
+    semanticOcclusionChecker: fakeSemanticOcclusionChecker,
+  });
+
+  const request = {
+    task: { id: "task-1", runtimePlanId: "runtime-1", capability: "visual_design", type: "visual_generation" },
+    inputs: { structure: [{ artifactId: "a-structure", checksum: "c1", payload: { output: { objective: "vender", channel: "tiktok", format: "single_image" } } }] },
+    context: { executionRunId: "exec-1", tenantId: "tenant-1", workspaceId: "workspace-1", mode: "real" },
+    attempt: { total: 1, providerAttempt: 1 },
+  };
+
+  try {
+    const result = await handler.execute(request);
+    assert.equal(result.ok, true, JSON.stringify(result));
+    // Nunca chama Pedro de novo, mesmo sem conseguir resolver — o reparo é sempre determinístico
+    // nesta camada; regenerar a foto é decisão do Quality Gate oficial, não deste loop.
+    assert.equal(pedroCallCount, 1);
+    // No máximo 2 tentativas de reparo (headline: alternativa 1, depois alternativa 2) + a
+    // checagem final que confirma que persistiu = 3 chamadas de verificação no total.
+    assert.equal(checkCount, 3);
+
+    const plan = result.value.outputs[0].payload.visualPipeline.designSpec.performanceCreativePlan;
+    assert.equal(plan.repairLoopRan, true);
+    assert.equal(plan.repairAttempts.length, 2);
+    assert.ok(plan.repairAttempts.every((entry) => entry.issueType === "headline_over_face"));
+    assert.equal(plan.repairAttempts[plan.repairAttempts.length - 1].result, "still_violated");
+    // A geração NUNCA trava — mesmo sem conseguir reparar, o pipeline conclui e devolve a peça
+    // (o Quality Gate oficial, não este loop, decide se ela é aprovada).
+    assert.ok(result.value.outputs[0].payload.visualPipeline.imageGeneration);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("VisualPipelineExecutionTaskHandler: Product Asset Pipeline (Rodada 2) recorta o produto de uma referência com fundo uniforme, sobe pro storage, e repassa o modo/URL pra Bianca e Pedro", async () => {
   // Referência com fundo branco uniforme + "produto" (círculo vermelho) — mesma técnica sintética
   // de tests/product-background.test.mjs, condição real pra `original_asset` ser escolhido.

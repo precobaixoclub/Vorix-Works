@@ -20,6 +20,32 @@ import { DEFAULT_EXECUTION_FEATURE_FLAGS, serializeExecutionFeatureFlags, type E
 import { createDefaultExecutionContractRegistry, type ExecutionContract, type ExecutionContractRegistry } from "./execution-contract-registry.js";
 import { circuitOpenFailure, type HandlerCircuitBreakerPort } from "./handler-circuit-breaker.js";
 import { SideEffectGuard } from "./execution-operational-policy.js";
+import type { BackoffStrategy } from "../../domain/execution/execution.model.js";
+
+// Achado ao vivo (Rodada 2, Fatia 3): `retryPolicy.backoffStrategy` do descriptor sempre existiu
+// no tipo mas nunca era lido em lugar nenhum — todo retry era imediato (mesmo loop síncrono,
+// zero espera), o que não dá NENHUMA chance real de uma falha transitória de provider (timeout,
+// rate limit) se resolver sozinha antes da 2ª tentativa. `FIXED_BACKOFF_MS` é deliberadamente
+// pequeno (a chamada HTTP inteira já leva dezenas de segundos quando há retry de verdade) — o
+// objetivo não é esperar "o suficiente" pra qualquer degradação passar, só parar de bater
+// imediatamente no mesmo provider que acabou de falhar.
+const FIXED_BACKOFF_MS = 1_500;
+const EXPONENTIAL_BASE_BACKOFF_MS = 1_000;
+const MAX_EXPONENTIAL_BACKOFF_MS = 8_000;
+
+function resolveBackoffDelayMs(strategy: BackoffStrategy | undefined, attemptNumber: number): number {
+  // `undefined` (nenhuma política explícita) é tratado como "fixed", nunca como "sem espera" — o
+  // ponto desta função é justamente nunca mais bater imediatamente num provider que acabou de
+  // falhar; só `"none"` explícito pula o backoff de propósito.
+  if (strategy === "none") return 0;
+  if (strategy === "exponential") return Math.min(MAX_EXPONENTIAL_BACKOFF_MS, EXPONENTIAL_BASE_BACKOFF_MS * 2 ** (attemptNumber - 1));
+  return FIXED_BACKOFF_MS;
+}
+
+async function defaultSleep(ms: number): Promise<void> {
+  if (ms <= 0) return;
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
 
 export type ExecutionEngineDeps = ExecutionPreconditionDeps & {
   executionRepository: ExecutionRepositoryPort;
@@ -32,6 +58,9 @@ export type ExecutionEngineDeps = ExecutionPreconditionDeps & {
   contractRegistry?: ExecutionContractRegistry;
   sideEffectGuard?: SideEffectGuard;
   circuitBreaker?: HandlerCircuitBreakerPort;
+  /** Injetável só pra teste (evita atrasar a suíte de verdade) — produção sempre usa o `setTimeout`
+   * real por trás de `defaultSleep`. */
+  sleep?: (ms: number) => Promise<void>;
 };
 
 export type CreateExecutionRunInput = {
@@ -284,7 +313,9 @@ async function executeTask(deps: ExecutionEngineDeps, runId: string, taskRunId: 
       ? { maxAttempts: descriptorRetryPolicy.supportsRetry ? descriptorRetryPolicy.maxAttempts : 1 }
       : deps.retryPolicy ?? DEFAULT_EXECUTION_RETRY_POLICY;
     if (canRetryExecutionFailure(result.error, attempt.attemptNumber, retryPolicy)) {
-      await deps.executionRepository.appendEvent({ id: deps.idGenerator(), executionRunId: runId, eventType: "retry_scheduled", taskRunId: taskRun.id, correlationId: detail.run.correlationId, causationId: attempt.id, traceId: detail.run.traceId, payload: { attemptNumber: attempt.attemptNumber + 1 } });
+      const backoffMs = resolveBackoffDelayMs(descriptorRetryPolicy?.backoffStrategy, attempt.attemptNumber);
+      await deps.executionRepository.appendEvent({ id: deps.idGenerator(), executionRunId: runId, eventType: "retry_scheduled", taskRunId: taskRun.id, correlationId: detail.run.correlationId, causationId: attempt.id, traceId: detail.run.traceId, payload: { attemptNumber: attempt.attemptNumber + 1, backoffMs } });
+      await (deps.sleep ?? defaultSleep)(backoffMs);
       await deps.executionRepository.replaceTaskRunState({ id: taskRun.id, state: "ready" });
       return undefined;
     }

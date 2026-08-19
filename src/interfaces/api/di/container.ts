@@ -39,6 +39,7 @@ import { OpenAiIcaroTextProvider } from "../../../infrastructure/ai-providers/op
 import { createQualityFeedbackCenter, type QualityFeedbackCenter } from "../../../application/quality-feedback/quality-feedback-center.js";
 import { OpenAiVisionDescriber } from "../../../infrastructure/ai-providers/openai-vision-describer.js";
 import { OpenAiReferenceIntelligenceExtractor } from "../../../infrastructure/ai-providers/openai-reference-intelligence-extractor.js";
+import { OpenAiSemanticOcclusionChecker } from "../../../infrastructure/ai-providers/openai-semantic-occlusion-checker.js";
 import type { ReferenceIntelligence } from "../../../shared/utils/reference-intelligence.types.js";
 import { GoogleVeoProviderAdapter } from "../../../infrastructure/ai-providers/google-veo-provider-adapter.js";
 import { IcaroAIBrain } from "../../../application/ai/icaro-brain.js";
@@ -491,6 +492,14 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
     getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
   });
+  // Repair Loop (Rodada 2, Fatia 3) — checagem barata de oclusão semântica (rosto/olhos/mãos/
+  // produto cobertos por um elemento comercial), rodada DENTRO do próprio pipeline visual antes
+  // de finalizar o artefato. Mesmo critério do registro oficial do Lucas (`semantic-occlusion.
+  // types.ts`), transporte HTTP próprio porque o execution handler não tem `IcaroBrainPort`.
+  const semanticOcclusionChecker = new OpenAiSemanticOcclusionChecker({
+    apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
+    getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
+  });
   const googleVeoProvider = new GoogleVeoProviderAdapter({
     enabled: config?.mediaProviders.googleEnabled ?? false,
     apiBaseUrl: config?.mediaProviders.googleApiBaseUrl,
@@ -540,6 +549,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       clara,
       objectStorage,
       ensureBrandVisualProfile,
+      semanticOcclusionChecker,
     });
   // `ValentinaTenantManager.createTenant` sempre gera um `id` novo (nunca aceita um `id`
   // explícito) — mas os skills reais (Pedro/Sofia/Bianca...) chamam

@@ -50,6 +50,11 @@ export type CreativeQualityScoreInput = {
    * partir dos issues que ele já calculou, nunca recalculado aqui. */
   hasHardFailure: boolean;
   hardFailureReasons: string[];
+  /** Teto explícito de score (Rodada 2, Fatia 3) — aplicado ANTES do veredito por faixa, para
+   * falhas estruturais graves mas não necessariamente "hard failure" (ex.: oclusão semântica
+   * parcial) nunca dependerem de as outras 9 dimensões ficarem altas o bastante para disfarçar o
+   * defeito. `undefined` = sem teto (comportamento de sempre). */
+  scoreCeiling?: number;
 };
 
 export type CreativeQualityScoreResult = {
@@ -68,14 +73,16 @@ function resolveVerdictFromScore(score: number): CreativeQualityVerdict {
 }
 
 export function computeCreativeQualityScore(input: CreativeQualityScoreInput): CreativeQualityScoreResult {
-  const score = CREATIVE_QUALITY_DIMENSION_KEYS.reduce((total, key) => total + input.dimensions[key], 0);
+  const rawScore = CREATIVE_QUALITY_DIMENSION_KEYS.reduce((total, key) => total + input.dimensions[key], 0);
+  const score = typeof input.scoreCeiling === "number" ? Math.min(rawScore, input.scoreCeiling) : rawScore;
   const scoreBasedVerdict = resolveVerdictFromScore(score);
   // Falha dura sempre vence, mesmo com score de "excellent" — nunca mascarada pela nota agregada.
   const verdict: CreativeQualityVerdict = input.hasHardFailure ? "reject" : scoreBasedVerdict;
 
+  const ceilingApplied = score < rawScore;
   const reasoning = input.hasHardFailure
     ? `Score ${score}/100 (${scoreBasedVerdict}), mas REJEITADO por falha crítica objetiva: ${input.hardFailureReasons.join("; ")}. A nota nunca mascara uma falha crítica.`
-    : `Score ${score}/100 → veredito "${verdict}" (limiares: >=${CREATIVE_QUALITY_THRESHOLDS.excellent} excelente, >=${CREATIVE_QUALITY_THRESHOLDS.approved} aprovado, >=${CREATIVE_QUALITY_THRESHOLDS.repair} reparo/revisão, abaixo disso rejeitar).`;
+    : `Score ${score}/100${ceilingApplied ? ` (limitado por teto de ${input.scoreCeiling} — soma bruta das dimensões seria ${rawScore})` : ""} → veredito "${verdict}" (limiares: >=${CREATIVE_QUALITY_THRESHOLDS.excellent} excelente, >=${CREATIVE_QUALITY_THRESHOLDS.approved} aprovado, >=${CREATIVE_QUALITY_THRESHOLDS.repair} reparo/revisão, abaixo disso rejeitar).`;
 
   return { score, dimensions: input.dimensions, verdict, blockedByHardFailure: input.hasHardFailure, reasoning };
 }

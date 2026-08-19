@@ -555,7 +555,34 @@ export type LucasIssueCode =
   | "TYPOGRAPHY_ALL_CAPS_OVERUSE"
   // Visual Composition Quality Gate (Fase 17) — veredito assíncrono via visão (mesmo padrão de
   // `evaluateProductFidelity`).
-  | "VISUAL_COMPOSITION_UNPROFESSIONAL";
+  | "VISUAL_COMPOSITION_UNPROFESSIONAL"
+  // Semantic Occlusion Check (Rodada 2, Fatia 3) — elemento comercial (headline/badge/preço/CTA/
+  // produto) cobrindo rosto/olhos de uma pessoa na peça final (ver `semantic-occlusion.types.ts`,
+  // `evaluateSemanticOcclusion` em `lucas-quality-review.skill.ts`). Variante "_SEVERE" (rosto
+  // fica irreconhecível/olhos escondidos) entra em `BLOCKING_ISSUE_CODES`/`CREATIVE_HARD_FAILURE_
+  // CODES` — reprovação automática, nunca mascarada por nota agregada alta ("headline cobrindo o
+  // rosto não pode continuar recebendo score de 86 ou 89"). Variante "_PARTIAL" (toca a região sem
+  // comprometer a peça) não bloqueia sozinha, mas reduz de verdade `visualHierarchy`/
+  // `layoutBalance`/`professionalPolish`/`productProminence` (ver `buildCreativeQualityDimensions`).
+  | "SEMANTIC_OCCLUSION_HEADLINE_OVER_FACE_SEVERE"
+  | "SEMANTIC_OCCLUSION_HEADLINE_OVER_FACE_PARTIAL"
+  | "SEMANTIC_OCCLUSION_BADGE_OVER_FACE_SEVERE"
+  | "SEMANTIC_OCCLUSION_BADGE_OVER_FACE_PARTIAL"
+  | "SEMANTIC_OCCLUSION_PRICE_OVER_FACE_SEVERE"
+  | "SEMANTIC_OCCLUSION_PRICE_OVER_FACE_PARTIAL"
+  | "SEMANTIC_OCCLUSION_CTA_OVER_FACE_SEVERE"
+  | "SEMANTIC_OCCLUSION_CTA_OVER_FACE_PARTIAL"
+  | "SEMANTIC_OCCLUSION_PRODUCT_OVER_FACE_SEVERE"
+  | "SEMANTIC_OCCLUSION_PRODUCT_OVER_FACE_PARTIAL"
+  // Nunca são "_SEVERE" isoladamente bloqueantes — logo/CTA tocando mão ou texto tocando borda do
+  // produto reduz a nota (via `professionalPolish`/`productProminence`), mas só rosto/olhos
+  // cobertos força reprovação automática (ver acima).
+  | "SEMANTIC_OCCLUSION_LOGO_OVER_SUBJECT"
+  | "SEMANTIC_OCCLUSION_TEXT_OVER_PRODUCT"
+  | "SEMANTIC_OCCLUSION_CTA_OVER_IMPORTANT_SUBJECT"
+  // Combinação elemento×sujeito detectada pela visão mas sem tipo de reparo dedicado ainda (ex.:
+  // "hands") — nunca descartada silenciosamente, vira issue igual, só sem mapeamento pro Repair Loop.
+  | "SEMANTIC_OCCLUSION_OTHER";
 
 export type LucasIssue = {
   code: LucasIssueCode;

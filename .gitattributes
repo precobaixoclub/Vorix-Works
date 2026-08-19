@@ -1,0 +1,19 @@
+# Força LF em todo o repositório, independente do core.autocrlf local de quem faz checkout —
+# achado ao vivo (Rodada 2, Fatia 3): sem isto, um checkout Windows com core.autocrlf=true
+# silenciosamente reescreve migrations SQL já aplicadas em produção para CRLF; o runner de
+# migrations calcula checksum sobre os bytes crus (sem normalização), então o mesmo conteúdo
+# semântico passa a hashear diferente e bloqueia qualquer migration nova (MIGRATION_CHECKSUM_
+# MISMATCH). `git status` fica limpo (autocrlf normaliza para o diff do próprio git), mas um
+# deploy que empacota a working tree crua (tar, não `git archive`) embarca os bytes com CRLF.
+* text=auto eol=lf
+
+# Binários — nunca normalizar.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
+*.pdf binary

@@ -676,10 +676,78 @@ test("Sem Reference Intelligence, nenhuma das checagens novas dispara (regressã
   assert.equal(review.issues.some((entry) => entry.code === "COMMERCIAL_FACT_IGNORED"), false);
 });
 
+test("evaluateSemanticOcclusion: violação SEVERE de headline sobre rosto vira issue bloqueante, força reviewStatus \"rejected\" e limita fortemente o creativeQualityScore", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const verdict = {
+    hasViolation: true,
+    violations: [{ element: "headline", subject: "face", severity: "severe", reasoning: "headline cobre os olhos e parte do nariz do modelo" }],
+  };
+  const input = createInput({ typographyGeometry: [typographyEntry()] });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS, undefined, undefined, verdict);
+
+  const found = review.issues.find((entry) => entry.code === "SEMANTIC_OCCLUSION_HEADLINE_OVER_FACE_SEVERE");
+  assert.ok(found, `esperava SEMANTIC_OCCLUSION_HEADLINE_OVER_FACE_SEVERE, issues: ${JSON.stringify(review.issues.map((i) => i.code))}`);
+  assert.equal(found.severity, "high");
+  assert.equal(found.category, "composition");
+  assert.equal(review.reviewStatus, "rejected");
+  assert.ok(review.creativeQualityScore);
+  assert.equal(review.creativeQualityScore.verdict, "reject");
+  assert.equal(review.creativeQualityScore.blockedByHardFailure, true);
+  assert.ok(review.creativeQualityScore.score <= 60, `esperava score <= 60 (nunca mais 86/89 com rosto coberto), veio ${review.creativeQualityScore.score}`);
+});
+
+test("evaluateSemanticOcclusion: violação PARTIAL não bloqueia o reviewStatus, mas reduz de verdade o creativeQualityScore (teto aplicado)", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const verdict = {
+    hasViolation: true,
+    violations: [{ element: "logo", subject: "hands", severity: "partial", reasoning: "logo encosta na borda da mão que segura o produto" }],
+  };
+  const input = createInput({ typographyGeometry: [typographyEntry()] });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS, undefined, undefined, verdict);
+
+  const found = review.issues.find((entry) => entry.code === "SEMANTIC_OCCLUSION_LOGO_OVER_SUBJECT");
+  assert.ok(found, `esperava SEMANTIC_OCCLUSION_LOGO_OVER_SUBJECT, issues: ${JSON.stringify(review.issues.map((i) => i.code))}`);
+  assert.equal(found.severity, "medium");
+  assert.notEqual(review.reviewStatus, "rejected");
+  assert.ok(review.creativeQualityScore);
+  assert.equal(review.creativeQualityScore.blockedByHardFailure, false);
+  assert.ok(review.creativeQualityScore.score <= 78, `esperava score <= 78 (teto de violação parcial), veio ${review.creativeQualityScore.score}`);
+  assert.notEqual(review.creativeQualityScore.verdict, "excellent");
+});
+
+test("evaluateSemanticOcclusion: hasViolation false não gera nenhuma issue (regressão)", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const verdict = { hasViolation: false, violations: [] };
+  const review = buildBaselineReview(createInput(), context, REVIEW_THRESHOLDS, undefined, undefined, verdict);
+
+  assert.equal(review.issues.some((entry) => entry.code.startsWith("SEMANTIC_OCCLUSION_")), false);
+});
+
+test("evaluateSemanticOcclusion: veredito indisponível (undefined — não foi possível verificar) nunca reprova por conta disso", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const review = buildBaselineReview(createInput(), context, REVIEW_THRESHOLDS, undefined, undefined, undefined);
+
+  assert.equal(review.issues.some((entry) => entry.code.startsWith("SEMANTIC_OCCLUSION_")), false);
+});
+
+test("evaluateSemanticOcclusion: combinação sem tipo de reparo dedicado (ex.: mãos sobre produto) cai em SEMANTIC_OCCLUSION_OTHER, nunca descartada silenciosamente", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const verdict = {
+    hasViolation: true,
+    violations: [{ element: "rating", subject: "hands", severity: "partial", reasoning: "selo de avaliação encosta na mão do modelo" }],
+  };
+  const review = buildBaselineReview(createInput(), context, REVIEW_THRESHOLDS, undefined, undefined, verdict);
+
+  const found = review.issues.find((entry) => entry.code === "SEMANTIC_OCCLUSION_OTHER");
+  assert.ok(found, `esperava SEMANTIC_OCCLUSION_OTHER, issues: ${JSON.stringify(review.issues.map((i) => i.code))}`);
+  assert.equal(found.severity, "medium");
+});
+
 test("Lucas.execute: com Ícaro + Reference Intelligence + imagem gerada, roda fidelidade E composição visual (imagens certas em cada uma) antes do apoio de IA de sempre", async () => {
   const icaro = new FakeIcaroBrain([
     JSON.stringify({ mismatch: false }),
     JSON.stringify({ unprofessional: false }),
+    JSON.stringify({ hasViolation: false, violations: [] }),
     enhancementJson(),
   ]);
   const { lucas } = createLucas({ icaro });
@@ -687,11 +755,13 @@ test("Lucas.execute: com Ícaro + Reference Intelligence + imagem gerada, roda f
   const response = await lucas.execute(createRequest(referenceInput()));
 
   assert.equal(response.status, "completed");
-  assert.equal(icaro.calls.length, 3, `esperava 3 chamadas ao Ícaro (fidelidade + composição + apoio de IA), veio ${icaro.calls.length}`);
+  assert.equal(icaro.calls.length, 4, `esperava 4 chamadas ao Ícaro (fidelidade + composição + oclusão semântica + apoio de IA), veio ${icaro.calls.length}`);
   assert.deepEqual(icaro.calls[0].imageUrls, ["https://x/referencia.png", "https://x/gerada.png"]);
   assert.deepEqual(icaro.calls[1].imageUrls, ["https://x/gerada.png"]);
+  assert.deepEqual(icaro.calls[2].imageUrls, ["https://x/gerada.png"]);
   assert.equal(response.output.issues.some((entry) => entry.code === "PRODUCT_FIDELITY_MISMATCH"), false);
   assert.equal(response.output.issues.some((entry) => entry.code === "VISUAL_COMPOSITION_UNPROFESSIONAL"), false);
+  assert.equal(response.output.issues.some((entry) => entry.code.startsWith("SEMANTIC_OCCLUSION_")), false);
 });
 
 test("Lucas.execute: sem workflowContext.referenceImageUrl e sem uri na imagem gerada, nem fidelidade nem composição chamam o Ícaro (só o apoio de IA de sempre, 1 chamada)", async () => {

@@ -48,7 +48,9 @@ function makeDeps(handlers = [new DeterministicExecutionTaskHandler()]) {
     shared,
     planningDeps: { ...shared, idGenerator: () => `planning-id-${++counter}`, now: () => new Date("2026-01-01T00:00:00.000Z") },
     runtimeDeps: { ...shared, idGenerator: () => `runtime-id-${++counter}`, now: () => new Date("2026-01-01T00:00:00.000Z") },
-    executionDeps: { ...shared, handlers, idGenerator, now: () => new Date("2026-01-01T00:00:00.000Z") },
+    // `sleep` real (backoff entre tentativas) atrasaria a suíte por atraso sem trazer nenhum
+    // sinal novo pro teste — injeta uma versão instantânea, mesmo raciocínio de `now` fixo acima.
+    executionDeps: { ...shared, handlers, idGenerator, now: () => new Date("2026-01-01T00:00:00.000Z"), sleep: async () => undefined },
   };
 }
 
@@ -170,6 +172,28 @@ test("Retry: falha transitória agenda retry; falha não retentável falha sem r
   const permanentDetail = await permanentDeps.shared.executionRepository.getDetail(permanentRun.id);
   assert.equal(permanentDetail.attempts.length, 1);
   assert.equal(permanentDetail.events.some((event) => event.eventType === "retry_scheduled"), false);
+});
+
+test("Retry: aguarda um backoff real (não mais imediato) antes de re-tentar uma falha transitória", async () => {
+  const deps = makeDeps([new FailingExecutionTaskHandler({ transient: true, taskType: "research" }), new DeterministicExecutionTaskHandler()]);
+  const sleepCalls = [];
+  deps.executionDeps.sleep = async (ms) => {
+    sleepCalls.push(ms);
+  };
+  const { runtime } = await seedRuntime(deps);
+  const run = await createExecutionRun(deps.executionDeps, { tenantId: "tenant-1", workspaceId: "workspace-1", runtimePlanId: runtime.id, idempotencyKey: "idem-backoff-1" });
+  await startExecutionRun(deps.executionDeps, { tenantId: "tenant-1", workspaceId: "workspace-1", runId: run.id });
+
+  // `FailingExecutionTaskHandler` (deterministic-handlers.js) roda com `retryPolicy.backoffStrategy:
+  // "fixed"` por padrão nos testes que já existiam pra este handler — um único retry, então
+  // `sleep` é chamado exatamente uma vez, com um atraso > 0 (nunca mais o retry imediato de antes).
+  assert.equal(sleepCalls.length, 1);
+  assert.ok(sleepCalls[0] > 0, `esperava um backoff > 0ms, recebeu ${sleepCalls[0]}`);
+
+  const detail = await deps.shared.executionRepository.getDetail(run.id);
+  const retryEvent = detail.events.find((event) => event.eventType === "retry_scheduled");
+  assert.ok(retryEvent);
+  assert.equal(retryEvent.payload.backoffMs, sleepCalls[0]);
 });
 
 test("Optimistic locking: ExecutionRun e ExecutionTaskRun rejeitam versão divergente", async () => {

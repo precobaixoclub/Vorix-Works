@@ -928,6 +928,12 @@ test("buildAdLayoutSpec: adiciona uma zona heroProduct quando o plano tem heroPr
 
   const heroZone = spec.zones.find((zone) => zone.type === "heroProduct");
   assert.ok(heroZone, "zona heroProduct deveria estar presente mesmo com orçamento de informação apertado (9:16)");
+  // Achado ao vivo (Rodada 2): tela cheia (0-100%) não dá a Pedro nenhum sinal de onde encenar o
+  // produto — o recorte real (sempre centralizado) acabava flutuando por cima de qualquer coisa
+  // desenhada no centro da cena (ex.: uma pessoa). A zona precisa ser uma faixa central real, não
+  // o quadro inteiro.
+  assert.notEqual(heroZone.position.widthPct, 100, "heroProduct não deveria mais ocupar 100% da largura (regressão do achado ao vivo)");
+  assert.notEqual(heroZone.position.heightPct, 100, "heroProduct não deveria mais ocupar 100% da altura (regressão do achado ao vivo)");
 });
 
 test("buildAdLayoutSpec: sem heroProductAssetUrl no plano, nenhuma zona heroProduct é adicionada (regressão — comportamento de sempre)", () => {

@@ -498,7 +498,13 @@ const DEFAULT_ZONE_POSITIONS: Record<AdLayoutZoneType, { xPct: number; yPct: num
   rating: { xPct: 68, yPct: 20, widthPct: 26, heightPct: 10 },
   salesProof: { xPct: 68, yPct: 32, widthPct: 26, heightPct: 10 },
   logo: { xPct: 6, yPct: 6, widthPct: 18, heightPct: 10 },
-  heroProduct: { xPct: 0, yPct: 0, widthPct: 100, heightPct: 100 },
+  // Achado ao vivo (Rodada 2): tela cheia (0-100% nos dois eixos) faz `describeZonePosition`
+  // dizer a Pedro "deixe a imagem TODA limpa" — sem sinal de ONDE o produto vai ficar de verdade,
+  // ele monta a cena sem saber que precisa reservar espaço ali, e o recorte real (sempre
+  // centralizado por `objectFit: contain`) acaba flutuando por cima de qualquer coisa que ele
+  // desenhou no centro (ex.: uma pessoa). Faixa central (entre o headline e o CTA) dá a Pedro uma
+  // região concreta pra montar a cena/palco ao redor.
+  heroProduct: { xPct: 8, yPct: 26, widthPct: 84, heightPct: 54 },
 };
 
 // Mapeia cada argumento comercial ranqueado (Fase 3) pro tipo de zona correspondente no layout.

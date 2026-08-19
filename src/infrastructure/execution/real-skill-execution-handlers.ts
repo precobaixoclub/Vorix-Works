@@ -968,16 +968,6 @@ function buildPedroInput(
   productAsset?: ProductAssetPipelineResult,
 ): Record<string, unknown> {
   const imageCount = numberValue(strategy.recommendedSlideCount, 1) ?? 1;
-  // Product Asset Pipeline (Rodada 2, Prioridade 2): quando o produto real vai ser colado por cima
-  // depois (`heroProduct`, `ad-creative-renderer.ts`), Pedro NUNCA deveria desenhar o produto — nem
-  // grounded na referência (o resultado seria dois produtos competindo: o real colado e o
-  // "parecido" que o modelo desenhou). Suprime `referenceImageUrl`/`referenceProductFidelity`
-  // inteiramente nesse modo (não faz sentido guiar o modelo por uma referência que ele não deveria
-  // tentar recriar) e troca pela instrução de "só cenário/fundo".
-  const isOriginalAssetMode = productAsset?.mode === "original_asset" && Boolean(productAsset.heroProductAssetUrl);
-  const productBackgroundOnlyInstruction = isOriginalAssetMode
-    ? "O produto real (recorte já pronto) será colado por cima desta imagem depois — NÃO desenhe o produto em nenhuma versão, cópia, silhueta ou interpretação dele nesta imagem, em nenhuma parte do quadro. Gere APENAS o cenário, fundo, atmosfera, iluminação, superfície e elementos de contexto ao redor de onde o produto vai ficar (mantenha essa área com composição/espaço adequados para receber o produto depois, mas sem desenhar nenhum objeto que pareça o produto nela)."
-    : undefined;
   // `imageHeadline` (Maria, requisito de "separar as funções de cada texto") é o texto CURTO
   // pensado especificamente para dentro da imagem — nunca o título do post, nunca a legenda.
   // Fallback pra `title`/`displayTitle` só quando `imageHeadline` não veio (copy ausente —
@@ -992,6 +982,21 @@ function buildPedroInput(
   const rendererOwnsHeadline = Boolean(adLayoutSpec?.zones.some((zone) => zone.type === "headline"));
   const headline = rendererOwnsHeadline ? "" : stringValue(copy.imageHeadline ?? copy.title ?? strategy.displayTitle, "");
   const cleanZoneInstruction = adLayoutSpec ? buildCleanZoneInstruction(adLayoutSpec) : undefined;
+  // Product Asset Pipeline (Rodada 2, Prioridade 2): quando o produto real vai ser colado por cima
+  // depois (`heroProduct`, `ad-creative-renderer.ts`), Pedro NUNCA deveria desenhar o produto — nem
+  // grounded na referência (o resultado seria dois produtos competindo: o real colado e o
+  // "parecido" que o modelo desenhou). Suprime `referenceImageUrl`/`referenceProductFidelity`
+  // inteiramente nesse modo (não faz sentido guiar o modelo por uma referência que ele não deveria
+  // tentar recriar) e troca pela instrução de "só cenário/fundo". Achado ao vivo: sem dizer ONDE a
+  // zona do produto vai ficar, Pedro monta a cena sem reservar espaço pra ela — o recorte real
+  // (sempre centralizado por `objectFit: contain`) acaba flutuando por cima de qualquer coisa que
+  // ele desenhou no centro (ex.: uma pessoa). `heroProductZone` dá a posição exata pra ele montar a
+  // cena/palco ao redor dela.
+  const isOriginalAssetMode = productAsset?.mode === "original_asset" && Boolean(productAsset.heroProductAssetUrl);
+  const heroProductZone = adLayoutSpec?.zones.find((zone) => zone.type === "heroProduct");
+  const productBackgroundOnlyInstruction = isOriginalAssetMode
+    ? `O produto real (recorte já pronto) será colado por cima desta imagem depois, exatamente na ${heroProductZone ? describeZonePosition(heroProductZone.position) : "área central"} — NÃO desenhe o produto em nenhuma versão, cópia, silhueta ou interpretação dele em NENHUMA parte do quadro. Gere APENAS o cenário, fundo, atmosfera, iluminação, superfície e elementos de contexto — componha a cena de forma que essa região específica seja onde o produto naturalmente ficaria (ex.: uma superfície, uma mão estendida, um espaço vazio iluminado), mas sem desenhar nenhum objeto que pareça o produto nela.`
+    : undefined;
   const base = baseInput(request);
   return {
     ...base,

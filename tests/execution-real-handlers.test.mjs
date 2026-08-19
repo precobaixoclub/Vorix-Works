@@ -669,7 +669,20 @@ test("VisualPipelineExecutionTaskHandler: Product Asset Pipeline (Rodada 2) reco
       return {
         skillId: "fake-social_media_design",
         state: "COMPLETED",
-        response: { skillId: "fake-social_media_design", taskId: request.context.taskId, status: "completed", output: { designConcept: "teste", gridSystem: "grid", ctaPlacement: "base" }, artifacts: [], warnings: [] },
+        response: {
+          skillId: "fake-social_media_design",
+          taskId: request.context.taskId,
+          status: "completed",
+          output: {
+            designConcept: "teste",
+            gridSystem: "grid",
+            ctaPlacement: "base",
+            performanceCreativePlan: { productRenderMode: request.input.productAsset?.mode, heroProductAssetUrl: request.input.productAsset?.heroProductAssetUrl },
+            adLayoutSpec: { zones: [{ type: "heroProduct", priority: 0, position: { xPct: 8, yPct: 26, widthPct: 84, heightPct: 54 } }] },
+          },
+          artifacts: [],
+          warnings: [],
+        },
       };
     }
     if (request.capability === "image_generation") {
@@ -728,6 +741,10 @@ test("VisualPipelineExecutionTaskHandler: Product Asset Pipeline (Rodada 2) reco
     assert.equal(capturedInputs.pedro.workflowContext.referenceImageUrl, undefined);
     assert.equal(capturedInputs.pedro.workflowContext.referenceIntelligence, undefined);
     assert.match(capturedInputs.pedro.workflowContext.productBackgroundOnlyInstruction, /NÃO desenhe o produto/);
+    // Achado ao vivo: sem dizer ONDE a zona do produto vai ficar, Pedro monta a cena sem reservar
+    // espaço — a instrução precisa incluir a posição real da zona heroProduct, não só "em algum
+    // lugar". Região faixa central (26-80% da altura, per DEFAULT_ZONE_POSITIONS.heroProduct).
+    assert.match(capturedInputs.pedro.workflowContext.productBackgroundOnlyInstruction, /\d+-\d+% da largura, \d+-\d+% da altura/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

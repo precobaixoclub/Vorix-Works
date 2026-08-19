@@ -1,6 +1,7 @@
 import type { CampaignCreativeDNA } from "../../shared/utils/creative-director-engine.js";
 import type { MarketingObjective } from "../../shared/utils/marketing-objective-classifier.js";
 import type { ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
+import type { CommercialFact } from "../../shared/utils/commercial-fact-normalizer.js";
 
 export type JoaoSupportedChannel =
   | "instagram"
@@ -68,6 +69,10 @@ export type JoaoStrategyRequestInput = {
    * comportamento de sempre (nenhum fato de referência disponível, ex.: `campaign_creation`, que
    * nunca tem imagens de referência). */
   referenceIntelligence?: ReferenceIntelligence;
+  /** Fatos comerciais extraídos do texto livre da ideia do usuário (Commercial Fact Normalizer,
+   * Rodada 2) — ver `commercial-fact-normalizer.ts`. Lista vazia = mesmo comportamento de sempre
+   * (nenhum fato de texto disponível). */
+  textCommercialFacts?: CommercialFact[];
 };
 
 /**
@@ -161,6 +166,10 @@ export type JoaoMarketingStrategyCore = {
    * para que Maria/Lucas (que recebem a SAÍDA de João, não o input original) também tenham acesso
    * aos fatos de referência, sem precisar reler/reparsear do banco. */
   referenceIntelligence?: ReferenceIntelligence;
+  /** Repassado de `JoaoStrategyRequestInput.textCommercialFacts` sem alteração — mesmo raciocínio
+   * de `referenceIntelligence` acima, agora para fatos extraídos do texto livre da ideia. Bianca
+   * combina isto com `referenceIntelligence.commercialFacts` via `mergeCommercialFacts`. */
+  textCommercialFacts?: CommercialFact[];
 };
 
 export type JoaoMarketingStrategyOutput = JoaoMarketingStrategyCore & {

@@ -19,6 +19,7 @@ import { CTA } from "./components/cta.js";
 import { RatingBlock } from "./components/rating-block.js";
 import { SalesProof } from "./components/sales-proof.js";
 import { FeatureGrid } from "./components/feature-grid.js";
+import { ProductHero } from "./components/product-hero.js";
 import type { ComponentRenderResult } from "./components/price-block.js";
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -82,6 +83,7 @@ function resolveZoneText(zone: AdLayoutZone, plan: PerformanceCreativePlan): str
     case "badge": return plan.urgency;
     case "benefits": return plan.benefits.join(" | ");
     case "specs": return plan.specifications.join(" | ");
+    case "heroProduct": return plan.heroProductAssetUrl ? plan.heroProduct : undefined;
     default: return undefined;
   }
 }
@@ -123,6 +125,11 @@ function resolveZoneContent(zone: AdLayoutZone, plan: PerformanceCreativePlan, w
       return plan.benefits.length ? FeatureGrid({ items: plan.benefits, widthPx, heightPx, textColor: colors.textColor, backgroundColor: colors.backgroundColor }) : undefined;
     case "specs":
       return plan.specifications.length ? FeatureGrid({ items: plan.specifications, widthPx, heightPx, textColor: colors.textColor, backgroundColor: colors.backgroundColor }) : undefined;
+    case "heroProduct":
+      // Só resolve quando o Product Asset Pipeline (Rodada 2) realmente extraiu um recorte real do
+      // produto (`productRenderMode === "original_asset"`) — nos outros modos, o produto é
+      // desenhado pelo próprio Pedro na imagem base, e esta zona não deveria sobrepor nada.
+      return plan.heroProductAssetUrl ? ProductHero({ imageUrl: plan.heroProductAssetUrl, widthPx, heightPx }) : undefined;
     default:
       return undefined;
   }
@@ -146,7 +153,12 @@ export async function renderAdCreativeOverlay(input: RenderAdCreativeOverlayInpu
   }
 
   const colors: BrandRenderColors = { ...DEFAULT_BRAND_COLORS, ...input.brandColors };
-  const ownedZones = input.adLayoutSpec.zones.filter((zone) => RENDERER_OWNED_ZONE_TYPES.includes(zone.type));
+  // `heroProduct` sempre entra PRIMEIRO na árvore Satori (nós depois pintam por cima dos
+  // anteriores na mesma pilha de empilhamento) — o recorte do produto precisa ficar ATRÁS de
+  // preço/CTA/etc, nunca por cima, independente da ordem em que `adLayoutSpec.zones` chegou.
+  const ownedZones = input.adLayoutSpec.zones
+    .filter((zone) => RENDERER_OWNED_ZONE_TYPES.includes(zone.type))
+    .sort((a, b) => (a.type === "heroProduct" ? -1 : b.type === "heroProduct" ? 1 : 0));
 
   const typographyGeometry: TypographyGeometryEntry[] = [];
   const positionedNodes: SatoriNode[] = [];
@@ -172,16 +184,21 @@ export async function renderAdCreativeOverlay(input: RenderAdCreativeOverlayInpu
       },
     });
 
-    typographyGeometry.push({
-      type: zone.type,
-      text: resolveZoneText(zone, input.plan) ?? "",
-      fontSizePx: result.maxFontSizePx,
-      lineCount: result.lineCount,
-      widthPx,
-      heightPx,
-      textColor: result.textColor,
-      backgroundColor: result.backgroundColor,
-    });
+    // `heroProduct` é uma imagem (o recorte real do produto), não tipografia — registrar geometria
+    // "de texto" pra ela (fontSizePx 0) faria o quality gate de tipografia do Lucas reprovar uma
+    // "fonte pequena demais" que nunca existiu.
+    if (zone.type !== "heroProduct") {
+      typographyGeometry.push({
+        type: zone.type,
+        text: resolveZoneText(zone, input.plan) ?? "",
+        fontSizePx: result.maxFontSizePx,
+        lineCount: result.lineCount,
+        widthPx,
+        heightPx,
+        textColor: result.textColor,
+        backgroundColor: result.backgroundColor,
+      });
+    }
   }
 
   if (positionedNodes.length === 0) {

@@ -810,6 +810,42 @@ test("buildPerformanceCreativePlan: nunca inventa um fato — sem preço/descont
   assert.equal(plan.offer, undefined);
 });
 
+test("buildPerformanceCreativePlan: preço/desconto extraídos SÓ do texto livre da ideia (sem imagem de referência) alimentam o plano do mesmo jeito (Commercial Fact Normalizer, Rodada 2)", () => {
+  const input = createInput({
+    joaoStrategy: createJoaoStrategy({
+      textCommercialFacts: [
+        { type: "previous_price", value: "R$ 189,90", source: "user_text", confidence: "high", verified: true },
+        { type: "current_price", value: "R$ 129,90", source: "user_text", confidence: "high", verified: true },
+        { type: "shipping", value: "Frete grátis", source: "user_text", confidence: "high", verified: true },
+      ],
+    }),
+    mariaCopy: { title: "Fones SoundMax: R$ 129,90!", cta: "Aproveite agora" },
+  });
+
+  const plan = buildPerformanceCreativePlan(input);
+
+  assert.ok(plan);
+  assert.equal(plan.price, "R$ 129,90");
+  assert.equal(plan.oldPrice, "R$ 189,90");
+  assert.equal(plan.trustSignals.includes("Frete grátis"), true);
+  assert.equal(plan.creativeType, "oferta");
+});
+
+test("buildPerformanceCreativePlan: quando imagem E texto trazem preço, a imagem de referência sempre vence (mais confiável que regex sobre texto livre)", () => {
+  const input = createInput({
+    joaoStrategy: createJoaoStrategy({
+      creativeBrief: tenisCreativeBrief(),
+      referenceIntelligence: tenisReferenceIntelligence(),
+      textCommercialFacts: [{ type: "current_price", value: "R$ 999,00", source: "user_text", confidence: "medium", verified: true }],
+    }),
+    mariaCopy: { title: "Tênis Casual Unissex por R$39,99!", cta: "Aproveite agora" },
+  });
+
+  const plan = buildPerformanceCreativePlan(input);
+
+  assert.equal(plan.price, "R$ 39,99");
+});
+
 test("buildAdLayoutSpec: sem plano criativo, devolve undefined", () => {
   assert.equal(buildAdLayoutSpec(undefined, createInput()), undefined);
 });
@@ -849,6 +885,61 @@ test("buildAdLayoutSpec: respeita o orçamento de informação — número de zo
   const spec = buildAdLayoutSpec(plan, input);
 
   assert.ok(spec.zones.length <= 8, "max_performance nunca deveria passar do teto superior de zonas");
+});
+
+test("buildPerformanceCreativePlan: productAsset.mode/heroProductAssetUrl entram no plano quando o Product Asset Pipeline resolveu original_asset (Rodada 2, Prioridade 1)", () => {
+  const input = createInput({
+    joaoStrategy: createJoaoStrategy({ creativeBrief: tenisCreativeBrief(), referenceIntelligence: tenisReferenceIntelligence() }),
+    mariaCopy: { title: "Tênis Casual Unissex por R$39,99!", cta: "Aproveite agora", imageHeadline: "50% OFF - R$39,99", claims: [] },
+    productAsset: { mode: "original_asset", reasoning: "Fundo uniforme detectado.", heroProductAssetUrl: "https://s3/product-assets/tenant/asset.png" },
+  });
+
+  const plan = buildPerformanceCreativePlan(input);
+
+  assert.equal(plan.productRenderMode, "original_asset");
+  assert.equal(plan.heroProductAssetUrl, "https://s3/product-assets/tenant/asset.png");
+});
+
+test("buildPerformanceCreativePlan: sem productAsset (pipeline nunca rodou), productRenderMode/heroProductAssetUrl ficam undefined (degradação graciosa)", () => {
+  const input = createInput({
+    joaoStrategy: createJoaoStrategy({ creativeBrief: tenisCreativeBrief(), referenceIntelligence: tenisReferenceIntelligence() }),
+    mariaCopy: { title: "Tênis Casual Unissex por R$39,99!", cta: "Aproveite agora", imageHeadline: "50% OFF - R$39,99", claims: [] },
+  });
+
+  const plan = buildPerformanceCreativePlan(input);
+
+  assert.equal(plan.productRenderMode, undefined);
+  assert.equal(plan.heroProductAssetUrl, undefined);
+});
+
+test("buildAdLayoutSpec: adiciona uma zona heroProduct quando o plano tem heroProductAssetUrl, sempre presente mesmo sob orçamento de informação apertado", () => {
+  const input = createInput({
+    joaoStrategy: createJoaoStrategy({
+      creativeBrief: tenisCreativeBrief({ differentiator: "Solado antiderrapante", mainBenefit: "Conforto o dia todo" }),
+      referenceIntelligence: tenisReferenceIntelligence(),
+    }),
+    mariaCopy: { title: "Tênis Casual Unissex por R$39,99!", cta: "Aproveite agora", imageHeadline: "50% OFF - R$39,99", claims: [] },
+    productAsset: { mode: "original_asset", reasoning: "Fundo uniforme.", heroProductAssetUrl: "https://s3/product-assets/tenant/asset.png" },
+    sofiaDirection: createSofiaDirection({ recommendedAspectRatio: "9:16" }),
+  });
+  const plan = buildPerformanceCreativePlan(input);
+
+  const spec = buildAdLayoutSpec(plan, input);
+
+  const heroZone = spec.zones.find((zone) => zone.type === "heroProduct");
+  assert.ok(heroZone, "zona heroProduct deveria estar presente mesmo com orçamento de informação apertado (9:16)");
+});
+
+test("buildAdLayoutSpec: sem heroProductAssetUrl no plano, nenhuma zona heroProduct é adicionada (regressão — comportamento de sempre)", () => {
+  const input = createInput({
+    joaoStrategy: createJoaoStrategy({ creativeBrief: tenisCreativeBrief(), referenceIntelligence: tenisReferenceIntelligence() }),
+    mariaCopy: { title: "Tênis Casual Unissex por R$39,99!", cta: "Aproveite agora", imageHeadline: "50% OFF - R$39,99", claims: [] },
+  });
+  const plan = buildPerformanceCreativePlan(input);
+
+  const spec = buildAdLayoutSpec(plan, input);
+
+  assert.equal(spec.zones.some((zone) => zone.type === "heroProduct"), false);
 });
 
 test("Bianca não importa providers concretos de IA e usa exclusivamente Ícaro", async () => {

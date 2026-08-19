@@ -6,6 +6,8 @@
  * importar daqui não viola ADR 0002.
  */
 
+import type { ProductRenderMode } from "./product-asset.types.js";
+
 export const LAYOUT_FAMILIES = [
   "hero_offer",
   "price_dominant",
@@ -54,6 +56,13 @@ export type PerformanceCreativePlan = {
   /** Argumentos comerciais disponíveis, já ranqueados por força (ver `rankCommercialArguments`,
    * `commercial-argument-ranking.ts`) — só os que de fato existem, na ordem de prioridade. */
   informationPriority: string[];
+  /** Product Asset Pipeline (Rodada 2, Prioridade 1) — modo de renderização decidido para o
+   * produto (ver `resolveProductRenderMode`, `product-asset.types.ts`). `undefined` quando a
+   * decisão nunca rodou (ex.: sem `objectStorage` configurado) — mesmo comportamento de sempre. */
+  productRenderMode?: ProductRenderMode;
+  /** URL do recorte real do produto (fundo neutralizado), só presente quando
+   * `productRenderMode === "original_asset"` — consumido pela zona `heroProduct` do renderer. */
+  heroProductAssetUrl?: string;
 };
 
 export const AD_LAYOUT_ZONE_TYPES = [
@@ -72,9 +81,13 @@ export const AD_LAYOUT_ZONE_TYPES = [
 
 export type AdLayoutZoneType = (typeof AD_LAYOUT_ZONE_TYPES)[number];
 
-/** Zonas "renderer-owned" — elementos comerciais críticos que o Fase 7 tira do modelo generativo e
- * passa a compor deterministicamente. `logo`/`heroProduct` ficam de fora (logo já tem seu próprio
- * compositor; heroProduct é o produto gerado pelo próprio Pedro, nunca sobreposto). */
+/** Zonas "renderer-owned" — elementos comerciais críticos que a Fase 7 tira do modelo generativo e
+ * passa a compor deterministicamente. `logo` fica de fora (já tem seu próprio compositor,
+ * `logo-compositor.ts`, com posicionamento/tamanho próprios). `heroProduct` entrou na Rodada 2
+ * (Product Asset Pipeline, Prioridade 1) — só é resolvida de verdade quando
+ * `plan.heroProductAssetUrl` existe (`productRenderMode === "original_asset"`); nos outros modos,
+ * o produto continua sendo o próprio Pedro quem desenha, e a zona simplesmente não resolve nada
+ * (ver `resolveZoneContent` em `ad-creative-renderer.ts`). */
 export const RENDERER_OWNED_ZONE_TYPES: readonly AdLayoutZoneType[] = [
   "price",
   "discount",
@@ -85,6 +98,7 @@ export const RENDERER_OWNED_ZONE_TYPES: readonly AdLayoutZoneType[] = [
   "benefits",
   "specs",
   "badge",
+  "heroProduct",
 ];
 
 export type AdLayoutZonePosition = {

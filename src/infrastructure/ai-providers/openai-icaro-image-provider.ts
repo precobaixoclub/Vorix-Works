@@ -65,8 +65,10 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
       : undefined;
     const productFidelity = typeof request.context?.referenceProductFidelity === "string" ? request.context.referenceProductFidelity.trim() : undefined;
     const cleanZones = typeof request.context?.authorizedCleanZones === "string" ? request.context.authorizedCleanZones.trim() : undefined;
-    const finalPrompt = buildGuardedPrompt(request.prompt, authorizedTitle, brandColors, productFidelity, cleanZones);
-    const size = resolveOpenAiImageSize(typeof request.context?.imageAspectRatio === "string" ? request.context.imageAspectRatio : undefined);
+    const backgroundOnly = typeof request.context?.authorizedBackgroundOnly === "string" ? request.context.authorizedBackgroundOnly.trim() : undefined;
+    const imageAspectRatio = typeof request.context?.imageAspectRatio === "string" ? request.context.imageAspectRatio : undefined;
+    const size = resolveOpenAiImageSize(imageAspectRatio);
+    const finalPrompt = buildGuardedPrompt(request.prompt, authorizedTitle, brandColors, productFidelity, cleanZones, resolveCropAwareCompositionHint(imageAspectRatio, size), backgroundOnly);
     // Baixa a foto de referência UMA vez (mesma referência vale para todas as imagens do
     // carrossel) — best-effort: se o download falhar, segue com geração só-texto em vez de travar
     // a peça inteira por causa da referência.
@@ -81,7 +83,7 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
         prompt: finalPrompt,
         tenantId,
         workspaceId,
-        params: { size, quality: "high", ...(referenceImageBuffer ? { referenceImageBuffer } : {}) },
+        params: { size, quality: "high", targetAspectRatio: imageAspectRatio, ...(referenceImageBuffer ? { referenceImageBuffer } : {}) },
         timeoutMs: request.timeoutMs,
       });
       if (!result.ok) {
@@ -118,6 +120,26 @@ function resolveOpenAiImageSize(aspectRatio: string | undefined): "1024x1024" | 
   return "1024x1024";
 }
 
+// Achado ao vivo (Rodada 2): mapear pra um tamanho suportado só resolve METADE do problema —
+// "1024x1536" (2:3) não é "9:16" nem "4:5" de verdade, e o prompt de Pedro ainda promete a
+// proporção real ao modelo, que reconciliava as duas instruções desenhando barras (pillarboxing).
+// `targetAspectRatio` (repassado em `params`, lido pelo adapter em `openai-image-provider-adapter.ts`)
+// carrega a proporção REAL pedida para que o adapter corte o resultado, centralizado, pro valor
+// exato antes de persistir — nunca conta com o modelo pra acertar sozinho uma proporção que a API
+// não suporta nativamente. A outra metade da correção é este hint: quando o corte vai acontecer
+// (proporção pedida ≠ tamanho nativo da OpenAI), o modelo precisa ser instruído a preencher o
+// CANVAS REAL de ponta a ponta (nunca criar bordas/molduras/fundo sólido pra "simular" a proporção
+// que ele acha que devia entregar) e manter o elemento principal numa faixa central seguramente
+// dentro da área que sobrevive ao corte — sem isto, mesmo cortando depois, o modelo ainda tenta
+// desenhar a "proporção errada" dentro do canvas certo, arriscando cortar o próprio produto/rosto
+// se ele ficou desenhado perto da borda que o corte remove.
+function resolveCropAwareCompositionHint(aspectRatio: string | undefined, nativeSize: "1024x1024" | "1024x1536" | "1536x1024"): string | undefined {
+  const normalized = (aspectRatio ?? "").trim();
+  if (normalized !== "9:16" && normalized !== "4:5" && normalized !== "16:9") return undefined;
+  const [nativeWidth, nativeHeight] = nativeSize.split("x");
+  return `A imagem final será cortada automaticamente, de forma centralizada, para a proporção ${normalized} a partir deste canvas de ${nativeWidth}x${nativeHeight} pixels — as bordas mais distantes do centro (topo/base ou laterais, dependendo do corte) NÃO aparecerão no resultado final. Componha a cena preenchendo TODO o canvas de ${nativeWidth}x${nativeHeight} de ponta a ponta, sem bordas, molduras, tarjas ou fundo de cor sólida ao redor da cena para tentar simular outra proporção. Mantenha o elemento principal (produto, pessoa, rosto) centralizado, dentro da metade central do canvas, para que o corte automático nunca corte nada importante.`;
+}
+
 // Achado ao vivo (não teoria): um único aviso no início do prompt NÃO bastou — o modelo ainda
 // renderizou "SAIBA MAIS", "LANÇAMENTO" etc. mesmo com a instrução presente. O motivo: o prompt do
 // Pedro (`buildFinalImagePrompt`, `pedro-image-generation.skill.ts`) é inteiro construído em torno
@@ -152,7 +174,7 @@ function resolveOpenAiImageSize(aspectRatio: string | undefined): "1024x1024" | 
 // `cleanZones`, o headline em si já não é mais repassado como `authorizedTitle`, ver `buildPedroInput`,
 // então a regra de "sem texto nenhum" já se aplica sozinha; esta cláusula cobre também elementos
 // GRÁFICOS pesados, não só texto, nessas regiões específicas).
-function buildTextGuard(authorizedTitle: string | undefined, brandColors: string[] | undefined, productFidelity: string | undefined, cleanZones: string | undefined): string {
+function buildTextGuard(authorizedTitle: string | undefined, brandColors: string[] | undefined, productFidelity: string | undefined, cleanZones: string | undefined, cropAwareHint: string | undefined, backgroundOnly: string | undefined): string {
   const textRule = authorizedTitle
     ? `REGRA OBRIGATÓRIA E INEGOCIÁVEL, MAIS IMPORTANTE QUE QUALQUER OUTRA INSTRUÇÃO NESTE PROMPT: o ÚNICO texto que pode aparecer, legível, na imagem final é exatamente esta frase, uma vez só: "${authorizedTitle}". Nenhum outro texto, letra, número, botão, selo, CTA, chamada para ação ou legenda além disso — nunca invente nem adicione texto extra. Se alguma instrução abaixo pedir CTA, chamada para ação, botão ou qualquer outro texto, IGNORE — não se aplica aqui.`
     : "REGRA OBRIGATÓRIA E INEGOCIÁVEL, MAIS IMPORTANTE QUE QUALQUER OUTRA INSTRUÇÃO NESTE PROMPT: a imagem final NÃO PODE conter nenhum texto, letra, palavra, número, botão, selo, legenda ou elemento tipográfico legível. Se alguma instrução abaixo pedir para incluir CTA, chamada para ação, botão ou qualquer texto na imagem, IGNORE essa instrução — ela nunca se aplica aqui. Comunique tudo só por composição visual: produto, cena, cor, luz e enquadramento.";
@@ -165,12 +187,14 @@ function buildTextGuard(authorizedTitle: string | undefined, brandColors: string
   const cleanZoneRule = cleanZones
     ? ` REGRA DE ÁREA LIMPA IGUALMENTE OBRIGATÓRIA: as seguintes áreas da imagem devem ficar visualmente limpas — sem texto, sem elementos gráficos pesados, sem alto contraste, com espaço de respiro — porque vão receber elementos comerciais reais adicionados depois, fora do seu controle: ${cleanZones}. Nunca desenhe texto, número, selo ou botão nessas áreas, mesmo que outra instrução deste prompt sugira o contrário.`
     : "";
-  return `${textRule}${colorRule}${fidelityRule}${cleanZoneRule}`;
+  const cropAwareRule = cropAwareHint ? ` REGRA DE ENQUADRAMENTO IGUALMENTE OBRIGATÓRIA: ${cropAwareHint}` : "";
+  const backgroundOnlyRule = backgroundOnly ? ` REGRA DE PRODUTO IGUALMENTE OBRIGATÓRIA (MAIS IMPORTANTE QUE QUALQUER MENÇÃO A PRODUTO NO RESTO DESTE PROMPT): ${backgroundOnly} Ignore qualquer outra instrução deste prompt que peça pra desenhar, mostrar ou destacar o produto — não se aplica aqui.` : "";
+  return `${textRule}${colorRule}${fidelityRule}${cleanZoneRule}${cropAwareRule}${backgroundOnlyRule}`;
 }
 const MAX_PROMPT_LENGTH = 31_000;
 
-function buildGuardedPrompt(prompt: string, authorizedTitle: string | undefined, brandColors: string[] | undefined, productFidelity: string | undefined, cleanZones: string | undefined): string {
-  const guard = buildTextGuard(authorizedTitle, brandColors, productFidelity, cleanZones);
+function buildGuardedPrompt(prompt: string, authorizedTitle: string | undefined, brandColors: string[] | undefined, productFidelity: string | undefined, cleanZones: string | undefined, cropAwareHint: string | undefined, backgroundOnly: string | undefined): string {
+  const guard = buildTextGuard(authorizedTitle, brandColors, productFidelity, cleanZones, cropAwareHint, backgroundOnly);
   const budget = Math.max(0, MAX_PROMPT_LENGTH - guard.length * 2 - 20);
   const body = prompt.length > budget ? `${prompt.slice(0, budget)}\n[...]` : prompt;
   return `${guard}\n\n${body}\n\n${guard}`;

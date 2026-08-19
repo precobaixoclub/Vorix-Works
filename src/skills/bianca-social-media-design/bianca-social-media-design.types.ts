@@ -1,5 +1,7 @@
 import type { ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
 import type { PerformanceCreativePlan, AdLayoutSpec } from "../../shared/utils/ad-layout.types.js";
+import type { CommercialFact } from "../../shared/utils/commercial-fact-normalizer.js";
+import type { ProductRenderMode } from "../../shared/utils/product-asset.types.js";
 
 export type BiancaSupportedChannel =
   | "instagram"
@@ -38,6 +40,11 @@ export type BiancaJoaoStrategySummary = {
   };
   /** Espelha `ReferenceIntelligence` — mesmo raciocínio acima. */
   referenceIntelligence?: ReferenceIntelligence;
+  /** Fatos comerciais extraídos do texto livre da ideia (Commercial Fact Normalizer, Rodada 2) —
+   * mesmo raciocínio acima. `buildPerformanceCreativePlan` combina isto com
+   * `referenceIntelligence.commercialFacts` via `mergeCommercialFacts` — imagem sempre vence
+   * quando os dois trazem o mesmo tipo de fato. */
+  textCommercialFacts?: CommercialFact[];
 };
 
 /** Espelha por convenção o subconjunto de `MariaStructuredCopy` (saída real de Maria) relevante
@@ -111,7 +118,21 @@ export type BiancaDesignRequestInput = {
    * silêncio). Ausente quando o formato não usa múltiplos slides (ex.: imagem única).
    */
   recommendedSlideCount?: number;
+  /** Product Asset Pipeline (Rodada 2, Prioridade 1) — decisão já resolvida ANTES de Bianca rodar
+   * (precisa existir antes dela decidir se inclui uma zona `heroProduct`), computada em
+   * `real-skill-execution-handlers.ts` a partir da imagem de referência real. Ausente quando o
+   * pipeline nunca rodou (ex.: sem `objectStorage` configurado) — degrada para o comportamento de
+   * sempre (produto desenhado pelo próprio Pedro). */
+  productAsset?: BiancaProductAssetSummary;
   workflowContext?: Record<string, unknown>;
+};
+
+export type BiancaProductAssetSummary = {
+  mode: ProductRenderMode;
+  reasoning: string;
+  /** URL do recorte real do produto (fundo já neutralizado) — só presente quando
+   * `mode === "original_asset"`. */
+  heroProductAssetUrl?: string;
 };
 
 export type BiancaTypographyScale = {

@@ -323,6 +323,11 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
           // áreas visualmente limpas em vez de desenhar texto nelas. Mesmo motivo estrutural dos
           // guards acima.
           authorizedCleanZones: typeof request.input.workflowContext?.cleanZoneInstruction === "string" ? request.input.workflowContext.cleanZoneInstruction : undefined,
+          // Product Asset Pipeline (Rodada 2, Prioridade 2): quando o produto real vai ser colado
+          // por cima depois (`heroProduct`), Pedro precisa gerar SÓ cenário/fundo/atmosfera — mesmo
+          // motivo estrutural dos guards acima (dado curto e estruturado, nunca só embutido no
+          // prompt gigante).
+          authorizedBackgroundOnly: typeof request.input.workflowContext?.productBackgroundOnlyInstruction === "string" ? request.input.workflowContext.productBackgroundOnlyInstruction : undefined,
         },
         constraints: [
           "Retornar apenas JSON válido.",

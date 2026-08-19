@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import sharp from "sharp";
 
 import { createDefaultAiMediaProviderRegistry } from "../dist/application/ai-providers/ai-media-provider-registry.js";
 import { CreditAccountingService } from "../dist/application/ai-providers/credit-accounting.service.js";
@@ -218,6 +219,32 @@ test("OpenAiImageProviderAdapter: sucesso com b64_json faz upload via persistGen
   const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-1", prompt: "um gato", tenantId: "t1", params: {}, timeoutMs: 5000 });
   assert.equal(result.ok, true);
   assert.equal(result.mediaUrl, "https://s3/generated.png");
+  assert.equal(persisted.base64, "AAAA");
+});
+
+test("OpenAiImageProviderAdapter: com targetAspectRatio, corta pra proporção real ANTES de persistir (regressão do pillarboxing 9:16 achado ao vivo)", async () => {
+  const nativePng = await sharp({ create: { width: 1024, height: 1536, channels: 4, background: { r: 10, g: 20, b: 80, alpha: 1 } } }).png().toBuffer();
+  const httpClient = async () => jsonResponse(200, { data: [{ b64_json: nativePng.toString("base64") }] });
+  let persisted;
+  const adapter = new OpenAiImageProviderAdapter({ enabled: true, getApiKey: async () => "sk-test", persistGeneratedImage: async (input) => { persisted = input; return "https://s3/generated.png"; } }, httpClient);
+
+  const result = await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-1", prompt: "um gato", tenantId: "t1", params: { targetAspectRatio: "9:16" }, timeoutMs: 5000 });
+
+  assert.equal(result.ok, true);
+  const persistedBuffer = Buffer.from(persisted.base64, "base64");
+  const meta = await sharp(persistedBuffer).metadata();
+  const ratio = meta.width / meta.height;
+  assert.ok(Math.abs(ratio - 9 / 16) < 0.01, `esperava proporção 9:16 (~0.5625), veio ${ratio}`);
+  assert.notEqual(persisted.base64, nativePng.toString("base64"), "base64 persistido deveria ser diferente do nativo (foi cortado)");
+});
+
+test("OpenAiImageProviderAdapter: sem targetAspectRatio, persiste o base64 original sem cortar", async () => {
+  const httpClient = async () => jsonResponse(200, { data: [{ b64_json: "AAAA" }] });
+  let persisted;
+  const adapter = new OpenAiImageProviderAdapter({ enabled: true, getApiKey: async () => "sk-test", persistGeneratedImage: async (input) => { persisted = input; return "https://s3/generated.png"; } }, httpClient);
+
+  await adapter.generate({ operationTypeCode: "image_generation", modelId: "gpt-image-1", prompt: "um gato", tenantId: "t1", params: {}, timeoutMs: 5000 });
+
   assert.equal(persisted.base64, "AAAA");
 });
 

@@ -165,6 +165,55 @@ test("renderAdCreativeOverlay: headline sempre usa scrim escuro + texto branco (
   assert.ok(headlineEntry.backgroundColor.includes("rgba(0, 0, 0"), `headline deveria ter um scrim escuro, veio "${headlineEntry.backgroundColor}"`);
 });
 
+test("renderAdCreativeOverlay: zona heroProduct compõe o recorte real do produto (Product Asset Pipeline, Rodada 2) quando heroProductAssetUrl existe", async () => {
+  const baseImageBuffer = await makeSolidPng(1024, 1280, { r: 30, g: 90, b: 60, alpha: 1 });
+  const productAssetPng = await sharp({ create: { width: 200, height: 200, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 1 } } }).png().toBuffer();
+  const heroProductAssetUrl = `data:image/png;base64,${productAssetPng.toString("base64")}`;
+  const plan = tenisPlan({ price: undefined, oldPrice: undefined, discount: undefined, primaryHook: undefined, cta: undefined, urgency: undefined, heroProductAssetUrl });
+  const spec = { format: "4:5", aspectRatio: "4:5", layoutFamily: "hero_offer", density: "clean", zones: [
+    { type: "heroProduct", priority: 1, position: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 60 } },
+  ] };
+
+  const result = await renderAdCreativeOverlay({ baseImageBuffer, adLayoutSpec: spec, plan });
+
+  assert.notEqual(Buffer.compare(result.buffer, baseImageBuffer), 0, "a imagem base deveria ter sido alterada pelo recorte do produto");
+  // heroProduct nunca deveria virar entrada de tipografia (é imagem, não texto) — evita reprovação
+  // falsa do quality gate de tipografia do Lucas por "fonte 0px".
+  assert.equal(result.typographyGeometry.some((entry) => entry.type === "heroProduct"), false);
+});
+
+test("renderAdCreativeOverlay: sem heroProductAssetUrl (productRenderMode != original_asset), a zona heroProduct não resolve nada", async () => {
+  const baseImageBuffer = await makeSolidPng(1024, 1280, { r: 30, g: 90, b: 60, alpha: 1 });
+  const plan = tenisPlan({ price: undefined, oldPrice: undefined, discount: undefined, primaryHook: undefined, cta: undefined, urgency: undefined });
+  const spec = { format: "4:5", aspectRatio: "4:5", layoutFamily: "hero_offer", density: "clean", zones: [
+    { type: "heroProduct", priority: 1, position: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 60 } },
+  ] };
+
+  const result = await renderAdCreativeOverlay({ baseImageBuffer, adLayoutSpec: spec, plan });
+
+  assert.equal(Buffer.compare(result.buffer, baseImageBuffer), 0);
+  assert.deepEqual(result.typographyGeometry, []);
+});
+
+test("renderAdCreativeOverlay: heroProduct sempre fica ATRÁS de CTA/preço na pilha de empilhamento, mesmo quando aparece depois no array de zonas", async () => {
+  const baseImageBuffer = await makeSolidPng(1024, 1280, { r: 30, g: 90, b: 60, alpha: 1 });
+  const productAssetPng = await sharp({ create: { width: 200, height: 200, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 1 } } }).png().toBuffer();
+  const heroProductAssetUrl = `data:image/png;base64,${productAssetPng.toString("base64")}`;
+  const plan = tenisPlan({ primaryHook: undefined, urgency: undefined, discount: undefined, oldPrice: undefined, heroProductAssetUrl });
+  // heroProduct DEPOIS de cta/price no array — a ordem de renderização precisa ser corrigida
+  // internamente (heroProduct sempre primeiro), não depender da ordem que chegou.
+  const spec = { format: "4:5", aspectRatio: "4:5", layoutFamily: "hero_offer", density: "performance", zones: [
+    { type: "cta", priority: 1, position: { xPct: 6, yPct: 84, widthPct: 88, heightPct: 10 } },
+    { type: "price", priority: 1, position: { xPct: 6, yPct: 60, widthPct: 44, heightPct: 16 } },
+    { type: "heroProduct", priority: 2, position: { xPct: 0, yPct: 0, widthPct: 100, heightPct: 100 } },
+  ] };
+
+  const result = await renderAdCreativeOverlay({ baseImageBuffer, adLayoutSpec: spec, plan });
+
+  const types = result.typographyGeometry.map((entry) => entry.type);
+  assert.deepEqual(types.sort(), ["cta", "price"]);
+});
+
 test("renderAdCreativeOverlay: rejeita quando a imagem base não tem metadados de dimensão válidos", async () => {
   await assert.rejects(() =>
     renderAdCreativeOverlay({ baseImageBuffer: Buffer.from("not an image"), adLayoutSpec: flashSaleLayoutSpec(), plan: tenisPlan() }),

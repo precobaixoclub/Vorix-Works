@@ -8,15 +8,18 @@ export type ProductHeroProps = {
 };
 
 /**
- * Componente de biblioteca (Fase 8) para completude — o produto protagonista é gerado pelo
- * próprio Pedro (fotografia/cenário/produto continuam sendo trabalho do modelo generativo, ver
- * `RENDERER_OWNED_ZONE_TYPES`), nunca sobreposto pelo renderer determinístico nesta rodada. Existe
- * aqui pra uma rodada futura de composição multi-camada (produto real recortado + fundo gerado).
+ * Compõe o recorte REAL do produto (Product Asset Pipeline, Rodada 2, Prioridade 1) — fundo já
+ * neutralizado por `extractProductAsset`, PNG com canal alpha — sobre o fundo/atmosfera que o
+ * Pedro gerou. Só entra em jogo quando `productRenderMode === "original_asset"`; nos outros modos
+ * o produto continua sendo desenhado pelo próprio Pedro, e esta zona simplesmente não resolve nada
+ * (ver `resolveZoneContent` em `ad-creative-renderer.ts`). `objectFit: "contain"` (nunca "cover")
+ * de propósito — o produto precisa aparecer INTEIRO na zona, nunca cortado pra preencher uma
+ * proporção que não é a dele (preservação integral de design/forma é requisito).
  */
 export function ProductHero(props: ProductHeroProps): ComponentRenderResult {
   const node: SatoriNode = {
     type: "img",
-    props: { style: { width: props.widthPx, height: props.heightPx, objectFit: "cover" }, src: props.imageUrl },
+    props: { style: { width: props.widthPx, height: props.heightPx, objectFit: "contain" }, src: props.imageUrl },
   };
   return { node, maxFontSizePx: 0, textColor: "transparent", backgroundColor: "transparent", lineCount: 0 };
 }

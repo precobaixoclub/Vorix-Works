@@ -628,6 +628,111 @@ test("VisualPipelineExecutionTaskHandler: compõe preço/desconto/CTA determiní
   }
 });
 
+test("VisualPipelineExecutionTaskHandler: Product Asset Pipeline (Rodada 2) recorta o produto de uma referência com fundo uniforme, sobe pro storage, e repassa o modo/URL pra Bianca e Pedro", async () => {
+  // Referência com fundo branco uniforme + "produto" (círculo vermelho) — mesma técnica sintética
+  // de tests/product-background.test.mjs, condição real pra `original_asset` ser escolhido.
+  const referenceBackground = await sharp({ create: { width: 800, height: 800, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).png().toBuffer();
+  const circleSvg = Buffer.from('<svg width="300" height="300"><circle cx="150" cy="150" r="150" fill="rgb(200,40,40)"/></svg>');
+  const circle = await sharp(circleSvg).png().toBuffer();
+  const referencePng = await sharp(referenceBackground).composite([{ input: circle, left: 250, top: 250 }]).png().toBuffer();
+  const baseImagePng = await sharp({ create: { width: 1024, height: 1280, channels: 4, background: { r: 30, g: 90, b: 60, alpha: 1 } } }).png().toBuffer();
+
+  const server = createServer((req, res) => {
+    if (req.url === "/reference.png") {
+      res.writeHead(200, { "content-type": "image/png" });
+      res.end(referencePng);
+      return;
+    }
+    if (req.url === "/generated-image.png") {
+      res.writeHead(200, { "content-type": "image/png" });
+      res.end(baseImagePng);
+      return;
+    }
+    if (req.url?.startsWith("/uploaded-")) {
+      res.writeHead(200, { "content-type": "image/png" });
+      res.end(baseImagePng);
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  const helena = fakeHelena();
+  const capturedInputs = {};
+  const originalExecuteSkill = helena.manager.executeSkill;
+  helena.manager.executeSkill = async (request) => {
+    if (request.capability === "social_media_design") {
+      capturedInputs.bianca = request.input;
+      return {
+        skillId: "fake-social_media_design",
+        state: "COMPLETED",
+        response: { skillId: "fake-social_media_design", taskId: request.context.taskId, status: "completed", output: { designConcept: "teste", gridSystem: "grid", ctaPlacement: "base" }, artifacts: [], warnings: [] },
+      };
+    }
+    if (request.capability === "image_generation") {
+      capturedInputs.pedro = request.input;
+      return {
+        skillId: "fake-image_generation",
+        state: "COMPLETED",
+        response: { skillId: "fake-image_generation", taskId: request.context.taskId, status: "completed", output: { generationSummary: "ok", imageCount: 1, images: [{ id: "img-1", uri: `${baseUrl}/generated-image.png` }] }, artifacts: [], warnings: [] },
+      };
+    }
+    return originalExecuteSkill(request);
+  };
+
+  const putCalls = [];
+  const fakeObjectStorage = {
+    put: async (input) => {
+      putCalls.push(input);
+      return { url: `${baseUrl}/uploaded-${putCalls.length}.png` };
+    },
+    delete: async () => undefined,
+    resolvePublicUrl: (key) => `${baseUrl}/${key}`,
+    health: async () => ({ ok: true }),
+  };
+  const fakeRuntimeRepository = { getById: async (id) => (id === "runtime-1" ? { sourceContext: { preparedCommandId: "prepared-1" } } : undefined) };
+  const fakePreparedCommandRepository = { getById: async (id) => (id === "prepared-1" ? { validatedInputs: { referenceImageUrl: `${baseUrl}/reference.png` } } : undefined) };
+
+  const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    helena: helena.manager,
+    provider: "helena",
+    objectStorage: fakeObjectStorage,
+    runtimeRepository: fakeRuntimeRepository,
+    preparedCommandRepository: fakePreparedCommandRepository,
+  });
+
+  const request = {
+    task: { id: "task-1", runtimePlanId: "runtime-1", capability: "visual_design", type: "visual_generation" },
+    inputs: {
+      structure: [{ artifactId: "a-structure", checksum: "c1", payload: { output: { objective: "vender", channel: "instagram", format: "carrossel" } } }],
+    },
+    context: { executionRunId: "exec-1", tenantId: "tenant-1", workspaceId: "workspace-1", mode: "real" },
+    attempt: { total: 1, providerAttempt: 1 },
+  };
+
+  try {
+    const result = await handler.execute(request);
+    assert.equal(result.ok, true, JSON.stringify(result));
+    // 1º upload é o recorte do produto (Product Asset Pipeline) — roda ANTES de Bianca/Pedro.
+    assert.equal(putCalls[0].contentType, "image/png");
+    assert.match(putCalls[0].key, /^product-assets\/tenant-1\//);
+
+    assert.equal(capturedInputs.bianca.productAsset.mode, "original_asset");
+    assert.equal(capturedInputs.bianca.productAsset.heroProductAssetUrl, `${baseUrl}/uploaded-1.png`);
+
+    // Pedro NUNCA deveria receber referenceImageUrl/referenceIntelligence nem desenhar o produto
+    // — o recorte real vai ser colado depois pelo renderer, não pelo modelo generativo.
+    assert.equal(capturedInputs.pedro.workflowContext.referenceImageUrl, undefined);
+    assert.equal(capturedInputs.pedro.workflowContext.referenceIntelligence, undefined);
+    assert.match(capturedInputs.pedro.workflowContext.productBackgroundOnlyInstruction, /NÃO desenhe o produto/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("VisualPipelineExecutionTaskHandler: sem performanceCreativePlan/adLayoutSpec (Bianca não produziu), nenhum overlay roda — só a logo (regressão)", async () => {
   const baseImagePng = await sharp({ create: { width: 512, height: 512, channels: 4, background: { r: 30, g: 30, b: 30, alpha: 1 } } }).png().toBuffer();
   const logoPng = await sharp({ create: { width: 100, height: 100, channels: 4, background: { r: 200, g: 20, b: 20, alpha: 1 } } }).png().toBuffer();

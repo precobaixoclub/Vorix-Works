@@ -13,8 +13,11 @@ import type { SkillArtifact, SkillResponse } from "../../domain/skills/skill.con
 import type { ExecutionCapability, TaskType } from "../../domain/planning/planning.model.js";
 import { compositeLogoOntoImage, type LogoCorner } from "../media/logo-compositor.js";
 import { parseReferenceIntelligence, type ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
+import { parseCommercialFacts, type CommercialFact } from "../../shared/utils/commercial-fact-normalizer.js";
 import { RENDERER_OWNED_ZONE_TYPES, type AdLayoutSpec, type AdLayoutZoneType, type PerformanceCreativePlan } from "../../shared/utils/ad-layout.types.js";
 import { renderAdCreativeOverlay } from "../rendering/ad-creative-renderer.js";
+import { resolveProductRenderMode, type ProductRenderMode } from "../../shared/utils/product-asset.types.js";
+import { analyzeProductBackground, extractProductAsset } from "../image-processing/product-background.js";
 
 type SkillCallResult = {
   output: Record<string, unknown>;
@@ -106,9 +109,14 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       // `ContentBriefExecutionTaskHandler`. Não passa pelo grafo (não é saída de nenhuma Skill),
       // então é lida direto do banco aqui — best-effort, nunca trava a geração.
       const referenceImageUrl = await lookupReferenceImageUrl(this.deps, request).catch(() => undefined);
+      // Product Asset Pipeline (Rodada 2, Prioridade 1) — precisa rodar ANTES de Bianca (ela decide
+      // se inclui uma zona `heroProduct` a partir do resultado). Best-effort: qualquer falha
+      // inesperada aqui cai no mesmo fallback conservador de "sem referência" (GENERATED_REFERENCE
+      // se não há URL, REFERENCE_EDIT se há) — nunca trava a geração.
+      const productAsset = await resolveProductAssetPipeline(this.deps, request, referenceImageUrl).catch(() => resolveProductRenderMode({ hasReferenceImage: Boolean(referenceImageUrl) }));
       const sofia = await callSkill(this.deps.helena, "art_direction", buildSofiaInput(request, structure), request);
-      const bianca = await callSkill(this.deps.helena, "social_media_design", buildBiancaInput(request, structure, sofia.output, copy), request);
-      const pedro = await callSkill(this.deps.helena, "image_generation", buildPedroInput(request, structure, copy, suppressUnauthorizedCta(bianca.output), referenceImageUrl), request);
+      const bianca = await callSkill(this.deps.helena, "social_media_design", buildBiancaInput(request, structure, sofia.output, copy, productAsset), request);
+      const pedro = await callSkill(this.deps.helena, "image_generation", buildPedroInput(request, structure, copy, suppressUnauthorizedCta(bianca.output), referenceImageUrl, productAsset), request);
       // Performance Creative Engine (Fase 7): compõe preço/desconto/headline/CTA/etc como pixels
       // reais sobre a imagem do Pedro, ANTES da logo — best-effort por imagem (uma falha aqui
       // nunca derruba a geração inteira), mas deliberadamente NUNCA volta a deixar o modelo
@@ -164,6 +172,62 @@ async function lookupReferenceImageUrl(
   if (!runtimePlan) return undefined;
   const preparedCommand = await deps.preparedCommandRepository.getById(runtimePlan.sourceContext.preparedCommandId);
   return preparedCommand?.validatedInputs.referenceImageUrl?.trim() || undefined;
+}
+
+export type ProductAssetPipelineResult = { mode: ProductRenderMode; reasoning: string; heroProductAssetUrl?: string };
+
+/**
+ * Product Asset Pipeline (Rodada 2, Prioridade 1) — decide se o produto REAL da imagem de
+ * referência pode virar o hero asset da peça (`ORIGINAL_ASSET`), se só dá pra usar como entrada de
+ * edição (`REFERENCE_EDIT`, comportamento já existente via `/v1/images/edits`), ou se não há
+ * referência disponível (`GENERATED_REFERENCE`, o modelo recria a partir da descrição). Roda ANTES
+ * de Bianca — ela precisa saber a decisão pra decidir se inclui uma zona `heroProduct` no
+ * `adLayoutSpec`. Best-effort em toda a cadeia: qualquer falha (download, análise, extração, upload)
+ * nunca trava a geração — degrada um degrau (nunca pula direto pro pior caso só porque uma etapa
+ * específica falhou).
+ */
+async function resolveProductAssetPipeline(
+  deps: { objectStorage?: ObjectStoragePort },
+  request: ExecutionTaskHandlerRequest,
+  referenceImageUrl: string | undefined,
+): Promise<ProductAssetPipelineResult> {
+  if (!referenceImageUrl) {
+    return resolveProductRenderMode({ hasReferenceImage: false });
+  }
+  let buffer: Buffer;
+  try {
+    buffer = await fetchAsBuffer(referenceImageUrl);
+  } catch (error) {
+    return {
+      mode: "reference_edit",
+      reasoning: `Não foi possível baixar a imagem de referência para análise de fundo: ${error instanceof Error ? error.message : "erro desconhecido"}. Usa como entrada de edição.`,
+    };
+  }
+
+  const analysis = await analyzeProductBackground(buffer);
+  const decision = resolveProductRenderMode({ hasReferenceImage: true, analysis });
+  if (decision.mode !== "original_asset" || !deps.objectStorage || !analysis?.dominantBackgroundColor) {
+    return decision;
+  }
+
+  const assetBuffer = await extractProductAsset(buffer, analysis.dominantBackgroundColor);
+  if (!assetBuffer) {
+    return {
+      mode: "reference_edit",
+      reasoning: "O fundo parecia uniforme, mas o recorte não produziu um resultado confiável — usa a referência como entrada de edição em vez de arriscar um recorte quebrado.",
+    };
+  }
+
+  try {
+    const key = `product-assets/${request.context.tenantId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-asset.png`;
+    const uploaded = await deps.objectStorage.put({ key, body: assetBuffer, contentType: "image/png" });
+    return { ...decision, heroProductAssetUrl: uploaded.url };
+  } catch (error) {
+    return {
+      mode: "reference_edit",
+      reasoning: `Recorte do produto extraído, mas falhou ao hospedar: ${error instanceof Error ? error.message : "erro desconhecido"}. Usa a referência como entrada de edição.`,
+    };
+  }
 }
 
 /**
@@ -652,6 +716,9 @@ function buildContentBriefStructure(validatedInputs: Record<string, string>): Re
     // (`parseReferenceIntelligence`) e decide como usar. Sem isto, preço/desconto visíveis numa
     // foto de referência nunca chegavam a nenhum lugar do pipeline (achado ao vivo).
     referenceIntelligence: validatedInputs.referenceIntelligence,
+    // Fatos comerciais extraídos do texto livre da ideia (Commercial Fact Normalizer, Rodada 2) —
+    // mesmo padrão de JSON bruto acima; João reidrata via `parseCommercialFacts`.
+    textCommercialFacts: validatedInputs.textCommercialFacts,
   };
 }
 
@@ -747,6 +814,9 @@ function buildStrategyInput(request: ExecutionTaskHandlerRequest): Record<string
     // — só existe no caminho `content_request` (content_brief nunca alimenta `campaign_creation`
     // com isto), `undefined` preserva o comportamento de sempre nesse caminho.
     referenceIntelligence: parseReferenceIntelligence(typeof upstream.referenceIntelligence === "string" ? upstream.referenceIntelligence : undefined),
+    // Fatos comerciais extraídos do texto livre da ideia (Commercial Fact Normalizer, Rodada 2) —
+    // mesmo caminho condicional de `referenceIntelligence` acima; lista vazia quando ausente.
+    textCommercialFacts: parseCommercialFacts(typeof upstream.textCommercialFacts === "string" ? upstream.textCommercialFacts : undefined),
   };
 }
 
@@ -822,7 +892,7 @@ function buildSofiaInput(request: ExecutionTaskHandlerRequest, strategy: Record<
   };
 }
 
-function buildBiancaInput(request: ExecutionTaskHandlerRequest, strategy: Record<string, unknown>, sofia: Record<string, unknown>, copy: Record<string, unknown>): Record<string, unknown> {
+function buildBiancaInput(request: ExecutionTaskHandlerRequest, strategy: Record<string, unknown>, sofia: Record<string, unknown>, copy: Record<string, unknown>, productAsset: ProductAssetPipelineResult): Record<string, unknown> {
   const hasCopy = Object.keys(copy).length > 0;
   return {
     ...baseInput(request),
@@ -830,6 +900,9 @@ function buildBiancaInput(request: ExecutionTaskHandlerRequest, strategy: Record
     joaoStrategy: strategy,
     sofiaDirection: sofia,
     sofiaBriefing: normalizeObject(sofia.biancaBriefing),
+    // Product Asset Pipeline (Rodada 2, Prioridade 1) — Bianca usa isto pra decidir se inclui uma
+    // zona `heroProduct` no `adLayoutSpec` (ver `buildPerformanceCreativePlan`/`buildAdLayoutSpec`).
+    productAsset,
     // Requisito do Performance Creative Engine (Fase 2): Bianca precisa da copy real da Maria pra
     // montar `performanceCreativePlan`/`adLayoutSpec` — antes disto ela nunca recebia `copy`.
     // Ausente em `campaign_creation` (copy/visual rodam em paralelo lá) — `hasCopy` reflete isso,
@@ -884,8 +957,19 @@ function buildPedroInput(
   copy: Record<string, unknown>,
   bianca: Record<string, unknown>,
   referenceImageUrl?: string,
+  productAsset?: ProductAssetPipelineResult,
 ): Record<string, unknown> {
   const imageCount = numberValue(strategy.recommendedSlideCount, 1) ?? 1;
+  // Product Asset Pipeline (Rodada 2, Prioridade 2): quando o produto real vai ser colado por cima
+  // depois (`heroProduct`, `ad-creative-renderer.ts`), Pedro NUNCA deveria desenhar o produto — nem
+  // grounded na referência (o resultado seria dois produtos competindo: o real colado e o
+  // "parecido" que o modelo desenhou). Suprime `referenceImageUrl`/`referenceProductFidelity`
+  // inteiramente nesse modo (não faz sentido guiar o modelo por uma referência que ele não deveria
+  // tentar recriar) e troca pela instrução de "só cenário/fundo".
+  const isOriginalAssetMode = productAsset?.mode === "original_asset" && Boolean(productAsset.heroProductAssetUrl);
+  const productBackgroundOnlyInstruction = isOriginalAssetMode
+    ? "O produto real (recorte já pronto) será colado por cima desta imagem depois — NÃO desenhe o produto em nenhuma versão, cópia, silhueta ou interpretação dele nesta imagem, em nenhuma parte do quadro. Gere APENAS o cenário, fundo, atmosfera, iluminação, superfície e elementos de contexto ao redor de onde o produto vai ficar (mantenha essa área com composição/espaço adequados para receber o produto depois, mas sem desenhar nenhum objeto que pareça o produto nela)."
+    : undefined;
   // `imageHeadline` (Maria, requisito de "separar as funções de cada texto") é o texto CURTO
   // pensado especificamente para dentro da imagem — nunca o título do post, nunca a legenda.
   // Fallback pra `title`/`displayTitle` só quando `imageHeadline` não veio (copy ausente —
@@ -917,13 +1001,18 @@ function buildPedroInput(
     // `strategy.referenceIntelligence`, que João já carrega no próprio output) vira a guarda de
     // fidelidade de produto — ver `pedro-image-generation.skill.ts`/`openai-icaro-image-provider.ts`.
     // `cleanZoneInstruction` diz ao Pedro onde NÃO colocar texto/elementos gráficos pesados —
-    // essas áreas vão ser preenchidas depois pelo renderer determinístico.
+    // essas áreas vão ser preenchidas depois pelo renderer determinístico. Ambos `referenceImageUrl`/
+    // `referenceIntelligence` são SUPRIMIDOS quando `isOriginalAssetMode` (Product Asset Pipeline,
+    // Rodada 2, Prioridade 2) — o produto real vai ser colado por cima depois, então não faz sentido
+    // guiar o modelo por uma referência que ele não deveria tentar recriar; `productBackgroundOnlyInstruction`
+    // assume o lugar, pedindo só cenário/fundo/atmosfera.
     workflowContext: {
       ...normalizeObject(base.workflowContext),
       ...(headline ? { headline } : {}),
-      ...(referenceImageUrl ? { referenceImageUrl } : {}),
-      ...(strategy.referenceIntelligence ? { referenceIntelligence: strategy.referenceIntelligence } : {}),
+      ...(!isOriginalAssetMode && referenceImageUrl ? { referenceImageUrl } : {}),
+      ...(!isOriginalAssetMode && strategy.referenceIntelligence ? { referenceIntelligence: strategy.referenceIntelligence } : {}),
       ...(cleanZoneInstruction ? { cleanZoneInstruction } : {}),
+      ...(productBackgroundOnlyInstruction ? { productBackgroundOnlyInstruction } : {}),
     },
     originalRequest: "Execution real controlada a partir de RuntimePlan validado.",
     biancaDesign: bianca,

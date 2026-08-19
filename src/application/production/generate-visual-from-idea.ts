@@ -5,6 +5,7 @@ import type { ConversationRepositoryPort } from "../ports/conversation-repositor
 import type { PlanningRepositoryPort } from "../ports/planning-repository.port.js";
 import type { RuntimeRepositoryPort } from "../ports/runtime-repository.port.js";
 import type { ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
+import { extractCommercialFactsFromText } from "../../shared/utils/commercial-fact-normalizer.js";
 
 // Nenhum `UserIntentType` dedicado existe para "gerar só uma peça visual" (o enum é fechado —
 // `create_campaign`/`edit_campaign`/.../`start_briefing`) — `intent` é só metadado guardado no
@@ -110,6 +111,14 @@ export async function generateVisualFromIdea(
 
   const referenceContext = await describeReferenceImages(deps, input.referenceImageUrls);
   if (referenceContext) fields.push({ key: "referenceContext", value: referenceContext });
+
+  // Commercial Fact Normalizer (Rodada 2, Prioridade 4) — preço/desconto mencionados só no texto
+  // livre da ideia (ex.: "de R$79,90 por R$39,99") nunca alimentavam `performanceCreativePlan`
+  // antes disto, mesmo sendo um fato literalmente escrito pelo usuário, não inventado. Extração
+  // determinística (regex), custo zero — mesmo padrão de campo bruto salvo em JSON que
+  // `referenceIntelligence` já usa (ver abaixo), pra reidratar mais adiante no pipeline.
+  const textCommercialFacts = extractCommercialFactsFromText(input.ideaText);
+  if (textCommercialFacts.length > 0) fields.push({ key: "textCommercialFacts", value: JSON.stringify(textCommercialFacts) });
 
   // Reference Intelligence (requisito "toda imagem fornecida deve ser analisada ANTES do
   // planejamento", extraindo fatos verificáveis — produto, preço, desconto, oferta, o que

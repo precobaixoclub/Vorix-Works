@@ -8,7 +8,7 @@ import type { Skill, SkillRequest, SkillResponse } from "../../domain/skills/ski
 import { extractJson, latest, normalize, normalizeStringArray } from "../../shared/utils/skill-parsing.js";
 import { buildDeveloperAiPendingResponse, isDeveloperAssistancePending } from "../../shared/utils/developer-ai-assistance.js";
 import { ANTI_GENERIC_VISUAL_CONSTRAINTS } from "../../shared/utils/visual-reference-library.js";
-import { hasStrongCommercialFact } from "../../shared/utils/reference-intelligence.types.js";
+import { commercialFactsFromReferenceIntelligence, mergeCommercialFacts, type CommercialFactType } from "../../shared/utils/commercial-fact-normalizer.js";
 import { rankCommercialArguments, type CommercialArgumentInputs } from "../../shared/utils/commercial-argument-ranking.js";
 import { selectLayoutFamily, resolveCompatibleDensity, LAYOUT_FAMILY_RULES } from "../../shared/utils/layout-family-rules.js";
 import { resolveInformationBudget, applyInformationBudget } from "../../shared/utils/information-budget.js";
@@ -406,31 +406,42 @@ function resolveVisualDensity(objective: string | undefined, argumentCount: numb
 export function buildPerformanceCreativePlan(input: BiancaDesignRequestInput): PerformanceCreativePlan | undefined {
   const creativeBrief = input.joaoStrategy.creativeBrief;
   const referenceIntelligence = input.joaoStrategy.referenceIntelligence;
-  const commercialFacts = referenceIntelligence?.commercialFacts;
   const mariaCopy = input.mariaCopy;
 
-  const hasAnySignal = Boolean(creativeBrief || hasStrongCommercialFact(commercialFacts) || mariaCopy);
+  // Commercial Fact Normalizer (Rodada 2, Prioridade 4) — preço/desconto/frete podem vir de uma
+  // imagem de referência OU do texto livre da ideia; a partir daqui nenhum campo abaixo precisa
+  // saber qual das duas fontes trouxe o dado. Imagem sempre vence quando as duas trazem o mesmo
+  // tipo de fato (`mergeCommercialFacts`).
+  const normalizedFacts = mergeCommercialFacts(
+    commercialFactsFromReferenceIntelligence(referenceIntelligence?.commercialFacts),
+    input.joaoStrategy.textCommercialFacts ?? [],
+  );
+  const factValue = (type: CommercialFactType): string | undefined => normalizedFacts.find((fact) => fact.type === type)?.value;
+  const hasStrongFact = normalizedFacts.some((fact) => fact.type === "current_price" || fact.type === "discount_percent" || fact.type === "promotion");
+
+  const hasAnySignal = Boolean(creativeBrief || hasStrongFact || mariaCopy);
   if (!hasAnySignal) return undefined;
 
-  const price = commercialFacts?.currentPrice;
-  const oldPrice = commercialFacts?.previousPrice;
-  const discount = commercialFacts?.discountPercent;
-  const offer = creativeBrief?.offer ?? commercialFacts?.promotion;
-  const urgency = commercialFacts?.promotion;
+  const price = factValue("current_price");
+  const oldPrice = factValue("previous_price");
+  const discount = factValue("discount_percent");
+  const offer = creativeBrief?.offer ?? factValue("promotion");
+  const urgency = factValue("promotion");
   const cta = mariaCopy?.cta ?? input.joaoStrategy.recommendedCta;
   const primaryHook = mariaCopy?.imageHeadline ?? mariaCopy?.title;
   const secondaryHook = mariaCopy?.title && mariaCopy.title !== primaryHook ? mariaCopy.title : undefined;
   const benefits = [creativeBrief?.mainBenefit].filter((value): value is string => Boolean(value?.trim()));
-  const trustSignals = [commercialFacts?.shippingInfo].filter((value): value is string => Boolean(value?.trim()));
-  const specifications = (commercialFacts?.commercialConditions ?? []).filter((value) => Boolean(value?.trim()));
+  const shipping = factValue("shipping");
+  const trustSignals = [shipping].filter((value): value is string => Boolean(value?.trim()));
+  const specifications = normalizedFacts.filter((fact) => fact.type === "payment_terms").map((fact) => fact.value);
 
   const commercialArguments: CommercialArgumentInputs = {
     price,
     discount,
     promotion: offer,
     mainBenefit: creativeBrief?.mainBenefit,
-    shipping: commercialFacts?.shippingInfo,
-    paymentTerms: commercialFacts?.commercialConditions?.[0],
+    shipping,
+    paymentTerms: specifications[0],
     differentiator: creativeBrief?.differentiator,
     cta,
   };
@@ -453,7 +464,7 @@ export function buildPerformanceCreativePlan(input: BiancaDesignRequestInput): P
 
   return {
     objective,
-    creativeType: hasStrongCommercialFact(commercialFacts) ? "oferta" : "produto",
+    creativeType: hasStrongFact ? "oferta" : "produto",
     primaryHook,
     secondaryHook,
     heroProduct: creativeBrief?.productOrService,
@@ -471,6 +482,8 @@ export function buildPerformanceCreativePlan(input: BiancaDesignRequestInput): P
     visualDensity,
     layoutFamily,
     informationPriority,
+    productRenderMode: input.productAsset?.mode,
+    heroProductAssetUrl: input.productAsset?.heroProductAssetUrl,
   };
 }
 
@@ -536,6 +549,12 @@ export function buildAdLayoutSpec(plan: PerformanceCreativePlan | undefined, inp
   // CTA sempre entra quando a família permite, mesmo que não tenha "vencido" o ranking de
   // argumentos comerciais — uma peça de conversão sem CTA visível não cumpre a função.
   if (rule.allowedZoneTypes.includes("cta") && plan.cta) candidateTypes.add("cta");
+  // heroProduct (Product Asset Pipeline, Rodada 2) não é um "argumento comercial" disputando
+  // orçamento de informação — é o recorte real do produto, a camada de base da peça. Só entra
+  // quando o pipeline efetivamente extraiu um asset (`heroProductAssetUrl`); tratado à parte do
+  // orçamento abaixo (nunca deveria ser a primeira coisa cortada por falta de espaço).
+  const hasHeroProduct = Boolean(plan.heroProductAssetUrl) && rule.allowedZoneTypes.includes("heroProduct");
+  candidateTypes.delete("heroProduct");
 
   const rankedTypes = Array.from(candidateTypes).sort((left, right) => {
     const leftPriority = rule.defaultZonePriority[left] ?? 9;
@@ -551,6 +570,10 @@ export function buildAdLayoutSpec(plan: PerformanceCreativePlan | undefined, inp
 
   const budget = resolveInformationBudget(plan.visualDensity, aspectRatio);
   const budgetedZones = applyInformationBudget(zones, budget);
+
+  if (hasHeroProduct) {
+    budgetedZones.push({ type: "heroProduct", priority: 0, position: clampZoneToSafeArea(DEFAULT_ZONE_POSITIONS.heroProduct, platform) });
+  }
 
   return {
     format: input.format,

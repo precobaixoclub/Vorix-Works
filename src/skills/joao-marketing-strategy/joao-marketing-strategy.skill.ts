@@ -485,6 +485,7 @@ export function buildBaselineStrategy(
     nextSteps,
     creativeDna,
     referenceIntelligence: input.referenceIntelligence,
+    textCommercialFacts: input.textCommercialFacts,
   };
 }
 

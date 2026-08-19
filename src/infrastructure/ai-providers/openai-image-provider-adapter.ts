@@ -5,6 +5,7 @@ import type {
   AiMediaProviderAdapterPort,
   AiMediaProviderDescriptor,
 } from "../../application/ports/ai-media-provider-adapter.port.js";
+import { cropToTargetAspectRatio } from "../image-processing/aspect-ratio-crop.js";
 
 export type OpenAiImageProviderConfig = {
   apiBaseUrl?: string;
@@ -110,7 +111,15 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
         // para virar uma URL pública. Erro isolado do bloco de rede acima para não virar
         // "Falha de conexão com a OpenAI" e esconder um problema de configuração local.
         try {
-          mediaUrl = await this.config.persistGeneratedImage({ base64: image.b64_json, tenantId: request.tenantId });
+          // Corta pra proporção real ANTES de persistir (ver `resolveOpenAiImageSize` em
+          // `openai-icaro-image-provider.ts`) — `size` só chega no tamanho suportado mais próximo,
+          // nunca a proporção exata pedida (ex.: 9:16). Sem isto, pillarboxing/letterboxing
+          // (achado ao vivo) fica permanentemente salvo no arquivo final.
+          const targetAspectRatio = typeof request.params.targetAspectRatio === "string" ? request.params.targetAspectRatio : undefined;
+          const rawBuffer = Buffer.from(image.b64_json, "base64");
+          const croppedBuffer = await cropToTargetAspectRatio(rawBuffer, targetAspectRatio);
+          const base64 = croppedBuffer === rawBuffer ? image.b64_json : croppedBuffer.toString("base64");
+          mediaUrl = await this.config.persistGeneratedImage({ base64, tenantId: request.tenantId });
         } catch (error) {
           return {
             ok: false,

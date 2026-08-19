@@ -79,6 +79,59 @@ test("OpenAiIcaroImageProvider: sem referenceProductFidelity, nenhuma menção a
   assert.equal(media.calls[0].prompt.includes("PRODUCT FIDELITY"), false);
 });
 
+test("OpenAiIcaroImageProvider: imageAspectRatio 9:16 vira regra de enquadramento (regressão do pillarboxing achado ao vivo), repetida 2x", async () => {
+  const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1 }));
+  const provider = new OpenAiIcaroImageProvider(media);
+
+  await provider.execute(baseRequest({ imageAspectRatio: "9:16" }));
+
+  const sentPrompt = media.calls[0].prompt;
+  assert.match(sentPrompt, /REGRA DE ENQUADRAMENTO IGUALMENTE OBRIGATÓRIA/);
+  assert.match(sentPrompt, /cortada automaticamente.*1024x1536/);
+  assert.equal(sentPrompt.split("REGRA DE ENQUADRAMENTO IGUALMENTE OBRIGATÓRIA").length - 1, 2);
+  assert.equal(media.calls[0].params.targetAspectRatio, "9:16");
+});
+
+test("OpenAiIcaroImageProvider: imageAspectRatio 1:1 (já compatível com o tamanho nativo) não gera regra de enquadramento", async () => {
+  const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1 }));
+  const provider = new OpenAiIcaroImageProvider(media);
+
+  await provider.execute(baseRequest({ imageAspectRatio: "1:1" }));
+
+  assert.equal(media.calls[0].prompt.includes("REGRA DE ENQUADRAMENTO"), false);
+});
+
+test("OpenAiIcaroImageProvider: sem imageAspectRatio, nenhuma regra de enquadramento e targetAspectRatio undefined", async () => {
+  const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1 }));
+  const provider = new OpenAiIcaroImageProvider(media);
+
+  await provider.execute(baseRequest());
+
+  assert.equal(media.calls[0].prompt.includes("REGRA DE ENQUADRAMENTO"), false);
+  assert.equal(media.calls[0].params.targetAspectRatio, undefined);
+});
+
+test("OpenAiIcaroImageProvider: authorizedBackgroundOnly vira regra de produto obrigatória (Product Asset Pipeline, Rodada 2, Prioridade 2), repetida 2x", async () => {
+  const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1 }));
+  const provider = new OpenAiIcaroImageProvider(media);
+
+  await provider.execute(baseRequest({ authorizedBackgroundOnly: "NÃO desenhe o produto — gere apenas cenário e fundo." }));
+
+  const sentPrompt = media.calls[0].prompt;
+  assert.match(sentPrompt, /REGRA DE PRODUTO IGUALMENTE OBRIGATÓRIA/);
+  assert.match(sentPrompt, /NÃO desenhe o produto — gere apenas cenário e fundo\./);
+  assert.equal(sentPrompt.split("REGRA DE PRODUTO IGUALMENTE OBRIGATÓRIA").length - 1, 2);
+});
+
+test("OpenAiIcaroImageProvider: sem authorizedBackgroundOnly, nenhuma regra de produto aparece (regressão — comportamento de sempre)", async () => {
+  const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1 }));
+  const provider = new OpenAiIcaroImageProvider(media);
+
+  await provider.execute(baseRequest());
+
+  assert.equal(media.calls[0].prompt.includes("REGRA DE PRODUTO IGUALMENTE OBRIGATÓRIA"), false);
+});
+
 test("OpenAiIcaroImageProvider: as três guardas (texto, cor, fidelidade) coexistem no mesmo prompt final", async () => {
   const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1 }));
   const provider = new OpenAiIcaroImageProvider(media);

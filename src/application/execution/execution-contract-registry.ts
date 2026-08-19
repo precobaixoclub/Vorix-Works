@@ -257,7 +257,15 @@ export const DEFAULT_EXECUTION_CONTRACTS: readonly ExecutionContract[] = [
     // `visual_generation` no grafo `content_request-visual-only-v2`, o input combinado inclui as
     // até 3 tentativas de Maria (`attempts[].prompt`, cada uma já embutindo briefing+estratégia
     // inteiros), que sozinhas estouram os 32KB default.
-    limits: { maxInputBytes: 500_000, maxOutputBytes: 2_000_000, maxStringLength: 150_000 },
+    // 150_000 subiu para 300_000 (achado ao vivo, Fatia 2 Caso B): o Multi-Candidate Planning
+    // (Prioridades 8-9) acrescentou `visualGrammar`/`componentSkins`/`commercialFactResolutions`
+    // ao `performanceCreativePlan` embutido no design spec da Bianca (repetido dentro do prompt de
+    // Pedro) — os campos de auditoria de candidatos já são removidos do que chega a Pedro
+    // (`stripCandidatePlanningAudit`), mas o resto do plano cresceu o bastante para, somado a uma
+    // copy mais rica (mais benefícios/especificações confirmados), ultrapassar a margem antiga já
+    // descrita acima como "apertada" (100000+ de baseline, 150000 de teto). Dobrar o teto reabre a
+    // mesma folga proporcional que o carrossel já tinha "de propósito".
+    limits: { maxInputBytes: 500_000, maxOutputBytes: 2_000_000, maxStringLength: 300_000 },
   }),
   contract({
     schemaId: "content_brief.structure",

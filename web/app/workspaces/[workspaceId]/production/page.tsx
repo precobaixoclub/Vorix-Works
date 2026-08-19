@@ -9,7 +9,7 @@ import { Input, Label, Textarea } from "@/components/Field";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { CHANNEL_LABEL, DEFAULT_PRODUCTION_CONFIG, FORMAT_LABEL } from "@/features/production-line/defaults";
-import { extractExecutionRunFailure, generateFromIdea as generateRealImageFromIdea, isUnrecoverableSemanticOcclusionFailure, waitForExecutionRunTerminal } from "@/features/production-line/api";
+import { deriveObjective, extractExecutionRunFailure, generateFromIdea as generateRealImageFromIdea, isUnrecoverableSemanticOcclusionFailure, waitForExecutionRunTerminal } from "@/features/production-line/api";
 import { recordGeneration } from "@/features/production-line/generation-log";
 import { useExecutionRuns } from "@/features/execution/hooks";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
@@ -283,7 +283,7 @@ export default function ProductionLinePage() {
     const normalizedDraft: ContentBlueprint = {
       ...draftIdea,
       name: draftIdea.name.trim() && draftIdea.name.trim() !== "Nova ideia" ? draftIdea.name.trim() : draftIdea.ideaText.trim().slice(0, 60),
-      objective: draftIdea.objective || draftIdea.ideaText,
+      objective: deriveObjective(draftIdea.objective, draftIdea.ideaText),
       productionMode: mode,
     };
     save({ ...config, blueprints: [...config.blueprints, normalizedDraft] });
@@ -309,7 +309,7 @@ export default function ProductionLinePage() {
       const generateInput = {
         workspaceId: workspace.id,
         name: idea.name.trim() || fallbackName,
-        objective: idea.objective || idea.ideaText,
+        objective: deriveObjective(idea.objective, idea.ideaText),
         ideaText: idea.ideaText,
         format: idea.format,
         channel: idea.channels[0] ?? ("instagram" as ProductionChannel),
@@ -1521,7 +1521,7 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
             rows={5}
             value={blueprint.ideaText}
             placeholder="Ex.: Criar um carrossel mostrando 5 motivos para comprar X, com linguagem simples e chamada para WhatsApp no final."
-            onChange={(event) => onChange({ ideaText: event.target.value, objective: event.target.value })}
+            onChange={(event) => onChange({ ideaText: event.target.value })}
           />
         </div>
       </section>

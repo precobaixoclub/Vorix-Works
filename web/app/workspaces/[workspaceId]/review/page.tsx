@@ -12,7 +12,7 @@ import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { decideExecutionGate } from "@/features/execution/api";
 import { useExecutionRun, useExecutionRuns } from "@/features/execution/hooks";
 import type { ExecutionRun, ExecutionRunState } from "@/features/execution/types";
-import { extractExecutionRunFailure, generateFromIdea, isUnrecoverableSemanticOcclusionFailure, rejectExecutionWithFeedback, REJECTION_REASONS, REJECTION_REASON_LABELS, type RejectionReason, waitForExecutionRunTerminal } from "@/features/production-line/api";
+import { deriveObjective, extractExecutionRunFailure, generateFromIdea, isUnrecoverableSemanticOcclusionFailure, rejectExecutionWithFeedback, REJECTION_REASONS, REJECTION_REASON_LABELS, type RejectionReason, waitForExecutionRunTerminal } from "@/features/production-line/api";
 import { getGenerationRecord, recordGeneration, type GenerationRecord } from "@/features/production-line/generation-log";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
 
@@ -145,7 +145,7 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
       const input = {
         workspaceId,
         name: record.name,
-        objective: record.objective,
+        objective: deriveObjective(record.objective, record.ideaText),
         ideaText: `${record.ideaText}\n\nAjuste solicitado na revisão: ${changeText.trim()}`.slice(0, 2000),
         format: record.format,
         channel: record.channel,

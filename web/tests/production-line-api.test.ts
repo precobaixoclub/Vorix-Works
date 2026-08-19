@@ -1,6 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { extractExecutionRunFailure, isUnrecoverableSemanticOcclusionFailure } from "../features/production-line/api";
+import { deriveObjective, extractExecutionRunFailure, isUnrecoverableSemanticOcclusionFailure, MAX_OBJECTIVE_LENGTH } from "../features/production-line/api";
 import type { ExecutionRunDetail } from "../features/execution/types";
+
+// Bug real achado ao vivo (Rodada 2, Fatia 3): o editor de ideias não tem campo separado de
+// objetivo — o texto livre da ideia (até 2000 caracteres) era espelhado direto em `objective`,
+// que a API limita a 300. Qualquer ideia com mais de 300 caracteres nunca conseguia gerar.
+describe("deriveObjective", () => {
+  it("usa o objective quando presente, cortado no limite da API", () => {
+    const longObjective = "x".repeat(400);
+    expect(deriveObjective(longObjective, "ideia curta")).toHaveLength(MAX_OBJECTIVE_LENGTH);
+  });
+
+  it("cai pro ideaText quando objective está vazio, também cortado no limite (o bug real: ideia sem objetivo dedicado, com texto longo)", () => {
+    const longIdeaText = "Descreva uma promoção completa. ".repeat(20);
+    expect(longIdeaText.length).toBeGreaterThan(MAX_OBJECTIVE_LENGTH);
+    const result = deriveObjective(undefined, longIdeaText);
+    expect(result).toHaveLength(MAX_OBJECTIVE_LENGTH);
+    expect(result).toBe(longIdeaText.slice(0, MAX_OBJECTIVE_LENGTH));
+  });
+
+  it("não corta desnecessariamente quando o texto já cabe no limite", () => {
+    expect(deriveObjective(undefined, "Ideia curta e direta.")).toBe("Ideia curta e direta.");
+  });
+});
 
 // Espelha `evaluateSemanticOcclusion` em `lucas-quality-review.skill.ts` (Rodada 2, Fatia 3) —
 // achado ao vivo: uma reprovação por rosto/olhos cobertos que o Repair Loop já tentou e não

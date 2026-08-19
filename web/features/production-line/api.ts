@@ -3,6 +3,19 @@ import { getExecutionRun } from "@/features/execution/api";
 import type { ExecutionRun, ExecutionRunDetail } from "@/features/execution/types";
 import type { ProductionChannel, ProductionFormat } from "./types";
 
+// Bug real achado ao vivo (Rodada 2, Fatia 3): o editor de ideias não tem um campo separado de
+// "objetivo" — o texto da ideia (`ideaText`, até 2000 caracteres) era espelhado direto em
+// `objective`, que a API limita a 300 (ver `GENERATE_BODY_SCHEMA`,
+// `src/interfaces/api/routes/v1/production.route.ts`). Qualquer ideia com mais de 300 caracteres
+// nunca conseguia gerar — a requisição sempre voltava com `VALIDATION_ERROR`. `deriveObjective`
+// centraliza o corte no mesmo limite da API, usado em todo lugar que monta `objective` a partir
+// do texto livre da ideia (inclusive dados antigos já salvos no navegador, de antes desta correção).
+export const MAX_OBJECTIVE_LENGTH = 300;
+
+export function deriveObjective(objective: string | undefined, ideaText: string): string {
+  return (objective || ideaText).slice(0, MAX_OBJECTIVE_LENGTH);
+}
+
 /** Motivos fechados de rejeição (requisito "registrar o motivo sempre que disponível") — espelha
  * `REJECTION_REASONS` em `src/interfaces/api/routes/v1/production.route.ts`. */
 export const REJECTION_REASONS = [

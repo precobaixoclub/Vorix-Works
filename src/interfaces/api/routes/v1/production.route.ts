@@ -40,6 +40,22 @@ const REJECT_BODY_SCHEMA = {
   },
 } as const;
 
+// Achado ao vivo (Rodada 2, Fatia 3): uma reprovação por oclusão semântica sobre rosto/olhos que
+// o Repair Loop já tentou reposicionar e não resolveu (ver `evaluateSemanticOcclusion`,
+// `lucas-quality-review.skill.ts` — mensagem no formato exato abaixo) tem baixa chance de ser
+// corrigida só regenerando copy/estratégia do zero: o problema é a COMPOSIÇÃO FOTOGRÁFICA (rosto
+// grande/dominante demais para qualquer posição alternativa fixa de texto escapar), não o texto
+// em si. Disparar uma 2ª tentativa inteira nesse caso específico só soma outros ~2 minutos numa
+// única requisição HTTP síncrona sem ganho real — foi isso que causou "erro de conexão" percebido
+// pelo usuário (a requisição combinada passou de 4 minutos). Nas OUTRAS causas de reprovação
+// (alucinação comercial, tipografia, etc.) a 2ª tentativa continua rodando normalmente, porque
+// regenerar copy/imagem ali pode genuinamente resolver.
+const SEMANTIC_OCCLUSION_FACE_FAILURE_PATTERN = /Elemento "[^"]+" sobre "(face|eyes)"/;
+
+export function isUnrecoverableSemanticOcclusionFailure(failureMessage: string | undefined): boolean {
+  return typeof failureMessage === "string" && SEMANTIC_OCCLUSION_FACE_FAILURE_PATTERN.test(failureMessage);
+}
+
 const GENERATE_BODY_SCHEMA = {
   type: "object",
   required: ["workspaceId", "name", "objective", "ideaText", "format", "channel"],
@@ -94,9 +110,8 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
     // execução NOVA e inteira, do zero, no máximo 1 vez, só quando a causa da falha foi
     // especificamente reprovação de qualidade (nunca para erro de configuração/provider/timeout,
     // onde tentar de novo com o mesmo problema só gastaria uma chamada paga da OpenAI à toa).
-    const result = attempt1.failureCode === "QUALITY_GATE_NOT_PASSED"
-      ? await runOneGenerationAttempt(deps, principal.tenantId, body)
-      : attempt1;
+    const shouldRetry = attempt1.failureCode === "QUALITY_GATE_NOT_PASSED" && !isUnrecoverableSemanticOcclusionFailure(attempt1.failureMessage);
+    const result = shouldRetry ? await runOneGenerationAttempt(deps, principal.tenantId, body) : attempt1;
 
     return successEnvelope({ executionRunId: result.started.id, state: result.started.state, failureMessage: result.failureMessage }, request.id);
   });

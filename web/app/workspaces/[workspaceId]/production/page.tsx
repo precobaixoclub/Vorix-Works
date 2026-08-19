@@ -9,7 +9,7 @@ import { Input, Label, Textarea } from "@/components/Field";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { CHANNEL_LABEL, DEFAULT_PRODUCTION_CONFIG, FORMAT_LABEL } from "@/features/production-line/defaults";
-import { deriveObjective, extractExecutionRunFailure, generateFromIdea as generateRealImageFromIdea, isUnrecoverableSemanticOcclusionFailure, waitForExecutionRunTerminal } from "@/features/production-line/api";
+import { deriveObjective, extractExecutionRunFailure, generateFromIdea as generateRealImageFromIdea, isUnrecoverableSemanticOcclusionFailure, MAX_IDEA_TEXT_LENGTH, waitForExecutionRunTerminal } from "@/features/production-line/api";
 import { recordGeneration } from "@/features/production-line/generation-log";
 import { useExecutionRuns } from "@/features/execution/hooks";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
@@ -303,6 +303,14 @@ export default function ProductionLinePage() {
   async function handleGenerateRealImage(idea: ContentBlueprint) {
     if (idea.format === "video") return;
     setGenerateError(null);
+    // Bug real achado ao vivo (Rodada 2, Fatia 3): ideias criadas antes do limite visível no
+    // textarea (ou coladas de outra fonte) podem já ter mais texto que a API aceita — sem essa
+    // checagem, o usuário só descobria com um erro de validação genérico depois de esperar a
+    // resposta. Avisa antes de sequer chamar a API, com uma mensagem acionável.
+    if (idea.ideaText.length > MAX_IDEA_TEXT_LENGTH) {
+      setGenerateError(`A descrição da ideia tem ${idea.ideaText.length} caracteres — o máximo é ${MAX_IDEA_TEXT_LENGTH}. Edite a ideia e reduza o texto antes de gerar.`);
+      return;
+    }
     setGeneratingIdeaId(idea.id);
     try {
       const fallbackName = (idea.objective || idea.ideaText || "Ideia sem nome").slice(0, 60);
@@ -1520,9 +1528,13 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
             id="blueprint-idea"
             rows={5}
             value={blueprint.ideaText}
+            maxLength={MAX_IDEA_TEXT_LENGTH}
             placeholder="Ex.: Criar um carrossel mostrando 5 motivos para comprar X, com linguagem simples e chamada para WhatsApp no final."
             onChange={(event) => onChange({ ideaText: event.target.value })}
           />
+          <p className={`mt-1 text-right text-xs ${blueprint.ideaText.length >= MAX_IDEA_TEXT_LENGTH ? "text-red-600" : "text-ink-faint"}`}>
+            {blueprint.ideaText.length}/{MAX_IDEA_TEXT_LENGTH}
+          </p>
         </div>
       </section>
 

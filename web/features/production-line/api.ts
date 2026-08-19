@@ -11,6 +11,10 @@ import type { ProductionChannel, ProductionFormat } from "./types";
 // centraliza o corte no mesmo limite da API, usado em todo lugar que monta `objective` a partir
 // do texto livre da ideia (inclusive dados antigos já salvos no navegador, de antes desta correção).
 export const MAX_OBJECTIVE_LENGTH = 300;
+// Mesmo limite de `ideaText` no schema da API (`GENERATE_BODY_SCHEMA`) — usado pra impedir
+// digitação/cole além do limite no textarea e mostrar um contador visível, em vez do usuário só
+// descobrir o limite quando a API rejeita a requisição sem nenhum aviso prévio.
+export const MAX_IDEA_TEXT_LENGTH = 2000;
 
 export function deriveObjective(objective: string | undefined, ideaText: string): string {
   return (objective || ideaText).slice(0, MAX_OBJECTIVE_LENGTH);

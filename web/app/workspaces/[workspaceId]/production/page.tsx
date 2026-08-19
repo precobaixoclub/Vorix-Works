@@ -9,7 +9,7 @@ import { Input, Label, Textarea } from "@/components/Field";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { CHANNEL_LABEL, DEFAULT_PRODUCTION_CONFIG, FORMAT_LABEL } from "@/features/production-line/defaults";
-import { generateFromIdea as generateRealImageFromIdea } from "@/features/production-line/api";
+import { extractExecutionRunFailure, generateFromIdea as generateRealImageFromIdea, isUnrecoverableSemanticOcclusionFailure, waitForExecutionRunTerminal } from "@/features/production-line/api";
 import { recordGeneration } from "@/features/production-line/generation-log";
 import { useExecutionRuns } from "@/features/execution/hooks";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
@@ -316,14 +316,43 @@ export default function ProductionLinePage() {
         targetAudience: idea.targetAudience,
         referenceImages: idea.referenceImages,
       };
-      const result = await generateRealImageFromIdea(generateInput);
-      if (result.state === "failed") {
+      // Assíncrono (Rodada 2, Fatia 3 — achado ao vivo): a chamada devolve o `executionRunId` na
+      // hora; o pipeline real roda em background no servidor, então o acompanhamento até o
+      // estado terminar é feito aqui via poll (`GET /execution-runs/:id`, sem segurar a conexão
+      // HTTP original por minutos — era isso que causava "erro de conexão" mesmo com o backend
+      // terminando normalmente).
+      const first = await generateRealImageFromIdea(generateInput);
+      let detail = await waitForExecutionRunTerminal(workspace.id, first.executionRunId);
+      let executionRunId = first.executionRunId;
+
+      if (detail.run.state === "failed") {
+        // Regeneração automática (requisito "se não atingir o padrão mínimo, gerar novamente"),
+        // no máximo 1 vez — exceto quando a causa foi oclusão semântica sobre rosto/olhos que o
+        // Repair Loop já tentou e não resolveu (ver `isUnrecoverableSemanticOcclusionFailure`):
+        // regenerar copy/estratégia do zero ali dificilmente resolve um problema de composição
+        // fotográfica, então pular evita gastar mais ~2 minutos e uma chamada paga da OpenAI.
+        const { code, message } = extractExecutionRunFailure(detail);
+        if (code === "QUALITY_GATE_NOT_PASSED" && !isUnrecoverableSemanticOcclusionFailure(message)) {
+          const retry = await generateRealImageFromIdea(generateInput);
+          executionRunId = retry.executionRunId;
+          detail = await waitForExecutionRunTerminal(workspace.id, retry.executionRunId);
+        }
+      }
+
+      if (detail.run.state === "failed") {
         // Fica em Produção de propósito — falha não é conteúdo pronto pra revisar, e a ideia
         // continua disponível no tanque para tentar de novo.
-        setGenerateError(result.failureMessage || "A geração falhou. Tente novamente.");
+        const { message } = extractExecutionRunFailure(detail);
+        setGenerateError(message || "A geração falhou. Tente novamente.");
         return;
       }
-      recordGeneration(workspace.id, { ...generateInput, executionRunId: result.executionRunId, ideaId: idea.id, createdAt: new Date().toISOString() });
+      if (detail.run.state !== "completed" && detail.run.state !== "waiting_for_approval") {
+        // Estourou o tempo máximo de espera do poll sem terminar (rede de segurança, nunca
+        // deveria acontecer na prática) — melhor avisar do que fingir sucesso.
+        setGenerateError("A geração está demorando mais que o esperado. Confira em Revisão em alguns minutos.");
+        return;
+      }
+      recordGeneration(workspace.id, { ...generateInput, executionRunId, ideaId: idea.id, createdAt: new Date().toISOString() });
       updateBlueprint(idea.id, { status: "used", usedAt: new Date().toISOString() });
       router.push(`/workspaces/${workspace.id}/review`);
     } catch (error) {

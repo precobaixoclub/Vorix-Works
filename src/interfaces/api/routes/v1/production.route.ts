@@ -40,22 +40,6 @@ const REJECT_BODY_SCHEMA = {
   },
 } as const;
 
-// Achado ao vivo (Rodada 2, Fatia 3): uma reprovação por oclusão semântica sobre rosto/olhos que
-// o Repair Loop já tentou reposicionar e não resolveu (ver `evaluateSemanticOcclusion`,
-// `lucas-quality-review.skill.ts` — mensagem no formato exato abaixo) tem baixa chance de ser
-// corrigida só regenerando copy/estratégia do zero: o problema é a COMPOSIÇÃO FOTOGRÁFICA (rosto
-// grande/dominante demais para qualquer posição alternativa fixa de texto escapar), não o texto
-// em si. Disparar uma 2ª tentativa inteira nesse caso específico só soma outros ~2 minutos numa
-// única requisição HTTP síncrona sem ganho real — foi isso que causou "erro de conexão" percebido
-// pelo usuário (a requisição combinada passou de 4 minutos). Nas OUTRAS causas de reprovação
-// (alucinação comercial, tipografia, etc.) a 2ª tentativa continua rodando normalmente, porque
-// regenerar copy/imagem ali pode genuinamente resolver.
-const SEMANTIC_OCCLUSION_FACE_FAILURE_PATTERN = /Elemento "[^"]+" sobre "(face|eyes)"/;
-
-export function isUnrecoverableSemanticOcclusionFailure(failureMessage: string | undefined): boolean {
-  return typeof failureMessage === "string" && SEMANTIC_OCCLUSION_FACE_FAILURE_PATTERN.test(failureMessage);
-}
-
 const GENERATE_BODY_SCHEMA = {
   type: "object",
   required: ["workspaceId", "name", "objective", "ideaText", "format", "channel"],
@@ -81,12 +65,21 @@ export type ProductionRoutesDeps = GenerateVisualFromIdeaDeps &
 /**
  * Ponte HTTP entre uma ideia do tanque de Produção e o pipeline de execução real — a única forma
  * de gerar uma peça visual de verdade hoje é via `runtimePlanId`, que só nasce de um briefing
- * conversacional completo (ver `generate-visual-from-idea.ts`). Esta rota faz o caminho inteiro
- * numa chamada só: ideia → briefing sintético → planning/runtime (automáticos) → execução real
- * criada, iniciada e rodada até o fim (aprovação ou falha) — nada continua em background depois
- * que a resposta HTTP volta. Devolve `state` já resolvido para o cliente decidir na hora (sem
- * poll) se marca a ideia como usada e navega para Revisão, ou mostra erro e mantém o usuário em
- * Produção.
+ * conversacional completo (ver `generate-visual-from-idea.ts`). Esta rota faz o setup rápido
+ * (briefing sintético + planning/runtime automáticos + criação da execução) na própria
+ * requisição, mas dispara `startExecution` em BACKGROUND — devolve o `executionRunId` na hora,
+ * sem esperar o pipeline inteiro terminar.
+ *
+ * Achado ao vivo (Rodada 2, Fatia 3): a versão anterior desta rota rodava tudo (planning →
+ * copy → design → imagem → Repair Loop → Quality Gate, às vezes 2x quando a 1ª tentativa era
+ * reprovada) dentro da MESMA requisição HTTP síncrona — minutos com a conexão parada sem nenhum
+ * byte de resposta. Isso se mostrou frágil demais contra timeouts de rede fora do nosso controle
+ * (o "erro de conexão" reportado em produção — confirmado ao vivo: o backend terminava
+ * normalmente minutos depois, mas a conexão do cliente já tinha caído, e a resposta nunca chegava
+ * a ser enviada). O cliente agora consulta `GET /execution-runs/:id` (endpoint que já existe)
+ * até o estado terminar — inclusive a decisão de regenerar automaticamente uma vez quando a causa
+ * foi reprovação de qualidade (antes decidida aqui) migrou pro cliente, que já vê o resultado de
+ * cada tentativa via poll.
  */
 export async function registerProductionRoutes(app: FastifyInstance, deps: ProductionRoutesDeps): Promise<void> {
   app.post("/production/ideas/generate", { schema: { body: GENERATE_BODY_SCHEMA } }, async (request) => {
@@ -102,18 +95,36 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
 
     await deps.ensureHouseTenantProfile(principal.tenantId, body.workspaceId);
 
-    const attempt1 = await runOneGenerationAttempt(deps, principal.tenantId, body);
-    // Regeneração automática (requisito "se não atingir o padrão mínimo, gerar novamente"): o
-    // quality gate (Lucas) roda DEPOIS de `visual_generation` já ter produzido seu único artefato
-    // por task — não há como "consertar e reemitir" a peça de dentro da própria task de revisão
-    // (ver comentário em `QualityGateExecutionTaskHandler`), então a regeneração de verdade é uma
-    // execução NOVA e inteira, do zero, no máximo 1 vez, só quando a causa da falha foi
-    // especificamente reprovação de qualidade (nunca para erro de configuração/provider/timeout,
-    // onde tentar de novo com o mesmo problema só gastaria uma chamada paga da OpenAI à toa).
-    const shouldRetry = attempt1.failureCode === "QUALITY_GATE_NOT_PASSED" && !isUnrecoverableSemanticOcclusionFailure(attempt1.failureMessage);
-    const result = shouldRetry ? await runOneGenerationAttempt(deps, principal.tenantId, body) : attempt1;
+    const { runtimePlanId } = await generateVisualFromIdea(deps, {
+      tenantId: principal.tenantId,
+      workspaceId: body.workspaceId,
+      name: body.name,
+      objective: body.objective,
+      ideaText: body.ideaText,
+      format: body.format,
+      channel: body.channel,
+      targetAudience: body.targetAudience,
+      referenceImageUrls: body.referenceImages,
+    });
 
-    return successEnvelope({ executionRunId: result.started.id, state: result.started.state, failureMessage: result.failureMessage }, request.id);
+    const idempotencyKey = `production-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const run = await createExecution(deps, {
+      tenantId: principal.tenantId,
+      workspaceId: body.workspaceId,
+      runtimePlanId,
+      idempotencyKey,
+      executionMode: "real",
+    }).catch(translateExecutionError);
+
+    // Fire-and-forget deliberado — o pipeline real (copy/design/imagem/Repair Loop/Quality Gate)
+    // roda por conta própria depois que a resposta HTTP já voltou. Erro aqui só pode ser
+    // logado, nunca propagado (a resposta já foi decidida) — o estado final sempre fica visível
+    // via `GET /execution-runs/:id`, que é a única fonte de verdade que o cliente consulta.
+    startExecution(deps, { tenantId: principal.tenantId, workspaceId: body.workspaceId, id: run.id }).catch((error) => {
+      request.log.error({ err: error instanceof Error ? error.message : String(error), executionRunId: run.id }, "Falha ao iniciar execução de produção em background.");
+    });
+
+    return successEnvelope({ executionRunId: run.id, state: "running" as const }, request.id);
   });
 
   // Rejeição estruturada (requisito "registrar o motivo sempre que disponível... usar esse
@@ -164,41 +175,3 @@ type GenerateBody = {
   referenceImages?: string[];
 };
 
-async function runOneGenerationAttempt(deps: ProductionRoutesDeps, tenantId: string, body: GenerateBody) {
-  const { runtimePlanId } = await generateVisualFromIdea(deps, {
-    tenantId,
-    workspaceId: body.workspaceId,
-    name: body.name,
-    objective: body.objective,
-    ideaText: body.ideaText,
-    format: body.format,
-    channel: body.channel,
-    targetAudience: body.targetAudience,
-    referenceImageUrls: body.referenceImages,
-  });
-
-  const idempotencyKey = `production-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const run = await createExecution(deps, {
-    tenantId,
-    workspaceId: body.workspaceId,
-    runtimePlanId,
-    idempotencyKey,
-    executionMode: "real",
-  }).catch(translateExecutionError);
-  const started = await startExecution(deps, { tenantId, workspaceId: body.workspaceId, id: run.id }).catch(translateExecutionError);
-
-  // A execução real roda de ponta a ponta dentro desta mesma requisição (nada é assíncrono em
-  // background) — por isso já sabemos aqui, sem poll nenhum, se terminou em falha. Devolver isso
-  // já pronto evita que o cliente precise descobrir sozinho (ou pior, navegar para uma tela de
-  // revisão como se tivesse dado certo quando na verdade falhou).
-  let failureMessage: string | undefined;
-  let failureCode: string | undefined;
-  if (started.state === "failed") {
-    const detail = await deps.executionRepository.getDetail(started.id);
-    const failedAttempt = [...(detail?.attempts ?? [])].reverse().find((candidate) => candidate.failure);
-    failureMessage = failedAttempt?.failure?.message;
-    failureCode = failedAttempt?.failure?.code;
-  }
-
-  return { started, failureMessage, failureCode };
-}

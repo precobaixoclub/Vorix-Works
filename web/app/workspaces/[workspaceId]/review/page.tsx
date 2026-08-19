@@ -12,7 +12,7 @@ import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { decideExecutionGate } from "@/features/execution/api";
 import { useExecutionRun, useExecutionRuns } from "@/features/execution/hooks";
 import type { ExecutionRun, ExecutionRunState } from "@/features/execution/types";
-import { generateFromIdea, rejectExecutionWithFeedback, REJECTION_REASONS, REJECTION_REASON_LABELS, type RejectionReason } from "@/features/production-line/api";
+import { extractExecutionRunFailure, generateFromIdea, isUnrecoverableSemanticOcclusionFailure, rejectExecutionWithFeedback, REJECTION_REASONS, REJECTION_REASON_LABELS, type RejectionReason, waitForExecutionRunTerminal } from "@/features/production-line/api";
 import { getGenerationRecord, recordGeneration, type GenerationRecord } from "@/features/production-line/generation-log";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
 
@@ -151,12 +151,33 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
         channel: record.channel,
         targetAudience: record.targetAudience,
       };
-      const result = await generateFromIdea(input);
-      if (result.state === "failed") {
-        setError(result.failureMessage || "Não foi possível gerar a nova versão. Tente novamente.");
+      // Assíncrono (Rodada 2, Fatia 3 — mesmo achado ao vivo da tela de Produção): a chamada
+      // devolve `executionRunId` na hora, o pipeline roda em background, e o acompanhamento até
+      // o estado terminar é feito aqui via poll — nunca segura a conexão HTTP original por
+      // minutos (era isso que causava "erro de conexão" mesmo com o backend terminando normalmente).
+      const first = await generateFromIdea(input);
+      let detail = await waitForExecutionRunTerminal(workspaceId, first.executionRunId);
+      let executionRunId = first.executionRunId;
+
+      if (detail.run.state === "failed") {
+        const { code, message } = extractExecutionRunFailure(detail);
+        if (code === "QUALITY_GATE_NOT_PASSED" && !isUnrecoverableSemanticOcclusionFailure(message)) {
+          const retry = await generateFromIdea(input);
+          executionRunId = retry.executionRunId;
+          detail = await waitForExecutionRunTerminal(workspaceId, retry.executionRunId);
+        }
+      }
+
+      if (detail.run.state === "failed") {
+        const { message } = extractExecutionRunFailure(detail);
+        setError(message || "Não foi possível gerar a nova versão. Tente novamente.");
         return;
       }
-      recordGeneration(workspaceId, { ...input, executionRunId: result.executionRunId, ideaId: record.ideaId, createdAt: new Date().toISOString() });
+      if (detail.run.state !== "completed" && detail.run.state !== "waiting_for_approval") {
+        setError("A geração está demorando mais que o esperado. Confira novamente em alguns minutos.");
+        return;
+      }
+      recordGeneration(workspaceId, { ...input, executionRunId, ideaId: record.ideaId, createdAt: new Date().toISOString() });
       setRejectStep("closed");
       setChangeText("");
       onDecided();

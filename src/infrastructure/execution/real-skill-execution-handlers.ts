@@ -123,7 +123,8 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       const brandVisualProfile = await this.deps.ensureBrandVisualProfile?.(request.context.workspaceId).catch(() => undefined);
       const sofia = await callSkill(this.deps.helena, "art_direction", buildSofiaInput(request, structure), request);
       const bianca = await callSkill(this.deps.helena, "social_media_design", buildBiancaInput(request, structure, sofia.output, copy, productAsset, brandVisualProfile), request);
-      const pedro = await callSkill(this.deps.helena, "image_generation", buildPedroInput(request, structure, copy, suppressUnauthorizedCta(bianca.output), referenceImageUrl, productAsset), request);
+      const pedroDesign = stripCandidatePlanningAudit(suppressUnauthorizedCta(bianca.output));
+      const pedro = await callSkill(this.deps.helena, "image_generation", buildPedroInput(request, structure, copy, pedroDesign, referenceImageUrl, productAsset), request);
       // Performance Creative Engine (Fase 7): compõe preço/desconto/headline/CTA/etc como pixels
       // reais sobre a imagem do Pedro, ANTES da logo — best-effort por imagem (uma falha aqui
       // nunca derruba a geração inteira), mas deliberadamente NUNCA volta a deixar o modelo
@@ -602,6 +603,24 @@ function suppressUnauthorizedCta(design: Record<string, unknown>): Record<string
     ctaPlacement: NO_CTA_INSTRUCTION,
     ...(Object.keys(typographyScale).length > 0 ? { typographyScale: { ...typographyScale, cta: "Sem CTA nesta peça" } } : {}),
   };
+}
+
+// Fatia 2, Prioridades 8-9 — campos de AUDITORIA do Multi-Candidate Planning
+// (`creativeCandidates`/`candidateScores`/`winnerCandidateId`/`selectionReason`/
+// `candidateDiversityScore`) nunca deveriam chegar ao Pedro: ele só precisa do plano JÁ VENCEDOR
+// (preço, headline, zonas, `visualGrammar`, `componentSkins` etc.), nunca do raciocínio de como
+// os outros 2 candidatos perdedores foram descartados. Achado ao vivo em produção (Caso A da
+// Fatia 2): `JSON.stringify(biancaDesign)` embutido no prompt de Pedro estourou o limite de
+// 150.000 caracteres por string do contrato `visual_generation.visual` assim que os 3 candidatos
+// passaram a viajar dentro de `performanceCreativePlan` — nunca deveriam ter viajado pra lá.
+const CANDIDATE_PLANNING_AUDIT_FIELDS = ["creativeCandidates", "candidateScores", "winnerCandidateId", "selectionReason", "candidateDiversityScore"] as const;
+
+function stripCandidatePlanningAudit(design: Record<string, unknown>): Record<string, unknown> {
+  const plan = design.performanceCreativePlan;
+  if (!plan || typeof plan !== "object") return design;
+  const trimmedPlan = { ...(plan as Record<string, unknown>) };
+  for (const field of CANDIDATE_PLANNING_AUDIT_FIELDS) delete trimmedPlan[field];
+  return { ...design, performanceCreativePlan: trimmedPlan };
 }
 
 /**

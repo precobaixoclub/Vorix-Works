@@ -628,6 +628,110 @@ test("VisualPipelineExecutionTaskHandler: compõe preço/desconto/CTA determiní
   }
 });
 
+test("VisualPipelineExecutionTaskHandler: campos de auditoria do Multi-Candidate Planning (creativeCandidates/candidateScores/etc.) NUNCA chegam ao prompt de Pedro, mas continuam no artefato final (achado ao vivo — estourava o limite de 150k caracteres do contrato)", async () => {
+  const baseImagePng = await sharp({ create: { width: 1024, height: 1280, channels: 4, background: { r: 30, g: 90, b: 60, alpha: 1 } } }).png().toBuffer();
+
+  const adLayoutSpec = { format: "4:5", aspectRatio: "4:5", layoutFamily: "flash_sale", density: "performance", zones: [] };
+  const performanceCreativePlan = {
+    objective: "promocao_oferta",
+    creativeType: "oferta",
+    price: "R$ 39,99",
+    benefits: [],
+    trustSignals: [],
+    specifications: [],
+    cta: "Aproveite agora",
+    brandElements: [],
+    visualDensity: "performance",
+    layoutFamily: "flash_sale",
+    informationPriority: ["price", "cta"],
+    creativeCandidates: [{ id: "A", layoutFamily: "flash_sale", visualDensity: "performance", rationale: "x".repeat(200), zoneTypes: ["price"] }],
+    candidateScores: [{ candidateId: "A", score: 90, dimensions: {}, penalties: [] }],
+    winnerCandidateId: "A",
+    selectionReason: "Candidato A venceu.",
+    candidateDiversityScore: 80,
+  };
+
+  const helena = fakeHelena();
+  const capturedInputs = {};
+  const originalExecuteSkill = helena.manager.executeSkill;
+  helena.manager.executeSkill = async (request) => {
+    if (request.capability === "image_generation") {
+      capturedInputs.pedro = request.input;
+      return {
+        skillId: "fake-image_generation",
+        state: "COMPLETED",
+        response: {
+          skillId: "fake-image_generation",
+          taskId: request.context.taskId,
+          status: "completed",
+          output: { generationSummary: "ok", imageCount: 1, images: [{ id: "img-1", uri: "https://x/generated-image.png" }] },
+          artifacts: [],
+          warnings: [],
+        },
+      };
+    }
+    if (request.capability === "social_media_design") {
+      return {
+        skillId: "fake-social_media_design",
+        state: "COMPLETED",
+        response: {
+          skillId: "fake-social_media_design",
+          taskId: request.context.taskId,
+          status: "completed",
+          output: { designConcept: "teste", gridSystem: "grid", ctaPlacement: "base", performanceCreativePlan, adLayoutSpec },
+          artifacts: [],
+          warnings: [],
+        },
+      };
+    }
+    return originalExecuteSkill(request);
+  };
+
+  const fakeObjectStorage = {
+    put: async () => ({ url: "https://x/uploaded.png" }),
+    delete: async () => undefined,
+    resolvePublicUrl: (key) => `https://x/${key}`,
+    health: async () => ({ ok: true }),
+  };
+  const fakeClara = { requestContext: async () => ({ clientId: "tenant-1", deliveredAt: FIXED_NOW, modules: {}, records: [] }) };
+
+  const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    helena: helena.manager,
+    provider: "helena",
+    clara: fakeClara,
+    objectStorage: fakeObjectStorage,
+  });
+
+  const request = {
+    task: { id: "task-1", runtimePlanId: "runtime-1", capability: "visual_design", type: "visual_generation" },
+    inputs: {
+      structure: [{ artifactId: "a-structure", checksum: "c1", payload: { output: { objective: "vender", channel: "instagram", format: "carrossel" } } }],
+    },
+    context: { executionRunId: "exec-1", tenantId: "tenant-1", workspaceId: "workspace-1", mode: "real" },
+    attempt: { total: 1, providerAttempt: 1 },
+  };
+
+  const result = await handler.execute(request);
+  assert.equal(result.ok, true, JSON.stringify(result));
+
+  // Pedro nunca recebeu os campos de auditoria do candidato vencedor.
+  const pedroPlan = capturedInputs.pedro.biancaDesign.performanceCreativePlan;
+  assert.equal(pedroPlan.creativeCandidates, undefined);
+  assert.equal(pedroPlan.candidateScores, undefined);
+  assert.equal(pedroPlan.winnerCandidateId, undefined);
+  assert.equal(pedroPlan.selectionReason, undefined);
+  assert.equal(pedroPlan.candidateDiversityScore, undefined);
+  // O resto do plano (o que Pedro de fato precisa) continua intacto.
+  assert.equal(pedroPlan.price, "R$ 39,99");
+  assert.equal(pedroPlan.layoutFamily, "flash_sale");
+
+  // O artefato final (visualPipeline.designSpec) preserva os campos de auditoria — só o prompt de
+  // Pedro é enxugado, o relatório/auditoria continua completo.
+  const finalDesignSpec = result.value.outputs[0].payload.visualPipeline.designSpec;
+  assert.equal(finalDesignSpec.performanceCreativePlan.winnerCandidateId, "A");
+  assert.equal(finalDesignSpec.performanceCreativePlan.creativeCandidates.length, 1);
+});
+
 test("VisualPipelineExecutionTaskHandler: Product Asset Pipeline (Rodada 2) recorta o produto de uma referência com fundo uniforme, sobe pro storage, e repassa o modo/URL pra Bianca e Pedro", async () => {
   // Referência com fundo branco uniforme + "produto" (círculo vermelho) — mesma técnica sintética
   // de tests/product-background.test.mjs, condição real pra `original_asset` ser escolhido.

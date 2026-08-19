@@ -25,7 +25,9 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import sharp from "sharp";
+import pg from "pg";
 
+import { PostgresSecretManager } from "../dist/infrastructure/operations/postgres-secret-manager.js";
 import { IcaroAIBrain } from "../dist/application/ai/icaro-brain.js";
 import { OpenAiIcaroImageProvider } from "../dist/infrastructure/ai-providers/openai-icaro-image-provider.js";
 import { OpenAiIcaroTextProvider } from "../dist/infrastructure/ai-providers/openai-icaro-text-provider.js";
@@ -70,7 +72,22 @@ async function main() {
     publicBaseUrl: process.env.OBJECT_STORAGE_PUBLIC_BASE_URL?.trim() || `${(process.env.ZUNO_API_ORIGIN || "http://localhost:3000").replace(/\/$/, "")}/uploads`,
   });
 
-  const getApiKey = async () => process.env.OPENAI_API_KEY?.trim() || undefined;
+  // Mesma precedência de `resolveMediaProviderKey` (container.ts): chave configurada pelo painel
+  // admin (Postgres, `ai-provider:openai`) tem prioridade sobre a variável de ambiente — em
+  // produção a chave normalmente só existe ali, nunca em `OPENAI_API_KEY` puro.
+  let secretPool;
+  const getApiKey = async () => {
+    const envKey = process.env.OPENAI_API_KEY?.trim() || undefined;
+    if (!process.env.DATABASE_URL || !process.env.JWT_SECRET) return envKey;
+    try {
+      secretPool = secretPool ?? new pg.Pool({ connectionString: process.env.DATABASE_URL });
+      const secretManager = new PostgresSecretManager(secretPool, process.env.JWT_SECRET);
+      const stored = await secretManager.get("ai-provider:openai");
+      return stored?.value?.apiKey ?? envKey;
+    } catch {
+      return envKey;
+    }
+  };
   const apiBaseUrl = process.env.OPENAI_API_BASE_URL?.trim() || undefined;
 
   const openaiImageProvider = new OpenAiImageProviderAdapter({
@@ -172,6 +189,7 @@ async function main() {
   await writeFile(outJsonPath, JSON.stringify({ ...result, durationMs }, null, 2));
   console.log(`\n[gpt-creative-prototype] Resultado completo salvo em ${outJsonPath}`);
 
+  if (secretPool) await secretPool.end();
   if (result.error) process.exitCode = 1;
 }
 

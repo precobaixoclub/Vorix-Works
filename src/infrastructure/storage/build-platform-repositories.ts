@@ -2,6 +2,7 @@ import pg from "pg";
 import type { AiExecutionRepositoryPort } from "../../application/ports/ai-execution-repository.port.js";
 import type { AnalyticsRepositoryPort } from "../../application/ports/analytics-repository.port.js";
 import type { AssetLibraryRepositoryPort } from "../../application/ports/asset-library-repository.port.js";
+import type { BrandVisualProfileRepositoryPort } from "../../application/ports/brand-visual-profile-repository.port.js";
 import type { AssetMetadataSourcePort } from "../../application/ports/asset-metadata-source.port.js";
 import type { BriefingFieldValueRepositoryPort } from "../../application/ports/briefing-field-value-repository.port.js";
 import type { BriefingQuestionRepositoryPort } from "../../application/ports/briefing-question-repository.port.js";
@@ -33,6 +34,7 @@ import { createNotConnectedCompanyKnowledgeSource } from "../briefing/not-connec
 import { InMemoryAiExecutionRepository } from "./in-memory-ai-execution-repository.js";
 import { InMemoryAnalyticsRepository } from "./in-memory-analytics-repository.js";
 import { InMemoryAssetLibraryRepository } from "./in-memory-asset-library-repository.js";
+import { InMemoryBrandVisualProfileRepository } from "./in-memory-brand-visual-profile-repository.js";
 import { InMemoryContentGenerationHistoryRepository } from "./in-memory-content-generation-history-repository.js";
 import { InMemoryQualityFeedbackRepository } from "./in-memory-quality-feedback-repository.js";
 import { InMemoryBriefingFieldValueRepository } from "./in-memory-briefing-field-value-repository.js";
@@ -60,6 +62,7 @@ import { InMemoryWorkspaceRepository } from "./in-memory-workspace-repository.js
 import { PostgresAiExecutionRepository } from "./postgres/postgres-ai-execution-repository.js";
 import { PostgresAnalyticsRepository } from "./postgres/postgres-analytics-repository.js";
 import { PostgresAssetLibraryRepository } from "./postgres/postgres-asset-library-repository.js";
+import { PostgresBrandVisualProfileRepository } from "./postgres/postgres-brand-visual-profile-repository.js";
 import { PostgresContentGenerationHistoryRepository } from "./postgres/postgres-content-generation-history-repository.js";
 import { PostgresQualityFeedbackRepository } from "./postgres/postgres-quality-feedback-repository.js";
 import { PostgresBriefingFieldValueRepository } from "./postgres/postgres-briefing-field-value-repository.js";
@@ -92,6 +95,7 @@ export type PersistenceDriver = "memory" | "postgres";
 export type PlatformRepositories = {
   workspaceRepository: WorkspaceRepositoryPort;
   assetLibraryRepository: AssetLibraryRepositoryPort;
+  brandVisualProfileRepository: BrandVisualProfileRepositoryPort;
   chatRepository: ChatRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
   conversationEventRepository: ConversationEventRepositoryPort;
@@ -153,6 +157,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     return {
       workspaceRepository,
       assetLibraryRepository,
+      brandVisualProfileRepository: new InMemoryBrandVisualProfileRepository(),
       chatRepository: new InMemoryChatRepository(),
       conversationRepository: new InMemoryConversationRepository(),
       conversationEventRepository: new InMemoryConversationEventRepository(),
@@ -193,6 +198,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
   return {
     workspaceRepository,
     assetLibraryRepository,
+    brandVisualProfileRepository: new PostgresBrandVisualProfileRepository(pool),
     chatRepository: new PostgresChatRepository(pool),
     conversationRepository: new PostgresConversationRepository(pool),
     conversationEventRepository: new PostgresConversationEventRepository(pool),

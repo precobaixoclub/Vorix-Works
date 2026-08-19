@@ -1,4 +1,6 @@
 import { el, fitFontSizeToBox, type SatoriNode } from "./satori-node.js";
+import { resolveSkinTreatment } from "./skin-treatment.js";
+import type { ComponentSkin } from "../../../shared/utils/brand-visual-profile.types.js";
 
 export type PriceBlockVariant = "compact" | "dominant" | "horizontal" | "stacked";
 
@@ -11,6 +13,8 @@ export type PriceBlockProps = {
   accentColor: string;
   textColor: string;
   backgroundColor: string;
+  /** Component Skin (Rodada 2, Fatia 2, Prioridade 6) — `undefined` cai no visual de sempre ("clean"). */
+  skin?: ComponentSkin;
 };
 
 export type ComponentRenderResult = {
@@ -24,7 +28,8 @@ export type ComponentRenderResult = {
 
 export function PriceBlock(props: PriceBlockProps): ComponentRenderResult {
   const variant = props.variant ?? "dominant";
-  const padding = Math.round(props.heightPx * 0.1);
+  const treatment = resolveSkinTreatment(props.skin);
+  const padding = Math.round(props.heightPx * 0.1 * treatment.paddingScale);
   const innerWidth = Math.max(1, props.widthPx - padding * 2);
   // Altura disponível pro preço principal: quando há preço anterior, ele reserva sua própria
   // fatia da caixa; sem isto o preço principal calculava o tamanho como se tivesse a caixa
@@ -50,15 +55,17 @@ export function PriceBlock(props: PriceBlockProps): ComponentRenderResult {
 
   const priceNode = el("div", {
     fontSize: priceFontSize,
-    fontWeight: 700,
+    fontWeight: treatment.fontWeight,
     color: props.accentColor,
     fontFamily: "Geist",
     lineHeight: 1.1,
     whiteSpace: "nowrap",
+    ...(treatment.letterSpacing ? { letterSpacing: treatment.letterSpacing } : {}),
   }, props.price);
 
   const children: SatoriNode[] = oldPriceNode ? [oldPriceNode, priceNode] : [priceNode];
 
+  const borderColor = treatment.border?.colorSource === "text" ? props.textColor : props.accentColor;
   const node = el(
     "div",
     {
@@ -70,9 +77,10 @@ export function PriceBlock(props: PriceBlockProps): ComponentRenderResult {
       width: props.widthPx,
       height: props.heightPx,
       background: props.backgroundColor,
-      borderRadius: 12,
+      borderRadius: Math.round(12 * treatment.borderRadiusScale),
       padding,
       overflow: "hidden",
+      ...(treatment.border ? { borderWidth: treatment.border.widthPx, borderStyle: "solid", borderColor } : {}),
     },
     children,
   );

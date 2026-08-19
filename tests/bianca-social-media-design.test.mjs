@@ -11,6 +11,7 @@ import {
   buildAdLayoutSpec,
   biancaSocialMediaDesignManifest,
 } from "../dist/skills/bianca-social-media-design/index.js";
+import { rectanglesOverlap } from "../dist/shared/utils/zone-collision.js";
 
 const CLIENT_ID = "client-casamento-1";
 const TENANT_ID = "tenant-casamento-1";
@@ -844,10 +845,120 @@ test("buildPerformanceCreativePlan: quando imagem E texto trazem preço, a image
   const plan = buildPerformanceCreativePlan(input);
 
   assert.equal(plan.price, "R$ 39,99");
+  // Bloco 0.4: o conflito real precisa aparecer registrado no plano, nunca resolvido em silêncio.
+  assert.equal(plan.commercialFactResolutions.length, 1);
+  assert.equal(plan.commercialFactResolutions[0].selectedFact.value, "R$ 39,99");
+});
+
+test("buildPerformanceCreativePlan: sem brandVisualProfile, visualGrammar fica undefined e componentSkins caem no skin \"clean\" (sem regressão)", () => {
+  const input = createInput({
+    joaoStrategy: createJoaoStrategy({ creativeBrief: tenisCreativeBrief(), referenceIntelligence: tenisReferenceIntelligence() }),
+    mariaCopy: { title: "Tênis Casual Unissex por R$39,99!", cta: "Aproveite agora", imageHeadline: "50% OFF - R$39,99" },
+  });
+
+  const plan = buildPerformanceCreativePlan(input);
+
+  assert.equal(plan.visualGrammar, undefined);
+  assert.equal(plan.componentSkins.price, "clean");
+  assert.equal(plan.brandVisualProfileSource, undefined);
+});
+
+test("buildPerformanceCreativePlan: Marca A (agressiva/densa) x Marca B (premium/minimalista) — mesmo produto/oferta, visualGrammar e componentSkins REALMENTE diferentes (Prioridade 7, teste de identidade)", () => {
+  const baseInput = {
+    joaoStrategy: createJoaoStrategy({ creativeBrief: tenisCreativeBrief(), referenceIntelligence: tenisReferenceIntelligence() }),
+    mariaCopy: { title: "Tênis Casual Unissex por R$39,99!", cta: "Aproveite agora", imageHeadline: "50% OFF - R$39,99" },
+  };
+
+  const marcaAgressiva = {
+    workspaceId: "ws-marca-a",
+    foundation: { primaryColor: "#DC2626", secondaryColor: "#111827", accentColor: "#F59E0B", backgroundColor: "#111827", surfaceColor: "#1F2937", textPrimary: "#FFFFFF", textSecondary: "#D1D5DB" },
+    typography: { personality: "tecnica_precisa", preferredWeight: "black", casingPreference: "uppercase" },
+    shapeLanguage: { borderRadius: "sharp", shadowStyle: "pronounced", cardStyle: "elevated" },
+    personality: { visualEnergy: "high", commercialAggressiveness: "aggressive", sophistication: "casual", graphicDensityPreference: "dense", contrastPreference: "high" },
+    components: { priceSkin: "marketplace", discountSkin: "marketplace", ctaSkin: "bold", badgeSkin: "marketplace" },
+    imagery: { backgroundComplexity: "rich", productTreatment: "lifestyle" },
+    logo: { preferredPlacement: "top_left" },
+    source: "manual",
+    createdAt: "2026-08-16T00:00:00.000Z",
+    updatedAt: "2026-08-16T00:00:00.000Z",
+  };
+  const marcaPremium = {
+    ...marcaAgressiva,
+    workspaceId: "ws-marca-b",
+    foundation: { primaryColor: "#111827", secondaryColor: "#F5F5F4", accentColor: "#111827", backgroundColor: "#FFFFFF", surfaceColor: "#FAFAFA", textPrimary: "#111827", textSecondary: "#6B7280" },
+    typography: { personality: "elegante_editorial", preferredWeight: "regular", casingPreference: "sentence_case" },
+    shapeLanguage: { borderRadius: "pill", shadowStyle: "none", cardStyle: "flat" },
+    personality: { visualEnergy: "calm", commercialAggressiveness: "subtle", sophistication: "premium", graphicDensityPreference: "minimal", contrastPreference: "soft" },
+    components: { priceSkin: "premium", discountSkin: "editorial", ctaSkin: "outlined", badgeSkin: "editorial" },
+    imagery: { backgroundComplexity: "minimal", productTreatment: "editorial" },
+  };
+
+  const planA = buildPerformanceCreativePlan(createInput({ ...baseInput, brandVisualProfile: marcaAgressiva }));
+  const planB = buildPerformanceCreativePlan(createInput({ ...baseInput, brandVisualProfile: marcaPremium }));
+
+  // Mesmo produto/oferta/preço — só a marca muda.
+  assert.equal(planA.price, planB.price);
+  assert.equal(planA.offer, planB.offer);
+
+  // A gramática visual precisa ser estruturalmente diferente, não só de cor.
+  assert.notEqual(planA.visualGrammar.alignmentPreference, planB.visualGrammar.alignmentPreference);
+  assert.notEqual(planA.visualGrammar.whitespacePreference, planB.visualGrammar.whitespacePreference);
+  assert.notEqual(planA.visualGrammar.cardUsage, planB.visualGrammar.cardUsage);
+  assert.notEqual(planA.visualGrammar.diagonalElements, planB.visualGrammar.diagonalElements);
+  assert.notEqual(planA.visualGrammar.hierarchyStyle, planB.visualGrammar.hierarchyStyle);
+
+  // Os skins de componente também precisam divergir de verdade.
+  assert.notEqual(planA.componentSkins.price, planB.componentSkins.price);
+  assert.notEqual(planA.componentSkins.discount, planB.componentSkins.discount);
+  assert.notEqual(planA.componentSkins.cta, planB.componentSkins.cta);
+  assert.notEqual(planA.componentSkins.headline, planB.componentSkins.headline);
+});
+
+test("buildPerformanceCreativePlan: texto com override explícito vence a imagem de referência (Fatia 2, Bloco 0.4)", () => {
+  const input = createInput({
+    joaoStrategy: createJoaoStrategy({
+      creativeBrief: tenisCreativeBrief(),
+      referenceIntelligence: tenisReferenceIntelligence(),
+      textCommercialFacts: [{ type: "current_price", value: "R$ 34,90", source: "user_text", confidence: "high", verified: true, explicitOverride: true }],
+    }),
+    mariaCopy: { title: "Tênis Casual Unissex", cta: "Aproveite agora" },
+  });
+
+  const plan = buildPerformanceCreativePlan(input);
+
+  assert.equal(plan.price, "R$ 34,90");
+  assert.equal(plan.commercialFactResolutions[0].selectedFact.source, "user_text");
 });
 
 test("buildAdLayoutSpec: sem plano criativo, devolve undefined", () => {
   assert.equal(buildAdLayoutSpec(undefined, createInput()), undefined);
+});
+
+test("buildAdLayoutSpec: headline e badge nunca se sobrepõem geometricamente, mesmo os dois presentes juntos (Fatia 2, Bloco 0.2 — regressão do achado ao vivo em Story 9:16)", () => {
+  const input = createInput({
+    joaoStrategy: createJoaoStrategy({ creativeBrief: tenisCreativeBrief(), referenceIntelligence: tenisReferenceIntelligence() }),
+    mariaCopy: { title: "Tênis Casual Unissex", cta: "Aproveite agora", imageHeadline: "Oferta relâmpago: R$ 249,90 por tempo limitado!", claims: [] },
+    sofiaDirection: createSofiaDirection({ recommendedAspectRatio: "9:16" }),
+  });
+  const plan = buildPerformanceCreativePlan(input);
+  assert.ok(plan.urgency, "teste pressupõe que a referência traz urgência (vira badge)");
+
+  const spec = buildAdLayoutSpec(plan, input);
+
+  const zoneTypes = spec.zones.map((zone) => zone.type);
+  assert.ok(zoneTypes.includes("headline"));
+  assert.ok(zoneTypes.includes("badge"));
+
+  for (let i = 0; i < spec.zones.length; i += 1) {
+    for (let j = i + 1; j < spec.zones.length; j += 1) {
+      if (spec.zones[i].type === "heroProduct" || spec.zones[j].type === "heroProduct") continue;
+      assert.equal(
+        rectanglesOverlap(spec.zones[i].position, spec.zones[j].position),
+        false,
+        `${spec.zones[i].type} não deveria se sobrepor a ${spec.zones[j].type}`,
+      );
+    }
+  }
 });
 
 test("buildAdLayoutSpec: monta zonas price/discount/cta/headline pro caso flash_sale, todas dentro da área segura do formato", () => {

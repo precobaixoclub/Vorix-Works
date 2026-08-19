@@ -111,6 +111,17 @@ test("OpenAiIcaroImageProvider: sem imageAspectRatio, nenhuma regra de enquadram
   assert.equal(media.calls[0].params.targetAspectRatio, undefined);
 });
 
+test("OpenAiIcaroImageProvider: authorizedCleanZones proíbe explicitamente rosto/cabeça/mãos nessas áreas (Fatia 2, Bloco 0.3 — regressão do achado ao vivo de produto sobrepondo rosto)", async () => {
+  const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1 }));
+  const provider = new OpenAiIcaroImageProvider(media);
+
+  await provider.execute(baseRequest({ authorizedCleanZones: "o produto na região central-central" }));
+
+  const sentPrompt = media.calls[0].prompt;
+  assert.match(sentPrompt, /REGRA DE ÁREA LIMPA IGUALMENTE OBRIGATÓRIA/);
+  assert.match(sentPrompt, /NUNCA posicione rosto, cabeça ou mãos de pessoa/);
+});
+
 test("OpenAiIcaroImageProvider: authorizedBackgroundOnly vira regra de produto obrigatória (Product Asset Pipeline, Rodada 2, Prioridade 2), repetida 2x", async () => {
   const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1 }));
   const provider = new OpenAiIcaroImageProvider(media);

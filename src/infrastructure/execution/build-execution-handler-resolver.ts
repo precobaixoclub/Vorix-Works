@@ -9,6 +9,7 @@ import type { ContentGenerationHistoryPort } from "../../application/ports/conte
 import type { QualityFeedbackPort } from "../../application/quality-feedback/quality-feedback.port.js";
 import type { ObjectStoragePort } from "../../application/ports/object-storage.port.js";
 import type { ClaraKnowledgePort } from "../../application/knowledge/clara-knowledge.port.js";
+import type { BrandVisualProfile } from "../../shared/utils/brand-visual-profile.types.js";
 import { EXECUTION_CAPABILITIES } from "../../domain/planning/planning.model.js";
 import { HelenaSkillManager, SkillManifestValidator, SkillRegistry } from "../../application/skills/index.js";
 import { FileSystemSkillDiscovery } from "../skills/file-system-skill-discovery.js";
@@ -25,6 +26,7 @@ export async function buildExecutionHandlerResolver(input: {
   qualityFeedback?: QualityFeedbackPort;
   clara?: ClaraKnowledgePort;
   objectStorage?: ObjectStoragePort;
+  ensureBrandVisualProfile?: (workspaceId: string) => Promise<BrandVisualProfile>;
 }): Promise<ExecutionHandlerResolver> {
   const registry = new ExecutionHandlerRegistry();
   registry.register({
@@ -66,6 +68,7 @@ export async function buildExecutionHandlerResolver(input: {
         objectStorage: input.objectStorage,
         runtimeRepository: input.runtimeRepository,
         preparedCommandRepository: input.preparedCommandRepository,
+        ensureBrandVisualProfile: input.ensureBrandVisualProfile,
       }),
       executionModes: ["real"],
       enabled: true,

@@ -117,6 +117,7 @@ import { RuntimeEnginePlanningHook } from "../../../infrastructure/runtime/runti
 import { buildIdentityRepositories } from "../../../infrastructure/storage/build-identity-repositories.js";
 import { buildPlatformRepositories } from "../../../infrastructure/storage/build-platform-repositories.js";
 import type { ApiConfig } from "../config/api-config.js";
+import { buildConservativeDefaultProfile, type BrandVisualProfile } from "../../../shared/utils/brand-visual-profile.types.js";
 
 const DISABLED_AI_GATEWAY_CONFIG: ApiConfig["aiGateway"] = {
   enabled: false,
@@ -263,6 +264,11 @@ export type ApiContainer = {
    * (a partir da logo real cadastrada em Materiais, quando existir) antes da primeira geração
    * real — ver comentário junto da implementação. */
   ensureHouseTenantProfile(tenantId: string, workspaceId: string): Promise<void>;
+  /** Brand Visual Profile (Rodada 2, Fatia 2, Prioridade 5) — busca/cria (idempotente) o perfil
+   * visual persistente do workspace, ver comentário junto da implementação. Chamado a cada geração
+   * (não só no bootstrap do tenant) porque é a Skill de design quem consome — barato depois da
+   * primeira vez (só um `select`). */
+  ensureBrandVisualProfile(workspaceId: string): Promise<BrandVisualProfile>;
   /** Descreve uma imagem pública (referência anexada numa ideia, logo em Materiais) em texto —
    * usado tanto pelo bootstrap de marca acima quanto por `generate-visual-from-idea.ts` para
    * enriquecer o briefing com o que uma imagem de referência mostra. */
@@ -533,6 +539,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       qualityFeedback,
       clara,
       objectStorage,
+      ensureBrandVisualProfile,
     });
   // `ValentinaTenantManager.createTenant` sempre gera um `id` novo (nunca aceita um `id`
   // explícito) — mas os skills reais (Pedro/Sofia/Bianca...) chamam
@@ -681,6 +688,26 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     } else {
       await clara.create({ module: "IdentityContext", title: "Identidade visual", payload, audit });
     }
+  };
+  // Brand Visual Profile (Rodada 2, Fatia 2, Prioridade 5) — persistente por WORKSPACE (diferente
+  // de IdentityContext/BrandContext acima, que ficam por TENANT), Postgres real
+  // (`brand_visual_profiles`, migration 0059). Idempotente-em-repouso: uma vez criado, nunca
+  // regenerado do zero a cada publicação — só cria quando ainda não existe. Nunca inventa uma
+  // identidade "exagerada": sem logo cadastrada, cai no perfil conservador padrão
+  // (`buildConservativeDefaultProfile`, mesmos tons neutros já usados como fallback de
+  // `ensureHouseIdentityContext` acima); com logo, marca a origem como `bootstrap_from_logo` (sinal
+  // de que HÁ identidade real disponível) sem reextrair cor via visão computacional de novo — evita
+  // uma segunda chamada de IA pra um dado que `ensureHouseIdentityContext` já resolveu.
+  const ensureBrandVisualProfile = async (workspaceId: string): Promise<BrandVisualProfile> => {
+    const existing = await repositories.brandVisualProfileRepository.getByWorkspace(workspaceId);
+    if (existing) return existing;
+    const logoUrl = await findLogoAssetUrl(workspaceId);
+    const now = new Date().toISOString();
+    const profile: BrandVisualProfile = {
+      ...buildConservativeDefaultProfile(workspaceId, now),
+      source: logoUrl ? "bootstrap_from_logo" : "bootstrap_conservative",
+    };
+    return repositories.brandVisualProfileRepository.upsert(profile);
   };
   const aiMediaProviderRegistry = createDefaultAiMediaProviderRegistry(aiMediaProviderAdapters);
 
@@ -985,6 +1012,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       createExecutionHandlerResolver,
       valentina,
       ensureHouseTenantProfile,
+      ensureBrandVisualProfile,
       imageDescriber,
       referenceIntelligenceExtractor,
       qualityFeedback,
@@ -1063,6 +1091,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     createExecutionHandlerResolver,
     valentina,
     ensureHouseTenantProfile,
+    ensureBrandVisualProfile,
     imageDescriber,
     referenceIntelligenceExtractor,
     qualityFeedback,

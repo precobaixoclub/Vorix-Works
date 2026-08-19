@@ -16,8 +16,9 @@ import { parseReferenceIntelligence, type ReferenceIntelligence } from "../../sh
 import { parseCommercialFacts, type CommercialFact } from "../../shared/utils/commercial-fact-normalizer.js";
 import { RENDERER_OWNED_ZONE_TYPES, type AdLayoutSpec, type AdLayoutZoneType, type PerformanceCreativePlan } from "../../shared/utils/ad-layout.types.js";
 import { renderAdCreativeOverlay } from "../rendering/ad-creative-renderer.js";
-import { resolveProductRenderMode, type ProductRenderMode } from "../../shared/utils/product-asset.types.js";
-import { analyzeProductBackground, extractProductAsset } from "../image-processing/product-background.js";
+import { resolveProductRenderMode, type ProductRenderMode, type AssetSuitabilityScore } from "../../shared/utils/product-asset.types.js";
+import { computeAssetSuitabilityScore, extractProductAsset } from "../image-processing/product-background.js";
+import type { BrandVisualProfile } from "../../shared/utils/brand-visual-profile.types.js";
 
 type SkillCallResult = {
   output: Record<string, unknown>;
@@ -82,6 +83,7 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       objectStorage?: ObjectStoragePort;
       runtimeRepository?: RuntimeRepositoryPort;
       preparedCommandRepository?: PreparedCommandRepositoryPort;
+      ensureBrandVisualProfile?: (workspaceId: string) => Promise<BrandVisualProfile>;
     },
   ) {}
 
@@ -114,8 +116,13 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       // inesperada aqui cai no mesmo fallback conservador de "sem referência" (GENERATED_REFERENCE
       // se não há URL, REFERENCE_EDIT se há) — nunca trava a geração.
       const productAsset = await resolveProductAssetPipeline(this.deps, request, referenceImageUrl).catch(() => resolveProductRenderMode({ hasReferenceImage: Boolean(referenceImageUrl) }));
+      // Brand Visual Profile (Rodada 2, Fatia 2, Prioridade 5) — identidade visual persistente do
+      // workspace (fundação de cor, tipografia, personalidade, skins de componente). Best-effort:
+      // qualquer falha (repositório indisponível, workspace sem contexto) nunca trava a geração —
+      // Bianca já sabe operar sem isto (era o comportamento de sempre até esta prioridade).
+      const brandVisualProfile = await this.deps.ensureBrandVisualProfile?.(request.context.workspaceId).catch(() => undefined);
       const sofia = await callSkill(this.deps.helena, "art_direction", buildSofiaInput(request, structure), request);
-      const bianca = await callSkill(this.deps.helena, "social_media_design", buildBiancaInput(request, structure, sofia.output, copy, productAsset), request);
+      const bianca = await callSkill(this.deps.helena, "social_media_design", buildBiancaInput(request, structure, sofia.output, copy, productAsset, brandVisualProfile), request);
       const pedro = await callSkill(this.deps.helena, "image_generation", buildPedroInput(request, structure, copy, suppressUnauthorizedCta(bianca.output), referenceImageUrl, productAsset), request);
       // Performance Creative Engine (Fase 7): compõe preço/desconto/headline/CTA/etc como pixels
       // reais sobre a imagem do Pedro, ANTES da logo — best-effort por imagem (uma falha aqui
@@ -123,7 +130,7 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       // desenhar esses elementos como fallback (o Pedro já foi instruído a deixar essas áreas
       // limpas, ver `buildCleanZoneInstruction`) — uma falha aqui produz uma imagem visivelmente
       // incompleta (sem preço/CTA), nunca uma imagem com um valor comercial errado ou inventado.
-      const overlayResult = await applyAdCreativeOverlay(this.deps, request, pedro.output, bianca.output).catch((error) => ({
+      const overlayResult = await applyAdCreativeOverlay(this.deps, request, pedro.output, bianca.output, brandVisualProfile).catch((error) => ({
         output: pedro.output,
         warnings: [`Não foi possível compor os elementos comerciais determinísticos: ${error instanceof Error ? error.message : "erro desconhecido"}.`],
       }));
@@ -174,7 +181,7 @@ async function lookupReferenceImageUrl(
   return preparedCommand?.validatedInputs.referenceImageUrl?.trim() || undefined;
 }
 
-export type ProductAssetPipelineResult = { mode: ProductRenderMode; reasoning: string; heroProductAssetUrl?: string };
+export type ProductAssetPipelineResult = { mode: ProductRenderMode; reasoning: string; heroProductAssetUrl?: string; suitability?: AssetSuitabilityScore };
 
 /**
  * Product Asset Pipeline (Rodada 2, Prioridade 1) — decide se o produto REAL da imagem de
@@ -204,13 +211,13 @@ async function resolveProductAssetPipeline(
     };
   }
 
-  const analysis = await analyzeProductBackground(buffer);
-  const decision = resolveProductRenderMode({ hasReferenceImage: true, analysis });
-  if (decision.mode !== "original_asset" || !deps.objectStorage || !analysis?.dominantBackgroundColor) {
+  const suitability = await computeAssetSuitabilityScore(buffer);
+  const decision = resolveProductRenderMode({ hasReferenceImage: true, suitability });
+  if (decision.mode !== "original_asset" || !deps.objectStorage || !suitability?.dominantBackgroundColor) {
     return decision;
   }
 
-  const assetBuffer = await extractProductAsset(buffer, analysis.dominantBackgroundColor);
+  const assetBuffer = await extractProductAsset(buffer, suitability.dominantBackgroundColor);
   if (!assetBuffer) {
     return {
       mode: "reference_edit",
@@ -244,6 +251,7 @@ async function applyAdCreativeOverlay(
   request: ExecutionTaskHandlerRequest,
   pedroOutput: Record<string, unknown>,
   biancaOutput: Record<string, unknown>,
+  brandVisualProfile: BrandVisualProfile | undefined,
 ): Promise<{ output: Record<string, unknown>; warnings: string[] }> {
   const plan = biancaOutput.performanceCreativePlan as PerformanceCreativePlan | undefined;
   const adLayoutSpec = biancaOutput.adLayoutSpec as AdLayoutSpec | undefined;
@@ -251,8 +259,17 @@ async function applyAdCreativeOverlay(
   const images = Array.isArray(pedroOutput.images) ? (pedroOutput.images as Record<string, unknown>[]) : [];
   if (images.length === 0) return { output: pedroOutput, warnings: [] };
 
+  // Brand Visual Profile (Rodada 2, Fatia 2, Prioridade 5) — quando existe, é a fonte de cor
+  // preferida (identidade PERSISTENTE do workspace, nunca regenerada por peça); sem perfil, cai no
+  // comportamento de sempre (só o accent sugerido pela Sofia, prosa de IA, sem persistência).
   const palette = Array.isArray(biancaOutput.suggestedPalette) ? (biancaOutput.suggestedPalette as unknown[]).filter((color): color is string => typeof color === "string") : [];
-  const brandColors = palette.length > 0 ? { accentColor: palette[0] } : undefined;
+  const brandColors = brandVisualProfile
+    ? {
+        accentColor: brandVisualProfile.foundation.accentColor,
+        textColor: brandVisualProfile.foundation.textPrimary,
+        backgroundColor: brandVisualProfile.foundation.surfaceColor,
+      }
+    : palette.length > 0 ? { accentColor: palette[0] } : undefined;
 
   const warnings: string[] = [];
   const updatedImages: Record<string, unknown>[] = [];
@@ -900,7 +917,14 @@ function buildSofiaInput(request: ExecutionTaskHandlerRequest, strategy: Record<
   };
 }
 
-function buildBiancaInput(request: ExecutionTaskHandlerRequest, strategy: Record<string, unknown>, sofia: Record<string, unknown>, copy: Record<string, unknown>, productAsset: ProductAssetPipelineResult): Record<string, unknown> {
+function buildBiancaInput(
+  request: ExecutionTaskHandlerRequest,
+  strategy: Record<string, unknown>,
+  sofia: Record<string, unknown>,
+  copy: Record<string, unknown>,
+  productAsset: ProductAssetPipelineResult,
+  brandVisualProfile: BrandVisualProfile | undefined,
+): Record<string, unknown> {
   const hasCopy = Object.keys(copy).length > 0;
   return {
     ...baseInput(request),
@@ -911,6 +935,10 @@ function buildBiancaInput(request: ExecutionTaskHandlerRequest, strategy: Record
     // Product Asset Pipeline (Rodada 2, Prioridade 1) — Bianca usa isto pra decidir se inclui uma
     // zona `heroProduct` no `adLayoutSpec` (ver `buildPerformanceCreativePlan`/`buildAdLayoutSpec`).
     productAsset,
+    // Brand Visual Profile (Rodada 2, Fatia 2, Prioridade 5) — identidade visual persistente do
+    // workspace; Bianca usa isto pra derivar `visualGrammar` e escolher skins de componente
+    // (Prioridades 6/7). `undefined` quando indisponível — Bianca cai nos padrões neutros de sempre.
+    brandVisualProfile,
     // Requisito do Performance Creative Engine (Fase 2): Bianca precisa da copy real da Maria pra
     // montar `performanceCreativePlan`/`adLayoutSpec` — antes disto ela nunca recebia `copy`.
     // Ausente em `campaign_creation` (copy/visual rodam em paralelo lá) — `hasCopy` reflete isso,
@@ -995,7 +1023,7 @@ function buildPedroInput(
   const isOriginalAssetMode = productAsset?.mode === "original_asset" && Boolean(productAsset.heroProductAssetUrl);
   const heroProductZone = adLayoutSpec?.zones.find((zone) => zone.type === "heroProduct");
   const productBackgroundOnlyInstruction = isOriginalAssetMode
-    ? `O produto real (recorte já pronto) será colado por cima desta imagem depois, exatamente na ${heroProductZone ? describeZonePosition(heroProductZone.position) : "área central"} — NÃO desenhe o produto em nenhuma versão, cópia, silhueta ou interpretação dele em NENHUMA parte do quadro. Gere APENAS o cenário, fundo, atmosfera, iluminação, superfície e elementos de contexto — componha a cena de forma que essa região específica seja onde o produto naturalmente ficaria (ex.: uma superfície, uma mão estendida, um espaço vazio iluminado), mas sem desenhar nenhum objeto que pareça o produto nela.`
+    ? `O produto real (recorte já pronto) será colado por cima desta imagem depois, exatamente na ${heroProductZone ? describeZonePosition(heroProductZone.position) : "área central"} — NÃO desenhe o produto em nenhuma versão, cópia, silhueta ou interpretação dele em NENHUMA parte do quadro. Gere APENAS o cenário, fundo, atmosfera, iluminação, superfície e elementos de contexto — componha a cena de forma que essa região específica seja onde o produto naturalmente ficaria (ex.: uma superfície, uma mão estendida, um espaço vazio iluminado), mas sem desenhar nenhum objeto que pareça o produto nela. Se a cena tiver uma pessoa, mantenha rosto, cabeça e mãos principais FORA dessa região específica — o recorte real vai ser colado exatamente ali por cima de qualquer coisa que estiver nela (achado ao vivo: um rosto acabou coberto pelo produto colado por cima porque a pessoa foi enquadrada bem onde essa região ficava).`
     : undefined;
   const base = baseInput(request);
   return {

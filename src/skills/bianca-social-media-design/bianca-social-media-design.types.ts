@@ -2,6 +2,7 @@ import type { ReferenceIntelligence } from "../../shared/utils/reference-intelli
 import type { PerformanceCreativePlan, AdLayoutSpec } from "../../shared/utils/ad-layout.types.js";
 import type { CommercialFact } from "../../shared/utils/commercial-fact-normalizer.js";
 import type { ProductRenderMode } from "../../shared/utils/product-asset.types.js";
+import type { BrandVisualProfile } from "../../shared/utils/brand-visual-profile.types.js";
 
 export type BiancaSupportedChannel =
   | "instagram"
@@ -124,6 +125,10 @@ export type BiancaDesignRequestInput = {
    * pipeline nunca rodou (ex.: sem `objectStorage` configurado) — degrada para o comportamento de
    * sempre (produto desenhado pelo próprio Pedro). */
   productAsset?: BiancaProductAssetSummary;
+  /** Brand Visual Profile (Rodada 2, Fatia 2, Prioridade 5) — identidade visual persistente do
+   * workspace, usada para derivar `visualGrammar` (Prioridade 7) e `componentSkins` (Prioridade 6)
+   * no plano criativo. `undefined` quando indisponível — degrada para o visual neutro de sempre. */
+  brandVisualProfile?: BrandVisualProfile;
   workflowContext?: Record<string, unknown>;
 };
 

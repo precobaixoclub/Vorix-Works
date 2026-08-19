@@ -35,10 +35,32 @@ export type CommercialFact = {
   source: CommercialFactSource;
   confidence: CommercialFactConfidence;
   verified: boolean;
+  /** Fatia 2, Bloco 0.4 — `true` quando o texto do usuário usa linguagem de atualização/correção
+   * explícita ("agora está", "atualizado", "mudou para"...) sobre este fato. Único sinal de
+   * precedência contextual disponível hoje: os dois fatos chegam na MESMA submissão (não existe
+   * timestamp real de "qual é mais recente" — reference_image e user_text sempre coexistem numa
+   * única chamada de `generate-visual-from-idea.ts`), então "explícito" é o proxy honesto de
+   * "recente"/"intencional" que temos, nunca um timestamp inventado. */
+  explicitOverride?: boolean;
+};
+
+/** Registra COMO um conflito entre fontes foi resolvido pra um tipo de fato — só populado quando
+ * as duas fontes trazem o mesmo `type` (Bloco 0.4: nunca decidir silenciosamente). */
+export type CommercialFactResolution = {
+  type: CommercialFactType;
+  selectedFact: CommercialFact;
+  supersededFacts: CommercialFact[];
+  resolutionReason: string;
 };
 
 export type NormalizedCommercialFacts = {
   facts: CommercialFact[];
+  resolutions: CommercialFactResolution[];
+};
+
+export type CommercialFactMergeResult = {
+  facts: CommercialFact[];
+  resolutions: CommercialFactResolution[];
 };
 
 const BRL_PRICE_TOKEN = String.raw`R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}|\d+(?:\.\d{2})?)`;
@@ -55,6 +77,27 @@ const URGENCY_KEYWORDS = [
   /oferta\s+relâmpago/i,
   /(?:\d+\s*)?(?:horas?|hrs?)\s+(?:restantes?|para\s+acabar)/i,
 ];
+/** Fatia 2, Bloco 0.4 — linguagem explícita de atualização/correção de preço no texto do usuário.
+ * Só ISTO (nunca a mera presença de um preço) autoriza o texto a vencer a imagem de referência num
+ * conflito — "R$34,90" sozinho no texto nunca supera "R$39,99" da imagem; "agora está R$34,90"
+ * supera, porque o usuário está explicitamente corrigindo/atualizando um valor. */
+// `(?=[\s.,!?;:]|$)` no lugar de `\b` depois de alternativas terminadas em vogal acentuada
+// ("é", "está") — `\b` do JS considera só `[A-Za-z0-9_]` como caractere de palavra, então a
+// fronteira entre "á"/"é" (não-palavra pra `\w`) e um espaço (também não-palavra) NUNCA conta como
+// boundary, fazendo `\b` falhar silenciosamente bem no caso mais comum ("agora está R$X").
+const EXPLICIT_OVERRIDE_KEYWORDS = [
+  /\bagora\s+(?:é|est[aá]|custa|sai\s+por|ficou)(?=[\s.,!?;:]|$)/i,
+  /\batualiz(?:ado|ada|ou)\b/i,
+  /\bmudou\s+para\b/i,
+  /\bcorreç(?:ão|ao)(?=[\s.,!?;:]|$)/i,
+  /\bpre[cç]o\s+(?:novo|correto|certo)\b/i,
+  /\bhoje\s+(?:é|est[aá]|custa)(?=[\s.,!?;:]|$)/i,
+  /\bvalor\s+(?:correto|certo|atualizado)\b/i,
+];
+
+function hasExplicitOverrideSignal(text: string): boolean {
+  return EXPLICIT_OVERRIDE_KEYWORDS.some((pattern) => pattern.test(text));
+}
 
 function formatPriceValue(rawDigits: string): string {
   return `R$ ${rawDigits.trim()}`;
@@ -103,6 +146,17 @@ export function extractCommercialFactsFromText(text: string): CommercialFact[] {
     facts.push({ type: "promotion", value: urgencyMatch.trim(), source: "user_text", confidence: "medium", verified: true });
   }
 
+  // Fatia 2, Bloco 0.4 — só preço/desconto (o caso concreto do pedido: "imagem diz R$39,99, texto
+  // diz 'agora está R$34,90'") viram override explícito; frete/urgência nunca competem com a
+  // imagem da mesma forma (não há "preço de frete errado na foto" pra corrigir).
+  if (hasExplicitOverrideSignal(text)) {
+    for (const fact of facts) {
+      if (fact.type === "current_price" || fact.type === "previous_price" || fact.type === "discount_percent") {
+        fact.explicitOverride = true;
+      }
+    }
+  }
+
   return facts;
 }
 
@@ -125,15 +179,59 @@ export function commercialFactsFromReferenceIntelligence(facts: ReferenceCommerc
 
 /**
  * Combina fatos já extraídos de duas fontes num único formato — quem consome nunca precisa saber
- * a origem. Quando o MESMO `type` aparece nas duas listas, `imageFacts` sempre vence (visão
- * computacional sobre uma foto real é mais confiável que regex sobre texto livre); nunca mistura
+ * a origem. Quando o MESMO `type` aparece nas duas listas (Fatia 2, Bloco 0.4 — precedência
+ * contextual, não mais "imagem sempre vence"):
+ *
+ * 1. Texto com `explicitOverride` (linguagem de atualização/correção explícita, ver
+ *    `hasExplicitOverrideSignal`) vence a imagem — o usuário está corrigindo um valor
+ *    especificamente, não só mencionando um preço qualquer.
+ * 2. Caso contrário, a imagem continua vencendo por padrão (visão computacional sobre uma foto
+ *    real é mais confiável que regex sobre texto livre não-explícito).
+ *
+ * Nunca decide silenciosamente: todo conflito real (as duas fontes trazem o mesmo `type`) vira uma
+ * entrada em `resolutions`, mesmo quando o resultado é "imagem venceu por padrão" — nunca mistura
  * metade de uma fonte com metade de outra para o mesmo tipo de fato. Genérico o bastante pra
  * aceitar fatos de QUALQUER fonte em `imageFacts`/`textFacts` — o nome reflete o caso de uso mais
  * comum hoje (imagem de referência vs. texto livre), não uma restrição do tipo.
  */
-export function mergeCommercialFacts(imageFacts: CommercialFact[], textFacts: CommercialFact[]): CommercialFact[] {
-  const typesFromImage = new Set(imageFacts.map((fact) => fact.type));
-  return [...imageFacts, ...textFacts.filter((fact) => !typesFromImage.has(fact.type))];
+export function mergeCommercialFacts(imageFacts: CommercialFact[], textFacts: CommercialFact[]): CommercialFactMergeResult {
+  const imageByType = new Map(imageFacts.map((fact) => [fact.type, fact]));
+  const textByType = new Map(textFacts.map((fact) => [fact.type, fact]));
+  const allTypes = new Set<CommercialFactType>([...imageByType.keys(), ...textByType.keys()]);
+
+  const facts: CommercialFact[] = [];
+  const resolutions: CommercialFactResolution[] = [];
+
+  for (const type of allTypes) {
+    const imageFact = imageByType.get(type);
+    const textFact = textByType.get(type);
+
+    if (imageFact && textFact) {
+      if (textFact.explicitOverride) {
+        facts.push(textFact);
+        resolutions.push({
+          type,
+          selectedFact: textFact,
+          supersededFacts: [imageFact],
+          resolutionReason: "Texto do usuário contém linguagem explícita de atualização/correção de preço — vence a imagem de referência.",
+        });
+      } else {
+        facts.push(imageFact);
+        resolutions.push({
+          type,
+          selectedFact: imageFact,
+          supersededFacts: [textFact],
+          resolutionReason: "Imagem de referência é a fonte padrão mais confiável (visão computacional sobre foto real vs. regex sobre texto livre); texto não trouxe sinal explícito de atualização.",
+        });
+      }
+    } else if (imageFact) {
+      facts.push(imageFact);
+    } else if (textFact) {
+      facts.push(textFact);
+    }
+  }
+
+  return { facts, resolutions };
 }
 
 export type CommercialFactNormalizerInput = {
@@ -153,7 +251,7 @@ export type CommercialFactNormalizerInput = {
 export function normalizeCommercialFacts(input: CommercialFactNormalizerInput): NormalizedCommercialFacts {
   const fromImage = commercialFactsFromReferenceIntelligence(input.referenceIntelligence?.commercialFacts);
   const fromText = extractCommercialFactsFromText(input.ideaText ?? "");
-  return { facts: mergeCommercialFacts(fromImage, fromText) };
+  return mergeCommercialFacts(fromImage, fromText);
 }
 
 /** Acesso por tipo — evita todo consumidor reimplementar `facts.find(f => f.type === ...)`. */

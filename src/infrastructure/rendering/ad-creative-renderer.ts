@@ -89,6 +89,7 @@ function resolveZoneText(zone: AdLayoutZone, plan: PerformanceCreativePlan): str
 }
 
 function resolveZoneContent(zone: AdLayoutZone, plan: PerformanceCreativePlan, widthPx: number, heightPx: number, colors: BrandRenderColors): ComponentRenderResult | undefined {
+  const skins = plan.componentSkins;
   switch (zone.type) {
     case "price": {
       if (!plan.price) return undefined;
@@ -100,23 +101,23 @@ function resolveZoneContent(zone: AdLayoutZone, plan: PerformanceCreativePlan, w
       const priceAccentColor = priceAccentContrast !== undefined && priceAccentContrast < MIN_READABLE_CONTRAST
         ? pickReadableTextColor(colors.backgroundColor)
         : colors.accentColor;
-      return PriceBlock({ price: plan.price, oldPrice: plan.oldPrice, variant: "dominant", widthPx, heightPx, accentColor: priceAccentColor, textColor: colors.textColor, backgroundColor: colors.backgroundColor });
+      return PriceBlock({ price: plan.price, oldPrice: plan.oldPrice, variant: "dominant", widthPx, heightPx, accentColor: priceAccentColor, textColor: colors.textColor, backgroundColor: colors.backgroundColor, skin: skins?.price });
     }
     case "discount":
-      return plan.discount ? DiscountBadge({ discount: plan.discount.includes("%") ? plan.discount : `${plan.discount}%`, widthPx, heightPx, textColor: "#FFFFFF", backgroundColor: "#DC2626" }) : undefined;
+      return plan.discount ? DiscountBadge({ discount: plan.discount.includes("%") ? plan.discount : `${plan.discount}%`, widthPx, heightPx, textColor: "#FFFFFF", backgroundColor: "#DC2626", skin: skins?.discount }) : undefined;
     case "headline":
       // Headline é desenhado diretamente sobre a foto gerada pelo Pedro (fundo imprevisível,
       // nunca uma cor sólida) — sem um scrim (véu escuro translúcido) atrás do texto, a
       // legibilidade depende do que a foto tem embaixo, o que já produziu texto quase invisível
       // numa geração real. Scrim escuro + texto branco é a técnica padrão de design (Stories,
       // templates de anúncio) para garantir contraste em qualquer fundo fotográfico.
-      return plan.primaryHook ? Headline({ text: plan.primaryHook, widthPx, heightPx, textColor: "#FFFFFF", backgroundColor: "rgba(0, 0, 0, 0.55)" }) : undefined;
+      return plan.primaryHook ? Headline({ text: plan.primaryHook, widthPx, heightPx, textColor: "#FFFFFF", backgroundColor: "rgba(0, 0, 0, 0.55)", skin: skins?.headline }) : undefined;
     case "cta":
       // Texto do CTA precisa se adaptar ao brilho do `accentColor` da marca (pode ser claro ou
       // escuro) — texto escuro fixo sobre um accent escuro (ex.: indigo/roxo) fica ilegível.
-      return plan.cta ? CTA({ text: plan.cta, widthPx, heightPx, textColor: pickReadableTextColor(colors.accentColor), backgroundColor: colors.accentColor }) : undefined;
+      return plan.cta ? CTA({ text: plan.cta, widthPx, heightPx, textColor: pickReadableTextColor(colors.accentColor), backgroundColor: colors.accentColor, skin: skins?.cta }) : undefined;
     case "rating":
-      return plan.socialProof ? RatingBlock({ rating: plan.socialProof, widthPx, heightPx, textColor: colors.textColor, backgroundColor: colors.backgroundColor }) : undefined;
+      return plan.socialProof ? RatingBlock({ rating: plan.socialProof, widthPx, heightPx, textColor: colors.textColor, backgroundColor: colors.backgroundColor, skin: skins?.rating }) : undefined;
     case "salesProof":
       return plan.socialProof ? SalesProof({ text: plan.socialProof, widthPx, heightPx, textColor: colors.textColor, backgroundColor: colors.backgroundColor }) : undefined;
     case "badge":

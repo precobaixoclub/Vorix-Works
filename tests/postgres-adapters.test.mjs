@@ -6,6 +6,8 @@ import { applyMigrations } from "../dist/infrastructure/storage/postgres/migrati
 import { PostgresWorkspaceRepository } from "../dist/infrastructure/storage/postgres/postgres-workspace-repository.js";
 import { PostgresAssetLibraryRepository } from "../dist/infrastructure/storage/postgres/postgres-asset-library-repository.js";
 import { PostgresChatRepository } from "../dist/infrastructure/storage/postgres/postgres-chat-repository.js";
+import { PostgresBrandVisualProfileRepository } from "../dist/infrastructure/storage/postgres/postgres-brand-visual-profile-repository.js";
+import { buildConservativeDefaultProfile } from "../dist/shared/utils/brand-visual-profile.types.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "db", "migrations");
@@ -264,4 +266,67 @@ test("Postgres Chat: apagar a sessão faz cascata nas mensagens e anexos", async
   const attachmentLeft = await db.pool.query("select 1 from chat_message_attachments where message_id = $1", [message.id]);
   assert.equal(messageLeft.rows.length, 0);
   assert.equal(attachmentLeft.rows.length, 0);
+});
+
+// ---------------------------------------------------------------------------------------------
+// PostgresBrandVisualProfileRepository
+// ---------------------------------------------------------------------------------------------
+
+test("Postgres Brand Visual Profile: getByWorkspace() sem perfil retorna undefined", async () => {
+  const repo = new PostgresBrandVisualProfileRepository(db.pool, { idGenerator: (p) => nextId(p) });
+  const result = await repo.getByWorkspace("nao-existe-brand-profile");
+  assert.equal(result, undefined);
+});
+
+test("Postgres Brand Visual Profile: upsert() cria e getByWorkspace() faz round trip da estrutura aninhada completa", async () => {
+  const workspaceRepo = new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") });
+  const profileRepo = new PostgresBrandVisualProfileRepository(db.pool, { idGenerator: (p) => nextId(p) });
+  const workspace = await workspaceRepo.create({ tenantId: "tenant-pg-brand-1", name: "Com identidade" });
+
+  const now = new Date().toISOString();
+  const profile = buildConservativeDefaultProfile(workspace.id, now);
+  const created = await profileRepo.upsert(profile);
+  assert.equal(created.workspaceId, workspace.id);
+  assert.equal(created.source, "bootstrap_conservative");
+
+  const fetched = await profileRepo.getByWorkspace(workspace.id);
+  assert.deepEqual(fetched.foundation, profile.foundation);
+  assert.deepEqual(fetched.typography, profile.typography);
+  assert.deepEqual(fetched.shapeLanguage, profile.shapeLanguage);
+  assert.deepEqual(fetched.personality, profile.personality);
+  assert.deepEqual(fetched.components, profile.components);
+  assert.deepEqual(fetched.imagery, profile.imagery);
+  assert.deepEqual(fetched.logo, profile.logo);
+});
+
+test("Postgres Brand Visual Profile: upsert() no mesmo workspace substitui em vez de duplicar (1 perfil por workspace)", async () => {
+  const workspaceRepo = new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") });
+  const profileRepo = new PostgresBrandVisualProfileRepository(db.pool, { idGenerator: (p) => nextId(p) });
+  const workspace = await workspaceRepo.create({ tenantId: "tenant-pg-brand-2", name: "Reupsert" });
+
+  const now = new Date().toISOString();
+  const first = buildConservativeDefaultProfile(workspace.id, now);
+  await profileRepo.upsert(first);
+
+  const updated = { ...first, source: "manual", foundation: { ...first.foundation, primaryColor: "#FF0000" }, updatedAt: new Date().toISOString() };
+  await profileRepo.upsert(updated);
+
+  const rows = await db.pool.query("select count(*)::int as count from brand_visual_profiles where workspace_id = $1", [workspace.id]);
+  assert.equal(rows.rows[0].count, 1);
+
+  const fetched = await profileRepo.getByWorkspace(workspace.id);
+  assert.equal(fetched.source, "manual");
+  assert.equal(fetched.foundation.primaryColor, "#FF0000");
+});
+
+test("Postgres Brand Visual Profile: apagar o workspace faz cascata no perfil", async () => {
+  const workspaceRepo = new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") });
+  const profileRepo = new PostgresBrandVisualProfileRepository(db.pool, { idGenerator: (p) => nextId(p) });
+  const workspace = await workspaceRepo.create({ tenantId: "tenant-pg-brand-3", name: "Vai sumir com perfil" });
+  await profileRepo.upsert(buildConservativeDefaultProfile(workspace.id, new Date().toISOString()));
+
+  await db.pool.query("delete from workspaces where id = $1", [workspace.id]);
+
+  const left = await db.pool.query("select 1 from brand_visual_profiles where workspace_id = $1", [workspace.id]);
+  assert.equal(left.rows.length, 0);
 });

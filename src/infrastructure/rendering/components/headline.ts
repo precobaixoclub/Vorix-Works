@@ -1,4 +1,6 @@
 import { el } from "./satori-node.js";
+import { resolveSkinTreatment } from "./skin-treatment.js";
+import type { ComponentSkin } from "../../../shared/utils/brand-visual-profile.types.js";
 import type { ComponentRenderResult } from "./price-block.js";
 
 export type HeadlineProps = {
@@ -7,6 +9,7 @@ export type HeadlineProps = {
   heightPx: number;
   textColor: string;
   backgroundColor?: string;
+  skin?: ComponentSkin;
 };
 
 /** Máximo de linhas antes de considerar o headline "cortado" — insumo do quality gate de
@@ -20,9 +23,10 @@ function estimateLineCount(text: string, widthPx: number, fontSizePx: number): n
 }
 
 export function Headline(props: HeadlineProps): ComponentRenderResult {
+  const treatment = resolveSkinTreatment(props.skin);
   const fontSize = Math.round(props.heightPx * 0.32);
   const lineCount = estimateLineCount(props.text, props.widthPx, fontSize);
-  const padding = Math.round(props.heightPx * 0.12);
+  const padding = Math.round(props.heightPx * 0.12 * treatment.paddingScale);
   const node = el(
     "div",
     {
@@ -34,10 +38,12 @@ export function Headline(props: HeadlineProps): ComponentRenderResult {
       padding,
       ...(props.backgroundColor ? { background: props.backgroundColor } : {}),
       fontSize,
-      fontWeight: 700,
+      fontWeight: treatment.fontWeight,
       color: props.textColor,
       fontFamily: "Geist",
       lineHeight: 1.15,
+      ...(treatment.letterSpacing ? { letterSpacing: treatment.letterSpacing } : {}),
+      ...(treatment.textTransform ? { textTransform: treatment.textTransform } : {}),
     },
     props.text,
   );

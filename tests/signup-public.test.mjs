@@ -79,11 +79,11 @@ test("signupPublic: cria User + Membership + Workspace + tenant_billing FREE e d
   assert.equal(workspaces.rows[0].name, "Meu Primeiro Workspace");
   assert.equal(workspaces.rows[0].kind, "default");
 
-  const billing = await db.pool.query("select plan_code, subscription_status, monthly_token_quota from tenant_billing where tenant_id = $1", [result.tenantId]);
+  const billing = await db.pool.query("select plan_code, subscription_status, monthly_credits_quota from tenant_billing where tenant_id = $1", [result.tenantId]);
   assert.equal(billing.rows.length, 1);
   assert.equal(billing.rows[0].plan_code, "FREE");
   assert.equal(billing.rows[0].subscription_status, "trial");
-  assert.equal(Number(billing.rows[0].monthly_token_quota), 100_000);
+  assert.equal(Number(billing.rows[0].monthly_credits_quota), 50);
 });
 
 test("signupPublic: workspaceName ausente cai no default 'Workspace de <name>'", async () => {

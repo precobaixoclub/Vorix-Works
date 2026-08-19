@@ -745,6 +745,9 @@ test("VisualPipelineExecutionTaskHandler: Product Asset Pipeline (Rodada 2) reco
     // espaço — a instrução precisa incluir a posição real da zona heroProduct, não só "em algum
     // lugar". Região faixa central (26-80% da altura, per DEFAULT_ZONE_POSITIONS.heroProduct).
     assert.match(capturedInputs.pedro.workflowContext.productBackgroundOnlyInstruction, /\d+-\d+% da largura, \d+-\d+% da altura/);
+    // Fatia 2, Bloco 0.3: regressão do achado ao vivo de o produto colado por cima acabar
+    // sobrepondo um rosto — a instrução precisa proibir explicitamente rosto/cabeça/mãos na zona.
+    assert.match(capturedInputs.pedro.workflowContext.productBackgroundOnlyInstruction, /rosto, cabeça e mãos/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

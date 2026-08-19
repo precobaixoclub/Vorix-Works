@@ -103,6 +103,34 @@ test("extractCommercialFactsFromText: '50% OFF' e '-50%' também são reconhecid
   assert.equal(extractCommercialFactsFromText("Só -50% nesta semana.").find((f) => f.type === "discount_percent").value, "50%");
 });
 
+test("extractCommercialFactsFromText: 'agora está R$X' marca explicitOverride no preço extraído (Bloco 0.4)", () => {
+  const facts = extractCommercialFactsFromText("O tênis agora está R$ 34,90.");
+
+  const price = facts.find((f) => f.type === "current_price");
+  assert.equal(price.value, "R$ 34,90");
+  assert.equal(price.explicitOverride, true);
+});
+
+test("extractCommercialFactsFromText: 'atualizado'/'preço correto'/'correção:' também marcam explicitOverride", () => {
+  assert.equal(extractCommercialFactsFromText("Valor atualizado: R$ 89,90.").find((f) => f.type === "current_price").explicitOverride, true);
+  assert.equal(extractCommercialFactsFromText("Preço correto é R$ 89,90.").find((f) => f.type === "current_price").explicitOverride, true);
+  assert.equal(extractCommercialFactsFromText("Correção: R$ 89,90.").find((f) => f.type === "current_price").explicitOverride, true);
+});
+
+test("extractCommercialFactsFromText: preço mencionado SEM linguagem de atualização nunca marca explicitOverride", () => {
+  const facts = extractCommercialFactsFromText("Tênis por R$ 89,90, aproveite.");
+
+  const price = facts.find((f) => f.type === "current_price");
+  assert.equal(price.explicitOverride, undefined);
+});
+
+test("extractCommercialFactsFromText: explicitOverride nunca se aplica a shipping/promotion (só preço/desconto)", () => {
+  const facts = extractCommercialFactsFromText("Frete grátis, agora está com estoque limitado.");
+
+  const shipping = facts.find((f) => f.type === "shipping");
+  assert.equal(shipping.explicitOverride, undefined);
+});
+
 test("extractCommercialFactsFromText: 'frete grátis' vira fato de shipping", () => {
   const facts = extractCommercialFactsFromText("Compre agora com frete grátis para todo o Brasil.");
 
@@ -192,25 +220,55 @@ test("normalizeCommercialFacts: nem imagem nem texto com fato comercial devolve 
 });
 
 test("normalizeCommercialFacts: entradas totalmente ausentes nunca lança", () => {
-  assert.deepEqual(normalizeCommercialFacts({}), { facts: [] });
+  assert.deepEqual(normalizeCommercialFacts({}), { facts: [], resolutions: [] });
 });
 
 // ---------------------------------------------------------------------------------------------
 // mergeCommercialFacts / parseCommercialFacts (usados nos limites do pipeline: João -> Bianca)
 // ---------------------------------------------------------------------------------------------
 
-test("mergeCommercialFacts: imagem sempre vence para o mesmo tipo, tipos exclusivos de cada lado coexistem", () => {
+test("mergeCommercialFacts: sem override explícito, imagem vence por padrão para o mesmo tipo; tipos exclusivos de cada lado coexistem", () => {
   const imageFacts = [{ type: "current_price", value: "R$ 39,99", source: "reference_image", confidence: "high", verified: true }];
   const textFacts = [
     { type: "current_price", value: "R$ 45,00", source: "user_text", confidence: "medium", verified: true },
     { type: "shipping", value: "Frete grátis", source: "user_text", confidence: "high", verified: true },
   ];
 
-  const merged = mergeCommercialFacts(imageFacts, textFacts);
+  const { facts, resolutions } = mergeCommercialFacts(imageFacts, textFacts);
 
-  assert.equal(merged.length, 2);
-  assert.equal(merged.find((f) => f.type === "current_price").source, "reference_image");
-  assert.equal(merged.find((f) => f.type === "shipping").source, "user_text");
+  assert.equal(facts.length, 2);
+  assert.equal(facts.find((f) => f.type === "current_price").source, "reference_image");
+  assert.equal(facts.find((f) => f.type === "shipping").source, "user_text");
+  // Bloco 0.4: todo conflito real vira uma resolução registrada, mesmo quando a imagem vence por padrão.
+  assert.equal(resolutions.length, 1);
+  assert.equal(resolutions[0].type, "current_price");
+  assert.equal(resolutions[0].selectedFact.source, "reference_image");
+  assert.equal(resolutions[0].supersededFacts[0].source, "user_text");
+  assert.match(resolutions[0].resolutionReason, /padrão/);
+});
+
+test("mergeCommercialFacts: texto com override explícito vence a imagem (Bloco 0.4 — caso do pedido: 'agora está R$34,90')", () => {
+  const imageFacts = [{ type: "current_price", value: "R$ 39,99", source: "reference_image", confidence: "high", verified: true }];
+  const textFacts = [{ type: "current_price", value: "R$ 34,90", source: "user_text", confidence: "high", verified: true, explicitOverride: true }];
+
+  const { facts, resolutions } = mergeCommercialFacts(imageFacts, textFacts);
+
+  assert.equal(facts.length, 1);
+  assert.equal(facts[0].value, "R$ 34,90");
+  assert.equal(facts[0].source, "user_text");
+  assert.equal(resolutions.length, 1);
+  assert.equal(resolutions[0].selectedFact.value, "R$ 34,90");
+  assert.equal(resolutions[0].supersededFacts[0].value, "R$ 39,99");
+  assert.match(resolutions[0].resolutionReason, /explícita/);
+});
+
+test("mergeCommercialFacts: sem conflito real (só um lado traz o tipo), nenhuma resolução é registrada", () => {
+  const imageFacts = [{ type: "current_price", value: "R$ 39,99", source: "reference_image", confidence: "high", verified: true }];
+
+  const { facts, resolutions } = mergeCommercialFacts(imageFacts, []);
+
+  assert.equal(facts.length, 1);
+  assert.deepEqual(resolutions, []);
 });
 
 test("parseCommercialFacts: reidrata um array JSON válido de volta em CommercialFact[]", () => {

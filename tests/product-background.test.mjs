@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import sharp from "sharp";
-import { analyzeProductBackground, extractProductAsset } from "../dist/infrastructure/image-processing/product-background.js";
+import { computeAssetSuitabilityScore, extractProductAsset } from "../dist/infrastructure/image-processing/product-background.js";
 
 async function solidPng(width, height, color) {
   return sharp({ create: { width, height, channels: 4, background: color } }).png().toBuffer();
@@ -25,22 +25,26 @@ async function countOpaquePixels(buffer) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// analyzeProductBackground
+// computeAssetSuitabilityScore (Fatia 2, Bloco 0.1)
 // ---------------------------------------------------------------------------------------------
 
-test("analyzeProductBackground: fundo branco sólido é detectado como uniforme, com a cor dominante correta", async () => {
+test("computeAssetSuitabilityScore: produto de alto contraste em fundo branco sólido e boa resolução recebe score alto (confiança 'high')", async () => {
   const buffer = await circleOnBackground(300, { r: 255, g: 255, b: 255, alpha: 1 }, { r: 200, g: 40, b: 40 });
 
-  const analysis = await analyzeProductBackground(buffer);
+  const result = await computeAssetSuitabilityScore(buffer);
 
-  assert.ok(analysis);
-  assert.equal(analysis.backgroundUniform, true);
-  assert.equal(analysis.dominantBackgroundColor, "#FFFFFF");
-  assert.equal(analysis.widthPx, 800);
-  assert.equal(analysis.heightPx, 800);
+  assert.ok(result);
+  assert.equal(result.confidence, "high");
+  assert.ok(result.score >= 75, `esperava score >= 75, veio ${result.score}`);
+  assert.equal(result.dominantBackgroundColor, "#FFFFFF");
+  assert.equal(result.widthPx, 800);
+  assert.equal(result.heightPx, 800);
+  assert.ok(result.factors.edgeUniformity >= 90);
+  assert.ok(result.factors.extractionCleanliness > 0);
+  assert.ok(result.reasoning.length > 0);
 });
 
-test("analyzeProductBackground: fundo ruidoso/fotográfico (gradiente simulado por múltiplos blocos de cor) NÃO é tratado como uniforme", async () => {
+test("computeAssetSuitabilityScore: fundo ruidoso/fotográfico (blocos de cor variados) derruba edgeUniformity e o score geral", async () => {
   const noisyBackground = await sharp({
     create: { width: 800, height: 800, channels: 4, background: { r: 30, g: 30, b: 30, alpha: 1 } },
   })
@@ -53,16 +57,61 @@ test("analyzeProductBackground: fundo ruidoso/fotográfico (gradiente simulado p
     .png()
     .toBuffer();
 
-  const analysis = await analyzeProductBackground(noisyBackground);
+  const result = await computeAssetSuitabilityScore(noisyBackground);
 
-  assert.ok(analysis);
-  assert.equal(analysis.backgroundUniform, false);
-  assert.equal(analysis.dominantBackgroundColor, undefined);
+  assert.ok(result);
+  assert.notEqual(result.confidence, "high");
+  assert.ok(result.factors.edgeUniformity < 50, `esperava edgeUniformity baixo, veio ${result.factors.edgeUniformity}`);
 });
 
-test("analyzeProductBackground: bytes inválidos nunca lança, devolve undefined", async () => {
-  const analysis = await analyzeProductBackground(Buffer.from("not an image"));
-  assert.equal(analysis, undefined);
+test("computeAssetSuitabilityScore: produto com cor muito parecida com o fundo (baixo contraste) reduz productBackgroundContrast", async () => {
+  // Fundo cinza claro, "produto" cinza quase idêntico — risco real do chroma-key remover parte do produto.
+  const buffer = await circleOnBackground(300, { r: 235, g: 235, b: 235, alpha: 1 }, { r: 225, g: 225, b: 225 });
+
+  const result = await computeAssetSuitabilityScore(buffer);
+
+  assert.ok(result);
+  assert.ok(result.factors.productBackgroundContrast < 40, `esperava contraste baixo, veio ${result.factors.productBackgroundContrast}`);
+});
+
+test("computeAssetSuitabilityScore: resolução abaixo do mínimo reduz resolutionAdequacy a 0", async () => {
+  const buffer = await circleOnBackground(150, { r: 255, g: 255, b: 255, alpha: 1 }, { r: 200, g: 40, b: 40 }, 400);
+
+  const result = await computeAssetSuitabilityScore(buffer);
+
+  assert.ok(result);
+  assert.equal(result.factors.resolutionAdequacy, 0);
+});
+
+test("computeAssetSuitabilityScore: resolução no ideal (>=1200px) satura resolutionAdequacy em 100", async () => {
+  const buffer = await circleOnBackground(500, { r: 255, g: 255, b: 255, alpha: 1 }, { r: 200, g: 40, b: 40 }, 1200);
+
+  const result = await computeAssetSuitabilityScore(buffer);
+
+  assert.ok(result);
+  assert.equal(result.factors.resolutionAdequacy, 100);
+});
+
+test("computeAssetSuitabilityScore: bytes inválidos nunca lança, devolve undefined", async () => {
+  const result = await computeAssetSuitabilityScore(Buffer.from("not an image"));
+  assert.equal(result, undefined);
+});
+
+test("computeAssetSuitabilityScore: reasoning sempre identifica o fator mais fraco, nunca genérico", async () => {
+  const noisyBackground = await sharp({
+    create: { width: 800, height: 800, channels: 4, background: { r: 30, g: 30, b: 30, alpha: 1 } },
+  })
+    .composite([
+      { input: await solidPng(800, 200, { r: 200, g: 180, b: 40, alpha: 1 }), left: 0, top: 0 },
+      { input: await solidPng(800, 200, { r: 10, g: 120, b: 200, alpha: 1 }), left: 0, top: 600 },
+    ])
+    .png()
+    .toBuffer();
+
+  const result = await computeAssetSuitabilityScore(noisyBackground);
+
+  assert.ok(result);
+  assert.match(result.reasoning, /fator mais fraco/);
 });
 
 // ---------------------------------------------------------------------------------------------

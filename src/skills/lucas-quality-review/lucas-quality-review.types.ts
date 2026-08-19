@@ -1,6 +1,7 @@
 import type { ContentQualityProfile } from "../../shared/utils/content-quality-profile.js";
 import type { ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
 import type { AdLayoutZoneType } from "../../shared/utils/ad-layout.types.js";
+import type { CreativeQualityScoreResult } from "../../shared/utils/creative-quality-score.js";
 
 /** Espelha por convenção `TypographyGeometryEntry` (`ad-creative-renderer.ts`) — a geometria EXATA
  * que o renderer determinístico usou por zona (Performance Creative Engine, Fase 16). Fonte de
@@ -586,6 +587,13 @@ export type LucasQualityReviewOutput = {
   nextSteps: string[];
   /** Perfil de qualidade usado nesta revisão (Feed/Story/Carrossel/Reels/Vídeo curto) — mesmo perfil que a Maria usou. */
   qualityProfile: ContentQualityProfile;
+  /** Unified Final Creative Score (Rodada 2, Fatia 2, Prioridade 10) — score 0-100 consolidado em
+   * 10 dimensões, só calculado quando o Performance Creative Engine rodou (`typographyGeometry`
+   * presente). NÃO substitui `reviewStatus`/`BLOCKING_ISSUE_CODES` — falha crítica objetiva
+   * (`PRODUCT_FIDELITY_MISMATCH`/`COMMERCIAL_HALLUCINATION_DETECTED`/`TYPOGRAPHY_TEXT_CLIPPED`/
+   * `TYPOGRAPHY_CONTRAST_LOW`) força `verdict: "reject"` mesmo com nota alta. `undefined` quando
+   * não aplicável (mesma condição de ausência de `typographyGeometry`). */
+  creativeQualityScore?: CreativeQualityScoreResult;
   aiSupportUsed: boolean;
   /** `provider.id` do Ícaro quando `aiSupportUsed` é `true` — ver `JoaoMarketingStrategyOutput.aiProviderId`. */
   aiProviderId?: string;

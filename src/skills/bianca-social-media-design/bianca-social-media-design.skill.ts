@@ -13,7 +13,13 @@ import { rankCommercialArguments, type CommercialArgumentInputs } from "../../sh
 import { selectLayoutFamily, resolveCompatibleDensity, LAYOUT_FAMILY_RULES } from "../../shared/utils/layout-family-rules.js";
 import { resolveInformationBudget, applyInformationBudget } from "../../shared/utils/information-budget.js";
 import { clampZoneToSafeArea, type AdSafeZonePlatform } from "../../shared/utils/ad-safe-zones.js";
-import type { AdLayoutSpec, AdLayoutZone, AdLayoutZoneType, PerformanceCreativePlan, VisualDensity } from "../../shared/utils/ad-layout.types.js";
+import { resolveZoneCollisions } from "../../shared/utils/zone-collision.js";
+import { deriveVisualGrammar } from "../../shared/utils/visual-grammar.types.js";
+import { resolveZoneSkins } from "../../shared/utils/component-skin-resolver.js";
+import { generateCreativeCandidates, computeCandidateDiversity } from "../../shared/utils/creative-candidate-planning.js";
+import { selectWinningCandidate, type CandidateForScoring } from "../../shared/utils/pre-render-creative-score.js";
+import type { AdLayoutSpec, AdLayoutZone, AdLayoutZoneType, CreativeCandidateSummary, PerformanceCreativePlan, VisualDensity } from "../../shared/utils/ad-layout.types.js";
+import type { LayoutFamilySelectionInput } from "../../shared/utils/layout-family-rules.js";
 import type { DeveloperAssistancePendingOutput } from "../../application/ai/developer-assistance.types.js";
 import { biancaSocialMediaDesignManifest } from "./bianca.manifest.js";
 import type { BiancaLogAction, BiancaLoggerPort } from "./bianca-log.contract.js";
@@ -408,11 +414,13 @@ export function buildPerformanceCreativePlan(input: BiancaDesignRequestInput): P
   const referenceIntelligence = input.joaoStrategy.referenceIntelligence;
   const mariaCopy = input.mariaCopy;
 
-  // Commercial Fact Normalizer (Rodada 2, Prioridade 4) — preço/desconto/frete podem vir de uma
-  // imagem de referência OU do texto livre da ideia; a partir daqui nenhum campo abaixo precisa
-  // saber qual das duas fontes trouxe o dado. Imagem sempre vence quando as duas trazem o mesmo
-  // tipo de fato (`mergeCommercialFacts`).
-  const normalizedFacts = mergeCommercialFacts(
+  // Commercial Fact Normalizer (Rodada 2, Prioridade 4 + Fatia 2, Bloco 0.4) — preço/desconto/
+  // frete podem vir de uma imagem de referência OU do texto livre da ideia; a partir daqui nenhum
+  // campo abaixo precisa saber qual das duas fontes trouxe o dado. Precedência contextual: texto
+  // com sinal explícito de atualização/correção vence a imagem; caso contrário a imagem vence por
+  // padrão (`mergeCommercialFacts`) — nunca decide silenciosamente, `resolutions` registra todo
+  // conflito real, repassado no plano pra observabilidade/relatório.
+  const { facts: normalizedFacts, resolutions: commercialFactResolutions } = mergeCommercialFacts(
     commercialFactsFromReferenceIntelligence(referenceIntelligence?.commercialFacts),
     input.joaoStrategy.textCommercialFacts ?? [],
   );
@@ -484,6 +492,10 @@ export function buildPerformanceCreativePlan(input: BiancaDesignRequestInput): P
     informationPriority,
     productRenderMode: input.productAsset?.mode,
     heroProductAssetUrl: input.productAsset?.heroProductAssetUrl,
+    commercialFactResolutions,
+    visualGrammar: input.brandVisualProfile ? deriveVisualGrammar(input.brandVisualProfile) : undefined,
+    componentSkins: resolveZoneSkins(input.brandVisualProfile),
+    brandVisualProfileSource: input.brandVisualProfile?.source,
   };
 }
 
@@ -576,9 +588,15 @@ export function buildAdLayoutSpec(plan: PerformanceCreativePlan | undefined, inp
 
   const budget = resolveInformationBudget(plan.visualDensity, aspectRatio);
   const budgetedZones = applyInformationBudget(zones, budget);
+  // Fatia 2, Bloco 0.2 — achado ao vivo: headline x badge (e por extensão qualquer par de zonas de
+  // texto/selo) podem se sobrepor de verdade quando o texto do headline é longo o bastante pra
+  // ocupar a largura nominal inteira. Nunca resolvido reduzindo fonte — reflow geométrico
+  // determinístico, roda ANTES do heroProduct entrar (heroProduct é a camada de fundo, atrás de
+  // tudo — nunca deveria encolher/ser encolhido por causa dele).
+  const collisionFreeZones = resolveZoneCollisions(budgetedZones);
 
   if (hasHeroProduct) {
-    budgetedZones.push({ type: "heroProduct", priority: 0, position: clampZoneToSafeArea(DEFAULT_ZONE_POSITIONS.heroProduct, platform) });
+    collisionFreeZones.push({ type: "heroProduct", priority: 0, position: clampZoneToSafeArea(DEFAULT_ZONE_POSITIONS.heroProduct, platform) });
   }
 
   return {
@@ -586,7 +604,81 @@ export function buildAdLayoutSpec(plan: PerformanceCreativePlan | undefined, inp
     aspectRatio,
     layoutFamily: plan.layoutFamily,
     density: plan.visualDensity,
-    zones: budgetedZones,
+    zones: collisionFreeZones,
+  };
+}
+
+/** Reconstrói o `LayoutFamilySelectionInput` inteiramente a partir do plano JÁ montado — os
+ * mesmos sinais que `selectLayoutFamily` usou (ver `buildPerformanceCreativePlan`), sem duplicar
+ * a extração dos fatos comerciais. Garante que `generateCreativeCandidates` ranqueie as famílias
+ * com EXATAMENTE o mesmo critério que decidiu a família "padrão" do plano base — candidato A é
+ * sempre essa mesma família (nunca diverge por um cálculo paralelo). */
+function buildLayoutFamilySelectionInputFromPlan(plan: PerformanceCreativePlan, input: BiancaDesignRequestInput): LayoutFamilySelectionInput {
+  return {
+    objective: plan.objective,
+    infoQuantity: plan.informationPriority.length,
+    hasStrongPrice: Boolean(plan.price),
+    hasDiscount: Boolean(plan.discount),
+    hasSocialProof: false,
+    hasUrgency: Boolean(plan.urgency),
+    hasManyBenefits: plan.benefits.length >= 2,
+    format: input.sofiaDirection.recommendedAspectRatio,
+    hasReferenceImage: Boolean(input.joaoStrategy.referenceIntelligence),
+  };
+}
+
+/**
+ * Multi-Candidate Planning + Pre-Render Score (Fatia 2, Prioridades 8-9) — gera até 3 candidatos
+ * criativos REALMENTE diferentes a partir do plano base, monta o `AdLayoutSpec` de cada um
+ * (barato — nenhuma chamada de IA, nenhuma geração de imagem), pontua e escolhe o vencedor.
+ * Só o vencedor chega ao Pedro/renderer ("pensar três vezes barato, gerar uma vez caro").
+ */
+function buildCreativeCandidatePlanning(basePlan: PerformanceCreativePlan, input: BiancaDesignRequestInput): {
+  candidateSummaries: CreativeCandidateSummary[];
+  candidateScores: ReturnType<typeof selectWinningCandidate>["candidateScores"];
+  winnerCandidateId: ReturnType<typeof selectWinningCandidate>["winnerCandidateId"];
+  selectionReason: string;
+  candidateDiversityScore: number;
+  winnerPlan: PerformanceCreativePlan;
+  winnerSpec: AdLayoutSpec;
+} {
+  const selectionInput = buildLayoutFamilySelectionInputFromPlan(basePlan, input);
+  const candidates = generateCreativeCandidates(basePlan, selectionInput);
+  const candidatesForScoring: CandidateForScoring[] = candidates.map((candidate) => ({
+    id: candidate.id,
+    layoutFamily: candidate.layoutFamily,
+    familyFitScore: candidate.familyFitScore,
+    plan: candidate.plan,
+    // `buildAdLayoutSpec` sempre devolve um spec real aqui — `candidate.plan` é uma variação de um
+    // `basePlan` que já existe (a própria precondição de `buildCreativeCandidatePlanning` rodar).
+    adLayoutSpec: buildAdLayoutSpec(candidate.plan, input) as AdLayoutSpec,
+  }));
+
+  const preferredDensity = resolveVisualDensity(basePlan.objective, basePlan.informationPriority.length);
+  const selection = selectWinningCandidate(candidatesForScoring, {
+    aspectRatio: input.sofiaDirection.recommendedAspectRatio,
+    brandVisualProfile: input.brandVisualProfile,
+    preferredDensity,
+  });
+  const diversity = computeCandidateDiversity(candidates);
+  const winner = candidatesForScoring.find((candidate) => candidate.id === selection.winnerCandidateId) as CandidateForScoring;
+
+  const candidateSummaries: CreativeCandidateSummary[] = candidatesForScoring.map((candidate) => ({
+    id: candidate.id,
+    layoutFamily: candidate.layoutFamily,
+    visualDensity: candidate.plan.visualDensity,
+    rationale: (candidates.find((c) => c.id === candidate.id) as (typeof candidates)[number]).rationale,
+    zoneTypes: candidate.adLayoutSpec.zones.map((zone) => zone.type),
+  }));
+
+  return {
+    candidateSummaries,
+    candidateScores: selection.candidateScores,
+    winnerCandidateId: selection.winnerCandidateId,
+    selectionReason: selection.selectionReason,
+    candidateDiversityScore: diversity.score,
+    winnerPlan: winner.plan,
+    winnerSpec: winner.adLayoutSpec,
   };
 }
 
@@ -596,8 +688,25 @@ export function buildBaselineDesign(input: BiancaDesignRequestInput, context: Cl
 
   const designConcept = `Layout que traduz o conceito visual "${input.sofiaDirection.visualConcept}" em uma peça extremamente escaneável para ${input.channel}.`;
   const slides = buildSlides(input);
-  const performanceCreativePlan = buildPerformanceCreativePlan(input);
-  const adLayoutSpec = buildAdLayoutSpec(performanceCreativePlan, input);
+  const basePlan = buildPerformanceCreativePlan(input);
+
+  // Multi-Candidate Planning (Fatia 2, Prioridades 8-9) — só roda quando há um plano de verdade
+  // (mesma condição de sempre para o Performance Creative Engine); o plano/spec FINAIS usados daqui
+  // pra baixo (Pedro, renderer) são os do candidato VENCEDOR, nunca o "candidato A" cego — os
+  // campos de auditoria (`creativeCandidates`/`candidateScores`/`winnerCandidateId`/
+  // `selectionReason`/`candidateDiversityScore`) registram a decisão, nunca silenciosa.
+  const candidatePlanning = basePlan ? buildCreativeCandidatePlanning(basePlan, input) : undefined;
+  const performanceCreativePlan: PerformanceCreativePlan | undefined = candidatePlanning
+    ? {
+        ...candidatePlanning.winnerPlan,
+        creativeCandidates: candidatePlanning.candidateSummaries,
+        candidateScores: candidatePlanning.candidateScores,
+        winnerCandidateId: candidatePlanning.winnerCandidateId,
+        selectionReason: candidatePlanning.selectionReason,
+        candidateDiversityScore: candidatePlanning.candidateDiversityScore,
+      }
+    : undefined;
+  const adLayoutSpec = candidatePlanning ? candidatePlanning.winnerSpec : undefined;
 
   return {
     designConcept,

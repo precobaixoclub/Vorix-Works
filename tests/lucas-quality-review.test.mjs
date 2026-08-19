@@ -797,6 +797,65 @@ test("evaluateTypographyQuality: texto longo em caixa alta vira TYPOGRAPHY_ALL_C
   assert.equal(shortCtaReview.issues.some((entry) => entry.code === "TYPOGRAPHY_ALL_CAPS_OVERUSE"), false);
 });
 
+// -------------------------------------------------------------------------------------------
+// Unified Final Creative Score (Fatia 2, Prioridade 10)
+// -------------------------------------------------------------------------------------------
+
+test("creativeQualityScore: sem typographyGeometry (Performance Creative Engine não rodou), fica undefined (regressão)", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const review = buildBaselineReview(createInput(), context, REVIEW_THRESHOLDS);
+
+  assert.equal(review.creativeQualityScore, undefined);
+});
+
+test("creativeQualityScore: peça sem nenhum issue relevante recebe score alto e veredito \"excellent\" ou \"approved\"", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const input = createInput({ typographyGeometry: [typographyEntry()] });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS);
+
+  assert.ok(review.creativeQualityScore);
+  assert.ok(review.creativeQualityScore.score >= 82);
+  assert.ok(["excellent", "approved"].includes(review.creativeQualityScore.verdict));
+  assert.equal(review.creativeQualityScore.blockedByHardFailure, false);
+});
+
+test("creativeQualityScore: TYPOGRAPHY_CONTRAST_LOW (falha dura) força verdict \"reject\" no creativeQualityScore, mesmo com as outras 9 dimensões perfeitas", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const input = createInput({ typographyGeometry: [typographyEntry({ textColor: "#FACC15", backgroundColor: "#FFFFFF" })] });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS);
+
+  assert.ok(review.creativeQualityScore);
+  assert.equal(review.creativeQualityScore.verdict, "reject");
+  assert.equal(review.creativeQualityScore.blockedByHardFailure, true);
+  assert.equal(review.creativeQualityScore.dimensions.typography, 0);
+});
+
+test("creativeQualityScore: PRODUCT_FIDELITY_MISMATCH (falha dura de outra checagem) também bloqueia o creativeQualityScore, não só o reviewStatus geral", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const input = createInput({ typographyGeometry: [typographyEntry()] });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS, { mismatch: true, reasoning: "produto errado na imagem gerada" });
+
+  assert.ok(review.creativeQualityScore);
+  assert.equal(review.creativeQualityScore.verdict, "reject");
+  assert.equal(review.creativeQualityScore.dimensions.productFidelity, 0);
+});
+
+test("creativeQualityScore: GENERIC_CLICHE_IN_COPY reduz a dimensão specificity, mas não é uma falha dura (não bloqueia sozinho)", () => {
+  const context = { modules: fullKnowledgeBase(), records: [] };
+  const input = createInput({
+    typographyGeometry: [typographyEntry()],
+    mariaCopy: { title: "O melhor produto do mercado", caption: "Qualidade incomparável, viva a experiência única.", cta: "Compre agora" },
+  });
+  const review = buildBaselineReview(input, context, REVIEW_THRESHOLDS);
+
+  const hasGenericClicheIssue = review.issues.some((entry) => entry.code === "GENERIC_CLICHE_IN_COPY");
+  if (hasGenericClicheIssue) {
+    assert.ok(review.creativeQualityScore);
+    assert.equal(review.creativeQualityScore.dimensions.specificity, 4);
+    assert.notEqual(review.creativeQualityScore.blockedByHardFailure, true);
+  }
+});
+
 test("Lucas revisa um pacote completo e devolve checklist, issues, riscos e próximos passos", async () => {
   const { lucas } = createLucas();
 

@@ -16,6 +16,7 @@ import { detectGenericPhrases } from "../../shared/utils/generic-phrase-detector
 import { detectUnconfirmedCommercialClaims } from "../../shared/utils/commercial-hallucination-detector.js";
 import { hasStrongCommercialFact } from "../../shared/utils/reference-intelligence.types.js";
 import { computeContrastRatio } from "../../shared/utils/color-contrast.js";
+import { computeCreativeQualityScore, type CreativeQualityDimensions, type CreativeQualityScoreResult } from "../../shared/utils/creative-quality-score.js";
 import { lucasQualityReviewManifest } from "./lucas.manifest.js";
 import type { LucasLogAction, LucasLoggerPort } from "./lucas-log.contract.js";
 import type {
@@ -84,6 +85,17 @@ const BLOCKING_ISSUE_CODES = new Set<LucasIssueCode>([
   "COMMERCIAL_HALLUCINATION_DETECTED",
   // Typography Quality Gate (Fase 16) — texto cortado ou ilegível por baixo contraste é defeito
   // objetivo, calculado a partir da geometria REAL do renderer, nunca opinião de IA.
+  "TYPOGRAPHY_TEXT_CLIPPED",
+  "TYPOGRAPHY_CONTRAST_LOW",
+]);
+
+// Unified Final Creative Score (Fatia 2, Prioridade 10) — subconjunto de `BLOCKING_ISSUE_CODES`
+// relevante ao Performance Creative Engine (preço/produto errado, alucinação comercial, texto
+// ilegível/cortado). Qualquer um destes força `verdict: "reject"` no `creativeQualityScore`,
+// mesmo com nota agregada alta — "a nota nunca mascara uma falha crítica".
+const CREATIVE_HARD_FAILURE_CODES = new Set<LucasIssueCode>([
+  "PRODUCT_FIDELITY_MISMATCH",
+  "COMMERCIAL_HALLUCINATION_DETECTED",
   "TYPOGRAPHY_TEXT_CLIPPED",
   "TYPOGRAPHY_CONTRAST_LOW",
 ]);
@@ -692,6 +704,7 @@ export function buildBaselineReview(
   const risks = buildRisks(input, issues);
   const observations = buildObservations(input, context);
   const nextSteps = buildNextSteps(reviewStatus);
+  const creativeQualityScore = buildCreativeQualityScore(input, issues);
 
   return {
     reviewStatus,
@@ -704,6 +717,7 @@ export function buildBaselineReview(
     observations,
     nextSteps,
     qualityProfile,
+    creativeQualityScore,
   };
 }
 
@@ -2006,6 +2020,52 @@ function evaluateVideoFile(input: LucasQualityReviewRequestInput, issues: LucasI
       "high",
     ));
   }
+}
+
+/**
+ * Unified Final Creative Score (Fatia 2, Prioridade 10) — deriva as 10 dimensões a partir dos
+ * ISSUES que os gates existentes já calcularam (nunca uma segunda análise paralela/divergente).
+ * Baseline 9/10 quando não há sinal de problema nessa dimensão específica (nunca 10 "de graça" —
+ * reserva o topo da escala pra quando um sinal positivo explícito existir). `brandConsistency` e
+ * `productProminence` ainda não têm um sinal direto disponível neste handler (a geometria real do
+ * `heroProduct` e o `BrandVisualProfile` usado não chegam a Lucas hoje) — ficam num neutro
+ * documentado (7/10), nunca inventado como "ótimo" nem penalizado por ausência de dado.
+ */
+function buildCreativeQualityDimensions(issues: LucasIssue[]): CreativeQualityDimensions {
+  const hasIssue = (code: LucasIssueCode) => issues.some((current) => current.code === code);
+
+  return {
+    productFidelity: hasIssue("PRODUCT_FIDELITY_MISMATCH") ? 0 : 10,
+    factualAccuracy: hasIssue("COMMERCIAL_HALLUCINATION_DETECTED") ? 0 : hasIssue("COMMERCIAL_FACT_IGNORED") ? 6 : 10,
+    commercialClarity: hasIssue("COMMERCIAL_FACT_IGNORED") ? 5 : 9,
+    visualHierarchy: hasIssue("TYPOGRAPHY_LINE_COUNT_EXCEEDED") ? 6 : 9,
+    typography: hasIssue("TYPOGRAPHY_TEXT_CLIPPED") || hasIssue("TYPOGRAPHY_CONTRAST_LOW")
+      ? 0
+      : hasIssue("TYPOGRAPHY_MIN_SIZE_VIOLATION") || hasIssue("TYPOGRAPHY_ALL_CAPS_OVERUSE") ? 6 : 10,
+    // Sem sinal direto do BrandVisualProfile aplicado nesta geração (não chega a este handler) —
+    // neutro documentado, nunca inventado.
+    brandConsistency: 7,
+    // Sem geometria real da zona heroProduct disponível neste handler (excluída deliberadamente de
+    // `typographyGeometry` — não é tipografia) — neutro documentado, nunca inventado.
+    productProminence: 7,
+    layoutBalance: hasIssue("VISUAL_COMPOSITION_UNPROFESSIONAL") ? 3 : 9,
+    specificity: hasIssue("GENERIC_CLICHE_IN_COPY") ? 4 : 9,
+    professionalPolish: hasIssue("VISUAL_COMPOSITION_UNPROFESSIONAL") ? 2 : 9,
+  };
+}
+
+/** `undefined` quando o Performance Creative Engine não rodou nesta geração (mesma condição de
+ * ausência de `typographyGeometry` — sem isso não há o que consolidar num score específico de
+ * peça de performance). */
+function buildCreativeQualityScore(input: LucasQualityReviewRequestInput, issues: LucasIssue[]): CreativeQualityScoreResult | undefined {
+  if (!input.typographyGeometry || input.typographyGeometry.length === 0) return undefined;
+
+  const hardFailures = issues.filter((current) => CREATIVE_HARD_FAILURE_CODES.has(current.code));
+  return computeCreativeQualityScore({
+    dimensions: buildCreativeQualityDimensions(issues),
+    hasHardFailure: hardFailures.length > 0,
+    hardFailureReasons: hardFailures.map((current) => current.message),
+  });
 }
 
 function computeScore(issues: LucasIssue[]): number {

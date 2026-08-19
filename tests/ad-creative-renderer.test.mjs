@@ -219,3 +219,50 @@ test("renderAdCreativeOverlay: rejeita quando a imagem base não tem metadados d
     renderAdCreativeOverlay({ baseImageBuffer: Buffer.from("not an image"), adLayoutSpec: flashSaleLayoutSpec(), plan: tenisPlan() }),
   );
 });
+
+// ---------------------------------------------------------------------------------------------
+// Component Skins (Rodada 2, Fatia 2, Prioridade 6)
+// ---------------------------------------------------------------------------------------------
+
+const ALL_SKINS = ["clean", "bold", "premium", "editorial", "outlined", "marketplace"];
+
+test("renderAdCreativeOverlay: todos os 6 skins renderizam PNG válido sem lançar erro (price/discount/cta/headline)", async () => {
+  const baseImageBuffer = await makeSolidPng(1024, 1280, { r: 30, g: 90, b: 60, alpha: 1 });
+
+  for (const skin of ALL_SKINS) {
+    const plan = tenisPlan({ componentSkins: { price: skin, discount: skin, cta: skin, headline: skin } });
+    const result = await renderAdCreativeOverlay({ baseImageBuffer, adLayoutSpec: flashSaleLayoutSpec(), plan });
+    const meta = await sharp(result.buffer).metadata();
+    assert.equal(meta.format, "png", `skin "${skin}" deveria produzir PNG válido`);
+  }
+});
+
+test("renderAdCreativeOverlay: skins diferentes produzem buffers de imagem diferentes para o mesmo plano/spec (o skin realmente muda o pixel)", async () => {
+  const baseImageBuffer = await makeSolidPng(1024, 1280, { r: 30, g: 90, b: 60, alpha: 1 });
+
+  const cleanResult = await renderAdCreativeOverlay({
+    baseImageBuffer,
+    adLayoutSpec: flashSaleLayoutSpec(),
+    plan: tenisPlan({ componentSkins: { price: "clean", discount: "clean", cta: "clean" } }),
+  });
+  const marketplaceResult = await renderAdCreativeOverlay({
+    baseImageBuffer,
+    adLayoutSpec: flashSaleLayoutSpec(),
+    plan: tenisPlan({ componentSkins: { price: "marketplace", discount: "marketplace", cta: "marketplace" } }),
+  });
+
+  assert.notEqual(Buffer.compare(cleanResult.buffer, marketplaceResult.buffer), 0);
+});
+
+test("renderAdCreativeOverlay: sem componentSkins no plano, comportamento idêntico ao skin \"clean\" explícito (sem regressão para geração sem perfil de marca)", async () => {
+  const baseImageBuffer = await makeSolidPng(1024, 1280, { r: 30, g: 90, b: 60, alpha: 1 });
+
+  const withoutSkins = await renderAdCreativeOverlay({ baseImageBuffer, adLayoutSpec: flashSaleLayoutSpec(), plan: tenisPlan() });
+  const withCleanSkin = await renderAdCreativeOverlay({
+    baseImageBuffer,
+    adLayoutSpec: flashSaleLayoutSpec(),
+    plan: tenisPlan({ componentSkins: { price: "clean", discount: "clean", cta: "clean", headline: "clean" } }),
+  });
+
+  assert.equal(Buffer.compare(withoutSkins.buffer, withCleanSkin.buffer), 0);
+});

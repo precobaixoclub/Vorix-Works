@@ -491,10 +491,18 @@ function buildLucasInput(
   // futura). Ausente quando o overlay não rodou nesta geração (mesmo comportamento de antes).
   const firstImage = Array.isArray(visualOutput.images) ? (visualOutput.images as Record<string, unknown>[])[0] : undefined;
   const typographyGeometry = Array.isArray(firstImage?.typographyGeometry) ? firstImage.typographyGeometry : undefined;
+  // Achado ao vivo (Rodada 2): quando `productRenderMode === "original_asset"`, o produto na
+  // imagem final é literalmente o mesmo recorte de pixels da referência (composto pelo renderer,
+  // nunca redesenhado por IA) — fidelidade já é garantida por construção. Pedir uma checagem de
+  // visão pra "confirmar" isso só adiciona ruído/custo: o modelo pode confundir um elemento de
+  // cenário que o próprio Pedro desenhou como apoio pro produto (ex.: um pedestal) com uma
+  // tentativa (inexistente) de redesenhar o produto, reprovando uma peça correta.
+  const productRenderMode = normalizeObject(biancaOutput.performanceCreativePlan).productRenderMode;
+  const skipProductFidelityCheck = productRenderMode === "original_asset";
 
   return {
     ...base,
-    workflowContext: { ...normalizeObject(base.workflowContext), ...(referenceImageUrl ? { referenceImageUrl } : {}) },
+    workflowContext: { ...normalizeObject(base.workflowContext), ...(referenceImageUrl && !skipProductFidelityCheck ? { referenceImageUrl } : {}) },
     originalRequest: "Execution real controlada a partir de RuntimePlan validado.",
     typographyGeometry,
     joaoStrategy: {

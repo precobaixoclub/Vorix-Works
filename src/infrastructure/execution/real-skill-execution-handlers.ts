@@ -21,6 +21,7 @@ import { computeAssetSuitabilityScore, extractProductAsset } from "../image-proc
 import type { BrandVisualProfile } from "../../shared/utils/brand-visual-profile.types.js";
 import type { OpenAiSemanticOcclusionChecker } from "../ai-providers/openai-semantic-occlusion-checker.js";
 import { buildRepairInstructionFromOcclusion, type RepairInstruction } from "../../shared/utils/repair-instructions.js";
+import type { SemanticOcclusionViolation } from "../../shared/utils/semantic-occlusion.types.js";
 import { DEFAULT_ZONE_ALTERNATIVES } from "../../shared/utils/zone-collision.js";
 import { clampZoneToSafeArea } from "../../shared/utils/ad-safe-zones.js";
 
@@ -299,8 +300,32 @@ function applyDeterministicZoneRepair(spec: AdLayoutSpec, zoneType: AdLayoutZone
   };
 }
 
-function pickMostSevereViolation<T extends { severity: "severe" | "partial" }>(violations: T[]): T | undefined {
-  return [...violations].sort((a, b) => (a.severity === "severe" ? -1 : 1) - (b.severity === "severe" ? -1 : 1))[0];
+type ViolationRepairPlan = { violation: SemanticOcclusionViolation; instruction: RepairInstruction };
+
+/**
+ * Bug real achado ao vivo (Rodada 2, Fatia 3): uma peça pode ter MAIS DE UMA zona cobrindo o
+ * rosto ao mesmo tempo (ex.: headline + badge + discount, todas simultâneas) — corrigir só a mais
+ * severa por tentativa (comportamento anterior) desperdiça o orçamento de 2 tentativas numa zona
+ * de cada vez, e a peça acaba reprovada com zonas que nunca chegaram a ser tentadas. Agora cada
+ * tentativa corrige TODAS as violações reparáveis na camada determinística de uma vez só (um
+ * único re-render), reservando cada zona já tentada só pra sua PRÓPRIA lista de alternativas —
+ * o limite de 2 tentativas continua valendo (nunca mais chamadas de verificação que isso), só que
+ * agora cobre "2 rodadas de correção", não "2 zonas corrigidas".
+ */
+function partitionViolationsForRepair(violations: SemanticOcclusionViolation[]): { repairable: ViolationRepairPlan[]; other: SemanticOcclusionViolation[] } {
+  const repairable: ViolationRepairPlan[] = [];
+  const other: SemanticOcclusionViolation[] = [];
+  const seenZones = new Set<AdLayoutZoneType>();
+  for (const violation of violations) {
+    const instruction = buildRepairInstructionFromOcclusion(violation.element, violation.subject, violation.severity, violation.reasoning);
+    if (!instruction || instruction.layer !== "deterministic" || !instruction.zoneType || seenZones.has(instruction.zoneType)) {
+      other.push(violation);
+      continue;
+    }
+    seenZones.add(instruction.zoneType);
+    repairable.push({ violation, instruction });
+  }
+  return { repairable, other };
 }
 
 async function applyAdCreativeOverlay(
@@ -347,57 +372,63 @@ async function applyAdCreativeOverlay(
 
       if (deps.semanticOcclusionChecker) {
         const zoneAttemptsUsed = new Map<AdLayoutZoneType, number>();
-        let pendingAttempt: { attempt: number; instruction: RepairInstruction; reasoning: string; correctionApplied: string } | undefined;
+        let pendingBatch: Array<{ attempt: number; instruction: RepairInstruction; reasoning: string; correctionApplied: string }> = [];
+        const loggedOther = new Set<string>();
 
         for (let attempt = 1; attempt <= MAX_REPAIR_ATTEMPTS + 1; attempt += 1) {
           repairLoopRan = true;
           const verdict = await deps.semanticOcclusionChecker.check(uploaded.url).catch(() => undefined);
 
-          if (pendingAttempt) {
-            const settledAttempt = pendingAttempt;
-            const stillViolated = verdict?.hasViolation && verdict.violations.some((violation) => violation.element === settledAttempt.instruction.zoneType);
-            repairAttempts.push({
-              attempt: settledAttempt.attempt,
-              issueType: settledAttempt.instruction.type,
-              zoneType: settledAttempt.instruction.zoneType,
-              reasoning: settledAttempt.reasoning,
-              correctionApplied: settledAttempt.correctionApplied,
-              result: !verdict ? "verification_unavailable" : stillViolated ? "still_violated" : "resolved",
-            });
-            pendingAttempt = undefined;
+          if (pendingBatch.length > 0) {
+            const stillViolatedZones = new Set((verdict?.hasViolation ? verdict.violations : []).map((violation) => violation.element as string));
+            for (const settled of pendingBatch) {
+              repairAttempts.push({
+                attempt: settled.attempt,
+                issueType: settled.instruction.type,
+                zoneType: settled.instruction.zoneType,
+                reasoning: settled.reasoning,
+                correctionApplied: settled.correctionApplied,
+                result: !verdict ? "verification_unavailable" : stillViolatedZones.has(settled.instruction.zoneType as string) ? "still_violated" : "resolved",
+              });
+            }
+            pendingBatch = [];
           }
 
           if (attempt > MAX_REPAIR_ATTEMPTS) break;
           if (!verdict || !verdict.hasViolation || verdict.violations.length === 0) break;
 
-          const violation = pickMostSevereViolation(verdict.violations);
-          if (!violation) break;
-          const instruction = buildRepairInstructionFromOcclusion(violation.element, violation.subject, violation.severity, violation.reasoning);
-          if (!instruction || instruction.layer !== "deterministic" || !instruction.zoneType) {
+          const { repairable, other } = partitionViolationsForRepair(verdict.violations);
+          for (const item of other) {
+            const key = `${item.element}:${item.subject}`;
+            if (loggedOther.has(key)) continue;
+            loggedOther.add(key);
+            const instruction = buildRepairInstructionFromOcclusion(item.element, item.subject, item.severity, item.reasoning);
             repairAttempts.push({
               attempt,
               issueType: instruction?.type ?? "product_not_prominent",
               zoneType: instruction?.zoneType,
-              reasoning: violation.reasoning,
+              reasoning: item.reasoning,
               correctionApplied: "Nenhuma — defeito exige nova geração fotográfica (fora do escopo do reflow determinístico deste reparo).",
               result: "still_violated",
             });
-            break;
           }
+          if (repairable.length === 0) break;
 
-          const triedCount = zoneAttemptsUsed.get(instruction.zoneType) ?? 0;
-          const repair = applyDeterministicZoneRepair(currentSpec, instruction.zoneType, triedCount);
-          zoneAttemptsUsed.set(instruction.zoneType, triedCount + 1);
-          currentSpec = repair.spec;
+          for (const { violation, instruction } of repairable) {
+            const zoneType = instruction.zoneType as AdLayoutZoneType;
+            const triedCount = zoneAttemptsUsed.get(zoneType) ?? 0;
+            const repair = applyDeterministicZoneRepair(currentSpec, zoneType, triedCount);
+            zoneAttemptsUsed.set(zoneType, triedCount + 1);
+            currentSpec = repair.spec;
+            if (repair.zoneRemoved) {
+              repairAttempts.push({ attempt, issueType: instruction.type, zoneType, reasoning: violation.reasoning, correctionApplied: repair.correctionApplied, result: "zone_removed" });
+              continue;
+            }
+            pendingBatch.push({ attempt, instruction, reasoning: violation.reasoning, correctionApplied: repair.correctionApplied });
+          }
 
           result = await renderAdCreativeOverlay({ baseImageBuffer: imageBuffer, adLayoutSpec: currentSpec, plan, brandColors });
           uploaded = await deps.objectStorage.put({ key: buildOverlayObjectKey(request, "overlay-repaired"), body: result.buffer, contentType: "image/png" });
-
-          if (repair.zoneRemoved) {
-            repairAttempts.push({ attempt, issueType: instruction.type, zoneType: instruction.zoneType, reasoning: violation.reasoning, correctionApplied: repair.correctionApplied, result: "zone_removed" });
-            break;
-          }
-          pendingAttempt = { attempt, instruction, reasoning: violation.reasoning, correctionApplied: repair.correctionApplied };
         }
       }
 

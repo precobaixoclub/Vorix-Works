@@ -965,6 +965,259 @@ test("VisualPipelineExecutionTaskHandler: Repair Loop nunca ultrapassa 2 tentati
   }
 });
 
+test("VisualPipelineExecutionTaskHandler: Repair Loop corrige MÚLTIPLAS zonas violadas ao mesmo tempo numa única rodada (bug real achado ao vivo — headline+badge+discount cobrindo o rosto simultaneamente)", async () => {
+  const baseImagePng = await sharp({ create: { width: 1024, height: 1280, channels: 4, background: { r: 30, g: 90, b: 60, alpha: 1 } } }).png().toBuffer();
+  const adLayoutSpec = {
+    format: "9:16",
+    aspectRatio: "9:16",
+    layoutFamily: "premium_product",
+    density: "clean",
+    zones: [
+      { type: "headline", priority: 1, position: { xPct: 6, yPct: 6, widthPct: 88, heightPct: 18 } },
+      { type: "badge", priority: 2, position: { xPct: 6, yPct: 30, widthPct: 26, heightPct: 12 } },
+      { type: "discount", priority: 3, position: { xPct: 6, yPct: 46, widthPct: 30, heightPct: 14 } },
+    ],
+  };
+  const performanceCreativePlan = {
+    objective: "reconhecimento_marca",
+    creativeType: "produto",
+    primaryHook: "Seu novo favorito",
+    benefits: [],
+    trustSignals: [],
+    specifications: [],
+    cta: "",
+    brandElements: [],
+    visualDensity: "clean",
+    layoutFamily: "premium_product",
+    informationPriority: [],
+  };
+
+  const server = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "image/png" });
+    res.end(baseImagePng);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+
+  const helena = fakeHelena();
+  let pedroCallCount = 0;
+  const originalExecuteSkill = helena.manager.executeSkill;
+  helena.manager.executeSkill = async (request) => {
+    if (request.capability === "image_generation") {
+      pedroCallCount += 1;
+      return {
+        skillId: "fake-image_generation",
+        state: "COMPLETED",
+        response: { skillId: "fake-image_generation", taskId: request.context.taskId, status: "completed", output: { generationSummary: "ok", imageCount: 1, images: [{ id: "img-1", uri: `http://127.0.0.1:${port}/generated-image.png` }] }, artifacts: [], warnings: [] },
+      };
+    }
+    if (request.capability === "social_media_design") {
+      return {
+        skillId: "fake-social_media_design",
+        state: "COMPLETED",
+        response: { skillId: "fake-social_media_design", taskId: request.context.taskId, status: "completed", output: { designConcept: "teste", gridSystem: "grid", ctaPlacement: "base", performanceCreativePlan, adLayoutSpec }, artifacts: [], warnings: [] },
+      };
+    }
+    return originalExecuteSkill(request);
+  };
+
+  let putCount = 0;
+  const fakeObjectStorage = {
+    put: async () => { putCount += 1; return { url: `https://x/uploaded-${putCount}.png` }; },
+    delete: async () => undefined,
+    resolvePublicUrl: (key) => `https://x/${key}`,
+    health: async () => ({ ok: true }),
+  };
+  const fakeClara = { requestContext: async () => ({ clientId: "tenant-1", deliveredAt: FIXED_NOW, modules: {}, records: [] }) };
+
+  // Caso real de produção (Rodada 2, Fatia 3): headline, badge E discount cobrem o rosto ao MESMO
+  // TEMPO na mesma imagem — antes desta correção, o loop só corrigia a violação mais severa por
+  // tentativa e esgotava as 2 tentativas sem nunca chegar a tratar a 3ª zona.
+  let checkCount = 0;
+  const fakeSemanticOcclusionChecker = {
+    check: async () => {
+      checkCount += 1;
+      if (checkCount === 1) {
+        return {
+          hasViolation: true,
+          violations: [
+            { element: "headline", subject: "face", severity: "severe", reasoning: "Headline cobre o rosto." },
+            { element: "badge", subject: "face", severity: "severe", reasoning: "Badge cobre o rosto." },
+            { element: "discount", subject: "face", severity: "severe", reasoning: "Discount cobre o rosto." },
+          ],
+        };
+      }
+      // Todas as 3 reposições da 1ª rodada resolveram — nenhuma 2ª tentativa é necessária.
+      return { hasViolation: false, violations: [] };
+    },
+  };
+
+  const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    helena: helena.manager,
+    provider: "helena",
+    clara: fakeClara,
+    objectStorage: fakeObjectStorage,
+    semanticOcclusionChecker: fakeSemanticOcclusionChecker,
+  });
+
+  const request = {
+    task: { id: "task-1", runtimePlanId: "runtime-1", capability: "visual_design", type: "visual_generation" },
+    inputs: { structure: [{ artifactId: "a-structure", checksum: "c1", payload: { output: { objective: "vender", channel: "tiktok", format: "single_image" } } }] },
+    context: { executionRunId: "exec-1", tenantId: "tenant-1", workspaceId: "workspace-1", mode: "real" },
+    attempt: { total: 1, providerAttempt: 1 },
+  };
+
+  try {
+    const result = await handler.execute(request);
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(pedroCallCount, 1);
+    // 1ª checagem acha as 3 violações simultâneas; 2ª checagem (depois de reposicionar as 3 zonas
+    // NUMA SÓ RODADA) confirma que todas resolveram — nunca precisa da 3ª chamada.
+    assert.equal(checkCount, 2);
+
+    const plan = result.value.outputs[0].payload.visualPipeline.designSpec.performanceCreativePlan;
+    assert.equal(plan.repairLoopRan, true);
+    assert.equal(plan.repairAttempts.length, 3);
+    const byZone = Object.fromEntries(plan.repairAttempts.map((entry) => [entry.zoneType, entry]));
+    assert.equal(byZone.headline.result, "resolved");
+    assert.equal(byZone.badge.result, "resolved");
+    assert.equal(byZone.discount.result, "resolved");
+    assert.ok(plan.repairAttempts.every((entry) => entry.attempt === 1));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("VisualPipelineExecutionTaskHandler: Repair Loop usa a 2ª rodada só para a zona que ainda ficou violada, sem re-tentar as que já resolveram na 1ª (caso real: discount precisa da 2ª alternativa)", async () => {
+  const baseImagePng = await sharp({ create: { width: 1024, height: 1280, channels: 4, background: { r: 30, g: 90, b: 60, alpha: 1 } } }).png().toBuffer();
+  const adLayoutSpec = {
+    format: "9:16",
+    aspectRatio: "9:16",
+    layoutFamily: "premium_product",
+    density: "clean",
+    zones: [
+      { type: "headline", priority: 1, position: { xPct: 6, yPct: 6, widthPct: 88, heightPct: 18 } },
+      { type: "badge", priority: 2, position: { xPct: 6, yPct: 30, widthPct: 26, heightPct: 12 } },
+      { type: "discount", priority: 3, position: { xPct: 6, yPct: 46, widthPct: 30, heightPct: 14 } },
+    ],
+  };
+  const performanceCreativePlan = {
+    objective: "reconhecimento_marca",
+    creativeType: "produto",
+    primaryHook: "Seu novo favorito",
+    benefits: [],
+    trustSignals: [],
+    specifications: [],
+    cta: "",
+    brandElements: [],
+    visualDensity: "clean",
+    layoutFamily: "premium_product",
+    informationPriority: [],
+  };
+
+  const server = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "image/png" });
+    res.end(baseImagePng);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+
+  const helena = fakeHelena();
+  let pedroCallCount = 0;
+  const originalExecuteSkill = helena.manager.executeSkill;
+  helena.manager.executeSkill = async (request) => {
+    if (request.capability === "image_generation") {
+      pedroCallCount += 1;
+      return {
+        skillId: "fake-image_generation",
+        state: "COMPLETED",
+        response: { skillId: "fake-image_generation", taskId: request.context.taskId, status: "completed", output: { generationSummary: "ok", imageCount: 1, images: [{ id: "img-1", uri: `http://127.0.0.1:${port}/generated-image.png` }] }, artifacts: [], warnings: [] },
+      };
+    }
+    if (request.capability === "social_media_design") {
+      return {
+        skillId: "fake-social_media_design",
+        state: "COMPLETED",
+        response: { skillId: "fake-social_media_design", taskId: request.context.taskId, status: "completed", output: { designConcept: "teste", gridSystem: "grid", ctaPlacement: "base", performanceCreativePlan, adLayoutSpec }, artifacts: [], warnings: [] },
+      };
+    }
+    return originalExecuteSkill(request);
+  };
+
+  const fakeObjectStorage = {
+    put: async () => ({ url: "https://x/uploaded.png" }),
+    delete: async () => undefined,
+    resolvePublicUrl: (key) => `https://x/${key}`,
+    health: async () => ({ ok: true }),
+  };
+  const fakeClara = { requestContext: async () => ({ clientId: "tenant-1", deliveredAt: FIXED_NOW, modules: {}, records: [] }) };
+
+  let checkCount = 0;
+  const fakeSemanticOcclusionChecker = {
+    check: async () => {
+      checkCount += 1;
+      if (checkCount === 1) {
+        return {
+          hasViolation: true,
+          violations: [
+            { element: "headline", subject: "face", severity: "severe", reasoning: "Headline cobre o rosto." },
+            { element: "badge", subject: "face", severity: "severe", reasoning: "Badge cobre o rosto." },
+            { element: "discount", subject: "face", severity: "severe", reasoning: "Discount cobre o rosto." },
+          ],
+        };
+      }
+      if (checkCount === 2) {
+        // headline e badge resolveram na 1ª rodada; discount continua (sua 1ª alternativa não bastou).
+        return { hasViolation: true, violations: [{ element: "discount", subject: "face", severity: "severe", reasoning: "Discount ainda cobre o rosto." }] };
+      }
+      // 3ª checagem: 2ª alternativa de discount resolveu.
+      return { hasViolation: false, violations: [] };
+    },
+  };
+
+  const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    helena: helena.manager,
+    provider: "helena",
+    clara: fakeClara,
+    objectStorage: fakeObjectStorage,
+    semanticOcclusionChecker: fakeSemanticOcclusionChecker,
+  });
+
+  const request = {
+    task: { id: "task-1", runtimePlanId: "runtime-1", capability: "visual_design", type: "visual_generation" },
+    inputs: { structure: [{ artifactId: "a-structure", checksum: "c1", payload: { output: { objective: "vender", channel: "tiktok", format: "single_image" } } }] },
+    context: { executionRunId: "exec-1", tenantId: "tenant-1", workspaceId: "workspace-1", mode: "real" },
+    attempt: { total: 1, providerAttempt: 1 },
+  };
+
+  try {
+    const result = await handler.execute(request);
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(pedroCallCount, 1);
+    assert.equal(checkCount, 3);
+
+    const plan = result.value.outputs[0].payload.visualPipeline.designSpec.performanceCreativePlan;
+    assert.equal(plan.repairLoopRan, true);
+    // headline + badge resolvidos na rodada 1 (1 entrada cada); discount aparece 2x — "ainda
+    // violado" na rodada 1, "resolvido" na rodada 2 (usando sua 2ª alternativa).
+    assert.equal(plan.repairAttempts.length, 4);
+    const headlineEntries = plan.repairAttempts.filter((entry) => entry.zoneType === "headline");
+    const badgeEntries = plan.repairAttempts.filter((entry) => entry.zoneType === "badge");
+    const discountEntries = plan.repairAttempts.filter((entry) => entry.zoneType === "discount");
+    assert.equal(headlineEntries.length, 1);
+    assert.equal(headlineEntries[0].result, "resolved");
+    assert.equal(badgeEntries.length, 1);
+    assert.equal(badgeEntries[0].result, "resolved");
+    assert.equal(discountEntries.length, 2);
+    assert.equal(discountEntries[0].result, "still_violated");
+    assert.equal(discountEntries[0].attempt, 1);
+    assert.equal(discountEntries[1].result, "resolved");
+    assert.equal(discountEntries[1].attempt, 2);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("VisualPipelineExecutionTaskHandler: Product Asset Pipeline (Rodada 2) recorta o produto de uma referência com fundo uniforme, sobe pro storage, e repassa o modo/URL pra Bianca e Pedro", async () => {
   // Referência com fundo branco uniforme + "produto" (círculo vermelho) — mesma técnica sintética
   // de tests/product-background.test.mjs, condição real pra `original_asset` ser escolhido.

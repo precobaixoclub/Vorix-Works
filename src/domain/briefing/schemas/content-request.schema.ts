@@ -136,5 +136,23 @@ export const CONTENT_REQUEST_SCHEMA_V1: BriefingSchema = {
       sensitivity: "normal",
       confirmationPolicy: "never_required",
     },
+    {
+      // Commercial Fact Normalizer (Rodada 2, Prioridade 4) — fatos comerciais extraídos por regex
+      // do texto livre da ideia do usuário (JSON stringificado de `CommercialFact[]`,
+      // `commercial-fact-normalizer.ts`), mesmo padrão de `referenceIntelligence` acima. Achado ao
+      // vivo: sem este campo registrado aqui, o schema do briefing (allowlist explícita de campos)
+      // descartava o valor silenciosamente antes mesmo de virar `PreparedCommand.validatedInputs` —
+      // um preço mencionado só no texto (ex.: "de R$79,90 por R$39,99") nunca chegava a Bianca,
+      // mesmo com a extração em si funcionando corretamente.
+      key: "textCommercialFacts",
+      label: "Fatos comerciais do texto",
+      description: "Fatos comerciais (preço, desconto, frete, urgência) extraídos do texto livre da ideia do usuário.",
+      required: false,
+      dataType: "string",
+      sourcePriority: ["user_message"],
+      validation: { maxLength: 4000 },
+      sensitivity: "normal",
+      confirmationPolicy: "never_required",
+    },
   ],
 };

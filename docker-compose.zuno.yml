@@ -46,6 +46,11 @@ services:
       JWT_SECRET: "${ZUNO_JWT_SECRET}"
       DATABASE_URL: "postgres://zuno:${ZUNO_POSTGRES_PASSWORD}@zuno-postgres:5432/zuno"
       PERSISTENCE_DRIVER: postgres
+      # Seleção do motor criativo (legacy|gpt) — precisa estar explicitamente wired aqui, senão o
+      # container nunca vê a variável mesmo com ela definida em `.env.zuno` (achado ao vivo: um
+      # deploy que reconstrói este arquivo a partir do git sem essa linha volta produção pro motor
+      # legado silenciosamente, sem nenhum erro visível).
+      CREATIVE_ENGINE: "${CREATIVE_ENGINE:-legacy}"
       SECRET_MANAGER_PROVIDER: "${SECRET_MANAGER_PROVIDER:-production}"
       API_CORS_ORIGIN: "${ZUNO_WEB_ORIGIN}"
       COOKIE_SECURE: "${ZUNO_COOKIE_SECURE:-false}"

@@ -12,6 +12,7 @@ import { Spinner } from "@/components/Spinner";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { AssetCard } from "@/features/assets/components/AssetCard";
 import { EditAssetModal } from "@/features/assets/components/EditAssetModal";
+import { LogoConfigCard } from "@/features/assets/components/LogoConfigCard";
 import { RegisterAssetModal } from "@/features/assets/components/RegisterAssetModal";
 import { archiveAsset, deleteAsset } from "@/features/assets/api";
 import { useAssets } from "@/features/assets/hooks";
@@ -55,6 +56,8 @@ export default function AssetsPage() {
         ]}
         aside={<p>Quanto melhor esta biblioteca, menos você precisa explicar estilo, cores e produto em cada postagem.</p>}
       />
+
+      <LogoConfigCard workspaceId={workspace.id} />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input

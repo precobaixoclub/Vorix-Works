@@ -29,19 +29,31 @@ export function RegisterAssetModal({
   workspaceId,
   onClose,
   onRegistered,
+  defaultKind,
+  lockKind = false,
+  defaultMaterialType,
+  defaultUsagePriority,
+  title = "Novo Material da Marca",
 }: {
   workspaceId: string;
   onClose: () => void;
   onRegistered: (asset: Asset) => void;
+  /** Pré-seleciona a categoria — usado pelo `LogoConfigCard`, que sempre quer "logo". */
+  defaultKind?: AssetKind;
+  /** Esconde o seletor de categoria quando o contexto já deixa claro o que está sendo enviado. */
+  lockKind?: boolean;
+  defaultMaterialType?: AssetMaterialType;
+  defaultUsagePriority?: AssetUsagePriority;
+  title?: string;
 }) {
   const [file, setFile] = useState<File | undefined>();
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<AssetKind>("photo");
+  const [kind, setKind] = useState<AssetKind>(defaultKind ?? "photo");
   const [tags, setTags] = useState("");
-  const [materialType, setMaterialType] = useState<AssetMaterialType | "">("");
+  const [materialType, setMaterialType] = useState<AssetMaterialType | "">(defaultMaterialType ?? "");
   const [aiInstructions, setAiInstructions] = useState("");
   const [usageRule, setUsageRule] = useState("");
-  const [usagePriority, setUsagePriority] = useState<AssetUsagePriority | "">("");
+  const [usagePriority, setUsagePriority] = useState<AssetUsagePriority | "">(defaultUsagePriority ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const fileRequired = FILE_REQUIRED_KINDS.has(kind);
@@ -92,21 +104,24 @@ export function RegisterAssetModal({
   }
 
   return (
-    <Modal title="Novo Material da Marca" onClose={onClose}>
+    <Modal title={title} onClose={onClose}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
           <Label htmlFor="asset-file">Arquivo</Label>
           <input
             id="asset-file"
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/svg+xml,video/mp4,video/quicktime,application/pdf,font/ttf,font/otf,font/woff,font/woff2"
+            accept={kind === "logo" ? "image/png,image/svg+xml,image/webp" : "image/jpeg,image/png,image/webp,image/svg+xml,video/mp4,video/quicktime,application/pdf,font/ttf,font/otf,font/woff,font/woff2"}
             required={fileRequired}
             onChange={(e) => pickFile(e.target.files?.[0])}
             className="w-full text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-accent"
           />
           <p className="mt-1 text-xs text-ink-muted">
-            JPEG, PNG, WEBP, SVG, MP4, MOV, PDF ou fontes (TTF/OTF/WOFF).
-            {fileRequired ? " Obrigatório para este tipo." : " Opcional para documentos e referências."}
+            {kind === "logo" ? (
+              "PNG com fundo transparente (recomendado), SVG ou WEBP. Formato quadrado (1:1), pelo menos 512×512px."
+            ) : (
+              <>JPEG, PNG, WEBP, SVG, MP4, MOV, PDF ou fontes (TTF/OTF/WOFF).{fileRequired ? " Obrigatório para este tipo." : " Opcional para documentos e referências."}</>
+            )}
           </p>
           {localPreviewUrl ? (
             <div className="mt-3 overflow-hidden rounded-lg border border-border bg-surface-sunken">
@@ -119,16 +134,18 @@ export function RegisterAssetModal({
           <Label htmlFor="asset-name">Nome do arquivo</Label>
           <Input id="asset-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: logo-principal.svg" autoFocus />
         </div>
-        <div>
-          <Label htmlFor="asset-kind">Tipo (categoria de arquivo)</Label>
-          <select id="asset-kind" value={kind} onChange={(e) => setKind(e.target.value as AssetKind)} className={SELECT_CLASSES}>
-            {ASSET_KINDS.map((k) => (
-              <option key={k} value={k}>
-                {ASSET_KIND_LABEL[k]}
-              </option>
-            ))}
-          </select>
-        </div>
+        {lockKind ? null : (
+          <div>
+            <Label htmlFor="asset-kind">Tipo (categoria de arquivo)</Label>
+            <select id="asset-kind" value={kind} onChange={(e) => setKind(e.target.value as AssetKind)} className={SELECT_CLASSES}>
+              {ASSET_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {ASSET_KIND_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <Label htmlFor="asset-tags">Tags (separadas por vírgula)</Label>
           <Input id="asset-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Ex.: campanha, verão" />

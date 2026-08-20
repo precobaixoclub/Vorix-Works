@@ -7,6 +7,7 @@ import { PostgresWorkspaceRepository } from "../dist/infrastructure/storage/post
 import { PostgresAssetLibraryRepository } from "../dist/infrastructure/storage/postgres/postgres-asset-library-repository.js";
 import { PostgresChatRepository } from "../dist/infrastructure/storage/postgres/postgres-chat-repository.js";
 import { PostgresBrandVisualProfileRepository } from "../dist/infrastructure/storage/postgres/postgres-brand-visual-profile-repository.js";
+import { PostgresProductionSettingsRepository } from "../dist/infrastructure/storage/postgres/postgres-production-settings-repository.js";
 import { buildConservativeDefaultProfile } from "../dist/shared/utils/brand-visual-profile.types.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
@@ -328,5 +329,60 @@ test("Postgres Brand Visual Profile: apagar o workspace faz cascata no perfil", 
   await db.pool.query("delete from workspaces where id = $1", [workspace.id]);
 
   const left = await db.pool.query("select 1 from brand_visual_profiles where workspace_id = $1", [workspace.id]);
+  assert.equal(left.rows.length, 0);
+});
+
+// ---------------------------------------------------------------------------------------------
+// PostgresProductionSettingsRepository
+// ---------------------------------------------------------------------------------------------
+
+test("Postgres Production Settings: getByWorkspace() sem configuração retorna undefined", async () => {
+  const repo = new PostgresProductionSettingsRepository(db.pool, { idGenerator: (p) => nextId(p) });
+  const result = await repo.getByWorkspace("nao-existe-production-settings");
+  assert.equal(result, undefined);
+});
+
+test("Postgres Production Settings: upsert() com patch parcial (só os campos booleanos) cria com defaults nos demais — regressão do achado ao vivo 'column is of type boolean but expression is of type text'", async () => {
+  const workspaceRepo = new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") });
+  const settingsRepo = new PostgresProductionSettingsRepository(db.pool, { idGenerator: (p) => nextId(p) });
+  const workspace = await workspaceRepo.create({ tenantId: "tenant-pg-settings-1", name: "Só booleanos" });
+
+  const created = await settingsRepo.upsert(workspace.id, { preferRealAssets: false, allowFictionalInterfaces: true, allowGeneratedPeople: false });
+  assert.equal(created.workspaceId, workspace.id);
+  assert.equal(created.version, 1);
+  assert.equal(created.preferRealAssets, false);
+  assert.equal(created.allowFictionalInterfaces, true);
+  assert.equal(created.allowGeneratedPeople, false);
+  assert.equal(created.textDensity, "balanced");
+  assert.equal(created.creativeFreedom, "medium");
+  assert.equal(created.productionPrompt, undefined);
+});
+
+test("Postgres Production Settings: upsert() no mesmo workspace faz merge parcial (nunca reseta campo ausente do patch) e incrementa version", async () => {
+  const workspaceRepo = new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") });
+  const settingsRepo = new PostgresProductionSettingsRepository(db.pool, { idGenerator: (p) => nextId(p) });
+  const workspace = await workspaceRepo.create({ tenantId: "tenant-pg-settings-2", name: "Merge parcial" });
+
+  await settingsRepo.upsert(workspace.id, { productionPrompt: "Priorize verde e amarelo.", preferRealAssets: false });
+  const updated = await settingsRepo.upsert(workspace.id, { textDensity: "rich" });
+
+  assert.equal(updated.version, 2);
+  assert.equal(updated.productionPrompt, "Priorize verde e amarelo.");
+  assert.equal(updated.preferRealAssets, false);
+  assert.equal(updated.textDensity, "rich");
+
+  const rows = await db.pool.query("select count(*)::int as count from workspace_production_settings where workspace_id = $1", [workspace.id]);
+  assert.equal(rows.rows[0].count, 1);
+});
+
+test("Postgres Production Settings: apagar o workspace faz cascata na configuração", async () => {
+  const workspaceRepo = new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") });
+  const settingsRepo = new PostgresProductionSettingsRepository(db.pool, { idGenerator: (p) => nextId(p) });
+  const workspace = await workspaceRepo.create({ tenantId: "tenant-pg-settings-3", name: "Vai sumir com config" });
+  await settingsRepo.upsert(workspace.id, { productionPrompt: "Qualquer coisa." });
+
+  await db.pool.query("delete from workspaces where id = $1", [workspace.id]);
+
+  const left = await db.pool.query("select 1 from workspace_production_settings where workspace_id = $1", [workspace.id]);
   assert.equal(left.rows.length, 0);
 });

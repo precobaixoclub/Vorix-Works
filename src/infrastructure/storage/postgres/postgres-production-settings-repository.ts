@@ -44,12 +44,12 @@ export class PostgresProductionSettingsRepository implements ProductionSettingsR
          id, workspace_id, production_prompt, version, prefer_real_assets, allow_fictional_interfaces,
          allow_generated_people, text_density, creative_freedom, created_at, updated_at
        )
-       values ($1, $2, $3, 1, coalesce($4, $9), coalesce($5, $10), coalesce($6, $11), coalesce($7, $12), coalesce($8, $13), now(), now())
+       values ($1, $2, $3, 1, coalesce($4::boolean, $9::boolean), coalesce($5::boolean, $10::boolean), coalesce($6::boolean, $11::boolean), coalesce($7, $12), coalesce($8, $13), now(), now())
        on conflict (workspace_id) do update set
          production_prompt = coalesce($3, workspace_production_settings.production_prompt),
-         prefer_real_assets = coalesce($4, workspace_production_settings.prefer_real_assets),
-         allow_fictional_interfaces = coalesce($5, workspace_production_settings.allow_fictional_interfaces),
-         allow_generated_people = coalesce($6, workspace_production_settings.allow_generated_people),
+         prefer_real_assets = coalesce($4::boolean, workspace_production_settings.prefer_real_assets),
+         allow_fictional_interfaces = coalesce($5::boolean, workspace_production_settings.allow_fictional_interfaces),
+         allow_generated_people = coalesce($6::boolean, workspace_production_settings.allow_generated_people),
          text_density = coalesce($7, workspace_production_settings.text_density),
          creative_freedom = coalesce($8, workspace_production_settings.creative_freedom),
          version = workspace_production_settings.version + 1,

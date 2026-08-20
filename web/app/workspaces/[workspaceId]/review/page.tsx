@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/Button";
 import { Card, CardBody } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
@@ -11,7 +11,7 @@ import { Textarea } from "@/components/Field";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { decideExecutionGate } from "@/features/execution/api";
 import { useExecutionRun, useExecutionRuns } from "@/features/execution/hooks";
-import type { ExecutionRun, ExecutionRunState } from "@/features/execution/types";
+import type { ExecutionRun, ExecutionRunDetail, ExecutionRunState } from "@/features/execution/types";
 import { deriveObjective, extractExecutionRunFailure, generateFromIdea, isUnrecoverableSemanticOcclusionFailure, rejectExecutionWithFeedback, REJECTION_REASONS, REJECTION_REASON_LABELS, type RejectionReason, waitForExecutionRunTerminal } from "@/features/production-line/api";
 import { getGenerationRecord, recordGeneration, type GenerationRecord } from "@/features/production-line/generation-log";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
@@ -22,56 +22,21 @@ import { readProductionConfig, writeProductionConfig } from "@/features/producti
 // como um card quebrado aqui.
 const READY_STATES: readonly ExecutionRunState[] = ["completed", "waiting_for_approval"];
 
-/**
- * Revisão — só o resultado pronto (imagem + a ideia que a originou) para aprovar ou rejeitar.
- * Nenhuma execução em andamento ou com falha aparece nesta tela.
- */
-export default function ReviewPage() {
-  const workspace = useCurrentWorkspace();
-  const { data: runs, isLoading, mutate } = useExecutionRuns(workspace.id);
-  const readyRuns = (runs ?? [])
-    .filter((run) => run.mode === "real" && READY_STATES.includes(run.state))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+type RunContent = {
+  title: string;
+  description: string;
+  images: Array<{ uri: string }>;
+  record: GenerationRecord | undefined;
+};
 
-  return (
-    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Revisão" description="Peças geradas prontas para você aprovar." />
-
-      {isLoading ? (
-        <div className="flex justify-center py-14">
-          <Spinner />
-        </div>
-      ) : readyRuns.length === 0 ? (
-        <EmptyState title="Nada para revisar ainda" description="Quando uma peça terminar de ser gerada em Produção, ela aparece aqui." />
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {readyRuns.map((run) => (
-            <RunCard key={run.id} workspaceId={workspace.id} run={run} onDecided={() => mutate()} />
-          ))}
-        </div>
-      )}
-    </main>
-  );
-}
-
-type RejectStep = "closed" | "choose" | "confirm_tank" | "request_change";
-
-function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: ExecutionRun; onDecided: () => void }) {
-  const { data: detail, mutate: mutateDetail } = useExecutionRun(workspaceId, run.id);
-  const [approving, setApproving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [rejectStep, setRejectStep] = useState<RejectStep>("closed");
-  const [busy, setBusy] = useState(false);
-  const [changeText, setChangeText] = useState("");
-  const [rejectReasons, setRejectReasons] = useState<RejectionReason[]>([]);
-  const [rejectComment, setRejectComment] = useState("");
-
+/** Deriva título/descrição/imagens de um `ExecutionRunDetail` — mesma lógica para o item da lista
+ * (compacto) e para o painel de detalhe (completo), nunca duplicada entre os dois. */
+function deriveRunContent(workspaceId: string, runId: string, detail: ExecutionRunDetail | undefined): RunContent {
   const images = (detail?.artifacts ?? []).flatMap((artifact) => {
     const payload = artifact.payload as { output?: { images?: Array<{ uri?: string }> } } | undefined;
     return payload?.output?.images?.filter((image): image is { uri: string } => Boolean(image.uri)) ?? [];
   });
-  const openGate = detail?.gates.find((gate) => gate.state === "open");
-  const record = getGenerationRecord(workspaceId, run.id);
+  const record = getGenerationRecord(workspaceId, runId);
   // Fonte principal: o artefato "structure" (produzido pelo content_brief) já vem do servidor e
   // reflete a ideia real que gerou esta peça — funciona em qualquer navegador/dispositivo. O
   // registro local (`record`, localStorage) só cobre o que o servidor não guarda (o vínculo com a
@@ -90,6 +55,131 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
   // `publication` já é a legenda + CTA + hashtags prontos para colar no post — mais útil aqui do
   // que só `caption` sozinha, já que o usuário pediu explicitamente "uma descrição para postar".
   const description = copyOutput?.output?.publication || copyOutput?.output?.caption || structureOutput?.output?.centralPromise || record?.ideaText || record?.objective || "Sem descrição.";
+  return { title, description, images, record };
+}
+
+/**
+ * Revisão, redesign "workspace criativo" em 3 painéis — contexto (lista do que está pronto para
+ * decidir) / canvas (a peça selecionada, grande) / ações (título, descrição, aprovar/rejeitar).
+ * Antes, cada peça era um card independente numa grade — revisar várias ao mesmo tempo forçava a
+ * rolar a página inteira. Agora dá para varrer a lista à esquerda e decidir uma por vez, com a
+ * peça atual sempre em destaque. Toda a lógica (hooks, aprovar/rejeitar/solicitar alteração,
+ * volta pro tanque) é exatamente a mesma de antes — só a apresentação mudou.
+ */
+export default function ReviewPage() {
+  const workspace = useCurrentWorkspace();
+  const { data: runs, isLoading, mutate } = useExecutionRuns(workspace.id);
+  const readyRuns = (runs ?? [])
+    .filter((run) => run.mode === "real" && READY_STATES.includes(run.state))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  const [selectedRunId, setSelectedRunId] = useState<string | undefined>(undefined);
+  const selectedRun = readyRuns.find((run) => run.id === selectedRunId) ?? readyRuns[0];
+
+  useEffect(() => {
+    // Se a peça selecionada some da lista (decidida, ou lote atualizado), cai pra próxima
+    // disponível — nunca trava numa peça que já saiu da fila de revisão.
+    if (selectedRunId && !readyRuns.some((run) => run.id === selectedRunId)) setSelectedRunId(undefined);
+  }, [selectedRunId, readyRuns]);
+
+  return (
+    <main className="mx-auto flex h-full max-w-7xl flex-col px-3 py-5 sm:px-6 sm:py-8">
+      <PageHeader title="Revisão" description="Peças geradas prontas para você aprovar." />
+
+      {isLoading ? (
+        <div className="flex justify-center py-14">
+          <Spinner />
+        </div>
+      ) : readyRuns.length === 0 ? (
+        <EmptyState title="Nada para revisar ainda" description="Quando uma peça terminar de ser gerada em Produção, ela aparece aqui." />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)_360px] lg:items-start">
+          <RunList workspaceId={workspace.id} runs={readyRuns} selectedId={selectedRun?.id} onSelect={setSelectedRunId} />
+          {selectedRun ? (
+            <RunWorkspace
+              key={selectedRun.id}
+              workspaceId={workspace.id}
+              run={selectedRun}
+              onDecided={() => {
+                mutate();
+                setSelectedRunId(undefined);
+              }}
+            />
+          ) : null}
+        </div>
+      )}
+    </main>
+  );
+}
+
+function RunList({
+  workspaceId,
+  runs,
+  selectedId,
+  onSelect,
+}: {
+  workspaceId: string;
+  runs: ExecutionRun[];
+  selectedId: string | undefined;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <Card className="lg:sticky lg:top-0">
+      <CardBody className="p-2">
+        <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
+          {runs.map((run) => (
+            <RunListItem key={run.id} workspaceId={workspaceId} run={run} selected={run.id === selectedId} onSelect={() => onSelect(run.id)} />
+          ))}
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function RunListItem({ workspaceId, run, selected, onSelect }: { workspaceId: string; run: ExecutionRun; selected: boolean; onSelect: () => void }) {
+  const { data: detail } = useExecutionRun(workspaceId, run.id);
+  const { title, images } = deriveRunContent(workspaceId, run.id, detail);
+  const thumbnail = images[0]?.uri;
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={selected}
+      className={`flex w-40 shrink-0 flex-col gap-2 rounded-lg border p-2 text-left transition-colors lg:w-full lg:flex-row lg:items-center ${
+        selected ? "border-accent bg-accent-soft" : "border-border bg-surface hover:bg-surface-sunken"
+      }`}
+    >
+      <div className="aspect-square w-full shrink-0 overflow-hidden rounded-md border border-border bg-surface-sunken lg:w-12">
+        {thumbnail ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={thumbnail} alt="" loading="lazy" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-[10px] text-ink-faint">—</div>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className={`truncate text-xs font-medium ${selected ? "text-accent" : "text-ink"}`}>{title}</p>
+        <p className="mt-0.5 text-[11px] text-ink-muted">{run.state === "waiting_for_approval" ? "Aguardando" : "Aprovada"}</p>
+      </div>
+    </button>
+  );
+}
+
+type RejectStep = "closed" | "choose" | "confirm_tank" | "request_change";
+
+function RunWorkspace({ workspaceId, run, onDecided }: { workspaceId: string; run: ExecutionRun; onDecided: () => void }) {
+  const { data: detail, mutate: mutateDetail } = useExecutionRun(workspaceId, run.id);
+  const [approving, setApproving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [rejectStep, setRejectStep] = useState<RejectStep>("closed");
+  const [busy, setBusy] = useState(false);
+  const [changeText, setChangeText] = useState("");
+  const [rejectReasons, setRejectReasons] = useState<RejectionReason[]>([]);
+  const [rejectComment, setRejectComment] = useState("");
+
+  const { title, description, images, record } = deriveRunContent(workspaceId, run.id, detail);
+  const openGate = detail?.gates.find((gate) => gate.state === "open");
 
   async function approve() {
     if (!openGate) return;
@@ -189,63 +279,69 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
   }
 
   return (
-    <Card>
-      <CardBody className="space-y-3">
-        {images.length > 0 ? (
-          images.length === 1 ? (
-            // Peça única: imagem inteira sem corte (achado ao vivo — `object-cover` com
-            // `aspect-square` cortava peças que não são quadradas) e clicável pra abrir em
-            // tamanho real numa aba nova.
-            <a href={images[0].uri} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border bg-surface-sunken">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={images[0].uri} alt={title} loading="lazy" className="mx-auto max-h-[520px] w-full object-contain" />
-            </a>
+    <>
+      <Card className="lg:col-span-1">
+        <CardBody>
+          {images.length > 0 ? (
+            images.length === 1 ? (
+              // Peça única: imagem inteira sem corte (achado ao vivo — `object-cover` com
+              // `aspect-square` cortava peças que não são quadradas) e clicável pra abrir em
+              // tamanho real numa aba nova.
+              <a href={images[0].uri} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border bg-surface-sunken">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={images[0].uri} alt={title} loading="lazy" className="mx-auto max-h-[70vh] w-full object-contain" />
+              </a>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {images.map((image, index) => (
+                  <a key={`${image.uri}-${index}`} href={image.uri} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border bg-surface-sunken">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={image.uri} alt={title} loading="lazy" className="aspect-square w-full object-contain" />
+                  </a>
+                ))}
+              </div>
+            )
           ) : (
-            <div className="grid grid-cols-2 gap-2">
-              {images.map((image, index) => (
-                <a key={`${image.uri}-${index}`} href={image.uri} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border bg-surface-sunken">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={image.uri} alt={title} loading="lazy" className="aspect-square w-full object-contain" />
-                </a>
-              ))}
-            </div>
-          )
-        ) : (
-          <div className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-xs text-ink-muted">Sem imagem</div>
-        )}
-
-        <div className="min-w-0 space-y-1.5">
-          <p className="text-[11px] text-ink-faint" title={run.createdAt}>
+            <div className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-xs text-ink-muted">Sem imagem</div>
+          )}
+          <p className="mt-2 text-[11px] text-ink-faint" title={run.createdAt}>
             Gerado em {formatGeneratedAt(run.createdAt)}
           </p>
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-sm font-semibold text-ink">{title}</p>
-            <CopyButton text={title} label="Copiar título" />
-          </div>
-          <div className="flex items-start justify-between gap-2">
-            <p className="whitespace-pre-wrap text-xs text-ink-muted">{description}</p>
-            <CopyButton text={description} label="Copiar descrição" />
-          </div>
-        </div>
+        </CardBody>
+      </Card>
 
-        {error ? <p className="text-xs text-red-600">{error}</p> : null}
-
-        {run.state === "waiting_for_approval" ? (
-          <div className="flex gap-2">
-            <Button className="flex-1" disabled={approving || !openGate} onClick={approve}>
-              {approving ? "Enviando…" : "Aprovar"}
-            </Button>
-            <Button variant="secondary" className="flex-1" disabled={approving || !openGate} onClick={() => setRejectStep("choose")}>
-              Rejeitar
-            </Button>
+      <Card className="lg:col-span-1">
+        <CardBody className="space-y-4">
+          <div className="min-w-0 space-y-1.5">
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-display text-sm font-semibold text-ink">{title}</p>
+              <CopyButton text={title} label="Copiar título" />
+            </div>
+            <div className="flex items-start justify-between gap-2">
+              <p className="whitespace-pre-wrap text-xs text-ink-muted">{description}</p>
+              <CopyButton text={description} label="Copiar descrição" />
+            </div>
           </div>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-muted">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            Aprovada
-          </span>
-        )}
-      </CardBody>
+
+          {error ? <p className="text-xs text-danger">{error}</p> : null}
+
+          {run.state === "waiting_for_approval" ? (
+            <div className="flex gap-2">
+              <Button className="flex-1" disabled={approving || !openGate} onClick={approve}>
+                {approving ? "Enviando…" : "Aprovar"}
+              </Button>
+              <Button variant="secondary" className="flex-1" disabled={approving || !openGate} onClick={() => setRejectStep("choose")}>
+                Rejeitar
+              </Button>
+            </div>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-muted">
+              <span className="h-1.5 w-1.5 rounded-full bg-success" />
+              Aprovada
+            </span>
+          )}
+        </CardBody>
+      </Card>
 
       {rejectStep === "choose" ? (
         <Modal title="Rejeitar peça" onClose={() => setRejectStep("closed")}>
@@ -282,7 +378,7 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
             </div>
             <Textarea value={rejectComment} onChange={(event) => setRejectComment(event.target.value)} rows={2} placeholder="Comentário opcional" />
             <p className="text-sm text-ink-muted">Quer que a ideia volte disponível no tanque, ou prefere mantê-la como já usada?</p>
-            {error ? <p className="text-xs text-red-600">{error}</p> : null}
+            {error ? <p className="text-xs text-danger">{error}</p> : null}
             <div className="flex flex-col gap-2">
               <Button disabled={busy || rejectReasons.length === 0} onClick={() => rejectAndResolveTank(true)}>
                 {busy ? "Enviando…" : "Voltar ideia para o tanque"}
@@ -300,14 +396,14 @@ function RunCard({ workspaceId, run, onDecided }: { workspaceId: string; run: Ex
           <div className="space-y-3">
             <p className="text-sm text-ink-muted">Descreva o que precisa mudar. Uma nova versão será gerada com esse ajuste.</p>
             <Textarea value={changeText} onChange={(event) => setChangeText(event.target.value)} rows={4} placeholder="Ex.: deixar o fundo mais claro e destacar o preço." autoFocus />
-            {error ? <p className="text-xs text-red-600">{error}</p> : null}
+            {error ? <p className="text-xs text-danger">{error}</p> : null}
             <Button className="w-full" disabled={busy || !changeText.trim()} onClick={requestChange}>
               {busy ? "Gerando nova versão…" : "Enviar e gerar novamente"}
             </Button>
           </div>
         </Modal>
       ) : null}
-    </Card>
+    </>
   );
 }
 

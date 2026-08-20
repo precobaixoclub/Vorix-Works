@@ -14,7 +14,7 @@ export default function KnowledgePage() {
 
   return (
     <main className="mx-auto max-w-4xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Central de Conhecimento" description="O que o Vorix sabe sobre esta marca — base para futuras campanhas e produção automática." />
+      <PageHeader title="Marca" description="O que o Vorix sabe sobre esta marca — base para futuras campanhas e produção automática." />
 
       <ScreenGuide
         title="O que olhar aqui"

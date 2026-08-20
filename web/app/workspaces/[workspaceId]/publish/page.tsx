@@ -304,7 +304,7 @@ export default function PublishPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Publicar" description="Envie o conteúdo, marque em quais redes vai publicar e agende data e horário." />
+      <PageHeader title="Campanhas" description="Envie o conteúdo, marque em quais redes vai publicar e agende data e horário." />
 
       <ScreenGuide
         title="Publicação manual"

@@ -58,7 +58,7 @@ export default function WorkspaceHomePage() {
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-xl font-semibold text-ink">{workspace.name}</h1>
+            <h1 className="font-display text-xl font-semibold text-ink">{workspace.name}</h1>
             <StatusBadge status={workspace.status} />
           </div>
           <p className="mt-1 text-sm text-ink-muted">Criado em {formatDate(workspace.createdAt)}</p>

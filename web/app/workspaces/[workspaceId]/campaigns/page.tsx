@@ -124,7 +124,7 @@ export default function PublicationsHistoryPage() {
   return (
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
-        title="Publicações"
+        title="Conteúdos"
         description="Tudo o que já foi postado ou está agendado nas suas redes sociais, em um só lugar."
         actions={<Link href={`/workspaces/${workspace.id}/publish`}><Button>+ Nova Publicação</Button></Link>}
       />

@@ -3,6 +3,7 @@ import type pg from "pg";
 import type { AiGatewayPort } from "../../../application/ports/ai-gateway.port.js";
 import type { AnalyticsRepositoryPort } from "../../../application/ports/analytics-repository.port.js";
 import type { AssetLibraryRepositoryPort } from "../../../application/ports/asset-library-repository.port.js";
+import type { ProductionSettingsRepositoryPort } from "../../../application/ports/production-settings-repository.port.js";
 import type { AssetMetadataSourcePort } from "../../../application/ports/asset-metadata-source.port.js";
 import type { AuditLogPort } from "../../../application/ports/audit-log.port.js";
 import type { AuthPort } from "../../../application/ports/auth.port.js";
@@ -75,6 +76,7 @@ import { DeterministicExecutionTaskHandler } from "../../../application/executio
 import type { ExecutionHandlerResolver } from "../../../application/execution/handler-resolver.js";
 import type { ExecutionFeatureFlags } from "../../../application/execution/feature-flags.js";
 import { assertCreativeEngineExclusivity, resolveCreativeEngineMode } from "../../../application/creative-engine/creative-engine-mode.js";
+import type { CreativeBrandProfile } from "../../../application/creative-engine/build-creative-context.js";
 import type { CreativeEngineRunRepositoryPort } from "../../../application/ports/creative-engine-run-repository.port.js";
 import { compositeLogoOntoImage } from "../../../infrastructure/media/logo-compositor.js";
 import { compositeScreenshotIntoDeviceMockup } from "../../../infrastructure/media/screenshot-mockup-compositor.js";
@@ -172,6 +174,7 @@ export type ApiContainer = {
   authPort: AuthPort;
   workspaceRepository: WorkspaceRepositoryPort;
   assetLibraryRepository: AssetLibraryRepositoryPort;
+  productionSettingsRepository: ProductionSettingsRepositoryPort;
   chatRepository: ChatRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
   conversationEventRepository: ConversationEventRepositoryPort;
@@ -288,6 +291,15 @@ export type ApiContainer = {
    * (não só no bootstrap do tenant) porque é a Skill de design quem consome — barato depois da
    * primeira vez (só um `select`). */
   ensureBrandVisualProfile(workspaceId: string): Promise<BrandVisualProfile>;
+  /** Migração "Prompt Persistente de Produção" (achado numa autorrevisão) — resolve o perfil de
+   * marca real (Clara BrandContext/IdentityContext/BusinessContext/AudienceContext/ProductContext)
+   * a partir do `workspaceId`, para o motor GPT e para prova de auditoria/teste. `undefined` =
+   * workspace sem nenhum dado de marca cadastrado ainda, nunca inventado. */
+  resolveBrandProfile(workspaceId: string): Promise<CreativeBrandProfile | undefined>;
+  /** Exposto para teste/auditoria direta da Clara (ex.: provar que `resolveBrandProfile` lê o
+   * dado real corretamente) — uso em produção continua indireto, via `resolveBrandProfile`/
+   * `ensureHouseTenantProfile`, nunca uma segunda via de escrita de perfil de marca. */
+  clara: ClaraKnowledgeCenter;
   /** Descreve uma imagem pública (referência anexada numa ideia, logo em Materiais) em texto —
    * usado tanto pelo bootstrap de marca acima quanto por `generate-visual-from-idea.ts` para
    * enriquecer o briefing com o que uma imagem de referência mostra. */
@@ -609,11 +621,93 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     const metadata = await sharp(buffer).metadata();
     return { width: metadata.width, height: metadata.height };
   };
+  // Migração "Prompt Persistente de Produção + Materiais com Contexto para o GPT" — resolve o
+  // Prompt de Produção/Diretrizes Criativas do workspace, sempre best-effort (nunca derruba a
+  // geração por falha de leitura; ausência = workspace sem configuração ainda, nunca inventado).
+  const resolveProductionSettings = async (workspaceId: string) =>
+    repositories.productionSettingsRepository.getByWorkspace(workspaceId).catch(() => undefined);
+  // Lista os materiais reais (com arquivo) da Asset Library do workspace, já com URL pública
+  // resolvida — a seleção de QUAIS são relevantes para o pedido atual acontece em
+  // `select-brand-materials.ts`, nunca aqui (este resolver só lista o que existe).
+  const resolveBrandMaterials = async (workspaceId: string) => {
+    const library = await repositories.assetLibraryRepository.getLibraryByWorkspace(workspaceId).catch(() => undefined);
+    if (!library) return [];
+    const assets = await repositories.assetLibraryRepository.listAssets(library.id).catch(() => []);
+    return assets
+      .filter((asset) => asset.status === "active" && asset.storageRef)
+      .map((asset) => {
+        let url: string | undefined;
+        try {
+          url = asset.storageRef ? objectStorage.resolvePublicUrl(asset.storageRef.objectKey) : undefined;
+        } catch {
+          url = undefined;
+        }
+        return {
+          id: asset.id,
+          name: asset.name,
+          materialType: asset.materialType,
+          usagePriority: asset.usagePriority,
+          aiInstructions: asset.aiInstructions,
+          usageRule: asset.usageRule,
+          url,
+        };
+      });
+  };
+  // Migração "Prompt Persistente de Produção" (achado numa autorrevisão) — fecha o gap que
+  // deixava `resolveBrandProfile` fora do wiring: `workspaceRepository.getById` resolve o
+  // `tenantId` real do workspace (Clara é indexada por `clientId`≈`tenantId`, nunca por
+  // `workspaceId` diretamente), e a partir daí reaproveita EXATAMENTE a mesma porta Clara já usada
+  // por `ensureHouseBrandContext`/`ensureHouseIdentityContext` acima — nunca uma segunda fonte de
+  // perfil de marca. Best-effort em cada leitura (best-effort agregado, não por módulo individual,
+  // de propósito: um erro real do Clara para este tenant deveria mesmo derrubar o perfil inteiro
+  // em vez de devolver um perfil parcialmente corrompido sem se saber).
+  const resolveBrandProfile = async (workspaceId: string): Promise<CreativeBrandProfile | undefined> => {
+    const workspace = await repositories.workspaceRepository.getById(workspaceId).catch(() => undefined);
+    if (!workspace) return undefined;
+    const clientId = workspace.tenantId;
+
+    const [brandRecords, identityRecords, businessRecords, audienceRecords, productRecords] = await Promise.all([
+      clara.list({ clientId, module: "BrandContext", status: "active" }).catch(() => []),
+      clara.list({ clientId, module: "IdentityContext", status: "active" }).catch(() => []),
+      clara.list({ clientId, module: "BusinessContext", status: "active" }).catch(() => []),
+      clara.list({ clientId, module: "AudienceContext", status: "active" }).catch(() => []),
+      clara.list({ clientId, module: "ProductContext", status: "active" }).catch(() => []),
+    ]);
+
+    const brand = brandRecords[0]?.payload as { brandName?: string; positioning?: string } | undefined;
+    const identity = identityRecords[0]?.payload as { colors?: string[]; imageStyle?: string; logoUri?: string } | undefined;
+    const business = businessRecords[0]?.payload as { description?: string } | undefined;
+    const audience = audienceRecords[0]?.payload as { targetAudience?: string } | undefined;
+    const productsOrServices = productRecords
+      .map((record) => (record.payload as { productName?: string; serviceName?: string }).productName ?? (record.payload as { productName?: string; serviceName?: string }).serviceName)
+      .filter((name): name is string => Boolean(name));
+
+    // Achado ao vivo numa autorrevisão: `BrandContext.brandName` é SEMPRE o literal "Vorix" nesta
+    // base de código — `ensureHouseBrandContext` (acima) escreve esse valor incondicionalmente,
+    // nunca o nome real do cliente. Nunca surfar isto como se fosse o nome real da marca —
+    // `buildCreativeContext` já usa `input.brandName` (vindo do briefing real) como o nome
+    // correto; aqui só `positioning` pode ser real, e só quando não for mais o texto genérico do
+    // bootstrap (`GENERIC_BRAND_POSITIONING`, escrito quando ainda não há descrição derivada de
+    // logo real). Pelo mesmo motivo, `colors`/`imageStyle` só são reais quando `identity.logoUri`
+    // existe — sem logo real, `ensureHouseIdentityContext` grava cores/estilo neutros fixos, nunca
+    // identidade visual de verdade — surfar esses valores fixos como "identidade da marca" seria
+    // apresentar preenchimento genérico como fato decidido.
+    const hasRealPositioning = Boolean(brand?.positioning) && brand?.positioning !== GENERIC_BRAND_POSITIONING;
+    const hasRealVisualIdentity = Boolean(identity?.logoUri);
+
+    if (!hasRealPositioning && !hasRealVisualIdentity && !business && !audience && productsOrServices.length === 0) return undefined;
+
+    return {
+      positioning: hasRealPositioning ? brand?.positioning : undefined,
+      businessDescription: business?.description,
+      targetAudience: audience?.targetAudience,
+      productsOrServices: productsOrServices.length > 0 ? productsOrServices : undefined,
+      brandColors: hasRealVisualIdentity ? identity?.colors : undefined,
+      visualIdentityNotes: hasRealVisualIdentity ? identity?.imageStyle : undefined,
+    };
+  };
   // Deps exclusivas do motor GPT (`build-execution-handler-resolver.ts`, só lido quando
-  // `creativeEngineGptEnabled` está ligado). `resolveBrandProfile` fica de fora por ora: exigiria
-  // encadear `tenantId` (Clara é indexada por `clientId`, não `workspaceId`) até este ponto, o que
-  // pertence à superfície de API/UI do PR 7 — na ausência, `buildCreativeContext` já documenta que
-  // nunca inventa um perfil, só segue sem ele.
+  // `creativeEngineGptEnabled` está ligado).
   const gptCreativeEngineDeps = {
     creativeBrain: creativeIcaro,
     objectStorage,
@@ -628,6 +722,9 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     },
     referenceIntelligenceExtractor,
     creativeEngineRunRepository: repositories.creativeEngineRunRepository,
+    resolveProductionSettings,
+    resolveBrandMaterials,
+    resolveBrandProfile,
   };
   const createExecutionHandlerResolver = () =>
     buildExecutionHandlerResolver({
@@ -1115,6 +1212,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       valentina,
       ensureHouseTenantProfile,
       ensureBrandVisualProfile,
+      resolveBrandProfile,
+      clara,
       imageDescriber,
       referenceIntelligenceExtractor,
       qualityFeedback,
@@ -1194,6 +1293,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     valentina,
     ensureHouseTenantProfile,
     ensureBrandVisualProfile,
+    resolveBrandProfile,
+    clara,
     imageDescriber,
     referenceIntelligenceExtractor,
     qualityFeedback,

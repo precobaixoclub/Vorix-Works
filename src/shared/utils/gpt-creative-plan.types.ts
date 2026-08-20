@@ -31,6 +31,36 @@ export type CreativeContextHistoryEntry = {
   visualConcept?: string;
 };
 
+/**
+ * Migração "Prompt Persistente de Produção + Materiais com Contexto para o GPT" — um material da
+ * Asset Library do workspace, já SELECIONADO como relevante para esta geração específica (ver
+ * `select-brand-materials.ts`) — nunca a biblioteca inteira despejada sem critério. Distinto de
+ * `CreativeContextAsset`: `assets[]` é a lista plana usada pela composição determinística
+ * (role→geometria); `brandMaterials[]` é o catálogo rico (prioridade/regra/instrução) que dá ao
+ * GPT o "porquê" e o "como" de cada material, não só o "o quê". `type`/`priority` ficam como
+ * `string` (não importam o enum do domínio) de propósito — este módulo permanece deliberadamente
+ * desacoplado de `src/domain` (ver comentário de topo do arquivo).
+ */
+export type CreativeContextBrandMaterial = {
+  id: string;
+  name: string;
+  type: string;
+  /** "required" nunca é omitido pela seleção; "on_request" só entra se o pedido atual referenciar
+   * o material explicitamente. Ver `AssetUsagePriority` (`asset-library.model.ts`). */
+  priority: string;
+  aiInstructions?: string;
+  usageRule?: string;
+  /** Sempre "asset_library" nesta versão — campo mantido para permitir outras origens no futuro
+   * (ex.: um material vindo só do pedido atual, sem estar na Asset Library) sem quebrar o formato. */
+  source: string;
+  /** URL real do material — mesma chave usada em `CreativeContext.assets[].url` quando este
+   * material também entra na lista plana de composição (papel required/preferred mapeável). */
+  url?: string;
+  /** Por que este material foi selecionado para ESTA geração — auditável, nunca "porque sim".
+   * Ver `select-brand-materials.ts`. */
+  selectionReason: string;
+};
+
 export type CreativeContext = {
   brandName: string;
   objective: string;
@@ -59,6 +89,25 @@ export type CreativeContext = {
   visualIdentityNotes?: string;
   /** Últimas peças aprovadas do workspace — ver `CreativeContextHistoryEntry`. */
   recentHistory?: CreativeContextHistoryEntry[];
+  /** Migração "Prompt Persistente de Produção" — texto livre permanente do workspace ("Prompt de
+   * Produção"/"Diretrizes Criativas"), incluído verbatim. Prioridade 2 na precedência de
+   * instruções (perde só para o pedido atual — `objective`/`ideaText` — quando houver conflito
+   * explícito; vence sobre materiais/dados de marca). `undefined` = workspace sem prompt
+   * configurado ainda, nunca inventado. */
+  productionInstructions?: string;
+  /** Número de versão do prompt persistente NO MOMENTO desta execução — snapshot para auditoria
+   * (ver `workspace_production_settings.version`); nunca reconstruído a partir de execuções
+   * antigas se o prompt for editado depois. */
+  productionInstructionsVersion?: number;
+  /** Frases derivadas das opções estruturadas de comportamento do workspace (ver
+   * `describeProductionSettingsAsInstructions`, `production-settings.types.ts`) — mesma
+   * prioridade 2 do `productionInstructions`. */
+  behaviorPreferences?: string[];
+  /** Materiais da Asset Library já selecionados como relevantes para este pedido — ver
+   * `CreativeContextBrandMaterial`. Prioridade 3 na precedência (perde para o pedido atual E para
+   * as instruções permanentes do workspace, vence sobre dados estruturados de marca). Lista vazia
+   * = nenhum material relevante encontrado (nunca a biblioteca inteira despejada aqui). */
+  brandMaterials?: CreativeContextBrandMaterial[];
 };
 
 export const VISUAL_DENSITIES_GPT_PLAN = ["clean", "balanced", "dense"] as const;
@@ -158,22 +207,40 @@ function describeAsset(asset: CreativeContextAsset): string {
   return `- ${asset.url}: ${roleLabel[asset.role]} ${asset.description}`.trim();
 }
 
+const BRAND_MATERIAL_PRIORITY_LABEL: Record<string, string> = {
+  required: "OBRIGATÓRIO",
+  preferred: "PREFERENCIAL",
+  automatic: "uso automático quando relevante",
+  on_request: "só quando solicitado explicitamente",
+};
+
+function describeBrandMaterial(material: CreativeContextBrandMaterial): string {
+  const priorityLabel = BRAND_MATERIAL_PRIORITY_LABEL[material.priority] ?? material.priority;
+  const parts = [`- ${material.name} (${material.type}, ${priorityLabel})`];
+  if (material.aiInstructions) parts.push(`Instrução: ${material.aiInstructions}`);
+  if (material.usageRule) parts.push(`REGRA: ${material.usageRule}`);
+  return parts.join(" ");
+}
+
 /**
- * Monta o prompt enviado ao GPT para produzir o `creative_plan` — instrui explicitamente o papel
- * de cada asset (nunca deixa o modelo adivinhar) e proíbe inventar fato comercial fora de
- * `confirmedFacts`. Multimodal: as URLs de `context.assets` também vão como `imageUrls` na
- * chamada ao `IcaroBrainPort` (o GPT literalmente VÊ as referências, não só lê a descrição).
+ * Bloco de contexto COMPARTILHADO entre o prompt do plano inicial (`buildCreativePlanPrompt`) e o
+ * prompt de reparo (`buildCreativePlanRepairPrompt`, `creative-repair.ts`) — achado ao vivo numa
+ * autorrevisão: o reparo (`gpt_replan`) reenvia o MESMO modelo diretor, mas antes desta função só
+ * recebia `brandName`/`confirmedFacts`, nunca `productionInstructions`/`behaviorPreferences`/
+ * `brandMaterials`. Resultado prático: um plano corrigido por reparo podia silenciosamente deixar
+ * de respeitar o Prompt de Produção e os materiais de marca configurados, exatamente o tipo de
+ * regressão que "só aparece na segunda chamada". Extrair este bloco garante que as duas chamadas
+ * ao GPT (plano inicial e todo reparo) vejam exatamente o mesmo contexto de workspace, nunca uma
+ * versão empobrecida.
  */
-export function buildCreativePlanPrompt(context: CreativeContext): string {
-  const lines = [
-    "Você é um diretor de criação sênior de uma agência de publicidade digital. Sua tarefa é produzir um PLANO CRIATIVO estruturado para uma peça publicitária — não a peça em si, só a direção.",
-    "",
-    `Marca: ${context.brandName}`,
-    `Objetivo: ${context.objective}`,
-    `Canal: ${context.channel}`,
-    `Formato final: ${context.format}`,
-    `Ideia/briefing do cliente: ${context.ideaText}`,
-  ];
+export function buildWorkspaceContextLines(context: CreativeContext): string[] {
+  const lines: string[] = [];
+
+  if (context.productionInstructions || (context.behaviorPreferences && context.behaviorPreferences.length > 0)) {
+    lines.push("", "Instruções permanentes deste workspace (prioridade 2 — respeite exceto quando conflitar com o pedido atual):");
+    if (context.productionInstructions) lines.push(context.productionInstructions);
+    if (context.behaviorPreferences) lines.push(...context.behaviorPreferences.map((item) => `- ${item}`));
+  }
 
   if (context.brandColors && context.brandColors.length > 0) {
     lines.push(`Cores de marca: ${context.brandColors.join(", ")}`);
@@ -196,14 +263,47 @@ export function buildCreativePlanPrompt(context: CreativeContext): string {
   lines.push("", "Fatos comerciais CONFIRMADOS (use exatamente estes, nunca invente outro valor, nunca omita se relevante ao objetivo):");
   lines.push(context.confirmedFacts.length > 0 ? context.confirmedFacts.map((fact) => `- ${fact}`).join("\n") : "- Nenhum fato comercial confirmado disponível. Não mencione preço, desconto, prazo ou qualquer condição comercial específica.");
 
+  if (context.brandMaterials && context.brandMaterials.length > 0) {
+    lines.push("", "Materiais de marca selecionados para esta geração (prioridade 3 — cada um já tem papel/prioridade/regra definidos, siga exatamente como instruído):");
+    lines.push(...context.brandMaterials.map(describeBrandMaterial));
+  }
+
   if (context.assets.length > 0) {
-    lines.push("", "Assets reais disponíveis (cada um já tem um papel definido, não reinterprete):");
+    lines.push("", "Assets reais disponíveis para composição determinística (cada um já tem um papel definido, não reinterprete):");
     lines.push(...context.assets.map(describeAsset));
   }
 
   if (context.forbiddenElements && context.forbiddenElements.length > 0) {
     lines.push("", "Proibido incluir:", ...context.forbiddenElements.map((item) => `- ${item}`));
   }
+
+  return lines;
+}
+
+/**
+ * Monta o prompt enviado ao GPT para produzir o `creative_plan` — instrui explicitamente o papel
+ * de cada asset (nunca deixa o modelo adivinhar) e proíbe inventar fato comercial fora de
+ * `confirmedFacts`. Multimodal: as URLs de `context.assets` também vão como `imageUrls` na
+ * chamada ao `IcaroBrainPort` (o GPT literalmente VÊ as referências, não só lê a descrição).
+ */
+export function buildCreativePlanPrompt(context: CreativeContext): string {
+  const lines = [
+    "Você é um diretor de criação sênior de uma agência de publicidade digital. Sua tarefa é produzir um PLANO CRIATIVO estruturado para uma peça publicitária — não a peça em si, só a direção.",
+    "",
+    "PRECEDÊNCIA DE INSTRUÇÕES — quando houver conflito entre as seções abaixo, siga exatamente esta ordem (a de número menor vence):",
+    "1. O PEDIDO ATUAL do usuário nesta geração (objetivo/ideia abaixo).",
+    "2. Instruções permanentes deste workspace e preferências de comportamento (se houver).",
+    "3. Materiais de marca selecionados e suas regras de uso (se houver).",
+    "4. Dados estruturados da marca (posicionamento, identidade visual, público, etc.).",
+    "5. Guardrails factuais/técnicos ao final deste prompt — estes são SEMPRE ABSOLUTOS e nunca podem ser sobrepostos por nenhuma das seções 1-4 (nunca invente fato comercial, nunca redesenhe uma logo obrigatória, nunca substitua um screenshot real por interface fictícia quando isso estiver proibido).",
+    "",
+    `Marca: ${context.brandName}`,
+    `Objetivo: ${context.objective}`,
+    `Canal: ${context.channel}`,
+    `Formato final: ${context.format}`,
+    `Ideia/briefing do cliente (PEDIDO ATUAL — prioridade 1): ${context.ideaText}`,
+    ...buildWorkspaceContextLines(context),
+  ];
 
   lines.push(
     "",

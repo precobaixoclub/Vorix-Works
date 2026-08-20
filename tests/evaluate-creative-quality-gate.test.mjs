@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   checkCommercialFactIntegrity,
   checkCreativeVisualIntegrity,
+  checkSafeAreaCompliance,
   combineCreativeQualityIssues,
   evaluateCreativeQualityGate,
   evaluateDeterministicCreativeChecks,
@@ -174,4 +175,65 @@ test("evaluateCreativeQualityGate: orquestra as três camadas (determinística +
   });
   assert.equal(result.verdict, "fail");
   assert.ok(result.issues.some((issue) => issue.code === "WRONG_PRICE"));
+});
+
+// Migração "Prompt Persistente de Produção + Materiais com Contexto para o GPT" — hard failure de
+// acabamento: achado ao vivo em produção, CTA/texto cortado na borda inferior de peças reais.
+// Determinístico, roda sobre a geometria já declarada no creative_plan, ANTES mesmo de compor a
+// peça — nunca depende do julgamento do check de visão (`checkCreativeVisualIntegrity`).
+
+test("checkSafeAreaCompliance: zona de texto dentro da margem de segurança não gera issue", () => {
+  const plan = basePlan({ textZones: [{ kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 50, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" }] });
+  assert.deepEqual(checkSafeAreaCompliance(plan), []);
+});
+
+test("checkSafeAreaCompliance: CTA tocando a borda inferior do canvas (caso real observado em produção) vira TEXT_ILLEGIBLE_OR_CUT quando renderedBy='renderer'", () => {
+  const plan = basePlan({ textZones: [{ kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 90, widthPct: 50, heightPct: 9 }, emphasis: "secondary", renderedBy: "renderer" }] });
+  const issues = checkSafeAreaCompliance(plan);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].code, "TEXT_ILLEGIBLE_OR_CUT");
+  assert.match(issues[0].message, /margem de segurança/);
+});
+
+test("checkSafeAreaCompliance: mesma violação com renderedBy='image_model' vira ELEMENT_CUT_OFF (não TEXT_ILLEGIBLE_OR_CUT)", () => {
+  const plan = basePlan({ textZones: [{ kind: "headline", text: "OFERTA", rect: { xPct: 10, yPct: 90, widthPct: 50, heightPct: 9 }, emphasis: "primary", renderedBy: "image_model" }] });
+  const issues = checkSafeAreaCompliance(plan);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].code, "ELEMENT_CUT_OFF");
+});
+
+test("checkSafeAreaCompliance: URL fora da área útil (encostando na borda direita) também é detectada", () => {
+  const plan = basePlan({ textZones: [{ kind: "url", text: "precobaixoclub.com.br", rect: { xPct: 60, yPct: 40, widthPct: 39, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer" }] });
+  const issues = checkSafeAreaCompliance(plan);
+  assert.equal(issues.length, 1);
+  assert.match(issues[0].message, /url/i);
+});
+
+test("checkSafeAreaCompliance: várias zonas violando ao mesmo tempo produzem uma issue por zona", () => {
+  const plan = basePlan({
+    textZones: [
+      { kind: "cta", text: "ACESSE", rect: { xPct: 0, yPct: 95, widthPct: 30, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer" },
+      { kind: "price", text: "R$ 39,99", rect: { xPct: 0, yPct: 0, widthPct: 20, heightPct: 5 }, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+  });
+  assert.equal(checkSafeAreaCompliance(plan).length, 2);
+});
+
+test("evaluateCreativeQualityGate: violação de safe area reprova o gate (fail) mesmo quando o check de visão aprova tudo", async () => {
+  const icaro = {
+    request: async () => ({ status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }) }),
+  };
+  const plan = basePlan({ textZones: [{ kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 91, widthPct: 50, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer" }] });
+  const result = await evaluateCreativeQualityGate(icaro, {
+    finalImageUrl: "https://x/final.jpg",
+    finalImageWidth: 1080,
+    finalImageHeight: 1350,
+    expectedAspectRatio: "4:5",
+    compositedAssetRoles: [],
+    context: baseContext(),
+    plan,
+    specialistId: "gpt-creative-director",
+  });
+  assert.equal(result.verdict, "fail");
+  assert.ok(result.issues.some((issue) => issue.code === "TEXT_ILLEGIBLE_OR_CUT"));
 });

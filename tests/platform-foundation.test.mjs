@@ -162,6 +162,41 @@ test("Asset Library: archiveAsset() marca status archived", async () => {
   assert.ok(archived.archivedAt);
 });
 
+// Migração "Prompt Persistente de Produção + Materiais com Contexto para o GPT" — metadados
+// semânticos são aditivos: um asset registrado sem eles continua exatamente como antes.
+test("Asset Library: registerAsset() sem metadados semânticos deixa os 4 campos novos undefined (aditivo, sem regressão)", async () => {
+  const repo = makeAssetLibraryRepo();
+  const library = await repo.createLibrary({ workspaceId: "workspace-1" });
+  const asset = await repo.registerAsset({ libraryId: library.id, kind: "logo", name: "logo.png" });
+  assert.equal(asset.materialType, undefined);
+  assert.equal(asset.aiInstructions, undefined);
+  assert.equal(asset.usageRule, undefined);
+  assert.equal(asset.usagePriority, undefined);
+});
+
+test("Asset Library: registerAsset()/updateAsset() fazem round trip completo dos 4 campos semânticos novos", async () => {
+  const repo = makeAssetLibraryRepo();
+  const library = await repo.createLibrary({ workspaceId: "workspace-1" });
+  const asset = await repo.registerAsset({
+    libraryId: library.id,
+    kind: "logo",
+    name: "Logo principal",
+    materialType: "logo_principal",
+    aiInstructions: "Logo oficial da marca: nunca redesenhar, não alterar proporção e não mudar cores.",
+    usageRule: "Uso obrigatório em toda peça.",
+    usagePriority: "required",
+  });
+  assert.equal(asset.materialType, "logo_principal");
+  assert.equal(asset.usagePriority, "required");
+  assert.match(asset.aiInstructions, /nunca redesenhar/);
+
+  const updated = await repo.updateAsset(asset.id, { usagePriority: "preferred" });
+  assert.equal(updated.usagePriority, "preferred");
+  // updateAsset() faz merge parcial — campos não informados no patch permanecem intactos.
+  assert.equal(updated.materialType, "logo_principal");
+  assert.equal(updated.aiInstructions, asset.aiInstructions);
+});
+
 // ---------------------------------------------------------------------------------------------
 // InMemoryChatRepository
 // ---------------------------------------------------------------------------------------------

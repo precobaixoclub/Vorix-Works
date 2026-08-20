@@ -102,6 +102,38 @@ test("buildCreativePlanPrompt: elementos proibidos aparecem no prompt", () => {
   assert.match(prompt, /Comente QUERO/);
 });
 
+// Migração "Prompt Persistente de Produção + Materiais com Contexto para o GPT"
+
+test("buildCreativePlanPrompt: sempre inclui o preâmbulo explícito de precedência de instruções (pedido atual > workspace > materiais > marca > guardrails)", () => {
+  const prompt = buildCreativePlanPrompt(sampleContext());
+  assert.match(prompt, /PRECED[ÊE]NCIA DE INSTRU[ÇC][ÕO]ES/);
+  assert.match(prompt, /PEDIDO ATUAL/);
+});
+
+test("buildCreativePlanPrompt: com productionInstructions, o texto do prompt persistente aparece verbatim marcado como prioridade 2", () => {
+  const prompt = buildCreativePlanPrompt(sampleContext({ productionInstructions: "Priorize fundo preto/grafite, verde neon, amarelo e branco." }));
+  assert.match(prompt, /prioridade 2/);
+  assert.match(prompt, /Priorize fundo preto\/grafite, verde neon, amarelo e branco\./);
+});
+
+test("buildCreativePlanPrompt: sem productionInstructions nem behaviorPreferences, a SEÇÃO de instruções permanentes do workspace não aparece (só o item da lista de precedência, sempre presente)", () => {
+  const prompt = buildCreativePlanPrompt(sampleContext());
+  assert.doesNotMatch(prompt, /respeite exceto quando conflitar/);
+});
+
+test("buildCreativePlanPrompt: brandMaterials selecionados aparecem com prioridade e instrução/regra de uso, cada um marcado como prioridade 3", () => {
+  const prompt = buildCreativePlanPrompt(sampleContext({
+    brandMaterials: [
+      { id: "logo-1", name: "Logo Oficial", type: "logo_principal", priority: "required", aiInstructions: "Sempre no canto superior.", usageRule: "Nunca redesenhar.", source: "asset_library", url: "https://x/logo.png", selectionReason: "Prioridade obrigatória." },
+    ],
+  }));
+  assert.match(prompt, /prioridade 3/);
+  assert.match(prompt, /Logo Oficial/);
+  assert.match(prompt, /OBRIGAT[ÓO]RIO/);
+  assert.match(prompt, /Sempre no canto superior\./);
+  assert.match(prompt, /REGRA: Nunca redesenhar\./);
+});
+
 test("buildImageGenerationPromptFromPlan: instrui deixar espaço pra logo/screenshot em vez de desenhá-los, quando presentes no contexto", () => {
   const context = sampleContext({
     assets: [

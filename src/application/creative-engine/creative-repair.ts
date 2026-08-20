@@ -1,4 +1,4 @@
-import { CREATIVE_PLAN_RESPONSE_SCHEMA_HINT, type CreativeContext, type CreativePlan } from "../../shared/utils/gpt-creative-plan.types.js";
+import { buildWorkspaceContextLines, CREATIVE_PLAN_RESPONSE_SCHEMA_HINT, type CreativeContext, type CreativePlan } from "../../shared/utils/gpt-creative-plan.types.js";
 import type { CreativeQualityIssue, CreativeQualityIssueCode } from "./evaluate-creative-quality-gate.js";
 
 /**
@@ -59,7 +59,12 @@ export function routeCreativeRepair(
  * Prompt de correção enviado ao MESMO modelo diretor criativo — plano anterior verbatim + os
  * motivos exatos da reprovação, nunca uma reinterpretação do defeito por outra camada. Preserva
  * fatos comerciais confirmados (nunca permite que uma correção "resolva" um problema inventando
- * outro fato).
+ * outro fato). Inclui o MESMO bloco de contexto do prompt inicial (`buildWorkspaceContextLines` —
+ * instruções permanentes do workspace, materiais de marca selecionados, dados de marca) — achado
+ * ao vivo numa autorrevisão: antes desta correção, o reparo só recebia `brandName`/
+ * `confirmedFacts`, deixando o Prompt de Produção e os materiais configurados de fora exatamente
+ * na chamada que mais precisa continuar respeitando-os (uma correção que "esquece" o estilo da
+ * marca não é uma correção aceitável).
  */
 export function buildCreativePlanRepairPrompt(previousPlan: CreativePlan, context: CreativeContext, instructions: readonly string[]): string {
   const lines = [
@@ -72,8 +77,7 @@ export function buildCreativePlanRepairPrompt(previousPlan: CreativePlan, contex
     ...instructions.map((instruction) => `- ${instruction}`),
     "",
     `Marca: ${context.brandName}`,
-    "Fatos comerciais CONFIRMADOS (use exatamente estes, nunca invente outro valor):",
-    context.confirmedFacts.length > 0 ? context.confirmedFacts.map((fact) => `- ${fact}`).join("\n") : "- Nenhum fato comercial confirmado disponível. Não mencione preço, desconto, prazo ou qualquer condição comercial específica.",
+    ...buildWorkspaceContextLines(context),
     "",
     "Responda APENAS com JSON válido, sem markdown, no formato exato (mesmo schema do plano anterior):",
     CREATIVE_PLAN_RESPONSE_SCHEMA_HINT,

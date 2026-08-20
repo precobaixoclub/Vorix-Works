@@ -95,3 +95,92 @@ test("buildCreativeContext: falhas em resolveBrandProfile/resolveRecentHistory n
   const context = await buildCreativeContext(deps, baseInput());
   assert.equal(context.brandName, "Preço Baixo Club");
 });
+
+// Migração "Prompt Persistente de Produção + Materiais com Contexto para o GPT"
+
+test("buildCreativeContext: workspace sem prompt persistente configurado -> productionInstructions/behaviorPreferences ausentes (nunca inventados)", async () => {
+  const context = await buildCreativeContext({ resolveProductionSettings: async () => undefined }, baseInput());
+  assert.equal(context.productionInstructions, undefined);
+  assert.equal(context.productionInstructionsVersion, undefined);
+  assert.equal(context.behaviorPreferences, undefined);
+});
+
+test("buildCreativeContext: workspace com prompt persistente configurado -> productionInstructions/version/behaviorPreferences populados verbatim", async () => {
+  const settings = {
+    workspaceId: "workspace-1",
+    productionPrompt: "Crie peças modernas e de alto impacto, priorize fundo preto/grafite.",
+    version: 3,
+    preferRealAssets: true,
+    allowFictionalInterfaces: false,
+    allowGeneratedPeople: true,
+    textDensity: "minimal",
+    creativeFreedom: "high",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const context = await buildCreativeContext({ resolveProductionSettings: async () => settings }, baseInput());
+  assert.equal(context.productionInstructions, settings.productionPrompt);
+  assert.equal(context.productionInstructionsVersion, 3);
+  assert.ok(context.behaviorPreferences.length > 0);
+});
+
+test("buildCreativeContext: allowFictionalInterfaces=false adiciona proibição explícita de interface fictícia em forbiddenElements", async () => {
+  const settings = { workspaceId: "w1", version: 1, preferRealAssets: true, allowFictionalInterfaces: false, allowGeneratedPeople: true, textDensity: "balanced", creativeFreedom: "medium", createdAt: "x", updatedAt: "x" };
+  const context = await buildCreativeContext({ resolveProductionSettings: async () => settings }, baseInput());
+  assert.ok(context.forbiddenElements.some((item) => /interface.*fictícia/.test(item)));
+});
+
+test("buildCreativeContext: allowFictionalInterfaces=true NÃO adiciona a proibição de interface fictícia", async () => {
+  const settings = { workspaceId: "w1", version: 1, preferRealAssets: true, allowFictionalInterfaces: true, allowGeneratedPeople: true, textDensity: "balanced", creativeFreedom: "medium", createdAt: "x", updatedAt: "x" };
+  const context = await buildCreativeContext({ resolveProductionSettings: async () => settings }, baseInput());
+  assert.equal(context.forbiddenElements, undefined);
+});
+
+test("buildCreativeContext: logo obrigatória da Asset Library é selecionada e entra em brandMaterials E na lista plana assets[] com role 'logo'", async () => {
+  const deps = {
+    resolveBrandMaterials: async () => [
+      { id: "logo-1", name: "Logo Oficial", materialType: "logo_principal", usagePriority: "required", aiInstructions: "Nunca redesenhar.", url: "https://cdn.example.com/logo.png" },
+    ],
+  };
+  const context = await buildCreativeContext(deps, baseInput());
+  assert.equal(context.brandMaterials.length, 1);
+  assert.equal(context.brandMaterials[0].priority, "required");
+  assert.match(context.brandMaterials[0].selectionReason, /obrigatório/);
+  assert.ok(context.assets.some((asset) => asset.url === "https://cdn.example.com/logo.png" && asset.role === "logo"));
+});
+
+test("buildCreativeContext: screenshot preferencial só entra quando o pedido atual menciona o site (seleção explicável, registrada em selectionReason)", async () => {
+  const deps = {
+    resolveBrandMaterials: async () => [
+      { id: "shot-1", name: "Screenshot do site", materialType: "screenshot_site", url: "https://cdn.example.com/shot.png" },
+    ],
+  };
+  const irrelevant = await buildCreativeContext(deps, baseInput({ objective: "Vender mais", ideaText: "Divulgar um produto qualquer" }));
+  assert.equal(irrelevant.brandMaterials, undefined);
+
+  const relevant = await buildCreativeContext(deps, baseInput({ objective: "Vender mais", ideaText: "Crie uma publicação divulgando nosso site" }));
+  assert.equal(relevant.brandMaterials.length, 1);
+  assert.ok(relevant.brandMaterials[0].selectionReason.length > 0);
+});
+
+test("buildCreativeContext: asset irrelevante ao pedido atual não é selecionado (biblioteca inteira nunca despejada sem critério)", async () => {
+  const deps = {
+    resolveBrandMaterials: async () => [
+      { id: "old-photo", name: "Foto institucional antiga", materialType: "foto_institucional", url: "https://cdn.example.com/old.png" },
+    ],
+  };
+  const context = await buildCreativeContext(deps, baseInput({ ideaText: "Divulgar uma promoção de sapatos" }));
+  assert.equal(context.brandMaterials, undefined);
+  assert.equal(context.assets.length, 0);
+});
+
+test("buildCreativeContext: produto real cadastrado é priorizado quando o pedido atual menciona o nome do produto", async () => {
+  const deps = {
+    resolveBrandMaterials: async () => [
+      { id: "product-1", name: "Tênis RV", materialType: "produto", url: "https://cdn.example.com/tenis-rv.png" },
+    ],
+  };
+  const context = await buildCreativeContext(deps, baseInput({ ideaText: "Promoção do Tênis RV com 50% off" }));
+  assert.equal(context.brandMaterials.length, 1);
+  assert.ok(context.assets.some((asset) => asset.role === "product_photo" && asset.url === "https://cdn.example.com/tenis-rv.png"));
+});

@@ -13,6 +13,7 @@ import { deriveObjective, extractExecutionRunFailure, generateFromIdea as genera
 import { recordGeneration } from "@/features/production-line/generation-log";
 import { useExecutionRuns } from "@/features/execution/hooks";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
+import { ProductionSettingsPanel } from "@/features/production-settings/components/ProductionSettingsPanel";
 import type { ContentBlueprint, IdeaProductionMode, PostingRule, ProductionAspectRatio, ProductionChannel, ProductionFormat, ProductionLineConfig, ProductionWeekday, ReferenceAssetRole, WeeklyFormatQuota } from "@/features/production-line/types";
 
 const CHANNELS: ProductionChannel[] = ["instagram", "facebook", "tiktok", "youtube"];
@@ -48,7 +49,7 @@ const WEEKDAYS: { id: ProductionWeekday; short: string; label: string }[] = [
 const QUICK_TIMES = ["08:00", "09:00", "12:00", "13:30", "18:30", "20:00"];
 const MINUTE_OPTIONS = ["00", "15", "30", "45"];
 
-type ProductionView = "dashboard" | "schedule";
+type ProductionView = "dashboard" | "schedule" | "settings";
 type IdeaTypeFilter = (typeof IDEA_TYPE_FILTERS)[number]["id"];
 type IdeaStatusFilter = (typeof IDEA_STATUS_FILTERS)[number]["id"];
 
@@ -466,6 +467,7 @@ export default function ProductionLinePage() {
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
           <Button onClick={addBlueprint}><IconPlus /> {draftIdea ? "Continuar rascunho" : "Nova ideia"}</Button>
           <Button variant="secondary" onClick={() => setActiveView("schedule")}><IconSliders /> Configurar rotina</Button>
+          <Button variant="secondary" onClick={() => setActiveView("settings")}><IconLayer /> Diretrizes Criativas</Button>
         </div>
       </div>
 
@@ -635,6 +637,23 @@ export default function ProductionLinePage() {
           </div>
         </div>
       </section>
+      ) : null}
+
+      {activeView === "settings" ? (
+        <section>
+          <Card>
+            <CardHeader>
+              <div>
+                <p className="text-sm font-semibold text-ink">Diretrizes Criativas</p>
+                <p className="text-xs text-ink-muted">Instruções permanentes deste workspace, usadas automaticamente em toda nova geração pelo motor GPT — configure uma vez, sem precisar repetir na ideia.</p>
+              </div>
+              <Button variant="secondary" onClick={() => setActiveView("dashboard")}>Voltar ao painel</Button>
+            </CardHeader>
+            <CardBody>
+              <ProductionSettingsPanel workspaceId={workspace.id} />
+            </CardBody>
+          </Card>
+        </section>
       ) : null}
     </main>
   );

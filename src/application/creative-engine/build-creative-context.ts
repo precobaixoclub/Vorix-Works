@@ -1,4 +1,4 @@
-import type { CreativeContext, CreativeContextAsset, CreativeContextHistoryEntry } from "../../shared/utils/gpt-creative-plan.types.js";
+import type { CreativeContext, CreativeContextAsset, CreativeContextBrandMaterial, CreativeContextHistoryEntry } from "../../shared/utils/gpt-creative-plan.types.js";
 import {
   commercialFactsFromReferenceIntelligence,
   extractCommercialFactsFromText,
@@ -7,6 +7,8 @@ import {
   type CommercialFact,
 } from "../../shared/utils/commercial-fact-normalizer.js";
 import type { ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
+import { describeProductionSettingsAsInstructions, type ProductionSettings } from "../../shared/utils/production-settings.types.js";
+import { materialTypeToAssetRole, selectRelevantBrandMaterials, type SelectableBrandMaterial } from "./select-brand-materials.js";
 
 /**
  * Monta o `creative_context` consolidado do motor GPT — migração "GPT como motor criativo único"
@@ -40,6 +42,15 @@ export type BuildCreativeContextDeps = {
   /** Mesma porta que `run-gpt-creative-prototype.ts` já usa — reaproveitada sem alteração para
    * extrair fatos comerciais REAIS de imagens de referência (nunca inventados pelo GPT). */
   referenceIntelligenceExtractor?: { extract(imageUrls: string[]): Promise<ReferenceIntelligence | undefined> };
+  /** Migração "Prompt Persistente de Produção" — instruções permanentes + preferências de
+   * comportamento do workspace. `undefined` de retorno = workspace nunca configurou nada, nunca
+   * inventado. */
+  resolveProductionSettings?(workspaceId: string): Promise<ProductionSettings | undefined>;
+  /** Materiais da Asset Library do workspace já com URL real resolvida (só os que têm arquivo —
+   * ver `SelectableBrandMaterial`). A seleção de relevância para o pedido atual acontece aqui
+   * dentro (`selectRelevantBrandMaterials`), nunca no adapter que implementa esta porta — ele só
+   * lista o que existe, nunca decide relevância. */
+  resolveBrandMaterials?(workspaceId: string): Promise<SelectableBrandMaterial[]>;
 };
 
 export type BuildCreativeContextInput = {
@@ -80,6 +91,42 @@ export async function buildCreativeContext(deps: BuildCreativeContextDeps, input
 
   const brandProfile = await deps.resolveBrandProfile?.(input.workspaceId).catch(() => undefined);
   const recentHistory = await deps.resolveRecentHistory?.(input.workspaceId, 5).catch(() => []);
+  const productionSettings = await deps.resolveProductionSettings?.(input.workspaceId).catch(() => undefined);
+  const availableMaterials = (await deps.resolveBrandMaterials?.(input.workspaceId).catch(() => [])) ?? [];
+
+  const selection = selectRelevantBrandMaterials(availableMaterials, { ideaText: input.ideaText, objective: input.objective });
+  const brandMaterials: CreativeContextBrandMaterial[] = selection.map(({ material, reason }) => ({
+    id: material.id,
+    name: material.name,
+    type: material.materialType ?? "outro",
+    priority: material.usagePriority ?? "automatic",
+    aiInstructions: material.aiInstructions,
+    usageRule: material.usageRule,
+    source: "asset_library",
+    url: material.url,
+    selectionReason: reason,
+  }));
+
+  // Materiais selecionados com papel de composição claro (logo/screenshot/produto/referência de
+  // estilo) também entram na lista plana `assets[]` — é ela que a composição determinística
+  // (`run-gpt-creative-engine.ts`) já sabe consumir por `role`. Nunca duplica uma URL já presente
+  // em `input.assets` (ex.: a mesma logo enviada explicitamente nesta chamada E cadastrada na
+  // Asset Library).
+  const existingAssetUrls = new Set(input.assets.map((asset) => asset.url));
+  const materialAssets: CreativeContextAsset[] = [];
+  for (const { material } of selection) {
+    if (!material.url || existingAssetUrls.has(material.url)) continue;
+    const role = materialTypeToAssetRole(material.materialType);
+    if (!role) continue;
+    materialAssets.push({ url: material.url, role, description: material.aiInstructions ?? material.usageRule ?? "" });
+    existingAssetUrls.add(material.url);
+  }
+
+  const behaviorPreferences = productionSettings ? describeProductionSettingsAsInstructions(productionSettings) : undefined;
+  const forbiddenElements = [...(input.forbiddenElements ?? [])];
+  if (productionSettings && !productionSettings.allowFictionalInterfaces) {
+    forbiddenElements.push("interface de site/app fictícia ou inventada (só use uma interface real quando houver screenshot real disponível para o que foi pedido)");
+  }
 
   return {
     brandName: brandProfile?.brandName ?? input.brandName,
@@ -87,15 +134,19 @@ export async function buildCreativeContext(deps: BuildCreativeContextDeps, input
     channel: input.channel,
     format: input.format,
     ideaText: input.ideaText,
-    assets: input.assets,
+    assets: [...input.assets, ...materialAssets],
     confirmedFacts,
     brandColors: input.brandColors ?? brandProfile?.brandColors,
-    forbiddenElements: input.forbiddenElements,
+    forbiddenElements: forbiddenElements.length > 0 ? forbiddenElements : undefined,
     audience: brandProfile?.targetAudience,
     brandPositioning: brandProfile?.positioning,
     businessDescription: brandProfile?.businessDescription,
     productsOrServices: brandProfile?.productsOrServices,
     visualIdentityNotes: brandProfile?.visualIdentityNotes,
     recentHistory: recentHistory && recentHistory.length > 0 ? recentHistory : undefined,
+    productionInstructions: productionSettings?.productionPrompt,
+    productionInstructionsVersion: productionSettings?.version,
+    behaviorPreferences,
+    brandMaterials: brandMaterials.length > 0 ? brandMaterials : undefined,
   };
 }

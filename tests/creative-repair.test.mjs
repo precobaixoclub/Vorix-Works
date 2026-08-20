@@ -35,7 +35,7 @@ test("routeCreativeRepair: instructions carregam a mensagem literal de cada issu
 
 test("buildCreativePlanRepairPrompt: inclui o plano anterior completo, as instruções de correção e os fatos confirmados", () => {
   const previousPlan = { headline: "Título antigo", cta: "CTA antigo" };
-  const context = { brandName: "Preço Baixo Club", confirmedFacts: ["Preço atual: R$ 39,99"] };
+  const context = { brandName: "Preço Baixo Club", confirmedFacts: ["Preço atual: R$ 39,99"], assets: [] };
   const prompt = buildCreativePlanRepairPrompt(previousPlan, context, ["produto não corresponde à referência"]);
 
   assert.match(prompt, /"headline":"Título antigo"|"headline": ?"Título antigo"/);
@@ -45,6 +45,27 @@ test("buildCreativePlanRepairPrompt: inclui o plano anterior completo, as instru
 });
 
 test("buildCreativePlanRepairPrompt: sem fatos confirmados, instrui explicitamente a não mencionar nenhum", () => {
-  const prompt = buildCreativePlanRepairPrompt({ headline: "x" }, { brandName: "X", confirmedFacts: [] }, ["x"]);
+  const prompt = buildCreativePlanRepairPrompt({ headline: "x" }, { brandName: "X", confirmedFacts: [], assets: [] }, ["x"]);
   assert.match(prompt, /Nenhum fato comercial confirmado disponível/);
+});
+
+// Achado ao vivo numa autorrevisão: o reparo (gpt_replan) reenvia o MESMO modelo diretor, mas
+// antes desta correção só recebia brandName/confirmedFacts — o Prompt de Produção e os materiais
+// de marca selecionados desapareciam silenciosamente exatamente na chamada que mais precisa
+// continuar respeitando-os.
+test("buildCreativePlanRepairPrompt: inclui productionInstructions/behaviorPreferences/brandMaterials — o reparo NUNCA esquece as diretrizes do workspace", () => {
+  const context = {
+    brandName: "Preço Baixo Club",
+    confirmedFacts: [],
+    assets: [],
+    productionInstructions: "Priorize fundo preto/grafite, verde neon, amarelo e branco.",
+    behaviorPreferences: ["NUNCA invente uma interface fictícia de site/app."],
+    brandMaterials: [
+      { id: "logo-1", name: "Logo Oficial", type: "logo_principal", priority: "required", aiInstructions: "Sempre no canto superior.", source: "asset_library", selectionReason: "Prioridade obrigatória." },
+    ],
+  };
+  const prompt = buildCreativePlanRepairPrompt({ headline: "x" }, context, ["problema x"]);
+  assert.match(prompt, /Priorize fundo preto\/grafite, verde neon, amarelo e branco\./);
+  assert.match(prompt, /NUNCA invente uma interface fictícia de site\/app\./);
+  assert.match(prompt, /Logo Oficial/);
 });

@@ -1,4 +1,4 @@
-import type { AssetLibraryRepositoryPort, CreateAssetLibraryInput, RegisterAssetInput } from "../../application/ports/asset-library-repository.port.js";
+import type { AssetMetadataPatch, AssetLibraryRepositoryPort, CreateAssetLibraryInput, RegisterAssetInput } from "../../application/ports/asset-library-repository.port.js";
 import type { AssetKind, AssetLibrary, AssetRecord } from "../../domain/asset-library/asset-library.model.js";
 
 export type AssetLibraryIdGenerator = (prefix: string) => string;
@@ -54,6 +54,10 @@ export class InMemoryAssetLibraryRepository implements AssetLibraryRepositoryPor
       updatedAt: timestamp,
       tags: input.tags ?? [],
       storageRef: input.storageRef,
+      materialType: input.materialType,
+      aiInstructions: input.aiInstructions,
+      usageRule: input.usageRule,
+      usagePriority: input.usagePriority,
     };
     this.assets.set(asset.id, clone(asset));
     return clone(asset);
@@ -70,7 +74,7 @@ export class InMemoryAssetLibraryRepository implements AssetLibraryRepositoryPor
     return clone(this.assets.get(assetId));
   }
 
-  async updateAsset(assetId: string, patch: { name?: string; kind?: AssetKind; tags?: string[] }): Promise<AssetRecord> {
+  async updateAsset(assetId: string, patch: AssetMetadataPatch): Promise<AssetRecord> {
     const existing = this.assets.get(assetId);
     if (!existing) {
       throw new Error(`ASSET_NOT_FOUND: asset "${assetId}" não existe.`);
@@ -81,6 +85,10 @@ export class InMemoryAssetLibraryRepository implements AssetLibraryRepositoryPor
       name: patch.name ?? existing.name,
       kind: patch.kind ?? existing.kind,
       tags: patch.tags ?? existing.tags,
+      materialType: patch.materialType ?? existing.materialType,
+      aiInstructions: patch.aiInstructions ?? existing.aiInstructions,
+      usageRule: patch.usageRule ?? existing.usageRule,
+      usagePriority: patch.usagePriority ?? existing.usagePriority,
       updatedAt: timestamp,
     };
     this.assets.set(assetId, clone(updated));

@@ -31,6 +31,41 @@ export type AssetKind = (typeof ASSET_KINDS)[number];
 export const ASSET_STATUSES = ["active", "archived"] as const;
 export type AssetStatus = (typeof ASSET_STATUSES)[number];
 
+/**
+ * Migração "Prompt Persistente de Produção + Materiais com Contexto para o GPT" — classificação
+ * SEMÂNTICA de um material, deliberadamente separada de `AssetKind` (que continua existindo e
+ * sendo usado para a categoria bruta de mídia/validação de upload, ex.: `findLogoAssetUrl` em
+ * `container.ts` já filtra por `kind: "logo"`). `materialType` é aditivo e opcional — nenhum
+ * asset existente é forçado a ter um, e nenhum código legado que só olha `kind` precisa mudar.
+ * É este campo (não `kind`) que o motor GPT usa para entender o PAPEL real de cada material
+ * (logo principal vs. secundária, screenshot do site vs. do app, etc.) — granularidade que
+ * `AssetKind` nunca teve.
+ */
+export const ASSET_MATERIAL_TYPES = [
+  "logo_principal",
+  "logo_secundaria",
+  "screenshot_site",
+  "screenshot_app",
+  "produto",
+  "foto_institucional",
+  "referencia_visual",
+  "selo",
+  "icone",
+  "fundo",
+  "campanha",
+  "outro",
+] as const;
+export type AssetMaterialType = (typeof ASSET_MATERIAL_TYPES)[number];
+
+/**
+ * Prioridade de uso — como o motor GPT deve tratar este material ao montar `brandMaterials` do
+ * `creative_context` (ver `select-brand-materials.ts`). `required` nunca é omitido pela seleção
+ * automática, mesmo que pareça irrelevante ao pedido atual (ex.: logo obrigatória); `on_request`
+ * nunca é incluído automaticamente, só quando o pedido atual referencia o material explicitamente.
+ */
+export const ASSET_USAGE_PRIORITIES = ["required", "preferred", "automatic", "on_request"] as const;
+export type AssetUsagePriority = (typeof ASSET_USAGE_PRIORITIES)[number];
+
 /** Uma Asset Library por Workspace (1:1) — o contêiner; os ativos em si são `AssetRecord`. */
 export type AssetLibrary = {
   id: string;
@@ -68,4 +103,20 @@ export type AssetRecord = {
   archivedAt?: string;
   tags: string[];
   storageRef?: AssetStorageRef;
+  /** Classificação semântica rica (ver `AssetMaterialType`) — aditiva, nunca obrigatória. */
+  materialType?: AssetMaterialType;
+  /** "Observação para IA" — explica COMO/QUANDO o motor GPT deve usar este material. Ex.: "Use
+   * este screenshot real dentro de notebook ou smartphone quando o objetivo for demonstrar o
+   * funcionamento do site." Texto livre, nunca interpretado como regra rígida (isso é
+   * `usageRule`). */
+  aiInstructions?: string;
+  /** Regra de uso — restrição/instrução mais categórica que `aiInstructions`. Ex.: "nunca
+   * redesenhar, não alterar proporção e não mudar cores." Também texto livre (nenhuma tentativa
+   * de parsear regras estruturadas nesta versão), mas semanticamente distinto: `aiInstructions`
+   * orienta QUANDO usar, `usageRule` restringe COMO usar. */
+  usageRule?: string;
+  /** Prioridade de uso na seleção automática (ver `AssetUsagePriority`). Ausente = tratado como
+   * "automatic" pela seleção (nunca "required"/"on_request" por omissão — nunca inventa uma
+   * obrigatoriedade que o usuário não marcou explicitamente). */
+  usagePriority?: AssetUsagePriority;
 };

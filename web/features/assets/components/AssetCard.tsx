@@ -1,6 +1,6 @@
 import { Card, CardBody } from "@/components/Card";
 import { formatDate } from "@/lib/format";
-import { ASSET_KIND_LABEL, type Asset } from "../types";
+import { ASSET_KIND_LABEL, ASSET_MATERIAL_TYPE_LABEL, ASSET_USAGE_PRIORITY_LABEL, type Asset } from "../types";
 
 const KIND_ICON: Record<string, string> = {
   logo: "🔷",
@@ -44,6 +44,16 @@ export function AssetCard({ asset, onEdit, onArchive, onDelete }: { asset: Asset
           <p className="truncate text-sm font-medium text-ink">{asset.name}</p>
           <p className="text-xs text-ink-muted">{ASSET_KIND_LABEL[asset.kind]}</p>
         </div>
+        {asset.materialType || asset.usagePriority ? (
+          <div className="flex flex-wrap gap-1">
+            {asset.materialType ? (
+              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">{ASSET_MATERIAL_TYPE_LABEL[asset.materialType]}</span>
+            ) : null}
+            {asset.usagePriority ? (
+              <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] text-ink-muted">{ASSET_USAGE_PRIORITY_LABEL[asset.usagePriority]}</span>
+            ) : null}
+          </div>
+        ) : null}
         {asset.tags.length > 0 ? (
           <div className="flex flex-wrap gap-1">
             {asset.tags.map((tag) => (

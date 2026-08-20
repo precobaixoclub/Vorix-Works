@@ -1,10 +1,11 @@
 import type { Pool } from "pg";
 import type {
   AssetLibraryRepositoryPort,
+  AssetMetadataPatch,
   CreateAssetLibraryInput,
   RegisterAssetInput,
 } from "../../../application/ports/asset-library-repository.port.js";
-import type { AssetKind, AssetLibrary, AssetRecord, AssetStorageRef } from "../../../domain/asset-library/asset-library.model.js";
+import type { AssetKind, AssetLibrary, AssetMaterialType, AssetRecord, AssetStorageRef, AssetUsagePriority } from "../../../domain/asset-library/asset-library.model.js";
 
 export type AssetLibraryIdGenerator = (prefix: string) => string;
 
@@ -26,6 +27,10 @@ type AssetRow = {
   archived_at: Date | null;
   tags: string[] | null;
   storage_ref: AssetStorageRef | null;
+  material_type: string | null;
+  ai_instructions: string | null;
+  usage_rule: string | null;
+  usage_priority: string | null;
 };
 
 /**
@@ -70,10 +75,21 @@ export class PostgresAssetLibraryRepository implements AssetLibraryRepositoryPor
     const id = this.idGenerator("asset");
     try {
       const result = await this.pool.query<AssetRow>(
-        `insert into assets (id, library_id, kind, name, status, created_at, updated_at, tags, storage_ref)
-         values ($1, $2, $3, $4, 'active', now(), now(), $5, $6::jsonb)
+        `insert into assets (id, library_id, kind, name, status, created_at, updated_at, tags, storage_ref, material_type, ai_instructions, usage_rule, usage_priority)
+         values ($1, $2, $3, $4, 'active', now(), now(), $5, $6::jsonb, $7, $8, $9, $10)
          returning *`,
-        [id, input.libraryId, input.kind, input.name, input.tags ?? [], input.storageRef ? JSON.stringify(input.storageRef) : null],
+        [
+          id,
+          input.libraryId,
+          input.kind,
+          input.name,
+          input.tags ?? [],
+          input.storageRef ? JSON.stringify(input.storageRef) : null,
+          input.materialType ?? null,
+          input.aiInstructions ?? null,
+          input.usageRule ?? null,
+          input.usagePriority ?? null,
+        ],
       );
       return this.toAssetDomain(result.rows[0]);
     } catch (error) {
@@ -104,15 +120,32 @@ export class PostgresAssetLibraryRepository implements AssetLibraryRepositoryPor
     return result.rows[0] ? this.toAssetDomain(result.rows[0]) : undefined;
   }
 
-  async updateAsset(assetId: string, patch: { name?: string; kind?: AssetKind; tags?: string[] }): Promise<AssetRecord> {
+  async updateAsset(assetId: string, patch: AssetMetadataPatch): Promise<AssetRecord> {
     const existing = await this.pool.query("select id from assets where id = $1", [assetId]);
     if (existing.rows.length === 0) {
       throw new Error(`ASSET_NOT_FOUND: asset "${assetId}" não existe.`);
     }
     const result = await this.pool.query<AssetRow>(
-      `update assets set name = coalesce($2, name), kind = coalesce($3, kind), tags = coalesce($4, tags), updated_at = now()
+      `update assets set
+         name = coalesce($2, name),
+         kind = coalesce($3, kind),
+         tags = coalesce($4, tags),
+         material_type = coalesce($5, material_type),
+         ai_instructions = coalesce($6, ai_instructions),
+         usage_rule = coalesce($7, usage_rule),
+         usage_priority = coalesce($8, usage_priority),
+         updated_at = now()
        where id = $1 returning *`,
-      [assetId, patch.name ?? null, patch.kind ?? null, patch.tags ?? null],
+      [
+        assetId,
+        patch.name ?? null,
+        patch.kind ?? null,
+        patch.tags ?? null,
+        patch.materialType ?? null,
+        patch.aiInstructions ?? null,
+        patch.usageRule ?? null,
+        patch.usagePriority ?? null,
+      ],
     );
     return this.toAssetDomain(result.rows[0]);
   }
@@ -145,6 +178,10 @@ export class PostgresAssetLibraryRepository implements AssetLibraryRepositoryPor
       archivedAt: row.archived_at ? row.archived_at.toISOString() : undefined,
       tags: row.tags ?? [],
       storageRef: row.storage_ref ?? undefined,
+      materialType: (row.material_type as AssetMaterialType | null) ?? undefined,
+      aiInstructions: row.ai_instructions ?? undefined,
+      usageRule: row.usage_rule ?? undefined,
+      usagePriority: (row.usage_priority as AssetUsagePriority | null) ?? undefined,
     };
   }
 }

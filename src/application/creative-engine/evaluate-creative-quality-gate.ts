@@ -1,6 +1,6 @@
 import type { IcaroBrainPort } from "../ai/icaro-brain.contract.js";
 import { extractJson } from "../../shared/utils/skill-parsing.js";
-import type { CreativeContext, CreativePlan, CreativePlanAssetRole } from "../../shared/utils/gpt-creative-plan.types.js";
+import type { CreativeContext, CreativePlan, CreativePlanAssetRole, CreativePlanRect } from "../../shared/utils/gpt-creative-plan.types.js";
 import { COMMERCIAL_FACT_TYPE_LABELS_PT, extractCommercialFactsFromText } from "../../shared/utils/commercial-fact-normalizer.js";
 
 /**
@@ -135,6 +135,43 @@ export function checkCommercialFactIntegrity(plan: CreativePlan, context: Creati
   return issues;
 }
 
+/** Margem de segurança (percentual do canvas) — achado ao vivo em produção: CTA/texto cortado na
+ * borda inferior de peças reais. Diferente do check de vídeo/visão (`checkCreativeVisualIntegrity`,
+ * que só reprova depois de renderizar e "olhar" a imagem), este check é determinístico e roda
+ * sobre a GEOMETRIA JÁ DECLARADA pelo `creative_plan` — pega o defeito antes mesmo de compor a
+ * peça. Só cobre `textZones` (não `assetPlacements`) de propósito: `renderer_reflow`
+ * (`creative-repair.ts`) só sabe reduzir `fontScale` e re-renderizar zonas de TEXTO — não
+ * reposiciona a geometria de logo/screenshot. Reportar uma violação de safe area em
+ * `assetPlacements` aqui criaria um defeito sem caminho de reparo correspondente (nunca resolvido,
+ * sempre esgotando as tentativas) — escopo deliberadamente restrito ao que o sistema já sabe
+ * corrigir sem gerar uma imagem nova. */
+const SAFE_AREA_MARGIN_PCT = 2;
+
+function violatesSafeArea(rect: CreativePlanRect, marginPct = SAFE_AREA_MARGIN_PCT): boolean {
+  return rect.xPct < marginPct || rect.yPct < marginPct || rect.xPct + rect.widthPct > 100 - marginPct || rect.yPct + rect.heightPct > 100 - marginPct;
+}
+
+/**
+ * Hard failure de acabamento — texto (headline/subheadline/CTA/preço/desconto/URL/badge) cuja
+ * geometria já declarada no `creative_plan` toca ou ultrapassa a margem de segurança do canvas.
+ * `TEXT_ILLEGIBLE_OR_CUT` (zonas com `renderedBy: "renderer"`, o caso reportado ao vivo — CTA
+ * cortado na borda) e `ELEMENT_CUT_OFF` (zonas com `renderedBy: "image_model"`, mesmo problema
+ * geométrico mas desenhado pelo modelo de imagem em vez do renderer) — a distinção de código
+ * importa para o roteamento de reparo (`creative-repair.ts`), embora ambos sejam
+ * `renderer_reflow`-elegíveis hoje.
+ */
+export function checkSafeAreaCompliance(plan: CreativePlan): CreativeQualityIssue[] {
+  const issues: CreativeQualityIssue[] = [];
+  for (const zone of plan.textZones) {
+    if (!violatesSafeArea(zone.rect)) continue;
+    issues.push({
+      code: zone.renderedBy === "renderer" ? "TEXT_ILLEGIBLE_OR_CUT" : "ELEMENT_CUT_OFF",
+      message: `Zona de texto "${zone.kind}" (x=${zone.rect.xPct}%, y=${zone.rect.yPct}%, largura=${zone.rect.widthPct}%, altura=${zone.rect.heightPct}%) toca ou ultrapassa a margem de segurança do canvas (${SAFE_AREA_MARGIN_PCT}%) — risco real de corte na borda.`,
+    });
+  }
+  return issues;
+}
+
 const VISUAL_INTEGRITY_PROMPT = [
   "Avalie esta peça publicitária JÁ FINALIZADA (a imagem anexada) para defeitos GRAVES apenas — não julgue estética, apenas problemas objetivos que tornariam a peça inaceitável.",
   "Responda APENAS com JSON válido, sem markdown, no formato exato:",
@@ -232,6 +269,7 @@ export async function evaluateCreativeQualityGate(
   });
 
   const commercialFactIssues = checkCommercialFactIntegrity(input.plan, input.context);
+  const safeAreaIssues = checkSafeAreaCompliance(input.plan);
 
   const referenceProductImageUrl = input.context.assets.find((asset) => asset.role === "product_photo")?.url;
   const referenceLogoUrl = input.context.assets.find((asset) => asset.role === "logo")?.url;
@@ -244,5 +282,5 @@ export async function evaluateCreativeQualityGate(
     specialistId: input.specialistId,
   });
 
-  return combineCreativeQualityIssues(deterministicIssues, commercialFactIssues, visualIssues);
+  return combineCreativeQualityIssues(deterministicIssues, commercialFactIssues, safeAreaIssues, visualIssues);
 }

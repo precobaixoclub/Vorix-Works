@@ -36,6 +36,50 @@ export type AssetStorageRef = {
   metadata?: Record<string, string>;
 };
 
+/** Migração "Prompt Persistente de Produção + Materiais com Contexto para o GPT" — classificação
+ * semântica rica, separada de `AssetKind` (que continua existindo). É este campo que o motor GPT
+ * usa para entender o papel real de cada material. */
+export const ASSET_MATERIAL_TYPES = [
+  "logo_principal",
+  "logo_secundaria",
+  "screenshot_site",
+  "screenshot_app",
+  "produto",
+  "foto_institucional",
+  "referencia_visual",
+  "selo",
+  "icone",
+  "fundo",
+  "campanha",
+  "outro",
+] as const;
+export type AssetMaterialType = (typeof ASSET_MATERIAL_TYPES)[number];
+
+export const ASSET_MATERIAL_TYPE_LABEL: Record<AssetMaterialType, string> = {
+  logo_principal: "Logo principal",
+  logo_secundaria: "Logo secundária",
+  screenshot_site: "Screenshot do site",
+  screenshot_app: "Screenshot do app",
+  produto: "Produto",
+  foto_institucional: "Foto institucional",
+  referencia_visual: "Referência visual",
+  selo: "Selo",
+  icone: "Ícone",
+  fundo: "Fundo",
+  campanha: "Campanha",
+  outro: "Outro",
+};
+
+export const ASSET_USAGE_PRIORITIES = ["required", "preferred", "automatic", "on_request"] as const;
+export type AssetUsagePriority = (typeof ASSET_USAGE_PRIORITIES)[number];
+
+export const ASSET_USAGE_PRIORITY_LABEL: Record<AssetUsagePriority, string> = {
+  required: "Uso obrigatório",
+  preferred: "Uso preferencial",
+  automatic: "Uso automático",
+  on_request: "Somente quando solicitado",
+};
+
 export type Asset = {
   id: string;
   libraryId: string;
@@ -47,4 +91,8 @@ export type Asset = {
   updatedAt: string;
   archivedAt?: string;
   storageRef?: AssetStorageRef;
+  materialType?: AssetMaterialType;
+  aiInstructions?: string;
+  usageRule?: string;
+  usagePriority?: AssetUsagePriority;
 };

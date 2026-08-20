@@ -3,6 +3,7 @@ import { registerAnalyticsRoutes } from "./analytics.route.js";
 import { registerAdminRoutes } from "./admin.route.js";
 import { registerAiProvidersRoutes } from "./ai-providers.route.js";
 import { registerAssetsRoutes } from "./assets.route.js";
+import { registerProductionSettingsRoutes } from "./production-settings.route.js";
 import { registerAuthRoutes } from "./auth.route.js";
 import { registerBriefingRoutes } from "./briefings.route.js";
 import { registerConversationRoutes } from "./conversations.route.js";
@@ -176,6 +177,9 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     assetLibraryRepository: app.zunoContainer.assetLibraryRepository,
     objectStorage: app.zunoContainer.objectStorage,
     maxUploadBytes: app.zunoConfig.objectStorage.maxUploadBytes,
+  });
+  await registerProductionSettingsRoutes(app, {
+    productionSettingsRepository: app.zunoContainer.productionSettingsRepository,
   });
   await registerCredentialRoutes(app, {
     credentialGovernanceService: app.zunoContainer.credentialGovernanceService,

@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { AssetLibraryRepositoryPort } from "../../../../application/ports/asset-library-repository.port.js";
 import type { ObjectStoragePort } from "../../../../application/ports/object-storage.port.js";
-import { ASSET_KINDS, type AssetKind } from "../../../../domain/asset-library/asset-library.model.js";
+import { ASSET_KINDS, ASSET_MATERIAL_TYPES, ASSET_USAGE_PRIORITIES, type AssetKind, type AssetMaterialType, type AssetUsagePriority } from "../../../../domain/asset-library/asset-library.model.js";
 import { NotFoundError, NotImplementedError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -26,6 +26,15 @@ const WORKSPACE_QUERY_SCHEMA = {
 const UPLOAD_QUERY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 } } } as const;
 const ID_PARAMS_SCHEMA = { type: "object", required: ["id"], properties: { id: { type: "string", minLength: 1 } } } as const;
 
+// Migração "Prompt Persistente de Produção + Materiais com Contexto para o GPT" — os 4 campos
+// semânticos abaixo são compartilhados entre registro e edição.
+const SEMANTIC_METADATA_PROPERTIES = {
+  materialType: { type: "string", enum: [...ASSET_MATERIAL_TYPES] },
+  aiInstructions: { type: "string", maxLength: 2000 },
+  usageRule: { type: "string", maxLength: 1000 },
+  usagePriority: { type: "string", enum: [...ASSET_USAGE_PRIORITIES] },
+} as const;
+
 const UPDATE_BODY_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -33,6 +42,7 @@ const UPDATE_BODY_SCHEMA = {
     name: { type: "string", minLength: 1, maxLength: 200 },
     kind: { type: "string", enum: [...ASSET_KINDS] },
     tags: { type: "array", items: { type: "string", maxLength: 60 }, maxItems: 20 },
+    ...SEMANTIC_METADATA_PROPERTIES,
   },
 } as const;
 
@@ -45,6 +55,7 @@ const REGISTER_BODY_SCHEMA = {
     kind: { type: "string", enum: [...ASSET_KINDS] },
     name: { type: "string", minLength: 1, maxLength: 200 },
     tags: { type: "array", items: { type: "string", maxLength: 60 }, maxItems: 20 },
+    ...SEMANTIC_METADATA_PROPERTIES,
     storageRef: {
       type: "object",
       required: ["provider", "objectKey"],
@@ -151,11 +162,25 @@ export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRou
       kind: AssetKind;
       name: string;
       tags?: string[];
+      materialType?: AssetMaterialType;
+      aiInstructions?: string;
+      usageRule?: string;
+      usagePriority?: AssetUsagePriority;
       storageRef?: { provider: string; bucket?: string; objectKey: string; metadata?: Record<string, string> };
     };
     const libraryId = await ensureLibraryId(body.workspaceId);
     const asset = await deps.assetLibraryRepository
-      .registerAsset({ libraryId, kind: body.kind, name: body.name, tags: body.tags, storageRef: body.storageRef })
+      .registerAsset({
+        libraryId,
+        kind: body.kind,
+        name: body.name,
+        tags: body.tags,
+        storageRef: body.storageRef,
+        materialType: body.materialType,
+        aiInstructions: body.aiInstructions,
+        usageRule: body.usageRule,
+        usagePriority: body.usagePriority,
+      })
       .catch(translateAssetError);
     return successEnvelope(asset, request.id);
   });
@@ -163,7 +188,15 @@ export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRou
   app.post("/assets/:id/update", { schema: { params: ID_PARAMS_SCHEMA, body: UPDATE_BODY_SCHEMA } }, async (request) => {
     requirePermission(request, "asset:update");
     const { id } = request.params as { id: string };
-    const patch = request.body as { name?: string; kind?: AssetKind; tags?: string[] };
+    const patch = request.body as {
+      name?: string;
+      kind?: AssetKind;
+      tags?: string[];
+      materialType?: AssetMaterialType;
+      aiInstructions?: string;
+      usageRule?: string;
+      usagePriority?: AssetUsagePriority;
+    };
     const asset = await deps.assetLibraryRepository.updateAsset(id, patch).catch(translateAssetError);
     return successEnvelope(asset, request.id);
   });

@@ -262,8 +262,18 @@ export class PostgresPublicationRepository implements PublicationRepositoryPort 
     return result.rows.map(toSchedule);
   }
 
-  async listDueSchedules(input: { now: string; limit: number }): Promise<PublicationSchedule[]> {
-    const result = await this.pool.query<ScheduleRow>("select * from publication_schedules where status = 'scheduled' and scheduled_at <= $1 order by scheduled_at, id limit $2", [input.now, input.limit]);
+  async listDueSchedules(input: { now: string; limit: number; tenantId?: string; workspaceId?: string }): Promise<PublicationSchedule[]> {
+    const params: unknown[] = [input.now, input.limit];
+    const conditions = ["status = 'scheduled'", "scheduled_at <= $1"];
+    if (input.tenantId) {
+      params.push(input.tenantId);
+      conditions.push(`tenant_id = $${params.length}`);
+    }
+    if (input.workspaceId) {
+      params.push(input.workspaceId);
+      conditions.push(`workspace_id = $${params.length}`);
+    }
+    const result = await this.pool.query<ScheduleRow>(`select * from publication_schedules where ${conditions.join(" and ")} order by scheduled_at, id limit $2`, params);
     return result.rows.map(toSchedule);
   }
 
@@ -342,7 +352,7 @@ export class PostgresPublicationRepository implements PublicationRepositoryPort 
     return result.rows.map(toOutbox);
   }
 
-  async claimOutbox(input: { workerId: string; now: string; leaseMs: number; limit: number }): Promise<PublicationOutboxMessage[]> {
+  async claimOutbox(input: { workerId: string; now: string; leaseMs: number; limit: number; tenantId?: string; workspaceId?: string; publicationId?: string }): Promise<PublicationOutboxMessage[]> {
     const result = await this.pool.query<OutboxRow>(
       `update publication_outbox set status = 'claimed', claimed_by = $1, claimed_at = $2, lease_expires_at = $2::timestamptz + ($3 || ' milliseconds')::interval, fencing_token = fencing_token + 1, updated_at = now()
        where outbox_message_id in (
@@ -350,11 +360,14 @@ export class PostgresPublicationRepository implements PublicationRepositoryPort 
          where (status in ('pending','failed') or (status = 'claimed' and lease_expires_at <= $2))
            and available_at <= $2
            and coalesce(last_failure_code, '') <> 'UNKNOWN_OUTCOME'
+           and ($5::text is null or tenant_id = $5)
+           and ($6::text is null or workspace_id = $6)
+           and ($7::text is null or publication_id = $7)
          order by available_at, outbox_message_id
          limit $4
          for update skip locked
        ) returning *`,
-      [input.workerId, input.now, input.leaseMs, input.limit],
+      [input.workerId, input.now, input.leaseMs, input.limit, input.tenantId, input.workspaceId, input.publicationId],
     );
     return result.rows.map(toOutbox);
   }

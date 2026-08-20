@@ -191,8 +191,15 @@ export class InMemoryPublicationRepository implements PublicationRepositoryPort 
     return [...this.schedules.values()].filter((schedule) => schedule.tenantId === filter.tenantId && schedule.workspaceId === filter.workspaceId && (!filter.status || schedule.status === filter.status));
   }
 
-  async listDueSchedules(input: { now: string; limit: number }): Promise<PublicationSchedule[]> {
-    return [...this.schedules.values()].filter((schedule) => schedule.status === "scheduled" && schedule.scheduledAt <= input.now).slice(0, input.limit);
+  async listDueSchedules(input: { now: string; limit: number; tenantId?: string; workspaceId?: string }): Promise<PublicationSchedule[]> {
+    return [...this.schedules.values()]
+      .filter((schedule) =>
+        schedule.status === "scheduled"
+        && schedule.scheduledAt <= input.now
+        && (!input.tenantId || schedule.tenantId === input.tenantId)
+        && (!input.workspaceId || schedule.workspaceId === input.workspaceId),
+      )
+      .slice(0, input.limit);
   }
 
   async acquireLock(input: PublicationLock): Promise<boolean> {
@@ -256,10 +263,13 @@ export class InMemoryPublicationRepository implements PublicationRepositoryPort 
     );
   }
 
-  async claimOutbox(input: { workerId: string; now: string; leaseMs: number; limit: number }): Promise<PublicationOutboxMessage[]> {
+  async claimOutbox(input: { workerId: string; now: string; leaseMs: number; limit: number; tenantId?: string; workspaceId?: string; publicationId?: string }): Promise<PublicationOutboxMessage[]> {
     const claimed: PublicationOutboxMessage[] = [];
     for (const message of [...this.outbox.values()].sort((a, b) => a.availableAt.localeCompare(b.availableAt))) {
       if (claimed.length >= input.limit) break;
+      if (input.tenantId && message.tenantId !== input.tenantId) continue;
+      if (input.workspaceId && message.workspaceId !== input.workspaceId) continue;
+      if (input.publicationId && message.publicationId !== input.publicationId) continue;
       const available = message.lastFailureCode !== "UNKNOWN_OUTCOME"
         && (message.status === "pending" || message.status === "failed" || (message.status === "claimed" && (message.leaseExpiresAt ?? "") <= input.now))
         && message.availableAt <= input.now;

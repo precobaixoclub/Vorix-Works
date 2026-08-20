@@ -22,14 +22,16 @@ export default function PublicationsPage() {
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [sandboxOpen, setSandboxOpen] = useState(false);
   const { data: publications, isLoading, error, mutate: mutatePublications } = usePublications(workspace.id);
-  const { data: queue } = usePublicationQueue();
+  const { data: queue } = usePublicationQueue(workspace.id);
   const { data: metrics } = usePublicationMetrics(workspace.id);
   const { data: providers } = usePublicationProviders();
   const { data: metaOAuth } = useMetaPagesOAuthStatus(workspace.id);
   const { data: outbox } = usePublicationOutbox(workspace.id);
   const { data: reconciliations } = usePublicationReconciliations(workspace.id);
   const { data: deadLetters } = usePublicationDeadLetters(workspace.id);
-  const metaProvider = providers?.find((provider) => provider.providerId === "meta_pages_sandbox");
+  const showSandboxTools = process.env.NEXT_PUBLIC_SHOW_SANDBOX_PROVIDERS === "true";
+  const visibleProviders = (providers ?? []).filter((provider) => showSandboxTools || !provider.providerId.includes("sandbox"));
+  const metaProvider = showSandboxTools ? providers?.find((provider) => provider.providerId === "meta_pages_sandbox") : undefined;
 
   async function connectMetaPages() {
     setOauthBusy(true);
@@ -55,7 +57,7 @@ export default function PublicationsPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Publicação Técnica" description="Bastidor da fila de publicação, usado para suporte quando uma postagem falha ou fica pendente." />
+      <PageHeader title="Publicação Técnica" description="Diagnóstico da fila e execução de publicação." />
       <ScreenGuide
         title="Quando abrir esta tela"
         description="No dia a dia, use Publicar ou Postagens Publicadas. Esta tela serve para investigar a fila interna."
@@ -63,7 +65,7 @@ export default function PublicationsPage() {
           "Fila mostra itens aguardando processamento.",
           "Caixa de saída mostra mensagens ainda não confirmadas.",
           "Não entregues lista falhas que precisam de correção.",
-          "Sandbox é apenas ambiente de teste da Meta.",
+          "Use Provedores para diagnosticar credenciais e sincronização.",
         ]}
         aside={<p>Se a intenção é criar uma postagem nova, volte para Publicar ou Produção.</p>}
       />
@@ -84,7 +86,7 @@ export default function PublicationsPage() {
           <div className="grid gap-4 lg:grid-cols-4">
             <Card className="p-4">
               <p className="mb-2 text-sm font-medium text-ink">Registro de Provedores</p>
-              <div className="space-y-2 text-xs text-ink-muted">{providers?.map((provider) => <p key={provider.providerId}>{provider.displayName} · v{provider.providerVersion} · {provider.enabled ? "ativo" : "desativado"} · {provider.supportedChannels.length} canais</p>)}</div>
+              <div className="space-y-2 text-xs text-ink-muted">{visibleProviders.map((provider) => <p key={provider.providerId}>{provider.displayName} · v{provider.providerVersion} · {provider.enabled ? "ativo" : "desativado"} · {provider.supportedChannels.length} canais</p>)}</div>
             </Card>
             <Card className="p-4">
               <p className="mb-2 text-sm font-medium text-ink">Caixa de Saída</p>
@@ -101,28 +103,30 @@ export default function PublicationsPage() {
           </div>
         </ProgressivePanel>
 
-        <ProgressivePanel
-          title="Meta Pages Sandbox"
-          description="Ambiente de teste da Meta. No uso normal, prefira Conexões."
-          open={sandboxOpen}
-          onToggle={() => setSandboxOpen(!sandboxOpen)}
-          badge={metaOAuth?.connected ? "conectado" : undefined}
-        >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-sm font-medium text-ink">Status do sandbox</p>
-              <p className="mt-1 text-xs text-ink-muted">
-                {metaProvider?.enabled ? "Provedor registrado" : "Provedor desabilitado"} · {metaOAuth?.connected ? "OAuth conectado" : "OAuth desconectado"}
-                {metaOAuth?.credentialReferences[0]?.providerSubjectId ? ` · page ${metaOAuth.credentialReferences[0].providerSubjectId}` : ""}
-              </p>
-              {metaOAuth?.credentialReferences[0]?.expiresAt ? <p className="mt-1 text-xs text-ink-muted">token expira em {formatDateTime(metaOAuth.credentialReferences[0].expiresAt)}</p> : null}
+        {showSandboxTools ? (
+          <ProgressivePanel
+            title="Meta Pages Sandbox"
+            description="Ambiente de teste da Meta. No uso normal, prefira Conexões."
+            open={sandboxOpen}
+            onToggle={() => setSandboxOpen(!sandboxOpen)}
+            badge={metaOAuth?.connected ? "conectado" : undefined}
+          >
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-sm font-medium text-ink">Status do sandbox</p>
+                <p className="mt-1 text-xs text-ink-muted">
+                  {metaProvider?.enabled ? "Provedor registrado" : "Provedor desabilitado"} · {metaOAuth?.connected ? "OAuth conectado" : "OAuth desconectado"}
+                  {metaOAuth?.credentialReferences[0]?.providerSubjectId ? ` · page ${metaOAuth.credentialReferences[0].providerSubjectId}` : ""}
+                </p>
+                {metaOAuth?.credentialReferences[0]?.expiresAt ? <p className="mt-1 text-xs text-ink-muted">token expira em {formatDateTime(metaOAuth.credentialReferences[0].expiresAt)}</p> : null}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button disabled={oauthBusy || !metaProvider?.enabled} onClick={connectMetaPages}>Conectar sandbox</Button>
+                <Button variant="secondary" disabled={oauthBusy || !metaOAuth?.connected} onClick={disconnectFirstCredential}>Desconectar</Button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={oauthBusy || !metaProvider?.enabled} onClick={connectMetaPages}>Conectar sandbox</Button>
-              <Button variant="secondary" disabled={oauthBusy || !metaOAuth?.connected} onClick={disconnectFirstCredential}>Desconectar</Button>
-            </div>
-          </div>
-        </ProgressivePanel>
+          </ProgressivePanel>
+        ) : null}
       </div>
       {isLoading ? (
         <div className="flex justify-center py-14">

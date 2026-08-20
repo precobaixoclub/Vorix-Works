@@ -1,147 +1,26 @@
 "use client";
 
-import { useState } from "react";
-import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
-import { EmptyState } from "@/components/EmptyState";
-import { ErrorState } from "@/components/ErrorState";
-import { Input } from "@/components/Field";
-import { PageHeader } from "@/components/PageHeader";
-import { ScreenGuide } from "@/components/ScreenGuide";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Spinner } from "@/components/Spinner";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { AssetCard } from "@/features/assets/components/AssetCard";
-import { EditAssetModal } from "@/features/assets/components/EditAssetModal";
-import { LogoConfigCard } from "@/features/assets/components/LogoConfigCard";
-import { RegisterAssetModal } from "@/features/assets/components/RegisterAssetModal";
-import { archiveAsset, deleteAsset } from "@/features/assets/api";
-import { useAssets } from "@/features/assets/hooks";
-import { ASSET_KINDS, ASSET_KIND_LABEL, type Asset, type AssetKind } from "@/features/assets/types";
 
-export default function AssetsPage() {
+/**
+ * Migração "Marca & Materiais" — Materiais deixou de ser uma tela própria e passou a ser uma aba
+ * dentro da central "Marca" (`/knowledge`). Esta rota continua existindo só para não quebrar
+ * links/favoritos antigos — redireciona imediatamente para a aba equivalente.
+ */
+export default function AssetsRedirectPage() {
   const workspace = useCurrentWorkspace();
-  const [search, setSearch] = useState("");
-  const [kindFilter, setKindFilter] = useState<AssetKind | undefined>(undefined);
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [editingAsset, setEditingAsset] = useState<Asset | undefined>();
-  const [actionError, setActionError] = useState<string | undefined>();
-  const { data: assets, isLoading, error, mutate } = useAssets(workspace.id, { search: search || undefined, kind: kindFilter });
+  const router = useRouter();
 
-  async function runAction(action: () => Promise<unknown>) {
-    setActionError(undefined);
-    try {
-      await action();
-      mutate();
-    } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : "Não foi possível concluir a ação.");
-    }
-  }
+  useEffect(() => {
+    router.replace(`/workspaces/${workspace.id}/knowledge?tab=materials`);
+  }, [router, workspace.id]);
 
   return (
-    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader
-        title="Materiais da Marca"
-        description="Logo, fotos, vídeos, brand book, fontes e referências que a IA vai usar para criar campanhas, roteiros e artes automaticamente."
-        actions={<Button onClick={() => setIsRegistering(true)}>+ Enviar Material</Button>}
-      />
-
-      <ScreenGuide
-        title="Como usar a biblioteca"
-        description="Tudo que entra aqui vira referência da marca para a linha de produção."
-        items={[
-          "Envie logo, fotos reais, vídeos, produtos e brand book.",
-          "Use nomes claros para encontrar rápido depois.",
-          "Arquive o que não deve mais ser usado.",
-          "Remova arquivos errados para evitar criação fora da marca.",
-        ]}
-        aside={<p>Quanto melhor esta biblioteca, menos você precisa explicar estilo, cores e produto em cada postagem.</p>}
-      />
-
-      <LogoConfigCard workspaceId={workspace.id} />
-
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Pesquisar por nome…"
-          aria-label="Pesquisar ativos por nome"
-          className="w-full sm:max-w-xs"
-        />
-        <button
-          type="button"
-          onClick={() => setKindFilter(undefined)}
-          className={`rounded-full px-3 py-1 text-xs font-medium ${
-            !kindFilter ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:text-ink"
-          }`}
-        >
-          Todos
-        </button>
-        {ASSET_KINDS.map((kind) => (
-          <button
-            key={kind}
-            type="button"
-            onClick={() => setKindFilter(kind)}
-            className={`rounded-full px-3 py-1 text-xs font-medium ${
-              kindFilter === kind ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:text-ink"
-            }`}
-          >
-            {ASSET_KIND_LABEL[kind]}
-          </button>
-        ))}
-      </div>
-
-      {actionError ? (
-        <Card className="mb-4 border-red-200 p-4">
-          <p className="text-sm text-red-600">{actionError}</p>
-        </Card>
-      ) : null}
-
-      {isLoading ? (
-        <div className="flex justify-center py-14">
-          <Spinner />
-        </div>
-      ) : error ? (
-        <ErrorState error={error} onRetry={() => mutate()} />
-      ) : !assets || assets.length === 0 ? (
-        <EmptyState
-          title="Nenhum material cadastrado"
-          description="Envie o primeiro material da marca (logo, foto, brand book...) para que a IA possa usá-lo ao criar campanhas."
-        />
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {assets.map((asset) => (
-            <AssetCard
-              key={asset.id}
-              asset={asset}
-              onEdit={() => setEditingAsset(asset)}
-              onArchive={() => runAction(() => archiveAsset(workspace.id, asset.id))}
-              onDelete={() => runAction(() => deleteAsset(workspace.id, asset.id))}
-            />
-          ))}
-        </div>
-      )}
-
-      {isRegistering ? (
-        <RegisterAssetModal
-          workspaceId={workspace.id}
-          onClose={() => setIsRegistering(false)}
-          onRegistered={() => {
-            setIsRegistering(false);
-            mutate();
-          }}
-        />
-      ) : null}
-
-      {editingAsset ? (
-        <EditAssetModal
-          asset={editingAsset}
-          onClose={() => setEditingAsset(undefined)}
-          onUpdated={() => {
-            setEditingAsset(undefined);
-            mutate();
-          }}
-        />
-      ) : null}
+    <main className="flex items-center justify-center gap-2 py-20 text-sm text-ink-muted">
+      <Spinner className="h-4 w-4" /> Redirecionando para Marca…
     </main>
   );
 }

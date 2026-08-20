@@ -11,7 +11,7 @@ import type { PublicationProviderPort } from "../../../../application/publicatio
 import type { PublicationProviderPolicy } from "../../../../application/publication/publication-provider-policy.js";
 import type { PublicationGovernancePolicy } from "../../../../application/credential/publication-governance-policy.js";
 import type { PublicationProviderRegistry } from "../../../../application/publication/publication-provider-registry.js";
-import type { PublicationQueuePort } from "../../../../application/publication/publication-queue.js";
+import type { PublicationQueueJob, PublicationQueuePort } from "../../../../application/publication/publication-queue.js";
 import { PublicationReconciliationService } from "../../../../application/publication/publication-reconciliation-service.js";
 import type { PublicationSecretResolverPort } from "../../../../application/publication/publication-secret-resolver.js";
 import type { MetaPagesOAuthService } from "../../../../infrastructure/publication/meta-pages-oauth-service.js";
@@ -103,9 +103,11 @@ export async function registerPublicationRoutes(app: FastifyInstance, deps: Publ
     return successEnvelope(await deps.publicationRepository.listSchedules({ tenantId: principal.tenantId, workspaceId: query.workspaceId }), request.id);
   });
 
-  app.get("/publications/queue", async (request) => {
-    requirePermission(request, "publication:read");
-    return successEnvelope({ size: await deps.queue.size(), jobs: await deps.queue.list() }, request.id);
+  app.get("/publications/queue", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "publication:read");
+    const { workspaceId } = request.query as { workspaceId?: string };
+    const jobs = (await deps.queue.list()).filter((job) => job.tenantId === principal.tenantId && (workspaceId ? job.workspaceId === workspaceId : true));
+    return successEnvelope({ size: jobs.length, jobs: jobs.map(toSafePublicationQueueJob) }, request.id);
   });
 
   app.get("/publications/dead-letters", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
@@ -207,7 +209,7 @@ export async function registerPublicationRoutes(app: FastifyInstance, deps: Publ
     await ensurePublicationOutboxIntents(engineDeps, { tenantId: principal.tenantId, workspaceId: body.workspaceId, publicationId: id, causationId: principal.userId });
     await enqueuePublication(orchestratorDeps, { tenantId: principal.tenantId, workspaceId: body.workspaceId, publicationId: id });
     if (body.async) return successEnvelope({ enqueued: true }, request.id);
-    await new PublicationWorker(orchestratorDeps, "api-publish-worker").runUntilIdle(1);
+    await new PublicationWorker(orchestratorDeps, "api-publish-worker").runUntilIdle(1, { tenantId: principal.tenantId, workspaceId: body.workspaceId });
     const detail = await requirePublication(deps.publicationRepository, id, principal.tenantId, body.workspaceId);
     return successEnvelope(detail, request.id);
   });
@@ -234,14 +236,16 @@ export async function registerPublicationRoutes(app: FastifyInstance, deps: Publ
     return successEnvelope(await schedulePublication(orchestratorDeps, { tenantId: principal.tenantId, workspaceId: body.workspaceId, publicationId: id, scheduledAt: body.scheduledAt, timezone: body.timezone }), request.id);
   });
 
-  app.post("/publications/operate/run-due", { schema: { body: { type: "object", properties: { now: { type: "string" } } } } }, async (request) => {
-    requirePermission(request, "publication:operate");
-    return successEnvelope({ enqueued: await runDueSchedules(orchestratorDeps, ((request.body ?? {}) as { now?: string }).now) }, request.id);
+  app.post("/publications/operate/run-due", { schema: { body: { type: "object", properties: { workspaceId: { type: "string" }, now: { type: "string" } } } } }, async (request) => {
+    const principal = requirePermission(request, "publication:operate");
+    const body = (request.body ?? {}) as { workspaceId?: string; now?: string };
+    return successEnvelope({ enqueued: await runDueSchedules(orchestratorDeps, body.now, { tenantId: principal.tenantId, workspaceId: body.workspaceId }) }, request.id);
   });
 
-  app.post("/publications/operate/work", async (request) => {
-    requirePermission(request, "publication:operate");
-    return successEnvelope({ processed: await new PublicationWorker(orchestratorDeps, "api-worker").runUntilIdle() }, request.id);
+  app.post("/publications/operate/work", { schema: { body: { type: "object", properties: { workspaceId: { type: "string" } } } } }, async (request) => {
+    const principal = requirePermission(request, "publication:operate");
+    const { workspaceId } = (request.body ?? {}) as { workspaceId?: string };
+    return successEnvelope({ processed: await new PublicationWorker(orchestratorDeps, "api-worker").runUntilIdle(100, { tenantId: principal.tenantId, workspaceId }) }, request.id);
   });
 
   app.post("/publications/operate/recover", { schema: { body: { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string" } } } } }, async (request) => {
@@ -379,6 +383,16 @@ function normalizeInlineArtifact(artifact: Record<string, unknown>) {
     outputPort: typeof artifact.outputPort === "string" ? artifact.outputPort : undefined,
     payload: typeof artifact.payload === "object" && artifact.payload ? artifact.payload as Record<string, unknown> : artifact,
     payloadRef: typeof artifact.payloadRef === "string" ? artifact.payloadRef : undefined,
+  };
+}
+
+function toSafePublicationQueueJob(job: PublicationQueueJob) {
+  return {
+    id: job.id,
+    publicationId: job.publicationId,
+    kind: job.kind,
+    enqueuedAt: job.enqueuedAt,
+    runAfter: job.runAfter,
   };
 }
 

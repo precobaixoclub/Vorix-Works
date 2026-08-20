@@ -43,9 +43,9 @@ export async function enqueuePublication(deps: PublicationOrchestratorDeps, inpu
   await deps.repository.appendEvent({ id: deps.idGenerator(), publicationId: input.publicationId, eventType: "publication_enqueued", correlationId: detail.plan.correlationId, traceId: detail.plan.traceId, payload: { kind: input.kind ?? "publish" } });
 }
 
-export async function runDueSchedules(deps: PublicationOrchestratorDeps, now = new Date().toISOString()): Promise<number> {
+export async function runDueSchedules(deps: PublicationOrchestratorDeps, now = new Date().toISOString(), filter: { tenantId?: string; workspaceId?: string } = {}): Promise<number> {
   await deps.repository.releaseExpiredOutbox(now);
-  const due = await deps.repository.listDueSchedules({ now, limit: deps.concurrency.maxConcurrentPublications });
+  const due = await deps.repository.listDueSchedules({ now, limit: deps.concurrency.maxConcurrentPublications, ...filter });
   let enqueued = 0;
   for (const schedule of due) {
     const detail = await deps.repository.getDetail(schedule.publicationId);
@@ -102,8 +102,8 @@ export async function rebuildPublicationQueueFromOutbox(deps: PublicationOrchest
   return jobsByPublicationId.size;
 }
 
-export async function executeQueuedPublication(deps: PublicationOrchestratorDeps, workerId = deps.workerId ?? "publication-worker"): Promise<PublicationDetail | undefined> {
-  const job = await deps.queue.dequeue();
+export async function executeQueuedPublication(deps: PublicationOrchestratorDeps, workerId = deps.workerId ?? "publication-worker", filter: { tenantId?: string; workspaceId?: string } = {}): Promise<PublicationDetail | undefined> {
+  const job = await deps.queue.dequeue(undefined, filter);
   if (!job) return undefined;
   const lockOwner = `${workerId}:${job.id}`;
   const current = await deps.repository.getDetail(job.publicationId);
@@ -118,7 +118,7 @@ export async function executeQueuedPublication(deps: PublicationOrchestratorDeps
     if (detail) await deps.repository.appendEvent({ id: deps.idGenerator(), publicationId: job.publicationId, eventType: "worker_started", correlationId: detail.plan.correlationId, traceId: detail.plan.traceId, payload: { workerId, kind: job.kind } });
     const providerRegistry = deps.providerRegistry ?? createDefaultPublicationProviderRegistry(deps.providers as never);
     const secretResolver = deps.secretResolver ?? new InMemoryPublicationSecretResolver();
-    await new PublicationDispatchService({ repository: deps.repository, providerRegistry, secretResolver, providerCircuitBreaker: deps.providerCircuitBreaker, idGenerator: deps.idGenerator }).dispatchAvailable(workerId);
+    await new PublicationDispatchService({ repository: deps.repository, providerRegistry, secretResolver, providerCircuitBreaker: deps.providerCircuitBreaker, idGenerator: deps.idGenerator }).dispatchAvailable(workerId, { tenantId: job.tenantId, workspaceId: job.workspaceId, publicationId: job.publicationId });
     const result = await deps.repository.getDetail(job.publicationId);
     if (result) {
       await finalizeRunningSchedules(deps, result);
@@ -139,15 +139,15 @@ export class PublicationWorker {
     this.shuttingDown = true;
   }
 
-  async runOnce(): Promise<PublicationDetail | undefined> {
+  async runOnce(filter: { tenantId?: string; workspaceId?: string } = {}): Promise<PublicationDetail | undefined> {
     if (this.shuttingDown) return undefined;
-    return executeQueuedPublication(this.deps, this.workerId);
+    return executeQueuedPublication(this.deps, this.workerId, filter);
   }
 
-  async runUntilIdle(maxJobs = 100): Promise<number> {
+  async runUntilIdle(maxJobs = 100, filter: { tenantId?: string; workspaceId?: string } = {}): Promise<number> {
     let count = 0;
     while (!this.shuttingDown && count < maxJobs) {
-      const result = await this.runOnce();
+      const result = await this.runOnce(filter);
       if (!result) break;
       count += 1;
     }

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { mutate } from "swr";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
@@ -16,10 +17,19 @@ import { useAuditEvents, useComplianceReport, useCredentials } from "@/features/
 import type { Credential } from "@/features/governance/types";
 import { formatDateTime } from "@/lib/format";
 
+type GovernanceConfirmAction = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  variant?: "primary" | "danger";
+  action: () => Promise<void>;
+};
+
 export default function GovernancePage() {
   const workspace = useCurrentWorkspace();
   const [busy, setBusy] = useState<string | undefined>();
-  const [exportPreview, setExportPreview] = useState<string>("");
+  const [exportPreview, setExportPreview] = useState("");
+  const [pendingAction, setPendingAction] = useState<GovernanceConfirmAction | null>(null);
   const { data: credentials, isLoading, error, mutate: mutateCredentials } = useCredentials(workspace.id);
   const { data: auditEvents } = useAuditEvents(workspace.id);
   const { data: compliance } = useComplianceReport(workspace.id);
@@ -55,6 +65,15 @@ export default function GovernancePage() {
     });
   }
 
+  function confirmAuditExport(format: "json" | "csv") {
+    setPendingAction({
+      title: `Exportar auditoria em ${format.toUpperCase()}?`,
+      description: "A exportação pode conter registros operacionais sensíveis do workspace. Use apenas para suporte ou compliance.",
+      confirmLabel: `Exportar ${format.toUpperCase()}`,
+      action: () => showExport(`audit-${format}`, () => exportAuditEvents(workspace.id, format)),
+    });
+  }
+
   return (
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader title="Governança" description="Controle de credenciais, auditoria e segurança das integrações do workspace." />
@@ -80,8 +99,8 @@ export default function GovernancePage() {
 
       <div className="mb-6 flex flex-wrap gap-2">
         <Button disabled={!!busy} onClick={connectProvider}>Conectar provedor</Button>
-        <Button variant="secondary" disabled={!!busy} onClick={() => showExport("audit-json", () => exportAuditEvents(workspace.id, "json"))}>Exportar audit JSON</Button>
-        <Button variant="secondary" disabled={!!busy} onClick={() => showExport("audit-csv", () => exportAuditEvents(workspace.id, "csv"))}>Exportar audit CSV</Button>
+        <Button variant="secondary" disabled={!!busy} onClick={() => confirmAuditExport("json")}>Exportar audit JSON</Button>
+        <Button variant="secondary" disabled={!!busy} onClick={() => confirmAuditExport("csv")}>Exportar audit CSV</Button>
       </div>
 
       {isLoading ? (
@@ -91,10 +110,10 @@ export default function GovernancePage() {
       ) : error ? (
         <ErrorState error={error} onRetry={() => mutateCredentials()} />
       ) : !credentials || credentials.length === 0 ? (
-        <EmptyState title="Nenhuma credencial" description="Conecte o provider sandbox para registrar Credential, CredentialReference e binding governado." />
+        <EmptyState title="Nenhuma credencial" description="Conecte um provedor para registrar Credential, CredentialReference e binding governado." />
       ) : (
         <Card className="mb-6 overflow-x-auto">
-          <table className="w-full min-w-[680px] text-left text-sm">
+          <table className="w-full min-w-[760px] text-left text-sm">
             <thead>
               <tr className="border-b border-border text-xs text-ink-muted">
                 <th className="px-4 py-3 font-medium">Provedor</th>
@@ -106,7 +125,15 @@ export default function GovernancePage() {
             </thead>
             <tbody>
               {credentials.map((credential) => (
-                <CredentialRow key={credential.id} credential={credential} busy={busy} workspaceId={workspace.id} runAction={runAction} showExport={showExport} />
+                <CredentialRow
+                  key={credential.id}
+                  credential={credential}
+                  busy={busy}
+                  workspaceId={workspace.id}
+                  runAction={runAction}
+                  showExport={showExport}
+                  requestConfirm={setPendingAction}
+                />
               ))}
             </tbody>
           </table>
@@ -151,17 +178,47 @@ export default function GovernancePage() {
           <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded bg-surface-sunken p-3 text-xs text-ink-muted">{exportPreview}</pre>
         </Card>
       ) : null}
+
+      <ConfirmDialog
+        open={!!pendingAction}
+        title={pendingAction?.title ?? ""}
+        description={pendingAction?.description ?? ""}
+        confirmLabel={pendingAction?.confirmLabel ?? "Confirmar"}
+        variant={pendingAction?.variant ?? "primary"}
+        busy={!!busy}
+        onCancel={() => setPendingAction(null)}
+        onConfirm={async () => {
+          if (!pendingAction) return;
+          await pendingAction.action();
+          setPendingAction(null);
+        }}
+      />
     </main>
   );
 }
 
-function CredentialRow({ credential, busy, workspaceId, runAction, showExport }: { credential: Credential; busy?: string; workspaceId: string; runAction: (key: string, action: () => Promise<unknown>) => Promise<void>; showExport: (label: string, action: () => Promise<{ contentType: string; body: string }>) => Promise<void> }) {
+function CredentialRow({
+  credential,
+  busy,
+  workspaceId,
+  runAction,
+  showExport,
+  requestConfirm,
+}: {
+  credential: Credential;
+  busy?: string;
+  workspaceId: string;
+  runAction: (key: string, action: () => Promise<unknown>) => Promise<void>;
+  showExport: (label: string, action: () => Promise<{ contentType: string; body: string }>) => Promise<void>;
+  requestConfirm: (action: GovernanceConfirmAction) => void;
+}) {
   const actionDisabled = !!busy;
   return (
     <tr className="border-b border-border last:border-0">
       <td className="px-4 py-3">
         <p className="font-medium text-ink">{credential.providerId}</p>
-        <p className="text-xs text-ink-muted">{credential.environment} · {credential.providerSubjectId ?? "sem subject"} · {credential.activeReferenceId ?? "sem reference ativa"}</p>
+        <p className="text-xs text-ink-muted">{credential.environment} · {credential.providerSubjectId ?? "sem subject"}</p>
+        <p className="break-all text-[11px] text-ink-faint">{credential.activeReferenceId ?? "sem referência ativa"}</p>
       </td>
       <td className="px-4 py-3"><StatusBadge status={credential.status} /></td>
       <td className="px-4 py-3 text-xs text-ink-muted">
@@ -170,15 +227,101 @@ function CredentialRow({ credential, busy, workspaceId, runAction, showExport }:
       </td>
       <td className="px-4 py-3 text-xs text-ink-muted">{credential.expiresAt ? formatDateTime(credential.expiresAt) : "Sem expiração"}</td>
       <td className="px-4 py-3">
-        <div className="flex min-w-0 flex-wrap gap-2">
+        <div className="flex min-w-0 flex-wrap items-start gap-2">
           <Button variant="secondary" disabled={actionDisabled} onClick={() => runAction(`health:${credential.id}`, () => checkCredentialHealth(workspaceId, credential.id))}>Saúde</Button>
-          <Button variant="secondary" disabled={actionDisabled || credential.status === "revoked"} onClick={() => runAction(`rotate:${credential.id}`, () => rotateCredential(workspaceId, credential.id, "Rotação manual via Governança"))}>Rotacionar</Button>
-          <Button variant="secondary" disabled={actionDisabled || credential.status === "disabled"} onClick={() => runAction(`disable:${credential.id}`, () => disableCredential(workspaceId, credential.id, "Desativação operacional via Governança"))}>Desabilitar</Button>
-          <Button variant="secondary" disabled={actionDisabled || credential.status === "connected"} onClick={() => runAction(`enable:${credential.id}`, () => enableCredential(workspaceId, credential.id, "Ativação operacional via Governança"))}>Habilitar</Button>
-          <Button variant="danger" disabled={actionDisabled || credential.status === "revoked"} onClick={() => runAction(`revoke:${credential.id}`, () => revokeCredential(workspaceId, credential.id, "Revogação operacional via Governança"))}>Revogar</Button>
-          <Button variant="ghost" disabled={actionDisabled} onClick={() => showExport(`credential-export:${credential.id}`, () => exportCredentialHistory(workspaceId, credential.id, "json"))}>Exportar</Button>
+          <details className="min-w-36">
+            <summary className="inline-flex min-h-10 cursor-pointer list-none items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+              Mais ações
+            </summary>
+            <div className="mt-2 grid gap-1 rounded-lg border border-border bg-surface-raised p-2">
+              <MenuAction
+                disabled={actionDisabled || credential.status === "revoked"}
+                onClick={() =>
+                  requestConfirm({
+                    title: "Rotacionar credencial?",
+                    description: "A rotação cria uma nova referência de credencial e pode exigir nova validação do provedor.",
+                    confirmLabel: "Rotacionar",
+                    action: () => runAction(`rotate:${credential.id}`, () => rotateCredential(workspaceId, credential.id, "Rotação manual via Governança")),
+                  })
+                }
+              >
+                Rotacionar
+              </MenuAction>
+              <MenuAction
+                disabled={actionDisabled || credential.status === "disabled"}
+                danger
+                onClick={() =>
+                  requestConfirm({
+                    title: "Desabilitar credencial?",
+                    description: "A credencial deixará de ser usada para publicações até ser habilitada novamente.",
+                    confirmLabel: "Desabilitar",
+                    variant: "danger",
+                    action: () => runAction(`disable:${credential.id}`, () => disableCredential(workspaceId, credential.id, "Desativação operacional via Governança")),
+                  })
+                }
+              >
+                Desabilitar
+              </MenuAction>
+              <MenuAction
+                disabled={actionDisabled || credential.status === "connected"}
+                onClick={() =>
+                  requestConfirm({
+                    title: "Habilitar credencial?",
+                    description: "A credencial voltará a ficar disponível para os fluxos que usam este provedor.",
+                    confirmLabel: "Habilitar",
+                    action: () => runAction(`enable:${credential.id}`, () => enableCredential(workspaceId, credential.id, "Ativação operacional via Governança")),
+                  })
+                }
+              >
+                Habilitar
+              </MenuAction>
+              <MenuAction
+                disabled={actionDisabled || credential.status === "revoked"}
+                danger
+                onClick={() =>
+                  requestConfirm({
+                    title: "Revogar credencial?",
+                    description: "A revogação interrompe o uso desta credencial e pode exigir reconectar o provedor.",
+                    confirmLabel: "Revogar",
+                    variant: "danger",
+                    action: () => runAction(`revoke:${credential.id}`, () => revokeCredential(workspaceId, credential.id, "Revogação operacional via Governança")),
+                  })
+                }
+              >
+                Revogar
+              </MenuAction>
+              <MenuAction
+                disabled={actionDisabled}
+                onClick={() =>
+                  requestConfirm({
+                    title: "Exportar histórico da credencial?",
+                    description: "A exportação contém histórico operacional sensível desta credencial.",
+                    confirmLabel: "Exportar",
+                    action: () => showExport(`credential-export:${credential.id}`, () => exportCredentialHistory(workspaceId, credential.id, "json")),
+                  })
+                }
+              >
+                Exportar
+              </MenuAction>
+            </div>
+          </details>
         </div>
       </td>
     </tr>
+  );
+}
+
+function MenuAction({ children, disabled, danger = false, onClick }: { children: ReactNode; disabled?: boolean; danger?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`min-h-9 rounded-md px-3 text-left text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+        danger ? "text-red-600 hover:bg-red-50" : "text-ink hover:bg-surface-sunken"
+      }`}
+    >
+      {children}
+    </button>
   );
 }

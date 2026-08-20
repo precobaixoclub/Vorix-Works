@@ -9,8 +9,8 @@ export function usePublication(workspaceId: string, publicationId: string) {
   return useSWR(["publication", workspaceId, publicationId], () => getPublication(workspaceId, publicationId));
 }
 
-export function usePublicationQueue() {
-  return useSWR("publication-queue", getPublicationQueue);
+export function usePublicationQueue(workspaceId: string) {
+  return useSWR(["publication-queue", workspaceId], () => getPublicationQueue(workspaceId));
 }
 
 export function usePublicationMetrics(workspaceId: string) {

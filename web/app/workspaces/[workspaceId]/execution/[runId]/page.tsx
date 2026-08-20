@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { mutate } from "swr";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { ScreenGuide } from "@/components/ScreenGuide";
@@ -14,10 +16,19 @@ import { cancelExecutionRun, decideExecutionGate, startExecutionRun } from "@/fe
 import { useExecutionRun } from "@/features/execution/hooks";
 import { formatDateTime } from "@/lib/format";
 
+type PendingAction = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  variant?: "primary" | "danger";
+  action: () => Promise<void>;
+};
+
 export default function ExecutionRunDetailPage() {
   const params = useParams<{ workspaceId: string; runId: string }>();
   const { data: detail, isLoading, error } = useExecutionRun(params.workspaceId, params.runId);
   const [busy, setBusy] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   async function refresh() {
     await mutate(["execution-run", params.workspaceId, params.runId]);
@@ -30,13 +41,23 @@ export default function ExecutionRunDetailPage() {
       await refresh();
     } finally {
       setBusy(false);
+      setPendingAction(null);
     }
   }
 
   async function handleStart() {
     if (!detail) return;
-    if (detail.run.mode === "real" && !window.confirm("Iniciar uma execução real pode chamar a Skill real de pesquisa habilitada por feature flag. Continuar?")) return;
-    await runAction(() => startExecutionRun(params.workspaceId, detail.run.id));
+    const action = () => runAction(() => startExecutionRun(params.workspaceId, detail.run.id));
+    if (detail.run.mode !== "real") {
+      await action();
+      return;
+    }
+    setPendingAction({
+      title: "Iniciar execução real?",
+      description: "Esta execução pode acionar handlers reais quando a feature flag estiver habilitada. Confirme somente se o runtime já foi revisado.",
+      confirmLabel: "Iniciar execução real",
+      action,
+    });
   }
 
   if (isLoading) {
@@ -66,16 +87,23 @@ export default function ExecutionRunDetailPage() {
   const openGate = detail.gates.find((gate) => gate.state === "open");
   const canStart = ["created", "ready"].includes(detail.run.state);
   const canCancel = !["completed", "failed", "cancelled"].includes(detail.run.state);
+  const pageTitle = detail.run.mode === "real" ? "Execução real" : "Simulação";
 
   return (
     <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
-        title={detail.run.id}
-        description={`Runtime ${detail.run.runtimePlanId} · criado em ${formatDateTime(detail.run.createdAt)}`}
+        title={pageTitle}
+        description={`Criada em ${formatDateTime(detail.run.createdAt)} · atualizada em ${formatDateTime(detail.run.updatedAt)}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">{detail.run.mode === "real" ? "Real" : "Simulação"}</span>
             <StatusBadge status={detail.run.state} />
+            <Link href={`/workspaces/${params.workspaceId}/runtime/${detail.run.runtimePlanId}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+              Abrir runtime
+            </Link>
+            <Link href={`/workspaces/${params.workspaceId}/planning/${detail.run.planningId}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+              Abrir planejamento
+            </Link>
           </div>
         }
       />
@@ -90,21 +118,58 @@ export default function ExecutionRunDetailPage() {
         ]}
         aside={<p>IDs de rastreio aparecem para suporte técnico e não precisam ser copiados no uso normal.</p>}
       />
-      <p className="mb-4 break-words text-xs text-ink-muted">traceId {detail.run.traceId} · correlationId {detail.run.correlationId}</p>
+      <p className="mb-4 break-all text-xs text-ink-faint">
+        Execução {detail.run.id} · Runtime {detail.run.runtimePlanId} · Planejamento {detail.run.planningId} · traceId {detail.run.traceId} · correlationId {detail.run.correlationId}
+      </p>
 
       <div className="mb-6 flex flex-wrap gap-2">
         <Button disabled={!canStart || busy} onClick={handleStart}>
           {detail.run.mode === "real" ? "Iniciar execução real" : "Iniciar simulação"}
         </Button>
-        <Button variant="danger" disabled={!canCancel || busy} onClick={() => runAction(() => cancelExecutionRun(params.workspaceId, detail.run.id))}>
+        <Button
+          variant="danger"
+          disabled={!canCancel || busy}
+          onClick={() =>
+            setPendingAction({
+              title: "Cancelar execução?",
+              description: "A execução será interrompida e não continuará processando tarefas pendentes.",
+              confirmLabel: "Cancelar execução",
+              variant: "danger",
+              action: () => runAction(() => cancelExecutionRun(params.workspaceId, detail.run.id)),
+            })
+          }
+        >
           Cancelar
         </Button>
         {openGate ? (
           <>
-            <Button variant="secondary" disabled={busy} onClick={() => runAction(() => decideExecutionGate({ workspaceId: params.workspaceId, runId: detail.run.id, gateId: openGate.id, decision: "approved" }))}>
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() =>
+                setPendingAction({
+                  title: "Aprovar gate?",
+                  description: "A aprovação libera a próxima etapa desta execução. Confirme apenas se o conteúdo e o contexto já foram revisados.",
+                  confirmLabel: "Aprovar gate",
+                  action: () => runAction(() => decideExecutionGate({ workspaceId: params.workspaceId, runId: detail.run.id, gateId: openGate.id, decision: "approved" })),
+                })
+              }
+            >
               Aprovar gate
             </Button>
-            <Button variant="danger" disabled={busy} onClick={() => runAction(() => decideExecutionGate({ workspaceId: params.workspaceId, runId: detail.run.id, gateId: openGate.id, decision: "rejected" }))}>
+            <Button
+              variant="danger"
+              disabled={busy}
+              onClick={() =>
+                setPendingAction({
+                  title: "Rejeitar gate?",
+                  description: "A rejeição bloqueia a continuidade desta execução até uma nova intervenção.",
+                  confirmLabel: "Rejeitar gate",
+                  variant: "danger",
+                  action: () => runAction(() => decideExecutionGate({ workspaceId: params.workspaceId, runId: detail.run.id, gateId: openGate.id, decision: "rejected" })),
+                })
+              }
+            >
               Rejeitar gate
             </Button>
           </>
@@ -270,6 +335,19 @@ export default function ExecutionRunDetailPage() {
           )}
         </CardBody>
       </Card>
+
+      <ConfirmDialog
+        open={!!pendingAction}
+        title={pendingAction?.title ?? ""}
+        description={pendingAction?.description ?? ""}
+        confirmLabel={pendingAction?.confirmLabel ?? "Confirmar"}
+        variant={pendingAction?.variant ?? "primary"}
+        busy={busy}
+        onCancel={() => setPendingAction(null)}
+        onConfirm={async () => {
+          if (pendingAction) await pendingAction.action();
+        }}
+      />
     </main>
   );
 }

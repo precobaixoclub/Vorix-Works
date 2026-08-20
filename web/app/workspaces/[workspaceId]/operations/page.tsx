@@ -12,23 +12,23 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { resetCircuitBreaker } from "@/features/operations/api";
 import { useBackpressure, useBackupRestorePlan, useCircuitBreakers, useQueues, useRateLimits, useSecretHealth, useSystemHealth } from "@/features/operations/hooks";
-import type { BackpressureSignal, CircuitBreaker, OperationalCheck, RateLimitBucket } from "@/features/operations/types";
+import type { BackpressureSignal, CircuitBreaker, OperationalCheck, QueueSnapshot, RateLimitBucket } from "@/features/operations/types";
 
-const TABS = ["Resumo", "Circuitos", "Pressão", "Limites de taxa", "Restauração"] as const;
+const TABS = ["Saúde", "Circuitos", "Pressão", "Limites de taxa", "Filas", "Restauração"] as const;
 
 export default function OperationsPage() {
   const workspace = useCurrentWorkspace();
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Resumo");
+  const [tab, setTab] = useState<(typeof TABS)[number]>("Saúde");
   const health = useSystemHealth(workspace.id);
   const circuits = useCircuitBreakers(workspace.id);
   const backpressure = useBackpressure(workspace.id);
-  const rateLimits = useRateLimits();
-  const queues = useQueues();
-  const secrets = useSecretHealth();
-  const backup = useBackupRestorePlan();
+  const rateLimits = useRateLimits(workspace.id);
+  const queues = useQueues(workspace.id);
+  const secrets = useSecretHealth(workspace.id);
+  const backup = useBackupRestorePlan(workspace.id);
 
   async function reset(id: string) {
-    await resetCircuitBreaker(id);
+    await resetCircuitBreaker(id, workspace.id);
     await Promise.all([health.mutate(), circuits.mutate()]);
   }
 
@@ -40,9 +40,9 @@ export default function OperationsPage() {
         title="Leitura rápida"
         description="Use esta tela quando uma geração, agendamento ou publicação parecer travada."
         items={[
-          "Resumo mostra se o sistema está pronto.",
+          "Saúde mostra se o sistema está pronto.",
           "Circuitos mostra integrações bloqueadas por falha repetida.",
-          "Pressão e Limites indicam excesso de uso ou espera.",
+          "Pressão, Limites e Filas indicam excesso de uso ou espera.",
           "Restauração mostra o plano de recuperação se algo parar.",
         ]}
         aside={<p>Se tudo estiver saudável aqui, investigue a publicação específica em Postagens Publicadas.</p>}
@@ -61,10 +61,11 @@ export default function OperationsPage() {
         <ErrorState error={health.error} onRetry={() => health.mutate()} />
       ) : (
         <>
-          {tab === "Resumo" && health.data ? <SummaryPanel health={health.data} queueSize={queues.data?.publication.localQueueSize ?? 0} secretOk={secrets.data?.ok ?? false} /> : null}
+          {tab === "Saúde" && health.data ? <SummaryPanel health={health.data} queueSize={queues.data?.publication.localQueueSize ?? 0} secretOk={secrets.data?.ok ?? false} /> : null}
           {tab === "Circuitos" ? <CircuitPanel items={circuits.data ?? health.data?.circuitBreakers ?? []} onReset={reset} /> : null}
           {tab === "Pressão" ? <BackpressurePanel items={backpressure.data ?? health.data?.backpressure ?? []} /> : null}
           {tab === "Limites de taxa" ? <RateLimitPanel items={rateLimits.data ?? []} /> : null}
+          {tab === "Filas" ? <QueuePanel snapshot={queues.data} /> : null}
           {tab === "Restauração" ? <RestorePanel plan={backup.data} /> : null}
         </>
       )}
@@ -171,8 +172,44 @@ function RateLimitPanel({ items }: { items: readonly RateLimitBucket[] }) {
       <CardBody>
         <div className="overflow-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
-            <thead><tr className="border-b border-border text-xs text-ink-muted"><th className="py-2">Grupo</th><th>Principal</th><th>IP</th><th>Limite</th><th>Restante</th><th>Reset</th></tr></thead>
-            <tbody>{items.map((item) => <tr key={item.key} className="border-b border-border last:border-0"><td className="py-2 font-medium text-ink">{item.routeGroup}</td><td className="text-ink-muted">{item.principalId ?? "-"}</td><td className="text-ink-muted">{item.ip ?? "-"}</td><td>{item.limit}</td><td>{item.remaining}</td><td className="text-ink-muted">{formatDate(item.resetAt)}</td></tr>)}</tbody>
+            <thead><tr className="border-b border-border text-xs text-ink-muted"><th className="py-2">Grupo</th><th>Escopo</th><th>Limite</th><th>Restante</th><th>Reset</th><th>Atualizado</th></tr></thead>
+            <tbody>{items.map((item) => <tr key={item.key} className="border-b border-border last:border-0"><td className="py-2 font-medium text-ink">{item.routeGroup}</td><td className="text-ink-muted">tenant atual</td><td>{item.limit}</td><td>{item.remaining}</td><td className="text-ink-muted">{formatDate(item.resetAt)}</td><td className="text-ink-muted">{formatDate(item.updatedAt)}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function QueuePanel({ snapshot }: { snapshot?: QueueSnapshot }) {
+  if (!snapshot) return <LoadingPanel />;
+  const jobs = snapshot.publication.localJobs;
+  if (jobs.length === 0) return <EmptyState title="Fila vazia" description="Nenhum job de publicação aguardando execução neste workspace." />;
+  return (
+    <Card>
+      <CardBody>
+        <div className="overflow-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs text-ink-muted">
+                <th className="py-2">Publicação</th>
+                <th>Tipo</th>
+                <th>Entrada</th>
+                <th>Executar após</th>
+                <th>Job</th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <tr key={job.id} className="border-b border-border last:border-0">
+                  <td className="py-2 font-medium text-ink">{job.publicationId}</td>
+                  <td className="text-ink-muted">{job.kind}</td>
+                  <td className="text-ink-muted">{formatDate(job.enqueuedAt)}</td>
+                  <td className="text-ink-muted">{formatDate(job.runAfter)}</td>
+                  <td className="break-all text-xs text-ink-faint">{job.id}</td>
+                </tr>
+              ))}
+            </tbody>
           </table>
         </div>
       </CardBody>

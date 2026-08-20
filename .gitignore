@@ -5,6 +5,7 @@ dist/
 web/next-env.d.ts
 *.tsbuildinfo
 /artifacts/
+/data/
 .zuno-data/
 zuno-deploy.tar
 .env

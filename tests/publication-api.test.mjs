@@ -44,10 +44,13 @@ test("Publication API: cria plano inline, aprova, enfileira, worker publica e re
   assert.equal(publish.statusCode, 200);
   assert.equal(publish.json().data.enqueued, true);
 
-  const queue = await app.inject({ method: "GET", url: "/v1/publications/queue" });
+  const queue = await app.inject({ method: "GET", url: `/v1/publications/queue?workspaceId=${workspaceId}` });
+  assert.equal(queue.statusCode, 200);
   assert.equal(queue.json().data.size, 1);
+  assert.equal("tenantId" in queue.json().data.jobs[0], false);
+  assert.equal("workspaceId" in queue.json().data.jobs[0], false);
 
-  const work = await app.inject({ method: "POST", url: "/v1/publications/operate/work" });
+  const work = await app.inject({ method: "POST", url: "/v1/publications/operate/work", payload: { workspaceId } });
   assert.equal(work.statusCode, 200);
   assert.equal(work.json().data.processed, 1);
 

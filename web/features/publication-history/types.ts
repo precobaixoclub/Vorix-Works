@@ -18,18 +18,29 @@ export type UnifiedPublication = {
   cancelledAt?: string;
 };
 
-export type PublicationDisplayStatus = "scheduled" | "published" | "failed" | "cancelled" | string;
+export type PublicationDisplayStatus = "draft" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+
+export const PUBLICATION_DISPLAY_STATUS_LABEL: Record<PublicationDisplayStatus, string> = {
+  draft: "Rascunho",
+  scheduled: "Agendado",
+  publishing: "Publicando",
+  published: "Publicado",
+  failed: "Falhou",
+  cancelled: "Cancelado",
+};
 
 /** Um post agendado pro futuro ainda está em `draft`/`waiting_for_approval`/`approved` no estado
  * bruto da Publication (o motor só avança pra `publishing`/`published` quando o Scheduler dispara)
  * — mostrar isso como "Rascunho" pro usuário seria enganoso, já que ele agendou de propósito.
  * Reduz pros 4 status que o usuário realmente entende. */
 export function derivePublicationStatus(post: Pick<UnifiedPublication, "state" | "scheduledAt">): PublicationDisplayStatus {
-  if (post.state === "published") return "published";
-  if (post.state === "failed" || post.state === "unknown_outcome") return "failed";
-  if (post.state === "cancelled") return "cancelled";
+  const state = post.state.toLowerCase();
+  if (["published", "completed", "confirmed_published"].includes(state)) return "published";
+  if (["failed", "unknown_outcome", "dead_lettered", "validation_failed", "confirmed_not_published", "mismatch"].includes(state)) return "failed";
+  if (["cancelled", "skipped", "archived"].includes(state)) return "cancelled";
   if (post.scheduledAt) return "scheduled";
-  return post.state;
+  if (["publishing", "in_progress", "running", "dispatched", "claimed", "pending"].includes(state)) return "publishing";
+  return "draft";
 }
 
 export type PublicationContentType = "image" | "video" | "carousel" | "text";

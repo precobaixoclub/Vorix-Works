@@ -6,8 +6,6 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input } from "@/components/Field";
-import { PageHeader } from "@/components/PageHeader";
-import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -16,6 +14,7 @@ import { useUnifiedPublications } from "@/features/publication-history/hooks";
 import {
   contentTypeOf,
   derivePublicationStatus,
+  PUBLICATION_DISPLAY_STATUS_LABEL,
   type PublicationContentType,
   type PublicationDisplayStatus,
   type PublicationNetwork,
@@ -24,40 +23,44 @@ import {
 import { formatDateTime } from "@/lib/format";
 
 const NETWORK_LABEL: Record<PublicationNetwork, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", youtube: "YouTube Shorts" };
-const NETWORK_ICON: Record<PublicationNetwork, string> = { tiktok: "🎵", instagram: "📷", facebook: "👍", youtube: "▶" };
+const NETWORK_ICON: Record<PublicationNetwork, string> = { tiktok: "♪", instagram: "◎", facebook: "f", youtube: "▶" };
 const FORMAT_LABEL: Record<PublicationContentType, string> = { image: "Imagem", video: "Vídeo", carousel: "Carrossel", text: "Texto" };
-const FORMAT_ICON: Record<PublicationContentType, string> = { image: "🖼", video: "🎬", carousel: "🔄", text: "📝" };
+const FORMAT_ICON: Record<PublicationContentType, string> = { image: "▧", video: "▶", carousel: "▦", text: "¶" };
 const FORMAT_GRADIENT: Record<PublicationContentType, string> = {
-  image: "from-blue-500/70 via-indigo-500/60 to-purple-500/70",
-  video: "from-red-500/70 via-orange-500/60 to-amber-500/70",
-  carousel: "from-emerald-500/70 via-teal-500/60 to-cyan-500/70",
-  text: "from-slate-500/70 via-slate-400/60 to-slate-600/70",
+  image: "from-sky-500/70 via-indigo-500/55 to-emerald-500/65",
+  video: "from-rose-500/70 via-orange-500/55 to-amber-500/65",
+  carousel: "from-emerald-500/70 via-teal-500/55 to-cyan-500/65",
+  text: "from-slate-600/70 via-zinc-500/55 to-slate-700/65",
 };
 
 const NETWORK_FILTERS: Array<{ value: PublicationNetwork | "all"; label: string }> = [
   { value: "all", label: "Todas as redes" },
-  { value: "tiktok", label: "🎵 TikTok" },
-  { value: "instagram", label: "📷 Instagram" },
-  { value: "facebook", label: "👍 Facebook" },
-  { value: "youtube", label: "▶ YouTube Shorts" },
+  { value: "instagram", label: "Instagram" },
+  { value: "facebook", label: "Facebook" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "youtube", label: "YouTube Shorts" },
 ];
 
 const STATUS_FILTERS: Array<{ value: PublicationDisplayStatus | "all"; label: string }> = [
   { value: "all", label: "Todos" },
-  { value: "scheduled", label: "Agendado" },
-  { value: "published", label: "Publicado" },
-  { value: "failed", label: "Falhou" },
-  { value: "cancelled", label: "Cancelado" },
+  { value: "published", label: "Publicados" },
+  { value: "scheduled", label: "Agendados" },
+  { value: "publishing", label: "Publicando" },
+  { value: "failed", label: "Com erro" },
+  { value: "cancelled", label: "Cancelados" },
 ];
 
 const FORMAT_FILTERS: Array<{ value: PublicationContentType | "all"; label: string }> = [
   { value: "all", label: "Todos formatos" },
-  { value: "image", label: "🖼 Imagem" },
-  { value: "video", label: "🎬 Vídeo" },
-  { value: "carousel", label: "🔄 Carrossel" },
+  { value: "image", label: "Imagem" },
+  { value: "video", label: "Vídeo" },
+  { value: "carousel", label: "Carrossel" },
+  { value: "text", label: "Texto" },
 ];
 
 type DateFilter = "all" | "upcoming" | "past" | "this_month";
+type ViewMode = "grid" | "list";
+
 const DATE_FILTERS: Array<{ value: DateFilter; label: string }> = [
   { value: "all", label: "Qualquer data" },
   { value: "upcoming", label: "Próximas" },
@@ -69,46 +72,45 @@ function matchesDate(iso: string | undefined, filter: DateFilter): boolean {
   if (filter === "all" || !iso) return true;
   const date = new Date(iso);
   const now = new Date();
+  if (Number.isNaN(date.getTime())) return true;
   if (filter === "upcoming") return date.getTime() >= now.getTime();
   if (filter === "past") return date.getTime() < now.getTime();
   if (filter === "this_month") return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
   return true;
 }
 
-/**
- * Histórico real de publicações — tudo que já foi postado ou está agendado, unificado entre
- * TikTok/Instagram/Facebook/YouTube (antes esta tela mostrava 4 itens fixos simulados, sem nenhuma
- * ligação com o que de fato foi publicado). Filtra por rede social, status, formato e data.
- */
-export default function PublicationsHistoryPage() {
+export default function ContentsPage() {
   const workspace = useCurrentWorkspace();
   const [search, setSearch] = useState("");
   const [networkFilter, setNetworkFilter] = useState<PublicationNetwork | "all">("all");
   const [statusFilter, setStatusFilter] = useState<PublicationDisplayStatus | "all">("all");
   const [formatFilter, setFormatFilter] = useState<PublicationContentType | "all">("all");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | undefined>();
+  const [selectedPost, setSelectedPost] = useState<UnifiedPublication | undefined>();
   const { data: publications, isLoading, error, mutate } = useUnifiedPublications(workspace.id);
 
   const stats = useMemo(() => {
-    const list = (publications ?? []).map((p) => derivePublicationStatus(p));
+    const statuses = (publications ?? []).map((publication) => derivePublicationStatus(publication));
     return {
-      total: list.length,
-      scheduled: list.filter((s) => s === "scheduled").length,
-      published: list.filter((s) => s === "published").length,
-      failed: list.filter((s) => s === "failed").length,
-      cancelled: list.filter((s) => s === "cancelled").length,
+      total: statuses.length,
+      published: statuses.filter((status) => status === "published").length,
+      scheduled: statuses.filter((status) => status === "scheduled").length,
+      failed: statuses.filter((status) => status === "failed").length,
+      cancelled: statuses.filter((status) => status === "cancelled").length,
     };
   }, [publications]);
 
   const filtered = useMemo(() => {
-    const list = publications ?? [];
-    return list
-      .filter((p) => (networkFilter === "all" ? true : p.network === networkFilter))
-      .filter((p) => (statusFilter === "all" ? true : derivePublicationStatus(p) === statusFilter))
-      .filter((p) => (formatFilter === "all" ? true : contentTypeOf(p) === formatFilter))
-      .filter((p) => matchesDate(p.scheduledAt ?? p.publishedAt, dateFilter))
-      .filter((p) => (search ? p.text.toLowerCase().includes(search.toLowerCase()) : true));
+    const query = search.trim().toLowerCase();
+    return (publications ?? [])
+      .filter((publication) => (networkFilter === "all" ? true : publication.network === networkFilter))
+      .filter((publication) => (statusFilter === "all" ? true : derivePublicationStatus(publication) === statusFilter))
+      .filter((publication) => (formatFilter === "all" ? true : contentTypeOf(publication) === formatFilter))
+      .filter((publication) => matchesDate(publication.scheduledAt ?? publication.publishedAt ?? publication.createdAt, dateFilter))
+      .filter((publication) => (query ? titleOf(publication).toLowerCase().includes(query) || publication.text.toLowerCase().includes(query) : true));
   }, [publications, networkFilter, statusFilter, formatFilter, dateFilter, search]);
 
   async function cancel(post: UnifiedPublication) {
@@ -116,100 +118,63 @@ export default function PublicationsHistoryPage() {
     try {
       await cancelUnifiedPublication(workspace.id, post.network, post.id);
       await mutate();
+      setSelectedPost(undefined);
     } finally {
       setBusyId(undefined);
     }
   }
 
+  const filters = (
+    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_150px_150px_150px_150px]">
+      <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar conteúdo" aria-label="Buscar conteúdo" className="w-full" />
+      <FilterSelect label="Rede" value={networkFilter} onChange={(value) => setNetworkFilter(value as PublicationNetwork | "all")} options={NETWORK_FILTERS} />
+      <FilterSelect label="Status" value={statusFilter} onChange={(value) => setStatusFilter(value as PublicationDisplayStatus | "all")} options={STATUS_FILTERS} />
+      <FilterSelect label="Periodo" value={dateFilter} onChange={(value) => setDateFilter(value as DateFilter)} options={DATE_FILTERS} />
+      <FilterSelect label="Formato" value={formatFilter} onChange={(value) => setFormatFilter(value as PublicationContentType | "all")} options={FORMAT_FILTERS} />
+    </div>
+  );
+
   return (
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader
-        title="Conteúdos"
-        description="Tudo o que já foi postado ou está agendado nas suas redes sociais, em um só lugar."
-        actions={<Link href={`/workspaces/${workspace.id}/publish`}><Button>+ Nova Publicação</Button></Link>}
-      />
-
-      <ScreenGuide
-        title="Como acompanhar"
-        description="Esta é a visão operacional das postagens: o que está agendado, publicado, cancelado ou com falha."
-        items={[
-          "Use os números do topo para ver o estado geral.",
-          "Filtre por rede, status, formato ou período.",
-          "Abra os cards para identificar legenda, data e formato.",
-          "Cancele apenas publicações que ainda estão agendadas.",
-        ]}
-        aside={<p>Se uma publicação falhar, confira primeiro a conexão da rede social e depois tente reagendar.</p>}
-      />
-
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard label="Total" value={stats.total} tone="neutral" />
-        <StatCard label="Agendado" value={stats.scheduled} tone="warning" />
-        <StatCard label="Publicado" value={stats.published} tone="success" />
-        <StatCard label="Falhou" value={stats.failed} tone="danger" />
-        <StatCard label="Cancelado" value={stats.cancelled} tone="muted" />
-      </div>
-
-      <div className="mb-6 flex flex-col gap-3 rounded-xl border border-border bg-surface-raised/40 p-3 sm:p-4">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_180px_160px]">
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por legenda…"
-            aria-label="Buscar publicações"
-            className="w-full"
-          />
-          <select
-            value={networkFilter}
-            onChange={(e) => setNetworkFilter(e.target.value as PublicationNetwork | "all")}
-            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
-            aria-label="Filtrar por rede social"
-          >
-            {NETWORK_FILTERS.map((f) => (
-              <option key={f.value} value={f.value}>{f.label}</option>
-            ))}
-          </select>
-          <select
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value as DateFilter)}
-            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
-            aria-label="Filtrar por data"
-          >
-            {DATE_FILTERS.map((f) => (
-              <option key={f.value} value={f.value}>{f.label}</option>
-            ))}
-          </select>
+      <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Biblioteca</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">Conteúdos</h1>
+          <p className="mt-2 max-w-2xl text-sm text-ink-muted">Veja, filtre e reutilize tudo que já foi criado ou publicado.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-ink-muted">Status:</span>
-          {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              onClick={() => setStatusFilter(f.value)}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                statusFilter === f.value ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:text-ink"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-ink-muted">Formato:</span>
-          {FORMAT_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              onClick={() => setFormatFilter(f.value)}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                formatFilter === f.value ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:text-ink"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
+          <Button type="button" variant="secondary" className="md:hidden" onClick={() => setFiltersOpen(true)}>Filtros</Button>
+          <div className="inline-flex rounded-lg border border-border bg-surface-raised p-1">
+            <button type="button" onClick={() => setViewMode("grid")} className={viewModeButtonClass(viewMode === "grid")}>Grid</button>
+            <button type="button" onClick={() => setViewMode("list")} className={viewModeButtonClass(viewMode === "list")}>Lista</button>
+          </div>
+          <Link href={`/workspaces/${workspace.id}/create`}><Button variant="secondary">Criar conteúdo</Button></Link>
         </div>
       </div>
+
+      <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
+        <StatPill label="Total" value={stats.total} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
+        <StatPill label="Publicados" value={stats.published} active={statusFilter === "published"} onClick={() => setStatusFilter("published")} />
+        <StatPill label="Agendados" value={stats.scheduled} active={statusFilter === "scheduled"} onClick={() => setStatusFilter("scheduled")} />
+        <StatPill label="Com erro" value={stats.failed} active={statusFilter === "failed"} onClick={() => setStatusFilter("failed")} />
+        <StatPill label="Cancelados" value={stats.cancelled} active={statusFilter === "cancelled"} onClick={() => setStatusFilter("cancelled")} />
+      </div>
+
+      <div className="mb-6 hidden rounded-2xl border border-border bg-surface-raised/50 p-3 md:block">{filters}</div>
+
+      {filtersOpen ? (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button type="button" aria-label="Fechar filtros" className="absolute inset-0 bg-black/50" onClick={() => setFiltersOpen(false)} />
+          <div className="absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-border bg-surface-raised p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border" />
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-semibold text-ink">Filtros</p>
+              <button type="button" className="text-sm text-ink-muted" onClick={() => setFiltersOpen(false)}>Fechar</button>
+            </div>
+            <div className="space-y-2">{filters}</div>
+          </div>
+        </div>
+      ) : null}
 
       {isLoading ? (
         <div className="flex justify-center py-14"><Spinner /></div>
@@ -217,79 +182,211 @@ export default function PublicationsHistoryPage() {
         <ErrorState error={error} onRetry={() => mutate()} />
       ) : !publications || publications.length === 0 ? (
         <EmptyState
-          title="Nenhuma publicação ainda"
-          description="Publique o primeiro conteúdo ou conecte uma rede social para começar."
-          action={<Link href={`/workspaces/${workspace.id}/publish`}><Button>+ Nova Publicação</Button></Link>}
+          title="Nenhum conteúdo ainda"
+          description="Quando algo for publicado ou agendado, a biblioteca aparece aqui."
+          action={<Link href={`/workspaces/${workspace.id}/create`}><Button variant="secondary">Criar conteúdo</Button></Link>}
         />
       ) : filtered.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border py-14 text-center text-sm text-ink-muted">
-          Nenhuma publicação corresponde aos filtros aplicados.
+        <div className="rounded-2xl border border-dashed border-border py-14 text-center text-sm text-ink-muted">
+          Nenhum conteúdo corresponde aos filtros aplicados.
         </div>
-      ) : (
+      ) : viewMode === "grid" ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((post) => (
-            <PublicationCard key={`${post.network}-${post.id}`} post={post} busy={busyId === post.id} onCancel={() => cancel(post)} />
+            <PublicationCard key={`${post.network}-${post.id}`} workspaceId={workspace.id} post={post} busy={busyId === post.id} onOpen={() => setSelectedPost(post)} onCancel={() => cancel(post)} />
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          {filtered.map((post) => (
+            <PublicationListItem key={`${post.network}-${post.id}`} workspaceId={workspace.id} post={post} busy={busyId === post.id} onOpen={() => setSelectedPost(post)} onCancel={() => cancel(post)} />
           ))}
         </div>
       )}
+
+      {selectedPost ? (
+        <PublicationDetailDrawer workspaceId={workspace.id} post={selectedPost} busy={busyId === selectedPost.id} onCancel={() => cancel(selectedPost)} onClose={() => setSelectedPost(undefined)} />
+      ) : null}
     </main>
   );
 }
 
-function StatCard({ label, value, tone }: { label: string; value: number; tone: "neutral" | "muted" | "warning" | "accent" | "success" | "danger" }) {
-  const toneClasses: Record<typeof tone, string> = {
-    neutral: "border-border bg-surface-raised/40 text-ink",
-    muted: "border-status-archived/30 bg-status-archived-bg/40 text-status-archived",
-    warning: "border-status-inactive/30 bg-status-inactive-bg/40 text-status-inactive",
-    accent: "border-accent/30 bg-accent-soft/40 text-accent",
-    success: "border-status-active/30 bg-status-active-bg/40 text-status-active",
-    danger: "border-red-300/40 bg-red-50 text-red-700",
-  };
+function FilterSelect<T extends string>({ label, value, onChange, options }: { label: string; value: T; onChange: (value: string) => void; options: Array<{ value: string; label: string }> }) {
   return (
-    <div className={`min-w-0 rounded-xl border px-3 py-3 sm:px-4 ${toneClasses[tone]}`}>
-      <p className="text-xs font-medium uppercase tracking-wide opacity-80">{label}</p>
-      <p className="mt-1 text-2xl font-semibold">{value}</p>
-    </div>
+    <label className="min-w-0">
+      <span className="sr-only">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" aria-label={label}>
+        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>
   );
 }
 
-function PublicationCard({ post, busy, onCancel }: { post: UnifiedPublication; busy: boolean; onCancel: () => void }) {
+function StatPill({ label, value, active, onClick }: { label: string; value: number; active: boolean; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className={`flex min-w-[128px] items-center justify-between gap-3 rounded-full border px-3 py-2 text-left transition ${active ? "border-accent bg-accent-soft text-accent" : "border-border bg-surface-raised/50 text-ink-muted hover:text-ink"}`}>
+      <span className="text-xs font-medium">{label}</span>
+      <span className="text-sm font-semibold tabular-nums">{value}</span>
+    </button>
+  );
+}
+
+function PublicationCard({ workspaceId, post, busy, onOpen, onCancel }: { workspaceId: string; post: UnifiedPublication; busy: boolean; onOpen: () => void; onCancel: () => void }) {
   const format = contentTypeOf(post);
   const status = derivePublicationStatus(post);
   const thumbnail = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
-  const extraImages = format === "carousel" ? post.media.imageUrls.length - 1 : 0;
-  const when = post.scheduledAt ?? post.publishedAt ?? post.createdAt;
+  const when = publicationDate(post);
 
   return (
-    <article className="group min-w-0 overflow-hidden rounded-xl border border-border bg-surface-raised/40 transition hover:border-accent hover:shadow-lg">
-      <div className={`relative flex aspect-square items-center justify-center bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
+    <article className="group min-w-0 overflow-hidden rounded-2xl border border-border bg-surface-raised/55 transition hover:border-accent/70 hover:shadow-lg">
+      <button type="button" onClick={onOpen} className={`relative flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
         {thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={thumbnail} alt="" className="h-full w-full object-cover" />
         ) : (
-          <span className="text-6xl opacity-80 drop-shadow-lg" aria-hidden>{FORMAT_ICON[format]}</span>
+          <span className="text-5xl text-white/75 drop-shadow" aria-hidden>{FORMAT_ICON[format]}</span>
         )}
-        <span className="absolute left-3 top-3 rounded-full bg-black/40 px-2.5 py-1 text-xs font-medium text-white backdrop-blur">
-          {NETWORK_ICON[post.network]} {NETWORK_LABEL[post.network]}
-        </span>
+        <span className="absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-xs font-medium text-white backdrop-blur">{NETWORK_ICON[post.network]} {NETWORK_LABEL[post.network]}</span>
         <span className="absolute right-3 top-3"><StatusBadge status={status} /></span>
-        {post.placement === "story" ? (
-          <span className="absolute bottom-3 left-3 rounded-full bg-black/40 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur">Story</span>
-        ) : null}
-        {extraImages > 0 ? (
-          <span className="absolute bottom-3 right-3 rounded-full bg-black/40 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur">+{extraImages}</span>
-        ) : null}
-      </div>
-      <div className="flex min-w-0 flex-col gap-1 p-3 sm:p-4">
-        <p className="line-clamp-3 min-h-[3.75rem] break-words text-sm text-ink" title={post.text}>{post.text || "Sem legenda"}</p>
-        <div className="flex min-w-0 items-center justify-between gap-2 text-xs text-ink-muted">
-          <span>{when ? formatDateTime(when) : "Sem data"}</span>
-          <span className="shrink-0">{FORMAT_LABEL[format]}</span>
+      </button>
+      <div className="p-3">
+        <div className="flex min-w-0 items-start justify-between gap-2">
+          <button type="button" onClick={onOpen} className="min-w-0 text-left">
+            <h2 className="line-clamp-2 text-sm font-semibold text-ink">{titleOf(post)}</h2>
+            <p className="mt-1 text-xs text-ink-muted">{when ? formatDateTime(when) : "Sem data"} · {FORMAT_LABEL[format]}</p>
+          </button>
+          <ActionsMenu workspaceId={workspaceId} post={post} busy={busy} onOpen={onOpen} onCancel={onCancel} />
         </div>
-        {status === "scheduled" ? (
-          <Button variant="secondary" disabled={busy} onClick={onCancel} className="mt-2">Cancelar</Button>
-        ) : null}
       </div>
     </article>
   );
+}
+
+function PublicationListItem({ workspaceId, post, busy, onOpen, onCancel }: { workspaceId: string; post: UnifiedPublication; busy: boolean; onOpen: () => void; onCancel: () => void }) {
+  const format = contentTypeOf(post);
+  const status = derivePublicationStatus(post);
+  const thumbnail = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
+  const when = publicationDate(post);
+
+  return (
+    <article className="flex min-w-0 gap-3 rounded-2xl border border-border bg-surface-raised/55 p-3">
+      <button type="button" onClick={onOpen} className={`relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
+        {thumbnail ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={thumbnail} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center text-3xl text-white/75" aria-hidden>{FORMAT_ICON[format]}</span>
+        )}
+      </button>
+      <div className="flex min-w-0 flex-1 flex-col justify-between gap-3">
+        <div className="min-w-0">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <NetworkBadge network={post.network} />
+            <StatusBadge status={status} />
+          </div>
+          <button type="button" onClick={onOpen} className="min-w-0 text-left">
+            <h2 className="line-clamp-2 text-sm font-semibold text-ink">{titleOf(post)}</h2>
+            <p className="mt-1 text-xs text-ink-muted">{when ? formatDateTime(when) : "Sem data"} · {FORMAT_LABEL[format]}</p>
+          </button>
+        </div>
+      </div>
+      <ActionsMenu workspaceId={workspaceId} post={post} busy={busy} onOpen={onOpen} onCancel={onCancel} />
+    </article>
+  );
+}
+
+function ActionsMenu({ workspaceId, post, busy, onOpen, onCancel }: { workspaceId: string; post: UnifiedPublication; busy: boolean; onOpen: () => void; onCancel: () => void }) {
+  const status = derivePublicationStatus(post);
+  return (
+    <details className="relative shrink-0">
+      <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full text-ink-muted hover:bg-surface-sunken hover:text-ink">•••</summary>
+      <div className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-border bg-surface-raised p-1 shadow-xl">
+        <button type="button" onClick={onOpen} className="w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-surface-sunken">Abrir</button>
+        <Link href={publishAgainHref(workspaceId, post)} className="block rounded-lg px-3 py-2 text-sm text-ink hover:bg-surface-sunken">Publicar novamente</Link>
+        {status === "scheduled" ? (
+          <button type="button" disabled={busy} onClick={onCancel} className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-60">Cancelar agendamento</button>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+function PublicationDetailDrawer({ workspaceId, post, busy, onClose, onCancel }: { workspaceId: string; post: UnifiedPublication; busy: boolean; onClose: () => void; onCancel: () => void }) {
+  const format = contentTypeOf(post);
+  const status = derivePublicationStatus(post);
+  const thumbnail = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
+  const when = publicationDate(post);
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button type="button" className="absolute inset-0 bg-black/55" aria-label="Fechar detalhe" onClick={onClose} />
+      <aside className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col overflow-y-auto border-l border-border bg-surface-raised p-4 shadow-2xl sm:p-6">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Conteúdo</p>
+            <h2 className="mt-2 text-2xl font-semibold text-ink">{titleOf(post)}</h2>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm text-ink-muted hover:bg-surface-sunken">Fechar</button>
+        </div>
+
+        <div className={`relative mb-5 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
+          {thumbnail ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={thumbnail} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="text-6xl text-white/75" aria-hidden>{FORMAT_ICON[format]}</span>
+          )}
+        </div>
+
+        <div className="mb-5 flex flex-wrap gap-2">
+          <NetworkBadge network={post.network} />
+          <StatusBadge status={status} />
+          <span className="rounded-full bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-ink-muted">{FORMAT_LABEL[format]}</span>
+          {post.placement === "story" ? <span className="rounded-full bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-ink-muted">Story</span> : null}
+        </div>
+
+        <div className="space-y-4">
+          <DetailBlock label="Legenda" value={post.text || "Sem legenda"} />
+          <DetailBlock label={status === "scheduled" ? "Agendado para" : status === "published" ? "Publicado em" : "Data"} value={when ? formatDateTime(when) : "Sem data"} />
+          {post.timezone ? <DetailBlock label="Fuso" value={post.timezone} /> : null}
+          <DetailBlock label="Histórico" value={PUBLICATION_DISPLAY_STATUS_LABEL[status]} />
+        </div>
+
+        <div className="mt-6 flex flex-wrap gap-2">
+          <Link href={publishAgainHref(workspaceId, post)}><Button>Publicar novamente</Button></Link>
+          {status === "scheduled" ? <Button variant="secondary" disabled={busy} onClick={onCancel}>Cancelar agendamento</Button> : null}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function DetailBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-surface p-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink">{value}</p>
+    </div>
+  );
+}
+
+function NetworkBadge({ network }: { network: PublicationNetwork }) {
+  return <span className="rounded-full bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-ink-muted">{NETWORK_ICON[network]} {NETWORK_LABEL[network]}</span>;
+}
+
+function viewModeButtonClass(active: boolean) {
+  return `rounded-md px-3 py-1.5 text-xs font-medium transition ${active ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`;
+}
+
+function titleOf(post: UnifiedPublication): string {
+  const firstLine = post.text.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+  return firstLine ? firstLine.slice(0, 96) : `${NETWORK_LABEL[post.network]} · ${FORMAT_LABEL[contentTypeOf(post)]}`;
+}
+
+function publicationDate(post: UnifiedPublication): string | undefined {
+  return post.scheduledAt ?? post.publishedAt ?? post.createdAt;
+}
+
+function publishAgainHref(workspaceId: string, post: UnifiedPublication): string {
+  return `/workspaces/${workspaceId}/publish?network=${post.network}&source=${encodeURIComponent(`${post.network}:${post.id}`)}`;
 }

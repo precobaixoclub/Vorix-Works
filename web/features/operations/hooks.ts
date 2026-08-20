@@ -9,23 +9,22 @@ export function useCircuitBreakers(workspaceId: string) {
   return useSWR(["system-circuit-breakers", workspaceId], () => listCircuitBreakers(workspaceId));
 }
 
-export function useRateLimits() {
-  return useSWR("system-rate-limits", listRateLimits);
+export function useRateLimits(workspaceId: string) {
+  return useSWR(["system-rate-limits", workspaceId], () => listRateLimits(workspaceId));
 }
 
 export function useBackpressure(workspaceId: string) {
   return useSWR(["system-backpressure", workspaceId], () => listBackpressure(workspaceId));
 }
 
-export function useQueues() {
-  return useSWR("system-queues", getQueues);
+export function useQueues(workspaceId: string) {
+  return useSWR(["system-queues", workspaceId], () => getQueues(workspaceId));
 }
 
-export function useSecretHealth() {
-  return useSWR("system-secret-health", getSecretHealth);
+export function useSecretHealth(workspaceId: string) {
+  return useSWR(["system-secret-health", workspaceId], () => getSecretHealth(workspaceId));
 }
 
-export function useBackupRestorePlan() {
-  return useSWR("system-backup-restore", getBackupRestorePlan);
+export function useBackupRestorePlan(workspaceId: string) {
+  return useSWR(["system-backup-restore", workspaceId], () => getBackupRestorePlan(workspaceId));
 }
-

@@ -19,9 +19,9 @@ export type PublicationDispatchDeps = {
 export class PublicationDispatchService {
   constructor(private readonly deps: PublicationDispatchDeps) {}
 
-  async dispatchAvailable(workerId: string): Promise<{ dispatched: number; fencingRejected: number; unknownOutcomes: number }> {
+  async dispatchAvailable(workerId: string, filter: { tenantId?: string; workspaceId?: string; publicationId?: string } = {}): Promise<{ dispatched: number; fencingRejected: number; unknownOutcomes: number }> {
     const now = this.now();
-    const messages = await this.deps.repository.claimOutbox({ workerId, now, leaseMs: this.deps.leaseMs ?? 60_000, limit: this.deps.maxBatch ?? 10 });
+    const messages = await this.deps.repository.claimOutbox({ workerId, now, leaseMs: this.deps.leaseMs ?? 60_000, limit: this.deps.maxBatch ?? 10, ...filter });
     let dispatched = 0;
     let fencingRejected = 0;
     let unknownOutcomes = 0;

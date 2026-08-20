@@ -10,7 +10,7 @@ export type PublicationQueueJob = {
 
 export type PublicationQueuePort = {
   enqueue(job: PublicationQueueJob): Promise<void>;
-  dequeue(now?: string): Promise<PublicationQueueJob | undefined>;
+  dequeue(now?: string, filter?: { tenantId?: string; workspaceId?: string }): Promise<PublicationQueueJob | undefined>;
   size(): Promise<number>;
   list(): Promise<readonly PublicationQueueJob[]>;
 };
@@ -23,8 +23,12 @@ export class InMemoryPublicationQueue implements PublicationQueuePort {
     this.jobs.push(job);
   }
 
-  async dequeue(now = new Date().toISOString()): Promise<PublicationQueueJob | undefined> {
-    const index = this.jobs.findIndex((job) => !job.runAfter || job.runAfter <= now);
+  async dequeue(now = new Date().toISOString(), filter: { tenantId?: string; workspaceId?: string } = {}): Promise<PublicationQueueJob | undefined> {
+    const index = this.jobs.findIndex((job) =>
+      (!job.runAfter || job.runAfter <= now)
+      && (!filter.tenantId || job.tenantId === filter.tenantId)
+      && (!filter.workspaceId || job.workspaceId === filter.workspaceId),
+    );
     if (index < 0) return undefined;
     const [job] = this.jobs.splice(index, 1);
     return job;

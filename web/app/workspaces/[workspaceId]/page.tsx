@@ -1,214 +1,179 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import useSWR from "swr";
-import { Button } from "@/components/Button";
-import { Card, CardBody, CardHeader } from "@/components/Card";
-import { EmptyState } from "@/components/EmptyState";
-import { Textarea } from "@/components/Field";
+import { useEffect, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { listAssets } from "@/features/assets/api";
-import { MAX_IDEA_TEXT_LENGTH } from "@/features/production-line/api";
+import { useExecutionRuns } from "@/features/execution/hooks";
+import type { ExecutionRunState } from "@/features/execution/types";
 import { useTikTokOAuthStatus } from "@/features/tiktok/hooks";
 import { useMetaOAuthStatus } from "@/features/meta/hooks";
 import { useYouTubeOAuthStatus } from "@/features/youtube/hooks";
 import { useUnifiedPublications } from "@/features/publication-history/hooks";
-import { derivePublicationStatus } from "@/features/publication-history/types";
-import { formatDate } from "@/lib/format";
+import { contentTypeOf, derivePublicationStatus, type UnifiedPublication } from "@/features/publication-history/types";
+import { IdeaComposer } from "@/features/production-line/components/IdeaComposer";
+import { formatDate, formatDateTime } from "@/lib/format";
 
 const NETWORK_LABEL: Record<string, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", youtube: "YouTube Shorts" };
+const IN_PROGRESS_STATES: readonly ExecutionRunState[] = ["created", "validating", "ready", "running"];
+const ONBOARDING_DISMISSED_KEY_PREFIX = "vorix.home.onboarding-dismissed.";
 
 /**
- * Workspace Home, redesign "composer-first" — abre com o campo de ideia (mesmo destino de
- * `/create`, que faz a geração de verdade) em vez de um painel de métricas. Os cards abaixo
- * ("Conexões", "Últimas publicações", "Materiais da Marca") continuam existindo com dado real,
- * agora como contexto secundário — nunca a primeira coisa que a tela mostra.
+ * Redesign "IA-first / composer-first" (padrão visual de referência do Vorix) — o composer é o
+ * único elemento dominante da tela; tudo abaixo é contexto compacto, nunca métrica inventada. Os
+ * blocos antigos de "Materiais"/"Conexões" saíram daqui de propósito: são navegação, não conteúdo
+ * de Home. O card "Linha de produção" com números fixos (3/10/1) também saiu — não existe dado
+ * real por trás dele.
  */
 export default function WorkspaceHomePage() {
   const workspace = useCurrentWorkspace();
-  const router = useRouter();
-  const [draft, setDraft] = useState("");
   const { data: publications } = useUnifiedPublications(workspace.id);
-  const { data: assets } = useSWR(["home-assets", workspace.id], () => listAssets(workspace.id));
+  const { data: executionRuns } = useExecutionRuns(workspace.id);
 
   const { data: tiktokOAuth } = useTikTokOAuthStatus(workspace.id);
   const { data: metaOAuth } = useMetaOAuthStatus(workspace.id);
   const { data: youtubeOAuth } = useYouTubeOAuthStatus(workspace.id);
-
   const oauthLoaded = tiktokOAuth !== undefined && metaOAuth !== undefined && youtubeOAuth !== undefined;
-  const connectedAccounts = [
-    ...(tiktokOAuth?.accounts ?? []).filter((account) => account.status === "active").map((account) => ({ network: "TikTok", name: account.displayName ?? account.openId })),
-    ...(metaOAuth?.accounts ?? []).filter((account) => account.status === "active").map((account) => ({ network: account.providerId === "instagram" ? "Instagram" : "Facebook", name: account.displayName ?? account.providerSubjectId })),
-    ...(youtubeOAuth?.accounts ?? []).filter((account) => account.status === "active").map((account) => ({ network: "YouTube Shorts", name: account.displayName ?? account.channelId })),
-  ];
-  const hasAnyConnection = connectedAccounts.length > 0;
-  const showOnboarding = oauthLoaded && (publications?.length ?? 0) === 0;
+  const hasAnyConnection =
+    (tiktokOAuth?.accounts ?? []).some((account) => account.status === "active") ||
+    (metaOAuth?.accounts ?? []).some((account) => account.status === "active") ||
+    (youtubeOAuth?.accounts ?? []).some((account) => account.status === "active");
 
-  function goToCreate() {
-    const trimmed = draft.trim();
-    const query = trimmed ? `?draft=${encodeURIComponent(trimmed)}` : "";
-    router.push(`/workspaces/${workspace.id}/create${query}`);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(true);
+  useEffect(() => {
+    setOnboardingDismissed(window.localStorage.getItem(`${ONBOARDING_DISMISSED_KEY_PREFIX}${workspace.id}`) === "true");
+  }, [workspace.id]);
+  function dismissOnboarding() {
+    window.localStorage.setItem(`${ONBOARDING_DISMISSED_KEY_PREFIX}${workspace.id}`, "true");
+    setOnboardingDismissed(true);
   }
+  const showOnboarding = !onboardingDismissed && oauthLoaded && (publications?.length ?? 0) === 0;
+
+  const realRuns = (executionRuns ?? []).filter((run) => run.mode === "real");
+  const awaitingReviewCount = realRuns.filter((run) => run.state === "waiting_for_approval").length;
+  const inProductionCount = realRuns.filter((run) => IN_PROGRESS_STATES.includes(run.state)).length;
+  const scheduledCount = (publications ?? []).filter((post) => derivePublicationStatus(post) === "scheduled").length;
+
+  const recentContent = publications?.slice(0, 5) ?? [];
+  const upcoming = (publications ?? [])
+    .filter((post): post is UnifiedPublication & { scheduledAt: string } => Boolean(post.scheduledAt) && derivePublicationStatus(post) === "scheduled")
+    .sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))
+    .slice(0, 4);
 
   return (
     <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="font-display text-xl font-semibold text-ink">{workspace.name}</h1>
-            <StatusBadge status={workspace.status} />
-          </div>
-          <p className="mt-1 text-sm text-ink-muted">Criado em {formatDate(workspace.createdAt)}</p>
-        </div>
+      <div className="mb-4 flex items-center gap-2.5">
+        <h2 className="text-sm font-medium text-ink-muted">{workspace.name}</h2>
+        <StatusBadge status={workspace.status} />
+        <span className="text-xs text-ink-faint">· Criado em {formatDate(workspace.createdAt)}</span>
       </div>
 
-      <Card className="mb-6 border-accent/30 bg-accent-soft/40">
-        <CardBody className="space-y-3">
-          <div>
-            <p className="font-display text-lg font-semibold text-ink">O que você quer publicar hoje?</p>
-            <p className="mt-0.5 text-sm text-ink-muted">Descreva a ideia — a IA cuida da estratégia, da copy e da peça final.</p>
-          </div>
-          <Textarea
-            rows={3}
-            value={draft}
-            maxLength={MAX_IDEA_TEXT_LENGTH}
-            placeholder="Ex.: Criar um post anunciando nosso site, com tom direto e um CTA para visitar agora."
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) goToCreate();
-            }}
-            className="bg-surface"
-          />
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-ink-muted">{draft.length}/{MAX_IDEA_TEXT_LENGTH} · Ctrl+Enter para continuar</p>
-            <Button onClick={goToCreate}>Continuar</Button>
-          </div>
-        </CardBody>
-      </Card>
+      <IdeaComposer workspaceId={workspace.id} />
 
       {showOnboarding ? (
-        <Card className="mb-6 p-5">
-          <p className="mb-4 text-sm font-semibold text-ink">Primeiros passos</p>
-          <ol className="space-y-3">
-            <li className="flex items-center justify-between gap-3 rounded border border-border px-3 py-2.5">
-              <div className="flex items-center gap-3">
-                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ${hasAnyConnection ? "bg-accent text-white" : "bg-surface-sunken text-ink-muted"}`}>
-                  {hasAnyConnection ? "✓" : "1"}
-                </span>
-                <span className="text-sm text-ink">Conectar uma rede social (TikTok, Instagram, Facebook ou YouTube)</span>
-              </div>
-              {!hasAnyConnection ? (
-                <Link href={`/workspaces/${workspace.id}/connections`}><Button>Conectar</Button></Link>
-              ) : null}
-            </li>
-            <li className="flex items-center justify-between gap-3 rounded border border-border px-3 py-2.5">
-              <div className="flex items-center gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-sunken text-xs font-medium text-ink-muted">2</span>
-                <span className={`text-sm ${hasAnyConnection ? "text-ink" : "text-ink-muted"}`}>Configurar a linha de produção</span>
-              </div>
-              {hasAnyConnection ? (
-                <Link href={`/workspaces/${workspace.id}/production`}><Button>Configurar</Button></Link>
-              ) : null}
-            </li>
-          </ol>
-        </Card>
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-surface-raised px-4 py-3 text-sm">
+          <span className="text-ink-muted">Primeiros passos:</span>
+          <Link
+            href={`/workspaces/${workspace.id}/connections`}
+            className={hasAnyConnection ? "text-ink-faint line-through" : "font-medium text-accent hover:underline"}
+          >
+            1. Conectar uma rede social
+          </Link>
+          <Link
+            href={`/workspaces/${workspace.id}/production`}
+            className={`font-medium ${hasAnyConnection ? "text-accent hover:underline" : "text-ink-faint"}`}
+          >
+            2. Configurar a linha de produção
+          </Link>
+          <button type="button" onClick={dismissOnboarding} aria-label="Dispensar" className="ml-auto text-ink-faint hover:text-ink">×</button>
+        </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <span className="text-sm font-semibold text-ink">Últimas publicações</span>
-            <Link href={`/workspaces/${workspace.id}/campaigns`} className="text-xs font-medium text-accent hover:underline">
-              Ver todas
-            </Link>
-          </CardHeader>
-          <CardBody>
-            {!publications ? null : publications.length === 0 ? (
-              <EmptyState title="Nenhuma publicação ainda" />
-            ) : (
-              <ul className="flex flex-col gap-3">
-                {publications.slice(0, 3).map((post) => (
-                  <li key={`${post.network}-${post.id}`} className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm text-ink">{NETWORK_LABEL[post.network]} · {post.text || "Sem legenda"}</span>
-                    <StatusBadge status={derivePublicationStatus(post)} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <span className="text-sm font-semibold text-ink">Linha de produção</span>
-            <Link href={`/workspaces/${workspace.id}/production`} className="text-xs font-medium text-accent hover:underline">
-              Configurar
-            </Link>
-          </CardHeader>
-          <CardBody>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-lg bg-surface-sunken px-2 py-3">
-                <p className="text-lg font-semibold text-ink">3</p>
-                <p className="text-xs text-ink-muted">modelos base</p>
-              </div>
-              <div className="rounded-lg bg-surface-sunken px-2 py-3">
-                <p className="text-lg font-semibold text-ink">10</p>
-                <p className="text-xs text-ink-muted">skills</p>
-              </div>
-              <div className="rounded-lg bg-surface-sunken px-2 py-3">
-                <p className="text-lg font-semibold text-ink">1</p>
-                <p className="text-xs text-ink-muted">agenda</p>
-              </div>
-            </div>
-            <Link href={`/workspaces/${workspace.id}/production`} className="mt-4 inline-flex">
-              <Button>Programar produção</Button>
-            </Link>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <span className="text-sm font-semibold text-ink">Materiais da Marca</span>
-            <Link href={`/workspaces/${workspace.id}/assets`} className="text-xs font-medium text-accent hover:underline">
-              Ver biblioteca
-            </Link>
-          </CardHeader>
-          <CardBody>
-            <p className="text-2xl font-semibold text-ink">{assets?.length ?? "—"}</p>
-            <p className="text-sm text-ink-muted">materiais disponíveis para a IA</p>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <span className="text-sm font-semibold text-ink">Conexões</span>
-            <Link href={`/workspaces/${workspace.id}/connections`} className="text-xs font-medium text-accent hover:underline">
-              Gerenciar →
-            </Link>
-          </CardHeader>
-          <CardBody>
-            {!oauthLoaded ? null : connectedAccounts.length === 0 ? (
-              <EmptyState
-                title="Nenhuma rede social conectada"
-                description="Conecte TikTok, Instagram, Facebook ou YouTube para publicar direto pelo Vorix."
-                action={<Link href={`/workspaces/${workspace.id}/connections`}><Button>Conectar rede social</Button></Link>}
-              />
-            ) : (
-              <ul className="flex flex-col gap-3">
-                {connectedAccounts.map((account, index) => (
-                  <li key={`${account.network}-${index}`} className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm text-ink">{account.network} · {account.name}</span>
-                    <StatusBadge status="active" />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardBody>
-        </Card>
+      <div className="mt-6 grid grid-cols-3 gap-2 sm:gap-3">
+        <Link href={`/workspaces/${workspace.id}/review`} className="rounded-xl bg-surface-raised px-3 py-3.5 text-center hover:bg-surface-sunken sm:px-4 sm:text-left">
+          <p className="text-xl font-semibold text-ink sm:text-2xl">{awaitingReviewCount}</p>
+          <p className="mt-0.5 truncate text-xs text-ink-muted">Aguardando revisão</p>
+        </Link>
+        <Link href={`/workspaces/${workspace.id}/production`} className="rounded-xl bg-surface-raised px-3 py-3.5 text-center hover:bg-surface-sunken sm:px-4 sm:text-left">
+          <p className="text-xl font-semibold text-ink sm:text-2xl">{inProductionCount}</p>
+          <p className="mt-0.5 truncate text-xs text-ink-muted">Em produção</p>
+        </Link>
+        <Link href={`/workspaces/${workspace.id}/campaigns`} className="rounded-xl bg-surface-raised px-3 py-3.5 text-center hover:bg-surface-sunken sm:px-4 sm:text-left">
+          <p className="text-xl font-semibold text-ink sm:text-2xl">{scheduledCount}</p>
+          <p className="mt-0.5 truncate text-xs text-ink-muted">Agendados</p>
+        </Link>
       </div>
+
+      {recentContent.length > 0 ? (
+        <div className="mt-8">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-display text-base font-semibold text-ink">Conteúdos recentes</h3>
+            <Link href={`/workspaces/${workspace.id}/campaigns`} className="text-xs font-medium text-accent hover:underline">Ver todos</Link>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {recentContent.map((post) => {
+              const thumbnail = post.media.thumbnailUrl ?? post.media.imageUrls[0];
+              return (
+                <Link
+                  key={`${post.network}-${post.id}`}
+                  href={`/workspaces/${workspace.id}/campaigns`}
+                  className="group overflow-hidden rounded-xl bg-surface-raised"
+                >
+                  <div className="aspect-square overflow-hidden bg-surface-sunken">
+                    {thumbnail ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={thumbnail} alt="" loading="lazy" className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-2xl text-ink-faint" aria-hidden="true">
+                        {contentTypeOf(post) === "video" ? "🎬" : "📝"}
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-2.5">
+                    <p className="truncate text-xs font-medium text-ink">{post.text || "Sem legenda"}</p>
+                    <div className="mt-1.5 flex items-center justify-between gap-1.5">
+                      <span className="truncate text-[11px] text-ink-muted">{NETWORK_LABEL[post.network]}</span>
+                      <StatusBadge status={derivePublicationStatus(post)} />
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {upcoming.length > 0 ? (
+        <div className="mt-8">
+          <h3 className="mb-3 font-display text-base font-semibold text-ink">Próximas publicações</h3>
+          <div className="flex flex-col gap-2">
+            {upcoming.map((post) => {
+              const thumbnail = post.media.thumbnailUrl ?? post.media.imageUrls[0];
+              return (
+                <Link
+                  key={`${post.network}-${post.id}`}
+                  href={`/workspaces/${workspace.id}/calendar`}
+                  className="flex items-center gap-3 rounded-xl bg-surface-raised p-2.5 hover:bg-surface-sunken"
+                >
+                  <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-surface-sunken">
+                    {thumbnail ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={thumbnail} alt="" loading="lazy" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-base text-ink-faint" aria-hidden="true">📅</div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-ink">{post.text || "Sem legenda"}</p>
+                    <p className="mt-0.5 text-xs text-ink-muted">{NETWORK_LABEL[post.network]} · {formatDateTime(post.scheduledAt)}</p>
+                  </div>
+                  <StatusBadge status="scheduled" />
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

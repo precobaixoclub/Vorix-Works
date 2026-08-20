@@ -3,49 +3,38 @@
 import { useState } from "react";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
-import { PageHeader } from "@/components/PageHeader";
-import { ScreenGuide } from "@/components/ScreenGuide";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { beginTikTokOAuth, disconnectTikTokAccount } from "@/features/tiktok/api";
-import { useTikTokOAuthStatus } from "@/features/tiktok/hooks";
+import { META_RETURN_PATH_KEY } from "@/app/instagram/callback/page";
 import { TIKTOK_RETURN_PATH_KEY } from "@/app/tiktok/callback/page";
+import { YOUTUBE_RETURN_PATH_KEY } from "@/app/youtube/callback/page";
 import { beginMetaOAuth, disconnectMetaAccount } from "@/features/meta/api";
 import { useMetaOAuthStatus } from "@/features/meta/hooks";
-import { META_RETURN_PATH_KEY } from "@/app/instagram/callback/page";
+import { beginTikTokOAuth, disconnectTikTokAccount } from "@/features/tiktok/api";
+import { useTikTokOAuthStatus } from "@/features/tiktok/hooks";
 import { beginYouTubeOAuth, disconnectYouTubeAccount } from "@/features/youtube/api";
 import { useYouTubeOAuthStatus } from "@/features/youtube/hooks";
-import { YOUTUBE_RETURN_PATH_KEY } from "@/app/youtube/callback/page";
 
-/**
- * Um único lugar pra conectar/desconectar cada rede social — as telas de TikTok/Instagram/Facebook
- * só publicam, não gerenciam mais a conexão (ver `docs/instagram-publishing.md`/`docs/tiktok-publishing.md`).
- */
+type HumanConnectionStatus = "connected" | "needs_attention" | "disconnected" | "syncing";
+type AccountRow = { id: string; label: string; detail?: string; status: string };
+
 export default function ConnectionsPage() {
   const workspace = useCurrentWorkspace();
   const [feedback, setFeedback] = useState<string | undefined>();
 
   return (
-    <main className="mx-auto max-w-3xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Conexões" description="Conecte as contas das redes sociais deste workspace. Cada uma faz login com a própria conta." />
+    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
+      <div className="mb-6">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Integrações</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">Conexões</h1>
+        <p className="mt-2 max-w-2xl text-sm text-ink-muted">Conecte as redes que o Vorix pode utilizar para publicar seus conteúdos.</p>
+      </div>
 
-      <ScreenGuide
-        title="Para que serve"
-        description="Aqui você autoriza o Vorix a publicar nas contas certas. Remover uma conta desta tela impede novas postagens nela."
-        items={[
-          "Conecte TikTok, Instagram/Facebook ou YouTube.",
-          "Confira se a conta exibida é a conta correta.",
-          "Use Desconectar apenas quando não quiser mais publicar nela.",
-          "Volte para Publicar ou Produção depois de conectar.",
-        ]}
-        aside={<p>Instagram e Facebook usam o mesmo login da Meta. O sistema só publica nas contas que ficarem ativas aqui.</p>}
-      />
+      {feedback ? <Card className="mb-6 border-accent/30 bg-accent-soft/30 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
 
-      {feedback ? <Card className="mb-6 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
-
-      <div className="space-y-4">
-        <TikTokConnection workspaceId={workspace.id} onFeedback={setFeedback} />
+      <div className="grid gap-4">
         <MetaConnection workspaceId={workspace.id} onFeedback={setFeedback} />
+        <TikTokConnection workspaceId={workspace.id} onFeedback={setFeedback} />
         <YouTubeConnection workspaceId={workspace.id} onFeedback={setFeedback} />
       </div>
     </main>
@@ -86,11 +75,12 @@ function TikTokConnection({ workspaceId, onFeedback }: { workspaceId: string; on
 
   return (
     <ConnectionCard
-      icon="🎵"
+      icon="♪"
       name="TikTok"
+      description="Conta autorizada para publicar vídeos e fotos no TikTok."
       configured={oauth?.configured !== false}
       busy={busy}
-      accounts={accounts.map((account) => ({ id: account.credentialReferenceId, label: account.displayName ?? account.openId, status: account.status }))}
+      accounts={accounts.map((account) => ({ id: account.credentialReferenceId, label: account.displayName ?? account.openId, detail: account.openId, status: account.status }))}
       onConnect={connect}
       onDisconnect={disconnect}
     />
@@ -121,7 +111,7 @@ function MetaConnection({ workspaceId, onFeedback }: { workspaceId: string; onFe
     try {
       await disconnectMetaAccount(workspaceId, credentialReferenceId);
       await mutate();
-      onFeedback("Conta desconectada.");
+      onFeedback("Conta Meta desconectada.");
     } catch (cause) {
       onFeedback(messageOf(cause));
     } finally {
@@ -131,14 +121,15 @@ function MetaConnection({ workspaceId, onFeedback }: { workspaceId: string; onFe
 
   return (
     <ConnectionCard
-      icon="📷"
-      name="Instagram + Facebook"
-      description="Um único login do Meta conecta o Instagram profissional e a Página do Facebook vinculada a ele."
+      icon="◎"
+      name="Meta"
+      description="Um login conecta Instagram profissional e Página do Facebook quando ambos estão disponíveis."
       configured={oauth?.configured !== false}
       busy={busy}
       accounts={accounts.map((account) => ({
         id: account.credentialReferenceId,
-        label: `${account.providerId === "instagram" ? "Instagram" : "Página"} · ${account.displayName ?? account.providerSubjectId}`,
+        label: account.displayName ?? account.providerSubjectId,
+        detail: account.providerId === "instagram" ? "Instagram profissional" : "Página do Facebook",
         status: account.status,
       }))}
       onConnect={connect}
@@ -183,63 +174,66 @@ function YouTubeConnection({ workspaceId, onFeedback }: { workspaceId: string; o
     <ConnectionCard
       icon="▶"
       name="YouTube Shorts"
-      description="Conecta um canal do YouTube para publicar Shorts em vídeo."
+      description="Canal autorizado para publicar Shorts em video."
       configured={oauth?.configured !== false}
       busy={busy}
-      accounts={accounts.map((account) => ({ id: account.credentialReferenceId, label: account.displayName ?? account.channelId, status: account.status }))}
+      accounts={accounts.map((account) => ({ id: account.credentialReferenceId, label: account.displayName ?? account.channelId, detail: account.channelId, status: account.status }))}
       onConnect={connect}
       onDisconnect={disconnect}
     />
   );
 }
 
-type ConnectionCardProps = {
-  icon: string;
-  name: string;
-  description?: string;
-  configured: boolean;
-  busy: boolean;
-  accounts: readonly { id: string; label: string; status: string }[];
-  onConnect: () => void;
-  onDisconnect: (id: string) => void;
-};
-
-function ConnectionCard({ icon, name, description, configured, busy, accounts, onConnect, onDisconnect }: ConnectionCardProps) {
+function ConnectionCard({ icon, name, description, configured, busy, accounts, onConnect, onDisconnect }: { icon: string; name: string; description: string; configured: boolean; busy: boolean; accounts: readonly AccountRow[]; onConnect: () => void; onDisconnect: (id: string) => void }) {
   const activeAccounts = accounts.filter((account) => account.status === "active");
   const inactiveAccounts = accounts.filter((account) => account.status !== "active");
   const connected = activeAccounts.length > 0;
-  const hasStaleCredentials = !connected && inactiveAccounts.length > 0;
+  const humanStatus: HumanConnectionStatus = busy ? "syncing" : connected ? "connected" : inactiveAccounts.length > 0 ? "needs_attention" : "disconnected";
+  const statusText = !configured
+    ? "Integração ainda não configurada no servidor."
+    : humanStatus === "connected"
+      ? `${activeAccounts.length} conta${activeAccounts.length === 1 ? "" : "s"} conectada${activeAccounts.length === 1 ? "" : "s"}`
+      : humanStatus === "needs_attention"
+        ? "Reconecte para voltar a publicar."
+        : "Nenhuma conta conectada.";
+
   return (
-    <Card className="p-4 sm:p-5">
-      <div className="mb-3 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-ink">{icon} {name}</p>
-          <p className="text-xs text-ink-muted">
-            {!configured
-              ? "Integração ainda não configurada no servidor."
-              : hasStaleCredentials
-                ? "Credencial salva sem token válido. Reconecte a conta."
-              : description ?? (connected ? "Conectado." : "Nenhuma conta conectada.")}
-          </p>
+    <Card className="overflow-hidden p-0">
+      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
+        <div className="flex min-w-0 gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-xl font-semibold text-accent">{icon}</span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold text-ink">{name}</h2>
+              <StatusBadge status={humanStatus} />
+            </div>
+            <p className="mt-1 text-sm text-ink-muted">{description}</p>
+            <p className="mt-2 text-xs text-ink-muted">{statusText}</p>
+          </div>
         </div>
-        <Button className="w-full sm:w-auto" disabled={busy || !configured} onClick={onConnect}>
-          {connected ? "Conectar outra conta" : hasStaleCredentials ? "Reconectar" : "Conectar"}
-        </Button>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button disabled={busy || !configured} onClick={onConnect}>{connected ? "Conectar outra" : humanStatus === "needs_attention" ? "Reconectar" : "Conectar"}</Button>
+        </div>
       </div>
 
-      {activeAccounts.length === 0 ? null : (
-        <div className="space-y-2">
-          {activeAccounts.map((account) => (
-            <div key={account.id} className="flex flex-col gap-3 rounded border border-border px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-              <p className="min-w-0 break-words text-sm text-ink">{account.label}</p>
-              <div className="flex flex-wrap items-center gap-3">
-                <StatusBadge status={account.status} />
-                <Button variant="secondary" disabled={busy} onClick={() => onDisconnect(account.id)}>Desconectar</Button>
+      {accounts.length > 0 ? (
+        <div className="border-t border-border bg-surface/70 p-3 sm:p-4">
+          <div className="grid gap-2">
+            {accounts.map((account) => (
+              <div key={account.id} className="flex flex-col gap-3 rounded-xl border border-border bg-surface-raised px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-ink">{account.label}</p>
+                  {account.detail ? <p className="mt-0.5 truncate text-xs text-ink-muted">{account.detail}</p> : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge status={account.status === "active" ? "connected" : "needs_attention"} />
+                  <Button variant="secondary" disabled={busy} onClick={() => onDisconnect(account.id)}>Desconectar</Button>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      )}
+      ) : null}
     </Card>
   );
 }

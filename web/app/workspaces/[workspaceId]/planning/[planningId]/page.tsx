@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { ErrorState } from "@/components/ErrorState";
@@ -10,6 +11,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { PlanningGraph } from "@/features/planning/components/PlanningGraph";
 import { PlanningTaskList } from "@/features/planning/components/PlanningTaskList";
 import { usePlanning, usePlanningTasks } from "@/features/planning/hooks";
+import { useRuntimeList } from "@/features/runtime/hooks";
 import { formatDateTime } from "@/lib/format";
 
 /**
@@ -21,6 +23,7 @@ export default function PlanningDetailPage() {
   const params = useParams<{ workspaceId: string; planningId: string }>();
   const { data: planningData, isLoading: isLoadingPlanning, error: planningError, mutate: mutatePlanning } = usePlanning(params.workspaceId, params.planningId);
   const { data: tasksData, isLoading: isLoadingTasks, error: tasksError, mutate: mutateTasks } = usePlanningTasks(params.workspaceId, params.planningId);
+  const { data: runtimes } = useRuntimeList(params.workspaceId, params.planningId);
 
   if (isLoadingPlanning || isLoadingTasks) {
     return (
@@ -54,6 +57,7 @@ export default function PlanningDetailPage() {
 
   const { planning, graph, decisions } = planningData;
   const { tasks, artifacts } = tasksData;
+  const runtime = runtimes?.[0];
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
   const issues = planning.validationReport.issues;
 
@@ -62,8 +66,24 @@ export default function PlanningDetailPage() {
       <PageHeader
         title={planning.planningTemplate}
         description={`Estratégia ${planning.plannerStrategy} · versão ${planning.plannerVersion} · grafo v${planning.graphVersion}`}
-        actions={<StatusBadge status={planning.status} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={planning.status} />
+            {runtime ? (
+              <Link href={`/workspaces/${params.workspaceId}/runtime/${runtime.id}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+                Abrir runtime
+              </Link>
+            ) : (
+              <Link href={`/workspaces/${params.workspaceId}/runtime`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+                Ver runtimes
+              </Link>
+            )}
+          </div>
+        }
       />
+      <p className="mb-4 break-all text-xs text-ink-faint">
+        Planejamento {planning.id} · Briefing {planning.briefingId} · Comando {planning.preparedCommandId}
+      </p>
 
       <ScreenGuide
         title="Como interpretar este plano"

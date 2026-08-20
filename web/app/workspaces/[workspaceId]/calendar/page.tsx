@@ -1,325 +1,458 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-import { mutate } from "swr";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
-import { Input, Label } from "@/components/Field";
-import { PageHeader } from "@/components/PageHeader";
-import { ScreenGuide } from "@/components/ScreenGuide";
+import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { useProviders } from "@/features/providers/hooks";
-import { cancelOccurrence, cancelSchedule, createSchedule, pauseSchedule, recoverScheduling, reprocessDeadLetter, rescheduleOccurrence, resumeSchedule, runScheduling } from "@/features/scheduling/api";
-import { useCalendarEntries, useSchedule, useSchedules, useSchedulingDeadLetters, useSchedulingHealth } from "@/features/scheduling/hooks";
-import type { CalendarEntry, CreateSchedulePayload } from "@/features/scheduling/types";
+import { cancelUnifiedPublication } from "@/features/publication-history/api";
+import { useUnifiedPublications } from "@/features/publication-history/hooks";
+import {
+  contentTypeOf,
+  derivePublicationStatus,
+  PUBLICATION_DISPLAY_STATUS_LABEL,
+  type PublicationDisplayStatus,
+  type PublicationNetwork,
+  type UnifiedPublication,
+} from "@/features/publication-history/types";
 import { formatDateTime } from "@/lib/format";
 
-const VIEW_LABELS = { month: "Mês", week: "Semana", day: "Dia" } as const;
-const STATUS_OPTIONS = ["pending", "claimed", "dispatched", "cancelled", "missed", "failed", "dead_lettered"] as const;
-const STATUS_OPTION_LABEL: Record<(typeof STATUS_OPTIONS)[number], string> = {
-  pending: "Pendente",
-  claimed: "Reivindicado",
-  dispatched: "Despachado",
-  cancelled: "Cancelado",
-  missed: "Perdido",
-  failed: "Falhou",
-  dead_lettered: "Não entregue",
+type CalendarView = "month" | "week" | "list";
+type CalendarEvent = {
+  post: UnifiedPublication;
+  status: PublicationDisplayStatus;
+  date: Date;
+  title: string;
+};
+
+const VIEWS: readonly { id: CalendarView; label: string }[] = [
+  { id: "month", label: "Mês" },
+  { id: "week", label: "Semana" },
+  { id: "list", label: "Lista" },
+];
+
+const NETWORK_LABEL: Record<PublicationNetwork, string> = {
+  tiktok: "TikTok",
+  instagram: "Instagram",
+  facebook: "Facebook",
+  youtube: "YouTube Shorts",
+};
+
+const NETWORK_ICON: Record<PublicationNetwork, string> = {
+  tiktok: "♪",
+  instagram: "◎",
+  facebook: "f",
+  youtube: "▶",
 };
 
 export default function CalendarPage() {
   const workspace = useCurrentWorkspace();
   const [cursor, setCursor] = useState(() => new Date());
-  const [view, setView] = useState<keyof typeof VIEW_LABELS>("month");
-  const [providerId, setProviderId] = useState("");
-  const [status, setStatus] = useState("");
-  const [selectedScheduleId, setSelectedScheduleId] = useState<string | undefined>();
-  const [busy, setBusy] = useState<string | undefined>();
-  const [form, setForm] = useState<CreateSchedulePayload>({
-    workspaceId: workspace.id,
-    publicationPlanId: "",
-    publicationCandidateId: "",
-    providerId: "dry_run",
-    targetId: "",
-    scheduledAt: localInputValue(new Date(Date.now() + 60 * 60_000)),
-    timezone: "America/Sao_Paulo",
-    missedPolicy: "manual_review",
-    maxAttempts: 3,
-  });
-  const [recurring, setRecurring] = useState(false);
-  const [rescheduleAt, setRescheduleAt] = useState(localInputValue(new Date(Date.now() + 2 * 60 * 60_000)));
+  const [view, setView] = useState<CalendarView>("month");
+  const [selected, setSelected] = useState<CalendarEvent | undefined>();
+  const [busyId, setBusyId] = useState<string | undefined>();
+  const { data: publications, isLoading, error, mutate } = useUnifiedPublications(workspace.id);
 
+  const events = useMemo(() => (publications ?? []).map(toCalendarEvent).filter(isCalendarEvent).sort((a, b) => a.date.getTime() - b.date.getTime()), [publications]);
   const range = useMemo(() => rangeFor(cursor, view), [cursor, view]);
-  const { data: providers } = useProviders();
-  const { data: schedules } = useSchedules(workspace.id, { providerId: providerId || undefined });
-  const { data: entries, error: entriesError, mutate: mutateEntries } = useCalendarEntries(workspace.id, range.from, range.to, { providerId: providerId || undefined, status: status || undefined });
-  const { data: health } = useSchedulingHealth(workspace.id);
-  const { data: deadLetters } = useSchedulingDeadLetters(workspace.id);
-  const { data: selected } = useSchedule(workspace.id, selectedScheduleId);
+  const visibleEvents = useMemo(() => events.filter((event) => event.date >= range.from && event.date < range.to), [events, range]);
+  const stats = useMemo(() => ({
+    scheduled: visibleEvents.filter((event) => event.status === "scheduled").length,
+    publishing: visibleEvents.filter((event) => event.status === "publishing").length,
+    published: visibleEvents.filter((event) => event.status === "published").length,
+    failed: visibleEvents.filter((event) => event.status === "failed").length,
+    cancelled: visibleEvents.filter((event) => event.status === "cancelled").length,
+  }), [visibleEvents]);
 
-  async function refresh() {
-    await Promise.all([
-      mutate((key) => Array.isArray(key) && ["calendar", "schedules", "schedule", "scheduling-health", "scheduling-dead-letters"].includes(String(key[0]))),
-    ]);
-  }
-
-  async function runAction(key: string, action: () => Promise<unknown>) {
-    setBusy(key);
+  async function cancel(event: CalendarEvent) {
+    setBusyId(event.post.id);
     try {
-      await action();
-      await refresh();
+      await cancelUnifiedPublication(workspace.id, event.post.network, event.post.id);
+      await mutate();
+      setSelected(undefined);
     } finally {
-      setBusy(undefined);
+      setBusyId(undefined);
     }
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const payload: CreateSchedulePayload = recurring
-      ? { ...form, workspaceId: workspace.id, scheduledAt: undefined, recurrence: { frequency: "daily", startAt: form.scheduledAt ?? "", count: 5, interval: 1, windowDays: 30 } }
-      : { ...form, workspaceId: workspace.id, recurrence: undefined };
-    await runAction("create", async () => {
-      const result = await createSchedule(payload);
-      setSelectedScheduleId(result.schedule.id);
-    });
-  }
-
-  const visibleEntries = entries ?? [];
-
   return (
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Calendário Editorial" description="Acompanhe o que está agendado, publicado, cancelado ou com falha." />
-
-      <ScreenGuide
-        title="Quando usar"
-        description="Use esta tela para conferir datas e resolver pendências. Para criar a linha automática, use Produção."
-        items={[
-          "Troque entre mês, semana e dia.",
-          "Filtre por rede ou status.",
-          "Clique em um item do calendário para ver detalhes.",
-          "Use processar pendentes somente se a fila estiver parada.",
-        ]}
-        aside={<p>Campos com ID são de diagnóstico. Normalmente o próprio sistema preenche esses dados quando cria uma publicação.</p>}
-      />
-
-      <div className="mb-5 grid gap-4 md:grid-cols-4">
-        <Card className="p-4"><p className="text-xs text-ink-muted">Agendamentos ativos</p><p className="text-2xl font-semibold text-ink">{health?.metrics.schedulesActiveTotal ?? 0}</p></Card>
-        <Card className="p-4"><p className="text-xs text-ink-muted">Ocorrências no período</p><p className="text-2xl font-semibold text-ink">{visibleEntries.length}</p></Card>
-        <Card className="p-4"><p className="text-xs text-ink-muted">Conflitos</p><p className="text-2xl font-semibold text-ink">{health?.metrics.scheduleConflictsTotal ?? 0}</p></Card>
-        <Card className="p-4"><p className="text-xs text-ink-muted">Não entregues</p><p className="text-2xl font-semibold text-ink">{deadLetters?.length ?? 0}</p></Card>
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Editorial</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">Calendário</h1>
+          <p className="mt-2 max-w-2xl text-sm text-ink-muted">Visualize e organize seus conteúdos publicados e agendados.</p>
+        </div>
+        <Link href={`/workspaces/${workspace.id}/create`}><Button>+ Criar conteúdo</Button></Link>
       </div>
 
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:w-auto">
-          <Button variant="secondary" aria-label="Período anterior" onClick={() => setCursor(shiftCursor(cursor, view, -1))}>{"<"}</Button>
-          <span className="min-w-0 text-center text-sm font-medium text-ink">{range.label}</span>
-          <Button variant="secondary" aria-label="Próximo período" onClick={() => setCursor(shiftCursor(cursor, view, 1))}>{">"}</Button>
+      <Card className="mb-5 p-3 sm:p-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2">
+            <Button variant="secondary" onClick={() => setCursor(new Date())}>Hoje</Button>
+            <Button variant="secondary" aria-label="Período anterior" onClick={() => setCursor(shiftCursor(cursor, view, -1))}>{"<"}</Button>
+            <p className="truncate text-center text-sm font-semibold capitalize text-ink sm:text-base">{range.label}</p>
+            <Button variant="secondary" aria-label="Próximo período" onClick={() => setCursor(shiftCursor(cursor, view, 1))}>{">"}</Button>
+          </div>
+          <div className="inline-flex rounded-lg border border-border bg-surface p-1">
+            {VIEWS.map((item) => (
+              <button key={item.id} type="button" onClick={() => setView(item.id)} className={viewButtonClass(view === item.id)}>
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
-          {(Object.keys(VIEW_LABELS) as (keyof typeof VIEW_LABELS)[]).map((mode) => (
-            <button key={mode} className={`rounded-md px-3 py-1.5 text-xs font-medium ${view === mode ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:text-ink"}`} onClick={() => setView(mode)} type="button">
-              {VIEW_LABELS[mode]}
-            </button>
-          ))}
-          <select className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink sm:flex-none" value={providerId} onChange={(event) => setProviderId(event.target.value)}>
-            <option value="">Todos os provedores</option>
-            {(providers ?? []).map((provider) => <option key={provider.providerId} value={provider.providerId}>{provider.displayName}</option>)}
-          </select>
-          <select className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink sm:flex-none" value={status} onChange={(event) => setStatus(event.target.value)}>
-            <option value="">Todos os status</option>
-            {STATUS_OPTIONS.map((item) => <option key={item} value={item}>{STATUS_OPTION_LABEL[item]}</option>)}
-          </select>
-        </div>
+      </Card>
+
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <Stat label="Agendado" value={stats.scheduled} tone="accent" />
+        <Stat label="Publicando" value={stats.publishing} tone="accent" />
+        <Stat label="Publicado" value={stats.published} tone="green" />
+        <Stat label="Falhou" value={stats.failed} tone="red" />
+        <Stat label="Cancelado" value={stats.cancelled} tone="neutral" />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
-        <div className="space-y-5">
-          {entriesError ? <ErrorState error={entriesError} onRetry={() => mutateEntries()} /> : <CalendarBoard view={view} cursor={cursor} entries={visibleEntries} onSelect={setSelectedScheduleId} />}
+      {isLoading ? (
+        <CalendarSkeleton />
+      ) : error ? (
+        <ErrorState error={error} onRetry={() => mutate()} />
+      ) : events.length === 0 ? (
+        <EmptyState
+          title="Seu calendário está livre"
+          description="Crie ou agende conteúdos para visualizar sua programação aqui."
+          action={<Link href={`/workspaces/${workspace.id}/create`}><Button variant="secondary">Criar conteúdo</Button></Link>}
+        />
+      ) : visibleEvents.length === 0 ? (
+        <EmptyState
+          title="Nada neste período"
+          description="Use as setas para navegar por outros períodos ou crie um novo conteúdo."
+          action={<Link href={`/workspaces/${workspace.id}/create`}><Button variant="secondary">Criar conteúdo</Button></Link>}
+        />
+      ) : view === "list" ? (
+        <EventAgenda events={visibleEvents} onSelect={setSelected} />
+      ) : view === "week" ? (
+        <WeekBoard cursor={cursor} events={visibleEvents} onSelect={setSelected} />
+      ) : (
+        <MonthBoard cursor={cursor} events={visibleEvents} onSelect={setSelected} />
+      )}
 
-          <Card className="p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-sm font-medium text-ink">Fila temporal</p>
-              <div className="flex gap-2">
-                <Button variant="secondary" disabled={!!busy} onClick={() => runAction("recover", () => recoverScheduling(workspace.id))}>Recuperar</Button>
-                <Button disabled={!!busy} onClick={() => runAction("run", () => runScheduling(workspace.id))}>Processar pendentes</Button>
-              </div>
-            </div>
-            {health ? (
-              <div className="grid gap-3 md:grid-cols-3">
-                {health.checks.map((check) => (
-                  <div key={check.id} className="rounded-lg border border-border p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-medium text-ink">{check.id}</p>
-                      <StatusBadge status={check.status} />
-                    </div>
-                    <p className="mt-2 text-xs text-ink-muted">{check.safeMessage}</p>
-                  </div>
-                ))}
-              </div>
-            ) : <p className="text-sm text-ink-muted">Carregando saúde.</p>}
-          </Card>
-        </div>
-
-        <aside className="space-y-5">
-          <Card className="p-4">
-            <p className="mb-3 text-sm font-medium text-ink">Novo agendamento</p>
-            <form className="space-y-3" onSubmit={submit}>
-              <Field label="ID do Plano de Publicação" value={form.publicationPlanId} onChange={(value) => setForm({ ...form, publicationPlanId: value })} />
-              <Field label="ID do Candidato" value={form.publicationCandidateId} onChange={(value) => setForm({ ...form, publicationCandidateId: value })} />
-              <Field label="ID do Alvo" value={form.targetId} onChange={(value) => setForm({ ...form, targetId: value })} />
-              <div>
-                <Label>Provedor</Label>
-                <select className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink" value={form.providerId} onChange={(event) => setForm({ ...form, providerId: event.target.value })}>
-                  {(providers ?? [{ providerId: "dry_run", displayName: "Simulação" }]).map((provider) => <option key={provider.providerId} value={provider.providerId}>{provider.displayName}</option>)}
-                </select>
-              </div>
-              <Field label="Horário local" type="datetime-local" value={form.scheduledAt ?? ""} onChange={(value) => setForm({ ...form, scheduledAt: value })} />
-              <Field label="Fuso horário (IANA)" value={form.timezone} onChange={(value) => setForm({ ...form, timezone: value })} />
-              <Field label="Referência de credencial" value={form.credentialReferenceId ?? ""} onChange={(value) => setForm({ ...form, credentialReferenceId: value || undefined })} />
-              <div className="flex items-center justify-between rounded-lg border border-border p-2">
-                <span className="text-sm text-ink">Recorrência diária</span>
-                <input type="checkbox" checked={recurring} onChange={(event) => setRecurring(event.target.checked)} />
-              </div>
-              <Button disabled={!!busy} type="submit">Criar agendamento</Button>
-            </form>
-          </Card>
-
-          <Card className="p-4">
-            <p className="mb-3 text-sm font-medium text-ink">Agendamentos</p>
-            <EventList
-              items={(schedules ?? []).map((schedule) => ({
-                id: schedule.id,
-                title: schedule.providerId,
-                detail: `${schedule.status} · ${schedule.scheduledAtLocal ?? schedule.scheduledAtUtc ?? schedule.createdAt}`,
-                status: schedule.status,
-                onClick: () => setSelectedScheduleId(schedule.id),
-              }))}
-            />
-          </Card>
-
-          <Card className="p-4">
-            <p className="mb-3 text-sm font-medium text-ink">Detalhe</p>
-            {selected ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-ink">{selected.schedule.id}</p>
-                  <StatusBadge status={selected.schedule.status} />
-                </div>
-                <p className="text-xs text-ink-muted">{selected.schedule.providerId} · {selected.schedule.timezone}</p>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" disabled={!!busy} onClick={() => runAction("pause", () => pauseSchedule(workspace.id, selected.schedule.id))}>Pausar</Button>
-                  <Button variant="secondary" disabled={!!busy} onClick={() => runAction("resume", () => resumeSchedule(workspace.id, selected.schedule.id))}>Retomar</Button>
-                  <Button variant="secondary" disabled={!!busy} onClick={() => runAction("cancel", () => cancelSchedule(workspace.id, selected.schedule.id))}>Cancelar</Button>
-                </div>
-                <div className="flex gap-2">
-                  <Input type="datetime-local" value={rescheduleAt} onChange={(event) => setRescheduleAt(event.target.value)} />
-                  <Button variant="secondary" disabled={!!busy || selected.occurrences.length === 0} onClick={() => runAction("reschedule", () => rescheduleOccurrence(workspace.id, selected.schedule.id, { occurrenceId: selected.occurrences[0]?.id, scheduledAt: rescheduleAt, timezone: selected.schedule.timezone }))}>Reagendar</Button>
-                </div>
-                <EventList items={selected.occurrences.slice(0, 6).map((occurrence) => ({ id: occurrence.id, title: occurrence.localDateTime, detail: `${occurrence.providerId} · ${formatDateTime(occurrence.dueAtUtc)}`, status: occurrence.status, onClick: () => runAction(`cancel-occ:${occurrence.id}`, () => cancelOccurrence(workspace.id, occurrence.id)) }))} />
-              </div>
-            ) : <p className="text-sm text-ink-muted">Selecione um agendamento.</p>}
-          </Card>
-
-          <Card className="p-4">
-            <p className="mb-3 text-sm font-medium text-ink">Não entregues</p>
-            <EventList items={(deadLetters ?? []).map((letter) => ({ id: letter.id, title: letter.failureCode, detail: `${letter.occurrenceId} · ${letter.lastError}`, status: letter.reprocessedAt ? "completed" : "failed", onClick: () => runAction(`dead:${letter.id}`, () => reprocessDeadLetter(workspace.id, letter.id)) }))} />
-          </Card>
-        </aside>
-      </div>
+      {selected ? (
+        <EventDrawer
+          workspaceId={workspace.id}
+          event={selected}
+          busy={busyId === selected.post.id}
+          onCancel={() => cancel(selected)}
+          onClose={() => setSelected(undefined)}
+        />
+      ) : null}
     </main>
   );
 }
 
-function CalendarBoard({ view, cursor, entries, onSelect }: { view: "month" | "week" | "day"; cursor: Date; entries: readonly CalendarEntry[]; onSelect: (scheduleId: string) => void }) {
-  const cells = buildCells(cursor, view);
-  if (entries.length === 0) return <EmptyState title="Sem ocorrências" description="Não há publicações agendadas para o período e filtros selecionados." />;
+function MonthBoard({ cursor, events, onSelect }: { cursor: Date; events: readonly CalendarEvent[]; onSelect: (event: CalendarEvent) => void }) {
+  const cells = monthCells(cursor);
   return (
-    <div className={`grid overflow-hidden rounded-lg border border-border bg-surface-raised ${view === "day" ? "grid-cols-1" : "grid-cols-7"}`}>
-      {cells.map((cell) => {
-        const dayEntries = entries.filter((entry) => sameUtcDay(entry.occurrence.dueAtUtc, cell));
-        return (
-          <div key={cell.toISOString()} className="min-h-32 border-b border-r border-border p-2 last:border-r-0">
-            <p className="mb-2 text-xs font-medium text-ink-muted">{cell.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}</p>
-            <div className="space-y-1">
-              {dayEntries.slice(0, 5).map((entry) => (
-                <button key={entry.occurrence.id} className="w-full rounded-md bg-surface-sunken px-2 py-1 text-left hover:bg-accent-soft" onClick={() => onSelect(entry.schedule.id)} type="button">
-                  <span className="block truncate text-xs font-medium text-ink">{entry.schedule.providerId}</span>
-                  <span className="block truncate text-[10px] text-ink-muted">{entry.occurrence.localDateTime} · {entry.conflicts.length} conflito(s)</span>
-                </button>
-              ))}
-              {dayEntries.length > 5 ? <p className="text-[10px] text-ink-faint">+{dayEntries.length - 5}</p> : null}
+    <>
+      <div className="hidden overflow-hidden rounded-2xl border border-border bg-surface-raised sm:grid sm:grid-cols-7">
+        {["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map((day) => (
+          <div key={day} className="border-b border-border bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">{day}</div>
+        ))}
+        {cells.map((day) => {
+          const dayEvents = events.filter((event) => sameDay(event.date, day));
+          const isMuted = day.getMonth() !== cursor.getMonth();
+          return (
+            <div key={day.toISOString()} className={`min-h-32 border-b border-r border-border p-2 last:border-r-0 ${isMuted ? "bg-surface/45" : "bg-surface-raised"}`}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className={`text-xs font-semibold ${sameDay(day, new Date()) ? "rounded-full bg-accent px-2 py-0.5 text-white" : isMuted ? "text-ink-faint" : "text-ink-muted"}`}>{day.getDate()}</span>
+                {dayEvents.length > 3 ? <span className="text-[10px] text-ink-faint">+{dayEvents.length - 3}</span> : null}
+              </div>
+              <div className="space-y-1">
+                {dayEvents.slice(0, 3).map((event) => <CalendarEventButton key={`${event.post.network}-${event.post.id}`} event={event} onClick={() => onSelect(event)} compact />)}
+              </div>
             </div>
-          </div>
+          );
+        })}
+      </div>
+
+      <div className="grid gap-3 sm:hidden">
+        {groupByDate(events).map((group) => (
+          <Card key={group.key} className="p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">{group.label}</p>
+            <div className="space-y-2">{group.items.map((event) => <CalendarEventButton key={`${event.post.network}-${event.post.id}`} event={event} onClick={() => onSelect(event)} />)}</div>
+          </Card>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function WeekBoard({ cursor, events, onSelect }: { cursor: Date; events: readonly CalendarEvent[]; onSelect: (event: CalendarEvent) => void }) {
+  const days = weekCells(cursor);
+  return (
+    <div className="grid gap-3 lg:grid-cols-7">
+      {days.map((day) => {
+        const dayEvents = events.filter((event) => sameDay(event.date, day));
+        return (
+          <Card key={day.toISOString()} className="p-3">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{day.toLocaleDateString("pt-BR", { weekday: "short" })}</p>
+                <p className="text-lg font-semibold text-ink">{day.getDate()}</p>
+              </div>
+              {sameDay(day, new Date()) ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent">Hoje</span> : null}
+            </div>
+            {dayEvents.length === 0 ? <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-ink-muted">Livre</p> : <div className="space-y-2">{dayEvents.map((event) => <CalendarEventButton key={`${event.post.network}-${event.post.id}`} event={event} onClick={() => onSelect(event)} />)}</div>}
+          </Card>
         );
       })}
     </div>
   );
 }
 
-function Field({ label, value, onChange, type = "text" }: { label: string; value: string; type?: string; onChange: (value: string) => void }) {
+function EventAgenda({ events, onSelect }: { events: readonly CalendarEvent[]; onSelect: (event: CalendarEvent) => void }) {
+  const groups = groupAgenda(events);
   return (
-    <div>
-      <Label>{label}</Label>
-      <Input type={type} value={value} onChange={(event) => onChange(event.target.value)} />
-    </div>
-  );
-}
-
-function EventList({ items }: { items: readonly { id: string; title: string; detail: string; status: string; onClick?: () => void }[] }) {
-  if (items.length === 0) return <p className="text-sm text-ink-muted">Nenhum item.</p>;
-  return (
-    <div className="space-y-2">
-      {items.map((item) => (
-        <button key={item.id} type="button" onClick={item.onClick} className="w-full rounded-lg border border-border p-2 text-left hover:bg-surface-sunken">
-          <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-sm font-medium text-ink">{item.title}</p>
-            <StatusBadge status={item.status} />
+    <div className="grid gap-4">
+      {groups.map((group) => (
+        <section key={group.label}>
+          <h2 className="mb-2 text-sm font-semibold text-ink">{group.label}</h2>
+          <div className="grid gap-2">
+            {group.items.map((event) => <CalendarEventButton key={`${event.post.network}-${event.post.id}`} event={event} onClick={() => onSelect(event)} />)}
           </div>
-          <p className="mt-1 truncate text-xs text-ink-muted">{item.detail}</p>
-        </button>
+        </section>
       ))}
     </div>
   );
 }
 
-function rangeFor(cursor: Date, view: "month" | "week" | "day") {
-  if (view === "day") {
-    const from = new Date(Date.UTC(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()));
-    const to = new Date(Date.UTC(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1));
-    return { from: from.toISOString(), to: to.toISOString(), label: cursor.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) };
-  }
-  if (view === "week") {
-    const from = new Date(Date.UTC(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() - cursor.getDay()));
-    const to = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate() + 7));
-    return { from: from.toISOString(), to: to.toISOString(), label: `${from.toLocaleDateString("pt-BR")} - ${to.toLocaleDateString("pt-BR")}` };
-  }
-  const from = new Date(Date.UTC(cursor.getFullYear(), cursor.getMonth(), 1));
-  const to = new Date(Date.UTC(cursor.getFullYear(), cursor.getMonth() + 1, 1));
-  return { from: from.toISOString(), to: to.toISOString(), label: cursor.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }) };
+function CalendarEventButton({ event, onClick, compact = false }: { event: CalendarEvent; onClick: () => void; compact?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} className={`w-full min-w-0 rounded-xl border border-border bg-surface p-2 text-left transition hover:border-accent hover:bg-accent-soft/30 ${compact ? "" : "sm:p-3"}`}>
+      <div className="flex min-w-0 items-center gap-2">
+        <PublicationThumb post={event.post} size={compact ? "sm" : "md"} />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold text-ink">{event.date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+          <p className="truncate text-sm font-medium text-ink">{event.title}</p>
+          <p className="truncate text-xs text-ink-muted">{NETWORK_LABEL[event.post.network]}</p>
+        </div>
+        <span className="hidden shrink-0 sm:inline-flex"><StatusBadge status={event.status} /></span>
+      </div>
+      <span className="mt-2 inline-flex sm:hidden"><StatusBadge status={event.status} /></span>
+    </button>
+  );
 }
 
-function shiftCursor(cursor: Date, view: "month" | "week" | "day", direction: number) {
-  if (view === "day") return new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + direction);
-  if (view === "week") return new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 7 * direction);
+function EventDrawer({ workspaceId, event, busy, onClose, onCancel }: { workspaceId: string; event: CalendarEvent; busy: boolean; onClose: () => void; onCancel: () => void }) {
+  const statusLabel = PUBLICATION_DISPLAY_STATUS_LABEL[event.status];
+  const retryHref = publishHref(workspaceId, event.post);
+  return (
+    <div className="fixed inset-0 z-50">
+      <button type="button" className="absolute inset-0 bg-black/55" aria-label="Fechar detalhe" onClick={onClose} />
+      <aside className="absolute inset-x-0 bottom-0 max-h-[92dvh] overflow-y-auto rounded-t-2xl border-t border-border bg-surface-raised p-4 shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:w-full sm:max-w-xl sm:rounded-none sm:border-l sm:border-t-0 sm:p-6">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Conteúdo</p>
+            <h2 className="mt-2 text-2xl font-semibold text-ink">{event.title}</h2>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm text-ink-muted hover:bg-surface-sunken">Fechar</button>
+        </div>
+
+        <div className="mb-5 overflow-hidden rounded-2xl border border-border bg-surface">
+          <div className="flex aspect-[4/3] items-center justify-center bg-surface-sunken">
+            <PublicationPreview post={event.post} />
+          </div>
+        </div>
+
+        <div className="mb-5 flex flex-wrap gap-2">
+          <NetworkBadge network={event.post.network} />
+          <StatusBadge status={event.status} />
+          {event.post.placement === "story" ? <span className="rounded-full bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-ink-muted">Story</span> : null}
+        </div>
+
+        <div className="space-y-3">
+          <Detail label="Horário" value={`${formatDateTime(event.date.toISOString())}${event.post.timezone ? ` (${event.post.timezone})` : ""}`} />
+          <Detail label="Status" value={statusLabel} />
+          <Detail label="Legenda" value={event.post.text || "Sem legenda"} />
+        </div>
+
+        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <Link href={contentHref(workspaceId)}><Button className="w-full sm:w-auto">Abrir conteúdo</Button></Link>
+          {event.status === "scheduled" ? <Button variant="secondary" disabled={busy} onClick={onCancel}>Cancelar</Button> : null}
+          {event.status === "scheduled" ? <Link href={retryHref}><Button variant="secondary" className="w-full sm:w-auto">Ajustar no Publicar</Button></Link> : null}
+          {event.status === "published" ? <Link href={`/workspaces/${workspaceId}/analytics`}><Button variant="secondary" className="w-full sm:w-auto">Ver resultado</Button></Link> : null}
+          {event.status === "failed" ? <Link href={retryHref}><Button variant="secondary" className="w-full sm:w-auto">Tentar novamente</Button></Link> : null}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function Stat({ label, value, tone }: { label: string; value: number; tone: "accent" | "green" | "red" | "neutral" }) {
+  const toneClass = tone === "green" ? "text-status-active" : tone === "red" ? "text-red-600" : tone === "accent" ? "text-accent" : "text-ink-muted";
+  return (
+    <Card className="p-3">
+      <p className="text-xs font-medium text-ink-muted">{label}</p>
+      <p className={`mt-1 text-2xl font-semibold ${toneClass}`}>{value}</p>
+    </Card>
+  );
+}
+
+function CalendarSkeleton() {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {Array.from({ length: 8 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-2xl bg-surface-sunken" />)}
+    </div>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-surface p-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink">{value}</p>
+    </div>
+  );
+}
+
+function PublicationThumb({ post, size = "md" }: { post: UnifiedPublication; size?: "sm" | "md" }) {
+  const image = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
+  const className = size === "sm" ? "h-9 w-9" : "h-12 w-12";
+  return (
+    <span className={`flex shrink-0 overflow-hidden rounded-lg bg-surface-sunken ${className}`}>
+      {image ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={image} alt="" className="h-full w-full object-cover" />
+      ) : (
+        <span className="flex h-full w-full items-center justify-center text-sm text-ink-muted">{contentTypeOf(post) === "video" ? "▶" : "▧"}</span>
+      )}
+    </span>
+  );
+}
+
+function PublicationPreview({ post }: { post: UnifiedPublication }) {
+  const image = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
+  if (image) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={image} alt="" className="h-full w-full object-cover" />
+    );
+  }
+  return <span className="text-5xl text-ink-faint">{contentTypeOf(post) === "video" ? "▶" : "▧"}</span>;
+}
+
+function NetworkBadge({ network }: { network: PublicationNetwork }) {
+  return <span className="rounded-full bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-ink-muted">{NETWORK_ICON[network]} {NETWORK_LABEL[network]}</span>;
+}
+
+function toCalendarEvent(post: UnifiedPublication): CalendarEvent | undefined {
+  const status = derivePublicationStatus(post);
+  if (status === "draft") return undefined;
+  const rawDate = post.scheduledAt ?? post.publishedAt ?? post.cancelledAt ?? (status === "publishing" || status === "failed" ? post.createdAt : undefined);
+  if (!rawDate) return undefined;
+  const date = new Date(rawDate);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return { post, status, date, title: titleOf(post) };
+}
+
+function isCalendarEvent(event: CalendarEvent | undefined): event is CalendarEvent {
+  return event !== undefined;
+}
+
+function titleOf(post: UnifiedPublication): string {
+  const firstLine = post.text.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+  return firstLine ? firstLine.slice(0, 72) : `${NETWORK_LABEL[post.network]} · ${contentTypeOf(post)}`;
+}
+
+function contentHref(workspaceId: string) {
+  return `/workspaces/${workspaceId}/campaigns`;
+}
+
+function publishHref(workspaceId: string, post: UnifiedPublication) {
+  return `/workspaces/${workspaceId}/publish?network=${post.network}&source=${encodeURIComponent(`${post.network}:${post.id}`)}`;
+}
+
+function rangeFor(cursor: Date, view: CalendarView) {
+  if (view === "week") {
+    const from = startOfWeek(cursor);
+    const to = addDays(from, 7);
+    return { from, to, label: `${from.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })} - ${addDays(to, -1).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}` };
+  }
+  if (view === "list") {
+    const from = startOfDay(cursor);
+    const to = addDays(from, 60);
+    const isToday = sameDay(from, new Date());
+    return { from, to, label: isToday ? "Próximos 60 dias" : `${from.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })} - ${addDays(to, -1).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}` };
+  }
+  const from = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const to = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+  return { from, to, label: cursor.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }) };
+}
+
+function shiftCursor(cursor: Date, view: CalendarView, direction: number) {
+  if (view === "week") return addDays(cursor, 7 * direction);
+  if (view === "list") return addDays(cursor, 30 * direction);
   return new Date(cursor.getFullYear(), cursor.getMonth() + direction, 1);
 }
 
-function buildCells(cursor: Date, view: "month" | "week" | "day") {
-  if (view === "day") return [new Date(Date.UTC(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()))];
-  const start = view === "week"
-    ? new Date(Date.UTC(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() - cursor.getDay()))
-    : new Date(Date.UTC(cursor.getFullYear(), cursor.getMonth(), 1 - new Date(cursor.getFullYear(), cursor.getMonth(), 1).getDay()));
-  return Array.from({ length: view === "week" ? 7 : 42 }, (_, index) => new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate() + index)));
+function monthCells(cursor: Date) {
+  const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const start = startOfWeek(first);
+  return Array.from({ length: 42 }, (_, index) => addDays(start, index));
 }
 
-function sameUtcDay(iso: string, date: Date) {
-  const item = new Date(iso);
-  return item.getUTCFullYear() === date.getUTCFullYear() && item.getUTCMonth() === date.getUTCMonth() && item.getUTCDate() === date.getUTCDate();
+function weekCells(cursor: Date) {
+  const start = startOfWeek(cursor);
+  return Array.from({ length: 7 }, (_, index) => addDays(start, index));
 }
 
-function localInputValue(date: Date) {
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+function groupByDate(events: readonly CalendarEvent[]) {
+  const map = new Map<string, CalendarEvent[]>();
+  for (const event of events) {
+    const key = event.date.toISOString().slice(0, 10);
+    map.set(key, [...(map.get(key) ?? []), event]);
+  }
+  return [...map.entries()].map(([key, items]) => ({
+    key,
+    label: new Date(`${key}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }),
+    items,
+  }));
+}
+
+function groupAgenda(events: readonly CalendarEvent[]) {
+  const today = startOfDay(new Date());
+  const tomorrow = addDays(today, 1);
+  const weekEnd = addDays(today, 7);
+  const groups = [
+    { label: "Hoje", items: events.filter((event) => sameDay(event.date, today)) },
+    { label: "Amanhã", items: events.filter((event) => sameDay(event.date, tomorrow)) },
+    { label: "Esta semana", items: events.filter((event) => event.date > tomorrow && event.date < weekEnd) },
+    { label: "Próximos", items: events.filter((event) => event.date >= weekEnd) },
+  ];
+  return groups.filter((group) => group.items.length > 0);
+}
+
+function startOfWeek(date: Date) {
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  return startOfDay(addDays(date, diff));
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDays(date: Date, days: number) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function sameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function viewButtonClass(active: boolean) {
+  return `rounded-md px-3 py-1.5 text-xs font-medium transition ${active ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`;
 }

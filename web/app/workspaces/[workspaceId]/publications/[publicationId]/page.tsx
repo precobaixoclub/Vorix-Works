@@ -5,6 +5,7 @@ import { useState } from "react";
 import { mutate } from "swr";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { ScreenGuide } from "@/components/ScreenGuide";
@@ -14,14 +15,23 @@ import { approvePublication, cancelPublication, publishPublication, reconcilePub
 import { usePublication } from "@/features/publication/hooks";
 import { formatDateTime } from "@/lib/format";
 
+type PendingAction = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  variant?: "primary" | "danger";
+  action: () => Promise<void>;
+};
+
 export default function PublicationDetailPage() {
   const params = useParams<{ workspaceId: string; publicationId: string }>();
   const { data: detail, isLoading, error } = usePublication(params.workspaceId, params.publicationId);
   const [busy, setBusy] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   async function refresh() {
     await mutate(["publication", params.workspaceId, params.publicationId]);
-    await mutate("publication-queue");
+    await mutate(["publication-queue", params.workspaceId]);
     await mutate(["publication-dead-letters", params.workspaceId]);
   }
 
@@ -32,7 +42,12 @@ export default function PublicationDetailPage() {
       await refresh();
     } finally {
       setBusy(false);
+      setPendingAction(null);
     }
+  }
+
+  function confirmAction(action: PendingAction) {
+    setPendingAction(action);
   }
 
   if (isLoading) {
@@ -54,14 +69,18 @@ export default function PublicationDetailPage() {
   const canApprove = ["draft", "waiting_for_approval"].includes(detail.plan.state);
   const canPublish = detail.plan.state === "approved";
   const canCancel = !["published", "cancelled"].includes(detail.plan.state);
+  const pageTitle = detail.plan.mode === "real" ? "Publicação real" : "Publicação de simulação";
 
   return (
     <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
-        title={detail.plan.id}
-        description={`Criado em ${formatDateTime(detail.plan.createdAt)} · trace ${detail.plan.traceId}`}
+        title={pageTitle}
+        description={`Criada em ${formatDateTime(detail.plan.createdAt)} · atualizada em ${formatDateTime(detail.plan.updatedAt)}`}
         actions={<div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">{detail.plan.mode === "dry_run" ? "Simulação" : "Real"}</span><StatusBadge status={detail.plan.state} /></div>}
       />
+      <p className="mb-4 break-all text-xs text-ink-faint">
+        Publicação {detail.plan.id} · Execução fonte {detail.plan.sourceExecutionRunId ?? "n/a"} · trace {detail.plan.traceId}
+      </p>
 
       <ScreenGuide
         title="Investigação de publicação"
@@ -76,14 +95,91 @@ export default function PublicationDetailPage() {
       />
 
       <div className="mb-6 flex flex-wrap gap-2">
-        <Button disabled={!canApprove || busy} onClick={() => runAction(() => approvePublication(params.workspaceId, detail.plan.id, "Aprovação operacional via painel."))}>Aprovar</Button>
-        <Button disabled={!canPublish || busy} onClick={() => runAction(() => publishPublication(params.workspaceId, detail.plan.id, false))}>Publicar via outbox</Button>
-        <Button variant="secondary" disabled={!canPublish || busy} onClick={() => runAction(() => publishPublication(params.workspaceId, detail.plan.id, true))}>Enviar para fila</Button>
-        <Button variant="secondary" disabled={busy} onClick={() => runAction(() => runPublicationWorker())}>Rodar worker</Button>
-        <Button variant="secondary" disabled={busy} onClick={() => runAction(() => retryPublication(params.workspaceId, detail.plan.id))}>Repetir</Button>
+        <Button
+          disabled={!canApprove || busy}
+          onClick={() =>
+            confirmAction({
+              title: "Aprovar publicação?",
+              description: "A aprovação libera esta publicação para envio pelo fluxo técnico.",
+              confirmLabel: "Aprovar",
+              action: () => runAction(() => approvePublication(params.workspaceId, detail.plan.id, "Aprovação operacional via painel.")),
+            })
+          }
+        >
+          Aprovar
+        </Button>
+        <Button
+          disabled={!canPublish || busy}
+          onClick={() =>
+            confirmAction({
+              title: "Publicar via outbox?",
+              description: "Esta ação tenta publicar agora usando o fluxo durável de publicação.",
+              confirmLabel: "Publicar",
+              action: () => runAction(() => publishPublication(params.workspaceId, detail.plan.id, false)),
+            })
+          }
+        >
+          Publicar via outbox
+        </Button>
+        <Button
+          variant="secondary"
+          disabled={!canPublish || busy}
+          onClick={() =>
+            confirmAction({
+              title: "Enviar para fila?",
+              description: "A publicação será colocada na fila deste workspace para processamento assíncrono.",
+              confirmLabel: "Enviar para fila",
+              action: () => runAction(() => publishPublication(params.workspaceId, detail.plan.id, true)),
+            })
+          }
+        >
+          Enviar para fila
+        </Button>
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onClick={() =>
+            confirmAction({
+              title: "Rodar worker do workspace?",
+              description: "O worker processará apenas jobs disponíveis para este workspace.",
+              confirmLabel: "Rodar worker",
+              action: () => runAction(() => runPublicationWorker(params.workspaceId)),
+            })
+          }
+        >
+          Rodar worker
+        </Button>
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onClick={() =>
+            confirmAction({
+              title: "Repetir publicação?",
+              description: "Uma nova tentativa será enfileirada para esta publicação.",
+              confirmLabel: "Repetir",
+              action: () => runAction(() => retryPublication(params.workspaceId, detail.plan.id)),
+            })
+          }
+        >
+          Repetir
+        </Button>
         <Button variant="secondary" disabled={busy} onClick={() => runAction(() => reconcilePublication(params.workspaceId, detail.plan.id, false))}>Reconciliar</Button>
         <Button variant="secondary" disabled={busy} onClick={() => runAction(() => reconcilePublication(params.workspaceId, detail.plan.id, true))}>Verificar receipts</Button>
-        <Button variant="danger" disabled={!canCancel || busy} onClick={() => runAction(() => cancelPublication(params.workspaceId, detail.plan.id))}>Cancelar</Button>
+        <Button
+          variant="danger"
+          disabled={!canCancel || busy}
+          onClick={() =>
+            confirmAction({
+              title: "Cancelar publicação?",
+              description: "A publicação será cancelada e deixará de seguir para envio.",
+              confirmLabel: "Cancelar publicação",
+              variant: "danger",
+              action: () => runAction(() => cancelPublication(params.workspaceId, detail.plan.id)),
+            })
+          }
+        >
+          Cancelar
+        </Button>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -169,7 +265,21 @@ export default function PublicationDetailPage() {
                   <StatusBadge status={letter.recoveryStatus ?? "pending"} />
                 </div>
                 <p className="mt-1 text-xs text-ink-muted">{letter.lastSafeMessage ?? letter.reason}</p>
-                <Button className="mt-3" variant="secondary" disabled={busy || letter.recoveryStatus === "reprocessed"} onClick={() => runAction(() => reprocessPublicationDeadLetter(params.workspaceId, letter.id))}>Reprocessar</Button>
+                <Button
+                  className="mt-3"
+                  variant="secondary"
+                  disabled={busy || letter.recoveryStatus === "reprocessed"}
+                  onClick={() =>
+                    confirmAction({
+                      title: "Reprocessar não entregue?",
+                      description: "Este registro voltará para a fila técnica do workspace.",
+                      confirmLabel: "Reprocessar",
+                      action: () => runAction(() => reprocessPublicationDeadLetter(params.workspaceId, letter.id)),
+                    })
+                  }
+                >
+                  Reprocessar
+                </Button>
               </div>
             ))}
           </CardBody>
@@ -187,6 +297,19 @@ export default function PublicationDetailPage() {
           </CardBody>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingAction}
+        title={pendingAction?.title ?? ""}
+        description={pendingAction?.description ?? ""}
+        confirmLabel={pendingAction?.confirmLabel ?? "Confirmar"}
+        variant={pendingAction?.variant ?? "primary"}
+        busy={busy}
+        onCancel={() => setPendingAction(null)}
+        onConfirm={async () => {
+          if (pendingAction) await pendingAction.action();
+        }}
+      />
     </main>
   );
 }

@@ -20,9 +20,9 @@ export function ConversationList({ workspaceId }: { workspaceId: string }) {
   async function handleNewConversation() {
     setCreating(true);
     try {
-      const conversation = await createConversation(workspaceId);
+      await createConversation(workspaceId);
       await mutate();
-      router.push(`/workspaces/${workspaceId}/chat/${conversation.id}`);
+      router.push(`/workspaces/${workspaceId}/production`);
     } finally {
       setCreating(false);
     }
@@ -44,7 +44,7 @@ export function ConversationList({ workspaceId }: { workspaceId: string }) {
           <ErrorState error={error} onRetry={() => mutate()} />
         ) : (
           conversations?.map((conversation) => {
-            const href = `/workspaces/${workspaceId}/chat/${conversation.id}`;
+            const href = `/workspaces/${workspaceId}/production`;
             const isActive = pathname === href;
             return (
               <Link

@@ -5,15 +5,13 @@ import { Button } from "@/components/Button";
 import { Input, Label, Textarea } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { updateAsset } from "../api";
+import { deriveAssetKind } from "../derive-kind";
 import {
-  ASSET_KINDS,
-  ASSET_KIND_LABEL,
   ASSET_MATERIAL_TYPES,
   ASSET_MATERIAL_TYPE_LABEL,
   ASSET_USAGE_PRIORITIES,
   ASSET_USAGE_PRIORITY_LABEL,
   type Asset,
-  type AssetKind,
   type AssetMaterialType,
   type AssetUsagePriority,
 } from "../types";
@@ -22,9 +20,10 @@ const SELECT_CLASSES = "w-full rounded-lg border border-border bg-surface px-3 p
 
 /** Edita nome, tipo e tags de um material já cadastrado — não substitui o arquivo em si, que
  * continua o mesmo no Object Storage (reenviar exige excluir e cadastrar de novo). Migração
- * "Prompt Persistente de Produção + Materiais com Contexto para o GPT" adicionou 4 campos
- * semânticos (tipo de material, instrução para IA, regra de uso, prioridade de uso) — é isto que
- * o motor GPT usa para saber COMO/QUANDO usar cada material, não só o arquivo em si. */
+ * "Marca & Materiais": a categoria técnica (`AssetKind`) deixou de ser um seletor visível — "Tipo
+ * do material" é o único conceito de classificação na interface, com `AssetKind` re-derivado a
+ * partir dele (preservando o arquivo original quando o tipo escolhido não muda a natureza dele,
+ * ex.: vídeo continua vídeo mesmo se reclassificado como "Outro"). */
 export function EditAssetModal({
   asset,
   onClose,
@@ -35,7 +34,6 @@ export function EditAssetModal({
   onUpdated: (asset: Asset) => void;
 }) {
   const [name, setName] = useState(asset.name);
-  const [kind, setKind] = useState<AssetKind>(asset.kind);
   const [tags, setTags] = useState(asset.tags.join(", "));
   const [materialType, setMaterialType] = useState<AssetMaterialType | "">(asset.materialType ?? "");
   const [aiInstructions, setAiInstructions] = useState(asset.aiInstructions ?? "");
@@ -50,6 +48,7 @@ export function EditAssetModal({
     setSubmitting(true);
     setError(undefined);
     try {
+      const kind = deriveAssetKind(materialType, asset.storageRef?.metadata?.contentType, asset.kind);
       const updated = await updateAsset(asset.id, {
         name: name.trim(),
         kind,
@@ -68,18 +67,19 @@ export function EditAssetModal({
   }
 
   return (
-    <Modal title="Editar Material da Marca" onClose={onClose}>
+    <Modal title="Editar material" onClose={onClose}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
-          <Label htmlFor="asset-edit-name">Nome do arquivo</Label>
+          <Label htmlFor="asset-edit-name">Nome</Label>
           <Input id="asset-edit-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </div>
         <div>
-          <Label htmlFor="asset-edit-kind">Tipo (categoria de arquivo)</Label>
-          <select id="asset-edit-kind" value={kind} onChange={(e) => setKind(e.target.value as AssetKind)} className={SELECT_CLASSES}>
-            {ASSET_KINDS.map((k) => (
-              <option key={k} value={k}>
-                {ASSET_KIND_LABEL[k]}
+          <Label htmlFor="asset-edit-material-type">Tipo do material</Label>
+          <select id="asset-edit-material-type" value={materialType} onChange={(e) => setMaterialType(e.target.value as AssetMaterialType | "")} className={SELECT_CLASSES}>
+            <option value="">Não classificado</option>
+            {ASSET_MATERIAL_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {ASSET_MATERIAL_TYPE_LABEL[type]}
               </option>
             ))}
           </select>
@@ -90,22 +90,8 @@ export function EditAssetModal({
         </div>
 
         <div className="border-t border-border pt-3">
-          <p className="mb-3 text-xs font-medium text-ink-muted">Contexto para o motor de geração (GPT)</p>
-
           <div>
-            <Label htmlFor="asset-edit-material-type">Papel do material</Label>
-            <select id="asset-edit-material-type" value={materialType} onChange={(e) => setMaterialType(e.target.value as AssetMaterialType | "")} className={SELECT_CLASSES}>
-              <option value="">Não classificado</option>
-              {ASSET_MATERIAL_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {ASSET_MATERIAL_TYPE_LABEL[type]}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="mt-3">
-            <Label htmlFor="asset-edit-usage-priority">Prioridade de uso</Label>
+            <Label htmlFor="asset-edit-usage-priority">Prioridade</Label>
             <select id="asset-edit-usage-priority" value={usagePriority} onChange={(e) => setUsagePriority(e.target.value as AssetUsagePriority | "")} className={SELECT_CLASSES}>
               <option value="">Automático (padrão)</option>
               {ASSET_USAGE_PRIORITIES.map((priority) => (
@@ -117,7 +103,7 @@ export function EditAssetModal({
           </div>
 
           <div className="mt-3">
-            <Label htmlFor="asset-edit-ai-instructions">Observação para IA</Label>
+            <Label htmlFor="asset-edit-ai-instructions">Como a IA deve usar este material?</Label>
             <Textarea
               id="asset-edit-ai-instructions"
               rows={3}
@@ -125,7 +111,6 @@ export function EditAssetModal({
               onChange={(e) => setAiInstructions(e.target.value)}
               placeholder='Ex.: "Use este screenshot real dentro de notebook ou smartphone quando o objetivo for demonstrar o funcionamento do site."'
             />
-            <p className="mt-1 text-xs text-ink-faint">Explica QUANDO/COMO o motor de geração deve usar este material.</p>
           </div>
 
           <div className="mt-3">
@@ -137,12 +122,11 @@ export function EditAssetModal({
               onChange={(e) => setUsageRule(e.target.value)}
               placeholder='Ex.: "Nunca redesenhar, não alterar proporção e não mudar cores."'
             />
-            <p className="mt-1 text-xs text-ink-faint">Restrição categórica de como este material pode ser tratado.</p>
           </div>
         </div>
 
         <p className="text-xs text-ink-faint">Para trocar o arquivo em si, exclua este material e envie um novo.</p>
-        {error ? <p className="text-xs text-red-600">{error}</p> : null}
+        {error ? <p className="text-xs text-danger">{error}</p> : null}
         <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
           <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={onClose}>
             Cancelar

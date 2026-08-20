@@ -54,7 +54,8 @@ export default function RuntimeListPage() {
                   <div className="mb-2"><StatusBadge status={runtime.status} /></div>
                   <p className="break-words text-sm font-semibold text-ink">{runtime.translationTemplate}</p>
                   <p className="mt-1 text-sm text-ink-muted">{runtime.translatorStrategy}</p>
-                  <p className="mt-1 text-xs text-ink-muted">Atualizado em {formatDateTime(runtime.updatedAt)}</p>
+                  <p className="mt-1 text-xs text-ink-muted">Atualizado em {formatDateTime(runtime.updatedAt)} · Planejamento {runtime.sourceContext.planningId}</p>
+                  <p className="mt-1 break-all text-[11px] text-ink-faint">Runtime {runtime.id}</p>
                 </div>
                 <Link href={`/workspaces/${workspace.id}/runtime/${runtime.id}`} className="inline-flex min-h-10 items-center justify-center rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white hover:bg-accent-hover">
                   Abrir runtime

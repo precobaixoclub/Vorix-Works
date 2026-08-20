@@ -84,6 +84,12 @@ export type CreativeContext = {
   /** Descrição do negócio (Clara `BusinessContext.description`, quando disponível). */
   businessDescription?: string;
   productsOrServices?: string[];
+  /** Diferenciais reais da marca frente à concorrência (Clara `ProductContext.differentiators`),
+   * distinto de `productsOrServices` (o que a marca vende). */
+  differentiators?: string[];
+  /** Tom de voz da marca (Clara `BrandContext.toneOfVoice`) — só quando não é mais o texto
+   * genérico do bootstrap (`GENERIC_BRAND_TONE_OF_VOICE`, `container.ts`). */
+  toneOfVoice?: string;
   /** Notas de identidade visual (tipografia, estilo, personalidade da marca) — nunca uma decisão
    * de layout, só contexto para a direção de arte do GPT. */
   visualIdentityNotes?: string;
@@ -251,6 +257,10 @@ export function buildWorkspaceContextLines(context: CreativeContext): string[] {
   if (context.productsOrServices && context.productsOrServices.length > 0) {
     lines.push(`Produtos/serviços: ${context.productsOrServices.join(", ")}`);
   }
+  if (context.differentiators && context.differentiators.length > 0) {
+    lines.push(`Diferenciais da marca: ${context.differentiators.join(", ")}`);
+  }
+  if (context.toneOfVoice) lines.push(`Tom de voz da marca: ${context.toneOfVoice}`);
   if (context.visualIdentityNotes) lines.push(`Identidade visual: ${context.visualIdentityNotes}`);
   if (context.recentHistory && context.recentHistory.length > 0) {
     lines.push(

@@ -1,7 +1,7 @@
-"use client";
+import { redirect } from "next/navigation";
+import { legacyNetworkPublishHref } from "@/features/publication-history/legacy-routes";
 
-import { MetaPostPage } from "@/features/meta/MetaPostPage";
-
-export default function InstagramPage() {
-  return <MetaPostPage target="instagram" />;
+export default async function InstagramLegacyPage({ params }: { params: Promise<{ workspaceId: string }> | { workspaceId: string } }) {
+  const resolved = await params;
+  redirect(legacyNetworkPublishHref(resolved.workspaceId, "instagram"));
 }

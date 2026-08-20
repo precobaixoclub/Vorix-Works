@@ -2,23 +2,24 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { Input, Label, Textarea } from "@/components/Field";
+import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { CHANNEL_LABEL, DEFAULT_PRODUCTION_CONFIG, FORMAT_LABEL } from "@/features/production-line/defaults";
-import { deriveObjective, extractExecutionRunFailure, generateFromIdea as generateRealImageFromIdea, isUnrecoverableSemanticOcclusionFailure, MAX_IDEA_TEXT_LENGTH, waitForExecutionRunTerminal } from "@/features/production-line/api";
-import { recordGeneration } from "@/features/production-line/generation-log";
-import { useExecutionRuns } from "@/features/execution/hooks";
+import { deriveObjective, extractExecutionRunFailure, generateFromIdea, MAX_IDEA_TEXT_LENGTH } from "@/features/production-line/api";
+import { getGenerationRecord, recordGeneration, type GenerationRecord } from "@/features/production-line/generation-log";
+import { useExecutionRun, useExecutionRuns } from "@/features/execution/hooks";
+import type { ExecutionRun, ExecutionRunDetail, ExecutionRunState } from "@/features/execution/types";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
-import { ProductionSettingsPanel } from "@/features/production-settings/components/ProductionSettingsPanel";
+import { useProductionSettings } from "@/features/production-settings/hooks";
 import type { ContentBlueprint, IdeaProductionMode, PostingRule, ProductionAspectRatio, ProductionChannel, ProductionFormat, ProductionLineConfig, ProductionWeekday, ReferenceAssetRole, WeeklyFormatQuota } from "@/features/production-line/types";
+import { formatRelativeTime } from "@/lib/format";
 
 const CHANNELS: ProductionChannel[] = ["instagram", "facebook", "tiktok", "youtube"];
 const FORMATS: ProductionFormat[] = ["single_image", "carousel", "video"];
-// Migração "GPT como motor criativo único" (PR 7/9) — superfície aditiva exclusiva do motor GPT.
 const ASPECT_RATIO_OPTIONS: ProductionAspectRatio[] = ["1:1", "4:5", "9:16", "16:9"];
 const REFERENCE_ASSET_ROLE_OPTIONS: { value: ReferenceAssetRole; label: string }[] = [
   { value: "product_photo", label: "Foto do produto" },
@@ -48,8 +49,27 @@ const WEEKDAYS: { id: ProductionWeekday; short: string; label: string }[] = [
 ];
 const QUICK_TIMES = ["08:00", "09:00", "12:00", "13:30", "18:30", "20:00"];
 const MINUTE_OPTIONS = ["00", "15", "30", "45"];
+const WEEKDAY_INDEX: Record<ProductionWeekday, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
 
-type ProductionView = "dashboard" | "schedule" | "settings";
+const QUEUE_TABS = [
+  { id: "in_progress", label: "Em andamento" },
+  { id: "waiting_review", label: "Aguardando revisão" },
+  { id: "completed", label: "Concluídos" },
+  { id: "failed", label: "Com problema" },
+] as const;
+const PERIOD_FILTERS = [
+  { id: "all", label: "Todo período" },
+  { id: "today", label: "Hoje" },
+  { id: "7d", label: "7 dias" },
+  { id: "30d", label: "30 dias" },
+] as const;
+const IN_PROGRESS_STATES: readonly ExecutionRunState[] = ["created", "validating", "ready", "running"];
+const RUN_STATE_LABEL: Record<string, string> = { created: "Na fila", validating: "Preparando", ready: "Pronto para processar", running: "Gerando com IA…" };
+
+type ProductionMode = "queue" | "configure";
+type QueueTabId = (typeof QUEUE_TABS)[number]["id"];
+type PeriodFilterId = (typeof PERIOD_FILTERS)[number]["id"];
+type SortOrder = "recent" | "oldest";
 type IdeaTypeFilter = (typeof IDEA_TYPE_FILTERS)[number]["id"];
 type IdeaStatusFilter = (typeof IDEA_STATUS_FILTERS)[number]["id"];
 
@@ -60,14 +80,6 @@ const CHANNEL_SHORT: Record<ProductionChannel, string> = {
   youtube: "YT",
 };
 
-function IconPlus({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
-      <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function IconLayer({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
@@ -77,42 +89,11 @@ function IconLayer({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
-function IconSliders({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
-      <line x1="2" y1="4" x2="14" y2="4" stroke="currentColor" strokeWidth="1.4" />
-      <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" strokeWidth="1.4" />
-      <line x1="2" y1="12" x2="14" y2="12" stroke="currentColor" strokeWidth="1.4" />
-      <circle cx="6" cy="4" r="1.6" stroke="currentColor" strokeWidth="1.4" />
-      <circle cx="10" cy="8" r="1.6" stroke="currentColor" strokeWidth="1.4" />
-      <circle cx="5" cy="12" r="1.6" stroke="currentColor" strokeWidth="1.4" />
-    </svg>
-  );
-}
-
-function IconSearch({ className = "h-3.5 w-3.5" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
-      <circle cx="7" cy="7" r="4.2" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M10.2 10.2L14 14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function IconWarn({ className = "h-3.5 w-3.5" }: { className?: string }) {
   return (
     <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
       <path d="M8 1.5l7 12.5H1L8 1.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
       <path d="M8 6.2v3.3M8 11.6h.01" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconTray({ className = "h-7 w-7" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 28 28" fill="none" className={className} aria-hidden="true">
-      <path d="M4 16l3-9h14l3 9" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M4 16h6.2c.4 1.6 1.8 2.7 3.8 2.7s3.4-1.1 3.8-2.7H24v6a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 22v-6z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -186,25 +167,86 @@ function emptyRule(blueprintId: string): PostingRule {
   };
 }
 
+/** Próxima ocorrência real de um (dia da semana, horário) a partir de agora — usado só para
+ * mostrar "próximo horário planejado" na rotina; nunca uma promessa de disparo automático (a
+ * rotina hoje é planejamento/estoque, não um cron que gera sozinho). */
+function nextOccurrence(weekday: ProductionWeekday, time: string, now: Date): Date {
+  const [hour, minute] = time.split(":").map(Number);
+  const result = new Date(now);
+  result.setHours(hour || 0, minute || 0, 0, 0);
+  let dayDiff = WEEKDAY_INDEX[weekday] - now.getDay();
+  if (dayDiff < 0 || (dayDiff === 0 && result <= now)) dayDiff += 7;
+  result.setDate(now.getDate() + dayDiff);
+  return result;
+}
+
+function describeNextSlot(rules: PostingRule[]): string | null {
+  const now = new Date();
+  let earliest: Date | null = null;
+  for (const rule of rules) {
+    for (const item of rule.weeklyMix) {
+      if (scheduledQuantity(item) === 0) continue;
+      for (const weekday of item.weekdays) {
+        for (const time of item.times) {
+          const candidate = nextOccurrence(weekday, time, now);
+          if (!earliest || candidate < earliest) earliest = candidate;
+        }
+      }
+    }
+  }
+  if (!earliest) return null;
+  const isToday = earliest.toDateString() === now.toDateString();
+  const time = earliest.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  if (isToday) return `hoje às ${time}`;
+  const weekdayShort = WEEKDAYS[(earliest.getDay() + 6) % 7]?.short ?? "";
+  return `${weekdayShort.toLowerCase()} às ${time}`;
+}
+
+type RunSummary = { title: string; images: { uri: string }[]; failureMessage?: string; record?: GenerationRecord };
+
+/** Deriva título/thumbnail/mensagem de erro de um `ExecutionRunDetail` já carregado — mesma fonte
+ * de dado que `review/page.tsx` usa (artefatos "copy"/"structure" + registro local), nunca IDs
+ * técnicos, traceId ou payload cru. */
+function deriveRunSummary(workspaceId: string, run: ExecutionRun, detail: ExecutionRunDetail | undefined): RunSummary {
+  const record = getGenerationRecord(workspaceId, run.id);
+  const images = (detail?.artifacts ?? []).flatMap((artifact) => {
+    const payload = artifact.payload as { output?: { images?: Array<{ uri?: string }> } } | undefined;
+    return payload?.output?.images?.filter((image): image is { uri: string } => Boolean(image.uri)) ?? [];
+  });
+  const copyOutput = (detail?.artifacts ?? []).find((artifact) => artifact.outputPort === "copy")?.payload as { output?: { title?: string } } | undefined;
+  const structureOutput = (detail?.artifacts ?? []).find((artifact) => artifact.outputPort === "structure")?.payload as { output?: { angle?: string } } | undefined;
+  const title = copyOutput?.output?.title || structureOutput?.output?.angle || record?.name || "Ideia sem nome";
+  const failureMessage = detail ? extractExecutionRunFailure(detail).message : undefined;
+  return { title, images, failureMessage, record };
+}
+
 export default function ProductionLinePage() {
   const workspace = useCurrentWorkspace();
-  const router = useRouter();
   const [config, setConfig] = useState<ProductionLineConfig>(DEFAULT_PRODUCTION_CONFIG);
   const [selectedBlueprintId, setSelectedBlueprintId] = useState(DEFAULT_PRODUCTION_CONFIG.blueprints[0]?.id ?? "");
   const [selectedRuleId, setSelectedRuleId] = useState(DEFAULT_PRODUCTION_CONFIG.postingRules[0]?.id ?? "");
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<ProductionView>("dashboard");
+  const [mode, setMode] = useState<ProductionMode>("queue");
   const [ideaTypeFilter, setIdeaTypeFilter] = useState<IdeaTypeFilter>("all");
   const [ideaStatusFilter, setIdeaStatusFilter] = useState<IdeaStatusFilter>("available");
   const [ideaSearch, setIdeaSearch] = useState("");
   const [formatFilter, setFormatFilter] = useState<ProductionFormat | "all">("all");
   const [draftIdea, setDraftIdea] = useState<ContentBlueprint | null>(null);
   const [ideaEditorOpen, setIdeaEditorOpen] = useState(false);
-  const [generatingIdeaId, setGeneratingIdeaId] = useState<string | null>(null);
-  const [generateError, setGenerateError] = useState<string | null>(null);
-  const { data: executionRuns } = useExecutionRuns(workspace.id);
-  const pendingReviewCount = (executionRuns ?? []).filter((run) => run.mode === "real" && run.state === "waiting_for_approval").length;
+
+  // Fila operacional — dado real de `ExecutionRun`, nunca do tanque local.
+  const { data: executionRuns, mutate: refreshRuns } = useExecutionRuns(workspace.id);
+  const { data: productionSettings } = useProductionSettings(workspace.id);
+  const [queueTab, setQueueTab] = useState<QueueTabId>("in_progress");
+  const [queueSearch, setQueueSearch] = useState("");
+  const [channelFilter, setChannelFilter] = useState<ProductionChannel | "all">("all");
+  const [queueFormatFilter, setQueueFormatFilter] = useState<ProductionFormat | "all">("all");
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilterId>("all");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("recent");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = readProductionConfig(workspace.id);
@@ -218,6 +260,12 @@ export default function ProductionLinePage() {
     const timeoutId = window.setTimeout(() => setSaveFeedback(null), 2500);
     return () => window.clearTimeout(timeoutId);
   }, [saveFeedback]);
+
+  // Fila é conteúdo em movimento — revalida sozinha em segundo plano, sem exigir F5.
+  useEffect(() => {
+    const intervalId = window.setInterval(() => refreshRuns(), 15_000);
+    return () => window.clearInterval(intervalId);
+  }, [refreshRuns]);
 
   const selectedBlueprint = draftIdea && selectedBlueprintId === draftIdea.id ? draftIdea : config.blueprints.find((blueprint) => blueprint.id === selectedBlueprintId) ?? config.blueprints[0];
   const selectedRule = config.postingRules.find((rule) => rule.id === selectedRuleId) ?? config.postingRules[0];
@@ -236,30 +284,75 @@ export default function ProductionLinePage() {
     });
   }, [config.blueprints, ideaTypeFilter, ideaStatusFilter, formatFilter, ideaSearch]);
   const routineBlueprints = useMemo(() => config.blueprints.filter(isRoutineIdea), [config.blueprints]);
-
-  const productionSummary = useMemo(() => {
-    const routineIdeas = config.blueprints.filter(isRoutineIdea);
-    const ideas = routineIdeas.length;
-    const availableIdeas = routineIdeas.filter((idea) => idea.status !== "used").length;
-    const usedIdeas = routineIdeas.filter((idea) => idea.status === "used").length;
-    const standaloneIdeas = config.blueprints.filter(isStandaloneIdea).length;
-    const weeklyTotal = config.postingRules.reduce((total, rule) => total + totalWeeklyPosts(rule), 0);
-    const channels = new Set(config.postingRules.flatMap((rule) => rule.channels));
-    const dailyCapacity = config.postingRules.reduce((total, rule) => total + rule.maxPostsPerDay, 0);
-    return { ideas, availableIdeas, usedIdeas, standaloneIdeas, weeklyTotal, channels: channels.size, dailyCapacity };
-  }, [config]);
   const emptyIdeas = useMemo(() => config.blueprints.filter(isEffectivelyEmptyIdea), [config.blueprints]);
-  const formatAlerts = useMemo(() => {
-    if (!selectedRule) return [];
-    return selectedRule.weeklyMix
-      .filter((item) => scheduledQuantity(item) > 0)
-      .map((item) => ({
-        format: item.format,
-        needed: scheduledQuantity(item),
-        available: routineBlueprints.filter((idea) => idea.format === item.format && idea.status !== "used").length,
-      }))
-      .filter((row) => row.available < row.needed);
-  }, [selectedRule, routineBlueprints]);
+
+  const hasGuidelines = Boolean(productionSettings?.productionPrompt?.trim());
+  const rotinaAtiva = config.postingRules.some((rule) => rule.weeklyMix.some((item) => scheduledQuantity(item) > 0));
+  const nextSlot = useMemo(() => describeNextSlot(config.postingRules), [config.postingRules]);
+
+  const realRuns = useMemo(() => (executionRuns ?? []).filter((run) => run.mode === "real"), [executionRuns]);
+  const inProgressRuns = useMemo(() => realRuns.filter((run) => IN_PROGRESS_STATES.includes(run.state)), [realRuns]);
+  const waitingReviewRuns = useMemo(() => realRuns.filter((run) => run.state === "waiting_for_approval"), [realRuns]);
+  const completedRuns = useMemo(() => realRuns.filter((run) => run.state === "completed"), [realRuns]);
+  const failedRuns = useMemo(() => realRuns.filter((run) => run.state === "failed"), [realRuns]);
+  const completedTodayCount = useMemo(() => {
+    const today = new Date().toDateString();
+    return completedRuns.filter((run) => (run.finishedAt ? new Date(run.finishedAt).toDateString() === today : false)).length;
+  }, [completedRuns]);
+
+  const runsByTab: Record<QueueTabId, ExecutionRun[]> = {
+    in_progress: inProgressRuns,
+    waiting_review: waitingReviewRuns,
+    completed: completedRuns,
+    failed: failedRuns,
+  };
+
+  const filteredQueueRuns = useMemo(() => {
+    const query = queueSearch.trim().toLowerCase();
+    const now = Date.now();
+    const periodMs: Record<PeriodFilterId, number | null> = { all: null, today: 24 * 60 * 60 * 1000, "7d": 7 * 24 * 60 * 60 * 1000, "30d": 30 * 24 * 60 * 60 * 1000 };
+    const list = runsByTab[queueTab].filter((run) => {
+      const record = getGenerationRecord(workspace.id, run.id);
+      if (channelFilter !== "all" && record?.channel !== channelFilter) return false;
+      if (queueFormatFilter !== "all" && record?.format !== queueFormatFilter) return false;
+      const limit = periodMs[periodFilter];
+      if (limit !== null && now - new Date(run.createdAt).getTime() > limit) return false;
+      if (query) {
+        const haystack = `${record?.name ?? ""} ${record?.ideaText ?? ""}`.toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      return true;
+    });
+    return [...list].sort((a, b) => (sortOrder === "recent" ? b.createdAt.localeCompare(a.createdAt) : a.createdAt.localeCompare(b.createdAt)));
+  }, [runsByTab, queueTab, queueSearch, channelFilter, queueFormatFilter, periodFilter, sortOrder, workspace.id]);
+
+  const totalQueueRuns = realRuns.length;
+
+  async function handleRetryFailed(run: ExecutionRun) {
+    const record = getGenerationRecord(workspace.id, run.id);
+    if (!record) return;
+    setRetryingRunId(run.id);
+    setRetryError(null);
+    try {
+      const generateInput = {
+        workspaceId: workspace.id,
+        name: record.name,
+        objective: record.objective,
+        ideaText: record.ideaText,
+        format: record.format,
+        channel: record.channel,
+        targetAudience: record.targetAudience,
+      };
+      const result = await generateFromIdea(generateInput);
+      recordGeneration(workspace.id, { ...generateInput, executionRunId: result.executionRunId, ideaId: record.ideaId, createdAt: new Date().toISOString() });
+      await refreshRuns();
+      setQueueTab("in_progress");
+    } catch (cause) {
+      setRetryError(cause instanceof Error ? cause.message : "Não foi possível tentar de novo.");
+    } finally {
+      setRetryingRunId(null);
+    }
+  }
 
   function save(next: ProductionLineConfig, options: { manual?: boolean } = {}) {
     setConfig(next);
@@ -288,17 +381,17 @@ export default function ProductionLinePage() {
     setIdeaEditorOpen(true);
   }
 
-  function saveDraftIdea(mode: IdeaProductionMode) {
+  function saveDraftIdea(ideaMode: IdeaProductionMode) {
     if (!draftIdea || !canPersistIdea(draftIdea)) return;
     const normalizedDraft: ContentBlueprint = {
       ...draftIdea,
       name: draftIdea.name.trim() && draftIdea.name.trim() !== "Nova ideia" ? draftIdea.name.trim() : draftIdea.ideaText.trim().slice(0, 60),
       objective: deriveObjective(draftIdea.objective, draftIdea.ideaText),
-      productionMode: mode,
+      productionMode: ideaMode,
     };
     save({ ...config, blueprints: [...config.blueprints, normalizedDraft] });
     setDraftIdea(null);
-    setIdeaTypeFilter(mode === "standalone" ? "standalone" : "routine");
+    setIdeaTypeFilter(ideaMode === "standalone" ? "standalone" : "routine");
     setIdeaStatusFilter("available");
     setSelectedBlueprintId(normalizedDraft.id);
     setIdeaEditorOpen(false);
@@ -308,91 +401,6 @@ export default function ProductionLinePage() {
     setDraftIdea(null);
     setSelectedBlueprintId(config.blueprints[0]?.id ?? "");
     setIdeaEditorOpen(false);
-  }
-
-  async function handleGenerateRealImage(idea: ContentBlueprint) {
-    if (idea.format === "video") return;
-    setGenerateError(null);
-    // Bug real achado ao vivo (Rodada 2, Fatia 3): ideias criadas antes do limite visível no
-    // textarea (ou coladas de outra fonte) podem já ter mais texto que a API aceita — sem essa
-    // checagem, o usuário só descobria com um erro de validação genérico depois de esperar a
-    // resposta. Avisa antes de sequer chamar a API, com uma mensagem acionável.
-    if (idea.ideaText.length > MAX_IDEA_TEXT_LENGTH) {
-      setGenerateError(`A descrição da ideia tem ${idea.ideaText.length} caracteres — o máximo é ${MAX_IDEA_TEXT_LENGTH}. Edite a ideia e reduza o texto antes de gerar.`);
-      return;
-    }
-    setGeneratingIdeaId(idea.id);
-    try {
-      const fallbackName = (idea.objective || idea.ideaText || "Ideia sem nome").slice(0, 60);
-      // Migração "GPT como motor criativo único" (PR 7/9) — só o motor GPT lê `aspectRatio`/
-      // `referenceAssets`/`forbiddenElements`; o motor legado ignora os 3 campos, sem nenhuma
-      // mudança de comportamento. `referenceAssetRoles` ausente para uma URL cai para
-      // "product_photo" (mesmo comportamento de antes deste campo existir).
-      const referenceAssets = idea.referenceImages.map((url) => ({
-        url,
-        role: idea.referenceAssetRoles?.[url] ?? ("product_photo" as const),
-      }));
-      const forbiddenElements = idea.forbiddenElements
-        ?.split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-      const generateInput = {
-        workspaceId: workspace.id,
-        name: idea.name.trim() || fallbackName,
-        objective: deriveObjective(idea.objective, idea.ideaText),
-        ideaText: idea.ideaText,
-        format: idea.format,
-        channel: idea.channels[0] ?? ("instagram" as ProductionChannel),
-        targetAudience: idea.targetAudience,
-        referenceImages: idea.referenceImages,
-        aspectRatio: idea.aspectRatio,
-        referenceAssets: referenceAssets.length > 0 ? referenceAssets : undefined,
-        forbiddenElements: forbiddenElements && forbiddenElements.length > 0 ? forbiddenElements : undefined,
-      };
-      // Assíncrono (Rodada 2, Fatia 3 — achado ao vivo): a chamada devolve o `executionRunId` na
-      // hora; o pipeline real roda em background no servidor, então o acompanhamento até o
-      // estado terminar é feito aqui via poll (`GET /execution-runs/:id`, sem segurar a conexão
-      // HTTP original por minutos — era isso que causava "erro de conexão" mesmo com o backend
-      // terminando normalmente).
-      const first = await generateRealImageFromIdea(generateInput);
-      let detail = await waitForExecutionRunTerminal(workspace.id, first.executionRunId);
-      let executionRunId = first.executionRunId;
-
-      if (detail.run.state === "failed") {
-        // Regeneração automática (requisito "se não atingir o padrão mínimo, gerar novamente"),
-        // no máximo 1 vez — exceto quando a causa foi oclusão semântica sobre rosto/olhos que o
-        // Repair Loop já tentou e não resolveu (ver `isUnrecoverableSemanticOcclusionFailure`):
-        // regenerar copy/estratégia do zero ali dificilmente resolve um problema de composição
-        // fotográfica, então pular evita gastar mais ~2 minutos e uma chamada paga da OpenAI.
-        const { code, message } = extractExecutionRunFailure(detail);
-        if (code === "QUALITY_GATE_NOT_PASSED" && !isUnrecoverableSemanticOcclusionFailure(message)) {
-          const retry = await generateRealImageFromIdea(generateInput);
-          executionRunId = retry.executionRunId;
-          detail = await waitForExecutionRunTerminal(workspace.id, retry.executionRunId);
-        }
-      }
-
-      if (detail.run.state === "failed") {
-        // Fica em Produção de propósito — falha não é conteúdo pronto pra revisar, e a ideia
-        // continua disponível no tanque para tentar de novo.
-        const { message } = extractExecutionRunFailure(detail);
-        setGenerateError(message || "A geração falhou. Tente novamente.");
-        return;
-      }
-      if (detail.run.state !== "completed" && detail.run.state !== "waiting_for_approval") {
-        // Estourou o tempo máximo de espera do poll sem terminar (rede de segurança, nunca
-        // deveria acontecer na prática) — melhor avisar do que fingir sucesso.
-        setGenerateError("A geração está demorando mais que o esperado. Confira em Revisão em alguns minutos.");
-        return;
-      }
-      recordGeneration(workspace.id, { ...generateInput, executionRunId, ideaId: idea.id, createdAt: new Date().toISOString() });
-      updateBlueprint(idea.id, { status: "used", usedAt: new Date().toISOString() });
-      router.push(`/workspaces/${workspace.id}/review`);
-    } catch (error) {
-      setGenerateError(error instanceof Error ? error.message : "Não foi possível iniciar a geração.");
-    } finally {
-      setGeneratingIdeaId(null);
-    }
   }
 
   function removeBlueprint(id: string) {
@@ -409,7 +417,6 @@ export default function ProductionLinePage() {
 
   function openBlueprint(id: string) {
     setSelectedBlueprintId(id);
-    setActiveView("dashboard");
     setIdeaEditorOpen(true);
   }
 
@@ -454,55 +461,59 @@ export default function ProductionLinePage() {
     updateRule(rule.id, { weeklyMix: rule.weeklyMix.map((item) => (item.id === itemId ? { ...item, ...patch } : item)) });
   }
 
-  return (
-    <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
-      <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wide text-accent">Produção automática</p>
-          <h1 className="mt-1 text-2xl font-semibold text-ink">Produção de conteúdo</h1>
-          <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-            Abasteça o tanque de ideias e acompanhe o que precisa revisar antes de postar.
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-          <Button onClick={addBlueprint}><IconPlus /> {draftIdea ? "Continuar rascunho" : "Nova ideia"}</Button>
-          <Button variant="secondary" onClick={() => setActiveView("schedule")}><IconSliders /> Configurar rotina</Button>
-          <Button variant="secondary" onClick={() => setActiveView("settings")}><IconLayer /> Diretrizes Criativas</Button>
-        </div>
-      </div>
-
-      <div className="mb-4 flex items-center justify-end gap-3">
-        {savedAt ? <p className="text-xs text-ink-muted">Último salvamento: {savedAt}</p> : null}
-        <button type="button" onClick={() => save(DEFAULT_PRODUCTION_CONFIG)} className="text-xs font-medium text-ink-faint hover:text-ink-muted">
-          Restaurar padrão
+  if (mode === "configure") {
+    return (
+      <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
+        <button type="button" onClick={() => setMode("queue")} className="mb-4 text-sm font-medium text-ink-muted hover:text-ink">
+          ← Voltar à produção
         </button>
-      </div>
 
-      {activeView === "dashboard" ? (
-        <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <Card>
-            <CardHeader>
-              <div>
-                <p className="text-sm font-semibold text-ink">Tanque de ideias</p>
-                <p className="text-xs text-ink-muted">Briefing para a próxima geração. Ideias da rotina entram no sorteio; avulsas ficam de fora.</p>
-              </div>
-              <div className="relative">
-                <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-faint" />
-                <input
-                  type="search"
-                  value={ideaSearch}
-                  onChange={(event) => setIdeaSearch(event.target.value)}
-                  placeholder="Buscar por nome ou descrição"
-                  className="w-64 max-w-full rounded-lg border border-border bg-surface py-2 pl-8 pr-3 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft sm:w-72"
+        <Card className="mb-4">
+          <CardHeader>
+            <div>
+              <p className="text-sm font-semibold text-ink">Rotina automática</p>
+              <p className="text-xs text-ink-muted">Onde publicar, em quais horários, e o tanque de ideias que abastece a agenda.</p>
+            </div>
+            <Button onClick={addRule}>Nova regra</Button>
+          </CardHeader>
+          <CardBody>
+            <div className="mb-4 flex flex-wrap gap-2">
+              {config.postingRules.map((rule) => (
+                <button
+                  key={rule.id}
+                  type="button"
+                  onClick={() => setSelectedRuleId(rule.id)}
+                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    selectedRule?.id === rule.id ? "border-ink-faint bg-surface-sunken text-ink" : "border-border bg-surface hover:bg-surface-sunken"
+                  }`}
+                >
+                  {rule.name}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(300px,0.5fr)]">
+              {selectedRule ? (
+                <ScheduleBuilder
+                  rule={selectedRule}
+                  ideas={routineBlueprints}
+                  onRuleChange={(patch) => updateRule(selectedRule.id, patch)}
+                  onWeeklyMixChange={(itemId, patch) => updateWeeklyMix(selectedRule, itemId, patch)}
+                  onRemove={() => removeRule(selectedRule.id)}
+                  canRemove={config.postingRules.length > 1}
                 />
-              </div>
-            </CardHeader>
-            <CardBody>
-              {generateError ? (
-                <div className="mb-3 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-500">{generateError}</div>
               ) : null}
-              <TankMetrics summary={productionSummary} />
-              <div className="mt-4 flex flex-wrap items-end gap-x-6 gap-y-3">
+              {selectedRule ? <SchedulePreview rule={selectedRule} ideas={routineBlueprints} /> : null}
+            </div>
+
+            <div className="mt-5 border-t border-border pt-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-ink">Tanque de ideias</p>
+                  <p className="text-xs text-ink-muted">Estoque de texto para a rotina sortear — gerar a peça continua sendo feito em Criar.</p>
+                </div>
+                <Button variant="secondary" onClick={addBlueprint}><span aria-hidden="true">+</span> {draftIdea ? "Continuar rascunho" : "Nova ideia"}</Button>
+              </div>
+              <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
                 <div>
                   <p className="mb-1.5 text-xs font-medium text-ink-muted">Tipo</p>
                   <SegmentedFilter value={ideaTypeFilter} options={IDEA_TYPE_FILTERS} onChange={setIdeaTypeFilter} />
@@ -524,6 +535,15 @@ export default function ProductionLinePage() {
                     ))}
                   </select>
                 </label>
+                <div className="relative">
+                  <input
+                    type="search"
+                    value={ideaSearch}
+                    onChange={(event) => setIdeaSearch(event.target.value)}
+                    placeholder="Buscar por nome ou descrição"
+                    className="w-64 max-w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+                  />
+                </div>
               </div>
               <IdeaInventory
                 ideas={visibleBlueprints}
@@ -534,128 +554,258 @@ export default function ProductionLinePage() {
                 onToggleStatus={toggleBlueprintStatus}
                 onRemove={removeBlueprint}
                 onCleanEmpty={removeEmptyIdeas}
-                onGenerate={handleGenerateRealImage}
-                generatingIdeaId={generatingIdeaId}
               />
-            </CardBody>
-          </Card>
-
-          <aside className="space-y-4">
-            <RoutineStatusCard rule={selectedRule} />
-            <FormatAlertsCard alerts={formatAlerts} />
-            <ReviewQueue workspaceId={workspace.id} totalPending={pendingReviewCount} />
-          </aside>
-        </section>
-      ) : null}
-
-      {ideaEditorOpen && selectedBlueprint ? (
-        <IdeaFormDialog
-          workspaceId={workspace.id}
-          blueprint={selectedBlueprint}
-          isDraft={selectedBlueprint.id === draftIdea?.id}
-          canSaveDraft={selectedBlueprint.id === draftIdea?.id ? canPersistIdea(draftIdea) : true}
-          onChange={(patch) => updateBlueprint(selectedBlueprint.id, patch)}
-          onClose={() => selectedBlueprint.id === draftIdea?.id ? discardDraftIdea() : setIdeaEditorOpen(false)}
-          onSaveDraft={saveDraftIdea}
-          onDiscardDraft={discardDraftIdea}
-          onRemove={() => selectedBlueprint.id === draftIdea?.id ? discardDraftIdea() : removeBlueprint(selectedBlueprint.id)}
-          onGenerate={() => handleGenerateRealImage(selectedBlueprint)}
-          isGenerating={generatingIdeaId === selectedBlueprint.id}
-          generateError={generateError}
-        />
-      ) : null}
-
-      {activeView === "schedule" ? (
-      <section className="space-y-4">
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(340px,0.55fr)]">
-          <Card>
-            <CardHeader>
-              <div>
-                <p className="text-sm font-semibold text-ink">Configurar rotina</p>
-                <p className="text-xs text-ink-muted">Escolha onde publicar, em quais horários e quantos conteúdos saem por semana.</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" onClick={() => setActiveView("dashboard")}>Voltar ao painel</Button>
-                <Button onClick={addRule}>Nova regra</Button>
-              </div>
-            </CardHeader>
-            <CardBody>
-              <div className="mb-4 flex flex-wrap gap-2">
-                {config.postingRules.map((rule) => (
-                  <button
-                    key={rule.id}
-                    type="button"
-                    onClick={() => setSelectedRuleId(rule.id)}
-                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                      selectedRule?.id === rule.id ? "border-ink-faint bg-surface-sunken text-ink" : "border-border bg-surface hover:bg-surface-sunken"
-                    }`}
-                  >
-                    {rule.name}
-                  </button>
-                ))}
-              </div>
-
-              {selectedRule ? (
-                <ScheduleBuilder
-                  rule={selectedRule}
-                  ideas={routineBlueprints}
-                  onRuleChange={(patch) => updateRule(selectedRule.id, patch)}
-                  onWeeklyMixChange={(itemId, patch) => updateWeeklyMix(selectedRule, itemId, patch)}
-                  onRemove={() => removeRule(selectedRule.id)}
-                  canRemove={config.postingRules.length > 1}
-                />
-              ) : null}
-            </CardBody>
-          </Card>
-
-          <Card className="h-fit">
-            <CardHeader>
-              <div>
-                <p className="text-sm font-semibold text-ink">Resumo da rotina</p>
-                <p className="text-xs text-ink-muted">Confira o resultado antes de salvar.</p>
-              </div>
-            </CardHeader>
-            <CardBody className="space-y-3">
-              {selectedRule ? <SchedulePreview rule={selectedRule} ideas={routineBlueprints} /> : null}
-            </CardBody>
-          </Card>
-        </div>
-
-        <div className="rounded-xl border border-border bg-surface-raised px-3 py-3 sm:px-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-ink">Finalizar rotina</p>
-              <p className="mt-0.5 text-xs text-ink-muted">
-                {saveFeedback ?? (savedAt ? `Último salvamento: ${savedAt}` : "Revise a rotina e salve quando terminar.")}
-              </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+              <p className="text-xs text-ink-muted">{saveFeedback ?? (savedAt ? `Último salvamento: ${savedAt}` : "Revise a rotina e salve quando terminar.")}</p>
               <Button onClick={saveCurrentConfig}>{saveFeedback ? "Salvo" : "Salvar rotina"}</Button>
-              <Button variant="secondary" onClick={() => setActiveView("dashboard")}>Voltar ao painel</Button>
-              <Button variant="secondary" onClick={addBlueprint}>Nova ideia</Button>
+            </div>
+          </CardBody>
+        </Card>
+
+        {ideaEditorOpen && selectedBlueprint ? (
+          <IdeaFormDialog
+            workspaceId={workspace.id}
+            blueprint={selectedBlueprint}
+            isDraft={selectedBlueprint.id === draftIdea?.id}
+            canSaveDraft={selectedBlueprint.id === draftIdea?.id ? canPersistIdea(draftIdea) : true}
+            onChange={(patch) => updateBlueprint(selectedBlueprint.id, patch)}
+            onClose={() => (selectedBlueprint.id === draftIdea?.id ? discardDraftIdea() : setIdeaEditorOpen(false))}
+            onSaveDraft={saveDraftIdea}
+            onDiscardDraft={discardDraftIdea}
+            onRemove={() => (selectedBlueprint.id === draftIdea?.id ? discardDraftIdea() : removeBlueprint(selectedBlueprint.id))}
+          />
+        ) : null}
+      </main>
+    );
+  }
+
+  return (
+    <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="font-display text-2xl font-semibold text-ink">Produção</h1>
+          <p className="mt-1 text-sm text-ink-muted">Acompanhe o que está sendo criado e o que precisa da sua atenção.</p>
+        </div>
+        <Link href={`/workspaces/${workspace.id}/create`}>
+          <Button className="px-5">+ Nova criação</Button>
+        </Link>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-surface-raised px-4 py-2.5 text-sm">
+        <span className="text-ink-muted">Automação:</span>
+        <span className="font-medium text-ink">{rotinaAtiva ? "Ativa" : "Pausada"}</span>
+        {rotinaAtiva && nextSlot ? <span className="text-ink-muted">· Próximo horário planejado: {nextSlot}</span> : null}
+        <span className="mx-1 text-border">·</span>
+        <span className="text-ink-muted">Diretrizes Criativas:</span>
+        <span className="font-medium text-ink">{hasGuidelines ? "ativas" : "não configuradas"}</span>
+        <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`} className="text-xs font-medium text-accent hover:underline">
+          {hasGuidelines ? "Editar" : "Configurar"}
+        </Link>
+        <button type="button" onClick={() => setMode("configure")} className="ml-auto text-xs font-medium text-accent hover:underline">
+          Configurar produção
+        </button>
+      </div>
+
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <button type="button" onClick={() => setQueueTab("in_progress")} className="rounded-xl bg-surface-raised px-3 py-3 text-left hover:bg-surface-sunken">
+          <p className="text-xl font-semibold text-ink">{inProgressRuns.length}</p>
+          <p className="text-xs text-ink-muted">Em produção</p>
+        </button>
+        <button type="button" onClick={() => setQueueTab("waiting_review")} className="rounded-xl bg-surface-raised px-3 py-3 text-left hover:bg-surface-sunken">
+          <p className="text-xl font-semibold text-ink">{waitingReviewRuns.length}</p>
+          <p className="text-xs text-ink-muted">Aguardando revisão</p>
+        </button>
+        <button type="button" onClick={() => setQueueTab("failed")} className="rounded-xl bg-surface-raised px-3 py-3 text-left hover:bg-surface-sunken">
+          <p className="text-xl font-semibold text-ink">{failedRuns.length}</p>
+          <p className="text-xs text-ink-muted">Com erro</p>
+        </button>
+        <button type="button" onClick={() => setQueueTab("completed")} className="rounded-xl bg-surface-raised px-3 py-3 text-left hover:bg-surface-sunken">
+          <p className="text-xl font-semibold text-ink">{completedTodayCount}</p>
+          <p className="text-xs text-ink-muted">Concluídos hoje</p>
+        </button>
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {QUEUE_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setQueueTab(tab.id)}
+            className={`min-h-9 rounded-lg px-3.5 text-sm font-medium transition-colors ${
+              queueTab === tab.id ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:text-ink"
+            }`}
+          >
+            {tab.label} <span className="text-xs opacity-70">({runsByTab[tab.id].length})</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-4 hidden items-center gap-2 sm:flex">
+        <input
+          type="search"
+          value={queueSearch}
+          onChange={(event) => setQueueSearch(event.target.value)}
+          placeholder="Buscar por nome ou ideia…"
+          className="w-56 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+        />
+        <select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value as ProductionChannel | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
+          <option value="all">Todos os canais</option>
+          {CHANNELS.map((channel) => (<option key={channel} value={channel}>{CHANNEL_LABEL[channel]}</option>))}
+        </select>
+        <select value={queueFormatFilter} onChange={(event) => setQueueFormatFilter(event.target.value as ProductionFormat | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
+          <option value="all">Todos os formatos</option>
+          {FORMATS.map((format) => (<option key={format} value={format}>{FORMAT_LABEL[format]}</option>))}
+        </select>
+        <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as PeriodFilterId)} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
+          {PERIOD_FILTERS.map((period) => (<option key={period.id} value={period.id}>{period.label}</option>))}
+        </select>
+        <SegmentedFilter value={sortOrder} options={[{ id: "recent", label: "Recentes" }, { id: "oldest", label: "Antigos" }]} onChange={setSortOrder} />
+      </div>
+
+      <div className="mb-4 sm:hidden">
+        <Button variant="secondary" onClick={() => setFiltersOpen(true)}>Filtros</Button>
+      </div>
+
+      {retryError ? <p className="mb-3 text-sm text-danger">{retryError}</p> : null}
+
+      {totalQueueRuns === 0 ? (
+        <div className="flex flex-col items-center gap-3 rounded-2xl bg-surface-raised px-6 py-14 text-center">
+          <p className="font-display text-lg font-semibold text-ink">Sua produção está vazia</p>
+          <p className="max-w-sm text-sm text-ink-muted">Crie seu primeiro conteúdo com IA e acompanhe o processo por aqui.</p>
+          <Link href={`/workspaces/${workspace.id}/create`} className="mt-1"><Button>Criar conteúdo</Button></Link>
+        </div>
+      ) : filteredQueueRuns.length === 0 ? (
+        <div className="rounded-2xl bg-surface-raised px-6 py-10 text-center text-sm text-ink-muted">Nada aqui para os filtros atuais.</div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredQueueRuns.map((run) => (
+            <ProductionRunCard
+              key={run.id}
+              workspaceId={workspace.id}
+              run={run}
+              onRetry={() => handleRetryFailed(run)}
+              retrying={retryingRunId === run.id}
+            />
+          ))}
+        </div>
+      )}
+
+      {queueTab === "completed" && completedRuns.length > 0 ? (
+        <div className="mt-4 text-right">
+          <Link href={`/workspaces/${workspace.id}/campaigns`} className="text-sm font-medium text-accent hover:underline">Ver todos os conteúdos →</Link>
+        </div>
+      ) : null}
+
+      {filtersOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/40 sm:hidden" onClick={() => setFiltersOpen(false)}>
+          <div className="w-full rounded-t-2xl bg-surface-raised p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]" onClick={(event) => event.stopPropagation()}>
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border" />
+            <div className="flex flex-col gap-3">
+              <input
+                type="search"
+                value={queueSearch}
+                onChange={(event) => setQueueSearch(event.target.value)}
+                placeholder="Buscar por nome ou ideia…"
+                className="rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent"
+              />
+              <select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value as ProductionChannel | "all")} className="rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-ink outline-none">
+                <option value="all">Todos os canais</option>
+                {CHANNELS.map((channel) => (<option key={channel} value={channel}>{CHANNEL_LABEL[channel]}</option>))}
+              </select>
+              <select value={queueFormatFilter} onChange={(event) => setQueueFormatFilter(event.target.value as ProductionFormat | "all")} className="rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-ink outline-none">
+                <option value="all">Todos os formatos</option>
+                {FORMATS.map((format) => (<option key={format} value={format}>{FORMAT_LABEL[format]}</option>))}
+              </select>
+              <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as PeriodFilterId)} className="rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-ink outline-none">
+                {PERIOD_FILTERS.map((period) => (<option key={period.id} value={period.id}>{period.label}</option>))}
+              </select>
+              <Button onClick={() => setFiltersOpen(false)}>Aplicar</Button>
             </div>
           </div>
         </div>
-      </section>
-      ) : null}
-
-      {activeView === "settings" ? (
-        <section>
-          <Card>
-            <CardHeader>
-              <div>
-                <p className="text-sm font-semibold text-ink">Diretrizes Criativas</p>
-                <p className="text-xs text-ink-muted">Instruções permanentes deste workspace, usadas automaticamente em toda nova geração pelo motor GPT — configure uma vez, sem precisar repetir na ideia.</p>
-              </div>
-              <Button variant="secondary" onClick={() => setActiveView("dashboard")}>Voltar ao painel</Button>
-            </CardHeader>
-            <CardBody>
-              <ProductionSettingsPanel workspaceId={workspace.id} />
-            </CardBody>
-          </Card>
-        </section>
       ) : null}
     </main>
+  );
+}
+
+function ProductionRunCard({
+  workspaceId,
+  run,
+  onRetry,
+  retrying,
+}: {
+  workspaceId: string;
+  run: ExecutionRun;
+  onRetry: () => void;
+  retrying: boolean;
+}) {
+  const needsDetail = run.state === "completed" || run.state === "waiting_for_approval" || run.state === "failed";
+  const { data: detail } = useExecutionRun(workspaceId, needsDetail ? run.id : undefined);
+  const [expanded, setExpanded] = useState(false);
+  const summary = deriveRunSummary(workspaceId, run, detail);
+  const thumbnail = summary.images[0]?.uri;
+
+  return (
+    <div className="overflow-hidden rounded-xl bg-surface-raised">
+      {thumbnail ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={thumbnail} alt="" className="aspect-square w-full object-cover" />
+      ) : run.state === "failed" ? null : (
+        <div className="flex aspect-[3/2] w-full items-center justify-center bg-surface-sunken text-2xl text-ink-faint" aria-hidden="true">
+          {IN_PROGRESS_STATES.includes(run.state) ? "✦" : "🖼"}
+        </div>
+      )}
+
+      <div className="space-y-2 p-3.5">
+        <p className="truncate text-sm font-semibold text-ink">{summary.title}</p>
+        {summary.record ? (
+          <p className="text-xs text-ink-muted">{CHANNEL_LABEL[summary.record.channel]} · {FORMAT_LABEL[summary.record.format]}</p>
+        ) : null}
+
+        {run.state === "failed" ? (
+          <>
+            <p className="text-sm text-danger">Não foi possível concluir a geração.</p>
+            {expanded ? <p className="rounded-lg bg-danger-bg px-2.5 py-2 text-xs text-danger">{summary.failureMessage || "Motivo não informado pelo provedor."}</p> : null}
+            <div className="flex flex-wrap gap-2 pt-1">
+              {summary.record ? (
+                <Button className="min-h-8 px-3 py-1.5 text-xs" disabled={retrying} onClick={onRetry}>{retrying ? "Tentando…" : "Tentar novamente"}</Button>
+              ) : null}
+              <Button variant="secondary" className="min-h-8 px-3 py-1.5 text-xs" onClick={() => setExpanded((prev) => !prev)}>Detalhes</Button>
+            </div>
+          </>
+        ) : run.state === "waiting_for_approval" ? (
+          <>
+            <StatusBadge status="waiting_for_approval" />
+            <Link href={`/workspaces/${workspaceId}/review`}>
+              <Button className="min-h-8 w-full px-3 py-1.5 text-xs">Revisar</Button>
+            </Link>
+          </>
+        ) : run.state === "completed" ? (
+          <>
+            <p className="text-xs text-ink-muted">Concluído · {formatRelativeTime(run.finishedAt ?? run.updatedAt)}</p>
+            <Link href={`/workspaces/${workspaceId}/campaigns`} className="text-xs font-medium text-accent hover:underline">Ver em Conteúdos →</Link>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-accent">{RUN_STATE_LABEL[run.state] ?? "Processando…"}</p>
+            <p className="text-xs text-ink-faint">Iniciado há {formatRelativeTime(run.createdAt)}</p>
+            {summary.record ? (
+              <button type="button" onClick={() => setExpanded((prev) => !prev)} className="text-xs font-medium text-ink-muted hover:text-ink">
+                {expanded ? "Ocultar detalhes" : "Ver detalhes"}
+              </button>
+            ) : null}
+            {expanded && summary.record ? (
+              <div className="rounded-lg bg-surface-sunken px-2.5 py-2 text-xs text-ink-muted">
+                <p className="whitespace-pre-wrap">{summary.record.ideaText}</p>
+                {summary.record.targetAudience ? <p className="mt-1.5">Público: {summary.record.targetAudience}</p> : null}
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -669,9 +819,6 @@ function IdeaFormDialog({
   onSaveDraft,
   onDiscardDraft,
   onRemove,
-  onGenerate,
-  isGenerating,
-  generateError,
 }: {
   workspaceId: string;
   blueprint: ContentBlueprint;
@@ -682,9 +829,6 @@ function IdeaFormDialog({
   onSaveDraft: (mode: IdeaProductionMode) => void;
   onDiscardDraft: () => void;
   onRemove: () => void;
-  onGenerate: () => void;
-  isGenerating: boolean;
-  generateError: string | null;
 }) {
   const standalone = isStandaloneIdea(blueprint);
   return (
@@ -696,7 +840,7 @@ function IdeaFormDialog({
               <p className="text-xs font-semibold uppercase tracking-wide text-accent">{isDraft ? "Nova ideia" : "Editar ideia"}</p>
               <h2 className="mt-1 text-lg font-semibold text-ink">{isDraft ? "Abastecer tanque de conteúdo" : blueprint.name || "Ideia sem nome"}</h2>
               <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-                {isDraft ? "Preencha a ideia e o formato. No final, escolha se ela entra na rotina ou se já sai como avulsa, fora da agenda." : "Preencha primeiro a ideia e o formato. Referências e detalhes aparecem separados para não poluir o fluxo."}
+                {isDraft ? "Preencha a ideia e o formato para entrar no estoque da rotina — gerar a peça é sempre em Criar." : "Preencha primeiro a ideia e o formato. Referências e detalhes aparecem separados para não poluir o fluxo."}
               </p>
             </div>
             <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-xl leading-none text-ink-muted hover:bg-surface-sunken hover:text-ink" aria-label="Fechar">
@@ -712,13 +856,7 @@ function IdeaFormDialog({
               <p>Este conteúdo fica fora da rotina automática — não entra no sorteio semanal.</p>
             </div>
           ) : null}
-          <BlueprintEditor
-            workspaceId={workspaceId}
-            blueprint={blueprint}
-            onChange={onChange}
-            onRemove={onRemove}
-            canRemove
-          />
+          <BlueprintEditor workspaceId={workspaceId} blueprint={blueprint} onChange={onChange} onRemove={onRemove} canRemove />
         </div>
 
         <footer className="border-t border-border bg-surface-raised px-4 py-3 sm:px-5">
@@ -732,123 +870,13 @@ function IdeaFormDialog({
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
-              {generateError ? <p className="text-xs text-red-600">{generateError}</p> : null}
-              <div className="flex flex-wrap justify-between gap-2">
-                <Button variant="danger" onClick={onRemove}>Remover ideia</Button>
-                <div className="flex flex-wrap gap-2">
-                  {blueprint.format !== "video" ? (
-                    <Button variant="secondary" disabled={isGenerating} onClick={onGenerate} title="Chama a OpenAI de verdade — gera custo real">
-                      {isGenerating ? "Gerando…" : "Gerar imagem real"}
-                    </Button>
-                  ) : null}
-                  <Button onClick={onClose}>Concluir</Button>
-                </div>
-              </div>
+            <div className="flex flex-wrap justify-between gap-2">
+              <Button variant="danger" onClick={onRemove}>Remover ideia</Button>
+              <Button onClick={onClose}>Concluir</Button>
             </div>
           )}
         </footer>
       </section>
-    </div>
-  );
-}
-
-function RoutineStatusCard({ rule }: { rule?: PostingRule }) {
-  const activeRows = rule ? rule.weeklyMix.filter((item) => scheduledQuantity(item) > 0) : [];
-  return (
-    <Card className="h-fit">
-      <CardHeader>
-        <div>
-          <p className="text-sm font-semibold text-ink">Rotina ativa</p>
-          <p className="text-xs text-ink-muted">{rule?.name ?? "Nenhuma rotina configurada"}</p>
-        </div>
-      </CardHeader>
-      <CardBody>
-        {rule ? (
-          <>
-            <div className="grid grid-cols-2 gap-2">
-              <Metric label="Posts/semana" value={totalWeeklyPosts(rule)} />
-              <Metric label="Canais" value={rule.channels.length} />
-            </div>
-            {activeRows.length > 0 ? (
-              <div className="mt-3 space-y-2">
-                {activeRows.map((row) => (
-                  <div key={row.id} className="flex items-center justify-between gap-3 text-xs">
-                    <span className="flex items-center gap-1.5 font-medium text-ink"><IconFormat format={row.format} className="h-3.5 w-3.5 text-ink-faint" />{FORMAT_LABEL[row.format]}</span>
-                    <span className="text-ink-muted">{formatScheduleLabel(row)}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-3 text-xs text-ink-muted">Nenhum formato ativo ainda.</p>
-            )}
-          </>
-        ) : (
-          <div className="rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-sm text-ink-muted">
-            Nenhuma rotina configurada.
-          </div>
-        )}
-      </CardBody>
-    </Card>
-  );
-}
-
-function FormatAlertsCard({ alerts }: { alerts: { format: ProductionFormat; needed: number; available: number }[] }) {
-  return (
-    <Card className="h-fit">
-      <CardHeader>
-        <div>
-          <p className="text-sm font-semibold text-ink">Alertas do tanque</p>
-          <p className="text-xs text-ink-muted">O que precisa de atenção antes da rotina rodar.</p>
-        </div>
-      </CardHeader>
-      <CardBody>
-        {alerts.length === 0 ? (
-          <p className="text-sm text-ink-muted">Estoque em dia para todos os formatos ativos na rotina.</p>
-        ) : (
-          <div className="space-y-3">
-            {alerts.map((alert) => (
-              <div key={alert.format} className="flex items-start gap-2.5">
-                <IconWarn className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-ink">{FORMAT_LABEL[alert.format]} sem estoque suficiente</p>
-                  <p className="text-xs text-ink-muted">{alert.available} no tanque para {alert.needed} por semana.</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardBody>
-    </Card>
-  );
-}
-
-function ReviewQueue({ workspaceId, totalPending }: { workspaceId: string; totalPending: number }) {
-  return (
-    <Card className="h-fit">
-      <CardBody className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <IconTray className="h-6 w-6 shrink-0 text-ink-faint" />
-          <div>
-            <p className="text-sm font-semibold text-ink">{totalPending} peça(s) para revisar</p>
-            <p className="text-xs text-ink-muted">{totalPending > 0 ? "Aguardando sua aprovação." : "Nada pendente no momento."}</p>
-          </div>
-        </div>
-        <Link href={`/workspaces/${workspaceId}/review`} className="shrink-0 text-xs font-medium text-accent hover:underline">
-          Ir para Revisão
-        </Link>
-      </CardBody>
-    </Card>
-  );
-}
-
-function TankMetrics({ summary }: { summary: { ideas: number; availableIdeas: number; usedIdeas: number; standaloneIdeas: number } }) {
-  return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      <Metric label="No tanque" value={summary.availableIdeas} />
-      <Metric label="Usadas" value={summary.usedIdeas} />
-      <Metric label="Rotina" value={summary.ideas} />
-      <Metric label="Avulsas" value={summary.standaloneIdeas} />
     </div>
   );
 }
@@ -862,8 +890,6 @@ function IdeaInventory({
   onToggleStatus,
   onRemove,
   onCleanEmpty,
-  onGenerate,
-  generatingIdeaId,
 }: {
   ideas: ContentBlueprint[];
   totalIdeas: number;
@@ -873,8 +899,6 @@ function IdeaInventory({
   onToggleStatus: (idea: ContentBlueprint) => void;
   onRemove: (id: string) => void;
   onCleanEmpty: () => void;
-  onGenerate: (idea: ContentBlueprint) => void;
-  generatingIdeaId: string | null;
 }) {
   return (
     <section className="mt-4">
@@ -887,8 +911,8 @@ function IdeaInventory({
         ) : null}
       </div>
 
-      <div className="mt-3 max-h-[620px] overflow-y-auto rounded-lg border border-border">
-        <div className="hidden grid-cols-[2.1fr_0.9fr_1.3fr_0.85fr_0.85fr_1.3fr] gap-3 border-b border-border bg-surface-sunken px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint sm:grid">
+      <div className="mt-3 max-h-[480px] overflow-y-auto rounded-lg border border-border">
+        <div className="hidden grid-cols-[2.3fr_0.9fr_1.3fr_0.85fr_0.85fr_1fr] gap-3 border-b border-border bg-surface-sunken px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint sm:grid">
           <span>Ideia</span>
           <span>Formato</span>
           <span>Canais</span>
@@ -905,7 +929,7 @@ function IdeaInventory({
           return (
             <div
               key={idea.id}
-              className={`grid grid-cols-1 gap-2 border-b border-border px-3 py-3 last:border-b-0 sm:grid-cols-[2.1fr_0.9fr_1.3fr_0.85fr_0.85fr_1.3fr] sm:items-center sm:gap-3 ${selected ? "bg-accent-soft" : "hover:bg-surface-sunken"}`}
+              className={`grid grid-cols-1 gap-2 border-b border-border px-3 py-3 last:border-b-0 sm:grid-cols-[2.3fr_0.9fr_1.3fr_0.85fr_0.85fr_1fr] sm:items-center sm:gap-3 ${selected ? "bg-accent-soft" : "hover:bg-surface-sunken"}`}
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-ink">{idea.name.trim() || "Ideia sem nome"}</p>
@@ -931,17 +955,6 @@ function IdeaInventory({
               </span>
               <div className="flex flex-wrap justify-start gap-1.5 sm:justify-end">
                 <Button className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onOpen(idea.id)}>Abrir</Button>
-                {idea.format !== "video" ? (
-                  <Button
-                    variant="secondary"
-                    className="min-h-8 px-2.5 py-1.5 text-xs"
-                    disabled={generatingIdeaId === idea.id}
-                    onClick={() => onGenerate(idea)}
-                    title="Chama a OpenAI de verdade — gera custo real"
-                  >
-                    {generatingIdeaId === idea.id ? "Gerando…" : "Gerar imagem real"}
-                  </Button>
-                ) : null}
                 <Button variant="ghost" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onToggleStatus(idea)}>
                   {idea.status === "used" ? "Voltar" : "Marcar usada"}
                 </Button>
@@ -1022,12 +1035,7 @@ function ScheduleBuilder({
         <PublishModePicker value={rule.publishMode} onChange={(publishMode) => onRuleChange({ publishMode })} />
       </section>
 
-      <RuleAdvancedSettings
-        rule={rule}
-        onChange={onRuleChange}
-        onRemove={onRemove}
-        canRemove={canRemove}
-      />
+      <RuleAdvancedSettings rule={rule} onChange={onRuleChange} onRemove={onRemove} canRemove={canRemove} />
     </div>
   );
 }
@@ -1104,10 +1112,7 @@ function WeeklyMixEditor({ rule, ideas, onChange }: { rule: PostingRule; ideas: 
       return;
     }
     const nextSchedule = defaultSchedule(item.format);
-    onChange(item.id, {
-      ...nextSchedule,
-      quantity: nextSchedule.weekdays.length * nextSchedule.times.length,
-    });
+    onChange(item.id, { ...nextSchedule, quantity: nextSchedule.weekdays.length * nextSchedule.times.length });
     setActiveFormat(item.format);
   }
 
@@ -1124,7 +1129,7 @@ function WeeklyMixEditor({ rule, ideas, onChange }: { rule: PostingRule; ideas: 
               <button
                 key={item.id}
                 type="button"
-                onClick={() => enabled ? setActiveFormat(item.format) : toggleFormat(item)}
+                onClick={() => (enabled ? setActiveFormat(item.format) : toggleFormat(item))}
                 className={`rounded-lg border p-3 text-left transition-colors ${
                   enabled
                     ? selected ? "border-ink bg-surface-sunken" : "border-ink-faint bg-surface-raised hover:bg-surface-sunken"
@@ -1151,12 +1156,7 @@ function WeeklyMixEditor({ rule, ideas, onChange }: { rule: PostingRule; ideas: 
       </div>
 
       {activeItem ? (
-        <FormatSchedulePanel
-          item={activeItem}
-          ideas={ideas}
-          onDisable={() => toggleFormat(activeItem)}
-          onChange={(patch) => onChange(activeItem.id, patch)}
-        />
+        <FormatSchedulePanel item={activeItem} ideas={ideas} onDisable={() => toggleFormat(activeItem)} onChange={(patch) => onChange(activeItem.id, patch)} />
       ) : (
         <div className="rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-sm text-ink-muted">
           Nenhum tipo está ativo nesta rotina. Escolha imagem, carrossel ou vídeo para configurar os dias e horários.
@@ -1187,11 +1187,7 @@ function FormatSchedulePanel({
   function updateSchedule(nextWeekdays: ProductionWeekday[], nextTimes: string[]) {
     const normalizedWeekdays = nextWeekdays.length > 0 ? nextWeekdays : weekdays;
     const normalizedTimes = nextTimes.length > 0 ? nextTimes : times;
-    onChange({
-      weekdays: normalizedWeekdays,
-      times: normalizedTimes,
-      quantity: normalizedWeekdays.length * normalizedTimes.length,
-    });
+    onChange({ weekdays: normalizedWeekdays, times: normalizedTimes, quantity: normalizedWeekdays.length * normalizedTimes.length });
   }
 
   return (
@@ -1206,12 +1202,8 @@ function FormatSchedulePanel({
               </span>
             ) : null}
           </p>
-          <p className="mt-0.5 text-xs text-ink-muted">
-            {quantity} por semana · {available} no tanque · {used} usadas
-          </p>
-          {!hasEnough ? (
-            <p className="mt-1 text-xs text-amber-500">Faltam ideias: {available} no tanque para {quantity} por semana.</p>
-          ) : null}
+          <p className="mt-0.5 text-xs text-ink-muted">{quantity} por semana · {available} no tanque · {used} usadas</p>
+          {!hasEnough ? <p className="mt-1 text-xs text-amber-500">Faltam ideias: {available} no tanque para {quantity} por semana.</p> : null}
         </div>
         <Button variant="secondary" className="min-h-8 px-3 py-1.5 text-xs" onClick={onDisable}>Desligar tipo</Button>
       </div>
@@ -1261,7 +1253,7 @@ function TimeSlotPicker({ times, onChange, compact = false }: { times: string[];
   const normalizedTimes = times.length > 0 ? times : ["09:00"];
 
   function updateTime(index: number, value: string) {
-    const next = normalizedTimes.map((time, currentIndex) => currentIndex === index ? value : time).filter(Boolean);
+    const next = normalizedTimes.map((time, currentIndex) => (currentIndex === index ? value : time)).filter(Boolean);
     onChange(next);
   }
 
@@ -1291,7 +1283,7 @@ function TimeSlotPicker({ times, onChange, compact = false }: { times: string[];
               <button
                 key={time}
                 type="button"
-                onClick={() => selected ? onChange(normalizedTimes.filter((item) => item !== time || normalizedTimes.length === 1)) : addQuickTime(time)}
+                onClick={() => (selected ? onChange(normalizedTimes.filter((item) => item !== time || normalizedTimes.length === 1)) : addQuickTime(time))}
                 className={`min-h-8 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
                   selected ? "border-ink-faint bg-surface-sunken text-ink" : "border-border bg-surface text-ink-muted hover:bg-surface-sunken hover:text-ink"
                 }`}
@@ -1308,41 +1300,14 @@ function TimeSlotPicker({ times, onChange, compact = false }: { times: string[];
           <div key={`${time}-${index}`} className="rounded-lg border border-border bg-surface p-2">
             <Label htmlFor={`rule-time-${index}`}>{`Horário ${index + 1}`}</Label>
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
-              <TimeSelect
-                id={`rule-time-hour-${index}`}
-                label="Hora"
-                value={timePart(time, "hour")}
-                options={hourOptions(time)}
-                onChange={(hour) => updateTime(index, `${hour}:${timePart(time, "minute")}`)}
-              />
-              <TimeSelect
-                id={`rule-time-minute-${index}`}
-                label="Min"
-                value={timePart(time, "minute")}
-                options={minuteOptions(time)}
-                onChange={(minute) => updateTime(index, `${timePart(time, "hour")}:${minute}`)}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                className="mt-5 min-h-9 px-2 text-xs"
-                disabled={normalizedTimes.length <= 1}
-                onClick={() => removeTime(index)}
-              >
-                Remover
-              </Button>
+              <TimeSelect id={`rule-time-hour-${index}`} label="Hora" value={timePart(time, "hour")} options={hourOptions(time)} onChange={(hour) => updateTime(index, `${hour}:${timePart(time, "minute")}`)} />
+              <TimeSelect id={`rule-time-minute-${index}`} label="Min" value={timePart(time, "minute")} options={minuteOptions(time)} onChange={(minute) => updateTime(index, `${timePart(time, "hour")}:${minute}`)} />
+              <Button type="button" variant="ghost" className="mt-5 min-h-9 px-2 text-xs" disabled={normalizedTimes.length <= 1} onClick={() => removeTime(index)}>Remover</Button>
             </div>
           </div>
         ))}
       </div>
-      <Button
-        type="button"
-        variant="secondary"
-        className="min-h-9 px-3 py-1.5 text-xs"
-        onClick={addNextTime}
-      >
-        + Horário
-      </Button>
+      <Button type="button" variant="secondary" className="min-h-9 px-3 py-1.5 text-xs" onClick={addNextTime}>+ Horário</Button>
     </div>
   );
 }
@@ -1357,9 +1322,7 @@ function TimeSelect({ id, label, value, options, onChange }: { id: string; label
         onChange={(event) => onChange(event.target.value)}
         className="h-9 w-full rounded-lg border border-border bg-surface-raised px-2 text-sm font-semibold text-ink outline-none focus:border-ink-faint focus:ring-2 focus:ring-surface-sunken"
       >
-        {options.map((option) => (
-          <option key={option} value={option}>{option}</option>
-        ))}
+        {options.map((option) => (<option key={option} value={option}>{option}</option>))}
       </select>
     </label>
   );
@@ -1392,12 +1355,7 @@ function RuleAdvancedSettings({ rule, onChange, onRemove, canRemove }: { rule: P
   const [open, setOpen] = useState(false);
 
   return (
-    <CollapsibleSection
-      title="Ajustes avançados"
-      description="Nome da regra, fuso horário, limite diário e intervalo mínimo."
-      open={open}
-      onToggle={() => setOpen(!open)}
-    >
+    <CollapsibleSection title="Ajustes avançados" description="Nome da regra, fuso horário, limite diário e intervalo mínimo." open={open} onToggle={() => setOpen(!open)}>
       <div>
         <Label htmlFor="rule-name">Nome da rotina</Label>
         <Input id="rule-name" value={rule.name} onChange={(event) => onChange({ name: event.target.value })} />
@@ -1419,55 +1377,8 @@ function RuleAdvancedSettings({ rule, onChange, onRemove, canRemove }: { rule: P
   );
 }
 
-function NumberStepper({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
-  function clamp(next: number) {
-    return Math.max(min, Math.min(max, next));
-  }
-
-  return (
-    <div>
-      <Label>{label}</Label>
-      <div className="grid grid-cols-[40px_minmax(0,1fr)_40px] overflow-hidden rounded-lg border border-border bg-surface">
-        <button
-          type="button"
-          className="min-h-10 border-r border-border text-lg font-semibold text-ink-muted hover:bg-surface-sunken disabled:opacity-40"
-          disabled={value <= min}
-          onClick={() => onChange(clamp(value - 1))}
-          aria-label={`Diminuir ${label.toLowerCase()}`}
-        >
-          -
-        </button>
-        <Input
-          type="number"
-          min={min}
-          max={max}
-          value={value}
-          className="rounded-none border-0 text-center focus:ring-0"
-          onChange={(event) => {
-            const next = Number(event.target.value);
-            if (Number.isFinite(next)) onChange(clamp(next));
-          }}
-        />
-        <button
-          type="button"
-          className="min-h-10 border-l border-border text-lg font-semibold text-ink-muted hover:bg-surface-sunken disabled:opacity-40"
-          disabled={value >= max}
-          onClick={() => onChange(clamp(value + 1))}
-          aria-label={`Aumentar ${label.toLowerCase()}`}
-        >
-          +
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function StepMarker({ value }: { value: number }) {
-  return (
-    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-white">
-      {value}
-    </span>
-  );
+  return <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-white">{value}</span>;
 }
 
 function totalWeeklyPosts(rule: PostingRule): number {
@@ -1627,13 +1538,7 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
       >
         <div>
           <Label htmlFor="blueprint-links">Links de referência</Label>
-          <Textarea
-            id="blueprint-links"
-            rows={3}
-            value={sourceLinksText}
-            placeholder={"https://site.com/produto\nhttps://instagram.com/p/referencia"}
-            onChange={(event) => onChange({ sourceLinks: splitLines(event.target.value) })}
-          />
+          <Textarea id="blueprint-links" rows={3} value={sourceLinksText} placeholder={"https://site.com/produto\nhttps://instagram.com/p/referencia"} onChange={(event) => onChange({ sourceLinks: splitLines(event.target.value) })} />
         </div>
         <div>
           <Label htmlFor="blueprint-files">Arquivos de referência</Label>
@@ -1647,9 +1552,7 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
               onChange={(event) => uploadReferences(event.target.files)}
               className="block w-full text-sm text-ink-muted file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-2 file:text-sm file:font-medium file:text-white"
             />
-            <p className="mt-2 text-xs text-ink-muted">
-              Envie print, foto, imagem ou vídeo curto. O arquivo enviado vira referência da ideia.
-            </p>
+            <p className="mt-2 text-xs text-ink-muted">Envie print, foto, imagem ou vídeo curto. O arquivo enviado vira referência da ideia.</p>
             {uploading ? <p className="mt-2 text-xs text-accent">Enviando arquivo...</p> : null}
             {uploadError ? <p className="mt-2 text-xs text-red-600">{uploadError}</p> : null}
           </div>
@@ -1657,9 +1560,7 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
             <div className="mt-2 space-y-2">
               {blueprint.referenceImages.map((url) => (
                 <div key={url} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2">
-                  <a href={url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-xs font-medium text-accent hover:underline">
-                    {fileLabel(url)}
-                  </a>
+                  <a href={url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-xs font-medium text-accent hover:underline">{fileLabel(url)}</a>
                   <div className="flex shrink-0 items-center gap-2">
                     <select
                       aria-label={`Papel da referência ${fileLabel(url)}`}
@@ -1667,30 +1568,19 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
                       onChange={(event) => setReferenceRole(url, event.target.value as ReferenceAssetRole)}
                       className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
                     >
-                      {REFERENCE_ASSET_ROLE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
+                      {REFERENCE_ASSET_ROLE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
                     </select>
-                    <button type="button" onClick={() => removeReference(url)} className="text-xs font-medium text-ink-muted hover:text-red-600">
-                      Remover
-                    </button>
+                    <button type="button" onClick={() => removeReference(url)} className="text-xs font-medium text-ink-muted hover:text-red-600">Remover</button>
                   </div>
                 </div>
               ))}
-              <p className="text-xs text-ink-muted">
-                O papel de cada referência (foto do produto, print de tela, logo) é usado só quando o motor GPT está ativo — orienta como cada arquivo entra na composição final, em vez de ser redesenhado pela IA.
-              </p>
+              <p className="text-xs text-ink-muted">O papel de cada referência (foto do produto, print de tela, logo) é usado só quando o motor GPT está ativo.</p>
             </div>
           ) : null}
         </div>
       </CollapsibleSection>
 
-      <CollapsibleSection
-        title="Detalhes avançados"
-        description="Ajuste legenda, direção visual e status apenas quando precisar de controle fino."
-        open={advancedOpen}
-        onToggle={() => setAdvancedOpen(!advancedOpen)}
-      >
+      <CollapsibleSection title="Detalhes avançados" description="Ajuste legenda, direção visual e status apenas quando precisar de controle fino." open={advancedOpen} onToggle={() => setAdvancedOpen(!advancedOpen)}>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <div>
             <Label htmlFor="blueprint-caption">Direção de legenda</Label>
@@ -1704,12 +1594,7 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
 
         <div className="mt-3">
           <Label htmlFor="blueprint-audience">Público-alvo</Label>
-          <Input
-            id="blueprint-audience"
-            value={blueprint.targetAudience ?? ""}
-            placeholder="Ex.: mulheres de 25-40 anos interessadas em moda sustentável"
-            onChange={(event) => onChange({ targetAudience: event.target.value })}
-          />
+          <Input id="blueprint-audience" value={blueprint.targetAudience ?? ""} placeholder="Ex.: mulheres de 25-40 anos interessadas em moda sustentável" onChange={(event) => onChange({ targetAudience: event.target.value })} />
           <p className="mt-1 text-xs text-ink-muted">Usado só na geração real de imagem — sem isso, entra um público genérico.</p>
         </div>
 
@@ -1723,20 +1608,13 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
               className="w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
             >
               <option value="">Automático (4:5)</option>
-              {ASPECT_RATIO_OPTIONS.map((ratio) => (
-                <option key={ratio} value={ratio}>{ratio}</option>
-              ))}
+              {ASPECT_RATIO_OPTIONS.map((ratio) => (<option key={ratio} value={ratio}>{ratio}</option>))}
             </select>
             <p className="mt-1 text-xs text-ink-muted">Usado só pelo motor GPT (quando ativo) — o motor padrão continua decidindo o formato pelo canal.</p>
           </div>
           <div>
             <Label htmlFor="blueprint-forbidden">Elementos proibidos</Label>
-            <Input
-              id="blueprint-forbidden"
-              value={blueprint.forbiddenElements ?? ""}
-              placeholder="Ex.: logo de concorrente, preço antigo"
-              onChange={(event) => onChange({ forbiddenElements: event.target.value })}
-            />
+            <Input id="blueprint-forbidden" value={blueprint.forbiddenElements ?? ""} placeholder="Ex.: logo de concorrente, preço antigo" onChange={(event) => onChange({ forbiddenElements: event.target.value })} />
             <p className="mt-1 text-xs text-ink-muted">Lista separada por vírgula do que a peça NUNCA deve mostrar. Usado só pelo motor GPT (quando ativo).</p>
           </div>
         </div>
@@ -1791,12 +1669,7 @@ function ModeToggle({ value, onChange, label }: { value: "manual" | "auto"; onCh
       <p className="mb-1.5 text-xs font-medium text-ink-muted">{label}</p>
       <div className="inline-flex rounded-lg border border-border bg-surface p-1">
         {(["manual", "auto"] as const).map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            onClick={() => onChange(mode)}
-            className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === mode ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}
-          >
+          <button key={mode} type="button" onClick={() => onChange(mode)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === mode ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}>
             {mode === "manual" ? "Manual" : "Automático"}
           </button>
         ))}
@@ -1811,12 +1684,7 @@ function IdeaModeToggle({ value, onChange }: { value: IdeaProductionMode; onChan
       <p className="mb-1.5 text-xs font-medium text-ink-muted">Tipo</p>
       <div className="inline-flex rounded-lg border border-border bg-surface p-1">
         {(["routine", "standalone"] as const).map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            onClick={() => onChange(mode)}
-            className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === mode ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}
-          >
+          <button key={mode} type="button" onClick={() => onChange(mode)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === mode ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}>
             {mode === "routine" ? "Rotina" : "Avulsa"}
           </button>
         ))}
@@ -1832,12 +1700,7 @@ function IdeaStatusToggle({ value, onChange }: { value: "available" | "used"; on
       <p className="mb-1.5 text-xs font-medium text-ink-muted">Status da ideia</p>
       <div className="inline-flex rounded-lg border border-border bg-surface p-1">
         {(["available", "used"] as const).map((status) => (
-          <button
-            key={status}
-            type="button"
-            onClick={() => onChange(status)}
-            className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === status ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}
-          >
+          <button key={status} type="button" onClick={() => onChange(status)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === status ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}>
             {status === "available" ? "No tanque" : "Usada"}
           </button>
         ))}
@@ -1869,12 +1732,8 @@ function CollapsibleSection({
           <span className="mt-0.5 block text-xs text-ink-muted">{description}</span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
-          {typeof badge === "number" && badge > 0 ? (
-            <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">{badge}</span>
-          ) : null}
-          <span className="rounded-md border border-border bg-surface-raised px-2 py-1 text-xs font-semibold text-ink-muted">
-            {open ? "Ocultar" : "Abrir"}
-          </span>
+          {typeof badge === "number" && badge > 0 ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">{badge}</span> : null}
+          <span className="rounded-md border border-border bg-surface-raised px-2 py-1 text-xs font-semibold text-ink-muted">{open ? "Ocultar" : "Abrir"}</span>
         </span>
       </button>
       {open ? <div className="mt-3 grid grid-cols-1 gap-3">{children}</div> : null}
@@ -1909,9 +1768,7 @@ function canPersistIdea(idea: ContentBlueprint): boolean {
 }
 
 function isEffectivelyEmptyIdea(idea: ContentBlueprint): boolean {
-  const textFields = [idea.ideaText, idea.objective, idea.theme, idea.captionDirection, idea.creativeDirection]
-    .map((value) => value.trim())
-    .filter(Boolean);
+  const textFields = [idea.ideaText, idea.objective, idea.theme, idea.captionDirection, idea.creativeDirection].map((value) => value.trim()).filter(Boolean);
   return textFields.length === 0 && idea.sourceLinks.length === 0 && idea.referenceImages.length === 0;
 }
 

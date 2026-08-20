@@ -48,8 +48,9 @@ export default function ExecutionRunsPage() {
                     <StatusBadge status={run.state} />
                     <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">{run.mode === "real" ? "Real" : "Simulação"}</span>
                   </div>
-                  <p className="break-all text-sm font-semibold text-ink">{run.id}</p>
-                  <p className="mt-1 text-xs text-ink-muted">Criado em {formatDateTime(run.createdAt)}</p>
+                  <p className="text-sm font-semibold text-ink">{run.mode === "real" ? "Execução real" : "Simulação"} da linha de produção</p>
+                  <p className="mt-1 text-xs text-ink-muted">Criado em {formatDateTime(run.createdAt)} · Runtime {run.runtimePlanId}</p>
+                  <p className="mt-1 break-all text-[11px] text-ink-faint">Execução {run.id}</p>
                 </div>
                 <Link href={`/workspaces/${workspace.id}/execution/${run.id}`} className="inline-flex min-h-10 items-center justify-center rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white hover:bg-accent-hover">
                   Abrir execução

@@ -296,6 +296,9 @@ export type ApiContainer = {
    * a partir do `workspaceId`, para o motor GPT e para prova de auditoria/teste. `undefined` =
    * workspace sem nenhum dado de marca cadastrado ainda, nunca inventado. */
   resolveBrandProfile(workspaceId: string): Promise<CreativeBrandProfile | undefined>;
+  /** Migração "Marca & Materiais" — grava os campos editáveis do Perfil da Marca (ver
+   * `resolveBrandProfile` para o caminho de leitura simétrico). */
+  updateBrandProfile(workspaceId: string, patch: { positioning?: string; toneOfVoice?: string; businessDescription?: string; targetAudience?: string }): Promise<void>;
   /** Exposto para teste/auditoria direta da Clara (ex.: provar que `resolveBrandProfile` lê o
    * dado real corretamente) — uso em produção continua indireto, via `resolveBrandProfile`/
    * `ensureHouseTenantProfile`, nunca uma segunda via de escrita de perfil de marca. */
@@ -674,13 +677,14 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       clara.list({ clientId, module: "ProductContext", status: "active" }).catch(() => []),
     ]);
 
-    const brand = brandRecords[0]?.payload as { brandName?: string; positioning?: string } | undefined;
+    const brand = brandRecords[0]?.payload as { brandName?: string; positioning?: string; toneOfVoice?: string } | undefined;
     const identity = identityRecords[0]?.payload as { colors?: string[]; imageStyle?: string; logoUri?: string } | undefined;
     const business = businessRecords[0]?.payload as { description?: string } | undefined;
     const audience = audienceRecords[0]?.payload as { targetAudience?: string } | undefined;
     const productsOrServices = productRecords
       .map((record) => (record.payload as { productName?: string; serviceName?: string }).productName ?? (record.payload as { productName?: string; serviceName?: string }).serviceName)
       .filter((name): name is string => Boolean(name));
+    const differentiators = productRecords.flatMap((record) => (record.payload as { differentiators?: string[] }).differentiators ?? []);
 
     // Achado ao vivo numa autorrevisão: `BrandContext.brandName` é SEMPRE o literal "Vorix" nesta
     // base de código — `ensureHouseBrandContext` (acima) escreve esse valor incondicionalmente,
@@ -694,17 +698,67 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     // apresentar preenchimento genérico como fato decidido.
     const hasRealPositioning = Boolean(brand?.positioning) && brand?.positioning !== GENERIC_BRAND_POSITIONING;
     const hasRealVisualIdentity = Boolean(identity?.logoUri);
+    // Mesmo problema do `positioning`: `ensureHouseBrandContext` grava `toneOfVoice` genérico
+    // incondicionalmente (achado nesta migração "Marca & Materiais") — nunca surfar como se a
+    // marca tivesse de fato definido um tom de voz.
+    const hasRealToneOfVoice = Boolean(brand?.toneOfVoice) && brand?.toneOfVoice !== GENERIC_BRAND_TONE_OF_VOICE;
 
-    if (!hasRealPositioning && !hasRealVisualIdentity && !business && !audience && productsOrServices.length === 0) return undefined;
+    if (!hasRealPositioning && !hasRealVisualIdentity && !hasRealToneOfVoice && !business && !audience && productsOrServices.length === 0 && differentiators.length === 0) return undefined;
 
     return {
       positioning: hasRealPositioning ? brand?.positioning : undefined,
+      toneOfVoice: hasRealToneOfVoice ? brand?.toneOfVoice : undefined,
       businessDescription: business?.description,
       targetAudience: audience?.targetAudience,
       productsOrServices: productsOrServices.length > 0 ? productsOrServices : undefined,
+      differentiators: differentiators.length > 0 ? differentiators : undefined,
       brandColors: hasRealVisualIdentity ? identity?.colors : undefined,
       visualIdentityNotes: hasRealVisualIdentity ? identity?.imageStyle : undefined,
     };
+  };
+
+  /** Migração "Marca & Materiais" — grava os campos editáveis do Perfil da Marca reusando
+   * EXATAMENTE o mesmo mecanismo de `ensureHouseBrandContext`/Clara (create/update por módulo),
+   * nunca uma segunda fonte de verdade. Corrige na origem o vazamento de `brandName: "Vorix"`: se
+   * o registro ainda tem o valor genérico do bootstrap, uma edição real do usuário já substitui
+   * pelo nome real do workspace. Campos ausentes do patch preservam o valor já existente (merge
+   * parcial, nunca reseta o que não foi editado). */
+  const updateBrandProfile = async (
+    workspaceId: string,
+    patch: { positioning?: string; toneOfVoice?: string; businessDescription?: string; targetAudience?: string },
+  ): Promise<void> => {
+    const workspace = await repositories.workspaceRepository.getById(workspaceId);
+    if (!workspace) throw new Error("WORKSPACE_NOT_FOUND: workspace inexistente.");
+    const clientId = workspace.tenantId;
+    const audit = { actor: { id: "human", type: "human" as const }, reason: "Edição manual do Perfil da Marca (Marca & Materiais)." };
+
+    if (patch.positioning !== undefined || patch.toneOfVoice !== undefined) {
+      const existing = await clara.list({ clientId, module: "BrandContext", status: "active" });
+      const current = existing[0]?.payload as { brandName?: string; positioning?: string; toneOfVoice?: string } | undefined;
+      const payload = {
+        clientId,
+        brandName: current?.brandName && current.brandName !== "Vorix" ? current.brandName : workspace.name,
+        positioning: patch.positioning ?? current?.positioning,
+        toneOfVoice: patch.toneOfVoice ?? current?.toneOfVoice,
+      };
+      if (existing.length > 0) await clara.update({ id: existing[0].id, patch: payload, audit });
+      else await clara.create({ module: "BrandContext", title: "Identidade de marca", payload, audit });
+    }
+
+    if (patch.businessDescription !== undefined) {
+      const existing = await clara.list({ clientId, module: "BusinessContext", status: "active" });
+      const current = existing[0]?.payload as { businessName?: string; description?: string } | undefined;
+      const payload = { clientId, businessName: current?.businessName ?? workspace.name, description: patch.businessDescription };
+      if (existing.length > 0) await clara.update({ id: existing[0].id, patch: payload, audit });
+      else await clara.create({ module: "BusinessContext", title: "Sobre o negócio", payload, audit });
+    }
+
+    if (patch.targetAudience !== undefined && patch.targetAudience.trim().length > 0) {
+      const existing = await clara.list({ clientId, module: "AudienceContext", status: "active" });
+      const payload = { clientId, targetAudience: patch.targetAudience };
+      if (existing.length > 0) await clara.update({ id: existing[0].id, patch: payload, audit });
+      else await clara.create({ module: "AudienceContext", title: "Público-alvo", payload, audit });
+    }
   };
   // Deps exclusivas do motor GPT (`build-execution-handler-resolver.ts`, só lido quando
   // `creativeEngineGptEnabled` está ligado).
@@ -823,6 +877,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // logo passou a existir em Materiais depois da primeira chamada, atualiza uma vez — achado real:
   // o bootstrap tinha rodado antes da logo ser cadastrada e nunca mais olhava de novo.
   const GENERIC_BRAND_POSITIONING = "Plataforma de marketing com IA para pequenos e médios negócios.";
+  const GENERIC_BRAND_TONE_OF_VOICE = "claro, direto e confiável";
   const ensureHouseBrandContext = async (tenantId: string, workspaceId: string): Promise<void> => {
     const existing = await clara.list({ clientId: tenantId, module: "BrandContext", status: "active" });
     const currentlyGeneric = existing.length === 0 || (existing[0].payload as { positioning?: string }).positioning === GENERIC_BRAND_POSITIONING;
@@ -836,7 +891,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       clientId: tenantId,
       brandName: "Vorix",
       positioning: brandDescription ?? GENERIC_BRAND_POSITIONING,
-      toneOfVoice: "claro, direto e confiável",
+      toneOfVoice: GENERIC_BRAND_TONE_OF_VOICE,
     };
     const audit = { actor: { id: "system", type: "system" as const }, reason: logoUrl ? "Bootstrap automático a partir da logo cadastrada em Materiais." : "Bootstrap automático do tenant interno para geração real de imagem (sem logo cadastrada ainda)." };
     if (existing.length > 0) {
@@ -1213,6 +1268,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       ensureHouseTenantProfile,
       ensureBrandVisualProfile,
       resolveBrandProfile,
+      updateBrandProfile,
       clara,
       imageDescriber,
       referenceIntelligenceExtractor,
@@ -1294,6 +1350,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     ensureHouseTenantProfile,
     ensureBrandVisualProfile,
     resolveBrandProfile,
+    updateBrandProfile,
     clara,
     imageDescriber,
     referenceIntelligenceExtractor,

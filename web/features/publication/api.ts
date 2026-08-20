@@ -37,16 +37,16 @@ export function listPublicationReceipts(workspaceId: string, id: string): Promis
   return apiClient.get<PublicationReceipt[]>(`/v1/publications/${id}/receipts?workspaceId=${encodeURIComponent(workspaceId)}`);
 }
 
-export function getPublicationQueue(): Promise<PublicationQueue> {
-  return apiClient.get<PublicationQueue>("/v1/publications/queue");
+export function getPublicationQueue(workspaceId: string): Promise<PublicationQueue> {
+  return apiClient.get<PublicationQueue>(`/v1/publications/queue?workspaceId=${encodeURIComponent(workspaceId)}`);
 }
 
 export function getPublicationMetrics(workspaceId: string): Promise<PublicationMetrics> {
   return apiClient.get<PublicationMetrics>(`/v1/publications/metrics?workspaceId=${encodeURIComponent(workspaceId)}`);
 }
 
-export function runPublicationWorker(): Promise<{ processed: number }> {
-  return apiClient.post<{ processed: number }>("/v1/publications/operate/work");
+export function runPublicationWorker(workspaceId: string): Promise<{ processed: number }> {
+  return apiClient.post<{ processed: number }>("/v1/publications/operate/work", { workspaceId });
 }
 
 export function listPublicationProviders(): Promise<PublicationProviderDescriptor[]> {

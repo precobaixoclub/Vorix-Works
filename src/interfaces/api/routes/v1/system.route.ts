@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { OperationalAuditRepositoryPort } from "../../../../application/ports/operational-audit-repository.port.js";
 import type { OperationalHealthService, BackpressureController, BackupRestorePlanner, OperationalCircuitBreaker, OperationalRateLimiter, ProductionGuard } from "../../../../application/operations/operational-services.js";
-import type { PublicationQueuePort } from "../../../../application/publication/publication-queue.js";
+import type { PublicationQueueJob, PublicationQueuePort } from "../../../../application/publication/publication-queue.js";
 import type { SecretManagerPort } from "../../../../application/ports/secret-manager.port.js";
 import type { SchedulingRecoveryService } from "../../../../application/scheduling/scheduling-recovery-service.js";
 import { requirePermission } from "../../http/require-principal.js";
@@ -50,14 +50,16 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
     return successEnvelope(await deps.circuitBreaker.list({ tenantId: principal.tenantId, workspaceId }), request.id);
   });
 
-  app.post("/system/circuit-breakers/:id/reset", { schema: { params: { type: "object", required: ["id"], properties: { id: { type: "string" } } } } }, async (request) => {
+  app.post("/system/circuit-breakers/:id/reset", { schema: { params: { type: "object", required: ["id"], properties: { id: { type: "string" } } }, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "system:operate");
     const { id } = request.params as { id: string };
-    const reset = await deps.circuitBreaker.reset(id);
+    const { workspaceId } = request.query as { workspaceId?: string };
+    const reset = await deps.circuitBreaker.reset(id, { tenantId: principal.tenantId, workspaceId });
     if (!reset) throw new NotFoundError("Circuit breaker nao encontrado.", { id });
     await deps.auditRepository.record({
       id: deps.idGenerator(),
       tenantId: principal.tenantId,
+      workspaceId,
       eventType: "system_circuit_breaker_reset",
       actor: principal,
       resource: { type: "system", id },
@@ -70,7 +72,8 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
   app.get("/system/rate-limits", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "system:operate");
     const { routeGroup } = request.query as { routeGroup?: string };
-    return successEnvelope(await deps.rateLimiter.list({ tenantId: principal.tenantId, routeGroup, limit: 100 }), request.id);
+    const buckets = await deps.rateLimiter.list({ tenantId: principal.tenantId, routeGroup, limit: 100 });
+    return successEnvelope(buckets.map(toSafeRateLimitBucket), request.id);
   });
 
   app.get("/system/backpressure", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
@@ -79,12 +82,14 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
     return successEnvelope(await deps.backpressure.list({ tenantId: principal.tenantId, workspaceId, activeOnly, limit: 100 }), request.id);
   });
 
-  app.get("/system/queues", async (request) => {
-    requirePermission(request, "system:operate");
-    return successEnvelope({ publication: { localQueueSize: await deps.publicationQueue.size(), localJobs: await deps.publicationQueue.list() } }, request.id);
+  app.get("/system/queues", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "system:operate");
+    const { workspaceId } = request.query as { workspaceId?: string };
+    const localJobs = (await deps.publicationQueue.list()).filter((job) => job.tenantId === principal.tenantId && (workspaceId ? job.workspaceId === workspaceId : true));
+    return successEnvelope({ publication: { localQueueSize: localJobs.length, localJobs: localJobs.map(toSafeQueueJob) } }, request.id);
   });
 
-  app.get("/system/secrets/health", async (request) => {
+  app.get("/system/secrets/health", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     requirePermission(request, "system:operate");
     return successEnvelope(await deps.secretManager.health(), request.id);
   });
@@ -106,7 +111,7 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
     return successEnvelope(await deps.auditRepository.list({ tenantId: principal.tenantId, workspaceId, limit: 100 }), request.id);
   });
 
-  app.get("/system/backup-restore", async (request) => {
+  app.get("/system/backup-restore", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     requirePermission(request, "system:operate");
     return successEnvelope(deps.backupRestorePlanner.describePlan(), request.id);
   });
@@ -131,3 +136,17 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
   });
 }
 
+function toSafeRateLimitBucket<T extends { key: string; tenantId?: string; principalId?: string; ip?: string; routeGroup: string; resetAt: string }>(bucket: T, index: number): Omit<T, "key" | "tenantId" | "principalId" | "ip"> & { key: string } {
+  const { tenantId: _tenantId, principalId: _principalId, ip: _ip, key: _key, ...safe } = bucket;
+  return { ...safe, key: `${bucket.routeGroup}:${index}:${bucket.resetAt}` };
+}
+
+function toSafeQueueJob(job: PublicationQueueJob) {
+  return {
+    id: job.id,
+    publicationId: job.publicationId,
+    kind: job.kind,
+    enqueuedAt: job.enqueuedAt,
+    runAfter: job.runAfter,
+  };
+}

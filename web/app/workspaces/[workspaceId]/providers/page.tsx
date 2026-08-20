@@ -22,7 +22,9 @@ export default function ProvidersPage() {
   const [busy, setBusy] = useState<string | undefined>();
   const [eventsOpen, setEventsOpen] = useState(false);
   const { data: providers, isLoading: isLoadingProviders, error: providersError, mutate: mutateProviders } = useProviders();
-  const selected = providers?.find((provider) => provider.providerId === selectedProviderId) ?? providers?.find((provider) => provider.providerId === "meta_pages_sandbox") ?? providers?.[0];
+  const showSandboxTools = process.env.NEXT_PUBLIC_SHOW_SANDBOX_PROVIDERS === "true";
+  const visibleProviders = (providers ?? []).filter((provider) => showSandboxTools || !provider.providerId.includes("sandbox"));
+  const selected = visibleProviders.find((provider) => provider.providerId === selectedProviderId) ?? visibleProviders[0];
   const { data: health } = useProviderHealth(selected?.providerId, workspace.id);
   const { data: webhooks } = useWebhooks(workspace.id, selected?.providerId);
   const { data: sync } = usePublicationSync(workspace.id, selected?.providerId);
@@ -77,15 +79,15 @@ export default function ProvidersPage() {
         items={[
           "Escolha um provedor na lista da esquerda.",
           "Veja se credenciais e webhooks estão saudáveis.",
-          "Rode sincronização quando o status não atualizar.",
+          "Rode sincronização do workspace quando o status não atualizar.",
           "Desconecte apenas se precisar refazer a autorização.",
         ]}
         aside={<p>Os nomes internos aparecem para facilitar suporte. No uso normal, basta observar o status e os avisos.</p>}
       />
 
       <div className="mb-6 grid gap-4 md:grid-cols-4">
-        <Card className="p-4"><p className="text-xs text-ink-muted">Provedores</p><p className="text-2xl font-semibold text-ink">{providers?.length ?? 0}</p></Card>
-        <Card className="p-4"><p className="text-xs text-ink-muted">Ativos</p><p className="text-2xl font-semibold text-ink">{providers?.filter((provider) => provider.enabled).length ?? 0}</p></Card>
+        <Card className="p-4"><p className="text-xs text-ink-muted">Provedores</p><p className="text-2xl font-semibold text-ink">{visibleProviders.length}</p></Card>
+        <Card className="p-4"><p className="text-xs text-ink-muted">Ativos</p><p className="text-2xl font-semibold text-ink">{visibleProviders.filter((provider) => provider.enabled).length}</p></Card>
         <Card className="p-4"><p className="text-xs text-ink-muted">Webhooks</p><p className="text-2xl font-semibold text-ink">{webhooks?.metrics.received ?? 0}</p></Card>
         <Card className="p-4"><p className="text-xs text-ink-muted">Sync pendente</p><p className="text-2xl font-semibold text-ink">{sync?.pending.length ?? 0}</p></Card>
       </div>
@@ -96,7 +98,7 @@ export default function ProvidersPage() {
             <p className="text-sm font-medium text-ink">Registro</p>
           </div>
           <div className="divide-y divide-border">
-            {(providers ?? []).map((provider) => (
+            {visibleProviders.map((provider) => (
               <button
                 key={provider.providerId}
                 className={`w-full px-4 py-3 text-left transition-colors ${selected?.providerId === provider.providerId ? "bg-accent-soft" : "hover:bg-surface-sunken"}`}
@@ -126,7 +128,7 @@ export default function ProvidersPage() {
                 <div className="flex flex-wrap gap-2">
                   <Button disabled={!!busy || !selected.enabled || selected.oauthType === "none"} onClick={connectSelected}>Conectar</Button>
                   <Button variant="secondary" disabled={!!busy || !health?.credentials.length} onClick={() => runAction(`disconnect:${selected.providerId}`, () => disconnectProvider(selected.providerId, workspace.id))}>Desconectar</Button>
-                  <Button variant="secondary" disabled={!!busy} onClick={() => runAction("sync", () => runPublicationSync(workspace.id))}>Rodar sincronização</Button>
+                  <Button variant="secondary" disabled={!!busy} onClick={() => runAction("sync", () => runPublicationSync(workspace.id))}>Sincronizar workspace</Button>
                 </div>
               </div>
             </Card>

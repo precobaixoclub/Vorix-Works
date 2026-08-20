@@ -4,6 +4,7 @@ import { registerAdminRoutes } from "./admin.route.js";
 import { registerAiProvidersRoutes } from "./ai-providers.route.js";
 import { registerAssetsRoutes } from "./assets.route.js";
 import { registerProductionSettingsRoutes } from "./production-settings.route.js";
+import { registerBrandProfileRoutes } from "./brand-profile.route.js";
 import { registerAuthRoutes } from "./auth.route.js";
 import { registerBriefingRoutes } from "./briefings.route.js";
 import { registerConversationRoutes } from "./conversations.route.js";
@@ -180,6 +181,10 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   });
   await registerProductionSettingsRoutes(app, {
     productionSettingsRepository: app.zunoContainer.productionSettingsRepository,
+  });
+  await registerBrandProfileRoutes(app, {
+    resolveBrandProfile: app.zunoContainer.resolveBrandProfile,
+    updateBrandProfile: app.zunoContainer.updateBrandProfile,
   });
   await registerCredentialRoutes(app, {
     credentialGovernanceService: app.zunoContainer.credentialGovernanceService,

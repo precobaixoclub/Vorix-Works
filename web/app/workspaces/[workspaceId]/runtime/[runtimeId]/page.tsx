@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { ScreenGuide } from "@/components/ScreenGuide";
@@ -25,6 +27,7 @@ export default function RuntimeDetailPage() {
   const params = useParams<{ workspaceId: string; runtimeId: string }>();
   const router = useRouter();
   const [isCreatingRun, setIsCreatingRun] = useState(false);
+  const [confirmRealExecution, setConfirmRealExecution] = useState(false);
   const { data: detail, isLoading: isLoadingDetail, error: detailError, mutate: mutateDetail } = useRuntime(params.workspaceId, params.runtimeId);
   const { data: bindingsView, isLoading: isLoadingBindings, error: bindingsError, mutate: mutateBindings } = useRuntimeBindings(params.workspaceId, params.runtimeId);
 
@@ -67,9 +70,7 @@ export default function RuntimeDetailPage() {
   }
 
   async function handleCreateRealExecution() {
-    const confirmed = window.confirm("Iniciar uma execução real pode chamar Skills reais habilitadas por feature flag. Continuar?");
-    if (!confirmed) return;
-    await createRun("real");
+    setConfirmRealExecution(true);
   }
 
   async function createRun(executionMode: "dry_run" | "real") {
@@ -84,6 +85,7 @@ export default function RuntimeDetailPage() {
       router.push(`/workspaces/${params.workspaceId}/execution/${run.id}`);
     } finally {
       setIsCreatingRun(false);
+      setConfirmRealExecution(false);
     }
   }
 
@@ -95,6 +97,9 @@ export default function RuntimeDetailPage() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={runtimePlan.status} />
+            <Link href={`/workspaces/${params.workspaceId}/planning/${runtimePlan.sourceContext.planningId}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+              Abrir planejamento
+            </Link>
             <Button disabled={runtimePlan.status !== "validated" || isCreatingRun} onClick={handleCreateDryRun}>
               Criar simulação
             </Button>
@@ -104,6 +109,9 @@ export default function RuntimeDetailPage() {
           </div>
         }
       />
+      <p className="mb-4 break-all text-xs text-ink-faint">
+        Runtime {runtimePlan.id} · Planejamento {runtimePlan.sourceContext.planningId} · Workspace {runtimePlan.sourceContext.workspaceId}
+      </p>
 
       <ScreenGuide
         title="Antes de executar"
@@ -158,6 +166,16 @@ export default function RuntimeDetailPage() {
           <RuntimeTaskContracts tasks={tasks} inputs={inputs} outputs={outputs} bindings={bindings} artifacts={artifacts} />
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={confirmRealExecution}
+        title="Criar execução real?"
+        description="Esta ação cria uma execução real a partir do runtime validado e pode acionar handlers reais quando a feature flag estiver habilitada. Use simulação se ainda estiver testando."
+        confirmLabel="Criar execução real"
+        busy={isCreatingRun}
+        onCancel={() => setConfirmRealExecution(false)}
+        onConfirm={() => createRun("real")}
+      />
     </main>
   );
 }

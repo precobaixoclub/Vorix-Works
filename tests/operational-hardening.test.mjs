@@ -176,6 +176,67 @@ test("API rate limit: health/livez ficam fora do limite e rotas de negocio receb
   await app.close();
 });
 
+test("API operacional: bastidor nao vaza fila, rate limits ou reset de outro tenant", async () => {
+  const app = await buildApp({ config: testConfig() });
+  try {
+    await app.zunoContainer.publicationQueue.enqueue({
+      id: "job-owned",
+      publicationId: "publication-owned",
+      tenantId: "tenant-ops",
+      workspaceId: "workspace-ops",
+      kind: "publish",
+      enqueuedAt: "2026-07-30T10:00:00.000Z",
+    });
+    await app.zunoContainer.publicationQueue.enqueue({
+      id: "job-other-tenant",
+      publicationId: "publication-other-tenant",
+      tenantId: "tenant-other",
+      workspaceId: "workspace-ops",
+      kind: "publish",
+      enqueuedAt: "2026-07-30T10:00:00.000Z",
+    });
+    await app.zunoContainer.publicationQueue.enqueue({
+      id: "job-other-workspace",
+      publicationId: "publication-other-workspace",
+      tenantId: "tenant-ops",
+      workspaceId: "workspace-other",
+      kind: "publish",
+      enqueuedAt: "2026-07-30T10:00:00.000Z",
+    });
+
+    const queues = await app.inject({ method: "GET", url: "/v1/system/queues?workspaceId=workspace-ops" });
+    assert.equal(queues.statusCode, 200);
+    assert.deepEqual(queues.json().data.publication.localJobs.map((job) => job.id), ["job-owned"]);
+    assert.equal(queues.json().data.publication.localQueueSize, 1);
+    const [safeJob] = queues.json().data.publication.localJobs;
+    assert.equal("tenantId" in safeJob, false);
+    assert.equal("workspaceId" in safeJob, false);
+
+    await app.zunoContainer.operationalRateLimiter.consume({ routeGroup: "publication_operate", tenantId: "tenant-ops", principalId: "owner-ops", ip: "127.0.0.1" });
+    const rateLimits = await app.inject({ method: "GET", url: "/v1/system/rate-limits?workspaceId=workspace-ops" });
+    assert.equal(rateLimits.statusCode, 200);
+    const bucket = rateLimits.json().data.find((item) => item.routeGroup === "publication_operate");
+    assert.ok(bucket);
+    assert.equal(bucket.routeGroup, "publication_operate");
+    assert.equal("principalId" in bucket, false);
+    assert.equal("ip" in bucket, false);
+    assert.equal("tenantId" in bucket, false);
+    assert.equal(bucket.key.includes("owner-ops"), false);
+    assert.equal(bucket.key.includes("127.0.0.1"), false);
+
+    const key = { tenantId: "tenant-other", workspaceId: "workspace-other", scope: "publication_provider", target: "instagram" };
+    await app.zunoContainer.operationalCircuitBreaker.recordFailure(key, { code: "PROVIDER_TIMEOUT", category: "provider_unavailable" });
+    const opened = await app.zunoContainer.operationalCircuitBreaker.recordFailure(key, { code: "PROVIDER_TIMEOUT", category: "provider_unavailable" });
+    assert.equal(opened.state, "open");
+    const deniedReset = await app.inject({ method: "POST", url: `/v1/system/circuit-breakers/${encodeURIComponent(opened.id)}/reset?workspaceId=workspace-ops` });
+    assert.equal(deniedReset.statusCode, 404);
+    const [remaining] = await app.zunoContainer.operationalCircuitBreaker.list({ tenantId: "tenant-other", workspaceId: "workspace-other" });
+    assert.equal(remaining.state, "open");
+  } finally {
+    await app.close();
+  }
+});
+
 test("Backup/restore plan e redaction removem credenciais sensiveis", () => {
   const plan = new BackupRestorePlanner().describePlan();
   assert.ok(plan.restoreOrder.includes("derived_rebuild"));
@@ -184,4 +245,3 @@ test("Backup/restore plan e redaction removem credenciais sensiveis", () => {
   assert.equal(redacted.nested.accessToken, "[REDACTED]");
   assert.equal(redacted.nested.safe, "ok");
 });
-

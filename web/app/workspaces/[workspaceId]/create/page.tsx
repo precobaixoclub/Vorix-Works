@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/Button";
-import { Card, CardBody } from "@/components/Card";
-import { Input, Label, Textarea } from "@/components/Field";
-import { PageHeader } from "@/components/PageHeader";
+import { Input, Label } from "@/components/Field";
+import { Modal } from "@/components/Modal";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
+import { useAssets } from "@/features/assets/hooks";
+import type { Asset, AssetMaterialType } from "@/features/assets/types";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
-import { CHANNEL_LABEL, FORMAT_LABEL } from "@/features/production-line/defaults";
+import { CHANNEL_LABEL } from "@/features/production-line/defaults";
 import {
   deriveObjective,
   extractExecutionRunFailure,
@@ -20,56 +22,126 @@ import {
 import { recordGeneration } from "@/features/production-line/generation-log";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
 import type { ContentBlueprint, ProductionAspectRatio, ProductionChannel, ProductionFormat, ReferenceAssetRole } from "@/features/production-line/types";
+import { useProductionSettings } from "@/features/production-settings/hooks";
+import { useTenantCredits } from "@/features/workspace/hooks";
+
+type ComposerFormat = Exclude<ProductionFormat, "video">;
+type ContentTypeId = "publicacao" | "anuncio" | "story" | "carrossel";
+
+const CONTENT_TYPES: { id: ContentTypeId; label: string; format: ComposerFormat; aspectRatio: ProductionAspectRatio }[] = [
+  { id: "publicacao", label: "Publicação", format: "single_image", aspectRatio: "4:5" },
+  { id: "anuncio", label: "Anúncio", format: "single_image", aspectRatio: "1:1" },
+  { id: "story", label: "Story", format: "single_image", aspectRatio: "9:16" },
+  { id: "carrossel", label: "Carrossel", format: "carousel", aspectRatio: "4:5" },
+];
+
+const ASPECT_RATIOS: { value: ProductionAspectRatio; label: string; w: number; h: number }[] = [
+  { value: "4:5", label: "Feed", w: 4, h: 5 },
+  { value: "1:1", label: "Quadrado", w: 1, h: 1 },
+  { value: "9:16", label: "Story/Reels", w: 9, h: 16 },
+];
 
 const CHANNELS: ProductionChannel[] = ["instagram", "facebook", "tiktok", "youtube"];
-const FORMATS: Exclude<ProductionFormat, "video">[] = ["single_image", "carousel"];
-const ASPECT_RATIO_OPTIONS: ProductionAspectRatio[] = ["1:1", "4:5", "9:16", "16:9"];
-const REFERENCE_ASSET_ROLE_OPTIONS: { value: ReferenceAssetRole; label: string }[] = [
-  { value: "product_photo", label: "Foto do produto" },
-  { value: "screenshot", label: "Print de tela" },
-  { value: "logo", label: "Logo" },
-  { value: "reference_style", label: "Referência de estilo" },
+
+const MATERIAL_ROLES: { value: ReferenceAssetRole; label: string }[] = [
+  { value: "product_photo", label: "Produto" },
+  { value: "screenshot", label: "Screenshot" },
+  { value: "reference_style", label: "Referência visual" },
   { value: "other", label: "Outro" },
 ];
+
+const MATERIAL_TYPE_TO_ROLE: Partial<Record<AssetMaterialType, ReferenceAssetRole>> = {
+  logo_principal: "logo",
+  logo_secundaria: "logo",
+  screenshot_site: "screenshot",
+  screenshot_app: "screenshot",
+  produto: "product_photo",
+  referencia_visual: "reference_style",
+};
+
+const GENERATING_MESSAGES = ["Analisando seu pedido…", "Selecionando materiais…", "Planejando a criação…", "Gerando sua peça…", "Finalizando…"];
 
 function newId(prefix: string) {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return `${prefix}-${crypto.randomUUID()}`;
   return `${prefix}-${Date.now()}-${Math.round(Math.random() * 10000)}`;
 }
 
+function isProductionFormat(value: string | null): value is ComposerFormat {
+  return value === "single_image" || value === "carousel";
+}
+function isAspectRatio(value: string | null): value is ProductionAspectRatio {
+  return value === "1:1" || value === "4:5" || value === "9:16" || value === "16:9";
+}
+function isChannel(value: string | null): value is ProductionChannel {
+  return value === "instagram" || value === "facebook" || value === "tiktok" || value === "youtube";
+}
+
 /**
- * Redesign "SaaS moderno + IA-first" — porta de entrada "composer-first": descreva a ideia em
- * linguagem natural e gere direto, sem passar pelo tanque de Produção. Reusa exatamente o mesmo
- * `generateFromIdea`/poll/retry de `production/page.tsx` (`handleGenerateRealImage`) — mesma
- * chamada de API, sem nenhuma mudança de comportamento — e grava a ideia no mesmo tanque local
- * (`readProductionConfig`/`writeProductionConfig`) como avulsa, para que ela continue aparecendo
- * em Produção mesmo tendo sido criada por aqui. Aditivo: o fluxo de modal em Produção continua
- * existindo, inalterado.
+ * Redesign "IA-first / composer-first" (Etapa 2) — ponto oficial de nova criação. A Home mantém a
+ * versão rápida (mesmo composer simples); esta tela é a versão completa, com referências, tipo de
+ * conteúdo/formato/canal, contexto automático do workspace visível e painel de marca. Reusa
+ * exatamente a mesma chamada de geração (`generateFromIdea`/poll/retry) e o mesmo tanque local que
+ * já existiam — nenhuma mudança de API, Creative Engine, banco ou regra de negócio.
  */
 export default function CreatePage() {
   const workspace = useCurrentWorkspace();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // A Home tem um composer rápido que manda pra cá com a ideia já escrita — só a primeira
-  // renderização considera a query, pra não sobrescrever o que o usuário já editou aqui.
+  const { data: productionSettings } = useProductionSettings(workspace.id);
+  const { data: assets } = useAssets(workspace.id);
+  const { data: credits } = useTenantCredits();
+
+  const activeAssets = (assets ?? []).filter((asset) => asset.status === "active" && asset.storageRef?.metadata?.url);
+  const hasLogo = activeAssets.some((asset) => asset.kind === "logo");
+  const hasGuidelines = Boolean(productionSettings?.productionPrompt?.trim());
+
   const [ideaText, setIdeaText] = useState(() => searchParams.get("draft")?.slice(0, MAX_IDEA_TEXT_LENGTH) ?? "");
-  const [format, setFormat] = useState<Exclude<ProductionFormat, "video">>("single_image");
-  const [channels, setChannels] = useState<ProductionChannel[]>(["instagram"]);
-  const [aspectRatio, setAspectRatio] = useState<ProductionAspectRatio | "">("");
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [format, setFormat] = useState<ComposerFormat>(() => (isProductionFormat(searchParams.get("format")) ? (searchParams.get("format") as ComposerFormat) : "single_image"));
+  const [aspectRatio, setAspectRatio] = useState<ProductionAspectRatio>(() => (isAspectRatio(searchParams.get("aspectRatio")) ? (searchParams.get("aspectRatio") as ProductionAspectRatio) : "4:5"));
+  const [channels, setChannels] = useState<ProductionChannel[]>(() => (isChannel(searchParams.get("channel")) ? [searchParams.get("channel") as ProductionChannel] : ["instagram"]));
+
+  const [objective, setObjective] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
   const [forbiddenElements, setForbiddenElements] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [brandOpen, setBrandOpen] = useState(false);
+
   const [referenceImages, setReferenceImages] = useState<string[]>([]);
   const [referenceRoles, setReferenceRoles] = useState<Record<string, ReferenceAssetRole>>({});
   const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
 
   const [status, setStatus] = useState<"idle" | "generating" | "retrying">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [messageIndex, setMessageIndex] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const busy = status !== "idle";
+  const contentTypeId = CONTENT_TYPES.find((type) => type.format === format && type.aspectRatio === aspectRatio)?.id;
+
+  // Mensagens genéricas por tempo — não existe telemetria real de etapa (o backend só devolve
+  // "rodando"/"terminou"), então isto é só percepção de progresso, nunca precisão simulada.
+  useEffect(() => {
+    if (!busy) {
+      setMessageIndex(0);
+      return;
+    }
+    const interval = window.setInterval(() => {
+      setMessageIndex((current) => Math.min(current + 1, GENERATING_MESSAGES.length - 1));
+    }, 14_000);
+    return () => window.clearInterval(interval);
+  }, [busy]);
 
   const overLimit = ideaText.length > MAX_IDEA_TEXT_LENGTH;
-  const canGenerate = ideaText.trim().length > 0 && !overLimit && status === "idle";
+  const canGenerate = ideaText.trim().length > 0 && !overLimit && !busy;
+
+  function selectContentType(type: (typeof CONTENT_TYPES)[number]) {
+    setFormat(type.format);
+    setAspectRatio(type.aspectRatio);
+  }
 
   function toggleChannel(channel: ProductionChannel) {
     setChannels((prev) => {
@@ -78,18 +150,28 @@ export default function CreatePage() {
     });
   }
 
-  async function uploadReferences(files: FileList | null) {
-    if (!files || files.length === 0) return;
+  async function attachFiles(files: FileList | File[] | null) {
+    const list = files ? Array.from(files) : [];
+    if (list.length === 0) return;
     setUploading(true);
-    setUploadError(null);
+    setError(null);
     try {
-      const uploaded = await Promise.all(Array.from(files).map((file) => uploadPublicationMedia(workspace.id, file)));
+      const uploaded = await Promise.all(list.map((file) => uploadPublicationMedia(workspace.id, file)));
       setReferenceImages((prev) => [...prev, ...uploaded.map((item) => item.url)]);
-    } catch (uploadFailure) {
-      setUploadError(uploadFailure instanceof Error ? uploadFailure.message : "Não foi possível enviar o arquivo.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível anexar o material.");
     } finally {
       setUploading(false);
     }
+  }
+
+  function attachFromLibrary(asset: Asset) {
+    const url = asset.storageRef?.metadata?.url;
+    if (!url) return;
+    setReferenceImages((prev) => (prev.includes(url) ? prev : [...prev, url]));
+    const role = (asset.materialType && MATERIAL_TYPE_TO_ROLE[asset.materialType]) || "product_photo";
+    setReferenceRoles((prev) => ({ ...prev, [url]: role }));
+    setLibraryOpen(false);
   }
 
   function removeReference(url: string) {
@@ -100,51 +182,26 @@ export default function CreatePage() {
     setError(null);
     setStatus("generating");
 
-    const blueprint: ContentBlueprint = {
-      id: newId("blueprint"),
-      name: ideaText.trim().slice(0, 60) || "Ideia sem nome",
-      format,
+    const name = ideaText.trim().slice(0, 60) || "Ideia sem nome";
+    const derivedObjective = deriveObjective(objective.trim() || undefined, ideaText);
+    const forbiddenList = forbiddenElements.split(",").map((item) => item.trim()).filter(Boolean);
+    const referenceAssets = referenceImages.map((url) => ({ url, role: referenceRoles[url] ?? ("product_photo" as const) }));
+
+    const generateInput = {
+      workspaceId: workspace.id,
+      name,
+      objective: derivedObjective,
       ideaText,
-      objective: deriveObjective(undefined, ideaText),
-      theme: "",
-      captionDirection: "",
-      creativeDirection: "",
+      format,
+      channel: channels[0] ?? ("instagram" as ProductionChannel),
       targetAudience: targetAudience.trim() || undefined,
-      mediaCount: format === "carousel" ? 3 : 1,
-      channels,
-      approvalMode: "manual",
-      sourceLinks: [],
       referenceImages,
-      referenceAssetRoles: referenceRoles,
-      aspectRatio: aspectRatio || undefined,
-      forbiddenElements: forbiddenElements.trim() || undefined,
-      status: "available",
-      productionMode: "standalone",
+      aspectRatio,
+      referenceAssets: referenceAssets.length > 0 ? referenceAssets : undefined,
+      forbiddenElements: forbiddenList.length > 0 ? forbiddenList : undefined,
     };
 
     try {
-      const referenceAssets = blueprint.referenceImages.map((url) => ({
-        url,
-        role: referenceRoles[url] ?? ("product_photo" as const),
-      }));
-      const forbiddenList = forbiddenElements
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-      const generateInput = {
-        workspaceId: workspace.id,
-        name: blueprint.name,
-        objective: blueprint.objective,
-        ideaText: blueprint.ideaText,
-        format,
-        channel: blueprint.channels[0] ?? ("instagram" as ProductionChannel),
-        targetAudience: blueprint.targetAudience,
-        referenceImages: blueprint.referenceImages,
-        aspectRatio: blueprint.aspectRatio,
-        referenceAssets: referenceAssets.length > 0 ? referenceAssets : undefined,
-        forbiddenElements: forbiddenList.length > 0 ? forbiddenList : undefined,
-      };
-
       const first = await generateFromIdea(generateInput);
       let detail = await waitForExecutionRunTerminal(workspace.id, first.executionRunId);
       let executionRunId = first.executionRunId;
@@ -159,14 +216,32 @@ export default function CreatePage() {
         }
       }
 
-      // Grava no tanque local como avulsa — a mesma ideia que acabou de gerar continua visível em
-      // Produção (filtro "Avulsas"), com o mesmo status que teria se criada por lá.
-      const config = readProductionConfig(workspace.id);
+      const blueprintId = newId("blueprint");
       const usedAt = detail.run.state === "failed" ? undefined : new Date().toISOString();
-      writeProductionConfig(workspace.id, {
-        ...config,
-        blueprints: [...config.blueprints, { ...blueprint, status: usedAt ? "used" : "available", usedAt }],
-      });
+      const blueprint: ContentBlueprint = {
+        id: blueprintId,
+        name,
+        format,
+        ideaText,
+        objective: derivedObjective,
+        theme: "",
+        captionDirection: "",
+        creativeDirection: "",
+        targetAudience: targetAudience.trim() || undefined,
+        mediaCount: format === "carousel" ? 3 : 1,
+        channels,
+        approvalMode: "manual",
+        sourceLinks: [],
+        referenceImages,
+        referenceAssetRoles: referenceRoles,
+        aspectRatio,
+        forbiddenElements: forbiddenElements.trim() || undefined,
+        status: usedAt ? "used" : "available",
+        productionMode: "standalone",
+        usedAt,
+      };
+      const config = readProductionConfig(workspace.id);
+      writeProductionConfig(workspace.id, { ...config, blueprints: [...config.blueprints, blueprint] });
 
       if (detail.run.state === "failed") {
         const { message } = extractExecutionRunFailure(detail);
@@ -174,189 +249,316 @@ export default function CreatePage() {
         setStatus("idle");
         return;
       }
+      recordGeneration(workspace.id, { ...generateInput, executionRunId, ideaId: blueprintId, createdAt: new Date().toISOString() });
+
       if (detail.run.state !== "completed" && detail.run.state !== "waiting_for_approval") {
-        setError("A geração está demorando mais que o esperado. Confira em Revisão em alguns minutos.");
-        setStatus("idle");
+        // Ainda rodando depois do tempo máximo de espera — o lugar certo para acompanhar é
+        // Produção, não um erro; Revisão só faz sentido quando já há peça pronta para decidir.
+        router.push(`/workspaces/${workspace.id}/production`);
         return;
       }
 
-      recordGeneration(workspace.id, { ...generateInput, executionRunId, ideaId: blueprint.id, createdAt: new Date().toISOString() });
       router.push(`/workspaces/${workspace.id}/review`);
-    } catch (generateFailure) {
-      setError(generateFailure instanceof Error ? generateFailure.message : "Não foi possível iniciar a geração.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível iniciar a geração.");
       setStatus("idle");
     }
   }
 
-  return (
-    <main className="mx-auto max-w-3xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Criar" description="Descreva a ideia em poucas frases — a IA cuida da estratégia, da copy e da peça final." />
+  const brandContextContent = (
+    <div className="space-y-4 text-sm">
+      <div>
+        <p className="text-xs font-medium text-ink-faint">Marca ativa</p>
+        <Link href={`/workspaces/${workspace.id}/knowledge?tab=profile`} className="mt-1.5 flex items-center gap-2 hover:underline">
+          {hasLogo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={activeAssets.find((asset) => asset.kind === "logo")?.storageRef?.metadata?.url} alt="" className="h-7 w-7 rounded-md object-contain" />
+          ) : (
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-sunken text-xs text-ink-faint" aria-hidden="true">🔷</span>
+          )}
+          <span className="truncate text-ink">{workspace.name}</span>
+        </Link>
+      </div>
 
-      <Card>
-        <CardBody className="space-y-5">
+      <div>
+        <p className="text-xs font-medium text-ink-faint">Diretrizes</p>
+        {hasGuidelines ? (
+          <p className="mt-1 text-ink-muted">Diretrizes Criativas configuradas.</p>
+        ) : (
+          <p className="mt-1 text-ink-faint">Nenhuma diretriz personalizada configurada.</p>
+        )}
+        <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`} className="text-xs font-medium text-accent hover:underline">
+          {hasGuidelines ? "Editar" : "Configurar"}
+        </Link>
+      </div>
+
+      <div>
+        <p className="text-xs font-medium text-ink-faint">Materiais disponíveis</p>
+        {activeAssets.length > 0 ? (
+          <>
+            <div className="mt-1.5 flex gap-1.5">
+              {activeAssets.slice(0, 4).map((asset) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={asset.id} src={asset.storageRef?.metadata?.url} alt="" className="h-9 w-9 rounded-md object-cover" />
+              ))}
+            </div>
+            <p className="mt-1.5 text-ink-muted">{activeAssets.length} {activeAssets.length === 1 ? "material" : "materiais"}</p>
+          </>
+        ) : (
+          <p className="mt-1 text-ink-faint">Nenhum material cadastrado ainda.</p>
+        )}
+        <Link href={`/workspaces/${workspace.id}/knowledge?tab=materials`} className="text-xs font-medium text-accent hover:underline">
+          Gerenciar materiais
+        </Link>
+      </div>
+
+      <div>
+        <p className="text-xs font-medium text-ink-faint">Formato atual</p>
+        <div className="mt-1.5 flex items-center gap-2">
+          <span className="block rounded-sm bg-surface-sunken" style={{ width: 22, aspectRatio: aspectRatio.replace(":", "/") }} aria-hidden="true" />
+          <span className="text-ink-muted">{aspectRatio} · {format === "carousel" ? "Carrossel" : "Imagem"}</span>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
+      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+        <div className="min-w-0 space-y-5">
           <div>
-            <Label htmlFor="create-idea">O que você quer publicar?</Label>
-            <Textarea
+            <h1 className="font-display text-2xl font-semibold text-ink sm:text-3xl">Criar conteúdo</h1>
+            <p className="mt-1 text-sm text-ink-muted">Descreva sua ideia, envie referências e deixe a IA montar a criação.</p>
+          </div>
+
+          <section
+            className={`rounded-2xl bg-surface-raised p-5 transition-colors sm:p-7 ${dragOver ? "ring-2 ring-accent" : ""}`}
+            onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragOver(false);
+              attachFiles(event.dataTransfer.files);
+            }}
+          >
+            <Label htmlFor="create-idea">O que você quer criar?</Label>
+            <textarea
               id="create-idea"
-              rows={6}
+              rows={5}
               autoFocus
               value={ideaText}
               maxLength={MAX_IDEA_TEXT_LENGTH}
-              placeholder="Ex.: Criar um post anunciando nosso site, com tom direto e um CTA para visitar agora."
+              disabled={busy}
               onChange={(event) => setIdeaText(event.target.value)}
-              disabled={status !== "idle"}
+              placeholder="Ex.: Crie uma publicação impactante para divulgar nosso site, com visual moderno e destaque para as principais vantagens."
+              className="mt-2 w-full resize-none border-0 bg-transparent text-base text-ink placeholder:text-ink-faint outline-none disabled:opacity-60 sm:text-lg"
             />
-            <p className={`mt-1 text-right text-xs ${overLimit ? "text-danger" : "text-ink-faint"}`}>
-              {ideaText.length}/{MAX_IDEA_TEXT_LENGTH}
-            </p>
-          </div>
+            <p className={`text-right text-xs ${overLimit ? "text-danger" : "text-ink-faint"}`}>{ideaText.length}/{MAX_IDEA_TEXT_LENGTH}</p>
 
-          <div>
-            <p className="mb-1.5 text-xs font-medium text-ink-muted">Formato</p>
-            <div className="grid grid-cols-2 gap-2">
-              {FORMATS.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  disabled={status !== "idle"}
-                  onClick={() => setFormat(option)}
-                  className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors disabled:opacity-50 ${
-                    format === option ? "border-accent bg-accent-soft text-accent" : "border-border bg-surface text-ink hover:bg-surface-sunken"
-                  }`}
-                >
-                  {FORMAT_LABEL[option]}
-                </button>
-              ))}
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3.5">
+              <button
+                type="button"
+                disabled={busy || uploading}
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-ink-muted hover:bg-surface-sunken hover:text-ink disabled:opacity-60"
+              >
+                <span aria-hidden="true">📎</span> {uploading ? "Enviando…" : "Enviar arquivo"}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setLibraryOpen(true)}
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-ink-muted hover:bg-surface-sunken hover:text-ink disabled:opacity-60"
+              >
+                <span aria-hidden="true">🗂</span> Da biblioteca
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime"
+                className="hidden"
+                onChange={(event) => { attachFiles(event.target.files); event.target.value = ""; }}
+              />
+              <p className="text-xs text-ink-faint">ou arraste imagens para aqui</p>
             </div>
-          </div>
 
-          <div>
-            <p className="mb-1.5 text-xs font-medium text-ink-muted">Canais</p>
-            <div className="flex flex-wrap gap-2">
-              {CHANNELS.map((channel) => (
-                <button
-                  key={channel}
-                  type="button"
-                  disabled={status !== "idle"}
-                  onClick={() => toggleChannel(channel)}
-                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
-                    channels.includes(channel) ? "border-ink-faint bg-surface-sunken text-ink" : "border-border bg-surface text-ink-muted hover:bg-surface-sunken"
-                  }`}
-                >
-                  {CHANNEL_LABEL[channel]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="border-t border-border pt-4">
-            <button
-              type="button"
-              onClick={() => setAdvancedOpen((prev) => !prev)}
-              className="flex w-full items-center justify-between text-sm font-medium text-ink-muted hover:text-ink"
-            >
-              <span>Detalhes avançados (opcional)</span>
-              <span aria-hidden="true" className={`transition-transform ${advancedOpen ? "rotate-90" : ""}`}>›</span>
-            </button>
-
-            {advancedOpen ? (
-              <div className="mt-3 space-y-4">
-                <div>
-                  <Label htmlFor="create-audience">Público-alvo</Label>
-                  <Input
-                    id="create-audience"
-                    value={targetAudience}
-                    placeholder="Ex.: mulheres de 25-40 anos interessadas em moda sustentável"
-                    onChange={(event) => setTargetAudience(event.target.value)}
-                    disabled={status !== "idle"}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <Label htmlFor="create-aspect-ratio">Proporção da peça</Label>
+            {referenceImages.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {referenceImages.map((url) => (
+                  <div key={url} className="flex items-center gap-1.5 rounded-lg bg-surface-sunken p-1.5">
+                    {/\.(png|jpe?g|webp)$/i.test(url) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={url} alt="" className="h-10 w-10 rounded-md object-cover" />
+                    ) : (
+                      <span className="flex h-10 w-10 items-center justify-center rounded-md bg-surface text-ink-faint" aria-hidden="true">🎞</span>
+                    )}
                     <select
-                      id="create-aspect-ratio"
-                      value={aspectRatio}
-                      disabled={status !== "idle"}
-                      onChange={(event) => setAspectRatio(event.target.value as ProductionAspectRatio | "")}
-                      className="w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft disabled:opacity-50"
+                      aria-label="Categoria do material"
+                      value={referenceRoles[url] ?? "product_photo"}
+                      disabled={busy}
+                      onChange={(event) => setReferenceRoles((prev) => ({ ...prev, [url]: event.target.value as ReferenceAssetRole }))}
+                      className="bg-transparent text-xs text-ink-muted outline-none disabled:opacity-60"
                     >
-                      <option value="">Automático (4:5)</option>
-                      {ASPECT_RATIO_OPTIONS.map((ratio) => (
-                        <option key={ratio} value={ratio}>{ratio}</option>
+                      {MATERIAL_ROLES.map((role) => (
+                        <option key={role.value} value={role.value}>{role.label}</option>
                       ))}
                     </select>
+                    <button type="button" disabled={busy} onClick={() => removeReference(url)} aria-label="Remover" className="text-ink-faint hover:text-danger disabled:opacity-60">×</button>
                   </div>
-                  <div>
-                    <Label htmlFor="create-forbidden">Elementos proibidos</Label>
-                    <Input
-                      id="create-forbidden"
-                      value={forbiddenElements}
-                      placeholder="Ex.: logo de concorrente, preço antigo"
-                      onChange={(event) => setForbiddenElements(event.target.value)}
-                      disabled={status !== "idle"}
-                    />
-                  </div>
-                </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-ink-faint">Nenhum material cadastrado. Você ainda pode gerar normalmente.</p>
+            )}
+          </section>
 
-                <div>
-                  <Label htmlFor="create-files">Referências (opcional)</Label>
-                  <div className="rounded-lg border border-dashed border-border bg-surface px-3 py-3">
-                    <input
-                      id="create-files"
-                      type="file"
-                      multiple
-                      accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime"
-                      disabled={uploading || status !== "idle"}
-                      onChange={(event) => uploadReferences(event.target.files)}
-                      className="block w-full text-sm text-ink-muted file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-2 file:text-sm file:font-medium file:text-white"
+          <section className="space-y-4">
+            <div>
+              <p className="mb-2 text-xs font-medium text-ink-muted">Tipo de conteúdo</p>
+              <div className="flex flex-wrap gap-2">
+                {CONTENT_TYPES.map((type) => (
+                  <button
+                    key={type.id}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => selectContentType(type)}
+                    className={`min-h-9 rounded-lg px-3.5 text-sm font-medium transition-colors disabled:opacity-60 ${
+                      contentTypeId === type.id ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:text-ink"
+                    }`}
+                  >
+                    {type.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-medium text-ink-muted">Formato</p>
+              <div className="flex flex-wrap gap-2">
+                {ASPECT_RATIOS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setAspectRatio(option.value)}
+                    className={`flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-60 ${
+                      aspectRatio === option.value ? "bg-accent-soft text-accent" : "bg-surface-raised text-ink-muted hover:text-ink"
+                    }`}
+                  >
+                    <span
+                      className={`block rounded-[2px] ${aspectRatio === option.value ? "bg-accent" : "bg-ink-faint"}`}
+                      style={{ width: option.w >= option.h ? 16 : Math.round((16 * option.w) / option.h), height: option.h >= option.w ? 16 : Math.round((16 * option.h) / option.w) }}
+                      aria-hidden="true"
                     />
-                    <p className="mt-2 text-xs text-ink-muted">Logo, print ou foto do produto — a IA usa como base real em vez de inventar.</p>
-                    {uploading ? <p className="mt-2 text-xs text-accent">Enviando arquivo...</p> : null}
-                    {uploadError ? <p className="mt-2 text-xs text-danger">{uploadError}</p> : null}
-                  </div>
-                  {referenceImages.length > 0 ? (
-                    <div className="mt-2 space-y-2">
-                      {referenceImages.map((url) => (
-                        <div key={url} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2">
-                          <a href={url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-xs font-medium text-accent hover:underline">
-                            {url.split("/").pop() || url}
-                          </a>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <select
-                              aria-label="Papel da referência"
-                              value={referenceRoles[url] ?? "product_photo"}
-                              onChange={(event) => setReferenceRoles((prev) => ({ ...prev, [url]: event.target.value as ReferenceAssetRole }))}
-                              className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
-                            >
-                              {REFERENCE_ASSET_ROLE_OPTIONS.map((option) => (
-                                <option key={option.value} value={option.value}>{option.label}</option>
-                              ))}
-                            </select>
-                            <button type="button" onClick={() => removeReference(url)} className="text-xs font-medium text-ink-muted hover:text-danger">
-                              Remover
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
+                    {option.value} <span className="text-ink-faint">· {option.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-medium text-ink-muted">Canal</p>
+              <div className="flex flex-wrap gap-2">
+                {CHANNELS.map((channel) => (
+                  <button
+                    key={channel}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => toggleChannel(channel)}
+                    className={`min-h-9 rounded-lg px-3.5 text-sm font-medium transition-colors disabled:opacity-60 ${
+                      channels.includes(channel) ? "bg-surface-raised text-ink" : "text-ink-faint hover:text-ink-muted"
+                    }`}
+                  >
+                    {CHANNEL_LABEL[channel]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-xl bg-surface-raised">
+            <button type="button" onClick={() => setContextOpen((prev) => !prev)} className="flex w-full items-center justify-between px-4 py-3 text-left">
+              <span className="text-sm font-medium text-ink">A IA já vai considerar</span>
+              <span aria-hidden="true" className={`text-ink-faint transition-transform ${contextOpen ? "rotate-90" : ""}`}>›</span>
+            </button>
+            {contextOpen ? (
+              <ul className="space-y-1.5 px-4 pb-4 text-sm text-ink-muted">
+                <li>• {hasGuidelines ? "Diretrizes Criativas da marca" : <span className="text-ink-faint">Diretrizes Criativas da marca (não configurada)</span>}</li>
+                <li>• {hasLogo ? "Logo oficial do workspace" : <span className="text-ink-faint">Logo oficial (não cadastrada)</span>}</li>
+                <li>• {activeAssets.length > 0 ? `${activeAssets.length} materiais relevantes da biblioteca` : <span className="text-ink-faint">Materiais relevantes (nenhum cadastrado)</span>}</li>
+              </ul>
+            ) : null}
+          </section>
+
+          <details className="rounded-xl bg-surface-raised lg:hidden" open={brandOpen} onToggle={(event) => setBrandOpen((event.target as HTMLDetailsElement).open)}>
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink">Contexto da marca</summary>
+            <div className="px-4 pb-4">{brandContextContent}</div>
+          </details>
+
+          <section className="border-t border-border/60 pt-4">
+            <button type="button" onClick={() => setAdvancedOpen((prev) => !prev)} className="flex w-full items-center justify-between text-sm font-medium text-ink-muted hover:text-ink">
+              <span>Detalhes avançados</span>
+              <span aria-hidden="true" className={`transition-transform ${advancedOpen ? "rotate-90" : ""}`}>›</span>
+            </button>
+            {advancedOpen ? (
+              <div className="mt-3 space-y-3">
+                <div>
+                  <Label htmlFor="create-objective">Objetivo</Label>
+                  <Input id="create-objective" value={objective} disabled={busy} placeholder="Ex.: gerar cliques para o site" onChange={(event) => setObjective(event.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="create-audience">Público-alvo</Label>
+                  <Input id="create-audience" value={targetAudience} disabled={busy} placeholder="Ex.: mulheres de 25-40 anos" onChange={(event) => setTargetAudience(event.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="create-forbidden">O que evitar</Label>
+                  <Input id="create-forbidden" value={forbiddenElements} disabled={busy} placeholder="Ex.: logo de concorrente, preço antigo" onChange={(event) => setForbiddenElements(event.target.value)} />
                 </div>
               </div>
             ) : null}
-          </div>
+          </section>
 
-          {error ? <p className="text-sm text-danger">{error}</p> : null}
+          {error ? (
+            <div className="rounded-xl bg-danger-bg px-4 py-3 text-sm text-danger">
+              <p>{error}</p>
+              <button type="button" onClick={handleGenerate} className="mt-1.5 font-medium underline">Tentar novamente</button>
+            </div>
+          ) : null}
 
-          <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
-            <p className="text-xs text-ink-muted">Chama a IA de verdade — gera custo real.</p>
-            <Button disabled={!canGenerate} onClick={handleGenerate}>
-              {status === "generating" ? "Gerando…" : status === "retrying" ? "Tentando de novo…" : "Gerar"}
+          {busy ? <p className="text-sm text-ink-muted">{GENERATING_MESSAGES[messageIndex]}</p> : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
+            <p className="text-xs text-ink-faint">{credits ? `Você tem ${credits.remainingCredits.toLocaleString("pt-BR")} créditos disponíveis.` : "Chama a IA de verdade — gera custo real."}</p>
+            <Button className="px-6 py-3 text-base" disabled={!canGenerate} onClick={handleGenerate}>
+              {status === "generating" ? "Gerando…" : status === "retrying" ? "Tentando de novo…" : "Gerar conteúdo"}
             </Button>
           </div>
-        </CardBody>
-      </Card>
+        </div>
+
+        <aside className="hidden rounded-2xl bg-surface-raised p-5 lg:sticky lg:top-5 lg:block">
+          <p className="mb-3 font-display text-sm font-semibold text-ink">Contexto da marca</p>
+          {brandContextContent}
+        </aside>
+      </div>
+
+      {libraryOpen ? (
+        <Modal title="Escolher da biblioteca" onClose={() => setLibraryOpen(false)}>
+          {activeAssets.length === 0 ? (
+            <p className="text-sm text-ink-muted">Nenhum material cadastrado ainda.</p>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              {activeAssets.map((asset) => (
+                <button key={asset.id} type="button" onClick={() => attachFromLibrary(asset)} className="overflow-hidden rounded-lg bg-surface-sunken text-left hover:ring-2 hover:ring-accent">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={asset.storageRef?.metadata?.url} alt="" className="aspect-square w-full object-cover" />
+                  <p className="truncate px-1.5 py-1 text-[11px] text-ink-muted">{asset.name}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </Modal>
+      ) : null}
     </main>
   );
 }

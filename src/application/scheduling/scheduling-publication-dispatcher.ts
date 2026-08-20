@@ -75,7 +75,7 @@ export class SchedulingPublicationDispatcher implements ScheduledPublicationDisp
       { tenantId: occurrence.tenantId, workspaceId: occurrence.workspaceId, publicationId: occurrence.publicationPlanId, causationId: occurrence.id },
     );
     await enqueuePublication(this.orchestratorDeps(), { tenantId: occurrence.tenantId, workspaceId: occurrence.workspaceId, publicationId: occurrence.publicationPlanId, kind: "scheduled" });
-    await new PublicationWorker(this.orchestratorDeps(), `schedule-worker:${input.actor.userId}`).runUntilIdle(1);
+    await new PublicationWorker(this.orchestratorDeps(), `schedule-worker:${input.actor.userId}`).runUntilIdle(1, { tenantId: occurrence.tenantId, workspaceId: occurrence.workspaceId });
     const after = await this.deps.publicationRepository.getDetail(occurrence.publicationPlanId);
     const outbox = after?.outbox.find((message) => message.targetId === occurrence.targetId && message.idempotencyKey === target.idempotencyKey);
     const attempt = after?.attempts.find((candidate) => candidate.targetId === occurrence.targetId && candidate.id === outbox?.attemptId);

@@ -199,7 +199,7 @@ export async function registerKwaiRoutes(app: FastifyInstance, deps: KwaiRoutesD
     }
 
     await enqueuePublication(orchestratorDeps, { tenantId: principal.tenantId, workspaceId: body.workspaceId, publicationId: detail.plan.id });
-    await new PublicationWorker(orchestratorDeps, "kwai-publish-worker").runUntilIdle(1);
+    await new PublicationWorker(orchestratorDeps, "kwai-publish-worker").runUntilIdle(1, { tenantId: principal.tenantId, workspaceId: body.workspaceId });
     const published = await deps.publicationRepository.getDetail(detail.plan.id);
     return successEnvelope({ publicationId: detail.plan.id, state: published?.plan.state ?? detail.plan.state, receipts: published?.receipts ?? [] }, request.id);
   });
@@ -212,10 +212,11 @@ export async function registerKwaiRoutes(app: FastifyInstance, deps: KwaiRoutesD
     return successEnvelope({ publicationId: id, state: detail.plan.state }, request.id);
   });
 
-  app.post("/kwai/posts/run-due", { schema: { body: { type: "object", properties: { now: { type: "string" } } } } }, async (request) => {
-    requirePermission(request, "publication:operate");
-    const enqueued = await runDueSchedules(orchestratorDeps, ((request.body ?? {}) as { now?: string }).now);
-    const processed = await new PublicationWorker(orchestratorDeps, "kwai-due-worker").runUntilIdle();
+  app.post("/kwai/posts/run-due", { schema: { body: { type: "object", properties: { workspaceId: { type: "string" }, now: { type: "string" } } } } }, async (request) => {
+    const principal = requirePermission(request, "publication:operate");
+    const body = (request.body ?? {}) as { workspaceId?: string; now?: string };
+    const enqueued = await runDueSchedules(orchestratorDeps, body.now, { tenantId: principal.tenantId, workspaceId: body.workspaceId });
+    const processed = await new PublicationWorker(orchestratorDeps, "kwai-due-worker").runUntilIdle(100, { tenantId: principal.tenantId, workspaceId: body.workspaceId });
     return successEnvelope({ enqueued, processed }, request.id);
   });
 }

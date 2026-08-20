@@ -109,7 +109,9 @@ export class OperationalCircuitBreaker {
     return this.repository.listCircuitBreakers(filter);
   }
 
-  reset(id: string) {
+  async reset(id: string, filter: { tenantId?: string; workspaceId?: string; scope?: OperationalCircuitBreakerKey["scope"] } = {}) {
+    const authorized = await this.repository.listCircuitBreakers(filter);
+    if (!authorized.some((item) => item.id === id)) return undefined;
     return this.repository.resetCircuitBreaker(id, this.nowIso());
   }
 

@@ -70,7 +70,7 @@ export type PublicationRepositoryPort = {
   createSchedule(input: Omit<PublicationSchedule, "createdAt" | "updatedAt">): Promise<PublicationSchedule>;
   updateScheduleStatus(input: { id: string; status: PublicationScheduleState }): Promise<PublicationSchedule>;
   listSchedules(filter: { tenantId: string; workspaceId: string; status?: PublicationScheduleState }): Promise<PublicationSchedule[]>;
-  listDueSchedules(input: { now: string; limit: number }): Promise<PublicationSchedule[]>;
+  listDueSchedules(input: { now: string; limit: number; tenantId?: string; workspaceId?: string }): Promise<PublicationSchedule[]>;
   acquireLock(input: PublicationLock): Promise<boolean>;
   releaseLock(publicationId: string, ownerId: string): Promise<void>;
   listLocks(): Promise<PublicationLock[]>;
@@ -79,7 +79,7 @@ export type PublicationRepositoryPort = {
   reprocessDeadLetter(input: { id: string; tenantId: string; workspaceId: string; now: string }): Promise<PublicationDeadLetter | undefined>;
   getPayloadReference(id: string): Promise<PublicationPayloadReference | undefined>;
   listOutbox(filter?: { tenantId?: string; workspaceId?: string; status?: PublicationOutboxMessage["status"] }): Promise<PublicationOutboxMessage[]>;
-  claimOutbox(input: { workerId: string; now: string; leaseMs: number; limit: number }): Promise<PublicationOutboxMessage[]>;
+  claimOutbox(input: { workerId: string; now: string; leaseMs: number; limit: number; tenantId?: string; workspaceId?: string; publicationId?: string }): Promise<PublicationOutboxMessage[]>;
   completeOutbox(input: { outboxMessageId: string; workerId: string; fencingToken: number; now: string; receipt?: Omit<PublicationReceipt, "id" | "createdAt">; receiptId?: string }): Promise<{ committed: boolean; receipt?: PublicationReceipt }>;
   failOutbox(input: { outboxMessageId: string; workerId: string; fencingToken: number; now: string; failure: PublicationFailure; retryAt?: string; deadLetter?: boolean }): Promise<boolean>;
   markOutboxUnknown(input: { outboxMessageId: string; workerId: string; fencingToken: number; now: string; reconciliationId: string; providerRequestId?: string; safeMessage: string }): Promise<boolean>;

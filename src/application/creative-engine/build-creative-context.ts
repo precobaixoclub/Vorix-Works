@@ -28,6 +28,13 @@ export type CreativeBrandProfile = {
   businessDescription?: string;
   targetAudience?: string;
   productsOrServices?: string[];
+  /** Diferenciais reais cadastrados em `ProductContext.differentiators` — distinto de
+   * `productsOrServices` (o que a marca vende vs. o que a diferencia da concorrência). */
+  differentiators?: string[];
+  /** Migração "Marca & Materiais" (achado numa autorrevisão) — mesmo tratamento de
+   * `positioning`: só real quando não é mais o texto genérico do bootstrap (ver
+   * `GENERIC_BRAND_TONE_OF_VOICE` em `container.ts`). */
+  toneOfVoice?: string;
   brandColors?: string[];
   visualIdentityNotes?: string;
 };
@@ -142,6 +149,8 @@ export async function buildCreativeContext(deps: BuildCreativeContextDeps, input
     brandPositioning: brandProfile?.positioning,
     businessDescription: brandProfile?.businessDescription,
     productsOrServices: brandProfile?.productsOrServices,
+    differentiators: brandProfile?.differentiators,
+    toneOfVoice: brandProfile?.toneOfVoice,
     visualIdentityNotes: brandProfile?.visualIdentityNotes,
     recentHistory: recentHistory && recentHistory.length > 0 ? recentHistory : undefined,
     productionInstructions: productionSettings?.productionPrompt,

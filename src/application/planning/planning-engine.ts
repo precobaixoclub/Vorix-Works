@@ -7,6 +7,7 @@ import type { PlanningDecisionRepositoryPort } from "../ports/planning-decision-
 import type { PlanningRepositoryPort } from "../ports/planning-repository.port.js";
 import { GRAPH_VERSION, PLANNER_STRATEGY, PLANNER_VERSION, planFromPreparedCommand } from "./arthur-planner.js";
 import { validatePreparedCommandForPlanning } from "./validation.js";
+import type { CreativeEngineMode } from "../creative-engine/creative-engine-mode.js";
 
 /**
  * Ponto de composição opcional com o Runtime (Sprint 10) — mesmo padrão de `BriefingPlanningHook`
@@ -36,6 +37,10 @@ export type PlanningEngineDeps = {
   /** Sprint 10 — chamado só quando um Planning novo nasce `"ready"` (nunca `"failed"`), e na
    * supersessão. Ausente reproduz a Sprint 09 sem nenhuma mudança. */
   runtimeEngine?: PlanningRuntimeHook;
+  /** Migração "GPT como motor criativo único" (PR 6/9) — decidido uma única vez no boot
+   * (`container.ts`), nunca por execução. Ausente reproduz o comportamento anterior a esta
+   * migração (`"legacy"`, default de `planFromPreparedCommand`). */
+  creativeEngine?: CreativeEngineMode;
 };
 
 /** Idempotente (decisão obrigatória — unicidade lógica por `preparedCommandId` +
@@ -68,7 +73,7 @@ export async function createPlanningFromPreparedCommand(deps: PlanningEngineDeps
     });
   }
 
-  const result = planFromPreparedCommand(preparedCommand, planningId, { idGenerator: deps.idGenerator, now });
+  const result = planFromPreparedCommand(preparedCommand, planningId, { idGenerator: deps.idGenerator, now, creativeEngine: deps.creativeEngine });
 
   const planning = await deps.planningRepository.create({
     id: planningId,

@@ -13,10 +13,19 @@ import { deriveObjective, extractExecutionRunFailure, generateFromIdea as genera
 import { recordGeneration } from "@/features/production-line/generation-log";
 import { useExecutionRuns } from "@/features/execution/hooks";
 import { readProductionConfig, writeProductionConfig } from "@/features/production-line/storage";
-import type { ContentBlueprint, IdeaProductionMode, PostingRule, ProductionChannel, ProductionFormat, ProductionLineConfig, ProductionWeekday, WeeklyFormatQuota } from "@/features/production-line/types";
+import type { ContentBlueprint, IdeaProductionMode, PostingRule, ProductionAspectRatio, ProductionChannel, ProductionFormat, ProductionLineConfig, ProductionWeekday, ReferenceAssetRole, WeeklyFormatQuota } from "@/features/production-line/types";
 
 const CHANNELS: ProductionChannel[] = ["instagram", "facebook", "tiktok", "youtube"];
 const FORMATS: ProductionFormat[] = ["single_image", "carousel", "video"];
+// Migração "GPT como motor criativo único" (PR 7/9) — superfície aditiva exclusiva do motor GPT.
+const ASPECT_RATIO_OPTIONS: ProductionAspectRatio[] = ["1:1", "4:5", "9:16", "16:9"];
+const REFERENCE_ASSET_ROLE_OPTIONS: { value: ReferenceAssetRole; label: string }[] = [
+  { value: "product_photo", label: "Foto do produto" },
+  { value: "screenshot", label: "Print de tela" },
+  { value: "logo", label: "Logo" },
+  { value: "reference_style", label: "Referência de estilo" },
+  { value: "other", label: "Outro" },
+];
 const IDEA_TYPE_FILTERS = [
   { id: "all", label: "Todas" },
   { id: "routine", label: "Rotina" },
@@ -314,6 +323,18 @@ export default function ProductionLinePage() {
     setGeneratingIdeaId(idea.id);
     try {
       const fallbackName = (idea.objective || idea.ideaText || "Ideia sem nome").slice(0, 60);
+      // Migração "GPT como motor criativo único" (PR 7/9) — só o motor GPT lê `aspectRatio`/
+      // `referenceAssets`/`forbiddenElements`; o motor legado ignora os 3 campos, sem nenhuma
+      // mudança de comportamento. `referenceAssetRoles` ausente para uma URL cai para
+      // "product_photo" (mesmo comportamento de antes deste campo existir).
+      const referenceAssets = idea.referenceImages.map((url) => ({
+        url,
+        role: idea.referenceAssetRoles?.[url] ?? ("product_photo" as const),
+      }));
+      const forbiddenElements = idea.forbiddenElements
+        ?.split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
       const generateInput = {
         workspaceId: workspace.id,
         name: idea.name.trim() || fallbackName,
@@ -323,6 +344,9 @@ export default function ProductionLinePage() {
         channel: idea.channels[0] ?? ("instagram" as ProductionChannel),
         targetAudience: idea.targetAudience,
         referenceImages: idea.referenceImages,
+        aspectRatio: idea.aspectRatio,
+        referenceAssets: referenceAssets.length > 0 ? referenceAssets : undefined,
+        forbiddenElements: forbiddenElements && forbiddenElements.length > 0 ? forbiddenElements : undefined,
       };
       // Assíncrono (Rodada 2, Fatia 3 — achado ao vivo): a chamada devolve o `executionRunId` na
       // hora; o pipeline real roda em background no servidor, então o acompanhamento até o
@@ -1502,6 +1526,10 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
     onChange({ referenceImages: blueprint.referenceImages.filter((item) => item !== url) });
   }
 
+  function setReferenceRole(url: string, role: ReferenceAssetRole) {
+    onChange({ referenceAssetRoles: { ...blueprint.referenceAssetRoles, [url]: role } });
+  }
+
   return (
     <div className="grid grid-cols-1 gap-4">
       <section className="rounded-lg border border-border bg-surface-sunken p-3">
@@ -1613,11 +1641,26 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
                   <a href={url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-xs font-medium text-accent hover:underline">
                     {fileLabel(url)}
                   </a>
-                  <button type="button" onClick={() => removeReference(url)} className="shrink-0 text-xs font-medium text-ink-muted hover:text-red-600">
-                    Remover
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <select
+                      aria-label={`Papel da referência ${fileLabel(url)}`}
+                      value={blueprint.referenceAssetRoles?.[url] ?? "product_photo"}
+                      onChange={(event) => setReferenceRole(url, event.target.value as ReferenceAssetRole)}
+                      className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+                    >
+                      {REFERENCE_ASSET_ROLE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={() => removeReference(url)} className="text-xs font-medium text-ink-muted hover:text-red-600">
+                      Remover
+                    </button>
+                  </div>
                 </div>
               ))}
+              <p className="text-xs text-ink-muted">
+                O papel de cada referência (foto do produto, print de tela, logo) é usado só quando o motor GPT está ativo — orienta como cada arquivo entra na composição final, em vez de ser redesenhado pela IA.
+              </p>
             </div>
           ) : null}
         </div>
@@ -1649,6 +1692,34 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
             onChange={(event) => onChange({ targetAudience: event.target.value })}
           />
           <p className="mt-1 text-xs text-ink-muted">Usado só na geração real de imagem — sem isso, entra um público genérico.</p>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div>
+            <Label htmlFor="blueprint-aspect-ratio">Proporção da peça</Label>
+            <select
+              id="blueprint-aspect-ratio"
+              value={blueprint.aspectRatio ?? ""}
+              onChange={(event) => onChange({ aspectRatio: (event.target.value || undefined) as ProductionAspectRatio | undefined })}
+              className="w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+            >
+              <option value="">Automático (4:5)</option>
+              {ASPECT_RATIO_OPTIONS.map((ratio) => (
+                <option key={ratio} value={ratio}>{ratio}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-ink-muted">Usado só pelo motor GPT (quando ativo) — o motor padrão continua decidindo o formato pelo canal.</p>
+          </div>
+          <div>
+            <Label htmlFor="blueprint-forbidden">Elementos proibidos</Label>
+            <Input
+              id="blueprint-forbidden"
+              value={blueprint.forbiddenElements ?? ""}
+              placeholder="Ex.: logo de concorrente, preço antigo"
+              onChange={(event) => onChange({ forbiddenElements: event.target.value })}
+            />
+            <p className="mt-1 text-xs text-ink-muted">Lista separada por vírgula do que a peça NUNCA deve mostrar. Usado só pelo motor GPT (quando ativo).</p>
+          </div>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">

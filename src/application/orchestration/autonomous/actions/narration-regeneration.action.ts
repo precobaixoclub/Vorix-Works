@@ -5,6 +5,16 @@ import { synthesizeNarrationWav } from "../../../../infrastructure/autonomous/wi
 import { projectPaths } from "../../../../interfaces/cli/run-command.js";
 import { readPendingNarrations } from "../blocker-classifier.js";
 import type { ActionDefinition } from "../autonomous-types.js";
+import type { ArtifactProvenance } from "../../../../shared/utils/artifact-provenance.js";
+
+/** Migração "GPT como motor criativo único" (PR 3/9) — a própria `limitations` desta ação já
+ * documenta "o resultado nunca é publicável como está" (voz sintética SAPI). `publishable: false`
+ * torna isso estrutural em vez de só um comentário. */
+const SYNTHETIC_NARRATION_PROVENANCE: ArtifactProvenance = {
+  producer: "synthetic_narration",
+  publishable: false,
+  reason: "Voz sintética Windows SAPI, gerada só para destravar o pipeline autônomo — nunca uma narração humana real pronta para publicação.",
+};
 
 /**
  * Só resolve pausas de narração que chegam como `WAITING_ASSISTED_GENERATION` — Nora pedindo o
@@ -61,7 +71,7 @@ export const narrationRegenerationAction: ActionDefinition = {
 
       const bytes = await readFile(tempWavPath);
       const artifactDelivery = new LocalArtifactDelivery({ rootDir: paths.artifactsDir });
-      const written = await artifactDelivery.writeFile({ executionId, relativePath, content: bytes, mimeType: "audio/wav" });
+      const written = await artifactDelivery.writeFile({ executionId, relativePath, content: bytes, mimeType: "audio/wav", provenance: SYNTHETIC_NARRATION_PROVENANCE });
       await rm(tempWavPath, { force: true }).catch(() => {});
 
       return {

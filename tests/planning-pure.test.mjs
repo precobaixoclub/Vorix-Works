@@ -17,6 +17,17 @@ test("templates: campaign_creation e content_request têm template registrado", 
   assert.equal(Object.keys(PLANNING_TEMPLATES_BY_PREPARED_COMMAND_TYPE).length, 2);
 });
 
+test("templates: sem creativeEngine (ou 'legacy'), content_request continua resolvendo para -v2 (migração GPT/PR 6 não muda o comportamento default)", () => {
+  assert.equal(getPlanningTemplateId("content_request"), "content_request-visual-only-v2");
+  assert.equal(getPlanningTemplateId("content_request", "legacy"), "content_request-visual-only-v2");
+});
+
+test("templates: com creativeEngine='gpt', content_request resolve para o grafo exclusivo do motor GPT", () => {
+  assert.equal(getPlanningTemplateId("content_request", "gpt"), "content_request-gpt-creative-v3");
+  // campaign_creation nunca é afetado pelo motor criativo (não tem variante por engine).
+  assert.equal(getPlanningTemplateId("campaign_creation", "gpt"), "campaign_creation-standard-pipeline-v1");
+});
+
 // ---------------------------------------------------------------------------------------------
 // Fase 3 — ValidationReport (roda ANTES de qualquer grafo ser montado)
 // ---------------------------------------------------------------------------------------------
@@ -106,6 +117,59 @@ test("Arthur Planner: PLANNER_VERSION/PLANNER_STRATEGY/GRAPH_VERSION são consta
 
 test("Arthur Planner: lança se chamado para um tipo sem template — só defesa, quem chama já deveria ter checado o ValidationReport", () => {
   assert.throws(() => planFromPreparedCommand(basePreparedCommand({ type: "knowledge_query" }), "planning-1", { idGenerator: makeIdGenerator("task") }));
+});
+
+// ---------------------------------------------------------------------------------------------
+// Migração "GPT como motor criativo único" (PR 6/9) — Graph C exclusivo do motor GPT
+// ---------------------------------------------------------------------------------------------
+
+function baseContentRequest(overrides = {}) {
+  return basePreparedCommand({ type: "content_request", intent: "generate_visual", ...overrides });
+}
+
+test("content_request + creativeEngine='legacy' (ou ausente) continua produzindo o grafo -v2 de 6 tarefas, com strategic_planning e copywriting (regressão)", () => {
+  const withoutEngine = planFromPreparedCommand(baseContentRequest(), "planning-1", { idGenerator: makeIdGenerator("task") });
+  const withLegacy = planFromPreparedCommand(baseContentRequest(), "planning-1", { idGenerator: makeIdGenerator("task"), creativeEngine: "legacy" });
+
+  for (const result of [withoutEngine, withLegacy]) {
+    assert.equal(result.planningTemplate, "content_request-visual-only-v2");
+    assert.equal(result.tasks.length, 6);
+    assert.ok(result.tasks.some((t) => t.capability === "strategic_planning"));
+    assert.ok(result.tasks.some((t) => t.capability === "copywriting"));
+  }
+});
+
+test("content_request + creativeEngine='gpt' produz o Graph C: 4 tarefas, SEM strategic_planning nem copywriting (prova estrutural, não só ausência de chamada)", () => {
+  const result = planFromPreparedCommand(baseContentRequest(), "planning-1", { idGenerator: makeIdGenerator("task"), creativeEngine: "gpt" });
+
+  assert.equal(result.planningTemplate, "content_request-gpt-creative-v3");
+  assert.equal(result.tasks.length, 4);
+  assert.deepEqual(result.tasks.map((t) => t.type), ["content_brief", "visual_generation", "quality_review", "approval"]);
+  assert.equal(result.tasks.some((t) => t.capability === "strategic_planning"), false, "João nunca deveria ter um nó no Graph C");
+  assert.equal(result.tasks.some((t) => t.capability === "copywriting"), false, "Maria nunca deveria ter um nó no Graph C");
+});
+
+test("Graph C: DAG é uma cadeia simples content_brief -> visual_generation -> quality_review -> approval, sem paralelismo", () => {
+  const result = planFromPreparedCommand(baseContentRequest(), "planning-1", { idGenerator: makeIdGenerator("task"), creativeEngine: "gpt" });
+  const byType = Object.fromEntries(result.tasks.map((t) => [t.type, t]));
+  const hasEdge = (fromType, toType) => result.edges.some((e) => e.fromTaskId === byType[fromType].id && e.toTaskId === byType[toType].id);
+
+  assert.ok(hasEdge("content_brief", "visual_generation"));
+  assert.ok(hasEdge("visual_generation", "quality_review"));
+  assert.ok(hasEdge("visual_generation", "approval"));
+  assert.ok(hasEdge("quality_review", "approval"));
+  assert.equal(result.edges.length, 4);
+});
+
+test("Graph C: registra a decisão 'creative_engine_selected' explicando por que João/Maria/Bianca/Pedro/Lucas não participam", () => {
+  const result = planFromPreparedCommand(baseContentRequest(), "planning-1", { idGenerator: makeIdGenerator("task"), creativeEngine: "gpt" });
+  assert.ok(result.decisions.some((d) => d.decisionCode === "creative_engine_selected" && d.reason.includes("engineMode=gpt")));
+});
+
+test("Graph C: campaign_creation nunca é afetado pelo motor criativo — sempre o pipeline padrão de 6 tarefas", () => {
+  const result = planFromPreparedCommand(basePreparedCommand({ type: "campaign_creation" }), "planning-1", { idGenerator: makeIdGenerator("task"), creativeEngine: "gpt" });
+  assert.equal(result.planningTemplate, "campaign_creation-standard-pipeline-v1");
+  assert.equal(result.tasks.length, 6);
 });
 
 // ---------------------------------------------------------------------------------------------

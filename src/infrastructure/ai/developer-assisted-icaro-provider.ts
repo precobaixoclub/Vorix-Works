@@ -7,6 +7,16 @@ import {
 } from "../../application/ai/developer-assistance.types.js";
 import type { ArtifactDeliveryPort } from "../../application/ports/artifact-delivery.port.js";
 import { sanitizePathSegment } from "../artifacts/local-artifact-delivery.js";
+import type { ArtifactProvenance } from "../../shared/utils/artifact-provenance.js";
+
+/** Migração "GPT como motor criativo único" (PR 3/9) — o pacote de trabalho é só a REQUISIÇÃO
+ * (prompt/contexto/schema) entregue a um humano/IDE, nunca conteúdo final; a resposta real chega
+ * por fora do `ArtifactDeliveryPort` (lida via `readFile`, nunca tem sidecar). */
+const WORK_PACKAGE_PROVENANCE: ArtifactProvenance = {
+  producer: "developer_assisted",
+  publishable: false,
+  reason: "Pacote de trabalho (prompt/contexto/schema) para intervenção assistida — nunca o conteúdo final.",
+};
 
 export type DeveloperAssistedIcaroProviderOptions = {
   artifactDelivery: ArtifactDeliveryPort;
@@ -74,6 +84,7 @@ export class DeveloperAssistedIcaroProvider implements IcaroBrainPort {
       relativePath: workPackagePath,
       content: JSON.stringify(workPackage, null, 2),
       mimeType: "application/json",
+      provenance: WORK_PACKAGE_PROVENANCE,
     });
     throw new DeveloperAssistancePendingError(workPackage);
   }

@@ -1,6 +1,7 @@
 import type { PreparedCommand } from "../../domain/briefing/briefing.model.js";
 import type { ExecutionTask, PlanningArtifact, PlanningArtifactType, PlanningDecision, TaskInputContract, TaskOutputContract, TaskType } from "../../domain/planning/planning.model.js";
 import { getPlanningTemplateId } from "./templates.js";
+import type { CreativeEngineMode } from "../creative-engine/creative-engine-mode.js";
 
 /** Versão dos contratos de porta emitidos por este Arthur Planner (Sprint 10) — muda só se a
  * FORMA de alguma porta mudar, independente de `PLANNER_VERSION` (que versiona a decomposição em
@@ -26,6 +27,11 @@ export const GRAPH_VERSION = 1;
 export type ArthurPlannerDeps = {
   idGenerator: () => string;
   now?: () => Date;
+  /** Migração "GPT como motor criativo único" (PR 6/9) — decide qual grafo `content_request`
+   * recebe (`content_request-gpt-creative-v3` vs. `-visual-only-v2`, ver `templates.ts`). Default
+   * `"legacy"` preserva o comportamento anterior a esta migração para qualquer chamador que ainda
+   * não foi atualizado. */
+  creativeEngine?: CreativeEngineMode;
 };
 
 export type PlannedEdge = { fromTaskId: string; toTaskId: string };
@@ -53,9 +59,13 @@ function visualArtifactTypeFor(contentFormat: string | undefined): "image" | "vi
  * (aprovação), exatamente o pedido da Fase 6.
  */
 export function planFromPreparedCommand(preparedCommand: PreparedCommand, planningId: string, deps: ArthurPlannerDeps): ArthurPlanningResult {
-  const templateId = getPlanningTemplateId(preparedCommand.type);
+  const creativeEngine = deps.creativeEngine ?? "legacy";
+  const templateId = getPlanningTemplateId(preparedCommand.type, creativeEngine);
   if (!templateId) {
     throw new Error(`PLANNING_TEMPLATE_NOT_FOUND: nenhum template para "${preparedCommand.type}" — o chamador deveria ter checado o ValidationReport antes.`);
+  }
+  if (preparedCommand.type === "content_request" && creativeEngine === "gpt") {
+    return planContentRequestGptCreative(preparedCommand, planningId, templateId, deps);
   }
   if (preparedCommand.type === "content_request") {
     return planContentRequestVisualOnly(preparedCommand, planningId, templateId, deps);
@@ -370,6 +380,145 @@ function planContentRequestVisualOnly(preparedCommand: PreparedCommand, planning
 
   const decisions = [
     decision("template_selected", `PreparedCommand.type="${preparedCommand.type}" mapeado para o template "${templateId}" (com estratégia/copy/quality gate reais, sem publicação).`, []),
+    decision(
+      "visual_artifact_type_selected",
+      `Tipo de artefato visual definido como "${visualArtifactType}" a partir de contentFormat="${preparedCommand.validatedInputs.contentFormat ?? "não informado"}".`,
+      [visualGeneration.id],
+    ),
+  ];
+
+  return { planningTemplate: templateId, tasks, edges, artifacts, decisions };
+}
+
+/**
+ * Decompõe um `PreparedCommand.type === "content_request"` num pipeline de 4 tarefas EXCLUSIVO do
+ * motor GPT (migração "GPT como motor criativo único", PR 6/9) — `content_brief →
+ * visual_generation → quality_review → approval`. DELIBERADAMENTE sem `strategic_planning`
+ * (João) nem `copywriting` (Maria): o motor GPT assume integralmente estratégia, headline, CTA e
+ * direção de arte dentro do próprio `creative_plan` (ver `run-gpt-creative-engine.ts`) — não há
+ * nó nesta árvore para essas capabilities, prova estrutural (não apenas ausência de chamada) de
+ * que João/Maria nunca são agendados quando `creativeEngine === "gpt"`.
+ *
+ * `visual_generation` e `quality_review` resolvem para os handlers registrados só sob
+ * `creativeEngineGptEnabled` (ver `gpt-creative-engine-execution-handlers.ts`/
+ * `build-execution-handler-resolver.ts`) — nunca os handlers do motor legado, mesmas capabilities
+ * (`visual_design`/`human_review`) reaproveitadas para não exigir migração dos CHECK constraints
+ * de `execution_tasks`/`runtime_tasks`/etc.
+ */
+function planContentRequestGptCreative(preparedCommand: PreparedCommand, planningId: string, templateId: string, deps: ArthurPlannerDeps): ArthurPlanningResult {
+  const now = deps.now ?? (() => new Date());
+  const createdAt = now().toISOString();
+  const nextId = deps.idGenerator;
+
+  function outputContract(ports: TaskOutputContract["ports"]): TaskOutputContract {
+    return { version: TASK_CONTRACT_VERSION, ports };
+  }
+  function inputContract(ports: TaskInputContract["ports"]): TaskInputContract {
+    return { version: TASK_CONTRACT_VERSION, ports };
+  }
+  function outputPort(portKey: string, artifactType: PlanningArtifactType, description: string) {
+    return { portKey, artifactType, description };
+  }
+  function inputPort(portKey: string, acceptedArtifactTypes: readonly PlanningArtifactType[], required: boolean, description: string) {
+    return { portKey, acceptedArtifactTypes, required, description };
+  }
+
+  function task(
+    type: TaskType,
+    name: string,
+    description: string,
+    capability: ExecutionTask["capability"],
+    expectedArtifactType: ExecutionTask["expectedArtifactType"],
+    sequenceHint: number,
+    input: TaskInputContract,
+    output: TaskOutputContract,
+  ): ExecutionTask {
+    return { id: nextId(), planningId, type, name, description, capability, expectedArtifactType, status: "planned", sequenceHint, inputContract: input, outputContract: output, createdAt };
+  }
+
+  const contentBrief = task(
+    "content_brief",
+    "Briefing da peça",
+    "Empacotar objetivo, oferta/assunto, público-alvo, canal e assets reais informados diretamente pelo usuário — sem pesquisa adicional.",
+    "content_brief",
+    "document",
+    1,
+    inputContract([]),
+    outputContract([outputPort("structure", "document", "Briefing mínimo (objetivo, oferta/assunto, público-alvo, canal, formato, assets) para montar o creative_context.")]),
+  );
+
+  const visualArtifactType = visualArtifactTypeFor(preparedCommand.validatedInputs.contentFormat);
+  const visualGeneration = task(
+    "visual_generation",
+    "Motor criativo GPT",
+    "GPT assume integralmente estratégia, conceito, headline, CTA e direção de arte a partir do creative_context — produz o creative_plan e a peça final.",
+    "visual_design",
+    visualArtifactType,
+    2,
+    inputContract([inputPort("structure", ["document"], true, "Briefing da peça já definido.")]),
+    outputContract([outputPort("visual", visualArtifactType, "Peça visual produzida pelo motor GPT para o canal informado.")]),
+  );
+
+  const qualityReview = task(
+    "quality_review",
+    "Quality gate do motor GPT",
+    "Avaliar a peça (produto/logo/screenshot corretos, fatos comerciais fiéis, texto legível, composição íntegra) antes de apresentar ao usuário — sem score, só pass/fail.",
+    "human_review",
+    "document",
+    3,
+    inputContract([inputPort("visual", ["image", "video", "carousel"], true, "Peça visual produzida pelo motor GPT.")]),
+    outputContract([outputPort("review", "document", "Avaliação de qualidade estruturada (verdict, issues).")]),
+  );
+
+  const approval = task(
+    "approval",
+    "Aprovação",
+    "Revisão humana da peça visual gerada — nenhuma publicação acontece neste pipeline.",
+    "human_review",
+    "document",
+    4,
+    inputContract([
+      inputPort("visual", ["image", "video", "carousel"], true, "Peça visual produzida."),
+      inputPort("review", ["document"], true, "Avaliação de qualidade que aprovou a peça."),
+    ]),
+    outputContract([outputPort("decision", "document", "Registro da decisão de aprovação humana.")]),
+  );
+
+  const tasks = [contentBrief, visualGeneration, qualityReview, approval];
+
+  const edges: PlannedEdge[] = [
+    { fromTaskId: contentBrief.id, toTaskId: visualGeneration.id },
+    { fromTaskId: visualGeneration.id, toTaskId: qualityReview.id },
+    { fromTaskId: visualGeneration.id, toTaskId: approval.id },
+    { fromTaskId: qualityReview.id, toTaskId: approval.id },
+  ];
+
+  function artifact(executionTaskId: string, expectedType: PlanningArtifact["contract"]["expectedType"], description: string, expectedFields: readonly string[]): PlanningArtifact {
+    return { id: nextId(), planningId, executionTaskId, contract: { expectedType, description, expectedFields }, status: "expected", createdAt };
+  }
+
+  const artifacts = [
+    artifact(contentBrief.id, "document", "Briefing mínimo (objetivo, oferta/assunto, público-alvo, canal, formato, assets).", ["objective", "channel", "format"]),
+    artifact(visualGeneration.id, visualArtifactType, "Peça visual produzida pelo motor GPT.", ["assetUri", "format", "dimensions"]),
+    artifact(qualityReview.id, "document", "Avaliação de qualidade estruturada.", ["verdict", "issues"]),
+    artifact(approval.id, "document", "Registro da decisão de aprovação humana sobre a peça gerada.", ["decision", "reviewer", "notes"]),
+  ];
+
+  function decision(decisionCode: string, reason: string, relatedTaskIds: readonly string[]): PlanningDecision {
+    return { id: nextId(), planningId, decisionCode, reason, relatedTaskIds, createdAt };
+  }
+
+  const decisions = [
+    decision(
+      "template_selected",
+      `PreparedCommand.type="${preparedCommand.type}" mapeado para o template "${templateId}" (motor GPT — sem nós de strategic_planning/copywriting).`,
+      [],
+    ),
+    decision(
+      "creative_engine_selected",
+      "engineMode=gpt — GPT assume integralmente estratégia/headline/CTA/direção de arte; motor legado (João/Maria/Bianca/Pedro/Lucas) não participa desta execução.",
+      [visualGeneration.id, qualityReview.id],
+    ),
     decision(
       "visual_artifact_type_selected",
       `Tipo de artefato visual definido como "${visualArtifactType}" a partir de contentFormat="${preparedCommand.validatedInputs.contentFormat ?? "não informado"}".`,

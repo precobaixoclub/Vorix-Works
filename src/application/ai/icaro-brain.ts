@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   AICostReport,
   AIProviderFailureKind,
@@ -138,7 +139,12 @@ export class IcaroAIBrain implements IcaroBrainPort {
       };
       await this.log("Error", error.message, request, undefined, undefined, { error });
       await this.emit("AIRequestFailed", request, { error });
-      return this.failedResponse(request, error, 0, false);
+      const response = await this.failedResponse(request, error, 0, false);
+      // Sem isto, uma falha de configuração (ex.: nenhuma chave de API válida para o Provider do
+      // motor criativo) nunca deixaria rastro em `icaro_ai_calls` — o mesmo silêncio que a
+      // auditoria "GPT como motor criativo único" apontou como o problema original.
+      await this.recordCost(request, response);
+      return response;
     }
 
     let totalAttempts = 0;
@@ -377,6 +383,11 @@ export class IcaroAIBrain implements IcaroBrainPort {
       tokens: response.tokens,
       cost: response.cost,
       status: response.status,
+      correlationId: request.correlationId,
+      promptHash: hashPrompt(request.prompt),
+      promptChars: request.prompt.length,
+      retryCount: Math.max(0, response.attempt.total - 1),
+      fallbackUsed: response.fallbackUsed,
     });
   }
 
@@ -454,6 +465,12 @@ function normalizeCost(selection: IcaroProviderSelection, tokens: AITokenUsage, 
 
 function estimateTokens(content: string): number {
   return Math.max(1, Math.ceil(content.length / 4));
+}
+
+/** Nunca o prompt em si — só um hash pra correlacionar/deduplicar sem reter conteúdo (mesmo
+ * padrão de `ai-gateway.ts`/`ai_executions.prompt_hash`). */
+function hashPrompt(prompt: string): string {
+  return createHash("sha256").update(prompt).digest("hex");
 }
 
 function classifyError(error: unknown): ClassifiedAIError {

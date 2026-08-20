@@ -154,5 +154,57 @@ export const CONTENT_REQUEST_SCHEMA_V1: BriefingSchema = {
       sensitivity: "normal",
       confirmationPolicy: "never_required",
     },
+    {
+      // Migração "GPT como motor criativo único" (PR 7/9) — proporção final da peça (ex.: "4:5",
+      // "9:16", "1:1", "16:9"), lida por `GptCreativeEngineVisualTaskHandler` como
+      // `creative_context.format`. Aditivo e opcional: na ausência, o handler cai para "4:5" (já o
+      // comportamento de antes deste campo existir). Só usado pelo motor GPT — o motor legado
+      // continua derivando o formato de `contentFormat`/`channel`, sem nenhuma mudança.
+      key: "aspectRatio",
+      label: "Proporção",
+      description: "Proporção final da peça visual (ex.: 4:5, 9:16, 1:1, 16:9) — usada pelo motor GPT para compor a imagem no formato certo.",
+      required: false,
+      dataType: "enum",
+      acceptedValues: ["1:1", "4:5", "9:16", "16:9"],
+      sourcePriority: ["user_message"],
+      sensitivity: "normal",
+      confirmationPolicy: "never_required",
+    },
+    {
+      // Migração "GPT como motor criativo único" (PR 7/9) — todos os assets de referência reais
+      // (produto/screenshot/logo/estilo) COM PAPEL explícito, JSON stringificado de
+      // `Array<{url, role, description?}>` (mesmo formato que
+      // `GptCreativeEngineVisualTaskHandler.buildAssetsFromValidatedInputs` já sabe ler). Aditivo:
+      // substitui `referenceImageUrl`/`referenceImageUrls` apenas quando presente — na ausência,
+      // o motor GPT cai para esses campos únicos (sempre como `product_photo`), comportamento
+      // idêntico ao de antes deste campo existir. É este campo que carrega o papel real
+      // (`screenshot`/`logo`) que os testes reais (Preço Baixo Club, tênis RV) exigem — sem ele, o
+      // motor GPT nunca saberia diferenciar "foto do produto" de "print de tela do site" de "logo".
+      key: "referenceAssets",
+      label: "Assets de referência com papel",
+      description: "Lista (JSON) de assets reais anexados, cada um com { url, role: product_photo|screenshot|logo|reference_style|other, description? }.",
+      required: false,
+      dataType: "string",
+      sourcePriority: ["user_message"],
+      validation: { maxLength: 6000 },
+      sensitivity: "normal",
+      confirmationPolicy: "never_required",
+    },
+    {
+      // Migração "GPT como motor criativo único" (PR 7/9) — elementos que a peça NUNCA deve conter
+      // (ex.: "concorrente X", "preço antigo", "logo de terceiros"), lista separada por vírgula.
+      // Entra em `creative_context.forbiddenElements` (ver `CreativeContext`,
+      // `gpt-creative-plan.types.ts`) e é checado pelo quality gate — nunca só uma sugestão solta
+      // pro modelo, é um fato que o gate pode reprovar se violado.
+      key: "forbiddenElements",
+      label: "Elementos proibidos",
+      description: "Lista (separada por vírgula) de elementos que a peça NUNCA deve conter.",
+      required: false,
+      dataType: "string",
+      sourcePriority: ["user_message"],
+      validation: { maxLength: 1000 },
+      sensitivity: "normal",
+      confirmationPolicy: "never_required",
+    },
   ],
 };

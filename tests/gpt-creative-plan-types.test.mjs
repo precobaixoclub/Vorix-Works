@@ -130,3 +130,79 @@ test("buildImageGenerationPromptFromPlan: inclui headline/cta literalmente entre
   assert.match(imagePrompt, /"TODAS AS OFERTAS EM UM SÓ SITE"/);
   assert.match(imagePrompt, /"ACESSE AGORA"/);
 });
+
+// ---------------------------------------------------------------------------------------------
+// PR 4/9 (migração "GPT como motor criativo único") — geometria de asset e zonas de texto
+// ---------------------------------------------------------------------------------------------
+
+test("parseCreativePlan: assetPlacements/textZones ausentes viram listas vazias (plano antigo continua válido)", () => {
+  const plan = parseCreativePlan(samplePlanJson());
+  assert.deepEqual(plan.assetPlacements, []);
+  assert.deepEqual(plan.textZones, []);
+});
+
+test("parseCreativePlan: aceita assetPlacements/textZones bem formados", () => {
+  const plan = parseCreativePlan(samplePlanJson({
+    assetPlacements: [
+      { role: "logo", url: "https://x/logo.png", rect: { xPct: 4, yPct: 4, widthPct: 18, heightPct: 10 }, frame: "none" },
+      { role: "screenshot", url: "https://x/shot.png", rect: { xPct: 20, yPct: 30, widthPct: 60, heightPct: 45 }, frame: "phone" },
+    ],
+    textZones: [
+      { kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 85, widthPct: 80, heightPct: 8 }, emphasis: "primary", renderedBy: "renderer" },
+    ],
+  }));
+  assert.equal(plan.assetPlacements.length, 2);
+  assert.equal(plan.assetPlacements[0].role, "logo");
+  assert.equal(plan.assetPlacements[1].frame, "phone");
+  assert.equal(plan.textZones.length, 1);
+  assert.equal(plan.textZones[0].renderedBy, "renderer");
+});
+
+test("parseCreativePlan: rejeita o PLANO INTEIRO quando um assetPlacement tem retângulo fora dos limites do canvas", () => {
+  const plan = parseCreativePlan(samplePlanJson({
+    assetPlacements: [{ role: "logo", url: "https://x/logo.png", rect: { xPct: 90, yPct: 4, widthPct: 30, heightPct: 10 } }],
+  }));
+  assert.equal(plan, undefined, "xPct+widthPct > 100 deveria invalidar o plano inteiro, nunca clampar silenciosamente");
+});
+
+test("parseCreativePlan: rejeita o plano inteiro quando um assetPlacement tem role desconhecido", () => {
+  const plan = parseCreativePlan(samplePlanJson({
+    assetPlacements: [{ role: "banner_generico", url: "https://x/x.png", rect: { xPct: 0, yPct: 0, widthPct: 10, heightPct: 10 } }],
+  }));
+  assert.equal(plan, undefined);
+});
+
+test("parseCreativePlan: rejeita o plano inteiro quando uma textZone tem retângulo com largura/altura zero ou negativa", () => {
+  const plan = parseCreativePlan(samplePlanJson({
+    textZones: [{ kind: "cta", text: "ACESSE", rect: { xPct: 10, yPct: 10, widthPct: 0, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" }],
+  }));
+  assert.equal(plan, undefined);
+});
+
+test("parseCreativePlan: rejeita o plano inteiro quando uma textZone tem renderedBy/emphasis fora do vocabulário fechado", () => {
+  const plan = parseCreativePlan(samplePlanJson({
+    textZones: [{ kind: "cta", text: "ACESSE", rect: { xPct: 10, yPct: 10, widthPct: 10, heightPct: 10 }, emphasis: "primary", renderedBy: "modelo_qualquer" }],
+  }));
+  assert.equal(plan, undefined);
+});
+
+test("buildImageGenerationPromptFromPlan: com assetPlacement de logo/screenshot, usa a geometria exata em percentual (não mais a instrução genérica)", () => {
+  const context = sampleContext({
+    assets: [
+      { url: "https://x/logo.png", role: "logo", description: "" },
+      { url: "https://x/screenshot.png", role: "screenshot", description: "" },
+    ],
+  });
+  const plan = parseCreativePlan(samplePlanJson({
+    assetPlacements: [
+      { role: "logo", url: "https://x/logo.png", rect: { xPct: 4, yPct: 4, widthPct: 18, heightPct: 10 } },
+      { role: "screenshot", url: "https://x/screenshot.png", rect: { xPct: 20, yPct: 30, widthPct: 60, heightPct: 45 }, frame: "laptop" },
+    ],
+  }));
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+  assert.match(imagePrompt, /4%–22% na horizontal e 4%–14% na vertical/);
+  assert.match(imagePrompt, /20%–80% na horizontal e 30%–75% na vertical/);
+  assert.match(imagePrompt, /notebook/);
+  assert.match(imagePrompt, /NÃO desenhe uma logo/);
+  assert.match(imagePrompt, /NUNCA a interface do site/);
+});

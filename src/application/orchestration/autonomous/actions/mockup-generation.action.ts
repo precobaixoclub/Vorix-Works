@@ -5,6 +5,17 @@ import { renderMockupPng } from "../../../../infrastructure/autonomous/html-mock
 import { projectPaths } from "../../../../interfaces/cli/run-command.js";
 import { readPendingVisualAssets } from "../blocker-classifier.js";
 import type { ActionDefinition } from "../autonomous-types.js";
+import type { ArtifactProvenance } from "../../../../shared/utils/artifact-provenance.js";
+
+/** Migração "GPT como motor criativo único" (PR 3/9) — este mockup é, no próprio texto de
+ * `limitations` acima, "placeholder visual esquemático... nunca uma interface real do produto".
+ * `publishable: false` torna isso estrutural: nenhum consumidor downstream (Pedro em modo
+ * assistido, quality gate, gate de aprovação) pode mais aceitá-lo como entrega final. */
+const MOCKUP_PROVENANCE: ArtifactProvenance = {
+  producer: "placeholder_mockup",
+  publishable: false,
+  reason: "Caixa de dispositivo HTML/CSS com o texto do prompt escrito na tela — nunca uma interface real, gerada só para destravar o pipeline autônomo.",
+};
 
 export const mockupGenerationAction: ActionDefinition = {
   id: "mockup_generation",
@@ -51,7 +62,7 @@ export const mockupGenerationAction: ActionDefinition = {
 
       const bytes = await readFile(tempPngPath);
       const artifactDelivery = new LocalArtifactDelivery({ rootDir: paths.artifactsDir });
-      const written = await artifactDelivery.writeFile({ executionId, relativePath, content: bytes, mimeType: "image/png" });
+      const written = await artifactDelivery.writeFile({ executionId, relativePath, content: bytes, mimeType: "image/png", provenance: MOCKUP_PROVENANCE });
       await rm(tempPngPath, { force: true }).catch(() => {});
 
       return {

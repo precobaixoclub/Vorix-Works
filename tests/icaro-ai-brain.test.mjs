@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { IcaroAIBrain } from "../dist/application/ai/index.js";
 import {
   InMemoryIcaroCostLedger,
@@ -162,10 +163,12 @@ test("Ícaro aplica retry quando a falha é temporária", async () => {
   ]);
   const events = new InMemoryZunoEventRecorder();
   const logger = new InMemoryIcaroLogger();
+  const ledger = new InMemoryIcaroCostLedger();
   const icaro = new IcaroAIBrain({
     providers: [provider],
     logger,
     eventRecorder: events,
+    costLedger: ledger,
     retryPolicy: { maxAttemptsPerProvider: 2 },
   });
 
@@ -176,6 +179,7 @@ test("Ícaro aplica retry quando a falha é temporária", async () => {
   assert.equal(provider.calls.length, 2);
   assert.ok(events.list().some((event) => event.name === "AIRetry"));
   assert.ok(logger.list().some((entry) => entry.action === "RetryScheduled"));
+  assert.equal(ledger.list()[0].retryCount, 1, "2 tentativas no total = 1 retry");
 });
 
 test("Ícaro usa fallback quando o Provider primário falha", async () => {
@@ -194,9 +198,11 @@ test("Ícaro usa fallback quando o Provider primário falha", async () => {
     { content: "resposta via fallback", model: "fallback-model", tokens: { input: 11, output: 6 } },
   ]);
   const events = new InMemoryZunoEventRecorder();
+  const ledger = new InMemoryIcaroCostLedger();
   const icaro = new IcaroAIBrain({
     providers: [primary, fallback],
     eventRecorder: events,
+    costLedger: ledger,
     retryPolicy: { maxAttemptsPerProvider: 1 },
     fallbackPolicy: { enabled: true, maxFallbackProviders: 1 },
   });
@@ -209,6 +215,7 @@ test("Ícaro usa fallback quando o Provider primário falha", async () => {
   assert.equal(primary.calls.length, 1);
   assert.equal(fallback.calls.length, 1);
   assert.ok(events.list().some((event) => event.name === "AIFallback"));
+  assert.equal(ledger.list()[0].fallbackUsed, true);
 });
 
 test("Ícaro respeita timeout e devolve falha padronizada", async () => {
@@ -252,7 +259,8 @@ test("Ícaro registra tokens, custo real e custo estimado", async () => {
     retryPolicy: { maxAttemptsPerProvider: 1 },
   });
 
-  const response = await icaro.request(createIcaroRequest());
+  const request = createIcaroRequest();
+  const response = await icaro.request(request);
   const [record] = ledger.list();
 
   assert.equal(response.tokens.total, 150);
@@ -261,13 +269,23 @@ test("Ícaro registra tokens, custo real e custo estimado", async () => {
   assert.equal(record.tokens.total, 150);
   assert.equal(record.cost.actual, 0.03);
   assert.equal(record.providerId, "text-provider");
+
+  // Migração "GPT como motor criativo único" (PR 1): prova ponta-a-ponta de que o hash/tamanho do
+  // prompt e o correlationId chegam ao ledger — nunca o prompt em si.
+  assert.equal(record.correlationId, "corr-ai");
+  assert.equal(record.promptChars, request.prompt.length);
+  assert.equal(record.promptHash, createHash("sha256").update(request.prompt).digest("hex"));
+  assert.equal(record.retryCount, 0);
+  assert.equal(record.fallbackUsed, false);
+  assert.ok(!("prompt" in record), "o ledger nunca guarda o prompt em si, só o hash");
 });
 
 test("Ícaro devolve resposta de no_provider quando não há Provider compatível", async () => {
   const provider = new FakeAIProvider(createProviderProfile({
     enabled: false,
   }), []);
-  const icaro = new IcaroAIBrain({ providers: [provider] });
+  const ledger = new InMemoryIcaroCostLedger();
+  const icaro = new IcaroAIBrain({ providers: [provider], costLedger: ledger });
 
   const response = await icaro.request(createIcaroRequest());
 
@@ -275,6 +293,11 @@ test("Ícaro devolve resposta de no_provider quando não há Provider compatíve
   assert.equal(response.error.kind, "no_provider");
   assert.equal(response.provider.id, undefined);
   assert.equal(provider.calls.length, 0);
+  // Migração "GPT como motor criativo único" (PR 1): mesmo uma falha de "nenhum Provider
+  // disponível" (ex.: chave de API ausente para o motor criativo) precisa deixar rastro em
+  // `icaro_ai_calls` — nunca falhar em silêncio total.
+  assert.equal(ledger.list().length, 1);
+  assert.equal(ledger.list()[0].status, "failed");
 });
 
 test("Arthur, Helena e Caio não dependem do Ícaro, e Maria não depende de Providers", async () => {

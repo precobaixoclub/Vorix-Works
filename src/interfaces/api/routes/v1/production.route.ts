@@ -40,6 +40,8 @@ const REJECT_BODY_SCHEMA = {
   },
 } as const;
 
+const REFERENCE_ASSET_ROLES = ["product_photo", "screenshot", "logo", "reference_style", "other"] as const;
+
 const GENERATE_BODY_SCHEMA = {
   type: "object",
   required: ["workspaceId", "name", "objective", "ideaText", "format", "channel"],
@@ -53,6 +55,25 @@ const GENERATE_BODY_SCHEMA = {
     channel: { type: "string", minLength: 1 },
     targetAudience: { type: "string", maxLength: 300 },
     referenceImages: { type: "array", items: { type: "string" }, maxItems: 10 },
+    // Migração "GPT como motor criativo único" (PR 7/9) — os 3 campos abaixo são lidos só pelo
+    // motor GPT (ver `content-request.schema.ts`); ausentes/omitidos, o comportamento é idêntico
+    // ao de antes deles existirem, inclusive para o motor legado.
+    aspectRatio: { type: "string", enum: ["1:1", "4:5", "9:16", "16:9"] },
+    referenceAssets: {
+      type: "array",
+      maxItems: 10,
+      items: {
+        type: "object",
+        required: ["url", "role"],
+        additionalProperties: false,
+        properties: {
+          url: { type: "string", minLength: 1, maxLength: 2000 },
+          role: { type: "string", enum: REFERENCE_ASSET_ROLES as unknown as string[] },
+          description: { type: "string", maxLength: 300 },
+        },
+      },
+    },
+    forbiddenElements: { type: "array", items: { type: "string", minLength: 1, maxLength: 100 }, maxItems: 20 },
   },
 } as const;
 
@@ -105,6 +126,9 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
       channel: body.channel,
       targetAudience: body.targetAudience,
       referenceImageUrls: body.referenceImages,
+      aspectRatio: body.aspectRatio,
+      referenceAssets: body.referenceAssets,
+      forbiddenElements: body.forbiddenElements,
     });
 
     const idempotencyKey = `production-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -173,5 +197,8 @@ type GenerateBody = {
   channel: string;
   targetAudience?: string;
   referenceImages?: string[];
+  aspectRatio?: "1:1" | "4:5" | "9:16" | "16:9";
+  referenceAssets?: Array<{ url: string; role: (typeof REFERENCE_ASSET_ROLES)[number]; description?: string }>;
+  forbiddenElements?: string[];
 };
 

@@ -79,3 +79,36 @@ test("compositeLogoOntoImage: rejeita quando a imagem base não tem metadados de
     () => compositeLogoOntoImage({ imageBuffer: Buffer.from("not an image"), logoBuffer: Buffer.from("also not an image") }),
   );
 });
+
+// ---------------------------------------------------------------------------------------------
+// PR 4/9 (migração "GPT como motor criativo único") — geometria vinda do creative_plan
+// ---------------------------------------------------------------------------------------------
+
+test("compositeLogoOntoImage: com placement do creative_plan, a logo ocupa a região exata pedida (não mais o canto padrão)", async () => {
+  const imageBuffer = await makeSolidPng(1000, 1000, { r: 0, g: 0, b: 0, alpha: 1 });
+  const logoBuffer = await makeSolidPng(200, 200, { r: 255, g: 255, b: 255, alpha: 1 });
+
+  // Placement no canto INFERIOR direito, mesmo sem passar `corner` — placement tem prioridade.
+  const result = await compositeLogoOntoImage({ imageBuffer, logoBuffer, placement: { xPct: 70, yPct: 70, widthPct: 25, heightPct: 25 } });
+
+  const bottomRightPixel = await sharp(result).extract({ left: 850, top: 850, width: 1, height: 1 }).raw().toBuffer();
+  const topLeftPixel = await sharp(result).extract({ left: 20, top: 20, width: 1, height: 1 }).raw().toBuffer();
+  assert.ok(bottomRightPixel[0] > 100, `esperava canal vermelho claro dentro do placement, veio ${bottomRightPixel[0]}`);
+  assert.equal(topLeftPixel[0], 0, "canto superior esquerdo (sem placement, sem corner) deveria continuar preto");
+});
+
+test("compositeLogoOntoImage: placement tem prioridade sobre corner quando ambos são passados", async () => {
+  const imageBuffer = await makeSolidPng(1000, 1000, { r: 0, g: 0, b: 0, alpha: 1 });
+  const logoBuffer = await makeSolidPng(200, 200, { r: 255, g: 255, b: 255, alpha: 1 });
+
+  // corner pede "bottom-right", mas placement pede o canto superior esquerdo — placement vence.
+  const result = await compositeLogoOntoImage({
+    imageBuffer,
+    logoBuffer,
+    corner: "bottom-right",
+    placement: { xPct: 4, yPct: 4, widthPct: 20, heightPct: 20 },
+  });
+
+  const topLeftPixel = await sharp(result).extract({ left: 60, top: 60, width: 1, height: 1 }).raw().toBuffer();
+  assert.ok(topLeftPixel[0] > 100, `esperava a logo no canto superior esquerdo (placement vence corner), veio ${topLeftPixel[0]}`);
+});

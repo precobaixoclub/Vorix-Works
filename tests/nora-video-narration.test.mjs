@@ -124,14 +124,22 @@ class FakeArtifactDelivery {
     return `${executionId}:${relativePath}`;
   }
 
+  // Sem proveniência de propósito — mesmo caso normal de um humano/IDE salvando o arquivo por
+  // fora do ArtifactDeliveryPort (migração "GPT como motor criativo único", PR 3/9).
   seed(executionId, relativePath, bytes) {
-    this.files.set(this.key(executionId, relativePath), new Uint8Array(bytes));
+    this.files.set(this.key(executionId, relativePath), { bytes: new Uint8Array(bytes), provenance: undefined });
+  }
+
+  // Simula o mesmo caminho de escrita real (`narration-regeneration.action.ts`, Autonomous
+  // Engine) sobrescrevendo o caminho esperado com proveniência explícita não publicável.
+  seedWithProvenance(executionId, relativePath, bytes, provenance) {
+    this.files.set(this.key(executionId, relativePath), { bytes: new Uint8Array(bytes), provenance });
   }
 
   async writeFile(input) {
     this.writeCalls.push(input);
     const bytes = typeof input.content === "string" ? Buffer.from(input.content, "utf8") : Buffer.from(input.content);
-    this.files.set(this.key(input.executionId, input.relativePath), new Uint8Array(bytes));
+    this.files.set(this.key(input.executionId, input.relativePath), { bytes: new Uint8Array(bytes), provenance: input.provenance });
     return {
       absolutePath: `/fake/artifacts/${input.executionId}/${input.relativePath}`,
       relativePath: input.relativePath,
@@ -146,13 +154,14 @@ class FakeArtifactDelivery {
 
   async readFile(input) {
     this.readCalls.push(input);
-    const data = this.files.get(this.key(input.executionId, input.relativePath));
-    if (!data) return undefined;
+    const entry = this.files.get(this.key(input.executionId, input.relativePath));
+    if (!entry) return undefined;
     return {
       absolutePath: `/fake/artifacts/${input.executionId}/${input.relativePath}`,
       relativePath: input.relativePath,
-      sizeBytes: data.byteLength,
-      data,
+      sizeBytes: entry.bytes.byteLength,
+      data: entry.bytes,
+      provenance: entry.provenance,
     };
   }
 }
@@ -550,6 +559,24 @@ test("Nora retoma com arquivo WAV válido e entrega briefing estruturado para Ra
   assert.ok(events.list().some((event) => event.name === "VideoNarrationGenerated"));
   assert.ok(response.output.creativeDna);
   assert.ok(response.output.creativeDna.bigIdea.length > 0);
+});
+
+test("Nora REJEITA narração sintética do Autonomous Engine mesmo com áudio válido — proveniência não publicável (migração GPT/PR 3)", async () => {
+  const { nora, artifactDelivery } = createNora();
+  // Mesmo mecanismo real de `narration-regeneration.action.ts`: escreve no MESMO caminho
+  // esperado, com um WAV que passa em toda validação de áudio, mas com proveniência explícita
+  // `publishable: false` (voz sintética SAPI) — nunca aceita como narração final.
+  artifactDelivery.seedWithProvenance(EXECUTION_ID, "audio/narration.wav", createValidWav(10), {
+    producer: "synthetic_narration",
+    publishable: false,
+    reason: "Voz sintética Windows SAPI.",
+  });
+
+  const response = await nora.execute(createRequest());
+
+  assert.equal(response.status, "needs_assisted_generation");
+  assert.equal(response.output.pendingNarrations.length, 1);
+  assert.equal(response.output.pendingNarrations[0].expectedRelativePath, "audio/narration.wav");
 });
 
 test("Nora rejeita áudio inválido, silencioso ou de outra duração antes de liberar Rafa", () => {

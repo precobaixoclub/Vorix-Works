@@ -9,6 +9,7 @@ import type { TenantClientContext } from "../../application/tenancy/valentina.ty
 import type { Skill, SkillArtifact, SkillRequest, SkillResponse } from "../../domain/skills/skill.contract.js";
 import { latest } from "../../shared/utils/skill-parsing.js";
 import { deriveCampaignCreativeDNA, type CampaignCreativeDNA } from "../../shared/utils/creative-director-engine.js";
+import { isExplicitlyNonPublishable, type ArtifactProvenance } from "../../shared/utils/artifact-provenance.js";
 import { noraVideoNarrationManifest } from "./nora.manifest.js";
 import type { NoraLogAction, NoraLoggerPort } from "./nora-log.contract.js";
 import type {
@@ -76,6 +77,15 @@ const EXPECTED_NARRATION_RELATIVE_PATH = "audio/narration.wav";
 const SCRIPT_RELATIVE_PATH = "audio/narration-script.txt";
 const WORK_PACKAGE_RELATIVE_PATH = "audio/narration-work-package.json";
 const SUPPORTED_AUDIO_MIME_TYPES = ["audio/wav", "audio/mpeg", "audio/mp4", "audio/aac"];
+
+/** Migração "GPT como motor criativo único" (PR 3/9) — roteiro e pacote de trabalho são material
+ * de apoio à intervenção assistida, nunca a narração final em si (essa chega por fora do
+ * `ArtifactDeliveryPort`, lida via `readFile`). */
+const NARRATION_ASSISTED_SUPPORT_PROVENANCE: ArtifactProvenance = {
+  producer: "developer_assisted",
+  publishable: false,
+  reason: "Roteiro/pacote de trabalho para intervenção assistida — nunca a narração final.",
+};
 
 export class NoraVideoNarrationSkill implements Skill<NoraVideoNarrationRequestInput, NoraSkillOutput> {
   readonly manifest = noraVideoNarrationManifest;
@@ -249,7 +259,18 @@ export class NoraVideoNarrationSkill implements Skill<NoraVideoNarrationRequestI
       relativePath: EXPECTED_NARRATION_RELATIVE_PATH,
     });
 
-    if (existing) {
+    if (existing && isExplicitlyNonPublishable(existing.provenance)) {
+      // Migração "GPT como motor criativo único" (PR 3/9) — fecha o mesmo tipo de vazamento
+      // encontrado para Pedro: se `narration_regeneration` (Autonomous Engine) escreveu por cima
+      // do mesmo caminho esperado, o arquivo carrega proveniência explícita `publishable: false`
+      // e nunca é aceito como narração final, mesmo passando na validação de bytes/duração.
+      validationErrors.push(`${existing.relativePath}: proveniência não publicável (${existing.provenance?.producer}) — nunca aceito como narração final.`);
+      await this.log("AssistedAudioValidationFailed", `Arquivo em ${existing.relativePath} tem proveniência não publicável (${existing.provenance?.producer}).`, request, {
+        clientId: tenant.clientId,
+        relativePath: existing.relativePath,
+        reason: existing.provenance?.reason,
+      });
+    } else if (existing) {
       const validation = validateNarrationAudio(existing.data, existing.relativePath, request.input.diegoEditingPlan.totalDurationSeconds);
       if (validation.valid) {
         const audio = buildGeneratedAudio(existing, validation);
@@ -314,10 +335,12 @@ export class NoraVideoNarrationSkill implements Skill<NoraVideoNarrationRequestI
       relativePath: SCRIPT_RELATIVE_PATH,
       content: plan.narrationScript,
       mimeType: "text/plain",
+      provenance: NARRATION_ASSISTED_SUPPORT_PROVENANCE,
     });
     const workPackage = await this.artifactDelivery.writeFile({
       executionId: request.context.executionId,
       relativePath: WORK_PACKAGE_RELATIVE_PATH,
+      provenance: NARRATION_ASSISTED_SUPPORT_PROVENANCE,
       content: JSON.stringify({
         skill: this.manifest.id,
         expectedRelativePath: EXPECTED_NARRATION_RELATIVE_PATH,

@@ -30,10 +30,43 @@ test("CONTENT_REQUEST_SCHEMA_V1: registra referenceIntelligence como campo pass-
 });
 
 test("CONTENT_REQUEST_SCHEMA_V1: todos os campos 'never_required' (preenchidos automaticamente por generate-visual-from-idea.ts) nunca são required", () => {
-  const autoFilledKeys = ["referenceImageUrl", "referenceImageUrls", "referenceIntelligence", "textCommercialFacts"];
+  const autoFilledKeys = ["referenceImageUrl", "referenceImageUrls", "referenceIntelligence", "textCommercialFacts", "aspectRatio", "referenceAssets", "forbiddenElements"];
   for (const key of autoFilledKeys) {
     const field = CONTENT_REQUEST_SCHEMA_V1.fields.find((f) => f.key === key);
     assert.ok(field, `campo '${key}' deveria existir no schema`);
     assert.equal(field.confirmationPolicy, "never_required", `campo '${key}' deveria ser never_required (nunca perguntado ao usuário)`);
   }
+});
+
+// Migração "GPT como motor criativo único" (PR 7/9) — superfície aditiva exclusiva do motor GPT
+// (aspectRatio/referenceAssets/forbiddenElements); mesmo risco de "allowlist silenciosa" que
+// motivou os testes acima, travado aqui separadamente porque estes 3 campos não existiam quando
+// aquele precedente foi escrito.
+
+test("CONTENT_REQUEST_SCHEMA_V1: registra aspectRatio como campo pass-through (PR 7/9 — motor GPT)", () => {
+  const field = CONTENT_REQUEST_SCHEMA_V1.fields.find((f) => f.key === "aspectRatio");
+
+  assert.ok(field, "campo 'aspectRatio' deveria estar registrado no schema, senão o valor é descartado silenciosamente");
+  assert.equal(field.required, false);
+  assert.equal(field.confirmationPolicy, "never_required");
+  assert.equal(field.dataType, "enum");
+  assert.deepEqual(field.acceptedValues, ["1:1", "4:5", "9:16", "16:9"]);
+});
+
+test("CONTENT_REQUEST_SCHEMA_V1: registra referenceAssets como campo pass-through (PR 7/9 — motor GPT, assets com papel explícito)", () => {
+  const field = CONTENT_REQUEST_SCHEMA_V1.fields.find((f) => f.key === "referenceAssets");
+
+  assert.ok(field);
+  assert.equal(field.required, false);
+  assert.equal(field.confirmationPolicy, "never_required");
+  assert.equal(field.dataType, "string");
+});
+
+test("CONTENT_REQUEST_SCHEMA_V1: registra forbiddenElements como campo pass-through (PR 7/9 — motor GPT)", () => {
+  const field = CONTENT_REQUEST_SCHEMA_V1.fields.find((f) => f.key === "forbiddenElements");
+
+  assert.ok(field);
+  assert.equal(field.required, false);
+  assert.equal(field.confirmationPolicy, "never_required");
+  assert.equal(field.dataType, "string");
 });

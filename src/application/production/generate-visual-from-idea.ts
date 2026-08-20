@@ -22,6 +22,14 @@ const CHANNEL_MAP: Record<string, string> = {
   youtube: "other",
 };
 
+export type ReferenceAssetRole = "product_photo" | "screenshot" | "logo" | "reference_style" | "other";
+
+export type ReferenceAssetInput = {
+  url: string;
+  role: ReferenceAssetRole;
+  description?: string;
+};
+
 export type GenerateVisualFromIdeaInput = {
   tenantId: string;
   workspaceId: string;
@@ -35,6 +43,20 @@ export type GenerateVisualFromIdeaInput = {
    * `deps.imageDescriber` e enviadas adiante como `referenceContext`, nunca a imagem em si (o
    * pipeline de geração real só aceita texto no prompt). */
   referenceImageUrls?: string[];
+  /** Migração "GPT como motor criativo único" (PR 7/9) — proporção final da peça (ex.: "4:5",
+   * "9:16"), lida só pelo motor GPT (`creative_context.format`); o motor legado ignora este campo,
+   * sem nenhuma mudança de comportamento. */
+  aspectRatio?: "1:1" | "4:5" | "9:16" | "16:9";
+  /** Migração "GPT como motor criativo único" (PR 7/9) — assets reais COM PAPEL explícito
+   * (produto/screenshot/logo/estilo), lidos só pelo motor GPT
+   * (`GptCreativeEngineVisualTaskHandler.buildAssetsFromValidatedInputs`). Quando presente,
+   * substitui inteiramente `referenceImageUrls` para fins do motor GPT (que nunca infere papel a
+   * partir de posição na lista) — é este campo que os testes reais (Preço Baixo Club, tênis RV)
+   * usam para marcar explicitamente qual URL é o screenshot/logo real. */
+  referenceAssets?: ReferenceAssetInput[];
+  /** Migração "GPT como motor criativo único" (PR 7/9) — elementos que a peça NUNCA deve conter,
+   * lidos só pelo motor GPT (`creative_context.forbiddenElements`, checado pelo quality gate). */
+  forbiddenElements?: string[];
 };
 
 export type GenerateVisualFromIdeaDeps = BriefingUseCaseDeps & {
@@ -137,6 +159,16 @@ export async function generateVisualFromIdea(
   const primaryImageIndex = referenceIntelligence && referenceIntelligence.primaryImageIndex < referenceUrls.length ? referenceIntelligence.primaryImageIndex : 0;
   const primaryReferenceImageUrl = referenceUrls[primaryImageIndex];
   if (primaryReferenceImageUrl) fields.push({ key: "referenceImageUrl", value: primaryReferenceImageUrl });
+
+  // Migração "GPT como motor criativo único" (PR 7/9) — superfície aditiva exclusiva do motor GPT;
+  // o motor legado nunca lê nenhum destes 3 campos, então nada muda para `legacyCreativeEngineEnabled`.
+  if (input.aspectRatio) fields.push({ key: "aspectRatio", value: input.aspectRatio });
+  if (input.referenceAssets && input.referenceAssets.length > 0) {
+    fields.push({ key: "referenceAssets", value: JSON.stringify(input.referenceAssets) });
+  }
+  if (input.forbiddenElements && input.forbiddenElements.length > 0) {
+    fields.push({ key: "forbiddenElements", value: input.forbiddenElements.join(", ") });
+  }
 
   // Título/headline/legenda/CTA prontos para postar agora são escritos pela Maria de verdade, via
   // o grafo `content_request-visual-only-v2` (campaign_structure → copy_generation, ver

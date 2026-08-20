@@ -17,8 +17,9 @@ export class PostgresContentGenerationHistoryRepository implements ContentGenera
     await this.pool.query(
       `insert into content_generation_history
          (id, tenant_id, workspace_id, execution_run_id, marketing_objective, headline, title, caption, cta,
-          visual_concept, composition_summary, quality_score, review_status, created_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
+          visual_concept, composition_summary, quality_score, review_status, created_at,
+          engine_mode, creative_engine_run_id, description)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), $14, $15, $16)
        on conflict (execution_run_id) do nothing`,
       [
         this.idGenerator(),
@@ -34,6 +35,9 @@ export class PostgresContentGenerationHistoryRepository implements ContentGenera
         entry.compositionSummary ?? null,
         entry.qualityScore ?? null,
         entry.reviewStatus ?? null,
+        entry.engineMode ?? null,
+        entry.creativeEngineRunId ?? null,
+        entry.description ?? null,
       ],
     );
   }
@@ -41,7 +45,8 @@ export class PostgresContentGenerationHistoryRepository implements ContentGenera
   async getRecentForWorkspace(workspaceId: string, limit = 5): Promise<ContentGenerationHistoryEntry[]> {
     const result = await this.pool.query(
       `select tenant_id, workspace_id, execution_run_id, marketing_objective, headline, title, caption, cta,
-              visual_concept, composition_summary, quality_score, review_status
+              visual_concept, composition_summary, quality_score, review_status,
+              engine_mode, creative_engine_run_id, description
          from content_generation_history
         where workspace_id = $1
         order by created_at desc
@@ -61,6 +66,9 @@ export class PostgresContentGenerationHistoryRepository implements ContentGenera
       compositionSummary: row.composition_summary ?? undefined,
       qualityScore: row.quality_score ?? undefined,
       reviewStatus: row.review_status ?? undefined,
+      engineMode: row.engine_mode ?? undefined,
+      creativeEngineRunId: row.creative_engine_run_id ?? undefined,
+      description: row.description ?? undefined,
     }));
   }
 }

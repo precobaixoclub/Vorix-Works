@@ -31,7 +31,10 @@ export const DEFAULT_EXECUTION_ENVIRONMENT_POLICIES: Record<ExecutionEnvironment
     realExecutionAllowed: true,
     networkAllowed: true,
     publicationAllowed: false,
-    allowedProviders: ["deterministic", "helena", "fake"],
+    // "gpt-creative-engine" — migração "GPT como motor criativo único" (PR 6/9), provider dos
+    // handlers do motor GPT (`gpt-creative-engine-execution-handlers.ts`), mesmo tratamento de
+    // "helena" (único outro provider real permitido).
+    allowedProviders: ["deterministic", "helena", "gpt-creative-engine", "fake"],
   },
   test: {
     environment: "test",
@@ -47,7 +50,7 @@ export const DEFAULT_EXECUTION_ENVIRONMENT_POLICIES: Record<ExecutionEnvironment
     realExecutionAllowed: true,
     networkAllowed: true,
     publicationAllowed: false,
-    allowedProviders: ["deterministic", "helena", "fake"],
+    allowedProviders: ["deterministic", "helena", "gpt-creative-engine", "fake"],
   },
   production: {
     environment: "production",
@@ -55,7 +58,7 @@ export const DEFAULT_EXECUTION_ENVIRONMENT_POLICIES: Record<ExecutionEnvironment
     realExecutionAllowed: true,
     networkAllowed: true,
     publicationAllowed: false,
-    allowedProviders: ["deterministic", "helena"],
+    allowedProviders: ["deterministic", "helena", "gpt-creative-engine"],
   },
 };
 

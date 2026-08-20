@@ -36,6 +36,7 @@ import { MediaGenerationService } from "../../../application/ai-providers/media-
 import { OpenAiImageProviderAdapter } from "../../../infrastructure/ai-providers/openai-image-provider-adapter.js";
 import { OpenAiIcaroImageProvider } from "../../../infrastructure/ai-providers/openai-icaro-image-provider.js";
 import { OpenAiIcaroTextProvider } from "../../../infrastructure/ai-providers/openai-icaro-text-provider.js";
+import { OpenAiCreativeImageProvider } from "../../../infrastructure/ai-providers/openai-creative-image-provider.js";
 import { createQualityFeedbackCenter, type QualityFeedbackCenter } from "../../../application/quality-feedback/quality-feedback-center.js";
 import { OpenAiVisionDescriber } from "../../../infrastructure/ai-providers/openai-vision-describer.js";
 import { OpenAiReferenceIntelligenceExtractor } from "../../../infrastructure/ai-providers/openai-reference-intelligence-extractor.js";
@@ -43,6 +44,10 @@ import { OpenAiSemanticOcclusionChecker } from "../../../infrastructure/ai-provi
 import type { ReferenceIntelligence } from "../../../shared/utils/reference-intelligence.types.js";
 import { GoogleVeoProviderAdapter } from "../../../infrastructure/ai-providers/google-veo-provider-adapter.js";
 import { IcaroAIBrain } from "../../../application/ai/icaro-brain.js";
+import { InMemoryIcaroCostLedger } from "../../../infrastructure/telemetry/in-memory-icaro-cost-ledger.js";
+import { PostgresIcaroCostLedger } from "../../../infrastructure/telemetry/postgres-icaro-cost-ledger.js";
+import { InMemoryIcaroLogger } from "../../../infrastructure/telemetry/in-memory-icaro-logger.js";
+import { PostgresIcaroLogger } from "../../../infrastructure/telemetry/postgres-icaro-logger.js";
 import { ValentinaTenantManager } from "../../../application/tenancy/valentina-tenant-manager.js";
 import type { ValentinaTenantPort } from "../../../application/tenancy/valentina-tenant.port.js";
 import { ClaraKnowledgeCenter } from "../../../application/knowledge/clara-knowledge-center.js";
@@ -69,6 +74,13 @@ import { CreditGatedAiGateway } from "../../../application/ai-gateway/credit-gat
 import { DeterministicExecutionTaskHandler } from "../../../application/execution/deterministic-handlers.js";
 import type { ExecutionHandlerResolver } from "../../../application/execution/handler-resolver.js";
 import type { ExecutionFeatureFlags } from "../../../application/execution/feature-flags.js";
+import { assertCreativeEngineExclusivity, resolveCreativeEngineMode } from "../../../application/creative-engine/creative-engine-mode.js";
+import type { CreativeEngineRunRepositoryPort } from "../../../application/ports/creative-engine-run-repository.port.js";
+import { compositeLogoOntoImage } from "../../../infrastructure/media/logo-compositor.js";
+import { compositeScreenshotIntoDeviceMockup } from "../../../infrastructure/media/screenshot-mockup-compositor.js";
+import { renderCreativePlanTextZones } from "../../../infrastructure/rendering/render-creative-plan-text-zones.js";
+import { computeAssetSuitabilityScore } from "../../../infrastructure/image-processing/product-background.js";
+import sharp from "sharp";
 import { createDefaultExecutionContractRegistry, type ExecutionContractRegistry } from "../../../application/execution/execution-contract-registry.js";
 import { createExecutionEnvironmentPolicy, SideEffectGuard, type ExecutionEnvironmentPolicy } from "../../../application/execution/execution-operational-policy.js";
 import { InMemoryHandlerCircuitBreaker, type HandlerCircuitBreakerPort } from "../../../application/execution/handler-circuit-breaker.js";
@@ -182,6 +194,12 @@ export type ApiContainer = {
   planningArtifactRepository: PlanningArtifactRepositoryPort;
   planningDecisionRepository: PlanningDecisionRepositoryPort;
   planningEngineHook: BriefingPlanningHook;
+  /** Migração "GPT como motor criativo único" (PR 1/9) — prova auditável de qual motor produziu
+   * cada peça publicável (ver `creative-engine-run-repository.port.ts`). Exposta aqui (já fluía
+   * via `...repositories` no retorno, mas sem tipo declarado) para que qualquer leitor legítimo
+   * — um endpoint de auditoria futuro, um script de validação — possa consultar
+   * `getByExecutionRunId`/`listByWorkspace` sem precisar de um cast. */
+  creativeEngineRunRepository: CreativeEngineRunRepositoryPort;
   /** Sprint 10 — Runtime Engine (só leitura pela API; escrita só via `runtimeEngineHook`, chamado
    * internamente por `planning-engine.ts` quando um Planning fica `"ready"`/é superado). */
   runtimeRepository: RuntimeRepositoryPort;
@@ -329,15 +347,6 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     idGenerator: defaultRuntimeIdGenerator,
   });
 
-  const planningEngineHook = new PlanningEngineBriefingHook({
-    planningRepository: repositories.planningRepository,
-    executionGraphRepository: repositories.executionGraphRepository,
-    executionTaskRepository: repositories.executionTaskRepository,
-    artifactRepository: repositories.planningArtifactRepository,
-    decisionRepository: repositories.planningDecisionRepository,
-    idGenerator: defaultPlanningIdGenerator,
-    runtimeEngine: runtimeEngineHook,
-  });
   const executionHandlers: [DeterministicExecutionTaskHandler] = [new DeterministicExecutionTaskHandler()];
   const executionFeatureFlags: ExecutionFeatureFlags = {
     realExecutionEnabled: config?.execution.realExecutionEnabled ?? false,
@@ -346,7 +355,25 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     realCopyEnabled: config?.execution.realCopyEnabled ?? false,
     realVisualEnabled: config?.execution.realVisualEnabled ?? false,
     realDistributionEnabled: config?.execution.realDistributionEnabled ?? false,
+    // Migração "GPT como motor criativo único" (PR 6/9) — default do container (sem config)
+    // preserva o motor legado, espelhando `DEFAULT_EXECUTION_FEATURE_FLAGS`.
+    creativeEngineGptEnabled: config?.execution.creativeEngineGptEnabled ?? false,
+    legacyCreativeEngineEnabled: config?.execution.legacyCreativeEngineEnabled ?? true,
   };
+  // Falha alto e cedo no boot em vez de deixar uma execução descobrir ambiguidade/ausência de
+  // motor criativo no meio do caminho — ver `creative-engine-mode.ts`.
+  assertCreativeEngineExclusivity(executionFeatureFlags);
+  const creativeEngineMode = resolveCreativeEngineMode(executionFeatureFlags).mode;
+  const planningEngineHook = new PlanningEngineBriefingHook({
+    planningRepository: repositories.planningRepository,
+    executionGraphRepository: repositories.executionGraphRepository,
+    executionTaskRepository: repositories.executionTaskRepository,
+    artifactRepository: repositories.planningArtifactRepository,
+    decisionRepository: repositories.planningDecisionRepository,
+    idGenerator: defaultPlanningIdGenerator,
+    runtimeEngine: runtimeEngineHook,
+    creativeEngine: creativeEngineMode,
+  });
   const executionContractRegistry = createDefaultExecutionContractRegistry();
   const executionEnvironmentPolicy = createExecutionEnvironmentPolicy(config?.execution.environment ?? "development");
   const executionSideEffectGuard = new SideEffectGuard(executionEnvironmentPolicy);
@@ -523,6 +550,20 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // "analysis"/"text_generation"/"review" — só "image_generation" (Pedro) estava registrado. João
   // degrada bem sem IA, mas Maria exige Ícaro (não é opcional na Skill dela): sem isto, toda
   // chamada de copy_generation no grafo `content_request-visual-only-v2` falhava sempre.
+  // `costLedger` fecha um gap encontrado na auditoria "GPT como motor criativo único": até aqui,
+  // NENHUMA chamada de IA das Skills (João/Maria/Bianca/Pedro/Lucas/Sofia) ficava registrada em
+  // lugar nenhum além de memória — perdida a cada reinício. Com Postgres disponível, cada chamada
+  // completa vira uma linha em `icaro_ai_calls` (ver `postgres-icaro-cost-ledger.ts`), dando uma
+  // baseline real de custo/latência do motor legado antes do corte para o motor GPT.
+  const icaroCostLedger = repositories.pool
+    ? new PostgresIcaroCostLedger(repositories.pool, { brain: "legacy" })
+    : new InMemoryIcaroCostLedger();
+  // `logger` persiste só as ações de log com diagnóstico real (Timeout/Error) em
+  // `icaro_ai_call_errors` — ver `postgres-icaro-logger.ts`. Complementa `costLedger`, que só
+  // guarda status/custo/latência agregados, nunca o motivo de uma falha.
+  const icaroLogger = repositories.pool
+    ? new PostgresIcaroLogger(repositories.pool, { brain: "legacy" })
+    : new InMemoryIcaroLogger();
   const icaro = new IcaroAIBrain({
     providers: [
       new OpenAiIcaroImageProvider(openaiImageProvider),
@@ -531,6 +572,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
         getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
       }),
     ],
+    costLedger: icaroCostLedger,
+    logger: icaroLogger,
   });
   // Módulo de Quality Feedback (`src/application/quality-feedback/*`) já existia mas nunca tinha
   // sido ligado à API/produção — só CLI. Reaproveitado aqui em vez de criar um mecanismo novo,
@@ -538,6 +581,54 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // (`getRecentRejectionSignalsForWorkspace`).
   const qualityFeedback = createQualityFeedbackCenter({ repository: repositories.qualityFeedbackRepository });
   const contentGenerationHistory = repositories.contentGenerationHistoryRepository;
+  // Migração "GPT como motor criativo único" (PR 6/9) — segunda instância do Ícaro, FISICAMENTE
+  // separada de `icaro` acima: providers próprios (texto configurado explicitamente para
+  // "gpt-4o", nunca o "gpt-4o-mini" padrão da instância legada) e ledger/logger com
+  // `brain: "creative"`, para nunca misturar custo/latência do motor novo com o legado em
+  // `icaro_ai_calls`. Duas instâncias = fisicamente impossível o diretor criativo cair no modelo
+  // econômico "por conveniência".
+  const creativeIcaroCostLedger = repositories.pool
+    ? new PostgresIcaroCostLedger(repositories.pool, { brain: "creative" })
+    : new InMemoryIcaroCostLedger();
+  const creativeIcaroLogger = repositories.pool
+    ? new PostgresIcaroLogger(repositories.pool, { brain: "creative" })
+    : new InMemoryIcaroLogger();
+  const creativeIcaro = new IcaroAIBrain({
+    providers: [
+      new OpenAiCreativeImageProvider(openaiImageProvider),
+      new OpenAiIcaroTextProvider({
+        apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
+        getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
+        modelId: "gpt-4o",
+      }),
+    ],
+    costLedger: creativeIcaroCostLedger,
+    logger: creativeIcaroLogger,
+  });
+  const readCreativeImageDimensions = async (buffer: Buffer): Promise<{ width?: number; height?: number }> => {
+    const metadata = await sharp(buffer).metadata();
+    return { width: metadata.width, height: metadata.height };
+  };
+  // Deps exclusivas do motor GPT (`build-execution-handler-resolver.ts`, só lido quando
+  // `creativeEngineGptEnabled` está ligado). `resolveBrandProfile` fica de fora por ora: exigiria
+  // encadear `tenantId` (Clara é indexada por `clientId`, não `workspaceId`) até este ponto, o que
+  // pertence à superfície de API/UI do PR 7 — na ausência, `buildCreativeContext` já documenta que
+  // nunca inventa um perfil, só segue sem ele.
+  const gptCreativeEngineDeps = {
+    creativeBrain: creativeIcaro,
+    objectStorage,
+    compositeLogo: compositeLogoOntoImage,
+    compositeScreenshot: compositeScreenshotIntoDeviceMockup,
+    renderTextZones: renderCreativePlanTextZones,
+    computeAssetSuitability: computeAssetSuitabilityScore,
+    readImageDimensions: readCreativeImageDimensions,
+    resolveRecentHistory: async (workspaceId: string, limit?: number) => {
+      const entries = await contentGenerationHistory.getRecentForWorkspace(workspaceId, limit);
+      return entries.map((entry) => ({ headline: entry.headline, cta: entry.cta, visualConcept: entry.visualConcept }));
+    },
+    referenceIntelligenceExtractor,
+    creativeEngineRunRepository: repositories.creativeEngineRunRepository,
+  };
   const createExecutionHandlerResolver = () =>
     buildExecutionHandlerResolver({
       featureFlags: executionFeatureFlags,
@@ -550,6 +641,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       objectStorage,
       ensureBrandVisualProfile,
       semanticOcclusionChecker,
+      gptCreativeEngine: gptCreativeEngineDeps,
     });
   // `ValentinaTenantManager.createTenant` sempre gera um `id` novo (nunca aceita um `id`
   // explícito) — mas os skills reais (Pedro/Sofia/Bianca...) chamam

@@ -117,6 +117,45 @@ test("translatePlanningToRuntime + validateRuntimeTranslation: a tradução real
   assert.deepEqual(report.issues, []);
 });
 
+// Migração "GPT como motor criativo único" (PR 6/9) — achado ao vivo na primeira execução real de
+// validação (PR 8): `content_request-gpt-creative-v3` (Graph C) tinha sido registrado no Planning
+// (`arthur-planner.ts`/`templates.ts`) mas NUNCA no tradutor de Runtime
+// (`TRANSLATION_TEMPLATES_BY_PLANNING_TEMPLATE`) — todo RuntimePlan real com `creativeEngine=gpt`
+// nascia `validation_failed` (`no_translation_template_registered`), e nenhuma execução real
+// chegava a rodar, apesar de todos os testes de Planning/gating do resolver passarem isoladamente.
+// Este teste prova ponta a ponta (Planning real -> tradução real -> validação real) que o Graph C
+// também produz um RuntimePlan `validated`, do mesmo jeito que os outros dois templates acima.
+test("translatePlanningToRuntime + validateRuntimeTranslation: Graph C (content_request-gpt-creative-v3, motor GPT) também produz um RuntimeValidationReport válido (regressão do gap achado na primeira execução real)", () => {
+  const gptPreparedCommand = preparedCommand({ type: "content_request", validatedInputs: { channel: "instagram", contentFormat: "image" } });
+  const result = planFromPreparedCommand(gptPreparedCommand, "planning-1", { idGenerator: makeIdGenerator("task"), now: () => new Date("2026-01-01T00:00:00.000Z"), creativeEngine: "gpt" });
+  assert.equal(result.planningTemplate, "content_request-gpt-creative-v3");
+
+  const nodes = result.tasks.map((task) => ({ id: `node-${task.id}`, planningId: "planning-1", executionTaskId: task.id, label: task.name, createdAt: "2026-01-01T00:00:00.000Z" }));
+  const nodeIdByTaskId = new Map(nodes.map((n) => [n.executionTaskId, n.id]));
+  const edges = result.edges.map((edge, index) => ({
+    id: `edge-${index}`,
+    planningId: "planning-1",
+    fromNodeId: nodeIdByTaskId.get(edge.fromTaskId),
+    toNodeId: nodeIdByTaskId.get(edge.toTaskId),
+    kind: "depends_on",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  }));
+  const graph = { nodes, edges };
+
+  const candidate = translatePlanningToRuntime(
+    fakePlanning({ planningTemplate: "content_request-gpt-creative-v3" }),
+    result.tasks,
+    result.artifacts,
+    "runtime-1",
+    { idGenerator: makeIdGenerator("rt"), now: () => new Date("2026-01-01T00:00:00.000Z") },
+  );
+  assert.notEqual(candidate, undefined, "content_request-gpt-creative-v3 precisa ter tradução registrada em translation-template.js");
+
+  const report = validateRuntimeTranslation(candidate, graph, () => new Date("2026-01-01T00:00:00.000Z"));
+  assert.equal(report.valid, true, `RuntimePlan do Graph C deveria ser validated, não validation_failed — issues: ${JSON.stringify(report.issues)}`);
+  assert.deepEqual(report.issues, []);
+});
+
 // ---------------------------------------------------------------------------------------------
 // RuntimeValidationReport — Fase 4, códigos fechados (construídos à mão para cobrir cada caso)
 // ---------------------------------------------------------------------------------------------

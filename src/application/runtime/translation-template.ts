@@ -49,6 +49,22 @@ export const TRANSLATION_TEMPLATES_BY_PLANNING_TEMPLATE: Partial<Record<string, 
     { fromTaskType: "visual_generation", fromOutputPort: "visual", toTaskType: "approval", toInputPort: "visual" },
     { fromTaskType: "quality_review", fromOutputPort: "review", toTaskType: "approval", toInputPort: "review" },
   ],
+  // Migração "GPT como motor criativo único" (PR 6/9, gap fechado no PR 8) — Graph C
+  // (`content_request-gpt-creative-v3`, ver `planContentRequestGptCreative` em `arthur-planner.ts`):
+  // content_brief → visual_generation(GPT) → quality_review(GPT) → approval, com
+  // visual_generation alimentando tanto quality_review quanto approval diretamente (mesmas 4
+  // arestas do grafo de Planning). Faltar este registro aqui não impede o Planning/execution-handler-
+  // resolver de aceitar a flag — mas todo RuntimePlan nasce `validation_failed`
+  // (`no_translation_template_registered`) e nenhuma execução real chega a rodar, mesmo com
+  // `creativeEngineGptEnabled=true` — achado ao vivo na primeira execução real de validação deste
+  // grafo, exatamente o tipo de gap que só aparece testando ponta a ponta, não nos testes unitários
+  // de Planning nem nos de gating do resolver isoladamente.
+  "content_request-gpt-creative-v3": [
+    { fromTaskType: "content_brief", fromOutputPort: "structure", toTaskType: "visual_generation", toInputPort: "structure" },
+    { fromTaskType: "visual_generation", fromOutputPort: "visual", toTaskType: "quality_review", toInputPort: "visual" },
+    { fromTaskType: "visual_generation", fromOutputPort: "visual", toTaskType: "approval", toInputPort: "visual" },
+    { fromTaskType: "quality_review", fromOutputPort: "review", toTaskType: "approval", toInputPort: "review" },
+  ],
 };
 
 export function getTranslationTemplate(planningTemplate: string): readonly TranslationBindingSpec[] | undefined {

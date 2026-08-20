@@ -23,6 +23,21 @@ export const COMMERCIAL_FACT_TYPES = [
 ] as const;
 export type CommercialFactType = (typeof COMMERCIAL_FACT_TYPES)[number];
 
+/** Labels em pt-BR para exibição humana (mensagens de log/UI, texto de `creative_context`) —
+ * centralizado aqui porque tanto `run-gpt-creative-prototype.ts` quanto o motor GPT
+ * (`build-creative-context.ts`/`evaluate-creative-quality-gate.ts`) precisavam do mesmo mapa;
+ * antes desta migração cada um duplicava sua própria cópia. */
+export const COMMERCIAL_FACT_TYPE_LABELS_PT: Record<CommercialFactType, string> = {
+  current_price: "Preço atual",
+  previous_price: "Preço anterior",
+  discount_percent: "Desconto",
+  promotion: "Promoção",
+  rating: "Avaliação",
+  sales_count: "Unidades vendidas",
+  shipping: "Frete",
+  payment_terms: "Condição de pagamento",
+};
+
 export const COMMERCIAL_FACT_SOURCES = ["reference_image", "user_text", "registered_product", "workspace_catalog", "other"] as const;
 export type CommercialFactSource = (typeof COMMERCIAL_FACT_SOURCES)[number];
 

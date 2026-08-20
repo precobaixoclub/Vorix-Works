@@ -16,6 +16,7 @@ import { HelenaSkillManager, SkillManifestValidator, SkillRegistry } from "../..
 import { FileSystemSkillDiscovery } from "../skills/file-system-skill-discovery.js";
 import { FileSystemSkillModuleLoader } from "../skills/file-system-skill-module-loader.js";
 import { ContentBriefExecutionTaskHandler, QualityGateExecutionTaskHandler, SingleSkillExecutionTaskHandler, VisualPipelineExecutionTaskHandler } from "./real-skill-execution-handlers.js";
+import { GptCreativeEngineQualityTaskHandler, GptCreativeEngineVisualTaskHandler, type GptCreativeEngineVisualTaskHandlerDeps } from "./gpt-creative-engine-execution-handlers.js";
 
 export async function buildExecutionHandlerResolver(input: {
   featureFlags: ExecutionFeatureFlags;
@@ -29,6 +30,12 @@ export async function buildExecutionHandlerResolver(input: {
   objectStorage?: ObjectStoragePort;
   ensureBrandVisualProfile?: (workspaceId: string) => Promise<BrandVisualProfile>;
   semanticOcclusionChecker?: OpenAiSemanticOcclusionChecker;
+  /** Migração "GPT como motor criativo único" (PR 6/9) — deps exclusivas do motor GPT (segunda
+   * instância do Ícaro, compositores com geometria do plano, renderer de zonas de texto,
+   * persistência de `creative_engine_runs`). Só é lido quando `creativeEngineGptEnabled` está
+   * ligado; ausente com a flag ligada é um erro de wiring (fail-closed), nunca um fallback
+   * silencioso para o motor legado. */
+  gptCreativeEngine?: Omit<GptCreativeEngineVisualTaskHandlerDeps, "runtimeRepository" | "preparedCommandRepository">;
 }): Promise<ExecutionHandlerResolver> {
   const registry = new ExecutionHandlerRegistry();
   registry.register({
@@ -56,70 +63,124 @@ export async function buildExecutionHandlerResolver(input: {
     await helena.discoverAndLoadSkills();
 
     registry.register(realSingle("helena-skill-research-handler", helena, "editorial_research", "research", "editorial_planning", "context", ["realExecutionEnabled", "realExecutionResearchEnabled"]));
-    registry.register(realSingle("helena-skill-planning-handler", helena, "strategic_planning", "campaign_structure", "marketing_strategy", "structure", ["realExecutionEnabled", "realPlanningEnabled"]));
-    // 30_000 (o padrão de `realSingle`) achado ao vivo como apertado demais pra copy_generation
-    // especificamente (Rodada 2, Fatia 3, Caso B de produção): variância real de latência da
-    // OpenAI para completions de texto passa de 30s com alguma frequência, mesmo sem estar "fora
-    // do ar" — cada estouro derrubava a execução inteira (Bianca/Pedro nem chegavam a rodar).
-    // 60s dá margem real sem mudar o comportamento das outras capabilities que usam `realSingle`.
-    registry.register(realSingle("helena-skill-copy-handler", helena, "copywriting", "copy_generation", "copywriting", "copy", ["realExecutionEnabled", "realCopyEnabled"], 60_000));
-    registry.register({
-      id: "helena-skill-visual-pipeline-handler",
-      provider: "helena",
-      version: "1",
-      priority: 100,
-      handler: new VisualPipelineExecutionTaskHandler({
-        helena,
+
+    // Migração "GPT como motor criativo único" (PR 6/9) — os 4 registros a seguir (João/Maria/
+    // Sofia+Bianca+Pedro/Lucas) só existem quando `legacyCreativeEngineEnabled` está ligado
+    // (construção condicional, não só filtro em tempo de resolução — nunca instanciados quando o
+    // motor GPT é o ativo). `requiredFeatureFlags` também carrega a flag como segunda trava
+    // (defesa em profundidade, ver `scripts/check-legacy-creative-engine-gating.mjs`).
+    if (input.featureFlags.legacyCreativeEngineEnabled) {
+      registry.register(realSingle("helena-skill-planning-handler", helena, "strategic_planning", "campaign_structure", "marketing_strategy", "structure", ["realExecutionEnabled", "realPlanningEnabled", "legacyCreativeEngineEnabled"]));
+      // 30_000 (o padrão de `realSingle`) achado ao vivo como apertado demais pra copy_generation
+      // especificamente (Rodada 2, Fatia 3, Caso B de produção): variância real de latência da
+      // OpenAI para completions de texto passa de 30s com alguma frequência, mesmo sem estar "fora
+      // do ar" — cada estouro derrubava a execução inteira (Bianca/Pedro nem chegavam a rodar).
+      // 60s dá margem real sem mudar o comportamento das outras capabilities que usam `realSingle`.
+      registry.register(realSingle("helena-skill-copy-handler", helena, "copywriting", "copy_generation", "copywriting", "copy", ["realExecutionEnabled", "realCopyEnabled", "legacyCreativeEngineEnabled"], 60_000));
+      registry.register({
+        id: "helena-skill-visual-pipeline-handler",
         provider: "helena",
-        clara: input.clara,
-        objectStorage: input.objectStorage,
-        runtimeRepository: input.runtimeRepository,
-        preparedCommandRepository: input.preparedCommandRepository,
-        ensureBrandVisualProfile: input.ensureBrandVisualProfile,
-        semanticOcclusionChecker: input.semanticOcclusionChecker,
-      }),
-      executionModes: ["real"],
-      enabled: true,
-      supportedCapabilities: ["visual_design"],
-      fallbackPolicy: "fail_closed",
-      sideEffectPolicy: "external_write",
-      retryPolicy: { supportsRetry: true, maxAttempts: 2, backoffStrategy: "fixed" },
-      // Sofia + Bianca são rápidas, mas Pedro chama a OpenAI de verdade (geração de imagem
-      // rotineiramente passa de 30s) — precisa cobrir a cadeia inteira, não só o texto.
-      executionTimeoutMs: 120_000,
-      requiredFeatureFlags: ["realExecutionEnabled", "realVisualEnabled"],
-    });
+        version: "1",
+        priority: 100,
+        handler: new VisualPipelineExecutionTaskHandler({
+          helena,
+          provider: "helena",
+          clara: input.clara,
+          objectStorage: input.objectStorage,
+          runtimeRepository: input.runtimeRepository,
+          preparedCommandRepository: input.preparedCommandRepository,
+          ensureBrandVisualProfile: input.ensureBrandVisualProfile,
+          semanticOcclusionChecker: input.semanticOcclusionChecker,
+        }),
+        executionModes: ["real"],
+        enabled: true,
+        supportedCapabilities: ["visual_design"],
+        fallbackPolicy: "fail_closed",
+        sideEffectPolicy: "external_write",
+        retryPolicy: { supportsRetry: true, maxAttempts: 2, backoffStrategy: "fixed" },
+        // Sofia + Bianca são rápidas, mas Pedro chama a OpenAI de verdade (geração de imagem
+        // rotineiramente passa de 30s) — precisa cobrir a cadeia inteira, não só o texto.
+        executionTimeoutMs: 120_000,
+        requiredFeatureFlags: ["realExecutionEnabled", "realVisualEnabled", "legacyCreativeEngineEnabled"],
+      });
+      registry.register({
+        id: "helena-skill-quality-gate-handler",
+        // "helena" pelo mesmo motivo de todos os outros handlers reais deste arquivo — único provider
+        // que sobrevive ao SideEffectGuard em modo real além de "deterministic".
+        provider: "helena",
+        version: "1",
+        priority: 100,
+        handler: new QualityGateExecutionTaskHandler({
+          helena,
+          provider: "helena",
+          contentGenerationHistory: input.contentGenerationHistory,
+          runtimeRepository: input.runtimeRepository,
+          preparedCommandRepository: input.preparedCommandRepository,
+        }),
+        executionModes: ["real"],
+        enabled: true,
+        supportedCapabilities: ["human_review"],
+        fallbackPolicy: "fail_closed",
+        // Reprovação não é "erro transitório" (Lucas com as mesmas entradas reprova de novo) — sem
+        // retry automático aqui; a regeneração de verdade acontece uma execução inteira nova, no
+        // caller HTTP (`production.route.ts`), não como retry da mesma task.
+        sideEffectPolicy: "external_read",
+        retryPolicy: { supportsRetry: false, maxAttempts: 1, backoffStrategy: "none" },
+        // Lucas é heurístico e rápido no geral, mas quando há Reference Intelligence disponível faz
+        // uma chamada real de visão pra checar fidelidade de produto (`checkProductFidelity`) —
+        // precisa de mais fôlego que os 30s antigos (puramente heurísticos, sem nenhuma chamada de
+        // IA).
+        executionTimeoutMs: 60_000,
+        requiredFeatureFlags: ["realExecutionEnabled", "realVisualEnabled", "legacyCreativeEngineEnabled"],
+      });
+    }
+
     registry.register(realSingle("helena-skill-distribution-handler", helena, "distribution", "publication", "social_publishing", "manifest", ["realExecutionEnabled", "realDistributionEnabled"]));
-    registry.register({
-      id: "helena-skill-quality-gate-handler",
-      // "helena" pelo mesmo motivo de todos os outros handlers reais deste arquivo — único provider
-      // que sobrevive ao SideEffectGuard em modo real além de "deterministic".
-      provider: "helena",
-      version: "1",
-      priority: 100,
-      handler: new QualityGateExecutionTaskHandler({
-        helena,
-        provider: "helena",
-        contentGenerationHistory: input.contentGenerationHistory,
-        runtimeRepository: input.runtimeRepository,
-        preparedCommandRepository: input.preparedCommandRepository,
-      }),
-      executionModes: ["real"],
-      enabled: true,
-      supportedCapabilities: ["human_review"],
-      fallbackPolicy: "fail_closed",
-      // Reprovação não é "erro transitório" (Lucas com as mesmas entradas reprova de novo) — sem
-      // retry automático aqui; a regeneração de verdade acontece uma execução inteira nova, no
-      // caller HTTP (`production.route.ts`), não como retry da mesma task.
-      sideEffectPolicy: "external_read",
-      retryPolicy: { supportsRetry: false, maxAttempts: 1, backoffStrategy: "none" },
-      // Lucas é heurístico e rápido no geral, mas quando há Reference Intelligence disponível faz
-      // uma chamada real de visão pra checar fidelidade de produto (`checkProductFidelity`) —
-      // precisa de mais fôlego que os 30s antigos (puramente heurísticos, sem nenhuma chamada de
-      // IA).
-      executionTimeoutMs: 60_000,
-      requiredFeatureFlags: ["realExecutionEnabled", "realVisualEnabled"],
-    });
+
+    // Migração "GPT como motor criativo único" (PR 6/9) — motor GPT, espelhando exatamente as
+    // mesmas capabilities (`visual_design`/`human_review`) que os handlers legados acima, nunca
+    // registrado ao mesmo tempo que eles (flags mutuamente exclusivas, ver
+    // `creative-engine-mode.ts`). `gptCreativeEngine` ausente com a flag ligada é um erro de
+    // wiring — falha alto (`GPT_CREATIVE_ENGINE_DEPS_MISSING`), nunca cai silenciosamente pro
+    // motor legado.
+    if (input.featureFlags.creativeEngineGptEnabled) {
+      if (!input.gptCreativeEngine || !input.runtimeRepository || !input.preparedCommandRepository) {
+        throw new Error("GPT_CREATIVE_ENGINE_DEPS_MISSING: creativeEngineGptEnabled=true exige gptCreativeEngine + runtimeRepository + preparedCommandRepository configurados.");
+      }
+      const gptDeps = { ...input.gptCreativeEngine, runtimeRepository: input.runtimeRepository, preparedCommandRepository: input.preparedCommandRepository };
+      registry.register({
+        id: "gpt-creative-engine-visual-handler",
+        provider: "gpt-creative-engine",
+        version: "1",
+        priority: 100,
+        handler: new GptCreativeEngineVisualTaskHandler(gptDeps),
+        executionModes: ["real"],
+        enabled: true,
+        supportedCapabilities: ["visual_design"],
+        fallbackPolicy: "fail_closed",
+        sideEffectPolicy: "external_write",
+        retryPolicy: { supportsRetry: false, maxAttempts: 1, backoffStrategy: "none" },
+        // creative_plan + geração de imagem + Repair Loop (até 2 rodadas, cada uma podendo chamar
+        // o modelo de imagem de novo) — mesma ordem de grandeza do handler legado equivalente.
+        executionTimeoutMs: 180_000,
+        requiredFeatureFlags: ["realExecutionEnabled", "realVisualEnabled", "creativeEngineGptEnabled"],
+      });
+      registry.register({
+        id: "gpt-creative-engine-quality-handler",
+        provider: "gpt-creative-engine",
+        version: "1",
+        priority: 100,
+        handler: new GptCreativeEngineQualityTaskHandler({ contentGenerationHistory: input.contentGenerationHistory }),
+        executionModes: ["real"],
+        enabled: true,
+        supportedCapabilities: ["human_review"],
+        fallbackPolicy: "fail_closed",
+        sideEffectPolicy: "external_read",
+        retryPolicy: { supportsRetry: false, maxAttempts: 1, backoffStrategy: "none" },
+        executionTimeoutMs: 15_000,
+        requiredFeatureFlags: ["realExecutionEnabled", "realVisualEnabled", "creativeEngineGptEnabled"],
+      });
+    }
 
     if (input.runtimeRepository && input.preparedCommandRepository) {
       registry.register({

@@ -108,6 +108,15 @@ export type IcaroConsumptionRecord = {
   tokens: AITokenUsage;
   cost: AICostReport;
   status: IcaroAIResponseStatus;
+  /** Metadados aditivos (migração "GPT como motor criativo único") — nunca o prompt/resposta em
+   * si, só o suficiente para correlacionar/auditar sem reter conteúdo sensível. */
+  correlationId?: string;
+  promptHash?: string;
+  promptChars?: number;
+  /** Quantas tentativas no total (>1 = houve retry) e se um Provider de fallback foi usado — mesma
+   * informação que `ai_executions.retry_count`/`fallback_used` já guardam para o AI Gateway. */
+  retryCount?: number;
+  fallbackUsed?: boolean;
 };
 
 export type IcaroIdGenerator = {

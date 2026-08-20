@@ -1062,6 +1062,53 @@ test("Pedro (developer_assisted) completa normalmente quando a imagem real já e
   });
 });
 
+test("Pedro (developer_assisted) REJEITA um mockup placeholder do Autonomous Engine mesmo com bytes/dimensão válidos — proveniência não publicável (migração GPT/PR 3)", async () => {
+  await withTempArtifacts(async (rootDir) => {
+    const artifactDelivery = new LocalArtifactDelivery({ rootDir });
+    // Mesmo mecanismo real de `mockup-generation.action.ts`: escreve no MESMO caminho que Pedro
+    // espera, com bytes/dimensão que passam na validação de PNG, mas com proveniência explícita
+    // `publishable: false` — exatamente o vazamento que a auditoria "GPT como motor criativo
+    // único" encontrou (validatePngBytes só checava formato/dimensão, nunca proveniência).
+    await artifactDelivery.writeFile({
+      executionId: "exec-pedro",
+      relativePath: "images/slide-01.png",
+      content: createMinimalPng(1080, 1350),
+      mimeType: "image/png",
+      provenance: {
+        producer: "placeholder_mockup",
+        publishable: false,
+        reason: "Caixa de dispositivo HTML/CSS — nunca uma interface real.",
+      },
+    });
+    const icaro = new FakeIcaroBrain([singleImageJson()]);
+    const { pedro } = createPedro({ icaro, artifactDelivery, imageGenerationMode: "developer_assisted" });
+
+    const response = await pedro.execute(createRequest(createInput({ imageCount: 1 })));
+
+    // Nunca aceito como imagem final — Pedro continua aguardando intervenção assistida real.
+    assert.equal(response.status, "needs_assisted_generation");
+    assert.equal(icaro.calls.length, 0);
+  });
+});
+
+test("Pedro (developer_assisted) ACEITA normalmente uma imagem assistida legítima sem sidecar de proveniência (regressão — humano/IDE nunca passa pelo ArtifactDeliveryPort)", async () => {
+  await withTempArtifacts(async (rootDir) => {
+    // Mesmo helper já usado pelo teste "completa normalmente" acima: escreve bytes DIRETO no
+    // disco (nunca via ArtifactDeliveryPort.writeFile), exatamente como um humano/IDE faria —
+    // por isso nunca existe sidecar de proveniência para este arquivo, e isso é o caso normal,
+    // nunca motivo de rejeição.
+    await writeAssistedImage(rootDir, "exec-pedro", "images/slide-01.png", 1080, 1350);
+    const icaro = new FakeIcaroBrain([singleImageJson()]);
+    const artifactDelivery = new LocalArtifactDelivery({ rootDir });
+    const { pedro } = createPedro({ icaro, artifactDelivery, imageGenerationMode: "developer_assisted" });
+
+    const response = await pedro.execute(createRequest(createInput({ imageCount: 1 })));
+
+    assert.equal(response.status, "completed");
+    assert.equal(response.output.generationMode, "developer_assisted");
+  });
+});
+
 test("Pedro (developer_assisted) sem ArtifactDeliveryPort configurada devolve erro estruturado dedicado", async () => {
   const { pedro } = createPedro({ imageGenerationMode: "developer_assisted", artifactDelivery: undefined });
 

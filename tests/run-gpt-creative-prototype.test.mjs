@@ -91,10 +91,20 @@ test("runGptParallelCreativePrototype: fluxo completo sem assets — devolve cre
   }
 });
 
-test("runGptParallelCreativePrototype: com logo e screenshot no contexto, compõe os dois determinísticamente e registra em compositedAssetRoles", async () => {
+test("runGptParallelCreativePrototype: com logo e screenshot no contexto E geometria no creative_plan, compõe os dois determinísticamente e registra em compositedAssetRoles", async () => {
   const icaro = {
     request: async (request) => {
-      if (request.taskType === "analysis") return { status: "completed", content: creativePlanJson() };
+      if (request.taskType === "analysis") {
+        return {
+          status: "completed",
+          content: creativePlanJson({
+            assetPlacements: [
+              { role: "logo", url: "https://x/logo.png", rect: { xPct: 4, yPct: 4, widthPct: 18, heightPct: 10 } },
+              { role: "screenshot", url: "https://x/screenshot.png", rect: { xPct: 20, yPct: 30, widthPct: 60, heightPct: 45 }, frame: "phone" },
+            ],
+          }),
+        };
+      }
       if (request.taskType === "image_generation") return { status: "completed", content: JSON.stringify({ images: [{ uri: "https://x/generated.png" }] }) };
       return { status: "completed", content: JSON.stringify({ productMismatch: false, textIllegibleOrCut: false, compositionBroken: false }) };
     },
@@ -110,8 +120,61 @@ test("runGptParallelCreativePrototype: com logo e screenshot no contexto, compõ
       ],
     });
     const result = await runGptParallelCreativePrototype(baseDeps({ icaro }), input);
+    assert.equal(result.error, undefined);
     assert.deepEqual(result.compositedAssetRoles.sort(), ["logo", "screenshot"]);
     assert.equal(result.qualityGate.verdict, "pass");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("runGptParallelCreativePrototype: screenshot no contexto SEM geometria no creative_plan é HARD FAILURE (migração GPT/PR 4) — nunca improvisa uma posição", async () => {
+  const icaro = {
+    request: async (request) => {
+      if (request.taskType === "analysis") return { status: "completed", content: creativePlanJson() };
+      if (request.taskType === "image_generation") return { status: "completed", content: JSON.stringify({ images: [{ uri: "https://x/generated.png" }] }) };
+      return { status: "completed", content: JSON.stringify({ productMismatch: false, textIllegibleOrCut: false, compositionBroken: false }) };
+    },
+  };
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({ ok: true, arrayBuffer: async () => new TextEncoder().encode("fake-image-bytes").buffer });
+
+  try {
+    const input = baseInput({ assets: [{ url: "https://x/screenshot.png", role: "screenshot", description: "Home do site." }] });
+    const result = await runGptParallelCreativePrototype(baseDeps({ icaro }), input);
+    assert.match(result.error, /CREATIVE_PLAN_MISSING_ASSET_PLACEMENT/);
+    assert.equal(result.finalImageUrl, undefined);
+    assert.equal(result.compositedAssetRoles.length, 0);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("runGptParallelCreativePrototype: falha ao compor o screenshot (mesmo com geometria válida) é HARD FAILURE — nunca publica com possível interface fictícia visível", async () => {
+  const icaro = {
+    request: async (request) => {
+      if (request.taskType === "analysis") {
+        return {
+          status: "completed",
+          content: creativePlanJson({
+            assetPlacements: [{ role: "screenshot", url: "https://x/screenshot.png", rect: { xPct: 20, yPct: 30, widthPct: 60, heightPct: 45 } }],
+          }),
+        };
+      }
+      if (request.taskType === "image_generation") return { status: "completed", content: JSON.stringify({ images: [{ uri: "https://x/generated.png" }] }) };
+      return { status: "completed", content: JSON.stringify({ productMismatch: false, textIllegibleOrCut: false, compositionBroken: false }) };
+    },
+  };
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({ ok: true, arrayBuffer: async () => new TextEncoder().encode("fake-image-bytes").buffer });
+
+  try {
+    const deps = baseDeps({ icaro, compositeScreenshot: async () => { throw new Error("screenshot mutilado — SCREENSHOT_COMPOSITE_SOURCE_ASPECT_MISMATCH"); } });
+    const input = baseInput({ assets: [{ url: "https://x/screenshot.png", role: "screenshot", description: "" }] });
+    const result = await runGptParallelCreativePrototype(deps, input);
+    assert.match(result.error, /Falha ao compor o screenshot real/);
+    assert.match(result.error, /interface fictícia/);
+    assert.equal(result.finalImageUrl, undefined);
   } finally {
     global.fetch = originalFetch;
   }
@@ -136,7 +199,7 @@ test("runGptParallelCreativePrototype: Ícaro falha ao gerar a imagem — devolv
   assert.ok(result.creativePlan);
 });
 
-test("runGptParallelCreativePrototype: falha ao compor a logo vira warning, não interrompe a geração", async () => {
+test("runGptParallelCreativePrototype: falha ao compor a logo é HARD FAILURE (migração GPT/PR 4) — nunca um warning que deixa a peça seguir sem a marca", async () => {
   const icaro = {
     request: async (request) => {
       if (request.taskType === "analysis") return { status: "completed", content: creativePlanJson() };
@@ -151,10 +214,8 @@ test("runGptParallelCreativePrototype: falha ao compor a logo vira warning, não
     const deps = baseDeps({ icaro, compositeLogo: async () => { throw new Error("logo quebrada"); } });
     const input = baseInput({ assets: [{ url: "https://x/logo.png", role: "logo", description: "" }] });
     const result = await runGptParallelCreativePrototype(deps, input);
-    assert.equal(result.error, undefined);
-    assert.ok(result.warnings.some((warning) => warning.includes("logo real")));
-    // Sem composição bem-sucedida, o gate determinístico deve acusar REQUIRED_ASSET_MISSING.
-    assert.ok(result.qualityGate.issues.some((issue) => issue.code === "REQUIRED_ASSET_MISSING"));
+    assert.match(result.error, /Falha ao compor a logo real/);
+    assert.equal(result.finalImageUrl, undefined);
   } finally {
     global.fetch = originalFetch;
   }

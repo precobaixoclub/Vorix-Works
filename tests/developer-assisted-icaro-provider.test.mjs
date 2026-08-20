@@ -7,6 +7,13 @@ import { DeveloperAssistedIcaroProvider } from "../dist/infrastructure/ai/develo
 import { DeveloperAssistancePendingError } from "../dist/application/ai/developer-assistance.types.js";
 import { LocalArtifactDelivery } from "../dist/infrastructure/artifacts/index.js";
 
+// Migração "GPT como motor criativo único" (PR 3/9): `provenance` agora é obrigatório em
+// `writeFile`. Estes testes simulam o arquivo de RESPOSTA que um humano/IDE escreveria por fora
+// do ArtifactDeliveryPort — usar o port aqui é só um atalho de teste para colocar os bytes em
+// disco, então qualquer proveniência válida serve; usamos `publishable: true` porque o cenário
+// simulado é conteúdo real, escrito por um humano.
+const FAKE_HUMAN_RESPONSE_PROVENANCE = { producer: "developer_assisted", publishable: true };
+
 async function withArtifactsDir(run) {
   const dir = await mkdtemp(join(tmpdir(), "zuno-icaro-assisted-"));
   try {
@@ -96,6 +103,7 @@ test("resposta válida salva pela IA desenvolvedora permite retomada (status com
         cta: "Conheça o Rumo ao Altar",
         hashtags: ["#RumoAoAltar", "#TaxaZero"],
       }),
+      provenance: FAKE_HUMAN_RESPONSE_PROVENANCE,
     });
 
     const response = await provider.request(mariaRequest());
@@ -116,6 +124,7 @@ test("JSON inválido no arquivo de resposta é rejeitado (pausa de novo, com err
       executionId: "execution-A",
       relativePath: "icaro/step-0003-maria-copywriting.response.json",
       content: "isto não é um JSON válido {{{",
+      provenance: FAKE_HUMAN_RESPONSE_PROVENANCE,
     });
 
     await assert.rejects(() => provider.request(mariaRequest()), (error) => {
@@ -136,6 +145,7 @@ test("resposta sem o campo obrigatório da Maria (caption) é rejeitada", async 
       executionId: "execution-A",
       relativePath: "icaro/step-0003-maria-copywriting.response.json",
       content: JSON.stringify({ title: "Só título, sem legenda" }),
+      provenance: FAKE_HUMAN_RESPONSE_PROVENANCE,
     });
 
     await assert.rejects(() => provider.request(mariaRequest()), (error) => {
@@ -156,6 +166,7 @@ test("objeto JSON vazio é rejeitado", async () => {
       executionId: "execution-A",
       relativePath: "icaro/step-0003-maria-copywriting.response.json",
       content: "{}",
+      provenance: FAKE_HUMAN_RESPONSE_PROVENANCE,
     });
 
     await assert.rejects(() => provider.request(mariaRequest()), (error) => {
@@ -177,6 +188,7 @@ test("resposta salva para outra execução não é aceita (isolamento por execut
       executionId: "execution-A",
       relativePath: "icaro/step-0003-maria-copywriting.response.json",
       content: JSON.stringify({ title: "A", caption: "Legenda da execução A." }),
+      provenance: FAKE_HUMAN_RESPONSE_PROVENANCE,
     });
     const responseA = await provider.request(mariaRequest({ executionId: "execution-A" }));
     assert.equal(responseA.status, "completed");
@@ -237,6 +249,7 @@ test("especialista sem schema conhecido (futura Skill que use IcaroBrainPort) ai
       executionId: "execution-futura",
       relativePath: "icaro/step-0001-futura-skill-desconhecida.response.json",
       content: JSON.stringify({ algumCampoQualquer: "conteúdo real e não vazio" }),
+      provenance: FAKE_HUMAN_RESPONSE_PROVENANCE,
     });
 
     const response = await provider.request(request);

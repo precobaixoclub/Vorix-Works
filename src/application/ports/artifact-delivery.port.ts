@@ -1,3 +1,5 @@
+import type { ArtifactProvenance } from "../../shared/utils/artifact-provenance.js";
+
 export type ArtifactWrittenFile = {
   absolutePath: string;
   relativePath: string;
@@ -10,6 +12,10 @@ export type ArtifactFileWriteInput = {
   relativePath: string;
   content: string | Uint8Array;
   mimeType?: string;
+  /** Migração "GPT como motor criativo único" (PR 3/9) — obrigatório de propósito: quem escreve
+   * um artefato declara, no mesmo lugar, se ele pode virar peça publicável. Ver
+   * `src/shared/utils/artifact-provenance.ts`. */
+  provenance: ArtifactProvenance;
 };
 
 export type ArtifactZipEntry = {
@@ -21,6 +27,7 @@ export type ArtifactZipWriteInput = {
   executionId: string;
   relativePath: string;
   entries: ArtifactZipEntry[];
+  provenance: ArtifactProvenance;
 };
 
 export type ArtifactFileReadInput = {
@@ -33,6 +40,11 @@ export type ArtifactReadFile = {
   relativePath: string;
   sizeBytes: number;
   data: Uint8Array;
+  /** Presente só quando o arquivo foi escrito via `ArtifactDeliveryPort.writeFile()`/`createZip()`
+   * desta mesma execução. Ausente é o caso NORMAL para conteúdo que chega por fora (ex.:
+   * intervenção assistida de um humano/IDE) — nunca tratar ausência aqui como suspeita por si só,
+   * ver `isExplicitlyNonPublishable` em `artifact-provenance.ts`. */
+  provenance?: ArtifactProvenance;
 };
 
 export type ArtifactDeliveryPort = {

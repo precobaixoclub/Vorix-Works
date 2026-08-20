@@ -9,6 +9,7 @@ import {
   type CreativeContextAsset,
   type CreativePlan,
   type CreativePlanAssetRole,
+  type CreativePlanRect,
 } from "../../shared/utils/gpt-creative-plan.types.js";
 import { commercialFactsFromReferenceIntelligence, type CommercialFact } from "../../shared/utils/commercial-fact-normalizer.js";
 import type { ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
@@ -43,8 +44,14 @@ export type RunGptCreativePrototypeDeps = {
    * `src/infrastructure` diretamente (a camada de aplicação não depende de infraestrutura
    * concreta; `scripts/run-gpt-creative-prototype.mjs`, o composition root deste protótipo, é
    * quem liga as implementações reais de `logo-compositor.ts`/`screenshot-mockup-compositor.ts`). */
-  compositeLogo(input: { imageBuffer: Buffer; logoBuffer: Buffer }): Promise<Buffer>;
-  compositeScreenshot(input: { imageBuffer: Buffer; screenshotBuffer: Buffer }): Promise<Buffer>;
+  /** `placement` opcional — cai no canto padrão do compositor quando o plano não posicionou a
+   * logo explicitamente (ver `logo-compositor.ts`). */
+  compositeLogo(input: { imageBuffer: Buffer; logoBuffer: Buffer; placement?: CreativePlanRect }): Promise<Buffer>;
+  /** `placement` OBRIGATÓRIO — migração "GPT como motor criativo único" (PR 4/9): a geometria
+   * vem sempre do `creative_plan.assetPlacements`, nunca um percentual fixo desconectado. Se o
+   * plano não posicionou o screenshot, `runGptParallelCreativePrototype` falha antes mesmo de
+   * chamar isto (ver `CREATIVE_PLAN_MISSING_ASSET_PLACEMENT` abaixo). */
+  compositeScreenshot(input: { imageBuffer: Buffer; screenshotBuffer: Buffer; placement: CreativePlanRect; frame?: "phone" | "laptop" }): Promise<Buffer>;
   computeAssetSuitability?(buffer: Buffer): Promise<AssetSuitabilityScore | undefined>;
   readImageDimensions(buffer: Buffer): Promise<{ width?: number; height?: number }>;
 };
@@ -214,25 +221,59 @@ export async function runGptParallelCreativePrototype(
 
   const compositedAssetRoles: CreativePlanAssetRole[] = [];
 
+  // Migração "GPT como motor criativo único" (PR 4/9): falhas de composição do screenshot/logo
+  // reais viram HARD FAILURE — nunca mais um warning que deixa a peça seguir com uma possível
+  // interface fictícia (alucinada pelo modelo de imagem) visível na tela de revisão do usuário.
   const screenshotAsset = input.assets.find((asset) => asset.role === "screenshot");
   if (screenshotAsset) {
+    const placement = creativePlan.assetPlacements.find((candidate) => candidate.role === "screenshot");
+    if (!placement) {
+      return {
+        creativeContext,
+        creativePlan,
+        productRenderDecision,
+        compositedAssetRoles,
+        warnings,
+        error: "CREATIVE_PLAN_MISSING_ASSET_PLACEMENT: o creative_plan não definiu a geometria (assetPlacements) do screenshot real — a posição precisa ser decidida antes da geração, nunca improvisada depois.",
+      };
+    }
     try {
       const screenshotBuffer = await fetchAsBuffer(screenshotAsset.url);
-      currentBuffer = await deps.compositeScreenshot({ imageBuffer: currentBuffer, screenshotBuffer });
+      currentBuffer = await deps.compositeScreenshot({
+        imageBuffer: currentBuffer,
+        screenshotBuffer,
+        placement: placement.rect,
+        frame: placement.frame === "laptop" ? "laptop" : "phone",
+      });
       compositedAssetRoles.push("screenshot");
     } catch (error) {
-      warnings.push(`Não foi possível compor o screenshot real: ${error instanceof Error ? error.message : "erro desconhecido"}.`);
+      return {
+        creativeContext,
+        creativePlan,
+        productRenderDecision,
+        compositedAssetRoles,
+        warnings,
+        error: `Falha ao compor o screenshot real: ${error instanceof Error ? error.message : "erro desconhecido"} — nunca publica com uma possível interface fictícia visível.`,
+      };
     }
   }
 
   const logoAsset = input.assets.find((asset) => asset.role === "logo");
   if (logoAsset) {
+    const placement = creativePlan.assetPlacements.find((candidate) => candidate.role === "logo");
     try {
       const logoBuffer = await fetchAsBuffer(logoAsset.url);
-      currentBuffer = await deps.compositeLogo({ imageBuffer: currentBuffer, logoBuffer });
+      currentBuffer = await deps.compositeLogo({ imageBuffer: currentBuffer, logoBuffer, placement: placement?.rect });
       compositedAssetRoles.push("logo");
     } catch (error) {
-      warnings.push(`Não foi possível compor a logo real: ${error instanceof Error ? error.message : "erro desconhecido"}.`);
+      return {
+        creativeContext,
+        creativePlan,
+        productRenderDecision,
+        compositedAssetRoles,
+        warnings,
+        error: `Falha ao compor a logo real: ${error instanceof Error ? error.message : "erro desconhecido"}.`,
+      };
     }
   }
 

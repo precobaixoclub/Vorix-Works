@@ -3,11 +3,17 @@ import type { AIProviderPort, AIProviderProfile, AIProviderRequest, AIProviderRe
 export type OpenAiIcaroTextProviderConfig = {
   apiBaseUrl?: string;
   getApiKey: () => Promise<string | undefined>;
+  /** Migração "GPT como motor criativo único" (PR 6/9) — configurável para que a instância
+   * DEDICADA ao motor criativo (diretor) use um modelo forte (`gpt-4o`) sem que isso mude o
+   * padrão da instância legada (João/Maria/Lucas), que continua em `gpt-4o-mini` por omissão.
+   * Duas instâncias de `IcaroAIBrain`, cada uma com seu próprio `OpenAiIcaroTextProvider`
+   * configurado — nunca a mesma instância reaproveitada "por conveniência" entre os dois papéis. */
+  modelId?: string;
 };
 
 const DEFAULT_BASE_URL = "https://api.openai.com";
 const DEFAULT_TIMEOUT_MS = 30_000;
-const MODEL_ID = "gpt-4o-mini";
+const DEFAULT_MODEL_ID = "gpt-4o-mini";
 
 /**
  * Ponte real de texto entre o Ícaro (`IcaroAIBrain`) e a OpenAI — sem isto, João (`taskType:
@@ -19,31 +25,35 @@ const MODEL_ID = "gpt-4o-mini";
  * (`AI_PROVIDER_FAILURE` em todas as 3 tentativas), quebrando a geração de peça de ponta a ponta.
  */
 export class OpenAiIcaroTextProvider implements AIProviderPort {
-  readonly profile: AIProviderProfile = {
-    id: "openai-icaro-text",
-    name: "OpenAI (texto/análise)",
-    kind: "text",
-    priority: 10,
-    enabled: true,
-    supportedTaskTypes: ["text_generation", "analysis", "review", "classification", "summary", "translation"],
-    models: [{
-      id: MODEL_ID,
-      supportedTaskTypes: ["text_generation", "analysis", "review", "classification", "summary", "translation"],
-      priority: 10,
-      qualityScore: 0.8,
-      speedScore: 0.9,
-      costPer1kInputTokens: 0.00015,
-      costPer1kOutputTokens: 0.0006,
-      defaultTemperature: 0.7,
-      defaultMaxTokens: 2400,
-      maxTokens: 4096,
-    }],
-  };
+  readonly profile: AIProviderProfile;
+  private readonly modelId: string;
 
   constructor(
     private readonly config: OpenAiIcaroTextProviderConfig,
     private readonly httpClient: typeof fetch = fetch,
-  ) {}
+  ) {
+    this.modelId = config.modelId ?? DEFAULT_MODEL_ID;
+    this.profile = {
+      id: "openai-icaro-text",
+      name: "OpenAI (texto/análise)",
+      kind: "text",
+      priority: 10,
+      enabled: true,
+      supportedTaskTypes: ["text_generation", "analysis", "review", "classification", "summary", "translation"],
+      models: [{
+        id: this.modelId,
+        supportedTaskTypes: ["text_generation", "analysis", "review", "classification", "summary", "translation"],
+        priority: 10,
+        qualityScore: 0.8,
+        speedScore: 0.9,
+        costPer1kInputTokens: 0.00015,
+        costPer1kOutputTokens: 0.0006,
+        defaultTemperature: 0.7,
+        defaultMaxTokens: 2400,
+        maxTokens: 4096,
+      }],
+    };
+  }
 
   async execute(request: AIProviderRequest): Promise<AIProviderResponse> {
     const apiKey = await this.config.getApiKey();
@@ -67,7 +77,7 @@ export class OpenAiIcaroTextProvider implements AIProviderPort {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: request.model || MODEL_ID,
+          model: request.model || this.modelId,
           temperature: request.temperature,
           max_tokens: request.maxTokens,
           ...(request.expectedOutput === "json" ? { response_format: { type: "json_object" } } : {}),
@@ -100,7 +110,7 @@ export class OpenAiIcaroTextProvider implements AIProviderPort {
 
       return {
         content,
-        model: body.model ?? MODEL_ID,
+        model: body.model ?? this.modelId,
         tokens: {
           input: body.usage?.prompt_tokens,
           output: body.usage?.completion_tokens,

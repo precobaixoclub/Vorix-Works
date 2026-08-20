@@ -80,6 +80,10 @@ export type ApiConfig = {
     realVisualEnabled: boolean;
     realDistributionEnabled: boolean;
     environment: ExecutionEnvironment;
+    /** Migração "GPT como motor criativo único" (PR 6/9) — mutuamente exclusivas por
+     * construção, ver `parseCreativeEngineMode` abaixo. */
+    creativeEngineGptEnabled: boolean;
+    legacyCreativeEngineEnabled: boolean;
   };
   publication: {
     providerEnvironment: "sandbox" | "production";
@@ -213,6 +217,13 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const realVisualEnabled = realExecutionEnabled && env.REAL_VISUAL_ENABLED?.trim() === "true";
   const realDistributionEnabled = realExecutionEnabled && env.REAL_DISTRIBUTION_ENABLED?.trim() === "true";
   const executionEnvironment = parseExecutionEnvironment(env.EXECUTION_ENVIRONMENT ?? env.NODE_ENV);
+  // Migração "GPT como motor criativo único" (PR 6/9) — UMA única variável escolhe o motor,
+  // tornando "os dois ligados" ou "nenhum ligado" impossível por construção (nunca duas
+  // variáveis independentes que poderiam divergir). Default "legacy" enquanto o motor GPT não
+  // for validado em produção (ver plano de rollout) — o PR 8 muda só este literal para "gpt".
+  const creativeEngineMode = env.CREATIVE_ENGINE?.trim() === "gpt" ? "gpt" : "legacy";
+  const creativeEngineGptEnabled = creativeEngineMode === "gpt";
+  const legacyCreativeEngineEnabled = creativeEngineMode === "legacy";
   const publicationProviderEnvironment = env.PUBLICATION_PROVIDER_ENVIRONMENT?.trim() === "production" ? "production" : "sandbox";
   const publicationProductionEnabled = env.PUBLICATION_PRODUCTION_ENABLED?.trim() === "true";
   const metaPagesSandboxEnabled = env.META_PAGES_SANDBOX_ENABLED?.trim() === "true";
@@ -335,6 +346,8 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       realVisualEnabled,
       realDistributionEnabled,
       environment: executionEnvironment,
+      creativeEngineGptEnabled,
+      legacyCreativeEngineEnabled,
     },
     publication: {
       providerEnvironment: publicationProviderEnvironment,

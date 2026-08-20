@@ -17,6 +17,7 @@ import type { ExecutionGraphRepositoryPort } from "../../application/ports/execu
 import type { ExecutionRepositoryPort } from "../../application/ports/execution-repository.port.js";
 import type { ExecutionTaskRepositoryPort } from "../../application/ports/execution-task-repository.port.js";
 import type { ContentGenerationHistoryPort } from "../../application/ports/content-generation-history.port.js";
+import type { CreativeEngineRunRepositoryPort } from "../../application/ports/creative-engine-run-repository.port.js";
 import type { QualityFeedbackRepositoryPort } from "../../application/quality-feedback/quality-feedback-repository.port.js";
 import type { OperationalAuditRepositoryPort } from "../../application/ports/operational-audit-repository.port.js";
 import type { OperationalStateRepositoryPort } from "../../application/ports/operational-state-repository.port.js";
@@ -36,6 +37,7 @@ import { InMemoryAnalyticsRepository } from "./in-memory-analytics-repository.js
 import { InMemoryAssetLibraryRepository } from "./in-memory-asset-library-repository.js";
 import { InMemoryBrandVisualProfileRepository } from "./in-memory-brand-visual-profile-repository.js";
 import { InMemoryContentGenerationHistoryRepository } from "./in-memory-content-generation-history-repository.js";
+import { InMemoryCreativeEngineRunRepository } from "./in-memory-creative-engine-run-repository.js";
 import { InMemoryQualityFeedbackRepository } from "./in-memory-quality-feedback-repository.js";
 import { InMemoryBriefingFieldValueRepository } from "./in-memory-briefing-field-value-repository.js";
 import { InMemoryBriefingQuestionRepository } from "./in-memory-briefing-question-repository.js";
@@ -64,6 +66,7 @@ import { PostgresAnalyticsRepository } from "./postgres/postgres-analytics-repos
 import { PostgresAssetLibraryRepository } from "./postgres/postgres-asset-library-repository.js";
 import { PostgresBrandVisualProfileRepository } from "./postgres/postgres-brand-visual-profile-repository.js";
 import { PostgresContentGenerationHistoryRepository } from "./postgres/postgres-content-generation-history-repository.js";
+import { PostgresCreativeEngineRunRepository } from "./postgres/postgres-creative-engine-run-repository.js";
 import { PostgresQualityFeedbackRepository } from "./postgres/postgres-quality-feedback-repository.js";
 import { PostgresBriefingFieldValueRepository } from "./postgres/postgres-briefing-field-value-repository.js";
 import { PostgresBriefingQuestionRepository } from "./postgres/postgres-briefing-question-repository.js";
@@ -136,6 +139,9 @@ export type PlatformRepositories = {
    * ver `ContentBriefExecutionTaskHandler`/`QualityGateExecutionTaskHandler`. */
   contentGenerationHistoryRepository: ContentGenerationHistoryPort;
   qualityFeedbackRepository: QualityFeedbackRepositoryPort;
+  /** Migração "GPT como motor criativo único" — prova auditável de qual motor produziu cada peça
+   * (`db/migrations/0060_creative_engine_runs.sql`). */
+  creativeEngineRunRepository: CreativeEngineRunRepositoryPort;
   /** Só existe quando `driver === "postgres"` — quem chama esta função é responsável por fechar (`pool.end()`) no shutdown. */
   pool?: InstanceType<typeof Pool>;
 };
@@ -185,6 +191,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       operationalStateRepository: new InMemoryOperationalStateRepository(),
       contentGenerationHistoryRepository: new InMemoryContentGenerationHistoryRepository(),
       qualityFeedbackRepository: new InMemoryQualityFeedbackRepository(),
+      creativeEngineRunRepository: new InMemoryCreativeEngineRunRepository(),
     };
   }
 
@@ -226,6 +233,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     operationalStateRepository: new PostgresOperationalStateRepository(pool),
     contentGenerationHistoryRepository: new PostgresContentGenerationHistoryRepository(pool),
     qualityFeedbackRepository: new PostgresQualityFeedbackRepository(pool),
+    creativeEngineRunRepository: new PostgresCreativeEngineRunRepository(pool),
     pool,
   };
 }

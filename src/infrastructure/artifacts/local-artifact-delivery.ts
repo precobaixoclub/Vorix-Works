@@ -9,6 +9,7 @@ import type {
   ArtifactZipEntry,
   ArtifactZipWriteInput,
 } from "../../application/ports/artifact-delivery.port.js";
+import type { ArtifactProvenance } from "../../shared/utils/artifact-provenance.js";
 
 export type LocalArtifactDeliveryOptions = {
   rootDir?: string;
@@ -27,6 +28,7 @@ export class LocalArtifactDelivery implements ArtifactDeliveryPort {
 
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, content);
+    await writeFile(provenanceSidecarPath(absolutePath), JSON.stringify(input.provenance));
 
     return {
       absolutePath,
@@ -43,6 +45,7 @@ export class LocalArtifactDelivery implements ArtifactDeliveryPort {
       relativePath: input.relativePath,
       content: zipBytes,
       mimeType: "application/zip",
+      provenance: input.provenance,
     });
   }
 
@@ -55,11 +58,31 @@ export class LocalArtifactDelivery implements ArtifactDeliveryPort {
         relativePath: normalizeRelativePath(input.relativePath),
         sizeBytes: data.byteLength,
         data: new Uint8Array(data),
+        provenance: await readProvenanceSidecar(provenanceSidecarPath(absolutePath)),
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
     }
+  }
+}
+
+/** Sidecar de proveniência — arquivo irmão, nunca embutido no conteúdo (que pode ser binário
+ * arbitrário, ex. PNG/WAV). Ausente é o caso normal para conteúdo que chegou por fora do
+ * `ArtifactDeliveryPort` (ex.: intervenção assistida de humano/IDE) — nunca um erro. */
+function provenanceSidecarPath(absolutePath: string): string {
+  return `${absolutePath}.provenance.json`;
+}
+
+async function readProvenanceSidecar(sidecarPath: string): Promise<ArtifactProvenance | undefined> {
+  try {
+    const raw = await readFileBytes(sidecarPath, "utf8");
+    return JSON.parse(raw) as ArtifactProvenance;
+  } catch {
+    // ENOENT (sem sidecar) ou JSON corrompido — em ambos os casos, trata como "proveniência
+    // desconhecida" (undefined), nunca lança: leitura de sidecar nunca pode derrubar a leitura do
+    // artefato real.
+    return undefined;
   }
 }
 

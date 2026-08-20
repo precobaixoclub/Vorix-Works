@@ -12,6 +12,7 @@ import type {
 import type { AssetQualityProfile } from "../../application/ports/asset-quality-profile.js";
 import { evaluateAssetDiversityGate, buildAssistedPackagesForFlaggedShots } from "../../shared/utils/asset-diversity-gate.js";
 import { evaluateProductionReadiness } from "../../shared/utils/production-readiness.js";
+import type { ArtifactProvenance } from "../../shared/utils/artifact-provenance.js";
 // NARRATIVE TIMING REBALANCING — reaproveita o motor de realocação (shared/utils, sem I/O);
 // Rafa é o único ponto com acesso simultâneo ao déficit estruturado do resolver (`timingDeficits`)
 // E à timeline completa de Diego (todos os Shots candidatos a doador), então a orquestração vive
@@ -422,6 +423,10 @@ export class RafaVideoRenderingSkill implements Skill<RafaVideoRenderingRequestI
               relativePath: "visual-assets/timing-rebalance-report.json",
               content: JSON.stringify({ executionId: request.context.executionId, generatedAt: new Date().toISOString(), records: rebalance.records, unresolvedShotIds: rebalance.unresolvedShotIds }, null, 2),
               mimeType: "application/json",
+              // Migração "GPT como motor criativo único" (PR 3/9) — relatório técnico real,
+              // calculado deterministicamente pelo próprio código a partir de dados reais, nunca
+              // fabricado.
+              provenance: { producer: "deterministic_composition", publishable: true } satisfies ArtifactProvenance,
             });
           }
         } else {

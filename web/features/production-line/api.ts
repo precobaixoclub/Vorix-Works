@@ -1,7 +1,7 @@
 import { apiClient } from "@/lib/api-client";
 import { getExecutionRun } from "@/features/execution/api";
 import type { ExecutionRun, ExecutionRunDetail } from "@/features/execution/types";
-import type { ProductionChannel, ProductionFormat } from "./types";
+import type { ProductionAspectRatio, ProductionChannel, ProductionFormat, ReferenceAssetRole } from "./types";
 
 // Bug real achado ao vivo (Rodada 2, Fatia 3): o editor de ideias não tem um campo separado de
 // "objetivo" — o texto da ideia (`ideaText`, até 2000 caracteres) era espelhado direto em
@@ -55,6 +55,11 @@ export type GenerateFromIdeaInput = {
   channel: ProductionChannel;
   targetAudience?: string;
   referenceImages?: string[];
+  /** Migração "GPT como motor criativo único" (PR 7/9) — lidos só pelo motor GPT; ausentes, o
+   * comportamento é idêntico ao de antes destes campos existirem (inclusive para o motor legado). */
+  aspectRatio?: ProductionAspectRatio;
+  referenceAssets?: Array<{ url: string; role: ReferenceAssetRole; description?: string }>;
+  forbiddenElements?: string[];
 };
 
 export type GenerateFromIdeaResult = {

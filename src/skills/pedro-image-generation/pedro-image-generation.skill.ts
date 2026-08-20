@@ -12,6 +12,7 @@ import type { Skill, SkillArtifact, SkillRequest, SkillResponse } from "../../do
 import { extractJson, latest } from "../../shared/utils/skill-parsing.js";
 import { areAspectRatiosEquivalent, resolutionForAspectRatio, resolutionLabelForAspectRatio } from "../../shared/utils/aspect-ratio.js";
 import { deriveCampaignCreativeDNA, type CampaignCreativeDNA } from "../../shared/utils/creative-director-engine.js";
+import { isExplicitlyNonPublishable, type ArtifactProvenance } from "../../shared/utils/artifact-provenance.js";
 import {
   ANTI_GENERIC_VISUAL_CONSTRAINTS,
   enrichVisualConcept,
@@ -92,6 +93,16 @@ function missingPort<TPort extends object>(portName: string): TPort {
     },
   });
 }
+
+/** Migração "GPT como motor criativo único" (PR 3/9) — imagem que veio de verdade da resposta do
+ * Provider de IA (`mode: ai_provider`), nunca de intervenção assistida (essa não passa por
+ * `materializeImage`, é lida diretamente via `readFile` sem nenhum `writeFile`). */
+const REAL_GENERATED_IMAGE_PROVENANCE: ArtifactProvenance = { producer: "real_ai_generation", publishable: true };
+
+/** Caption/prompts/metadata/ZIP/HTML de entrega — composição determinística real a partir dos
+ * dados já produzidos (texto real da Maria, imagens já materializadas, métricas reais da
+ * execução), nunca fabricada. */
+const DELIVERY_ARTIFACT_PROVENANCE: ArtifactProvenance = { producer: "deterministic_composition", publishable: true };
 
 export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequestInput, PedroSkillOutput> {
   readonly manifest = pedroImageGenerationManifest;
@@ -452,6 +463,21 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
         continue;
       }
 
+      if (isExplicitlyNonPublishable(existing.provenance)) {
+        // Migração "GPT como motor criativo único" (PR 3/9) — fecha o vazamento encontrado na
+        // auditoria: `mockup_generation` (Autonomous Engine) escreve por cima do MESMO caminho que
+        // Pedro espera aqui; sem esta checagem, a caixa de dispositivo placeholder passava na
+        // validação de bytes/dimensão e era aceita como se fosse a imagem final real.
+        await this.log("AssistedImageValidationFailed", `Arquivo em ${expected.expectedRelativePath} tem proveniência não publicável (${existing.provenance?.producer}: ${existing.provenance?.reason ?? "sem motivo informado"}) — nunca aceito como imagem final.`, request, {
+          clientId: tenant.clientId,
+          relativePath: expected.expectedRelativePath,
+          producer: existing.provenance?.producer,
+        });
+        validationWarnings.push(`${expected.expectedRelativePath}: proveniência não publicável (${existing.provenance?.producer}).`);
+        pendingImages.push(expected);
+        continue;
+      }
+
       const validation = validatePngBytes(existing.data, expected.width, expected.height);
       if (!validation.valid) {
         await this.log("AssistedImageValidationFailed", `Arquivo em ${expected.expectedRelativePath} não é uma imagem válida: ${validation.reason}`, request, {
@@ -666,6 +692,7 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
         relativePath: imageRelativePath,
         content: bytes,
         mimeType,
+        provenance: REAL_GENERATED_IMAGE_PROVENANCE,
       });
       sizeBytes = artifactFile.sizeBytes;
     }
@@ -738,6 +765,7 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
       relativePath: "caption.txt",
       content: captionText,
       mimeType: "text/plain; charset=utf-8",
+      provenance: DELIVERY_ARTIFACT_PROVENANCE,
     });
 
     const promptFiles = await Promise.all(localImages.map((item, index) => this.artifactDelivery!.writeFile({
@@ -745,6 +773,7 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
       relativePath: promptFileNameForImage(index, localImages.length),
       content: item.image.prompt,
       mimeType: "text/plain; charset=utf-8",
+      provenance: DELIVERY_ARTIFACT_PROVENANCE,
     })));
 
     let zipFile: ArtifactWrittenFile | undefined;
@@ -761,6 +790,7 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
         executionId: input.request.context.executionId,
         relativePath: "carousel.zip",
         entries: zipEntries,
+        provenance: DELIVERY_ARTIFACT_PROVENANCE,
       });
     }
 
@@ -791,6 +821,7 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
       relativePath: "metadata.json",
       content: metadataContent,
       mimeType: "application/json",
+      provenance: DELIVERY_ARTIFACT_PROVENANCE,
     });
 
     const html = buildDeliveryHtml({
@@ -819,6 +850,7 @@ export class PedroImageGenerationSkill implements Skill<PedroImageGenerationRequ
       relativePath: "index.html",
       content: html,
       mimeType: "text/html; charset=utf-8",
+      provenance: DELIVERY_ARTIFACT_PROVENANCE,
     });
 
     return {

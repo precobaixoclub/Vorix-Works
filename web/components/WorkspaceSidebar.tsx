@@ -8,17 +8,23 @@ import { useAuth } from "@/contexts/auth-context";
 
 type NavItem = { href: string; label: string; icon: string };
 
+// Redesign "SaaS moderno + IA-first" — nova ordem/rótulos pedidos: Início, Criar, Produção,
+// Conteúdos, Calendário, Campanhas, Materiais, Marca, Analytics, Configurações. "Revisão" sai da
+// navegação principal (a experiência de revisar uma peça passa a viver dentro de Produção — a
+// rota `/review` continua existindo e é aberta a partir de lá, nunca removida). "Conteúdos"/
+// "Campanhas"/"Marca" são só rótulos novos sobre rotas que já existiam (`/campaigns`, `/publish`,
+// `/knowledge`) — ver decisões 3/4 da proposta de redesign.
 const MAIN_NAV: readonly NavItem[] = [
   { href: "", label: "Início", icon: "◆" },
+  { href: "/create", label: "Criar", icon: "✦" },
   { href: "/production", label: "Produção", icon: "▤" },
-  { href: "/review", label: "Revisão", icon: "✓" },
-  { href: "/publish", label: "Publicar", icon: "🚀" },
-  { href: "/campaigns", label: "Publicações", icon: "📣" },
-  { href: "/assets", label: "Materiais", icon: "📂" },
-  { href: "/knowledge", label: "Conhecimento", icon: "🧠" },
+  { href: "/campaigns", label: "Conteúdos", icon: "▥" },
   { href: "/calendar", label: "Calendário", icon: "🗓" },
-  { href: "/connections", label: "Conexões", icon: "🔗" },
-  { href: "/analytics", label: "Análises", icon: "◈" },
+  { href: "/publish", label: "Campanhas", icon: "🚀" },
+  { href: "/assets", label: "Materiais", icon: "📂" },
+  { href: "/knowledge", label: "Marca", icon: "🧠" },
+  { href: "/analytics", label: "Analytics", icon: "◈" },
+  { href: "/settings", label: "Configurações", icon: "⚙" },
 ] as const;
 
 const BACKSTAGE_NAV: readonly NavItem[] = [
@@ -27,16 +33,17 @@ const BACKSTAGE_NAV: readonly NavItem[] = [
   { href: "/providers", label: "Provedores", icon: "◇" },
   { href: "/governance", label: "Governança", icon: "▣" },
   { href: "/operations", label: "Operação", icon: "▦" },
+  { href: "/publications", label: "Publicação técnica", icon: "📡" },
 ] as const;
 
 const BACKSTAGE_STORAGE_KEY = "zuno.sidebar.backstageOpen";
 
 /**
- * Navegação fixa dentro de um Workspace. Itens divididos em "principais" (jornada do usuário
- * final) e "bastidor" (observabilidade técnica — disjuntores, credenciais, filas, saúde do
- * sistema) — este último só aparece pra `owner`/`admin` do tenant, nunca pra `editor`/`viewer`
- * (nenhum desses controles faz sentido pra quem só usa o produto pra publicar conteúdo), e fica
- * colapsável e persistido em localStorage para quem tem acesso manter aberto entre sessões.
+ * Navegação fixa dentro de um Workspace — DESKTOP APENAS (`md:` e acima). No mobile, a navegação
+ * vive em `WorkspaceTopBar` (troca de espaço) + `BottomNav` (as 4 áreas mais usadas + "Menu" com
+ * o resto) — ver esses dois componentes. Antes desta revisão este arquivo também renderizava a
+ * versão mobile (uma faixa no topo); separar os dois evita a barra "← Espaços"/"Menu" ocupando
+ * espaço permanente no topo do desktop, que era o problema original.
  */
 export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
   const pathname = usePathname();
@@ -46,7 +53,6 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
 
   const isBackstagePathActive = BACKSTAGE_NAV.some((item) => pathname.startsWith(`${base}${item.href}`));
   const [backstageOpen, setBackstageOpen] = useState<boolean>(isBackstagePathActive);
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     const stored = typeof window !== "undefined" ? window.localStorage.getItem(BACKSTAGE_STORAGE_KEY) : null;
@@ -69,7 +75,6 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
       <Link
         key={item.href}
         href={href}
-        onClick={() => setMobileOpen(false)}
         className={`flex min-h-10 w-full min-w-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
           isActive ? "bg-accent-soft text-accent" : "text-ink-muted hover:bg-surface-sunken hover:text-ink"
         }`}
@@ -81,35 +86,17 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
   }
 
   return (
-    <nav className="sticky top-0 z-30 flex w-full shrink-0 flex-col gap-2 border-b border-border bg-surface-raised/95 p-2 backdrop-blur md:h-dvh md:w-56 md:gap-1 md:border-b-0 md:border-r md:p-3">
-      <div className="flex items-center justify-between gap-2 md:block">
-        <Link href="/workspaces" className="flex items-center px-2 py-1 text-ink md:mb-4" aria-label="Vonix — Workspaces">
-          <Logo className="h-8 w-auto md:h-10" />
-        </Link>
-        <div className="flex shrink-0 items-center gap-2 md:block">
-          <Link
-            href="/workspaces"
-            className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-ink-muted hover:bg-surface-sunken hover:text-ink md:mb-3 md:min-h-0 md:rounded-none md:hover:bg-transparent"
-          >
-            ← Espaços
-          </Link>
-          <button
-            type="button"
-            onClick={() => setMobileOpen((prev) => !prev)}
-            aria-expanded={mobileOpen}
-            className="inline-flex min-h-9 items-center rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-ink md:hidden"
-          >
-            Menu
-          </button>
-        </div>
-      </div>
+    <nav className="sticky top-0 hidden h-dvh w-56 shrink-0 flex-col gap-1 border-r border-border bg-surface-raised p-3 md:flex">
+      <Link href={base} className="mb-4 flex items-center px-2 py-1 text-ink" aria-label="Vorix">
+        <Logo className="h-9 w-auto" />
+      </Link>
 
-      <div className={`${mobileOpen ? "flex" : "hidden"} max-h-[calc(100dvh-4.5rem)] flex-col gap-1 overflow-y-auto pb-1 md:flex md:max-h-none md:overflow-visible md:pb-0`}>
+      <div className="flex flex-1 flex-col gap-1 overflow-y-auto">
         {MAIN_NAV.map(renderLink)}
 
         {canSeeBackstage ? (
           <>
-            <div className="my-1 border-t border-border/60 md:my-2" />
+            <div className="my-2 border-t border-border/60" />
 
             <button
               type="button"

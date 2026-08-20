@@ -27,7 +27,25 @@
   --color-status-archived: #52525b;
   --color-status-archived-bg: #f4f4f5;
 
+  /* Redesign "SaaS moderno + IA-first" — cor semântica de PROPÓSITO GERAL (nunca reaproveitar
+   * --color-status-*, que é especificamente do vocabulário de status de Workspace/Asset). Sempre
+   * pareada com ícone/texto no componente, nunca a única forma de comunicar o estado. */
+  --color-success: #2f9d4d;
+  --color-success-bg: #eaf7ee;
+  --color-warning: #a3760a;
+  --color-warning-bg: #fdf3e0;
+  --color-danger: #c23b37;
+  --color-danger-bg: #fbebea;
+
+  /* Escala de raio consolidada — redefine a escala do próprio Tailwind (nunca cria classe nova)
+   * para que `rounded-md`/`rounded-lg`/`rounded-xl` já usados em todo o app fiquem mais
+   * consistentes com a proposta de redesign sem precisar editar cada componente. */
+  --radius-lg: 0.625rem;
+  --radius-xl: 1rem;
+
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: "Instrument Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -48,6 +66,13 @@
     --color-status-active-bg: #0f2a1c;
     --color-status-inactive-bg: #2b2308;
     --color-status-archived-bg: #232327;
+
+    --color-success: #6bd98a;
+    --color-success-bg: #16311f;
+    --color-warning: #e6c169;
+    --color-warning-bg: #332811;
+    --color-danger: #ea6b67;
+    --color-danger-bg: #351916;
   }
 }
 

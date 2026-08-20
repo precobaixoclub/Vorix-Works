@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import useSWR from "swr";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
-import { ScreenGuide } from "@/components/ScreenGuide";
+import { Textarea } from "@/components/Field";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { listAssets } from "@/features/assets/api";
+import { MAX_IDEA_TEXT_LENGTH } from "@/features/production-line/api";
 import { useTikTokOAuthStatus } from "@/features/tiktok/hooks";
 import { useMetaOAuthStatus } from "@/features/meta/hooks";
 import { useYouTubeOAuthStatus } from "@/features/youtube/hooks";
@@ -19,11 +22,15 @@ import { formatDate } from "@/lib/format";
 const NETWORK_LABEL: Record<string, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", youtube: "YouTube Shorts" };
 
 /**
- * Workspace Home. Todos os cards ("Conexões", "Últimas publicações", "Materiais da Marca") usam
- * dado real hoje.
+ * Workspace Home, redesign "composer-first" — abre com o campo de ideia (mesmo destino de
+ * `/create`, que faz a geração de verdade) em vez de um painel de métricas. Os cards abaixo
+ * ("Conexões", "Últimas publicações", "Materiais da Marca") continuam existindo com dado real,
+ * agora como contexto secundário — nunca a primeira coisa que a tela mostra.
  */
 export default function WorkspaceHomePage() {
   const workspace = useCurrentWorkspace();
+  const router = useRouter();
+  const [draft, setDraft] = useState("");
   const { data: publications } = useUnifiedPublications(workspace.id);
   const { data: assets } = useSWR(["home-assets", workspace.id], () => listAssets(workspace.id));
 
@@ -40,9 +47,15 @@ export default function WorkspaceHomePage() {
   const hasAnyConnection = connectedAccounts.length > 0;
   const showOnboarding = oauthLoaded && (publications?.length ?? 0) === 0;
 
+  function goToCreate() {
+    const trimmed = draft.trim();
+    const query = trimmed ? `?draft=${encodeURIComponent(trimmed)}` : "";
+    router.push(`/workspaces/${workspace.id}/create${query}`);
+  }
+
   return (
     <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2.5">
             <h1 className="text-xl font-semibold text-ink">{workspace.name}</h1>
@@ -52,22 +65,29 @@ export default function WorkspaceHomePage() {
         </div>
       </div>
 
-      <ScreenGuide
-        title="O que fazer neste espaço"
-        description="Use esta página como painel inicial: ela mostra se as contas estão conectadas, se a linha de produção já foi configurada e o que saiu por último."
-        items={[
-          "Conecte as redes sociais em Conexões.",
-          "Configure os modelos e horários na Produção.",
-          "Publique manualmente em Publicar ou acompanhe em Publicações.",
-          "Envie logos, fotos e referências em Materiais da Marca.",
-        ]}
-        aside={
+      <Card className="mb-6 border-accent/30 bg-accent-soft/40">
+        <CardBody className="space-y-3">
           <div>
-            <p className="font-medium text-ink">Atalho recomendado</p>
-            <p className="mt-1">Se estiver começando agora, siga: Conexões → Produção → Publicar.</p>
+            <p className="font-display text-lg font-semibold text-ink">O que você quer publicar hoje?</p>
+            <p className="mt-0.5 text-sm text-ink-muted">Descreva a ideia — a IA cuida da estratégia, da copy e da peça final.</p>
           </div>
-        }
-      />
+          <Textarea
+            rows={3}
+            value={draft}
+            maxLength={MAX_IDEA_TEXT_LENGTH}
+            placeholder="Ex.: Criar um post anunciando nosso site, com tom direto e um CTA para visitar agora."
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) goToCreate();
+            }}
+            className="bg-surface"
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-ink-muted">{draft.length}/{MAX_IDEA_TEXT_LENGTH} · Ctrl+Enter para continuar</p>
+            <Button onClick={goToCreate}>Continuar</Button>
+          </div>
+        </CardBody>
+      </Card>
 
       {showOnboarding ? (
         <Card className="mb-6 p-5">

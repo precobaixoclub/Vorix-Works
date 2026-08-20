@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import { BottomNav } from "@/components/BottomNav";
 import { EmptyState } from "@/components/EmptyState";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Spinner } from "@/components/Spinner";
@@ -13,8 +14,8 @@ import { useWorkspace } from "@/features/workspace/hooks";
  * Casca de todo Workspace — Sprint 04, protegida por autenticação real a partir da Sprint 05
  * (`RequireAuth`). Busca o Workspace UMA VEZ aqui (via API real) e o disponibiliza para toda a
  * árvore de rotas abaixo via `WorkspaceProvider`, para que Home/Production/Assets/Campaigns/Knowledge/
- * Calendar nunca precisem buscá-lo de novo. `WorkspaceSidebar` é a navegação fixa entre essas
- * áreas — nunca aparece fora daqui.
+ * Calendar nunca precisem buscá-lo de novo. `WorkspaceSidebar` (desktop) e `BottomNav` (mobile) são
+ * a navegação fixa entre essas áreas — nunca aparecem fora daqui.
  */
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -52,9 +53,10 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-dvh min-w-0 flex-col md:flex-row">
         <WorkspaceSidebar workspaceId={workspace.id} />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col md:min-h-dvh">
-          <WorkspaceTopBar name={workspace.name} status={workspace.status} />
-          <div className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-surface-sunken">{children}</div>
+          <WorkspaceTopBar workspaceId={workspace.id} name={workspace.name} status={workspace.status} />
+          <div className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-surface-sunken pb-16 md:pb-0">{children}</div>
         </div>
+        <BottomNav workspaceId={workspace.id} />
       </div>
     </WorkspaceProvider>
   );

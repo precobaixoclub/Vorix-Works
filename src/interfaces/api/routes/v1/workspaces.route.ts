@@ -59,6 +59,7 @@ const PATCH_BODY_SCHEMA = {
         timezone: { type: "string" },
         language: { type: "string" },
         defaultAspectRatio: { type: "string" },
+        logoUrl: { type: "string" },
       },
     },
   },
@@ -115,7 +116,11 @@ export async function registerWorkspaceRoutes(app: FastifyInstance, deps: Worksp
   app.patch("/workspaces/:id", { schema: { params: ID_PARAMS_SCHEMA, body: PATCH_BODY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "workspace:update");
     const { id } = request.params as { id: string };
-    const body = request.body as { name?: string; kind?: string; settings?: { timezone?: string; language?: string; defaultAspectRatio?: string } };
+    const body = request.body as {
+      name?: string;
+      kind?: string;
+      settings?: { timezone?: string; language?: string; defaultAspectRatio?: string; logoUrl?: string };
+    };
     const workspace = await updateWorkspace(deps, { tenantId: principal.tenantId, id, ...body }).catch(translateWorkspaceError);
     return successEnvelope(workspace, request.id);
   });

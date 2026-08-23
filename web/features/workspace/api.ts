@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { TenantCreditsSummary, Workspace, WorkspaceStatus } from "./types";
+import type { TenantCreditsSummary, Workspace, WorkspaceSettings, WorkspaceStatus } from "./types";
 
 /**
  * Única porta de entrada para dados de Workspace — todos reais, contra a API da Sprint 03
@@ -20,7 +20,7 @@ export async function createWorkspace(input: { name: string; kind?: string }): P
   return apiClient.post<Workspace>("/v1/workspaces", input);
 }
 
-export async function updateWorkspace(id: string, patch: { name?: string; kind?: string }): Promise<Workspace> {
+export async function updateWorkspace(id: string, patch: { name?: string; kind?: string; settings?: Partial<WorkspaceSettings> }): Promise<Workspace> {
   return apiClient.patch<Workspace>(`/v1/workspaces/${id}`, patch);
 }
 

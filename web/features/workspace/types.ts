@@ -25,6 +25,7 @@ export type WorkspaceSettings = {
   timezone?: string;
   language?: string;
   defaultAspectRatio?: string;
+  logoUrl?: string;
 };
 
 export type TenantCreditsSummary = {

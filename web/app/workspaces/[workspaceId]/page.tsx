@@ -5,21 +5,15 @@ import { useMemo } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useExecutionRuns } from "@/features/execution/hooks";
-import type { ExecutionRun, ExecutionRunState } from "@/features/execution/types";
+import type { ExecutionRunState } from "@/features/execution/types";
 import { useUnifiedPublications } from "@/features/publication-history/hooks";
 import {
   contentTypeOf,
   derivePublicationStatus,
   type UnifiedPublication,
 } from "@/features/publication-history/types";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 
-const NETWORK_LABEL: Record<string, string> = {
-  tiktok: "TikTok",
-  instagram: "Instagram",
-  facebook: "Facebook",
-  youtube: "YouTube Shorts",
-};
 const IN_PROGRESS_STATES: readonly ExecutionRunState[] = ["created", "validating", "ready", "running"];
 const GENERATED_STATES: readonly ExecutionRunState[] = ["waiting_for_approval", "completed"];
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -29,15 +23,6 @@ type Shortcut = {
   label: string;
   description: string;
   icon: string;
-};
-
-type ActivityItem = {
-  id: string;
-  title: string;
-  description: string;
-  status: string;
-  date: string;
-  href: string;
 };
 
 export default function WorkspaceHomePage() {
@@ -61,7 +46,6 @@ export default function WorkspaceHomePage() {
   const scheduledCount = (publications ?? []).filter((post) => derivePublicationStatus(post) === "scheduled").length;
   const publishedLast30 = recentPublications.filter((post) => derivePublicationStatus(post) === "published").length;
   const recentByType = countContentTypes(recentPublications);
-  const recentActivity = buildRecentActivity(workspace.id, recentRuns, recentPublications).slice(0, 6);
   const loading = runsLoading || publicationsLoading;
 
   const shortcuts: Shortcut[] = [
@@ -149,41 +133,10 @@ export default function WorkspaceHomePage() {
         ))}
       </section>
 
-      <section className="mt-6 grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-        <div className="rounded-xl border border-border bg-surface-raised">
-          <div className="border-b border-border px-4 py-3">
-            <h2 className="font-semibold text-ink">Atividade recente</h2>
-            <p className="text-sm text-ink-muted">Últimos movimentos do workspace nos últimos 30 dias.</p>
-          </div>
-          <div className="divide-y divide-border">
-            {loading ? (
-              <EmptyLine text="Carregando dados..." />
-            ) : recentActivity.length === 0 ? (
-              <EmptyLine text="Nenhuma geração ou publicação nos últimos 30 dias." />
-            ) : (
-              recentActivity.map((item) => (
-                <Link
-                  key={item.id}
-                  href={item.href}
-                  className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-surface-sunken"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-ink">{item.title}</p>
-                    <p className="mt-0.5 text-xs text-ink-muted">{item.description}</p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <StatusBadge status={item.status} />
-                    <p className="mt-1 text-[11px] text-ink-faint">{formatDateTime(item.date)}</p>
-                  </div>
-                </Link>
-              ))
-            )}
-          </div>
-        </div>
-
+      <section className="mt-6">
         <div className="rounded-xl border border-border bg-surface-raised p-4">
           <h2 className="font-semibold text-ink">Métricas gerais</h2>
-          <div className="mt-4 grid gap-2">
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
             <CompactMetric label="Execuções totais" value={realRuns.length} loading={runsLoading} />
             <CompactMetric label="Conteúdos no histórico" value={publications?.length ?? 0} loading={publicationsLoading} />
             <CompactMetric label="Agendados" value={scheduledCount} loading={publicationsLoading} />
@@ -225,10 +178,6 @@ function CompactMetric({ label, value, loading }: { label: string; value: number
   );
 }
 
-function EmptyLine({ text }: { text: string }) {
-  return <p className="px-4 py-8 text-center text-sm text-ink-muted">{text}</p>;
-}
-
 function isWithinLast30Days(iso: string | undefined, cutoff: number, now: number): boolean {
   if (!iso) return false;
   const timestamp = new Date(iso).getTime();
@@ -250,38 +199,4 @@ function countContentTypes(posts: readonly UnifiedPublication[]) {
     },
     { image: 0, carousel: 0, video: 0 },
   );
-}
-
-function buildRecentActivity(
-  workspaceId: string,
-  runs: readonly ExecutionRun[],
-  publications: readonly UnifiedPublication[],
-): ActivityItem[] {
-  const runItems: ActivityItem[] = runs.map((run) => ({
-    id: `run-${run.id}`,
-    title: `Execução ${run.id.slice(0, 8)}`,
-    description: run.state === "waiting_for_approval" ? "Conteúdo gerado aguardando revisão" : "Fluxo de produção",
-    status: run.state,
-    date: run.finishedAt ?? run.updatedAt ?? run.createdAt,
-    href: `/workspaces/${workspaceId}/execution/${run.id}`,
-  }));
-  const publicationItems: ActivityItem[] = publications.map((post) => ({
-    id: `post-${post.network}-${post.id}`,
-    title: post.text || "Conteúdo sem legenda",
-    description: `${NETWORK_LABEL[post.network]} · ${contentTypeLabel(contentTypeOf(post))}`,
-    status: derivePublicationStatus(post),
-    date: publicationActivityDate(post),
-    href: `/workspaces/${workspaceId}/campaigns`,
-  }));
-
-  return [...runItems, ...publicationItems]
-    .filter((item) => item.date)
-    .sort((a, b) => b.date.localeCompare(a.date));
-}
-
-function contentTypeLabel(type: ReturnType<typeof contentTypeOf>): string {
-  if (type === "image") return "Imagem";
-  if (type === "carousel") return "Carrossel";
-  if (type === "video") return "Vídeo";
-  return "Texto";
 }

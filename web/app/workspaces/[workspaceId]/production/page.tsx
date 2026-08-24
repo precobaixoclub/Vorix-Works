@@ -215,7 +215,7 @@ function deriveRunSummary(workspaceId: string, run: ExecutionRun, detail: Execut
   });
   const copyOutput = (detail?.artifacts ?? []).find((artifact) => artifact.outputPort === "copy")?.payload as { output?: { title?: string } } | undefined;
   const structureOutput = (detail?.artifacts ?? []).find((artifact) => artifact.outputPort === "structure")?.payload as { output?: { angle?: string } } | undefined;
-  const title = copyOutput?.output?.title || structureOutput?.output?.angle || record?.name || "Ideia sem nome";
+  const title = copyOutput?.output?.title || structureOutput?.output?.angle || record?.name || record?.ideaText?.slice(0, 68) || "Conteúdo sem título";
   const failureMessage = detail ? extractExecutionRunFailure(detail).message : undefined;
   return { title, images, failureMessage, record };
 }
@@ -232,6 +232,7 @@ export default function ProductionLinePage() {
   const [ideaStatusFilter, setIdeaStatusFilter] = useState<IdeaStatusFilter>("available");
   const [ideaSearch, setIdeaSearch] = useState("");
   const [formatFilter, setFormatFilter] = useState<ProductionFormat | "all">("all");
+  const [ideaFiltersOpen, setIdeaFiltersOpen] = useState(false);
   const [draftIdea, setDraftIdea] = useState<ContentBlueprint | null>(null);
   const [ideaEditorOpen, setIdeaEditorOpen] = useState(false);
 
@@ -327,6 +328,17 @@ export default function ProductionLinePage() {
   }, [runsByTab, queueTab, queueSearch, channelFilter, queueFormatFilter, periodFilter, sortOrder, workspace.id]);
 
   const totalQueueRuns = realRuns.length;
+  const activeQueueFilterCount = [
+    channelFilter !== "all",
+    queueFormatFilter !== "all",
+    periodFilter !== "all",
+    sortOrder !== "recent",
+  ].filter(Boolean).length;
+  const activeIdeaFilterCount = [
+    ideaTypeFilter !== "all",
+    ideaStatusFilter !== "available",
+    formatFilter !== "all",
+  ].filter(Boolean).length;
 
   async function handleRetryFailed(run: ExecutionRun) {
     const record = getGenerationRecord(workspace.id, run.id);
@@ -468,6 +480,8 @@ export default function ProductionLinePage() {
           ← Voltar à produção
         </button>
 
+        <PromptSetupCard workspaceId={workspace.id} hasGuidelines={hasGuidelines} compact={false} />
+
         <Card className="mb-4">
           <CardHeader>
             <div>
@@ -513,38 +527,57 @@ export default function ProductionLinePage() {
                 </div>
                 <Button variant="secondary" onClick={addBlueprint}><span aria-hidden="true">+</span> {draftIdea ? "Continuar rascunho" : "Nova ideia"}</Button>
               </div>
-              <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
-                <div>
-                  <p className="mb-1.5 text-xs font-medium text-ink-muted">Tipo</p>
-                  <SegmentedFilter value={ideaTypeFilter} options={IDEA_TYPE_FILTERS} onChange={setIdeaTypeFilter} />
-                </div>
-                <div>
-                  <p className="mb-1.5 text-xs font-medium text-ink-muted">Status</p>
-                  <SegmentedFilter value={ideaStatusFilter} options={IDEA_STATUS_FILTERS} onChange={setIdeaStatusFilter} />
-                </div>
-                <label className="ml-auto flex items-center gap-2 text-xs text-ink-muted">
-                  Formato
-                  <select
-                    value={formatFilter}
-                    onChange={(event) => setFormatFilter(event.target.value as ProductionFormat | "all")}
-                    className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs font-medium text-ink outline-none focus:border-accent"
-                  >
-                    <option value="all">Todos</option>
-                    {FORMATS.map((format) => (
-                      <option key={format} value={format}>{FORMAT_LABEL[format]}</option>
-                    ))}
-                  </select>
-                </label>
-                <div className="relative">
-                  <input
-                    type="search"
-                    value={ideaSearch}
-                    onChange={(event) => setIdeaSearch(event.target.value)}
-                    placeholder="Buscar por nome ou descrição"
-                    className="w-64 max-w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
-                  />
-                </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  type="search"
+                  value={ideaSearch}
+                  onChange={(event) => setIdeaSearch(event.target.value)}
+                  placeholder="Buscar ideias"
+                  className="min-h-10 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft sm:max-w-sm"
+                />
+                <Button variant="secondary" onClick={() => setIdeaFiltersOpen((open) => !open)}>
+                  Filtros{activeIdeaFilterCount > 0 ? ` (${activeIdeaFilterCount})` : ""}
+                </Button>
               </div>
+              {ideaFiltersOpen ? (
+                <div className="mt-3 rounded-lg border border-border bg-surface-sunken p-3">
+                  <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+                    <div>
+                      <p className="mb-1.5 text-xs font-medium text-ink-muted">Tipo</p>
+                      <SegmentedFilter value={ideaTypeFilter} options={IDEA_TYPE_FILTERS} onChange={setIdeaTypeFilter} />
+                    </div>
+                    <div>
+                      <p className="mb-1.5 text-xs font-medium text-ink-muted">Status</p>
+                      <SegmentedFilter value={ideaStatusFilter} options={IDEA_STATUS_FILTERS} onChange={setIdeaStatusFilter} />
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-ink-muted">
+                      Formato
+                      <select
+                        value={formatFilter}
+                        onChange={(event) => setFormatFilter(event.target.value as ProductionFormat | "all")}
+                        className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs font-medium text-ink outline-none focus:border-accent"
+                      >
+                        <option value="all">Todos</option>
+                        {FORMATS.map((format) => (
+                          <option key={format} value={format}>{FORMAT_LABEL[format]}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {activeIdeaFilterCount > 0 ? (
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setIdeaTypeFilter("all");
+                          setIdeaStatusFilter("available");
+                          setFormatFilter("all");
+                        }}
+                      >
+                        Limpar filtros
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               <IdeaInventory
                 ideas={visibleBlueprints}
                 totalIdeas={config.blueprints.length}
@@ -586,25 +619,20 @@ export default function ProductionLinePage() {
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-semibold text-ink">Produção</h1>
-          <p className="mt-1 text-sm text-ink-muted">Acompanhe o que está sendo criado e o que precisa da sua atenção.</p>
+          <p className="mt-1 text-sm text-ink-muted">Acompanhe conteúdos gerados, revisão e rotina automática.</p>
         </div>
         <Link href={`/workspaces/${workspace.id}/create`}>
           <Button className="px-5">+ Nova criação</Button>
         </Link>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-surface-raised px-4 py-2.5 text-sm">
-        <span className="text-ink-muted">Automação:</span>
-        <span className="font-medium text-ink">{rotinaAtiva ? "Ativa" : "Pausada"}</span>
-        {rotinaAtiva && nextSlot ? <span className="text-ink-muted">· Próximo horário planejado: {nextSlot}</span> : null}
-        <span className="mx-1 text-border">·</span>
-        <span className="text-ink-muted">Diretrizes Criativas:</span>
-        <span className="font-medium text-ink">{hasGuidelines ? "ativas" : "não configuradas"}</span>
-        <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`} className="text-xs font-medium text-accent hover:underline">
-          {hasGuidelines ? "Editar" : "Configurar"}
-        </Link>
-        <button type="button" onClick={() => setMode("configure")} className="ml-auto text-xs font-medium text-accent hover:underline">
-          Configurar produção
+      <PromptSetupCard workspaceId={workspace.id} hasGuidelines={hasGuidelines} compact />
+
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-raised px-4 py-3 text-sm">
+        <span className="font-medium text-ink">Rotina {rotinaAtiva ? "ativa" : "pausada"}</span>
+        {rotinaAtiva && nextSlot ? <span className="text-ink-muted">Próximo horário: {nextSlot}</span> : null}
+        <button type="button" onClick={() => setMode("configure")} className="ml-auto text-sm font-medium text-accent hover:underline">
+          Configurar rotina
         </button>
       </div>
 
@@ -642,31 +670,50 @@ export default function ProductionLinePage() {
         ))}
       </div>
 
-      <div className="mb-4 hidden items-center gap-2 sm:flex">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
         <input
           type="search"
           value={queueSearch}
           onChange={(event) => setQueueSearch(event.target.value)}
-          placeholder="Buscar por nome ou ideia…"
-          className="w-56 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+          placeholder="Buscar produção"
+          className="min-h-10 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft sm:max-w-sm"
         />
-        <select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value as ProductionChannel | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
-          <option value="all">Todos os canais</option>
-          {CHANNELS.map((channel) => (<option key={channel} value={channel}>{CHANNEL_LABEL[channel]}</option>))}
-        </select>
-        <select value={queueFormatFilter} onChange={(event) => setQueueFormatFilter(event.target.value as ProductionFormat | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
-          <option value="all">Todos os formatos</option>
-          {FORMATS.map((format) => (<option key={format} value={format}>{FORMAT_LABEL[format]}</option>))}
-        </select>
-        <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as PeriodFilterId)} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
-          {PERIOD_FILTERS.map((period) => (<option key={period.id} value={period.id}>{period.label}</option>))}
-        </select>
-        <SegmentedFilter value={sortOrder} options={[{ id: "recent", label: "Recentes" }, { id: "oldest", label: "Antigos" }]} onChange={setSortOrder} />
+        <Button variant="secondary" onClick={() => setFiltersOpen((open) => !open)}>
+          Filtros{activeQueueFilterCount > 0 ? ` (${activeQueueFilterCount})` : ""}
+        </Button>
       </div>
 
-      <div className="mb-4 sm:hidden">
-        <Button variant="secondary" onClick={() => setFiltersOpen(true)}>Filtros</Button>
-      </div>
+      {filtersOpen ? (
+        <div className="mb-4 rounded-xl border border-border bg-surface-raised p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value as ProductionChannel | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
+              <option value="all">Todos os canais</option>
+              {CHANNELS.map((channel) => (<option key={channel} value={channel}>{CHANNEL_LABEL[channel]}</option>))}
+            </select>
+            <select value={queueFormatFilter} onChange={(event) => setQueueFormatFilter(event.target.value as ProductionFormat | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
+              <option value="all">Todos os formatos</option>
+              {FORMATS.map((format) => (<option key={format} value={format}>{FORMAT_LABEL[format]}</option>))}
+            </select>
+            <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as PeriodFilterId)} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
+              {PERIOD_FILTERS.map((period) => (<option key={period.id} value={period.id}>{period.label}</option>))}
+            </select>
+            <SegmentedFilter value={sortOrder} options={[{ id: "recent", label: "Recentes" }, { id: "oldest", label: "Antigos" }]} onChange={setSortOrder} />
+            {activeQueueFilterCount > 0 ? (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setChannelFilter("all");
+                  setQueueFormatFilter("all");
+                  setPeriodFilter("all");
+                  setSortOrder("recent");
+                }}
+              >
+                Limpar filtros
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {retryError ? <p className="mb-3 text-sm text-danger">{retryError}</p> : null}
 
@@ -698,34 +745,6 @@ export default function ProductionLinePage() {
         </div>
       ) : null}
 
-      {filtersOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/40 sm:hidden" onClick={() => setFiltersOpen(false)}>
-          <div className="w-full rounded-t-2xl bg-surface-raised p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]" onClick={(event) => event.stopPropagation()}>
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border" />
-            <div className="flex flex-col gap-3">
-              <input
-                type="search"
-                value={queueSearch}
-                onChange={(event) => setQueueSearch(event.target.value)}
-                placeholder="Buscar por nome ou ideia…"
-                className="rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent"
-              />
-              <select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value as ProductionChannel | "all")} className="rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-ink outline-none">
-                <option value="all">Todos os canais</option>
-                {CHANNELS.map((channel) => (<option key={channel} value={channel}>{CHANNEL_LABEL[channel]}</option>))}
-              </select>
-              <select value={queueFormatFilter} onChange={(event) => setQueueFormatFilter(event.target.value as ProductionFormat | "all")} className="rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-ink outline-none">
-                <option value="all">Todos os formatos</option>
-                {FORMATS.map((format) => (<option key={format} value={format}>{FORMAT_LABEL[format]}</option>))}
-              </select>
-              <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as PeriodFilterId)} className="rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-ink outline-none">
-                {PERIOD_FILTERS.map((period) => (<option key={period.id} value={period.id}>{period.label}</option>))}
-              </select>
-              <Button onClick={() => setFiltersOpen(false)}>Aplicar</Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </main>
   );
 }
@@ -809,6 +828,30 @@ function ProductionRunCard({
   );
 }
 
+function PromptSetupCard({ workspaceId, hasGuidelines, compact }: { workspaceId: string; hasGuidelines: boolean; compact: boolean }) {
+  return (
+    <div className={`mb-4 rounded-xl border px-4 py-3 ${hasGuidelines ? "border-border bg-surface-raised" : "border-accent/40 bg-accent-soft"}`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className={`text-sm font-semibold ${hasGuidelines ? "text-ink" : "text-accent"}`}>
+            {hasGuidelines ? "Prompt da IA configurado" : "Configure o prompt da IA antes de gerar conteúdo"}
+          </p>
+          <p className={`mt-0.5 text-sm ${hasGuidelines ? "text-ink-muted" : "text-accent"}`}>
+            {hasGuidelines
+              ? "A IA já tem diretrizes criativas fixas desta marca."
+              : compact
+                ? "Esse prompt define estilo, tom, limites e referências que a IA deve seguir em todas as criações."
+                : "Antes de abastecer a rotina, defina como a IA deve escrever e criar visualmente: tom de voz, cores, estilo, regras do que nunca inventar e uso de materiais reais."}
+          </p>
+        </div>
+        <Link href={`/workspaces/${workspaceId}/knowledge?tab=guidelines`} className="shrink-0">
+          <Button variant={hasGuidelines ? "secondary" : "primary"}>{hasGuidelines ? "Editar prompt" : "Configurar prompt da IA"}</Button>
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 function IdeaFormDialog({
   workspaceId,
   blueprint,
@@ -838,7 +881,7 @@ function IdeaFormDialog({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wide text-accent">{isDraft ? "Nova ideia" : "Editar ideia"}</p>
-              <h2 className="mt-1 text-lg font-semibold text-ink">{isDraft ? "Abastecer tanque de conteúdo" : blueprint.name || "Ideia sem nome"}</h2>
+              <h2 className="mt-1 text-lg font-semibold text-ink">{isDraft ? "Abastecer tanque de conteúdo" : displayIdeaName(blueprint)}</h2>
               <p className="mt-1 max-w-2xl text-sm text-ink-muted">
                 {isDraft ? "Preencha a ideia e o formato para entrar no estoque da rotina — gerar a peça é sempre em Criar." : "Preencha primeiro a ideia e o formato. Referências e detalhes aparecem separados para não poluir o fluxo."}
               </p>
@@ -925,14 +968,14 @@ function IdeaInventory({
           <div className="px-3 py-8 text-center text-sm text-ink-muted">O tanque ainda não tem ideias para este filtro.</div>
         ) : ideas.map((idea) => {
           const selected = selectedId === idea.id;
-          const preview = idea.ideaText.trim() || idea.objective.trim() || "Sem descrição preenchida.";
+          const preview = idea.ideaText.trim() || idea.objective.trim() || "Rascunho sem descrição. Remova ou preencha a ideia.";
           return (
             <div
               key={idea.id}
               className={`grid grid-cols-1 gap-2 border-b border-border px-3 py-3 last:border-b-0 sm:grid-cols-[2.3fr_0.9fr_1.3fr_0.85fr_0.85fr_1fr] sm:items-center sm:gap-3 ${selected ? "bg-accent-soft" : "hover:bg-surface-sunken"}`}
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-ink">{idea.name.trim() || "Ideia sem nome"}</p>
+                <p className="truncate text-sm font-semibold text-ink">{displayIdeaName(idea)}</p>
                 <p className="mt-0.5 line-clamp-1 text-xs text-ink-muted">{preview}</p>
               </div>
               <div className="flex items-center gap-1.5 text-xs text-ink-muted">
@@ -1770,6 +1813,14 @@ function canPersistIdea(idea: ContentBlueprint): boolean {
 function isEffectivelyEmptyIdea(idea: ContentBlueprint): boolean {
   const textFields = [idea.ideaText, idea.objective, idea.theme, idea.captionDirection, idea.creativeDirection].map((value) => value.trim()).filter(Boolean);
   return textFields.length === 0 && idea.sourceLinks.length === 0 && idea.referenceImages.length === 0;
+}
+
+function displayIdeaName(idea: ContentBlueprint): string {
+  const explicitName = idea.name.trim();
+  if (explicitName && explicitName.toLowerCase() !== "nova ideia" && explicitName.toLowerCase() !== "ideia sem nome") return explicitName;
+  const text = idea.ideaText.trim() || idea.objective.trim();
+  if (text) return text.length > 68 ? `${text.slice(0, 65)}...` : text;
+  return "Rascunho sem descrição";
 }
 
 function isRoutineIdea(idea: ContentBlueprint): boolean {

@@ -52,8 +52,7 @@ function isBlankDraftIdea(input: ContentBlueprint): boolean {
     .map((value) => value?.trim() ?? "")
     .filter(Boolean);
   const hasReferences = input.sourceLinks.length > 0 || input.referenceImages.length > 0;
-  const defaultName = input.name.trim() === "" || input.name.trim().toLowerCase() === "nova ideia";
-  return input.status !== "used" && defaultName && textFields.length === 0 && !hasReferences;
+  return input.status !== "used" && textFields.length === 0 && !hasReferences;
 }
 
 function normalizeRule(input: PostingRule): PostingRule {

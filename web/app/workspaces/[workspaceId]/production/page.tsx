@@ -65,6 +65,7 @@ const PERIOD_FILTERS = [
 ] as const;
 const IN_PROGRESS_STATES: readonly ExecutionRunState[] = ["created", "validating", "ready", "running"];
 const RUN_STATE_LABEL: Record<string, string> = { created: "Na fila", validating: "Preparando", ready: "Pronto para processar", running: "Gerando com IA…" };
+const UNTITLED_CONTENT_TITLE = "Conteúdo sem título";
 
 type ProductionMode = "queue" | "configure";
 type QueueTabId = (typeof QUEUE_TABS)[number]["id"];
@@ -215,9 +216,16 @@ function deriveRunSummary(workspaceId: string, run: ExecutionRun, detail: Execut
   });
   const copyOutput = (detail?.artifacts ?? []).find((artifact) => artifact.outputPort === "copy")?.payload as { output?: { title?: string } } | undefined;
   const structureOutput = (detail?.artifacts ?? []).find((artifact) => artifact.outputPort === "structure")?.payload as { output?: { angle?: string } } | undefined;
-  const title = copyOutput?.output?.title || structureOutput?.output?.angle || record?.name || record?.ideaText?.slice(0, 68) || "Conteúdo sem título";
+  const title = copyOutput?.output?.title || structureOutput?.output?.angle || record?.name || record?.ideaText?.slice(0, 68) || UNTITLED_CONTENT_TITLE;
   const failureMessage = detail ? extractExecutionRunFailure(detail).message : undefined;
   return { title, images, failureMessage, record };
+}
+
+function hasProductionCardTitle(workspaceId: string, run: ExecutionRun): boolean {
+  const record = getGenerationRecord(workspaceId, run.id);
+  if (!record) return false;
+  const title = (record.name || record.ideaText || "").trim().toLowerCase();
+  return Boolean(title) && title !== UNTITLED_CONTENT_TITLE.toLowerCase() && title !== "ideia sem nome";
 }
 
 export default function ProductionLinePage() {
@@ -292,10 +300,11 @@ export default function ProductionLinePage() {
   const nextSlot = useMemo(() => describeNextSlot(config.postingRules), [config.postingRules]);
 
   const realRuns = useMemo(() => (executionRuns ?? []).filter((run) => run.mode === "real"), [executionRuns]);
-  const inProgressRuns = useMemo(() => realRuns.filter((run) => IN_PROGRESS_STATES.includes(run.state)), [realRuns]);
-  const waitingReviewRuns = useMemo(() => realRuns.filter((run) => run.state === "waiting_for_approval"), [realRuns]);
-  const completedRuns = useMemo(() => realRuns.filter((run) => run.state === "completed"), [realRuns]);
-  const failedRuns = useMemo(() => realRuns.filter((run) => run.state === "failed"), [realRuns]);
+  const visibleRuns = useMemo(() => realRuns.filter((run) => hasProductionCardTitle(workspace.id, run)), [realRuns, workspace.id]);
+  const inProgressRuns = useMemo(() => visibleRuns.filter((run) => IN_PROGRESS_STATES.includes(run.state)), [visibleRuns]);
+  const waitingReviewRuns = useMemo(() => visibleRuns.filter((run) => run.state === "waiting_for_approval"), [visibleRuns]);
+  const completedRuns = useMemo(() => visibleRuns.filter((run) => run.state === "completed"), [visibleRuns]);
+  const failedRuns = useMemo(() => visibleRuns.filter((run) => run.state === "failed"), [visibleRuns]);
   const completedTodayCount = useMemo(() => {
     const today = new Date().toDateString();
     return completedRuns.filter((run) => (run.finishedAt ? new Date(run.finishedAt).toDateString() === today : false)).length;
@@ -327,7 +336,7 @@ export default function ProductionLinePage() {
     return [...list].sort((a, b) => (sortOrder === "recent" ? b.createdAt.localeCompare(a.createdAt) : a.createdAt.localeCompare(b.createdAt)));
   }, [runsByTab, queueTab, queueSearch, channelFilter, queueFormatFilter, periodFilter, sortOrder, workspace.id]);
 
-  const totalQueueRuns = realRuns.length;
+  const totalQueueRuns = visibleRuns.length;
   const activeQueueFilterCount = [
     channelFilter !== "all",
     queueFormatFilter !== "all",
@@ -616,52 +625,33 @@ export default function ProductionLinePage() {
 
   return (
     <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-semibold text-ink">Produção</h1>
-          <p className="mt-1 text-sm text-ink-muted">Acompanhe conteúdos gerados, revisão e rotina automática.</p>
+          <p className="mt-1 text-sm text-ink-muted">Crie ideias, ajuste o prompt da IA e acompanhe a fila.</p>
         </div>
-        <Link href={`/workspaces/${workspace.id}/create`}>
-          <Button className="px-5">+ Nova criação</Button>
-        </Link>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Button onClick={() => { setMode("configure"); addBlueprint(); }}>+ Nova ideia</Button>
+          <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`}>
+            <Button variant={hasGuidelines ? "secondary" : "primary"} className="w-full">{hasGuidelines ? "Editar prompt" : "Configurar prompt"}</Button>
+          </Link>
+          <Button variant="secondary" onClick={() => setMode("configure")}>Configurar rotina</Button>
+        </div>
       </div>
 
-      <PromptSetupCard workspaceId={workspace.id} hasGuidelines={hasGuidelines} compact />
-
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-raised px-4 py-3 text-sm">
-        <span className="font-medium text-ink">Rotina {rotinaAtiva ? "ativa" : "pausada"}</span>
-        {rotinaAtiva && nextSlot ? <span className="text-ink-muted">Próximo horário: {nextSlot}</span> : null}
-        <button type="button" onClick={() => setMode("configure")} className="ml-auto text-sm font-medium text-accent hover:underline">
-          Configurar rotina
-        </button>
+      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-surface-raised px-3 py-2 text-xs text-ink-muted">
+        <span>Prompt: <strong className="font-semibold text-ink">{hasGuidelines ? "configurado" : "pendente"}</strong></span>
+        <span>Rotina: <strong className="font-semibold text-ink">{rotinaAtiva ? "ativa" : "pausada"}</strong></span>
+        {rotinaAtiva && nextSlot ? <span>Próximo: <strong className="font-semibold text-ink">{nextSlot}</strong></span> : null}
       </div>
 
-      <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <button type="button" onClick={() => setQueueTab("in_progress")} className="rounded-xl bg-surface-raised px-3 py-3 text-left hover:bg-surface-sunken">
-          <p className="text-xl font-semibold text-ink">{inProgressRuns.length}</p>
-          <p className="text-xs text-ink-muted">Em produção</p>
-        </button>
-        <button type="button" onClick={() => setQueueTab("waiting_review")} className="rounded-xl bg-surface-raised px-3 py-3 text-left hover:bg-surface-sunken">
-          <p className="text-xl font-semibold text-ink">{waitingReviewRuns.length}</p>
-          <p className="text-xs text-ink-muted">Aguardando revisão</p>
-        </button>
-        <button type="button" onClick={() => setQueueTab("failed")} className="rounded-xl bg-surface-raised px-3 py-3 text-left hover:bg-surface-sunken">
-          <p className="text-xl font-semibold text-ink">{failedRuns.length}</p>
-          <p className="text-xs text-ink-muted">Com erro</p>
-        </button>
-        <button type="button" onClick={() => setQueueTab("completed")} className="rounded-xl bg-surface-raised px-3 py-3 text-left hover:bg-surface-sunken">
-          <p className="text-xl font-semibold text-ink">{completedTodayCount}</p>
-          <p className="text-xs text-ink-muted">Concluídos hoje</p>
-        </button>
-      </div>
-
-      <div className="mb-4 flex flex-wrap gap-1.5">
+      <div className="mb-3 flex flex-wrap gap-1.5 rounded-lg bg-surface-raised p-1">
         {QUEUE_TABS.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => setQueueTab(tab.id)}
-            className={`min-h-9 rounded-lg px-3.5 text-sm font-medium transition-colors ${
+            className={`min-h-8 rounded-md px-2.5 text-xs font-medium transition-colors ${
               queueTab === tab.id ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:text-ink"
             }`}
           >
@@ -676,9 +666,9 @@ export default function ProductionLinePage() {
           value={queueSearch}
           onChange={(event) => setQueueSearch(event.target.value)}
           placeholder="Buscar produção"
-          className="min-h-10 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft sm:max-w-sm"
+          className="min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft sm:max-w-xs"
         />
-        <Button variant="secondary" onClick={() => setFiltersOpen((open) => !open)}>
+        <Button variant="secondary" className="min-h-9 py-1.5" onClick={() => setFiltersOpen((open) => !open)}>
           Filtros{activeQueueFilterCount > 0 ? ` (${activeQueueFilterCount})` : ""}
         </Button>
       </div>

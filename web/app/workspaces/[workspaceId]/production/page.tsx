@@ -29,14 +29,10 @@ const REFERENCE_ASSET_ROLE_OPTIONS: { value: ReferenceAssetRole; label: string }
   { value: "reference_style", label: "Referência de estilo" },
   { value: "other", label: "Outro" },
 ];
-const IDEA_TYPE_FILTERS = [
-  { id: "all", label: "Todas" },
-  { id: "routine", label: "Rotina" },
-  { id: "standalone", label: "Avulsas" },
-] as const;
 const IDEA_STATUS_FILTERS = [
   { id: "all", label: "Todas" },
-  { id: "available", label: "No tanque" },
+  { id: "available", label: "Pendentes" },
+  { id: "in_progress", label: "Em andamento" },
   { id: "used", label: "Usadas" },
 ] as const;
 const WEEKDAYS: { id: ProductionWeekday; short: string; label: string }[] = [
@@ -72,7 +68,6 @@ type ProductionMode = "queue" | "configure";
 type QueueTabId = (typeof QUEUE_TABS)[number]["id"];
 type PeriodFilterId = (typeof PERIOD_FILTERS)[number]["id"];
 type SortOrder = "recent" | "oldest";
-type IdeaTypeFilter = (typeof IDEA_TYPE_FILTERS)[number]["id"];
 type IdeaStatusFilter = (typeof IDEA_STATUS_FILTERS)[number]["id"];
 
 const CHANNEL_SHORT: Record<ProductionChannel, string> = {
@@ -81,15 +76,6 @@ const CHANNEL_SHORT: Record<ProductionChannel, string> = {
   tiktok: "TT",
   youtube: "YT",
 };
-
-function IconLayer({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
-      <rect x="3" y="3" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="1.4" />
-      <circle cx="8" cy="8" r="1.3" fill="currentColor" />
-    </svg>
-  );
-}
 
 function IconWarn({ className = "h-3.5 w-3.5" }: { className?: string }) {
   return (
@@ -237,6 +223,30 @@ function hasProductionCardTitle(workspaceId: string, run: ExecutionRun): boolean
   return Boolean(title) && title !== UNTITLED_CONTENT_TITLE.toLowerCase() && title !== "ideia sem nome";
 }
 
+/** Alternância persistente entre Fila (execuções reais em andamento) e Tanque (ideias pendentes +
+ * rotina) — sempre visível nos dois modos, pra nunca depender de um botão perdido no cabeçalho
+ * pra saber que essas duas coisas existem e como alternar entre elas. */
+function ProductionModeTabs({ mode, onChange, queueCount, tankCount }: { mode: ProductionMode; onChange: (mode: ProductionMode) => void; queueCount: number; tankCount: number }) {
+  return (
+    <div className="mb-4 inline-flex gap-1 rounded-lg bg-surface-raised p-1">
+      <button
+        type="button"
+        onClick={() => onChange("queue")}
+        className={`min-h-9 rounded-md px-3.5 text-sm font-medium transition-colors ${mode === "queue" ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}
+      >
+        Fila{queueCount > 0 ? ` (${queueCount})` : ""}
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("configure")}
+        className={`min-h-9 rounded-md px-3.5 text-sm font-medium transition-colors ${mode === "configure" ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}
+      >
+        Tanque{tankCount > 0 ? ` (${tankCount})` : ""}
+      </button>
+    </div>
+  );
+}
+
 export default function ProductionLinePage() {
   const workspace = useCurrentWorkspace();
   const searchParams = useSearchParams();
@@ -249,13 +259,16 @@ export default function ProductionLinePage() {
   // "Guardar no tanque") — sem isso, esse link cairia sempre na fila (modo padrão), nunca
   // realmente mostrando onde a ideia acabou de ser guardada.
   const [mode, setMode] = useState<ProductionMode>(() => (searchParams.get("mode") === "configure" ? "configure" : "queue"));
-  const [ideaTypeFilter, setIdeaTypeFilter] = useState<IdeaTypeFilter>("all");
-  const [ideaStatusFilter, setIdeaStatusFilter] = useState<IdeaStatusFilter>("available");
+  const [ideaStatusFilter, setIdeaStatusFilter] = useState<IdeaStatusFilter>("all");
   const [ideaSearch, setIdeaSearch] = useState("");
   const [formatFilter, setFormatFilter] = useState<ProductionFormat | "all">("all");
   const [ideaFiltersOpen, setIdeaFiltersOpen] = useState(false);
   const [draftIdea, setDraftIdea] = useState<ContentBlueprint | null>(null);
   const [ideaEditorOpen, setIdeaEditorOpen] = useState(false);
+  // Geração disparada direto do tanque ("Gerar agora"/"Salvar e gerar agora") — nunca bloqueia a
+  // tela: só acompanha qual ideia está em voo pra desabilitar a linha certa e mostrar "Gerando…".
+  const [generatingIdeaId, setGeneratingIdeaId] = useState<string | null>(null);
+  const [generateIdeaError, setGenerateIdeaError] = useState<string | null>(null);
 
   // Fila operacional — dado real de `ExecutionRun`, nunca do tanque local.
   const { data: executionRuns, mutate: refreshRuns } = useExecutionRuns(workspace.id);
@@ -291,12 +304,29 @@ export default function ProductionLinePage() {
 
   const selectedBlueprint = draftIdea && selectedBlueprintId === draftIdea.id ? draftIdea : config.blueprints.find((blueprint) => blueprint.id === selectedBlueprintId) ?? config.blueprints[0];
   const selectedRule = config.postingRules.find((rule) => rule.id === selectedRuleId) ?? config.postingRules[0];
+
+  const realRuns = useMemo(() => (executionRuns ?? []).filter((run) => run.mode === "real"), [executionRuns]);
+  // Cruza toda ideia do tanque com execuções reais ainda ativas (via `recordGeneration`/
+  // `ideaId`) pra derivar "em andamento" — nunca um status gravado no blueprint, sempre calculado
+  // contra o dado real da fila, senão uma aba fechada no meio de uma geração deixaria a ideia
+  // congelada como "pendente" ou "usada" pra sempre.
+  const activeGenerationIdeaIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const run of realRuns) {
+      if (!IN_PROGRESS_STATES.includes(run.state)) continue;
+      const record = getGenerationRecord(workspace.id, run.id);
+      if (record?.ideaId) ids.add(record.ideaId);
+    }
+    return ids;
+  }, [realRuns, workspace.id]);
+
   const visibleBlueprints = useMemo(() => {
     const query = ideaSearch.trim().toLowerCase();
     return config.blueprints.filter((idea) => {
-      if (ideaTypeFilter === "routine" && !isRoutineIdea(idea)) return false;
-      if (ideaTypeFilter === "standalone" && !isStandaloneIdea(idea)) return false;
-      if (ideaStatusFilter !== "all" && idea.status !== ideaStatusFilter) return false;
+      const inProgress = activeGenerationIdeaIds.has(idea.id);
+      if (ideaStatusFilter === "in_progress" && !inProgress) return false;
+      if (ideaStatusFilter === "available" && (idea.status !== "available" || inProgress)) return false;
+      if (ideaStatusFilter === "used" && idea.status !== "used") return false;
       if (formatFilter !== "all" && idea.format !== formatFilter) return false;
       if (query) {
         const haystack = `${idea.name} ${idea.ideaText} ${idea.objective}`.toLowerCase();
@@ -304,15 +334,15 @@ export default function ProductionLinePage() {
       }
       return true;
     });
-  }, [config.blueprints, ideaTypeFilter, ideaStatusFilter, formatFilter, ideaSearch]);
+  }, [config.blueprints, ideaStatusFilter, formatFilter, ideaSearch, activeGenerationIdeaIds]);
   const routineBlueprints = useMemo(() => config.blueprints.filter(isRoutineIdea), [config.blueprints]);
   const emptyIdeas = useMemo(() => config.blueprints.filter(isEffectivelyEmptyIdea), [config.blueprints]);
+  const pendingIdeaCount = useMemo(() => config.blueprints.filter((idea) => idea.status === "available").length, [config.blueprints]);
 
   const hasGuidelines = Boolean(productionSettings?.productionPrompt?.trim());
   const rotinaAtiva = config.postingRules.some((rule) => rule.weeklyMix.some((item) => scheduledQuantity(item) > 0));
   const nextSlot = useMemo(() => describeNextSlot(config.postingRules), [config.postingRules]);
 
-  const realRuns = useMemo(() => (executionRuns ?? []).filter((run) => run.mode === "real"), [executionRuns]);
   const visibleRuns = useMemo(() => realRuns.filter((run) => hasProductionCardTitle(workspace.id, run)), [realRuns, workspace.id]);
   const inProgressRuns = useMemo(() => visibleRuns.filter((run) => IN_PROGRESS_STATES.includes(run.state)), [visibleRuns]);
   const waitingReviewRuns = useMemo(() => visibleRuns.filter((run) => run.state === "waiting_for_approval"), [visibleRuns]);
@@ -357,8 +387,7 @@ export default function ProductionLinePage() {
     sortOrder !== "recent",
   ].filter(Boolean).length;
   const activeIdeaFilterCount = [
-    ideaTypeFilter !== "all",
-    ideaStatusFilter !== "available",
+    ideaStatusFilter !== "all",
     formatFilter !== "all",
   ].filter(Boolean).length;
   const currentQueueTabLabel = QUEUE_TABS.find((tab) => tab.id === queueTab)?.label ?? "";
@@ -416,26 +445,70 @@ export default function ProductionLinePage() {
     setIdeaEditorOpen(true);
   }
 
-  function saveDraftIdea(ideaMode: IdeaProductionMode) {
-    if (!draftIdea || !canPersistIdea(draftIdea)) return;
+  /** Salva o rascunho no tanque — sempre `productionMode: "routine"` (não existe mais a escolha
+   * "avulsa": toda ideia salva entra no mesmo estoque, elegível pro sorteio da rotina). Devolve o
+   * blueprint salvo (ou `null` se não pôde salvar) pra quem chamou decidir o que fazer a seguir —
+   * "Salvar e gerar agora" encadeia `triggerGeneration` no valor devolvido. */
+  function saveDraftIdea(): ContentBlueprint | null {
+    if (!draftIdea || !canPersistIdea(draftIdea)) return null;
     const normalizedDraft: ContentBlueprint = {
       ...draftIdea,
       name: draftIdea.name.trim() && draftIdea.name.trim() !== "Nova ideia" ? draftIdea.name.trim() : draftIdea.ideaText.trim().slice(0, 60),
       objective: deriveObjective(draftIdea.objective, draftIdea.ideaText),
-      productionMode: ideaMode,
+      productionMode: "routine",
     };
     save({ ...config, blueprints: [...config.blueprints, normalizedDraft] });
     setDraftIdea(null);
-    setIdeaTypeFilter(ideaMode === "standalone" ? "standalone" : "routine");
-    setIdeaStatusFilter("available");
+    setIdeaStatusFilter("all");
     setSelectedBlueprintId(normalizedDraft.id);
     setIdeaEditorOpen(false);
+    return normalizedDraft;
+  }
+
+  async function saveDraftIdeaAndGenerate() {
+    const saved = saveDraftIdea();
+    if (saved) await triggerGeneration(saved);
   }
 
   function discardDraftIdea() {
     setDraftIdea(null);
     setSelectedBlueprintId(config.blueprints[0]?.id ?? "");
     setIdeaEditorOpen(false);
+  }
+
+  /** "Gerar agora"/"Salvar e gerar agora" — a mesma ação em dois lugares (linha do tanque e diálogo
+   * de nova ideia): aciona o pipeline real pra essa ideia específica, sem esperar a rotina sortear.
+   * Mesmo padrão do `handleRetryFailed` da fila (fire, registra, atualiza, muda de aba) — nunca
+   * bloqueia a tela esperando o pipeline inteiro terminar. */
+  async function triggerGeneration(blueprint: ContentBlueprint) {
+    const format = blueprint.format;
+    if (format === "video") {
+      setGenerateIdeaError("Vídeo ainda não pode ser gerado direto do tanque — abra a ideia e ajuste o formato para imagem ou carrossel.");
+      return;
+    }
+    setGenerateIdeaError(null);
+    setGeneratingIdeaId(blueprint.id);
+    try {
+      const generateInput = {
+        workspaceId: workspace.id,
+        name: blueprint.name,
+        objective: deriveObjective(blueprint.objective, blueprint.ideaText),
+        ideaText: blueprint.ideaText,
+        format,
+        channel: blueprint.channels[0] ?? ("instagram" as ProductionChannel),
+        targetAudience: blueprint.targetAudience,
+      };
+      const result = await generateFromIdea(generateInput);
+      recordGeneration(workspace.id, { ...generateInput, executionRunId: result.executionRunId, ideaId: blueprint.id, createdAt: new Date().toISOString() });
+      updateBlueprint(blueprint.id, { status: "used", usedAt: new Date().toISOString() });
+      await refreshRuns();
+      setMode("queue");
+      setQueueTab("in_progress");
+    } catch (cause) {
+      setGenerateIdeaError(cause instanceof Error ? cause.message : "Não foi possível iniciar a geração.");
+    } finally {
+      setGeneratingIdeaId(null);
+    }
   }
 
   function removeBlueprint(id: string) {
@@ -471,8 +544,7 @@ export default function ProductionLinePage() {
     }));
     save({ blueprints: nextBlueprints, postingRules: nextRules });
     setSelectedBlueprintId(fallbackId);
-    setIdeaTypeFilter("all");
-    setIdeaStatusFilter("available");
+    setIdeaStatusFilter("all");
   }
 
   function updateRule(id: string, patch: Partial<PostingRule>) {
@@ -499,9 +571,7 @@ export default function ProductionLinePage() {
   if (mode === "configure") {
     return (
       <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-        <button type="button" onClick={() => setMode("queue")} className="mb-4 text-sm font-medium text-ink-muted hover:text-ink">
-          ← Voltar à produção
-        </button>
+        <ProductionModeTabs mode={mode} onChange={setMode} queueCount={totalQueueRuns} tankCount={pendingIdeaCount} />
 
         <PromptSetupCard workspaceId={workspace.id} hasGuidelines={hasGuidelines} compact={false} />
 
@@ -546,7 +616,7 @@ export default function ProductionLinePage() {
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-sm font-semibold text-ink">Tanque de ideias</p>
-                  <p className="text-xs text-ink-muted">Estoque de texto para a rotina sortear — gerar a peça continua sendo feito em Criar.</p>
+                  <p className="text-xs text-ink-muted">Estoque de ideias para a rotina sortear — ou gere qualquer uma agora mesmo, sem esperar.</p>
                 </div>
                 <Button variant="secondary" onClick={addBlueprint}><span aria-hidden="true">+</span> {draftIdea ? "Continuar rascunho" : "Nova ideia"}</Button>
               </div>
@@ -565,10 +635,6 @@ export default function ProductionLinePage() {
               {ideaFiltersOpen ? (
                 <div className="mt-3 rounded-lg border border-border bg-surface-sunken p-3">
                   <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
-                    <div>
-                      <p className="mb-1.5 text-xs font-medium text-ink-muted">Tipo</p>
-                      <SegmentedFilter value={ideaTypeFilter} options={IDEA_TYPE_FILTERS} onChange={setIdeaTypeFilter} />
-                    </div>
                     <div>
                       <p className="mb-1.5 text-xs font-medium text-ink-muted">Status</p>
                       <SegmentedFilter value={ideaStatusFilter} options={IDEA_STATUS_FILTERS} onChange={setIdeaStatusFilter} />
@@ -590,8 +656,7 @@ export default function ProductionLinePage() {
                       <Button
                         variant="ghost"
                         onClick={() => {
-                          setIdeaTypeFilter("all");
-                          setIdeaStatusFilter("available");
+                          setIdeaStatusFilter("all");
                           setFormatFilter("all");
                         }}
                       >
@@ -601,15 +666,19 @@ export default function ProductionLinePage() {
                   </div>
                 </div>
               ) : null}
+              {generateIdeaError ? <p className="mt-3 text-sm text-danger">{generateIdeaError}</p> : null}
               <IdeaInventory
                 ideas={visibleBlueprints}
                 totalIdeas={config.blueprints.length}
                 selectedId={selectedBlueprint?.id}
                 emptyCount={emptyIdeas.length}
+                generatingIdeaId={generatingIdeaId}
+                activeGenerationIdeaIds={activeGenerationIdeaIds}
                 onOpen={openBlueprint}
                 onToggleStatus={toggleBlueprintStatus}
                 onRemove={removeBlueprint}
                 onCleanEmpty={removeEmptyIdeas}
+                onGenerate={triggerGeneration}
               />
             </div>
 
@@ -629,6 +698,7 @@ export default function ProductionLinePage() {
             onChange={(patch) => updateBlueprint(selectedBlueprint.id, patch)}
             onClose={() => (selectedBlueprint.id === draftIdea?.id ? discardDraftIdea() : setIdeaEditorOpen(false))}
             onSaveDraft={saveDraftIdea}
+            onSaveAndGenerate={saveDraftIdeaAndGenerate}
             onDiscardDraft={discardDraftIdea}
             onRemove={() => (selectedBlueprint.id === draftIdea?.id ? discardDraftIdea() : removeBlueprint(selectedBlueprint.id))}
           />
@@ -642,19 +712,18 @@ export default function ProductionLinePage() {
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-semibold text-ink">Produção</h1>
-          <p className="mt-1 text-sm text-ink-muted">Crie ideias, ajuste o prompt da IA e acompanhe a fila.</p>
+          <p className="mt-1 text-sm text-ink-muted">Acompanhe a fila e abasteça o tanque de ideias.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Button className="w-full sm:w-auto" onClick={() => { setMode("configure"); addBlueprint(); }}>+ Nova ideia</Button>
-          <div className="grid grid-cols-2 gap-2 sm:flex">
-            <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`} className="relative">
-              <Button variant="secondary" className="w-full">{hasGuidelines ? "Editar prompt" : "Configurar prompt"}</Button>
-              {!hasGuidelines ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400" aria-hidden="true" /> : null}
-            </Link>
-            <Button variant="secondary" className="w-full sm:w-auto" onClick={() => setMode("configure")}>Configurar rotina</Button>
-          </div>
+          <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`} className="relative">
+            <Button variant="secondary" className="w-full">{hasGuidelines ? "Editar prompt" : "Configurar prompt"}</Button>
+            {!hasGuidelines ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400" aria-hidden="true" /> : null}
+          </Link>
         </div>
       </div>
+
+      <ProductionModeTabs mode={mode} onChange={setMode} queueCount={totalQueueRuns} tankCount={pendingIdeaCount} />
 
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-surface-raised px-3 py-1.5 text-xs text-ink-muted">
         <span>Prompt: <strong className="font-semibold text-ink">{hasGuidelines ? "configurado" : "pendente"}</strong></span>
@@ -883,6 +952,7 @@ function IdeaFormDialog({
   onChange,
   onClose,
   onSaveDraft,
+  onSaveAndGenerate,
   onDiscardDraft,
   onRemove,
 }: {
@@ -892,11 +962,11 @@ function IdeaFormDialog({
   canSaveDraft: boolean;
   onChange: (patch: Partial<ContentBlueprint>) => void;
   onClose: () => void;
-  onSaveDraft: (mode: IdeaProductionMode) => void;
+  onSaveDraft: () => void;
+  onSaveAndGenerate: () => void;
   onDiscardDraft: () => void;
   onRemove: () => void;
 }) {
-  const standalone = isStandaloneIdea(blueprint);
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-3 py-3 sm:items-center sm:py-6">
       <section className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-surface-raised shadow-xl">
@@ -906,7 +976,7 @@ function IdeaFormDialog({
               <p className="text-xs font-semibold uppercase tracking-wide text-accent">{isDraft ? "Nova ideia" : "Editar ideia"}</p>
               <h2 className="mt-1 text-lg font-semibold text-ink">{isDraft ? "Abastecer tanque de conteúdo" : displayIdeaName(blueprint)}</h2>
               <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-                {isDraft ? "Preencha a ideia e o formato para entrar no estoque da rotina — gerar a peça é sempre em Criar." : "Preencha primeiro a ideia e o formato. Referências e detalhes aparecem separados para não poluir o fluxo."}
+                {isDraft ? "Preencha a ideia e o formato: salve no tanque para a rotina sortear depois, ou gere agora mesmo." : "Preencha primeiro a ideia e o formato. Referências e detalhes aparecem separados para não poluir o fluxo."}
               </p>
             </div>
             <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-xl leading-none text-ink-muted hover:bg-surface-sunken hover:text-ink" aria-label="Fechar">
@@ -916,12 +986,6 @@ function IdeaFormDialog({
         </header>
 
         <div className="overflow-y-auto bg-surface-raised px-4 py-4 sm:px-5">
-          {!isDraft && standalone ? (
-            <div className="mb-4 flex items-start gap-2.5 rounded-lg border border-blue-500/25 bg-blue-500/10 px-3.5 py-3 text-sm text-blue-300">
-              <IconLayer className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>Este conteúdo fica fora da rotina automática — não entra no sorteio semanal.</p>
-            </div>
-          ) : null}
           <BlueprintEditor workspaceId={workspaceId} blueprint={blueprint} onChange={onChange} onRemove={onRemove} canRemove />
         </div>
 
@@ -931,8 +995,8 @@ function IdeaFormDialog({
               <p className="text-xs text-ink-muted">Escolha uma das opções para salvar. O campo obrigatório é a ideia da postagem.</p>
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" onClick={onDiscardDraft}>Descartar</Button>
-                <Button variant="secondary" disabled={!canSaveDraft} onClick={() => onSaveDraft("routine")}>Salvar no tanque</Button>
-                <Button disabled={!canSaveDraft} onClick={() => onSaveDraft("standalone")}>Salvar como avulsa</Button>
+                <Button variant="secondary" disabled={!canSaveDraft} onClick={onSaveDraft}>Salvar no tanque</Button>
+                <Button disabled={!canSaveDraft} onClick={onSaveAndGenerate}>Salvar e gerar agora</Button>
               </div>
             </div>
           ) : (
@@ -952,19 +1016,25 @@ function IdeaInventory({
   totalIdeas,
   selectedId,
   emptyCount,
+  generatingIdeaId,
+  activeGenerationIdeaIds,
   onOpen,
   onToggleStatus,
   onRemove,
   onCleanEmpty,
+  onGenerate,
 }: {
   ideas: ContentBlueprint[];
   totalIdeas: number;
   selectedId?: string;
   emptyCount: number;
+  generatingIdeaId: string | null;
+  activeGenerationIdeaIds: Set<string>;
   onOpen: (id: string) => void;
   onToggleStatus: (idea: ContentBlueprint) => void;
   onRemove: (id: string) => void;
   onCleanEmpty: () => void;
+  onGenerate: (idea: ContentBlueprint) => void;
 }) {
   return (
     <section className="mt-4">
@@ -978,11 +1048,10 @@ function IdeaInventory({
       </div>
 
       <div className="mt-3 max-h-[480px] overflow-y-auto rounded-lg border border-border">
-        <div className="hidden grid-cols-[2.3fr_0.9fr_1.3fr_0.85fr_0.85fr_1fr] gap-3 border-b border-border bg-surface-sunken px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint sm:grid">
+        <div className="hidden grid-cols-[2.1fr_0.9fr_1.2fr_0.9fr_1.2fr] gap-3 border-b border-border bg-surface-sunken px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint sm:grid">
           <span>Ideia</span>
           <span>Formato</span>
           <span>Canais</span>
-          <span>Tipo</span>
           <span>Status</span>
           <span className="text-right">Ações</span>
         </div>
@@ -992,10 +1061,13 @@ function IdeaInventory({
         ) : ideas.map((idea) => {
           const selected = selectedId === idea.id;
           const preview = idea.ideaText.trim() || idea.objective.trim() || "Rascunho sem descrição. Remova ou preencha a ideia.";
+          const generatingNow = generatingIdeaId === idea.id || activeGenerationIdeaIds.has(idea.id);
+          const statusLabel = generatingNow ? "em andamento" : idea.status === "used" ? "usada" : "pendente";
+          const statusDotClass = generatingNow ? "bg-amber-400" : idea.status === "used" ? "bg-ink-faint" : "bg-accent";
           return (
             <div
               key={idea.id}
-              className={`grid grid-cols-1 gap-2 border-b border-border px-3 py-3 last:border-b-0 sm:grid-cols-[2.3fr_0.9fr_1.3fr_0.85fr_0.85fr_1fr] sm:items-center sm:gap-3 ${selected ? "bg-accent-soft" : "hover:bg-surface-sunken"}`}
+              className={`grid grid-cols-1 gap-2 border-b border-border px-3 py-3 last:border-b-0 sm:grid-cols-[2.1fr_0.9fr_1.2fr_0.9fr_1.2fr] sm:items-center sm:gap-3 ${selected ? "bg-accent-soft" : "hover:bg-surface-sunken"}`}
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-ink">{displayIdeaName(idea)}</p>
@@ -1012,19 +1084,19 @@ function IdeaInventory({
                   </span>
                 ))}
               </div>
-              <span className="inline-flex w-fit items-center rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-ink-muted">
-                {isStandaloneIdea(idea) ? "avulsa" : "rotina"}
-              </span>
               <span className="inline-flex w-fit items-center gap-1.5 text-[11px] font-medium text-ink-muted">
-                <span className={`h-1.5 w-1.5 rounded-full ${idea.status === "used" ? "bg-ink-faint" : "bg-accent"}`} />
-                {idea.status === "used" ? "usada" : "no tanque"}
+                <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass}`} />
+                {statusLabel}
               </span>
               <div className="flex flex-wrap justify-start gap-1.5 sm:justify-end">
-                <Button className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onOpen(idea.id)}>Abrir</Button>
-                <Button variant="ghost" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onToggleStatus(idea)}>
+                <Button className="min-h-8 px-2.5 py-1.5 text-xs" disabled={generatingNow} onClick={() => onGenerate(idea)}>
+                  {generatingIdeaId === idea.id ? "Gerando…" : "Gerar agora"}
+                </Button>
+                <Button variant="secondary" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onOpen(idea.id)}>Abrir</Button>
+                <Button variant="ghost" className="min-h-8 px-2.5 py-1.5 text-xs" disabled={generatingNow} onClick={() => onToggleStatus(idea)}>
                   {idea.status === "used" ? "Voltar" : "Marcar usada"}
                 </Button>
-                <Button variant="danger" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onRemove(idea.id)}>Remover</Button>
+                <Button variant="danger" className="min-h-8 px-2.5 py-1.5 text-xs" disabled={generatingNow} onClick={() => onRemove(idea.id)}>Remover</Button>
               </div>
             </div>
           );
@@ -1689,7 +1761,6 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
           <div className="flex flex-wrap items-center gap-3">
             <ModeToggle value={blueprint.approvalMode} onChange={(approvalMode) => onChange({ approvalMode })} label="Aprovação" />
             <IdeaStatusToggle value={blueprint.status} onChange={(status) => onChange({ status, usedAt: status === "used" ? new Date().toISOString() : undefined })} />
-            <IdeaModeToggle value={blueprint.productionMode ?? "routine"} onChange={(productionMode) => onChange({ productionMode })} />
           </div>
           <Button variant="danger" disabled={!canRemove} onClick={onRemove}>Remover ideia</Button>
         </div>
@@ -1744,22 +1815,6 @@ function ModeToggle({ value, onChange, label }: { value: "manual" | "auto"; onCh
   );
 }
 
-function IdeaModeToggle({ value, onChange }: { value: IdeaProductionMode; onChange: (value: IdeaProductionMode) => void }) {
-  return (
-    <div>
-      <p className="mb-1.5 text-xs font-medium text-ink-muted">Tipo</p>
-      <div className="inline-flex rounded-lg border border-border bg-surface p-1">
-        {(["routine", "standalone"] as const).map((mode) => (
-          <button key={mode} type="button" onClick={() => onChange(mode)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === mode ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}>
-            {mode === "routine" ? "Rotina" : "Avulsa"}
-          </button>
-        ))}
-      </div>
-      <p className="mt-1 text-xs text-ink-muted">Muda o tipo desta mesma ideia — não cria cópia.</p>
-    </div>
-  );
-}
-
 function IdeaStatusToggle({ value, onChange }: { value: "available" | "used"; onChange: (value: "available" | "used") => void }) {
   return (
     <div>
@@ -1767,7 +1822,7 @@ function IdeaStatusToggle({ value, onChange }: { value: "available" | "used"; on
       <div className="inline-flex rounded-lg border border-border bg-surface p-1">
         {(["available", "used"] as const).map((status) => (
           <button key={status} type="button" onClick={() => onChange(status)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === status ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}>
-            {status === "available" ? "No tanque" : "Usada"}
+            {status === "available" ? "Pendente" : "Usada"}
           </button>
         ))}
       </div>
@@ -1848,10 +1903,6 @@ function displayIdeaName(idea: ContentBlueprint): string {
 
 function isRoutineIdea(idea: ContentBlueprint): boolean {
   return idea.productionMode !== "standalone";
-}
-
-function isStandaloneIdea(idea: ContentBlueprint): boolean {
-  return idea.productionMode === "standalone";
 }
 
 function fileLabel(url: string): string {

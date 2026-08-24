@@ -241,7 +241,7 @@ export default function CreatePage() {
         aspectRatio,
         forbiddenElements: forbiddenElements.trim() || undefined,
         status: usedAt ? "used" : "available",
-        productionMode: "standalone",
+        productionMode: "routine",
         usedAt,
       };
       const config = readProductionConfig(workspace.id);

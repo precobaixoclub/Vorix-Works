@@ -632,6 +632,17 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // Lista os materiais reais (com arquivo) da Asset Library do workspace, já com URL pública
   // resolvida — a seleção de QUAIS são relevantes para o pedido atual acontece em
   // `select-brand-materials.ts`, nunca aqui (este resolver só lista o que existe).
+  //
+  // Achado ao vivo (cliente real): `materialType` é aditivo (ver `asset-library.model.ts`) — um
+  // asset cadastrado como logo ANTES da migração "Marca & Materiais" (ou via qualquer fluxo que só
+  // seta `kind: "logo"`, ex.: `LogoConfigCard` antes desta correção) nunca teve `materialType`
+  // preenchido. `select-brand-materials.ts` só reconhece `materialType === "logo_principal"/
+  // "logo_secundaria"` para incluir a logo automaticamente — sem esse campo, a logo aparece como
+  // "configurada" em toda a UI (que checa só `kind`), mas o motor GPT real nunca a recebe, e a
+  // peça gerada sai sem nenhuma logo, em silêncio. Backfill aqui (nunca em `select-brand-
+  // materials.ts`, que deve continuar puro/alheio a `AssetKind`): `kind: "logo"` sem `materialType`
+  // próprio conta como "logo_principal" — nunca sobrescreve um `materialType` já definido
+  // explicitamente (ex.: alguém marcou de propósito como "logo_secundaria").
   const resolveBrandMaterials = async (workspaceId: string) => {
     const library = await repositories.assetLibraryRepository.getLibraryByWorkspace(workspaceId).catch(() => undefined);
     if (!library) return [];
@@ -645,10 +656,11 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
         } catch {
           url = undefined;
         }
+        const materialType = asset.materialType ?? (asset.kind === "logo" ? "logo_principal" : undefined);
         return {
           id: asset.id,
           name: asset.name,
-          materialType: asset.materialType,
+          materialType,
           usagePriority: asset.usagePriority,
           aiInstructions: asset.aiInstructions,
           usageRule: asset.usageRule,

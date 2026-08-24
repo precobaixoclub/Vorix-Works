@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   checkCommercialFactIntegrity,
   checkCreativeVisualIntegrity,
+  checkProductionGuidelinesCompliance,
   checkSafeAreaCompliance,
   combineCreativeQualityIssues,
   evaluateCreativeQualityGate,
@@ -157,6 +158,58 @@ test("checkCreativeVisualIntegrity: mapeia cada veredito verdadeiro para o issue
   ]);
 });
 
+// Reforço da migração "Prompt Persistente de Produção" — achado ao vivo: uma peça podia passar o
+// gate inteiro mesmo ignorando claramente uma diretriz configurada, porque nenhum check anterior
+// olhava para `productionInstructions`/`behaviorPreferences`.
+
+test("checkProductionGuidelinesCompliance: sem nenhuma diretriz configurada, nunca chama o Ícaro nem reprova", async () => {
+  let called = false;
+  const icaro = { request: async () => { called = true; return { status: "completed", content: "{}" }; } };
+  const plan = basePlan({ headline: "Compre agora" });
+  const context = baseContext();
+  const issues = await checkProductionGuidelinesCompliance(icaro, { context, plan, specialistId: "gpt-creative-director" });
+  assert.deepEqual(issues, []);
+  assert.equal(called, false);
+});
+
+test("checkProductionGuidelinesCompliance: sem nenhum texto na peça, nunca chama o Ícaro nem reprova", async () => {
+  let called = false;
+  const icaro = { request: async () => { called = true; return { status: "completed", content: "{}" }; } };
+  const plan = basePlan({ headline: "", subheadline: undefined, cta: "", title: "", description: "" });
+  const context = baseContext({ productionInstructions: "Nunca use a palavra 'grátis'." });
+  const issues = await checkProductionGuidelinesCompliance(icaro, { context, plan, specialistId: "gpt-creative-director" });
+  assert.deepEqual(issues, []);
+  assert.equal(called, false);
+});
+
+test("checkProductionGuidelinesCompliance: veredito explícito 'true' vira PRODUCTION_GUIDELINES_VIOLATED", async () => {
+  const icaro = {
+    request: async () => ({ status: "completed", content: JSON.stringify({ violatesGuidelines: true, reasoning: "Usa a palavra proibida 'grátis' no CTA." }) }),
+  };
+  const plan = basePlan({ cta: "Ganhe grátis hoje" });
+  const context = baseContext({ productionInstructions: "Nunca use a palavra 'grátis'." });
+  const issues = await checkProductionGuidelinesCompliance(icaro, { context, plan, specialistId: "gpt-creative-director" });
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].code, "PRODUCTION_GUIDELINES_VIOLATED");
+  assert.match(issues[0].message, /grátis/);
+});
+
+test("checkProductionGuidelinesCompliance: veredito 'false' não gera issue", async () => {
+  const icaro = { request: async () => ({ status: "completed", content: JSON.stringify({ violatesGuidelines: false }) }) };
+  const plan = basePlan({ cta: "Compre já" });
+  const context = baseContext({ behaviorPreferences: ["Tom de voz sempre informal."] });
+  const issues = await checkProductionGuidelinesCompliance(icaro, { context, plan, specialistId: "gpt-creative-director" });
+  assert.deepEqual(issues, []);
+});
+
+test("checkProductionGuidelinesCompliance: best-effort — resposta 'failed' do Ícaro nunca reprova por conta própria", async () => {
+  const icaro = { request: async () => ({ status: "failed" }) };
+  const plan = basePlan({ cta: "Compre já" });
+  const context = baseContext({ productionInstructions: "Regra qualquer." });
+  const issues = await checkProductionGuidelinesCompliance(icaro, { context, plan, specialistId: "gpt-creative-director" });
+  assert.deepEqual(issues, []);
+});
+
 test("evaluateCreativeQualityGate: orquestra as três camadas (determinística + fatos + visão)", async () => {
   const icaro = {
     request: async () => ({ status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }) }),
@@ -175,6 +228,31 @@ test("evaluateCreativeQualityGate: orquestra as três camadas (determinística +
   });
   assert.equal(result.verdict, "fail");
   assert.ok(result.issues.some((issue) => issue.code === "WRONG_PRICE"));
+});
+
+test("evaluateCreativeQualityGate: peça que contraria uma diretriz permanente configurada reprova o gate mesmo com visão/geometria/fatos todos aprovados", async () => {
+  const icaro = {
+    request: async ({ prompt }) => {
+      if (prompt.includes("INSTRUÇÕES PERMANENTES DESTE WORKSPACE")) {
+        return { status: "completed", content: JSON.stringify({ violatesGuidelines: true, reasoning: "Promete frete grátis, proibido pela diretriz do workspace." }) };
+      }
+      return { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }) };
+    },
+  };
+  const plan = basePlan({ cta: "Frete grátis para todo o Brasil" });
+  const context = baseContext({ productionInstructions: "Nunca prometa frete grátis — a loja não oferece esse benefício." });
+  const result = await evaluateCreativeQualityGate(icaro, {
+    finalImageUrl: "https://x/final.jpg",
+    finalImageWidth: 1080,
+    finalImageHeight: 1350,
+    expectedAspectRatio: "4:5",
+    compositedAssetRoles: [],
+    context,
+    plan,
+    specialistId: "gpt-creative-director",
+  });
+  assert.equal(result.verdict, "fail");
+  assert.ok(result.issues.some((issue) => issue.code === "PRODUCTION_GUIDELINES_VIOLATED"));
 });
 
 // Migração "Prompt Persistente de Produção + Materiais com Contexto para o GPT" — hard failure de

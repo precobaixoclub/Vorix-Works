@@ -365,14 +365,16 @@ function PublicationDetailDrawer({ workspaceId, post, busy, onClose, onCancel }:
           <button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm text-ink-muted hover:bg-surface-sunken">Fechar</button>
         </div>
 
-        <div className={`relative mb-5 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
-          {thumbnail ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={thumbnail} alt="" className="h-full w-full object-cover" />
-          ) : (
+        {thumbnail ? (
+          // Peça inteira sem corte (mesmo achado ao vivo do review/page.tsx — `object-cover` numa
+          // caixa de proporção fixa cortava peças que não são exatamente 4:3, ex.: Stories 9:16).
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={thumbnail} alt="" className="mx-auto mb-5 max-h-[60vh] w-full rounded-2xl border border-border object-contain" />
+        ) : (
+          <div className={`relative mb-5 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
             <span className="text-6xl text-white/75" aria-hidden>{FORMAT_ICON[format]}</span>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="mb-5 flex flex-wrap gap-2">
           <NetworkBadge network={post.network} />

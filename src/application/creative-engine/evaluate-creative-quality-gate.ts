@@ -24,6 +24,7 @@ export const CREATIVE_QUALITY_ISSUE_CODES = [
   "CRITICAL_OVERLAP",
   "COMPOSITION_BROKEN",
   "NON_PUBLISHABLE_SOURCE",
+  "PRODUCTION_GUIDELINES_VIOLATED",
 ] as const;
 export type CreativeQualityIssueCode = (typeof CREATIVE_QUALITY_ISSUE_CODES)[number];
 
@@ -237,6 +238,80 @@ export async function checkCreativeVisualIntegrity(
   }
 }
 
+const PRODUCTION_GUIDELINES_PROMPT_HEADER = [
+  "Você é um revisor de conformidade de marca. Um workspace configurou instruções PERMANENTES e OBRIGATÓRIAS que toda peça gerada precisa respeitar — abaixo estão essas instruções e o conteúdo de texto real da peça que acabou de ser planejada.",
+  "Sua ÚNICA tarefa é dizer se o conteúdo da peça contraria alguma dessas instruções de forma CLARA e CONCRETA (nunca microgerencie estilo, tom ou gosto subjetivo — só violações objetivas: uma regra explícita que a peça claramente descumpre).",
+  "Responda APENAS com JSON válido, sem markdown, no formato exato:",
+  '{"violatesGuidelines": true|false, "reasoning": "1-2 frases objetivas citando a instrução violada e onde"}',
+  "Na dúvida, responda false — este check é para pegar descumprimentos óbvios de uma regra explícita, nunca para reescrever a peça a seu critério.",
+].join("\n");
+
+/**
+ * Reforço da migração "Prompt Persistente de Produção": até aqui, `productionInstructions`/
+ * `behaviorPreferences` (ver `build-creative-context.ts`) chegavam ao GPT diretor só como texto
+ * de prioridade 2 — o próprio modelo decidia sozinho se "respeitava" ou não, sem nenhuma
+ * verificação automática depois. Achado ao vivo: uma peça pode passar o gate inteiro mesmo
+ * ignorando claramente uma diretriz configurada, porque nenhum dos checks anteriores olha para
+ * `productionInstructions`. Best-effort e determinadamente conservador (só reprova em violação
+ * ÓBVIA e concreta, nunca gosto/estilo) — mesmo espírito de `checkCreativeVisualIntegrity`: uma
+ * falha ou resposta ilegível do juiz NUNCA reprova por conta própria, só um veredito EXPLÍCITO.
+ * Sem nenhuma diretriz configurada (`productionInstructions`/`behaviorPreferences` ambos vazios),
+ * não há nada pra violar — retorna `[]` sem gastar a chamada.
+ */
+export async function checkProductionGuidelinesCompliance(
+  icaro: IcaroBrainPort,
+  input: { context: CreativeContext; plan: CreativePlan; specialistId: string },
+): Promise<CreativeQualityIssue[]> {
+  const guidelines = [input.context.productionInstructions?.trim(), ...(input.context.behaviorPreferences ?? [])].filter(
+    (line): line is string => Boolean(line && line.trim()),
+  );
+  if (guidelines.length === 0) return [];
+
+  const pieceTexts = [input.plan.headline, input.plan.subheadline, input.plan.cta, input.plan.title, input.plan.description, ...input.plan.textZones.map((zone) => zone.text)].filter(
+    (text): text is string => Boolean(text?.trim()),
+  );
+  if (pieceTexts.length === 0) return [];
+
+  try {
+    const prompt = [
+      PRODUCTION_GUIDELINES_PROMPT_HEADER,
+      "",
+      "INSTRUÇÕES PERMANENTES DESTE WORKSPACE:",
+      ...guidelines.map((line) => `- ${line}`),
+      "",
+      "CONTEÚDO DE TEXTO REAL DA PEÇA PLANEJADA:",
+      ...pieceTexts.map((text) => `- ${text}`),
+    ].join("\n");
+
+    const response = await icaro.request({
+      taskType: "review",
+      prompt,
+      specialistId: input.specialistId,
+      expectedOutput: "json",
+      priority: "quality",
+      temperature: 0.2,
+      maxTokens: 300,
+      timeoutMs: 20_000,
+    });
+
+    if (response.status !== "completed") return [];
+    const parsed = JSON.parse(extractJson(String(response.content ?? ""), "Production Guidelines Compliance")) as {
+      violatesGuidelines?: unknown;
+      reasoning?: unknown;
+    };
+    if (parsed.violatesGuidelines !== true) return [];
+    const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : undefined;
+    return [
+      {
+        code: "PRODUCTION_GUIDELINES_VIOLATED",
+        message: reasoning ?? "A peça contraria uma instrução permanente configurada para este workspace.",
+      },
+    ];
+  } catch {
+    return [];
+  }
+}
+
 export function combineCreativeQualityIssues(...groups: CreativeQualityIssue[][]): CreativeQualityGateResult {
   const issues = groups.flat();
   return { verdict: issues.length > 0 ? "fail" : "pass", issues };
@@ -281,6 +356,11 @@ export async function evaluateCreativeQualityGate(
     referenceScreenshotUrl,
     specialistId: input.specialistId,
   });
+  const productionGuidelinesIssues = await checkProductionGuidelinesCompliance(icaro, {
+    context: input.context,
+    plan: input.plan,
+    specialistId: input.specialistId,
+  });
 
-  return combineCreativeQualityIssues(deterministicIssues, commercialFactIssues, safeAreaIssues, visualIssues);
+  return combineCreativeQualityIssues(deterministicIssues, commercialFactIssues, safeAreaIssues, visualIssues, productionGuidelinesIssues);
 }

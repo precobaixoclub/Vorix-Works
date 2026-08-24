@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { Input, Label, Textarea } from "@/components/Field";
@@ -238,12 +239,16 @@ function hasProductionCardTitle(workspaceId: string, run: ExecutionRun): boolean
 
 export default function ProductionLinePage() {
   const workspace = useCurrentWorkspace();
+  const searchParams = useSearchParams();
   const [config, setConfig] = useState<ProductionLineConfig>(DEFAULT_PRODUCTION_CONFIG);
   const [selectedBlueprintId, setSelectedBlueprintId] = useState(DEFAULT_PRODUCTION_CONFIG.blueprints[0]?.id ?? "");
   const [selectedRuleId, setSelectedRuleId] = useState(DEFAULT_PRODUCTION_CONFIG.postingRules[0]?.id ?? "");
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
-  const [mode, setMode] = useState<ProductionMode>("queue");
+  // Link direto pro tanque de ideias (ex.: "Ver tanque de ideias" a partir de Criar, depois de
+  // "Guardar no tanque") — sem isso, esse link cairia sempre na fila (modo padrão), nunca
+  // realmente mostrando onde a ideia acabou de ser guardada.
+  const [mode, setMode] = useState<ProductionMode>(() => (searchParams.get("mode") === "configure" ? "configure" : "queue"));
   const [ideaTypeFilter, setIdeaTypeFilter] = useState<IdeaTypeFilter>("all");
   const [ideaStatusFilter, setIdeaStatusFilter] = useState<IdeaStatusFilter>("available");
   const [ideaSearch, setIdeaSearch] = useState("");

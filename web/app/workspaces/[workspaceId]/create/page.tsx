@@ -117,9 +117,12 @@ export default function CreatePage() {
   const [status, setStatus] = useState<"idle" | "generating" | "retrying">("idle");
   const [error, setError] = useState<string | null>(null);
   const [messageIndex, setMessageIndex] = useState(0);
+  const [savingToTank, setSavingToTank] = useState(false);
+  const [tankMessage, setTankMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const busy = status !== "idle";
+  const formDisabled = busy || savingToTank;
   const contentTypeId = CONTENT_TYPES.find((type) => type.format === format && type.aspectRatio === aspectRatio)?.id;
 
   // Mensagens genéricas por tempo — não existe telemetria real de etapa (o backend só devolve
@@ -136,7 +139,8 @@ export default function CreatePage() {
   }, [busy]);
 
   const overLimit = ideaText.length > MAX_IDEA_TEXT_LENGTH;
-  const canGenerate = ideaText.trim().length > 0 && !overLimit && !busy;
+  const canGenerate = ideaText.trim().length > 0 && !overLimit && !busy && !savingToTank;
+  const canSaveToTank = ideaText.trim().length > 0 && !overLimit && !busy && !savingToTank;
 
   function selectContentType(type: (typeof CONTENT_TYPES)[number]) {
     setFormat(type.format);
@@ -265,6 +269,57 @@ export default function CreatePage() {
     }
   }
 
+  /**
+   * "Guardar no tanque" — reaproveita exatamente os mesmos campos de `handleGenerate` (mesma
+   * validação de tamanho, mesmo mapeamento pra `ContentBlueprint`), mas nunca chama
+   * `generateFromIdea`: só grava a ideia como pendente (`status: "available"`,
+   * `productionMode: "routine"`) pra entrar no sorteio da rotina automática — sem gastar
+   * geração/crédito agora. Logo e diretrizes do workspace continuam se aplicando sozinhas na hora
+   * que a rotina (ou "Abrir" no tanque) efetivamente gerar a peça; não são um campo por ideia.
+   */
+  function handleSaveToTank() {
+    setError(null);
+    setTankMessage(null);
+    setSavingToTank(true);
+    try {
+      const name = ideaText.trim().slice(0, 60) || "Ideia sem nome";
+      const derivedObjective = deriveObjective(objective.trim() || undefined, ideaText);
+      const blueprint: ContentBlueprint = {
+        id: newId("blueprint"),
+        name,
+        format,
+        ideaText,
+        objective: derivedObjective,
+        theme: "",
+        captionDirection: "",
+        creativeDirection: "",
+        targetAudience: targetAudience.trim() || undefined,
+        mediaCount: format === "carousel" ? 3 : 1,
+        channels,
+        approvalMode: "manual",
+        sourceLinks: [],
+        referenceImages,
+        referenceAssetRoles: referenceRoles,
+        aspectRatio,
+        forbiddenElements: forbiddenElements.trim() || undefined,
+        status: "available",
+        productionMode: "routine",
+      };
+      const config = readProductionConfig(workspace.id);
+      writeProductionConfig(workspace.id, { ...config, blueprints: [...config.blueprints, blueprint] });
+
+      setTankMessage(`"${name}" guardada no tanque — ela entra no sorteio da rotina automática.`);
+      setIdeaText("");
+      setObjective("");
+      setTargetAudience("");
+      setForbiddenElements("");
+      setReferenceImages([]);
+      setReferenceRoles({});
+    } finally {
+      setSavingToTank(false);
+    }
+  }
+
   const brandContextContent = (
     <div className="space-y-4 text-sm">
       <div>
@@ -348,7 +403,7 @@ export default function CreatePage() {
               autoFocus
               value={ideaText}
               maxLength={MAX_IDEA_TEXT_LENGTH}
-              disabled={busy}
+              disabled={formDisabled}
               onChange={(event) => setIdeaText(event.target.value)}
               placeholder="Ex.: Crie uma publicação impactante para divulgar nosso site, com visual moderno e destaque para as principais vantagens."
               className="mt-2 w-full resize-none border-0 bg-transparent text-base text-ink placeholder:text-ink-faint outline-none disabled:opacity-60 sm:text-lg"
@@ -366,7 +421,7 @@ export default function CreatePage() {
               </button>
               <button
                 type="button"
-                disabled={busy}
+                disabled={formDisabled}
                 onClick={() => setLibraryOpen(true)}
                 className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-ink-muted hover:bg-surface-sunken hover:text-ink disabled:opacity-60"
               >
@@ -396,7 +451,7 @@ export default function CreatePage() {
                     <select
                       aria-label="Categoria do material"
                       value={referenceRoles[url] ?? "product_photo"}
-                      disabled={busy}
+                      disabled={formDisabled}
                       onChange={(event) => setReferenceRoles((prev) => ({ ...prev, [url]: event.target.value as ReferenceAssetRole }))}
                       className="bg-transparent text-xs text-ink-muted outline-none disabled:opacity-60"
                     >
@@ -404,7 +459,7 @@ export default function CreatePage() {
                         <option key={role.value} value={role.value}>{role.label}</option>
                       ))}
                     </select>
-                    <button type="button" disabled={busy} onClick={() => removeReference(url)} aria-label="Remover" className="text-ink-faint hover:text-danger disabled:opacity-60">×</button>
+                    <button type="button" disabled={formDisabled} onClick={() => removeReference(url)} aria-label="Remover" className="text-ink-faint hover:text-danger disabled:opacity-60">×</button>
                   </div>
                 ))}
               </div>
@@ -421,7 +476,7 @@ export default function CreatePage() {
                   <button
                     key={type.id}
                     type="button"
-                    disabled={busy}
+                    disabled={formDisabled}
                     onClick={() => selectContentType(type)}
                     className={`min-h-9 rounded-lg px-3.5 text-sm font-medium transition-colors disabled:opacity-60 ${
                       contentTypeId === type.id ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:text-ink"
@@ -440,7 +495,7 @@ export default function CreatePage() {
                   <button
                     key={option.value}
                     type="button"
-                    disabled={busy}
+                    disabled={formDisabled}
                     onClick={() => setAspectRatio(option.value)}
                     className={`flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-60 ${
                       aspectRatio === option.value ? "bg-accent-soft text-accent" : "bg-surface-raised text-ink-muted hover:text-ink"
@@ -464,7 +519,7 @@ export default function CreatePage() {
                   <button
                     key={channel}
                     type="button"
-                    disabled={busy}
+                    disabled={formDisabled}
                     onClick={() => toggleChannel(channel)}
                     className={`min-h-9 rounded-lg px-3.5 text-sm font-medium transition-colors disabled:opacity-60 ${
                       channels.includes(channel) ? "bg-surface-raised text-ink" : "text-ink-faint hover:text-ink-muted"
@@ -505,15 +560,15 @@ export default function CreatePage() {
               <div className="mt-3 space-y-3">
                 <div>
                   <Label htmlFor="create-objective">Objetivo</Label>
-                  <Input id="create-objective" value={objective} disabled={busy} placeholder="Ex.: gerar cliques para o site" onChange={(event) => setObjective(event.target.value)} />
+                  <Input id="create-objective" value={objective} disabled={formDisabled} placeholder="Ex.: gerar cliques para o site" onChange={(event) => setObjective(event.target.value)} />
                 </div>
                 <div>
                   <Label htmlFor="create-audience">Público-alvo</Label>
-                  <Input id="create-audience" value={targetAudience} disabled={busy} placeholder="Ex.: mulheres de 25-40 anos" onChange={(event) => setTargetAudience(event.target.value)} />
+                  <Input id="create-audience" value={targetAudience} disabled={formDisabled} placeholder="Ex.: mulheres de 25-40 anos" onChange={(event) => setTargetAudience(event.target.value)} />
                 </div>
                 <div>
                   <Label htmlFor="create-forbidden">O que evitar</Label>
-                  <Input id="create-forbidden" value={forbiddenElements} disabled={busy} placeholder="Ex.: logo de concorrente, preço antigo" onChange={(event) => setForbiddenElements(event.target.value)} />
+                  <Input id="create-forbidden" value={forbiddenElements} disabled={formDisabled} placeholder="Ex.: logo de concorrente, preço antigo" onChange={(event) => setForbiddenElements(event.target.value)} />
                 </div>
               </div>
             ) : null}
@@ -526,13 +581,25 @@ export default function CreatePage() {
             </div>
           ) : null}
 
+          {tankMessage ? (
+            <div className="rounded-xl bg-accent-soft px-4 py-3 text-sm text-accent">
+              <p>{tankMessage}</p>
+              <Link href={`/workspaces/${workspace.id}/production?mode=configure`} className="mt-1.5 inline-block font-medium underline">Ver tanque de ideias →</Link>
+            </div>
+          ) : null}
+
           {busy ? <p className="text-sm text-ink-muted">{GENERATING_MESSAGES[messageIndex]}</p> : null}
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
             <p className="text-xs text-ink-faint">{credits ? `Você tem ${credits.remainingCredits.toLocaleString("pt-BR")} créditos disponíveis.` : "Chama a IA de verdade — gera custo real."}</p>
-            <Button className="px-6 py-3 text-base" disabled={!canGenerate} onClick={handleGenerate}>
-              {status === "generating" ? "Gerando…" : status === "retrying" ? "Tentando de novo…" : "Gerar conteúdo"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" className="px-5 py-3 text-base" disabled={!canSaveToTank} onClick={handleSaveToTank} title="Guarda a ideia sem gerar agora — a rotina automática a produz conforme as regras configuradas.">
+                {savingToTank ? "Guardando…" : "Guardar no tanque"}
+              </Button>
+              <Button className="px-6 py-3 text-base" disabled={!canGenerate} onClick={handleGenerate}>
+                {status === "generating" ? "Gerando…" : status === "retrying" ? "Tentando de novo…" : "Gerar conteúdo"}
+              </Button>
+            </div>
           </div>
         </div>
 

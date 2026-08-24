@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { NavIcon } from "@/components/NavIcon";
 import { useAuth } from "@/contexts/auth-context";
 import { BACKSTAGE_NAV, MOBILE_MENU_NAV, PRIMARY_MOBILE_NAV, canUseBackstage, type WorkspaceNavItem } from "@/components/workspace-navigation";
 
@@ -46,9 +47,7 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
           isActive(item.href) ? "bg-accent-soft text-accent" : "text-ink hover:bg-surface-sunken"
         }`}
       >
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true">
-          {item.icon}
-        </span>
+        <NavIcon id={item.icon} className="h-[18px] w-[18px] shrink-0" />
         <span>{item.label}</span>
       </Link>
     );
@@ -60,8 +59,8 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
         {PRIMARY_MOBILE_NAV.map((item) =>
           item.href === "/create" ? (
             <Link key={item.href} href={`${base}${item.href}`} className="flex flex-col items-center gap-1 px-2 py-1 text-[11px] font-medium text-accent">
-              <span aria-hidden="true" className="-mt-4 flex h-11 w-11 items-center justify-center rounded-full bg-accent text-xl text-white shadow-lg shadow-accent/30">
-                {item.icon}
+              <span aria-hidden="true" className="-mt-4 flex h-11 w-11 items-center justify-center rounded-full bg-accent text-white shadow-lg shadow-accent/30">
+                <NavIcon id={item.icon} className="h-5 w-5" />
               </span>
               <span>{item.label}</span>
             </Link>
@@ -73,9 +72,7 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
                 isActive(item.href) ? "text-accent" : "text-ink-muted"
               }`}
             >
-              <span aria-hidden="true" className="text-base">
-                {item.icon}
-              </span>
+              <NavIcon id={item.icon} className="h-[18px] w-[18px]" />
               <span>{item.label}</span>
             </Link>
           ),
@@ -87,9 +84,7 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
           aria-haspopup="menu"
           className="flex min-h-11 flex-col items-center justify-center gap-0.5 px-2 text-[11px] font-medium text-ink-muted"
         >
-          <span aria-hidden="true" className="text-base">
-            ☰
-          </span>
+          <NavIcon id="menu" className="h-[18px] w-[18px]" />
           <span>Menu</span>
         </button>
       </nav>

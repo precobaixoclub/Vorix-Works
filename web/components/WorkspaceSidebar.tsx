@@ -4,8 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
+import { NavIcon } from "@/components/NavIcon";
 import { useAuth } from "@/contexts/auth-context";
-import { BACKSTAGE_NAV, MAIN_NAV_SECTIONS, SETTINGS_NAV, canUseBackstage, type WorkspaceNavItem } from "@/components/workspace-navigation";
+import {
+  BACKSTAGE_NAV,
+  CREATE_NAV_ITEM,
+  HOME_NAV_ITEM,
+  MAIN_NAV_SECTIONS,
+  SETTINGS_NAV,
+  canUseBackstage,
+  type WorkspaceNavItem,
+} from "@/components/workspace-navigation";
 
 export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
   const pathname = usePathname();
@@ -19,20 +28,22 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
     if (isBackstagePathActive) setBackstageOpen(true);
   }, [isBackstagePathActive]);
 
-  function renderLink(item: WorkspaceNavItem) {
+  function isItemActive(item: WorkspaceNavItem): boolean {
     const href = `${base}${item.href}`;
-    const isActive = item.href === "" ? pathname === base : pathname.startsWith(href);
+    return item.href === "" ? pathname === base : pathname.startsWith(href);
+  }
+
+  function renderLink(item: WorkspaceNavItem) {
+    const isActive = isItemActive(item);
     return (
       <Link
         key={item.href}
-        href={href}
+        href={`${base}${item.href}`}
         className={`flex min-h-10 w-full min-w-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
           isActive ? "bg-accent-soft text-accent" : "text-ink-muted hover:bg-surface-sunken hover:text-ink"
         }`}
       >
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-sm" aria-hidden="true">
-          {item.icon}
-        </span>
+        <NavIcon id={item.icon} className="h-[18px] w-[18px] shrink-0" />
         <span className="truncate">{item.label}</span>
       </Link>
     );
@@ -44,7 +55,17 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
         <Logo className="h-9 w-auto" />
       </Link>
 
+      <Link
+        href={`${base}${CREATE_NAV_ITEM.href}`}
+        className="mb-3 flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-hover"
+      >
+        <NavIcon id={CREATE_NAV_ITEM.icon} className="h-[18px] w-[18px]" />
+        <span>{CREATE_NAV_ITEM.label}</span>
+      </Link>
+
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto">
+        <div className="flex flex-col gap-1">{renderLink(HOME_NAV_ITEM)}</div>
+
         {MAIN_NAV_SECTIONS.map((section) => (
           <div key={section.label} className="flex flex-col gap-1">
             <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-faint">{section.label}</p>

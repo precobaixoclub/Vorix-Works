@@ -22,6 +22,14 @@ import {
 } from "@/features/publication-history/types";
 import { formatDateTime } from "@/lib/format";
 
+function IconChevron({ className = "h-3 w-3" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+      <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 const NETWORK_LABEL: Record<PublicationNetwork, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", youtube: "YouTube Shorts" };
 const NETWORK_ICON: Record<PublicationNetwork, string> = { tiktok: "♪", instagram: "◎", facebook: "f", youtube: "▶" };
 const FORMAT_LABEL: Record<PublicationContentType, string> = { image: "Imagem", video: "Vídeo", carousel: "Carrossel", text: "Texto" };
@@ -103,6 +111,14 @@ export default function ContentsPage() {
     };
   }, [publications]);
 
+  const activeFilterCount = [
+    networkFilter !== "all",
+    statusFilter !== "all",
+    formatFilter !== "all",
+    dateFilter !== "all",
+    search.trim() !== "",
+  ].filter(Boolean).length;
+
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return (publications ?? [])
@@ -143,7 +159,6 @@ export default function ContentsPage() {
           <p className="mt-2 max-w-2xl text-sm text-ink-muted">Veja, filtre e reutilize tudo que já foi criado ou publicado.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="secondary" className="md:hidden" onClick={() => setFiltersOpen(true)}>Filtros</Button>
           <div className="inline-flex rounded-lg border border-border bg-surface-raised p-1">
             <button type="button" onClick={() => setViewMode("grid")} className={viewModeButtonClass(viewMode === "grid")}>Grid</button>
             <button type="button" onClick={() => setViewMode("list")} className={viewModeButtonClass(viewMode === "list")}>Lista</button>
@@ -152,7 +167,7 @@ export default function ContentsPage() {
         </div>
       </div>
 
-      <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
         <StatPill label="Total" value={stats.total} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
         <StatPill label="Publicados" value={stats.published} active={statusFilter === "published"} onClick={() => setStatusFilter("published")} />
         <StatPill label="Agendados" value={stats.scheduled} active={statusFilter === "scheduled"} onClick={() => setStatusFilter("scheduled")} />
@@ -160,21 +175,42 @@ export default function ContentsPage() {
         <StatPill label="Cancelados" value={stats.cancelled} active={statusFilter === "cancelled"} onClick={() => setStatusFilter("cancelled")} />
       </div>
 
-      <div className="mb-6 hidden rounded-2xl border border-border bg-surface-raised/50 p-3 md:block">{filters}</div>
+      <div className="mb-5">
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((open) => !open)}
+          className="flex min-h-9 items-center gap-1.5 rounded-lg border border-border bg-surface-raised px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface-sunken"
+          aria-expanded={filtersOpen}
+        >
+          Filtrar
+          {activeFilterCount > 0 ? (
+            <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">{activeFilterCount}</span>
+          ) : null}
+          <IconChevron className={`h-3 w-3 transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
+        </button>
 
-      {filtersOpen ? (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <button type="button" aria-label="Fechar filtros" className="absolute inset-0 bg-black/50" onClick={() => setFiltersOpen(false)} />
-          <div className="absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-border bg-surface-raised p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border" />
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-semibold text-ink">Filtros</p>
-              <button type="button" className="text-sm text-ink-muted" onClick={() => setFiltersOpen(false)}>Fechar</button>
-            </div>
-            <div className="space-y-2">{filters}</div>
+        {filtersOpen ? (
+          <div className="mt-2 rounded-2xl border border-border bg-surface-raised/50 p-3">
+            {filters}
+            {activeFilterCount > 0 ? (
+              <div className="mt-2 flex justify-end">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setSearch("");
+                    setNetworkFilter("all");
+                    setStatusFilter("all");
+                    setFormatFilter("all");
+                    setDateFilter("all");
+                  }}
+                >
+                  Limpar filtros
+                </Button>
+              </div>
+            ) : null}
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       {isLoading ? (
         <div className="flex justify-center py-14"><Spinner /></div>

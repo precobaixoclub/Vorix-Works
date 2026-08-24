@@ -99,6 +99,14 @@ function IconWarn({ className = "h-3.5 w-3.5" }: { className?: string }) {
   );
 }
 
+function IconChevron({ className = "h-3 w-3" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+      <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function IconFormat({ format, className = "h-3.5 w-3.5" }: { format: ProductionFormat; className?: string }) {
   if (format === "carousel") {
     return (
@@ -253,7 +261,7 @@ export default function ProductionLinePage() {
   const [queueFormatFilter, setQueueFormatFilter] = useState<ProductionFormat | "all">("all");
   const [periodFilter, setPeriodFilter] = useState<PeriodFilterId>("all");
   const [sortOrder, setSortOrder] = useState<SortOrder>("recent");
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [queuePanelOpen, setQueuePanelOpen] = useState(false);
   const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
   const [retryError, setRetryError] = useState<string | null>(null);
 
@@ -348,6 +356,7 @@ export default function ProductionLinePage() {
     ideaStatusFilter !== "available",
     formatFilter !== "all",
   ].filter(Boolean).length;
+  const currentQueueTabLabel = QUEUE_TABS.find((tab) => tab.id === queueTab)?.label ?? "";
 
   async function handleRetryFailed(run: ExecutionRun) {
     const record = getGenerationRecord(workspace.id, run.id);
@@ -625,85 +634,104 @@ export default function ProductionLinePage() {
 
   return (
     <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-semibold text-ink">Produção</h1>
           <p className="mt-1 text-sm text-ink-muted">Crie ideias, ajuste o prompt da IA e acompanhe a fila.</p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-3">
-          <Button onClick={() => { setMode("configure"); addBlueprint(); }}>+ Nova ideia</Button>
-          <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`}>
-            <Button variant={hasGuidelines ? "secondary" : "primary"} className="w-full">{hasGuidelines ? "Editar prompt" : "Configurar prompt"}</Button>
-          </Link>
-          <Button variant="secondary" onClick={() => setMode("configure")}>Configurar rotina</Button>
-        </div>
-      </div>
-
-      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-surface-raised px-3 py-2 text-xs text-ink-muted">
-        <span>Prompt: <strong className="font-semibold text-ink">{hasGuidelines ? "configurado" : "pendente"}</strong></span>
-        <span>Rotina: <strong className="font-semibold text-ink">{rotinaAtiva ? "ativa" : "pausada"}</strong></span>
-        {rotinaAtiva && nextSlot ? <span>Próximo: <strong className="font-semibold text-ink">{nextSlot}</strong></span> : null}
-      </div>
-
-      <div className="mb-3 flex flex-wrap gap-1.5 rounded-lg bg-surface-raised p-1">
-        {QUEUE_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setQueueTab(tab.id)}
-            className={`min-h-8 rounded-md px-2.5 text-xs font-medium transition-colors ${
-              queueTab === tab.id ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:text-ink"
-            }`}
-          >
-            {tab.label} <span className="text-xs opacity-70">({runsByTab[tab.id].length})</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <input
-          type="search"
-          value={queueSearch}
-          onChange={(event) => setQueueSearch(event.target.value)}
-          placeholder="Buscar produção"
-          className="min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft sm:max-w-xs"
-        />
-        <Button variant="secondary" className="min-h-9 py-1.5" onClick={() => setFiltersOpen((open) => !open)}>
-          Filtros{activeQueueFilterCount > 0 ? ` (${activeQueueFilterCount})` : ""}
-        </Button>
-      </div>
-
-      {filtersOpen ? (
-        <div className="mb-4 rounded-xl border border-border bg-surface-raised p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value as ProductionChannel | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
-              <option value="all">Todos os canais</option>
-              {CHANNELS.map((channel) => (<option key={channel} value={channel}>{CHANNEL_LABEL[channel]}</option>))}
-            </select>
-            <select value={queueFormatFilter} onChange={(event) => setQueueFormatFilter(event.target.value as ProductionFormat | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
-              <option value="all">Todos os formatos</option>
-              {FORMATS.map((format) => (<option key={format} value={format}>{FORMAT_LABEL[format]}</option>))}
-            </select>
-            <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as PeriodFilterId)} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
-              {PERIOD_FILTERS.map((period) => (<option key={period.id} value={period.id}>{period.label}</option>))}
-            </select>
-            <SegmentedFilter value={sortOrder} options={[{ id: "recent", label: "Recentes" }, { id: "oldest", label: "Antigos" }]} onChange={setSortOrder} />
-            {activeQueueFilterCount > 0 ? (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setChannelFilter("all");
-                  setQueueFormatFilter("all");
-                  setPeriodFilter("all");
-                  setSortOrder("recent");
-                }}
-              >
-                Limpar filtros
-              </Button>
-            ) : null}
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <Button className="w-full sm:w-auto" onClick={() => { setMode("configure"); addBlueprint(); }}>+ Nova ideia</Button>
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`} className="relative">
+              <Button variant="secondary" className="w-full">{hasGuidelines ? "Editar prompt" : "Configurar prompt"}</Button>
+              {!hasGuidelines ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400" aria-hidden="true" /> : null}
+            </Link>
+            <Button variant="secondary" className="w-full sm:w-auto" onClick={() => setMode("configure")}>Configurar rotina</Button>
           </div>
         </div>
-      ) : null}
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-surface-raised px-3 py-1.5 text-xs text-ink-muted">
+        <span>Prompt: <strong className="font-semibold text-ink">{hasGuidelines ? "configurado" : "pendente"}</strong></span>
+        <span>Rotina: <strong className="font-semibold text-ink">{rotinaAtiva ? "ativa" : "pausada"}</strong></span>
+        {rotinaAtiva && nextSlot ? <span className="hidden sm:inline">Próximo: <strong className="font-semibold text-ink">{nextSlot}</strong></span> : null}
+      </div>
+
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={() => setQueuePanelOpen((open) => !open)}
+          className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm font-medium text-ink hover:bg-surface-sunken sm:w-auto"
+          aria-expanded={queuePanelOpen}
+        >
+          <span className="flex items-center gap-2">
+            <span>{currentQueueTabLabel}</span>
+            <span className="text-xs font-normal text-ink-muted">({runsByTab[queueTab].length})</span>
+            {activeQueueFilterCount > 0 ? (
+              <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">{activeQueueFilterCount}</span>
+            ) : null}
+          </span>
+          <span className="flex items-center gap-1 text-xs font-normal text-ink-muted">
+            Filtrar
+            <IconChevron className={`h-3 w-3 transition-transform ${queuePanelOpen ? "rotate-180" : ""}`} />
+          </span>
+        </button>
+
+        {queuePanelOpen ? (
+          <div className="mt-2 rounded-xl border border-border bg-surface-raised p-3">
+            <div className="mb-3 flex flex-wrap gap-1.5 rounded-lg bg-surface-sunken p-1">
+              {QUEUE_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setQueueTab(tab.id)}
+                  className={`min-h-8 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                    queueTab === tab.id ? "bg-accent text-white" : "text-ink-muted hover:text-ink"
+                  }`}
+                >
+                  {tab.label} <span className="text-xs opacity-70">({runsByTab[tab.id].length})</span>
+                </button>
+              ))}
+            </div>
+
+            <input
+              type="search"
+              value={queueSearch}
+              onChange={(event) => setQueueSearch(event.target.value)}
+              placeholder="Buscar produção"
+              className="mb-3 min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+            />
+
+            <div className="flex flex-wrap items-center gap-2">
+              <select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value as ProductionChannel | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
+                <option value="all">Todos os canais</option>
+                {CHANNELS.map((channel) => (<option key={channel} value={channel}>{CHANNEL_LABEL[channel]}</option>))}
+              </select>
+              <select value={queueFormatFilter} onChange={(event) => setQueueFormatFilter(event.target.value as ProductionFormat | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
+                <option value="all">Todos os formatos</option>
+                {FORMATS.map((format) => (<option key={format} value={format}>{FORMAT_LABEL[format]}</option>))}
+              </select>
+              <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as PeriodFilterId)} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
+                {PERIOD_FILTERS.map((period) => (<option key={period.id} value={period.id}>{period.label}</option>))}
+              </select>
+              <SegmentedFilter value={sortOrder} options={[{ id: "recent", label: "Recentes" }, { id: "oldest", label: "Antigos" }]} onChange={setSortOrder} />
+              {activeQueueFilterCount > 0 ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setChannelFilter("all");
+                    setQueueFormatFilter("all");
+                    setPeriodFilter("all");
+                    setSortOrder("recent");
+                  }}
+                >
+                  Limpar filtros
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       {retryError ? <p className="mb-3 text-sm text-danger">{retryError}</p> : null}
 

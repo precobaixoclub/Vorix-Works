@@ -143,11 +143,29 @@ test("runGptCreativeEngine: toda chamada ao Ícaro carrega executionId/correlati
   }
 }));
 
-test("runGptCreativeEngine: creative_plan inválido é hard failure", () => withFakeFetch(async () => {
-  const icaro = fakeIcaro({ analysis: [{ status: "completed", model: { id: "gpt-4o" }, content: "isto não é JSON" }] });
+// Achado ao vivo em produção: a primeira resposta do plano veio com JSON malformado (falha
+// passageira do modelo) e derrubava a execução na hora, sem nenhuma segunda tentativa — mesma
+// classe de bug já corrigida pro plano de correção (`MAX_REPAIR_JSON_ATTEMPTS`).
+
+test("runGptCreativeEngine: creative_plan malformado tenta de novo (mesmo prompt) antes de virar hard failure", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [{ status: "completed", model: { id: "gpt-4o" }, content: "isto não é JSON" }, planResponse()],
+    image_generation: [imageResponse()],
+    review: [passingReview()],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+  assert.equal(result.error, undefined);
+  assert.equal(result.publishable, true);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 2);
+}));
+
+test("runGptCreativeEngine: creative_plan malformado em AMBAS as tentativas é hard failure CREATIVE_PLAN_INVALID", () => withFakeFetch(async () => {
+  const malformed = { status: "completed", model: { id: "gpt-4o" }, content: "isto não é JSON" };
+  const icaro = fakeIcaro({ analysis: [malformed, malformed] });
   const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
   assert.equal(result.errorCode, "CREATIVE_PLAN_INVALID");
   assert.equal(result.publishable, false);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 2);
 }));
 
 test("runGptCreativeEngine: screenshot no contexto sem geometria no plano é hard failure ANTES de gerar imagem", () => withFakeFetch(async () => {

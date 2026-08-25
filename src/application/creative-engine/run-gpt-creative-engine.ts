@@ -117,31 +117,46 @@ function buildObjectKey(tenantId: string, suffix: string): string {
   return `gpt-creative-engine/${tenantId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${suffix}.jpg`;
 }
 
+// Achado ao vivo em produção: a primeira resposta do plano veio com JSON malformado/incompleto
+// (falha passageira do modelo, não do nosso código — mesma classe já corrigida pro plano de
+// REPARO, ver `MAX_REPAIR_JSON_ATTEMPTS` abaixo) e derrubava a execução inteira na hora, sem
+// nenhuma chance de reparo (o plano nem chega a existir, então não há o que reparar). Mesma
+// segunda tentativa com o MESMO prompt antes de desistir.
+const MAX_INITIAL_PLAN_JSON_ATTEMPTS = 2;
+
 async function requestCreativePlan(
   icaro: IcaroBrainPort,
   context: CreativeContext,
   executionId: string,
   correlationId: string,
+  track: (response: IcaroAIResponse | undefined) => void,
 ): Promise<{ plan?: CreativePlan; response?: IcaroAIResponse }> {
-  const response = await icaro.request({
-    taskType: "analysis",
-    prompt: buildCreativePlanPrompt(context),
-    specialistId: SPECIALIST_ID,
-    executionId,
-    correlationId,
-    imageUrls: context.assets.map((asset) => asset.url),
-    expectedOutput: "json",
-    priority: "quality",
-    temperature: 0.4,
-    maxTokens: 1_600,
-    timeoutMs: 45_000,
-  });
-  if (response.status !== "completed") return { response };
-  try {
-    return { plan: parseCreativePlan(extractJson(String(response.content ?? ""), "GPT Creative Plan")), response };
-  } catch {
-    return { response };
+  let lastResponse: IcaroAIResponse | undefined;
+  for (let jsonAttempt = 1; jsonAttempt <= MAX_INITIAL_PLAN_JSON_ATTEMPTS; jsonAttempt++) {
+    const response = await icaro.request({
+      taskType: "analysis",
+      prompt: buildCreativePlanPrompt(context),
+      specialistId: SPECIALIST_ID,
+      executionId,
+      correlationId,
+      imageUrls: context.assets.map((asset) => asset.url),
+      expectedOutput: "json",
+      priority: "quality",
+      temperature: 0.4,
+      maxTokens: 1_600,
+      timeoutMs: 45_000,
+    });
+    track(response);
+    lastResponse = response;
+    if (response.status !== "completed") continue;
+    try {
+      const plan = parseCreativePlan(extractJson(String(response.content ?? ""), "GPT Creative Plan"));
+      if (plan) return { plan, response };
+    } catch {
+      // tenta de novo (ou desiste, se for a última tentativa)
+    }
   }
+  return { response: lastResponse };
 }
 
 /** Deriva a guarda mínima do motor GPT a partir do `creative_plan` já produzido — nunca a
@@ -228,8 +243,8 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     context,
     input.executionRunId,
     input.creativeEngineRunId,
+    track,
   );
-  track(planResponse);
   directorModel = planResponse?.model?.id;
   if (!initialPlan) {
     return fail("Não foi possível obter um creative_plan válido do GPT.", "CREATIVE_PLAN_INVALID");

@@ -134,6 +134,27 @@ test("buildCreativePlanPrompt: brandMaterials selecionados aparecem com priorida
   assert.match(prompt, /REGRA: Nunca redesenhar\./);
 });
 
+// Achado ao vivo em produção: peças reais saíam com fundo branco/cores erradas mesmo com
+// brandColors configurado, e com texto de baixo contraste — nenhum dos dois tinha instrução
+// direta e explícita nos prompts que de fato produzem o creative_plan e a imagem.
+
+test("buildCreativePlanPrompt: com brandColors configurado, a paleta aparece como requisito obrigatório (não uma linha informativa solta)", () => {
+  const prompt = buildCreativePlanPrompt(sampleContext({ brandColors: ["preto", "verde", "amarelo"] }));
+  assert.match(prompt, /PALETA DE CORES OFICIAL DESTA MARCA \(obrigatória, não uma sugestão\): preto, verde, amarelo/);
+  assert.match(prompt, /cores predominantes do fundo/);
+});
+
+test("buildCreativePlanPrompt: sem brandColors configurado, não menciona paleta nenhuma", () => {
+  const prompt = buildCreativePlanPrompt(sampleContext());
+  assert.doesNotMatch(prompt, /PALETA DE CORES/);
+});
+
+test("buildCreativePlanPrompt: sempre instrui alto contraste entre texto e fundo, mesmo sem paleta configurada", () => {
+  const prompt = buildCreativePlanPrompt(sampleContext());
+  assert.match(prompt, /ALTO CONTRASTE/);
+  assert.match(prompt, /nunca texto claro sobre fundo claro/);
+});
+
 test("buildImageGenerationPromptFromPlan: instrui deixar espaço pra logo/screenshot em vez de desenhá-los, quando presentes no contexto", () => {
   const context = sampleContext({
     assets: [
@@ -161,6 +182,27 @@ test("buildImageGenerationPromptFromPlan: inclui headline/cta literalmente entre
   const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
   assert.match(imagePrompt, /"TODAS AS OFERTAS EM UM SÓ SITE"/);
   assert.match(imagePrompt, /"ACESSE AGORA"/);
+});
+
+test("buildImageGenerationPromptFromPlan: com brandColors configurado, repete a paleta como obrigatória NO prompt que gera a imagem (nunca só no prompt do plano, um passo antes)", () => {
+  const context = sampleContext({ brandColors: ["preto", "verde", "amarelo"] });
+  const plan = parseCreativePlan(samplePlanJson());
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+  assert.match(imagePrompt, /PALETA DE CORES OBRIGATÓRIA: preto, verde, amarelo/);
+});
+
+test("buildImageGenerationPromptFromPlan: sem brandColors configurado, não menciona paleta nenhuma", () => {
+  const context = sampleContext();
+  const plan = parseCreativePlan(samplePlanJson());
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+  assert.doesNotMatch(imagePrompt, /PALETA DE CORES/);
+});
+
+test("buildImageGenerationPromptFromPlan: sempre instrui alto contraste entre texto e fundo", () => {
+  const context = sampleContext();
+  const plan = parseCreativePlan(samplePlanJson());
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+  assert.match(imagePrompt, /ALTO CONTRASTE/);
 });
 
 // ---------------------------------------------------------------------------------------------

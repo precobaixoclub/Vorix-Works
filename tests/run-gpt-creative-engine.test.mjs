@@ -193,15 +193,40 @@ test("runGptCreativeEngine: com logo e screenshot posicionados, compõe os dois 
   assert.ok(result.compositionSteps.some((step) => step.step === "screenshot_mockup"));
 }));
 
-test("runGptCreativeEngine: quality gate reprova só com TEXT_ILLEGIBLE_OR_CUT — repara via renderer_reflow, SEM gerar nova imagem", () => withFakeFetch(async () => {
-  let reviewCallCount = 0;
+// Achado ao vivo em produção: TEXT_ILLEGIBLE_OR_CUT vindo da VISÃO (a peça final já pronta,
+// julgada por baixo contraste) ia para `renderer_reflow` só pelo código — que só re-renderiza
+// zonas `renderedBy: "renderer"` sobre a MESMA imagem, nunca resolve um problema de contraste que
+// o modelo de IMAGEM desenhou. Duas rodadas inteiras eram gastas sem chance real de corrigir.
+
+test("runGptCreativeEngine: TEXT_ILLEGIBLE_OR_CUT vindo da VISÃO (não da geometria) força gpt_replan — reflow nunca resolveria um problema de contraste desenhado pelo modelo de imagem", () => withFakeFetch(async () => {
   const icaro = fakeIcaro({
-    analysis: [planResponse({ textZones: [{ kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 80, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" }] })],
-    image_generation: [imageResponse()],
+    analysis: [planResponse({ headline: "Plano original" }), planResponse({ headline: "Plano corrigido" })],
+    image_generation: [imageResponse("https://x/v1.png"), imageResponse("https://x/v2.png")],
     review: [
-      () => { reviewCallCount += 1; return { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: true, elementCutOff: false, criticalOverlap: false, compositionBroken: false }) }; },
-      () => { reviewCallCount += 1; return passingReview(); },
+      { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: true, elementCutOff: false, criticalOverlap: false, compositionBroken: false, reasoning: "baixo contraste" }) },
+      passingReview(),
     ],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.publishable, true);
+  assert.equal(result.creativePlan.headline, "Plano corrigido");
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 2, "TEXT_ILLEGIBLE_OR_CUT da visão precisa de um novo plano, nunca só reflow");
+  assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 2, "TEXT_ILLEGIBLE_OR_CUT da visão precisa de uma nova imagem, nunca só reflow");
+  assert.equal(result.repairRounds.length, 1);
+  assert.equal(result.repairRounds[0].route, "gpt_replan");
+}));
+
+test("runGptCreativeEngine: TEXT_ILLEGIBLE_OR_CUT vindo da GEOMETRIA (safe area, zona renderer) repara via renderer_reflow, SEM gerar novo plano nem nova imagem", () => withFakeFetch(async () => {
+  // Rect propositalmente violando a margem de segurança (y=90% + altura=10% = 100%, > limite de
+  // 98%) — a MESMA issue em toda rodada (o rect declarado nunca muda com fontScale), então nunca
+  // "resolve" de fato, mas o importante aqui é que o roteamento nunca escala pra replan/nova
+  // imagem só por causa de uma origem geométrica.
+  const icaro = fakeIcaro({
+    analysis: [planResponse({ textZones: [{ kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 90, widthPct: 80, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" }] })],
+    image_generation: [imageResponse()],
+    review: [passingReview(), passingReview(), passingReview()],
   });
   let renderCallCount = 0;
   const fontScales = [];
@@ -212,14 +237,11 @@ test("runGptCreativeEngine: quality gate reprova só com TEXT_ILLEGIBLE_OR_CUT �
 
   const result = await runGptCreativeEngine(deps, baseInput());
 
-  assert.equal(result.error, undefined);
-  assert.equal(result.publishable, true);
   assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 1, "renderer_reflow nunca deve gerar uma nova imagem");
   assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 1, "renderer_reflow nunca deve pedir um novo plano ao GPT");
-  assert.equal(renderCallCount, 2);
+  assert.ok(renderCallCount >= 2);
   assert.ok(fontScales[1] < fontScales[0], "a segunda tentativa deveria usar uma fonte menor");
-  assert.equal(result.repairRounds.length, 1);
-  assert.equal(result.repairRounds[0].route, "renderer_reflow");
+  assert.ok(result.repairRounds.every((round) => round.route === "renderer_reflow" || round.route === "unrecoverable"));
 }));
 
 test("runGptCreativeEngine: quality gate reprova com PRODUCT_MISMATCH — repara via gpt_replan (novo plano E nova imagem)", () => withFakeFetch(async () => {

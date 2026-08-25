@@ -32,6 +32,18 @@ export type CreativeQualityIssueCode = (typeof CREATIVE_QUALITY_ISSUE_CODES)[num
 export type CreativeQualityIssue = {
   code: CreativeQualityIssueCode;
   message: string;
+  /** Achado ao vivo em produção: `TEXT_ILLEGIBLE_OR_CUT`/`ELEMENT_CUT_OFF` podem vir de duas
+   * origens bem diferentes — `checkSafeAreaCompliance` (determinístico, só sobre zonas de texto
+   * já declaradas no plano, sempre sabe se a zona é `renderer` ou `image_model`) ou
+   * `checkCreativeVisualIntegrity` (visão sobre a imagem final já pronta, nunca sabe QUEM
+   * desenhou o trecho ilegível). `routeCreativeRepair` (`creative-repair.ts`) precisa dessa
+   * distinção: só é seguro mandar pra `renderer_reflow` (que só re-renderiza zonas
+   * `renderedBy: "renderer"` sobre a MESMA imagem já gerada, nunca toca o que o modelo de imagem
+   * já pintou) quando a origem é `"safe_area"` — uma origem `"vision"` pode estar reportando um
+   * problema de contraste/cor no que o modelo de imagem desenhou, que ajustar `fontScale` nunca
+   * resolve; sem essa distinção, o reparo gastava 2 rodadas inteiras tentando uma correção que
+   * não tinha como funcionar. */
+  source?: "safe_area" | "vision";
 };
 
 export type CreativeQualityGateResult = {
@@ -159,8 +171,11 @@ function violatesSafeArea(rect: CreativePlanRect, marginPct = SAFE_AREA_MARGIN_P
  * `TEXT_ILLEGIBLE_OR_CUT` (zonas com `renderedBy: "renderer"`, o caso reportado ao vivo — CTA
  * cortado na borda) e `ELEMENT_CUT_OFF` (zonas com `renderedBy: "image_model"`, mesmo problema
  * geométrico mas desenhado pelo modelo de imagem em vez do renderer) — a distinção de código
- * importa para o roteamento de reparo (`creative-repair.ts`), embora ambos sejam
- * `renderer_reflow`-elegíveis hoje.
+ * importa para o roteamento de reparo (`creative-repair.ts`). `source: "safe_area"` (sempre
+ * determinístico, sempre sobre geometria já declarada no plano) é o que torna essas duas issues
+ * seguras pra `renderer_reflow` — nunca confundir com o MESMO código vindo da visão
+ * (`checkCreativeVisualIntegrity`, `source: "vision"`), que pode estar reportando um problema de
+ * contraste/cor que reflow nenhum resolve (ver comentário em `CreativeQualityIssue.source`).
  */
 export function checkSafeAreaCompliance(plan: CreativePlan): CreativeQualityIssue[] {
   const issues: CreativeQualityIssue[] = [];
@@ -169,6 +184,7 @@ export function checkSafeAreaCompliance(plan: CreativePlan): CreativeQualityIssu
     issues.push({
       code: zone.renderedBy === "renderer" ? "TEXT_ILLEGIBLE_OR_CUT" : "ELEMENT_CUT_OFF",
       message: `Zona de texto "${zone.kind}" (x=${zone.rect.xPct}%, y=${zone.rect.yPct}%, largura=${zone.rect.widthPct}%, altura=${zone.rect.heightPct}%) toca ou ultrapassa a margem de segurança do canvas (${SAFE_AREA_MARGIN_PCT}%) — risco real de corte na borda.`,
+      source: "safe_area",
     });
   }
   return issues;
@@ -247,19 +263,22 @@ export async function checkCreativeVisualIntegrity(
     };
     const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : undefined;
     const issues: CreativeQualityIssue[] = [];
-    if (parsed.productMismatch === true) issues.push({ code: "PRODUCT_MISMATCH", message: reasoning ?? "O produto na peça final não corresponde à foto de referência." });
-    if (parsed.wrongLogo === true) issues.push({ code: "WRONG_LOGO", message: reasoning ?? "A logo na peça final não corresponde à logo real de referência." });
-    if (parsed.screenshotMischaracterized === true) issues.push({ code: "SCREENSHOT_MISCHARACTERIZED", message: reasoning ?? "A interface mostrada não corresponde ao screenshot real de referência." });
-    if (parsed.textIllegibleOrCut === true) issues.push({ code: "TEXT_ILLEGIBLE_OR_CUT", message: reasoning ?? "Texto principal ilegível ou cortado." });
-    if (parsed.elementCutOff === true) issues.push({ code: "ELEMENT_CUT_OFF", message: reasoning ?? "Elemento visual importante cortado, perdendo informação essencial." });
-    if (parsed.criticalOverlap === true) issues.push({ code: "CRITICAL_OVERLAP", message: reasoning ?? "Elemento comercial sobrepõe destrutivamente rosto/produto/outro elemento essencial." });
-    if (parsed.compositionBroken === true) issues.push({ code: "COMPOSITION_BROKEN", message: reasoning ?? "Composição visivelmente quebrada." });
+    if (parsed.productMismatch === true) issues.push({ code: "PRODUCT_MISMATCH", message: reasoning ?? "O produto na peça final não corresponde à foto de referência.", source: "vision" });
+    if (parsed.wrongLogo === true) issues.push({ code: "WRONG_LOGO", message: reasoning ?? "A logo na peça final não corresponde à logo real de referência.", source: "vision" });
+    if (parsed.screenshotMischaracterized === true) issues.push({ code: "SCREENSHOT_MISCHARACTERIZED", message: reasoning ?? "A interface mostrada não corresponde ao screenshot real de referência.", source: "vision" });
+    // TEXT_ILLEGIBLE_OR_CUT/ELEMENT_CUT_OFF vindos daqui NUNCA são renderer_reflow-elegíveis —
+    // ver `CreativeQualityIssue.source` e `routeCreativeRepair`. A visão não sabe se o trecho
+    // ilegível foi desenhado pelo renderer ou pelo modelo de imagem; reflow só ajusta o primeiro.
+    if (parsed.textIllegibleOrCut === true) issues.push({ code: "TEXT_ILLEGIBLE_OR_CUT", message: reasoning ?? "Texto principal ilegível ou cortado.", source: "vision" });
+    if (parsed.elementCutOff === true) issues.push({ code: "ELEMENT_CUT_OFF", message: reasoning ?? "Elemento visual importante cortado, perdendo informação essencial.", source: "vision" });
+    if (parsed.criticalOverlap === true) issues.push({ code: "CRITICAL_OVERLAP", message: reasoning ?? "Elemento comercial sobrepõe destrutivamente rosto/produto/outro elemento essencial.", source: "vision" });
+    if (parsed.compositionBroken === true) issues.push({ code: "COMPOSITION_BROKEN", message: reasoning ?? "Composição visivelmente quebrada.", source: "vision" });
     // Garantia no CÓDIGO, nunca só na instrução do prompt — sem paleta configurada, um "true"
     // vindo da IA (alucinação, ou simplesmente não seguiu a instrução) nunca reprova por conta
     // própria, mesmo que a peça já teste isso deliberadamente.
     const hasBrandColors = Boolean(input.brandColors && input.brandColors.length > 0);
     if (hasBrandColors && parsed.colorPaletteViolated === true) {
-      issues.push({ code: "COLOR_PALETTE_VIOLATED", message: reasoning ?? "A peça final não usa a paleta de cores oficial configurada para a marca." });
+      issues.push({ code: "COLOR_PALETTE_VIOLATED", message: reasoning ?? "A peça final não usa a paleta de cores oficial configurada para a marca.", source: "vision" });
     }
     return issues;
   } catch {

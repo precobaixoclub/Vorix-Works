@@ -36,6 +36,16 @@ const RENDERER_REFLOW_CODES: readonly CreativeQualityIssueCode[] = ["TEXT_ILLEGI
  * vai para `renderer_reflow` quando TODOS os problemas são geométricos-de-renderer; um único
  * problema criativo/factual no meio já manda a rodada inteira de volta ao GPT (nunca mistura as
  * duas correções na mesma rodada).
+ *
+ * Achado ao vivo em produção: `TEXT_ILLEGIBLE_OR_CUT`/`ELEMENT_CUT_OFF` vindos da VISÃO
+ * (`issue.source === "vision"`, ver `evaluate-creative-quality-gate.ts`) NUNCA são
+ * `renderer_reflow`-elegíveis, mesmo com o código certo — a visão julga a imagem final já
+ * pronta, sem saber se o trecho ilegível foi desenhado pelo renderer (reflow ajusta) ou pelo
+ * modelo de imagem (reflow é um no-op, `renderer_reflow` só re-renderiza zonas
+ * `renderedBy: "renderer"` sobre a MESMA imagem, nunca gera uma nova). Um caso real gastou 2
+ * rodadas inteiras de reflow tentando corrigir baixo contraste que o modelo de imagem desenhou —
+ * reflow nunca poderia ter resolvido isso, só um `gpt_replan` (nova imagem) poderia. Só a origem
+ * `"safe_area"` (determinística, sempre sabe se a zona é renderer-drawn) é segura pra reflow.
  */
 export function routeCreativeRepair(
   issues: readonly CreativeQualityIssue[],
@@ -47,7 +57,7 @@ export function routeCreativeRepair(
     return { route: "unrecoverable", instructions };
   }
 
-  const allRendererFixable = issues.length > 0 && issues.every((issue) => RENDERER_REFLOW_CODES.includes(issue.code));
+  const allRendererFixable = issues.length > 0 && issues.every((issue) => RENDERER_REFLOW_CODES.includes(issue.code) && issue.source !== "vision");
   if (allRendererFixable) {
     return { route: "renderer_reflow", instructions };
   }

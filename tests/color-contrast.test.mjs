@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computeContrastRatio, pickReadableTextColor } from "../dist/shared/utils/color-contrast.js";
+import { computeContrastRatio, isValidHexColor, pickReadableTextColor } from "../dist/shared/utils/color-contrast.js";
 
 test("computeContrastRatio: preto sobre branco tem contraste máximo (21:1)", () => {
   const ratio = computeContrastRatio("#000000", "#FFFFFF");
@@ -41,4 +41,21 @@ test("pickReadableTextColor: cor de fundo não-hex cai para o padrão escuro, nu
 
 test("pickReadableTextColor: aceita cores light/dark customizadas", () => {
   assert.equal(pickReadableTextColor("#000000", "#EEEEEE", "#222222"), "#EEEEEE");
+});
+
+// Achado ao vivo em produção: `brandColors[0]` era "verde" (nome de cor livre em português, não
+// hex) — um consumidor que usa essa string direto como `backgroundColor` CSS sem validar antes
+// (o renderer determinístico de zonas de texto) fazia o texto sair invisível: fundo indefinido +
+// `pickReadableTextColor` caindo no texto escuro padrão, tudo sobre uma imagem de fundo escura.
+
+test("isValidHexColor: aceita hex de 6 e 3 dígitos, com ou sem #", () => {
+  assert.equal(isValidHexColor("#FACC15"), true);
+  assert.equal(isValidHexColor("FACC15"), true);
+  assert.equal(isValidHexColor("#FFF"), true);
+});
+
+test("isValidHexColor: rejeita nome de cor livre (ex.: 'verde', caso real de brandColors[0])", () => {
+  assert.equal(isValidHexColor("verde"), false);
+  assert.equal(isValidHexColor("transparent"), false);
+  assert.equal(isValidHexColor(""), false);
 });

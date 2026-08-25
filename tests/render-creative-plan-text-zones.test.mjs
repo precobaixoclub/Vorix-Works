@@ -58,6 +58,25 @@ test("renderCreativePlanTextZones: zona emphasis=secondary usa a cor de destaque
   assert.ok(probePixel[0] < 60, `esperava canal vermelho baixo, veio R=${probePixel[0]}`);
 });
 
+// Achado ao vivo em produção: `accentColor` veio "verde" — nome de cor livre em português
+// (brandColors[0], pensado pro prompt do modelo de imagem, nunca hex) — e uma zona secondary
+// usava essa string direto como fundo CSS sem validar. Resultado real: texto completamente
+// invisível (max de brilho ~17/255 numa imagem de fundo escura, medido pixel a pixel na peça
+// real). Precisa cair pro accentColor padrão (#FACC15, amarelo — visível e com texto escuro
+// legível por cima) em vez de um fundo indefinido.
+
+test("renderCreativePlanTextZones: accentColor não-hex (nome de cor livre, caso real de produção) cai pro padrão em vez de ficar invisível", async () => {
+  const baseImageBuffer = await makeSolidPng(1080, 1350, { r: 0, g: 0, b: 0, alpha: 1 });
+  const zones = [{ kind: "subheadline", text: "COMPRE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 80, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" }];
+
+  const result = await renderCreativePlanTextZones({ baseImageBuffer, zones, accentColor: "verde" });
+  const zoneLeft = Math.round(0.10 * 1080);
+  const zoneTop = Math.round(0.80 * 1350);
+  const probePixel = await sharp(result.buffer).extract({ left: zoneLeft + 5, top: zoneTop + 5, width: 1, height: 1 }).raw().toBuffer();
+  // Fundo amarelo padrão (#FACC15): vermelho e verde altos, azul baixo — nunca preto/indefinido.
+  assert.ok(probePixel[0] > 200 && probePixel[1] > 150, `esperava o accentColor padrão (amarelo), veio R=${probePixel[0]} G=${probePixel[1]} B=${probePixel[2]}`);
+});
+
 // Achado ao vivo em produção: uma frase longa de subheadline ("Shopee + Mercado Livre.
 // Promoções selecionadas para você economizar sem perder tempo.") saiu com fonte no piso mínimo
 // de 10px — branco sobre preto, contraste de cor tecnicamente perfeito, mas ilegível de tão

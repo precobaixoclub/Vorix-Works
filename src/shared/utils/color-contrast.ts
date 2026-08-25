@@ -15,6 +15,19 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | undefined 
   };
 }
 
+/** Achado ao vivo em produção: `CreativeContext.brandColors` pode vir como NOME de cor em
+ * português (ex.: "verde", "amarelo" — extraído/descrito em linguagem natural, útil pro prompt do
+ * modelo de imagem, que entende o nome), nunca hex. Um consumidor que espera hex (ex.: o
+ * `accentColor` do renderer determinístico) e usa a string direto como cor CSS sem validar antes
+ * quebra silenciosamente: "verde" não é uma cor CSS válida, o fundo vira transparente/nada, e
+ * `pickReadableTextColor` (sem conseguir calcular contraste) cai no texto escuro padrão — texto
+ * escuro sobre fundo indefinido em cima de uma imagem escura = completamente invisível. Use isto
+ * pra validar ANTES de tratar uma string como cor CSS real, nunca confiar que `brandColors` é
+ * sempre hex só porque geralmente é. */
+export function isValidHexColor(value: string): boolean {
+  return hexToRgb(value) !== undefined;
+}
+
 function relativeLuminance(rgb: { r: number; g: number; b: number }): number {
   const channel = (value: number): number => {
     const normalized = value / 255;

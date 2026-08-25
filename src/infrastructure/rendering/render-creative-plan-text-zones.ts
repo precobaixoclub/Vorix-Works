@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import satori from "satori";
 import sharp from "sharp";
 import type { CreativePlanRect, CreativePlanTextZone, CreativePlanTextZoneKind } from "../../shared/utils/gpt-creative-plan.types.js";
-import { pickReadableTextColor } from "../../shared/utils/color-contrast.js";
+import { isValidHexColor, pickReadableTextColor } from "../../shared/utils/color-contrast.js";
 import { el, type SatoriNode } from "./components/satori-node.js";
 
 /**
@@ -159,7 +159,12 @@ export async function renderCreativePlanTextZones(input: RenderCreativePlanTextZ
     return { buffer: input.baseImageBuffer, renderedZones: [] };
   }
 
-  const accentColor = input.accentColor ?? DEFAULT_ACCENT_COLOR;
+  // Achado ao vivo em produção: `input.accentColor` (derivado de `context.brandColors[0]`) veio
+  // como "verde" — nome de cor em português, não hex — fazendo o texto de zonas `secondary`
+  // sair invisível (fundo indefinido + texto escuro por cima de uma imagem escura). `brandColors`
+  // é livre-texto por natureza (pensado pro prompt do modelo de imagem, que entende nomes) — nunca
+  // confiar que é hex sem validar antes de usar como cor CSS real.
+  const accentColor = input.accentColor && isValidHexColor(input.accentColor) ? input.accentColor : DEFAULT_ACCENT_COLOR;
   const fontScale = input.fontScale ?? 1;
   const positionedNodes: SatoriNode[] = [];
   const renderedZones: RenderedCreativePlanTextZone[] = [];

@@ -421,33 +421,44 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       }
 
       // gpt_replan — sempre volta ao MESMO modelo diretor, nunca ao motor/renderer legado.
+      // Achado ao vivo em produção: uma resposta de correção com JSON malformado/incompleto
+      // (falha passageira do modelo, não do nosso código) derrubava a execução inteira na hora,
+      // mesmo com rodadas de reparo ainda disponíveis (`MAX_CREATIVE_REPAIR_ROUNDS`). Uma segunda
+      // tentativa com o MESMO prompt antes de desistir — nunca infinita, nunca conta como uma
+      // rodada de reparo nova (o `repairAttempt` já foi incrementado acima, pra continuar contra
+      // o limite de rounds normal).
       const repairPrompt = buildCreativePlanRepairPrompt(plan, context, routed.instructions);
-      const repairResponse = await deps.creativeBrain.request({
-        taskType: "analysis",
-        prompt: repairPrompt,
-        specialistId: SPECIALIST_ID,
-        executionId: input.executionRunId,
-        correlationId: input.creativeEngineRunId,
-        imageUrls: context.assets.map((asset) => asset.url),
-        expectedOutput: "json",
-        priority: "quality",
-        temperature: 0.4,
-        maxTokens: 1_600,
-        timeoutMs: 45_000,
-      });
-      track(repairResponse);
-      const repairedPlan = repairResponse.status === "completed"
-        ? (() => {
-            try {
-              return parseCreativePlan(extractJson(String(repairResponse.content ?? ""), "GPT Creative Plan Repair"));
-            } catch {
-              return undefined;
-            }
-          })()
-        : undefined;
+      const MAX_REPAIR_JSON_ATTEMPTS = 2;
+      let repairedPlan: CreativePlan | undefined;
+      for (let jsonAttempt = 1; jsonAttempt <= MAX_REPAIR_JSON_ATTEMPTS; jsonAttempt++) {
+        const repairResponse = await deps.creativeBrain.request({
+          taskType: "analysis",
+          prompt: repairPrompt,
+          specialistId: SPECIALIST_ID,
+          executionId: input.executionRunId,
+          correlationId: input.creativeEngineRunId,
+          imageUrls: context.assets.map((asset) => asset.url),
+          expectedOutput: "json",
+          priority: "quality",
+          temperature: 0.4,
+          maxTokens: 1_600,
+          timeoutMs: 45_000,
+        });
+        track(repairResponse);
+        repairedPlan = repairResponse.status === "completed"
+          ? (() => {
+              try {
+                return parseCreativePlan(extractJson(String(repairResponse.content ?? ""), "GPT Creative Plan Repair"));
+              } catch {
+                return undefined;
+              }
+            })()
+          : undefined;
+        if (repairedPlan) break;
+      }
 
       if (!repairedPlan) {
-        return fail("Não foi possível obter um creative_plan de correção válido do GPT.", "CREATIVE_PLAN_REPAIR_INVALID", {
+        return fail("Não foi possível obter um creative_plan de correção válido do GPT, mesmo após nova tentativa.", "CREATIVE_PLAN_REPAIR_INVALID", {
           creativePlan: plan,
           finalImagePrompt: imagePrompt,
           qualityGate,

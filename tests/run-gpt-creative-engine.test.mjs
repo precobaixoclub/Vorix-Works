@@ -242,6 +242,42 @@ test("runGptCreativeEngine: quality gate reprova com PRODUCT_MISMATCH — repara
   assert.equal(result.repairRounds[0].route, "gpt_replan");
 }));
 
+// Achado ao vivo em produção: uma resposta de correção com JSON malformado (falha passageira do
+// modelo) derrubava a execução inteira na hora, mesmo havendo rodadas de reparo disponíveis.
+
+test("runGptCreativeEngine: resposta de correção com JSON malformado tenta de novo (mesmo prompt) antes de desistir", () => withFakeFetch(async () => {
+  const malformedRepairResponse = { status: "completed", model: { id: "gpt-4o" }, content: "isto não é JSON válido", cost: { estimated: 0.01, currency: "USD" }, durationMs: 500 };
+  const icaro = fakeIcaro({
+    analysis: [planResponse({ headline: "Plano original" }), malformedRepairResponse, planResponse({ headline: "Plano corrigido" })],
+    image_generation: [imageResponse("https://x/v1.png"), imageResponse("https://x/v2.png")],
+    review: [
+      { status: "completed", content: JSON.stringify({ productMismatch: true, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, reasoning: "produto errado" }) },
+      passingReview(),
+    ],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.publishable, true);
+  assert.equal(result.creativePlan.headline, "Plano corrigido");
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 3);
+  assert.equal(result.repairRounds.length, 1);
+}));
+
+test("runGptCreativeEngine: resposta de correção malformada em AMBAS as tentativas é hard failure CREATIVE_PLAN_REPAIR_INVALID", () => withFakeFetch(async () => {
+  const malformedRepairResponse = { status: "completed", model: { id: "gpt-4o" }, content: "json quebrado", cost: { estimated: 0.01, currency: "USD" }, durationMs: 500 };
+  const icaro = fakeIcaro({
+    analysis: [planResponse(), malformedRepairResponse, malformedRepairResponse],
+    image_generation: [imageResponse()],
+    review: [{ status: "completed", content: JSON.stringify({ productMismatch: true, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, reasoning: "produto errado" }) }],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+
+  assert.equal(result.errorCode, "CREATIVE_PLAN_REPAIR_INVALID");
+  assert.equal(result.publishable, false);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 3);
+}));
+
 test("runGptCreativeEngine: reprovação persistente esgota as tentativas e vira unrecoverable — resultado não publicável, com repairRounds completo", () => withFakeFetch(async () => {
   const failingReview = () => ({ status: "completed", content: JSON.stringify({ productMismatch: true, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, reasoning: "sempre errado" }) });
   const icaro = fakeIcaro({

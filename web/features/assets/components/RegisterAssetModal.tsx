@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/Button";
 import { Input, Label, Textarea } from "@/components/Field";
 import { Modal } from "@/components/Modal";
-import { registerAsset, uploadAssetFile } from "../api";
+import { registerAsset, removeImageBackground, uploadAssetFile, type UploadedAssetFile } from "../api";
 import { deriveAssetKind, FILE_REQUIRED_MATERIAL_TYPES } from "../derive-kind";
 import {
   ASSET_MATERIAL_TYPES,
@@ -16,6 +16,8 @@ import {
   type AssetMaterialType,
   type AssetUsagePriority,
 } from "../types";
+
+const LOGO_WITHOUT_TRANSPARENCY_ERROR = "ASSET_UPLOAD_LOGO_WITHOUT_TRANSPARENCY";
 
 const SELECT_CLASSES = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft";
 
@@ -60,6 +62,12 @@ export function RegisterAssetModal({
   const [error, setError] = useState<string | undefined>();
   const fileRequired = isLogoMode || (materialType !== "" && FILE_REQUIRED_MATERIAL_TYPES.has(materialType));
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | undefined>();
+  // Oferta de "remover fundo com IA" quando o upload normal rejeita por falta de transparência —
+  // nunca troca a logo sozinho: o resultado processado só é usado depois de confirmação explícita
+  // (ver comentário em `openai-background-removal.ts` — um recorte errado aqui se repetiria em
+  // toda peça futura da marca).
+  const [needsTransparency, setNeedsTransparency] = useState(false);
+  const [bgRemoval, setBgRemoval] = useState<{ status: "idle" | "processing" | "ready" | "error"; result?: UploadedAssetFile; error?: string }>({ status: "idle" });
 
   useEffect(() => {
     if (!file?.type.startsWith("image/")) {
@@ -73,7 +81,44 @@ export function RegisterAssetModal({
 
   function pickFile(selected: File | undefined) {
     setFile(selected);
+    setNeedsTransparency(false);
+    setBgRemoval({ status: "idle" });
     if (selected && !name.trim()) setName(selected.name);
+  }
+
+  async function handleRemoveBackground() {
+    if (!file) return;
+    setBgRemoval({ status: "processing" });
+    try {
+      const result = await removeImageBackground(workspaceId, file);
+      setBgRemoval({ status: "ready", result });
+    } catch (cause) {
+      setBgRemoval({ status: "error", error: cause instanceof Error ? cause.message : "Não foi possível remover o fundo automaticamente." });
+    }
+  }
+
+  async function handleUseBackgroundRemovedResult() {
+    if (bgRemoval.status !== "ready" || !bgRemoval.result || !name.trim()) return;
+    setSubmitting(true);
+    setError(undefined);
+    try {
+      const kind: AssetKind = isLogoMode ? "logo" : deriveAssetKind(materialType, bgRemoval.result.contentType, "photo");
+      const asset = await registerAsset(workspaceId, {
+        kind,
+        name: name.trim(),
+        tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+        upload: bgRemoval.result,
+        materialType: materialType || undefined,
+        aiInstructions: aiInstructions.trim() || undefined,
+        usageRule: usageRule.trim() || undefined,
+        usagePriority: usagePriority || undefined,
+      });
+      onRegistered(asset);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível salvar o material.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function handleSubmit(event: React.FormEvent) {
@@ -85,6 +130,7 @@ export function RegisterAssetModal({
     }
     setSubmitting(true);
     setError(undefined);
+    setNeedsTransparency(false);
     try {
       // Logo sem fundo transparente sai com uma caixa visível ao redor na peça final (achado ao
       // vivo — JPEG nunca tem canal alfa, não tem como "remover o fundo" depois). Vale pra
@@ -106,7 +152,9 @@ export function RegisterAssetModal({
       });
       onRegistered(asset);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível enviar o material.");
+      const message = cause instanceof Error ? cause.message : "Não foi possível enviar o material.";
+      setError(message);
+      if (message.includes(LOGO_WITHOUT_TRANSPARENCY_ERROR)) setNeedsTransparency(true);
     } finally {
       setSubmitting(false);
     }
@@ -200,6 +248,45 @@ export function RegisterAssetModal({
         </div>
 
         {error ? <p className="text-xs text-danger">{error}</p> : null}
+
+        {needsTransparency ? (
+          <div className="rounded-lg border border-accent/30 bg-accent-soft/40 p-3">
+            {bgRemoval.status === "ready" && bgRemoval.result ? (
+              <div className="space-y-2.5">
+                <p className="text-xs font-medium text-ink">Fundo removido pela IA — confira antes de usar:</p>
+                <div
+                  className="h-32 w-32 overflow-hidden rounded-lg border border-border"
+                  style={{
+                    backgroundImage: "conic-gradient(var(--color-surface-sunken) 0.25turn, var(--color-surface) 0.25turn 0.5turn, var(--color-surface-sunken) 0.5turn 0.75turn, var(--color-surface) 0.75turn)",
+                    backgroundSize: "16px 16px",
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={bgRemoval.result.url} alt="Prévia com fundo removido" className="h-full w-full object-contain p-2" />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" className="text-xs" disabled={submitting} onClick={handleUseBackgroundRemovedResult}>
+                    {submitting ? "Salvando…" : "Usar esta versão"}
+                  </Button>
+                  <Button type="button" variant="secondary" className="text-xs" disabled={submitting} onClick={handleRemoveBackground}>
+                    Tentar de novo
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-ink-muted">
+                  Esse arquivo não tem fundo transparente. A IA pode remover o fundo automaticamente (mesmo recurso do ChatGPT) — você confere o resultado antes de usar.
+                </p>
+                {bgRemoval.status === "error" ? <p className="text-xs text-danger">{bgRemoval.error}</p> : null}
+                <Button type="button" variant="secondary" className="text-xs" disabled={bgRemoval.status === "processing"} onClick={handleRemoveBackground}>
+                  {bgRemoval.status === "processing" ? "Removendo fundo…" : "Remover fundo com IA"}
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : null}
+
         <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
           <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={onClose}>
             Cancelar

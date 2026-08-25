@@ -35,6 +35,7 @@ import { createDefaultAiMediaProviderRegistry, type AiMediaProviderRegistry } fr
 import { CreditAccountingService } from "../../../application/ai-providers/credit-accounting.service.js";
 import { MediaGenerationService } from "../../../application/ai-providers/media-generation.service.js";
 import { OpenAiImageProviderAdapter } from "../../../infrastructure/ai-providers/openai-image-provider-adapter.js";
+import { removeImageBackgroundViaAI } from "../../../infrastructure/ai-providers/openai-background-removal.js";
 import { OpenAiIcaroImageProvider } from "../../../infrastructure/ai-providers/openai-icaro-image-provider.js";
 import { OpenAiIcaroTextProvider } from "../../../infrastructure/ai-providers/openai-icaro-text-provider.js";
 import { OpenAiCreativeImageProvider } from "../../../infrastructure/ai-providers/openai-creative-image-provider.js";
@@ -263,6 +264,10 @@ export type ApiContainer = {
   instagramProvider: MetaContentPostingProvider;
   facebookProvider: MetaContentPostingProvider;
   objectStorage: ObjectStoragePort;
+  /** Remoção de fundo de logo via IA (`POST /v1/images/edits`, `background: "transparent"`) —
+   * ver `openai-background-removal.ts`. Nunca registra Asset por conta própria; a rota exige
+   * confirmação explícita do usuário antes de salvar o resultado como logo oficial. */
+  removeImageBackground: (input: { imageBuffer: Buffer; contentType: string }) => Promise<Buffer>;
   publicationQueue: PublicationQueuePort;
   /** Sprint 26 — Provedores de IA (imagem/vídeo). Registro sempre existe; adapters só entram
    * habilitados quando configurados via env/painel admin. */
@@ -523,6 +528,11 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       return result.url;
     },
   });
+  const removeImageBackground = (input: { imageBuffer: Buffer; contentType: string }) =>
+    removeImageBackgroundViaAI(
+      { apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl, getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai") },
+      input,
+    );
   const imageDescriber = new OpenAiVisionDescriber({
     apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
     getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
@@ -1273,6 +1283,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       instagramProvider,
       facebookProvider,
       objectStorage,
+      removeImageBackground,
       publicationQueue,
       clock,
       createExecutionHandlerResolver,
@@ -1355,6 +1366,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     instagramProvider,
     facebookProvider,
     objectStorage,
+    removeImageBackground,
     publicationQueue,
     clock,
     createExecutionHandlerResolver,

@@ -20,6 +20,15 @@ export function uploadAssetFile(workspaceId: string, file: File, options?: { req
   return apiClient.upload<UploadedAssetFile>(`/v1/assets/upload?${query.toString()}`, formData);
 }
 
+/** Mesmo recurso que "remove o fundo desta imagem" no ChatGPT — nunca registra Asset por conta
+ * própria, só devolve o PNG processado (mesmo formato de `uploadAssetFile`) pra confirmação
+ * explícita do usuário antes de salvar como logo oficial (ver `RegisterAssetModal`). */
+export function removeImageBackground(workspaceId: string, file: File): Promise<UploadedAssetFile> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiClient.upload<UploadedAssetFile>(`/v1/assets/remove-background?${new URLSearchParams({ workspaceId }).toString()}`, formData);
+}
+
 export function listAssets(workspaceId: string, filter?: { kind?: AssetKind; search?: string }): Promise<Asset[]> {
   const search = new URLSearchParams({ workspaceId });
   if (filter?.kind) search.set("kind", filter.kind);

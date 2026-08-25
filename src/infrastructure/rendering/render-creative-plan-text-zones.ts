@@ -5,7 +5,7 @@ import satori from "satori";
 import sharp from "sharp";
 import type { CreativePlanRect, CreativePlanTextZone, CreativePlanTextZoneKind } from "../../shared/utils/gpt-creative-plan.types.js";
 import { pickReadableTextColor } from "../../shared/utils/color-contrast.js";
-import { el, fitFontSizeToBox, type SatoriNode } from "./components/satori-node.js";
+import { el, type SatoriNode } from "./components/satori-node.js";
 
 /**
  * Executor determinístico das zonas de texto do `creative_plan` (`renderedBy: "renderer"`) —
@@ -60,13 +60,42 @@ export type RenderCreativePlanTextZonesResult = {
 
 const DEFAULT_ACCENT_COLOR = "#FACC15";
 
+// Mesmo valor de `AVERAGE_CHAR_WIDTH_RATIO`/`lineHeight: 1.15` usados por `fitFontSizeToBox`
+// (components/satori-node.ts) e pelo `span` abaixo — mantido em duplicado de propósito (ver
+// `fitWrappedFontSizeToBox`).
+const AVERAGE_CHAR_WIDTH_RATIO = 0.58;
+const LINE_HEIGHT_RATIO = 1.15;
+
+/**
+ * Achado ao vivo em produção: `fitFontSizeToBox` (satori-node.ts) assume texto de UMA linha só —
+ * pensada pra resolver preço/CTA curtos vazando da caixa — e por isso encolhia até o piso de 10px
+ * um subheadline de frase inteira, que na prática QUEBRA em várias linhas dentro da div de largura
+ * fixa (o Satori já quebra texto normalmente, sem `whiteSpace: nowrap` configurado). O resultado:
+ * branco sobre preto, contraste de cor tecnicamente perfeito, mas ilegível de tão minúsculo — a
+ * visão reprovou como "baixo contraste" por falta de um jeito melhor de descrever "fonte
+ * inutilizável". Versão local (não a global, pra não alterar preço/CTA/badge do motor legado que
+ * usam `fitFontSizeToBox` original) que testa se o texto CABE quebrando em múltiplas linhas antes
+ * de encolher — nunca pior que a original pra texto curto (mesmo resultado quando cabe numa linha
+ * só), sempre melhor pra texto longo.
+ */
+function fitWrappedFontSizeToBox(text: string, widthPx: number, heightPx: number, maxHeightRatio = 0.6): number {
+  const maxFontSize = Math.max(10, Math.round(heightPx * maxHeightRatio));
+  const safeLength = Math.max(1, text.length);
+  for (let fontSize = maxFontSize; fontSize > 10; fontSize -= 1) {
+    const charsPerLine = Math.max(1, Math.floor(widthPx / (fontSize * AVERAGE_CHAR_WIDTH_RATIO)));
+    const lines = Math.ceil(safeLength / charsPerLine);
+    if (lines * fontSize * LINE_HEIGHT_RATIO <= heightPx) return fontSize;
+  }
+  return 10;
+}
+
 function toPx(pct: number, totalPx: number): number {
   return Math.round((pct / 100) * totalPx);
 }
 
 function buildZoneNode(zone: CreativePlanTextZone, left: number, top: number, widthPx: number, heightPx: number, accentColor: string, fontScale: number): { node: SatoriNode; fontSizePx: number } {
   const padding = Math.round(Math.min(widthPx, heightPx) * 0.12);
-  const fittedFontSizePx = fitFontSizeToBox(zone.text, widthPx - padding * 2, heightPx - padding * 2);
+  const fittedFontSizePx = fitWrappedFontSizeToBox(zone.text, widthPx - padding * 2, heightPx - padding * 2);
   const fontSizePx = Math.max(10, Math.round(fittedFontSizePx * fontScale));
 
   const isPrimary = zone.emphasis === "primary";

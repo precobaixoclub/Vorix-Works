@@ -58,6 +58,28 @@ test("renderCreativePlanTextZones: zona emphasis=secondary usa a cor de destaque
   assert.ok(probePixel[0] < 60, `esperava canal vermelho baixo, veio R=${probePixel[0]}`);
 });
 
+// Achado ao vivo em produção: uma frase longa de subheadline ("Shopee + Mercado Livre.
+// Promoções selecionadas para você economizar sem perder tempo.") saiu com fonte no piso mínimo
+// de 10px — branco sobre preto, contraste de cor tecnicamente perfeito, mas ilegível de tão
+// minúsculo. O cálculo antigo assumia texto de UMA linha só; a caixa na prática permite quebrar
+// em várias linhas (sem whiteSpace:nowrap), então devia ter usado uma fonte bem maior.
+
+test("renderCreativePlanTextZones: subheadline de frase longa usa fonte legível (quebra em várias linhas em vez de encolher até o piso mínimo)", async () => {
+  const baseImageBuffer = await makeSolidPng(1080, 1350, { r: 255, g: 255, b: 255, alpha: 1 });
+  const zones = [
+    {
+      kind: "subheadline",
+      text: "Shopee + Mercado Livre. Promoções selecionadas para você economizar sem perder tempo.",
+      rect: { xPct: 5, yPct: 70, widthPct: 90, heightPct: 10 },
+      emphasis: "primary",
+      renderedBy: "renderer",
+    },
+  ];
+  const result = await renderCreativePlanTextZones({ baseImageBuffer, zones });
+  assert.equal(result.renderedZones.length, 1);
+  assert.ok(result.renderedZones[0].fontSizePx > 16, `esperava fonte legível (>16px), veio ${result.renderedZones[0].fontSizePx}px`);
+});
+
 test("renderCreativePlanTextZones: múltiplas zonas são todas compostas e reportadas em renderedZones", async () => {
   const baseImageBuffer = await makeSolidPng(1080, 1350, { r: 255, g: 255, b: 255, alpha: 1 });
   const zones = [

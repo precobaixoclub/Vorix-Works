@@ -129,7 +129,7 @@ test("checkCreativeVisualIntegrity: best-effort — resposta 'failed' do Ícaro 
   assert.deepEqual(issues, []);
 });
 
-test("checkCreativeVisualIntegrity: mapeia cada veredito verdadeiro para o issue code correto", async () => {
+test("checkCreativeVisualIntegrity: mapeia cada veredito verdadeiro para o issue code correto (com as três referências reais presentes)", async () => {
   const icaro = {
     request: async () => ({
       status: "completed",
@@ -145,7 +145,13 @@ test("checkCreativeVisualIntegrity: mapeia cada veredito verdadeiro para o issue
       }),
     }),
   };
-  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director" });
+  const issues = await checkCreativeVisualIntegrity(icaro, {
+    finalImageUrl: "https://x/final.jpg",
+    specialistId: "gpt-creative-director",
+    referenceProductImageUrl: "https://x/product.jpg",
+    referenceLogoUrl: "https://x/logo.png",
+    referenceScreenshotUrl: "https://x/screenshot.png",
+  });
   const codes = issues.map((issue) => issue.code).sort();
   assert.deepEqual(codes, [
     "COMPOSITION_BROKEN",
@@ -156,6 +162,34 @@ test("checkCreativeVisualIntegrity: mapeia cada veredito verdadeiro para o issue
     "TEXT_ILLEGIBLE_OR_CUT",
     "WRONG_LOGO",
   ]);
+});
+
+// Achado ao vivo em produção: uma peça sem NENHUM screenshot real cadastrado ainda assim recebeu
+// "screenshotMischaracterized: true" da visão (alucinação, ou só não seguiu a regra do prompt de
+// "só marque true com uma referência real") — reprovando por um problema que não existia. Mesma
+// classe de bug já corrigida pra `colorPaletteViolated`: cada critério de referência só conta
+// quando a referência correspondente de fato foi enviada, garantido no código, nunca só no prompt.
+
+test("checkCreativeVisualIntegrity: sem nenhuma referência real, productMismatch/wrongLogo/screenshotMischaracterized=true no retorno da IA são ignorados", async () => {
+  const icaro = {
+    request: async () => ({
+      status: "completed",
+      content: JSON.stringify({ productMismatch: true, wrongLogo: true, screenshotMischaracterized: true, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }),
+    }),
+  };
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director" });
+  assert.deepEqual(issues, []);
+});
+
+test("checkCreativeVisualIntegrity: com só a referência de screenshot presente, apenas screenshotMischaracterized é honrado (produto/logo continuam ignorados)", async () => {
+  const icaro = {
+    request: async () => ({
+      status: "completed",
+      content: JSON.stringify({ productMismatch: true, wrongLogo: true, screenshotMischaracterized: true, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }),
+    }),
+  };
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", referenceScreenshotUrl: "https://x/screenshot.png" });
+  assert.deepEqual(issues.map((issue) => issue.code), ["SCREENSHOT_MISCHARACTERIZED"]);
 });
 
 // Reforço da migração "Prompt Persistente de Produção" — achado ao vivo: uma peça podia passar o

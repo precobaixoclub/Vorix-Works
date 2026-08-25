@@ -263,9 +263,22 @@ export async function checkCreativeVisualIntegrity(
     };
     const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : undefined;
     const issues: CreativeQualityIssue[] = [];
-    if (parsed.productMismatch === true) issues.push({ code: "PRODUCT_MISMATCH", message: reasoning ?? "O produto na peça final não corresponde à foto de referência.", source: "vision" });
-    if (parsed.wrongLogo === true) issues.push({ code: "WRONG_LOGO", message: reasoning ?? "A logo na peça final não corresponde à logo real de referência.", source: "vision" });
-    if (parsed.screenshotMischaracterized === true) issues.push({ code: "SCREENSHOT_MISCHARACTERIZED", message: reasoning ?? "A interface mostrada não corresponde ao screenshot real de referência.", source: "vision" });
+    // Achado ao vivo em produção (mesma classe de bug já corrigida pra `colorPaletteViolated`):
+    // a REGRA do prompt já diz "só marque true se havia uma referência real" (`productMismatch`/
+    // `wrongLogo`/`screenshotMischaracterized`), mas nada no CÓDIGO garantia isso — sem nenhum
+    // screenshot real cadastrado, o modelo mesmo assim marcou `screenshotMischaracterized: true`
+    // (alucinação, ou só não seguiu a instrução), gastando uma rodada de reparo numa correção sem
+    // problema real pra corrigir. Confiar só no prompt pra isso nunca é garantia — cada critério
+    // só reprova quando a referência correspondente de fato existe.
+    if (parsed.productMismatch === true && input.referenceProductImageUrl) {
+      issues.push({ code: "PRODUCT_MISMATCH", message: reasoning ?? "O produto na peça final não corresponde à foto de referência.", source: "vision" });
+    }
+    if (parsed.wrongLogo === true && input.referenceLogoUrl) {
+      issues.push({ code: "WRONG_LOGO", message: reasoning ?? "A logo na peça final não corresponde à logo real de referência.", source: "vision" });
+    }
+    if (parsed.screenshotMischaracterized === true && input.referenceScreenshotUrl) {
+      issues.push({ code: "SCREENSHOT_MISCHARACTERIZED", message: reasoning ?? "A interface mostrada não corresponde ao screenshot real de referência.", source: "vision" });
+    }
     // TEXT_ILLEGIBLE_OR_CUT/ELEMENT_CUT_OFF vindos daqui NUNCA são renderer_reflow-elegíveis —
     // ver `CreativeQualityIssue.source` e `routeCreativeRepair`. A visão não sabe se o trecho
     // ilegível foi desenhado pelo renderer ou pelo modelo de imagem; reflow só ajusta o primeiro.

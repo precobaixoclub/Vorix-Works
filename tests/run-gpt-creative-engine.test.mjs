@@ -50,6 +50,13 @@ function baseInput(overrides = {}) {
   };
 }
 
+/** Contexto com uma foto de produto real registrada — usado nos testes que disparam
+ * `productMismatch` de propósito (achado ao vivo: sem essa referência registrada, o quality gate
+ * ignora o veredito de `productMismatch` da visão por design, ver `evaluate-creative-quality-gate.ts`). */
+function contextWithProductReference(overrides = {}) {
+  return baseContext({ assets: [{ url: "https://x/product-ref.jpg", role: "product_photo", description: "Foto real do produto" }], ...overrides });
+}
+
 function fakeObjectStorage() {
   let count = 0;
   return {
@@ -253,7 +260,7 @@ test("runGptCreativeEngine: quality gate reprova com PRODUCT_MISMATCH — repara
       passingReview(),
     ],
   });
-  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ creativeContext: contextWithProductReference() }));
 
   assert.equal(result.error, undefined);
   assert.equal(result.publishable, true);
@@ -277,7 +284,7 @@ test("runGptCreativeEngine: resposta de correção com JSON malformado tenta de 
       passingReview(),
     ],
   });
-  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ creativeContext: contextWithProductReference() }));
 
   assert.equal(result.error, undefined);
   assert.equal(result.publishable, true);
@@ -293,7 +300,7 @@ test("runGptCreativeEngine: resposta de correção malformada em AMBAS as tentat
     image_generation: [imageResponse()],
     review: [{ status: "completed", content: JSON.stringify({ productMismatch: true, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, reasoning: "produto errado" }) }],
   });
-  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ creativeContext: contextWithProductReference() }));
 
   assert.equal(result.errorCode, "CREATIVE_PLAN_REPAIR_INVALID");
   assert.equal(result.publishable, false);
@@ -307,7 +314,7 @@ test("runGptCreativeEngine: reprovação persistente esgota as tentativas e vira
     image_generation: [imageResponse(), imageResponse(), imageResponse()],
     review: [failingReview(), failingReview(), failingReview()],
   });
-  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ creativeContext: contextWithProductReference() }));
 
   assert.equal(result.errorCode, "CREATIVE_QUALITY_GATE_NOT_PASSED");
   assert.equal(result.publishable, false);

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { AssetLibraryRepositoryPort } from "../../../../application/ports/asset-library-repository.port.js";
+import { hasRealTransparency } from "../../../../infrastructure/image-processing/transparency-check.js";
 import type { ObjectStoragePort } from "../../../../application/ports/object-storage.port.js";
 import { ASSET_KINDS, ASSET_MATERIAL_TYPES, ASSET_USAGE_PRIORITIES, type AssetKind, type AssetMaterialType, type AssetUsagePriority } from "../../../../domain/asset-library/asset-library.model.js";
 import { NotFoundError, NotImplementedError, ValidationError } from "../../http/app-error.js";
@@ -23,7 +24,19 @@ const WORKSPACE_QUERY_SCHEMA = {
   },
 } as const;
 
-const UPLOAD_QUERY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 } } } as const;
+const UPLOAD_QUERY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId"],
+  properties: {
+    workspaceId: { type: "string", minLength: 1 },
+    // Achado ao vivo em produção (cliente real): um JPEG cadastrado como logo antes de qualquer
+    // trava existir gerava uma peça publicitária com uma caixa de fundo visível ao redor da logo
+    // — JPEG nunca tem canal alfa, então "recortar o fundo" é fisicamente impossível pra esse
+    // formato, não uma questão de composição. `requireTransparency=true` (setado pelo
+    // `LogoConfigCard`/upload em modo logo) bloqueia no upload, antes do arquivo virar Asset.
+    requireTransparency: { type: "string", enum: ["true", "false"] },
+  },
+} as const;
 const ID_PARAMS_SCHEMA = { type: "object", required: ["id"], properties: { id: { type: "string", minLength: 1 } } } as const;
 
 // Migração "Prompt Persistente de Produção + Materiais com Contexto para o GPT" — os 4 campos
@@ -93,6 +106,7 @@ function translateAssetError(error: unknown): never {
     if (error.message.startsWith("ASSET_UPLOAD_FILE_MISSING")) throw new ValidationError(error.message);
     if (error.message.startsWith("ASSET_UPLOAD_TYPE_UNSUPPORTED")) throw new ValidationError(error.message);
     if (error.message.startsWith("ASSET_UPLOAD_TOO_LARGE")) throw new ValidationError(error.message);
+    if (error.message.startsWith("ASSET_UPLOAD_LOGO_WITHOUT_TRANSPARENCY")) throw new ValidationError(error.message);
     if (error.message.startsWith("OBJECT_STORAGE_NOT_CONFIGURED")) throw new NotImplementedError("Upload de material não configurado neste servidor.");
   }
   throw error;
@@ -124,7 +138,7 @@ export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRou
 
   app.post("/assets/upload", { schema: { querystring: UPLOAD_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "asset:create");
-    const { workspaceId } = request.query as { workspaceId: string };
+    const { workspaceId, requireTransparency } = request.query as { workspaceId: string; requireTransparency?: "true" | "false" };
 
     try {
       const file = await request.file({ limits: { fileSize: deps.maxUploadBytes } });
@@ -144,6 +158,12 @@ export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRou
       });
       if (file.file.truncated) {
         throw new Error(`ASSET_UPLOAD_TOO_LARGE: arquivo maior que o limite de ${Math.floor(deps.maxUploadBytes / 1_000_000)}MB.`);
+      }
+
+      if (requireTransparency === "true" && !(await hasRealTransparency(buffer, contentType))) {
+        throw new Error(
+          `ASSET_UPLOAD_LOGO_WITHOUT_TRANSPARENCY: este arquivo (${extension.toUpperCase()}) não tem fundo transparente — logo precisa ser PNG ou WEBP com canal alfa real. JPEG nunca suporta transparência.`,
+        );
       }
 
       const objectKey = `assets/${principal.tenantId}/${workspaceId}/${randomUUID()}.${extension}`;

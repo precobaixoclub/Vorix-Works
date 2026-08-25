@@ -12,10 +12,12 @@ export type AssetSemanticFields = {
   usagePriority?: AssetUsagePriority;
 };
 
-export function uploadAssetFile(workspaceId: string, file: File): Promise<UploadedAssetFile> {
+export function uploadAssetFile(workspaceId: string, file: File, options?: { requireTransparency?: boolean }): Promise<UploadedAssetFile> {
   const formData = new FormData();
   formData.append("file", file);
-  return apiClient.upload<UploadedAssetFile>(`/v1/assets/upload?workspaceId=${encodeURIComponent(workspaceId)}`, formData);
+  const query = new URLSearchParams({ workspaceId });
+  if (options?.requireTransparency) query.set("requireTransparency", "true");
+  return apiClient.upload<UploadedAssetFile>(`/v1/assets/upload?${query.toString()}`, formData);
 }
 
 export function listAssets(workspaceId: string, filter?: { kind?: AssetKind; search?: string }): Promise<Asset[]> {

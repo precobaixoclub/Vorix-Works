@@ -86,7 +86,11 @@ export function RegisterAssetModal({
     setSubmitting(true);
     setError(undefined);
     try {
-      const upload = file ? await uploadAssetFile(workspaceId, file) : undefined;
+      // Logo sem fundo transparente sai com uma caixa visível ao redor na peça final (achado ao
+      // vivo — JPEG nunca tem canal alfa, não tem como "remover o fundo" depois). Vale pra
+      // qualquer caminho que classifique o material como logo, não só o `LogoConfigCard`.
+      const requireTransparency = isLogoMode || materialType === "logo_principal" || materialType === "logo_secundaria";
+      const upload = file ? await uploadAssetFile(workspaceId, file, { requireTransparency }) : undefined;
       const contentTypeForKind = upload?.contentType ?? file?.type;
       const fallbackKind: AssetKind = contentTypeForKind?.startsWith("image/") ? "photo" : "document";
       const kind = isLogoMode ? "logo" : deriveAssetKind(materialType, contentTypeForKind, fallbackKind);

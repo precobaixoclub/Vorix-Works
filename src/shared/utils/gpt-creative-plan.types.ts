@@ -330,7 +330,13 @@ export function buildCreativePlanPrompt(context: CreativeContext): string {
     "- Priorize clareza da mensagem principal sobre densidade visual — só adicione elementos que sirvam ao objetivo.",
     "- `requiredElements` deve listar o que é obrigatório (ex.: \"logo\", \"headline\", \"cta\", \"screenshot do site em mockup de celular\").",
     "- `assetPlacements`: para cada asset REAL (produto/screenshot/logo) da lista acima, defina a geometria exata (retângulo em percentual do canvas final, 0-100) de onde ele vai entrar na composição — essa geometria será usada por composição determinística depois, então precisa ser definida ANTES da imagem existir, nunca improvisada depois.",
-    "- `textZones`: para headline/subheadline/CTA/preço/desconto/URL/badge que devem aparecer na peça, defina o retângulo exato e se você (o modelo de imagem) vai desenhar o texto (`renderedBy: \"image_model\"`) ou se um renderer determinístico vai desenhá-lo depois com legibilidade perfeita (`renderedBy: \"renderer\"`) — prefira `\"renderer\"` para preço/desconto/CTA/URL (texto factual que precisa ser perfeitamente legível) e `\"image_model\"` para headline quando fizer parte da composição fotográfica.",
+    // Achado ao vivo em produção: a orientação anterior ("prefira image_model pro headline") deu
+    // errado nas duas primeiras tentativas reais após este pipeline entrar no ar — o headline,
+    // desenhado livremente pelo modelo de imagem sem um retângulo determinístico, saiu cortado nas
+    // bordas do canvas nas duas vezes, sempre reprovado e sem chance real de reparo (um novo plano
+    // cai na mesma armadilha). `renderedBy: "renderer"` nunca corta: o compositor ajusta a fonte
+    // pra caber no retângulo. Virou o padrão pra TODO texto principal, não só factual.
+    "- `textZones`: para headline/subheadline/CTA/preço/desconto/URL/badge que devem aparecer na peça, defina o retângulo exato e se você (o modelo de imagem) vai desenhar o texto (`renderedBy: \"image_model\"`) ou se um renderer determinístico vai desenhá-lo depois com legibilidade perfeita e SEM risco de cortar nas bordas (`renderedBy: \"renderer\"`) — PREFIRA `\"renderer\"` para TODO texto principal (headline, subheadline, CTA, preço, desconto, URL, badge) por padrão. Só use `\"image_model\"` quando o texto for parte física e pequena de um cenário real dentro da composição (ex.: uma placa/vitrine ao fundo da cena), nunca para o headline/CTA principal da peça.",
     "- Todo texto que você (modelo de imagem) desenhar precisa ter ALTO CONTRASTE com o fundo exato onde ele cai — nunca texto claro sobre fundo claro, nem texto escuro sobre fundo escuro. Se a área por trás do texto for de tom duvidoso, adicione um leve escurecimento/scrim ou uma cor de texto claramente oposta, nunca arrisque legibilidade.",
     "",
     "Responda APENAS com JSON válido, sem markdown, no formato exato:",

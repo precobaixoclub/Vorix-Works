@@ -82,6 +82,17 @@ test("buildCreativePlanPrompt: com fatos comerciais, lista exatamente os fatos c
   assert.match(prompt, /Desconto: 20%/);
 });
 
+// Achado ao vivo em produção: a orientação anterior ("prefira image_model pro headline") fez o
+// headline sair cortado nas bordas do canvas em duas tentativas reais seguidas — texto desenhado
+// livremente pelo modelo de imagem não tem garantia de caber, ao contrário do renderer
+// determinístico. Agora "renderer" é o padrão pra todo texto principal, não só o factual.
+
+test("buildCreativePlanPrompt: instrui preferir renderedBy='renderer' por padrão pra todo texto principal, incluindo headline", () => {
+  const prompt = buildCreativePlanPrompt(sampleContext());
+  assert.match(prompt, /PREFIRA `"renderer"` para TODO texto principal/);
+  assert.match(prompt, /nunca para o headline\/CTA principal da peça/);
+});
+
 test("buildCreativePlanPrompt: descreve o papel de cada asset (produto real vs. screenshot vs. logo)", () => {
   const prompt = buildCreativePlanPrompt(
     sampleContext({

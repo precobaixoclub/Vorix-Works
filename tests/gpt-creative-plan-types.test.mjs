@@ -243,6 +243,35 @@ test("buildImageGenerationPromptFromPlan: sempre instrui alto contraste entre te
   assert.match(imagePrompt, /ALTO CONTRASTE/);
 });
 
+// Achado ao vivo em produção: um headline sem textZone/rect (desenhado livremente pelo modelo)
+// saiu cortado nas bordas superior e esquerda do canvas — nada instruía manter distância da borda.
+
+test("buildImageGenerationPromptFromPlan: sempre instrui manter todo texto a uma distância mínima da borda do canvas", () => {
+  const context = sampleContext();
+  const plan = parseCreativePlan(samplePlanJson());
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+  assert.match(imagePrompt, /pelo menos 6% de distância de cada borda/);
+});
+
+// Achado ao vivo em produção: sem nenhum screenshot real cadastrado, o modelo inventou uma
+// interface de site fictícia inteira com nomes de marca digitados errado ("Shopce", "mereado
+// livre") — texto pequeno gerado por modelo de imagem quase sempre sai com erro de grafia, então a
+// única instrução confiável é nunca pedir esse texto.
+
+test("buildImageGenerationPromptFromPlan: sem screenshot real cadastrado, proíbe texto legível dentro de qualquer mockup de dispositivo", () => {
+  const context = sampleContext({ assets: [] });
+  const plan = parseCreativePlan(samplePlanJson());
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+  assert.match(imagePrompt, /NUNCA escreva texto legível dentro dela/);
+});
+
+test("buildImageGenerationPromptFromPlan: com screenshot real cadastrado, não repete a proibição genérica de texto no mockup (já instrui deixar a região limpa)", () => {
+  const context = sampleContext({ assets: [{ url: "https://x/screenshot.png", role: "screenshot", description: "" }] });
+  const plan = parseCreativePlan(samplePlanJson());
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+  assert.doesNotMatch(imagePrompt, /NUNCA escreva texto legível dentro dela/);
+});
+
 // ---------------------------------------------------------------------------------------------
 // PR 4/9 (migração "GPT como motor criativo único") — geometria de asset e zonas de texto
 // ---------------------------------------------------------------------------------------------

@@ -532,6 +532,10 @@ export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: 
     );
   }
   lines.push("Garanta ALTO CONTRASTE entre todo texto e o fundo exato atrás dele — nunca texto claro sobre fundo claro, nem texto escuro sobre fundo escuro.");
+  // Achado ao vivo em produção: um headline desenhado pelo próprio modelo (sem textZone/rect
+  // determinado) saiu cortado nas bordas superior e esquerda do canvas — nada no prompt até aqui
+  // dizia pra manter distância da borda quando o texto não tem uma zona com rect explícito.
+  lines.push("Mantenha TODO texto (headline, subheadline, CTA, badges, preços) a pelo menos 6% de distância de cada borda do canvas — nunca corte ou aproxime letras da borda.");
 
   const logoPlacement = plan.assetPlacements.find((placement) => placement.role === "logo");
   if (hasLogoAsset) {
@@ -548,6 +552,16 @@ export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: 
       screenshotPlacement
         ? `Deixe a região de ${screenshotPlacement.rect.xPct}%–${screenshotPlacement.rect.xPct + screenshotPlacement.rect.widthPct}% na horizontal e ${screenshotPlacement.rect.yPct}%–${screenshotPlacement.rect.yPct + screenshotPlacement.rect.heightPct}% na vertical completamente limpa: um screenshot REAL do site será colado exatamente ali depois. Desenhe apenas a moldura do dispositivo${screenshotPlacement.frame && screenshotPlacement.frame !== "none" ? ` (${screenshotPlacement.frame === "phone" ? "celular" : "notebook"})` : ""} e a cena ao redor — NUNCA a interface do site.`
         : "Deixe espaço para um mockup de dispositivo (celular ou notebook) exibindo uma interface de site — a tela real será colada por cima depois, NÃO desenhe a interface do site você mesmo, apenas o dispositivo/cenário ao redor.",
+    );
+  } else {
+    // Achado ao vivo em produção: sem nenhum screenshot real cadastrado, este prompt não dizia
+    // nada sobre eventuais mockups de dispositivo que o próprio plano decidisse incluir — o modelo
+    // desenhou uma interface de site fictícia inteira, com nomes de marca digitados errado
+    // ("Shopce", "mereado livre" em vez de "Shopee"/"Mercado Livre"). Modelos de imagem quase
+    // sempre erram a grafia de texto pequeno — a única forma confiável de evitar isso é nunca
+    // pedir esse texto, nunca torná-lo mais legível.
+    lines.push(
+      "Se a composição incluir um mockup de dispositivo (celular, notebook etc.) mostrando uma tela, NUNCA escreva texto legível dentro dela (nomes de marcas, menus, nomes de produtos) — represente o conteúdo da tela só com blocos de cor, fotos e formas, sem nenhuma palavra real, pois texto pequeno gerado sempre sai com erros de grafia.",
     );
   }
 

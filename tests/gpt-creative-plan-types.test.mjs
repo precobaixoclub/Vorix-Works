@@ -184,6 +184,44 @@ test("buildImageGenerationPromptFromPlan: inclui headline/cta literalmente entre
   assert.match(imagePrompt, /"ACESSE AGORA"/);
 });
 
+// Achado ao vivo em produção: um plano que decide `renderedBy: "renderer"` pro headline/CTA (o
+// compositor determinístico desenha por cima depois) mas cujo prompt de imagem ainda mandava o
+// próprio modelo desenhar o mesmo texto — duas camadas de texto sobrepostas, sempre reprovadas
+// (TEXT_ILLEGIBLE_OR_CUT/CRITICAL_OVERLAP/COMPOSITION_BROKEN) e sem chance real de reparo, porque
+// nenhum `gpt_replan` corrige uma armadilha que está no PROMPT, não no plano.
+
+test("buildImageGenerationPromptFromPlan: headline/cta com renderedBy='renderer' manda deixar a região limpa, NUNCA escrever o texto duas vezes", () => {
+  const context = sampleContext();
+  const plan = parseCreativePlan(
+    samplePlanJson({
+      textZones: [
+        { kind: "headline", text: "TODAS AS OFERTAS EM UM SÓ SITE", rect: { xPct: 5, yPct: 5, widthPct: 90, heightPct: 20 }, emphasis: "primary", renderedBy: "renderer" },
+        { kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" },
+      ],
+    }),
+  );
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+  assert.doesNotMatch(imagePrompt, /Headline \(desenhar exatamente este texto/);
+  assert.doesNotMatch(imagePrompt, /CTA \(desenhar exatamente este texto/);
+  assert.doesNotMatch(imagePrompt, /"TODAS AS OFERTAS EM UM SÓ SITE"/);
+  assert.doesNotMatch(imagePrompt, /"ACESSE AGORA"/);
+  assert.match(imagePrompt, /5%–95% na horizontal e 5%–25% na vertical completamente limpa, sem nenhum texto: o headline será desenhado por cima depois/);
+  assert.match(imagePrompt, /10%–90% na horizontal e 80%–90% na vertical completamente limpa, sem nenhum texto: o cta será desenhado por cima depois/);
+});
+
+test("buildImageGenerationPromptFromPlan: headline/cta com renderedBy='image_model' continua instruindo o modelo a desenhar o texto exato", () => {
+  const context = sampleContext();
+  const plan = parseCreativePlan(
+    samplePlanJson({
+      textZones: [
+        { kind: "headline", text: "TODAS AS OFERTAS EM UM SÓ SITE", rect: { xPct: 5, yPct: 5, widthPct: 90, heightPct: 20 }, emphasis: "primary", renderedBy: "image_model" },
+      ],
+    }),
+  );
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+  assert.match(imagePrompt, /"TODAS AS OFERTAS EM UM SÓ SITE"/);
+});
+
 test("buildImageGenerationPromptFromPlan: com brandColors configurado, repete a paleta como obrigatória NO prompt que gera a imagem (nunca só no prompt do plano, um passo antes)", () => {
   const context = sampleContext({ brandColors: ["preto", "verde", "amarelo"] });
   const plan = parseCreativePlan(samplePlanJson());

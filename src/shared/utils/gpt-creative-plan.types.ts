@@ -484,18 +484,39 @@ export function parseCreativePlan(raw: string): CreativePlan | undefined {
  * depois (logo, screenshot) são explicitamente excluídos da instrução de desenho — o modelo deve
  * deixar espaço/composição para eles, nunca tentar desenhá-los.
  */
+/**
+ * Achado ao vivo em produção: quando o plano decide `renderedBy: "renderer"` para o headline/CTA
+ * (o compositor determinístico Satori+sharp vai desenhar por cima depois, com legibilidade
+ * perfeita), este prompt seguia mandando o próprio modelo de imagem desenhar o MESMO texto —
+ * gerando duas camadas de texto sobrepostas (uma fantasma/embutida no fundo, outra do renderer
+ * por cima de uma caixa de contraste), sempre reprovado como `TEXT_ILLEGIBLE_OR_CUT`/
+ * `CRITICAL_OVERLAP`/`COMPOSITION_BROKEN` e sem nenhuma chance real de reparo (nenhuma rodada de
+ * `gpt_replan` corrige isso, porque o novo plano cai na mesma armadilha). Mesmo princípio já usado
+ * pra logo/screenshot: se uma zona é `renderedBy: "renderer"`, o modelo de imagem só pode deixar o
+ * espaço limpo — nunca escrever o texto ele mesmo, nem uma versão aproximada.
+ */
+function textZoneDrawInstruction(zone: CreativePlanTextZone | undefined, label: string, exactText: string, emphasisNote: string): string {
+  if (zone && zone.renderedBy === "renderer") {
+    return `Deixe a região de ${zone.rect.xPct}%–${zone.rect.xPct + zone.rect.widthPct}% na horizontal e ${zone.rect.yPct}%–${zone.rect.yPct + zone.rect.heightPct}% na vertical completamente limpa, sem nenhum texto: o ${label.toLowerCase()} será desenhado por cima depois, com tipografia perfeita e legibilidade garantida. NÃO escreva o ${label.toLowerCase()} você mesmo, nem uma versão aproximada, fantasma ou estilizada dele.`;
+  }
+  return `${label} (desenhar exatamente este texto${emphasisNote}): "${exactText}"`;
+}
+
 export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: CreativeContext): string {
   const hasScreenshotAsset = context.assets.some((asset) => asset.role === "screenshot");
   const hasLogoAsset = context.assets.some((asset) => asset.role === "logo");
+  const headlineZone = plan.textZones.find((zone) => zone.kind === "headline");
+  const subheadlineZone = plan.textZones.find((zone) => zone.kind === "subheadline");
+  const ctaZone = plan.textZones.find((zone) => zone.kind === "cta");
 
   const lines = [
     `Crie uma peça publicitária ${context.format} para "${context.brandName}".`,
     `Direção visual: ${plan.visualDirection}`,
     `Intenção de composição: ${plan.compositionIntent}`,
-    `Headline (desenhar exatamente este texto, com destaque tipográfico forte): "${plan.headline}"`,
+    textZoneDrawInstruction(headlineZone, "Headline", plan.headline, ", com destaque tipográfico forte"),
   ];
-  if (plan.subheadline) lines.push(`Subheadline: "${plan.subheadline}"`);
-  lines.push(`CTA (desenhar exatamente este texto): "${plan.cta}"`);
+  if (plan.subheadline) lines.push(textZoneDrawInstruction(subheadlineZone, "Subheadline", plan.subheadline, ""));
+  lines.push(textZoneDrawInstruction(ctaZone, "CTA", plan.cta, ""));
   if (plan.requiredElements.length > 0) lines.push(`Elementos obrigatórios na composição: ${plan.requiredElements.join(", ")}.`);
   if (plan.forbiddenElements.length > 0) lines.push(`NUNCA incluir: ${plan.forbiddenElements.join(", ")}.`);
   lines.push(`Densidade visual desejada: ${plan.visualDensity}.`);

@@ -197,6 +197,34 @@ test("checkCreativeVisualIntegrity: com só a referência de screenshot presente
 // gate inteiro mesmo ignorando claramente uma diretriz configurada, porque nenhum check anterior
 // olhava para `productionInstructions`/`behaviorPreferences`.
 
+// Achado ao vivo em produção: o modelo de imagem inventou um slogan/parágrafo decorativo extra no
+// fundo (não pedido em nenhum lugar do plano), sobrepondo o headline renderizado — recorrência do
+// mesmo defeito já visto antes, apesar da proibição explícita já existente no prompt de geração
+// (nenhuma instrução de prompt é garantia absoluta). Critério dedicado dá ao diretor uma instrução
+// de reparo específica ("havia texto extra não pedido") em vez de uma mensagem vaga.
+
+test("checkCreativeVisualIntegrity: veredito unexpectedDecorativeText=true vira UNEXPECTED_DECORATIVE_TEXT", async () => {
+  const icaro = {
+    request: async () => ({
+      status: "completed",
+      content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, unexpectedDecorativeText: true, reasoning: "slogan extra no fundo" }),
+    }),
+  };
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director" });
+  assert.deepEqual(issues.map((issue) => issue.code), ["UNEXPECTED_DECORATIVE_TEXT"]);
+});
+
+test("checkCreativeVisualIntegrity: veredito unexpectedDecorativeText=false não gera issue", async () => {
+  const icaro = {
+    request: async () => ({
+      status: "completed",
+      content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, unexpectedDecorativeText: false }),
+    }),
+  };
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director" });
+  assert.deepEqual(issues, []);
+});
+
 test("checkProductionGuidelinesCompliance: sem nenhuma diretriz configurada, nunca chama o Ícaro nem reprova", async () => {
   let called = false;
   const icaro = { request: async () => { called = true; return { status: "completed", content: "{}" }; } };

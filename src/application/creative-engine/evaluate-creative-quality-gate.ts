@@ -27,6 +27,7 @@ export const CREATIVE_QUALITY_ISSUE_CODES = [
   "PRODUCTION_GUIDELINES_VIOLATED",
   "COLOR_PALETTE_VIOLATED",
   "TEXT_ZONE_OVERLAPS_ASSET",
+  "UNEXPECTED_DECORATIVE_TEXT",
 ] as const;
 export type CreativeQualityIssueCode = (typeof CREATIVE_QUALITY_ISSUE_CODES)[number];
 
@@ -237,7 +238,7 @@ function buildVisualIntegrityPrompt(brandColors: readonly string[] | undefined):
     "Avalie esta peça publicitária JÁ FINALIZADA (a imagem anexada) para defeitos GRAVES apenas — não julgue estética, apenas problemas objetivos que tornariam a peça inaceitável.",
     colorsLine,
     "Responda APENAS com JSON válido, sem markdown, no formato exato:",
-    '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "reasoning": "1-2 frases objetivas"}',
+    '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "unexpectedDecorativeText": true|false, "reasoning": "1-2 frases objetivas"}',
     "REGRAS:",
     "- \"productMismatch\": true SOMENTE se havia uma foto de produto real de referência e o produto na peça final é claramente outro produto (nunca marque true sem uma referência real para comparar).",
     "- \"wrongLogo\": true SOMENTE se havia uma logo real de referência e a logo na peça final é visivelmente diferente (cores, proporções, símbolo) — nunca marque true sem uma referência real.",
@@ -247,6 +248,7 @@ function buildVisualIntegrityPrompt(brandColors: readonly string[] | undefined):
     "- \"criticalOverlap\": true se um elemento comercial (preço, CTA, badge) sobrepõe de forma destrutiva um rosto, o produto principal ou outro elemento essencial.",
     "- \"compositionBroken\": true se a composição está visivelmente quebrada — elementos deformados, pillarboxing (barras vazias nas laterais), ou artefatos visuais graves.",
     "- \"colorPaletteViolated\": true SOMENTE se uma paleta oficial foi informada acima E a peça final claramente NÃO usa essas cores (ex.: fundo e cores predominantes totalmente diferentes do pedido, nenhuma cor da paleta aparece de forma reconhecível). Sem paleta oficial informada, responda sempre false — nunca microgerencie tom/saturação exatos, só a ausência clara da paleta inteira.",
+    "- \"unexpectedDecorativeText\": true se há QUALQUER texto, palavra, frase ou slogan na peça além do headline/subheadline/CTA — ex.: um título ou parágrafo decorativo extra desenhado no fundo, não pedido em nenhum lugar. Um texto extra sobrepondo o headline/CTA conta como este defeito (não como coincidência de posição).",
     "- Na dúvida, prefira false — este gate é para pegar defeitos ÓBVIOS, não para microgerenciar qualidade estética.",
   ].join("\n");
 }
@@ -292,6 +294,7 @@ export async function checkCreativeVisualIntegrity(
       criticalOverlap?: unknown;
       compositionBroken?: unknown;
       colorPaletteViolated?: unknown;
+      unexpectedDecorativeText?: unknown;
       reasoning?: unknown;
     };
     const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : undefined;
@@ -325,6 +328,20 @@ export async function checkCreativeVisualIntegrity(
     const hasBrandColors = Boolean(input.brandColors && input.brandColors.length > 0);
     if (hasBrandColors && parsed.colorPaletteViolated === true) {
       issues.push({ code: "COLOR_PALETTE_VIOLATED", message: reasoning ?? "A peça final não usa a paleta de cores oficial configurada para a marca.", source: "vision" });
+    }
+    // Achado ao vivo em produção: o modelo de imagem inventou um slogan/parágrafo decorativo
+    // extra no fundo (não pedido em nenhum lugar do plano), que ficou sobreposto ao headline
+    // renderizado — recorrência do mesmo defeito já visto antes, apesar da proibição explícita já
+    // existente no prompt de geração (instrução de prompt nunca é garantia). Critério dedicado
+    // (em vez de só cair em `textIllegibleOrCut`/`compositionBroken`, mensagens vagas que não
+    // dizem A CAUSA) dá ao diretor uma instrução de reparo específica e acionável: pare de
+    // desenhar texto que não foi pedido, em vez de adivinhar a partir de uma descrição genérica.
+    if (parsed.unexpectedDecorativeText === true) {
+      issues.push({
+        code: "UNEXPECTED_DECORATIVE_TEXT",
+        message: reasoning ?? "A peça contém texto/tipografia decorativa extra, não pedida em nenhum lugar do plano (só headline/subheadline/CTA/preço/desconto/URL/badge explicitamente definidos são permitidos).",
+        source: "vision",
+      });
     }
     return issues;
   } catch {

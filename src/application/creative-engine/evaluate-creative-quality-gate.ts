@@ -25,6 +25,7 @@ export const CREATIVE_QUALITY_ISSUE_CODES = [
   "COMPOSITION_BROKEN",
   "NON_PUBLISHABLE_SOURCE",
   "PRODUCTION_GUIDELINES_VIOLATED",
+  "COLOR_PALETTE_VIOLATED",
 ] as const;
 export type CreativeQualityIssueCode = (typeof CREATIVE_QUALITY_ISSUE_CODES)[number];
 
@@ -173,27 +174,47 @@ export function checkSafeAreaCompliance(plan: CreativePlan): CreativeQualityIssu
   return issues;
 }
 
-const VISUAL_INTEGRITY_PROMPT = [
-  "Avalie esta peça publicitária JÁ FINALIZADA (a imagem anexada) para defeitos GRAVES apenas — não julgue estética, apenas problemas objetivos que tornariam a peça inaceitável.",
-  "Responda APENAS com JSON válido, sem markdown, no formato exato:",
-  '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "compositionBroken": true|false, "reasoning": "1-2 frases objetivas"}',
-  "REGRAS:",
-  "- \"productMismatch\": true SOMENTE se havia uma foto de produto real de referência e o produto na peça final é claramente outro produto (nunca marque true sem uma referência real para comparar).",
-  "- \"wrongLogo\": true SOMENTE se havia uma logo real de referência e a logo na peça final é visivelmente diferente (cores, proporções, símbolo) — nunca marque true sem uma referência real.",
-  "- \"screenshotMischaracterized\": true SOMENTE se havia um screenshot real de referência e a interface mostrada na peça final não corresponde a ele (ex.: uma tela genérica/inventada no lugar do site real).",
-  "- \"textIllegibleOrCut\": true se algum texto principal (headline, CTA, preço) está cortado nas bordas, sobreposto de forma ilegível, ou com contraste tão baixo que não dá pra ler.",
-  "- \"elementCutOff\": true se qualquer elemento visual importante (produto, logo, dispositivo/mockup) está cortado de forma que perde informação essencial.",
-  "- \"criticalOverlap\": true se um elemento comercial (preço, CTA, badge) sobrepõe de forma destrutiva um rosto, o produto principal ou outro elemento essencial.",
-  "- \"compositionBroken\": true se a composição está visivelmente quebrada — elementos deformados, pillarboxing (barras vazias nas laterais), ou artefatos visuais graves.",
-  "- Na dúvida, prefira false — este gate é para pegar defeitos ÓBVIOS, não para microgerenciar qualidade estética.",
-].join("\n");
+/** Achado ao vivo em produção (cliente real): uma peça saiu com fundo branco e cores
+ * ciano/magenta quando a marca tem paleta configurada (preto/grafite + verde + amarelo) —
+ * passou pelo gate inteiro "limpa" porque nenhum critério de visão perguntava sobre cor. As
+ * cores oficiais só entram no prompt (e no schema pede o campo) quando `brandColors` vem
+ * preenchido — sem paleta configurada, a instrução explícita é sempre responder `false`, nunca
+ * inventar uma expectativa de cor que a marca não definiu. */
+function buildVisualIntegrityPrompt(brandColors: readonly string[] | undefined): string {
+  const colorsLine = brandColors && brandColors.length > 0
+    ? `Paleta de cores oficial configurada para esta marca: ${brandColors.join(", ")}.`
+    : "Nenhuma paleta de cores oficial foi configurada para esta marca.";
+  return [
+    "Avalie esta peça publicitária JÁ FINALIZADA (a imagem anexada) para defeitos GRAVES apenas — não julgue estética, apenas problemas objetivos que tornariam a peça inaceitável.",
+    colorsLine,
+    "Responda APENAS com JSON válido, sem markdown, no formato exato:",
+    '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "reasoning": "1-2 frases objetivas"}',
+    "REGRAS:",
+    "- \"productMismatch\": true SOMENTE se havia uma foto de produto real de referência e o produto na peça final é claramente outro produto (nunca marque true sem uma referência real para comparar).",
+    "- \"wrongLogo\": true SOMENTE se havia uma logo real de referência e a logo na peça final é visivelmente diferente (cores, proporções, símbolo) — nunca marque true sem uma referência real.",
+    "- \"screenshotMischaracterized\": true SOMENTE se havia um screenshot real de referência e a interface mostrada na peça final não corresponde a ele (ex.: uma tela genérica/inventada no lugar do site real).",
+    "- \"textIllegibleOrCut\": true se algum texto principal (headline, CTA, preço) está cortado nas bordas, sobreposto de forma ilegível, ou com contraste tão baixo que não dá pra ler.",
+    "- \"elementCutOff\": true se qualquer elemento visual importante (produto, logo, dispositivo/mockup) está cortado de forma que perde informação essencial.",
+    "- \"criticalOverlap\": true se um elemento comercial (preço, CTA, badge) sobrepõe de forma destrutiva um rosto, o produto principal ou outro elemento essencial.",
+    "- \"compositionBroken\": true se a composição está visivelmente quebrada — elementos deformados, pillarboxing (barras vazias nas laterais), ou artefatos visuais graves.",
+    "- \"colorPaletteViolated\": true SOMENTE se uma paleta oficial foi informada acima E a peça final claramente NÃO usa essas cores (ex.: fundo e cores predominantes totalmente diferentes do pedido, nenhuma cor da paleta aparece de forma reconhecível). Sem paleta oficial informada, responda sempre false — nunca microgerencie tom/saturação exatos, só a ausência clara da paleta inteira.",
+    "- Na dúvida, prefira false — este gate é para pegar defeitos ÓBVIOS, não para microgerenciar qualidade estética.",
+  ].join("\n");
+}
 
 /** Chamada de visão best-effort, UMA chamada cobrindo todos os critérios juntos (deliberadamente
  * mais barato que o motor legado, que faz 1 chamada por critério) — falha ou resposta ilegível
  * nunca reprova por conta própria, só um veredito EXPLÍCITO de defeito grave gera issue. */
 export async function checkCreativeVisualIntegrity(
   icaro: IcaroBrainPort,
-  input: { finalImageUrl: string; referenceProductImageUrl?: string; referenceLogoUrl?: string; referenceScreenshotUrl?: string; specialistId: string },
+  input: {
+    finalImageUrl: string;
+    referenceProductImageUrl?: string;
+    referenceLogoUrl?: string;
+    referenceScreenshotUrl?: string;
+    specialistId: string;
+    brandColors?: readonly string[];
+  },
 ): Promise<CreativeQualityIssue[]> {
   try {
     const referenceUrls = [input.referenceProductImageUrl, input.referenceLogoUrl, input.referenceScreenshotUrl].filter(
@@ -202,7 +223,7 @@ export async function checkCreativeVisualIntegrity(
     const imageUrls = [...referenceUrls, input.finalImageUrl];
     const response = await icaro.request({
       taskType: "review",
-      prompt: VISUAL_INTEGRITY_PROMPT,
+      prompt: buildVisualIntegrityPrompt(input.brandColors),
       specialistId: input.specialistId,
       imageUrls,
       expectedOutput: "json",
@@ -221,6 +242,7 @@ export async function checkCreativeVisualIntegrity(
       elementCutOff?: unknown;
       criticalOverlap?: unknown;
       compositionBroken?: unknown;
+      colorPaletteViolated?: unknown;
       reasoning?: unknown;
     };
     const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : undefined;
@@ -232,6 +254,13 @@ export async function checkCreativeVisualIntegrity(
     if (parsed.elementCutOff === true) issues.push({ code: "ELEMENT_CUT_OFF", message: reasoning ?? "Elemento visual importante cortado, perdendo informação essencial." });
     if (parsed.criticalOverlap === true) issues.push({ code: "CRITICAL_OVERLAP", message: reasoning ?? "Elemento comercial sobrepõe destrutivamente rosto/produto/outro elemento essencial." });
     if (parsed.compositionBroken === true) issues.push({ code: "COMPOSITION_BROKEN", message: reasoning ?? "Composição visivelmente quebrada." });
+    // Garantia no CÓDIGO, nunca só na instrução do prompt — sem paleta configurada, um "true"
+    // vindo da IA (alucinação, ou simplesmente não seguiu a instrução) nunca reprova por conta
+    // própria, mesmo que a peça já teste isso deliberadamente.
+    const hasBrandColors = Boolean(input.brandColors && input.brandColors.length > 0);
+    if (hasBrandColors && parsed.colorPaletteViolated === true) {
+      issues.push({ code: "COLOR_PALETTE_VIOLATED", message: reasoning ?? "A peça final não usa a paleta de cores oficial configurada para a marca." });
+    }
     return issues;
   } catch {
     return [];
@@ -355,6 +384,7 @@ export async function evaluateCreativeQualityGate(
     referenceLogoUrl,
     referenceScreenshotUrl,
     specialistId: input.specialistId,
+    brandColors: input.context.brandColors,
   });
   const productionGuidelinesIssues = await checkProductionGuidelinesCompliance(icaro, {
     context: input.context,

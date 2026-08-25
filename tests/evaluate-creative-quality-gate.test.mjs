@@ -210,6 +210,59 @@ test("checkProductionGuidelinesCompliance: best-effort — resposta 'failed' do 
   assert.deepEqual(issues, []);
 });
 
+// Achado ao vivo em produção: uma peça saiu com fundo branco e cores ciano/magenta quando a marca
+// tinha paleta configurada (preto/grafite + verde + amarelo) — passou pelo gate inteiro "limpa"
+// porque nenhum critério de visão perguntava sobre cor.
+
+test("checkCreativeVisualIntegrity: sem brandColors configurado, colorPaletteViolated=true no retorno da IA é ignorado (nunca reprova sem paleta oficial)", async () => {
+  const icaro = {
+    request: async () => ({ status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, colorPaletteViolated: true }) }),
+  };
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director" });
+  assert.deepEqual(issues, []);
+});
+
+test("checkCreativeVisualIntegrity: com brandColors configurado, veredito colorPaletteViolated=true vira COLOR_PALETTE_VIOLATED", async () => {
+  const icaro = {
+    request: async ({ prompt }) => {
+      assert.match(prompt, /preto, verde, amarelo/);
+      return { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, colorPaletteViolated: true, reasoning: "fundo branco, sem nenhuma cor da paleta" }) };
+    },
+  };
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", brandColors: ["preto", "verde", "amarelo"] });
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].code, "COLOR_PALETTE_VIOLATED");
+  assert.match(issues[0].message, /fundo branco/);
+});
+
+test("checkCreativeVisualIntegrity: com brandColors configurado, veredito 'false' não gera issue", async () => {
+  const icaro = {
+    request: async () => ({ status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, colorPaletteViolated: false }) }),
+  };
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", brandColors: ["preto", "verde"] });
+  assert.deepEqual(issues, []);
+});
+
+test("evaluateCreativeQualityGate: peça que ignora a paleta de cores configurada reprova o gate mesmo com tudo mais aprovado", async () => {
+  const icaro = {
+    request: async () => ({ status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, colorPaletteViolated: true, reasoning: "usa ciano e magenta, nenhuma cor da marca aparece" }) }),
+  };
+  const plan = basePlan();
+  const context = baseContext({ brandColors: ["preto", "verde", "amarelo"] });
+  const result = await evaluateCreativeQualityGate(icaro, {
+    finalImageUrl: "https://x/final.jpg",
+    finalImageWidth: 1080,
+    finalImageHeight: 1350,
+    expectedAspectRatio: "4:5",
+    compositedAssetRoles: [],
+    context,
+    plan,
+    specialistId: "gpt-creative-director",
+  });
+  assert.equal(result.verdict, "fail");
+  assert.ok(result.issues.some((issue) => issue.code === "COLOR_PALETTE_VIOLATED"));
+});
+
 test("evaluateCreativeQualityGate: orquestra as três camadas (determinística + fatos + visão)", async () => {
   const icaro = {
     request: async () => ({ status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }) }),

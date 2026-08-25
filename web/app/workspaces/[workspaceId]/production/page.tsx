@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/Button";
-import { Card, CardBody, CardHeader } from "@/components/Card";
 import { Input, Label, Textarea } from "@/components/Field";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -265,6 +264,10 @@ export default function ProductionLinePage() {
   const [ideaFiltersOpen, setIdeaFiltersOpen] = useState(false);
   const [draftIdea, setDraftIdea] = useState<ContentBlueprint | null>(null);
   const [ideaEditorOpen, setIdeaEditorOpen] = useState(false);
+  // A aba Tanque é só as ideias — configurar a rotina automática (regras, horários, canais) é
+  // uma tarefa ocasional, não algo pra olhar toda vez que se quer ver/gerar uma ideia. Fica atrás
+  // deste botão, nunca aberto por padrão.
+  const [routineDialogOpen, setRoutineDialogOpen] = useState(false);
   // Geração disparada direto do tanque ("Gerar agora"/"Salvar e gerar agora") — nunca bloqueia a
   // tela: só acompanha qual ideia está em voo pra desabilitar a linha certa e mostrar "Gerando…".
   const [generatingIdeaId, setGeneratingIdeaId] = useState<string | null>(null);
@@ -575,119 +578,95 @@ export default function ProductionLinePage() {
 
         <PromptSetupCard workspaceId={workspace.id} hasGuidelines={hasGuidelines} compact={false} />
 
-        <Card className="mb-4">
-          <CardHeader>
-            <div>
-              <p className="text-sm font-semibold text-ink">Rotina automática</p>
-              <p className="text-xs text-ink-muted">Onde publicar, em quais horários, e o tanque de ideias que abastece a agenda.</p>
-            </div>
-            <Button onClick={addRule}>Nova regra</Button>
-          </CardHeader>
-          <CardBody>
-            <div className="mb-4 flex flex-wrap gap-2">
-              {config.postingRules.map((rule) => (
-                <button
-                  key={rule.id}
-                  type="button"
-                  onClick={() => setSelectedRuleId(rule.id)}
-                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                    selectedRule?.id === rule.id ? "border-ink-faint bg-surface-sunken text-ink" : "border-border bg-surface hover:bg-surface-sunken"
-                  }`}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold text-ink">Tanque de ideias</p>
+            <p className="text-xs text-ink-muted">Estoque de ideias para a rotina sortear — ou gere qualquer uma agora mesmo, sem esperar.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setRoutineDialogOpen(true)}>Configurar rotina</Button>
+            <Button onClick={addBlueprint}><span aria-hidden="true">+</span> {draftIdea ? "Continuar rascunho" : "Nova ideia"}</Button>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <input
+            type="search"
+            value={ideaSearch}
+            onChange={(event) => setIdeaSearch(event.target.value)}
+            placeholder="Buscar ideias"
+            className="min-h-10 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft sm:max-w-sm"
+          />
+          <Button variant="secondary" onClick={() => setIdeaFiltersOpen((open) => !open)}>
+            Filtros{activeIdeaFilterCount > 0 ? ` (${activeIdeaFilterCount})` : ""}
+          </Button>
+        </div>
+        {ideaFiltersOpen ? (
+          <div className="mt-3 rounded-lg border border-border bg-surface-sunken p-3">
+            <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-ink-muted">Status</p>
+                <SegmentedFilter value={ideaStatusFilter} options={IDEA_STATUS_FILTERS} onChange={setIdeaStatusFilter} />
+              </div>
+              <label className="flex items-center gap-2 text-xs text-ink-muted">
+                Formato
+                <select
+                  value={formatFilter}
+                  onChange={(event) => setFormatFilter(event.target.value as ProductionFormat | "all")}
+                  className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs font-medium text-ink outline-none focus:border-accent"
                 >
-                  {rule.name}
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(300px,0.5fr)]">
-              {selectedRule ? (
-                <ScheduleBuilder
-                  rule={selectedRule}
-                  ideas={routineBlueprints}
-                  onRuleChange={(patch) => updateRule(selectedRule.id, patch)}
-                  onWeeklyMixChange={(itemId, patch) => updateWeeklyMix(selectedRule, itemId, patch)}
-                  onRemove={() => removeRule(selectedRule.id)}
-                  canRemove={config.postingRules.length > 1}
-                />
-              ) : null}
-              {selectedRule ? <SchedulePreview rule={selectedRule} ideas={routineBlueprints} /> : null}
-            </div>
-
-            <div className="mt-5 border-t border-border pt-4">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-ink">Tanque de ideias</p>
-                  <p className="text-xs text-ink-muted">Estoque de ideias para a rotina sortear — ou gere qualquer uma agora mesmo, sem esperar.</p>
-                </div>
-                <Button variant="secondary" onClick={addBlueprint}><span aria-hidden="true">+</span> {draftIdea ? "Continuar rascunho" : "Nova ideia"}</Button>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <input
-                  type="search"
-                  value={ideaSearch}
-                  onChange={(event) => setIdeaSearch(event.target.value)}
-                  placeholder="Buscar ideias"
-                  className="min-h-10 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft sm:max-w-sm"
-                />
-                <Button variant="secondary" onClick={() => setIdeaFiltersOpen((open) => !open)}>
-                  Filtros{activeIdeaFilterCount > 0 ? ` (${activeIdeaFilterCount})` : ""}
+                  <option value="all">Todos</option>
+                  {FORMATS.map((format) => (
+                    <option key={format} value={format}>{FORMAT_LABEL[format]}</option>
+                  ))}
+                </select>
+              </label>
+              {activeIdeaFilterCount > 0 ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setIdeaStatusFilter("all");
+                    setFormatFilter("all");
+                  }}
+                >
+                  Limpar filtros
                 </Button>
-              </div>
-              {ideaFiltersOpen ? (
-                <div className="mt-3 rounded-lg border border-border bg-surface-sunken p-3">
-                  <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
-                    <div>
-                      <p className="mb-1.5 text-xs font-medium text-ink-muted">Status</p>
-                      <SegmentedFilter value={ideaStatusFilter} options={IDEA_STATUS_FILTERS} onChange={setIdeaStatusFilter} />
-                    </div>
-                    <label className="flex items-center gap-2 text-xs text-ink-muted">
-                      Formato
-                      <select
-                        value={formatFilter}
-                        onChange={(event) => setFormatFilter(event.target.value as ProductionFormat | "all")}
-                        className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs font-medium text-ink outline-none focus:border-accent"
-                      >
-                        <option value="all">Todos</option>
-                        {FORMATS.map((format) => (
-                          <option key={format} value={format}>{FORMAT_LABEL[format]}</option>
-                        ))}
-                      </select>
-                    </label>
-                    {activeIdeaFilterCount > 0 ? (
-                      <Button
-                        variant="ghost"
-                        onClick={() => {
-                          setIdeaStatusFilter("all");
-                          setFormatFilter("all");
-                        }}
-                      >
-                        Limpar filtros
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
               ) : null}
-              {generateIdeaError ? <p className="mt-3 text-sm text-danger">{generateIdeaError}</p> : null}
-              <IdeaInventory
-                ideas={visibleBlueprints}
-                totalIdeas={config.blueprints.length}
-                selectedId={selectedBlueprint?.id}
-                emptyCount={emptyIdeas.length}
-                generatingIdeaId={generatingIdeaId}
-                activeGenerationIdeaIds={activeGenerationIdeaIds}
-                onOpen={openBlueprint}
-                onToggleStatus={toggleBlueprintStatus}
-                onRemove={removeBlueprint}
-                onCleanEmpty={removeEmptyIdeas}
-                onGenerate={triggerGeneration}
-              />
             </div>
+          </div>
+        ) : null}
+        {generateIdeaError ? <p className="mt-3 text-sm text-danger">{generateIdeaError}</p> : null}
+        <IdeaInventory
+          ideas={visibleBlueprints}
+          totalIdeas={config.blueprints.length}
+          selectedId={selectedBlueprint?.id}
+          emptyCount={emptyIdeas.length}
+          generatingIdeaId={generatingIdeaId}
+          activeGenerationIdeaIds={activeGenerationIdeaIds}
+          onOpen={openBlueprint}
+          onToggleStatus={toggleBlueprintStatus}
+          onRemove={removeBlueprint}
+          onCleanEmpty={removeEmptyIdeas}
+          onGenerate={triggerGeneration}
+        />
 
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-              <p className="text-xs text-ink-muted">{saveFeedback ?? (savedAt ? `Último salvamento: ${savedAt}` : "Revise a rotina e salve quando terminar.")}</p>
-              <Button onClick={saveCurrentConfig}>{saveFeedback ? "Salvo" : "Salvar rotina"}</Button>
-            </div>
-          </CardBody>
-        </Card>
+        {routineDialogOpen ? (
+          <RoutineConfigDialog
+            config={config}
+            selectedRule={selectedRule}
+            routineBlueprints={routineBlueprints}
+            saveFeedback={saveFeedback}
+            savedAt={savedAt}
+            onSelectRule={setSelectedRuleId}
+            onAddRule={addRule}
+            onRuleChange={(patch) => selectedRule && updateRule(selectedRule.id, patch)}
+            onWeeklyMixChange={(itemId, patch) => selectedRule && updateWeeklyMix(selectedRule, itemId, patch)}
+            onRemoveRule={() => selectedRule && removeRule(selectedRule.id)}
+            canRemoveRule={config.postingRules.length > 1}
+            onSave={saveCurrentConfig}
+            onClose={() => setRoutineDialogOpen(false)}
+          />
+        ) : null}
 
         {ideaEditorOpen && selectedBlueprint ? (
           <IdeaFormDialog
@@ -940,6 +919,98 @@ function PromptSetupCard({ workspaceId, hasGuidelines, compact }: { workspaceId:
           <Button variant={hasGuidelines ? "secondary" : "primary"}>{hasGuidelines ? "Editar prompt" : "Configurar prompt da IA"}</Button>
         </Link>
       </div>
+    </div>
+  );
+}
+
+/** Configuração da rotina automática (regras, horários, canais) — deliberadamente atrás de um
+ * botão, nunca aberta por padrão. A aba Tanque é pra olhar/gerar ideias; configurar quando/onde
+ * elas são sorteadas é uma tarefa ocasional, não algo que devesse competir por espaço toda vez. */
+function RoutineConfigDialog({
+  config,
+  selectedRule,
+  routineBlueprints,
+  saveFeedback,
+  savedAt,
+  onSelectRule,
+  onAddRule,
+  onRuleChange,
+  onWeeklyMixChange,
+  onRemoveRule,
+  canRemoveRule,
+  onSave,
+  onClose,
+}: {
+  config: ProductionLineConfig;
+  selectedRule: PostingRule | undefined;
+  routineBlueprints: ContentBlueprint[];
+  saveFeedback: string | null;
+  savedAt: string | null;
+  onSelectRule: (id: string) => void;
+  onAddRule: () => void;
+  onRuleChange: (patch: Partial<PostingRule>) => void;
+  onWeeklyMixChange: (itemId: string, patch: Partial<WeeklyFormatQuota>) => void;
+  onRemoveRule: () => void;
+  canRemoveRule: boolean;
+  onSave: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-3 py-3 sm:items-center sm:py-6">
+      <section className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-border bg-surface-raised shadow-xl">
+        <header className="border-b border-border bg-surface-raised px-4 py-3 sm:px-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-accent">Rotina automática</p>
+              <h2 className="mt-1 text-lg font-semibold text-ink">Onde publicar, em quais horários, e o tanque que abastece a agenda</h2>
+            </div>
+            <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-xl leading-none text-ink-muted hover:bg-surface-sunken hover:text-ink" aria-label="Fechar">
+              x
+            </button>
+          </div>
+        </header>
+
+        <div className="overflow-y-auto bg-surface-raised px-4 py-4 sm:px-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
+              {config.postingRules.map((rule) => (
+                <button
+                  key={rule.id}
+                  type="button"
+                  onClick={() => onSelectRule(rule.id)}
+                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    selectedRule?.id === rule.id ? "border-ink-faint bg-surface-sunken text-ink" : "border-border bg-surface hover:bg-surface-sunken"
+                  }`}
+                >
+                  {rule.name}
+                </button>
+              ))}
+            </div>
+            <Button variant="secondary" onClick={onAddRule}>Nova regra</Button>
+          </div>
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(300px,0.5fr)]">
+            {selectedRule ? (
+              <ScheduleBuilder
+                rule={selectedRule}
+                ideas={routineBlueprints}
+                onRuleChange={onRuleChange}
+                onWeeklyMixChange={onWeeklyMixChange}
+                onRemove={onRemoveRule}
+                canRemove={canRemoveRule}
+              />
+            ) : null}
+            {selectedRule ? <SchedulePreview rule={selectedRule} ideas={routineBlueprints} /> : null}
+          </div>
+        </div>
+
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface-raised px-4 py-3 sm:px-5">
+          <p className="text-xs text-ink-muted">{saveFeedback ?? (savedAt ? `Último salvamento: ${savedAt}` : "Revise a rotina e salve quando terminar.")}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={onClose}>Fechar</Button>
+            <Button onClick={onSave}>{saveFeedback ? "Salvo" : "Salvar rotina"}</Button>
+          </div>
+        </footer>
+      </section>
     </div>
   );
 }

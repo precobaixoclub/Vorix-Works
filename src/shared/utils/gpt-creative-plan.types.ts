@@ -523,6 +523,14 @@ export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: 
   ];
   if (plan.subheadline) lines.push(textZoneDrawInstruction(subheadlineZone, "Subheadline", plan.subheadline, ""));
   lines.push(textZoneDrawInstruction(ctaZone, "CTA", plan.cta, ""));
+  // Achado ao vivo em produção: mesmo com headline/subheadline corretamente desenhados pelo
+  // renderer determinístico (sem corte, com contraste garantido), o modelo de imagem ainda
+  // inventou uma tipografia decorativa GIGANTE por conta própria no fundo (um slogan diferente,
+  // não pedido em nenhum lugar do plano) — que ficou sobreposta ao box do headline. Nada até aqui
+  // proibia o modelo de adicionar texto extra além do que foi explicitamente pedido.
+  lines.push(
+    "NUNCA adicione nenhum texto, palavra, frase ou tipografia decorativa além dos elementos explicitamente pedidos acima (headline, subheadline, CTA e outros listados nos elementos obrigatórios) — nenhum slogan, grafismo tipográfico ou letra extra no fundo ou em qualquer parte da composição.",
+  );
   if (plan.requiredElements.length > 0) lines.push(`Elementos obrigatórios na composição: ${plan.requiredElements.join(", ")}.`);
   if (plan.forbiddenElements.length > 0) lines.push(`NUNCA incluir: ${plan.forbiddenElements.join(", ")}.`);
   lines.push(`Densidade visual desejada: ${plan.visualDensity}.`);

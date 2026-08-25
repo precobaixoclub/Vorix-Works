@@ -247,6 +247,18 @@ test("buildImageGenerationPromptFromPlan: sem brandColors configurado, não menc
   assert.doesNotMatch(imagePrompt, /PALETA DE CORES/);
 });
 
+// Achado ao vivo em produção: mesmo com headline/subheadline corretamente desenhados pelo
+// renderer (sem corte, com contraste garantido), o modelo de imagem ainda inventou uma tipografia
+// decorativa gigante por conta própria no fundo (um slogan diferente, não pedido em nenhum lugar
+// do plano) — sobrepondo o box do headline. Nada proibia o modelo de adicionar texto extra.
+
+test("buildImageGenerationPromptFromPlan: sempre proíbe o modelo de adicionar texto/tipografia decorativa extra além do que foi pedido", () => {
+  const context = sampleContext();
+  const plan = parseCreativePlan(samplePlanJson());
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+  assert.match(imagePrompt, /NUNCA adicione nenhum texto, palavra, frase ou tipografia decorativa além dos elementos explicitamente pedidos/);
+});
+
 test("buildImageGenerationPromptFromPlan: sempre instrui alto contraste entre texto e fundo", () => {
   const context = sampleContext();
   const plan = parseCreativePlan(samplePlanJson());

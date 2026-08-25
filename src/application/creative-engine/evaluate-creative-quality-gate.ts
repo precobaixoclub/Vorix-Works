@@ -26,6 +26,7 @@ export const CREATIVE_QUALITY_ISSUE_CODES = [
   "NON_PUBLISHABLE_SOURCE",
   "PRODUCTION_GUIDELINES_VIOLATED",
   "COLOR_PALETTE_VIOLATED",
+  "TEXT_ZONE_OVERLAPS_ASSET",
 ] as const;
 export type CreativeQualityIssueCode = (typeof CREATIVE_QUALITY_ISSUE_CODES)[number];
 
@@ -186,6 +187,38 @@ export function checkSafeAreaCompliance(plan: CreativePlan): CreativeQualityIssu
       message: `Zona de texto "${zone.kind}" (x=${zone.rect.xPct}%, y=${zone.rect.yPct}%, largura=${zone.rect.widthPct}%, altura=${zone.rect.heightPct}%) toca ou ultrapassa a margem de segurança do canvas (${SAFE_AREA_MARGIN_PCT}%) — risco real de corte na borda.`,
       source: "safe_area",
     });
+  }
+  return issues;
+}
+
+function rectsOverlap(a: CreativePlanRect, b: CreativePlanRect): boolean {
+  return a.xPct < b.xPct + b.widthPct && a.xPct + a.widthPct > b.xPct && a.yPct < b.yPct + b.heightPct && a.yPct + a.heightPct > b.yPct;
+}
+
+/**
+ * Achado ao vivo em produção: o retângulo do headline (textZone) e o retângulo da logo
+ * (assetPlacement) se sobrepunham geometricamente no MESMO plano — a caixa semi-opaca do headline
+ * cobria parte da logo. A visão flagrou o SINTOMA por 3 rodadas seguidas ("texto sobreposto por
+ * fundo escuro"), sempre com a mesma redação vaga, porque nunca sabia DIZER qual zona colide com
+ * qual asset — cada `gpt_replan` repetia a mesma colisão, sem instrução acionável pra corrigir.
+ * Checagem puramente geométrica (mesmo princípio de `checkSafeAreaCompliance`, sem custo de IA),
+ * que nomeia a colisão exata — o diretor recebe uma instrução concreta ("retângulo X sobrepõe
+ * retângulo Y") na próxima rodada, em vez de adivinhar a partir de uma descrição vaga.
+ * `TEXT_ZONE_OVERLAPS_ASSET` é deliberadamente excluído de `RENDERER_REFLOW_CODES`
+ * (`creative-repair.ts`) — reflow só ajusta `fontScale` dentro do MESMO retângulo, nunca reposiciona
+ * a zona; só uma nova decisão de geometria (`gpt_replan`) resolve uma colisão de posição real.
+ */
+export function checkAssetPlacementOverlap(plan: CreativePlan): CreativeQualityIssue[] {
+  const issues: CreativeQualityIssue[] = [];
+  for (const zone of plan.textZones) {
+    for (const placement of plan.assetPlacements) {
+      if (!rectsOverlap(zone.rect, placement.rect)) continue;
+      issues.push({
+        code: "TEXT_ZONE_OVERLAPS_ASSET",
+        message: `Zona de texto "${zone.kind}" (x=${zone.rect.xPct}%-${zone.rect.xPct + zone.rect.widthPct}%, y=${zone.rect.yPct}%-${zone.rect.yPct + zone.rect.heightPct}%) se sobrepõe ao asset "${placement.role}" (x=${placement.rect.xPct}%-${placement.rect.xPct + placement.rect.widthPct}%, y=${placement.rect.yPct}%-${placement.rect.yPct + placement.rect.heightPct}%) — ajuste um dos dois retângulos para eles nunca se tocarem.`,
+        source: "safe_area",
+      });
+    }
   }
   return issues;
 }
@@ -406,6 +439,7 @@ export async function evaluateCreativeQualityGate(
 
   const commercialFactIssues = checkCommercialFactIntegrity(input.plan, input.context);
   const safeAreaIssues = checkSafeAreaCompliance(input.plan);
+  const assetPlacementOverlapIssues = checkAssetPlacementOverlap(input.plan);
 
   const referenceProductImageUrl = input.context.assets.find((asset) => asset.role === "product_photo")?.url;
   const referenceLogoUrl = input.context.assets.find((asset) => asset.role === "logo")?.url;
@@ -424,5 +458,5 @@ export async function evaluateCreativeQualityGate(
     specialistId: input.specialistId,
   });
 
-  return combineCreativeQualityIssues(deterministicIssues, commercialFactIssues, safeAreaIssues, visualIssues, productionGuidelinesIssues);
+  return combineCreativeQualityIssues(deterministicIssues, commercialFactIssues, safeAreaIssues, assetPlacementOverlapIssues, visualIssues, productionGuidelinesIssues);
 }

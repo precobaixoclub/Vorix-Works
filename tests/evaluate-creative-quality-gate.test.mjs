@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  checkAssetPlacementOverlap,
   checkCommercialFactIntegrity,
   checkCreativeVisualIntegrity,
   checkProductionGuidelinesCompliance,
@@ -382,6 +383,41 @@ test("checkSafeAreaCompliance: várias zonas violando ao mesmo tempo produzem um
     ],
   });
   assert.equal(checkSafeAreaCompliance(plan).length, 2);
+});
+
+// Achado ao vivo em produção: o retângulo do headline (textZone) e o retângulo da logo
+// (assetPlacement) se sobrepunham no mesmo plano real — a caixa semi-opaca do headline cobria
+// parte da logo. A visão flagrou o sintoma vagamente por 3 rodadas seguidas ("texto sobreposto
+// por fundo escuro"), sem nunca dizer QUAL zona colide com QUAL asset, então o diretor repetia a
+// mesma colisão a cada gpt_replan. Geometria exata, sem custo de IA — mesmo princípio de
+// checkSafeAreaCompliance.
+
+test("checkAssetPlacementOverlap: headline e logo com retângulos sobrepostos (caso real de produção) vira TEXT_ZONE_OVERLAPS_ASSET", () => {
+  const plan = basePlan({
+    textZones: [{ kind: "headline", text: "TODAS AS OFERTAS EM UM SÓ SITE", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" }],
+    assetPlacements: [{ role: "logo", url: "https://x/logo.png", rect: { xPct: 5, yPct: 5, widthPct: 30, heightPct: 15 }, frame: "none", treatment: "original" }],
+  });
+  const issues = checkAssetPlacementOverlap(plan);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].code, "TEXT_ZONE_OVERLAPS_ASSET");
+  assert.match(issues[0].message, /headline/);
+  assert.match(issues[0].message, /logo/);
+});
+
+test("checkAssetPlacementOverlap: retângulos que não se tocam não geram issue", () => {
+  const plan = basePlan({
+    textZones: [{ kind: "headline", text: "OFERTA", rect: { xPct: 40, yPct: 10, widthPct: 50, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" }],
+    assetPlacements: [{ role: "logo", url: "https://x/logo.png", rect: { xPct: 5, yPct: 5, widthPct: 30, heightPct: 15 }, frame: "none", treatment: "original" }],
+  });
+  assert.deepEqual(checkAssetPlacementOverlap(plan), []);
+});
+
+test("checkAssetPlacementOverlap: sem nenhum assetPlacement, nunca gera issue", () => {
+  const plan = basePlan({
+    textZones: [{ kind: "headline", text: "OFERTA", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" }],
+    assetPlacements: [],
+  });
+  assert.deepEqual(checkAssetPlacementOverlap(plan), []);
 });
 
 test("evaluateCreativeQualityGate: violação de safe area reprova o gate (fail) mesmo quando o check de visão aprova tudo", async () => {

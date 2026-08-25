@@ -338,6 +338,10 @@ export function buildCreativePlanPrompt(context: CreativeContext): string {
     // pra caber no retângulo. Virou o padrão pra TODO texto principal, não só factual.
     "- `textZones`: para headline/subheadline/CTA/preço/desconto/URL/badge que devem aparecer na peça, defina o retângulo exato e se você (o modelo de imagem) vai desenhar o texto (`renderedBy: \"image_model\"`) ou se um renderer determinístico vai desenhá-lo depois com legibilidade perfeita e SEM risco de cortar nas bordas (`renderedBy: \"renderer\"`) — PREFIRA `\"renderer\"` para TODO texto principal (headline, subheadline, CTA, preço, desconto, URL, badge) por padrão. Só use `\"image_model\"` quando o texto for parte física e pequena de um cenário real dentro da composição (ex.: uma placa/vitrine ao fundo da cena), nunca para o headline/CTA principal da peça.",
     "- Todo texto que você (modelo de imagem) desenhar precisa ter ALTO CONTRASTE com o fundo exato onde ele cai — nunca texto claro sobre fundo claro, nem texto escuro sobre fundo escuro. Se a área por trás do texto for de tom duvidoso, adicione um leve escurecimento/scrim ou uma cor de texto claramente oposta, nunca arrisque legibilidade.",
+    // Achado ao vivo em produção: o retângulo do headline e o retângulo da logo se sobrepunham no
+    // mesmo plano (a caixa do headline cobria parte da logo) — nenhuma regra proibia isso
+    // explicitamente antes.
+    "- O retângulo de NENHUMA `textZone` pode se sobrepor ao retângulo de NENHUM `assetPlacement` (logo, produto, screenshot) — antes de responder, confira se os dois conjuntos de retângulos nunca se tocam.",
     "",
     "Responda APENAS com JSON válido, sem markdown, no formato exato:",
     CREATIVE_PLAN_RESPONSE_SCHEMA_HINT,

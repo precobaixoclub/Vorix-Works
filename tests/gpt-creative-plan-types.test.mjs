@@ -93,6 +93,14 @@ test("buildCreativePlanPrompt: instrui preferir renderedBy='renderer' por padrã
   assert.match(prompt, /nunca para o headline\/CTA principal da peça/);
 });
 
+// Achado ao vivo em produção: o retângulo do headline e o retângulo da logo se sobrepunham no
+// mesmo plano real — nada proibia explicitamente essa colisão entre textZones e assetPlacements.
+
+test("buildCreativePlanPrompt: proíbe explicitamente o retângulo de uma textZone se sobrepor ao retângulo de um assetPlacement", () => {
+  const prompt = buildCreativePlanPrompt(sampleContext());
+  assert.match(prompt, /retângulo de NENHUMA `textZone` pode se sobrepor ao retângulo de NENHUM `assetPlacement`/);
+});
+
 test("buildCreativePlanPrompt: descreve o papel de cada asset (produto real vs. screenshot vs. logo)", () => {
   const prompt = buildCreativePlanPrompt(
     sampleContext({

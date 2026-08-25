@@ -45,13 +45,21 @@ type ClassifiedAIError = {
   retryable: boolean;
 };
 
-class SequentialIcaroIdGenerator implements IcaroIdGenerator {
-  private nextNumber = 1;
-
+/**
+ * Achado ao vivo em produção: o gerador anterior era um contador sequencial em memória
+ * (`prefix-0001`, `prefix-0002`, ...), único apenas DENTRO do processo atual — reinicia do zero a
+ * cada restart do container (todo deploy). `icaro_ai_call_errors.id`/`icaro_ai_calls.id` são
+ * chave primária em Postgres, que sobrevive ao restart; a primeira chamada `Error`/`Timeout` (ou
+ * o primeiro custo registrado) depois de qualquer redeploy colidia com uma linha já gravada numa
+ * vida anterior do processo com o mesmo número baixo, e o `INSERT` falhava com `duplicate key
+ * value violates unique constraint` — derrubando o registro em segundo plano da geração inteira e
+ * deixando a execução travada em "running" pra sempre, sem nenhum erro visível pro usuário. Mesmo
+ * padrão de `defaultRuntimeIdGenerator` (`container.ts`) — timestamp + sufixo aleatório — nunca
+ * colide entre processos/restarts.
+ */
+class DefaultIcaroIdGenerator implements IcaroIdGenerator {
   create(prefix: string): string {
-    const id = `${prefix}-${String(this.nextNumber).padStart(4, "0")}`;
-    this.nextNumber += 1;
-    return id;
+    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
 }
 
@@ -105,7 +113,7 @@ export class IcaroAIBrain implements IcaroBrainPort {
       enabled: dependencies.cachePolicy?.enabled ?? false,
       ttlSeconds: dependencies.cachePolicy?.ttlSeconds,
     };
-    this.idGenerator = dependencies.idGenerator ?? new SequentialIcaroIdGenerator();
+    this.idGenerator = dependencies.idGenerator ?? new DefaultIcaroIdGenerator();
     this.now = dependencies.now ?? (() => new Date());
   }
 

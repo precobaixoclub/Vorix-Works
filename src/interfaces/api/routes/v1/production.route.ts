@@ -144,8 +144,24 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
     // roda por conta própria depois que a resposta HTTP já voltou. Erro aqui só pode ser
     // logado, nunca propagado (a resposta já foi decidida) — o estado final sempre fica visível
     // via `GET /execution-runs/:id`, que é a única fonte de verdade que o cliente consulta.
-    startExecution(deps, { tenantId: principal.tenantId, workspaceId: body.workspaceId, id: run.id }).catch((error) => {
+    //
+    // Achado ao vivo em produção: um erro NESTE catch (ex.: colisão de id do
+    // `PostgresIcaroLogger`, já corrigida na origem, mas qualquer outra falha antes do pipeline
+    // ter chance de marcar sua própria tarefa como "failed" tem o mesmo efeito) só era logado —
+    // a run ficava travada em "running"/"created" para sempre, sem nenhum jeito de o usuário
+    // saber ou tentar de novo. `replaceRunState` aqui é a rede de segurança: sobrescreve
+    // incondicionalmente (nunca falha por otimistic-lock, propositalmente — é o último recurso)
+    // pra "failed", e é ela mesma best-effort (nunca pode lançar por cima do catch original).
+    startExecution(deps, { tenantId: principal.tenantId, workspaceId: body.workspaceId, id: run.id }).catch(async (error) => {
       request.log.error({ err: error instanceof Error ? error.message : String(error), executionRunId: run.id }, "Falha ao iniciar execução de produção em background.");
+      try {
+        await deps.executionRepository.replaceRunState({ id: run.id, state: "failed", finishedAt: new Date().toISOString() });
+      } catch (reapError) {
+        request.log.error(
+          { err: reapError instanceof Error ? reapError.message : String(reapError), executionRunId: run.id },
+          "Não foi possível marcar a execução travada como falha (rede de segurança).",
+        );
+      }
     });
 
     return successEnvelope({ executionRunId: run.id, state: "running" as const }, request.id);

@@ -1,5 +1,21 @@
 import { apiClient } from "@/lib/api-client";
-import type { MetaAdAccount, MetaAdCampaignSyncResult, MetaAdCampaignTree, MetaAdsOAuthBegin, MetaAdsOAuthComplete, MetaAdsOAuthStatus } from "./types";
+import type {
+  CreateMetaAdCampaignInput,
+  CreateMetaAdInput,
+  CreateMetaAdSetInput,
+  MetaAdAccount,
+  MetaAdCampaign,
+  MetaAdCampaignSyncResult,
+  MetaAdCampaignTree,
+  MetaAdEntity,
+  MetaAdSet,
+  MetaAdsOAuthBegin,
+  MetaAdsOAuthComplete,
+  MetaAdsOAuthStatus,
+  UpdateMetaAdCampaignInput,
+  UpdateMetaAdInput,
+  UpdateMetaAdSetInput,
+} from "./types";
 
 export function getMetaAdsOAuthStatus(workspaceId: string): Promise<MetaAdsOAuthStatus> {
   return apiClient.get<MetaAdsOAuthStatus>(`/v1/meta-ads/oauth/status?workspaceId=${encodeURIComponent(workspaceId)}`);
@@ -32,4 +48,30 @@ export function getMetaAdCampaignTree(workspaceId: string, adAccountId?: string)
 
 export function syncMetaAdCampaigns(workspaceId: string, adAccountId: string): Promise<MetaAdCampaignSyncResult> {
   return apiClient.post<MetaAdCampaignSyncResult>("/v1/meta-ads/campaigns/sync", { workspaceId, adAccountId });
+}
+
+// --- Fase 3: criação e edição -----------------------------------------------------------------
+
+export function createMetaAdCampaign(workspaceId: string, input: CreateMetaAdCampaignInput): Promise<MetaAdCampaign> {
+  return apiClient.post<MetaAdCampaign>("/v1/meta-ads/campaigns", { workspaceId, ...input });
+}
+
+export function updateMetaAdCampaign(workspaceId: string, id: string, input: UpdateMetaAdCampaignInput): Promise<MetaAdCampaign> {
+  return apiClient.patch<MetaAdCampaign>(`/v1/meta-ads/campaigns/${encodeURIComponent(id)}`, { workspaceId, ...input });
+}
+
+export function createMetaAdSet(workspaceId: string, input: CreateMetaAdSetInput): Promise<MetaAdSet> {
+  return apiClient.post<MetaAdSet>("/v1/meta-ads/adsets", { workspaceId, ...input });
+}
+
+export function updateMetaAdSet(workspaceId: string, id: string, input: UpdateMetaAdSetInput): Promise<MetaAdSet> {
+  return apiClient.patch<MetaAdSet>(`/v1/meta-ads/adsets/${encodeURIComponent(id)}`, { workspaceId, ...input });
+}
+
+export function createMetaAd(workspaceId: string, input: CreateMetaAdInput): Promise<MetaAdEntity> {
+  return apiClient.post<MetaAdEntity>("/v1/meta-ads/ads", { workspaceId, ...input });
+}
+
+export function updateMetaAd(workspaceId: string, id: string, input: UpdateMetaAdInput): Promise<MetaAdEntity> {
+  return apiClient.patch<MetaAdEntity>(`/v1/meta-ads/ads/${encodeURIComponent(id)}`, { workspaceId, ...input });
 }

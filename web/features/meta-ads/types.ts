@@ -106,6 +106,65 @@ export type MetaAdCampaignTree = {
 
 export type MetaAdCampaignSyncResult = { campaignsSynced: number; adSetsSynced: number; adsSynced: number };
 
+/** Fase 3 — criação e edição. Toda entidade criada nasce PAUSADA; ativar é sempre uma chamada
+ * separada de update com `status: "ACTIVE"`. */
+export type CreateMetaAdCampaignInput = {
+  adAccountId: string;
+  name: string;
+  objective: string;
+  specialAdCategories?: readonly string[];
+  dailyBudget?: number;
+  lifetimeBudget?: number;
+  buyingType?: string;
+};
+
+export type UpdateMetaAdCampaignInput = {
+  name?: string;
+  status?: "ACTIVE" | "PAUSED";
+  dailyBudget?: number;
+  lifetimeBudget?: number;
+};
+
+export type SimpleTargeting = { geoCountries: readonly string[]; ageMin?: number; ageMax?: number; genders?: readonly number[] };
+
+export type CreateMetaAdSetInput = {
+  campaignId: string;
+  name: string;
+  optimizationGoal: string;
+  billingEvent: string;
+  dailyBudget?: number;
+  lifetimeBudget?: number;
+  bidAmount?: number;
+  targeting: SimpleTargeting;
+};
+
+export type UpdateMetaAdSetInput = {
+  name?: string;
+  status?: "ACTIVE" | "PAUSED";
+  dailyBudget?: number;
+  lifetimeBudget?: number;
+  bidAmount?: number;
+};
+
+export type CreateMetaAdInput = {
+  adSetId: string;
+  name: string;
+  pageId: string;
+  creative: {
+    link: string;
+    message?: string;
+    headline?: string;
+    description?: string;
+    imageUrl?: string;
+    callToActionType?: string;
+  };
+};
+
+export type UpdateMetaAdInput = {
+  name?: string;
+  status?: "ACTIVE" | "PAUSED";
+};
+
 export type MetaAdAccount = {
   id: string;
   tenantId: string;

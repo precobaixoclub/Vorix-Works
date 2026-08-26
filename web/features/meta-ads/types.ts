@@ -184,3 +184,82 @@ export type MetaAdAccount = {
   createdAt: string;
   updatedAt: string;
 };
+
+/** Fase 4 — públicos customizados/semelhantes, pixels e Conversions API. Ver
+ * `src/application/ports/meta-custom-audience-repository.port.ts` no backend. */
+export type MetaCustomAudience = {
+  id: string;
+  adAccountId: string;
+  audienceId: string;
+  name: string;
+  /** Texto livre — a Marketing API tem ~15 subtypes reais, nunca uma enum fechada aqui. */
+  subtype: string;
+  description?: string;
+  approximateCount?: number;
+  lookalikeOriginAudienceId?: string;
+  lookalikeRatio?: number;
+  lookalikeCountry?: string;
+  deletedAt?: string;
+};
+
+export type MetaCustomAudienceSyncResult = { audiencesSynced: number };
+
+export type CreateMetaCustomAudienceInput = {
+  adAccountId: string;
+  name: string;
+  description?: string;
+  customers?: readonly { email?: string; phone?: string }[];
+};
+
+export type CreateMetaCustomAudienceResult = { audience: MetaCustomAudience; usersUploaded: number };
+
+export type CreateMetaLookalikeAudienceInput = {
+  originAudienceId: string;
+  name: string;
+  ratio: number;
+  country: string;
+};
+
+export type MetaPixel = {
+  id: string;
+  adAccountId: string;
+  pixelId: string;
+  name: string;
+  lastFiredTime?: string;
+  isActive: boolean;
+};
+
+export type MetaPixelSyncResult = { pixelsSynced: number };
+
+export type CreateMetaPixelInput = { adAccountId: string; name: string };
+
+export type MetaCapiEventUserData = { email?: string; phone?: string; firstName?: string; lastName?: string; countryCode?: string };
+
+export type SendMetaCapiEventInput = {
+  eventName: string;
+  eventTime?: string;
+  eventId?: string;
+  actionSource?: "website" | "app" | "phone_call" | "chat" | "email" | "other" | "physical_store" | "system_generated";
+  userData: MetaCapiEventUserData;
+  customData?: Record<string, unknown>;
+  eventSourceUrl?: string;
+  testEventCode?: string;
+};
+
+export type SendMetaCapiEventResult = { eventsReceived?: number; fbtraceId?: string };
+
+export type MetaCapiEventRecord = {
+  id: string;
+  eventName: string;
+  eventTime: string;
+  actionSource: string;
+  userDataFields: readonly string[];
+  testEventCode?: string;
+  status: "sent" | "failed";
+  eventsReceived?: number;
+  fbtraceId?: string;
+  errorMessage?: string;
+  createdAt: string;
+};
+
+export type MetaAdInterest = { id: string; name: string; audienceSize?: number; path?: readonly string[] };

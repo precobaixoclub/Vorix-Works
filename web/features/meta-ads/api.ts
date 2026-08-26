@@ -3,15 +3,27 @@ import type {
   CreateMetaAdCampaignInput,
   CreateMetaAdInput,
   CreateMetaAdSetInput,
+  CreateMetaCustomAudienceInput,
+  CreateMetaCustomAudienceResult,
+  CreateMetaLookalikeAudienceInput,
+  CreateMetaPixelInput,
   MetaAdAccount,
   MetaAdCampaign,
   MetaAdCampaignSyncResult,
   MetaAdCampaignTree,
   MetaAdEntity,
+  MetaAdInterest,
   MetaAdSet,
   MetaAdsOAuthBegin,
   MetaAdsOAuthComplete,
   MetaAdsOAuthStatus,
+  MetaCapiEventRecord,
+  MetaCustomAudience,
+  MetaCustomAudienceSyncResult,
+  MetaPixel,
+  MetaPixelSyncResult,
+  SendMetaCapiEventInput,
+  SendMetaCapiEventResult,
   UpdateMetaAdCampaignInput,
   UpdateMetaAdInput,
   UpdateMetaAdSetInput,
@@ -74,4 +86,50 @@ export function createMetaAd(workspaceId: string, input: CreateMetaAdInput): Pro
 
 export function updateMetaAd(workspaceId: string, id: string, input: UpdateMetaAdInput): Promise<MetaAdEntity> {
   return apiClient.patch<MetaAdEntity>(`/v1/meta-ads/ads/${encodeURIComponent(id)}`, { workspaceId, ...input });
+}
+
+// --- Fase 4: públicos, pixels e Conversions API -----------------------------------------------
+
+export function listMetaCustomAudiences(workspaceId: string, adAccountId?: string): Promise<{ audiences: MetaCustomAudience[] }> {
+  const query = new URLSearchParams({ workspaceId, ...(adAccountId ? { adAccountId } : {}) });
+  return apiClient.get<{ audiences: MetaCustomAudience[] }>(`/v1/meta-ads/audiences?${query.toString()}`);
+}
+
+export function syncMetaCustomAudiences(workspaceId: string, adAccountId: string): Promise<MetaCustomAudienceSyncResult> {
+  return apiClient.post<MetaCustomAudienceSyncResult>("/v1/meta-ads/audiences/sync", { workspaceId, adAccountId });
+}
+
+export function createMetaCustomAudience(workspaceId: string, input: CreateMetaCustomAudienceInput): Promise<CreateMetaCustomAudienceResult> {
+  return apiClient.post<CreateMetaCustomAudienceResult>("/v1/meta-ads/audiences", { workspaceId, ...input });
+}
+
+export function createMetaLookalikeAudience(workspaceId: string, input: CreateMetaLookalikeAudienceInput): Promise<MetaCustomAudience> {
+  return apiClient.post<MetaCustomAudience>("/v1/meta-ads/audiences/lookalike", { workspaceId, ...input });
+}
+
+export function searchMetaAdInterests(workspaceId: string, credentialReferenceId: string, query: string): Promise<{ interests: MetaAdInterest[] }> {
+  const params = new URLSearchParams({ workspaceId, credentialReferenceId, q: query });
+  return apiClient.get<{ interests: MetaAdInterest[] }>(`/v1/meta-ads/interests?${params.toString()}`);
+}
+
+export function listMetaPixels(workspaceId: string, adAccountId?: string): Promise<{ pixels: MetaPixel[] }> {
+  const query = new URLSearchParams({ workspaceId, ...(adAccountId ? { adAccountId } : {}) });
+  return apiClient.get<{ pixels: MetaPixel[] }>(`/v1/meta-ads/pixels?${query.toString()}`);
+}
+
+export function syncMetaPixels(workspaceId: string, adAccountId: string): Promise<MetaPixelSyncResult> {
+  return apiClient.post<MetaPixelSyncResult>("/v1/meta-ads/pixels/sync", { workspaceId, adAccountId });
+}
+
+export function createMetaPixel(workspaceId: string, input: CreateMetaPixelInput): Promise<MetaPixel> {
+  return apiClient.post<MetaPixel>("/v1/meta-ads/pixels", { workspaceId, ...input });
+}
+
+export function listMetaCapiEvents(workspaceId: string, pixelId: string): Promise<{ events: MetaCapiEventRecord[] }> {
+  const query = new URLSearchParams({ workspaceId });
+  return apiClient.get<{ events: MetaCapiEventRecord[] }>(`/v1/meta-ads/pixels/${encodeURIComponent(pixelId)}/events?${query.toString()}`);
+}
+
+export function sendMetaCapiEvent(workspaceId: string, pixelId: string, input: SendMetaCapiEventInput): Promise<SendMetaCapiEventResult> {
+  return apiClient.post<SendMetaCapiEventResult>(`/v1/meta-ads/pixels/${encodeURIComponent(pixelId)}/events`, { workspaceId, ...input });
 }

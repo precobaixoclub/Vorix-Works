@@ -24,6 +24,15 @@ import {
 } from "@/features/meta-ads/api";
 import { useMetaAdAccounts, useMetaAdCampaignTree } from "@/features/meta-ads/hooks";
 import type { MetaAdCampaign, MetaAdEntity, MetaAdEntityStatus, MetaAdSet } from "@/features/meta-ads/types";
+import { AudiencesTab } from "./audiences-tab";
+import { PixelsTab } from "./pixels-tab";
+
+const TABS = [
+  { key: "campaigns", label: "Campanhas" },
+  { key: "audiences", label: "Públicos" },
+  { key: "pixels", label: "Pixels" },
+] as const;
+type TabKey = (typeof TABS)[number]["key"];
 
 const OBJECTIVES = [
   { value: "OUTCOME_AWARENESS", label: "Reconhecimento" },
@@ -79,6 +88,8 @@ export default function MetaAdsPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>();
   const activeAccountId = selectedAccountId ?? accounts[0]?.id;
   const activeAccount = accounts.find((account) => account.id === activeAccountId);
+
+  const [activeTab, setActiveTab] = useState<TabKey>("campaigns");
 
   const { data: tree, isLoading: treeLoading, error: treeError, mutate: refetchTree } = useMetaAdCampaignTree(workspace.id, activeAccountId);
   const [syncing, setSyncing] = useState(false);
@@ -180,8 +191,12 @@ export default function MetaAdsPage() {
                 ))}
               </select>
             ) : null}
-            <Button variant="secondary" disabled={syncing || !activeAccountId} onClick={handleSync}>{syncing ? "Sincronizando..." : "Sincronizar"}</Button>
-            <Button disabled={!activeAccountId} onClick={() => setNewCampaignOpen(true)}>+ Nova campanha</Button>
+            {activeTab === "campaigns" ? (
+              <>
+                <Button variant="secondary" disabled={syncing || !activeAccountId} onClick={handleSync}>{syncing ? "Sincronizando..." : "Sincronizar"}</Button>
+                <Button disabled={!activeAccountId} onClick={() => setNewCampaignOpen(true)}>+ Nova campanha</Button>
+              </>
+            ) : null}
           </>
         }
       />
@@ -189,38 +204,59 @@ export default function MetaAdsPage() {
       {feedback ? <Card className="mb-4 border-accent/30 bg-accent-soft/30 p-3"><p className="text-sm text-ink">{feedback}</p></Card> : null}
 
       {activeAccount ? (
-        <p className="mb-4 text-xs text-ink-muted">
+        <p className="mb-1 text-xs text-ink-muted">
           Conta: {activeAccount.name} ({activeAccount.accountId}) · {activeAccount.currency}
           {activeAccount.lastSyncedAt ? ` · última sincronização ${formatDateTime(activeAccount.lastSyncedAt)}` : ""}
         </p>
       ) : null}
 
-      {treeLoading ? (
-        <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-accent" /></div>
-      ) : treeError ? (
-        <ErrorState error={treeError} onRetry={() => refetchTree()} />
-      ) : !tree || tree.campaigns.length === 0 ? (
-        <EmptyState title="Nenhuma campanha ainda" description="Crie uma campanha nova ou clique em Sincronizar para importar campanhas já existentes desta conta." />
-      ) : (
-        <div className="grid gap-3">
-          {tree.campaigns.map((campaign) => (
-            <CampaignRow
-              key={campaign.id}
-              campaign={campaign}
-              currency={activeAccount?.currency ?? "BRL"}
-              expanded={expandedCampaignId === campaign.id}
-              onToggle={() => setExpandedCampaignId(expandedCampaignId === campaign.id ? undefined : campaign.id)}
-              onToggleStatus={() => handleToggleCampaignStatus(campaign)}
-              onNewAdSet={() => setNewAdSetForCampaign(campaign)}
-              adSets={tree.adSets.filter((adSet) => adSet.campaignId === campaign.id)}
-              ads={tree.ads}
-              onToggleAdSetStatus={handleToggleAdSetStatus}
-              onToggleAdStatus={handleToggleAdStatus}
-              onNewAd={(adSet) => setNewAdForAdSet(adSet)}
-            />
-          ))}
-        </div>
-      )}
+      <div className="mb-4 flex gap-1 border-b border-border">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+              activeTab === tab.key ? "border-accent text-ink" : "border-transparent text-ink-muted hover:text-ink"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "campaigns" ? (
+        treeLoading ? (
+          <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-accent" /></div>
+        ) : treeError ? (
+          <ErrorState error={treeError} onRetry={() => refetchTree()} />
+        ) : !tree || tree.campaigns.length === 0 ? (
+          <EmptyState title="Nenhuma campanha ainda" description="Crie uma campanha nova ou clique em Sincronizar para importar campanhas já existentes desta conta." />
+        ) : (
+          <div className="grid gap-3">
+            {tree.campaigns.map((campaign) => (
+              <CampaignRow
+                key={campaign.id}
+                campaign={campaign}
+                currency={activeAccount?.currency ?? "BRL"}
+                expanded={expandedCampaignId === campaign.id}
+                onToggle={() => setExpandedCampaignId(expandedCampaignId === campaign.id ? undefined : campaign.id)}
+                onToggleStatus={() => handleToggleCampaignStatus(campaign)}
+                onNewAdSet={() => setNewAdSetForCampaign(campaign)}
+                adSets={tree.adSets.filter((adSet) => adSet.campaignId === campaign.id)}
+                ads={tree.ads}
+                onToggleAdSetStatus={handleToggleAdSetStatus}
+                onToggleAdStatus={handleToggleAdStatus}
+                onNewAd={(adSet) => setNewAdForAdSet(adSet)}
+              />
+            ))}
+          </div>
+        )
+      ) : activeTab === "audiences" ? (
+        activeAccount ? <AudiencesTab workspaceId={workspace.id} adAccount={activeAccount} /> : null
+      ) : activeAccount ? (
+        <PixelsTab workspaceId={workspace.id} adAccount={activeAccount} />
+      ) : null}
 
       {newCampaignOpen && activeAccountId ? (
         <NewCampaignModal

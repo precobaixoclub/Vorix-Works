@@ -52,27 +52,29 @@ export async function registerInstagramDmWebhookRoutes(app: FastifyInstance, dep
     // Handshake de assinatura do webhook (uma vez, ao configurar a assinatura no App Dashboard) —
     // a Meta manda `hub.mode=subscribe`+`hub.verify_token`, espera o `hub.challenge` ecoado de
     // volta como texto puro se o token bater.
+    // NUNCA `reply.send(); return;` separado — chamar `.send()` sem devolver o `reply` faz o
+    // Fastify tentar mandar a resposta de novo a partir do valor de retorno do handler (`undefined`),
+    // o que na prática derrubou o processo inteiro em produção (`ERR_HTTP_HEADERS_SENT` dentro da
+    // cadeia de hooks `onSend`, não capturado — Node encerra o processo). Toda resposta aqui é
+    // sempre `return reply....send(...)`.
     instance.get("/webhooks/instagram", { schema: { querystring: VERIFY_QUERY_SCHEMA } }, async (request, reply) => {
       const query = request.query as Record<string, string | undefined>;
       const mode = query["hub.mode"];
       const token = query["hub.verify_token"];
       const challenge = query["hub.challenge"];
       if (mode === "subscribe" && deps.webhookVerifyToken && token === deps.webhookVerifyToken && challenge) {
-        reply.code(200).type("text/plain").send(challenge);
-        return;
+        return reply.code(200).type("text/plain").send(challenge);
       }
-      reply.code(403).send();
+      return reply.code(403).send();
     });
 
     instance.post("/webhooks/instagram", async (request, reply) => {
       if (!deps.appSecret) {
-        reply.code(503).send();
-        return;
+        return reply.code(503).send();
       }
       const valid = verifyMetaWebhookSignature({ appSecret: deps.appSecret, rawBody: request.rawBody ?? Buffer.alloc(0), signatureHeader: request.headers["x-hub-signature-256"] });
       if (!valid) {
-        reply.code(401).send();
-        return;
+        return reply.code(401).send();
       }
 
       // A Meta exige um 200 rápido (retenta com backoff se não receber); processar tudo aqui
@@ -87,7 +89,7 @@ export async function registerInstagramDmWebhookRoutes(app: FastifyInstance, dep
         // bastante pra só logar, nunca travar o ack.
         request.log.error({ err: error }, "instagram-dm-webhook: falha ao processar evento");
       }
-      reply.code(200).send();
+      return reply.code(200).send();
     });
   });
 }

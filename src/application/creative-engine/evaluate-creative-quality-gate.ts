@@ -27,6 +27,7 @@ export const CREATIVE_QUALITY_ISSUE_CODES = [
   "PRODUCTION_GUIDELINES_VIOLATED",
   "COLOR_PALETTE_VIOLATED",
   "TEXT_ZONE_OVERLAPS_ASSET",
+  "TEXT_ZONE_OVERLAPS_TEXT_ZONE",
   "UNEXPECTED_DECORATIVE_TEXT",
 ] as const;
 export type CreativeQualityIssueCode = (typeof CREATIVE_QUALITY_ISSUE_CODES)[number];
@@ -217,6 +218,33 @@ export function checkAssetPlacementOverlap(plan: CreativePlan): CreativeQualityI
       issues.push({
         code: "TEXT_ZONE_OVERLAPS_ASSET",
         message: `Zona de texto "${zone.kind}" (x=${zone.rect.xPct}%-${zone.rect.xPct + zone.rect.widthPct}%, y=${zone.rect.yPct}%-${zone.rect.yPct + zone.rect.heightPct}%) se sobrepõe ao asset "${placement.role}" (x=${placement.rect.xPct}%-${placement.rect.xPct + placement.rect.widthPct}%, y=${placement.rect.yPct}%-${placement.rect.yPct + placement.rect.heightPct}%) — ajuste um dos dois retângulos para eles nunca se tocarem.`,
+        source: "safe_area",
+      });
+    }
+  }
+  return issues;
+}
+
+/**
+ * Revisão preventiva (mesmo princípio de `checkAssetPlacementOverlap`, achado ao rever a checagem
+ * de colisão geométrica): aquela função só cobre textZone-vs-assetPlacement — nada verificava DUAS
+ * zonas de texto se sobrepondo entre si (ex.: headline cobrindo o subheadline). Mesma consequência
+ * visual (uma caixa desenhada sobre a outra, texto ilegível) já vista repetidas vezes em produção
+ * nesta mesma sessão, só que entre uma textZone e um assetPlacement — o caso simétrico entre duas
+ * textZones nunca tinha cobertura. `TEXT_ZONE_OVERLAPS_TEXT_ZONE` deliberadamente fora de
+ * `RENDERER_REFLOW_CODES` pelo mesmo motivo: reflow não reposiciona, só uma nova decisão de
+ * geometria (`gpt_replan`) resolve.
+ */
+export function checkTextZoneCollisions(plan: CreativePlan): CreativeQualityIssue[] {
+  const issues: CreativeQualityIssue[] = [];
+  for (let i = 0; i < plan.textZones.length; i++) {
+    for (let j = i + 1; j < plan.textZones.length; j++) {
+      const a = plan.textZones[i];
+      const b = plan.textZones[j];
+      if (!rectsOverlap(a.rect, b.rect)) continue;
+      issues.push({
+        code: "TEXT_ZONE_OVERLAPS_TEXT_ZONE",
+        message: `Zona de texto "${a.kind}" (x=${a.rect.xPct}%-${a.rect.xPct + a.rect.widthPct}%, y=${a.rect.yPct}%-${a.rect.yPct + a.rect.heightPct}%) se sobrepõe à zona de texto "${b.kind}" (x=${b.rect.xPct}%-${b.rect.xPct + b.rect.widthPct}%, y=${b.rect.yPct}%-${b.rect.yPct + b.rect.heightPct}%) — ajuste um dos dois retângulos para eles nunca se tocarem.`,
         source: "safe_area",
       });
     }
@@ -457,6 +485,7 @@ export async function evaluateCreativeQualityGate(
   const commercialFactIssues = checkCommercialFactIntegrity(input.plan, input.context);
   const safeAreaIssues = checkSafeAreaCompliance(input.plan);
   const assetPlacementOverlapIssues = checkAssetPlacementOverlap(input.plan);
+  const textZoneCollisionIssues = checkTextZoneCollisions(input.plan);
 
   const referenceProductImageUrl = input.context.assets.find((asset) => asset.role === "product_photo")?.url;
   const referenceLogoUrl = input.context.assets.find((asset) => asset.role === "logo")?.url;
@@ -475,5 +504,5 @@ export async function evaluateCreativeQualityGate(
     specialistId: input.specialistId,
   });
 
-  return combineCreativeQualityIssues(deterministicIssues, commercialFactIssues, safeAreaIssues, assetPlacementOverlapIssues, visualIssues, productionGuidelinesIssues);
+  return combineCreativeQualityIssues(deterministicIssues, commercialFactIssues, safeAreaIssues, assetPlacementOverlapIssues, textZoneCollisionIssues, visualIssues, productionGuidelinesIssues);
 }

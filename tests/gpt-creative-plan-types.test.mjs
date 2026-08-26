@@ -101,6 +101,11 @@ test("buildCreativePlanPrompt: proíbe explicitamente o retângulo de uma textZo
   assert.match(prompt, /retângulo de NENHUMA `textZone` pode se sobrepor ao retângulo de NENHUM `assetPlacement`/);
 });
 
+test("buildCreativePlanPrompt: proíbe explicitamente o retângulo de uma textZone se sobrepor ao retângulo de OUTRA textZone", () => {
+  const prompt = buildCreativePlanPrompt(sampleContext());
+  assert.match(prompt, /retângulo de NENHUMA `textZone` pode se sobrepor ao retângulo de NENHUMA outra `textZone`/);
+});
+
 test("buildCreativePlanPrompt: descreve o papel de cada asset (produto real vs. screenshot vs. logo)", () => {
   const prompt = buildCreativePlanPrompt(
     sampleContext({

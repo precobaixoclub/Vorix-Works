@@ -342,6 +342,10 @@ export function buildCreativePlanPrompt(context: CreativeContext): string {
     // mesmo plano (a caixa do headline cobria parte da logo) — nenhuma regra proibia isso
     // explicitamente antes.
     "- O retângulo de NENHUMA `textZone` pode se sobrepor ao retângulo de NENHUM `assetPlacement` (logo, produto, screenshot) — antes de responder, confira se os dois conjuntos de retângulos nunca se tocam.",
+    // Revisão preventiva (mesmo princípio da regra acima): nada proibia duas textZones (ex.:
+    // headline e subheadline) de se sobrepor ENTRE si — mesma consequência visual, cobertura
+    // simétrica.
+    "- O retângulo de NENHUMA `textZone` pode se sobrepor ao retângulo de NENHUMA outra `textZone` (ex.: headline não pode encostar no subheadline nem no CTA) — confira também entre as próprias zonas de texto, não só contra os assets.",
     "",
     "Responda APENAS com JSON válido, sem markdown, no formato exato:",
     CREATIVE_PLAN_RESPONSE_SCHEMA_HINT,

@@ -124,6 +124,14 @@ function buildObjectKey(tenantId: string, suffix: string): string {
 // segunda tentativa com o MESMO prompt antes de desistir.
 const MAX_INITIAL_PLAN_JSON_ATTEMPTS = 2;
 
+// Achado ao vivo em produção: mesmo com o retry acima, DUAS tentativas seguidas vieram com JSON
+// inválido — sugere corte por limite de tokens, não só falha aleatória passageira. O schema do
+// plano cresceu bastante desde que `1_600` foi escolhido (regras novas empurram o diretor a
+// definir MAIS `textZones` com geometria completa — headline/subheadline/CTA agora todos com
+// `renderedBy`/`rect` — além de todos os campos de texto livre já existentes). Mais espaço de
+// sobra nunca piora nada; cortar o JSON no meio sempre reprova o plano inteiro.
+const CREATIVE_PLAN_MAX_TOKENS = 2_400;
+
 async function requestCreativePlan(
   icaro: IcaroBrainPort,
   context: CreativeContext,
@@ -143,7 +151,7 @@ async function requestCreativePlan(
       expectedOutput: "json",
       priority: "quality",
       temperature: 0.4,
-      maxTokens: 1_600,
+      maxTokens: CREATIVE_PLAN_MAX_TOKENS,
       timeoutMs: 45_000,
     });
     track(response);
@@ -456,7 +464,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
           expectedOutput: "json",
           priority: "quality",
           temperature: 0.4,
-          maxTokens: 1_600,
+          maxTokens: CREATIVE_PLAN_MAX_TOKENS,
           timeoutMs: 45_000,
         });
         track(repairResponse);

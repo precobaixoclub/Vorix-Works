@@ -6,6 +6,7 @@ import {
   checkCreativeVisualIntegrity,
   checkProductionGuidelinesCompliance,
   checkSafeAreaCompliance,
+  checkTextZoneCollisions,
   combineCreativeQualityIssues,
   evaluateCreativeQualityGate,
   evaluateDeterministicCreativeChecks,
@@ -446,6 +447,41 @@ test("checkAssetPlacementOverlap: sem nenhum assetPlacement, nunca gera issue", 
     assetPlacements: [],
   });
   assert.deepEqual(checkAssetPlacementOverlap(plan), []);
+});
+
+// Revisão preventiva (mesmo princípio de checkAssetPlacementOverlap): nada verificava DUAS zonas
+// de texto se sobrepondo entre si (ex.: headline cobrindo o subheadline) — mesma consequência
+// visual já vista repetidas vezes em produção, cobertura simétrica à de textZone-vs-asset.
+
+test("checkTextZoneCollisions: headline e subheadline com retângulos sobrepostos vira TEXT_ZONE_OVERLAPS_TEXT_ZONE", () => {
+  const plan = basePlan({
+    textZones: [
+      { kind: "headline", text: "OFERTA", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 20 }, emphasis: "primary", renderedBy: "renderer" },
+      { kind: "subheadline", text: "Detalhes", rect: { xPct: 10, yPct: 25, widthPct: 80, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+  });
+  const issues = checkTextZoneCollisions(plan);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].code, "TEXT_ZONE_OVERLAPS_TEXT_ZONE");
+  assert.match(issues[0].message, /headline/);
+  assert.match(issues[0].message, /subheadline/);
+});
+
+test("checkTextZoneCollisions: zonas de texto que não se tocam não geram issue", () => {
+  const plan = basePlan({
+    textZones: [
+      { kind: "headline", text: "OFERTA", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" },
+      { kind: "cta", text: "ACESSE", rect: { xPct: 10, yPct: 80, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" },
+    ],
+  });
+  assert.deepEqual(checkTextZoneCollisions(plan), []);
+});
+
+test("checkTextZoneCollisions: com menos de duas textZones, nunca gera issue", () => {
+  const plan = basePlan({
+    textZones: [{ kind: "headline", text: "OFERTA", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" }],
+  });
+  assert.deepEqual(checkTextZoneCollisions(plan), []);
 });
 
 test("evaluateCreativeQualityGate: violação de safe area reprova o gate (fail) mesmo quando o check de visão aprova tudo", async () => {

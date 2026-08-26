@@ -16,7 +16,7 @@ test("routeCreativeRepair: qualquer issue criativa/factual manda a rodada inteir
   assert.equal(result.route, "gpt_replan");
 });
 
-for (const code of ["PRODUCT_MISMATCH", "WRONG_LOGO", "SCREENSHOT_MISCHARACTERIZED", "INVENTED_COMMERCIAL_FACT", "WRONG_PRICE", "CRITICAL_OVERLAP", "COMPOSITION_BROKEN", "WRONG_ASPECT_RATIO", "REQUIRED_ASSET_MISSING", "NON_PUBLISHABLE_SOURCE", "TEXT_ZONE_OVERLAPS_ASSET", "UNEXPECTED_DECORATIVE_TEXT"]) {
+for (const code of ["PRODUCT_MISMATCH", "WRONG_LOGO", "SCREENSHOT_MISCHARACTERIZED", "INVENTED_COMMERCIAL_FACT", "WRONG_PRICE", "CRITICAL_OVERLAP", "COMPOSITION_BROKEN", "WRONG_ASPECT_RATIO", "REQUIRED_ASSET_MISSING", "NON_PUBLISHABLE_SOURCE", "TEXT_ZONE_OVERLAPS_ASSET", "TEXT_ZONE_OVERLAPS_TEXT_ZONE", "UNEXPECTED_DECORATIVE_TEXT"]) {
   test(`routeCreativeRepair: "${code}" sozinho sempre vai para gpt_replan — nunca ao motor/renderer legado`, () => {
     const result = routeCreativeRepair([issue(code)], 0);
     assert.equal(result.route, "gpt_replan");

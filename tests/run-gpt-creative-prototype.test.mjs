@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { runGptParallelCreativePrototype } from "../dist/application/production/run-gpt-creative-prototype.js";
 
 function creativePlanJson(overrides = {}) {
-  return JSON.stringify({
+  const merged = {
     objective: "Comunicar clareza de proposta",
     angle: "Um site, todas as ofertas",
     targetAudience: "Caçadores de promoção",
@@ -19,7 +19,13 @@ function creativePlanJson(overrides = {}) {
     styleNotes: "tecnológico, imponente",
     rationale: "Diferenciar de grupo de WhatsApp",
     ...overrides,
-  });
+  };
+  // allowedRenderedTexts sempre eco literal de headline/subheadline/cta — recomputado DEPOIS dos
+  // overrides pra nunca dessincronizar quando um teste sobrescreve headline/cta diretamente.
+  if (!Object.prototype.hasOwnProperty.call(overrides, "allowedRenderedTexts")) {
+    merged.allowedRenderedTexts = [merged.headline, merged.subheadline, merged.cta].filter(Boolean);
+  }
+  return JSON.stringify(merged);
 }
 
 function fakeObjectStorage() {

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   checkAssetPlacementOverlap,
+  checkAssetSafeAreaCompliance,
   checkCommercialFactIntegrity,
   checkCreativeVisualIntegrity,
   checkProductionGuidelinesCompliance,
@@ -13,7 +14,7 @@ import {
 } from "../dist/application/creative-engine/evaluate-creative-quality-gate.js";
 
 function basePlan(overrides = {}) {
-  return {
+  const merged = {
     objective: "x",
     angle: "x",
     targetAudience: "x",
@@ -33,6 +34,12 @@ function basePlan(overrides = {}) {
     rationale: "",
     ...overrides,
   };
+  // allowedRenderedTexts sempre eco literal de headline/subheadline/cta — recomputado DEPOIS dos
+  // overrides pra nunca dessincronizar quando um teste sobrescreve headline/cta diretamente.
+  if (!Object.prototype.hasOwnProperty.call(overrides, "allowedRenderedTexts")) {
+    merged.allowedRenderedTexts = [merged.headline, merged.subheadline, merged.cta].filter(Boolean);
+  }
+  return merged;
 }
 
 function baseContext(overrides = {}) {
@@ -153,6 +160,7 @@ test("checkCreativeVisualIntegrity: mapeia cada veredito verdadeiro para o issue
     referenceProductImageUrl: "https://x/product.jpg",
     referenceLogoUrl: "https://x/logo.png",
     referenceScreenshotUrl: "https://x/screenshot.png",
+    allowedRenderedTexts: ["TODAS AS OFERTAS EM UM SÓ SITE", "ACESSE AGORA"],
   });
   const codes = issues.map((issue) => issue.code).sort();
   assert.deepEqual(codes, [
@@ -179,7 +187,7 @@ test("checkCreativeVisualIntegrity: sem nenhuma referência real, productMismatc
       content: JSON.stringify({ productMismatch: true, wrongLogo: true, screenshotMischaracterized: true, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }),
     }),
   };
-  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director" });
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", allowedRenderedTexts: ["ACESSE AGORA"] });
   assert.deepEqual(issues, []);
 });
 
@@ -190,7 +198,7 @@ test("checkCreativeVisualIntegrity: com só a referência de screenshot presente
       content: JSON.stringify({ productMismatch: true, wrongLogo: true, screenshotMischaracterized: true, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }),
     }),
   };
-  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", referenceScreenshotUrl: "https://x/screenshot.png" });
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", referenceScreenshotUrl: "https://x/screenshot.png", allowedRenderedTexts: ["ACESSE AGORA"] });
   assert.deepEqual(issues.map((issue) => issue.code), ["SCREENSHOT_MISCHARACTERIZED"]);
 });
 
@@ -198,31 +206,60 @@ test("checkCreativeVisualIntegrity: com só a referência de screenshot presente
 // gate inteiro mesmo ignorando claramente uma diretriz configurada, porque nenhum check anterior
 // olhava para `productionInstructions`/`behaviorPreferences`.
 
-// Achado ao vivo em produção: o modelo de imagem inventou um slogan/parágrafo decorativo extra no
-// fundo (não pedido em nenhum lugar do plano), sobrepondo o headline renderizado — recorrência do
-// mesmo defeito já visto antes, apesar da proibição explícita já existente no prompt de geração
-// (nenhuma instrução de prompt é garantia absoluta). Critério dedicado dá ao diretor uma instrução
-// de reparo específica ("havia texto extra não pedido") em vez de uma mensagem vaga.
+// Auditoria "motor de geração de criativos" — achado ao vivo: o modelo de imagem inventou texto
+// não pedido em lugar nenhum ("TEXTO DE DESTAQUE", "SAIBA MAIS"), e o critério booleano antigo
+// (`unexpectedDecorativeText`) não pegava isso de forma confiável — a mesma peça com esse defeito
+// óbvio às vezes recebia `false`. Substituído por uma TRANSCRIÇÃO objetiva (`unauthorizedTexts`/
+// `missingRequiredTexts`) comparada em CÓDIGO contra `allowedRenderedTexts`, nunca só o
+// julgamento livre da IA.
 
-test("checkCreativeVisualIntegrity: veredito unexpectedDecorativeText=true vira UNEXPECTED_DECORATIVE_TEXT", async () => {
+test("checkCreativeVisualIntegrity: unauthorizedTexts vira UNAUTHORIZED_TEXT (um issue por item)", async () => {
   const icaro = {
     request: async () => ({
       status: "completed",
-      content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, unexpectedDecorativeText: true, reasoning: "slogan extra no fundo" }),
+      content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, unauthorizedTexts: ["Destaque-se no mundo digital"], reasoning: "slogan extra no fundo" }),
     }),
   };
-  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director" });
-  assert.deepEqual(issues.map((issue) => issue.code), ["UNEXPECTED_DECORATIVE_TEXT"]);
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", allowedRenderedTexts: ["ACESSE AGORA"] });
+  assert.deepEqual(issues.map((issue) => issue.code), ["UNAUTHORIZED_TEXT"]);
+  assert.match(issues[0].message, /Destaque-se no mundo digital/);
 });
 
-test("checkCreativeVisualIntegrity: veredito unexpectedDecorativeText=false não gera issue", async () => {
+// Achado ao vivo em produção: um texto não autorizado que é literalmente um NOME DE CAMPO do
+// próprio creative_plan ("TEXTO DE DESTAQUE", "SOME HEADLINE TEXT", "CALL TO ACTION") indica uma
+// causa diferente de um slogan qualquer — o modelo confundiu instrução interna com conteúdo real.
+
+test("checkCreativeVisualIntegrity: unauthorizedTexts que parece placeholder/rótulo técnico (nome de campo do plano) vira PLACEHOLDER_RENDERED; um slogan genérico qualquer continua UNAUTHORIZED_TEXT", async () => {
   const icaro = {
     request: async () => ({
       status: "completed",
-      content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, unexpectedDecorativeText: false }),
+      content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, unauthorizedTexts: ["TEXTO DE DESTAQUE", "SAIBA MAIS"] }),
     }),
   };
-  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director" });
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", allowedRenderedTexts: ["ACESSE AGORA"] });
+  assert.deepEqual(issues.map((issue) => issue.code), ["PLACEHOLDER_RENDERED", "UNAUTHORIZED_TEXT"]);
+});
+
+test("checkCreativeVisualIntegrity: missingRequiredTexts vira MISSING_REQUIRED_TEXT", async () => {
+  const icaro = {
+    request: async () => ({
+      status: "completed",
+      content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, missingRequiredTexts: ["ACESSE AGORA"] }),
+    }),
+  };
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", allowedRenderedTexts: ["ACESSE AGORA"] });
+  assert.deepEqual(issues.map((issue) => issue.code), ["MISSING_REQUIRED_TEXT"]);
+  assert.match(issues[0].message, /ACESSE AGORA/);
+});
+
+test("checkCreativeVisualIntegrity: unauthorizedTexts/missingRequiredTexts vazios ou ausentes nunca geram issue", async () => {
+  const icaro = {
+    request: async () => ({
+      status: "completed",
+      content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, unauthorizedTexts: [], missingRequiredTexts: [] }),
+    }),
+  };
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", allowedRenderedTexts: ["ACESSE AGORA"] });
   assert.deepEqual(issues, []);
 });
 
@@ -282,7 +319,7 @@ test("checkCreativeVisualIntegrity: sem brandColors configurado, colorPaletteVio
   const icaro = {
     request: async () => ({ status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, colorPaletteViolated: true }) }),
   };
-  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director" });
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", allowedRenderedTexts: ["ACESSE AGORA"] });
   assert.deepEqual(issues, []);
 });
 
@@ -293,7 +330,7 @@ test("checkCreativeVisualIntegrity: com brandColors configurado, veredito colorP
       return { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, colorPaletteViolated: true, reasoning: "fundo branco, sem nenhuma cor da paleta" }) };
     },
   };
-  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", brandColors: ["preto", "verde", "amarelo"] });
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", brandColors: ["preto", "verde", "amarelo"], allowedRenderedTexts: ["ACESSE AGORA"] });
   assert.equal(issues.length, 1);
   assert.equal(issues[0].code, "COLOR_PALETTE_VIOLATED");
   assert.match(issues[0].message, /fundo branco/);
@@ -303,7 +340,7 @@ test("checkCreativeVisualIntegrity: com brandColors configurado, veredito 'false
   const icaro = {
     request: async () => ({ status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, colorPaletteViolated: false }) }),
   };
-  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", brandColors: ["preto", "verde"] });
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", brandColors: ["preto", "verde"], allowedRenderedTexts: ["ACESSE AGORA"] });
   assert.deepEqual(issues, []);
 });
 
@@ -482,6 +519,33 @@ test("checkTextZoneCollisions: com menos de duas textZones, nunca gera issue", (
     textZones: [{ kind: "headline", text: "OFERTA", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" }],
   });
   assert.deepEqual(checkTextZoneCollisions(plan), []);
+});
+
+// Auditoria "motor de geração de criativos" — achado ao revisar checkSafeAreaCompliance: aquele
+// check cobre só textZones de propósito ("assetPlacements não teria caminho de reparo"), premissa
+// desatualizada por TEXT_ZONE_OVERLAPS_ASSET (que já prova que um código fora de
+// RENDERER_REFLOW_CODES sempre tem gpt_replan como caminho real). Um produto/screenshot
+// encostando na borda tem o mesmo risco de corte destrutivo que um texto.
+
+test("checkAssetSafeAreaCompliance: assetPlacement tocando a borda do canvas vira CRITICAL_ASSET_CROP", () => {
+  const plan = basePlan({
+    assetPlacements: [{ role: "product_photo", url: "https://x/produto.png", rect: { xPct: 0, yPct: 10, widthPct: 40, heightPct: 40 }, frame: "none", treatment: "original" }],
+  });
+  const issues = checkAssetSafeAreaCompliance(plan);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].code, "CRITICAL_ASSET_CROP");
+  assert.match(issues[0].message, /product_photo/);
+});
+
+test("checkAssetSafeAreaCompliance: assetPlacement dentro da margem de segurança não gera issue", () => {
+  const plan = basePlan({
+    assetPlacements: [{ role: "logo", url: "https://x/logo.png", rect: { xPct: 5, yPct: 5, widthPct: 20, heightPct: 10 }, frame: "none", treatment: "original" }],
+  });
+  assert.deepEqual(checkAssetSafeAreaCompliance(plan), []);
+});
+
+test("checkAssetSafeAreaCompliance: sem nenhum assetPlacement, nunca gera issue", () => {
+  assert.deepEqual(checkAssetSafeAreaCompliance(basePlan({ assetPlacements: [] })), []);
 });
 
 test("evaluateCreativeQualityGate: violação de safe area reprova o gate (fail) mesmo quando o check de visão aprova tudo", async () => {

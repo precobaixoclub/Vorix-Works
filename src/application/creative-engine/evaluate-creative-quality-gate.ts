@@ -28,7 +28,18 @@ export const CREATIVE_QUALITY_ISSUE_CODES = [
   "COLOR_PALETTE_VIOLATED",
   "TEXT_ZONE_OVERLAPS_ASSET",
   "TEXT_ZONE_OVERLAPS_TEXT_ZONE",
-  "UNEXPECTED_DECORATIVE_TEXT",
+  // Auditoria "motor de geração de criativos" — substituem `UNEXPECTED_DECORATIVE_TEXT` (removido):
+  // aquele critério booleano não pegava de forma confiável casos reais óbvios. Comparação
+  // determinística contra `allowedRenderedTexts`, ver `checkCreativeVisualIntegrity`.
+  "UNAUTHORIZED_TEXT",
+  "PLACEHOLDER_RENDERED",
+  "MISSING_REQUIRED_TEXT",
+  // Novo: colisão geométrica de um assetPlacement (produto/screenshot) com a margem de segurança
+  // do canvas — mesmo princípio de `checkSafeAreaCompliance`, agora cobrindo assets, não só texto.
+  // (Auditoria: `LOGO_DISTORTED` NÃO foi adicionado — `logo-compositor.ts` já usa
+  // `fit: "inside"` do sharp, que preserva proporção por construção; nunca estica. Nenhum código
+  // novo resolveria um problema que não existe nesse caminho.)
+  "CRITICAL_ASSET_CROP",
 ] as const;
 export type CreativeQualityIssueCode = (typeof CREATIVE_QUALITY_ISSUE_CODES)[number];
 
@@ -193,6 +204,28 @@ export function checkSafeAreaCompliance(plan: CreativePlan): CreativeQualityIssu
   return issues;
 }
 
+/**
+ * Auditoria "motor de geração de criativos" — achado ao revisar `checkSafeAreaCompliance`: aquele
+ * check cobre só `textZones` de propósito (o comentário original argumentava que uma violação em
+ * `assetPlacements` "criaria um defeito sem caminho de reparo correspondente"). Essa premissa
+ * ficou desatualizada: `TEXT_ZONE_OVERLAPS_ASSET` (abaixo) já prova que um código deliberadamente
+ * fora de `RENDERER_REFLOW_CODES` sempre tem um caminho de reparo real (`gpt_replan` — o diretor
+ * escolhe outra geometria). Um produto/screenshot posicionado tocando a borda do canvas tem
+ * exatamente o mesmo risco de corte destrutivo que um texto, e a mesma correção resolve.
+ */
+export function checkAssetSafeAreaCompliance(plan: CreativePlan): CreativeQualityIssue[] {
+  const issues: CreativeQualityIssue[] = [];
+  for (const placement of plan.assetPlacements) {
+    if (!violatesSafeArea(placement.rect)) continue;
+    issues.push({
+      code: "CRITICAL_ASSET_CROP",
+      message: `Asset "${placement.role}" (x=${placement.rect.xPct}%, y=${placement.rect.yPct}%, largura=${placement.rect.widthPct}%, altura=${placement.rect.heightPct}%) toca ou ultrapassa a margem de segurança do canvas (${SAFE_AREA_MARGIN_PCT}%) — risco real de corte destrutivo na borda.`,
+      source: "safe_area",
+    });
+  }
+  return issues;
+}
+
 function rectsOverlap(a: CreativePlanRect, b: CreativePlanRect): boolean {
   return a.xPct < b.xPct + b.widthPct && a.xPct + a.widthPct > b.xPct && a.yPct < b.yPct + b.heightPct && a.yPct + a.heightPct > b.yPct;
 }
@@ -258,15 +291,21 @@ export function checkTextZoneCollisions(plan: CreativePlan): CreativeQualityIssu
  * cores oficiais só entram no prompt (e no schema pede o campo) quando `brandColors` vem
  * preenchido — sem paleta configurada, a instrução explícita é sempre responder `false`, nunca
  * inventar uma expectativa de cor que a marca não definiu. */
-function buildVisualIntegrityPrompt(brandColors: readonly string[] | undefined): string {
+function buildVisualIntegrityPrompt(brandColors: readonly string[] | undefined, allowedRenderedTexts: readonly string[]): string {
   const colorsLine = brandColors && brandColors.length > 0
     ? `Paleta de cores oficial configurada para esta marca: ${brandColors.join(", ")}.`
     : "Nenhuma paleta de cores oficial foi configurada para esta marca.";
   return [
     "Avalie esta peça publicitária JÁ FINALIZADA (a imagem anexada) para defeitos GRAVES apenas — não julgue estética, apenas problemas objetivos que tornariam a peça inaceitável.",
     colorsLine,
+    // Auditoria "motor de geração de criativos" — achado ao vivo: um veredito booleano solto
+    // ("tem texto inesperado? sim/não") não pegava de forma confiável casos reais óbvios ("TEXTO
+    // DE DESTAQUE", "SAIBA MAIS" apareceram na peça e o veredito ainda saiu false). Dar à visão a
+    // lista EXATA de textos autorizados e pedir uma TRANSCRIÇÃO OBJETIVA do que está visível —
+    // comparada depois em CÓDIGO, nunca só no julgamento subjetivo da IA — é muito mais confiável.
+    `LISTA FECHADA DE TEXTOS AUTORIZADOS NESTA PEÇA (a marca/logo colada por composição não conta, veja regra abaixo): ${allowedRenderedTexts.map((text) => `"${text}"`).join(", ")}.`,
     "Responda APENAS com JSON válido, sem markdown, no formato exato:",
-    '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "unexpectedDecorativeText": true|false, "reasoning": "1-2 frases objetivas"}',
+    '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "unauthorizedTexts": ["..."], "missingRequiredTexts": ["..."], "reasoning": "1-2 frases objetivas"}',
     "REGRAS:",
     "- \"productMismatch\": true SOMENTE se havia uma foto de produto real de referência e o produto na peça final é claramente outro produto (nunca marque true sem uma referência real para comparar).",
     "- \"wrongLogo\": true SOMENTE se havia uma logo real de referência e a logo na peça final é visivelmente diferente (cores, proporções, símbolo) — nunca marque true sem uma referência real.",
@@ -276,9 +315,33 @@ function buildVisualIntegrityPrompt(brandColors: readonly string[] | undefined):
     "- \"criticalOverlap\": true se um elemento comercial (preço, CTA, badge) sobrepõe de forma destrutiva um rosto, o produto principal ou outro elemento essencial.",
     "- \"compositionBroken\": true se a composição está visivelmente quebrada — elementos deformados, pillarboxing (barras vazias nas laterais), ou artefatos visuais graves.",
     "- \"colorPaletteViolated\": true SOMENTE se uma paleta oficial foi informada acima E a peça final claramente NÃO usa essas cores (ex.: fundo e cores predominantes totalmente diferentes do pedido, nenhuma cor da paleta aparece de forma reconhecível). Sem paleta oficial informada, responda sempre false — nunca microgerencie tom/saturação exatos, só a ausência clara da paleta inteira.",
-    "- \"unexpectedDecorativeText\": true se há QUALQUER texto, palavra, frase ou slogan na peça além do headline/subheadline/CTA — ex.: um título ou parágrafo decorativo extra desenhado no fundo, não pedido em nenhum lugar. Um texto extra sobrepondo o headline/CTA conta como este defeito (não como coincidência de posição).",
-    "- Na dúvida, prefira false — este gate é para pegar defeitos ÓBVIOS, não para microgerenciar qualidade estética.",
+    "- \"unauthorizedTexts\": liste CADA palavra/frase/rótulo/botão legível na peça que NÃO está na lista de textos autorizados acima — transcreva exatamente como está escrito na imagem. NUNCA inclua aqui o nome/wordmark que aparece DENTRO da logo colada (isso é a marca real, não texto gerado). Lista vazia se todo texto visível bate com a lista autorizada.",
+    "- \"missingRequiredTexts\": liste CADA item da lista de textos autorizados que NÃO está legível/visível em nenhum lugar da peça final. Lista vazia se todos apareceram.",
+    "- Na dúvida sobre os outros critérios booleanos, prefira false — este gate é para pegar defeitos ÓBVIOS, não para microgerenciar qualidade estética. Mas \"unauthorizedTexts\"/\"missingRequiredTexts\" devem ser objetivos e completos: transcreva tudo que você conseguir ler.",
   ].join("\n");
+}
+
+const PLACEHOLDER_TEXT_PATTERNS: readonly RegExp[] = [
+  /\btexto de destaque\b/i,
+  /\bheadline\b/i,
+  /\bsubheadline\b/i,
+  /\bcall[- ]?to[- ]?action\b/i,
+  /\bcta\b/i,
+  /\bsome (headline|text)\b/i,
+  /\blorem ipsum\b/i,
+  /\bplaceholder\b/i,
+  /\bsample text\b/i,
+  /\byour (text|headline|cta) here\b/i,
+  /\b(seu|sua) (texto|headline|cta) aqui\b/i,
+];
+
+/** Achado ao vivo em produção: um texto não autorizado que segue um padrão de PLACEHOLDER/rótulo
+ * técnico (ex.: literalmente "TEXTO DE DESTAQUE", "SOME HEADLINE TEXT") indica uma causa
+ * diferente de um slogan decorativo qualquer — o modelo confundiu um NOME DE CAMPO do próprio
+ * `creative_plan` com conteúdo a desenhar. Classificar separado (`PLACEHOLDER_RENDERED` vs
+ * `UNAUTHORIZED_TEXT`) dá ao diretor uma instrução de reparo mais específica. */
+function isPlaceholderLikeText(text: string): boolean {
+  return PLACEHOLDER_TEXT_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 /** Chamada de visão best-effort, UMA chamada cobrindo todos os critérios juntos (deliberadamente
@@ -293,6 +356,7 @@ export async function checkCreativeVisualIntegrity(
     referenceScreenshotUrl?: string;
     specialistId: string;
     brandColors?: readonly string[];
+    allowedRenderedTexts: readonly string[];
   },
 ): Promise<CreativeQualityIssue[]> {
   try {
@@ -302,7 +366,7 @@ export async function checkCreativeVisualIntegrity(
     const imageUrls = [...referenceUrls, input.finalImageUrl];
     const response = await icaro.request({
       taskType: "review",
-      prompt: buildVisualIntegrityPrompt(input.brandColors),
+      prompt: buildVisualIntegrityPrompt(input.brandColors, input.allowedRenderedTexts),
       specialistId: input.specialistId,
       imageUrls,
       expectedOutput: "json",
@@ -322,7 +386,8 @@ export async function checkCreativeVisualIntegrity(
       criticalOverlap?: unknown;
       compositionBroken?: unknown;
       colorPaletteViolated?: unknown;
-      unexpectedDecorativeText?: unknown;
+      unauthorizedTexts?: unknown;
+      missingRequiredTexts?: unknown;
       reasoning?: unknown;
     };
     const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : undefined;
@@ -357,19 +422,34 @@ export async function checkCreativeVisualIntegrity(
     if (hasBrandColors && parsed.colorPaletteViolated === true) {
       issues.push({ code: "COLOR_PALETTE_VIOLATED", message: reasoning ?? "A peça final não usa a paleta de cores oficial configurada para a marca.", source: "vision" });
     }
-    // Achado ao vivo em produção: o modelo de imagem inventou um slogan/parágrafo decorativo
-    // extra no fundo (não pedido em nenhum lugar do plano), que ficou sobreposto ao headline
-    // renderizado — recorrência do mesmo defeito já visto antes, apesar da proibição explícita já
-    // existente no prompt de geração (instrução de prompt nunca é garantia). Critério dedicado
-    // (em vez de só cair em `textIllegibleOrCut`/`compositionBroken`, mensagens vagas que não
-    // dizem A CAUSA) dá ao diretor uma instrução de reparo específica e acionável: pare de
-    // desenhar texto que não foi pedido, em vez de adivinhar a partir de uma descrição genérica.
-    if (parsed.unexpectedDecorativeText === true) {
-      issues.push({
-        code: "UNEXPECTED_DECORATIVE_TEXT",
-        message: reasoning ?? "A peça contém texto/tipografia decorativa extra, não pedida em nenhum lugar do plano (só headline/subheadline/CTA/preço/desconto/URL/badge explicitamente definidos são permitidos).",
-        source: "vision",
-      });
+    // Auditoria "motor de geração de criativos" — achado ao vivo: o modelo de imagem inventou
+    // texto que não foi pedido em lugar nenhum ("TEXTO DE DESTAQUE", "SAIBA MAIS"), e um veredito
+    // booleano solto ("tem texto inesperado?") não pegava isso de forma confiável — a mesma peça
+    // com esse defeito óbvio às vezes recebia `false`. Comparar a TRANSCRIÇÃO da visão contra
+    // `allowedRenderedTexts` (a fonte de verdade do plano) EM CÓDIGO, nunca só confiar no
+    // julgamento livre da IA, é o que torna isto um hard failure objetivo de verdade.
+    if (Array.isArray(parsed.unauthorizedTexts)) {
+      for (const item of parsed.unauthorizedTexts) {
+        if (typeof item !== "string" || !item.trim()) continue;
+        const placeholder = isPlaceholderLikeText(item);
+        issues.push({
+          code: placeholder ? "PLACEHOLDER_RENDERED" : "UNAUTHORIZED_TEXT",
+          message: placeholder
+            ? `A peça contém um placeholder/rótulo técnico renderizado como texto real: "${item}" — isso é nome de campo do plano, nunca conteúdo visual. Remova e substitua pelo texto autorizado correspondente.`
+            : `A peça contém texto não autorizado: "${item}" — não está na lista de textos permitidos do plano. Remova completamente.`,
+          source: "vision",
+        });
+      }
+    }
+    if (Array.isArray(parsed.missingRequiredTexts)) {
+      for (const item of parsed.missingRequiredTexts) {
+        if (typeof item !== "string" || !item.trim()) continue;
+        issues.push({
+          code: "MISSING_REQUIRED_TEXT",
+          message: `O texto autorizado "${item}" não está visível/legível na peça final — inclua-o exatamente como definido no plano.`,
+          source: "vision",
+        });
+      }
     }
     return issues;
   } catch {
@@ -484,6 +564,7 @@ export async function evaluateCreativeQualityGate(
 
   const commercialFactIssues = checkCommercialFactIntegrity(input.plan, input.context);
   const safeAreaIssues = checkSafeAreaCompliance(input.plan);
+  const assetSafeAreaIssues = checkAssetSafeAreaCompliance(input.plan);
   const assetPlacementOverlapIssues = checkAssetPlacementOverlap(input.plan);
   const textZoneCollisionIssues = checkTextZoneCollisions(input.plan);
 
@@ -497,6 +578,7 @@ export async function evaluateCreativeQualityGate(
     referenceScreenshotUrl,
     specialistId: input.specialistId,
     brandColors: input.context.brandColors,
+    allowedRenderedTexts: input.plan.allowedRenderedTexts,
   });
   const productionGuidelinesIssues = await checkProductionGuidelinesCompliance(icaro, {
     context: input.context,
@@ -504,5 +586,14 @@ export async function evaluateCreativeQualityGate(
     specialistId: input.specialistId,
   });
 
-  return combineCreativeQualityIssues(deterministicIssues, commercialFactIssues, safeAreaIssues, assetPlacementOverlapIssues, textZoneCollisionIssues, visualIssues, productionGuidelinesIssues);
+  return combineCreativeQualityIssues(
+    deterministicIssues,
+    commercialFactIssues,
+    safeAreaIssues,
+    assetSafeAreaIssues,
+    assetPlacementOverlapIssues,
+    textZoneCollisionIssues,
+    visualIssues,
+    productionGuidelinesIssues,
+  );
 }

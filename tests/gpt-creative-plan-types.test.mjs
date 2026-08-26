@@ -16,7 +16,7 @@ function sampleContext(overrides = {}) {
 }
 
 function samplePlanJson(overrides = {}) {
-  return JSON.stringify({
+  const merged = {
     objective: "Comunicar clareza de proposta",
     angle: "Um site, todas as ofertas",
     targetAudience: "Caçadores de promoção",
@@ -32,7 +32,16 @@ function samplePlanJson(overrides = {}) {
     styleNotes: "tecnológico, imponente",
     rationale: "Diferenciar de grupo de WhatsApp",
     ...overrides,
-  });
+  };
+  // allowedRenderedTexts sempre eco literal de headline/subheadline/cta — recomputado DEPOIS dos
+  // overrides pra nunca dessincronizar quando um teste sobrescreve headline/cta diretamente.
+  // `hasOwnProperty` (não `=== undefined`) porque um teste pode querer testar o campo REALMENTE
+  // ausente do JSON (`allowedRenderedTexts: undefined` explícito nos overrides) — nesse caso não
+  // deve ser auto-preenchido, senão o teste nunca exercitaria o caminho "campo ausente".
+  if (!Object.prototype.hasOwnProperty.call(overrides, "allowedRenderedTexts")) {
+    merged.allowedRenderedTexts = [merged.headline, merged.subheadline, merged.cta].filter(Boolean);
+  }
+  return JSON.stringify(merged);
 }
 
 test("parseCreativePlan: parseia um JSON completo e bem formado", () => {
@@ -44,10 +53,37 @@ test("parseCreativePlan: parseia um JSON completo e bem formado", () => {
   assert.deepEqual(plan.forbiddenElements, ["Comente QUERO"]);
   assert.equal(plan.assetUsage["https://x/logo.png"], "logo no canto superior");
   assert.equal(plan.visualDensity, "clean");
+  assert.deepEqual(plan.allowedRenderedTexts, ["TODAS AS OFERTAS EM UM SÓ SITE", "Shopee + Mercado Livre", "ACESSE AGORA"]);
 });
 
 test("parseCreativePlan: devolve undefined sem headline/cta (campos mínimos obrigatórios)", () => {
   assert.equal(parseCreativePlan(JSON.stringify({ objective: "x" })), undefined);
+});
+
+// Auditoria "motor de geração de criativos" — achado ao vivo: texto de peças finais trazia
+// strings nunca pedidas ("TEXTO DE DESTAQUE", "SAIBA MAIS"). `allowedRenderedTexts` é a fonte de
+// verdade que separa texto REAL (vira pixel) de instrução interna — deliberadamente estrito
+// (rejeita o plano INTEIRO se ausente/malformado/inconsistente, nunca deriva silenciosamente).
+
+test("parseCreativePlan: devolve undefined sem allowedRenderedTexts (campo obrigatório, nunca derivado silenciosamente)", () => {
+  assert.equal(parseCreativePlan(samplePlanJson({ allowedRenderedTexts: undefined })), undefined);
+});
+
+test("parseCreativePlan: devolve undefined com allowedRenderedTexts vazio", () => {
+  assert.equal(parseCreativePlan(samplePlanJson({ allowedRenderedTexts: [] })), undefined);
+});
+
+test("parseCreativePlan: devolve undefined com allowedRenderedTexts contendo item vazio/não-string", () => {
+  assert.equal(parseCreativePlan(samplePlanJson({ allowedRenderedTexts: ["ACESSE AGORA", ""] })), undefined);
+  assert.equal(parseCreativePlan(samplePlanJson({ allowedRenderedTexts: ["ACESSE AGORA", 123] })), undefined);
+});
+
+test("parseCreativePlan: devolve undefined quando allowedRenderedTexts não inclui o headline exato", () => {
+  assert.equal(parseCreativePlan(samplePlanJson({ allowedRenderedTexts: ["algo diferente", "ACESSE AGORA"] })), undefined);
+});
+
+test("parseCreativePlan: devolve undefined quando allowedRenderedTexts não inclui o cta exato", () => {
+  assert.equal(parseCreativePlan(samplePlanJson({ allowedRenderedTexts: ["TODAS AS OFERTAS EM UM SÓ SITE"] })), undefined);
 });
 
 test("parseCreativePlan: devolve undefined para JSON inválido, nunca lança", () => {
@@ -91,6 +127,18 @@ test("buildCreativePlanPrompt: instrui preferir renderedBy='renderer' por padrã
   const prompt = buildCreativePlanPrompt(sampleContext());
   assert.match(prompt, /PREFIRA `"renderer"` para TODO texto principal/);
   assert.match(prompt, /nunca para o headline\/CTA principal da peça/);
+});
+
+// Auditoria "motor de geração de criativos" — achado ao vivo: texto de peças finais trazia
+// strings nunca pedidas em lugar nenhum ("TEXTO DE DESTAQUE", "SAIBA MAIS"), porque campos de
+// DIREÇÃO/ESTILO em prosa livre (visualDirection/styleNotes/compositionIntent) às vezes eram
+// interpretados como algo a desenhar literalmente. `allowedRenderedTexts` separa rigidamente
+// texto REAL de instrução interna.
+
+test("buildCreativePlanPrompt: instrui allowedRenderedTexts como eco literal de headline/subheadline/cta/textZones, nunca derivado de campos de direção/estilo", () => {
+  const prompt = buildCreativePlanPrompt(sampleContext());
+  assert.match(prompt, /allowedRenderedTexts.*array com EXATAMENTE os textos que podem aparecer/);
+  assert.match(prompt, /nenhuma palavra desses campos pode ser desenhada como texto na peça final/);
 });
 
 // Achado ao vivo em produção: o retângulo do headline e o retângulo da logo se sobrepunham no
@@ -231,6 +279,28 @@ test("buildImageGenerationPromptFromPlan: headline/cta com renderedBy='renderer'
   assert.doesNotMatch(imagePrompt, /"ACESSE AGORA"/);
   assert.match(imagePrompt, /5%–95% na horizontal e 5%–25% na vertical completamente limpa, sem nenhum texto: o headline será desenhado por cima depois/);
   assert.match(imagePrompt, /10%–90% na horizontal e 80%–90% na vertical completamente limpa, sem nenhum texto: o cta será desenhado por cima depois/);
+  // A lista de "textos permitidos" só cita o que o PRÓPRIO modelo ainda precisa desenhar
+  // (subheadline, sem zona própria neste teste) — headline/cta (renderer) não aparecem nem aqui.
+  assert.match(imagePrompt, /TEXTOS PERMITIDOS NESTA PEÇA — lista FECHADA e EXAUSTIVA de tudo que VOCÊ \(modelo de imagem\) pode desenhar como texto: "Shopee \+ Mercado Livre"/);
+  assert.match(imagePrompt, /Os demais textos autorizados desta peça já foram tratados nas instruções acima/);
+});
+
+test("buildImageGenerationPromptFromPlan: com TODOS os textos autorizados sendo do renderer, vira proibição genérica — nenhum deles é citado", () => {
+  const context = sampleContext();
+  const plan = parseCreativePlan(
+    samplePlanJson({
+      subheadline: undefined,
+      textZones: [
+        { kind: "headline", text: "TODAS AS OFERTAS EM UM SÓ SITE", rect: { xPct: 5, yPct: 5, widthPct: 90, heightPct: 20 }, emphasis: "primary", renderedBy: "renderer" },
+        { kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" },
+      ],
+      allowedRenderedTexts: ["TODAS AS OFERTAS EM UM SÓ SITE", "ACESSE AGORA"],
+    }),
+  );
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+  assert.doesNotMatch(imagePrompt, /"TODAS AS OFERTAS EM UM SÓ SITE"/);
+  assert.doesNotMatch(imagePrompt, /"ACESSE AGORA"/);
+  assert.match(imagePrompt, /NUNCA escreva NENHUM texto além do que já foi instruído acima/);
 });
 
 test("buildImageGenerationPromptFromPlan: headline/cta com renderedBy='image_model' continua instruindo o modelo a desenhar o texto exato", () => {
@@ -260,16 +330,21 @@ test("buildImageGenerationPromptFromPlan: sem brandColors configurado, não menc
   assert.doesNotMatch(imagePrompt, /PALETA DE CORES/);
 });
 
-// Achado ao vivo em produção: mesmo com headline/subheadline corretamente desenhados pelo
-// renderer (sem corte, com contraste garantido), o modelo de imagem ainda inventou uma tipografia
-// decorativa gigante por conta própria no fundo (um slogan diferente, não pedido em nenhum lugar
-// do plano) — sobrepondo o box do headline. Nada proibia o modelo de adicionar texto extra.
+// Auditoria "motor de geração de criativos" — achado ao vivo: mesmo com headline/subheadline
+// corretamente desenhados pelo renderer (sem corte, com contraste garantido), o modelo de imagem
+// inventou tipografia decorativa extra por conta própria (slogan, rótulo técnico "TEXTO DE
+// DESTAQUE", botão "SAIBA MAIS" — nada pedido em lugar nenhum do plano). Uma proibição genérica
+// não bastou de forma confiável — agora o prompt repete a lista FECHADA de `allowedRenderedTexts`
+// (a mesma fonte de verdade que o quality gate usa pra reprovar objetivamente).
 
-test("buildImageGenerationPromptFromPlan: sempre proíbe o modelo de adicionar texto/tipografia decorativa extra além do que foi pedido", () => {
+test("buildImageGenerationPromptFromPlan: sempre lista os textos permitidos como lista FECHADA e proíbe qualquer texto fora dela", () => {
   const context = sampleContext();
   const plan = parseCreativePlan(samplePlanJson());
   const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
-  assert.match(imagePrompt, /NUNCA adicione nenhum texto, palavra, frase ou tipografia decorativa além dos elementos explicitamente pedidos/);
+  assert.match(imagePrompt, /TEXTOS PERMITIDOS NESTA PEÇA — lista FECHADA e EXAUSTIVA/i);
+  assert.match(imagePrompt, /"TODAS AS OFERTAS EM UM SÓ SITE"/);
+  assert.match(imagePrompt, /"ACESSE AGORA"/);
+  assert.match(imagePrompt, /NUNCA escreva nenhuma outra palavra/);
 });
 
 test("buildImageGenerationPromptFromPlan: sempre instrui alto contraste entre texto e fundo", () => {
@@ -279,11 +354,29 @@ test("buildImageGenerationPromptFromPlan: sempre instrui alto contraste entre te
   assert.match(imagePrompt, /ALTO CONTRASTE/);
 });
 
-// Achado ao vivo em produção: um headline sem textZone/rect (desenhado livremente pelo modelo)
-// saiu cortado nas bordas superior e esquerda do canvas — nada instruía manter distância da borda.
+// Auditoria "motor de geração de criativos" — achado ao vivo: um headline sem textZone/rect
+// (desenhado livremente pelo modelo) saiu cortado na borda MESMO com a margem de 6% (valor
+// arbitrário) já instruída — porque 4:5/9:16/16:9 sofrem corte automático centralizado depois da
+// geração (gpt-image-1 não suporta essas proporções nativamente), e o modelo desenha sobre um
+// canvas nativo maior, sem saber que uma faixa das bordas será removida. Agora a margem é a
+// EXATA que o corte de fato remove (ver `image-crop-geometry.ts`), não um número arbitrário.
 
-test("buildImageGenerationPromptFromPlan: sempre instrui manter todo texto a uma distância mínima da borda do canvas", () => {
-  const context = sampleContext();
+test("buildImageGenerationPromptFromPlan: instrui a margem de borda EXATA que o corte automático de 4:5 remove (8.3%, não um valor arbitrário)", () => {
+  const context = sampleContext({ format: "4:5" });
+  const plan = parseCreativePlan(samplePlanJson());
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+  assert.match(imagePrompt, /pelo menos 8\.3% de distância de cada borda/);
+});
+
+test("buildImageGenerationPromptFromPlan: em 9:16, usa a margem exata desse formato (7.8%), diferente de 4:5", () => {
+  const context = sampleContext({ format: "9:16" });
+  const plan = parseCreativePlan(samplePlanJson());
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+  assert.match(imagePrompt, /pelo menos 7\.8% de distância de cada borda/);
+});
+
+test("buildImageGenerationPromptFromPlan: em 1:1 (sem corte automático), cai no piso de segurança geral de 6%", () => {
+  const context = sampleContext({ format: "1:1" });
   const plan = parseCreativePlan(samplePlanJson());
   const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
   assert.match(imagePrompt, /pelo menos 6% de distância de cada borda/);

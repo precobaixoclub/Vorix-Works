@@ -11,6 +11,8 @@
  * determinística (logo/screenshot).
  */
 
+import { computeCropSafeMarginPct } from "./image-crop-geometry.js";
+
 export const CREATIVE_PLAN_ASSET_ROLES = ["product_photo", "screenshot", "logo", "reference_style", "other"] as const;
 export type CreativePlanAssetRole = (typeof CREATIVE_PLAN_ASSET_ROLES)[number];
 
@@ -172,6 +174,19 @@ export type CreativePlan = {
   headline: string;
   subheadline?: string;
   cta: string;
+  /** Auditoria "motor de geração de criativos" — achado ao vivo em produção: o texto de peças
+   * finais várias vezes trazia strings que nunca foram pedidas em lugar nenhum ("TEXTO DE
+   * DESTAQUE", "SAIBA MAIS", "SOME HEADLINE TEXT") — o modelo de imagem, lendo campos de
+   * DIREÇÃO/ESTILO em prosa livre (`visualDirection`/`styleNotes`/`compositionIntent`), às vezes
+   * interpretava uma descrição como algo a desenhar literalmente. `allowedRenderedTexts` é a
+   * ÚNICA fonte de verdade de quais strings podem aparecer como pixels legíveis na peça final —
+   * sempre um eco exato de `headline`/`subheadline`/`cta`/`textZones[].text` (nunca um texto
+   * novo, nunca reformulado), nunca derivado de campos de direção/estilo. O quality gate
+   * (`evaluate-creative-quality-gate.ts`) usa isto para reprovar objetivamente qualquer texto
+   * visível fora da lista (`UNAUTHORIZED_TEXT`/`PLACEHOLDER_RENDERED`) ou qualquer item da lista
+   * que não apareça (`MISSING_REQUIRED_TEXT`) — comparação determinística contra o artefato
+   * final, nunca um julgamento subjetivo solto. */
+  allowedRenderedTexts: string[];
   visualDirection: string;
   compositionIntent: string;
   /** Para cada asset (por `url`, mesma chave do `CreativeContext.assets`), como o plano quer que
@@ -194,7 +209,7 @@ export type CreativePlan = {
 export const CREATIVE_PLAN_RESPONSE_SCHEMA_HINT =
   '{"objective": "...", "angle": "...", "targetAudience": "...", "title": "...", "description": "...", ' +
   '"headline": "...", "subheadline": "...", ' +
-  '"cta": "...", "visualDirection": "...", "compositionIntent": "...", "assetUsage": {"<url>": "..."}, ' +
+  '"cta": "...", "allowedRenderedTexts": ["..."], "visualDirection": "...", "compositionIntent": "...", "assetUsage": {"<url>": "..."}, ' +
   '"assetPlacements": [{"role": "product_photo"|"screenshot"|"logo"|"reference_style"|"other", "url": "...", ' +
   '"rect": {"xPct": 0, "yPct": 0, "widthPct": 0, "heightPct": 0}, "frame": "phone"|"laptop"|"none", "treatment": "..."}], ' +
   '"textZones": [{"kind": "headline"|"subheadline"|"cta"|"price"|"discount"|"url"|"badge", "text": "...", ' +
@@ -329,6 +344,14 @@ export function buildCreativePlanPrompt(context: CreativeContext): string {
     "- Quando houver produto real ou screenshot real, o plano deve construir a peça AO REDOR desse asset — nunca sugerir substituí-lo por algo genérico.",
     "- Priorize clareza da mensagem principal sobre densidade visual — só adicione elementos que sirvam ao objetivo.",
     "- `requiredElements` deve listar o que é obrigatório (ex.: \"logo\", \"headline\", \"cta\", \"screenshot do site em mockup de celular\").",
+    // Auditoria "motor de geração de criativos" — achado ao vivo: texto de peças finais trazia
+    // strings nunca pedidas ("TEXTO DE DESTAQUE", "SAIBA MAIS"), porque o modelo de imagem às
+    // vezes interpreta uma DESCRIÇÃO de estilo/composição como algo a desenhar literalmente.
+    // `allowedRenderedTexts` separa rigidamente o que é TEXTO REAL (vai virar pixels) do que é
+    // INSTRUÇÃO INTERNA (visualDirection/styleNotes/compositionIntent/rationale/objective/angle/
+    // targetAudience/title/description — nenhum desses pode virar texto visível).
+    "- `allowedRenderedTexts`: array com EXATAMENTE os textos que podem aparecer como pixels legíveis na peça — sempre um eco literal de `headline`, `subheadline` (se houver) e `cta`, mais o `text` de cada item de `textZones`. NUNCA inclua aqui, nem deixe aparecer na imagem, nenhuma paráfrase, rótulo técnico, nome de campo ou frase descritiva (\"headline\", \"CTA\", \"texto de destaque\", \"call to action\", \"placeholder\") — esses são nomes de CAMPO do seu próprio JSON, nunca conteúdo visual. Todo texto que não estiver literalmente nesta lista é uma falha grave da peça.",
+    "- `visualDirection`/`styleNotes`/`compositionIntent`/`rationale`/`objective`/`angle`/`targetAudience`/`title`/`description` são só para SEU planejamento interno e para o modelo de imagem entender atmosfera/composição — nenhuma palavra desses campos pode ser desenhada como texto na peça final.",
     "- `assetPlacements`: para cada asset REAL (produto/screenshot/logo) da lista acima, defina a geometria exata (retângulo em percentual do canvas final, 0-100) de onde ele vai entrar na composição — essa geometria será usada por composição determinística depois, então precisa ser definida ANTES da imagem existir, nunca improvisada depois.",
     // Achado ao vivo em produção: a orientação anterior ("prefira image_model pro headline") deu
     // errado nas duas primeiras tentativas reais após este pipeline entrar no ar — o headline,
@@ -444,6 +467,16 @@ function parseTextZones(value: unknown): CreativePlanTextZone[] | undefined {
   return result;
 }
 
+function parseAllowedRenderedTexts(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const result: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string" || !item.trim()) return undefined;
+    result.push(item);
+  }
+  return result;
+}
+
 /** Parser tolerante — nunca lança; devolve `undefined` em qualquer entrada malformada (mesmo
  * padrão best-effort do resto do pipeline de visão/texto do Vorix). Campos ausentes recebem
  * valores neutros nunca inventados como "preenchidos". Exceção deliberada: `assetPlacements`/
@@ -466,6 +499,16 @@ export function parseCreativePlan(raw: string): CreativePlan | undefined {
     if (assetPlacements === undefined) return undefined;
     const textZones = parseTextZones(parsed.textZones);
     if (textZones === undefined) return undefined;
+    // Achado ao vivo em produção (auditoria "motor de geração de criativos"): campo NOVO e
+    // deliberadamente estrito (rejeita o plano inteiro se ausente/malformado, nunca deriva
+    // silenciosamente de headline/cta/textZones) — é a fonte de verdade que o quality gate usa
+    // pra reprovar objetivamente texto não autorizado no artefato final. `headline`/`cta` devem
+    // aparecer EXATAMENTE (eco literal, não uma paráfrase) — se o diretor não consegue nem manter
+    // a lista consistente com os próprios campos que acabou de escrever, o plano inteiro não é
+    // confiável.
+    const allowedRenderedTexts = parseAllowedRenderedTexts(parsed.allowedRenderedTexts);
+    if (allowedRenderedTexts === undefined) return undefined;
+    if (!allowedRenderedTexts.includes(parsed.headline) || !allowedRenderedTexts.includes(parsed.cta)) return undefined;
 
     return {
       objective: typeof parsed.objective === "string" ? parsed.objective : "",
@@ -476,6 +519,7 @@ export function parseCreativePlan(raw: string): CreativePlan | undefined {
       headline: parsed.headline,
       subheadline: typeof parsed.subheadline === "string" && parsed.subheadline.trim() ? parsed.subheadline : undefined,
       cta: parsed.cta,
+      allowedRenderedTexts,
       visualDirection: typeof parsed.visualDirection === "string" ? parsed.visualDirection : "",
       compositionIntent: typeof parsed.compositionIntent === "string" ? parsed.compositionIntent : "",
       assetUsage,
@@ -531,13 +575,23 @@ export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: 
   ];
   if (plan.subheadline) lines.push(textZoneDrawInstruction(subheadlineZone, "Subheadline", plan.subheadline, ""));
   lines.push(textZoneDrawInstruction(ctaZone, "CTA", plan.cta, ""));
-  // Achado ao vivo em produção: mesmo com headline/subheadline corretamente desenhados pelo
-  // renderer determinístico (sem corte, com contraste garantido), o modelo de imagem ainda
-  // inventou uma tipografia decorativa GIGANTE por conta própria no fundo (um slogan diferente,
-  // não pedido em nenhum lugar do plano) — que ficou sobreposta ao box do headline. Nada até aqui
-  // proibia o modelo de adicionar texto extra além do que foi explicitamente pedido.
+  // Auditoria "motor de geração de criativos" — achado ao vivo: mesmo com headline/subheadline
+  // corretamente desenhados pelo renderer determinístico, o modelo de imagem inventou tipografia
+  // decorativa extra por conta própria (um slogan diferente, um rótulo técnico como "TEXTO DE
+  // DESTAQUE" ou "SAIBA MAIS" — não pedidos em lugar nenhum). Uma proibição genérica não bastou;
+  // repetir aqui a lista EXATA e FECHADA de `allowedRenderedTexts` (a mesma fonte de verdade que o
+  // quality gate usa pra reprovar objetivamente) dá ao modelo um contrato literal, não uma
+  // descrição vaga do que evitar. Achado ao revisar esta correção: a lista NUNCA pode citar o
+  // texto exato de uma zona `renderedBy: "renderer"` — o mesmo bug de duplicação corrigido antes
+  // (o modelo lê "X é permitido" como permissão pra desenhar X, mesmo já instruído a deixar a
+  // área limpa) reapareceria por uma porta diferente. Só lista o que o PRÓPRIO modelo pode/deve
+  // desenhar; textos do renderer são só referenciados de forma genérica, nunca citados.
+  const rendererOwnedTexts = new Set(plan.textZones.filter((zone) => zone.renderedBy === "renderer").map((zone) => zone.text));
+  const modelDrawableAllowedTexts = plan.allowedRenderedTexts.filter((text) => !rendererOwnedTexts.has(text));
   lines.push(
-    "NUNCA adicione nenhum texto, palavra, frase ou tipografia decorativa além dos elementos explicitamente pedidos acima (headline, subheadline, CTA e outros listados nos elementos obrigatórios) — nenhum slogan, grafismo tipográfico ou letra extra no fundo ou em qualquer parte da composição.",
+    modelDrawableAllowedTexts.length > 0
+      ? `TEXTOS PERMITIDOS NESTA PEÇA — lista FECHADA e EXAUSTIVA de tudo que VOCÊ (modelo de imagem) pode desenhar como texto: ${modelDrawableAllowedTexts.map((text) => `"${text}"`).join(", ")}.${rendererOwnedTexts.size > 0 ? " Os demais textos autorizados desta peça já foram tratados nas instruções acima (áreas que você deve deixar limpas, desenhadas por um renderer separado depois) — não repita nenhum deles, nem uma versão aproximada." : ""} NUNCA escreva nenhuma outra palavra, frase, rótulo, botão, tag ou tipografia decorativa além do listado — nenhum texto adicional, mesmo que pareça combinar com o estilo da peça (ex.: "saiba mais", "compre agora", "oferta", ou qualquer paráfrase).`
+      : "NUNCA escreva NENHUM texto além do que já foi instruído acima — todos os textos autorizados desta peça são desenhados por um renderer separado depois. Nenhuma palavra, frase, rótulo, botão, tag ou tipografia decorativa extra em qualquer lugar da composição.",
   );
   if (plan.requiredElements.length > 0) lines.push(`Elementos obrigatórios na composição: ${plan.requiredElements.join(", ")}.`);
   if (plan.forbiddenElements.length > 0) lines.push(`NUNCA incluir: ${plan.forbiddenElements.join(", ")}.`);
@@ -554,10 +608,18 @@ export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: 
     );
   }
   lines.push("Garanta ALTO CONTRASTE entre todo texto e o fundo exato atrás dele — nunca texto claro sobre fundo claro, nem texto escuro sobre fundo escuro.");
-  // Achado ao vivo em produção: um headline desenhado pelo próprio modelo (sem textZone/rect
-  // determinado) saiu cortado nas bordas superior e esquerda do canvas — nada no prompt até aqui
-  // dizia pra manter distância da borda quando o texto não tem uma zona com rect explícito.
-  lines.push("Mantenha TODO texto (headline, subheadline, CTA, badges, preços) a pelo menos 6% de distância de cada borda do canvas — nunca corte ou aproxime letras da borda.");
+  // Auditoria "motor de geração de criativos" — achado ao vivo: um headline desenhado pelo
+  // próprio modelo (sem textZone/rect determinado) saiu cortado na borda do canvas MESMO depois
+  // da margem de 6% (valor arbitrário) já ter sido adicionada — porque `4:5`/`9:16`/`16:9` sofrem
+  // um corte automático centralizado depois da geração (`gpt-image-1` não suporta essas proporções
+  // nativamente, ver `image-crop-geometry.ts`), e o modelo desenha sobre o canvas NATIVO maior,
+  // sem saber que uma faixa das bordas será removida. 6% nunca foi a margem real — é só o que
+  // "parecia razoável". Usa a margem EXATA que o corte de fato remove (calculada, não arbitrária);
+  // cai pra 6% só em formatos sem corte (`1:1`), como piso de segurança geral.
+  const cropSafeMarginPct = computeCropSafeMarginPct(context.format) ?? 6;
+  lines.push(
+    `Mantenha TODO texto (headline, subheadline, CTA, badges, preços) a pelo menos ${cropSafeMarginPct}% de distância de cada borda do canvas — nunca corte ou aproxime letras da borda. Esta margem já considera que a imagem final pode ser cortada automaticamente depois; respeitá-la garante que nada seja removido nesse corte.`,
+  );
 
   const logoPlacement = plan.assetPlacements.find((placement) => placement.role === "logo");
   if (hasLogoAsset) {

@@ -20,6 +20,7 @@ import { registerTikTokRoutes } from "./tiktok.route.js";
 import { registerYouTubeRoutes } from "./youtube.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
 import { registerMetaAdsRoutes } from "./meta-ads.route.js";
+import { registerMetaAdCampaignsRoutes } from "./meta-ad-campaigns.route.js";
 import { registerPublicationMediaRoutes } from "./publication-media.route.js";
 import { registerExecutionRunRoutes } from "./execution-runs.route.js";
 import { registerProductionRoutes } from "./production.route.js";
@@ -174,6 +175,14 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   await registerMetaAdsRoutes(app, {
     metaAdsOAuthService: app.zunoContainer.metaAdsOAuthService,
     metaAdAccountRepository: app.zunoContainer.metaAdAccountRepository,
+  });
+  await registerMetaAdCampaignsRoutes(app, {
+    metaAdAccountRepository: app.zunoContainer.metaAdAccountRepository,
+    metaAdCampaignRepository: app.zunoContainer.metaAdCampaignRepository,
+    metaAdSetRepository: app.zunoContainer.metaAdSetRepository,
+    metaAdRepository: app.zunoContainer.metaAdRepository,
+    metaAdsCredentialRepository: app.zunoContainer.metaAdsCredentialRepository,
+    secretManager: app.zunoContainer.secretManager,
   });
   await registerPublicationMediaRoutes(app, {
     objectStorage: app.zunoContainer.objectStorage,

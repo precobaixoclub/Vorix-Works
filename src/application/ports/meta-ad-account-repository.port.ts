@@ -33,6 +33,10 @@ export type MetaAdAccountRepositoryPort = {
   upsertAccount(input: UpsertMetaAdAccountInput): Promise<MetaAdAccount>;
   listByWorkspace(input: { tenantId: string; workspaceId: string }): Promise<MetaAdAccount[]>;
   getById(id: string): Promise<MetaAdAccount | undefined>;
+  /** Todas as contas ativas, de TODOS os tenants/workspaces — usado só pelo scheduler de sync
+   * (Fase 2), que varre o sistema inteiro a cada ciclo, nunca por uma rota autenticada por
+   * workspace (isso vazaria dados entre tenants). */
+  listAllActive(): Promise<MetaAdAccount[]>;
   /** Marca como inativa qualquer conta deste `credentialReferenceId` cujo `accountId` NÃO esteja
    * em `keepAccountIds` — a Meta pode remover o acesso do usuário a uma conta entre duas
    * sincronizações; sem isto, uma conta desconectada continuaria aparecendo pra sempre. */

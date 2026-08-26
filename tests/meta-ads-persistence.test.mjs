@@ -8,6 +8,9 @@ import { PostgresMetaAdsCredentialRepository } from "../dist/infrastructure/stor
 import { PostgresMetaAdAccountRepository } from "../dist/infrastructure/storage/postgres/postgres-meta-ad-account-repository.js";
 import { InMemoryMetaAdsCredentialRepository } from "../dist/infrastructure/storage/in-memory-meta-ads-credential-repository.js";
 import { InMemoryMetaAdAccountRepository } from "../dist/infrastructure/storage/in-memory-meta-ad-account-repository.js";
+import { PostgresMetaAdCampaignRepository } from "../dist/infrastructure/storage/postgres/postgres-meta-ad-campaign-repository.js";
+import { PostgresMetaAdSetRepository } from "../dist/infrastructure/storage/postgres/postgres-meta-ad-set-repository.js";
+import { PostgresMetaAdRepository } from "../dist/infrastructure/storage/postgres/postgres-meta-ad-repository.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "db", "migrations");
@@ -147,4 +150,75 @@ test("Paridade InMemory/Postgres: mesmo fluxo de upsert+list produz o mesmo resu
   assert.equal(pgAccount.accountId, memAccount.accountId);
   assert.equal(pgAccount.name, memAccount.name);
   assert.equal(pgAccount.isActive, memAccount.isActive);
+});
+
+// Fase 2 — hierarquia campanha → adset → ad. Ver db/migrations/0070-0072: FKs REAIS com CASCADE,
+// ao contrário do pacote de referência analisado (bittencourtthulio/meta-graph-api-integration),
+// cujo ad_sets/ads originais tinham UUIDs soltos sem REFERENCES.
+
+async function makeAdAccount(tenantId, workspaceId) {
+  const credentialRepo = new PostgresMetaAdsCredentialRepository(db.pool);
+  const credentialReferenceId = nextId("cred");
+  await credentialRepo.upsertCredentialReference({ credentialReferenceId, tenantId, workspaceId, providerId: "meta_ads", status: "active" });
+  const accountRepo = new PostgresMetaAdAccountRepository(db.pool);
+  return accountRepo.upsertAccount({ tenantId, workspaceId, credentialReferenceId, accountId: `act_${nextId("acc")}`, name: "Conta", currency: "BRL", isActive: true });
+}
+
+test("Migrations 0070-0072 aplicam sem erro; meta_ad_campaigns/meta_ad_sets/meta_ads existem com FK real", async () => {
+  const status = await db.pool.query("select id from schema_migrations where id in ('0070_meta_ad_campaigns', '0071_meta_ad_sets', '0072_meta_ads')");
+  assert.equal(status.rows.length, 3);
+  const fks = await db.pool.query(`
+    select tc.table_name, kcu.column_name from information_schema.table_constraints tc
+    join information_schema.key_column_usage kcu on tc.constraint_name = kcu.constraint_name
+    where tc.constraint_type = 'FOREIGN KEY' and tc.table_name in ('meta_ad_campaigns', 'meta_ad_sets', 'meta_ads')`);
+  assert.ok(fks.rows.some((row) => row.table_name === "meta_ad_sets" && row.column_name === "campaign_id"));
+  assert.ok(fks.rows.some((row) => row.table_name === "meta_ads" && row.column_name === "ad_set_id"));
+});
+
+test("PostgresMetaAdCampaignRepository: upsert por (adAccountId, campaignId) nunca duplica; insights fica em jsonb intacto", async () => {
+  const workspace = await makeWorkspace("tenant-mc-1");
+  const account = await makeAdAccount("tenant-mc-1", workspace.id);
+  const repo = new PostgresMetaAdCampaignRepository(db.pool);
+  const input = { tenantId: "tenant-mc-1", workspaceId: workspace.id, adAccountId: account.id, campaignId: "cmp_pg_1", name: "Campanha", status: "ACTIVE", spend: 99.9, insights: { spend: "99.9", actions: [{ action_type: "link_click", value: "12" }] } };
+
+  await repo.upsertCampaign(input);
+  await repo.upsertCampaign({ ...input, name: "Campanha Renomeada" });
+
+  const [campaign] = await repo.listByWorkspace({ tenantId: "tenant-mc-1", workspaceId: workspace.id });
+  assert.equal(campaign.name, "Campanha Renomeada");
+  assert.deepEqual(campaign.insights, { spend: "99.9", actions: [{ action_type: "link_click", value: "12" }] });
+});
+
+test("FK campanha → workspace: apagar o workspace apaga em cascata campanhas/adsets/ads (nunca deixa órfão)", async () => {
+  const workspace = await makeWorkspace("tenant-cascade-1");
+  const account = await makeAdAccount("tenant-cascade-1", workspace.id);
+  const campaignRepo = new PostgresMetaAdCampaignRepository(db.pool);
+  const adSetRepo = new PostgresMetaAdSetRepository(db.pool);
+  const adRepo = new PostgresMetaAdRepository(db.pool);
+
+  const campaign = await campaignRepo.upsertCampaign({ tenantId: "tenant-cascade-1", workspaceId: workspace.id, adAccountId: account.id, campaignId: "cmp_casc", name: "C", status: "ACTIVE" });
+  const adSet = await adSetRepo.upsertAdSet({ tenantId: "tenant-cascade-1", workspaceId: workspace.id, campaignId: campaign.id, adAccountId: account.id, adSetId: "adset_casc", name: "AS", status: "ACTIVE" });
+  const ad = await adRepo.upsertAd({ tenantId: "tenant-cascade-1", workspaceId: workspace.id, adSetId: adSet.id, campaignId: campaign.id, adAccountId: account.id, adId: "ad_casc", name: "A", status: "ACTIVE" });
+
+  await db.pool.query("delete from workspaces where id = $1", [workspace.id]);
+
+  assert.equal(await campaignRepo.getById(campaign.id), undefined);
+  assert.equal(await adSetRepo.getById(adSet.id), undefined);
+  assert.equal(await adRepo.getById(ad.id), undefined);
+});
+
+test("PostgresMetaAdCampaignRepository.markDeletedMissing: nunca DELETE físico, só deletedAt — soft delete preservado", async () => {
+  const workspace = await makeWorkspace("tenant-mc-2");
+  const account = await makeAdAccount("tenant-mc-2", workspace.id);
+  const repo = new PostgresMetaAdCampaignRepository(db.pool);
+  await repo.upsertCampaign({ tenantId: "tenant-mc-2", workspaceId: workspace.id, adAccountId: account.id, campaignId: "cmp_stay", name: "Fica", status: "ACTIVE" });
+  await repo.upsertCampaign({ tenantId: "tenant-mc-2", workspaceId: workspace.id, adAccountId: account.id, campaignId: "cmp_gone", name: "Sai", status: "ACTIVE" });
+
+  await repo.markDeletedMissing({ adAccountId: account.id, keepCampaignIds: ["cmp_stay"] });
+
+  const active = await repo.listByWorkspace({ tenantId: "tenant-mc-2", workspaceId: workspace.id });
+  const all = await repo.listByWorkspace({ tenantId: "tenant-mc-2", workspaceId: workspace.id, includeDeleted: true });
+  assert.equal(active.length, 1);
+  assert.equal(all.length, 2, "nunca deleta a linha fisicamente");
+  assert.ok(all.find((campaign) => campaign.campaignId === "cmp_gone").deletedAt);
 });

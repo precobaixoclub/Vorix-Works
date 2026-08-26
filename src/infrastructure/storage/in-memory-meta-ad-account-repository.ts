@@ -26,6 +26,10 @@ export class InMemoryMetaAdAccountRepository implements MetaAdAccountRepositoryP
     return this.accounts.get(id);
   }
 
+  async listAllActive(): Promise<MetaAdAccount[]> {
+    return [...this.accounts.values()].filter((account) => account.isActive);
+  }
+
   async deactivateMissing(input: { credentialReferenceId: string; keepAccountIds: readonly string[] }): Promise<void> {
     const keep = new Set(input.keepAccountIds);
     for (const [id, account] of this.accounts) {

@@ -6,6 +6,7 @@ export type NavIconId =
   | "calendar"
   | "publish"
   | "connections"
+  | "ads"
   | "brand"
   | "analytics"
   | "settings"
@@ -75,6 +76,14 @@ export function NavIcon({ id, className = "h-[18px] w-[18px]" }: { id: NavIconId
         <svg {...shared}>
           <circle cx="5.6" cy="6" r="2.6" {...stroke} />
           <circle cx="10.4" cy="10" r="2.6" {...stroke} />
+        </svg>
+      );
+    case "ads":
+      return (
+        <svg {...shared}>
+          <path d="M2.4 6.2h2.4l5-3.2v10l-5-3.2H2.4a1 1 0 01-1-1V7.2a1 1 0 011-1z" {...stroke} strokeLinejoin="round" />
+          <path d="M6.6 11.4l1 2.6" {...stroke} />
+          <path d="M11.6 6a2.4 2.4 0 010 4" {...stroke} />
         </svg>
       );
     case "brand":

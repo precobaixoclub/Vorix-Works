@@ -102,6 +102,11 @@ export class PostgresMetaAdAccountRepository implements MetaAdAccountRepositoryP
     return result.rows[0] ? toDomain(result.rows[0]) : undefined;
   }
 
+  async listAllActive(): Promise<MetaAdAccount[]> {
+    const result = await this.pool.query<MetaAdAccountRow>("select * from meta_ad_accounts where is_active = true order by workspace_id");
+    return result.rows.map(toDomain);
+  }
+
   async deactivateMissing(input: { credentialReferenceId: string; keepAccountIds: readonly string[] }): Promise<void> {
     await this.pool.query(
       "update meta_ad_accounts set is_active = false, updated_at = now() where credential_reference_id = $1 and not (account_id = any($2::text[]))",

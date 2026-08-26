@@ -136,6 +136,10 @@ export type ApiConfig = {
     appSecret?: string;
     redirectUri?: string;
     loginConfigId?: string;
+    /** Fase 2 — sync periódico de campanhas/adsets/ads, mesmo padrão de
+     * `publication.schedulerEnabled/schedulerIntervalMs`. */
+    syncSchedulerEnabled: boolean;
+    syncSchedulerIntervalMs: number;
   };
   scheduling: {
     occurrenceWindowDays: number;
@@ -251,6 +255,11 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const metaAdsAppSecret = env.META_ADS_APP_SECRET?.trim() || undefined;
   const metaAdsRedirectUri = env.META_ADS_OAUTH_REDIRECT_URI?.trim() || undefined;
   const metaAdsLoginConfigId = env.META_ADS_LOGIN_CONFIG_ID?.trim() || undefined;
+  // Intervalo bem mais longo que o scheduler de publicação (30s): dados de campanha/insights não
+  // precisam de frescor de segundos, e sincronizar com frequência demais gasta rate limit da
+  // Marketing API à toa. 15 minutos por padrão.
+  const metaAdsSyncSchedulerEnabled = env.META_ADS_SYNC_SCHEDULER_ENABLED?.trim() !== "false";
+  const metaAdsSyncSchedulerIntervalMs = parsePositiveInt(env.META_ADS_SYNC_SCHEDULER_INTERVAL_MS) ?? 900_000;
   const metaInstagramEnabled = env.META_INSTAGRAM_ENABLED?.trim() === "true";
   const metaInstagramRedirectUri = env.META_INSTAGRAM_OAUTH_REDIRECT_URI?.trim() || undefined;
   const metaLoginConfigId = env.META_LOGIN_CONFIG_ID?.trim() || undefined;
@@ -418,6 +427,8 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       appSecret: metaAdsAppSecret,
       redirectUri: metaAdsRedirectUri,
       loginConfigId: metaAdsLoginConfigId,
+      syncSchedulerEnabled: metaAdsSyncSchedulerEnabled,
+      syncSchedulerIntervalMs: metaAdsSyncSchedulerIntervalMs,
     },
     scheduling: {
       occurrenceWindowDays: schedulingOccurrenceWindowDays,

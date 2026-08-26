@@ -43,6 +43,69 @@ export type MetaAdsOAuthComplete = {
   accounts: readonly MetaAdsConnectedAccount[];
 };
 
+/** Fase 2 — hierarquia sincronizada da Marketing API. Ver
+ * `src/application/ports/meta-ad-campaign-repository.port.ts` no backend. */
+export type MetaAdEntityStatus = "ACTIVE" | "PAUSED" | "DELETED" | "ARCHIVED";
+
+export type MetaAdCampaign = {
+  id: string;
+  adAccountId: string;
+  campaignId: string;
+  name: string;
+  objective?: string;
+  status: MetaAdEntityStatus;
+  effectiveStatus?: string;
+  dailyBudget?: number;
+  lifetimeBudget?: number;
+  spend?: number;
+  impressions?: number;
+  clicks?: number;
+  reach?: number;
+  lastSyncedAt?: string;
+  deletedAt?: string;
+};
+
+export type MetaAdSet = {
+  id: string;
+  campaignId: string;
+  adAccountId: string;
+  adSetId: string;
+  name: string;
+  status: MetaAdEntityStatus;
+  effectiveStatus?: string;
+  dailyBudget?: number;
+  lifetimeBudget?: number;
+  spend?: number;
+  impressions?: number;
+  clicks?: number;
+  reach?: number;
+  deletedAt?: string;
+};
+
+export type MetaAdEntity = {
+  id: string;
+  adSetId: string;
+  campaignId: string;
+  adAccountId: string;
+  adId: string;
+  name: string;
+  status: MetaAdEntityStatus;
+  effectiveStatus?: string;
+  spend?: number;
+  impressions?: number;
+  clicks?: number;
+  reach?: number;
+  deletedAt?: string;
+};
+
+export type MetaAdCampaignTree = {
+  campaigns: readonly MetaAdCampaign[];
+  adSets: readonly MetaAdSet[];
+  ads: readonly MetaAdEntity[];
+};
+
+export type MetaAdCampaignSyncResult = { campaignsSynced: number; adSetsSynced: number; adsSynced: number };
+
 export type MetaAdAccount = {
   id: string;
   tenantId: string;

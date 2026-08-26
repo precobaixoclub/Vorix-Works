@@ -21,6 +21,9 @@ import type { ContentGenerationHistoryPort } from "../../application/ports/conte
 import type { CreativeEngineRunRepositoryPort } from "../../application/ports/creative-engine-run-repository.port.js";
 import type { MetaAdsCredentialRepositoryPort } from "../../application/ports/meta-ads-credential-repository.port.js";
 import type { MetaAdAccountRepositoryPort } from "../../application/ports/meta-ad-account-repository.port.js";
+import type { MetaAdCampaignRepositoryPort } from "../../application/ports/meta-ad-campaign-repository.port.js";
+import type { MetaAdSetRepositoryPort } from "../../application/ports/meta-ad-set-repository.port.js";
+import type { MetaAdRepositoryPort } from "../../application/ports/meta-ad-repository.port.js";
 import type { QualityFeedbackRepositoryPort } from "../../application/quality-feedback/quality-feedback-repository.port.js";
 import type { OperationalAuditRepositoryPort } from "../../application/ports/operational-audit-repository.port.js";
 import type { OperationalStateRepositoryPort } from "../../application/ports/operational-state-repository.port.js";
@@ -44,6 +47,9 @@ import { InMemoryContentGenerationHistoryRepository } from "./in-memory-content-
 import { InMemoryCreativeEngineRunRepository } from "./in-memory-creative-engine-run-repository.js";
 import { InMemoryMetaAdsCredentialRepository } from "./in-memory-meta-ads-credential-repository.js";
 import { InMemoryMetaAdAccountRepository } from "./in-memory-meta-ad-account-repository.js";
+import { InMemoryMetaAdCampaignRepository } from "./in-memory-meta-ad-campaign-repository.js";
+import { InMemoryMetaAdSetRepository } from "./in-memory-meta-ad-set-repository.js";
+import { InMemoryMetaAdRepository } from "./in-memory-meta-ad-repository.js";
 import { InMemoryQualityFeedbackRepository } from "./in-memory-quality-feedback-repository.js";
 import { InMemoryBriefingFieldValueRepository } from "./in-memory-briefing-field-value-repository.js";
 import { InMemoryBriefingQuestionRepository } from "./in-memory-briefing-question-repository.js";
@@ -76,6 +82,9 @@ import { PostgresContentGenerationHistoryRepository } from "./postgres/postgres-
 import { PostgresCreativeEngineRunRepository } from "./postgres/postgres-creative-engine-run-repository.js";
 import { PostgresMetaAdsCredentialRepository } from "./postgres/postgres-meta-ads-credential-repository.js";
 import { PostgresMetaAdAccountRepository } from "./postgres/postgres-meta-ad-account-repository.js";
+import { PostgresMetaAdCampaignRepository } from "./postgres/postgres-meta-ad-campaign-repository.js";
+import { PostgresMetaAdSetRepository } from "./postgres/postgres-meta-ad-set-repository.js";
+import { PostgresMetaAdRepository } from "./postgres/postgres-meta-ad-repository.js";
 import { PostgresQualityFeedbackRepository } from "./postgres/postgres-quality-feedback-repository.js";
 import { PostgresBriefingFieldValueRepository } from "./postgres/postgres-briefing-field-value-repository.js";
 import { PostgresBriefingQuestionRepository } from "./postgres/postgres-briefing-question-repository.js";
@@ -156,6 +165,11 @@ export type PlatformRepositories = {
    * `db/migrations/0069_meta_ads_credentials_accounts.sql`. */
   metaAdsCredentialRepository: MetaAdsCredentialRepositoryPort;
   metaAdAccountRepository: MetaAdAccountRepositoryPort;
+  /** Fase 2 — hierarquia campanha → adset → ad sincronizada da Marketing API, ver
+   * `db/migrations/0070-0072`. */
+  metaAdCampaignRepository: MetaAdCampaignRepositoryPort;
+  metaAdSetRepository: MetaAdSetRepositoryPort;
+  metaAdRepository: MetaAdRepositoryPort;
   /** Só existe quando `driver === "postgres"` — quem chama esta função é responsável por fechar (`pool.end()`) no shutdown. */
   pool?: InstanceType<typeof Pool>;
 };
@@ -209,6 +223,9 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       creativeEngineRunRepository: new InMemoryCreativeEngineRunRepository(),
       metaAdsCredentialRepository: new InMemoryMetaAdsCredentialRepository(),
       metaAdAccountRepository: new InMemoryMetaAdAccountRepository(),
+      metaAdCampaignRepository: new InMemoryMetaAdCampaignRepository(),
+      metaAdSetRepository: new InMemoryMetaAdSetRepository(),
+      metaAdRepository: new InMemoryMetaAdRepository(),
     };
   }
 
@@ -254,6 +271,9 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     creativeEngineRunRepository: new PostgresCreativeEngineRunRepository(pool),
     metaAdsCredentialRepository: new PostgresMetaAdsCredentialRepository(pool),
     metaAdAccountRepository: new PostgresMetaAdAccountRepository(pool),
+    metaAdCampaignRepository: new PostgresMetaAdCampaignRepository(pool),
+    metaAdSetRepository: new PostgresMetaAdSetRepository(pool),
+    metaAdRepository: new PostgresMetaAdRepository(pool),
     pool,
   };
 }

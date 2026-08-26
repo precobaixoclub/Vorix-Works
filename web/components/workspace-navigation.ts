@@ -28,6 +28,7 @@ export const MAIN_NAV_SECTIONS: readonly WorkspaceNavSection[] = [
     label: "DISTRIBUIÇÃO",
     items: [
       { href: "/publish", label: "Publicar", icon: "publish" },
+      { href: "/meta-ads", label: "Anúncios", icon: "ads" },
       { href: "/connections", label: "Conexões", icon: "connections" },
     ],
   },
@@ -64,6 +65,7 @@ export const PRIMARY_MOBILE_NAV: readonly WorkspaceNavItem[] = [
 export const MOBILE_MENU_NAV: readonly WorkspaceNavItem[] = [
   { href: "/publish", label: "Publicar", icon: "publish" },
   { href: "/calendar", label: "Calendário", icon: "calendar" },
+  { href: "/meta-ads", label: "Anúncios", icon: "ads" },
   { href: "/connections", label: "Conexões", icon: "connections" },
   { href: "/knowledge", label: "Marca", icon: "brand" },
   { href: "/analytics", label: "Analytics", icon: "analytics" },

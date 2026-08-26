@@ -20,6 +20,10 @@ import { CredentialGovernanceService } from "../../../application/credential/cre
 import type { ConversationRepositoryPort } from "../../../application/ports/conversation-repository.port.js";
 import type { CredentialRepositoryPort } from "../../../application/ports/credential-repository.port.js";
 import type { MetaAdAccountRepositoryPort } from "../../../application/ports/meta-ad-account-repository.port.js";
+import type { MetaAdsCredentialRepositoryPort } from "../../../application/ports/meta-ads-credential-repository.port.js";
+import type { MetaAdCampaignRepositoryPort } from "../../../application/ports/meta-ad-campaign-repository.port.js";
+import type { MetaAdSetRepositoryPort } from "../../../application/ports/meta-ad-set-repository.port.js";
+import type { MetaAdRepositoryPort } from "../../../application/ports/meta-ad-repository.port.js";
 import type { ExecutionGraphRepositoryPort } from "../../../application/ports/execution-graph-repository.port.js";
 import type { ExecutionTaskRepositoryPort } from "../../../application/ports/execution-task-repository.port.js";
 import type { JwtPort } from "../../../application/ports/jwt.port.js";
@@ -269,6 +273,12 @@ export type ApiContainer = {
    * ver comentário no topo de `meta-ads-oauth-service.ts`. */
   metaAdsOAuthService: MetaAdsOAuthService;
   metaAdAccountRepository: MetaAdAccountRepositoryPort;
+  /** Fase 2 — expostos para o scheduler de sync (`meta-ads-sync-scheduler.ts`) e para as rotas de
+   * árvore de campanhas. */
+  metaAdsCredentialRepository: MetaAdsCredentialRepositoryPort;
+  metaAdCampaignRepository: MetaAdCampaignRepositoryPort;
+  metaAdSetRepository: MetaAdSetRepositoryPort;
+  metaAdRepository: MetaAdRepositoryPort;
   objectStorage: ObjectStoragePort;
   /** Remoção de fundo de logo via IA (`POST /v1/images/edits`, `background: "transparent"`) —
    * ver `openai-background-removal.ts`. Nunca registra Asset por conta própria; a rota exige

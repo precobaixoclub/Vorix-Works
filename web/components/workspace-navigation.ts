@@ -29,6 +29,7 @@ export const MAIN_NAV_SECTIONS: readonly WorkspaceNavSection[] = [
     items: [
       { href: "/publish", label: "Publicar", icon: "publish" },
       { href: "/meta-ads", label: "Anúncios", icon: "ads" },
+      { href: "/instagram-dm", label: "Mensagens", icon: "messages" },
       { href: "/connections", label: "Conexões", icon: "connections" },
     ],
   },
@@ -66,6 +67,7 @@ export const MOBILE_MENU_NAV: readonly WorkspaceNavItem[] = [
   { href: "/publish", label: "Publicar", icon: "publish" },
   { href: "/calendar", label: "Calendário", icon: "calendar" },
   { href: "/meta-ads", label: "Anúncios", icon: "ads" },
+  { href: "/instagram-dm", label: "Mensagens", icon: "messages" },
   { href: "/connections", label: "Conexões", icon: "connections" },
   { href: "/knowledge", label: "Marca", icon: "brand" },
   { href: "/analytics", label: "Analytics", icon: "analytics" },

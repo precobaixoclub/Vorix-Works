@@ -128,6 +128,14 @@ function parseForbiddenElements(raw: unknown): string[] | undefined {
   return items.length > 0 ? items : undefined;
 }
 
+// Auditoria de custo urgente — preset "Premium" aprovado pelo usuário (qualidade "high" mantida,
+// teto de US$ 0.60/execução): pior caso real calculado é ~US$ 0.54 (1 rodada inicial + 1 rodada de
+// reparo, `MAX_CREATIVE_REPAIR_ROUNDS = 1`, imagem 1024x1536 em qualidade "high" com foto de
+// referência) — este teto dá ~11% de margem sobre esse pior caso, nunca bloqueando uma geração
+// normal, mas parando qualquer cenário de gasto fora do esperado (bug, loop, mudança de preço da
+// OpenAI). Ver relatório da auditoria de custo para o cálculo completo por etapa.
+const DEFAULT_MAX_BUDGET_USD = 0.6;
+
 export type GptCreativeEngineVisualTaskHandlerDeps = GptCreativeEngineDeps &
   BuildCreativeContextDeps & {
     runtimeRepository: RuntimeRepositoryPort;
@@ -135,6 +143,12 @@ export type GptCreativeEngineVisualTaskHandlerDeps = GptCreativeEngineDeps &
     /** Ausente em memória (in-memory) desativa a persistência auditável — nunca bloqueia a
      * geração; é sempre best-effort (nunca deve derrubar a execução por falha de escrita). */
     creativeEngineRunRepository?: CreativeEngineRunRepositoryPort;
+    /** Auditoria de custo urgente — permite sobrescrever o teto padrão (`DEFAULT_MAX_BUDGET_USD`)
+     * por wiring (ex.: um preset econômico por tenant/workspace, no futuro). `undefined` aqui usa
+     * o padrão aprovado; passar explicitamente `undefined` não é possível para DESATIVAR o
+     * teto — isso é deliberado: produção sempre roda com algum limite explícito, nunca "sem
+     * limite" por omissão silenciosa. */
+    maxBudgetUsd?: number;
   };
 
 export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerPort {
@@ -175,6 +189,7 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
       tenantId: request.context.tenantId,
       workspaceId: request.context.workspaceId,
       creativeContext,
+      maxBudgetUsd: this.deps.maxBudgetUsd ?? DEFAULT_MAX_BUDGET_USD,
     });
 
     await this.persistRun(request, creativeEngineRunId, result).catch(() => undefined);

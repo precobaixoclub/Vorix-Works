@@ -19,6 +19,8 @@ import type { ExecutionRepositoryPort } from "../../application/ports/execution-
 import type { ExecutionTaskRepositoryPort } from "../../application/ports/execution-task-repository.port.js";
 import type { ContentGenerationHistoryPort } from "../../application/ports/content-generation-history.port.js";
 import type { CreativeEngineRunRepositoryPort } from "../../application/ports/creative-engine-run-repository.port.js";
+import type { MetaAdsCredentialRepositoryPort } from "../../application/ports/meta-ads-credential-repository.port.js";
+import type { MetaAdAccountRepositoryPort } from "../../application/ports/meta-ad-account-repository.port.js";
 import type { QualityFeedbackRepositoryPort } from "../../application/quality-feedback/quality-feedback-repository.port.js";
 import type { OperationalAuditRepositoryPort } from "../../application/ports/operational-audit-repository.port.js";
 import type { OperationalStateRepositoryPort } from "../../application/ports/operational-state-repository.port.js";
@@ -40,6 +42,8 @@ import { InMemoryBrandVisualProfileRepository } from "./in-memory-brand-visual-p
 import { InMemoryProductionSettingsRepository } from "./in-memory-production-settings-repository.js";
 import { InMemoryContentGenerationHistoryRepository } from "./in-memory-content-generation-history-repository.js";
 import { InMemoryCreativeEngineRunRepository } from "./in-memory-creative-engine-run-repository.js";
+import { InMemoryMetaAdsCredentialRepository } from "./in-memory-meta-ads-credential-repository.js";
+import { InMemoryMetaAdAccountRepository } from "./in-memory-meta-ad-account-repository.js";
 import { InMemoryQualityFeedbackRepository } from "./in-memory-quality-feedback-repository.js";
 import { InMemoryBriefingFieldValueRepository } from "./in-memory-briefing-field-value-repository.js";
 import { InMemoryBriefingQuestionRepository } from "./in-memory-briefing-question-repository.js";
@@ -70,6 +74,8 @@ import { PostgresBrandVisualProfileRepository } from "./postgres/postgres-brand-
 import { PostgresProductionSettingsRepository } from "./postgres/postgres-production-settings-repository.js";
 import { PostgresContentGenerationHistoryRepository } from "./postgres/postgres-content-generation-history-repository.js";
 import { PostgresCreativeEngineRunRepository } from "./postgres/postgres-creative-engine-run-repository.js";
+import { PostgresMetaAdsCredentialRepository } from "./postgres/postgres-meta-ads-credential-repository.js";
+import { PostgresMetaAdAccountRepository } from "./postgres/postgres-meta-ad-account-repository.js";
 import { PostgresQualityFeedbackRepository } from "./postgres/postgres-quality-feedback-repository.js";
 import { PostgresBriefingFieldValueRepository } from "./postgres/postgres-briefing-field-value-repository.js";
 import { PostgresBriefingQuestionRepository } from "./postgres/postgres-briefing-question-repository.js";
@@ -146,6 +152,10 @@ export type PlatformRepositories = {
   /** Migração "GPT como motor criativo único" — prova auditável de qual motor produziu cada peça
    * (`db/migrations/0060_creative_engine_runs.sql`). */
   creativeEngineRunRepository: CreativeEngineRunRepositoryPort;
+  /** Módulo Meta Ads Manager (Fase 1) — deliberadamente separado do domínio de publicação, ver
+   * `db/migrations/0069_meta_ads_credentials_accounts.sql`. */
+  metaAdsCredentialRepository: MetaAdsCredentialRepositoryPort;
+  metaAdAccountRepository: MetaAdAccountRepositoryPort;
   /** Só existe quando `driver === "postgres"` — quem chama esta função é responsável por fechar (`pool.end()`) no shutdown. */
   pool?: InstanceType<typeof Pool>;
 };
@@ -197,6 +207,8 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       contentGenerationHistoryRepository: new InMemoryContentGenerationHistoryRepository(),
       qualityFeedbackRepository: new InMemoryQualityFeedbackRepository(),
       creativeEngineRunRepository: new InMemoryCreativeEngineRunRepository(),
+      metaAdsCredentialRepository: new InMemoryMetaAdsCredentialRepository(),
+      metaAdAccountRepository: new InMemoryMetaAdAccountRepository(),
     };
   }
 
@@ -240,6 +252,8 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     contentGenerationHistoryRepository: new PostgresContentGenerationHistoryRepository(pool),
     qualityFeedbackRepository: new PostgresQualityFeedbackRepository(pool),
     creativeEngineRunRepository: new PostgresCreativeEngineRunRepository(pool),
+    metaAdsCredentialRepository: new PostgresMetaAdsCredentialRepository(pool),
+    metaAdAccountRepository: new PostgresMetaAdAccountRepository(pool),
     pool,
   };
 }

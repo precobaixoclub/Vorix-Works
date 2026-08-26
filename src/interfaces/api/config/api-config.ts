@@ -126,6 +126,17 @@ export type ApiConfig = {
     canaryWorkspaceIds: readonly string[];
     webhookSecrets: Partial<Record<"meta_pages_sandbox" | "linkedin_sandbox" | "x_sandbox", string>>;
   };
+  /** Módulo Meta Ads Manager (Fase 1) — DELIBERADAMENTE separado de `publication.meta*`: mesmo
+   * App do Meta pode reutilizar App ID/Secret, mas o fluxo OAuth pede escopos de anúncios
+   * (`ads_management`/`business_management`) numa Configuração de Login própria, para nunca
+   * arriscar a tela de consentimento já em produção da publicação de conteúdo. */
+  metaAds: {
+    enabled: boolean;
+    appId?: string;
+    appSecret?: string;
+    redirectUri?: string;
+    loginConfigId?: string;
+  };
   scheduling: {
     occurrenceWindowDays: number;
     maxOccurrencesPerRun: number;
@@ -231,6 +242,15 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const metaAppSecret = env.META_APP_SECRET?.trim() || undefined;
   const metaRedirectUri = env.META_OAUTH_REDIRECT_URI?.trim() || undefined;
   const metaGraphBaseUrl = env.META_GRAPH_BASE_URL?.trim() || undefined;
+  // Módulo Meta Ads Manager — variáveis PRÓPRIAS, nunca reaproveita `META_INSTAGRAM_*` (a
+  // Configuração de Login é distinta, ver comentário no tipo `metaAds` acima). App ID/Secret podem
+  // ser os mesmos do app de publicação (mesmo App do Meta) OU um app dedicado — decisão de quem
+  // configura o ambiente, nunca assumida aqui.
+  const metaAdsEnabled = env.META_ADS_ENABLED?.trim() === "true";
+  const metaAdsAppId = env.META_ADS_APP_ID?.trim() || undefined;
+  const metaAdsAppSecret = env.META_ADS_APP_SECRET?.trim() || undefined;
+  const metaAdsRedirectUri = env.META_ADS_OAUTH_REDIRECT_URI?.trim() || undefined;
+  const metaAdsLoginConfigId = env.META_ADS_LOGIN_CONFIG_ID?.trim() || undefined;
   const metaInstagramEnabled = env.META_INSTAGRAM_ENABLED?.trim() === "true";
   const metaInstagramRedirectUri = env.META_INSTAGRAM_OAUTH_REDIRECT_URI?.trim() || undefined;
   const metaLoginConfigId = env.META_LOGIN_CONFIG_ID?.trim() || undefined;
@@ -391,6 +411,13 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
         linkedin_sandbox: env.LINKEDIN_SANDBOX_WEBHOOK_SECRET?.trim() || undefined,
         x_sandbox: env.X_SANDBOX_WEBHOOK_SECRET?.trim() || undefined,
       },
+    },
+    metaAds: {
+      enabled: metaAdsEnabled,
+      appId: metaAdsAppId,
+      appSecret: metaAdsAppSecret,
+      redirectUri: metaAdsRedirectUri,
+      loginConfigId: metaAdsLoginConfigId,
     },
     scheduling: {
       occurrenceWindowDays: schedulingOccurrenceWindowDays,

@@ -6,10 +6,13 @@ import { Card } from "@/components/Card";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { META_RETURN_PATH_KEY } from "@/app/instagram/callback/page";
+import { META_ADS_RETURN_PATH_KEY } from "@/app/meta-ads/callback/page";
 import { TIKTOK_RETURN_PATH_KEY } from "@/app/tiktok/callback/page";
 import { YOUTUBE_RETURN_PATH_KEY } from "@/app/youtube/callback/page";
 import { beginMetaOAuth, disconnectMetaAccount } from "@/features/meta/api";
 import { useMetaOAuthStatus } from "@/features/meta/hooks";
+import { beginMetaAdsOAuth, disconnectMetaAdsAccount } from "@/features/meta-ads/api";
+import { useMetaAdAccounts, useMetaAdsOAuthStatus } from "@/features/meta-ads/hooks";
 import { beginTikTokOAuth, disconnectTikTokAccount } from "@/features/tiktok/api";
 import { useTikTokOAuthStatus } from "@/features/tiktok/hooks";
 import { beginYouTubeOAuth, disconnectYouTubeAccount } from "@/features/youtube/api";
@@ -34,6 +37,7 @@ export default function ConnectionsPage() {
 
       <div className="grid gap-4">
         <MetaConnection workspaceId={workspace.id} onFeedback={setFeedback} />
+        <MetaAdsConnection workspaceId={workspace.id} onFeedback={setFeedback} />
         <TikTokConnection workspaceId={workspace.id} onFeedback={setFeedback} />
         <YouTubeConnection workspaceId={workspace.id} onFeedback={setFeedback} />
       </div>
@@ -135,6 +139,100 @@ function MetaConnection({ workspaceId, onFeedback }: { workspaceId: string; onFe
       onConnect={connect}
       onDisconnect={disconnect}
     />
+  );
+}
+
+/**
+ * DELIBERADAMENTE não reusa `ConnectionCard` — ali cada linha da lista é uma identidade
+ * desconectável (uma Página, um canal). Aqui a conexão é UMA credencial (`meta_ads:...`), e as
+ * "contas de anúncio" descobertas embaixo dela não são desconectáveis individualmente — só a
+ * conexão inteira é. Mesmo visual, estrutura de dados diferente.
+ */
+function MetaAdsConnection({ workspaceId, onFeedback }: { workspaceId: string; onFeedback: (message: string | undefined) => void }) {
+  const { data: oauth, mutate } = useMetaAdsOAuthStatus(workspaceId);
+  const [busy, setBusy] = useState(false);
+  const references = oauth?.credentialReferences.filter((reference) => reference.status !== "revoked") ?? [];
+  const activeReference = references.find((reference) => reference.status === "active");
+  const { data: accountsData } = useMetaAdAccounts(workspaceId, Boolean(activeReference));
+  const accounts = accountsData?.accounts.filter((account) => account.isActive) ?? [];
+
+  const connected = Boolean(activeReference);
+  const configured = oauth?.configured !== false;
+  const humanStatus: HumanConnectionStatus = busy ? "syncing" : connected ? "connected" : references.length > 0 ? "needs_attention" : "disconnected";
+  const statusText = !configured
+    ? "Integração ainda não configurada no servidor."
+    : humanStatus === "connected"
+      ? `${accounts.length} conta${accounts.length === 1 ? "" : "s"} de anúncio encontrada${accounts.length === 1 ? "" : "s"}`
+      : humanStatus === "needs_attention"
+        ? "Reconecte para voltar a sincronizar."
+        : "Nenhuma conta conectada.";
+
+  async function connect() {
+    setBusy(true);
+    onFeedback(undefined);
+    try {
+      const result = await beginMetaAdsOAuth(workspaceId);
+      window.sessionStorage.setItem(META_ADS_RETURN_PATH_KEY, `/workspaces/${workspaceId}/connections`);
+      window.location.assign(result.authorizationUrl);
+    } catch (cause) {
+      onFeedback(messageOf(cause));
+      setBusy(false);
+    }
+  }
+
+  async function disconnect(credentialReferenceId: string) {
+    setBusy(true);
+    onFeedback(undefined);
+    try {
+      await disconnectMetaAdsAccount(workspaceId, credentialReferenceId);
+      await mutate();
+      onFeedback("Conexão de anúncios do Meta desconectada.");
+    } catch (cause) {
+      onFeedback(messageOf(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
+        <div className="flex min-w-0 gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-xl font-semibold text-accent">$</span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold text-ink">Meta Ads</h2>
+              <StatusBadge status={humanStatus} />
+            </div>
+            <p className="mt-1 text-sm text-ink-muted">Conexão para sincronizar e gerenciar campanhas de anúncios do Facebook/Instagram.</p>
+            <p className="mt-2 text-xs text-ink-muted">{statusText}</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {activeReference ? (
+            <Button variant="secondary" disabled={busy} onClick={() => disconnect(activeReference.credentialReferenceId)}>Desconectar</Button>
+          ) : (
+            <Button disabled={busy || !configured} onClick={connect}>{humanStatus === "needs_attention" ? "Reconectar" : "Conectar"}</Button>
+          )}
+        </div>
+      </div>
+
+      {accounts.length > 0 ? (
+        <div className="border-t border-border bg-surface/70 p-3 sm:p-4">
+          <div className="grid gap-2">
+            {accounts.map((account) => (
+              <div key={account.id} className="flex flex-col gap-3 rounded-xl border border-border bg-surface-raised px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-ink">{account.name}</p>
+                  <p className="mt-0.5 truncate text-xs text-ink-muted">{account.accountId} · {account.currency}{account.businessName ? ` · ${account.businessName}` : ""}</p>
+                </div>
+                <StatusBadge status={account.accountStatus === 1 ? "connected" : "needs_attention"} />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </Card>
   );
 }
 

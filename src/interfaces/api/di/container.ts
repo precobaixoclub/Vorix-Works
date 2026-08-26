@@ -19,6 +19,7 @@ import { ComplianceService } from "../../../application/credential/compliance-se
 import { CredentialGovernanceService } from "../../../application/credential/credential-governance-service.js";
 import type { ConversationRepositoryPort } from "../../../application/ports/conversation-repository.port.js";
 import type { CredentialRepositoryPort } from "../../../application/ports/credential-repository.port.js";
+import type { MetaAdAccountRepositoryPort } from "../../../application/ports/meta-ad-account-repository.port.js";
 import type { ExecutionGraphRepositoryPort } from "../../../application/ports/execution-graph-repository.port.js";
 import type { ExecutionTaskRepositoryPort } from "../../../application/ports/execution-task-repository.port.js";
 import type { JwtPort } from "../../../application/ports/jwt.port.js";
@@ -112,6 +113,7 @@ import { SchedulingUseCases } from "../../../application/scheduling/schedule-use
 import { TemporalDispatcher } from "../../../application/scheduling/temporal-queue.js";
 import { MetaPagesOAuthService } from "../../../infrastructure/publication/meta-pages-oauth-service.js";
 import { MetaInstagramOAuthService, META_INSTAGRAM_REQUIRED_SCOPES } from "../../../infrastructure/publication/meta-instagram-oauth-service.js";
+import { MetaAdsOAuthService, META_ADS_REQUIRED_SCOPES } from "../../../infrastructure/publication/meta-ads-oauth-service.js";
 import { MetaContentPostingProvider } from "../../../infrastructure/publication/meta-instagram-content-posting-provider.js";
 import { FailClosedProductionSecretManager, InMemorySecretManager } from "../../../infrastructure/operations/secret-managers.js";
 import { PostgresSecretManager } from "../../../infrastructure/operations/postgres-secret-manager.js";
@@ -263,6 +265,10 @@ export type ApiContainer = {
   metaInstagramOAuthService: MetaInstagramOAuthService;
   instagramProvider: MetaContentPostingProvider;
   facebookProvider: MetaContentPostingProvider;
+  /** Módulo Meta Ads Manager (Fase 1) — deliberadamente separado de `metaInstagramOAuthService`,
+   * ver comentário no topo de `meta-ads-oauth-service.ts`. */
+  metaAdsOAuthService: MetaAdsOAuthService;
+  metaAdAccountRepository: MetaAdAccountRepositoryPort;
   objectStorage: ObjectStoragePort;
   /** Remoção de fundo de logo via IA (`POST /v1/images/edits`, `background: "transparent"`) —
    * ver `openai-background-removal.ts`. Nunca registra Asset por conta própria; a rota exige
@@ -1102,6 +1108,19 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     credentialGovernanceService,
   });
   metaInstagramOAuthServiceRef = metaInstagramOAuthService;
+  const metaAdsOAuthService = new MetaAdsOAuthService({
+    config: {
+      enabled: config?.metaAds.enabled ?? false,
+      appId: config?.metaAds.appId,
+      appSecret: config?.metaAds.appSecret,
+      redirectUri: config?.metaAds.redirectUri,
+      loginConfigId: config?.metaAds.loginConfigId,
+      scopes: META_ADS_REQUIRED_SCOPES,
+    },
+    credentialRepository: repositories.metaAdsCredentialRepository,
+    adAccountRepository: repositories.metaAdAccountRepository,
+    secretManager,
+  });
   const publicationQueue = new InMemoryPublicationQueue();
   const clock = new SystemClock();
   const scheduleOccurrenceGenerator = new ScheduleOccurrenceGenerator({
@@ -1282,6 +1301,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       metaInstagramOAuthService,
       instagramProvider,
       facebookProvider,
+      metaAdsOAuthService,
       objectStorage,
       removeImageBackground,
       publicationQueue,
@@ -1365,6 +1385,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     metaInstagramOAuthService,
     instagramProvider,
     facebookProvider,
+    metaAdsOAuthService,
     objectStorage,
     removeImageBackground,
     publicationQueue,

@@ -19,6 +19,7 @@ import { registerSystemRoutes } from "./system.route.js";
 import { registerTikTokRoutes } from "./tiktok.route.js";
 import { registerYouTubeRoutes } from "./youtube.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
+import { registerMetaAdsRoutes } from "./meta-ads.route.js";
 import { registerPublicationMediaRoutes } from "./publication-media.route.js";
 import { registerExecutionRunRoutes } from "./execution-runs.route.js";
 import { registerProductionRoutes } from "./production.route.js";
@@ -169,6 +170,10 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     metaInstagramOAuthService: app.zunoContainer.metaInstagramOAuthService,
     providerCircuitBreaker: app.zunoContainer.operationalCircuitBreaker,
     idGenerator: () => `instagram-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  });
+  await registerMetaAdsRoutes(app, {
+    metaAdsOAuthService: app.zunoContainer.metaAdsOAuthService,
+    metaAdAccountRepository: app.zunoContainer.metaAdAccountRepository,
   });
   await registerPublicationMediaRoutes(app, {
     objectStorage: app.zunoContainer.objectStorage,

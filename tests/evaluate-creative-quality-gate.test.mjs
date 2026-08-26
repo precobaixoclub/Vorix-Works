@@ -213,6 +213,24 @@ test("checkCreativeVisualIntegrity: com só a referência de screenshot presente
 // `missingRequiredTexts`) comparada em CÓDIGO contra `allowedRenderedTexts`, nunca só o
 // julgamento livre da IA.
 
+// Achado ao vivo em produção (teste de regressão real, caso Preço Baixo Club): o CTA autorizado
+// "ACESSE AGORA — precobaixoclub.com.br" quebrou em duas linhas na composição (comum quando um
+// texto longo precisa caber numa caixa), e a visão reportou "ACESSE AGORA" sozinho como
+// `unauthorizedTexts` — falso positivo, é só a primeira linha do MESMO texto autorizado. Gastou
+// uma rodada de reparo corrigindo um problema que não existia.
+
+test("checkCreativeVisualIntegrity: instrui a visão a NUNCA contar uma linha/fragmento de um texto autorizado que quebrou em várias linhas como não autorizado", async () => {
+  let capturedPrompt;
+  const icaro = {
+    request: async ({ prompt }) => {
+      capturedPrompt = prompt;
+      return { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }) };
+    },
+  };
+  await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", allowedRenderedTexts: ["ACESSE AGORA — precobaixoclub.com.br"] });
+  assert.match(capturedPrompt, /NUNCA inclua um FRAGMENTO\/LINHA\/TRECHO de um texto autorizado/);
+});
+
 test("checkCreativeVisualIntegrity: unauthorizedTexts vira UNAUTHORIZED_TEXT (um issue por item)", async () => {
   const icaro = {
     request: async () => ({

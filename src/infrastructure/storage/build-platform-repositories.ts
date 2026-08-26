@@ -24,6 +24,9 @@ import type { MetaAdAccountRepositoryPort } from "../../application/ports/meta-a
 import type { MetaAdCampaignRepositoryPort } from "../../application/ports/meta-ad-campaign-repository.port.js";
 import type { MetaAdSetRepositoryPort } from "../../application/ports/meta-ad-set-repository.port.js";
 import type { MetaAdRepositoryPort } from "../../application/ports/meta-ad-repository.port.js";
+import type { MetaCustomAudienceRepositoryPort } from "../../application/ports/meta-custom-audience-repository.port.js";
+import type { MetaPixelRepositoryPort } from "../../application/ports/meta-pixel-repository.port.js";
+import type { MetaCapiEventRepositoryPort } from "../../application/ports/meta-capi-event-repository.port.js";
 import type { QualityFeedbackRepositoryPort } from "../../application/quality-feedback/quality-feedback-repository.port.js";
 import type { OperationalAuditRepositoryPort } from "../../application/ports/operational-audit-repository.port.js";
 import type { OperationalStateRepositoryPort } from "../../application/ports/operational-state-repository.port.js";
@@ -50,6 +53,9 @@ import { InMemoryMetaAdAccountRepository } from "./in-memory-meta-ad-account-rep
 import { InMemoryMetaAdCampaignRepository } from "./in-memory-meta-ad-campaign-repository.js";
 import { InMemoryMetaAdSetRepository } from "./in-memory-meta-ad-set-repository.js";
 import { InMemoryMetaAdRepository } from "./in-memory-meta-ad-repository.js";
+import { InMemoryMetaCustomAudienceRepository } from "./in-memory-meta-custom-audience-repository.js";
+import { InMemoryMetaPixelRepository } from "./in-memory-meta-pixel-repository.js";
+import { InMemoryMetaCapiEventRepository } from "./in-memory-meta-capi-event-repository.js";
 import { InMemoryQualityFeedbackRepository } from "./in-memory-quality-feedback-repository.js";
 import { InMemoryBriefingFieldValueRepository } from "./in-memory-briefing-field-value-repository.js";
 import { InMemoryBriefingQuestionRepository } from "./in-memory-briefing-question-repository.js";
@@ -85,6 +91,9 @@ import { PostgresMetaAdAccountRepository } from "./postgres/postgres-meta-ad-acc
 import { PostgresMetaAdCampaignRepository } from "./postgres/postgres-meta-ad-campaign-repository.js";
 import { PostgresMetaAdSetRepository } from "./postgres/postgres-meta-ad-set-repository.js";
 import { PostgresMetaAdRepository } from "./postgres/postgres-meta-ad-repository.js";
+import { PostgresMetaCustomAudienceRepository } from "./postgres/postgres-meta-custom-audience-repository.js";
+import { PostgresMetaPixelRepository } from "./postgres/postgres-meta-pixel-repository.js";
+import { PostgresMetaCapiEventRepository } from "./postgres/postgres-meta-capi-event-repository.js";
 import { PostgresQualityFeedbackRepository } from "./postgres/postgres-quality-feedback-repository.js";
 import { PostgresBriefingFieldValueRepository } from "./postgres/postgres-briefing-field-value-repository.js";
 import { PostgresBriefingQuestionRepository } from "./postgres/postgres-briefing-question-repository.js";
@@ -170,6 +179,11 @@ export type PlatformRepositories = {
   metaAdCampaignRepository: MetaAdCampaignRepositoryPort;
   metaAdSetRepository: MetaAdSetRepositoryPort;
   metaAdRepository: MetaAdRepositoryPort;
+  /** Fase 4 — públicos customizados/semelhantes, pixels e log de auditoria da Conversions API, ver
+   * `db/migrations/0073-0075`. */
+  metaCustomAudienceRepository: MetaCustomAudienceRepositoryPort;
+  metaPixelRepository: MetaPixelRepositoryPort;
+  metaCapiEventRepository: MetaCapiEventRepositoryPort;
   /** Só existe quando `driver === "postgres"` — quem chama esta função é responsável por fechar (`pool.end()`) no shutdown. */
   pool?: InstanceType<typeof Pool>;
 };
@@ -226,6 +240,9 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       metaAdCampaignRepository: new InMemoryMetaAdCampaignRepository(),
       metaAdSetRepository: new InMemoryMetaAdSetRepository(),
       metaAdRepository: new InMemoryMetaAdRepository(),
+      metaCustomAudienceRepository: new InMemoryMetaCustomAudienceRepository(),
+      metaPixelRepository: new InMemoryMetaPixelRepository(),
+      metaCapiEventRepository: new InMemoryMetaCapiEventRepository(),
     };
   }
 
@@ -274,6 +291,9 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     metaAdCampaignRepository: new PostgresMetaAdCampaignRepository(pool),
     metaAdSetRepository: new PostgresMetaAdSetRepository(pool),
     metaAdRepository: new PostgresMetaAdRepository(pool),
+    metaCustomAudienceRepository: new PostgresMetaCustomAudienceRepository(pool),
+    metaPixelRepository: new PostgresMetaPixelRepository(pool),
+    metaCapiEventRepository: new PostgresMetaCapiEventRepository(pool),
     pool,
   };
 }

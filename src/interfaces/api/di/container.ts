@@ -24,6 +24,9 @@ import type { MetaAdsCredentialRepositoryPort } from "../../../application/ports
 import type { MetaAdCampaignRepositoryPort } from "../../../application/ports/meta-ad-campaign-repository.port.js";
 import type { MetaAdSetRepositoryPort } from "../../../application/ports/meta-ad-set-repository.port.js";
 import type { MetaAdRepositoryPort } from "../../../application/ports/meta-ad-repository.port.js";
+import type { MetaCustomAudienceRepositoryPort } from "../../../application/ports/meta-custom-audience-repository.port.js";
+import type { MetaPixelRepositoryPort } from "../../../application/ports/meta-pixel-repository.port.js";
+import type { MetaCapiEventRepositoryPort } from "../../../application/ports/meta-capi-event-repository.port.js";
 import type { ExecutionGraphRepositoryPort } from "../../../application/ports/execution-graph-repository.port.js";
 import type { ExecutionTaskRepositoryPort } from "../../../application/ports/execution-task-repository.port.js";
 import type { JwtPort } from "../../../application/ports/jwt.port.js";
@@ -279,6 +282,10 @@ export type ApiContainer = {
   metaAdCampaignRepository: MetaAdCampaignRepositoryPort;
   metaAdSetRepository: MetaAdSetRepositoryPort;
   metaAdRepository: MetaAdRepositoryPort;
+  /** Fase 4 — públicos customizados/semelhantes, pixels e log de auditoria da Conversions API. */
+  metaCustomAudienceRepository: MetaCustomAudienceRepositoryPort;
+  metaPixelRepository: MetaPixelRepositoryPort;
+  metaCapiEventRepository: MetaCapiEventRepositoryPort;
   objectStorage: ObjectStoragePort;
   /** Remoção de fundo de logo via IA (`POST /v1/images/edits`, `background: "transparent"`) —
    * ver `openai-background-removal.ts`. Nunca registra Asset por conta própria; a rota exige

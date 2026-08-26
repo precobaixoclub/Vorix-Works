@@ -21,6 +21,8 @@ import { registerYouTubeRoutes } from "./youtube.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
 import { registerMetaAdsRoutes } from "./meta-ads.route.js";
 import { registerMetaAdCampaignsRoutes } from "./meta-ad-campaigns.route.js";
+import { registerMetaAudiencesRoutes } from "./meta-audiences.route.js";
+import { registerMetaPixelsRoutes } from "./meta-pixels.route.js";
 import { registerPublicationMediaRoutes } from "./publication-media.route.js";
 import { registerExecutionRunRoutes } from "./execution-runs.route.js";
 import { registerProductionRoutes } from "./production.route.js";
@@ -181,6 +183,19 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     metaAdCampaignRepository: app.zunoContainer.metaAdCampaignRepository,
     metaAdSetRepository: app.zunoContainer.metaAdSetRepository,
     metaAdRepository: app.zunoContainer.metaAdRepository,
+    metaAdsCredentialRepository: app.zunoContainer.metaAdsCredentialRepository,
+    secretManager: app.zunoContainer.secretManager,
+  });
+  await registerMetaAudiencesRoutes(app, {
+    metaAdAccountRepository: app.zunoContainer.metaAdAccountRepository,
+    metaCustomAudienceRepository: app.zunoContainer.metaCustomAudienceRepository,
+    metaAdsCredentialRepository: app.zunoContainer.metaAdsCredentialRepository,
+    secretManager: app.zunoContainer.secretManager,
+  });
+  await registerMetaPixelsRoutes(app, {
+    metaAdAccountRepository: app.zunoContainer.metaAdAccountRepository,
+    metaPixelRepository: app.zunoContainer.metaPixelRepository,
+    metaCapiEventRepository: app.zunoContainer.metaCapiEventRepository,
     metaAdsCredentialRepository: app.zunoContainer.metaAdsCredentialRepository,
     secretManager: app.zunoContainer.secretManager,
   });

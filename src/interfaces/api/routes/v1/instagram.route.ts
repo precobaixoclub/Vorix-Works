@@ -10,6 +10,7 @@ import type { OperationalCircuitBreaker } from "../../../../application/operatio
 import type { PublicationProviderPolicy } from "../../../../application/publication/publication-provider-policy.js";
 import type { PublicationPlan, PublicationPolicy, PublicationProvider } from "../../../../domain/publication/publication.model.js";
 import type { MetaInstagramOAuthService } from "../../../../infrastructure/publication/meta-instagram-oauth-service.js";
+import type { InstagramDmAccountRouteRepositoryPort } from "../../../../application/ports/instagram-dm-account-route-repository.port.js";
 import { AppError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -41,6 +42,11 @@ export type InstagramRoutesDeps = {
   metaInstagramOAuthService: MetaInstagramOAuthService;
   providerCircuitBreaker?: OperationalCircuitBreaker;
   idGenerator: () => string;
+  /** Fase 5 (Instagram DM Automation) — registra, a cada conexão bem-sucedida, o vínculo conta→
+   * workspace usado pra rotear o webhook de Mensageria (que não sabe o tenant/workspace sozinho,
+   * ver `db/migrations/0076_instagram_dm_account_routes.sql`). Opcional: sem isto, a publicação
+   * de conteúdo continua funcionando normalmente, só a automação de DM fica sem roteamento. */
+  instagramDmAccountRouteRepository?: InstagramDmAccountRouteRepositoryPort;
 };
 
 type SchedulePostBody = {
@@ -122,6 +128,26 @@ export async function registerInstagramRoutes(app: FastifyInstance, deps: Instag
         });
       }
       throw error;
+    }
+    if (deps.instagramDmAccountRouteRepository) {
+      // `credentialReferenceId` é sempre `${providerId}:${tenantId}:${workspaceId}:${providerSubjectId}`
+      // (ver `persistCredential` em `meta-instagram-oauth-service.ts`) — o callback nunca recebe
+      // `workspaceId` no corpo (só `state`+`code`; o workspace fica no estado OAuth guardado no
+      // `begin()`), então extraímos removendo o prefixo/sufixo conhecidos em vez de dividir a
+      // string às cegas (workspaceId poderia, em tese, conter ":").
+      for (const account of result.accounts) {
+        if (account.providerId !== "instagram") continue;
+        const prefix = `${account.providerId}:${principal.tenantId}:`;
+        const suffix = `:${account.providerSubjectId}`;
+        if (!account.credentialReferenceId.startsWith(prefix) || !account.credentialReferenceId.endsWith(suffix)) continue;
+        const workspaceId = account.credentialReferenceId.slice(prefix.length, account.credentialReferenceId.length - suffix.length);
+        if (!workspaceId) continue;
+        await deps.instagramDmAccountRouteRepository.upsertRoute({
+          instagramBusinessAccountId: account.providerSubjectId,
+          tenantId: principal.tenantId,
+          workspaceId,
+        }).catch(() => undefined);
+      }
     }
     return successEnvelope(result, request.id);
   });

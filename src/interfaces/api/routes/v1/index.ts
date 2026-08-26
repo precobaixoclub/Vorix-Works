@@ -19,6 +19,7 @@ import { registerSystemRoutes } from "./system.route.js";
 import { registerTikTokRoutes } from "./tiktok.route.js";
 import { registerYouTubeRoutes } from "./youtube.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
+import { registerInstagramDmRoutes } from "./instagram-dm.route.js";
 import { registerMetaAdsRoutes } from "./meta-ads.route.js";
 import { registerMetaAdCampaignsRoutes } from "./meta-ad-campaigns.route.js";
 import { registerMetaAudiencesRoutes } from "./meta-audiences.route.js";
@@ -173,6 +174,14 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     metaInstagramOAuthService: app.zunoContainer.metaInstagramOAuthService,
     providerCircuitBreaker: app.zunoContainer.operationalCircuitBreaker,
     idGenerator: () => `instagram-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    instagramDmAccountRouteRepository: app.zunoContainer.instagramDmAccountRouteRepository,
+  });
+  await registerInstagramDmRoutes(app, {
+    conversationRepository: app.zunoContainer.instagramDmConversationRepository,
+    messageRepository: app.zunoContainer.instagramDmMessageRepository,
+    automationRuleRepository: app.zunoContainer.instagramDmAutomationRuleRepository,
+    publicationRepository: app.zunoContainer.publicationRepository,
+    publicationSecretStore: app.zunoContainer.publicationSecretStore,
   });
   await registerMetaAdsRoutes(app, {
     metaAdsOAuthService: app.zunoContainer.metaAdsOAuthService,

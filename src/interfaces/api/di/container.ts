@@ -27,6 +27,11 @@ import type { MetaAdRepositoryPort } from "../../../application/ports/meta-ad-re
 import type { MetaCustomAudienceRepositoryPort } from "../../../application/ports/meta-custom-audience-repository.port.js";
 import type { MetaPixelRepositoryPort } from "../../../application/ports/meta-pixel-repository.port.js";
 import type { MetaCapiEventRepositoryPort } from "../../../application/ports/meta-capi-event-repository.port.js";
+import type { InstagramDmAccountRouteRepositoryPort } from "../../../application/ports/instagram-dm-account-route-repository.port.js";
+import type { InstagramDmConversationRepositoryPort } from "../../../application/ports/instagram-dm-conversation-repository.port.js";
+import type { InstagramDmMessageRepositoryPort } from "../../../application/ports/instagram-dm-message-repository.port.js";
+import type { InstagramDmAutomationRuleRepositoryPort } from "../../../application/ports/instagram-dm-automation-rule-repository.port.js";
+import type { AIProviderPort } from "../../../application/ports/ai-provider.port.js";
 import type { ExecutionGraphRepositoryPort } from "../../../application/ports/execution-graph-repository.port.js";
 import type { ExecutionTaskRepositoryPort } from "../../../application/ports/execution-task-repository.port.js";
 import type { JwtPort } from "../../../application/ports/jwt.port.js";
@@ -275,6 +280,9 @@ export type ApiContainer = {
   /** Módulo Meta Ads Manager (Fase 1) — deliberadamente separado de `metaInstagramOAuthService`,
    * ver comentário no topo de `meta-ads-oauth-service.ts`. */
   metaAdsOAuthService: MetaAdsOAuthService;
+  /** Módulo Instagram DM Automation (Fase 5) — instância dedicada, ver comentário onde é
+   * construída. */
+  instagramDmAiReplyProvider: AIProviderPort;
   metaAdAccountRepository: MetaAdAccountRepositoryPort;
   /** Fase 2 — expostos para o scheduler de sync (`meta-ads-sync-scheduler.ts`) e para as rotas de
    * árvore de campanhas. */
@@ -286,6 +294,11 @@ export type ApiContainer = {
   metaCustomAudienceRepository: MetaCustomAudienceRepositoryPort;
   metaPixelRepository: MetaPixelRepositoryPort;
   metaCapiEventRepository: MetaCapiEventRepositoryPort;
+  /** Módulo Instagram DM Automation (Fase 5). */
+  instagramDmAccountRouteRepository: InstagramDmAccountRouteRepositoryPort;
+  instagramDmConversationRepository: InstagramDmConversationRepositoryPort;
+  instagramDmMessageRepository: InstagramDmMessageRepositoryPort;
+  instagramDmAutomationRuleRepository: InstagramDmAutomationRuleRepositoryPort;
   objectStorage: ObjectStoragePort;
   /** Remoção de fundo de logo via IA (`POST /v1/images/edits`, `background: "transparent"`) —
    * ver `openai-background-removal.ts`. Nunca registra Asset por conta própria; a rota exige
@@ -652,6 +665,14 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     ],
     costLedger: creativeIcaroCostLedger,
     logger: creativeIcaroLogger,
+  });
+  // Módulo Instagram DM Automation (Fase 5) — instância DEDICADA de `OpenAiIcaroTextProvider`,
+  // nunca `icaro`/`creativeIcaro` acima (mesmo raciocínio: nunca misturar custo/contexto entre
+  // papéis). Chamada direta em `generateAiDmReply`, sem passar pelo `IcaroAIBrain` — não há
+  // tarefa multi-provider pra rotear numa resposta avulsa de DM.
+  const instagramDmAiReplyProvider: AIProviderPort = new OpenAiIcaroTextProvider({
+    apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
+    getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
   });
   const readCreativeImageDimensions = async (buffer: Buffer): Promise<{ width?: number; height?: number }> => {
     const metadata = await sharp(buffer).metadata();
@@ -1319,6 +1340,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       instagramProvider,
       facebookProvider,
       metaAdsOAuthService,
+      instagramDmAiReplyProvider,
       objectStorage,
       removeImageBackground,
       publicationQueue,
@@ -1403,6 +1425,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     instagramProvider,
     facebookProvider,
     metaAdsOAuthService,
+    instagramDmAiReplyProvider,
     objectStorage,
     removeImageBackground,
     publicationQueue,

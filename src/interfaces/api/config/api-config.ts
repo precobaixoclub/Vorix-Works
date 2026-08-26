@@ -141,6 +141,15 @@ export type ApiConfig = {
     syncSchedulerEnabled: boolean;
     syncSchedulerIntervalMs: number;
   };
+  /** Módulo Instagram DM Automation (Fase 5) — webhook de Mensageria + automação por palavra-chave.
+   * Reaproveita a MESMA credencial/App do Instagram de publicação (`publication.metaAppSecret`,
+   * `metaInstagramOAuthService`) — mensageria é o mesmo canal/token, nunca um App separado como o
+   * módulo de Ads. `webhookVerifyToken` só serve pro handshake `GET` de assinatura do webhook
+   * (`hub.verify_token`); a verificação de CADA evento recebido usa HMAC com `metaAppSecret`. */
+  instagramDm: {
+    enabled: boolean;
+    webhookVerifyToken?: string;
+  };
   scheduling: {
     occurrenceWindowDays: number;
     maxOccurrencesPerRun: number;
@@ -263,6 +272,8 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const metaInstagramEnabled = env.META_INSTAGRAM_ENABLED?.trim() === "true";
   const metaInstagramRedirectUri = env.META_INSTAGRAM_OAUTH_REDIRECT_URI?.trim() || undefined;
   const metaLoginConfigId = env.META_LOGIN_CONFIG_ID?.trim() || undefined;
+  const instagramDmEnabled = env.META_INSTAGRAM_DM_ENABLED?.trim() === "true";
+  const instagramDmWebhookVerifyToken = env.META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN?.trim() || undefined;
   const tiktokEnabled = env.TIKTOK_ENABLED?.trim() === "true";
   const tiktokClientKey = env.TIKTOK_CLIENT_KEY?.trim() || undefined;
   const tiktokClientSecret = env.TIKTOK_CLIENT_SECRET?.trim() || undefined;
@@ -429,6 +440,10 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       loginConfigId: metaAdsLoginConfigId,
       syncSchedulerEnabled: metaAdsSyncSchedulerEnabled,
       syncSchedulerIntervalMs: metaAdsSyncSchedulerIntervalMs,
+    },
+    instagramDm: {
+      enabled: instagramDmEnabled,
+      webhookVerifyToken: instagramDmWebhookVerifyToken,
     },
     scheduling: {
       occurrenceWindowDays: schedulingOccurrenceWindowDays,

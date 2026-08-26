@@ -460,7 +460,12 @@ async function safeJson(response: Response): Promise<Record<string, unknown>> {
   }
 }
 
-export const META_INSTAGRAM_REQUIRED_SCOPES = ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "instagram_business_basic", "instagram_business_content_publish"] as const;
+// `instagram_manage_messages` — Fase 5 (Instagram DM Automation): sem este escopo no token, o
+// envio via Messaging API (`/<ig-id>/messages`) falha com permissão negada mesmo com um Page
+// Access Token válido para publicação. Conexões feitas ANTES desta mudança precisam reconectar —
+// a Meta exige o escopo esteja presente no momento da concessão, nunca é adicionado retroativamente
+// a um token já emitido.
+export const META_INSTAGRAM_REQUIRED_SCOPES = ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "instagram_business_basic", "instagram_business_content_publish", "instagram_manage_messages"] as const;
 
 export function createDisabledMetaInstagramOAuthService(input: { repository: PublicationRepositoryPort; secretStore: PublicationSecretStoragePort }): MetaInstagramOAuthService {
   return new MetaInstagramOAuthService({ config: { enabled: false, scopes: META_INSTAGRAM_REQUIRED_SCOPES }, repository: input.repository, secretStore: input.secretStore });

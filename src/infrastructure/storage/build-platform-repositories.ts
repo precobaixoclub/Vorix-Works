@@ -27,6 +27,10 @@ import type { MetaAdRepositoryPort } from "../../application/ports/meta-ad-repos
 import type { MetaCustomAudienceRepositoryPort } from "../../application/ports/meta-custom-audience-repository.port.js";
 import type { MetaPixelRepositoryPort } from "../../application/ports/meta-pixel-repository.port.js";
 import type { MetaCapiEventRepositoryPort } from "../../application/ports/meta-capi-event-repository.port.js";
+import type { InstagramDmAccountRouteRepositoryPort } from "../../application/ports/instagram-dm-account-route-repository.port.js";
+import type { InstagramDmConversationRepositoryPort } from "../../application/ports/instagram-dm-conversation-repository.port.js";
+import type { InstagramDmMessageRepositoryPort } from "../../application/ports/instagram-dm-message-repository.port.js";
+import type { InstagramDmAutomationRuleRepositoryPort } from "../../application/ports/instagram-dm-automation-rule-repository.port.js";
 import type { QualityFeedbackRepositoryPort } from "../../application/quality-feedback/quality-feedback-repository.port.js";
 import type { OperationalAuditRepositoryPort } from "../../application/ports/operational-audit-repository.port.js";
 import type { OperationalStateRepositoryPort } from "../../application/ports/operational-state-repository.port.js";
@@ -56,6 +60,10 @@ import { InMemoryMetaAdRepository } from "./in-memory-meta-ad-repository.js";
 import { InMemoryMetaCustomAudienceRepository } from "./in-memory-meta-custom-audience-repository.js";
 import { InMemoryMetaPixelRepository } from "./in-memory-meta-pixel-repository.js";
 import { InMemoryMetaCapiEventRepository } from "./in-memory-meta-capi-event-repository.js";
+import { InMemoryInstagramDmAccountRouteRepository } from "./in-memory-instagram-dm-account-route-repository.js";
+import { InMemoryInstagramDmConversationRepository } from "./in-memory-instagram-dm-conversation-repository.js";
+import { InMemoryInstagramDmMessageRepository } from "./in-memory-instagram-dm-message-repository.js";
+import { InMemoryInstagramDmAutomationRuleRepository } from "./in-memory-instagram-dm-automation-rule-repository.js";
 import { InMemoryQualityFeedbackRepository } from "./in-memory-quality-feedback-repository.js";
 import { InMemoryBriefingFieldValueRepository } from "./in-memory-briefing-field-value-repository.js";
 import { InMemoryBriefingQuestionRepository } from "./in-memory-briefing-question-repository.js";
@@ -94,6 +102,10 @@ import { PostgresMetaAdRepository } from "./postgres/postgres-meta-ad-repository
 import { PostgresMetaCustomAudienceRepository } from "./postgres/postgres-meta-custom-audience-repository.js";
 import { PostgresMetaPixelRepository } from "./postgres/postgres-meta-pixel-repository.js";
 import { PostgresMetaCapiEventRepository } from "./postgres/postgres-meta-capi-event-repository.js";
+import { PostgresInstagramDmAccountRouteRepository } from "./postgres/postgres-instagram-dm-account-route-repository.js";
+import { PostgresInstagramDmConversationRepository } from "./postgres/postgres-instagram-dm-conversation-repository.js";
+import { PostgresInstagramDmMessageRepository } from "./postgres/postgres-instagram-dm-message-repository.js";
+import { PostgresInstagramDmAutomationRuleRepository } from "./postgres/postgres-instagram-dm-automation-rule-repository.js";
 import { PostgresQualityFeedbackRepository } from "./postgres/postgres-quality-feedback-repository.js";
 import { PostgresBriefingFieldValueRepository } from "./postgres/postgres-briefing-field-value-repository.js";
 import { PostgresBriefingQuestionRepository } from "./postgres/postgres-briefing-question-repository.js";
@@ -184,6 +196,11 @@ export type PlatformRepositories = {
   metaCustomAudienceRepository: MetaCustomAudienceRepositoryPort;
   metaPixelRepository: MetaPixelRepositoryPort;
   metaCapiEventRepository: MetaCapiEventRepositoryPort;
+  /** Módulo Instagram DM Automation (Fase 5) — ver `db/migrations/0076-0079`. */
+  instagramDmAccountRouteRepository: InstagramDmAccountRouteRepositoryPort;
+  instagramDmConversationRepository: InstagramDmConversationRepositoryPort;
+  instagramDmMessageRepository: InstagramDmMessageRepositoryPort;
+  instagramDmAutomationRuleRepository: InstagramDmAutomationRuleRepositoryPort;
   /** Só existe quando `driver === "postgres"` — quem chama esta função é responsável por fechar (`pool.end()`) no shutdown. */
   pool?: InstanceType<typeof Pool>;
 };
@@ -243,6 +260,10 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       metaCustomAudienceRepository: new InMemoryMetaCustomAudienceRepository(),
       metaPixelRepository: new InMemoryMetaPixelRepository(),
       metaCapiEventRepository: new InMemoryMetaCapiEventRepository(),
+      instagramDmAccountRouteRepository: new InMemoryInstagramDmAccountRouteRepository(),
+      instagramDmConversationRepository: new InMemoryInstagramDmConversationRepository(),
+      instagramDmMessageRepository: new InMemoryInstagramDmMessageRepository(),
+      instagramDmAutomationRuleRepository: new InMemoryInstagramDmAutomationRuleRepository(),
     };
   }
 
@@ -294,6 +315,10 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     metaCustomAudienceRepository: new PostgresMetaCustomAudienceRepository(pool),
     metaPixelRepository: new PostgresMetaPixelRepository(pool),
     metaCapiEventRepository: new PostgresMetaCapiEventRepository(pool),
+    instagramDmAccountRouteRepository: new PostgresInstagramDmAccountRouteRepository(pool),
+    instagramDmConversationRepository: new PostgresInstagramDmConversationRepository(pool),
+    instagramDmMessageRepository: new PostgresInstagramDmMessageRepository(pool),
+    instagramDmAutomationRuleRepository: new PostgresInstagramDmAutomationRuleRepository(pool),
     pool,
   };
 }

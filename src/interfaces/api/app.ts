@@ -17,6 +17,7 @@ import { registerPublicationScheduler } from "./scheduler/publication-scheduler.
 import { registerMetaAdsSyncScheduler } from "./scheduler/meta-ads-sync-scheduler.js";
 import { registerVersionRoute } from "./routes/version.route.js";
 import { registerWebhookReceiverRoutes } from "./routes/webhook-receiver.route.js";
+import { registerInstagramDmWebhookRoutes } from "./routes/instagram-dm-webhook.route.js";
 import { successEnvelope } from "./http/response-envelope.js";
 import { registerUploadedObjectRoutes } from "./routes/uploads.route.js";
 
@@ -86,6 +87,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
   await registerVersionRoute(app);
   await registerWebhookReceiverRoutes(app, { ingestionService: container.webhookIngestionService });
+  await registerInstagramDmWebhookRoutes(app, {
+    messageRepository: container.instagramDmMessageRepository,
+    conversationRepository: container.instagramDmConversationRepository,
+    automationRuleRepository: container.instagramDmAutomationRuleRepository,
+    accountRouteRepository: container.instagramDmAccountRouteRepository,
+    publicationRepository: container.publicationRepository,
+    publicationSecretStore: container.publicationSecretStore,
+    aiReplyProvider: container.instagramDmAiReplyProvider,
+    appSecret: config.publication.metaAppSecret,
+    webhookVerifyToken: config.instagramDm.webhookVerifyToken,
+    resolveAccountName: async (input) => {
+      const references = await container.publicationRepository.listCredentialReferences({ tenantId: input.tenantId, workspaceId: input.workspaceId, providerId: "instagram" });
+      const reference = references.find((candidate) => candidate.providerSubjectId === input.instagramBusinessAccountId);
+      if (!reference) return undefined;
+      const secret = await container.publicationSecretStore.get({ tenantId: input.tenantId, workspaceId: input.workspaceId, providerId: "instagram", credentialReferenceId: reference.credentialReferenceId });
+      return secret?.value.displayName;
+    },
+  });
 
   await app.register(registerV1Routes, { prefix: "/v1" });
 

@@ -25,7 +25,43 @@ function creativePlanJson(overrides = {}) {
   if (!Object.prototype.hasOwnProperty.call(overrides, "allowedRenderedTexts")) {
     merged.allowedRenderedTexts = [merged.headline, merged.subheadline, merged.cta].filter(Boolean);
   }
+  if (!Object.prototype.hasOwnProperty.call(overrides, "artDirection")) {
+    merged.artDirection = sampleArtDirection();
+  }
+  if (!Object.prototype.hasOwnProperty.call(overrides, "layoutPlan")) {
+    merged.layoutPlan = sampleLayoutPlan();
+  }
   return JSON.stringify(merged);
+}
+
+// Achado ao vivo — auditoria "qualidade visual e direção de arte": `artDirection` é validada
+// contra uma lista de frases vagas banidas, então o fixture de teste precisa ser CONCRETA de
+// verdade (mesmo padrão exigido do Director real), nunca "visual moderno".
+function sampleArtDirection(overrides = {}) {
+  return {
+    concept: "Fundo grafite quase preto com feixe de luz verde neon diagonal, produto centralizado",
+    visualFocus: "Mockup do celular exibindo o site, ocupando o terço central da peça",
+    elementHierarchy: ["mockup do site", "headline", "cta", "logo"],
+    primaryMassPct: 45,
+    contrastStrategy: "Texto branco sólido sobre faixa preta semi-opaca, nunca direto sobre o fundo grafite",
+    chromaticDirection: "Grafite quase preto dominante, verde neon como único acento, amarelo só no CTA",
+    atmosphere: "Tecnológico e direto, sem elementos decorativos soltos",
+    backgroundTreatment: "Gradiente sutil de grafite para preto, sem textura ou ruído",
+    productTextRelationship: "Texto sempre acima ou abaixo do mockup, nunca sobreposto a ele",
+    avoidedCliches: ["cards flutuantes", "elementos 3D aleatórios"],
+    justifiedCliches: [],
+    ...overrides,
+  };
+}
+
+function sampleLayoutPlan(overrides = []) {
+  if (Array.isArray(overrides) && overrides.length > 0) return overrides;
+  return [
+    { kind: "headline", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 15 }, priority: 1, rationale: "Mensagem principal no topo, primeira coisa lida" },
+    { kind: "hero", rect: { xPct: 15, yPct: 30, widthPct: 70, heightPct: 40 }, priority: 2, rationale: "Mockup do site como foco visual central" },
+    { kind: "cta", rect: { xPct: 10, yPct: 80, widthPct: 80, heightPct: 10 }, priority: 3, rationale: "Ação no terço inferior, fácil de alcançar visualmente" },
+    { kind: "negativeSpace", rect: { xPct: 10, yPct: 72, widthPct: 80, heightPct: 6 }, priority: 4, rationale: "Respiro entre o mockup e o CTA" },
+  ];
 }
 
 function fakeObjectStorage() {

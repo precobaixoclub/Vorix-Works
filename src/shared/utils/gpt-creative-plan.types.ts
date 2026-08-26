@@ -150,16 +150,102 @@ export type CreativePlanTextZoneEmphasis = (typeof CREATIVE_PLAN_TEXT_ZONE_EMPHA
 export const CREATIVE_PLAN_TEXT_ZONE_RENDERERS = ["image_model", "renderer"] as const;
 export type CreativePlanTextZoneRenderer = (typeof CREATIVE_PLAN_TEXT_ZONE_RENDERERS)[number];
 
+export const CREATIVE_PLAN_TEXT_ZONE_ALIGNMENTS = ["left", "center", "right"] as const;
+export type CreativePlanTextZoneAlignment = (typeof CREATIVE_PLAN_TEXT_ZONE_ALIGNMENTS)[number];
+
+export const CREATIVE_PLAN_TEXT_ZONE_BACKING_STYLES = ["scrim", "solid", "none"] as const;
+export type CreativePlanTextZoneBackingStyle = (typeof CREATIVE_PLAN_TEXT_ZONE_BACKING_STYLES)[number];
+
 /** Uma zona de texto do plano — `renderedBy: "renderer"` é executada pelo compositor
  * determinístico (`render-creative-plan-text-zones.ts`, Satori+sharp, legibilidade perfeita);
  * `renderedBy: "image_model"` é desenhada pelo próprio modelo de imagem dentro da cena. O
- * renderer NUNCA decide qual dos dois — só executa o que o plano já decidiu. */
+ * renderer NUNCA decide qual dos dois — só executa o que o plano já decidiu.
+ *
+ * Auditoria "qualidade visual e direção de arte" — achado ao vivo: antes de `align`/`backingStyle`
+ * existirem, TODA zona `renderedBy: "renderer"` saía com o MESMO tratamento visual fixo
+ * (`emphasis: "primary"` sempre virava scrim preto 55% + texto branco centralizado;
+ * `"secondary"` sempre virava bloco sólido da cor de destaque) — precisão de texto garantida,
+ * mas a composição toda parecia o mesmo template independente da direção de arte do plano. Estes
+ * dois campos (opcionais, com o tratamento antigo como padrão pra nunca quebrar planos que ainda
+ * não os definem) dão ao Director controle real sobre alinhamento e o estilo do fundo do texto,
+ * sem abrir mão de legibilidade/contraste garantidos pelo renderer. */
 export type CreativePlanTextZone = {
   kind: CreativePlanTextZoneKind;
   text: string;
   rect: CreativePlanRect;
   emphasis: CreativePlanTextZoneEmphasis;
   renderedBy: CreativePlanTextZoneRenderer;
+  /** Alinhamento horizontal do texto dentro da zona — padrão `"center"` quando ausente (mesmo
+   * comportamento de antes desta auditoria). */
+  align?: CreativePlanTextZoneAlignment;
+  /** Estilo do fundo atrás do texto — `"scrim"` (escurecimento parcial, o padrão histórico de
+   * `emphasis: "primary"`), `"solid"` (bloco sólido de cor, o padrão histórico de `"secondary"`)
+   * ou `"none"` (sem fundo — só usar quando o Director garantir contraste alto o bastante contra
+   * o que já está atrás, ex.: uma área de cor sólida conhecida do próprio plano). Ausente cai no
+   * padrão histórico por `emphasis`. */
+  backingStyle?: CreativePlanTextZoneBackingStyle;
+};
+
+export const CREATIVE_LAYOUT_ZONE_KINDS = ["hero", "headline", "cta", "logo", "support", "negativeSpace"] as const;
+export type CreativeLayoutZoneKind = (typeof CREATIVE_LAYOUT_ZONE_KINDS)[number];
+
+/**
+ * Auditoria "qualidade visual e direção de arte" — o "visual map"/layout plan pedido: um mapa de
+ * zonas e prioridades que força o Director a decidir a DISTRIBUIÇÃO DE MASSA VISUAL da peça antes
+ * de gerar a imagem, sem reativar o sistema rígido de templates do motor legado (`ad-layout.types.ts`
+ * — este tipo é deliberadamente mais simples e específico do motor GPT, nunca compartilhado com o
+ * legado). Camada de DECISÃO/auditoria — `assetPlacements`/`textZones` continuam sendo a camada de
+ * EXECUÇÃO (o que o compositor determinístico de fato usa); `layoutPlan` existe pra tornar a
+ * distribuição de massa visual inspecionável e para o quality gate/score visual julgar
+ * "aproveitamento do canvas" e "equilíbrio da composição" contra uma intenção declarada, não
+ * inferida da imagem final às cegas. `negativeSpace` é o único kind sem contrapartida obrigatória
+ * em `assetPlacements`/`textZones` — existe só pra declarar "aqui é respiro de propósito".
+ */
+export type CreativePlanLayoutZone = {
+  kind: CreativeLayoutZoneKind;
+  rect: CreativePlanRect;
+  /** 1 = maior prioridade visual (o que o olho deve encontrar primeiro). */
+  priority: number;
+  /** Motivo curto desta zona existir nesse lugar/tamanho — nunca "porque sim". */
+  rationale: string;
+};
+
+/**
+ * Auditoria "qualidade visual e direção de arte" — achado ao vivo: `visualDirection`/`styleNotes`
+ * aceitavam qualquer prosa livre, e na prática viravam frases genéricas e não-reproduzíveis
+ * ("visual moderno", "alto impacto", "premium", "fundo tecnológico") — a mesma frase serviria pra
+ * qualquer marca, qualquer peça. `artDirection` estrutura os campos que a auditoria pediu
+ * explicitamente, cada um validado contra uma lista de frases vagas banidas (`parseCreativePlan`
+ * rejeita o plano inteiro se qualquer campo for só uma frase genérica da lista) — força uma
+ * decisão concreta e específica desta peça, nunca reaproveitável em qualquer outro brief.
+ */
+export type CreativePlanArtDirection = {
+  /** Conceito criativo concreto desta peça — nunca um adjetivo solto. */
+  concept: string;
+  /** O ÚNICO foco visual principal — o que o olho encontra primeiro. */
+  visualFocus: string;
+  /** Hierarquia dos elementos, do mais para o menos importante. */
+  elementHierarchy: string[];
+  /** % aproximada do canvas ocupada pelo elemento de foco visual principal (0-100) — força um
+   * número, nunca "grande"/"grande destaque". */
+  primaryMassPct: number;
+  /** Onde e como o contraste principal da peça acontece. */
+  contrastStrategy: string;
+  chromaticDirection: string;
+  atmosphere: string;
+  backgroundTreatment: string;
+  /** Relação entre produto/screenshot real (quando existir) e o texto — como um influencia o
+   * espaço do outro. */
+  productTextRelationship: string;
+  /** Achado ao vivo: notebook genérico centralizado, smartphone inclinado, glow verde, cards
+   * flutuantes, gradiente neon, headline enorme genérica no topo, CTA em barra larga no rodapé,
+   * elementos 3D aleatórios, setas, formas abstratas, mockup sem relação com a marca — padrões
+   * que se repetem quando o briefing não pediu. Nunca proibidos globalmente — só exigem decisão
+   * consciente: cada um citado aqui foi deliberadamente EVITADO nesta peça. */
+  avoidedCliches: string[];
+  /** Um clichê da mesma lista só pode aparecer na peça se estiver aqui, com o motivo — nunca "porque
+   * sim". Lista vazia é o caminho normal; só preencher quando genuinamente necessário. */
+  justifiedCliches: string[];
 };
 
 export type CreativePlan = {
@@ -189,6 +275,12 @@ export type CreativePlan = {
   allowedRenderedTexts: string[];
   visualDirection: string;
   compositionIntent: string;
+  /** Auditoria "qualidade visual e direção de arte" — ver `CreativePlanArtDirection`. Decisões
+   * concretas e específicas desta peça, nunca frases genéricas reaproveitáveis em qualquer brief. */
+  artDirection: CreativePlanArtDirection;
+  /** Auditoria "qualidade visual e direção de arte" — ver `CreativePlanLayoutZone`. Mapa de zonas
+   * e prioridades que antecede a geração, força distribuição de massa visual deliberada. */
+  layoutPlan: CreativePlanLayoutZone[];
   /** Para cada asset (por `url`, mesma chave do `CreativeContext.assets`), como o plano quer que
    * ele apareça na peça final — eco do papel já decidido, nunca uma reinterpretação. */
   assetUsage: Record<string, string>;
@@ -209,11 +301,18 @@ export type CreativePlan = {
 export const CREATIVE_PLAN_RESPONSE_SCHEMA_HINT =
   '{"objective": "...", "angle": "...", "targetAudience": "...", "title": "...", "description": "...", ' +
   '"headline": "...", "subheadline": "...", ' +
-  '"cta": "...", "allowedRenderedTexts": ["..."], "visualDirection": "...", "compositionIntent": "...", "assetUsage": {"<url>": "..."}, ' +
+  '"cta": "...", "allowedRenderedTexts": ["..."], "visualDirection": "...", "compositionIntent": "...", ' +
+  '"artDirection": {"concept": "...", "visualFocus": "...", "elementHierarchy": ["..."], "primaryMassPct": 0, ' +
+  '"contrastStrategy": "...", "chromaticDirection": "...", "atmosphere": "...", "backgroundTreatment": "...", ' +
+  '"productTextRelationship": "...", "avoidedCliches": ["..."], "justifiedCliches": ["..."]}, ' +
+  '"layoutPlan": [{"kind": "hero"|"headline"|"cta"|"logo"|"support"|"negativeSpace", ' +
+  '"rect": {"xPct": 0, "yPct": 0, "widthPct": 0, "heightPct": 0}, "priority": 1, "rationale": "..."}], ' +
+  '"assetUsage": {"<url>": "..."}, ' +
   '"assetPlacements": [{"role": "product_photo"|"screenshot"|"logo"|"reference_style"|"other", "url": "...", ' +
   '"rect": {"xPct": 0, "yPct": 0, "widthPct": 0, "heightPct": 0}, "frame": "phone"|"laptop"|"none", "treatment": "..."}], ' +
   '"textZones": [{"kind": "headline"|"subheadline"|"cta"|"price"|"discount"|"url"|"badge", "text": "...", ' +
-  '"rect": {"xPct": 0, "yPct": 0, "widthPct": 0, "heightPct": 0}, "emphasis": "primary"|"secondary", "renderedBy": "image_model"|"renderer"}], ' +
+  '"rect": {"xPct": 0, "yPct": 0, "widthPct": 0, "heightPct": 0}, "emphasis": "primary"|"secondary", "renderedBy": "image_model"|"renderer", ' +
+  '"align": "left"|"center"|"right", "backingStyle": "scrim"|"solid"|"none"}], ' +
   '"requiredElements": ["..."], "forbiddenElements": ["..."], "visualDensity": "clean"|"balanced"|"dense", ' +
   '"styleNotes": "...", "rationale": "..."}';
 
@@ -312,13 +411,18 @@ export function buildWorkspaceContextLines(context: CreativeContext): string[] {
   return lines;
 }
 
+/** Direção escolhida na exploração barata pré-plano — ver `explore-creative-directions.ts`
+ * (auditoria "qualidade visual e direção de arte", ponto 9). Só o suficiente pra ANCORAR o plano
+ * detalhado, nunca um plano em si. */
+export type ChosenCreativeDirection = { name: string; coreIdea: string; whyItFits: string };
+
 /**
  * Monta o prompt enviado ao GPT para produzir o `creative_plan` — instrui explicitamente o papel
  * de cada asset (nunca deixa o modelo adivinhar) e proíbe inventar fato comercial fora de
  * `confirmedFacts`. Multimodal: as URLs de `context.assets` também vão como `imageUrls` na
  * chamada ao `IcaroBrainPort` (o GPT literalmente VÊ as referências, não só lê a descrição).
  */
-export function buildCreativePlanPrompt(context: CreativeContext): string {
+export function buildCreativePlanPrompt(context: CreativeContext, chosenDirection?: ChosenCreativeDirection): string {
   const lines = [
     "Você é um diretor de criação sênior de uma agência de publicidade digital. Sua tarefa é produzir um PLANO CRIATIVO estruturado para uma peça publicitária — não a peça em si, só a direção.",
     "",
@@ -334,6 +438,12 @@ export function buildCreativePlanPrompt(context: CreativeContext): string {
     `Canal: ${context.channel}`,
     `Formato final: ${context.format}`,
     `Ideia/briefing do cliente (PEDIDO ATUAL — prioridade 1): ${context.ideaText}`,
+    ...(chosenDirection
+      ? [
+          "",
+          `DIREÇÃO CRIATIVA JÁ ESCOLHIDA nesta geração (etapa de exploração anterior) — "${chosenDirection.name}": ${chosenDirection.coreIdea} (${chosenDirection.whyItFits}). Construa o plano detalhado seguindo ESTA direção — ela já é a decisão de conceito, nunca a contrarie nem proponha outra.`,
+        ]
+      : []),
     ...buildWorkspaceContextLines(context),
   ];
 
@@ -352,6 +462,30 @@ export function buildCreativePlanPrompt(context: CreativeContext): string {
     // targetAudience/title/description — nenhum desses pode virar texto visível).
     "- `allowedRenderedTexts`: array com EXATAMENTE os textos que podem aparecer como pixels legíveis na peça — sempre um eco literal de `headline`, `subheadline` (se houver) e `cta`, mais o `text` de cada item de `textZones`. NUNCA inclua aqui, nem deixe aparecer na imagem, nenhuma paráfrase, rótulo técnico, nome de campo ou frase descritiva (\"headline\", \"CTA\", \"texto de destaque\", \"call to action\", \"placeholder\") — esses são nomes de CAMPO do seu próprio JSON, nunca conteúdo visual. Todo texto que não estiver literalmente nesta lista é uma falha grave da peça.",
     "- `visualDirection`/`styleNotes`/`compositionIntent`/`rationale`/`objective`/`angle`/`targetAudience`/`title`/`description` são só para SEU planejamento interno e para o modelo de imagem entender atmosfera/composição — nenhuma palavra desses campos pode ser desenhada como texto na peça final.",
+    // Auditoria "qualidade visual e direção de arte" — achado ao vivo: sem uma estrutura forçando
+    // concretude, `visualDirection`/`styleNotes` viravam frases genéricas e não-reproduzíveis
+    // ("visual moderno", "alto impacto", "premium") — a mesma frase serviria pra qualquer marca,
+    // qualquer peça, e o resultado saía com cara de template automático. `artDirection` é
+    // VALIDADA em código contra uma lista de frases vagas banidas — o plano inteiro é rejeitado
+    // se qualquer campo for só uma dessas frases.
+    "- `artDirection` precisa ser CONCRETA e REPRODUZÍVEL — decisões específicas desta peça, nunca adjetivos soltos. RUIM (proibido, rejeita o plano): \"visual moderno\", \"alto impacto\", \"premium\", \"fundo tecnológico\". BOM (o padrão exigido): \"fundo grafite quase preto, produto ocupando 55% da área central inferior, headline em duas linhas no topo esquerdo com alto contraste, CTA compacto no terço inferior, logo pequeno no topo, sem cards flutuantes, sem mockup 3D genérico, sem gradientes decorativos excessivos\". Cada campo de `artDirection` (`concept`, `visualFocus`, `contrastStrategy`, `chromaticDirection`, `atmosphere`, `backgroundTreatment`, `productTextRelationship`) precisa ter esse nível de especificidade — sempre respondendo \"onde exatamente\", \"quanto\" ou \"como\", nunca só um adjetivo.",
+    "- `artDirection.primaryMassPct`: percentual aproximado (0-100) do canvas ocupado pelo elemento de foco visual principal — força um número real, nunca \"grande\" ou \"em destaque\".",
+    "- `artDirection.elementHierarchy`: ordene TODOS os elementos da peça do mais para o menos importante visualmente (ex.: [\"produto\", \"headline\", \"cta\", \"logo\"]) — decide o que o olho encontra primeiro.",
+    // Auditoria "qualidade visual e direção de arte" — achado ao vivo (revisão de gerações
+    // recentes): padrões visuais se repetem quando o briefing não pediu nada disso — notebook
+    // genérico centralizado, smartphone inclinado, glow verde, cards flutuantes, gradiente neon,
+    // headline enorme genérica no topo, CTA em barra larga no rodapé, elementos 3D aleatórios,
+    // setas, formas abstratas, mockup sem relação com a marca. Nunca proibidos globalmente — só
+    // exigem decisão consciente.
+    "- Clichês visuais conhecidos (notebook genérico centralizado, smartphone inclinado, glow verde, cards flutuantes, gradiente neon decorativo, headline enorme genérica no topo, CTA em barra larga no rodapé, elementos 3D aleatórios, setas, formas abstratas soltas, mockup sem relação com a marca): NUNCA proibidos globalmente, mas só podem aparecer na peça se estiverem em `artDirection.justifiedCliches` com o motivo específico desta peça precisar deles (ex.: \"smartphone inclinado — o produto É um app mobile, faz sentido mostrar o dispositivo real\"). Sem justificativa, evite — liste em `artDirection.avoidedCliches` os que você conscientemente decidiu não usar.",
+    // Auditoria "qualidade visual e direção de arte" — ponto 11 pedido explicitamente: não basta
+    // passar o prompt de marca pro modelo, o Director precisa TRADUZIR isso em decisões visuais.
+    "- Traduza a marca/Diretrizes Criativas configuradas em decisões visuais CONCRETAS, nunca só repita o texto da diretriz. Se a marca é direta/comercial/dark/verde, isso precisa aparecer como decisões reais em `artDirection`: contraste alto e literal (não \"bom contraste\"), densidade de elementos baixa e objetiva, uso de verde como a cor de destaque PRINCIPAL (não uma entre várias), CTA com peso visual forte. A ligação entre a diretriz configurada e a decisão visual tem que ser rastreável — se alguém perguntasse \"por que essa cor/essa densidade/esse contraste\", a resposta devia vir de uma regra de marca real, nunca de um gosto genérico do modelo.",
+    // Auditoria "qualidade visual e direção de arte" — layoutPlan: mapa de zonas e prioridades
+    // ANTES da geração, força distribuição de massa visual deliberada sem reativar templates
+    // rígidos do motor legado — o Director ainda decide a criatividade, só não pode decidir "no
+    // vácuo" sem declarar intenção de distribuição.
+    "- `layoutPlan`: declare pelo menos uma zona de cada tipo relevante pra esta peça (`hero` para o foco visual principal — produto/screenshot real ou o conceito central; `headline`; `cta`; `logo`; `support` para elementos secundários se houver; `negativeSpace` para pelo menos uma área de respiro REAL, sem elemento nenhum dentro, com espaço suficiente pra a composição não parecer congestionada). Cada zona leva um `rationale` curto — nunca \"porque sim\". As zonas de `layoutPlan` guiam `assetPlacements`/`textZones`, mas a geometria final de cada elemento renderizável continua sendo decidida ali, não aqui.",
     "- `assetPlacements`: para cada asset REAL (produto/screenshot/logo) da lista acima, defina a geometria exata (retângulo em percentual do canvas final, 0-100) de onde ele vai entrar na composição — essa geometria será usada por composição determinística depois, então precisa ser definida ANTES da imagem existir, nunca improvisada depois.",
     // Achado ao vivo em produção: a orientação anterior ("prefira image_model pro headline") deu
     // errado nas duas primeiras tentativas reais após este pipeline entrar no ar — o headline,
@@ -403,6 +537,18 @@ function isCreativePlanTextZoneEmphasis(value: unknown): value is CreativePlanTe
 
 function isCreativePlanTextZoneRenderer(value: unknown): value is CreativePlanTextZoneRenderer {
   return typeof value === "string" && (CREATIVE_PLAN_TEXT_ZONE_RENDERERS as readonly string[]).includes(value);
+}
+
+function isCreativePlanTextZoneAlignment(value: unknown): value is CreativePlanTextZoneAlignment {
+  return typeof value === "string" && (CREATIVE_PLAN_TEXT_ZONE_ALIGNMENTS as readonly string[]).includes(value);
+}
+
+function isCreativePlanTextZoneBackingStyle(value: unknown): value is CreativePlanTextZoneBackingStyle {
+  return typeof value === "string" && (CREATIVE_PLAN_TEXT_ZONE_BACKING_STYLES as readonly string[]).includes(value);
+}
+
+function isCreativeLayoutZoneKind(value: unknown): value is CreativeLayoutZoneKind {
+  return typeof value === "string" && (CREATIVE_LAYOUT_ZONE_KINDS as readonly string[]).includes(value);
 }
 
 /** Retângulo válido: dentro do canvas (0-100 em cada eixo) e com área real (largura/altura > 0).
@@ -462,9 +608,103 @@ function parseTextZones(value: unknown): CreativePlanTextZone[] | undefined {
     ) {
       return undefined;
     }
-    result.push({ kind: record.kind, text: record.text, rect: record.rect, emphasis: record.emphasis, renderedBy: record.renderedBy });
+    result.push({
+      kind: record.kind,
+      text: record.text,
+      rect: record.rect,
+      emphasis: record.emphasis,
+      renderedBy: record.renderedBy,
+      align: isCreativePlanTextZoneAlignment(record.align) ? record.align : undefined,
+      backingStyle: isCreativePlanTextZoneBackingStyle(record.backingStyle) ? record.backingStyle : undefined,
+    });
   }
   return result;
+}
+
+function parseLayoutPlan(value: unknown): CreativePlanLayoutZone[] | undefined {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return undefined;
+
+  const result: CreativePlanLayoutZone[] = [];
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) return undefined;
+    const record = item as Record<string, unknown>;
+    if (
+      !isCreativeLayoutZoneKind(record.kind)
+      || !isValidCreativePlanRect(record.rect)
+      || typeof record.priority !== "number" || !Number.isFinite(record.priority)
+      || typeof record.rationale !== "string" || !record.rationale.trim()
+    ) {
+      return undefined;
+    }
+    result.push({ kind: record.kind, rect: record.rect, priority: record.priority, rationale: record.rationale });
+  }
+  return result;
+}
+
+// Auditoria "qualidade visual e direção de arte" — achado ao vivo: `visualDirection`/`styleNotes`
+// aceitavam qualquer prosa livre, e viravam frases genéricas reaproveitáveis em qualquer marca
+// ("visual moderno", "alto impacto", "premium", "fundo tecnológico"). Lista de frases banidas —
+// quando um campo de `artDirection` é SÓ uma dessas frases (ignorando maiúsculas/pontuação/
+// espaços), o plano inteiro é rejeitado, forçando uma nova tentativa mais concreta. Comparação é
+// deliberadamente "campo inteiro bate com a frase banida", nunca "contém a palavra" — não pune
+// uma frase concreta que mencione "moderno" en passant, só pune quando isso é a resposta inteira.
+const VAGUE_ART_DIRECTION_PHRASES = new Set([
+  "visual moderno", "moderno", "alto impacto", "premium", "fundo tecnologico", "fundo tecnológico",
+  "visual premium", "visual impactante", "impactante", "visual chamativo", "chamativo",
+  "design moderno", "visual profissional", "profissional", "visual clean", "clean e moderno",
+  "tecnologico e moderno", "tecnológico e moderno", "visual atraente", "atraente",
+  "cores vibrantes", "visual arrojado", "arrojado", "moderno e tecnologico", "moderno e tecnológico",
+]);
+
+function normalizeForVagueCheck(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[.!]+$/, "");
+}
+
+function isVagueArtDirectionField(value: string): boolean {
+  return VAGUE_ART_DIRECTION_PHRASES.has(normalizeForVagueCheck(value));
+}
+
+function parseArtDirection(value: unknown): CreativePlanArtDirection | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  const stringFields = [
+    "concept", "visualFocus", "contrastStrategy", "chromaticDirection", "atmosphere",
+    "backgroundTreatment", "productTextRelationship",
+  ] as const;
+  for (const field of stringFields) {
+    const fieldValue = record[field];
+    if (typeof fieldValue !== "string" || !fieldValue.trim() || isVagueArtDirectionField(fieldValue)) return undefined;
+  }
+  if (
+    !Array.isArray(record.elementHierarchy) || record.elementHierarchy.length === 0
+    || !record.elementHierarchy.every((item) => typeof item === "string" && item.trim())
+  ) {
+    return undefined;
+  }
+  if (typeof record.primaryMassPct !== "number" || !Number.isFinite(record.primaryMassPct) || record.primaryMassPct <= 0 || record.primaryMassPct > 100) {
+    return undefined;
+  }
+  const avoidedCliches = toStringArray(record.avoidedCliches);
+  const justifiedCliches = toStringArray(record.justifiedCliches);
+  return {
+    concept: record.concept as string,
+    visualFocus: record.visualFocus as string,
+    elementHierarchy: record.elementHierarchy as string[],
+    primaryMassPct: record.primaryMassPct,
+    contrastStrategy: record.contrastStrategy as string,
+    chromaticDirection: record.chromaticDirection as string,
+    atmosphere: record.atmosphere as string,
+    backgroundTreatment: record.backgroundTreatment as string,
+    productTextRelationship: record.productTextRelationship as string,
+    avoidedCliches,
+    justifiedCliches,
+  };
 }
 
 function parseAllowedRenderedTexts(value: unknown): string[] | undefined {
@@ -510,6 +750,14 @@ export function parseCreativePlan(raw: string): CreativePlan | undefined {
     if (allowedRenderedTexts === undefined) return undefined;
     if (!allowedRenderedTexts.includes(parsed.headline) || !allowedRenderedTexts.includes(parsed.cta)) return undefined;
 
+    // Auditoria "qualidade visual e direção de arte" — mesma filosofia estrita: sem artDirection
+    // concreta (ou com qualquer campo sendo só uma frase vaga banida), o plano inteiro é rejeitado
+    // e uma nova tentativa é forçada, nunca uma peça construída sobre "visual moderno".
+    const artDirection = parseArtDirection(parsed.artDirection);
+    if (artDirection === undefined) return undefined;
+    const layoutPlan = parseLayoutPlan(parsed.layoutPlan);
+    if (layoutPlan === undefined) return undefined;
+
     return {
       objective: typeof parsed.objective === "string" ? parsed.objective : "",
       angle: typeof parsed.angle === "string" ? parsed.angle : "",
@@ -522,6 +770,8 @@ export function parseCreativePlan(raw: string): CreativePlan | undefined {
       allowedRenderedTexts,
       visualDirection: typeof parsed.visualDirection === "string" ? parsed.visualDirection : "",
       compositionIntent: typeof parsed.compositionIntent === "string" ? parsed.compositionIntent : "",
+      artDirection,
+      layoutPlan,
       assetUsage,
       assetPlacements,
       textZones,
@@ -571,8 +821,42 @@ export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: 
     `Crie uma peça publicitária ${context.format} para "${context.brandName}".`,
     `Direção visual: ${plan.visualDirection}`,
     `Intenção de composição: ${plan.compositionIntent}`,
-    textZoneDrawInstruction(headlineZone, "Headline", plan.headline, ", com destaque tipográfico forte"),
   ];
+  // Auditoria "qualidade visual e direção de arte" — achado ao vivo: `artDirection`/`layoutPlan`
+  // (as decisões CONCRETAS de composição) eram validados no plano mas nunca chegavam ao prompt
+  // que de fato gera os pixels — o modelo de imagem só via `visualDirection`/`compositionIntent`
+  // (prosa livre), então a especificidade exigida no Director se perdia antes de virar imagem.
+  const artDirection = plan.artDirection;
+  lines.push(
+    `CONCEITO CRIATIVO DESTA PEÇA (siga literalmente, não reinterprete): ${artDirection.concept}`,
+    `Foco visual principal (o que o olho encontra primeiro, deve ocupar aproximadamente ${artDirection.primaryMassPct}% do canvas): ${artDirection.visualFocus}`,
+    `Hierarquia dos elementos, do mais para o menos importante: ${artDirection.elementHierarchy.join(" > ")}`,
+    `Estratégia de contraste principal: ${artDirection.contrastStrategy}`,
+    `Direção cromática: ${artDirection.chromaticDirection}`,
+    `Atmosfera: ${artDirection.atmosphere}`,
+    `Tratamento de fundo: ${artDirection.backgroundTreatment}`,
+    `Relação entre produto/screenshot e texto: ${artDirection.productTextRelationship}`,
+  );
+  if (artDirection.justifiedCliches.length > 0) {
+    lines.push(`Elementos visuais comuns usados NESTA peça, de propósito: ${artDirection.justifiedCliches.join("; ")}.`);
+  }
+  if (artDirection.avoidedCliches.length > 0) {
+    lines.push(`NUNCA inclua (decisão consciente desta peça): ${artDirection.avoidedCliches.join(", ")}.`);
+  }
+  if (plan.layoutPlan.length > 0) {
+    const layoutLines = plan.layoutPlan
+      .slice()
+      .sort((a, b) => a.priority - b.priority)
+      .map((zone) => `${zone.kind} (prioridade ${zone.priority}, x=${zone.rect.xPct}%-${zone.rect.xPct + zone.rect.widthPct}%, y=${zone.rect.yPct}%-${zone.rect.yPct + zone.rect.heightPct}%): ${zone.rationale}`);
+    lines.push(`Mapa de composição — respeite esta distribuição de massa visual (zonas em ordem de prioridade):\n${layoutLines.join("\n")}`);
+    const negativeSpaceZones = plan.layoutPlan.filter((zone) => zone.kind === "negativeSpace");
+    if (negativeSpaceZones.length > 0) {
+      lines.push(
+        `Área(s) de respiro — mantenha ${negativeSpaceZones.map((zone) => `x=${zone.rect.xPct}%-${zone.rect.xPct + zone.rect.widthPct}%, y=${zone.rect.yPct}%-${zone.rect.yPct + zone.rect.heightPct}%`).join("; ")} genuinamente vazia(s), sem elemento decorativo nenhum — isso é respiro deliberado, não espaço a preencher.`,
+      );
+    }
+  }
+  lines.push(textZoneDrawInstruction(headlineZone, "Headline", plan.headline, ", com destaque tipográfico forte"));
   if (plan.subheadline) lines.push(textZoneDrawInstruction(subheadlineZone, "Subheadline", plan.subheadline, ""));
   lines.push(textZoneDrawInstruction(ctaZone, "CTA", plan.cta, ""));
   // Auditoria "motor de geração de criativos" — achado ao vivo: mesmo com headline/subheadline

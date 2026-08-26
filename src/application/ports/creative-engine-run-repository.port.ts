@@ -34,6 +34,16 @@ export type CreativeEngineRun = {
   assetsUsed: unknown[];
   compositionSteps: unknown[];
   qualityGate?: unknown;
+  /** Auditoria "qualidade visual e direção de arte" (segunda auditoria) — DELIBERADAMENTE separado
+   * de `qualityGate`: aquele campo é o veredito TÉCNICO pass/fail; este é a avaliação estética (12
+   * dimensões + nota geral + justificativas, ver `evaluate-visual-quality-score.ts`), nunca um
+   * pass/fail puro. `undefined` quando o gate técnico nunca chegou a passar (score nunca roda antes
+   * disso) ou a chamada de visão falhou (best-effort). */
+  visualQualityScore?: unknown;
+  /** Auditoria "qualidade visual e direção de arte", ponto 9 — direção criativa escolhida na
+   * exploração barata pré-plano (ver `explore-creative-directions.ts`). `undefined` quando a
+   * exploração falhou/veio incompleta (best-effort). */
+  chosenCreativeDirection?: unknown;
   repairRounds: unknown[];
   finalImageUrl?: string;
   finalImageWidth?: number;

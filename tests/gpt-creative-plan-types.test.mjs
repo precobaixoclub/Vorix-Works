@@ -41,7 +41,43 @@ function samplePlanJson(overrides = {}) {
   if (!Object.prototype.hasOwnProperty.call(overrides, "allowedRenderedTexts")) {
     merged.allowedRenderedTexts = [merged.headline, merged.subheadline, merged.cta].filter(Boolean);
   }
+  if (!Object.prototype.hasOwnProperty.call(overrides, "artDirection")) {
+    merged.artDirection = sampleArtDirection();
+  }
+  if (!Object.prototype.hasOwnProperty.call(overrides, "layoutPlan")) {
+    merged.layoutPlan = sampleLayoutPlan();
+  }
   return JSON.stringify(merged);
+}
+
+// Achado ao vivo — auditoria "qualidade visual e direção de arte": `artDirection` é validada
+// contra uma lista de frases vagas banidas, então o fixture de teste precisa ser CONCRETA de
+// verdade (mesmo padrão exigido do Director real), nunca "visual moderno".
+function sampleArtDirection(overrides = {}) {
+  return {
+    concept: "Fundo grafite quase preto com feixe de luz verde neon diagonal, produto centralizado",
+    visualFocus: "Mockup do celular exibindo o site, ocupando o terço central da peça",
+    elementHierarchy: ["mockup do site", "headline", "cta", "logo"],
+    primaryMassPct: 45,
+    contrastStrategy: "Texto branco sólido sobre faixa preta semi-opaca, nunca direto sobre o fundo grafite",
+    chromaticDirection: "Grafite quase preto dominante, verde neon como único acento, amarelo só no CTA",
+    atmosphere: "Tecnológico e direto, sem elementos decorativos soltos",
+    backgroundTreatment: "Gradiente sutil de grafite para preto, sem textura ou ruído",
+    productTextRelationship: "Texto sempre acima ou abaixo do mockup, nunca sobreposto a ele",
+    avoidedCliches: ["cards flutuantes", "elementos 3D aleatórios"],
+    justifiedCliches: [],
+    ...overrides,
+  };
+}
+
+function sampleLayoutPlan(overrides = []) {
+  if (Array.isArray(overrides) && overrides.length > 0) return overrides;
+  return [
+    { kind: "headline", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 15 }, priority: 1, rationale: "Mensagem principal no topo, primeira coisa lida" },
+    { kind: "hero", rect: { xPct: 15, yPct: 30, widthPct: 70, heightPct: 40 }, priority: 2, rationale: "Mockup do site como foco visual central" },
+    { kind: "cta", rect: { xPct: 10, yPct: 80, widthPct: 80, heightPct: 10 }, priority: 3, rationale: "Ação no terço inferior, fácil de alcançar visualmente" },
+    { kind: "negativeSpace", rect: { xPct: 10, yPct: 72, widthPct: 80, heightPct: 6 }, priority: 4, rationale: "Respiro entre o mockup e o CTA" },
+  ];
 }
 
 test("parseCreativePlan: parseia um JSON completo e bem formado", () => {
@@ -88,6 +124,103 @@ test("parseCreativePlan: devolve undefined quando allowedRenderedTexts não incl
 
 test("parseCreativePlan: devolve undefined para JSON inválido, nunca lança", () => {
   assert.equal(parseCreativePlan("isto não é JSON"), undefined);
+});
+
+// Auditoria "qualidade visual e direção de arte" — achado ao vivo em revisão de gerações reais:
+// `visualDirection`/`styleNotes` viravam frases genéricas reaproveitáveis em qualquer marca
+// ("visual moderno", "alto impacto", "premium"). `artDirection` é validada em código contra uma
+// lista de frases banidas — deliberadamente estrito, mesmo padrão de `allowedRenderedTexts`.
+
+test("parseCreativePlan: aceita artDirection concreta (caso feliz)", () => {
+  const plan = parseCreativePlan(samplePlanJson());
+  assert.ok(plan);
+  assert.equal(plan.artDirection.primaryMassPct, 45);
+  assert.deepEqual(plan.artDirection.elementHierarchy, ["mockup do site", "headline", "cta", "logo"]);
+});
+
+test("parseCreativePlan: devolve undefined sem artDirection", () => {
+  assert.equal(parseCreativePlan(samplePlanJson({ artDirection: undefined })), undefined);
+});
+
+for (const field of ["concept", "visualFocus", "contrastStrategy", "chromaticDirection", "atmosphere", "backgroundTreatment", "productTextRelationship"]) {
+  test(`parseCreativePlan: devolve undefined quando artDirection.${field} é uma frase vaga banida ("visual moderno")`, () => {
+    const plan = parseCreativePlan(samplePlanJson({ artDirection: sampleArtDirection({ [field]: "visual moderno" }) }));
+    assert.equal(plan, undefined);
+  });
+}
+
+test("parseCreativePlan: devolve undefined quando um campo de artDirection é vazio", () => {
+  const plan = parseCreativePlan(samplePlanJson({ artDirection: sampleArtDirection({ concept: "" }) }));
+  assert.equal(plan, undefined);
+});
+
+test("parseCreativePlan: devolve undefined quando artDirection.elementHierarchy está vazio", () => {
+  const plan = parseCreativePlan(samplePlanJson({ artDirection: sampleArtDirection({ elementHierarchy: [] }) }));
+  assert.equal(plan, undefined);
+});
+
+test("parseCreativePlan: devolve undefined quando artDirection.primaryMassPct está fora de 0-100 ou ausente", () => {
+  assert.equal(parseCreativePlan(samplePlanJson({ artDirection: sampleArtDirection({ primaryMassPct: 0 }) })), undefined);
+  assert.equal(parseCreativePlan(samplePlanJson({ artDirection: sampleArtDirection({ primaryMassPct: 150 }) })), undefined);
+  assert.equal(parseCreativePlan(samplePlanJson({ artDirection: sampleArtDirection({ primaryMassPct: "grande" }) })), undefined);
+});
+
+test("parseCreativePlan: avoidedCliches/justifiedCliches ausentes viram listas vazias, nunca rejeitam o plano", () => {
+  const plan = parseCreativePlan(samplePlanJson({ artDirection: sampleArtDirection({ avoidedCliches: undefined, justifiedCliches: undefined }) }));
+  assert.ok(plan);
+  assert.deepEqual(plan.artDirection.avoidedCliches, []);
+  assert.deepEqual(plan.artDirection.justifiedCliches, []);
+});
+
+// Auditoria "qualidade visual e direção de arte" — layoutPlan: mapa de zonas e prioridades ANTES
+// da geração, mesma filosofia de rejeitar o plano inteiro (nunca clampar) quando malformado.
+
+test("parseCreativePlan: layoutPlan ausente vira lista vazia (nunca rejeita)", () => {
+  const plan = parseCreativePlan(samplePlanJson({ layoutPlan: undefined }));
+  assert.ok(plan);
+  assert.deepEqual(plan.layoutPlan, []);
+});
+
+test("parseCreativePlan: aceita layoutPlan bem formado com múltiplas zonas", () => {
+  const plan = parseCreativePlan(samplePlanJson());
+  assert.equal(plan.layoutPlan.length, 4);
+  assert.equal(plan.layoutPlan[0].kind, "headline");
+  assert.equal(plan.layoutPlan.find((zone) => zone.kind === "negativeSpace").rationale, "Respiro entre o mockup e o CTA");
+});
+
+test("parseCreativePlan: devolve undefined quando uma zona de layoutPlan tem kind desconhecido", () => {
+  const plan = parseCreativePlan(samplePlanJson({
+    layoutPlan: [{ kind: "banner_generico", rect: { xPct: 0, yPct: 0, widthPct: 10, heightPct: 10 }, priority: 1, rationale: "x" }],
+  }));
+  assert.equal(plan, undefined);
+});
+
+test("parseCreativePlan: devolve undefined quando uma zona de layoutPlan não tem rationale", () => {
+  const plan = parseCreativePlan(samplePlanJson({
+    layoutPlan: [{ kind: "hero", rect: { xPct: 0, yPct: 0, widthPct: 10, heightPct: 10 }, priority: 1, rationale: "" }],
+  }));
+  assert.equal(plan, undefined);
+});
+
+// Auditoria "qualidade visual e direção de arte" — `align`/`backingStyle` opcionais em textZones:
+// dão ao Director controle real sobre tratamento visual, em vez do renderer sempre aplicar o
+// mesmo bloco fixo independente da direção de arte.
+
+test("parseCreativePlan: aceita align/backingStyle opcionais numa textZone", () => {
+  const plan = parseCreativePlan(samplePlanJson({
+    textZones: [{ kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 50, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer", align: "left", backingStyle: "none" }],
+  }));
+  assert.equal(plan.textZones[0].align, "left");
+  assert.equal(plan.textZones[0].backingStyle, "none");
+});
+
+test("parseCreativePlan: align/backingStyle ausentes viram undefined, nunca rejeitam o plano", () => {
+  const plan = parseCreativePlan(samplePlanJson({
+    textZones: [{ kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 50, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" }],
+  }));
+  assert.ok(plan);
+  assert.equal(plan.textZones[0].align, undefined);
+  assert.equal(plan.textZones[0].backingStyle, undefined);
 });
 
 test("parseCreativePlan: densidade inválida cai pro neutro 'balanced', nunca inventa um valor da lista", () => {

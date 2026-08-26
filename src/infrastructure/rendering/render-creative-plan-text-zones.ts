@@ -93,14 +93,42 @@ function toPx(pct: number, totalPx: number): number {
   return Math.round((pct / 100) * totalPx);
 }
 
+/**
+ * Auditoria "qualidade visual e direção de arte" — antes desta função, o renderer sempre aplicava
+ * o MESMO tratamento visual fixo por `emphasis` (scrim escuro pra "primary", cor de destaque
+ * sólida pra "secondary"), independente da direção de arte decidida pelo plano — um bloco visual
+ * idêntico em toda peça, exatamente o "template automático" que a auditoria pediu pra quebrar.
+ * `zone.backingStyle` (opcional, ver `gpt-creative-plan.types.ts`) dá ao Director controle real:
+ * "scrim" força a faixa escura semi-opaca (útil sobre fundo fotográfico imprevisível mesmo numa
+ * zona secundária), "solid" força a cor de destaque sólida, "none" deixa o texto direto sobre a
+ * imagem (só faz sentido quando a própria composição da imagem já reservou contraste suficiente
+ * ali — decisão do plano, nunca do renderer). AUSENTE preserva o comportamento histórico por
+ * `emphasis` — nunca quebra um plano antigo que não conhece o campo.
+ */
+function resolveZoneBacking(zone: CreativePlanTextZone, accentColor: string): { backgroundColor?: string; textColor: string } {
+  if (zone.backingStyle === "none") return { textColor: "#FFFFFF" };
+  if (zone.backingStyle === "scrim") return { backgroundColor: "rgba(0, 0, 0, 0.55)", textColor: "#FFFFFF" };
+  if (zone.backingStyle === "solid") return { backgroundColor: accentColor, textColor: pickReadableTextColor(accentColor) };
+  return zone.emphasis === "primary"
+    ? { backgroundColor: "rgba(0, 0, 0, 0.55)", textColor: "#FFFFFF" }
+    : { backgroundColor: accentColor, textColor: pickReadableTextColor(accentColor) };
+}
+
+/** `zone.align` (opcional) — mesmo princípio de `resolveZoneBacking`: dá ao plano controle real
+ * sobre o alinhamento em vez do renderer sempre centralizar. AUSENTE preserva o "center" histórico. */
+function resolveZoneAlignment(align: CreativePlanTextZone["align"]): { justifyContent: string; textAlign: string } {
+  if (align === "left") return { justifyContent: "flex-start", textAlign: "left" };
+  if (align === "right") return { justifyContent: "flex-end", textAlign: "right" };
+  return { justifyContent: "center", textAlign: "center" };
+}
+
 function buildZoneNode(zone: CreativePlanTextZone, left: number, top: number, widthPx: number, heightPx: number, accentColor: string, fontScale: number): { node: SatoriNode; fontSizePx: number } {
   const padding = Math.round(Math.min(widthPx, heightPx) * 0.12);
   const fittedFontSizePx = fitWrappedFontSizeToBox(zone.text, widthPx - padding * 2, heightPx - padding * 2);
   const fontSizePx = Math.max(10, Math.round(fittedFontSizePx * fontScale));
 
-  const isPrimary = zone.emphasis === "primary";
-  const backgroundColor = isPrimary ? "rgba(0, 0, 0, 0.55)" : accentColor;
-  const textColor = isPrimary ? "#FFFFFF" : pickReadableTextColor(accentColor);
+  const { backgroundColor, textColor } = resolveZoneBacking(zone, accentColor);
+  const { justifyContent, textAlign } = resolveZoneAlignment(zone.align);
 
   // Uma única div acumula posição absoluta E estilo visual — nunca uma div de posição
   // "vazia" envolvendo outra de estilo (achado ao vivo: o Satori não preenche uma div
@@ -116,10 +144,9 @@ function buildZoneNode(zone: CreativePlanTextZone, left: number, top: number, wi
       height: heightPx,
       display: "flex",
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent,
       padding,
-      backgroundColor,
-      borderRadius: Math.round(padding * 0.8),
+      ...(backgroundColor ? { backgroundColor, borderRadius: Math.round(padding * 0.8) } : {}),
       boxSizing: "border-box",
     },
     el(
@@ -129,7 +156,7 @@ function buildZoneNode(zone: CreativePlanTextZone, left: number, top: number, wi
         fontSize: fontSizePx,
         fontFamily: "Geist",
         fontWeight: 700,
-        textAlign: "center",
+        textAlign,
         lineHeight: 1.15,
       },
       zone.text,

@@ -26,6 +26,8 @@ type CreativeEngineRunRow = {
   assets_used: unknown;
   composition_steps: unknown;
   quality_gate: unknown;
+  visual_quality_score: unknown;
+  chosen_creative_direction: unknown;
   repair_rounds: unknown;
   final_image_url: string | null;
   final_image_width: number | null;
@@ -50,11 +52,12 @@ export class PostgresCreativeEngineRunRepository implements CreativeEngineRunRep
       `insert into creative_engine_runs (
          id, tenant_id, workspace_id, execution_run_id, task_run_id, engine_mode, planning_template,
          director_model, image_model, generation_method, creative_context, creative_plan,
-         final_image_prompt, assets_used, composition_steps, quality_gate, repair_rounds,
+         final_image_prompt, assets_used, composition_steps, quality_gate, visual_quality_score,
+         chosen_creative_direction, repair_rounds,
          final_image_url, final_image_width, final_image_height, publishable, estimated_cost_usd,
          latency_ms, status, error_code, created_at
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, now())
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, now())
        returning *`,
       [
         input.id,
@@ -73,6 +76,8 @@ export class PostgresCreativeEngineRunRepository implements CreativeEngineRunRep
         JSON.stringify(input.assetsUsed),
         JSON.stringify(input.compositionSteps),
         input.qualityGate === undefined ? null : JSON.stringify(input.qualityGate),
+        input.visualQualityScore === undefined ? null : JSON.stringify(input.visualQualityScore),
+        input.chosenCreativeDirection === undefined ? null : JSON.stringify(input.chosenCreativeDirection),
         JSON.stringify(input.repairRounds),
         input.finalImageUrl ?? null,
         input.finalImageWidth ?? null,
@@ -137,6 +142,8 @@ export class PostgresCreativeEngineRunRepository implements CreativeEngineRunRep
       assetsUsed: Array.isArray(row.assets_used) ? row.assets_used : [],
       compositionSteps: Array.isArray(row.composition_steps) ? row.composition_steps : [],
       qualityGate: row.quality_gate ?? undefined,
+      visualQualityScore: row.visual_quality_score ?? undefined,
+      chosenCreativeDirection: row.chosen_creative_direction ?? undefined,
       repairRounds: Array.isArray(row.repair_rounds) ? row.repair_rounds : [],
       finalImageUrl: row.final_image_url ?? undefined,
       finalImageWidth: row.final_image_width ?? undefined,

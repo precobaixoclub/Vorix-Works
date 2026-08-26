@@ -213,6 +213,8 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
         assetsUsed: result.assetsUsed,
         compositionSteps: result.compositionSteps,
         qualityGate: result.qualityGate,
+        visualQualityScore: result.visualQualityScore,
+        chosenCreativeDirection: result.chosenCreativeDirection,
         repairRounds: result.repairRounds,
         estimatedCostUsd: result.estimatedCostUsd,
         latencyMs: result.latencyMs,
@@ -250,6 +252,8 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
       assetsUsed: result.assetsUsed,
       compositionSteps: result.compositionSteps,
       qualityGate: result.qualityGate,
+      visualQualityScore: result.visualQualityScore,
+      chosenCreativeDirection: result.chosenCreativeDirection,
       repairRounds: result.repairRounds,
       finalImageUrl: result.finalImageUrl,
       finalImageWidth: result.finalImageWidth,
@@ -312,6 +316,15 @@ export class GptCreativeEngineQualityTaskHandler implements ExecutionTaskHandler
 
   private async recordHistory(request: ExecutionTaskHandlerRequest, plan: Record<string, unknown>, creativeEngineBlock: Record<string, unknown>): Promise<void> {
     if (!this.deps.contentGenerationHistory || Object.keys(plan).length === 0) return;
+    // Auditoria "qualidade visual e direção de arte" — `artDirection.concept` (novo, validado em
+    // código contra frases vagas banidas, ver `gpt-creative-plan.types.ts`) é sempre mais concreto
+    // que `plan.visualDirection` (campo antigo, livre-texto sem nenhuma validação de concretude).
+    // Preferir o novo é o que torna `exploreCreativeDirections`/`recentHistory` (ponto 10 —
+    // detecção de repetição visual entre gerações) um sinal de verdade útil, nunca uma frase
+    // genérica repetida ("visual moderno") que não ajuda a evitar repetição nenhuma. Cai pro campo
+    // antigo só quando `artDirection` ainda não existe (plano de antes desta auditoria).
+    const artDirection = normalizeObject(plan.artDirection);
+    const visualConcept = optionalString(artDirection.concept) ?? optionalString(plan.visualDirection);
     await this.deps.contentGenerationHistory.recordGeneration({
       tenantId: request.context.tenantId,
       workspaceId: request.context.workspaceId,
@@ -320,7 +333,7 @@ export class GptCreativeEngineQualityTaskHandler implements ExecutionTaskHandler
       title: optionalString(plan.title),
       caption: optionalString(plan.description),
       cta: optionalString(plan.cta),
-      visualConcept: optionalString(plan.visualDirection),
+      visualConcept,
       compositionSummary: optionalString(plan.compositionIntent),
       reviewStatus: "approved",
       engineMode: "gpt",

@@ -6,11 +6,13 @@ import {
   buildCreativePlanPrompt,
   buildImageGenerationPromptFromPlan,
   parseCreativePlan,
+  type ChosenCreativeDirection,
   type CreativeContext,
   type CreativePlan,
   type CreativePlanAssetRole,
   type CreativePlanRect,
 } from "../../shared/utils/gpt-creative-plan.types.js";
+import { exploreCreativeDirections, type CreativeDirectionExploration } from "./explore-creative-directions.js";
 import type { CreativeEngineImageGuardInput } from "../../shared/utils/creative-engine-image-guard.js";
 import { resolveProductRenderMode, type AssetSuitabilityScore, type ProductRenderModeDecision } from "../../shared/utils/product-asset.types.js";
 import {
@@ -18,6 +20,7 @@ import {
   type CreativeQualityGateResult,
 } from "./evaluate-creative-quality-gate.js";
 import { buildCreativePlanRepairPrompt, MAX_CREATIVE_REPAIR_ROUNDS, routeCreativeRepair, type CreativeRepairRound } from "./creative-repair.js";
+import { evaluateVisualQualityScore, buildAestheticRepairInstructions, type VisualQualityScoreResult } from "./evaluate-visual-quality-score.js";
 
 /**
  * Motor criativo GPT — migração "GPT como motor criativo único" (PR 5/9). Promove
@@ -99,6 +102,16 @@ export type GptCreativeEngineResult = {
   compositedAssetRoles: CreativePlanAssetRole[];
   compositionSteps: CompositionStep[];
   qualityGate?: CreativeQualityGateResult;
+  /** Auditoria "qualidade visual e direção de arte" — DELIBERADAMENTE separado de `qualityGate`
+   * (pass/fail técnico). `undefined` quando o gate técnico nunca chegou a passar (score nunca roda
+   * antes disso) OU quando a chamada de visão falhou/veio incompleta (best-effort, nunca bloqueia
+   * a peça por uma falha de leitura da IA — ver `evaluateVisualQualityScore`). */
+  visualQualityScore?: VisualQualityScoreResult;
+  /** Auditoria "qualidade visual e direção de arte", ponto 9 — exploração barata de 2-3 direções
+   * criativas ANTES do plano detalhado (ver `explore-creative-directions.ts`). `undefined` quando
+   * a chamada falhou/veio incompleta (best-effort — a geração segue sem âncora, exatamente como
+   * funcionava antes desta etapa existir). */
+  chosenCreativeDirection?: CreativeDirectionExploration;
   repairRounds: CreativeRepairRound[];
   finalImageUrl?: string;
   finalImageWidth?: number;
@@ -138,12 +151,13 @@ async function requestCreativePlan(
   executionId: string,
   correlationId: string,
   track: (response: IcaroAIResponse | undefined) => void,
+  chosenDirection?: ChosenCreativeDirection,
 ): Promise<{ plan?: CreativePlan; response?: IcaroAIResponse }> {
   let lastResponse: IcaroAIResponse | undefined;
   for (let jsonAttempt = 1; jsonAttempt <= MAX_INITIAL_PLAN_JSON_ATTEMPTS; jsonAttempt++) {
     const response = await icaro.request({
       taskType: "analysis",
-      prompt: buildCreativePlanPrompt(context),
+      prompt: buildCreativePlanPrompt(context, chosenDirection),
       specialistId: SPECIALIST_ID,
       executionId,
       correlationId,
@@ -165,6 +179,51 @@ async function requestCreativePlan(
     }
   }
   return { response: lastResponse };
+}
+
+// Achado ao vivo em produção (mesma classe de bug do plano inicial, ver `MAX_INITIAL_PLAN_JSON_ATTEMPTS`
+// acima): uma resposta de CORREÇÃO com JSON malformado/incompleto também acontece — mesma segunda
+// tentativa com o MESMO prompt antes de desistir. Fatorado aqui porque a partir da auditoria
+// "qualidade visual e direção de arte" existem DUAS origens de correção (gate técnico e Visual
+// Quality Score abaixo do piso) que precisam do mesmo mecanismo de reparo — nunca duplicar a lógica
+// de retry entre elas.
+const MAX_REPAIR_JSON_ATTEMPTS = 2;
+
+async function requestRepairedPlan(
+  icaro: IcaroBrainPort,
+  previousPlan: CreativePlan,
+  context: CreativeContext,
+  instructions: readonly string[],
+  executionId: string,
+  correlationId: string,
+  track: (response: IcaroAIResponse | undefined) => void,
+): Promise<CreativePlan | undefined> {
+  const repairPrompt = buildCreativePlanRepairPrompt(previousPlan, context, instructions);
+  for (let jsonAttempt = 1; jsonAttempt <= MAX_REPAIR_JSON_ATTEMPTS; jsonAttempt++) {
+    const repairResponse = await icaro.request({
+      taskType: "analysis",
+      prompt: repairPrompt,
+      specialistId: SPECIALIST_ID,
+      executionId,
+      correlationId,
+      imageUrls: context.assets.map((asset) => asset.url),
+      expectedOutput: "json",
+      priority: "quality",
+      temperature: 0.4,
+      maxTokens: CREATIVE_PLAN_MAX_TOKENS,
+      timeoutMs: 45_000,
+    });
+    track(repairResponse);
+    if (repairResponse.status === "completed") {
+      try {
+        const plan = parseCreativePlan(extractJson(String(repairResponse.content ?? ""), "GPT Creative Plan Repair"));
+        if (plan) return plan;
+      } catch {
+        // tenta de novo (ou desiste, se for a última tentativa)
+      }
+    }
+  }
+  return undefined;
 }
 
 /** Deriva a guarda mínima do motor GPT a partir do `creative_plan` já produzido — nunca a
@@ -242,9 +301,24 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       warnings,
       error,
       errorCode,
+      chosenCreativeDirection,
       ...extra,
     };
   }
+
+  // Ponto 9 da auditoria "qualidade visual e direção de arte" — uma ÚNICA chamada de texto barata
+  // ANTES do plano detalhado, pra ancorar o plano numa direção criativa concreta (e, via
+  // `context.recentHistory`, evitar repetir o conceito visual de peças recentes — ponto 10). Best-
+  // effort: `undefined` (chamada falhou/resposta incompleta) segue direto pro plano SEM âncora,
+  // comportamento idêntico ao motor antes desta etapa existir.
+  const chosenCreativeDirection = await exploreCreativeDirections(deps.creativeBrain, context, {
+    specialistId: SPECIALIST_ID,
+    executionId: input.executionRunId,
+    correlationId: input.creativeEngineRunId,
+  });
+  const chosenDirectionAnchor: ChosenCreativeDirection | undefined = chosenCreativeDirection
+    ? chosenCreativeDirection.candidates[chosenCreativeDirection.chosenIndex]
+    : undefined;
 
   const { plan: initialPlan, response: planResponse } = await requestCreativePlan(
     deps.creativeBrain,
@@ -252,6 +326,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     input.executionRunId,
     input.creativeEngineRunId,
     track,
+    chosenDirectionAnchor,
   );
   directorModel = planResponse?.model?.id;
   if (!initialPlan) {
@@ -396,28 +471,75 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       });
 
       if (qualityGate.verdict === "pass") {
-        return {
-          engineMode: "gpt",
-          directorModel,
-          imageModel,
-          creativeContext: context,
-          creativePlan: plan,
-          finalImagePrompt: imagePrompt,
-          generationMethod,
-          productRenderDecision,
-          assetsUsed,
-          compositedAssetRoles,
-          compositionSteps: textCompositionSteps,
-          qualityGate,
-          repairRounds,
+        // Auditoria "qualidade visual e direção de arte" — o gate técnico só garante que a peça
+        // NÃO TEM defeito grave; nunca garantiu que ela é boa. Visual Quality Score roda só aqui
+        // (nunca antes do gate técnico passar — sem sentido avaliar estética de algo já quebrado).
+        const visualQualityScore = await evaluateVisualQualityScore(deps.creativeBrain, {
           finalImageUrl: uploaded.url,
-          finalImageWidth,
-          finalImageHeight,
-          publishable: true,
-          estimatedCostUsd,
-          latencyMs: Math.max(latencyMs, (deps.now?.() ?? new Date()).getTime() - startedAt),
-          warnings,
-        };
+          plan,
+          brandColors: context.brandColors,
+          specialistId: SPECIALIST_ID,
+        });
+
+        // `undefined` (chamada falhou/resposta incompleta) nunca bloqueia — best-effort, mesmo
+        // espírito do resto do gate. Só um resultado EXPLÍCITO abaixo do piso reprova.
+        if (!visualQualityScore || !visualQualityScore.belowThreshold) {
+          return {
+            engineMode: "gpt",
+            directorModel,
+            imageModel,
+            creativeContext: context,
+            creativePlan: plan,
+            finalImagePrompt: imagePrompt,
+            generationMethod,
+            productRenderDecision,
+            assetsUsed,
+            compositedAssetRoles,
+            compositionSteps: textCompositionSteps,
+            qualityGate,
+            visualQualityScore,
+            chosenCreativeDirection,
+            repairRounds,
+            finalImageUrl: uploaded.url,
+            finalImageWidth,
+            finalImageHeight,
+            publishable: true,
+            estimatedCostUsd,
+            latencyMs: Math.max(latencyMs, (deps.now?.() ?? new Date()).getTime() - startedAt),
+            warnings,
+          };
+        }
+
+        if (repairAttempt >= MAX_CREATIVE_REPAIR_ROUNDS) {
+          return fail(
+            "CREATIVE_VISUAL_QUALITY_BELOW_THRESHOLD: a peça passou no quality gate técnico, mas ficou abaixo do piso mínimo de qualidade visual mesmo após as rodadas de reparo disponíveis.",
+            "CREATIVE_VISUAL_QUALITY_BELOW_THRESHOLD",
+            { creativePlan: plan, finalImagePrompt: imagePrompt, qualityGate, visualQualityScore, repairRounds, compositionSteps: textCompositionSteps, finalImageUrl: uploaded.url, finalImageWidth, finalImageHeight },
+          );
+        }
+
+        // Reparo estético sempre volta ao GPT (`gpt_replan`) — nunca `renderer_reflow`: nenhum
+        // defeito de qualidade visual (hierarquia, composição, direção genérica) é puramente
+        // geométrico-de-renderer. Compartilha o MESMO contador `repairAttempt`/limite do gate
+        // técnico — ver auditoria, ponto 15 ("não aumentar complexidade/custo indefinidamente").
+        const aestheticInstructions = buildAestheticRepairInstructions(visualQualityScore);
+        repairRounds.push({ round: repairAttempt + 1, route: "gpt_replan", issues: [], instructions: aestheticInstructions, resolved: false });
+        repairAttempt += 1;
+
+        const repairedPlan = await requestRepairedPlan(deps.creativeBrain, plan, context, aestheticInstructions, input.executionRunId, input.creativeEngineRunId, track);
+        if (!repairedPlan) {
+          return fail("Não foi possível obter um creative_plan de correção estética válido do GPT, mesmo após nova tentativa.", "CREATIVE_PLAN_REPAIR_INVALID", {
+            creativePlan: plan,
+            finalImagePrompt: imagePrompt,
+            qualityGate,
+            visualQualityScore,
+            repairRounds,
+            compositionSteps: textCompositionSteps,
+          });
+        }
+
+        plan = repairedPlan;
+        continue outerImageRound;
       }
 
       const routed = routeCreativeRepair(qualityGate.issues, repairAttempt);
@@ -444,41 +566,11 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       }
 
       // gpt_replan — sempre volta ao MESMO modelo diretor, nunca ao motor/renderer legado.
-      // Achado ao vivo em produção: uma resposta de correção com JSON malformado/incompleto
-      // (falha passageira do modelo, não do nosso código) derrubava a execução inteira na hora,
-      // mesmo com rodadas de reparo ainda disponíveis (`MAX_CREATIVE_REPAIR_ROUNDS`). Uma segunda
-      // tentativa com o MESMO prompt antes de desistir — nunca infinita, nunca conta como uma
-      // rodada de reparo nova (o `repairAttempt` já foi incrementado acima, pra continuar contra
-      // o limite de rounds normal).
-      const repairPrompt = buildCreativePlanRepairPrompt(plan, context, routed.instructions);
-      const MAX_REPAIR_JSON_ATTEMPTS = 2;
-      let repairedPlan: CreativePlan | undefined;
-      for (let jsonAttempt = 1; jsonAttempt <= MAX_REPAIR_JSON_ATTEMPTS; jsonAttempt++) {
-        const repairResponse = await deps.creativeBrain.request({
-          taskType: "analysis",
-          prompt: repairPrompt,
-          specialistId: SPECIALIST_ID,
-          executionId: input.executionRunId,
-          correlationId: input.creativeEngineRunId,
-          imageUrls: context.assets.map((asset) => asset.url),
-          expectedOutput: "json",
-          priority: "quality",
-          temperature: 0.4,
-          maxTokens: CREATIVE_PLAN_MAX_TOKENS,
-          timeoutMs: 45_000,
-        });
-        track(repairResponse);
-        repairedPlan = repairResponse.status === "completed"
-          ? (() => {
-              try {
-                return parseCreativePlan(extractJson(String(repairResponse.content ?? ""), "GPT Creative Plan Repair"));
-              } catch {
-                return undefined;
-              }
-            })()
-          : undefined;
-        if (repairedPlan) break;
-      }
+      // `requestRepairedPlan` já cobre a segunda tentativa em caso de JSON malformado/incompleto
+      // (achado ao vivo em produção, ver comentário na definição da função) — nunca conta como uma
+      // rodada de reparo nova (o `repairAttempt` já foi incrementado acima, pra continuar contra o
+      // limite de rounds normal).
+      const repairedPlan = await requestRepairedPlan(deps.creativeBrain, plan, context, routed.instructions, input.executionRunId, input.creativeEngineRunId, track);
 
       if (!repairedPlan) {
         return fail("Não foi possível obter um creative_plan de correção válido do GPT, mesmo após nova tentativa.", "CREATIVE_PLAN_REPAIR_INVALID", {

@@ -114,3 +114,81 @@ test("renderCreativePlanTextZones: múltiplas zonas são todas compostas e repor
     assert.ok(zone.fontSizePx > 0);
   }
 });
+
+// Auditoria "qualidade visual e direção de arte" — antes destes testes, `align`/`backingStyle`
+// existiam no tipo `CreativePlanTextZone` mas eram completamente ignorados aqui: o renderer sempre
+// aplicava o mesmo tratamento fixo por `emphasis` (scrim/solid/center), nunca a decisão real do
+// plano. Estes testes travam o comportamento NOVO (plano decide) e confirmam que o comportamento
+// HISTÓRICO (campo ausente) nunca muda — ver `resolveZoneBacking`/`resolveZoneAlignment`.
+
+test("renderCreativePlanTextZones: backingStyle='none' desenha o texto direto sobre a imagem, sem nenhuma caixa de fundo", async () => {
+  const baseImageBuffer = await makeSolidPng(1080, 1350, { r: 20, g: 20, b: 20, alpha: 1 });
+  const zones = [{ kind: "headline", text: "OFERTA", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 15 }, emphasis: "primary", renderedBy: "renderer", backingStyle: "none" }];
+
+  const result = await renderCreativePlanTextZones({ baseImageBuffer, zones });
+  const zoneLeft = Math.round(0.10 * 1080);
+  const zoneTop = Math.round(0.10 * 1350);
+  const zoneWidthPx = Math.round(0.80 * 1080);
+  const zoneHeightPx = Math.round(0.15 * 1350);
+  // Mesmo ponto de prova usado no teste de scrim (fundo original, longe do texto centralizado) —
+  // sem caixa nenhuma, deveria continuar exatamente a cor de fundo original (20,20,20), nunca o
+  // escurecimento do scrim (~9 sobre um fundo já escuro).
+  const probePixel = await sharp(result.buffer)
+    .extract({ left: zoneLeft + Math.round(zoneWidthPx * 0.1), top: zoneTop + Math.round(zoneHeightPx / 2), width: 1, height: 1 })
+    .raw()
+    .toBuffer();
+  assert.equal(probePixel[0], 20, `backingStyle="none" nunca deveria desenhar uma caixa de fundo, veio R=${probePixel[0]}`);
+});
+
+test("renderCreativePlanTextZones: backingStyle='scrim' força a faixa escura mesmo numa zona emphasis=secondary", async () => {
+  const baseImageBuffer = await makeSolidPng(1080, 1350, { r: 255, g: 255, b: 255, alpha: 1 });
+  const zones = [{ kind: "cta", text: "COMPRE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 80, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer", backingStyle: "scrim" }];
+
+  const result = await renderCreativePlanTextZones({ baseImageBuffer, zones, accentColor: "#0000FF" });
+  const zoneLeft = Math.round(0.10 * 1080);
+  const zoneTop = Math.round(0.80 * 1350);
+  const probePixel = await sharp(result.buffer).extract({ left: zoneLeft + 5, top: zoneTop + 5, width: 1, height: 1 }).raw().toBuffer();
+  assert.ok(probePixel[0] < 150, `backingStyle="scrim" deveria vencer o accentColor de "secondary", veio R=${probePixel[0]} B=${probePixel[2]}`);
+});
+
+test("renderCreativePlanTextZones: backingStyle='solid' força a cor de destaque mesmo numa zona emphasis=primary", async () => {
+  const baseImageBuffer = await makeSolidPng(1080, 1350, { r: 255, g: 255, b: 255, alpha: 1 });
+  const zones = [{ kind: "headline", text: "OFERTA", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 15 }, emphasis: "primary", renderedBy: "renderer", backingStyle: "solid" }];
+
+  const result = await renderCreativePlanTextZones({ baseImageBuffer, zones, accentColor: "#0000FF" });
+  const zoneLeft = Math.round(0.10 * 1080);
+  const zoneTop = Math.round(0.10 * 1350);
+  const zoneWidthPx = Math.round(0.80 * 1080);
+  const zoneHeightPx = Math.round(0.15 * 1350);
+  const probePixel = await sharp(result.buffer)
+    .extract({ left: zoneLeft + Math.round(zoneWidthPx * 0.1), top: zoneTop + Math.round(zoneHeightPx / 2), width: 1, height: 1 })
+    .raw()
+    .toBuffer();
+  assert.ok(probePixel[2] > 150 && probePixel[0] < 60, `backingStyle="solid" deveria vencer o scrim de "primary", veio R=${probePixel[0]} B=${probePixel[2]}`);
+});
+
+test("renderCreativePlanTextZones: sem backingStyle definido, o comportamento histórico por emphasis nunca muda", async () => {
+  const baseImageBuffer = await makeSolidPng(1080, 1350, { r: 255, g: 255, b: 255, alpha: 1 });
+  const zonesWithField = [{ kind: "headline", text: "OFERTA", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 15 }, emphasis: "primary", renderedBy: "renderer", backingStyle: undefined }];
+  const zonesWithoutField = [{ kind: "headline", text: "OFERTA", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 15 }, emphasis: "primary", renderedBy: "renderer" }];
+
+  const [withField, withoutField] = await Promise.all([
+    renderCreativePlanTextZones({ baseImageBuffer, zones: zonesWithField }),
+    renderCreativePlanTextZones({ baseImageBuffer, zones: zonesWithoutField }),
+  ]);
+  assert.equal(Buffer.compare(withField.buffer, withoutField.buffer), 0);
+});
+
+test("renderCreativePlanTextZones: align='left' produz uma imagem diferente de align='center' (mesma zona, mesmo texto)", async () => {
+  // Fundo ESCURO de propósito: `backingStyle: "none"` sempre desenha texto branco (ver
+  // `resolveZoneBacking`) — sobre um fundo branco o texto fica invisível (branco sobre branco) e
+  // QUALQUER alinhamento produziria o mesmo PNG em branco, mascarando um bug real de alinhamento.
+  const baseImageBuffer = await makeSolidPng(1080, 1350, { r: 10, g: 10, b: 10, alpha: 1 });
+  const rect = { xPct: 5, yPct: 40, widthPct: 90, heightPct: 15 };
+
+  const [leftAligned, centerAligned] = await Promise.all([
+    renderCreativePlanTextZones({ baseImageBuffer, zones: [{ kind: "headline", text: "OFERTA IMPERDÍVEL", rect, emphasis: "secondary", renderedBy: "renderer", backingStyle: "none", align: "left" }] }),
+    renderCreativePlanTextZones({ baseImageBuffer, zones: [{ kind: "headline", text: "OFERTA IMPERDÍVEL", rect, emphasis: "secondary", renderedBy: "renderer", backingStyle: "none", align: "center" }] }),
+  ]);
+  assert.notEqual(Buffer.compare(leftAligned.buffer, centerAligned.buffer), 0, "align deveria mudar a posição real do texto renderizado");
+});

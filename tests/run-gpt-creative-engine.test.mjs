@@ -29,7 +29,43 @@ function creativePlanJson(overrides = {}) {
   if (!Object.prototype.hasOwnProperty.call(overrides, "allowedRenderedTexts")) {
     merged.allowedRenderedTexts = [merged.headline, merged.subheadline, merged.cta].filter(Boolean);
   }
+  if (!Object.prototype.hasOwnProperty.call(overrides, "artDirection")) {
+    merged.artDirection = sampleArtDirection();
+  }
+  if (!Object.prototype.hasOwnProperty.call(overrides, "layoutPlan")) {
+    merged.layoutPlan = sampleLayoutPlan();
+  }
   return JSON.stringify(merged);
+}
+
+// Achado ao vivo — auditoria "qualidade visual e direção de arte": `artDirection` é validada
+// contra uma lista de frases vagas banidas, então o fixture de teste precisa ser CONCRETA de
+// verdade (mesmo padrão exigido do Director real), nunca "visual moderno".
+function sampleArtDirection(overrides = {}) {
+  return {
+    concept: "Fundo grafite quase preto com feixe de luz verde neon diagonal, produto centralizado",
+    visualFocus: "Mockup do celular exibindo o site, ocupando o terço central da peça",
+    elementHierarchy: ["mockup do site", "headline", "cta", "logo"],
+    primaryMassPct: 45,
+    contrastStrategy: "Texto branco sólido sobre faixa preta semi-opaca, nunca direto sobre o fundo grafite",
+    chromaticDirection: "Grafite quase preto dominante, verde neon como único acento, amarelo só no CTA",
+    atmosphere: "Tecnológico e direto, sem elementos decorativos soltos",
+    backgroundTreatment: "Gradiente sutil de grafite para preto, sem textura ou ruído",
+    productTextRelationship: "Texto sempre acima ou abaixo do mockup, nunca sobreposto a ele",
+    avoidedCliches: ["cards flutuantes", "elementos 3D aleatórios"],
+    justifiedCliches: [],
+    ...overrides,
+  };
+}
+
+function sampleLayoutPlan(overrides = []) {
+  if (Array.isArray(overrides) && overrides.length > 0) return overrides;
+  return [
+    { kind: "headline", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 15 }, priority: 1, rationale: "Mensagem principal no topo, primeira coisa lida" },
+    { kind: "hero", rect: { xPct: 15, yPct: 30, widthPct: 70, heightPct: 40 }, priority: 2, rationale: "Mockup do site como foco visual central" },
+    { kind: "cta", rect: { xPct: 10, yPct: 80, widthPct: 80, heightPct: 10 }, priority: 3, rationale: "Ação no terço inferior, fácil de alcançar visualmente" },
+    { kind: "negativeSpace", rect: { xPct: 10, yPct: 72, widthPct: 80, heightPct: 6 }, priority: 4, rationale: "Respiro entre o mockup e o CTA" },
+  ];
 }
 
 function baseContext(overrides = {}) {
@@ -77,7 +113,12 @@ function fakeObjectStorage() {
  * specialistId, executionId, correlationId para as asserções de rastreabilidade. */
 function fakeIcaro(scripts) {
   const calls = [];
-  const queues = { analysis: [...(scripts.analysis ?? [])], image_generation: [...(scripts.image_generation ?? [])], review: [...(scripts.review ?? [])] };
+  const queues = {
+    analysis: [...(scripts.analysis ?? [])],
+    image_generation: [...(scripts.image_generation ?? [])],
+    review: [...(scripts.review ?? [])],
+    text_generation: [...(scripts.text_generation ?? [])],
+  };
   return {
     calls,
     request: async (request) => {
@@ -98,8 +139,45 @@ function imageResponse(uri = "https://x/generated.png", cost = 0.05, durationMs 
   return { status: "completed", model: { id: "gpt-image-1" }, content: JSON.stringify({ images: [{ uri }] }), cost: { estimated: cost, currency: "USD" }, durationMs };
 }
 
+// Auditoria "qualidade visual e direção de arte", ponto 9 — exploração barata de direções antes
+// do plano detalhado. Usa taskType "text_generation", deliberadamente separado de "analysis"
+// (plano) e "review" (gates) — ver `explore-creative-directions.ts`.
+function explorationResponse(chosenIndex = 1) {
+  const candidates = [
+    { name: "Editorial", coreIdea: "Fundo grafite com tipografia grande, sem mockup", whyItFits: "Foca na mensagem", originalityScore: 6 },
+    { name: "Produto protagonista", coreIdea: "Mockup do site ocupando 60% do canvas", whyItFits: "Deixa o site falar por si", originalityScore: 7 },
+  ];
+  return { status: "completed", content: JSON.stringify({ candidates, chosenIndex, chosenReasoning: "Melhor equilíbrio entre originalidade e clareza" }) };
+}
+
 function passingReview() {
   return { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }) };
+}
+
+// Auditoria "qualidade visual e direção de arte" — Visual Quality Score roda como uma SEGUNDA
+// chamada "review" logo depois do gate técnico passar (`evaluateVisualQualityScore`), então todo
+// teste cujo fluxo chega a "publishable: true" precisa de MAIS UM item na fila `review` além do
+// `passingReview()` do gate técnico daquela rodada — ver `VISUAL_QUALITY_DIMENSIONS`.
+const VISUAL_QUALITY_DIMENSION_KEYS = [
+  "visualHierarchy", "compositionBalance", "legibility", "focusClarity", "canvasUsage",
+  "colorCoherence", "backgroundQuality", "assetIntegration", "nonGenericLook",
+  "visualCleanliness", "commercialStrength", "artDirectionFidelity",
+];
+
+function passingVisualScore() {
+  const body = {};
+  for (const key of VISUAL_QUALITY_DIMENSION_KEYS) body[key] = { score: 8, justification: `${key}: peça de teste sólida nesta dimensão.` };
+  return { status: "completed", content: JSON.stringify(body) };
+}
+
+/** Uma única dimensão crítica (abaixo do piso individual de 4) — reprova sozinha mesmo com as
+ * outras 11 dimensões altas, testando o piso POR DIMENSÃO (nunca só a média). */
+function lowVisualScore(weakKey = "visualHierarchy", justification = "produto ocupa menos de 15% do canvas, sem protagonismo") {
+  const body = {};
+  for (const key of VISUAL_QUALITY_DIMENSION_KEYS) {
+    body[key] = key === weakKey ? { score: 2, justification } : { score: 8, justification: `${key}: ok.` };
+  }
+  return { status: "completed", content: JSON.stringify(body) };
 }
 
 function baseDeps(overrides = {}) {
@@ -122,7 +200,7 @@ function withFakeFetch(run) {
 }
 
 test("runGptCreativeEngine: fluxo feliz sem assets — publishable, engineMode gpt, custo/latência acumulados", () => withFakeFetch(async () => {
-  const icaro = fakeIcaro({ analysis: [planResponse({}, 0.01, 500)], image_generation: [imageResponse(undefined, 0.05, 4000)], review: [passingReview()] });
+  const icaro = fakeIcaro({ analysis: [planResponse({}, 0.01, 500)], image_generation: [imageResponse(undefined, 0.05, 4000)], review: [passingReview(), passingVisualScore()] });
   const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
 
   assert.equal(result.error, undefined);
@@ -134,10 +212,13 @@ test("runGptCreativeEngine: fluxo feliz sem assets — publishable, engineMode g
   assert.ok(result.estimatedCostUsd >= 0.06);
   assert.ok(result.latencyMs >= 4500);
   assert.equal(result.repairRounds.length, 0);
+  assert.ok(result.visualQualityScore);
+  assert.equal(result.visualQualityScore.belowThreshold, false);
+  assert.equal(result.visualQualityScore.dimensions.length, 12);
 }));
 
 test("runGptCreativeEngine: toda chamada ao Ícaro carrega executionId/correlationId do input (rastreabilidade)", () => withFakeFetch(async () => {
-  const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()], review: [passingReview()] });
+  const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()], review: [passingReview(), passingVisualScore()] });
   await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ executionRunId: "exec-XYZ", creativeEngineRunId: "cer-XYZ" }));
 
   const analysisAndImageCalls = icaro.calls.filter((call) => call.taskType === "analysis" || call.taskType === "image_generation");
@@ -157,7 +238,7 @@ test("runGptCreativeEngine: creative_plan malformado tenta de novo (mesmo prompt
   const icaro = fakeIcaro({
     analysis: [{ status: "completed", model: { id: "gpt-4o" }, content: "isto não é JSON" }, planResponse()],
     image_generation: [imageResponse()],
-    review: [passingReview()],
+    review: [passingReview(), passingVisualScore()],
   });
   const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
   assert.equal(result.error, undefined);
@@ -205,7 +286,7 @@ test("runGptCreativeEngine: com logo e screenshot posicionados, compõe os dois 
       ],
     })],
     image_generation: [imageResponse()],
-    review: [passingReview()],
+    review: [passingReview(), passingVisualScore()],
   });
   const input = baseInput({
     creativeContext: baseContext({
@@ -236,6 +317,7 @@ test("runGptCreativeEngine: TEXT_ILLEGIBLE_OR_CUT vindo da VISÃO (não da geome
     review: [
       { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: true, elementCutOff: false, criticalOverlap: false, compositionBroken: false, reasoning: "baixo contraste" }) },
       passingReview(),
+      passingVisualScore(),
     ],
   });
   const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
@@ -282,6 +364,7 @@ test("runGptCreativeEngine: quality gate reprova com PRODUCT_MISMATCH — repara
     review: [
       { status: "completed", content: JSON.stringify({ productMismatch: true, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, reasoning: "produto errado" }) },
       passingReview(),
+      passingVisualScore(),
     ],
   });
   const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ creativeContext: contextWithProductReference() }));
@@ -306,6 +389,7 @@ test("runGptCreativeEngine: resposta de correção com JSON malformado tenta de 
     review: [
       { status: "completed", content: JSON.stringify({ productMismatch: true, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, reasoning: "produto errado" }) },
       passingReview(),
+      passingVisualScore(),
     ],
   });
   const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ creativeContext: contextWithProductReference() }));
@@ -344,6 +428,88 @@ test("runGptCreativeEngine: reprovação persistente esgota as tentativas e vira
   assert.equal(result.publishable, false);
   assert.ok(result.repairRounds.length >= 2);
   assert.equal(result.repairRounds[result.repairRounds.length - 1].route, "unrecoverable");
+}));
+
+// Auditoria "qualidade visual e direção de arte" — Visual Quality Score é uma segunda barreira,
+// DEPOIS do gate técnico já ter passado: uma peça sem nenhum defeito técnico ainda pode ficar
+// abaixo do piso de qualidade PERCEBIDA e nunca deveria chegar à Revisão sem antes tentar corrigir.
+
+test("runGptCreativeEngine: Visual Quality Score abaixo do piso aciona reparo estético (gpt_replan, mesmo diretor) e publica quando a correção sobe o score", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({ headline: "Plano original" }), planResponse({ headline: "Plano corrigido" })],
+    image_generation: [imageResponse("https://x/v1.png"), imageResponse("https://x/v2.png")],
+    review: [
+      passingReview(), // gate técnico da rodada 1: pass
+      lowVisualScore("visualHierarchy", "produto ocupa menos de 15% do canvas, sem protagonismo"), // score da rodada 1: abaixo do piso
+      passingReview(), // gate técnico da rodada 2: pass
+      passingVisualScore(), // score da rodada 2: acima do piso
+    ],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.publishable, true);
+  assert.equal(result.creativePlan.headline, "Plano corrigido");
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 2, "score abaixo do piso precisa de um novo plano, nunca só reflow");
+  assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 2, "score abaixo do piso precisa de uma nova imagem, nunca só reflow");
+  assert.equal(result.repairRounds.length, 1);
+  assert.equal(result.repairRounds[0].route, "gpt_replan");
+  assert.equal(result.repairRounds[0].issues.length, 0, "reparo estético não vem do quality gate técnico — nunca inventa uma issue técnica que não existiu");
+  assert.match(result.repairRounds[0].instructions[0], /produto ocupa menos de 15% do canvas/);
+  assert.equal(result.visualQualityScore.belowThreshold, false);
+}));
+
+test("runGptCreativeEngine: Visual Quality Score abaixo do piso em TODAS as rodadas esgota o reparo e vira unrecoverable — nunca publica só por não ter falha técnica dura", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse(), planResponse(), planResponse()],
+    image_generation: [imageResponse(), imageResponse(), imageResponse()],
+    review: [
+      passingReview(), lowVisualScore(),
+      passingReview(), lowVisualScore(),
+      passingReview(), lowVisualScore(),
+    ],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+
+  assert.equal(result.errorCode, "CREATIVE_VISUAL_QUALITY_BELOW_THRESHOLD");
+  assert.equal(result.publishable, false);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 3, "gate técnico nunca reprovou — as 3 tentativas vêm só do reparo estético (1 inicial + 2 rodadas, o mesmo limite do gate técnico)");
+  assert.equal(result.repairRounds.length, 2);
+  assert.ok(result.repairRounds.every((round) => round.route === "gpt_replan"));
+  assert.ok(result.visualQualityScore.belowThreshold);
+}));
+
+test("runGptCreativeEngine: com exploração de direções bem-sucedida, a direção escolhida ancora o prompt do plano E fica registrada em chosenCreativeDirection", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    text_generation: [explorationResponse(1)],
+    analysis: [planResponse()],
+    image_generation: [imageResponse()],
+    review: [passingReview(), passingVisualScore()],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.publishable, true);
+  assert.ok(result.chosenCreativeDirection);
+  assert.equal(result.chosenCreativeDirection.chosenIndex, 1);
+  assert.equal(result.chosenCreativeDirection.candidates[1].name, "Produto protagonista");
+
+  const planCall = icaro.calls.find((call) => call.taskType === "analysis");
+  assert.match(planCall.prompt, /DIREÇÃO CRIATIVA JÁ ESCOLHIDA/);
+  assert.match(planCall.prompt, /Produto protagonista/);
+  assert.match(planCall.prompt, /Mockup do site ocupando 60% do canvas/);
+}));
+
+test("runGptCreativeEngine: exploração de direções falha (best-effort) — plano segue sem âncora, exatamente como antes desta etapa existir", () => withFakeFetch(async () => {
+  // Nenhuma fila `text_generation` configurada — fakeIcaro lança "fila vazia", capturado dentro
+  // de `exploreCreativeDirections` (best-effort, nunca propaga).
+  const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()], review: [passingReview(), passingVisualScore()] });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+
+  assert.equal(result.publishable, true);
+  assert.equal(result.chosenCreativeDirection, undefined);
+  const planCall = icaro.calls.find((call) => call.taskType === "analysis");
+  assert.doesNotMatch(planCall.prompt, /DIREÇÃO CRIATIVA JÁ ESCOLHIDA/);
 }));
 
 test("runGptCreativeEngine: falha ao compor a logo é hard failure", () => withFakeFetch(async () => {

@@ -9,7 +9,14 @@ import type { CreativeQualityIssue, CreativeQualityIssueCode } from "./evaluate-
  * direção de arte do GPT.
  */
 
-export const MAX_CREATIVE_REPAIR_ROUNDS = 2;
+// Auditoria de custo urgente — reduzido de 2 para 1 de propósito: cada rodada de reparo é um novo
+// plano (chamada de texto) + uma nova imagem (o passo mais caro, ~$0.25/imagem em 4:5/9:16 com
+// qualidade "high" — ver `gpt-image-1-pricing.ts`) + uma nova rodada dos dois gates (técnico e
+// Visual Quality Score). Com 2 rounds, o pior caso de uma peça chegava a 3 imagens geradas; com 1,
+// no máximo 2 — o pipeline nunca gasta mais que o dobro do custo de uma peça só por reparo, nunca
+// um múltiplo maior sem limite explícito. Ver relatório da auditoria de custo para o cálculo
+// completo do pior caso.
+export const MAX_CREATIVE_REPAIR_ROUNDS = 1;
 
 export const CREATIVE_REPAIR_ROUTES = ["renderer_reflow", "gpt_replan", "unrecoverable"] as const;
 export type CreativeRepairRoute = (typeof CREATIVE_REPAIR_ROUTES)[number];

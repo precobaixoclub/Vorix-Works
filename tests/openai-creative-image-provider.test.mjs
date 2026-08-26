@@ -85,6 +85,35 @@ test("OpenAiCreativeImageProvider: envia o prompt guardado (guarda factual) pres
   assert.equal(media.calls[0].params.targetAspectRatio, "4:5");
 });
 
+// Auditoria de custo urgente — achado crítico: antes desta correção, `response.cost.estimated`
+// era SEMPRE 0 aqui, nunca contabilizando o passo mais caro do pipeline em nenhum total de custo
+// do motor (confirmado em produção: 47 chamadas reais de image_generation, custo médio $0.000000).
+
+test("OpenAiCreativeImageProvider: response.cost.estimated NUNCA é zero — geração de imagem é o passo mais caro do pipeline", async () => {
+  const media = fakeMediaProvider();
+  const provider = new OpenAiCreativeImageProvider(media);
+  const response = await provider.execute(baseRequest({ imageAspectRatio: "4:5" }));
+  assert.ok(response.cost.estimated > 0, `esperava custo > 0, veio ${response.cost.estimated}`);
+});
+
+test("OpenAiCreativeImageProvider: qualidade configurável (preset econômico) reduz o custo estimado sem mudar o padrão 'high'", async () => {
+  const highQuality = new OpenAiCreativeImageProvider(fakeMediaProvider());
+  const economicQuality = new OpenAiCreativeImageProvider(fakeMediaProvider(), { quality: "medium" });
+
+  const highResponse = await highQuality.execute(baseRequest({ imageAspectRatio: "4:5" }));
+  const economicResponse = await economicQuality.execute(baseRequest({ imageAspectRatio: "4:5" }));
+
+  assert.ok(economicResponse.cost.estimated < highResponse.cost.estimated);
+});
+
+test("OpenAiCreativeImageProvider: com imageCount > 1, o custo estimado é multiplicado pelo número real de imagens geradas", async () => {
+  const media = fakeMediaProvider();
+  const provider = new OpenAiCreativeImageProvider(media);
+  const oneImage = await provider.execute(baseRequest({ imageAspectRatio: "4:5", imageCount: 1 }));
+  const threeImages = await provider.execute(baseRequest({ imageAspectRatio: "4:5", imageCount: 3 }));
+  assert.ok(Math.abs(threeImages.cost.estimated - oneImage.cost.estimated * 3) < 0.0001);
+});
+
 test("OpenAiCreativeImageProvider: propaga falha do mediaProvider.generate() como erro explícito", async () => {
   const media = fakeMediaProvider(() => ({ ok: false, category: "provider_error", message: "falha simulada" }));
   const provider = new OpenAiCreativeImageProvider(media);

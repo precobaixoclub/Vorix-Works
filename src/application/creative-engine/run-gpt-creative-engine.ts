@@ -87,6 +87,41 @@ export type GptCreativeEngineInput = {
   /** Já pronto — ver `build-creative-context.ts`. Este módulo nunca reinterpreta ou reconstrói o
    * contexto, só o usa. */
   creativeContext: CreativeContext;
+  /** Auditoria de custo urgente — teto de gasto (USD) para ESTA execução, checado antes de cada
+   * chamada paga (exploração, plano, imagem, gates, reparo). `undefined` = sem teto (comportamento
+   * histórico). Ao ser atingido, o pipeline para IMEDIATAMENTE — nunca faz "só mais uma chamada" —
+   * com `errorCode: "CREATIVE_ENGINE_BUDGET_EXCEEDED"` e `costBreakdown` completo até aquele
+   * ponto, nunca publica nada parcial. */
+  maxBudgetUsd?: number;
+};
+
+/** Auditoria de custo urgente — breakdown por etapa, pedido explicitamente pelo usuário. Cada
+ * categoria soma o custo de TODAS as chamadas daquele tipo na execução inteira (inicial +
+ * reparo); `repairRoundsCost` é DELIBERADAMENTE uma sobreposição das outras categorias (não uma
+ * fatia exclusiva) — responde diretamente "quanto do gasto veio de rodadas de reparo", que é
+ * exatamente o risco que motivou esta auditoria (repair loops consumindo crédito sem controle). */
+export type CreativeEngineCostBreakdown = {
+  /** Chamadas de plano ao modelo diretor — inicial + toda correção (`gpt_replan` técnico e
+   * estético). */
+  director: number;
+  /** Exploração barata de 2-3 direções antes do plano (`explore-creative-directions.ts`). */
+  directionExploration: number;
+  /** Toda geração de imagem — inicial + cada rodada de reparo. Historicamente o passo mais caro
+   * do pipeline (ver `gpt-image-1-pricing.ts`), e o único que nunca era contabilizado antes desta
+   * auditoria (`OpenAiCreativeImageProvider` sempre devolvia custo $0). */
+  imageGeneration: number;
+  /** Gate técnico (`checkCreativeVisualIntegrity` + `checkProductionGuidelinesCompliance`) — toda
+   * rodada em que o gate técnico roda. */
+  technicalQualityGate: number;
+  /** Visual Quality Score — só roda depois que o gate técnico já passou, toda rodada em que isso
+   * acontece. */
+  visualQualityScore: number;
+  /** Soma de TUDO que ocorreu depois que a primeira rodada de reparo começou (qualquer categoria
+   * acima) — nunca uma fatia exclusiva, ver comentário do tipo. */
+  repairRoundsCost: number;
+  /** Soma de todas as categorias (nunca inclui `repairRoundsCost`, que já está contido nas
+   * outras) — sempre igual a `estimatedCostUsd`. */
+  total: number;
 };
 
 export type GptCreativeEngineResult = {
@@ -118,6 +153,10 @@ export type GptCreativeEngineResult = {
   finalImageHeight?: number;
   publishable: boolean;
   estimatedCostUsd: number;
+  /** Auditoria de custo urgente — mesmo total de `estimatedCostUsd`, quebrado por etapa. Sempre
+   * presente (mesmo em falha antes de qualquer chamada paga — nesse caso, todas as categorias
+   * zeradas). */
+  costBreakdown: CreativeEngineCostBreakdown;
   latencyMs: number;
   warnings: string[];
   error?: string;
@@ -279,11 +318,46 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
   let directorModel: string | undefined;
   let imageModel: string | undefined;
 
-  const track = (response: IcaroAIResponse | undefined) => {
+  // Auditoria de custo urgente — breakdown por etapa + teto de gasto por execução. `repairRoundsCost`
+  // é sobreposição deliberada das outras categorias (ver `CreativeEngineCostBreakdown`);
+  // `isRepairRound` vira `true` de propósito e NUNCA volta a `false` na mesma execução — a partir
+  // do momento em que a primeira rodada de reparo começa, todo gasto seguinte É gasto de reparo,
+  // mesmo que a categoria específica (imagem, gate, plano) mude entre uma rodada e outra.
+  const costBreakdown: CreativeEngineCostBreakdown = {
+    director: 0,
+    directionExploration: 0,
+    imageGeneration: 0,
+    technicalQualityGate: 0,
+    visualQualityScore: 0,
+    repairRoundsCost: 0,
+    total: 0,
+  };
+  let isRepairRound = false;
+
+  const track = (category: keyof Omit<CreativeEngineCostBreakdown, "repairRoundsCost" | "total">, response: IcaroAIResponse | undefined) => {
     if (!response) return;
-    estimatedCostUsd += response.cost?.estimated ?? 0;
+    const cost = response.cost?.estimated ?? 0;
+    costBreakdown[category] += cost;
+    costBreakdown.total += cost;
+    if (isRepairRound) costBreakdown.repairRoundsCost += cost;
+    estimatedCostUsd += cost;
     latencyMs += response.durationMs ?? 0;
   };
+
+  // Checado ANTES de cada chamada paga (nunca depois) — o pipeline nunca faz "só mais uma
+  // chamada" quando o teto já foi atingido por uma rodada anterior. `undefined` (sem teto
+  // configurado) preserva o comportamento histórico: nunca interrompe.
+  function budgetExceeded(): boolean {
+    return input.maxBudgetUsd !== undefined && costBreakdown.total >= input.maxBudgetUsd;
+  }
+
+  function failBudgetExceeded(extra: Partial<GptCreativeEngineResult> = {}): GptCreativeEngineResult {
+    return fail(
+      `CREATIVE_ENGINE_BUDGET_EXCEEDED: o teto de gasto configurado para esta execução (US$ ${input.maxBudgetUsd?.toFixed(4)}) foi atingido — US$ ${costBreakdown.total.toFixed(4)} gastos até aqui. Pipeline interrompido antes de qualquer chamada nova.`,
+      "CREATIVE_ENGINE_BUDGET_EXCEEDED",
+      extra,
+    );
+  }
 
   function fail(error: string, errorCode: string, extra: Partial<GptCreativeEngineResult> = {}): GptCreativeEngineResult {
     return {
@@ -297,6 +371,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       repairRounds: [],
       publishable: false,
       estimatedCostUsd,
+      costBreakdown,
       latencyMs: Math.max(latencyMs, (deps.now?.() ?? new Date()).getTime() - startedAt),
       warnings,
       error,
@@ -311,21 +386,26 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
   // `context.recentHistory`, evitar repetir o conceito visual de peças recentes — ponto 10). Best-
   // effort: `undefined` (chamada falhou/resposta incompleta) segue direto pro plano SEM âncora,
   // comportamento idêntico ao motor antes desta etapa existir.
-  const chosenCreativeDirection = await exploreCreativeDirections(deps.creativeBrain, context, {
-    specialistId: SPECIALIST_ID,
-    executionId: input.executionRunId,
-    correlationId: input.creativeEngineRunId,
-  });
+  const chosenCreativeDirection = budgetExceeded()
+    ? undefined
+    : await exploreCreativeDirections(deps.creativeBrain, context, {
+        specialistId: SPECIALIST_ID,
+        executionId: input.executionRunId,
+        correlationId: input.creativeEngineRunId,
+        onCost: (response) => track("directionExploration", response),
+      });
   const chosenDirectionAnchor: ChosenCreativeDirection | undefined = chosenCreativeDirection
     ? chosenCreativeDirection.candidates[chosenCreativeDirection.chosenIndex]
     : undefined;
+
+  if (budgetExceeded()) return failBudgetExceeded();
 
   const { plan: initialPlan, response: planResponse } = await requestCreativePlan(
     deps.creativeBrain,
     context,
     input.executionRunId,
     input.creativeEngineRunId,
-    track,
+    (response) => track("director", response),
     chosenDirectionAnchor,
   );
   directorModel = planResponse?.model?.id;
@@ -364,6 +444,9 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
 
     const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
     const creativeGuard = buildGuardInputFromPlan(plan, context);
+
+    if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
+
     const { uri, response: imageResponse } = await requestGeneratedImage(deps.creativeBrain, {
       prompt: imagePrompt,
       format: context.format,
@@ -372,7 +455,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       executionId: input.executionRunId,
       correlationId: input.creativeEngineRunId,
     });
-    track(imageResponse);
+    track("imageGeneration", imageResponse);
     imageModel = imageResponse?.model?.id ?? imageModel;
     if (!uri) {
       return fail("Ícaro não devolveu uma imagem gerada.", "IMAGE_GENERATION_FAILED", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
@@ -459,6 +542,10 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       const finalImageWidth = dimensions.width ?? 0;
       const finalImageHeight = dimensions.height ?? 0;
 
+      if (budgetExceeded()) {
+        return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, compositionSteps: textCompositionSteps, finalImageUrl: uploaded.url, finalImageWidth, finalImageHeight });
+      }
+
       const qualityGate = await evaluateCreativeQualityGate(deps.creativeBrain, {
         finalImageUrl: uploaded.url,
         finalImageWidth,
@@ -468,17 +555,22 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         context,
         plan,
         specialistId: SPECIALIST_ID,
+        onCost: (response) => track("technicalQualityGate", response),
       });
 
       if (qualityGate.verdict === "pass") {
         // Auditoria "qualidade visual e direção de arte" — o gate técnico só garante que a peça
         // NÃO TEM defeito grave; nunca garantiu que ela é boa. Visual Quality Score roda só aqui
         // (nunca antes do gate técnico passar — sem sentido avaliar estética de algo já quebrado).
+        if (budgetExceeded()) {
+          return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, qualityGate, repairRounds, compositionSteps: textCompositionSteps, finalImageUrl: uploaded.url, finalImageWidth, finalImageHeight });
+        }
         const visualQualityScore = await evaluateVisualQualityScore(deps.creativeBrain, {
           finalImageUrl: uploaded.url,
           plan,
           brandColors: context.brandColors,
           specialistId: SPECIALIST_ID,
+          onCost: (response) => track("visualQualityScore", response),
         });
 
         // `undefined` (chamada falhou/resposta incompleta) nunca bloqueia — best-effort, mesmo
@@ -505,6 +597,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
             finalImageHeight,
             publishable: true,
             estimatedCostUsd,
+            costBreakdown,
             latencyMs: Math.max(latencyMs, (deps.now?.() ?? new Date()).getTime() - startedAt),
             warnings,
           };
@@ -525,8 +618,15 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         const aestheticInstructions = buildAestheticRepairInstructions(visualQualityScore);
         repairRounds.push({ round: repairAttempt + 1, route: "gpt_replan", issues: [], instructions: aestheticInstructions, resolved: false });
         repairAttempt += 1;
+        // Auditoria de custo urgente — a partir daqui, todo gasto seguinte É gasto de reparo
+        // (nunca volta a `false` na mesma execução, ver `costBreakdown.repairRoundsCost`).
+        isRepairRound = true;
 
-        const repairedPlan = await requestRepairedPlan(deps.creativeBrain, plan, context, aestheticInstructions, input.executionRunId, input.creativeEngineRunId, track);
+        if (budgetExceeded()) {
+          return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, qualityGate, visualQualityScore, repairRounds, compositionSteps: textCompositionSteps });
+        }
+
+        const repairedPlan = await requestRepairedPlan(deps.creativeBrain, plan, context, aestheticInstructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
         if (!repairedPlan) {
           return fail("Não foi possível obter um creative_plan de correção estética válido do GPT, mesmo após nova tentativa.", "CREATIVE_PLAN_REPAIR_INVALID", {
             creativePlan: plan,
@@ -559,10 +659,19 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       }
 
       repairAttempt += 1;
+      // Auditoria de custo urgente — a partir daqui, todo gasto seguinte É gasto de reparo (nunca
+      // volta a `false` na mesma execução). Marcado ANTES do `if renderer_reflow` de propósito:
+      // mesmo aquela rota (sem chamada de IA, custo zero) já é tecnicamente uma rodada de reparo —
+      // se o loop seguir depois dela, o gasto seguinte continua corretamente atribuído.
+      isRepairRound = true;
 
       if (routed.route === "renderer_reflow") {
         fontScale = Math.max(0.4, fontScale * 0.75);
         continue innerTextRound;
+      }
+
+      if (budgetExceeded()) {
+        return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, qualityGate, repairRounds, compositionSteps: textCompositionSteps });
       }
 
       // gpt_replan — sempre volta ao MESMO modelo diretor, nunca ao motor/renderer legado.
@@ -570,7 +679,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       // (achado ao vivo em produção, ver comentário na definição da função) — nunca conta como uma
       // rodada de reparo nova (o `repairAttempt` já foi incrementado acima, pra continuar contra o
       // limite de rounds normal).
-      const repairedPlan = await requestRepairedPlan(deps.creativeBrain, plan, context, routed.instructions, input.executionRunId, input.creativeEngineRunId, track);
+      const repairedPlan = await requestRepairedPlan(deps.creativeBrain, plan, context, routed.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
 
       if (!repairedPlan) {
         return fail("Não foi possível obter um creative_plan de correção válido do GPT, mesmo após nova tentativa.", "CREATIVE_PLAN_REPAIR_INVALID", {

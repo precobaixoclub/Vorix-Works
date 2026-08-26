@@ -217,6 +217,7 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
         chosenCreativeDirection: result.chosenCreativeDirection,
         repairRounds: result.repairRounds,
         estimatedCostUsd: result.estimatedCostUsd,
+        costBreakdown: result.costBreakdown,
         latencyMs: result.latencyMs,
       },
     };
@@ -260,6 +261,7 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
       finalImageHeight: result.finalImageHeight,
       publishable: result.publishable,
       estimatedCostUsd: result.estimatedCostUsd,
+      costBreakdown: result.costBreakdown,
       latencyMs: result.latencyMs,
       status: result.publishable ? "completed" : "failed",
       errorCode: result.errorCode,

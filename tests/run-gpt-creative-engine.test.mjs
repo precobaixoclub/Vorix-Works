@@ -142,16 +142,16 @@ function imageResponse(uri = "https://x/generated.png", cost = 0.05, durationMs 
 // Auditoria "qualidade visual e direção de arte", ponto 9 — exploração barata de direções antes
 // do plano detalhado. Usa taskType "text_generation", deliberadamente separado de "analysis"
 // (plano) e "review" (gates) — ver `explore-creative-directions.ts`.
-function explorationResponse(chosenIndex = 1) {
+function explorationResponse(chosenIndex = 1, cost = 0) {
   const candidates = [
     { name: "Editorial", coreIdea: "Fundo grafite com tipografia grande, sem mockup", whyItFits: "Foca na mensagem", originalityScore: 6 },
     { name: "Produto protagonista", coreIdea: "Mockup do site ocupando 60% do canvas", whyItFits: "Deixa o site falar por si", originalityScore: 7 },
   ];
-  return { status: "completed", content: JSON.stringify({ candidates, chosenIndex, chosenReasoning: "Melhor equilíbrio entre originalidade e clareza" }) };
+  return { status: "completed", content: JSON.stringify({ candidates, chosenIndex, chosenReasoning: "Melhor equilíbrio entre originalidade e clareza" }), cost: { estimated: cost, currency: "USD" } };
 }
 
-function passingReview() {
-  return { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }) };
+function passingReview(cost = 0) {
+  return { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }), cost: { estimated: cost, currency: "USD" } };
 }
 
 // Auditoria "qualidade visual e direção de arte" — Visual Quality Score roda como uma SEGUNDA
@@ -164,10 +164,10 @@ const VISUAL_QUALITY_DIMENSION_KEYS = [
   "visualCleanliness", "commercialStrength", "artDirectionFidelity",
 ];
 
-function passingVisualScore() {
+function passingVisualScore(cost = 0) {
   const body = {};
   for (const key of VISUAL_QUALITY_DIMENSION_KEYS) body[key] = { score: 8, justification: `${key}: peça de teste sólida nesta dimensão.` };
-  return { status: "completed", content: JSON.stringify(body) };
+  return { status: "completed", content: JSON.stringify(body), cost: { estimated: cost, currency: "USD" } };
 }
 
 /** Uma única dimensão crítica (abaixo do piso individual de 4) — reprova sozinha mesmo com as
@@ -460,11 +460,12 @@ test("runGptCreativeEngine: Visual Quality Score abaixo do piso aciona reparo es
 }));
 
 test("runGptCreativeEngine: Visual Quality Score abaixo do piso em TODAS as rodadas esgota o reparo e vira unrecoverable — nunca publica só por não ter falha técnica dura", () => withFakeFetch(async () => {
+  // Auditoria de custo urgente — MAX_CREATIVE_REPAIR_ROUNDS reduzido de 2 para 1: só 2 tentativas
+  // totais agora (1 inicial + 1 rodada de reparo), nunca 3.
   const icaro = fakeIcaro({
-    analysis: [planResponse(), planResponse(), planResponse()],
-    image_generation: [imageResponse(), imageResponse(), imageResponse()],
+    analysis: [planResponse(), planResponse()],
+    image_generation: [imageResponse(), imageResponse()],
     review: [
-      passingReview(), lowVisualScore(),
       passingReview(), lowVisualScore(),
       passingReview(), lowVisualScore(),
     ],
@@ -473,8 +474,8 @@ test("runGptCreativeEngine: Visual Quality Score abaixo do piso em TODAS as roda
 
   assert.equal(result.errorCode, "CREATIVE_VISUAL_QUALITY_BELOW_THRESHOLD");
   assert.equal(result.publishable, false);
-  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 3, "gate técnico nunca reprovou — as 3 tentativas vêm só do reparo estético (1 inicial + 2 rodadas, o mesmo limite do gate técnico)");
-  assert.equal(result.repairRounds.length, 2);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 2, "gate técnico nunca reprovou — as 2 tentativas vêm só do reparo estético (1 inicial + 1 rodada, o mesmo limite do gate técnico)");
+  assert.equal(result.repairRounds.length, 1);
   assert.ok(result.repairRounds.every((round) => round.route === "gpt_replan"));
   assert.ok(result.visualQualityScore.belowThreshold);
 }));
@@ -510,6 +511,82 @@ test("runGptCreativeEngine: exploração de direções falha (best-effort) — p
   assert.equal(result.chosenCreativeDirection, undefined);
   const planCall = icaro.calls.find((call) => call.taskType === "analysis");
   assert.doesNotMatch(planCall.prompt, /DIREÇÃO CRIATIVA JÁ ESCOLHIDA/);
+}));
+
+// Auditoria de custo urgente — costBreakdown por etapa + teto de gasto por execução
+// (`maxBudgetUsd`). Achado crítico que motivou esta auditoria: `image_generation` nunca entrava
+// em NENHUM total de custo do motor (o provider real sempre devolvia $0 — corrigido em
+// `openai-creative-image-provider.ts`/`gpt-image-1-pricing.ts`); estes testes usam mocks com
+// custo DISTINGUÍVEL por categoria pra travar que agora TODAS as chamadas pagas são contabilizadas.
+
+test("runGptCreativeEngine: costBreakdown soma corretamente por categoria (director/exploração/imagem/gate técnico/Visual Quality Score)", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    text_generation: [explorationResponse(1, 0.002)],
+    analysis: [planResponse({}, 0.01)],
+    image_generation: [imageResponse(undefined, 0.25)],
+    review: [passingReview(0.0003), passingVisualScore(0.0009)],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+
+  assert.equal(result.publishable, true);
+  assert.ok(result.costBreakdown);
+  assert.ok(Math.abs(result.costBreakdown.directionExploration - 0.002) < 1e-9);
+  assert.ok(Math.abs(result.costBreakdown.director - 0.01) < 1e-9);
+  assert.ok(Math.abs(result.costBreakdown.imageGeneration - 0.25) < 1e-9);
+  assert.ok(Math.abs(result.costBreakdown.technicalQualityGate - 0.0003) < 1e-9);
+  assert.ok(Math.abs(result.costBreakdown.visualQualityScore - 0.0009) < 1e-9);
+  assert.equal(result.costBreakdown.repairRoundsCost, 0, "sem nenhuma rodada de reparo, repairRoundsCost deve ficar zerado");
+  const expectedTotal = 0.002 + 0.01 + 0.25 + 0.0003 + 0.0009;
+  assert.ok(Math.abs(result.costBreakdown.total - expectedTotal) < 1e-9);
+  assert.ok(Math.abs(result.estimatedCostUsd - expectedTotal) < 1e-9, "estimatedCostUsd deve bater exatamente com costBreakdown.total");
+}));
+
+test("runGptCreativeEngine: sem maxBudgetUsd configurado, nunca interrompe — comportamento idêntico ao motor antes desta auditoria", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({ headline: "Plano original" }), planResponse({ headline: "Plano corrigido" })],
+    image_generation: [imageResponse("https://x/v1.png", 0.25), imageResponse("https://x/v2.png", 0.25)],
+    review: [
+      { status: "completed", content: JSON.stringify({ productMismatch: true, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, reasoning: "produto errado" }), cost: { estimated: 0, currency: "USD" } },
+      passingReview(),
+      passingVisualScore(),
+    ],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ creativeContext: contextWithProductReference() }));
+  assert.equal(result.publishable, true);
+  assert.equal(result.repairRounds.length, 1);
+}));
+
+test("runGptCreativeEngine: maxBudgetUsd=0 interrompe ANTES de qualquer chamada paga — zero chamadas feitas, costBreakdown zerado", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()], review: [passingReview(), passingVisualScore()] });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ maxBudgetUsd: 0 }));
+
+  assert.equal(result.errorCode, "CREATIVE_ENGINE_BUDGET_EXCEEDED");
+  assert.equal(result.publishable, false);
+  assert.equal(icaro.calls.length, 0, "nenhuma chamada deveria ter sido feita — o teto já estava atingido antes da primeira");
+  assert.equal(result.costBreakdown.total, 0);
+}));
+
+test("runGptCreativeEngine: maxBudgetUsd atingido durante o reparo interrompe ANTES da nova chamada de plano — nunca deixa o pipeline gastar 2x sem limite explícito", () => withFakeFetch(async () => {
+  // Orçamento entre o custo de plano+imagem da rodada inicial ($0.26) e o custo total da rodada
+  // inicial completa incluindo o gate técnico ($0.261) — a rodada inicial completa normalmente
+  // (plano, imagem, E o gate técnico que reprova com productMismatch), mas a rodada de REPARO
+  // nunca deveria chegar a pedir um novo plano: o teto já foi atingido exatamente depois do gate.
+  const icaro = fakeIcaro({
+    analysis: [planResponse({}, 0.01), planResponse({}, 0.01)],
+    image_generation: [imageResponse(undefined, 0.25), imageResponse(undefined, 0.25)],
+    review: [
+      { status: "completed", content: JSON.stringify({ productMismatch: true, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, reasoning: "produto errado" }), cost: { estimated: 0.001, currency: "USD" } },
+    ],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ creativeContext: contextWithProductReference(), maxBudgetUsd: 0.2605 }));
+
+  assert.equal(result.errorCode, "CREATIVE_ENGINE_BUDGET_EXCEEDED");
+  assert.equal(result.publishable, false);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 1, "a rodada inicial gastou o teto inteiro — o plano de reparo nunca deveria ter sido pedido");
+  assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 1, "nenhuma segunda imagem deveria ter sido gerada");
+  assert.equal(result.repairRounds.length, 1, "a DECISÃO de reparar (gpt_replan) ainda fica registrada — só a chamada em si foi bloqueada");
+  assert.equal(result.repairRounds[0].route, "gpt_replan");
+  assert.ok(Math.abs(result.costBreakdown.total - 0.261) < 1e-9);
 }));
 
 test("runGptCreativeEngine: falha ao compor a logo é hard failure", () => withFakeFetch(async () => {

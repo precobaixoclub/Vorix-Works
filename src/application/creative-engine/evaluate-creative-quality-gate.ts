@@ -1,4 +1,5 @@
 import type { IcaroBrainPort } from "../ai/icaro-brain.contract.js";
+import type { IcaroAIResponse } from "../ai/icaro.types.js";
 import { extractJson } from "../../shared/utils/skill-parsing.js";
 import type { CreativeContext, CreativePlan, CreativePlanAssetRole, CreativePlanRect } from "../../shared/utils/gpt-creative-plan.types.js";
 import { COMMERCIAL_FACT_TYPE_LABELS_PT, extractCommercialFactsFromText } from "../../shared/utils/commercial-fact-normalizer.js";
@@ -357,6 +358,11 @@ export async function checkCreativeVisualIntegrity(
     specialistId: string;
     brandColors?: readonly string[];
     allowedRenderedTexts: readonly string[];
+    /** Auditoria de custo — achado crítico: esta chamada de visão nunca entrava em NENHUM total
+     * de custo do motor antes desta correção (`run-gpt-creative-engine.ts` só rastreava
+     * plano/imagem). Opcional e best-effort, mesmo espírito do resto da função — nunca lançar por
+     * causa disto. */
+    onCost?: (response: IcaroAIResponse | undefined) => void;
   },
 ): Promise<CreativeQualityIssue[]> {
   try {
@@ -375,6 +381,7 @@ export async function checkCreativeVisualIntegrity(
       maxTokens: 400,
       timeoutMs: 25_000,
     });
+    input.onCost?.(response);
 
     if (response.status !== "completed") return [];
     const parsed = JSON.parse(extractJson(String(response.content ?? ""), "Creative Quality Gate")) as {
@@ -479,7 +486,7 @@ const PRODUCTION_GUIDELINES_PROMPT_HEADER = [
  */
 export async function checkProductionGuidelinesCompliance(
   icaro: IcaroBrainPort,
-  input: { context: CreativeContext; plan: CreativePlan; specialistId: string },
+  input: { context: CreativeContext; plan: CreativePlan; specialistId: string; onCost?: (response: IcaroAIResponse | undefined) => void },
 ): Promise<CreativeQualityIssue[]> {
   const guidelines = [input.context.productionInstructions?.trim(), ...(input.context.behaviorPreferences ?? [])].filter(
     (line): line is string => Boolean(line && line.trim()),
@@ -512,6 +519,7 @@ export async function checkProductionGuidelinesCompliance(
       maxTokens: 300,
       timeoutMs: 20_000,
     });
+    input.onCost?.(response);
 
     if (response.status !== "completed") return [];
     const parsed = JSON.parse(extractJson(String(response.content ?? ""), "Production Guidelines Compliance")) as {
@@ -551,6 +559,9 @@ export async function evaluateCreativeQualityGate(
     plan: CreativePlan;
     specialistId: string;
     nonPublishableSource?: boolean;
+    /** Auditoria de custo — repassado para as duas chamadas de visão internas, ver
+     * `checkCreativeVisualIntegrity`/`checkProductionGuidelinesCompliance`. */
+    onCost?: (response: IcaroAIResponse | undefined) => void;
   },
 ): Promise<CreativeQualityGateResult> {
   const deterministicIssues = evaluateDeterministicCreativeChecks({
@@ -579,11 +590,13 @@ export async function evaluateCreativeQualityGate(
     specialistId: input.specialistId,
     brandColors: input.context.brandColors,
     allowedRenderedTexts: input.plan.allowedRenderedTexts,
+    onCost: input.onCost,
   });
   const productionGuidelinesIssues = await checkProductionGuidelinesCompliance(icaro, {
     context: input.context,
     plan: input.plan,
     specialistId: input.specialistId,
+    onCost: input.onCost,
   });
 
   return combineCreativeQualityIssues(

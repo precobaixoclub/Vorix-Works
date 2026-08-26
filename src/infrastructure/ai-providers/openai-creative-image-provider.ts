@@ -2,9 +2,15 @@ import type { AIProviderPort, AIProviderProfile, AIProviderRequest, AIProviderRe
 import type { AiMediaProviderAdapterPort } from "../../application/ports/ai-media-provider-adapter.port.js";
 import { buildCreativeEngineGuardedPrompt, type CreativeEngineImageGuardInput } from "../../shared/utils/creative-engine-image-guard.js";
 import { fetchAsBuffer, resolveCropAwareCompositionHint, resolveOpenAiImageSize } from "./openai-image-technical-helpers.js";
+import { estimateGptImage1CostUsd, type OpenAiImageQuality } from "./gpt-image-1-pricing.js";
 
 export type OpenAiCreativeImageProviderConfig = {
   modelId?: string;
+  /** Auditoria de custo — configurável para permitir um preset "econômico" (`"medium"`/`"low"`)
+   * sem duplicar este provider. `"high"` preserva o comportamento de sempre (padrão desde a
+   * primeira auditoria: "extremamente profissional" precisa do parâmetro pedido, não só de um
+   * prompt melhor). */
+  quality?: OpenAiImageQuality;
 };
 
 /** Campos do contrato de guarda do motor LEGADO (`legacy-pedro-image-guard.ts`) — nunca devem
@@ -86,6 +92,7 @@ export class OpenAiCreativeImageProvider implements AIProviderPort {
     const modelId = request.model || this.profile.models[0].id;
     const imageAspectRatio = typeof request.context?.imageAspectRatio === "string" ? request.context.imageAspectRatio : undefined;
     const size = resolveOpenAiImageSize(imageAspectRatio);
+    const quality = this.config.quality ?? "high";
 
     const finalPrompt = buildCreativeEngineGuardedPrompt(request.prompt, {
       ...creativeGuard,
@@ -106,7 +113,7 @@ export class OpenAiCreativeImageProvider implements AIProviderPort {
         prompt: finalPrompt,
         tenantId,
         workspaceId,
-        params: { size, quality: "high", targetAspectRatio: imageAspectRatio, ...(referenceImageBuffer ? { referenceImageBuffer } : {}) },
+        params: { size, quality, targetAspectRatio: imageAspectRatio, ...(referenceImageBuffer ? { referenceImageBuffer } : {}) },
         timeoutMs: request.timeoutMs,
       });
       if (!result.ok) {
@@ -115,11 +122,24 @@ export class OpenAiCreativeImageProvider implements AIProviderPort {
       images.push({ uri: result.mediaUrl, mimeType: "image/png" });
     }
 
+    // Auditoria de custo — achado crítico: antes desta correção, `cost.estimated` era SEMPRE 0
+    // aqui, então a geração de imagem (o passo mais caro do pipeline) nunca entrava em nenhum
+    // total de custo do motor. `estimateGptImage1CostUsd` é sempre uma ESTIMATIVA (a API de
+    // imagens não devolve uso real de tokens) — ver `gpt-image-1-pricing.ts` para a fonte dos
+    // números e a ressalva sobre o preço divergente já cadastrado em `ai_provider_models`.
+    const perImageCostUsd = estimateGptImage1CostUsd({
+      size,
+      quality,
+      promptChars: finalPrompt.length,
+      hasReferenceImage: Boolean(referenceImageBuffer),
+    });
+    const totalCostUsd = perImageCostUsd * images.length;
+
     return {
       content: JSON.stringify({ images }),
       model: modelId,
       tokens: { input: 0, output: 0, total: 0 },
-      cost: { estimated: 0, currency: "USD" },
+      cost: { estimated: totalCostUsd, currency: "USD" },
     };
   }
 }

@@ -44,6 +44,12 @@ export type CreativeEngineRun = {
    * exploração barata pré-plano (ver `explore-creative-directions.ts`). `undefined` quando a
    * exploração falhou/veio incompleta (best-effort). */
   chosenCreativeDirection?: unknown;
+  /** Auditoria de custo urgente — breakdown de custo por etapa (director/exploração/imagem/gate
+   * técnico/Visual Quality Score) + subtotal de rodadas de reparo, ver `CreativeEngineCostBreakdown`
+   * (`run-gpt-creative-engine.ts`). Sempre presente quando a execução chega a gerar QUALQUER
+   * chamada paga — `undefined` só em falhas anteriores a isso (nunca deveria acontecer no caminho
+   * real, mas o tipo permanece opcional pra nunca quebrar uma linha histórica). */
+  costBreakdown?: unknown;
   repairRounds: unknown[];
   finalImageUrl?: string;
   finalImageWidth?: number;

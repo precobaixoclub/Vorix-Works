@@ -1,4 +1,5 @@
 import type { IcaroBrainPort } from "../ai/icaro-brain.contract.js";
+import type { IcaroAIResponse } from "../ai/icaro.types.js";
 import { extractJson } from "../../shared/utils/skill-parsing.js";
 import type { CreativePlan } from "../../shared/utils/gpt-creative-plan.types.js";
 
@@ -88,7 +89,16 @@ type VisualQualityScoreResponse = Partial<Record<VisualQualityDimensionKey, { sc
 
 export async function evaluateVisualQualityScore(
   icaro: IcaroBrainPort,
-  input: { finalImageUrl: string; plan: CreativePlan; brandColors?: readonly string[]; specialistId: string },
+  input: {
+    finalImageUrl: string;
+    plan: CreativePlan;
+    brandColors?: readonly string[];
+    specialistId: string;
+    /** Auditoria de custo — achado crítico: esta chamada de visão nunca entrava em NENHUM total
+     * de custo do motor antes desta correção. Opcional e best-effort, mesmo espírito do resto da
+     * função — nunca lançar por causa disto. */
+    onCost?: (response: IcaroAIResponse | undefined) => void;
+  },
 ): Promise<VisualQualityScoreResult | undefined> {
   try {
     const response = await icaro.request({
@@ -102,6 +112,7 @@ export async function evaluateVisualQualityScore(
       maxTokens: 900,
       timeoutMs: 25_000,
     });
+    input.onCost?.(response);
     if (response.status !== "completed") return undefined;
 
     const parsed = JSON.parse(extractJson(String(response.content ?? ""), "Visual Quality Score")) as VisualQualityScoreResponse;

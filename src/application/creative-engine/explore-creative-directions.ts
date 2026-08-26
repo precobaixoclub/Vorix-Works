@@ -1,4 +1,5 @@
 import type { IcaroBrainPort } from "../ai/icaro-brain.contract.js";
+import type { IcaroAIResponse } from "../ai/icaro.types.js";
 import { extractJson } from "../../shared/utils/skill-parsing.js";
 import type { CreativeContext } from "../../shared/utils/gpt-creative-plan.types.js";
 
@@ -54,7 +55,15 @@ function buildExplorationPrompt(context: CreativeContext): string {
 export async function exploreCreativeDirections(
   icaro: IcaroBrainPort,
   context: CreativeContext,
-  input: { specialistId: string; executionId?: string; correlationId?: string },
+  input: {
+    specialistId: string;
+    executionId?: string;
+    correlationId?: string;
+    /** Auditoria de custo — achado crítico: esta chamada nunca entrava em NENHUM total de custo
+     * do motor antes desta correção. Opcional e best-effort, mesmo espírito do resto da função —
+     * nunca lançar por causa disto. */
+    onCost?: (response: IcaroAIResponse | undefined) => void;
+  },
 ): Promise<CreativeDirectionExploration | undefined> {
   try {
     const response = await icaro.request({
@@ -73,6 +82,7 @@ export async function exploreCreativeDirections(
       maxTokens: 600,
       timeoutMs: 25_000,
     });
+    input.onCost?.(response);
     if (response.status !== "completed") return undefined;
 
     const parsed = JSON.parse(extractJson(String(response.content ?? ""), "Creative Direction Exploration")) as {

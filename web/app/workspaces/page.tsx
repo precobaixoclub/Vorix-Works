@@ -45,7 +45,7 @@ function WorkspacesPageContent() {
     <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-10">
       <header className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase text-accent">Vorix Works</p>
+          <p className="text-xs font-semibold uppercase text-primary">Vorix Works</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-normal text-ink">Espaços de trabalho</h1>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-muted">
             Escolha a empresa, marca ou cliente que você quer operar.
@@ -62,7 +62,7 @@ function WorkspacesPageContent() {
                 aria-haspopup="menu"
                 aria-expanded={accountMenuOpen}
               >
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-soft text-xs font-semibold text-accent">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-soft text-xs font-semibold text-primary">
                   {user.name.slice(0, 1).toUpperCase()}
                 </span>
                 <span className="hidden max-w-36 truncate text-sm font-medium text-ink sm:block">{user.name}</span>
@@ -116,7 +116,7 @@ function WorkspacesPageContent() {
       ) : !hasWorkspaces ? (
         <section className="rounded-2xl border border-border bg-surface-raised p-5 sm:p-7">
           <div className="max-w-2xl">
-            <p className="text-sm font-semibold text-accent">Primeiro acesso</p>
+            <p className="text-sm font-semibold text-primary">Primeiro acesso</p>
             <h2 className="mt-2 text-xl font-semibold text-ink">Crie o primeiro espaço da marca</h2>
             <p className="mt-2 text-sm leading-relaxed text-ink-muted">
               Cada espaço separa produção, conexões, materiais e publicações de uma empresa ou cliente.
@@ -132,7 +132,7 @@ function WorkspacesPageContent() {
               ["3", "Trabalhe separado", "Tudo fica organizado dentro daquele espaço."],
             ].map(([step, title, description]) => (
               <div key={step} className="rounded-xl border border-border bg-surface p-4">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-primary">
                   {step}
                 </span>
                 <p className="mt-3 text-sm font-semibold text-ink">{title}</p>
@@ -153,7 +153,7 @@ function WorkspacesPageContent() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              className="min-h-10 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-accent focus:ring-2 focus:ring-accent-soft sm:max-w-xs"
+              className="min-h-10 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-primary focus:ring-2 focus:ring-accent-soft sm:max-w-xs"
               placeholder="Buscar espaço"
             />
           </div>
@@ -173,7 +173,7 @@ function WorkspacesPageContent() {
                     onClick={() => setStatusFilter(value as typeof statusFilter)}
                     className={`min-h-9 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
                       selected
-                        ? "border-accent bg-accent text-white"
+                        ? "border-primary bg-primary text-white"
                         : "border-border bg-surface text-ink-muted hover:bg-surface-sunken hover:text-ink"
                     }`}
                   >

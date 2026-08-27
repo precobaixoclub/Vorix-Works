@@ -8,8 +8,10 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input } from "@/components/Field";
+import { PageSubnav } from "@/components/PageSubnav";
 import { Spinner } from "@/components/Spinner";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
+import { useDebounce } from "@/hooks/useDebounce";
 import { archiveAsset, deleteAsset } from "@/features/assets/api";
 import { AssetCard } from "@/features/assets/components/AssetCard";
 import { EditAssetModal } from "@/features/assets/components/EditAssetModal";
@@ -68,24 +70,11 @@ export default function KnowledgePage() {
         <p className="mt-1 text-sm text-muted-foreground">Identidade, diretrizes criativas e materiais que a IA usa para criar conteúdo desta marca.</p>
       </div>
 
-      <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setTab(tab.id)}
-            className={`shrink-0 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm font-medium transition-colors ${
-              activeTab === tab.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === "profile" ? <BrandProfileTab workspaceId={workspace.id} onGoToTab={setTab} /> : null}
-      {activeTab === "guidelines" ? <GuidelinesTab workspaceId={workspace.id} /> : null}
-      {activeTab === "materials" ? <MaterialsTab workspaceId={workspace.id} /> : null}
+      <PageSubnav items={TABS.map((tab) => ({ value: tab.id, label: tab.label }))} value={activeTab} onValueChange={(value) => setTab(value as TabId)}>
+        {activeTab === "profile" ? <BrandProfileTab workspaceId={workspace.id} onGoToTab={setTab} /> : null}
+        {activeTab === "guidelines" ? <GuidelinesTab workspaceId={workspace.id} /> : null}
+        {activeTab === "materials" ? <MaterialsTab workspaceId={workspace.id} /> : null}
+      </PageSubnav>
     </main>
   );
 }
@@ -250,7 +239,8 @@ function MaterialsTab({ workspaceId }: { workspaceId: string }) {
   const [dragOver, setDragOver] = useState(false);
   const [confirmingAction, setConfirmingAction] = useState<{ asset: Asset; kind: "archive" | "delete" } | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
-  const { data: assets, isLoading, error, mutate } = useAssets(workspaceId, { search: search || undefined });
+  const debouncedSearch = useDebounce(search, 300);
+  const { data: assets, isLoading, error, mutate } = useAssets(workspaceId, { search: debouncedSearch || undefined });
 
   const activeLogo = (assets ?? []).find((asset) => asset.kind === "logo" && asset.status === "active");
 

@@ -16,7 +16,7 @@ import {
   type AssetUsagePriority,
 } from "../types";
 
-const SELECT_CLASSES = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft";
+const SELECT_CLASSES = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft";
 
 /** Edita nome, tipo e tags de um material já cadastrado — não substitui o arquivo em si, que
  * continua o mesmo no Object Storage (reenviar exige excluir e cadastrar de novo). Migração

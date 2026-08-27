@@ -51,7 +51,7 @@ export function ConversationList({ workspaceId }: { workspaceId: string }) {
                 key={conversation.id}
                 href={href}
                 className={`block rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                  isActive ? "bg-accent-soft text-accent" : "text-ink hover:bg-surface-sunken"
+                  isActive ? "bg-accent-soft text-primary" : "text-ink hover:bg-surface-sunken"
                 }`}
               >
                 <p className="truncate font-medium">{conversation.title ?? "Fluxo sem título"}</p>

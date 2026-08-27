@@ -14,7 +14,7 @@ export default function PrivacyPage() {
           <Link href="/" aria-label="Vorix">
             <Logo className="h-10 w-auto text-ink" />
           </Link>
-          <Link href="/terms" className="text-sm font-medium text-accent hover:underline">
+          <Link href="/terms" className="text-sm font-medium text-primary hover:underline">
             Termos
           </Link>
         </header>
@@ -58,7 +58,7 @@ export default function PrivacyPage() {
             <h2 className="text-lg font-semibold text-ink">Exclusao de dados</h2>
             <p className="mt-2">
               O usuario pode solicitar a exclusao de dados pelo email abaixo ou pela pagina de instrucoes em{" "}
-              <Link href="/data-deletion" className="font-medium text-accent hover:underline">
+              <Link href="/data-deletion" className="font-medium text-primary hover:underline">
                 /data-deletion
               </Link>
               .

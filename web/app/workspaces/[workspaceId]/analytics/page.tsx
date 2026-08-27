@@ -157,7 +157,7 @@ export default function AnalyticsPage() {
 
       <div className="mb-6 flex gap-2 overflow-x-auto pb-1">
         {AREAS.map((item) => (
-          <button key={item.id} type="button" onClick={() => setArea(item.id)} className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition ${area === item.id ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:bg-surface-sunken hover:text-ink"}`}>
+          <button key={item.id} type="button" onClick={() => setArea(item.id)} className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition ${area === item.id ? "bg-primary text-white" : "bg-surface-raised text-ink-muted hover:bg-surface-sunken hover:text-ink"}`}>
             {item.label}
           </button>
         ))}
@@ -355,7 +355,7 @@ function BestContents({ publications, workspaceId }: { publications: readonly Un
     <Card className="p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-ink">Melhores conteúdos</h2>
-        <Link href={`/workspaces/${workspaceId}/campaigns`} className="text-xs font-medium text-accent hover:underline">Abrir conteúdos</Link>
+        <Link href={`/workspaces/${workspaceId}/campaigns`} className="text-xs font-medium text-primary hover:underline">Abrir conteúdos</Link>
       </div>
       {items.length === 0 ? (
         <EmptyState title="Ainda não há dados suficientes" description="Publique conteúdos para começar a acompanhar os resultados." />
@@ -364,7 +364,7 @@ function BestContents({ publications, workspaceId }: { publications: readonly Un
           {items.map((post) => {
             const status = derivePublicationStatus(post);
             return (
-              <Link key={`${post.network}-${post.id}`} href={`/workspaces/${workspaceId}/campaigns`} className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-surface p-3 transition hover:border-accent hover:bg-accent-soft/25">
+              <Link key={`${post.network}-${post.id}`} href={`/workspaces/${workspaceId}/campaigns`} className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-surface p-3 transition hover:border-primary hover:bg-accent-soft/25">
                 <PublicationThumb post={post} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-ink">{titleOf(post)}</p>

@@ -59,7 +59,7 @@ export default async function RootPage() {
       </header>
 
       <section className="mx-auto flex w-full max-w-4xl flex-col items-center justify-center gap-6 px-3 py-12 text-center sm:px-6 sm:py-20">
-        <span className="rounded-full bg-accent-soft px-3 py-1 text-xs font-medium text-accent">Marketing com IA</span>
+        <span className="rounded-full bg-accent-soft px-3 py-1 text-xs font-medium text-primary">Marketing com IA</span>
         <h1 className="text-balance text-4xl font-semibold tracking-tight text-ink sm:text-5xl">
           Da produção ao post publicado, sem sair de um só lugar.
         </h1>
@@ -94,7 +94,7 @@ export default async function RootPage() {
               <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Planos</p>
               <h2 className="mt-1 text-2xl font-semibold text-ink">Cresce com você.</h2>
             </div>
-            <Link href="/pricing" className="text-sm font-medium text-accent hover:underline">
+            <Link href="/pricing" className="text-sm font-medium text-primary hover:underline">
               Ver todos os planos →
             </Link>
           </div>
@@ -105,7 +105,7 @@ export default async function RootPage() {
                 className={
                   "rounded-xl border p-5 " +
                   (plan.highlighted
-                    ? "border-accent bg-accent-soft/40"
+                    ? "border-primary bg-accent-soft/40"
                     : "border-border bg-surface-raised")
                 }
               >

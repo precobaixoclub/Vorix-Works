@@ -14,7 +14,7 @@ export default function DataDeletionPage() {
           <Link href="/" aria-label="Vorix">
             <Logo className="h-10 w-auto text-ink" />
           </Link>
-          <Link href="/privacy" className="text-sm font-medium text-accent hover:underline">
+          <Link href="/privacy" className="text-sm font-medium text-primary hover:underline">
             Privacidade
           </Link>
         </header>

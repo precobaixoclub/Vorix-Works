@@ -315,12 +315,12 @@ export default function PublicationsPage() {
               paginatedItems.map((publication) => (
                 <TableRow key={publication.id}>
                   <TableCell className="font-medium text-ink">
-                    <button type="button" onClick={() => setSelectedId(publication.id)} className="text-left hover:text-accent">
+                    <button type="button" onClick={() => setSelectedId(publication.id)} className="text-left hover:text-primary">
                       {publication.id}
                     </button>
                   </TableCell>
                   <TableCell><StatusBadge status={publication.state} /></TableCell>
-                  <TableCell><span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">{publication.mode === "dry_run" ? "Simulação" : "Real"}</span></TableCell>
+                  <TableCell><span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-primary">{publication.mode === "dry_run" ? "Simulação" : "Real"}</span></TableCell>
                   <TableCell className="text-right text-ink-muted">{formatDateTime(publication.createdAt)}</TableCell>
                 </TableRow>
               ))

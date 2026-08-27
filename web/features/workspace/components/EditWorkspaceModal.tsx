@@ -86,7 +86,7 @@ export function EditWorkspaceModal({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={logoUrl} alt="" className="h-full w-full object-contain p-2" />
               ) : (
-                <span className="text-2xl font-semibold text-accent">{trimmedName.slice(0, 1).toUpperCase() || "V"}</span>
+                <span className="text-2xl font-semibold text-primary">{trimmedName.slice(0, 1).toUpperCase() || "V"}</span>
               )}
             </div>
             <div className="min-w-0 flex-1">

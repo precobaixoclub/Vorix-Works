@@ -124,7 +124,7 @@ function SidebarLink({ href, active, children }: { href: string; active: boolean
     <Link
       href={href}
       className={`rounded-md px-2.5 py-1.5 transition-colors ${
-        active ? "bg-accent/10 font-medium text-accent" : "text-ink-muted hover:bg-surface-sunken hover:text-ink"
+        active ? "bg-primary/10 font-medium text-primary" : "text-ink-muted hover:bg-surface-sunken hover:text-ink"
       }`}
     >
       {children}

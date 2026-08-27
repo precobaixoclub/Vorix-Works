@@ -356,7 +356,7 @@ function FilterSelect<T extends string>({ label, value, onChange, options }: { l
   return (
     <label className="min-w-0">
       <span className="sr-only">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" aria-label={label}>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft" aria-label={label}>
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>
@@ -370,7 +370,7 @@ function PublicationCard({ workspaceId, post, busy, onOpen, onCancel }: { worksp
   const when = publicationDate(post);
 
   return (
-    <article className="group min-w-0 overflow-hidden rounded-2xl border border-border bg-surface-raised/55 transition hover:border-accent/70 hover:shadow-lg">
+    <article className="group min-w-0 overflow-hidden rounded-2xl border border-border bg-surface-raised/55 transition hover:border-primary/70 hover:shadow-lg">
       <button type="button" onClick={onOpen} className={`relative flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
         {thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -422,7 +422,7 @@ function PublicationDetailDrawer({ workspaceId, post, busy, onClose, onCancel }:
       <aside className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col overflow-y-auto border-l border-border bg-surface-raised p-4 shadow-2xl sm:p-6">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Conteúdo</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Conteúdo</p>
             <h2 className="mt-2 text-2xl font-semibold text-ink">{titleOf(post)}</h2>
           </div>
           <button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm text-ink-muted hover:bg-surface-sunken">Fechar</button>
@@ -476,7 +476,7 @@ function NetworkBadge({ network }: { network: PublicationNetwork }) {
 }
 
 function viewModeButtonClass(active: boolean) {
-  return `rounded-md px-3 py-1.5 text-xs font-medium transition ${active ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`;
+  return `rounded-md px-3 py-1.5 text-xs font-medium transition ${active ? "bg-primary text-white" : "text-ink-muted hover:text-ink"}`;
 }
 
 function titleOf(post: UnifiedPublication): string {

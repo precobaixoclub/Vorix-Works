@@ -19,7 +19,7 @@ import {
 
 const LOGO_WITHOUT_TRANSPARENCY_ERROR = "ASSET_UPLOAD_LOGO_WITHOUT_TRANSPARENCY";
 
-const SELECT_CLASSES = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft";
+const SELECT_CLASSES = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft";
 
 /** Envia o arquivo pro Object Storage (`POST /v1/assets/upload`) e só depois registra o material
  * com o `storageRef` real. Migração "Marca & Materiais": a categoria técnica (`AssetKind`) deixou
@@ -171,7 +171,7 @@ export function RegisterAssetModal({
             accept={isLogoMode ? "image/png,image/svg+xml,image/webp" : "image/jpeg,image/png,image/webp,image/svg+xml,video/mp4,video/quicktime,application/pdf,font/ttf,font/otf,font/woff,font/woff2"}
             required={fileRequired}
             onChange={(e) => pickFile(e.target.files?.[0])}
-            className="w-full text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-accent"
+            className="w-full text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary"
           />
           <p className="mt-1 text-xs text-ink-muted">
             {isLogoMode ? (
@@ -250,7 +250,7 @@ export function RegisterAssetModal({
         {error ? <p className="text-xs text-danger">{error}</p> : null}
 
         {needsTransparency ? (
-          <div className="rounded-lg border border-accent/30 bg-accent-soft/40 p-3">
+          <div className="rounded-lg border border-primary/30 bg-accent-soft/40 p-3">
             {bgRemoval.status === "ready" && bgRemoval.result ? (
               <div className="space-y-2.5">
                 <p className="text-xs font-medium text-ink">Fundo removido pela IA — confira antes de usar:</p>

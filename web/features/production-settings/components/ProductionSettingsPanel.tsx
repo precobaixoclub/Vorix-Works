@@ -7,7 +7,7 @@ import { updateProductionSettings } from "../api";
 import { useProductionSettings } from "../hooks";
 import { CREATIVE_FREEDOM_LABEL, CREATIVE_FREEDOM_OPTIONS, TEXT_DENSITY_LABEL, TEXT_DENSITY_OPTIONS, type CreativeFreedom, type TextDensity } from "../types";
 
-const SELECT_CLASSES = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft";
+const SELECT_CLASSES = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft";
 const MAX_PROMPT_LENGTH = 8000;
 
 /**

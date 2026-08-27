@@ -29,12 +29,12 @@ export default function ConnectionsPage() {
   return (
     <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
       <div className="mb-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Integrações</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Integrações</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">Conexões</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-muted">Conecte as redes que o Vorix pode utilizar para publicar seus conteúdos.</p>
       </div>
 
-      {feedback ? <Card className="mb-6 border-accent/30 bg-accent-soft/30 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
+      {feedback ? <Card className="mb-6 border-primary/30 bg-accent-soft/30 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
 
       <div className="grid gap-4">
         <MetaConnection workspaceId={workspace.id} onFeedback={setFeedback} />
@@ -200,7 +200,7 @@ function MetaAdsConnection({ workspaceId, onFeedback }: { workspaceId: string; o
     <Card className="overflow-hidden p-0">
       <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
         <div className="flex min-w-0 gap-3">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-xl font-semibold text-accent">$</span>
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-xl font-semibold text-primary">$</span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-base font-semibold text-ink">Meta Ads</h2>
@@ -318,7 +318,7 @@ function ConnectionCard({ icon, name, description, configured, busy, accounts, o
     <Card className="overflow-hidden p-0">
       <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
         <div className="flex min-w-0 gap-3">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-xl font-semibold text-accent">{icon}</span>
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-xl font-semibold text-primary">{icon}</span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-base font-semibold text-ink">{name}</h2>

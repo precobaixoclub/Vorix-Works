@@ -120,7 +120,7 @@ export function PublicationDetailModal({
 
   const headerExtra = (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">
+      <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-primary">
         {detail.plan.mode === "dry_run" ? "Simulação" : "Real"}
       </span>
       <StatusBadge status={detail.plan.state} />

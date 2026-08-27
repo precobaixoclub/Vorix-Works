@@ -243,14 +243,14 @@ function ProductionModeTabs({ mode, onChange, queueCount, tankCount }: { mode: P
       <button
         type="button"
         onClick={() => onChange("queue")}
-        className={`min-h-9 rounded-md px-3.5 text-sm font-medium transition-colors ${mode === "queue" ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}
+        className={`min-h-9 rounded-md px-3.5 text-sm font-medium transition-colors ${mode === "queue" ? "bg-primary text-white" : "text-ink-muted hover:text-ink"}`}
       >
         Fila{queueCount > 0 ? ` (${queueCount})` : ""}
       </button>
       <button
         type="button"
         onClick={() => onChange("configure")}
-        className={`min-h-9 rounded-md px-3.5 text-sm font-medium transition-colors ${mode === "configure" ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}
+        className={`min-h-9 rounded-md px-3.5 text-sm font-medium transition-colors ${mode === "configure" ? "bg-primary text-white" : "text-ink-muted hover:text-ink"}`}
       >
         Tanque{tankCount > 0 ? ` (${tankCount})` : ""}
       </button>
@@ -752,7 +752,7 @@ export default function ProductionLinePage() {
                   const statusLabel = generatingNow ? "Em andamento" : idea.status === "used" ? "Usada" : "Pendente";
                   const statusBadgeClass = generatingNow ? "bg-amber-500/10 text-amber-600" : idea.status === "used" ? "" : "bg-emerald-500/10 text-emerald-600";
                   return (
-                    <TableRow key={idea.id} className={selected ? "bg-accent/5" : undefined}>
+                    <TableRow key={idea.id} className={selected ? "bg-primary/5" : undefined}>
                       <TableCell>
                         <div className="min-w-0 max-w-xs">
                           <p className="truncate text-sm font-medium text-foreground">{displayIdeaName(idea)}</p>
@@ -868,7 +868,7 @@ export default function ProductionLinePage() {
             <span>{currentQueueTabLabel}</span>
             <span className="text-xs font-normal text-ink-muted">({runsByTab[queueTab].length})</span>
             {activeQueueFilterCount > 0 ? (
-              <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">{activeQueueFilterCount}</span>
+              <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">{activeQueueFilterCount}</span>
             ) : null}
           </span>
           <span className="flex items-center gap-1 text-xs font-normal text-ink-muted">
@@ -886,7 +886,7 @@ export default function ProductionLinePage() {
                   type="button"
                   onClick={() => setQueueTab(tab.id)}
                   className={`min-h-8 rounded-md px-2.5 text-xs font-medium transition-colors ${
-                    queueTab === tab.id ? "bg-accent text-white" : "text-ink-muted hover:text-ink"
+                    queueTab === tab.id ? "bg-primary text-white" : "text-ink-muted hover:text-ink"
                   }`}
                 >
                   {tab.label} <span className="text-xs opacity-70">({runsByTab[tab.id].length})</span>
@@ -899,19 +899,19 @@ export default function ProductionLinePage() {
               value={queueSearch}
               onChange={(event) => setQueueSearch(event.target.value)}
               placeholder="Buscar produção"
-              className="mb-3 min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+              className="mb-3 min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft"
             />
 
             <div className="flex flex-wrap items-center gap-2">
-              <select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value as ProductionChannel | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
+              <select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value as ProductionChannel | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-primary">
                 <option value="all">Todos os canais</option>
                 {CHANNELS.map((channel) => (<option key={channel} value={channel}>{CHANNEL_LABEL[channel]}</option>))}
               </select>
-              <select value={queueFormatFilter} onChange={(event) => setQueueFormatFilter(event.target.value as ProductionFormat | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
+              <select value={queueFormatFilter} onChange={(event) => setQueueFormatFilter(event.target.value as ProductionFormat | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-primary">
                 <option value="all">Todos os formatos</option>
                 {FORMATS.map((format) => (<option key={format} value={format}>{FORMAT_LABEL[format]}</option>))}
               </select>
-              <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as PeriodFilterId)} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-accent">
+              <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as PeriodFilterId)} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-primary">
                 {PERIOD_FILTERS.map((period) => (<option key={period.id} value={period.id}>{period.label}</option>))}
               </select>
               <SegmentedFilter value={sortOrder} options={[{ id: "recent", label: "Recentes" }, { id: "oldest", label: "Antigos" }]} onChange={setSortOrder} />
@@ -959,7 +959,7 @@ export default function ProductionLinePage() {
 
       {queueTab === "completed" && completedRuns.length > 0 ? (
         <div className="mt-4 text-right">
-          <Link href={`/workspaces/${workspace.id}/campaigns`} className="text-sm font-medium text-accent hover:underline">Ver todos os conteúdos →</Link>
+          <Link href={`/workspaces/${workspace.id}/campaigns`} className="text-sm font-medium text-primary hover:underline">Ver todos os conteúdos →</Link>
         </div>
       ) : null}
 
@@ -1022,11 +1022,11 @@ function ProductionRunCard({
         ) : run.state === "completed" ? (
           <>
             <p className="text-xs text-ink-muted">Concluído · {formatRelativeTime(run.finishedAt ?? run.updatedAt)}</p>
-            <Link href={`/workspaces/${workspaceId}/campaigns`} className="text-xs font-medium text-accent hover:underline">Ver em Conteúdos →</Link>
+            <Link href={`/workspaces/${workspaceId}/campaigns`} className="text-xs font-medium text-primary hover:underline">Ver em Conteúdos →</Link>
           </>
         ) : (
           <>
-            <p className="text-sm text-accent">{RUN_STATE_LABEL[run.state] ?? "Processando…"}</p>
+            <p className="text-sm text-primary">{RUN_STATE_LABEL[run.state] ?? "Processando…"}</p>
             <p className="text-xs text-ink-faint">Iniciado há {formatRelativeTime(run.createdAt)}</p>
             {summary.record ? (
               <button type="button" onClick={() => setExpanded((prev) => !prev)} className="text-xs font-medium text-ink-muted hover:text-ink">
@@ -1048,13 +1048,13 @@ function ProductionRunCard({
 
 function PromptSetupCard({ workspaceId, hasGuidelines, compact }: { workspaceId: string; hasGuidelines: boolean; compact: boolean }) {
   return (
-    <div className={`mb-4 rounded-xl border px-4 py-3 ${hasGuidelines ? "border-border bg-surface-raised" : "border-accent/40 bg-accent-soft"}`}>
+    <div className={`mb-4 rounded-xl border px-4 py-3 ${hasGuidelines ? "border-border bg-surface-raised" : "border-primary/40 bg-accent-soft"}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className={`text-sm font-semibold ${hasGuidelines ? "text-ink" : "text-accent"}`}>
+          <p className={`text-sm font-semibold ${hasGuidelines ? "text-ink" : "text-primary"}`}>
             {hasGuidelines ? "Prompt da IA configurado" : "Configure o prompt da IA antes de gerar conteúdo"}
           </p>
-          <p className={`mt-0.5 text-sm ${hasGuidelines ? "text-ink-muted" : "text-accent"}`}>
+          <p className={`mt-0.5 text-sm ${hasGuidelines ? "text-ink-muted" : "text-primary"}`}>
             {hasGuidelines
               ? "A IA já tem diretrizes criativas fixas desta marca."
               : compact
@@ -1108,7 +1108,7 @@ function RoutineConfigDialog({
         <header className="border-b border-border bg-surface-raised px-4 py-3 sm:px-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-accent">Rotina automática</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">Rotina automática</p>
               <h2 className="mt-1 text-lg font-semibold text-ink">Onde publicar, em quais horários, e o tanque que abastece a agenda</h2>
             </div>
             <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-xl leading-none text-ink-muted hover:bg-surface-sunken hover:text-ink" aria-label="Fechar">
@@ -1191,7 +1191,7 @@ function IdeaFormDialog({
         <header className="border-b border-border bg-surface-raised px-4 py-3 sm:px-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-accent">{isDraft ? "Nova ideia" : "Editar ideia"}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">{isDraft ? "Nova ideia" : "Editar ideia"}</p>
               <h2 className="mt-1 text-lg font-semibold text-ink">{isDraft ? "Abastecer tanque de conteúdo" : displayIdeaName(blueprint)}</h2>
               <p className="mt-1 max-w-2xl text-sm text-ink-muted">
                 {isDraft ? "Preencha a ideia e o formato: salve no tanque para a rotina sortear depois, ou gere agora mesmo." : "Preencha primeiro a ideia e o formato. Referências e detalhes aparecem separados para não poluir o fluxo."}
@@ -1237,7 +1237,7 @@ function SegmentedFilter<T extends string>({ value, options, onChange }: { value
           key={option.id}
           type="button"
           onClick={() => onChange(option.id)}
-          className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === option.id ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}
+          className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === option.id ? "bg-primary text-white" : "text-ink-muted hover:text-ink"}`}
         >
           {option.label}
         </button>
@@ -1401,7 +1401,7 @@ function WeeklyMixEditor({ rule, ideas, onChange }: { rule: PostingRule; ideas: 
                   <span className="flex items-center gap-1.5 text-sm font-semibold text-ink"><IconFormat format={item.format} className="h-3.5 w-3.5 text-ink-faint" />{FORMAT_LABEL[item.format]}</span>
                   <span className="flex items-center gap-1.5">
                     {enabled && available < scheduledQuantity(item) ? <IconWarn className="h-3.5 w-3.5 text-amber-400" /> : null}
-                    <span className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${enabled ? "bg-accent" : "border border-border bg-surface-sunken"}`}>
+                    <span className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${enabled ? "bg-primary" : "border border-border bg-surface-sunken"}`}>
                       <span className={`absolute h-3 w-3 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-3.5" : "translate-x-0.5"}`} />
                     </span>
                   </span>
@@ -1639,7 +1639,7 @@ function RuleAdvancedSettings({ rule, onChange, onRemove, canRemove }: { rule: P
 }
 
 function StepMarker({ value }: { value: number }) {
-  return <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-white">{value}</span>;
+  return <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white">{value}</span>;
 }
 
 function totalWeeklyPosts(rule: PostingRule): number {
@@ -1770,7 +1770,7 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
                 key={format}
                 type="button"
                 onClick={() => onChange({ format, mediaCount: format === "carousel" ? Math.max(blueprint.mediaCount, 3) : 1 })}
-                className={`rounded-lg border px-3 py-3 text-left transition-colors ${blueprint.format === format ? "border-accent bg-accent-soft text-accent" : "border-border bg-surface-raised text-ink hover:bg-surface-sunken"}`}
+                className={`rounded-lg border px-3 py-3 text-left transition-colors ${blueprint.format === format ? "border-primary bg-accent-soft text-primary" : "border-border bg-surface-raised text-ink hover:bg-surface-sunken"}`}
               >
                 <span className="block text-sm font-semibold">{FORMAT_LABEL[format]}</span>
                 <span className="mt-1 block text-xs text-ink-muted">{formatHelp(format)}</span>
@@ -1811,23 +1811,23 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
               accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime"
               disabled={uploading}
               onChange={(event) => uploadReferences(event.target.files)}
-              className="block w-full text-sm text-ink-muted file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-2 file:text-sm file:font-medium file:text-white"
+              className="block w-full text-sm text-ink-muted file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-medium file:text-white"
             />
             <p className="mt-2 text-xs text-ink-muted">Envie print, foto, imagem ou vídeo curto. O arquivo enviado vira referência da ideia.</p>
-            {uploading ? <p className="mt-2 text-xs text-accent">Enviando arquivo...</p> : null}
+            {uploading ? <p className="mt-2 text-xs text-primary">Enviando arquivo...</p> : null}
             {uploadError ? <p className="mt-2 text-xs text-red-600">{uploadError}</p> : null}
           </div>
           {blueprint.referenceImages.length > 0 ? (
             <div className="mt-2 space-y-2">
               {blueprint.referenceImages.map((url) => (
                 <div key={url} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2">
-                  <a href={url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-xs font-medium text-accent hover:underline">{fileLabel(url)}</a>
+                  <a href={url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-xs font-medium text-primary hover:underline">{fileLabel(url)}</a>
                   <div className="flex shrink-0 items-center gap-2">
                     <select
                       aria-label={`Papel da referência ${fileLabel(url)}`}
                       value={blueprint.referenceAssetRoles?.[url] ?? "product_photo"}
                       onChange={(event) => setReferenceRole(url, event.target.value as ReferenceAssetRole)}
-                      className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+                      className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft"
                     >
                       {REFERENCE_ASSET_ROLE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
                     </select>
@@ -1866,7 +1866,7 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
               id="blueprint-aspect-ratio"
               value={blueprint.aspectRatio ?? ""}
               onChange={(event) => onChange({ aspectRatio: (event.target.value || undefined) as ProductionAspectRatio | undefined })}
-              className="w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+              className="w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft"
             >
               <option value="">Automático (4:5)</option>
               {ASPECT_RATIO_OPTIONS.map((ratio) => (<option key={ratio} value={ratio}>{ratio}</option>))}
@@ -1929,7 +1929,7 @@ function ModeToggle({ value, onChange, label }: { value: "manual" | "auto"; onCh
       <p className="mb-1.5 text-xs font-medium text-ink-muted">{label}</p>
       <div className="inline-flex rounded-lg border border-border bg-surface p-1">
         {(["manual", "auto"] as const).map((mode) => (
-          <button key={mode} type="button" onClick={() => onChange(mode)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === mode ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}>
+          <button key={mode} type="button" onClick={() => onChange(mode)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === mode ? "bg-primary text-white" : "text-ink-muted hover:text-ink"}`}>
             {mode === "manual" ? "Manual" : "Automático"}
           </button>
         ))}
@@ -1944,7 +1944,7 @@ function IdeaStatusToggle({ value, onChange }: { value: "available" | "used"; on
       <p className="mb-1.5 text-xs font-medium text-ink-muted">Status da ideia</p>
       <div className="inline-flex rounded-lg border border-border bg-surface p-1">
         {(["available", "used"] as const).map((status) => (
-          <button key={status} type="button" onClick={() => onChange(status)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === status ? "bg-accent text-white" : "text-ink-muted hover:text-ink"}`}>
+          <button key={status} type="button" onClick={() => onChange(status)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === status ? "bg-primary text-white" : "text-ink-muted hover:text-ink"}`}>
             {status === "available" ? "Pendente" : "Usada"}
           </button>
         ))}
@@ -1976,7 +1976,7 @@ function CollapsibleSection({
           <span className="mt-0.5 block text-xs text-ink-muted">{description}</span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
-          {typeof badge === "number" && badge > 0 ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">{badge}</span> : null}
+          {typeof badge === "number" && badge > 0 ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-primary">{badge}</span> : null}
           <span className="rounded-md border border-border bg-surface-raised px-2 py-1 text-xs font-semibold text-ink-muted">{open ? "Ocultar" : "Abrir"}</span>
         </span>
       </button>

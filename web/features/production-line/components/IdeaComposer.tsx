@@ -194,7 +194,7 @@ export function IdeaComposer({ workspaceId }: { workspaceId: string }) {
                 disabled={busy}
                 onClick={() => setFormat(option)}
                 className={`min-h-8 rounded-md px-3 text-xs font-medium transition-colors disabled:opacity-60 ${
-                  format === option ? "bg-accent text-white" : "text-ink-muted hover:text-ink"
+                  format === option ? "bg-primary text-white" : "text-ink-muted hover:text-ink"
                 }`}
               >
                 {option === "single_image" ? "Imagem" : "Carrossel"}
@@ -281,7 +281,7 @@ export function IdeaComposer({ workspaceId }: { workspaceId: string }) {
             disabled={busy}
             onClick={() => applyPreset(preset)}
             className={`flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-medium transition-colors disabled:opacity-60 sm:shrink ${
-              activePreset === preset.id ? "border-accent bg-accent-soft text-accent" : "border-border/60 bg-surface-raised text-ink-muted hover:text-ink"
+              activePreset === preset.id ? "border-primary bg-accent-soft text-primary" : "border-border/60 bg-surface-raised text-ink-muted hover:text-ink"
             }`}
           >
             <span aria-hidden="true">{preset.icon}</span>

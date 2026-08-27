@@ -37,7 +37,7 @@ export default async function PricingPage() {
       </header>
 
       <section className="mx-auto w-full max-w-6xl px-3 pb-6 pt-10 text-center sm:px-6 sm:pt-12">
-        <span className="rounded-full bg-accent-soft px-3 py-1 text-xs font-medium text-accent">Planos e preços</span>
+        <span className="rounded-full bg-accent-soft px-3 py-1 text-xs font-medium text-primary">Planos e preços</span>
         <h1 className="mt-4 text-balance text-4xl font-semibold tracking-tight text-ink sm:text-5xl">
           Escolha o plano que combina com seu volume.
         </h1>
@@ -83,12 +83,12 @@ function PlanCard({ plan }: { plan: PublicPlan }) {
       className={
         "flex flex-col rounded-xl border p-6 " +
         (plan.highlighted
-          ? "border-accent bg-accent-soft/40 shadow-md"
+          ? "border-primary bg-accent-soft/40 shadow-md"
           : "border-border bg-surface-raised")
       }
     >
       {plan.highlighted ? (
-        <span className="mb-2 inline-block self-start rounded-full bg-accent px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+        <span className="mb-2 inline-block self-start rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
           Mais popular
         </span>
       ) : null}
@@ -106,7 +106,7 @@ function PlanCard({ plan }: { plan: PublicPlan }) {
       <ul className="mt-4 flex flex-1 flex-col gap-2 text-sm text-ink">
         {plan.features.map((feature) => (
           <li key={feature} className="flex items-start gap-2">
-            <span className="mt-0.5 text-accent">✓</span>
+            <span className="mt-0.5 text-primary">✓</span>
             <span>{feature}</span>
           </li>
         ))}

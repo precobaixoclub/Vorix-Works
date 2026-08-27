@@ -10,7 +10,7 @@ export function WorkspaceCard({ workspace, onEdit }: { workspace: Workspace; onE
   const initial = workspace.name.slice(0, 1).toUpperCase();
 
   return (
-    <Card className="h-full overflow-hidden transition-colors hover:border-accent/60">
+    <Card className="h-full overflow-hidden transition-colors hover:border-primary/60">
       <CardBody className="flex h-full flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
           <Link href={`/workspaces/${workspace.id}`} className="min-w-0" aria-label={`Abrir ${workspace.name}`}>
@@ -19,7 +19,7 @@ export function WorkspaceCard({ workspace, onEdit }: { workspace: Workspace; onE
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={logoUrl} alt="" className="h-full w-full object-contain p-1.5" />
               ) : (
-                <span className="text-xl font-semibold text-accent">{initial}</span>
+                <span className="text-xl font-semibold text-primary">{initial}</span>
               )}
             </div>
           </Link>
@@ -38,7 +38,7 @@ export function WorkspaceCard({ workspace, onEdit }: { workspace: Workspace; onE
             {workspace.kind ? <p className="text-xs text-ink-muted">{workspace.kind}</p> : null}
           </div>
           <p className="mt-auto text-xs text-ink-faint">Criado em {formatDate(workspace.createdAt)}</p>
-          <span className="mt-1 inline-flex min-h-9 items-center justify-center rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover">
+          <span className="mt-1 inline-flex min-h-9 items-center justify-center rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover">
             Acessar espaço
           </span>
         </Link>

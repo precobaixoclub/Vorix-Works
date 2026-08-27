@@ -13,7 +13,7 @@ export function TurnBubble({ turn }: { turn: ConversationTurn }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex justify-end">
-        <div className="max-w-lg rounded-2xl bg-accent px-4 py-2.5 text-sm text-white">
+        <div className="max-w-lg rounded-2xl bg-primary px-4 py-2.5 text-sm text-white">
           <p className="whitespace-pre-wrap">{turn.userMessageContent}</p>
           <p className="mt-1 text-[11px] text-white/70">{formatDateTime(turn.userMessageCreatedAt)}</p>
         </div>
@@ -35,7 +35,7 @@ export function TurnBubble({ turn }: { turn: ConversationTurn }) {
                     </span>
                   ) : null}
                   <span className="rounded-full bg-surface-sunken px-2 py-0.5">Ação: {ACTION_LABEL[turn.decision.action]}</span>
-                  {turn.state ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-accent">Estado: {STATE_LABEL[turn.state]}</span> : null}
+                  {turn.state ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-primary">Estado: {STATE_LABEL[turn.state]}</span> : null}
                 </div>
                 <p className="mt-2 text-xs text-ink-faint">{turn.decision.reason}</p>
               </details>

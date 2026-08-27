@@ -47,7 +47,7 @@ export function AssetCard({ asset, onEdit, onArchive, onDelete }: { asset: Asset
         {asset.materialType || asset.usagePriority ? (
           <div className="flex flex-wrap gap-1">
             {asset.materialType ? (
-              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">{ASSET_MATERIAL_TYPE_LABEL[asset.materialType]}</span>
+              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-primary">{ASSET_MATERIAL_TYPE_LABEL[asset.materialType]}</span>
             ) : null}
             {asset.usagePriority ? (
               <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] text-ink-muted">{ASSET_USAGE_PRIORITY_LABEL[asset.usagePriority]}</span>
@@ -65,7 +65,7 @@ export function AssetCard({ asset, onEdit, onArchive, onDelete }: { asset: Asset
         ) : null}
         <p className="text-[11px] text-ink-faint">Adicionado em {formatDate(asset.createdAt)}</p>
         <div className="flex flex-wrap gap-3 border-t border-border pt-2 text-xs">
-          <button type="button" onClick={onEdit} className="min-h-9 cursor-pointer font-medium text-accent hover:underline">
+          <button type="button" onClick={onEdit} className="min-h-9 cursor-pointer font-medium text-primary hover:underline">
             Editar
           </button>
           <button type="button" onClick={onArchive} className="min-h-9 cursor-pointer font-medium text-ink-muted hover:text-ink">

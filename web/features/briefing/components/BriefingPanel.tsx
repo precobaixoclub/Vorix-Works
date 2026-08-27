@@ -95,7 +95,7 @@ export function BriefingPanel({
       ) : null}
 
       {preparedCommandSummary ? (
-        <p className="rounded-lg bg-accent-soft px-3 py-2 text-xs text-accent">
+        <p className="rounded-lg bg-accent-soft px-3 py-2 text-xs text-primary">
           Comando preparado (revisão {preparedCommandSummary.briefingRevision}, {preparedCommandSummary.fieldCount} campo(s)). Nenhum conteúdo foi gerado
           ainda — a execução real fica para uma sprint futura.
         </p>

@@ -44,7 +44,7 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
         href={`${base}${item.href}`}
         onClick={() => setMenuOpen(false)}
         className={`flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium ${
-          isActive(item.href) ? "bg-accent-soft text-accent" : "text-ink hover:bg-surface-sunken"
+          isActive(item.href) ? "bg-accent-soft text-primary" : "text-ink hover:bg-surface-sunken"
         }`}
       >
         <NavIcon id={item.icon} className="h-[18px] w-[18px] shrink-0" />
@@ -58,8 +58,8 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
       <nav className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t border-border bg-surface-raised/95 px-2 pb-[env(safe-area-inset-bottom)] pt-1.5 backdrop-blur md:hidden">
         {PRIMARY_MOBILE_NAV.map((item) =>
           item.href === "/create" ? (
-            <Link key={item.href} href={`${base}${item.href}`} className="flex flex-col items-center gap-1 px-2 py-1 text-[11px] font-medium text-accent">
-              <span aria-hidden="true" className="-mt-4 flex h-11 w-11 items-center justify-center rounded-full bg-accent text-white shadow-lg shadow-accent/30">
+            <Link key={item.href} href={`${base}${item.href}`} className="flex flex-col items-center gap-1 px-2 py-1 text-[11px] font-medium text-primary">
+              <span aria-hidden="true" className="-mt-4 flex h-11 w-11 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-primary/30">
                 <NavIcon id={item.icon} className="h-5 w-5" />
               </span>
               <span>{item.label}</span>
@@ -69,7 +69,7 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
               key={item.href}
               href={`${base}${item.href}`}
               className={`flex min-h-11 flex-col items-center justify-center gap-0.5 px-2 text-[11px] font-medium ${
-                isActive(item.href) ? "text-accent" : "text-ink-muted"
+                isActive(item.href) ? "text-primary" : "text-ink-muted"
               }`}
             >
               <NavIcon id={item.icon} className="h-[18px] w-[18px]" />

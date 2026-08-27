@@ -22,7 +22,7 @@ export function ScreenGuide({
           <ol className="mt-3 grid gap-2 sm:grid-cols-2">
             {items.map((item, index) => (
               <li key={item} className="flex min-w-0 gap-2 rounded-lg bg-surface-sunken px-3 py-2 text-sm text-ink">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-semibold text-white">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-white">
                   {index + 1}
                 </span>
                 <span className="min-w-0 break-words">{item}</span>
@@ -70,7 +70,7 @@ export function ProgressivePanel({
           {description ? <span className="mt-0.5 block text-xs text-ink-muted">{description}</span> : null}
         </span>
         <span className="flex shrink-0 items-center gap-2">
-          {badge ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">{badge}</span> : null}
+          {badge ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-primary">{badge}</span> : null}
           <span className="rounded-md border border-border bg-surface px-2 py-1 text-xs font-semibold text-ink-muted">
             {open ? "Ocultar" : "Abrir"}
           </span>

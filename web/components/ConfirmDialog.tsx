@@ -1,8 +1,20 @@
 "use client";
 
-import { Button } from "@/components/Button";
-import { Modal } from "@/components/Modal";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
+import { buttonVariants } from "@/components/ui/button";
 
+/** Ação destrutiva sempre nomeia o registro e a consequência — nunca `window.confirm`, nunca um
+ * delete silencioso. Construído sobre `AlertDialog` (Radix) do design system. */
 export function ConfirmDialog({
   open,
   title,
@@ -24,21 +36,24 @@ export function ConfirmDialog({
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 }) {
-  if (!open) return null;
-
   return (
-    <Modal title={title} onClose={busy ? () => undefined : onCancel}>
-      <div className="space-y-4">
-        <p className="text-sm leading-6 text-ink-muted">{description}</p>
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="secondary" disabled={busy} onClick={onCancel}>
-            {cancelLabel}
-          </Button>
-          <Button type="button" variant={variant === "danger" ? "danger" : "primary"} disabled={busy} onClick={onConfirm}>
+    <AlertDialog open={open} onOpenChange={(next) => { if (!next && !busy) onCancel(); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy} onClick={onCancel}>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={busy}
+            onClick={(event) => { event.preventDefault(); onConfirm(); }}
+            className={cn(variant === "danger" && buttonVariants({ variant: "destructive" }))}
+          >
             {busy ? "Processando..." : confirmLabel}
-          </Button>
-        </div>
-      </div>
-    </Modal>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

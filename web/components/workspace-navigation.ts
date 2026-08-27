@@ -77,3 +77,20 @@ export const MOBILE_MENU_NAV: readonly WorkspaceNavItem[] = [
 export function canUseBackstage(role: string | undefined): boolean {
   return role === "owner" || role === "admin";
 }
+
+/** Rótulos localizados por rota, pro `Breadcrumbs` — junta todo item de navegação conhecido num
+ * mapa `caminho absoluto → label`, prefixado por `base` (`/workspaces/<id>`). */
+export function buildRouteLabels(base: string): Record<string, string> {
+  const allItems: readonly WorkspaceNavItem[] = [
+    HOME_NAV_ITEM,
+    CREATE_NAV_ITEM,
+    ...MAIN_NAV_SECTIONS.flatMap((section) => section.items),
+    ...SETTINGS_NAV,
+    ...BACKSTAGE_NAV,
+  ];
+  const labels: Record<string, string> = {};
+  for (const item of allItems) {
+    if (item.href) labels[`${base}${item.href}`] = item.label;
+  }
+  return labels;
+}

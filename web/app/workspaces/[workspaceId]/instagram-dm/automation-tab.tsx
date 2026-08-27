@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label, Textarea } from "@/components/Field";
@@ -19,6 +20,8 @@ export function AutomationTab({ workspaceId, instagramBusinessAccountId }: { wor
   const rules = data?.rules ?? [];
   const [newRuleOpen, setNewRuleOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<InstagramDmAutomationRule | undefined>();
+  const [deletingRule, setDeletingRule] = useState<InstagramDmAutomationRule | undefined>();
+  const [deleting, setDeleting] = useState(false);
   const [feedback, setFeedback] = useState<string | undefined>();
 
   async function handleToggleEnabled(rule: InstagramDmAutomationRule) {
@@ -26,11 +29,17 @@ export function AutomationTab({ workspaceId, instagramBusinessAccountId }: { wor
     await mutate();
   }
 
-  async function handleDelete(rule: InstagramDmAutomationRule) {
-    if (!confirm(`Excluir a regra "${rule.name}"?`)) return;
-    await deleteInstagramDmAutomationRule(workspaceId, rule.id);
-    await mutate();
-    setFeedback("Regra excluída.");
+  async function handleConfirmDelete() {
+    if (!deletingRule) return;
+    setDeleting(true);
+    try {
+      await deleteInstagramDmAutomationRule(workspaceId, deletingRule.id);
+      await mutate();
+      setFeedback("Regra excluída.");
+      setDeletingRule(undefined);
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
@@ -71,7 +80,7 @@ export function AutomationTab({ workspaceId, instagramBusinessAccountId }: { wor
                 <div className="flex shrink-0 items-center gap-2">
                   <Button variant="secondary" className="px-2.5 py-1.5 text-xs" onClick={() => handleToggleEnabled(rule)}>{rule.enabled ? "Desativar" : "Ativar"}</Button>
                   <Button variant="secondary" className="px-2.5 py-1.5 text-xs" onClick={() => setEditingRule(rule)}>Editar</Button>
-                  <Button variant="danger" className="px-2.5 py-1.5 text-xs" onClick={() => handleDelete(rule)}>Excluir</Button>
+                  <Button variant="danger" className="px-2.5 py-1.5 text-xs" onClick={() => setDeletingRule(rule)}>Excluir</Button>
                 </div>
               </div>
             </Card>
@@ -105,6 +114,17 @@ export function AutomationTab({ workspaceId, instagramBusinessAccountId }: { wor
           }}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={!!deletingRule}
+        title="Excluir regra de automação"
+        description={deletingRule ? `A regra "${deletingRule.name}" para de responder mensagens imediatamente — essa ação não pode ser desfeita.` : ""}
+        confirmLabel="Excluir"
+        variant="danger"
+        busy={deleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeletingRule(undefined)}
+      />
     </div>
   );
 }

@@ -39,8 +39,8 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
       <Link
         key={item.href}
         href={`${base}${item.href}`}
-        className={`flex min-h-10 w-full min-w-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-          isActive ? "bg-accent-soft text-accent" : "text-ink-muted hover:bg-surface-sunken hover:text-ink"
+        className={`flex h-9 w-full min-w-0 items-center gap-2.5 rounded-md px-3 text-sm font-medium transition-colors ${
+          isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"
         }`}
       >
         <NavIcon id={item.icon} className="h-[18px] w-[18px] shrink-0" />
@@ -50,14 +50,14 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
   }
 
   return (
-    <nav className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-1 border-r border-border bg-surface-raised p-3 md:flex">
-      <Link href={base} className="mb-4 flex items-center px-2 py-1 text-ink" aria-label="Vorix">
+    <nav className="app-shell sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-1 border-r border-border bg-card p-3 md:flex">
+      <Link href={base} className="mb-4 flex items-center px-2 py-1 text-foreground" aria-label="Vorix">
         <Logo className="h-9 w-auto" />
       </Link>
 
       <Link
         href={`${base}${CREATE_NAV_ITEM.href}`}
-        className="mb-3 flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-hover"
+        className="mb-3 flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-none transition-colors hover:bg-primary/85"
       >
         <NavIcon id={CREATE_NAV_ITEM.icon} className="h-[18px] w-[18px]" />
         <span>{CREATE_NAV_ITEM.label}</span>
@@ -68,20 +68,20 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
 
         {MAIN_NAV_SECTIONS.map((section) => (
           <div key={section.label} className="flex flex-col gap-1">
-            <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-faint">{section.label}</p>
+            <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">{section.label}</p>
             {section.items.map(renderLink)}
           </div>
         ))}
 
-        <div className="mt-1 border-t border-border/70 pt-3">{SETTINGS_NAV.map(renderLink)}</div>
+        <div className="mt-1 border-t border-border pt-3">{SETTINGS_NAV.map(renderLink)}</div>
 
         {canSeeBackstage ? (
-          <div className="mt-1 border-t border-border/70 pt-3">
+          <div className="mt-1 border-t border-border pt-3">
             <button
               type="button"
               onClick={() => setBackstageOpen((current) => !current)}
               aria-expanded={backstageOpen}
-              className="flex min-h-10 w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-ink-faint transition-colors hover:bg-surface-sunken hover:text-ink-muted"
+              className="flex h-9 w-full items-center justify-between rounded-md px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70 transition-colors hover:bg-muted hover:text-muted-foreground"
             >
               <span>Bastidor</span>
               <span aria-hidden="true" className={`transition-transform ${backstageOpen ? "rotate-90" : ""}`}>

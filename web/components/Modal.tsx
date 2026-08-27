@@ -1,7 +1,13 @@
 "use client";
 
-import { type ReactNode, useEffect } from "react";
+import type { ReactNode } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
+/** Wrapper fino sobre `components/ui/dialog` (design system, Radix) — mesma API de antes
+ * (`title`/`onClose`/`children`/`maxWidthClass`), pra nenhuma das dezenas de telas que já abrem
+ * `<Modal>` precisar mudar. Usado só pro padrão "criar/editar registro" (RHF+Zod-ready) — ver
+ * `DetailModal` pra visualizar um registro existente com seções (nunca este). */
 export function Modal({
   title,
   onClose,
@@ -13,36 +19,14 @@ export function Modal({
   children: ReactNode;
   maxWidthClass?: string;
 }) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 px-3 py-4 sm:px-4" onClick={onClose}>
-      <div
-        className={`max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-border bg-surface-raised shadow-xl ${maxWidthClass}`}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h2 className="text-sm font-semibold text-ink">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="cursor-pointer rounded-md p-1 text-ink-muted hover:bg-surface-sunken hover:text-ink"
-            aria-label="Fechar"
-          >
-            ✕
-          </button>
-        </div>
-        <div className="px-5 py-4">{children}</div>
-      </div>
-    </div>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className={cn("max-h-[88vh] w-[calc(100vw-1.5rem)] overflow-y-auto", maxWidthClass)}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        {children}
+      </DialogContent>
+    </Dialog>
   );
 }

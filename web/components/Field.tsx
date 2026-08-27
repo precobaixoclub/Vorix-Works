@@ -1,26 +1,23 @@
-import { type InputHTMLAttributes, type TextareaHTMLAttributes, forwardRef } from "react";
+import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { Input as ShadcnInput } from "@/components/ui/input";
+import { Textarea as ShadcnTextarea } from "@/components/ui/textarea";
+import { Label as ShadcnLabel } from "@/components/ui/label";
 
-const FIELD_CLASSES =
-  "w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft";
+/** Wrapper fino sobre `components/ui/{input,textarea,label}` (design system) — mesma lógica de
+ * `Button.tsx`/`Card.tsx`. */
 
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input(
-  { className = "", ...props },
-  ref,
-) {
-  return <input ref={ref} className={`${FIELD_CLASSES} ${className}`} {...props} />;
+export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input(props, ref) {
+  return <ShadcnInput ref={ref} {...props} />;
 });
 
-export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea(
-  { className = "", ...props },
-  ref,
-) {
-  return <textarea ref={ref} className={`${FIELD_CLASSES} resize-none ${className}`} {...props} />;
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea(props, ref) {
+  return <ShadcnTextarea ref={ref} {...props} />;
 });
 
 export function Label({ children, htmlFor }: { children: string; htmlFor?: string }) {
   return (
-    <label htmlFor={htmlFor} className="mb-1.5 block text-xs font-medium text-ink-muted">
+    <ShadcnLabel htmlFor={htmlFor} className="mb-1.5 block text-xs font-medium text-muted-foreground">
       {children}
-    </label>
+    </ShadcnLabel>
   );
 }

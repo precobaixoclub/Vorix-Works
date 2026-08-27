@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Instrument_Sans, Inter } from "next/font/google";
 import { AuthProvider } from "@/contexts/auth-context";
+import { Providers } from "./providers";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
@@ -20,9 +21,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${inter.variable} ${instrumentSans.variable} ${plexMono.variable}`}>
+    <html lang="pt-BR" className={`${inter.variable} ${instrumentSans.variable} ${plexMono.variable}`} suppressHydrationWarning>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <Providers>
+          <AuthProvider>{children}</AuthProvider>
+        </Providers>
       </body>
     </html>
   );

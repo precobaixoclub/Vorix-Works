@@ -1,19 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { DetailBlock, DetailModal } from "@/components/DetailModal";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label } from "@/components/Field";
+import { ListCard } from "@/components/ListCard";
 import { Modal } from "@/components/Modal";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SortableHead } from "@/components/SortableHead";
 import { Spinner } from "@/components/Spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TablePagination, usePagination } from "@/components/ui/table-pagination";
+import { useSortedRows } from "@/hooks/useSortedRows";
 import { formatDateTime } from "@/lib/format";
 import { createMetaPixel, sendMetaCapiEvent, syncMetaPixels } from "@/features/meta-ads/api";
 import { useMetaCapiEvents, useMetaPixels } from "@/features/meta-ads/hooks";
 import type { MetaAdAccount, MetaPixel } from "@/features/meta-ads/types";
 
 const EVENT_NAMES = ["PageView", "ViewContent", "AddToCart", "InitiateCheckout", "Lead", "CompleteRegistration", "Purchase"];
+type PixelSortKey = "name" | "lastFiredTime";
 
 export function PixelsTab({ workspaceId, adAccount }: { workspaceId: string; adAccount: MetaAdAccount }) {
   const { data, isLoading, error, mutate } = useMetaPixels(workspaceId, adAccount.id);
@@ -22,6 +30,15 @@ export function PixelsTab({ workspaceId, adAccount }: { workspaceId: string; adA
   const [feedback, setFeedback] = useState<string | undefined>();
   const [newPixelOpen, setNewPixelOpen] = useState(false);
   const [testingPixel, setTestingPixel] = useState<MetaPixel | undefined>();
+  const [viewingPixel, setViewingPixel] = useState<MetaPixel | undefined>();
+
+  const { sorted, sort, onSort } = useSortedRows<MetaPixel, PixelSortKey>(
+    pixels,
+    { name: (pixel) => pixel.name.toLowerCase(), lastFiredTime: (pixel) => (pixel.lastFiredTime ? new Date(pixel.lastFiredTime).getTime() : null) },
+    { key: "name", dir: "asc" },
+  );
+  const { currentPage, totalPages, paginatedItems, setCurrentPage, resetPage, totalItems, pageSize, containerRef, availableHeight } = usePagination(sorted, { auto: true });
+  useEffect(() => { resetPage(); }, [sort, resetPage]);
 
   async function handleSync() {
     setSyncing(true);
@@ -38,29 +55,64 @@ export function PixelsTab({ workspaceId, adAccount }: { workspaceId: string; adA
   }
 
   return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-ink-muted">Pixels desta conta — envie eventos de teste pra validar a Conversions API antes de integrar no seu site.</p>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">Pixels desta conta — envie eventos de teste pra validar a Conversions API antes de integrar no seu site.</p>
         <div className="flex gap-2">
-          <Button variant="secondary" disabled={syncing} onClick={handleSync}>{syncing ? "Sincronizando..." : "Sincronizar"}</Button>
+          <Button variant="outline" disabled={syncing} onClick={handleSync}>{syncing ? "Sincronizando..." : "Sincronizar"}</Button>
           <Button onClick={() => setNewPixelOpen(true)}>+ Pixel</Button>
         </div>
       </div>
 
-      {feedback ? <Card className="mb-4 border-accent/30 bg-accent-soft/30 p-3"><p className="text-sm text-ink">{feedback}</p></Card> : null}
+      {feedback ? <Card className="border-primary/30 bg-primary/5"><CardContent className="p-3"><p className="text-sm text-foreground">{feedback}</p></CardContent></Card> : null}
 
       {isLoading ? (
-        <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-accent" /></div>
+        <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-primary" /></div>
       ) : error ? (
         <ErrorState error={error} onRetry={() => mutate()} />
       ) : pixels.length === 0 ? (
         <EmptyState title="Nenhum pixel ainda" description="Crie um pixel novo, ou clique em Sincronizar para importar pixels já existentes desta conta." />
       ) : (
-        <div className="grid gap-2">
-          {pixels.map((pixel) => (
-            <PixelRow key={pixel.id} workspaceId={workspaceId} pixel={pixel} onTest={() => setTestingPixel(pixel)} />
-          ))}
-        </div>
+        <ListCard
+          ref={containerRef}
+          availableHeight={availableHeight}
+          footer={<TablePagination currentPage={currentPage} totalPages={totalPages} totalItems={totalItems} pageSize={pageSize} onPageChange={setCurrentPage} />}
+        >
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <SortableHead columnKey="name" sort={sort} onSort={onSort}>Pixel</SortableHead>
+                <SortableHead columnKey="lastFiredTime" sort={sort} onSort={onSort}>Último disparo</SortableHead>
+                <TableHead className="text-right">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginatedItems.length === 0 ? (
+                <TableRow><TableCell colSpan={3} className="py-8 text-center text-muted-foreground">Nenhum pixel nesta página.</TableCell></TableRow>
+              ) : (
+                paginatedItems.map((pixel) => (
+                  <TableRow key={pixel.id}>
+                    <TableCell>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-foreground">{pixel.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">id {pixel.pixelId}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {pixel.lastFiredTime ? formatDateTime(pixel.lastFiredTime) : <span className="text-muted-foreground">— nunca disparou</span>}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => setViewingPixel(pixel)}>Ver eventos</Button>
+                        <Button size="sm" onClick={() => setTestingPixel(pixel)}>Testar evento</Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </ListCard>
       )}
 
       {newPixelOpen ? (
@@ -77,54 +129,41 @@ export function PixelsTab({ workspaceId, adAccount }: { workspaceId: string; adA
       ) : null}
 
       {testingPixel ? <TestEventModal workspaceId={workspaceId} pixel={testingPixel} onClose={() => setTestingPixel(undefined)} /> : null}
+
+      <PixelEventsModal workspaceId={workspaceId} pixel={viewingPixel} onOpenChange={(open) => !open && setViewingPixel(undefined)} />
     </div>
   );
 }
 
-function PixelRow({ workspaceId, pixel, onTest }: { workspaceId: string; pixel: MetaPixel; onTest: () => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const { data: eventsData, isLoading } = useMetaCapiEvents(workspaceId, expanded ? pixel.id : undefined);
-  const events = eventsData?.events ?? [];
+function PixelEventsModal({ workspaceId, pixel, onOpenChange }: { workspaceId: string; pixel: MetaPixel | undefined; onOpenChange: (open: boolean) => void }) {
+  const { data, isLoading } = useMetaCapiEvents(workspaceId, pixel?.id);
+  const events = data?.events ?? [];
 
   return (
-    <Card className="overflow-hidden p-0">
-      <div className="flex flex-wrap items-center justify-between gap-2 p-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-ink">{pixel.name}</p>
-          <p className="mt-0.5 text-xs text-ink-muted">
-            id {pixel.pixelId}{pixel.lastFiredTime ? ` · último disparo ${formatDateTime(pixel.lastFiredTime)}` : " · nunca disparou"}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" className="px-2.5 py-1.5 text-xs" onClick={() => setExpanded(!expanded)}>{expanded ? "Ocultar eventos" : "Ver eventos"}</Button>
-          <Button className="px-2.5 py-1.5 text-xs" onClick={onTest}>Enviar evento de teste</Button>
-        </div>
-      </div>
-      {expanded ? (
-        <div className="border-t border-border bg-surface/70 p-3">
-          {isLoading ? (
-            <div className="flex justify-center py-4"><Spinner className="h-5 w-5 text-accent" /></div>
-          ) : events.length === 0 ? (
-            <p className="text-xs text-ink-muted">Nenhum evento enviado por aqui ainda.</p>
-          ) : (
-            <div className="grid gap-1.5">
-              {events.map((event) => (
-                <div key={event.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className={event.status === "sent" ? "text-ink" : "text-red-600"}>{event.eventName}</span>
-                    <span className="text-ink-muted">{event.userDataFields.join(", ") || "sem user_data"}</span>
-                    {event.testEventCode ? <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[10px] text-ink-muted">teste</span> : null}
-                  </div>
-                  <span className="text-ink-muted">
-                    {event.status === "sent" ? `recebido (${event.eventsReceived ?? 0})` : (event.errorMessage ?? "falhou")} · {formatDateTime(event.createdAt)}
-                  </span>
+    <DetailModal open={!!pixel} onOpenChange={onOpenChange} title={pixel?.name ?? ""} description="Eventos recentes enviados à Conversions API">
+      <DetailBlock label="Eventos">
+        {isLoading ? (
+          <div className="flex justify-center py-8"><Spinner className="h-5 w-5 text-primary" /></div>
+        ) : events.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhum evento enviado por este pixel ainda.</p>
+        ) : (
+          <div className="grid gap-2">
+            {events.map((event) => (
+              <div key={event.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className={event.status === "sent" ? "font-medium text-foreground" : "font-medium text-destructive"}>{event.eventName}</span>
+                  <span className="text-xs text-muted-foreground">{event.userDataFields.join(", ") || "sem user_data"}</span>
+                  {event.testEventCode ? <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">teste</span> : null}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : null}
-    </Card>
+                <span className="text-xs text-muted-foreground">
+                  {event.status === "sent" ? `recebido (${event.eventsReceived ?? 0})` : (event.errorMessage ?? "falhou")} · {formatDateTime(event.createdAt)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </DetailBlock>
+    </DetailModal>
   );
 }
 
@@ -157,10 +196,10 @@ function NewPixelModal({ workspaceId, adAccount, onClose, onCreated }: { workspa
           <Label htmlFor="pixel-name">Nome</Label>
           <Input id="pixel-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Pixel Loja Principal" autoFocus />
         </div>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button disabled={submitting} onClick={handleSubmit}>{submitting ? "Criando..." : "Criar pixel"}</Button>
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button type="button" disabled={submitting} onClick={handleSubmit}>{submitting ? "Criando..." : "Criar pixel"}</Button>
         </div>
       </div>
     </Modal>
@@ -204,14 +243,17 @@ function TestEventModal({ workspaceId, pixel, onClose }: { workspaceId: string; 
   return (
     <Modal title={`Enviar evento — ${pixel.name}`} onClose={onClose} maxWidthClass="sm:max-w-lg">
       <div className="grid gap-4">
-        <p className="text-xs text-ink-muted">
+        <p className="text-xs text-muted-foreground">
           E-mail/telefone são hasheados antes de sair do servidor — nunca trafegam nem ficam salvos em texto puro. Preencha o "Código de teste" (do painel Testar eventos do Events Manager) pra validar sem contaminar dados reais.
         </p>
         <div>
           <Label htmlFor="capi-event-name">Evento</Label>
-          <select id="capi-event-name" className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink" value={eventName} onChange={(event) => setEventName(event.target.value)}>
-            {EVENT_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
+          <Select value={eventName} onValueChange={setEventName}>
+            <SelectTrigger id="capi-event-name"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {EVENT_NAMES.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
@@ -237,13 +279,13 @@ function TestEventModal({ workspaceId, pixel, onClose }: { workspaceId: string; 
           <Label htmlFor="capi-test-code">Código de teste (Events Manager → Testar eventos)</Label>
           <Input id="capi-test-code" value={testEventCode} onChange={(event) => setTestEventCode(event.target.value)} placeholder="TEST12345" />
         </div>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {result ? (
-          <p className="text-sm text-ink">Enviado — {result.eventsReceived ?? 0} evento(s) recebido(s) pela Meta{result.fbtraceId ? ` (fbtrace ${result.fbtraceId})` : ""}.</p>
+          <p className="text-sm text-foreground">Enviado — {result.eventsReceived ?? 0} evento(s) recebido(s) pela Meta{result.fbtraceId ? ` (fbtrace ${result.fbtraceId})` : ""}.</p>
         ) : null}
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>Fechar</Button>
-          <Button disabled={submitting} onClick={handleSubmit}>{submitting ? "Enviando..." : "Enviar evento"}</Button>
+          <Button type="button" variant="outline" onClick={onClose}>Fechar</Button>
+          <Button type="button" disabled={submitting} onClick={handleSubmit}>{submitting ? "Enviando..." : "Enviar evento"}</Button>
         </div>
       </div>
     </Modal>

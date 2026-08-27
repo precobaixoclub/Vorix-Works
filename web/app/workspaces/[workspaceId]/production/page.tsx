@@ -17,6 +17,17 @@ import { readProductionConfig, writeProductionConfig } from "@/features/producti
 import { useProductionSettings } from "@/features/production-settings/hooks";
 import type { ContentBlueprint, IdeaProductionMode, PostingRule, ProductionAspectRatio, ProductionChannel, ProductionFormat, ProductionLineConfig, ProductionWeekday, ReferenceAssetRole, WeeklyFormatQuota } from "@/features/production-line/types";
 import { formatRelativeTime } from "@/lib/format";
+import { PageHeader } from "@/components/PageHeader";
+import { StatsGrid } from "@/components/StatsGrid";
+import { ListCard } from "@/components/ListCard";
+import { SortableHead } from "@/components/SortableHead";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TablePagination, usePagination } from "@/components/ui/table-pagination";
+import { useDebounce } from "@/hooks/useDebounce";
+import { useSortedRows } from "@/hooks/useSortedRows";
 
 const CHANNELS: ProductionChannel[] = ["instagram", "facebook", "tiktok", "youtube"];
 const FORMATS: ProductionFormat[] = ["single_image", "carousel", "video"];
@@ -68,6 +79,7 @@ type QueueTabId = (typeof QUEUE_TABS)[number]["id"];
 type PeriodFilterId = (typeof PERIOD_FILTERS)[number]["id"];
 type SortOrder = "recent" | "oldest";
 type IdeaStatusFilter = (typeof IDEA_STATUS_FILTERS)[number]["id"];
+type IdeaSortKey = "name" | "format" | "status";
 
 const CHANNEL_SHORT: Record<ProductionChannel, string> = {
   instagram: "IG",
@@ -261,7 +273,7 @@ export default function ProductionLinePage() {
   const [ideaStatusFilter, setIdeaStatusFilter] = useState<IdeaStatusFilter>("all");
   const [ideaSearch, setIdeaSearch] = useState("");
   const [formatFilter, setFormatFilter] = useState<ProductionFormat | "all">("all");
-  const [ideaFiltersOpen, setIdeaFiltersOpen] = useState(false);
+  const debouncedIdeaSearch = useDebounce(ideaSearch, 300);
   const [draftIdea, setDraftIdea] = useState<ContentBlueprint | null>(null);
   const [ideaEditorOpen, setIdeaEditorOpen] = useState(false);
   // A aba Tanque é só as ideias — configurar a rotina automática (regras, horários, canais) é
@@ -324,7 +336,7 @@ export default function ProductionLinePage() {
   }, [realRuns, workspace.id]);
 
   const visibleBlueprints = useMemo(() => {
-    const query = ideaSearch.trim().toLowerCase();
+    const query = debouncedIdeaSearch.trim().toLowerCase();
     return config.blueprints.filter((idea) => {
       const inProgress = activeGenerationIdeaIds.has(idea.id);
       if (ideaStatusFilter === "in_progress" && !inProgress) return false;
@@ -337,10 +349,47 @@ export default function ProductionLinePage() {
       }
       return true;
     });
-  }, [config.blueprints, ideaStatusFilter, formatFilter, ideaSearch, activeGenerationIdeaIds]);
+  }, [config.blueprints, ideaStatusFilter, formatFilter, debouncedIdeaSearch, activeGenerationIdeaIds]);
+
+  // Ordenação da lista INTEIRA (antes de paginar) — padrão de tela de lista do design system.
+  const { sorted: sortedBlueprints, sort: ideaSort, onSort: onIdeaSort } = useSortedRows<ContentBlueprint, IdeaSortKey>(
+    visibleBlueprints,
+    {
+      name: (idea) => displayIdeaName(idea).toLowerCase(),
+      format: (idea) => FORMAT_LABEL[idea.format],
+      status: (idea) => (generatingIdeaId === idea.id || activeGenerationIdeaIds.has(idea.id) ? 1 : idea.status === "used" ? 2 : 0),
+    },
+    { key: "name", dir: "asc" },
+  );
+
+  // Paginação adaptativa à altura da viewport (nunca PAGE_SIZE fixo).
+  const {
+    currentPage: ideaPage,
+    totalPages: ideaTotalPages,
+    paginatedItems: paginatedIdeas,
+    setCurrentPage: setIdeaPage,
+    resetPage: resetIdeaPage,
+    totalItems: totalVisibleIdeas,
+    pageSize: ideaPageSize,
+    containerRef: ideaContainerRef,
+    availableHeight: ideaAvailableHeight,
+  } = usePagination(sortedBlueprints, { auto: true });
+
+  // Reset de página ao mudar filtro OU ordenação.
+  useEffect(() => {
+    resetIdeaPage();
+  }, [debouncedIdeaSearch, ideaStatusFilter, formatFilter, ideaSort, resetIdeaPage]);
+
   const routineBlueprints = useMemo(() => config.blueprints.filter(isRoutineIdea), [config.blueprints]);
   const emptyIdeas = useMemo(() => config.blueprints.filter(isEffectivelyEmptyIdea), [config.blueprints]);
   const pendingIdeaCount = useMemo(() => config.blueprints.filter((idea) => idea.status === "available").length, [config.blueprints]);
+  // KPIs do tanque (StatsGrid) — contam sobre TODAS as ideias, não sobre o recorte filtrado.
+  const ideaStats = useMemo(() => {
+    const used = config.blueprints.filter((idea) => idea.status === "used").length;
+    const inProgress = config.blueprints.filter((idea) => activeGenerationIdeaIds.has(idea.id)).length;
+    const pending = config.blueprints.filter((idea) => idea.status === "available" && !activeGenerationIdeaIds.has(idea.id)).length;
+    return { total: config.blueprints.length, pending, inProgress, used };
+  }, [config.blueprints, activeGenerationIdeaIds]);
 
   const hasGuidelines = Boolean(productionSettings?.productionPrompt?.trim());
   const rotinaAtiva = config.postingRules.some((rule) => rule.weeklyMix.some((item) => scheduledQuantity(item) > 0));
@@ -578,49 +627,66 @@ export default function ProductionLinePage() {
 
         <PromptSetupCard workspaceId={workspace.id} hasGuidelines={hasGuidelines} compact={false} />
 
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-sm font-semibold text-ink">Tanque de ideias</p>
-            <p className="text-xs text-ink-muted">Estoque de ideias para a rotina sortear — ou gere qualquer uma agora mesmo, sem esperar.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => setRoutineDialogOpen(true)}>Configurar rotina</Button>
-            <Button onClick={addBlueprint}><span aria-hidden="true">+</span> {draftIdea ? "Continuar rascunho" : "Nova ideia"}</Button>
-          </div>
-        </div>
+        {/* BLOCO 1 — header: toda ação global da seção mora aqui, na linha do título. */}
+        <PageHeader
+          title="Tanque de ideias"
+          description="Estoque de ideias para a rotina sortear — ou gere qualquer uma agora mesmo, sem esperar."
+          actions={
+            <>
+              <Button variant="secondary" onClick={() => setRoutineDialogOpen(true)}>Configurar rotina</Button>
+              <Button onClick={addBlueprint}><span aria-hidden="true">+</span> {draftIdea ? "Continuar rascunho" : "Nova ideia"}</Button>
+            </>
+          }
+        />
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <input
-            type="search"
-            value={ideaSearch}
-            onChange={(event) => setIdeaSearch(event.target.value)}
-            placeholder="Buscar ideias"
-            className="min-h-10 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft sm:max-w-sm"
-          />
-          <Button variant="secondary" onClick={() => setIdeaFiltersOpen((open) => !open)}>
-            Filtros{activeIdeaFilterCount > 0 ? ` (${activeIdeaFilterCount})` : ""}
-          </Button>
-        </div>
-        {ideaFiltersOpen ? (
-          <div className="mt-3 rounded-lg border border-border bg-surface-sunken p-3">
+        {/* BLOCO 2 — KPIs do tanque. */}
+        <StatsGrid className="mb-4">
+          <Card><CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Total</p>
+            <p className="text-2xl font-semibold text-foreground">{ideaStats.total}</p>
+          </CardContent></Card>
+          <Card><CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Pendentes</p>
+            <p className="text-2xl font-semibold text-foreground">{ideaStats.pending}</p>
+          </CardContent></Card>
+          <Card><CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Em andamento</p>
+            <p className="text-2xl font-semibold text-foreground">{ideaStats.inProgress}</p>
+          </CardContent></Card>
+          <Card><CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Usadas</p>
+            <p className="text-2xl font-semibold text-foreground">{ideaStats.used}</p>
+          </CardContent></Card>
+        </StatsGrid>
+
+        {/* BLOCO 3 — filtros SEMPRE visíveis dentro de um Card (busca debounced). */}
+        <Card className="mb-4">
+          <CardContent className="p-4">
             <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+              <div className="min-w-64 flex-1">
+                <Input
+                  type="search"
+                  value={ideaSearch}
+                  onChange={(event) => setIdeaSearch(event.target.value)}
+                  placeholder="Buscar ideias"
+                />
+              </div>
               <div>
-                <p className="mb-1.5 text-xs font-medium text-ink-muted">Status</p>
+                <p className="mb-1.5 text-xs font-medium text-muted-foreground">Status</p>
                 <SegmentedFilter value={ideaStatusFilter} options={IDEA_STATUS_FILTERS} onChange={setIdeaStatusFilter} />
               </div>
-              <label className="flex items-center gap-2 text-xs text-ink-muted">
-                Formato
-                <select
-                  value={formatFilter}
-                  onChange={(event) => setFormatFilter(event.target.value as ProductionFormat | "all")}
-                  className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs font-medium text-ink outline-none focus:border-accent"
-                >
-                  <option value="all">Todos</option>
-                  {FORMATS.map((format) => (
-                    <option key={format} value={format}>{FORMAT_LABEL[format]}</option>
-                  ))}
-                </select>
-              </label>
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-muted-foreground">Formato</p>
+                <Select value={formatFilter} onValueChange={(value: ProductionFormat | "all") => setFormatFilter(value)}>
+                  <SelectTrigger className="w-44"><SelectValue placeholder="Formato" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os formatos</SelectItem>
+                    {FORMATS.map((format) => (
+                      <SelectItem key={format} value={format}>{FORMAT_LABEL[format]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               {activeIdeaFilterCount > 0 ? (
                 <Button
                   variant="ghost"
@@ -632,23 +698,104 @@ export default function ProductionLinePage() {
                   Limpar filtros
                 </Button>
               ) : null}
+              {emptyIdeas.length > 0 ? (
+                <button type="button" onClick={removeEmptyIdeas} className="text-xs font-medium text-amber-500 hover:text-amber-400">
+                  Limpar {emptyIdeas.length} ideia(s) sem descrição
+                </button>
+              ) : null}
             </div>
-          </div>
-        ) : null}
-        {generateIdeaError ? <p className="mt-3 text-sm text-danger">{generateIdeaError}</p> : null}
-        <IdeaInventory
-          ideas={visibleBlueprints}
-          totalIdeas={config.blueprints.length}
-          selectedId={selectedBlueprint?.id}
-          emptyCount={emptyIdeas.length}
-          generatingIdeaId={generatingIdeaId}
-          activeGenerationIdeaIds={activeGenerationIdeaIds}
-          onOpen={openBlueprint}
-          onToggleStatus={toggleBlueprintStatus}
-          onRemove={removeBlueprint}
-          onCleanEmpty={removeEmptyIdeas}
-          onGenerate={triggerGeneration}
-        />
+          </CardContent>
+        </Card>
+
+        {generateIdeaError ? <p className="mb-3 text-sm text-danger">{generateIdeaError}</p> : null}
+
+        {/* BLOCO 4 — lista: altura adaptativa + paginação colada no rodapé. */}
+        <ListCard
+          ref={ideaContainerRef}
+          availableHeight={ideaAvailableHeight}
+          footer={
+            <TablePagination
+              currentPage={ideaPage}
+              totalPages={ideaTotalPages}
+              totalItems={totalVisibleIdeas}
+              pageSize={ideaPageSize}
+              onPageChange={setIdeaPage}
+            />
+          }
+        >
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <SortableHead columnKey="name" sort={ideaSort} onSort={onIdeaSort}>Ideia</SortableHead>
+                <SortableHead columnKey="format" sort={ideaSort} onSort={onIdeaSort}>Formato</SortableHead>
+                <TableHead>Canais</TableHead>
+                <SortableHead columnKey="status" sort={ideaSort} onSort={onIdeaSort}>Status</SortableHead>
+                {/* ações NUNCA ordenam */}
+                <TableHead className="text-right">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {/* empty state DENTRO da tabela, com mensagem contextual — busca/filtro vazio ≠ tanque sem dados */}
+              {paginatedIdeas.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    {debouncedIdeaSearch || ideaStatusFilter !== "all" || formatFilter !== "all"
+                      ? "Nenhuma ideia encontrada para esses filtros."
+                      : "O tanque ainda não tem ideias — crie a primeira."}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedIdeas.map((idea) => {
+                  const selected = selectedBlueprint?.id === idea.id;
+                  const preview = idea.ideaText.trim() || idea.objective.trim() || "Rascunho sem descrição. Remova ou preencha a ideia.";
+                  const generatingNow = generatingIdeaId === idea.id || activeGenerationIdeaIds.has(idea.id);
+                  const statusLabel = generatingNow ? "Em andamento" : idea.status === "used" ? "Usada" : "Pendente";
+                  const statusBadgeClass = generatingNow ? "bg-amber-500/10 text-amber-600" : idea.status === "used" ? "" : "bg-emerald-500/10 text-emerald-600";
+                  return (
+                    <TableRow key={idea.id} className={selected ? "bg-accent/5" : undefined}>
+                      <TableCell>
+                        <div className="min-w-0 max-w-xs">
+                          <p className="truncate text-sm font-medium text-foreground">{displayIdeaName(idea)}</p>
+                          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{preview}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                          <IconFormat format={idea.format} className="h-3.5 w-3.5 shrink-0" />
+                          {FORMAT_LABEL[idea.format]}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {idea.channels.map((channel) => (
+                            <span key={channel} title={CHANNEL_LABEL[channel]} className="flex h-5 w-5 items-center justify-center rounded-md border border-border bg-muted font-mono text-[9px] font-bold text-muted-foreground">
+                              {CHANNEL_SHORT[channel]}
+                            </span>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className={statusBadgeClass || undefined}>{statusLabel}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap justify-end gap-1.5">
+                          <Button size="sm" disabled={generatingNow} onClick={() => triggerGeneration(idea)}>
+                            {generatingIdeaId === idea.id ? "Gerando…" : "Gerar agora"}
+                          </Button>
+                          <Button size="sm" variant="secondary" onClick={() => openBlueprint(idea.id)}>Abrir</Button>
+                          <Button size="sm" variant="ghost" disabled={generatingNow} onClick={() => toggleBlueprintStatus(idea)}>
+                            {idea.status === "used" ? "Voltar" : "Marcar usada"}
+                          </Button>
+                          <Button size="sm" variant="danger" disabled={generatingNow} onClick={() => removeBlueprint(idea.id)}>Remover</Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </ListCard>
 
         {routineDialogOpen ? (
           <RoutineConfigDialog
@@ -1079,101 +1226,6 @@ function IdeaFormDialog({
         </footer>
       </section>
     </div>
-  );
-}
-
-function IdeaInventory({
-  ideas,
-  totalIdeas,
-  selectedId,
-  emptyCount,
-  generatingIdeaId,
-  activeGenerationIdeaIds,
-  onOpen,
-  onToggleStatus,
-  onRemove,
-  onCleanEmpty,
-  onGenerate,
-}: {
-  ideas: ContentBlueprint[];
-  totalIdeas: number;
-  selectedId?: string;
-  emptyCount: number;
-  generatingIdeaId: string | null;
-  activeGenerationIdeaIds: Set<string>;
-  onOpen: (id: string) => void;
-  onToggleStatus: (idea: ContentBlueprint) => void;
-  onRemove: (id: string) => void;
-  onCleanEmpty: () => void;
-  onGenerate: (idea: ContentBlueprint) => void;
-}) {
-  return (
-    <section className="mt-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-ink-muted">Mostrando {ideas.length} de {totalIdeas} ideia(s).</p>
-        {emptyCount > 0 ? (
-          <button type="button" onClick={onCleanEmpty} className="text-xs font-medium text-amber-400 hover:text-amber-300">
-            Limpar {emptyCount} ideia(s) sem descrição
-          </button>
-        ) : null}
-      </div>
-
-      <div className="mt-3 max-h-[480px] overflow-y-auto rounded-lg border border-border">
-        <div className="hidden grid-cols-[2.1fr_0.9fr_1.2fr_0.9fr_1.2fr] gap-3 border-b border-border bg-surface-sunken px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint sm:grid">
-          <span>Ideia</span>
-          <span>Formato</span>
-          <span>Canais</span>
-          <span>Status</span>
-          <span className="text-right">Ações</span>
-        </div>
-
-        {ideas.length === 0 ? (
-          <div className="px-3 py-8 text-center text-sm text-ink-muted">O tanque ainda não tem ideias para este filtro.</div>
-        ) : ideas.map((idea) => {
-          const selected = selectedId === idea.id;
-          const preview = idea.ideaText.trim() || idea.objective.trim() || "Rascunho sem descrição. Remova ou preencha a ideia.";
-          const generatingNow = generatingIdeaId === idea.id || activeGenerationIdeaIds.has(idea.id);
-          const statusLabel = generatingNow ? "em andamento" : idea.status === "used" ? "usada" : "pendente";
-          const statusDotClass = generatingNow ? "bg-amber-400" : idea.status === "used" ? "bg-ink-faint" : "bg-accent";
-          return (
-            <div
-              key={idea.id}
-              className={`grid grid-cols-1 gap-2 border-b border-border px-3 py-3 last:border-b-0 sm:grid-cols-[2.1fr_0.9fr_1.2fr_0.9fr_1.2fr] sm:items-center sm:gap-3 ${selected ? "bg-accent-soft" : "hover:bg-surface-sunken"}`}
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-ink">{displayIdeaName(idea)}</p>
-                <p className="mt-0.5 line-clamp-1 text-xs text-ink-muted">{preview}</p>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-ink-muted">
-                <IconFormat format={idea.format} className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
-                {FORMAT_LABEL[idea.format]}
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {idea.channels.map((channel) => (
-                  <span key={channel} title={CHANNEL_LABEL[channel]} className="flex h-5 w-5 items-center justify-center rounded-md border border-border bg-surface-sunken font-mono text-[9px] font-bold text-ink-faint">
-                    {CHANNEL_SHORT[channel]}
-                  </span>
-                ))}
-              </div>
-              <span className="inline-flex w-fit items-center gap-1.5 text-[11px] font-medium text-ink-muted">
-                <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass}`} />
-                {statusLabel}
-              </span>
-              <div className="flex flex-wrap justify-start gap-1.5 sm:justify-end">
-                <Button className="min-h-8 px-2.5 py-1.5 text-xs" disabled={generatingNow} onClick={() => onGenerate(idea)}>
-                  {generatingIdeaId === idea.id ? "Gerando…" : "Gerar agora"}
-                </Button>
-                <Button variant="secondary" className="min-h-8 px-2.5 py-1.5 text-xs" onClick={() => onOpen(idea.id)}>Abrir</Button>
-                <Button variant="ghost" className="min-h-8 px-2.5 py-1.5 text-xs" disabled={generatingNow} onClick={() => onToggleStatus(idea)}>
-                  {idea.status === "used" ? "Voltar" : "Marcar usada"}
-                </Button>
-                <Button variant="danger" className="min-h-8 px-2.5 py-1.5 text-xs" disabled={generatingNow} onClick={() => onRemove(idea.id)}>Remover</Button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
   );
 }
 

@@ -2,13 +2,15 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label, Textarea } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { PageHeader } from "@/components/PageHeader";
+import { PageSubnav } from "@/components/PageSubnav";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -147,7 +149,7 @@ export default function MetaAdsPage() {
   if (accountsLoading) {
     return (
       <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-        <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-accent" /></div>
+        <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-primary" /></div>
       </main>
     );
   }
@@ -181,15 +183,14 @@ export default function MetaAdsPage() {
         actions={
           <>
             {accounts.length > 1 ? (
-              <select
-                className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink"
-                value={activeAccountId}
-                onChange={(event) => setSelectedAccountId(event.target.value)}
-              >
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>{account.name}</option>
-                ))}
-              </select>
+              <Select value={activeAccountId} onValueChange={setSelectedAccountId}>
+                <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {accounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             ) : null}
             {activeTab === "campaigns" ? (
               <>
@@ -201,62 +202,49 @@ export default function MetaAdsPage() {
         }
       />
 
-      {feedback ? <Card className="mb-4 border-accent/30 bg-accent-soft/30 p-3"><p className="text-sm text-ink">{feedback}</p></Card> : null}
+      {feedback ? <Card className="mb-4 border-primary/30 bg-primary/5"><CardContent className="p-3"><p className="text-sm text-foreground">{feedback}</p></CardContent></Card> : null}
 
       {activeAccount ? (
-        <p className="mb-1 text-xs text-ink-muted">
+        <p className="mb-4 text-xs text-muted-foreground">
           Conta: {activeAccount.name} ({activeAccount.accountId}) · {activeAccount.currency}
           {activeAccount.lastSyncedAt ? ` · última sincronização ${formatDateTime(activeAccount.lastSyncedAt)}` : ""}
         </p>
       ) : null}
 
-      <div className="mb-4 flex gap-1 border-b border-border">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setActiveTab(tab.key)}
-            className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-              activeTab === tab.key ? "border-accent text-ink" : "border-transparent text-ink-muted hover:text-ink"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === "campaigns" ? (
-        treeLoading ? (
-          <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-accent" /></div>
-        ) : treeError ? (
-          <ErrorState error={treeError} onRetry={() => refetchTree()} />
-        ) : !tree || tree.campaigns.length === 0 ? (
-          <EmptyState title="Nenhuma campanha ainda" description="Crie uma campanha nova ou clique em Sincronizar para importar campanhas já existentes desta conta." />
-        ) : (
-          <div className="grid gap-3">
-            {tree.campaigns.map((campaign) => (
-              <CampaignRow
-                key={campaign.id}
-                campaign={campaign}
-                currency={activeAccount?.currency ?? "BRL"}
-                expanded={expandedCampaignId === campaign.id}
-                onToggle={() => setExpandedCampaignId(expandedCampaignId === campaign.id ? undefined : campaign.id)}
-                onToggleStatus={() => handleToggleCampaignStatus(campaign)}
-                onNewAdSet={() => setNewAdSetForCampaign(campaign)}
-                adSets={tree.adSets.filter((adSet) => adSet.campaignId === campaign.id)}
-                ads={tree.ads}
-                onToggleAdSetStatus={handleToggleAdSetStatus}
-                onToggleAdStatus={handleToggleAdStatus}
-                onNewAd={(adSet) => setNewAdForAdSet(adSet)}
-              />
-            ))}
-          </div>
-        )
-      ) : activeTab === "audiences" ? (
-        activeAccount ? <AudiencesTab workspaceId={workspace.id} adAccount={activeAccount} /> : null
-      ) : activeAccount ? (
-        <PixelsTab workspaceId={workspace.id} adAccount={activeAccount} />
-      ) : null}
+      <PageSubnav items={TABS.map((tab) => ({ value: tab.key, label: tab.label }))} value={activeTab} onValueChange={(value) => setActiveTab(value as TabKey)}>
+        {activeTab === "campaigns" ? (
+          treeLoading ? (
+            <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-primary" /></div>
+          ) : treeError ? (
+            <ErrorState error={treeError} onRetry={() => refetchTree()} />
+          ) : !tree || tree.campaigns.length === 0 ? (
+            <EmptyState title="Nenhuma campanha ainda" description="Crie uma campanha nova ou clique em Sincronizar para importar campanhas já existentes desta conta." />
+          ) : (
+            <div className="grid gap-3">
+              {tree.campaigns.map((campaign) => (
+                <CampaignRow
+                  key={campaign.id}
+                  campaign={campaign}
+                  currency={activeAccount?.currency ?? "BRL"}
+                  expanded={expandedCampaignId === campaign.id}
+                  onToggle={() => setExpandedCampaignId(expandedCampaignId === campaign.id ? undefined : campaign.id)}
+                  onToggleStatus={() => handleToggleCampaignStatus(campaign)}
+                  onNewAdSet={() => setNewAdSetForCampaign(campaign)}
+                  adSets={tree.adSets.filter((adSet) => adSet.campaignId === campaign.id)}
+                  ads={tree.ads}
+                  onToggleAdSetStatus={handleToggleAdSetStatus}
+                  onToggleAdStatus={handleToggleAdStatus}
+                  onNewAd={(adSet) => setNewAdForAdSet(adSet)}
+                />
+              ))}
+            </div>
+          )
+        ) : activeTab === "audiences" ? (
+          activeAccount ? <AudiencesTab workspaceId={workspace.id} adAccount={activeAccount} /> : null
+        ) : activeAccount ? (
+          <PixelsTab workspaceId={workspace.id} adAccount={activeAccount} />
+        ) : null}
+      </PageSubnav>
 
       {newCampaignOpen && activeAccountId ? (
         <NewCampaignModal
@@ -318,43 +306,43 @@ function CampaignRow({ campaign, currency, expanded, onToggle, onToggleStatus, o
       <div className="flex w-full flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
         <button type="button" onClick={onToggle} className="min-w-0 flex-1 text-left">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-sm font-semibold text-ink">{campaign.name}</h3>
+            <h3 className="truncate text-sm font-semibold text-foreground">{campaign.name}</h3>
             <StatusBadge status={statusOf(campaign.status)} />
           </div>
-          <p className="mt-1 text-xs text-ink-muted">{campaign.objective ?? "—"} · {adSets.length} conjunto{adSets.length === 1 ? "" : "s"} de anúncios</p>
+          <p className="mt-1 text-xs text-muted-foreground">{campaign.objective ?? "—"} · {adSets.length} conjunto{adSets.length === 1 ? "" : "s"} de anúncios</p>
         </button>
         <div className="flex shrink-0 items-center gap-3 text-sm">
           <div className="text-right">
-            <p className="font-medium text-ink">{money(campaign.spend, currency)}</p>
-            <p className="text-xs text-ink-muted">{campaign.impressions ?? 0} impressões · {campaign.clicks ?? 0} cliques</p>
+            <p className="font-medium text-foreground">{money(campaign.spend, currency)}</p>
+            <p className="text-xs text-muted-foreground">{campaign.impressions ?? 0} impressões · {campaign.clicks ?? 0} cliques</p>
           </div>
           {!campaign.deletedAt ? (
             <Button variant="secondary" className="px-2.5 py-1.5 text-xs" onClick={onToggleStatus}>
               {campaign.status === "ACTIVE" ? "Pausar" : "Ativar"}
             </Button>
           ) : null}
-          <button type="button" onClick={onToggle} className="text-ink-muted">{expanded ? "▾" : "▸"}</button>
+          <button type="button" onClick={onToggle} className="text-muted-foreground">{expanded ? "▾" : "▸"}</button>
         </div>
       </div>
 
       {expanded ? (
-        <div className="border-t border-border bg-surface/70 p-3 sm:p-4">
+        <div className="border-t border-border bg-muted/40 p-3 sm:p-4">
           <div className="mb-3 flex justify-end">
             <Button variant="secondary" className="px-2.5 py-1.5 text-xs" disabled={!!campaign.deletedAt} onClick={onNewAdSet}>+ Conjunto de anúncios</Button>
           </div>
           {adSets.length === 0 ? (
-            <p className="text-xs text-ink-muted">Nenhum conjunto de anúncios nesta campanha.</p>
+            <p className="text-xs text-muted-foreground">Nenhum conjunto de anúncios nesta campanha.</p>
           ) : (
             <div className="grid gap-2">
               {adSets.map((adSet) => (
-                <div key={adSet.id} className="rounded-xl border border-border bg-surface-raised p-3">
+                <div key={adSet.id} className="rounded-xl border border-border bg-card p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-ink">{adSet.name}</p>
+                      <p className="text-sm font-medium text-foreground">{adSet.name}</p>
                       <StatusBadge status={statusOf(adSet.status)} />
                     </div>
                     <div className="flex items-center gap-2">
-                      <p className="text-sm text-ink">{money(adSet.spend, currency)}</p>
+                      <p className="text-sm text-foreground">{money(adSet.spend, currency)}</p>
                       {!adSet.deletedAt ? (
                         <Button variant="secondary" className="px-2.5 py-1 text-xs" onClick={() => onToggleAdSetStatus(adSet)}>
                           {adSet.status === "ACTIVE" ? "Pausar" : "Ativar"}
@@ -366,11 +354,11 @@ function CampaignRow({ campaign, currency, expanded, onToggle, onToggleStatus, o
                     {ads.filter((ad) => ad.adSetId === adSet.id).map((ad) => (
                       <div key={ad.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
                         <div className="flex items-center gap-2">
-                          <span className="text-ink-muted">{ad.name}</span>
+                          <span className="text-muted-foreground">{ad.name}</span>
                           <StatusBadge status={statusOf(ad.status)} />
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-ink-muted">{money(ad.spend, currency)} · {ad.impressions ?? 0} impr.</span>
+                          <span className="text-muted-foreground">{money(ad.spend, currency)} · {ad.impressions ?? 0} impr.</span>
                           {!ad.deletedAt ? (
                             <Button variant="secondary" className="px-2 py-0.5 text-xs" onClick={() => onToggleAdStatus(ad)}>
                               {ad.status === "ACTIVE" ? "Pausar" : "Ativar"}
@@ -379,7 +367,7 @@ function CampaignRow({ campaign, currency, expanded, onToggle, onToggleStatus, o
                         </div>
                       </div>
                     ))}
-                    {ads.filter((ad) => ad.adSetId === adSet.id).length === 0 ? <p className="text-xs text-ink-muted">Nenhum anúncio neste conjunto.</p> : null}
+                    {ads.filter((ad) => ad.adSetId === adSet.id).length === 0 ? <p className="text-xs text-muted-foreground">Nenhum anúncio neste conjunto.</p> : null}
                     <div className="flex justify-end pt-1">
                       <Button variant="ghost" className="px-2 py-1 text-xs" disabled={!!adSet.deletedAt} onClick={() => onNewAd(adSet)}>+ Anúncio</Button>
                     </div>
@@ -426,22 +414,25 @@ function NewCampaignModal({ workspaceId, adAccountId, onClose, onCreated }: { wo
   return (
     <Modal title="Nova campanha" onClose={onClose}>
       <div className="grid gap-4">
-        <p className="text-xs text-ink-muted">A campanha nasce pausada — revise tudo no Ads Manager antes de ativar.</p>
+        <p className="text-xs text-muted-foreground">A campanha nasce pausada — revise tudo no Ads Manager antes de ativar.</p>
         <div>
           <Label htmlFor="campaign-name">Nome</Label>
           <Input id="campaign-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Black Friday — Tráfego" autoFocus />
         </div>
         <div>
           <Label htmlFor="campaign-objective">Objetivo</Label>
-          <select id="campaign-objective" className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink" value={objective} onChange={(event) => setObjective(event.target.value)}>
-            {OBJECTIVES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
+          <Select value={objective} onValueChange={setObjective}>
+            <SelectTrigger id="campaign-objective"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {OBJECTIVES.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <Label htmlFor="campaign-budget">Orçamento diário (opcional)</Label>
           <Input id="campaign-budget" type="number" min={0} step="0.01" value={dailyBudget} onChange={(event) => setDailyBudget(event.target.value)} placeholder="Ex.: 50" />
         </div>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>Cancelar</Button>
           <Button disabled={submitting} onClick={handleSubmit}>{submitting ? "Criando..." : "Criar campanha"}</Button>
@@ -498,7 +489,7 @@ function NewAdSetModal({ workspaceId, campaign, onClose, onCreated }: { workspac
   return (
     <Modal title={`Novo conjunto de anúncios em "${campaign.name}"`} onClose={onClose}>
       <div className="grid gap-4">
-        <p className="text-xs text-ink-muted">Nasce pausado, na mesma conta de anúncio da campanha.</p>
+        <p className="text-xs text-muted-foreground">Nasce pausado, na mesma conta de anúncio da campanha.</p>
         <div>
           <Label htmlFor="adset-name">Nome</Label>
           <Input id="adset-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Público frio — SP/RJ" autoFocus />
@@ -506,15 +497,21 @@ function NewAdSetModal({ workspaceId, campaign, onClose, onCreated }: { workspac
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="adset-optimization">Otimização</Label>
-            <select id="adset-optimization" className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink" value={optimizationGoal} onChange={(event) => setOptimizationGoal(event.target.value)}>
-              {OPTIMIZATION_GOALS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
+            <Select value={optimizationGoal} onValueChange={setOptimizationGoal}>
+              <SelectTrigger id="adset-optimization"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {OPTIMIZATION_GOALS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label htmlFor="adset-billing">Cobrança por</Label>
-            <select id="adset-billing" className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink" value={billingEvent} onChange={(event) => setBillingEvent(event.target.value)}>
-              {BILLING_EVENTS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
+            <Select value={billingEvent} onValueChange={setBillingEvent}>
+              <SelectTrigger id="adset-billing"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {BILLING_EVENTS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <div>
@@ -535,7 +532,7 @@ function NewAdSetModal({ workspaceId, campaign, onClose, onCreated }: { workspac
             <Input id="adset-age-max" type="number" min={13} max={65} value={ageMax} onChange={(event) => setAgeMax(event.target.value)} />
           </div>
         </div>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>Cancelar</Button>
           <Button disabled={submitting} onClick={handleSubmit}>{submitting ? "Criando..." : "Criar conjunto de anúncios"}</Button>
@@ -587,7 +584,7 @@ function NewAdModal({ workspaceId, adSet, onClose, onCreated }: { workspaceId: s
   return (
     <Modal title={`Novo anúncio em "${adSet.name}"`} onClose={onClose} maxWidthClass="sm:max-w-lg">
       <div className="grid gap-4">
-        <p className="text-xs text-ink-muted">
+        <p className="text-xs text-muted-foreground">
           Anúncio de link — nasce pausado, referenciando uma imagem já publicada em algum lugar (URL), sem upload de mídia nesta primeira versão.
         </p>
         <div>
@@ -616,11 +613,14 @@ function NewAdModal({ workspaceId, adSet, onClose, onCreated }: { workspaceId: s
         </div>
         <div>
           <Label htmlFor="ad-cta">Botão de ação</Label>
-          <select id="ad-cta" className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink" value={callToActionType} onChange={(event) => setCallToActionType(event.target.value)}>
-            {CALL_TO_ACTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
+          <Select value={callToActionType} onValueChange={setCallToActionType}>
+            <SelectTrigger id="ad-cta"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {CALL_TO_ACTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>Cancelar</Button>
           <Button disabled={submitting} onClick={handleSubmit}>{submitting ? "Criando..." : "Criar anúncio"}</Button>

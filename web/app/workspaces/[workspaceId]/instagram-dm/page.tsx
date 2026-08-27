@@ -6,6 +6,8 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { PageSubnav } from "@/components/PageSubnav";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/Spinner";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useMetaOAuthStatus } from "@/features/meta/hooks";
@@ -30,7 +32,7 @@ export default function InstagramDmPage() {
   if (isLoading) {
     return (
       <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-        <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-accent" /></div>
+        <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-primary" /></div>
       </main>
     );
   }
@@ -63,40 +65,26 @@ export default function InstagramDmPage() {
         description="Inbox de DM e respostas automáticas por palavra-chave."
         actions={
           accounts.length > 1 ? (
-            <select
-              className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink"
-              value={activeAccountId}
-              onChange={(event) => setSelectedAccountId(event.target.value)}
-            >
-              {accounts.map((account) => (
-                <option key={account.providerSubjectId} value={account.providerSubjectId}>{account.displayName ?? account.providerSubjectId}</option>
-              ))}
-            </select>
+            <Select value={activeAccountId} onValueChange={setSelectedAccountId}>
+              <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {accounts.map((account) => (
+                  <SelectItem key={account.providerSubjectId} value={account.providerSubjectId}>{account.displayName ?? account.providerSubjectId}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           ) : undefined
         }
       />
 
-      <div className="mb-4 flex gap-1 border-b border-border">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setActiveTab(tab.key)}
-            className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-              activeTab === tab.key ? "border-accent text-ink" : "border-transparent text-ink-muted hover:text-ink"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
       {activeAccount ? (
-        activeTab === "conversations" ? (
-          <ConversationsTab workspaceId={workspace.id} instagramBusinessAccountId={activeAccount.providerSubjectId} />
-        ) : (
-          <AutomationTab workspaceId={workspace.id} instagramBusinessAccountId={activeAccount.providerSubjectId} />
-        )
+        <PageSubnav items={TABS.map((tab) => ({ value: tab.key, label: tab.label }))} value={activeTab} onValueChange={(value) => setActiveTab(value as TabKey)}>
+          {activeTab === "conversations" ? (
+            <ConversationsTab workspaceId={workspace.id} instagramBusinessAccountId={activeAccount.providerSubjectId} />
+          ) : (
+            <AutomationTab workspaceId={workspace.id} instagramBusinessAccountId={activeAccount.providerSubjectId} />
+          )}
+        </PageSubnav>
       ) : null}
     </main>
   );

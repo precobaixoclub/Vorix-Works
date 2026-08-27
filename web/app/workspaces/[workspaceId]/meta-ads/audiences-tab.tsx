@@ -1,13 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label, Textarea } from "@/components/Field";
+import { ListCard } from "@/components/ListCard";
 import { Modal } from "@/components/Modal";
+import { SortableHead } from "@/components/SortableHead";
 import { Spinner } from "@/components/Spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TablePagination, usePagination } from "@/components/ui/table-pagination";
+import { useSortedRows } from "@/hooks/useSortedRows";
 import { createMetaCustomAudience, createMetaLookalikeAudience, searchMetaAdInterests, syncMetaCustomAudiences } from "@/features/meta-ads/api";
 import { useMetaCustomAudiences } from "@/features/meta-ads/hooks";
 import type { MetaAdAccount, MetaAdInterest, MetaCustomAudience } from "@/features/meta-ads/types";
@@ -23,6 +28,8 @@ function parseCustomersFromText(text: string): { email?: string; phone?: string 
     });
 }
 
+type AudienceSortKey = "name" | "subtype" | "approximateCount";
+
 export function AudiencesTab({ workspaceId, adAccount }: { workspaceId: string; adAccount: MetaAdAccount }) {
   const { data, isLoading, error, mutate } = useMetaCustomAudiences(workspaceId, adAccount.id);
   const audiences = data?.audiences ?? [];
@@ -30,6 +37,14 @@ export function AudiencesTab({ workspaceId, adAccount }: { workspaceId: string; 
   const [feedback, setFeedback] = useState<string | undefined>();
   const [newAudienceOpen, setNewAudienceOpen] = useState(false);
   const [lookalikeOrigin, setLookalikeOrigin] = useState<MetaCustomAudience | undefined>();
+
+  const { sorted, sort, onSort } = useSortedRows<MetaCustomAudience, AudienceSortKey>(
+    audiences,
+    { name: (audience) => audience.name.toLowerCase(), subtype: (audience) => audience.subtype, approximateCount: (audience) => audience.approximateCount ?? null },
+    { key: "name", dir: "asc" },
+  );
+  const { currentPage, totalPages, paginatedItems, setCurrentPage, resetPage, totalItems, pageSize, containerRef, availableHeight } = usePagination(sorted, { auto: true });
+  useEffect(() => { resetPage(); }, [sort, resetPage]);
 
   async function handleSync() {
     setSyncing(true);
@@ -46,45 +61,67 @@ export function AudiencesTab({ workspaceId, adAccount }: { workspaceId: string; 
   }
 
   return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-ink-muted">Públicos customizados e semelhantes desta conta, mais busca de interesses pra segmentação.</p>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">Públicos customizados e semelhantes desta conta, mais busca de interesses pra segmentação.</p>
         <div className="flex gap-2">
-          <Button variant="secondary" disabled={syncing} onClick={handleSync}>{syncing ? "Sincronizando..." : "Sincronizar"}</Button>
+          <Button variant="outline" disabled={syncing} onClick={handleSync}>{syncing ? "Sincronizando..." : "Sincronizar"}</Button>
           <Button onClick={() => setNewAudienceOpen(true)}>+ Público</Button>
         </div>
       </div>
 
-      {feedback ? <Card className="mb-4 border-accent/30 bg-accent-soft/30 p-3"><p className="text-sm text-ink">{feedback}</p></Card> : null}
+      {feedback ? <Card className="border-primary/30 bg-primary/5"><CardContent className="p-3"><p className="text-sm text-foreground">{feedback}</p></CardContent></Card> : null}
 
       <InterestSearch workspaceId={workspaceId} adAccount={adAccount} />
 
       {isLoading ? (
-        <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-accent" /></div>
+        <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-primary" /></div>
       ) : error ? (
         <ErrorState error={error} onRetry={() => mutate()} />
       ) : audiences.length === 0 ? (
         <EmptyState title="Nenhum público ainda" description="Crie um público a partir de uma lista de clientes, ou clique em Sincronizar para importar públicos já existentes." />
       ) : (
-        <div className="mt-4 grid gap-2">
-          {audiences.map((audience) => (
-            <Card key={audience.id} className="flex flex-wrap items-center justify-between gap-2 p-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="truncate text-sm font-medium text-ink">{audience.name}</p>
-                  <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] text-ink-muted">{audience.subtype}</span>
-                </div>
-                <p className="mt-0.5 text-xs text-ink-muted">
-                  {audience.approximateCount !== undefined ? `~${audience.approximateCount.toLocaleString("pt-BR")} pessoas` : "Tamanho ainda não calculado"}
-                  {audience.subtype === "LOOKALIKE" && audience.lookalikeRatio !== undefined ? ` · ${(audience.lookalikeRatio * 100).toFixed(0)}% · ${audience.lookalikeCountry}` : ""}
-                </p>
-              </div>
-              {audience.subtype !== "LOOKALIKE" && !audience.deletedAt ? (
-                <Button variant="secondary" className="px-2.5 py-1.5 text-xs" onClick={() => setLookalikeOrigin(audience)}>+ Semelhante</Button>
-              ) : null}
-            </Card>
-          ))}
-        </div>
+        <ListCard
+          ref={containerRef}
+          availableHeight={availableHeight}
+          footer={<TablePagination currentPage={currentPage} totalPages={totalPages} totalItems={totalItems} pageSize={pageSize} onPageChange={setCurrentPage} />}
+        >
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <SortableHead columnKey="name" sort={sort} onSort={onSort}>Público</SortableHead>
+                <SortableHead columnKey="subtype" sort={sort} onSort={onSort}>Tipo</SortableHead>
+                <SortableHead columnKey="approximateCount" sort={sort} onSort={onSort} align="right">Tamanho</SortableHead>
+                <TableHead className="text-right">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginatedItems.length === 0 ? (
+                <TableRow><TableCell colSpan={4} className="py-8 text-center text-muted-foreground">Nenhum público nesta página.</TableCell></TableRow>
+              ) : (
+                paginatedItems.map((audience) => (
+                  <TableRow key={audience.id}>
+                    <TableCell className="font-medium text-foreground">{audience.name}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {audience.subtype}
+                      {audience.subtype === "LOOKALIKE" && audience.lookalikeRatio !== undefined ? ` · ${(audience.lookalikeRatio * 100).toFixed(0)}% · ${audience.lookalikeCountry}` : ""}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {audience.approximateCount !== undefined ? `~${audience.approximateCount.toLocaleString("pt-BR")}` : "—"}
+                    </TableCell>
+                    <TableCell>
+                      {audience.subtype !== "LOOKALIKE" && !audience.deletedAt ? (
+                        <div className="flex justify-end">
+                          <Button size="sm" variant="ghost" onClick={() => setLookalikeOrigin(audience)}>+ Semelhante</Button>
+                        </div>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </ListCard>
       )}
 
       {newAudienceOpen ? (
@@ -137,25 +174,27 @@ function InterestSearch({ workspaceId, adAccount }: { workspaceId: string; adAcc
   }
 
   return (
-    <Card className="mb-4 p-3">
-      <p className="mb-2 text-xs font-medium text-ink-muted">Buscar interesses (pra usar na segmentação de um conjunto de anúncios)</p>
-      <div className="flex gap-2">
-        <Input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && handleSearch()} placeholder="Ex.: fitness, viagem, moda" />
-        <Button variant="secondary" disabled={searching || query.trim().length < 2} onClick={handleSearch}>{searching ? "Buscando..." : "Buscar"}</Button>
-      </div>
-      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
-      {results && results.length > 0 ? (
-        <div className="mt-3 grid gap-1.5">
-          {results.map((interest) => (
-            <div key={interest.id} className="flex items-center justify-between gap-2 rounded-lg bg-surface-sunken px-3 py-1.5 text-xs">
-              <span className="text-ink">{interest.name}</span>
-              <span className="text-ink-muted">{interest.audienceSize ? `~${interest.audienceSize.toLocaleString("pt-BR")}` : "—"} · id {interest.id}</span>
-            </div>
-          ))}
+    <Card>
+      <CardContent className="p-3">
+        <p className="mb-2 text-xs font-medium text-muted-foreground">Buscar interesses (pra usar na segmentação de um conjunto de anúncios)</p>
+        <div className="flex gap-2">
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && handleSearch()} placeholder="Ex.: fitness, viagem, moda" />
+          <Button variant="outline" disabled={searching || query.trim().length < 2} onClick={handleSearch}>{searching ? "Buscando..." : "Buscar"}</Button>
         </div>
-      ) : results && results.length === 0 ? (
-        <p className="mt-2 text-xs text-ink-muted">Nenhum interesse encontrado.</p>
-      ) : null}
+        {error ? <p className="mt-2 text-sm text-destructive">{error}</p> : null}
+        {results && results.length > 0 ? (
+          <div className="mt-3 grid gap-1.5">
+            {results.map((interest) => (
+              <div key={interest.id} className="flex items-center justify-between gap-2 rounded-lg bg-muted px-3 py-1.5 text-xs">
+                <span className="text-foreground">{interest.name}</span>
+                <span className="text-muted-foreground">{interest.audienceSize ? `~${interest.audienceSize.toLocaleString("pt-BR")}` : "—"} · id {interest.id}</span>
+              </div>
+            ))}
+          </div>
+        ) : results && results.length === 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">Nenhum interesse encontrado.</p>
+        ) : null}
+      </CardContent>
     </Card>
   );
 }
@@ -188,7 +227,7 @@ function NewCustomAudienceModal({ workspaceId, adAccount, onClose, onCreated }: 
   return (
     <Modal title="Novo público (lista de clientes)" onClose={onClose} maxWidthClass="sm:max-w-lg">
       <div className="grid gap-4">
-        <p className="text-xs text-ink-muted">
+        <p className="text-xs text-muted-foreground">
           E-mail e telefone são hasheados (SHA-256) no seu navegador antes de sair pra Meta — o dado cru nunca é salvo. Todos os contatos precisam ter os mesmos campos preenchidos (só e-mail, só telefone, ou os dois).
         </p>
         <div>
@@ -203,10 +242,10 @@ function NewCustomAudienceModal({ workspaceId, adAccount, onClose, onCreated }: 
           <Label htmlFor="audience-customers">Contatos (opcional — um por linha, "e-mail,telefone")</Label>
           <Textarea id="audience-customers" rows={6} value={customersText} onChange={(event) => setCustomersText(event.target.value)} placeholder={"maria@exemplo.com,11999998888\njoao@exemplo.com,11888887777"} />
         </div>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button disabled={submitting} onClick={handleSubmit}>{submitting ? "Criando..." : "Criar público"}</Button>
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button type="button" disabled={submitting} onClick={handleSubmit}>{submitting ? "Criando..." : "Criar público"}</Button>
         </div>
       </div>
     </Modal>
@@ -259,10 +298,10 @@ function NewLookalikeModal({ workspaceId, origin, onClose, onCreated }: { worksp
             <Input id="lookalike-country" value={country} onChange={(event) => setCountry(event.target.value)} placeholder="BR" />
           </div>
         </div>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button disabled={submitting} onClick={handleSubmit}>{submitting ? "Criando..." : "Criar público semelhante"}</Button>
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button type="button" disabled={submitting} onClick={handleSubmit}>{submitting ? "Criando..." : "Criar público semelhante"}</Button>
         </div>
       </div>
     </Modal>

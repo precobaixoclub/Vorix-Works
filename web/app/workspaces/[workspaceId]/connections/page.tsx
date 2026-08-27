@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { META_RETURN_PATH_KEY } from "@/app/instagram/callback/page";
@@ -151,6 +152,7 @@ function MetaConnection({ workspaceId, onFeedback }: { workspaceId: string; onFe
 function MetaAdsConnection({ workspaceId, onFeedback }: { workspaceId: string; onFeedback: (message: string | undefined) => void }) {
   const { data: oauth, mutate } = useMetaAdsOAuthStatus(workspaceId);
   const [busy, setBusy] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const references = oauth?.credentialReferences.filter((reference) => reference.status !== "revoked") ?? [];
   const activeReference = references.find((reference) => reference.status === "active");
   const { data: accountsData } = useMetaAdAccounts(workspaceId, Boolean(activeReference));
@@ -210,7 +212,7 @@ function MetaAdsConnection({ workspaceId, onFeedback }: { workspaceId: string; o
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           {activeReference ? (
-            <Button variant="secondary" disabled={busy} onClick={() => disconnect(activeReference.credentialReferenceId)}>Desconectar</Button>
+            <Button variant="secondary" disabled={busy} onClick={() => setConfirmDisconnect(true)}>Desconectar</Button>
           ) : (
             <Button disabled={busy || !configured} onClick={connect}>{humanStatus === "needs_attention" ? "Reconectar" : "Conectar"}</Button>
           )}
@@ -231,6 +233,22 @@ function MetaAdsConnection({ workspaceId, onFeedback }: { workspaceId: string; o
             ))}
           </div>
         </div>
+      ) : null}
+
+      {activeReference ? (
+        <ConfirmDialog
+          open={confirmDisconnect}
+          title="Desconectar Meta Ads?"
+          description={`Isso desconecta a integração de Meta Ads deste workspace${accounts.length > 0 ? ` e para de sincronizar ${accounts.length} conta${accounts.length === 1 ? "" : "s"} de anúncio` : ""}. Campanhas deixarão de ser gerenciadas por aqui até você reconectar.`}
+          confirmLabel="Desconectar"
+          variant="danger"
+          busy={busy}
+          onConfirm={async () => {
+            await disconnect(activeReference.credentialReferenceId);
+            setConfirmDisconnect(false);
+          }}
+          onCancel={() => setConfirmDisconnect(false)}
+        />
       ) : null}
     </Card>
   );
@@ -282,7 +300,8 @@ function YouTubeConnection({ workspaceId, onFeedback }: { workspaceId: string; o
   );
 }
 
-function ConnectionCard({ icon, name, description, configured, busy, accounts, onConnect, onDisconnect }: { icon: string; name: string; description: string; configured: boolean; busy: boolean; accounts: readonly AccountRow[]; onConnect: () => void; onDisconnect: (id: string) => void }) {
+function ConnectionCard({ icon, name, description, configured, busy, accounts, onConnect, onDisconnect }: { icon: string; name: string; description: string; configured: boolean; busy: boolean; accounts: readonly AccountRow[]; onConnect: () => void; onDisconnect: (id: string) => void | Promise<void> }) {
+  const [confirmTarget, setConfirmTarget] = useState<AccountRow | null>(null);
   const activeAccounts = accounts.filter((account) => account.status === "active");
   const inactiveAccounts = accounts.filter((account) => account.status !== "active");
   const connected = activeAccounts.length > 0;
@@ -325,13 +344,27 @@ function ConnectionCard({ icon, name, description, configured, busy, accounts, o
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge status={account.status === "active" ? "connected" : "needs_attention"} />
-                  <Button variant="secondary" disabled={busy} onClick={() => onDisconnect(account.id)}>Desconectar</Button>
+                  <Button variant="secondary" disabled={busy} onClick={() => setConfirmTarget(account)}>Desconectar</Button>
                 </div>
               </div>
             ))}
           </div>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        title={`Desconectar de ${name}?`}
+        description={`Isso desconecta "${confirmTarget?.label ?? ""}" de ${name}. Você vai precisar reconectar essa conta para voltar a publicar por ela.`}
+        confirmLabel="Desconectar"
+        variant="danger"
+        busy={busy}
+        onConfirm={async () => {
+          if (confirmTarget) await onDisconnect(confirmTarget.id);
+          setConfirmTarget(null);
+        }}
+        onCancel={() => setConfirmTarget(null)}
+      />
     </Card>
   );
 }

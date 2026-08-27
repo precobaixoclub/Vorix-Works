@@ -32,7 +32,7 @@ export function ConversationsTab({ workspaceId, instagramBusinessAccountId }: { 
   }
 
   if (isLoading) {
-    return <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-accent" /></div>;
+    return <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-primary" /></div>;
   }
   if (error) {
     return <ErrorState error={error} onRetry={() => mutate()} />;
@@ -50,19 +50,19 @@ export function ConversationsTab({ workspaceId, instagramBusinessAccountId }: { 
             type="button"
             onClick={() => handleSelect(conversation)}
             className={`rounded-xl border p-3 text-left transition-colors ${
-              conversation.id === selectedId ? "border-accent bg-accent-soft/30" : "border-border bg-surface hover:bg-surface-sunken"
+              conversation.id === selectedId ? "border-primary bg-primary/10" : "border-border bg-card hover:bg-muted"
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <p className={`truncate text-sm ${conversation.unread ? "font-semibold text-ink" : "font-medium text-ink"}`}>
+              <p className={`truncate text-sm ${conversation.unread ? "font-semibold text-foreground" : "font-medium text-foreground"}`}>
                 {conversation.participantUsername ? `@${conversation.participantUsername}` : conversation.participantId}
               </p>
-              {conversation.unread ? <span className="h-2 w-2 shrink-0 rounded-full bg-accent" /> : null}
+              {conversation.unread ? <span className="h-2 w-2 shrink-0 rounded-full bg-primary" /> : null}
             </div>
-            <p className="mt-0.5 truncate text-xs text-ink-muted">
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
               {senderLabel(conversation)}{conversation.lastMessagePreview ?? "—"}
             </p>
-            {conversation.automationMuted ? <p className="mt-1 text-[11px] text-ink-faint">Automação pausada nesta conversa</p> : null}
+            {conversation.automationMuted ? <p className="mt-1 text-[11px] text-muted-foreground/70">Automação pausada nesta conversa</p> : null}
           </button>
         ))}
       </div>
@@ -71,7 +71,7 @@ export function ConversationsTab({ workspaceId, instagramBusinessAccountId }: { 
         {selected ? (
           <ConversationThread workspaceId={workspaceId} conversation={selected} onMutedChange={() => mutate()} />
         ) : (
-          <div className="flex flex-1 items-center justify-center p-6 text-sm text-ink-muted">Selecione uma conversa pra ver as mensagens.</div>
+          <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">Selecione uma conversa pra ver as mensagens.</div>
         )}
       </Card>
     </div>
@@ -113,7 +113,7 @@ function ConversationThread({ workspaceId, conversation, onMutedChange }: { work
   return (
     <div className="flex flex-1 flex-col">
       <div className="flex items-center justify-between gap-2 border-b border-border p-3">
-        <p className="text-sm font-medium text-ink">{conversation.participantUsername ? `@${conversation.participantUsername}` : conversation.participantId}</p>
+        <p className="text-sm font-medium text-foreground">{conversation.participantUsername ? `@${conversation.participantUsername}` : conversation.participantId}</p>
         <Button variant="secondary" className="px-2.5 py-1.5 text-xs" onClick={handleToggleMute}>
           {conversation.automationMuted ? "Reativar automação" : "Assumir conversa (pausar automação)"}
         </Button>
@@ -121,15 +121,15 @@ function ConversationThread({ workspaceId, conversation, onMutedChange }: { work
 
       <div className="flex-1 space-y-2 overflow-y-auto p-3">
         {isLoading ? (
-          <div className="flex justify-center py-8"><Spinner className="h-5 w-5 text-accent" /></div>
+          <div className="flex justify-center py-8"><Spinner className="h-5 w-5 text-primary" /></div>
         ) : messages.length === 0 ? (
-          <p className="text-center text-xs text-ink-muted">Nenhuma mensagem ainda.</p>
+          <p className="text-center text-xs text-muted-foreground">Nenhuma mensagem ainda.</p>
         ) : (
           messages.map((message) => (
             <div key={message.id} className={`flex ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${message.direction === "outbound" ? "bg-accent text-white" : "bg-surface-sunken text-ink"}`}>
+              <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${message.direction === "outbound" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"}`}>
                 <p>{message.messageText}</p>
-                <p className={`mt-1 text-[10px] ${message.direction === "outbound" ? "text-white/70" : "text-ink-faint"}`}>
+                <p className={`mt-1 text-[10px] ${message.direction === "outbound" ? "text-primary-foreground/70" : "text-muted-foreground/70"}`}>
                   {message.sender === "automation" ? "Automação · " : ""}{formatDateTime(message.sentAt)}
                 </p>
               </div>
@@ -139,7 +139,7 @@ function ConversationThread({ workspaceId, conversation, onMutedChange }: { work
       </div>
 
       <div className="border-t border-border p-3">
-        {error ? <p className="mb-2 text-xs text-red-600">{error}</p> : null}
+        {error ? <p className="mb-2 text-xs text-destructive">{error}</p> : null}
         <div className="flex gap-2">
           <Input value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => event.key === "Enter" && handleSend()} placeholder="Escreva uma resposta..." />
           <Button disabled={sending || !text.trim()} onClick={handleSend}>{sending ? "Enviando..." : "Enviar"}</Button>

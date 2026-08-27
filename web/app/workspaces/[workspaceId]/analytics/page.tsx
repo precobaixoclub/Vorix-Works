@@ -2,11 +2,28 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/Button";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Funnel,
+  FunnelChart,
+  LabelList,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Card } from "@/components/Card";
+import { axisProps, CHART_COLORS, ChartCard, KpiCard, tooltipStyle } from "@/components/DashboardKit";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label } from "@/components/Field";
+import { PageHeader } from "@/components/PageHeader";
+import { StatsGrid } from "@/components/StatsGrid";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { getAnalyticsExport, requestAnalyticsExport } from "@/features/analytics/api";
@@ -97,44 +114,43 @@ export default function AnalyticsPage() {
 
   return (
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
-      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Resultados</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">Analytics</h1>
-          <p className="mt-2 max-w-2xl text-sm text-ink-muted">Entenda o que aconteceu, o que funcionou e onde vale agir agora.</p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end xl:justify-end">
-          <div>
-            <Label htmlFor="period">Período</Label>
-            <select id="period" value={periodChoice} onChange={(event) => setPeriodChoice(event.target.value as PeriodChoice)} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink sm:w-36">
-              {PERIODS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-            </select>
-          </div>
-          {periodChoice === "custom" ? (
-            <>
-              <div>
-                <Label htmlFor="period-from">Início</Label>
-                <Input id="period-from" type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="period-to">Fim</Label>
-                <Input id="period-to" type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
-              </div>
-            </>
-          ) : null}
-          <div>
-            <Label htmlFor="timezone">Fuso</Label>
-            <Input id="timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} className="sm:w-44" />
-          </div>
-          <details className="relative">
-            <summary className="flex min-h-10 cursor-pointer list-none items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">Exportar</summary>
-            <div className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-border bg-surface-raised p-1 shadow-xl">
-              <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-surface-sunken" onClick={() => exportFormat("csv")}>CSV</button>
-              <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-surface-sunken" onClick={() => exportFormat("json")}>JSON</button>
+      <PageHeader
+        title="Analytics"
+        description="Entenda o que aconteceu, o que funcionou e onde vale agir agora."
+        actions={
+          <>
+            <div>
+              <Label htmlFor="period">Período</Label>
+              <select id="period" value={periodChoice} onChange={(event) => setPeriodChoice(event.target.value as PeriodChoice)} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink sm:w-36">
+                {PERIODS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
             </div>
-          </details>
-        </div>
-      </div>
+            {periodChoice === "custom" ? (
+              <>
+                <div>
+                  <Label htmlFor="period-from">Início</Label>
+                  <Input id="period-from" type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="period-to">Fim</Label>
+                  <Input id="period-to" type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
+                </div>
+              </>
+            ) : null}
+            <div>
+              <Label htmlFor="timezone">Fuso</Label>
+              <Input id="timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} className="sm:w-44" />
+            </div>
+            <details className="relative">
+              <summary className="flex min-h-10 cursor-pointer list-none items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">Exportar</summary>
+              <div className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-border bg-surface-raised p-1 shadow-xl">
+                <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-surface-sunken" onClick={() => exportFormat("csv")}>CSV</button>
+                <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-surface-sunken" onClick={() => exportFormat("json")}>JSON</button>
+              </div>
+            </details>
+          </>
+        }
+      />
 
       {exportError ? <Card className="mb-4 border-red-200 bg-red-50 p-3 text-sm text-red-700">{exportError}</Card> : null}
       {exportDetail ? <Card className="mb-4 p-3 text-sm text-ink-muted">Exportação {exportDetail.job.status}. {exportDetail.artifact ? "Arquivo gerado para download via API." : "Arquivo ainda em processamento."}</Card> : null}
@@ -171,21 +187,27 @@ function OverviewPanel({ result, isLoading, error, onRetry, insights, publicatio
   if (error) return <ErrorState error={error} onRetry={onRetry} />;
   if (!result || !hasResultData(result, publications)) return <NoData />;
 
-  const cards = [
-    metricCard(result, "publication_requested_total", "Publicações"),
-    metricCard(result, "publication_completed_total", "Publicadas"),
-    metricCard(result, "publication_success_rate", "Taxa de sucesso"),
-    metricCard(result, "publication_failed_total", "Falhas"),
-  ];
+  const requested = metricCard(result, "publication_requested_total", "Publicações");
+  const completed = metricCard(result, "publication_completed_total", "Publicadas");
+  const successRate = metricCard(result, "publication_success_rate", "Taxa de sucesso");
+  const failed = metricCard(result, "publication_failed_total", "Falhas");
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {cards.map((card) => <MetricCard key={card.id} {...card} />)}
-      </div>
+    <div className="space-y-4">
+      <StatsGrid>
+        <KpiCard label={requested.label} value={requested.value} hint={metricHint(requested.comparison)} />
+        <KpiCard label={completed.label} value={completed.value} hint={metricHint(completed.comparison)} />
+        <KpiCard label={successRate.label} value={successRate.value} hint={metricHint(successRate.comparison)} accent="positive" />
+        <KpiCard label={failed.label} value={failed.value} hint={metricHint(failed.comparison)} accent="negative" />
+      </StatsGrid>
       <Freshness result={result} />
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
-        <LineChart result={result} metricId="publication_completed_total" title="Publicações ao longo do tempo" />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
+        <TimeSeriesChart
+          result={result}
+          metricId="publication_completed_total"
+          title="Publicações ao longo do tempo"
+          description="Publicações concluídas por dia no período selecionado."
+        />
         <InsightSummary insights={insights} />
       </div>
       <BestContents publications={publications} workspaceId={workspaceId} />
@@ -199,17 +221,21 @@ function ContentPanel({ campaigns, publication, funnel, publications, isLoading,
   if (!campaigns && !publication && publications.length === 0) return <NoData />;
 
   const formatRows = formatDistribution(publications);
+  const generated = metricCard(campaigns, "content_items_generated_total", "Gerados");
+  const approved = metricCard(campaigns, "content_items_approved_total", "Aprovados");
+  const published = metricCard(publication, "publication_completed_total", "Publicados");
+  const withFailure = metricCard(publication, "publication_failed_total", "Com falha");
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <MetricCard {...metricCard(campaigns, "content_items_generated_total", "Gerados")} />
-        <MetricCard {...metricCard(campaigns, "content_items_approved_total", "Aprovados")} />
-        <MetricCard {...metricCard(publication, "publication_completed_total", "Publicados")} />
-        <MetricCard {...metricCard(publication, "publication_failed_total", "Com falha")} />
-      </div>
-      <div className="grid gap-5 xl:grid-cols-2">
-        <HorizontalRanking title="Desempenho por formato" rows={formatRows} />
-        {funnel?.funnel ? <FunnelChart stages={funnel.funnel} /> : <EmptyCard title="Funil editorial" description="Ainda não há dados suficientes para montar o funil." />}
+    <div className="space-y-4">
+      <StatsGrid>
+        <KpiCard label={generated.label} value={generated.value} hint={metricHint(generated.comparison)} />
+        <KpiCard label={approved.label} value={approved.value} hint={metricHint(approved.comparison)} accent="positive" />
+        <KpiCard label={published.label} value={published.value} hint={metricHint(published.comparison)} />
+        <KpiCard label={withFailure.label} value={withFailure.value} hint={metricHint(withFailure.comparison)} accent="negative" />
+      </StatsGrid>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <RankingChart title="Desempenho por formato" description="Publicações por tipo de conteúdo no período." rows={formatRows} />
+        {funnel?.funnel ? <EditorialFunnelChart stages={funnel.funnel} /> : <EmptyCard title="Funil editorial" description="Ainda não há dados suficientes para montar o funil." />}
       </div>
       <BestContents publications={publications} workspaceId={workspaceId} />
     </div>
@@ -246,19 +272,24 @@ function NetworksPanel({ providers, publications, isLoading, error, onRetry }: {
 function AiPanel({ campaigns, execution, isLoading, error, onRetry }: { campaigns?: AnalyticsQueryResult; execution?: AnalyticsQueryResult; isLoading: boolean; error?: unknown; onRetry: () => void }) {
   if (isLoading) return <AnalyticsSkeleton />;
   if (error) return <ErrorState error={error} onRetry={onRetry} />;
-  const cards = [
-    metricCard(campaigns, "content_items_generated_total", "Conteúdos gerados"),
-    metricCard(campaigns, "content_items_approved_total", "Aprovados"),
-    metricCard(campaigns, "content_items_rejected_total", "Rejeições/alterações"),
-    metricCard(execution, "execution_duration_ms", "Tempo médio"),
-  ];
+  const generated = metricCard(campaigns, "content_items_generated_total", "Conteúdos gerados");
+  const approved = metricCard(campaigns, "content_items_approved_total", "Aprovados");
+  const rejected = metricCard(campaigns, "content_items_rejected_total", "Rejeições/alterações");
+  const duration = metricCard(execution, "execution_duration_ms", "Tempo médio");
+  const cards = [generated, approved, rejected, duration];
   const hasData = cards.some((card) => Number(card.rawValue ?? 0) > 0);
   if (!hasData) return <NoData message="Ainda não há dados de IA suficientes para leitura executiva." />;
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{cards.map((card) => <MetricCard key={card.id} {...card} />)}</div>
-      <HorizontalRanking
+    <div className="space-y-4">
+      <StatsGrid>
+        <KpiCard label={generated.label} value={generated.value} hint={metricHint(generated.comparison)} />
+        <KpiCard label={approved.label} value={approved.value} hint={metricHint(approved.comparison)} accent="positive" />
+        <KpiCard label={rejected.label} value={rejected.value} hint={metricHint(rejected.comparison)} accent="negative" />
+        <KpiCard label={duration.label} value={duration.value} hint={metricHint(duration.comparison)} />
+      </StatsGrid>
+      <RankingChart
         title="Fluxo de conteúdo"
+        description="Comparação entre volume gerado, aprovado e com ajuste."
         rows={[
           { label: "Gerados", value: metricNumber(campaigns, "content_items_generated_total") },
           { label: "Aprovados", value: metricNumber(campaigns, "content_items_approved_total") },
@@ -274,14 +305,20 @@ function HealthPanel({ publication, quality, alerts, isLoading, error, onRetry }
   if (error) return <ErrorState error={error} onRetry={onRetry} />;
   const failureRate = metricNumber(publication, "publication_failure_rate");
   const failures = metricNumber(publication, "publication_failed_total");
+  const successRate = metricCard(publication, "publication_success_rate", "Taxa de sucesso");
+  const failed = metricCard(publication, "publication_failed_total", "Falhas");
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <MetricCard {...metricCard(publication, "publication_success_rate", "Taxa de sucesso")} />
-        <MetricCard {...metricCard(publication, "publication_failed_total", "Falhas")} />
-        <MetricCard id="active-alerts" label="Alertas" value={String(alerts.length)} rawValue={alerts.length} />
-        <MetricCard id="quality" label="Qualidade" value={quality ? qualityLabel(quality.status) : "Pendente"} rawValue={quality ? 1 : 0} />
-      </div>
+    <div className="space-y-4">
+      <StatsGrid>
+        <KpiCard label={successRate.label} value={successRate.value} hint={metricHint(successRate.comparison)} accent="positive" />
+        <KpiCard label={failed.label} value={failed.value} hint={metricHint(failed.comparison)} accent="negative" />
+        <KpiCard label="Alertas" value={String(alerts.length)} accent={alerts.length > 0 ? "negative" : "default"} />
+        <KpiCard
+          label="Qualidade"
+          value={quality ? qualityLabel(quality.status) : "Pendente"}
+          accent={quality?.status === "critical" ? "negative" : quality?.status === "healthy" ? "positive" : "default"}
+        />
+      </StatsGrid>
       <Card className="p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -343,75 +380,72 @@ function BestContents({ publications, workspaceId }: { publications: readonly Un
   );
 }
 
-function MetricCard({ label, value, comparison }: { id: string; label: string; value: string; rawValue?: number | null; comparison?: string }) {
+/** Vira o `hint` do KpiCard — "—" some, o card só mostra o número quando não há comparação. */
+function metricHint(comparison?: string) {
+  return comparison ? `${comparison} vs. período anterior` : undefined;
+}
+
+function TimeSeriesChart({ result, metricId, title, description }: { result: AnalyticsQueryResult; metricId: string; title: string; description?: string }) {
+  const points = useMemo(
+    () =>
+      result.series.points
+        .map((point) => ({ label: formatAxisDate(point.from), value: Number(point.values[metricId] ?? 0) }))
+        .filter((point) => Number.isFinite(point.value)),
+    [result, metricId],
+  );
+  const empty = points.length < 2 || points.every((point) => point.value === 0);
   return (
-    <Card className="p-4">
-      <p className="text-xs font-medium text-ink-muted">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-ink">{value}</p>
-      {comparison ? <p className={`mt-1 text-xs font-medium ${comparison.startsWith("-") ? "text-red-600" : "text-status-active"}`}>{comparison} vs. período anterior</p> : null}
-    </Card>
+    <ChartCard title={title} description={description} empty={empty} emptyText="Ainda não há pontos suficientes para mostrar evolução.">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={points} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+          <XAxis dataKey="label" {...axisProps} />
+          <YAxis {...axisProps} allowDecimals={false} />
+          <Tooltip {...tooltipStyle} formatter={(value) => formatNumber(Number(value ?? 0))} />
+          <Area type="monotone" dataKey="value" name="Publicações" stroke={CHART_COLORS[0]} fill={CHART_COLORS[0]} fillOpacity={0.25} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </ChartCard>
   );
 }
 
-function LineChart({ result, metricId, title }: { result: AnalyticsQueryResult; metricId: string; title: string }) {
-  const points = result.series.points.map((point) => ({ label: point.from, value: Number(point.values[metricId] ?? 0) })).filter((point) => Number.isFinite(point.value));
-  const max = Math.max(0, ...points.map((point) => point.value));
-  if (points.length < 2 || max === 0) return <EmptyCard title={title} description="Ainda não há pontos suficientes para mostrar evolução." />;
-  const polyline = points.map((point, index) => `${(index / Math.max(1, points.length - 1)) * 100},${60 - (point.value / max) * 52}`).join(" ");
+function RankingChart({ title, description, rows }: { title: string; description?: string; rows: readonly { label: string; value: number }[] }) {
+  const cleanRows = useMemo(() => rows.filter((row) => row.value > 0).slice(0, 6), [rows]);
   return (
-    <Card className="p-4">
-      <h2 className="mb-4 text-sm font-semibold text-ink">{title}</h2>
-      <svg viewBox="0 0 100 64" className="h-56 w-full overflow-visible" preserveAspectRatio="none">
-        <polyline fill="none" stroke="currentColor" strokeWidth="2.5" points={polyline} className="text-accent" vectorEffect="non-scaling-stroke" />
-        {points.map((point, index) => (
-          <circle key={`${point.label}-${index}`} cx={(index / Math.max(1, points.length - 1)) * 100} cy={60 - (point.value / max) * 52} r="1.4" className="fill-accent" />
-        ))}
-      </svg>
-      <div className="mt-2 flex justify-between gap-3 text-xs text-ink-muted">
-        <span>{new Date(points[0].label).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</span>
-        <span>{new Date(points[points.length - 1].label).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</span>
-      </div>
-    </Card>
+    <ChartCard title={title} description={description} empty={cleanRows.length === 0} emptyText="Ainda não há dados suficientes para esta leitura.">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={cleanRows} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+          <XAxis type="number" allowDecimals={false} {...axisProps} />
+          <YAxis type="category" dataKey="label" width={120} {...axisProps} />
+          <Tooltip {...tooltipStyle} formatter={(value) => formatNumber(Number(value ?? 0))} />
+          <Bar dataKey="value" name="Quantidade" fill={CHART_COLORS[0]} radius={[0, 4, 4, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
   );
 }
 
-function HorizontalRanking({ title, rows }: { title: string; rows: readonly { label: string; value: number }[] }) {
-  const cleanRows = rows.filter((row) => row.value > 0).slice(0, 6);
-  const max = Math.max(1, ...cleanRows.map((row) => row.value));
-  if (cleanRows.length === 0) return <EmptyCard title={title} description="Ainda não há dados suficientes para esta leitura." />;
-  return (
-    <Card className="p-4">
-      <h2 className="mb-4 text-sm font-semibold text-ink">{title}</h2>
-      <div className="space-y-3">
-        {cleanRows.map((row) => (
-          <div key={row.label}>
-            <div className="mb-1 flex justify-between gap-3 text-xs">
-              <span className="truncate text-ink-muted">{row.label}</span>
-              <span className="font-medium text-ink">{formatNumber(row.value)}</span>
-            </div>
-            <div className="h-2 rounded-full bg-surface-sunken"><div className="h-2 rounded-full bg-accent" style={{ width: `${Math.max(4, (row.value / max) * 100)}%` }} /></div>
-          </div>
-        ))}
-      </div>
-    </Card>
+function EditorialFunnelChart({ stages }: { stages: NonNullable<AnalyticsQueryResult["funnel"]> }) {
+  const data = useMemo(
+    () => stages.map((stage) => ({ name: `${stageLabel(stage.stage)} · ${formatNumber(stage.conversionRate)}%`, value: stage.input })),
+    [stages],
   );
-}
-
-function FunnelChart({ stages }: { stages: NonNullable<AnalyticsQueryResult["funnel"]> }) {
-  const max = Math.max(1, ...stages.map((stage) => stage.input));
+  const empty = data.length === 0 || data.every((point) => point.value === 0);
   return (
-    <Card className="p-4">
-      <h2 className="mb-4 text-sm font-semibold text-ink">Funil editorial</h2>
-      <div className="space-y-3">
-        {stages.map((stage) => (
-          <div key={stage.stage} className="grid gap-2 sm:grid-cols-[120px_1fr_72px] sm:items-center">
-            <span className="text-sm text-ink-muted">{stageLabel(stage.stage)}</span>
-            <div className="h-8 rounded bg-surface-sunken"><div className="flex h-8 items-center rounded bg-accent px-3 text-xs font-medium text-white" style={{ width: `${Math.max(8, (stage.input / max) * 100)}%` }}>{formatNumber(stage.input)}</div></div>
-            <span className="text-xs text-ink-muted sm:text-right">{formatNumber(stage.conversionRate)}%</span>
-          </div>
-        ))}
-      </div>
-    </Card>
+    <ChartCard title="Funil editorial" description="Volume de itens em cada etapa da produção." empty={empty} emptyText="Ainda não há dados suficientes para montar o funil.">
+      <ResponsiveContainer width="100%" height="100%">
+        <FunnelChart>
+          <Tooltip {...tooltipStyle} formatter={(value) => formatNumber(Number(value ?? 0))} />
+          <Funnel dataKey="value" data={data} nameKey="name" isAnimationActive={false}>
+            <LabelList position="right" dataKey="name" fill="hsl(var(--foreground))" stroke="none" fontSize={12} />
+            {data.map((entry, index) => (
+              <Cell key={entry.name} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+            ))}
+          </Funnel>
+        </FunnelChart>
+      </ResponsiveContainer>
+    </ChartCard>
   );
 }
 
@@ -478,9 +512,9 @@ function NoData({ message = "Publique conteúdos para começar a acompanhar os r
 
 function AnalyticsSkeleton() {
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-xl bg-surface-sunken" />)}</div>
-      <div className="grid gap-5 xl:grid-cols-2">{Array.from({ length: 2 }, (_, index) => <div key={index} className="h-64 animate-pulse rounded-xl bg-surface-sunken" />)}</div>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-xl bg-surface-sunken" />)}</div>
+      <div className="grid gap-4 xl:grid-cols-2">{Array.from({ length: 2 }, (_, index) => <div key={index} className="h-64 animate-pulse rounded-xl bg-surface-sunken" />)}</div>
     </div>
   );
 }
@@ -625,6 +659,12 @@ function formatMetric(value: number, unit: string) {
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(value);
+}
+
+function formatAxisDate(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(date);
 }
 
 function periodString(choice: PeriodChoice, from: string, to: string) {

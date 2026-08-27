@@ -1,13 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input } from "@/components/Field";
+import { ListCard } from "@/components/ListCard";
+import { PageHeader } from "@/components/PageHeader";
+import { SortableHead } from "@/components/SortableHead";
 import { Spinner } from "@/components/Spinner";
+import { StatsGrid } from "@/components/StatsGrid";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TablePagination, usePagination } from "@/components/ui/table-pagination";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { cancelUnifiedPublication } from "@/features/publication-history/api";
 import { useUnifiedPublications } from "@/features/publication-history/hooks";
@@ -20,15 +27,9 @@ import {
   type PublicationNetwork,
   type UnifiedPublication,
 } from "@/features/publication-history/types";
+import { useDebounce } from "@/hooks/useDebounce";
+import { useSortedRows } from "@/hooks/useSortedRows";
 import { formatDateTime } from "@/lib/format";
-
-function IconChevron({ className = "h-3 w-3" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
-      <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 const NETWORK_LABEL: Record<PublicationNetwork, string> = { tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", youtube: "YouTube Shorts" };
 const NETWORK_ICON: Record<PublicationNetwork, string> = { tiktok: "♪", instagram: "◎", facebook: "f", youtube: "▶" };
@@ -39,6 +40,16 @@ const FORMAT_GRADIENT: Record<PublicationContentType, string> = {
   video: "from-rose-500/70 via-orange-500/55 to-amber-500/65",
   carousel: "from-emerald-500/70 via-teal-500/55 to-cyan-500/65",
   text: "from-slate-600/70 via-zinc-500/55 to-slate-700/65",
+};
+
+// Ordinal usado só para ordenar a coluna Status da tabela — não é exibido.
+const STATUS_ORDER: Record<PublicationDisplayStatus, number> = {
+  draft: 0,
+  scheduled: 1,
+  publishing: 2,
+  published: 3,
+  failed: 4,
+  cancelled: 5,
 };
 
 const NETWORK_FILTERS: Array<{ value: PublicationNetwork | "all"; label: string }> = [
@@ -68,6 +79,7 @@ const FORMAT_FILTERS: Array<{ value: PublicationContentType | "all"; label: stri
 
 type DateFilter = "all" | "upcoming" | "past" | "this_month";
 type ViewMode = "grid" | "list";
+type PublicationSortKey = "title" | "network" | "format" | "status" | "date";
 
 const DATE_FILTERS: Array<{ value: DateFilter; label: string }> = [
   { value: "all", label: "Qualquer data" },
@@ -95,10 +107,11 @@ export default function ContentsPage() {
   const [formatFilter, setFormatFilter] = useState<PublicationContentType | "all">("all");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | undefined>();
   const [selectedPost, setSelectedPost] = useState<UnifiedPublication | undefined>();
   const { data: publications, isLoading, error, mutate } = useUnifiedPublications(workspace.id);
+
+  const debouncedSearch = useDebounce(search, 300);
 
   const stats = useMemo(() => {
     const statuses = (publications ?? []).map((publication) => derivePublicationStatus(publication));
@@ -119,15 +132,45 @@ export default function ContentsPage() {
     search.trim() !== "",
   ].filter(Boolean).length;
 
+  // 1 — filtro (busca debounced: o Input recebe `search` cru, o filtro lê `debouncedSearch`)
   const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = debouncedSearch.trim().toLowerCase();
     return (publications ?? [])
       .filter((publication) => (networkFilter === "all" ? true : publication.network === networkFilter))
       .filter((publication) => (statusFilter === "all" ? true : derivePublicationStatus(publication) === statusFilter))
       .filter((publication) => (formatFilter === "all" ? true : contentTypeOf(publication) === formatFilter))
       .filter((publication) => matchesDate(publication.scheduledAt ?? publication.publishedAt ?? publication.createdAt, dateFilter))
       .filter((publication) => (query ? titleOf(publication).toLowerCase().includes(query) || publication.text.toLowerCase().includes(query) : true));
-  }, [publications, networkFilter, statusFilter, formatFilter, dateFilter, search]);
+  }, [publications, networkFilter, statusFilter, formatFilter, dateFilter, debouncedSearch]);
+
+  // 2 — ordenação da lista INTEIRA (antes de paginar; só usada pela visão "Lista")
+  const { sorted, sort, onSort } = useSortedRows<UnifiedPublication, PublicationSortKey>(
+    filtered,
+    {
+      title: (post) => titleOf(post).toLowerCase(),
+      network: (post) => NETWORK_LABEL[post.network].toLowerCase(),
+      format: (post) => FORMAT_LABEL[contentTypeOf(post)].toLowerCase(),
+      status: (post) => STATUS_ORDER[derivePublicationStatus(post)] ?? 0,
+      date: (post) => {
+        const iso = publicationDate(post);
+        if (!iso) return null;
+        const time = new Date(iso).getTime();
+        return Number.isNaN(time) ? null : time;
+      },
+    },
+    { key: "date", dir: "desc" },
+  );
+
+  // 3 — paginação adaptativa à altura da viewport (só usada pela visão "Lista")
+  const {
+    currentPage, totalPages, paginatedItems, setCurrentPage, resetPage,
+    totalItems, pageSize, containerRef, availableHeight,
+  } = usePagination(sorted, { auto: true });
+
+  // 4 — reset de página ao mudar filtro OU ordenação
+  useEffect(() => {
+    resetPage();
+  }, [debouncedSearch, networkFilter, statusFilter, formatFilter, dateFilter, sort, resetPage]);
 
   async function cancel(post: UnifiedPublication) {
     setBusyId(post.id);
@@ -140,110 +183,172 @@ export default function ContentsPage() {
     }
   }
 
-  const filters = (
-    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_150px_150px_150px_150px]">
-      <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar conteúdo" aria-label="Buscar conteúdo" className="w-full" />
-      <FilterSelect label="Rede" value={networkFilter} onChange={(value) => setNetworkFilter(value as PublicationNetwork | "all")} options={NETWORK_FILTERS} />
-      <FilterSelect label="Status" value={statusFilter} onChange={(value) => setStatusFilter(value as PublicationDisplayStatus | "all")} options={STATUS_FILTERS} />
-      <FilterSelect label="Periodo" value={dateFilter} onChange={(value) => setDateFilter(value as DateFilter)} options={DATE_FILTERS} />
-      <FilterSelect label="Formato" value={formatFilter} onChange={(value) => setFormatFilter(value as PublicationContentType | "all")} options={FORMAT_FILTERS} />
-    </div>
-  );
-
   return (
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
-      <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Biblioteca</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">Conteúdos</h1>
-          <p className="mt-2 max-w-2xl text-sm text-ink-muted">Veja, filtre e reutilize tudo que já foi criado ou publicado.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-lg border border-border bg-surface-raised p-1">
-            <button type="button" onClick={() => setViewMode("grid")} className={viewModeButtonClass(viewMode === "grid")}>Grid</button>
-            <button type="button" onClick={() => setViewMode("list")} className={viewModeButtonClass(viewMode === "list")}>Lista</button>
-          </div>
-          <Link href={`/workspaces/${workspace.id}/create`}><Button variant="secondary">Criar conteúdo</Button></Link>
-        </div>
-      </div>
-
-      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-        <StatPill label="Total" value={stats.total} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
-        <StatPill label="Publicados" value={stats.published} active={statusFilter === "published"} onClick={() => setStatusFilter("published")} />
-        <StatPill label="Agendados" value={stats.scheduled} active={statusFilter === "scheduled"} onClick={() => setStatusFilter("scheduled")} />
-        <StatPill label="Com erro" value={stats.failed} active={statusFilter === "failed"} onClick={() => setStatusFilter("failed")} />
-        <StatPill label="Cancelados" value={stats.cancelled} active={statusFilter === "cancelled"} onClick={() => setStatusFilter("cancelled")} />
-      </div>
+      <PageHeader
+        title="Conteúdos"
+        description="Veja, filtre e reutilize tudo que já foi criado ou publicado."
+        actions={
+          <>
+            <div className="inline-flex rounded-lg border border-border bg-surface-raised p-1">
+              <button type="button" onClick={() => setViewMode("grid")} className={viewModeButtonClass(viewMode === "grid")}>Grid</button>
+              <button type="button" onClick={() => setViewMode("list")} className={viewModeButtonClass(viewMode === "list")}>Lista</button>
+            </div>
+            <Link href={`/workspaces/${workspace.id}/create`}><Button variant="secondary">Criar conteúdo</Button></Link>
+          </>
+        }
+      />
 
       <div className="mb-5">
-        <button
-          type="button"
-          onClick={() => setFiltersOpen((open) => !open)}
-          className="flex min-h-9 items-center gap-1.5 rounded-lg border border-border bg-surface-raised px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface-sunken"
-          aria-expanded={filtersOpen}
-        >
-          Filtrar
-          {activeFilterCount > 0 ? (
-            <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">{activeFilterCount}</span>
-          ) : null}
-          <IconChevron className={`h-3 w-3 transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
-        </button>
-
-        {filtersOpen ? (
-          <div className="mt-2 rounded-2xl border border-border bg-surface-raised/50 p-3">
-            {filters}
-            {activeFilterCount > 0 ? (
-              <div className="mt-2 flex justify-end">
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setSearch("");
-                    setNetworkFilter("all");
-                    setStatusFilter("all");
-                    setFormatFilter("all");
-                    setDateFilter("all");
-                  }}
-                >
-                  Limpar filtros
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+        <StatsGrid>
+          <StatCard label="Total" value={stats.total} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
+          <StatCard label="Publicados" value={stats.published} active={statusFilter === "published"} onClick={() => setStatusFilter("published")} />
+          <StatCard label="Agendados" value={stats.scheduled} active={statusFilter === "scheduled"} onClick={() => setStatusFilter("scheduled")} />
+          <StatCard label="Com erro" value={stats.failed} active={statusFilter === "failed"} onClick={() => setStatusFilter("failed")} />
+          <StatCard label="Cancelados" value={stats.cancelled} active={statusFilter === "cancelled"} onClick={() => setStatusFilter("cancelled")} />
+        </StatsGrid>
       </div>
+
+      <Card className="mb-5">
+        <CardContent className="p-4">
+          <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_150px_150px_150px_150px]">
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar conteúdo" aria-label="Buscar conteúdo" className="w-full" />
+            <FilterSelect label="Rede" value={networkFilter} onChange={(value) => setNetworkFilter(value as PublicationNetwork | "all")} options={NETWORK_FILTERS} />
+            <FilterSelect label="Status" value={statusFilter} onChange={(value) => setStatusFilter(value as PublicationDisplayStatus | "all")} options={STATUS_FILTERS} />
+            <FilterSelect label="Período" value={dateFilter} onChange={(value) => setDateFilter(value as DateFilter)} options={DATE_FILTERS} />
+            <FilterSelect label="Formato" value={formatFilter} onChange={(value) => setFormatFilter(value as PublicationContentType | "all")} options={FORMAT_FILTERS} />
+          </div>
+          {activeFilterCount > 0 ? (
+            <div className="mt-2 flex justify-end">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSearch("");
+                  setNetworkFilter("all");
+                  setStatusFilter("all");
+                  setFormatFilter("all");
+                  setDateFilter("all");
+                }}
+              >
+                Limpar filtros
+              </Button>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       {isLoading ? (
         <div className="flex justify-center py-14"><Spinner /></div>
       ) : error ? (
         <ErrorState error={error} onRetry={() => mutate()} />
-      ) : !publications || publications.length === 0 ? (
-        <EmptyState
-          title="Nenhum conteúdo ainda"
-          description="Quando algo for publicado ou agendado, a biblioteca aparece aqui."
-          action={<Link href={`/workspaces/${workspace.id}/create`}><Button variant="secondary">Criar conteúdo</Button></Link>}
-        />
-      ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border py-14 text-center text-sm text-ink-muted">
-          Nenhum conteúdo corresponde aos filtros aplicados.
-        </div>
       ) : viewMode === "grid" ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((post) => (
-            <PublicationCard key={`${post.network}-${post.id}`} workspaceId={workspace.id} post={post} busy={busyId === post.id} onOpen={() => setSelectedPost(post)} onCancel={() => cancel(post)} />
-          ))}
-        </div>
+        !publications || publications.length === 0 ? (
+          <EmptyState
+            title="Nenhum conteúdo ainda"
+            description="Quando algo for publicado ou agendado, a biblioteca aparece aqui."
+            action={<Link href={`/workspaces/${workspace.id}/create`}><Button variant="secondary">Criar conteúdo</Button></Link>}
+          />
+        ) : filtered.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border py-14 text-center text-sm text-ink-muted">
+            Nenhum conteúdo corresponde aos filtros aplicados.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {filtered.map((post) => (
+              <PublicationCard key={`${post.network}-${post.id}`} workspaceId={workspace.id} post={post} busy={busyId === post.id} onOpen={() => setSelectedPost(post)} onCancel={() => cancel(post)} />
+            ))}
+          </div>
+        )
       ) : (
-        <div className="grid gap-3">
-          {filtered.map((post) => (
-            <PublicationListItem key={`${post.network}-${post.id}`} workspaceId={workspace.id} post={post} busy={busyId === post.id} onOpen={() => setSelectedPost(post)} onCancel={() => cancel(post)} />
-          ))}
-        </div>
+        <ListCard
+          ref={containerRef}
+          availableHeight={availableHeight}
+          footer={
+            <TablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+            />
+          }
+        >
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <SortableHead columnKey="title" sort={sort} onSort={onSort}>Conteúdo</SortableHead>
+                <SortableHead columnKey="network" sort={sort} onSort={onSort}>Rede</SortableHead>
+                <SortableHead columnKey="format" sort={sort} onSort={onSort}>Formato</SortableHead>
+                <SortableHead columnKey="status" sort={sort} onSort={onSort}>Status</SortableHead>
+                <SortableHead columnKey="date" sort={sort} onSort={onSort} align="right">Data</SortableHead>
+                <TableHead className="text-right">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginatedItems.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    {!publications || publications.length === 0
+                      ? "Nenhum conteúdo ainda"
+                      : "Nenhum conteúdo corresponde aos filtros aplicados."}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedItems.map((post) => {
+                  const format = contentTypeOf(post);
+                  const status = derivePublicationStatus(post);
+                  const thumbnail = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
+                  const when = publicationDate(post);
+                  return (
+                    <TableRow key={`${post.network}-${post.id}`}>
+                      <TableCell>
+                        <button type="button" onClick={() => setSelectedPost(post)} className="flex min-w-0 items-center gap-3 text-left">
+                          <span className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
+                            {thumbnail ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={thumbnail} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                              <span className="text-lg text-white/80" aria-hidden>{FORMAT_ICON[format]}</span>
+                            )}
+                          </span>
+                          <span className="min-w-0 truncate font-medium text-foreground">{titleOf(post)}</span>
+                        </button>
+                      </TableCell>
+                      <TableCell><NetworkBadge network={post.network} /></TableCell>
+                      <TableCell className="text-muted-foreground">{FORMAT_LABEL[format]}</TableCell>
+                      <TableCell><StatusBadge status={status} /></TableCell>
+                      <TableCell className="text-right text-muted-foreground">{when ? formatDateTime(when) : "—"}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end">
+                          <ActionsMenu workspaceId={workspace.id} post={post} busy={busyId === post.id} onOpen={() => setSelectedPost(post)} onCancel={() => cancel(post)} />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </ListCard>
       )}
 
       {selectedPost ? (
         <PublicationDetailDrawer workspaceId={workspace.id} post={selectedPost} busy={busyId === selectedPost.id} onCancel={() => cancel(selectedPost)} onClose={() => setSelectedPost(undefined)} />
       ) : null}
     </main>
+  );
+}
+
+function StatCard({ label, value, active, onClick }: { label: string; value: number; active: boolean; onClick: () => void }) {
+  return (
+    <Card className={active ? "border-primary" : undefined}>
+      <CardContent className="p-4">
+        <button type="button" onClick={onClick} className="block w-full text-left">
+          <p className="text-sm text-muted-foreground">{label}</p>
+          <p className="mt-1 text-2xl font-semibold text-foreground tabular-nums">{value}</p>
+        </button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -255,15 +360,6 @@ function FilterSelect<T extends string>({ label, value, onChange, options }: { l
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>
-  );
-}
-
-function StatPill({ label, value, active, onClick }: { label: string; value: number; active: boolean; onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className={`flex min-w-[128px] items-center justify-between gap-3 rounded-full border px-3 py-2 text-left transition ${active ? "border-accent bg-accent-soft text-accent" : "border-border bg-surface-raised/50 text-ink-muted hover:text-ink"}`}>
-      <span className="text-xs font-medium">{label}</span>
-      <span className="text-sm font-semibold tabular-nums">{value}</span>
-    </button>
   );
 }
 
@@ -294,39 +390,6 @@ function PublicationCard({ workspaceId, post, busy, onOpen, onCancel }: { worksp
           <ActionsMenu workspaceId={workspaceId} post={post} busy={busy} onOpen={onOpen} onCancel={onCancel} />
         </div>
       </div>
-    </article>
-  );
-}
-
-function PublicationListItem({ workspaceId, post, busy, onOpen, onCancel }: { workspaceId: string; post: UnifiedPublication; busy: boolean; onOpen: () => void; onCancel: () => void }) {
-  const format = contentTypeOf(post);
-  const status = derivePublicationStatus(post);
-  const thumbnail = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
-  const when = publicationDate(post);
-
-  return (
-    <article className="flex min-w-0 gap-3 rounded-2xl border border-border bg-surface-raised/55 p-3">
-      <button type="button" onClick={onOpen} className={`relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
-        {thumbnail ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={thumbnail} alt="" className="h-full w-full object-cover" />
-        ) : (
-          <span className="flex h-full w-full items-center justify-center text-3xl text-white/75" aria-hidden>{FORMAT_ICON[format]}</span>
-        )}
-      </button>
-      <div className="flex min-w-0 flex-1 flex-col justify-between gap-3">
-        <div className="min-w-0">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <NetworkBadge network={post.network} />
-            <StatusBadge status={status} />
-          </div>
-          <button type="button" onClick={onOpen} className="min-w-0 text-left">
-            <h2 className="line-clamp-2 text-sm font-semibold text-ink">{titleOf(post)}</h2>
-            <p className="mt-1 text-xs text-ink-muted">{when ? formatDateTime(when) : "Sem data"} · {FORMAT_LABEL[format]}</p>
-          </button>
-        </div>
-      </div>
-      <ActionsMenu workspaceId={workspaceId} post={post} busy={busy} onOpen={onOpen} onCancel={onCancel} />
     </article>
   );
 }

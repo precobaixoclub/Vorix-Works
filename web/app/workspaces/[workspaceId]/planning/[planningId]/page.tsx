@@ -70,18 +70,18 @@ export default function PlanningDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={planning.status} />
             {runtime ? (
-              <Link href={`/workspaces/${params.workspaceId}/runtime/${runtime.id}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+              <Link href={`/workspaces/${params.workspaceId}/runtime/${runtime.id}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-card px-3.5 py-2 text-sm font-medium text-foreground hover:bg-muted">
                 Abrir runtime
               </Link>
             ) : (
-              <Link href={`/workspaces/${params.workspaceId}/runtime`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+              <Link href={`/workspaces/${params.workspaceId}/runtime`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-card px-3.5 py-2 text-sm font-medium text-foreground hover:bg-muted">
                 Ver runtimes
               </Link>
             )}
           </div>
         }
       />
-      <p className="mb-4 break-all text-xs text-ink-faint">
+      <p className="mb-4 break-all text-xs text-muted-foreground/70">
         Planejamento {planning.id} · Briefing {planning.briefingId} · Comando {planning.preparedCommandId}
       </p>
 
@@ -100,11 +100,11 @@ export default function PlanningDetailPage() {
       {issues.length > 0 ? (
         <Card className="mb-6 border-l-4 border-l-amber-500">
           <CardHeader>
-            <p className="text-sm font-medium text-ink">Relatório de validação</p>
+            <p className="text-sm font-medium text-foreground">Relatório de validação</p>
           </CardHeader>
           <CardBody className="flex flex-col gap-1.5">
             {issues.map((issue, index) => (
-              <p key={index} className={`text-xs ${issue.severity === "error" ? "text-red-600" : "text-ink-muted"}`}>
+              <p key={index} className={`text-xs ${issue.severity === "error" ? "text-destructive" : "text-muted-foreground"}`}>
                 [{issue.severity === "error" ? "erro" : "aviso"}] {issue.message}
               </p>
             ))}
@@ -115,7 +115,7 @@ export default function PlanningDetailPage() {
       {graph.nodes.length > 0 ? (
         <Card className="mb-6">
           <CardHeader>
-            <p className="text-sm font-medium text-ink">Grafo de execução</p>
+            <p className="text-sm font-medium text-foreground">Grafo de execução</p>
           </CardHeader>
           <CardBody>
             <PlanningGraph graph={graph} tasksById={tasksById} />
@@ -125,7 +125,7 @@ export default function PlanningDetailPage() {
 
       {tasks.length > 0 ? (
         <div className="mb-6">
-          <h2 className="mb-3 text-sm font-medium text-ink">Tarefas</h2>
+          <h2 className="mb-3 text-sm font-medium text-foreground">Tarefas</h2>
           <PlanningTaskList tasks={tasks} artifacts={artifacts} />
         </div>
       ) : null}
@@ -133,14 +133,14 @@ export default function PlanningDetailPage() {
       {decisions.length > 0 ? (
         <Card>
           <CardHeader>
-            <p className="text-sm font-medium text-ink">Decisões do Arthur Planner</p>
+            <p className="text-sm font-medium text-foreground">Decisões do Arthur Planner</p>
           </CardHeader>
           <CardBody className="flex flex-col gap-3">
             {decisions.map((decision) => (
               <div key={decision.id}>
-                <p className="text-xs font-medium text-ink">{decision.decisionCode}</p>
-                <p className="text-xs text-ink-muted">{decision.reason}</p>
-                <p className="text-[11px] text-ink-faint">{formatDateTime(decision.createdAt)}</p>
+                <p className="text-xs font-medium text-foreground">{decision.decisionCode}</p>
+                <p className="text-xs text-muted-foreground">{decision.reason}</p>
+                <p className="text-[11px] text-muted-foreground/70">{formatDateTime(decision.createdAt)}</p>
               </div>
             ))}
           </CardBody>

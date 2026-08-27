@@ -75,7 +75,7 @@ export function PlanningGraph({ graph, tasksById }: { graph: ExecutionGraph; tas
 
         <defs>
           <marker id="planning-graph-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 0 L 8 4 L 0 8 z" className="fill-ink-faint" />
+            <path d="M 0 0 L 8 4 L 0 8 z" className="fill-muted-foreground" />
           </marker>
         </defs>
 
@@ -85,12 +85,12 @@ export function PlanningGraph({ graph, tasksById }: { graph: ExecutionGraph; tas
           return (
             <foreignObject key={node.id} x={position.x} y={position.y} width={NODE_WIDTH} height={NODE_HEIGHT}>
               <div
-                className={`flex h-full flex-col justify-center gap-0.5 rounded-lg border border-border border-l-4 bg-surface-raised px-3 py-1.5 shadow-sm ${task ? TASK_TYPE_COLOR[task.type] : "border-l-border"}`}
+                className={`flex h-full flex-col justify-center gap-0.5 rounded-lg border border-border border-l-4 bg-card px-3 py-1.5 shadow-sm ${task ? TASK_TYPE_COLOR[task.type] : "border-l-border"}`}
               >
-                <p className="truncate text-xs font-medium text-ink" title={node.label}>
+                <p className="truncate text-xs font-medium text-foreground" title={node.label}>
                   {node.label}
                 </p>
-                <p className="truncate text-[11px] text-ink-muted">{task ? TASK_TYPE_LABEL[task.type] : ""}</p>
+                <p className="truncate text-[11px] text-muted-foreground">{task ? TASK_TYPE_LABEL[task.type] : ""}</p>
               </div>
             </foreignObject>
           );

@@ -96,12 +96,12 @@ export default function ExecutionRunDetailPage() {
         description={`Criada em ${formatDateTime(detail.run.createdAt)} · atualizada em ${formatDateTime(detail.run.updatedAt)}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">{detail.run.mode === "real" ? "Real" : "Simulação"}</span>
+            <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">{detail.run.mode === "real" ? "Real" : "Simulação"}</span>
             <StatusBadge status={detail.run.state} />
-            <Link href={`/workspaces/${params.workspaceId}/runtime/${detail.run.runtimePlanId}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+            <Link href={`/workspaces/${params.workspaceId}/runtime/${detail.run.runtimePlanId}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-card px-3.5 py-2 text-sm font-medium text-foreground hover:bg-muted">
               Abrir runtime
             </Link>
-            <Link href={`/workspaces/${params.workspaceId}/planning/${detail.run.planningId}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+            <Link href={`/workspaces/${params.workspaceId}/planning/${detail.run.planningId}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-card px-3.5 py-2 text-sm font-medium text-foreground hover:bg-muted">
               Abrir planejamento
             </Link>
           </div>
@@ -118,7 +118,7 @@ export default function ExecutionRunDetailPage() {
         ]}
         aside={<p>IDs de rastreio aparecem para suporte técnico e não precisam ser copiados no uso normal.</p>}
       />
-      <p className="mb-4 break-all text-xs text-ink-faint">
+      <p className="mb-4 break-all text-xs text-muted-foreground/70">
         Execução {detail.run.id} · Runtime {detail.run.runtimePlanId} · Planejamento {detail.run.planningId} · traceId {detail.run.traceId} · correlationId {detail.run.correlationId}
       </p>
 
@@ -179,12 +179,12 @@ export default function ExecutionRunDetailPage() {
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <Card>
           <CardHeader>
-            <p className="text-sm font-medium text-ink">Tarefas</p>
+            <p className="text-sm font-medium text-foreground">Tarefas</p>
           </CardHeader>
           <CardBody className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-left text-sm">
               <thead>
-                <tr className="border-b border-border text-xs text-ink-muted">
+                <tr className="border-b border-border text-xs text-muted-foreground">
                   <th className="py-2 pr-3 font-medium">Tipo</th>
                   <th className="py-2 pr-3 font-medium">Estado</th>
                   <th className="py-2 pr-3 font-medium">Tentativas</th>
@@ -193,9 +193,9 @@ export default function ExecutionRunDetailPage() {
               <tbody>
                 {detail.taskRuns.map((task) => (
                   <tr key={task.id} className="border-b border-border last:border-0">
-                    <td className="py-2 pr-3 font-medium text-ink">{task.type}</td>
+                    <td className="py-2 pr-3 font-medium text-foreground">{task.type}</td>
                     <td className="py-2 pr-3"><StatusBadge status={task.state} /></td>
-                    <td className="py-2 pr-3 text-ink-muted">{task.attemptsCount}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{task.attemptsCount}</td>
                   </tr>
                 ))}
               </tbody>
@@ -205,16 +205,16 @@ export default function ExecutionRunDetailPage() {
 
         <Card>
           <CardHeader>
-            <p className="text-sm font-medium text-ink">Gates</p>
+            <p className="text-sm font-medium text-foreground">Gates</p>
           </CardHeader>
           <CardBody className="flex flex-col gap-2">
-            {detail.gates.length === 0 ? <p className="text-sm text-ink-muted">Nenhum gate aberto.</p> : detail.gates.map((gate) => (
+            {detail.gates.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum gate aberto.</p> : detail.gates.map((gate) => (
               <div key={gate.id} className="rounded-lg border border-border px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-medium text-ink">{gate.id}</p>
+                  <p className="text-xs font-medium text-foreground">{gate.id}</p>
                   <StatusBadge status={gate.state} />
                 </div>
-                <p className="mt-1 text-xs text-ink-muted">{gate.decision ?? "aguardando decisão"}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{gate.decision ?? "aguardando decisão"}</p>
               </div>
             ))}
           </CardBody>
@@ -224,31 +224,31 @@ export default function ExecutionRunDetailPage() {
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <p className="text-sm font-medium text-ink">Artefatos</p>
+            <p className="text-sm font-medium text-foreground">Artefatos</p>
           </CardHeader>
           <CardBody className="flex flex-col gap-2">
             {detail.artifacts.map((artifact) => (
               <div key={artifact.id} className="rounded-lg border border-border px-3 py-2 text-xs">
-                <p className="font-medium text-ink">{artifact.schemaId} · {artifact.outputPort}</p>
-                <p className="mt-1 text-ink-muted">{artifact.artifactType} · checksum {artifact.checksum.slice(0, 12)}</p>
-                <p className="mt-1 text-ink-muted">handler {artifact.handlerId ?? "n/a"} · provider {artifact.provider ?? "n/a"}</p>
-                <p className="mt-1 text-ink-muted">lineage {artifact.parentArtifactIds.length ? artifact.parentArtifactIds.join(", ") : "root"}</p>
+                <p className="font-medium text-foreground">{artifact.schemaId} · {artifact.outputPort}</p>
+                <p className="mt-1 text-muted-foreground">{artifact.artifactType} · checksum {artifact.checksum.slice(0, 12)}</p>
+                <p className="mt-1 text-muted-foreground">handler {artifact.handlerId ?? "n/a"} · provider {artifact.provider ?? "n/a"}</p>
+                <p className="mt-1 text-muted-foreground">lineage {artifact.parentArtifactIds.length ? artifact.parentArtifactIds.join(", ") : "root"}</p>
               </div>
             ))}
-            {detail.artifacts.length === 0 ? <p className="text-sm text-ink-muted">Nenhum artefato produzido.</p> : null}
+            {detail.artifacts.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum artefato produzido.</p> : null}
           </CardBody>
         </Card>
 
         <Card>
           <CardHeader>
-            <p className="text-sm font-medium text-ink">Eventos</p>
+            <p className="text-sm font-medium text-foreground">Eventos</p>
           </CardHeader>
           <CardBody className="flex max-h-96 flex-col gap-2 overflow-auto">
             {detail.events.map((event) => (
               <div key={event.id} className="rounded-lg border border-border px-3 py-2 text-xs">
-                <p className={event.eventType === "side_effect_blocked" ? "font-medium text-status-danger" : "font-medium text-ink"}>{event.eventType}</p>
-                <p className="mt-1 text-ink-muted">{formatDateTime(event.createdAt)}</p>
-                <p className="mt-1 text-ink-muted">trace {event.traceId ?? "n/a"}</p>
+                <p className={event.eventType === "side_effect_blocked" ? "font-medium text-destructive" : "font-medium text-foreground"}>{event.eventType}</p>
+                <p className="mt-1 text-muted-foreground">{formatDateTime(event.createdAt)}</p>
+                <p className="mt-1 text-muted-foreground">trace {event.traceId ?? "n/a"}</p>
               </div>
             ))}
           </CardBody>
@@ -257,15 +257,15 @@ export default function ExecutionRunDetailPage() {
 
       <Card className="mt-6">
         <CardHeader>
-          <p className="text-sm font-medium text-ink">Resolução de Manipulador</p>
+          <p className="text-sm font-medium text-foreground">Resolução de Manipulador</p>
         </CardHeader>
         <CardBody className="overflow-x-auto">
           {detail.handlerResolution.length === 0 ? (
-            <p className="text-sm text-ink-muted">Nenhum handler resolvido ainda.</p>
+            <p className="text-sm text-muted-foreground">Nenhum handler resolvido ainda.</p>
           ) : (
             <table className="w-full min-w-[680px] text-left text-sm">
               <thead>
-                <tr className="border-b border-border text-xs text-ink-muted">
+                <tr className="border-b border-border text-xs text-muted-foreground">
                   <th className="py-2 pr-3 font-medium">Capacidade</th>
                   <th className="py-2 pr-3 font-medium">Manipulador</th>
                   <th className="py-2 pr-3 font-medium">Provedor</th>
@@ -278,18 +278,18 @@ export default function ExecutionRunDetailPage() {
               <tbody>
                 {detail.handlerResolution.map((resolution) => (
                   <tr key={resolution.id} className="border-b border-border last:border-0">
-                    <td className="py-2 pr-3 font-medium text-ink">{resolution.capability}</td>
-                    <td className="py-2 pr-3 text-ink-muted">{resolution.handler}</td>
-                    <td className="py-2 pr-3 text-ink-muted">
-                      <span className={resolution.provider === "deterministic" ? "rounded-full bg-ink-muted/10 px-2 py-0.5 text-xs" : "rounded-full bg-accent-soft px-2 py-0.5 text-xs text-accent"}>
+                    <td className="py-2 pr-3 font-medium text-foreground">{resolution.capability}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{resolution.handler}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">
+                      <span className={resolution.provider === "deterministic" ? "rounded-full bg-muted px-2 py-0.5 text-xs" : "rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary"}>
                         {resolution.provider === "deterministic" ? "Manipulador Determinístico" : "Habilidade Real"}
                       </span>
                       <span className="ml-2">{resolution.provider}</span>
                     </td>
-                    <td className="py-2 pr-3 text-ink-muted">{resolution.executionMode}</td>
-                    <td className="py-2 pr-3 text-ink-muted">{resolution.fallbackPolicy}</td>
-                    <td className="py-2 pr-3 text-ink-muted">{resolution.capabilityMapping?.skillCapability ?? "deterministic"}</td>
-                    <td className="py-2 pr-3 text-ink-muted">{resolution.traceId ?? "n/a"}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{resolution.executionMode}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{resolution.fallbackPolicy}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{resolution.capabilityMapping?.skillCapability ?? "deterministic"}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{resolution.traceId ?? "n/a"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -300,15 +300,15 @@ export default function ExecutionRunDetailPage() {
 
       <Card className="mt-6">
         <CardHeader>
-          <p className="text-sm font-medium text-ink">Rastreamento de Execução</p>
+          <p className="text-sm font-medium text-foreground">Rastreamento de Execução</p>
         </CardHeader>
         <CardBody className="overflow-x-auto">
           {detail.traces.length === 0 ? (
-            <p className="text-sm text-ink-muted">Nenhum trace registrado ainda.</p>
+            <p className="text-sm text-muted-foreground">Nenhum trace registrado ainda.</p>
           ) : (
             <table className="w-full min-w-[680px] text-left text-sm">
               <thead>
-                <tr className="border-b border-border text-xs text-ink-muted">
+                <tr className="border-b border-border text-xs text-muted-foreground">
                   <th className="py-2 pr-3 font-medium">Capacidade</th>
                   <th className="py-2 pr-3 font-medium">Manipulador</th>
                   <th className="py-2 pr-3 font-medium">Duração</th>
@@ -321,13 +321,13 @@ export default function ExecutionRunDetailPage() {
               <tbody>
                 {detail.traces.map((trace) => (
                   <tr key={trace.id} className="border-b border-border last:border-0">
-                    <td className="py-2 pr-3 font-medium text-ink">{trace.capability}</td>
-                    <td className="py-2 pr-3 text-ink-muted">{trace.handler}</td>
-                    <td className="py-2 pr-3 text-ink-muted">{trace.durationMs}ms</td>
-                    <td className="py-2 pr-3 text-ink-muted">{trace.retryAttempt}</td>
-                    <td className="py-2 pr-3 text-ink-muted">{trace.warnings.length}</td>
-                    <td className="py-2 pr-3 text-ink-muted">{trace.success ? "sucesso" : "falhou"}</td>
-                    <td className="py-2 pr-3 text-ink-muted">{trace.traceId}</td>
+                    <td className="py-2 pr-3 font-medium text-foreground">{trace.capability}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{trace.handler}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{trace.durationMs}ms</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{trace.retryAttempt}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{trace.warnings.length}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{trace.success ? "sucesso" : "falhou"}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{trace.traceId}</td>
                   </tr>
                 ))}
               </tbody>

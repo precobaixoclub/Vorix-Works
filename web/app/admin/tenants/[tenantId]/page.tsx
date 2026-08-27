@@ -3,12 +3,17 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
-import { EmptyState } from "@/components/EmptyState";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ErrorState } from "@/components/ErrorState";
+import { Input, Label } from "@/components/Field";
 import { PageHeader } from "@/components/PageHeader";
 import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   activateTenant,
   adjustTenantCredits,
@@ -24,31 +29,43 @@ import { PLATFORM_PLAN_CODES, type PlatformPlanCode } from "@/features/platform-
  * precisa para operar sem gateway de pagamento: liberar créditos após um Pix, trocar plano após
  * upgrade, suspender por inadimplência, mexer no multiplicador de preço em casos especiais.
  * Todas as ações caem em `POST /v1/admin/tenants/...` e o SWR revalida a página inteira depois.
+ *
+ * Continua como ROTA (não virou `DetailModal`, ao contrário de `PublicationDetailModal`): além da
+ * listagem de contas (`/admin/tenants`), o dashboard (`/admin/page.tsx`, tabela "Top 10 contas")
+ * também linka direto para `/admin/tenants/{tenantId}`. Um modal aberto a partir de uma linha só
+ * faz sentido quando existe UMA lista dona da navegação; aqui há duas entradas independentes, e a
+ * rota também é um destino compartilhável/copiável (fica no financeiro do time via link direto).
  */
 export default function AdminTenantDetailPage() {
   const params = useParams<{ tenantId: string }>();
   const tenantId = decodeURIComponent(params.tenantId);
   const { data, error, isLoading, mutate } = useTenantDetail(tenantId);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [confirmSuspendOpen, setConfirmSuspendOpen] = useState(false);
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
-    setMessage(null);
     try {
       await action();
       await mutate();
-      setMessage({ kind: "ok", text: "Alteração aplicada." });
+      toast.success("Alteração aplicada.");
     } catch (err) {
-      setMessage({ kind: "err", text: err instanceof Error ? err.message : "Falhou." });
+      toast.error("Não foi possível aplicar a alteração", {
+        description: err instanceof Error ? err.message : "Falhou.",
+      });
     } finally {
       setBusy(false);
     }
   }
 
+  async function confirmSuspend() {
+    await run(() => suspendTenant(tenantId));
+    setConfirmSuspendOpen(false);
+  }
+
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 px-3 py-10 text-sm text-ink-muted sm:px-6 sm:py-14">
+      <div className="flex items-center gap-2 px-3 py-10 text-sm text-muted-foreground sm:px-6 sm:py-14">
         <Spinner className="h-4 w-4" /> Carregando conta…
       </div>
     );
@@ -57,12 +74,9 @@ export default function AdminTenantDetailPage() {
   if (error || !data) {
     return (
       <div className="mx-auto max-w-4xl px-3 py-5 sm:px-6 sm:py-8">
-        <EmptyState
-          title="Não foi possível carregar essa conta"
-          description={error instanceof Error ? error.message : "Verifique o tenantId ou tente novamente."}
-        />
+        <ErrorState error={error} onRetry={() => mutate()} />
         <div className="mt-4">
-          <Link href="/admin/tenants" className="text-sm text-accent hover:underline">
+          <Link href="/admin/tenants" className="text-sm text-primary hover:underline">
             ← Voltar para a lista
           </Link>
         </div>
@@ -76,7 +90,7 @@ export default function AdminTenantDetailPage() {
   return (
     <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <div className="mb-4 text-sm">
-        <Link href="/admin/tenants" className="text-accent hover:underline">
+        <Link href="/admin/tenants" className="text-primary hover:underline">
           ← Todas as contas
         </Link>
       </div>
@@ -97,18 +111,6 @@ export default function AdminTenantDetailPage() {
         aside={<p>Alterações feitas aqui valem para todos os espaços de trabalho deste cliente.</p>}
       />
 
-      {message ? (
-        <div
-          className={`mb-4 rounded-lg border px-4 py-2 text-sm ${
-            message.kind === "ok"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800"
-          }`}
-        >
-          {message.text}
-        </div>
-      ) : null}
-
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <MetricCard label="Créditos usados no mês" value={formatNumber(overview.totalCreditsUsedThisMonth)} hint={`Cota mensal: ${formatQuota(billing.monthlyCreditsQuota)}`} />
         <MetricCard label="Créditos extras" value={formatNumber(billing.creditsExtra)} hint="Somam à cota do plano" />
@@ -123,14 +125,14 @@ export default function AdminTenantDetailPage() {
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <div className="text-base font-semibold text-ink">Ajustar créditos manualmente</div>
+            <div className="text-base font-semibold text-foreground">Ajustar créditos manualmente</div>
           </CardHeader>
           <CardBody>
             <CreditsForm
               busy={busy}
               onSubmit={(delta, reason) => run(() => adjustTenantCredits(tenantId, delta, reason))}
             />
-            <p className="mt-3 text-xs text-ink-muted">
+            <p className="mt-3 text-xs text-muted-foreground">
               Positivo credita, negativo debita. Use ao liberar tokens após um pagamento manual (Pix, boleto, etc.).
             </p>
           </CardBody>
@@ -138,15 +140,15 @@ export default function AdminTenantDetailPage() {
 
         <Card>
           <CardHeader>
-            <div className="text-base font-semibold text-ink">Trocar plano</div>
+            <div className="text-base font-semibold text-foreground">Trocar plano</div>
           </CardHeader>
           <CardBody>
             <PlanForm
               currentPlan={billing.planCode}
               busy={busy}
-              onSubmit={(planCode) => run(() => changeTenantPlan(tenantId, planCode))}
+              onSubmit={(nextPlanCode) => run(() => changeTenantPlan(tenantId, nextPlanCode))}
             />
-            <p className="mt-3 text-xs text-ink-muted">
+            <p className="mt-3 text-xs text-muted-foreground">
               Aplica as cotas do plano imediatamente; se estava suspenso, reativa a conta.
             </p>
           </CardBody>
@@ -154,7 +156,7 @@ export default function AdminTenantDetailPage() {
 
         <Card>
           <CardHeader>
-            <div className="text-base font-semibold text-ink">Status da conta</div>
+            <div className="text-base font-semibold text-foreground">Status da conta</div>
           </CardHeader>
           <CardBody className="flex gap-2">
             {billing.subscriptionStatus === "suspended" ? (
@@ -162,7 +164,7 @@ export default function AdminTenantDetailPage() {
                 Reativar conta
               </Button>
             ) : (
-              <Button variant="danger" disabled={busy} onClick={() => run(() => suspendTenant(tenantId))}>
+              <Button variant="danger" disabled={busy} onClick={() => setConfirmSuspendOpen(true)}>
                 Suspender conta
               </Button>
             )}
@@ -171,7 +173,7 @@ export default function AdminTenantDetailPage() {
 
         <Card>
           <CardHeader>
-            <div className="text-base font-semibold text-ink">Percentual de lucro</div>
+            <div className="text-base font-semibold text-foreground">Percentual de lucro</div>
           </CardHeader>
           <CardBody>
             <ProfitPercentForm
@@ -179,7 +181,7 @@ export default function AdminTenantDetailPage() {
               busy={busy}
               onSubmit={(multiplier) => run(() => setTenantMultiplier(tenantId, multiplier))}
             />
-            <p className="mt-3 text-xs text-ink-muted">
+            <p className="mt-3 text-xs text-muted-foreground">
               Quanto cobramos de lucro em cima do custo real dos provedores para este cliente. Padrão da plataforma é 100%
               (cobramos o dobro do custo) — para uma conta interna própria, use 0% (fica só no custo, sem margem).
             </p>
@@ -190,17 +192,17 @@ export default function AdminTenantDetailPage() {
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <div className="text-base font-semibold text-ink">Workspaces desta conta</div>
+            <div className="text-base font-semibold text-foreground">Workspaces desta conta</div>
           </CardHeader>
           <CardBody className="p-0">
             {workspaces.length === 0 ? (
-              <div className="px-5 py-4 text-sm text-ink-muted">Nenhum workspace.</div>
+              <div className="px-5 py-4 text-sm text-muted-foreground">Nenhum workspace.</div>
             ) : (
               <ul className="divide-y divide-border">
                 {workspaces.map((ws) => (
                   <li key={ws.id} className="flex items-center justify-between px-5 py-2 text-sm">
                     <span>{ws.name}</span>
-                    <span className="text-xs text-ink-muted">{ws.status}</span>
+                    <span className="text-xs text-muted-foreground">{ws.status}</span>
                   </li>
                 ))}
               </ul>
@@ -210,20 +212,20 @@ export default function AdminTenantDetailPage() {
 
         <Card>
           <CardHeader>
-            <div className="text-base font-semibold text-ink">Membros</div>
+            <div className="text-base font-semibold text-foreground">Membros</div>
           </CardHeader>
           <CardBody className="p-0">
             {members.length === 0 ? (
-              <div className="px-5 py-4 text-sm text-ink-muted">Nenhum membro.</div>
+              <div className="px-5 py-4 text-sm text-muted-foreground">Nenhum membro.</div>
             ) : (
               <ul className="divide-y divide-border">
                 {members.map((m) => (
                   <li key={m.userId} className="flex items-center justify-between gap-3 px-5 py-2 text-sm">
                     <div>
                       <div className="font-medium">{m.name}</div>
-                      <div className="text-xs text-ink-muted">{m.email}</div>
+                      <div className="text-xs text-muted-foreground">{m.email}</div>
                     </div>
-                    <span className="text-xs uppercase tracking-wide text-ink-muted">{m.role}</span>
+                    <span className="text-xs uppercase tracking-wide text-muted-foreground">{m.role}</span>
                   </li>
                 ))}
               </ul>
@@ -235,75 +237,82 @@ export default function AdminTenantDetailPage() {
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <div className="text-base font-semibold text-ink">Histórico de créditos (últimos 50)</div>
+            <div className="text-base font-semibold text-foreground">Histórico de créditos (últimos 50)</div>
           </CardHeader>
           <CardBody className="p-0">
             {recentCreditEntries.length === 0 ? (
-              <div className="px-5 py-4 text-sm text-ink-muted">Sem movimentações.</div>
+              <div className="px-5 py-4 text-sm text-muted-foreground">Sem movimentações.</div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[520px] text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-muted">
-                      <th className="px-5 py-2 font-medium">Quando</th>
-                      <th className="px-5 py-2 font-medium">Motivo</th>
-                      <th className="px-5 py-2 text-right font-medium">Δ tokens</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentCreditEntries.map((entry) => (
-                      <tr key={entry.id} className="border-b border-border/60 last:border-b-0">
-                        <td className="px-5 py-1.5 text-xs text-ink-muted">{formatDate(entry.occurredAt)}</td>
-                        <td className="px-5 py-1.5 text-xs">{entry.reason}</td>
-                        <td className={`px-5 py-1.5 text-right font-semibold ${entry.deltaCredits >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                          {entry.deltaCredits >= 0 ? "+" : ""}
-                          {formatNumber(entry.deltaCredits)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Quando</TableHead>
+                    <TableHead>Motivo</TableHead>
+                    <TableHead className="text-right">Δ tokens</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recentCreditEntries.map((entry) => (
+                    <TableRow key={entry.id}>
+                      <TableCell className="text-xs text-muted-foreground">{formatDate(entry.occurredAt)}</TableCell>
+                      <TableCell className="text-xs">{entry.reason}</TableCell>
+                      <TableCell className={`text-right font-semibold tabular-nums ${entry.deltaCredits >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+                        {entry.deltaCredits >= 0 ? "+" : ""}
+                        {formatNumber(entry.deltaCredits)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </CardBody>
         </Card>
 
         <Card>
           <CardHeader>
-            <div className="text-base font-semibold text-ink">Consumo — últimos 6 meses</div>
+            <div className="text-base font-semibold text-foreground">Consumo — últimos 6 meses</div>
           </CardHeader>
           <CardBody className="p-0">
             {usageHistory.length === 0 ? (
-              <div className="px-5 py-4 text-sm text-ink-muted">Ainda sem histórico.</div>
+              <div className="px-5 py-4 text-sm text-muted-foreground">Ainda sem histórico.</div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[620px] text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-muted">
-                      <th className="px-5 py-2 font-medium">Período</th>
-                      <th className="px-5 py-2 text-right font-medium">Tokens</th>
-                      <th className="px-5 py-2 text-right font-medium">Receita</th>
-                      <th className="px-5 py-2 text-right font-medium">Lucro</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usageHistory.map((row) => (
-                      <tr key={row.period} className="border-b border-border/60 last:border-b-0">
-                        <td className="px-5 py-1.5">{row.period}</td>
-                        <td className="px-5 py-1.5 text-right text-ink-muted">{formatNumber(row.inputTokens + row.outputTokens)}</td>
-                        <td className="px-5 py-1.5 text-right">{formatUsd(row.customerPriceUsd)}</td>
-                        <td className="px-5 py-1.5 text-right font-semibold text-emerald-700">
-                          {formatUsd(row.customerPriceUsd - row.providerCostUsd)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Período</TableHead>
+                    <TableHead className="text-right">Tokens</TableHead>
+                    <TableHead className="text-right">Receita</TableHead>
+                    <TableHead className="text-right">Lucro</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {usageHistory.map((row) => (
+                    <TableRow key={row.period}>
+                      <TableCell>{row.period}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">{formatNumber(row.inputTokens + row.outputTokens)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatUsd(row.customerPriceUsd)}</TableCell>
+                      <TableCell className="text-right font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                        {formatUsd(row.customerPriceUsd - row.providerCostUsd)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </CardBody>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={confirmSuspendOpen}
+        title="Suspender conta?"
+        description={`A conta "${tenantId}" ficará suspensa: o cliente perde acesso à plataforma até você reativá-la.`}
+        confirmLabel="Suspender conta"
+        variant="danger"
+        busy={busy}
+        onCancel={() => setConfirmSuspendOpen(false)}
+        onConfirm={confirmSuspend}
+      />
     </div>
   );
 }
@@ -313,7 +322,7 @@ function CreditsForm({ busy, onSubmit }: { busy: boolean; onSubmit: (delta: numb
   const [reason, setReason] = useState<string>("");
   return (
     <form
-      className="flex flex-col gap-2"
+      className="flex flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault();
         const parsed = Number.parseInt(delta, 10);
@@ -322,20 +331,26 @@ function CreditsForm({ busy, onSubmit }: { busy: boolean; onSubmit: (delta: numb
         onSubmit(parsed, reason.trim());
       }}
     >
-      <input
-        type="number"
-        value={delta}
-        onChange={(event) => setDelta(event.target.value)}
-        placeholder="+ ou − tokens"
-        className="rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-sm"
-      />
-      <input
-        type="text"
-        value={reason}
-        onChange={(event) => setReason(event.target.value)}
-        placeholder="Motivo (ex.: Pix R$ 90,00 — plano PRO)"
-        className="rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-sm"
-      />
+      <div>
+        <Label htmlFor="credits-delta">Créditos</Label>
+        <Input
+          id="credits-delta"
+          type="number"
+          value={delta}
+          onChange={(event) => setDelta(event.target.value)}
+          placeholder="+ ou − tokens"
+        />
+      </div>
+      <div>
+        <Label htmlFor="credits-reason">Motivo</Label>
+        <Input
+          id="credits-reason"
+          type="text"
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Ex.: Pix R$ 90,00 — plano PRO"
+        />
+      </div>
       <Button type="submit" disabled={busy}>
         Aplicar ajuste
       </Button>
@@ -355,23 +370,20 @@ function PlanForm({
   const [planCode, setPlanCode] = useState<PlatformPlanCode>(currentPlan);
   return (
     <form
-      className="flex flex-col gap-2"
+      className="flex flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit(planCode);
       }}
     >
-      <select
-        value={planCode}
-        onChange={(event) => setPlanCode(event.target.value as PlatformPlanCode)}
-        className="rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-sm"
-      >
-        {PLATFORM_PLAN_CODES.map((code) => (
-          <option key={code} value={code}>
-            {code}
-          </option>
-        ))}
-      </select>
+      <Select value={planCode} onValueChange={(value) => setPlanCode(value as PlatformPlanCode)}>
+        <SelectTrigger><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {PLATFORM_PLAN_CODES.map((code) => (
+            <SelectItem key={code} value={code}>{code}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <Button type="submit" disabled={busy || planCode === currentPlan}>
         Aplicar plano
       </Button>
@@ -407,7 +419,7 @@ function ProfitPercentForm({
   const [value, setValue] = useState<string>(multiplierToPercent(current).toString());
   return (
     <form
-      className="flex flex-col gap-2"
+      className="flex flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault();
         const parsedPercent = Number.parseFloat(value);
@@ -415,17 +427,17 @@ function ProfitPercentForm({
         onSubmit(percentToMultiplier(parsedPercent));
       }}
     >
-      <div className="flex items-center gap-2">
-        <input
+      <div className="relative">
+        <Input
           type="number"
           step="1"
           min="0"
           max="9900"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          className="w-full rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-sm"
+          className="pr-8"
         />
-        <span className="text-sm text-ink-muted">%</span>
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
       </div>
       <Button type="submit" disabled={busy}>
         Aplicar percentual
@@ -436,11 +448,11 @@ function ProfitPercentForm({
 
 function MetricCard({ label, value, hint, highlight }: { label: string; value: string; hint?: string; highlight?: boolean }) {
   return (
-    <Card className={highlight ? "border-accent/40 bg-accent/5" : undefined}>
+    <Card className={highlight ? "border-primary/40 bg-primary/5" : undefined}>
       <div className="px-5 py-4">
-        <div className="text-xs uppercase tracking-wider text-ink-muted">{label}</div>
-        <div className="mt-1 text-2xl font-semibold text-ink">{value}</div>
-        {hint ? <div className="mt-1 text-xs text-ink-muted">{hint}</div> : null}
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+        <div className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{value}</div>
+        {hint ? <div className="mt-1 text-xs text-muted-foreground">{hint}</div> : null}
       </div>
     </Card>
   );

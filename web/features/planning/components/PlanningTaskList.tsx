@@ -44,22 +44,22 @@ export function PlanningTaskList({ tasks, artifacts }: { tasks: readonly Executi
           <Card key={task.id} className="px-4 py-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-ink">{task.name}</p>
-                <p className="mt-0.5 text-xs text-ink-muted">{task.description}</p>
+                <p className="text-sm font-medium text-foreground">{task.name}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{task.description}</p>
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-ink-muted">{TASK_TYPE_LABEL[task.type]}</span>
-                <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-ink-muted">{CAPABILITY_LABEL[task.capability]}</span>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{TASK_TYPE_LABEL[task.type]}</span>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{CAPABILITY_LABEL[task.capability]}</span>
               </div>
             </div>
             {artifact ? (
               <div className="mt-3 rounded-lg border border-dashed border-border px-3 py-2">
-                <p className="text-xs font-medium text-ink-muted">
+                <p className="text-xs font-medium text-muted-foreground">
                   Artefato esperado — {ARTIFACT_TYPE_LABEL[artifact.contract.expectedType]}
                 </p>
-                <p className="mt-0.5 text-xs text-ink-faint">{artifact.contract.description}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{artifact.contract.description}</p>
                 {artifact.contract.expectedFields.length > 0 ? (
-                  <p className="mt-1 text-[11px] text-ink-faint">Campos: {artifact.contract.expectedFields.join(", ")}</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">Campos: {artifact.contract.expectedFields.join(", ")}</p>
                 ) : null}
               </div>
             ) : null}

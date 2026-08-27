@@ -3,6 +3,8 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/Button";
+import { Card, CardBody, CardHeader } from "@/components/Card";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input } from "@/components/Field";
@@ -62,8 +64,8 @@ export default function KnowledgePage() {
   return (
     <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
       <div className="mb-6">
-        <h1 className="font-display text-2xl font-semibold text-ink sm:text-3xl">Marca</h1>
-        <p className="mt-1 text-sm text-ink-muted">Identidade, diretrizes criativas e materiais que a IA usa para criar conteúdo desta marca.</p>
+        <h1 className="font-display text-2xl font-semibold text-foreground sm:text-3xl">Marca</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Identidade, diretrizes criativas e materiais que a IA usa para criar conteúdo desta marca.</p>
       </div>
 
       <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border">
@@ -73,7 +75,7 @@ export default function KnowledgePage() {
             type="button"
             onClick={() => setTab(tab.id)}
             className={`shrink-0 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm font-medium transition-colors ${
-              activeTab === tab.id ? "border-accent text-ink" : "border-transparent text-ink-muted hover:text-ink"
+              activeTab === tab.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             {tab.label}
@@ -90,18 +92,20 @@ export default function KnowledgePage() {
 
 function BrandSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-2xl bg-surface-raised p-5">
-      <p className="mb-3 text-sm font-semibold text-ink">{title}</p>
-      <div className="space-y-3">{children}</div>
-    </div>
+    <Card>
+      <CardHeader>
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+      </CardHeader>
+      <CardBody className="space-y-3">{children}</CardBody>
+    </Card>
   );
 }
 
 function BrandField({ label, value }: { label: string; value?: string }) {
   return (
     <div>
-      <p className="text-xs font-medium text-ink-faint">{label}</p>
-      {value ? <p className="mt-0.5 text-sm text-ink">{value}</p> : <p className="mt-0.5 text-sm text-ink-faint">Não configurado.</p>}
+      <p className="text-xs font-medium text-muted-foreground/70">{label}</p>
+      {value ? <p className="mt-0.5 text-sm text-foreground">{value}</p> : <p className="mt-0.5 text-sm text-muted-foreground/70">Não configurado.</p>}
     </div>
   );
 }
@@ -122,7 +126,7 @@ function BrandProfileTab({ workspaceId, onGoToTab }: { workspaceId: string; onGo
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 py-14 text-sm text-ink-muted">
+      <div className="flex items-center gap-2 py-14 text-sm text-muted-foreground">
         <Spinner className="h-4 w-4" /> Carregando…
       </div>
     );
@@ -133,26 +137,28 @@ function BrandProfileTab({ workspaceId, onGoToTab }: { workspaceId: string; onGo
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-surface-raised p-5">
-        <div className="flex items-center gap-3">
-          {hasLogo ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={activeLogo?.storageRef?.metadata?.url} alt="" className="h-14 w-14 rounded-xl bg-surface-sunken object-contain p-1.5" />
-          ) : (
-            <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-surface-sunken text-2xl text-ink-faint" aria-hidden="true">🔷</span>
-          )}
-          <div>
-            <p className="font-display text-lg font-semibold text-ink">{workspace.name}</p>
-            {workspace.kind ? <p className="text-sm text-ink-muted">{workspace.kind}</p> : null}
+      <Card>
+        <CardBody className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            {hasLogo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={activeLogo?.storageRef?.metadata?.url} alt="" className="h-14 w-14 rounded-xl bg-muted object-contain p-1.5" />
+            ) : (
+              <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-muted text-2xl text-muted-foreground/70" aria-hidden="true">🔷</span>
+            )}
+            <div>
+              <p className="font-display text-lg font-semibold text-foreground">{workspace.name}</p>
+              {workspace.kind ? <p className="text-sm text-muted-foreground">{workspace.kind}</p> : null}
+            </div>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${isComplete ? "bg-success-bg text-success" : "bg-surface-sunken text-ink-muted"}`}>
-            Perfil da marca: {isComplete ? "Completo" : "Parcial"}
-          </span>
-          <Button variant="secondary" onClick={() => setEditing(true)}>Editar perfil</Button>
-        </div>
-      </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${isComplete ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}`}>
+              Perfil da marca: {isComplete ? "Completo" : "Parcial"}
+            </span>
+            <Button variant="secondary" onClick={() => setEditing(true)}>Editar perfil</Button>
+          </div>
+        </CardBody>
+      </Card>
 
       <BrandSection title="Sobre a marca">
         <BrandField label="Descrição" value={profile?.businessDescription} />
@@ -165,13 +171,13 @@ function BrandProfileTab({ workspaceId, onGoToTab }: { workspaceId: string; onGo
 
       <BrandSection title="Diferenciais">
         {profile?.differentiators && profile.differentiators.length > 0 ? (
-          <ul className="list-inside list-disc space-y-1 text-sm text-ink">
+          <ul className="list-inside list-disc space-y-1 text-sm text-foreground">
             {profile.differentiators.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-ink-faint">Nenhum diferencial cadastrado ainda.</p>
+          <p className="text-sm text-muted-foreground/70">Nenhum diferencial cadastrado ainda.</p>
         )}
       </BrandSection>
 
@@ -179,7 +185,7 @@ function BrandProfileTab({ workspaceId, onGoToTab }: { workspaceId: string; onGo
         <BrandField label="Tom de voz" value={profile?.toneOfVoice} />
       </BrandSection>
 
-      <button type="button" onClick={() => onGoToTab("materials")} className="text-sm font-medium text-accent hover:underline">
+      <button type="button" onClick={() => onGoToTab("materials")} className="text-sm font-medium text-primary hover:underline">
         Gerenciar materiais →
       </button>
 
@@ -201,25 +207,35 @@ function BrandProfileTab({ workspaceId, onGoToTab }: { workspaceId: string; onGo
 function GuidelinesTab({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl bg-surface-raised p-5">
-        <p className="text-sm font-semibold text-ink">Diretrizes Criativas</p>
-        <p className="mt-1 text-sm text-ink-muted">Defina como o GPT deve criar conteúdos para esta marca.</p>
-        <p className="mt-3 text-xs text-ink-faint">
-          Estas instruções serão aplicadas automaticamente em todas as novas criações deste workspace — o pedido feito na hora da geração continua tendo prioridade quando houver conflito.
-        </p>
-        <div className="mt-4">
-          <ProductionSettingsPanel workspaceId={workspaceId} />
-        </div>
-      </div>
+      <Card>
+        <CardHeader>
+          <div>
+            <p className="text-sm font-semibold text-foreground">Diretrizes Criativas</p>
+            <p className="mt-1 text-sm text-muted-foreground">Defina como o GPT deve criar conteúdos para esta marca.</p>
+          </div>
+        </CardHeader>
+        <CardBody>
+          <p className="text-xs text-muted-foreground/70">
+            Estas instruções serão aplicadas automaticamente em todas as novas criações deste workspace — o pedido feito na hora da geração continua tendo prioridade quando houver conflito.
+          </p>
+          <div className="mt-4">
+            <ProductionSettingsPanel workspaceId={workspaceId} />
+          </div>
+        </CardBody>
+      </Card>
 
-      <div className="rounded-2xl bg-surface-raised p-5">
-        <p className="text-sm font-semibold text-ink">Exemplos de diretrizes</p>
-        <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-ink-muted">
-          <li>&ldquo;Priorize fotos e screenshots reais em vez de recriar visualmente.&rdquo;</li>
-          <li>&ldquo;Use sempre fundo escuro com detalhes em verde.&rdquo;</li>
-          <li>&ldquo;Nunca invente preços ou promoções que não foram informados.&rdquo;</li>
-        </ul>
-      </div>
+      <Card>
+        <CardHeader>
+          <p className="text-sm font-semibold text-foreground">Exemplos de diretrizes</p>
+        </CardHeader>
+        <CardBody>
+          <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
+            <li>&ldquo;Priorize fotos e screenshots reais em vez de recriar visualmente.&rdquo;</li>
+            <li>&ldquo;Use sempre fundo escuro com detalhes em verde.&rdquo;</li>
+            <li>&ldquo;Nunca invente preços ou promoções que não foram informados.&rdquo;</li>
+          </ul>
+        </CardBody>
+      </Card>
     </div>
   );
 }
@@ -232,6 +248,8 @@ function MaterialsTab({ workspaceId }: { workspaceId: string }) {
   const [editingAsset, setEditingAsset] = useState<Asset | undefined>();
   const [actionError, setActionError] = useState<string | undefined>();
   const [dragOver, setDragOver] = useState(false);
+  const [confirmingAction, setConfirmingAction] = useState<{ asset: Asset; kind: "archive" | "delete" } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const { data: assets, isLoading, error, mutate } = useAssets(workspaceId, { search: search || undefined });
 
   const activeLogo = (assets ?? []).find((asset) => asset.kind === "logo" && asset.status === "active");
@@ -259,11 +277,23 @@ function MaterialsTab({ workspaceId }: { workspaceId: string }) {
     }
   }
 
+  async function handleConfirmAction() {
+    if (!confirmingAction) return;
+    setConfirmBusy(true);
+    await runAction(() =>
+      confirmingAction.kind === "delete"
+        ? deleteAsset(workspaceId, confirmingAction.asset.id)
+        : archiveAsset(workspaceId, confirmingAction.asset.id),
+    );
+    setConfirmBusy(false);
+    setConfirmingAction(null);
+  }
+
   const isLibraryEmpty = (assets ?? []).length === 0;
 
   return (
     <div
-      className={`space-y-4 rounded-2xl transition-shadow ${dragOver ? "ring-2 ring-accent" : ""}`}
+      className={`space-y-4 rounded-2xl transition-shadow ${dragOver ? "ring-2 ring-primary" : ""}`}
       onDragOver={(event) => {
         event.preventDefault();
         setDragOver(true);
@@ -278,13 +308,13 @@ function MaterialsTab({ workspaceId }: { workspaceId: string }) {
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-ink">Materiais</p>
-          <p className="mt-1 text-sm text-ink-muted">Logos, produtos, screenshots e referências que a IA pode utilizar.</p>
+          <p className="text-sm font-semibold text-foreground">Materiais</p>
+          <p className="mt-1 text-sm text-muted-foreground">Logos, produtos, screenshots e referências que a IA pode utilizar.</p>
         </div>
         <Button onClick={() => openRegister()}>+ Adicionar material</Button>
       </div>
 
-      <p className="text-xs text-ink-faint">ou arraste um arquivo para qualquer lugar desta área</p>
+      <p className="text-xs text-muted-foreground/70">ou arraste um arquivo para qualquer lugar desta área</p>
 
       <LogoConfigCard workspaceId={workspaceId} />
 
@@ -301,14 +331,14 @@ function MaterialsTab({ workspaceId }: { workspaceId: string }) {
             key={f.id}
             type="button"
             onClick={() => setFilter(f.id)}
-            className={`rounded-full px-3 py-1 text-xs font-medium ${filter === f.id ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:text-ink"}`}
+            className={`rounded-full px-3 py-1 text-xs font-medium ${filter === f.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}
           >
             {f.label}
           </button>
         ))}
       </div>
 
-      {actionError ? <p className="text-sm text-danger">{actionError}</p> : null}
+      {actionError ? <p className="text-sm text-destructive">{actionError}</p> : null}
 
       {isLoading ? (
         <div className="flex justify-center py-14">
@@ -323,7 +353,7 @@ function MaterialsTab({ workspaceId }: { workspaceId: string }) {
           action={<Button onClick={() => openRegister()}>Adicionar primeiro material</Button>}
         />
       ) : visibleAssets.length === 0 ? (
-        <p className="py-10 text-center text-sm text-ink-muted">Nenhum material encontrado para este filtro.</p>
+        <p className="py-10 text-center text-sm text-muted-foreground">Nenhum material encontrado para este filtro.</p>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {visibleAssets.map((asset) => (
@@ -331,8 +361,8 @@ function MaterialsTab({ workspaceId }: { workspaceId: string }) {
               key={asset.id}
               asset={asset}
               onEdit={() => setEditingAsset(asset)}
-              onArchive={() => runAction(() => archiveAsset(workspaceId, asset.id))}
-              onDelete={() => runAction(() => deleteAsset(workspaceId, asset.id))}
+              onArchive={() => setConfirmingAction({ asset, kind: "archive" })}
+              onDelete={() => setConfirmingAction({ asset, kind: "delete" })}
             />
           ))}
         </div>
@@ -362,6 +392,23 @@ function MaterialsTab({ workspaceId }: { workspaceId: string }) {
             setEditingAsset(undefined);
             mutate();
           }}
+        />
+      ) : null}
+
+      {confirmingAction ? (
+        <ConfirmDialog
+          open
+          title={confirmingAction.kind === "delete" ? "Excluir material" : "Arquivar material"}
+          description={
+            confirmingAction.kind === "delete"
+              ? `Tem certeza que deseja excluir "${confirmingAction.asset.name}"? Esta ação não pode ser desfeita.`
+              : `O material "${confirmingAction.asset.name}" deixa de aparecer na biblioteca ativa e não será mais usado pela IA. Isso não apaga o arquivo, só o remove da listagem.`
+          }
+          confirmLabel={confirmingAction.kind === "delete" ? "Excluir" : "Arquivar"}
+          variant={confirmingAction.kind === "delete" ? "danger" : "primary"}
+          busy={confirmBusy}
+          onConfirm={handleConfirmAction}
+          onCancel={() => setConfirmingAction(null)}
         />
       ) : null}
     </div>

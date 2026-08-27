@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label, Textarea } from "@/components/Field";
@@ -11,10 +12,13 @@ import { PageHeader } from "@/components/PageHeader";
 import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { cancelMetaPost, scheduleMetaPost } from "@/features/meta/api";
 import { useMetaOAuthStatus, useMetaPosts } from "@/features/meta/hooks";
-import type { MetaTarget } from "@/features/meta/types";
+import type { MetaPost, MetaTarget } from "@/features/meta/types";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { formatDateTime } from "@/lib/format";
 
@@ -42,6 +46,7 @@ export function MetaPostPage({ target }: { target: MetaTarget }) {
   const [scheduledAt, setScheduledAt] = useState("");
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
   const [credentialReferenceId, setCredentialReferenceId] = useState("");
+  const [postToCancel, setPostToCancel] = useState<MetaPost | undefined>();
 
   const accounts = (oauth?.accounts ?? []).filter((account) => account.providerId === target);
   const connected = accounts.some((account) => account.status === "active");
@@ -102,16 +107,18 @@ export function MetaPostPage({ target }: { target: MetaTarget }) {
     }
   }
 
-  async function cancelPost(publicationId: string) {
+  async function confirmCancelPost() {
+    if (!postToCancel) return;
     setBusy(true);
     setFeedback(undefined);
     try {
-      await cancelMetaPost(workspace.id, publicationId);
+      await cancelMetaPost(workspace.id, postToCancel.publicationId);
       await mutatePosts();
     } catch (cause) {
       setFeedback(messageOf(cause));
     } finally {
       setBusy(false);
+      setPostToCancel(undefined);
     }
   }
 
@@ -138,51 +145,68 @@ export function MetaPostPage({ target }: { target: MetaTarget }) {
         aside={<p>Quando houver várias contas conectadas, o seletor Publicar na conta define exatamente onde o post será enviado.</p>}
       />
 
-      {feedback ? <Card className="mb-6 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
+      {feedback ? <Card className="mb-6 p-4"><p className="text-sm text-foreground">{feedback}</p></Card> : null}
 
       <Card className="mb-6 flex items-center justify-between gap-4 p-4">
-        <p className="text-sm text-ink-muted">
+        <p className="text-sm text-muted-foreground">
           {oauth?.configured === false
             ? "Integração ainda não configurada no servidor."
             : connected
               ? `Publicando na conta: ${accounts[0]?.displayName ?? accounts[0]?.providerSubjectId}${accounts.length > 1 ? ` (+${accounts.length - 1})` : ""}`
               : `Nenhuma conta do ${label} conectada a este workspace.`}
         </p>
-        <Link href={`/workspaces/${workspace.id}/connections`} className="text-sm font-medium text-accent hover:underline">
+        <Link href={`/workspaces/${workspace.id}/connections`} className="text-sm font-medium text-primary hover:underline">
           Gerenciar conexão →
         </Link>
       </Card>
 
       <Card className="mb-6 p-5">
-        <p className="mb-4 text-sm font-medium text-ink">Nova publicação</p>
+        <p className="mb-4 text-sm font-medium text-foreground">Nova publicação</p>
         <form className="space-y-4" onSubmit={submitPost}>
           <div>
             <Label htmlFor="meta-placement">Onde publicar</Label>
-            <div className="flex gap-2">
-              <Button type="button" id="meta-placement" variant={placement === "feed" ? "primary" : "secondary"} onClick={() => setPlacement("feed")}>Feed</Button>
-              <Button type="button" variant={placement === "story" ? "primary" : "secondary"} onClick={() => setPlacement("story")}>Story</Button>
-            </div>
+            <ToggleGroup
+              id="meta-placement"
+              type="single"
+              variant="outline"
+              className="justify-start"
+              value={placement}
+              onValueChange={(value) => value && setPlacement(value as "feed" | "story")}
+            >
+              <ToggleGroupItem value="feed" className="px-4">Feed</ToggleGroupItem>
+              <ToggleGroupItem value="story" className="px-4">Story</ToggleGroupItem>
+            </ToggleGroup>
             {placement === "story" ? (
-              <p className="mt-1 text-xs text-ink-muted">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Story aceita só uma imagem ou um vídeo (sem carrossel, sem legenda exibida no Story).
                 {target === "facebook" ? " Story de vídeo na Página ainda não é suportado — use foto." : ""}
               </p>
             ) : null}
           </div>
 
-          <div className="flex gap-2">
-            <Button type="button" variant={mediaKind === "image" ? "primary" : "secondary"} onClick={() => setMediaKind("image")}>Imagem{placement === "feed" ? (target === "instagram" ? "/carrossel" : "(ns)") : ""}</Button>
-            <Button type="button" variant={mediaKind === "video" ? "primary" : "secondary"} onClick={() => setMediaKind("video")}>{placement === "feed" && target === "instagram" ? "Vídeo/Reels" : "Vídeo"}</Button>
-            {target === "facebook" && placement === "feed" ? (
-              <Button type="button" variant={mediaKind === "none" ? "primary" : "secondary"} onClick={() => setMediaKind("none")}>Somente texto</Button>
-            ) : null}
+          <div>
+            <Label htmlFor="meta-media-kind">Tipo de mídia</Label>
+            <ToggleGroup
+              id="meta-media-kind"
+              type="single"
+              variant="outline"
+              className="justify-start"
+              value={mediaKind}
+              onValueChange={(value) => value && setMediaKind(value as "image" | "video" | "none")}
+            >
+              <ToggleGroupItem value="image" className="px-4">Imagem{placement === "feed" ? (target === "instagram" ? "/carrossel" : "(ns)") : ""}</ToggleGroupItem>
+              <ToggleGroupItem value="video" className="px-4">{placement === "feed" && target === "instagram" ? "Vídeo/Reels" : "Vídeo"}</ToggleGroupItem>
+              {target === "facebook" && placement === "feed" ? (
+                <ToggleGroupItem value="none" className="px-4">Somente texto</ToggleGroupItem>
+              ) : null}
+            </ToggleGroup>
           </div>
 
           {mediaKind === "video" ? (
             <div>
               <Label htmlFor="meta-video-url">URL do vídeo (HTTPS pública)</Label>
               <Input id="meta-video-url" type="url" required value={videoUrl} placeholder="https://cdn.exemplo.com/video.mp4" onChange={(event) => setVideoUrl(event.target.value)} />
-              <p className="mt-1 text-xs text-ink-muted">
+              <p className="mt-1 text-xs text-muted-foreground">
                 ou envie um arquivo:{" "}
                 <input type="file" accept="video/mp4,video/quicktime" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadVideoFile(event.target.files[0])} />
                 {uploading ? " enviando..." : ""}
@@ -192,7 +216,7 @@ export function MetaPostPage({ target }: { target: MetaTarget }) {
             <div>
               <Label htmlFor="meta-image-urls">{placement === "story" ? "URL da imagem" : "URLs das imagens (uma por linha — mais de uma vira carrossel/multi-foto)"}</Label>
               <Textarea id="meta-image-urls" required rows={placement === "story" ? 1 : 3} value={imageUrls} placeholder={placement === "story" ? "https://cdn.exemplo.com/1.jpg" : "https://cdn.exemplo.com/1.jpg\nhttps://cdn.exemplo.com/2.jpg"} onChange={(event) => setImageUrls(event.target.value)} />
-              <p className="mt-1 text-xs text-ink-muted">
+              <p className="mt-1 text-xs text-muted-foreground">
                 ou envie um arquivo:{" "}
                 <input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(event) => event.target.files?.[0] && uploadImageFile(event.target.files[0])} />
                 {uploading ? " enviando..." : ""}
@@ -219,19 +243,26 @@ export function MetaPostPage({ target }: { target: MetaTarget }) {
           {accounts.length > 1 ? (
             <div>
               <Label htmlFor="meta-account">Publicar na conta</Label>
-              <select
-                id="meta-account"
-                className="w-full rounded border border-border bg-surface px-3 py-2 text-sm text-ink"
+              <Select
                 value={credentialReferenceId || accounts[0].credentialReferenceId}
-                onChange={(event) => setCredentialReferenceId(event.target.value)}
+                onValueChange={(value) => setCredentialReferenceId(value)}
               >
-                {accounts.map((account) => <option key={account.credentialReferenceId} value={account.credentialReferenceId}>{account.displayName ?? account.providerSubjectId}</option>)}
-              </select>
+                <SelectTrigger id="meta-account">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((account) => (
+                    <SelectItem key={account.credentialReferenceId} value={account.credentialReferenceId}>
+                      {account.displayName ?? account.providerSubjectId}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           ) : null}
 
           <Button type="submit" disabled={busy || accounts.length === 0}>{scheduledAt ? "Agendar publicação" : "Publicar agora"}</Button>
-          {accounts.length === 0 ? <p className="text-xs text-ink-muted">Conecte uma conta do {label} para habilitar a publicação.</p> : null}
+          {accounts.length === 0 ? <p className="text-xs text-muted-foreground">Conecte uma conta do {label} para habilitar a publicação.</p> : null}
         </form>
       </Card>
 
@@ -243,36 +274,48 @@ export function MetaPostPage({ target }: { target: MetaTarget }) {
         <EmptyState title={`Nenhuma publicação no ${label}`} description="Agende o primeiro post usando o formulário acima." />
       ) : (
         <Card className="overflow-x-auto">
-          <table className="w-full min-w-[680px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="px-4 py-3 font-medium">Onde</th>
-                <th className="px-4 py-3 font-medium">Legenda</th>
-                <th className="px-4 py-3 font-medium">Mídia</th>
-                <th className="px-4 py-3 font-medium">Agendado</th>
-                <th className="px-4 py-3 font-medium">Estado</th>
-                <th className="px-4 py-3 font-medium">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="min-w-[680px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Onde</TableHead>
+                <TableHead>Legenda</TableHead>
+                <TableHead>Mídia</TableHead>
+                <TableHead>Agendado</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {posts.map((post) => (
-                <tr key={post.publicationId} className="border-b border-border last:border-0">
-                  <td className="px-4 py-3 text-xs text-ink-muted">{post.placement === "story" ? "Story" : "Feed"}</td>
-                  <td className="max-w-xs px-4 py-3 text-ink">{post.caption || "—"}</td>
-                  <td className="px-4 py-3 text-xs text-ink-muted">{post.media.videoUrl ? "Vídeo" : post.media.imageUrls.length > 0 ? `${post.media.imageUrls.length} imagem(ns)` : "Texto"}</td>
-                  <td className="px-4 py-3 text-xs text-ink-muted">{post.scheduledAt ? `${formatDateTime(post.scheduledAt)}${post.timezone ? ` (${post.timezone})` : ""}` : "Imediato"}</td>
-                  <td className="px-4 py-3"><StatusBadge status={post.state} /></td>
-                  <td className="px-4 py-3">
+                <TableRow key={post.publicationId}>
+                  <TableCell className="text-xs text-muted-foreground">{post.placement === "story" ? "Story" : "Feed"}</TableCell>
+                  <TableCell className="max-w-xs">{post.caption || "—"}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{post.media.videoUrl ? "Vídeo" : post.media.imageUrls.length > 0 ? `${post.media.imageUrls.length} imagem(ns)` : "Texto"}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{post.scheduledAt ? `${formatDateTime(post.scheduledAt)}${post.timezone ? ` (${post.timezone})` : ""}` : "Imediato"}</TableCell>
+                  <TableCell><StatusBadge status={post.state} /></TableCell>
+                  <TableCell>
                     {post.state === "published" || post.state === "cancelled" ? null : (
-                      <Button variant="secondary" disabled={busy} onClick={() => cancelPost(post.publicationId)}>Cancelar</Button>
+                      <Button variant="secondary" disabled={busy} onClick={() => setPostToCancel(post)}>Cancelar</Button>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </Card>
       )}
+
+      <ConfirmDialog
+        open={Boolean(postToCancel)}
+        title="Cancelar publicação"
+        description={postToCancel ? `Tem certeza que deseja cancelar a publicação "${postToCancel.caption || "sem legenda"}" no ${label}? Esta ação não pode ser desfeita.` : ""}
+        confirmLabel="Cancelar publicação"
+        cancelLabel="Voltar"
+        variant="danger"
+        busy={busy}
+        onConfirm={confirmCancelPost}
+        onCancel={() => setPostToCancel(undefined)}
+      />
     </main>
   );
 }

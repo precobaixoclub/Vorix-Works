@@ -39,7 +39,7 @@ export function RuntimeBindingGraph({ tasks, bindings }: { tasks: readonly Runti
             return (
               <g key={binding.id}>
                 <path d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`} fill="none" className="stroke-border" strokeWidth={1.5} markerEnd="url(#runtime-graph-arrow)" />
-                <text x={midX} y={midY - 6} textAnchor="middle" className="fill-ink-faint text-[10px]">
+                <text x={midX} y={midY - 6} textAnchor="middle" className="fill-muted-foreground text-[10px]">
                   {binding.fromOutputPort} → {binding.toInputPort}
                 </text>
               </g>
@@ -49,7 +49,7 @@ export function RuntimeBindingGraph({ tasks, bindings }: { tasks: readonly Runti
 
         <defs>
           <marker id="runtime-graph-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 0 L 8 4 L 0 8 z" className="fill-ink-faint" />
+            <path d="M 0 0 L 8 4 L 0 8 z" className="fill-muted-foreground" />
           </marker>
         </defs>
 
@@ -57,17 +57,17 @@ export function RuntimeBindingGraph({ tasks, bindings }: { tasks: readonly Runti
           const position = centerOf(task.id);
           return (
             <foreignObject key={task.id} x={position.x} y={position.y} width={NODE_WIDTH} height={NODE_HEIGHT}>
-              <div className="flex h-full flex-col justify-center gap-0.5 rounded-lg border border-border border-l-4 border-l-accent bg-surface-raised px-3 py-1.5 shadow-sm">
-                <p className="truncate text-xs font-medium text-ink" title={task.type}>
+              <div className="flex h-full flex-col justify-center gap-0.5 rounded-lg border border-border border-l-4 border-l-primary bg-card px-3 py-1.5 shadow-sm">
+                <p className="truncate text-xs font-medium text-foreground" title={task.type}>
                   {task.type}
                 </p>
-                <p className="truncate text-[11px] text-ink-muted">{task.capability}</p>
+                <p className="truncate text-[11px] text-muted-foreground">{task.capability}</p>
               </div>
             </foreignObject>
           );
         })}
       </svg>
-      {tasks.length === 0 ? <p className="px-1 py-2 text-xs text-ink-muted">Nenhuma tarefa traduzida (validação falhou antes da tradução).</p> : null}
+      {tasks.length === 0 ? <p className="px-1 py-2 text-xs text-muted-foreground">Nenhuma tarefa traduzida (validação falhou antes da tradução).</p> : null}
     </div>
   );
 }

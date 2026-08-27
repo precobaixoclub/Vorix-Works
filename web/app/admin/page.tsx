@@ -2,19 +2,25 @@
 
 import Link from "next/link";
 import { Card, CardBody, CardHeader } from "@/components/Card";
-import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
+import { StatsGrid } from "@/components/StatsGrid";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { usePlatformDashboard } from "@/features/platform-admin/hooks";
 
 /**
  * Visão geral (`/admin`) — Sprint 25. Números do mês corrente somados sobre todos os tenants:
  * receita cobrada dos clientes vs custo dos provedores de IA vs lucro (a diferença). "Top 10 por
  * receita" ajuda a identificar rápido quais contas estão puxando o faturamento.
+ *
+ * Não é um hub (nenhum card leva a outra rota — a navegação entre as seções do admin já vive na
+ * sidebar de `app/admin/layout.tsx`); é um painel de métricas, então segue o padrão de
+ * lista/estados (`StatsGrid` + tabela) em vez do padrão de hub (`HubPage`).
  */
 export default function AdminDashboardPage() {
-  const { data, error, isLoading } = usePlatformDashboard();
+  const { data, error, isLoading, mutate } = usePlatformDashboard();
 
   return (
     <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
@@ -36,67 +42,65 @@ export default function AdminDashboardPage() {
       />
 
       {isLoading ? (
-        <div className="flex items-center gap-2 py-14 text-sm text-ink-muted">
+        <div className="flex items-center gap-2 py-14 text-sm text-muted-foreground">
           <Spinner className="h-4 w-4" /> Carregando dashboard…
         </div>
       ) : error ? (
-        <EmptyState
-          title="Não foi possível carregar o dashboard"
-          description={error instanceof Error ? error.message : "Verifique se a API está no ar."}
-        />
+        <ErrorState error={error} onRetry={() => mutate()} />
       ) : !data ? null : (
         <div className="flex flex-col gap-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatsGrid>
             <MetricCard label="Contas totais" value={data.totalTenants.toString()} hint={`${data.activeTenants} ativas · ${data.suspendedTenants} suspensas`} />
             <MetricCard label="Receita do mês" value={formatUsd(data.totalRevenueUsd)} hint={`Período ${data.currentPeriod}`} />
             <MetricCard label="Custo dos provedores" value={formatUsd(data.totalProviderCostUsd)} hint={`${formatNumber(data.totalRequestsCount)} requisições`} />
             <MetricCard label="Lucro consolidado" value={formatUsd(data.totalProfitUsd)} hint={`${formatNumber(data.totalCreditsConsumed)} créditos consumidos`} highlight />
-          </div>
+          </StatsGrid>
 
           <Card>
             <CardHeader>
               <div>
-                <div className="text-base font-semibold text-ink">Top 10 contas por receita</div>
-                <div className="text-xs text-ink-muted">Ranking do período {data.currentPeriod} — receita cobrada e lucro por conta.</div>
+                <div className="text-base font-semibold text-foreground">Top 10 contas por receita</div>
+                <div className="text-xs text-muted-foreground">Ranking do período {data.currentPeriod} — receita cobrada e lucro por conta.</div>
               </div>
             </CardHeader>
             <CardBody className="p-0">
-              {data.topTenantsByRevenue.length === 0 ? (
-                <div className="px-5 py-10 text-center text-sm text-ink-muted">
-                  Ainda não há consumo neste período.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[680px] text-sm">
-                    <thead>
-                      <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-muted">
-                        <th className="px-5 py-2 font-medium">Conta (tenant)</th>
-                        <th className="px-5 py-2 font-medium">Plano</th>
-                        <th className="px-5 py-2 text-right font-medium">Receita</th>
-                        <th className="px-5 py-2 text-right font-medium">Custo</th>
-                        <th className="px-5 py-2 text-right font-medium">Lucro</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.topTenantsByRevenue.map((row) => (
-                        <tr key={row.tenantId} className="border-b border-border/60 last:border-b-0 hover:bg-surface-sunken">
-                          <td className="px-5 py-2">
-                            <Link href={`/admin/tenants/${encodeURIComponent(row.tenantId)}`} className="text-accent hover:underline">
-                              {row.tenantId}
-                            </Link>
-                          </td>
-                          <td className="px-5 py-2">
-                            <PlanBadge code={row.planCode} />
-                          </td>
-                          <td className="px-5 py-2 text-right font-medium">{formatUsd(row.customerPriceUsd)}</td>
-                          <td className="px-5 py-2 text-right text-ink-muted">{formatUsd(row.providerCostUsd)}</td>
-                          <td className="px-5 py-2 text-right font-semibold text-emerald-700">{formatUsd(row.profitUsd)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Conta (tenant)</TableHead>
+                    <TableHead>Plano</TableHead>
+                    <TableHead className="text-right">Receita</TableHead>
+                    <TableHead className="text-right">Custo</TableHead>
+                    <TableHead className="text-right">Lucro</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {/* Ranking fixo (Top 10) — a ordem É a informação, sem cabeçalho ordenável. */}
+                  {data.topTenantsByRevenue.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                        Ainda não há consumo neste período.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    data.topTenantsByRevenue.map((row) => (
+                      <TableRow key={row.tenantId}>
+                        <TableCell>
+                          <Link href={`/admin/tenants/${encodeURIComponent(row.tenantId)}`} className="text-primary hover:underline">
+                            {row.tenantId}
+                          </Link>
+                        </TableCell>
+                        <TableCell>
+                          <PlanBadge code={row.planCode} />
+                        </TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">{formatUsd(row.customerPriceUsd)}</TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">{formatUsd(row.providerCostUsd)}</TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatUsd(row.profitUsd)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
             </CardBody>
           </Card>
         </div>
@@ -107,11 +111,11 @@ export default function AdminDashboardPage() {
 
 function MetricCard({ label, value, hint, highlight }: { label: string; value: string; hint?: string; highlight?: boolean }) {
   return (
-    <Card className={highlight ? "border-accent/40 bg-accent/5" : undefined}>
+    <Card className={highlight ? "border-primary/40 bg-primary/5" : undefined}>
       <div className="px-5 py-4">
-        <div className="text-xs uppercase tracking-wider text-ink-muted">{label}</div>
-        <div className="mt-1 text-2xl font-semibold text-ink">{value}</div>
-        {hint ? <div className="mt-1 text-xs text-ink-muted">{hint}</div> : null}
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+        <div className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{value}</div>
+        {hint ? <div className="mt-1 text-xs text-muted-foreground">{hint}</div> : null}
       </div>
     </Card>
   );
@@ -119,13 +123,13 @@ function MetricCard({ label, value, hint, highlight }: { label: string; value: s
 
 function PlanBadge({ code }: { code: string }) {
   const style: Record<string, string> = {
-    FREE: "bg-slate-100 text-slate-700",
-    START: "bg-sky-100 text-sky-800",
-    PRO: "bg-violet-100 text-violet-800",
-    BUSINESS: "bg-amber-100 text-amber-800",
-    ENTERPRISE: "bg-emerald-100 text-emerald-800",
+    FREE: "bg-muted text-muted-foreground",
+    START: "bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300",
+    PRO: "bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300",
+    BUSINESS: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+    ENTERPRISE: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
   };
-  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${style[code] ?? "bg-slate-100 text-slate-700"}`}>{code}</span>;
+  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${style[code] ?? "bg-muted text-muted-foreground"}`}>{code}</span>;
 }
 
 function formatUsd(value: number): string {

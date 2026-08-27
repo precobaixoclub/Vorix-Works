@@ -4,10 +4,16 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Input, Label, Textarea } from "@/components/Field";
+import { PageHeader } from "@/components/PageHeader";
 import { PostPreview } from "@/components/PostPreview";
 import { ProgressivePanel } from "@/components/ScreenGuide";
+import { SearchableCombo } from "@/components/SearchableCombo";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { scheduleMetaPost } from "@/features/meta/api";
@@ -48,6 +54,12 @@ const TIKTOK_PRIVACY_OPTIONS: readonly { value: TikTokPrivacyLevel; label: strin
   { value: "SELF_ONLY", label: "Só eu" },
 ];
 
+const YOUTUBE_PRIVACY_OPTIONS: readonly { value: YouTubePrivacyStatus; label: string }[] = [
+  { value: "public", label: "Público" },
+  { value: "unlisted", label: "Não listado" },
+  { value: "private", label: "Privado" },
+];
+
 export default function PublishPage() {
   const workspace = useCurrentWorkspace();
   const { data: tiktokOAuth } = useTikTokOAuthStatus(workspace.id);
@@ -81,6 +93,7 @@ export default function PublishPage() {
   const [tiktokAutoAddMusic, setTiktokAutoAddMusic] = useState(true);
   const [youtubePrivacy, setYouTubePrivacy] = useState<YouTubePrivacyStatus>("public");
   const [networkOptionsOpen, setNetworkOptionsOpen] = useState(false);
+  const [postPendingCancel, setPostPendingCancel] = useState<UnifiedPublication | undefined>();
 
   const connectedByPlatform: Record<Platform, boolean> = {
     tiktok: tiktokOAuth?.connected ?? false,
@@ -115,6 +128,7 @@ export default function PublishPage() {
   const recentPublications = (unified ?? []).slice(0, 3);
   const mostRecent = unified?.[0];
   const selectedSource = useMemo(() => unified?.find((post) => sourceKey(post) === selectedSourceId), [selectedSourceId, unified]);
+  const contentLibraryItems = useMemo(() => (unified ?? []).slice(0, 20).map((post) => ({ id: sourceKey(post), label: titleOf(post) })), [unified]);
 
   useEffect(() => {
     if (queryApplied || !unified) return;
@@ -149,15 +163,6 @@ export default function PublishPage() {
       return next;
     });
     if (platform === "youtube") setMediaKind("video");
-  }
-
-  function toggleMetaPlacement(placement: MetaPlacement) {
-    setMetaPlacements((current) => {
-      const next = new Set(current);
-      if (next.has(placement) && next.size > 1) next.delete(placement);
-      else next.add(placement);
-      return next;
-    });
   }
 
   async function uploadVideoFile(file: File) {
@@ -315,34 +320,35 @@ export default function PublishPage() {
     setBusy(false);
   }
 
-  async function cancelPost(post: UnifiedPublication) {
+  async function confirmCancelPost() {
+    if (!postPendingCancel) return;
     setBusy(true);
     setFeedback(undefined);
     try {
-      await cancelUnifiedPublication(workspace.id, post.network, post.id);
+      await cancelUnifiedPublication(workspace.id, postPendingCancel.network, postPendingCancel.id);
       await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateYouTubePosts(), mutateUnified()]);
     } catch (cause) {
       setFeedback(messageOf(cause));
     } finally {
       setBusy(false);
+      setPostPendingCancel(undefined);
     }
   }
 
   return (
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Distribuição</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">Publicar</h1>
-          <p className="mt-2 max-w-2xl text-sm text-ink-muted">Escolha um conteúdo, selecione as redes e publique agora ou agende.</p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <Link href={`/workspaces/${workspace.id}/calendar`} className="text-sm font-medium text-accent hover:underline">Ver calendário</Link>
-          <Link href={`/workspaces/${workspace.id}/campaigns`} className="text-sm font-medium text-accent hover:underline">Ver todos os conteúdos</Link>
-        </div>
-      </div>
+      <PageHeader
+        title="Publicar"
+        description="Escolha um conteúdo, selecione as redes e publique agora ou agende."
+        actions={
+          <>
+            <Link href={`/workspaces/${workspace.id}/calendar`} className="text-sm font-medium text-primary hover:underline">Ver calendário</Link>
+            <Link href={`/workspaces/${workspace.id}/campaigns`} className="text-sm font-medium text-primary hover:underline">Ver todos os conteúdos</Link>
+          </>
+        }
+      />
 
-      {feedback ? <Card className="mb-6 border-accent/30 bg-accent-soft/30 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
+      {feedback ? <Card className="mb-6 border-primary/30 bg-primary/10 p-4"><p className="text-sm text-foreground">{feedback}</p></Card> : null}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
         <form className="space-y-5" onSubmit={submitPost}>
@@ -350,42 +356,47 @@ export default function PublishPage() {
             <SectionTitle step="1" title="Escolher conteúdo" />
             <div className="mt-4 grid gap-3">
               {mostRecent ? (
-                <button type="button" onClick={() => applyContent(mostRecent)} className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-surface p-3 text-left hover:border-accent">
+                <button type="button" onClick={() => applyContent(mostRecent)} className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card p-3 text-left hover:border-primary">
                   <ContentThumb post={mostRecent} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Peça mais recente</p>
-                    <p className="line-clamp-2 text-sm font-semibold text-ink">{titleOf(mostRecent)}</p>
-                    <p className="mt-1 text-xs text-ink-muted">{formatDateTime(mostRecent.createdAt)}</p>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Peça mais recente</p>
+                    <p className="line-clamp-2 text-sm font-semibold text-foreground">{titleOf(mostRecent)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(mostRecent.createdAt)}</p>
                   </div>
-                  <span className="text-xs font-medium text-accent">Usar</span>
+                  <span className="text-xs font-medium text-primary">Usar</span>
                 </button>
               ) : null}
 
               {unified && unified.length > 0 ? (
                 <div>
                   <Label htmlFor="existing-content">Selecionar conteúdo existente</Label>
-                  <select
-                    id="existing-content"
+                  <SearchableCombo
+                    items={contentLibraryItems}
                     value={selectedSourceId}
-                    onChange={(event) => {
-                      const post = unified.find((item) => sourceKey(item) === event.target.value);
+                    onValueChange={(value) => {
+                      const post = unified.find((item) => sourceKey(item) === value);
                       if (post) applyContent(post);
                     }}
-                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
-                  >
-                    <option value="">Escolher da biblioteca</option>
-                    {unified.slice(0, 20).map((post) => <option key={sourceKey(post)} value={sourceKey(post)}>{titleOf(post)}</option>)}
-                  </select>
+                    placeholder="Escolher da biblioteca"
+                    searchPlaceholder="Buscar conteúdo..."
+                    emptyText="Nenhum conteúdo encontrado."
+                  />
                 </div>
               ) : null}
 
-              <div className="rounded-xl border border-border bg-surface-sunken p-3">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">Ou enviar agora</p>
-                <div className="mb-3 flex flex-wrap gap-2">
-                  <Button type="button" variant={mediaKind === "image" ? "primary" : "secondary"} disabled={selected.has("youtube")} onClick={() => setMediaKind("image")}>Imagem/carrossel</Button>
-                  <Button type="button" variant={mediaKind === "video" ? "primary" : "secondary"} onClick={() => setMediaKind("video")}>Vídeo</Button>
-                </div>
-                {selected.has("youtube") ? <p className="mb-3 text-xs text-ink-muted">YouTube Shorts só publica vídeo.</p> : null}
+              <div className="rounded-xl border border-border bg-background p-3">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ou enviar agora</p>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  className="mb-3 justify-start"
+                  value={mediaKind}
+                  onValueChange={(value) => value && setMediaKind(value as "image" | "video")}
+                >
+                  <ToggleGroupItem value="image" disabled={selected.has("youtube")} className="px-4">Imagem/carrossel</ToggleGroupItem>
+                  <ToggleGroupItem value="video" className="px-4">Vídeo</ToggleGroupItem>
+                </ToggleGroup>
+                {selected.has("youtube") ? <p className="mb-3 text-xs text-muted-foreground">YouTube Shorts só publica vídeo.</p> : null}
                 {mediaKind === "video" ? (
                   <MediaUploadPanel id="publish-video-file" label="Vídeo" helper="MP4 ou MOV. Para Shorts, prefira vídeo vertical curto." accept="video/mp4,video/quicktime" uploading={uploading} urls={videoUrl.trim() ? [videoUrl.trim()] : []} onPick={(files) => files?.[0] && uploadVideoFile(files[0])} onRemove={() => setVideoUrl("")} />
                 ) : (
@@ -415,15 +426,24 @@ export default function PublishPage() {
             </div>
 
             {hasMetaSelection ? (
-              <div className="mt-4 rounded-xl border border-border bg-surface p-3">
+              <div className="mt-4 rounded-xl border border-border bg-card p-3">
                 <Label htmlFor="publish-placement">Opções de Meta</Label>
-                <div id="publish-placement" className="mt-2 flex gap-2">
+                <ToggleGroup
+                  id="publish-placement"
+                  type="multiple"
+                  variant="outline"
+                  className="mt-2 justify-start"
+                  value={selectedMetaPlacements}
+                  onValueChange={(next: string[]) => { if (next.length > 0) setMetaPlacements(new Set(next as MetaPlacement[])); }}
+                >
                   {META_PLACEMENTS.map((item) => (
-                    <Button key={item.id} type="button" className="flex-1 sm:flex-none" variant={metaPlacements.has(item.id) ? "primary" : "secondary"} onClick={() => toggleMetaPlacement(item.id)}>{item.label}</Button>
+                    <ToggleGroupItem key={item.id} value={item.id} className="flex-1 px-4 sm:flex-none">
+                      {item.label}
+                    </ToggleGroupItem>
                   ))}
-                </div>
-                {storySelected ? <p className="mt-2 text-xs text-ink-muted">Story usa somente o formato permitido pela rede. Feed continua com legenda e carrossel quando aplicavel.</p> : null}
-                {hasStoryUnsupported ? <p className="mt-1 text-xs text-ink-muted">Story vale só para Instagram/Facebook; TikTok e YouTube seguem como publicação normal.</p> : null}
+                </ToggleGroup>
+                {storySelected ? <p className="mt-2 text-xs text-muted-foreground">Story usa somente o formato permitido pela rede. Feed continua com legenda e carrossel quando aplicavel.</p> : null}
+                {hasStoryUnsupported ? <p className="mt-1 text-xs text-muted-foreground">Story vale só para Instagram/Facebook; TikTok e YouTube seguem como publicação normal.</p> : null}
               </div>
             ) : null}
           </Card>
@@ -441,11 +461,11 @@ export default function PublishPage() {
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <button type="button" onClick={() => { setPublishTiming("now"); setScheduledAt(""); }} className={timingClass(publishTiming === "now")}>
                 <span className="text-sm font-semibold">Publicar agora</span>
-                <span className="text-xs text-ink-muted">Enviar assim que confirmar.</span>
+                <span className="text-xs text-muted-foreground">Enviar assim que confirmar.</span>
               </button>
               <button type="button" onClick={() => setPublishTiming("schedule")} className={timingClass(publishTiming === "schedule")}>
                 <span className="text-sm font-semibold">Agendar</span>
-                <span className="text-xs text-ink-muted">Definir data e horário.</span>
+                <span className="text-xs text-muted-foreground">Definir data e horário.</span>
               </button>
             </div>
             {publishTiming === "schedule" ? (
@@ -466,40 +486,48 @@ export default function PublishPage() {
             <ProgressivePanel title="Opções da rede" description="Privacidade, música automática e interações quando a rede suporta." open={networkOptionsOpen} onToggle={() => setNetworkOptionsOpen(!networkOptionsOpen)}>
               <div className="grid gap-3">
                 {selected.has("tiktok") ? (
-                  <div className="rounded-xl border border-border bg-surface p-3">
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">TikTok</p>
+                  <div className="rounded-xl border border-border bg-card p-3">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">TikTok</p>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div>
                         <Label htmlFor="tiktok-privacy">Quem pode ver</Label>
-                        <select id="tiktok-privacy" value={tiktokPrivacy} onChange={(event) => setTiktokPrivacy(event.target.value as TikTokPrivacyLevel)} className="w-full rounded-md border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none">
-                          {TIKTOK_PRIVACY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                        </select>
+                        <Select value={tiktokPrivacy} onValueChange={(value) => setTiktokPrivacy(value as TikTokPrivacyLevel)}>
+                          <SelectTrigger id="tiktok-privacy">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {TIKTOK_PRIVACY_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <div className="flex flex-col justify-end gap-1.5">
-                        <CheckboxLine checked={tiktokAutoAddMusic} onChange={setTiktokAutoAddMusic} label="Adicionar música automaticamente" />
-                        <CheckboxLine checked={tiktokDisableComment} onChange={setTiktokDisableComment} label="Desativar comentários" />
-                        <CheckboxLine checked={tiktokDisableDuet} onChange={setTiktokDisableDuet} label="Desativar Duet" />
-                        <CheckboxLine checked={tiktokDisableStitch} onChange={setTiktokDisableStitch} label="Desativar Stitch" />
+                      <div className="flex flex-col justify-end gap-2">
+                        <SwitchLine id="tiktok-auto-music" checked={tiktokAutoAddMusic} onChange={setTiktokAutoAddMusic} label="Adicionar música automaticamente" />
+                        <SwitchLine id="tiktok-disable-comment" checked={tiktokDisableComment} onChange={setTiktokDisableComment} label="Desativar comentários" />
+                        <SwitchLine id="tiktok-disable-duet" checked={tiktokDisableDuet} onChange={setTiktokDisableDuet} label="Desativar Duet" />
+                        <SwitchLine id="tiktok-disable-stitch" checked={tiktokDisableStitch} onChange={setTiktokDisableStitch} label="Desativar Stitch" />
                       </div>
                     </div>
                   </div>
                 ) : null}
                 {selected.has("youtube") ? (
-                  <div className="rounded-xl border border-border bg-surface p-3">
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">YouTube</p>
+                  <div className="rounded-xl border border-border bg-card p-3">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">YouTube</p>
                     <Label htmlFor="youtube-privacy">Visibilidade</Label>
-                    <select id="youtube-privacy" value={youtubePrivacy} onChange={(event) => setYouTubePrivacy(event.target.value as YouTubePrivacyStatus)} className="w-full rounded-md border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none">
-                      <option value="public">Público</option>
-                      <option value="unlisted">Não listado</option>
-                      <option value="private">Privado</option>
-                    </select>
+                    <Select value={youtubePrivacy} onValueChange={(value) => setYouTubePrivacy(value as YouTubePrivacyStatus)}>
+                      <SelectTrigger id="youtube-privacy">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {YOUTUBE_PRIVACY_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
                 ) : null}
               </div>
             </ProgressivePanel>
           ) : null}
 
-          <div className="sticky bottom-16 z-20 rounded-2xl border border-border bg-surface-raised/95 p-3 shadow-xl backdrop-blur md:bottom-4">
+          <div className="sticky bottom-16 z-20 rounded-2xl border border-border bg-card/95 p-3 shadow-xl backdrop-blur md:bottom-4">
             <Button type="submit" className="w-full" disabled={busy || uploading || selected.size === 0 || !hasMedia || (publishTiming === "schedule" && !scheduledAt)}>
               {publishTiming === "schedule" ? "Agendar publicação" : "Publicar agora"}
             </Button>
@@ -508,9 +536,9 @@ export default function PublishPage() {
 
         <aside className="space-y-5 lg:sticky lg:top-5 lg:self-start">
           <Card className="p-4 sm:p-5">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">Preview</p>
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Preview</p>
             {selected.size === 0 ? (
-              <p className="text-sm text-ink-muted">Selecione uma rede conectada para ver a prévia.</p>
+              <p className="text-sm text-muted-foreground">Selecione uma rede conectada para ver a prévia.</p>
             ) : (
               <div className="flex flex-col gap-5">
                 {PLATFORMS.filter((platform) => selected.has(platform.id)).flatMap((platform) => {
@@ -527,19 +555,31 @@ export default function PublishPage() {
 
           <Card className="p-4 sm:p-5">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-ink">Publicações recentes</p>
-              <Link href={`/workspaces/${workspace.id}/campaigns`} className="text-xs font-medium text-accent hover:underline">Ver todos</Link>
+              <p className="text-sm font-semibold text-foreground">Publicações recentes</p>
+              <Link href={`/workspaces/${workspace.id}/campaigns`} className="text-xs font-medium text-primary hover:underline">Ver todos</Link>
             </div>
             {recentPublications.length === 0 ? (
-              <p className="text-sm text-ink-muted">Nenhuma publicação ainda.</p>
+              <p className="text-sm text-muted-foreground">Nenhuma publicação ainda.</p>
             ) : (
               <div className="space-y-3">
-                {recentPublications.map((post) => <RecentPublicationCard key={`${post.network}-${post.id}`} post={post} busy={busy} onCancel={() => cancelPost(post)} />)}
+                {recentPublications.map((post) => <RecentPublicationCard key={`${post.network}-${post.id}`} post={post} busy={busy} onCancel={() => setPostPendingCancel(post)} />)}
               </div>
             )}
           </Card>
         </aside>
       </div>
+
+      <ConfirmDialog
+        open={Boolean(postPendingCancel)}
+        title="Cancelar publicação"
+        description={postPendingCancel ? `Tem certeza que deseja cancelar a publicação "${titleOf(postPendingCancel)}"? Esta ação não pode ser desfeita.` : ""}
+        confirmLabel="Cancelar publicação"
+        cancelLabel="Voltar"
+        variant="danger"
+        busy={busy}
+        onConfirm={confirmCancelPost}
+        onCancel={() => setPostPendingCancel(undefined)}
+      />
     </main>
   );
 }
@@ -547,24 +587,24 @@ export default function PublishPage() {
 function SectionTitle({ step, title }: { step: string; title: string }) {
   return (
     <div className="flex items-center gap-3">
-      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-sm font-semibold text-white">{step}</span>
-      <h2 className="text-base font-semibold text-ink">{title}</h2>
+      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">{step}</span>
+      <h2 className="text-base font-semibold text-foreground">{title}</h2>
     </div>
   );
 }
 
 function NetworkChoice({ platform, connected, selected, accountLabel, workspaceId, onToggle }: { platform: { id: Platform; label: string; icon: string }; connected: boolean; selected: boolean; accountLabel?: string; workspaceId: string; onToggle: () => void }) {
   return (
-    <div className={`rounded-xl border p-3 ${selected ? "border-accent bg-accent-soft/35" : "border-border bg-surface"}`}>
+    <div className={`rounded-xl border p-3 ${selected ? "border-primary bg-primary/10" : "border-border bg-card"}`}>
       <button type="button" onClick={onToggle} disabled={!connected} className="flex w-full items-start gap-3 text-left disabled:cursor-not-allowed">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-raised text-sm font-semibold text-ink">{platform.icon}</span>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-card text-sm font-semibold text-foreground">{platform.icon}</span>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-ink">{platform.label}</span>
-          <span className="mt-0.5 block truncate text-xs text-ink-muted">{connected ? accountLabel ?? "Conta conectada" : "Não conectado"}</span>
+          <span className="block text-sm font-semibold text-foreground">{platform.label}</span>
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground">{connected ? accountLabel ?? "Conta conectada" : "Não conectado"}</span>
         </span>
-        <span className={`mt-1 h-4 w-4 rounded border ${selected ? "border-accent bg-accent" : "border-border bg-surface-raised"}`} />
+        <span className={`mt-1 h-4 w-4 rounded border ${selected ? "border-primary bg-primary" : "border-border bg-card"}`} />
       </button>
-      {!connected ? <Link href={`/workspaces/${workspaceId}/connections`} className="mt-3 inline-flex text-xs font-medium text-accent hover:underline">Conectar</Link> : null}
+      {!connected ? <Link href={`/workspaces/${workspaceId}/connections`} className="mt-3 inline-flex text-xs font-medium text-primary hover:underline">Conectar</Link> : null}
     </div>
   );
 }
@@ -572,12 +612,12 @@ function NetworkChoice({ platform, connected, selected, accountLabel, workspaceI
 function ContentThumb({ post }: { post: UnifiedPublication }) {
   const image = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
   return (
-    <span className="flex h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-surface-raised">
+    <span className="flex h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-card">
       {image ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={image} alt="" className="h-full w-full object-cover" />
       ) : (
-        <span className="flex h-full w-full items-center justify-center text-lg text-ink-muted">{contentTypeOf(post) === "video" ? "▶" : "▧"}</span>
+        <span className="flex h-full w-full items-center justify-center text-lg text-muted-foreground">{contentTypeOf(post) === "video" ? "▶" : "▧"}</span>
       )}
     </span>
   );
@@ -587,21 +627,21 @@ function MediaUploadPanel({ id, label, helper, accept, multiple, uploading, urls
   return (
     <div className="mt-3">
       <Label htmlFor={id}>{label}</Label>
-      <div className="rounded-lg border border-border bg-surface p-3">
-        <input id={id} type="file" accept={accept} multiple={multiple} disabled={uploading} onChange={(event) => { onPick(event.target.files); event.currentTarget.value = ""; }} className="w-full text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-accent" />
-        <p className="mt-2 text-xs text-ink-muted">{uploading ? "Enviando arquivo..." : helper}</p>
+      <div className="rounded-lg border border-border bg-card p-3">
+        <input id={id} type="file" accept={accept} multiple={multiple} disabled={uploading} onChange={(event) => { onPick(event.target.files); event.currentTarget.value = ""; }} className="w-full text-sm text-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary" />
+        <p className="mt-2 text-xs text-muted-foreground">{uploading ? "Enviando arquivo..." : helper}</p>
         {urls.length > 0 ? (
           <div className="mt-3 grid gap-2">
             {urls.map((url) => (
-              <div key={url} className="flex flex-col gap-3 rounded-md border border-border bg-surface-raised p-2 sm:flex-row sm:items-center">
+              <div key={url} className="flex flex-col gap-3 rounded-md border border-border bg-background p-2 sm:flex-row sm:items-center">
                 {isImageUrl(url) ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={url} alt="" className="h-32 w-full rounded object-contain sm:h-14 sm:w-14 sm:object-cover" />
                 ) : (
-                  <div className="flex h-14 w-full items-center justify-center rounded bg-surface-sunken text-lg sm:w-14">▶</div>
+                  <div className="flex h-14 w-full items-center justify-center rounded bg-muted text-lg sm:w-14">▶</div>
                 )}
-                <p className="min-w-0 flex-1 truncate text-xs text-ink-muted">{url}</p>
-                <button type="button" className="min-h-9 text-left text-xs font-medium text-red-600 hover:text-red-700 sm:text-center" onClick={() => onRemove(url)}>Remover</button>
+                <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{url}</p>
+                <button type="button" className="min-h-9 text-left text-xs font-medium text-destructive hover:text-destructive/80 sm:text-center" onClick={() => onRemove(url)}>Remover</button>
               </div>
             ))}
           </div>
@@ -616,11 +656,11 @@ function RecentPublicationCard({ post, busy, onCancel }: { post: UnifiedPublicat
   const when = post.scheduledAt ? `${formatDateTime(post.scheduledAt)}${post.timezone ? ` (${post.timezone})` : ""}` : "Imediato";
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-3">
+    <div className="rounded-xl border border-border bg-card p-3">
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-ink">{titleOf(post)}</p>
-          <p className="mt-0.5 text-xs text-ink-muted">{when}</p>
+          <p className="truncate text-sm font-semibold text-foreground">{titleOf(post)}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{when}</p>
         </div>
         <StatusBadge status={status} />
       </div>
@@ -630,14 +670,14 @@ function RecentPublicationCard({ post, busy, onCancel }: { post: UnifiedPublicat
 }
 
 function timingClass(active: boolean) {
-  return `flex flex-col gap-1 rounded-xl border p-3 text-left transition ${active ? "border-accent bg-accent-soft/35 text-ink" : "border-border bg-surface text-ink hover:border-accent/60"}`;
+  return `flex flex-col gap-1 rounded-xl border p-3 text-left transition ${active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card text-foreground hover:border-primary/60"}`;
 }
 
-function CheckboxLine({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
+function SwitchLine({ id, checked, onChange, label }: { id: string; checked: boolean; onChange: (value: boolean) => void; label: string }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-ink">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4" />
-      {label}
+    <label htmlFor={id} className="flex items-center justify-between gap-3 text-sm text-foreground">
+      <span>{label}</span>
+      <Switch id={id} checked={checked} onCheckedChange={onChange} />
     </label>
   );
 }

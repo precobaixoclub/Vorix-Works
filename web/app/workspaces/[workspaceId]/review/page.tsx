@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/Button";
 import { Card, CardBody } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { Modal } from "@/components/Modal";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
@@ -68,7 +69,7 @@ function deriveRunContent(workspaceId: string, runId: string, detail: ExecutionR
  */
 export default function ReviewPage() {
   const workspace = useCurrentWorkspace();
-  const { data: runs, isLoading, mutate } = useExecutionRuns(workspace.id);
+  const { data: runs, isLoading, error: runsError, mutate } = useExecutionRuns(workspace.id);
   const readyRuns = (runs ?? [])
     .filter((run) => run.mode === "real" && READY_STATES.includes(run.state))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -88,8 +89,10 @@ export default function ReviewPage() {
 
       {isLoading ? (
         <div className="flex justify-center py-14">
-          <Spinner />
+          <Spinner className="h-6 w-6 text-primary" />
         </div>
+      ) : runsError ? (
+        <ErrorState error={runsError} onRetry={() => mutate()} />
       ) : readyRuns.length === 0 ? (
         <EmptyState title="Nada para revisar ainda" description="Quando uma peça terminar de ser gerada em Produção, ela aparece aqui." />
       ) : (
@@ -147,20 +150,20 @@ function RunListItem({ workspaceId, run, selected, onSelect }: { workspaceId: st
       onClick={onSelect}
       aria-current={selected}
       className={`flex w-40 shrink-0 flex-col gap-2 rounded-lg border p-2 text-left transition-colors lg:w-full lg:flex-row lg:items-center ${
-        selected ? "border-accent bg-accent-soft" : "border-border bg-surface hover:bg-surface-sunken"
+        selected ? "border-primary bg-primary/10" : "border-border bg-card hover:bg-muted"
       }`}
     >
-      <div className="aspect-square w-full shrink-0 overflow-hidden rounded-md border border-border bg-surface-sunken lg:w-12">
+      <div className="aspect-square w-full shrink-0 overflow-hidden rounded-md border border-border bg-muted lg:w-12">
         {thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={thumbnail} alt="" loading="lazy" className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-[10px] text-ink-faint">—</div>
+          <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">—</div>
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className={`truncate text-xs font-medium ${selected ? "text-accent" : "text-ink"}`}>{title}</p>
-        <p className="mt-0.5 text-[11px] text-ink-muted">{run.state === "waiting_for_approval" ? "Aguardando" : "Aprovada"}</p>
+        <p className={`truncate text-xs font-medium ${selected ? "text-primary" : "text-foreground"}`}>{title}</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">{run.state === "waiting_for_approval" ? "Aguardando" : "Aprovada"}</p>
       </div>
     </button>
   );
@@ -287,14 +290,14 @@ function RunWorkspace({ workspaceId, run, onDecided }: { workspaceId: string; ru
               // Peça única: imagem inteira sem corte (achado ao vivo — `object-cover` com
               // `aspect-square` cortava peças que não são quadradas) e clicável pra abrir em
               // tamanho real numa aba nova.
-              <a href={images[0].uri} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border bg-surface-sunken">
+              <a href={images[0].uri} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border bg-muted">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={images[0].uri} alt={title} loading="lazy" className="mx-auto max-h-[70vh] w-full object-contain" />
               </a>
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 {images.map((image, index) => (
-                  <a key={`${image.uri}-${index}`} href={image.uri} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border bg-surface-sunken">
+                  <a key={`${image.uri}-${index}`} href={image.uri} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border bg-muted">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={image.uri} alt={title} loading="lazy" className="aspect-square w-full object-contain" />
                   </a>
@@ -302,9 +305,9 @@ function RunWorkspace({ workspaceId, run, onDecided }: { workspaceId: string; ru
               </div>
             )
           ) : (
-            <div className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-xs text-ink-muted">Sem imagem</div>
+            <div className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-xs text-muted-foreground">Sem imagem</div>
           )}
-          <p className="mt-2 text-[11px] text-ink-faint" title={run.createdAt}>
+          <p className="mt-2 text-[11px] text-muted-foreground/70" title={run.createdAt}>
             Gerado em {formatGeneratedAt(run.createdAt)}
           </p>
         </CardBody>
@@ -314,16 +317,16 @@ function RunWorkspace({ workspaceId, run, onDecided }: { workspaceId: string; ru
         <CardBody className="space-y-4">
           <div className="min-w-0 space-y-1.5">
             <div className="flex items-start justify-between gap-2">
-              <p className="font-display text-sm font-semibold text-ink">{title}</p>
+              <p className="font-display text-sm font-semibold text-foreground">{title}</p>
               <CopyButton text={title} label="Copiar título" />
             </div>
             <div className="flex items-start justify-between gap-2">
-              <p className="whitespace-pre-wrap text-xs text-ink-muted">{description}</p>
+              <p className="whitespace-pre-wrap text-xs text-muted-foreground">{description}</p>
               <CopyButton text={description} label="Copiar descrição" />
             </div>
           </div>
 
-          {error ? <p className="text-xs text-danger">{error}</p> : null}
+          {error ? <p className="text-xs text-destructive">{error}</p> : null}
 
           {run.state === "waiting_for_approval" ? (
             <div className="flex gap-2">
@@ -335,8 +338,8 @@ function RunWorkspace({ workspaceId, run, onDecided }: { workspaceId: string; ru
               </Button>
             </div>
           ) : (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-muted">
-              <span className="h-1.5 w-1.5 rounded-full bg-success" />
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               Aprovada
             </span>
           )}
@@ -346,7 +349,7 @@ function RunWorkspace({ workspaceId, run, onDecided }: { workspaceId: string; ru
       {rejectStep === "choose" ? (
         <Modal title="Rejeitar peça" onClose={() => setRejectStep("closed")}>
           <div className="space-y-3">
-            <p className="text-sm text-ink-muted">Você quer rejeitar por completo ou pedir um ajuste e gerar de novo?</p>
+            <p className="text-sm text-muted-foreground">Você quer rejeitar por completo ou pedir um ajuste e gerar de novo?</p>
             <div className="flex flex-col gap-2">
               <Button onClick={() => setRejectStep("request_change")}>Solicitar alteração</Button>
               <Button variant="secondary" onClick={() => setRejectStep("confirm_tank")}>
@@ -361,13 +364,13 @@ function RunWorkspace({ workspaceId, run, onDecided }: { workspaceId: string; ru
         <Modal title="Rejeitar por completo" onClose={() => setRejectStep("closed")}>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <p className="text-sm text-ink-muted">Por que essa peça não serve? (escolha ao menos um motivo — ajuda a próxima geração a não repetir o mesmo problema)</p>
+              <p className="text-sm text-muted-foreground">Por que essa peça não serve? (escolha ao menos um motivo — ajuda a próxima geração a não repetir o mesmo problema)</p>
               <div className="flex flex-wrap gap-1.5">
                 {REJECTION_REASONS.map((reason) => (
                   <label
                     key={reason}
                     className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
-                      rejectReasons.includes(reason) ? "border-ink bg-ink text-surface" : "border-border text-ink-muted hover:bg-surface-sunken"
+                      rejectReasons.includes(reason) ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     <input type="checkbox" className="sr-only" checked={rejectReasons.includes(reason)} onChange={() => toggleRejectReason(reason)} />
@@ -377,8 +380,8 @@ function RunWorkspace({ workspaceId, run, onDecided }: { workspaceId: string; ru
               </div>
             </div>
             <Textarea value={rejectComment} onChange={(event) => setRejectComment(event.target.value)} rows={2} placeholder="Comentário opcional" />
-            <p className="text-sm text-ink-muted">Quer que a ideia volte disponível no tanque, ou prefere mantê-la como já usada?</p>
-            {error ? <p className="text-xs text-danger">{error}</p> : null}
+            <p className="text-sm text-muted-foreground">Quer que a ideia volte disponível no tanque, ou prefere mantê-la como já usada?</p>
+            {error ? <p className="text-xs text-destructive">{error}</p> : null}
             <div className="flex flex-col gap-2">
               <Button disabled={busy || rejectReasons.length === 0} onClick={() => rejectAndResolveTank(true)}>
                 {busy ? "Enviando…" : "Voltar ideia para o tanque"}
@@ -394,9 +397,9 @@ function RunWorkspace({ workspaceId, run, onDecided }: { workspaceId: string; ru
       {rejectStep === "request_change" ? (
         <Modal title="Solicitar alteração" onClose={() => setRejectStep("closed")}>
           <div className="space-y-3">
-            <p className="text-sm text-ink-muted">Descreva o que precisa mudar. Uma nova versão será gerada com esse ajuste.</p>
+            <p className="text-sm text-muted-foreground">Descreva o que precisa mudar. Uma nova versão será gerada com esse ajuste.</p>
             <Textarea value={changeText} onChange={(event) => setChangeText(event.target.value)} rows={4} placeholder="Ex.: deixar o fundo mais claro e destacar o preço." autoFocus />
-            {error ? <p className="text-xs text-danger">{error}</p> : null}
+            {error ? <p className="text-xs text-destructive">{error}</p> : null}
             <Button className="w-full" disabled={busy || !changeText.trim()} onClick={requestChange}>
               {busy ? "Gerando nova versão…" : "Enviar e gerar novamente"}
             </Button>
@@ -434,7 +437,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       onClick={copy}
       title={label}
       aria-label={label}
-      className="shrink-0 rounded-md p-1 text-ink-faint hover:bg-surface-sunken hover:text-ink"
+      className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
     >
       {copied ? "✓" : "⧉"}
     </button>

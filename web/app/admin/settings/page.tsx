@@ -1,10 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Input, Label } from "@/components/Field";
 import { PageHeader } from "@/components/PageHeader";
 import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
+import { Switch } from "@/components/ui/switch";
 import { fetchPlatformAiSettings, updatePlatformAiSettings, type PlatformAiSettingsPublic } from "@/features/platform-admin/ai-settings-api";
 
 /**
@@ -25,6 +29,7 @@ export default function AdminSettingsPage() {
   const [model, setModel] = useState("claude-haiku-4-5-20251001");
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [removeKey, setRemoveKey] = useState(false);
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,8 +51,16 @@ export default function AdminSettingsPage() {
     void load();
   }, [load]);
 
-  const onSave = async (event: React.FormEvent) => {
+  const onSave = (event: React.FormEvent) => {
     event.preventDefault();
+    if (removeKey) {
+      setConfirmRemoveOpen(true);
+      return;
+    }
+    void performSave();
+  };
+
+  const performSave = async () => {
     setSaving(true);
     setError(undefined);
     setSuccess(undefined);
@@ -67,6 +80,7 @@ export default function AdminSettingsPage() {
       setError(e instanceof Error ? e.message : "Falha ao salvar.");
     } finally {
       setSaving(false);
+      setConfirmRemoveOpen(false);
     }
   };
 
@@ -90,7 +104,7 @@ export default function AdminSettingsPage() {
       />
 
       {loading ? (
-        <div className="flex items-center gap-2 py-14 text-sm text-ink-muted">
+        <div className="flex items-center gap-2 py-14 text-sm text-muted-foreground">
           <Spinner className="h-4 w-4" /> Carregando…
         </div>
       ) : (
@@ -98,34 +112,23 @@ export default function AdminSettingsPage() {
           <Card>
             <CardHeader>
               <div>
-                <div className="text-base font-semibold text-ink">Flags globais</div>
-                <div className="text-xs text-ink-muted">Controlam se a IA está ativa em toda a plataforma.</div>
+                <div className="text-base font-semibold text-foreground">Flags globais</div>
+                <div className="text-xs text-muted-foreground">Controlam se a IA está ativa em toda a plataforma.</div>
               </div>
             </CardHeader>
             <CardBody className="flex flex-col gap-4">
-              <label className="flex items-center gap-3 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={gatewayEnabled}
-                  onChange={(e) => setGatewayEnabled(e.target.checked)}
-                  className="h-4 w-4"
-                />
+              <label className="flex items-center gap-3 text-sm text-foreground">
+                <Switch checked={gatewayEnabled} onCheckedChange={setGatewayEnabled} />
                 <span>
                   <span className="font-medium">AI Gateway ligado</span>
-                  <span className="ml-1 text-ink-muted">— quando desligado, todas as chamadas de IA voltam para o fallback determinístico.</span>
+                  <span className="ml-1 text-muted-foreground">— quando desligado, todas as chamadas de IA voltam para o fallback determinístico.</span>
                 </span>
               </label>
-              <label className="flex items-center gap-3 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={briefingEnabled}
-                  onChange={(e) => setBriefingEnabled(e.target.checked)}
-                  disabled={!gatewayEnabled}
-                  className="h-4 w-4"
-                />
+              <label className="flex items-center gap-3 text-sm text-foreground">
+                <Switch checked={briefingEnabled} onCheckedChange={setBriefingEnabled} disabled={!gatewayEnabled} />
                 <span>
                   <span className="font-medium">Extração de briefing por IA</span>
-                  <span className="ml-1 text-ink-muted">— usa IA para preencher campos de briefing a partir dos dados da produção.</span>
+                  <span className="ml-1 text-muted-foreground">— usa IA para preencher campos de briefing a partir dos dados da produção.</span>
                 </span>
               </label>
             </CardBody>
@@ -134,90 +137,83 @@ export default function AdminSettingsPage() {
           <Card>
             <CardHeader>
               <div>
-                <div className="text-base font-semibold text-ink">Anthropic (Claude)</div>
-                <div className="text-xs text-ink-muted">A chave é guardada criptografada (AES-256-GCM). Só os últimos 4 caracteres são exibidos.</div>
+                <div className="text-base font-semibold text-foreground">Anthropic (Claude)</div>
+                <div className="text-xs text-muted-foreground">A chave é guardada criptografada (AES-256-GCM). Só os últimos 4 caracteres são exibidos.</div>
               </div>
             </CardHeader>
             <CardBody className="flex flex-col gap-4">
               <div className="text-sm">
-                <div className="text-ink-muted">API key atual</div>
-                <div className="mt-1 font-mono text-ink">
+                <div className="text-muted-foreground">API key atual</div>
+                <div className="mt-1 font-mono text-foreground">
                   {settings?.hasAnthropicApiKey
                     ? `sk-ant-…${settings.anthropicApiKeyLast4}`
-                    : <span className="text-error">Nenhuma chave configurada</span>}
+                    : <span className="text-destructive">Nenhuma chave configurada</span>}
                 </div>
               </div>
 
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-ink">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="anthropic-key">
                   {settings?.hasAnthropicApiKey ? "Substituir por nova chave" : "Colar a chave"}
-                </span>
-                <input
+                </Label>
+                <Input
+                  id="anthropic-key"
                   type="password"
                   autoComplete="off"
                   value={apiKeyInput}
                   onChange={(e) => setApiKeyInput(e.target.value)}
                   placeholder="sk-ant-api03-..."
                   disabled={removeKey}
-                  className="w-full rounded-md border border-border bg-surface-raised px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
+                  className="font-mono"
                 />
-                <span className="text-xs text-ink-muted">Deixe em branco para manter a chave atual.</span>
-              </label>
+                <span className="text-xs text-muted-foreground">Deixe em branco para manter a chave atual.</span>
+              </div>
 
               {settings?.hasAnthropicApiKey && (
-                <label className="flex items-center gap-2 text-sm text-error">
-                  <input
-                    type="checkbox"
-                    checked={removeKey}
-                    onChange={(e) => setRemoveKey(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Remover chave atual (o Gateway ficará "não configurado" até nova chave)
+                <label className="flex items-center gap-3 text-sm text-destructive">
+                  <Switch checked={removeKey} onCheckedChange={setRemoveKey} />
+                  Remover chave atual (o Gateway ficará &quot;não configurado&quot; até nova chave)
                 </label>
               )}
 
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-ink">Modelo padrão (briefing_field_extraction)</span>
-                <input
-                  type="text"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  className="w-full rounded-md border border-border bg-surface-raised px-3 py-2 font-mono text-sm text-ink focus:border-accent focus:outline-none"
-                />
-                <span className="text-xs text-ink-muted">Precisa estar registrado no Model Registry (ex.: <code>claude-haiku-4-5-20251001</code>).</span>
-              </label>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="briefing-model">Modelo padrão (briefing_field_extraction)</Label>
+                <Input id="briefing-model" type="text" value={model} onChange={(e) => setModel(e.target.value)} className="font-mono" />
+                <span className="text-xs text-muted-foreground">Precisa estar registrado no Model Registry (ex.: <code>claude-haiku-4-5-20251001</code>).</span>
+              </div>
             </CardBody>
           </Card>
 
-          {error && <div className="rounded-md border border-error/40 bg-error/10 px-4 py-2 text-sm text-error">{error}</div>}
-          {success && <div className="rounded-md border border-accent/40 bg-accent/10 px-4 py-2 text-sm text-accent">{success}</div>}
+          {error && <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</div>}
+          {success && <div className="rounded-md border border-primary/40 bg-primary/10 px-4 py-2 text-sm text-primary">{success}</div>}
 
           <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => void load()}
-              disabled={saving}
-              className="rounded-md border border-border px-4 py-2 text-sm text-ink hover:bg-surface-sunken disabled:opacity-50"
-            >
+            <Button type="button" variant="secondary" onClick={() => void load()} disabled={saving}>
               Recarregar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent/90 disabled:opacity-50"
-            >
+            </Button>
+            <Button type="submit" disabled={saving}>
               {saving ? "Salvando..." : "Salvar configurações"}
-            </button>
+            </Button>
           </div>
 
           {settings?.updatedAt && (
-            <div className="text-xs text-ink-muted">
+            <div className="text-xs text-muted-foreground">
               Última atualização em {new Date(settings.updatedAt).toLocaleString("pt-BR")}
               {settings.updatedBy && ` por ${settings.updatedBy}`}.
             </div>
           )}
         </form>
       )}
+
+      <ConfirmDialog
+        open={confirmRemoveOpen}
+        title="Remover a chave da Anthropic?"
+        description="O AI Gateway ficará sem chave configurada até que uma nova seja cadastrada — chamadas de IA que dependem de Claude passam a usar o fallback determinístico."
+        confirmLabel="Remover chave"
+        variant="danger"
+        busy={saving}
+        onConfirm={() => void performSave()}
+        onCancel={() => setConfirmRemoveOpen(false)}
+      />
     </div>
   );
 }

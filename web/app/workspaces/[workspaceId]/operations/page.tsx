@@ -1,24 +1,40 @@
 "use client";
 
+import { Activity, Gauge, History, ListOrdered, Timer, Zap } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { PageSubnav, type PageSubnavItem } from "@/components/PageSubnav";
 import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
+import { StatsGrid } from "@/components/StatsGrid";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { resetCircuitBreaker } from "@/features/operations/api";
 import { useBackpressure, useBackupRestorePlan, useCircuitBreakers, useQueues, useRateLimits, useSecretHealth, useSystemHealth } from "@/features/operations/hooks";
 import type { BackpressureSignal, CircuitBreaker, OperationalCheck, QueueSnapshot, RateLimitBucket } from "@/features/operations/types";
 
-const TABS = ["Saúde", "Circuitos", "Pressão", "Limites de taxa", "Filas", "Restauração"] as const;
+const TAB_ITEMS: PageSubnavItem[] = [
+  { value: "saude", label: "Saúde", icon: Activity },
+  { value: "circuitos", label: "Circuitos", icon: Zap },
+  { value: "pressao", label: "Pressão", icon: Gauge },
+  { value: "limites", label: "Limites de taxa", icon: Timer },
+  { value: "filas", label: "Filas", icon: ListOrdered },
+  { value: "restauracao", label: "Restauração", icon: History },
+] as const;
+
+type TabKey = (typeof TAB_ITEMS)[number]["value"];
 
 export default function OperationsPage() {
   const workspace = useCurrentWorkspace();
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Saúde");
+  const [tab, setTab] = useState<TabKey>("saude");
+  const [resetTarget, setResetTarget] = useState<CircuitBreaker | null>(null);
+  const [resetBusy, setResetBusy] = useState(false);
   const health = useSystemHealth(workspace.id);
   const circuits = useCircuitBreakers(workspace.id);
   const backpressure = useBackpressure(workspace.id);
@@ -28,8 +44,14 @@ export default function OperationsPage() {
   const backup = useBackupRestorePlan(workspace.id);
 
   async function reset(id: string) {
-    await resetCircuitBreaker(id, workspace.id);
-    await Promise.all([health.mutate(), circuits.mutate()]);
+    setResetBusy(true);
+    try {
+      await resetCircuitBreaker(id, workspace.id);
+      await Promise.all([health.mutate(), circuits.mutate()]);
+      setResetTarget(null);
+    } finally {
+      setResetBusy(false);
+    }
   }
 
   return (
@@ -48,27 +70,33 @@ export default function OperationsPage() {
         aside={<p>Se tudo estiver saudável aqui, investigue a publicação específica em Postagens Publicadas.</p>}
       />
 
-      <div className="mb-5 flex flex-wrap gap-2">
-        {TABS.map((item) => (
-          <button key={item} onClick={() => setTab(item)} className={`rounded-lg px-3 py-2 text-sm font-medium ${tab === item ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:bg-surface-sunken"}`}>
-            {item}
-          </button>
-        ))}
-      </div>
+      <PageSubnav items={TAB_ITEMS} value={tab} onValueChange={(value) => setTab(value as TabKey)}>
+        {health.isLoading ? <LoadingPanel /> : null}
+        {health.error ? (
+          <ErrorState error={health.error} onRetry={() => health.mutate()} />
+        ) : (
+          <>
+            {tab === "saude" && health.data ? <SummaryPanel health={health.data} queueSize={queues.data?.publication.localQueueSize ?? 0} secretOk={secrets.data?.ok ?? false} /> : null}
+            {tab === "circuitos" ? <CircuitPanel items={circuits.data ?? health.data?.circuitBreakers ?? []} busy={resetBusy} onRequestReset={setResetTarget} /> : null}
+            {tab === "pressao" ? <BackpressurePanel items={backpressure.data ?? health.data?.backpressure ?? []} /> : null}
+            {tab === "limites" ? <RateLimitPanel items={rateLimits.data ?? []} /> : null}
+            {tab === "filas" ? <QueuePanel snapshot={queues.data} /> : null}
+            {tab === "restauracao" ? <RestorePanel plan={backup.data} /> : null}
+          </>
+        )}
+      </PageSubnav>
 
-      {health.isLoading ? <LoadingPanel /> : null}
-      {health.error ? (
-        <ErrorState error={health.error} onRetry={() => health.mutate()} />
-      ) : (
-        <>
-          {tab === "Saúde" && health.data ? <SummaryPanel health={health.data} queueSize={queues.data?.publication.localQueueSize ?? 0} secretOk={secrets.data?.ok ?? false} /> : null}
-          {tab === "Circuitos" ? <CircuitPanel items={circuits.data ?? health.data?.circuitBreakers ?? []} onReset={reset} /> : null}
-          {tab === "Pressão" ? <BackpressurePanel items={backpressure.data ?? health.data?.backpressure ?? []} /> : null}
-          {tab === "Limites de taxa" ? <RateLimitPanel items={rateLimits.data ?? []} /> : null}
-          {tab === "Filas" ? <QueuePanel snapshot={queues.data} /> : null}
-          {tab === "Restauração" ? <RestorePanel plan={backup.data} /> : null}
-        </>
-      )}
+      <ConfirmDialog
+        open={!!resetTarget}
+        title={`Redefinir disjuntor de ${resetTarget?.target ?? ""}?`}
+        description="O disjuntor volta a permitir chamadas para este alvo mesmo que a causa original da falha ainda não tenha sido corrigida."
+        confirmLabel="Redefinir"
+        busy={resetBusy}
+        onCancel={() => setResetTarget(null)}
+        onConfirm={() => {
+          if (resetTarget) return reset(resetTarget.id);
+        }}
+      />
     </main>
   );
 }
@@ -77,17 +105,17 @@ function SummaryPanel({ health, queueSize, secretOk }: { health: NonNullable<Ret
   const checksByStatus = countBy(health.checks.map((check) => check.status));
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 md:grid-cols-4">
+      <StatsGrid>
         <Metric title="Status" value={health.status} status={health.status} />
         <Metric title="Checks com falha" value={String(checksByStatus.fail ?? 0)} status={(checksByStatus.fail ?? 0) > 0 ? "failed" : "healthy"} />
         <Metric title="Fila local" value={String(queueSize)} status={queueSize > 0 ? "pending" : "healthy"} />
         <Metric title="Gerenciador de Segredos" value={secretOk ? "ok" : "bloqueado"} status={secretOk ? "healthy" : "failed"} />
-      </div>
+      </StatsGrid>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
         <Card>
           <CardHeader>
-            <h2 className="text-sm font-semibold text-ink">Prontidão</h2>
+            <h2 className="text-sm font-semibold text-foreground">Prontidão</h2>
             <StatusBadge status={health.status} />
           </CardHeader>
           <CardBody>
@@ -97,7 +125,7 @@ function SummaryPanel({ health, queueSize, secretOk }: { health: NonNullable<Ret
 
         <Card>
           <CardHeader>
-            <h2 className="text-sm font-semibold text-ink">Portão de Liberação</h2>
+            <h2 className="text-sm font-semibold text-foreground">Portão de Liberação</h2>
             <StatusBadge status={health.releaseGate.productionEnabled ? "blocked" : "healthy"} />
           </CardHeader>
           <CardBody className="space-y-3 text-sm">
@@ -114,29 +142,39 @@ function SummaryPanel({ health, queueSize, secretOk }: { health: NonNullable<Ret
   );
 }
 
-function CircuitPanel({ items, onReset }: { items: readonly CircuitBreaker[]; onReset: (id: string) => Promise<void> }) {
+function CircuitPanel({ items, busy, onRequestReset }: { items: readonly CircuitBreaker[]; busy: boolean; onRequestReset: (item: CircuitBreaker) => void }) {
   if (items.length === 0) return <EmptyState title="Sem disjuntores registrados" description="Nenhum provedor ou manipulador abriu circuito nesta janela." />;
   return (
     <Card>
       <CardBody>
-        <div className="overflow-auto">
-          <table className="w-full min-w-[820px] text-left text-sm">
-            <thead><tr className="border-b border-border text-xs text-ink-muted"><th className="py-2">Alvo</th><th>Escopo</th><th>Estado</th><th>Falhas</th><th>Última falha</th><th>Atualizado</th><th /></tr></thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id} className="border-b border-border last:border-0">
-                  <td className="py-2 font-medium text-ink">{item.target}</td>
-                  <td className="text-ink-muted">{item.scope}</td>
-                  <td><StatusBadge status={item.state} /></td>
-                  <td>{item.failureCount}</td>
-                  <td className="text-ink-muted">{item.lastFailureCode ?? "-"}</td>
-                  <td className="text-ink-muted">{formatDate(item.updatedAt)}</td>
-                  <td className="text-right"><Button variant="secondary" onClick={() => onReset(item.id)}>Redefinir</Button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Alvo</TableHead>
+              <TableHead>Escopo</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead>Falhas</TableHead>
+              <TableHead>Última falha</TableHead>
+              <TableHead>Atualizado</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell className="font-medium text-foreground">{item.target}</TableCell>
+                <TableCell className="text-muted-foreground">{item.scope}</TableCell>
+                <TableCell><StatusBadge status={item.state} /></TableCell>
+                <TableCell>{item.failureCount}</TableCell>
+                <TableCell className="text-muted-foreground">{item.lastFailureCode ?? "-"}</TableCell>
+                <TableCell className="text-muted-foreground">{formatDate(item.updatedAt)}</TableCell>
+                <TableCell className="text-right">
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => onRequestReset(item)}>Redefinir</Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </CardBody>
     </Card>
   );
@@ -151,13 +189,13 @@ function BackpressurePanel({ items }: { items: readonly BackpressureSignal[] }) 
           <CardBody>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-ink">{item.component}</p>
-                <p className="text-xs text-ink-muted">{item.reason}</p>
+                <p className="text-sm font-semibold text-foreground">{item.component}</p>
+                <p className="text-xs text-muted-foreground">{item.reason}</p>
               </div>
               <div className="flex gap-2"><StatusBadge status={item.status} /><StatusBadge status={item.severity} /></div>
             </div>
-            <p className="mt-3 text-sm text-ink-muted">{item.safeMessage}</p>
-            <p className="mt-3 text-xs text-ink-faint">{formatDate(item.observedAt)}</p>
+            <p className="mt-3 text-sm text-muted-foreground">{item.safeMessage}</p>
+            <p className="mt-3 text-xs text-muted-foreground">{formatDate(item.observedAt)}</p>
           </CardBody>
         </Card>
       ))}
@@ -170,12 +208,30 @@ function RateLimitPanel({ items }: { items: readonly RateLimitBucket[] }) {
   return (
     <Card>
       <CardBody>
-        <div className="overflow-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead><tr className="border-b border-border text-xs text-ink-muted"><th className="py-2">Grupo</th><th>Escopo</th><th>Limite</th><th>Restante</th><th>Reset</th><th>Atualizado</th></tr></thead>
-            <tbody>{items.map((item) => <tr key={item.key} className="border-b border-border last:border-0"><td className="py-2 font-medium text-ink">{item.routeGroup}</td><td className="text-ink-muted">tenant atual</td><td>{item.limit}</td><td>{item.remaining}</td><td className="text-ink-muted">{formatDate(item.resetAt)}</td><td className="text-ink-muted">{formatDate(item.updatedAt)}</td></tr>)}</tbody>
-          </table>
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Grupo</TableHead>
+              <TableHead>Escopo</TableHead>
+              <TableHead>Limite</TableHead>
+              <TableHead>Restante</TableHead>
+              <TableHead>Reset</TableHead>
+              <TableHead>Atualizado</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((item) => (
+              <TableRow key={item.key}>
+                <TableCell className="font-medium text-foreground">{item.routeGroup}</TableCell>
+                <TableCell className="text-muted-foreground">tenant atual</TableCell>
+                <TableCell>{item.limit}</TableCell>
+                <TableCell>{item.remaining}</TableCell>
+                <TableCell className="text-muted-foreground">{formatDate(item.resetAt)}</TableCell>
+                <TableCell className="text-muted-foreground">{formatDate(item.updatedAt)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </CardBody>
     </Card>
   );
@@ -188,30 +244,28 @@ function QueuePanel({ snapshot }: { snapshot?: QueueSnapshot }) {
   return (
     <Card>
       <CardBody>
-        <div className="overflow-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-border text-xs text-ink-muted">
-                <th className="py-2">Publicação</th>
-                <th>Tipo</th>
-                <th>Entrada</th>
-                <th>Executar após</th>
-                <th>Job</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.map((job) => (
-                <tr key={job.id} className="border-b border-border last:border-0">
-                  <td className="py-2 font-medium text-ink">{job.publicationId}</td>
-                  <td className="text-ink-muted">{job.kind}</td>
-                  <td className="text-ink-muted">{formatDate(job.enqueuedAt)}</td>
-                  <td className="text-ink-muted">{formatDate(job.runAfter)}</td>
-                  <td className="break-all text-xs text-ink-faint">{job.id}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Publicação</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Entrada</TableHead>
+              <TableHead>Executar após</TableHead>
+              <TableHead>Job</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {jobs.map((job) => (
+              <TableRow key={job.id}>
+                <TableCell className="font-medium text-foreground">{job.publicationId}</TableCell>
+                <TableCell className="text-muted-foreground">{job.kind}</TableCell>
+                <TableCell className="text-muted-foreground">{formatDate(job.enqueuedAt)}</TableCell>
+                <TableCell className="text-muted-foreground">{formatDate(job.runAfter)}</TableCell>
+                <TableCell className="break-all text-xs text-muted-foreground">{job.id}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </CardBody>
     </Card>
   );
@@ -221,39 +275,80 @@ function RestorePanel({ plan }: { plan?: NonNullable<ReturnType<typeof useBackup
   if (!plan) return <LoadingPanel />;
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <ListCard title="Fonte de verdade" items={plan.sourceOfTruth} />
-      <ListCard title="Dados derivados" items={plan.derivedData} />
-      <ListCard title="Ordem de restore" items={plan.restoreOrder} />
-      <ListCard title="Checks de consistência" items={plan.consistencyChecks} />
+      <OrderedListCard title="Fonte de verdade" items={plan.sourceOfTruth} />
+      <OrderedListCard title="Dados derivados" items={plan.derivedData} />
+      <OrderedListCard title="Ordem de restore" items={plan.restoreOrder} />
+      <OrderedListCard title="Checks de consistência" items={plan.consistencyChecks} />
     </div>
   );
 }
 
 function CheckTable({ checks }: { checks: readonly OperationalCheck[] }) {
   return (
-    <div className="overflow-auto">
-      <table className="w-full min-w-[680px] text-left text-sm">
-        <thead><tr className="border-b border-border text-xs text-ink-muted"><th className="py-2">Componente</th><th>Status</th><th>Mensagem</th><th>Latência</th></tr></thead>
-        <tbody>{checks.map((check) => <tr key={check.id} className="border-b border-border last:border-0"><td className="py-2 font-medium text-ink">{check.component}</td><td><StatusBadge status={check.status} /></td><td className="text-ink-muted">{check.safeMessage}</td><td className="text-ink-muted">{check.latencyMs ?? 0} ms</td></tr>)}</tbody>
-      </table>
-    </div>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Componente</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Mensagem</TableHead>
+          <TableHead>Latência</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {checks.map((check) => (
+          <TableRow key={check.id}>
+            <TableCell className="font-medium text-foreground">{check.component}</TableCell>
+            <TableCell><StatusBadge status={check.status} /></TableCell>
+            <TableCell className="text-muted-foreground">{check.safeMessage}</TableCell>
+            <TableCell className="text-muted-foreground">{check.latencyMs ?? 0} ms</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
 function Metric({ title, value, status }: { title: string; value: string; status: string }) {
-  return <Card><CardBody><p className="text-xs text-ink-muted">{title}</p><p className="mt-2 text-2xl font-semibold text-ink">{value}</p><div className="mt-2"><StatusBadge status={status} /></div></CardBody></Card>;
+  return (
+    <Card>
+      <CardBody>
+        <p className="text-xs text-muted-foreground">{title}</p>
+        <p className="mt-2 text-2xl font-semibold text-foreground">{value}</p>
+        <div className="mt-2"><StatusBadge status={status} /></div>
+      </CardBody>
+    </Card>
+  );
 }
 
-function ListCard({ title, items }: { title: string; items: readonly string[] }) {
-  return <Card><CardHeader><h2 className="text-sm font-semibold text-ink">{title}</h2></CardHeader><CardBody><ol className="space-y-2 text-sm text-ink-muted">{items.map((item, index) => <li key={item} className="flex gap-3"><span className="w-6 shrink-0 text-right text-ink-faint">{index + 1}</span><span>{item}</span></li>)}</ol></CardBody></Card>;
+function OrderedListCard({ title, items }: { title: string; items: readonly string[] }) {
+  return (
+    <Card>
+      <CardHeader><h2 className="text-sm font-semibold text-foreground">{title}</h2></CardHeader>
+      <CardBody>
+        <ol className="space-y-2 text-sm text-muted-foreground">
+          {items.map((item, index) => (
+            <li key={item} className="flex gap-3">
+              <span className="w-6 shrink-0 text-right text-muted-foreground">{index + 1}</span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ol>
+      </CardBody>
+    </Card>
+  );
 }
 
 function Row({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-center justify-between gap-3"><span className="text-ink-muted">{label}</span><span className="font-medium text-ink">{value}</span></div>;
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-foreground">{value}</span>
+    </div>
+  );
 }
 
 function LoadingPanel() {
-  return <div className="flex min-h-64 items-center justify-center"><Spinner className="h-5 w-5 text-ink-muted" /></div>;
+  return <div className="flex min-h-64 items-center justify-center"><Spinner className="h-5 w-5 text-muted-foreground" /></div>;
 }
 
 function countBy(items: readonly string[]): Record<string, number> {

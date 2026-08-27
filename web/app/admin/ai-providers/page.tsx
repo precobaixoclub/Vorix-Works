@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
+import { Input } from "@/components/Field";
 import { PageHeader } from "@/components/PageHeader";
 import { ScreenGuide } from "@/components/ScreenGuide";
 import { Spinner } from "@/components/Spinner";
+import { Switch } from "@/components/ui/switch";
 import {
   fetchAiOperationTypes,
   fetchAiProviders,
@@ -79,7 +82,7 @@ export default function AdminAiProvidersPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-        <div className="flex items-center gap-2 py-14 text-sm text-ink-muted">
+        <div className="flex items-center gap-2 py-14 text-sm text-muted-foreground">
           <Spinner className="h-4 w-4" /> Carregando…
         </div>
       </div>
@@ -114,7 +117,7 @@ export default function AdminAiProvidersPage() {
       />
 
       {message ? (
-        <div className={`mb-4 rounded-lg border px-4 py-2 text-sm ${message.kind === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"}`}>
+        <div className={`mb-4 rounded-lg border px-4 py-2 text-sm ${message.kind === "ok" ? "border-primary/40 bg-primary/10 text-primary" : "border-destructive/40 bg-destructive/10 text-destructive"}`}>
           {message.text}
         </div>
       ) : null}
@@ -139,10 +142,10 @@ export default function AdminAiProvidersPage() {
 
         <Card>
           <CardHeader>
-            <div className="text-base font-semibold text-ink">Modelos e custos reais</div>
+            <div className="text-base font-semibold text-foreground">Modelos e custos reais</div>
           </CardHeader>
           <CardBody>
-            <p className="text-sm text-ink-muted">
+            <p className="text-sm text-muted-foreground">
               Esta seção é operacional. As chaves principais ficam nos cards acima; aqui você confere modelos ativos e preço real de cada provedor.
             </p>
           </CardBody>
@@ -152,12 +155,12 @@ export default function AdminAiProvidersPage() {
           <Card key={provider.code}>
             <CardHeader>
               <div>
-                <div className="text-base font-semibold text-ink">{provider.displayName}</div>
-                <div className="text-xs text-ink-muted">
+                <div className="text-base font-semibold text-foreground">{provider.displayName}</div>
+                <div className="text-xs text-muted-foreground">
                   {provider.capabilities.map((c) => CAPABILITY_LABELS[c] ?? c).join(", ")} · {provider.health.ok ? "Saudável" : provider.health.safeMessage ?? "Indisponível"}
                 </div>
               </div>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${provider.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-surface-sunken text-ink-muted"}`}>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${provider.status === "active" ? "bg-emerald-500/10 text-emerald-600" : "bg-muted text-muted-foreground"}`}>
                 {provider.status === "active" ? "Ativo" : "Desativado"}
               </span>
             </CardHeader>
@@ -165,7 +168,7 @@ export default function AdminAiProvidersPage() {
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] text-sm">
                   <thead>
-                    <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
+                    <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                       <th className="py-1">Modelo</th>
                       <th className="py-1">Ativo</th>
                       <th className="py-1 text-right">Preço real</th>
@@ -174,9 +177,9 @@ export default function AdminAiProvidersPage() {
                   <tbody>
                     {provider.models.map((model) => (
                       <tr key={model.id} className="border-t border-border/60">
-                        <td className="py-1.5 font-mono text-ink">{model.modelId}</td>
+                        <td className="py-1.5 font-mono text-foreground">{model.modelId}</td>
                         <td className="py-1.5">{model.active ? "Sim" : "Não"}</td>
-                        <td className="py-1.5 text-right text-ink-muted">{formatPricing(model.pricing)}</td>
+                        <td className="py-1.5 text-right text-muted-foreground">{formatPricing(model.pricing)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -188,13 +191,13 @@ export default function AdminAiProvidersPage() {
 
         <Card>
           <CardHeader>
-            <div className="text-base font-semibold text-ink">Custo em crédito por operação</div>
+            <div className="text-base font-semibold text-foreground">Custo em crédito por operação</div>
           </CardHeader>
           <CardBody>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-sm">
                 <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
+                  <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="py-1">Operação</th>
                     <th className="py-1">Provedor padrão</th>
                     <th className="py-1 text-right">Créditos</th>
@@ -215,10 +218,10 @@ export default function AdminAiProvidersPage() {
         <Card>
           <CardHeader>
             <div>
-              <div className="text-base font-semibold text-ink">Percentual de lucro por cliente</div>
-              <div className="text-xs text-ink-muted">
+              <div className="text-base font-semibold text-foreground">Percentual de lucro por cliente</div>
+              <div className="text-xs text-muted-foreground">
                 A receita estimada de cada geração é <code>custo real × (1 + % de lucro)</code>, configurado por conta em{" "}
-                <Link href="/admin/tenants" className="text-accent hover:underline">/admin/tenants/:id</Link>. Uma conta interna própria pode ficar em 0% (fica só no custo).
+                <Link href="/admin/tenants" className="text-primary hover:underline">/admin/tenants/:id</Link>. Uma conta interna própria pode ficar em 0% (fica só no custo).
               </div>
             </div>
           </CardHeader>
@@ -227,8 +230,8 @@ export default function AdminAiProvidersPage() {
         <Card>
           <CardHeader>
             <div>
-              <div className="text-base font-semibold text-ink">Financeiro por provedor (mês corrente)</div>
-              <div className="text-xs text-ink-muted">Custo real pago ao provedor vs. receita estimada (créditos × valor de referência) vs. lucro.</div>
+              <div className="text-base font-semibold text-foreground">Financeiro por provedor (mês corrente)</div>
+              <div className="text-xs text-muted-foreground">Custo real pago ao provedor vs. receita estimada (créditos × valor de referência) vs. lucro.</div>
             </div>
           </CardHeader>
           <CardBody>
@@ -238,7 +241,7 @@ export default function AdminAiProvidersPage() {
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] text-sm">
                   <thead>
-                    <tr className="text-left text-xs uppercase tracking-wide text-ink-muted">
+                    <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                       <th className="py-1">Provedor</th>
                       <th className="py-1 text-right">Gerações</th>
                       <th className="py-1 text-right">Créditos</th>
@@ -250,21 +253,21 @@ export default function AdminAiProvidersPage() {
                   <tbody>
                     {finance.byProvider.map((row) => (
                       <tr key={row.providerCode} className="border-t border-border/60">
-                        <td className="py-1.5 text-ink">{row.providerCode}</td>
-                        <td className="py-1.5 text-right text-ink-muted">{row.totalGenerations}</td>
-                        <td className="py-1.5 text-right text-ink-muted">{row.totalCreditsConsumed}</td>
-                        <td className="py-1.5 text-right text-ink-muted">{formatUsd(row.totalProviderCostUsd)}</td>
-                        <td className="py-1.5 text-right text-ink-muted">{formatUsd(row.totalEstimatedRevenueUsd)}</td>
-                        <td className="py-1.5 text-right font-semibold text-emerald-700">{formatUsd(row.totalProfitUsd)}</td>
+                        <td className="py-1.5 text-foreground">{row.providerCode}</td>
+                        <td className="py-1.5 text-right text-muted-foreground tabular-nums">{row.totalGenerations}</td>
+                        <td className="py-1.5 text-right text-muted-foreground tabular-nums">{row.totalCreditsConsumed}</td>
+                        <td className="py-1.5 text-right text-muted-foreground tabular-nums">{formatUsd(row.totalProviderCostUsd)}</td>
+                        <td className="py-1.5 text-right text-muted-foreground tabular-nums">{formatUsd(row.totalEstimatedRevenueUsd)}</td>
+                        <td className="py-1.5 text-right font-semibold text-emerald-600 tabular-nums">{formatUsd(row.totalProfitUsd)}</td>
                       </tr>
                     ))}
                     <tr className="border-t border-border font-semibold">
-                      <td className="py-1.5 text-ink">Total</td>
-                      <td className="py-1.5 text-right text-ink">{finance.totals.generations}</td>
-                      <td className="py-1.5 text-right text-ink">{finance.totals.creditsConsumed}</td>
-                      <td className="py-1.5 text-right text-ink">{formatUsd(finance.totals.providerCostUsd)}</td>
-                      <td className="py-1.5 text-right text-ink">{formatUsd(finance.totals.estimatedRevenueUsd)}</td>
-                      <td className="py-1.5 text-right text-emerald-700">{formatUsd(finance.totals.profitUsd)}</td>
+                      <td className="py-1.5 text-foreground">Total</td>
+                      <td className="py-1.5 text-right text-foreground tabular-nums">{finance.totals.generations}</td>
+                      <td className="py-1.5 text-right text-foreground tabular-nums">{finance.totals.creditsConsumed}</td>
+                      <td className="py-1.5 text-right text-foreground tabular-nums">{formatUsd(finance.totals.providerCostUsd)}</td>
+                      <td className="py-1.5 text-right text-foreground tabular-nums">{formatUsd(finance.totals.estimatedRevenueUsd)}</td>
+                      <td className="py-1.5 text-right text-emerald-600 tabular-nums">{formatUsd(finance.totals.profitUsd)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -302,39 +305,34 @@ function ProviderSetupCard({
     <Card className="p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-base font-semibold text-ink">{provider.displayName}</p>
-          <p className="mt-1 text-xs text-ink-muted">{provider.capabilities.map((c) => CAPABILITY_LABELS[c] ?? c).join(", ")}</p>
+          <p className="truncate text-base font-semibold text-foreground">{provider.displayName}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{provider.capabilities.map((c) => CAPABILITY_LABELS[c] ?? c).join(", ")}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${provider.hasSecretConfigured ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${provider.hasSecretConfigured ? "bg-emerald-500/10 text-emerald-600" : "bg-destructive/10 text-destructive"}`}>
           {provider.hasSecretConfigured ? "com chave" : "sem chave"}
         </span>
       </div>
-      <p className="mb-4 text-sm text-ink-muted">{providerHint[provider.code] ?? "Configure a chave deste provedor."}</p>
+      <p className="mb-4 text-sm text-muted-foreground">{providerHint[provider.code] ?? "Configure a chave deste provedor."}</p>
       {provider.externallyManaged ? (
-        <Link href="/admin/settings" className="inline-flex min-h-10 items-center rounded-md border border-border px-3 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+        <Link href="/admin/settings" className="inline-flex min-h-10 items-center rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted">
           Abrir Anthropic
         </Link>
       ) : (
         <div className="flex flex-col gap-3">
-          <input
+          <Input
             type="password"
             autoComplete="off"
             placeholder={provider.code === "openai" ? "sk-..." : "AIza..."}
             value={inputValue}
             onChange={(event) => onInput(event.target.value)}
-            className="w-full rounded-md border border-border bg-surface-raised px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
+            className="font-mono"
           />
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              disabled={!inputValue.trim() || busy}
-              onClick={onSaveKey}
-              className="min-h-10 flex-1 rounded-md bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent/90 disabled:opacity-50"
-            >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button type="button" disabled={!inputValue.trim() || busy} onClick={onSaveKey} className="flex-1">
               Salvar chave
-            </button>
-            <label className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-ink">
-              <input type="checkbox" checked={provider.status === "active"} disabled={busy} onChange={(event) => onToggle(event.target.checked)} className="h-4 w-4" />
+            </Button>
+            <label className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground">
+              <Switch checked={provider.status === "active"} disabled={busy} onCheckedChange={onToggle} />
               Ativo
             </label>
           </div>
@@ -358,36 +356,32 @@ function OperationTypeRow({
   return (
     <tr className="border-t border-border/60">
       <td className="py-1.5">
-        <div className="text-ink">{operationType.label}</div>
-        <div className="font-mono text-xs text-ink-muted">{operationType.code}</div>
+        <div className="text-foreground">{operationType.label}</div>
+        <div className="font-mono text-xs text-muted-foreground">{operationType.code}</div>
       </td>
-      <td className="py-1.5 text-ink-muted">{operationType.defaultProviderCode ?? "—"}</td>
+      <td className="py-1.5 text-muted-foreground">{operationType.defaultProviderCode ?? "—"}</td>
       <td className="py-1.5 text-right">
-        <input
+        <Input
           type="number"
           min="0"
           value={creditsCost}
           onChange={(e) => setCreditsCost(e.target.value)}
-          className="w-20 rounded-md border border-border bg-surface-raised px-2 py-1 text-right text-sm text-ink focus:border-accent focus:outline-none"
+          className="w-20 text-right tabular-nums"
         />
       </td>
       <td className="py-1.5 text-right">
-        <input
-          type="checkbox"
-          checked={operationType.active}
-          onChange={(e) => void onSave({ active: e.target.checked })}
-          className="h-4 w-4"
-        />
+        <Switch checked={operationType.active} onCheckedChange={(checked) => void onSave({ active: checked })} />
       </td>
       <td className="py-1.5 text-right">
-        <button
+        <Button
           type="button"
+          variant="secondary"
           disabled={busy || Number(creditsCost) === operationType.creditsCost}
           onClick={() => void onSave({ creditsCost: Number(creditsCost) })}
-          className="rounded-md border border-border px-3 py-1 text-xs text-ink hover:bg-surface-sunken disabled:opacity-50"
+          className="h-7 px-3 text-xs"
         >
           Salvar
-        </button>
+        </Button>
       </td>
     </tr>
   );

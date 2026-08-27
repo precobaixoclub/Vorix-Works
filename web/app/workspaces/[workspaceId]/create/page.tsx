@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/Button";
 import { Input, Label } from "@/components/Field";
 import { Modal } from "@/components/Modal";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useAssets } from "@/features/assets/hooks";
 import type { Asset, AssetMaterialType } from "@/features/assets/types";
@@ -323,32 +324,32 @@ export default function CreatePage() {
   const brandContextContent = (
     <div className="space-y-4 text-sm">
       <div>
-        <p className="text-xs font-medium text-ink-faint">Marca ativa</p>
+        <p className="text-xs font-medium text-muted-foreground/70">Marca ativa</p>
         <Link href={`/workspaces/${workspace.id}/knowledge?tab=profile`} className="mt-1.5 flex items-center gap-2 hover:underline">
           {hasLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={activeAssets.find((asset) => asset.kind === "logo")?.storageRef?.metadata?.url} alt="" className="h-7 w-7 rounded-md object-contain" />
           ) : (
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-sunken text-xs text-ink-faint" aria-hidden="true">🔷</span>
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground/70" aria-hidden="true">🔷</span>
           )}
-          <span className="truncate text-ink">{workspace.name}</span>
+          <span className="truncate text-foreground">{workspace.name}</span>
         </Link>
       </div>
 
       <div>
-        <p className="text-xs font-medium text-ink-faint">Diretrizes</p>
+        <p className="text-xs font-medium text-muted-foreground/70">Diretrizes</p>
         {hasGuidelines ? (
-          <p className="mt-1 text-ink-muted">Diretrizes Criativas configuradas.</p>
+          <p className="mt-1 text-muted-foreground">Diretrizes Criativas configuradas.</p>
         ) : (
-          <p className="mt-1 text-ink-faint">Nenhuma diretriz personalizada configurada.</p>
+          <p className="mt-1 text-muted-foreground/70">Nenhuma diretriz personalizada configurada.</p>
         )}
-        <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`} className="text-xs font-medium text-accent hover:underline">
+        <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`} className="text-xs font-medium text-primary hover:underline">
           {hasGuidelines ? "Editar" : "Configurar"}
         </Link>
       </div>
 
       <div>
-        <p className="text-xs font-medium text-ink-faint">Materiais disponíveis</p>
+        <p className="text-xs font-medium text-muted-foreground/70">Materiais disponíveis</p>
         {activeAssets.length > 0 ? (
           <>
             <div className="mt-1.5 flex gap-1.5">
@@ -357,21 +358,21 @@ export default function CreatePage() {
                 <img key={asset.id} src={asset.storageRef?.metadata?.url} alt="" className="h-9 w-9 rounded-md object-cover" />
               ))}
             </div>
-            <p className="mt-1.5 text-ink-muted">{activeAssets.length} {activeAssets.length === 1 ? "material" : "materiais"}</p>
+            <p className="mt-1.5 text-muted-foreground">{activeAssets.length} {activeAssets.length === 1 ? "material" : "materiais"}</p>
           </>
         ) : (
-          <p className="mt-1 text-ink-faint">Nenhum material cadastrado ainda.</p>
+          <p className="mt-1 text-muted-foreground/70">Nenhum material cadastrado ainda.</p>
         )}
-        <Link href={`/workspaces/${workspace.id}/knowledge?tab=materials`} className="text-xs font-medium text-accent hover:underline">
+        <Link href={`/workspaces/${workspace.id}/knowledge?tab=materials`} className="text-xs font-medium text-primary hover:underline">
           Gerenciar materiais
         </Link>
       </div>
 
       <div>
-        <p className="text-xs font-medium text-ink-faint">Formato atual</p>
+        <p className="text-xs font-medium text-muted-foreground/70">Formato atual</p>
         <div className="mt-1.5 flex items-center gap-2">
-          <span className="block rounded-sm bg-surface-sunken" style={{ width: 22, aspectRatio: aspectRatio.replace(":", "/") }} aria-hidden="true" />
-          <span className="text-ink-muted">{aspectRatio} · {format === "carousel" ? "Carrossel" : "Imagem"}</span>
+          <span className="block rounded-sm bg-muted" style={{ width: 22, aspectRatio: aspectRatio.replace(":", "/") }} aria-hidden="true" />
+          <span className="text-muted-foreground">{aspectRatio} · {format === "carousel" ? "Carrossel" : "Imagem"}</span>
         </div>
       </div>
     </div>
@@ -382,12 +383,12 @@ export default function CreatePage() {
       <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
         <div className="min-w-0 space-y-5">
           <div>
-            <h1 className="font-display text-2xl font-semibold text-ink sm:text-3xl">Criar conteúdo</h1>
-            <p className="mt-1 text-sm text-ink-muted">Descreva sua ideia, envie referências e deixe a IA montar a criação.</p>
+            <h1 className="font-display text-2xl font-semibold text-foreground sm:text-3xl">Criar conteúdo</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Descreva sua ideia, envie referências e deixe a IA montar a criação.</p>
           </div>
 
           <section
-            className={`rounded-2xl bg-surface-raised p-5 transition-colors sm:p-7 ${dragOver ? "ring-2 ring-accent" : ""}`}
+            className={`rounded-2xl bg-card p-5 transition-colors sm:p-7 ${dragOver ? "ring-2 ring-primary" : ""}`}
             onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={(event) => {
@@ -406,16 +407,16 @@ export default function CreatePage() {
               disabled={formDisabled}
               onChange={(event) => setIdeaText(event.target.value)}
               placeholder="Ex.: Crie uma publicação impactante para divulgar nosso site, com visual moderno e destaque para as principais vantagens."
-              className="mt-2 w-full resize-none border-0 bg-transparent text-base text-ink placeholder:text-ink-faint outline-none disabled:opacity-60 sm:text-lg"
+              className="mt-2 w-full resize-none border-0 bg-transparent text-base text-foreground placeholder:text-muted-foreground/70 outline-none disabled:opacity-60 sm:text-lg"
             />
-            <p className={`text-right text-xs ${overLimit ? "text-danger" : "text-ink-faint"}`}>{ideaText.length}/{MAX_IDEA_TEXT_LENGTH}</p>
+            <p className={`text-right text-xs ${overLimit ? "text-destructive" : "text-muted-foreground/70"}`}>{ideaText.length}/{MAX_IDEA_TEXT_LENGTH}</p>
 
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3.5">
               <button
                 type="button"
                 disabled={busy || uploading}
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-ink-muted hover:bg-surface-sunken hover:text-ink disabled:opacity-60"
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60"
               >
                 <span aria-hidden="true">📎</span> {uploading ? "Enviando…" : "Enviar arquivo"}
               </button>
@@ -423,7 +424,7 @@ export default function CreatePage() {
                 type="button"
                 disabled={formDisabled}
                 onClick={() => setLibraryOpen(true)}
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-ink-muted hover:bg-surface-sunken hover:text-ink disabled:opacity-60"
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60"
               >
                 <span aria-hidden="true">🗂</span> Da biblioteca
               </button>
@@ -435,42 +436,48 @@ export default function CreatePage() {
                 className="hidden"
                 onChange={(event) => { attachFiles(event.target.files); event.target.value = ""; }}
               />
-              <p className="text-xs text-ink-faint">ou arraste imagens para aqui</p>
+              <p className="text-xs text-muted-foreground/70">ou arraste imagens para aqui</p>
             </div>
 
             {referenceImages.length > 0 ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {referenceImages.map((url) => (
-                  <div key={url} className="flex items-center gap-1.5 rounded-lg bg-surface-sunken p-1.5">
+                  <div key={url} className="flex items-center gap-1.5 rounded-lg bg-muted p-1.5">
                     {/\.(png|jpe?g|webp)$/i.test(url) ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={url} alt="" className="h-10 w-10 rounded-md object-cover" />
                     ) : (
-                      <span className="flex h-10 w-10 items-center justify-center rounded-md bg-surface text-ink-faint" aria-hidden="true">🎞</span>
+                      <span className="flex h-10 w-10 items-center justify-center rounded-md bg-card text-muted-foreground" aria-hidden="true">🎞</span>
                     )}
-                    <select
-                      aria-label="Categoria do material"
+                    <Select
                       value={referenceRoles[url] ?? "product_photo"}
                       disabled={formDisabled}
-                      onChange={(event) => setReferenceRoles((prev) => ({ ...prev, [url]: event.target.value as ReferenceAssetRole }))}
-                      className="bg-transparent text-xs text-ink-muted outline-none disabled:opacity-60"
+                      onValueChange={(value) => setReferenceRoles((prev) => ({ ...prev, [url]: value as ReferenceAssetRole }))}
                     >
-                      {MATERIAL_ROLES.map((role) => (
-                        <option key={role.value} value={role.value}>{role.label}</option>
-                      ))}
-                    </select>
-                    <button type="button" disabled={formDisabled} onClick={() => removeReference(url)} aria-label="Remover" className="text-ink-faint hover:text-danger disabled:opacity-60">×</button>
+                      <SelectTrigger
+                        aria-label="Categoria do material"
+                        className="h-auto w-auto gap-1 border-0 bg-transparent px-0 py-0 text-xs text-muted-foreground shadow-none hover:text-foreground disabled:opacity-60 [&>svg]:h-3 [&>svg]:w-3"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MATERIAL_ROLES.map((role) => (
+                          <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <button type="button" disabled={formDisabled} onClick={() => removeReference(url)} aria-label="Remover" className="text-muted-foreground hover:text-destructive disabled:opacity-60">×</button>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="mt-3 text-xs text-ink-faint">Nenhum material cadastrado. Você ainda pode gerar normalmente.</p>
+              <p className="mt-3 text-xs text-muted-foreground/70">Nenhum material cadastrado. Você ainda pode gerar normalmente.</p>
             )}
           </section>
 
           <section className="space-y-4">
             <div>
-              <p className="mb-2 text-xs font-medium text-ink-muted">Tipo de conteúdo</p>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">Tipo de conteúdo</p>
               <div className="flex flex-wrap gap-2">
                 {CONTENT_TYPES.map((type) => (
                   <button
@@ -479,7 +486,7 @@ export default function CreatePage() {
                     disabled={formDisabled}
                     onClick={() => selectContentType(type)}
                     className={`min-h-9 rounded-lg px-3.5 text-sm font-medium transition-colors disabled:opacity-60 ${
-                      contentTypeId === type.id ? "bg-accent text-white" : "bg-surface-raised text-ink-muted hover:text-ink"
+                      contentTypeId === type.id ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     {type.label}
@@ -489,7 +496,7 @@ export default function CreatePage() {
             </div>
 
             <div>
-              <p className="mb-2 text-xs font-medium text-ink-muted">Formato</p>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">Formato</p>
               <div className="flex flex-wrap gap-2">
                 {ASPECT_RATIOS.map((option) => (
                   <button
@@ -498,22 +505,22 @@ export default function CreatePage() {
                     disabled={formDisabled}
                     onClick={() => setAspectRatio(option.value)}
                     className={`flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-60 ${
-                      aspectRatio === option.value ? "bg-accent-soft text-accent" : "bg-surface-raised text-ink-muted hover:text-ink"
+                      aspectRatio === option.value ? "bg-primary/10 text-primary" : "bg-card text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     <span
-                      className={`block rounded-[2px] ${aspectRatio === option.value ? "bg-accent" : "bg-ink-faint"}`}
+                      className={`block rounded-[2px] ${aspectRatio === option.value ? "bg-primary" : "bg-muted-foreground/70"}`}
                       style={{ width: option.w >= option.h ? 16 : Math.round((16 * option.w) / option.h), height: option.h >= option.w ? 16 : Math.round((16 * option.h) / option.w) }}
                       aria-hidden="true"
                     />
-                    {option.value} <span className="text-ink-faint">· {option.label}</span>
+                    {option.value} <span className="text-muted-foreground/70">· {option.label}</span>
                   </button>
                 ))}
               </div>
             </div>
 
             <div>
-              <p className="mb-2 text-xs font-medium text-ink-muted">Canal</p>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">Canal</p>
               <div className="flex flex-wrap gap-2">
                 {CHANNELS.map((channel) => (
                   <button
@@ -522,7 +529,7 @@ export default function CreatePage() {
                     disabled={formDisabled}
                     onClick={() => toggleChannel(channel)}
                     className={`min-h-9 rounded-lg px-3.5 text-sm font-medium transition-colors disabled:opacity-60 ${
-                      channels.includes(channel) ? "bg-surface-raised text-ink" : "text-ink-faint hover:text-ink-muted"
+                      channels.includes(channel) ? "bg-card text-foreground" : "text-muted-foreground/70 hover:text-muted-foreground"
                     }`}
                   >
                     {CHANNEL_LABEL[channel]}
@@ -532,27 +539,27 @@ export default function CreatePage() {
             </div>
           </section>
 
-          <section className="rounded-xl bg-surface-raised">
+          <section className="rounded-xl bg-card">
             <button type="button" onClick={() => setContextOpen((prev) => !prev)} className="flex w-full items-center justify-between px-4 py-3 text-left">
-              <span className="text-sm font-medium text-ink">A IA já vai considerar</span>
-              <span aria-hidden="true" className={`text-ink-faint transition-transform ${contextOpen ? "rotate-90" : ""}`}>›</span>
+              <span className="text-sm font-medium text-foreground">A IA já vai considerar</span>
+              <span aria-hidden="true" className={`text-muted-foreground/70 transition-transform ${contextOpen ? "rotate-90" : ""}`}>›</span>
             </button>
             {contextOpen ? (
-              <ul className="space-y-1.5 px-4 pb-4 text-sm text-ink-muted">
-                <li>• {hasGuidelines ? "Diretrizes Criativas da marca" : <span className="text-ink-faint">Diretrizes Criativas da marca (não configurada)</span>}</li>
-                <li>• {hasLogo ? "Logo oficial do workspace" : <span className="text-ink-faint">Logo oficial (não cadastrada)</span>}</li>
-                <li>• {activeAssets.length > 0 ? `${activeAssets.length} materiais relevantes da biblioteca` : <span className="text-ink-faint">Materiais relevantes (nenhum cadastrado)</span>}</li>
+              <ul className="space-y-1.5 px-4 pb-4 text-sm text-muted-foreground">
+                <li>• {hasGuidelines ? "Diretrizes Criativas da marca" : <span className="text-muted-foreground/70">Diretrizes Criativas da marca (não configurada)</span>}</li>
+                <li>• {hasLogo ? "Logo oficial do workspace" : <span className="text-muted-foreground/70">Logo oficial (não cadastrada)</span>}</li>
+                <li>• {activeAssets.length > 0 ? `${activeAssets.length} materiais relevantes da biblioteca` : <span className="text-muted-foreground/70">Materiais relevantes (nenhum cadastrado)</span>}</li>
               </ul>
             ) : null}
           </section>
 
-          <details className="rounded-xl bg-surface-raised lg:hidden" open={brandOpen} onToggle={(event) => setBrandOpen((event.target as HTMLDetailsElement).open)}>
-            <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink">Contexto da marca</summary>
+          <details className="rounded-xl bg-card lg:hidden" open={brandOpen} onToggle={(event) => setBrandOpen((event.target as HTMLDetailsElement).open)}>
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-foreground">Contexto da marca</summary>
             <div className="px-4 pb-4">{brandContextContent}</div>
           </details>
 
           <section className="border-t border-border/60 pt-4">
-            <button type="button" onClick={() => setAdvancedOpen((prev) => !prev)} className="flex w-full items-center justify-between text-sm font-medium text-ink-muted hover:text-ink">
+            <button type="button" onClick={() => setAdvancedOpen((prev) => !prev)} className="flex w-full items-center justify-between text-sm font-medium text-muted-foreground hover:text-foreground">
               <span>Detalhes avançados</span>
               <span aria-hidden="true" className={`transition-transform ${advancedOpen ? "rotate-90" : ""}`}>›</span>
             </button>
@@ -575,23 +582,23 @@ export default function CreatePage() {
           </section>
 
           {error ? (
-            <div className="rounded-xl bg-danger-bg px-4 py-3 text-sm text-danger">
+            <div className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
               <p>{error}</p>
               <button type="button" onClick={handleGenerate} className="mt-1.5 font-medium underline">Tentar novamente</button>
             </div>
           ) : null}
 
           {tankMessage ? (
-            <div className="rounded-xl bg-accent-soft px-4 py-3 text-sm text-accent">
+            <div className="rounded-xl bg-primary/10 px-4 py-3 text-sm text-primary">
               <p>{tankMessage}</p>
               <Link href={`/workspaces/${workspace.id}/production?mode=configure`} className="mt-1.5 inline-block font-medium underline">Ver tanque de ideias →</Link>
             </div>
           ) : null}
 
-          {busy ? <p className="text-sm text-ink-muted">{GENERATING_MESSAGES[messageIndex]}</p> : null}
+          {busy ? <p className="text-sm text-muted-foreground">{GENERATING_MESSAGES[messageIndex]}</p> : null}
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
-            <p className="text-xs text-ink-faint">{credits ? `Você tem ${credits.remainingCredits.toLocaleString("pt-BR")} créditos disponíveis.` : "Chama a IA de verdade — gera custo real."}</p>
+            <p className="text-xs text-muted-foreground/70">{credits ? `Você tem ${credits.remainingCredits.toLocaleString("pt-BR")} créditos disponíveis.` : "Chama a IA de verdade — gera custo real."}</p>
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" className="px-5 py-3 text-base" disabled={!canSaveToTank} onClick={handleSaveToTank} title="Guarda a ideia sem gerar agora — a rotina automática a produz conforme as regras configuradas.">
                 {savingToTank ? "Guardando…" : "Guardar no tanque"}
@@ -603,8 +610,8 @@ export default function CreatePage() {
           </div>
         </div>
 
-        <aside className="hidden rounded-2xl bg-surface-raised p-5 lg:sticky lg:top-5 lg:block">
-          <p className="mb-3 font-display text-sm font-semibold text-ink">Contexto da marca</p>
+        <aside className="hidden rounded-2xl bg-card p-5 lg:sticky lg:top-5 lg:block">
+          <p className="mb-3 font-display text-sm font-semibold text-foreground">Contexto da marca</p>
           {brandContextContent}
         </aside>
       </div>
@@ -612,14 +619,14 @@ export default function CreatePage() {
       {libraryOpen ? (
         <Modal title="Escolher da biblioteca" onClose={() => setLibraryOpen(false)}>
           {activeAssets.length === 0 ? (
-            <p className="text-sm text-ink-muted">Nenhum material cadastrado ainda.</p>
+            <p className="text-sm text-muted-foreground">Nenhum material cadastrado ainda.</p>
           ) : (
             <div className="grid grid-cols-3 gap-2">
               {activeAssets.map((asset) => (
-                <button key={asset.id} type="button" onClick={() => attachFromLibrary(asset)} className="overflow-hidden rounded-lg bg-surface-sunken text-left hover:ring-2 hover:ring-accent">
+                <button key={asset.id} type="button" onClick={() => attachFromLibrary(asset)} className="overflow-hidden rounded-lg bg-muted text-left hover:ring-2 hover:ring-primary">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={asset.storageRef?.metadata?.url} alt="" className="aspect-square w-full object-cover" />
-                  <p className="truncate px-1.5 py-1 text-[11px] text-ink-muted">{asset.name}</p>
+                  <p className="truncate px-1.5 py-1 text-[11px] text-muted-foreground">{asset.name}</p>
                 </button>
               ))}
             </div>

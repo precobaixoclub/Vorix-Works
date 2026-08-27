@@ -25,8 +25,8 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <div>
-                <p className="text-sm font-semibold text-ink">Geral</p>
-                <p className="mt-1 text-xs text-ink-muted">Identificação e preferências reais do workspace.</p>
+                <p className="text-sm font-semibold text-foreground">Geral</p>
+                <p className="mt-1 text-xs text-muted-foreground">Identificação e preferências reais do workspace.</p>
               </div>
               <StatusBadge status={workspace.status} />
             </CardHeader>
@@ -43,8 +43,8 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <div>
-                <p className="text-sm font-semibold text-ink">Produção</p>
-                <p className="mt-1 text-xs text-ink-muted">Preferências criativas usadas antes de gerar conteúdo.</p>
+                <p className="text-sm font-semibold text-foreground">Produção</p>
+                <p className="mt-1 text-xs text-muted-foreground">Preferências criativas usadas antes de gerar conteúdo.</p>
               </div>
             </CardHeader>
             <CardBody className="grid gap-3 sm:grid-cols-2">
@@ -64,8 +64,8 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <div>
-                <p className="text-sm font-semibold text-ink">Publicação</p>
-                <p className="mt-1 text-xs text-ink-muted">Agendamento e saída dos conteúdos para os canais conectados.</p>
+                <p className="text-sm font-semibold text-foreground">Publicação</p>
+                <p className="mt-1 text-xs text-muted-foreground">Agendamento e saída dos conteúdos para os canais conectados.</p>
               </div>
             </CardHeader>
             <CardBody className="grid gap-3 sm:grid-cols-2">
@@ -79,10 +79,10 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <div>
-                <p className="text-sm font-semibold text-ink">Integrações</p>
-                <p className="mt-1 text-xs text-ink-muted">Resumo das conexões registradas neste workspace.</p>
+                <p className="text-sm font-semibold text-foreground">Integrações</p>
+                <p className="mt-1 text-xs text-muted-foreground">Resumo das conexões registradas neste workspace.</p>
               </div>
-              <Link href={`/workspaces/${workspace.id}/connections`} className="text-sm font-medium text-accent hover:underline">
+              <Link href={`/workspaces/${workspace.id}/connections`} className="text-sm font-medium text-primary hover:underline">
                 Abrir Conexões
               </Link>
             </CardHeader>
@@ -96,13 +96,13 @@ export default function SettingsPage() {
                 {workspace.integrations.slice(0, 4).map((integration) => (
                   <div key={integration.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-ink">{integration.displayName ?? integration.channel}</p>
-                      <p className="text-xs text-ink-muted">{integration.channel}</p>
+                      <p className="truncate text-sm font-medium text-foreground">{integration.displayName ?? integration.channel}</p>
+                      <p className="text-xs text-muted-foreground">{integration.channel}</p>
                     </div>
                     <StatusBadge status={integration.status} />
                   </div>
                 ))}
-                {workspace.integrations.length === 0 ? <p className="text-sm text-ink-muted">Nenhuma integração registrada.</p> : null}
+                {workspace.integrations.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma integração registrada.</p> : null}
               </div>
             </CardBody>
           </Card>
@@ -110,8 +110,8 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <div>
-                <p className="text-sm font-semibold text-ink">Equipe</p>
-                <p className="mt-1 text-xs text-ink-muted">Distribuição de acesso no workspace.</p>
+                <p className="text-sm font-semibold text-foreground">Equipe</p>
+                <p className="mt-1 text-xs text-muted-foreground">Distribuição de acesso no workspace.</p>
               </div>
             </CardHeader>
             <CardBody className="grid grid-cols-2 gap-2 text-sm">
@@ -125,8 +125,8 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <div>
-                <p className="text-sm font-semibold text-ink">Conta</p>
-                <p className="mt-1 text-xs text-ink-muted">Sessão atual e escopo de acesso.</p>
+                <p className="text-sm font-semibold text-foreground">Conta</p>
+                <p className="mt-1 text-xs text-muted-foreground">Sessão atual e escopo de acesso.</p>
               </div>
             </CardHeader>
             <CardBody className="space-y-3 text-sm">
@@ -137,10 +137,10 @@ export default function SettingsPage() {
                   <InfoRow label="Papel" value={state.role} />
                 </>
               ) : (
-                <p className="text-ink-muted">Sessão carregando.</p>
+                <p className="text-muted-foreground">Sessão carregando.</p>
               )}
               {canSeeGovernance ? (
-                <Link href={`/workspaces/${workspace.id}/governance`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+                <Link href={`/workspaces/${workspace.id}/governance`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border px-3.5 py-2 text-sm font-medium text-foreground hover:bg-muted">
                   Abrir Governança
                 </Link>
               ) : null}
@@ -155,10 +155,10 @@ export default function SettingsPage() {
 
 function SettingsAction({ href, title, description }: { href: string; title: string; description: string }) {
   return (
-    <Link href={href} className="block rounded-lg border border-border px-3 py-3 transition-colors hover:bg-surface-sunken">
-      <p className="text-sm font-semibold text-ink">{title}</p>
-      <p className="mt-1 text-sm text-ink-muted">{description}</p>
-      <p className="mt-3 text-xs font-medium text-accent">Abrir</p>
+    <Link href={href} className="block rounded-lg border border-border px-3 py-3 transition-colors hover:bg-muted">
+      <p className="text-sm font-semibold text-foreground">{title}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <p className="mt-3 text-xs font-medium text-primary">Abrir</p>
     </Link>
   );
 }
@@ -166,8 +166,8 @@ function SettingsAction({ href, title, description }: { href: string; title: str
 function InfoRow({ label, value, subtle = false }: { label: string; value: string; subtle?: boolean }) {
   return (
     <div className="min-w-0">
-      <p className="text-xs text-ink-muted">{label}</p>
-      <p className={`mt-1 break-words font-medium ${subtle ? "text-xs text-ink-faint" : "text-ink"}`}>{value}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={`mt-1 break-words font-medium ${subtle ? "text-xs text-muted-foreground/70" : "text-foreground"}`}>{value}</p>
     </div>
   );
 }
@@ -175,8 +175,8 @@ function InfoRow({ label, value, subtle = false }: { label: string; value: strin
 function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg border border-border px-3 py-2">
-      <p className="text-xs text-ink-muted">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-ink">{value}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">{value}</p>
     </div>
   );
 }

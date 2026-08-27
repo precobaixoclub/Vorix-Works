@@ -97,7 +97,7 @@ export default function RuntimeDetailPage() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={runtimePlan.status} />
-            <Link href={`/workspaces/${params.workspaceId}/planning/${runtimePlan.sourceContext.planningId}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">
+            <Link href={`/workspaces/${params.workspaceId}/planning/${runtimePlan.sourceContext.planningId}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-card px-3.5 py-2 text-sm font-medium text-foreground hover:bg-muted">
               Abrir planejamento
             </Link>
             <Button disabled={runtimePlan.status !== "validated" || isCreatingRun} onClick={handleCreateDryRun}>
@@ -109,7 +109,7 @@ export default function RuntimeDetailPage() {
           </div>
         }
       />
-      <p className="mb-4 break-all text-xs text-ink-faint">
+      <p className="mb-4 break-all text-xs text-muted-foreground/70">
         Runtime {runtimePlan.id} · Planejamento {runtimePlan.sourceContext.planningId} · Workspace {runtimePlan.sourceContext.workspaceId}
       </p>
 
@@ -127,7 +127,7 @@ export default function RuntimeDetailPage() {
 
       <Card className="mb-6">
         <CardHeader>
-          <p className="text-sm font-medium text-ink">Contexto de execução</p>
+          <p className="text-sm font-medium text-foreground">Contexto de execução</p>
         </CardHeader>
         <CardBody>
           <RuntimeContextPanel context={context} />
@@ -137,11 +137,11 @@ export default function RuntimeDetailPage() {
       {issues.length > 0 ? (
         <Card className="mb-6 border-l-4 border-l-amber-500">
           <CardHeader>
-            <p className="text-sm font-medium text-ink">Relatório de validação</p>
+            <p className="text-sm font-medium text-foreground">Relatório de validação</p>
           </CardHeader>
           <CardBody className="flex flex-col gap-1.5">
             {issues.map((issue, index) => (
-              <p key={index} className={`text-xs ${issue.severity === "error" ? "text-red-600" : "text-ink-muted"}`}>
+              <p key={index} className={`text-xs ${issue.severity === "error" ? "text-destructive" : "text-muted-foreground"}`}>
                 [{issue.code}] {issue.message}
               </p>
             ))}
@@ -152,7 +152,7 @@ export default function RuntimeDetailPage() {
       {tasks.length > 0 ? (
         <Card className="mb-6">
           <CardHeader>
-            <p className="text-sm font-medium text-ink">Grafo de bindings</p>
+            <p className="text-sm font-medium text-foreground">Grafo de bindings</p>
           </CardHeader>
           <CardBody>
             <RuntimeBindingGraph tasks={tasks} bindings={bindings} />
@@ -162,7 +162,7 @@ export default function RuntimeDetailPage() {
 
       {tasks.length > 0 ? (
         <div>
-          <h2 className="mb-3 text-sm font-medium text-ink">Contratos por tarefa</h2>
+          <h2 className="mb-3 text-sm font-medium text-foreground">Contratos por tarefa</h2>
           <RuntimeTaskContracts tasks={tasks} inputs={inputs} outputs={outputs} bindings={bindings} artifacts={artifacts} />
         </div>
       ) : null}

@@ -28,24 +28,24 @@ export function RuntimeTaskContracts({
         return (
           <Card key={task.id} className="px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-medium text-ink">{task.type}</p>
-              <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-ink-muted">{task.capability}</span>
+              <p className="text-sm font-medium text-foreground">{task.type}</p>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{task.capability}</span>
             </div>
 
             {(inputsByTask.get(task.id) ?? []).length > 0 ? (
               <div className="mt-3">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Entradas</p>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Entradas</p>
                 <ul className="mt-1 flex flex-col gap-1">
                   {(inputsByTask.get(task.id) ?? []).map((port) => {
                     const binding = bindingByInputPort.get(`${task.id}:${port.portKey}`);
                     return (
-                      <li key={port.portKey} className="text-xs text-ink-muted">
-                        <span className="font-medium text-ink">{port.portKey}</span> — aceita [{port.acceptedArtifactTypes.join(", ")}]
+                      <li key={port.portKey} className="text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">{port.portKey}</span> — aceita [{port.acceptedArtifactTypes.join(", ")}]
                         {port.required ? " · obrigatória" : " · opcional"}
                         {binding ? (
-                          <span className="text-ink-faint"> · vem de {binding.fromRuntimeTaskId === task.id ? "—" : `"${binding.fromOutputPort}"`}</span>
+                          <span className="text-muted-foreground"> · vem de {binding.fromRuntimeTaskId === task.id ? "—" : `"${binding.fromOutputPort}"`}</span>
                         ) : (
-                          <span className="text-red-600"> · sem binding</span>
+                          <span className="text-destructive"> · sem binding</span>
                         )}
                       </li>
                     );
@@ -56,11 +56,11 @@ export function RuntimeTaskContracts({
 
             {(outputsByTask.get(task.id) ?? []).length > 0 ? (
               <div className="mt-2">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">Saídas</p>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Saídas</p>
                 <ul className="mt-1 flex flex-col gap-1">
                   {(outputsByTask.get(task.id) ?? []).map((port) => (
-                    <li key={port.portKey} className="text-xs text-ink-muted">
-                      <span className="font-medium text-ink">{port.portKey}</span> — produz &quot;{port.artifactType}&quot;
+                    <li key={port.portKey} className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{port.portKey}</span> — produz &quot;{port.artifactType}&quot;
                     </li>
                   ))}
                 </ul>
@@ -69,8 +69,8 @@ export function RuntimeTaskContracts({
 
             {artifact ? (
               <div className="mt-3 rounded-lg border border-dashed border-border px-3 py-2">
-                <p className="text-xs font-medium text-ink-muted">Artefato esperado — {artifact.schema.artifactType}</p>
-                <p className="mt-0.5 text-xs text-ink-faint">{artifact.schema.description}</p>
+                <p className="text-xs font-medium text-muted-foreground">Artefato esperado — {artifact.schema.artifactType}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{artifact.schema.description}</p>
               </div>
             ) : null}
           </Card>

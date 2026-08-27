@@ -1,8 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { CalendarClock, ClipboardCheck, Factory, FolderOpen } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
+import { StatsGrid } from "@/components/StatsGrid";
+import { HubCard, type HubItem } from "@/components/HubPage";
+import { KpiCard, num } from "@/components/DashboardKit";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useExecutionRuns } from "@/features/execution/hooks";
 import type { ExecutionRunState } from "@/features/execution/types";
@@ -18,14 +23,8 @@ const IN_PROGRESS_STATES: readonly ExecutionRunState[] = ["created", "validating
 const GENERATED_STATES: readonly ExecutionRunState[] = ["waiting_for_approval", "completed"];
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
-type Shortcut = {
-  href: string;
-  label: string;
-  description: string;
-  icon: string;
-};
-
 export default function WorkspaceHomePage() {
+  const router = useRouter();
   const workspace = useCurrentWorkspace();
   const { data: publications, isLoading: publicationsLoading } = useUnifiedPublications(workspace.id);
   const { data: executionRuns, isLoading: runsLoading } = useExecutionRuns(workspace.id);
@@ -48,30 +47,42 @@ export default function WorkspaceHomePage() {
   const recentByType = countContentTypes(recentPublications);
   const loading = runsLoading || publicationsLoading;
 
-  const shortcuts: Shortcut[] = [
+  const shortcuts: HubItem[] = [
     {
-      href: `/workspaces/${workspace.id}/production`,
-      label: "Produção",
+      id: "production",
+      title: "Produção",
+      tagline: "Fluxo de criação",
       description: "Abrir tanque, rotina e geração de conteúdos.",
-      icon: "▤",
+      icon: Factory,
+      route: `/workspaces/${workspace.id}/production`,
+      accent: "emerald",
     },
     {
-      href: `/workspaces/${workspace.id}/review`,
-      label: "Revisão",
+      id: "review",
+      title: "Revisão",
+      tagline: "Aprovação",
       description: `${awaitingReviewCount} conteúdo(s) aguardando aprovação.`,
-      icon: "✓",
+      icon: ClipboardCheck,
+      route: `/workspaces/${workspace.id}/review`,
+      accent: "amber",
     },
     {
-      href: `/workspaces/${workspace.id}/campaigns`,
-      label: "Conteúdos",
+      id: "campaigns",
+      title: "Conteúdos",
+      tagline: "Histórico",
       description: "Ver histórico, publicados e agendados.",
-      icon: "▥",
+      icon: FolderOpen,
+      route: `/workspaces/${workspace.id}/campaigns`,
+      accent: "violet",
     },
     {
-      href: `/workspaces/${workspace.id}/calendar`,
-      label: "Calendário",
+      id: "calendar",
+      title: "Calendário",
+      tagline: "Agenda",
       description: `${scheduledCount} publicação(ões) agendada(s).`,
-      icon: "□",
+      icon: CalendarClock,
+      route: `/workspaces/${workspace.id}/calendar`,
+      accent: "sky",
     },
   ];
 
@@ -80,100 +91,101 @@ export default function WorkspaceHomePage() {
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-ink">{workspace.name}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">{workspace.name}</h1>
             <StatusBadge status={workspace.status} />
           </div>
-          <p className="mt-1 text-sm text-ink-muted">
+          <p className="mt-1 text-sm text-muted-foreground">
             Resumo dos últimos 30 dias e atalhos para continuar a operação.
           </p>
         </div>
-        <p className="text-xs text-ink-faint">Espaço criado em {formatDate(workspace.createdAt)}</p>
+        <p className="text-xs text-muted-foreground/70">Espaço criado em {formatDate(workspace.createdAt)}</p>
       </header>
 
-      <section className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          label="Gerados em 30 dias"
-          value={generatedLast30}
-          description="Execuções concluídas ou aguardando aprovação"
-          loading={loading}
-        />
-        <MetricCard
-          label="Em produção"
-          value={inProductionCount}
-          description="Execuções rodando ou preparadas agora"
-          loading={runsLoading}
-        />
-        <MetricCard
-          label="Aguardando revisão"
-          value={awaitingReviewCount}
-          description="Conteúdos que precisam de aprovação"
-          loading={runsLoading}
-        />
-        <MetricCard
-          label="Publicados em 30 dias"
-          value={publishedLast30}
-          description={`${recentByType.image} imagem(ns) · ${recentByType.carousel} carrossel(is) · ${recentByType.video} vídeo(s)`}
-          loading={loading}
-        />
-      </section>
-
-      <section className="mt-6 grid gap-3 md:grid-cols-4">
-        {shortcuts.map((shortcut) => (
-          <Link
-            key={shortcut.href}
-            href={shortcut.href}
-            className="group rounded-xl border border-border bg-surface-raised p-4 transition hover:-translate-y-0.5 hover:bg-surface"
-          >
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-sunken text-sm font-semibold text-accent">
-              {shortcut.icon}
-            </div>
-            <p className="mt-3 font-semibold text-ink group-hover:text-accent">{shortcut.label}</p>
-            <p className="mt-1 text-sm text-ink-muted">{shortcut.description}</p>
-          </Link>
-        ))}
+      <section className="mt-6">
+        <StatsGrid>
+          <KpiCard
+            label="Gerados em 30 dias"
+            value={loading ? "…" : num(generatedLast30)}
+            hint="Execuções concluídas ou aguardando aprovação"
+          />
+          <KpiCard
+            label="Em produção"
+            value={runsLoading ? "…" : num(inProductionCount)}
+            hint="Execuções rodando ou preparadas agora"
+          />
+          <KpiCard
+            label="Aguardando revisão"
+            value={runsLoading ? "…" : num(awaitingReviewCount)}
+            hint="Conteúdos que precisam de aprovação"
+          />
+          <KpiCard
+            label="Publicados em 30 dias"
+            value={loading ? "…" : num(publishedLast30)}
+            hint={`${recentByType.image} imagem(ns) · ${recentByType.carousel} carrossel(is) · ${recentByType.video} vídeo(s)`}
+            accent="positive"
+          />
+        </StatsGrid>
       </section>
 
       <section className="mt-6">
-        <div className="rounded-xl border border-border bg-surface-raised p-4">
-          <h2 className="font-semibold text-ink">Métricas gerais</h2>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Continuar a operação
+        </h2>
+        <div className="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+          {shortcuts.map((item, i) => (
+            <HubCard
+              key={item.id}
+              item={item}
+              order={i + 1}
+              onClick={() => router.push(item.route)}
+              ctaLabel="Abrir"
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Métricas gerais</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2 pt-0 sm:grid-cols-2 lg:grid-cols-5">
             <CompactMetric label="Execuções totais" value={realRuns.length} loading={runsLoading} />
             <CompactMetric label="Conteúdos no histórico" value={publications?.length ?? 0} loading={publicationsLoading} />
             <CompactMetric label="Agendados" value={scheduledCount} loading={publicationsLoading} />
             <CompactMetric label="Publicados nos últimos 30 dias" value={publishedLast30} loading={publicationsLoading} />
-            <CompactMetric label="Falhas nos últimos 30 dias" value={failedLast30} loading={runsLoading} />
-          </div>
-        </div>
+            <CompactMetric
+              label="Falhas nos últimos 30 dias"
+              value={failedLast30}
+              loading={runsLoading}
+              accent={failedLast30 > 0 ? "negative" : "default"}
+            />
+          </CardContent>
+        </Card>
       </section>
     </main>
   );
 }
 
-function MetricCard({
+function CompactMetric({
   label,
   value,
-  description,
   loading,
+  accent = "default",
 }: {
   label: string;
   value: number;
-  description: string;
   loading?: boolean;
+  accent?: "default" | "negative";
 }) {
   return (
-    <div className="rounded-xl border border-border bg-surface-raised p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</p>
-      <p className="mt-2 text-3xl font-semibold text-ink">{loading ? "..." : value}</p>
-      <p className="mt-1 text-sm text-ink-muted">{description}</p>
-    </div>
-  );
-}
-
-function CompactMetric({ label, value, loading }: { label: string; value: number; loading?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg bg-surface-sunken px-3 py-2.5">
-      <span className="text-sm text-ink-muted">{label}</span>
-      <span className="text-sm font-semibold text-ink">{loading ? "..." : value}</span>
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2.5">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span
+        className={`text-sm font-semibold tabular-nums ${accent === "negative" ? "text-destructive" : "text-foreground"}`}
+      >
+        {loading ? "…" : num(value)}
+      </span>
     </div>
   );
 }

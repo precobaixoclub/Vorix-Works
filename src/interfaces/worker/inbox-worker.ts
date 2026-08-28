@@ -1,5 +1,8 @@
 import type { Channel, ConsumeMessage } from "amqplib";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { PersistenceDriver } from "../../infrastructure/storage/build-platform-repositories.js";
+import { sanitizeWuzApiEventForFixture } from "../../infrastructure/messaging/wuzapi/sanitize-fixture.js";
 import { buildPlatformRepositories } from "../../infrastructure/storage/build-platform-repositories.js";
 import { FakeMessagingProvider } from "../../infrastructure/messaging/fake-messaging-provider.js";
 import { WuzApiClient } from "../../infrastructure/messaging/wuzapi/wuzapi-client.js";
@@ -65,6 +68,25 @@ function loadInboxWorkerConfig(): InboxWorkerConfig {
   };
 }
 
+/**
+ * Captura de fixtures do spike de verificação (Fase 2) — SOMENTE quando `INBOX_SPIKE_FIXTURES_DIR`
+ * está setado (nunca em produção: variável ausente = sem custo, sem I/O de disco extra). Grava o
+ * payload bruto do WuzAPI e o evento normalizado correspondente, ambos sanitizados
+ * (`sanitizeWuzApiEventForFixture`), lado a lado — é assim que `wuzapi-event-mapper.ts` é
+ * corrigido depois com a FORMA real em vez da suposição da documentação pública.
+ */
+function captureSpikeFixture(dir: string | undefined, label: string, raw: unknown, mapped: unknown): void {
+  if (!dir) return;
+  try {
+    mkdirSync(dir, { recursive: true });
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const payload = { capturedAt: new Date().toISOString(), raw: sanitizeWuzApiEventForFixture(raw), mapped: sanitizeWuzApiEventForFixture(mapped) };
+    writeFileSync(join(dir, `${label}-${stamp}.json`), JSON.stringify(payload, null, 2), "utf8");
+  } catch (error) {
+    console.error("[inbox-worker] falha ao gravar fixture do spike:", error instanceof Error ? error.message : error);
+  }
+}
+
 function attemptCountOf(msg: ConsumeMessage): number {
   const raw = msg.properties.headers?.["x-attempt"];
   return typeof raw === "number" ? raw : 0;
@@ -107,6 +129,10 @@ async function consumeQueue(channel: Channel, queue: string, handle: (content: B
 
 async function main(): Promise<void> {
   const config = loadInboxWorkerConfig();
+  const spikeFixturesDir = process.env.INBOX_SPIKE_FIXTURES_DIR?.trim() || undefined;
+  if (spikeFixturesDir) {
+    console.log(`[inbox-worker] SPIKE: capturando fixtures sanitizadas em "${spikeFixturesDir}" — nunca deixar ligado em produção.`);
+  }
   if (!config.inbox.enabled) {
     console.log("[inbox-worker] CONVERSATIONS_MODULE_ENABLED=false — worker encerrando sem iniciar consumers.");
     return;
@@ -139,19 +165,21 @@ async function main(): Promise<void> {
   await consumeQueue(channel, WUZAPI_RAW_QUEUE, async (content) => {
     const raw = JSON.parse(content.toString("utf8")) as RawWuzApiEvent;
     const mapped = mapWuzApiEvent(raw);
+    captureSpikeFixture(spikeFixturesDir, mapped ? `recognized-${mapped.type}` : "unrecognized", raw, mapped);
     if (!mapped) {
-      console.warn("[inbox-worker] evento WuzAPI não reconhecido, descartado:", raw.event);
+      console.warn("[inbox-worker] evento WuzAPI não reconhecido, descartado:", raw.type);
       return;
     }
-    const connectionRow = await deps.connectionRepository.findByExternalSessionId(mapped.externalSessionId);
+    // `mapped.connectionId` já É o id real da conexão (o mapper usa `instanceName`, que o Vorix
+    // sempre define como o próprio `MessagingConnection.id` ao provisionar — ver
+    // `wuzapi-messaging-provider.ts:connect`) — nunca precisa de índice por token aqui.
+    const connectionRow = await deps.connectionRepository.getById(mapped.connectionId);
     if (!connectionRow) {
-      console.warn(`[inbox-worker] evento para sessão desconhecida "${mapped.externalSessionId}", descartado.`);
+      console.warn(`[inbox-worker] evento para conexão desconhecida "${mapped.connectionId}", descartado.`);
       return;
     }
     const enriched: NormalizedInboxEvent =
-      mapped.type === "message.inbound"
-        ? { ...mapped, connectionId: connectionRow.id, tenantId: connectionRow.tenantId, workspaceId: connectionRow.workspaceId }
-        : { ...mapped, connectionId: connectionRow.id };
+      mapped.type === "message.inbound" ? { ...mapped, tenantId: connectionRow.tenantId, workspaceId: connectionRow.workspaceId } : mapped;
 
     const routingKey = enriched.type;
     channel.publish(INBOX_EVENTS_EXCHANGE, routingKey, Buffer.from(JSON.stringify(enriched)), { persistent: true });

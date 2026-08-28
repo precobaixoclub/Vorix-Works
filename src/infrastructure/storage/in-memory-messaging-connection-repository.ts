@@ -39,10 +39,6 @@ export class InMemoryMessagingConnectionRepository implements MessagingConnectio
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  async findByExternalSessionId(externalSessionId: string): Promise<MessagingConnection | undefined> {
-    return [...this.rows.values()].find((row) => row.externalSessionId === externalSessionId);
-  }
-
   async listAllActive(): Promise<MessagingConnection[]> {
     return [...this.rows.values()].filter((row) => !MESSAGING_CONNECTION_TERMINAL_STATUSES.includes(row.status));
   }

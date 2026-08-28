@@ -3,18 +3,36 @@ import type { InboxMessageStatus, InboxMessageType } from "../../../domain/inbox
 
 /**
  * Camada anti-corrupção — módulo Conversas (Fase 2). Único arquivo que conhece o formato bruto de
- * evento publicado pelo WuzAPI (`RABBITMQ_QUEUE`, fila `wuzapi.events.raw`). Converte para os três
- * eventos internos normalizados (`inbox-events.ts`) ANTES de qualquer consumer — nenhum outro
- * arquivo do módulo pode importar/inspecionar este payload bruto.
+ * evento publicado pelo WuzAPI na fila `wuzapi.events.raw`. Converte para os três eventos internos
+ * normalizados (`inbox-events.ts`) ANTES de qualquer consumer — nenhum outro arquivo do módulo
+ * pode importar/inspecionar este payload bruto.
  *
- * IMPORTANTE: o formato exato do payload (nomes de campo do whatsmeow/WuzAPI, ex.: `event`,
- * `Info.ID`, `Info.Sender`) precisa ser confirmado contra uma instância real na Fase 2 (spike) —
- * este mapper assume o formato documentado publicamente do projeto `asternic/wuzapi` e falha de
- * forma explícita (retorna `undefined`, nunca lança) para qualquer payload que não reconheça, para
- * que o `RawEventConsumer` possa rotear o desconhecido para a DLQ em vez de derrubar o worker.
+ * Envelope CONFIRMADO via código-fonte real de `asternic/wuzapi` (`wmiau.go`,
+ * `rabbitmq.go:sendToGlobalRabbit` — pesquisa direta no repositório, Fase 2 pré-spike):
+ *
+ * ```json
+ * { "type": "Message" | "ReadReceipt" | "Connected" | "Disconnected" | "LoggedOut",
+ *   "event": { "Info": { "ID", "Sender", "Chat", "PushName", "Timestamp", "IsFromMe", "IsGroup" },
+ *              "Message": { "conversation": "...", ... } },
+ *   "state": "Read" | "ReadSelf" | "Delivered",   // só em "ReadReceipt"
+ *   "userID": "<id interno do WuzAPI>",
+ *   "instanceName": "<name escolhido em POST /admin/users>" }
+ * ```
+ *
+ * `instanceName` é SEMPRE o `MessagingConnection.id` do Vorix (é o Vorix quem escolhe esse `name`
+ * ao provisionar a sessão — ver `wuzapi-messaging-provider.ts:connect`), nunca o token de sessão
+ * (que nunca aparece neste payload). Por isso a correlação de evento → conexão é um `getById`
+ * direto, sem precisar de índice por token.
+ *
+ * AINDA NÃO CONFIRMADO (pendência do spike, ver docs/conversas-fase2-spike.md): o nome exato do
+ * campo de texto dentro de `Message` para cada tipo de mídia (`imageMessage`, `videoMessage`
+ * etc. — só `conversation`/`extendedTextMessage` para texto simples estão bem documentados no
+ * proto do whatsmeow) e o valor exato de `PairError`/erro de autenticação irrecuperável (o
+ * mapeamento para `requires_repair` abaixo é uma extrapolação razoável de `LoggedOut`, não uma
+ * confirmação de um evento `PairError` real).
  */
 
-const MESSAGE_TYPE_BY_WUZAPI_KIND: Record<string, InboxMessageType> = {
+const MESSAGE_TYPE_BY_WHATSMEOW_KIND: Record<string, InboxMessageType> = {
   conversation: "text",
   extendedTextMessage: "text",
   imageMessage: "image",
@@ -25,56 +43,53 @@ const MESSAGE_TYPE_BY_WUZAPI_KIND: Record<string, InboxMessageType> = {
   contactMessage: "contact",
 };
 
-const STATUS_BY_WUZAPI_RECEIPT: Record<string, InboxMessageStatus> = {
-  delivery: "delivered",
-  read: "read",
-  played: "read",
+const STATUS_BY_RECEIPT_STATE: Record<string, InboxMessageStatus> = {
+  Delivered: "delivered",
+  Read: "read",
+  ReadSelf: "read",
 };
 
 export type RawWuzApiEvent = {
-  event?: string;
-  sessionId?: string;
-  instanceToken?: string;
-  data?: Record<string, unknown>;
+  type?: string;
+  event?: Record<string, unknown>;
+  state?: string;
+  userID?: string;
+  instanceName?: string;
 };
 
 export function mapWuzApiEvent(raw: RawWuzApiEvent): NormalizedInboxEvent | undefined {
-  const externalSessionId = raw.sessionId ?? raw.instanceToken;
-  if (!raw.event || !externalSessionId || !raw.data) return undefined;
+  const instanceName = raw.instanceName;
+  if (!raw.type || !instanceName) return undefined;
 
-  if (raw.event === "Message") {
-    return mapInboundMessage(externalSessionId, raw.data);
-  }
-  if (raw.event === "ReadReceipt" || raw.event === "Receipt") {
-    return mapStatusReceipt(externalSessionId, raw.data);
-  }
-  if (raw.event === "Connected" || raw.event === "Disconnected" || raw.event === "LoggedOut" || raw.event === "PairError") {
-    return mapConnectionState(raw.event, externalSessionId, raw.data);
+  if (raw.type === "Message" && raw.event) return mapInboundMessage(instanceName, raw.event);
+  if (raw.type === "ReadReceipt" && raw.event) return mapStatusReceipt(instanceName, raw.event, raw.state);
+  if (raw.type === "Connected" || raw.type === "Disconnected" || raw.type === "LoggedOut") {
+    return mapConnectionState(raw.type, instanceName, raw.event ?? {});
   }
   return undefined;
 }
 
-function mapInboundMessage(externalSessionId: string, data: Record<string, unknown>): InboundMessageReceived | undefined {
-  const info = data.Info as Record<string, unknown> | undefined;
+function mapInboundMessage(instanceName: string, event: Record<string, unknown>): InboundMessageReceived | undefined {
+  const info = event.Info as Record<string, unknown> | undefined;
   const messageId = info?.ID as string | undefined;
   const fromPhone = info?.Sender as string | undefined;
   if (!messageId || !fromPhone) return undefined;
 
-  const messageBody = data.Message as Record<string, unknown> | undefined;
-  const kind = messageBody ? Object.keys(messageBody).find((key) => key in MESSAGE_TYPE_BY_WUZAPI_KIND || key === "conversation") : undefined;
-  const messageType = kind ? MESSAGE_TYPE_BY_WUZAPI_KIND[kind] ?? "other" : "other";
-  const body = typeof messageBody?.conversation === "string" ? (messageBody.conversation as string) : undefined;
+  const message = event.Message as Record<string, unknown> | undefined;
+  const kind = message ? Object.keys(message).find((key) => key in MESSAGE_TYPE_BY_WHATSMEOW_KIND) : undefined;
+  const messageType = kind ? MESSAGE_TYPE_BY_WHATSMEOW_KIND[kind] ?? "other" : "other";
+  const body = typeof message?.conversation === "string" ? (message.conversation as string) : undefined;
 
   return {
     type: "message.inbound",
-    // tenantId/workspaceId são resolvidos pelo consumer a partir de `messaging_connections`
-    // (busca por `externalSessionId`) — o mapper não tem acesso a repositório, só normaliza o payload.
+    // tenantId/workspaceId são resolvidos pelo worker a partir de `messaging_connections` (busca
+    // por `instanceName` == connectionId) — o mapper não tem acesso a repositório, só normaliza.
     tenantId: "",
     workspaceId: "",
-    connectionId: "",
-    externalSessionId,
+    connectionId: instanceName,
+    externalSessionId: instanceName,
     externalMessageId: messageId,
-    fromPhone,
+    fromPhone: normalizeWhatsmeowJid(fromPhone),
     fromName: info?.PushName as string | undefined,
     messageType,
     body,
@@ -82,36 +97,41 @@ function mapInboundMessage(externalSessionId: string, data: Record<string, unkno
   };
 }
 
-function mapStatusReceipt(externalSessionId: string, data: Record<string, unknown>): MessageStatusChanged | undefined {
-  const messageIds = data.MessageIDs as string[] | undefined;
-  const receiptType = (data.Type as string | undefined) ?? "delivery";
-  const status = STATUS_BY_WUZAPI_RECEIPT[receiptType];
+function mapStatusReceipt(instanceName: string, event: Record<string, unknown>, state: string | undefined): MessageStatusChanged | undefined {
+  const messageIds = event.MessageIDs as string[] | undefined;
+  const status = state ? STATUS_BY_RECEIPT_STATE[state] : undefined;
   const externalMessageId = messageIds?.[0];
   if (!status || !externalMessageId) return undefined;
 
   return {
     type: "message.status",
-    connectionId: "",
-    externalSessionId,
+    connectionId: instanceName,
+    externalSessionId: instanceName,
     externalMessageId,
     status,
     occurredAt: new Date().toISOString(),
   };
 }
 
-function mapConnectionState(event: string, externalSessionId: string, data: Record<string, unknown>): ConnectionStateChanged {
-  const statusByEvent: Record<string, ConnectionStateChanged["status"]> = {
+function mapConnectionState(type: "Connected" | "Disconnected" | "LoggedOut", instanceName: string, event: Record<string, unknown>): ConnectionStateChanged {
+  const statusByType: Record<typeof type, ConnectionStateChanged["status"]> = {
     Connected: "connected",
     Disconnected: "disconnected",
-    LoggedOut: "logged_out",
-    PairError: "requires_repair",
+    LoggedOut: "requires_repair",
   };
   return {
     type: "connection.state",
-    connectionId: "",
-    externalSessionId,
-    status: statusByEvent[event] ?? "error",
-    phoneNumber: data.JID as string | undefined,
+    connectionId: instanceName,
+    externalSessionId: instanceName,
+    status: statusByType[type],
+    phoneNumber: typeof event.JID === "string" ? normalizeWhatsmeowJid(event.JID) : undefined,
     occurredAt: new Date().toISOString(),
   };
+}
+
+/** JIDs do whatsmeow vêm como `"<telefone>@s.whatsapp.net"` (contato) ou
+ * `"<telefone>.<device>:<agent>@s.whatsapp.net"` (própria sessão, ver `wuzapi-messaging-provider.ts`). */
+function normalizeWhatsmeowJid(jid: string): string {
+  const phone = jid.split("@")[0]?.split(".")[0]?.split(":")[0];
+  return phone ? `+${phone}` : jid;
 }

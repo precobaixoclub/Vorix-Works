@@ -38,9 +38,17 @@ export class MessagingProviderError extends Error {
 export type MessagingProvider = {
   readonly providerId: string;
 
-  /** Inicia (ou reinicia) a sessão no gateway para esta conexão. Idempotente. */
-  connect(input: { externalSessionId: string }): Promise<void>;
+  /**
+   * Provisiona (se necessário) e inicia a sessão no gateway para esta conexão. Idempotente.
+   * `instanceName` é um identificador ESTÁVEL escolhido pelo Vorix (o `MessagingConnection.id`) —
+   * o adapter real (WuzAPI) usa isto para poder correlacionar eventos de volta a esta conexão sem
+   * expor o token de sessão em nenhum payload de evento. Pode devolver o telefone pareado quando o
+   * gateway já souber (nem todo provider sabe nesse momento — por isso é opcional).
+   */
+  connect(input: { externalSessionId: string; instanceName: string }): Promise<{ phoneNumber?: string }>;
   disconnect(input: { externalSessionId: string }): Promise<void>;
+  /** Revoga a sessão de verdade (distinto de `disconnect` — o usuário precisaria parear de novo). */
+  logout(input: { externalSessionId: string }): Promise<void>;
   getConnectionStatus(input: { externalSessionId: string }): Promise<NormalizedConnectionStatus>;
   getQrCode(input: { externalSessionId: string }): Promise<{ qrCode: string; expiresAt: string }>;
 

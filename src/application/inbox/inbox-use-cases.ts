@@ -56,8 +56,10 @@ export async function createConnection(deps: InboxUseCaseDeps, input: CreateConn
 
   const connection = await deps.connectionRepository.create({ tenantId: input.tenantId, workspaceId: input.workspaceId, provider: "wuzapi", displayName: input.displayName.trim() });
   const externalSessionId = (deps.idGenerator ?? defaultIdGenerator)();
-  await deps.provider.connect({ externalSessionId });
-  return deps.connectionRepository.updateStatus(connection.id, { status: "connecting", externalSessionId });
+  // `instanceName: connection.id` — o RawEventConsumer do worker correlaciona eventos de volta a
+  // esta conexão por esse id direto (ver `wuzapi-event-mapper.ts`), nunca pelo token de sessão.
+  const { phoneNumber } = await deps.provider.connect({ externalSessionId, instanceName: connection.id });
+  return deps.connectionRepository.updateStatus(connection.id, { status: "connecting", externalSessionId, phoneNumber });
 }
 
 export type ListConnectionsInput = { tenantId: string; workspaceId: string };

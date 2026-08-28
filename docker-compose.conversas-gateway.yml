@@ -73,7 +73,9 @@ services:
     mem_limit: 384m
     mem_reservation: 192m
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/session/status", "||", "exit", "1"]
+      # /health é público (sem Authorization) — confirmado em routes.go do WuzAPI. CMD-SHELL (não
+      # CMD) porque o healthcheck usa "||" como operador de shell, não um argumento literal do wget.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

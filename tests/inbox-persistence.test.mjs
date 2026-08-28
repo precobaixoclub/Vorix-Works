@@ -43,7 +43,7 @@ test("Migrations 0080-0083 aplicam sem erro; tabelas do módulo Conversas existe
   }
 });
 
-test("PostgresMessagingConnectionRepository: create()/updateStatus()/findByExternalSessionId() round trip", async () => {
+test("PostgresMessagingConnectionRepository: create()/updateStatus()/getById() round trip", async () => {
   const workspace = await makeWorkspace("tenant-conn-1");
   const repo = new PostgresMessagingConnectionRepository(db.pool);
 
@@ -54,8 +54,11 @@ test("PostgresMessagingConnectionRepository: create()/updateStatus()/findByExter
   assert.equal(updated.status, "connected");
   assert.equal(updated.phoneNumber, "+5511999990000");
 
-  const found = await repo.findByExternalSessionId("sess-abc");
-  assert.equal(found.id, connection.id);
+  // Correlação de evento inbound usa `getById` direto — `instanceName` no evento do WuzAPI é
+  // sempre o próprio `MessagingConnection.id` (ver `wuzapi-messaging-provider.ts:connect`), não o
+  // token de sessão. Ver `wuzapi-event-mapper.ts`.
+  const found = await repo.getById(connection.id);
+  assert.equal(found.externalSessionId, "sess-abc");
 });
 
 test("PostgresInboxContactRepository: upsertByPhone() nunca duplica pelo mesmo (workspace, telefone)", async () => {

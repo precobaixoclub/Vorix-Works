@@ -10,8 +10,12 @@ export class FakeMessagingProvider implements MessagingProvider {
   readonly sentMessages: Array<{ to: string; body: string }> = [];
   private sequence = 0;
 
-  async connect(): Promise<void> {}
+  async connect(): Promise<{ phoneNumber?: string }> {
+    return { phoneNumber: "+5511999990000" };
+  }
+
   async disconnect(): Promise<void> {}
+  async logout(): Promise<void> {}
 
   async getConnectionStatus(): Promise<NormalizedConnectionStatus> {
     return { status: "connected", phoneNumber: "+5511999990000" };

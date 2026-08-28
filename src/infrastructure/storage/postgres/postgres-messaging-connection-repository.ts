@@ -55,11 +55,6 @@ export class PostgresMessagingConnectionRepository implements MessagingConnectio
     return result.rows.map((row) => this.toDomain(row));
   }
 
-  async findByExternalSessionId(externalSessionId: string): Promise<MessagingConnection | undefined> {
-    const result = await this.pool.query<Row>("select * from messaging_connections where external_session_id = $1", [externalSessionId]);
-    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
-  }
-
   async listAllActive(): Promise<MessagingConnection[]> {
     const result = await this.pool.query<Row>(
       "select * from messaging_connections where status <> all($1::text[])",

@@ -3,41 +3,50 @@ import { MessagingProviderError } from "../../../application/ports/messaging-pro
 import type { WuzApiClient } from "./wuzapi-client.js";
 
 /**
- * Adapter real do `MessagingProvider` para o WuzAPI — módulo Conversas (Fase 1). Único lugar do
+ * Adapter real do `MessagingProvider` para o WuzAPI — módulo Conversas (Fase 1/2). Único lugar do
  * domínio/aplicação que sabe que "o provider" hoje é WuzAPI; um futuro
  * `WhatsAppCloudMessagingProvider` implementaria o mesmo `MessagingProvider` sem tocar em Inbox,
  * contatos, CRM, IA ou automações.
  *
- * `externalSessionId` aqui É o token de sessão do WuzAPI (identificador por sessão, distinto do
- * `WUZAPI_ADMIN_TOKEN` administrativo) — nunca exposto ao frontend, só circula entre
- * `zuno-api`/`vorix-worker` e o container do WuzAPI na rede interna `conversas_internal`.
+ * `externalSessionId` aqui É o token de sessão do WuzAPI (identificador por sessão, usado no
+ * header `Authorization` de toda chamada de sessão) — nunca exposto ao frontend, só circula entre
+ * `zuno-api`/`vorix-worker` e o container do WuzAPI na rede interna `conversas_internal`. O token
+ * NUNCA aparece no payload de evento publicado no RabbitMQ (confirmado via código-fonte do WuzAPI,
+ * `rabbitmq.go:sendToGlobalRabbit`) — só `instanceName` (o `name` escolhido em `connect()`, que o
+ * Vorix sempre define como o próprio `MessagingConnection.id`) e `userID` (id interno do WuzAPI,
+ * não usado aqui). É por isso que a correlação de evento inbound usa `instanceName`, não o token.
  */
 export class WuzApiMessagingProvider implements MessagingProvider {
   readonly providerId = "wuzapi";
 
   constructor(private readonly client: WuzApiClient) {}
 
-  async connect(input: { externalSessionId: string }): Promise<void> {
-    await this.client.connectSession(input.externalSessionId);
+  async connect(input: { externalSessionId: string; instanceName: string }): Promise<{ phoneNumber?: string }> {
+    await this.client.createAdminUser({ name: input.instanceName, token: input.externalSessionId });
+    const result = await this.client.connectSession(input.externalSessionId);
+    return { phoneNumber: extractPhoneFromJid(result.jid) };
   }
 
   async disconnect(input: { externalSessionId: string }): Promise<void> {
     await this.client.disconnectSession(input.externalSessionId);
   }
 
+  async logout(input: { externalSessionId: string }): Promise<void> {
+    await this.client.logoutSession(input.externalSessionId);
+  }
+
   async getConnectionStatus(input: { externalSessionId: string }): Promise<NormalizedConnectionStatus> {
+    // `/session/status` não devolve telefone (confirmado via API.md) — só no momento do connect()
+    // (campo `jid` da resposta). Aqui só refletimos Connected/LoggedIn.
     const status = await this.client.getSessionStatus(input.externalSessionId);
-    return {
-      status: status.loggedIn ? (status.connected ? "connected" : "reconnecting") : "logged_out",
-      phoneNumber: status.phoneNumber,
-    };
+    return { status: status.LoggedIn ? (status.Connected ? "connected" : "reconnecting") : "logged_out" };
   }
 
   async getQrCode(input: { externalSessionId: string }): Promise<{ qrCode: string; expiresAt: string }> {
     const result = await this.client.getQrCode(input.externalSessionId);
     // WuzAPI/whatsmeow expira o QR em ~20s por convenção do protocolo WhatsApp Web — a UI deve
     // pedir um novo código depois disso, nunca reutilizar um QR expirado.
-    return { qrCode: result.qrCode, expiresAt: new Date(Date.now() + 20_000).toISOString() };
+    return { qrCode: result.QRCode, expiresAt: new Date(Date.now() + 20_000).toISOString() };
   }
 
   async sendText(input: { externalSessionId: string; to: string; body: string }): Promise<MessagingSendResult> {
@@ -65,8 +74,16 @@ export class WuzApiMessagingProvider implements MessagingProvider {
     return this.toSendResult(result);
   }
 
-  private toSendResult(result: { id: string }): MessagingSendResult {
-    if (!result?.id) throw new MessagingProviderError("transient", "WuzAPI não retornou um id de mensagem.");
-    return { externalMessageId: result.id };
+  private toSendResult(result: { Id: string }): MessagingSendResult {
+    if (!result?.Id) throw new MessagingProviderError("transient", "WuzAPI não retornou um id de mensagem.");
+    return { externalMessageId: result.Id };
   }
+}
+
+/** JID confirmado no formato `"<telefone>.<device>:<agent>@s.whatsapp.net"` (exemplo real da
+ * documentação: `"5491155554444.0:52@s.whatsapp.net"`) — telefone é tudo antes do primeiro `.`. */
+function extractPhoneFromJid(jid: string | undefined): string | undefined {
+  if (!jid) return undefined;
+  const phone = jid.split(".")[0]?.split("@")[0];
+  return phone ? `+${phone}` : undefined;
 }

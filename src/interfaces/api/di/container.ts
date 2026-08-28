@@ -31,6 +31,19 @@ import type { InstagramDmAccountRouteRepositoryPort } from "../../../application
 import type { InstagramDmConversationRepositoryPort } from "../../../application/ports/instagram-dm-conversation-repository.port.js";
 import type { InstagramDmMessageRepositoryPort } from "../../../application/ports/instagram-dm-message-repository.port.js";
 import type { InstagramDmAutomationRuleRepositoryPort } from "../../../application/ports/instagram-dm-automation-rule-repository.port.js";
+import type { MessagingConnectionRepositoryPort } from "../../../application/ports/messaging-connection-repository.port.js";
+import type { InboxContactRepositoryPort } from "../../../application/ports/inbox-contact-repository.port.js";
+import type { InboxConversationRepositoryPort } from "../../../application/ports/inbox-conversation-repository.port.js";
+import type { InboxMessageRepositoryPort } from "../../../application/ports/inbox-message-repository.port.js";
+import type { MessagingProvider } from "../../../application/ports/messaging-provider.port.js";
+import type { OutboundMessageQueuePort } from "../../../application/ports/outbound-message-queue.port.js";
+import type { InboxFeatureFlags } from "../../../application/inbox/inbox-feature-flags.js";
+import { DEFAULT_INBOX_FEATURE_FLAGS } from "../../../application/inbox/inbox-feature-flags.js";
+import { FakeMessagingProvider } from "../../../infrastructure/messaging/fake-messaging-provider.js";
+import { InMemoryOutboundMessageQueue } from "../../../infrastructure/messaging/in-memory-outbound-message-queue.js";
+import { RabbitMqOutboundMessageQueue } from "../../../infrastructure/messaging/rabbitmq/rabbitmq-outbound-message-queue.js";
+import { WuzApiClient } from "../../../infrastructure/messaging/wuzapi/wuzapi-client.js";
+import { WuzApiMessagingProvider } from "../../../infrastructure/messaging/wuzapi/wuzapi-messaging-provider.js";
 import type { AIProviderPort } from "../../../application/ports/ai-provider.port.js";
 import type { ExecutionGraphRepositoryPort } from "../../../application/ports/execution-graph-repository.port.js";
 import type { ExecutionTaskRepositoryPort } from "../../../application/ports/execution-task-repository.port.js";
@@ -299,6 +312,19 @@ export type ApiContainer = {
   instagramDmConversationRepository: InstagramDmConversationRepositoryPort;
   instagramDmMessageRepository: InstagramDmMessageRepositoryPort;
   instagramDmAutomationRuleRepository: InstagramDmAutomationRuleRepositoryPort;
+  /** Módulo Conversas (Fase 1) — ver `db/migrations/0080-0083`. Rotas só são registradas quando
+   * `inboxFeatureFlags.enabled === true` (ver `routes/v1/index.ts`). */
+  messagingConnectionRepository: MessagingConnectionRepositoryPort;
+  inboxContactRepository: InboxContactRepositoryPort;
+  inboxConversationRepository: InboxConversationRepositoryPort;
+  inboxMessageRepository: InboxMessageRepositoryPort;
+  inboxFeatureFlags: InboxFeatureFlags;
+  /** Adapter real (WuzAPI) quando configurado; `FakeMessagingProvider` em dev/teste sem
+   * `INBOX_WUZAPI_BASE_URL` — nunca undefined, o módulo sempre tem ALGUM provider funcional. */
+  inboxProvider: MessagingProvider;
+  /** `RabbitMqOutboundMessageQueue` quando `INBOX_RABBITMQ_URL` está configurado; senão
+   * `InMemoryOutboundMessageQueue` (dev/teste, sem broker). */
+  inboxOutboundQueue: OutboundMessageQueuePort;
   objectStorage: ObjectStoragePort;
   /** Remoção de fundo de logo via IA (`POST /v1/images/edits`, `background: "transparent"`) —
    * ver `openai-background-removal.ts`. Nunca registra Asset por conta própria; a rota exige
@@ -416,6 +442,19 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     creativeEngineGptEnabled: config?.execution.creativeEngineGptEnabled ?? false,
     legacyCreativeEngineEnabled: config?.execution.legacyCreativeEngineEnabled ?? true,
   };
+  // Módulo Conversas (Fase 1) — `enabled=false` (padrão) é o kill switch global (ver
+  // `routes/v1/index.ts`, que só registra `/v1/inbox/*` quando isto é `true`). Sem
+  // `wuzApiBaseUrl`/`rabbitMqUrl` configurados o container usa duplos de teste (Fake/InMemory) em
+  // vez de falhar o boot — o módulo pode ficar habilitado num ambiente de dev sem WuzAPI/RabbitMQ
+  // rodando, só sem efeito real nenhum.
+  const inboxFeatureFlags: InboxFeatureFlags = { enabled: config?.inbox.enabled ?? DEFAULT_INBOX_FEATURE_FLAGS.enabled };
+  const inboxProvider: MessagingProvider = config?.inbox.wuzApiBaseUrl && config?.inbox.wuzApiAdminToken
+    ? new WuzApiMessagingProvider(new WuzApiClient({ baseUrl: config.inbox.wuzApiBaseUrl, adminToken: config.inbox.wuzApiAdminToken }))
+    : new FakeMessagingProvider();
+  const inboxOutboundQueue: OutboundMessageQueuePort = config?.inbox.rabbitMqUrl
+    ? new RabbitMqOutboundMessageQueue(config.inbox.rabbitMqUrl)
+    : new InMemoryOutboundMessageQueue();
+
   // Falha alto e cedo no boot em vez de deixar uma execução descobrir ambiguidade/ausência de
   // motor criativo no meio do caminho — ver `creative-engine-mode.ts`.
   assertCreativeEngineExclusivity(executionFeatureFlags);
@@ -1283,6 +1322,9 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
 
     return {
       authPort: new JwtAuthAdapter(jwtPort),
+      inboxFeatureFlags,
+      inboxProvider,
+      inboxOutboundQueue,
       aiGateway: gatedAiGateway,
       aiExtractionEnabled,
       aiMediaProviderAdapters,
@@ -1369,6 +1411,9 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
 
   return {
     authPort: createNoopAuthAdapter({ devPrincipal: config?.devPrincipal }),
+    inboxFeatureFlags,
+    inboxProvider,
+    inboxOutboundQueue,
     aiGateway,
     aiExtractionEnabled,
     aiMediaProviderAdapters,

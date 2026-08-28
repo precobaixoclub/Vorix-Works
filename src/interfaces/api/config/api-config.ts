@@ -72,6 +72,15 @@ export type ApiConfig = {
     googleApiBaseUrl?: string;
     googleVeoModel: string;
   };
+  /** Módulo Conversas (Fase 1) — `enabled=false` (padrão) é o kill switch global: nenhuma rota
+   * `/v1/inbox/*` é registrada. Sem `wuzApiBaseUrl`/`rabbitMqUrl` configurados, o container usa
+   * `FakeMessagingProvider`/`InMemoryOutboundMessageQueue` (dev/teste, sem infra externa). */
+  inbox: {
+    enabled: boolean;
+    wuzApiBaseUrl?: string;
+    wuzApiAdminToken?: string;
+    rabbitMqUrl?: string;
+  };
   execution: {
     realExecutionEnabled: boolean;
     realExecutionResearchEnabled: boolean;
@@ -320,6 +329,10 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const publicationDeadLetterMax = parsePositiveInt(env.OPERATIONAL_PUBLICATION_DEAD_LETTER_MAX) ?? 25;
   const schedulingLateMsMax = parsePositiveInt(env.OPERATIONAL_SCHEDULING_LATE_MS_MAX) ?? 15 * 60_000;
   const analyticsDeadLetterMax = parsePositiveInt(env.OPERATIONAL_ANALYTICS_DEAD_LETTER_MAX) ?? 25;
+  const inboxEnabled = env.CONVERSATIONS_MODULE_ENABLED?.trim() === "true";
+  const inboxWuzApiBaseUrl = env.INBOX_WUZAPI_BASE_URL?.trim() || undefined;
+  const inboxWuzApiAdminToken = env.INBOX_WUZAPI_ADMIN_TOKEN?.trim() || undefined;
+  const inboxRabbitMqUrl = env.INBOX_RABBITMQ_URL?.trim() || undefined;
   const objectStorageEnabled = env.OBJECT_STORAGE_ENABLED?.trim() === "true";
   const objectStorageDriver = env.OBJECT_STORAGE_DRIVER?.trim() === "local" ? "local" : "s3";
   const objectStorageEndpoint = env.OBJECT_STORAGE_ENDPOINT?.trim() || undefined;
@@ -470,6 +483,12 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       publicationDeadLetterMax,
       schedulingLateMsMax,
       analyticsDeadLetterMax,
+    },
+    inbox: {
+      enabled: inboxEnabled,
+      wuzApiBaseUrl: inboxWuzApiBaseUrl,
+      wuzApiAdminToken: inboxWuzApiAdminToken,
+      rabbitMqUrl: inboxRabbitMqUrl,
     },
     objectStorage: {
       enabled: objectStorageEnabled,

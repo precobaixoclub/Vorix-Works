@@ -1,0 +1,40 @@
+import type { InboxMediaStorageRef, InboxMessage, InboxMessageStatus, InboxMessageType } from "../../domain/inbox/inbox.model.js";
+
+/** Módulo Conversas (Fase 1). Ver `db/migrations/0083_inbox_messages.sql`. */
+
+export type CreateInboxMessageInput = {
+  tenantId: string;
+  workspaceId: string;
+  conversationId: string;
+  connectionId: string;
+  externalMessageId?: string;
+  direction: InboxMessage["direction"];
+  type: InboxMessageType;
+  body?: string;
+  mediaStorageRef?: InboxMediaStorageRef;
+  mimeType?: string;
+  metadata?: Record<string, unknown>;
+  status?: InboxMessageStatus;
+  sentByUserId?: string;
+  sentByAi?: boolean;
+  sentByAutomation?: boolean;
+};
+
+export type InboxMessageRepositoryPort = {
+  /**
+   * Cria a mensagem. Para `direction: "inbound"` com `externalMessageId` preenchido, é
+   * IDEMPOTENTE por `(connectionId, externalMessageId)` — uma segunda chamada com o mesmo par
+   * retorna a linha já existente em vez de lançar/duplicar (ver `unique` na migration e
+   * `insert ... on conflict do nothing` no adapter Postgres). Essencial porque eventos de fila
+   * podem ser entregues mais de uma vez.
+   */
+  create(input: CreateInboxMessageInput): Promise<InboxMessage>;
+  getById(id: string): Promise<InboxMessage | undefined>;
+  listByConversation(input: { tenantId: string; workspaceId: string; conversationId: string; cursor?: string; limit?: number }): Promise<InboxMessage[]>;
+  /** Usado pelo consumer de status (delivery/read receipts) e pelo `OutboxSenderConsumer`. Ignora
+   * silenciosamente se a mensagem já estiver num status terminal — retries podem chegar tarde. */
+  updateStatusByExternalId(input: { connectionId: string; externalMessageId: string; status: InboxMessageStatus; occurredAt: string }): Promise<void>;
+  markSent(id: string, input: { externalMessageId: string; sentAt: string }): Promise<InboxMessage>;
+  markFailed(id: string, input: { lastError: string; failedAt: string }): Promise<InboxMessage>;
+  recordAttempt(id: string, input: { lastError?: string; lastAttemptAt: string }): Promise<void>;
+};

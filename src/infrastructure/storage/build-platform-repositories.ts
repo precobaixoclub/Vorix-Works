@@ -31,6 +31,10 @@ import type { InstagramDmAccountRouteRepositoryPort } from "../../application/po
 import type { InstagramDmConversationRepositoryPort } from "../../application/ports/instagram-dm-conversation-repository.port.js";
 import type { InstagramDmMessageRepositoryPort } from "../../application/ports/instagram-dm-message-repository.port.js";
 import type { InstagramDmAutomationRuleRepositoryPort } from "../../application/ports/instagram-dm-automation-rule-repository.port.js";
+import type { MessagingConnectionRepositoryPort } from "../../application/ports/messaging-connection-repository.port.js";
+import type { InboxContactRepositoryPort } from "../../application/ports/inbox-contact-repository.port.js";
+import type { InboxConversationRepositoryPort } from "../../application/ports/inbox-conversation-repository.port.js";
+import type { InboxMessageRepositoryPort } from "../../application/ports/inbox-message-repository.port.js";
 import type { QualityFeedbackRepositoryPort } from "../../application/quality-feedback/quality-feedback-repository.port.js";
 import type { OperationalAuditRepositoryPort } from "../../application/ports/operational-audit-repository.port.js";
 import type { OperationalStateRepositoryPort } from "../../application/ports/operational-state-repository.port.js";
@@ -64,6 +68,10 @@ import { InMemoryInstagramDmAccountRouteRepository } from "./in-memory-instagram
 import { InMemoryInstagramDmConversationRepository } from "./in-memory-instagram-dm-conversation-repository.js";
 import { InMemoryInstagramDmMessageRepository } from "./in-memory-instagram-dm-message-repository.js";
 import { InMemoryInstagramDmAutomationRuleRepository } from "./in-memory-instagram-dm-automation-rule-repository.js";
+import { InMemoryMessagingConnectionRepository } from "./in-memory-messaging-connection-repository.js";
+import { InMemoryInboxContactRepository } from "./in-memory-inbox-contact-repository.js";
+import { InMemoryInboxConversationRepository } from "./in-memory-inbox-conversation-repository.js";
+import { InMemoryInboxMessageRepository } from "./in-memory-inbox-message-repository.js";
 import { InMemoryQualityFeedbackRepository } from "./in-memory-quality-feedback-repository.js";
 import { InMemoryBriefingFieldValueRepository } from "./in-memory-briefing-field-value-repository.js";
 import { InMemoryBriefingQuestionRepository } from "./in-memory-briefing-question-repository.js";
@@ -106,6 +114,10 @@ import { PostgresInstagramDmAccountRouteRepository } from "./postgres/postgres-i
 import { PostgresInstagramDmConversationRepository } from "./postgres/postgres-instagram-dm-conversation-repository.js";
 import { PostgresInstagramDmMessageRepository } from "./postgres/postgres-instagram-dm-message-repository.js";
 import { PostgresInstagramDmAutomationRuleRepository } from "./postgres/postgres-instagram-dm-automation-rule-repository.js";
+import { PostgresMessagingConnectionRepository } from "./postgres/postgres-messaging-connection-repository.js";
+import { PostgresInboxContactRepository } from "./postgres/postgres-inbox-contact-repository.js";
+import { PostgresInboxConversationRepository } from "./postgres/postgres-inbox-conversation-repository.js";
+import { PostgresInboxMessageRepository } from "./postgres/postgres-inbox-message-repository.js";
 import { PostgresQualityFeedbackRepository } from "./postgres/postgres-quality-feedback-repository.js";
 import { PostgresBriefingFieldValueRepository } from "./postgres/postgres-briefing-field-value-repository.js";
 import { PostgresBriefingQuestionRepository } from "./postgres/postgres-briefing-question-repository.js";
@@ -201,6 +213,11 @@ export type PlatformRepositories = {
   instagramDmConversationRepository: InstagramDmConversationRepositoryPort;
   instagramDmMessageRepository: InstagramDmMessageRepositoryPort;
   instagramDmAutomationRuleRepository: InstagramDmAutomationRuleRepositoryPort;
+  /** Módulo Conversas (Fase 1) — ver `db/migrations/0080-0083`. */
+  messagingConnectionRepository: MessagingConnectionRepositoryPort;
+  inboxContactRepository: InboxContactRepositoryPort;
+  inboxConversationRepository: InboxConversationRepositoryPort;
+  inboxMessageRepository: InboxMessageRepositoryPort;
   /** Só existe quando `driver === "postgres"` — quem chama esta função é responsável por fechar (`pool.end()`) no shutdown. */
   pool?: InstanceType<typeof Pool>;
 };
@@ -264,6 +281,10 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       instagramDmConversationRepository: new InMemoryInstagramDmConversationRepository(),
       instagramDmMessageRepository: new InMemoryInstagramDmMessageRepository(),
       instagramDmAutomationRuleRepository: new InMemoryInstagramDmAutomationRuleRepository(),
+      messagingConnectionRepository: new InMemoryMessagingConnectionRepository(),
+      inboxContactRepository: new InMemoryInboxContactRepository(),
+      inboxConversationRepository: new InMemoryInboxConversationRepository(),
+      inboxMessageRepository: new InMemoryInboxMessageRepository(),
     };
   }
 
@@ -319,6 +340,10 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     instagramDmConversationRepository: new PostgresInstagramDmConversationRepository(pool),
     instagramDmMessageRepository: new PostgresInstagramDmMessageRepository(pool),
     instagramDmAutomationRuleRepository: new PostgresInstagramDmAutomationRuleRepository(pool),
+    messagingConnectionRepository: new PostgresMessagingConnectionRepository(pool),
+    inboxContactRepository: new PostgresInboxContactRepository(pool),
+    inboxConversationRepository: new PostgresInboxConversationRepository(pool),
+    inboxMessageRepository: new PostgresInboxMessageRepository(pool),
     pool,
   };
 }

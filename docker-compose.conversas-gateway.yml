@@ -1,0 +1,90 @@
+name: conversas-gateway
+
+# Stack do gateway do módulo Conversas (WuzAPI + RabbitMQ + Postgres dedicado) — DELIBERADAMENTE
+# separada de docker-compose.zuno.yml. Um deploy do Vorix (`docker compose -f
+# docker-compose.zuno.yml up -d --build`) nunca toca nestes serviços, e um deploy deste arquivo
+# (`scripts/deploy-conversas-gateway.sh`) nunca reinicia zuno-api/zuno-web — arquivos/projetos
+# compose diferentes, ciclos de vida independentes (ver plano técnico, "Containers").
+#
+# Nenhum serviço aqui é exposto na rede pública (`cmdesk_cmdesk-network`) nem tem porta publicada
+# no host — só a rede interna `conversas_internal`, compartilhada com zuno-api/vorix-worker (ver
+# docker-compose.zuno.yml). O frontend NUNCA fala com WuzAPI/RabbitMQ diretamente.
+#
+# Pré-requisito único: a rede externa precisa existir ANTES do primeiro `up` de qualquer um dos
+# dois arquivos compose — `docker network create conversas_internal` (idempotente, rodar uma vez).
+
+services:
+  wuzapi-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wuzapi
+      POSTGRES_PASSWORD: ${WUZAPI_POSTGRES_PASSWORD}
+      POSTGRES_DB: wuzapi
+    volumes:
+      - wuzapi_postgres_data:/var/lib/postgresql/data
+    networks: [conversas_internal]
+    mem_limit: 384m
+    mem_reservation: 192m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wuzapi -d wuzapi"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks: [conversas_internal]
+    # UI de gestão (porta 15672) só acessível de dentro da rede interna — para inspecionar em
+    # produção, usar túnel SSH (`ssh -L 15672:rabbitmq:15672 ...`), nunca publicar no host.
+    mem_limit: 384m
+    mem_reservation: 192m
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  wuzapi:
+    image: ${WUZAPI_IMAGE:-asternic/wuzapi:latest}
+    restart: unless-stopped
+    depends_on:
+      wuzapi-postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      WUZAPI_ADMIN_TOKEN: "${WUZAPI_ADMIN_TOKEN}"
+      WUZAPI_GLOBAL_ENCRYPTION_KEY: "${WUZAPI_GLOBAL_ENCRYPTION_KEY}"
+      DB_HOST: wuzapi-postgres
+      DB_PORT: "5432"
+      DB_USER: wuzapi
+      DB_PASSWORD: "${WUZAPI_POSTGRES_PASSWORD}"
+      DB_NAME: wuzapi
+      RABBITMQ_URL: "amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672"
+      RABBITMQ_QUEUE: wuzapi.events.raw
+    networks: [conversas_internal]
+    mem_limit: 384m
+    mem_reservation: 192m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/session/status", "||", "exit", "1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+networks:
+  conversas_internal:
+    external: true
+
+volumes:
+  wuzapi_postgres_data:
+    name: wuzapi_postgres_data
+  rabbitmq_data:
+    name: rabbitmq_data

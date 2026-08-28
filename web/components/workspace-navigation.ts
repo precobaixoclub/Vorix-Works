@@ -30,6 +30,9 @@ export const MAIN_NAV_SECTIONS: readonly WorkspaceNavSection[] = [
       { href: "/publish", label: "Publicar", icon: "publish" },
       { href: "/meta-ads", label: "Anúncios", icon: "ads" },
       { href: "/instagram-dm", label: "Mensagens", icon: "messages" },
+      // Módulo Conversas (Fase 1) — inbox de WhatsApp via WuzAPI, atrás de feature flag
+      // (CONVERSATIONS_MODULE_ENABLED). Distinto de "Mensagens" (Instagram DM automation).
+      { href: "/conversas", label: "Conversas", icon: "conversas" },
       { href: "/connections", label: "Conexões", icon: "connections" },
     ],
   },
@@ -68,6 +71,7 @@ export const MOBILE_MENU_NAV: readonly WorkspaceNavItem[] = [
   { href: "/calendar", label: "Calendário", icon: "calendar" },
   { href: "/meta-ads", label: "Anúncios", icon: "ads" },
   { href: "/instagram-dm", label: "Mensagens", icon: "messages" },
+  { href: "/conversas", label: "Conversas", icon: "conversas" },
   { href: "/connections", label: "Conexões", icon: "connections" },
   { href: "/knowledge", label: "Marca", icon: "brand" },
   { href: "/analytics", label: "Analytics", icon: "analytics" },

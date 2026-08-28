@@ -98,11 +98,19 @@ services:
       REAL_COPY_ENABLED: "${REAL_COPY_ENABLED:-false}"
       REAL_VISUAL_ENABLED: "${REAL_VISUAL_ENABLED:-false}"
       REAL_DISTRIBUTION_ENABLED: "${REAL_DISTRIBUTION_ENABLED:-false}"
+      # Módulo Conversas (Fase 1) — kill switch global por padrão; sem WUZAPI/RABBITMQ configurados
+      # o container usa duplos de teste (Fake/InMemory), nunca falha o boot.
+      CONVERSATIONS_MODULE_ENABLED: "${CONVERSATIONS_MODULE_ENABLED:-false}"
+      INBOX_WUZAPI_BASE_URL: "${INBOX_WUZAPI_BASE_URL:-http://wuzapi:8080}"
+      INBOX_WUZAPI_ADMIN_TOKEN: "${WUZAPI_ADMIN_TOKEN:-}"
+      INBOX_RABBITMQ_URL: "${INBOX_RABBITMQ_URL:-}"
     ports:
       - "${ZUNO_API_PORT:-8090}:3000"
     volumes:
       - zuno_uploads:/app/uploads
-    networks: [zuno_network, cmdesk_cmdesk-network]
+    # `conversas_internal` — módulo Conversas (Fase 1): permite à API chamar `http://wuzapi:8080`
+    # (admin/QR/status/envio) sem expor o WuzAPI na rede pública. Ver docker-compose.conversas-gateway.yml.
+    networks: [zuno_network, cmdesk_cmdesk-network, conversas_internal]
     init: true
     mem_limit: 512m
     mem_reservation: 256m
@@ -167,10 +175,38 @@ services:
       - traefik.http.routers.zuno-web.tls.certresolver=letsencrypt
       - traefik.http.services.zuno-web.loadbalancer.server.port=3001
 
+  # Processo separado do módulo Conversas (Fase 1) — consome eventos do gateway via RabbitMQ e
+  # drena o envio outbound. Deliberadamente FORA do processo HTTP (`zuno-api`): um pico ou crash
+  # aqui nunca derruba requisições da API, e vice-versa (ver plano técnico, "Critério principal").
+  # Faz parte do MESMO deploy do Vorix (não do gateway) — reconstrói junto de zuno-api/zuno-web.
+  vorix-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: node dist/interfaces/worker/inbox-worker.js
+    depends_on:
+      zuno-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgres://zuno:${ZUNO_POSTGRES_PASSWORD}@zuno-postgres:5432/zuno"
+      PERSISTENCE_DRIVER: postgres
+      CONVERSATIONS_MODULE_ENABLED: "${CONVERSATIONS_MODULE_ENABLED:-false}"
+      INBOX_WUZAPI_BASE_URL: "${INBOX_WUZAPI_BASE_URL:-http://wuzapi:8080}"
+      INBOX_WUZAPI_ADMIN_TOKEN: "${WUZAPI_ADMIN_TOKEN:-}"
+      INBOX_RABBITMQ_URL: "${INBOX_RABBITMQ_URL:-}"
+      ZUNO_LOG_LEVEL: info
+    networks: [zuno_network, conversas_internal]
+    init: true
+    mem_limit: 384m
+    mem_reservation: 192m
+
 networks:
   zuno_network:
     name: zuno_network
   cmdesk_cmdesk-network:
+    external: true
+  conversas_internal:
     external: true
 
 volumes:

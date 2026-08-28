@@ -20,6 +20,7 @@ import { registerTikTokRoutes } from "./tiktok.route.js";
 import { registerYouTubeRoutes } from "./youtube.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
 import { registerInstagramDmRoutes } from "./instagram-dm.route.js";
+import { registerInboxRoutes } from "./inbox.route.js";
 import { registerMetaAdsRoutes } from "./meta-ads.route.js";
 import { registerMetaAdCampaignsRoutes } from "./meta-ad-campaigns.route.js";
 import { registerMetaAudiencesRoutes } from "./meta-audiences.route.js";
@@ -183,6 +184,19 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     publicationRepository: app.zunoContainer.publicationRepository,
     publicationSecretStore: app.zunoContainer.publicationSecretStore,
   });
+  // Módulo Conversas (Fase 1) — kill switch global via `CONVERSATIONS_MODULE_ENABLED`; sem isto,
+  // `/v1/inbox/*` nem existe (nenhum tenant vê o módulo até habilitação explícita).
+  if (app.zunoContainer.inboxFeatureFlags.enabled) {
+    await registerInboxRoutes(app, {
+      connectionRepository: app.zunoContainer.messagingConnectionRepository,
+      contactRepository: app.zunoContainer.inboxContactRepository,
+      conversationRepository: app.zunoContainer.inboxConversationRepository,
+      messageRepository: app.zunoContainer.inboxMessageRepository,
+      workspaceRepository: app.zunoContainer.workspaceRepository,
+      outboundQueue: app.zunoContainer.inboxOutboundQueue,
+      provider: app.zunoContainer.inboxProvider,
+    });
+  }
   await registerMetaAdsRoutes(app, {
     metaAdsOAuthService: app.zunoContainer.metaAdsOAuthService,
     metaAdAccountRepository: app.zunoContainer.metaAdAccountRepository,

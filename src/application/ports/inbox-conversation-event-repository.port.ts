@@ -12,6 +12,9 @@ export type RecordInboxConversationEventInput = {
   toUserId?: string;
   fromStatus?: InboxConversationStatus;
   toStatus?: InboxConversationStatus;
+  /** Fase 5 — só os 3 eventos `ai_response_*` usam isto (nunca prompt/resposta bruta, ver
+   * `InboxConversationEvent.metadata`). */
+  metadata?: Record<string, unknown>;
 };
 
 export type InboxConversationEventRepositoryPort = {

@@ -73,6 +73,12 @@ export type InboxContact = {
 export const INBOX_CONVERSATION_STATUSES = ["open", "pending", "resolved", "archived"] as const;
 export type InboxConversationStatus = (typeof INBOX_CONVERSATION_STATUSES)[number];
 
+/** Fase 5 — motivo pelo qual `aiEnabled` está `false`, só informativo (nunca texto livre):
+ * `human_takeover` = desligada automaticamente por "assumir conversa"; `manual` = um atendente com
+ * `inbox:manage_ai` pausou explicitamente. `undefined` quando `aiEnabled` é `true`. */
+export const INBOX_AI_PAUSE_REASONS = ["human_takeover", "manual"] as const;
+export type InboxAiPauseReason = (typeof INBOX_AI_PAUSE_REASONS)[number];
+
 export type InboxConversation = {
   id: string;
   tenantId: string;
@@ -85,8 +91,16 @@ export type InboxConversation = {
   lastMessageAt?: string;
   unreadCount: number;
   /** IA responde automaticamente enquanto `true`; "assumir conversa" desliga isto só NESTA
-   * conversa (nunca globalmente) — ver Fase 5. */
+   * conversa (nunca globalmente) — ver Fase 5. O gate real de elegibilidade da IA (Fase 5,
+   * `isConversationEligibleForAi` em `inbox-use-cases.ts`) também exige `!assignedUserId`
+   * diretamente — nunca confia só em `aiEnabled`, porque atribuição DIRETA (`assign()`, Fase 4)
+   * não mexe em `aiEnabled` e ainda assim um humano responsável nunca pode competir com a IA. */
   aiEnabled: boolean;
+  aiPausedReason?: InboxAiPauseReason;
+  /** Fase 5 — lock lógico (CAS) de geração de IA em andamento para esta conversa; serializa
+   * mensagens consecutivas do mesmo contato (ver `maybeGenerateAiResponse`). `undefined` quando
+   * nenhuma geração está em voo. */
+  aiProcessingSince?: string;
   automationEnabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -140,7 +154,29 @@ export type InboxMessage = {
   deliveredAt?: string;
   readAt?: string;
   failedAt?: string;
+  /** Fase 5 — claim atômico (CAS) de "quem tem o direito de gerar/enviar uma resposta de IA para
+   * esta mensagem inbound". Só é significativo em `direction: "inbound"`. `undefined` = ainda não
+   * reivindicada (elegível para uma futura geração). Existe especificamente para impedir duas
+   * respostas de IA para a mesma mensagem sob concorrência real (duas invocações do worker, ou
+   * redelivery do RabbitMQ chegando bem próximo de uma reentrega já em processamento) — a defesa
+   * PRINCIPAL contra duplicidade já é `wasCreated` em `registerInboundMessage` (evento duplicado
+   * nunca chega a re-disparar a IA); isto cobre o caso mais raro de disputa dentro do mesmo
+   * processamento inicial. */
+  aiClaimStatus?: InboxAiClaimStatus;
+  aiClaimedAt?: string;
+  /** Preenchido só quando `aiClaimStatus === "answered"` — aponta para a `InboxMessage` outbound
+   * que a IA efetivamente enviou em resposta a esta mensagem inbound. */
+  aiResponseMessageId?: string;
 };
+
+/** Fase 5 — estado do claim de resposta automática de uma mensagem INBOUND (nunca aplicável a
+ * outbound). `processing` = uma geração está em voo; `answered` = a IA respondeu com sucesso;
+ * `skipped` = elegibilidade mudou antes do envio (ex.: humano assumiu durante a geração) ou a IA
+ * não estava habilitada quando o claim foi tentado; `failed` = o AI Gateway falhou (timeout,
+ * provider indisponível, saída inválida...) — nestes dois últimos casos a mensagem permanece
+ * disponível para atendimento manual, nunca é re-tentada automaticamente. */
+export const INBOX_AI_CLAIM_STATUSES = ["processing", "answered", "skipped", "failed"] as const;
+export type InboxAiClaimStatus = (typeof INBOX_AI_CLAIM_STATUSES)[number];
 
 /**
  * Evento operacional de uma conversa — Fase 4 (Atendimento). Dupla função: (1) auditoria (quem
@@ -156,8 +192,18 @@ export const INBOX_CONVERSATION_EVENT_TYPES = [
   "status_changed",
   "ai_paused",
   "ai_resumed",
+  // Fase 5 — únicos tipos de evento com ator automático (`performedBy: "ai"`, sentinela fixa,
+  // nunca um userId real — desvio deliberado da invariante "sempre um userId real" da Fase 4,
+  // que nunca tinha um ator automático). `metadata` carrega os detalhes operacionais (nunca
+  // prompt/resposta bruta — ver `InboxConversationEvent.metadata`).
+  "ai_response_sent",
+  "ai_response_failed",
+  "ai_response_cancelled",
 ] as const;
 export type InboxConversationEventType = (typeof INBOX_CONVERSATION_EVENT_TYPES)[number];
+
+/** Sentinela fixa de `performedBy` para os 3 eventos de IA da Fase 5 — nunca um userId real. */
+export const INBOX_AI_ACTOR = "ai";
 
 export type InboxConversationEvent = {
   id: string;
@@ -165,13 +211,22 @@ export type InboxConversationEvent = {
   workspaceId: string;
   conversationId: string;
   type: InboxConversationEventType;
-  /** Quem fez a ação — sempre um userId real, nunca "system", mesmo para efeitos colaterais
-   * (ex.: IA pausada automaticamente ao assumir) — a Fase 4 não tem nenhum ator automático. */
+  /** Quem fez a ação — um userId real para todo evento da Fase 4, ou a sentinela `INBOX_AI_ACTOR`
+   * ("ai") para os 3 eventos de IA da Fase 5. */
   performedBy: string;
   fromUserId?: string;
   toUserId?: string;
   fromStatus?: InboxConversationStatus;
   toStatus?: InboxConversationStatus;
+  /**
+   * Fase 5 — detalhes operacionais dos eventos `ai_response_*`, nunca prompt/resposta bruta:
+   * `inboundMessageIds: string[]`, `outboundMessageId?: string`, `provider?: string`,
+   * `model?: string`, `latencyMs?: number`, `tokens?: {inputTokens,outputTokens,totalTokens}`,
+   * `estimatedCost?: number`, `aiTraceId?: string` (correlaciona com `ai_executions.trace_id`),
+   * `errorCategory?: string` (categoria segura do AI Gateway, nunca o erro bruto do provider),
+   * `reason?: string` (ex.: "human_took_over_during_generation" em `ai_response_cancelled`).
+   */
+  metadata?: Record<string, unknown>;
   createdAt: string;
 };
 

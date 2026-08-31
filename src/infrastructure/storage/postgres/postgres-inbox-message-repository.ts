@@ -29,6 +29,9 @@ type Row = {
   delivered_at: Date | null;
   read_at: Date | null;
   failed_at: Date | null;
+  ai_claim_status: string | null;
+  ai_claimed_at: Date | null;
+  ai_response_message_id: string | null;
 };
 
 export class PostgresInboxMessageRepository implements InboxMessageRepositoryPort {
@@ -122,6 +125,29 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
     );
   }
 
+  async tryClaimForAiResponse(id: string, claimedAt: string): Promise<InboxMessage | undefined> {
+    const result = await this.pool.query<Row>(
+      "update inbox_messages set ai_claim_status = 'processing', ai_claimed_at = $2 where id = $1 and direction = 'inbound' and ai_claim_status is null returning *",
+      [id, claimedAt],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
+  async resolveAiClaim(id: string, input: { status: "answered" | "skipped" | "failed"; responseMessageId?: string }): Promise<void> {
+    await this.pool.query(
+      "update inbox_messages set ai_claim_status = $2, ai_response_message_id = $3 where id = $1",
+      [id, input.status, input.responseMessageId ?? null],
+    );
+  }
+
+  async listUnansweredInboundByConversation(input: { conversationId: string }): Promise<InboxMessage[]> {
+    const result = await this.pool.query<Row>(
+      "select * from inbox_messages where conversation_id = $1 and direction = 'inbound' and ai_claim_status is null order by created_at asc",
+      [input.conversationId],
+    );
+    return result.rows.map((row) => this.toDomain(row));
+  }
+
   private toDomain(row: Row): InboxMessage {
     return {
       id: row.id,
@@ -148,6 +174,9 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
       deliveredAt: row.delivered_at?.toISOString(),
       readAt: row.read_at?.toISOString(),
       failedAt: row.failed_at?.toISOString(),
+      aiClaimStatus: (row.ai_claim_status as InboxMessage["aiClaimStatus"]) ?? undefined,
+      aiClaimedAt: row.ai_claimed_at?.toISOString(),
+      aiResponseMessageId: row.ai_response_message_id ?? undefined,
     };
   }
 }

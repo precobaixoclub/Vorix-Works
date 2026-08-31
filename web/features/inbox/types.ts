@@ -16,6 +16,9 @@ export type MessagingConnection = {
 
 export type InboxConversationStatus = "open" | "pending" | "resolved" | "archived";
 
+/** Fase 5 — motivo pelo qual `aiEnabled` está `false`; `undefined` quando `aiEnabled` é `true`. */
+export type InboxAiPauseReason = "human_takeover" | "manual";
+
 export type InboxConversation = {
   id: string;
   connectionId: string;
@@ -25,6 +28,7 @@ export type InboxConversation = {
   lastMessageAt?: string;
   unreadCount: number;
   aiEnabled: boolean;
+  aiPausedReason?: InboxAiPauseReason;
   automationEnabled: boolean;
   /** Denormalizado pela listagem (`GET /v1/inbox/conversations`) — nunca vem no `getById()`, que
    * hoje nem existe como rota própria (a Fase 1 não tem "abrir 1 conversa" isolado, só a lista). */
@@ -39,7 +43,18 @@ export type InboxConversationFilter = "all" | "mine" | "unassigned" | "unread" |
 /** Fase 4 — evento discreto de atendimento (nunca uma mensagem enviada ao WhatsApp). Timeline do
  * frontend intercala isso com `InboxMessage` por `createdAt`, renderizando como um "pill" central
  * distinto das bolhas de mensagem. Espelha `InboxConversationEvent` no backend. */
-export type InboxConversationEventType = "assigned" | "unassigned" | "took_over" | "transferred" | "status_changed" | "ai_paused" | "ai_resumed";
+export type InboxConversationEventType =
+  | "assigned"
+  | "unassigned"
+  | "took_over"
+  | "transferred"
+  | "status_changed"
+  | "ai_paused"
+  | "ai_resumed"
+  // Fase 5 — únicos tipos com `performedBy: "ai"` (sentinela fixa, nunca um userId real).
+  | "ai_response_sent"
+  | "ai_response_failed"
+  | "ai_response_cancelled";
 
 export type InboxConversationEvent = {
   id: string;
@@ -50,8 +65,14 @@ export type InboxConversationEvent = {
   toUserId?: string;
   fromStatus?: InboxConversationStatus;
   toStatus?: InboxConversationStatus;
+  /** Fase 5 — só os eventos `ai_response_*`; nunca prompt/resposta bruta (ver backend). */
+  metadata?: Record<string, unknown>;
   createdAt: string;
 };
+
+/** Fase 5 — membro do tenant/workspace atual, usado pelo seletor de transferência
+ * (`GET /v1/inbox/members`). Nunca inclui membros de outro tenant. */
+export type InboxTenantMember = { userId: string; email: string; name: string; role: string };
 
 export type InboxMessageDirection = "inbound" | "outbound";
 export type InboxMessageType = "text" | "image" | "video" | "audio" | "document" | "location" | "contact" | "other";

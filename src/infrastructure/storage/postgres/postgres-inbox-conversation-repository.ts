@@ -5,7 +5,7 @@ import type {
   InboxConversationListItem,
   InboxConversationRepositoryPort,
 } from "../../../application/ports/inbox-conversation-repository.port.js";
-import type { InboxConversation, InboxConversationStatus } from "../../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus } from "../../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -21,6 +21,8 @@ type Row = {
   last_message_at: Date | null;
   unread_count: number;
   ai_enabled: boolean;
+  ai_paused_reason: string | null;
+  ai_processing_since: Date | null;
   automation_enabled: boolean;
   created_at: Date;
   updated_at: Date;
@@ -115,10 +117,10 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     return this.toDomain(row);
   }
 
-  async setAiEnabled(id: string, aiEnabled: boolean): Promise<InboxConversation> {
+  async setAiEnabled(id: string, aiEnabled: boolean, reason?: InboxAiPauseReason): Promise<InboxConversation> {
     const result = await this.pool.query<Row>(
-      "update inbox_conversations set ai_enabled = $2, updated_at = now() where id = $1 returning *",
-      [id, aiEnabled],
+      "update inbox_conversations set ai_enabled = $2, ai_paused_reason = case when $2 then null else $3 end, updated_at = now() where id = $1 returning *",
+      [id, aiEnabled, reason ?? null],
     );
     const row = result.rows[0];
     if (!row) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
@@ -130,11 +132,11 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     // conversa primeiro (ou se for o mesmo usuário reafirmando) — o Postgres serializa isso a
     // nível de linha, então duas requisições concorrentes nunca podem AMBAS ver `assigned_user_id
     // is null` como verdadeiro pro mesmo update; uma delas sempre perde a corrida e recebe 0 linhas
-    // de volta. `ai_enabled = false` na MESMA instrução fecha a janela IA+humano (Fase 4, requisito
-    // crítico) — nunca duas chamadas separadas.
+    // de volta. `ai_enabled = false`/`ai_paused_reason = 'human_takeover'` na MESMA instrução fecha
+    // a janela IA+humano (Fase 4/5, requisito crítico) — nunca chamadas separadas.
     const result = await this.pool.query<Row>(
       `update inbox_conversations
-       set assigned_user_id = $2, ai_enabled = false, updated_at = now()
+       set assigned_user_id = $2, ai_enabled = false, ai_paused_reason = 'human_takeover', updated_at = now()
        where id = $1 and (assigned_user_id is null or assigned_user_id = $2)
        returning *`,
       [id, userId],
@@ -153,6 +155,18 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
+  async tryAcquireAiLock(id: string, at: string): Promise<InboxConversation | undefined> {
+    const result = await this.pool.query<Row>(
+      "update inbox_conversations set ai_processing_since = $2 where id = $1 and ai_processing_since is null returning *",
+      [id, at],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
+  async releaseAiLock(id: string, ownedAt: string): Promise<void> {
+    await this.pool.query("update inbox_conversations set ai_processing_since = null where id = $1 and ai_processing_since = $2", [id, ownedAt]);
+  }
+
   private toDomain(row: Row): InboxConversation {
     return {
       id: row.id,
@@ -166,6 +180,8 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       lastMessageAt: row.last_message_at?.toISOString(),
       unreadCount: row.unread_count,
       aiEnabled: row.ai_enabled,
+      aiPausedReason: (row.ai_paused_reason as InboxAiPauseReason | null) ?? undefined,
+      aiProcessingSince: row.ai_processing_since?.toISOString(),
       automationEnabled: row.automation_enabled,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),

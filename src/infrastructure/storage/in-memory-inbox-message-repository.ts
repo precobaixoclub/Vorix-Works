@@ -86,4 +86,24 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
     if (!existing) return;
     this.rows.set(id, { ...existing, attemptCount: existing.attemptCount + 1, lastError: input.lastError ?? existing.lastError, lastAttemptAt: input.lastAttemptAt });
   }
+
+  async tryClaimForAiResponse(id: string, claimedAt: string): Promise<InboxMessage | undefined> {
+    const existing = this.rows.get(id);
+    if (!existing || existing.direction !== "inbound" || existing.aiClaimStatus) return undefined;
+    const updated: InboxMessage = { ...existing, aiClaimStatus: "processing", aiClaimedAt: claimedAt };
+    this.rows.set(id, updated);
+    return updated;
+  }
+
+  async resolveAiClaim(id: string, input: { status: "answered" | "skipped" | "failed"; responseMessageId?: string }): Promise<void> {
+    const existing = this.rows.get(id);
+    if (!existing) return;
+    this.rows.set(id, { ...existing, aiClaimStatus: input.status, aiResponseMessageId: input.responseMessageId });
+  }
+
+  async listUnansweredInboundByConversation(input: { conversationId: string }): Promise<InboxMessage[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.conversationId === input.conversationId && row.direction === "inbound" && !row.aiClaimStatus)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
 }

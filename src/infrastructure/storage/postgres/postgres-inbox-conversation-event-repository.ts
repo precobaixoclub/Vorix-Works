@@ -15,6 +15,7 @@ type Row = {
   to_user_id: string | null;
   from_status: string | null;
   to_status: string | null;
+  metadata: Record<string, unknown> | null;
   created_at: Date;
 };
 
@@ -25,12 +26,12 @@ export class PostgresInboxConversationEventRepository implements InboxConversati
     const id = idGenerator();
     const result = await this.pool.query<Row>(
       `insert into inbox_conversation_events (
-         id, tenant_id, workspace_id, conversation_id, type, performed_by, from_user_id, to_user_id, from_status, to_status
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         id, tenant_id, workspace_id, conversation_id, type, performed_by, from_user_id, to_user_id, from_status, to_status, metadata
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        returning *`,
       [
         id, input.tenantId, input.workspaceId, input.conversationId, input.type, input.performedBy,
-        input.fromUserId ?? null, input.toUserId ?? null, input.fromStatus ?? null, input.toStatus ?? null,
+        input.fromUserId ?? null, input.toUserId ?? null, input.fromStatus ?? null, input.toStatus ?? null, input.metadata ?? null,
       ],
     );
     return this.toDomain(result.rows[0]);
@@ -56,6 +57,7 @@ export class PostgresInboxConversationEventRepository implements InboxConversati
       toUserId: row.to_user_id ?? undefined,
       fromStatus: (row.from_status as InboxConversationStatus | null) ?? undefined,
       toStatus: (row.to_status as InboxConversationStatus | null) ?? undefined,
+      metadata: row.metadata ?? undefined,
       createdAt: row.created_at.toISOString(),
     };
   }

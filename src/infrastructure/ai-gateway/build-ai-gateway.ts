@@ -17,6 +17,12 @@ export type BuildAiGatewayOptions = {
     briefingExtractionEnabled: boolean;
     anthropicApiKey?: string;
     anthropicBriefingExtractionModel: string;
+    /** Módulo Conversas, Fase 5 — opcionais de propósito: o `vorix-worker` (único consumidor de
+     * `inbox_auto_reply`) monta sua própria config estática independente de `loadApiConfig()`
+     * (mesmo padrão já usado para `provider`/`outboundQueue` no worker); a API nunca precisa
+     * disto, então nenhuma mudança em `api-config.ts`/`container.ts` foi necessária. */
+    inboxAutoReplyEnabled?: boolean;
+    anthropicInboxAutoReplyModel?: string;
   };
   executionRepository: AiExecutionRepositoryPort;
   telemetry?: AiTelemetryPort;
@@ -30,7 +36,19 @@ export type BuiltAiGateway = {
   /** Já é `aiConfig.enabled && aiConfig.briefingExtractionEnabled` — o único valor que
    * `process-briefing-turn.ts` precisa (Fase 19: checado na aplicação, nunca no domínio). */
   aiExtractionEnabled: boolean;
+  /** Fase 5 — mesmo raciocínio de `aiExtractionEnabled`, mas para `inbox_auto_reply`. */
+  aiInboxAutoReplyEnabled: boolean;
 };
+
+function buildBindings(aiConfig: BuildAiGatewayOptions["aiConfig"]): AiOperationModelBindings {
+  const bindings: AiOperationModelBindings = {
+    briefing_field_extraction: { provider: "anthropic", modelId: aiConfig.anthropicBriefingExtractionModel },
+  };
+  if (aiConfig.anthropicInboxAutoReplyModel) {
+    bindings.inbox_auto_reply = { provider: "anthropic", modelId: aiConfig.anthropicInboxAutoReplyModel };
+  }
+  return bindings;
+}
 
 /**
  * Único ponto de construção do AI Gateway ("composition root" do stack de IA, mesmo papel de
@@ -46,13 +64,9 @@ export function buildAiGateway(options: BuildAiGatewayOptions): BuiltAiGateway {
       getApiKey: async () => (await settingsRepo.get()).resolvedAnthropicApiKey,
     });
 
-    const bindings: AiOperationModelBindings = {
-      briefing_field_extraction: { provider: "anthropic", modelId: options.aiConfig.anthropicBriefingExtractionModel },
-    };
-
     const baseGateway = new AiGateway({
       providers: [anthropicProvider],
-      bindings,
+      bindings: buildBindings(options.aiConfig),
       rateLimiter: new InMemoryAiRateLimiter(),
       circuitBreaker: new InMemoryAiCircuitBreaker(),
       executionRepository: options.executionRepository,
@@ -60,27 +74,27 @@ export function buildAiGateway(options: BuildAiGatewayOptions): BuiltAiGateway {
     });
     // Import dinâmico evita ciclos entre infrastructure e application.
     const aiGateway = new SettingsGatedAiGateway({ inner: baseGateway, platformAiSettingsRepository: settingsRepo });
-    return { aiGateway, aiExtractionEnabled: true };
+    return { aiGateway, aiExtractionEnabled: true, aiInboxAutoReplyEnabled: Boolean(options.aiConfig.anthropicInboxAutoReplyModel) };
   }
 
   if (!options.aiConfig.enabled) {
-    return { aiGateway: createNotConfiguredAiGateway(), aiExtractionEnabled: false };
+    return { aiGateway: createNotConfiguredAiGateway(), aiExtractionEnabled: false, aiInboxAutoReplyEnabled: false };
   }
 
   const anthropicProvider = new AnthropicAiModelProvider({ apiKey: options.aiConfig.anthropicApiKey });
 
-  const bindings: AiOperationModelBindings = {
-    briefing_field_extraction: { provider: "anthropic", modelId: options.aiConfig.anthropicBriefingExtractionModel },
-  };
-
   const aiGateway = new AiGateway({
     providers: [anthropicProvider],
-    bindings,
+    bindings: buildBindings(options.aiConfig),
     rateLimiter: new InMemoryAiRateLimiter(),
     circuitBreaker: new InMemoryAiCircuitBreaker(),
     executionRepository: options.executionRepository,
     telemetry: options.telemetry ?? new InMemoryAiTelemetry(),
   });
 
-  return { aiGateway, aiExtractionEnabled: options.aiConfig.briefingExtractionEnabled };
+  return {
+    aiGateway,
+    aiExtractionEnabled: options.aiConfig.briefingExtractionEnabled,
+    aiInboxAutoReplyEnabled: Boolean(options.aiConfig.inboxAutoReplyEnabled && options.aiConfig.anthropicInboxAutoReplyModel),
+  };
 }

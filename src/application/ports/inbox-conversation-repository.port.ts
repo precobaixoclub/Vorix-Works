@@ -1,4 +1,4 @@
-import type { InboxConversation, InboxConversationStatus } from "../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus } from "../../domain/inbox/inbox.model.js";
 
 /** Módulo Conversas (Fase 1/4). Ver `db/migrations/0082_inbox_conversations.sql`. */
 
@@ -32,15 +32,34 @@ export type InboxConversationRepositoryPort = {
    * concorrência própria: é uma ação autoritativa, não uma disputa entre atendentes. */
   assign(id: string, assignedUserId: string | undefined): Promise<InboxConversation>;
   setStatus(id: string, status: InboxConversationStatus): Promise<InboxConversation>;
-  /** "Assumir conversa" desliga a IA só aqui — nunca globalmente (ver Fase 5). */
-  setAiEnabled(id: string, aiEnabled: boolean): Promise<InboxConversation>;
+  /** "Assumir conversa" desliga a IA só aqui — nunca globalmente. `reason` (Fase 5) é gravado
+   * junto quando `aiEnabled` é `false`; ignorado (sempre limpo para `null`) quando `aiEnabled` é
+   * `true` — não faz sentido ter um "motivo de pausa" numa conversa com IA ativa. */
+  setAiEnabled(id: string, aiEnabled: boolean, reason?: InboxAiPauseReason): Promise<InboxConversation>;
+
+  /**
+   * Fase 5 — lock lógico (CAS) de geração de IA em andamento para uma conversa. Serializa
+   * mensagens consecutivas do mesmo contato: só uma geração pode estar "em voo" por conversa a
+   * qualquer momento (ver `maybeGenerateAiResponse`, que drena qualquer mensagem nova chegada
+   * durante a geração antes de liberar o lock, em vez de disparar respostas paralelas
+   * desconexas). `undefined` = outra geração já está em andamento (quem chama não gera uma
+   * resposta própria — confia que o dono atual do lock vai drenar as mensagens novas).
+   */
+  tryAcquireAiLock(id: string, at: string): Promise<InboxConversation | undefined>;
+  /** Libera o lock só se `ai_processing_since` ainda for exatamente `ownedAt` — evita que um
+   * processo libere um lock que já não é mais seu (defesa em profundidade, não deveria acontecer
+   * na prática já que só quem detém o lock chama isto). */
+  releaseAiLock(id: string, ownedAt: string): Promise<void>;
 
   /**
    * "Assumir conversa" — ATÔMICO (Fase 4, requisito crítico de concorrência). Compare-and-set:
    * só assume se a conversa ainda não tiver responsável, OU se o responsável já for o próprio
-   * `userId` (idempotente — clicar "assumir" de novo não é erro). Desliga `aiEnabled` NA MESMA
-   * operação — nunca em duas chamadas separadas, que abriria uma janela onde IA e humano
-   * poderiam responder ao mesmo tempo. Retorna `undefined` quando outro atendente já assumiu
+   * `userId` (idempotente — clicar "assumir" de novo não é erro). Desliga `aiEnabled` (com
+   * `aiPausedReason: "human_takeover"`) NA MESMA operação — nunca em duas chamadas separadas, que
+   * abriria uma janela onde IA e humano poderiam responder ao mesmo tempo; uma geração de IA já em
+   * voo no momento do take-over não é abortada aqui — o gate de elegibilidade re-lido logo antes de
+   * enviar (Fase 5, `maybeGenerateAiResponse`) é o que garante que ela nunca chega a ser enviada.
+   * Retorna `undefined` quando outro atendente já assumiu
    * entre o carregamento da tela e o clique (conflito real, não bug) — quem chama traduz isso
    * pra 409, nunca sobrescreve silenciosamente.
    */

@@ -25,12 +25,17 @@ export const AI_OPERATIONS = [
   "content_generation",
   "image_generation",
   "embedding_generation",
+  /** Módulo Conversas, Fase 5 — resposta automática de atendimento via WhatsApp. Nome deliberadamente
+   * distinto de `conversation_response` (que é sobre o chat interno do Arthur, domínio diferente) —
+   * ver `src/application/ports/inbox-ai-responder.port.ts`. */
+  "inbox_auto_reply",
 ] as const;
 export type AiOperation = (typeof AI_OPERATIONS)[number];
 
-/** Só esta operação é executável nesta sprint — ver `model-registry.ts` (nenhuma entrada ativa
- * para as demais) e `extraction-decision.ts` (único chamador do Gateway hoje). */
-export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction"];
+/** Operações executáveis até agora — ver `model-registry.ts` (nenhuma entrada ativa para as
+ * demais). `extraction-decision.ts` chama `briefing_field_extraction`; o adapter em
+ * `infrastructure/ai-gateway/inbox-ai-responder-adapter.ts` chama `inbox_auto_reply`. */
+export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction", "inbox_auto_reply"];
 
 export type AiCapability = "structured_text" | "free_text" | "vision" | "image_generation" | "embeddings" | "tool_calling" | "streaming";
 

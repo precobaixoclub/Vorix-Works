@@ -195,6 +195,11 @@ services:
       INBOX_WUZAPI_BASE_URL: "${INBOX_WUZAPI_BASE_URL:-http://wuzapi:8080}"
       INBOX_WUZAPI_ADMIN_TOKEN: "${WUZAPI_ADMIN_TOKEN:-}"
       INBOX_RABBITMQ_URL: "${INBOX_RABBITMQ_URL:-}"
+      # IA de Atendimento (Fase 5) — config estática própria do worker, independente do AI Gateway
+      # da API; "false" por padrão, Inbox funciona 100% normalmente sem isto.
+      AI_INBOX_AUTO_REPLY_ENABLED: "${AI_INBOX_AUTO_REPLY_ENABLED:-false}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      ANTHROPIC_INBOX_AUTO_REPLY_MODEL: "${ANTHROPIC_INBOX_AUTO_REPLY_MODEL:-}"
       ZUNO_LOG_LEVEL: info
     networks: [zuno_network, conversas_internal]
     init: true

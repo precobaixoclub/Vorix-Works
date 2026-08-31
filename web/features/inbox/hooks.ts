@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { getApiBaseUrl } from "@/lib/api-error";
 import { getAccessToken } from "@/lib/auth-token";
-import { listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations } from "./api";
+import { listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers } from "./api";
 import type { InboxConversationFilter } from "./types";
 
 /**
@@ -29,6 +29,12 @@ export function useInboxConversationEvents(workspaceId: string, conversationId: 
   return useSWR(conversationId ? ["inbox-conversation-events", workspaceId, conversationId] : null, () => listInboxConversationEvents(workspaceId, conversationId!), {
     refreshInterval: 20_000,
   });
+}
+
+/** Fase 5 — lista de membros do tenant para o seletor de transferência. Raramente muda dentro de
+ * uma sessão — sem polling/SSE dedicado, só a revalidação padrão do SWR (foco de aba, reconexão). */
+export function useInboxMembers(workspaceId: string) {
+  return useSWR(workspaceId ? ["inbox-members", workspaceId] : null, () => listInboxMembers());
 }
 
 const ALL_FILTERS = ["all", "mine", "unassigned", "unread", "open", "pending", "resolved"] as const;

@@ -7,6 +7,7 @@ import type { MessagingConnectionRepositoryPort } from "../../../../application/
 import type { MessagingProvider } from "../../../../application/ports/messaging-provider.port.js";
 import type { OutboundMessageQueuePort } from "../../../../application/ports/outbound-message-queue.port.js";
 import type { TenantMembershipRepositoryPort } from "../../../../application/ports/tenant-membership-repository.port.js";
+import type { UserRepositoryPort } from "../../../../application/ports/user-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
 import type { InboxRealtimeSubscriber } from "../../../../infrastructure/messaging/rabbitmq/inbox-realtime-subscriber.js";
 import {
@@ -95,6 +96,10 @@ export type InboxRoutesDeps = {
    * checar). `undefined` só em setups sem identidade real (ex.: `AUTH_MODE=noop`/testes) — nesse
    * caso a validação é pulada, nunca bloqueia o fluxo. */
   membershipRepository?: TenantMembershipRepositoryPort;
+  /** Fase 5 — só usado por `GET /inbox/members` (seletor de transferência no frontend, substitui o
+   * campo manual de userId). `undefined` no mesmo cenário de `membershipRepository` — a rota
+   * responde uma lista vazia em vez de falhar. */
+  userRepository?: UserRepositoryPort;
 };
 
 function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {
@@ -209,6 +214,29 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     } catch (error) {
       rethrowInboxError(error);
     }
+  });
+
+  /**
+   * Fase 5 — lista de membros do MESMO tenant (nunca outro), para o seletor de transferência no
+   * frontend (substitui o campo manual de userId da Fase 4). Mesma permissão de `/assign` e
+   * `/transfer` (`inbox:assign`) — só quem pode atribuir/transferir precisa ver esta lista.
+   * `tenantId` vem SEMPRE do principal, nunca de query string — não há como um cliente pedir a
+   * lista de outro tenant. Sem `membershipRepository`/`userRepository` configurados (ex.:
+   * `AUTH_MODE=noop`), responde uma lista vazia em vez de falhar.
+   */
+  app.get("/inbox/members", async (request) => {
+    const principal = requirePermission(request, "inbox:assign");
+    if (!deps.membershipRepository || !deps.userRepository) {
+      return successEnvelope({ members: [] }, request.id);
+    }
+    const memberships = await deps.membershipRepository.listByTenant(principal.tenantId);
+    const members = await Promise.all(
+      memberships.map(async (membership) => {
+        const user = await deps.userRepository!.getById(membership.userId);
+        return { userId: membership.userId, email: user?.email ?? "(desconhecido)", name: user?.name ?? "(desconhecido)", role: membership.role };
+      }),
+    );
+    return successEnvelope({ members }, request.id);
   });
 
   app.get("/inbox/conversations", { schema: { querystring: CONVERSATIONS_QUERY_SCHEMA } }, async (request) => {

@@ -1,5 +1,6 @@
 import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, MessagingConnection, MessagingConnectionStatus } from "../../domain/inbox/inbox.model.js";
-import { normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
+import { INBOX_AI_ACTOR, normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
+import type { InboxAiResponderPort } from "../ports/inbox-ai-responder.port.js";
 import type { InboxContactRepositoryPort } from "../ports/inbox-contact-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../ports/inbox-conversation-event-repository.port.js";
 import type { InboxConversationListFilter, InboxConversationListItem, InboxConversationRepositoryPort } from "../ports/inbox-conversation-repository.port.js";
@@ -11,7 +12,7 @@ import type { OutboundMessageQueuePort } from "../ports/outbound-message-queue.p
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
 
 /**
- * Casos de uso do módulo Conversas — Fase 1/3/4. Mesmo padrão de `conversation-use-cases.ts`:
+ * Casos de uso do módulo Conversas — Fase 1/3/4/5. Mesmo padrão de `conversation-use-cases.ts`:
  * `tenantId` sempre vem do principal autenticado (nunca do corpo da requisição); toda operação
  * sobre um recurso existente confere `tenantId` E `workspaceId` (nunca só o primeiro); erros são
  * `Error` com prefixo `INBOX_*`, traduzidos para status HTTP em `inbox.route.ts`. Um recurso de
@@ -26,6 +27,10 @@ export type InboxUseCaseDeps = {
   workspaceRepository: WorkspaceRepositoryPort;
   outboundQueue: OutboundMessageQueuePort;
   provider: MessagingProvider;
+  /** Fase 5 — `undefined` = IA de atendimento não configurada neste processo (ex.: API, ou worker
+   * sem `ANTHROPIC_API_KEY`). `maybeGenerateAiResponse` vira um no-op silencioso nesse caso — a
+   * Inbox continua 100% funcional sem IA (IA caiu != Inbox caiu). */
+  aiResponder?: InboxAiResponderPort;
   idGenerator?: () => string;
 };
 
@@ -257,7 +262,7 @@ export type SetAiConversationEnabledInput = { tenantId: string; workspaceId: str
 export async function setAiConversationEnabled(deps: InboxUseCaseDeps, input: SetAiConversationEnabledInput): Promise<InboxConversation> {
   const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
   if (conversation.aiEnabled === input.aiEnabled) return conversation;
-  const updated = await deps.conversationRepository.setAiEnabled(conversation.id, input.aiEnabled);
+  const updated = await deps.conversationRepository.setAiEnabled(conversation.id, input.aiEnabled, input.aiEnabled ? undefined : "manual");
   await deps.conversationEventRepository.record({
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
@@ -328,7 +333,7 @@ export type RegisterInboundMessageInput = {
  * mesmo evento (mensagem corretamente deduplicada) ainda incrementava `unread_count` de novo,
  * fazendo o contador de não lidas divergir do número real de mensagens.
  */
-export async function registerInboundMessage(deps: InboxUseCaseDeps, input: RegisterInboundMessageInput): Promise<{ contact: InboxContact; conversation: InboxConversation; message: InboxMessage }> {
+export async function registerInboundMessage(deps: InboxUseCaseDeps, input: RegisterInboundMessageInput): Promise<{ contact: InboxContact; conversation: InboxConversation; message: InboxMessage; wasCreated: boolean }> {
   const phoneNormalized = normalizePhoneNumber(input.fromPhone);
   const contact = await deps.contactRepository.upsertByPhone({
     tenantId: input.tenantId,
@@ -355,7 +360,7 @@ export async function registerInboundMessage(deps: InboxUseCaseDeps, input: Regi
   if (wasCreated) {
     await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: input.occurredAt, incrementUnread: true });
   }
-  return { contact, conversation, message };
+  return { contact, conversation, message, wasCreated };
 }
 
 export type ApplyMessageStatusChangedInput = { connectionId: string; externalMessageId: string; status: InboxMessage["status"]; occurredAt: string };
@@ -400,5 +405,201 @@ export async function processOutboundMessage(deps: InboxUseCaseDeps, input: Proc
   } catch (error) {
     await deps.messageRepository.recordAttempt(message.id, { lastError: error instanceof Error ? error.message : String(error), lastAttemptAt: new Date().toISOString() });
     throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// IA de Atendimento — Fase 5. Ver `src/application/ports/inbox-ai-responder.port.ts` para o
+// contrato e o racional de isolamento (nunca importa AiGatewayPort/AiRequest diretamente).
+// ---------------------------------------------------------------------------------------------
+
+/** Janela de contexto enviada à IA — controla tanto o tamanho quanto o custo por resposta (nunca
+ * o histórico completo de uma conversa longa). 20 mensagens cobrem confortavelmente uma troca
+ * recente de WhatsApp; o teto duro de verdade contra estouro é `INBOX_AUTO_REPLY_POLICY.
+ * maxInputTokens` no próprio AI Gateway — esta constante é só a primeira linha de defesa,
+ * mais barata (evita nem buscar/serializar mensagens que nunca caberiam). */
+const AI_CONTEXT_MESSAGE_LIMIT = 20;
+
+/** Segunda tentativa de adquirir o lock de geração da conversa antes de desistir — cobre só a
+ * janela estreita entre "o dono atual do lock decidiu que não há mais nada pendente" e "ele
+ * efetivamente libera o lock" (ver `drainAiResponses`). Não é uma fila de retry de verdade: se
+ * mesmo assim perder a corrida, esta mensagem específica só será respondida quando a PRÓXIMA
+ * mensagem inbound da conversa disparar um novo `maybeGenerateAiResponse` (ela nunca é perdida —
+ * `ai_claim_status` continua `null` até alguém efetivamente a reivindicar), ou manualmente por um
+ * humano. Ver relatório da Fase 5 para a análise completa desse trade-off. */
+const AI_LOCK_RETRY_DELAY_MS = 200;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Gate de elegibilidade da IA — checado SEMPRE a partir de uma leitura fresca do banco, nunca de
+ * uma cópia em memória potencialmente desatualizada (é isto que fecha a janela de corrida entre
+ * "IA começou a gerar" e "humano assumiu enquanto isso"). Checa `assignedUserId` diretamente, não
+ * só `aiEnabled`: atribuição DIRETA (`assign()`, Fase 4) não desliga `aiEnabled`, mas um humano
+ * responsável nunca pode competir com a IA de qualquer forma que a atribuição tenha acontecido.
+ */
+function isConversationEligibleForAi(conversation: InboxConversation): boolean {
+  return conversation.aiEnabled && !conversation.assignedUserId && conversation.status !== "resolved" && conversation.status !== "archived";
+}
+
+async function resolveClaims(deps: InboxUseCaseDeps, claimed: readonly InboxMessage[], status: "answered" | "skipped" | "failed", responseMessageId?: string): Promise<void> {
+  for (const message of claimed) {
+    await deps.messageRepository.resolveAiClaim(message.id, { status, responseMessageId });
+  }
+}
+
+export type MaybeGenerateAiResponseInput = { tenantId: string; workspaceId: string; conversationId: string; triggeringMessageId: string };
+
+/**
+ * Ponto de entrada da IA de Atendimento — chamado pelo `vorix-worker` logo após CADA mensagem
+ * INBOUND ser persistida (só quando `wasCreated`, nunca numa reentrega — isso sozinho já evita
+ * qualquer duplicidade de resposta para o caso comum). Nunca lança: qualquer falha inesperada aqui
+ * nunca pode derrubar o consumer de `inbox.incoming.queue` nem impedir que um humano responda.
+ *
+ * Estratégia de concorrência/serialização por conversa (decisão obrigatória, documentada no
+ * relatório da Fase 5): LOCK lógico por conversa (`ai_processing_since`, CAS) — só uma geração de
+ * IA pode estar em voo por conversa a qualquer momento. Quem detém o lock DRENA (num laço) toda
+ * mensagem inbound ainda não respondida antes de liberar, incluindo qualquer uma que tenha
+ * chegado durante a própria geração — em vez de várias respostas paralelas e desconexas para
+ * mensagens consecutivas, o resultado é uma única resposta coerente considerando o estado mais
+ * recente da conversa. Quem perde a corrida pelo lock não gera nada por conta própria: confia que
+ * o dono atual do lock cobre sua mensagem (ela fica com `ai_claim_status: null`, visível para o
+ * drenador). Ver `AI_LOCK_RETRY_DELAY_MS` para o único caso estreito em que isso pode falhar.
+ *
+ * Sem backlog retroativo (requisito explícito): quando a conversa NÃO está elegível (IA pausada
+ * ou humano responsável) no momento em que ESTA mensagem específica chega, ela é imediatamente
+ * marcada `skipped` — nunca fica com `ai_claim_status: null` esperando uma reativação futura da
+ * IA "pescar" ela. É isso que garante que reativar a IA só afeta mensagens que chegarem DEPOIS —
+ * o drenador (`listUnansweredInboundByConversation`) só encontra mensagens que já estavam
+ * elegíveis quando chegaram, nunca um acúmulo de antes da pausa.
+ */
+export async function maybeGenerateAiResponse(deps: InboxUseCaseDeps, input: MaybeGenerateAiResponseInput): Promise<void> {
+  if (!deps.aiResponder) return;
+
+  const conversation = await deps.conversationRepository.getById(input.conversationId);
+  if (!conversation || conversation.tenantId !== input.tenantId || conversation.workspaceId !== input.workspaceId) return;
+  if (!isConversationEligibleForAi(conversation)) {
+    const claimed = await deps.messageRepository.tryClaimForAiResponse(input.triggeringMessageId, new Date().toISOString());
+    if (claimed) await deps.messageRepository.resolveAiClaim(claimed.id, { status: "skipped" });
+    return;
+  }
+
+  const lockOwnedAt = new Date().toISOString();
+  let lock = await deps.conversationRepository.tryAcquireAiLock(conversation.id, lockOwnedAt);
+  if (!lock) {
+    await sleep(AI_LOCK_RETRY_DELAY_MS);
+    lock = await deps.conversationRepository.tryAcquireAiLock(conversation.id, new Date().toISOString());
+  }
+  if (!lock) return; // outra geração já está em andamento — o dono atual do lock drena esta mensagem.
+  const ownedAt = lock.aiProcessingSince as string;
+
+  try {
+    await drainAiResponses(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id });
+  } finally {
+    await deps.conversationRepository.releaseAiLock(conversation.id, ownedAt);
+  }
+}
+
+async function drainAiResponses(deps: InboxUseCaseDeps, ctx: { tenantId: string; workspaceId: string; conversationId: string }): Promise<void> {
+  for (;;) {
+    const pending = await deps.messageRepository.listUnansweredInboundByConversation({ conversationId: ctx.conversationId });
+    if (pending.length === 0) return;
+
+    const claimed: InboxMessage[] = [];
+    for (const message of pending) {
+      const claimedMessage = await deps.messageRepository.tryClaimForAiResponse(message.id, new Date().toISOString());
+      if (claimedMessage) claimed.push(claimedMessage);
+    }
+    if (claimed.length === 0) return;
+
+    // Race-check #1 — antes de gastar uma chamada de IA: se a elegibilidade já mudou (ex.: alguém
+    // assumiu a conversa entre a mensagem chegar e o lock ser adquirido), nem tenta gerar.
+    const freshBefore = await deps.conversationRepository.getById(ctx.conversationId);
+    if (!freshBefore || !isConversationEligibleForAi(freshBefore)) {
+      await resolveClaims(deps, claimed, "skipped");
+      return;
+    }
+
+    const contact = await deps.contactRepository.getById(freshBefore.contactId);
+    const recentMessages = await deps.messageRepository.listByConversation({
+      tenantId: ctx.tenantId,
+      workspaceId: ctx.workspaceId,
+      conversationId: ctx.conversationId,
+      limit: AI_CONTEXT_MESSAGE_LIMIT,
+    });
+    // `listByConversation` devolve mais recente primeiro — inverte para ordem cronológica antes
+    // de montar o prompt (uma transcrição de trás pra frente confundiria o modelo).
+    const chronological = [...recentMessages].reverse();
+
+    const result = await deps.aiResponder!.generateReply({
+      tenantId: ctx.tenantId,
+      workspaceId: ctx.workspaceId,
+      conversationId: ctx.conversationId,
+      contactName: contact?.name,
+      contactPhone: contact?.phoneNormalized ?? "",
+      recentMessages: chronological.map((message) => ({ direction: message.direction, body: message.body ?? "", sentByAi: message.sentByAi, createdAt: message.createdAt })),
+    });
+
+    if (!result.ok) {
+      // Falha operacional controlada (timeout, provider indisponível, saída inválida...) — nunca
+      // um retry automático ilimitado aqui (o próprio AI Gateway já tentou algumas vezes
+      // internamente); a mensagem fica `failed`, disponível para atendimento manual, e a IA só
+      // tenta de novo quando uma NOVA mensagem inbound chegar.
+      await resolveClaims(deps, claimed, "failed");
+      await deps.conversationEventRepository.record({
+        tenantId: ctx.tenantId,
+        workspaceId: ctx.workspaceId,
+        conversationId: ctx.conversationId,
+        type: "ai_response_failed",
+        performedBy: INBOX_AI_ACTOR,
+        metadata: { inboundMessageIds: claimed.map((message) => message.id), errorCategory: result.category },
+      });
+      return;
+    }
+
+    // Race-check #2 — depois da chamada de IA, ANTES de persistir/enfileirar qualquer coisa
+    // (requisito crítico da Fase 5): se um humano assumiu ENQUANTO a IA gerava, a resposta é
+    // descartada aqui e NUNCA chega a entrar na fila outbound.
+    const freshAfter = await deps.conversationRepository.getById(ctx.conversationId);
+    if (!freshAfter || !isConversationEligibleForAi(freshAfter)) {
+      await resolveClaims(deps, claimed, "skipped");
+      await deps.conversationEventRepository.record({
+        tenantId: ctx.tenantId,
+        workspaceId: ctx.workspaceId,
+        conversationId: ctx.conversationId,
+        type: "ai_response_cancelled",
+        performedBy: INBOX_AI_ACTOR,
+        metadata: { inboundMessageIds: claimed.map((message) => message.id), reason: "human_took_over_during_generation" },
+      });
+      return;
+    }
+
+    // A partir daqui a resposta da IA passa pelo MESMO pipeline outbound de uma mensagem humana —
+    // persiste `queued`, publica na fila, o `vorix-worker` drena e chama o `MessagingProvider`.
+    // Nenhum código de IA jamais chama o provider/WuzAPI diretamente.
+    const outbound = await sendInboxMessage(deps, { tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, conversationId: ctx.conversationId, body: result.reply, sentByAi: true });
+    await resolveClaims(deps, claimed, "answered", outbound.id);
+    await deps.conversationEventRepository.record({
+      tenantId: ctx.tenantId,
+      workspaceId: ctx.workspaceId,
+      conversationId: ctx.conversationId,
+      type: "ai_response_sent",
+      performedBy: INBOX_AI_ACTOR,
+      metadata: {
+        inboundMessageIds: claimed.map((message) => message.id),
+        outboundMessageId: outbound.id,
+        provider: result.provider,
+        model: result.model,
+        latencyMs: result.latencyMs,
+        tokens: result.usage,
+        estimatedCost: result.usage.estimatedCost,
+        aiTraceId: result.traceId,
+      },
+    });
+    // Volta ao topo do laço: drena qualquer mensagem nova que tenha chegado durante a geração —
+    // é assim que várias mensagens consecutivas do mesmo contato viram UMA resposta coerente por
+    // rodada em vez de N respostas paralelas desconexas, sem precisar de debounce/timer nenhum.
   }
 }

@@ -5,7 +5,7 @@ import type {
   InboxConversationRepositoryPort,
 } from "../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxContactRepositoryPort } from "../../application/ports/inbox-contact-repository.port.js";
-import type { InboxConversation, InboxConversationStatus } from "../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus } from "../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -110,10 +110,10 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     return updated;
   }
 
-  async setAiEnabled(id: string, aiEnabled: boolean): Promise<InboxConversation> {
+  async setAiEnabled(id: string, aiEnabled: boolean, reason?: InboxAiPauseReason): Promise<InboxConversation> {
     const existing = this.rows.get(id);
     if (!existing) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
-    const updated = { ...existing, aiEnabled, updatedAt: new Date().toISOString() };
+    const updated = { ...existing, aiEnabled, aiPausedReason: aiEnabled ? undefined : reason, updatedAt: new Date().toISOString() };
     this.rows.set(id, updated);
     return updated;
   }
@@ -125,7 +125,7 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     const existing = this.rows.get(id);
     if (!existing) return undefined;
     if (existing.assignedUserId && existing.assignedUserId !== userId) return undefined;
-    const updated = { ...existing, assignedUserId: userId, aiEnabled: false, updatedAt: new Date().toISOString() };
+    const updated: InboxConversation = { ...existing, assignedUserId: userId, aiEnabled: false, aiPausedReason: "human_takeover", updatedAt: new Date().toISOString() };
     this.rows.set(id, updated);
     return updated;
   }
@@ -136,5 +136,19 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     const updated = { ...existing, assignedUserId: input.toUserId, updatedAt: new Date().toISOString() };
     this.rows.set(id, updated);
     return updated;
+  }
+
+  async tryAcquireAiLock(id: string, at: string): Promise<InboxConversation | undefined> {
+    const existing = this.rows.get(id);
+    if (!existing || existing.aiProcessingSince) return undefined;
+    const updated = { ...existing, aiProcessingSince: at };
+    this.rows.set(id, updated);
+    return updated;
+  }
+
+  async releaseAiLock(id: string, ownedAt: string): Promise<void> {
+    const existing = this.rows.get(id);
+    if (!existing || existing.aiProcessingSince !== ownedAt) return;
+    this.rows.set(id, { ...existing, aiProcessingSince: undefined });
   }
 }

@@ -156,3 +156,81 @@ test("Isolamento cross-tenant via HTTP: principal de um tenant não enxerga nem 
   await appA.close();
   await appB.close();
 });
+
+/**
+ * Módulo Conversas — Fase 5: `GET /inbox/members` alimenta o seletor de transferência do frontend
+ * (substitui o campo manual de userId da Fase 4). RBAC (mesma permissão de `/assign`/`/transfer`)
+ * e isolamento cross-tenant (a lista nunca inclui membros de outro tenant) são requisitos
+ * explícitos da fase.
+ */
+function fakeMembershipAndUserRepositories(membershipsByTenant) {
+  const membershipRepository = {
+    async listByTenant(tenantId) {
+      return membershipsByTenant[tenantId] ?? [];
+    },
+    async getByUserAndTenant(userId, tenantId) {
+      return (membershipsByTenant[tenantId] ?? []).find((m) => m.userId === userId);
+    },
+  };
+  const usersById = new Map();
+  for (const memberships of Object.values(membershipsByTenant)) {
+    for (const membership of memberships) {
+      usersById.set(membership.userId, { id: membership.userId, email: `${membership.userId}@example.com`, name: membership.userId });
+    }
+  }
+  const userRepository = { async getById(id) { return usersById.get(id); } };
+  return { membershipRepository, userRepository };
+}
+
+test("RBAC: GET /inbox/members exige inbox:assign — viewer recebe 403, editor recebe a lista", async () => {
+  const tenantId = "tenant-http-members-rbac";
+  const { membershipRepository, userRepository } = fakeMembershipAndUserRepositories({
+    [tenantId]: [{ userId: "user-a", tenantId, role: "editor" }],
+  });
+
+  const appViewer = await buildApp({
+    config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop", CONVERSATIONS_MODULE_ENABLED: "true" }),
+    container: { authPort: fakeAuthPortFor(principal({ role: "viewer", tenantId })), identity: { membershipRepository, userRepository, pool: { end: async () => {} } } },
+  });
+  const deniedResponse = await appViewer.inject({ method: "GET", url: "/v1/inbox/members" });
+  assert.equal(deniedResponse.statusCode, 403);
+  await appViewer.close();
+
+  const appEditor = await buildApp({
+    config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop", CONVERSATIONS_MODULE_ENABLED: "true" }),
+    container: { authPort: fakeAuthPortFor(principal({ role: "editor", tenantId })), identity: { membershipRepository, userRepository, pool: { end: async () => {} } } },
+  });
+  const allowedResponse = await appEditor.inject({ method: "GET", url: "/v1/inbox/members" });
+  assert.equal(allowedResponse.statusCode, 200);
+  assert.deepEqual(allowedResponse.json().data.members, [{ userId: "user-a", email: "user-a@example.com", name: "user-a", role: "editor" }]);
+  await appEditor.close();
+});
+
+test("Isolamento cross-tenant: GET /inbox/members nunca lista membros de outro tenant", async () => {
+  const tenantA = "tenant-http-members-a";
+  const tenantB = "tenant-http-members-b";
+  const { membershipRepository, userRepository } = fakeMembershipAndUserRepositories({
+    [tenantA]: [{ userId: "user-a1", tenantId: tenantA, role: "editor" }, { userId: "user-a2", tenantId: tenantA, role: "admin" }],
+    [tenantB]: [{ userId: "user-b1", tenantId: tenantB, role: "editor" }],
+  });
+
+  const appA = await buildApp({
+    config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop", CONVERSATIONS_MODULE_ENABLED: "true" }),
+    container: { authPort: fakeAuthPortFor(principal({ role: "editor", tenantId: tenantA, userId: "user-a1" })), identity: { membershipRepository, userRepository, pool: { end: async () => {} } } },
+  });
+
+  const response = await appA.inject({ method: "GET", url: "/v1/inbox/members" });
+  assert.equal(response.statusCode, 200);
+  const userIds = response.json().data.members.map((m) => m.userId).sort();
+  assert.deepEqual(userIds, ["user-a1", "user-a2"], "só membros do tenant A (do principal autenticado) — nunca user-b1");
+
+  await appA.close();
+});
+
+test("GET /inbox/members sem membershipRepository/userRepository configurados (ex.: AUTH_MODE=noop puro) responde lista vazia, nunca erro", async () => {
+  const app = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "editor", tenantId: "tenant-http-members-noop" })) });
+  const response = await app.inject({ method: "GET", url: "/v1/inbox/members" });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json().data.members, []);
+  await app.close();
+});

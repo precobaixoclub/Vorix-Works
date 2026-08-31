@@ -20,14 +20,18 @@ import {
 } from "../../infrastructure/messaging/rabbitmq/inbox-rabbitmq-topology.js";
 import { MessagingProviderError } from "../../application/ports/messaging-provider.port.js";
 import type { MessagingProvider } from "../../application/ports/messaging-provider.port.js";
+import type { InboxAiResponderPort } from "../../application/ports/inbox-ai-responder.port.js";
 import {
   applyConnectionStateChanged,
   applyMessageStatusChanged,
+  maybeGenerateAiResponse,
   processOutboundMessage,
   registerInboundMessage,
   type InboxUseCaseDeps,
 } from "../../application/inbox/inbox-use-cases.js";
 import type { NormalizedInboxEvent } from "../../application/inbox/inbox-events.js";
+import { buildAiGateway } from "../../infrastructure/ai-gateway/build-ai-gateway.js";
+import { AiGatewayInboxResponder } from "../../infrastructure/ai-gateway/inbox-ai-responder-adapter.js";
 
 /**
  * Processo separado do módulo Conversas — `vorix-worker` (Fase 1/2). Consome os eventos do
@@ -53,7 +57,14 @@ type InboxWorkerConfig = {
   persistenceDriver: PersistenceDriver;
   databaseUrl?: string;
   inbox: { enabled: boolean; wuzApiBaseUrl?: string; wuzApiAdminToken?: string; rabbitMqUrl?: string };
+  /** Fase 5 — config MÍNIMA e independente de `loadApiConfig()`, mesmo raciocínio de
+   * `InboxWorkerConfig` como um todo: o worker nunca deveria falhar o boot por causa de config de
+   * IA ausente (`enabled=false`, o padrão, é um no-op completo — `deps.aiResponder` fica
+   * `undefined` e `maybeGenerateAiResponse` vira um no-op silencioso). */
+  ai: { enabled: boolean; anthropicApiKey?: string; anthropicInboxAutoReplyModel: string };
 };
+
+const DEFAULT_ANTHROPIC_INBOX_AUTO_REPLY_MODEL = "claude-haiku-4-5-20251001";
 
 function loadInboxWorkerConfig(): InboxWorkerConfig {
   const persistenceDriver: PersistenceDriver = process.env.PERSISTENCE_DRIVER?.trim() === "postgres" ? "postgres" : "memory";
@@ -65,6 +76,11 @@ function loadInboxWorkerConfig(): InboxWorkerConfig {
       wuzApiBaseUrl: process.env.INBOX_WUZAPI_BASE_URL?.trim() || undefined,
       wuzApiAdminToken: process.env.INBOX_WUZAPI_ADMIN_TOKEN?.trim() || undefined,
       rabbitMqUrl: process.env.INBOX_RABBITMQ_URL?.trim() || undefined,
+    },
+    ai: {
+      enabled: process.env.AI_INBOX_AUTO_REPLY_ENABLED?.trim() === "true",
+      anthropicApiKey: process.env.ANTHROPIC_API_KEY?.trim() || undefined,
+      anthropicInboxAutoReplyModel: process.env.ANTHROPIC_INBOX_AUTO_REPLY_MODEL?.trim() || DEFAULT_ANTHROPIC_INBOX_AUTO_REPLY_MODEL,
     },
   };
 }
@@ -162,6 +178,32 @@ async function main(): Promise<void> {
     ? new WuzApiMessagingProvider(new WuzApiClient({ baseUrl: config.inbox.wuzApiBaseUrl, adminToken: config.inbox.wuzApiAdminToken }))
     : new FakeMessagingProvider();
 
+  // IA de Atendimento (Fase 5) — `aiResponder` fica `undefined` (no-op) sem
+  // `AI_INBOX_AUTO_REPLY_ENABLED=true`; falta de `ANTHROPIC_API_KEY` com isso habilitado nunca
+  // impede o boot (mesmo princípio de `api-config.ts`'s aiGateway) — toda chamada só degrada para
+  // `not_configured`, tratado como falha operacional normal por `maybeGenerateAiResponse`.
+  let aiResponder: InboxAiResponderPort | undefined;
+  if (config.ai.enabled) {
+    const { aiGateway } = buildAiGateway({
+      aiConfig: {
+        enabled: true,
+        briefingExtractionEnabled: false,
+        anthropicApiKey: config.ai.anthropicApiKey,
+        // Nunca usado de verdade: o worker jamais monta um `AiRequest` de `briefing_field_extraction`
+        // (só a API/`process-briefing-turn.ts` faz isso) — campo obrigatório do tipo compartilhado,
+        // sem efeito prático aqui.
+        anthropicBriefingExtractionModel: "unused-in-inbox-worker",
+        inboxAutoReplyEnabled: true,
+        anthropicInboxAutoReplyModel: config.ai.anthropicInboxAutoReplyModel,
+      },
+      executionRepository: repositories.aiExecutionRepository,
+    });
+    aiResponder = new AiGatewayInboxResponder(aiGateway);
+    console.log(`[inbox-worker] IA de atendimento habilitada (modelo "${config.ai.anthropicInboxAutoReplyModel}").`);
+  } else {
+    console.log("[inbox-worker] AI_INBOX_AUTO_REPLY_ENABLED=false — IA de atendimento desligada, Inbox funciona normalmente sem ela.");
+  }
+
   const deps: InboxUseCaseDeps = {
     connectionRepository: repositories.messagingConnectionRepository,
     contactRepository: repositories.inboxContactRepository,
@@ -171,6 +213,7 @@ async function main(): Promise<void> {
     workspaceRepository: repositories.workspaceRepository,
     outboundQueue: { publish: async () => {} }, // o worker nunca publica outbound, só drena
     provider,
+    aiResponder,
   };
 
   const { connection, channel } = await connectInboxRabbitMq(config.inbox.rabbitMqUrl);
@@ -225,7 +268,7 @@ async function main(): Promise<void> {
   // só usa isso como gatilho pra revalidar, nunca como fonte de verdade (ver publishRealtimeNotification).
   await consumeQueue(channel, INBOX_QUEUES.incoming, async (content) => {
     const event = JSON.parse(content.toString("utf8")) as Extract<NormalizedInboxEvent, { type: "message.inbound" }>;
-    const { conversation } = await registerInboundMessage(deps, {
+    const { conversation, message, wasCreated } = await registerInboundMessage(deps, {
       tenantId: event.tenantId,
       workspaceId: event.workspaceId,
       connectionId: event.connectionId,
@@ -237,6 +280,19 @@ async function main(): Promise<void> {
       occurredAt: event.occurredAt,
     });
     publishRealtimeNotification(channel, { type: "message.created", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
+
+    // `wasCreated` é a MESMA guarda de idempotência que já protege `markLastMessage`/unread —
+    // uma reentrega do mesmo evento (mensagem corretamente deduplicada) nunca dispara uma segunda
+    // geração de IA. Roda em `.catch()`, nunca `await`-ado dentro do fluxo principal do ACK: uma
+    // falha inesperada aqui NUNCA pode fazer este evento (já persistido com sucesso) cair na
+    // escada de retry/DLQ do RabbitMQ, o que reprocessaria a mensagem sem necessidade.
+    if (wasCreated) {
+      maybeGenerateAiResponse(deps, { tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id, triggeringMessageId: message.id })
+        .then(() => publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id }))
+        .catch((error) => {
+          console.error("[inbox-worker] falha ao processar resposta automática de IA:", error instanceof Error ? error.message : error);
+        });
+    }
   });
 
   await consumeQueue(channel, INBOX_QUEUES.status, async (content) => {

@@ -7,6 +7,7 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Spinner } from "@/components/Spinner";
+import { SearchableCombo } from "@/components/SearchableCombo";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -20,8 +21,8 @@ import {
   takeOverInboxConversation,
   transferInboxConversation,
 } from "@/features/inbox/api";
-import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxRealtime } from "@/features/inbox/hooks";
-import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage } from "@/features/inbox/types";
+import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime } from "@/features/inbox/hooks";
+import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxTenantMember } from "@/features/inbox/types";
 
 const FILTERS: { value: InboxConversationFilter; label: string }[] = [
   { value: "all", label: "Todas" },
@@ -33,12 +34,24 @@ const FILTERS: { value: InboxConversationFilter; label: string }[] = [
   { value: "resolved", label: "Finalizadas" },
 ];
 
-/** Fase 4 — sem endpoint de listagem de membros do tenant hoje (limitação conhecida, ver relatório
- * da fase); só sabemos identificar o usuário logado. Todo outro id aparece truncado. */
-function agentLabel(userId: string | undefined, currentUserId: string | undefined): string {
+/** Resolve um userId para o nome do membro (Fase 5, `GET /v1/inbox/members`) quando disponível;
+ * cai para "Você"/id truncado quando `members` ainda não carregou ou o id não pertence ao tenant
+ * (nunca deveria acontecer, mas evita quebrar a UI). */
+function agentLabel(userId: string | undefined, currentUserId: string | undefined, members: readonly InboxTenantMember[]): string {
   if (!userId) return "Ninguém";
   if (userId === currentUserId) return "Você";
+  const member = members.find((m) => m.userId === userId);
+  if (member) return member.name;
   return userId.length > 10 ? `${userId.slice(0, 8)}…` : userId;
+}
+
+/** Fase 5 — motivo de a IA estar pausada, mostrado discretamente no painel "Atendimento". */
+function aiPauseReasonLabel(reason: NonNullable<InboxConversation["aiPausedReason"]>): string {
+  switch (reason) {
+    case "human_takeover": return "Pausada automaticamente — um atendente assumiu a conversa";
+    case "manual": return "Pausada manualmente por um atendente";
+    default: return "";
+  }
 }
 
 function statusLabelFor(status: InboxConversation["status"]): string {
@@ -68,6 +81,8 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
   useInboxRealtime(workspaceId, selectedConversationId);
 
   const { data, isLoading, error, mutate } = useInboxConversations(workspaceId, filter);
+  const { data: membersData } = useInboxMembers(workspaceId);
+  const members = membersData?.members ?? [];
   const conversations = data?.conversations ?? [];
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId);
 
@@ -94,6 +109,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
           selectedConversationId={selectedConversationId}
           onSelect={handleSelect}
           currentUserId={currentUserId}
+          members={members}
         />
       </div>
 
@@ -103,6 +119,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
             workspaceId={workspaceId}
             conversation={selectedConversation}
             currentUserId={currentUserId}
+            members={members}
             onBack={() => setMobileView("list")}
             onOpenDetails={() => setMobileView("details")}
           />
@@ -118,6 +135,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
           <ContactContextPane
             workspaceId={workspaceId}
             conversation={selectedConversation}
+            members={members}
             onBack={() => setMobileView("conversation")}
             onConversationChanged={() => mutate()}
           />
@@ -137,6 +155,7 @@ function ConversationListPane({
   selectedConversationId,
   onSelect,
   currentUserId,
+  members,
 }: {
   conversations: InboxConversation[];
   isLoading: boolean;
@@ -147,6 +166,7 @@ function ConversationListPane({
   selectedConversationId: string | undefined;
   onSelect: (conversation: InboxConversation) => void;
   currentUserId: string | undefined;
+  members: readonly InboxTenantMember[];
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -198,12 +218,14 @@ function ConversationListPane({
                 </div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                   <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal">{statusLabelFor(conversation.status)}</Badge>
-                  {conversation.aiEnabled ? (
+                  {conversation.assignedUserId ? (
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">Atendimento humano</Badge>
+                  ) : conversation.aiEnabled ? (
                     <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">IA ativa</Badge>
                   ) : (
                     <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground">IA pausada</Badge>
                   )}
-                  <span className="text-[11px] text-muted-foreground">{agentLabel(conversation.assignedUserId, currentUserId)}</span>
+                  <span className="text-[11px] text-muted-foreground">{agentLabel(conversation.assignedUserId, currentUserId, members)}</span>
                 </div>
               </div>
               {conversation.unreadCount > 0 ? (
@@ -225,12 +247,14 @@ function ConversationTimelinePane({
   workspaceId,
   conversation,
   currentUserId,
+  members,
   onBack,
   onOpenDetails,
 }: {
   workspaceId: string;
   conversation: InboxConversation;
   currentUserId: string | undefined;
+  members: readonly InboxTenantMember[];
   onBack: () => void;
   onOpenDetails: () => void;
 }) {
@@ -266,7 +290,13 @@ function ConversationTimelinePane({
           <p className="truncate text-sm font-medium text-foreground">{conversation.contactName ?? conversation.contactPhone}</p>
           <p className="text-xs text-muted-foreground">{conversation.contactPhone}</p>
         </div>
-        {conversation.aiEnabled ? <Badge variant="secondary">IA ativa</Badge> : null}
+        {conversation.assignedUserId ? (
+          <Badge variant="secondary">Atendimento humano</Badge>
+        ) : conversation.aiEnabled ? (
+          <Badge variant="secondary">IA ativa</Badge>
+        ) : (
+          <Badge variant="outline" className="text-muted-foreground">IA pausada</Badge>
+        )}
         <Button variant="ghost" className="md:hidden" onClick={onOpenDetails}>Detalhes</Button>
       </div>
 
@@ -283,7 +313,7 @@ function ConversationTimelinePane({
               entry.kind === "message" ? (
                 <MessageBubble key={`msg-${entry.message.id}`} message={entry.message} />
               ) : (
-                <EventPill key={`evt-${entry.event.id}`} event={entry.event} currentUserId={currentUserId} />
+                <EventPill key={`evt-${entry.event.id}`} event={entry.event} currentUserId={currentUserId} members={members} />
               ),
             )}
           </div>
@@ -327,29 +357,30 @@ function MessageBubble({ message }: { message: InboxMessage }) {
   );
 }
 
-/** Fase 4 — evento operacional discreto, renderizado como um "pill" central na timeline. NUNCA é
- * uma mensagem enviada ao WhatsApp — só reflete uma mudança de estado do atendimento. */
-function EventPill({ event, currentUserId }: { event: InboxConversationEvent; currentUserId: string | undefined }) {
+/** Fase 4/5 — evento operacional discreto, renderizado como um "pill" central na timeline. NUNCA
+ * é uma mensagem enviada ao WhatsApp — só reflete uma mudança de estado do atendimento (humano ou,
+ * na Fase 5, da IA). */
+function EventPill({ event, currentUserId, members }: { event: InboxConversationEvent; currentUserId: string | undefined; members: readonly InboxTenantMember[] }) {
   return (
     <div className="flex justify-center py-1">
       <span className="rounded-full bg-muted px-3 py-1 text-center text-[11px] text-muted-foreground">
-        {eventLabel(event, currentUserId)} · {new Date(event.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+        {eventLabel(event, currentUserId, members)} · {new Date(event.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
       </span>
     </div>
   );
 }
 
-function eventLabel(event: InboxConversationEvent, currentUserId: string | undefined): string {
-  const by = agentLabel(event.performedBy, currentUserId);
+function eventLabel(event: InboxConversationEvent, currentUserId: string | undefined, members: readonly InboxTenantMember[]): string {
+  const by = agentLabel(event.performedBy, currentUserId, members);
   switch (event.type) {
     case "took_over":
       return `${by} assumiu o atendimento`;
     case "assigned":
-      return `${by} atribuiu a conversa a ${agentLabel(event.toUserId, currentUserId)}`;
+      return `${by} atribuiu a conversa a ${agentLabel(event.toUserId, currentUserId, members)}`;
     case "unassigned":
-      return `${by} removeu ${agentLabel(event.fromUserId, currentUserId)} do atendimento`;
+      return `${by} removeu ${agentLabel(event.fromUserId, currentUserId, members)} do atendimento`;
     case "transferred":
-      return `${by} transferiu a conversa de ${agentLabel(event.fromUserId, currentUserId)} para ${agentLabel(event.toUserId, currentUserId)}`;
+      return `${by} transferiu a conversa de ${agentLabel(event.fromUserId, currentUserId, members)} para ${agentLabel(event.toUserId, currentUserId, members)}`;
     case "status_changed":
       if (event.toStatus === "resolved") return `${by} finalizou o atendimento`;
       if (event.toStatus === "open") return `${by} reabriu a conversa`;
@@ -358,6 +389,12 @@ function eventLabel(event: InboxConversationEvent, currentUserId: string | undef
       return "IA pausada";
     case "ai_resumed":
       return "IA reativada";
+    case "ai_response_sent":
+      return "IA respondeu automaticamente";
+    case "ai_response_failed":
+      return "IA não conseguiu gerar uma resposta (falha temporária)";
+    case "ai_response_cancelled":
+      return "Resposta da IA cancelada — um atendente assumiu a conversa";
     default:
       return "Atendimento atualizado";
   }
@@ -378,11 +415,13 @@ function statusLabel(status: InboxMessage["status"]): string {
 function ContactContextPane({
   workspaceId,
   conversation,
+  members,
   onBack,
   onConversationChanged,
 }: {
   workspaceId: string;
   conversation: InboxConversation;
+  members: readonly InboxTenantMember[];
   onBack: () => void;
   onConversationChanged: () => void;
 }) {
@@ -393,6 +432,7 @@ function ContactContextPane({
   const [transferTarget, setTransferTarget] = useState("");
   const isAssignedToMe = conversation.assignedUserId === currentUserId;
   const isResolved = conversation.status === "resolved";
+  const transferOptions = members.filter((member) => member.userId !== conversation.assignedUserId).map((member) => ({ id: member.userId, label: `${member.name} · ${member.email}` }));
 
   async function runAction(action: () => Promise<InboxConversation>) {
     setBusy(true);
@@ -416,9 +456,8 @@ function ContactContextPane({
   }
 
   function handleTransfer() {
-    const toUserId = transferTarget.trim();
-    if (!toUserId) return;
-    return runAction(() => transferInboxConversation(workspaceId, conversation.id, toUserId)).then(() => setTransferTarget(""));
+    if (!transferTarget) return;
+    return runAction(() => transferInboxConversation(workspaceId, conversation.id, transferTarget)).then(() => setTransferTarget(""));
   }
 
   function handleToggleAi(aiEnabled: boolean) {
@@ -457,7 +496,7 @@ function ContactContextPane({
         <div className="mb-3 flex items-center justify-between gap-2">
           <div>
             <p className="text-[11px] text-muted-foreground">Responsável</p>
-            <p className="text-sm text-foreground">{agentLabel(conversation.assignedUserId, currentUserId)}</p>
+            <p className="text-sm text-foreground">{agentLabel(conversation.assignedUserId, currentUserId, members)}</p>
           </div>
           <div className="flex gap-1.5">
             {!isAssignedToMe ? (
@@ -471,17 +510,19 @@ function ContactContextPane({
 
         {conversation.assignedUserId ? (
           <div className="mb-3">
-            <p className="mb-1 text-[11px] text-muted-foreground">
-              Transferir para (ID do usuário) <span className="opacity-70">— ainda sem busca por nome, ver limitações da Fase 4</span>
-            </p>
+            <p className="mb-1 text-[11px] text-muted-foreground">Transferir para</p>
             <div className="flex gap-1.5">
-              <input
+              <SearchableCombo
+                items={transferOptions}
                 value={transferTarget}
-                onChange={(event) => setTransferTarget(event.target.value)}
-                placeholder="id-do-usuario"
-                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                onValueChange={setTransferTarget}
+                placeholder="Escolher atendente"
+                searchPlaceholder="Buscar por nome ou e-mail..."
+                emptyText="Nenhum outro membro encontrado."
+                disabled={busy}
+                className="min-w-0 flex-1"
               />
-              <Button variant="secondary" disabled={busy || !transferTarget.trim()} onClick={handleTransfer}>Transferir</Button>
+              <Button variant="secondary" disabled={busy || !transferTarget} onClick={handleTransfer}>Transferir</Button>
             </div>
           </div>
         ) : null}
@@ -502,7 +543,12 @@ function ContactContextPane({
       <section>
         <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Inteligência artificial</h3>
         <div className="flex items-center justify-between gap-2">
-          <p className="text-sm text-foreground">{conversation.aiEnabled ? "IA ativa" : "IA pausada"}</p>
+          <div>
+            <p className="text-sm text-foreground">{conversation.aiEnabled ? "IA ativa" : "IA pausada"}</p>
+            {!conversation.aiEnabled && conversation.aiPausedReason ? (
+              <p className="text-[11px] text-muted-foreground">{aiPauseReasonLabel(conversation.aiPausedReason)}</p>
+            ) : null}
+          </div>
           {conversation.aiEnabled ? (
             <Button variant="secondary" disabled={busy} onClick={() => handleToggleAi(false)}>Pausar IA</Button>
           ) : (

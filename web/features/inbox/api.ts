@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, MessagingConnection } from "./types";
+import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxTenantMember, MessagingConnection } from "./types";
 
 export function listInboxConnections(workspaceId: string): Promise<{ connections: MessagingConnection[] }> {
   const query = new URLSearchParams({ workspaceId });
@@ -73,4 +73,11 @@ export function listInboxConversationEvents(workspaceId: string, conversationId:
 
 export function sendInboxMessage(workspaceId: string, conversationId: string, body: string): Promise<InboxMessage> {
   return apiClient.post<InboxMessage>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, { workspaceId, body });
+}
+
+/** Fase 5 — membros do tenant atual, para o seletor de transferência (substitui o campo manual de
+ * userId da Fase 4). Sempre escopado pelo tenant do principal autenticado no backend — nunca por
+ * um parâmetro vindo daqui. */
+export function listInboxMembers(): Promise<{ members: InboxTenantMember[] }> {
+  return apiClient.get<{ members: InboxTenantMember[] }>("/v1/inbox/members");
 }

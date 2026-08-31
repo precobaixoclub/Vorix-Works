@@ -198,8 +198,12 @@ services:
       ZUNO_LOG_LEVEL: info
     networks: [zuno_network, conversas_internal]
     init: true
-    mem_limit: 384m
-    mem_reservation: 192m
+    # Reduzido de 384m/192m com base no achado de capacidade real da VPS (spike Fase 2 — só
+    # ~288Mi livres, 7 stacks compartilhando o host). NÃO medido como container nesta rodada (o
+    # spike rodou o worker como processo comum, fora de container) — um processo Node com
+    # amqplib+pg tende a ser leve, mas recalibrar aqui especificamente na homologação real.
+    mem_limit: 256m
+    mem_reservation: 128m
 
 networks:
   zuno_network:

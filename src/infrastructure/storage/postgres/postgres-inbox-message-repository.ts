@@ -34,7 +34,7 @@ type Row = {
 export class PostgresInboxMessageRepository implements InboxMessageRepositoryPort {
   constructor(private readonly pool: Pool) {}
 
-  async create(input: CreateInboxMessageInput): Promise<InboxMessage> {
+  async create(input: CreateInboxMessageInput): Promise<{ message: InboxMessage; wasCreated: boolean }> {
     const id = idGenerator();
     const defaultStatus = input.status ?? (input.direction === "inbound" ? "delivered" : "queued");
     // `on conflict do nothing` + segunda leitura: idempotência contra reentrega de evento —
@@ -54,14 +54,14 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
         input.sentByUserId ?? null, input.sentByAi ?? false, input.sentByAutomation ?? false,
       ],
     );
-    if (insertResult.rows[0]) return this.toDomain(insertResult.rows[0]);
+    if (insertResult.rows[0]) return { message: this.toDomain(insertResult.rows[0]), wasCreated: true };
 
     if (!input.externalMessageId) throw new Error("INBOX_MESSAGE_CONFLICT: inserção falhou sem externalMessageId (não deveria acontecer).");
     const existing = await this.pool.query<Row>(
       "select * from inbox_messages where connection_id = $1 and external_message_id = $2",
       [input.connectionId, input.externalMessageId],
     );
-    return this.toDomain(existing.rows[0]);
+    return { message: this.toDomain(existing.rows[0]), wasCreated: false };
   }
 
   async getById(id: string): Promise<InboxMessage | undefined> {

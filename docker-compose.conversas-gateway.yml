@@ -12,6 +12,15 @@ name: conversas-gateway
 #
 # Pré-requisito único: a rede externa precisa existir ANTES do primeiro `up` de qualquer um dos
 # dois arquivos compose — `docker network create conversas_internal` (idempotente, rodar uma vez).
+#
+# LIMITES DE MEMÓRIA calibrados com dado real (spike Fase 2, VPS de produção): a VPS tem só
+# 3.8GB RAM / 2 CPUs compartilhados entre 7 stacks (zuno/cmdesk/rumoaoaltar/saas_*), com ~288Mi
+# genuinamente livre no momento da medição. Consumo REAL observado com os 3 serviços rodando (uma
+# sessão de teste, sem carga de mensagens real): wuzapi-postgres ~50MB, rabbitmq ~136MB (idle,
+# Erlang tem piso mais alto), wuzapi ~22MB. Os valores abaixo dão de ~1.4x a ~2.3x de folga sobre
+# o idle observado — ainda conservadores, mas bem mais realistas que os 384m/384m/384m originais
+# (escolhidos sem nenhum dado de capacidade). Recalibrar de novo depois da homologação real com
+# WhatsApp pareado e volume de mensagens de verdade (sessão paga mais RAM que uma sessão vazia).
 
 services:
   wuzapi-postgres:
@@ -24,8 +33,8 @@ services:
     volumes:
       - wuzapi_postgres_data:/var/lib/postgresql/data
     networks: [conversas_internal]
-    mem_limit: 384m
-    mem_reservation: 192m
+    mem_limit: 192m
+    mem_reservation: 96m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wuzapi -d wuzapi"]
       interval: 10s
@@ -43,8 +52,8 @@ services:
     networks: [conversas_internal]
     # UI de gestão (porta 15672) só acessível de dentro da rede interna — para inspecionar em
     # produção, usar túnel SSH (`ssh -L 15672:rabbitmq:15672 ...`), nunca publicar no host.
-    mem_limit: 384m
-    mem_reservation: 192m
+    mem_limit: 320m
+    mem_reservation: 160m
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 15s
@@ -70,8 +79,8 @@ services:
       RABBITMQ_URL: "amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672"
       RABBITMQ_QUEUE: wuzapi.events.raw
     networks: [conversas_internal]
-    mem_limit: 384m
-    mem_reservation: 192m
+    mem_limit: 256m
+    mem_reservation: 128m
     healthcheck:
       # /health é público (sem Authorization) — confirmado em routes.go do WuzAPI. CMD-SHELL (não
       # CMD) porque o healthcheck usa "||" como operador de shell, não um argumento literal do wget.

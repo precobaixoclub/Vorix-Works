@@ -98,14 +98,29 @@ function classifyGenericError(error: unknown): "transient" | "permanent" {
     : "transient";
 }
 
-/** Nack lógico via republish na escada de retry (ver `inbox-rabbitmq-topology.ts`) — nunca usamos
+/**
+ * Nack lógico via republish na escada de retry (ver `inbox-rabbitmq-topology.ts`) — nunca usamos
  * `channel.nack(msg, false, true)` puro (isso recolocaria a mensagem no topo da fila principal
- * imediatamente, um busy-loop sem backoff nenhum). */
-async function retryOrDeadLetter(channel: Channel, queue: string, msg: ConsumeMessage, error: unknown): Promise<void> {
+ * imediatamente, um busy-loop sem backoff nenhum).
+ *
+ * `onDeadLetter` (opcional) roda quando a mensagem esgota a escada — ACHADO AO VIVO (spike Fase
+ * 2): sem isso, uma mensagem que cai na DLQ fica com `inbox_messages.status = 'queued'` PARA
+ * SEMPRE, indistinguível de uma mensagem genuinamente pendente para quem olha a Inbox. É best
+ * effort: se `onDeadLetter` falhar, a mensagem já está durável na DLQ do RabbitMQ (não se perde),
+ * só logamos e seguimos — nunca deixamos essa falha bloquear o ACK.
+ */
+async function retryOrDeadLetter(channel: Channel, queue: string, msg: ConsumeMessage, error: unknown, onDeadLetter?: (content: Buffer) => Promise<void>): Promise<void> {
   const attempt = attemptCountOf(msg);
   const kind = classifyGenericError(error);
   if (kind === "permanent" || attempt >= RETRY_TIERS_MS.length) {
     await publishToDeadLetter(channel, queue, msg.content);
+    if (onDeadLetter) {
+      try {
+        await onDeadLetter(msg.content);
+      } catch (markError) {
+        console.error(`[inbox-worker] falha ao marcar mensagem como failed após DLQ ("${queue}"):`, markError instanceof Error ? markError.message : markError);
+      }
+    }
     channel.ack(msg);
     return;
   }
@@ -114,7 +129,7 @@ async function retryOrDeadLetter(channel: Channel, queue: string, msg: ConsumeMe
   channel.ack(msg);
 }
 
-async function consumeQueue(channel: Channel, queue: string, handle: (content: Buffer) => Promise<void>): Promise<void> {
+async function consumeQueue(channel: Channel, queue: string, handle: (content: Buffer) => Promise<void>, onDeadLetter?: (content: Buffer) => Promise<void>): Promise<void> {
   await channel.prefetch(CONSUMER_PREFETCH);
   await channel.consume(queue, (msg) => {
     if (!msg) return;
@@ -122,7 +137,7 @@ async function consumeQueue(channel: Channel, queue: string, handle: (content: B
       .then(() => channel.ack(msg))
       .catch(async (error) => {
         console.error(`[inbox-worker] erro processando "${queue}":`, error instanceof Error ? error.message : error);
-        await retryOrDeadLetter(channel, queue, msg, error);
+        await retryOrDeadLetter(channel, queue, msg, error, onDeadLetter);
       });
   });
 }
@@ -158,6 +173,23 @@ async function main(): Promise<void> {
 
   const { connection, channel } = await connectInboxRabbitMq(config.inbox.rabbitMqUrl);
   console.log("[inbox-worker] conectado ao RabbitMQ, iniciando consumers.");
+
+  // ACHADO AO VIVO (spike Fase 2): sem isto, uma queda do RabbitMQ (`docker stop rabbitmq`)
+  // derrubava o processo em SILÊNCIO — nenhuma linha de log, nada — porque amqplib emite 'error'/
+  // 'close' na conexão/canal, e um listener de 'error' ausente faz o Node lançar e crashar o
+  // processo sem contexto nenhum. A escolha aqui é DELIBERADA: logar com clareza e sair com
+  // código 1 (nunca tentar reconectar manualmente dentro do mesmo processo) — o `restart:
+  // unless-stopped` do container em produção já cuida de reiniciar um processo limpo; um restart
+  // completo é mais simples e mais confiável do que gerenciar reconexão de canal/consumers no meio
+  // do processo. Preferir "morrer com log claro" a "morrer em silêncio" ou "ficar pendurado".
+  connection.on("error", (error: Error) => {
+    console.error("[inbox-worker] conexão com RabbitMQ caiu:", error.message);
+    process.exit(1);
+  });
+  connection.on("close", () => {
+    console.error("[inbox-worker] conexão com RabbitMQ fechada inesperadamente — encerrando para o restart policy do container religar.");
+    process.exit(1);
+  });
 
   // 1) RawEventConsumer — único ponto que lê o payload bruto do WuzAPI (fila plana nativa dele) e
   // o converte via `mapWuzApiEvent` (anti-corrupção) antes de republicar na exchange própria do
@@ -212,16 +244,34 @@ async function main(): Promise<void> {
   });
 
   // 3) OutboxSenderConsumer — drena o envio outbound enfileirado pela API (`inbox.route.ts`).
-  await consumeQueue(channel, INBOX_QUEUES.outgoing, async (content) => {
-    const payload = JSON.parse(content.toString("utf8")) as { messageId: string };
-    await processOutboundMessage(deps, { messageId: payload.messageId });
-  });
+  // `onDeadLetter` marca a mensagem como `failed` no Postgres quando a escada de retry se esgota
+  // (ou o erro é permanente) — sem isso ela ficava `queued` para sempre, mesmo já morta na DLQ.
+  await consumeQueue(
+    channel,
+    INBOX_QUEUES.outgoing,
+    async (content) => {
+      const payload = JSON.parse(content.toString("utf8")) as { messageId: string };
+      await processOutboundMessage(deps, { messageId: payload.messageId });
+    },
+    async (content) => {
+      const payload = JSON.parse(content.toString("utf8")) as { messageId: string };
+      const message = await deps.messageRepository.getById(payload.messageId);
+      if (message && message.status !== "sent" && message.status !== "failed") {
+        await deps.messageRepository.markFailed(payload.messageId, { lastError: message.lastError ?? "Excedeu a escada de retry.", failedAt: new Date().toISOString() });
+      }
+    },
+  );
 
   // Graceful shutdown (Fase 1, requisito de deploy): para de puxar mensagens novas e dá um tempo
   // curto para o processamento em voo terminar (ACK só acontece após persistência) antes de
   // fechar canal/conexão — nenhuma mensagem em processamento é perdida num deploy.
   const shutdown = async () => {
     console.log("[inbox-worker] encerrando — aguardando processamento em voo...");
+    // Remove os listeners de 'error'/'close' ANTES de fechar de propósito — sem isso, o
+    // `connection.close()" abaixo dispara o handler de "queda inesperada" (achado ao vivo acima)
+    // e o processo sairia com código 1 mesmo num shutdown limpo, pedido por SIGTERM/SIGINT.
+    connection.removeAllListeners("error");
+    connection.removeAllListeners("close");
     try {
       await channel.close();
       await connection.close();

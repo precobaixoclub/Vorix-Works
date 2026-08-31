@@ -6,12 +6,12 @@ const idGenerator = () => `inboxmsg-${Date.now().toString(36)}-${Math.random().t
 export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPort {
   private readonly rows = new Map<string, InboxMessage>();
 
-  async create(input: CreateInboxMessageInput): Promise<InboxMessage> {
+  async create(input: CreateInboxMessageInput): Promise<{ message: InboxMessage; wasCreated: boolean }> {
     if (input.externalMessageId) {
       const existing = [...this.rows.values()].find(
         (row) => row.connectionId === input.connectionId && row.externalMessageId === input.externalMessageId,
       );
-      if (existing) return existing;
+      if (existing) return { message: existing, wasCreated: false };
     }
     const now = new Date().toISOString();
     const created: InboxMessage = {
@@ -36,7 +36,7 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
       sentAt: input.direction === "inbound" ? now : undefined,
     };
     this.rows.set(created.id, created);
-    return created;
+    return { message: created, wasCreated: true };
   }
 
   async getById(id: string): Promise<InboxMessage | undefined> {

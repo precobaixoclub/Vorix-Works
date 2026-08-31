@@ -266,21 +266,33 @@ manualmente (ou documentar exatamente o que precisa de reinício manual, se for 
 - Confirmar que o management UI do RabbitMQ (15672) só é acessado via túnel SSH
   (`ssh -L 15672:127.0.0.1:15672 <host>`), nunca publicado direto pra internet.
 
-## 7. Métricas reais da VPS (antes de fixar limites de recursos)
+## 7. Métricas reais da VPS — JÁ COLETADAS, limites recalibrados
 
-Rodar na VPS de produção e colar o resultado — uma vez ANTES de subir o gateway (baseline) e uma
-vez DEPOIS, com o spike rodando (para ver o consumo real incremental):
+Coletado na VPS de produção (`cmdesk-production`, 209.97.152.212) antes de subir o gateway:
 
-```bash
-free -h
-nproc
-df -h
-docker system df
-docker stats --no-stream
+```
+Mem:  3.8Gi total, 1.8Gi usado, 288Mi livre, 2.0Gi "available", 692Mi de swap já em uso
+CPUs: 2
+Disco: 33GB livres de 67GB (52% usado) — não é o gargalo, RAM/CPU são
 ```
 
-Os limites atuais (`docker-compose.zuno.yml`, `docker-compose.conversas-gateway.yml`) são
-placeholders conservadores (~192-512m por serviço) até esses números chegarem.
+**Achado crítico**: esta VPS não é dedicada ao Vorix — hospeda 7 stacks (`zuno`, `cmdesk`,
+`rumoaoaltar`, `saas_*`), todos competindo pelos mesmos 3.8GB/2 CPUs.
+
+Consumo REAL medido com os 4 containers do gateway rodando (uma sessão de teste, sem WhatsApp
+pareado, sem carga de mensagens de verdade):
+
+| Serviço | Observado (idle) | Limite antigo | Limite recalibrado |
+|---|---|---|---|
+| wuzapi-postgres | ~50MB | 384m | **192m** |
+| rabbitmq | ~136MB | 384m | **320m** |
+| wuzapi | ~22MB | 384m | **256m** |
+| spike-vorix-postgres (só spike) | ~24MB | — | (não existe em produção) |
+| vorix-worker | não medido como container (rodou como processo comum no spike) | 384m | **256m** (estimativa) |
+
+Já aplicado em `docker-compose.conversas-gateway.yml` e `docker-compose.zuno.yml`. **Recalibrar de
+novo depois da homologação real** — uma sessão pareada de verdade, com histórico de mensagens e
+mídia, consome mais que uma sessão vazia.
 
 ## 8. Pendência obrigatória registrada: backup/retenção/restore
 
@@ -299,18 +311,104 @@ docker compose -f docker-compose.conversas-gateway.yml -f docker-compose.convers
 docker network rm conversas_internal   # só se não for reaproveitar para o deploy real depois
 ```
 
+## 10. Resultados desta rodada — tudo que NÃO depende de WhatsApp pareado
+
+Sem celular disponível, validamos tudo que dá pra validar com `FakeMessagingProvider` + eventos
+sintéticos (payload no formato real confirmado via código-fonte) contra o gateway real (RabbitMQ +
+Postgres containerizados na VPS) e, para os dois testes de indisponibilidade, contra o container
+real do WuzAPI (sem sessão pareada). **6 bugs reais encontrados e corrigidos**, nenhum encontrável
+só lendo código:
+
+1. Header de sessão errado (`Authorization` → `token`) — seção 3.
+2. Casing de campo real (PascalCase → lowercase/camelCase em `/session/status`/`/session/connect`).
+3. Tamanho da chave de criptografia (64 → 32 caracteres).
+4. `registerInboundMessage` incrementava `unread_count` a cada reentrega do MESMO evento, mesmo a
+   mensagem sendo corretamente deduplicada — corrigido com `wasCreated` no retorno de
+   `messageRepository.create()`.
+5. Mensagem que esgota a escada de retry (DLQ) ficava com `status: 'queued'` PARA SEMPRE — nada
+   marcava como `failed`. Corrigido: `onDeadLetter` callback no worker chama `markFailed`.
+6. Queda do RabbitMQ derrubava o `vorix-worker` em SILÊNCIO (nenhum log) — `connection.on('error'
+   | 'close')` ausente. Corrigido: log claro + `process.exit(1)` (deixa o `restart: unless-stopped`
+   do container religar com contexto no log). Shutdown gracioso (SIGTERM) ajustado pra não disparar
+   esse mesmo handler.
+7. (Refinamento, não bug per se) `classifyHttpError` tratava TODO HTTP 500 como transitório —
+   "no session"/"the store doesn't contain a device JID" são permanentes (exigem reautenticação,
+   nunca resolvidos por retry). Agora classificados como `session_logged_out` → DLQ imediata em
+   vez de gastar os ~380s da escada inteira numa causa que retry nenhum resolve.
+
+Testes executados e resultado, ponta a ponta contra RabbitMQ/Postgres reais:
+
+- [x] Processamento inbound (evento sintético → contato/conversa/mensagem no Postgres).
+- [x] Outbound queue (`sendInboxMessage` → `FakeMessagingProvider` → `sent`).
+- [x] Idempotência (mesmo evento republicado duas vezes → 1 mensagem só, `unread_count` correto).
+- [x] Atualização de status (delivered → read, timestamps corretos, `delivered_at` preservado).
+- [x] Retry 5s/15s/60s/300s — progressão cronometrada e confirmada com timestamps reais (não
+      estimativa): tier a tier, sem busy-loop, `attempt_count` incrementando corretamente.
+- [x] DLQ — confirmada tanto pela escada natural completa (2 mensagens chegaram lá sozinhas) quanto
+      por injeção de fronteira (`x-attempt=4`) para verificação rápida.
+- [x] ACK/NACK correto — nunca duplicou mensagem, fila principal sempre vazia entre processamentos.
+- [x] Graceful shutdown (SIGTERM) — log limpo, sem falso alarme de "conexão caiu".
+- [x] Restart do worker após crash (`kill -9`) — sem duplicar, sem perder mensagem.
+- [x] Indisponibilidade do WuzAPI (container real parado/religado) — outbound fica `queued`,
+      histórico continua consultável, drena sozinho depois (achado extra: sessão precisa de
+      `/session/connect` de novo após restart do container — mapeado para Fase 6/health monitor).
+- [x] Indisponibilidade do RabbitMQ — WuzAPI tem retry próprio limitado (10 tentativas, ~30s) e
+      DESISTE de vez depois disso, sem crashar e sem reportar isso no `/health` — **risco
+      operacional real, ver seção 11**. `vorix-worker` agora morre com log claro (item 6 acima) em
+      vez de travar em silêncio.
+- [ ] Circuit breaker — **fora de escopo ainda** (Fase 6 no plano original, nunca implementado).
+- [x] Isolamento cross-tenant — já coberto por 7 testes automatizados contra Postgres real
+      (`tests/inbox-persistence.test.mjs`); a correlação de evento usa sempre `connectionRow.
+      tenantId/workspaceId` (nunca um valor do payload bruto), seguro por construção.
+- [x] Recuperação após falha — worker, RabbitMQ e WuzAPI todos testados e recuperados sem perda.
+
+## 11. Risco operacional novo, registrado para a Fase 6
+
+WuzAPI não reconecta sozinho ao RabbitMQ depois de esgotar as 10 tentativas iniciais (~30s), e seu
+`/health` continua respondendo `"status":"ok"` mesmo nesse estado — nem o container crasha (então
+`restart: unless-stopped` não ajuda) nem o healthcheck detecta o problema. Uma queda do RabbitMQ
+mais longa que ~30s silenciosamente para todo o fluxo de eventos do WhatsApp até alguém reiniciar o
+container do WuzAPI manualmente. **Ação necessária na Fase 6** (health monitor): detectar esse
+estado (ex.: heartbeat sintético pela fila, ou parsear o log por "Failed to reconnect to RabbitMQ")
+e disparar `docker restart wuzapi` automaticamente.
+
+## RUNTIME_VALIDATION_PENDING_QR
+
+Estes itens EXIGEM uma sessão de WhatsApp real autenticada (celular escaneando o QR) e **não estão
+comprovados** — não tratar como validados até a rodada de homologação real:
+
+- `RUNTIME_VALIDATION_PENDING_QR`: recebimento real de mensagem pelo WhatsApp (forma exata de
+  `event.Message` para texto/mídia — hoje é suposição, mesmo que a validada via wmiau.go).
+- `RUNTIME_VALIDATION_PENDING_QR`: envio real para outro número de WhatsApp.
+- `RUNTIME_VALIDATION_PENDING_QR`: `delivered`/`read` reais (o teste desta rodada usou eventos
+  sintéticos — a FORMA do `state`/`MessageIDs` real nunca foi confirmada ao vivo).
+- `RUNTIME_VALIDATION_PENDING_QR`: reconexão após queda de uma sessão AUTENTICADA (o teste desta
+  rodada usou uma sessão nunca pareada — comportamento de reconexão do whatsmeow com uma sessão
+  real pode diferir).
+- `RUNTIME_VALIDATION_PENDING_QR`: logout/revogação reais (evento `LoggedOut` do WuzAPI nunca
+  observado ao vivo — só sintetizado).
+- `RUNTIME_VALIDATION_PENDING_QR`: nomes de campo de `sendImage`/`sendAudio`/`sendVideo`/
+  `sendDocument` (só `sendText` foi confirmado contra a instância real).
+
 ## Critério de conclusão da Fase 2
 
-Só avançar para a Fase 3 (SSE/realtime, Inbox completa) quando TODOS os itens abaixo estiverem
-confirmados com uma instância real:
+**Aprovada para avançar à Fase 3 com o escopo que não depende de pareamento** (provider abstrato,
+fixtures, worker, pipeline de eventos) — mas o módulo **não deve ser habilitado para um número de
+produção** até a homologação real fechar os itens `RUNTIME_VALIDATION_PENDING_QR` acima.
+`CONVERSATIONS_MODULE_ENABLED` continua `false` em todo lugar até essa homologação acontecer.
 
-- [ ] Contratos HTTP (seção 3) confirmados; `wuzapi-client.ts` corrigido onde divergiu.
-- [ ] Payloads de evento reais capturados e sanitizados; `wuzapi-event-mapper.ts` corrigido onde
-      divergiu.
-- [ ] Fluxo ponta a ponta inbound e outbound provado (seção 4).
-- [ ] Duplicidade, retry, DLQ, reconexão, logout, WuzAPI/worker/RabbitMQ fora do ar (seção 5)
-      todos testados com resultado documentado.
-- [ ] Isolamento de rede confirmado (seção 6).
-- [ ] Métricas reais da VPS coletadas (seção 7, baseline + com carga) e limites recalibrados.
-- [ ] Backup/retenção/restore (seção 8) OU aceito explicitamente como risco conhecido.
+- [x] Contratos HTTP (seção 3) confirmados onde testável sem pareamento; `wuzapi-client.ts`
+      corrigido (3 achados reais).
+- [x] Payloads de evento sintéticos processados corretamente pelo pipeline real;
+      `wuzapi-event-mapper.ts` já reflete a estrutura confirmada via código-fonte — a FORMA exata
+      de mídia real continua `RUNTIME_VALIDATION_PENDING_QR`.
+- [x] Fluxo ponta a ponta inbound e outbound provado (seção 4/10) com `FakeMessagingProvider`.
+- [x] Duplicidade, retry, DLQ, restart, WuzAPI/RabbitMQ fora do ar (seção 10) testados e
+      documentados — 4 bugs reais corrigidos.
+- [x] Isolamento de rede confirmado (seção 6) — nada exposto além do necessário.
+- [x] Métricas reais da VPS coletadas (seção 7) e limites de recursos recalibrados com dado real.
+- [ ] Backup/retenção/restore (seção 8) — continua pendente, aceito como risco conhecido por
+      enquanto (não bloqueia Fase 3, mas bloqueia produção real).
+- [ ] `RUNTIME_VALIDATION_PENDING_QR` (seção acima) — bloqueia especificamente habilitar
+      `CONVERSATIONS_MODULE_ENABLED` para um número de produção, não bloqueia construir a Fase 3.
 - [ ] Confirmado que nenhum container do Vorix foi parado/reiniciado/afetado durante o spike.

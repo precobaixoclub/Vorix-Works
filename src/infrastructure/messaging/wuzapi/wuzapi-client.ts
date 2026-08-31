@@ -28,12 +28,20 @@ import { MessagingProviderError } from "../../../application/ports/messaging-pro
  *  - `/session/logout` é um endpoint DISTINTO de `/session/disconnect` — logout revoga a sessão de
  *    verdade (o usuário precisaria escanear QR de novo); disconnect só derruba o socket. Ainda não
  *    testado ao vivo (pendência do restante do spike).
+ *  - **Nem todo HTTP 500 é transitório** — confirmado ao vivo que `/chat/send/text` devolve 500
+ *    tanto para "no session" (container reiniciou, socket perdido) quanto para "the store doesn't
+ *    contain a device JID" (sessão nunca foi pareada/perdeu o pareamento) — os dois exigem
+ *    reautenticação (reconectar ou escanear QR de novo), NUNCA resolvidos por retry. Classificar
+ *    esses dois como status 500 genérico faria o worker gastar a escada de retry inteira (~380s)
+ *    numa causa que retry nenhum resolve — `classifyHttpError` já detecta esse padrão no corpo da
+ *    resposta e classifica como `session_logged_out` em vez de `transient`.
  *
  * AINDA NÃO CONFIRMADO (pendência do restante do spike, ver docs/conversas-fase2-spike.md): os
  * nomes exatos dos campos de `sendImage`/`sendAudio`/`sendVideo`/`sendDocument`, e se `sendText`
  * (`{ Phone, Body }`, PascalCase, único endpoint testado ao vivo até agora) representa o padrão de
  * TODAS as rotas de envio ou só desta — dado o mix de casing já encontrado em `/session/*`, não dá
- * mais para assumir por analogia sem testar cada uma.
+ * mais para assumir por analogia sem testar cada uma. Também não confirmado: se existem OUTRAS
+ * mensagens de erro de "sessão não autenticada" além das duas listadas acima.
  */
 
 export type WuzApiClientConfig = {
@@ -44,9 +52,18 @@ export type WuzApiClientConfig = {
 
 type WuzApiEnvelope<T> = { code: number; data: T; success: boolean };
 
+/** Fragmentos confirmados ao vivo (spike Fase 2) que indicam sessão não autenticada — reconectar
+ * ou escanear QR de novo, NUNCA resolvido por retry. Case-insensitive, checado no corpo bruto da
+ * resposta antes de cair no fallback genérico por status HTTP. */
+const SESSION_LOGGED_OUT_PATTERNS = ["no session", "doesn't contain a device jid", "not logged in", "not connected"];
+
 function classifyHttpError(status: number, body: string): MessagingProviderError {
   if (status === 401 || status === 403) return new MessagingProviderError("auth", `WuzAPI recusou autenticação (status ${status}): ${body}`);
   if (status === 429) return new MessagingProviderError("rate_limit", `WuzAPI rate limit (status ${status}): ${body}`);
+  const lowerBody = body.toLowerCase();
+  if (SESSION_LOGGED_OUT_PATTERNS.some((pattern) => lowerBody.includes(pattern))) {
+    return new MessagingProviderError("session_logged_out", `WuzAPI reporta sessão não autenticada (status ${status}): ${body}`);
+  }
   if (status >= 500 || status === 408) return new MessagingProviderError("transient", `WuzAPI indisponível (status ${status}): ${body}`);
   return new MessagingProviderError("permanent", `WuzAPI rejeitou a requisição (status ${status}): ${body}`);
 }

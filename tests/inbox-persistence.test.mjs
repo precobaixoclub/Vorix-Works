@@ -8,6 +8,7 @@ import { PostgresMessagingConnectionRepository } from "../dist/infrastructure/st
 import { PostgresInboxContactRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-contact-repository.js";
 import { PostgresInboxConversationRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-conversation-repository.js";
 import { PostgresInboxMessageRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-message-repository.js";
+import { registerInboundMessage } from "../dist/application/inbox/inbox-use-cases.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
 /**
@@ -112,7 +113,9 @@ test("PostgresInboxMessageRepository: create() com o mesmo (connectionId, extern
   const first = await messageRepo.create(input);
   const second = await messageRepo.create(input); // simula reentrega do mesmo evento pelo RabbitMQ
 
-  assert.equal(first.id, second.id, "o mesmo externalMessageId na mesma conexão nunca deve gerar uma segunda mensagem");
+  assert.equal(first.message.id, second.message.id, "o mesmo externalMessageId na mesma conexão nunca deve gerar uma segunda mensagem");
+  assert.equal(first.wasCreated, true);
+  assert.equal(second.wasCreated, false, "reentrega deve reportar wasCreated=false — é o que registerInboundMessage usa para não incrementar unread_count de novo");
 
   const count = await db.pool.query("select count(*)::int as count from inbox_messages where connection_id = $1 and external_message_id = $2", [connection.id, "wamid.duplicated-event"]);
   assert.equal(count.rows[0].count, 1);
@@ -133,7 +136,9 @@ test("PostgresInboxMessageRepository: mensagens outbound sem externalMessageId (
   const first = await messageRepo.create({ ...base, body: "Mensagem 1" });
   const second = await messageRepo.create({ ...base, body: "Mensagem 2" });
 
-  assert.notEqual(first.id, second.id, "duas mensagens queued sem externalMessageId (NULL) não podem ser tratadas como a mesma");
+  assert.notEqual(first.message.id, second.message.id, "duas mensagens queued sem externalMessageId (NULL) não podem ser tratadas como a mesma");
+  assert.equal(first.wasCreated, true);
+  assert.equal(second.wasCreated, true);
 });
 
 test("Isolamento multi-tenant: listByWorkspace() nunca mistura conexões/conversas de tenants diferentes", async () => {
@@ -160,4 +165,35 @@ test("Isolamento multi-tenant: listByWorkspace() nunca mistura conexões/convers
   const conversationsB = await conversationRepo.listByWorkspace({ tenantId: "tenant-iso-b", workspaceId: workspaceB.id });
   assert.deepEqual(conversationsA.map((c) => c.id), [conversationA.id]);
   assert.deepEqual(conversationsB, [], "workspace B não pode ver a conversa criada no workspace A");
+});
+
+test("registerInboundMessage: reentrega do mesmo evento NÃO incrementa unread_count de novo (achado ao vivo, spike Fase 2)", async () => {
+  const workspace = await makeWorkspace("tenant-unread-1");
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+
+  const connection = await connectionRepo.create({ tenantId: "tenant-unread-1", workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo };
+
+  const input = {
+    tenantId: "tenant-unread-1",
+    workspaceId: workspace.id,
+    connectionId: connection.id,
+    fromPhone: "5511944443333",
+    fromName: "Contato Teste",
+    externalMessageId: "wamid.regressao-unread",
+    type: "text",
+    body: "Oi",
+    occurredAt: new Date().toISOString(),
+  };
+
+  const first = await registerInboundMessage(deps, input);
+  const second = await registerInboundMessage(deps, input); // simula reentrega do mesmo evento (RabbitMQ redelivery)
+
+  assert.equal(first.message.id, second.message.id, "reentrega não pode gerar uma segunda mensagem");
+
+  const conversation = await conversationRepo.getById(first.conversation.id);
+  assert.equal(conversation.unreadCount, 1, "reentrega do mesmo evento não pode incrementar unread_count de novo — bug real encontrado no spike, corrigido via wasCreated");
 });

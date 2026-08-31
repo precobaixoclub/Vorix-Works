@@ -152,7 +152,7 @@ export async function sendInboxMessage(deps: InboxUseCaseDeps, input: SendInboxM
   const body = input.body.trim();
   if (!body) throw new Error("INBOX_MESSAGE_BODY_EMPTY: a mensagem não pode ser vazia.");
 
-  const message = await deps.messageRepository.create({
+  const { message } = await deps.messageRepository.create({
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
     conversationId: conversation.id,
@@ -186,6 +186,11 @@ export type RegisterInboundMessageInput = {
  * Idempotente ponta a ponta: `upsertByPhone` nunca duplica contato, `findOrCreate` nunca duplica
  * conversa, `messageRepository.create` nunca duplica mensagem (constraint `(connection_id,
  * external_message_id)`) — uma reentrega do mesmo evento é inofensiva.
+ *
+ * ACHADO AO VIVO (spike Fase 2): `markLastMessage`/`incrementUnread` só pode rodar quando a
+ * mensagem foi REALMENTE inserida agora (`wasCreated`) — sem essa checagem, uma reentrega do
+ * mesmo evento (mensagem corretamente deduplicada) ainda incrementava `unread_count` de novo,
+ * fazendo o contador de não lidas divergir do número real de mensagens.
  */
 export async function registerInboundMessage(deps: InboxUseCaseDeps, input: RegisterInboundMessageInput): Promise<{ contact: InboxContact; conversation: InboxConversation; message: InboxMessage }> {
   const phoneNormalized = normalizePhoneNumber(input.fromPhone);
@@ -201,7 +206,7 @@ export async function registerInboundMessage(deps: InboxUseCaseDeps, input: Regi
     connectionId: input.connectionId,
     contactId: contact.id,
   });
-  const message = await deps.messageRepository.create({
+  const { message, wasCreated } = await deps.messageRepository.create({
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
     conversationId: conversation.id,
@@ -211,7 +216,9 @@ export async function registerInboundMessage(deps: InboxUseCaseDeps, input: Regi
     type: input.type,
     body: input.body,
   });
-  await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: input.occurredAt, incrementUnread: true });
+  if (wasCreated) {
+    await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: input.occurredAt, incrementUnread: true });
+  }
   return { contact, conversation, message };
 }
 

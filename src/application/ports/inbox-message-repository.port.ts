@@ -27,8 +27,14 @@ export type InboxMessageRepositoryPort = {
    * retorna a linha já existente em vez de lançar/duplicar (ver `unique` na migration e
    * `insert ... on conflict do nothing` no adapter Postgres). Essencial porque eventos de fila
    * podem ser entregues mais de uma vez.
+   *
+   * `wasCreated` distingue "inseriu uma linha nova" de "reentrega, devolveu a linha existente" —
+   * ACHADO AO VIVO (spike Fase 2): sem isso, `registerInboundMessage` incrementava
+   * `unread_count`/`lastMessageAt` da conversa a cada reentrega do MESMO evento, mesmo a mensagem
+   * em si sendo corretamente deduplicada. Todo chamador que atualiza estado derivado (contador de
+   * não lidas, "última mensagem") deve checar `wasCreated` antes de agir.
    */
-  create(input: CreateInboxMessageInput): Promise<InboxMessage>;
+  create(input: CreateInboxMessageInput): Promise<{ message: InboxMessage; wasCreated: boolean }>;
   getById(id: string): Promise<InboxMessage | undefined>;
   listByConversation(input: { tenantId: string; workspaceId: string; conversationId: string; cursor?: string; limit?: number }): Promise<InboxMessage[]>;
   /** Usado pelo consumer de status (delivery/read receipts) e pelo `OutboxSenderConsumer`. Ignora

@@ -1,0 +1,68 @@
+name: conversas-gateway
+
+# OVERRIDE de uso EXCLUSIVO do spike de verificação da Fase 2 (docs/conversas-fase2-spike.md).
+# NUNCA usar em produção. Sempre combinado com o arquivo base:
+#
+#   docker compose --env-file .env.conversas \
+#     -f docker-compose.conversas-gateway.yml -f docker-compose.conversas-gateway.spike.yml \
+#     up -d
+#
+# O que este arquivo muda em relação à produção:
+#   1) publica wuzapi:8080 e rabbitmq:5672/15672 em 127.0.0.1 (loopback da própria VPS) — só para
+#      o `vorix-worker` do spike, rodando como processo `node` comum (fora de container) na mesma
+#      máquina, conseguir alcançá-los. Nunca em 0.0.0.0 — não fica acessível pela internet.
+#   2) adiciona um Postgres DESCARTÁVEL (`spike-vorix-postgres`) só para o schema do Vorix
+#      (migrations 0080-0083 + tabelas já existentes que o worker toca) — NUNCA o `zuno-postgres`
+#      real, para não misturar tráfego de teste de WhatsApp com dado de produção.
+#   3) REDUZ mem_limit dos 3 serviços do arquivo base — achado ao vivo (spike, VPS de produção):
+#      o host tem só 3.8GB RAM / 2 CPUs compartilhados entre 7 stacks (zuno/cmdesk/rumoaoaltar/
+#      saas_*), com ~288Mi genuinamente livre e swap já em uso no momento do spike. Os limites de
+#      384m do arquivo base (pensados sem dado real de capacidade) ficam de lado até a Fase 6
+#      recalibrar com o consumo observado — aqui usamos o mínimo que cada imagem tolera sem OOM
+#      no boot (RabbitMQ/Erlang precisa de mais folga que Postgres/WuzAPI).
+#
+# Ao final do spike: `docker compose -f docker-compose.conversas-gateway.yml -f
+# docker-compose.conversas-gateway.spike.yml down -v` remove os 4 containers deste projeto
+# (`conversas-gateway`) e os volumes descartáveis — nunca afeta o projeto `zuno` (Vorix).
+
+services:
+  wuzapi-postgres:
+    mem_limit: 160m
+    mem_reservation: 96m
+
+  rabbitmq:
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    mem_limit: 256m
+    mem_reservation: 160m
+
+  wuzapi:
+    ports:
+      - "127.0.0.1:8080:8080"
+    mem_limit: 192m
+    mem_reservation: 128m
+
+  spike-vorix-postgres:
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      POSTGRES_USER: vorix_spike
+      POSTGRES_PASSWORD: ${SPIKE_VORIX_POSTGRES_PASSWORD}
+      POSTGRES_DB: vorix_spike
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - spike_vorix_postgres_data:/var/lib/postgresql/data
+    networks: [conversas_internal]
+    mem_limit: 128m
+    mem_reservation: 64m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vorix_spike -d vorix_spike"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  spike_vorix_postgres_data:
+    name: spike_vorix_postgres_data

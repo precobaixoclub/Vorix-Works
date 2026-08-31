@@ -195,6 +195,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       workspaceRepository: app.zunoContainer.workspaceRepository,
       outboundQueue: app.zunoContainer.inboxOutboundQueue,
       provider: app.zunoContainer.inboxProvider,
+      realtimeSubscriber: app.zunoContainer.inboxRealtimeSubscriber,
     });
   }
   await registerMetaAdsRoutes(app, {

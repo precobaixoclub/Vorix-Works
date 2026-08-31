@@ -12,6 +12,7 @@ import {
   connectInboxRabbitMq,
   INBOX_EVENTS_EXCHANGE,
   INBOX_QUEUES,
+  publishRealtimeNotification,
   publishToDeadLetter,
   publishToRetryTier,
   RETRY_TIERS_MS,
@@ -210,17 +211,20 @@ async function main(): Promise<void> {
       console.warn(`[inbox-worker] evento para conexão desconhecida "${mapped.connectionId}", descartado.`);
       return;
     }
-    const enriched: NormalizedInboxEvent =
-      mapped.type === "message.inbound" ? { ...mapped, tenantId: connectionRow.tenantId, workspaceId: connectionRow.workspaceId } : mapped;
+    // Todo evento normalizado carrega tenantId/workspaceId — mais barato enriquecer aqui (já
+    // temos `connectionRow`) do que cada consumer de fila fazer sua própria consulta.
+    const enriched: NormalizedInboxEvent = { ...mapped, tenantId: connectionRow.tenantId, workspaceId: connectionRow.workspaceId } as NormalizedInboxEvent;
 
     const routingKey = enriched.type;
     channel.publish(INBOX_EVENTS_EXCHANGE, routingKey, Buffer.from(JSON.stringify(enriched)), { persistent: true });
   });
 
-  // 2) Fan-out por assunto — cada fila só processa o seu tipo de evento normalizado.
+  // 2) Fan-out por assunto — cada fila só processa o seu tipo de evento normalizado. Cada um
+  // publica uma notificação leve em `inbox.realtime` (Fase 3) depois de persistir — o SSE da API
+  // só usa isso como gatilho pra revalidar, nunca como fonte de verdade (ver publishRealtimeNotification).
   await consumeQueue(channel, INBOX_QUEUES.incoming, async (content) => {
     const event = JSON.parse(content.toString("utf8")) as Extract<NormalizedInboxEvent, { type: "message.inbound" }>;
-    await registerInboundMessage(deps, {
+    const { conversation } = await registerInboundMessage(deps, {
       tenantId: event.tenantId,
       workspaceId: event.workspaceId,
       connectionId: event.connectionId,
@@ -231,16 +235,19 @@ async function main(): Promise<void> {
       body: event.body,
       occurredAt: event.occurredAt,
     });
+    publishRealtimeNotification(channel, { type: "message.created", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
   });
 
   await consumeQueue(channel, INBOX_QUEUES.status, async (content) => {
     const event = JSON.parse(content.toString("utf8")) as Extract<NormalizedInboxEvent, { type: "message.status" }>;
     await applyMessageStatusChanged(deps, { connectionId: event.connectionId, externalMessageId: event.externalMessageId, status: event.status, occurredAt: event.occurredAt });
+    publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId });
   });
 
   await consumeQueue(channel, INBOX_QUEUES.connection, async (content) => {
     const event = JSON.parse(content.toString("utf8")) as Extract<NormalizedInboxEvent, { type: "connection.state" }>;
     await applyConnectionStateChanged(deps, { connectionId: event.connectionId, status: event.status, phoneNumber: event.phoneNumber });
+    publishRealtimeNotification(channel, { type: "connection.status_changed", tenantId: event.tenantId, workspaceId: event.workspaceId, connectionId: event.connectionId, status: event.status });
   });
 
   // 3) OutboxSenderConsumer — drena o envio outbound enfileirado pela API (`inbox.route.ts`).
@@ -251,7 +258,10 @@ async function main(): Promise<void> {
     INBOX_QUEUES.outgoing,
     async (content) => {
       const payload = JSON.parse(content.toString("utf8")) as { messageId: string };
-      await processOutboundMessage(deps, { messageId: payload.messageId });
+      const message = await processOutboundMessage(deps, { messageId: payload.messageId });
+      if (message) {
+        publishRealtimeNotification(channel, { type: "message.updated", tenantId: message.tenantId, workspaceId: message.workspaceId, conversationId: message.conversationId });
+      }
     },
     async (content) => {
       const payload = JSON.parse(content.toString("utf8")) as { messageId: string };

@@ -26,6 +26,8 @@ export type InboundMessageReceived = {
 
 export type MessageStatusChanged = {
   type: "message.status";
+  tenantId: string;
+  workspaceId: string;
   connectionId: string;
   externalSessionId: string;
   externalMessageId: string;
@@ -35,6 +37,8 @@ export type MessageStatusChanged = {
 
 export type ConnectionStateChanged = {
   type: "connection.state";
+  tenantId: string;
+  workspaceId: string;
   connectionId: string;
   externalSessionId: string;
   status: MessagingConnectionStatus;

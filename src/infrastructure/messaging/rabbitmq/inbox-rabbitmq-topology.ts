@@ -98,6 +98,17 @@ export async function publishToDeadLetter(channel: Channel, queue: string, conte
   channel.sendToQueue(dlqName(queue), content, { persistent: true });
 }
 
+/**
+ * Publica uma notificação de realtime (Fase 3) na exchange fanout `inbox.realtime` — best effort
+ * de propósito (`durable: false`, sem persistência): se nenhuma instância de `zuno-api` estiver
+ * ouvindo no momento, a notificação simplesmente não é entregue a ninguém, e não faz falta — o
+ * próximo fetch normal da Inbox (SWR) já traz o estado atualizado. Nunca é a fonte de verdade,
+ * só um gatilho pra atualizar a UI mais rápido que o polling de fallback.
+ */
+export function publishRealtimeNotification(channel: Channel, notification: Record<string, unknown>): void {
+  channel.publish(INBOX_REALTIME_EXCHANGE, "", Buffer.from(JSON.stringify(notification)));
+}
+
 export async function connectInboxRabbitMq(url: string): Promise<{ connection: ChannelModel; channel: Channel }> {
   const connection = await amqplib.connect(url);
   const channel = await connection.createChannel();

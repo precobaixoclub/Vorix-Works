@@ -26,6 +26,10 @@ export type InboxConversation = {
   unreadCount: number;
   aiEnabled: boolean;
   automationEnabled: boolean;
+  /** Denormalizado pela listagem (`GET /v1/inbox/conversations`) — nunca vem no `getById()`, que
+   * hoje nem existe como rota própria (a Fase 1 não tem "abrir 1 conversa" isolado, só a lista). */
+  contactName?: string;
+  contactPhone: string;
 };
 
 export type InboxConversationFilter = "all" | "mine" | "unassigned" | "unread";

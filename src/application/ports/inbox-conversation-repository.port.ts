@@ -11,11 +11,16 @@ export type FindOrCreateInboxConversationInput = {
 
 export type InboxConversationListFilter = "all" | "mine" | "unassigned" | "unread";
 
+/** Read-model só de listagem (Fase 3) — denormaliza nome/telefone do contato pra Inbox não
+ * precisar de uma segunda chamada por conversa. Nunca usado fora de `listByWorkspace`; toda
+ * escrita continua contra `InboxConversation` puro. */
+export type InboxConversationListItem = InboxConversation & { contactName?: string; contactPhone: string };
+
 export type InboxConversationRepositoryPort = {
   /** Idempotente por `(connectionId, contactId)` — nunca cria uma segunda conversa pro mesmo par. */
   findOrCreate(input: FindOrCreateInboxConversationInput): Promise<InboxConversation>;
   getById(id: string): Promise<InboxConversation | undefined>;
-  listByWorkspace(input: { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string }): Promise<InboxConversation[]>;
+  listByWorkspace(input: { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string }): Promise<InboxConversationListItem[]>;
   markLastMessage(id: string, input: { lastMessageAt: string; incrementUnread: boolean }): Promise<void>;
   markRead(id: string): Promise<void>;
   assign(id: string, assignedUserId: string | undefined): Promise<InboxConversation>;

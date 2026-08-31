@@ -1,14 +1,20 @@
 import type {
   FindOrCreateInboxConversationInput,
   InboxConversationListFilter,
+  InboxConversationListItem,
   InboxConversationRepositoryPort,
 } from "../../application/ports/inbox-conversation-repository.port.js";
+import type { InboxContactRepositoryPort } from "../../application/ports/inbox-contact-repository.port.js";
 import type { InboxConversation, InboxConversationStatus } from "../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 export class InMemoryInboxConversationRepository implements InboxConversationRepositoryPort {
   private readonly rows = new Map<string, InboxConversation>();
+
+  /** Opcional — só usado para denormalizar nome/telefone do contato em `listByWorkspace` (read-model
+   * de Fase 3). Sem isso, a listagem ainda funciona, só sem `contactName`/`contactPhone`. */
+  constructor(private readonly contactRepository?: InboxContactRepositoryPort) {}
 
   async findOrCreate(input: FindOrCreateInboxConversationInput): Promise<InboxConversation> {
     const existing = [...this.rows.values()].find(
@@ -42,7 +48,7 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     workspaceId: string;
     filter?: InboxConversationListFilter;
     assignedUserId?: string;
-  }): Promise<InboxConversation[]> {
+  }): Promise<InboxConversationListItem[]> {
     let rows = [...this.rows.values()].filter((row) => row.tenantId === input.tenantId && row.workspaceId === input.workspaceId);
     switch (input.filter) {
       case "mine":
@@ -57,7 +63,13 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
       default:
         break;
     }
-    return rows.sort((a, b) => (b.lastMessageAt ?? b.createdAt).localeCompare(a.lastMessageAt ?? a.createdAt));
+    const sorted = rows.sort((a, b) => (b.lastMessageAt ?? b.createdAt).localeCompare(a.lastMessageAt ?? a.createdAt));
+    const items: InboxConversationListItem[] = [];
+    for (const row of sorted) {
+      const contact = await this.contactRepository?.getById(row.contactId);
+      items.push({ ...row, contactName: contact?.name, contactPhone: contact?.phoneNormalized ?? "" });
+    }
+    return items;
   }
 
   async markLastMessage(id: string, input: { lastMessageAt: string; incrementUnread: boolean }): Promise<void> {

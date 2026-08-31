@@ -42,6 +42,7 @@ import { DEFAULT_INBOX_FEATURE_FLAGS } from "../../../application/inbox/inbox-fe
 import { FakeMessagingProvider } from "../../../infrastructure/messaging/fake-messaging-provider.js";
 import { InMemoryOutboundMessageQueue } from "../../../infrastructure/messaging/in-memory-outbound-message-queue.js";
 import { RabbitMqOutboundMessageQueue } from "../../../infrastructure/messaging/rabbitmq/rabbitmq-outbound-message-queue.js";
+import { InboxRealtimeSubscriber } from "../../../infrastructure/messaging/rabbitmq/inbox-realtime-subscriber.js";
 import { WuzApiClient } from "../../../infrastructure/messaging/wuzapi/wuzapi-client.js";
 import { WuzApiMessagingProvider } from "../../../infrastructure/messaging/wuzapi/wuzapi-messaging-provider.js";
 import type { AIProviderPort } from "../../../application/ports/ai-provider.port.js";
@@ -325,6 +326,10 @@ export type ApiContainer = {
   /** `RabbitMqOutboundMessageQueue` quando `INBOX_RABBITMQ_URL` está configurado; senão
    * `InMemoryOutboundMessageQueue` (dev/teste, sem broker). */
   inboxOutboundQueue: OutboundMessageQueuePort;
+  /** SSE (Fase 3) — `undefined` sem `INBOX_RABBITMQ_URL` configurado (a rota SSE ainda funciona,
+   * só nunca recebe notificação nenhuma nesse caso). Conecta de forma LAZY, só no primeiro
+   * cliente SSE (`.start()` chamado pela própria rota) — nunca bloqueia o boot do container. */
+  inboxRealtimeSubscriber?: InboxRealtimeSubscriber;
   objectStorage: ObjectStoragePort;
   /** Remoção de fundo de logo via IA (`POST /v1/images/edits`, `background: "transparent"`) —
    * ver `openai-background-removal.ts`. Nunca registra Asset por conta própria; a rota exige
@@ -454,6 +459,11 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   const inboxOutboundQueue: OutboundMessageQueuePort = config?.inbox.rabbitMqUrl
     ? new RabbitMqOutboundMessageQueue(config.inbox.rabbitMqUrl)
     : new InMemoryOutboundMessageQueue();
+  // SSE (Fase 3) — construído sempre que há broker configurado, mas só conecta de fato (`.start()`)
+  // no primeiro cliente SSE de verdade (ver `inbox.route.ts`), nunca no boot do container.
+  const inboxRealtimeSubscriber: InboxRealtimeSubscriber | undefined = config?.inbox.rabbitMqUrl
+    ? new InboxRealtimeSubscriber(config.inbox.rabbitMqUrl)
+    : undefined;
 
   // Falha alto e cedo no boot em vez de deixar uma execução descobrir ambiguidade/ausência de
   // motor criativo no meio do caminho — ver `creative-engine-mode.ts`.
@@ -1325,6 +1335,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       inboxFeatureFlags,
       inboxProvider,
       inboxOutboundQueue,
+      inboxRealtimeSubscriber,
       aiGateway: gatedAiGateway,
       aiExtractionEnabled,
       aiMediaProviderAdapters,
@@ -1414,6 +1425,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     inboxFeatureFlags,
     inboxProvider,
     inboxOutboundQueue,
+    inboxRealtimeSubscriber,
     aiGateway,
     aiExtractionEnabled,
     aiMediaProviderAdapters,

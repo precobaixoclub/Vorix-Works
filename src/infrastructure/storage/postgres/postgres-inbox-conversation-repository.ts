@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import type {
   FindOrCreateInboxConversationInput,
   InboxConversationListFilter,
+  InboxConversationListItem,
   InboxConversationRepositoryPort,
 } from "../../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxConversation, InboxConversationStatus } from "../../../domain/inbox/inbox.model.js";
@@ -50,22 +51,28 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     workspaceId: string;
     filter?: InboxConversationListFilter;
     assignedUserId?: string;
-  }): Promise<InboxConversation[]> {
-    const conditions = ["tenant_id = $1", "workspace_id = $2"];
+  }): Promise<InboxConversationListItem[]> {
+    const conditions = ["c.tenant_id = $1", "c.workspace_id = $2"];
     const params: unknown[] = [input.tenantId, input.workspaceId];
     if (input.filter === "mine" && input.assignedUserId) {
       params.push(input.assignedUserId);
-      conditions.push(`assigned_user_id = $${params.length}`);
+      conditions.push(`c.assigned_user_id = $${params.length}`);
     } else if (input.filter === "unassigned") {
-      conditions.push("assigned_user_id is null");
+      conditions.push("c.assigned_user_id is null");
     } else if (input.filter === "unread") {
-      conditions.push("unread_count > 0");
+      conditions.push("c.unread_count > 0");
     }
-    const result = await this.pool.query<Row>(
-      `select * from inbox_conversations where ${conditions.join(" and ")} order by coalesce(last_message_at, created_at) desc`,
+    // Join com inbox_contacts só pra listagem (read-model, Fase 3) — evita a Inbox ter que fazer
+    // uma segunda chamada por conversa só pra saber o nome/telefone de quem está do outro lado.
+    const result = await this.pool.query<Row & { contact_name: string | null; contact_phone: string }>(
+      `select c.*, ct.name as contact_name, ct.phone_normalized as contact_phone
+       from inbox_conversations c
+       join inbox_contacts ct on ct.id = c.contact_id
+       where ${conditions.join(" and ")}
+       order by coalesce(c.last_message_at, c.created_at) desc`,
       params,
     );
-    return result.rows.map((row) => this.toDomain(row));
+    return result.rows.map((row) => ({ ...this.toDomain(row), contactName: row.contact_name ?? undefined, contactPhone: row.contact_phone }));
   }
 
   async markLastMessage(id: string, input: { lastMessageAt: string; incrementUnread: boolean }): Promise<void> {

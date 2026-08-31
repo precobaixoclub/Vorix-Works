@@ -6,6 +6,7 @@ import type { MessagingConnectionRepositoryPort } from "../../../../application/
 import type { MessagingProvider } from "../../../../application/ports/messaging-provider.port.js";
 import type { OutboundMessageQueuePort } from "../../../../application/ports/outbound-message-queue.port.js";
 import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
+import type { InboxRealtimeSubscriber } from "../../../../infrastructure/messaging/rabbitmq/inbox-realtime-subscriber.js";
 import {
   assignConversation,
   createConnection,
@@ -72,6 +73,10 @@ export type InboxRoutesDeps = {
   workspaceRepository: WorkspaceRepositoryPort;
   outboundQueue: OutboundMessageQueuePort;
   provider: MessagingProvider;
+  /** `undefined` quando `INBOX_RABBITMQ_URL` não está configurado (dev/teste sem broker) — nesse
+   * caso a rota SSE ainda funciona (conecta, manda heartbeat), só nunca recebe notificação
+   * nenhuma; o polling de fallback do frontend continua garantindo consistência eventual. */
+  realtimeSubscriber?: InboxRealtimeSubscriber;
 };
 
 function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {
@@ -80,6 +85,44 @@ function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {
 
 export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoutesDeps): Promise<void> {
   const useCaseDeps = toUseCaseDeps(deps);
+
+  /**
+   * SSE (Fase 3) — atualização em tempo real da Inbox, alimentada pelo `vorix-worker` via
+   * RabbitMQ (`InboxRealtimeSubscriber`). Nunca é a fonte de verdade — só um gatilho pra revalidar
+   * mais rápido; o frontend mantém um polling de fallback bem mais espaçado. `EventSource` do
+   * browser não seta headers customizados, por isso o token de acesso aqui pode vir por
+   * `?access_token=` (ver `auth.middleware.ts`), nunca só por `Authorization`.
+   */
+  app.get("/inbox/stream", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:read");
+    const { workspaceId } = request.query as { workspaceId: string };
+
+    deps.realtimeSubscriber?.start();
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    reply.raw.write(": connected\n\n");
+
+    const listener = (notification: Record<string, unknown>) => {
+      if (notification.tenantId !== principal.tenantId || notification.workspaceId !== workspaceId) return;
+      const eventType = typeof notification.type === "string" ? notification.type : "message";
+      reply.raw.write(`event: ${eventType}\ndata: ${JSON.stringify(notification)}\n\n`);
+    };
+    deps.realtimeSubscriber?.on("notification", listener);
+
+    // Heartbeat — mantém proxies (Traefik) e o próprio EventSource do browser de considerar a
+    // conexão morta em silêncio; comentário SSE (`:`), nunca interpretado como evento de dado.
+    const heartbeat = setInterval(() => reply.raw.write(": heartbeat\n\n"), 20_000);
+
+    request.raw.on("close", () => {
+      clearInterval(heartbeat);
+      deps.realtimeSubscriber?.off("notification", listener);
+    });
+  });
 
   app.get("/inbox/connections", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "inbox:read");

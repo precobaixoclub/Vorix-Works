@@ -105,6 +105,10 @@ function mapStatusReceipt(instanceName: string, event: Record<string, unknown>, 
 
   return {
     type: "message.status",
+    // tenantId/workspaceId são preenchidos pelo worker (já tem `connectionRow` em mãos) — o
+    // mapper não tem acesso a repositório, só normaliza o payload.
+    tenantId: "",
+    workspaceId: "",
     connectionId: instanceName,
     externalSessionId: instanceName,
     externalMessageId,
@@ -121,6 +125,8 @@ function mapConnectionState(type: "Connected" | "Disconnected" | "LoggedOut", in
   };
   return {
     type: "connection.state",
+    tenantId: "",
+    workspaceId: "",
     connectionId: instanceName,
     externalSessionId: instanceName,
     status: statusByType[type],

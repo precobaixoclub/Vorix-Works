@@ -236,6 +236,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
   if (options.driver === "memory") {
     const workspaceRepository = new InMemoryWorkspaceRepository();
     const assetLibraryRepository = new InMemoryAssetLibraryRepository();
+    const inboxContactRepository = new InMemoryInboxContactRepository();
     return {
       workspaceRepository,
       assetLibraryRepository,
@@ -282,8 +283,8 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       instagramDmMessageRepository: new InMemoryInstagramDmMessageRepository(),
       instagramDmAutomationRuleRepository: new InMemoryInstagramDmAutomationRuleRepository(),
       messagingConnectionRepository: new InMemoryMessagingConnectionRepository(),
-      inboxContactRepository: new InMemoryInboxContactRepository(),
-      inboxConversationRepository: new InMemoryInboxConversationRepository(),
+      inboxContactRepository,
+      inboxConversationRepository: new InMemoryInboxConversationRepository(inboxContactRepository),
       inboxMessageRepository: new InMemoryInboxMessageRepository(),
     };
   }

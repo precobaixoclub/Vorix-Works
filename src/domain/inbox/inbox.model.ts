@@ -39,8 +39,12 @@ export type MessagingConnection = {
   /** Identificador de sessão no gateway (ex.: nome da instância no WuzAPI) — nunca um token/segredo. */
   externalSessionId?: string;
   status: MessagingConnectionStatus;
-  /** Saúde reportada pelo monitor periódico (Fase 6), independente do último evento de fila. */
-  connectionHealth: "healthy" | "degraded" | "unknown";
+  /** Saúde reportada pelo monitor periódico (Fase 6), independente do último evento de fila.
+   * `gateway_unavailable` é distinto de `degraded`: o próprio container WuzAPI está inalcançável
+   * (falha de rede/timeout ao chamar `getConnectionStatus`), nunca inferido de um erro de sessão
+   * específica — "container WuzAPI saudável não significa sessão WhatsApp saudável", e o inverso
+   * também vale (sessão pode estar com problema mesmo com o gateway respondendo normalmente). */
+  connectionHealth: "healthy" | "degraded" | "unknown" | "gateway_unavailable";
   reconnectCount: number;
   createdAt: string;
   updatedAt: string;
@@ -48,6 +52,10 @@ export type MessagingConnection = {
   lastDisconnectedAt?: string;
   lastEventAt?: string;
   lastHeartbeatAt?: string;
+  /** Fase 6 — categoria segura do último erro observado pelo monitor de saúde (nunca o corpo bruto
+   * da resposta do gateway) — ex.: `"gateway_unreachable"`, `"session_logged_out"`. `undefined`
+   * quando a última checagem foi bem-sucedida. */
+  lastConnectionError?: string;
 };
 
 export type InboxContact = {
@@ -149,6 +157,12 @@ export type InboxMessage = {
   attemptCount: number;
   lastError?: string;
   lastAttemptAt?: string;
+  /** Fase 6 — categoria segura da última falha (mesmo vocabulário de `MessagingProviderErrorKind`
+   * — `transient`/`rate_limit`/`auth`/`session_logged_out`/`permanent` — mais `circuit_open` e
+   * `rate_limited_local`, específicas do worker). Nunca o texto bruto do erro (isso é `lastError`).
+   * Existe para permitir diagnosticar/reprocessar manualmente mensagens na DLQ sem precisar
+   * reabrir logs. */
+  failureCategory?: string;
   createdAt: string;
   sentAt?: string;
   deliveredAt?: string;
@@ -199,6 +213,9 @@ export const INBOX_CONVERSATION_EVENT_TYPES = [
   "ai_response_sent",
   "ai_response_failed",
   "ai_response_cancelled",
+  // Fase 6 — a IA não gerou resposta por falta de crédito Vorix (nunca desliga a IA nem a Inbox
+  // por isso; a conversa continua disponível para um humano responder normalmente).
+  "ai_response_skipped_insufficient_credits",
 ] as const;
 export type InboxConversationEventType = (typeof INBOX_CONVERSATION_EVENT_TYPES)[number];
 

@@ -32,6 +32,7 @@ type Row = {
   ai_claim_status: string | null;
   ai_claimed_at: Date | null;
   ai_response_message_id: string | null;
+  failure_category: string | null;
 };
 
 export class PostgresInboxMessageRepository implements InboxMessageRepositoryPort {
@@ -108,27 +109,30 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
     return this.toDomain(row);
   }
 
-  async markFailed(id: string, input: { lastError: string; failedAt: string }): Promise<InboxMessage> {
+  async markFailed(id: string, input: { lastError: string; failedAt: string; failureCategory?: string }): Promise<InboxMessage> {
     const result = await this.pool.query<Row>(
-      "update inbox_messages set status = 'failed', last_error = $2, failed_at = $3 where id = $1 returning *",
-      [id, input.lastError, input.failedAt],
+      "update inbox_messages set status = 'failed', last_error = $2, failed_at = $3, failure_category = coalesce($4, failure_category) where id = $1 returning *",
+      [id, input.lastError, input.failedAt, input.failureCategory ?? null],
     );
     const row = result.rows[0];
     if (!row) throw new Error(`INBOX_MESSAGE_NOT_FOUND: mensagem "${id}" não existe.`);
     return this.toDomain(row);
   }
 
-  async recordAttempt(id: string, input: { lastError?: string; lastAttemptAt: string }): Promise<void> {
+  async recordAttempt(id: string, input: { lastError?: string; lastAttemptAt: string; failureCategory?: string }): Promise<void> {
     await this.pool.query(
-      "update inbox_messages set attempt_count = attempt_count + 1, last_error = coalesce($2, last_error), last_attempt_at = $3 where id = $1",
-      [id, input.lastError ?? null, input.lastAttemptAt],
+      "update inbox_messages set attempt_count = attempt_count + 1, last_error = coalesce($2, last_error), last_attempt_at = $3, failure_category = coalesce($4, failure_category) where id = $1",
+      [id, input.lastError ?? null, input.lastAttemptAt, input.failureCategory ?? null],
     );
   }
 
-  async tryClaimForAiResponse(id: string, claimedAt: string): Promise<InboxMessage | undefined> {
+  async tryClaimForAiResponse(id: string, claimedAt: string, staleBeforeIso: string): Promise<InboxMessage | undefined> {
     const result = await this.pool.query<Row>(
-      "update inbox_messages set ai_claim_status = 'processing', ai_claimed_at = $2 where id = $1 and direction = 'inbound' and ai_claim_status is null returning *",
-      [id, claimedAt],
+      `update inbox_messages set ai_claim_status = 'processing', ai_claimed_at = $2
+       where id = $1 and direction = 'inbound'
+         and (ai_claim_status is null or (ai_claim_status = 'processing' and ai_claimed_at < $3))
+       returning *`,
+      [id, claimedAt, staleBeforeIso],
     );
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
@@ -140,10 +144,13 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
     );
   }
 
-  async listUnansweredInboundByConversation(input: { conversationId: string }): Promise<InboxMessage[]> {
+  async listUnansweredInboundByConversation(input: { conversationId: string; staleProcessingBeforeIso: string }): Promise<InboxMessage[]> {
     const result = await this.pool.query<Row>(
-      "select * from inbox_messages where conversation_id = $1 and direction = 'inbound' and ai_claim_status is null order by created_at asc",
-      [input.conversationId],
+      `select * from inbox_messages
+       where conversation_id = $1 and direction = 'inbound'
+         and (ai_claim_status is null or (ai_claim_status = 'processing' and ai_claimed_at < $2))
+       order by created_at asc`,
+      [input.conversationId, input.staleProcessingBeforeIso],
     );
     return result.rows.map((row) => this.toDomain(row));
   }
@@ -177,6 +184,7 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
       aiClaimStatus: (row.ai_claim_status as InboxMessage["aiClaimStatus"]) ?? undefined,
       aiClaimedAt: row.ai_claimed_at?.toISOString(),
       aiResponseMessageId: row.ai_response_message_id ?? undefined,
+      failureCategory: row.failure_category ?? undefined,
     };
   }
 }

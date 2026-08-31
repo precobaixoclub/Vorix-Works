@@ -1,18 +1,20 @@
 import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, MessagingConnection, MessagingConnectionStatus } from "../../domain/inbox/inbox.model.js";
 import { INBOX_AI_ACTOR, normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
+import type { OperationalCircuitBreaker, OperationalRateLimiter } from "../operations/operational-services.js";
 import type { InboxAiResponderPort } from "../ports/inbox-ai-responder.port.js";
 import type { InboxContactRepositoryPort } from "../ports/inbox-contact-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../ports/inbox-conversation-event-repository.port.js";
 import type { InboxConversationListFilter, InboxConversationListItem, InboxConversationRepositoryPort } from "../ports/inbox-conversation-repository.port.js";
 import type { InboxMessageRepositoryPort } from "../ports/inbox-message-repository.port.js";
+import type { InboxMetricsRecorder } from "../ports/inbox-metrics.port.js";
 import type { MessagingConnectionRepositoryPort } from "../ports/messaging-connection-repository.port.js";
-import type { MessagingProvider } from "../ports/messaging-provider.port.js";
+import type { MessagingProvider, MessagingProviderErrorKind } from "../ports/messaging-provider.port.js";
 import { MessagingProviderError } from "../ports/messaging-provider.port.js";
 import type { OutboundMessageQueuePort } from "../ports/outbound-message-queue.port.js";
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
 
 /**
- * Casos de uso do módulo Conversas — Fase 1/3/4/5. Mesmo padrão de `conversation-use-cases.ts`:
+ * Casos de uso do módulo Conversas — Fase 1/3/4/5/6. Mesmo padrão de `conversation-use-cases.ts`:
  * `tenantId` sempre vem do principal autenticado (nunca do corpo da requisição); toda operação
  * sobre um recurso existente confere `tenantId` E `workspaceId` (nunca só o primeiro); erros são
  * `Error` com prefixo `INBOX_*`, traduzidos para status HTTP em `inbox.route.ts`. Um recurso de
@@ -31,6 +33,18 @@ export type InboxUseCaseDeps = {
    * sem `ANTHROPIC_API_KEY`). `maybeGenerateAiResponse` vira um no-op silencioso nesse caso — a
    * Inbox continua 100% funcional sem IA (IA caiu != Inbox caiu). */
   aiResponder?: InboxAiResponderPort;
+  /** Fase 6 — reaproveita o `OperationalCircuitBreaker` já existente (Postgres-backed, sobrevive a
+   * restart do worker) para as chamadas HTTP ao WuzAPI (`scope: "messaging_provider"`, `target:
+   * connectionId`) — nunca uma segunda stack de circuit breaker só para Inbox. `undefined` = sem
+   * proteção (dev/teste sem `operationalStateRepository` configurado); `processOutboundMessage`
+   * simplesmente pula a checagem nesse caso. */
+  circuitBreaker?: OperationalCircuitBreaker;
+  /** Fase 6 — mesmo racional do `circuitBreaker`: reaproveita `OperationalRateLimiter` já
+   * existente, keyed por `connectionId` (`routeGroup: "inbox_outbound"`). `undefined` = sem
+   * limite (dev/teste). */
+  rateLimiter?: OperationalRateLimiter;
+  /** Fase 6 — `undefined` = métricas não configuradas neste processo (nunca bloqueia nada). */
+  metrics?: InboxMetricsRecorder;
   idGenerator?: () => string;
 };
 
@@ -92,6 +106,59 @@ export async function refreshConnectionStatus(deps: InboxUseCaseDeps, input: Ref
   if (!connection.externalSessionId) return connection;
   const status = await deps.provider.getConnectionStatus({ externalSessionId: connection.externalSessionId });
   return deps.connectionRepository.updateStatus(connection.id, { status: status.status, phoneNumber: status.phoneNumber, connectionHealth: "healthy" });
+}
+
+/**
+ * Fase 6 — monitor de saúde periódico das conexões, chamado pelo `vorix-worker` num tick
+ * `setInterval` (nunca acionado por HTTP nem por evento de fila). Deliberadamente PASSIVO: só
+ * pergunta ao gateway o status atual e reconcilia `connectionHealth`/`lastConnectionError` —
+ * NUNCA chama `connect()`/tenta reautenticar. "Não implementar reconexão agressiva" é atendido por
+ * construção: a única "recuperação" possível é o PRÓXIMO tick constatar sucesso, nunca um loop de
+ * retry dentro desta função. Conexões em status TERMINAL (`logged_out`/`requires_repair`) nunca
+ * são sequer checadas — `listAllActive()` já as exclui — evitando qualquer chance de reautenticar
+ * ou "acordar" uma sessão revogada.
+ *
+ * Container WuzAPI saudável != sessão WhatsApp saudável: `connectionHealth` é um sinal
+ * INDEPENDENTE do último `status` conhecido — uma falha aqui nunca sobrescreve `status` (só
+ * reflete status quando a checagem tem SUCESSO, mesmo raciocínio de `refreshConnectionStatus`).
+ */
+export async function reconcileConnectionsHealth(deps: InboxUseCaseDeps): Promise<{ checked: number; healthy: number; unhealthy: number }> {
+  const connections = await deps.connectionRepository.listAllActive();
+  let healthy = 0;
+  let unhealthy = 0;
+  const at = new Date().toISOString();
+
+  for (const connection of connections) {
+    if (!connection.externalSessionId) continue;
+    try {
+      const status = await deps.provider.getConnectionStatus({ externalSessionId: connection.externalSessionId });
+      await deps.connectionRepository.recordHealthCheck(connection.id, { connectionHealth: "healthy", at });
+      // Só reconcilia `status` em sucesso — nunca infere um novo status a partir de uma FALHA de
+      // checagem (isso seria inventar informação que não temos: "não consegui perguntar" não é o
+      // mesmo que "a sessão caiu").
+      if (status.status !== connection.status) {
+        await deps.connectionRepository.updateStatus(connection.id, { status: status.status, phoneNumber: status.phoneNumber });
+      }
+      healthy += 1;
+    } catch (error) {
+      const kind = error instanceof MessagingProviderError ? error.kind : "transient";
+      // `transient` na checagem de status é o sinal mais próximo de "o próprio gateway está
+      // inalcançável" (ver comentário em `wuzapi-client.ts`: falha de rede vira `transient` com a
+      // mensagem "WuzAPI inalcançável"); `auth`/`permanent`/`rate_limit` indicam algo específico
+      // desta sessão/credencial, nunca o gateway inteiro fora do ar — nunca confundir os dois.
+      // `session_logged_out` nem chega aqui de fato (a sessão já teria sido marcada terminal por
+      // outro caminho), mas por segurança também não é tratado como indisponibilidade de gateway.
+      const connectionHealth = kind === "transient" ? "gateway_unavailable" : "degraded";
+      await deps.connectionRepository.recordHealthCheck(connection.id, {
+        connectionHealth,
+        lastConnectionError: kind,
+        at,
+      });
+      unhealthy += 1;
+    }
+  }
+
+  return { checked: connections.length, healthy, unhealthy };
 }
 
 export type DisconnectConnectionInput = { tenantId: string; workspaceId: string; connectionId: string };
@@ -359,6 +426,7 @@ export async function registerInboundMessage(deps: InboxUseCaseDeps, input: Regi
   });
   if (wasCreated) {
     await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: input.occurredAt, incrementUnread: true });
+    deps.metrics?.incMessageInbound();
   }
   return { contact, conversation, message, wasCreated };
 }
@@ -377,15 +445,42 @@ export type ApplyConnectionStateChangedInput = { connectionId: string; status: M
 export async function applyConnectionStateChanged(deps: InboxUseCaseDeps, input: ApplyConnectionStateChangedInput): Promise<void> {
   await deps.connectionRepository.updateStatus(input.connectionId, { status: input.status, phoneNumber: input.phoneNumber });
   await deps.connectionRepository.touchEvent(input.connectionId, new Date().toISOString());
+  if (input.status === "connected") deps.metrics?.incConnectionConnected();
+  else if (input.status === "disconnected") deps.metrics?.incConnectionDisconnected();
+  else if (input.status === "reconnecting") deps.metrics?.incReconnect();
 }
 
 export type ProcessOutboundMessageInput = { messageId: string };
+
+/** Fase 6 — categoria de circuit breaker correspondente a cada `MessagingProviderErrorKind`.
+ * Deliberadamente NUNCA conta `session_logged_out`/`permanent` — erro de UMA sessão específica
+ * nunca deve abrir o circuito de todas as conexões (requisito explícito: "não confundir erro de
+ * sessão específica com indisponibilidade global do gateway"). `authentication` abre o circuito
+ * imediatamente (mesma regra já aplicada a outros consumidores de `OperationalCircuitBreaker`). */
+function circuitCategoryFor(kind: MessagingProviderErrorKind): string {
+  switch (kind) {
+    case "transient": return "provider_unavailable";
+    case "rate_limit": return "rate_limited";
+    case "auth": return "authentication";
+    case "session_logged_out": return "session_logged_out";
+    case "permanent": return "permanent";
+    default: return "permanent";
+  }
+}
 
 /**
  * Drena `inbox.outgoing.queue` (Fase 2) — chamado pelo `OutboxSenderConsumer` do `vorix-worker`.
  * Idempotente por construção: se a mensagem já não estiver `queued` (reentrega tardia de um evento
  * já processado), não reenvia de novo. Erros do provider propagam como `MessagingProviderError`
  * para o worker decidir retry/backoff/DLQ a partir de `error.kind` — nunca decidido aqui.
+ *
+ * Fase 6 — duas proteções ANTES de chamar o provider, ambas reaproveitando infraestrutura
+ * operacional já existente (nunca uma segunda stack): (1) circuit breaker por conexão
+ * (`scope: "messaging_provider"`) — se aberto, nem tenta a chamada, lança `MessagingProviderError`
+ * transitório para o worker requeue via a escada de retry já existente (a mensagem PERMANECE
+ * `queued`, nunca é perdida); (2) rate limiter por conexão — se o limite foi atingido, mesma
+ * consequência (requeue, nunca descarte). As duas são best-effort: `deps.circuitBreaker`/
+ * `deps.rateLimiter` ausentes (`undefined`) significam "sem proteção configurada", nunca um erro.
  */
 export async function processOutboundMessage(deps: InboxUseCaseDeps, input: ProcessOutboundMessageInput): Promise<InboxMessage | undefined> {
   const message = await deps.messageRepository.getById(input.messageId);
@@ -399,11 +494,48 @@ export async function processOutboundMessage(deps: InboxUseCaseDeps, input: Proc
   const connection = await deps.connectionRepository.getById(message.connectionId);
   if (!connection?.externalSessionId) throw new MessagingProviderError("transient", `Conexão "${message.connectionId}" sem sessão ativa no gateway.`);
 
+  const circuitKey = { tenantId: message.tenantId, workspaceId: message.workspaceId, scope: "messaging_provider" as const, target: connection.id };
+
+  if (deps.circuitBreaker) {
+    const { allowed } = await deps.circuitBreaker.canExecute(circuitKey);
+    if (!allowed) {
+      await deps.messageRepository.recordAttempt(message.id, { lastError: `Circuit breaker aberto para a conexão "${connection.id}" — WuzAPI considerado indisponível.`, lastAttemptAt: new Date().toISOString(), failureCategory: "circuit_open" });
+      deps.metrics?.incMessageRetry();
+      throw new MessagingProviderError("transient", `Circuit breaker aberto para a conexão "${connection.id}".`);
+    }
+  }
+
+  if (deps.rateLimiter) {
+    // Nunca passa `limit` explícito aqui — o valor vem do `defaultLimit` configurado na PRÓPRIA
+    // instância de `OperationalRateLimiter` injetada (o worker a constrói a partir de
+    // `INBOX_OUTBOUND_RATE_LIMIT_PER_MINUTE`). Passar um `limit` fixo aqui ignoraria silenciosamente
+    // essa configuração (bug real encontrado escrevendo os testes da Fase 6).
+    const { allowed, retryAfterMs } = await deps.rateLimiter.consume({
+      routeGroup: "inbox_outbound",
+      tenantId: message.tenantId,
+      principalId: connection.id,
+    });
+    if (!allowed) {
+      // Nunca perde a mensagem: fica `queued`, o worker requeue via a escada de retry (erro
+      // classificado como transitório) — ela é processada de novo assim que a janela abrir.
+      await deps.messageRepository.recordAttempt(message.id, { lastError: `Limite de envio por conexão atingido (retryAfterMs=${retryAfterMs ?? 0}).`, lastAttemptAt: new Date().toISOString(), failureCategory: "rate_limited_local" });
+      deps.metrics?.incMessageRetry();
+      throw new MessagingProviderError("transient", `Limite de envio por conexão "${connection.id}" atingido.`);
+    }
+  }
+
   try {
     const result = await deps.provider.sendText({ externalSessionId: connection.externalSessionId, to: contact.phoneNormalized, body: message.body ?? "" });
+    if (deps.circuitBreaker) await deps.circuitBreaker.recordSuccess(circuitKey);
+    deps.metrics?.incMessageOutbound();
     return await deps.messageRepository.markSent(message.id, { externalMessageId: result.externalMessageId, sentAt: new Date().toISOString() });
   } catch (error) {
-    await deps.messageRepository.recordAttempt(message.id, { lastError: error instanceof Error ? error.message : String(error), lastAttemptAt: new Date().toISOString() });
+    const kind = error instanceof MessagingProviderError ? error.kind : "transient";
+    if (deps.circuitBreaker) {
+      await deps.circuitBreaker.recordFailure(circuitKey, { code: kind, category: circuitCategoryFor(kind) });
+    }
+    deps.metrics?.incMessageFailed(kind);
+    await deps.messageRepository.recordAttempt(message.id, { lastError: error instanceof Error ? error.message : String(error), lastAttemptAt: new Date().toISOString(), failureCategory: kind });
     throw error;
   }
 }
@@ -429,8 +561,28 @@ const AI_CONTEXT_MESSAGE_LIMIT = 20;
  * humano. Ver relatório da Fase 5 para a análise completa desse trade-off. */
 const AI_LOCK_RETRY_DELAY_MS = 200;
 
+/**
+ * Fase 6 — TTL do lease de geração de IA (conversa) e do claim por mensagem. Um processo que
+ * morre segurando `ai_processing_since`/`ai_claim_status='processing'` NUNCA deveria travar uma
+ * conversa/mensagem para sempre (bug de classe real: "lock lógico correto para concorrência, mas
+ * sem recuperação"). 90s é generoso o bastante para cobrir o pior caso de uma geração real
+ * (`INBOX_AUTO_REPLY_POLICY.timeoutMs = 12_000` × até 2 tentativas do AI Gateway + overhead de
+ * claim/envio/evento) sem arriscar duas gerações válidas simultâneas por engano — e ainda assim
+ * baixo o bastante para uma recuperação em tempo operacionalmente razoável após um crash. Mesmo
+ * valor usado para os dois (lock de conversa e claim de mensagem) por simplicidade — não há
+ * evidência hoje que justifique dois TTLs distintos.
+ */
+const AI_LOCK_TTL_MS = 90_000;
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Fase 6 — instante a partir do qual um lock/claim é considerado abandonado (agora menos
+ * `AI_LOCK_TTL_MS`). Recalculado a cada chamada (nunca cacheado) para nunca usar um "agora"
+ * desatualizado numa retentativa. */
+function staleBeforeIso(): string {
+  return new Date(Date.now() - AI_LOCK_TTL_MS).toISOString();
 }
 
 /**
@@ -481,18 +633,18 @@ export async function maybeGenerateAiResponse(deps: InboxUseCaseDeps, input: May
   const conversation = await deps.conversationRepository.getById(input.conversationId);
   if (!conversation || conversation.tenantId !== input.tenantId || conversation.workspaceId !== input.workspaceId) return;
   if (!isConversationEligibleForAi(conversation)) {
-    const claimed = await deps.messageRepository.tryClaimForAiResponse(input.triggeringMessageId, new Date().toISOString());
+    const claimed = await deps.messageRepository.tryClaimForAiResponse(input.triggeringMessageId, new Date().toISOString(), staleBeforeIso());
     if (claimed) await deps.messageRepository.resolveAiClaim(claimed.id, { status: "skipped" });
     return;
   }
 
   const lockOwnedAt = new Date().toISOString();
-  let lock = await deps.conversationRepository.tryAcquireAiLock(conversation.id, lockOwnedAt);
+  let lock = await deps.conversationRepository.tryAcquireAiLock(conversation.id, lockOwnedAt, staleBeforeIso());
   if (!lock) {
     await sleep(AI_LOCK_RETRY_DELAY_MS);
-    lock = await deps.conversationRepository.tryAcquireAiLock(conversation.id, new Date().toISOString());
+    lock = await deps.conversationRepository.tryAcquireAiLock(conversation.id, new Date().toISOString(), staleBeforeIso());
   }
-  if (!lock) return; // outra geração já está em andamento — o dono atual do lock drena esta mensagem.
+  if (!lock) return; // outra geração já está em andamento (dentro do lease) — o dono atual drena esta mensagem.
   const ownedAt = lock.aiProcessingSince as string;
 
   try {
@@ -504,12 +656,12 @@ export async function maybeGenerateAiResponse(deps: InboxUseCaseDeps, input: May
 
 async function drainAiResponses(deps: InboxUseCaseDeps, ctx: { tenantId: string; workspaceId: string; conversationId: string }): Promise<void> {
   for (;;) {
-    const pending = await deps.messageRepository.listUnansweredInboundByConversation({ conversationId: ctx.conversationId });
+    const pending = await deps.messageRepository.listUnansweredInboundByConversation({ conversationId: ctx.conversationId, staleProcessingBeforeIso: staleBeforeIso() });
     if (pending.length === 0) return;
 
     const claimed: InboxMessage[] = [];
     for (const message of pending) {
-      const claimedMessage = await deps.messageRepository.tryClaimForAiResponse(message.id, new Date().toISOString());
+      const claimedMessage = await deps.messageRepository.tryClaimForAiResponse(message.id, new Date().toISOString(), staleBeforeIso());
       if (claimedMessage) claimed.push(claimedMessage);
     }
     if (claimed.length === 0) return;
@@ -543,11 +695,32 @@ async function drainAiResponses(deps: InboxUseCaseDeps, ctx: { tenantId: string;
     });
 
     if (!result.ok) {
+      // Fase 6 — crédito insuficiente é uma falha DE NEGÓCIO, não operacional: nunca conta como
+      // "IA quebrada" nos eventos/métricas de erro, tem seu próprio evento visível
+      // (`ai_response_skipped_insufficient_credits`) e NUNCA desliga a IA/Inbox — a conversa
+      // continua disponível para um humano responder normalmente. `"quota_exceeded"` é a mesma
+      // categoria que `CreditGatedAiGateway` usa para tenant sem billing/suspenso/sem saldo (ver
+      // `CreditAccountingService.checkAvailability` — todas essas colapsam nessa categoria).
+      if (result.category === "quota_exceeded") {
+        await resolveClaims(deps, claimed, "skipped");
+        deps.metrics?.incAiSkippedInsufficientCredits();
+        await deps.conversationEventRepository.record({
+          tenantId: ctx.tenantId,
+          workspaceId: ctx.workspaceId,
+          conversationId: ctx.conversationId,
+          type: "ai_response_skipped_insufficient_credits",
+          performedBy: INBOX_AI_ACTOR,
+          metadata: { inboundMessageIds: claimed.map((message) => message.id) },
+        });
+        return;
+      }
+
       // Falha operacional controlada (timeout, provider indisponível, saída inválida...) — nunca
       // um retry automático ilimitado aqui (o próprio AI Gateway já tentou algumas vezes
       // internamente); a mensagem fica `failed`, disponível para atendimento manual, e a IA só
       // tenta de novo quando uma NOVA mensagem inbound chegar.
       await resolveClaims(deps, claimed, "failed");
+      deps.metrics?.incAiFailure(result.category);
       await deps.conversationEventRepository.record({
         tenantId: ctx.tenantId,
         workspaceId: ctx.workspaceId,
@@ -565,6 +738,7 @@ async function drainAiResponses(deps: InboxUseCaseDeps, ctx: { tenantId: string;
     const freshAfter = await deps.conversationRepository.getById(ctx.conversationId);
     if (!freshAfter || !isConversationEligibleForAi(freshAfter)) {
       await resolveClaims(deps, claimed, "skipped");
+      deps.metrics?.incAiCancelled();
       await deps.conversationEventRepository.record({
         tenantId: ctx.tenantId,
         workspaceId: ctx.workspaceId,
@@ -581,6 +755,9 @@ async function drainAiResponses(deps: InboxUseCaseDeps, ctx: { tenantId: string;
     // Nenhum código de IA jamais chama o provider/WuzAPI diretamente.
     const outbound = await sendInboxMessage(deps, { tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, conversationId: ctx.conversationId, body: result.reply, sentByAi: true });
     await resolveClaims(deps, claimed, "answered", outbound.id);
+    deps.metrics?.incAiReply();
+    deps.metrics?.addAiCostUsd(result.usage.estimatedCost);
+    deps.metrics?.observeAiLatencyMs(result.latencyMs);
     await deps.conversationEventRepository.record({
       tenantId: ctx.tenantId,
       workspaceId: ctx.workspaceId,

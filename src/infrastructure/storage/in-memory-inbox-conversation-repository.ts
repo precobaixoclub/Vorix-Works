@@ -138,9 +138,11 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     return updated;
   }
 
-  async tryAcquireAiLock(id: string, at: string): Promise<InboxConversation | undefined> {
+  async tryAcquireAiLock(id: string, at: string, staleBeforeIso: string): Promise<InboxConversation | undefined> {
     const existing = this.rows.get(id);
-    if (!existing || existing.aiProcessingSince) return undefined;
+    if (!existing) return undefined;
+    const isFree = !existing.aiProcessingSince || existing.aiProcessingSince < staleBeforeIso;
+    if (!isFree) return undefined;
     const updated = { ...existing, aiProcessingSince: at };
     this.rows.set(id, updated);
     return updated;

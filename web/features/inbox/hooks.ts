@@ -42,11 +42,19 @@ const ALL_FILTERS = ["all", "mine", "unassigned", "unread", "open", "pending", "
 const REALTIME_EVENT_TYPES = ["message.created", "message.updated", "conversation.updated", "connection.status_changed"] as const;
 
 /**
- * SSE (Fase 3) — nunca é a fonte de verdade, só revalida o SWR mais rápido que o polling de
- * fallback quando algo muda. Reconecta com token FRESCO a cada tentativa (não confia no retry
- * nativo do `EventSource`, que reusaria a mesma URL com um `access_token` potencialmente
- * expirado) — ver `auth.middleware.ts` sobre por que o token vai por querystring aqui
- * especificamente (o `EventSource` do browser não seta headers customizados).
+ * SSE (Fase 3, resiliência reforçada na Fase 6) — nunca é a fonte de verdade, só revalida o SWR
+ * mais rápido que o polling de fallback quando algo muda. Reconecta com token FRESCO a cada
+ * tentativa (não confia no retry nativo do `EventSource`, que reusaria a mesma URL com um
+ * `access_token` potencialmente expirado) — ver `auth.middleware.ts` sobre por que o token vai por
+ * querystring aqui especificamente (o `EventSource` do browser não seta headers customizados).
+ *
+ * Fase 6 — auditoria encontrou uma janela real: entre uma queda de SSE e a reconexão, qualquer
+ * evento que tivesse acontecido no meio ficava invisível até o próximo tick do polling de
+ * fallback (até 20-30s de atraso). `source.onopen` agora revalida TUDO relevante assim que a
+ * conexão (re)abre — tanto na conexão inicial quanto em toda reconexão — em vez de confiar
+ * apenas no próximo evento empurrado pelo servidor. Isso é exatamente "SSE nunca é fonte de
+ * verdade, reconectar recupera o estado atual pela API": o `mutate()` aqui busca de novo via
+ * `GET`, o SSE só decide QUANDO buscar de novo, nunca fornece o dado ele mesmo.
  */
 export function useInboxRealtime(workspaceId: string, conversationId: string | undefined): void {
   const { mutate } = useSWRConfig();
@@ -60,11 +68,27 @@ export function useInboxRealtime(workspaceId: string, conversationId: string | u
     let retryTimeout: ReturnType<typeof setTimeout> | undefined;
     let closed = false;
 
+    function revalidateEverythingRelevant() {
+      for (const filterValue of ALL_FILTERS) {
+        void mutate(["inbox-conversations", workspaceId, filterValue]);
+      }
+      const currentConversationId = conversationIdRef.current;
+      if (currentConversationId) {
+        void mutate(["inbox-conversation-messages", workspaceId, currentConversationId]);
+        void mutate(["inbox-conversation-events", workspaceId, currentConversationId]);
+      }
+    }
+
     function connect() {
       if (closed) return;
       const token = getAccessToken();
       const query = new URLSearchParams({ workspaceId, ...(token ? { access_token: token } : {}) });
       source = new EventSource(`${getApiBaseUrl()}/v1/inbox/stream?${query.toString()}`);
+
+      // Conexão nova OU reconexão depois de uma queda — nos dois casos, pode ter havido mudanças
+      // que o SSE nunca vai reenviar retroativamente (ele não é fila persistente). Buscar o estado
+      // atual pela API de novo é a única forma correta de "recuperar" depois de uma queda.
+      source.onopen = () => revalidateEverythingRelevant();
 
       for (const type of REALTIME_EVENT_TYPES) {
         source.addEventListener(type, (event: MessageEvent<string>) => {

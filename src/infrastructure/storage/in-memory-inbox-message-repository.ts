@@ -73,23 +73,31 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
     return updated;
   }
 
-  async markFailed(id: string, input: { lastError: string; failedAt: string }): Promise<InboxMessage> {
+  async markFailed(id: string, input: { lastError: string; failedAt: string; failureCategory?: string }): Promise<InboxMessage> {
     const existing = this.rows.get(id);
     if (!existing) throw new Error(`INBOX_MESSAGE_NOT_FOUND: mensagem "${id}" não existe.`);
-    const updated: InboxMessage = { ...existing, status: "failed", lastError: input.lastError, failedAt: input.failedAt };
+    const updated: InboxMessage = { ...existing, status: "failed", lastError: input.lastError, failedAt: input.failedAt, failureCategory: input.failureCategory ?? existing.failureCategory };
     this.rows.set(id, updated);
     return updated;
   }
 
-  async recordAttempt(id: string, input: { lastError?: string; lastAttemptAt: string }): Promise<void> {
+  async recordAttempt(id: string, input: { lastError?: string; lastAttemptAt: string; failureCategory?: string }): Promise<void> {
     const existing = this.rows.get(id);
     if (!existing) return;
-    this.rows.set(id, { ...existing, attemptCount: existing.attemptCount + 1, lastError: input.lastError ?? existing.lastError, lastAttemptAt: input.lastAttemptAt });
+    this.rows.set(id, {
+      ...existing,
+      attemptCount: existing.attemptCount + 1,
+      lastError: input.lastError ?? existing.lastError,
+      lastAttemptAt: input.lastAttemptAt,
+      failureCategory: input.failureCategory ?? existing.failureCategory,
+    });
   }
 
-  async tryClaimForAiResponse(id: string, claimedAt: string): Promise<InboxMessage | undefined> {
+  async tryClaimForAiResponse(id: string, claimedAt: string, staleBeforeIso: string): Promise<InboxMessage | undefined> {
     const existing = this.rows.get(id);
-    if (!existing || existing.direction !== "inbound" || existing.aiClaimStatus) return undefined;
+    if (!existing || existing.direction !== "inbound") return undefined;
+    const isClaimable = !existing.aiClaimStatus || (existing.aiClaimStatus === "processing" && (existing.aiClaimedAt ?? "") < staleBeforeIso);
+    if (!isClaimable) return undefined;
     const updated: InboxMessage = { ...existing, aiClaimStatus: "processing", aiClaimedAt: claimedAt };
     this.rows.set(id, updated);
     return updated;
@@ -101,9 +109,13 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
     this.rows.set(id, { ...existing, aiClaimStatus: input.status, aiResponseMessageId: input.responseMessageId });
   }
 
-  async listUnansweredInboundByConversation(input: { conversationId: string }): Promise<InboxMessage[]> {
+  async listUnansweredInboundByConversation(input: { conversationId: string; staleProcessingBeforeIso: string }): Promise<InboxMessage[]> {
     return [...this.rows.values()]
-      .filter((row) => row.conversationId === input.conversationId && row.direction === "inbound" && !row.aiClaimStatus)
+      .filter((row) => {
+        if (row.conversationId !== input.conversationId || row.direction !== "inbound") return false;
+        if (!row.aiClaimStatus) return true;
+        return row.aiClaimStatus === "processing" && (row.aiClaimedAt ?? "") < input.staleProcessingBeforeIso;
+      })
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 }

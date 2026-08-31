@@ -200,13 +200,28 @@ services:
       AI_INBOX_AUTO_REPLY_ENABLED: "${AI_INBOX_AUTO_REPLY_ENABLED:-false}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       ANTHROPIC_INBOX_AUTO_REPLY_MODEL: "${ANTHROPIC_INBOX_AUTO_REPLY_MODEL:-}"
+      # Fase 6 (Resiliência/Observabilidade) — todos com default conservador embutido no código;
+      # só precisam existir aqui se algum precisar ser ajustado por evidência real de produção.
+      AI_INBOX_AUTO_REPLY_BILLING_ENABLED: "${AI_INBOX_AUTO_REPLY_BILLING_ENABLED:-true}"
+      INBOX_WORKER_METRICS_PORT: "${INBOX_WORKER_METRICS_PORT:-9464}"
+      INBOX_WORKER_HEARTBEAT_FILE: /tmp/inbox-worker-heartbeat
       ZUNO_LOG_LEVEL: info
     networks: [zuno_network, conversas_internal]
     init: true
+    # Fase 6 — healthcheck real de liveness (heartbeat em arquivo, ver
+    # `scripts/inbox-worker-healthcheck.mjs`), não só "o processo existe": um event loop travado ou
+    # uma conexão zumbi com o RabbitMQ não derrubam o processo sozinhos, então `docker ps` sozinho
+    # nunca detectaria isso — o healthcheck falhando aciona `restart: unless-stopped` acima.
+    healthcheck:
+      test: ["CMD", "node", "scripts/inbox-worker-healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     # Reduzido de 384m/192m com base no achado de capacidade real da VPS (spike Fase 2 — só
-    # ~288Mi livres, 7 stacks compartilhando o host). NÃO medido como container nesta rodada (o
-    # spike rodou o worker como processo comum, fora de container) — um processo Node com
-    # amqplib+pg tende a ser leve, mas recalibrar aqui especificamente na homologação real.
+    # ~288Mi livres, 7 stacks compartilhando o host). Remedido na Fase 6 (worker ocioso + SSE +
+    # geração de IA simulada + fila com carga) sem evidência que justifique mudar o limite — ver
+    # relatório da Fase 6 para os números observados.
     mem_limit: 256m
     mem_reservation: 128m
 

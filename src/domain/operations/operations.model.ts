@@ -37,7 +37,10 @@ export type OperationalCircuitBreakerState = (typeof CIRCUIT_BREAKER_STATES)[num
 export type OperationalCircuitBreakerKey = {
   tenantId?: string;
   workspaceId?: string;
-  scope: "publication_provider" | "execution_handler" | "webhook" | "analytics" | "system";
+  /** `messaging_provider` (Fase 6, Módulo Conversas) — chamadas HTTP ao gateway de mensageria
+   * (WuzAPI), `target` = `connectionId`. Reaproveita este circuit breaker operacional já existente
+   * em vez de uma segunda stack só para Inbox — ver `db/migrations/0086_inbox_resilience.sql`. */
+  scope: "publication_provider" | "execution_handler" | "webhook" | "analytics" | "system" | "messaging_provider";
   target: string;
 };
 

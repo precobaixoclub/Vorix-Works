@@ -155,10 +155,14 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
-  async tryAcquireAiLock(id: string, at: string): Promise<InboxConversation | undefined> {
+  async tryAcquireAiLock(id: string, at: string, staleBeforeIso: string): Promise<InboxConversation | undefined> {
+    // Mesma CAS de sempre (`returning *` — 0 linhas = não conseguiu), só com a condição ampliada
+    // para tratar um lock mais velho que `staleBeforeIso` como disponível (lease recuperável, Fase
+    // 6) — nunca dois donos válidos simultâneos: o Postgres serializa a nível de linha, então só
+    // uma requisição concorrente pode ver a condição como verdadeira para o mesmo UPDATE.
     const result = await this.pool.query<Row>(
-      "update inbox_conversations set ai_processing_since = $2 where id = $1 and ai_processing_since is null returning *",
-      [id, at],
+      "update inbox_conversations set ai_processing_since = $2 where id = $1 and (ai_processing_since is null or ai_processing_since < $3) returning *",
+      [id, at, staleBeforeIso],
     );
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }

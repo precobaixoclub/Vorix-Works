@@ -38,14 +38,19 @@ export type InboxConversationRepositoryPort = {
   setAiEnabled(id: string, aiEnabled: boolean, reason?: InboxAiPauseReason): Promise<InboxConversation>;
 
   /**
-   * Fase 5 — lock lógico (CAS) de geração de IA em andamento para uma conversa. Serializa
-   * mensagens consecutivas do mesmo contato: só uma geração pode estar "em voo" por conversa a
-   * qualquer momento (ver `maybeGenerateAiResponse`, que drena qualquer mensagem nova chegada
-   * durante a geração antes de liberar o lock, em vez de disparar respostas paralelas
-   * desconexas). `undefined` = outra geração já está em andamento (quem chama não gera uma
-   * resposta própria — confia que o dono atual do lock vai drenar as mensagens novas).
+   * Fase 5/6 — lock lógico (CAS) de geração de IA em andamento para uma conversa, agora um LEASE
+   * recuperável (Fase 6): casa quando `ai_processing_since is null` OU quando já passou de
+   * `staleBeforeIso` (o dono anterior travou por tempo demais — quase certamente um processo que
+   * morreu segurando o lock, nunca reaberto por nenhum reaper, ver Fase 6). Serializa mensagens
+   * consecutivas do mesmo contato: só uma geração pode estar "em voo" por conversa a qualquer
+   * momento (ver `maybeGenerateAiResponse`, que drena qualquer mensagem nova chegada durante a
+   * geração antes de liberar o lock, em vez de disparar respostas paralelas desconexas).
+   * `undefined` = outra geração está em andamento E ainda dentro do lease (quem chama não gera
+   * uma resposta própria — confia que o dono atual do lock vai drenar as mensagens novas, ou que o
+   * lease vai expirar e permitir recuperação). A recuperação é ATÔMICA pela mesma cláusula WHERE
+   * de sempre — nunca dois donos válidos simultâneos, mesmo sob concorrência (testado).
    */
-  tryAcquireAiLock(id: string, at: string): Promise<InboxConversation | undefined>;
+  tryAcquireAiLock(id: string, at: string, staleBeforeIso: string): Promise<InboxConversation | undefined>;
   /** Libera o lock só se `ai_processing_since` ainda for exatamente `ownedAt` — evita que um
    * processo libere um lock que já não é mais seu (defesa em profundidade, não deveria acontecer
    * na prática já que só quem detém o lock chama isto). */

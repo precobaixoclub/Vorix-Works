@@ -41,22 +41,28 @@ export type InboxMessageRepositoryPort = {
    * silenciosamente se a mensagem já estiver num status terminal — retries podem chegar tarde. */
   updateStatusByExternalId(input: { connectionId: string; externalMessageId: string; status: InboxMessageStatus; occurredAt: string }): Promise<void>;
   markSent(id: string, input: { externalMessageId: string; sentAt: string }): Promise<InboxMessage>;
-  markFailed(id: string, input: { lastError: string; failedAt: string }): Promise<InboxMessage>;
-  recordAttempt(id: string, input: { lastError?: string; lastAttemptAt: string }): Promise<void>;
+  /** Fase 6 — `failureCategory` (opcional) é a categoria segura da falha final (mesmo vocabulário
+   * de `MessagingProviderErrorKind` + `circuit_open`/`rate_limited_local`) — permite diagnosticar
+   * uma mensagem na DLQ sem reabrir logs. */
+  markFailed(id: string, input: { lastError: string; failedAt: string; failureCategory?: string }): Promise<InboxMessage>;
+  recordAttempt(id: string, input: { lastError?: string; lastAttemptAt: string; failureCategory?: string }): Promise<void>;
 
   /**
-   * Fase 5 — claim atômico (CAS) de "quem gera/envia a resposta de IA para esta mensagem
-   * inbound". Só casa se `direction = 'inbound'` e `ai_claim_status is null`. `undefined` = já
-   * reivindicada por outra execução (defesa em profundidade contra duas gerações para a mesma
-   * mensagem — a defesa principal continua sendo `wasCreated` em `registerInboundMessage`).
+   * Fase 5/6 — claim atômico (CAS/lease) de "quem gera/envia a resposta de IA para esta mensagem
+   * inbound". Casa se `direction = 'inbound'` E (`ai_claim_status is null` OU o claim `processing`
+   * já passou de `staleBeforeIso` — Fase 6: um processo que morreu segurando o claim nunca deveria
+   * travar a mensagem para sempre). `undefined` = já reivindicada por outra execução e ainda
+   * dentro do lease (defesa em profundidade contra duas gerações para a mesma mensagem — a defesa
+   * principal continua sendo `wasCreated` em `registerInboundMessage`).
    */
-  tryClaimForAiResponse(id: string, claimedAt: string): Promise<InboxMessage | undefined>;
+  tryClaimForAiResponse(id: string, claimedAt: string, staleBeforeIso: string): Promise<InboxMessage | undefined>;
   /** Resolve um claim já feito (`processing` → `answered`/`skipped`/`failed`). `responseMessageId`
    * só é gravado quando `status === "answered"`. Nunca re-tenta automaticamente um claim
    * `failed`/`skipped` — a mensagem fica disponível só para atendimento manual. */
   resolveAiClaim(id: string, input: { status: "answered" | "skipped" | "failed"; responseMessageId?: string }): Promise<void>;
-  /** Mensagens inbound de uma conversa ainda sem claim (`ai_claim_status is null`), ordem
-   * cronológica ascendente — usado pelo drenador de IA para pegar tudo que se acumulou desde a
-   * última rodada (ver `maybeGenerateAiResponse`). */
-  listUnansweredInboundByConversation(input: { conversationId: string }): Promise<InboxMessage[]>;
+  /** Mensagens inbound de uma conversa ainda sem claim VÁLIDO — `ai_claim_status is null` OU um
+   * claim `processing` mais velho que `staleProcessingBeforeIso` (Fase 6: lease expirado, ver
+   * `tryClaimForAiResponse`) — ordem cronológica ascendente. Usado pelo drenador de IA para pegar
+   * tudo que se acumulou (ou ficou órfão) desde a última rodada (ver `maybeGenerateAiResponse`). */
+  listUnansweredInboundByConversation(input: { conversationId: string; staleProcessingBeforeIso: string }): Promise<InboxMessage[]>;
 };

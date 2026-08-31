@@ -26,6 +26,7 @@ type Row = {
   last_disconnected_at: Date | null;
   last_event_at: Date | null;
   last_heartbeat_at: Date | null;
+  last_connection_error: string | null;
 };
 
 export class PostgresMessagingConnectionRepository implements MessagingConnectionRepositoryPort {
@@ -91,6 +92,14 @@ export class PostgresMessagingConnectionRepository implements MessagingConnectio
     await this.pool.query("update messaging_connections set last_heartbeat_at = $2 where id = $1", [id, at]);
   }
 
+  async recordHealthCheck(id: string, input: { connectionHealth: MessagingConnection["connectionHealth"]; lastConnectionError?: string; at: string }): Promise<MessagingConnection | undefined> {
+    const result = await this.pool.query<Row>(
+      "update messaging_connections set connection_health = $2, last_connection_error = $3, last_heartbeat_at = $4 where id = $1 returning *",
+      [id, input.connectionHealth, input.lastConnectionError ?? null, input.at],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
   private toDomain(row: Row): MessagingConnection {
     return {
       id: row.id,
@@ -109,6 +118,7 @@ export class PostgresMessagingConnectionRepository implements MessagingConnectio
       lastDisconnectedAt: row.last_disconnected_at?.toISOString(),
       lastEventAt: row.last_event_at?.toISOString(),
       lastHeartbeatAt: row.last_heartbeat_at?.toISOString(),
+      lastConnectionError: row.last_connection_error ?? undefined,
     };
   }
 }

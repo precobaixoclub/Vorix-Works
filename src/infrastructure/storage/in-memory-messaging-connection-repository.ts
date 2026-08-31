@@ -73,4 +73,12 @@ export class InMemoryMessagingConnectionRepository implements MessagingConnectio
     if (!existing) return;
     this.rows.set(id, { ...existing, lastHeartbeatAt: at });
   }
+
+  async recordHealthCheck(id: string, input: { connectionHealth: MessagingConnection["connectionHealth"]; lastConnectionError?: string; at: string }): Promise<MessagingConnection | undefined> {
+    const existing = this.rows.get(id);
+    if (!existing) return undefined;
+    const updated: MessagingConnection = { ...existing, connectionHealth: input.connectionHealth, lastConnectionError: input.lastConnectionError, lastHeartbeatAt: input.at };
+    this.rows.set(id, updated);
+    return updated;
+  }
 }

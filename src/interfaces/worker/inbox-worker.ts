@@ -1,5 +1,6 @@
 import type { Channel, ConsumeMessage } from "amqplib";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import type { PersistenceDriver } from "../../infrastructure/storage/build-platform-repositories.js";
 import { sanitizeWuzApiEventForFixture } from "../../infrastructure/messaging/wuzapi/sanitize-fixture.js";
@@ -26,18 +27,25 @@ import {
   applyMessageStatusChanged,
   maybeGenerateAiResponse,
   processOutboundMessage,
+  reconcileConnectionsHealth,
   registerInboundMessage,
   type InboxUseCaseDeps,
 } from "../../application/inbox/inbox-use-cases.js";
 import type { NormalizedInboxEvent } from "../../application/inbox/inbox-events.js";
 import { buildAiGateway } from "../../infrastructure/ai-gateway/build-ai-gateway.js";
 import { AiGatewayInboxResponder } from "../../infrastructure/ai-gateway/inbox-ai-responder-adapter.js";
+import { CreditGatedAiGateway } from "../../application/ai-gateway/credit-gated-ai-gateway.js";
+import { CreditAccountingService } from "../../application/ai-providers/credit-accounting.service.js";
+import { OperationalCircuitBreaker, OperationalRateLimiter } from "../../application/operations/operational-services.js";
+import { PostgresAiProvidersRepository } from "../../infrastructure/storage/postgres/postgres-ai-providers-repository.js";
+import { PostgresPlatformBillingRepository } from "../../infrastructure/storage/postgres/postgres-platform-billing-repository.js";
+import { createPromInboxMetrics, inboxMetricsRegistry } from "../../infrastructure/observability/prom-inbox-metrics.js";
 
 /**
- * Processo separado do módulo Conversas — `vorix-worker` (Fase 1/2). Consome os eventos do
- * WuzAPI via RabbitMQ e drena a fila de envio outbound; NUNCA compartilha processo com a API HTTP
- * (`zuno-api`) — um pico/crash aqui não derruba requisições HTTP, e vice-versa (ver "Critério
- * principal" no plano: mínima oscilação possível).
+ * Processo separado do módulo Conversas — `vorix-worker` (Fase 1/2, resiliência reforçada na
+ * Fase 6). Consome os eventos do WuzAPI via RabbitMQ e drena a fila de envio outbound; NUNCA
+ * compartilha processo com a API HTTP (`zuno-api`) — um pico/crash aqui não derruba requisições
+ * HTTP, e vice-versa (ver "Critério principal" no plano: mínima oscilação possível).
  *
  * Idempotência/ACK: todo consumer só dá ACK depois que a persistência no Postgres foi confirmada.
  * Um crash no meio do processamento causa reentrega (RabbitMQ redelivery), e reentrega é sempre
@@ -61,10 +69,28 @@ type InboxWorkerConfig = {
    * `InboxWorkerConfig` como um todo: o worker nunca deveria falhar o boot por causa de config de
    * IA ausente (`enabled=false`, o padrão, é um no-op completo — `deps.aiResponder` fica
    * `undefined` e `maybeGenerateAiResponse` vira um no-op silencioso). */
-  ai: { enabled: boolean; anthropicApiKey?: string; anthropicInboxAutoReplyModel: string };
+  ai: { enabled: boolean; anthropicApiKey?: string; anthropicInboxAutoReplyModel: string; billingEnabled: boolean };
+  /** Fase 6 — resiliência/observabilidade. Todos com defaults conservadores; nenhum exige setup
+   * extra para o worker continuar funcionando exatamente como nas Fases 1-5. */
+  resilience: {
+    healthCheckIntervalMs: number;
+    heartbeatFile: string;
+    heartbeatIntervalMs: number;
+    metricsPort: number;
+    metricsEnabled: boolean;
+    outboundRateLimitPerMinute: number;
+    wuzapiCircuitFailureThreshold: number;
+    wuzapiCircuitCooldownMs: number;
+    shutdownDrainTimeoutMs: number;
+  };
 };
 
 const DEFAULT_ANTHROPIC_INBOX_AUTO_REPLY_MODEL = "claude-haiku-4-5-20251001";
+
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 function loadInboxWorkerConfig(): InboxWorkerConfig {
   const persistenceDriver: PersistenceDriver = process.env.PERSISTENCE_DRIVER?.trim() === "postgres" ? "postgres" : "memory";
@@ -81,6 +107,22 @@ function loadInboxWorkerConfig(): InboxWorkerConfig {
       enabled: process.env.AI_INBOX_AUTO_REPLY_ENABLED?.trim() === "true",
       anthropicApiKey: process.env.ANTHROPIC_API_KEY?.trim() || undefined,
       anthropicInboxAutoReplyModel: process.env.ANTHROPIC_INBOX_AUTO_REPLY_MODEL?.trim() || DEFAULT_ANTHROPIC_INBOX_AUTO_REPLY_MODEL,
+      // Fase 6 — só tem efeito quando o driver é postgres (billing sempre vive em Postgres real,
+      // nunca em memória) E `ai.enabled`. Default `true`: uma vez que a IA está ligada em produção
+      // (postgres), o crédito É verificado por padrão — quem quer IA sem cobrança (ex.: ambiente
+      // interno) desliga explicitamente via env, nunca por omissão.
+      billingEnabled: process.env.AI_INBOX_AUTO_REPLY_BILLING_ENABLED?.trim() !== "false",
+    },
+    resilience: {
+      healthCheckIntervalMs: parsePositiveInt(process.env.INBOX_HEALTH_CHECK_INTERVAL_MS, 60_000),
+      heartbeatFile: process.env.INBOX_WORKER_HEARTBEAT_FILE?.trim() || join(process.cwd(), ".inbox-worker-heartbeat"),
+      heartbeatIntervalMs: parsePositiveInt(process.env.INBOX_WORKER_HEARTBEAT_INTERVAL_MS, 15_000),
+      metricsPort: parsePositiveInt(process.env.INBOX_WORKER_METRICS_PORT, 9464),
+      metricsEnabled: process.env.INBOX_WORKER_METRICS_ENABLED?.trim() !== "false",
+      outboundRateLimitPerMinute: parsePositiveInt(process.env.INBOX_OUTBOUND_RATE_LIMIT_PER_MINUTE, 20),
+      wuzapiCircuitFailureThreshold: parsePositiveInt(process.env.INBOX_WUZAPI_CIRCUIT_FAILURE_THRESHOLD, 5),
+      wuzapiCircuitCooldownMs: parsePositiveInt(process.env.INBOX_WUZAPI_CIRCUIT_COOLDOWN_MS, 30_000),
+      shutdownDrainTimeoutMs: parsePositiveInt(process.env.INBOX_WORKER_SHUTDOWN_DRAIN_TIMEOUT_MS, 10_000),
     },
   };
 }
@@ -126,11 +168,19 @@ function classifyGenericError(error: unknown): "transient" | "permanent" {
  * effort: se `onDeadLetter` falhar, a mensagem já está durável na DLQ do RabbitMQ (não se perde),
  * só logamos e seguimos — nunca deixamos essa falha bloquear o ACK.
  */
-async function retryOrDeadLetter(channel: Channel, queue: string, msg: ConsumeMessage, error: unknown, onDeadLetter?: (content: Buffer) => Promise<void>): Promise<void> {
+async function retryOrDeadLetter(
+  channel: Channel,
+  queue: string,
+  msg: ConsumeMessage,
+  error: unknown,
+  metrics: ReturnType<typeof createPromInboxMetrics> | undefined,
+  onDeadLetter?: (content: Buffer) => Promise<void>,
+): Promise<void> {
   const attempt = attemptCountOf(msg);
   const kind = classifyGenericError(error);
   if (kind === "permanent" || attempt >= RETRY_TIERS_MS.length) {
     await publishToDeadLetter(channel, queue, msg.content);
+    metrics?.incDlq();
     if (onDeadLetter) {
       try {
         await onDeadLetter(msg.content);
@@ -141,22 +191,72 @@ async function retryOrDeadLetter(channel: Channel, queue: string, msg: ConsumeMe
     channel.ack(msg);
     return;
   }
+  metrics?.incMessageRetry();
   const contentWithAttempt = Buffer.from(msg.content.toString("utf8"));
   await publishToRetryTier(channel, queue, attempt, contentWithAttempt, { persistent: true });
   channel.ack(msg);
 }
 
-async function consumeQueue(channel: Channel, queue: string, handle: (content: Buffer) => Promise<void>, onDeadLetter?: (content: Buffer) => Promise<void>): Promise<void> {
+/**
+ * Fase 6 — contador de handlers em voo, usado pelo shutdown gracioso: `channel.close()` sozinho
+ * NUNCA esperava mensagens já entregues terminarem de processar (achado da auditoria da Fase 6) —
+ * agora o `shutdown()` espera este contador zerar (com um teto de tempo) antes de fechar o canal.
+ */
+let inFlightHandlers = 0;
+
+async function consumeQueue(channel: Channel, queue: string, handle: (content: Buffer) => Promise<void>, metrics: ReturnType<typeof createPromInboxMetrics> | undefined, onDeadLetter?: (content: Buffer) => Promise<void>): Promise<void> {
   await channel.prefetch(CONSUMER_PREFETCH);
   await channel.consume(queue, (msg) => {
     if (!msg) return;
+    inFlightHandlers += 1;
     handle(msg.content)
       .then(() => channel.ack(msg))
       .catch(async (error) => {
         console.error(`[inbox-worker] erro processando "${queue}":`, error instanceof Error ? error.message : error);
-        await retryOrDeadLetter(channel, queue, msg, error, onDeadLetter);
+        await retryOrDeadLetter(channel, queue, msg, error, metrics, onDeadLetter);
+      })
+      .finally(() => {
+        inFlightHandlers -= 1;
       });
   });
+}
+
+/** Fase 6 — servidor HTTP mínimo (sem Fastify — o worker nunca teve nem precisa de um framework
+ * HTTP completo) só para `GET /metrics` (scrape do Prometheus). `metricsEnabled=false` desliga
+ * completamente (nenhuma porta aberta) para ambientes que não quserem/podem expor isso. */
+function startMetricsServer(port: number): import("node:http").Server {
+  const server = createServer((request, response) => {
+    if (request.url === "/metrics") {
+      inboxMetricsRegistry
+        .metrics()
+        .then((body) => {
+          response.writeHead(200, { "Content-Type": inboxMetricsRegistry.contentType });
+          response.end(body);
+        })
+        .catch((error) => {
+          response.writeHead(500);
+          response.end(String(error));
+        });
+      return;
+    }
+    response.writeHead(404);
+    response.end();
+  });
+  server.listen(port);
+  server.unref();
+  return server;
+}
+
+/** Fase 6 — heartbeat em arquivo: `scripts/inbox-worker-healthcheck.mjs` (usado como Docker
+ * `HEALTHCHECK`) checa a idade deste arquivo para distinguir "processo travado" (event loop preso,
+ * conexão zumbi) de "processo existe" — um `docker ps` saudável não garante que o worker ainda
+ * está consumindo de verdade. */
+function touchHeartbeatFile(path: string): void {
+  try {
+    writeFileSync(path, new Date().toISOString(), "utf8");
+  } catch (error) {
+    console.error("[inbox-worker] falha ao gravar heartbeat:", error instanceof Error ? error.message : error);
+  }
 }
 
 async function main(): Promise<void> {
@@ -178,7 +278,29 @@ async function main(): Promise<void> {
     ? new WuzApiMessagingProvider(new WuzApiClient({ baseUrl: config.inbox.wuzApiBaseUrl, adminToken: config.inbox.wuzApiAdminToken }))
     : new FakeMessagingProvider();
 
-  // IA de Atendimento (Fase 5) — `aiResponder` fica `undefined` (no-op) sem
+  // Fase 6 — métricas Prometheus (primeira introdução no Vorix, ver `prom-inbox-metrics.ts`).
+  const metrics = config.resilience.metricsEnabled ? createPromInboxMetrics() : undefined;
+  let metricsServer: import("node:http").Server | undefined;
+  if (config.resilience.metricsEnabled) {
+    metricsServer = startMetricsServer(config.resilience.metricsPort);
+    console.log(`[inbox-worker] métricas Prometheus em http://0.0.0.0:${config.resilience.metricsPort}/metrics`);
+  }
+
+  // Fase 6 — circuit breaker/rate limiter reaproveitados de `application/operations` (Postgres-
+  // backed via `operationalStateRepository`, já exposto por `buildPlatformRepositories()`) — nunca
+  // uma segunda stack só para Inbox. Em driver "memory" (dev/teste sem Postgres) o repositório
+  // ainda existe (`InMemoryOperationalStateRepository`), então isto funciona igual, só sem
+  // sobreviver a um restart do processo.
+  const circuitBreaker = new OperationalCircuitBreaker(repositories.operationalStateRepository, {
+    failureThreshold: config.resilience.wuzapiCircuitFailureThreshold,
+    cooldownMs: config.resilience.wuzapiCircuitCooldownMs,
+  });
+  const rateLimiter = new OperationalRateLimiter(repositories.operationalStateRepository, {
+    defaultLimit: config.resilience.outboundRateLimitPerMinute,
+    windowMs: 60_000,
+  });
+
+  // IA de Atendimento (Fase 5/6) — `aiResponder` fica `undefined` (no-op) sem
   // `AI_INBOX_AUTO_REPLY_ENABLED=true`; falta de `ANTHROPIC_API_KEY` com isso habilitado nunca
   // impede o boot (mesmo princípio de `api-config.ts`'s aiGateway) — toda chamada só degrada para
   // `not_configured`, tratado como falha operacional normal por `maybeGenerateAiResponse`.
@@ -198,7 +320,28 @@ async function main(): Promise<void> {
       },
       executionRepository: repositories.aiExecutionRepository,
     });
-    aiResponder = new AiGatewayInboxResponder(aiGateway);
+
+    // Fase 6 — fecha a limitação deixada explicitamente pela Fase 5: cobra crédito Vorix real por
+    // resposta automática, reaproveitando `CreditAccountingService`/`CreditGatedAiGateway` já
+    // existentes (nunca um ledger/saldo paralelo). Só disponível quando o driver é Postgres — o
+    // billing real SEMPRE vive lá; em memória (dev/teste sem Postgres) a IA roda sem gating de
+    // crédito, documentado como limitação (não há billing algum para gatear nesse modo).
+    let gatedGateway = aiGateway;
+    if (config.ai.billingEnabled && repositories.pool) {
+      const creditAccounting = new CreditAccountingService({
+        platformBillingRepository: new PostgresPlatformBillingRepository(repositories.pool),
+        aiProvidersRepository: new PostgresAiProvidersRepository(repositories.pool),
+        idGenerator: (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      });
+      gatedGateway = new CreditGatedAiGateway({ inner: aiGateway, creditAccounting, now: () => new Date() });
+      console.log("[inbox-worker] billing de IA da Inbox habilitado — resposta automática consome crédito Vorix real (operação \"inbox_auto_reply\").");
+    } else if (config.ai.billingEnabled) {
+      console.log("[inbox-worker] billing de IA da Inbox pedido, mas PERSISTENCE_DRIVER != postgres — rodando sem gating de crédito (dev/teste).");
+    } else {
+      console.log("[inbox-worker] AI_INBOX_AUTO_REPLY_BILLING_ENABLED=false — IA da Inbox roda sem consumir crédito Vorix (decisão explícita).");
+    }
+
+    aiResponder = new AiGatewayInboxResponder(gatedGateway);
     console.log(`[inbox-worker] IA de atendimento habilitada (modelo "${config.ai.anthropicInboxAutoReplyModel}").`);
   } else {
     console.log("[inbox-worker] AI_INBOX_AUTO_REPLY_ENABLED=false — IA de atendimento desligada, Inbox funciona normalmente sem ela.");
@@ -214,6 +357,9 @@ async function main(): Promise<void> {
     outboundQueue: { publish: async () => {} }, // o worker nunca publica outbound, só drena
     provider,
     aiResponder,
+    circuitBreaker,
+    rateLimiter,
+    metrics,
   };
 
   const { connection, channel } = await connectInboxRabbitMq(config.inbox.rabbitMqUrl);
@@ -261,7 +407,7 @@ async function main(): Promise<void> {
 
     const routingKey = enriched.type;
     channel.publish(INBOX_EVENTS_EXCHANGE, routingKey, Buffer.from(JSON.stringify(enriched)), { persistent: true });
-  });
+  }, metrics);
 
   // 2) Fan-out por assunto — cada fila só processa o seu tipo de evento normalizado. Cada um
   // publica uma notificação leve em `inbox.realtime` (Fase 3) depois de persistir — o SSE da API
@@ -293,19 +439,19 @@ async function main(): Promise<void> {
           console.error("[inbox-worker] falha ao processar resposta automática de IA:", error instanceof Error ? error.message : error);
         });
     }
-  });
+  }, metrics);
 
   await consumeQueue(channel, INBOX_QUEUES.status, async (content) => {
     const event = JSON.parse(content.toString("utf8")) as Extract<NormalizedInboxEvent, { type: "message.status" }>;
     await applyMessageStatusChanged(deps, { connectionId: event.connectionId, externalMessageId: event.externalMessageId, status: event.status, occurredAt: event.occurredAt });
     publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId });
-  });
+  }, metrics);
 
   await consumeQueue(channel, INBOX_QUEUES.connection, async (content) => {
     const event = JSON.parse(content.toString("utf8")) as Extract<NormalizedInboxEvent, { type: "connection.state" }>;
     await applyConnectionStateChanged(deps, { connectionId: event.connectionId, status: event.status, phoneNumber: event.phoneNumber });
     publishRealtimeNotification(channel, { type: "connection.status_changed", tenantId: event.tenantId, workspaceId: event.workspaceId, connectionId: event.connectionId, status: event.status });
-  });
+  }, metrics);
 
   // 3) OutboxSenderConsumer — drena o envio outbound enfileirado pela API (`inbox.route.ts`).
   // `onDeadLetter` marca a mensagem como `failed` no Postgres quando a escada de retry se esgota
@@ -320,28 +466,66 @@ async function main(): Promise<void> {
         publishRealtimeNotification(channel, { type: "message.updated", tenantId: message.tenantId, workspaceId: message.workspaceId, conversationId: message.conversationId });
       }
     },
+    metrics,
     async (content) => {
       const payload = JSON.parse(content.toString("utf8")) as { messageId: string };
       const message = await deps.messageRepository.getById(payload.messageId);
       if (message && message.status !== "sent" && message.status !== "failed") {
-        await deps.messageRepository.markFailed(payload.messageId, { lastError: message.lastError ?? "Excedeu a escada de retry.", failedAt: new Date().toISOString() });
+        await deps.messageRepository.markFailed(payload.messageId, { lastError: message.lastError ?? "Excedeu a escada de retry.", failedAt: new Date().toISOString(), failureCategory: message.failureCategory ?? "transient" });
       }
     },
   );
 
-  // Graceful shutdown (Fase 1, requisito de deploy): para de puxar mensagens novas e dá um tempo
-  // curto para o processamento em voo terminar (ACK só acontece após persistência) antes de
-  // fechar canal/conexão — nenhuma mensagem em processamento é perdida num deploy.
+  // Fase 6 — monitor de saúde periódico (nunca reconecta ativamente, só reconcilia
+  // `connectionHealth`/`lastConnectionError` — ver `reconcileConnectionsHealth`) e heartbeat de
+  // liveness (arquivo tocado a cada tick — ver `scripts/inbox-worker-healthcheck.mjs`). Guarda
+  // `running` evita ticks sobrepostos caso uma rodada demore mais que o intervalo.
+  let healthTickRunning = false;
+  const healthTimer = setInterval(() => {
+    if (healthTickRunning) return;
+    healthTickRunning = true;
+    reconcileConnectionsHealth(deps)
+      .then(({ checked, unhealthy }) => {
+        if (unhealthy > 0) console.warn(`[inbox-worker] monitor de saúde: ${unhealthy}/${checked} conexão(ões) com problema.`);
+      })
+      .catch((error) => console.error("[inbox-worker] monitor de saúde falhou:", error instanceof Error ? error.message : error))
+      .finally(() => {
+        healthTickRunning = false;
+      });
+  }, config.resilience.healthCheckIntervalMs);
+  healthTimer.unref();
+
+  touchHeartbeatFile(config.resilience.heartbeatFile);
+  const heartbeatTimer = setInterval(() => touchHeartbeatFile(config.resilience.heartbeatFile), config.resilience.heartbeatIntervalMs);
+  heartbeatTimer.unref();
+
+  // Graceful shutdown (Fase 1/6): para de consumir, espera o que já estava em voo terminar (com
+  // um teto de tempo — nunca trava o shutdown para sempre por um handler pendurado), fecha
+  // RabbitMQ/pool. Fase 6 corrige um gap real encontrado na auditoria: `channel.close()` sozinho
+  // NUNCA esperava handlers em voo de verdade — agora espera `inFlightHandlers` zerar.
   const shutdown = async () => {
     console.log("[inbox-worker] encerrando — aguardando processamento em voo...");
+    clearInterval(healthTimer);
+    clearInterval(heartbeatTimer);
     // Remove os listeners de 'error'/'close' ANTES de fechar de propósito — sem isso, o
     // `connection.close()" abaixo dispara o handler de "queda inesperada" (achado ao vivo acima)
     // e o processo sairia com código 1 mesmo num shutdown limpo, pedido por SIGTERM/SIGINT.
     connection.removeAllListeners("error");
     connection.removeAllListeners("close");
+
+    const drainDeadline = Date.now() + config.resilience.shutdownDrainTimeoutMs;
+    while (inFlightHandlers > 0 && Date.now() < drainDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (inFlightHandlers > 0) {
+      console.warn(`[inbox-worker] shutdown: ${inFlightHandlers} handler(es) ainda em voo após ${config.resilience.shutdownDrainTimeoutMs}ms — fechando mesmo assim.`);
+    }
+
     try {
       await channel.close();
       await connection.close();
+      if (repositories.pool) await repositories.pool.end();
+      if (metricsServer) await new Promise((resolve) => metricsServer!.close(() => resolve(undefined)));
     } finally {
       process.exit(0);
     }

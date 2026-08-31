@@ -9,7 +9,8 @@ import type { WuzApiClient } from "./wuzapi-client.js";
  * contatos, CRM, IA ou automações.
  *
  * `externalSessionId` aqui É o token de sessão do WuzAPI (identificador por sessão, usado no
- * header `Authorization` de toda chamada de sessão) — nunca exposto ao frontend, só circula entre
+ * header `token` — customizado, confirmado ao vivo, distinto do `Authorization` usado pelas
+ * chamadas admin — ver `wuzapi-client.ts`) — nunca exposto ao frontend, só circula entre
  * `zuno-api`/`vorix-worker` e o container do WuzAPI na rede interna `conversas_internal`. O token
  * NUNCA aparece no payload de evento publicado no RabbitMQ (confirmado via código-fonte do WuzAPI,
  * `rabbitmq.go:sendToGlobalRabbit`) — só `instanceName` (o `name` escolhido em `connect()`, que o
@@ -36,10 +37,11 @@ export class WuzApiMessagingProvider implements MessagingProvider {
   }
 
   async getConnectionStatus(input: { externalSessionId: string }): Promise<NormalizedConnectionStatus> {
-    // `/session/status` não devolve telefone (confirmado via API.md) — só no momento do connect()
-    // (campo `jid` da resposta). Aqui só refletimos Connected/LoggedIn.
+    // Confirmado ao vivo (spike Fase 2): `/session/status` já devolve `jid` (vazio antes de
+    // parear) — ao contrário do que a documentação pública sugeria. Campos são lowercase
+    // (`connected`/`loggedIn`), não PascalCase.
     const status = await this.client.getSessionStatus(input.externalSessionId);
-    return { status: status.LoggedIn ? (status.Connected ? "connected" : "reconnecting") : "logged_out" };
+    return { status: status.loggedIn ? (status.connected ? "connected" : "reconnecting") : "logged_out", phoneNumber: extractPhoneFromJid(status.jid) };
   }
 
   async getQrCode(input: { externalSessionId: string }): Promise<{ qrCode: string; expiresAt: string }> {

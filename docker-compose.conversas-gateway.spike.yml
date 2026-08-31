@@ -8,9 +8,11 @@ name: conversas-gateway
 #     up -d
 #
 # O que este arquivo muda em relação à produção:
-#   1) publica wuzapi:8080 e rabbitmq:5672/15672 em 127.0.0.1 (loopback da própria VPS) — só para
-#      o `vorix-worker` do spike, rodando como processo `node` comum (fora de container) na mesma
-#      máquina, conseguir alcançá-los. Nunca em 0.0.0.0 — não fica acessível pela internet.
+#   1) publica wuzapi (host 8180 -> container 8080) e rabbitmq:5672/15672 em 127.0.0.1 (loopback
+#      da própria VPS) — só para o `vorix-worker` do spike, rodando como processo `node` comum
+#      (fora de container) na mesma máquina, conseguir alcançá-los. Nunca em 0.0.0.0 — não fica
+#      acessível pela internet. Portas de host escolhidas para não colidir com outros stacks já
+#      rodando nesta VPS compartilhada (8080 = cmdesk-frontend, 5433 = saas_postgres).
 #   2) adiciona um Postgres DESCARTÁVEL (`spike-vorix-postgres`) só para o schema do Vorix
 #      (migrations 0080-0083 + tabelas já existentes que o worker toca) — NUNCA o `zuno-postgres`
 #      real, para não misturar tráfego de teste de WhatsApp com dado de produção.
@@ -39,7 +41,8 @@ services:
 
   wuzapi:
     ports:
-      - "127.0.0.1:8080:8080"
+      # 8080 já é usado por cmdesk-frontend (outro stack neste mesmo host) — usar 8180 no host.
+      - "127.0.0.1:8180:8080"
     mem_limit: 192m
     mem_reservation: 128m
 
@@ -51,7 +54,8 @@ services:
       POSTGRES_PASSWORD: ${SPIKE_VORIX_POSTGRES_PASSWORD}
       POSTGRES_DB: vorix_spike
     ports:
-      - "127.0.0.1:5433:5432"
+      # 5433 já é usado por saas_postgres (outro stack neste mesmo host) — usar 5434.
+      - "127.0.0.1:5434:5432"
     volumes:
       - spike_vorix_postgres_data:/var/lib/postgresql/data
     networks: [conversas_internal]

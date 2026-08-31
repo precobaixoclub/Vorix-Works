@@ -4,26 +4,36 @@ import { MessagingProviderError } from "../../../application/ports/messaging-pro
  * Cliente HTTP cru do WuzAPI — módulo Conversas (Fase 1/2). Único arquivo que conhece o formato de
  * requisição/resposta do WuzAPI; `WuzApiMessagingProvider` chama isto e nunca `fetch` diretamente.
  *
- * Contrato CONFIRMADO contra o código-fonte real de `asternic/wuzapi` (routes.go, README.md,
- * API.md, wmiau.go, rabbitmq.go — via pesquisa direta no repositório, Fase 2 pré-spike):
+ * Contrato CONFIRMADO CONTRA UMA INSTÂNCIA REAL (spike Fase 2, `asternic/wuzapi` v1.0.8) — supera
+ * a pesquisa de código-fonte/documentação pública que motivou a primeira versão deste arquivo,
+ * que acertou várias coisas mas errou duas importantes:
  *  - toda resposta vem envelopada em `{ code, data, success }` — `request()` já desembrulha `data`.
- *  - admin e sessão usam o MESMO header `Authorization` (nunca um header `token` customizado).
+ *  - **admin usa header `Authorization`; chamadas de SESSÃO (`/session/*`, `/chat/*`) usam um
+ *    header CUSTOMIZADO `token`, não `Authorization`** — a documentação pública dizia que os dois
+ *    usavam `Authorization`; ao vivo, `/session/status` com `Authorization` devolve 401, com
+ *    `token` devolve 200. Confirmado por curl direto contra o container antes de corrigir aqui.
  *  - `/session/connect` NÃO funciona sozinho — a sessão precisa existir antes via
  *    `POST /admin/users` (admin token), escolhendo o `token` da sessão e o `name` (usado como
  *    `instanceName` no evento do RabbitMQ — por isso `createAdminUser` recebe `name` = o
  *    `MessagingConnection.id` do Vorix, permitindo correlacionar o evento de volta por id direto,
- *    sem precisar de um índice por token).
- *  - Campos de resposta são PascalCase (`QRCode`, `Connected`, `LoggedIn`, `Id`, `Timestamp`).
- *  - `/session/status` NÃO retorna telefone — o JID pareado só aparece na resposta de
- *    `/session/connect` (`data.jid`, formato `"<telefone>.<device>:<agent>@s.whatsapp.net"`).
+ *    sem precisar de um índice por token). Confirmado: cria a linha em `users` no Postgres do
+ *    WuzAPI com `name`/`token` exatamente como enviados.
+ *  - **Campos de resposta são um MIX, não uniformemente PascalCase** — `/session/qr` devolve
+ *    `data.QRCode` (PascalCase, confirmado), mas `/session/status` e `/session/connect` devolvem
+ *    `data.connected`/`data.loggedIn`/`data.jid`/`data.details`/`data.events`/`data.webhook`
+ *    (lowercase/camelCase) — a documentação pública mostrava exemplo PascalCase para essas duas
+ *    rotas, que NÃO bate com esta versão ao vivo.
+ *  - `/session/status` JÁ retorna `jid` (vazio antes de parear, preenchido depois) — ao contrário
+ *    do que a documentação pública sugeria (só em `/session/connect`).
  *  - `/session/logout` é um endpoint DISTINTO de `/session/disconnect` — logout revoga a sessão de
- *    verdade (o usuário precisaria escanear QR de novo); disconnect só derruba o socket.
+ *    verdade (o usuário precisaria escanear QR de novo); disconnect só derruba o socket. Ainda não
+ *    testado ao vivo (pendência do restante do spike).
  *
- * AINDA NÃO CONFIRMADO (pendência do spike com instância real, ver
- * docs/conversas-fase2-spike.md): os nomes exatos dos campos de `sendImage`/`sendAudio`/
- * `sendVideo`/`sendDocument` — só `sendText` aparece com exemplo completo na documentação
- * (`Phone`/`Body`/`Id` opcional). Os demais seguem o mesmo padrão PascalCase por analogia, mas
- * precisam ser validados contra a instância real antes de confiar em produção.
+ * AINDA NÃO CONFIRMADO (pendência do restante do spike, ver docs/conversas-fase2-spike.md): os
+ * nomes exatos dos campos de `sendImage`/`sendAudio`/`sendVideo`/`sendDocument`, e se `sendText`
+ * (`{ Phone, Body }`, PascalCase, único endpoint testado ao vivo até agora) representa o padrão de
+ * TODAS as rotas de envio ou só desta — dado o mix de casing já encontrado em `/session/*`, não dá
+ * mais para assumir por analogia sem testar cada uma.
  */
 
 export type WuzApiClientConfig = {
@@ -53,9 +63,11 @@ export class WuzApiClient {
     return this.request<T>(path, { ...init, headers: { Authorization: this.config.adminToken } });
   }
 
-  /** Chamadas de sessão (status/QR/envio) usam o token daquela sessão (`externalSessionId` no domínio Vorix) — mesmo header `Authorization`, valor diferente. */
+  /** Chamadas de sessão (status/QR/envio) usam o token daquela sessão (`externalSessionId` no
+   * domínio Vorix) num header CUSTOMIZADO `token` — confirmado ao vivo, NUNCA `Authorization`
+   * aqui (isso é só para `adminRequest`). */
   private async sessionRequest<T>(sessionToken: string, path: string, init: { method: string; body?: unknown }): Promise<T> {
-    return this.request<T>(path, { ...init, headers: { Authorization: sessionToken } });
+    return this.request<T>(path, { ...init, headers: { token: sessionToken } });
   }
 
   private async request<T>(path: string, init: { method: string; body?: unknown; headers: Record<string, string> }): Promise<T> {
@@ -90,7 +102,7 @@ export class WuzApiClient {
     });
   }
 
-  async connectSession(sessionToken: string, input: { subscribe?: string[]; immediate?: boolean } = {}): Promise<{ jid?: string }> {
+  async connectSession(sessionToken: string, input: { subscribe?: string[]; immediate?: boolean } = {}): Promise<{ jid?: string; details?: string; events?: string }> {
     return this.sessionRequest(sessionToken, "/session/connect", {
       method: "POST",
       body: { Subscribe: input.subscribe ?? ["Message", "ReadReceipt", "Connected", "Disconnected", "LoggedOut"], Immediate: input.immediate ?? false },
@@ -106,7 +118,7 @@ export class WuzApiClient {
     await this.sessionRequest(sessionToken, "/session/logout", { method: "POST" });
   }
 
-  async getSessionStatus(sessionToken: string): Promise<{ Connected: boolean; LoggedIn: boolean }> {
+  async getSessionStatus(sessionToken: string): Promise<{ connected: boolean; loggedIn: boolean; jid?: string }> {
     return this.sessionRequest(sessionToken, "/session/status", { method: "GET" });
   }
 

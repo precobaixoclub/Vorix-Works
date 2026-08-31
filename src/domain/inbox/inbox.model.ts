@@ -64,6 +64,12 @@ export type InboxContact = {
   updatedAt: string;
 };
 
+/**
+ * Fase 4 (Atendimento): mapeia direto para OPEN/PENDING/CLOSED pedidos — `"resolved"` É o CLOSED
+ * (nome mantido do schema da Fase 1 para não exigir migration de enum; "finalizada" na UI).
+ * `"archived"` continua reservado, fora do fluxo principal de atendimento (nunca setado por
+ * nenhum caso de uso desta fase).
+ */
 export const INBOX_CONVERSATION_STATUSES = ["open", "pending", "resolved", "archived"] as const;
 export type InboxConversationStatus = (typeof INBOX_CONVERSATION_STATUSES)[number];
 
@@ -134,6 +140,39 @@ export type InboxMessage = {
   deliveredAt?: string;
   readAt?: string;
   failedAt?: string;
+};
+
+/**
+ * Evento operacional de uma conversa — Fase 4 (Atendimento). Dupla função: (1) auditoria (quem
+ * atribuiu/transferiu/pausou IA/mudou status, quando), (2) alimenta a timeline da Inbox com
+ * eventos discretos ("Cleverton assumiu o atendimento") — NUNCA vira mensagem real enviada ao
+ * WhatsApp, é só um registro interno do Vorix.
+ */
+export const INBOX_CONVERSATION_EVENT_TYPES = [
+  "assigned",
+  "unassigned",
+  "took_over",
+  "transferred",
+  "status_changed",
+  "ai_paused",
+  "ai_resumed",
+] as const;
+export type InboxConversationEventType = (typeof INBOX_CONVERSATION_EVENT_TYPES)[number];
+
+export type InboxConversationEvent = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  conversationId: string;
+  type: InboxConversationEventType;
+  /** Quem fez a ação — sempre um userId real, nunca "system", mesmo para efeitos colaterais
+   * (ex.: IA pausada automaticamente ao assumir) — a Fase 4 não tem nenhum ator automático. */
+  performedBy: string;
+  fromUserId?: string;
+  toUserId?: string;
+  fromStatus?: InboxConversationStatus;
+  toStatus?: InboxConversationStatus;
+  createdAt: string;
 };
 
 /** Normaliza um telefone para E.164 simplificado (dígitos apenas, com `+` opcional na entrada) —

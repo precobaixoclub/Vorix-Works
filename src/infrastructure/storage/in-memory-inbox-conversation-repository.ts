@@ -55,10 +55,15 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
         rows = rows.filter((row) => row.assignedUserId === input.assignedUserId);
         break;
       case "unassigned":
-        rows = rows.filter((row) => !row.assignedUserId);
+        rows = rows.filter((row) => !row.assignedUserId && row.status !== "resolved" && row.status !== "archived");
         break;
       case "unread":
         rows = rows.filter((row) => row.unreadCount > 0);
+        break;
+      case "open":
+      case "pending":
+      case "resolved":
+        rows = rows.filter((row) => row.status === input.filter);
         break;
       default:
         break;
@@ -109,6 +114,26 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     const existing = this.rows.get(id);
     if (!existing) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
     const updated = { ...existing, aiEnabled, updatedAt: new Date().toISOString() };
+    this.rows.set(id, updated);
+    return updated;
+  }
+
+  // Sem `await` entre o check e o set — o event loop do Node não intercala outra chamada no meio,
+  // então isto já é atômico por construção (mesmo raciocínio da versão Postgres, só que a garantia
+  // vem do single-thread do JS em vez de um WHERE de banco).
+  async tryTakeOver(id: string, userId: string): Promise<InboxConversation | undefined> {
+    const existing = this.rows.get(id);
+    if (!existing) return undefined;
+    if (existing.assignedUserId && existing.assignedUserId !== userId) return undefined;
+    const updated = { ...existing, assignedUserId: userId, aiEnabled: false, updatedAt: new Date().toISOString() };
+    this.rows.set(id, updated);
+    return updated;
+  }
+
+  async tryTransfer(id: string, input: { fromUserId: string; toUserId: string }): Promise<InboxConversation | undefined> {
+    const existing = this.rows.get(id);
+    if (!existing || existing.assignedUserId !== input.fromUserId) return undefined;
+    const updated = { ...existing, assignedUserId: input.toUserId, updatedAt: new Date().toISOString() };
     this.rows.set(id, updated);
     return updated;
   }

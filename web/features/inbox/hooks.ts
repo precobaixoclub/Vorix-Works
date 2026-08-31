@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { getApiBaseUrl } from "@/lib/api-error";
 import { getAccessToken } from "@/lib/auth-token";
-import { listInboxConnections, listInboxConversationMessages, listInboxConversations } from "./api";
+import { listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations } from "./api";
 import type { InboxConversationFilter } from "./types";
 
 /**
@@ -22,6 +22,16 @@ export function useInboxConversationMessages(workspaceId: string, conversationId
     refreshInterval: 20_000,
   });
 }
+
+/** Fase 4 — timeline de eventos operacionais ("assumiu o atendimento", "IA pausada"...), separada
+ * das mensagens; a UI intercala as duas por `createdAt`. */
+export function useInboxConversationEvents(workspaceId: string, conversationId: string | undefined) {
+  return useSWR(conversationId ? ["inbox-conversation-events", workspaceId, conversationId] : null, () => listInboxConversationEvents(workspaceId, conversationId!), {
+    refreshInterval: 20_000,
+  });
+}
+
+const ALL_FILTERS = ["all", "mine", "unassigned", "unread", "open", "pending", "resolved"] as const;
 
 const REALTIME_EVENT_TYPES = ["message.created", "message.updated", "conversation.updated", "connection.status_changed"] as const;
 
@@ -58,12 +68,12 @@ export function useInboxRealtime(workspaceId: string, conversationId: string | u
           } catch {
             return;
           }
-          void mutate(["inbox-conversations", workspaceId, "all"]);
-          void mutate(["inbox-conversations", workspaceId, "mine"]);
-          void mutate(["inbox-conversations", workspaceId, "unassigned"]);
-          void mutate(["inbox-conversations", workspaceId, "unread"]);
+          for (const filterValue of ALL_FILTERS) {
+            void mutate(["inbox-conversations", workspaceId, filterValue]);
+          }
           if (payload.conversationId && payload.conversationId === conversationIdRef.current) {
             void mutate(["inbox-conversation-messages", workspaceId, payload.conversationId]);
+            void mutate(["inbox-conversation-events", workspaceId, payload.conversationId]);
           }
         });
       }

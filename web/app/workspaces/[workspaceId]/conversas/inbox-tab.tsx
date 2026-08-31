@@ -12,20 +12,44 @@ import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
 import {
   assignInboxConversation,
+  closeInboxConversation,
   markInboxConversationRead,
+  reopenInboxConversation,
   sendInboxMessage,
   setInboxConversationAiEnabled,
   takeOverInboxConversation,
+  transferInboxConversation,
 } from "@/features/inbox/api";
-import { useInboxConversationMessages, useInboxConversations, useInboxRealtime } from "@/features/inbox/hooks";
-import type { InboxConversation, InboxConversationFilter, InboxMessage } from "@/features/inbox/types";
+import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxRealtime } from "@/features/inbox/hooks";
+import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage } from "@/features/inbox/types";
 
 const FILTERS: { value: InboxConversationFilter; label: string }[] = [
   { value: "all", label: "Todas" },
   { value: "mine", label: "Minhas" },
   { value: "unassigned", label: "Não atribuídas" },
   { value: "unread", label: "Não lidas" },
+  { value: "open", label: "Em atendimento" },
+  { value: "pending", label: "Pendentes" },
+  { value: "resolved", label: "Finalizadas" },
 ];
+
+/** Fase 4 — sem endpoint de listagem de membros do tenant hoje (limitação conhecida, ver relatório
+ * da fase); só sabemos identificar o usuário logado. Todo outro id aparece truncado. */
+function agentLabel(userId: string | undefined, currentUserId: string | undefined): string {
+  if (!userId) return "Ninguém";
+  if (userId === currentUserId) return "Você";
+  return userId.length > 10 ? `${userId.slice(0, 8)}…` : userId;
+}
+
+function statusLabelFor(status: InboxConversation["status"]): string {
+  switch (status) {
+    case "open": return "Em atendimento";
+    case "pending": return "Pendente";
+    case "resolved": return "Finalizada";
+    case "archived": return "Arquivada";
+    default: return status;
+  }
+}
 
 type MobileView = "list" | "conversation" | "details";
 
@@ -35,6 +59,8 @@ type MobileView = "list" | "conversation" | "details";
  * `web/CLAUDE.md`/design system.
  */
 export function InboxTab({ workspaceId }: { workspaceId: string }) {
+  const { state } = useAuth();
+  const currentUserId = state.status === "authenticated" ? state.user.id : undefined;
   const [filter, setFilter] = useState<InboxConversationFilter>("all");
   const [selectedConversationId, setSelectedConversationId] = useState<string | undefined>();
   const [mobileView, setMobileView] = useState<MobileView>("list");
@@ -67,6 +93,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
           onFilterChange={setFilter}
           selectedConversationId={selectedConversationId}
           onSelect={handleSelect}
+          currentUserId={currentUserId}
         />
       </div>
 
@@ -75,6 +102,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
           <ConversationTimelinePane
             workspaceId={workspaceId}
             conversation={selectedConversation}
+            currentUserId={currentUserId}
             onBack={() => setMobileView("list")}
             onOpenDetails={() => setMobileView("details")}
           />
@@ -108,6 +136,7 @@ function ConversationListPane({
   onFilterChange,
   selectedConversationId,
   onSelect,
+  currentUserId,
 }: {
   conversations: InboxConversation[];
   isLoading: boolean;
@@ -117,6 +146,7 @@ function ConversationListPane({
   onFilterChange: (filter: InboxConversationFilter) => void;
   selectedConversationId: string | undefined;
   onSelect: (conversation: InboxConversation) => void;
+  currentUserId: string | undefined;
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -166,9 +196,14 @@ function ConversationListPane({
                     </span>
                   ) : null}
                 </div>
-                <div className="mt-0.5 flex items-center gap-1.5">
-                  {conversation.aiEnabled ? <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">IA</Badge> : null}
-                  {!conversation.assignedUserId ? <span className="text-[11px] text-muted-foreground">Não atribuída</span> : null}
+                <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                  <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal">{statusLabelFor(conversation.status)}</Badge>
+                  {conversation.aiEnabled ? (
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">IA ativa</Badge>
+                  ) : (
+                    <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground">IA pausada</Badge>
+                  )}
+                  <span className="text-[11px] text-muted-foreground">{agentLabel(conversation.assignedUserId, currentUserId)}</span>
                 </div>
               </div>
               {conversation.unreadCount > 0 ? (
@@ -184,21 +219,31 @@ function ConversationListPane({
   );
 }
 
+type TimelineEntry = { kind: "message"; at: string; message: InboxMessage } | { kind: "event"; at: string; event: InboxConversationEvent };
+
 function ConversationTimelinePane({
   workspaceId,
   conversation,
+  currentUserId,
   onBack,
   onOpenDetails,
 }: {
   workspaceId: string;
   conversation: InboxConversation;
+  currentUserId: string | undefined;
   onBack: () => void;
   onOpenDetails: () => void;
 }) {
   const { data, isLoading, error, mutate } = useInboxConversationMessages(workspaceId, conversation.id);
+  const { data: eventsData } = useInboxConversationEvents(workspaceId, conversation.id);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const messages = [...(data?.messages ?? [])].reverse();
+  const events = eventsData?.events ?? [];
+  const timeline: TimelineEntry[] = [
+    ...messages.map((message): TimelineEntry => ({ kind: "message", at: message.sentAt ?? message.createdAt, message })),
+    ...events.map((event): TimelineEntry => ({ kind: "event", at: event.createdAt, event })),
+  ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
   async function handleSend() {
     const body = draft.trim();
@@ -230,13 +275,17 @@ function ConversationTimelinePane({
           <div className="flex justify-center py-10"><Spinner className="h-5 w-5 text-primary" /></div>
         ) : error ? (
           <ErrorState error={error} onRetry={() => mutate()} />
-        ) : messages.length === 0 ? (
+        ) : timeline.length === 0 ? (
           <EmptyState title="Nenhuma mensagem ainda" description="Envie a primeira mensagem para começar a conversa." />
         ) : (
           <div className="flex flex-col gap-2">
-            {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
-            ))}
+            {timeline.map((entry) =>
+              entry.kind === "message" ? (
+                <MessageBubble key={`msg-${entry.message.id}`} message={entry.message} />
+              ) : (
+                <EventPill key={`evt-${entry.event.id}`} event={entry.event} currentUserId={currentUserId} />
+              ),
+            )}
           </div>
         )}
       </div>
@@ -278,6 +327,42 @@ function MessageBubble({ message }: { message: InboxMessage }) {
   );
 }
 
+/** Fase 4 — evento operacional discreto, renderizado como um "pill" central na timeline. NUNCA é
+ * uma mensagem enviada ao WhatsApp — só reflete uma mudança de estado do atendimento. */
+function EventPill({ event, currentUserId }: { event: InboxConversationEvent; currentUserId: string | undefined }) {
+  return (
+    <div className="flex justify-center py-1">
+      <span className="rounded-full bg-muted px-3 py-1 text-center text-[11px] text-muted-foreground">
+        {eventLabel(event, currentUserId)} · {new Date(event.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+      </span>
+    </div>
+  );
+}
+
+function eventLabel(event: InboxConversationEvent, currentUserId: string | undefined): string {
+  const by = agentLabel(event.performedBy, currentUserId);
+  switch (event.type) {
+    case "took_over":
+      return `${by} assumiu o atendimento`;
+    case "assigned":
+      return `${by} atribuiu a conversa a ${agentLabel(event.toUserId, currentUserId)}`;
+    case "unassigned":
+      return `${by} removeu ${agentLabel(event.fromUserId, currentUserId)} do atendimento`;
+    case "transferred":
+      return `${by} transferiu a conversa de ${agentLabel(event.fromUserId, currentUserId)} para ${agentLabel(event.toUserId, currentUserId)}`;
+    case "status_changed":
+      if (event.toStatus === "resolved") return `${by} finalizou o atendimento`;
+      if (event.toStatus === "open") return `${by} reabriu a conversa`;
+      return `${by} mudou o status para ${event.toStatus ? statusLabelFor(event.toStatus) : "—"}`;
+    case "ai_paused":
+      return "IA pausada";
+    case "ai_resumed":
+      return "IA reativada";
+    default:
+      return "Atendimento atualizado";
+  }
+}
+
 function statusLabel(status: InboxMessage["status"]): string {
   switch (status) {
     case "queued": return "enviando";
@@ -304,36 +389,48 @@ function ContactContextPane({
   const { state } = useAuth();
   const currentUserId = state.status === "authenticated" ? state.user.id : undefined;
   const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | undefined>();
+  const [transferTarget, setTransferTarget] = useState("");
   const isAssignedToMe = conversation.assignedUserId === currentUserId;
+  const isResolved = conversation.status === "resolved";
 
-  async function handleTakeOver() {
+  async function runAction(action: () => Promise<InboxConversation>) {
     setBusy(true);
+    setActionError(undefined);
     try {
-      await takeOverInboxConversation(workspaceId, conversation.id);
+      await action();
       onConversationChanged();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Não foi possível concluir a ação.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleReleaseAssignment() {
-    setBusy(true);
-    try {
-      await assignInboxConversation(workspaceId, conversation.id, undefined);
-      onConversationChanged();
-    } finally {
-      setBusy(false);
-    }
+  function handleTakeOver() {
+    return runAction(() => takeOverInboxConversation(workspaceId, conversation.id));
   }
 
-  async function handleToggleAi(aiEnabled: boolean) {
-    setBusy(true);
-    try {
-      await setInboxConversationAiEnabled(workspaceId, conversation.id, aiEnabled);
-      onConversationChanged();
-    } finally {
-      setBusy(false);
-    }
+  function handleReleaseAssignment() {
+    return runAction(() => assignInboxConversation(workspaceId, conversation.id, undefined));
+  }
+
+  function handleTransfer() {
+    const toUserId = transferTarget.trim();
+    if (!toUserId) return;
+    return runAction(() => transferInboxConversation(workspaceId, conversation.id, toUserId)).then(() => setTransferTarget(""));
+  }
+
+  function handleToggleAi(aiEnabled: boolean) {
+    return runAction(() => setInboxConversationAiEnabled(workspaceId, conversation.id, aiEnabled));
+  }
+
+  function handleClose() {
+    return runAction(() => closeInboxConversation(workspaceId, conversation.id));
+  }
+
+  function handleReopen() {
+    return runAction(() => reopenInboxConversation(workspaceId, conversation.id));
   }
 
   return (
@@ -350,19 +447,59 @@ function ContactContextPane({
         <p className="text-xs text-muted-foreground">{conversation.contactPhone}</p>
       </div>
 
-      <section className="mb-4">
-        <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Responsável</h3>
-        {conversation.assignedUserId ? (
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm text-foreground">{isAssignedToMe ? "Você" : conversation.assignedUserId}</p>
-            <Button variant="secondary" disabled={busy} onClick={handleReleaseAssignment}>Liberar</Button>
+      {actionError ? (
+        <div className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{actionError}</div>
+      ) : null}
+
+      <section className="mb-4 border-b border-border pb-4">
+        <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Atendimento</h3>
+
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] text-muted-foreground">Responsável</p>
+            <p className="text-sm text-foreground">{agentLabel(conversation.assignedUserId, currentUserId)}</p>
           </div>
-        ) : (
-          <Button disabled={busy} onClick={handleTakeOver}>Assumir conversa</Button>
-        )}
+          <div className="flex gap-1.5">
+            {!isAssignedToMe ? (
+              <Button disabled={busy} onClick={handleTakeOver}>{conversation.assignedUserId ? "Assumir" : "Assumir conversa"}</Button>
+            ) : null}
+            {conversation.assignedUserId ? (
+              <Button variant="secondary" disabled={busy} onClick={handleReleaseAssignment}>Liberar</Button>
+            ) : null}
+          </div>
+        </div>
+
+        {conversation.assignedUserId ? (
+          <div className="mb-3">
+            <p className="mb-1 text-[11px] text-muted-foreground">
+              Transferir para (ID do usuário) <span className="opacity-70">— ainda sem busca por nome, ver limitações da Fase 4</span>
+            </p>
+            <div className="flex gap-1.5">
+              <input
+                value={transferTarget}
+                onChange={(event) => setTransferTarget(event.target.value)}
+                placeholder="id-do-usuario"
+                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+              />
+              <Button variant="secondary" disabled={busy || !transferTarget.trim()} onClick={handleTransfer}>Transferir</Button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] text-muted-foreground">Status</p>
+            <p className="text-sm text-foreground">{statusLabelFor(conversation.status)}</p>
+          </div>
+          {isResolved ? (
+            <Button variant="secondary" disabled={busy} onClick={handleReopen}>Reabrir</Button>
+          ) : (
+            <Button variant="secondary" disabled={busy} onClick={handleClose}>Finalizar</Button>
+          )}
+        </div>
       </section>
 
-      <section className="mb-4">
+      <section>
         <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Inteligência artificial</h3>
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm text-foreground">{conversation.aiEnabled ? "IA ativa" : "IA pausada"}</p>
@@ -372,11 +509,6 @@ function ContactContextPane({
             <Button variant="secondary" disabled={busy} onClick={() => handleToggleAi(true)}>Reativar IA</Button>
           )}
         </div>
-      </section>
-
-      <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Status da conversa</h3>
-        <p className="text-sm text-foreground capitalize">{conversation.status}</p>
       </section>
     </div>
   );

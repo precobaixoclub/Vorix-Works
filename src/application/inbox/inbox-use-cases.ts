@@ -1,7 +1,8 @@
-import type { InboxContact, InboxConversation, InboxMessage, MessagingConnection, MessagingConnectionStatus } from "../../domain/inbox/inbox.model.js";
+import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, MessagingConnection, MessagingConnectionStatus } from "../../domain/inbox/inbox.model.js";
 import { normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
 import type { InboxContactRepositoryPort } from "../ports/inbox-contact-repository.port.js";
-import type { InboxConversationListFilter, InboxConversationRepositoryPort } from "../ports/inbox-conversation-repository.port.js";
+import type { InboxConversationEventRepositoryPort } from "../ports/inbox-conversation-event-repository.port.js";
+import type { InboxConversationListFilter, InboxConversationListItem, InboxConversationRepositoryPort } from "../ports/inbox-conversation-repository.port.js";
 import type { InboxMessageRepositoryPort } from "../ports/inbox-message-repository.port.js";
 import type { MessagingConnectionRepositoryPort } from "../ports/messaging-connection-repository.port.js";
 import type { MessagingProvider } from "../ports/messaging-provider.port.js";
@@ -20,6 +21,7 @@ export type InboxUseCaseDeps = {
   connectionRepository: MessagingConnectionRepositoryPort;
   contactRepository: InboxContactRepositoryPort;
   conversationRepository: InboxConversationRepositoryPort;
+  conversationEventRepository: InboxConversationEventRepositoryPort;
   messageRepository: InboxMessageRepositoryPort;
   workspaceRepository: WorkspaceRepositoryPort;
   outboundQueue: OutboundMessageQueuePort;
@@ -97,7 +99,7 @@ export async function disconnectConnection(deps: InboxUseCaseDeps, input: Discon
 
 export type ListConversationsInput = { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string };
 
-export async function listConversations(deps: InboxUseCaseDeps, input: ListConversationsInput): Promise<InboxConversation[]> {
+export async function listConversations(deps: InboxUseCaseDeps, input: ListConversationsInput): Promise<InboxConversationListItem[]> {
   return deps.conversationRepository.listByWorkspace(input);
 }
 
@@ -117,28 +119,162 @@ export async function markConversationRead(deps: InboxUseCaseDeps, input: MarkCo
   await deps.conversationRepository.markRead(conversation.id);
 }
 
-export type AssignConversationInput = { tenantId: string; workspaceId: string; conversationId: string; assignedUserId?: string };
+export type AssignConversationInput = { tenantId: string; workspaceId: string; conversationId: string; assignedUserId?: string; performedBy: string };
 
+/**
+ * Atribuição DIRETA (Fase 4) — um supervisor definindo/removendo o responsável, ou o próprio fluxo
+ * de "assumir"/"transferir" usando isto só pra registrar o evento (a mudança de estado em si, nos
+ * dois últimos casos, já aconteceu de forma atômica via `tryTakeOver`/`tryTransfer` — nunca duas
+ * vezes). Nunca usar isto sozinho pra implementar "assumir conversa": não tem proteção de
+ * concorrência (ver `takeOverConversation`).
+ */
 export async function assignConversation(deps: InboxUseCaseDeps, input: AssignConversationInput): Promise<InboxConversation> {
   const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
-  return deps.conversationRepository.assign(conversation.id, input.assignedUserId);
+  const updated = await deps.conversationRepository.assign(conversation.id, input.assignedUserId);
+  await deps.conversationEventRepository.record({
+    tenantId: input.tenantId,
+    workspaceId: input.workspaceId,
+    conversationId: conversation.id,
+    type: input.assignedUserId ? "assigned" : "unassigned",
+    performedBy: input.performedBy,
+    fromUserId: conversation.assignedUserId,
+    toUserId: input.assignedUserId,
+  });
+  return updated;
 }
 
 export type TakeOverConversationInput = { tenantId: string; workspaceId: string; conversationId: string; userId: string };
 
-/** "Assumir conversa" (obrigatório, Fase 4/5): atribui ao atendente E desliga a IA SÓ nesta
- * conversa — nunca globalmente. Ver `setAiConversationEnabled` para o caminho inverso ("reativar IA"). */
+/**
+ * "Assumir conversa" (Fase 4, requisito crítico de concorrência) — ATÔMICO via
+ * `tryTakeOver` (compare-and-set no repositório): dois atendentes clicando "assumir" ao mesmo
+ * tempo NUNCA resultam em ambos "ganhando" — um deles recebe `INBOX_CONVERSATION_ALREADY_ASSIGNED`
+ * (409), nunca um estado inconsistente. A IA é desligada NA MESMA operação atômica do backend
+ * (dentro de `tryTakeOver`, nunca uma segunda chamada separada) — é isso que fecha a janela onde
+ * IA e humano poderiam responder ao mesmo tempo. Registra até 2 eventos discretos na timeline:
+ * sempre "took_over", e "ai_paused" só se a IA estava de fato ativa antes (evita ruído no
+ * histórico quando a IA já estava pausada).
+ */
 export async function takeOverConversation(deps: InboxUseCaseDeps, input: TakeOverConversationInput): Promise<InboxConversation> {
   const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
-  await deps.conversationRepository.assign(conversation.id, input.userId);
-  return deps.conversationRepository.setAiEnabled(conversation.id, false);
+  // Reclique do MESMO atendente que já é dono: no-op de verdade, nunca gera uma segunda linha
+  // redundante de "assumiu o atendimento" no histórico.
+  if (conversation.assignedUserId === input.userId && !conversation.aiEnabled) return conversation;
+  const wasAiEnabled = conversation.aiEnabled;
+  const updated = await deps.conversationRepository.tryTakeOver(conversation.id, input.userId);
+  if (!updated) {
+    throw new Error(`INBOX_CONVERSATION_ALREADY_ASSIGNED: a conversa "${conversation.id}" já foi assumida por outro atendente.`);
+  }
+  await deps.conversationEventRepository.record({
+    tenantId: input.tenantId,
+    workspaceId: input.workspaceId,
+    conversationId: conversation.id,
+    type: "took_over",
+    performedBy: input.userId,
+    fromUserId: conversation.assignedUserId,
+    toUserId: input.userId,
+  });
+  if (wasAiEnabled) {
+    await deps.conversationEventRepository.record({
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+      conversationId: conversation.id,
+      type: "ai_paused",
+      performedBy: input.userId,
+    });
+  }
+  return updated;
 }
 
-export type SetAiConversationEnabledInput = { tenantId: string; workspaceId: string; conversationId: string; aiEnabled: boolean };
+export type TransferConversationInput = { tenantId: string; workspaceId: string; conversationId: string; toUserId: string; performedBy: string };
+
+/**
+ * Transferência (Fase 4) — ATÔMICA via `tryTransfer`, mesmo raciocínio de `takeOverConversation`:
+ * só transfere se o responsável atual ainda for quem a UI achava que era; se outra ação mudou isso
+ * entre a leitura da tela e o clique, `INBOX_CONVERSATION_TRANSFER_CONFLICT` (409) em vez de
+ * sobrescrever silenciosamente. Exige uma conversa JÁ atribuída — transferir uma conversa sem
+ * responsável não faz sentido semântico (isso é "assumir" ou "atribuir", não "transferir").
+ */
+export async function transferConversation(deps: InboxUseCaseDeps, input: TransferConversationInput): Promise<InboxConversation> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  if (!conversation.assignedUserId) {
+    throw new Error("INBOX_CONVERSATION_NOT_ASSIGNED: só é possível transferir uma conversa que já tem responsável — use atribuição direta para uma conversa sem dono.");
+  }
+  const fromUserId = conversation.assignedUserId;
+  const updated = await deps.conversationRepository.tryTransfer(conversation.id, { fromUserId, toUserId: input.toUserId });
+  if (!updated) {
+    throw new Error(`INBOX_CONVERSATION_TRANSFER_CONFLICT: a conversa "${conversation.id}" já não está mais com o responsável esperado.`);
+  }
+  await deps.conversationEventRepository.record({
+    tenantId: input.tenantId,
+    workspaceId: input.workspaceId,
+    conversationId: conversation.id,
+    type: "transferred",
+    performedBy: input.performedBy,
+    fromUserId,
+    toUserId: input.toUserId,
+  });
+  return updated;
+}
+
+export type CloseConversationInput = { tenantId: string; workspaceId: string; conversationId: string; performedBy: string };
+
+/** Finalizar atendimento — status vira `resolved` ("Finalizada" na UI). Idempotente: já
+ * finalizada, não faz nada (nunca duplica evento de histórico). */
+export async function closeConversation(deps: InboxUseCaseDeps, input: CloseConversationInput): Promise<InboxConversation> {
+  return transitionConversationStatus(deps, input, "resolved");
+}
+
+export type ReopenConversationInput = { tenantId: string; workspaceId: string; conversationId: string; performedBy: string };
+
+/** Reabrir uma conversa finalizada — só faz sentido a partir de `resolved`; volta pra `open`. */
+export async function reopenConversation(deps: InboxUseCaseDeps, input: ReopenConversationInput): Promise<InboxConversation> {
+  return transitionConversationStatus(deps, input, "open");
+}
+
+async function transitionConversationStatus(
+  deps: InboxUseCaseDeps,
+  input: { tenantId: string; workspaceId: string; conversationId: string; performedBy: string },
+  toStatus: InboxConversation["status"],
+): Promise<InboxConversation> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  if (conversation.status === toStatus) return conversation;
+  const updated = await deps.conversationRepository.setStatus(conversation.id, toStatus);
+  await deps.conversationEventRepository.record({
+    tenantId: input.tenantId,
+    workspaceId: input.workspaceId,
+    conversationId: conversation.id,
+    type: "status_changed",
+    performedBy: input.performedBy,
+    fromStatus: conversation.status,
+    toStatus,
+  });
+  return updated;
+}
+
+export type SetAiConversationEnabledInput = { tenantId: string; workspaceId: string; conversationId: string; aiEnabled: boolean; performedBy: string };
 
 export async function setAiConversationEnabled(deps: InboxUseCaseDeps, input: SetAiConversationEnabledInput): Promise<InboxConversation> {
   const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
-  return deps.conversationRepository.setAiEnabled(conversation.id, input.aiEnabled);
+  if (conversation.aiEnabled === input.aiEnabled) return conversation;
+  const updated = await deps.conversationRepository.setAiEnabled(conversation.id, input.aiEnabled);
+  await deps.conversationEventRepository.record({
+    tenantId: input.tenantId,
+    workspaceId: input.workspaceId,
+    conversationId: conversation.id,
+    type: input.aiEnabled ? "ai_resumed" : "ai_paused",
+    performedBy: input.performedBy,
+  });
+  return updated;
+}
+
+export type ListConversationEventsInput = { tenantId: string; workspaceId: string; conversationId: string };
+
+/** Timeline operacional (Fase 4) — a Inbox intercala isso com as mensagens por `createdAt`.
+ * NUNCA vira mensagem real enviada ao WhatsApp, é só histórico interno do Vorix. */
+export async function listConversationEvents(deps: InboxUseCaseDeps, input: ListConversationEventsInput): Promise<InboxConversationEvent[]> {
+  await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  return deps.conversationEventRepository.listByConversation(input);
 }
 
 export type SendInboxMessageInput = { tenantId: string; workspaceId: string; conversationId: string; body: string; sentByUserId?: string; sentByAi?: boolean };

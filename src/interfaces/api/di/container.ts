@@ -35,6 +35,7 @@ import type { MessagingConnectionRepositoryPort } from "../../../application/por
 import type { InboxContactRepositoryPort } from "../../../application/ports/inbox-contact-repository.port.js";
 import type { InboxConversationRepositoryPort } from "../../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxMessageRepositoryPort } from "../../../application/ports/inbox-message-repository.port.js";
+import type { InboxConversationEventRepositoryPort } from "../../../application/ports/inbox-conversation-event-repository.port.js";
 import type { MessagingProvider } from "../../../application/ports/messaging-provider.port.js";
 import type { OutboundMessageQueuePort } from "../../../application/ports/outbound-message-queue.port.js";
 import type { InboxFeatureFlags } from "../../../application/inbox/inbox-feature-flags.js";
@@ -319,6 +320,8 @@ export type ApiContainer = {
   inboxContactRepository: InboxContactRepositoryPort;
   inboxConversationRepository: InboxConversationRepositoryPort;
   inboxMessageRepository: InboxMessageRepositoryPort;
+  /** Fase 4 (Atendimento) — auditoria + timeline de eventos operacionais, ver `db/migrations/0084`. */
+  inboxConversationEventRepository: InboxConversationEventRepositoryPort;
   inboxFeatureFlags: InboxFeatureFlags;
   /** Adapter real (WuzAPI) quando configurado; `FakeMessagingProvider` em dev/teste sem
    * `INBOX_WUZAPI_BASE_URL` — nunca undefined, o módulo sempre tem ALGUM provider funcional. */

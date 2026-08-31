@@ -35,6 +35,7 @@ import type { MessagingConnectionRepositoryPort } from "../../application/ports/
 import type { InboxContactRepositoryPort } from "../../application/ports/inbox-contact-repository.port.js";
 import type { InboxConversationRepositoryPort } from "../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxMessageRepositoryPort } from "../../application/ports/inbox-message-repository.port.js";
+import type { InboxConversationEventRepositoryPort } from "../../application/ports/inbox-conversation-event-repository.port.js";
 import type { QualityFeedbackRepositoryPort } from "../../application/quality-feedback/quality-feedback-repository.port.js";
 import type { OperationalAuditRepositoryPort } from "../../application/ports/operational-audit-repository.port.js";
 import type { OperationalStateRepositoryPort } from "../../application/ports/operational-state-repository.port.js";
@@ -72,6 +73,7 @@ import { InMemoryMessagingConnectionRepository } from "./in-memory-messaging-con
 import { InMemoryInboxContactRepository } from "./in-memory-inbox-contact-repository.js";
 import { InMemoryInboxConversationRepository } from "./in-memory-inbox-conversation-repository.js";
 import { InMemoryInboxMessageRepository } from "./in-memory-inbox-message-repository.js";
+import { InMemoryInboxConversationEventRepository } from "./in-memory-inbox-conversation-event-repository.js";
 import { InMemoryQualityFeedbackRepository } from "./in-memory-quality-feedback-repository.js";
 import { InMemoryBriefingFieldValueRepository } from "./in-memory-briefing-field-value-repository.js";
 import { InMemoryBriefingQuestionRepository } from "./in-memory-briefing-question-repository.js";
@@ -118,6 +120,7 @@ import { PostgresMessagingConnectionRepository } from "./postgres/postgres-messa
 import { PostgresInboxContactRepository } from "./postgres/postgres-inbox-contact-repository.js";
 import { PostgresInboxConversationRepository } from "./postgres/postgres-inbox-conversation-repository.js";
 import { PostgresInboxMessageRepository } from "./postgres/postgres-inbox-message-repository.js";
+import { PostgresInboxConversationEventRepository } from "./postgres/postgres-inbox-conversation-event-repository.js";
 import { PostgresQualityFeedbackRepository } from "./postgres/postgres-quality-feedback-repository.js";
 import { PostgresBriefingFieldValueRepository } from "./postgres/postgres-briefing-field-value-repository.js";
 import { PostgresBriefingQuestionRepository } from "./postgres/postgres-briefing-question-repository.js";
@@ -218,6 +221,8 @@ export type PlatformRepositories = {
   inboxContactRepository: InboxContactRepositoryPort;
   inboxConversationRepository: InboxConversationRepositoryPort;
   inboxMessageRepository: InboxMessageRepositoryPort;
+  /** Módulo Conversas (Fase 4 — Atendimento) — ver `db/migrations/0084`. */
+  inboxConversationEventRepository: InboxConversationEventRepositoryPort;
   /** Só existe quando `driver === "postgres"` — quem chama esta função é responsável por fechar (`pool.end()`) no shutdown. */
   pool?: InstanceType<typeof Pool>;
 };
@@ -286,6 +291,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       inboxContactRepository,
       inboxConversationRepository: new InMemoryInboxConversationRepository(inboxContactRepository),
       inboxMessageRepository: new InMemoryInboxMessageRepository(),
+      inboxConversationEventRepository: new InMemoryInboxConversationEventRepository(),
     };
   }
 
@@ -345,6 +351,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     inboxContactRepository: new PostgresInboxContactRepository(pool),
     inboxConversationRepository: new PostgresInboxConversationRepository(pool),
     inboxMessageRepository: new PostgresInboxMessageRepository(pool),
+    inboxConversationEventRepository: new PostgresInboxConversationEventRepository(pool),
     pool,
   };
 }

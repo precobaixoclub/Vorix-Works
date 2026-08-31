@@ -166,6 +166,7 @@ async function main(): Promise<void> {
     connectionRepository: repositories.messagingConnectionRepository,
     contactRepository: repositories.inboxContactRepository,
     conversationRepository: repositories.inboxConversationRepository,
+    conversationEventRepository: repositories.inboxConversationEventRepository,
     messageRepository: repositories.inboxMessageRepository,
     workspaceRepository: repositories.workspaceRepository,
     outboundQueue: { publish: async () => {} }, // o worker nunca publica outbound, só drena

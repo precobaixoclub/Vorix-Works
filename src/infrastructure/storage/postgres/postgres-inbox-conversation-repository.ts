@@ -58,9 +58,14 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       params.push(input.assignedUserId);
       conditions.push(`c.assigned_user_id = $${params.length}`);
     } else if (input.filter === "unassigned") {
-      conditions.push("c.assigned_user_id is null");
+      // Só o que ainda precisa de alguém — conversa finalizada sem responsável não é "trabalho
+      // pendente" pra ninguém pegar.
+      conditions.push("c.assigned_user_id is null and c.status <> 'resolved' and c.status <> 'archived'");
     } else if (input.filter === "unread") {
       conditions.push("c.unread_count > 0");
+    } else if (input.filter === "open" || input.filter === "pending" || input.filter === "resolved") {
+      params.push(input.filter);
+      conditions.push(`c.status = $${params.length}`);
     }
     // Join com inbox_contacts só pra listagem (read-model, Fase 3) — evita a Inbox ter que fazer
     // uma segunda chamada por conversa só pra saber o nome/telefone de quem está do outro lado.
@@ -118,6 +123,34 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     const row = result.rows[0];
     if (!row) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
     return this.toDomain(row);
+  }
+
+  async tryTakeOver(id: string, userId: string): Promise<InboxConversation | undefined> {
+    // Compare-and-set numa ÚNICA instrução: a cláusula WHERE só casa se ninguém mais pegou a
+    // conversa primeiro (ou se for o mesmo usuário reafirmando) — o Postgres serializa isso a
+    // nível de linha, então duas requisições concorrentes nunca podem AMBAS ver `assigned_user_id
+    // is null` como verdadeiro pro mesmo update; uma delas sempre perde a corrida e recebe 0 linhas
+    // de volta. `ai_enabled = false` na MESMA instrução fecha a janela IA+humano (Fase 4, requisito
+    // crítico) — nunca duas chamadas separadas.
+    const result = await this.pool.query<Row>(
+      `update inbox_conversations
+       set assigned_user_id = $2, ai_enabled = false, updated_at = now()
+       where id = $1 and (assigned_user_id is null or assigned_user_id = $2)
+       returning *`,
+      [id, userId],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
+  async tryTransfer(id: string, input: { fromUserId: string; toUserId: string }): Promise<InboxConversation | undefined> {
+    const result = await this.pool.query<Row>(
+      `update inbox_conversations
+       set assigned_user_id = $3, updated_at = now()
+       where id = $1 and assigned_user_id = $2
+       returning *`,
+      [id, input.fromUserId, input.toUserId],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
   private toDomain(row: Row): InboxConversation {

@@ -5,6 +5,15 @@ trabalho aqui é correção de bugs concretos, testes, segurança e documentaç�
 que já existia das Fases 1–6. `CONVERSATIONS_MODULE_ENABLED` permanece `false`. Commit desta fase:
 `894cfc7` (+ correções subsequentes descritas abaixo).
 
+> **Status: Fase 7 aprovada. Não há Fase 8.** Nenhuma alteração estrutural adicional será feita no
+> módulo a partir daqui. O trabalho restante é exclusivamente a EXECUÇÃO dos três roteiros de
+> homologação já preparados (`docs/conversas-homologacao-broker.md`,
+> `docs/conversas-homologacao-restore.md`, `docs/conversas-homologacao-whatsapp.md`) quando o
+> ambiente permitir, seguida do piloto controlado (`docs/conversas-piloto.md`). Os três achados de
+> menor severidade da auditoria (seção 1) estão formalizados como backlog priorizado em
+> `docs/conversas-backlog-pos-fase7.md` — não implementar sem decisão explícita de retomar trabalho
+> estrutural.
+
 ## 1. Auditoria arquitetural
 
 Três auditorias independentes cobriram a cadeia completa WhatsApp→WuzAPI→RabbitMQ→worker→Inbox→
@@ -75,13 +84,15 @@ integridade (`scripts/restore-drill.mjs`) roda contra pglite (protocolo de fio r
 executável `pg_dump`/`pg_restore` de verdade) e sempre recusa produção como destino
 (`assertNotProduction`) — `tests/backup-restore-drill.test.mjs` passa. O teste com o binário
 `pg_dump`/`pg_restore` real não pôde ser executado neste ambiente (Docker/Postgres/`pg_dump`
-confirmados indisponíveis). **RUNTIME_VALIDATION_PENDING_POSTGRES_RESTORE.**
+confirmados indisponíveis). Roteiro de execução pronto em
+`docs/conversas-homologacao-restore.md`. **RUNTIME_VALIDATION_PENDING_POSTGRES_RESTORE.**
 
 ## 4. Broker real (RabbitMQ)
 
 Topologia (exchange/filas/DLQ/escada de retry) implementada e coberta por testes de aplicação;
 comportamento de reconexão/DLQ/SIGTERM/graceful shutdown contra uma instância RabbitMQ real não
-pôde ser executado (sem Docker neste ambiente). **RUNTIME_VALIDATION_PENDING_BROKER.**
+pôde ser executado (sem Docker neste ambiente). Roteiro de execução pronto em
+`docs/conversas-homologacao-broker.md`. **RUNTIME_VALIDATION_PENDING_BROKER.**
 
 ## 5. Homologação WhatsApp
 
@@ -313,3 +324,11 @@ foram, e não devem ser, marcados como concluídos sem execução real. `CONVERS
 permanece `false`. **Não há Fase 8.** O próximo passo é exclusivamente homologação real (seções
 3–6) e piloto controlado (`docs/conversas-piloto.md`), quando o ambiente (Docker/VPS/número de
 telefone) estiver disponível.
+
+Ordem de execução das homologações quando o ambiente permitir: primeiro broker real
+(`docs/conversas-homologacao-broker.md`) e restore real
+(`docs/conversas-homologacao-restore.md`), por não dependerem de um número de telefone; depois a
+homologação completa do WhatsApp (`docs/conversas-homologacao-whatsapp.md`) assim que houver um
+número de teste disponível. Nenhum dos três roteiros deve ser marcado `VERIFIED_RUNTIME` sem
+execução real documentada. Só depois de todas as três homologações fechadas, avançar para o piloto
+com IA desligada, observação de 24–48h e ampliação gradual (`docs/conversas-piloto.md`).

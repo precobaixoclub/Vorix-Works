@@ -99,4 +99,9 @@ export type AiGenerationLedgerEntry = {
   requestedByUserId?: string;
   occurredAt: string;
   metadata: Record<string, unknown>;
+  /** Fase 7 — chave determinística opcional (ex.: `inbox_auto_reply:<inboundMessageId>`) que torna
+   * a cobrança idempotente de verdade: uma segunda tentativa com a MESMA chave nunca insere uma
+   * segunda linha (`unique` parcial, só quando não nula — ver migration 0087). `undefined` para
+   * geração de imagem/vídeo (`MediaGenerationService`), que nunca precisou disso. */
+  idempotencyKey?: string;
 };

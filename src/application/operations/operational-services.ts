@@ -76,9 +76,25 @@ export class OperationalCircuitBreaker {
 
   async canExecute(key: OperationalCircuitBreakerKey): Promise<{ allowed: boolean; snapshot: OperationalCircuitBreakerSnapshot }> {
     const current = await this.repository.getCircuitBreaker(key) ?? this.closed(key);
-    if (current.state === "open" && current.openedAt && this.now().getTime() - Date.parse(current.openedAt) >= (this.options.cooldownMs ?? 60_000)) {
+    const cooldownMs = this.options.cooldownMs ?? 60_000;
+    if (current.state === "open" && current.openedAt && this.now().getTime() - Date.parse(current.openedAt) >= cooldownMs) {
       const halfOpen = await this.repository.upsertCircuitBreaker({ ...current, state: "half_open", halfOpenAt: this.nowIso(), updatedAt: this.nowIso() });
       return { allowed: true, snapshot: halfOpen };
+    }
+    if (current.state === "half_open") {
+      // Fase 7 — achado de auditoria (bug de fail-open perigoso): meia-abertura permite só UMA
+      // chamada de teste por vez. Sem isto, QUALQUER chamada concorrente durante o half-open
+      // sempre retornava `allowed: true` (o `state !== "open"` abaixo é verdadeiro pra half_open) —
+      // e se o processo que fez a chamada de teste morresse antes de `recordSuccess`/`recordFailure`,
+      // o circuito ficava aberto pra sempre em `allowed: true`, desabilitando silenciosamente a
+      // proteção. Auto-cura: se o trial ficou pendurado por mais de `cooldownMs` (o chamador
+      // morreu), trata como uma NOVA tentativa de half-open em vez de travar bloqueado pra sempre.
+      const halfOpenAgeMs = current.halfOpenAt ? this.now().getTime() - Date.parse(current.halfOpenAt) : Number.POSITIVE_INFINITY;
+      if (halfOpenAgeMs >= cooldownMs) {
+        const retryHalfOpen = await this.repository.upsertCircuitBreaker({ ...current, halfOpenAt: this.nowIso(), updatedAt: this.nowIso() });
+        return { allowed: true, snapshot: retryHalfOpen };
+      }
+      return { allowed: false, snapshot: current };
     }
     return { allowed: current.state !== "open", snapshot: current };
   }

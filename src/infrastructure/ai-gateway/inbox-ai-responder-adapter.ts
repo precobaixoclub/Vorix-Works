@@ -30,6 +30,10 @@ export class AiGatewayInboxResponder implements InboxAiResponderPort {
       },
       outputSchema: { id: "inbox-auto-reply-result", version: 1 },
       policy: INBOX_AUTO_REPLY_POLICY,
+      // Fase 7 — única forma de fazer a chave de idempotência financeira chegar ao
+      // `CreditGatedAiGateway` sem alargar `AiRequest`/`AiGateway` (que não conhecem Inbox): via
+      // `metadata`, já genérico e nunca sanitizado/alterado pelo Gateway (só `input` é).
+      metadata: { idempotencyKey: input.idempotencyKey },
     });
 
     if (!result.ok) {

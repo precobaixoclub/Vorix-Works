@@ -106,6 +106,19 @@ function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {
   return deps;
 }
 
+/**
+ * Fase 7 — isolamento do SSE: extraído como função pura e exportada especificamente para ser
+ * testada de forma direta e exaustiva (testar isto via uma conexão SSE real de verdade end-to-end
+ * é frágil/lento; a lógica de decisão em si é só este predicado, e é ELE que precisa estar
+ * comprovadamente correto). Um browser do workspace A NUNCA pode receber notificação — nem
+ * metadata, nem contador, nem id — de outro tenant/workspace; isto é a ÚNICA barreira entre "todo
+ * assinante recebe todo evento" (o fanout do RabbitMQ, Fase 3, é deliberadamente global) e
+ * "cada assinante só vê o que é seu".
+ */
+export function shouldDeliverInboxNotification(notification: Record<string, unknown>, scope: { tenantId: string; workspaceId: string }): boolean {
+  return notification.tenantId === scope.tenantId && notification.workspaceId === scope.workspaceId;
+}
+
 /** Fase 4 — best-effort: publica no SSE depois que a ação já foi persistida com sucesso; nunca faz
  * a requisição HTTP esperar por isso nem falhar por causa disso. */
 function publishConversationUpdated(deps: InboxRoutesDeps, input: { tenantId: string; workspaceId: string; conversationId: string }): void {
@@ -145,7 +158,7 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     reply.raw.write(": connected\n\n");
 
     const listener = (notification: Record<string, unknown>) => {
-      if (notification.tenantId !== principal.tenantId || notification.workspaceId !== workspaceId) return;
+      if (!shouldDeliverInboxNotification(notification, { tenantId: principal.tenantId, workspaceId })) return;
       const eventType = typeof notification.type === "string" ? notification.type : "message";
       reply.raw.write(`event: ${eventType}\ndata: ${JSON.stringify(notification)}\n\n`);
     };

@@ -80,7 +80,7 @@ function makeFakeAiProvidersRepo(operationType = OPERATION_TYPE) {
       },
       async recordGeneration(entry) {
         generationLedger.push(entry);
-        return entry;
+        return { generation: entry, wasCreated: true };
       },
       async listProviders() { throw new Error("não usado"); },
       async getProvider() { throw new Error("não usado"); },

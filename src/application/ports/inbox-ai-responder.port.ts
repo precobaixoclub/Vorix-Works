@@ -30,6 +30,16 @@ export type InboxAiResponderInput = {
    * `inbox-use-cases.ts`) — em ordem cronológica ascendente (mais antiga primeiro). Nunca o
    * histórico completo da conversa. */
   recentMessages: readonly InboxAiResponderMessage[];
+  /**
+   * Fase 7 — chave determinística e estável (`inbox_auto_reply:<inboundMessageId(s)>`, montada por
+   * `drainAiResponses`) para IDEMPOTÊNCIA FINANCEIRA de verdade: garante que, mesmo se esta mesma
+   * "rodada" de resposta for reprocessada (claim expirado por TTL após um crash, redelivery,
+   * retry), o crédito Vorix nunca é debitado duas vezes — o claim CAS operacional (Fase 5/6)
+   * protege contra duas GERAÇÕES concorrentes, mas não contra cobrar duas vezes por uma geração
+   * que foi reprocessada depois de já ter sido cobrada uma vez. A implementação concreta
+   * (`AiGatewayInboxResponder`) é quem sabe onde isso se pluga no AI Gateway.
+   */
+  idempotencyKey: string;
 };
 
 export type InboxAiResponderSuccess = {

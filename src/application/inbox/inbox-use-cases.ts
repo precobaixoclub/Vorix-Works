@@ -1,5 +1,5 @@
 import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, MessagingConnection, MessagingConnectionStatus } from "../../domain/inbox/inbox.model.js";
-import { INBOX_AI_ACTOR, normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
+import { INBOX_AI_ACTOR, MESSAGING_CONNECTION_TERMINAL_STATUSES, normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
 import type { OperationalCircuitBreaker, OperationalRateLimiter } from "../operations/operational-services.js";
 import type { InboxAiResponderPort } from "../ports/inbox-ai-responder.port.js";
 import type { InboxContactRepositoryPort } from "../ports/inbox-contact-repository.port.js";
@@ -45,6 +45,19 @@ export type InboxUseCaseDeps = {
   rateLimiter?: OperationalRateLimiter;
   /** Fase 6 — `undefined` = métricas não configuradas neste processo (nunca bloqueia nada). */
   metrics?: InboxMetricsRecorder;
+  /**
+   * Fase 7 — kill switch de EMERGÊNCIA para envio outbound (`INBOX_OUTBOUND_SEND_PAUSED`,
+   * verificado uma vez no boot do worker — trocar exige restart, deliberadamente simples e
+   * confiável, sem infraestrutura nova). Distinto de `CONVERSATIONS_MODULE_ENABLED=false` (que
+   * desligaria o módulo INTEIRO, inclusive inbound/humano) e distinto de desligar a IA
+   * (`AI_INBOX_AUTO_REPLY_ENABLED=false`, que só afeta resposta automática): isto pausa SÓ o envio
+   * real ao WuzAPI, mantendo inbound/composição humana/IA funcionando normalmente — útil quando o
+   * incidente é especificamente "não podemos mandar mensagem agora" (ex.: suspeita de loop de
+   * envio, ban iminente do número, gateway comportando-se de forma inesperada) sem precisar
+   * derrubar o resto do atendimento. Mensagem nunca é perdida — fica `queued`, requeue automático
+   * (mesmo raciocínio do circuit breaker/rate limiter).
+   */
+  outboundSendPaused?: boolean;
   idGenerator?: () => string;
 };
 
@@ -440,9 +453,24 @@ export async function applyMessageStatusChanged(deps: InboxUseCaseDeps, input: A
 
 export type ApplyConnectionStateChangedInput = { connectionId: string; status: MessagingConnectionStatus; phoneNumber?: string };
 
-/** Usado pelo consumer de `inbox.connection.queue` (Fase 2). Nunca dispara reconexão automática
- * aqui — isso é papel do health monitor (Fase 6); este consumer só reflete o estado reportado. */
+/**
+ * Usado pelo consumer de `inbox.connection.queue` (Fase 2). Nunca dispara reconexão automática
+ * aqui — isso é papel do health monitor (Fase 6); este consumer só reflete o estado reportado.
+ *
+ * Fase 7 — achado de auditoria: um evento de fila ATRASADO (reentrega, reordenação do broker,
+ * escada de retry) podia sobrescrever silenciosamente um status TERMINAL (`logged_out`/
+ * `requires_repair`) de volta para `connected`/`reconnecting` — exatamente o "logout tratado como
+ * reconnecting eterno" que a Fase 6 já evitava no monitor de saúde periódico
+ * (`reconcileConnectionsHealth`, que só opera em `listAllActive()`), mas que este consumer
+ * orientado a evento não respeitava. Agora lê o estado ATUAL primeiro: uma vez terminal, só
+ * `reopenConversation`-like ação explícita (hoje: reconectar de verdade via `createConnection`/
+ * `refreshConnectionStatus`, nunca um evento de fila) pode tirar a conexão desse estado.
+ */
 export async function applyConnectionStateChanged(deps: InboxUseCaseDeps, input: ApplyConnectionStateChangedInput): Promise<void> {
+  const current = await deps.connectionRepository.getById(input.connectionId);
+  if (current && MESSAGING_CONNECTION_TERMINAL_STATUSES.includes(current.status)) {
+    return; // conexão já revogada/precisa de reparo — nunca "ressuscitada" por um evento de fila atrasado.
+  }
   await deps.connectionRepository.updateStatus(input.connectionId, { status: input.status, phoneNumber: input.phoneNumber });
   await deps.connectionRepository.touchEvent(input.connectionId, new Date().toISOString());
   if (input.status === "connected") deps.metrics?.incConnectionConnected();
@@ -464,6 +492,7 @@ function circuitCategoryFor(kind: MessagingProviderErrorKind): string {
     case "auth": return "authentication";
     case "session_logged_out": return "session_logged_out";
     case "permanent": return "permanent";
+    case "operator_paused": return "permanent"; // nunca deveria chegar aqui — kind lançado antes do circuit breaker (ver processOutboundMessage).
     default: return "permanent";
   }
 }
@@ -485,6 +514,16 @@ function circuitCategoryFor(kind: MessagingProviderErrorKind): string {
 export async function processOutboundMessage(deps: InboxUseCaseDeps, input: ProcessOutboundMessageInput): Promise<InboxMessage | undefined> {
   const message = await deps.messageRepository.getById(input.messageId);
   if (!message) return undefined;
+  if (message.status === "sending") {
+    // Fase 7 — achado crítico de auditoria: NUNCA reenvia aqui. Ver `tryMarkSending` — este estado
+    // só existe entre o claim e `markSent`/`revertToQueued`; se uma redelivery encontra a mensagem
+    // ainda `sending`, é porque o processo anterior morreu no meio do envio (nunca chegou ao
+    // catch). Não há como saber com certeza se `provider.sendText` já chegou a executar no
+    // WhatsApp — reenviar arrisca duplicidade real e irreversível, então a mensagem fica parada
+    // aqui para reconciliação manual em vez disso. Log alto para dar visibilidade operacional.
+    console.warn(`[inbox] mensagem "${message.id}" travada em "sending" — possível crash do worker durante um envio anterior. Requer reconciliação manual (verificar no WhatsApp se a mensagem já foi entregue).`);
+    return message;
+  }
   if (message.status !== "queued") return message;
 
   const conversation = await deps.conversationRepository.getById(message.conversationId);
@@ -493,6 +532,17 @@ export async function processOutboundMessage(deps: InboxUseCaseDeps, input: Proc
   if (!contact) throw new Error(`INBOX_CONTACT_NOT_FOUND: contato "${conversation.contactId}" não existe.`);
   const connection = await deps.connectionRepository.getById(message.connectionId);
   if (!connection?.externalSessionId) throw new MessagingProviderError("transient", `Conexão "${message.connectionId}" sem sessão ativa no gateway.`);
+
+  if (deps.outboundSendPaused) {
+    // Kill switch de emergência (Fase 7) — nunca perde a mensagem, nunca conta como falha do
+    // provider/circuit breaker (isto é uma pausa DELIBERADA, não uma indisponibilidade real).
+    await deps.messageRepository.recordAttempt(message.id, { lastError: "Envio outbound pausado manualmente (kill switch de emergência).", lastAttemptAt: new Date().toISOString(), failureCategory: "outbound_paused" });
+    deps.metrics?.incMessageRetry();
+    // Fase 7 — achado de auditoria: `kind: "operator_paused"` (nunca "transient") é o que garante
+    // que o worker NUNCA esgota a escada de retry e manda para a DLQ enquanto a pausa durar, por
+    // mais longa que seja — ver `MessagingProviderErrorKind` e `retryOrDeadLetter` no worker.
+    throw new MessagingProviderError("operator_paused", "Envio outbound pausado manualmente — mensagem permanece na fila.");
+  }
 
   const circuitKey = { tenantId: message.tenantId, workspaceId: message.workspaceId, scope: "messaging_provider" as const, target: connection.id };
 
@@ -524,6 +574,15 @@ export async function processOutboundMessage(deps: InboxUseCaseDeps, input: Proc
     }
   }
 
+  // Fase 7 — achado crítico de auditoria: claim atômico ANTES de chamar o provider. Fecha duas
+  // condições de corrida com uma única mudança: (1) duas execuções concorrentes do mesmo
+  // `messageId` (ex.: redelivery sobreposta) nunca chamam `provider.sendText` duas vezes — só uma
+  // ganha o CAS `queued → sending`; (2) um crash exatamente entre o provider responder sucesso e
+  // `markSent` commitar deixa a mensagem em `sending` (nunca de volta pra `queued`), e o guard no
+  // topo desta função recusa reenviar uma mensagem `sending` — ver comentário lá.
+  const claimed = await deps.messageRepository.tryMarkSending(message.id);
+  if (!claimed) return message;
+
   try {
     const result = await deps.provider.sendText({ externalSessionId: connection.externalSessionId, to: contact.phoneNormalized, body: message.body ?? "" });
     if (deps.circuitBreaker) await deps.circuitBreaker.recordSuccess(circuitKey);
@@ -535,6 +594,10 @@ export async function processOutboundMessage(deps: InboxUseCaseDeps, input: Proc
       await deps.circuitBreaker.recordFailure(circuitKey, { code: kind, category: circuitCategoryFor(kind) });
     }
     deps.metrics?.incMessageFailed(kind);
+    // Falha capturada AQUI DENTRO do processo (nunca um crash) — sabemos com certeza que o
+    // provider não foi chamado com sucesso, então é seguro devolver a mensagem pra `queued` e
+    // deixar a escada de retry existente (RabbitMQ) reprocessar normalmente.
+    await deps.messageRepository.revertToQueued(message.id);
     await deps.messageRepository.recordAttempt(message.id, { lastError: error instanceof Error ? error.message : String(error), lastAttemptAt: new Date().toISOString(), failureCategory: kind });
     throw error;
   }
@@ -685,6 +748,12 @@ async function drainAiResponses(deps: InboxUseCaseDeps, ctx: { tenantId: string;
     // de montar o prompt (uma transcrição de trás pra frente confundiria o modelo).
     const chronological = [...recentMessages].reverse();
 
+    // Fase 7 — chave de idempotência FINANCEIRA determinística: sempre a mesma para o mesmo lote
+    // de mensagens reivindicadas, mesmo entre tentativas diferentes (reprocessamento após claim
+    // expirado) — `claimed` já vem ordenado cronologicamente, e ordenar os ids de novo garante
+    // determinismo mesmo que a ordem de claim varie entre tentativas.
+    const idempotencyKey = `inbox_auto_reply:${claimed.map((message) => message.id).sort().join("+")}`;
+
     const result = await deps.aiResponder!.generateReply({
       tenantId: ctx.tenantId,
       workspaceId: ctx.workspaceId,
@@ -692,6 +761,7 @@ async function drainAiResponses(deps: InboxUseCaseDeps, ctx: { tenantId: string;
       contactName: contact?.name,
       contactPhone: contact?.phoneNormalized ?? "",
       recentMessages: chronological.map((message) => ({ direction: message.direction, body: message.body ?? "", sentByAi: message.sentByAi, createdAt: message.createdAt })),
+      idempotencyKey,
     });
 
     if (!result.ok) {

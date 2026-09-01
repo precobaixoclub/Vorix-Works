@@ -82,6 +82,8 @@ type InboxWorkerConfig = {
     wuzapiCircuitFailureThreshold: number;
     wuzapiCircuitCooldownMs: number;
     shutdownDrainTimeoutMs: number;
+    /** Fase 7 — kill switch de emergência (ver `InboxUseCaseDeps.outboundSendPaused`). */
+    outboundSendPaused: boolean;
   };
 };
 
@@ -123,6 +125,7 @@ function loadInboxWorkerConfig(): InboxWorkerConfig {
       wuzapiCircuitFailureThreshold: parsePositiveInt(process.env.INBOX_WUZAPI_CIRCUIT_FAILURE_THRESHOLD, 5),
       wuzapiCircuitCooldownMs: parsePositiveInt(process.env.INBOX_WUZAPI_CIRCUIT_COOLDOWN_MS, 30_000),
       shutdownDrainTimeoutMs: parsePositiveInt(process.env.INBOX_WORKER_SHUTDOWN_DRAIN_TIMEOUT_MS, 10_000),
+      outboundSendPaused: process.env.INBOX_OUTBOUND_SEND_PAUSED?.trim() === "true",
     },
   };
 }
@@ -151,10 +154,12 @@ function attemptCountOf(msg: ConsumeMessage): number {
   return typeof raw === "number" ? raw : 0;
 }
 
-function classifyGenericError(error: unknown): "transient" | "permanent" {
-  return error instanceof MessagingProviderError && (error.kind === "permanent" || error.kind === "auth" || error.kind === "session_logged_out")
-    ? "permanent"
-    : "transient";
+function classifyGenericError(error: unknown): "transient" | "permanent" | "paused" {
+  if (error instanceof MessagingProviderError) {
+    if (error.kind === "operator_paused") return "paused";
+    if (error.kind === "permanent" || error.kind === "auth" || error.kind === "session_logged_out") return "permanent";
+  }
+  return "transient";
 }
 
 /**
@@ -178,7 +183,7 @@ async function retryOrDeadLetter(
 ): Promise<void> {
   const attempt = attemptCountOf(msg);
   const kind = classifyGenericError(error);
-  if (kind === "permanent" || attempt >= RETRY_TIERS_MS.length) {
+  if (kind === "permanent" || (kind === "transient" && attempt >= RETRY_TIERS_MS.length)) {
     await publishToDeadLetter(channel, queue, msg.content);
     metrics?.incDlq();
     if (onDeadLetter) {
@@ -193,7 +198,11 @@ async function retryOrDeadLetter(
   }
   metrics?.incMessageRetry();
   const contentWithAttempt = Buffer.from(msg.content.toString("utf8"));
-  await publishToRetryTier(channel, queue, attempt, contentWithAttempt, { persistent: true });
+  // Fase 7 — achado de auditoria: `kind === "paused"` (kill switch de emergência) NUNCA esgota a
+  // escada, por mais tempo que a pausa dure — trava no último degrau (300s) em vez de avançar pro
+  // índice fora da faixa que `publishToRetryTier` trataria como "escada esgotada, vai pra DLQ".
+  const tierIndex = kind === "paused" ? Math.min(attempt, RETRY_TIERS_MS.length - 1) : attempt;
+  await publishToRetryTier(channel, queue, tierIndex, contentWithAttempt, { persistent: true });
   channel.ack(msg);
 }
 
@@ -360,7 +369,11 @@ async function main(): Promise<void> {
     circuitBreaker,
     rateLimiter,
     metrics,
+    outboundSendPaused: config.resilience.outboundSendPaused,
   };
+  if (config.resilience.outboundSendPaused) {
+    console.warn("[inbox-worker] INBOX_OUTBOUND_SEND_PAUSED=true — kill switch de emergência ATIVO: nenhuma mensagem outbound será enviada ao WuzAPI (permanecem queued). Inbound/IA/humano continuam funcionando normalmente.");
+  }
 
   const { connection, channel } = await connectInboxRabbitMq(config.inbox.rabbitMqUrl);
   console.log("[inbox-worker] conectado ao RabbitMQ, iniciando consumers.");

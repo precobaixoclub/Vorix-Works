@@ -65,9 +65,24 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
     });
   }
 
+  async tryMarkSending(id: string): Promise<InboxMessage | undefined> {
+    const existing = this.rows.get(id);
+    if (!existing || existing.status !== "queued") return undefined;
+    const updated: InboxMessage = { ...existing, status: "sending" };
+    this.rows.set(id, updated);
+    return updated;
+  }
+
+  async revertToQueued(id: string): Promise<void> {
+    const existing = this.rows.get(id);
+    if (!existing || existing.status !== "sending") return;
+    this.rows.set(id, { ...existing, status: "queued" });
+  }
+
   async markSent(id: string, input: { externalMessageId: string; sentAt: string }): Promise<InboxMessage> {
     const existing = this.rows.get(id);
     if (!existing) throw new Error(`INBOX_MESSAGE_NOT_FOUND: mensagem "${id}" não existe.`);
+    if (existing.status !== "sending") return existing; // nunca reaplica uma transição inválida (ver Postgres impl.).
     const updated: InboxMessage = { ...existing, status: "sent", externalMessageId: input.externalMessageId, sentAt: input.sentAt };
     this.rows.set(id, updated);
     return updated;

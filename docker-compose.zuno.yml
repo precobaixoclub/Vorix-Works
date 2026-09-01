@@ -205,6 +205,8 @@ services:
       AI_INBOX_AUTO_REPLY_BILLING_ENABLED: "${AI_INBOX_AUTO_REPLY_BILLING_ENABLED:-true}"
       INBOX_WORKER_METRICS_PORT: "${INBOX_WORKER_METRICS_PORT:-9464}"
       INBOX_WORKER_HEARTBEAT_FILE: /tmp/inbox-worker-heartbeat
+      # Fase 7 — kill switches de emergência (ver docs/conversas-runbook.md). Nunca "true" por padrão.
+      INBOX_OUTBOUND_SEND_PAUSED: "${INBOX_OUTBOUND_SEND_PAUSED:-false}"
       ZUNO_LOG_LEVEL: info
     networks: [zuno_network, conversas_internal]
     init: true

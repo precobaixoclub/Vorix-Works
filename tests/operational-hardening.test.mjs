@@ -86,6 +86,32 @@ test("Circuit breaker persistente: abre, sobrevive a nova instancia, entra em ha
   }
 });
 
+test("Circuit breaker: half_open permite só UMA chamada de teste concorrente por vez (achado de auditoria — fail-open perigoso)", async () => {
+  const repo = new InMemoryOperationalStateRepository();
+  let now = new Date("2026-08-01T00:00:00.000Z");
+  const breaker = new OperationalCircuitBreaker(repo, { failureThreshold: 1, cooldownMs: 60_000, now: () => now });
+  const key = { tenantId: "tenant-halfopen", workspaceId: "workspace-halfopen", scope: "publication_provider", target: "provider-x" };
+
+  await breaker.recordFailure(key, { code: "TIMEOUT", category: "provider_unavailable" });
+  now = new Date(now.getTime() + 60_000); // cooldown decorrido — próxima chamada abre o trial de half-open.
+
+  const firstTrial = await breaker.canExecute(key);
+  assert.equal(firstTrial.allowed, true, "primeira chamada após o cooldown entra em half_open e é permitida (o trial)");
+  assert.equal(firstTrial.snapshot.state, "half_open");
+
+  // Sem o fix: QUALQUER chamada concorrente aqui também retornaria `allowed: true` (bug de
+  // fail-open), mesmo com um trial já em andamento — desabilitando a proteção do circuito.
+  const concurrentDuringTrial = await breaker.canExecute(key);
+  assert.equal(concurrentDuringTrial.allowed, false, "uma segunda chamada ENQUANTO o trial ainda está em andamento é bloqueada, não passa despercebida");
+
+  // Auto-cura: se o processo que pegou o trial morreu sem nunca chamar recordSuccess/recordFailure,
+  // o circuito não pode ficar bloqueado (nem aberto em fail-open) para sempre — depois de outro
+  // cooldown completo, uma NOVA tentativa de trial é permitida.
+  now = new Date(now.getTime() + 60_000);
+  const staleTrialRecovered = await breaker.canExecute(key);
+  assert.equal(staleTrialRecovered.allowed, true, "trial que nunca foi resolvido (processo morreu) se autocura após outro cooldown, em vez de travar bloqueado para sempre");
+});
+
 test("Rate limiter: limita por grupo, tenant, principal e janela", async () => {
   const repo = new InMemoryOperationalStateRepository();
   let now = new Date("2026-07-30T10:00:00.000Z");

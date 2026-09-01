@@ -99,14 +99,36 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
     );
   }
 
-  async markSent(id: string, input: { externalMessageId: string; sentAt: string }): Promise<InboxMessage> {
+  async tryMarkSending(id: string): Promise<InboxMessage | undefined> {
     const result = await this.pool.query<Row>(
-      "update inbox_messages set status = 'sent', external_message_id = $2, sent_at = $3 where id = $1 returning *",
+      "update inbox_messages set status = 'sending' where id = $1 and status = 'queued' returning *",
+      [id],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
+  async revertToQueued(id: string): Promise<void> {
+    await this.pool.query("update inbox_messages set status = 'queued' where id = $1 and status = 'sending'", [id]);
+  }
+
+  async markSent(id: string, input: { externalMessageId: string; sentAt: string }): Promise<InboxMessage> {
+    // Fase 7 — achado de auditoria: sem o `and status = 'sending'`, esta instrução aceitava
+    // QUALQUER estado anterior — inclusive reviver silenciosamente uma mensagem já `failed` de
+    // volta pra `sent` (ex.: uma segunda execução concorrente do mesmo `processOutboundMessage`
+    // chegando atrasada). O pré-requisito agora é ter passado por `tryMarkSending` antes — esta
+    // cláusula WHERE é a garantia de verdade, não um check-then-act em memória.
+    const result = await this.pool.query<Row>(
+      "update inbox_messages set status = 'sent', external_message_id = $2, sent_at = $3 where id = $1 and status = 'sending' returning *",
       [id, input.externalMessageId, input.sentAt],
     );
-    const row = result.rows[0];
-    if (!row) throw new Error(`INBOX_MESSAGE_NOT_FOUND: mensagem "${id}" não existe.`);
-    return this.toDomain(row);
+    if (result.rows[0]) return this.toDomain(result.rows[0]);
+
+    // 0 linhas: ou a mensagem não existe, ou já não estava mais `sending` (condição de corrida rara
+    // — outra execução já resolveu o status). Nunca lança NOT_FOUND para o segundo caso: devolve o
+    // estado ATUAL sem aplicar a transição inválida, deixando quem chamou decidir o que fazer.
+    const existing = await this.pool.query<Row>("select * from inbox_messages where id = $1", [id]);
+    if (!existing.rows[0]) throw new Error(`INBOX_MESSAGE_NOT_FOUND: mensagem "${id}" não existe.`);
+    return this.toDomain(existing.rows[0]);
   }
 
   async markFailed(id: string, input: { lastError: string; failedAt: string; failureCategory?: string }): Promise<InboxMessage> {

@@ -40,6 +40,22 @@ export type InboxMessageRepositoryPort = {
   /** Usado pelo consumer de status (delivery/read receipts) e pelo `OutboxSenderConsumer`. Ignora
    * silenciosamente se a mensagem já estiver num status terminal — retries podem chegar tarde. */
   updateStatusByExternalId(input: { connectionId: string; externalMessageId: string; status: InboxMessageStatus; occurredAt: string }): Promise<void>;
+  /**
+   * Fase 7 — achado de auditoria (bug crítico): claim atômico (CAS `queued` → `sending`) que
+   * `processOutboundMessage` DEVE adquirir imediatamente antes de chamar `provider.sendText`.
+   * `undefined` = perdeu a corrida (outra execução concorrente já está enviando, ou a mensagem já
+   * não está mais `queued`) — quem chamou NUNCA deve chamar o provider nesse caso. Sem este claim,
+   * um crash do worker exatamente entre `provider.sendText()` suceder e `markSent()` commitar
+   * deixava a mensagem em `queued`; a reentrega (mesmo `messageId`, via redelivery do RabbitMQ)
+   * reprocessava do zero e enviava a MESMA mensagem ao WhatsApp uma segunda vez — duplicidade real,
+   * irreversível e visível ao cliente. Com o claim, essa reentrega encontra `status = 'sending'`
+   * (não `queued`) e é tratada como estado ambíguo (nunca reenviada — ver `processOutboundMessage`).
+   */
+  tryMarkSending(id: string): Promise<InboxMessage | undefined>;
+  /** Reverte `sending` → `queued` — chamado quando `provider.sendText` lança um erro capturado
+   * DENTRO do próprio processo (falha transitória normal, não um crash). Preserva a escada de
+   * retry existente: a próxima entrega verá `queued` de novo, não `sending` travado. */
+  revertToQueued(id: string): Promise<void>;
   markSent(id: string, input: { externalMessageId: string; sentAt: string }): Promise<InboxMessage>;
   /** Fase 6 — `failureCategory` (opcional) é a categoria segura da falha final (mesmo vocabulário
    * de `MessagingProviderErrorKind` + `circuit_open`/`rate_limited_local`) — permite diagnosticar

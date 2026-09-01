@@ -23,6 +23,7 @@ import { InMemoryAiExecutionRepository } from "../dist/infrastructure/storage/in
 import { AiGatewayInboxResponder } from "../dist/infrastructure/ai-gateway/inbox-ai-responder-adapter.js";
 import { MessagingProviderError } from "../dist/application/ports/messaging-provider.port.js";
 import {
+  applyConnectionStateChanged,
   maybeGenerateAiResponse,
   processOutboundMessage,
   reconcileConnectionsHealth,
@@ -389,7 +390,7 @@ function buildGatedInboxResponder(reply) {
 test("Billing real: tenant sem billing configurado nunca chama o provider de IA (nunca gera resposta sem crédito verificável)", async () => {
   const tenantId = "tenant-res-billing-nobilling";
   const responder = buildGatedInboxResponder("Não deveria ser usada");
-  const result = await responder.generateReply({ tenantId, workspaceId: "ws-x", conversationId: "conv-x", contactPhone: "+5511900000000", recentMessages: [] });
+  const result = await responder.generateReply({ tenantId, workspaceId: "ws-x", conversationId: "conv-x", contactPhone: "+5511900000000", recentMessages: [], idempotencyKey: "inbox_auto_reply:msg-nobilling" });
   assert.equal(result.ok, false);
   assert.equal(result.category, "quota_exceeded");
 });
@@ -401,12 +402,83 @@ test("Billing real: com crédito suficiente, a IA responde e o consumo é regist
   await billingRepo.updateTenantBilling({ tenantId, patch: { subscriptionStatus: "active", monthlyCreditsQuota: 1000 }, now: new Date().toISOString() });
 
   const responder = buildGatedInboxResponder("Resposta cobrada corretamente.");
-  const result = await responder.generateReply({ tenantId, workspaceId: "ws-x", conversationId: "conv-x", contactPhone: "+5511900000000", recentMessages: [] });
+  const result = await responder.generateReply({ tenantId, workspaceId: "ws-x", conversationId: "conv-x", contactPhone: "+5511900000000", recentMessages: [], idempotencyKey: "inbox_auto_reply:msg-billing-ok" });
   assert.equal(result.ok, true);
   assert.equal(result.reply, "Resposta cobrada corretamente.");
 
   const usageAfterOne = await billingRepo.getAiUsage({ tenantId, period: new Date().toISOString().slice(0, 7) });
   assert.ok(usageAfterOne.creditsConsumed >= 1, "consumo de crédito real registrado após uma geração bem-sucedida");
+});
+
+// ------------------------------------------------------------------------------------------
+// Fase 7 — Idempotência FINANCEIRA forte: o claim CAS operacional (Fase 5/6) impede duas
+// GERAÇÕES concorrentes, mas sozinho não impede cobrar duas vezes se a MESMA geração for
+// reprocessada depois de já ter sido cobrada (crash entre debitar e resolver o claim, claim
+// expira pelo lease, reprocessamento). A chave de idempotência (`inbox_auto_reply:<messageId>`)
+// fecha exatamente essa lacuna, na PRÓPRIA tabela `ai_generation_ledger` (nunca um ledger paralelo).
+// ------------------------------------------------------------------------------------------
+
+test("Idempotência financeira: CreditAccountingService.recordSuccess chamado duas vezes com a MESMA chave cobra exatamente uma vez", async () => {
+  const tenantId = "tenant-res-fin-idem-1";
+  const billingRepo = new PostgresPlatformBillingRepository(db.pool);
+  const aiProvidersRepo = new PostgresAiProvidersRepository(db.pool);
+  await billingRepo.ensureTenantBilling({ tenantId, now: new Date().toISOString() });
+  await billingRepo.updateTenantBilling({ tenantId, patch: { subscriptionStatus: "active", monthlyCreditsQuota: 1000 }, now: new Date().toISOString() });
+
+  const creditAccounting = new CreditAccountingService({ platformBillingRepository: billingRepo, aiProvidersRepository: aiProvidersRepo, idGenerator: (p) => `${p}-${Math.random().toString(36).slice(2, 8)}` });
+  const operationType = await aiProvidersRepo.getOperationType("inbox_auto_reply");
+  const availability = await creditAccounting.checkAvailability(tenantId, "inbox_auto_reply", new Date());
+  assert.equal(availability.ok, true);
+
+  const chargeInput = {
+    tenantId,
+    operationType,
+    providerCode: "anthropic",
+    modelId: "claude-haiku-4-5-20251001",
+    providerCostUsd: 0.001,
+    priceMultiplier: 1,
+    monthlyRemainingBefore: availability.monthlyRemainingBefore,
+    creditsExtraBefore: availability.creditsExtraBefore,
+    tokens: { inputTokens: 10, outputTokens: 5 },
+    idempotencyKey: "inbox_auto_reply:msg-crash-scenario",
+    now: new Date(),
+  };
+
+  // 1ª chamada: debita normalmente. Simula então "processo morreu antes de resolver o claim" —
+  // uma 2ª chamada com a MESMA chave chega depois (claim expirou pelo lease, Fase 6, e a mensagem
+  // foi reprocessada) — nunca pode debitar de novo.
+  await creditAccounting.recordSuccess(chargeInput);
+  await creditAccounting.recordSuccess(chargeInput);
+
+  const usage = await billingRepo.getAiUsage({ tenantId, period: new Date().toISOString().slice(0, 7) });
+  assert.equal(usage.creditsConsumed, operationType.creditsCost, "exatamente UMA cobrança, mesmo com recordSuccess chamado duas vezes com a mesma chave");
+  assert.equal(usage.requestsCount, 1, "requestsCount também nunca duplica");
+
+  const ledger = await aiProvidersRepo.listGenerations({ tenantId, limit: 10 });
+  const forThisKey = ledger.filter((entry) => entry.idempotencyKey === "inbox_auto_reply:msg-crash-scenario");
+  assert.equal(forThisKey.length, 1, "só UMA linha no ledger para esta chave — nunca um ledger paralelo, nunca duplicidade na MESMA tabela");
+});
+
+test("Idempotência financeira: reprocessamento via AiGatewayInboxResponder (mesma chave) nunca cobra duas vezes, mesmo gerando de novo", async () => {
+  const tenantId = "tenant-res-fin-idem-2";
+  const billingRepo = new PostgresPlatformBillingRepository(db.pool);
+  await billingRepo.ensureTenantBilling({ tenantId, now: new Date().toISOString() });
+  await billingRepo.updateTenantBilling({ tenantId, patch: { subscriptionStatus: "active", monthlyCreditsQuota: 1000 }, now: new Date().toISOString() });
+
+  const sameIdempotencyKey = "inbox_auto_reply:msg-reprocessed-after-crash";
+  const responder = buildGatedInboxResponder("Resposta da tentativa.");
+
+  // Tentativa 1 (bem-sucedida, cobra).
+  const first = await responder.generateReply({ tenantId, workspaceId: "ws-x", conversationId: "conv-x", contactPhone: "+5511900000000", recentMessages: [], idempotencyKey: sameIdempotencyKey });
+  assert.equal(first.ok, true);
+
+  // Tentativa 2: simula o claim expirado reprocessando a MESMA mensagem (mesma chave) — a IA
+  // ainda gera uma resposta (a geração em si não é bloqueada), mas a cobrança tem que ser um no-op.
+  const second = await responder.generateReply({ tenantId, workspaceId: "ws-x", conversationId: "conv-x", contactPhone: "+5511900000000", recentMessages: [], idempotencyKey: sameIdempotencyKey });
+  assert.equal(second.ok, true);
+
+  const usage = await billingRepo.getAiUsage({ tenantId, period: new Date().toISOString().slice(0, 7) });
+  assert.equal(usage.creditsConsumed, 1, "exatamente uma cobrança, mesmo com duas gerações reais completadas para a mesma chave");
 });
 
 // ------------------------------------------------------------------------------------------
@@ -466,4 +538,125 @@ test("Métricas: fluxo completo (inbound, outbound, falha, IA) chama os contador
   assert.ok(methodNames.includes("addAiCostUsd"), "custo de IA contabilizado");
   assert.ok(methodNames.includes("observeAiLatencyMs"), "latência de IA contabilizada");
   assert.ok(methodNames.includes("incMessageOutbound"), "envio outbound bem-sucedido contabilizado");
+});
+
+// ------------------------------------------------------------------------------------------
+// Fase 7 — achado crítico de auditoria: envio duplicado ao WhatsApp em caso de crash do worker
+// entre `provider.sendText` suceder e `markSent` commitar. Corrigido com um claim atômico
+// (`tryMarkSending`, CAS `queued -> sending`) ANTES de chamar o provider — ver `processOutboundMessage`.
+// ------------------------------------------------------------------------------------------
+
+test("Claim atômico: tryMarkSending só permite UMA execução concorrente reivindicar a mesma mensagem queued", async () => {
+  const tenantId = "tenant-res-claim-1";
+  const { workspace, conversation } = await makeConversation(tenantId);
+  const deps = buildDeps(tenantId);
+  const message = await sendInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, body: "Msg", sentByUserId: "user-a" });
+
+  const first = await deps.messageRepository.tryMarkSending(message.id);
+  assert.ok(first, "primeira reivindicação vence a corrida");
+  assert.equal(first.status, "sending");
+
+  const second = await deps.messageRepository.tryMarkSending(message.id);
+  assert.equal(second, undefined, "segunda reivindicação concorrente da MESMA mensagem perde a corrida (undefined, nunca reenvia)");
+});
+
+test("Crash simulado: mensagem travada em 'sending' (crash entre sendText e markSent) NUNCA é reenviada numa redelivery", async () => {
+  const tenantId = "tenant-res-crash-1";
+  const { workspace, conversation } = await makeConversation(tenantId);
+  const deps = buildDeps(tenantId);
+  const message = await sendInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, body: "Mensagem crítica", sentByUserId: "user-a" });
+
+  // Simula o crash: o processo anterior reivindicou o claim e chamou `provider.sendText` (que pode
+  // ou não ter chegado a executar de verdade no WhatsApp), mas morreu antes de `markSent` commitar.
+  await deps.messageRepository.tryMarkSending(message.id);
+
+  // Redelivery (mesma messageId, via RabbitMQ) chega numa NOVA execução de `processOutboundMessage`.
+  const result = await processOutboundMessage(deps, { messageId: message.id });
+
+  assert.equal(deps.provider.sentMessages.length, 0, "o provider NUNCA é chamado de novo para uma mensagem já 'sending' — isso é o que evita o envio duplicado");
+  assert.equal(result.status, "sending", "a mensagem fica parada em 'sending' para reconciliação manual, nunca é reenviada nem perdida");
+});
+
+test("Falha transitória capturada normalmente (sem crash) continua reprocessando via a escada de retry, sem regressão", async () => {
+  const tenantId = "tenant-res-transient-retry-1";
+  const { workspace, conversation } = await makeConversation(tenantId);
+  let attempts = 0;
+  const provider = makeFakeMessagingProvider({
+    sendText(input, self) {
+      attempts += 1;
+      if (attempts === 1) throw new MessagingProviderError("transient", "Falha simulada na 1ª tentativa.");
+      self.sentMessages.push(input);
+      return { externalMessageId: `fake-wa-${self.sentMessages.length}` };
+    },
+  });
+  const deps = buildDeps(tenantId, { provider });
+  const message = await sendInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, body: "Retry normal", sentByUserId: "user-a" });
+
+  await assert.rejects(() => processOutboundMessage(deps, { messageId: message.id }));
+  const afterFailure = await deps.messageRepository.getById(message.id);
+  assert.equal(afterFailure.status, "queued", "erro capturado DENTRO do processo (não um crash) reverte pra 'queued' — a escada de retry do worker continua funcionando normalmente");
+
+  const sent = await processOutboundMessage(deps, { messageId: message.id });
+  assert.equal(sent.status, "sent", "a retentativa seguinte (mesma mensagem, agora 'queued' de novo) é processada e enviada com sucesso");
+  assert.equal(provider.sentMessages.length, 1);
+});
+
+test("markSent recusa transicionar uma mensagem que ainda não passou pelo claim (ainda 'queued')", async () => {
+  const tenantId = "tenant-res-marksent-guard-1";
+  const { workspace, conversation } = await makeConversation(tenantId);
+  const deps = buildDeps(tenantId);
+  const message = await sendInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, body: "Sem claim", sentByUserId: "user-a" });
+
+  const result = await deps.messageRepository.markSent(message.id, { externalMessageId: "wa-x", sentAt: new Date().toISOString() });
+  assert.equal(result.status, "queued", "markSent exige status 'sending' (pós-claim) — nunca aplica a transição a partir de 'queued' diretamente");
+});
+
+test("Kill switch de outbound pausado lança MessagingProviderError com kind 'operator_paused' (nunca 'transient')", async () => {
+  const tenantId = "tenant-res-paused-kind-1";
+  const { workspace, conversation } = await makeConversation(tenantId);
+  const deps = buildDeps(tenantId, { outboundSendPaused: true });
+  const message = await sendInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, body: "Pausada", sentByUserId: "user-a" });
+
+  try {
+    await processOutboundMessage(deps, { messageId: message.id });
+    assert.fail("deveria ter lançado");
+  } catch (error) {
+    assert.ok(error instanceof MessagingProviderError);
+    assert.equal(error.kind, "operator_paused", "kind distinto de 'transient' — é isso que impede o worker de esgotar a escada de retry e mandar pra DLQ enquanto a pausa durar (ver inbox-worker.ts)");
+  }
+  assert.equal(deps.provider.sentMessages.length, 0);
+});
+
+// ------------------------------------------------------------------------------------------
+// Fase 7 — achado de auditoria: `applyConnectionStateChanged` não podia "ressuscitar" uma conexão
+// já num estado terminal (`logged_out`/`requires_repair`) por causa de um evento de fila
+// atrasado/reentregue com um estado antigo (ex.: "connected" de antes do logout).
+// ------------------------------------------------------------------------------------------
+
+test("applyConnectionStateChanged nunca reverte um estado terminal (logged_out) por um evento de fila atrasado", async () => {
+  const tenantId = "tenant-res-terminal-1";
+  const { workspace, connection } = await makeConversation(tenantId);
+  const deps = buildDeps(tenantId);
+
+  await deps.connectionRepository.updateStatus(connection.id, { status: "logged_out" });
+  const beforeEvent = await deps.connectionRepository.getById(connection.id);
+  assert.equal(beforeEvent.status, "logged_out");
+
+  // Evento de fila atrasado/reentregue, carregando um estado ANTERIOR ao logout.
+  await applyConnectionStateChanged(deps, { connectionId: connection.id, status: "connected" });
+
+  const afterEvent = await deps.connectionRepository.getById(connection.id);
+  assert.equal(afterEvent.status, "logged_out", "estado terminal nunca é sobrescrito por um evento de fila atrasado — precisa de um novo pareamento explícito");
+});
+
+test("applyConnectionStateChanged aplica normalmente transições que NÃO partem de um estado terminal", async () => {
+  const tenantId = "tenant-res-terminal-2";
+  const { workspace, connection } = await makeConversation(tenantId);
+  const deps = buildDeps(tenantId);
+
+  await deps.connectionRepository.updateStatus(connection.id, { status: "reconnecting" });
+  await applyConnectionStateChanged(deps, { connectionId: connection.id, status: "connected" });
+
+  const after = await deps.connectionRepository.getById(connection.id);
+  assert.equal(after.status, "connected", "transições normais (não-terminais) continuam funcionando sem regressão");
 });

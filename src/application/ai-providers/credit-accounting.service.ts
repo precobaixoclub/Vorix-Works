@@ -56,9 +56,19 @@ export class CreditAccountingService {
     return { ok: true, operationType, monthlyRemainingBefore, creditsExtraBefore: billing.creditsExtra, priceMultiplier: billing.priceMultiplier };
   }
 
-  /** Registra uma geração bem-sucedida: ledger financeiro + agregado mensal + dedução de crédito
+  /**
+   * Registra uma geração bem-sucedida: ledger financeiro + agregado mensal + dedução de crédito
    * avulso se a cota mensal já tiver estourado. Nunca lança — falha em registrar não deve derrubar
-   * uma resposta de IA já entregue ao cliente (quem chama decide o que fazer com o erro). */
+   * uma resposta de IA já entregue ao cliente (quem chama decide o que fazer com o erro).
+   *
+   * Fase 7 — `idempotencyKey` (opcional) fecha um cenário real de double-charge que o claim CAS
+   * operacional (Fase 5/6) sozinho não cobre: crédito debitado → processo morre ANTES de resolver
+   * o claim/evento → o lease do claim expira (Fase 6) → a mesma mensagem é reprocessada → sem
+   * isto, cobraria DE NOVO. Com a chave, `recordGeneration` é idempotente de verdade
+   * (`wasCreated: false` numa repetição) — e esta função para AQUI, nunca chamando
+   * `addAiUsage`/`applyCreditDelta` uma segunda vez para a mesma cobrança. Chamadores que não
+   * passam `idempotencyKey` (ex.: `MediaGenerationService`) mantêm o comportamento de sempre.
+   */
   async recordSuccess(input: {
     tenantId: string;
     workspaceId?: string;
@@ -74,6 +84,7 @@ export class CreditAccountingService {
     requestedByUserId?: string;
     tokens?: { inputTokens: number; outputTokens: number; cachedInputTokens?: number };
     metadata?: Record<string, unknown>;
+    idempotencyKey?: string;
     now: Date;
   }): Promise<void> {
     const creditsConsumed = input.operationType.creditsCost;
@@ -81,7 +92,7 @@ export class CreditAccountingService {
     const period = periodOf(input.now);
     const nowIso = input.now.toISOString();
 
-    await this.deps.aiProvidersRepository.recordGeneration({
+    const { wasCreated } = await this.deps.aiProvidersRepository.recordGeneration({
       id: this.deps.idGenerator("gen"),
       tenantId: input.tenantId,
       workspaceId: input.workspaceId,
@@ -95,7 +106,9 @@ export class CreditAccountingService {
       requestedByUserId: input.requestedByUserId,
       occurredAt: nowIso,
       metadata: input.metadata ?? {},
+      idempotencyKey: input.idempotencyKey,
     });
+    if (!wasCreated) return; // já cobrado antes com a MESMA chave — nunca aplica o efeito financeiro duas vezes.
 
     await this.deps.platformBillingRepository.addAiUsage({
       tenantId: input.tenantId,

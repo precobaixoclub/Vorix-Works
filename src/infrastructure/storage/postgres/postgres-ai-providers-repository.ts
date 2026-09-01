@@ -118,12 +118,18 @@ export class PostgresAiProvidersRepository implements AiProvidersRepositoryPort 
     return toOperationTypeDomain(result.rows[0]);
   }
 
-  async recordGeneration(entry: Omit<AiGenerationLedgerEntry, "id"> & { id: string }): Promise<AiGenerationLedgerEntry> {
-    const result = await this.pool.query<LedgerRow>(
+  async recordGeneration(entry: Omit<AiGenerationLedgerEntry, "id"> & { id: string }): Promise<{ generation: AiGenerationLedgerEntry; wasCreated: boolean }> {
+    // `on conflict (idempotency_key) where idempotency_key is not null do nothing` — só entra em
+    // jogo quando `entry.idempotencyKey` é de fato informado (o índice único é parcial, ver
+    // migration 0087); sem chave, `idempotency_key` grava NULL e NUNCA colide (múltiplos NULLs
+    // convivem livremente num índice único), preservando o comportamento de sempre para
+    // MediaGenerationService (imagem/vídeo).
+    const insertResult = await this.pool.query<LedgerRow>(
       `insert into ai_generation_ledger
         (id, tenant_id, workspace_id, operation_type_code, provider_code, model_id, credits_consumed,
-         provider_cost_usd, estimated_revenue_usd, status, error_code, requested_by_user_id, occurred_at, metadata)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
+         provider_cost_usd, estimated_revenue_usd, status, error_code, requested_by_user_id, occurred_at, metadata, idempotency_key)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15)
+       on conflict (idempotency_key) where idempotency_key is not null do nothing
        returning *`,
       [
         entry.id,
@@ -140,9 +146,16 @@ export class PostgresAiProvidersRepository implements AiProvidersRepositoryPort 
         entry.requestedByUserId ?? null,
         entry.occurredAt,
         JSON.stringify(entry.metadata ?? {}),
+        entry.idempotencyKey ?? null,
       ],
     );
-    return toLedgerDomain(result.rows[0]);
+    if (insertResult.rows[0]) return { generation: toLedgerDomain(insertResult.rows[0]), wasCreated: true };
+
+    // Conflito real (chave já usada) — devolve a linha JÁ existente, nunca lança: quem chama
+    // (`CreditAccountingService.recordSuccess`) trata `wasCreated: false` como "já cobrado, não
+    // aplicar efeito nenhum de novo", nunca como um erro.
+    const existing = await this.pool.query<LedgerRow>("select * from ai_generation_ledger where idempotency_key = $1", [entry.idempotencyKey]);
+    return { generation: toLedgerDomain(existing.rows[0]), wasCreated: false };
   }
 
   async listGenerations(input: { tenantId: string; limit?: number }): Promise<AiGenerationLedgerEntry[]> {
@@ -237,6 +250,7 @@ type LedgerRow = {
   requested_by_user_id: string | null;
   occurred_at: Date;
   metadata: Record<string, unknown>;
+  idempotency_key: string | null;
 };
 
 function toProviderDomain(row: ProviderRow): AiProviderConfig {
@@ -298,5 +312,6 @@ function toLedgerDomain(row: LedgerRow): AiGenerationLedgerEntry {
     requestedByUserId: row.requested_by_user_id ?? undefined,
     occurredAt: row.occurred_at.toISOString(),
     metadata: row.metadata ?? {},
+    idempotencyKey: row.idempotency_key ?? undefined,
   };
 }

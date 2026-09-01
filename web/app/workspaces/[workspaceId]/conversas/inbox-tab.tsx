@@ -544,8 +544,16 @@ function ContactContextPane({
         <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Inteligência artificial</h3>
         <div className="flex items-center justify-between gap-2">
           <div>
-            <p className="text-sm text-foreground">{conversation.aiEnabled ? "IA ativa" : "IA pausada"}</p>
-            {!conversation.aiEnabled && conversation.aiPausedReason ? (
+            {/* Fase 7 — achado de auditoria: atribuição DIRETA (Fase 4, `assign()`) nunca desliga
+             * `aiEnabled` no banco, então mostrar só `aiEnabled` aqui podia dizer "IA ativa" numa
+             * conversa que JAMAIS recebe resposta automática enquanto tiver responsável (o gate
+             * real, `isConversationEligibleForAi`, sempre checa `assignedUserId` primeiro). */}
+            <p className="text-sm text-foreground">
+              {conversation.assignedUserId ? "IA não responde (atendimento humano ativo)" : conversation.aiEnabled ? "IA ativa" : "IA pausada"}
+            </p>
+            {conversation.assignedUserId ? (
+              <p className="text-[11px] text-muted-foreground">Volta a responder automaticamente só depois que o responsável for liberado.</p>
+            ) : !conversation.aiEnabled && conversation.aiPausedReason ? (
               <p className="text-[11px] text-muted-foreground">{aiPauseReasonLabel(conversation.aiPausedReason)}</p>
             ) : null}
           </div>

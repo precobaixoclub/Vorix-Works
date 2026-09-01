@@ -20,7 +20,13 @@ export type MessagingSendResult = {
   externalMessageId: string;
 };
 
-export type MessagingProviderErrorKind = "transient" | "rate_limit" | "auth" | "session_logged_out" | "permanent";
+/** Fase 7 — `"operator_paused"` é distinto de `"transient"`: nunca lançado por um adapter de
+ * verdade (WuzAPI/Fake), só pelo kill switch de emergência (`INBOX_OUTBOUND_SEND_PAUSED`, ver
+ * `processOutboundMessage`). Uma pausa deliberada não deve consumir a escada finita de retry do
+ * worker (`RETRY_TIERS_MS`) — diferente de uma falha real de provider, ela pode durar horas de
+ * propósito, e "esgotar a escada e ir pra DLQ" contradiria a garantia de "nunca perde a mensagem"
+ * do kill switch (ver `retryOrDeadLetter` no worker). */
+export type MessagingProviderErrorKind = "transient" | "rate_limit" | "auth" | "session_logged_out" | "permanent" | "operator_paused";
 
 /** Erro classificado — o worker decide retry/backoff/DLQ a partir de `kind`, nunca inspecionando
  * mensagem de erro livre. Todo adapter (`WuzApiMessagingProvider`, `FakeMessagingProvider`, um

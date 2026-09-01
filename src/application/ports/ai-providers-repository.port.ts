@@ -36,8 +36,15 @@ export type AiProvidersRepositoryPort = {
     now: string;
   }): Promise<AiOperationType>;
 
-  /** Grava uma linha por geração — nunca atualizada depois de inserida (auditoria imutável). */
-  recordGeneration(entry: Omit<AiGenerationLedgerEntry, "id"> & { id: string }): Promise<AiGenerationLedgerEntry>;
+  /**
+   * Grava uma linha por geração — nunca atualizada depois de inserida (auditoria imutável). Fase 7
+   * — quando `entry.idempotencyKey` é informado, é IDEMPOTENTE de verdade: uma segunda chamada com
+   * a MESMA chave nunca insere uma segunda linha (`wasCreated: false`, devolve a linha já
+   * existente) — quem chama (`CreditAccountingService.recordSuccess`) usa isso para nunca aplicar
+   * `addAiUsage`/`applyCreditDelta` duas vezes para a mesma cobrança. Sem `idempotencyKey`
+   * (`undefined`), o comportamento é o de sempre: sempre insere uma linha nova.
+   */
+  recordGeneration(entry: Omit<AiGenerationLedgerEntry, "id"> & { id: string }): Promise<{ generation: AiGenerationLedgerEntry; wasCreated: boolean }>;
 
   listGenerations(input: { tenantId: string; limit?: number }): Promise<AiGenerationLedgerEntry[]>;
 

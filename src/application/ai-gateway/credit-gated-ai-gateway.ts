@@ -22,6 +22,13 @@ export type CreditGatedAiGatewayDeps = {
  *
  * A receita estimada por geração = `creditsCost * creditUnitValueUsd` (parâmetro admin), não mais
  * `providerCost * priceMultiplier` — o cliente nunca vê o custo real do provider.
+ *
+ * Fase 7 — se `request.metadata?.idempotencyKey` vier preenchido (ver `AiGatewayInboxResponder`,
+ * que monta uma chave determinística `inbox_auto_reply:<inboundMessageId>`), a cobrança em (3) é
+ * idempotente de verdade: uma segunda chamada com a MESMA chave (retry, worker restart, claim
+ * expirado, redelivery do RabbitMQ) nunca debita duas vezes — ver `CreditAccountingService.
+ * recordSuccess`. Sem a chave (a maioria das operações, ex.: `briefing_field_extraction`), o
+ * comportamento é o de sempre.
  */
 export class CreditGatedAiGateway implements AiGatewayPort {
   constructor(private readonly deps: CreditGatedAiGatewayDeps) {}
@@ -73,6 +80,7 @@ export class CreditGatedAiGateway implements AiGatewayPort {
           outputTokens: result.data.usage.outputTokens,
           cachedInputTokens: result.data.usage.cachedInputTokens,
         },
+        idempotencyKey: request.metadata?.idempotencyKey,
         now: nowDate,
       });
     } catch (error) {

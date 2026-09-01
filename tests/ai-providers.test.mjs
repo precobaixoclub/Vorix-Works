@@ -92,7 +92,7 @@ function makeAiProvidersRepo(operationType, models = [], providerStatus = "activ
     repo: {
       async getOperationType(code) { return code === operationType.code ? operationType : undefined; },
       async getProvider(code) { return code === operationType.defaultProviderCode ? { code, status: providerStatus } : undefined; },
-      async recordGeneration(entry) { generationLedger.push(entry); return entry; },
+      async recordGeneration(entry) { generationLedger.push(entry); return { generation: entry, wasCreated: true }; },
       async listModels(providerCode) { return models.filter((m) => !providerCode || m.providerCode === providerCode); },
     },
   };

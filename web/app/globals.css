@@ -10,8 +10,8 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
-  /* SaaS Panel Design System — nomes canônicos (`references/01-fundacoes-cores.md`). Marca do
-   * Vonix (verde-limão #ADDB46/#4F6B1A) no lugar do verde padrão do pacote — ver `:root`/`.dark`
+  /* SaaS Panel Design System — nomes canônicos (`references/01-fundacoes-cores.md`). Marca da
+   * Vorix (verde-limão #ADDB46/#4F6B1A) no lugar do verde padrão do pacote — ver `:root`/`.dark`
    * abaixo pro valor cru de cada `--primary`/`--background`/etc. */
   --color-primary: hsl(var(--primary));
   --color-primary-glow: hsl(var(--primary-glow));
@@ -59,6 +59,16 @@
   --color-warning-bg: hsl(var(--warning) / 0.12);
   --color-danger: hsl(var(--destructive));
   --color-danger-bg: hsl(var(--destructive) / 0.12);
+
+  /* Paleta de gráficos — vocabulário fechado (`primary → emerald → sky → violet → amber → rose`,
+   * o mesmo de `HubAccent` em `components/HubPage.tsx`), nunca cor solta por gráfico. Valores
+   * brutos em `:root`/`.dark` abaixo; `DashboardKit.tsx` consome via `hsl(var(--chart-N))`. */
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+  --color-chart-6: hsl(var(--chart-6));
 
   --radius-lg: 0.625rem;
   --radius-xl: 1rem;
@@ -112,6 +122,15 @@
   --brand: 79 67% 57%;
   --accent-hover: 82 62% 21%;
   --accent-soft: 78 59% 91%;
+
+  /* Paleta de gráficos (claro) — chart-1 segue a marca (`--primary`); 2-6 são os tons 500 padrão
+   * do vocabulário fechado (emerald/sky/violet/amber/rose), mesmas cores usadas em `HubAccent`. */
+  --chart-1: var(--primary);
+  --chart-2: 160 84% 39%;
+  --chart-3: 199 89% 48%;
+  --chart-4: 258 90% 66%;
+  --chart-5: 38 92% 50%;
+  --chart-6: 350 89% 60%;
 }
 
 .dark {
@@ -152,6 +171,17 @@
   --brand: 79 67% 57%;
   --accent-hover: 78 71% 70%;
   --accent-soft: 84 32% 15%;
+
+  /* Paleta de gráficos (escuro) — chart-1 usa `--primary-glow` (verde sólido de 26% de
+   * luminosidade some no fundo escuro, mesmo motivo do `dark:bg-primary-glow` do resto do
+   * sistema); 2-6 usam os tons 400 (mais claros que o light, mesma lógica de `--success`/
+   * `--warning`/`--destructive` acima). */
+  --chart-1: var(--primary-glow);
+  --chart-2: 158 64% 52%;
+  --chart-3: 199 89% 64%;
+  --chart-4: 255 92% 76%;
+  --chart-5: 43 96% 63%;
+  --chart-6: 351 95% 71%;
 }
 
 /* Escala tipográfica reduzida do painel — só dentro do shell (`.app-shell`), páginas públicas

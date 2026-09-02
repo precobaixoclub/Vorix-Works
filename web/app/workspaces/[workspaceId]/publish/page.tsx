@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
+import { cn } from "@/lib/utils";
 import { uploadPublicationMedia } from "@/features/media-upload/api";
 import { scheduleMetaPost } from "@/features/meta/api";
 import { useMetaOAuthStatus, useMetaPosts } from "@/features/meta/hooks";
@@ -72,7 +73,7 @@ export default function PublishPage() {
 
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [feedback, setFeedback] = useState<string | undefined>();
+  const [feedback, setFeedback] = useState<{ tone: "success" | "warning" | "error"; message: string } | undefined>();
   const [selected, setSelected] = useState<Set<Platform>>(new Set());
   const [selectedSourceId, setSelectedSourceId] = useState("");
   const [queryApplied, setQueryApplied] = useState(false);
@@ -173,7 +174,7 @@ export default function PublishPage() {
       setVideoUrl(uploaded.url);
       setSelectedSourceId("");
     } catch (cause) {
-      setFeedback(messageOf(cause));
+      setFeedback({ tone: "error", message: messageOf(cause) });
     } finally {
       setUploading(false);
     }
@@ -188,7 +189,7 @@ export default function PublishPage() {
       setImageUrls((current) => [...current.split(/[\n,]/).map((url) => url.trim()).filter(Boolean), ...uploaded.map((item) => item.url)].join("\n"));
       setSelectedSourceId("");
     } catch (cause) {
-      setFeedback(messageOf(cause));
+      setFeedback({ tone: "error", message: messageOf(cause) });
     } finally {
       setUploading(false);
     }
@@ -201,7 +202,7 @@ export default function PublishPage() {
       const uploaded = await uploadPublicationMedia(workspace.id, file);
       setThumbnailUrl(uploaded.url);
     } catch (cause) {
-      setFeedback(messageOf(cause));
+      setFeedback({ tone: "error", message: messageOf(cause) });
     } finally {
       setUploading(false);
     }
@@ -212,15 +213,15 @@ export default function PublishPage() {
     setFeedback(undefined);
 
     if (!hasMedia) {
-      setFeedback(mediaKind === "video" ? "Envie um vídeo para publicar." : "Escolha ou envie ao menos uma imagem.");
+      setFeedback({ tone: "error", message: mediaKind === "video" ? "Envie um vídeo para publicar." : "Escolha ou envie ao menos uma imagem." });
       return;
     }
     if (selected.size === 0) {
-      setFeedback("Selecione ao menos uma rede conectada.");
+      setFeedback({ tone: "error", message: "Selecione ao menos uma rede conectada." });
       return;
     }
     if (youtubeNeedsVideo) {
-      setFeedback("YouTube Shorts só publica vídeo. Desmarque YouTube ou troque a mídia para vídeo.");
+      setFeedback({ tone: "error", message: "YouTube Shorts só publica vídeo. Desmarque YouTube ou troque a mídia para vídeo." });
       return;
     }
 
@@ -294,7 +295,7 @@ export default function PublishPage() {
     }
 
     if (publicationTasks.length === 0) {
-      setFeedback(skippedSummaries.join(" · ") || "Nenhuma publicação pode ser criada com essa combinação.");
+      setFeedback({ tone: "error", message: skippedSummaries.join(" · ") || "Nenhuma publicação pode ser criada com essa combinação." });
       setBusy(false);
       return;
     }
@@ -305,7 +306,9 @@ export default function PublishPage() {
       if (outcome.status === "fulfilled") return `${label}: ok`;
       return `${label}: ${messageOf(outcome.reason)}`;
     }).concat(skippedSummaries).join(" · ");
-    setFeedback(summary);
+    const fulfilledCount = outcomes.filter((outcome) => outcome.status === "fulfilled").length;
+    const tone = fulfilledCount === 0 ? "error" : fulfilledCount === outcomes.length && skippedSummaries.length === 0 ? "success" : "warning";
+    setFeedback({ tone, message: summary });
 
     if (outcomes.some((outcome) => outcome.status === "fulfilled")) {
       setCaption("");
@@ -328,7 +331,7 @@ export default function PublishPage() {
       await cancelUnifiedPublication(workspace.id, postPendingCancel.network, postPendingCancel.id);
       await Promise.all([mutateTikTokPosts(), mutateMetaPosts(), mutateYouTubePosts(), mutateUnified()]);
     } catch (cause) {
-      setFeedback(messageOf(cause));
+      setFeedback({ tone: "error", message: messageOf(cause) });
     } finally {
       setBusy(false);
       setPostPendingCancel(undefined);
@@ -348,7 +351,23 @@ export default function PublishPage() {
         }
       />
 
-      {feedback ? <Card className="mb-6 border-primary/30 bg-primary/10 p-4"><p className="text-sm text-foreground">{feedback}</p></Card> : null}
+      {feedback ? (
+        <Card
+          className={cn(
+            "mb-6 p-4",
+            feedback.tone === "success" && "border-status-active/30 bg-status-active-bg",
+            feedback.tone === "warning" && "border-warning/30 bg-warning-bg",
+            feedback.tone === "error" && "border-danger/30 bg-danger-bg",
+          )}
+        >
+          <p className={cn(
+            "text-sm",
+            feedback.tone === "success" && "text-status-active",
+            feedback.tone === "warning" && "text-warning",
+            feedback.tone === "error" && "text-danger",
+          )}>{feedback.message}</p>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
         <form className="space-y-5" onSubmit={submitPost}>
@@ -384,7 +403,7 @@ export default function PublishPage() {
                 </div>
               ) : null}
 
-              <div className="rounded-xl border border-border bg-background p-3">
+              <div className="rounded-lg bg-muted/40 p-3">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ou enviar agora</p>
                 <ToggleGroup
                   type="single"
@@ -426,7 +445,7 @@ export default function PublishPage() {
             </div>
 
             {hasMetaSelection ? (
-              <div className="mt-4 rounded-xl border border-border bg-card p-3">
+              <div className="mt-4 rounded-lg bg-muted/40 p-3">
                 <Label htmlFor="publish-placement">Opções de Meta</Label>
                 <ToggleGroup
                   id="publish-placement"
@@ -486,7 +505,7 @@ export default function PublishPage() {
             <ProgressivePanel title="Opções da rede" description="Privacidade, música automática e interações quando a rede suporta." open={networkOptionsOpen} onToggle={() => setNetworkOptionsOpen(!networkOptionsOpen)}>
               <div className="grid gap-3">
                 {selected.has("tiktok") ? (
-                  <div className="rounded-xl border border-border bg-card p-3">
+                  <div className="rounded-lg bg-muted/40 p-3">
                     <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">TikTok</p>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div>
@@ -510,7 +529,7 @@ export default function PublishPage() {
                   </div>
                 ) : null}
                 {selected.has("youtube") ? (
-                  <div className="rounded-xl border border-border bg-card p-3">
+                  <div className="rounded-lg bg-muted/40 p-3">
                     <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">YouTube</p>
                     <Label htmlFor="youtube-privacy">Visibilidade</Label>
                     <Select value={youtubePrivacy} onValueChange={(value) => setYouTubePrivacy(value as YouTubePrivacyStatus)}>
@@ -527,7 +546,7 @@ export default function PublishPage() {
             </ProgressivePanel>
           ) : null}
 
-          <div className="sticky bottom-16 z-20 rounded-2xl border border-border bg-card/95 p-3 shadow-xl backdrop-blur md:bottom-4">
+          <div className="sticky bottom-16 z-20 rounded-2xl border border-border bg-card/95 p-3 shadow-md backdrop-blur md:bottom-4">
             <Button type="submit" className="w-full" disabled={busy || uploading || selected.size === 0 || !hasMedia || (publishTiming === "schedule" && !scheduledAt)}>
               {publishTiming === "schedule" ? "Agendar publicação" : "Publicar agora"}
             </Button>

@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/Button";
 import { Label, Textarea } from "@/components/Field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { updateProductionSettings } from "../api";
 import { useProductionSettings } from "../hooks";
 import { CREATIVE_FREEDOM_LABEL, CREATIVE_FREEDOM_OPTIONS, TEXT_DENSITY_LABEL, TEXT_DENSITY_OPTIONS, type CreativeFreedom, type TextDensity } from "../types";
 
-const SELECT_CLASSES = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft";
 const MAX_PROMPT_LENGTH = 8000;
 
 /**
@@ -63,7 +64,7 @@ export function ProductionSettingsPanel({ workspaceId }: { workspaceId: string }
   }
 
   if (isLoading) {
-    return <p className="text-sm text-ink-muted">Carregando diretrizes…</p>;
+    return <p className="text-sm text-muted-foreground">Carregando diretrizes…</p>;
   }
 
   return (
@@ -78,10 +79,10 @@ export function ProductionSettingsPanel({ workspaceId }: { workspaceId: string }
           onChange={(e) => setProductionPrompt(e.target.value)}
           placeholder='Ex.: "Crie peças modernas, tecnológicas e de alto impacto. Priorize fundo preto/grafite, verde neon, amarelo e branco. Utilize screenshots reais do site quando disponíveis. Não invente interfaces se houver screenshot real. Em campanhas de produto, destaque produto, preço e desconto."'
         />
-        <p className={`mt-1 text-right text-xs ${productionPrompt.length >= MAX_PROMPT_LENGTH ? "text-red-600" : "text-ink-faint"}`}>
+        <p className={`mt-1 text-right text-xs ${productionPrompt.length >= MAX_PROMPT_LENGTH ? "text-danger" : "text-muted-foreground/70"}`}>
           {productionPrompt.length}/{MAX_PROMPT_LENGTH}
         </p>
-        <p className="mt-1 text-xs text-ink-muted">
+        <p className="mt-1 text-xs text-muted-foreground">
           Essas instruções são usadas automaticamente em TODAS as novas gerações deste workspace — o pedido feito na hora da geração continua tendo prioridade quando houver conflito.
         </p>
       </div>
@@ -89,40 +90,46 @@ export function ProductionSettingsPanel({ workspaceId }: { workspaceId: string }
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <Label htmlFor="text-density">Quantidade de texto preferida</Label>
-          <select id="text-density" value={textDensity} onChange={(e) => setTextDensity(e.target.value as TextDensity)} className={SELECT_CLASSES}>
-            {TEXT_DENSITY_OPTIONS.map((option) => (
-              <option key={option} value={option}>{TEXT_DENSITY_LABEL[option]}</option>
-            ))}
-          </select>
+          <Select value={textDensity} onValueChange={(value) => setTextDensity(value as TextDensity)}>
+            <SelectTrigger id="text-density"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {TEXT_DENSITY_OPTIONS.map((option) => (
+                <SelectItem key={option} value={option}>{TEXT_DENSITY_LABEL[option]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <Label htmlFor="creative-freedom">Nível de liberdade criativa</Label>
-          <select id="creative-freedom" value={creativeFreedom} onChange={(e) => setCreativeFreedom(e.target.value as CreativeFreedom)} className={SELECT_CLASSES}>
-            {CREATIVE_FREEDOM_OPTIONS.map((option) => (
-              <option key={option} value={option}>{CREATIVE_FREEDOM_LABEL[option]}</option>
-            ))}
-          </select>
+          <Select value={creativeFreedom} onValueChange={(value) => setCreativeFreedom(value as CreativeFreedom)}>
+            <SelectTrigger id="creative-freedom"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {CREATIVE_FREEDOM_OPTIONS.map((option) => (
+                <SelectItem key={option} value={option}>{CREATIVE_FREEDOM_LABEL[option]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <label className="flex items-center gap-2 text-sm text-ink">
-          <input type="checkbox" checked={preferRealAssets} onChange={(e) => setPreferRealAssets(e.target.checked)} className="h-4 w-4 rounded border-border" />
+      <div className="flex flex-col gap-3">
+        <label htmlFor="prefer-real-assets" className="flex items-center justify-between gap-3 text-sm text-foreground">
           Priorizar sempre assets reais (fotos/screenshots/logo reais) em vez de recriar visualmente
+          <Switch id="prefer-real-assets" checked={preferRealAssets} onCheckedChange={setPreferRealAssets} className="shrink-0" />
         </label>
-        <label className="flex items-center gap-2 text-sm text-ink">
-          <input type="checkbox" checked={allowFictionalInterfaces} onChange={(e) => setAllowFictionalInterfaces(e.target.checked)} className="h-4 w-4 rounded border-border" />
+        <label htmlFor="allow-fictional-interfaces" className="flex items-center justify-between gap-3 text-sm text-foreground">
           Permitir interfaces fictícias (telas/apps inventados) quando não houver screenshot real
+          <Switch id="allow-fictional-interfaces" checked={allowFictionalInterfaces} onCheckedChange={setAllowFictionalInterfaces} className="shrink-0" />
         </label>
-        <label className="flex items-center gap-2 text-sm text-ink">
-          <input type="checkbox" checked={allowGeneratedPeople} onChange={(e) => setAllowGeneratedPeople(e.target.checked)} className="h-4 w-4 rounded border-border" />
+        <label htmlFor="allow-generated-people" className="flex items-center justify-between gap-3 text-sm text-foreground">
           Permitir pessoas geradas por IA na peça
+          <Switch id="allow-generated-people" checked={allowGeneratedPeople} onCheckedChange={setAllowGeneratedPeople} className="shrink-0" />
         </label>
       </div>
 
-      <div className="rounded-lg border border-border bg-surface-sunken px-3 py-3">
-        <p className="mb-2 text-xs font-medium text-ink-muted">Contexto que a IA receberá (resumo)</p>
-        <ul className="list-inside list-disc space-y-1 text-xs text-ink-muted">
+      <div className="rounded-lg bg-muted/40 px-3 py-3">
+        <p className="mb-2 text-xs font-medium text-muted-foreground">Contexto que a IA receberá (resumo)</p>
+        <ul className="list-inside list-disc space-y-1 text-xs text-muted-foreground">
           <li>{preferRealAssets ? "Priorizar assets reais sobre recriação visual." : "Sem preferência forçada por assets reais."}</li>
           <li>{allowFictionalInterfaces ? "Interfaces fictícias permitidas quando necessário." : "Nunca inventar uma interface fictícia de site/app."}</li>
           <li>{allowGeneratedPeople ? "Pessoas geradas por IA permitidas." : "Não gerar pessoas/rostos artificiais."}</li>
@@ -132,10 +139,10 @@ export function ProductionSettingsPanel({ workspaceId }: { workspaceId: string }
         </ul>
       </div>
 
-      {error ? <p className="text-xs text-red-600">{error}</p> : null}
+      {error ? <p className="text-xs text-danger">{error}</p> : null}
       <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={handleSave} disabled={saving}>{saving ? "Salvando…" : "Salvar diretrizes"}</Button>
-        {savedAt ? <p className="text-xs text-ink-muted">Salvo às {savedAt} (versão {savedVersion})</p> : null}
+        <Button onClick={handleSave} loading={saving} disabled={saving}>Salvar diretrizes</Button>
+        {savedAt ? <p className="text-xs text-muted-foreground">Salvo às {savedAt} (versão {savedVersion})</p> : null}
       </div>
     </div>
   );

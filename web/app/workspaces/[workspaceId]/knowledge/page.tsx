@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input } from "@/components/Field";
+import { PageHeader } from "@/components/PageHeader";
 import { PageSubnav } from "@/components/PageSubnav";
 import { Spinner } from "@/components/Spinner";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -64,11 +65,8 @@ export default function KnowledgePage() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
-      <div className="mb-6">
-        <h1 className="font-display text-2xl font-semibold text-foreground sm:text-3xl">Marca</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Identidade, diretrizes criativas e materiais que a IA usa para criar conteúdo desta marca.</p>
-      </div>
+    <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
+      <PageHeader title="Marca" description="Identidade, diretrizes criativas e materiais que a IA usa para criar conteúdo desta marca." />
 
       <PageSubnav items={TABS.map((tab) => ({ value: tab.id, label: tab.label }))} value={activeTab} onValueChange={(value) => setTab(value as TabId)}>
         {activeTab === "profile" ? <BrandProfileTab workspaceId={workspace.id} onGoToTab={setTab} /> : null}
@@ -93,8 +91,8 @@ function BrandSection({ title, children }: { title: string; children: ReactNode 
 function BrandField({ label, value }: { label: string; value?: string }) {
   return (
     <div>
-      <p className="text-xs font-medium text-muted-foreground/70">{label}</p>
-      {value ? <p className="mt-0.5 text-sm text-foreground">{value}</p> : <p className="mt-0.5 text-sm text-muted-foreground/70">Não configurado.</p>}
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      {value ? <p className="mt-0.5 text-sm text-foreground">{value}</p> : <p className="mt-0.5 text-sm text-muted-foreground">Não configurado.</p>}
     </div>
   );
 }
@@ -321,7 +319,7 @@ function MaterialsTab({ workspaceId }: { workspaceId: string }) {
             key={f.id}
             type="button"
             onClick={() => setFilter(f.id)}
-            className={`rounded-full px-3 py-1 text-xs font-medium ${filter === f.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 ${filter === f.id ? "bg-primary text-primary-foreground active:bg-primary/85" : "bg-muted text-muted-foreground hover:text-foreground active:bg-muted/70"}`}
           >
             {f.label}
           </button>

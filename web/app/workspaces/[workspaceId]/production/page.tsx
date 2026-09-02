@@ -239,18 +239,18 @@ function hasProductionCardTitle(workspaceId: string, run: ExecutionRun): boolean
  * pra saber que essas duas coisas existem e como alternar entre elas. */
 function ProductionModeTabs({ mode, onChange, queueCount, tankCount }: { mode: ProductionMode; onChange: (mode: ProductionMode) => void; queueCount: number; tankCount: number }) {
   return (
-    <div className="mb-4 inline-flex gap-1 rounded-lg bg-surface-raised p-1">
+    <div className="mb-4 inline-flex gap-1 rounded-lg bg-card p-1">
       <button
         type="button"
         onClick={() => onChange("queue")}
-        className={`min-h-9 rounded-md px-3.5 text-sm font-medium transition-colors ${mode === "queue" ? "bg-primary text-white" : "text-ink-muted hover:text-ink"}`}
+        className={`min-h-9 rounded-md px-3.5 text-sm font-medium transition-colors ${mode === "queue" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
       >
         Fila{queueCount > 0 ? ` (${queueCount})` : ""}
       </button>
       <button
         type="button"
         onClick={() => onChange("configure")}
-        className={`min-h-9 rounded-md px-3.5 text-sm font-medium transition-colors ${mode === "configure" ? "bg-primary text-white" : "text-ink-muted hover:text-ink"}`}
+        className={`min-h-9 rounded-md px-3.5 text-sm font-medium transition-colors ${mode === "configure" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
       >
         Tanque{tankCount > 0 ? ` (${tankCount})` : ""}
       </button>
@@ -699,7 +699,7 @@ export default function ProductionLinePage() {
                 </Button>
               ) : null}
               {emptyIdeas.length > 0 ? (
-                <button type="button" onClick={removeEmptyIdeas} className="text-xs font-medium text-amber-500 hover:text-amber-400">
+                <button type="button" onClick={removeEmptyIdeas} className="text-xs font-medium text-warning transition-colors hover:text-warning/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 rounded">
                   Limpar {emptyIdeas.length} ideia(s) sem descrição
                 </button>
               ) : null}
@@ -750,7 +750,7 @@ export default function ProductionLinePage() {
                   const preview = idea.ideaText.trim() || idea.objective.trim() || "Rascunho sem descrição. Remova ou preencha a ideia.";
                   const generatingNow = generatingIdeaId === idea.id || activeGenerationIdeaIds.has(idea.id);
                   const statusLabel = generatingNow ? "Em andamento" : idea.status === "used" ? "Usada" : "Pendente";
-                  const statusBadgeClass = generatingNow ? "bg-amber-500/10 text-amber-600" : idea.status === "used" ? "" : "bg-emerald-500/10 text-emerald-600";
+                  const statusBadgeClass = generatingNow ? "bg-warning-bg text-warning" : idea.status === "used" ? "" : "bg-status-active-bg text-status-active";
                   return (
                     <TableRow key={idea.id} className={selected ? "bg-primary/5" : undefined}>
                       <TableCell>
@@ -779,8 +779,8 @@ export default function ProductionLinePage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap justify-end gap-1.5">
-                          <Button size="sm" disabled={generatingNow} onClick={() => triggerGeneration(idea)}>
-                            {generatingIdeaId === idea.id ? "Gerando…" : "Gerar agora"}
+                          <Button size="sm" variant="secondary" loading={generatingIdeaId === idea.id} disabled={generatingNow} onClick={() => triggerGeneration(idea)}>
+                            Gerar agora
                           </Button>
                           <Button size="sm" variant="secondary" onClick={() => openBlueprint(idea.id)}>Abrir</Button>
                           <Button size="sm" variant="ghost" disabled={generatingNow} onClick={() => toggleBlueprintStatus(idea)}>
@@ -837,56 +837,56 @@ export default function ProductionLinePage() {
     <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="font-display text-2xl font-semibold text-ink">Produção</h1>
-          <p className="mt-1 text-sm text-ink-muted">Acompanhe a fila e abasteça o tanque de ideias.</p>
+          <h1 className="text-2xl font-semibold text-foreground">Produção</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Acompanhe a fila e abasteça o tanque de ideias.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Button className="w-full sm:w-auto" onClick={() => { setMode("configure"); addBlueprint(); }}>+ Nova ideia</Button>
           <Link href={`/workspaces/${workspace.id}/knowledge?tab=guidelines`} className="relative">
             <Button variant="secondary" className="w-full">{hasGuidelines ? "Editar prompt" : "Configurar prompt"}</Button>
-            {!hasGuidelines ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400" aria-hidden="true" /> : null}
+            {!hasGuidelines ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-warning" aria-hidden="true" /> : null}
           </Link>
         </div>
       </div>
 
       <ProductionModeTabs mode={mode} onChange={setMode} queueCount={totalQueueRuns} tankCount={pendingIdeaCount} />
 
-      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-surface-raised px-3 py-1.5 text-xs text-ink-muted">
-        <span>Prompt: <strong className="font-semibold text-ink">{hasGuidelines ? "configurado" : "pendente"}</strong></span>
-        <span>Rotina: <strong className="font-semibold text-ink">{rotinaAtiva ? "ativa" : "pausada"}</strong></span>
-        {rotinaAtiva && nextSlot ? <span className="hidden sm:inline">Próximo: <strong className="font-semibold text-ink">{nextSlot}</strong></span> : null}
+      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
+        <span>Prompt: <strong className="font-semibold text-foreground">{hasGuidelines ? "configurado" : "pendente"}</strong></span>
+        <span>Rotina: <strong className="font-semibold text-foreground">{rotinaAtiva ? "ativa" : "pausada"}</strong></span>
+        {rotinaAtiva && nextSlot ? <span className="hidden sm:inline">Próximo: <strong className="font-semibold text-foreground">{nextSlot}</strong></span> : null}
       </div>
 
       <div className="mb-4">
         <button
           type="button"
           onClick={() => setQueuePanelOpen((open) => !open)}
-          className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm font-medium text-ink hover:bg-surface-sunken sm:w-auto"
+          className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 sm:w-auto"
           aria-expanded={queuePanelOpen}
         >
           <span className="flex items-center gap-2">
             <span>{currentQueueTabLabel}</span>
-            <span className="text-xs font-normal text-ink-muted">({runsByTab[queueTab].length})</span>
+            <span className="text-xs font-normal text-muted-foreground">({runsByTab[queueTab].length})</span>
             {activeQueueFilterCount > 0 ? (
-              <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">{activeQueueFilterCount}</span>
+              <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground">{activeQueueFilterCount}</span>
             ) : null}
           </span>
-          <span className="flex items-center gap-1 text-xs font-normal text-ink-muted">
+          <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">
             Filtrar
             <IconChevron className={`h-3 w-3 transition-transform ${queuePanelOpen ? "rotate-180" : ""}`} />
           </span>
         </button>
 
         {queuePanelOpen ? (
-          <div className="mt-2 rounded-xl border border-border bg-surface-raised p-3">
-            <div className="mb-3 flex flex-wrap gap-1.5 rounded-lg bg-surface-sunken p-1">
+          <div className="mt-2 rounded-xl border border-border bg-card p-3">
+            <div className="mb-3 flex flex-wrap gap-1.5 rounded-lg bg-muted p-1">
               {QUEUE_TABS.map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setQueueTab(tab.id)}
-                  className={`min-h-8 rounded-md px-2.5 text-xs font-medium transition-colors ${
-                    queueTab === tab.id ? "bg-primary text-white" : "text-ink-muted hover:text-ink"
+                  className={`min-h-8 rounded-md px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 ${
+                    queueTab === tab.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {tab.label} <span className="text-xs opacity-70">({runsByTab[tab.id].length})</span>
@@ -899,19 +899,19 @@ export default function ProductionLinePage() {
               value={queueSearch}
               onChange={(event) => setQueueSearch(event.target.value)}
               placeholder="Buscar produção"
-              className="mb-3 min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft"
+              className="mb-3 min-h-9 w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/70 outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary/20"
             />
 
             <div className="flex flex-wrap items-center gap-2">
-              <select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value as ProductionChannel | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-primary">
+              <select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value as ProductionChannel | "all")} className="rounded-lg border border-border bg-card px-2.5 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary/20">
                 <option value="all">Todos os canais</option>
                 {CHANNELS.map((channel) => (<option key={channel} value={channel}>{CHANNEL_LABEL[channel]}</option>))}
               </select>
-              <select value={queueFormatFilter} onChange={(event) => setQueueFormatFilter(event.target.value as ProductionFormat | "all")} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-primary">
+              <select value={queueFormatFilter} onChange={(event) => setQueueFormatFilter(event.target.value as ProductionFormat | "all")} className="rounded-lg border border-border bg-card px-2.5 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary/20">
                 <option value="all">Todos os formatos</option>
                 {FORMATS.map((format) => (<option key={format} value={format}>{FORMAT_LABEL[format]}</option>))}
               </select>
-              <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as PeriodFilterId)} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink outline-none focus:border-primary">
+              <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as PeriodFilterId)} className="rounded-lg border border-border bg-card px-2.5 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary/20">
                 {PERIOD_FILTERS.map((period) => (<option key={period.id} value={period.id}>{period.label}</option>))}
               </select>
               <SegmentedFilter value={sortOrder} options={[{ id: "recent", label: "Recentes" }, { id: "oldest", label: "Antigos" }]} onChange={setSortOrder} />
@@ -936,13 +936,13 @@ export default function ProductionLinePage() {
       {retryError ? <p className="mb-3 text-sm text-danger">{retryError}</p> : null}
 
       {totalQueueRuns === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-2xl bg-surface-raised px-6 py-14 text-center">
-          <p className="font-display text-lg font-semibold text-ink">Sua produção está vazia</p>
-          <p className="max-w-sm text-sm text-ink-muted">Crie seu primeiro conteúdo com IA e acompanhe o processo por aqui.</p>
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-border/60 bg-card px-6 py-14 text-center">
+          <p className="text-lg font-semibold text-foreground">Sua produção está vazia</p>
+          <p className="max-w-sm text-sm text-muted-foreground">Crie seu primeiro conteúdo com IA e acompanhe o processo por aqui.</p>
           <Link href={`/workspaces/${workspace.id}/create`} className="mt-1"><Button>Criar conteúdo</Button></Link>
         </div>
       ) : filteredQueueRuns.length === 0 ? (
-        <div className="rounded-2xl bg-surface-raised px-6 py-10 text-center text-sm text-ink-muted">Nada aqui para os filtros atuais.</div>
+        <div className="rounded-2xl border border-border/60 bg-card px-6 py-10 text-center text-sm text-muted-foreground">Nada aqui para os filtros atuais.</div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filteredQueueRuns.map((run) => (
@@ -985,20 +985,20 @@ function ProductionRunCard({
   const thumbnail = summary.images[0]?.uri;
 
   return (
-    <div className="overflow-hidden rounded-xl bg-surface-raised">
+    <div className="overflow-hidden rounded-xl bg-card">
       {thumbnail ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={thumbnail} alt="" className="aspect-square w-full object-cover" />
       ) : run.state === "failed" ? null : (
-        <div className="flex aspect-[3/2] w-full items-center justify-center bg-surface-sunken text-2xl text-ink-faint" aria-hidden="true">
+        <div className="flex aspect-[3/2] w-full items-center justify-center bg-background text-2xl text-muted-foreground/70" aria-hidden="true">
           {IN_PROGRESS_STATES.includes(run.state) ? "✦" : "🖼"}
         </div>
       )}
 
       <div className="space-y-2 p-3.5">
-        <p className="truncate text-sm font-semibold text-ink">{summary.title}</p>
+        <p className="truncate text-sm font-semibold text-foreground">{summary.title}</p>
         {summary.record ? (
-          <p className="text-xs text-ink-muted">{CHANNEL_LABEL[summary.record.channel]} · {FORMAT_LABEL[summary.record.format]}</p>
+          <p className="text-xs text-muted-foreground">{CHANNEL_LABEL[summary.record.channel]} · {FORMAT_LABEL[summary.record.format]}</p>
         ) : null}
 
         {run.state === "failed" ? (
@@ -1021,20 +1021,20 @@ function ProductionRunCard({
           </>
         ) : run.state === "completed" ? (
           <>
-            <p className="text-xs text-ink-muted">Concluído · {formatRelativeTime(run.finishedAt ?? run.updatedAt)}</p>
+            <p className="text-xs text-muted-foreground">Concluído · {formatRelativeTime(run.finishedAt ?? run.updatedAt)}</p>
             <Link href={`/workspaces/${workspaceId}/campaigns`} className="text-xs font-medium text-primary hover:underline">Ver em Conteúdos →</Link>
           </>
         ) : (
           <>
             <p className="text-sm text-primary">{RUN_STATE_LABEL[run.state] ?? "Processando…"}</p>
-            <p className="text-xs text-ink-faint">Iniciado há {formatRelativeTime(run.createdAt)}</p>
+            <p className="text-xs text-muted-foreground/70">Iniciado há {formatRelativeTime(run.createdAt)}</p>
             {summary.record ? (
-              <button type="button" onClick={() => setExpanded((prev) => !prev)} className="text-xs font-medium text-ink-muted hover:text-ink">
+              <button type="button" onClick={() => setExpanded((prev) => !prev)} className="text-xs font-medium text-muted-foreground hover:text-foreground">
                 {expanded ? "Ocultar detalhes" : "Ver detalhes"}
               </button>
             ) : null}
             {expanded && summary.record ? (
-              <div className="rounded-lg bg-surface-sunken px-2.5 py-2 text-xs text-ink-muted">
+              <div className="rounded-lg bg-background px-2.5 py-2 text-xs text-muted-foreground">
                 <p className="whitespace-pre-wrap">{summary.record.ideaText}</p>
                 {summary.record.targetAudience ? <p className="mt-1.5">Público: {summary.record.targetAudience}</p> : null}
               </div>
@@ -1046,15 +1046,18 @@ function ProductionRunCard({
   );
 }
 
+// Banner de setup — NUNCA um segundo primary sólido na tela (a ação principal da página é
+// "Nova ideia", no PageHeader). Quando as diretrizes não estão configuradas, o tom é `warning`
+// (é um aviso importante, não a ação principal desta tela) e o botão fica `secondary`.
 function PromptSetupCard({ workspaceId, hasGuidelines, compact }: { workspaceId: string; hasGuidelines: boolean; compact: boolean }) {
   return (
-    <div className={`mb-4 rounded-xl border px-4 py-3 ${hasGuidelines ? "border-border bg-surface-raised" : "border-primary/40 bg-accent-soft"}`}>
+    <div className={`mb-4 rounded-xl border px-4 py-3 ${hasGuidelines ? "border-border bg-card" : "border-warning/40 bg-warning-bg"}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className={`text-sm font-semibold ${hasGuidelines ? "text-ink" : "text-primary"}`}>
+          <p className={`text-sm font-semibold ${hasGuidelines ? "text-foreground" : "text-warning"}`}>
             {hasGuidelines ? "Prompt da IA configurado" : "Configure o prompt da IA antes de gerar conteúdo"}
           </p>
-          <p className={`mt-0.5 text-sm ${hasGuidelines ? "text-ink-muted" : "text-primary"}`}>
+          <p className={`mt-0.5 text-sm ${hasGuidelines ? "text-muted-foreground" : "text-warning"}`}>
             {hasGuidelines
               ? "A IA já tem diretrizes criativas fixas desta marca."
               : compact
@@ -1063,7 +1066,7 @@ function PromptSetupCard({ workspaceId, hasGuidelines, compact }: { workspaceId:
           </p>
         </div>
         <Link href={`/workspaces/${workspaceId}/knowledge?tab=guidelines`} className="shrink-0">
-          <Button variant={hasGuidelines ? "secondary" : "primary"}>{hasGuidelines ? "Editar prompt" : "Configurar prompt da IA"}</Button>
+          <Button variant="secondary">{hasGuidelines ? "Editar prompt" : "Configurar prompt da IA"}</Button>
         </Link>
       </div>
     </div>
@@ -1104,20 +1107,20 @@ function RoutineConfigDialog({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-3 py-3 sm:items-center sm:py-6">
-      <section className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-border bg-surface-raised shadow-xl">
-        <header className="border-b border-border bg-surface-raised px-4 py-3 sm:px-5">
+      <section className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg">
+        <header className="border-b border-border bg-card px-4 py-3 sm:px-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wide text-primary">Rotina automática</p>
-              <h2 className="mt-1 text-lg font-semibold text-ink">Onde publicar, em quais horários, e o tanque que abastece a agenda</h2>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">Onde publicar, em quais horários, e o tanque que abastece a agenda</h2>
             </div>
-            <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-xl leading-none text-ink-muted hover:bg-surface-sunken hover:text-ink" aria-label="Fechar">
+            <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-xl leading-none text-muted-foreground hover:bg-background hover:text-foreground" aria-label="Fechar">
               x
             </button>
           </div>
         </header>
 
-        <div className="overflow-y-auto bg-surface-raised px-4 py-4 sm:px-5">
+        <div className="overflow-y-auto bg-card px-4 py-4 sm:px-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap gap-2">
               {config.postingRules.map((rule) => (
@@ -1126,7 +1129,7 @@ function RoutineConfigDialog({
                   type="button"
                   onClick={() => onSelectRule(rule.id)}
                   className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                    selectedRule?.id === rule.id ? "border-ink-faint bg-surface-sunken text-ink" : "border-border bg-surface hover:bg-surface-sunken"
+                    selectedRule?.id === rule.id ? "border-muted-foreground/40 bg-background text-foreground" : "border-border bg-card hover:bg-background"
                   }`}
                 >
                   {rule.name}
@@ -1150,8 +1153,8 @@ function RoutineConfigDialog({
           </div>
         </div>
 
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface-raised px-4 py-3 sm:px-5">
-          <p className="text-xs text-ink-muted">{saveFeedback ?? (savedAt ? `Último salvamento: ${savedAt}` : "Revise a rotina e salve quando terminar.")}</p>
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-4 py-3 sm:px-5">
+          <p className="text-xs text-muted-foreground">{saveFeedback ?? (savedAt ? `Último salvamento: ${savedAt}` : "Revise a rotina e salve quando terminar.")}</p>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={onClose}>Fechar</Button>
             <Button onClick={onSave}>{saveFeedback ? "Salvo" : "Salvar rotina"}</Button>
@@ -1187,30 +1190,30 @@ function IdeaFormDialog({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-3 py-3 sm:items-center sm:py-6">
-      <section className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-surface-raised shadow-xl">
-        <header className="border-b border-border bg-surface-raised px-4 py-3 sm:px-5">
+      <section className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg">
+        <header className="border-b border-border bg-card px-4 py-3 sm:px-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wide text-primary">{isDraft ? "Nova ideia" : "Editar ideia"}</p>
-              <h2 className="mt-1 text-lg font-semibold text-ink">{isDraft ? "Abastecer tanque de conteúdo" : displayIdeaName(blueprint)}</h2>
-              <p className="mt-1 max-w-2xl text-sm text-ink-muted">
+              <h2 className="mt-1 text-lg font-semibold text-foreground">{isDraft ? "Abastecer tanque de conteúdo" : displayIdeaName(blueprint)}</h2>
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
                 {isDraft ? "Preencha a ideia e o formato: salve no tanque para a rotina sortear depois, ou gere agora mesmo." : "Preencha primeiro a ideia e o formato. Referências e detalhes aparecem separados para não poluir o fluxo."}
               </p>
             </div>
-            <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-xl leading-none text-ink-muted hover:bg-surface-sunken hover:text-ink" aria-label="Fechar">
+            <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-xl leading-none text-muted-foreground hover:bg-background hover:text-foreground" aria-label="Fechar">
               x
             </button>
           </div>
         </header>
 
-        <div className="overflow-y-auto bg-surface-raised px-4 py-4 sm:px-5">
+        <div className="overflow-y-auto bg-card px-4 py-4 sm:px-5">
           <BlueprintEditor workspaceId={workspaceId} blueprint={blueprint} onChange={onChange} onRemove={onRemove} canRemove />
         </div>
 
-        <footer className="border-t border-border bg-surface-raised px-4 py-3 sm:px-5">
+        <footer className="border-t border-border bg-card px-4 py-3 sm:px-5">
           {isDraft ? (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-ink-muted">Escolha uma das opções para salvar. O campo obrigatório é a ideia da postagem.</p>
+              <p className="text-xs text-muted-foreground">Escolha uma das opções para salvar. O campo obrigatório é a ideia da postagem.</p>
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" onClick={onDiscardDraft}>Descartar</Button>
                 <Button variant="secondary" disabled={!canSaveDraft} onClick={onSaveDraft}>Salvar no tanque</Button>
@@ -1231,13 +1234,13 @@ function IdeaFormDialog({
 
 function SegmentedFilter<T extends string>({ value, options, onChange }: { value: T; options: readonly { id: T; label: string }[]; onChange: (value: T) => void }) {
   return (
-    <div className="inline-flex rounded-lg border border-border bg-surface p-1">
+    <div className="inline-flex rounded-lg border border-border bg-card p-1">
       {options.map((option) => (
         <button
           key={option.id}
           type="button"
           onClick={() => onChange(option.id)}
-          className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === option.id ? "bg-primary text-white" : "text-ink-muted hover:text-ink"}`}
+          className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === option.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
         >
           {option.label}
         </button>
@@ -1263,34 +1266,34 @@ function ScheduleBuilder({
 }) {
   return (
     <div className="space-y-4">
-      <section className="rounded-lg border border-border bg-surface p-3 sm:p-4">
+      <section className="rounded-lg border border-border bg-card p-3 sm:p-4">
         <div className="mb-3 flex items-start gap-3">
           <StepMarker value={1} />
           <div>
-            <p className="text-sm font-semibold text-ink">Onde publicar</p>
-            <p className="mt-0.5 text-xs text-ink-muted">Selecione os canais que entram nesta rotina.</p>
+            <p className="text-sm font-semibold text-foreground">Onde publicar</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Selecione os canais que entram nesta rotina.</p>
           </div>
         </div>
         <ChannelPicker selected={rule.channels} onChange={(channels) => onRuleChange({ channels })} hideLabel />
       </section>
 
-      <section className="rounded-lg border border-border bg-surface p-3 sm:p-4">
+      <section className="rounded-lg border border-border bg-card p-3 sm:p-4">
         <div className="mb-3 flex items-start gap-3">
           <StepMarker value={2} />
           <div>
-            <p className="text-sm font-semibold text-ink">Agenda por tipo de conteúdo</p>
-            <p className="mt-0.5 text-xs text-ink-muted">Escolha dias e horários próprios para imagem, carrossel e vídeo.</p>
+            <p className="text-sm font-semibold text-foreground">Agenda por tipo de conteúdo</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Escolha dias e horários próprios para imagem, carrossel e vídeo.</p>
           </div>
         </div>
         <WeeklyMixEditor rule={rule} ideas={ideas} onChange={onWeeklyMixChange} />
       </section>
 
-      <section className="rounded-lg border border-border bg-surface p-3 sm:p-4">
+      <section className="rounded-lg border border-border bg-card p-3 sm:p-4">
         <div className="mb-3 flex items-start gap-3">
           <StepMarker value={3} />
           <div>
-            <p className="text-sm font-semibold text-ink">Aprovação</p>
-            <p className="mt-0.5 text-xs text-ink-muted">Escolha se você revisa antes de postar ou se a linha publica sozinha.</p>
+            <p className="text-sm font-semibold text-foreground">Aprovação</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Escolha se você revisa antes de postar ou se a linha publica sozinha.</p>
           </div>
         </div>
         <PublishModePicker value={rule.publishMode} onChange={(publishMode) => onRuleChange({ publishMode })} />
@@ -1313,12 +1316,12 @@ function SchedulePreview({ rule, ideas }: { rule: PostingRule; ideas: ContentBlu
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-border bg-surface px-3 py-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Como vai funcionar</p>
-        <p className="mt-1 text-sm font-semibold text-ink">
+      <div className="rounded-lg border border-border bg-card px-3 py-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Como vai funcionar</p>
+        <p className="mt-1 text-sm font-semibold text-foreground">
           {weeklyTotal} post{weeklyTotal === 1 ? "" : "s"} por semana em {selectedChannels || "nenhum canal"}, com dias e horários definidos por formato.
         </p>
-        <p className="mt-1 text-xs text-ink-muted">
+        <p className="mt-1 text-xs text-muted-foreground">
           Depois de gerar, a postagem {approvalText}. Há {availableIdeas} {availableIdeas === 1 ? "ideia disponível" : "ideias disponíveis"} no tanque.
         </p>
       </div>
@@ -1332,13 +1335,13 @@ function SchedulePreview({ rule, ideas }: { rule: PostingRule; ideas: ContentBlu
         {formatRows.map((row) => {
           const hasEnough = row.available >= row.quantity || row.quantity === 0;
           return (
-            <div key={row.id} className="rounded-lg border border-border bg-surface px-3 py-2">
+            <div key={row.id} className="rounded-lg border border-border bg-card px-3 py-2">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-ink">{FORMAT_LABEL[row.format]}</p>
-                <span className="text-sm font-semibold text-ink">{row.quantity}/semana</span>
+                <p className="text-sm font-semibold text-foreground">{FORMAT_LABEL[row.format]}</p>
+                <span className="text-sm font-semibold text-foreground">{row.quantity}/semana</span>
               </div>
-              <p className="mt-0.5 text-xs text-ink-muted">{formatScheduleLabel(row)}</p>
-              <p className={`mt-0.5 text-xs ${hasEnough ? "text-ink-muted" : "text-amber-500"}`}>
+              <p className="mt-0.5 text-xs text-muted-foreground">{formatScheduleLabel(row)}</p>
+              <p className={`mt-0.5 text-xs ${hasEnough ? "text-muted-foreground" : "text-warning"}`}>
                 {hasEnough ? `${row.available} ${row.available === 1 ? "ideia pronta" : "ideias prontas"} no tanque.` : `Faltam ideias: ${row.available} no tanque para ${row.quantity} por semana.`}
               </p>
             </div>
@@ -1346,7 +1349,7 @@ function SchedulePreview({ rule, ideas }: { rule: PostingRule; ideas: ContentBlu
         })}
       </div>
 
-      <div className="rounded-lg border border-border bg-surface px-3 py-2 text-xs text-ink-muted">
+      <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
         Se faltar ideia em algum formato, a linha pausa só aquele formato até o tanque ser abastecido.
       </div>
     </div>
@@ -1380,7 +1383,7 @@ function WeeklyMixEditor({ rule, ideas, onChange }: { rule: PostingRule; ideas: 
   return (
     <div className="space-y-4">
       <div>
-        <p className="mb-2 text-xs font-medium text-ink-muted">Tipos que entram nesta rotina</p>
+        <p className="mb-2 text-xs font-medium text-muted-foreground">Tipos que entram nesta rotina</p>
         <div className="grid gap-2 sm:grid-cols-3">
           {rule.weeklyMix.map((item) => {
             const available = ideas.filter((idea) => idea.format === item.format && idea.status !== "used").length;
@@ -1393,23 +1396,23 @@ function WeeklyMixEditor({ rule, ideas, onChange }: { rule: PostingRule; ideas: 
                 onClick={() => (enabled ? setActiveFormat(item.format) : toggleFormat(item))}
                 className={`rounded-lg border p-3 text-left transition-colors ${
                   enabled
-                    ? selected ? "border-ink bg-surface-sunken" : "border-ink-faint bg-surface-raised hover:bg-surface-sunken"
-                    : "border-border bg-surface text-ink-muted hover:bg-surface-sunken"
+                    ? selected ? "border-foreground bg-background" : "border-muted-foreground/40 bg-card hover:bg-background"
+                    : "border-border bg-card text-muted-foreground hover:bg-background"
                 }`}
               >
                 <span className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5 text-sm font-semibold text-ink"><IconFormat format={item.format} className="h-3.5 w-3.5 text-ink-faint" />{FORMAT_LABEL[item.format]}</span>
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground"><IconFormat format={item.format} className="h-3.5 w-3.5 text-muted-foreground/70" />{FORMAT_LABEL[item.format]}</span>
                   <span className="flex items-center gap-1.5">
-                    {enabled && available < scheduledQuantity(item) ? <IconWarn className="h-3.5 w-3.5 text-amber-400" /> : null}
-                    <span className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${enabled ? "bg-primary" : "border border-border bg-surface-sunken"}`}>
-                      <span className={`absolute h-3 w-3 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-3.5" : "translate-x-0.5"}`} />
+                    {enabled && available < scheduledQuantity(item) ? <IconWarn className="h-3.5 w-3.5 text-warning" /> : null}
+                    <span className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${enabled ? "bg-primary" : "border border-border bg-background"}`}>
+                      <span className={`absolute h-3 w-3 rounded-full bg-background shadow transition-transform ${enabled ? "translate-x-3.5" : "translate-x-0.5"}`} />
                     </span>
                   </span>
                 </span>
-                <span className="mt-2 block text-xs text-ink-muted">
+                <span className="mt-2 block text-xs text-muted-foreground">
                   {enabled ? `${scheduledQuantity(item)} por semana · ${formatScheduleLabel(item)}` : "Clique para configurar"}
                 </span>
-                <span className="mt-1 block text-xs text-ink-muted">{available} no tanque</span>
+                <span className="mt-1 block text-xs text-muted-foreground">{available} no tanque</span>
               </button>
             );
           })}
@@ -1419,7 +1422,7 @@ function WeeklyMixEditor({ rule, ideas, onChange }: { rule: PostingRule; ideas: 
       {activeItem ? (
         <FormatSchedulePanel item={activeItem} ideas={ideas} onDisable={() => toggleFormat(activeItem)} onChange={(patch) => onChange(activeItem.id, patch)} />
       ) : (
-        <div className="rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-sm text-ink-muted">
+        <div className="rounded-lg border border-dashed border-border bg-card px-3 py-4 text-sm text-muted-foreground">
           Nenhum tipo está ativo nesta rotina. Escolha imagem, carrossel ou vídeo para configurar os dias e horários.
         </div>
       )}
@@ -1452,19 +1455,19 @@ function FormatSchedulePanel({
   }
 
   return (
-    <div className="rounded-lg border border-border bg-surface-raised p-3">
+    <div className="rounded-lg border border-border bg-card p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="flex items-center gap-2 text-sm font-semibold text-ink">
+          <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
             Configurar {FORMAT_LABEL[item.format].toLowerCase()}
             {!hasEnough ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+              <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning-bg px-2 py-0.5 text-[10px] font-semibold text-warning">
                 <IconWarn className="h-2.5 w-2.5" /> faltam ideias
               </span>
             ) : null}
           </p>
-          <p className="mt-0.5 text-xs text-ink-muted">{quantity} por semana · {available} no tanque · {used} usadas</p>
-          {!hasEnough ? <p className="mt-1 text-xs text-amber-500">Faltam ideias: {available} no tanque para {quantity} por semana.</p> : null}
+          <p className="mt-0.5 text-xs text-muted-foreground">{quantity} por semana · {available} no tanque · {used} usadas</p>
+          {!hasEnough ? <p className="mt-1 text-xs text-warning">Faltam ideias: {available} no tanque para {quantity} por semana.</p> : null}
         </div>
         <Button variant="secondary" className="min-h-8 px-3 py-1.5 text-xs" onClick={onDisable}>Desligar tipo</Button>
       </div>
@@ -1490,7 +1493,7 @@ function WeekdayPicker({ selected, onChange }: { selected: ProductionWeekday[]; 
 
   return (
     <div>
-      <p className="mb-1.5 text-xs font-medium text-ink-muted">Dias da semana</p>
+      <p className="mb-1.5 text-xs font-medium text-muted-foreground">Dias da semana</p>
       <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
         {WEEKDAYS.map((weekday) => (
           <button
@@ -1499,7 +1502,7 @@ function WeekdayPicker({ selected, onChange }: { selected: ProductionWeekday[]; 
             title={weekday.label}
             onClick={() => toggle(weekday.id)}
             className={`min-h-9 rounded-lg border px-2 text-xs font-semibold transition-colors ${
-              selected.includes(weekday.id) ? "border-ink-faint bg-surface-sunken text-ink" : "border-border bg-surface text-ink-muted hover:bg-surface-sunken hover:text-ink"
+              selected.includes(weekday.id) ? "border-muted-foreground/40 bg-background text-foreground" : "border-border bg-card text-muted-foreground hover:bg-background hover:text-foreground"
             }`}
           >
             {weekday.short}
@@ -1536,7 +1539,7 @@ function TimeSlotPicker({ times, onChange, compact = false }: { times: string[];
   return (
     <div className="space-y-3">
       <div>
-        <p className="mb-1.5 text-xs font-medium text-ink-muted">Horários rápidos</p>
+        <p className="mb-1.5 text-xs font-medium text-muted-foreground">Horários rápidos</p>
         <div className="flex flex-wrap gap-1.5">
           {QUICK_TIMES.map((time) => {
             const selected = normalizedTimes.includes(time);
@@ -1546,7 +1549,7 @@ function TimeSlotPicker({ times, onChange, compact = false }: { times: string[];
                 type="button"
                 onClick={() => (selected ? onChange(normalizedTimes.filter((item) => item !== time || normalizedTimes.length === 1)) : addQuickTime(time))}
                 className={`min-h-8 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
-                  selected ? "border-ink-faint bg-surface-sunken text-ink" : "border-border bg-surface text-ink-muted hover:bg-surface-sunken hover:text-ink"
+                  selected ? "border-muted-foreground/40 bg-background text-foreground" : "border-border bg-card text-muted-foreground hover:bg-background hover:text-foreground"
                 }`}
               >
                 {time}
@@ -1558,7 +1561,7 @@ function TimeSlotPicker({ times, onChange, compact = false }: { times: string[];
 
       <div className={`grid gap-2 ${compact ? "sm:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-3"}`}>
         {normalizedTimes.map((time, index) => (
-          <div key={`${time}-${index}`} className="rounded-lg border border-border bg-surface p-2">
+          <div key={`${time}-${index}`} className="rounded-lg border border-border bg-card p-2">
             <Label htmlFor={`rule-time-${index}`}>{`Horário ${index + 1}`}</Label>
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
               <TimeSelect id={`rule-time-hour-${index}`} label="Hora" value={timePart(time, "hour")} options={hourOptions(time)} onChange={(hour) => updateTime(index, `${hour}:${timePart(time, "minute")}`)} />
@@ -1576,12 +1579,12 @@ function TimeSlotPicker({ times, onChange, compact = false }: { times: string[];
 function TimeSelect({ id, label, value, options, onChange }: { id: string; label: string; value: string; options: string[]; onChange: (value: string) => void }) {
   return (
     <label htmlFor={id} className="block">
-      <span className="mb-1 block text-[11px] font-medium text-ink-muted">{label}</span>
+      <span className="mb-1 block text-[11px] font-medium text-muted-foreground">{label}</span>
       <select
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-9 w-full rounded-lg border border-border bg-surface-raised px-2 text-sm font-semibold text-ink outline-none focus:border-ink-faint focus:ring-2 focus:ring-surface-sunken"
+        className="h-9 w-full rounded-lg border border-border bg-card px-2 text-sm font-semibold text-foreground outline-none focus:border-muted-foreground/40 focus:ring-2 focus:ring-surface-sunken"
       >
         {options.map((option) => (<option key={option} value={option}>{option}</option>))}
       </select>
@@ -1602,10 +1605,10 @@ function PublishModePicker({ value, onChange }: { value: "manual" | "auto"; onCh
           key={option.id}
           type="button"
           onClick={() => onChange(option.id)}
-          className={`rounded-lg border p-3 text-left transition-colors ${value === option.id ? "border-ink-faint bg-surface-sunken" : "border-border bg-surface-raised hover:bg-surface-sunken"}`}
+          className={`rounded-lg border p-3 text-left transition-colors ${value === option.id ? "border-muted-foreground/40 bg-background" : "border-border bg-card hover:bg-background"}`}
         >
-          <span className="block text-sm font-semibold text-ink">{option.title}</span>
-          <span className="mt-1 block text-xs text-ink-muted">{option.description}</span>
+          <span className="block text-sm font-semibold text-foreground">{option.title}</span>
+          <span className="mt-1 block text-xs text-muted-foreground">{option.description}</span>
         </button>
       ))}
     </div>
@@ -1629,7 +1632,7 @@ function RuleAdvancedSettings({ rule, onChange, onRemove, canRemove }: { rule: P
         <NumberField label="Máximo por dia" value={rule.maxPostsPerDay} min={1} max={20} onChange={(value) => onChange({ maxPostsPerDay: value })} />
       </div>
       <div>
-        <p className="mb-1.5 text-xs font-medium text-ink-muted">Horário padrão da rotina</p>
+        <p className="mb-1.5 text-xs font-medium text-muted-foreground">Horário padrão da rotina</p>
         <TimeSlotPicker times={rule.times} onChange={(times) => onChange({ times })} compact />
       </div>
       <NumberField label="Intervalo mínimo entre posts (min)" value={rule.spacingMinutes} min={15} max={1440} onChange={(value) => onChange({ spacingMinutes: value })} />
@@ -1639,7 +1642,7 @@ function RuleAdvancedSettings({ rule, onChange, onRemove, canRemove }: { rule: P
 }
 
 function StepMarker({ value }: { value: number }) {
-  return <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white">{value}</span>;
+  return <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">{value}</span>;
 }
 
 function totalWeeklyPosts(rule: PostingRule): number {
@@ -1685,9 +1688,9 @@ function minuteOptions(currentTime: string): string[] {
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-border bg-surface px-3 py-3">
-      <p className="text-xs text-ink-muted">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-ink">{value}</p>
+    <div className="rounded-lg border border-border bg-card px-3 py-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-foreground">{value}</p>
     </div>
   );
 }
@@ -1723,10 +1726,10 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
 
   return (
     <div className="grid grid-cols-1 gap-4">
-      <section className="rounded-lg border border-border bg-surface-sunken p-3">
+      <section className="rounded-lg border border-border bg-background p-3">
         <div className="mb-3">
-          <p className="text-sm font-semibold text-ink">1. Ideia principal</p>
-          <p className="mt-0.5 text-xs text-ink-muted">Descreva o que deve ser produzido. Esse texto é o que abastece o tanque.</p>
+          <p className="text-sm font-semibold text-foreground">1. Ideia principal</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">Descreva o que deve ser produzido. Esse texto é o que abastece o tanque.</p>
         </div>
         <div>
           <Label htmlFor="blueprint-name">Nome da ideia</Label>
@@ -1751,29 +1754,29 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
             placeholder="Ex.: Criar um carrossel mostrando 5 motivos para comprar X, com linguagem simples e chamada para WhatsApp no final."
             onChange={(event) => onChange({ ideaText: event.target.value })}
           />
-          <p className={`mt-1 text-right text-xs ${blueprint.ideaText.length >= MAX_IDEA_TEXT_LENGTH ? "text-red-600" : "text-ink-faint"}`}>
+          <p className={`mt-1 text-right text-xs ${blueprint.ideaText.length >= MAX_IDEA_TEXT_LENGTH ? "text-danger" : "text-muted-foreground/70"}`}>
             {blueprint.ideaText.length}/{MAX_IDEA_TEXT_LENGTH}
           </p>
         </div>
       </section>
 
-      <section className="rounded-lg border border-border bg-surface-sunken p-3">
+      <section className="rounded-lg border border-border bg-background p-3">
         <div className="mb-3">
-          <p className="text-sm font-semibold text-ink">2. Como gerar</p>
-          <p className="mt-0.5 text-xs text-ink-muted">Escolha o tipo de conteúdo e onde ele pode ser usado.</p>
+          <p className="text-sm font-semibold text-foreground">2. Como gerar</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">Escolha o tipo de conteúdo e onde ele pode ser usado.</p>
         </div>
         <div>
-          <p className="mb-1.5 text-xs font-medium text-ink-muted">Formato</p>
+          <p className="mb-1.5 text-xs font-medium text-muted-foreground">Formato</p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {FORMATS.map((format) => (
               <button
                 key={format}
                 type="button"
                 onClick={() => onChange({ format, mediaCount: format === "carousel" ? Math.max(blueprint.mediaCount, 3) : 1 })}
-                className={`rounded-lg border px-3 py-3 text-left transition-colors ${blueprint.format === format ? "border-primary bg-accent-soft text-primary" : "border-border bg-surface-raised text-ink hover:bg-surface-sunken"}`}
+                className={`rounded-lg border px-3 py-3 text-left transition-colors ${blueprint.format === format ? "border-primary bg-accent-soft text-primary" : "border-border bg-card text-foreground hover:bg-background"}`}
               >
                 <span className="block text-sm font-semibold">{FORMAT_LABEL[format]}</span>
-                <span className="mt-1 block text-xs text-ink-muted">{formatHelp(format)}</span>
+                <span className="mt-1 block text-xs text-muted-foreground">{formatHelp(format)}</span>
               </button>
             ))}
           </div>
@@ -1803,7 +1806,7 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
         </div>
         <div>
           <Label htmlFor="blueprint-files">Arquivos de referência</Label>
-          <div className="rounded-lg border border-dashed border-border bg-surface px-3 py-3">
+          <div className="rounded-lg border border-dashed border-border bg-card px-3 py-3">
             <input
               id="blueprint-files"
               type="file"
@@ -1811,31 +1814,31 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
               accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime"
               disabled={uploading}
               onChange={(event) => uploadReferences(event.target.files)}
-              className="block w-full text-sm text-ink-muted file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-medium file:text-white"
+              className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary-foreground"
             />
-            <p className="mt-2 text-xs text-ink-muted">Envie print, foto, imagem ou vídeo curto. O arquivo enviado vira referência da ideia.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Envie print, foto, imagem ou vídeo curto. O arquivo enviado vira referência da ideia.</p>
             {uploading ? <p className="mt-2 text-xs text-primary">Enviando arquivo...</p> : null}
-            {uploadError ? <p className="mt-2 text-xs text-red-600">{uploadError}</p> : null}
+            {uploadError ? <p className="mt-2 text-xs text-danger">{uploadError}</p> : null}
           </div>
           {blueprint.referenceImages.length > 0 ? (
             <div className="mt-2 space-y-2">
               {blueprint.referenceImages.map((url) => (
-                <div key={url} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+                <div key={url} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2">
                   <a href={url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-xs font-medium text-primary hover:underline">{fileLabel(url)}</a>
                   <div className="flex shrink-0 items-center gap-2">
                     <select
                       aria-label={`Papel da referência ${fileLabel(url)}`}
                       value={blueprint.referenceAssetRoles?.[url] ?? "product_photo"}
                       onChange={(event) => setReferenceRole(url, event.target.value as ReferenceAssetRole)}
-                      className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft"
+                      className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft"
                     >
                       {REFERENCE_ASSET_ROLE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
                     </select>
-                    <button type="button" onClick={() => removeReference(url)} className="text-xs font-medium text-ink-muted hover:text-red-600">Remover</button>
+                    <button type="button" onClick={() => removeReference(url)} className="text-xs font-medium text-muted-foreground hover:text-danger">Remover</button>
                   </div>
                 </div>
               ))}
-              <p className="text-xs text-ink-muted">O papel de cada referência (foto do produto, print de tela, logo) é usado só quando o motor GPT está ativo.</p>
+              <p className="text-xs text-muted-foreground">O papel de cada referência (foto do produto, print de tela, logo) é usado só quando o motor GPT está ativo.</p>
             </div>
           ) : null}
         </div>
@@ -1856,7 +1859,7 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
         <div className="mt-3">
           <Label htmlFor="blueprint-audience">Público-alvo</Label>
           <Input id="blueprint-audience" value={blueprint.targetAudience ?? ""} placeholder="Ex.: mulheres de 25-40 anos interessadas em moda sustentável" onChange={(event) => onChange({ targetAudience: event.target.value })} />
-          <p className="mt-1 text-xs text-ink-muted">Usado só na geração real de imagem — sem isso, entra um público genérico.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Usado só na geração real de imagem — sem isso, entra um público genérico.</p>
         </div>
 
         <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -1866,17 +1869,17 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
               id="blueprint-aspect-ratio"
               value={blueprint.aspectRatio ?? ""}
               onChange={(event) => onChange({ aspectRatio: (event.target.value || undefined) as ProductionAspectRatio | undefined })}
-              className="w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft"
+              className="w-full min-w-0 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft"
             >
               <option value="">Automático (4:5)</option>
               {ASPECT_RATIO_OPTIONS.map((ratio) => (<option key={ratio} value={ratio}>{ratio}</option>))}
             </select>
-            <p className="mt-1 text-xs text-ink-muted">Usado só pelo motor GPT (quando ativo) — o motor padrão continua decidindo o formato pelo canal.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Usado só pelo motor GPT (quando ativo) — o motor padrão continua decidindo o formato pelo canal.</p>
           </div>
           <div>
             <Label htmlFor="blueprint-forbidden">Elementos proibidos</Label>
             <Input id="blueprint-forbidden" value={blueprint.forbiddenElements ?? ""} placeholder="Ex.: logo de concorrente, preço antigo" onChange={(event) => onChange({ forbiddenElements: event.target.value })} />
-            <p className="mt-1 text-xs text-ink-muted">Lista separada por vírgula do que a peça NUNCA deve mostrar. Usado só pelo motor GPT (quando ativo).</p>
+            <p className="mt-1 text-xs text-muted-foreground">Lista separada por vírgula do que a peça NUNCA deve mostrar. Usado só pelo motor GPT (quando ativo).</p>
           </div>
         </div>
 
@@ -1904,7 +1907,7 @@ function ChannelPicker({ selected, onChange, hideLabel = false }: { selected: Pr
 
   return (
     <div>
-      {hideLabel ? null : <p className="mb-1.5 text-xs font-medium text-ink-muted">Canais</p>}
+      {hideLabel ? null : <p className="mb-1.5 text-xs font-medium text-muted-foreground">Canais</p>}
       <div className="flex flex-wrap gap-2">
         {CHANNELS.map((channel) => (
           <button
@@ -1912,7 +1915,7 @@ function ChannelPicker({ selected, onChange, hideLabel = false }: { selected: Pr
             type="button"
             onClick={() => toggle(channel)}
             className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-              selected.includes(channel) ? "border-ink-faint bg-surface-sunken text-ink" : "border-border bg-surface text-ink-muted hover:bg-surface-sunken"
+              selected.includes(channel) ? "border-muted-foreground/40 bg-background text-foreground" : "border-border bg-card text-muted-foreground hover:bg-background"
             }`}
           >
             {CHANNEL_LABEL[channel]}
@@ -1926,10 +1929,10 @@ function ChannelPicker({ selected, onChange, hideLabel = false }: { selected: Pr
 function ModeToggle({ value, onChange, label }: { value: "manual" | "auto"; onChange: (value: "manual" | "auto") => void; label: string }) {
   return (
     <div>
-      <p className="mb-1.5 text-xs font-medium text-ink-muted">{label}</p>
-      <div className="inline-flex rounded-lg border border-border bg-surface p-1">
+      <p className="mb-1.5 text-xs font-medium text-muted-foreground">{label}</p>
+      <div className="inline-flex rounded-lg border border-border bg-card p-1">
         {(["manual", "auto"] as const).map((mode) => (
-          <button key={mode} type="button" onClick={() => onChange(mode)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === mode ? "bg-primary text-white" : "text-ink-muted hover:text-ink"}`}>
+          <button key={mode} type="button" onClick={() => onChange(mode)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === mode ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
             {mode === "manual" ? "Manual" : "Automático"}
           </button>
         ))}
@@ -1941,10 +1944,10 @@ function ModeToggle({ value, onChange, label }: { value: "manual" | "auto"; onCh
 function IdeaStatusToggle({ value, onChange }: { value: "available" | "used"; onChange: (value: "available" | "used") => void }) {
   return (
     <div>
-      <p className="mb-1.5 text-xs font-medium text-ink-muted">Status da ideia</p>
-      <div className="inline-flex rounded-lg border border-border bg-surface p-1">
+      <p className="mb-1.5 text-xs font-medium text-muted-foreground">Status da ideia</p>
+      <div className="inline-flex rounded-lg border border-border bg-card p-1">
         {(["available", "used"] as const).map((status) => (
-          <button key={status} type="button" onClick={() => onChange(status)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === status ? "bg-primary text-white" : "text-ink-muted hover:text-ink"}`}>
+          <button key={status} type="button" onClick={() => onChange(status)} className={`min-h-8 rounded-md px-3 text-sm font-medium ${value === status ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
             {status === "available" ? "Pendente" : "Usada"}
           </button>
         ))}
@@ -1969,15 +1972,15 @@ function CollapsibleSection({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-border bg-surface-sunken p-3">
+    <section className="rounded-lg border border-border bg-background p-3">
       <button type="button" onClick={onToggle} className="flex w-full items-start justify-between gap-3 text-left">
         <span>
-          <span className="block text-sm font-semibold text-ink">{title}</span>
-          <span className="mt-0.5 block text-xs text-ink-muted">{description}</span>
+          <span className="block text-sm font-semibold text-foreground">{title}</span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">{description}</span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
           {typeof badge === "number" && badge > 0 ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-primary">{badge}</span> : null}
-          <span className="rounded-md border border-border bg-surface-raised px-2 py-1 text-xs font-semibold text-ink-muted">{open ? "Ocultar" : "Abrir"}</span>
+          <span className="rounded-md border border-border bg-card px-2 py-1 text-xs font-semibold text-muted-foreground">{open ? "Ocultar" : "Abrir"}</span>
         </span>
       </button>
       {open ? <div className="mt-3 grid grid-cols-1 gap-3">{children}</div> : null}

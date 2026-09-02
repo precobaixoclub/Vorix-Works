@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/Button";
@@ -219,9 +220,9 @@ function ConversationListPane({
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                   <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal">{statusLabelFor(conversation.status)}</Badge>
                   {conversation.assignedUserId ? (
-                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">Atendimento humano</Badge>
+                    <Badge variant="info" className="px-1.5 py-0 text-[10px]">Atendimento humano</Badge>
                   ) : conversation.aiEnabled ? (
-                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">IA ativa</Badge>
+                    <Badge variant="accent" className="px-1.5 py-0 text-[10px]">IA ativa</Badge>
                   ) : (
                     <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground">IA pausada</Badge>
                   )}
@@ -285,15 +286,15 @@ function ConversationTimelinePane({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
-        <Button variant="ghost" className="md:hidden" onClick={onBack}>←</Button>
+        <Button variant="ghost" size="icon" className="md:hidden" onClick={onBack} aria-label="Voltar"><ArrowLeft className="h-4 w-4" /></Button>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-foreground">{conversation.contactName ?? conversation.contactPhone}</p>
           <p className="text-xs text-muted-foreground">{conversation.contactPhone}</p>
         </div>
         {conversation.assignedUserId ? (
-          <Badge variant="secondary">Atendimento humano</Badge>
+          <Badge variant="info">Atendimento humano</Badge>
         ) : conversation.aiEnabled ? (
-          <Badge variant="secondary">IA ativa</Badge>
+          <Badge variant="accent">IA ativa</Badge>
         ) : (
           <Badge variant="outline" className="text-muted-foreground">IA pausada</Badge>
         )}
@@ -334,7 +335,7 @@ function ConversationTimelinePane({
           className="min-h-[42px] flex-1 resize-none"
           rows={1}
         />
-        <Button onClick={handleSend} disabled={sending || !draft.trim()}>Enviar</Button>
+        <Button onClick={handleSend} loading={sending} disabled={sending || !draft.trim()}>Enviar</Button>
       </div>
     </div>
   );
@@ -500,7 +501,7 @@ function ContactContextPane({
           </div>
           <div className="flex gap-1.5">
             {!isAssignedToMe ? (
-              <Button disabled={busy} onClick={handleTakeOver}>{conversation.assignedUserId ? "Assumir" : "Assumir conversa"}</Button>
+              <Button variant="secondary" loading={busy} disabled={busy} onClick={handleTakeOver}>{conversation.assignedUserId ? "Assumir" : "Assumir conversa"}</Button>
             ) : null}
             {conversation.assignedUserId ? (
               <Button variant="secondary" disabled={busy} onClick={handleReleaseAssignment}>Liberar</Button>

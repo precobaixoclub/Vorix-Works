@@ -39,7 +39,8 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
       <Link
         key={item.href}
         href={`${base}${item.href}`}
-        className={`flex h-9 w-full min-w-0 items-center gap-2.5 rounded-md px-3 text-sm font-medium transition-colors ${
+        aria-current={isActive ? "page" : undefined}
+        className={`flex h-9 w-full min-w-0 items-center gap-2.5 rounded-md px-3 text-sm font-medium transition-colors active:bg-muted/70 ${
           isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"
         }`}
       >
@@ -57,7 +58,7 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
 
       <Link
         href={`${base}${CREATE_NAV_ITEM.href}`}
-        className="mb-3 flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-none transition-colors hover:bg-primary/85"
+        className="mb-3 flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-none transition-colors hover:bg-primary/85 active:bg-primary/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
       >
         <NavIcon id={CREATE_NAV_ITEM.icon} className="h-[18px] w-[18px]" />
         <span>{CREATE_NAV_ITEM.label}</span>

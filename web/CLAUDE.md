@@ -7,7 +7,7 @@ Antes de construir ou restilizar qualquer UI aqui, carregue a skill `saas-panel-
 ## O que já foi aplicado
 
 - Tokens canônicos (`--primary`, `--background`, `--foreground`, `--muted`, `--border`...) em
-  `app/globals.css`, com a marca do Vonix (verde-limão) no lugar do verde padrão do pacote.
+  `app/globals.css`, com a marca da Vorix (verde-limão) no lugar do verde padrão do pacote.
   Convivem com os tokens antigos (`--color-surface`, `--color-ink`...) — ambos resolvem pro
   MESMO valor, então nenhum componente antigo quebrou.
 - `shadcn/ui` instalado em `components/ui/` (Tailwind v4, sem `tailwind.config.*` — CSS-first via

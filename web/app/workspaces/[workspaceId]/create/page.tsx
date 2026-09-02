@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ChevronRight, FolderOpen, ImageIcon, Paperclip, Video, X } from "lucide-react";
 import { Button } from "@/components/Button";
+import { Card } from "@/components/ui/card";
 import { Input, Label } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useAssets } from "@/features/assets/hooks";
 import type { Asset, AssetMaterialType } from "@/features/assets/types";
@@ -330,7 +333,9 @@ export default function CreatePage() {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={activeAssets.find((asset) => asset.kind === "logo")?.storageRef?.metadata?.url} alt="" className="h-7 w-7 rounded-md object-contain" />
           ) : (
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground/70" aria-hidden="true">🔷</span>
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground/70" aria-hidden="true">
+              <ImageIcon className="h-4 w-4" />
+            </span>
           )}
           <span className="truncate text-foreground">{workspace.name}</span>
         </Link>
@@ -387,8 +392,8 @@ export default function CreatePage() {
             <p className="mt-1 text-sm text-muted-foreground">Descreva sua ideia, envie referências e deixe a IA montar a criação.</p>
           </div>
 
-          <section
-            className={`rounded-2xl bg-card p-5 transition-colors sm:p-7 ${dragOver ? "ring-2 ring-primary" : ""}`}
+          <Card
+            className={cn("p-5 transition-colors sm:p-7", dragOver && "ring-2 ring-primary")}
             onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={(event) => {
@@ -416,17 +421,17 @@ export default function CreatePage() {
                 type="button"
                 disabled={busy || uploading}
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60"
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 active:bg-muted/70 disabled:opacity-60"
               >
-                <span aria-hidden="true">📎</span> {uploading ? "Enviando…" : "Enviar arquivo"}
+                <Paperclip className="h-4 w-4" aria-hidden="true" /> {uploading ? "Enviando…" : "Enviar arquivo"}
               </button>
               <button
                 type="button"
                 disabled={formDisabled}
                 onClick={() => setLibraryOpen(true)}
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60"
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 active:bg-muted/70 disabled:opacity-60"
               >
-                <span aria-hidden="true">🗂</span> Da biblioteca
+                <FolderOpen className="h-4 w-4" aria-hidden="true" /> Da biblioteca
               </button>
               <input
                 ref={fileInputRef}
@@ -447,7 +452,9 @@ export default function CreatePage() {
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={url} alt="" className="h-10 w-10 rounded-md object-cover" />
                     ) : (
-                      <span className="flex h-10 w-10 items-center justify-center rounded-md bg-card text-muted-foreground" aria-hidden="true">🎞</span>
+                      <span className="flex h-10 w-10 items-center justify-center rounded-md bg-card text-muted-foreground" aria-hidden="true">
+                        <Video className="h-4 w-4" />
+                      </span>
                     )}
                     <Select
                       value={referenceRoles[url] ?? "product_photo"}
@@ -466,14 +473,16 @@ export default function CreatePage() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <button type="button" disabled={formDisabled} onClick={() => removeReference(url)} aria-label="Remover" className="text-muted-foreground hover:text-destructive disabled:opacity-60">×</button>
+                    <button type="button" disabled={formDisabled} onClick={() => removeReference(url)} aria-label="Remover" className="rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-60">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 ))}
               </div>
             ) : (
               <p className="mt-3 text-xs text-muted-foreground/70">Nenhum material cadastrado. Você ainda pode gerar normalmente.</p>
             )}
-          </section>
+          </Card>
 
           <section className="space-y-4">
             <div>
@@ -485,9 +494,10 @@ export default function CreatePage() {
                     type="button"
                     disabled={formDisabled}
                     onClick={() => selectContentType(type)}
-                    className={`min-h-9 rounded-lg px-3.5 text-sm font-medium transition-colors disabled:opacity-60 ${
-                      contentTypeId === type.id ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground"
-                    }`}
+                    className={cn(
+                      "min-h-9 rounded-lg px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-60",
+                      contentTypeId === type.id ? "bg-primary/10 text-primary active:bg-primary/15" : "bg-card text-muted-foreground hover:text-foreground active:bg-muted/70",
+                    )}
                   >
                     {type.label}
                   </button>
@@ -504,9 +514,10 @@ export default function CreatePage() {
                     type="button"
                     disabled={formDisabled}
                     onClick={() => setAspectRatio(option.value)}
-                    className={`flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-60 ${
-                      aspectRatio === option.value ? "bg-primary/10 text-primary" : "bg-card text-muted-foreground hover:text-foreground"
-                    }`}
+                    className={cn(
+                      "flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-60",
+                      aspectRatio === option.value ? "bg-primary/10 text-primary active:bg-primary/15" : "bg-card text-muted-foreground hover:text-foreground active:bg-muted/70",
+                    )}
                   >
                     <span
                       className={`block rounded-[2px] ${aspectRatio === option.value ? "bg-primary" : "bg-muted-foreground/70"}`}
@@ -528,9 +539,10 @@ export default function CreatePage() {
                     type="button"
                     disabled={formDisabled}
                     onClick={() => toggleChannel(channel)}
-                    className={`min-h-9 rounded-lg px-3.5 text-sm font-medium transition-colors disabled:opacity-60 ${
-                      channels.includes(channel) ? "bg-card text-foreground" : "text-muted-foreground/70 hover:text-muted-foreground"
-                    }`}
+                    className={cn(
+                      "min-h-9 rounded-lg px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-60",
+                      channels.includes(channel) ? "bg-primary/10 text-primary active:bg-primary/15" : "bg-card text-muted-foreground hover:text-foreground active:bg-muted/70",
+                    )}
                   >
                     {CHANNEL_LABEL[channel]}
                   </button>
@@ -539,10 +551,10 @@ export default function CreatePage() {
             </div>
           </section>
 
-          <section className="rounded-xl bg-card">
-            <button type="button" onClick={() => setContextOpen((prev) => !prev)} className="flex w-full items-center justify-between px-4 py-3 text-left">
+          <section className="rounded-xl border border-border/60 bg-card">
+            <button type="button" onClick={() => setContextOpen((prev) => !prev)} className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20">
               <span className="text-sm font-medium text-foreground">A IA já vai considerar</span>
-              <span aria-hidden="true" className={`text-muted-foreground/70 transition-transform ${contextOpen ? "rotate-90" : ""}`}>›</span>
+              <ChevronRight aria-hidden="true" className={`h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform ${contextOpen ? "rotate-90" : ""}`} />
             </button>
             {contextOpen ? (
               <ul className="space-y-1.5 px-4 pb-4 text-sm text-muted-foreground">
@@ -553,15 +565,15 @@ export default function CreatePage() {
             ) : null}
           </section>
 
-          <details className="rounded-xl bg-card lg:hidden" open={brandOpen} onToggle={(event) => setBrandOpen((event.target as HTMLDetailsElement).open)}>
-            <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-foreground">Contexto da marca</summary>
+          <details className="rounded-xl border border-border/60 bg-card lg:hidden" open={brandOpen} onToggle={(event) => setBrandOpen((event.target as HTMLDetailsElement).open)}>
+            <summary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted/40">Contexto da marca</summary>
             <div className="px-4 pb-4">{brandContextContent}</div>
           </details>
 
           <section className="border-t border-border/60 pt-4">
-            <button type="button" onClick={() => setAdvancedOpen((prev) => !prev)} className="flex w-full items-center justify-between text-sm font-medium text-muted-foreground hover:text-foreground">
+            <button type="button" onClick={() => setAdvancedOpen((prev) => !prev)} className="flex w-full items-center justify-between rounded-md text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20">
               <span>Detalhes avançados</span>
-              <span aria-hidden="true" className={`transition-transform ${advancedOpen ? "rotate-90" : ""}`}>›</span>
+              <ChevronRight aria-hidden="true" className={`h-4 w-4 shrink-0 transition-transform ${advancedOpen ? "rotate-90" : ""}`} />
             </button>
             {advancedOpen ? (
               <div className="mt-3 space-y-3">
@@ -600,20 +612,20 @@ export default function CreatePage() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
             <p className="text-xs text-muted-foreground/70">{credits ? `Você tem ${credits.remainingCredits.toLocaleString("pt-BR")} créditos disponíveis.` : "Chama a IA de verdade — gera custo real."}</p>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" className="px-5 py-3 text-base" disabled={!canSaveToTank} onClick={handleSaveToTank} title="Guarda a ideia sem gerar agora — a rotina automática a produz conforme as regras configuradas.">
-                {savingToTank ? "Guardando…" : "Guardar no tanque"}
+              <Button variant="secondary" size="lg" loading={savingToTank} disabled={!canSaveToTank} onClick={handleSaveToTank} title="Guarda a ideia sem gerar agora — a rotina automática a produz conforme as regras configuradas.">
+                Guardar no tanque
               </Button>
-              <Button className="px-6 py-3 text-base" disabled={!canGenerate} onClick={handleGenerate}>
-                {status === "generating" ? "Gerando…" : status === "retrying" ? "Tentando de novo…" : "Gerar conteúdo"}
+              <Button size="xl" loading={status === "generating" || status === "retrying"} disabled={!canGenerate} onClick={handleGenerate}>
+                {status === "retrying" ? "Tentando de novo…" : "Gerar conteúdo"}
               </Button>
             </div>
           </div>
         </div>
 
-        <aside className="hidden rounded-2xl bg-card p-5 lg:sticky lg:top-5 lg:block">
-          <p className="mb-3 font-display text-sm font-semibold text-foreground">Contexto da marca</p>
+        <Card className="hidden p-5 lg:sticky lg:top-5 lg:block" role="complementary" aria-label="Contexto da marca">
+          <p className="mb-3 text-sm font-semibold text-foreground">Contexto da marca</p>
           {brandContextContent}
-        </aside>
+        </Card>
       </div>
 
       {libraryOpen ? (

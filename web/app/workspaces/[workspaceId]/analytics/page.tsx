@@ -24,6 +24,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { Input, Label } from "@/components/Field";
 import { PageHeader } from "@/components/PageHeader";
 import { StatsGrid } from "@/components/StatsGrid";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { getAnalyticsExport, requestAnalyticsExport } from "@/features/analytics/api";
@@ -121,9 +122,12 @@ export default function AnalyticsPage() {
           <>
             <div>
               <Label htmlFor="period">Período</Label>
-              <select id="period" value={periodChoice} onChange={(event) => setPeriodChoice(event.target.value as PeriodChoice)} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink sm:w-36">
-                {PERIODS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-              </select>
+              <Select value={periodChoice} onValueChange={(value) => setPeriodChoice(value as PeriodChoice)}>
+                <SelectTrigger id="period" className="sm:w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PERIODS.map((item) => <SelectItem key={item.id} value={item.id}>{item.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             {periodChoice === "custom" ? (
               <>
@@ -142,22 +146,28 @@ export default function AnalyticsPage() {
               <Input id="timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} className="sm:w-44" />
             </div>
             <details className="relative">
-              <summary className="flex min-h-10 cursor-pointer list-none items-center justify-center rounded-lg border border-border bg-surface-raised px-3.5 py-2 text-sm font-medium text-ink hover:bg-surface-sunken">Exportar</summary>
-              <div className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-border bg-surface-raised p-1 shadow-xl">
-                <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-surface-sunken" onClick={() => exportFormat("csv")}>CSV</button>
-                <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-surface-sunken" onClick={() => exportFormat("json")}>JSON</button>
+              <summary className="flex min-h-10 cursor-pointer list-none items-center justify-center rounded-lg border border-border bg-card px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted">Exportar</summary>
+              <div className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">
+                <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-muted" onClick={() => exportFormat("csv")}>CSV</button>
+                <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-muted" onClick={() => exportFormat("json")}>JSON</button>
               </div>
             </details>
           </>
         }
       />
 
-      {exportError ? <Card className="mb-4 border-red-200 bg-red-50 p-3 text-sm text-red-700">{exportError}</Card> : null}
-      {exportDetail ? <Card className="mb-4 p-3 text-sm text-ink-muted">Exportação {exportDetail.job.status}. {exportDetail.artifact ? "Arquivo gerado para download via API." : "Arquivo ainda em processamento."}</Card> : null}
+      {exportError ? <Card className="mb-4 border-danger/30 bg-danger-bg p-3 text-sm text-danger">{exportError}</Card> : null}
+      {exportDetail ? <Card className="mb-4 p-3 text-sm text-muted-foreground">Exportação {exportDetail.job.status}. {exportDetail.artifact ? "Arquivo gerado para download via API." : "Arquivo ainda em processamento."}</Card> : null}
 
       <div className="mb-6 flex gap-2 overflow-x-auto pb-1">
         {AREAS.map((item) => (
-          <button key={item.id} type="button" onClick={() => setArea(item.id)} className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition ${area === item.id ? "bg-primary text-white" : "bg-surface-raised text-ink-muted hover:bg-surface-sunken hover:text-ink"}`}>
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setArea(item.id)}
+            aria-current={area === item.id ? "page" : undefined}
+            className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 ${area === item.id ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+          >
             {item.label}
           </button>
         ))}
@@ -253,8 +263,8 @@ function NetworksPanel({ providers, publications, isLoading, error, onRetry }: {
         <Card key={row.id} className="p-4">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-ink">{row.label}</p>
-              <p className="mt-1 text-xs text-ink-muted">Publicações comparáveis desta rede no período.</p>
+              <p className="text-sm font-semibold text-foreground">{row.label}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Publicações comparáveis desta rede no período.</p>
             </div>
             <StatusBadge status={row.failed > 0 ? "needs_attention" : "connected"} />
           </div>
@@ -322,20 +332,20 @@ function HealthPanel({ publication, quality, alerts, isLoading, error, onRetry }
       <Card className="p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-ink">Saúde de publicação</h2>
-            <p className="mt-1 text-xs text-ink-muted">Taxa de falha e alertas respeitam o período selecionado. Qualidade de dados é um estado atual.</p>
+            <h2 className="text-sm font-semibold text-foreground">Saúde de publicação</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Taxa de falha e alertas respeitam o período selecionado. Qualidade de dados é um estado atual.</p>
           </div>
           <StatusBadge status={failureRate > 0 || failures > 0 || alerts.length > 0 ? "needs_attention" : "connected"} />
         </div>
         {alerts.length === 0 ? (
-          <p className="text-sm text-ink-muted">Nenhum alerta ativo para este período.</p>
+          <p className="text-sm text-muted-foreground">Nenhum alerta ativo para este período.</p>
         ) : (
           <div className="grid gap-2">
             {alerts.slice(0, 5).map((alert) => (
-              <div key={alert.id} className="rounded-xl border border-border bg-surface p-3">
+              <div key={alert.id} className="rounded-xl border border-border bg-card p-3">
                 <div className="mb-2 flex flex-wrap gap-2"><StatusBadge status={alert.severity} /><StatusBadge status={alert.status} /></div>
-                <p className="text-sm font-semibold text-ink">{alert.title}</p>
-                <p className="mt-1 text-sm text-ink-muted">{alert.description}</p>
+                <p className="text-sm font-semibold text-foreground">{alert.title}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{alert.description}</p>
               </div>
             ))}
           </div>
@@ -354,7 +364,7 @@ function BestContents({ publications, workspaceId }: { publications: readonly Un
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-ink">Melhores conteúdos</h2>
+        <h2 className="text-sm font-semibold text-foreground">Melhores conteúdos</h2>
         <Link href={`/workspaces/${workspaceId}/campaigns`} className="text-xs font-medium text-primary hover:underline">Abrir conteúdos</Link>
       </div>
       {items.length === 0 ? (
@@ -364,11 +374,11 @@ function BestContents({ publications, workspaceId }: { publications: readonly Un
           {items.map((post) => {
             const status = derivePublicationStatus(post);
             return (
-              <Link key={`${post.network}-${post.id}`} href={`/workspaces/${workspaceId}/campaigns`} className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-surface p-3 transition hover:border-primary hover:bg-accent-soft/25">
+              <Link key={`${post.network}-${post.id}`} href={`/workspaces/${workspaceId}/campaigns`} className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card p-3 transition hover:border-primary hover:bg-accent-soft/25">
                 <PublicationThumb post={post} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-ink">{titleOf(post)}</p>
-                  <p className="mt-0.5 text-xs text-ink-muted">{NETWORK_LABEL[post.network]} · {formatDateTime((post.publishedAt ?? post.scheduledAt ?? post.createdAt))}</p>
+                  <p className="truncate text-sm font-semibold text-foreground">{titleOf(post)}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{NETWORK_LABEL[post.network]} · {formatDateTime((post.publishedAt ?? post.scheduledAt ?? post.createdAt))}</p>
                 </div>
                 <StatusBadge status={status} />
               </Link>
@@ -452,16 +462,16 @@ function EditorialFunnelChart({ stages }: { stages: NonNullable<AnalyticsQueryRe
 function InsightSummary({ insights }: { insights: readonly AnalyticsInsight[] }) {
   return (
     <Card className="p-4">
-      <h2 className="mb-3 text-sm font-semibold text-ink">Leituras do período</h2>
+      <h2 className="mb-3 text-sm font-semibold text-foreground">Leituras do período</h2>
       {insights.length === 0 ? (
-        <p className="text-sm text-ink-muted">Nenhum insight relevante encontrado neste período.</p>
+        <p className="text-sm text-muted-foreground">Nenhum insight relevante encontrado neste período.</p>
       ) : (
         <div className="space-y-3">
           {insights.slice(0, 3).map((insight) => (
-            <div key={insight.insightId} className="rounded-xl border border-border bg-surface p-3">
+            <div key={insight.insightId} className="rounded-xl border border-border bg-card p-3">
               <StatusBadge status={insight.severity} />
-              <p className="mt-2 text-sm font-semibold text-ink">{insight.title}</p>
-              <p className="mt-1 text-sm text-ink-muted">{insight.description}</p>
+              <p className="mt-2 text-sm font-semibold text-foreground">{insight.title}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{insight.description}</p>
             </div>
           ))}
         </div>
@@ -474,17 +484,17 @@ function QualityCard({ report }: { report: AnalyticsDataQualityReport }) {
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-ink">Qualidade dos dados</h2>
+        <h2 className="text-sm font-semibold text-foreground">Qualidade dos dados</h2>
         <StatusBadge status={report.status} />
       </div>
       {report.issues.length === 0 ? (
-        <p className="text-sm text-ink-muted">Nenhum problema de qualidade detectado.</p>
+        <p className="text-sm text-muted-foreground">Nenhum problema de qualidade detectado.</p>
       ) : (
         <div className="space-y-2">
           {report.issues.slice(0, 5).map((issue) => (
-            <div key={`${issue.code}-${issue.safeMessage}`} className="rounded-xl border border-border bg-surface p-3">
+            <div key={`${issue.code}-${issue.safeMessage}`} className="rounded-xl border border-border bg-card p-3">
               <StatusBadge status={issue.severity} />
-              <p className="mt-2 text-sm text-ink-muted">{issue.safeMessage}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{issue.safeMessage}</p>
             </div>
           ))}
         </div>
@@ -495,9 +505,9 @@ function QualityCard({ report }: { report: AnalyticsDataQualityReport }) {
 
 function SmallNumber({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-xl bg-surface p-3">
-      <p className="text-xs text-ink-muted">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-ink">{value}</p>
+    <div className="rounded-xl bg-card p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-foreground">{value}</p>
     </div>
   );
 }
@@ -513,8 +523,8 @@ function NoData({ message = "Publique conteúdos para começar a acompanhar os r
 function AnalyticsSkeleton() {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-xl bg-surface-sunken" />)}</div>
-      <div className="grid gap-4 xl:grid-cols-2">{Array.from({ length: 2 }, (_, index) => <div key={index} className="h-64 animate-pulse rounded-xl bg-surface-sunken" />)}</div>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-xl bg-background" />)}</div>
+      <div className="grid gap-4 xl:grid-cols-2">{Array.from({ length: 2 }, (_, index) => <div key={index} className="h-64 animate-pulse rounded-xl bg-background" />)}</div>
     </div>
   );
 }
@@ -522,7 +532,7 @@ function AnalyticsSkeleton() {
 function Freshness({ result }: { result: AnalyticsQueryResult }) {
   if (!result.dataFreshness.partialData && !result.dataFreshness.staleData) return null;
   return (
-    <Card className="border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+    <Card className="border-warning/30 bg-warning-bg p-3 text-sm text-warning">
       Alguns dados podem estar parciais neste período. Métricas indisponíveis foram ocultadas quando não havia fonte confiável.
     </Card>
   );
@@ -531,12 +541,12 @@ function Freshness({ result }: { result: AnalyticsQueryResult }) {
 function PublicationThumb({ post }: { post: UnifiedPublication }) {
   const image = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
   return (
-    <span className="flex h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-surface-sunken">
+    <span className="flex h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-background">
       {image ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={image} alt="" className="h-full w-full object-cover" />
       ) : (
-        <span className="flex h-full w-full items-center justify-center text-sm text-ink-muted">{contentTypeOf(post) === "video" ? "▶" : "▧"}</span>
+        <span className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">{contentTypeOf(post) === "video" ? "▶" : "▧"}</span>
       )}
     </span>
   );

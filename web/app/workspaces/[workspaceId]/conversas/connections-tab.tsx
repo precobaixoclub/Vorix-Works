@@ -128,7 +128,7 @@ function ConnectionRow({
           </div>
         </div>
         {connection.status === "requires_repair" ? (
-          <p className="text-sm text-red-600">WhatsApp precisa ser conectado novamente — escaneie um novo QR Code.</p>
+          <p className="text-sm text-danger">WhatsApp precisa ser conectado novamente — escaneie um novo QR Code.</p>
         ) : null}
         {qrCode ? (
           <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">

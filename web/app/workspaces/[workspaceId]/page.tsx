@@ -128,9 +128,7 @@ export default function WorkspaceHomePage() {
       </section>
 
       <section className="mt-6">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Continuar a operação
-        </h2>
+        <h2 className="text-base font-semibold text-foreground">Continuar a operação</h2>
         <div className="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
           {shortcuts.map((item, i) => (
             <HubCard

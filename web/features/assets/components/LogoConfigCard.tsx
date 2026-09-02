@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { archiveAsset } from "../api";
@@ -59,8 +60,8 @@ export function LogoConfigCard({ workspaceId }: { workspaceId: string }) {
     <Card className="mb-6">
       <CardHeader>
         <div>
-          <p className="font-display text-sm font-semibold text-ink">Logo da marca</p>
-          <p className="mt-0.5 text-xs text-ink-muted">A IA usa esta imagem para nunca inventar uma marca diferente da sua.</p>
+          <p className="text-sm font-semibold text-foreground">Logo da marca</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">A IA usa esta imagem para nunca inventar uma marca diferente da sua.</p>
         </div>
         <Button variant="secondary" onClick={() => setReplacing(true)} disabled={busy}>
           {activeLogo ? "Substituir logo" : "Enviar logo"}
@@ -70,7 +71,7 @@ export function LogoConfigCard({ workspaceId }: { workspaceId: string }) {
         <div
           className="flex h-32 w-32 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border"
           style={{
-            backgroundImage: "conic-gradient(var(--color-surface-sunken) 0.25turn, var(--color-surface) 0.25turn 0.5turn, var(--color-surface-sunken) 0.5turn 0.75turn, var(--color-surface) 0.75turn)",
+            backgroundImage: "conic-gradient(var(--color-background) 0.25turn, var(--color-card) 0.25turn 0.5turn, var(--color-background) 0.5turn 0.75turn, var(--color-card) 0.75turn)",
             backgroundSize: "16px 16px",
           }}
         >
@@ -78,22 +79,22 @@ export function LogoConfigCard({ workspaceId }: { workspaceId: string }) {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={previewUrl} alt="Logo da marca" className="h-full w-full object-contain p-2" />
           ) : (
-            <span className="text-3xl text-ink-faint" aria-hidden="true">🔷</span>
+            <ImageIcon className="h-8 w-8 text-muted-foreground/70" aria-hidden="true" />
           )}
         </div>
         <div className="min-w-0 flex-1 space-y-2.5">
           {activeLogo ? (
             <div className="flex items-center justify-between gap-2">
-              <p className="truncate text-sm font-medium text-ink">{activeLogo.name}</p>
-              <button type="button" onClick={handleRemove} disabled={busy} className="shrink-0 text-xs font-medium text-ink-muted hover:text-danger">
+              <p className="truncate text-sm font-medium text-foreground">{activeLogo.name}</p>
+              <button type="button" onClick={handleRemove} disabled={busy} className="shrink-0 text-xs font-medium text-muted-foreground hover:text-danger">
                 Remover
               </button>
             </div>
           ) : (
-            <p className="text-sm text-ink-muted">Nenhuma logo cadastrada ainda.</p>
+            <p className="text-sm text-muted-foreground">Nenhuma logo cadastrada ainda.</p>
           )}
-          <div className="rounded-lg bg-surface-sunken px-3 py-2.5 text-xs text-ink-muted">
-            <p className="font-medium text-ink">Tamanho indicado</p>
+          <div className="rounded-lg bg-background px-3 py-2.5 text-xs text-muted-foreground">
+            <p className="font-medium text-foreground">Tamanho indicado</p>
             <p className="mt-1">PNG com fundo transparente, formato quadrado (proporção 1:1), pelo menos 512×512px. Evite margens em excesso ao redor do símbolo.</p>
           </div>
           {error ? <p className="text-xs text-danger">{error}</p> : null}

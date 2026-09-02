@@ -115,11 +115,13 @@ export function NavIcon({ id, className = "h-[18px] w-[18px]" }: { id: NavIconId
         </svg>
       );
     case "settings":
+      // Dentes desenhados como traços (stroke), nunca `fill` sólido — mesmo peso visual do
+      // restante do set (achado de auditoria: fill quebrava a consistência do ícone no menu).
       return (
         <svg {...shared}>
           <circle cx="8" cy="8" r="2.4" {...stroke} />
           {GEAR_TEETH_ANGLES.map((angle) => (
-            <rect key={angle} x="7.3" y="1.4" width="1.4" height="2.4" rx="0.5" fill="currentColor" transform={`rotate(${angle} 8 8)`} />
+            <line key={angle} x1="8" y1="1.6" x2="8" y2="3.4" {...stroke} transform={`rotate(${angle} 8 8)`} />
           ))}
         </svg>
       );
@@ -169,7 +171,7 @@ export function NavIcon({ id, className = "h-[18px] w-[18px]" }: { id: NavIconId
         <svg {...shared}>
           <path d="M2.6 11.2a5.4 5.4 0 0110.8 0" {...stroke} />
           <path d="M8 11.2l2.6-3.8" {...stroke} />
-          <circle cx="8" cy="11.2" r="0.9" fill="currentColor" stroke="none" />
+          <circle cx="8" cy="11.2" r="0.9" {...stroke} />
         </svg>
       );
     case "menu":

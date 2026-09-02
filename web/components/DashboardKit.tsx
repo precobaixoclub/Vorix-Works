@@ -56,16 +56,16 @@ export const bucketLabel = (bucket: string) => {
   return bucket;
 };
 
-/** Paleta dos gráficos — cores do tema, estáveis entre light e dark. */
+/** Paleta dos gráficos — tokens globais `--chart-1`..`--chart-6` (`app/globals.css`), vocabulário
+ * fechado `primary → emerald → sky → violet → amber → rose` (mesmo de `HubAccent`). Nunca uma cor
+ * solta por gráfico — `hsl(var(--chart-N))` já resolve sozinho pra light/dark. */
 export const CHART_COLORS = [
-  'hsl(142 71% 45%)', // verde (primário do produto)
-  'hsl(217 91% 60%)', // azul
-  'hsl(38 92% 50%)',  // âmbar
-  'hsl(0 84% 60%)',   // vermelho
-  'hsl(271 81% 56%)', // violeta
-  'hsl(199 89% 48%)', // ciano
-  'hsl(330 81% 60%)', // rosa
-  'hsl(25 95% 53%)',  // laranja
+  'hsl(var(--chart-1))', // primary (marca)
+  'hsl(var(--chart-2))', // emerald
+  'hsl(var(--chart-3))', // sky
+  'hsl(var(--chart-4))', // violet
+  'hsl(var(--chart-5))', // amber
+  'hsl(var(--chart-6))', // rose
 ];
 
 // --- Blocos ------------------------------------------------------------------

@@ -35,11 +35,14 @@ const NETWORK_LABEL: Record<PublicationNetwork, string> = { tiktok: "TikTok", in
 const NETWORK_ICON: Record<PublicationNetwork, string> = { tiktok: "♪", instagram: "◎", facebook: "f", youtube: "▶" };
 const FORMAT_LABEL: Record<PublicationContentType, string> = { image: "Imagem", video: "Vídeo", carousel: "Carrossel", text: "Texto" };
 const FORMAT_ICON: Record<PublicationContentType, string> = { image: "▧", video: "▶", carousel: "▦", text: "¶" };
+// Um tom por formato, dentro do vocabulário fechado (emerald/sky/violet/amber/rose/primary) —
+// gradiente de dois estágios na MESMA cor, nunca um degradê multicolorido (achado de auditoria:
+// a versão anterior misturava sky/indigo/emerald/rose/orange/teal/cyan/slate/zinc numa única tela).
 const FORMAT_GRADIENT: Record<PublicationContentType, string> = {
-  image: "from-sky-500/70 via-indigo-500/55 to-emerald-500/65",
-  video: "from-rose-500/70 via-orange-500/55 to-amber-500/65",
-  carousel: "from-emerald-500/70 via-teal-500/55 to-cyan-500/65",
-  text: "from-slate-600/70 via-zinc-500/55 to-slate-700/65",
+  image: "from-sky-500/60 to-sky-600/60",
+  video: "from-rose-500/60 to-rose-600/60",
+  carousel: "from-emerald-500/60 to-emerald-600/60",
+  text: "from-violet-500/60 to-violet-600/60",
 };
 
 // Ordinal usado só para ordenar a coluna Status da tabela — não é exibido.
@@ -190,7 +193,7 @@ export default function ContentsPage() {
         description="Veja, filtre e reutilize tudo que já foi criado ou publicado."
         actions={
           <>
-            <div className="inline-flex rounded-lg border border-border bg-surface-raised p-1">
+            <div className="inline-flex rounded-lg border border-border bg-card p-1">
               <button type="button" onClick={() => setViewMode("grid")} className={viewModeButtonClass(viewMode === "grid")}>Grid</button>
               <button type="button" onClick={() => setViewMode("list")} className={viewModeButtonClass(viewMode === "list")}>Lista</button>
             </div>
@@ -249,7 +252,7 @@ export default function ContentsPage() {
             action={<Link href={`/workspaces/${workspace.id}/create`}><Button variant="secondary">Criar conteúdo</Button></Link>}
           />
         ) : filtered.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border py-14 text-center text-sm text-ink-muted">
+          <div className="rounded-2xl border border-dashed border-border py-14 text-center text-sm text-muted-foreground">
             Nenhum conteúdo corresponde aos filtros aplicados.
           </div>
         ) : (
@@ -308,7 +311,7 @@ export default function ContentsPage() {
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={thumbnail} alt="" className="h-full w-full object-cover" />
                             ) : (
-                              <span className="text-lg text-white/80" aria-hidden>{FORMAT_ICON[format]}</span>
+                              <span className="text-lg text-primary-foreground/80" aria-hidden>{FORMAT_ICON[format]}</span>
                             )}
                           </span>
                           <span className="min-w-0 truncate font-medium text-foreground">{titleOf(post)}</span>
@@ -356,7 +359,7 @@ function FilterSelect<T extends string>({ label, value, onChange, options }: { l
   return (
     <label className="min-w-0">
       <span className="sr-only">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft" aria-label={label}>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-accent-soft" aria-label={label}>
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>
@@ -370,22 +373,22 @@ function PublicationCard({ workspaceId, post, busy, onOpen, onCancel }: { worksp
   const when = publicationDate(post);
 
   return (
-    <article className="group min-w-0 overflow-hidden rounded-2xl border border-border bg-surface-raised/55 transition hover:border-primary/70 hover:shadow-lg">
+    <article className="group min-w-0 overflow-hidden rounded-2xl border border-border bg-card/55 transition hover:border-primary/70 hover:shadow-lg">
       <button type="button" onClick={onOpen} className={`relative flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
         {thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={thumbnail} alt="" className="h-full w-full object-cover" />
         ) : (
-          <span className="text-5xl text-white/75 drop-shadow" aria-hidden>{FORMAT_ICON[format]}</span>
+          <span className="text-5xl text-primary-foreground/75 drop-shadow" aria-hidden>{FORMAT_ICON[format]}</span>
         )}
-        <span className="absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-xs font-medium text-white backdrop-blur">{NETWORK_ICON[post.network]} {NETWORK_LABEL[post.network]}</span>
+        <span className="absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-xs font-medium text-primary-foreground backdrop-blur">{NETWORK_ICON[post.network]} {NETWORK_LABEL[post.network]}</span>
         <span className="absolute right-3 top-3"><StatusBadge status={status} /></span>
       </button>
       <div className="p-3">
         <div className="flex min-w-0 items-start justify-between gap-2">
           <button type="button" onClick={onOpen} className="min-w-0 text-left">
-            <h2 className="line-clamp-2 text-sm font-semibold text-ink">{titleOf(post)}</h2>
-            <p className="mt-1 text-xs text-ink-muted">{when ? formatDateTime(when) : "Sem data"} · {FORMAT_LABEL[format]}</p>
+            <h2 className="line-clamp-2 text-sm font-semibold text-foreground">{titleOf(post)}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{when ? formatDateTime(when) : "Sem data"} · {FORMAT_LABEL[format]}</p>
           </button>
           <ActionsMenu workspaceId={workspaceId} post={post} busy={busy} onOpen={onOpen} onCancel={onCancel} />
         </div>
@@ -398,12 +401,12 @@ function ActionsMenu({ workspaceId, post, busy, onOpen, onCancel }: { workspaceI
   const status = derivePublicationStatus(post);
   return (
     <details className="relative shrink-0">
-      <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full text-ink-muted hover:bg-surface-sunken hover:text-ink">•••</summary>
-      <div className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-border bg-surface-raised p-1 shadow-xl">
-        <button type="button" onClick={onOpen} className="w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-surface-sunken">Abrir</button>
-        <Link href={publishAgainHref(workspaceId, post)} className="block rounded-lg px-3 py-2 text-sm text-ink hover:bg-surface-sunken">Publicar novamente</Link>
+      <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground">•••</summary>
+      <div className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">
+        <button type="button" onClick={onOpen} className="w-full rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-muted">Abrir</button>
+        <Link href={publishAgainHref(workspaceId, post)} className="block rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted">Publicar novamente</Link>
         {status === "scheduled" ? (
-          <button type="button" disabled={busy} onClick={onCancel} className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-60">Cancelar agendamento</button>
+          <button type="button" disabled={busy} onClick={onCancel} className="w-full rounded-lg px-3 py-2 text-left text-sm text-danger hover:bg-danger-bg disabled:opacity-60">Cancelar agendamento</button>
         ) : null}
       </div>
     </details>
@@ -419,13 +422,13 @@ function PublicationDetailDrawer({ workspaceId, post, busy, onClose, onCancel }:
   return (
     <div className="fixed inset-0 z-50">
       <button type="button" className="absolute inset-0 bg-black/55" aria-label="Fechar detalhe" onClick={onClose} />
-      <aside className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col overflow-y-auto border-l border-border bg-surface-raised p-4 shadow-2xl sm:p-6">
+      <aside className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col overflow-y-auto border-l border-border bg-card p-4 shadow-lg sm:p-6">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Conteúdo</p>
-            <h2 className="mt-2 text-2xl font-semibold text-ink">{titleOf(post)}</h2>
+            <h2 className="mt-2 text-2xl font-semibold text-foreground">{titleOf(post)}</h2>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm text-ink-muted hover:bg-surface-sunken">Fechar</button>
+          <button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20">Fechar</button>
         </div>
 
         {thumbnail ? (
@@ -435,15 +438,15 @@ function PublicationDetailDrawer({ workspaceId, post, busy, onClose, onCancel }:
           <img src={thumbnail} alt="" className="mx-auto mb-5 max-h-[60vh] w-full rounded-2xl border border-border object-contain" />
         ) : (
           <div className={`relative mb-5 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
-            <span className="text-6xl text-white/75" aria-hidden>{FORMAT_ICON[format]}</span>
+            <span className="text-6xl text-primary-foreground/75" aria-hidden>{FORMAT_ICON[format]}</span>
           </div>
         )}
 
         <div className="mb-5 flex flex-wrap gap-2">
           <NetworkBadge network={post.network} />
           <StatusBadge status={status} />
-          <span className="rounded-full bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-ink-muted">{FORMAT_LABEL[format]}</span>
-          {post.placement === "story" ? <span className="rounded-full bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-ink-muted">Story</span> : null}
+          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">{FORMAT_LABEL[format]}</span>
+          {post.placement === "story" ? <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Story</span> : null}
         </div>
 
         <div className="space-y-4">
@@ -464,19 +467,19 @@ function PublicationDetailDrawer({ workspaceId, post, busy, onClose, onCancel }:
 
 function DetailBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</p>
-      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink">{value}</p>
+    <div className="rounded-xl border border-border bg-card p-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">{value}</p>
     </div>
   );
 }
 
 function NetworkBadge({ network }: { network: PublicationNetwork }) {
-  return <span className="rounded-full bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-ink-muted">{NETWORK_ICON[network]} {NETWORK_LABEL[network]}</span>;
+  return <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">{NETWORK_ICON[network]} {NETWORK_LABEL[network]}</span>;
 }
 
 function viewModeButtonClass(active: boolean) {
-  return `rounded-md px-3 py-1.5 text-xs font-medium transition ${active ? "bg-primary text-white" : "text-ink-muted hover:text-ink"}`;
+  return `rounded-md px-3 py-1.5 text-xs font-medium transition ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`;
 }
 
 function titleOf(post: UnifiedPublication): string {

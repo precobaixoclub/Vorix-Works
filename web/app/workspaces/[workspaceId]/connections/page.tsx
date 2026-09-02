@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { AtSign, Megaphone, Music2, PlaySquare, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { META_RETURN_PATH_KEY } from "@/app/instagram/callback/page";
@@ -27,14 +29,10 @@ export default function ConnectionsPage() {
   const [feedback, setFeedback] = useState<string | undefined>();
 
   return (
-    <main className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
-      <div className="mb-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Integrações</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">Conexões</h1>
-        <p className="mt-2 max-w-2xl text-sm text-ink-muted">Conecte as redes que o Vorix pode utilizar para publicar seus conteúdos.</p>
-      </div>
+    <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
+      <PageHeader title="Conexões" description="Conecte as redes que o Vorix pode utilizar para publicar seus conteúdos." />
 
-      {feedback ? <Card className="mb-6 border-primary/30 bg-accent-soft/30 p-4"><p className="text-sm text-ink">{feedback}</p></Card> : null}
+      {feedback ? <Card className="mb-6 border-primary/30 bg-primary/5 p-4"><p className="text-sm text-foreground">{feedback}</p></Card> : null}
 
       <div className="grid gap-4">
         <MetaConnection workspaceId={workspace.id} onFeedback={setFeedback} />
@@ -80,7 +78,7 @@ function TikTokConnection({ workspaceId, onFeedback }: { workspaceId: string; on
 
   return (
     <ConnectionCard
-      icon="♪"
+      icon={Music2}
       name="TikTok"
       description="Conta autorizada para publicar vídeos e fotos no TikTok."
       configured={oauth?.configured !== false}
@@ -126,7 +124,7 @@ function MetaConnection({ workspaceId, onFeedback }: { workspaceId: string; onFe
 
   return (
     <ConnectionCard
-      icon="◎"
+      icon={AtSign}
       name="Meta"
       description="Um login conecta Instagram profissional e Página do Facebook quando ambos estão disponíveis."
       configured={oauth?.configured !== false}
@@ -200,14 +198,16 @@ function MetaAdsConnection({ workspaceId, onFeedback }: { workspaceId: string; o
     <Card className="overflow-hidden p-0">
       <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
         <div className="flex min-w-0 gap-3">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-xl font-semibold text-primary">$</span>
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <Megaphone className="h-5 w-5" aria-hidden="true" />
+          </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-semibold text-ink">Meta Ads</h2>
+              <h2 className="text-base font-semibold text-foreground">Meta Ads</h2>
               <StatusBadge status={humanStatus} />
             </div>
-            <p className="mt-1 text-sm text-ink-muted">Conexão para sincronizar e gerenciar campanhas de anúncios do Facebook/Instagram.</p>
-            <p className="mt-2 text-xs text-ink-muted">{statusText}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Conexão para sincronizar e gerenciar campanhas de anúncios do Facebook/Instagram.</p>
+            <p className="mt-2 text-xs text-muted-foreground">{statusText}</p>
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -220,13 +220,13 @@ function MetaAdsConnection({ workspaceId, onFeedback }: { workspaceId: string; o
       </div>
 
       {accounts.length > 0 ? (
-        <div className="border-t border-border bg-surface/70 p-3 sm:p-4">
+        <div className="border-t border-border bg-card/70 p-3 sm:p-4">
           <div className="grid gap-2">
             {accounts.map((account) => (
-              <div key={account.id} className="flex flex-col gap-3 rounded-xl border border-border bg-surface-raised px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+              <div key={account.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-ink">{account.name}</p>
-                  <p className="mt-0.5 truncate text-xs text-ink-muted">{account.accountId} · {account.currency}{account.businessName ? ` · ${account.businessName}` : ""}</p>
+                  <p className="truncate text-sm font-medium text-foreground">{account.name}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{account.accountId} · {account.currency}{account.businessName ? ` · ${account.businessName}` : ""}</p>
                 </div>
                 <StatusBadge status={account.accountStatus === 1 ? "connected" : "needs_attention"} />
               </div>
@@ -288,7 +288,7 @@ function YouTubeConnection({ workspaceId, onFeedback }: { workspaceId: string; o
 
   return (
     <ConnectionCard
-      icon="▶"
+      icon={PlaySquare}
       name="YouTube Shorts"
       description="Canal autorizado para publicar Shorts em video."
       configured={oauth?.configured !== false}
@@ -300,7 +300,7 @@ function YouTubeConnection({ workspaceId, onFeedback }: { workspaceId: string; o
   );
 }
 
-function ConnectionCard({ icon, name, description, configured, busy, accounts, onConnect, onDisconnect }: { icon: string; name: string; description: string; configured: boolean; busy: boolean; accounts: readonly AccountRow[]; onConnect: () => void; onDisconnect: (id: string) => void | Promise<void> }) {
+function ConnectionCard({ icon: Icon, name, description, configured, busy, accounts, onConnect, onDisconnect }: { icon: LucideIcon; name: string; description: string; configured: boolean; busy: boolean; accounts: readonly AccountRow[]; onConnect: () => void; onDisconnect: (id: string) => void | Promise<void> }) {
   const [confirmTarget, setConfirmTarget] = useState<AccountRow | null>(null);
   const activeAccounts = accounts.filter((account) => account.status === "active");
   const inactiveAccounts = accounts.filter((account) => account.status !== "active");
@@ -318,14 +318,16 @@ function ConnectionCard({ icon, name, description, configured, busy, accounts, o
     <Card className="overflow-hidden p-0">
       <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
         <div className="flex min-w-0 gap-3">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-xl font-semibold text-primary">{icon}</span>
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <Icon className="h-5 w-5" aria-hidden="true" />
+          </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-semibold text-ink">{name}</h2>
+              <h2 className="text-base font-semibold text-foreground">{name}</h2>
               <StatusBadge status={humanStatus} />
             </div>
-            <p className="mt-1 text-sm text-ink-muted">{description}</p>
-            <p className="mt-2 text-xs text-ink-muted">{statusText}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+            <p className="mt-2 text-xs text-muted-foreground">{statusText}</p>
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -334,13 +336,13 @@ function ConnectionCard({ icon, name, description, configured, busy, accounts, o
       </div>
 
       {accounts.length > 0 ? (
-        <div className="border-t border-border bg-surface/70 p-3 sm:p-4">
+        <div className="border-t border-border bg-card/70 p-3 sm:p-4">
           <div className="grid gap-2">
             {accounts.map((account) => (
-              <div key={account.id} className="flex flex-col gap-3 rounded-xl border border-border bg-surface-raised px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+              <div key={account.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-ink">{account.label}</p>
-                  {account.detail ? <p className="mt-0.5 truncate text-xs text-ink-muted">{account.detail}</p> : null}
+                  <p className="truncate text-sm font-medium text-foreground">{account.label}</p>
+                  {account.detail ? <p className="mt-0.5 truncate text-xs text-muted-foreground">{account.detail}</p> : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge status={account.status === "active" ? "connected" : "needs_attention"} />

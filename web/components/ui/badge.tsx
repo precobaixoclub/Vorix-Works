@@ -15,6 +15,12 @@ const badgeVariants = cva(
         destructive:
           "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
         outline: "text-foreground",
+        // Variantes semânticas compartilhadas — pra distinguir dois estados que NÃO são
+        // hierarquia (nenhum é "mais importante"), só categorias diferentes (ex.: atendimento
+        // humano vs. IA ativa numa conversa). Nunca espalhar `bg-sky-50`/`bg-violet-50` direto
+        // numa tela — usar `variant="info"`/`variant="accent"` aqui, um lugar só.
+        info: "border-transparent bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/10 dark:text-sky-300",
+        accent: "border-transparent bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-300",
       },
     },
     defaultVariants: {

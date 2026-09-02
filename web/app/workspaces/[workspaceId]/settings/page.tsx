@@ -140,7 +140,7 @@ export default function SettingsPage() {
                 <p className="text-muted-foreground">Sessão carregando.</p>
               )}
               {canSeeGovernance ? (
-                <Link href={`/workspaces/${workspace.id}/governance`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border px-3.5 py-2 text-sm font-medium text-foreground hover:bg-muted">
+                <Link href={`/workspaces/${workspace.id}/governance`} className="text-sm font-medium text-primary hover:underline">
                   Abrir Governança
                 </Link>
               ) : null}

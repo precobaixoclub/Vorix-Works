@@ -31,7 +31,7 @@ after(async () => {
   await db.stop();
 });
 
-function buildTestApp() {
+function buildTestApp(envOverrides = {}) {
   const config = loadApiConfig({
     AUTH_MODE: "jwt",
     JWT_SECRET: "test-secret-onboarding",
@@ -40,6 +40,7 @@ function buildTestApp() {
     ACCESS_TOKEN_TTL_SECONDS: "900",
     REFRESH_TOKEN_TTL_SECONDS: "2592000",
     ZUNO_LOG_LEVEL: "silent",
+    ...envOverrides,
   });
   return buildApp({ config });
 }
@@ -132,5 +133,35 @@ test("POST /v1/onboarding/complete + GET /v1/onboarding: completar de propósito
 
   const read = await app.inject({ method: "GET", url: `/v1/onboarding?workspaceId=${seed.workspaceId}`, headers: auth });
   assert.equal(read.json().data.status, "completed");
+  await app.close();
+});
+
+test("POST /v1/onboarding/connect-channel: módulo Conversas desligado responde 409 e nunca cria a conexão (CONVERSATIONS_MODULE_ENABLED ausente = desligado por padrão)", async () => {
+  const app = await buildTestApp();
+  const seed = await seedTenant("tenant-onb-route-6", "owner");
+  const token = await loginAndGetToken(app, seed);
+  const auth = { authorization: `Bearer ${token}` };
+
+  await app.inject({ method: "POST", url: "/v1/onboarding/start", headers: auth, payload: { workspaceId: seed.workspaceId } });
+  const connect = await app.inject({ method: "POST", url: "/v1/onboarding/connect-channel", headers: auth, payload: { workspaceId: seed.workspaceId, displayName: "WhatsApp" } });
+  assert.equal(connect.statusCode, 409);
+  assert.match(connect.json().error.message, /ONBOARDING_CHANNEL_MODULE_DISABLED/);
+
+  const count = await db.pool.query("select count(*)::int as c from messaging_connections where workspace_id = $1", [seed.workspaceId]);
+  assert.equal(count.rows[0].c, 0);
+  await app.close();
+});
+
+test("GET /v1/onboarding: channelModuleEnabled reflete CONVERSATIONS_MODULE_ENABLED; conectar funciona quando ligado", async () => {
+  const app = await buildTestApp({ CONVERSATIONS_MODULE_ENABLED: "true" });
+  const seed = await seedTenant("tenant-onb-route-7", "owner");
+  const token = await loginAndGetToken(app, seed);
+  const auth = { authorization: `Bearer ${token}` };
+
+  const start = await app.inject({ method: "POST", url: "/v1/onboarding/start", headers: auth, payload: { workspaceId: seed.workspaceId } });
+  assert.equal(start.json().data.channelModuleEnabled, true);
+
+  const connect = await app.inject({ method: "POST", url: "/v1/onboarding/connect-channel", headers: auth, payload: { workspaceId: seed.workspaceId, displayName: "WhatsApp" } });
+  assert.equal(connect.statusCode, 201);
   await app.close();
 });

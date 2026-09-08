@@ -101,7 +101,9 @@ export default function OnboardingWizardPage() {
 
       <div className="mt-8 flex-1">
         {progress.currentStep === "company" ? <CompanyStep workspaceId={workspace.id} onAdvance={refresh} /> : null}
-        {progress.currentStep === "channel" ? <ChannelStep workspaceId={workspace.id} onAdvance={refresh} /> : null}
+        {progress.currentStep === "channel" ? (
+          <ChannelStep workspaceId={workspace.id} onAdvance={refresh} channelModuleEnabled={progress.channelModuleEnabled} />
+        ) : null}
         {progress.currentStep === "team" ? <TeamStep workspaceId={workspace.id} onAdvance={refresh} /> : null}
         {progress.currentStep === "commercial" ? <CommercialStep workspaceId={workspace.id} onAdvance={refresh} /> : null}
         {progress.currentStep === "brand" ? <BrandStep workspaceId={workspace.id} onAdvance={refresh} /> : null}
@@ -224,7 +226,15 @@ function CompanyStep({ workspaceId, onAdvance }: { workspaceId: string; onAdvanc
   );
 }
 
-function ChannelStep({ workspaceId, onAdvance }: { workspaceId: string; onAdvance: () => Promise<void> }) {
+function ChannelStep({
+  workspaceId,
+  onAdvance,
+  channelModuleEnabled,
+}: {
+  workspaceId: string;
+  onAdvance: () => Promise<void>;
+  channelModuleEnabled: boolean;
+}) {
   const { data } = useInboxConnections(workspaceId);
   const [displayName, setDisplayName] = useState("WhatsApp Principal");
   const [busy, setBusy] = useState(false);
@@ -279,7 +289,7 @@ function ChannelStep({ workspaceId, onAdvance }: { workspaceId: string; onAdvanc
           ) : null}
           <Button onClick={handleContinue} disabled={busy} className="w-full">Continuar</Button>
         </div>
-      ) : (
+      ) : channelModuleEnabled ? (
         <div className="space-y-3">
           <div>
             <Label htmlFor="channel-name">Nome desta conexão</Label>
@@ -292,6 +302,13 @@ function ChannelStep({ workspaceId, onAdvance }: { workspaceId: string; onAdvanc
             Conectar depois
           </Button>
           <p className="text-xs text-muted-foreground">O Conversas só começa a funcionar de verdade depois que um canal for conectado.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            A conexão de canais está temporariamente indisponível neste ambiente. Você pode continuar o onboarding normalmente e conectar o WhatsApp assim que estiver disponível.
+          </p>
+          <Button onClick={handleSkip} disabled={busy} className="w-full">Continuar</Button>
         </div>
       )}
     </StepCard>
@@ -333,7 +350,7 @@ function TeamStep({ workspaceId, onAdvance }: { workspaceId: string; onAdvance: 
   }
 
   return (
-    <StepCard title="Quem vai trabalhar com você?" description="Convide quantas pessoas quiser — cada uma recebe um e-mail para entrar no Vorix.">
+    <StepCard title="Convide sua equipe" description="Convide quantas pessoas quiser por e-mail, cada uma com seu papel de acesso — cada convidado recebe um link para entrar no Vorix. (Times nomeados, como “Comercial” ou “Atendimento”, podem ser organizados depois em Configurações.)">
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@empresa.com" className="flex-1" />
         <Select value={role} onValueChange={(v) => setRole(v as TenantRole)} className="sm:w-40">

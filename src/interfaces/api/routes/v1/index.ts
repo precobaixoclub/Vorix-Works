@@ -357,6 +357,9 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         outboundQueue: app.zunoContainer.inboxOutboundQueue,
         provider: app.zunoContainer.inboxProvider,
       },
+      // Independente do entitlement de messaging_connections: isto é o kill switch operacional
+      // do módulo (CONVERSATIONS_MODULE_ENABLED), não o limite de plano.
+      inboxModuleEnabled: app.zunoContainer.inboxFeatureFlags.enabled,
     });
   }
   await registerMetaAdsRoutes(app, {

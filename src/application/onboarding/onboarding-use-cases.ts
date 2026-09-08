@@ -20,6 +20,11 @@ export type OnboardingUseCaseDeps = {
   entitlementDeps: EntitlementUseCaseDeps;
   inviteDeps: InviteUseCaseDeps;
   inboxDeps: InboxUseCaseDeps;
+  /** Kill switch global do módulo Conversas (`CONVERSATIONS_MODULE_ENABLED`) — INDEPENDENTE do
+   * entitlement de `messaging_connections`. Um é "o plano permite quantas conexões" (billing), o
+   * outro é "o módulo está tecnicamente ligado neste ambiente" (operações); a etapa "Canal" só
+   * pode agir quando OS DOIS permitirem, nunca um no lugar do outro. */
+  inboxModuleEnabled: boolean;
 };
 
 async function assertWorkspaceBelongsToTenant(deps: OnboardingUseCaseDeps, tenantId: string, workspaceId: string): Promise<void> {
@@ -101,9 +106,17 @@ export type ConnectChannelDuringOnboardingResult = { connection: MessagingConnec
  * workspace já tem QUALQUER conexão, reaproveita a mais recente em vez de criar outra (clicar
  * duas vezes nunca duplica) — só passa pelo limite de plano (`messaging_connections`) quando de
  * fato vai criar uma conexão nova.
+ *
+ * `inboxModuleEnabled` é checado ANTES de tudo — feature flag e entitlement são independentes por
+ * design (não-negociável): um ambiente com o módulo desligado nunca deveria conseguir criar uma
+ * conexão só porque o plano permitiria, e um plano sem cota nunca é contornado só porque o módulo
+ * está ligado. A operação só acontece quando OS DOIS permitirem.
  */
 export async function connectChannelDuringOnboarding(deps: OnboardingUseCaseDeps, input: ConnectChannelDuringOnboardingInput): Promise<ConnectChannelDuringOnboardingResult> {
   await assertWorkspaceBelongsToTenant(deps, input.tenantId, input.workspaceId);
+  if (!deps.inboxModuleEnabled) {
+    throw new Error("ONBOARDING_CHANNEL_MODULE_DISABLED: o módulo Conversas está desabilitado neste ambiente.");
+  }
 
   const existing = await listConnections(deps.inboxDeps, { tenantId: input.tenantId, workspaceId: input.workspaceId });
   if (existing.length > 0) {

@@ -22,4 +22,7 @@ export type WorkspaceOnboarding = {
   startedAt: string;
   completedAt?: string;
   updatedAt: string;
+  /** Anexado pela resposta (nunca persistido) — reflete `CONVERSATIONS_MODULE_ENABLED`,
+   * independente do entitlement de `messaging_connections`. `false` esconde o CTA de conectar. */
+  channelModuleEnabled: boolean;
 };

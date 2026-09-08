@@ -54,7 +54,7 @@ after(async () => {
   await db.stop();
 });
 
-function onboardingDeps() {
+function onboardingDeps({ inboxModuleEnabled = true } = {}) {
   const inviteDeps = {
     tenantMemberInviteRepository: new PostgresTenantMemberInviteRepository(db.pool),
     membershipRepository: new PostgresTenantMembershipRepository(db.pool),
@@ -91,6 +91,7 @@ function onboardingDeps() {
     entitlementDeps,
     inviteDeps,
     inboxDeps,
+    inboxModuleEnabled,
   };
 }
 
@@ -260,4 +261,24 @@ test("modo somente-leitura (past_due): onboarding não permite convidar nem cone
     () => connectChannelDuringOnboarding(deps, { tenantId, workspaceId: workspace.id, displayName: "WhatsApp" }),
     /ENTITLEMENT_ACCOUNT_READ_ONLY/,
   );
+});
+
+test("connectChannelDuringOnboarding: feature flag do módulo Conversas é checada de forma INDEPENDENTE do entitlement", async () => {
+  const tenantId = "tenant-onb-12";
+  const { workspace } = await makeTenantWithWorkspace(tenantId);
+  // Plano permite conexão (FREE já permite 1) — só o módulo está desligado neste ambiente.
+  const depsModuleDisabled = onboardingDeps({ inboxModuleEnabled: false });
+  await assert.rejects(
+    () => connectChannelDuringOnboarding(depsModuleDisabled, { tenantId, workspaceId: workspace.id, displayName: "WhatsApp" }),
+    /ONBOARDING_CHANNEL_MODULE_DISABLED/,
+  );
+  // Nenhuma conexão foi criada — a checagem de flag vem ANTES de qualquer efeito colateral.
+  const count = await db.pool.query("select count(*)::int as c from messaging_connections where workspace_id = $1", [workspace.id]);
+  assert.equal(count.rows[0].c, 0);
+
+  // Módulo ligado de novo (mesmo workspace) — agora funciona normalmente, provando que as duas
+  // checagens são de fato independentes (uma não substitui a outra em nenhuma direção).
+  const depsModuleEnabled = onboardingDeps({ inboxModuleEnabled: true });
+  const result = await connectChannelDuringOnboarding(depsModuleEnabled, { tenantId, workspaceId: workspace.id, displayName: "WhatsApp" });
+  assert.equal(result.reused, false);
 });

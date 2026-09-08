@@ -10,6 +10,7 @@ import {
   type OnboardingUseCaseDeps,
 } from "../../../../application/onboarding/onboarding-use-cases.js";
 import { ONBOARDING_GOALS, ONBOARDING_STEPS } from "../../../../domain/onboarding/onboarding.model.js";
+import type { WorkspaceOnboarding } from "../../../../domain/onboarding/onboarding.model.js";
 import { TENANT_ROLES } from "../../../../domain/identity/identity.model.js";
 import { ConflictError, NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
@@ -20,7 +21,11 @@ export type OnboardingRoutesDeps = OnboardingUseCaseDeps;
 function translateOnboardingError(error: unknown): never {
   if (error instanceof Error) {
     if (error.message.startsWith("ONBOARDING_WORKSPACE_NOT_FOUND")) throw new NotFoundError(error.message);
-    if (error.message.startsWith("USAGE_LIMIT_REACHED") || error.message.startsWith("ENTITLEMENT_ACCOUNT_READ_ONLY")) {
+    if (
+      error.message.startsWith("USAGE_LIMIT_REACHED") ||
+      error.message.startsWith("ENTITLEMENT_ACCOUNT_READ_ONLY") ||
+      error.message.startsWith("ONBOARDING_CHANNEL_MODULE_DISABLED")
+    ) {
       throw new ConflictError(error.message);
     }
     if (error.message.startsWith("INBOX_DISPLAY_NAME_EMPTY") || error.message.startsWith("IDENTITY_VALIDATION_ERROR")) {
@@ -28,6 +33,14 @@ function translateOnboardingError(error: unknown): never {
     }
   }
   throw error;
+}
+
+/** Anexa a disponibilidade do canal à resposta (nunca ao registro persistido) — o frontend usa
+ * isto pra decidir se mostra o CTA "Conectar WhatsApp" na etapa "Canal", sem precisar assumir
+ * nada sobre o ambiente. Puramente informativo: quem decide de verdade continua sendo
+ * `connectChannelDuringOnboarding`, que checa a MESMA flag antes de agir. */
+function withChannelAvailability(deps: OnboardingRoutesDeps, progress: WorkspaceOnboarding) {
+  return { ...progress, channelModuleEnabled: deps.inboxModuleEnabled };
 }
 
 const WORKSPACE_QUERY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 } } } as const;
@@ -90,7 +103,7 @@ export async function registerOnboardingRoutes(app: FastifyInstance, deps: Onboa
     const principal = requirePermission(request, "workspace:read");
     const { workspaceId } = request.query as { workspaceId: string };
     const progress = await getOnboarding(deps, { tenantId: principal.tenantId, workspaceId }).catch(translateOnboardingError);
-    return successEnvelope(progress ?? null, request.id);
+    return successEnvelope(progress ? withChannelAvailability(deps, progress) : null, request.id);
   });
 
   app.post("/onboarding/start", { schema: { body: WORKSPACE_BODY_SCHEMA } }, async (request, reply) => {
@@ -98,14 +111,14 @@ export async function registerOnboardingRoutes(app: FastifyInstance, deps: Onboa
     const { workspaceId } = request.body as { workspaceId: string };
     const progress = await startOnboarding(deps, { tenantId: principal.tenantId, workspaceId }).catch(translateOnboardingError);
     reply.code(201);
-    return successEnvelope(progress, request.id);
+    return successEnvelope(withChannelAvailability(deps, progress), request.id);
   });
 
   app.patch("/onboarding/company", { schema: { body: COMPANY_BODY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "workspace:update");
     const { workspaceId, segment, size, goal } = request.body as { workspaceId: string; segment?: string; size?: string; goal?: (typeof ONBOARDING_GOALS)[number] };
     const progress = await saveCompanyStep(deps, { tenantId: principal.tenantId, workspaceId, segment, size, goal }).catch(translateOnboardingError);
-    return successEnvelope(progress, request.id);
+    return successEnvelope(withChannelAvailability(deps, progress), request.id);
   });
 
   app.post("/onboarding/invite-team-member", { schema: { body: INVITE_BODY_SCHEMA } }, async (request, reply) => {
@@ -134,13 +147,13 @@ export async function registerOnboardingRoutes(app: FastifyInstance, deps: Onboa
     const principal = requirePermission(request, "workspace:update");
     const { workspaceId, step, skipped } = request.body as { workspaceId: string; step: (typeof ONBOARDING_STEPS)[number]; skipped?: boolean };
     const progress = await advanceOnboardingStep(deps, { tenantId: principal.tenantId, workspaceId, step, skipped }).catch(translateOnboardingError);
-    return successEnvelope(progress, request.id);
+    return successEnvelope(withChannelAvailability(deps, progress), request.id);
   });
 
   app.post("/onboarding/complete", { schema: { body: WORKSPACE_BODY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "workspace:update");
     const { workspaceId } = request.body as { workspaceId: string };
     const progress = await completeOnboarding(deps, { tenantId: principal.tenantId, workspaceId }).catch(translateOnboardingError);
-    return successEnvelope(progress, request.id);
+    return successEnvelope(withChannelAvailability(deps, progress), request.id);
   });
 }

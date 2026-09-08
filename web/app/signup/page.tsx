@@ -8,6 +8,7 @@ import { Card, CardBody } from "@/components/Card";
 import { Input, Label } from "@/components/Field";
 import { Logo } from "@/components/Logo";
 import { useAuth } from "@/contexts/auth-context";
+import { listWorkspaces } from "@/features/workspace/api";
 import { ApiError } from "@/lib/api-client";
 
 /**
@@ -36,7 +37,11 @@ export default function SignupPage() {
         name: name.trim(),
         workspaceName: workspaceName.trim() || undefined,
       });
-      router.push("/workspaces");
+      // O signup público cria exatamente um Workspace — leva direto pro onboarding guiado dele,
+      // em vez do seletor de workspaces (que só faz sentido pra quem já tem mais de um).
+      const workspaces = await listWorkspaces().catch(() => []);
+      if (workspaces[0]) router.push(`/workspaces/${workspaces[0].id}/onboarding`);
+      else router.push("/workspaces");
     } catch (err) {
       const message = err instanceof ApiError
         ? translateSignupError(err)

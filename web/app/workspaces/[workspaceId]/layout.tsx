@@ -62,6 +62,18 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
     </main>
   ) : children;
 
+  // Onboarding guiado usa um shell simplificado (só a própria página) — mostrar os 15+ módulos
+  // da sidebar enquanto a pessoa ainda está configurando a conta é ruído, não ajuda (seção 21 do
+  // pedido de Onboarding). Mesmo padrão de detecção por pathname já usado acima pro Bastidor.
+  const isOnboardingPath = pathname === `${base}/onboarding`;
+  if (isOnboardingPath) {
+    return (
+      <WorkspaceProvider workspace={workspace}>
+        <div className="min-h-dvh bg-surface-sunken">{content}</div>
+      </WorkspaceProvider>
+    );
+  }
+
   return (
     <WorkspaceProvider workspace={workspace}>
       <div className="flex min-h-dvh min-w-0 flex-col md:flex-row">

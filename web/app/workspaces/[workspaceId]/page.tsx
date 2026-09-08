@@ -2,13 +2,16 @@
 
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, ClipboardCheck, Factory, FolderOpen } from "lucide-react";
+import { CalendarClock, CheckCircle2, ClipboardCheck, Circle, Factory, FolderOpen } from "lucide-react";
+import { Button } from "@/components/Button";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatsGrid } from "@/components/StatsGrid";
 import { HubCard, type HubItem } from "@/components/HubPage";
 import { KpiCard, num } from "@/components/DashboardKit";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
+import { useOnboarding } from "@/features/onboarding/hooks";
+import type { OnboardingStep } from "@/features/onboarding/types";
 import { useExecutionRuns } from "@/features/execution/hooks";
 import type { ExecutionRunState } from "@/features/execution/types";
 import { useUnifiedPublications } from "@/features/publication-history/hooks";
@@ -23,6 +26,49 @@ import { VorixIntelligencePanel } from "./vorix-intelligence-panel";
 const IN_PROGRESS_STATES: readonly ExecutionRunState[] = ["created", "validating", "ready", "running"];
 const GENERATED_STATES: readonly ExecutionRunState[] = ["waiting_for_approval", "completed"];
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+const CHECKLIST_ITEMS: ReadonlyArray<{ step: OnboardingStep; label: string }> = [
+  { step: "company", label: "Empresa" },
+  { step: "commercial", label: "Comercial" },
+  { step: "team", label: "Equipe" },
+  { step: "channel", label: "Conectar WhatsApp" },
+  { step: "brand", label: "Configurar marca" },
+];
+
+/** Seção 19 do pedido de Onboarding: um checklist discreto, nunca um segundo wizard dentro da
+ * Home — só lê o progresso já persistido e some sozinho quando `status === "completed"`. */
+function OnboardingChecklistCard({ workspaceId }: { workspaceId: string }) {
+  const router = useRouter();
+  const { data: progress } = useOnboarding(workspaceId);
+  if (!progress || progress.status === "completed") return null;
+
+  const done = CHECKLIST_ITEMS.filter((item) => progress.completedSteps.includes(item.step)).length;
+  return (
+    <Card className="mb-6 border-primary/30 bg-primary/5">
+      <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">
+            Sua configuração — {done} de {CHECKLIST_ITEMS.length} concluídos
+          </p>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            {CHECKLIST_ITEMS.map((item) => {
+              const isDone = progress.completedSteps.includes(item.step);
+              return (
+                <span key={item.step} className={`flex items-center gap-1.5 text-xs ${isDone ? "text-foreground" : "text-muted-foreground"}`}>
+                  {isDone ? <CheckCircle2 className="h-3.5 w-3.5 text-primary" /> : <Circle className="h-3.5 w-3.5" />}
+                  {item.label}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+        <Button variant="secondary" onClick={() => router.push(`/workspaces/${workspaceId}/onboarding`)}>
+          Continuar configuração
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function WorkspaceHomePage() {
   const router = useRouter();
@@ -101,6 +147,10 @@ export default function WorkspaceHomePage() {
         </div>
         <p className="text-xs text-muted-foreground/70">Espaço criado em {formatDate(workspace.createdAt)}</p>
       </header>
+
+      <div className="mt-6">
+        <OnboardingChecklistCard workspaceId={workspace.id} />
+      </div>
 
       <section className="mt-6">
         <StatsGrid>

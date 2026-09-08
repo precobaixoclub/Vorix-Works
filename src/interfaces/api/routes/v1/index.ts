@@ -36,6 +36,7 @@ import { registerBillingEntitlementsRoutes } from "./billing-entitlements.route.
 import { registerAdminPlanVersionsRoutes } from "./admin-plan-versions.route.js";
 import { registerBillingCheckoutRoutes } from "./billing-checkout.route.js";
 import { registerBillingLifecycleRoutes } from "./billing-lifecycle.route.js";
+import { registerBillingOverviewRoutes } from "./billing-overview.route.js";
 import { DefaultResourceCounterAdapter } from "../../../../infrastructure/billing/resource-counter-adapter.js";
 import { registerProposalsRoutes } from "./proposals.route.js";
 import { registerPublicProposalsRoutes } from "./public-proposals.route.js";
@@ -327,6 +328,13 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     });
     // SaaS Commercialization (Fase 3) — upgrade/downgrade, add-ons, cancelamento/reativação.
     await registerBillingLifecycleRoutes(app, { ...entitlementDeps, billingProvider: app.zunoContainer.billingProvider, billingEventRepository: identity.billingEventRepository });
+    // SaaS Commercialization (Fase 4) — tela "Plano e Cobrança" self-service.
+    await registerBillingOverviewRoutes(app, {
+      ...entitlementDeps,
+      billingProvider: app.zunoContainer.billingProvider,
+      invoiceRepository: identity.invoiceRepository,
+      appBaseUrl: app.zunoConfig.billing.appBaseUrl,
+    });
   }
   await registerMetaAdsRoutes(app, {
     metaAdsOAuthService: app.zunoContainer.metaAdsOAuthService,

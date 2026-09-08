@@ -38,6 +38,10 @@ export type SubscriptionRepositoryPort = {
   getActiveByTenant(tenantId: string): Promise<Subscription | undefined>;
   getByProviderSubscriptionId(providerSubscriptionId: string): Promise<Subscription | undefined>;
   update(id: string, input: UpdateSubscriptionInput): Promise<Subscription>;
+  /** Trial + Product Analytics — assinaturas em `status:"trial"` cujo `trialEnd` já passou.
+   * Varrida periodicamente para transicionar pra `trial_expired` (nunca checado no caminho de
+   * leitura de entitlements, que precisa continuar um SELECT puro). */
+  listExpiredTrials(now: string): Promise<Subscription[]>;
 };
 
 export type CreateSubscriptionItemInput = {

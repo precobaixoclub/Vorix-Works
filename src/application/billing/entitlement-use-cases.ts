@@ -6,6 +6,14 @@ import type { ResourceCounterPort } from "../ports/resource-counter.port.js";
 import type { PlanCapability, PlanLimitResource } from "../../domain/platform-billing/plan-entitlements.model.js";
 import type { EffectiveEntitlements } from "../../domain/platform-billing/subscription.model.js";
 import { periodOf } from "../../domain/platform-billing/tenant-billing.model.js";
+import type { PlatformSubscriptionStatus } from "../../domain/platform-billing/platform-plan-catalog.js";
+
+/** Único ponto de decisão de "isto bloqueia ação nova" — `past_due` (pagamento falhou),
+ * `suspended` (suspensão administrativa) e `trial_expired` (teste terminou sem conversão) levam
+ * ao MESMO modo somente-leitura, nunca uma regra por status espalhada pelo resto do produto. */
+function isReadOnlyStatus(status: PlatformSubscriptionStatus | undefined): boolean {
+  return status === "past_due" || status === "suspended" || status === "trial_expired";
+}
 
 export type EntitlementUseCaseDeps = {
   subscriptionRepository: SubscriptionRepositoryPort;
@@ -40,7 +48,7 @@ export async function resolveEffectiveEntitlements(deps: EntitlementUseCaseDeps,
       const current = limits[addon.resource];
       if (current !== null) limits[addon.resource] = current + addon.increment * item.quantity;
     }
-    const readOnly = subscription.status === "past_due" || subscription.status === "suspended";
+    const readOnly = isReadOnlyStatus(subscription.status);
     return { tenantId, planCode: planVersion.planCode, planVersionId: planVersion.id, capabilities: planVersion.capabilities, limits, virtual: false, readOnly };
   }
 
@@ -50,7 +58,7 @@ export async function resolveEffectiveEntitlements(deps: EntitlementUseCaseDeps,
   if (!activeVersion) {
     throw new Error(`ENTITLEMENTS_PLAN_VERSION_NOT_FOUND: nenhuma versão ativa cadastrada para o plano "${planCode}".`);
   }
-  const readOnly = billing?.subscriptionStatus === "past_due" || billing?.subscriptionStatus === "suspended";
+  const readOnly = isReadOnlyStatus(billing?.subscriptionStatus);
   return { tenantId, planCode: activeVersion.planCode, planVersionId: activeVersion.id, capabilities: activeVersion.capabilities, limits: activeVersion.limits, virtual: true, readOnly };
 }
 
@@ -87,7 +95,7 @@ export async function getLimit(deps: EntitlementUseCaseDeps, input: { tenantId: 
 async function assertNotReadOnly(deps: EntitlementUseCaseDeps, tenantId: string): Promise<void> {
   const entitlements = await resolveEffectiveEntitlements(deps, tenantId);
   if (entitlements.readOnly) {
-    throw new Error("ENTITLEMENT_ACCOUNT_READ_ONLY: pagamento pendente — regularize a assinatura para continuar usando o Vorix. Nenhum dado foi apagado.");
+    throw new Error("ENTITLEMENT_ACCOUNT_READ_ONLY: regularize o pagamento ou escolha um plano para continuar usando o Vorix. Nenhum dado foi apagado.");
   }
 }
 

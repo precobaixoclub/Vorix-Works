@@ -91,6 +91,14 @@ export class PostgresSubscriptionRepository implements SubscriptionRepositoryPor
     return result.rows[0] ? toDomain(result.rows[0]) : undefined;
   }
 
+  async listExpiredTrials(now: string): Promise<Subscription[]> {
+    const result = await this.pool.query<SubscriptionRow>(
+      "select * from subscriptions where status = 'trial' and trial_end is not null and trial_end < $1",
+      [now],
+    );
+    return result.rows.map(toDomain);
+  }
+
   async update(id: string, input: UpdateSubscriptionInput): Promise<Subscription> {
     const existing = await this.getById(id);
     if (!existing) throw new Error(`SUBSCRIPTION_NOT_FOUND: assinatura "${id}" não existe.`);

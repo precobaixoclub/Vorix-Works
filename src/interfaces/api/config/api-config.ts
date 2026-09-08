@@ -77,6 +77,12 @@ export type ApiConfig = {
     /** Base para as URLs de sucesso/cancelamento do Checkout (Fase 2) — nunca uma URL vinda do
      * cliente; sempre `APP_BASE_URL` combinada com um `successPath`/`cancelPath` relativo. */
     appBaseUrl: string;
+    /** Trial + Product Analytics — kill switch independente de `PlanVersion.trialDays`: mesmo um
+     * plano com `trialDays` configurado nunca inicia trial se isto estiver `false`. */
+    trialEnabled: boolean;
+    /** Intervalo da varredura de expiração de trial (`expireTrials`) — não precisa ser preciso ao
+     * minuto (um trial de dias de duração tolera folga de até um ciclo), então o padrão é 1h. */
+    trialExpirationCheckIntervalMs: number;
   };
   /** Provedores de IA de mídia (imagem/vídeo) — Sprint 26. Chave estática só serve de bootstrap;
    * o painel admin (`/admin/ai-providers`) pode substituir em runtime (mesmo padrão de
@@ -268,6 +274,8 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const stripeSecretKey = env.STRIPE_SECRET_KEY?.trim() || undefined;
   const stripeWebhookSecret = env.STRIPE_WEBHOOK_SECRET?.trim() || undefined;
   const billingAppBaseUrl = env.APP_BASE_URL?.trim() || "http://localhost:3001";
+  const trialEnabled = env.TRIAL_ENABLED?.trim() === "true";
+  const trialExpirationCheckIntervalMs = parsePositiveInt(env.TRIAL_EXPIRATION_CHECK_INTERVAL_MS) ?? 3_600_000;
   const realExecutionEnabled = env.REAL_EXECUTION_ENABLED?.trim() === "true";
   const realExecutionResearchEnabled = realExecutionEnabled && env.REAL_EXECUTION_RESEARCH_ENABLED?.trim() === "true";
   const realPlanningEnabled = realExecutionEnabled && env.REAL_PLANNING_ENABLED?.trim() === "true";
@@ -420,6 +428,8 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       stripeSecretKey,
       stripeWebhookSecret,
       appBaseUrl: billingAppBaseUrl,
+      trialEnabled,
+      trialExpirationCheckIntervalMs,
     },
     mediaProviders: {
       openaiEnabled,

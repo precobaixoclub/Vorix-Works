@@ -15,6 +15,7 @@ import { buildApiContainer, type ApiContainer } from "./di/container.js";
 import { registerV1Routes } from "./routes/v1/index.js";
 import { registerPublicationScheduler } from "./scheduler/publication-scheduler.js";
 import { registerMetaAdsSyncScheduler } from "./scheduler/meta-ads-sync-scheduler.js";
+import { registerTrialExpirationScheduler } from "./scheduler/trial-expiration-scheduler.js";
 import { registerVersionRoute } from "./routes/version.route.js";
 import { registerWebhookReceiverRoutes } from "./routes/webhook-receiver.route.js";
 import { registerInstagramDmWebhookRoutes } from "./routes/instagram-dm-webhook.route.js";
@@ -124,6 +125,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   registerPublicationScheduler(app, container, { enabled: config.publication.schedulerEnabled, intervalMs: config.publication.schedulerIntervalMs });
   registerMetaAdsSyncScheduler(app, container, { enabled: config.metaAds.syncSchedulerEnabled, intervalMs: config.metaAds.syncSchedulerIntervalMs });
+  registerTrialExpirationScheduler(app, container, { enabled: config.billing.trialEnabled, intervalMs: config.billing.trialExpirationCheckIntervalMs });
 
   return app;
 }

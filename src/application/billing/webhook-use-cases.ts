@@ -88,6 +88,10 @@ async function handleCheckoutCompleted(deps: WebhookUseCaseDeps, event: BillingW
   }
 
   const existing = await deps.subscriptionRepository.getActiveByTenant(tenantId);
+  // Convertendo um trial (com ou sem cartão) em pago: reusa a MESMA Subscription (nunca cria uma
+  // segunda linha) e emite `trial_converted`, não `subscription_created` — o funil de Trial/
+  // Product Analytics depende dessa distinção para calcular trial→paid corretamente.
+  const wasTrial = existing?.status === "trial" || existing?.status === "trial_expired";
   const subscription = existing
     ? await deps.subscriptionRepository.update(existing.id, {
         planVersionId,
@@ -107,7 +111,12 @@ async function handleCheckoutCompleted(deps: WebhookUseCaseDeps, event: BillingW
       });
 
   await syncTenantBilling(deps, { tenantId, planVersionId, status: "active" });
-  await deps.billingEventRepository.record({ tenantId, subscriptionId: subscription.id, eventType: "subscription_created", payload: event.data });
+  await deps.billingEventRepository.record({
+    tenantId,
+    subscriptionId: subscription.id,
+    eventType: wasTrial ? "trial_converted" : "subscription_created",
+    payload: event.data,
+  });
 }
 
 async function handleSubscriptionUpdated(deps: WebhookUseCaseDeps, event: BillingWebhookEvent, deleted: boolean): Promise<void> {

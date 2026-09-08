@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { startCheckout } from "../../../../application/billing/checkout-use-cases.js";
 import type { CheckoutUseCaseDeps } from "../../../../application/billing/checkout-use-cases.js";
+import { startTrial, type TrialUseCaseDeps } from "../../../../application/billing/trial-use-cases.js";
 import type { UserRepositoryPort } from "../../../../application/ports/user-repository.port.js";
 import { BILLING_INTERVALS } from "../../../../domain/platform-billing/subscription.model.js";
 import { PLATFORM_PLAN_CODES } from "../../../../domain/platform-billing/platform-plan-catalog.js";
@@ -24,10 +25,28 @@ function translateCheckoutError(error: unknown): never {
   throw error;
 }
 
+function translateTrialError(error: unknown): never {
+  if (error instanceof Error) {
+    if (error.message.startsWith("TRIAL_PLAN_VERSION_NOT_FOUND")) throw new NotFoundError(error.message);
+    if (error.message.startsWith("TRIAL_ALREADY_HAS_SUBSCRIPTION")) throw new ConflictError(error.message);
+    if (error.message.startsWith("TRIAL_DISABLED") || error.message.startsWith("TRIAL_NOT_AVAILABLE_FOR_PLAN")) {
+      throw new ValidationError(error.message);
+    }
+  }
+  throw error;
+}
+
 export type BillingCheckoutRoutesDeps = CheckoutUseCaseDeps & {
   userRepository: UserRepositoryPort;
   appBaseUrl: string;
 };
+
+const START_TRIAL_BODY_SCHEMA = {
+  type: "object",
+  required: ["planCode"],
+  additionalProperties: false,
+  properties: { planCode: { type: "string", enum: [...PLATFORM_PLAN_CODES] } },
+} as const;
 
 const CHECKOUT_BODY_SCHEMA = {
   type: "object",
@@ -79,5 +98,23 @@ export async function registerBillingCheckoutRoutes(app: FastifyInstance, deps: 
     }).catch(translateCheckoutError);
 
     return successEnvelope(result, request.id);
+  });
+}
+
+export type BillingTrialRoutesDeps = TrialUseCaseDeps;
+
+/**
+ * `POST /v1/billing/start-trial` — Trial + Product Analytics. Trial SEM cartão: cria a
+ * `Subscription` real diretamente (nunca passa por `BillingProviderPort`, não há nada pra cobrar
+ * ainda). `trialEnabled` (kill switch) e `PlanVersion.trialDays` (o plano de fato oferecer trial)
+ * são checagens INDEPENDENTES dentro de `startTrial` — nunca uma substitui a outra.
+ */
+export async function registerBillingTrialRoutes(app: FastifyInstance, deps: BillingTrialRoutesDeps): Promise<void> {
+  app.post("/billing/start-trial", { schema: { body: START_TRIAL_BODY_SCHEMA } }, async (request, reply) => {
+    const principal = requirePrincipal(request);
+    const body = request.body as { planCode: (typeof PLATFORM_PLAN_CODES)[number] };
+    const subscription = await startTrial(deps, { tenantId: principal.tenantId, planCode: body.planCode }).catch(translateTrialError);
+    reply.code(201);
+    return successEnvelope(subscription, request.id);
   });
 }

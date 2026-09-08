@@ -20,6 +20,14 @@ export const PLATFORM_SUBSCRIPTION_STATUSES = [
   "cancelled",
   "expired",
   "suspended",
+  /** Trial + Product Analytics — período de teste terminou sem conversão para pago. Deliberadamente
+   * DISTINTO de `expired` (cancelamento definitivo, exclui a Subscription de `getActiveByTenant`)
+   * e de `suspended` (usado hoje pelo admin para suspensão manual por abuso/inadimplência) — um
+   * tenant com trial vencido continua contável como "não convertido" sem se misturar com esses
+   * dois significados já existentes. Continua "ativo" pra `getActiveByTenant` (nunca some da
+   * Subscription real) e ENTRA no modo somente-leitura já existente (`resolveEffectiveEntitlements`),
+   * nunca uma regra paralela. */
+  "trial_expired",
 ] as const;
 export type PlatformSubscriptionStatus = (typeof PLATFORM_SUBSCRIPTION_STATUSES)[number];
 

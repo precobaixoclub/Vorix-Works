@@ -36,7 +36,12 @@ export async function startCheckout(deps: CheckoutUseCaseDeps, input: StartCheck
   }
 
   const existing = await deps.subscriptionRepository.getActiveByTenant(input.tenantId);
-  if (existing) {
+  // Trial (com ou sem cartão) que ainda não converteu pode ir a checkout normalmente — é assim
+  // que ele vira pago (webhook confirmado atualiza a MESMA Subscription, nunca cria uma segunda).
+  // Qualquer outro status real (`active`/`past_due`) já tem assinatura de verdade — checkout novo
+  // não faz sentido, a troca é via `changePlan`.
+  const isUnconvertedTrial = existing?.status === "trial" || existing?.status === "trial_expired";
+  if (existing && !isUnconvertedTrial) {
     throw new Error("CHECKOUT_ALREADY_SUBSCRIBED: este tenant já tem uma assinatura ativa — use a troca de plano, não um novo checkout.");
   }
 
@@ -74,7 +79,9 @@ export async function startCheckout(deps: CheckoutUseCaseDeps, input: StartCheck
     customerEmail: input.customerEmail,
     successUrl: input.successUrl,
     cancelUrl: input.cancelUrl,
-    trialDays: planVersion.trialDays ?? undefined,
+    // Nunca concede um SEGUNDO trial a quem está convertendo um trial existente (com ou sem
+    // cartão) — o período de teste já foi (ou está sendo) usado.
+    trialDays: isUnconvertedTrial ? undefined : planVersion.trialDays ?? undefined,
     addonPriceRefs,
   });
 

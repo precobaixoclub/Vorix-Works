@@ -34,7 +34,7 @@ import { registerAutomationRulesRoutes } from "./automation-rules.route.js";
 import { registerCommercialMetricsRoutes } from "./commercial-metrics.route.js";
 import { registerBillingEntitlementsRoutes } from "./billing-entitlements.route.js";
 import { registerAdminPlanVersionsRoutes } from "./admin-plan-versions.route.js";
-import { registerBillingCheckoutRoutes } from "./billing-checkout.route.js";
+import { registerBillingCheckoutRoutes, registerBillingTrialRoutes } from "./billing-checkout.route.js";
 import { registerBillingLifecycleRoutes } from "./billing-lifecycle.route.js";
 import { registerBillingOverviewRoutes } from "./billing-overview.route.js";
 import { registerOnboardingRoutes } from "./onboarding.route.js";
@@ -326,6 +326,14 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       subscriptionRepository: identity.subscriptionRepository,
       userRepository: identity.userRepository,
       appBaseUrl: app.zunoConfig.billing.appBaseUrl,
+    });
+    // Trial + Product Analytics — trial sem cartão, mesma Subscription real de qualquer assinatura.
+    await registerBillingTrialRoutes(app, {
+      subscriptionRepository: identity.subscriptionRepository,
+      planVersionRepository: identity.planVersionRepository,
+      platformBillingRepository: identity.platformBillingRepository,
+      billingEventRepository: identity.billingEventRepository,
+      trialEnabled: app.zunoConfig.billing.trialEnabled,
     });
     // SaaS Commercialization (Fase 3) — upgrade/downgrade, add-ons, cancelamento/reativação.
     await registerBillingLifecycleRoutes(app, { ...entitlementDeps, billingProvider: app.zunoContainer.billingProvider, billingEventRepository: identity.billingEventRepository });

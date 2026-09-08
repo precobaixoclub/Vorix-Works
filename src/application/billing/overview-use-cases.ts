@@ -26,6 +26,10 @@ export type BillingOverview = {
   status: PlatformSubscriptionStatus | null;
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: string | null;
+  /** Trial + Product Analytics — `null` fora de trial. `trialDaysRemaining` já vem arredondado
+   * pra cima (nunca mostra "0 dias" enquanto ainda faltarem horas). */
+  trialEnd: string | null;
+  trialDaysRemaining: number | null;
   allowedAddonCodes: readonly string[];
   addons: BillingOverviewAddon[];
   availableAddons: BillingOverviewAvailableAddon[];
@@ -64,6 +68,12 @@ export async function getBillingOverview(deps: BillingOverviewUseCaseDeps, tenan
 
   const recentInvoices = await deps.invoiceRepository.listByTenant(tenantId, 12);
 
+  let trialDaysRemaining: number | null = null;
+  if (subscription?.trialEnd && (subscription.status === "trial" || subscription.status === "trial_expired")) {
+    const msRemaining = new Date(subscription.trialEnd).getTime() - Date.now();
+    trialDaysRemaining = Math.max(0, Math.ceil(msRemaining / (24 * 60 * 60 * 1000)));
+  }
+
   const purchasedCodes = new Set(addons.map((addon) => addon.addonCode));
   const allActiveAddons = await deps.addonDefinitionRepository.listActive();
   const availableAddons: BillingOverviewAvailableAddon[] = allActiveAddons
@@ -79,6 +89,8 @@ export async function getBillingOverview(deps: BillingOverviewUseCaseDeps, tenan
     status: subscription?.status ?? null,
     cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
     currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
+    trialEnd: subscription?.trialEnd ?? null,
+    trialDaysRemaining,
     allowedAddonCodes: planVersion?.allowedAddonCodes ?? [],
     addons,
     availableAddons,

@@ -5,12 +5,12 @@ import {
   login,
   logout,
   refresh,
-  signupPublic,
   switchTenant,
   type IdentityUseCaseDeps,
 } from "../../../../application/identity/index.js";
 import type { PlatformBillingRepositoryPort } from "../../../../application/ports/platform-billing-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
+import { signupPublicTransactional } from "../../../../infrastructure/storage/postgres/signup-public-transactional.js";
 import type { ApiConfig } from "../../config/api-config.js";
 import type { ApiContainer } from "../../di/container.js";
 import { ForbiddenError, NotImplementedError, UnauthorizedError } from "../../http/app-error.js";
@@ -169,21 +169,22 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?
     );
   });
 
-  // Cadastro público (Fase 2). Cria User + Tenant + Workspace + tenant_billing FREE em uma
-  // única chamada, e devolve o mesmo envelope de /auth/login já autenticado. Sem verificação de
-  // email nesta fase — rate limiting HTTP + email opaco error protegem contra abuso básico.
+  // Cadastro público (Fase 2). Cria User + Tenant + Workspace + tenant_billing FREE + a sessão de
+  // login numa única transação real (`signupPublicTransactional`) — uma falha no meio do fluxo
+  // nunca deixa um tenant órfão. Devolve o mesmo envelope de /auth/login já autenticado. Sem
+  // verificação de email nesta fase — rate limiting HTTP + email opaco error protegem contra
+  // abuso básico.
   app.post("/auth/signup", { schema: { body: SIGNUP_BODY_SCHEMA } }, async (request, reply) => {
     const identity = requireIdentity(deps.identity);
-    if (!deps.workspaceRepository) {
-      throw new NotImplementedError("Signup público indisponível: workspaceRepository não configurado.");
-    }
     const body = request.body as { email: string; password: string; name: string; workspaceName?: string };
 
-    const result = await signupPublic(
+    const result = await signupPublicTransactional(
+      identity.pool,
       {
-        ...toUseCaseDeps(identity),
-        workspaceRepository: deps.workspaceRepository,
-        platformBillingRepository: identity.platformBillingRepository,
+        passwordHasher: identity.passwordHasher,
+        jwt: identity.jwt,
+        accessTokenTtlSeconds: identity.accessTokenTtlSeconds,
+        refreshTokenTtlSeconds: identity.refreshTokenTtlSeconds,
         idGenerator: (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
         now: () => new Date(),
       },

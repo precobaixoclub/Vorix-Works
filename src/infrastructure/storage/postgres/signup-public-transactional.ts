@@ -1,0 +1,69 @@
+import type pg from "pg";
+import type { LoginUseCaseOutput } from "../../../application/identity/login.usecase.js";
+import { signupPublic, type SignupPublicUseCaseInput } from "../../../application/identity/signup-public.usecase.js";
+import type { JwtPort } from "../../../application/ports/jwt.port.js";
+import type { PasswordHasherPort } from "../../../application/ports/password-hasher.port.js";
+import { PostgresAuditLogRepository } from "./postgres-audit-log-repository.js";
+import { PostgresPlatformBillingRepository } from "./postgres-platform-billing-repository.js";
+import { PostgresRefreshTokenRepository } from "./postgres-refresh-token-repository.js";
+import { PostgresSessionRepository } from "./postgres-session-repository.js";
+import { PostgresTenantMembershipRepository } from "./postgres-tenant-membership-repository.js";
+import { PostgresUserRepository } from "./postgres-user-repository.js";
+import { PostgresWorkspaceRepository } from "./postgres-workspace-repository.js";
+
+export type SignupPublicTransactionDeps = {
+  passwordHasher: PasswordHasherPort;
+  jwt: JwtPort;
+  accessTokenTtlSeconds: number;
+  refreshTokenTtlSeconds: number;
+  idGenerator: (prefix: string) => string;
+  now?: () => Date;
+};
+
+/**
+ * Envolve `signupPublic` numa transação real (`BEGIN`/`COMMIT`/`ROLLBACK`). `signupPublic` em si
+ * continua agnóstico de Postgres/transação (só enxerga ports) — aqui construímos instâncias
+ * TEMPORÁRIAS dos mesmos repositórios já existentes, todas ligadas a um único `PoolClient`
+ * reservado (que expõe `.query()` com assinatura compatível com `Pool`, e nenhum dos métodos
+ * chamados por `signupPublic`/`login` usa algo além de `.query()`), para que as 4 gravações
+ * (User/Membership/Workspace/tenant_billing) + a sessão de login imediato sejam tudo-ou-nada.
+ * Sem isto, uma falha no meio do fluxo (ex.: `tenant_billing` falhando após o Workspace já
+ * existir) deixava um tenant órfão — risco que fica mais sério a partir do Checkout (Fase 2),
+ * onde este mesmo caminho de provisionamento passa a ser acionado por webhooks de pagamento.
+ */
+export async function signupPublicTransactional(
+  pool: pg.Pool,
+  deps: SignupPublicTransactionDeps,
+  input: SignupPublicUseCaseInput,
+): Promise<LoginUseCaseOutput> {
+  const client = await pool.connect();
+  const txPool = client as unknown as pg.Pool;
+  try {
+    await client.query("begin");
+    const result = await signupPublic(
+      {
+        userRepository: new PostgresUserRepository(txPool),
+        membershipRepository: new PostgresTenantMembershipRepository(txPool),
+        sessionRepository: new PostgresSessionRepository(txPool),
+        refreshTokenRepository: new PostgresRefreshTokenRepository(txPool),
+        auditLog: new PostgresAuditLogRepository(txPool),
+        workspaceRepository: new PostgresWorkspaceRepository(txPool),
+        platformBillingRepository: new PostgresPlatformBillingRepository(txPool),
+        passwordHasher: deps.passwordHasher,
+        jwt: deps.jwt,
+        accessTokenTtlSeconds: deps.accessTokenTtlSeconds,
+        refreshTokenTtlSeconds: deps.refreshTokenTtlSeconds,
+        idGenerator: deps.idGenerator,
+        now: deps.now ?? (() => new Date()),
+      },
+      input,
+    );
+    await client.query("commit");
+    return result;
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}

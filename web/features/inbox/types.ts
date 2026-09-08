@@ -94,3 +94,19 @@ export type InboxMessage = {
   createdAt: string;
   sentAt?: string;
 };
+
+/** Fase 7 (Resultados) — relatório agregado de atendimento (read-only). */
+export type InboxAgentVolume = { userId: string; messageCount: number };
+
+export type InboxMetricsReport = {
+  receivedCount: number;
+  openCount: number;
+  pendingCount: number;
+  resolvedCount: number;
+  backlogCount: number;
+  avgFirstResponseSeconds?: number;
+  avgHandleTimeSeconds?: number;
+  aiResolvedMessageCount: number;
+  humanResolvedMessageCount: number;
+  volumeByAgent: readonly InboxAgentVolume[];
+};

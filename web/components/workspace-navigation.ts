@@ -50,6 +50,10 @@ export const MAIN_NAV_SECTIONS: readonly WorkspaceNavSection[] = [
     items: [
       { href: "/knowledge", label: "Marca", icon: "brand" },
       { href: "/analytics", label: "Analytics", icon: "analytics" },
+      // CRM/Comercial (Fase 7) — atendimento + comercial num só painel, sempre a partir de dados
+      // reais (nunca atribuição de marketing inventada). "Analytics" continua sendo o detalhado
+      // de conteúdo/anúncios — telas complementares, não uma substitui a outra.
+      { href: "/results", label: "Resultados", icon: "results" },
     ],
   },
 ] as const;

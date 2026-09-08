@@ -6,6 +6,7 @@ import type {
   AutomationRule,
   AutomationRunLog,
   AutomationTrigger,
+  CommercialMetricsReport,
   CommercialSuggestion,
   CommercialSuggestionStatus,
   Contact,
@@ -286,4 +287,21 @@ export function deleteAutomationRule(ruleId: string, workspaceId: string): Promi
 
 export function listAutomationRunLogs(ruleId: string, workspaceId: string): Promise<AutomationRunLog[]> {
   return apiClient.get<AutomationRunLog[]>(`/v1/automation-rules/${encodeURIComponent(ruleId)}/run-logs?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Resultados (Fase 7) — métricas comerciais agregadas
+// ---------------------------------------------------------------------------------------------
+
+export type CommercialMetricsParams = { pipelineId?: string; ownerUserId?: string; teamId?: string; origin?: string; dateFrom?: string; dateTo?: string };
+
+export function getCommercialMetrics(workspaceId: string, params?: CommercialMetricsParams): Promise<CommercialMetricsReport> {
+  const query = new URLSearchParams({ workspaceId });
+  if (params?.pipelineId) query.set("pipelineId", params.pipelineId);
+  if (params?.ownerUserId) query.set("ownerUserId", params.ownerUserId);
+  if (params?.teamId) query.set("teamId", params.teamId);
+  if (params?.origin) query.set("origin", params.origin);
+  if (params?.dateFrom) query.set("dateFrom", params.dateFrom);
+  if (params?.dateTo) query.set("dateTo", params.dateTo);
+  return apiClient.get<CommercialMetricsReport>(`/v1/commercial-metrics?${query.toString()}`);
 }

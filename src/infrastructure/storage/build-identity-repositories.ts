@@ -4,6 +4,7 @@ import type { AiProvidersRepositoryPort } from "../../application/ports/ai-provi
 import type { ContactIdentityRepositoryPort } from "../../application/ports/contact-identity-repository.port.js";
 import type { AutomationRuleRepositoryPort } from "../../application/ports/automation-rule-repository.port.js";
 import type { AutomationRunLogRepositoryPort } from "../../application/ports/automation-run-log-repository.port.js";
+import type { CommercialMetricsRepositoryPort } from "../../application/ports/commercial-metrics-repository.port.js";
 import type { CommercialSuggestionRepositoryPort } from "../../application/ports/commercial-suggestion-repository.port.js";
 import type { ContactRepositoryPort } from "../../application/ports/contact-repository.port.js";
 import type { DealRepositoryPort } from "../../application/ports/deal-repository.port.js";
@@ -25,6 +26,7 @@ import { PostgresAuditLogRepository } from "./postgres/postgres-audit-log-reposi
 import { PostgresContactIdentityRepository } from "./postgres/postgres-contact-identity-repository.js";
 import { PostgresAutomationRuleRepository } from "./postgres/postgres-automation-rule-repository.js";
 import { PostgresAutomationRunLogRepository } from "./postgres/postgres-automation-run-log-repository.js";
+import { PostgresCommercialMetricsRepository } from "./postgres/postgres-commercial-metrics-repository.js";
 import { PostgresCommercialSuggestionRepository } from "./postgres/postgres-commercial-suggestion-repository.js";
 import { PostgresContactRepository } from "./postgres/postgres-contact-repository.js";
 import { PostgresDealRepository } from "./postgres/postgres-deal-repository.js";
@@ -76,6 +78,8 @@ export type IdentityRepositories = {
   /** CRM/Comercial (Fase 6) — Regras de automação e seu log de execução. */
   automationRuleRepository: AutomationRuleRepositoryPort;
   automationRunLogRepository: AutomationRunLogRepositoryPort;
+  /** CRM/Comercial (Fase 7) — relatório agregado de resultados comerciais (read-only). */
+  commercialMetricsRepository: CommercialMetricsRepositoryPort;
   pool: InstanceType<typeof Pool>;
 };
 
@@ -105,6 +109,7 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     commercialSuggestionRepository: new PostgresCommercialSuggestionRepository(pool),
     automationRuleRepository: new PostgresAutomationRuleRepository(pool),
     automationRunLogRepository: new PostgresAutomationRunLogRepository(pool),
+    commercialMetricsRepository: new PostgresCommercialMetricsRepository(pool),
     pool,
   };
 }

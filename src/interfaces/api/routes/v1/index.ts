@@ -21,6 +21,7 @@ import { registerYouTubeRoutes } from "./youtube.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
 import { registerInstagramDmRoutes } from "./instagram-dm.route.js";
 import { registerInboxRoutes } from "./inbox.route.js";
+import { registerInboxMetricsRoutes } from "./inbox-metrics.route.js";
 import { registerTeamsRoutes } from "./teams.route.js";
 import { registerTenantMembersRoutes } from "./tenant-members.route.js";
 import { registerContactsRoutes } from "./contacts.route.js";
@@ -30,6 +31,7 @@ import { registerTasksRoutes } from "./tasks.route.js";
 import { registerProductsRoutes } from "./products.route.js";
 import { registerCommercialSuggestionsRoutes } from "./commercial-suggestions.route.js";
 import { registerAutomationRulesRoutes } from "./automation-rules.route.js";
+import { registerCommercialMetricsRoutes } from "./commercial-metrics.route.js";
 import { registerProposalsRoutes } from "./proposals.route.js";
 import { registerPublicProposalsRoutes } from "./public-proposals.route.js";
 import { AiGatewayCommercialCopilotGenerator } from "../../../../infrastructure/ai-gateway/commercial-copilot-generator-adapter.js";
@@ -212,6 +214,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       membershipRepository: app.zunoContainer.identity?.membershipRepository,
       userRepository: app.zunoContainer.identity?.userRepository,
     });
+    // Fase 7 (Resultados) — métricas agregadas de atendimento, mesmo kill switch do módulo.
+    await registerInboxMetricsRoutes(app, { inboxMetricsRepository: app.zunoContainer.inboxMetricsRepository });
   }
   // CRM/Comercial (Fase 1) — sempre postgres-backed (mesmo racional de Identidade); registrado
   // só quando `identity` existe (driver postgres), nunca em modo memória (dev/teste sem banco).
@@ -286,6 +290,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       timelineEventRepository: identity.timelineEventRepository,
       generator: new AiGatewayCommercialCopilotGenerator(app.zunoContainer.aiGateway),
     });
+    // CRM/Comercial (Fase 7) — métricas agregadas de resultados comerciais.
+    await registerCommercialMetricsRoutes(app, { commercialMetricsRepository: identity.commercialMetricsRepository });
   }
   await registerMetaAdsRoutes(app, {
     metaAdsOAuthService: app.zunoContainer.metaAdsOAuthService,

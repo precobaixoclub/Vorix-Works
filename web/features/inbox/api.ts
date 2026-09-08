@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxTenantMember, MessagingConnection } from "./types";
+import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxMetricsReport, InboxTenantMember, MessagingConnection } from "./types";
 
 export function listInboxConnections(workspaceId: string): Promise<{ connections: MessagingConnection[] }> {
   const query = new URLSearchParams({ workspaceId });
@@ -80,4 +80,12 @@ export function sendInboxMessage(workspaceId: string, conversationId: string, bo
  * um parâmetro vindo daqui. */
 export function listInboxMembers(): Promise<{ members: InboxTenantMember[] }> {
   return apiClient.get<{ members: InboxTenantMember[] }>("/v1/inbox/members");
+}
+
+/** Fase 7 (Resultados) — relatório agregado de atendimento. */
+export function getInboxMetrics(workspaceId: string, params?: { dateFrom?: string; dateTo?: string }): Promise<InboxMetricsReport> {
+  const query = new URLSearchParams({ workspaceId });
+  if (params?.dateFrom) query.set("dateFrom", params.dateFrom);
+  if (params?.dateTo) query.set("dateTo", params.dateTo);
+  return apiClient.get<InboxMetricsReport>(`/v1/inbox/metrics?${query.toString()}`);
 }

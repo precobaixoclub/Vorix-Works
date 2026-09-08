@@ -4,6 +4,7 @@ import {
   getContactTimeline,
   getDealsSummary,
   getDealTimeline,
+  getCommercialMetrics,
   getLeadScore,
   listAutomationRules,
   listAutomationRunLogs,
@@ -16,7 +17,7 @@ import {
   listProposals,
   listTasks,
 } from "./api";
-import type { ListDealsParams } from "./api";
+import type { CommercialMetricsParams, ListDealsParams } from "./api";
 import type { CommercialSuggestionStatus, ProposalStatus, TaskStatus } from "./types";
 
 export function useContacts(workspaceId: string, params?: { search?: string; ownerUserId?: string; teamId?: string }) {
@@ -86,4 +87,11 @@ export function useAutomationRules(workspaceId: string) {
 
 export function useAutomationRunLogs(ruleId: string | undefined, workspaceId: string) {
   return useSWR(ruleId ? ["automation-run-logs", ruleId, workspaceId] : null, () => listAutomationRunLogs(ruleId!, workspaceId));
+}
+
+export function useCommercialMetrics(workspaceId: string, params?: CommercialMetricsParams) {
+  return useSWR(
+    ["commercial-metrics", workspaceId, params?.pipelineId, params?.ownerUserId, params?.teamId, params?.origin, params?.dateFrom, params?.dateTo],
+    () => getCommercialMetrics(workspaceId, params),
+  );
 }

@@ -36,6 +36,7 @@ import type { InboxContactRepositoryPort } from "../../../application/ports/inbo
 import type { InboxConversationRepositoryPort } from "../../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxMessageRepositoryPort } from "../../../application/ports/inbox-message-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../../../application/ports/inbox-conversation-event-repository.port.js";
+import type { InboxMetricsRepositoryPort } from "../../../application/ports/inbox-metrics-repository.port.js";
 import type { MessagingProvider } from "../../../application/ports/messaging-provider.port.js";
 import type { OutboundMessageQueuePort } from "../../../application/ports/outbound-message-queue.port.js";
 import type { InboxFeatureFlags } from "../../../application/inbox/inbox-feature-flags.js";
@@ -96,6 +97,7 @@ import type { TenantMemberInviteRepositoryPort } from "../../../application/port
 import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../../application/ports/team-repository.port.js";
 import type { AutomationRuleRepositoryPort } from "../../../application/ports/automation-rule-repository.port.js";
 import type { AutomationRunLogRepositoryPort } from "../../../application/ports/automation-run-log-repository.port.js";
+import type { CommercialMetricsRepositoryPort } from "../../../application/ports/commercial-metrics-repository.port.js";
 import type { CommercialSuggestionRepositoryPort } from "../../../application/ports/commercial-suggestion-repository.port.js";
 import type { ContactRepositoryPort } from "../../../application/ports/contact-repository.port.js";
 import type { ContactIdentityRepositoryPort } from "../../../application/ports/contact-identity-repository.port.js";
@@ -339,6 +341,8 @@ export type ApiContainer = {
   inboxMessageRepository: InboxMessageRepositoryPort;
   /** Fase 4 (Atendimento) — auditoria + timeline de eventos operacionais, ver `db/migrations/0084`. */
   inboxConversationEventRepository: InboxConversationEventRepositoryPort;
+  /** Fase 7 (Resultados) — relatório agregado de atendimento (read-only). */
+  inboxMetricsRepository: InboxMetricsRepositoryPort;
   inboxFeatureFlags: InboxFeatureFlags;
   /** Adapter real (WuzAPI) quando configurado; `FakeMessagingProvider` em dev/teste sem
    * `INBOX_WUZAPI_BASE_URL` — nunca undefined, o módulo sempre tem ALGUM provider funcional. */
@@ -442,6 +446,8 @@ export type ApiContainer = {
     /** CRM/Comercial (Fase 6) — Regras de automação e seu log de execução. */
     automationRuleRepository: AutomationRuleRepositoryPort;
     automationRunLogRepository: AutomationRunLogRepositoryPort;
+    /** CRM/Comercial (Fase 7) — relatório agregado de resultados comerciais (read-only). */
+    commercialMetricsRepository: CommercialMetricsRepositoryPort;
     /** Pool próprio (independente do `pool` de Workspace/Asset/Chat) — ver `buildIdentityRepositories`. Fechado no hook `onClose` também. */
     pool: pg.Pool;
   };

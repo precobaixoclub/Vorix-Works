@@ -36,6 +36,7 @@ import type { InboxContactRepositoryPort } from "../../application/ports/inbox-c
 import type { InboxConversationRepositoryPort } from "../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxMessageRepositoryPort } from "../../application/ports/inbox-message-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../../application/ports/inbox-conversation-event-repository.port.js";
+import type { InboxMetricsRepositoryPort } from "../../application/ports/inbox-metrics-repository.port.js";
 import type { QualityFeedbackRepositoryPort } from "../../application/quality-feedback/quality-feedback-repository.port.js";
 import type { OperationalAuditRepositoryPort } from "../../application/ports/operational-audit-repository.port.js";
 import type { OperationalStateRepositoryPort } from "../../application/ports/operational-state-repository.port.js";
@@ -121,6 +122,8 @@ import { PostgresInboxContactRepository } from "./postgres/postgres-inbox-contac
 import { PostgresInboxConversationRepository } from "./postgres/postgres-inbox-conversation-repository.js";
 import { PostgresInboxMessageRepository } from "./postgres/postgres-inbox-message-repository.js";
 import { PostgresInboxConversationEventRepository } from "./postgres/postgres-inbox-conversation-event-repository.js";
+import { PostgresInboxMetricsRepository } from "./postgres/postgres-inbox-metrics-repository.js";
+import { InMemoryInboxMetricsRepository } from "./in-memory-inbox-metrics-repository.js";
 import { PostgresQualityFeedbackRepository } from "./postgres/postgres-quality-feedback-repository.js";
 import { PostgresBriefingFieldValueRepository } from "./postgres/postgres-briefing-field-value-repository.js";
 import { PostgresBriefingQuestionRepository } from "./postgres/postgres-briefing-question-repository.js";
@@ -223,6 +226,8 @@ export type PlatformRepositories = {
   inboxMessageRepository: InboxMessageRepositoryPort;
   /** Módulo Conversas (Fase 4 — Atendimento) — ver `db/migrations/0084`. */
   inboxConversationEventRepository: InboxConversationEventRepositoryPort;
+  /** Módulo Conversas (Fase 7) — relatório agregado de atendimento (read-only). */
+  inboxMetricsRepository: InboxMetricsRepositoryPort;
   /** Só existe quando `driver === "postgres"` — quem chama esta função é responsável por fechar (`pool.end()`) no shutdown. */
   pool?: InstanceType<typeof Pool>;
 };
@@ -292,6 +297,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       inboxConversationRepository: new InMemoryInboxConversationRepository(inboxContactRepository),
       inboxMessageRepository: new InMemoryInboxMessageRepository(),
       inboxConversationEventRepository: new InMemoryInboxConversationEventRepository(),
+      inboxMetricsRepository: new InMemoryInboxMetricsRepository(),
     };
   }
 
@@ -352,6 +358,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     inboxConversationRepository: new PostgresInboxConversationRepository(pool),
     inboxMessageRepository: new PostgresInboxMessageRepository(pool),
     inboxConversationEventRepository: new PostgresInboxConversationEventRepository(pool),
+    inboxMetricsRepository: new PostgresInboxMetricsRepository(pool),
     pool,
   };
 }

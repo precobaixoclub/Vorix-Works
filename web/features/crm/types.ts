@@ -173,6 +173,28 @@ export type LeadScore = {
 export type CommercialSuggestionAction = "follow_up_task" | "reach_out" | "review_deal_stage" | "send_proposal" | "none";
 export type CommercialSuggestionStatus = "pending" | "accepted" | "dismissed";
 
+export type StageAging = { stageId: string; stageName: string; openCount: number; avgDaysInStage: number };
+export type LossReasonBreakdown = { reason: string; count: number };
+export type OriginRevenue = { origin: string; wonCount: number; wonValueCents: number };
+
+export type CommercialMetricsReport = {
+  dealsCreatedCount: number;
+  openPipelineValueCents: number;
+  wonCount: number;
+  wonValueCents: number;
+  lostCount: number;
+  conversionRate?: number;
+  avgTicketCents?: number;
+  avgCycleDays?: number;
+  proposalsSentCount: number;
+  proposalsAcceptedCount: number;
+  proposalAcceptRate?: number;
+  dealsWithoutNextActionCount: number;
+  stageAging: readonly StageAging[];
+  lossReasons: readonly LossReasonBreakdown[];
+  revenueByOrigin: readonly OriginRevenue[];
+};
+
 export type AutomationTrigger = "deal_stage_changed" | "contact_created" | "proposal_accepted" | "proposal_rejected";
 export type AutomationConditionField = "pipelineId" | "stageId" | "origin" | "tag";
 export type AutomationActionType = "create_task" | "add_tag" | "assign_owner" | "assign_owner_least_loaded_in_team" | "move_deal_stage";

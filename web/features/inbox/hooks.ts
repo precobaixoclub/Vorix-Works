@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { getApiBaseUrl } from "@/lib/api-error";
 import { getAccessToken } from "@/lib/auth-token";
-import { listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers } from "./api";
+import { getInboxMetrics, listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers } from "./api";
 import type { InboxConversationFilter } from "./types";
 
 /**
@@ -11,6 +11,10 @@ import type { InboxConversationFilter } from "./types";
  */
 export function useInboxConnections(workspaceId: string) {
   return useSWR(["inbox-connections", workspaceId], () => listInboxConnections(workspaceId), { refreshInterval: 30_000 });
+}
+
+export function useInboxMetrics(workspaceId: string, params?: { dateFrom?: string; dateTo?: string }) {
+  return useSWR(["inbox-metrics", workspaceId, params?.dateFrom, params?.dateTo], () => getInboxMetrics(workspaceId, params));
 }
 
 export function useInboxConversations(workspaceId: string, filter: InboxConversationFilter = "all") {

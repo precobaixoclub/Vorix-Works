@@ -1,9 +1,11 @@
 import type pg from "pg";
+import { ensureDefaultPipeline } from "../../../application/crm/pipeline-use-cases.js";
 import type { LoginUseCaseOutput } from "../../../application/identity/login.usecase.js";
 import { signupPublic, type SignupPublicUseCaseInput } from "../../../application/identity/signup-public.usecase.js";
 import type { JwtPort } from "../../../application/ports/jwt.port.js";
 import type { PasswordHasherPort } from "../../../application/ports/password-hasher.port.js";
 import { PostgresAuditLogRepository } from "./postgres-audit-log-repository.js";
+import { PostgresPipelineRepository, PostgresPipelineStageRepository } from "./postgres-pipeline-repository.js";
 import { PostgresPlatformBillingRepository } from "./postgres-platform-billing-repository.js";
 import { PostgresRefreshTokenRepository } from "./postgres-refresh-token-repository.js";
 import { PostgresSessionRepository } from "./postgres-session-repository.js";
@@ -30,6 +32,12 @@ export type SignupPublicTransactionDeps = {
  * Sem isto, uma falha no meio do fluxo (ex.: `tenant_billing` falhando após o Workspace já
  * existir) deixava um tenant órfão — risco que fica mais sério a partir do Checkout (Fase 2),
  * onde este mesmo caminho de provisionamento passa a ser acionado por webhooks de pagamento.
+ *
+ * Fase 5 (Onboarding) — logo após o Workspace nascer, provisiona o Pipeline padrão + etapas
+ * (`ensureDefaultPipeline`, já existente desde o CRM/Comercial Fase 2 mas nunca antes acionado em
+ * lugar nenhum) na MESMA transação: um tenant novo já abre o CRM com um funil de vendas pronto,
+ * em vez de uma tela vazia. Reusa a entidade existente — não inventa um conceito novo de "template
+ * de onboarding" para isto.
  */
 export async function signupPublicTransactional(
   pool: pg.Pool,
@@ -58,6 +66,16 @@ export async function signupPublicTransactional(
       },
       input,
     );
+
+    const [workspace] = await new PostgresWorkspaceRepository(txPool).listByTenant(result.tenantId);
+    if (workspace) {
+      await ensureDefaultPipeline(
+        { pipelineRepository: new PostgresPipelineRepository(txPool), pipelineStageRepository: new PostgresPipelineStageRepository(txPool) },
+        result.tenantId,
+        workspace.id,
+      );
+    }
+
     await client.query("commit");
     return result;
   } catch (error) {

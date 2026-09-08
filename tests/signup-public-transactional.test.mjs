@@ -58,6 +58,15 @@ test("signupPublicTransactional: cria User + Membership + Workspace + tenant_bil
 
   const billing = await db.pool.query("select plan_code from tenant_billing where tenant_id = $1", [result.tenantId]);
   assert.equal(billing.rows.length, 1);
+
+  // Fase 5 (Onboarding) — todo tenant novo já abre o CRM com um pipeline de vendas pronto.
+  const pipelines = await db.pool.query("select id, name, is_default from pipelines where tenant_id = $1", [result.tenantId]);
+  assert.equal(pipelines.rows.length, 1);
+  assert.equal(pipelines.rows[0].is_default, true);
+  const stages = await db.pool.query("select name, is_won, is_lost from pipeline_stages where pipeline_id = $1 order by position asc", [pipelines.rows[0].id]);
+  assert.equal(stages.rows.length, 6, "6 etapas padrão (Novo, Contato Feito, Proposta Enviada, Negociação, Ganho, Perdido)");
+  assert.equal(stages.rows.at(-2).is_won, true);
+  assert.equal(stages.rows.at(-1).is_lost, true);
 });
 
 test("signupPublicTransactional: falha depois de User/Membership/Workspace gravados desfaz TUDO (não deixa tenant órfão)", async () => {

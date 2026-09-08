@@ -11,6 +11,8 @@ export type NavIconId =
   | "conversas"
   | "contacts"
   | "deals"
+  | "tasks"
+  | "proposals"
   | "brand"
   | "analytics"
   | "settings"
@@ -116,6 +118,20 @@ export function NavIcon({ id, className = "h-[18px] w-[18px]" }: { id: NavIconId
           <rect x="2.2" y="2.6" width="3.4" height="10.8" rx="1" {...stroke} />
           <rect x="6.3" y="5.2" width="3.4" height="8.2" rx="1" {...stroke} />
           <rect x="10.4" y="7.8" width="3.4" height="5.6" rx="1" {...stroke} />
+        </svg>
+      );
+    case "tasks":
+      return (
+        <svg {...shared}>
+          <rect x="2.6" y="2.6" width="10.8" height="10.8" rx="1.6" {...stroke} />
+          <path d="M5.4 8l1.8 1.8L10.6 6" {...stroke} />
+        </svg>
+      );
+    case "proposals":
+      return (
+        <svg {...shared}>
+          <path d="M4.2 2.4h6l2.6 2.6v8.6a1 1 0 01-1 1H4.2a1 1 0 01-1-1V3.4a1 1 0 011-1z" {...stroke} strokeLinejoin="round" />
+          <path d="M5.8 7.4h4.4M5.8 9.8h4.4M5.8 12.2h2.6" {...stroke} />
         </svg>
       );
     case "brand":

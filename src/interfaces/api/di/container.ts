@@ -98,6 +98,9 @@ import type { ContactRepositoryPort } from "../../../application/ports/contact-r
 import type { ContactIdentityRepositoryPort } from "../../../application/ports/contact-identity-repository.port.js";
 import type { DealRepositoryPort } from "../../../application/ports/deal-repository.port.js";
 import type { PipelineRepositoryPort, PipelineStageRepositoryPort } from "../../../application/ports/pipeline-repository.port.js";
+import type { ProductRepositoryPort } from "../../../application/ports/product-repository.port.js";
+import type { ProposalRepositoryPort } from "../../../application/ports/proposal-repository.port.js";
+import type { TaskRepositoryPort } from "../../../application/ports/task-repository.port.js";
 import type { TimelineEventRepositoryPort } from "../../../application/ports/timeline-event-repository.port.js";
 import type { UserRepositoryPort } from "../../../application/ports/user-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../../../application/ports/workspace-repository.port.js";
@@ -423,6 +426,10 @@ export type ApiContainer = {
     pipelineRepository: PipelineRepositoryPort;
     pipelineStageRepository: PipelineStageRepositoryPort;
     dealRepository: DealRepositoryPort;
+    /** CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público). */
+    taskRepository: TaskRepositoryPort;
+    productRepository: ProductRepositoryPort;
+    proposalRepository: ProposalRepositoryPort;
     /** Pool próprio (independente do `pool` de Workspace/Asset/Chat) — ver `buildIdentityRepositories`. Fechado no hook `onClose` também. */
     pool: pg.Pool;
   };

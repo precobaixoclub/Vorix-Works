@@ -1,5 +1,21 @@
 import { apiClient } from "@/lib/api-client";
-import type { Contact, ContactChannel, ContactIdentity, Deal, DealStageSummary, Pipeline, PipelineStage, TimelineEvent } from "./types";
+import type {
+  Contact,
+  ContactChannel,
+  ContactIdentity,
+  Deal,
+  DealStageSummary,
+  Pipeline,
+  PipelineStage,
+  Product,
+  Proposal,
+  ProposalStatus,
+  ProposalWithToken,
+  Task,
+  TaskStatus,
+  TaskType,
+  TimelineEvent,
+} from "./types";
 
 export type CreateContactInput = {
   workspaceId: string;
@@ -103,4 +119,101 @@ export function moveDealStage(dealId: string, workspaceId: string, stageId: stri
 
 export function getDealTimeline(dealId: string, workspaceId: string): Promise<TimelineEvent[]> {
   return apiClient.get<TimelineEvent[]>(`/v1/deals/${encodeURIComponent(dealId)}/timeline?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Tarefas / Produtos / Propostas (Fase 3 — Execução Comercial)
+// ---------------------------------------------------------------------------------------------
+
+export type CreateTaskInput = {
+  workspaceId: string;
+  contactId?: string;
+  dealId?: string;
+  type: TaskType;
+  title: string;
+  description?: string;
+  dueAt?: string;
+  ownerUserId?: string;
+  teamId?: string;
+};
+
+export function listTasks(workspaceId: string, params?: { contactId?: string; dealId?: string; ownerUserId?: string; status?: TaskStatus }): Promise<Task[]> {
+  const query = new URLSearchParams({ workspaceId });
+  if (params?.contactId) query.set("contactId", params.contactId);
+  if (params?.dealId) query.set("dealId", params.dealId);
+  if (params?.ownerUserId) query.set("ownerUserId", params.ownerUserId);
+  if (params?.status) query.set("status", params.status);
+  return apiClient.get<Task[]>(`/v1/tasks?${query.toString()}`);
+}
+
+export function createTask(input: CreateTaskInput): Promise<Task> {
+  return apiClient.post<Task>("/v1/tasks", input);
+}
+
+export function updateTask(taskId: string, workspaceId: string, patch: Partial<Omit<CreateTaskInput, "workspaceId">>): Promise<Task> {
+  return apiClient.patch<Task>(`/v1/tasks/${encodeURIComponent(taskId)}`, { workspaceId, ...patch });
+}
+
+export function completeTask(taskId: string, workspaceId: string): Promise<Task> {
+  return apiClient.post<Task>(`/v1/tasks/${encodeURIComponent(taskId)}/complete`, { workspaceId });
+}
+
+export function cancelTask(taskId: string, workspaceId: string): Promise<Task> {
+  return apiClient.post<Task>(`/v1/tasks/${encodeURIComponent(taskId)}/cancel`, { workspaceId });
+}
+
+export type CreateProductInput = { workspaceId: string; name: string; description?: string; priceCents: number; currency?: string };
+
+export function listProducts(workspaceId: string, params?: { search?: string; activeOnly?: boolean }): Promise<Product[]> {
+  const query = new URLSearchParams({ workspaceId });
+  if (params?.search) query.set("search", params.search);
+  if (params?.activeOnly) query.set("activeOnly", "true");
+  return apiClient.get<Product[]>(`/v1/products?${query.toString()}`);
+}
+
+export function createProduct(input: CreateProductInput): Promise<Product> {
+  return apiClient.post<Product>("/v1/products", input);
+}
+
+export function updateProduct(productId: string, workspaceId: string, patch: Partial<Omit<CreateProductInput, "workspaceId">> & { active?: boolean }): Promise<Product> {
+  return apiClient.patch<Product>(`/v1/products/${encodeURIComponent(productId)}`, { workspaceId, ...patch });
+}
+
+export function deleteProduct(productId: string, workspaceId: string): Promise<void> {
+  return apiClient.delete<void>(`/v1/products/${encodeURIComponent(productId)}?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+export type CreateProposalInput = {
+  workspaceId: string;
+  dealId?: string;
+  contactId?: string;
+  title: string;
+  items: ReadonlyArray<{ productId?: string; name: string; quantity: number; unitPriceCents: number }>;
+  discountCents?: number;
+  validUntil?: string;
+  conditions?: string;
+};
+
+export function listProposals(workspaceId: string, params?: { dealId?: string; contactId?: string; status?: ProposalStatus }): Promise<Proposal[]> {
+  const query = new URLSearchParams({ workspaceId });
+  if (params?.dealId) query.set("dealId", params.dealId);
+  if (params?.contactId) query.set("contactId", params.contactId);
+  if (params?.status) query.set("status", params.status);
+  return apiClient.get<Proposal[]>(`/v1/proposals?${query.toString()}`);
+}
+
+export function createProposal(input: CreateProposalInput): Promise<ProposalWithToken> {
+  return apiClient.post<ProposalWithToken>("/v1/proposals", input);
+}
+
+export function updateProposal(proposalId: string, workspaceId: string, patch: Partial<Omit<CreateProposalInput, "workspaceId">>): Promise<Proposal> {
+  return apiClient.patch<Proposal>(`/v1/proposals/${encodeURIComponent(proposalId)}`, { workspaceId, ...patch });
+}
+
+export function sendProposal(proposalId: string, workspaceId: string): Promise<Proposal> {
+  return apiClient.post<Proposal>(`/v1/proposals/${encodeURIComponent(proposalId)}/send`, { workspaceId });
+}
+
+export function getProposalTimeline(proposalId: string, workspaceId: string): Promise<TimelineEvent[]> {
+  return apiClient.get<TimelineEvent[]>(`/v1/proposals/${encodeURIComponent(proposalId)}/timeline?workspaceId=${encodeURIComponent(workspaceId)}`);
 }

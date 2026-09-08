@@ -7,7 +7,10 @@ import type { DealRepositoryPort } from "../../application/ports/deal-repository
 import type { PipelineRepositoryPort, PipelineStageRepositoryPort } from "../../application/ports/pipeline-repository.port.js";
 import type { PlatformAiSettingsRepositoryPort } from "../../application/ports/platform-ai-settings-repository.port.js";
 import type { PlatformBillingRepositoryPort } from "../../application/ports/platform-billing-repository.port.js";
+import type { ProductRepositoryPort } from "../../application/ports/product-repository.port.js";
+import type { ProposalRepositoryPort } from "../../application/ports/proposal-repository.port.js";
 import type { RefreshTokenRepositoryPort } from "../../application/ports/refresh-token-repository.port.js";
+import type { TaskRepositoryPort } from "../../application/ports/task-repository.port.js";
 import type { SessionRepositoryPort } from "../../application/ports/session-repository.port.js";
 import type { TeamMembershipRepositoryPort, TeamRepositoryPort } from "../../application/ports/team-repository.port.js";
 import type { TenantMemberInviteRepositoryPort } from "../../application/ports/tenant-member-invite-repository.port.js";
@@ -22,7 +25,10 @@ import { PostgresDealRepository } from "./postgres/postgres-deal-repository.js";
 import { PostgresPipelineRepository, PostgresPipelineStageRepository } from "./postgres/postgres-pipeline-repository.js";
 import { PostgresPlatformAiSettingsRepository } from "./postgres/postgres-platform-ai-settings-repository.js";
 import { PostgresPlatformBillingRepository } from "./postgres/postgres-platform-billing-repository.js";
+import { PostgresProductRepository } from "./postgres/postgres-product-repository.js";
+import { PostgresProposalRepository } from "./postgres/postgres-proposal-repository.js";
 import { PostgresRefreshTokenRepository } from "./postgres/postgres-refresh-token-repository.js";
+import { PostgresTaskRepository } from "./postgres/postgres-task-repository.js";
 import { PostgresSessionRepository } from "./postgres/postgres-session-repository.js";
 import { PostgresTeamMembershipRepository, PostgresTeamRepository } from "./postgres/postgres-team-repository.js";
 import { PostgresTenantMemberInviteRepository } from "./postgres/postgres-tenant-member-invite-repository.js";
@@ -55,6 +61,10 @@ export type IdentityRepositories = {
   pipelineRepository: PipelineRepositoryPort;
   pipelineStageRepository: PipelineStageRepositoryPort;
   dealRepository: DealRepositoryPort;
+  /** CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público). */
+  taskRepository: TaskRepositoryPort;
+  productRepository: ProductRepositoryPort;
+  proposalRepository: ProposalRepositoryPort;
   pool: InstanceType<typeof Pool>;
 };
 
@@ -78,6 +88,9 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     pipelineRepository: new PostgresPipelineRepository(pool),
     pipelineStageRepository: new PostgresPipelineStageRepository(pool),
     dealRepository: new PostgresDealRepository(pool),
+    taskRepository: new PostgresTaskRepository(pool),
+    productRepository: new PostgresProductRepository(pool),
+    proposalRepository: new PostgresProposalRepository(pool),
     pool,
   };
 }

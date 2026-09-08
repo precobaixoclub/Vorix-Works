@@ -26,6 +26,10 @@ import { registerTenantMembersRoutes } from "./tenant-members.route.js";
 import { registerContactsRoutes } from "./contacts.route.js";
 import { registerPipelinesRoutes } from "./pipelines.route.js";
 import { registerDealsRoutes } from "./deals.route.js";
+import { registerTasksRoutes } from "./tasks.route.js";
+import { registerProductsRoutes } from "./products.route.js";
+import { registerProposalsRoutes } from "./proposals.route.js";
+import { registerPublicProposalsRoutes } from "./public-proposals.route.js";
 import { registerMetaAdsRoutes } from "./meta-ads.route.js";
 import { registerMetaAdCampaignsRoutes } from "./meta-ad-campaigns.route.js";
 import { registerMetaAudiencesRoutes } from "./meta-audiences.route.js";
@@ -230,6 +234,16 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       dealRepository: identity.dealRepository,
       pipelineStageRepository: identity.pipelineStageRepository,
       timelineEventRepository: identity.timelineEventRepository,
+    });
+    // CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público).
+    await registerTasksRoutes(app, { taskRepository: identity.taskRepository, timelineEventRepository: identity.timelineEventRepository });
+    await registerProductsRoutes(app, { productRepository: identity.productRepository });
+    await registerProposalsRoutes(app, { proposalRepository: identity.proposalRepository, timelineEventRepository: identity.timelineEventRepository });
+    await registerPublicProposalsRoutes(app, {
+      proposalRepository: identity.proposalRepository,
+      timelineEventRepository: identity.timelineEventRepository,
+      dealRepository: identity.dealRepository,
+      pipelineStageRepository: identity.pipelineStageRepository,
     });
   }
   await registerMetaAdsRoutes(app, {

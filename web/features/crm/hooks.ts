@@ -1,6 +1,19 @@
 import useSWR from "swr";
-import { getContact, getContactTimeline, getDealsSummary, getDealTimeline, listContacts, listDeals, listPipelines, listPipelineStages } from "./api";
+import {
+  getContact,
+  getContactTimeline,
+  getDealsSummary,
+  getDealTimeline,
+  listContacts,
+  listDeals,
+  listPipelines,
+  listPipelineStages,
+  listProducts,
+  listProposals,
+  listTasks,
+} from "./api";
 import type { ListDealsParams } from "./api";
+import type { ProposalStatus, TaskStatus } from "./types";
 
 export function useContacts(workspaceId: string, params?: { search?: string; ownerUserId?: string; teamId?: string }) {
   return useSWR(["contacts", workspaceId, params?.search, params?.ownerUserId, params?.teamId], () => listContacts(workspaceId, params));
@@ -38,4 +51,19 @@ export function useDealsSummary(workspaceId: string, pipelineId: string | undefi
 
 export function useDealTimeline(dealId: string | undefined, workspaceId: string) {
   return useSWR(dealId ? ["deal-timeline", dealId, workspaceId] : null, () => getDealTimeline(dealId!, workspaceId));
+}
+
+export function useTasks(workspaceId: string, params?: { contactId?: string; dealId?: string; ownerUserId?: string; status?: TaskStatus }) {
+  return useSWR(
+    ["tasks", workspaceId, params?.contactId, params?.dealId, params?.ownerUserId, params?.status],
+    () => listTasks(workspaceId, params),
+  );
+}
+
+export function useProducts(workspaceId: string, params?: { search?: string; activeOnly?: boolean }) {
+  return useSWR(["products", workspaceId, params?.search, params?.activeOnly], () => listProducts(workspaceId, params));
+}
+
+export function useProposals(workspaceId: string, params?: { dealId?: string; contactId?: string; status?: ProposalStatus }) {
+  return useSWR(["proposals", workspaceId, params?.dealId, params?.contactId, params?.status], () => listProposals(workspaceId, params));
 }

@@ -88,3 +88,71 @@ export type DealStageSummary = {
   count: number;
   valueCentsSum: number;
 };
+
+export type TaskType = "ligacao" | "whatsapp" | "reuniao" | "enviar_proposta" | "follow_up" | "personalizada";
+export type TaskStatus = "pending" | "done" | "cancelled";
+
+export type Task = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  contactId?: string;
+  dealId?: string;
+  type: TaskType;
+  title: string;
+  description?: string;
+  dueAt?: string;
+  status: TaskStatus;
+  ownerUserId?: string;
+  teamId?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Product = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  name: string;
+  description?: string;
+  priceCents: number;
+  currency: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProposalItem = {
+  productId?: string;
+  name: string;
+  quantity: number;
+  unitPriceCents: number;
+  subtotalCents: number;
+};
+
+export type ProposalStatus = "draft" | "sent" | "viewed" | "accepted" | "rejected" | "expired";
+
+export type Proposal = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  dealId?: string;
+  contactId?: string;
+  title: string;
+  items: readonly ProposalItem[];
+  discountCents: number;
+  totalCents: number;
+  currency: string;
+  validUntil?: string;
+  conditions?: string;
+  status: ProposalStatus;
+  publicTokenHash: string;
+  sentAt?: string;
+  viewedAt?: string;
+  respondedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProposalWithToken = Proposal & { publicToken: string };

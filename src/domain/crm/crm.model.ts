@@ -124,3 +124,82 @@ export type DealStageSummary = {
   count: number;
   valueCentsSum: number;
 };
+
+/**
+ * CRM — Fase 3 (Execução Comercial). `Task` é o lembrete de próximo passo (ligar, enviar
+ * proposta...), sempre ligado opcionalmente a um `Contact`/`Deal` — nunca obrigatório, uma tarefa
+ * solta também é válida. `Product` é um catálogo simples de preço (SEM estoque — fora de escopo,
+ * ver auditoria seção "o que não construir"). `Proposal` tem itens congelados no momento do envio
+ * (nome/preço snapshot, nunca uma referência viva ao `Product` que pode mudar de preço depois) e
+ * um token público de acesso — só o HASH é persistido (`publicTokenHash`), o token bruto só existe
+ * na resposta de criação/reenvio, nunca no banco (mesmo padrão de `TenantMemberInvite.tokenHash`).
+ */
+export const TASK_TYPES = ["ligacao", "whatsapp", "reuniao", "enviar_proposta", "follow_up", "personalizada"] as const;
+export type TaskType = (typeof TASK_TYPES)[number];
+
+export const TASK_STATUSES = ["pending", "done", "cancelled"] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+export type Task = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  contactId?: string;
+  dealId?: string;
+  type: TaskType;
+  title: string;
+  description?: string;
+  dueAt?: string;
+  status: TaskStatus;
+  ownerUserId?: string;
+  teamId?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Product = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  name: string;
+  description?: string;
+  priceCents: number;
+  currency: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProposalItem = {
+  productId?: string;
+  name: string;
+  quantity: number;
+  unitPriceCents: number;
+  subtotalCents: number;
+};
+
+export const PROPOSAL_STATUSES = ["draft", "sent", "viewed", "accepted", "rejected", "expired"] as const;
+export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
+
+export type Proposal = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  dealId?: string;
+  contactId?: string;
+  title: string;
+  items: readonly ProposalItem[];
+  discountCents: number;
+  totalCents: number;
+  currency: string;
+  validUntil?: string;
+  conditions?: string;
+  status: ProposalStatus;
+  publicTokenHash: string;
+  sentAt?: string;
+  viewedAt?: string;
+  respondedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};

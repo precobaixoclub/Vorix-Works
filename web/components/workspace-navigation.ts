@@ -39,6 +39,9 @@ export const MAIN_NAV_SECTIONS: readonly WorkspaceNavSection[] = [
       { href: "/contacts", label: "Contatos", icon: "contacts" },
       // CRM/Comercial (Fase 2) — Kanban de negócios (pipelines/etapas configuráveis).
       { href: "/deals", label: "Negócios", icon: "deals" },
+      // CRM/Comercial (Fase 3) — Execução comercial: tarefas de follow-up e propostas com link público.
+      { href: "/tasks", label: "Tarefas", icon: "tasks" },
+      { href: "/proposals", label: "Propostas", icon: "proposals" },
       { href: "/connections", label: "Conexões", icon: "connections" },
     ],
   },

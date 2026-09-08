@@ -66,6 +66,10 @@ function buildFilterConditions(filter: ListDealsFilter, params: unknown[]): stri
     params.push(filter.stageId);
     conditions.push(`stage_id = $${params.length}`);
   }
+  if (filter.contactId) {
+    params.push(filter.contactId);
+    conditions.push(`contact_id = $${params.length}`);
+  }
   if (filter.ownerUserId) {
     params.push(filter.ownerUserId);
     conditions.push(`owner_user_id = $${params.length}`);

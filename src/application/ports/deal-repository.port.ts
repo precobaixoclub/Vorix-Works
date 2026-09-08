@@ -31,6 +31,7 @@ export type ListDealsFilter = {
   workspaceId: string;
   pipelineId?: string;
   stageId?: string;
+  contactId?: string;
   ownerUserId?: string;
   teamId?: string;
   origin?: string;

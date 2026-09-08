@@ -66,12 +66,13 @@ export function listPipelineStages(pipelineId: string, workspaceId: string): Pro
   return apiClient.get<PipelineStage[]>(`/v1/pipelines/${encodeURIComponent(pipelineId)}/stages?workspaceId=${encodeURIComponent(workspaceId)}`);
 }
 
-export type ListDealsParams = { pipelineId?: string; stageId?: string; ownerUserId?: string; teamId?: string; origin?: string; search?: string };
+export type ListDealsParams = { pipelineId?: string; stageId?: string; contactId?: string; ownerUserId?: string; teamId?: string; origin?: string; search?: string };
 
 export function listDeals(workspaceId: string, params?: ListDealsParams): Promise<Deal[]> {
   const query = new URLSearchParams({ workspaceId });
   if (params?.pipelineId) query.set("pipelineId", params.pipelineId);
   if (params?.stageId) query.set("stageId", params.stageId);
+  if (params?.contactId) query.set("contactId", params.contactId);
   if (params?.ownerUserId) query.set("ownerUserId", params.ownerUserId);
   if (params?.teamId) query.set("teamId", params.teamId);
   if (params?.origin) query.set("origin", params.origin);

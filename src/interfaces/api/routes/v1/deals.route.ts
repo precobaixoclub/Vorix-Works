@@ -20,6 +20,7 @@ const LIST_QUERY_SCHEMA = {
     workspaceId: { type: "string", minLength: 1 },
     pipelineId: { type: "string" },
     stageId: { type: "string" },
+    contactId: { type: "string" },
     ownerUserId: { type: "string" },
     teamId: { type: "string" },
     origin: { type: "string" },
@@ -98,7 +99,7 @@ function translateDealError(error: unknown): never {
 export async function registerDealsRoutes(app: FastifyInstance, deps: DealUseCaseDeps): Promise<void> {
   app.get("/deals", { schema: { querystring: LIST_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "deal:read");
-    const query = request.query as { workspaceId: string; pipelineId?: string; stageId?: string; ownerUserId?: string; teamId?: string; origin?: string; search?: string; cursor?: string; limit?: number };
+    const query = request.query as { workspaceId: string; pipelineId?: string; stageId?: string; contactId?: string; ownerUserId?: string; teamId?: string; origin?: string; search?: string; cursor?: string; limit?: number };
     const deals = await listDeals(deps, { tenantId: principal.tenantId, ...query });
     return successEnvelope(deals, request.id);
   });

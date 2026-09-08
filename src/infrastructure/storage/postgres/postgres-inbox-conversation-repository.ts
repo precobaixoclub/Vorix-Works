@@ -71,15 +71,15 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     }
     // Join com inbox_contacts só pra listagem (read-model, Fase 3) — evita a Inbox ter que fazer
     // uma segunda chamada por conversa só pra saber o nome/telefone de quem está do outro lado.
-    const result = await this.pool.query<Row & { contact_name: string | null; contact_phone: string }>(
-      `select c.*, ct.name as contact_name, ct.phone_normalized as contact_phone
+    const result = await this.pool.query<Row & { contact_name: string | null; contact_phone: string; crm_contact_id: string | null }>(
+      `select c.*, ct.name as contact_name, ct.phone_normalized as contact_phone, ct.contact_id as crm_contact_id
        from inbox_conversations c
        join inbox_contacts ct on ct.id = c.contact_id
        where ${conditions.join(" and ")}
        order by coalesce(c.last_message_at, c.created_at) desc`,
       params,
     );
-    return result.rows.map((row) => ({ ...this.toDomain(row), contactName: row.contact_name ?? undefined, contactPhone: row.contact_phone }));
+    return result.rows.map((row) => ({ ...this.toDomain(row), contactName: row.contact_name ?? undefined, contactPhone: row.contact_phone, crmContactId: row.crm_contact_id ?? undefined }));
   }
 
   async markLastMessage(id: string, input: { lastMessageAt: string; incrementUnread: boolean }): Promise<void> {

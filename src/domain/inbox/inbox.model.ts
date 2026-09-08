@@ -68,6 +68,10 @@ export type InboxContact = {
   profilePictureUrl?: string;
   externalId?: string;
   metadata?: Record<string, unknown>;
+  /** CRM/Comercial (Fase 4) — `contacts.id` ligado via `ContactIdentity` (migration 0092, coluna
+   * `inbox_contacts.contact_id`). `undefined` até alguém vincular este contato do WhatsApp a um
+   * Contact do CRM — nunca preenchido automaticamente (ver `docs/crm-omnichannel-architecture-audit.md`). */
+  crmContactId?: string;
   createdAt: string;
   updatedAt: string;
 };

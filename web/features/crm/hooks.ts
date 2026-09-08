@@ -37,7 +37,7 @@ export function usePipelineStages(pipelineId: string | undefined, workspaceId: s
 
 export function useDeals(workspaceId: string, params?: ListDealsParams) {
   return useSWR(
-    ["deals", workspaceId, params?.pipelineId, params?.stageId, params?.ownerUserId, params?.teamId, params?.origin, params?.search],
+    ["deals", workspaceId, params?.pipelineId, params?.stageId, params?.contactId, params?.ownerUserId, params?.teamId, params?.origin, params?.search],
     () => listDeals(workspaceId, params),
   );
 }

@@ -17,8 +17,9 @@ export type InboxConversationListFilter = "all" | "mine" | "unassigned" | "unrea
 
 /** Read-model só de listagem (Fase 3) — denormaliza nome/telefone do contato pra Inbox não
  * precisar de uma segunda chamada por conversa. Nunca usado fora de `listByWorkspace`; toda
- * escrita continua contra `InboxConversation` puro. */
-export type InboxConversationListItem = InboxConversation & { contactName?: string; contactPhone: string };
+ * escrita continua contra `InboxConversation` puro. `crmContactId` (Fase 4) é
+ * `inbox_contacts.contact_id` denormalizado do mesmo join — ver `InboxContact.crmContactId`. */
+export type InboxConversationListItem = InboxConversation & { contactName?: string; contactPhone: string; crmContactId?: string };
 
 export type InboxConversationRepositoryPort = {
   /** Idempotente por `(connectionId, contactId)` — nunca cria uma segunda conversa pro mesmo par. */

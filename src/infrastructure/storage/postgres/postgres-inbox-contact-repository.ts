@@ -13,6 +13,7 @@ type Row = {
   profile_picture_url: string | null;
   external_id: string | null;
   metadata: Record<string, unknown> | null;
+  contact_id: string | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -60,6 +61,7 @@ export class PostgresInboxContactRepository implements InboxContactRepositoryPor
       profilePictureUrl: row.profile_picture_url ?? undefined,
       externalId: row.external_id ?? undefined,
       metadata: row.metadata ?? undefined,
+      crmContactId: row.contact_id ?? undefined,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
     };

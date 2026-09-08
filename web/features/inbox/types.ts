@@ -34,6 +34,9 @@ export type InboxConversation = {
    * hoje nem existe como rota própria (a Fase 1 não tem "abrir 1 conversa" isolado, só a lista). */
   contactName?: string;
   contactPhone: string;
+  /** CRM/Comercial (Fase 4) — `contacts.id` do CRM já vinculado a este contato do WhatsApp
+   * (`inbox_contacts.contact_id`), se algum vínculo já foi feito. `undefined` até alguém vincular. */
+  crmContactId?: string;
 };
 
 /** Fase 4 — `open`/`pending`/`resolved` filtram por status normalizado (ver

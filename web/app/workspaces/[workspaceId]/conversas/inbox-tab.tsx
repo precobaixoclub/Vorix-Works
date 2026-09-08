@@ -24,6 +24,7 @@ import {
 } from "@/features/inbox/api";
 import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime } from "@/features/inbox/hooks";
 import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxTenantMember } from "@/features/inbox/types";
+import { CrmContextSection } from "./crm-panel";
 
 const FILTERS: { value: InboxConversationFilter; label: string }[] = [
   { value: "all", label: "Todas" },
@@ -565,6 +566,8 @@ function ContactContextPane({
           )}
         </div>
       </section>
+
+      <CrmContextSection workspaceId={workspaceId} conversation={conversation} onLinked={onConversationChanged} />
     </div>
   );
 }

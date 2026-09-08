@@ -53,6 +53,7 @@ import { registerProductionRoutes } from "./production.route.js";
 import { registerPublicationRoutes } from "./publications.route.js";
 import { registerWebhookRoutes } from "./webhooks.route.js";
 import { registerWorkspaceRoutes } from "./workspaces.route.js";
+import { registerGrowthDashboardRoutes } from "./growth-dashboard.route.js";
 
 /**
  * Grupo de rotas `v1` — esqueleto de versionamento. Registrado sob o prefixo `/v1` (ver `app.ts`),
@@ -527,5 +528,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       secretManager: app.zunoContainer.secretManager,
       now: () => new Date(),
     });
+
+    // Trial + Product Analytics — Fatia E: Growth Dashboard mínimo, ADMIN-only.
+    await registerGrowthDashboardRoutes(app, { growthMetricsRepository: identity.growthMetricsRepository });
   }
 }

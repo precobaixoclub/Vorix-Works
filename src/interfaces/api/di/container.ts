@@ -101,6 +101,7 @@ import type { BillingEventRepositoryPort, InvoiceRepositoryPort, PaymentMethodRe
 import type { BillingProviderPort } from "../../../application/ports/billing-provider.port.js";
 import type { WorkspaceOnboardingRepositoryPort } from "../../../application/ports/workspace-onboarding-repository.port.js";
 import type { ProductEventRepositoryPort } from "../../../application/ports/product-event-repository.port.js";
+import type { GrowthMetricsRepositoryPort } from "../../../application/ports/growth-metrics-repository.port.js";
 import type { AddonDefinitionRepositoryPort, PlanVersionRepositoryPort } from "../../../application/ports/plan-version-repository.port.js";
 import type { SubscriptionItemRepositoryPort, SubscriptionRepositoryPort } from "../../../application/ports/subscription-repository.port.js";
 import type { UsageCounterRepositoryPort } from "../../../application/ports/usage-counter-repository.port.js";
@@ -471,6 +472,8 @@ export type ApiContainer = {
     workspaceOnboardingRepository: WorkspaceOnboardingRepositoryPort;
     /** Trial + Product Analytics — fundação de eventos de produto. */
     productEventRepository: ProductEventRepositoryPort;
+    /** Growth Dashboard (Fatia E) — leituras agregadas cross-tenant, só pra uso ADMIN. */
+    growthMetricsRepository: GrowthMetricsRepositoryPort;
     /** Pool próprio (independente do `pool` de Workspace/Asset/Chat) — ver `buildIdentityRepositories`. Fechado no hook `onClose` também. */
     pool: pg.Pool;
   };

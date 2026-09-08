@@ -66,6 +66,9 @@ function AdminShell({ children }: { children: ReactNode }) {
           <SidebarLink href="/admin/tenants" active={isActive("/admin/tenants")}>
             Contas
           </SidebarLink>
+          <SidebarLink href="/admin/growth" active={isActive("/admin/growth")}>
+            Growth
+          </SidebarLink>
           <SidebarLink href="/admin/ai-providers" active={isActive("/admin/ai-providers")}>
             Chaves IA
           </SidebarLink>
@@ -85,6 +88,9 @@ function AdminShell({ children }: { children: ReactNode }) {
           </SidebarLink>
           <SidebarLink href="/admin/tenants" active={isActive("/admin/tenants")}>
             Contas de clientes
+          </SidebarLink>
+          <SidebarLink href="/admin/growth" active={isActive("/admin/growth")}>
+            Growth Dashboard
           </SidebarLink>
           <SidebarLink href="/admin/ai-providers" active={isActive("/admin/ai-providers")}>
             Chaves OpenAI/Gemini

@@ -41,8 +41,29 @@ export class MessagingProviderError extends Error {
   }
 }
 
+export const MESSAGING_MEDIA_KINDS = ["text", "image", "audio", "video", "document"] as const;
+export type MessagingMediaKind = (typeof MESSAGING_MEDIA_KINDS)[number];
+
+/** Declaração de capacidades por canal — SaaS Commercialization, Fase 6 (Omnichannel). Mesmo
+ * papel de `SocialPublisherPort.capabilities`: um valor estático que a camada de aplicação/UI lê
+ * ANTES de agir (nunca descoberto só por um erro do provider em runtime). Existe porque WhatsApp
+ * (sessão pareada via QR, todo tipo de mídia) e um futuro canal stateless (Instagram/Facebook —
+ * token OAuth já existente, sem QR/sessão) têm capacidades genuinamente diferentes; o Inbox
+ * unificado (quando existir) precisa saber disso por canal, nunca assumir que todo
+ * `MessagingProvider` suporta tudo que o WhatsApp suporta hoje. */
+export type MessagingProviderCapabilities = {
+  /** `false` = canal stateless (token OAuth), sem fluxo de pareamento por QR — `connect`/
+   * `getQrCode`/`logout` não fazem sentido chamar. */
+  supportsQrConnect: boolean;
+  supportsTemplates: boolean;
+  supportedMediaKinds: readonly MessagingMediaKind[];
+  supportsReadReceipts: boolean;
+  supportsTypingIndicator: boolean;
+};
+
 export type MessagingProvider = {
   readonly providerId: string;
+  readonly capabilities: MessagingProviderCapabilities;
 
   /**
    * Provisiona (se necessário) e inicia a sessão no gateway para esta conexão. Idempotente.

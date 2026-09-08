@@ -1,4 +1,4 @@
-import type { MessagingProvider, MessagingSendResult, NormalizedConnectionStatus } from "../../application/ports/messaging-provider.port.js";
+import type { MessagingProvider, MessagingProviderCapabilities, MessagingSendResult, NormalizedConnectionStatus } from "../../application/ports/messaging-provider.port.js";
 
 /**
  * Duplo de teste do `MessagingProvider` — permite testar todo o módulo Conversas (rotas, use
@@ -7,6 +7,15 @@ import type { MessagingProvider, MessagingSendResult, NormalizedConnectionStatus
  */
 export class FakeMessagingProvider implements MessagingProvider {
   readonly providerId = "fake";
+  // Espelha exatamente `WuzApiMessagingProvider.capabilities` — o duplo de teste nunca deve
+  // divergir das capacidades do adapter real que substitui.
+  readonly capabilities: MessagingProviderCapabilities = {
+    supportsQrConnect: true,
+    supportsTemplates: false,
+    supportedMediaKinds: ["text", "image", "audio", "video", "document"],
+    supportsReadReceipts: false,
+    supportsTypingIndicator: false,
+  };
   readonly sentMessages: Array<{ to: string; body: string }> = [];
   private sequence = 0;
 

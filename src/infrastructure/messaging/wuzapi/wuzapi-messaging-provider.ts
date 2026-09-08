@@ -1,4 +1,4 @@
-import type { MessagingProvider, MessagingSendResult, NormalizedConnectionStatus } from "../../../application/ports/messaging-provider.port.js";
+import type { MessagingProvider, MessagingProviderCapabilities, MessagingSendResult, NormalizedConnectionStatus } from "../../../application/ports/messaging-provider.port.js";
 import { MessagingProviderError } from "../../../application/ports/messaging-provider.port.js";
 import type { WuzApiClient } from "./wuzapi-client.js";
 
@@ -19,6 +19,16 @@ import type { WuzApiClient } from "./wuzapi-client.js";
  */
 export class WuzApiMessagingProvider implements MessagingProvider {
   readonly providerId = "wuzapi";
+  // WhatsApp via WuzAPI: sessão pareada por QR, todo tipo de mídia deste port, sem templates de
+  // WhatsApp Business (não exposto por este client) nem recibo de leitura/indicador de digitação
+  // (o WuzAPI não expõe isso na API usada aqui).
+  readonly capabilities: MessagingProviderCapabilities = {
+    supportsQrConnect: true,
+    supportsTemplates: false,
+    supportedMediaKinds: ["text", "image", "audio", "video", "document"],
+    supportsReadReceipts: false,
+    supportsTypingIndicator: false,
+  };
 
   constructor(private readonly client: WuzApiClient) {}
 

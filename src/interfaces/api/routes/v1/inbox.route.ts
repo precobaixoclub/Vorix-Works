@@ -178,7 +178,10 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     const principal = requirePermission(request, "inbox:read");
     const { workspaceId } = request.query as { workspaceId: string };
     const connections = await listConnections(useCaseDeps, { tenantId: principal.tenantId, workspaceId });
-    return successEnvelope({ connections }, request.id);
+    // Fase 6 (Omnichannel) — o frontend usa isto para decidir se mostra o fluxo de QR/pareamento
+    // (só faz sentido pra um canal com `supportsQrConnect`), sem precisar hardcoded conhecer que
+    // "o" provider hoje é WuzAPI.
+    return successEnvelope({ connections, providerId: deps.provider.providerId, providerCapabilities: deps.provider.capabilities }, request.id);
   });
 
   app.post("/inbox/connections", { schema: { body: CREATE_CONNECTION_BODY_SCHEMA } }, async (request, reply) => {

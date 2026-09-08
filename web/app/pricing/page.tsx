@@ -42,7 +42,7 @@ export default async function PricingPage() {
           Escolha o plano que combina com seu volume.
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-balance text-base text-ink-muted sm:text-lg">
-          Comece grátis com 100 mil tokens de IA e evolua quando precisar de mais volume, publicações ou workspaces.
+          Comece grátis com 50 créditos de IA por mês e evolua quando precisar de mais volume, publicações ou workspaces.
         </p>
       </section>
 

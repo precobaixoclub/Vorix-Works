@@ -75,7 +75,7 @@ export default async function RootPage() {
             <Button variant="secondary" className="px-6 py-3 text-base">Ver planos</Button>
           </Link>
         </div>
-        <p className="text-xs text-ink-muted">100 mil tokens de IA por mês. Sem cartão de crédito.</p>
+        <p className="text-xs text-ink-muted">50 créditos de IA por mês no plano grátis. Sem cartão de crédito.</p>
       </section>
 
       <section className="mx-auto grid w-full max-w-5xl gap-4 px-3 pb-12 sm:grid-cols-2 sm:px-6 sm:pb-16 lg:grid-cols-4">

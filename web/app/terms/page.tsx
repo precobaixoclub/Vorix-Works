@@ -55,7 +55,7 @@ export default function TermsPage() {
 
           <section>
             <h2 className="text-lg font-semibold text-ink">Contato</h2>
-            <p className="mt-2">Duvidas sobre estes termos podem ser enviadas para cleverton@imobilsi9.com.br.</p>
+            <p className="mt-2">Duvidas sobre estes termos podem ser enviadas para cleverton@si9sistemas.com.br.</p>
           </section>
         </article>
       </div>

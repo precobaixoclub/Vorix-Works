@@ -127,7 +127,7 @@ Regras:
 4. Configurar `AUTH_MODE=jwt` (nunca `noop` fora de dev/teste) com `JWT_SECRET` forte e `DATABASE_URL` apontando para o Postgres real.
 5. `PERSISTENCE_DRIVER=postgres` (memória nunca deve rodar fora de dev/teste — dados somem a cada restart).
 6. `COOKIE_SECURE=true` obrigatório fora de `http://localhost` — o padrão é `false`, então isto **precisa ser setado explicitamente** (achado de configuração crítica no relatório final).
-7. `SECRET_MANAGER_PROVIDER` — `local` para sandbox (não durável, aceitável só fora de produção real); `production` hoje é um stub fail-closed sem backend real conectado (bloqueia qualquer fluxo que dependa de segredo de credencial até um backend real existir — ver Riscos residuais).
+7. `SECRET_MANAGER_PROVIDER` — `local` para sandbox (não durável, aceitável só fora de produção real); `production` usa `PostgresSecretManager` (real, durável) quando `PERSISTENCE_DRIVER=postgres`/`DATABASE_URL` estão configurados (item 5 acima) — só degrada para um stub fail-closed se essas duas variáveis faltarem, o que nunca deveria acontecer numa produção configurada corretamente.
 8. `npm run zuno:api` — sobe a API.
 9. `cd web && npm run build && npm start` — sobe o frontend (`NEXT_PUBLIC_API_URL` apontando para a API).
 10. Confirmar `GET /readyz` → `ready: true` e `GET /v1/system/release-gate` → `productionEnabled: false` antes de considerar o ambiente "no ar".

@@ -25,7 +25,7 @@ export default function DataDeletionPage() {
             <h1 className="mt-2 text-3xl font-semibold text-ink">Exclusao de Dados</h1>
             <p className="mt-4">
               Para solicitar a exclusao dos seus dados associados a Vorix, envie um email para
-              cleverton@imobilsi9.com.br com o assunto "Exclusao de dados Vorix".
+              cleverton@si9sistemas.com.br com o assunto "Exclusao de dados Vorix".
             </p>
           </div>
 

@@ -55,7 +55,7 @@ export default function SignupPage() {
             <Logo className="h-16 w-auto text-ink" />
             <div>
               <h1 className="text-base font-semibold text-ink">Crie sua conta grátis</h1>
-              <p className="mt-1 text-sm text-ink-muted">Plano FREE com 100 mil tokens de IA por mês.</p>
+              <p className="mt-1 text-sm text-ink-muted">Plano FREE com 50 créditos de IA por mês.</p>
             </div>
           </div>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">

@@ -65,6 +65,11 @@ export type ChangeSubscriptionResult = { ok: true; status: string; prorationAmou
 export type CancelSubscriptionInput = { providerSubscriptionId: string; atPeriodEnd: boolean; reason?: string };
 export type ResumeSubscriptionInput = { providerSubscriptionId: string };
 
+export type AddSubscriptionItemInput = { providerSubscriptionId: string; providerPriceRef: string; quantity: number };
+export type AddSubscriptionItemResult = { ok: true; providerItemId: string };
+export type RemoveSubscriptionItemInput = { providerItemId: string };
+export type UpdateSubscriptionItemQuantityInput = { providerItemId: string; quantity: number };
+
 export type PaymentMethodSnapshot = { providerPaymentMethodId: string; brand?: string; last4?: string; expMonth?: number; expYear?: number };
 export type GetPaymentMethodInput = { providerCustomerId: string };
 export type GetPaymentMethodResult = { ok: true; paymentMethod: PaymentMethodSnapshot | undefined };
@@ -92,6 +97,11 @@ export type BillingProviderPort = {
   changeSubscription(input: ChangeSubscriptionInput): Promise<ChangeSubscriptionResult | BillingProviderFailure>;
   cancelSubscription(input: CancelSubscriptionInput): Promise<{ ok: true } | BillingProviderFailure>;
   resumeSubscription(input: ResumeSubscriptionInput): Promise<{ ok: true } | BillingProviderFailure>;
+  /** Compra de add-on — SaaS Commercialization, Fase 3. Item de linha PRÓPRIO na assinatura,
+   * nunca reaproveita `changeSubscription` (que troca só o item do plano base). */
+  addSubscriptionItem(input: AddSubscriptionItemInput): Promise<AddSubscriptionItemResult | BillingProviderFailure>;
+  removeSubscriptionItem(input: RemoveSubscriptionItemInput): Promise<{ ok: true } | BillingProviderFailure>;
+  updateSubscriptionItemQuantity(input: UpdateSubscriptionItemQuantityInput): Promise<{ ok: true } | BillingProviderFailure>;
   getPaymentMethod(input: GetPaymentMethodInput): Promise<GetPaymentMethodResult | BillingProviderFailure>;
   createCustomerPortal(input: CreateCustomerPortalInput): Promise<CreateCustomerPortalResult | BillingProviderFailure>;
   handleWebhook(input: HandleWebhookInput): Promise<HandleWebhookResult | BillingProviderFailure>;

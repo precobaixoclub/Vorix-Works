@@ -59,4 +59,9 @@ export type EffectiveEntitlements = {
    * `entitlement-use-cases.ts`). Tenants criados antes da Fase 2 (checkout) continuam funcionando
    * sem backfill nenhum. */
   virtual: boolean;
+  /** `true` quando a `Subscription` real está `past_due`/`suspended` — Fase 3 (dunning). NUNCA
+   * apaga/oculta dado nenhum: `canUse`/`getLimit` continuam devolvendo a verdade (para a tela de
+   * cobrança poder mostrar "pagamento falhou"), mas `assertCanUse`/`assertWithinLimit` bloqueiam
+   * toda ação nova até o pagamento ser regularizado. */
+  readOnly: boolean;
 };

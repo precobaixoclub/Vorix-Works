@@ -23,6 +23,7 @@ export async function registerBillingEntitlementsRoutes(app: FastifyInstance, de
         planCode: entitlements.planCode,
         planVersionId: entitlements.planVersionId,
         virtual: entitlements.virtual,
+        readOnly: entitlements.readOnly,
         capabilities: entitlements.capabilities,
         limits,
       },

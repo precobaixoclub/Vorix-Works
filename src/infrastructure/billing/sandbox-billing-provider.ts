@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
+  AddSubscriptionItemInput,
+  AddSubscriptionItemResult,
   BillingProviderPort,
   CancelSubscriptionInput,
   ChangeSubscriptionInput,
@@ -14,7 +16,9 @@ import type {
   GetPaymentMethodResult,
   HandleWebhookInput,
   HandleWebhookResult,
+  RemoveSubscriptionItemInput,
   ResumeSubscriptionInput,
+  UpdateSubscriptionItemQuantityInput,
 } from "../../application/ports/billing-provider.port.js";
 
 /**
@@ -50,6 +54,18 @@ export class SandboxBillingProvider implements BillingProviderPort {
   }
 
   async resumeSubscription(_input: ResumeSubscriptionInput): Promise<{ ok: true }> {
+    return { ok: true };
+  }
+
+  async addSubscriptionItem(_input: AddSubscriptionItemInput): Promise<AddSubscriptionItemResult> {
+    return { ok: true, providerItemId: `sandbox-item-${randomUUID()}` };
+  }
+
+  async removeSubscriptionItem(_input: RemoveSubscriptionItemInput): Promise<{ ok: true }> {
+    return { ok: true };
+  }
+
+  async updateSubscriptionItemQuantity(_input: UpdateSubscriptionItemQuantityInput): Promise<{ ok: true }> {
     return { ok: true };
   }
 

@@ -1,5 +1,7 @@
 import Stripe from "stripe";
 import type {
+  AddSubscriptionItemInput,
+  AddSubscriptionItemResult,
   BillingProviderFailure,
   BillingProviderPort,
   CancelSubscriptionInput,
@@ -15,7 +17,9 @@ import type {
   GetPaymentMethodResult,
   HandleWebhookInput,
   HandleWebhookResult,
+  RemoveSubscriptionItemInput,
   ResumeSubscriptionInput,
+  UpdateSubscriptionItemQuantityInput,
 } from "../../application/ports/billing-provider.port.js";
 
 export type StripeBillingProviderOptions = {
@@ -118,6 +122,40 @@ export class StripeBillingProvider implements BillingProviderPort {
     if (!this.client) return NOT_CONFIGURED;
     try {
       await this.client.subscriptions.update(input.providerSubscriptionId, { cancel_at_period_end: false });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, kind: "invalid_request", message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  async addSubscriptionItem(input: AddSubscriptionItemInput): Promise<AddSubscriptionItemResult | BillingProviderFailure> {
+    if (!this.client) return NOT_CONFIGURED;
+    try {
+      const item = await this.client.subscriptionItems.create({
+        subscription: input.providerSubscriptionId,
+        price: input.providerPriceRef,
+        quantity: input.quantity,
+      });
+      return { ok: true, providerItemId: item.id };
+    } catch (error) {
+      return { ok: false, kind: "invalid_request", message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  async removeSubscriptionItem(input: RemoveSubscriptionItemInput): Promise<{ ok: true } | BillingProviderFailure> {
+    if (!this.client) return NOT_CONFIGURED;
+    try {
+      await this.client.subscriptionItems.del(input.providerItemId);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, kind: "invalid_request", message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  async updateSubscriptionItemQuantity(input: UpdateSubscriptionItemQuantityInput): Promise<{ ok: true } | BillingProviderFailure> {
+    if (!this.client) return NOT_CONFIGURED;
+    try {
+      await this.client.subscriptionItems.update(input.providerItemId, { quantity: input.quantity });
       return { ok: true };
     } catch (error) {
       return { ok: false, kind: "invalid_request", message: error instanceof Error ? error.message : String(error) };

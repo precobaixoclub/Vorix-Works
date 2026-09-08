@@ -3,6 +3,7 @@ import type { AddonDefinitionRepositoryPort, PlanVersionRepositoryPort } from ".
 import type { SubscriptionRepositoryPort } from "../ports/subscription-repository.port.js";
 import type { BillingInterval } from "../../domain/platform-billing/subscription.model.js";
 import type { PlatformPlanCode } from "../../domain/platform-billing/platform-plan-catalog.js";
+import { priceRefFor } from "./price-ref.js";
 
 export type CheckoutUseCaseDeps = {
   billingProvider: BillingProviderPort;
@@ -22,15 +23,6 @@ export type StartCheckoutInput = {
 };
 
 export type StartCheckoutOutput = { checkoutUrl: string; providerSessionId: string };
-
-function priceRefFor(providerId: string, planId: string, ref: string | undefined): string {
-  if (ref) return ref;
-  // `SandboxBillingProvider` nunca valida `providerPlanPriceRef` — usa o próprio id como
-  // referência determinística. Um gateway real sem o Price configurado é um erro de configuração
-  // (ver `CHECKOUT_PRICE_NOT_CONFIGURED` abaixo), nunca cai aqui.
-  if (providerId === "sandbox") return planId;
-  throw new Error(`CHECKOUT_PRICE_NOT_CONFIGURED: "${planId}" não tem Price configurado para o gateway "${providerId}".`);
-}
 
 /**
  * Inicia o checkout de um plano pago — SaaS Commercialization, Fase 2. NUNCA cria/ativa a

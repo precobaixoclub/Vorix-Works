@@ -40,7 +40,8 @@ export async function resolveEffectiveEntitlements(deps: EntitlementUseCaseDeps,
       const current = limits[addon.resource];
       if (current !== null) limits[addon.resource] = current + addon.increment * item.quantity;
     }
-    return { tenantId, planCode: planVersion.planCode, planVersionId: planVersion.id, capabilities: planVersion.capabilities, limits, virtual: false };
+    const readOnly = subscription.status === "past_due" || subscription.status === "suspended";
+    return { tenantId, planCode: planVersion.planCode, planVersionId: planVersion.id, capabilities: planVersion.capabilities, limits, virtual: false, readOnly };
   }
 
   const billing = await deps.platformBillingRepository.getTenantBilling(tenantId);
@@ -49,7 +50,8 @@ export async function resolveEffectiveEntitlements(deps: EntitlementUseCaseDeps,
   if (!activeVersion) {
     throw new Error(`ENTITLEMENTS_PLAN_VERSION_NOT_FOUND: nenhuma versão ativa cadastrada para o plano "${planCode}".`);
   }
-  return { tenantId, planCode: activeVersion.planCode, planVersionId: activeVersion.id, capabilities: activeVersion.capabilities, limits: activeVersion.limits, virtual: true };
+  const readOnly = billing?.subscriptionStatus === "past_due" || billing?.subscriptionStatus === "suspended";
+  return { tenantId, planCode: activeVersion.planCode, planVersionId: activeVersion.id, capabilities: activeVersion.capabilities, limits: activeVersion.limits, virtual: true, readOnly };
 }
 
 export async function canUse(deps: EntitlementUseCaseDeps, input: { tenantId: string; capability: PlanCapability }): Promise<boolean> {
@@ -80,7 +82,17 @@ export async function getLimit(deps: EntitlementUseCaseDeps, input: { tenantId: 
   return { used, max };
 }
 
+/** Nunca lança sozinho — só sinaliza; `assertCanUse`/`assertWithinLimit` checam isto ANTES de
+ * qualquer outra regra, pra dar sempre a mesma mensagem clara de "regularize o pagamento". */
+async function assertNotReadOnly(deps: EntitlementUseCaseDeps, tenantId: string): Promise<void> {
+  const entitlements = await resolveEffectiveEntitlements(deps, tenantId);
+  if (entitlements.readOnly) {
+    throw new Error("ENTITLEMENT_ACCOUNT_READ_ONLY: pagamento pendente — regularize a assinatura para continuar usando o Vorix. Nenhum dado foi apagado.");
+  }
+}
+
 export async function assertCanUse(deps: EntitlementUseCaseDeps, input: { tenantId: string; capability: PlanCapability }): Promise<void> {
+  await assertNotReadOnly(deps, input.tenantId);
   if (!(await canUse(deps, input))) {
     throw new Error(`ENTITLEMENT_DENIED: a capability "${input.capability}" não está disponível no plano atual.`);
   }
@@ -89,6 +101,7 @@ export async function assertCanUse(deps: EntitlementUseCaseDeps, input: { tenant
 /** `increment` é quanto a operação em curso PRETENDE adicionar (ex.: convidar 1 usuário = 1) —
  * checar ANTES de criar o recurso, nunca depois. */
 export async function assertWithinLimit(deps: EntitlementUseCaseDeps, input: { tenantId: string; resource: PlanLimitResource; increment?: number }): Promise<void> {
+  await assertNotReadOnly(deps, input.tenantId);
   const { used, max } = await getLimit(deps, input);
   const increment = input.increment ?? 1;
   if (max !== null && used + increment > max) {

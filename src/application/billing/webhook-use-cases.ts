@@ -56,8 +56,8 @@ function readMetadata(data: Record<string, unknown>): Record<string, unknown> {
  * admin (`monthly_credits_quota`, `monthly_publications_quota`), traduzindo o `PlanVersion` novo
  * de volta para o catálogo legado só para as cotas que o novo modelo ainda não cobre
  * (`monthly_publications_quota` não existe em `PLAN_LIMIT_RESOURCES` — ver auditoria). */
-async function syncTenantBilling(
-  deps: WebhookUseCaseDeps,
+export async function syncTenantBilling(
+  deps: Pick<WebhookUseCaseDeps, "planVersionRepository" | "platformBillingRepository" | "now">,
   input: { tenantId: string; planVersionId: string; status: PlatformSubscriptionStatus },
 ): Promise<void> {
   const planVersion = await deps.planVersionRepository.getById(input.planVersionId);
@@ -125,7 +125,19 @@ async function handleSubscriptionUpdated(deps: WebhookUseCaseDeps, event: Billin
     ...(deleted ? { canceledAt: (deps.now?.() ?? new Date()).toISOString() } : {}),
   });
 
-  await syncTenantBilling(deps, { tenantId: subscription.tenantId, planVersionId: subscription.planVersionId, status });
+  if (deleted) {
+    // Terminal: a Subscription sai de `getActiveByTenant` (status fora do conjunto não-terminal)
+    // e `resolveEffectiveEntitlements` passa a sintetizar a partir de `tenant_billing.plan_code`
+    // de novo — precisa voltar pro FREE aqui, senão o tenant ficaria com entitlements do plano
+    // pago pra sempre. Isto NUNCA apaga dado nenhum (contatos/negócios/etc. continuam intactos);
+    // só reduz o que o plano permite fazer daqui pra frente.
+    const freeVersion = await deps.planVersionRepository.getActiveVersion("FREE");
+    if (freeVersion) {
+      await syncTenantBilling(deps, { tenantId: subscription.tenantId, planVersionId: freeVersion.id, status: "active" });
+    }
+  } else {
+    await syncTenantBilling(deps, { tenantId: subscription.tenantId, planVersionId: subscription.planVersionId, status });
+  }
   await deps.billingEventRepository.record({
     tenantId: subscription.tenantId,
     subscriptionId: updated.id,

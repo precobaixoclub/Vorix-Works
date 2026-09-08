@@ -189,9 +189,11 @@ test("webhook customer.subscription.deleted: cancela SEM apagar nada, e uma reen
   assert.ok(subscription.canceledAt);
 
   const billing = await deps.platformBillingRepository.getTenantBilling(tenantId);
-  assert.equal(billing.subscriptionStatus, "cancelled");
-  // Cancelamento nunca apaga o plano/tenant — só o status muda.
-  assert.equal(billing.planCode, "PRO");
+  // Cancelamento definitivo (customer.subscription.deleted) nunca apaga NENHUM dado do tenant
+  // (contatos/negócios/etc. continuam intactos) — só reverte os entitlements pro FREE, senão o
+  // tenant ficaria com acesso ao plano pago pra sempre depois de cancelar.
+  assert.equal(billing.planCode, "FREE");
+  assert.equal(billing.subscriptionStatus, "active");
 });
 
 test("webhook invoice.payment_failed: marca past_due e registra a fatura, sem apagar nada", async () => {

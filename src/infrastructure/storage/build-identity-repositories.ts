@@ -26,6 +26,7 @@ import type { TenantMembershipRepositoryPort } from "../../application/ports/ten
 import type { TimelineEventRepositoryPort } from "../../application/ports/timeline-event-repository.port.js";
 import type { UserRepositoryPort } from "../../application/ports/user-repository.port.js";
 import type { WorkspaceOnboardingRepositoryPort } from "../../application/ports/workspace-onboarding-repository.port.js";
+import type { ProductEventRepositoryPort } from "../../application/ports/product-event-repository.port.js";
 import { PostgresAiProvidersRepository } from "./postgres/postgres-ai-providers-repository.js";
 import { PostgresAuditLogRepository } from "./postgres/postgres-audit-log-repository.js";
 import { PostgresContactIdentityRepository } from "./postgres/postgres-contact-identity-repository.js";
@@ -53,6 +54,7 @@ import { PostgresTenantMembershipRepository } from "./postgres/postgres-tenant-m
 import { PostgresTimelineEventRepository } from "./postgres/postgres-timeline-event-repository.js";
 import { PostgresUserRepository } from "./postgres/postgres-user-repository.js";
 import { PostgresWorkspaceOnboardingRepository } from "./postgres/postgres-workspace-onboarding-repository.js";
+import { PostgresProductEventRepository } from "./postgres/postgres-product-event-repository.js";
 
 const { Pool } = pg;
 
@@ -103,6 +105,8 @@ export type IdentityRepositories = {
   paymentWebhookEventRepository: PaymentWebhookEventRepositoryPort;
   /** Onboarding guiado — progresso por workspace. */
   workspaceOnboardingRepository: WorkspaceOnboardingRepositoryPort;
+  /** Trial + Product Analytics — fundação de eventos de produto. */
+  productEventRepository: ProductEventRepositoryPort;
   pool: InstanceType<typeof Pool>;
 };
 
@@ -143,6 +147,7 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     billingEventRepository: new PostgresBillingEventRepository(pool),
     paymentWebhookEventRepository: new PostgresPaymentWebhookEventRepository(pool),
     workspaceOnboardingRepository: new PostgresWorkspaceOnboardingRepository(pool),
+    productEventRepository: new PostgresProductEventRepository(pool),
     pool,
   };
 }

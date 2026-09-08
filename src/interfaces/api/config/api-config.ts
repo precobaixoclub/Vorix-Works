@@ -184,6 +184,12 @@ export type ApiConfig = {
     enabled: boolean;
     webhookVerifyToken?: string;
   };
+  /** Trial + Product Analytics — kill switch de `POST /v1/product-events` e de toda
+   * instrumentação server-side (`recordProductEvent`/`recordFirstEvent`). `false` = todo registro
+   * é um no-op silencioso, nunca afeta a operação principal que o chama. */
+  productAnalytics: {
+    enabled: boolean;
+  };
   scheduling: {
     occurrenceWindowDays: number;
     maxOccurrencesPerRun: number;
@@ -315,6 +321,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const metaInstagramRedirectUri = env.META_INSTAGRAM_OAUTH_REDIRECT_URI?.trim() || undefined;
   const metaLoginConfigId = env.META_LOGIN_CONFIG_ID?.trim() || undefined;
   const instagramDmEnabled = env.META_INSTAGRAM_DM_ENABLED?.trim() === "true";
+  const productAnalyticsEnabled = env.PRODUCT_ANALYTICS_ENABLED?.trim() === "true";
   const instagramDmWebhookVerifyToken = env.META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN?.trim() || undefined;
   const tiktokEnabled = env.TIKTOK_ENABLED?.trim() === "true";
   const tiktokClientKey = env.TIKTOK_CLIENT_KEY?.trim() || undefined;
@@ -507,6 +514,9 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     instagramDm: {
       enabled: instagramDmEnabled,
       webhookVerifyToken: instagramDmWebhookVerifyToken,
+    },
+    productAnalytics: {
+      enabled: productAnalyticsEnabled,
     },
     scheduling: {
       occurrenceWindowDays: schedulingOccurrenceWindowDays,

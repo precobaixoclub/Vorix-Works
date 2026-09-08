@@ -35,6 +35,7 @@ import { registerCommercialMetricsRoutes } from "./commercial-metrics.route.js";
 import { registerBillingEntitlementsRoutes } from "./billing-entitlements.route.js";
 import { registerAdminPlanVersionsRoutes } from "./admin-plan-versions.route.js";
 import { registerBillingCheckoutRoutes, registerBillingTrialRoutes } from "./billing-checkout.route.js";
+import { registerProductEventsRoutes } from "./product-events.route.js";
 import { registerBillingLifecycleRoutes } from "./billing-lifecycle.route.js";
 import { registerBillingOverviewRoutes } from "./billing-overview.route.js";
 import { registerOnboardingRoutes } from "./onboarding.route.js";
@@ -335,6 +336,15 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       billingEventRepository: identity.billingEventRepository,
       trialEnabled: app.zunoConfig.billing.trialEnabled,
     });
+    // Trial + Product Analytics — fundação de eventos de produto.
+    const productAnalyticsDeps = {
+      productEventRepository: identity.productEventRepository,
+      enabled: app.zunoConfig.productAnalytics.enabled,
+      onWriteFailed: ({ eventName, error }: { eventName: string; error: unknown }) => {
+        app.log.warn({ err: error, eventName }, "product_event_write_failed");
+      },
+    };
+    await registerProductEventsRoutes(app, productAnalyticsDeps);
     // SaaS Commercialization (Fase 3) — upgrade/downgrade, add-ons, cancelamento/reativação.
     await registerBillingLifecycleRoutes(app, { ...entitlementDeps, billingProvider: app.zunoContainer.billingProvider, billingEventRepository: identity.billingEventRepository });
     // SaaS Commercialization (Fase 4) — tela "Plano e Cobrança" self-service.

@@ -22,13 +22,21 @@
 #      (`scripts/restore-drill.mjs`) e para uma futura integração de alerta (Fase 7) saberem, sem
 #      parsear log de texto, se a última execução teve sucesso.
 #
-# Backup só é considerado validado se conseguir restaurá-lo — ver `scripts/restore-drill.mjs`
-# (drenagem de dados real, tabela por tabela, contra um banco descartável — nunca produção).
+# ACHADO REAL (homologação operacional, execução ao vivo na VPS): os nomes de container abaixo
+# eram literais (`zuno-postgres`/`wuzapi-postgres`) desde a criação deste script, mas o Docker
+# Compose v2 nomeia containers como `<nome-do-projeto>-<serviço>-<réplica>` — o nome real em
+# produção é `zuno-zuno-postgres-1`/`conversas-gateway-wuzapi-postgres-1`. Resultado: este script
+# rodou (quando rodado manualmente) sempre caindo no ramo "container não encontrado" pros DOIS
+# bancos, e ainda reportava "Backup concluído (status=ok)" — nenhum backup real do Vorix jamais
+# foi feito por este mecanismo. Corrigido para nomes configuráveis via env (default = nomes reais
+# de produção) e pra `overall_status` refletir "zero dumps bem-sucedidos" como falha, não sucesso.
 set -uo pipefail
 
 BACKUP_DIR="${BACKUP_DIR:-/opt/backups/postgres}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
 REMOTE_BACKUP_DEST="${REMOTE_BACKUP_DEST:-}"
+ZUNO_POSTGRES_CONTAINER="${ZUNO_POSTGRES_CONTAINER:-zuno-zuno-postgres-1}"
+WUZAPI_POSTGRES_CONTAINER="${WUZAPI_POSTGRES_CONTAINER:-conversas-gateway-wuzapi-postgres-1}"
 STAMP="$(date +%Y%m%d%H%M%S)"
 LOG_FILE="$BACKUP_DIR/backup.log"
 MANIFEST_FILE="$BACKUP_DIR/backup-manifest.jsonl"
@@ -40,6 +48,7 @@ log() {
 }
 
 overall_status=0
+success_count=0
 
 dump_container() {
   local container="$1" user="$2" db="$3"
@@ -54,6 +63,7 @@ dump_container() {
     size_bytes="$(stat -c%s "$out" 2>/dev/null || stat -f%z "$out" 2>/dev/null || echo 0)"
     log "OK db=$db container=$container arquivo=$out tamanho_bytes=$size_bytes"
     echo "{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"db\":\"$db\",\"status\":\"ok\",\"file\":\"$out\",\"sizeBytes\":$size_bytes}" >> "$MANIFEST_FILE"
+    success_count=$((success_count + 1))
   else
     log "FAIL db=$db container=$container — pg_dump/gzip falhou, ver saída acima."
     echo "{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"db\":\"$db\",\"status\":\"failed\"}" >> "$MANIFEST_FILE"
@@ -62,8 +72,17 @@ dump_container() {
   fi
 }
 
-dump_container "zuno-postgres" "zuno" "zuno"
-dump_container "wuzapi-postgres" "wuzapi" "wuzapi"
+dump_container "$ZUNO_POSTGRES_CONTAINER" "zuno" "zuno"
+dump_container "$WUZAPI_POSTGRES_CONTAINER" "wuzapi" "wuzapi"
+
+# Zero dumps bem-sucedidos é sempre uma falha, mesmo que cada `dump_container` individualmente
+# tenha "só" pulado por container não encontrado (nunca lançou erro) — é exatamente o cenário real
+# encontrado na homologação: nomes de container errados faziam os dois serem pulados em silêncio,
+# e o script ainda reportava "status=ok" no final.
+if [ "$success_count" -eq 0 ]; then
+  log "FALHA: nenhum backup real foi produzido nesta execução (nenhum container respondeu). Verifique ZUNO_POSTGRES_CONTAINER/WUZAPI_POSTGRES_CONTAINER."
+  overall_status=1
+fi
 
 if [ -n "$REMOTE_BACKUP_DEST" ]; then
   log "Copiando backups desta execução para destino remoto: $REMOTE_BACKUP_DEST"

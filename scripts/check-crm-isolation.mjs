@@ -19,9 +19,15 @@ const CRM_FILE_PATTERNS = [
   /\/application\/crm\//,
   /\/ports\/contact-.*\.port\.ts$/,
   /\/ports\/timeline-event-repository\.port\.ts$/,
+  /\/ports\/pipeline-repository\.port\.ts$/,
+  /\/ports\/deal-repository\.port\.ts$/,
   /\/infrastructure\/storage\/postgres\/postgres-contact.*\.ts$/,
   /\/infrastructure\/storage\/postgres\/postgres-timeline-event-repository\.ts$/,
+  /\/infrastructure\/storage\/postgres\/postgres-pipeline-repository\.ts$/,
+  /\/infrastructure\/storage\/postgres\/postgres-deal-repository\.ts$/,
   /\/interfaces\/api\/routes\/v1\/contacts\.route\.ts$/,
+  /\/interfaces\/api\/routes\/v1\/pipelines\.route\.ts$/,
+  /\/interfaces\/api\/routes\/v1\/deals\.route\.ts$/,
 ];
 
 const MESSAGING_FILE_PATTERNS = [
@@ -31,7 +37,7 @@ const MESSAGING_FILE_PATTERNS = [
   /\/infrastructure\/messaging\//,
 ];
 
-const CRM_IMPORT_MARKERS = ["/domain/crm/", "/application/crm/", "/ports/contact-", "/ports/timeline-event-repository", "/contacts.route.js"];
+const CRM_IMPORT_MARKERS = ["/domain/crm/", "/application/crm/", "/ports/contact-", "/ports/timeline-event-repository", "/ports/pipeline-repository", "/ports/deal-repository", "/contacts.route.js", "/pipelines.route.js", "/deals.route.js"];
 const MESSAGING_IMPORT_MARKERS = ["/domain/inbox/", "/application/inbox/", "/application/instagram-dm/", "/infrastructure/messaging/"];
 
 async function listTsFiles(dir) {

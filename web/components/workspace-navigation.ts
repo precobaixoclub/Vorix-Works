@@ -37,6 +37,8 @@ export const MAIN_NAV_SECTIONS: readonly WorkspaceNavSection[] = [
       // docs/crm-omnichannel-architecture-audit.md, seção 10). Reorganização completa da nav
       // (seções Comercial/Marketing) fica pra quando as fases seguintes existirem de verdade.
       { href: "/contacts", label: "Contatos", icon: "contacts" },
+      // CRM/Comercial (Fase 2) — Kanban de negócios (pipelines/etapas configuráveis).
+      { href: "/deals", label: "Negócios", icon: "deals" },
       { href: "/connections", label: "Conexões", icon: "connections" },
     ],
   },

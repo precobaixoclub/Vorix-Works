@@ -96,6 +96,8 @@ import type { TenantMemberInviteRepositoryPort } from "../../../application/port
 import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../../application/ports/team-repository.port.js";
 import type { ContactRepositoryPort } from "../../../application/ports/contact-repository.port.js";
 import type { ContactIdentityRepositoryPort } from "../../../application/ports/contact-identity-repository.port.js";
+import type { DealRepositoryPort } from "../../../application/ports/deal-repository.port.js";
+import type { PipelineRepositoryPort, PipelineStageRepositoryPort } from "../../../application/ports/pipeline-repository.port.js";
 import type { TimelineEventRepositoryPort } from "../../../application/ports/timeline-event-repository.port.js";
 import type { UserRepositoryPort } from "../../../application/ports/user-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../../../application/ports/workspace-repository.port.js";
@@ -417,6 +419,10 @@ export type ApiContainer = {
     contactRepository: ContactRepositoryPort;
     contactIdentityRepository: ContactIdentityRepositoryPort;
     timelineEventRepository: TimelineEventRepositoryPort;
+    /** CRM/Comercial (Fase 2) — Pipelines/Etapas/Negócios (Kanban). */
+    pipelineRepository: PipelineRepositoryPort;
+    pipelineStageRepository: PipelineStageRepositoryPort;
+    dealRepository: DealRepositoryPort;
     /** Pool próprio (independente do `pool` de Workspace/Asset/Chat) — ver `buildIdentityRepositories`. Fechado no hook `onClose` também. */
     pool: pg.Pool;
   };

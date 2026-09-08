@@ -14,6 +14,10 @@ export function formatDateTime(iso: string | undefined): string {
   );
 }
 
+export function formatCurrencyCents(cents: number, currency = "BRL"): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(cents / 100);
+}
+
 export function formatRelativeTime(iso: string | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);

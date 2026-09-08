@@ -68,3 +68,59 @@ export type TimelineEvent = {
   payload: Record<string, unknown>;
   occurredAt: string;
 };
+
+/**
+ * CRM — Fase 2 (pipelines/negócios/Kanban). `Pipeline`/`PipelineStage` são configuráveis por
+ * workspace (auditoria, seção 6: "nunca hardcoded") — um pipeline padrão é criado sob demanda
+ * (`ensureDefaultPipeline`) na primeira leitura, nunca via seed de migration (multi-tenant).
+ * `PipelineStage.isWon`/`isLost` marcam as etapas terminais; mover um negócio pra uma etapa
+ * `isLost` exige `lossReason` (nunca perdido silenciosamente); mover de volta pra uma etapa aberta
+ * limpa `wonAt`/`lostAt`/`lossReason` (reabertura é permitida, não é um estado especial).
+ */
+export type Pipeline = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  name: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PipelineStage = {
+  id: string;
+  pipelineId: string;
+  name: string;
+  position: number;
+  isWon: boolean;
+  isLost: boolean;
+  createdAt: string;
+};
+
+export type Deal = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  pipelineId: string;
+  stageId: string;
+  contactId?: string;
+  title: string;
+  valueCents: number;
+  currency: string;
+  ownerUserId?: string;
+  teamId?: string;
+  origin?: string;
+  lossReason?: string;
+  wonAt?: string;
+  lostAt?: string;
+  expectedCloseDate?: string;
+  createdAt: string;
+  updatedAt: string;
+  lastStageChangedAt: string;
+};
+
+export type DealStageSummary = {
+  stageId: string;
+  count: number;
+  valueCentsSum: number;
+};

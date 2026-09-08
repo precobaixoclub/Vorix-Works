@@ -3,6 +3,8 @@ import type { AuditLogPort } from "../../application/ports/audit-log.port.js";
 import type { AiProvidersRepositoryPort } from "../../application/ports/ai-providers-repository.port.js";
 import type { ContactIdentityRepositoryPort } from "../../application/ports/contact-identity-repository.port.js";
 import type { ContactRepositoryPort } from "../../application/ports/contact-repository.port.js";
+import type { DealRepositoryPort } from "../../application/ports/deal-repository.port.js";
+import type { PipelineRepositoryPort, PipelineStageRepositoryPort } from "../../application/ports/pipeline-repository.port.js";
 import type { PlatformAiSettingsRepositoryPort } from "../../application/ports/platform-ai-settings-repository.port.js";
 import type { PlatformBillingRepositoryPort } from "../../application/ports/platform-billing-repository.port.js";
 import type { RefreshTokenRepositoryPort } from "../../application/ports/refresh-token-repository.port.js";
@@ -16,6 +18,8 @@ import { PostgresAiProvidersRepository } from "./postgres/postgres-ai-providers-
 import { PostgresAuditLogRepository } from "./postgres/postgres-audit-log-repository.js";
 import { PostgresContactIdentityRepository } from "./postgres/postgres-contact-identity-repository.js";
 import { PostgresContactRepository } from "./postgres/postgres-contact-repository.js";
+import { PostgresDealRepository } from "./postgres/postgres-deal-repository.js";
+import { PostgresPipelineRepository, PostgresPipelineStageRepository } from "./postgres/postgres-pipeline-repository.js";
 import { PostgresPlatformAiSettingsRepository } from "./postgres/postgres-platform-ai-settings-repository.js";
 import { PostgresPlatformBillingRepository } from "./postgres/postgres-platform-billing-repository.js";
 import { PostgresRefreshTokenRepository } from "./postgres/postgres-refresh-token-repository.js";
@@ -47,6 +51,10 @@ export type IdentityRepositories = {
   contactRepository: ContactRepositoryPort;
   contactIdentityRepository: ContactIdentityRepositoryPort;
   timelineEventRepository: TimelineEventRepositoryPort;
+  /** CRM/Comercial (Fase 2) — Pipelines/Etapas/Negócios (Kanban). */
+  pipelineRepository: PipelineRepositoryPort;
+  pipelineStageRepository: PipelineStageRepositoryPort;
+  dealRepository: DealRepositoryPort;
   pool: InstanceType<typeof Pool>;
 };
 
@@ -67,6 +75,9 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     contactRepository: new PostgresContactRepository(pool),
     contactIdentityRepository: new PostgresContactIdentityRepository(pool),
     timelineEventRepository: new PostgresTimelineEventRepository(pool),
+    pipelineRepository: new PostgresPipelineRepository(pool),
+    pipelineStageRepository: new PostgresPipelineStageRepository(pool),
+    dealRepository: new PostgresDealRepository(pool),
     pool,
   };
 }

@@ -24,6 +24,8 @@ import { registerInboxRoutes } from "./inbox.route.js";
 import { registerTeamsRoutes } from "./teams.route.js";
 import { registerTenantMembersRoutes } from "./tenant-members.route.js";
 import { registerContactsRoutes } from "./contacts.route.js";
+import { registerPipelinesRoutes } from "./pipelines.route.js";
+import { registerDealsRoutes } from "./deals.route.js";
 import { registerMetaAdsRoutes } from "./meta-ads.route.js";
 import { registerMetaAdCampaignsRoutes } from "./meta-ad-campaigns.route.js";
 import { registerMetaAudiencesRoutes } from "./meta-audiences.route.js";
@@ -217,6 +219,16 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     await registerContactsRoutes(app, {
       contactRepository: identity.contactRepository,
       contactIdentityRepository: identity.contactIdentityRepository,
+      timelineEventRepository: identity.timelineEventRepository,
+    });
+    // CRM/Comercial (Fase 2) — Pipelines/Etapas/Negócios (Kanban).
+    await registerPipelinesRoutes(app, {
+      pipelineRepository: identity.pipelineRepository,
+      pipelineStageRepository: identity.pipelineStageRepository,
+    });
+    await registerDealsRoutes(app, {
+      dealRepository: identity.dealRepository,
+      pipelineStageRepository: identity.pipelineStageRepository,
       timelineEventRepository: identity.timelineEventRepository,
     });
   }

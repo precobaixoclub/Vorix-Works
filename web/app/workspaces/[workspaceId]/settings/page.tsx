@@ -144,6 +144,18 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <div>
+                <p className="text-sm font-semibold text-foreground">Cobrança</p>
+                <p className="mt-1 text-xs text-muted-foreground">Plano, consumo e forma de pagamento.</p>
+              </div>
+            </CardHeader>
+            <CardBody className="grid gap-2 sm:grid-cols-2">
+              <SettingsAction href={`/workspaces/${workspace.id}/settings/plano`} title="Plano e Cobrança" description="Veja seu plano atual, troque de plano e gerencie pagamento." />
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div>
                 <p className="text-sm font-semibold text-foreground">Conta</p>
                 <p className="mt-1 text-xs text-muted-foreground">Sessão atual e escopo de acesso.</p>
               </div>

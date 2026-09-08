@@ -15,6 +15,7 @@ export type BillingOverviewUseCaseDeps = EntitlementUseCaseDeps & {
 
 export type BillingOverviewAddon = { addonCode: string; name: string; quantity: number; subscriptionItemId: string };
 export type BillingOverviewConsumption = { resource: PlanLimitResource; used: number; max: number | null };
+export type BillingOverviewAvailableAddon = { code: string; name: string; description: string; monthlyPriceUsd: number; yearlyPriceUsd: number; resource: PlanLimitResource; increment: number };
 
 export type BillingOverview = {
   planCode: string;
@@ -27,6 +28,7 @@ export type BillingOverview = {
   currentPeriodEnd: string | null;
   allowedAddonCodes: readonly string[];
   addons: BillingOverviewAddon[];
+  availableAddons: BillingOverviewAvailableAddon[];
   consumption: BillingOverviewConsumption[];
   paymentMethod: PaymentMethodSnapshot | undefined;
   recentInvoices: Invoice[];
@@ -62,6 +64,12 @@ export async function getBillingOverview(deps: BillingOverviewUseCaseDeps, tenan
 
   const recentInvoices = await deps.invoiceRepository.listByTenant(tenantId, 12);
 
+  const purchasedCodes = new Set(addons.map((addon) => addon.addonCode));
+  const allActiveAddons = await deps.addonDefinitionRepository.listActive();
+  const availableAddons: BillingOverviewAvailableAddon[] = allActiveAddons
+    .filter((addon) => (planVersion?.allowedAddonCodes ?? []).includes(addon.code) && !purchasedCodes.has(addon.code))
+    .map((addon) => ({ code: addon.code, name: addon.name, description: addon.description, monthlyPriceUsd: addon.monthlyPriceUsd, yearlyPriceUsd: addon.yearlyPriceUsd, resource: addon.resource, increment: addon.increment }));
+
   return {
     planCode: entitlements.planCode,
     planName: planVersion?.name ?? entitlements.planCode,
@@ -73,6 +81,7 @@ export async function getBillingOverview(deps: BillingOverviewUseCaseDeps, tenan
     currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
     allowedAddonCodes: planVersion?.allowedAddonCodes ?? [],
     addons,
+    availableAddons,
     consumption,
     paymentMethod,
     recentInvoices,

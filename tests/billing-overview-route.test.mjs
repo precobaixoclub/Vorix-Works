@@ -100,6 +100,8 @@ test("GET /v1/billing/overview: assinante real PRO com add-on mostra plano, add-
   assert.equal(overview.addons.length, 1);
   assert.equal(overview.addons[0].addonCode, "extra_user");
   assert.ok(overview.paymentMethod, "SandboxBillingProvider sempre devolve um cartão de exemplo");
+  assert.ok(!overview.availableAddons.some((a) => a.code === "extra_user"), "add-on já comprado não deveria aparecer nos disponíveis pra comprar de novo");
+  assert.ok(overview.availableAddons.some((a) => a.code === "extra_whatsapp_connection"), "add-on permitido no PRO e ainda não comprado deveria aparecer");
   await app.close();
 });
 

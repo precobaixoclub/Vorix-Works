@@ -18,6 +18,7 @@ import {
   type UnifiedPublication,
 } from "@/features/publication-history/types";
 import { formatDate } from "@/lib/format";
+import { VorixIntelligencePanel } from "./vorix-intelligence-panel";
 
 const IN_PROGRESS_STATES: readonly ExecutionRunState[] = ["created", "validating", "ready", "running"];
 const GENERATED_STATES: readonly ExecutionRunState[] = ["waiting_for_approval", "completed"];
@@ -125,6 +126,10 @@ export default function WorkspaceHomePage() {
             accent="positive"
           />
         </StatsGrid>
+      </section>
+
+      <section className="mt-6">
+        <VorixIntelligencePanel workspaceId={workspace.id} />
       </section>
 
       <section className="mt-6">

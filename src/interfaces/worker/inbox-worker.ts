@@ -326,6 +326,11 @@ async function main(): Promise<void> {
         anthropicBriefingExtractionModel: "unused-in-inbox-worker",
         inboxAutoReplyEnabled: true,
         anthropicInboxAutoReplyModel: config.ai.anthropicInboxAutoReplyModel,
+        // O worker jamais monta um `AiRequest` de `commercial_copilot_suggestions` (só a API faz
+        // isso, via `commercial-copilot-generator-adapter.ts`) — mesmo racional do campo "unused"
+        // de `anthropicBriefingExtractionModel` acima.
+        commercialCopilotEnabled: false,
+        anthropicCommercialCopilotModel: "unused-in-inbox-worker",
       },
       executionRepository: repositories.aiExecutionRepository,
     });

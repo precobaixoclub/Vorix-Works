@@ -1,10 +1,13 @@
 import { apiClient } from "@/lib/api-client";
 import type {
+  CommercialSuggestion,
+  CommercialSuggestionStatus,
   Contact,
   ContactChannel,
   ContactIdentity,
   Deal,
   DealStageSummary,
+  LeadScore,
   Pipeline,
   PipelineStage,
   Product,
@@ -217,4 +220,31 @@ export function sendProposal(proposalId: string, workspaceId: string): Promise<P
 
 export function getProposalTimeline(proposalId: string, workspaceId: string): Promise<TimelineEvent[]> {
   return apiClient.get<TimelineEvent[]>(`/v1/proposals/${encodeURIComponent(proposalId)}/timeline?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Inteligência (Fase 5) — Pontuação de lead (determinística) e Copiloto Comercial (IA)
+// ---------------------------------------------------------------------------------------------
+
+export function getLeadScore(contactId: string, workspaceId: string): Promise<LeadScore> {
+  return apiClient.get<LeadScore>(`/v1/contacts/${encodeURIComponent(contactId)}/lead-score?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+export function listCommercialSuggestions(workspaceId: string, params?: { contactId?: string; status?: CommercialSuggestionStatus }): Promise<CommercialSuggestion[]> {
+  const query = new URLSearchParams({ workspaceId });
+  if (params?.contactId) query.set("contactId", params.contactId);
+  if (params?.status) query.set("status", params.status);
+  return apiClient.get<CommercialSuggestion[]>(`/v1/commercial-suggestions?${query.toString()}`);
+}
+
+export function generateCommercialSuggestions(contactId: string, workspaceId: string): Promise<CommercialSuggestion[]> {
+  return apiClient.post<CommercialSuggestion[]>(`/v1/contacts/${encodeURIComponent(contactId)}/commercial-suggestions/generate`, { workspaceId });
+}
+
+export function acceptCommercialSuggestion(suggestionId: string, workspaceId: string): Promise<CommercialSuggestion> {
+  return apiClient.post<CommercialSuggestion>(`/v1/commercial-suggestions/${encodeURIComponent(suggestionId)}/accept`, { workspaceId });
+}
+
+export function dismissCommercialSuggestion(suggestionId: string, workspaceId: string): Promise<CommercialSuggestion> {
+  return apiClient.post<CommercialSuggestion>(`/v1/commercial-suggestions/${encodeURIComponent(suggestionId)}/dismiss`, { workspaceId });
 }

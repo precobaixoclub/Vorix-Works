@@ -24,6 +24,8 @@ const CRM_FILE_PATTERNS = [
   /\/ports\/task-repository\.port\.ts$/,
   /\/ports\/product-repository\.port\.ts$/,
   /\/ports\/proposal-repository\.port\.ts$/,
+  /\/ports\/commercial-suggestion-repository\.port\.ts$/,
+  /\/ports\/commercial-copilot-generator\.port\.ts$/,
   /\/infrastructure\/storage\/postgres\/postgres-contact.*\.ts$/,
   /\/infrastructure\/storage\/postgres\/postgres-timeline-event-repository\.ts$/,
   /\/infrastructure\/storage\/postgres\/postgres-pipeline-repository\.ts$/,
@@ -31,6 +33,8 @@ const CRM_FILE_PATTERNS = [
   /\/infrastructure\/storage\/postgres\/postgres-task-repository\.ts$/,
   /\/infrastructure\/storage\/postgres\/postgres-product-repository\.ts$/,
   /\/infrastructure\/storage\/postgres\/postgres-proposal-repository\.ts$/,
+  /\/infrastructure\/storage\/postgres\/postgres-commercial-suggestion-repository\.ts$/,
+  /\/infrastructure\/ai-gateway\/commercial-copilot-generator-adapter\.ts$/,
   /\/interfaces\/api\/routes\/v1\/contacts\.route\.ts$/,
   /\/interfaces\/api\/routes\/v1\/pipelines\.route\.ts$/,
   /\/interfaces\/api\/routes\/v1\/deals\.route\.ts$/,
@@ -38,6 +42,7 @@ const CRM_FILE_PATTERNS = [
   /\/interfaces\/api\/routes\/v1\/products\.route\.ts$/,
   /\/interfaces\/api\/routes\/v1\/proposals\.route\.ts$/,
   /\/interfaces\/api\/routes\/v1\/public-proposals\.route\.ts$/,
+  /\/interfaces\/api\/routes\/v1\/commercial-suggestions\.route\.ts$/,
 ];
 
 const MESSAGING_FILE_PATTERNS = [
@@ -50,7 +55,9 @@ const MESSAGING_FILE_PATTERNS = [
 const CRM_IMPORT_MARKERS = [
   "/domain/crm/", "/application/crm/", "/ports/contact-", "/ports/timeline-event-repository",
   "/ports/pipeline-repository", "/ports/deal-repository", "/ports/task-repository", "/ports/product-repository", "/ports/proposal-repository",
+  "/ports/commercial-suggestion-repository", "/ports/commercial-copilot-generator",
   "/contacts.route.js", "/pipelines.route.js", "/deals.route.js", "/tasks.route.js", "/products.route.js", "/proposals.route.js", "/public-proposals.route.js",
+  "/commercial-suggestions.route.js", "/commercial-copilot-generator-adapter.js",
 ];
 const MESSAGING_IMPORT_MARKERS = ["/domain/inbox/", "/application/inbox/", "/application/instagram-dm/", "/infrastructure/messaging/"];
 

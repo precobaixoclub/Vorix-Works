@@ -5,6 +5,7 @@ import type { ExecutionEnvironment } from "../../../application/execution/execut
 import { PUBLICATION_PROVIDERS, type PublicationProvider } from "../../../domain/publication/publication.model.js";
 
 const DEFAULT_ANTHROPIC_BRIEFING_EXTRACTION_MODEL = "claude-haiku-4-5-20251001";
+const DEFAULT_ANTHROPIC_COMMERCIAL_COPILOT_MODEL = "claude-haiku-4-5-20251001";
 
 /**
  * Configuração da camada HTTP — lê variáveis de ambiente uma única vez, com padrões seguros.
@@ -58,6 +59,10 @@ export type ApiConfig = {
     briefingExtractionEnabled: boolean;
     anthropicApiKey?: string;
     anthropicBriefingExtractionModel: string;
+    /** CRM/Comercial, Fase 5 — Copiloto Comercial. Mesmo racional de `briefingExtractionEnabled`/
+     * `anthropicBriefingExtractionModel`. */
+    commercialCopilotEnabled: boolean;
+    anthropicCommercialCopilotModel: string;
   };
   /** Provedores de IA de mídia (imagem/vídeo) — Sprint 26. Chave estática só serve de bootstrap;
    * o painel admin (`/admin/ai-providers`) pode substituir em runtime (mesmo padrão de
@@ -243,6 +248,8 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const aiBriefingExtractionEnabled = aiGatewayEnabled && env.AI_BRIEFING_EXTRACTION_ENABLED?.trim() === "true";
   const anthropicApiKey = env.ANTHROPIC_API_KEY?.trim() || undefined;
   const anthropicBriefingExtractionModel = env.ANTHROPIC_BRIEFING_EXTRACTION_MODEL?.trim() || DEFAULT_ANTHROPIC_BRIEFING_EXTRACTION_MODEL;
+  const aiCommercialCopilotEnabled = aiGatewayEnabled && env.AI_COMMERCIAL_COPILOT_ENABLED?.trim() === "true";
+  const anthropicCommercialCopilotModel = env.ANTHROPIC_COMMERCIAL_COPILOT_MODEL?.trim() || DEFAULT_ANTHROPIC_COMMERCIAL_COPILOT_MODEL;
   const realExecutionEnabled = env.REAL_EXECUTION_ENABLED?.trim() === "true";
   const realExecutionResearchEnabled = realExecutionEnabled && env.REAL_EXECUTION_RESEARCH_ENABLED?.trim() === "true";
   const realPlanningEnabled = realExecutionEnabled && env.REAL_PLANNING_ENABLED?.trim() === "true";
@@ -361,6 +368,13 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     );
   }
 
+  if (aiGatewayEnabled && !isModelRegisteredAndActive("anthropic", anthropicCommercialCopilotModel)) {
+    throw new Error(
+      `AI_GATEWAY_ENABLED="true" mas ANTHROPIC_COMMERCIAL_COPILOT_MODEL="${anthropicCommercialCopilotModel}" não está registrado (ou não está ativo) no Model Registry ` +
+        "(src/application/ai-gateway/model-registry.ts). Nunca use um alias implícito como \"latest\" — informe um modelId explícito já registrado.",
+    );
+  }
+
   return {
     port,
     host,
@@ -380,6 +394,8 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       briefingExtractionEnabled: aiBriefingExtractionEnabled,
       anthropicApiKey,
       anthropicBriefingExtractionModel,
+      commercialCopilotEnabled: aiCommercialCopilotEnabled,
+      anthropicCommercialCopilotModel,
     },
     mediaProviders: {
       openaiEnabled,

@@ -156,3 +156,33 @@ export type Proposal = {
 };
 
 export type ProposalWithToken = Proposal & { publicToken: string };
+
+export type LeadTemperature = "frio" | "morno" | "quente";
+
+export type LeadScoreFactor = {
+  label: string;
+  points: number;
+};
+
+export type LeadScore = {
+  score: number;
+  temperature: LeadTemperature;
+  factors: readonly LeadScoreFactor[];
+};
+
+export type CommercialSuggestionAction = "follow_up_task" | "reach_out" | "review_deal_stage" | "send_proposal" | "none";
+export type CommercialSuggestionStatus = "pending" | "accepted" | "dismissed";
+
+export type CommercialSuggestion = {
+  id: string;
+  contactId: string;
+  dealId?: string;
+  title: string;
+  rationale: string;
+  evidence: string;
+  confidence: number;
+  suggestedAction: CommercialSuggestionAction;
+  status: CommercialSuggestionStatus;
+  createdAt: string;
+  resolvedAt?: string;
+};

@@ -171,6 +171,56 @@ export type Product = {
   updatedAt: string;
 };
 
+/**
+ * CRM — Fase 5 (Inteligência). `LeadScore` é DETERMINÍSTICO — nunca calculado por IA, nunca
+ * apresentado como verdade absoluta (auditoria, seção 12: "nunca uma pontuação absoluta"), sempre
+ * com `factors` explicando a composição. Calculado sob demanda (`computeLeadScore`), nunca
+ * persistido — evita ficar desatualizado (dado sempre reflete o estado real e atual do CRM).
+ */
+export const LEAD_TEMPERATURES = ["frio", "morno", "quente"] as const;
+export type LeadTemperature = (typeof LEAD_TEMPERATURES)[number];
+
+export type LeadScoreFactor = {
+  label: string;
+  points: number;
+};
+
+export type LeadScore = {
+  score: number;
+  temperature: LeadTemperature;
+  factors: readonly LeadScoreFactor[];
+};
+
+/**
+ * `CommercialSuggestion` — Copiloto Comercial (Fase 5). Gerada pelo AI Gateway (nunca Ícaro — ver
+ * `scripts/check-ai-stack-isolation.mjs`), sempre com `evidence` (trecho literal dos dados reais
+ * que embasou a sugestão — nunca inventado, mesma validação semântica anti-alucinação de
+ * `briefing-field-extraction-result.v1.ts`) e `confidence`. NUNCA executa a ação sozinha: só uma
+ * ação humana explícita (`accept`) pode transformar a sugestão em algo real (ex.: criar uma
+ * Tarefa) — "aceitar" É a autorização humana exigida pela auditoria, seção 13.
+ */
+export const COMMERCIAL_SUGGESTION_ACTIONS = ["follow_up_task", "reach_out", "review_deal_stage", "send_proposal", "none"] as const;
+export type CommercialSuggestionAction = (typeof COMMERCIAL_SUGGESTION_ACTIONS)[number];
+
+export const COMMERCIAL_SUGGESTION_STATUSES = ["pending", "accepted", "dismissed"] as const;
+export type CommercialSuggestionStatus = (typeof COMMERCIAL_SUGGESTION_STATUSES)[number];
+
+export type CommercialSuggestion = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  contactId: string;
+  dealId?: string;
+  title: string;
+  rationale: string;
+  evidence: string;
+  confidence: number;
+  suggestedAction: CommercialSuggestionAction;
+  status: CommercialSuggestionStatus;
+  createdAt: string;
+  resolvedAt?: string;
+};
+
 export type ProposalItem = {
   productId?: string;
   name: string;

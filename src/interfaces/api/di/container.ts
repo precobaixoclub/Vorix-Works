@@ -94,6 +94,7 @@ import type { SessionRepositoryPort } from "../../../application/ports/session-r
 import type { TenantMembershipRepositoryPort } from "../../../application/ports/tenant-membership-repository.port.js";
 import type { TenantMemberInviteRepositoryPort } from "../../../application/ports/tenant-member-invite-repository.port.js";
 import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../../application/ports/team-repository.port.js";
+import type { CommercialSuggestionRepositoryPort } from "../../../application/ports/commercial-suggestion-repository.port.js";
 import type { ContactRepositoryPort } from "../../../application/ports/contact-repository.port.js";
 import type { ContactIdentityRepositoryPort } from "../../../application/ports/contact-identity-repository.port.js";
 import type { DealRepositoryPort } from "../../../application/ports/deal-repository.port.js";
@@ -178,6 +179,8 @@ const DISABLED_AI_GATEWAY_CONFIG: ApiConfig["aiGateway"] = {
   enabled: false,
   briefingExtractionEnabled: false,
   anthropicBriefingExtractionModel: "claude-haiku-4-5-20251001",
+  commercialCopilotEnabled: false,
+  anthropicCommercialCopilotModel: "claude-haiku-4-5-20251001",
 };
 
 const defaultPlanningIdGenerator = () => `planning-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -229,6 +232,8 @@ export type ApiContainer = {
    * Sprint 07); um `AiGateway` real, com o provider Anthropic, quando está. */
   aiGateway: AiGatewayPort;
   aiExtractionEnabled: boolean;
+  /** CRM/Comercial, Fase 5 — Copiloto Comercial. Mesmo racional de `aiExtractionEnabled`. */
+  aiCommercialCopilotEnabled: boolean;
   /** Sprint 09 — Planning Engine (só leitura pela API; escrita só via `planningEngineHook`, chamado
    * internamente por `briefing-use-cases.ts` ao confirmar/corrigir). */
   planningRepository: PlanningRepositoryPort;
@@ -430,6 +435,8 @@ export type ApiContainer = {
     taskRepository: TaskRepositoryPort;
     productRepository: ProductRepositoryPort;
     proposalRepository: ProposalRepositoryPort;
+    /** CRM/Comercial (Fase 5) — Sugestões do Copiloto Comercial (IA). */
+    commercialSuggestionRepository: CommercialSuggestionRepositoryPort;
     /** Pool próprio (independente do `pool` de Workspace/Asset/Chat) — ver `buildIdentityRepositories`. Fechado no hook `onClose` também. */
     pool: pg.Pool;
   };
@@ -448,7 +455,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     ? buildIdentityRepositories({ databaseUrl: config.databaseUrl, secretsMasterKey: config.jwtSecret })
     : undefined;
 
-  const { aiGateway, aiExtractionEnabled } = buildAiGateway({
+  const { aiGateway, aiExtractionEnabled, aiCommercialCopilotEnabled } = buildAiGateway({
     aiConfig: config?.aiGateway ?? DISABLED_AI_GATEWAY_CONFIG,
     executionRepository: repositories.aiExecutionRepository,
     platformAiSettingsRepository: identityRepositories?.platformAiSettingsRepository,
@@ -1366,6 +1373,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       inboxRealtimeSubscriber,
       aiGateway: gatedAiGateway,
       aiExtractionEnabled,
+      aiCommercialCopilotEnabled,
       aiMediaProviderAdapters,
       aiMediaProviderRegistry,
       mediaGenerationService,
@@ -1456,6 +1464,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     inboxRealtimeSubscriber,
     aiGateway,
     aiExtractionEnabled,
+    aiCommercialCopilotEnabled,
     aiMediaProviderAdapters,
     aiMediaProviderRegistry,
     executionHandlers,

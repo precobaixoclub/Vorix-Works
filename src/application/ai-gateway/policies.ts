@@ -35,3 +35,20 @@ export const INBOX_AUTO_REPLY_POLICY: AiPolicy = {
   sensitiveDataPolicy: "strict",
   providerFallbackAllowed: false,
 };
+
+/** Política de `commercial_copilot_suggestions` — CRM/Comercial, Fase 5. `temperature` baixa
+ * (0.2, não 0) porque a tarefa é "sugerir", não extrair um valor determinístico único, mas ainda
+ * baixa o bastante pra minimizar invenção; `maxOutputTokens` modesto (no máximo 5 sugestões
+ * curtas). `providerFallbackAllowed: false` pelo mesmo motivo das demais políticas — só um
+ * provider real conectado hoje. */
+export const COMMERCIAL_COPILOT_SUGGESTIONS_POLICY: AiPolicy = {
+  preferredCapability: "structured_text",
+  maxInputTokens: 3_000,
+  maxOutputTokens: 800,
+  timeoutMs: 8_000,
+  retryPolicy: DEFAULT_AI_RETRY_POLICY,
+  temperature: 0.2,
+  structuredOutputRequired: true,
+  sensitiveDataPolicy: "strict",
+  providerFallbackAllowed: false,
+};

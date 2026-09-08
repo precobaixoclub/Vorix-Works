@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { createContact, getContact, getContactTimeline, linkContactIdentity, listContacts, updateContact } from "../../../../application/crm/contact-use-cases.js";
 import type { ContactUseCaseDeps } from "../../../../application/crm/contact-use-cases.js";
+import { getLeadScore } from "../../../../application/crm/lead-scoring-use-cases.js";
+import type { LeadScoringUseCaseDeps } from "../../../../application/crm/lead-scoring-use-cases.js";
 import { CONTACT_CHANNELS } from "../../../../domain/crm/crm.model.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
@@ -54,7 +56,7 @@ function translateContactError(error: unknown): never {
   throw error;
 }
 
-export async function registerContactsRoutes(app: FastifyInstance, deps: ContactUseCaseDeps): Promise<void> {
+export async function registerContactsRoutes(app: FastifyInstance, deps: ContactUseCaseDeps & LeadScoringUseCaseDeps): Promise<void> {
   app.get("/contacts", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "contact:read");
     const { workspaceId, search, ownerUserId, teamId, cursor, limit } = request.query as { workspaceId: string; search?: string; ownerUserId?: string; teamId?: string; cursor?: string; limit?: number };
@@ -101,6 +103,18 @@ export async function registerContactsRoutes(app: FastifyInstance, deps: Contact
     try {
       const timeline = await getContactTimeline(deps, { contactId: id, tenantId: principal.tenantId, workspaceId, limit });
       return successEnvelope(timeline, request.id);
+    } catch (error) {
+      translateContactError(error);
+    }
+  });
+
+  app.get("/contacts/:id/lead-score", { schema: { params: ID_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "contact:read");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      const leadScore = await getLeadScore(deps, { contactId: id, tenantId: principal.tenantId, workspaceId });
+      return successEnvelope(leadScore, request.id);
     } catch (error) {
       translateContactError(error);
     }

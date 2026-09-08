@@ -28,8 +28,10 @@ import { registerPipelinesRoutes } from "./pipelines.route.js";
 import { registerDealsRoutes } from "./deals.route.js";
 import { registerTasksRoutes } from "./tasks.route.js";
 import { registerProductsRoutes } from "./products.route.js";
+import { registerCommercialSuggestionsRoutes } from "./commercial-suggestions.route.js";
 import { registerProposalsRoutes } from "./proposals.route.js";
 import { registerPublicProposalsRoutes } from "./public-proposals.route.js";
+import { AiGatewayCommercialCopilotGenerator } from "../../../../infrastructure/ai-gateway/commercial-copilot-generator-adapter.js";
 import { registerMetaAdsRoutes } from "./meta-ads.route.js";
 import { registerMetaAdCampaignsRoutes } from "./meta-ad-campaigns.route.js";
 import { registerMetaAudiencesRoutes } from "./meta-audiences.route.js";
@@ -224,6 +226,9 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       contactRepository: identity.contactRepository,
       contactIdentityRepository: identity.contactIdentityRepository,
       timelineEventRepository: identity.timelineEventRepository,
+      // Fase 5 — GET /contacts/:id/lead-score.
+      dealRepository: identity.dealRepository,
+      taskRepository: identity.taskRepository,
     });
     // CRM/Comercial (Fase 2) — Pipelines/Etapas/Negócios (Kanban).
     await registerPipelinesRoutes(app, {
@@ -244,6 +249,16 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       timelineEventRepository: identity.timelineEventRepository,
       dealRepository: identity.dealRepository,
       pipelineStageRepository: identity.pipelineStageRepository,
+    });
+    // CRM/Comercial (Fase 5) — Copiloto Comercial (IA, via AI Gateway) + Pontuação de lead.
+    await registerCommercialSuggestionsRoutes(app, {
+      contactRepository: identity.contactRepository,
+      dealRepository: identity.dealRepository,
+      taskRepository: identity.taskRepository,
+      pipelineStageRepository: identity.pipelineStageRepository,
+      commercialSuggestionRepository: identity.commercialSuggestionRepository,
+      timelineEventRepository: identity.timelineEventRepository,
+      generator: new AiGatewayCommercialCopilotGenerator(app.zunoContainer.aiGateway),
     });
   }
   await registerMetaAdsRoutes(app, {

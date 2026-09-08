@@ -4,6 +4,8 @@ import {
   getContactTimeline,
   getDealsSummary,
   getDealTimeline,
+  getLeadScore,
+  listCommercialSuggestions,
   listContacts,
   listDeals,
   listPipelines,
@@ -13,7 +15,7 @@ import {
   listTasks,
 } from "./api";
 import type { ListDealsParams } from "./api";
-import type { ProposalStatus, TaskStatus } from "./types";
+import type { CommercialSuggestionStatus, ProposalStatus, TaskStatus } from "./types";
 
 export function useContacts(workspaceId: string, params?: { search?: string; ownerUserId?: string; teamId?: string }) {
   return useSWR(["contacts", workspaceId, params?.search, params?.ownerUserId, params?.teamId], () => listContacts(workspaceId, params));
@@ -66,4 +68,12 @@ export function useProducts(workspaceId: string, params?: { search?: string; act
 
 export function useProposals(workspaceId: string, params?: { dealId?: string; contactId?: string; status?: ProposalStatus }) {
   return useSWR(["proposals", workspaceId, params?.dealId, params?.contactId, params?.status], () => listProposals(workspaceId, params));
+}
+
+export function useLeadScore(contactId: string | undefined, workspaceId: string) {
+  return useSWR(contactId ? ["lead-score", contactId, workspaceId] : null, () => getLeadScore(contactId!, workspaceId));
+}
+
+export function useCommercialSuggestions(workspaceId: string, params?: { contactId?: string; status?: CommercialSuggestionStatus }) {
+  return useSWR(["commercial-suggestions", workspaceId, params?.contactId, params?.status], () => listCommercialSuggestions(workspaceId, params));
 }

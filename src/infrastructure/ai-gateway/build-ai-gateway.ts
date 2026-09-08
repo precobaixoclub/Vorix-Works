@@ -23,6 +23,12 @@ export type BuildAiGatewayOptions = {
      * disto, então nenhuma mudança em `api-config.ts`/`container.ts` foi necessária. */
     inboxAutoReplyEnabled?: boolean;
     anthropicInboxAutoReplyModel?: string;
+    /** CRM/Comercial, Fase 5 — Copiloto Comercial. Ao contrário de `inboxAutoReplyEnabled`
+     * (worker-only), esta operação é acionada via HTTP (`POST /contacts/:id/commercial-
+     * suggestions/generate`), então segue o mesmo padrão de `briefingExtractionEnabled`: sempre
+     * populada por `api-config.ts`, nunca opcional. */
+    commercialCopilotEnabled: boolean;
+    anthropicCommercialCopilotModel: string;
   };
   executionRepository: AiExecutionRepositoryPort;
   telemetry?: AiTelemetryPort;
@@ -38,11 +44,15 @@ export type BuiltAiGateway = {
   aiExtractionEnabled: boolean;
   /** Fase 5 — mesmo raciocínio de `aiExtractionEnabled`, mas para `inbox_auto_reply`. */
   aiInboxAutoReplyEnabled: boolean;
+  /** CRM/Comercial, Fase 5 — mesmo raciocínio de `aiExtractionEnabled`, mas para
+   * `commercial_copilot_suggestions`. */
+  aiCommercialCopilotEnabled: boolean;
 };
 
 function buildBindings(aiConfig: BuildAiGatewayOptions["aiConfig"]): AiOperationModelBindings {
   const bindings: AiOperationModelBindings = {
     briefing_field_extraction: { provider: "anthropic", modelId: aiConfig.anthropicBriefingExtractionModel },
+    commercial_copilot_suggestions: { provider: "anthropic", modelId: aiConfig.anthropicCommercialCopilotModel },
   };
   if (aiConfig.anthropicInboxAutoReplyModel) {
     bindings.inbox_auto_reply = { provider: "anthropic", modelId: aiConfig.anthropicInboxAutoReplyModel };
@@ -74,11 +84,11 @@ export function buildAiGateway(options: BuildAiGatewayOptions): BuiltAiGateway {
     });
     // Import dinâmico evita ciclos entre infrastructure e application.
     const aiGateway = new SettingsGatedAiGateway({ inner: baseGateway, platformAiSettingsRepository: settingsRepo });
-    return { aiGateway, aiExtractionEnabled: true, aiInboxAutoReplyEnabled: Boolean(options.aiConfig.anthropicInboxAutoReplyModel) };
+    return { aiGateway, aiExtractionEnabled: true, aiInboxAutoReplyEnabled: Boolean(options.aiConfig.anthropicInboxAutoReplyModel), aiCommercialCopilotEnabled: true };
   }
 
   if (!options.aiConfig.enabled) {
-    return { aiGateway: createNotConfiguredAiGateway(), aiExtractionEnabled: false, aiInboxAutoReplyEnabled: false };
+    return { aiGateway: createNotConfiguredAiGateway(), aiExtractionEnabled: false, aiInboxAutoReplyEnabled: false, aiCommercialCopilotEnabled: false };
   }
 
   const anthropicProvider = new AnthropicAiModelProvider({ apiKey: options.aiConfig.anthropicApiKey });
@@ -96,5 +106,6 @@ export function buildAiGateway(options: BuildAiGatewayOptions): BuiltAiGateway {
     aiGateway,
     aiExtractionEnabled: options.aiConfig.briefingExtractionEnabled,
     aiInboxAutoReplyEnabled: Boolean(options.aiConfig.inboxAutoReplyEnabled && options.aiConfig.anthropicInboxAutoReplyModel),
+    aiCommercialCopilotEnabled: options.aiConfig.commercialCopilotEnabled,
   };
 }

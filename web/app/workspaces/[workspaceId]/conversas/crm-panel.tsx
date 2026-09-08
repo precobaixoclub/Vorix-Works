@@ -7,9 +7,19 @@ import { Input, Label } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/Spinner";
-import { createContact, createDeal, createProposal, createTask, linkContactIdentity, updateContact } from "@/features/crm/api";
-import { useContact, useDeals, usePipelines, usePipelineStages, useTasks } from "@/features/crm/hooks";
-import type { TaskType } from "@/features/crm/types";
+import {
+  acceptCommercialSuggestion,
+  createContact,
+  createDeal,
+  createProposal,
+  createTask,
+  dismissCommercialSuggestion,
+  generateCommercialSuggestions,
+  linkContactIdentity,
+  updateContact,
+} from "@/features/crm/api";
+import { useCommercialSuggestions, useContact, useDeals, useLeadScore, usePipelines, usePipelineStages, useTasks } from "@/features/crm/hooks";
+import type { LeadTemperature, TaskType } from "@/features/crm/types";
 import { useInboxConversationMessages } from "@/features/inbox/hooks";
 import type { InboxConversation } from "@/features/inbox/types";
 import { formatCurrencyCents } from "@/lib/format";
@@ -72,6 +82,9 @@ export function CrmContextSection({ workspaceId, conversation, onLinked }: { wor
 
 type QuickAction = "deal" | "task" | "proposal";
 
+const TEMPERATURE_LABEL: Record<LeadTemperature, string> = { frio: "Frio", morno: "Morno", quente: "Quente" };
+const TEMPERATURE_VARIANT: Record<LeadTemperature, "outline" | "secondary" | "default"> = { frio: "outline", morno: "secondary", quente: "default" };
+
 function LinkedCrmSection({ workspaceId, contactId }: { workspaceId: string; contactId: string }) {
   const { data: contact, mutate: mutateContact } = useContact(contactId, workspaceId);
   const { data: deals, mutate: mutateDeals } = useDeals(workspaceId, { contactId });
@@ -80,12 +93,46 @@ function LinkedCrmSection({ workspaceId, contactId }: { workspaceId: string; con
   const defaultPipeline = pipelines?.[0];
   const { data: stages } = usePipelineStages(defaultPipeline?.id, workspaceId);
   const defaultStage = stages?.[0];
+  const { data: leadScore } = useLeadScore(contactId, workspaceId);
+  const { data: suggestions, mutate: mutateSuggestions } = useCommercialSuggestions(workspaceId, { contactId, status: "pending" });
 
   const [quickAction, setQuickAction] = useState<QuickAction | undefined>();
   const [busy, setBusy] = useState(false);
   const [newTag, setNewTag] = useState("");
   const [ownerInput, setOwnerInput] = useState("");
   const [proposalLink, setProposalLink] = useState<string | undefined>();
+  const [generatingSuggestions, setGeneratingSuggestions] = useState(false);
+  const [resolvingSuggestionId, setResolvingSuggestionId] = useState<string | undefined>();
+
+  async function handleGenerateSuggestions() {
+    setGeneratingSuggestions(true);
+    try {
+      await generateCommercialSuggestions(contactId, workspaceId);
+      await mutateSuggestions();
+    } finally {
+      setGeneratingSuggestions(false);
+    }
+  }
+
+  async function handleAcceptSuggestion(suggestionId: string) {
+    setResolvingSuggestionId(suggestionId);
+    try {
+      await acceptCommercialSuggestion(suggestionId, workspaceId);
+      await Promise.all([mutateSuggestions(), mutateTasks()]);
+    } finally {
+      setResolvingSuggestionId(undefined);
+    }
+  }
+
+  async function handleDismissSuggestion(suggestionId: string) {
+    setResolvingSuggestionId(suggestionId);
+    try {
+      await dismissCommercialSuggestion(suggestionId, workspaceId);
+      await mutateSuggestions();
+    } finally {
+      setResolvingSuggestionId(undefined);
+    }
+  }
 
   // Campos do modal de ação rápida (compartilhados entre negócio/tarefa/proposta pra manter 1 modal só).
   const [title, setTitle] = useState("");
@@ -145,6 +192,24 @@ function LinkedCrmSection({ workspaceId, contactId }: { workspaceId: string; con
     <section className="mt-4 space-y-3 border-t border-border pt-4">
       <h3 className="text-xs font-semibold uppercase text-muted-foreground">CRM</h3>
 
+      {leadScore ? (
+        <div>
+          <div className="flex items-center gap-2">
+            <Badge variant={TEMPERATURE_VARIANT[leadScore.temperature]}>{TEMPERATURE_LABEL[leadScore.temperature]}</Badge>
+            <span className="text-xs tabular-nums text-muted-foreground">{leadScore.score}/100</span>
+          </div>
+          {leadScore.factors.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {leadScore.factors.map((factor) => (
+                <li key={factor.label} className="text-[11px] text-muted-foreground">
+                  {factor.points > 0 ? "+" : ""}{factor.points} · {factor.label}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+
       <div>
         <p className="text-[11px] text-muted-foreground">Responsável</p>
         <p className="text-sm text-foreground">{contact.ownerUserId ?? "Sem responsável"}</p>
@@ -188,6 +253,26 @@ function LinkedCrmSection({ workspaceId, contactId }: { workspaceId: string; con
           </div>
         </div>
       ) : null}
+
+      <div>
+        <div className="mb-1 flex items-center justify-between">
+          <p className="text-[11px] text-muted-foreground">Copiloto Comercial</p>
+          <Button variant="ghost" onClick={handleGenerateSuggestions} loading={generatingSuggestions} disabled={generatingSuggestions}>Gerar sugestões</Button>
+        </div>
+        <div className="space-y-1.5">
+          {(suggestions ?? []).map((suggestion) => (
+            <div key={suggestion.id} className="rounded-lg border border-primary/20 bg-primary/5 p-2">
+              <p className="text-xs font-medium text-foreground">✨ {suggestion.title}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{suggestion.rationale}</p>
+              <div className="mt-1.5 flex gap-1.5">
+                <Button variant="secondary" onClick={() => handleAcceptSuggestion(suggestion.id)} loading={resolvingSuggestionId === suggestion.id} disabled={Boolean(resolvingSuggestionId)}>Aceitar</Button>
+                <Button variant="ghost" onClick={() => handleDismissSuggestion(suggestion.id)} disabled={Boolean(resolvingSuggestionId)}>Descartar</Button>
+              </div>
+            </div>
+          ))}
+          {suggestions && suggestions.length === 0 ? <p className="text-xs text-muted-foreground">Nenhuma sugestão pendente.</p> : null}
+        </div>
+      </div>
 
       <div className="grid grid-cols-3 gap-1.5">
         <Button variant="secondary" onClick={() => setQuickAction("deal")} disabled={!defaultPipeline || !defaultStage}>+ Negócio</Button>

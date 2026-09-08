@@ -29,13 +29,19 @@ export const AI_OPERATIONS = [
    * distinto de `conversation_response` (que é sobre o chat interno do Arthur, domínio diferente) —
    * ver `src/application/ports/inbox-ai-responder.port.ts`. */
   "inbox_auto_reply",
+  /** CRM/Comercial, Fase 5 — Copiloto Comercial: sugestões de próxima ação sobre um Contact/Deal,
+   * sempre com evidência literal + confiança, nunca executando nada sozinha — ver
+   * `src/application/ports/commercial-copilot-generator.port.ts`. */
+  "commercial_copilot_suggestions",
 ] as const;
 export type AiOperation = (typeof AI_OPERATIONS)[number];
 
 /** Operações executáveis até agora — ver `model-registry.ts` (nenhuma entrada ativa para as
  * demais). `extraction-decision.ts` chama `briefing_field_extraction`; o adapter em
- * `infrastructure/ai-gateway/inbox-ai-responder-adapter.ts` chama `inbox_auto_reply`. */
-export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction", "inbox_auto_reply"];
+ * `infrastructure/ai-gateway/inbox-ai-responder-adapter.ts` chama `inbox_auto_reply`; o adapter em
+ * `infrastructure/ai-gateway/commercial-copilot-generator-adapter.ts` chama
+ * `commercial_copilot_suggestions`. */
+export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction", "inbox_auto_reply", "commercial_copilot_suggestions"];
 
 export type AiCapability = "structured_text" | "free_text" | "vision" | "image_generation" | "embeddings" | "tool_calling" | "streaming";
 

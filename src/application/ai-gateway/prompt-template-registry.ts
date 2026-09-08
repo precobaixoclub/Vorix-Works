@@ -5,6 +5,12 @@ import type { PromptTemplate } from "./prompt-template.js";
 import { briefingFieldExtractionPromptV1, type BriefingFieldExtractionPromptContext } from "./prompts/briefing-field-extraction.v1.js";
 import { inboxAutoReplyPromptV1, type InboxAutoReplyPromptContext, type InboxAutoReplyPromptMessage } from "./prompts/inbox-auto-reply.v1.js";
 import {
+  commercialCopilotSuggestionsPromptV1,
+  type CommercialCopilotDealSummary,
+  type CommercialCopilotPromptContext,
+  type CommercialCopilotTaskSummary,
+} from "./prompts/commercial-copilot-suggestions.v1.js";
+import {
   applySemanticValidation,
   validateBriefingFieldExtractionStructure,
   BRIEFING_FIELD_EXTRACTION_RESULT_SCHEMA_VERSION,
@@ -17,6 +23,13 @@ import {
   INBOX_AUTO_REPLY_RESULT_SCHEMA_VERSION,
   INBOX_AUTO_REPLY_TOOL_INPUT_SCHEMA,
 } from "./schemas/inbox-auto-reply-result.v1.js";
+import {
+  applyCommercialCopilotSuggestionsSemanticValidation,
+  validateCommercialCopilotSuggestionsStructure,
+  COMMERCIAL_COPILOT_SUGGESTIONS_RESULT_SCHEMA_VERSION,
+  COMMERCIAL_COPILOT_SUGGESTIONS_TOOL_INPUT_SCHEMA,
+  type CommercialCopilotSuggestionsResult,
+} from "./schemas/commercial-copilot-suggestions-result.v1.js";
 
 /**
  * Registro operação → template + validação — Sprint 08 (Fase 9/11). Único ponto do Gateway que
@@ -72,7 +85,32 @@ function buildInboxAutoReplyContext(input: Readonly<Record<string, unknown>>): I
   };
 }
 
+function buildCommercialCopilotSuggestionsContext(input: Readonly<Record<string, unknown>>): CommercialCopilotPromptContext {
+  return {
+    contactName: String(input.contactName ?? ""),
+    origin: typeof input.origin === "string" ? input.origin : undefined,
+    tags: Array.isArray(input.tags) ? (input.tags as string[]) : [],
+    daysSinceLastInteraction: typeof input.daysSinceLastInteraction === "number" ? input.daysSinceLastInteraction : undefined,
+    deals: Array.isArray(input.deals) ? (input.deals as CommercialCopilotDealSummary[]) : [],
+    pendingTasks: Array.isArray(input.pendingTasks) ? (input.pendingTasks as CommercialCopilotTaskSummary[]) : [],
+  };
+}
+
 export const PROMPT_TEMPLATE_REGISTRY: Partial<Record<AiOperation, PromptTemplateRegistration>> = {
+  commercial_copilot_suggestions: {
+    template: commercialCopilotSuggestionsPromptV1 as PromptTemplate<unknown>,
+    buildContext: (input) => buildCommercialCopilotSuggestionsContext(input),
+    toolName: "submit_commercial_copilot_suggestions",
+    toolDescription: "Envia as sugestões de próxima ação comercial para este contato, cada uma com evidência literal e confiança.",
+    toolInputSchema: COMMERCIAL_COPILOT_SUGGESTIONS_TOOL_INPUT_SCHEMA,
+    outputSchemaRef: { id: "commercial-copilot-suggestions-result", version: COMMERCIAL_COPILOT_SUGGESTIONS_RESULT_SCHEMA_VERSION },
+    validateStructure: (raw) => validateCommercialCopilotSuggestionsStructure(raw),
+    validateSemantics: (structural, sanitizedInput) => {
+      const context = buildCommercialCopilotSuggestionsContext(sanitizedInput);
+      const sourceText = commercialCopilotSuggestionsPromptV1.buildUserInput(context);
+      return applyCommercialCopilotSuggestionsSemanticValidation({ structural: structural as CommercialCopilotSuggestionsResult, sourceText });
+    },
+  },
   inbox_auto_reply: {
     template: inboxAutoReplyPromptV1 as PromptTemplate<unknown>,
     buildContext: (input) => buildInboxAutoReplyContext(input),

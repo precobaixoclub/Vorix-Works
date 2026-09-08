@@ -2,6 +2,7 @@ import pg from "pg";
 import type { AuditLogPort } from "../../application/ports/audit-log.port.js";
 import type { AiProvidersRepositoryPort } from "../../application/ports/ai-providers-repository.port.js";
 import type { ContactIdentityRepositoryPort } from "../../application/ports/contact-identity-repository.port.js";
+import type { CommercialSuggestionRepositoryPort } from "../../application/ports/commercial-suggestion-repository.port.js";
 import type { ContactRepositoryPort } from "../../application/ports/contact-repository.port.js";
 import type { DealRepositoryPort } from "../../application/ports/deal-repository.port.js";
 import type { PipelineRepositoryPort, PipelineStageRepositoryPort } from "../../application/ports/pipeline-repository.port.js";
@@ -20,6 +21,7 @@ import type { UserRepositoryPort } from "../../application/ports/user-repository
 import { PostgresAiProvidersRepository } from "./postgres/postgres-ai-providers-repository.js";
 import { PostgresAuditLogRepository } from "./postgres/postgres-audit-log-repository.js";
 import { PostgresContactIdentityRepository } from "./postgres/postgres-contact-identity-repository.js";
+import { PostgresCommercialSuggestionRepository } from "./postgres/postgres-commercial-suggestion-repository.js";
 import { PostgresContactRepository } from "./postgres/postgres-contact-repository.js";
 import { PostgresDealRepository } from "./postgres/postgres-deal-repository.js";
 import { PostgresPipelineRepository, PostgresPipelineStageRepository } from "./postgres/postgres-pipeline-repository.js";
@@ -65,6 +67,8 @@ export type IdentityRepositories = {
   taskRepository: TaskRepositoryPort;
   productRepository: ProductRepositoryPort;
   proposalRepository: ProposalRepositoryPort;
+  /** CRM/Comercial (Fase 5) — Sugestões do Copiloto Comercial (IA). */
+  commercialSuggestionRepository: CommercialSuggestionRepositoryPort;
   pool: InstanceType<typeof Pool>;
 };
 
@@ -91,6 +95,7 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     taskRepository: new PostgresTaskRepository(pool),
     productRepository: new PostgresProductRepository(pool),
     proposalRepository: new PostgresProposalRepository(pool),
+    commercialSuggestionRepository: new PostgresCommercialSuggestionRepository(pool),
     pool,
   };
 }

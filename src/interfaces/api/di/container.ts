@@ -97,6 +97,11 @@ import type { TenantMemberInviteRepositoryPort } from "../../../application/port
 import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../../application/ports/team-repository.port.js";
 import type { AutomationRuleRepositoryPort } from "../../../application/ports/automation-rule-repository.port.js";
 import type { AutomationRunLogRepositoryPort } from "../../../application/ports/automation-run-log-repository.port.js";
+import type { BillingEventRepositoryPort, InvoiceRepositoryPort, PaymentMethodRepositoryPort, PaymentWebhookEventRepositoryPort } from "../../../application/ports/billing-ops-repository.port.js";
+import type { BillingProviderPort } from "../../../application/ports/billing-provider.port.js";
+import type { AddonDefinitionRepositoryPort, PlanVersionRepositoryPort } from "../../../application/ports/plan-version-repository.port.js";
+import type { SubscriptionItemRepositoryPort, SubscriptionRepositoryPort } from "../../../application/ports/subscription-repository.port.js";
+import type { UsageCounterRepositoryPort } from "../../../application/ports/usage-counter-repository.port.js";
 import type { CommercialMetricsRepositoryPort } from "../../../application/ports/commercial-metrics-repository.port.js";
 import type { CommercialSuggestionRepositoryPort } from "../../../application/ports/commercial-suggestion-repository.port.js";
 import type { ContactRepositoryPort } from "../../../application/ports/contact-repository.port.js";
@@ -115,6 +120,8 @@ import { JsonWebTokenJwtAdapter } from "../../../infrastructure/auth/jsonwebtoke
 import { JwtAuthAdapter } from "../../../infrastructure/auth/jwt-auth-adapter.js";
 import { createNoopAuthAdapter } from "../../../infrastructure/auth/noop-auth-adapter.js";
 import { buildAiGateway } from "../../../infrastructure/ai-gateway/build-ai-gateway.js";
+import { SandboxBillingProvider } from "../../../infrastructure/billing/sandbox-billing-provider.js";
+import { StripeBillingProvider } from "../../../infrastructure/billing/stripe-billing-provider.js";
 import { CreditGatedAiGateway } from "../../../application/ai-gateway/credit-gated-ai-gateway.js";
 import { DeterministicExecutionTaskHandler } from "../../../application/execution/deterministic-handlers.js";
 import type { ExecutionHandlerResolver } from "../../../application/execution/handler-resolver.js";
@@ -448,9 +455,24 @@ export type ApiContainer = {
     automationRunLogRepository: AutomationRunLogRepositoryPort;
     /** CRM/Comercial (Fase 7) — relatório agregado de resultados comerciais (read-only). */
     commercialMetricsRepository: CommercialMetricsRepositoryPort;
+    /** SaaS Commercialization (Fase 1) — Billing Foundation. */
+    planVersionRepository: PlanVersionRepositoryPort;
+    addonDefinitionRepository: AddonDefinitionRepositoryPort;
+    subscriptionRepository: SubscriptionRepositoryPort;
+    subscriptionItemRepository: SubscriptionItemRepositoryPort;
+    usageCounterRepository: UsageCounterRepositoryPort;
+    paymentMethodRepository: PaymentMethodRepositoryPort;
+    invoiceRepository: InvoiceRepositoryPort;
+    billingEventRepository: BillingEventRepositoryPort;
+    paymentWebhookEventRepository: PaymentWebhookEventRepositoryPort;
     /** Pool próprio (independente do `pool` de Workspace/Asset/Chat) — ver `buildIdentityRepositories`. Fechado no hook `onClose` também. */
     pool: pg.Pool;
   };
+  /** SaaS Commercialization (Fase 1) — `SandboxBillingProvider` sem `STRIPE_SECRET_KEY`/
+   * `BILLING_PROVIDER_ENABLED`; `StripeBillingProvider` real quando configurados. Nunca depende
+   * de `identity` (não precisa de Postgres por si só) — só as camadas que o consultam
+   * (entitlements/checkout) dependem de `identity` estar presente. */
+  billingProvider: BillingProviderPort;
 };
 
 export function buildApiContainer(config?: ApiConfig): ApiContainer {
@@ -471,6 +493,13 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     executionRepository: repositories.aiExecutionRepository,
     platformAiSettingsRepository: identityRepositories?.platformAiSettingsRepository,
   });
+
+  // SaaS Commercialization (Fase 1) — `SandboxBillingProvider` sem chave real configurada, nunca
+  // derruba o boot (mesmo racional de `aiGateway` sem `anthropicApiKey`).
+  const billingProvider: BillingProviderPort =
+    config?.billing?.enabled && config.billing.stripeSecretKey
+      ? new StripeBillingProvider({ secretKey: config.billing.stripeSecretKey, webhookSecret: config.billing.stripeWebhookSecret })
+      : new SandboxBillingProvider();
 
   const runtimeEngineHook = new RuntimeEnginePlanningHook({
     runtimeRepository: repositories.runtimeRepository,
@@ -1385,6 +1414,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       aiGateway: gatedAiGateway,
       aiExtractionEnabled,
       aiCommercialCopilotEnabled,
+      billingProvider,
       aiMediaProviderAdapters,
       aiMediaProviderRegistry,
       mediaGenerationService,
@@ -1476,6 +1506,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     aiGateway,
     aiExtractionEnabled,
     aiCommercialCopilotEnabled,
+    billingProvider,
     aiMediaProviderAdapters,
     aiMediaProviderRegistry,
     executionHandlers,

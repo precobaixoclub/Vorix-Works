@@ -32,6 +32,9 @@ import { registerProductsRoutes } from "./products.route.js";
 import { registerCommercialSuggestionsRoutes } from "./commercial-suggestions.route.js";
 import { registerAutomationRulesRoutes } from "./automation-rules.route.js";
 import { registerCommercialMetricsRoutes } from "./commercial-metrics.route.js";
+import { registerBillingEntitlementsRoutes } from "./billing-entitlements.route.js";
+import { registerAdminPlanVersionsRoutes } from "./admin-plan-versions.route.js";
+import { DefaultResourceCounterAdapter } from "../../../../infrastructure/billing/resource-counter-adapter.js";
 import { registerProposalsRoutes } from "./proposals.route.js";
 import { registerPublicProposalsRoutes } from "./public-proposals.route.js";
 import { AiGatewayCommercialCopilotGenerator } from "../../../../infrastructure/ai-gateway/commercial-copilot-generator-adapter.js";
@@ -292,6 +295,24 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     });
     // CRM/Comercial (Fase 7) — métricas agregadas de resultados comerciais.
     await registerCommercialMetricsRoutes(app, { commercialMetricsRepository: identity.commercialMetricsRepository });
+    // SaaS Commercialization (Fase 1) — Billing Foundation: canUse()/limit() centralizados.
+    const entitlementDeps = {
+      subscriptionRepository: identity.subscriptionRepository,
+      subscriptionItemRepository: identity.subscriptionItemRepository,
+      planVersionRepository: identity.planVersionRepository,
+      addonDefinitionRepository: identity.addonDefinitionRepository,
+      platformBillingRepository: identity.platformBillingRepository,
+      usageCounterRepository: identity.usageCounterRepository,
+      resourceCounter: new DefaultResourceCounterAdapter({
+        tenantMembershipRepository: identity.membershipRepository,
+        workspaceRepository: app.zunoContainer.workspaceRepository,
+        messagingConnectionRepository: app.zunoContainer.messagingConnectionRepository,
+        contactRepository: identity.contactRepository,
+        automationRuleRepository: identity.automationRuleRepository,
+      }),
+    };
+    await registerBillingEntitlementsRoutes(app, entitlementDeps);
+    await registerAdminPlanVersionsRoutes(app, { planVersionRepository: identity.planVersionRepository, addonDefinitionRepository: identity.addonDefinitionRepository });
   }
   await registerMetaAdsRoutes(app, {
     metaAdsOAuthService: app.zunoContainer.metaAdsOAuthService,

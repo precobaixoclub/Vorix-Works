@@ -73,6 +73,14 @@ export class PostgresContactRepository implements ContactRepositoryPort {
     return result.rows.map((row) => this.toDomain(row));
   }
 
+  async countByWorkspace(input: { tenantId: string; workspaceId: string }): Promise<number> {
+    const result = await this.pool.query<{ count: string }>(
+      "select count(*) as count from contacts where tenant_id = $1 and workspace_id = $2",
+      [input.tenantId, input.workspaceId],
+    );
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
   async update(id: string, input: UpdateContactInput): Promise<Contact> {
     const existing = await this.getById(id);
     if (!existing) throw new Error(`CONTACT_NOT_FOUND: contato "${id}" não existe.`);

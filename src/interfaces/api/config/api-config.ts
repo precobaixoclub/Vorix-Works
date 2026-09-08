@@ -64,6 +64,17 @@ export type ApiConfig = {
     commercialCopilotEnabled: boolean;
     anthropicCommercialCopilotModel: string;
   };
+  /**
+   * SaaS Commercialization, Fase 1 — `BillingProviderPort`. `enabled=false` ou sem
+   * `stripeSecretKey` → `SandboxBillingProvider` (determinístico, nunca cobra ninguém de
+   * verdade), mesmo padrão de degradação graciosa de `aiGateway` sem `anthropicApiKey`. Cobrança
+   * real só liga quando uma conta Stripe própria for configurada.
+   */
+  billing: {
+    enabled: boolean;
+    stripeSecretKey?: string;
+    stripeWebhookSecret?: string;
+  };
   /** Provedores de IA de mídia (imagem/vídeo) — Sprint 26. Chave estática só serve de bootstrap;
    * o painel admin (`/admin/ai-providers`) pode substituir em runtime (mesmo padrão de
    * `platformAiSettingsRepository` para Anthropic). */
@@ -250,6 +261,9 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const anthropicBriefingExtractionModel = env.ANTHROPIC_BRIEFING_EXTRACTION_MODEL?.trim() || DEFAULT_ANTHROPIC_BRIEFING_EXTRACTION_MODEL;
   const aiCommercialCopilotEnabled = aiGatewayEnabled && env.AI_COMMERCIAL_COPILOT_ENABLED?.trim() === "true";
   const anthropicCommercialCopilotModel = env.ANTHROPIC_COMMERCIAL_COPILOT_MODEL?.trim() || DEFAULT_ANTHROPIC_COMMERCIAL_COPILOT_MODEL;
+  const billingProviderEnabled = env.BILLING_PROVIDER_ENABLED?.trim() === "true";
+  const stripeSecretKey = env.STRIPE_SECRET_KEY?.trim() || undefined;
+  const stripeWebhookSecret = env.STRIPE_WEBHOOK_SECRET?.trim() || undefined;
   const realExecutionEnabled = env.REAL_EXECUTION_ENABLED?.trim() === "true";
   const realExecutionResearchEnabled = realExecutionEnabled && env.REAL_EXECUTION_RESEARCH_ENABLED?.trim() === "true";
   const realPlanningEnabled = realExecutionEnabled && env.REAL_PLANNING_ENABLED?.trim() === "true";
@@ -396,6 +410,11 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       anthropicBriefingExtractionModel,
       commercialCopilotEnabled: aiCommercialCopilotEnabled,
       anthropicCommercialCopilotModel,
+    },
+    billing: {
+      enabled: billingProviderEnabled,
+      stripeSecretKey,
+      stripeWebhookSecret,
     },
     mediaProviders: {
       openaiEnabled,

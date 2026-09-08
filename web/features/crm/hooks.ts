@@ -5,6 +5,8 @@ import {
   getDealsSummary,
   getDealTimeline,
   getLeadScore,
+  listAutomationRules,
+  listAutomationRunLogs,
   listCommercialSuggestions,
   listContacts,
   listDeals,
@@ -76,4 +78,12 @@ export function useLeadScore(contactId: string | undefined, workspaceId: string)
 
 export function useCommercialSuggestions(workspaceId: string, params?: { contactId?: string; status?: CommercialSuggestionStatus }) {
   return useSWR(["commercial-suggestions", workspaceId, params?.contactId, params?.status], () => listCommercialSuggestions(workspaceId, params));
+}
+
+export function useAutomationRules(workspaceId: string) {
+  return useSWR(["automation-rules", workspaceId], () => listAutomationRules(workspaceId));
+}
+
+export function useAutomationRunLogs(ruleId: string | undefined, workspaceId: string) {
+  return useSWR(ruleId ? ["automation-run-logs", ruleId, workspaceId] : null, () => listAutomationRunLogs(ruleId!, workspaceId));
 }

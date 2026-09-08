@@ -1,12 +1,16 @@
 import type { DealRepositoryPort, ListDealsFilter, UpdateDealInput } from "../ports/deal-repository.port.js";
 import type { PipelineStageRepositoryPort } from "../ports/pipeline-repository.port.js";
 import type { TimelineEventRepositoryPort } from "../ports/timeline-event-repository.port.js";
+import { evaluateAutomationTrigger, type AutomationUseCaseDeps } from "./automation-use-cases.js";
 import type { Deal, DealStageSummary, TimelineEvent } from "../../domain/crm/crm.model.js";
 
 export type DealUseCaseDeps = {
   dealRepository: DealRepositoryPort;
   pipelineStageRepository: PipelineStageRepositoryPort;
   timelineEventRepository: TimelineEventRepositoryPort;
+  /** Fase 6 — opcional de propósito: quando ausente, `moveDealStage` funciona 100% normalmente
+   * sem disparar nenhuma automação (mesmo racional de `InboxUseCaseDeps.aiResponder`). */
+  automation?: AutomationUseCaseDeps;
 };
 
 /** Guard de tenant/workspace — nunca 403, sempre 404. */
@@ -84,6 +88,10 @@ export async function moveDealStage(deps: DealUseCaseDeps, input: { dealId: stri
     actorType: "user",
     payload: { fromStageId: deal.stageId, toStageId: input.targetStageId, lossReason: targetStage.isLost ? input.lossReason : undefined, isWon: targetStage.isWon, isLost: targetStage.isLost },
   });
+  if (deps.automation) {
+    const contact = deal.contactId ? await deps.automation.contactRepository.getById(deal.contactId) : undefined;
+    await evaluateAutomationTrigger(deps.automation, { tenantId: deal.tenantId, workspaceId: deal.workspaceId, trigger: "deal_stage_changed", deal: updated, contact });
+  }
   return updated;
 }
 

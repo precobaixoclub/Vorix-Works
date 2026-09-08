@@ -1,5 +1,11 @@
 import { apiClient } from "@/lib/api-client";
 import type {
+  AutomationActionConfig,
+  AutomationActionType,
+  AutomationCondition,
+  AutomationRule,
+  AutomationRunLog,
+  AutomationTrigger,
   CommercialSuggestion,
   CommercialSuggestionStatus,
   Contact,
@@ -247,4 +253,37 @@ export function acceptCommercialSuggestion(suggestionId: string, workspaceId: st
 
 export function dismissCommercialSuggestion(suggestionId: string, workspaceId: string): Promise<CommercialSuggestion> {
   return apiClient.post<CommercialSuggestion>(`/v1/commercial-suggestions/${encodeURIComponent(suggestionId)}/dismiss`, { workspaceId });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Automação (Fase 6) — gatilho + condições (E lógico) + uma ação por regra
+// ---------------------------------------------------------------------------------------------
+
+export type AutomationRuleInput = {
+  workspaceId: string;
+  name: string;
+  trigger: AutomationTrigger;
+  conditions: readonly AutomationCondition[];
+  action: AutomationActionType;
+  actionConfig: AutomationActionConfig;
+};
+
+export function listAutomationRules(workspaceId: string): Promise<AutomationRule[]> {
+  return apiClient.get<AutomationRule[]>(`/v1/automation-rules?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+export function createAutomationRule(input: AutomationRuleInput): Promise<AutomationRule> {
+  return apiClient.post<AutomationRule>("/v1/automation-rules", input);
+}
+
+export function updateAutomationRule(ruleId: string, workspaceId: string, patch: Partial<Omit<AutomationRuleInput, "workspaceId">> & { active?: boolean }): Promise<AutomationRule> {
+  return apiClient.patch<AutomationRule>(`/v1/automation-rules/${encodeURIComponent(ruleId)}`, { workspaceId, ...patch });
+}
+
+export function deleteAutomationRule(ruleId: string, workspaceId: string): Promise<void> {
+  return apiClient.delete<void>(`/v1/automation-rules/${encodeURIComponent(ruleId)}?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+export function listAutomationRunLogs(ruleId: string, workspaceId: string): Promise<AutomationRunLog[]> {
+  return apiClient.get<AutomationRunLog[]>(`/v1/automation-rules/${encodeURIComponent(ruleId)}/run-logs?workspaceId=${encodeURIComponent(workspaceId)}`);
 }

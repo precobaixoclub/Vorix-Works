@@ -173,6 +173,47 @@ export type LeadScore = {
 export type CommercialSuggestionAction = "follow_up_task" | "reach_out" | "review_deal_stage" | "send_proposal" | "none";
 export type CommercialSuggestionStatus = "pending" | "accepted" | "dismissed";
 
+export type AutomationTrigger = "deal_stage_changed" | "contact_created" | "proposal_accepted" | "proposal_rejected";
+export type AutomationConditionField = "pipelineId" | "stageId" | "origin" | "tag";
+export type AutomationActionType = "create_task" | "add_tag" | "assign_owner" | "assign_owner_least_loaded_in_team" | "move_deal_stage";
+
+export type AutomationCondition = {
+  field: AutomationConditionField;
+  equals: string;
+};
+
+export type AutomationActionConfig = {
+  taskType?: TaskType;
+  taskTitle?: string;
+  tag?: string;
+  ownerUserId?: string;
+  teamId?: string;
+  targetStageId?: string;
+};
+
+export type AutomationRule = {
+  id: string;
+  name: string;
+  trigger: AutomationTrigger;
+  conditions: readonly AutomationCondition[];
+  action: AutomationActionType;
+  actionConfig: AutomationActionConfig;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AutomationRunLog = {
+  id: string;
+  ruleId: string;
+  contactId?: string;
+  dealId?: string;
+  matched: boolean;
+  actionTaken: boolean;
+  error?: string;
+  occurredAt: string;
+};
+
 export type CommercialSuggestion = {
   id: string;
   contactId: string;

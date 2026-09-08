@@ -94,6 +94,8 @@ import type { SessionRepositoryPort } from "../../../application/ports/session-r
 import type { TenantMembershipRepositoryPort } from "../../../application/ports/tenant-membership-repository.port.js";
 import type { TenantMemberInviteRepositoryPort } from "../../../application/ports/tenant-member-invite-repository.port.js";
 import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../../application/ports/team-repository.port.js";
+import type { AutomationRuleRepositoryPort } from "../../../application/ports/automation-rule-repository.port.js";
+import type { AutomationRunLogRepositoryPort } from "../../../application/ports/automation-run-log-repository.port.js";
 import type { CommercialSuggestionRepositoryPort } from "../../../application/ports/commercial-suggestion-repository.port.js";
 import type { ContactRepositoryPort } from "../../../application/ports/contact-repository.port.js";
 import type { ContactIdentityRepositoryPort } from "../../../application/ports/contact-identity-repository.port.js";
@@ -437,6 +439,9 @@ export type ApiContainer = {
     proposalRepository: ProposalRepositoryPort;
     /** CRM/Comercial (Fase 5) — Sugestões do Copiloto Comercial (IA). */
     commercialSuggestionRepository: CommercialSuggestionRepositoryPort;
+    /** CRM/Comercial (Fase 6) — Regras de automação e seu log de execução. */
+    automationRuleRepository: AutomationRuleRepositoryPort;
+    automationRunLogRepository: AutomationRunLogRepositoryPort;
     /** Pool próprio (independente do `pool` de Workspace/Asset/Chat) — ver `buildIdentityRepositories`. Fechado no hook `onClose` também. */
     pool: pg.Pool;
   };

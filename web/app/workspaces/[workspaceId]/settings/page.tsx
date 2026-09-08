@@ -137,6 +137,7 @@ export default function SettingsPage() {
             </CardHeader>
             <CardBody className="grid gap-2 sm:grid-cols-2">
               <SettingsAction href={`/workspaces/${workspace.id}/settings/products`} title="Produtos e Serviços" description="Catálogo simples de preço, usado em propostas." />
+              <SettingsAction href={`/workspaces/${workspace.id}/settings/automations`} title="Automações" description="Gatilho + condições + ação — regras simples do CRM." />
             </CardBody>
           </Card>
 

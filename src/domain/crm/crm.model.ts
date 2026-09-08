@@ -221,6 +221,71 @@ export type CommercialSuggestion = {
   resolvedAt?: string;
 };
 
+/**
+ * CRM — Fase 6 (Automação). Motor SIMPLES e guiado (auditoria, seção 16: "nunca um Zapier") —
+ * gatilho fechado + até 3 condições (E lógico só, vocabulário fechado, sem OR/grupos/expressões) +
+ * UMA ação por regra. Cada disparo grava um `AutomationRunLog` (auditabilidade obrigatória) e
+ * NUNCA pode quebrar a ação de negócio que o disparou — falha de automação é sempre contida e
+ * registrada, nunca propagada (ver `evaluateAutomationTrigger`).
+ */
+export const AUTOMATION_TRIGGERS = ["deal_stage_changed", "contact_created", "proposal_accepted", "proposal_rejected"] as const;
+export type AutomationTrigger = (typeof AUTOMATION_TRIGGERS)[number];
+
+export const AUTOMATION_CONDITION_FIELDS = ["pipelineId", "stageId", "origin", "tag"] as const;
+export type AutomationConditionField = (typeof AUTOMATION_CONDITION_FIELDS)[number];
+
+export type AutomationCondition = {
+  field: AutomationConditionField;
+  equals: string;
+};
+
+/**
+ * `assign_owner_least_loaded_in_team` é o "roteamento inteligente" desta fase (auditoria, seção
+ * 17) — distribui entre os membros de `actionConfig.teamId` escolhendo sempre quem tem MENOS
+ * contatos daquele time atribuídos no momento (round-robin por carga real, nunca um cursor
+ * artificial que dessincroniza do estado de verdade). As demais estratégias citadas na auditoria
+ * (disponibilidade/agenda) exigem infraestrutura de presença que não existe hoje — deliberadamente
+ * fora de escopo desta fase, não fingidas aqui.
+ */
+export const AUTOMATION_ACTIONS = ["create_task", "add_tag", "assign_owner", "assign_owner_least_loaded_in_team", "move_deal_stage"] as const;
+export type AutomationActionType = (typeof AUTOMATION_ACTIONS)[number];
+
+export type AutomationActionConfig = {
+  taskType?: TaskType;
+  taskTitle?: string;
+  tag?: string;
+  ownerUserId?: string;
+  teamId?: string;
+  targetStageId?: string;
+};
+
+export type AutomationRule = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  name: string;
+  trigger: AutomationTrigger;
+  conditions: readonly AutomationCondition[];
+  action: AutomationActionType;
+  actionConfig: AutomationActionConfig;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AutomationRunLog = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  ruleId: string;
+  contactId?: string;
+  dealId?: string;
+  matched: boolean;
+  actionTaken: boolean;
+  error?: string;
+  occurredAt: string;
+};
+
 export type ProposalItem = {
   productId?: string;
   name: string;

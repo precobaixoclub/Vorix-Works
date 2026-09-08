@@ -29,6 +29,7 @@ import { registerDealsRoutes } from "./deals.route.js";
 import { registerTasksRoutes } from "./tasks.route.js";
 import { registerProductsRoutes } from "./products.route.js";
 import { registerCommercialSuggestionsRoutes } from "./commercial-suggestions.route.js";
+import { registerAutomationRulesRoutes } from "./automation-rules.route.js";
 import { registerProposalsRoutes } from "./proposals.route.js";
 import { registerPublicProposalsRoutes } from "./public-proposals.route.js";
 import { AiGatewayCommercialCopilotGenerator } from "../../../../infrastructure/ai-gateway/commercial-copilot-generator-adapter.js";
@@ -216,6 +217,19 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   // só quando `identity` existe (driver postgres), nunca em modo memória (dev/teste sem banco).
   if (app.zunoContainer.identity) {
     const identity = app.zunoContainer.identity;
+    // CRM/Comercial (Fase 6) — deps de automação, reaproveitadas por Contatos/Negócios/Propostas
+    // (opcional em cada um: quando ausente, nenhuma automação dispara, comportamento idêntico às
+    // fases anteriores).
+    const automationDeps = {
+      automationRuleRepository: identity.automationRuleRepository,
+      automationRunLogRepository: identity.automationRunLogRepository,
+      contactRepository: identity.contactRepository,
+      dealRepository: identity.dealRepository,
+      taskRepository: identity.taskRepository,
+      teamMembershipRepository: identity.teamMembershipRepository,
+      pipelineStageRepository: identity.pipelineStageRepository,
+      timelineEventRepository: identity.timelineEventRepository,
+    };
     await registerTeamsRoutes(app, { teamRepository: identity.teamRepository, teamMembershipRepository: identity.teamMembershipRepository });
     await registerTenantMembersRoutes(app, {
       tenantMemberInviteRepository: identity.tenantMemberInviteRepository,
@@ -229,6 +243,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       // Fase 5 — GET /contacts/:id/lead-score.
       dealRepository: identity.dealRepository,
       taskRepository: identity.taskRepository,
+      // Fase 6 — dispara `contact_created` ao criar um contato.
+      automation: automationDeps,
     });
     // CRM/Comercial (Fase 2) — Pipelines/Etapas/Negócios (Kanban).
     await registerPipelinesRoutes(app, {
@@ -239,17 +255,27 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       dealRepository: identity.dealRepository,
       pipelineStageRepository: identity.pipelineStageRepository,
       timelineEventRepository: identity.timelineEventRepository,
+      // Fase 6 — dispara `deal_stage_changed` ao mover um negócio de etapa.
+      automation: automationDeps,
     });
     // CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público).
     await registerTasksRoutes(app, { taskRepository: identity.taskRepository, timelineEventRepository: identity.timelineEventRepository });
     await registerProductsRoutes(app, { productRepository: identity.productRepository });
-    await registerProposalsRoutes(app, { proposalRepository: identity.proposalRepository, timelineEventRepository: identity.timelineEventRepository });
+    await registerProposalsRoutes(app, {
+      proposalRepository: identity.proposalRepository,
+      timelineEventRepository: identity.timelineEventRepository,
+      automation: automationDeps,
+    });
     await registerPublicProposalsRoutes(app, {
       proposalRepository: identity.proposalRepository,
       timelineEventRepository: identity.timelineEventRepository,
       dealRepository: identity.dealRepository,
       pipelineStageRepository: identity.pipelineStageRepository,
+      // Fase 6 — dispara `proposal_accepted`/`proposal_rejected` ao responder ao link público.
+      automation: automationDeps,
     });
+    // CRM/Comercial (Fase 6) — Regras de automação (motor simples, gatilho + condições + ação).
+    await registerAutomationRulesRoutes(app, automationDeps);
     // CRM/Comercial (Fase 5) — Copiloto Comercial (IA, via AI Gateway) + Pontuação de lead.
     await registerCommercialSuggestionsRoutes(app, {
       contactRepository: identity.contactRepository,

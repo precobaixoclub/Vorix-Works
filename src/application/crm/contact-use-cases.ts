@@ -1,12 +1,15 @@
 import type { ContactIdentityRepositoryPort } from "../ports/contact-identity-repository.port.js";
 import type { ContactRepositoryPort, CreateContactInput, UpdateContactInput } from "../ports/contact-repository.port.js";
 import type { TimelineEventRepositoryPort } from "../ports/timeline-event-repository.port.js";
+import { evaluateAutomationTrigger, type AutomationUseCaseDeps } from "./automation-use-cases.js";
 import type { Contact, ContactChannel, ContactIdentity, TimelineEvent } from "../../domain/crm/crm.model.js";
 
 export type ContactUseCaseDeps = {
   contactRepository: ContactRepositoryPort;
   contactIdentityRepository: ContactIdentityRepositoryPort;
   timelineEventRepository: TimelineEventRepositoryPort;
+  /** Fase 6 — opcional de propósito, mesmo racional de `DealUseCaseDeps.automation`. */
+  automation?: AutomationUseCaseDeps;
 };
 
 /** Guard de tenant/workspace — nunca 403 (não revela existência cross-tenant), sempre 404. */
@@ -29,6 +32,9 @@ export async function createContact(deps: ContactUseCaseDeps, input: CreateConta
     actorType: "user",
     payload: { origin: contact.origin },
   });
+  if (deps.automation) {
+    await evaluateAutomationTrigger(deps.automation, { tenantId: contact.tenantId, workspaceId: contact.workspaceId, trigger: "contact_created", contact });
+  }
   return contact;
 }
 

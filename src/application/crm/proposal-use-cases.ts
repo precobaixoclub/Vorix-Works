@@ -3,11 +3,15 @@ import type { DealRepositoryPort } from "../ports/deal-repository.port.js";
 import type { PipelineStageRepositoryPort } from "../ports/pipeline-repository.port.js";
 import type { ProposalRepositoryPort, UpdateProposalInput } from "../ports/proposal-repository.port.js";
 import type { TimelineEventRepositoryPort } from "../ports/timeline-event-repository.port.js";
+import { evaluateAutomationTrigger, type AutomationUseCaseDeps } from "./automation-use-cases.js";
 import type { Proposal, ProposalItem } from "../../domain/crm/crm.model.js";
 
 export type ProposalUseCaseDeps = {
   proposalRepository: ProposalRepositoryPort;
   timelineEventRepository: TimelineEventRepositoryPort;
+  /** Fase 6 — opcional de propósito, mesmo racional de `DealUseCaseDeps.automation`. Dispara
+   * `proposal_accepted`/`proposal_rejected` a partir de `respondToPublicProposal`. */
+  automation?: AutomationUseCaseDeps;
 };
 
 /** Deps do lado "negócio ganho ao aceitar a proposta" — bounded context ainda `crm`, então
@@ -160,6 +164,11 @@ async function respondToPublicProposal(deps: ProposalUseCaseDeps, rawToken: stri
     actorType: "system",
     payload: {},
   });
+  if (deps.automation) {
+    const contact = updated.contactId ? await deps.automation.contactRepository.getById(updated.contactId) : undefined;
+    const deal = updated.dealId ? await deps.automation.dealRepository.getById(updated.dealId) : undefined;
+    await evaluateAutomationTrigger(deps.automation, { tenantId: updated.tenantId, workspaceId: updated.workspaceId, trigger: decision === "accepted" ? "proposal_accepted" : "proposal_rejected", contact, deal });
+  }
   return updated;
 }
 

@@ -10,6 +10,7 @@ import {
 } from "../../../../application/identity/index.js";
 import type { PlatformBillingRepositoryPort } from "../../../../application/ports/platform-billing-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
+import type { ProductAnalyticsUseCaseDeps } from "../../../../application/product-analytics/product-analytics-use-cases.js";
 import { signupPublicTransactional } from "../../../../infrastructure/storage/postgres/signup-public-transactional.js";
 import type { ApiConfig } from "../../config/api-config.js";
 import type { ApiContainer } from "../../di/container.js";
@@ -144,7 +145,7 @@ const SWITCH_TENANT_BODY_SCHEMA = {
   },
 } as const;
 
-export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?: IdentityDeps; config: ApiConfig; workspaceRepository?: WorkspaceRepositoryPort }): Promise<void> {
+export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?: IdentityDeps; config: ApiConfig; workspaceRepository?: WorkspaceRepositoryPort; productAnalytics?: ProductAnalyticsUseCaseDeps }): Promise<void> {
   app.post("/auth/login", { schema: { body: LOGIN_BODY_SCHEMA } }, async (request, reply) => {
     const identity = requireIdentity(deps.identity);
     const body = request.body as { email: string; password: string };
@@ -187,6 +188,7 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?
         refreshTokenTtlSeconds: identity.refreshTokenTtlSeconds,
         idGenerator: (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
         now: () => new Date(),
+        productAnalytics: deps.productAnalytics,
       },
       {
         email: body.email,

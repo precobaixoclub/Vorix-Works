@@ -61,6 +61,20 @@ import { registerWorkspaceRoutes } from "./workspaces.route.js";
  * decorators do Fastify — nenhuma rota importa um adapter diretamente.
  */
 export async function registerV1Routes(app: FastifyInstance): Promise<void> {
+  // Trial + Product Analytics — construído uma ÚNICA vez aqui (não dentro do bloco `if
+  // (identity)` mais abaixo) porque `registerAuthRoutes` (signup) já precisa dele antes disso.
+  // `undefined` quando `identity` não existe (modo memória/noop) — toda instrumentação vira um
+  // no-op silencioso automaticamente (ver `recordProductEvent`/`recordFirstEvent`).
+  const productAnalyticsDeps = app.zunoContainer.identity
+    ? {
+        productEventRepository: app.zunoContainer.identity.productEventRepository,
+        enabled: app.zunoConfig.productAnalytics.enabled,
+        onWriteFailed: ({ eventName, error }: { eventName: string; error: unknown }) => {
+          app.log.warn({ err: error, eventName }, "product_event_write_failed");
+        },
+      }
+    : undefined;
+
   await registerHealthRoutes(app);
   await registerWorkspaceRoutes(app, {
     workspaceRepository: app.zunoContainer.workspaceRepository,
@@ -70,6 +84,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     identity: app.zunoContainer.identity,
     config: app.zunoConfig,
     workspaceRepository: app.zunoContainer.workspaceRepository,
+    productAnalytics: productAnalyticsDeps,
   });
   await registerPlatformPlansRoutes(app);
   await registerConversationRoutes(app, {
@@ -123,6 +138,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     executionFeatureFlags: app.zunoContainer.executionFeatureFlags,
     executionEnvironmentPolicy: app.zunoContainer.executionEnvironmentPolicy,
     idGenerator: () => `execution-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    productAnalytics: productAnalyticsDeps,
   });
   await registerProductionRoutes(app, {
     conversationRepository: app.zunoContainer.conversationRepository,
@@ -221,6 +237,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       realtimeSubscriber: app.zunoContainer.inboxRealtimeSubscriber,
       membershipRepository: app.zunoContainer.identity?.membershipRepository,
       userRepository: app.zunoContainer.identity?.userRepository,
+      productAnalytics: productAnalyticsDeps,
     });
     // Fase 7 (Resultados) — métricas agregadas de atendimento, mesmo kill switch do módulo.
     await registerInboxMetricsRoutes(app, { inboxMetricsRepository: app.zunoContainer.inboxMetricsRepository });
@@ -247,6 +264,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       tenantMemberInviteRepository: identity.tenantMemberInviteRepository,
       membershipRepository: identity.membershipRepository,
       userRepository: identity.userRepository,
+      workspaceRepository: app.zunoContainer.workspaceRepository,
+      productAnalytics: productAnalyticsDeps,
     });
     await registerContactsRoutes(app, {
       contactRepository: identity.contactRepository,
@@ -269,6 +288,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       timelineEventRepository: identity.timelineEventRepository,
       // Fase 6 — dispara `deal_stage_changed` ao mover um negócio de etapa.
       automation: automationDeps,
+      productAnalytics: productAnalyticsDeps,
     });
     // CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público).
     await registerTasksRoutes(app, { taskRepository: identity.taskRepository, timelineEventRepository: identity.timelineEventRepository });
@@ -277,6 +297,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       proposalRepository: identity.proposalRepository,
       timelineEventRepository: identity.timelineEventRepository,
       automation: automationDeps,
+      productAnalytics: productAnalyticsDeps,
     });
     await registerPublicProposalsRoutes(app, {
       proposalRepository: identity.proposalRepository,
@@ -285,6 +306,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       pipelineStageRepository: identity.pipelineStageRepository,
       // Fase 6 — dispara `proposal_accepted`/`proposal_rejected` ao responder ao link público.
       automation: automationDeps,
+      productAnalytics: productAnalyticsDeps,
     });
     // CRM/Comercial (Fase 6) — Regras de automação (motor simples, gatilho + condições + ação).
     await registerAutomationRulesRoutes(app, automationDeps);
@@ -327,6 +349,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       subscriptionRepository: identity.subscriptionRepository,
       userRepository: identity.userRepository,
       appBaseUrl: app.zunoConfig.billing.appBaseUrl,
+      productAnalytics: productAnalyticsDeps,
     });
     // Trial + Product Analytics — trial sem cartão, mesma Subscription real de qualquer assinatura.
     await registerBillingTrialRoutes(app, {
@@ -335,18 +358,15 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       platformBillingRepository: identity.platformBillingRepository,
       billingEventRepository: identity.billingEventRepository,
       trialEnabled: app.zunoConfig.billing.trialEnabled,
+      productAnalytics: productAnalyticsDeps,
     });
-    // Trial + Product Analytics — fundação de eventos de produto.
-    const productAnalyticsDeps = {
-      productEventRepository: identity.productEventRepository,
-      enabled: app.zunoConfig.productAnalytics.enabled,
-      onWriteFailed: ({ eventName, error }: { eventName: string; error: unknown }) => {
-        app.log.warn({ err: error, eventName }, "product_event_write_failed");
-      },
-    };
-    await registerProductEventsRoutes(app, productAnalyticsDeps);
+    // Trial + Product Analytics — fundação de eventos de produto (`productAnalyticsDeps`
+    // construído uma única vez no topo desta função, reusado aqui e por `registerAuthRoutes`).
+    // Non-null seguro: estamos dentro de `if (app.zunoContainer.identity)`, a MESMA condição que
+    // decidiu `productAnalyticsDeps` lá em cima — nunca `undefined` neste ponto.
+    await registerProductEventsRoutes(app, productAnalyticsDeps!);
     // SaaS Commercialization (Fase 3) — upgrade/downgrade, add-ons, cancelamento/reativação.
-    await registerBillingLifecycleRoutes(app, { ...entitlementDeps, billingProvider: app.zunoContainer.billingProvider, billingEventRepository: identity.billingEventRepository });
+    await registerBillingLifecycleRoutes(app, { ...entitlementDeps, billingProvider: app.zunoContainer.billingProvider, billingEventRepository: identity.billingEventRepository, productAnalytics: productAnalyticsDeps });
     // SaaS Commercialization (Fase 4) — tela "Plano e Cobrança" self-service.
     await registerBillingOverviewRoutes(app, {
       ...entitlementDeps,
@@ -364,6 +384,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         tenantMemberInviteRepository: identity.tenantMemberInviteRepository,
         membershipRepository: identity.membershipRepository,
         userRepository: identity.userRepository,
+        workspaceRepository: app.zunoContainer.workspaceRepository,
+        productAnalytics: productAnalyticsDeps,
       },
       inboxDeps: {
         connectionRepository: app.zunoContainer.messagingConnectionRepository,
@@ -374,10 +396,12 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         workspaceRepository: app.zunoContainer.workspaceRepository,
         outboundQueue: app.zunoContainer.inboxOutboundQueue,
         provider: app.zunoContainer.inboxProvider,
+        productAnalytics: productAnalyticsDeps,
       },
       // Independente do entitlement de messaging_connections: isto é o kill switch operacional
       // do módulo (CONVERSATIONS_MODULE_ENABLED), não o limite de plano.
       inboxModuleEnabled: app.zunoContainer.inboxFeatureFlags.enabled,
+      productAnalytics: productAnalyticsDeps,
     });
   }
   await registerMetaAdsRoutes(app, {

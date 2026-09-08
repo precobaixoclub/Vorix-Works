@@ -4,12 +4,16 @@ import type { SubscriptionRepositoryPort } from "../ports/subscription-repositor
 import type { BillingInterval } from "../../domain/platform-billing/subscription.model.js";
 import type { PlatformPlanCode } from "../../domain/platform-billing/platform-plan-catalog.js";
 import { priceRefFor } from "./price-ref.js";
+import { recordProductEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
 
 export type CheckoutUseCaseDeps = {
   billingProvider: BillingProviderPort;
   planVersionRepository: PlanVersionRepositoryPort;
   addonDefinitionRepository: AddonDefinitionRepositoryPort;
   subscriptionRepository: SubscriptionRepositoryPort;
+  /** Trial + Product Analytics — integração mínima (`checkout_started`, confirmado pelo provider,
+   * nunca só pelo clique do usuário). */
+  productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
 
 export type StartCheckoutInput = {
@@ -87,6 +91,14 @@ export async function startCheckout(deps: CheckoutUseCaseDeps, input: StartCheck
 
   if (!result.ok) {
     throw new Error(`CHECKOUT_PROVIDER_ERROR(${result.kind}): ${result.message}`);
+  }
+  if (deps.productAnalytics) {
+    await recordProductEvent(deps.productAnalytics, {
+      eventName: "checkout_started",
+      source: "server",
+      tenantId: input.tenantId,
+      properties: { planKey: input.planCode, billingCycle: input.billingInterval },
+    });
   }
   return { checkoutUrl: result.checkoutUrl, providerSessionId: result.providerSessionId };
 }

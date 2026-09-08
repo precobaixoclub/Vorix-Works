@@ -5,6 +5,7 @@ import type { ProposalRepositoryPort, UpdateProposalInput } from "../ports/propo
 import type { TimelineEventRepositoryPort } from "../ports/timeline-event-repository.port.js";
 import { evaluateAutomationTrigger, type AutomationUseCaseDeps } from "./automation-use-cases.js";
 import type { Proposal, ProposalItem } from "../../domain/crm/crm.model.js";
+import { recordFirstEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
 
 export type ProposalUseCaseDeps = {
   proposalRepository: ProposalRepositoryPort;
@@ -12,6 +13,9 @@ export type ProposalUseCaseDeps = {
   /** Fase 6 — opcional de propósito, mesmo racional de `DealUseCaseDeps.automation`. Dispara
    * `proposal_accepted`/`proposal_rejected` a partir de `respondToPublicProposal`. */
   automation?: AutomationUseCaseDeps;
+  /** Trial + Product Analytics — integração MÍNIMA (`first_proposal_created`,
+   * `first_proposal_sent`, `first_proposal_accepted`). */
+  productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
 
 /** Deps do lado "negócio ganho ao aceitar a proposta" — bounded context ainda `crm`, então
@@ -21,6 +25,10 @@ export type ProposalDealLinkDeps = {
   dealRepository: DealRepositoryPort;
   pipelineStageRepository: PipelineStageRepositoryPort;
   timelineEventRepository: TimelineEventRepositoryPort;
+  /** Trial + Product Analytics — integração MÍNIMA (`first_deal_won`, mesmo evento que
+   * `moveDealStage` dispara — este é o SEGUNDO caminho pra um negócio ser ganho, que não passa
+   * por `moveDealStage` nenhuma vez, ver `applyProposalAcceptanceToDeal`). */
+  productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
 
 function generateProposalToken(): string {
@@ -67,6 +75,9 @@ export async function createProposal(deps: ProposalUseCaseDeps, input: { tenantI
     actorType: "user",
     payload: { dealId: proposal.dealId, totalCents: proposal.totalCents },
   });
+  if (deps.productAnalytics) {
+    await recordFirstEvent(deps.productAnalytics, { eventName: "first_proposal_created", source: "server", tenantId: proposal.tenantId, workspaceId: proposal.workspaceId });
+  }
   return { proposal, rawToken };
 }
 
@@ -106,6 +117,9 @@ export async function sendProposal(deps: ProposalUseCaseDeps, input: { proposalI
     actorType: "user",
     payload: {},
   });
+  if (deps.productAnalytics) {
+    await recordFirstEvent(deps.productAnalytics, { eventName: "first_proposal_sent", source: "server", tenantId: proposal.tenantId, workspaceId: proposal.workspaceId });
+  }
   return proposal;
 }
 
@@ -169,6 +183,9 @@ async function respondToPublicProposal(deps: ProposalUseCaseDeps, rawToken: stri
     const deal = updated.dealId ? await deps.automation.dealRepository.getById(updated.dealId) : undefined;
     await evaluateAutomationTrigger(deps.automation, { tenantId: updated.tenantId, workspaceId: updated.workspaceId, trigger: decision === "accepted" ? "proposal_accepted" : "proposal_rejected", contact, deal });
   }
+  if (deps.productAnalytics && decision === "accepted") {
+    await recordFirstEvent(deps.productAnalytics, { eventName: "first_proposal_accepted", source: "server", tenantId: updated.tenantId, workspaceId: updated.workspaceId });
+  }
   return updated;
 }
 
@@ -205,4 +222,7 @@ export async function applyProposalAcceptanceToDeal(deps: ProposalDealLinkDeps, 
     actorType: "system",
     payload: { fromStageId: deal.stageId, toStageId: wonStage.id, trigger: "proposal_accepted", proposalId: proposal.id, isWon: true },
   });
+  if (deps.productAnalytics) {
+    await recordFirstEvent(deps.productAnalytics, { eventName: "first_deal_won", source: "server", tenantId: deal.tenantId, workspaceId: deal.workspaceId });
+  }
 }

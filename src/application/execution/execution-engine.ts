@@ -21,6 +21,7 @@ import { createDefaultExecutionContractRegistry, type ExecutionContract, type Ex
 import { circuitOpenFailure, type HandlerCircuitBreakerPort } from "./handler-circuit-breaker.js";
 import { SideEffectGuard } from "./execution-operational-policy.js";
 import type { BackoffStrategy } from "../../domain/execution/execution.model.js";
+import { recordFirstEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
 
 // Achado ao vivo (Rodada 2, Fatia 3): `retryPolicy.backoffStrategy` do descriptor sempre existiu
 // no tipo mas nunca era lido em lugar nenhum — todo retry era imediato (mesmo loop síncrono,
@@ -61,6 +62,8 @@ export type ExecutionEngineDeps = ExecutionPreconditionDeps & {
   /** Injetável só pra teste (evita atrasar a suíte de verdade) — produção sempre usa o `setTimeout`
    * real por trás de `defaultSleep`. */
   sleep?: (ms: number) => Promise<void>;
+  /** Trial + Product Analytics — integração MÍNIMA (`first_content_created`). */
+  productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
 
 export type CreateExecutionRunInput = {
@@ -104,6 +107,9 @@ export async function createExecutionRun(deps: ExecutionEngineDeps, input: Creat
     runtimeDetails: validated.runtimeDetails,
   });
   await deps.executionRepository.appendEvent({ id: deps.idGenerator(), executionRunId: runId, eventType: "run_created", correlationId, causationId: input.causationId, traceId, payload: { mode: executionMode } });
+  if (deps.productAnalytics) {
+    await recordFirstEvent(deps.productAnalytics, { eventName: "first_content_created", source: "server", tenantId: input.tenantId, workspaceId: input.workspaceId });
+  }
   return detail.run;
 }
 

@@ -2,13 +2,21 @@ import { randomBytes, createHash } from "node:crypto";
 import type { TenantMemberInviteRepositoryPort } from "../ports/tenant-member-invite-repository.port.js";
 import type { TenantMembershipRepositoryPort } from "../ports/tenant-membership-repository.port.js";
 import type { UserRepositoryPort } from "../ports/user-repository.port.js";
+import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
 import type { TenantMemberInvite, TenantMembership, TenantRole } from "../../domain/identity/identity.model.js";
+import { recordFirstEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
 
 export type InviteUseCaseDeps = {
   tenantMemberInviteRepository: TenantMemberInviteRepositoryPort;
   membershipRepository: TenantMembershipRepositoryPort;
   userRepository: UserRepositoryPort;
   now?: () => Date;
+  /** Trial + Product Analytics — integração mínima (`first_team_member_invited`). Opcional: usado
+   * só pra resolver o `workspaceId` quando o chamador não convida a partir de um workspace
+   * específico (ex.: tela "Usuários" do tenant, ver `tenant-members.route.ts`) — nunca decide
+   * regra de convite, só onde registrar o evento. */
+  workspaceRepository?: WorkspaceRepositoryPort;
+  productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
@@ -23,7 +31,7 @@ function hashInviteToken(rawToken: string): string {
 
 /** Retorna o token BRUTO uma única vez (pra enviar por e-mail) — nunca persistido em claro, mesmo
  * racional de `RefreshToken.tokenHash`. */
-export async function inviteMember(deps: InviteUseCaseDeps, input: { tenantId: string; email: string; role: TenantRole; invitedByUserId: string }): Promise<{ invite: TenantMemberInvite; rawToken: string }> {
+export async function inviteMember(deps: InviteUseCaseDeps, input: { tenantId: string; email: string; role: TenantRole; invitedByUserId: string; workspaceId?: string }): Promise<{ invite: TenantMemberInvite; rawToken: string }> {
   const now = (deps.now ?? (() => new Date()))();
   const rawToken = generateInviteToken();
   const invite = await deps.tenantMemberInviteRepository.create({
@@ -34,6 +42,17 @@ export async function inviteMember(deps: InviteUseCaseDeps, input: { tenantId: s
     invitedByUserId: input.invitedByUserId,
     expiresAt: new Date(now.getTime() + INVITE_TTL_MS).toISOString(),
   });
+  if (deps.productAnalytics) {
+    const workspaceId = input.workspaceId ?? (await deps.workspaceRepository?.listByTenant(input.tenantId))?.[0]?.id;
+    if (workspaceId) {
+      await recordFirstEvent(deps.productAnalytics, {
+        eventName: "first_team_member_invited",
+        source: "server",
+        tenantId: input.tenantId,
+        workspaceId,
+      });
+    }
+  }
   return { invite, rawToken };
 }
 

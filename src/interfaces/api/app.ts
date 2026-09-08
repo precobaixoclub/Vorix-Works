@@ -110,6 +110,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   if (container.identity) {
     const identity = container.identity;
+    // Trial + Product Analytics — mesma construção de `registerV1Routes` (webhook fica FORA de
+    // `/v1`, registrado antes dele, então precisa da própria instância; nunca um segundo tipo de
+    // deps, só a mesma forma reconstruída aqui).
+    const productAnalyticsDeps = {
+      productEventRepository: identity.productEventRepository,
+      enabled: config.productAnalytics.enabled,
+      onWriteFailed: ({ eventName, error }: { eventName: string; error: unknown }) => {
+        app.log.warn({ err: error, eventName }, "product_event_write_failed");
+      },
+    };
     await registerBillingWebhookRoutes(app, {
       billingProvider: container.billingProvider,
       paymentWebhookEventRepository: identity.paymentWebhookEventRepository,
@@ -118,6 +128,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       platformBillingRepository: identity.platformBillingRepository,
       billingEventRepository: identity.billingEventRepository,
       invoiceRepository: identity.invoiceRepository,
+      productAnalytics: productAnalyticsDeps,
     });
   }
 

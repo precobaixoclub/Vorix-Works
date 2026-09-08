@@ -4,6 +4,7 @@ import type { LoginUseCaseOutput } from "../../../application/identity/login.use
 import { signupPublic, type SignupPublicUseCaseInput } from "../../../application/identity/signup-public.usecase.js";
 import type { JwtPort } from "../../../application/ports/jwt.port.js";
 import type { PasswordHasherPort } from "../../../application/ports/password-hasher.port.js";
+import { recordProductEvent, type ProductAnalyticsUseCaseDeps } from "../../../application/product-analytics/product-analytics-use-cases.js";
 import { PostgresAuditLogRepository } from "./postgres-audit-log-repository.js";
 import { PostgresPipelineRepository, PostgresPipelineStageRepository } from "./postgres-pipeline-repository.js";
 import { PostgresPlatformBillingRepository } from "./postgres-platform-billing-repository.js";
@@ -20,6 +21,9 @@ export type SignupPublicTransactionDeps = {
   refreshTokenTtlSeconds: number;
   idGenerator: (prefix: string) => string;
   now?: () => Date;
+  /** Trial + Product Analytics — integração MÍNIMA (só o registro do evento, nenhuma regra de
+   * signup muda). `undefined` = Product Analytics não configurado, nunca bloqueia o signup. */
+  productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
 
 /**
@@ -77,6 +81,17 @@ export async function signupPublicTransactional(
     }
 
     await client.query("commit");
+
+    // Sempre DEPOIS do commit — um evento pra um signup que acabou sendo revertido seria mentira.
+    // `productEventRepository` aqui usa o pool REAL (nunca `txPool`, que já foi liberado/não
+    // participa de nada fora desta transação).
+    if (deps.productAnalytics) {
+      await recordProductEvent(deps.productAnalytics, { eventName: "signup_completed", source: "server", tenantId: result.tenantId, userId: result.user.id });
+      if (workspace) {
+        await recordProductEvent(deps.productAnalytics, { eventName: "workspace_created", source: "server", tenantId: result.tenantId, workspaceId: workspace.id });
+      }
+    }
+
     return result;
   } catch (error) {
     await client.query("rollback");

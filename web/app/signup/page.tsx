@@ -10,6 +10,7 @@ import { Logo } from "@/components/Logo";
 import { useAuth } from "@/contexts/auth-context";
 import { listWorkspaces } from "@/features/workspace/api";
 import { ApiError } from "@/lib/api-client";
+import { trackProductEvent } from "@/lib/product-events";
 
 /**
  * Cadastro público — Fase 2 do rollout B2C. POST /v1/auth/signup cria User + Tenant + Workspace
@@ -30,6 +31,10 @@ export default function SignupPage() {
     event.preventDefault();
     setSubmitting(true);
     setError(undefined);
+    // Marca o início real da tentativa de cadastro (não a mera visita à página) — o par com
+    // `signup_completed` (disparado pelo backend só depois do commit da transação, ver
+    // `signup-public-transactional.ts`) é o que permite medir abandono no formulário/validação.
+    trackProductEvent("signup_started");
     try {
       await signup({
         email: email.trim(),

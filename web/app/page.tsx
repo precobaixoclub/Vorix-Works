@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Logo } from "@/components/Logo";
+import { TrackPageView } from "@/components/TrackPageView";
 import { fetchPublicPlans, formatPlanPrice, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
 
 export const revalidate = 300;
@@ -43,6 +44,7 @@ export default async function RootPage() {
 
   return (
     <main className="flex min-h-dvh flex-col bg-surface">
+      <TrackPageView eventName="landing_view" />
       <header className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-3 py-4 sm:px-6 sm:py-6">
         <Logo className="h-12 w-auto text-ink" />
         <div className="flex items-center gap-2">

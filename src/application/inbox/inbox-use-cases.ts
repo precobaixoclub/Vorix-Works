@@ -12,6 +12,7 @@ import type { MessagingProvider, MessagingProviderErrorKind } from "../ports/mes
 import { MessagingProviderError } from "../ports/messaging-provider.port.js";
 import type { OutboundMessageQueuePort } from "../ports/outbound-message-queue.port.js";
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
+import { recordFirstEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
 
 /**
  * Casos de uso do módulo Conversas — Fase 1/3/4/5/6. Mesmo padrão de `conversation-use-cases.ts`:
@@ -59,6 +60,10 @@ export type InboxUseCaseDeps = {
    */
   outboundSendPaused?: boolean;
   idGenerator?: () => string;
+  /** Trial + Product Analytics — integração MÍNIMA (`first_channel_connected`,
+   * `first_conversation_received`, `first_conversation_replied`). Nenhuma regra de Conversas
+   * muda por causa disto. */
+  productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
 
 const defaultIdGenerator = () => `wuzsess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -93,7 +98,11 @@ export async function createConnection(deps: InboxUseCaseDeps, input: CreateConn
   // `instanceName: connection.id` — o RawEventConsumer do worker correlaciona eventos de volta a
   // esta conexão por esse id direto (ver `wuzapi-event-mapper.ts`), nunca pelo token de sessão.
   const { phoneNumber } = await deps.provider.connect({ externalSessionId, instanceName: connection.id });
-  return deps.connectionRepository.updateStatus(connection.id, { status: "connecting", externalSessionId, phoneNumber });
+  const updated = await deps.connectionRepository.updateStatus(connection.id, { status: "connecting", externalSessionId, phoneNumber });
+  if (deps.productAnalytics) {
+    await recordFirstEvent(deps.productAnalytics, { eventName: "first_channel_connected", source: "server", tenantId: input.tenantId, workspaceId: input.workspaceId });
+  }
+  return updated;
 }
 
 export type ListConnectionsInput = { tenantId: string; workspaceId: string };
@@ -387,6 +396,11 @@ export async function sendInboxMessage(deps: InboxUseCaseDeps, input: SendInboxM
   });
   await deps.outboundQueue.publish({ messageId: message.id, tenantId: input.tenantId, workspaceId: input.workspaceId, connectionId: conversation.connectionId });
   await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: message.createdAt, incrementUnread: false });
+  if (deps.productAnalytics && !input.sentByAi) {
+    // "Reply" no sentido do funil de ativação é uma resposta HUMANA — resposta automática de IA
+    // não conta como o marco de "alguém do time respondeu pela primeira vez".
+    await recordFirstEvent(deps.productAnalytics, { eventName: "first_conversation_replied", source: "server", tenantId: input.tenantId, workspaceId: input.workspaceId });
+  }
   return message;
 }
 
@@ -440,6 +454,11 @@ export async function registerInboundMessage(deps: InboxUseCaseDeps, input: Regi
   if (wasCreated) {
     await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: input.occurredAt, incrementUnread: true });
     deps.metrics?.incMessageInbound();
+    // `createdAt === updatedAt` é o sinal de que `findOrCreate` acabou de CRIAR a conversa agora
+    // (nunca reaproveitou uma existente) — só aí é de fato a primeira conversa do workspace.
+    if (deps.productAnalytics && conversation.createdAt === conversation.updatedAt) {
+      await recordFirstEvent(deps.productAnalytics, { eventName: "first_conversation_received", source: "server", tenantId: input.tenantId, workspaceId: input.workspaceId });
+    }
   }
   return { contact, conversation, message, wasCreated };
 }

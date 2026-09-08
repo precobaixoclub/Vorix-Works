@@ -10,6 +10,7 @@ import type { TenantMembershipRepositoryPort } from "../../../../application/por
 import type { UserRepositoryPort } from "../../../../application/ports/user-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
 import type { InboxRealtimeSubscriber } from "../../../../infrastructure/messaging/rabbitmq/inbox-realtime-subscriber.js";
+import type { ProductAnalyticsUseCaseDeps } from "../../../../application/product-analytics/product-analytics-use-cases.js";
 import {
   assignConversation,
   closeConversation,
@@ -100,6 +101,9 @@ export type InboxRoutesDeps = {
    * campo manual de userId). `undefined` no mesmo cenário de `membershipRepository` — a rota
    * responde uma lista vazia em vez de falhar. */
   userRepository?: UserRepositoryPort;
+  /** Trial + Product Analytics — integração MÍNIMA (`first_channel_connected`,
+   * `first_conversation_received`, `first_conversation_replied`). */
+  productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
 
 function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {

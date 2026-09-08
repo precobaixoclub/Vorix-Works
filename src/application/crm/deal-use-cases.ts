@@ -3,6 +3,7 @@ import type { PipelineStageRepositoryPort } from "../ports/pipeline-repository.p
 import type { TimelineEventRepositoryPort } from "../ports/timeline-event-repository.port.js";
 import { evaluateAutomationTrigger, type AutomationUseCaseDeps } from "./automation-use-cases.js";
 import type { Deal, DealStageSummary, TimelineEvent } from "../../domain/crm/crm.model.js";
+import { recordFirstEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
 
 export type DealUseCaseDeps = {
   dealRepository: DealRepositoryPort;
@@ -11,6 +12,8 @@ export type DealUseCaseDeps = {
   /** Fase 6 — opcional de propósito: quando ausente, `moveDealStage` funciona 100% normalmente
    * sem disparar nenhuma automação (mesmo racional de `InboxUseCaseDeps.aiResponder`). */
   automation?: AutomationUseCaseDeps;
+  /** Trial + Product Analytics — integração MÍNIMA (`first_deal_created`, `first_deal_won`). */
+  productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
 
 /** Guard de tenant/workspace — nunca 403, sempre 404. */
@@ -37,6 +40,9 @@ export async function createDeal(deps: DealUseCaseDeps, input: { tenantId: strin
     actorType: "user",
     payload: { pipelineId: deal.pipelineId, stageId: deal.stageId, origin: deal.origin },
   });
+  if (deps.productAnalytics) {
+    await recordFirstEvent(deps.productAnalytics, { eventName: "first_deal_created", source: "server", tenantId: deal.tenantId, workspaceId: deal.workspaceId });
+  }
   return deal;
 }
 
@@ -91,6 +97,9 @@ export async function moveDealStage(deps: DealUseCaseDeps, input: { dealId: stri
   if (deps.automation) {
     const contact = deal.contactId ? await deps.automation.contactRepository.getById(deal.contactId) : undefined;
     await evaluateAutomationTrigger(deps.automation, { tenantId: deal.tenantId, workspaceId: deal.workspaceId, trigger: "deal_stage_changed", deal: updated, contact });
+  }
+  if (deps.productAnalytics && targetStage.isWon) {
+    await recordFirstEvent(deps.productAnalytics, { eventName: "first_deal_won", source: "server", tenantId: deal.tenantId, workspaceId: deal.workspaceId });
   }
   return updated;
 }

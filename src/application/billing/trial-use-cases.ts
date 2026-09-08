@@ -5,6 +5,7 @@ import type { SubscriptionRepositoryPort } from "../ports/subscription-repositor
 import type { Subscription } from "../../domain/platform-billing/subscription.model.js";
 import type { PlatformPlanCode } from "../../domain/platform-billing/platform-plan-catalog.js";
 import { syncTenantBilling } from "./webhook-use-cases.js";
+import { recordProductEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
 
 /**
  * Trial configurável — SaaS Commercialization. Cria uma `Subscription` REAL com `status:"trial"`
@@ -25,6 +26,10 @@ export type TrialUseCaseDeps = {
    * flag nunca substitui a outra). */
   trialEnabled: boolean;
   now?: () => Date;
+  /** Trial + Product Analytics — integração MÍNIMA (só o registro do evento, nenhuma regra de
+   * trial muda). Distinto do `BillingEvent` já gravado logo acima — mesma ocorrência, dois
+   * sistemas com finalidades diferentes (ver `product-analytics.model.ts`). */
+  productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
 
 export type StartTrialInput = { tenantId: string; planCode: PlatformPlanCode };
@@ -71,6 +76,9 @@ export async function startTrial(deps: TrialUseCaseDeps, input: StartTrialInput)
     eventType: "trial_started",
     payload: { planCode: input.planCode, trialDays: planVersion.trialDays },
   });
+  if (deps.productAnalytics) {
+    await recordProductEvent(deps.productAnalytics, { eventName: "trial_started", source: "server", tenantId: input.tenantId, properties: { planCode: input.planCode } });
+  }
   return subscription;
 }
 
@@ -98,6 +106,9 @@ export async function expireTrials(deps: TrialUseCaseDeps): Promise<ExpireTrials
         eventType: "trial_expired",
         payload: { planVersionId: subscription.planVersionId },
       });
+      if (deps.productAnalytics) {
+        await recordProductEvent(deps.productAnalytics, { eventName: "trial_expired", source: "server", tenantId: subscription.tenantId });
+      }
       expiredCount += 1;
     } catch {
       failedTenantIds.push(subscription.tenantId);

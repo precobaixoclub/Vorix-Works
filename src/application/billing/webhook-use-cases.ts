@@ -5,6 +5,7 @@ import type { PlatformBillingRepositoryPort } from "../ports/platform-billing-re
 import type { SubscriptionRepositoryPort } from "../ports/subscription-repository.port.js";
 import { getPlatformPlan, type PlatformSubscriptionStatus } from "../../domain/platform-billing/platform-plan-catalog.js";
 import type { BillingInterval } from "../../domain/platform-billing/subscription.model.js";
+import { recordProductEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
 
 export type WebhookUseCaseDeps = {
   billingProvider: BillingProviderPort;
@@ -15,6 +16,9 @@ export type WebhookUseCaseDeps = {
   billingEventRepository: BillingEventRepositoryPort;
   invoiceRepository: InvoiceRepositoryPort;
   now?: () => Date;
+  /** Trial + Product Analytics — integração mínima. O webhook é a fonte de verdade (seção 12);
+   * `checkout_completed`/`trial_converted`/`payment_failed` só nascem aqui, nunca no frontend. */
+  productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
 
 export type ProcessBillingWebhookResult =
@@ -117,6 +121,12 @@ async function handleCheckoutCompleted(deps: WebhookUseCaseDeps, event: BillingW
     eventType: wasTrial ? "trial_converted" : "subscription_created",
     payload: event.data,
   });
+  if (deps.productAnalytics) {
+    await recordProductEvent(deps.productAnalytics, { eventName: "checkout_completed", source: "server", tenantId });
+    if (wasTrial) {
+      await recordProductEvent(deps.productAnalytics, { eventName: "trial_converted", source: "server", tenantId });
+    }
+  }
 }
 
 async function handleSubscriptionUpdated(deps: WebhookUseCaseDeps, event: BillingWebhookEvent, deleted: boolean): Promise<void> {
@@ -188,6 +198,9 @@ async function handleInvoiceEvent(deps: WebhookUseCaseDeps, event: BillingWebhoo
     eventType: succeeded ? "payment_succeeded" : "payment_failed",
     payload: event.data,
   });
+  if (!succeeded && deps.productAnalytics) {
+    await recordProductEvent(deps.productAnalytics, { eventName: "payment_failed", source: "server", tenantId: subscription.tenantId });
+  }
 }
 
 async function applyBillingWebhookEvent(deps: WebhookUseCaseDeps, event: BillingWebhookEvent): Promise<"processed" | "event_type_ignored"> {

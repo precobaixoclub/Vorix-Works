@@ -4,9 +4,10 @@ import type { WebhookEventRepositoryPort } from "../ports/webhook-event-reposito
 import { checksumPublicationPayload } from "../publication/publication-utils.js";
 import type { AuditActor } from "../../domain/credential/credential.model.js";
 import type { NormalizedProviderEvent } from "../../domain/webhook/webhook.model.js";
+import { recordFirstEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
 
 export class PublicationSynchronizationService {
-  constructor(private readonly deps: { webhookRepository: WebhookEventRepositoryPort; publicationRepository: PublicationRepositoryPort; auditRepository: OperationalAuditRepositoryPort; idGenerator: () => string }) {}
+  constructor(private readonly deps: { webhookRepository: WebhookEventRepositoryPort; publicationRepository: PublicationRepositoryPort; auditRepository: OperationalAuditRepositoryPort; idGenerator: () => string; productAnalytics?: ProductAnalyticsUseCaseDeps }) {}
 
   async processPending(input: { tenantId?: string; workspaceId?: string; limit?: number } = {}): Promise<{ processed: number; ignored: number; failed: number }> {
     const events = await this.deps.webhookRepository.listNormalizedEvents({ tenantId: input.tenantId, workspaceId: input.workspaceId, status: "pending", limit: input.limit ?? 100 });
@@ -81,6 +82,9 @@ export class PublicationSynchronizationService {
         const refreshed = await this.deps.publicationRepository.getDetail(event.publicationId);
         if (refreshed?.targets.every((candidate) => candidate.status === "published")) {
           await this.deps.publicationRepository.updatePlanState({ id: event.publicationId, state: "published", publishedAt: event.occurredAt });
+          if (this.deps.productAnalytics) {
+            await recordFirstEvent(this.deps.productAnalytics, { eventName: "first_content_published", source: "server", tenantId: event.tenantId, workspaceId: event.workspaceId });
+          }
         }
         await this.deps.publicationRepository.appendEvent({ id: this.deps.idGenerator(), publicationId: event.publicationId, eventType: event.type === "ReceiptUpdated" ? "receipt_updated" : "publication_sync_completed", targetId: event.targetId, receiptId, payload: { normalizedEventId: event.id, externalStatus: event.externalStatus, providerPublicationId } });
         return this.complete(event, "Receipt/publication sincronizados por evento externo.", "completed", receiptId);

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { fetchPublicPlans, formatPlanPrice, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
 import { Button } from "@/components/Button";
 import { Logo } from "@/components/Logo";
+import { PlanSelectLink } from "@/components/PlanSelectLink";
+import { TrackPageView } from "@/components/TrackPageView";
 
 export const revalidate = 300;
 
@@ -22,6 +24,7 @@ export default async function PricingPage() {
 
   return (
     <main className="flex min-h-dvh flex-col bg-surface">
+      <TrackPageView eventName="pricing_view" />
       <header className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-3 py-4 sm:px-6 sm:py-6">
         <Link href="/">
           <Logo className="h-12 w-auto text-ink" />
@@ -111,11 +114,9 @@ function PlanCard({ plan }: { plan: PublicPlan }) {
           </li>
         ))}
       </ul>
-      <Link href="/signup" className="mt-6">
-        <Button className="w-full" variant={plan.highlighted ? "primary" : "secondary"}>
-          {isFree ? "Começar grátis" : `Começar com ${plan.name}`}
-        </Button>
-      </Link>
+      <PlanSelectLink planCode={plan.code} className="mt-6" variant={plan.highlighted ? "primary" : "secondary"}>
+        {isFree ? "Começar grátis" : `Começar com ${plan.name}`}
+      </PlanSelectLink>
     </div>
   );
 }

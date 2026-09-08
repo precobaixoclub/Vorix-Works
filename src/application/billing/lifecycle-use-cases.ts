@@ -4,6 +4,7 @@ import type { EntitlementUseCaseDeps } from "./entitlement-use-cases.js";
 import { getLimit } from "./entitlement-use-cases.js";
 import { priceRefFor } from "./price-ref.js";
 import { syncTenantBilling } from "./webhook-use-cases.js";
+import { recordProductEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
 import type { BillingInterval } from "../../domain/platform-billing/subscription.model.js";
 import type { PlatformPlanCode } from "../../domain/platform-billing/platform-plan-catalog.js";
 import { PLAN_LIMIT_RESOURCES } from "../../domain/platform-billing/plan-entitlements.model.js";
@@ -11,6 +12,8 @@ import { PLAN_LIMIT_RESOURCES } from "../../domain/platform-billing/plan-entitle
 export type LifecycleUseCaseDeps = EntitlementUseCaseDeps & {
   billingProvider: BillingProviderPort;
   billingEventRepository: BillingEventRepositoryPort;
+  /** Trial + Product Analytics — integração mínima, mesmo racional de `trial-use-cases.ts`. */
+  productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
 
 async function getRealActiveSubscription(deps: LifecycleUseCaseDeps, tenantId: string) {
@@ -86,9 +89,22 @@ export async function changePlan(deps: LifecycleUseCaseDeps, input: ChangePlanIn
     throw new Error(`CHANGE_PLAN_PROVIDER_ERROR(${result.kind}): ${result.message}`);
   }
 
+  const oldPlanVersion = await deps.planVersionRepository.getById(subscription.planVersionId);
+
   await deps.subscriptionRepository.update(subscription.id, { planVersionId: newPlanVersion.id, billingInterval: input.billingInterval });
   await syncTenantBilling(deps, { tenantId: input.tenantId, planVersionId: newPlanVersion.id, status: subscription.status });
   await deps.billingEventRepository.record({ tenantId: input.tenantId, subscriptionId: subscription.id, eventType: "subscription_updated", payload: { newPlanCode: input.newPlanCode, prorationAmountCents: result.prorationAmountCents } });
+
+  if (deps.productAnalytics && oldPlanVersion) {
+    const oldPrice = input.billingInterval === "monthly" ? oldPlanVersion.monthlyPriceUsd : oldPlanVersion.yearlyPriceUsd;
+    const newPrice = input.billingInterval === "monthly" ? newPlanVersion.monthlyPriceUsd : newPlanVersion.yearlyPriceUsd;
+    await recordProductEvent(deps.productAnalytics, {
+      eventName: newPrice >= oldPrice ? "subscription_upgraded" : "subscription_downgraded",
+      source: "server",
+      tenantId: input.tenantId,
+      properties: { fromPlan: oldPlanVersion.planCode, toPlan: newPlanVersion.planCode },
+    });
+  }
 }
 
 export type PurchaseAddonInput = { tenantId: string; addonCode: string; quantity: number; billingInterval: BillingInterval };
@@ -155,6 +171,9 @@ export async function cancelSubscriptionSelfService(deps: LifecycleUseCaseDeps, 
 
   await deps.subscriptionRepository.update(subscription.id, { cancelAtPeriodEnd: true, cancellationReason: input.reason ?? null });
   await deps.billingEventRepository.record({ tenantId: input.tenantId, subscriptionId: subscription.id, eventType: "subscription_canceled", payload: { reason: input.reason, atPeriodEnd: true } });
+  if (deps.productAnalytics) {
+    await recordProductEvent(deps.productAnalytics, { eventName: "subscription_canceled", source: "server", tenantId: input.tenantId });
+  }
 }
 
 /** Reativação — só possível ENQUANTO a assinatura ainda não passou do fim do período
@@ -173,4 +192,7 @@ export async function reactivateSubscription(deps: LifecycleUseCaseDeps, input: 
 
   await deps.subscriptionRepository.update(subscription.id, { cancelAtPeriodEnd: false, cancellationReason: null });
   await deps.billingEventRepository.record({ tenantId: input.tenantId, subscriptionId: subscription.id, eventType: "subscription_resumed", payload: {} });
+  if (deps.productAnalytics) {
+    await recordProductEvent(deps.productAnalytics, { eventName: "subscription_reactivated", source: "server", tenantId: input.tenantId });
+  }
 }

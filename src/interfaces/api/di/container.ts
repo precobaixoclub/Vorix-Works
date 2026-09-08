@@ -99,6 +99,7 @@ import type { AutomationRuleRepositoryPort } from "../../../application/ports/au
 import type { AutomationRunLogRepositoryPort } from "../../../application/ports/automation-run-log-repository.port.js";
 import type { BillingEventRepositoryPort, InvoiceRepositoryPort, PaymentMethodRepositoryPort, PaymentWebhookEventRepositoryPort } from "../../../application/ports/billing-ops-repository.port.js";
 import type { BillingProviderPort } from "../../../application/ports/billing-provider.port.js";
+import type { WorkspaceOnboardingRepositoryPort } from "../../../application/ports/workspace-onboarding-repository.port.js";
 import type { AddonDefinitionRepositoryPort, PlanVersionRepositoryPort } from "../../../application/ports/plan-version-repository.port.js";
 import type { SubscriptionItemRepositoryPort, SubscriptionRepositoryPort } from "../../../application/ports/subscription-repository.port.js";
 import type { UsageCounterRepositoryPort } from "../../../application/ports/usage-counter-repository.port.js";
@@ -465,6 +466,8 @@ export type ApiContainer = {
     invoiceRepository: InvoiceRepositoryPort;
     billingEventRepository: BillingEventRepositoryPort;
     paymentWebhookEventRepository: PaymentWebhookEventRepositoryPort;
+    /** Onboarding guiado — progresso por workspace. */
+    workspaceOnboardingRepository: WorkspaceOnboardingRepositoryPort;
     /** Pool próprio (independente do `pool` de Workspace/Asset/Chat) — ver `buildIdentityRepositories`. Fechado no hook `onClose` também. */
     pool: pg.Pool;
   };

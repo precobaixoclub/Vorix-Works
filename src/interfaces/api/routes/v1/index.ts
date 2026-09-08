@@ -37,6 +37,7 @@ import { registerAdminPlanVersionsRoutes } from "./admin-plan-versions.route.js"
 import { registerBillingCheckoutRoutes } from "./billing-checkout.route.js";
 import { registerBillingLifecycleRoutes } from "./billing-lifecycle.route.js";
 import { registerBillingOverviewRoutes } from "./billing-overview.route.js";
+import { registerOnboardingRoutes } from "./onboarding.route.js";
 import { DefaultResourceCounterAdapter } from "../../../../infrastructure/billing/resource-counter-adapter.js";
 import { registerProposalsRoutes } from "./proposals.route.js";
 import { registerPublicProposalsRoutes } from "./public-proposals.route.js";
@@ -334,6 +335,28 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       billingProvider: app.zunoContainer.billingProvider,
       invoiceRepository: identity.invoiceRepository,
       appBaseUrl: app.zunoConfig.billing.appBaseUrl,
+    });
+    // Onboarding guiado — orquestra Convites/Conexões/Entitlements já existentes, nunca uma
+    // segunda implementação daquelas ações (ver `onboarding-use-cases.ts`).
+    await registerOnboardingRoutes(app, {
+      workspaceOnboardingRepository: identity.workspaceOnboardingRepository,
+      workspaceRepository: app.zunoContainer.workspaceRepository,
+      entitlementDeps,
+      inviteDeps: {
+        tenantMemberInviteRepository: identity.tenantMemberInviteRepository,
+        membershipRepository: identity.membershipRepository,
+        userRepository: identity.userRepository,
+      },
+      inboxDeps: {
+        connectionRepository: app.zunoContainer.messagingConnectionRepository,
+        contactRepository: app.zunoContainer.inboxContactRepository,
+        conversationRepository: app.zunoContainer.inboxConversationRepository,
+        conversationEventRepository: app.zunoContainer.inboxConversationEventRepository,
+        messageRepository: app.zunoContainer.inboxMessageRepository,
+        workspaceRepository: app.zunoContainer.workspaceRepository,
+        outboundQueue: app.zunoContainer.inboxOutboundQueue,
+        provider: app.zunoContainer.inboxProvider,
+      },
     });
   }
   await registerMetaAdsRoutes(app, {

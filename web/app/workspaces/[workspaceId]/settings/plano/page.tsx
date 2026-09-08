@@ -21,6 +21,7 @@ import {
   reactivateSubscription,
   removeAddon,
   startCheckout,
+  startTrial,
 } from "@/features/billing/api";
 import { useBillingOverview } from "@/features/billing/hooks";
 import { RESOURCE_LABELS, type BillingOverviewAvailableAddon, type PlatformPlanCode } from "@/features/billing/types";
@@ -51,17 +52,46 @@ export default function BillingSettingsPage() {
     }
   }
 
+async function goToCheckout(planCode: PlatformPlanCode, onError: () => void) {
+    try {
+      const { checkoutUrl } = await startCheckout({ planCode, billingInterval: "monthly" });
+      window.location.href = checkoutUrl;
+    } catch (err) {
+      toast.error("Não foi possível iniciar o checkout", { description: err instanceof Error ? err.message : "Falhou." });
+      onError();
+    }
+  }
+
   async function handleChoosePlan(planCode: PlatformPlanCode) {
     if (!data) return;
+
+    // Sem assinatura nenhuma ainda: tenta trial sem cartão primeiro (se o plano/ambiente
+    // permitirem — o backend decide, nunca adivinhamos aqui); sem trial disponível, cai pro
+    // checkout normal.
     if (data.virtual) {
       setBusy(true);
       try {
-        const { checkoutUrl } = await startCheckout({ planCode, billingInterval: "monthly" });
-        window.location.href = checkoutUrl;
+        await startTrial(planCode);
+        await mutate();
+        toast.success("Período de teste iniciado.");
       } catch (err) {
-        toast.error("Não foi possível iniciar o checkout", { description: err instanceof Error ? err.message : "Falhou." });
+        const message = err instanceof Error ? err.message : "";
+        if (message.startsWith("TRIAL_DISABLED") || message.startsWith("TRIAL_NOT_AVAILABLE_FOR_PLAN")) {
+          await goToCheckout(planCode, () => setBusy(false));
+          return;
+        }
+        toast.error("Não foi possível iniciar o teste", { description: message || "Falhou." });
+      } finally {
         setBusy(false);
       }
+      return;
+    }
+
+    // Convertendo um trial (ativo ou já vencido): checkout normal, pode inclusive trocar de
+    // plano nesse momento — nunca tenta um segundo trial.
+    if (data.status === "trial" || data.status === "trial_expired") {
+      setBusy(true);
+      await goToCheckout(planCode, () => setBusy(false));
       return;
     }
 
@@ -131,7 +161,29 @@ export default function BillingSettingsPage() {
         }
       />
 
-      {data.readOnly ? (
+      {data.status === "trial_expired" ? (
+        <Card className="mb-6 border-destructive/50 bg-destructive/5">
+          <CardBody className="text-sm">
+            <p className="font-semibold text-foreground">Seu período de teste terminou.</p>
+            <p className="mt-1 text-muted-foreground">Seus dados continuam seguros. Escolha um plano para continuar criando e operando.</p>
+          </CardBody>
+        </Card>
+      ) : data.status === "trial" ? (
+        <Card className="mb-6 border-warning/50 bg-warning/5">
+          <CardBody className="text-sm">
+            <p className="font-semibold text-foreground">
+              {data.trialDaysRemaining === 0
+                ? "Seu período de teste termina hoje."
+                : data.trialDaysRemaining === 1
+                  ? "Seu período de teste termina amanhã."
+                  : `Restam ${data.trialDaysRemaining} dias de teste.`}
+            </p>
+            <p className="mt-1 text-muted-foreground">Escolha um plano quando quiser continuar sem interrupção — nenhum dado é perdido na transição.</p>
+          </CardBody>
+        </Card>
+      ) : null}
+
+      {data.readOnly && data.status !== "trial_expired" ? (
         <Card className="mb-6 border-destructive/50 bg-destructive/5">
           <CardBody className="text-sm">
             <p className="font-semibold text-foreground">Pagamento pendente</p>
@@ -171,11 +223,17 @@ export default function BillingSettingsPage() {
             {data.status ? <StatusBadge status={data.status} /> : null}
           </CardHeader>
           <CardBody>
-            <p className="text-2xl font-semibold text-foreground">{data.planName}</p>
-            {data.currentPeriodEnd && !data.cancelAtPeriodEnd ? (
+            <p className="text-2xl font-semibold text-foreground">
+              {data.status === "trial" || data.status === "trial_expired" ? `Teste (${data.planName})` : data.planName}
+            </p>
+            {data.status === "trial" ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Restam {data.trialDaysRemaining} {data.trialDaysRemaining === 1 ? "dia" : "dias"}.
+              </p>
+            ) : data.currentPeriodEnd && !data.cancelAtPeriodEnd ? (
               <p className="mt-1 text-sm text-muted-foreground">Renova em {formatDate(data.currentPeriodEnd)}.</p>
             ) : null}
-            {!data.virtual && !data.cancelAtPeriodEnd ? (
+            {!data.virtual && !data.cancelAtPeriodEnd && data.status !== "trial" && data.status !== "trial_expired" ? (
               <Button variant="ghost" className="mt-3 text-destructive hover:text-destructive" disabled={busy} onClick={() => setConfirmCancelOpen(true)}>
                 Cancelar assinatura
               </Button>

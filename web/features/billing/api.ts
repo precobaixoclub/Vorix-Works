@@ -12,6 +12,11 @@ export async function startCheckout(input: { planCode: PlatformPlanCode; billing
   return apiClient.post("/v1/billing/checkout", input);
 }
 
+/** Trial sem cartão — cria a Subscription real direto, sem passar pelo gateway de pagamento. */
+export async function startTrial(planCode: PlatformPlanCode): Promise<unknown> {
+  return apiClient.post("/v1/billing/start-trial", { planCode });
+}
+
 export async function fetchDowngradePreview(newPlanCode: PlatformPlanCode): Promise<DowngradePreview> {
   return apiClient.get<DowngradePreview>(`/v1/billing/downgrade-preview?newPlanCode=${encodeURIComponent(newPlanCode)}`);
 }

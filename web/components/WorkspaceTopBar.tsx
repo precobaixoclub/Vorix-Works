@@ -10,6 +10,7 @@ import { buildRouteLabels } from "@/components/workspace-navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { TenantSwitcher } from "@/features/auth/components/TenantSwitcher";
 import { useTenantCredits } from "@/features/workspace/hooks";
+import { useBillingOverview } from "@/features/billing/hooks";
 import { StatusBadge } from "./StatusBadge";
 
 export function WorkspaceTopBar({ workspaceId, name, status }: { workspaceId: string; name: string; status: string }) {
@@ -18,6 +19,7 @@ export function WorkspaceTopBar({ workspaceId, name, status }: { workspaceId: st
   const isPlatformAdmin = state.status === "authenticated" && state.user.isPlatformAdmin;
   const user = state.status === "authenticated" ? state.user : null;
   const { data: credits } = useTenantCredits();
+  const { data: billing } = useBillingOverview();
   const base = `/workspaces/${workspaceId}`;
 
   return (
@@ -37,6 +39,23 @@ export function WorkspaceTopBar({ workspaceId, name, status }: { workspaceId: st
             >
               {credits.remainingCredits.toLocaleString("pt-BR")} créditos
             </span>
+          ) : null}
+          {billing?.status === "trial" || billing?.status === "trial_expired" ? (
+            <Link
+              href={`${base}/settings/plano`}
+              className={
+                billing.status === "trial_expired"
+                  ? "rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/20"
+                  : "rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1 text-xs font-medium text-warning hover:bg-warning/20"
+              }
+              title="Ver planos"
+            >
+              {billing.status === "trial_expired"
+                ? "Teste terminou"
+                : billing.trialDaysRemaining === 1
+                  ? "Teste termina amanhã"
+                  : `Teste: ${billing.trialDaysRemaining ?? "—"} dias`}
+            </Link>
           ) : null}
           <TenantSwitcher />
           {isPlatformAdmin ? (

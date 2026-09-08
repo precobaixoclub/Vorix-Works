@@ -35,6 +35,8 @@ export type BillingOverview = {
   status: string | null;
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: string | null;
+  trialEnd: string | null;
+  trialDaysRemaining: number | null;
   allowedAddonCodes: readonly string[];
   addons: BillingOverviewAddon[];
   availableAddons: BillingOverviewAvailableAddon[];

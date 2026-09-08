@@ -63,12 +63,20 @@ export class SandboxBillingProvider implements BillingProviderPort {
 
   async handleWebhook(input: HandleWebhookInput): Promise<HandleWebhookResult> {
     const parsed = JSON.parse(input.rawBody.toString("utf8")) as { id?: string; type?: string; data?: Record<string, unknown> };
+    const data = parsed.data ?? {};
+    // Mesmo formato do `StripeBillingProvider` (`customer`/`subscription` como string no objeto de
+    // evento) — permite simular o fluxo de checkout→ativação completo em dev/teste sem Stripe.
+    const providerCustomerId = typeof data.customer === "string" ? data.customer : undefined;
+    const providerSubscriptionId =
+      typeof data.subscription === "string" ? data.subscription : typeof data.id === "string" && parsed.type?.startsWith("customer.subscription") ? data.id : undefined;
     return {
       ok: true,
       event: {
         providerEventId: parsed.id ?? `sandbox-evt-${randomUUID()}`,
         eventType: parsed.type ?? "unknown",
-        data: parsed.data ?? {},
+        providerCustomerId,
+        providerSubscriptionId,
+        data,
       },
     };
   }

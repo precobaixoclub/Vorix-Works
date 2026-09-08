@@ -59,7 +59,7 @@ export class StripeBillingProvider implements BillingProviderPort {
         customer_email: input.existingProviderCustomerId ? undefined : input.customerEmail,
         subscription_data: input.trialDays ? { trial_period_days: input.trialDays } : undefined,
         client_reference_id: input.tenantId,
-        metadata: { tenantId: input.tenantId, planVersionId: input.planVersionId },
+        metadata: { tenantId: input.tenantId, planVersionId: input.planVersionId, billingInterval: input.billingInterval },
       });
       if (!session.url) return { ok: false, kind: "provider_unavailable", message: "Stripe não devolveu uma URL de checkout." };
       return { ok: true, checkoutUrl: session.url, providerSessionId: session.id };

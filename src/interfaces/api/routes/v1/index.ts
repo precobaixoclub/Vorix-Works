@@ -34,6 +34,7 @@ import { registerAutomationRulesRoutes } from "./automation-rules.route.js";
 import { registerCommercialMetricsRoutes } from "./commercial-metrics.route.js";
 import { registerBillingEntitlementsRoutes } from "./billing-entitlements.route.js";
 import { registerAdminPlanVersionsRoutes } from "./admin-plan-versions.route.js";
+import { registerBillingCheckoutRoutes } from "./billing-checkout.route.js";
 import { DefaultResourceCounterAdapter } from "../../../../infrastructure/billing/resource-counter-adapter.js";
 import { registerProposalsRoutes } from "./proposals.route.js";
 import { registerPublicProposalsRoutes } from "./public-proposals.route.js";
@@ -313,6 +314,16 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     };
     await registerBillingEntitlementsRoutes(app, entitlementDeps);
     await registerAdminPlanVersionsRoutes(app, { planVersionRepository: identity.planVersionRepository, addonDefinitionRepository: identity.addonDefinitionRepository });
+    // SaaS Commercialization (Fase 2) — Checkout self-service. A ativação real da Subscription só
+    // acontece via webhook confirmado (`billing-webhook.route.ts`, fora de `/v1`), nunca aqui.
+    await registerBillingCheckoutRoutes(app, {
+      billingProvider: app.zunoContainer.billingProvider,
+      planVersionRepository: identity.planVersionRepository,
+      addonDefinitionRepository: identity.addonDefinitionRepository,
+      subscriptionRepository: identity.subscriptionRepository,
+      userRepository: identity.userRepository,
+      appBaseUrl: app.zunoConfig.billing.appBaseUrl,
+    });
   }
   await registerMetaAdsRoutes(app, {
     metaAdsOAuthService: app.zunoContainer.metaAdsOAuthService,

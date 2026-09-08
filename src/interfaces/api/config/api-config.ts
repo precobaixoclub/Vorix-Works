@@ -74,6 +74,9 @@ export type ApiConfig = {
     enabled: boolean;
     stripeSecretKey?: string;
     stripeWebhookSecret?: string;
+    /** Base para as URLs de sucesso/cancelamento do Checkout (Fase 2) — nunca uma URL vinda do
+     * cliente; sempre `APP_BASE_URL` combinada com um `successPath`/`cancelPath` relativo. */
+    appBaseUrl: string;
   };
   /** Provedores de IA de mídia (imagem/vídeo) — Sprint 26. Chave estática só serve de bootstrap;
    * o painel admin (`/admin/ai-providers`) pode substituir em runtime (mesmo padrão de
@@ -264,6 +267,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const billingProviderEnabled = env.BILLING_PROVIDER_ENABLED?.trim() === "true";
   const stripeSecretKey = env.STRIPE_SECRET_KEY?.trim() || undefined;
   const stripeWebhookSecret = env.STRIPE_WEBHOOK_SECRET?.trim() || undefined;
+  const billingAppBaseUrl = env.APP_BASE_URL?.trim() || "http://localhost:3001";
   const realExecutionEnabled = env.REAL_EXECUTION_ENABLED?.trim() === "true";
   const realExecutionResearchEnabled = realExecutionEnabled && env.REAL_EXECUTION_RESEARCH_ENABLED?.trim() === "true";
   const realPlanningEnabled = realExecutionEnabled && env.REAL_PLANNING_ENABLED?.trim() === "true";
@@ -415,6 +419,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       enabled: billingProviderEnabled,
       stripeSecretKey,
       stripeWebhookSecret,
+      appBaseUrl: billingAppBaseUrl,
     },
     mediaProviders: {
       openaiEnabled,

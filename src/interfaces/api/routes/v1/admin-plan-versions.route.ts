@@ -41,6 +41,8 @@ const PUBLISH_BODY_SCHEMA = {
     limits: LIMITS_SCHEMA,
     allowedAddonCodes: { type: "array", items: { type: "string" } },
     trialDays: { type: ["integer", "null"], minimum: 0 },
+    monthlyProviderPriceRef: { type: "string", minLength: 1 },
+    yearlyProviderPriceRef: { type: "string", minLength: 1 },
   },
 } as const;
 

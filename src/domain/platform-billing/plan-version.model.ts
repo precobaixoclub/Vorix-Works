@@ -27,6 +27,10 @@ export type PlanVersion = {
    * versões antigas continuam válidas pra quem já as contratou, nunca são reativadas. */
   active: boolean;
   createdAt: string;
+  /** Id do Price no gateway real (Stripe) para cada intervalo — Fase 2 (Checkout). `undefined`
+   * até um administrador configurar; `SandboxBillingProvider` nunca precisa disto. */
+  monthlyProviderPriceRef?: string;
+  yearlyProviderPriceRef?: string;
 };
 
 export type AddonDefinition = {
@@ -41,4 +45,6 @@ export type AddonDefinition = {
   increment: number;
   active: boolean;
   createdAt: string;
+  monthlyProviderPriceRef?: string;
+  yearlyProviderPriceRef?: string;
 };

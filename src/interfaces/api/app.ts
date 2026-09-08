@@ -18,6 +18,7 @@ import { registerMetaAdsSyncScheduler } from "./scheduler/meta-ads-sync-schedule
 import { registerVersionRoute } from "./routes/version.route.js";
 import { registerWebhookReceiverRoutes } from "./routes/webhook-receiver.route.js";
 import { registerInstagramDmWebhookRoutes } from "./routes/instagram-dm-webhook.route.js";
+import { registerBillingWebhookRoutes } from "./routes/billing-webhook.route.js";
 import { successEnvelope } from "./http/response-envelope.js";
 import { registerUploadedObjectRoutes } from "./routes/uploads.route.js";
 
@@ -105,6 +106,19 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return secret?.value.displayName;
     },
   });
+
+  if (container.identity) {
+    const identity = container.identity;
+    await registerBillingWebhookRoutes(app, {
+      billingProvider: container.billingProvider,
+      paymentWebhookEventRepository: identity.paymentWebhookEventRepository,
+      subscriptionRepository: identity.subscriptionRepository,
+      planVersionRepository: identity.planVersionRepository,
+      platformBillingRepository: identity.platformBillingRepository,
+      billingEventRepository: identity.billingEventRepository,
+      invoiceRepository: identity.invoiceRepository,
+    });
+  }
 
   await app.register(registerV1Routes, { prefix: "/v1" });
 

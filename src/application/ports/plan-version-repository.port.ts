@@ -13,6 +13,8 @@ export type CreatePlanVersionInput = {
   limits: PlanLimitMap;
   allowedAddonCodes: readonly string[];
   trialDays: number | null;
+  monthlyProviderPriceRef?: string;
+  yearlyProviderPriceRef?: string;
 };
 
 export type PlanVersionRepositoryPort = {

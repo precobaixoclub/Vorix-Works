@@ -25,6 +25,8 @@ type PlanVersionRow = {
   trial_days: number | null;
   active: boolean;
   created_at: Date;
+  monthly_provider_price_ref: string | null;
+  yearly_provider_price_ref: string | null;
 };
 
 function toDomain(row: PlanVersionRow): PlanVersion {
@@ -43,6 +45,8 @@ function toDomain(row: PlanVersionRow): PlanVersion {
     trialDays: row.trial_days,
     active: row.active,
     createdAt: row.created_at.toISOString(),
+    monthlyProviderPriceRef: row.monthly_provider_price_ref ?? undefined,
+    yearlyProviderPriceRef: row.yearly_provider_price_ref ?? undefined,
   };
 }
 
@@ -51,13 +55,14 @@ export class PostgresPlanVersionRepository implements PlanVersionRepositoryPort 
 
   async createNextVersion(input: CreatePlanVersionInput): Promise<PlanVersion> {
     const result = await this.pool.query<PlanVersionRow>(
-      `insert into plan_versions (id, plan_code, version, name, tagline, monthly_price_usd, yearly_price_usd, currency, capabilities, limits, allowed_addon_codes, trial_days)
-       values ($1, $2, coalesce((select max(version) + 1 from plan_versions where plan_code = $2), 1), $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `insert into plan_versions (id, plan_code, version, name, tagline, monthly_price_usd, yearly_price_usd, currency, capabilities, limits, allowed_addon_codes, trial_days, monthly_provider_price_ref, yearly_provider_price_ref)
+       values ($1, $2, coalesce((select max(version) + 1 from plan_versions where plan_code = $2), 1), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        returning *`,
       [
         planVersionId(), input.planCode, input.name, input.tagline, input.monthlyPriceUsd, input.yearlyPriceUsd,
         input.currency ?? "USD", JSON.stringify(input.capabilities), JSON.stringify(input.limits),
         JSON.stringify(input.allowedAddonCodes), input.trialDays,
+        input.monthlyProviderPriceRef ?? null, input.yearlyProviderPriceRef ?? null,
       ],
     );
     return toDomain(result.rows[0]);
@@ -106,6 +111,8 @@ type AddonRow = {
   increment: number;
   active: boolean;
   created_at: Date;
+  monthly_provider_price_ref: string | null;
+  yearly_provider_price_ref: string | null;
 };
 
 function addonToDomain(row: AddonRow): AddonDefinition {
@@ -119,6 +126,8 @@ function addonToDomain(row: AddonRow): AddonDefinition {
     increment: row.increment,
     active: row.active,
     createdAt: row.created_at.toISOString(),
+    monthlyProviderPriceRef: row.monthly_provider_price_ref ?? undefined,
+    yearlyProviderPriceRef: row.yearly_provider_price_ref ?? undefined,
   };
 }
 

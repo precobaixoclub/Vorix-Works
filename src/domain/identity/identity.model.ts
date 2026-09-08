@@ -146,6 +146,28 @@ export const PERMISSIONS = [
   "inbox:assign",
   "inbox:manage_connections",
   "inbox:manage_ai",
+  // CRM/Comercial (Fase 1) — auditoria em docs/crm-omnichannel-architecture-audit.md.
+  // `tenant_member:manage`/`team:manage` ficam num degrau administrativo (convidar/remover
+  // membro e criar/editar equipe são ações de gestão de conta, mesmo raciocínio de
+  // `credential:connect`). `contact`/`deal`/`task`/`product` seguem o padrão read/editor já usado
+  // em outros módulos; `proposal:send` fica separado de `proposal:manage` porque enviar uma
+  // proposta pro cliente é uma ação com efeito externo (mesmo raciocínio de `publication:publish`
+  // vs. `publication:create`); `automation:manage` fica restrito porque uma regra mal configurada
+  // move negócio/dispara ação sem revisão humana (mesmo raciocínio de `inbox:manage_ai`).
+  "tenant_member:manage",
+  "team:manage",
+  "contact:read",
+  "contact:manage",
+  "deal:read",
+  "deal:manage",
+  "task:read",
+  "task:manage",
+  "product:read",
+  "product:manage",
+  "proposal:read",
+  "proposal:manage",
+  "proposal:send",
+  "automation:manage",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -178,6 +200,9 @@ const INSTAGRAM_DM_ADMIN_PERMISSIONS: readonly Permission[] = ["instagram_dm:aut
 const INBOX_READ_PERMISSIONS: readonly Permission[] = ["inbox:read"];
 const INBOX_OPERATOR_PERMISSIONS: readonly Permission[] = ["inbox:reply", "inbox:assign"];
 const INBOX_ADMIN_PERMISSIONS: readonly Permission[] = ["inbox:manage_connections", "inbox:manage_ai"];
+const CRM_READ_PERMISSIONS: readonly Permission[] = ["contact:read", "deal:read", "task:read", "product:read", "proposal:read"];
+const CRM_OPERATOR_PERMISSIONS: readonly Permission[] = ["contact:manage", "deal:manage", "task:manage", "product:manage", "proposal:manage", "proposal:send"];
+const CRM_ADMIN_PERMISSIONS: readonly Permission[] = ["tenant_member:manage", "team:manage", "automation:manage"];
 
 /**
  * Permissões mínimas pedidas na Fase 4 (Sprint 05). Gradiente deliberado para que RBAC seja
@@ -186,10 +211,27 @@ const INBOX_ADMIN_PERMISSIONS: readonly Permission[] = ["inbox:manage_connection
  * é igual para todos os papéis — ver comentário acima de `PERMISSIONS`.
  */
 export const ROLE_PERMISSIONS: Record<TenantRole, readonly Permission[]> = {
-  viewer: ["workspace:read", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...INSTAGRAM_DM_READ_PERMISSIONS, ...INBOX_READ_PERMISSIONS],
-  editor: ["workspace:read", "workspace:update", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...EXECUTION_WRITE_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...PUBLICATION_EDITOR_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...SCHEDULING_EDITOR_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ASSET_EDITOR_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...ADS_OPERATOR_PERMISSIONS, ...INSTAGRAM_DM_READ_PERMISSIONS, ...INSTAGRAM_DM_OPERATOR_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...INBOX_OPERATOR_PERMISSIONS],
-  admin: ["workspace:read", "workspace:create", "workspace:update", "workspace:transition", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...EXECUTION_WRITE_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...PUBLICATION_EDITOR_PERMISSIONS, ...PUBLICATION_OPERATOR_PERMISSIONS, ...PUBLICATION_ADMIN_PERMISSIONS, ...CREDENTIAL_READ_PERMISSIONS, ...CREDENTIAL_OPERATOR_PERMISSIONS, ...AUDIT_READ_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...SCHEDULING_EDITOR_PERMISSIONS, ...SCHEDULING_OPERATOR_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ANALYTICS_OPERATOR_PERMISSIONS, ...SYSTEM_OPERATOR_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ASSET_EDITOR_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...ADS_OPERATOR_PERMISSIONS, ...ADS_ADMIN_PERMISSIONS, ...INSTAGRAM_DM_READ_PERMISSIONS, ...INSTAGRAM_DM_OPERATOR_PERMISSIONS, ...INSTAGRAM_DM_ADMIN_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...INBOX_OPERATOR_PERMISSIONS, ...INBOX_ADMIN_PERMISSIONS],
-  owner: ["workspace:read", "workspace:create", "workspace:update", "workspace:transition", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...EXECUTION_WRITE_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...PUBLICATION_EDITOR_PERMISSIONS, ...PUBLICATION_OPERATOR_PERMISSIONS, ...PUBLICATION_ADMIN_PERMISSIONS, ...CREDENTIAL_READ_PERMISSIONS, ...CREDENTIAL_OPERATOR_PERMISSIONS, ...AUDIT_READ_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...SCHEDULING_EDITOR_PERMISSIONS, ...SCHEDULING_OPERATOR_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ANALYTICS_OPERATOR_PERMISSIONS, ...SYSTEM_OPERATOR_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ASSET_EDITOR_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...ADS_OPERATOR_PERMISSIONS, ...ADS_ADMIN_PERMISSIONS, ...INSTAGRAM_DM_READ_PERMISSIONS, ...INSTAGRAM_DM_OPERATOR_PERMISSIONS, ...INSTAGRAM_DM_ADMIN_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...INBOX_OPERATOR_PERMISSIONS, ...INBOX_ADMIN_PERMISSIONS],
+  viewer: ["workspace:read", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...INSTAGRAM_DM_READ_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...CRM_READ_PERMISSIONS],
+  editor: ["workspace:read", "workspace:update", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...EXECUTION_WRITE_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...PUBLICATION_EDITOR_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...SCHEDULING_EDITOR_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ASSET_EDITOR_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...ADS_OPERATOR_PERMISSIONS, ...INSTAGRAM_DM_READ_PERMISSIONS, ...INSTAGRAM_DM_OPERATOR_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...INBOX_OPERATOR_PERMISSIONS, ...CRM_READ_PERMISSIONS, ...CRM_OPERATOR_PERMISSIONS],
+  admin: ["workspace:read", "workspace:create", "workspace:update", "workspace:transition", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...EXECUTION_WRITE_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...PUBLICATION_EDITOR_PERMISSIONS, ...PUBLICATION_OPERATOR_PERMISSIONS, ...PUBLICATION_ADMIN_PERMISSIONS, ...CREDENTIAL_READ_PERMISSIONS, ...CREDENTIAL_OPERATOR_PERMISSIONS, ...AUDIT_READ_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...SCHEDULING_EDITOR_PERMISSIONS, ...SCHEDULING_OPERATOR_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ANALYTICS_OPERATOR_PERMISSIONS, ...SYSTEM_OPERATOR_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ASSET_EDITOR_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...ADS_OPERATOR_PERMISSIONS, ...ADS_ADMIN_PERMISSIONS, ...INSTAGRAM_DM_READ_PERMISSIONS, ...INSTAGRAM_DM_OPERATOR_PERMISSIONS, ...INSTAGRAM_DM_ADMIN_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...INBOX_OPERATOR_PERMISSIONS, ...INBOX_ADMIN_PERMISSIONS, ...CRM_READ_PERMISSIONS, ...CRM_OPERATOR_PERMISSIONS, ...CRM_ADMIN_PERMISSIONS],
+  owner: ["workspace:read", "workspace:create", "workspace:update", "workspace:transition", ...CONVERSATION_PERMISSIONS, ...PLANNING_PERMISSIONS, ...RUNTIME_PERMISSIONS, ...EXECUTION_READ_PERMISSIONS, ...EXECUTION_WRITE_PERMISSIONS, ...PUBLICATION_READ_PERMISSIONS, ...PUBLICATION_EDITOR_PERMISSIONS, ...PUBLICATION_OPERATOR_PERMISSIONS, ...PUBLICATION_ADMIN_PERMISSIONS, ...CREDENTIAL_READ_PERMISSIONS, ...CREDENTIAL_OPERATOR_PERMISSIONS, ...AUDIT_READ_PERMISSIONS, ...SCHEDULING_READ_PERMISSIONS, ...SCHEDULING_EDITOR_PERMISSIONS, ...SCHEDULING_OPERATOR_PERMISSIONS, ...ANALYTICS_READ_PERMISSIONS, ...ANALYTICS_OPERATOR_PERMISSIONS, ...SYSTEM_OPERATOR_PERMISSIONS, ...ASSET_READ_PERMISSIONS, ...ASSET_EDITOR_PERMISSIONS, ...ADS_READ_PERMISSIONS, ...ADS_OPERATOR_PERMISSIONS, ...ADS_ADMIN_PERMISSIONS, ...INSTAGRAM_DM_READ_PERMISSIONS, ...INSTAGRAM_DM_OPERATOR_PERMISSIONS, ...INSTAGRAM_DM_ADMIN_PERMISSIONS, ...INBOX_READ_PERMISSIONS, ...INBOX_OPERATOR_PERMISSIONS, ...INBOX_ADMIN_PERMISSIONS, ...CRM_READ_PERMISSIONS, ...CRM_OPERATOR_PERMISSIONS, ...CRM_ADMIN_PERMISSIONS],
+};
+
+/**
+ * Perfis simples (CRM/Comercial, Fase 1 — auditoria seção 9) — camada de UX só pra convite/
+ * atribuição de papel, NUNCA substitui o RBAC granular acima (que continua sendo a fonte de
+ * verdade real). Cada perfil mapeia direto pra um `TenantRole` existente — não inventa um segundo
+ * mecanismo de permissão.
+ */
+export const SIMPLE_PROFILES = ["administrador", "gestor", "atendimento", "comercial", "marketing"] as const;
+export type SimpleProfile = (typeof SIMPLE_PROFILES)[number];
+
+export const SIMPLE_PROFILE_TO_ROLE: Record<SimpleProfile, TenantRole> = {
+  administrador: "owner",
+  gestor: "admin",
+  atendimento: "editor",
+  comercial: "editor",
+  marketing: "editor",
 };
 
 export function hasPermission(role: TenantRole, permission: Permission): boolean {
@@ -229,6 +271,46 @@ export type TenantMembership = {
   role: TenantRole;
   createdAt: string;
   updatedAt: string;
+};
+
+/**
+ * CRM/Comercial (Fase 1) — Equipe: sub-grupo dentro de um workspace, mais fino que
+ * `TenantMembership` (que é por tenant inteiro). Ver auditoria, seção 3/4/9.
+ */
+export type Team = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TeamMembership = {
+  id: string;
+  teamId: string;
+  userId: string;
+  role: TenantRole;
+  createdAt: string;
+};
+
+export const TENANT_MEMBER_INVITE_STATUSES = ["pending", "accepted", "revoked", "expired"] as const;
+export type TenantMemberInviteStatus = (typeof TENANT_MEMBER_INVITE_STATUSES)[number];
+
+/** Convite de membro por e-mail — fecha o gap encontrado na auditoria (nunca existiu fluxo de
+ * convite, só signup e listagem read-only). `tokenHash` nunca guarda o valor bruto, mesmo padrão
+ * de `RefreshToken.tokenHash`. */
+export type TenantMemberInvite = {
+  id: string;
+  tenantId: string;
+  email: string;
+  role: TenantRole;
+  tokenHash: string;
+  status: TenantMemberInviteStatus;
+  invitedByUserId: string;
+  createdAt: string;
+  expiresAt: string;
+  acceptedAt?: string;
 };
 
 export type UserSession = {

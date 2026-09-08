@@ -1,0 +1,70 @@
+/**
+ * Domínio CRM/Comercial — Fase 1 (Fundação Comercial). Ver
+ * `docs/crm-omnichannel-architecture-audit.md` para o racional completo. Bounded context próprio,
+ * isolado de `inbox`/`instagram-dm` (verificado por `scripts/check-crm-isolation.mjs`) — a única
+ * ligação com o WhatsApp existente é via `contact_identities`/`inbox_contacts.contact_id`
+ * (migration 0092), nunca um import direto de código.
+ *
+ * PRINCÍPIO CENTRAL: `Contact` é a pessoa 360°, nunca duplicada por canal — `ContactIdentity` é a
+ * ligação (contato × canal × id externo). `inbox_contacts` (WhatsApp) nunca muda de forma; ganha
+ * só uma coluna opcional apontando pra cima. Nenhuma fusão automática de duas identidades sem
+ * sinal de confiança explícito (ver `mergeContacts`, Fase futura — não implementado nesta fase).
+ */
+
+export const CONTACT_CHANNELS = ["whatsapp", "instagram", "facebook", "tiktok"] as const;
+export type ContactChannel = (typeof CONTACT_CHANNELS)[number];
+
+export type Contact = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  name: string;
+  company?: string;
+  document?: string;
+  /** Origem de marketing (ex.: "whatsapp", "instagram", "indicação") — nunca inventada sem
+   * evidência (auditoria, seção 22: "não inventar atribuição quando não houver evidência"). */
+  origin?: string;
+  ownerUserId?: string;
+  teamId?: string;
+  tags: readonly string[];
+  customFields: Record<string, unknown>;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  lastInteractionAt?: string;
+};
+
+export type ContactIdentity = {
+  id: string;
+  contactId: string;
+  tenantId: string;
+  workspaceId: string;
+  channel: ContactChannel;
+  externalId: string;
+  connectionId?: string;
+  createdAt: string;
+};
+
+/**
+ * Timeline genérica — deliberadamente separada do pipeline de Analytics (métrica agregada por
+ * janela de tempo, não narrativa por entidade — ver auditoria, seção 17). Nunca duplica o payload
+ * inteiro do evento de origem, só uma referência/resumo suficiente pra renderizar a timeline.
+ */
+export const TIMELINE_ENTITY_TYPES = ["contact", "deal", "conversation", "proposal", "task"] as const;
+export type TimelineEntityType = (typeof TIMELINE_ENTITY_TYPES)[number];
+
+export const TIMELINE_ACTOR_TYPES = ["user", "ai", "automation", "system"] as const;
+export type TimelineActorType = (typeof TIMELINE_ACTOR_TYPES)[number];
+
+export type TimelineEvent = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  entityType: TimelineEntityType;
+  entityId: string;
+  eventType: string;
+  actorType: TimelineActorType;
+  actorId?: string;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+};

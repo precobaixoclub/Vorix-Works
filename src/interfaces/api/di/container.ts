@@ -92,6 +92,11 @@ import { SystemClock, type ClockPort } from "../../../application/ports/clock.po
 import type { SchedulingRepositoryPort } from "../../../application/ports/scheduling-repository.port.js";
 import type { SessionRepositoryPort } from "../../../application/ports/session-repository.port.js";
 import type { TenantMembershipRepositoryPort } from "../../../application/ports/tenant-membership-repository.port.js";
+import type { TenantMemberInviteRepositoryPort } from "../../../application/ports/tenant-member-invite-repository.port.js";
+import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../../application/ports/team-repository.port.js";
+import type { ContactRepositoryPort } from "../../../application/ports/contact-repository.port.js";
+import type { ContactIdentityRepositoryPort } from "../../../application/ports/contact-identity-repository.port.js";
+import type { TimelineEventRepositoryPort } from "../../../application/ports/timeline-event-repository.port.js";
 import type { UserRepositoryPort } from "../../../application/ports/user-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../../../application/ports/workspace-repository.port.js";
 import type { WebhookEventRepositoryPort } from "../../../application/ports/webhook-event-repository.port.js";
@@ -405,6 +410,13 @@ export type ApiContainer = {
     jwt: JwtPort;
     accessTokenTtlSeconds: number;
     refreshTokenTtlSeconds: number;
+    /** CRM/Comercial (Fase 1) — Equipes, convites, Contato 360°/identidade por canal, Timeline. */
+    teamRepository: TeamRepositoryPort;
+    teamMembershipRepository: TeamMembershipRepositoryPort;
+    tenantMemberInviteRepository: TenantMemberInviteRepositoryPort;
+    contactRepository: ContactRepositoryPort;
+    contactIdentityRepository: ContactIdentityRepositoryPort;
+    timelineEventRepository: TimelineEventRepositoryPort;
     /** Pool próprio (independente do `pool` de Workspace/Asset/Chat) — ver `buildIdentityRepositories`. Fechado no hook `onClose` também. */
     pool: pg.Pool;
   };

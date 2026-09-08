@@ -33,6 +33,10 @@ export const MAIN_NAV_SECTIONS: readonly WorkspaceNavSection[] = [
       // Módulo Conversas (Fase 1) — inbox de WhatsApp via WuzAPI, atrás de feature flag
       // (CONVERSATIONS_MODULE_ENABLED). Distinto de "Mensagens" (Instagram DM automation).
       { href: "/conversas", label: "Conversas", icon: "conversas" },
+      // CRM/Comercial (Fase 1) — Contato 360°, ao lado de Conversas por natureza (auditoria,
+      // docs/crm-omnichannel-architecture-audit.md, seção 10). Reorganização completa da nav
+      // (seções Comercial/Marketing) fica pra quando as fases seguintes existirem de verdade.
+      { href: "/contacts", label: "Contatos", icon: "contacts" },
       { href: "/connections", label: "Conexões", icon: "connections" },
     ],
   },

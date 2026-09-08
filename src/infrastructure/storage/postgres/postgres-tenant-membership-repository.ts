@@ -69,6 +69,18 @@ export class PostgresTenantMembershipRepository implements TenantMembershipRepos
     return result.rows.map((row) => this.toDomain(row));
   }
 
+  async updateRole(userId: string, tenantId: string, role: TenantMembership["role"]): Promise<TenantMembership | undefined> {
+    const result = await this.pool.query<MembershipRow>(
+      "update tenant_members set role = $3, updated_at = now() where user_id = $1 and tenant_id = $2 returning *",
+      [userId, tenantId, role],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
+  async remove(userId: string, tenantId: string): Promise<void> {
+    await this.pool.query("delete from tenant_members where user_id = $1 and tenant_id = $2", [userId, tenantId]);
+  }
+
   private toDomain(row: MembershipRow): TenantMembership {
     return {
       id: row.id,

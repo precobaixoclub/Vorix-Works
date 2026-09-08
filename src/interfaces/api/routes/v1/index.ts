@@ -21,6 +21,9 @@ import { registerYouTubeRoutes } from "./youtube.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
 import { registerInstagramDmRoutes } from "./instagram-dm.route.js";
 import { registerInboxRoutes } from "./inbox.route.js";
+import { registerTeamsRoutes } from "./teams.route.js";
+import { registerTenantMembersRoutes } from "./tenant-members.route.js";
+import { registerContactsRoutes } from "./contacts.route.js";
 import { registerMetaAdsRoutes } from "./meta-ads.route.js";
 import { registerMetaAdCampaignsRoutes } from "./meta-ad-campaigns.route.js";
 import { registerMetaAudiencesRoutes } from "./meta-audiences.route.js";
@@ -199,6 +202,22 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       realtimeSubscriber: app.zunoContainer.inboxRealtimeSubscriber,
       membershipRepository: app.zunoContainer.identity?.membershipRepository,
       userRepository: app.zunoContainer.identity?.userRepository,
+    });
+  }
+  // CRM/Comercial (Fase 1) — sempre postgres-backed (mesmo racional de Identidade); registrado
+  // só quando `identity` existe (driver postgres), nunca em modo memória (dev/teste sem banco).
+  if (app.zunoContainer.identity) {
+    const identity = app.zunoContainer.identity;
+    await registerTeamsRoutes(app, { teamRepository: identity.teamRepository, teamMembershipRepository: identity.teamMembershipRepository });
+    await registerTenantMembersRoutes(app, {
+      tenantMemberInviteRepository: identity.tenantMemberInviteRepository,
+      membershipRepository: identity.membershipRepository,
+      userRepository: identity.userRepository,
+    });
+    await registerContactsRoutes(app, {
+      contactRepository: identity.contactRepository,
+      contactIdentityRepository: identity.contactIdentityRepository,
+      timelineEventRepository: identity.timelineEventRepository,
     });
   }
   await registerMetaAdsRoutes(app, {

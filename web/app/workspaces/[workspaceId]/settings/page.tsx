@@ -114,11 +114,17 @@ export default function SettingsPage() {
                 <p className="mt-1 text-xs text-muted-foreground">Distribuição de acesso no workspace.</p>
               </div>
             </CardHeader>
-            <CardBody className="grid grid-cols-2 gap-2 text-sm">
-              <Metric label="Membros" value={workspace.members.length} />
-              <Metric label="Owners" value={memberRoles.owner ?? 0} />
-              <Metric label="Admins" value={memberRoles.admin ?? 0} />
-              <Metric label="Editores" value={memberRoles.editor ?? 0} />
+            <CardBody className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <Metric label="Membros" value={workspace.members.length} />
+                <Metric label="Owners" value={memberRoles.owner ?? 0} />
+                <Metric label="Admins" value={memberRoles.admin ?? 0} />
+                <Metric label="Editores" value={memberRoles.editor ?? 0} />
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <SettingsAction href={`/workspaces/${workspace.id}/settings/users`} title="Usuários" description="Convide, troque papéis e remova acesso." />
+                <SettingsAction href={`/workspaces/${workspace.id}/settings/teams`} title="Equipes" description="Organize sub-times (Comercial, Suporte, Marketing)." />
+              </div>
             </CardBody>
           </Card>
 

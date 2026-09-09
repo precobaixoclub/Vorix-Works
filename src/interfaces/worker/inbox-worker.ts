@@ -28,6 +28,7 @@ import {
   maybeGenerateAiResponse,
   processOutboundMessage,
   reconcileConnectionsHealth,
+  reconcileOrphanedOutboundMessages,
   registerInboundMessage,
   type InboxUseCaseDeps,
 } from "../../application/inbox/inbox-use-cases.js";
@@ -84,6 +85,11 @@ type InboxWorkerConfig = {
     shutdownDrainTimeoutMs: number;
     /** Fase 7 — kill switch de emergência (ver `InboxUseCaseDeps.outboundSendPaused`). */
     outboundSendPaused: boolean;
+    /** Correção de bug real (homologação de runtime) — reconciliação de mensagens outbound órfãs
+     * (`queued`, nunca confirmadas publicadas no broker). `outboundReconcileGracePeriodMs` nunca
+     * reconcilia algo recém-criado que `sendInboxMessage` ainda pode estar publicando sozinho. */
+    outboundReconcileIntervalMs: number;
+    outboundReconcileGracePeriodMs: number;
   };
 };
 
@@ -126,6 +132,8 @@ function loadInboxWorkerConfig(): InboxWorkerConfig {
       wuzapiCircuitCooldownMs: parsePositiveInt(process.env.INBOX_WUZAPI_CIRCUIT_COOLDOWN_MS, 30_000),
       shutdownDrainTimeoutMs: parsePositiveInt(process.env.INBOX_WORKER_SHUTDOWN_DRAIN_TIMEOUT_MS, 10_000),
       outboundSendPaused: process.env.INBOX_OUTBOUND_SEND_PAUSED?.trim() === "true",
+      outboundReconcileIntervalMs: parsePositiveInt(process.env.INBOX_OUTBOUND_RECONCILE_INTERVAL_MS, 60_000),
+      outboundReconcileGracePeriodMs: parsePositiveInt(process.env.INBOX_OUTBOUND_RECONCILE_GRACE_PERIOD_MS, 120_000),
     },
   };
 }
@@ -361,6 +369,9 @@ async function main(): Promise<void> {
     console.log("[inbox-worker] AI_INBOX_AUTO_REPLY_ENABLED=false — IA de atendimento desligada, Inbox funciona normalmente sem ela.");
   }
 
+  const { connection, channel } = await connectInboxRabbitMq(config.inbox.rabbitMqUrl);
+  console.log("[inbox-worker] conectado ao RabbitMQ, iniciando consumers.");
+
   const deps: InboxUseCaseDeps = {
     connectionRepository: repositories.messagingConnectionRepository,
     contactRepository: repositories.inboxContactRepository,
@@ -368,7 +379,11 @@ async function main(): Promise<void> {
     conversationEventRepository: repositories.inboxConversationEventRepository,
     messageRepository: repositories.inboxMessageRepository,
     workspaceRepository: repositories.workspaceRepository,
-    outboundQueue: { publish: async () => {} }, // o worker nunca publica outbound, só drena
+    // Correção de bug real (homologação de runtime) — antes, um stub no-op de propósito ("o
+    // worker nunca publica outbound, só drena"); agora `reconcileOrphanedOutboundMessages` (ver
+    // abaixo) PRECISA republicar mensagens órfãs de verdade, então reusa o MESMO canal já aberto
+    // pra consumo (nunca uma segunda conexão AMQP só pra isto).
+    outboundQueue: { publish: async (input) => { channel.sendToQueue(INBOX_QUEUES.outgoing, Buffer.from(JSON.stringify(input)), { persistent: true }); } },
     provider,
     aiResponder,
     circuitBreaker,
@@ -379,9 +394,6 @@ async function main(): Promise<void> {
   if (config.resilience.outboundSendPaused) {
     console.warn("[inbox-worker] INBOX_OUTBOUND_SEND_PAUSED=true — kill switch de emergência ATIVO: nenhuma mensagem outbound será enviada ao WuzAPI (permanecem queued). Inbound/IA/humano continuam funcionando normalmente.");
   }
-
-  const { connection, channel } = await connectInboxRabbitMq(config.inbox.rabbitMqUrl);
-  console.log("[inbox-worker] conectado ao RabbitMQ, iniciando consumers.");
 
   // ACHADO AO VIVO (spike Fase 2): sem isto, uma queda do RabbitMQ (`docker stop rabbitmq`)
   // derrubava o processo em SILÊNCIO — nenhuma linha de log, nada — porque amqplib emite 'error'/
@@ -517,6 +529,28 @@ async function main(): Promise<void> {
   const heartbeatTimer = setInterval(() => touchHeartbeatFile(config.resilience.heartbeatFile), config.resilience.heartbeatIntervalMs);
   heartbeatTimer.unref();
 
+  // Correção de bug real (homologação de runtime) — reconcilia mensagens outbound `queued` que
+  // nunca foram confirmadas publicadas no broker (ver `reconcileOrphanedOutboundMessages`). Roda
+  // uma vez IMEDIATAMENTE no boot (nunca depende só do primeiro tick futuro — seção 11 do pedido:
+  // órfãs de uma outage anterior precisam ser recuperadas assim que o worker sobe de novo) e
+  // depois no intervalo configurado. Mesma guarda `running` do monitor de saúde acima.
+  let reconcileTickRunning = false;
+  const runOutboundReconciliation = (): void => {
+    if (reconcileTickRunning) return;
+    reconcileTickRunning = true;
+    reconcileOrphanedOutboundMessages(deps, { gracePeriodMs: config.resilience.outboundReconcileGracePeriodMs })
+      .then(({ reconciled, failed }) => {
+        if (reconciled > 0 || failed > 0) console.log(`[inbox-worker] reconciliação outbound: ${reconciled} republicada(s), ${failed} falha(s).`);
+      })
+      .catch((error) => console.error("[inbox-worker] reconciliação outbound falhou:", error instanceof Error ? error.message : error))
+      .finally(() => {
+        reconcileTickRunning = false;
+      });
+  };
+  runOutboundReconciliation();
+  const reconcileTimer = setInterval(runOutboundReconciliation, config.resilience.outboundReconcileIntervalMs);
+  reconcileTimer.unref();
+
   // Graceful shutdown (Fase 1/6): para de consumir, espera o que já estava em voo terminar (com
   // um teto de tempo — nunca trava o shutdown para sempre por um handler pendurado), fecha
   // RabbitMQ/pool. Fase 6 corrige um gap real encontrado na auditoria: `channel.close()` sozinho
@@ -525,6 +559,7 @@ async function main(): Promise<void> {
     console.log("[inbox-worker] encerrando — aguardando processamento em voo...");
     clearInterval(healthTimer);
     clearInterval(heartbeatTimer);
+    clearInterval(reconcileTimer);
     // Remove os listeners de 'error'/'close' ANTES de fechar de propósito — sem isso, o
     // `connection.close()" abaixo dispara o handler de "queda inesperada" (achado ao vivo acima)
     // e o processo sairia com código 1 mesmo num shutdown limpo, pedido por SIGTERM/SIGINT.

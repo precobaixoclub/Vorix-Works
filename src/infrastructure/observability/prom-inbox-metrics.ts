@@ -28,6 +28,13 @@ const dlqTotal = new Counter({ name: "inbox_dlq_total", help: "Total de mensagen
 const queueDepth = new Gauge({ name: "inbox_queue_depth", help: "Profundidade atual de uma fila do módulo Conversas.", labelNames: ["queue"], registers: [inboxMetricsRegistry] });
 const oldestQueuedMessageAgeSeconds = new Gauge({ name: "inbox_oldest_queued_message_seconds", help: "Idade (segundos) da mensagem outbound QUEUED mais antiga.", registers: [inboxMetricsRegistry] });
 
+// Reconciliação outbound (bug real corrigido após homologação de runtime) — camada de PUBLICAÇÃO
+// NO BROKER, nunca confundir com `messagesFailedTotal`/`messagesRetryTotal` (camada de ENVIO AO
+// PROVIDER, ver `inbox-use-cases.ts`).
+const outboundPublishFailedTotal = new Counter({ name: "inbox_outbound_publish_failed_total", help: "Total de falhas ao publicar uma mensagem outbound no broker (RabbitMQ), logo após o commit no Postgres.", registers: [inboxMetricsRegistry] });
+const outboundReconciledTotal = new Counter({ name: "inbox_outbound_reconciled_total", help: "Total de mensagens outbound órfãs republicadas com sucesso pelo reconciliador periódico.", registers: [inboxMetricsRegistry] });
+const outboundReconcileFailedTotal = new Counter({ name: "inbox_outbound_reconcile_failed_total", help: "Total de tentativas de reconciliação outbound que falharam (broker ainda indisponível).", registers: [inboxMetricsRegistry] });
+
 const aiRepliesTotal = new Counter({ name: "inbox_ai_replies_total", help: "Total de respostas de IA enviadas com sucesso.", registers: [inboxMetricsRegistry] });
 const aiFailuresTotal = new Counter({ name: "inbox_ai_failures_total", help: "Total de falhas operacionais da IA (nunca inclui crédito insuficiente), por categoria.", labelNames: ["category"], registers: [inboxMetricsRegistry] });
 const aiCancelledTotal = new Counter({ name: "inbox_ai_cancelled_total", help: "Total de respostas de IA descartadas por mudança de elegibilidade durante a geração.", registers: [inboxMetricsRegistry] });
@@ -47,6 +54,9 @@ export function createPromInboxMetrics(): InboxMetricsRecorder {
     incDlq: () => dlqTotal.inc(),
     setQueueDepth: (queue, depth) => queueDepth.set({ queue }, depth),
     setOldestQueuedMessageAgeSeconds: (seconds) => oldestQueuedMessageAgeSeconds.set(seconds),
+    incOutboundPublishFailed: () => outboundPublishFailedTotal.inc(),
+    incOutboundReconciled: () => outboundReconciledTotal.inc(),
+    incOutboundReconcileFailed: () => outboundReconcileFailedTotal.inc(),
     incAiReply: () => aiRepliesTotal.inc(),
     incAiFailure: (category) => aiFailuresTotal.inc({ category }),
     incAiCancelled: () => aiCancelledTotal.inc(),

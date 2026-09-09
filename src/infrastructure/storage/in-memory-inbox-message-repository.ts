@@ -32,6 +32,7 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
       sentByAi: input.sentByAi ?? false,
       sentByAutomation: input.sentByAutomation ?? false,
       attemptCount: 0,
+      publishAttempts: 0,
       createdAt: now,
       sentAt: input.direction === "inbound" ? now : undefined,
     };
@@ -106,6 +107,25 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
       lastAttemptAt: input.lastAttemptAt,
       failureCategory: input.failureCategory ?? existing.failureCategory,
     });
+  }
+
+  async markOutboundPublished(id: string, input: { publishedAt: string }): Promise<void> {
+    const existing = this.rows.get(id);
+    if (!existing || existing.outboundPublishedAt) return;
+    this.rows.set(id, { ...existing, outboundPublishedAt: input.publishedAt });
+  }
+
+  async recordPublishAttempt(id: string, input: { lastPublishError: string; attemptedAt: string }): Promise<void> {
+    const existing = this.rows.get(id);
+    if (!existing) return;
+    this.rows.set(id, { ...existing, publishAttempts: existing.publishAttempts + 1, lastPublishError: input.lastPublishError });
+  }
+
+  async listOrphanedOutboundMessages(input: { olderThanIso: string; limit: number }): Promise<InboxMessage[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.direction === "outbound" && row.status === "queued" && !row.outboundPublishedAt && row.createdAt < input.olderThanIso)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .slice(0, input.limit);
   }
 
   async tryClaimForAiResponse(id: string, claimedAt: string, staleBeforeIso: string): Promise<InboxMessage | undefined> {

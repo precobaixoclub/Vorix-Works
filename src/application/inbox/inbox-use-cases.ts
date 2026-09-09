@@ -376,6 +376,15 @@ export type SendInboxMessageInput = { tenantId: string; workspaceId: string; con
 /**
  * Envio outbound — nunca espera a confirmação do WhatsApp. Persiste `status: "queued"` e publica
  * na fila de saída; quem envia de fato ao provider é o `OutboxSenderConsumer` do `vorix-worker`.
+ *
+ * ACHADO REAL (homologação de runtime, bug confirmado): se `outboundQueue.publish()` falhar DEPOIS
+ * do commit do insert (ex.: RabbitMQ momentaneamente fora do ar), a linha ficava `queued` para
+ * sempre — nada a distinguia de uma mensagem normal aguardando processamento, e nenhum mecanismo
+ * existente jamais a alcançava. Agora a falha de publish é capturada e registrada
+ * (`recordPublishAttempt`, camada DISTINTA da falha de envio ao provider — nunca confundir as
+ * duas) e a exceção original ainda sobe pro chamador HTTP (comportamento visível preservado) — a
+ * garantia nova é que `reconcileOrphanedOutboundMessages` (rodando periodicamente no worker)
+ * encontra e republica esta mensagem depois, sem depender de nenhum evento futuro do usuário.
  */
 export async function sendInboxMessage(deps: InboxUseCaseDeps, input: SendInboxMessageInput): Promise<InboxMessage> {
   const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
@@ -394,7 +403,17 @@ export async function sendInboxMessage(deps: InboxUseCaseDeps, input: SendInboxM
     sentByUserId: input.sentByUserId,
     sentByAi: input.sentByAi ?? false,
   });
-  await deps.outboundQueue.publish({ messageId: message.id, tenantId: input.tenantId, workspaceId: input.workspaceId, connectionId: conversation.connectionId });
+  try {
+    await deps.outboundQueue.publish({ messageId: message.id, tenantId: input.tenantId, workspaceId: input.workspaceId, connectionId: conversation.connectionId });
+    await deps.messageRepository.markOutboundPublished(message.id, { publishedAt: new Date().toISOString() });
+  } catch (error) {
+    await deps.messageRepository.recordPublishAttempt(message.id, {
+      lastPublishError: error instanceof Error ? error.message : String(error),
+      attemptedAt: new Date().toISOString(),
+    });
+    deps.metrics?.incOutboundPublishFailed();
+    throw error;
+  }
   await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: message.createdAt, incrementUnread: false });
   if (deps.productAnalytics && !input.sentByAi) {
     // "Reply" no sentido do funil de ativação é uma resposta HUMANA — resposta automática de IA
@@ -620,6 +639,64 @@ export async function processOutboundMessage(deps: InboxUseCaseDeps, input: Proc
     await deps.messageRepository.recordAttempt(message.id, { lastError: error instanceof Error ? error.message : String(error), lastAttemptAt: new Date().toISOString(), failureCategory: kind });
     throw error;
   }
+}
+
+export type ReconcileOrphanedOutboundMessagesResult = { reconciled: number; failed: number; oldestOrphanAgeSeconds?: number };
+
+/**
+ * Correção de bug real (homologação de runtime): reconcilia mensagens outbound que ficaram
+ * `queued` porque `sendInboxMessage` conseguiu commitar o insert no Postgres mas
+ * `outboundQueue.publish()` falhou logo em seguida (ex.: RabbitMQ momentaneamente fora do ar) —
+ * sem isso, essas linhas nunca eram alcançadas por NENHUM mecanismo existente (retry ladder, DLQ,
+ * redelivery), mesmo depois do broker voltar. Rodado periodicamente pelo `vorix-worker` (nunca
+ * pela API HTTP, que não deveria bloquear uma requisição de usuário esperando isto).
+ *
+ * `gracePeriodMs` existe para NUNCA reconciliar uma mensagem recém-criada cujo `sendInboxMessage`
+ * ainda pode estar em voo, terminando de publicar normalmente sozinho — só mensagens já mais
+ * velhas que o fluxo normal têm qualquer chance de ser genuinamente órfãs.
+ *
+ * Duplicidade real (o mesmo `messageId` publicado duas vezes — uma pelo `sendInboxMessage`
+ * original que na verdade teve sucesso mas morreu antes de gravar `outboundPublishedAt`, e outra
+ * por esta reconciliação) É POSSÍVEL e é aceita de propósito (at-least-once na fila, nunca
+ * "exactly-once" fingido) — a proteção real contra enviar ao provider duas vezes já existe e não
+ * muda: o CAS `tryMarkSending` (`queued → sending`) em `processOutboundMessage` garante que só a
+ * PRIMEIRA entrega a chegar no worker chama `provider.sendText`; a segunda encontra `status !==
+ * "queued"` e retorna sem fazer nada (ver o guard logo no topo daquela função).
+ *
+ * Nunca reconcilia mensagens `sending` (trava intencional pré-existente — ver comentário em
+ * `processOutboundMessage` sobre por que uma mensagem travada em `sending` exige reconciliação
+ * MANUAL, nunca automática, para não arriscar reenviar algo que pode já ter sido entregue de
+ * verdade ao WhatsApp) nem `sent`/`failed` (estados que já convergiram).
+ *
+ * Cada mensagem carrega seu próprio `tenantId`/`workspaceId`/`connectionId` (lidos da própria
+ * linha, nunca inferidos) — reconciliação cross-tenant incorreta não é possível por construção.
+ */
+export async function reconcileOrphanedOutboundMessages(deps: InboxUseCaseDeps, input: { gracePeriodMs: number; limit?: number }): Promise<ReconcileOrphanedOutboundMessagesResult> {
+  const now = Date.now();
+  const olderThanIso = new Date(now - input.gracePeriodMs).toISOString();
+  const orphans = await deps.messageRepository.listOrphanedOutboundMessages({ olderThanIso, limit: input.limit ?? 100 });
+
+  let reconciled = 0;
+  let failed = 0;
+  for (const message of orphans) {
+    try {
+      await deps.outboundQueue.publish({ messageId: message.id, tenantId: message.tenantId, workspaceId: message.workspaceId, connectionId: message.connectionId });
+      await deps.messageRepository.markOutboundPublished(message.id, { publishedAt: new Date().toISOString() });
+      deps.metrics?.incOutboundReconciled();
+      reconciled += 1;
+    } catch (error) {
+      await deps.messageRepository.recordPublishAttempt(message.id, {
+        lastPublishError: error instanceof Error ? error.message : String(error),
+        attemptedAt: new Date().toISOString(),
+      });
+      deps.metrics?.incOutboundReconcileFailed();
+      failed += 1;
+    }
+  }
+
+  const oldestOrphanAgeSeconds = orphans[0] ? Math.floor((now - new Date(orphans[0].createdAt).getTime()) / 1000) : undefined;
+  if (oldestOrphanAgeSeconds !== undefined) deps.metrics?.setOldestQueuedMessageAgeSeconds(oldestOrphanAgeSeconds);
+  return { reconciled, failed, oldestOrphanAgeSeconds };
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -64,6 +64,24 @@ export type InboxMessageRepositoryPort = {
   recordAttempt(id: string, input: { lastError?: string; lastAttemptAt: string; failureCategory?: string }): Promise<void>;
 
   /**
+   * Reconciliação outbound (bug real corrigido após homologação de runtime) — camada de
+   * PUBLICAÇÃO NO BROKER, distinta da camada de ENVIO AO PROVIDER acima (`recordAttempt`/
+   * `markFailed`). `markOutboundPublished` só grava se ainda não havia sido marcada (idempotente:
+   * chamar duas vezes nunca sobrescreve um timestamp real por outro mais novo).
+   */
+  markOutboundPublished(id: string, input: { publishedAt: string }): Promise<void>;
+  /** Registra uma TENTATIVA de publicação no broker que falhou — nunca uma tentativa de envio ao
+   * provider (isso é `recordAttempt`). Nunca lança para mensagem inexistente (a reconciliação
+   * segue para a próxima mesmo se uma linha sumir entre a leitura e a escrita). */
+  recordPublishAttempt(id: string, input: { lastPublishError: string; attemptedAt: string }): Promise<void>;
+  /** Mensagens outbound `queued` que NUNCA foram confirmadas publicadas no broker E já passaram da
+   * janela de graça (`olderThanIso` — tempo suficiente pro fluxo normal de `sendInboxMessage` ter
+   * concluído a publicação sozinho; nunca reconciliar algo que ainda pode estar em voo). Ordem
+   * cronológica ascendente (mais antiga primeiro) — mesmo padrão de
+   * `listUnansweredInboundByConversation`. */
+  listOrphanedOutboundMessages(input: { olderThanIso: string; limit: number }): Promise<InboxMessage[]>;
+
+  /**
    * Fase 5/6 — claim atômico (CAS/lease) de "quem gera/envia a resposta de IA para esta mensagem
    * inbound". Casa se `direction = 'inbound'` E (`ai_claim_status is null` OU o claim `processing`
    * já passou de `staleBeforeIso` — Fase 6: um processo que morreu segurando o claim nunca deveria

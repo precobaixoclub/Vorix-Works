@@ -22,6 +22,12 @@ export type InboxMetricsRecorder = {
   incDlq(): void;
   setQueueDepth(queue: string, depth: number): void;
   setOldestQueuedMessageAgeSeconds(seconds: number): void;
+  /** Reconciliação outbound (bug real corrigido após homologação de runtime) — camada de
+   * PUBLICAÇÃO NO BROKER, nunca confundir com `incMessageFailed`/`incMessageRetry` (camada de
+   * ENVIO AO PROVIDER). */
+  incOutboundPublishFailed(): void;
+  incOutboundReconciled(): void;
+  incOutboundReconcileFailed(): void;
   incAiReply(): void;
   incAiFailure(category: string): void;
   incAiCancelled(): void;

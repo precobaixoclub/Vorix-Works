@@ -167,6 +167,15 @@ export type InboxMessage = {
    * Existe para permitir diagnosticar/reprocessar manualmente mensagens na DLQ sem precisar
    * reabrir logs. */
   failureCategory?: string;
+  /** Reconciliação outbound (bug real corrigido após homologação de runtime) — camada DISTINTA de
+   * `attemptCount`/`lastError`/`failureCategory` acima (que são do ENVIO AO PROVIDER). Estas três
+   * são só sobre "esta mensagem já chegou a ser publicada no broker interno do Vorix?" — nunca
+   * misturar as duas camadas (broker vs. provider), ver `docs/conversas-homologacao-runtime-relatorio.md`
+   * seção 1-B. `outboundPublishedAt` ausente + `direction: "outbound"` + `status: "queued"` +
+   * `createdAt` mais velho que a janela de graça = candidata a reconciliação. */
+  outboundPublishedAt?: string;
+  publishAttempts: number;
+  lastPublishError?: string;
   createdAt: string;
   sentAt?: string;
   deliveredAt?: string;

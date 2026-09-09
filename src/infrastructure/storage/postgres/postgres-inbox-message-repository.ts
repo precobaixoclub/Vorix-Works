@@ -33,6 +33,9 @@ type Row = {
   ai_claimed_at: Date | null;
   ai_response_message_id: string | null;
   failure_category: string | null;
+  outbound_published_at: Date | null;
+  publish_attempts: number;
+  last_publish_error: string | null;
 };
 
 export class PostgresInboxMessageRepository implements InboxMessageRepositoryPort {
@@ -148,6 +151,31 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
     );
   }
 
+  async markOutboundPublished(id: string, input: { publishedAt: string }): Promise<void> {
+    await this.pool.query(
+      "update inbox_messages set outbound_published_at = $2 where id = $1 and outbound_published_at is null",
+      [id, input.publishedAt],
+    );
+  }
+
+  async recordPublishAttempt(id: string, input: { lastPublishError: string; attemptedAt: string }): Promise<void> {
+    await this.pool.query(
+      "update inbox_messages set publish_attempts = publish_attempts + 1, last_publish_error = $2 where id = $1",
+      [id, input.lastPublishError],
+    );
+  }
+
+  async listOrphanedOutboundMessages(input: { olderThanIso: string; limit: number }): Promise<InboxMessage[]> {
+    const result = await this.pool.query<Row>(
+      `select * from inbox_messages
+       where direction = 'outbound' and status = 'queued' and outbound_published_at is null and created_at < $1
+       order by created_at asc
+       limit $2`,
+      [input.olderThanIso, input.limit],
+    );
+    return result.rows.map((row) => this.toDomain(row));
+  }
+
   async tryClaimForAiResponse(id: string, claimedAt: string, staleBeforeIso: string): Promise<InboxMessage | undefined> {
     const result = await this.pool.query<Row>(
       `update inbox_messages set ai_claim_status = 'processing', ai_claimed_at = $2
@@ -207,6 +235,9 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
       aiClaimedAt: row.ai_claimed_at?.toISOString(),
       aiResponseMessageId: row.ai_response_message_id ?? undefined,
       failureCategory: row.failure_category ?? undefined,
+      outboundPublishedAt: row.outbound_published_at?.toISOString(),
+      publishAttempts: row.publish_attempts,
+      lastPublishError: row.last_publish_error ?? undefined,
     };
   }
 }

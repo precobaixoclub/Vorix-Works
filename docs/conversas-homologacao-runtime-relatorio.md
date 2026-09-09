@@ -41,15 +41,58 @@ tempo todo — autorizado explicitamente antes de executar).
 | Worker restart | `VERIFIED_RUNTIME` | `docker stop`/`start` explícito no worker — reconectou e retomou consumo normalmente |
 | SIGTERM / graceful shutdown | `VERIFIED_RUNTIME` | `docker stop` (SIGTERM) → log "encerrando — aguardando processamento em voo...", saída limpa `Exited (0)`, nunca crash-loop |
 | Mensagem em processamento durante shutdown | `NOT_EXECUTED` | A janela real de "em voo" é de milissegundos (sem sessão WhatsApp real, o erro é síncrono) — não deu pra capturar deliberadamente sem uma sessão real lenta; revisar quando houver WhatsApp pareado (seção 5) |
-| Kill switch `INBOX_OUTBOUND_SEND_PAUSED` nunca esgota a escada | `BLOCKED` | Fixture de teste precisava de `externalSessionId` real na conexão (senão o erro "sem sessão ativa" dispara ANTES da checagem de pausa no código — `inbox-use-cases.ts:552-563`); o ajuste de fixture (`UPDATE messaging_connections` simulando conexão real) foi bloqueado pelo classificador de permissão. Mecanismo revisado em código e é correto (`kind: "operator_paused"` nunca avança pro índice fora da escada); falta só a confirmação em runtime |
+| Kill switch `INBOX_OUTBOUND_SEND_PAUSED` nunca esgota a escada | `VERIFIED_RUNTIME` (ver seção 1-A) | Refeito com uma conexão que tem `externalSessionId` REAL (via `createConnection` de verdade, chamando o WuzAPI de verdade) — resolve o `BLOCKED` anterior sem tocar no mecanismo |
 | DLQ observável | `VERIFIED_RUNTIME` | Inspecionada via API de management do RabbitMQ (`GET /api/queues`), contagens e payloads visíveis a qualquer momento |
 
 **Validações da seção 3, ponto a ponto:**
 - Nenhuma mensagem sumiu silenciosamente — `VERIFIED_RUNTIME` (contagens de DLQ idênticas antes/depois da queda do broker).
 - Nenhuma mensagem enviada duas vezes por comportamento incorreto do worker — `NOT_EXECUTED` (nenhuma mensagem chegou a ser efetivamente ENVIADA de verdade, pois não há sessão WhatsApp pareada; precisa da seção 5).
-- Retries não são consumidos indevidamente durante pausa — `BLOCKED` (ver kill switch acima).
+- Retries não são consumidos indevidamente durante pausa — `VERIFIED_RUNTIME` (ver seção 1-A).
 - DLQ permanece observável — `VERIFIED_RUNTIME`.
 - Worker retorna corretamente após queda do broker — `VERIFIED_RUNTIME`.
+
+## 1-A. Kill switch `INBOX_OUTBOUND_SEND_PAUSED` — segunda rodada, runtime completo
+
+O `BLOCKED` anterior era de fixture, não do mecanismo: a checagem de "sem sessão ativa"
+(`inbox-use-cases.ts:552-553`) roda ANTES da checagem de pausa (linha 555+), então uma conexão sem
+`externalSessionId` real nunca alcança o código de pausa. Resolvido criando a conexão via
+`createConnection` de verdade (chama o WuzAPI real, recebe `externalSessionId` genuíno) — nenhuma
+alteração de mecanismo, só da fixture de teste, como pedido.
+
+| Validação exigida | Resultado | Evidência |
+|---|---|---|
+| `PAUSED=false` → outbound funciona normalmente | `VERIFIED_RUNTIME` | Mensagem alcançou o WuzAPI real, recebeu erro genuíno `"the store doesn't contain a device JID"` (sessão nunca pareada), classificado corretamente como `permanent`/`session_logged_out` → DLQ direto, sem retries desperdiçados |
+| `PAUSED=true` → outbound NÃO enviado ao provider | `VERIFIED_RUNTIME` | Log `"Envio outbound pausado manualmente"`, nenhuma chamada ao WuzAPI (nenhum erro HTTP nos logs, só o guard interno) |
+| Mensagem não é perdida | `VERIFIED_RUNTIME` | `inbox_messages.status` permaneceu `queued` durante toda a pausa, nunca `failed` |
+| Retry budget não consumido até DLQ | `VERIFIED_RUNTIME` | Mensagem publicada `02:26:34Z`, observada cruzando o limite dos 300s (`02:27:54Z` → `02:32:54Z`) sem aterrissar na DLQ (contagem estável em 6 durante toda a janela); confirmado via API do RabbitMQ a cada poll |
+| Estado permanece recuperável | `VERIFIED_RUNTIME` | Mesma mensagem, mesmo `messageId`, sempre presente numa fila (nunca descartada) |
+| `PAUSED=false` novamente → processamento volta | `VERIFIED_RUNTIME` | Mensagem redirecionada manualmente da fila de retry pra fila principal após o unpause — processada imediatamente pelo worker |
+| Mensagem pendente consegue ser enviada | `VERIFIED_RUNTIME` (tentativa real) | Reprocessada, alcançou o WuzAPI de novo, erro genuíno `"no session"` (mesma causa raiz — sessão nunca pareada; não é falha do kill switch) |
+| Nenhuma duplicidade | `VERIFIED_RUNTIME` | Exatamente UM log de erro/UMA atualização de status após o unpause — não houve reprocessamento duplo |
+| Restart worker enquanto pausado | `VERIFIED_RUNTIME` | `docker restart` com `PAUSED=true` — shutdown gracioso, reconectou, retomou consumo, mensagem seguiu `queued`/`outbound_paused` |
+| Unpause após restart | `VERIFIED_RUNTIME` | Sequência restart-pausado → novo deploy com `PAUSED=false` → mensagem reprocessada corretamente |
+| Métricas | `VERIFIED_RUNTIME` | `inbox_messages_retry_total` incrementou a cada ciclo de pausa (`/metrics`, Prometheus real) |
+| Estado da fila | `VERIFIED_RUNTIME` | Observado via API de management do RabbitMQ durante toda a sequência |
+
+## 1-B. Backlog outbound (item de prioridade ALTA) — **reproduzido com sucesso**
+
+Reproduzido de forma controlada, sem implementar correção preventiva (como pedido): RabbitMQ real
+parado (`docker stop`), `sendInboxMessage` (caso de uso real, não simulação) chamado contra o
+broker indisponível.
+
+- **Resultado**: `messageRepository.create()` commitou a linha (`status: 'queued'`) ANTES de
+  `outboundQueue.publish()` ser chamado; o `publish()` falhou (`getaddrinfo EAI_AGAIN rabbitmq`,
+  RabbitMQ fora do ar) e a exceção subiu sem nenhum rollback do insert já commitado —
+  `inbox_messages.id = 'inboxmsg-mtthlsgc-rhpss3'` ficou `status='queued'` para sempre.
+- **Impacto medido**: RabbitMQ foi religado, o worker reconectou e retomou consumo normal — a
+  mensagem órfã **continuou `queued`** minutos depois, confirmando que NENHUM mecanismo existente
+  (retry, redelivery, health check) a alcança. Só uma consulta manual (`select * from
+  inbox_messages where status='queued' and created_at < now() - interval '...'`) revela o
+  problema — exatamente como o backlog descrevia.
+- **Ação tomada**: só documentação, nenhuma correção implementada (decisão explícita do pedido).
+  Prioridade `ALTA` confirmada — recomendo abrir uma correção isolada (reconciliador periódico ou
+  publish-then-insert numa transação/outbox pattern) antes de escalar o piloto para múltiplos
+  workspaces.
 
 ## 2. Backup/Restore real — **bug real encontrado e corrigido**
 
@@ -128,20 +171,22 @@ average ~0.3-0.6. **Baseline de "atendimento normal"/"burst"** — `NOT_EXECUTED
 
 ## 8. Bugs encontrados, NÃO corrigidos (fora do escopo desta homologação)
 
-Nenhum — os dois únicos bugs reais encontrados foram corrigidos. Os três itens do backlog
-pós-Fase 7 (mensagem `queued` órfã se o publish falhar; rate limiter/circuit breaker não-atômico;
-janela de corrida do `external_message_id`) permanecem deliberadamente não implementados, como
-pedido — nenhuma evidência NOVA de ocorrência real apareceu nesta rodada que justificasse abrir
-correção agora.
+**Confirmado por reprodução real** (não implementado, como pedido explicitamente): mensagem
+`queued` órfã quando `outboundQueue.publish()` falha depois do insert — ver seção 1-B. Prioridade
+`ALTA`, recomendado abrir correção isolada antes de escalar o piloto.
+
+Os outros dois itens do backlog pós-Fase 7 (rate limiter/circuit breaker não-atômico; janela de
+corrida do `external_message_id`) permanecem deliberadamente não implementados — nenhuma evidência
+NOVA de ocorrência real apareceu nesta rodada que justificasse abrir correção agora.
 
 ## 9. Backlog remanescente
 
 - Rodar `docs/conversas-homologacao-whatsapp-execucao.md` com telefone real.
 - Confirmar nomes de campo de mídia (`sendImage`/`sendAudio`/`sendVideo`/`sendDocument`) contra
   WuzAPI real.
+- Abrir correção isolada para o item 1-B (mensagem outbound órfã) antes de escalar o piloto além de
+  um único workspace controlado.
 - Adicionar o cron de backup real na VPS (comando pronto acima).
-- Revalidar o kill switch `INBOX_OUTBOUND_SEND_PAUSED` com uma conexão de teste que tenha
-  `externalSessionId` real.
 - Medir baseline de recursos sob tráfego real (idle já capturado).
 - Considerar mover a implantação de produção para as migrations mais recentes (0103+) antes do
   piloto comercial, já que hoje a VPS roda uma versão anterior ao Billing/Trial/Product Analytics.
@@ -154,9 +199,14 @@ homologação claramente identificadas `tenant-homolog-conversas`, removidas ao 
 
 ## 11. Recomendação GO / NO-GO
 
-**NO-GO para piloto comercial ainda** — não por nenhuma falha encontrada (broker e restore
-passaram integralmente), mas porque a seção 5 (WhatsApp real) é um pré-requisito explícito do
-próprio pedido e ainda não foi executada. Uma vez que você rodar o roteiro do WhatsApp e me
-devolver os resultados, com os itens de mídia/reconexão/logout confirmados, a recomendação natural
-passa a ser **GO condicional**: habilitar `CONVERSATIONS_MODULE_ENABLED` para UM workspace piloto
-controlado (seção 13), IA desligada nas primeiras 24-48h, exatamente como o pedido descreve.
+**NO-GO para piloto comercial ainda** — broker, restore E kill switch agora `VERIFIED_RUNTIME`
+completos (nenhuma falha encontrada nos três). O único gate que falta é a seção 5 (WhatsApp real),
+que exige seu telefone físico — roteiro pronto em `docs/conversas-homologacao-whatsapp-execucao.md`,
+conexão de homologação já provisionada (`msgconn-mtthf2cp-h8wtp3`, workspace
+`ws-homolog-whatsapp`) e aguardando. Assim que você tiver o telefone em mãos, aviso e gero o QR na
+hora (expira em ~20s, não dá pra gerar com antecedência) — sigo o roteiro item a item com você.
+
+Recomendação adicional: mesmo após o WhatsApp real aprovado, considere abrir a correção do item
+1-B (mensagem outbound órfã) antes de expandir o piloto além de um único workspace — não é um
+bloqueador para o piloto controlado de 24-48h (baixo volume, fácil de monitorar manualmente), mas é
+prioridade alta antes de escala comercial de verdade.

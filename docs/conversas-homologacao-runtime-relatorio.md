@@ -94,6 +94,64 @@ broker indisponível.
   publish-then-insert numa transação/outbox pattern) antes de escalar o piloto para múltiplos
   workspaces.
 
+## 1-C. Correção do bug 1-B — commitada, implantada e validada em runtime real (`VERIFIED_RUNTIME`)
+
+Correção implementada em rodada posterior (migration `0114_inbox_outbound_publish_tracking.sql` +
+`reconcileOrphanedOutboundMessages` no `vorix-worker`), commitada isoladamente
+(`94954cf`), implantada na VPS real e validada repetindo EXATAMENTE o cenário que produziu o bug.
+
+**Reprodução completa (sequência real, sem simulação):**
+
+| Passo | Horário (UTC) | Resultado |
+|---|---|---|
+| RabbitMQ parado (`docker stop`) | `14:53:48Z` | — |
+| `sendInboxMessage` real chamado contra o broker indisponível | `14:54:07Z` | `EXPECTED_THROW: getaddrinfo EAI_AGAIN rabbitmq` |
+| Estado do banco logo após | — | `inboxmsg-mtu7ygbt-idxml3`: `status=queued`, `publish_attempts=1`, `last_publish_error="getaddrinfo EAI_AGAIN rabbitmq"`, `outbound_published_at=null` |
+| RabbitMQ religado | `14:54:28Z` | worker reconectou sozinho (mesmo comportamento já validado na seção 1) |
+| Reconciliador (tick periódico, sem intervenção manual) republicou a mensagem | `~14:56:0x` (após a janela de graça de 120s) | log: `reconciliação outbound: 1 republicada(s), 0 falha(s)` |
+| Worker consumiu, CAS `queued→sending`, chamou o provider real | — | WuzAPI real respondeu `"no session"` (sessão nunca pareada — não é falha do mecanismo) |
+| Estado final | — | `status=failed`, `outbound_published_at` preenchido, `publish_attempts=1`, `attempt_count=1`, `failure_category=session_logged_out` |
+
+**Resultado**: mensagem recuperada **automaticamente**, **zero intervenção manual** além de ligar o
+RabbitMQ de volta — exatamente o comportamento exigido. A entrega real ao WhatsApp não pôde ser
+confirmada porque esta conexão de homologação nunca foi pareada com um telefone real (fora do
+escopo desta correção — é a mesma limitação da seção 3 da homologação original), mas o pipeline
+completo (commit → falha de publish → reconciliação → CAS → chamada real ao provider → estado
+terminal correto) foi validado de ponta a ponta.
+
+**Janela de crash B** (publish teve sucesso real, processo morre antes de persistir
+`outbound_published_at`) — testada com uma segunda mensagem publicada duas vezes de propósito na
+fila real (`inbox.outgoing.queue`): log do worker mostrou a segunda entrega encontrando a mensagem
+já em `"sending"` (`"possível crash do worker durante um envio anterior"`) e retornando sem chamar
+o provider — `attempt_count` final = **1**, confirmando que só a primeira entrega chegou a chamar
+`provider.sendText`, mesmo com duas cópias reais na fila.
+
+**Recuperação por restart do worker** — testada isoladamente: mensagem órfã criada, `docker
+restart` do worker, reconciliador rodou no próximo tick e recuperou a mensagem sem nenhum evento
+novo do usuário (log: `reconciliação outbound: 1 republicada(s), 0 falha(s)`, `outbound_published_at`
+gravado no mesmo segundo do processamento).
+
+**Interação com o kill switch de pausa** — confirmada com o código corrigido: mensagem
+republicada pelo reconciliador enquanto `INBOX_OUTBOUND_SEND_PAUSED=true` nunca chegou ao provider
+(`status` permaneceu `queued`, `failure_category=outbound_paused`), e a contagem da DLQ ficou
+inalterada durante toda a janela — retry budget não foi consumido.
+
+**Falha "failed" terminal nunca ressuscitada** — confirmado com uma mensagem real que já havia
+chegado a `status=failed`: forçar `outbound_published_at` de volta para `null` nela não teve
+nenhum efeito, porque o reconciliador só olha `status='queued'`, nunca `failed`.
+
+**Métricas**: `inbox_outbound_reconciled_total` incrementou corretamente (`1` após a reconciliação
+real). **Achado residual de observabilidade** (não é um bug de confiabilidade): `inbox_outbound_publish_failed_total`
+nunca é incrementado pela via HTTP real porque `registerInboxRoutes` (rota da API) nunca recebeu um
+`metrics` nas suas deps — a API nunca teve métricas Prometheus wireadas para Inbox, só o worker
+tem. Isto já era assim antes desta correção (gap pré-existente, não introduzido agora); documentado
+aqui porque apareceu durante a validação, mas fora do escopo desta correção específica (exigiria
+decidir uma nova exposição de `/metrics` no processo da API, o que é uma mudança de infraestrutura,
+não parte desta correção de confiabilidade). Recomendo abrir isso como item de dívida técnica
+separado.
+
+**Classificação final: `VERIFIED_RUNTIME`.**
+
 ## 2. Backup/Restore real — **bug real encontrado e corrigido**
 
 `scripts/backup-postgres.sh` nunca havia sido executado com sucesso: usava nomes de container
@@ -199,14 +257,13 @@ homologação claramente identificadas `tenant-homolog-conversas`, removidas ao 
 
 ## 11. Recomendação GO / NO-GO
 
-**NO-GO para piloto comercial ainda** — broker, restore E kill switch agora `VERIFIED_RUNTIME`
-completos (nenhuma falha encontrada nos três). O único gate que falta é a seção 5 (WhatsApp real),
-que exige seu telefone físico — roteiro pronto em `docs/conversas-homologacao-whatsapp-execucao.md`,
-conexão de homologação já provisionada (`msgconn-mtthf2cp-h8wtp3`, workspace
-`ws-homolog-whatsapp`) e aguardando. Assim que você tiver o telefone em mãos, aviso e gero o QR na
-hora (expira em ~20s, não dá pra gerar com antecedência) — sigo o roteiro item a item com você.
+**NO-GO para piloto comercial ainda** — broker, restore, kill switch **e agora a correção do bug
+outbound (1-B/1-C)** estão `VERIFIED_RUNTIME` completos (nenhuma falha encontrada em nenhum dos
+quatro). O único gate que falta é a seção 5 (WhatsApp real), que exige seu telefone físico —
+roteiro pronto em `docs/conversas-homologacao-whatsapp-execucao.md`, conexão de homologação já
+provisionada (`msgconn-mtthf2cp-h8wtp3`, workspace `ws-homolog-whatsapp`) e aguardando. Assim que
+você tiver o telefone em mãos, aviso e gero o QR na hora (expira em ~20s, não dá pra gerar com
+antecedência) — sigo o roteiro item a item com você.
 
-Recomendação adicional: mesmo após o WhatsApp real aprovado, considere abrir a correção do item
-1-B (mensagem outbound órfã) antes de expandir o piloto além de um único workspace — não é um
-bloqueador para o piloto controlado de 24-48h (baixo volume, fácil de monitorar manualmente), mas é
-prioridade alta antes de escala comercial de verdade.
+Item residual (não bloqueador): `inbox_outbound_publish_failed_total` nunca incrementa via a rota
+HTTP real (gap pré-existente de observabilidade na API, não desta correção — ver seção 1-C).

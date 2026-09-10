@@ -14,6 +14,30 @@ funciona por dentro" (isso está no relatório da Fase 7 e no código). Assume a
 Lembrete: um container `healthy` no Docker **não** significa "WhatsApp conectado" — sempre confirme
 o status real da conexão via `GET /v1/inbox/connections?workspaceId=` (campo `status`).
 
+## ⚠️ Comando oficial para subir/recriar a stack Conversas — NUNCA sem `--env-file`
+
+Achado real (Fase 10, Pre-Pilot Hardening): as credenciais reais de `docker-compose.conversas-gateway.yml`
+(`WUZAPI_ADMIN_TOKEN`, `WUZAPI_POSTGRES_PASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`,
+`WUZAPI_GLOBAL_ENCRYPTION_KEY`) **não** estão em `/opt/zuno/.env.zuno` nem em nenhum `.env.conversas`
+dentro de `/opt/zuno` — vivem em **`/opt/conversas-spike/.env.conversas`**, um diretório
+completamente separado (resquício do spike original, nunca migrado). O comando
+`docker compose -f docker-compose.conversas-gateway.yml up -d` **sem** `--env-file` sobe
+silenciosamente com todas as credenciais em branco e RECRIA os três containers
+(`wuzapi`, `wuzapi-postgres`, `rabbitmq`) nesse estado — já aconteceu uma vez em produção (~90s de
+credenciais em branco até a correção; nenhum dado foi perdido só porque os volumes Postgres já
+estavam inicializados, o que não é garantido na próxima vez).
+
+**Comando correto, sempre**, rodando a partir de `/opt/zuno` (onde o compose file fica, sincronizado
+a cada deploy):
+
+```bash
+cd /opt/zuno && docker compose --env-file /opt/conversas-spike/.env.conversas -f docker-compose.conversas-gateway.yml up -d
+```
+
+Nunca rode `up`, `restart` ou `recreate` deste stack sem o `--env-file` acima. Se o comando emitir
+avisos `"... variable is not set. Defaulting to a blank string."`, **pare imediatamente** (Ctrl+C se
+ainda não terminou) — é o sinal de que o env-file não foi carregado.
+
 ---
 
 ## 1. WhatsApp desconectado (`disconnected` / `reconnecting`)

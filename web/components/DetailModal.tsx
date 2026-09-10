@@ -281,6 +281,16 @@ export function DetailModal({
                   <button
                     key={section.value}
                     type="button"
+                    // Fase 10.1 — achado real (reprodução com o componente de verdade, não só
+                    // leitura de código): sem isto, a aba ativa podia ficar inteiramente fora da
+                    // área visível da faixa horizontal no mobile (ex.: "Propostas" como 3ª de 4
+                    // abas nunca rolava pra a visão sozinha) — parecia rótulo cortado, mas era a
+                    // aba inteira fora do viewport. Ref inline (nova função a cada render) é
+                    // proposital: React reinvoca em toda renderização enquanto `isActive`, então
+                    // também cobre a troca de aba via clique, não só a montagem inicial do portal
+                    // do Dialog (que acontece depois do primeiro efeito, por isso um `useEffect`
+                    // sozinho chegava tarde demais).
+                    ref={isActive ? (el) => el?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) : undefined}
                     onClick={() => onValueChange?.(section.value)}
                     aria-current={isActive ? 'page' : undefined}
                     className={cn(

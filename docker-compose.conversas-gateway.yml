@@ -83,8 +83,15 @@ services:
     mem_reservation: 128m
     healthcheck:
       # /health é público (sem Authorization) — confirmado em routes.go do WuzAPI. CMD-SHELL (não
-      # CMD) porque o healthcheck usa "||" como operador de shell, não um argumento literal do wget.
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      # CMD) porque o healthcheck usa "||" como operador de shell, não um argumento literal.
+      #
+      # Fase 10 (Pre-Pilot Hardening) — achado real em produção: a imagem `asternic/wuzapi` (Debian
+      # bookworm) não tem `wget` instalado (`/bin/sh: 1: wget: not found`), então TODO healthcheck
+      # falhava desde sempre — 57.350 falhas consecutivas confirmadas via `docker inspect`, container
+      # marcado `unhealthy` por dias, enquanto o processo real (`curl` confirma `/health` → `{"status":
+      # "ok"}`) nunca teve problema nenhum. `curl` existe na imagem (`/usr/bin/curl`) — troca simples,
+      # sem mudar a semântica do check (mesmo endpoint, mesmo "||").
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

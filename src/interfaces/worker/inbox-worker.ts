@@ -238,10 +238,17 @@ async function consumeQueue(channel: Channel, queue: string, handle: (content: B
   });
 }
 
+/** Fase 10 (Pre-Pilot Hardening) — estado exposto por `GET /status`, pra distinguir "módulo
+ * desligado de propósito" (`status: "disabled"`) de "processo travado"/"ainda conectando" sem
+ * precisar adivinhar a partir de logs. Nunca confundir com o heartbeat de liveness (arquivo) —
+ * este é sobre O QUE o processo está fazendo, não SE ele está vivo. */
+type WorkerStatus = { moduleEnabled: boolean; consumersRunning: boolean; status: "disabled" | "starting" | "running" };
+
 /** Fase 6 — servidor HTTP mínimo (sem Fastify — o worker nunca teve nem precisa de um framework
- * HTTP completo) só para `GET /metrics` (scrape do Prometheus). `metricsEnabled=false` desliga
- * completamente (nenhuma porta aberta) para ambientes que não quserem/podem expor isso. */
-function startMetricsServer(port: number): import("node:http").Server {
+ * HTTP completo) só para `GET /metrics` (scrape do Prometheus) e, desde a Fase 10, `GET /status`
+ * (health semântico, ver `WorkerStatus`). `metricsEnabled=false` desliga completamente (nenhuma
+ * porta aberta) para ambientes que não quiserem/puderem expor isso. */
+function startMetricsServer(port: number, getStatus: () => WorkerStatus): import("node:http").Server {
   const server = createServer((request, response) => {
     if (request.url === "/metrics") {
       inboxMetricsRegistry
@@ -254,6 +261,11 @@ function startMetricsServer(port: number): import("node:http").Server {
           response.writeHead(500);
           response.end(String(error));
         });
+      return;
+    }
+    if (request.url === "/status") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(getStatus()));
       return;
     }
     response.writeHead(404);
@@ -283,7 +295,36 @@ async function main(): Promise<void> {
     console.log(`[inbox-worker] SPIKE: capturando fixtures sanitizadas em "${spikeFixturesDir}" — nunca deixar ligado em produção.`);
   }
   if (!config.inbox.enabled) {
-    console.log("[inbox-worker] CONVERSATIONS_MODULE_ENABLED=false — worker encerrando sem iniciar consumers.");
+    // Fase 10 (Pre-Pilot Hardening) — achado real: antes, `main()` retornava aqui e o processo
+    // encerrava (exit 0) sem nunca ter tocado o heartbeat nem subido o servidor de status; com
+    // `restart: unless-stopped`, o Docker reiniciava o container imediatamente, que encerrava de
+    // novo, num loop indefinido — ruidoso nos logs, contador de restart sempre subindo, e capaz de
+    // esconder um crash real no meio do ruído. Agora o worker permanece vivo, num estado IDLE
+    // explícito: heartbeat tocado normalmente (o healthcheck continua vendo um processo saudável,
+    // porque ele DE FATO está) e `GET /status` (quando `metricsEnabled`) responde
+    // `{moduleEnabled:false, consumersRunning:false, status:"disabled"}` — nunca "quebrado".
+    console.log("[inbox-worker] CONVERSATIONS_MODULE_ENABLED=false — permanecendo ocioso (sem consumers), health reportado como disabled.");
+
+    const disabledStatus: WorkerStatus = { moduleEnabled: false, consumersRunning: false, status: "disabled" };
+    let idleMetricsServer: import("node:http").Server | undefined;
+    if (config.resilience.metricsEnabled) {
+      idleMetricsServer = startMetricsServer(config.resilience.metricsPort, () => disabledStatus);
+    }
+
+    touchHeartbeatFile(config.resilience.heartbeatFile);
+    // Deliberadamente SEM `.unref()` — é este timer que mantém o processo vivo em vez de sair e
+    // acionar o restart loop. `startMetricsServer`/seu `server.unref()` sozinho não bastaria (um
+    // servidor HTTP ocioso não impede o Node de encerrar se nada mais estiver "segurando" o loop).
+    const idleHeartbeatTimer = setInterval(() => touchHeartbeatFile(config.resilience.heartbeatFile), config.resilience.heartbeatIntervalMs);
+
+    const shutdownIdle = () => {
+      console.log("[inbox-worker] encerrando (estado ocioso) — SIGTERM/SIGINT recebido.");
+      clearInterval(idleHeartbeatTimer);
+      if (idleMetricsServer) idleMetricsServer.close();
+      process.exit(0);
+    };
+    process.on("SIGTERM", shutdownIdle);
+    process.on("SIGINT", shutdownIdle);
     return;
   }
   if (!config.inbox.rabbitMqUrl) {
@@ -297,9 +338,12 @@ async function main(): Promise<void> {
 
   // Fase 6 — métricas Prometheus (primeira introdução no Vorix, ver `prom-inbox-metrics.ts`).
   const metrics = config.resilience.metricsEnabled ? createPromInboxMetrics() : undefined;
+  // Fase 10 — status semântico exposto em `GET /status` (ver `WorkerStatus`); começa em "starting"
+  // (RabbitMQ ainda não conectou) e vira "running" só depois que TODOS os consumers estão de pé.
+  const workerStatus: WorkerStatus = { moduleEnabled: true, consumersRunning: false, status: "starting" };
   let metricsServer: import("node:http").Server | undefined;
   if (config.resilience.metricsEnabled) {
-    metricsServer = startMetricsServer(config.resilience.metricsPort);
+    metricsServer = startMetricsServer(config.resilience.metricsPort, () => workerStatus);
     console.log(`[inbox-worker] métricas Prometheus em http://0.0.0.0:${config.resilience.metricsPort}/metrics`);
   }
 
@@ -505,6 +549,11 @@ async function main(): Promise<void> {
       }
     },
   );
+
+  // Fase 10 — só agora, com os 4 consumers de pé, o worker está genuinamente "running" (não só
+  // "processo vivo, ainda conectando"). `GET /status` reflete isso a partir daqui.
+  workerStatus.consumersRunning = true;
+  workerStatus.status = "running";
 
   // Fase 6 — monitor de saúde periódico (nunca reconecta ativamente, só reconcilia
   // `connectionHealth`/`lastConnectionError` — ver `reconcileConnectionsHealth`) e heartbeat de

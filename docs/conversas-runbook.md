@@ -14,29 +14,65 @@ funciona por dentro" (isso está no relatório da Fase 7 e no código). Assume a
 Lembrete: um container `healthy` no Docker **não** significa "WhatsApp conectado" — sempre confirme
 o status real da conexão via `GET /v1/inbox/connections?workspaceId=` (campo `status`).
 
-## ⚠️ Comando oficial para subir/recriar a stack Conversas — NUNCA sem `--env-file`
+## ⚠️ Único jeito suportado de operar a stack Conversas — `conversas-gateway-ctl.sh`
 
 Achado real (Fase 10, Pre-Pilot Hardening): as credenciais reais de `docker-compose.conversas-gateway.yml`
 (`WUZAPI_ADMIN_TOKEN`, `WUZAPI_POSTGRES_PASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`,
 `WUZAPI_GLOBAL_ENCRYPTION_KEY`) **não** estão em `/opt/zuno/.env.zuno` nem em nenhum `.env.conversas`
 dentro de `/opt/zuno` — vivem em **`/opt/conversas-spike/.env.conversas`**, um diretório
-completamente separado (resquício do spike original, nunca migrado). O comando
-`docker compose -f docker-compose.conversas-gateway.yml up -d` **sem** `--env-file` sobe
-silenciosamente com todas as credenciais em branco e RECRIA os três containers
-(`wuzapi`, `wuzapi-postgres`, `rabbitmq`) nesse estado — já aconteceu uma vez em produção (~90s de
-credenciais em branco até a correção; nenhum dado foi perdido só porque os volumes Postgres já
-estavam inicializados, o que não é garantido na próxima vez).
+completamente separado (resquício do spike original — ver
+`docs/conversas-pre-homologacao-fechamento-final.md`, seção "/opt/conversas-spike", para a decisão
+de manter assim nesta fase). Rodar `docker compose -f docker-compose.conversas-gateway.yml up -d`
+direto, **sem** `--env-file`, sobe silenciosamente com todas as credenciais em branco e RECRIA os
+três containers (`wuzapi`, `wuzapi-postgres`, `rabbitmq`) nesse estado — já aconteceu uma vez em
+produção (~90s de credenciais em branco até a correção; nenhum dado foi perdido só porque os
+volumes Postgres já estavam inicializados, o que não é garantido na próxima vez).
 
-**Comando correto, sempre**, rodando a partir de `/opt/zuno` (onde o compose file fica, sincronizado
-a cada deploy):
+Por causa disso (Fase 10.1), **não rode `docker compose` direto neste stack**. Use sempre
+`scripts/conversas-gateway-ctl.sh` (no servidor, em `/opt/zuno/scripts/`) — ele injeta o
+`--env-file` correto automaticamente e recusa rodar se o env-file não existir:
+
+| Operação | Comando |
+|---|---|
+| Subir stack (primeira vez ou depois de `down`) | `scripts/conversas-gateway-ctl.sh up` |
+| Recriar containers (ex.: depois de atualizar a imagem/compose) | `scripts/conversas-gateway-ctl.sh recreate` |
+| Restart de tudo | `scripts/conversas-gateway-ctl.sh restart` |
+| Restart só da WuzAPI (recuperação manual pós-RabbitMQ — ver seção 4) | `scripts/conversas-gateway-ctl.sh restart wuzapi` |
+| Logs (tudo ou um serviço: `wuzapi`, `rabbitmq`, `wuzapi-postgres`) | `scripts/conversas-gateway-ctl.sh logs [serviço]` |
+| Status/health de todos os containers | `scripts/conversas-gateway-ctl.sh ps` |
+| Verificar WuzAPI (`/health` + status dos containers) | `scripts/conversas-gateway-ctl.sh health` |
+| Parar stack (nunca remove volumes) | `scripts/conversas-gateway-ctl.sh down` |
+| Verificar worker (processa a fila Conversas, é do stack `zuno`, não `conversas-gateway`) | `docker compose -f /opt/zuno/docker-compose.zuno.yml ps vorix-worker` |
+
+Se por qualquer motivo precisar rodar `docker compose` manualmente (o script não cobre o caso), o
+comando completo e correto é:
 
 ```bash
-cd /opt/zuno && docker compose --env-file /opt/conversas-spike/.env.conversas -f docker-compose.conversas-gateway.yml up -d
+docker compose --env-file /opt/conversas-spike/.env.conversas -f /opt/zuno/docker-compose.conversas-gateway.yml up -d
 ```
 
-Nunca rode `up`, `restart` ou `recreate` deste stack sem o `--env-file` acima. Se o comando emitir
-avisos `"... variable is not set. Defaulting to a blank string."`, **pare imediatamente** (Ctrl+C se
-ainda não terminou) — é o sinal de que o env-file não foi carregado.
+Se o comando emitir avisos `"... variable is not set. Defaulting to a blank string."`, **pare
+imediatamente** (Ctrl+C se ainda não terminou) — é o sinal de que o env-file não foi carregado.
+
+## 🤖 Watchdog automático WuzAPI↔RabbitMQ
+
+Achado real e testado em runtime de produção (Fase 10.1): a WuzAPI tenta reconectar ao RabbitMQ
+exatamente 10 vezes (~30s) após qualquer queda e depois **nunca mais tenta sozinha**, mesmo com o
+RabbitMQ saudável de novo — confirmado derrubando o RabbitMQ de propósito e observando o log parar
+completamente (`"Failed to reconnect to RabbitMQ after all retries"`), inclusive minutos depois do
+RabbitMQ voltar. Não existe configuração nativa de retry na imagem `asternic/wuzapi`, nem endpoint
+de status de RabbitMQ (`/health` não tem esse campo; `/status` e `/metrics` não existem).
+
+Mitigação: `scripts/wuzapi-rabbitmq-watchdog.sh`, rodando via cron no host (`*/5 * * * *`, ver
+`crontab -l`), lê `docker logs` da WuzAPI (somente leitura) e, se encontrar o erro terminal sem uma
+reconexão bem-sucedida depois dele, roda `docker restart conversas-gateway-wuzapi-1` — a mesma ação
+que um operador humano faria manualmente. Testado de ponta a ponta em produção: detectou a falha
+real, reiniciou o container, WuzAPI reconectou na tentativa 1 em ~2s, e confirmado que o script não
+faz nada quando o estado já está saudável (idempotente). Log em `/var/log/wuzapi-watchdog.log`.
+
+Isso **não elimina** a janela entre a queda e a reconexão (até ~5min de detecção + ~2s de restart) —
+mensagens outbound não se perdem nessa janela (ficam `queued`, ver seção 4), mas inbound depende da
+WuzAPI já estar recebendo do WhatsApp normalmente, que é o problema real, não algo que o watchdog piora.
 
 ---
 
@@ -73,14 +109,20 @@ ainda não terminou) — é o sinal de que o env-file não foi carregado.
 
 ## 4. RabbitMQ caiu
 
-- Nenhuma mensagem em filas duráveis se perde (todas as filas do módulo são `durable: true`) — ao
-  RabbitMQ voltar, o worker reconecta e retoma o consumo normalmente.
+- Nenhuma mensagem em filas duráveis se perde (todas as filas do módulo são `durable: true`) —
+  `vorix-worker`/`zuno-api` reconectam sozinhos ao RabbitMQ voltar e retomam o consumo normalmente.
+  **A WuzAPI é diferente e NÃO reconecta sozinha** (achado real, Fase 10.1 — ver seção "Watchdog
+  automático" acima): esgota 10 tentativas em ~30s e trava nesse estado até um restart.
 - Enquanto RabbitMQ estiver fora: envios outbound novos ficam `queued` no Postgres (a API grava a
   linha antes de publicar); mensagens inbound novas do WhatsApp podem se acumular no lado do WuzAPI
-  até a fila voltar (WuzAPI as re-publica quando a conexão AMQP dele se restabelecer).
-- `docker compose -f docker-compose.conversas-gateway.yml restart rabbitmq`, depois confirme
-  `vorix-worker`/`zuno-api` reconectaram nos logs (`[inbox-worker] conectado ao RabbitMQ` ou
-  equivalente).
+  até a fila voltar.
+- Recuperação: `scripts/conversas-gateway-ctl.sh restart rabbitmq` se o próprio RabbitMQ precisar
+  reiniciar. Depois de qualquer queda de RabbitMQ (mesmo curta), **sempre** verifique se a WuzAPI
+  reconectou: `scripts/conversas-gateway-ctl.sh logs wuzapi` procurando
+  `"RabbitMQ connection established successfully"` mais recente que o erro. O watchdog automático
+  cobre isso em até 5 minutos sozinho; se precisar forçar na hora:
+  `scripts/conversas-gateway-ctl.sh restart wuzapi`. Confirme também que `vorix-worker`/`zuno-api`
+  reconectaram nos logs (`[inbox-worker] conectado ao RabbitMQ` ou equivalente).
 
 ## 5. DLQ crescendo
 

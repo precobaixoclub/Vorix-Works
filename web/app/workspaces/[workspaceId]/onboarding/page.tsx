@@ -287,6 +287,18 @@ function ChannelStep({
     }
   }
 
+  // Achado real (Fase 9.1/10, ao vivo em produção): reabrir esta tela com uma conexão já existente
+  // (segunda aba, F5, ou resume depois de sair no meio do passo) nunca buscava o QR sozinho —
+  // ficava sem QR e sem erro, silenciosamente (o bug documentado na Fase 9.1). Busca
+  // automaticamente assim que existe uma conexão ativa que ainda não tem QR/erro carregado NESTA
+  // sessão do componente; nunca re-busca depois que já existe um resultado ou erro — só
+  // `handleRegenerateQr` (ação explícita do usuário) faz isso de propósito.
+  useEffect(() => {
+    if (!activeConnectionId || isAlreadyConnected || qrCode || qrError) return;
+    void requestQrCode(activeConnectionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConnectionId, isAlreadyConnected]);
+
   async function handleConnect() {
     setBusy(true);
     try {

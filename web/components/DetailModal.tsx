@@ -306,7 +306,12 @@ export function DetailModal({
                         )}
                       />
                     )}
-                    <span className="flex-1 text-left">{section.label}</span>
+                    {/* Fase 10.1 — achado P3 (Fase 9.1): `flex-1` sozinho deixava o rótulo espremível
+                        dentro do botão `shrink-0` na faixa horizontal do mobile (ex.: "Propostas"
+                        truncando para "Pro..."). `flex-1` continua só no desktop, onde empurra o
+                        badge pro fim da trilha vertical — no mobile o rótulo flui no tamanho natural
+                        do texto, sem risco de espremer (a faixa já é `overflow-x-auto`). */}
+                    <span className="text-left md:flex-1">{section.label}</span>
                     {section.badge && (
                       <span className="text-[11px] tabular-nums text-muted-foreground">
                         {section.badge}

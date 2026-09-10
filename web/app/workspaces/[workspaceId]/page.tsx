@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useCommercialMetrics, useTasks } from "@/features/crm/hooks";
-import { useInboxMetrics } from "@/features/inbox/hooks";
+import { useInboxMetrics, useInboxModuleStatus } from "@/features/inbox/hooks";
 import { useOnboarding } from "@/features/onboarding/hooks";
 import type { OnboardingStep } from "@/features/onboarding/types";
 import { useUnifiedPublications } from "@/features/publication-history/hooks";
@@ -38,7 +38,12 @@ export default function WorkspaceHomePage() {
   const router = useRouter();
   const workspace = useCurrentWorkspace();
   const { state } = useAuth();
-  const { data: inboxMetrics, isLoading: inboxLoading, error: inboxError, mutate: mutateInbox } = useInboxMetrics(workspace.id);
+  // Fase 10 (Pre-Pilot Hardening) — feature indisponível/desligada nunca é tratada como erro
+  // operacional: enquanto o status não resolve, assume desligado (não dispara `/inbox/metrics` à
+  // toa); só chama de verdade depois de confirmar `enabled === true`.
+  const { data: inboxStatus } = useInboxModuleStatus();
+  const inboxEnabled = inboxStatus?.enabled === true;
+  const { data: inboxMetrics, isLoading: inboxLoading, error: inboxError, mutate: mutateInbox } = useInboxMetrics(workspace.id, { enabled: inboxEnabled });
   const { data: commercialMetrics, isLoading: commercialLoading, error: commercialError, mutate: mutateCommercial } = useCommercialMetrics(workspace.id);
   const { data: tasks, isLoading: tasksLoading, error: tasksError, mutate: mutateTasks } = useTasks(workspace.id, { status: "pending" });
   const { data: publications, isLoading: publicationsLoading, error: publicationsError, mutate: mutatePublications } = useUnifiedPublications(workspace.id);
@@ -47,22 +52,26 @@ export default function WorkspaceHomePage() {
   const now = useMemo(() => new Date(), []);
   const overdueTasks = (tasks ?? []).filter((task) => task.dueAt && new Date(task.dueAt) < now);
   const scheduledPublications = (publications ?? []).filter((post) => derivePublicationStatus(post) === "scheduled");
-  const loading = inboxLoading || commercialLoading || tasksLoading || publicationsLoading;
-  const error = inboxError || commercialError || tasksError || publicationsError;
+  const loading = (inboxEnabled && inboxLoading) || commercialLoading || tasksLoading || publicationsLoading;
+  const error = (inboxEnabled && inboxError) || commercialError || tasksError || publicationsError;
   const isFreshWorkspace = !loading && !error && (inboxMetrics?.backlogCount ?? 0) === 0 && (commercialMetrics?.openPipelineValueCents ?? 0) === 0 && overdueTasks.length === 0 && scheduledPublications.length === 0;
 
   const userName = state.status === "authenticated" ? state.user.name.split(" ")[0] : undefined;
   const greeting = `${greetingForHour(now)}, ${userName || "time"}.`;
 
   const kpis = [
-    {
-      label: "Conversas aguardando",
-      value: inboxMetrics ? String(inboxMetrics.backlogCount) : undefined,
-      hint: inboxMetrics ? `${inboxMetrics.openCount} abertas · ${inboxMetrics.pendingCount} pendentes` : undefined,
-      route: `/workspaces/${workspace.id}/conversas`,
-      icon: MessageSquareText,
-      tone: (inboxMetrics?.backlogCount ?? 0) > 0 ? "attention" as const : "default" as const,
-    },
+    // Fase 10 — nunca renderizado com o módulo desligado (nem placeholder/erro): o card some e o
+    // grid reflui pros demais, em vez de mostrar um KPI que não existe neste ambiente.
+    ...(inboxEnabled
+      ? [{
+          label: "Conversas aguardando",
+          value: inboxMetrics ? String(inboxMetrics.backlogCount) : undefined,
+          hint: inboxMetrics ? `${inboxMetrics.openCount} abertas · ${inboxMetrics.pendingCount} pendentes` : undefined,
+          route: `/workspaces/${workspace.id}/conversas`,
+          icon: MessageSquareText,
+          tone: (inboxMetrics?.backlogCount ?? 0) > 0 ? "attention" as const : "default" as const,
+        }]
+      : []),
     {
       label: "Pipeline comercial",
       value: commercialMetrics ? formatCurrencyCents(commercialMetrics.openPipelineValueCents) : undefined,
@@ -116,7 +125,7 @@ export default function WorkspaceHomePage() {
         </div>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className={cn("grid gap-3 sm:grid-cols-2", inboxEnabled ? "xl:grid-cols-4" : "xl:grid-cols-3")}>
         {kpis.map((kpi) => (
           <button
             key={kpi.label}

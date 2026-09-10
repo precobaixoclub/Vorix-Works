@@ -354,4 +354,10 @@ export type AuthPrincipal = {
   /** Superadmin da plataforma — propaga do JWT para rotas `/v1/admin/*`. Default `false`
    * quando o claim não veio no token (compatibilidade com tokens antigos). Sprint 25. */
   isPlatformAdmin: boolean;
+  /** Fase 10 (Pre-Pilot Hardening) — presente SOMENTE em tokens de curtíssima duração emitidos por
+   * `POST /v1/inbox/stream-token`, nunca no access token normal. Um principal com este campo só
+   * pode autenticar a rota `GET /v1/inbox/stream` (ver `auth.middleware.ts`) — mesmo que o token
+   * vaze (log de proxy, histórico do navegador), o raio de exposição é uma única rota, por no
+   * máximo 60 segundos. */
+  purpose?: "inbox_stream";
 };

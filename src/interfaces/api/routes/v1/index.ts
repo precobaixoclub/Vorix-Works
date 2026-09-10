@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import { requirePrincipal } from "../../http/require-principal.js";
+import { successEnvelope } from "../../http/response-envelope.js";
 import { registerAnalyticsRoutes } from "./analytics.route.js";
 import { registerAdminRoutes } from "./admin.route.js";
 import { registerAiProvidersRoutes } from "./ai-providers.route.js";
@@ -223,6 +225,16 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     publicationRepository: app.zunoContainer.publicationRepository,
     publicationSecretStore: app.zunoContainer.publicationSecretStore,
   });
+  // Fase 10 (Pre-Pilot Hardening) — SEMPRE registrada, mesmo com o módulo desligado (nunca 404):
+  // é assim que o frontend distingue "Conversas está desligado neste ambiente" (esperado, UX
+  // neutra) de "algo quebrou" (erro real) ANTES de tentar qualquer outra rota `/v1/inbox/*`. Não
+  // exige permissão específica — qualquer principal autenticado do tenant pode ver se o módulo
+  // está ligado nesta instância; não é dado sensível, é uma flag de plataforma.
+  app.get("/inbox/status", async (request) => {
+    requirePrincipal(request);
+    return successEnvelope({ enabled: app.zunoContainer.inboxFeatureFlags.enabled }, request.id);
+  });
+
   // Módulo Conversas (Fase 1) — kill switch global via `CONVERSATIONS_MODULE_ENABLED`; sem isto,
   // `/v1/inbox/*` nem existe (nenhum tenant vê o módulo até habilitação explícita).
   if (app.zunoContainer.inboxFeatureFlags.enabled) {
@@ -239,6 +251,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       membershipRepository: app.zunoContainer.identity?.membershipRepository,
       userRepository: app.zunoContainer.identity?.userRepository,
       productAnalytics: productAnalyticsDeps,
+      jwtPort: app.zunoContainer.identity?.jwt,
     });
     // Fase 7 (Resultados) — métricas agregadas de atendimento, mesmo kill switch do módulo.
     await registerInboxMetricsRoutes(app, { inboxMetricsRepository: app.zunoContainer.inboxMetricsRepository });

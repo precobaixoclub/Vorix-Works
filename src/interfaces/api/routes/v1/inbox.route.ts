@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { JwtPort } from "../../../../application/ports/jwt.port.js";
 import type { InboxContactRepositoryPort } from "../../../../application/ports/inbox-contact-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../../../../application/ports/inbox-conversation-event-repository.port.js";
 import type { InboxConversationListFilter, InboxConversationRepositoryPort } from "../../../../application/ports/inbox-conversation-repository.port.js";
@@ -104,6 +105,10 @@ export type InboxRoutesDeps = {
   /** Trial + Product Analytics — integração MÍNIMA (`first_channel_connected`,
    * `first_conversation_received`, `first_conversation_replied`). */
   productAnalytics?: ProductAnalyticsUseCaseDeps;
+  /** Fase 10 (Pre-Pilot Hardening) — emite o token de curta duração de `POST /inbox/stream-token`.
+   * `undefined` só em setups sem identidade real (`AUTH_MODE=noop`/testes sem JWT) — nesse caso a
+   * rota responde 503 em vez de tentar assinar algo sem chave. */
+  jwtPort?: JwtPort;
 };
 
 function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {
@@ -135,8 +140,32 @@ async function assertUserBelongsToTenant(deps: InboxRoutesDeps, userId: string, 
   if (!membership) throw new AppError({ code: "INBOX_TARGET_USER_NOT_IN_TENANT", message: `Usuário "${userId}" não pertence a esta conta.`, statusCode: 404, recoverable: true });
 }
 
+/** Fase 10 (Pre-Pilot Hardening) — 60s é o teto de tempo entre "mintar o token" e "o EventSource
+ * abrir a conexão"; não precisa sobreviver além disso, e reconexões (`useInboxRealtime` no
+ * frontend) sempre mintam um token novo, nunca reusam um velho. */
+const STREAM_TOKEN_TTL_SECONDS = 60;
+
 export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoutesDeps): Promise<void> {
   const useCaseDeps = toUseCaseDeps(deps);
+
+  /**
+   * Fase 10 (Pre-Pilot Hardening) — emite o token de curtíssima duração e escopo único que
+   * `GET /inbox/stream` passa a exigir via querystring. Autenticado normalmente (header
+   * `Authorization`, como qualquer outra rota) — é ISSO que torna seguro: o access token de sessão
+   * nunca aparece numa URL, só este token derivado, que não serve para mais nada além de abrir o
+   * SSE, por no máximo `STREAM_TOKEN_TTL_SECONDS`.
+   */
+  app.post("/inbox/stream-token", async (request) => {
+    const principal = requirePermission(request, "inbox:read");
+    if (!deps.jwtPort) {
+      throw new AppError({ code: "INBOX_STREAM_TOKEN_UNAVAILABLE", message: "Emissão de token de stream indisponível nesta configuração.", statusCode: 503, recoverable: true });
+    }
+    const streamToken = deps.jwtPort.sign(
+      { userId: principal.userId, tenantId: principal.tenantId, role: principal.role, sessionId: principal.sessionId, isPlatformAdmin: principal.isPlatformAdmin, purpose: "inbox_stream" },
+      STREAM_TOKEN_TTL_SECONDS,
+    );
+    return successEnvelope({ streamToken, expiresIn: STREAM_TOKEN_TTL_SECONDS }, request.id);
+  });
 
   /**
    * SSE (Fase 3/4) — atualização em tempo real da Inbox. Alimentada tanto pelo `vorix-worker`
@@ -144,8 +173,9 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
    * atribuir/assumir/transferir/finalizar/reabrir/pausar IA), via `InboxRealtimeSubscriber`. Nunca
    * é a fonte de verdade — só um gatilho pra revalidar mais rápido; o frontend mantém um polling de
    * fallback bem mais espaçado. `EventSource` do browser não seta headers customizados, por isso o
-   * token de acesso aqui pode vir por `?access_token=` (ver `auth.middleware.ts`), nunca só por
-   * `Authorization`.
+   * credential aqui chega via `?stream_token=` (Fase 10 — token próprio de curta duração/escopo
+   * único, ver `POST /inbox/stream-token` acima e `auth.middleware.ts`), nunca o access token
+   * normal de sessão.
    */
   app.get("/inbox/stream", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request, reply) => {
     const principal = requirePermission(request, "inbox:read");

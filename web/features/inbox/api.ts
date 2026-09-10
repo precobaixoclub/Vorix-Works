@@ -1,5 +1,18 @@
 import { apiClient } from "@/lib/api-client";
-import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxMetricsReport, InboxTenantMember, MessagingConnection } from "./types";
+import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxMetricsReport, InboxModuleStatus, InboxStreamToken, InboxTenantMember, MessagingConnection } from "./types";
+
+/** Fase 10 (Pre-Pilot Hardening) — sempre disponível, mesmo com o módulo desligado. */
+export function getInboxModuleStatus(): Promise<InboxModuleStatus> {
+  return apiClient.get<InboxModuleStatus>("/v1/inbox/status");
+}
+
+/** Fase 10 — mintado sob demanda pra cada conexão/reconexão do SSE (ver `useInboxRealtime`), nunca
+ * reaproveitado depois de expirar. Autenticado normalmente (header `Authorization`, como qualquer
+ * outra chamada via `apiClient`) — é a partir DESTE token curto que a URL do EventSource é montada,
+ * nunca a partir do access token de sessão. */
+export function mintInboxStreamToken(): Promise<InboxStreamToken> {
+  return apiClient.post<InboxStreamToken>("/v1/inbox/stream-token", {});
+}
 
 export function listInboxConnections(workspaceId: string): Promise<{ connections: MessagingConnection[] }> {
   const query = new URLSearchParams({ workspaceId });

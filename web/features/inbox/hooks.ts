@@ -1,9 +1,19 @@
 import { useEffect, useRef } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { getApiBaseUrl } from "@/lib/api-error";
-import { getAccessToken } from "@/lib/auth-token";
-import { getInboxMetrics, listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers } from "./api";
+import { getInboxMetrics, getInboxModuleStatus, listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers, mintInboxStreamToken } from "./api";
 import type { InboxConversationFilter } from "./types";
+
+/**
+ * Fase 10 (Pre-Pilot Hardening) — sinal de feature flag que TODA tela que fala com `/v1/inbox/*`
+ * consulta antes de decidir o que renderizar (nunca infere "desligado" a partir de um 404/erro
+ * genérico). Sem `refreshInterval`: a flag é de plataforma, muda por operação manual (redeploy com
+ * `CONVERSATIONS_MODULE_ENABLED` diferente), nunca no meio de uma sessão — a revalidação padrão do
+ * SWR (foco de aba, reconexão) já é mais que suficiente.
+ */
+export function useInboxModuleStatus() {
+  return useSWR("inbox-module-status", getInboxModuleStatus);
+}
 
 /**
  * Módulo Conversas — Fase 3. `refreshInterval` aqui é só o FALLBACK (bem mais espaçado que antes,
@@ -13,8 +23,12 @@ export function useInboxConnections(workspaceId: string) {
   return useSWR(["inbox-connections", workspaceId], () => listInboxConnections(workspaceId), { refreshInterval: 30_000 });
 }
 
-export function useInboxMetrics(workspaceId: string, params?: { dateFrom?: string; dateTo?: string }) {
-  return useSWR(["inbox-metrics", workspaceId, params?.dateFrom, params?.dateTo], () => getInboxMetrics(workspaceId, params));
+/** `enabled: false` (Fase 10 — chamador já sabe, via `useInboxModuleStatus`, que o módulo está
+ * desligado) pula a chamada por completo: `useSWR(null, ...)` nunca busca nada, `data`/`error`
+ * ficam `undefined`, `isLoading` fica `false` — nunca um 404 desnecessário. */
+export function useInboxMetrics(workspaceId: string, params?: { dateFrom?: string; dateTo?: string; enabled?: boolean }) {
+  const shouldFetch = params?.enabled !== false;
+  return useSWR(shouldFetch ? ["inbox-metrics", workspaceId, params?.dateFrom, params?.dateTo] : null, () => getInboxMetrics(workspaceId, params));
 }
 
 export function useInboxConversations(workspaceId: string, filter: InboxConversationFilter = "all") {
@@ -46,10 +60,12 @@ const ALL_FILTERS = ["all", "mine", "unassigned", "unread", "open", "pending", "
 const REALTIME_EVENT_TYPES = ["message.created", "message.updated", "conversation.updated", "connection.status_changed"] as const;
 
 /**
- * SSE (Fase 3, resiliência reforçada na Fase 6) — nunca é a fonte de verdade, só revalida o SWR
- * mais rápido que o polling de fallback quando algo muda. Reconecta com token FRESCO a cada
- * tentativa (não confia no retry nativo do `EventSource`, que reusaria a mesma URL com um
- * `access_token` potencialmente expirado) — ver `auth.middleware.ts` sobre por que o token vai por
+ * SSE (Fase 3, resiliência reforçada na Fase 6, token de escopo único na Fase 10) — nunca é a
+ * fonte de verdade, só revalida o SWR mais rápido que o polling de fallback quando algo muda.
+ * Reconecta com token FRESCO a cada tentativa (nunca confia no retry nativo do `EventSource`, que
+ * reusaria a mesma URL com um token potencialmente expirado) — mintando um `streamToken` novo
+ * (`POST /v1/inbox/stream-token`, curtíssima duração/escopo único) a cada chamada de `connect()`,
+ * nunca o access token normal de sessão. Ver `auth.middleware.ts` sobre por que o token vai por
  * querystring aqui especificamente (o `EventSource` do browser não seta headers customizados).
  *
  * Fase 6 — auditoria encontrou uma janela real: entre uma queda de SSE e a reconexão, qualquer
@@ -83,10 +99,20 @@ export function useInboxRealtime(workspaceId: string, conversationId: string | u
       }
     }
 
-    function connect() {
+    async function connect() {
       if (closed) return;
-      const token = getAccessToken();
-      const query = new URLSearchParams({ workspaceId, ...(token ? { access_token: token } : {}) });
+      let streamToken: string;
+      try {
+        streamToken = (await mintInboxStreamToken()).streamToken;
+      } catch {
+        // Sem permissão, módulo desligado, API fora do ar, etc. — mesmo backoff do erro de conexão
+        // abaixo; nunca deixa o hook "morto" silenciosamente, só tenta de novo mais tarde.
+        if (!closed) retryTimeout = setTimeout(connect, 5_000);
+        return;
+      }
+      if (closed) return; // desmontou/mudou de workspace enquanto o mint estava em voo
+
+      const query = new URLSearchParams({ workspaceId, stream_token: streamToken });
       source = new EventSource(`${getApiBaseUrl()}/v1/inbox/stream?${query.toString()}`);
 
       // Conexão nova OU reconexão depois de uma queda — nos dois casos, pode ter havido mudanças
@@ -114,11 +140,14 @@ export function useInboxRealtime(workspaceId: string, conversationId: string | u
 
       source.onerror = () => {
         source?.close();
+        // O `streamToken` desta tentativa já era de curta duração por design (60s) — mesmo que o
+        // erro seja "token expirou no meio da conexão", a única ação correta é mintar um novo, nunca
+        // tentar reusar/renovar o mesmo.
         if (!closed) retryTimeout = setTimeout(connect, 5_000);
       };
     }
 
-    connect();
+    void connect();
     return () => {
       closed = true;
       source?.close();

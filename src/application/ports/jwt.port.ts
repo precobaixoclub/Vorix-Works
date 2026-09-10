@@ -10,6 +10,9 @@ export type JwtAccessTokenPayload = {
   /** Sprint 25 — opcional no verify (tokens antigos não têm). Sempre `false` como default
    * quando ausente; para virar `true`, o usuário precisa fazer novo login/refresh. */
   isPlatformAdmin?: boolean;
+  /** Fase 10 (Pre-Pilot Hardening) — ver `AuthPrincipal.purpose`. Ausente em todo access token
+   * normal; presente e igual a `"inbox_stream"` só no token de curta duração do SSE da Inbox. */
+  purpose?: "inbox_stream";
 };
 
 export type JwtVerificationResult =

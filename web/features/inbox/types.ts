@@ -110,3 +110,12 @@ export type InboxMetricsReport = {
   humanResolvedMessageCount: number;
   volumeByAgent: readonly InboxAgentVolume[];
 };
+
+/** Fase 10 (Pre-Pilot Hardening) — `GET /v1/inbox/status`, SEMPRE disponível (nunca 404, mesmo com
+ * o módulo desligado). É assim que o frontend decide se chama qualquer outra rota `/v1/inbox/*`
+ * antes de tentar — nunca infere isso a partir de um 404/erro genérico. */
+export type InboxModuleStatus = { enabled: boolean };
+
+/** Fase 10 — token de curtíssima duração e escopo único (só abre `GET /v1/inbox/stream`), emitido
+ * por `POST /v1/inbox/stream-token`. Nunca o access token normal — ver `auth.middleware.ts`. */
+export type InboxStreamToken = { streamToken: string; expiresIn: number };

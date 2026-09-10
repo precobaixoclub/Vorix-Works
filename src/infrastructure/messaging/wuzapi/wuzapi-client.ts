@@ -111,12 +111,26 @@ export class WuzApiClient {
    * RabbitMQ, permitindo `RawEventConsumer` correlacionar por id direto (`getById`), sem precisar
    * de índice por token. `token` é o valor que este mesmo processo vai usar depois como
    * `externalSessionId`/`Authorization` em toda chamada de sessão.
+   *
+   * Idempotente por design: achado real em produção (Fase 10.1 — reconectar um canal
+   * `logged_out`/`requires_repair` chama `connect()` de novo, que chama isto de novo com o MESMO
+   * token) — o WuzAPI responde 409 `"user with this token already exists"` na segunda chamada.
+   * Confirmado ao vivo com um usuário descartável (criado e removido só para o teste) que isso é
+   * exatamente o que quebrava "Mostrar QR Code" num canal já existente. Tratado aqui, não no
+   * chamador, porque idempotência é responsabilidade da própria operação de provisionamento.
    */
   async createAdminUser(input: { name: string; token: string; webhookUrl?: string; events?: string[] }): Promise<{ id: number }> {
-    return this.adminRequest("/admin/users", {
-      method: "POST",
-      body: { name: input.name, token: input.token, webhook: input.webhookUrl, events: (input.events ?? ["Message", "ReadReceipt", "Connected", "Disconnected", "LoggedOut"]).join(",") },
-    });
+    try {
+      return await this.adminRequest("/admin/users", {
+        method: "POST",
+        body: { name: input.name, token: input.token, webhook: input.webhookUrl, events: (input.events ?? ["Message", "ReadReceipt", "Connected", "Disconnected", "LoggedOut"]).join(",") },
+      });
+    } catch (error) {
+      if (error instanceof MessagingProviderError && /already exists/i.test(error.message)) {
+        return { id: 0 };
+      }
+      throw error;
+    }
   }
 
   async connectSession(sessionToken: string, input: { subscribe?: string[]; immediate?: boolean } = {}): Promise<{ jid?: string; details?: string; events?: string }> {

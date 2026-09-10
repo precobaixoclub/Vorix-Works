@@ -116,6 +116,12 @@ export type GetQrCodeInput = { tenantId: string; workspaceId: string; connection
 export async function getConnectionQrCode(deps: InboxUseCaseDeps, input: GetQrCodeInput): Promise<{ qrCode: string; expiresAt: string }> {
   const connection = await mustConnectionBelongToTenantAndWorkspace(deps, input.connectionId, input.tenantId, input.workspaceId);
   if (!connection.externalSessionId) throw new Error("INBOX_CONNECTION_NOT_READY: a conexão ainda não iniciou a sessão no gateway.");
+  // Achado real em produção (Fase 10.1): pedir o QR direto falha com "no session" no WuzAPI para
+  // qualquer canal que não esteja "connecting" agora mesmo (logged_out/requires_repair/error) —
+  // o gateway derruba o cliente whatsmeow no logout, e `/session/qr` exige um cliente ativo.
+  // `connect()` reabre a sessão (idempotente — `createAdminUser` tolera "já existe") antes de
+  // pedir o QR; para uma conexão que acabou de ser criada isso é um no-op inofensivo.
+  await deps.provider.connect({ externalSessionId: connection.externalSessionId, instanceName: connection.id });
   return deps.provider.getQrCode({ externalSessionId: connection.externalSessionId });
 }
 

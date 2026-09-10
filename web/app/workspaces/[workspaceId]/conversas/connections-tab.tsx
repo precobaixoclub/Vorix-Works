@@ -169,7 +169,16 @@ function ConnectionRow({
   onRefreshStatus: () => void;
   onDisconnect: () => void;
 }) {
-  const needsQrCode = connection.status === "connecting" || connection.status === "requires_repair";
+  // "requires_repair"/"logged_out"/"error" são estados terminais por design (nunca reconectam
+  // sozinhos, ver docs/conversas-runbook.md seção 2) — precisam do mesmo pareamento manual via QR
+  // que "connecting". Mesmo agrupamento já usado em app/workspaces/[workspaceId]/onboarding/page.tsx
+  // (`needsRepair`); aqui faltava "logged_out" e "error", deixando um canal deslogado sem nenhum
+  // caminho de volta na UI.
+  const needsQrCode =
+    connection.status === "connecting" ||
+    connection.status === "requires_repair" ||
+    connection.status === "logged_out" ||
+    connection.status === "error";
   return (
     <Card>
       <CardContent className="flex flex-col gap-3 py-4">
@@ -193,7 +202,7 @@ function ConnectionRow({
             </GuardedButton>
           </div>
         </div>
-        {connection.status === "requires_repair" ? (
+        {connection.status === "requires_repair" || connection.status === "logged_out" || connection.status === "error" ? (
           <p className="text-sm text-danger">WhatsApp precisa ser conectado novamente. Escaneie um novo QR Code.</p>
         ) : null}
         {qrCode ? (

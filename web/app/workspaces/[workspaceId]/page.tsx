@@ -133,7 +133,7 @@ export default function WorkspaceHomePage() {
               <kpi.icon className="h-4 w-4 shrink-0 text-muted-foreground transition group-hover:text-primary" />
             </div>
             {loading ? <Skeleton className="mt-3 h-8 w-24" /> : <p className="mt-3 truncate text-2xl font-semibold tabular-nums text-foreground">{kpi.value ?? "—"}</p>}
-            {loading ? <Skeleton className="mt-2 h-3 w-32" /> : <p className="mt-1 truncate text-xs text-muted-foreground">{kpi.hint ?? "Sem dado disponivel"}</p>}
+            {loading ? <Skeleton className="mt-2 h-3 w-32" /> : <p className="mt-1 truncate text-xs text-muted-foreground">{kpi.hint ?? "Sem dado disponível"}</p>}
           </button>
         ))}
       </section>

@@ -225,7 +225,7 @@ function ContactsView() {
             </div>
             <div>
               <Label htmlFor="contact-origin">Origem</Label>
-              <Input id="contact-origin" value={origin} onChange={(event) => setOrigin(event.target.value)} placeholder="Ex.: whatsapp, indicacao" />
+              <Input id="contact-origin" value={origin} onChange={(event) => setOrigin(event.target.value)} placeholder="Ex.: whatsapp, indicação" />
             </div>
             <div>
               <Label>Responsável</Label>

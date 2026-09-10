@@ -223,7 +223,7 @@ function ProposalsView() {
       {error ? <ErrorState error={error} onRetry={() => mutate()} /> : null}
       {!isLoading && !error && visibleProposals.length === 0 ? (
         <EmptyState
-          title="Nenhuma proposta nesta visao"
+          title="Nenhuma proposta nesta visão"
           description="Crie uma proposta vinculada a um contato ou negócio para acompanhar envio, visualização e aceite."
           action={<Button onClick={() => setCreateOpen(true)}>Criar proposta</Button>}
         />

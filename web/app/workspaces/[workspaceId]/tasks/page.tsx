@@ -279,7 +279,7 @@ function TasksView() {
       {error ? <ErrorState error={error} onRetry={() => mutate()} /> : null}
       {!isLoading && !error && filteredTasks.length === 0 ? (
         <EmptyState
-          title="Nenhuma tarefa nesta visao"
+          title="Nenhuma tarefa nesta visão"
           description={view === "overdue" ? "Nada atrasado. Bom sinal." : "Crie uma tarefa vinculada a um contato ou negócio para manter a cadência comercial."}
           action={<Button onClick={() => setCreateOpen(true)}>Criar tarefa</Button>}
         />

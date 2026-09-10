@@ -51,12 +51,12 @@ import { CrmContextSection } from "./crm-panel";
 const QUICK_FILTERS: { value: InboxConversationFilter; label: string }[] = [
   { value: "all", label: "Todos" },
   { value: "mine", label: "Minhas" },
-  { value: "unread", label: "Nao lidas" },
+  { value: "unread", label: "Não lidas" },
 ];
 
 const ADVANCED_FILTERS: { value: InboxConversationFilter; label: string; description: string }[] = [
   { value: "open", label: "Em atendimento", description: "Conversas abertas agora." },
-  { value: "pending", label: "Pendentes", description: "Aguardando retorno ou decisao." },
+  { value: "pending", label: "Pendentes", description: "Aguardando retorno ou decisão." },
   { value: "resolved", label: "Finalizadas", description: "Atendimentos encerrados." },
   { value: "unassigned", label: "Sem responsável", description: "Fila livre para assumir." },
 ];
@@ -547,7 +547,7 @@ function ConversationTimelinePane({
           ) : error ? (
             <ErrorState error={error} onRetry={() => mutate()} />
           ) : timeline.length === 0 ? (
-            <EmptyState title="Nenhuma mensagem ainda" description="Envie a primeira mensagem para comecar a conversa." />
+            <EmptyState title="Nenhuma mensagem ainda" description="Envie a primeira mensagem para começar a conversa." />
           ) : (
             timeline.map((entry) =>
               entry.kind === "message" ? (
@@ -582,7 +582,7 @@ function ConversationTimelinePane({
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="inline-flex">
-                  <Button type="button" variant="ghost" size="icon" disabled aria-label="Anexos indisponiveis">
+                  <Button type="button" variant="ghost" size="icon" disabled aria-label="Anexos indisponíveis">
                     <Paperclip className="h-4 w-4" />
                   </Button>
                 </span>
@@ -714,7 +714,7 @@ function ConversationActionsMenu({
 
 function MessageBubble({ message, onRetry, retrying }: { message: InboxMessage; onRetry: (body: string) => void; retrying: boolean }) {
   const isOutbound = message.direction === "outbound";
-  const senderLabel = message.sentByAi ? "Vorix IA" : message.sentByAutomation ? "Automacao" : isOutbound ? "Atendente" : undefined;
+  const senderLabel = message.sentByAi ? "Vorix IA" : message.sentByAutomation ? "Automação" : isOutbound ? "Atendente" : undefined;
   const body = message.body?.trim();
   const failed = isOutbound && message.status === "failed";
 
@@ -905,7 +905,7 @@ function MessageSkeleton() {
 function agentLabel(userId: string | undefined, currentUserId: string | undefined, members: readonly InboxTenantMember[]): string {
   if (!userId) return "Sem responsável";
   if (userId === "ai") return "Vorix";
-  if (userId === currentUserId) return "Voce";
+  if (userId === currentUserId) return "Você";
   const member = members.find((item) => item.userId === userId);
   if (member) return member.name;
   return userId.length > 10 ? `${userId.slice(0, 8)}...` : userId;
@@ -977,10 +977,10 @@ function mediaLabelFor(type: InboxMessage["type"]): string {
     case "video": return "Video recebido";
     case "audio": return "Audio recebido";
     case "document": return "Documento recebido";
-    case "location": return "Localizacao recebida";
+    case "location": return "Localização recebida";
     case "contact": return "Contato recebido";
     case "text": return "Mensagem sem texto";
-    default: return "Midia recebida";
+    default: return "Mídia recebida";
   }
 }
 

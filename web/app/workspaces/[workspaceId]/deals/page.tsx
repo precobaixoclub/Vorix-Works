@@ -420,10 +420,10 @@ function DealsView() {
             </div>
             <div>
               <Label htmlFor="deal-origin">Origem</Label>
-              <Input id="deal-origin" value={createOrigin} onChange={(event) => setCreateOrigin(event.target.value)} placeholder="Ex.: whatsapp, indicacao" />
+              <Input id="deal-origin" value={createOrigin} onChange={(event) => setCreateOrigin(event.target.value)} placeholder="Ex.: whatsapp, indicação" />
             </div>
             <div>
-              <Label htmlFor="deal-close">Previsao de fechamento</Label>
+              <Label htmlFor="deal-close">Previsão de fechamento</Label>
               <Input id="deal-close" type="date" value={expectedCloseDate} onChange={(event) => setExpectedCloseDate(event.target.value)} />
             </div>
           </div>

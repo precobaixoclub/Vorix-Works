@@ -16,6 +16,7 @@ import { updateWorkspace } from "@/features/workspace/api";
 import type { TenantRole } from "@/features/identity/types";
 import { getInboxConnectionQrCode } from "@/features/inbox/api";
 import { useInboxConnections } from "@/features/inbox/hooks";
+import { humanizeQrError } from "@/features/inbox/qr-error";
 import {
   advanceOnboardingStep,
   completeOnboarding,
@@ -245,19 +246,66 @@ function ChannelStep({
   const [displayName, setDisplayName] = useState("WhatsApp Principal");
   const [busy, setBusy] = useState(false);
   const [qrCode, setQrCode] = useState<string | undefined>(undefined);
+  const [qrExpiresAt, setQrExpiresAt] = useState<string | undefined>(undefined);
+  const [qrExpired, setQrExpired] = useState(false);
+  const [qrError, setQrError] = useState<string | undefined>(undefined);
   const [connectionId, setConnectionId] = useState<string | undefined>(undefined);
 
   const existingConnection = data?.connections[0];
+  const activeConnectionId = existingConnection?.id ?? connectionId;
+  const connectionStatus = existingConnection?.status;
+  const isAlreadyConnected = connectionStatus === "connected";
+  // "requires_repair"/"logged_out"/"error" (ver `MessagingConnectionStatus`) — a sessão existe mas
+  // precisa ser refeita; mesmo fluxo de QR de novo conexão, só com copy que não finge que está tudo
+  // certo.
+  const needsRepair = connectionStatus === "requires_repair" || connectionStatus === "logged_out" || connectionStatus === "error";
+
+  // Agenda a transição pra "expirado" no momento certo (em vez de só descobrir quando o usuário
+  // tenta escanear um código morto) — reseta sempre que um QR novo chega.
+  useEffect(() => {
+    if (!qrExpiresAt) return;
+    setQrExpired(false);
+    const msUntilExpiry = new Date(qrExpiresAt).getTime() - Date.now();
+    if (msUntilExpiry <= 0) {
+      setQrExpired(true);
+      return;
+    }
+    const timer = setTimeout(() => setQrExpired(true), msUntilExpiry);
+    return () => clearTimeout(timer);
+  }, [qrExpiresAt]);
+
+  async function requestQrCode(targetConnectionId: string) {
+    setQrError(undefined);
+    try {
+      const { qrCode: code, expiresAt } = await getInboxConnectionQrCode(workspaceId, targetConnectionId);
+      setQrCode(code);
+      setQrExpiresAt(expiresAt);
+    } catch (err) {
+      setQrCode(undefined);
+      setQrExpiresAt(undefined);
+      setQrError(humanizeQrError(err));
+    }
+  }
 
   async function handleConnect() {
     setBusy(true);
     try {
       const result = await connectChannelDuringOnboarding(workspaceId, displayName.trim() || "WhatsApp");
       setConnectionId(result.connection.id);
-      const { qrCode: code } = await getInboxConnectionQrCode(workspaceId, result.connection.id);
-      setQrCode(code);
+      await requestQrCode(result.connection.id);
     } catch (err) {
+      setQrError(humanizeQrError(err));
       toast.error("Não foi possível conectar o WhatsApp", { description: err instanceof Error ? err.message : "Tente de novo." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRegenerateQr() {
+    if (!activeConnectionId) return;
+    setBusy(true);
+    try {
+      await requestQrCode(activeConnectionId);
     } finally {
       setBusy(false);
     }
@@ -285,10 +333,39 @@ function ChannelStep({
 
   return (
     <StepCard title="Por onde seus clientes falam com você?" description="Conecte o WhatsApp para começar a atender com contexto dentro do Vorix.">
-      {existingConnection || connectionId ? (
+      {isAlreadyConnected ? (
         <div className="space-y-3">
-          <p className="text-sm text-foreground">WhatsApp conectado — escaneie o código abaixo pelo app do WhatsApp do número que vai atender pelo Vorix.</p>
-          {qrCode ? <QrPreview value={qrCode} /> : null}
+          <p className="text-sm text-foreground">WhatsApp conectado{existingConnection?.phoneNumber ? ` (${existingConnection.phoneNumber})` : ""}.</p>
+          <Button onClick={handleContinue} disabled={busy} className="w-full">Continuar</Button>
+        </div>
+      ) : activeConnectionId ? (
+        <div className="space-y-3">
+          {qrError ? (
+            <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+              <p className="text-sm text-foreground">{qrError}</p>
+              <Button variant="secondary" onClick={handleRegenerateQr} disabled={busy} className="w-full">
+                {busy ? "Tentando..." : "Tentar novamente"}
+              </Button>
+            </div>
+          ) : qrExpired ? (
+            <div className="space-y-2 rounded-lg border border-warning/30 bg-warning/5 p-3">
+              <p className="text-sm text-foreground">Este código expirou. Gere um novo para continuar.</p>
+              <Button onClick={handleRegenerateQr} disabled={busy} className="w-full">
+                {busy ? "Gerando..." : "Gerar novo QR"}
+              </Button>
+            </div>
+          ) : qrCode ? (
+            <>
+              <p className="text-sm text-foreground">
+                {needsRepair
+                  ? "A conexão precisa ser refeita — escaneie o código abaixo de novo pelo app do WhatsApp."
+                  : "WhatsApp conectado — escaneie o código abaixo pelo app do WhatsApp do número que vai atender pelo Vorix."}
+              </p>
+              <QrPreview value={qrCode} />
+            </>
+          ) : (
+            <div className="flex justify-center py-6"><Spinner className="h-5 w-5 text-primary" /></div>
+          )}
           <Button onClick={handleContinue} disabled={busy} className="w-full">Continuar</Button>
         </div>
       ) : channelModuleEnabled ? (

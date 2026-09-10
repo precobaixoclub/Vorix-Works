@@ -13,47 +13,46 @@ export type WorkspaceNavSection = {
 
 export const HOME_NAV_ITEM: WorkspaceNavItem = { href: "", label: "Início", icon: "home" };
 
-export const CREATE_NAV_ITEM: WorkspaceNavItem = { href: "/create", label: "Criar conteúdo", icon: "create" };
+export const CREATE_NAV_ITEM: WorkspaceNavItem = { href: "/create", label: "Criar", icon: "create" };
 
 export const MAIN_NAV_SECTIONS: readonly WorkspaceNavSection[] = [
   {
-    label: "CRIATIVO",
+    label: "CONVERSAS",
+    items: [
+      { href: "/conversas", label: "Conversas", icon: "conversas" },
+      { href: "/instagram-dm", label: "DM Instagram", icon: "messages" },
+    ],
+  },
+  {
+    label: "COMERCIAL",
+    items: [
+      { href: "/deals", label: "Negócios", icon: "deals" },
+      { href: "/contacts", label: "Contatos", icon: "contacts" },
+      { href: "/tasks", label: "Tarefas", icon: "tasks" },
+      { href: "/proposals", label: "Propostas", icon: "proposals" },
+    ],
+  },
+  {
+    label: "MARKETING",
     items: [
       { href: "/production", label: "Produção", icon: "production" },
       { href: "/campaigns", label: "Conteúdos", icon: "content" },
       { href: "/calendar", label: "Calendário", icon: "calendar" },
-    ],
-  },
-  {
-    label: "DISTRIBUIÇÃO",
-    items: [
       { href: "/publish", label: "Publicar", icon: "publish" },
       { href: "/meta-ads", label: "Anúncios", icon: "ads" },
-      { href: "/instagram-dm", label: "Mensagens", icon: "messages" },
-      // Módulo Conversas (Fase 1) — inbox de WhatsApp via WuzAPI, atrás de feature flag
-      // (CONVERSATIONS_MODULE_ENABLED). Distinto de "Mensagens" (Instagram DM automation).
-      { href: "/conversas", label: "Conversas", icon: "conversas" },
-      // CRM/Comercial (Fase 1) — Contato 360°, ao lado de Conversas por natureza (auditoria,
-      // docs/crm-omnichannel-architecture-audit.md, seção 10). Reorganização completa da nav
-      // (seções Comercial/Marketing) fica pra quando as fases seguintes existirem de verdade.
-      { href: "/contacts", label: "Contatos", icon: "contacts" },
-      // CRM/Comercial (Fase 2) — Kanban de negócios (pipelines/etapas configuráveis).
-      { href: "/deals", label: "Negócios", icon: "deals" },
-      // CRM/Comercial (Fase 3) — Execução comercial: tarefas de follow-up e propostas com link público.
-      { href: "/tasks", label: "Tarefas", icon: "tasks" },
-      { href: "/proposals", label: "Propostas", icon: "proposals" },
-      { href: "/connections", label: "Conexões", icon: "connections" },
     ],
   },
   {
-    label: "MARCA E RESULTADOS",
+    label: "RESULTADOS",
+    items: [
+      { href: "/results", label: "Resultados", icon: "results" },
+    ],
+  },
+  {
+    label: "SISTEMA",
     items: [
       { href: "/knowledge", label: "Marca", icon: "brand" },
-      { href: "/analytics", label: "Analytics", icon: "analytics" },
-      // CRM/Comercial (Fase 7) — atendimento + comercial num só painel, sempre a partir de dados
-      // reais (nunca atribuição de marketing inventada). "Analytics" continua sendo o detalhado
-      // de conteúdo/anúncios — telas complementares, não uma substitui a outra.
-      { href: "/results", label: "Resultados", icon: "results" },
+      { href: "/connections", label: "Integrações", icon: "connections" },
     ],
   },
 ] as const;
@@ -66,7 +65,7 @@ export const BACKSTAGE_NAV: readonly WorkspaceNavItem[] = [
   { href: "/planning", label: "Planejamento", icon: "planning" },
   { href: "/runtime", label: "Runtime", icon: "runtime" },
   { href: "/execution", label: "Execução", icon: "execution" },
-  { href: "/publications", label: "Publicação Técnica", icon: "publication-technical" },
+  { href: "/publications", label: "Publicação técnica", icon: "publication-technical" },
   { href: "/providers", label: "Provedores", icon: "providers" },
   { href: "/governance", label: "Governança", icon: "governance" },
   { href: "/operations", label: "Operação", icon: "operations" },
@@ -74,29 +73,51 @@ export const BACKSTAGE_NAV: readonly WorkspaceNavItem[] = [
 
 export const PRIMARY_MOBILE_NAV: readonly WorkspaceNavItem[] = [
   HOME_NAV_ITEM,
-  { href: "/production", label: "Produção", icon: "production" },
-  { href: "/create", label: "Criar", icon: "create" },
-  { href: "/campaigns", label: "Conteúdos", icon: "content" },
+  { href: "/conversas", label: "Conversas", icon: "conversas" },
+  CREATE_NAV_ITEM,
+  { href: "/deals", label: "Negócios", icon: "deals" },
 ] as const;
 
-export const MOBILE_MENU_NAV: readonly WorkspaceNavItem[] = [
-  { href: "/publish", label: "Publicar", icon: "publish" },
-  { href: "/calendar", label: "Calendário", icon: "calendar" },
-  { href: "/meta-ads", label: "Anúncios", icon: "ads" },
-  { href: "/instagram-dm", label: "Mensagens", icon: "messages" },
-  { href: "/conversas", label: "Conversas", icon: "conversas" },
-  { href: "/connections", label: "Conexões", icon: "connections" },
-  { href: "/knowledge", label: "Marca", icon: "brand" },
-  { href: "/analytics", label: "Analytics", icon: "analytics" },
-  { href: "/settings", label: "Configurações", icon: "settings" },
+export const MOBILE_MENU_SECTIONS: readonly WorkspaceNavSection[] = [
+  {
+    label: "Marketing",
+    items: [
+      { href: "/production", label: "Produção", icon: "production" },
+      { href: "/campaigns", label: "Conteúdos", icon: "content" },
+      { href: "/calendar", label: "Calendário", icon: "calendar" },
+      { href: "/publish", label: "Publicar", icon: "publish" },
+      { href: "/meta-ads", label: "Anúncios", icon: "ads" },
+    ],
+  },
+  {
+    label: "Comercial",
+    items: [
+      { href: "/contacts", label: "Contatos", icon: "contacts" },
+      { href: "/tasks", label: "Tarefas", icon: "tasks" },
+      { href: "/proposals", label: "Propostas", icon: "proposals" },
+    ],
+  },
+  {
+    label: "Resultados",
+    items: [
+      { href: "/results", label: "Resultados", icon: "results" },
+    ],
+  },
+  {
+    label: "Configurações",
+    items: [
+      { href: "/knowledge", label: "Marca", icon: "brand" },
+      { href: "/connections", label: "Integrações", icon: "connections" },
+      { href: "/settings", label: "Configurações", icon: "settings" },
+      { href: "/instagram-dm", label: "DM Instagram", icon: "messages" },
+    ],
+  },
 ] as const;
 
 export function canUseBackstage(role: string | undefined): boolean {
   return role === "owner" || role === "admin";
 }
 
-/** Rótulos localizados por rota, pro `Breadcrumbs` — junta todo item de navegação conhecido num
- * mapa `caminho absoluto → label`, prefixado por `base` (`/workspaces/<id>`). */
 export function buildRouteLabels(base: string): Record<string, string> {
   const allItems: readonly WorkspaceNavItem[] = [
     HOME_NAV_ITEM,

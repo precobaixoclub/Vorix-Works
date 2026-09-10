@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { AlignLeft, GalleryHorizontal, ImageIcon, MoreHorizontal, Video } from "lucide-react";
 import { Button } from "@/components/Button";
+import { ChannelIcon, channelLabel } from "@/components/ChannelIcon";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { DetailBlock as ModalDetailBlock, DetailModal } from "@/components/DetailModal";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Input } from "@/components/Field";
@@ -112,6 +116,7 @@ export default function ContentsPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [busyId, setBusyId] = useState<string | undefined>();
   const [selectedPost, setSelectedPost] = useState<UnifiedPublication | undefined>();
+  const [pendingCancel, setPendingCancel] = useState<UnifiedPublication | undefined>();
   const { data: publications, isLoading, error, mutate } = useUnifiedPublications(workspace.id);
 
   const debouncedSearch = useDebounce(search, 300);
@@ -181,6 +186,7 @@ export default function ContentsPage() {
       await cancelUnifiedPublication(workspace.id, post.network, post.id);
       await mutate();
       setSelectedPost(undefined);
+      setPendingCancel(undefined);
     } finally {
       setBusyId(undefined);
     }
@@ -258,7 +264,7 @@ export default function ContentsPage() {
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filtered.map((post) => (
-              <PublicationCard key={`${post.network}-${post.id}`} workspaceId={workspace.id} post={post} busy={busyId === post.id} onOpen={() => setSelectedPost(post)} onCancel={() => cancel(post)} />
+              <PublicationCard key={`${post.network}-${post.id}`} workspaceId={workspace.id} post={post} busy={busyId === post.id} onOpen={() => setSelectedPost(post)} onCancel={() => setPendingCancel(post)} />
             ))}
           </div>
         )
@@ -311,7 +317,7 @@ export default function ContentsPage() {
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={thumbnail} alt="" className="h-full w-full object-cover" />
                             ) : (
-                              <span className="text-lg text-primary-foreground/80" aria-hidden>{FORMAT_ICON[format]}</span>
+                              <FormatIcon format={format} className="h-5 w-5 text-primary-foreground/80" />
                             )}
                           </span>
                           <span className="min-w-0 truncate font-medium text-foreground">{titleOf(post)}</span>
@@ -323,7 +329,7 @@ export default function ContentsPage() {
                       <TableCell className="text-right text-muted-foreground">{when ? formatDateTime(when) : "—"}</TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end">
-                          <ActionsMenu workspaceId={workspace.id} post={post} busy={busyId === post.id} onOpen={() => setSelectedPost(post)} onCancel={() => cancel(post)} />
+                          <ActionsMenu workspaceId={workspace.id} post={post} busy={busyId === post.id} onOpen={() => setSelectedPost(post)} onCancel={() => setPendingCancel(post)} />
                         </div>
                       </TableCell>
                     </TableRow>
@@ -336,8 +342,19 @@ export default function ContentsPage() {
       )}
 
       {selectedPost ? (
-        <PublicationDetailDrawer workspaceId={workspace.id} post={selectedPost} busy={busyId === selectedPost.id} onCancel={() => cancel(selectedPost)} onClose={() => setSelectedPost(undefined)} />
+        <PublicationDetailModal workspaceId={workspace.id} post={selectedPost} busy={busyId === selectedPost.id} onCancel={() => setPendingCancel(selectedPost)} onClose={() => setSelectedPost(undefined)} />
       ) : null}
+      <ConfirmDialog
+        open={!!pendingCancel}
+        title="Cancelar agendamento"
+        description={pendingCancel ? `Tem certeza que deseja cancelar "${titleOf(pendingCancel)}"? A publicação agendada não vai mais sair.` : ""}
+        confirmLabel="Cancelar agendamento"
+        cancelLabel="Voltar"
+        variant="danger"
+        busy={!!pendingCancel && busyId === pendingCancel.id}
+        onCancel={() => setPendingCancel(undefined)}
+        onConfirm={() => pendingCancel ? cancel(pendingCancel) : undefined}
+      />
     </main>
   );
 }
@@ -366,6 +383,11 @@ function FilterSelect<T extends string>({ label, value, onChange, options }: { l
   );
 }
 
+function FormatIcon({ format, className }: { format: PublicationContentType; className?: string }) {
+  const Icon = format === "video" ? Video : format === "carousel" ? GalleryHorizontal : format === "text" ? AlignLeft : ImageIcon;
+  return <Icon className={className} aria-hidden />;
+}
+
 function PublicationCard({ workspaceId, post, busy, onOpen, onCancel }: { workspaceId: string; post: UnifiedPublication; busy: boolean; onOpen: () => void; onCancel: () => void }) {
   const format = contentTypeOf(post);
   const status = derivePublicationStatus(post);
@@ -379,9 +401,11 @@ function PublicationCard({ workspaceId, post, busy, onOpen, onCancel }: { worksp
           // eslint-disable-next-line @next/next/no-img-element
           <img src={thumbnail} alt="" className="h-full w-full object-cover" />
         ) : (
-          <span className="text-5xl text-primary-foreground/75 drop-shadow" aria-hidden>{FORMAT_ICON[format]}</span>
+          <FormatIcon format={format} className="h-12 w-12 text-primary-foreground/75 drop-shadow" />
         )}
-        <span className="absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-xs font-medium text-primary-foreground backdrop-blur">{NETWORK_ICON[post.network]} {NETWORK_LABEL[post.network]}</span>
+        <span className="absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-xs font-medium text-primary-foreground backdrop-blur">
+          <ChannelIcon channel={post.network} label={NETWORK_LABEL[post.network]} showLabel />
+        </span>
         <span className="absolute right-3 top-3"><StatusBadge status={status} /></span>
       </button>
       <div className="p-3">
@@ -401,7 +425,9 @@ function ActionsMenu({ workspaceId, post, busy, onOpen, onCancel }: { workspaceI
   const status = derivePublicationStatus(post);
   return (
     <details className="relative shrink-0">
-      <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground">•••</summary>
+      <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Abrir menu">
+        <MoreHorizontal className="h-4 w-4" aria-hidden />
+      </summary>
       <div className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">
         <button type="button" onClick={onOpen} className="w-full rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-muted">Abrir</button>
         <Link href={publishAgainHref(workspaceId, post)} className="block rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted">Publicar novamente</Link>
@@ -413,11 +439,60 @@ function ActionsMenu({ workspaceId, post, busy, onOpen, onCancel }: { workspaceI
   );
 }
 
-function PublicationDetailDrawer({ workspaceId, post, busy, onClose, onCancel }: { workspaceId: string; post: UnifiedPublication; busy: boolean; onClose: () => void; onCancel: () => void }) {
+function PublicationDetailModal({ workspaceId, post, busy, onClose, onCancel }: { workspaceId: string; post: UnifiedPublication; busy: boolean; onClose: () => void; onCancel: () => void }) {
   const format = contentTypeOf(post);
   const status = derivePublicationStatus(post);
   const thumbnail = post.media.imageUrls[0] ?? post.media.thumbnailUrl;
   const when = publicationDate(post);
+
+  return (
+    <DetailModal
+      open
+      onOpenChange={(open) => { if (!open) onClose(); }}
+      eyebrow="Conteúdo"
+      title={titleOf(post)}
+      description={
+        <div className="flex flex-wrap gap-2">
+          <NetworkBadge network={post.network} />
+          <StatusBadge status={status} />
+          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">{FORMAT_LABEL[format]}</span>
+          {post.placement === "story" ? <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Story</span> : null}
+        </div>
+      }
+      srDescription="Detalhes do conteúdo publicado ou agendado."
+      widthStorageKey="vorix.contents.detail.width"
+      defaultWidthPercent={62}
+      footer={
+        <div className="flex flex-wrap gap-2">
+          <Link href={publishAgainHref(workspaceId, post)}><Button>Publicar novamente</Button></Link>
+          {status === "scheduled" ? <Button variant="secondary" disabled={busy} onClick={onCancel}>Cancelar agendamento</Button> : null}
+        </div>
+      }
+    >
+      <div className="space-y-6">
+        {thumbnail ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={thumbnail} alt="" className="mx-auto max-h-[60vh] w-full rounded-xl border border-border object-contain" />
+        ) : (
+          <div className={`relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br ${FORMAT_GRADIENT[format]}`}>
+            <FormatIcon format={format} className="h-14 w-14 text-primary-foreground/75" />
+          </div>
+        )}
+        <ModalDetailBlock label="Legenda">
+          <p className="whitespace-pre-wrap break-words text-sm text-foreground">{post.text || "Sem legenda"}</p>
+        </ModalDetailBlock>
+        <div className="grid gap-4 md:grid-cols-2">
+          <ModalDetailBlock label={status === "scheduled" ? "Agendado para" : status === "published" ? "Publicado em" : "Data"}>
+            <p className="text-sm text-foreground">{when ? formatDateTime(when) : "Sem data"}</p>
+          </ModalDetailBlock>
+          <ModalDetailBlock label="Histórico">
+            <p className="text-sm text-foreground">{PUBLICATION_DISPLAY_STATUS_LABEL[status]}</p>
+            {post.timezone ? <p className="mt-1 text-xs text-muted-foreground">{post.timezone}</p> : null}
+          </ModalDetailBlock>
+        </div>
+      </div>
+    </DetailModal>
+  );
 
   return (
     <div className="fixed inset-0 z-50">
@@ -452,7 +527,7 @@ function PublicationDetailDrawer({ workspaceId, post, busy, onClose, onCancel }:
         <div className="space-y-4">
           <DetailBlock label="Legenda" value={post.text || "Sem legenda"} />
           <DetailBlock label={status === "scheduled" ? "Agendado para" : status === "published" ? "Publicado em" : "Data"} value={when ? formatDateTime(when) : "Sem data"} />
-          {post.timezone ? <DetailBlock label="Fuso" value={post.timezone} /> : null}
+          {post.timezone ? <DetailBlock label="Fuso" value={post.timezone ?? ""} /> : null}
           <DetailBlock label="Histórico" value={PUBLICATION_DISPLAY_STATUS_LABEL[status]} />
         </div>
 
@@ -475,7 +550,11 @@ function DetailBlock({ label, value }: { label: string; value: string }) {
 }
 
 function NetworkBadge({ network }: { network: PublicationNetwork }) {
-  return <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">{NETWORK_ICON[network]} {NETWORK_LABEL[network]}</span>;
+  return (
+    <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+      <ChannelIcon channel={network} label={NETWORK_LABEL[network]} showLabel />
+    </span>
+  );
 }
 
 function viewModeButtonClass(active: boolean) {
@@ -484,7 +563,7 @@ function viewModeButtonClass(active: boolean) {
 
 function titleOf(post: UnifiedPublication): string {
   const firstLine = post.text.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
-  return firstLine ? firstLine.slice(0, 96) : `${NETWORK_LABEL[post.network]} · ${FORMAT_LABEL[contentTypeOf(post)]}`;
+  return firstLine ? firstLine.slice(0, 96) : `${channelLabel(post.network)} · ${FORMAT_LABEL[contentTypeOf(post)]}`;
 }
 
 function publicationDate(post: UnifiedPublication): string | undefined {

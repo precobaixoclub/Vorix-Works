@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/Button";
@@ -9,12 +10,6 @@ import { Logo } from "@/components/Logo";
 import { useAuth } from "@/contexts/auth-context";
 import { ApiError } from "@/lib/api-client";
 
-/**
- * Login real — Sprint 05 (Fase 5), substitui o login fake (DEV_PRINCIPAL, Sprint 04). Email +
- * senha contra `POST /v1/auth/login`; nenhum campo/estado de sessão é gerenciado aqui além de
- * delegar para `useAuth().login`, que cuida de token em memória + cookies + agendamento de
- * renovação automática.
- */
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
@@ -38,49 +33,39 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-surface-sunken px-4">
-      <Card className="w-full max-w-sm">
-        <CardBody className="flex flex-col gap-5 py-8">
-          <div className="flex flex-col items-center gap-3 text-center">
-            <Logo className="h-16 w-auto text-ink" />
-            <div>
-              <h1 className="text-base font-semibold text-ink">Entrar no Vorix</h1>
-              <p className="mt-1 text-sm text-ink-muted">Use o email e senha da sua conta.</p>
+    <main className="grid min-h-dvh bg-background px-4 py-8 text-foreground lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)] lg:p-0">
+      <section className="hidden border-r border-border bg-muted/20 p-10 lg:flex lg:flex-col lg:justify-between">
+        <Link href="/" aria-label="Vorix"><Logo className="h-11 w-auto text-foreground" /></Link>
+        <div className="max-w-xl">
+          <p className="text-sm font-semibold uppercase tracking-wide text-primary">Bem-vindo de volta</p>
+          <h1 className="mt-4 text-5xl font-semibold tracking-tight">Entre para continuar sua operação.</h1>
+          <p className="mt-4 text-muted-foreground">Marketing, atendimento, CRM e resultados no mesmo lugar.</p>
+        </div>
+      </section>
+      <section className="flex items-center justify-center">
+        <Card className="w-full max-w-sm">
+          <CardBody className="flex flex-col gap-5 py-8">
+            <div className="text-center">
+              <Logo className="mx-auto h-12 w-auto text-foreground lg:hidden" />
+              <h2 className="mt-4 text-xl font-semibold">Entrar no Vorix</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Use o e-mail e a senha da sua conta.</p>
             </div>
-          </div>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <div>
-              <Label htmlFor="email">E-mail</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="username"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="voce@empresa.com"
-                autoFocus
-              />
-            </div>
-            <div>
-              <Label htmlFor="password">Senha</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-              />
-            </div>
-            {error ? <p className="text-sm text-red-600">{error}</p> : null}
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? "Entrando…" : "Entrar"}
-            </Button>
-          </form>
-        </CardBody>
-      </Card>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <Label htmlFor="login-email">E-mail</Label>
+                <Input id="login-email" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" autoFocus />
+              </div>
+              <div>
+                <Label htmlFor="login-password">Senha</Label>
+                <Input id="login-password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Sua senha" />
+              </div>
+              {error ? <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
+              <Button type="submit" className="w-full" disabled={submitting}>{submitting ? "Entrando..." : "Entrar"}</Button>
+            </form>
+            <p className="text-center text-xs text-muted-foreground">Ainda não tem conta? <Link href="/signup" className="font-medium text-primary hover:underline">Criar conta</Link></p>
+          </CardBody>
+        </Card>
+      </section>
     </main>
   );
 }

@@ -7,22 +7,32 @@ import { Card, CardBody, CardHeader } from "@/components/Card";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { GuardedButton } from "@/components/GuardedButton";
 import { Input, Label } from "@/components/Field";
 import { Modal } from "@/components/Modal";
-import { PageHeader } from "@/components/PageHeader";
+import { PersonAvatar } from "@/components/DashboardKit";
+import { SettingsShell } from "@/components/settings/SettingsShell";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/Spinner";
+import { useAuth } from "@/contexts/auth-context";
+import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { inviteTenantMember, removeTenantMember, revokeTenantInvite, updateTenantMemberRole } from "@/features/identity/api";
 import { useTenantInvites, useTenantMembers } from "@/features/identity/hooks";
 import type { TenantMemberInvite, TenantRole } from "@/features/identity/types";
+import { useInboxMembers } from "@/features/inbox/hooks";
+import { canManageTenant, RBAC_COPY } from "@/lib/rbac";
 
 const ROLE_LABEL: Record<TenantRole, string> = { owner: "Administrador", admin: "Gestor", editor: "Editor", viewer: "Visualizador" };
 const ROLES: TenantRole[] = ["owner", "admin", "editor", "viewer"];
 
 export default function UsersPage() {
+  const workspace = useCurrentWorkspace();
+  const { state } = useAuth();
+  const canManage = canManageTenant(state.status === "authenticated" ? state.role : undefined);
   const { data: members, error: membersError, isLoading: membersLoading, mutate: mutateMembers } = useTenantMembers();
   const { data: invites, error: invitesError, isLoading: invitesLoading, mutate: mutateInvites } = useTenantInvites();
+  const { data: inboxMembers } = useInboxMembers(workspace.id);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<TenantRole>("editor");
@@ -31,6 +41,7 @@ export default function UsersPage() {
   const [pendingRemoval, setPendingRemoval] = useState<string | undefined>();
 
   async function handleInvite() {
+    if (!canManage) return;
     setBusy(true);
     setError(undefined);
     try {
@@ -46,28 +57,56 @@ export default function UsersPage() {
   }
 
   async function handleRoleChange(userId: string, nextRole: TenantRole) {
-    await updateTenantMemberRole(userId, nextRole);
-    await mutateMembers();
+    if (!canManage) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await updateTenantMemberRole(userId, nextRole);
+      await mutateMembers();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível atualizar o papel.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleRemove(userId: string) {
-    await removeTenantMember(userId);
-    setPendingRemoval(undefined);
-    await mutateMembers();
+    if (!canManage) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await removeTenantMember(userId);
+      setPendingRemoval(undefined);
+      await mutateMembers();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível remover o usuário.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleRevokeInvite(invite: TenantMemberInvite) {
-    await revokeTenantInvite(invite.id);
-    await mutateInvites();
+    if (!canManage) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await revokeTenantInvite(invite.id);
+      await mutateInvites();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível revogar o convite.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader
-        title="Usuários"
-        description="Convide, gerencie papéis e remova acesso de quem trabalha neste workspace."
-        actions={<Button onClick={() => setInviteOpen(true)}>Convidar usuário</Button>}
-      />
+    <SettingsShell
+      active="users"
+      title="Usuários"
+      description="Convide, gerencie papéis e remova acesso de quem trabalha neste workspace."
+      actions={<GuardedButton onClick={() => setInviteOpen(true)} allowed={canManage} blockedReason={RBAC_COPY.manageTenant}>Convidar usuário</GuardedButton>}
+    >
+      {error ? <p className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
 
       <Card className="mb-4">
         <CardHeader><p className="text-sm font-semibold text-foreground">Membros</p></CardHeader>
@@ -80,29 +119,41 @@ export default function UsersPage() {
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Usuário</TableHead>
-                    <TableHead>Papel</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
-                  </TableRow>
+                    <TableRow>
+                      <TableHead>Usuário</TableHead>
+                      <TableHead>Papel</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
+                    </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {members.map((member) => (
+                  {members.map((member) => {
+                    const identity = memberIdentity(member.userId, inboxMembers?.members);
+                    return (
                     <TableRow key={member.id}>
-                      <TableCell className="font-mono text-xs text-muted-foreground">{member.userId}</TableCell>
                       <TableCell>
-                        <Select value={member.role} onValueChange={(value) => handleRoleChange(member.userId, value as TenantRole)}>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <PersonAvatar nome={identity.name} className="h-9 w-9" />
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-foreground">{identity.name}</p>
+                            <p className="truncate text-xs text-muted-foreground">{identity.email}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Select value={member.role} onValueChange={(value) => handleRoleChange(member.userId, value as TenantRole)} disabled={!canManage || busy}>
                           <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {ROLES.map((r) => <SelectItem key={r} value={r}>{ROLE_LABEL[r]}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </TableCell>
+                      <TableCell><Badge variant="default">Ativo</Badge></TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" onClick={() => setPendingRemoval(member.userId)}>Remover</Button>
+                        <GuardedButton variant="ghost" onClick={() => setPendingRemoval(member.userId)} allowed={canManage} blockedReason={RBAC_COPY.manageTenant} disabled={busy}>Remover</GuardedButton>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  );})}
                 </TableBody>
               </Table>
             )
@@ -139,7 +190,7 @@ export default function UsersPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        {invite.status === "pending" ? <Button variant="ghost" onClick={() => handleRevokeInvite(invite)}>Revogar</Button> : null}
+                        {invite.status === "pending" ? <GuardedButton variant="ghost" onClick={() => handleRevokeInvite(invite)} allowed={canManage} blockedReason={RBAC_COPY.manageTenant} disabled={busy}>Revogar</GuardedButton> : null}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -166,7 +217,6 @@ export default function UsersPage() {
                 </SelectContent>
               </Select>
             </div>
-            {error ? <p className="text-sm text-danger">{error}</p> : null}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => setInviteOpen(false)} disabled={busy}>Cancelar</Button>
               <Button onClick={handleInvite} loading={busy} disabled={!email.trim() || busy}>Enviar convite</Button>
@@ -181,9 +231,15 @@ export default function UsersPage() {
         description="Este usuário perde acesso a este tenant imediatamente. Essa ação pode ser desfeita convidando-o novamente."
         confirmLabel="Remover"
         variant="danger"
+        busy={busy}
         onConfirm={() => { if (pendingRemoval) return handleRemove(pendingRemoval); }}
         onCancel={() => setPendingRemoval(undefined)}
       />
-    </main>
+    </SettingsShell>
   );
+}
+
+function memberIdentity(userId: string, members: readonly { userId: string; name: string; email: string }[] | undefined) {
+  const member = members?.find((item) => item.userId === userId);
+  return member ? { name: member.name, email: member.email } : { name: "Membro do tenant", email: "E-mail indisponível nesta API" };
 }

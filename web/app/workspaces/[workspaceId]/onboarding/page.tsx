@@ -8,6 +8,7 @@ import { Button } from "@/components/Button";
 import { Card, CardBody } from "@/components/Card";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label, Select, SelectItem, Textarea } from "@/components/Field";
+import { Logo } from "@/components/Logo";
 import { Spinner } from "@/components/Spinner";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { apiClient } from "@/lib/api-client";
@@ -96,7 +97,7 @@ export default function OnboardingWizardPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-xl flex-col px-4 py-8 sm:py-12">
+    <div className="mx-auto flex min-h-dvh max-w-2xl flex-col px-4 py-8 sm:py-12">
       <WizardHeader stepNumber={stepNumber} totalSteps={WIZARD_STEPS.length} onSaveAndExit={goHome} />
 
       <div className="mt-8 flex-1">
@@ -118,7 +119,7 @@ function WizardHeader({ stepNumber, totalSteps, onSaveAndExit }: { stepNumber: n
   return (
     <div>
       <div className="flex items-center justify-between gap-4">
-        <span className="text-sm font-semibold text-foreground">Vorix</span>
+        <Logo className="h-9 w-auto text-foreground" />
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground">
             Passo {stepNumber} de {totalSteps}
@@ -131,14 +132,19 @@ function WizardHeader({ stepNumber, totalSteps, onSaveAndExit }: { stepNumber: n
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
         <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${percent}%` }} />
       </div>
+      <div className="mt-3 hidden grid-cols-5 gap-2 text-[11px] font-medium text-muted-foreground sm:grid">
+        {["Empresa", "Canal", "Equipe", "Comercial", "Marca"].map((label, index) => (
+          <span key={label} className={index + 1 <= stepNumber ? "text-foreground" : undefined}>{index + 1} {label}</span>
+        ))}
+      </div>
     </div>
   );
 }
 
 function StepCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
-    <Card>
-      <CardBody className="space-y-5">
+    <Card className="overflow-hidden">
+      <CardBody className="space-y-5 p-6 sm:p-7">
         <div>
           <h1 className="text-xl font-semibold text-foreground">{title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
@@ -278,15 +284,11 @@ function ChannelStep({
   }
 
   return (
-    <StepCard title="Por onde seus clientes falam com você?" description="Conecte um canal para o Conversas começar a funcionar. Instagram e Facebook chegam em breve.">
+    <StepCard title="Por onde seus clientes falam com você?" description="Conecte o WhatsApp para começar a atender com contexto dentro do Vorix.">
       {existingConnection || connectionId ? (
         <div className="space-y-3">
           <p className="text-sm text-foreground">WhatsApp conectado — escaneie o código abaixo pelo app do WhatsApp do número que vai atender pelo Vorix.</p>
-          {qrCode ? (
-            <div className="rounded-lg border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
-              Código de pareamento: <span className="font-mono">{qrCode}</span>
-            </div>
-          ) : null}
+          {qrCode ? <QrPreview value={qrCode} /> : null}
           <Button onClick={handleContinue} disabled={busy} className="w-full">Continuar</Button>
         </div>
       ) : channelModuleEnabled ? (
@@ -299,7 +301,7 @@ function ChannelStep({
             {busy ? "Conectando..." : "Conectar WhatsApp"}
           </Button>
           <Button variant="ghost" onClick={handleSkip} disabled={busy} className="w-full">
-            Conectar depois
+            Pular por enquanto
           </Button>
           <p className="text-xs text-muted-foreground">O Conversas só começa a funcionar de verdade depois que um canal for conectado.</p>
         </div>
@@ -312,6 +314,22 @@ function ChannelStep({
         </div>
       )}
     </StepCard>
+  );
+}
+
+function QrPreview({ value }: { value: string }) {
+  const looksLikeImage = value.startsWith("data:image") || value.startsWith("http://") || value.startsWith("https://");
+  return (
+    <div className="rounded-xl border border-border bg-background p-4 text-center">
+      {looksLikeImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={value} alt="QR Code para conectar WhatsApp" className="mx-auto h-56 w-56 rounded-lg bg-white object-contain p-2" />
+      ) : (
+        <div className="mx-auto flex min-h-40 max-w-sm items-center justify-center rounded-lg border border-dashed border-border bg-muted/35 px-4 py-6 text-sm text-muted-foreground">
+          Código de pareamento recebido. Copie pelo fluxo do WhatsApp quando solicitado.
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -372,7 +390,7 @@ function TeamStep({ workspaceId, onAdvance }: { workspaceId: string; onAdvance: 
       <div className="flex flex-col gap-2">
         <Button onClick={() => handleContinue(invited.length === 0)} disabled={busy} className="w-full">Continuar</Button>
         {invited.length === 0 ? (
-          <Button variant="ghost" onClick={() => handleContinue(true)} disabled={busy} className="w-full">Convidar depois</Button>
+          <Button variant="ghost" onClick={() => handleContinue(true)} disabled={busy} className="w-full">Pular por enquanto</Button>
         ) : null}
       </div>
     </StepCard>
@@ -438,7 +456,7 @@ function BrandStep({ workspaceId, onAdvance }: { workspaceId: string; onAdvance:
       </div>
       <div className="flex flex-col gap-2">
         <Button onClick={() => handleSubmit(false)} disabled={busy} className="w-full">Configurar agora</Button>
-        <Button variant="ghost" onClick={() => handleSubmit(true)} disabled={busy} className="w-full">Completar depois</Button>
+        <Button variant="ghost" onClick={() => handleSubmit(true)} disabled={busy} className="w-full">Pular por enquanto</Button>
       </div>
     </StepCard>
   );

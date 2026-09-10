@@ -592,8 +592,9 @@ function NewAdModal({ workspaceId, adSet, onClose, onCreated }: { workspaceId: s
           <Input id="ad-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Criativo A — carrossel" autoFocus />
         </div>
         <div>
-          <Label htmlFor="ad-page">ID da Página do Facebook</Label>
-          <Input id="ad-page" value={pageId} onChange={(event) => setPageId(event.target.value)} placeholder="Ex.: 123456789012345" />
+          <Label htmlFor="ad-page">Página do Facebook</Label>
+          <Input id="ad-page" value={pageId} onChange={(event) => setPageId(event.target.value)} placeholder="ID da página enquanto a API de páginas não estiver disponível" />
+          <p className="mt-1 text-xs text-muted-foreground">O frontend ainda não recebeu um endpoint para listar páginas conectadas; este campo usa o ID exigido pela Marketing API.</p>
         </div>
         <div>
           <Label htmlFor="ad-link">Link de destino</Label>

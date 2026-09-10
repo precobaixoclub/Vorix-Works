@@ -7,32 +7,21 @@ import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
-import { PageHeader } from "@/components/PageHeader";
+import { GuardedButton } from "@/components/GuardedButton";
+import { SettingsShell } from "@/components/settings/SettingsShell";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
-import { formatCurrencyCents, formatDate } from "@/lib/format";
-import { formatPlanPrice, fetchPublicPlans, type PublicPlan } from "@/features/platform-plans/api";
-import {
-  cancelSubscription,
-  changePlan,
-  fetchDowngradePreview,
-  openBillingPortal,
-  purchaseAddon,
-  reactivateSubscription,
-  removeAddon,
-  startCheckout,
-  startTrial,
-} from "@/features/billing/api";
+import { useAuth } from "@/contexts/auth-context";
+import { cancelSubscription, changePlan, fetchDowngradePreview, openBillingPortal, purchaseAddon, reactivateSubscription, removeAddon, startCheckout, startTrial } from "@/features/billing/api";
 import { useBillingOverview } from "@/features/billing/hooks";
-import { RESOURCE_LABELS, type BillingOverviewAvailableAddon, type PlatformPlanCode } from "@/features/billing/types";
+import { RESOURCE_LABELS, type BillingInterval, type BillingOverviewAvailableAddon, type PlatformPlanCode } from "@/features/billing/types";
+import { fetchPublicPlans, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
+import { formatCurrencyCents, formatDate } from "@/lib/format";
+import { canManageBilling, RBAC_COPY } from "@/lib/rbac";
 
-/**
- * "Plano e Cobrança" (`/workspaces/:workspaceId/settings/plano`) — SaaS Commercialization, Fase 4.
- * Uma tela só, de propósito (não-negociável do pedido original): plano atual + consumo + trocar
- * plano + add-ons + pagamento + faturas. Escopada ao TENANT (não ao workspace do path) — o backend
- * resolve isso via o JWT, nunca por um parâmetro de rota.
- */
 export default function BillingSettingsPage() {
+  const { state } = useAuth();
+  const canManage = canManageBilling(state.status === "authenticated" ? state.role : undefined);
   const { data, error, isLoading, mutate } = useBillingOverview();
   const { data: plans } = useSWR("platform-plans", () => fetchPublicPlans());
   const [busy, setBusy] = useState(false);
@@ -40,34 +29,34 @@ export default function BillingSettingsPage() {
   const [confirmRemoveAddon, setConfirmRemoveAddon] = useState<{ subscriptionItemId: string; name: string } | null>(null);
 
   async function run(action: () => Promise<unknown>, successMessage: string) {
+    if (!canManage) return;
     setBusy(true);
     try {
       await action();
       await mutate();
       toast.success(successMessage);
     } catch (err) {
-      toast.error("Não foi possível concluir a ação", { description: err instanceof Error ? err.message : "Falhou." });
+      toast.error("Não foi possível concluir a ação", { description: err instanceof Error ? err.message : "Tente novamente." });
     } finally {
       setBusy(false);
     }
   }
 
-async function goToCheckout(planCode: PlatformPlanCode, onError: () => void) {
+  async function goToCheckout(planCode: PlatformPlanCode, interval: BillingInterval) {
+    if (!canManage) return;
+    setBusy(true);
     try {
-      const { checkoutUrl } = await startCheckout({ planCode, billingInterval: "monthly" });
+      const { checkoutUrl } = await startCheckout({ planCode, billingInterval: interval });
       window.location.href = checkoutUrl;
     } catch (err) {
-      toast.error("Não foi possível iniciar o checkout", { description: err instanceof Error ? err.message : "Falhou." });
-      onError();
+      toast.error("Não foi possível iniciar o checkout", { description: err instanceof Error ? err.message : "Tente novamente." });
+      setBusy(false);
     }
   }
 
-  async function handleChoosePlan(planCode: PlatformPlanCode) {
-    if (!data) return;
-
-    // Sem assinatura nenhuma ainda: tenta trial sem cartão primeiro (se o plano/ambiente
-    // permitirem — o backend decide, nunca adivinhamos aqui); sem trial disponível, cai pro
-    // checkout normal.
+  async function choosePlan(planCode: PlatformPlanCode) {
+    if (!data || !canManage) return;
+    const interval = data.billingInterval ?? "monthly";
     if (data.virtual) {
       setBusy(true);
       try {
@@ -77,310 +66,192 @@ async function goToCheckout(planCode: PlatformPlanCode, onError: () => void) {
       } catch (err) {
         const message = err instanceof Error ? err.message : "";
         if (message.startsWith("TRIAL_DISABLED") || message.startsWith("TRIAL_NOT_AVAILABLE_FOR_PLAN")) {
-          await goToCheckout(planCode, () => setBusy(false));
+          await goToCheckout(planCode, interval);
           return;
         }
-        toast.error("Não foi possível iniciar o teste", { description: message || "Falhou." });
+        toast.error("Não foi possível iniciar o teste", { description: message || "Tente novamente." });
       } finally {
         setBusy(false);
       }
       return;
     }
-
-    // Convertendo um trial (ativo ou já vencido): checkout normal, pode inclusive trocar de
-    // plano nesse momento — nunca tenta um segundo trial.
     if (data.status === "trial" || data.status === "trial_expired") {
-      setBusy(true);
-      await goToCheckout(planCode, () => setBusy(false));
+      await goToCheckout(planCode, interval);
       return;
     }
-
     try {
       const preview = await fetchDowngradePreview(planCode);
       if (!preview.safeToChange) {
         toast.error("Uso atual excede o novo plano", {
-          description: `Reduza antes de trocar: ${preview.overages.map((o) => `${RESOURCE_LABELS[o.resource]} (${o.used}/${o.newMax})`).join(", ")}.`,
+          description: preview.overages.map((item) => `${RESOURCE_LABELS[item.resource]}: ${item.used}/${item.newMax}`).join(" · "),
         });
         return;
       }
     } catch {
-      // segue — o backend reforça a mesma checagem em `changePlan`.
+      // O backend valida novamente no changePlan; esta prévia é apenas para melhorar a mensagem.
     }
-    await run(() => changePlan({ newPlanCode: planCode, billingInterval: data.billingInterval ?? "monthly" }), "Plano alterado.");
+    await run(() => changePlan({ newPlanCode: planCode, billingInterval: interval }), "Plano alterado.");
   }
 
-  async function handleOpenPortal() {
+  async function openPortal() {
+    if (!canManage) return;
     setBusy(true);
     try {
       const { portalUrl } = await openBillingPortal();
       window.location.href = portalUrl;
     } catch (err) {
-      toast.error("Não foi possível abrir o portal de pagamento", { description: err instanceof Error ? err.message : "Falhou." });
+      toast.error("Não foi possível abrir o pagamento", { description: err instanceof Error ? err.message : "Tente novamente." });
       setBusy(false);
     }
   }
 
-  async function confirmCancel() {
-    await run(() => cancelSubscription(), "Cancelamento agendado para o fim do período atual.");
-    setConfirmCancelOpen(false);
-  }
-
-  async function confirmRemoveAddonAction() {
-    if (!confirmRemoveAddon) return;
-    await run(() => removeAddon(confirmRemoveAddon.subscriptionItemId), "Add-on removido.");
-    setConfirmRemoveAddon(null);
-  }
-
   if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 px-3 py-10 text-sm text-muted-foreground sm:px-6 sm:py-14">
-        <Spinner className="h-4 w-4" /> Carregando plano e cobrança…
-      </div>
-    );
+    return <div className="flex items-center gap-2 px-6 py-14 text-sm text-muted-foreground"><Spinner className="h-4 w-4" /> Carregando plano e cobrança...</div>;
   }
+  if (error || !data) return <div className="mx-auto max-w-4xl px-3 py-8"><ErrorState error={error} onRetry={() => mutate()} /></div>;
 
-  if (error || !data) {
-    return (
-      <div className="mx-auto max-w-4xl px-3 py-5 sm:px-6 sm:py-8">
-        <ErrorState error={error} onRetry={() => mutate()} />
-      </div>
-    );
-  }
+  const currentPlan = plans?.find((plan) => plan.code === data.planCode);
+  const interval = data.billingInterval ?? "monthly";
 
   return (
-    <div className="mx-auto max-w-5xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader
-        title="Plano e Cobrança"
-        description="Seu plano atual, consumo do mês e as ações de assinatura — tudo nesta única tela."
-        actions={
-          data.status && !data.virtual ? (
-            <Button variant="secondary" disabled={busy} onClick={handleOpenPortal}>
-              Gerenciar forma de pagamento
-            </Button>
-          ) : undefined
-        }
-      />
-
-      {data.status === "trial_expired" ? (
-        <Card className="mb-6 border-destructive/50 bg-destructive/5">
-          <CardBody className="text-sm">
-            <p className="font-semibold text-foreground">Seu período de teste terminou.</p>
-            <p className="mt-1 text-muted-foreground">Seus dados continuam seguros. Escolha um plano para continuar criando e operando.</p>
-          </CardBody>
-        </Card>
-      ) : data.status === "trial" ? (
-        <Card className="mb-6 border-warning/50 bg-warning/5">
-          <CardBody className="text-sm">
-            <p className="font-semibold text-foreground">
-              {data.trialDaysRemaining === 0
-                ? "Seu período de teste termina hoje."
-                : data.trialDaysRemaining === 1
-                  ? "Seu período de teste termina amanhã."
-                  : `Restam ${data.trialDaysRemaining} dias de teste.`}
-            </p>
-            <p className="mt-1 text-muted-foreground">Escolha um plano quando quiser continuar sem interrupção — nenhum dado é perdido na transição.</p>
-          </CardBody>
-        </Card>
-      ) : null}
-
-      {data.readOnly && data.status !== "trial_expired" ? (
-        <Card className="mb-6 border-destructive/50 bg-destructive/5">
+    <SettingsShell
+      active="billing"
+      title="Plano e cobrança"
+      description="Plano atual, ciclo, uso e pagamento em uma visão clara."
+      actions={data.status && !data.virtual ? <GuardedButton variant="secondary" disabled={busy} onClick={openPortal} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>Gerenciar pagamento</GuardedButton> : undefined}
+    >
+      {data.readOnly ? (
+        <Card className="mb-5 border-warning/50 bg-warning/5">
           <CardBody className="text-sm">
             <p className="font-semibold text-foreground">Pagamento pendente</p>
-            <p className="mt-1 text-muted-foreground">
-              Não conseguimos confirmar seu último pagamento. Seus dados estão preservados, mas novas ações estão bloqueadas até a
-              cobrança ser regularizada.
-            </p>
+            <p className="mt-1 text-muted-foreground">Atualize sua forma de pagamento para evitar interrupções.</p>
           </CardBody>
         </Card>
       ) : null}
 
       {data.cancelAtPeriodEnd ? (
-        <Card className="mb-6 border-warning/50 bg-warning/5">
+        <Card className="mb-5 border-warning/50 bg-warning/5">
           <CardBody className="flex flex-wrap items-center justify-between gap-3 text-sm">
             <div>
-              <p className="font-semibold text-foreground">Assinatura agendada para cancelamento</p>
-              <p className="mt-1 text-muted-foreground">
-                Você mantém acesso ao plano {data.planName} até {formatDate(data.currentPeriodEnd ?? undefined)}.
-              </p>
+              <p className="font-semibold text-foreground">Cancelamento agendado</p>
+              <p className="mt-1 text-muted-foreground">Seu plano continuará ativo até {formatDate(data.currentPeriodEnd ?? undefined)}.</p>
             </div>
-            <Button variant="primary" disabled={busy} onClick={() => run(() => reactivateSubscription(), "Assinatura reativada.")}>
-              Reativar assinatura
-            </Button>
+            <GuardedButton disabled={busy} onClick={() => run(() => reactivateSubscription(), "Plano reativado.")} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>Reativar plano</GuardedButton>
           </CardBody>
         </Card>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.8fr)]">
+        <Card>
           <CardHeader>
             <div>
               <p className="text-sm font-semibold text-foreground">Plano atual</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {data.virtual ? "Nenhuma assinatura paga ativa." : `Cobrança ${data.billingInterval === "yearly" ? "anual" : "mensal"}.`}
-              </p>
+              <p className="mt-1 text-xs text-muted-foreground">{data.virtual ? "Nenhuma assinatura paga ativa." : `Ciclo ${interval === "yearly" ? "anual" : "mensal"}.`}</p>
             </div>
             {data.status ? <StatusBadge status={data.status} /> : null}
           </CardHeader>
-          <CardBody>
-            <p className="text-2xl font-semibold text-foreground">
-              {data.status === "trial" || data.status === "trial_expired" ? `Teste (${data.planName})` : data.planName}
-            </p>
-            {data.status === "trial" ? (
-              <p className="mt-1 text-sm text-muted-foreground">
-                Restam {data.trialDaysRemaining} {data.trialDaysRemaining === 1 ? "dia" : "dias"}.
+          <CardBody className="space-y-4">
+            <div>
+              <p className="text-3xl font-semibold tracking-tight text-foreground">{data.status === "trial" ? `Teste · ${data.planName}` : data.planName}</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {currentPlan ? cyclePrice(currentPlan, interval) : "Valor do ciclo indisponível no catálogo atual."}
               </p>
-            ) : data.currentPeriodEnd && !data.cancelAtPeriodEnd ? (
-              <p className="mt-1 text-sm text-muted-foreground">Renova em {formatDate(data.currentPeriodEnd)}.</p>
-            ) : null}
+              {data.currentPeriodEnd ? <p className="mt-1 text-sm text-muted-foreground">{data.cancelAtPeriodEnd ? "Ativo até" : "Renova em"} {formatDate(data.currentPeriodEnd)}.</p> : null}
+              {data.status === "trial" && data.trialDaysRemaining !== null ? <p className="mt-1 text-sm text-muted-foreground">{data.trialDaysRemaining} dias de teste restantes.</p> : null}
+            </div>
             {!data.virtual && !data.cancelAtPeriodEnd && data.status !== "trial" && data.status !== "trial_expired" ? (
-              <Button variant="ghost" className="mt-3 text-destructive hover:text-destructive" disabled={busy} onClick={() => setConfirmCancelOpen(true)}>
-                Cancelar assinatura
-              </Button>
+              <GuardedButton variant="ghost" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => setConfirmCancelOpen(true)} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>Cancelar no fim do período</GuardedButton>
             ) : null}
           </CardBody>
         </Card>
 
         <Card>
-          <CardHeader>
-            <div className="text-sm font-semibold text-foreground">Forma de pagamento</div>
-          </CardHeader>
-          <CardBody>
+          <CardHeader><p className="text-sm font-semibold text-foreground">Forma de pagamento</p></CardHeader>
+          <CardBody className="space-y-3 text-sm">
             {data.paymentMethod ? (
-              <p className="text-sm text-foreground">
-                {data.paymentMethod.brand?.toUpperCase() ?? "Cartão"} •••• {data.paymentMethod.last4}
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  Vence {data.paymentMethod.expMonth}/{data.paymentMethod.expYear}
-                </span>
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground">Nenhuma forma de pagamento cadastrada.</p>
-            )}
+              <p className="text-foreground">{data.paymentMethod.brand?.toUpperCase() ?? "Cartão"} final {data.paymentMethod.last4 ?? "—"}<span className="block text-xs text-muted-foreground">Vence {data.paymentMethod.expMonth}/{data.paymentMethod.expYear}</span></p>
+            ) : <p className="text-muted-foreground">Nenhuma forma de pagamento cadastrada.</p>}
+            <GuardedButton variant="secondary" disabled={busy || data.virtual} onClick={openPortal} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>Gerenciar pagamento</GuardedButton>
           </CardBody>
         </Card>
       </div>
 
-      <Card className="mt-6">
+      <Card className="mt-5">
         <CardHeader>
           <div>
-            <p className="text-sm font-semibold text-foreground">Consumo do mês</p>
-            <p className="mt-1 text-xs text-muted-foreground">O que já foi usado em relação ao limite do plano atual.</p>
+            <p className="text-sm font-semibold text-foreground">Uso do plano</p>
+            <p className="mt-1 text-xs text-muted-foreground">Somente limites medidos pelo backend aparecem aqui.</p>
           </div>
         </CardHeader>
-        <CardBody className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {data.consumption.map((item) => (
-            <ConsumptionBar key={item.resource} label={RESOURCE_LABELS[item.resource]} used={item.used} max={item.max} />
-          ))}
+        <CardBody className="grid gap-4 md:grid-cols-2">
+          {data.consumption.map((item) => <ConsumptionBar key={item.resource} label={RESOURCE_LABELS[item.resource]} used={item.used} max={item.max} />)}
+        </CardBody>
+      </Card>
+
+      <Card className="mt-5">
+        <CardHeader><p className="text-sm font-semibold text-foreground">Comparar planos</p></CardHeader>
+        <CardBody className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {(plans ?? []).map((plan) => <PlanCard key={plan.code} plan={plan} interval={interval} isCurrent={plan.code === data.planCode} busy={busy} canManage={canManage} onChoose={() => choosePlan(plan.code)} />)}
         </CardBody>
       </Card>
 
       {!data.virtual ? (
-        <Card className="mt-6">
-          <CardHeader>
-            <div>
-              <p className="text-sm font-semibold text-foreground">Add-ons</p>
-              <p className="mt-1 text-xs text-muted-foreground">Aumente limites específicos sem trocar de plano.</p>
-            </div>
-          </CardHeader>
-          <CardBody className="space-y-4">
-            {data.addons.length > 0 ? (
-              <ul className="space-y-2">
-                {data.addons.map((addon) => (
-                  <li key={addon.subscriptionItemId} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm">
-                    <span>
-                      {addon.name} {addon.quantity > 1 ? `× ${addon.quantity}` : null}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      disabled={busy || data.readOnly}
-                      onClick={() => setConfirmRemoveAddon({ subscriptionItemId: addon.subscriptionItemId, name: addon.name })}
-                    >
-                      Remover
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">Nenhum add-on contratado.</p>
-            )}
-
-            {data.availableAddons.length > 0 ? (
-              <div className="space-y-2 border-t border-border pt-4">
-                {data.availableAddons.map((addon) => (
-                  <AddonRow
-                    key={addon.code}
-                    addon={addon}
-                    busy={busy || data.readOnly}
-                    billingInterval={data.billingInterval ?? "monthly"}
-                    onPurchase={() =>
-                      run(() => purchaseAddon({ addonCode: addon.code, quantity: 1, billingInterval: data.billingInterval ?? "monthly" }), "Add-on adicionado.")
-                    }
-                  />
-                ))}
+        <Card className="mt-5">
+          <CardHeader><p className="text-sm font-semibold text-foreground">Add-ons</p></CardHeader>
+          <CardBody className="space-y-3">
+            {data.addons.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum add-on contratado.</p> : null}
+            {data.addons.map((addon) => (
+              <div key={addon.subscriptionItemId} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm">
+                <span className="text-foreground">{addon.name}{addon.quantity > 1 ? ` × ${addon.quantity}` : ""}</span>
+                <GuardedButton variant="ghost" className="text-destructive hover:text-destructive" disabled={busy || data.readOnly} allowed={canManage} blockedReason={RBAC_COPY.manageBilling} onClick={() => setConfirmRemoveAddon({ subscriptionItemId: addon.subscriptionItemId, name: addon.name })}>Remover</GuardedButton>
               </div>
-            ) : null}
+            ))}
+            {data.availableAddons.map((addon) => <AddonRow key={addon.code} addon={addon} interval={interval} busy={busy || data.readOnly} canManage={canManage} onPurchase={() => run(() => purchaseAddon({ addonCode: addon.code, quantity: 1, billingInterval: interval }), "Add-on adicionado.")} />)}
           </CardBody>
         </Card>
       ) : null}
 
-      <Card className="mt-6">
-        <CardHeader>
-          <div>
-            <p className="text-sm font-semibold text-foreground">Trocar de plano</p>
-            <p className="mt-1 text-xs text-muted-foreground">Downgrades só são aplicados quando o uso atual cabe no novo limite.</p>
-          </div>
-        </CardHeader>
-        <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {(plans ?? []).map((plan) => (
-            <PlanCard key={plan.code} plan={plan} isCurrent={plan.code === data.planCode} busy={busy} onChoose={() => handleChoosePlan(plan.code)} />
+      <Card className="mt-5">
+        <CardHeader><p className="text-sm font-semibold text-foreground">Faturas recentes</p></CardHeader>
+        <CardBody className="space-y-2">
+          {data.recentInvoices.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma fatura ainda.</p> : null}
+          {data.recentInvoices.map((invoice) => (
+            <div key={invoice.id} className="flex items-center justify-between gap-3 rounded-lg bg-muted/35 px-3 py-2 text-sm">
+              <span className="text-muted-foreground">{formatDate(invoice.createdAt)}</span>
+              <span className="font-medium tabular-nums text-foreground">{formatCurrencyCents(invoice.amountCents, invoice.currency)}</span>
+              <StatusBadge status={invoice.status} />
+            </div>
           ))}
-        </CardBody>
-      </Card>
-
-      <Card className="mt-6">
-        <CardHeader>
-          <div className="text-sm font-semibold text-foreground">Faturas recentes</div>
-        </CardHeader>
-        <CardBody className="p-0">
-          {data.recentInvoices.length === 0 ? (
-            <div className="px-5 py-4 text-sm text-muted-foreground">Nenhuma fatura ainda.</div>
-          ) : (
-            <ul className="divide-y divide-border">
-              {data.recentInvoices.map((invoice) => (
-                <li key={invoice.id} className="flex items-center justify-between gap-3 px-5 py-2 text-sm">
-                  <span className="text-muted-foreground">{formatDate(invoice.createdAt)}</span>
-                  <span className="font-medium tabular-nums">{formatCurrencyCents(invoice.amountCents, invoice.currency)}</span>
-                  <StatusBadge status={invoice.status} />
-                </li>
-              ))}
-            </ul>
-          )}
         </CardBody>
       </Card>
 
       <ConfirmDialog
         open={confirmCancelOpen}
         title="Cancelar assinatura?"
-        description={`Você continua com acesso completo ao plano ${data.planName} até o fim do período já pago. Nenhum dado é apagado — você pode reativar a qualquer momento antes disso.`}
-        confirmLabel="Cancelar assinatura"
+        description={`Seu plano continuará ativo até ${formatDate(data.currentPeriodEnd ?? undefined)}. Nenhum dado será apagado.`}
+        confirmLabel="Cancelar no fim do período"
         variant="danger"
         busy={busy}
         onCancel={() => setConfirmCancelOpen(false)}
-        onConfirm={confirmCancel}
+        onConfirm={async () => {
+          await run(() => cancelSubscription(), "Cancelamento agendado.");
+          setConfirmCancelOpen(false);
+        }}
       />
-
       <ConfirmDialog
         open={confirmRemoveAddon !== null}
         title="Remover add-on?"
-        description={`"${confirmRemoveAddon?.name}" deixará de valer imediatamente — os limites voltam ao do plano base.`}
+        description={`"${confirmRemoveAddon?.name}" deixará de valer imediatamente e os limites voltam ao plano base.`}
         confirmLabel="Remover add-on"
         variant="danger"
         busy={busy}
         onCancel={() => setConfirmRemoveAddon(null)}
-        onConfirm={confirmRemoveAddonAction}
+        onConfirm={async () => {
+          if (confirmRemoveAddon) await run(() => removeAddon(confirmRemoveAddon.subscriptionItemId), "Add-on removido.");
+          setConfirmRemoveAddon(null);
+        }}
       />
-    </div>
+    </SettingsShell>
   );
 }
 
@@ -389,65 +260,42 @@ function ConsumptionBar({ label, used, max }: { label: string; used: number; max
   const nearLimit = max !== null && used / Math.max(max, 1) >= 0.9;
   return (
     <div>
-      <div className="flex items-baseline justify-between text-sm">
+      <div className="flex items-baseline justify-between gap-3 text-sm">
         <span className="text-foreground">{label}</span>
-        <span className="tabular-nums text-muted-foreground">
-          {used.toLocaleString("pt-BR")} / {max === null ? "Ilimitado" : max.toLocaleString("pt-BR")}
-        </span>
+        <span className="shrink-0 tabular-nums text-muted-foreground">{used.toLocaleString("pt-BR")} / {max === null ? "Ilimitado" : max.toLocaleString("pt-BR")}</span>
       </div>
-      {max !== null ? (
-        <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted">
-          <div className={`h-full rounded-full ${nearLimit ? "bg-destructive" : "bg-primary"}`} style={{ width: `${percent}%` }} />
-        </div>
-      ) : null}
+      {max !== null ? <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${nearLimit ? "bg-destructive" : "bg-primary"}`} style={{ width: `${percent}%` }} /></div> : null}
     </div>
   );
 }
 
-function AddonRow({
-  addon,
-  busy,
-  billingInterval,
-  onPurchase,
-}: {
-  addon: BillingOverviewAvailableAddon;
-  busy: boolean;
-  billingInterval: "monthly" | "yearly";
-  onPurchase: () => void;
-}) {
-  const priceUsd = billingInterval === "yearly" ? addon.yearlyPriceUsd : addon.monthlyPriceUsd;
+function PlanCard({ plan, interval, isCurrent, busy, canManage, onChoose }: { plan: PublicPlan; interval: BillingInterval; isCurrent: boolean; busy: boolean; canManage: boolean; onChoose: () => void }) {
+  return (
+    <div className={`flex flex-col rounded-xl border p-4 ${isCurrent ? "border-primary bg-primary/5" : "border-border bg-card"}`}>
+      <p className="text-sm font-semibold text-foreground">{plan.name}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{plan.tagline}</p>
+      <p className="mt-3 text-xl font-semibold tabular-nums text-foreground">{cyclePrice(plan, interval)}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{formatCreditsQuota(plan.monthlyCreditsQuota)}</p>
+      <GuardedButton variant={isCurrent ? "secondary" : "primary"} className="mt-4" disabled={busy || isCurrent} onClick={onChoose} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>{isCurrent ? "Plano atual" : "Selecionar"}</GuardedButton>
+    </div>
+  );
+}
+
+function AddonRow({ addon, interval, busy, canManage, onPurchase }: { addon: BillingOverviewAvailableAddon; interval: BillingInterval; busy: boolean; canManage: boolean; onPurchase: () => void }) {
+  const price = interval === "yearly" ? addon.yearlyPriceUsd : addon.monthlyPriceUsd;
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border px-3 py-2 text-sm">
       <div className="min-w-0">
         <p className="font-medium text-foreground">{addon.name}</p>
         <p className="truncate text-xs text-muted-foreground">{addon.description}</p>
       </div>
-      <Button variant="secondary" disabled={busy} onClick={onPurchase}>
-        Adicionar · US$ {priceUsd}
-      </Button>
+      <GuardedButton variant="secondary" disabled={busy} onClick={onPurchase} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>Adicionar · US$ {price}</GuardedButton>
     </div>
   );
 }
 
-function PlanCard({
-  plan,
-  isCurrent,
-  busy,
-  onChoose,
-}: {
-  plan: PublicPlan;
-  isCurrent: boolean;
-  busy: boolean;
-  onChoose: () => void;
-}) {
-  return (
-    <div className={`flex flex-col rounded-xl border p-4 ${isCurrent ? "border-primary bg-primary/5" : "border-border"}`}>
-      <p className="text-sm font-semibold text-foreground">{plan.name}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{plan.tagline}</p>
-      <p className="mt-3 text-xl font-semibold tabular-nums text-foreground">{formatPlanPrice(plan)}</p>
-      <Button variant={isCurrent ? "secondary" : "primary"} className="mt-4" disabled={busy || isCurrent} onClick={onChoose}>
-        {isCurrent ? "Plano atual" : "Selecionar"}
-      </Button>
-    </div>
-  );
+function cyclePrice(plan: PublicPlan, interval: BillingInterval): string {
+  if (plan.monthlyPriceUsd === 0) return "Grátis";
+  if (interval === "monthly") return `US$ ${plan.monthlyPriceUsd}/mês`;
+  return "Valor anual não informado pela API";
 }

@@ -312,7 +312,7 @@ export default function CreatePage() {
       const config = readProductionConfig(workspace.id);
       writeProductionConfig(workspace.id, { ...config, blueprints: [...config.blueprints, blueprint] });
 
-      setTankMessage(`"${name}" guardada no tanque — ela entra no sorteio da rotina automática.`);
+      setTankMessage(`"${name}" guardada no planejamento de produção.`);
       setIdeaText("");
       setObjective("");
       setTargetAudience("");
@@ -603,7 +603,7 @@ export default function CreatePage() {
           {tankMessage ? (
             <div className="rounded-xl bg-primary/10 px-4 py-3 text-sm text-primary">
               <p>{tankMessage}</p>
-              <Link href={`/workspaces/${workspace.id}/production?mode=configure`} className="mt-1.5 inline-block font-medium underline">Ver tanque de ideias →</Link>
+              <Link href={`/workspaces/${workspace.id}/production?mode=configure`} className="mt-1.5 inline-block font-medium underline">Ver planejamento →</Link>
             </div>
           ) : null}
 
@@ -612,8 +612,8 @@ export default function CreatePage() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
             <p className="text-xs text-muted-foreground/70">{credits ? `Você tem ${credits.remainingCredits.toLocaleString("pt-BR")} créditos disponíveis.` : "Chama a IA de verdade — gera custo real."}</p>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" size="lg" loading={savingToTank} disabled={!canSaveToTank} onClick={handleSaveToTank} title="Guarda a ideia sem gerar agora — a rotina automática a produz conforme as regras configuradas.">
-                Guardar no tanque
+              <Button variant="secondary" size="lg" loading={savingToTank} disabled={!canSaveToTank} onClick={handleSaveToTank} title="Guarda a ideia sem gerar agora para usar no planejamento de produção.">
+                Guardar no planejamento
               </Button>
               <Button size="xl" loading={status === "generating" || status === "retrying"} disabled={!canGenerate} onClick={handleGenerate}>
                 {status === "retrying" ? "Tentando de novo…" : "Gerar conteúdo"}

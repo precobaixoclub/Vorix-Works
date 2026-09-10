@@ -5,7 +5,7 @@ import { AtSign, Megaphone, Music2, PlaySquare, type LucideIcon } from "lucide-r
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { PageHeader } from "@/components/PageHeader";
+import { SettingsShell } from "@/components/settings/SettingsShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { META_RETURN_PATH_KEY } from "@/app/instagram/callback/page";
@@ -29,8 +29,7 @@ export default function ConnectionsPage() {
   const [feedback, setFeedback] = useState<string | undefined>();
 
   return (
-    <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Conexões" description="Conecte as redes que o Vorix pode utilizar para publicar seus conteúdos." />
+    <SettingsShell active="integrations" title="Integrações" description="Redes de marketing que o Vorix usa para publicar e medir conteúdos. Canais de atendimento ficam em Conversas.">
 
       {feedback ? <Card className="mb-6 border-primary/30 bg-primary/5 p-4"><p className="text-sm text-foreground">{feedback}</p></Card> : null}
 
@@ -40,7 +39,7 @@ export default function ConnectionsPage() {
         <TikTokConnection workspaceId={workspace.id} onFeedback={setFeedback} />
         <YouTubeConnection workspaceId={workspace.id} onFeedback={setFeedback} />
       </div>
-    </main>
+    </SettingsShell>
   );
 }
 
@@ -83,7 +82,7 @@ function TikTokConnection({ workspaceId, onFeedback }: { workspaceId: string; on
       description="Conta autorizada para publicar vídeos e fotos no TikTok."
       configured={oauth?.configured !== false}
       busy={busy}
-      accounts={accounts.map((account) => ({ id: account.credentialReferenceId, label: account.displayName ?? account.openId, detail: account.openId, status: account.status }))}
+      accounts={accounts.map((account) => ({ id: account.credentialReferenceId, label: account.displayName ?? "Conta TikTok", status: account.status }))}
       onConnect={connect}
       onDisconnect={disconnect}
     />
@@ -131,7 +130,7 @@ function MetaConnection({ workspaceId, onFeedback }: { workspaceId: string; onFe
       busy={busy}
       accounts={accounts.map((account) => ({
         id: account.credentialReferenceId,
-        label: account.displayName ?? account.providerSubjectId,
+        label: account.displayName ?? (account.providerId === "instagram" ? "Instagram profissional" : "Página do Facebook"),
         detail: account.providerId === "instagram" ? "Instagram profissional" : "Página do Facebook",
         status: account.status,
       }))}
@@ -226,7 +225,7 @@ function MetaAdsConnection({ workspaceId, onFeedback }: { workspaceId: string; o
               <div key={account.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-foreground">{account.name}</p>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{account.accountId} · {account.currency}{account.businessName ? ` · ${account.businessName}` : ""}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{account.currency}{account.businessName ? ` · ${account.businessName}` : ""}</p>
                 </div>
                 <StatusBadge status={account.accountStatus === 1 ? "connected" : "needs_attention"} />
               </div>
@@ -293,7 +292,7 @@ function YouTubeConnection({ workspaceId, onFeedback }: { workspaceId: string; o
       description="Canal autorizado para publicar Shorts em video."
       configured={oauth?.configured !== false}
       busy={busy}
-      accounts={accounts.map((account) => ({ id: account.credentialReferenceId, label: account.displayName ?? account.channelId, detail: account.channelId, status: account.status }))}
+      accounts={accounts.map((account) => ({ id: account.credentialReferenceId, label: account.displayName ?? "Canal do YouTube", status: account.status }))}
       onConnect={connect}
       onDisconnect={disconnect}
     />

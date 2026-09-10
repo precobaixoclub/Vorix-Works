@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { ChannelIcon } from "@/components/ChannelIcon";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Input, Label, Textarea } from "@/components/Field";
 import { PageHeader } from "@/components/PageHeader";
@@ -31,16 +32,25 @@ import type { YouTubePrivacyStatus } from "@/features/youtube/types";
 import { formatDateTime } from "@/lib/format";
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
+const TIMEZONE_OPTIONS = [
+  "America/Sao_Paulo",
+  "America/Manaus",
+  "America/Fortaleza",
+  "America/Recife",
+  "America/Cuiaba",
+  "America/Rio_Branco",
+  "UTC",
+];
 
 type Platform = "tiktok" | "instagram" | "facebook" | "youtube";
 type MetaPlacement = "feed" | "story";
 type PublishTiming = "now" | "schedule";
 
-const PLATFORMS: readonly { id: Platform; label: string; icon: string }[] = [
-  { id: "instagram", label: "Instagram", icon: "◎" },
-  { id: "facebook", label: "Facebook", icon: "f" },
-  { id: "tiktok", label: "TikTok", icon: "♪" },
-  { id: "youtube", label: "YouTube Shorts", icon: "▶" },
+const PLATFORMS: readonly { id: Platform; label: string }[] = [
+  { id: "instagram", label: "Instagram" },
+  { id: "facebook", label: "Facebook" },
+  { id: "tiktok", label: "TikTok" },
+  { id: "youtube", label: "YouTube Shorts" },
 ];
 
 const META_PLACEMENTS: readonly { id: MetaPlacement; label: string }[] = [
@@ -495,7 +505,14 @@ export default function PublishPage() {
                 </div>
                 <div>
                   <Label htmlFor="publish-timezone">Fuso horário</Label>
-                  <Input id="publish-timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} />
+                  <SearchableCombo
+                    items={TIMEZONE_OPTIONS.map((item) => ({ id: item, label: item }))}
+                    value={timezone}
+                    onValueChange={setTimezone}
+                    placeholder="Selecione o fuso"
+                    searchPlaceholder="Buscar fuso..."
+                    emptyText="Fuso não encontrado."
+                  />
                 </div>
               </div>
             ) : null}
@@ -612,11 +629,13 @@ function SectionTitle({ step, title }: { step: string; title: string }) {
   );
 }
 
-function NetworkChoice({ platform, connected, selected, accountLabel, workspaceId, onToggle }: { platform: { id: Platform; label: string; icon: string }; connected: boolean; selected: boolean; accountLabel?: string; workspaceId: string; onToggle: () => void }) {
+function NetworkChoice({ platform, connected, selected, accountLabel, workspaceId, onToggle }: { platform: { id: Platform; label: string }; connected: boolean; selected: boolean; accountLabel?: string; workspaceId: string; onToggle: () => void }) {
   return (
     <div className={`rounded-xl border p-3 ${selected ? "border-primary bg-primary/10" : "border-border bg-card"}`}>
       <button type="button" onClick={onToggle} disabled={!connected} className="flex w-full items-start gap-3 text-left disabled:cursor-not-allowed">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-card text-sm font-semibold text-foreground">{platform.icon}</span>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-card text-foreground">
+          <ChannelIcon channel={platform.id} label={platform.label} />
+        </span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-foreground">{platform.label}</span>
           <span className="mt-0.5 block truncate text-xs text-muted-foreground">{connected ? accountLabel ?? "Conta conectada" : "Não conectado"}</span>

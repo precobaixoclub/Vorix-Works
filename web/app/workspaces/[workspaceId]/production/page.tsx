@@ -252,7 +252,7 @@ function ProductionModeTabs({ mode, onChange, queueCount, tankCount }: { mode: P
         onClick={() => onChange("configure")}
         className={`min-h-9 rounded-md px-3.5 text-sm font-medium transition-colors ${mode === "configure" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
       >
-        Tanque{tankCount > 0 ? ` (${tankCount})` : ""}
+        Planejamento{tankCount > 0 ? ` (${tankCount})` : ""}
       </button>
     </div>
   );
@@ -535,7 +535,7 @@ export default function ProductionLinePage() {
   async function triggerGeneration(blueprint: ContentBlueprint) {
     const format = blueprint.format;
     if (format === "video") {
-      setGenerateIdeaError("Vídeo ainda não pode ser gerado direto do tanque — abra a ideia e ajuste o formato para imagem ou carrossel.");
+      setGenerateIdeaError("Vídeo ainda não pode ser gerado direto do planejamento — abra a ideia e ajuste o formato para imagem ou carrossel.");
       return;
     }
     setGenerateIdeaError(null);
@@ -629,11 +629,11 @@ export default function ProductionLinePage() {
 
         {/* BLOCO 1 — header: toda ação global da seção mora aqui, na linha do título. */}
         <PageHeader
-          title="Tanque de ideias"
-          description="Estoque de ideias para a rotina sortear — ou gere qualquer uma agora mesmo, sem esperar."
+          title="Planejamento de conteúdo"
+          description="Ideias prontas para entrar na agenda de produção — ou gere qualquer uma agora mesmo."
           actions={
             <>
-              <Button variant="secondary" onClick={() => setRoutineDialogOpen(true)}>Configurar rotina</Button>
+              <Button variant="secondary" onClick={() => setRoutineDialogOpen(true)}>Preferências de produção</Button>
               <Button onClick={addBlueprint}><span aria-hidden="true">+</span> {draftIdea ? "Continuar rascunho" : "Nova ideia"}</Button>
             </>
           }
@@ -741,7 +741,7 @@ export default function ProductionLinePage() {
                   <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                     {debouncedIdeaSearch || ideaStatusFilter !== "all" || formatFilter !== "all"
                       ? "Nenhuma ideia encontrada para esses filtros."
-                      : "O tanque ainda não tem ideias — crie a primeira."}
+                      : "O planejamento ainda não tem ideias — crie a primeira."}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -838,7 +838,7 @@ export default function ProductionLinePage() {
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-foreground">Produção</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Acompanhe a fila e abasteça o tanque de ideias.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Acompanhe a fila e abasteça o planejamento de conteúdo.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Button className="w-full sm:w-auto" onClick={() => { setMode("configure"); addBlueprint(); }}>+ Nova ideia</Button>
@@ -853,8 +853,8 @@ export default function ProductionLinePage() {
 
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
         <span>Prompt: <strong className="font-semibold text-foreground">{hasGuidelines ? "configurado" : "pendente"}</strong></span>
-        <span>Rotina: <strong className="font-semibold text-foreground">{rotinaAtiva ? "ativa" : "pausada"}</strong></span>
-        {rotinaAtiva && nextSlot ? <span className="hidden sm:inline">Próximo: <strong className="font-semibold text-foreground">{nextSlot}</strong></span> : null}
+        <span>Agenda: <strong className="font-semibold text-foreground">{rotinaAtiva ? "planejada" : "sem itens"}</strong></span>
+        {rotinaAtiva && nextSlot ? <span className="hidden sm:inline">Próximo horário planejado: <strong className="font-semibold text-foreground">{nextSlot}</strong></span> : null}
       </div>
 
       <div className="mb-4">
@@ -1111,8 +1111,8 @@ function RoutineConfigDialog({
         <header className="border-b border-border bg-card px-4 py-3 sm:px-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-primary">Rotina automática</p>
-              <h2 className="mt-1 text-lg font-semibold text-foreground">Onde publicar, em quais horários, e o tanque que abastece a agenda</h2>
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">Agenda de produção</p>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">Onde publicar, em quais horários, e quais ideias abastecem a agenda</h2>
             </div>
             <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-xl leading-none text-muted-foreground hover:bg-background hover:text-foreground" aria-label="Fechar">
               x
@@ -1154,10 +1154,10 @@ function RoutineConfigDialog({
         </div>
 
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-4 py-3 sm:px-5">
-          <p className="text-xs text-muted-foreground">{saveFeedback ?? (savedAt ? `Último salvamento: ${savedAt}` : "Revise a rotina e salve quando terminar.")}</p>
+          <p className="text-xs text-muted-foreground">{saveFeedback ?? (savedAt ? `Último salvamento: ${savedAt}` : "Revise as preferências e salve quando terminar.")}</p>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={onClose}>Fechar</Button>
-            <Button onClick={onSave}>{saveFeedback ? "Salvo" : "Salvar rotina"}</Button>
+            <Button onClick={onSave}>{saveFeedback ? "Salvo" : "Salvar preferências"}</Button>
           </div>
         </footer>
       </section>
@@ -1195,9 +1195,9 @@ function IdeaFormDialog({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wide text-primary">{isDraft ? "Nova ideia" : "Editar ideia"}</p>
-              <h2 className="mt-1 text-lg font-semibold text-foreground">{isDraft ? "Abastecer tanque de conteúdo" : displayIdeaName(blueprint)}</h2>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">{isDraft ? "Adicionar ideia ao planejamento" : displayIdeaName(blueprint)}</h2>
               <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                {isDraft ? "Preencha a ideia e o formato: salve no tanque para a rotina sortear depois, ou gere agora mesmo." : "Preencha primeiro a ideia e o formato. Referências e detalhes aparecem separados para não poluir o fluxo."}
+                {isDraft ? "Preencha a ideia e o formato: salve no planejamento para usar depois, ou gere agora mesmo." : "Preencha primeiro a ideia e o formato. Referências e detalhes aparecem separados para não poluir o fluxo."}
               </p>
             </div>
             <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-xl leading-none text-muted-foreground hover:bg-background hover:text-foreground" aria-label="Fechar">
@@ -1216,7 +1216,7 @@ function IdeaFormDialog({
               <p className="text-xs text-muted-foreground">Escolha uma das opções para salvar. O campo obrigatório é a ideia da postagem.</p>
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" onClick={onDiscardDraft}>Descartar</Button>
-                <Button variant="secondary" disabled={!canSaveDraft} onClick={onSaveDraft}>Salvar no tanque</Button>
+                <Button variant="secondary" disabled={!canSaveDraft} onClick={onSaveDraft}>Salvar no planejamento</Button>
                 <Button disabled={!canSaveDraft} onClick={onSaveAndGenerate}>Salvar e gerar agora</Button>
               </div>
             </div>
@@ -1322,13 +1322,13 @@ function SchedulePreview({ rule, ideas }: { rule: PostingRule; ideas: ContentBlu
           {weeklyTotal} post{weeklyTotal === 1 ? "" : "s"} por semana em {selectedChannels || "nenhum canal"}, com dias e horários definidos por formato.
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Depois de gerar, a postagem {approvalText}. Há {availableIdeas} {availableIdeas === 1 ? "ideia disponível" : "ideias disponíveis"} no tanque.
+          Depois de gerar, a postagem {approvalText}. Há {availableIdeas} {availableIdeas === 1 ? "ideia disponível" : "ideias disponíveis"} no planejamento.
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
         <Metric label="Posts/semana" value={weeklyTotal} />
-        <Metric label="No tanque" value={availableIdeas} />
+        <Metric label="No planejamento" value={availableIdeas} />
       </div>
 
       <div className="space-y-2">
@@ -1342,7 +1342,7 @@ function SchedulePreview({ rule, ideas }: { rule: PostingRule; ideas: ContentBlu
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">{formatScheduleLabel(row)}</p>
               <p className={`mt-0.5 text-xs ${hasEnough ? "text-muted-foreground" : "text-warning"}`}>
-                {hasEnough ? `${row.available} ${row.available === 1 ? "ideia pronta" : "ideias prontas"} no tanque.` : `Faltam ideias: ${row.available} no tanque para ${row.quantity} por semana.`}
+                {hasEnough ? `${row.available} ${row.available === 1 ? "ideia pronta" : "ideias prontas"} no planejamento.` : `Faltam ideias: ${row.available} no planejamento para ${row.quantity} por semana.`}
               </p>
             </div>
           );
@@ -1350,7 +1350,7 @@ function SchedulePreview({ rule, ideas }: { rule: PostingRule; ideas: ContentBlu
       </div>
 
       <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
-        Se faltar ideia em algum formato, a linha pausa só aquele formato até o tanque ser abastecido.
+        Se faltar ideia em algum formato, a linha pausa só aquele formato até o planejamento ser abastecido.
       </div>
     </div>
   );
@@ -1412,7 +1412,7 @@ function WeeklyMixEditor({ rule, ideas, onChange }: { rule: PostingRule; ideas: 
                 <span className="mt-2 block text-xs text-muted-foreground">
                   {enabled ? `${scheduledQuantity(item)} por semana · ${formatScheduleLabel(item)}` : "Clique para configurar"}
                 </span>
-                <span className="mt-1 block text-xs text-muted-foreground">{available} no tanque</span>
+                <span className="mt-1 block text-xs text-muted-foreground">{available} no planejamento</span>
               </button>
             );
           })}
@@ -1466,8 +1466,8 @@ function FormatSchedulePanel({
               </span>
             ) : null}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{quantity} por semana · {available} no tanque · {used} usadas</p>
-          {!hasEnough ? <p className="mt-1 text-xs text-warning">Faltam ideias: {available} no tanque para {quantity} por semana.</p> : null}
+          <p className="mt-0.5 text-xs text-muted-foreground">{quantity} por semana · {available} no planejamento · {used} usadas</p>
+          {!hasEnough ? <p className="mt-1 text-xs text-warning">Faltam ideias: {available} no planejamento para {quantity} por semana.</p> : null}
         </div>
         <Button variant="secondary" className="min-h-8 px-3 py-1.5 text-xs" onClick={onDisable}>Desligar tipo</Button>
       </div>
@@ -1729,7 +1729,7 @@ function BlueprintEditor({ workspaceId, blueprint, onChange, onRemove, canRemove
       <section className="rounded-lg border border-border bg-background p-3">
         <div className="mb-3">
           <p className="text-sm font-semibold text-foreground">1. Ideia principal</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">Descreva o que deve ser produzido. Esse texto é o que abastece o tanque.</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">Descreva o que deve ser produzido. Esse texto abastece o planejamento.</p>
         </div>
         <div>
           <Label htmlFor="blueprint-name">Nome da ideia</Label>

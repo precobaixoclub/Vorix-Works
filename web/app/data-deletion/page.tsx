@@ -1,51 +1,45 @@
-import Link from "next/link";
-import { Logo } from "@/components/Logo";
+import type React from "react";
+import { PublicFooter } from "@/components/public/PublicFooter";
+import { PublicHeader } from "@/components/public/PublicHeader";
 
 export const metadata = {
-  title: "Exclusao de Dados | Vorix",
-  description: "Instrucoes para solicitacao de exclusao de dados na Vorix.",
+  title: "Exclusão de Dados | Vorix",
+  description: "Instruções para solicitação de exclusão de dados na Vorix.",
 };
 
 export default function DataDeletionPage() {
   return (
-    <main className="min-h-dvh bg-surface px-3 py-6 text-ink sm:px-6 sm:py-8">
-      <div className="mx-auto max-w-3xl">
-        <header className="mb-10 flex items-center justify-between border-b border-border pb-6">
-          <Link href="/" aria-label="Vorix">
-            <Logo className="h-10 w-auto text-ink" />
-          </Link>
-          <Link href="/privacy" className="text-sm font-medium text-primary hover:underline">
-            Privacidade
-          </Link>
-        </header>
-
-        <article className="space-y-7 text-sm leading-6 text-ink-muted">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Atualizado em 05 de agosto de 2026</p>
-            <h1 className="mt-2 text-3xl font-semibold text-ink">Exclusao de Dados</h1>
-            <p className="mt-4">
-              Para solicitar a exclusao dos seus dados associados a Vorix, envie um email para
-              cleverton@si9sistemas.com.br com o assunto "Exclusao de dados Vorix".
-            </p>
-          </div>
-
-          <section>
-            <h2 className="text-lg font-semibold text-ink">O que informar</h2>
-            <p className="mt-2">
-              Inclua o email da sua conta, o nome do workspace e, se aplicavel, a rede social conectada que deseja remover.
-              Podemos solicitar confirmacao de identidade antes de processar a exclusao.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-lg font-semibold text-ink">Prazo</h2>
-            <p className="mt-2">
-              Depois da confirmacao, removeremos ou anonimizaremos os dados elegiveis dentro de um prazo razoavel, salvo
-              quando a retencao for necessaria por obrigacao legal, seguranca, auditoria ou prevencao de abuso.
-            </p>
-          </section>
-        </article>
-      </div>
+    <main className="min-h-dvh bg-background text-foreground">
+      <PublicHeader />
+      <LegalArticle title="Exclusão de Dados" updated="05 de agosto de 2026">
+        <p>
+          Para solicitar a exclusão dos seus dados associados à Vorix, envie um e-mail para{" "}
+          <a href="mailto:privacidade@vorixworks.com" className="font-medium text-primary hover:underline">privacidade@vorixworks.com</a>{" "}
+          com o assunto "Exclusão de dados Vorix".
+        </p>
+        <Section title="O que informar">Inclua o e-mail da sua conta, o nome do workspace e, se aplicável, a rede social ou canal de atendimento conectado que deseja remover. Podemos solicitar confirmação de identidade antes de processar a exclusão.</Section>
+        <Section title="Prazo">Depois da confirmação, removemos ou anonimizamos os dados elegíveis dentro de um prazo razoável, salvo quando a retenção for necessária por obrigação legal, segurança, auditoria ou prevenção de abuso.</Section>
+      </LegalArticle>
+      <PublicFooter />
     </main>
+  );
+}
+
+function LegalArticle({ title, updated, children }: { title: string; updated: string; children: React.ReactNode }) {
+  return (
+    <article className="mx-auto max-w-3xl px-4 py-14 text-sm leading-6 text-muted-foreground sm:px-6">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Atualizado em {updated}</p>
+      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{title}</h1>
+      <div className="mt-8 space-y-7">{children}</div>
+    </article>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+      <p className="mt-2">{children}</p>
+    </section>
   );
 }

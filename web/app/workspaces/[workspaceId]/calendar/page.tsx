@@ -4,7 +4,9 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { ChannelIcon } from "@/components/ChannelIcon";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { DetailBlock as ModalDetailBlock, DetailModal } from "@/components/DetailModal";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
@@ -264,6 +266,52 @@ function EventDrawer({ workspaceId, event, busy, onClose, onRequestCancel }: { w
   const statusLabel = PUBLICATION_DISPLAY_STATUS_LABEL[event.status];
   const retryHref = publishHref(workspaceId, event.post);
   return (
+    <DetailModal
+      open
+      onOpenChange={(open) => { if (!open) onClose(); }}
+      eyebrow="Conteúdo"
+      title={event.title}
+      description={
+        <div className="flex flex-wrap gap-2">
+          <NetworkBadge network={event.post.network} />
+          <StatusBadge status={event.status} />
+          {event.post.placement === "story" ? <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Story</span> : null}
+        </div>
+      }
+      srDescription="Detalhes da publicação no calendário."
+      widthStorageKey="vorix.calendar.event.width"
+      defaultWidthPercent={58}
+      footer={
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <Link href={contentHref(workspaceId)}><Button className="w-full sm:w-auto">Abrir conteúdo</Button></Link>
+          {event.status === "scheduled" ? <Button variant="secondary" disabled={busy} onClick={onRequestCancel}>Cancelar</Button> : null}
+          {event.status === "scheduled" ? <Link href={retryHref}><Button variant="secondary" className="w-full sm:w-auto">Ajustar no Publicar</Button></Link> : null}
+          {event.status === "published" ? <Link href={`/workspaces/${workspaceId}/analytics`}><Button variant="secondary" className="w-full sm:w-auto">Ver resultado</Button></Link> : null}
+          {event.status === "failed" ? <Link href={retryHref}><Button variant="secondary" className="w-full sm:w-auto">Tentar novamente</Button></Link> : null}
+        </div>
+      }
+    >
+      <div className="space-y-6">
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="flex aspect-[4/3] items-center justify-center bg-muted">
+            <PublicationPreview post={event.post} />
+          </div>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <ModalDetailBlock label="Horário">
+            <p className="text-sm text-foreground">{`${formatDateTime(event.date.toISOString())}${event.post.timezone ? ` (${event.post.timezone})` : ""}`}</p>
+          </ModalDetailBlock>
+          <ModalDetailBlock label="Status">
+            <p className="text-sm text-foreground">{statusLabel}</p>
+          </ModalDetailBlock>
+        </div>
+        <ModalDetailBlock label="Legenda">
+          <p className="whitespace-pre-wrap break-words text-sm text-foreground">{event.post.text || "Sem legenda"}</p>
+        </ModalDetailBlock>
+      </div>
+    </DetailModal>
+  );
+  return (
     <div className="fixed inset-0 z-50">
       <button type="button" className="absolute inset-0 bg-black/55" aria-label="Fechar detalhe" onClick={onClose} />
       <aside className="absolute inset-x-0 bottom-0 max-h-[92dvh] overflow-y-auto rounded-t-2xl border-t border-border bg-card p-4 shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:w-full sm:max-w-xl sm:rounded-none sm:border-l sm:border-t-0 sm:p-6">
@@ -363,7 +411,11 @@ function PublicationPreview({ post }: { post: UnifiedPublication }) {
 }
 
 function NetworkBadge({ network }: { network: PublicationNetwork }) {
-  return <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">{NETWORK_ICON[network]} {NETWORK_LABEL[network]}</span>;
+  return (
+    <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+      <ChannelIcon channel={network} label={NETWORK_LABEL[network]} showLabel />
+    </span>
+  );
 }
 
 function toCalendarEvent(post: UnifiedPublication): CalendarEvent | undefined {

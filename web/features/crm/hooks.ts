@@ -6,6 +6,7 @@ import {
   getDealTimeline,
   getCommercialMetrics,
   getLeadScore,
+  getProposalTimeline,
   listAutomationRules,
   listAutomationRunLogs,
   listCommercialSuggestions,
@@ -71,6 +72,10 @@ export function useProducts(workspaceId: string, params?: { search?: string; act
 
 export function useProposals(workspaceId: string, params?: { dealId?: string; contactId?: string; status?: ProposalStatus }) {
   return useSWR(["proposals", workspaceId, params?.dealId, params?.contactId, params?.status], () => listProposals(workspaceId, params));
+}
+
+export function useProposalTimeline(proposalId: string | undefined, workspaceId: string) {
+  return useSWR(proposalId ? ["proposal-timeline", proposalId, workspaceId] : null, () => getProposalTimeline(proposalId!, workspaceId));
 }
 
 export function useLeadScore(contactId: string | undefined, workspaceId: string) {

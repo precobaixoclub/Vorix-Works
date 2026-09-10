@@ -1,18 +1,13 @@
-import Link from "next/link";
-import { fetchPublicPlans, formatPlanPrice, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
+import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/Button";
-import { Logo } from "@/components/Logo";
 import { PlanSelectLink } from "@/components/PlanSelectLink";
+import { PublicFooter } from "@/components/public/PublicFooter";
+import { PublicHeader } from "@/components/public/PublicHeader";
 import { TrackPageView } from "@/components/TrackPageView";
+import { fetchPublicPlans, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
 
 export const revalidate = 300;
 
-/**
- * Página pública de pricing (Fase 2). SSR — busca `/v1/platform/plans` no server-side com
- * revalidate de 5 minutos (o catálogo muda em release, não em runtime). Sem autenticação, cada
- * card leva para `/signup` (plano começa em FREE — usuário pode fazer upgrade depois em
- * `/workspaces/settings/billing`, ainda a construir).
- */
 export default async function PricingPage() {
   let plans: readonly PublicPlan[] = [];
   let loadError: string | undefined;
@@ -23,58 +18,31 @@ export default async function PricingPage() {
   }
 
   return (
-    <main className="flex min-h-dvh flex-col bg-surface">
+    <main className="min-h-dvh bg-background text-foreground">
       <TrackPageView eventName="pricing_view" />
-      <header className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-3 py-4 sm:px-6 sm:py-6">
-        <Link href="/">
-          <Logo className="h-12 w-auto text-ink" />
-        </Link>
-        <div className="flex items-center gap-2">
-          <Link href="/login">
-            <Button variant="secondary">Entrar</Button>
-          </Link>
-          <Link href="/signup">
-            <Button>Criar conta grátis</Button>
-          </Link>
-        </div>
-      </header>
+      <PublicHeader />
 
-      <section className="mx-auto w-full max-w-6xl px-3 pb-6 pt-10 text-center sm:px-6 sm:pt-12">
-        <span className="rounded-full bg-accent-soft px-3 py-1 text-xs font-medium text-primary">Planos e preços</span>
-        <h1 className="mt-4 text-balance text-4xl font-semibold tracking-tight text-ink sm:text-5xl">
-          Escolha o plano que combina com seu volume.
-        </h1>
-        <p className="mx-auto mt-4 max-w-2xl text-balance text-base text-ink-muted sm:text-lg">
-          Comece grátis com 50 créditos de IA por mês e evolua quando precisar de mais volume, publicações ou workspaces.
-        </p>
+      <section className="mx-auto max-w-7xl px-4 py-16 text-center sm:px-6">
+        <p className="text-sm font-semibold uppercase tracking-wide text-primary">Planos reais</p>
+        <h1 className="mx-auto mt-4 max-w-3xl text-balance text-4xl font-semibold tracking-tight sm:text-5xl">Escolha pelo volume que sua operação usa hoje.</h1>
+        <p className="mx-auto mt-4 max-w-2xl text-balance text-muted-foreground">A API pública informa preço mensal, créditos, publicações e principais limites. Sem anual decorativo enquanto o catálogo não entregar ciclo anual.</p>
       </section>
 
-      <section className="mx-auto grid w-full max-w-6xl gap-4 px-3 pb-12 sm:px-6 md:grid-cols-2 lg:grid-cols-4">
+      <section className="mx-auto grid max-w-7xl gap-4 px-4 pb-16 sm:px-6 md:grid-cols-2 xl:grid-cols-4">
         {loadError ? (
-          <div className="col-span-full rounded-xl border border-red-300 bg-red-50 p-6 text-center text-sm text-red-700">
-            {loadError}
-          </div>
-        ) : (
-          plans.map((plan) => <PlanCard key={plan.code} plan={plan} />)
-        )}
+          <div className="col-span-full rounded-xl border border-destructive/40 bg-destructive/10 p-6 text-center text-sm text-destructive">{loadError}</div>
+        ) : plans.map((plan) => <PlanCard key={plan.code} plan={plan} />)}
       </section>
 
-      <section className="mx-auto w-full max-w-4xl px-3 pb-16 text-center sm:px-6">
-        <div className="rounded-2xl border border-border bg-surface-raised p-5 sm:p-8">
-          <p className="text-sm font-semibold uppercase tracking-wide text-ink-muted">Volume corporativo</p>
-          <h2 className="mt-2 text-2xl font-semibold text-ink">Precisa de mais?</h2>
-          <p className="mt-2 text-sm text-ink-muted">
-            Cotas negociadas, SLA contábil e jurídico, onboarding assistido e contrato empresarial.
-          </p>
-          <a href="mailto:comercial@vorixworks.com" className="mt-4 inline-block">
-            <Button variant="secondary">Falar com o comercial</Button>
-          </a>
+      <section className="mx-auto max-w-5xl px-4 pb-16 sm:px-6">
+        <div className="rounded-xl border border-border bg-card p-6 text-center">
+          <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Comparação simples</p>
+          <h2 className="mt-2 text-2xl font-semibold">Os limites importantes, sem tabela infinita.</h2>
+          <p className="mx-auto mt-2 max-w-2xl text-sm text-muted-foreground">Compare créditos, publicações e recursos principais. Billing detalhado, add-ons e downgrade seguro ficam dentro do Vorix, em Plano e cobrança.</p>
         </div>
       </section>
 
-      <footer className="border-t border-border px-3 py-5 text-center text-xs text-ink-faint sm:px-6 sm:py-6">
-        © {new Date().getFullYear()} Vorix. Todos os direitos reservados.
-      </footer>
+      <PublicFooter />
     </main>
   );
 }
@@ -82,40 +50,19 @@ export default async function PricingPage() {
 function PlanCard({ plan }: { plan: PublicPlan }) {
   const isFree = plan.monthlyPriceUsd === 0;
   return (
-    <div
-      className={
-        "flex flex-col rounded-xl border p-6 " +
-        (plan.highlighted
-          ? "border-primary bg-accent-soft/40 shadow-md"
-          : "border-border bg-surface-raised")
-      }
-    >
-      {plan.highlighted ? (
-        <span className="mb-2 inline-block self-start rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-          Mais popular
-        </span>
-      ) : null}
-      <div>
-        <h3 className="text-lg font-semibold text-ink">{plan.name}</h3>
-        <p className="mt-1 text-xs text-ink-muted">{plan.tagline}</p>
-      </div>
-      <div className="mt-4">
-        <p className="text-3xl font-semibold text-ink">
-          {formatPlanPrice(plan)}
-          {!isFree ? <span className="ml-1 text-sm font-normal text-ink-muted">/mês</span> : null}
-        </p>
-        <p className="mt-1 text-xs text-ink-muted">{formatCreditsQuota(plan.monthlyCreditsQuota)} · {plan.monthlyPublicationsQuota} publicações</p>
-      </div>
-      <ul className="mt-4 flex flex-1 flex-col gap-2 text-sm text-ink">
-        {plan.features.map((feature) => (
-          <li key={feature} className="flex items-start gap-2">
-            <span className="mt-0.5 text-primary">✓</span>
-            <span>{feature}</span>
-          </li>
+    <div className={`flex flex-col rounded-xl border p-6 ${plan.highlighted ? "border-primary bg-primary/10 shadow-lg" : "border-border bg-card"}`}>
+      {plan.highlighted ? <span className="mb-3 w-fit rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">Mais escolhido</span> : null}
+      <h2 className="text-lg font-semibold">{plan.name}</h2>
+      <p className="mt-1 min-h-10 text-sm text-muted-foreground">{plan.tagline}</p>
+      <p className="mt-5 text-3xl font-semibold tracking-tight">{isFree ? "Grátis" : `US$ ${plan.monthlyPriceUsd}`}{!isFree ? <span className="text-sm font-normal text-muted-foreground">/mês</span> : null}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{formatCreditsQuota(plan.monthlyCreditsQuota)} · {plan.monthlyPublicationsQuota.toLocaleString("pt-BR")} publicações</p>
+      <ul className="mt-6 flex flex-1 flex-col gap-3 text-sm text-muted-foreground">
+        {plan.features.slice(0, 5).map((feature) => (
+          <li key={feature} className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />{feature}</li>
         ))}
       </ul>
       <PlanSelectLink planCode={plan.code} className="mt-6" variant={plan.highlighted ? "primary" : "secondary"}>
-        {isFree ? "Começar grátis" : `Começar com ${plan.name}`}
+        {isFree ? "Começar grátis" : `Selecionar ${plan.name}`}
       </PlanSelectLink>
     </div>
   );

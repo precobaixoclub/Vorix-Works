@@ -205,12 +205,28 @@ function ConnectionRow({
         {connection.status === "requires_repair" || connection.status === "logged_out" || connection.status === "error" ? (
           <p className="text-sm text-danger">WhatsApp precisa ser conectado novamente. Escaneie um novo QR Code.</p>
         ) : null}
-        {qrCode ? (
-          <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-            Codigo de pareamento: <span className="font-mono">{qrCode}</span>
-          </div>
-        ) : null}
+        {qrCode ? <QrPreview value={qrCode} /> : null}
       </CardContent>
     </Card>
+  );
+}
+
+// Achado real em produção: o QR chega como data URI de imagem (`data:image/png;base64,...`), não
+// como texto pra copiar — renderizar como `<span>{qrCode}</span>` mostrava só o base64 bruto,
+// impossível de escanear. Mesmo padrão já usado em
+// app/workspaces/[workspaceId]/onboarding/page.tsx (`QrPreview`).
+function QrPreview({ value }: { value: string }) {
+  const looksLikeImage = value.startsWith("data:image") || value.startsWith("http://") || value.startsWith("https://");
+  return (
+    <div className="rounded-xl border border-border bg-background p-4 text-center">
+      {looksLikeImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={value} alt="QR Code para conectar WhatsApp" className="mx-auto h-56 w-56 rounded-lg bg-white object-contain p-2" />
+      ) : (
+        <div className="mx-auto flex min-h-40 max-w-sm items-center justify-center rounded-lg border border-dashed border-border bg-muted/35 px-4 py-6 text-sm text-muted-foreground">
+          Código de pareamento recebido. Copie pelo fluxo do WhatsApp quando solicitado.
+        </div>
+      )}
+    </div>
   );
 }

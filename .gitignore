@@ -2,6 +2,9 @@ node_modules/
 dist/
 /coverage/
 .next/
+web/test-results/
+web/playwright-report/
+web/blob-report/
 web/next-env.d.ts
 *.tsbuildinfo
 /artifacts/

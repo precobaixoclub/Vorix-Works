@@ -204,6 +204,42 @@ function captureSpikeFixture(dir: string | undefined, label: string, raw: unknow
   }
 }
 
+/**
+ * Diagnóstico TEMPORÁRIO (investigação do bug de identidade canônica de conversa — grupos e
+ * inbound/outbound duplicados). Loga só a FORMA do payload bruto: nome dos campos, tipos, e para
+ * strings que parecem JID (contém "@") só o comprimento + sufixo depois do "@" (ex.: "@g.us",
+ * "@s.whatsapp.net", "@lid") — nunca o número/telefone real. Remover depois que a causa raiz for
+ * confirmada e o mapper corrigido.
+ */
+function logRawEventShapeForDiagnosis(raw: unknown): void {
+  try {
+    const describe = (obj: unknown, path: string, depth: number): string[] => {
+      if (depth > 4 || obj === null || typeof obj !== "object") return [];
+      const lines: string[] = [];
+      for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+        const p = `${path}.${k}`;
+        if (typeof v === "string") {
+          const at = v.indexOf("@");
+          lines.push(at >= 0 ? `${p}=string(len=${v.length}, suffix=${v.slice(at)})` : `${p}=string(len=${v.length})`);
+        } else if (typeof v === "boolean" || typeof v === "number") {
+          lines.push(`${p}=${typeof v}(${v})`);
+        } else if (v === null || v === undefined) {
+          lines.push(`${p}=${v}`);
+        } else if (Array.isArray(v)) {
+          lines.push(`${p}=array(len=${v.length})`);
+        } else if (typeof v === "object") {
+          lines.push(`${p}=object`);
+          lines.push(...describe(v, p, depth + 1));
+        }
+      }
+      return lines;
+    };
+    console.log("[DIAG-RAW-SHAPE]", JSON.stringify(describe(raw, "raw", 0)));
+  } catch (error) {
+    console.error("[inbox-worker] diag log falhou:", error instanceof Error ? error.message : error);
+  }
+}
+
 function attemptCountOf(msg: ConsumeMessage): number {
   const raw = msg.properties.headers?.["x-attempt"];
   return typeof raw === "number" ? raw : 0;
@@ -509,6 +545,7 @@ async function main(): Promise<void> {
   // Vorix. Nenhum outro consumer conhece o formato bruto.
   await consumeQueue(channel, WUZAPI_RAW_QUEUE, async (content) => {
     const raw = JSON.parse(content.toString("utf8")) as RawWuzApiEvent;
+    logRawEventShapeForDiagnosis(raw);
     const mapped = mapWuzApiEvent(raw);
     captureSpikeFixture(spikeFixturesDir, mapped ? `recognized-${mapped.type}` : "unrecognized", raw, mapped);
     if (!mapped) {

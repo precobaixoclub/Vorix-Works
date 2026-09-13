@@ -5,6 +5,7 @@ import type { InboxAiResponderPort } from "../ports/inbox-ai-responder.port.js";
 import type { InboxContactRepositoryPort } from "../ports/inbox-contact-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../ports/inbox-conversation-event-repository.port.js";
 import type { InboxConversationListFilter, InboxConversationListItem, InboxConversationRepositoryPort } from "../ports/inbox-conversation-repository.port.js";
+import type { InboxMediaStoragePort } from "../ports/inbox-media-storage.port.js";
 import type { InboxMessageRepositoryPort } from "../ports/inbox-message-repository.port.js";
 import type { InboxMetricsRecorder } from "../ports/inbox-metrics.port.js";
 import type { MessagingConnectionRepositoryPort } from "../ports/messaging-connection-repository.port.js";
@@ -60,6 +61,11 @@ export type InboxUseCaseDeps = {
    */
   outboundSendPaused?: boolean;
   idGenerator?: () => string;
+  /** Redesign operacional (mídia real) — `undefined` = storage de mídia de conversas não
+   * configurado neste processo; `downloadInboundMediaAndAttach` vira no-op silencioso nesse caso
+   * (a Inbox continua 100% funcional, só sem baixar o arquivo — mensagem de mídia fica com `type`
+   * correto e `mediaStorageRef` vazio, o frontend cai no fallback de ícone+rótulo). */
+  inboxMediaStorage?: InboxMediaStoragePort;
   /** Trial + Product Analytics — integração MÍNIMA (`first_channel_connected`,
    * `first_conversation_received`, `first_conversation_replied`). Nenhuma regra de Conversas
    * muda por causa disto. */
@@ -486,6 +492,61 @@ export async function registerInboundMessage(deps: InboxUseCaseDeps, input: Regi
     }
   }
   return { contact, conversation, message, wasCreated };
+}
+
+export type DownloadInboundMediaInput = {
+  tenantId: string;
+  workspaceId: string;
+  connectionId: string;
+  messageId: string;
+  type: Exclude<InboxMessage["type"], "text" | "location" | "contact" | "other">;
+  mediaUrl: string;
+  mimeType?: string;
+  mediaKey?: string;
+  fileSha256?: string;
+  fileEncSha256?: string;
+  fileName?: string;
+  fileSizeBytes?: number;
+  durationSeconds?: number;
+  thumbnailBase64?: string;
+};
+
+/**
+ * Redesign operacional (mídia real) — best-effort, sempre chamado FORA do caminho crítico do ack
+ * (nunca `await`-ado pelo worker antes de confirmar a mensagem no RabbitMQ; ver
+ * `inbox-worker.ts`). A mensagem já existe com `type` correto e `mediaStorageRef` vazio quando
+ * isto roda — sucesso aqui só ENRIQUECE a mensagem (`attachMedia`), nunca é pré-requisito para ela
+ * aparecer na tela. Qualquer falha (provider sem suporte, sessão perdida, storage indisponível,
+ * payload sem os campos esperados) é tratada como "mídia indisponível", nunca lançada — quem
+ * chama já espera isso e só loga.
+ */
+export async function downloadInboundMediaAndAttach(deps: InboxUseCaseDeps, input: DownloadInboundMediaInput): Promise<{ attached: boolean }> {
+  if (!deps.inboxMediaStorage || !deps.provider.downloadMedia) return { attached: false };
+  const connection = await deps.connectionRepository.getById(input.connectionId);
+  if (!connection?.externalSessionId) return { attached: false };
+
+  const downloaded = await deps.provider.downloadMedia({
+    externalSessionId: connection.externalSessionId,
+    type: input.type,
+    ref: { url: input.mediaUrl, mediaKey: input.mediaKey, mimeType: input.mimeType, fileSha256: input.fileSha256, fileSizeBytes: input.fileSizeBytes, fileEncSha256: input.fileEncSha256 },
+  });
+  if (!downloaded) return { attached: false };
+
+  const objectKey = `${input.tenantId}/${input.workspaceId}/${input.messageId}`;
+  await deps.inboxMediaStorage.put({ key: objectKey, body: downloaded.body, contentType: downloaded.mimeType ?? input.mimeType ?? "application/octet-stream" });
+
+  const metadata: Record<string, unknown> = {};
+  if (input.fileName) metadata.fileName = input.fileName;
+  if (input.fileSizeBytes) metadata.fileSizeBytes = input.fileSizeBytes;
+  if (input.durationSeconds) metadata.durationSeconds = input.durationSeconds;
+  if (input.thumbnailBase64) metadata.thumbnailDataUrl = `data:image/jpeg;base64,${input.thumbnailBase64}`;
+
+  await deps.messageRepository.attachMedia(input.messageId, {
+    mediaStorageRef: { provider: "inbox-media", objectKey, metadata: { tenantId: input.tenantId } },
+    mimeType: downloaded.mimeType ?? input.mimeType,
+    metadata,
+  });
+  return { attached: true };
 }
 
 export type ApplyMessageStatusChangedInput = { connectionId: string; externalMessageId: string; status: InboxMessage["status"]; occurredAt: string };

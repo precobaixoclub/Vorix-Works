@@ -84,4 +84,18 @@ export type MessagingProvider = {
   sendAudio(input: { externalSessionId: string; to: string; mediaUrl: string }): Promise<MessagingSendResult>;
   sendVideo(input: { externalSessionId: string; to: string; mediaUrl: string; caption?: string }): Promise<MessagingSendResult>;
   sendDocument(input: { externalSessionId: string; to: string; mediaUrl: string; fileName: string }): Promise<MessagingSendResult>;
+
+  /**
+   * Redesign operacional (mídia real) — baixa e descriptografa mídia RECEBIDA a partir das
+   * referências que o próprio evento inbound trouxe (ver `InboundMessageReceived` em
+   * `inbox-events.ts`). Opcional: um provider sem suporte a isto (ex.: `FakeMessagingProvider`,
+   * um futuro canal stateless) simplesmente não preenche este método — `registerInboundMessage`
+   * trata a ausência como "mídia não pôde ser baixada", nunca como erro fatal. Nunca expor
+   * `mediaKey`/hashes fora desta chamada — são material de descriptografia de uso único.
+   */
+  downloadMedia?(input: {
+    externalSessionId: string;
+    type: Exclude<MessagingMediaKind, "text">;
+    ref: { url: string; mediaKey?: string; mimeType?: string; fileSha256?: string; fileSizeBytes?: number; fileEncSha256?: string };
+  }): Promise<{ body: Buffer; mimeType?: string } | undefined>;
 };

@@ -173,6 +173,10 @@ import type { ObjectStoragePort } from "../../../application/ports/object-storag
 import { S3ObjectStorage } from "../../../infrastructure/storage/s3-object-storage.js";
 import { LocalObjectStorage } from "../../../infrastructure/storage/local-object-storage.js";
 import { DisabledObjectStorage } from "../../../infrastructure/storage/disabled-object-storage.js";
+import type { InboxMediaStoragePort } from "../../../application/ports/inbox-media-storage.port.js";
+import { S3InboxMediaStorage } from "../../../infrastructure/storage/s3-inbox-media-storage.js";
+import { LocalInboxMediaStorage } from "../../../infrastructure/storage/local-inbox-media-storage.js";
+import { DisabledInboxMediaStorage } from "../../../infrastructure/storage/disabled-inbox-media-storage.js";
 import { MetaPagesSandboxProvider } from "../../../infrastructure/publication/meta-pages-sandbox-provider.js";
 import { TikTokContentPostingProvider } from "../../../infrastructure/publication/tiktok-content-posting-provider.js";
 import { TikTokOAuthService, TIKTOK_REQUIRED_SCOPES } from "../../../infrastructure/publication/tiktok-oauth-service.js";
@@ -365,6 +369,9 @@ export type ApiContainer = {
    * cliente SSE (`.start()` chamado pela própria rota) — nunca bloqueia o boot do container. */
   inboxRealtimeSubscriber?: InboxRealtimeSubscriber;
   objectStorage: ObjectStoragePort;
+  /** Redesign operacional (Conversas) — storage PRIVADO de mídia recebida via WhatsApp, distinto
+   * de `objectStorage` acima (público). Ver `inbox-media-storage.port.ts`. */
+  inboxMediaStorage: InboxMediaStoragePort;
   /** Remoção de fundo de logo via IA (`POST /v1/images/edits`, `background: "transparent"`) —
    * ver `openai-background-removal.ts`. Nunca registra Asset por conta própria; a rota exige
    * confirmação explícita do usuário antes de salvar o resultado como logo oficial. */
@@ -593,6 +600,23 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       });
     }
     return new DisabledObjectStorage();
+  })();
+  const inboxMediaStorage: InboxMediaStoragePort = (() => {
+    const ims = config?.inboxMediaStorage;
+    if (ims?.enabled && ims.driver === "local" && ims.localDir) {
+      return new LocalInboxMediaStorage({ rootDir: ims.localDir });
+    }
+    if (ims?.enabled && ims.bucket && ims.accessKeyId && ims.secretAccessKey) {
+      return new S3InboxMediaStorage({
+        endpoint: ims.endpoint,
+        region: ims.region,
+        bucket: ims.bucket,
+        accessKeyId: ims.accessKeyId,
+        secretAccessKey: ims.secretAccessKey,
+        forcePathStyle: ims.forcePathStyle,
+      });
+    }
+    return new DisabledInboxMediaStorage();
   })();
   const productionGuard = new ProductionGuard(
     {
@@ -1481,6 +1505,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       metaAdsOAuthService,
       instagramDmAiReplyProvider,
       objectStorage,
+      inboxMediaStorage,
       removeImageBackground,
       publicationQueue,
       clock,
@@ -1572,6 +1597,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     metaAdsOAuthService,
     instagramDmAiReplyProvider,
     objectStorage,
+    inboxMediaStorage,
     removeImageBackground,
     publicationQueue,
     clock,

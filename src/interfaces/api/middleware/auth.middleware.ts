@@ -15,6 +15,17 @@ function isInboxStreamRoute(url: string): boolean {
   return path === INBOX_STREAM_ROUTE_PREFIX || path.startsWith(`${INBOX_STREAM_ROUTE_PREFIX}?`);
 }
 
+/** Redesign operacional (mídia real) — mesmo racional do stream: `<img>`/`<audio>`/`<video>` não
+ * enviam header `Authorization`, então `GET /v1/inbox/media/:id` também aceita credential via
+ * querystring (`media_token`, `purpose: "inbox_media"`, emitido por `POST /v1/inbox/media-token`). */
+const INBOX_MEDIA_ROUTE_PREFIX = "/v1/inbox/media/";
+
+function inboxMediaRouteMessageId(url: string): string | undefined {
+  const path = url.split("?")[0] ?? url;
+  if (!path.startsWith(INBOX_MEDIA_ROUTE_PREFIX)) return undefined;
+  return decodeURIComponent(path.slice(INBOX_MEDIA_ROUTE_PREFIX.length)) || undefined;
+}
+
 /**
  * Decide se um principal já verificado (assinatura/expiração OK) pode de fato autenticar ESTA
  * requisição, dado de onde o token veio. Extraído como função pura e exportado especificamente
@@ -26,12 +37,21 @@ function isInboxStreamRoute(url: string): boolean {
  * 1. Um principal com `purpose === "inbox_stream"` só autentica a rota de stream, e só quando o
  *    token chegou pela querystring (`stream_token`) — nunca via header `Authorization`, mesmo que
  *    alguém tente reusá-lo lá.
+ * 1b. Um principal com `purpose === "inbox_media"` só autentica `GET /v1/inbox/media/:id`, só via
+ *     querystring (`media_token`), E só para o `:id` exato gravado no próprio token
+ *     (`principal.messageId`) — um token minted para a mídia da mensagem A nunca autentica a
+ *     mensagem B, mesmo dentro da janela de validade.
  * 2. Um principal SEM `purpose` (access token normal) só autentica quando chegou pelo header — a
  *    querystring nunca mais aceita o access token normal, em rota nenhuma.
  */
-export function isPrincipalAuthorizedForRequest(principal: AuthPrincipal, context: { isStreamRoute: boolean; tokenSource: "header" | "query" }): boolean {
-  const isStreamPurpose = principal.purpose === "inbox_stream";
-  if (isStreamPurpose) return context.isStreamRoute && context.tokenSource === "query";
+export function isPrincipalAuthorizedForRequest(
+  principal: AuthPrincipal,
+  context: { isStreamRoute: boolean; mediaRouteMessageId?: string; tokenSource: "header" | "query" },
+): boolean {
+  if (principal.purpose === "inbox_stream") return context.isStreamRoute && context.tokenSource === "query";
+  if (principal.purpose === "inbox_media") {
+    return context.tokenSource === "query" && context.mediaRouteMessageId !== undefined && principal.messageId === context.mediaRouteMessageId;
+  }
   return context.tokenSource === "header";
 }
 
@@ -48,10 +68,12 @@ export function registerAuthMiddleware(app: FastifyInstance, authPort: AuthPort)
     const headerToken = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined;
 
     const isStreamRoute = isInboxStreamRoute(request.url);
+    const mediaRouteMessageId = inboxMediaRouteMessageId(request.url);
     const query = request.query as Record<string, unknown> | undefined;
     const streamQueryToken = isStreamRoute && typeof query?.stream_token === "string" ? query.stream_token : undefined;
+    const mediaQueryToken = mediaRouteMessageId !== undefined && typeof query?.media_token === "string" ? query.media_token : undefined;
 
-    const token = headerToken ?? streamQueryToken;
+    const token = headerToken ?? streamQueryToken ?? mediaQueryToken;
     const tokenSource: "header" | "query" = headerToken ? "header" : "query";
 
     const result = await authPort.verifyToken(token);
@@ -64,7 +86,7 @@ export function registerAuthMiddleware(app: FastifyInstance, authPort: AuthPort)
     // extraído — com `token === undefined`, não há "fonte" nenhuma pra restringir (ex.: dublês de
     // teste de `AuthPort` que autenticam sem token nenhum; um `JwtAuthAdapter` real já teria
     // recusado com "missing_token" antes de chegar aqui, então isto nunca acontece em produção).
-    if (token !== undefined && !isPrincipalAuthorizedForRequest(result.principal, { isStreamRoute, tokenSource })) {
+    if (token !== undefined && !isPrincipalAuthorizedForRequest(result.principal, { isStreamRoute, mediaRouteMessageId, tokenSource })) {
       // Mesmo motivo de falha que "token inválido" pro chamador — nunca vazamos QUAL regra
       // específica de escopo barrou (ex.: "purpose errado"), só que a autenticação não vale aqui.
       request.zunoContext.authFailureReason = "invalid_token";

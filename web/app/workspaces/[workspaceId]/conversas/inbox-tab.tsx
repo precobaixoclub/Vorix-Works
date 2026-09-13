@@ -47,6 +47,7 @@ import {
 import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime } from "@/features/inbox/hooks";
 import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxTenantMember } from "@/features/inbox/types";
 import { CrmContextSection } from "./crm-panel";
+import { MessageMedia } from "./message-media";
 
 const QUICK_FILTERS: { value: InboxConversationFilter; label: string }[] = [
   { value: "all", label: "Todos" },
@@ -127,11 +128,16 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
   }
 
   return (
-    <div className="relative min-h-[620px] overflow-hidden rounded-xl border border-border bg-card shadow-sm md:h-[calc(100dvh-13rem)]">
+    <div className="relative flex h-full min-w-0 flex-col overflow-hidden bg-card">
       <div
         className={cn(
-          "grid h-full min-h-0",
-          contextOpen && contextPinned ? "xl:grid-cols-[320px_minmax(0,1fr)_380px]" : "md:grid-cols-[320px_minmax(0,1fr)]",
+          // `grid-rows-[minmax(0,1fr)]` é o que impede o CSS Grid de fazer a única linha (mobile:
+          // 1 coluna implícita; desktop: linha única atrás das colunas explícitas) crescer para
+          // caber o conteúdo (`grid-auto-rows` padrão é `auto` = tamanho do conteúdo, ignorando
+          // `h-full`/`min-h-0` do item) — sem isso, uma conversa longa empurra a linha (e a página
+          // inteira) além da viewport no mobile, mesmo com overflow-y-auto interno correto.
+          "grid h-full min-h-0 grid-rows-[minmax(0,1fr)]",
+          contextOpen && contextPinned ? "xl:grid-cols-[320px_minmax(0,1fr)_384px]" : "md:grid-cols-[320px_minmax(0,1fr)]",
         )}
       >
         <div className={cn("min-h-0 border-border md:block md:border-r", mobileView === "list" ? "block" : "hidden")}>
@@ -190,7 +196,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
 
       {contextOpen && selectedConversation && !contextPinned ? (
         <div className="absolute inset-0 z-20 flex justify-end bg-background/55 backdrop-blur-[2px]">
-          <div className="h-full w-full border-l border-border bg-card shadow-2xl sm:w-[390px]">
+          <div className="h-full w-full border-l border-border bg-card shadow-2xl sm:w-96">
             <ContactContextPane
               workspaceId={workspaceId}
               conversation={selectedConversation}
@@ -371,7 +377,7 @@ function ConversationListItem({
           <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{timeLabel(conversation.lastMessageAt)}</span>
         </div>
         <p className="mt-0.5 truncate text-xs text-muted-foreground">WhatsApp · {conversation.contactPhone}</p>
-        <p className="mt-1 line-clamp-1 text-xs text-muted-foreground/80">{conversation.lastMessageAt ? "Última interação registrada." : "Sem mensagens recentes."}</p>
+        <p className="mt-1 line-clamp-1 text-xs text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
         <div className="mt-2 flex min-w-0 items-center gap-1.5">
           <StatusDot status={conversation.status} />
           <span className="truncate text-[11px] text-muted-foreground">{agentLabel(conversation.assignedUserId, currentUserId, members)}</span>
@@ -490,7 +496,7 @@ function ConversationTimelinePane({
             </p>
           </div>
 
-          <div className="hidden items-center gap-1.5 lg:flex">
+          <div className="hidden items-center gap-1.5 md:flex">
             {!isAssignedToMe && !isResolved ? (
               <GuardedButton
                 size="sm"
@@ -551,7 +557,7 @@ function ConversationTimelinePane({
           ) : (
             timeline.map((entry) =>
               entry.kind === "message" ? (
-                <MessageBubble key={`msg-${entry.message.id}`} message={entry.message} onRetry={(body) => handleSend(body)} retrying={sending} />
+                <MessageBubble key={`msg-${entry.message.id}`} workspaceId={workspaceId} message={entry.message} onRetry={(body) => handleSend(body)} retrying={sending} />
               ) : (
                 <EventPill key={`evt-${entry.event.id}`} event={entry.event} currentUserId={currentUserId} members={members} />
               ),
@@ -712,10 +718,11 @@ function ConversationActionsMenu({
   );
 }
 
-function MessageBubble({ message, onRetry, retrying }: { message: InboxMessage; onRetry: (body: string) => void; retrying: boolean }) {
+function MessageBubble({ workspaceId, message, onRetry, retrying }: { workspaceId: string; message: InboxMessage; onRetry: (body: string) => void; retrying: boolean }) {
   const isOutbound = message.direction === "outbound";
   const senderLabel = message.sentByAi ? "Vorix IA" : message.sentByAutomation ? "Automação" : isOutbound ? "Atendente" : undefined;
   const body = message.body?.trim();
+  const isMedia = message.type === "image" || message.type === "video" || message.type === "audio" || message.type === "document";
   const failed = isOutbound && message.status === "failed";
 
   return (
@@ -731,7 +738,8 @@ function MessageBubble({ message, onRetry, retrying }: { message: InboxMessage; 
         )}
       >
         {senderLabel ? <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">{senderLabel}</p> : null}
-        {body ? <p className="whitespace-pre-wrap break-words">{body}</p> : <MessageMediaPreview message={message} />}
+        {isMedia ? <MessageMedia workspaceId={workspaceId} message={message} /> : null}
+        {body ? <p className={cn("whitespace-pre-wrap break-words", isMedia && "mt-1.5")}>{body}</p> : null}
         <div className="mt-1.5 flex flex-wrap items-center justify-end gap-2 text-[10px] opacity-70">
           <span className="tabular-nums">{timeLabel(message.sentAt ?? message.createdAt)}</span>
           {isOutbound ? <span>{messageStatusLabel(message.status)}</span> : null}
@@ -744,16 +752,6 @@ function MessageBubble({ message, onRetry, retrying }: { message: InboxMessage; 
           </div>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-function MessageMediaPreview({ message }: { message: InboxMessage }) {
-  const Icon = mediaIconFor(message.type);
-  return (
-    <div className="flex items-center gap-2 rounded-lg bg-muted/70 px-3 py-2 text-muted-foreground">
-      <Icon className="h-4 w-4 shrink-0" />
-      <span className="text-xs">{mediaLabelFor(message.type)}</span>
     </div>
   );
 }
@@ -961,7 +959,7 @@ function eventLabel(event: InboxConversationEvent, currentUserId: string | undef
   }
 }
 
-function mediaIconFor(type: InboxMessage["type"]) {
+export function mediaIconFor(type: InboxMessage["type"]) {
   switch (type) {
     case "image": return ImageIcon;
     case "video": return Video;
@@ -971,7 +969,15 @@ function mediaIconFor(type: InboxMessage["type"]) {
   }
 }
 
-function mediaLabelFor(type: InboxMessage["type"]): string {
+function lastMessagePreviewLabel(conversation: InboxConversation): string {
+  const preview = conversation.lastMessagePreview;
+  if (!preview) return conversation.lastMessageAt ? "Última interação registrada." : "Sem mensagens recentes.";
+  const prefix = preview.direction === "outbound" ? "Você: " : "";
+  if (preview.type === "text") return `${prefix}${preview.body?.trim() || "Mensagem sem texto"}`;
+  return `${prefix}${mediaLabelFor(preview.type)}`;
+}
+
+export function mediaLabelFor(type: InboxMessage["type"]): string {
   switch (type) {
     case "image": return "Imagem recebida";
     case "video": return "Video recebido";

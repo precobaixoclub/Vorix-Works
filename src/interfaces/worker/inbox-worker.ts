@@ -8,6 +8,10 @@ import { buildPlatformRepositories } from "../../infrastructure/storage/build-pl
 import { FakeMessagingProvider } from "../../infrastructure/messaging/fake-messaging-provider.js";
 import { WuzApiClient } from "../../infrastructure/messaging/wuzapi/wuzapi-client.js";
 import { WuzApiMessagingProvider } from "../../infrastructure/messaging/wuzapi/wuzapi-messaging-provider.js";
+import type { InboxMediaStoragePort } from "../../application/ports/inbox-media-storage.port.js";
+import { LocalInboxMediaStorage } from "../../infrastructure/storage/local-inbox-media-storage.js";
+import { S3InboxMediaStorage } from "../../infrastructure/storage/s3-inbox-media-storage.js";
+import { DisabledInboxMediaStorage } from "../../infrastructure/storage/disabled-inbox-media-storage.js";
 import { mapWuzApiEvent, type RawWuzApiEvent } from "../../infrastructure/messaging/wuzapi/wuzapi-event-mapper.js";
 import {
   connectInboxRabbitMq,
@@ -25,6 +29,7 @@ import type { InboxAiResponderPort } from "../../application/ports/inbox-ai-resp
 import {
   applyConnectionStateChanged,
   applyMessageStatusChanged,
+  downloadInboundMediaAndAttach,
   maybeGenerateAiResponse,
   processOutboundMessage,
   reconcileConnectionsHealth,
@@ -91,6 +96,20 @@ type InboxWorkerConfig = {
     outboundReconcileIntervalMs: number;
     outboundReconcileGracePeriodMs: number;
   };
+  /** Redesign operacional (Conversas) — storage PRIVADO de mídia recebida via WhatsApp; config
+   * mínima independente de `loadApiConfig()`, mesmo racional do resto deste tipo. `enabled: false`
+   * (padrão) não impede o worker de funcionar, só deixa `downloadInboundMediaAndAttach` em no-op. */
+  inboxMediaStorage: {
+    enabled: boolean;
+    driver: "s3" | "local";
+    endpoint?: string;
+    region: string;
+    bucket?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    localDir?: string;
+    forcePathStyle: boolean;
+  };
 };
 
 const DEFAULT_ANTHROPIC_INBOX_AUTO_REPLY_MODEL = "claude-haiku-4-5-20251001";
@@ -135,7 +154,35 @@ function loadInboxWorkerConfig(): InboxWorkerConfig {
       outboundReconcileIntervalMs: parsePositiveInt(process.env.INBOX_OUTBOUND_RECONCILE_INTERVAL_MS, 60_000),
       outboundReconcileGracePeriodMs: parsePositiveInt(process.env.INBOX_OUTBOUND_RECONCILE_GRACE_PERIOD_MS, 120_000),
     },
+    inboxMediaStorage: {
+      enabled: process.env.INBOX_MEDIA_STORAGE_ENABLED?.trim() === "true",
+      driver: process.env.INBOX_MEDIA_STORAGE_DRIVER?.trim() === "s3" ? "s3" : "local",
+      endpoint: process.env.INBOX_MEDIA_STORAGE_ENDPOINT?.trim() || undefined,
+      region: process.env.INBOX_MEDIA_STORAGE_REGION?.trim() || "auto",
+      bucket: process.env.INBOX_MEDIA_STORAGE_BUCKET?.trim() || undefined,
+      accessKeyId: process.env.INBOX_MEDIA_STORAGE_ACCESS_KEY_ID?.trim() || undefined,
+      secretAccessKey: process.env.INBOX_MEDIA_STORAGE_SECRET_ACCESS_KEY?.trim() || undefined,
+      localDir: process.env.INBOX_MEDIA_STORAGE_LOCAL_DIR?.trim() || undefined,
+      forcePathStyle: process.env.INBOX_MEDIA_STORAGE_FORCE_PATH_STYLE?.trim() !== "false",
+    },
   };
+}
+
+function buildInboxMediaStorage(config: InboxWorkerConfig["inboxMediaStorage"]): InboxMediaStoragePort {
+  if (config.enabled && config.driver === "local" && config.localDir) {
+    return new LocalInboxMediaStorage({ rootDir: config.localDir });
+  }
+  if (config.enabled && config.bucket && config.accessKeyId && config.secretAccessKey) {
+    return new S3InboxMediaStorage({
+      endpoint: config.endpoint,
+      region: config.region,
+      bucket: config.bucket,
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+      forcePathStyle: config.forcePathStyle,
+    });
+  }
+  return new DisabledInboxMediaStorage();
 }
 
 /**
@@ -434,6 +481,7 @@ async function main(): Promise<void> {
     rateLimiter,
     metrics,
     outboundSendPaused: config.resilience.outboundSendPaused,
+    inboxMediaStorage: buildInboxMediaStorage(config.inboxMediaStorage),
   };
   if (config.resilience.outboundSendPaused) {
     console.warn("[inbox-worker] INBOX_OUTBOUND_SEND_PAUSED=true — kill switch de emergência ATIVO: nenhuma mensagem outbound será enviada ao WuzAPI (permanecem queued). Inbound/IA/humano continuam funcionando normalmente.");
@@ -512,6 +560,38 @@ async function main(): Promise<void> {
         .catch((error) => {
           console.error("[inbox-worker] falha ao processar resposta automática de IA:", error instanceof Error ? error.message : error);
         });
+
+      // Mesmo racional: best-effort, nunca no caminho crítico do ack. A mensagem já existe com
+      // `type` correto; sucesso aqui só enriquece com `mediaStorageRef` um instante depois — o
+      // frontend revalida via `message.updated` quando isso acontece.
+      if (event.messageType === "image" || event.messageType === "video" || event.messageType === "audio" || event.messageType === "document") {
+        if (event.mediaUrl) {
+          downloadInboundMediaAndAttach(deps, {
+            tenantId: event.tenantId,
+            workspaceId: event.workspaceId,
+            connectionId: event.connectionId,
+            messageId: message.id,
+            type: event.messageType,
+            mediaUrl: event.mediaUrl,
+            mimeType: event.mimeType,
+            mediaKey: event.mediaKey,
+            fileSha256: event.fileSha256,
+            fileEncSha256: event.fileEncSha256,
+            fileName: event.fileName,
+            fileSizeBytes: event.fileSizeBytes,
+            durationSeconds: event.durationSeconds,
+            thumbnailBase64: event.thumbnailBase64,
+          })
+            .then((result) => {
+              if (result.attached) publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
+            })
+            .catch((error) => {
+              console.error("[inbox-worker] falha ao baixar mídia recebida:", error instanceof Error ? error.message : error);
+            });
+        } else {
+          console.warn(`[inbox-worker] mensagem "${message.id}" do tipo "${event.messageType}" sem mediaUrl no evento — mídia não pôde ser localizada (payload PENDING de validação, ver wuzapi-event-mapper.ts).`);
+        }
+      }
     }
   }, metrics);
 

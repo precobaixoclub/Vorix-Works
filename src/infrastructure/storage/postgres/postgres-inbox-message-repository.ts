@@ -76,6 +76,13 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
+  async attachMedia(id: string, input: { mediaStorageRef: InboxMediaStorageRef; mimeType?: string; metadata?: Record<string, unknown> }): Promise<void> {
+    await this.pool.query(
+      "update inbox_messages set media_storage_ref = $2, mime_type = coalesce($3, mime_type), metadata = coalesce(metadata, '{}'::jsonb) || $4::jsonb where id = $1",
+      [id, input.mediaStorageRef, input.mimeType ?? null, JSON.stringify(input.metadata ?? {})],
+    );
+  }
+
   async listByConversation(input: { tenantId: string; workspaceId: string; conversationId: string; cursor?: string; limit?: number }): Promise<InboxMessage[]> {
     const limit = input.limit ?? 50;
     const cursorCondition = input.cursor ? "and created_at < (select created_at from inbox_messages where id = $5)" : "";

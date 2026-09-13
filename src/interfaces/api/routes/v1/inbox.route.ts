@@ -3,6 +3,7 @@ import type { JwtPort } from "../../../../application/ports/jwt.port.js";
 import type { InboxContactRepositoryPort } from "../../../../application/ports/inbox-contact-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../../../../application/ports/inbox-conversation-event-repository.port.js";
 import type { InboxConversationListFilter, InboxConversationRepositoryPort } from "../../../../application/ports/inbox-conversation-repository.port.js";
+import type { InboxMediaStoragePort } from "../../../../application/ports/inbox-media-storage.port.js";
 import type { InboxMessageRepositoryPort } from "../../../../application/ports/inbox-message-repository.port.js";
 import type { MessagingConnectionRepositoryPort } from "../../../../application/ports/messaging-connection-repository.port.js";
 import type { MessagingProvider } from "../../../../application/ports/messaging-provider.port.js";
@@ -55,6 +56,11 @@ const MESSAGES_QUERY_SCHEMA = {
   type: "object",
   required: ["workspaceId"],
   properties: { workspaceId: { type: "string", minLength: 1 }, cursor: { type: "string" }, limit: { type: "number" } },
+} as const;
+const MEDIA_TOKEN_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId", "messageId"],
+  properties: { workspaceId: { type: "string", minLength: 1 }, messageId: { type: "string", minLength: 1 } },
 } as const;
 
 const INBOX_ERROR_STATUS: Record<string, number> = {
@@ -109,6 +115,10 @@ export type InboxRoutesDeps = {
    * `undefined` só em setups sem identidade real (`AUTH_MODE=noop`/testes sem JWT) — nesse caso a
    * rota responde 503 em vez de tentar assinar algo sem chave. */
   jwtPort?: JwtPort;
+  /** Redesign operacional (mídia real) — `undefined` só em setups sem `jwtPort`/storage
+   * configurado; `GET /inbox/media/:messageId`/`POST /inbox/media-token` respondem 503 nesse
+   * caso, nunca tentam servir algo sem as duas peças presentes. */
+  inboxMediaStorage?: InboxMediaStoragePort;
 };
 
 function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {
@@ -144,6 +154,9 @@ async function assertUserBelongsToTenant(deps: InboxRoutesDeps, userId: string, 
  * abrir a conexão"; não precisa sobreviver além disso, e reconexões (`useInboxRealtime` no
  * frontend) sempre mintam um token novo, nunca reusam um velho. */
 const STREAM_TOKEN_TTL_SECONDS = 60;
+/** Redesign operacional (mídia real) — mesmo teto de 60s do `stream-token`: só precisa sobreviver
+ * entre "mintar o token" e "o `<img>`/`<audio>`/`<video>` disparar o `GET`", nunca mais que isso. */
+const MEDIA_TOKEN_TTL_SECONDS = 60;
 
 export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoutesDeps): Promise<void> {
   const useCaseDeps = toUseCaseDeps(deps);
@@ -165,6 +178,57 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
       STREAM_TOKEN_TTL_SECONDS,
     );
     return successEnvelope({ streamToken, expiresIn: STREAM_TOKEN_TTL_SECONDS }, request.id);
+  });
+
+  /**
+   * Redesign operacional (mídia real) — mesmo racional do `stream-token`: `<img>`/`<audio>`/
+   * `<video>` não enviam header `Authorization`, então o proxy de mídia (`GET /inbox/media/:id`
+   * abaixo) precisa de credential via querystring. Escopado a UMA mensagem específica
+   * (`messageId` no claim) — nunca autentica a mídia de outra mensagem, mesmo dentro da janela de
+   * validade (ver `isPrincipalAuthorizedForRequest`, `auth.middleware.ts`).
+   */
+  app.post("/inbox/media-token", { schema: { body: MEDIA_TOKEN_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:read");
+    const { workspaceId, messageId } = request.body as { workspaceId: string; messageId: string };
+    if (!deps.jwtPort) {
+      throw new AppError({ code: "INBOX_MEDIA_TOKEN_UNAVAILABLE", message: "Emissão de token de mídia indisponível nesta configuração.", statusCode: 503, recoverable: true });
+    }
+    // Nunca vaza existência entre tenants — mensagem inexistente E mensagem de outro
+    // tenant/workspace respondem exatamente o mesmo 404.
+    const message = await deps.messageRepository.getById(messageId);
+    if (!message || message.tenantId !== principal.tenantId || message.workspaceId !== workspaceId) {
+      throw new AppError({ code: "INBOX_MESSAGE_NOT_FOUND", message: `Mensagem "${messageId}" não existe.`, statusCode: 404, recoverable: true });
+    }
+    const mediaToken = deps.jwtPort.sign(
+      { userId: principal.userId, tenantId: principal.tenantId, role: principal.role, sessionId: principal.sessionId, isPlatformAdmin: principal.isPlatformAdmin, purpose: "inbox_media", messageId },
+      MEDIA_TOKEN_TTL_SECONDS,
+    );
+    return successEnvelope({ mediaToken, expiresIn: MEDIA_TOKEN_TTL_SECONDS }, request.id);
+  });
+
+  /**
+   * Proxy autenticado de mídia de conversas — nunca expõe a URL/token do WuzAPI nem uma URL
+   * assinada de storage diretamente ao navegador; os bytes sempre passam por aqui. Credential via
+   * `?media_token=` (ver rota acima) OU o header `Authorization` normal (uso direto/testes) — o
+   * middleware já garante que um `media_token` só autentica o `:id` exato gravado nele.
+   */
+  app.get("/inbox/media/:id", { schema: { params: ID_PARAMS_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:read");
+    const { id } = request.params as { id: string };
+    if (!deps.inboxMediaStorage) {
+      throw new AppError({ code: "INBOX_MEDIA_STORAGE_UNAVAILABLE", message: "Mídia de conversas não configurada neste ambiente.", statusCode: 503, recoverable: true });
+    }
+    const message = await deps.messageRepository.getById(id);
+    if (!message || message.tenantId !== principal.tenantId || !message.mediaStorageRef) {
+      throw new AppError({ code: "INBOX_MEDIA_NOT_FOUND", message: "Mídia não encontrada.", statusCode: 404, recoverable: true });
+    }
+    const stored = await deps.inboxMediaStorage.get(message.mediaStorageRef.objectKey);
+    if (!stored) {
+      throw new AppError({ code: "INBOX_MEDIA_NOT_FOUND", message: "Mídia não encontrada.", statusCode: 404, recoverable: true });
+    }
+    reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    reply.type(message.mimeType ?? stored.contentType);
+    return reply.send(stored.body);
   });
 
   /**

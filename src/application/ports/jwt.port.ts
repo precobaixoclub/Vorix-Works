@@ -11,8 +11,13 @@ export type JwtAccessTokenPayload = {
    * quando ausente; para virar `true`, o usuário precisa fazer novo login/refresh. */
   isPlatformAdmin?: boolean;
   /** Fase 10 (Pre-Pilot Hardening) — ver `AuthPrincipal.purpose`. Ausente em todo access token
-   * normal; presente e igual a `"inbox_stream"` só no token de curta duração do SSE da Inbox. */
-  purpose?: "inbox_stream";
+   * normal; presente e igual a `"inbox_stream"` só no token de curta duração do SSE da Inbox, ou
+   * `"inbox_media"` (redesign operacional) no token de curta duração do proxy de mídia. */
+  purpose?: "inbox_stream" | "inbox_media";
+  /** Redesign operacional (mídia real) — só presente com `purpose: "inbox_media"`: escopa o token
+   * a UMA mensagem específica, para um token minted para a mídia da mensagem A nunca servir para
+   * ler a mídia da mensagem B (mesmo dentro da curtíssima janela de validade). */
+  messageId?: string;
 };
 
 export type JwtVerificationResult =

@@ -42,6 +42,15 @@ import { MessagingProviderError } from "../../../application/ports/messaging-pro
  * TODAS as rotas de envio ou só desta — dado o mix de casing já encontrado em `/session/*`, não dá
  * mais para assumir por analogia sem testar cada uma. Também não confirmado: se existem OUTRAS
  * mensagens de erro de "sessão não autenticada" além das duas listadas acima.
+ *
+ * PENDING (redesign operacional — mídia real, `downloadMedia` abaixo) — endpoints e parâmetros
+ * documentados publicamente (`API.md` do `asternic/wuzapi`, não confirmados ao vivo como o resto
+ * deste arquivo): `POST /chat/downloadimage`/`downloadvideo`/`downloadaudio`/`downloaddocument`,
+ * todos recebendo `{ Url, MediaKey, Mimetype, FileSHA256, FileLength, FileEncSHA256 }` (os mesmos
+ * campos extraídos pelo mapper do evento recebido — ver `wuzapi-event-mapper.ts`) e devolvendo o
+ * arquivo em base64. A forma exata do campo de resposta (`data` como string pura vs.
+ * `data.Data`/`data.Base64`/`data.Image` etc.) é desconhecida até validação real — `downloadMedia`
+ * tenta as variantes mais prováveis antes de desistir.
  */
 
 export type WuzApiClientConfig = {
@@ -177,4 +186,48 @@ export class WuzApiClient {
   async sendDocument(sessionToken: string, input: { phone: string; mediaUrl: string; fileName: string }): Promise<{ Id: string; Timestamp: string }> {
     return this.sessionRequest(sessionToken, "/chat/send/document", { method: "POST", body: { Phone: input.phone, Document: input.mediaUrl, FileName: input.fileName } });
   }
+
+  /**
+   * Baixa e descriptografa mídia recebida (PENDING — ver comentário no topo do arquivo). O
+   * WuzAPI faz a descriptografia E2E server-side (nunca dá para buscar `mediaUrl` direto com
+   * `fetch` — é ciphertext na CDN do WhatsApp, precisa da `mediaKey`) e devolve os bytes em
+   * base64. `undefined` = resposta em formato inesperado (nenhuma das variantes de campo
+   * conhecidas continha uma string base64) — quem chama trata como "mídia indisponível", nunca
+   * lança.
+   */
+  async downloadMedia(
+    sessionToken: string,
+    type: "image" | "video" | "audio" | "document",
+    input: { url: string; mediaKey?: string; mimeType?: string; fileSha256?: string; fileSizeBytes?: number; fileEncSha256?: string },
+  ): Promise<{ body: Buffer; mimeType?: string } | undefined> {
+    const path = { image: "/chat/downloadimage", video: "/chat/downloadvideo", audio: "/chat/downloadaudio", document: "/chat/downloaddocument" }[type];
+    const raw = await this.sessionRequest<unknown>(sessionToken, path, {
+      method: "POST",
+      body: {
+        Url: input.url,
+        MediaKey: input.mediaKey,
+        Mimetype: input.mimeType,
+        FileSHA256: input.fileSha256,
+        FileLength: input.fileSizeBytes,
+        FileEncSHA256: input.fileEncSha256,
+      },
+    });
+    const base64 = extractBase64Payload(raw);
+    if (!base64) return undefined;
+    try {
+      return { body: Buffer.from(base64, "base64"), mimeType: input.mimeType };
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+function extractBase64Payload(raw: unknown): string | undefined {
+  if (typeof raw === "string") return raw;
+  if (raw && typeof raw === "object") {
+    const record = raw as Record<string, unknown>;
+    const candidate = record.Data ?? record.data ?? record.Base64 ?? record.base64 ?? record.Image ?? record.File ?? record.Content;
+    if (typeof candidate === "string") return candidate;
+  }
+  return undefined;
 }

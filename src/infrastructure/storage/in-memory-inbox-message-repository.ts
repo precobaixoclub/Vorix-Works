@@ -1,5 +1,5 @@
 import type { CreateInboxMessageInput, InboxMessageRepositoryPort } from "../../application/ports/inbox-message-repository.port.js";
-import type { InboxMessage, InboxMessageStatus } from "../../domain/inbox/inbox.model.js";
+import type { InboxMediaStorageRef, InboxMessage, InboxMessageStatus } from "../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxmsg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -42,6 +42,17 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
 
   async getById(id: string): Promise<InboxMessage | undefined> {
     return this.rows.get(id);
+  }
+
+  async attachMedia(id: string, input: { mediaStorageRef: InboxMediaStorageRef; mimeType?: string; metadata?: Record<string, unknown> }): Promise<void> {
+    const existing = this.rows.get(id);
+    if (!existing) return;
+    this.rows.set(id, {
+      ...existing,
+      mediaStorageRef: input.mediaStorageRef,
+      mimeType: input.mimeType ?? existing.mimeType,
+      metadata: { ...existing.metadata, ...input.metadata },
+    });
   }
 
   async listByConversation(input: { tenantId: string; workspaceId: string; conversationId: string; cursor?: string; limit?: number }): Promise<InboxMessage[]> {

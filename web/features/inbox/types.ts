@@ -37,6 +37,11 @@ export type InboxConversation = {
   /** CRM/Comercial (Fase 4) — `contacts.id` do CRM já vinculado a este contato do WhatsApp
    * (`inbox_contacts.contact_id`), se algum vínculo já foi feito. `undefined` até alguém vincular. */
   crmContactId?: string;
+  /** Redesign operacional — resumo da última mensagem, denormalizado pela listagem
+   * (`GET /v1/inbox/conversations`) para a lista mostrar um preview real em vez de um texto
+   * genérico. `undefined` em conversas sem nenhuma mensagem ainda, ou em ambientes que ainda não
+   * atualizaram o backend para preenchê-lo. */
+  lastMessagePreview?: { type: InboxMessageType; body?: string; direction: InboxMessageDirection };
 };
 
 /** Fase 4 — `open`/`pending`/`resolved` filtram por status normalizado (ver
@@ -81,6 +86,16 @@ export type InboxMessageDirection = "inbound" | "outbound";
 export type InboxMessageType = "text" | "image" | "video" | "audio" | "document" | "location" | "contact" | "other";
 export type InboxMessageStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed";
 
+/** Redesign operacional (mídia real) — espelha `InboxMediaStorageRef` do backend
+ * (`src/domain/inbox/inbox.model.ts`). `objectKey` nunca é usado diretamente pelo frontend para
+ * montar uma URL — só como sinal de "esta mensagem tem mídia baixada"; o arquivo em si só é
+ * acessível via `GET /v1/inbox/media/:id` com um token de curta duração (`getInboxMediaToken`). */
+export type InboxMediaStorageRef = { provider: string; bucket?: string; objectKey: string };
+
+/** Metadados auxiliares de exibição (`InboxMediaMetadata` no backend) — presentes só quando a
+ * mídia já foi baixada e enriquecida (ver `downloadInboundMediaAndAttach`). */
+export type InboxMediaMetadata = { fileName?: string; fileSizeBytes?: number; durationSeconds?: number; thumbnailDataUrl?: string };
+
 export type InboxMessage = {
   id: string;
   conversationId: string;
@@ -88,6 +103,12 @@ export type InboxMessage = {
   type: InboxMessageType;
   status: InboxMessageStatus;
   body?: string;
+  /** Presente só quando a mídia já foi baixada e persistida (best-effort/assíncrono — pode
+   * demorar um instante depois da mensagem aparecer, ou nunca chegar a existir se o download
+   * falhar). `undefined` = mostrar o fallback de ícone+rótulo, nunca um estado de erro definitivo. */
+  mediaStorageRef?: InboxMediaStorageRef;
+  mimeType?: string;
+  metadata?: InboxMediaMetadata;
   sentByUserId?: string;
   sentByAi: boolean;
   sentByAutomation: boolean;

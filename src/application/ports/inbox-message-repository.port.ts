@@ -36,6 +36,14 @@ export type InboxMessageRepositoryPort = {
    */
   create(input: CreateInboxMessageInput): Promise<{ message: InboxMessage; wasCreated: boolean }>;
   getById(id: string): Promise<InboxMessage | undefined>;
+  /**
+   * Redesign operacional (mídia real) — preenche `mediaStorageRef`/`mimeType`/`metadata` DEPOIS
+   * que a mensagem já foi criada (best-effort/assíncrono: a mensagem aparece imediatamente com
+   * `type` correto e mídia ainda vazia; isto é chamado quando o download+upload conclui). Nunca
+   * lança para mensagem inexistente (a mensagem pode ter sido apagada por retenção entre o
+   * registro e a conclusão do download — silenciosamente vira no-op).
+   */
+  attachMedia(id: string, input: { mediaStorageRef: InboxMediaStorageRef; mimeType?: string; metadata?: Record<string, unknown> }): Promise<void>;
   listByConversation(input: { tenantId: string; workspaceId: string; conversationId: string; cursor?: string; limit?: number }): Promise<InboxMessage[]>;
   /** Usado pelo consumer de status (delivery/read receipts) e pelo `OutboxSenderConsumer`. Ignora
    * silenciosamente se a mensagem já estiver num status terminal — retries podem chegar tarde. */

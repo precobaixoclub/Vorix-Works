@@ -359,5 +359,8 @@ export type AuthPrincipal = {
    * pode autenticar a rota `GET /v1/inbox/stream` (ver `auth.middleware.ts`) — mesmo que o token
    * vaze (log de proxy, histórico do navegador), o raio de exposição é uma única rota, por no
    * máximo 60 segundos. */
-  purpose?: "inbox_stream";
+  purpose?: "inbox_stream" | "inbox_media";
+  /** Redesign operacional (mídia real) — só presente com `purpose: "inbox_media"`, escopando o
+   * token a uma única mensagem (ver `JwtAccessTokenPayload.messageId`). */
+  messageId?: string;
 };

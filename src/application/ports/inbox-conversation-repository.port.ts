@@ -1,4 +1,4 @@
-import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus } from "../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus, InboxMessageDirection, InboxMessageType } from "../../domain/inbox/inbox.model.js";
 
 /** Módulo Conversas (Fase 1/4). Ver `db/migrations/0082_inbox_conversations.sql`. */
 
@@ -19,7 +19,16 @@ export type InboxConversationListFilter = "all" | "mine" | "unassigned" | "unrea
  * precisar de uma segunda chamada por conversa. Nunca usado fora de `listByWorkspace`; toda
  * escrita continua contra `InboxConversation` puro. `crmContactId` (Fase 4) é
  * `inbox_contacts.contact_id` denormalizado do mesmo join — ver `InboxContact.crmContactId`. */
-export type InboxConversationListItem = InboxConversation & { contactName?: string; contactPhone: string; crmContactId?: string };
+/** Redesign operacional — resumo da última mensagem da conversa, para a lista de conversas
+ * mostrar um preview real (texto ou rótulo de mídia) em vez de um placeholder genérico. */
+export type InboxConversationLastMessagePreview = { type: InboxMessageType; body?: string; direction: InboxMessageDirection };
+
+export type InboxConversationListItem = InboxConversation & {
+  contactName?: string;
+  contactPhone: string;
+  crmContactId?: string;
+  lastMessagePreview?: InboxConversationLastMessagePreview;
+};
 
 export type InboxConversationRepositoryPort = {
   /** Idempotente por `(connectionId, contactId)` — nunca cria uma segunda conversa pro mesmo par. */

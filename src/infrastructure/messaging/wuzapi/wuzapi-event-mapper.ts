@@ -30,6 +30,16 @@ import type { InboxMessageStatus, InboxMessageType } from "../../../domain/inbox
  * proto do whatsmeow) e o valor exato de `PairError`/erro de autenticação irrecuperável (o
  * mapeamento para `requires_repair` abaixo é uma extrapolação razoável de `LoggedOut`, não uma
  * confirmação de um evento `PairError` real).
+ *
+ * PENDING (redesign operacional de Conversas — mídia real) — `extractMediaFields` abaixo extrai
+ * `url`/`mimetype`/`caption`/`fileName`/`seconds`/`fileLength`/`mediaKey`/`fileSha256`/
+ * `fileEncSha256`/`jpegThumbnail` do objeto de mídia (`imageMessage`/`videoMessage`/
+ * `audioMessage`/`documentMessage`) usando os nomes de campo públicos do proto do whatsmeow
+ * (`waE2E.*Message`, camelCase). NUNCA testado contra um payload real (homologação com QR jamais
+ * executada — ver `docs/conversas-fase2-spike.md`). Defensivamente tenta também a variante
+ * PascalCase de cada campo (`Url`, `Mimetype`, `FileSHA256`...), já que o resto do WuzAPI mistura
+ * casing entre rotas (ver `wuzapi-client.ts`) — mas a fonte da verdade só pode ser confirmada com
+ * uma sessão real pareada.
  */
 
 const MESSAGE_TYPE_BY_WHATSMEOW_KIND: Record<string, InboxMessageType> = {
@@ -79,6 +89,8 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
   const kind = message ? Object.keys(message).find((key) => key in MESSAGE_TYPE_BY_WHATSMEOW_KIND) : undefined;
   const messageType = kind ? MESSAGE_TYPE_BY_WHATSMEOW_KIND[kind] ?? "other" : "other";
   const body = typeof message?.conversation === "string" ? (message.conversation as string) : undefined;
+  const mediaObject = kind && message ? (message[kind] as Record<string, unknown> | undefined) : undefined;
+  const media = mediaObject ? extractMediaFields(messageType, mediaObject) : undefined;
 
   return {
     type: "message.inbound",
@@ -92,8 +104,61 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
     fromPhone: normalizeWhatsmeowJid(fromPhone),
     fromName: info?.PushName as string | undefined,
     messageType,
-    body,
+    // Caption de imagem/vídeo vira o `body` da mensagem — mesma UX do WhatsApp (mídia com legenda
+    // aparece como uma coisa só, não texto separado da mídia).
+    body: body ?? media?.caption,
+    ...media,
     occurredAt: typeof info?.Timestamp === "number" ? new Date((info.Timestamp as number) * 1000).toISOString() : new Date().toISOString(),
+  };
+}
+
+type ExtractedMediaFields = {
+  mediaUrl?: string;
+  mimeType?: string;
+  caption?: string;
+  fileName?: string;
+  fileSizeBytes?: number;
+  durationSeconds?: number;
+  thumbnailBase64?: string;
+  mediaKey?: string;
+  fileSha256?: string;
+  fileEncSha256?: string;
+};
+
+/** Lê um campo tentando várias grafias (o resto do WuzAPI mistura casing entre rotas — ver
+ * comentário de `wuzapi-client.ts` — não dá para assumir uma única convenção sem validação real). */
+function pick(object: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (object[key] !== undefined) return object[key];
+  }
+  return undefined;
+}
+
+function pickString(object: Record<string, unknown>, keys: string[]): string | undefined {
+  const value = pick(object, keys);
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function pickNumber(object: Record<string, unknown>, keys: string[]): number | undefined {
+  const value = pick(object, keys);
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value))) return Number(value);
+  return undefined;
+}
+
+function extractMediaFields(messageType: InboxMessageType, media: Record<string, unknown>): ExtractedMediaFields | undefined {
+  if (messageType !== "image" && messageType !== "video" && messageType !== "audio" && messageType !== "document") return undefined;
+  return {
+    mediaUrl: pickString(media, ["url", "Url", "URL", "directPath", "DirectPath"]),
+    mimeType: pickString(media, ["mimetype", "Mimetype", "mimeType"]),
+    caption: pickString(media, ["caption", "Caption"]),
+    fileName: pickString(media, ["fileName", "FileName"]),
+    fileSizeBytes: pickNumber(media, ["fileLength", "FileLength"]),
+    durationSeconds: pickNumber(media, ["seconds", "Seconds"]),
+    thumbnailBase64: pickString(media, ["jpegThumbnail", "JPEGThumbnail", "jpegThumbnailBase64"]),
+    mediaKey: pickString(media, ["mediaKey", "MediaKey"]),
+    fileSha256: pickString(media, ["fileSha256", "FileSHA256", "fileSHA256"]),
+    fileEncSha256: pickString(media, ["fileEncSha256", "FileEncSHA256", "fileEncSHA256"]),
   };
 }
 

@@ -232,6 +232,22 @@ export type ApiConfig = {
     acl?: string;
     maxUploadBytes: number;
   };
+  /** Redesign operacional (Conversas) — storage PRIVADO de mídia recebida via WhatsApp, deliberadamente
+   * separado de `objectStorage` acima (esse é público, para TikTok/Meta puxarem). Sem
+   * `resolvePublicUrl`/ACL pública — só lido de volta pelo proxy autenticado
+   * `GET /v1/inbox/media/:messageId`. `enabled: false` (padrão) não impede a Inbox de funcionar,
+   * só deixa mensagens de mídia sem o arquivo baixado (ver `downloadInboundMediaAndAttach`). */
+  inboxMediaStorage: {
+    enabled: boolean;
+    driver: "s3" | "local";
+    endpoint?: string;
+    region: string;
+    bucket?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    localDir?: string;
+    forcePathStyle: boolean;
+  };
 };
 
 const DEFAULT_PORT = 3000;
@@ -382,6 +398,15 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const objectStorageSecretAccessKey = env.OBJECT_STORAGE_SECRET_ACCESS_KEY?.trim() || undefined;
   const objectStorageLocalDir = env.OBJECT_STORAGE_LOCAL_DIR?.trim() || undefined;
   const objectStoragePublicBaseUrl = env.OBJECT_STORAGE_PUBLIC_BASE_URL?.trim() || undefined;
+  const inboxMediaStorageEnabled = env.INBOX_MEDIA_STORAGE_ENABLED?.trim() === "true";
+  const inboxMediaStorageDriver = env.INBOX_MEDIA_STORAGE_DRIVER?.trim() === "s3" ? "s3" : "local";
+  const inboxMediaStorageEndpoint = env.INBOX_MEDIA_STORAGE_ENDPOINT?.trim() || undefined;
+  const inboxMediaStorageRegion = env.INBOX_MEDIA_STORAGE_REGION?.trim() || "auto";
+  const inboxMediaStorageBucket = env.INBOX_MEDIA_STORAGE_BUCKET?.trim() || undefined;
+  const inboxMediaStorageAccessKeyId = env.INBOX_MEDIA_STORAGE_ACCESS_KEY_ID?.trim() || undefined;
+  const inboxMediaStorageSecretAccessKey = env.INBOX_MEDIA_STORAGE_SECRET_ACCESS_KEY?.trim() || undefined;
+  const inboxMediaStorageLocalDir = env.INBOX_MEDIA_STORAGE_LOCAL_DIR?.trim() || undefined;
+  const inboxMediaStorageForcePathStyle = env.INBOX_MEDIA_STORAGE_FORCE_PATH_STYLE?.trim() !== "false";
   const objectStorageForcePathStyle = env.OBJECT_STORAGE_FORCE_PATH_STYLE?.trim() !== "false";
   const objectStorageAcl = env.OBJECT_STORAGE_ACL?.trim() || undefined;
   const objectStorageMaxUploadBytes = parsePositiveInt(env.MEDIA_UPLOAD_MAX_BYTES) ?? 100_000_000;
@@ -563,6 +588,17 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       forcePathStyle: objectStorageForcePathStyle,
       acl: objectStorageAcl,
       maxUploadBytes: objectStorageMaxUploadBytes,
+    },
+    inboxMediaStorage: {
+      enabled: inboxMediaStorageEnabled,
+      driver: inboxMediaStorageDriver,
+      endpoint: inboxMediaStorageEndpoint,
+      region: inboxMediaStorageRegion,
+      bucket: inboxMediaStorageBucket,
+      accessKeyId: inboxMediaStorageAccessKeyId,
+      secretAccessKey: inboxMediaStorageSecretAccessKey,
+      localDir: inboxMediaStorageLocalDir,
+      forcePathStyle: inboxMediaStorageForcePathStyle,
     },
   };
 }

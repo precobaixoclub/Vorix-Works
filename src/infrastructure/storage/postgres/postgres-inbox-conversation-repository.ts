@@ -5,7 +5,7 @@ import type {
   InboxConversationListItem,
   InboxConversationRepositoryPort,
 } from "../../../application/ports/inbox-conversation-repository.port.js";
-import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus } from "../../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus, InboxMessageDirection, InboxMessageType } from "../../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -71,15 +71,36 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     }
     // Join com inbox_contacts só pra listagem (read-model, Fase 3) — evita a Inbox ter que fazer
     // uma segunda chamada por conversa só pra saber o nome/telefone de quem está do outro lado.
-    const result = await this.pool.query<Row & { contact_name: string | null; contact_phone: string; crm_contact_id: string | null }>(
-      `select c.*, ct.name as contact_name, ct.phone_normalized as contact_phone, ct.contact_id as crm_contact_id
+    // LATERAL join com a última mensagem (redesign operacional) — barato porque
+    // `inbox_messages_conversation_idx (conversation_id, created_at desc)` (migration 0083) já
+    // existe: o planner faz um index scan de 1 linha por conversa, não uma varredura completa.
+    const result = await this.pool.query<
+      Row & { contact_name: string | null; contact_phone: string; crm_contact_id: string | null; lm_type: string | null; lm_body: string | null; lm_direction: string | null }
+    >(
+      `select c.*, ct.name as contact_name, ct.phone_normalized as contact_phone, ct.contact_id as crm_contact_id,
+              lm.type as lm_type, lm.body as lm_body, lm.direction as lm_direction
        from inbox_conversations c
        join inbox_contacts ct on ct.id = c.contact_id
+       left join lateral (
+         select type, body, direction
+         from inbox_messages m
+         where m.conversation_id = c.id
+         order by m.created_at desc
+         limit 1
+       ) lm on true
        where ${conditions.join(" and ")}
        order by coalesce(c.last_message_at, c.created_at) desc`,
       params,
     );
-    return result.rows.map((row) => ({ ...this.toDomain(row), contactName: row.contact_name ?? undefined, contactPhone: row.contact_phone, crmContactId: row.crm_contact_id ?? undefined }));
+    return result.rows.map((row) => ({
+      ...this.toDomain(row),
+      contactName: row.contact_name ?? undefined,
+      contactPhone: row.contact_phone,
+      crmContactId: row.crm_contact_id ?? undefined,
+      lastMessagePreview: row.lm_type
+        ? { type: row.lm_type as InboxMessageType, body: row.lm_body ?? undefined, direction: row.lm_direction as InboxMessageDirection }
+        : undefined,
+    }));
   }
 
   async markLastMessage(id: string, input: { lastMessageAt: string; incrementUnread: boolean }): Promise<void> {

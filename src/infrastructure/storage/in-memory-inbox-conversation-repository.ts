@@ -5,6 +5,7 @@ import type {
   InboxConversationRepositoryPort,
 } from "../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxContactRepositoryPort } from "../../application/ports/inbox-contact-repository.port.js";
+import type { InboxMessageRepositoryPort } from "../../application/ports/inbox-message-repository.port.js";
 import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus } from "../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -12,9 +13,13 @@ const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().
 export class InMemoryInboxConversationRepository implements InboxConversationRepositoryPort {
   private readonly rows = new Map<string, InboxConversation>();
 
-  /** Opcional — só usado para denormalizar nome/telefone do contato em `listByWorkspace` (read-model
-   * de Fase 3). Sem isso, a listagem ainda funciona, só sem `contactName`/`contactPhone`. */
-  constructor(private readonly contactRepository?: InboxContactRepositoryPort) {}
+  /** Ambos opcionais — só usados para denormalizar em `listByWorkspace` (read-model de Fase 3):
+   * `contactRepository` para nome/telefone, `messageRepository` para o preview da última mensagem
+   * (redesign operacional). Sem eles, a listagem ainda funciona, só sem esses campos. */
+  constructor(
+    private readonly contactRepository?: InboxContactRepositoryPort,
+    private readonly messageRepository?: InboxMessageRepositoryPort,
+  ) {}
 
   async findOrCreate(input: FindOrCreateInboxConversationInput): Promise<InboxConversation> {
     const existing = [...this.rows.values()].find(
@@ -72,7 +77,18 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     const items: InboxConversationListItem[] = [];
     for (const row of sorted) {
       const contact = await this.contactRepository?.getById(row.contactId);
-      items.push({ ...row, contactName: contact?.name, contactPhone: contact?.phoneNormalized ?? "" });
+      const [lastMessage] = (await this.messageRepository?.listByConversation({
+        tenantId: row.tenantId,
+        workspaceId: row.workspaceId,
+        conversationId: row.id,
+        limit: 1,
+      })) ?? [];
+      items.push({
+        ...row,
+        contactName: contact?.name,
+        contactPhone: contact?.phoneNormalized ?? "",
+        lastMessagePreview: lastMessage ? { type: lastMessage.type, body: lastMessage.body, direction: lastMessage.direction } : undefined,
+      });
     }
     return items;
   }

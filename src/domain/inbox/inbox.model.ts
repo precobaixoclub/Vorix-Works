@@ -136,6 +136,19 @@ export type InboxMediaStorageRef = {
   metadata?: Record<string, unknown>;
 };
 
+/** Redesign operacional (mídia) — atributos auxiliares de exibição para mensagens de mídia,
+ * guardados dentro de `InboxMessage.metadata` (jsonb já existente — ver migration 0083). Não são
+ * colunas dedicadas de propósito: são só dados de apresentação (nunca filtrados/indexados por
+ * eles), então não justificam uma migration nova. Convenção puramente TypeScript sobre o jsonb —
+ * casts na borda do repositório, mesmo padrão já usado para `metadata` (ver
+ * `postgres-inbox-message-repository.ts`). */
+export type InboxMediaMetadata = {
+  fileName?: string;
+  fileSizeBytes?: number;
+  durationSeconds?: number;
+  thumbnailDataUrl?: string;
+};
+
 export type InboxMessage = {
   id: string;
   tenantId: string;

@@ -46,6 +46,14 @@ export function listInboxConversationMessages(workspaceId: string, conversationI
   return apiClient.get<{ messages: InboxMessage[] }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/messages?${query.toString()}`);
 }
 
+/** Redesign operacional (mídia real) — token de curtíssima duração e escopo único (só abre
+ * `GET /v1/inbox/media/:messageId`, para ESTA mensagem específica), mesmo padrão de
+ * `mintInboxStreamToken`. Mintado sob demanda a cada tentativa de exibir/abrir a mídia — nunca
+ * cacheado além do componente que o usa. */
+export function getInboxMediaToken(workspaceId: string, messageId: string): Promise<{ mediaToken: string; expiresIn: number }> {
+  return apiClient.post<{ mediaToken: string; expiresIn: number }>("/v1/inbox/media-token", { workspaceId, messageId });
+}
+
 export function markInboxConversationRead(workspaceId: string, conversationId: string): Promise<{ read: boolean }> {
   return apiClient.post<{ read: boolean }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/read`, { workspaceId });
 }

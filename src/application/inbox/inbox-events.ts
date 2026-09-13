@@ -21,6 +21,21 @@ export type InboundMessageReceived = {
   body?: string;
   mediaUrl?: string;
   mimeType?: string;
+  /**
+   * Redesign operacional (mídia) — campos extraídos do payload bruto do WuzAPI só para tipos de
+   * mídia (`image`/`video`/`audio`/`document`), PENDING validação real (ver comentário no topo de
+   * `wuzapi-event-mapper.ts`). `mediaKey`/`fileSha256`/`fileEncSha256` são material de
+   * descriptografia — usados uma única vez pelo worker para chamar o download do WuzAPI logo após
+   * este evento chegar, NUNCA persistidos em `inbox_messages` (ver `registerInboundMessage`).
+   */
+  caption?: string;
+  fileName?: string;
+  fileSizeBytes?: number;
+  durationSeconds?: number;
+  thumbnailBase64?: string;
+  mediaKey?: string;
+  fileSha256?: string;
+  fileEncSha256?: string;
   occurredAt: string;
 };
 

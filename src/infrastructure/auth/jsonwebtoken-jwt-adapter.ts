@@ -14,9 +14,10 @@ export class JsonWebTokenJwtAdapter implements JwtPort {
     try {
       const decoded = jwt.verify(token, this.secret, { algorithms: ["HS256"] });
       if (typeof decoded !== "object" || decoded === null) return { valid: false, reason: "invalid" };
-      const { userId, tenantId, role, sessionId, isPlatformAdmin, purpose } = decoded as Partial<JwtAccessTokenPayload>;
+      const { userId, tenantId, role, sessionId, isPlatformAdmin, purpose, messageId } = decoded as Partial<JwtAccessTokenPayload>;
       if (!userId || !tenantId || !role || !sessionId) return { valid: false, reason: "invalid" };
-      return { valid: true, payload: { userId, tenantId, role, sessionId, isPlatformAdmin: isPlatformAdmin === true, purpose: purpose === "inbox_stream" ? "inbox_stream" : undefined } };
+      const safePurpose = purpose === "inbox_stream" || purpose === "inbox_media" ? purpose : undefined;
+      return { valid: true, payload: { userId, tenantId, role, sessionId, isPlatformAdmin: isPlatformAdmin === true, purpose: safePurpose, messageId: safePurpose === "inbox_media" ? messageId : undefined } };
     } catch (error) {
       if (error instanceof jwt.TokenExpiredError) return { valid: false, reason: "expired" };
       return { valid: false, reason: "invalid" };

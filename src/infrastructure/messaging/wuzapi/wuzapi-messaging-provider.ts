@@ -86,6 +86,14 @@ export class WuzApiMessagingProvider implements MessagingProvider {
     return this.toSendResult(result);
   }
 
+  async downloadMedia(input: {
+    externalSessionId: string;
+    type: "image" | "audio" | "video" | "document";
+    ref: { url: string; mediaKey?: string; mimeType?: string; fileSha256?: string; fileSizeBytes?: number; fileEncSha256?: string };
+  }): Promise<{ body: Buffer; mimeType?: string } | undefined> {
+    return this.client.downloadMedia(input.externalSessionId, input.type, input.ref);
+  }
+
   private toSendResult(result: { Id: string }): MessagingSendResult {
     if (!result?.Id) throw new MessagingProviderError("transient", "WuzAPI não retornou um id de mensagem.");
     return { externalMessageId: result.Id };

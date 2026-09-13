@@ -10,6 +10,7 @@ import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { WorkspaceTopBar } from "@/components/WorkspaceTopBar";
 import { BACKSTAGE_NAV, canUseBackstage } from "@/components/workspace-navigation";
 import { useAuth } from "@/contexts/auth-context";
+import { SidebarProvider } from "@/contexts/sidebar-context";
 import { WorkspaceProvider } from "@/contexts/workspace-context";
 import { useWorkspace } from "@/features/workspace/hooks";
 
@@ -74,16 +75,42 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // Conversas entra em "modo foco": sem scroll na página (o scroll fica dentro de cada painel do
+  // Inbox), preenchendo 100% da altura restante em vez do padding/scroll padrão de página comum.
+  const isConversasPath = pathname === `${base}/conversas`;
+
   return (
     <WorkspaceProvider workspace={workspace}>
-      <div className="flex min-h-dvh min-w-0 flex-col md:flex-row">
-        <WorkspaceSidebar workspaceId={workspace.id} />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col md:min-h-dvh">
-          <WorkspaceTopBar workspaceId={workspace.id} name={workspace.name} status={workspace.status} />
-          <div className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-surface-sunken pb-24 md:pb-0">{content}</div>
+      <SidebarProvider>
+        <div className="flex min-h-dvh min-w-0 flex-col md:flex-row">
+          <WorkspaceSidebar workspaceId={workspace.id} />
+          <div
+            className={
+              isConversasPath
+                ? // `md:flex-1` (não `flex-1` incondicional) de propósito: no mobile o eixo principal
+                  // deste flex é vertical (flex-col) — `flex-1` ali reinterpretaria como
+                  // flex-basis:0% na ALTURA, entrando em conflito com o `h-dvh` explícito e inflando
+                  // o container para o tamanho do conteúdo (achado real via Playwright, mobile-390).
+                  // A partir de `md:` o eixo vira horizontal (flex-row) e `flex-1` volta a fazer o
+                  // que sempre fez: crescer na LARGURA ao lado da sidebar (`shrink-0`).
+                  "flex h-dvh min-w-0 flex-col overflow-hidden md:flex-1"
+                : "flex min-h-0 min-w-0 flex-1 flex-col md:min-h-dvh"
+            }
+          >
+            <WorkspaceTopBar workspaceId={workspace.id} name={workspace.name} status={workspace.status} />
+            <div
+              className={
+                isConversasPath
+                  ? "min-h-0 min-w-0 flex-1 overflow-hidden bg-surface-sunken pb-16 md:pb-0"
+                  : "min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-surface-sunken pb-24 md:pb-0"
+              }
+            >
+              {content}
+            </div>
+          </div>
+          <BottomNav workspaceId={workspace.id} />
         </div>
-        <BottomNav workspaceId={workspace.id} />
-      </div>
+      </SidebarProvider>
     </WorkspaceProvider>
   );
 }

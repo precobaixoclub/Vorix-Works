@@ -15,8 +15,21 @@ export type InboundMessageReceived = {
   connectionId: string;
   externalSessionId: string;
   externalMessageId: string;
-  fromPhone: string;
-  fromName?: string;
+  /**
+   * Correção do bug de identidade de conversa (ver docs/conversas-canonical-chat-identity.md) —
+   * `chatId` é a identidade CANÔNICA do chat (JID do grupo `@g.us`, ou telefone normalizado do
+   * peer em DM), sempre distinta do remetente de uma mensagem específica. `senderId`/`senderName`
+   * são de quem mandou ESTA mensagem (== o peer em DM; um dos N participantes em grupo).
+   * `fromMe` = este evento é um self-echo do WuzAPI (mensagem que o PRÓPRIO número conectado
+   * mandou — via Vorix ou diretamente do celular pareado), nunca tratado como mensagem de um
+   * contato externo.
+   */
+  chatId: string;
+  isGroup: boolean;
+  groupName?: string;
+  fromMe: boolean;
+  senderId: string;
+  senderName?: string;
   messageType: InboxMessageType;
   body?: string;
   mediaUrl?: string;

@@ -189,7 +189,7 @@ test("isPrincipalAuthorizedForRequest: matriz completa de decisão", () => {
 async function seedMediaMessage(app, { tenantId, workspaceId }) {
   const connection = await app.zunoContainer.messagingConnectionRepository.create({ tenantId, workspaceId, provider: "wuzapi", displayName: "Canal de teste" });
   const contact = await app.zunoContainer.inboxContactRepository.upsertByPhone({ tenantId, workspaceId, phoneNormalized: "+5511999998888", name: "Cliente" });
-  const conversation = await app.zunoContainer.inboxConversationRepository.findOrCreate({ tenantId, workspaceId, connectionId: connection.id, contactId: contact.id });
+  const conversation = await app.zunoContainer.inboxConversationRepository.findOrCreate({ tenantId, workspaceId, connectionId: connection.id, chatType: "direct", externalChatId: "+5511999998888", contactId: contact.id });
   const objectKey = `${tenantId}/${workspaceId}/media-test-object`;
   const { message } = await app.zunoContainer.inboxMessageRepository.create({
     tenantId, workspaceId, conversationId: conversation.id, connectionId: connection.id,

@@ -5,7 +5,7 @@ import type {
   InboxConversationListItem,
   InboxConversationRepositoryPort,
 } from "../../../application/ports/inbox-conversation-repository.port.js";
-import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus, InboxMessageDirection, InboxMessageType } from "../../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMessageDirection, InboxMessageType } from "../../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -14,7 +14,10 @@ type Row = {
   tenant_id: string;
   workspace_id: string;
   connection_id: string;
-  contact_id: string;
+  chat_type: string;
+  external_chat_id: string;
+  group_name: string | null;
+  contact_id: string | null;
   status: string;
   assigned_user_id: string | null;
   department_id: string | null;
@@ -33,12 +36,19 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
 
   async findOrCreate(input: FindOrCreateInboxConversationInput): Promise<InboxConversation> {
     const id = idGenerator();
+    // Idempotente por `(connection_id, external_chat_id)` — a identidade CANÔNICA do chat (grupo
+    // ou peer), nunca mais o remetente de uma mensagem específica (ver migration 0115). Um grupo
+    // já existente nunca ganha um `group_name`/`contact_id` diferente por reentrega: `coalesce`
+    // preserva o que já tiver, só preenche se ainda estava vazio.
     const result = await this.pool.query<Row>(
-      `insert into inbox_conversations (id, tenant_id, workspace_id, connection_id, contact_id)
-       values ($1, $2, $3, $4, $5)
-       on conflict (connection_id, contact_id) do update set updated_at = inbox_conversations.updated_at
+      `insert into inbox_conversations (id, tenant_id, workspace_id, connection_id, chat_type, external_chat_id, group_name, contact_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)
+       on conflict (connection_id, external_chat_id) do update set
+         group_name = coalesce(inbox_conversations.group_name, excluded.group_name),
+         contact_id = coalesce(inbox_conversations.contact_id, excluded.contact_id),
+         updated_at = inbox_conversations.updated_at
        returning *`,
-      [id, input.tenantId, input.workspaceId, input.connectionId, input.contactId],
+      [id, input.tenantId, input.workspaceId, input.connectionId, input.chatType, input.externalChatId, input.groupName ?? null, input.contactId ?? null],
     );
     return this.toDomain(result.rows[0]);
   }
@@ -71,16 +81,19 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     }
     // Join com inbox_contacts só pra listagem (read-model, Fase 3) — evita a Inbox ter que fazer
     // uma segunda chamada por conversa só pra saber o nome/telefone de quem está do outro lado.
+    // LEFT JOIN (era INNER) desde a correção do bug de identidade de conversa: uma conversa de
+    // GRUPO não tem `contact_id` (nunca fundida com um Contact do CRM, ver migration 0115) — um
+    // INNER aqui faria todo grupo desaparecer silenciosamente da listagem.
     // LATERAL join com a última mensagem (redesign operacional) — barato porque
     // `inbox_messages_conversation_idx (conversation_id, created_at desc)` (migration 0083) já
     // existe: o planner faz um index scan de 1 linha por conversa, não uma varredura completa.
     const result = await this.pool.query<
-      Row & { contact_name: string | null; contact_phone: string; crm_contact_id: string | null; lm_type: string | null; lm_body: string | null; lm_direction: string | null }
+      Row & { contact_name: string | null; contact_phone: string | null; crm_contact_id: string | null; lm_type: string | null; lm_body: string | null; lm_direction: string | null }
     >(
       `select c.*, ct.name as contact_name, ct.phone_normalized as contact_phone, ct.contact_id as crm_contact_id,
               lm.type as lm_type, lm.body as lm_body, lm.direction as lm_direction
        from inbox_conversations c
-       join inbox_contacts ct on ct.id = c.contact_id
+       left join inbox_contacts ct on ct.id = c.contact_id
        left join lateral (
          select type, body, direction
          from inbox_messages m
@@ -95,7 +108,7 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     return result.rows.map((row) => ({
       ...this.toDomain(row),
       contactName: row.contact_name ?? undefined,
-      contactPhone: row.contact_phone,
+      contactPhone: row.contact_phone ?? undefined,
       crmContactId: row.crm_contact_id ?? undefined,
       lastMessagePreview: row.lm_type
         ? { type: row.lm_type as InboxMessageType, body: row.lm_body ?? undefined, direction: row.lm_direction as InboxMessageDirection }
@@ -198,7 +211,10 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       tenantId: row.tenant_id,
       workspaceId: row.workspace_id,
       connectionId: row.connection_id,
-      contactId: row.contact_id,
+      chatType: row.chat_type as InboxChatType,
+      externalChatId: row.external_chat_id,
+      groupName: row.group_name ?? undefined,
+      contactId: row.contact_id ?? undefined,
       status: row.status as InboxConversationStatus,
       assignedUserId: row.assigned_user_id ?? undefined,
       departmentId: row.department_id ?? undefined,

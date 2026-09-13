@@ -110,7 +110,7 @@ async function makeConversation(tenantId, { aiEnabled = false } = {}) {
   await connectionRepo.updateStatus(connection.id, { status: "connected", externalSessionId: `sess-${connection.id}` });
   const phone = `+55119${++counter}0000`;
   const contact = await contactRepo.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: phone, name: "Cliente Teste" });
-  const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: contact.id });
+  const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "direct", externalChatId: phone, contactId: contact.id });
   if (aiEnabled) await conversationRepo.setAiEnabled(conversation.id, true);
   return { workspace, connection: await connectionRepo.getById(connection.id), contact, phone, conversation: await conversationRepo.getById(conversation.id) };
 }
@@ -159,7 +159,7 @@ test("Claim de mensagem abandonado (lease expirado) é recuperado pelo drenador 
   const { workspace, connection, phone, conversation } = await makeConversation(tenantId, { aiEnabled: true });
   const depsSetup = buildDeps(tenantId);
   const { message } = await registerInboundMessage(depsSetup, {
-    tenantId, workspaceId: workspace.id, connectionId: connection.id, fromPhone: phone, externalMessageId: "wa-stuck-claim", type: "text", body: "Oi", occurredAt: new Date().toISOString(),
+    tenantId, workspaceId: workspace.id, connectionId: connection.id, chatId: phone, isGroup: false, fromMe: false, senderId: phone, externalMessageId: "wa-stuck-claim", type: "text", body: "Oi", occurredAt: new Date().toISOString(),
   });
 
   // Simula um processo que reivindicou a mensagem e morreu antes de resolver o claim.
@@ -338,7 +338,7 @@ test("Crédito insuficiente: IA não gera resposta, evento distinto registrado, 
   const aiResponder = { async generateReply() { return { ok: false, category: "quota_exceeded", message: "Créditos insuficientes (simulado)." }; } };
   const deps = buildDeps(tenantId, { aiResponder });
 
-  const { message } = await registerInboundMessage(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, fromPhone: phone, externalMessageId: "wa-no-credit", type: "text", body: "Oi", occurredAt: new Date().toISOString() });
+  const { message } = await registerInboundMessage(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, chatId: phone, isGroup: false, fromMe: false, senderId: phone, externalMessageId: "wa-no-credit", type: "text", body: "Oi", occurredAt: new Date().toISOString() });
   await maybeGenerateAiResponse(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, triggeringMessageId: message.id });
 
   const events = await deps.conversationEventRepository.listByConversation({ tenantId, workspaceId: workspace.id, conversationId: conversation.id });
@@ -524,7 +524,7 @@ test("Métricas: fluxo completo (inbound, outbound, falha, IA) chama os contador
   const aiResponder = { async generateReply() { return { ok: true, reply: "Resposta.", provider: "fake", model: "fake", latencyMs: 42, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCost: 0.01 }, traceId: "t" }; } };
   const deps = buildDeps(tenantId, { aiResponder, metrics });
 
-  const { message, wasCreated } = await registerInboundMessage(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, fromPhone: phone, externalMessageId: "wa-metrics", type: "text", body: "Oi", occurredAt: new Date().toISOString() });
+  const { message, wasCreated } = await registerInboundMessage(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, chatId: phone, isGroup: false, fromMe: false, senderId: phone, externalMessageId: "wa-metrics", type: "text", body: "Oi", occurredAt: new Date().toISOString() });
   assert.ok(wasCreated);
   await maybeGenerateAiResponse(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, triggeringMessageId: message.id });
 

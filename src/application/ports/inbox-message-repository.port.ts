@@ -18,6 +18,10 @@ export type CreateInboxMessageInput = {
   sentByUserId?: string;
   sentByAi?: boolean;
   sentByAutomation?: boolean;
+  /** Correção do bug de identidade de conversa — quem, dentro do chat, mandou esta mensagem (ver
+   * `InboxMessage.senderExternalId`/`senderDisplayName`). */
+  senderExternalId?: string;
+  senderDisplayName?: string;
 };
 
 export type InboxMessageRepositoryPort = {
@@ -36,6 +40,12 @@ export type InboxMessageRepositoryPort = {
    */
   create(input: CreateInboxMessageInput): Promise<{ message: InboxMessage; wasCreated: boolean }>;
   getById(id: string): Promise<InboxMessage | undefined>;
+  /** Correção do bug de self-echo (ver docs/conversas-canonical-chat-identity.md) — lookup puro
+   * por `(connectionId, externalMessageId)`, sem inserir nada. Usado para distinguir "o WuzAPI está
+   * só confirmando uma mensagem que o Vorix já registrou via `sendInboxMessage`" (achado ==
+   * `undefined` no `create()` seria ambíguo com "nunca existiu") de "isto é uma mensagem nova que o
+   * próprio número mandou por fora do Vorix (direto do celular pareado)". */
+  findByExternalId(input: { connectionId: string; externalMessageId: string }): Promise<InboxMessage | undefined>;
   /**
    * Redesign operacional (mídia real) — preenche `mediaStorageRef`/`mimeType`/`metadata` DEPOIS
    * que a mensagem já foi criada (best-effort/assíncrono: a mensagem aparece imediatamente com

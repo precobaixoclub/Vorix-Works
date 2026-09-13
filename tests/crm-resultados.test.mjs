@@ -160,7 +160,7 @@ test("Métricas de atendimento: recebidas, backlog, IA vs. humano e tempo de pri
 
   const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "WhatsApp" });
   const inboxContact = await inboxContactRepo.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: "+5511900000001", name: "Cliente" });
-  const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: inboxContact.id });
+  const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "direct", externalChatId: "+5511900000001", contactId: inboxContact.id });
 
   await messageRepo.create({ tenantId, workspaceId: workspace.id, conversationId: conversation.id, connectionId: connection.id, direction: "inbound", type: "text", body: "Oi" });
   await messageRepo.create({ tenantId, workspaceId: workspace.id, conversationId: conversation.id, connectionId: connection.id, direction: "outbound", type: "text", body: "Olá! Como posso ajudar?", sentByAi: true });

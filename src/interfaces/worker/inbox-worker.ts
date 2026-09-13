@@ -234,7 +234,9 @@ function logRawEventShapeForDiagnosis(raw: unknown): void {
       }
       return lines;
     };
+    const info = (raw as { event?: { Info?: Record<string, unknown> } })?.event?.Info;
     console.log("[DIAG-RAW-SHAPE]", JSON.stringify(describe(raw, "raw", 0)));
+    if (info) console.log("[DIAG-TIMESTAMP]", JSON.stringify({ Timestamp: info.Timestamp, Type: info.Type, AddressingMode: info.AddressingMode }));
   } catch (error) {
     console.error("[inbox-worker] diag log falhou:", error instanceof Error ? error.message : error);
   }
@@ -577,8 +579,12 @@ async function main(): Promise<void> {
       tenantId: event.tenantId,
       workspaceId: event.workspaceId,
       connectionId: event.connectionId,
-      fromPhone: event.fromPhone,
-      fromName: event.fromName,
+      chatId: event.chatId,
+      isGroup: event.isGroup,
+      groupName: event.groupName,
+      fromMe: event.fromMe,
+      senderId: event.senderId,
+      senderName: event.senderName,
       externalMessageId: event.externalMessageId,
       type: event.messageType,
       body: event.body,
@@ -591,7 +597,12 @@ async function main(): Promise<void> {
     // geração de IA. Roda em `.catch()`, nunca `await`-ado dentro do fluxo principal do ACK: uma
     // falha inesperada aqui NUNCA pode fazer este evento (já persistido com sucesso) cair na
     // escada de retry/DLQ do RabbitMQ, o que reprocessaria a mensagem sem necessidade.
-    if (wasCreated) {
+    //
+    // `message.direction === "inbound"` (correção do bug de self-echo, ver
+    // docs/conversas-canonical-chat-identity.md) — um evento `fromMe` que virou uma mensagem NOVA
+    // (o próprio número mandou por fora do Vorix) é registrado como `outbound`; a IA nunca deve
+    // "responder" à própria mensagem do operador.
+    if (wasCreated && message.direction === "inbound") {
       maybeGenerateAiResponse(deps, { tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id, triggeringMessageId: message.id })
         .then(() => publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id }))
         .catch((error) => {

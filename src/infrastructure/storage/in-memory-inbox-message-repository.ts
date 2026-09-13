@@ -31,6 +31,8 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
       sentByUserId: input.sentByUserId,
       sentByAi: input.sentByAi ?? false,
       sentByAutomation: input.sentByAutomation ?? false,
+      senderExternalId: input.senderExternalId,
+      senderDisplayName: input.senderDisplayName,
       attemptCount: 0,
       publishAttempts: 0,
       createdAt: now,
@@ -42,6 +44,12 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
 
   async getById(id: string): Promise<InboxMessage | undefined> {
     return this.rows.get(id);
+  }
+
+  async findByExternalId(input: { connectionId: string; externalMessageId: string }): Promise<InboxMessage | undefined> {
+    return [...this.rows.values()].find(
+      (row) => row.connectionId === input.connectionId && row.externalMessageId === input.externalMessageId,
+    );
   }
 
   async attachMedia(id: string, input: { mediaStorageRef: InboxMediaStorageRef; mimeType?: string; metadata?: Record<string, unknown> }): Promise<void> {

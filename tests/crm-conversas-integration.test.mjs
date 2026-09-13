@@ -63,7 +63,7 @@ test("Vincular um inbox_contact (WhatsApp) a um Contact do CRM aparece em InboxC
 
   const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "WhatsApp" });
   const inboxContact = await inboxContactRepo.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: "+5511977776666", name: "Cliente Integrado" });
-  const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: inboxContact.id });
+  const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "direct", externalChatId: "+5511977776666", contactId: inboxContact.id });
 
   // Antes de vincular: nem InboxContact nem a listagem de conversas mostram nenhum vínculo.
   const beforeLink = await inboxContactRepo.getById(inboxContact.id);

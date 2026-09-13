@@ -24,6 +24,28 @@ import type { InboxMessageStatus, InboxMessageType } from "../../../domain/inbox
  * (que nunca aparece neste payload). Por isso a correlação de evento → conexão é um `getById`
  * direto, sem precisar de índice por token.
  *
+ * CORREÇÃO DO BUG DE IDENTIDADE DE CONVERSA (ver docs/conversas-canonical-chat-identity.md) — até
+ * aqui este mapper só lia `Info.Sender` (sempre) como identidade da conversa, e nunca lia
+ * `Info.Chat`/`Info.IsGroup`/`Info.IsFromMe` apesar de já estarem documentados no envelope acima
+ * (confirmados via código-fonte, não suposição). Isso quebrava dois casos reais: (1) GRUPO — em
+ * mensagem de grupo, `Sender` é o PARTICIPANTE que mandou (`...@s.whatsapp.net`), `Chat` é o GRUPO
+ * (`...@g.us`); usar `Sender` como identidade da conversa cria uma conversa por participante em vez
+ * de uma por grupo. (2) SELF-ECHO — o WuzAPI/whatsmeow também emite um evento `Message` para
+ * mensagens que o PRÓPRIO número conectado mandou (via Vorix ou direto do celular pareado), com
+ * `IsFromMe: true` e `Sender` = o JID do próprio bot; sem checar `IsFromMe`, esse evento virava uma
+ * "mensagem inbound de um contato" cujo contato é o PRÓPRIO número — uma segunda conversa fantasma
+ * pro mesmo par. Agora: `chatId` (identidade canônica da conversa) vem de `Chat` quando presente,
+ * com fallback pra `Sender` só se `Chat` estiver ausente (nunca deveria acontecer segundo o
+ * envelope confirmado, mas defensivo); `senderId`/`senderName` são sempre de `Sender`/`PushName`
+ * (quem mandou ESSA mensagem específica); `fromMe`/`isGroup` são repassados como booleans crus.
+ *
+ * AINDA PENDENTE DE CONFIRMAÇÃO AO VIVO (diagnóstico temporário em `inbox-worker.ts`,
+ * `logRawEventShapeForDiagnosis` — ver commit "debug(inbox)"): os nomes acima vêm do código-fonte
+ * do `asternic/wuzapi`, mas nunca foram vistos num payload real de GRUPO ou de self-echo (a
+ * homologação até agora só validou o formato de mensagem individual/mídia). Tratar como
+ * alta-confiança, não como 100% verificado — reavaliar assim que o diagnóstico capturar um evento
+ * real de grupo/self-echo.
+ *
  * AINDA NÃO CONFIRMADO (pendência do spike, ver docs/conversas-fase2-spike.md): o nome exato do
  * campo de texto dentro de `Message` para cada tipo de mídia (`imageMessage`, `videoMessage`
  * etc. — só `conversation`/`extendedTextMessage` para texto simples estão bem documentados no
@@ -82,8 +104,16 @@ export function mapWuzApiEvent(raw: RawWuzApiEvent): NormalizedInboxEvent | unde
 function mapInboundMessage(instanceName: string, event: Record<string, unknown>): InboundMessageReceived | undefined {
   const info = event.Info as Record<string, unknown> | undefined;
   const messageId = info?.ID as string | undefined;
-  const fromPhone = info?.Sender as string | undefined;
-  if (!messageId || !fromPhone) return undefined;
+  const sender = info?.Sender as string | undefined;
+  if (!messageId || !sender) return undefined;
+
+  const isGroup = Boolean(info?.IsGroup);
+  const fromMe = Boolean(info?.IsFromMe);
+  // `Chat` é a identidade CANÔNICA da conversa (grupo ou peer) — ver comentário no topo do
+  // arquivo. Fallback pra `Sender` só se `Chat` vier ausente (não deveria, é confirmado no
+  // envelope, mas nunca deixar o evento inteiro cair por um campo defensivo faltando).
+  const chatRaw = (info?.Chat as string | undefined) ?? sender;
+  const chatId = isGroup ? normalizeWhatsmeowGroupJid(chatRaw) : normalizeWhatsmeowJid(chatRaw);
 
   const message = event.Message as Record<string, unknown> | undefined;
   const kind = message ? Object.keys(message).find((key) => key in MESSAGE_TYPE_BY_WHATSMEOW_KIND) : undefined;
@@ -101,8 +131,15 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
     connectionId: instanceName,
     externalSessionId: instanceName,
     externalMessageId: messageId,
-    fromPhone: normalizeWhatsmeowJid(fromPhone),
-    fromName: info?.PushName as string | undefined,
+    chatId,
+    isGroup,
+    // Nome do grupo não vem no evento de mensagem do whatsmeow (só em metadata de grupo, uma
+    // chamada separada nunca implementada aqui) — `undefined` de propósito; o frontend cai no
+    // fallback visual (ver `docs/conversas-canonical-chat-identity.md`, seção "riscos restantes").
+    groupName: undefined,
+    fromMe,
+    senderId: normalizeWhatsmeowJid(sender),
+    senderName: info?.PushName as string | undefined,
     messageType,
     // Caption de imagem/vídeo vira o `body` da mensagem — mesma UX do WhatsApp (mídia com legenda
     // aparece como uma coisa só, não texto separado da mídia).
@@ -201,8 +238,22 @@ function mapConnectionState(type: "Connected" | "Disconnected" | "LoggedOut", in
 }
 
 /** JIDs do whatsmeow vêm como `"<telefone>@s.whatsapp.net"` (contato) ou
- * `"<telefone>.<device>:<agent>@s.whatsapp.net"` (própria sessão, ver `wuzapi-messaging-provider.ts`). */
+ * `"<telefone>.<device>:<agent>@s.whatsapp.net"` (própria sessão, ver `wuzapi-messaging-provider.ts`).
+ * NUNCA usar para um JID de grupo (`@g.us`) — não é um telefone, ver `normalizeWhatsmeowGroupJid`. */
 function normalizeWhatsmeowJid(jid: string): string {
   const phone = jid.split("@")[0]?.split(".")[0]?.split(":")[0];
   return phone ? `+${phone}` : jid;
+}
+
+/** JID de GRUPO do whatsmeow (`"<id>@g.us"`) não é um telefone — nunca passar por
+ * `normalizeWhatsmeowJid`/`normalizePhoneNumber` (formatação `+<dígitos>` faria um grupo colidir
+ * com um contato cujo telefone coincida com o id numérico do grupo, ou simplesmente produzir uma
+ * string sem sentido). Mantém o JID como veio (só remove sufixo de device, se algum dia existir),
+ * já que `...@g.us` nunca colide com o formato `+<dígitos>` usado pra chats diretos — é a própria
+ * distinção que torna `external_chat_id` seguro como chave única por conexão independente do
+ * `chat_type`. */
+function normalizeWhatsmeowGroupJid(jid: string): string {
+  const [id, domain] = jid.split("@");
+  const cleanId = id?.split(":")[0];
+  return domain ? `${cleanId}@${domain}` : jid;
 }

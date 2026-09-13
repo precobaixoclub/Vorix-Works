@@ -439,8 +439,16 @@ export type RegisterInboundMessageInput = {
   tenantId: string;
   workspaceId: string;
   connectionId: string;
-  fromPhone: string;
-  fromName?: string;
+  /** Identidade CANÔNICA do chat (JID de grupo ou telefone normalizado do peer) — NUNCA o
+   * remetente de uma mensagem específica. Ver `docs/conversas-canonical-chat-identity.md`. */
+  chatId: string;
+  isGroup: boolean;
+  groupName?: string;
+  /** `true` = self-echo do WuzAPI (o PRÓPRIO número conectado mandou esta mensagem, via Vorix ou
+   * direto do celular pareado) — nunca um contato externo. Ver comentário na função abaixo. */
+  fromMe: boolean;
+  senderId: string;
+  senderName?: string;
   externalMessageId: string;
   type: InboxMessage["type"];
   body?: string;
@@ -448,29 +456,62 @@ export type RegisterInboundMessageInput = {
 };
 
 /**
- * Normalização de mensagem inbound — usada pelo consumer de `inbox.incoming.queue` (Fase 2).
- * Idempotente ponta a ponta: `upsertByPhone` nunca duplica contato, `findOrCreate` nunca duplica
- * conversa, `messageRepository.create` nunca duplica mensagem (constraint `(connection_id,
+ * Registra um evento de mensagem (inbound de um contato/participante, OU self-echo do próprio
+ * número) — usado pelo consumer de `inbox.incoming.queue` (Fase 2). Idempotente ponta a ponta:
+ * `upsertByPhone` nunca duplica contato, `findOrCreate` nunca duplica conversa,
+ * `messageRepository.create` nunca duplica mensagem (constraint `(connection_id,
  * external_message_id)`) — uma reentrega do mesmo evento é inofensiva.
  *
  * ACHADO AO VIVO (spike Fase 2): `markLastMessage`/`incrementUnread` só pode rodar quando a
  * mensagem foi REALMENTE inserida agora (`wasCreated`) — sem essa checagem, uma reentrega do
  * mesmo evento (mensagem corretamente deduplicada) ainda incrementava `unread_count` de novo,
  * fazendo o contador de não lidas divergir do número real de mensagens.
+ *
+ * CORREÇÃO DO BUG DE IDENTIDADE DE CONVERSA (ver docs/conversas-canonical-chat-identity.md):
+ * (1) GRUPO — a conversa é resolvida por `chatId` (o grupo), nunca por `senderId` (o participante).
+ *     `contactId` só existe para `chatType: "direct"`; grupo nunca ganha um `InboxContact`/CRM
+ *     próprio (participantes continuam anônimos aqui — a atribuição por mensagem é via
+ *     `senderExternalId`/`senderDisplayName`, não via um contato).
+ * (2) SELF-ECHO (`fromMe: true`) — primeiro checa se esta `externalMessageId` já existe (mensagem
+ *     que o próprio Vorix mandou via `sendInboxMessage`/`processOutboundMessage`): se sim, este
+ *     evento é só a confirmação do WuzAPI, tratado como no-op (`wasCreated: false`), NUNCA cria uma
+ *     segunda conversa/mensagem para o mesmo par. Se não existir ainda, é uma mensagem que o número
+ *     mandou por fora do Vorix (direto do celular pareado) — registrada como `outbound` na MESMA
+ *     conversa do chat (nunca como "inbound de um contato chamado eu mesmo").
  */
-export async function registerInboundMessage(deps: InboxUseCaseDeps, input: RegisterInboundMessageInput): Promise<{ contact: InboxContact; conversation: InboxConversation; message: InboxMessage; wasCreated: boolean }> {
-  const phoneNormalized = normalizePhoneNumber(input.fromPhone);
-  const contact = await deps.contactRepository.upsertByPhone({
-    tenantId: input.tenantId,
-    workspaceId: input.workspaceId,
-    phoneNormalized,
-    name: input.fromName,
-  });
+export async function registerInboundMessage(
+  deps: InboxUseCaseDeps,
+  input: RegisterInboundMessageInput,
+): Promise<{ contact?: InboxContact; conversation: InboxConversation; message: InboxMessage; wasCreated: boolean }> {
+  if (input.fromMe) {
+    const existing = await deps.messageRepository.findByExternalId({ connectionId: input.connectionId, externalMessageId: input.externalMessageId });
+    if (existing) {
+      const conversation = await deps.conversationRepository.getById(existing.conversationId);
+      if (conversation) return { conversation, message: existing, wasCreated: false };
+    }
+  }
+
+  let contact: InboxContact | undefined;
+  if (!input.isGroup) {
+    const phoneNormalized = normalizePhoneNumber(input.chatId);
+    contact = await deps.contactRepository.upsertByPhone({
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+      phoneNormalized,
+      // Self-echo nunca deveria sobrescrever o nome do CONTATO com o nome do próprio operador —
+      // `PushName` num evento `fromMe` é o nome de quem mandou (o bot), não da pessoa do outro lado.
+      name: input.fromMe ? undefined : input.senderName,
+    });
+  }
+
   const conversation = await deps.conversationRepository.findOrCreate({
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
     connectionId: input.connectionId,
-    contactId: contact.id,
+    chatType: input.isGroup ? "group" : "direct",
+    externalChatId: input.isGroup ? input.chatId : normalizePhoneNumber(input.chatId),
+    groupName: input.groupName,
+    contactId: contact?.id,
   });
   const { message, wasCreated } = await deps.messageRepository.create({
     tenantId: input.tenantId,
@@ -478,17 +519,22 @@ export async function registerInboundMessage(deps: InboxUseCaseDeps, input: Regi
     conversationId: conversation.id,
     connectionId: input.connectionId,
     externalMessageId: input.externalMessageId,
-    direction: "inbound",
+    direction: input.fromMe ? "outbound" : "inbound",
     type: input.type,
     body: input.body,
+    senderExternalId: input.senderId,
+    senderDisplayName: input.senderName,
+    ...(input.fromMe ? { status: "sent" as const } : {}),
   });
   if (wasCreated) {
-    await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: input.occurredAt, incrementUnread: true });
-    deps.metrics?.incMessageInbound();
-    // `createdAt === updatedAt` é o sinal de que `findOrCreate` acabou de CRIAR a conversa agora
-    // (nunca reaproveitou uma existente) — só aí é de fato a primeira conversa do workspace.
-    if (deps.productAnalytics && conversation.createdAt === conversation.updatedAt) {
-      await recordFirstEvent(deps.productAnalytics, { eventName: "first_conversation_received", source: "server", tenantId: input.tenantId, workspaceId: input.workspaceId });
+    await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: input.occurredAt, incrementUnread: !input.fromMe });
+    if (!input.fromMe) {
+      deps.metrics?.incMessageInbound();
+      // `createdAt === updatedAt` é o sinal de que `findOrCreate` acabou de CRIAR a conversa agora
+      // (nunca reaproveitou uma existente) — só aí é de fato a primeira conversa do workspace.
+      if (deps.productAnalytics && conversation.createdAt === conversation.updatedAt) {
+        await recordFirstEvent(deps.productAnalytics, { eventName: "first_conversation_received", source: "server", tenantId: input.tenantId, workspaceId: input.workspaceId });
+      }
     }
   }
   return { contact, conversation, message, wasCreated };
@@ -633,8 +679,6 @@ export async function processOutboundMessage(deps: InboxUseCaseDeps, input: Proc
 
   const conversation = await deps.conversationRepository.getById(message.conversationId);
   if (!conversation) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${message.conversationId}" não existe.`);
-  const contact = await deps.contactRepository.getById(conversation.contactId);
-  if (!contact) throw new Error(`INBOX_CONTACT_NOT_FOUND: contato "${conversation.contactId}" não existe.`);
   const connection = await deps.connectionRepository.getById(message.connectionId);
   if (!connection?.externalSessionId) throw new MessagingProviderError("transient", `Conexão "${message.connectionId}" sem sessão ativa no gateway.`);
 
@@ -689,7 +733,12 @@ export async function processOutboundMessage(deps: InboxUseCaseDeps, input: Proc
   if (!claimed) return message;
 
   try {
-    const result = await deps.provider.sendText({ externalSessionId: connection.externalSessionId, to: contact.phoneNormalized, body: message.body ?? "" });
+    // Destino é sempre a identidade CANÔNICA do chat (`externalChatId` — grupo ou peer), nunca o
+    // telefone de um contato: uma conversa de GRUPO não tem `contactId` (ver correção do bug de
+    // identidade de conversa), e usar o remetente da ÚLTIMA mensagem recebida como destino
+    // (em vez do chat) mandaria a resposta pro participante errado, nunca pro grupo. Ver
+    // docs/conversas-canonical-chat-identity.md.
+    const result = await deps.provider.sendText({ externalSessionId: connection.externalSessionId, to: conversation.externalChatId, body: message.body ?? "" });
     if (deps.circuitBreaker) await deps.circuitBreaker.recordSuccess(circuitKey);
     deps.metrics?.incMessageOutbound();
     return await deps.messageRepository.markSent(message.id, { externalMessageId: result.externalMessageId, sentAt: new Date().toISOString() });
@@ -900,7 +949,9 @@ async function drainAiResponses(deps: InboxUseCaseDeps, ctx: { tenantId: string;
       return;
     }
 
-    const contact = await deps.contactRepository.getById(freshBefore.contactId);
+    // `contactId` é `undefined` em conversas de grupo (ver correção do bug de identidade de
+    // conversa) — `contact`/`contactName`/`contactPhone` ficam vazios nesse caso, nunca lança.
+    const contact = freshBefore.contactId ? await deps.contactRepository.getById(freshBefore.contactId) : undefined;
     const recentMessages = await deps.messageRepository.listByConversation({
       tenantId: ctx.tenantId,
       workspaceId: ctx.workspaceId,

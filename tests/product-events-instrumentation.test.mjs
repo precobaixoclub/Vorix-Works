@@ -258,16 +258,16 @@ test("registerInboundMessage: first_conversation_received só na conversa realme
   const deps = inboxDeps();
   const connection = await deps.connectionRepository.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
 
-  await registerInboundMessage(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, fromPhone: "+5511988887777", externalMessageId: "ext-1", type: "text", body: "Oi", occurredAt: new Date().toISOString() });
+  await registerInboundMessage(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, chatId: "+5511988887777", isGroup: false, fromMe: false, senderId: "+5511988887777", externalMessageId: "ext-1", type: "text", body: "Oi", occurredAt: new Date().toISOString() });
   assert.equal(await countEvents("first_conversation_received", workspace.id), 1);
 
   // Segunda mensagem do MESMO contato/conversa — não é uma conversa nova, não deve contar de novo.
-  await registerInboundMessage(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, fromPhone: "+5511988887777", externalMessageId: "ext-2", type: "text", body: "Tudo bem?", occurredAt: new Date().toISOString() });
+  await registerInboundMessage(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, chatId: "+5511988887777", isGroup: false, fromMe: false, senderId: "+5511988887777", externalMessageId: "ext-2", type: "text", body: "Tudo bem?", occurredAt: new Date().toISOString() });
   assert.equal(await countEvents("first_conversation_received", workspace.id), 1);
 
   // Um SEGUNDO contato/conversa no mesmo workspace também não deve contar de novo (o marco é "a
   // primeira conversa do workspace", não "toda conversa nova").
-  await registerInboundMessage(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, fromPhone: "+5511977776666", externalMessageId: "ext-3", type: "text", body: "Olá", occurredAt: new Date().toISOString() });
+  await registerInboundMessage(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, chatId: "+5511977776666", isGroup: false, fromMe: false, senderId: "+5511977776666", externalMessageId: "ext-3", type: "text", body: "Olá", occurredAt: new Date().toISOString() });
   assert.equal(await countEvents("first_conversation_received", workspace.id), 1);
 });
 
@@ -277,7 +277,7 @@ test("sendInboxMessage: first_conversation_replied só conta resposta HUMANA —
   const deps = inboxDeps();
   const connection = await deps.connectionRepository.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
   const contact = await deps.contactRepository.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: "+5511911112222" });
-  const conversation = await deps.conversationRepository.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: contact.id });
+  const conversation = await deps.conversationRepository.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "direct", externalChatId: "+5511911112222", contactId: contact.id });
 
   await sendInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, body: "Resposta automática", sentByAi: true });
   assert.equal(await countEvents("first_conversation_replied", workspace.id), 0, "resposta da IA nunca é o marco de 'primeira resposta humana'");

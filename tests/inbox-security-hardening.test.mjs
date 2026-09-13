@@ -35,7 +35,7 @@ async function seedConversation(app, { tenantId, aiEnabled = false }) {
   const workspace = await app.zunoContainer.workspaceRepository.create({ tenantId, name: "Workspace HTTP" });
   const connection = await app.zunoContainer.messagingConnectionRepository.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
   const contact = await app.zunoContainer.inboxContactRepository.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: "+5511999990000" });
-  const conversation = await app.zunoContainer.inboxConversationRepository.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: contact.id });
+  const conversation = await app.zunoContainer.inboxConversationRepository.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "direct", externalChatId: "+5511999990000", contactId: contact.id });
   if (aiEnabled) await app.zunoContainer.inboxConversationRepository.setAiEnabled(conversation.id, true);
   return { workspace, connection, contact, conversationId: conversation.id };
 }

@@ -52,7 +52,7 @@ async function seedRepresentativeData(pool) {
     [contactId, "tenant-restore-drill", workspaceId],
   );
   await pool.query(
-    "insert into inbox_conversations (id, tenant_id, workspace_id, connection_id, contact_id) values ($1, $2, $3, $4, $5)",
+    "insert into inbox_conversations (id, tenant_id, workspace_id, connection_id, chat_type, external_chat_id, contact_id) values ($1, $2, $3, $4, 'direct', '+5511900000000', $5)",
     [conversationId, "tenant-restore-drill", workspaceId, connectionId, contactId],
   );
   await pool.query(

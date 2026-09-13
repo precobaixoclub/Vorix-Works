@@ -88,7 +88,7 @@ async function makeConversation(tenantId) {
   await connectionRepo.updateStatus(connection.id, { status: "connected", externalSessionId: `sess-${connection.id}` });
   const phone = `+55119${++counter}0000`;
   const contact = await contactRepo.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: phone, name: "Cliente Teste" });
-  const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: contact.id });
+  const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "direct", externalChatId: phone, contactId: contact.id });
   return { workspace, connection: await connectionRepo.getById(connection.id), contact, conversation: await conversationRepo.getById(conversation.id) };
 }
 

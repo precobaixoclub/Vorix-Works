@@ -119,14 +119,14 @@ async function makeConversation(tenantId, { aiEnabled = false } = {}) {
   const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
   const phone = `+55119${++counter}0000`;
   const contact = await contactRepo.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: phone, name: "Cliente Teste" });
-  const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: contact.id });
+  const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "direct", externalChatId: phone, contactId: contact.id });
   if (aiEnabled) await conversationRepo.setAiEnabled(conversation.id, true);
   return { workspace, connection, contact, phone, conversation: await conversationRepo.getById(conversation.id) };
 }
 
 async function receiveInboundAndMaybeRespond(deps, { tenantId, workspaceId, connectionId, fromPhone, externalMessageId, body }) {
   const { conversation, message, wasCreated } = await registerInboundMessage(deps, {
-    tenantId, workspaceId, connectionId, fromPhone, externalMessageId, type: "text", body, occurredAt: new Date().toISOString(),
+    tenantId, workspaceId, connectionId, chatId: fromPhone, isGroup: false, fromMe: false, senderId: fromPhone, externalMessageId, type: "text", body, occurredAt: new Date().toISOString(),
   });
   if (wasCreated) {
     await maybeGenerateAiResponse(deps, { tenantId, workspaceId, conversationId: conversation.id, triggeringMessageId: message.id });
@@ -257,7 +257,7 @@ test("Restart/reentrega: duas invocações concorrentes de maybeGenerateAiRespon
   const { workspace, connection, phone, conversation } = await makeConversation(tenantId, { aiEnabled: true });
   const depsSetup = buildDeps(tenantId);
   const { message } = await registerInboundMessage(depsSetup, {
-    tenantId, workspaceId: workspace.id, connectionId: connection.id, fromPhone: phone, externalMessageId: "wa-restart", type: "text", body: "Oi", occurredAt: new Date().toISOString(),
+    tenantId, workspaceId: workspace.id, connectionId: connection.id, chatId: phone, isGroup: false, fromMe: false, senderId: phone, externalMessageId: "wa-restart", type: "text", body: "Oi", occurredAt: new Date().toISOString(),
   });
 
   const aiResponder = makeFakeAiResponder();

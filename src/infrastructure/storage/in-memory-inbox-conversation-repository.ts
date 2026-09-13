@@ -22,16 +22,28 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
   ) {}
 
   async findOrCreate(input: FindOrCreateInboxConversationInput): Promise<InboxConversation> {
+    // Idempotente por `(connectionId, externalChatId)` — identidade canônica do chat, nunca mais o
+    // remetente de uma mensagem (ver correção do bug de identidade de conversa, migration 0115).
     const existing = [...this.rows.values()].find(
-      (row) => row.connectionId === input.connectionId && row.contactId === input.contactId,
+      (row) => row.connectionId === input.connectionId && row.externalChatId === input.externalChatId,
     );
-    if (existing) return existing;
+    if (existing) {
+      if (existing.groupName || existing.contactId) return existing;
+      // Mesma regra do adapter Postgres: preenche `groupName`/`contactId` só se ainda estavam
+      // vazios, nunca sobrescreve o que já tiver.
+      const filled = { ...existing, groupName: existing.groupName ?? input.groupName, contactId: existing.contactId ?? input.contactId };
+      this.rows.set(existing.id, filled);
+      return filled;
+    }
     const now = new Date().toISOString();
     const created: InboxConversation = {
       id: idGenerator(),
       tenantId: input.tenantId,
       workspaceId: input.workspaceId,
       connectionId: input.connectionId,
+      chatType: input.chatType,
+      externalChatId: input.externalChatId,
+      groupName: input.groupName,
       contactId: input.contactId,
       status: "open",
       unreadCount: 0,
@@ -76,7 +88,7 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     const sorted = rows.sort((a, b) => (b.lastMessageAt ?? b.createdAt).localeCompare(a.lastMessageAt ?? a.createdAt));
     const items: InboxConversationListItem[] = [];
     for (const row of sorted) {
-      const contact = await this.contactRepository?.getById(row.contactId);
+      const contact = row.contactId ? await this.contactRepository?.getById(row.contactId) : undefined;
       const [lastMessage] = (await this.messageRepository?.listByConversation({
         tenantId: row.tenantId,
         workspaceId: row.workspaceId,
@@ -86,7 +98,7 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
       items.push({
         ...row,
         contactName: contact?.name,
-        contactPhone: contact?.phoneNormalized ?? "",
+        contactPhone: contact?.phoneNormalized,
         lastMessagePreview: lastMessage ? { type: lastMessage.type, body: lastMessage.body, direction: lastMessage.direction } : undefined,
       });
     }

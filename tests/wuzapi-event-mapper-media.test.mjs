@@ -103,3 +103,69 @@ test("mapWuzApiEvent: imageMessage sem url/mediaKey (payload incompleto) não la
 test("mapWuzApiEvent: mensagem sem Info.ID ou Sender é descartada (undefined), nunca lança", () => {
   assert.equal(mapWuzApiEvent({ type: "Message", instanceName: "conn-1", event: { Info: {}, Message: { conversation: "x" } } }), undefined);
 });
+
+/**
+ * Correção do bug estrutural de identidade de conversa (ver docs/conversas-canonical-chat-identity.md).
+ * Fixtures SANITIZADAS (sem telefone/nome real) representando os 3 cenários que motivaram a
+ * correção — nomes de campo (`Chat`/`IsGroup`/`IsFromMe`) vêm do comentário já existente no topo de
+ * `wuzapi-event-mapper.ts` ("CONFIRMADO via código-fonte real de asternic/wuzapi"), AINDA sem
+ * confirmação ao vivo específica pra grupo/self-echo (ver diagnóstico temporário em
+ * `inbox-worker.ts` — `logRawEventShapeForDiagnosis`); tratar como alta-confiança, reavaliar quando
+ * o diagnóstico capturar um evento real.
+ */
+
+test("mapWuzApiEvent: DIRECT — chatId vem de Info.Chat (== peer), isGroup false, fromMe false", () => {
+  const mapped = mapWuzApiEvent(rawEvent(
+    { conversation: "Oi" },
+    { info: { Chat: "5511999998888@s.whatsapp.net", IsGroup: false, IsFromMe: false } },
+  ));
+
+  assert.equal(mapped.chatId, "+5511999998888");
+  assert.equal(mapped.isGroup, false);
+  assert.equal(mapped.fromMe, false);
+  assert.equal(mapped.senderId, "+5511999998888");
+  assert.equal(mapped.senderName, "Cliente Teste");
+});
+
+test("mapWuzApiEvent: GRUPO — chatId vem de Info.Chat (o GRUPO, @g.us), senderId é o PARTICIPANTE (Info.Sender), nunca o contrário", () => {
+  const mapped = mapWuzApiEvent(rawEvent(
+    { conversation: "Bora jogar às 20h?" },
+    { info: { Sender: "5511911110001@s.whatsapp.net", Chat: "120363912345678901@g.us", PushName: "João", IsGroup: true, IsFromMe: false } },
+  ));
+
+  assert.equal(mapped.isGroup, true);
+  assert.equal(mapped.chatId, "120363912345678901@g.us", "identidade do CHAT é o grupo — nunca reduzido a formato de telefone (não é um telefone)");
+  assert.equal(mapped.senderId, "+5511911110001", "quem mandou a mensagem é o PARTICIPANTE, atribuído por mensagem — nunca a identidade da conversa");
+  assert.equal(mapped.senderName, "João");
+  assert.equal(mapped.fromMe, false);
+});
+
+test("mapWuzApiEvent: dois participantes DIFERENTES no MESMO grupo produzem o MESMO chatId (a causa raiz do bug de fragmentação)", () => {
+  const fromJoao = mapWuzApiEvent(rawEvent(
+    { conversation: "Bora jogar?" },
+    { info: { ID: "wamid-joao", Sender: "5511911110001@s.whatsapp.net", Chat: "120363912345678901@g.us", PushName: "João", IsGroup: true } },
+  ));
+  const fromMaria = mapWuzApiEvent(rawEvent(
+    { conversation: "Fechou" },
+    { info: { ID: "wamid-maria", Sender: "5511911110002@s.whatsapp.net", Chat: "120363912345678901@g.us", PushName: "Maria", IsGroup: true } },
+  ));
+
+  assert.equal(fromJoao.chatId, fromMaria.chatId, "mesmo grupo, remetentes diferentes — a IDENTIDADE DA CONVERSA (chatId) deve ser igual");
+  assert.notEqual(fromJoao.senderId, fromMaria.senderId, "mas o REMETENTE de cada mensagem continua distinto");
+});
+
+test("mapWuzApiEvent: SELF-ECHO (IsFromMe=true) — chatId continua o PEER (não o próprio número), fromMe=true", () => {
+  const mapped = mapWuzApiEvent(rawEvent(
+    { conversation: "Oi, aqui é a empresa" },
+    { info: { Sender: "5511900000000@s.whatsapp.net", Chat: "5511999998888@s.whatsapp.net", PushName: "Minha Empresa", IsFromMe: true, IsGroup: false } },
+  ));
+
+  assert.equal(mapped.fromMe, true);
+  assert.equal(mapped.chatId, "+5511999998888", "self-echo: a conversa continua sendo a do PEER — nunca uma conversa nova pro próprio número do bot");
+  assert.notEqual(mapped.chatId, mapped.senderId, "self-echo: chatId (peer) e senderId (o próprio bot) são DIFERENTES de propósito");
+});
+
+test("mapWuzApiEvent: sem Info.Chat (defensivo) cai pra Info.Sender como chatId", () => {
+  const mapped = mapWuzApiEvent(rawEvent({ conversation: "Oi" }, { info: {} }));
+  assert.equal(mapped.chatId, "+5511999998888", "fallback defensivo — nunca deveria acontecer no envelope real, mas nunca deve descartar o evento inteiro");
+});

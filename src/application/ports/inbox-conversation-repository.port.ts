@@ -1,12 +1,20 @@
-import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus, InboxMessageDirection, InboxMessageType } from "../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMessageDirection, InboxMessageType } from "../../domain/inbox/inbox.model.js";
 
-/** Módulo Conversas (Fase 1/4). Ver `db/migrations/0082_inbox_conversations.sql`. */
+/** Módulo Conversas (Fase 1/4). Ver `db/migrations/0082_inbox_conversations.sql` e
+ * `db/migrations/0115_inbox_canonical_chat_identity.sql` (identidade canônica de chat). */
 
 export type FindOrCreateInboxConversationInput = {
   tenantId: string;
   workspaceId: string;
   connectionId: string;
-  contactId: string;
+  chatType: InboxChatType;
+  /** Identidade canônica do chat (JID de grupo ou telefone normalizado do peer) — ver
+   * `InboxConversation.externalChatId`. Chave real de idempotência junto com `connectionId`. */
+  externalChatId: string;
+  groupName?: string;
+  /** Só para `chatType: "direct"` — `undefined` em conversas de grupo (nunca um `contactId` de
+   * "grupo", ver `InboxConversation.contactId`). */
+  contactId?: string;
 };
 
 /**
@@ -24,14 +32,17 @@ export type InboxConversationListFilter = "all" | "mine" | "unassigned" | "unrea
 export type InboxConversationLastMessagePreview = { type: InboxMessageType; body?: string; direction: InboxMessageDirection };
 
 export type InboxConversationListItem = InboxConversation & {
+  /** `undefined` em conversas de grupo (`chatType: "group"`) — não há um único contato. */
   contactName?: string;
-  contactPhone: string;
+  contactPhone?: string;
   crmContactId?: string;
   lastMessagePreview?: InboxConversationLastMessagePreview;
 };
 
 export type InboxConversationRepositoryPort = {
-  /** Idempotente por `(connectionId, contactId)` — nunca cria uma segunda conversa pro mesmo par. */
+  /** Idempotente por `(connectionId, externalChatId)` — nunca cria uma segunda conversa pro mesmo
+   * chat (grupo ou DM), mesmo que remetentes diferentes mandem mensagem nele (ver correção do bug
+   * de identidade de conversa, migration 0115). */
   findOrCreate(input: FindOrCreateInboxConversationInput): Promise<InboxConversation>;
   getById(id: string): Promise<InboxConversation | undefined>;
   listByWorkspace(input: { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string }): Promise<InboxConversationListItem[]>;

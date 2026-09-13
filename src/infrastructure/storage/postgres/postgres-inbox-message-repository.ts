@@ -36,6 +36,8 @@ type Row = {
   outbound_published_at: Date | null;
   publish_attempts: number;
   last_publish_error: string | null;
+  sender_external_id: string | null;
+  sender_display_name: string | null;
 };
 
 export class PostgresInboxMessageRepository implements InboxMessageRepositoryPort {
@@ -51,14 +53,14 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
       `insert into inbox_messages (
          id, tenant_id, workspace_id, conversation_id, connection_id, external_message_id,
          direction, type, status, body, media_storage_ref, mime_type, metadata,
-         sent_by_user_id, sent_by_ai, sent_by_automation, sent_at
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, case when $7 = 'inbound' then now() else null end)
+         sent_by_user_id, sent_by_ai, sent_by_automation, sender_external_id, sender_display_name, sent_at
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, case when $7 = 'inbound' then now() else null end)
        on conflict (connection_id, external_message_id) do nothing
        returning *`,
       [
         id, input.tenantId, input.workspaceId, input.conversationId, input.connectionId, input.externalMessageId ?? null,
         input.direction, input.type, defaultStatus, input.body ?? null, input.mediaStorageRef ?? null, input.mimeType ?? null, input.metadata ?? null,
-        input.sentByUserId ?? null, input.sentByAi ?? false, input.sentByAutomation ?? false,
+        input.sentByUserId ?? null, input.sentByAi ?? false, input.sentByAutomation ?? false, input.senderExternalId ?? null, input.senderDisplayName ?? null,
       ],
     );
     if (insertResult.rows[0]) return { message: this.toDomain(insertResult.rows[0]), wasCreated: true };
@@ -73,6 +75,14 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
 
   async getById(id: string): Promise<InboxMessage | undefined> {
     const result = await this.pool.query<Row>("select * from inbox_messages where id = $1", [id]);
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
+  async findByExternalId(input: { connectionId: string; externalMessageId: string }): Promise<InboxMessage | undefined> {
+    const result = await this.pool.query<Row>(
+      "select * from inbox_messages where connection_id = $1 and external_message_id = $2",
+      [input.connectionId, input.externalMessageId],
+    );
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
@@ -245,6 +255,8 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
       outboundPublishedAt: row.outbound_published_at?.toISOString(),
       publishAttempts: row.publish_attempts,
       lastPublishError: row.last_publish_error ?? undefined,
+      senderExternalId: row.sender_external_id ?? undefined,
+      senderDisplayName: row.sender_display_name ?? undefined,
     };
   }
 }

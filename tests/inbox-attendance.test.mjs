@@ -63,8 +63,9 @@ async function makeConversation(tenantId, { aiEnabled = false } = {}) {
 
   const workspace = await workspaceRepo.create({ tenantId, name: "W" });
   const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
-  const contact = await contactRepo.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: `+55119${counter}0000` });
-  const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: contact.id });
+  const phone = `+55119${counter}0000`;
+  const contact = await contactRepo.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: phone });
+  const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "direct", externalChatId: phone, contactId: contact.id });
   if (aiEnabled) await conversationRepo.setAiEnabled(conversation.id, true);
   return { workspace, connection, contact, conversation: await conversationRepo.getById(conversation.id) };
 }

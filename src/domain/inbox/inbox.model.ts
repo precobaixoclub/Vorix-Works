@@ -91,12 +91,31 @@ export type InboxConversationStatus = (typeof INBOX_CONVERSATION_STATUSES)[numbe
 export const INBOX_AI_PAUSE_REASONS = ["human_takeover", "manual"] as const;
 export type InboxAiPauseReason = (typeof INBOX_AI_PAUSE_REASONS)[number];
 
+/** Correção do bug estrutural de identidade de conversa (ver
+ * docs/conversas-canonical-chat-identity.md) — `"direct"` = 1:1 com um contato; `"group"` = grupo
+ * do WhatsApp, onde vários participantes mandam mensagem para a MESMA conversa. */
+export const INBOX_CHAT_TYPES = ["direct", "group"] as const;
+export type InboxChatType = (typeof INBOX_CHAT_TYPES)[number];
+
 export type InboxConversation = {
   id: string;
   tenantId: string;
   workspaceId: string;
   connectionId: string;
-  contactId: string;
+  chatType: InboxChatType;
+  /** Identidade CANÔNICA do chat no provider — JID do grupo (`...@g.us`) ou telefone normalizado
+   * do peer, NUNCA o remetente de uma mensagem específica. Chave real de deduplicação junto com
+   * `connectionId` (ver `unique index inbox_conversations_connection_chat_key`, migration 0115) —
+   * substituiu `(connectionId, contactId)`, que fragmentava grupos (um `contactId` por
+   * participante) e DMs (self-echo virava um `contactId`/conversa fantasma do próprio número). */
+  externalChatId: string;
+  /** Só para `chatType: "group"` — nome/assunto do grupo quando o provider fornece. `undefined` =
+   * sem nome conhecido (fallback visual no frontend), nunca inventado a partir do primeiro remetente. */
+  groupName?: string;
+  /** Só para `chatType: "direct"` — o `InboxContact` (pessoa) do outro lado. `undefined` em
+   * conversas de grupo: um grupo não é uma pessoa/Contact do CRM, nunca fundido automaticamente
+   * (ver `crm-panel.tsx` — vínculo ao CRM continua manual e só aparece para conversas diretas). */
+  contactId?: string;
   status: InboxConversationStatus;
   assignedUserId?: string;
   departmentId?: string;
@@ -162,6 +181,16 @@ export type InboxMessage = {
   direction: InboxMessageDirection;
   type: InboxMessageType;
   status: InboxMessageStatus;
+  /** Correção do bug de identidade de conversa — quem, DENTRO do chat, mandou esta mensagem
+   * específica (JID/telefone do participante). Em DM é redundante com o contato da conversa; em
+   * GRUPO é a única forma de saber quem dos N participantes mandou cada mensagem (a conversa em si
+   * representa o grupo inteiro, não mais um remetente). `undefined` em mensagens outbound enviadas
+   * pelo próprio Vorix (o remetente já é conhecido: `sentByUserId`/`sentByAi`/`sentByAutomation`). */
+  senderExternalId?: string;
+  /** Nome de exibição do remetente (`PushName` do WhatsApp) no momento do envio — snapshot, nunca
+   * resolvido de novo depois (o nome de alguém pode mudar; a mensagem antiga mostra o nome de quando
+   * foi mandada). Usado pelo frontend para rotular cada bolha dentro de uma conversa de grupo. */
+  senderDisplayName?: string;
   body?: string;
   mediaStorageRef?: InboxMediaStorageRef;
   mimeType?: string;

@@ -266,8 +266,11 @@ Ordem seguida (produção real, `209.97.152.212`):
 6. Segundo commit (classificação `@lid`/`@newsletter` + `Timestamp`) deployado só no worker.
 7. Backup completo do código anterior preservado em `/opt/zuno/deploy_backups/` a cada passo.
 
-Deploy do frontend (`zuno-web`, mudanças desta sessão) e da migration/backend definitivos: pendente
-no momento em que este relatório foi escrito — ver instrução final da tarefa.
+Deploy do frontend (`zuno-web`) concluído em seguida (`docker compose up -d --build`, todos os 4
+containers): `vorixworks.com`/`api.vorixworks.com` respondendo 200/OK, 115 migrations aplicadas, 0
+conversas duplicadas, 2 conversas `chat_type='group'` (Canal/`@newsletter`, corretamente sem
+`contact_id`) confirmadas no banco pós-deploy, sem erros nos logs de `zuno-api`/`vorix-worker` nos
+minutos seguintes.
 
 ## 20. Riscos restantes
 

@@ -62,11 +62,14 @@ export function CrmContextSection({
   const messageCount = messagesData?.messages.length ?? 0;
 
   async function handleLink() {
-    if (!canOperate) return;
+    // Vínculo ao CRM só existe pra conversa direta (o chamador já garante isso — ver
+    // `ContactContextPane` — mas esta checagem é defesa em profundidade: grupo nunca tem
+    // `contactId`, nunca pode virar um Contact do CRM, ver seção 8 do pedido original).
+    if (!canOperate || !conversation.contactId) return;
     setLinking(true);
     setLinkError(undefined);
     try {
-      const contact = await createContact({ workspaceId, name: conversation.contactName ?? conversation.contactPhone, origin: "whatsapp" });
+      const contact = await createContact({ workspaceId, name: conversation.contactName ?? conversation.contactPhone ?? "Contato do WhatsApp", origin: "whatsapp" });
       await linkContactIdentity(contact.id, workspaceId, "whatsapp", conversation.contactId);
       onLinked();
     } catch (error) {

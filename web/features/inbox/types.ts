@@ -19,10 +19,21 @@ export type InboxConversationStatus = "open" | "pending" | "resolved" | "archive
 /** Fase 5 — motivo pelo qual `aiEnabled` está `false`; `undefined` quando `aiEnabled` é `true`. */
 export type InboxAiPauseReason = "human_takeover" | "manual";
 
+/** Correção do bug de identidade de conversa (ver docs/conversas-canonical-chat-identity.md) —
+ * `"direct"` = 1:1 com uma pessoa; `"group"` = grupo/canal do WhatsApp, onde vários remetentes
+ * mandam mensagem pra MESMA conversa (nunca uma pessoa/Contact do CRM). */
+export type InboxChatType = "direct" | "group";
+
 export type InboxConversation = {
   id: string;
   connectionId: string;
-  contactId: string;
+  chatType: InboxChatType;
+  /** Só em `chatType: "group"` — nome do grupo/canal quando o provider fornece. `undefined` = sem
+   * nome conhecido, o frontend cai no fallback visual (nunca inventa um nome). */
+  groupName?: string;
+  /** Só em `chatType: "direct"` — `undefined` em conversas de grupo (nunca fundido com um Contact
+   * do CRM, ver `ContactContextPane`/`CrmContextSection`). */
+  contactId?: string;
   status: InboxConversationStatus;
   assignedUserId?: string;
   lastMessageAt?: string;
@@ -31,9 +42,10 @@ export type InboxConversation = {
   aiPausedReason?: InboxAiPauseReason;
   automationEnabled: boolean;
   /** Denormalizado pela listagem (`GET /v1/inbox/conversations`) — nunca vem no `getById()`, que
-   * hoje nem existe como rota própria (a Fase 1 não tem "abrir 1 conversa" isolado, só a lista). */
+   * hoje nem existe como rota própria (a Fase 1 não tem "abrir 1 conversa" isolado, só a lista).
+   * `undefined` em conversas de grupo (`chatType: "group"`) — não há um único contato. */
   contactName?: string;
-  contactPhone: string;
+  contactPhone?: string;
   /** CRM/Comercial (Fase 4) — `contacts.id` do CRM já vinculado a este contato do WhatsApp
    * (`inbox_contacts.contact_id`), se algum vínculo já foi feito. `undefined` até alguém vincular. */
   crmContactId?: string;
@@ -41,7 +53,7 @@ export type InboxConversation = {
    * (`GET /v1/inbox/conversations`) para a lista mostrar um preview real em vez de um texto
    * genérico. `undefined` em conversas sem nenhuma mensagem ainda, ou em ambientes que ainda não
    * atualizaram o backend para preenchê-lo. */
-  lastMessagePreview?: { type: InboxMessageType; body?: string; direction: InboxMessageDirection };
+  lastMessagePreview?: { type: InboxMessageType; body?: string; direction: InboxMessageDirection; senderDisplayName?: string };
 };
 
 /** Fase 4 — `open`/`pending`/`resolved` filtram por status normalizado (ver
@@ -112,6 +124,13 @@ export type InboxMessage = {
   sentByUserId?: string;
   sentByAi: boolean;
   sentByAutomation: boolean;
+  /** Correção do bug de identidade de conversa — quem, dentro do chat, mandou esta mensagem
+   * específica. Em grupo é a única forma de atribuir cada mensagem a um participante (a conversa
+   * em si representa o grupo inteiro); em DM é redundante com o contato da conversa. `undefined`
+   * em mensagens outbound enviadas pelo Vorix (o remetente já é `sentByUserId`/`sentByAi`/
+   * `sentByAutomation`). */
+  senderExternalId?: string;
+  senderDisplayName?: string;
   createdAt: string;
   sentAt?: string;
 };

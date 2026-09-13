@@ -366,17 +366,17 @@ function ConversationListItem({
     >
       <Avatar className="h-10 w-10 shrink-0 rounded-xl">
         <AvatarFallback className="rounded-xl bg-muted text-xs font-semibold text-foreground">
-          {initials(conversation.contactName ?? conversation.contactPhone)}
+          {initials(conversationTitle(conversation))}
         </AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <p className={cn("truncate text-sm text-foreground", conversation.unreadCount > 0 ? "font-semibold" : "font-medium")}>
-            {conversation.contactName ?? conversation.contactPhone}
+            {conversationTitle(conversation)}
           </p>
           <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{timeLabel(conversation.lastMessageAt)}</span>
         </div>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">WhatsApp · {conversation.contactPhone}</p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">{conversationSubtitle(conversation)}</p>
         <p className="mt-1 line-clamp-1 text-xs text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
         <div className="mt-2 flex min-w-0 items-center gap-1.5">
           <StatusDot status={conversation.status} />
@@ -483,16 +483,16 @@ function ConversationTimelinePane({
           </Button>
           <Avatar className="h-10 w-10 shrink-0 rounded-xl">
             <AvatarFallback className="rounded-xl bg-primary/10 text-xs font-semibold text-primary dark:bg-primary-glow/10 dark:text-primary-glow">
-              {initials(conversation.contactName ?? conversation.contactPhone)}
+              {initials(conversationTitle(conversation))}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
-              <p className="truncate text-sm font-semibold text-foreground">{conversation.contactName ?? conversation.contactPhone}</p>
+              <p className="truncate text-sm font-semibold text-foreground">{conversationTitle(conversation)}</p>
               <StatusDot status={conversation.status} />
             </div>
             <p className="truncate text-xs text-muted-foreground">
-              WhatsApp · {conversation.contactPhone} · {statusLabelFor(conversation.status)} · {agentLabel(conversation.assignedUserId, currentUserId, members)}
+              {conversationSubtitle(conversation)} · {statusLabelFor(conversation.status)} · {agentLabel(conversation.assignedUserId, currentUserId, members)}
             </p>
           </div>
 
@@ -557,7 +557,14 @@ function ConversationTimelinePane({
           ) : (
             timeline.map((entry) =>
               entry.kind === "message" ? (
-                <MessageBubble key={`msg-${entry.message.id}`} workspaceId={workspaceId} message={entry.message} onRetry={(body) => handleSend(body)} retrying={sending} />
+                <MessageBubble
+                  key={`msg-${entry.message.id}`}
+                  workspaceId={workspaceId}
+                  message={entry.message}
+                  isGroup={conversation.chatType === "group"}
+                  onRetry={(body) => handleSend(body)}
+                  retrying={sending}
+                />
               ) : (
                 <EventPill key={`evt-${entry.event.id}`} event={entry.event} currentUserId={currentUserId} members={members} />
               ),
@@ -718,9 +725,32 @@ function ConversationActionsMenu({
   );
 }
 
-function MessageBubble({ workspaceId, message, onRetry, retrying }: { workspaceId: string; message: InboxMessage; onRetry: (body: string) => void; retrying: boolean }) {
+function MessageBubble({
+  workspaceId,
+  message,
+  isGroup,
+  onRetry,
+  retrying,
+}: {
+  workspaceId: string;
+  message: InboxMessage;
+  isGroup: boolean;
+  onRetry: (body: string) => void;
+  retrying: boolean;
+}) {
   const isOutbound = message.direction === "outbound";
-  const senderLabel = message.sentByAi ? "Vorix IA" : message.sentByAutomation ? "Automação" : isOutbound ? "Atendente" : undefined;
+  // Grupo: mostra quem dos participantes mandou (a conversa representa o grupo inteiro, não mais
+  // um remetente — ver docs/conversas-canonical-chat-identity.md). DM: mantém o comportamento
+  // original (nunca repete o nome do contato acima de toda mensagem, ele já está no header).
+  const senderLabel = message.sentByAi
+    ? "Vorix IA"
+    : message.sentByAutomation
+      ? "Automação"
+      : isOutbound
+        ? "Atendente"
+        : isGroup
+          ? (message.senderDisplayName ?? "Participante")
+          : undefined;
   const body = message.body?.trim();
   const isMedia = message.type === "image" || message.type === "video" || message.type === "audio" || message.type === "document";
   const failed = isOutbound && message.status === "failed";
@@ -788,7 +818,7 @@ function ContactContextPane({
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Contexto</p>
-          <p className="truncate text-sm font-semibold text-foreground">{conversation.contactName ?? "Contato sem nome"}</p>
+          <p className="truncate text-sm font-semibold text-foreground">{conversationTitle(conversation)}</p>
         </div>
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" className="hidden xl:inline-flex" onClick={() => onPinnedChange(!contextPinned)}>
@@ -804,13 +834,13 @@ function ContactContextPane({
         <div className="mb-4 flex items-center gap-3">
           <Avatar className="h-12 w-12 rounded-xl">
             <AvatarFallback className="rounded-xl bg-primary/10 text-sm font-semibold text-primary dark:bg-primary-glow/10 dark:text-primary-glow">
-              {initials(conversation.contactName ?? conversation.contactPhone)}
+              {initials(conversationTitle(conversation))}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-foreground">{conversation.contactName ?? "Sem nome"}</p>
-            <p className="truncate text-xs text-muted-foreground">{conversation.contactPhone}</p>
-            <p className="truncate text-xs text-muted-foreground">WhatsApp</p>
+            <p className="truncate text-sm font-semibold text-foreground">{conversationTitle(conversation)}</p>
+            {conversation.chatType === "direct" ? <p className="truncate text-xs text-muted-foreground">{conversation.contactPhone}</p> : null}
+            <p className="truncate text-xs text-muted-foreground">{conversationSubtitle(conversation)}</p>
           </div>
         </div>
 
@@ -825,13 +855,17 @@ function ContactContextPane({
           </div>
         </div>
 
-        {conversation.crmContactId ? (
+        {conversation.chatType === "direct" && conversation.crmContactId ? (
           <Link href={`/workspaces/${workspaceId}/contacts`} className="mb-4 inline-flex text-xs font-medium text-primary hover:underline dark:text-primary-glow">
             Abrir contato completo
           </Link>
         ) : null}
 
-        <CrmContextSection workspaceId={workspaceId} conversation={conversation} members={members} onLinked={onConversationChanged} />
+        {/* Grupo nunca é uma pessoa/Contact do CRM — vínculo manual só faz sentido pra conversas
+            diretas (ver docs/conversas-canonical-chat-identity.md, seção 8 do pedido original). */}
+        {conversation.chatType === "direct" ? (
+          <CrmContextSection workspaceId={workspaceId} conversation={conversation} members={members} onLinked={onConversationChanged} />
+        ) : null}
       </div>
     </aside>
   );
@@ -972,7 +1006,14 @@ export function mediaIconFor(type: InboxMessage["type"]) {
 function lastMessagePreviewLabel(conversation: InboxConversation): string {
   const preview = conversation.lastMessagePreview;
   if (!preview) return conversation.lastMessageAt ? "Última interação registrada." : "Sem mensagens recentes.";
-  const prefix = preview.direction === "outbound" ? "Você: " : "";
+  // Grupo: "Maria: Fechou" — sem isso, a lista mostraria só "Fechou" sem dizer quem, dos N
+  // participantes, mandou a última mensagem (ver seção 31 do pedido original).
+  const prefix =
+    preview.direction === "outbound"
+      ? "Você: "
+      : conversation.chatType === "group" && preview.senderDisplayName
+        ? `${preview.senderDisplayName}: `
+        : "";
   if (preview.type === "text") return `${prefix}${preview.body?.trim() || "Mensagem sem texto"}`;
   return `${prefix}${mediaLabelFor(preview.type)}`;
 }
@@ -988,6 +1029,19 @@ export function mediaLabelFor(type: InboxMessage["type"]): string {
     case "text": return "Mensagem sem texto";
     default: return "Mídia recebida";
   }
+}
+
+/** Correção do bug de identidade de conversa — título/subtítulo exibido pra uma conversa, sem
+ * inventar nada: grupo sem `groupName` conhecido cai num rótulo genérico seguro ("Grupo do
+ * WhatsApp"), nunca no nome do primeiro remetente (ver docs/conversas-canonical-chat-identity.md,
+ * seção 10 do pedido original). */
+function conversationTitle(conversation: InboxConversation): string {
+  if (conversation.chatType === "group") return conversation.groupName ?? "Grupo do WhatsApp";
+  return conversation.contactName ?? conversation.contactPhone ?? "Contato";
+}
+
+function conversationSubtitle(conversation: InboxConversation): string {
+  return conversation.chatType === "group" ? "WhatsApp · Grupo" : `WhatsApp · ${conversation.contactPhone ?? "—"}`;
 }
 
 function initials(value: string): string {

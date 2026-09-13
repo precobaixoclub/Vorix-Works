@@ -1,11 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { buildApp } from "../dist/interfaces/api/app.js";
 import { loadApiConfig } from "../dist/interfaces/api/config/api-config.js";
 import { isPrincipalAuthorizedForRequest } from "../dist/interfaces/api/middleware/auth.middleware.js";
 import { JsonWebTokenJwtAdapter } from "../dist/infrastructure/auth/jsonwebtoken-jwt-adapter.js";
 import { JwtAuthAdapter } from "../dist/infrastructure/auth/jwt-auth-adapter.js";
+import { LocalInboxMediaStorage } from "../dist/infrastructure/storage/local-inbox-media-storage.js";
 
 /**
  * Fase 10 (Pre-Pilot Hardening) — fecha os riscos residuais documentados em
@@ -25,7 +29,7 @@ function testJwtPort() {
   return new JsonWebTokenJwtAdapter(TEST_SECRET);
 }
 
-async function buildRealJwtTestApp({ conversationsModuleEnabled }) {
+async function buildRealJwtTestApp({ conversationsModuleEnabled, inboxMediaStorage }) {
   const jwt = testJwtPort();
   const config = loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop", CONVERSATIONS_MODULE_ENABLED: String(conversationsModuleEnabled) });
   const app = await buildApp({
@@ -33,7 +37,9 @@ async function buildRealJwtTestApp({ conversationsModuleEnabled }) {
     // `app.js` registra um hook `onClose` que chama `container.identity.pool.end()` sempre que
     // `container.identity` existe — precisa de um pool (mesmo que fake/no-op) pra não quebrar o
     // `app.close()` no fim de cada teste; nenhum destes testes toca Postgres de verdade.
-    container: { authPort: new JwtAuthAdapter(jwt), identity: { jwt, pool: { end: async () => {} } } },
+    // `inboxMediaStorage` PRECISA ser passado aqui (nunca reatribuído em `app.zunoContainer` depois
+    // do boot) — `registerInboxRoutes` captura a referência uma única vez ao montar as rotas.
+    container: { authPort: new JwtAuthAdapter(jwt), identity: { jwt, pool: { end: async () => {} } }, ...(inboxMediaStorage ? { inboxMediaStorage } : {}) },
   });
   return { app, jwt };
 }
@@ -166,4 +172,111 @@ test("isPrincipalAuthorizedForRequest: matriz completa de decisão", () => {
   assert.equal(isPrincipalAuthorizedForRequest(streamPrincipal, { isStreamRoute: true, tokenSource: "header" }), false);
   assert.equal(isPrincipalAuthorizedForRequest(streamPrincipal, { isStreamRoute: false, tokenSource: "query" }), false);
   assert.equal(isPrincipalAuthorizedForRequest(streamPrincipal, { isStreamRoute: false, tokenSource: "header" }), false);
+
+  // Token de mídia (purpose=inbox_media): só autentica a rota de mídia, só via querystring, e só
+  // para o messageId exato gravado no token — nunca para outra mensagem.
+  const mediaPrincipal = { ...normalPrincipal, purpose: "inbox_media", messageId: "msg-1" };
+  assert.equal(isPrincipalAuthorizedForRequest(mediaPrincipal, { mediaRouteMessageId: "msg-1", tokenSource: "query" }), true);
+  assert.equal(isPrincipalAuthorizedForRequest(mediaPrincipal, { mediaRouteMessageId: "msg-2", tokenSource: "query" }), false, "token minted pra mensagem A nunca autentica a mensagem B");
+  assert.equal(isPrincipalAuthorizedForRequest(mediaPrincipal, { mediaRouteMessageId: "msg-1", tokenSource: "header" }), false, "token de mídia nunca via header");
+  assert.equal(isPrincipalAuthorizedForRequest(mediaPrincipal, { tokenSource: "query" }), false, "fora da rota de mídia (sem mediaRouteMessageId) nunca autentica");
+});
+
+// ------------------------------------------------------------------------------------------
+// Redesign operacional (mídia real) — POST /inbox/media-token + GET /inbox/media/:id
+// ------------------------------------------------------------------------------------------
+
+async function seedMediaMessage(app, { tenantId, workspaceId }) {
+  const connection = await app.zunoContainer.messagingConnectionRepository.create({ tenantId, workspaceId, provider: "wuzapi", displayName: "Canal de teste" });
+  const contact = await app.zunoContainer.inboxContactRepository.upsertByPhone({ tenantId, workspaceId, phoneNormalized: "+5511999998888", name: "Cliente" });
+  const conversation = await app.zunoContainer.inboxConversationRepository.findOrCreate({ tenantId, workspaceId, connectionId: connection.id, contactId: contact.id });
+  const objectKey = `${tenantId}/${workspaceId}/media-test-object`;
+  const { message } = await app.zunoContainer.inboxMessageRepository.create({
+    tenantId, workspaceId, conversationId: conversation.id, connectionId: connection.id,
+    externalMessageId: "wamid-media-1", direction: "inbound", type: "image",
+    mediaStorageRef: { provider: "inbox-media", objectKey }, mimeType: "image/jpeg",
+  });
+  return { message, objectKey };
+}
+
+test("POST /v1/inbox/media-token exige autenticação (401 sem token)", async () => {
+  const { app } = await buildRealJwtTestApp({ conversationsModuleEnabled: true });
+  const response = await app.inject({ method: "POST", url: "/v1/inbox/media-token", payload: { workspaceId: "ws-1", messageId: "msg-1" } });
+  assert.equal(response.statusCode, 401);
+  await app.close();
+});
+
+test("POST /v1/inbox/media-token para mensagem inexistente responde 404 (nunca vaza existência)", async () => {
+  const { app, jwt } = await buildRealJwtTestApp({ conversationsModuleEnabled: true });
+  const accessToken = jwt.sign(accessPayload(), 3600);
+  const response = await app.inject({
+    method: "POST", url: "/v1/inbox/media-token",
+    headers: { authorization: `Bearer ${accessToken}` },
+    payload: { workspaceId: "ws-1", messageId: "msg-inexistente" },
+  });
+  assert.equal(response.statusCode, 404);
+  await app.close();
+});
+
+test("POST /v1/inbox/media-token emite token escopado (purpose=inbox_media + messageId) e GET /inbox/media/:id serve os bytes reais", async () => {
+  const mediaDir = mkdtempSync(join(tmpdir(), "inbox-media-test-"));
+  const inboxMediaStorage = new LocalInboxMediaStorage({ rootDir: mediaDir });
+  const { app, jwt } = await buildRealJwtTestApp({ conversationsModuleEnabled: true, inboxMediaStorage });
+
+  const accessToken = jwt.sign(accessPayload(), 3600);
+  const { message, objectKey } = await seedMediaMessage(app, { tenantId: "tenant-hardening", workspaceId: "ws-1" });
+  await inboxMediaStorage.put({ key: objectKey, body: Buffer.from("fake-jpeg-bytes"), contentType: "image/jpeg" });
+
+  const tokenResponse = await app.inject({
+    method: "POST", url: "/v1/inbox/media-token",
+    headers: { authorization: `Bearer ${accessToken}` },
+    payload: { workspaceId: "ws-1", messageId: message.id },
+  });
+  assert.equal(tokenResponse.statusCode, 200);
+  const { mediaToken, expiresIn } = JSON.parse(tokenResponse.body).data;
+  assert.equal(expiresIn, 60);
+  const verified = jwt.verify(mediaToken);
+  assert.equal(verified.payload.purpose, "inbox_media");
+  assert.equal(verified.payload.messageId, message.id);
+
+  const mediaResponse = await app.inject({ method: "GET", url: `/v1/inbox/media/${message.id}?media_token=${mediaToken}` });
+  assert.equal(mediaResponse.statusCode, 200);
+  assert.equal(mediaResponse.headers["content-type"], "image/jpeg");
+  assert.equal(mediaResponse.body, "fake-jpeg-bytes");
+  await app.close();
+});
+
+test("GET /inbox/media/:id com media_token válido para OUTRA mensagem é rejeitado (401)", async () => {
+  const mediaDir = mkdtempSync(join(tmpdir(), "inbox-media-test-"));
+  const { app, jwt } = await buildRealJwtTestApp({ conversationsModuleEnabled: true, inboxMediaStorage: new LocalInboxMediaStorage({ rootDir: mediaDir }) });
+  const { message: messageA } = await seedMediaMessage(app, { tenantId: "tenant-hardening", workspaceId: "ws-1" });
+  const { message: messageB } = await seedMediaMessage(app, { tenantId: "tenant-hardening", workspaceId: "ws-1" });
+
+  const tokenForA = jwt.sign({ ...accessPayload(), purpose: "inbox_media", messageId: messageA.id }, 60);
+  const response = await app.inject({ method: "GET", url: `/v1/inbox/media/${messageB.id}?media_token=${tokenForA}` });
+  assert.equal(response.statusCode, 401, "token minted para a mídia de A nunca serve para ler a mídia de B");
+  await app.close();
+});
+
+test("GET /inbox/media/:id de mensagem de OUTRO tenant responde 404 (IDOR)", async () => {
+  const mediaDir = mkdtempSync(join(tmpdir(), "inbox-media-test-"));
+  const { app, jwt } = await buildRealJwtTestApp({ conversationsModuleEnabled: true, inboxMediaStorage: new LocalInboxMediaStorage({ rootDir: mediaDir }) });
+  const { message } = await seedMediaMessage(app, { tenantId: "tenant-outro", workspaceId: "ws-1" });
+
+  const accessToken = jwt.sign(accessPayload({ tenantId: "tenant-hardening" }), 3600); // tenant DIFERENTE do dono da mensagem
+  const response = await app.inject({ method: "GET", url: `/v1/inbox/media/${message.id}`, headers: { authorization: `Bearer ${accessToken}` } });
+  assert.equal(response.statusCode, 404);
+  await app.close();
+});
+
+test("GET /inbox/media/:id sem storage de mídia configurado (DisabledInboxMediaStorage, o padrão) responde 404, nunca 500", async () => {
+  // Sem `INBOX_MEDIA_STORAGE_ENABLED=true`, o container sempre injeta um `DisabledInboxMediaStorage`
+  // real (nunca deixa o campo undefined) — `.get()` sempre devolve `undefined`, indistinguível de
+  // "arquivo não encontrado" pela rota, então o resultado correto é 404, não 503.
+  const { app, jwt } = await buildRealJwtTestApp({ conversationsModuleEnabled: true });
+  const { message } = await seedMediaMessage(app, { tenantId: "tenant-hardening", workspaceId: "ws-1" });
+  const accessToken = jwt.sign(accessPayload(), 3600);
+  const response = await app.inject({ method: "GET", url: `/v1/inbox/media/${message.id}`, headers: { authorization: `Bearer ${accessToken}` } });
+  assert.equal(response.statusCode, 404);
+  await app.close();
 });

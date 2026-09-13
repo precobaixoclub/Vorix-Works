@@ -107,12 +107,22 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
   const sender = info?.Sender as string | undefined;
   if (!messageId || !sender) return undefined;
 
-  const isGroup = Boolean(info?.IsGroup);
   const fromMe = Boolean(info?.IsFromMe);
   // `Chat` é a identidade CANÔNICA da conversa (grupo ou peer) — ver comentário no topo do
   // arquivo. Fallback pra `Sender` só se `Chat` vier ausente (não deveria, é confirmado no
   // envelope, mas nunca deixar o evento inteiro cair por um campo defensivo faltando).
   const chatRaw = (info?.Chat as string | undefined) ?? sender;
+  // ACHADO AO VIVO (diagnóstico temporário em produção, ver commit "debug(inbox)") — `Info.IsGroup`
+  // sozinho NÃO cobre todo chat que não é uma pessoa: um Canal/Newsletter do WhatsApp
+  // (`Info.Chat` termina em `@newsletter`) chega com `IsGroup: false`, mas não é uma pessoa e não
+  // pode virar um `InboxContact` (um "telefone" fake feito do id do canal). `@lid` (identidade
+  // "Linked ID" do whatsmeow — mensagens 1:1 aparecem assim em vez de `@s.whatsapp.net` nesta
+  // versão do WuzAPI) É uma pessoa normal, tratada como DM. Só `@s.whatsapp.net`/`@lid` são
+  // "telefone de uma pessoa" — qualquer outro sufixo (`@g.us`, `@newsletter`, ou algo não previsto)
+  // é tratado como não-pessoa (mesmo caminho de armazenamento de grupo: JID preservado como
+  // `externalChatId`, nunca vira um `InboxContact`/CRM). Ver docs/conversas-canonical-chat-identity.md.
+  const isPersonJid = /@(s\.whatsapp\.net|lid)$/.test(chatRaw);
+  const isGroup = Boolean(info?.IsGroup) || !isPersonJid;
   const chatId = isGroup ? normalizeWhatsmeowGroupJid(chatRaw) : normalizeWhatsmeowJid(chatRaw);
 
   const message = event.Message as Record<string, unknown> | undefined;
@@ -145,8 +155,24 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
     // aparece como uma coisa só, não texto separado da mídia).
     body: body ?? media?.caption,
     ...media,
-    occurredAt: typeof info?.Timestamp === "number" ? new Date((info.Timestamp as number) * 1000).toISOString() : new Date().toISOString(),
+    occurredAt: parseWuzApiTimestamp(info?.Timestamp),
   };
+}
+
+/** ACHADO AO VIVO (diagnóstico temporário em produção) — `Info.Timestamp` chega como STRING
+ * ISO-8601/RFC3339 com offset de fuso (ex.: `"2026-09-13T20:03:49-03:00"`, 25 caracteres), nunca
+ * como número epoch — a suposição anterior (`typeof === "number"`) nunca era verdadeira nesta
+ * versão do WuzAPI, então `occurredAt` sempre caía no fallback (hora de processamento do worker,
+ * não a hora real da mensagem no WhatsApp). Mantém o fallback numérico (epoch em segundos) por
+ * segurança — não custa nada e cobre uma versão futura/diferente do gateway que volte a emitir
+ * número — mas a STRING é o formato real confirmado. */
+function parseWuzApiTimestamp(value: unknown): string {
+  if (typeof value === "number") return new Date(value * 1000).toISOString();
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  return new Date().toISOString();
 }
 
 type ExtractedMediaFields = {

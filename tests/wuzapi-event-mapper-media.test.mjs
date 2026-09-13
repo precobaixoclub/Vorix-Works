@@ -169,3 +169,43 @@ test("mapWuzApiEvent: sem Info.Chat (defensivo) cai pra Info.Sender como chatId"
   const mapped = mapWuzApiEvent(rawEvent({ conversation: "Oi" }, { info: {} }));
   assert.equal(mapped.chatId, "+5511999998888", "fallback defensivo — nunca deveria acontecer no envelope real, mas nunca deve descartar o evento inteiro");
 });
+
+/**
+ * Achados AO VIVO via diagnóstico temporário em produção (ver commits "debug(inbox)") — payloads
+ * reais mostraram formas que a documentação/código-fonte pesquisado não previa:
+ * - `Info.Chat` pode terminar em `@lid` (identidade "Linked ID" do whatsmeow — usada em vez de
+ *   `@s.whatsapp.net` para DM nesta versão do WuzAPI) ou `@newsletter` (Canal do WhatsApp).
+ * - `Info.IsGroup` é `false` para Canal/Newsletter — não basta pra decidir "isto é uma pessoa".
+ * - `Info.Timestamp` é uma STRING ISO-8601 com offset (`"2026-09-13T20:03:49-03:00"`), nunca um
+ *   número epoch como a suposição original assumia.
+ */
+
+test("mapWuzApiEvent: @lid é tratado como DM normal (é uma pessoa) — mesmo caminho de @s.whatsapp.net", () => {
+  const mapped = mapWuzApiEvent(rawEvent(
+    { conversation: "Oi" },
+    { info: { Sender: "123456789012345@lid", Chat: "123456789012345@lid", IsGroup: false, IsFromMe: false } },
+  ));
+
+  assert.equal(mapped.isGroup, false, "@lid é uma pessoa (DM), não deve virar grupo/canal");
+  assert.equal(mapped.chatId, "+123456789012345");
+});
+
+test("mapWuzApiEvent: @newsletter (Canal do WhatsApp) — IsGroup=false no payload real, mas NUNCA pode virar um InboxContact/telefone fake", () => {
+  const mapped = mapWuzApiEvent(rawEvent(
+    { conversation: "Notícia do dia" },
+    { info: { Sender: "120363111222333444@newsletter", Chat: "120363111222333444@newsletter", IsGroup: false, IsFromMe: false } },
+  ));
+
+  assert.equal(mapped.isGroup, true, "Canal/Newsletter nunca é uma pessoa — tratado pelo mesmo caminho seguro de grupo (JID preservado, nunca vira InboxContact)");
+  assert.equal(mapped.chatId, "120363111222333444@newsletter", "JID do canal preservado como veio, nunca convertido em formato de telefone");
+});
+
+test("mapWuzApiEvent: Info.Timestamp como STRING ISO-8601 com offset (formato real confirmado) é convertido corretamente para occurredAt", () => {
+  const mapped = mapWuzApiEvent(rawEvent({ conversation: "Oi" }, { info: { Timestamp: "2026-09-13T20:03:49-03:00" } }));
+  assert.equal(mapped.occurredAt, new Date("2026-09-13T20:03:49-03:00").toISOString());
+});
+
+test("mapWuzApiEvent: Info.Timestamp numérico (epoch, fallback defensivo) ainda funciona", () => {
+  const mapped = mapWuzApiEvent(rawEvent({ conversation: "Oi" }, { info: { Timestamp: 1735000000 } }));
+  assert.equal(mapped.occurredAt, new Date(1735000000 * 1000).toISOString());
+});

@@ -205,13 +205,17 @@ function captureSpikeFixture(dir: string | undefined, label: string, raw: unknow
 }
 
 /**
- * Diagnóstico TEMPORÁRIO (investigação do bug de identidade canônica de conversa — grupos e
- * inbound/outbound duplicados). Loga só a FORMA do payload bruto: nome dos campos, tipos, e para
- * strings que parecem JID (contém "@") só o comprimento + sufixo depois do "@" (ex.: "@g.us",
- * "@s.whatsapp.net", "@lid") — nunca o número/telefone real. Remover depois que a causa raiz for
- * confirmada e o mapper corrigido.
+ * Diagnóstico de investigação (bug de identidade canônica de conversa — ver
+ * docs/conversas-canonical-chat-identity.md) — SOMENTE quando `INBOX_DIAG_RAW_SHAPE=true` (mesmo
+ * padrão de opt-in do `INBOX_SPIKE_FIXTURES_DIR`: variável ausente = sem custo, sem log extra).
+ * Loga só a FORMA do payload bruto: nome dos campos, tipos, e para strings que parecem JID
+ * (contém "@") só o comprimento + sufixo depois do "@" (ex.: "@g.us", "@s.whatsapp.net", "@lid")
+ * — nunca o número/telefone real. Já confirmou ao vivo `@lid` (DM) e `@newsletter` (Canal) em
+ * produção; `@g.us` (grupo de verdade) ainda não foi visto num payload real — mantido ligável para
+ * quando isso acontecer, em vez de removido (não é infra permanente: sem a env var, é um no-op).
  */
 function logRawEventShapeForDiagnosis(raw: unknown): void {
+  if (process.env.INBOX_DIAG_RAW_SHAPE?.trim() !== "true") return;
   try {
     const describe = (obj: unknown, path: string, depth: number): string[] => {
       if (depth > 4 || obj === null || typeof obj !== "object") return [];

@@ -99,7 +99,9 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
         ...row,
         contactName: contact?.name,
         contactPhone: contact?.phoneNormalized,
-        lastMessagePreview: lastMessage ? { type: lastMessage.type, body: lastMessage.body, direction: lastMessage.direction } : undefined,
+        lastMessagePreview: lastMessage
+          ? { type: lastMessage.type, body: lastMessage.body, direction: lastMessage.direction, senderDisplayName: lastMessage.senderDisplayName }
+          : undefined,
       });
     }
     return items;

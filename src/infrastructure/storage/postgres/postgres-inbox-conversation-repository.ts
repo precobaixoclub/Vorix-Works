@@ -88,14 +88,17 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     // `inbox_messages_conversation_idx (conversation_id, created_at desc)` (migration 0083) já
     // existe: o planner faz um index scan de 1 linha por conversa, não uma varredura completa.
     const result = await this.pool.query<
-      Row & { contact_name: string | null; contact_phone: string | null; crm_contact_id: string | null; lm_type: string | null; lm_body: string | null; lm_direction: string | null }
+      Row & {
+        contact_name: string | null; contact_phone: string | null; crm_contact_id: string | null;
+        lm_type: string | null; lm_body: string | null; lm_direction: string | null; lm_sender_display_name: string | null;
+      }
     >(
       `select c.*, ct.name as contact_name, ct.phone_normalized as contact_phone, ct.contact_id as crm_contact_id,
-              lm.type as lm_type, lm.body as lm_body, lm.direction as lm_direction
+              lm.type as lm_type, lm.body as lm_body, lm.direction as lm_direction, lm.sender_display_name as lm_sender_display_name
        from inbox_conversations c
        left join inbox_contacts ct on ct.id = c.contact_id
        left join lateral (
-         select type, body, direction
+         select type, body, direction, sender_display_name
          from inbox_messages m
          where m.conversation_id = c.id
          order by m.created_at desc
@@ -111,7 +114,10 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       contactPhone: row.contact_phone ?? undefined,
       crmContactId: row.crm_contact_id ?? undefined,
       lastMessagePreview: row.lm_type
-        ? { type: row.lm_type as InboxMessageType, body: row.lm_body ?? undefined, direction: row.lm_direction as InboxMessageDirection }
+        ? {
+            type: row.lm_type as InboxMessageType, body: row.lm_body ?? undefined, direction: row.lm_direction as InboxMessageDirection,
+            senderDisplayName: row.lm_sender_display_name ?? undefined,
+          }
         : undefined,
     }));
   }

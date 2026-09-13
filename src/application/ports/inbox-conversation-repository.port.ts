@@ -29,7 +29,14 @@ export type InboxConversationListFilter = "all" | "mine" | "unassigned" | "unrea
  * `inbox_contacts.contact_id` denormalizado do mesmo join — ver `InboxContact.crmContactId`. */
 /** Redesign operacional — resumo da última mensagem da conversa, para a lista de conversas
  * mostrar um preview real (texto ou rótulo de mídia) em vez de um placeholder genérico. */
-export type InboxConversationLastMessagePreview = { type: InboxMessageType; body?: string; direction: InboxMessageDirection };
+export type InboxConversationLastMessagePreview = {
+  type: InboxMessageType;
+  body?: string;
+  direction: InboxMessageDirection;
+  /** Correção do bug de identidade de conversa — quem mandou a última mensagem (só relevante pra
+   * `chatType: "group"`, onde a lista precisa mostrar "Maria: Fechou" em vez de só "Fechou"). */
+  senderDisplayName?: string;
+};
 
 export type InboxConversationListItem = InboxConversation & {
   /** `undefined` em conversas de grupo (`chatType: "group"`) — não há um único contato. */

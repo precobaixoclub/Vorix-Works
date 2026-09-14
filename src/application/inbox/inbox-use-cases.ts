@@ -87,8 +87,21 @@ async function mustConnectionBelongToTenantAndWorkspace(deps: InboxUseCaseDeps, 
   return connection;
 }
 
+/**
+ * Bloco "réplica de identidade" — segue o ponteiro de tombstone (`mergedIntoConversationId`)
+ * quando o id pedido já foi fundido em outra conversa (ver `db/migrations/0118`). Sem isto,
+ * qualquer ação (mandar mensagem, marcar como lida, assumir, transferir, fechar...) contra uma
+ * conversa que acabou de ser fundida pelo reconciliador (ex.: usuário com a conversa "perdedora"
+ * ainda aberta na tela no exato momento do merge) seria silenciosamente perdida — persistida contra
+ * um id que nunca mais aparece em nenhuma listagem. Teto de 5 saltos só como cinto-e-suspensório
+ * contra um ciclo malformado; na prática um merge nunca encadeia (o vencedor nunca é, ele mesmo,
+ * marcado como perdedor de outro merge).
+ */
 async function mustConversationBelongToTenantAndWorkspace(deps: InboxUseCaseDeps, id: string, tenantId: string, workspaceId: string): Promise<InboxConversation> {
-  const conversation = await deps.conversationRepository.getById(id);
+  let conversation = await deps.conversationRepository.getById(id);
+  for (let hops = 0; conversation?.mergeStatus === "merged" && conversation.mergedIntoConversationId && hops < 5; hops += 1) {
+    conversation = await deps.conversationRepository.getById(conversation.mergedIntoConversationId);
+  }
   if (!conversation || conversation.tenantId !== tenantId || conversation.workspaceId !== workspaceId) {
     throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
   }

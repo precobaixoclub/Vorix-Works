@@ -786,10 +786,17 @@ async function main(): Promise<void> {
       const sinceIso = lastMergeScanAt;
       const tickStartedAt = new Date().toISOString();
       reconcileMergeableIdentities(pool, { sinceIso })
-        .then(({ scanned, contactsMerged, conversationsMerged }) => {
+        .then(({ scanned, contactsMerged, conversationsMerged, affectedConversations }) => {
           lastMergeScanAt = tickStartedAt;
           if (contactsMerged > 0 || conversationsMerged > 0) {
             console.log(`[inbox-worker] reconciliação de identidade: ${scanned} link(s) revisado(s), ${contactsMerged} contato(s) fundido(s), ${conversationsMerged} conversa(s) fundida(s).`);
+          }
+          // Quem estava com a conversa PERDEDORA aberta na tela no exato momento do merge nunca
+          // seria avisado sem isto — a próxima ação nela já resolve certo (ver
+          // `mustConversationBelongToTenantAndWorkspace`), mas sem notificação a tela só atualiza
+          // no próximo reload/poll manual.
+          for (const { tenantId, workspaceId, conversationId } of affectedConversations) {
+            publishRealtimeNotification(channel, { type: "message.updated", tenantId, workspaceId, conversationId });
           }
         })
         .catch((error) => console.error("[inbox-worker] scan de merge de identidade falhou:", error instanceof Error ? error.message : error))

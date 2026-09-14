@@ -62,10 +62,17 @@ async function findContactMergeCandidates(pool: Pool, sinceIso: string, limit: n
  * estado lido fora do lock: outra rodada concorrente pode já ter mergeado). Reponta
  * `inbox_conversations.contact_id` que ainda apontava pro perdedor — única tabela satélite de
  * contato hoje (lista fixa, ver plano aprovado — nunca um mecanismo genérico de FK via
- * `information_schema`). */
+ * `information_schema`). Também preserva, via `coalesce`, qualquer dado do PERDEDOR que o
+ * vencedor ainda não tenha — em especial `contact_id` (vínculo manual com o CRM, `crmContactId` no
+ * domínio): sem isto, um vínculo CRM feito por um humano no contato perdedor (criado primeiro,
+ * antes do link existir) seria silenciosamente perdido no merge — o snapshot no
+ * `inbox_identity_merge_log` permitiria recuperar manualmente, mas nunca deveria precisar disso. */
 async function mergeContactRows(client: PoolClient, input: { tenantId: string; workspaceId: string; winnerId: string; loserId: string }): Promise<boolean> {
-  const rows = await client.query<{ id: string; phone_normalized: string; whatsapp_pn: string | null; whatsapp_lid: string | null; name: string | null; merge_status: string | null }>(
-    "select id, phone_normalized, whatsapp_pn, whatsapp_lid, name, merge_status from inbox_contacts where id = any($1) for update",
+  const rows = await client.query<{
+    id: string; phone_normalized: string; whatsapp_pn: string | null; whatsapp_lid: string | null; name: string | null;
+    profile_picture_url: string | null; external_id: string | null; metadata: Record<string, unknown> | null; contact_id: string | null; merge_status: string | null;
+  }>(
+    "select id, phone_normalized, whatsapp_pn, whatsapp_lid, name, profile_picture_url, external_id, metadata, contact_id, merge_status from inbox_contacts where id = any($1) for update",
     [[input.winnerId, input.loserId]],
   );
   const winner = rows.rows.find((r) => r.id === input.winnerId);
@@ -73,6 +80,17 @@ async function mergeContactRows(client: PoolClient, input: { tenantId: string; w
   if (!winner || !loser || winner.merge_status || loser.merge_status) return false;
 
   await client.query("update inbox_conversations set contact_id = $2, updated_at = now() where contact_id = $1 and merge_status is null", [loser.id, winner.id]);
+  await client.query(
+    `update inbox_contacts set
+       contact_id = coalesce(contact_id, $2),
+       name = coalesce(name, $3),
+       profile_picture_url = coalesce(profile_picture_url, $4),
+       external_id = coalesce(external_id, $5),
+       metadata = coalesce(metadata, $6),
+       updated_at = now()
+     where id = $1`,
+    [winner.id, loser.contact_id, loser.name, loser.profile_picture_url, loser.external_id, loser.metadata ? JSON.stringify(loser.metadata) : null],
+  );
   await client.query("update inbox_contacts set merge_status = 'merged', merged_into_contact_id = $2, merged_at = now() where id = $1", [loser.id, winner.id]);
   await client.query(
     `insert into inbox_identity_merge_log (id, tenant_id, workspace_id, entity_type, winner_id, loser_id, reason, snapshot)
@@ -89,12 +107,16 @@ async function mergeContactRows(client: PoolClient, input: { tenantId: string; w
 async function reconcileConversationsForMergedContact(
   client: PoolClient,
   input: { tenantId: string; workspaceId: string; winnerContactId: string; loserContactId: string; winnerPhoneE164: string },
-): Promise<number> {
+): Promise<{ mergedCount: number; affectedConversationIds: string[] }> {
   const orphaned = await client.query<{ id: string; connection_id: string; external_chat_id: string; last_message_at: Date | null; unread_count: number }>(
     "select id, connection_id, external_chat_id, last_message_at, unread_count from inbox_conversations where contact_id = $1 and merge_status is null for update",
     [input.winnerContactId],
   );
   let mergedCount = 0;
+  // ids das conversas ATIVAS afetadas (a que absorveu mensagens, ou a que só teve a identidade
+  // corrigida no lugar) — quem chama usa isto pra notificar o frontend em tempo real, pra uma
+  // conversa fundida nunca ficar "morta na tela" de quem estava com ela aberta.
+  const affectedConversationIds: string[] = [];
   for (const loserConv of orphaned.rows) {
     if (loserConv.external_chat_id === input.winnerPhoneE164) continue; // já está com a chave certa (repoint anterior).
     const winnerConv = await client.query<{ id: string; last_message_at: Date | null; unread_count: number }>(
@@ -105,6 +127,7 @@ async function reconcileConversationsForMergedContact(
     if (!winner || winner.id === loserConv.id) {
       // Nenhuma conversa concorrente com a chave real ainda — só corrige a identidade no lugar.
       await client.query("update inbox_conversations set external_chat_id = $2, updated_at = now() where id = $1", [loserConv.id, input.winnerPhoneE164]);
+      affectedConversationIds.push(loserConv.id);
       continue;
     }
     await client.query("update inbox_messages set conversation_id = $2 where conversation_id = $1", [loserConv.id, winner.id]);
@@ -120,9 +143,14 @@ async function reconcileConversationsForMergedContact(
        values ($1, $2, $3, 'conversation', $4, $5, 'identity_link_strong_evidence', $6)`,
       [mergeLogIdGenerator(), input.tenantId, input.workspaceId, winner.id, loserConv.id, JSON.stringify(loserConv)],
     );
+    // Notifica os dois ids: quem tinha a conversa PERDEDORA aberta precisa saber que ela morreu
+    // (próxima ação nela já resolve pro vencedor, via `mustConversationBelongToTenantAndWorkspace`
+    // — ver inbox-use-cases.ts — mas a tela só refaz o fetch se for avisada), e o vencedor precisa
+    // refletir as mensagens recém-absorvidas.
+    affectedConversationIds.push(winner.id, loserConv.id);
     mergedCount += 1;
   }
-  return mergedCount;
+  return { mergedCount, affectedConversationIds };
 }
 
 /**
@@ -131,10 +159,16 @@ async function reconcileConversationsForMergedContact(
  * MESMO lid, e funde sob lock (nunca corrida entre dois ticks, nem entre um tick e uma mensagem
  * nova chegando para o mesmo LID via `registerInboundMessage`).
  */
-export async function reconcileMergeableIdentities(pool: Pool, options: { sinceIso: string; limit?: number }): Promise<{ scanned: number; contactsMerged: number; conversationsMerged: number }> {
+export type IdentityMergeAffectedConversation = { tenantId: string; workspaceId: string; conversationId: string };
+
+export async function reconcileMergeableIdentities(
+  pool: Pool,
+  options: { sinceIso: string; limit?: number },
+): Promise<{ scanned: number; contactsMerged: number; conversationsMerged: number; affectedConversations: IdentityMergeAffectedConversation[] }> {
   const candidates = await findContactMergeCandidates(pool, options.sinceIso, options.limit ?? 200);
   let contactsMerged = 0;
   let conversationsMerged = 0;
+  const affectedConversations: IdentityMergeAffectedConversation[] = [];
   for (const candidate of candidates) {
     const lockKey = identityLockKeyForLid(candidate.workspaceId, candidate.lid);
     await withIdentityLock(pool, lockKey, async (client) => {
@@ -143,13 +177,17 @@ export async function reconcileMergeableIdentities(pool: Pool, options: { sinceI
       });
       if (!merged) return;
       contactsMerged += 1;
-      conversationsMerged += await reconcileConversationsForMergedContact(client, {
+      const { mergedCount, affectedConversationIds } = await reconcileConversationsForMergedContact(client, {
         tenantId: candidate.tenantId, workspaceId: candidate.workspaceId,
         winnerContactId: candidate.winnerContactId, loserContactId: candidate.loserContactId, winnerPhoneE164: candidate.phoneE164,
       });
+      conversationsMerged += mergedCount;
+      for (const conversationId of affectedConversationIds) {
+        affectedConversations.push({ tenantId: candidate.tenantId, workspaceId: candidate.workspaceId, conversationId });
+      }
     });
   }
-  return { scanned: candidates.length, contactsMerged, conversationsMerged };
+  return { scanned: candidates.length, contactsMerged, conversationsMerged, affectedConversations };
 }
 
 /**

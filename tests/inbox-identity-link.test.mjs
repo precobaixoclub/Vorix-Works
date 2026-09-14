@@ -9,7 +9,7 @@ import { PostgresInboxContactRepository } from "../dist/infrastructure/storage/p
 import { PostgresInboxConversationRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-conversation-repository.js";
 import { PostgresInboxMessageRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-message-repository.js";
 import { PostgresInboxIdentityLinkRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-identity-link-repository.js";
-import { registerInboundMessage } from "../dist/application/inbox/inbox-use-cases.js";
+import { registerInboundMessage, sendInboxMessage, markConversationRead } from "../dist/application/inbox/inbox-use-cases.js";
 import { reconcileMergeableIdentities, reconcileUnresolvedLidContacts } from "../dist/infrastructure/storage/postgres/inbox-identity-reconciliation.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
@@ -226,4 +226,94 @@ test("reconcileUnresolvedLidContacts: completa whatsapp_pn de um contato já cor
   const updated = await contactRepo.getById(contact.id);
   assert.equal(updated.whatsappPn, phone);
   assert.equal(updated.mergeStatus, undefined, "isto é só completude de metadado — nunca decide merge sozinho");
+});
+
+test("MERGE_TOMBSTONE_REDIRECT: ação contra a conversa PERDEDORA (ex.: alguém com ela aberta na tela no momento do merge) resolve transparente pra vencedora, nunca perdida", async () => {
+  const tenantId = "tenant-link-merge-redirect";
+  const workspace = await makeWorkspace(tenantId);
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+  const identityLinkRepository = new PostgresInboxIdentityLinkRepository(db.pool);
+  const outboundQueue = { published: [], publish: async function publish(input) { this.published.push(input); } };
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, identityLinkRepository, outboundQueue };
+
+  const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+  const lid = "+444111222333444";
+  const realPhone = "+5511933332222";
+
+  const loser = await registerInboundMessage(deps, {
+    tenantId, workspaceId: workspace.id, connectionId: connection.id,
+    chatId: lid, isGroup: false, fromMe: false, chatLid: lid,
+    senderId: lid, senderName: "Cliente",
+    externalMessageId: "wamid.redirect-1", type: "text", body: "Oi", occurredAt: new Date().toISOString(),
+  });
+  const winner = await registerInboundMessage(deps, {
+    tenantId, workspaceId: workspace.id, connectionId: connection.id,
+    chatId: lid, isGroup: false, fromMe: false,
+    chatPhoneE164: realPhone, chatPn: realPhone, chatLid: lid,
+    senderId: lid, senderName: "Cliente", senderPn: realPhone, senderLid: lid,
+    externalMessageId: "wamid.redirect-2", type: "text", body: "Meu número real", occurredAt: new Date().toISOString(),
+  });
+
+  await reconcileMergeableIdentities(db.pool, { sinceIso: new Date(0).toISOString() });
+  const mergedLoserConversation = await conversationRepo.getById(loser.conversation.id);
+  assert.equal(mergedLoserConversation.mergeStatus, "merged", "pré-condição: a conversa perdedora já está com tombstone");
+
+  // Alguém (ou uma aba ainda aberta) manda uma mensagem contra o id ANTIGO (perdedor) — nunca
+  // deveria se perder num id que não aparece mais em nenhuma listagem.
+  const sent = await sendInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: loser.conversation.id, body: "Mensagem tardia contra o id antigo" });
+  assert.equal(sent.conversationId, winner.conversation.id, "a mensagem é gravada na conversa VENCEDORA, nunca perdida na tombstoneada");
+
+  const winnerMessages = await messageRepo.listByConversation({ tenantId, workspaceId: workspace.id, conversationId: winner.conversation.id, limit: 10 });
+  assert.ok(winnerMessages.some((m) => m.body === "Mensagem tardia contra o id antigo"));
+
+  // Outra ação simples (marcar como lida) contra o id antigo também nunca deveria lançar
+  // INBOX_CONVERSATION_NOT_FOUND.
+  await assert.doesNotReject(markConversationRead(deps, { tenantId, workspaceId: workspace.id, conversationId: loser.conversation.id }));
+});
+
+test("MERGE_PRESERVA_VINCULO_CRM: contact_id (vínculo manual com o CRM) do contato PERDEDOR sobrevive ao merge quando o vencedor ainda não tinha nenhum", async () => {
+  const tenantId = "tenant-link-merge-crm";
+  const workspace = await makeWorkspace(tenantId);
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+  const identityLinkRepository = new PostgresInboxIdentityLinkRepository(db.pool);
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, identityLinkRepository };
+
+  const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+  const lid = "+333111222333444";
+  const realPhone = "+5511922221111";
+
+  const loser = await registerInboundMessage(deps, {
+    tenantId, workspaceId: workspace.id, connectionId: connection.id,
+    chatId: lid, isGroup: false, fromMe: false, chatLid: lid,
+    senderId: lid, senderName: "Cliente",
+    externalMessageId: "wamid.crm-1", type: "text", body: "Oi", occurredAt: new Date().toISOString(),
+  });
+
+  // Um humano vincula o contato PERDEDOR (o único que existia até aqui) a um Contact do CRM,
+  // ANTES da 2ª mensagem trazer o telefone real.
+  await db.pool.query(
+    "insert into contacts (id, tenant_id, workspace_id, name) values ($1, $2, $3, $4)",
+    ["crm-contact-manual-123", tenantId, workspace.id, "Cliente do CRM"],
+  );
+  await db.pool.query("update inbox_contacts set contact_id = $2 where id = $1", [loser.contact.id, "crm-contact-manual-123"]);
+
+  const winner = await registerInboundMessage(deps, {
+    tenantId, workspaceId: workspace.id, connectionId: connection.id,
+    chatId: lid, isGroup: false, fromMe: false,
+    chatPhoneE164: realPhone, chatPn: realPhone, chatLid: lid,
+    senderId: lid, senderName: "Cliente", senderPn: realPhone, senderLid: lid,
+    externalMessageId: "wamid.crm-2", type: "text", body: "Meu número real", occurredAt: new Date().toISOString(),
+  });
+  assert.equal(winner.contact.crmContactId, undefined, "pré-condição: o vencedor nasceu sem vínculo CRM nenhum");
+
+  await reconcileMergeableIdentities(db.pool, { sinceIso: new Date(0).toISOString() });
+
+  const mergedWinnerContact = await contactRepo.getById(winner.contact.id);
+  assert.equal(mergedWinnerContact.crmContactId, "crm-contact-manual-123", "o vínculo CRM do perdedor nunca é perdido no merge — sobrevive no vencedor");
 });

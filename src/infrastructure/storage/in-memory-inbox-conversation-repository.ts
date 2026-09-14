@@ -25,7 +25,7 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     // Idempotente por `(connectionId, externalChatId)` — identidade canônica do chat, nunca mais o
     // remetente de uma mensagem (ver correção do bug de identidade de conversa, migration 0115).
     const existing = [...this.rows.values()].find(
-      (row) => row.connectionId === input.connectionId && row.externalChatId === input.externalChatId,
+      (row) => row.connectionId === input.connectionId && row.externalChatId === input.externalChatId && !row.mergeStatus,
     );
     if (existing) {
       if (existing.groupName || existing.contactId) return existing;
@@ -60,13 +60,22 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     return this.rows.get(id);
   }
 
+  async getByExternalChatId(input: { connectionId: string; externalChatId: string }): Promise<InboxConversation | undefined> {
+    // Mesmo racional do adapter Postgres: prefere o registro ATIVO se houver, mas ainda devolve um
+    // tombstone se for a única correspondência (o reconciliador precisa enxergá-lo).
+    const matches = [...this.rows.values()].filter(
+      (row) => row.connectionId === input.connectionId && row.externalChatId === input.externalChatId,
+    );
+    return matches.find((row) => !row.mergeStatus) ?? matches[0];
+  }
+
   async listByWorkspace(input: {
     tenantId: string;
     workspaceId: string;
     filter?: InboxConversationListFilter;
     assignedUserId?: string;
   }): Promise<InboxConversationListItem[]> {
-    let rows = [...this.rows.values()].filter((row) => row.tenantId === input.tenantId && row.workspaceId === input.workspaceId);
+    let rows = [...this.rows.values()].filter((row) => row.tenantId === input.tenantId && row.workspaceId === input.workspaceId && !row.mergeStatus);
     switch (input.filter) {
       case "mine":
         rows = rows.filter((row) => row.assignedUserId === input.assignedUserId);

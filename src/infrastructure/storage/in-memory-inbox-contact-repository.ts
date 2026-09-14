@@ -58,7 +58,7 @@ export class InMemoryInboxContactRepository implements InboxContactRepositoryPor
 
   async findByPhone(input: { tenantId: string; workspaceId: string; phoneNormalized: string }): Promise<InboxContact | undefined> {
     return [...this.rows.values()].find(
-      (row) => row.tenantId === input.tenantId && row.workspaceId === input.workspaceId && row.phoneNormalized === input.phoneNormalized,
+      (row) => row.tenantId === input.tenantId && row.workspaceId === input.workspaceId && row.phoneNormalized === input.phoneNormalized && !row.mergeStatus,
     );
   }
 
@@ -70,7 +70,7 @@ export class InMemoryInboxContactRepository implements InboxContactRepositoryPor
     excludeId: string | undefined,
   ): Promise<InboxContact | undefined> {
     return [...this.rows.values()].find(
-      (row) => row.tenantId === tenantId && row.workspaceId === workspaceId && row[field] === value && row.id !== excludeId,
+      (row) => row.tenantId === tenantId && row.workspaceId === workspaceId && row[field] === value && row.id !== excludeId && !row.mergeStatus,
     );
   }
 }

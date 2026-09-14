@@ -5,6 +5,7 @@ import type { InboxAiResponderPort } from "../ports/inbox-ai-responder.port.js";
 import type { InboxContactRepositoryPort } from "../ports/inbox-contact-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../ports/inbox-conversation-event-repository.port.js";
 import type { InboxConversationListFilter, InboxConversationListItem, InboxConversationRepositoryPort } from "../ports/inbox-conversation-repository.port.js";
+import type { InboxIdentityLinkRepositoryPort } from "../ports/inbox-identity-link-repository.port.js";
 import type { InboxMediaStoragePort } from "../ports/inbox-media-storage.port.js";
 import type { InboxMessageRepositoryPort } from "../ports/inbox-message-repository.port.js";
 import type { InboxMetricsRecorder } from "../ports/inbox-metrics.port.js";
@@ -66,6 +67,10 @@ export type InboxUseCaseDeps = {
    * (a Inbox continua 100% funcional, só sem baixar o arquivo — mensagem de mídia fica com `type`
    * correto e `mediaStorageRef` vazio, o frontend cai no fallback de ícone+rótulo). */
   inboxMediaStorage?: InboxMediaStoragePort;
+  /** Bloco "réplica de identidade" (ver docs do plano — inspirado no `IdentityLink` de outro
+   * sistema do usuário). `undefined` = comportamento anterior a esta entrega (LID só resolve
+   * telefone quando o `*Alt` vem NESTE evento específico, nunca persiste pra eventos futuros). */
+  identityLinkRepository?: InboxIdentityLinkRepositoryPort;
   /** Trial + Product Analytics — integração MÍNIMA (`first_channel_connected`,
    * `first_conversation_received`, `first_conversation_replied`). Nenhuma regra de Conversas
    * muda por causa disto. */
@@ -542,6 +547,39 @@ export type RegisterInboundMessageInput = {
  *     mandou por fora do Vorix (direto do celular pareado) — registrada como `outbound` na MESMA
  *     conversa do chat (nunca como "inbound de um contato chamado eu mesmo").
  */
+/**
+ * Bloco "réplica de identidade" — resolve o pivô (telefone canônico) de UM chat direto, consultando
+ * `inbox_identity_links` quando o evento atual não traz evidência forte (`chatPhoneE164`). Sem
+ * isto, um LID visto de novo sem o `*Alt` recalcularia um pseudo-telefone diferente do já
+ * resolvido antes, fragmentando o mesmo contato/conversa em dois (risco "PN/LID cruzado",
+ * documentado em `docs/conversas-canonical-chat-identity.md`).
+ *
+ * Quando `chatPhoneE164` ESTÁ presente (evidência forte deste evento), grava/atualiza o link pra
+ * `chatLid` (se houver) — nunca fica só no evento atual, fica disponível pra qualquer evento
+ * futuro do mesmo LID, mesmo sem `*Alt` de novo.
+ */
+async function resolveInboundPivotPhone(deps: InboxUseCaseDeps, input: RegisterInboundMessageInput): Promise<string> {
+  if (input.chatPhoneE164) {
+    if (input.chatLid && deps.identityLinkRepository) {
+      await deps.identityLinkRepository.upsert({
+        tenantId: input.tenantId,
+        workspaceId: input.workspaceId,
+        lid: input.chatLid,
+        phoneE164: input.chatPhoneE164,
+        confidence: 100,
+        source: "wuzapi_alt_field",
+      });
+    }
+    return input.chatPhoneE164;
+  }
+  if (input.chatLid && deps.identityLinkRepository) {
+    const link = await deps.identityLinkRepository.getByLid(input.workspaceId, input.chatLid);
+    if (link) return link.phoneE164;
+  }
+  // Pivô degradado (documentado) — nenhuma evidência forte disponível, nem agora nem antes.
+  return normalizePhoneNumber(input.chatId);
+}
+
 export async function registerInboundMessage(
   deps: InboxUseCaseDeps,
   input: RegisterInboundMessageInput,
@@ -555,15 +593,17 @@ export async function registerInboundMessage(
   }
 
   let contact: InboxContact | undefined;
+  let pivotPhone: string | undefined;
   if (!input.isGroup) {
-    // Bloco "Identity UX" — telefone é o pivô CANÔNICO da pessoa quando o provider confirmou o
-    // alias PN/LID (`chatPhoneE164`); só cai pro LID-como-pseudo-telefone quando isso ainda não
-    // foi observado (pivô degradado, documentado — ver src/domain/inbox/whatsapp-identity.ts).
-    const phoneNormalized = input.chatPhoneE164 ?? normalizePhoneNumber(input.chatId);
+    // Bloco "Identity UX" + "réplica de identidade" — telefone é o pivô CANÔNICO da pessoa,
+    // resolvido com evidência forte (`chatPhoneE164` deste evento OU de um evento anterior do
+    // mesmo LID, via `inbox_identity_links`); só cai pro LID-como-pseudo-telefone quando isso
+    // nunca foi observado (pivô degradado, documentado — ver `resolveInboundPivotPhone` acima).
+    pivotPhone = await resolveInboundPivotPhone(deps, input);
     contact = await deps.contactRepository.upsertByPhone({
       tenantId: input.tenantId,
       workspaceId: input.workspaceId,
-      phoneNormalized,
+      phoneNormalized: pivotPhone,
       // Self-echo nunca deveria sobrescrever o nome do CONTATO com o nome do próprio operador —
       // `PushName` num evento `fromMe` é o nome de quem mandou (o bot), não da pessoa do outro lado.
       name: input.fromMe ? undefined : input.senderName,
@@ -577,7 +617,9 @@ export async function registerInboundMessage(
     workspaceId: input.workspaceId,
     connectionId: input.connectionId,
     chatType: input.isGroup ? "group" : "direct",
-    externalChatId: input.isGroup ? input.chatId : normalizePhoneNumber(input.chatId),
+    // Mesmo pivô resolvido acima (nunca recalculado separadamente) — garante que contato e
+    // conversa convirjam pra identidade certa juntos, nunca um resolvido e o outro não.
+    externalChatId: input.isGroup ? input.chatId : (pivotPhone ?? normalizePhoneNumber(input.chatId)),
     groupName: input.groupName,
     contactId: contact?.id,
   });

@@ -29,6 +29,9 @@ type Row = {
   ai_paused_reason: string | null;
   ai_processing_since: Date | null;
   automation_enabled: boolean;
+  merge_status: string | null;
+  merged_into_conversation_id: string | null;
+  merged_at: Date | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -45,7 +48,7 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     const result = await this.pool.query<Row>(
       `insert into inbox_conversations (id, tenant_id, workspace_id, connection_id, chat_type, external_chat_id, group_name, contact_id)
        values ($1, $2, $3, $4, $5, $6, $7, $8)
-       on conflict (connection_id, external_chat_id) do update set
+       on conflict (connection_id, external_chat_id) where merge_status is null do update set
          group_name = coalesce(inbox_conversations.group_name, excluded.group_name),
          contact_id = coalesce(inbox_conversations.contact_id, excluded.contact_id),
          updated_at = inbox_conversations.updated_at
@@ -60,13 +63,25 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
+  async getByExternalChatId(input: { connectionId: string; externalChatId: string }): Promise<InboxConversation | undefined> {
+    // Inclui linhas já mescladas de propósito (`merge_status` não filtrado aqui) — o reconciliador
+    // (Fase 4) precisa enxergar o registro-perdedor pra decidir que já foi fundido e não repetir o
+    // trabalho, diferente de `listByWorkspace`/`findOrCreate`, que nunca devem expor/reusar um
+    // tombstone.
+    const result = await this.pool.query<Row>(
+      "select * from inbox_conversations where connection_id = $1 and external_chat_id = $2 order by (merge_status is null) desc, created_at asc limit 1",
+      [input.connectionId, input.externalChatId],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
   async listByWorkspace(input: {
     tenantId: string;
     workspaceId: string;
     filter?: InboxConversationListFilter;
     assignedUserId?: string;
   }): Promise<InboxConversationListItem[]> {
-    const conditions = ["c.tenant_id = $1", "c.workspace_id = $2"];
+    const conditions = ["c.tenant_id = $1", "c.workspace_id = $2", "c.merge_status is null"];
     const params: unknown[] = [input.tenantId, input.workspaceId];
     if (input.filter === "mine" && input.assignedUserId) {
       params.push(input.assignedUserId);
@@ -246,6 +261,9 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       aiPausedReason: (row.ai_paused_reason as InboxAiPauseReason | null) ?? undefined,
       aiProcessingSince: row.ai_processing_since?.toISOString(),
       automationEnabled: row.automation_enabled,
+      mergeStatus: (row.merge_status as "merged" | null) ?? undefined,
+      mergedIntoConversationId: row.merged_into_conversation_id ?? undefined,
+      mergedAt: row.merged_at?.toISOString(),
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
     };

@@ -11,6 +11,8 @@
  * `src/infrastructure/messaging/wuzapi/`.
  */
 
+import { canonicalizeBrazilianPhone } from "./brazilian-phone-identity.js";
+
 export const MESSAGING_PROVIDERS = ["wuzapi"] as const;
 export type MessagingProviderId = (typeof MESSAGING_PROVIDERS)[number];
 
@@ -79,6 +81,13 @@ export type InboxContact = {
    * `inbox_contacts.contact_id`). `undefined` até alguém vincular este contato do WhatsApp a um
    * Contact do CRM — nunca preenchido automaticamente (ver `docs/crm-omnichannel-architecture-audit.md`). */
   crmContactId?: string;
+  /** Bloco "réplica de identidade" — padrão tombstone (ver `db/migrations/0118_inbox_identity_merge.sql`):
+   * quando `mergeStatus === "merged"`, este contato foi fundido em `mergedIntoContactId` — o `id`
+   * é preservado (nunca apagado, qualquer referência antiga continua resolvendo), mas nunca deve
+   * aparecer em listagens/UI. `undefined` = contato ativo normal. */
+  mergeStatus?: "merged";
+  mergedIntoContactId?: string;
+  mergedAt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -144,6 +153,12 @@ export type InboxConversation = {
    * nenhuma geração está em voo. */
   aiProcessingSince?: string;
   automationEnabled: boolean;
+  /** Bloco "réplica de identidade" — mesmo padrão tombstone de `InboxContact.mergeStatus`: quando
+   * `mergeStatus === "merged"`, as mensagens desta conversa foram movidas para
+   * `mergedIntoConversationId` e este registro nunca deve aparecer em listagens/UI. */
+  mergeStatus?: "merged";
+  mergedIntoConversationId?: string;
+  mergedAt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -316,9 +331,15 @@ export type InboxConversationEvent = {
   createdAt: string;
 };
 
-/** Normaliza um telefone para E.164 simplificado (dígitos apenas, com `+` opcional na entrada) —
- * usado como chave de deduplicação de `InboxContact`. Não valida DDI/DDD; só remove formatação. */
+/** Normaliza um telefone para E.164 simplificado — usado como chave de deduplicação de
+ * `InboxContact`. Tenta a canonicalização brasileira primeiro (bloco "réplica de identidade" —
+ * ver `brazilian-phone-identity.ts`: mesmo número real, com ou sem o 9º dígito do celular, sempre
+ * vira a mesma chave); cai no comportamento original (só dígitos) pra qualquer entrada que não
+ * bata o formato BR — LID/grupo/canal (nunca tratados como telefone, ver `looksLikeNonPhoneJid`)
+ * ou números de outros países. */
 export function normalizePhoneNumber(raw: string): string {
+  const brazilian = canonicalizeBrazilianPhone(raw);
+  if (brazilian?.isValidBrazilian) return brazilian.e164;
   const digits = raw.replace(/[^\d]/g, "");
   if (!digits) throw new Error("INBOX_INVALID_PHONE: telefone vazio ou sem dígitos.");
   return `+${digits}`;

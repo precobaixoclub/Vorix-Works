@@ -52,6 +52,10 @@ export type InboxConversationRepositoryPort = {
    * de identidade de conversa, migration 0115). */
   findOrCreate(input: FindOrCreateInboxConversationInput): Promise<InboxConversation>;
   getById(id: string): Promise<InboxConversation | undefined>;
+  /** Bloco "réplica de identidade" — busca sem criar, usado pelo reconciliador de merge (Fase 4)
+   * pra checar se já existem DUAS conversas divergentes (pseudo-telefone-por-LID vs. telefone
+   * real) pro mesmo `connectionId`, antes de decidir fundir. */
+  getByExternalChatId(input: { connectionId: string; externalChatId: string }): Promise<InboxConversation | undefined>;
   listByWorkspace(input: { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string }): Promise<InboxConversationListItem[]>;
   markLastMessage(id: string, input: { lastMessageAt: string; incrementUnread: boolean }): Promise<void>;
   /** Bloco "Identity UX" — metadata de grupo (nome real/quantidade de participantes), buscada via

@@ -37,6 +37,7 @@ import type { InboxConversationRepositoryPort } from "../../application/ports/in
 import type { InboxMessageRepositoryPort } from "../../application/ports/inbox-message-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../../application/ports/inbox-conversation-event-repository.port.js";
 import type { InboxMetricsRepositoryPort } from "../../application/ports/inbox-metrics-repository.port.js";
+import type { InboxIdentityLinkRepositoryPort } from "../../application/ports/inbox-identity-link-repository.port.js";
 import type { QualityFeedbackRepositoryPort } from "../../application/quality-feedback/quality-feedback-repository.port.js";
 import type { OperationalAuditRepositoryPort } from "../../application/ports/operational-audit-repository.port.js";
 import type { OperationalStateRepositoryPort } from "../../application/ports/operational-state-repository.port.js";
@@ -124,6 +125,8 @@ import { PostgresInboxMessageRepository } from "./postgres/postgres-inbox-messag
 import { PostgresInboxConversationEventRepository } from "./postgres/postgres-inbox-conversation-event-repository.js";
 import { PostgresInboxMetricsRepository } from "./postgres/postgres-inbox-metrics-repository.js";
 import { InMemoryInboxMetricsRepository } from "./in-memory-inbox-metrics-repository.js";
+import { PostgresInboxIdentityLinkRepository } from "./postgres/postgres-inbox-identity-link-repository.js";
+import { InMemoryInboxIdentityLinkRepository } from "./in-memory-inbox-identity-link-repository.js";
 import { PostgresQualityFeedbackRepository } from "./postgres/postgres-quality-feedback-repository.js";
 import { PostgresBriefingFieldValueRepository } from "./postgres/postgres-briefing-field-value-repository.js";
 import { PostgresBriefingQuestionRepository } from "./postgres/postgres-briefing-question-repository.js";
@@ -228,6 +231,9 @@ export type PlatformRepositories = {
   inboxConversationEventRepository: InboxConversationEventRepositoryPort;
   /** Módulo Conversas (Fase 7) — relatório agregado de atendimento (read-only). */
   inboxMetricsRepository: InboxMetricsRepositoryPort;
+  /** Bloco "réplica de identidade" — tabela de aliases LID↔telefone persistida (ver
+   * `db/migrations/0117_inbox_identity_links.sql`). */
+  inboxIdentityLinkRepository: InboxIdentityLinkRepositoryPort;
   /** Só existe quando `driver === "postgres"` — quem chama esta função é responsável por fechar (`pool.end()`) no shutdown. */
   pool?: InstanceType<typeof Pool>;
 };
@@ -298,6 +304,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       inboxMessageRepository: new InMemoryInboxMessageRepository(),
       inboxConversationEventRepository: new InMemoryInboxConversationEventRepository(),
       inboxMetricsRepository: new InMemoryInboxMetricsRepository(),
+      inboxIdentityLinkRepository: new InMemoryInboxIdentityLinkRepository(),
     };
   }
 
@@ -359,6 +366,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     inboxMessageRepository: new PostgresInboxMessageRepository(pool),
     inboxConversationEventRepository: new PostgresInboxConversationEventRepository(pool),
     inboxMetricsRepository: new PostgresInboxMetricsRepository(pool),
+    inboxIdentityLinkRepository: new PostgresInboxIdentityLinkRepository(pool),
     pool,
   };
 }

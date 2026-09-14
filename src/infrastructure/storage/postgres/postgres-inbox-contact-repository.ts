@@ -16,6 +16,9 @@ type Row = {
   contact_id: string | null;
   whatsapp_pn: string | null;
   whatsapp_lid: string | null;
+  merge_status: string | null;
+  merged_into_contact_id: string | null;
+  merged_at: Date | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -51,7 +54,7 @@ export class PostgresInboxContactRepository implements InboxContactRepositoryPor
     const result = await this.pool.query<Row>(
       `insert into inbox_contacts (id, tenant_id, workspace_id, phone_normalized, name, profile_picture_url, external_id, metadata, whatsapp_pn, whatsapp_lid)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       on conflict (workspace_id, phone_normalized) do update set
+       on conflict (workspace_id, phone_normalized) where merge_status is null do update set
          name = coalesce(excluded.name, inbox_contacts.name),
          profile_picture_url = coalesce(excluded.profile_picture_url, inbox_contacts.profile_picture_url),
          external_id = coalesce(excluded.external_id, inbox_contacts.external_id),
@@ -74,8 +77,10 @@ export class PostgresInboxContactRepository implements InboxContactRepositoryPor
   }
 
   async findByPhone(input: { tenantId: string; workspaceId: string; phoneNormalized: string }): Promise<InboxContact | undefined> {
+    // `merge_status is null` — nunca devolve um contato já fundido (tombstone) como se fosse o
+    // registro ativo; quem chama esperaria poder escrever nele.
     const result = await this.pool.query<Row>(
-      "select * from inbox_contacts where tenant_id = $1 and workspace_id = $2 and phone_normalized = $3",
+      "select * from inbox_contacts where tenant_id = $1 and workspace_id = $2 and phone_normalized = $3 and merge_status is null",
       [input.tenantId, input.workspaceId, input.phoneNormalized],
     );
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
@@ -94,6 +99,9 @@ export class PostgresInboxContactRepository implements InboxContactRepositoryPor
       crmContactId: row.contact_id ?? undefined,
       whatsappPn: row.whatsapp_pn ?? undefined,
       whatsappLid: row.whatsapp_lid ?? undefined,
+      mergeStatus: (row.merge_status as "merged" | null) ?? undefined,
+      mergedIntoContactId: row.merged_into_contact_id ?? undefined,
+      mergedAt: row.merged_at?.toISOString(),
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
     };

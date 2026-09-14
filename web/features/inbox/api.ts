@@ -96,6 +96,19 @@ export function sendInboxMessage(workspaceId: string, conversationId: string, bo
   return apiClient.post<InboxMessage>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, { workspaceId, body });
 }
 
+/** Bloco "Media Outbound" — imagem/áudio/vídeo/documento pelo composer. `workspaceId`/`caption`/
+ * `fileName` vão como campos de formulário (nunca querystring — evita vazar em logs de acesso,
+ * mesmo racional do backend, ver `inbox.route.ts`). */
+export function sendInboxMediaMessage(workspaceId: string, conversationId: string, file: File | Blob, options?: { caption?: string; fileName?: string }): Promise<InboxMessage> {
+  const formData = new FormData();
+  formData.append("workspaceId", workspaceId);
+  if (options?.caption) formData.append("caption", options.caption);
+  const fileName = options?.fileName ?? (file instanceof File ? file.name : "arquivo");
+  formData.append("fileName", fileName);
+  formData.append("file", file, fileName);
+  return apiClient.upload<InboxMessage>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/media`, formData);
+}
+
 /** Fase 5 — membros do tenant atual, para o seletor de transferência (substitui o campo manual de
  * userId da Fase 4). Sempre escopado pelo tenant do principal autenticado no backend — nunca por
  * um parâmetro vindo daqui. */

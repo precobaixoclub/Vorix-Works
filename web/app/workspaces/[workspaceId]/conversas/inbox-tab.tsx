@@ -1,20 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
   Bot,
+  Check,
+  CheckCheck,
+  Clock,
   FileText,
   Image as ImageIcon,
+  Mic,
   MoreHorizontal,
   Paperclip,
   PauseCircle,
   Search,
   Send,
+  Smile,
   Sparkles,
+  Square,
+  Trash2,
   UserCheck,
   Video,
   Volume2,
@@ -39,6 +46,7 @@ import {
   closeInboxConversation,
   markInboxConversationRead,
   reopenInboxConversation,
+  sendInboxMediaMessage,
   sendInboxMessage,
   setInboxConversationAiEnabled,
   takeOverInboxConversation,
@@ -422,6 +430,14 @@ function ConversationTimelinePane({
   const [busyAction, setBusyAction] = useState<string | undefined>();
   const [actionError, setActionError] = useState<string | undefined>();
   const [transferTarget, setTransferTarget] = useState("");
+  // Bloco "Composer" (ver docs/conversas-whatsapp-experience-completion.md) — anexo (imagem/vídeo/
+  // documento) é um upload+envio próprio, com seu próprio estado de progresso/erro (nunca reusa
+  // `sending`/`sendError` do texto — são caminhos independentes que podem estar em voo ao mesmo tempo).
+  const [attaching, setAttaching] = useState(false);
+  const [attachError, setAttachError] = useState<string | undefined>();
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const documentInputRef = useRef<HTMLInputElement | null>(null);
 
   const messages = [...(data?.messages ?? [])].reverse();
   const events = eventsData?.events ?? [];
@@ -472,6 +488,54 @@ function ConversationTimelinePane({
     } finally {
       setSending(false);
     }
+  }
+
+  async function handleAttach(file: File) {
+    if (!canOperate) return;
+    setAttaching(true);
+    setAttachError(undefined);
+    try {
+      await sendInboxMediaMessage(workspaceId, conversation.id, file);
+      await refreshThread();
+    } catch (cause) {
+      setAttachError(cause instanceof Error ? cause.message : "Não foi possível enviar o arquivo.");
+    } finally {
+      setAttaching(false);
+    }
+  }
+
+  async function handleSendVoiceNote(blob: Blob) {
+    if (!canOperate) return;
+    setAttaching(true);
+    setAttachError(undefined);
+    try {
+      const extension = blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "m4a" : "webm";
+      await sendInboxMediaMessage(workspaceId, conversation.id, blob, { fileName: `audio-${Date.now()}.${extension}` });
+      await refreshThread();
+    } catch (cause) {
+      setAttachError(cause instanceof Error ? cause.message : "Não foi possível enviar o áudio.");
+    } finally {
+      setAttaching(false);
+    }
+  }
+
+  /** Insere na posição do CURSOR (nunca só no final) — comportamento esperado de um seletor de
+   * emoji num campo de texto (ver seção 18 do pedido original). */
+  function insertEmoji(emoji: string) {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setDraft((current) => current + emoji);
+      return;
+    }
+    const start = textarea.selectionStart ?? draft.length;
+    const end = textarea.selectionEnd ?? draft.length;
+    const next = draft.slice(0, start) + emoji + draft.slice(end);
+    setDraft(next);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const cursor = start + emoji.length;
+      textarea.setSelectionRange(cursor, cursor);
+    });
   }
 
   return (
@@ -591,18 +655,64 @@ function ConversationTimelinePane({
               ) : null}
             </div>
           ) : null}
+          {attachError ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <span className="min-w-0 flex-1">{attachError}</span>
+            </div>
+          ) : null}
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*,video/*"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void handleAttach(file);
+            }}
+          />
+          <input
+            ref={documentInputRef}
+            type="file"
+            accept="application/pdf,text/plain,application/zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void handleAttach(file);
+            }}
+          />
           <div className="flex items-end gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
+            <Popover>
+              <PopoverTrigger asChild>
                 <span className="inline-flex">
-                  <Button type="button" variant="ghost" size="icon" disabled aria-label="Anexos indisponíveis">
+                  <Button type="button" variant="ghost" size="icon" disabled={!canOperate || attaching} aria-label="Anexar arquivo">
                     <Paperclip className="h-4 w-4" />
                   </Button>
                 </span>
-              </TooltipTrigger>
-              <TooltipContent>Este canal aceita apenas texto nesta versao.</TooltipContent>
-            </Tooltip>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-52 p-1">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+                  onClick={() => imageInputRef.current?.click()}
+                >
+                  <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                  Foto ou vídeo
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+                  onClick={() => documentInputRef.current?.click()}
+                >
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  Documento
+                </button>
+              </PopoverContent>
+            </Popover>
+            <EmojiPickerButton disabled={!canOperate} onSelect={insertEmoji} />
             <Textarea
+              ref={textareaRef}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -616,16 +726,20 @@ function ConversationTimelinePane({
               rows={1}
               disabled={!canOperate || sending}
             />
-            <GuardedButton
-              onClick={() => handleSend()}
-              loading={sending}
-              disabled={sending || !draft.trim()}
-              allowed={canOperate}
-              blockedReason={RBAC_COPY.operateConversations}
-            >
-              <Send className="h-4 w-4" />
-              <span className="hidden sm:inline">Enviar</span>
-            </GuardedButton>
+            {draft.trim() ? (
+              <GuardedButton
+                onClick={() => handleSend()}
+                loading={sending}
+                disabled={sending || !draft.trim()}
+                allowed={canOperate}
+                blockedReason={RBAC_COPY.operateConversations}
+              >
+                <Send className="h-4 w-4" />
+                <span className="hidden sm:inline">Enviar</span>
+              </GuardedButton>
+            ) : (
+              <VoiceRecorderButton disabled={!canOperate || attaching} onSend={handleSendVoiceNote} />
+            )}
           </div>
         </div>
       </div>
@@ -725,6 +839,244 @@ function ConversationActionsMenu({
   );
 }
 
+/** Bloco "Composer" — seletor de emoji leve (ver seção 18 do pedido original): sem biblioteca
+ * externa, sem backend (emoji é texto Unicode normal, inserido direto no rascunho). Conjunto
+ * curado com palavra-chave própria pra busca simples (nunca uma busca "de verdade" contra um
+ * banco de nomes Unicode — não vale a complexidade pra um seletor deste tamanho). */
+const EMOJI_ENTRIES: { char: string; keywords: string }[] = [
+  { char: "😀", keywords: "sorriso feliz" }, { char: "😁", keywords: "sorriso feliz" }, { char: "😂", keywords: "risada rindo" },
+  { char: "🤣", keywords: "risada rindo chao" }, { char: "🙂", keywords: "sorriso" }, { char: "😊", keywords: "sorriso feliz" },
+  { char: "😍", keywords: "apaixonado coracao olhos" }, { char: "😘", keywords: "beijo" }, { char: "😉", keywords: "piscada" },
+  { char: "😎", keywords: "legal oculos" }, { char: "🤔", keywords: "pensando duvida" }, { char: "😅", keywords: "suor aliviado" },
+  { char: "😢", keywords: "triste chorando" }, { char: "😭", keywords: "choro triste" }, { char: "😡", keywords: "raiva bravo" },
+  { char: "🥳", keywords: "festa comemoracao" }, { char: "😴", keywords: "sono dormindo" }, { char: "😇", keywords: "anjo santo" },
+  { char: "🤗", keywords: "abraco" }, { char: "😏", keywords: "sorriso malicioso" }, { char: "😮", keywords: "surpresa espanto" },
+  { char: "👍", keywords: "joinha positivo like" }, { char: "👎", keywords: "negativo dislike" }, { char: "👏", keywords: "palmas aplauso" },
+  { char: "🙏", keywords: "obrigado por favor rezar" }, { char: "💪", keywords: "forca musculo" }, { char: "🤝", keywords: "aperto de mao acordo" },
+  { char: "✌️", keywords: "paz vitoria" }, { char: "👌", keywords: "ok perfeito" }, { char: "🖐️", keywords: "mao parar" },
+  { char: "👋", keywords: "tchau oi acenar" }, { char: "🙌", keywords: "comemoracao maos" }, { char: "💯", keywords: "cem perfeito" },
+  { char: "🔥", keywords: "fogo top demais" }, { char: "✨", keywords: "brilho estrela" }, { char: "⭐", keywords: "estrela favorito" },
+  { char: "❤️", keywords: "coracao amor" }, { char: "💔", keywords: "coracao partido" }, { char: "💛", keywords: "coracao amarelo" },
+  { char: "📞", keywords: "telefone ligar" }, { char: "📱", keywords: "celular whatsapp" }, { char: "💻", keywords: "computador notebook" },
+  { char: "📷", keywords: "camera foto" }, { char: "🎉", keywords: "festa parabens comemoracao" }, { char: "🎂", keywords: "bolo aniversario" },
+  { char: "🎁", keywords: "presente" }, { char: "📅", keywords: "calendario data agenda" }, { char: "⏰", keywords: "relogio despertador hora" },
+  { char: "✅", keywords: "check certo confirmado" }, { char: "❌", keywords: "errado cancelar x" }, { char: "⚠️", keywords: "atencao aviso" },
+  { char: "📌", keywords: "fixar pin" }, { char: "💡", keywords: "ideia lampada" }, { char: "🛒", keywords: "carrinho compra" },
+  { char: "💰", keywords: "dinheiro pagamento" }, { char: "📦", keywords: "pacote entrega" }, { char: "🚗", keywords: "carro" },
+  { char: "✈️", keywords: "aviao viagem" }, { char: "🏠", keywords: "casa" },
+];
+
+function EmojiPickerButton({ disabled, onSelect }: { disabled: boolean; onSelect: (emoji: string) => void }) {
+  const [query, setQuery] = useState("");
+  const filtered = query.trim() ? EMOJI_ENTRIES.filter((entry) => entry.keywords.includes(query.trim().toLowerCase())) : EMOJI_ENTRIES;
+
+  return (
+    <Popover onOpenChange={(open) => !open && setQuery("")}>
+      <PopoverTrigger asChild>
+        <span className="inline-flex">
+          <Button type="button" variant="ghost" size="icon" disabled={disabled} aria-label="Inserir emoji">
+            <Smile className="h-4 w-4" />
+          </Button>
+        </span>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-2">
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Buscar emoji..."
+          className="mb-2 h-8 text-sm"
+          autoFocus
+        />
+        <div className="grid max-h-48 grid-cols-8 gap-0.5 overflow-y-auto">
+          {filtered.map((entry) => (
+            <button
+              key={entry.char}
+              type="button"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-lg hover:bg-muted"
+              onClick={() => onSelect(entry.char)}
+              aria-label={entry.keywords}
+            >
+              {entry.char}
+            </button>
+          ))}
+          {filtered.length === 0 ? <p className="col-span-8 py-4 text-center text-xs text-muted-foreground">Nenhum emoji encontrado.</p> : null}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Bloco "Gravação de áudio" (ver seções 19-23 do pedido original) — `navigator.mediaDevices.
+ * getUserMedia` + `MediaRecorder`. Fluxo: clicar microfone → permissão → gravando (timer + cancelar/
+ * parar) → preview (ouvir antes de enviar, nunca envia direto ao parar) → enviar/descartar. Erros
+ * (permissão negada, browser sem suporte, dispositivo indisponível) sempre viram mensagem humana,
+ * nunca o erro técnico cru — ver `describeRecorderError`.
+ *
+ * Formato: usa o mimetype que o PRÓPRIO browser oferece via `MediaRecorder.isTypeSupported`
+ * (preferindo `audio/ogg;codecs=opus`, o formato do exemplo documentado do WuzAPI — `API.md`,
+ * `POST /chat/send/audio` — quando o browser suporta gravar nesse formato; a maioria dos Chromium
+ * só grava `audio/webm;codecs=opus` nativamente). AINDA NÃO CONFIRMADO ao vivo: se o WuzAPI
+ * distingue voice note/PTT de áudio genérico por algum campo à parte (a documentação pública não
+ * menciona nenhum) — precisa validar contra um WhatsApp real antes de considerar "voice note"
+ * garantido (ver docs/conversas-whatsapp-experience-completion.md, riscos restantes).
+ */
+function VoiceRecorderButton({ disabled, onSend }: { disabled: boolean; onSend: (blob: Blob) => Promise<void> }) {
+  const [phase, setPhase] = useState<"idle" | "requesting" | "recording" | "preview" | "sending">("idle");
+  const [seconds, setSeconds] = useState(0);
+  const [error, setError] = useState<string | undefined>();
+  const [previewUrl, setPreviewUrl] = useState<string | undefined>();
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const blobRef = useRef<Blob | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function stopStream() {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }
+
+  function reset() {
+    stopStream();
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(undefined);
+    blobRef.current = null;
+    chunksRef.current = [];
+    setSeconds(0);
+    setPhase("idle");
+  }
+
+  async function startRecording() {
+    setError(undefined);
+    setPhase("requesting");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((candidate) => MediaRecorder.isTypeSupported(candidate));
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        blobRef.current = blob;
+        setPreviewUrl(URL.createObjectURL(blob));
+        setPhase("preview");
+        stopStream();
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setPhase("recording");
+      setSeconds(0);
+      timerRef.current = setInterval(() => setSeconds((current) => current + 1), 1000);
+    } catch (cause) {
+      setError(describeRecorderError(cause));
+      setPhase("idle");
+      stopStream();
+    }
+  }
+
+  function stopRecording() {
+    recorderRef.current?.stop();
+  }
+
+  function cancelRecording() {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.onstop = null;
+      recorderRef.current.stop();
+    }
+    reset();
+  }
+
+  async function confirmSend() {
+    if (!blobRef.current) return;
+    setPhase("sending");
+    try {
+      await onSend(blobRef.current);
+      reset();
+    } catch {
+      // `onSend` já registra o erro no estado do composer (attachError) — aqui só volta pro
+      // preview, nunca perde a gravação numa falha de rede/upload.
+      setPhase("preview");
+    }
+  }
+
+  useEffect(() => () => stopStream(), []);
+
+  if (phase === "idle") {
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Button type="button" variant="ghost" size="icon" disabled={disabled} onClick={startRecording} aria-label="Gravar áudio">
+                <Mic className="h-4 w-4" />
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>Gravar mensagem de voz</TooltipContent>
+        </Tooltip>
+        {error ? <p className="max-w-[12rem] text-right text-[11px] text-destructive">{error}</p> : null}
+      </div>
+    );
+  }
+
+  if (phase === "requesting") {
+    return <Button type="button" variant="ghost" size="icon" disabled aria-label="Solicitando microfone" loading />;
+  }
+
+  if (phase === "recording") {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-2 py-1.5">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-destructive" aria-hidden="true" />
+        <span className="tabular-nums text-sm text-foreground">{formatRecordingTime(seconds)}</span>
+        <Button type="button" variant="ghost" size="sm" onClick={cancelRecording}>
+          Cancelar
+        </Button>
+        <Button type="button" variant="secondary" size="icon" onClick={stopRecording} aria-label="Parar gravação">
+          <Square className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+  }
+
+  // "preview" | "sending" — sempre pode ouvir antes de enviar (nunca envia direto ao parar).
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-2 py-1.5">
+      {previewUrl ? <audio src={previewUrl} controls className="h-8 max-w-[10rem]" /> : null}
+      <Button type="button" variant="ghost" size="icon" onClick={reset} disabled={phase === "sending"} aria-label="Descartar gravação">
+        <Trash2 className="h-4 w-4" />
+      </Button>
+      <GuardedButton size="sm" onClick={confirmSend} loading={phase === "sending"} disabled={phase === "sending"} allowed={!disabled} blockedReason={RBAC_COPY.operateConversations}>
+        <Send className="h-4 w-4" />
+        Enviar
+      </GuardedButton>
+    </div>
+  );
+}
+
+function describeRecorderError(cause: unknown): string {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    return "Seu navegador não suporta gravação de áudio.";
+  }
+  if (cause instanceof DOMException) {
+    if (cause.name === "NotAllowedError" || cause.name === "SecurityError") return "Não foi possível acessar o microfone.";
+    if (cause.name === "NotFoundError") return "Nenhum microfone disponível neste dispositivo.";
+  }
+  return "Não foi possível acessar o microfone.";
+}
+
+function formatRecordingTime(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
+  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
 function MessageBubble({
   workspaceId,
   message,
@@ -770,9 +1122,9 @@ function MessageBubble({
         {senderLabel ? <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">{senderLabel}</p> : null}
         {isMedia ? <MessageMedia workspaceId={workspaceId} message={message} /> : null}
         {body ? <p className={cn("whitespace-pre-wrap break-words", isMedia && "mt-1.5")}>{body}</p> : null}
-        <div className="mt-1.5 flex flex-wrap items-center justify-end gap-2 text-[10px] opacity-70">
+        <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1 text-[10px] opacity-70">
           <span className="tabular-nums">{timeLabel(message.sentAt ?? message.createdAt)}</span>
-          {isOutbound ? <span>{messageStatusLabel(message.status)}</span> : null}
+          {isOutbound ? <MessageStatusTicks status={message.status} /> : null}
         </div>
         {failed && body ? (
           <div className="mt-2 flex justify-end">
@@ -963,6 +1315,35 @@ function messageStatusLabel(status: InboxMessage["status"]): string {
     case "failed": return "Falhou";
     default: return status;
   }
+}
+
+/** Bloco "Receipts" (ver docs/conversas-whatsapp-experience-completion.md) — ícones ✓/✓✓ na
+ * ergonomia do WhatsApp em vez do rótulo de texto anterior. Tooltip explica o estado por extenso.
+ * `queued`/`sending` usam um relógio discreto (nunca inventa um "entregue"/"lido" que o provider
+ * não confirmou — ver `mapStatusReceipt` no backend, só reconhece `Delivered`/`Read`/`ReadSelf`). */
+function MessageStatusTicks({ status }: { status: InboxMessage["status"] }) {
+  const icon =
+    status === "failed" ? (
+      <AlertCircle className="h-3 w-3 text-destructive" aria-hidden="true" />
+    ) : status === "read" ? (
+      <CheckCheck className="h-3 w-3 text-sky-500 dark:text-sky-400" aria-hidden="true" />
+    ) : status === "delivered" ? (
+      <CheckCheck className="h-3 w-3" aria-hidden="true" />
+    ) : status === "sent" ? (
+      <Check className="h-3 w-3" aria-hidden="true" />
+    ) : (
+      <Clock className="h-3 w-3" aria-hidden="true" />
+    );
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex items-center" aria-label={messageStatusLabel(status)}>
+          {icon}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{messageStatusLabel(status)}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 function eventLabel(event: InboxConversationEvent, currentUserId: string | undefined, members: readonly InboxTenantMember[]): string {

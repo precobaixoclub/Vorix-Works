@@ -214,13 +214,6 @@ export class WuzApiClient {
     input: { url: string; mediaKey?: string; mimeType?: string; fileSha256?: string; fileSizeBytes?: number; fileEncSha256?: string },
   ): Promise<{ body: Buffer; mimeType?: string } | undefined> {
     const path = { image: "/chat/downloadimage", video: "/chat/downloadvideo", audio: "/chat/downloadaudio", document: "/chat/downloaddocument" }[type];
-    // DIAGNÓSTICO TEMPORÁRIO (investigação: WuzAPI responde "no url present" mesmo com mediaUrl
-    // presente no evento normalizado) — remover após confirmar a causa raiz. Só tamanhos, nunca
-    // o valor real (a Url é uma URL de CDN de curta duração, mediaKey é material de descriptografia).
-    console.log("[DIAG-DOWNLOAD-REQUEST]", JSON.stringify({
-      type, urlLength: input.url?.length ?? 0, hasMediaKey: Boolean(input.mediaKey), mediaKeyLength: input.mediaKey?.length ?? 0,
-      mimeType: input.mimeType, hasFileSha256: Boolean(input.fileSha256), fileSizeBytes: input.fileSizeBytes,
-    }));
     const raw = await this.sessionRequest<unknown>(sessionToken, path, {
       method: "POST",
       body: {

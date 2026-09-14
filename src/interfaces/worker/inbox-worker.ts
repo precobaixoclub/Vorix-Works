@@ -642,17 +642,6 @@ async function main(): Promise<void> {
       // `type` correto; sucesso aqui só enriquece com `mediaStorageRef` um instante depois — o
       // frontend revalida via `message.updated` quando isso acontece.
       if (event.messageType === "image" || event.messageType === "video" || event.messageType === "audio" || event.messageType === "document") {
-        // DIAGNÓSTICO TEMPORÁRIO (investigação: media_storage_ref sempre NULL em produção) —
-        // remover depois que a causa raiz for confirmada. Nunca loga o valor de mediaUrl (pode
-        // conter token de curta duração da CDN do WhatsApp), só se está presente e seu tamanho.
-        console.log("[DIAG-MEDIA-PRECONDITIONS]", JSON.stringify({
-          hasInboxMediaStorage: Boolean(deps.inboxMediaStorage),
-          hasProviderDownloadMedia: Boolean(deps.provider.downloadMedia),
-          hasMediaUrl: Boolean(event.mediaUrl),
-          mediaUrlLength: event.mediaUrl?.length ?? 0,
-          hasMediaKey: Boolean(event.mediaKey),
-          messageType: event.messageType,
-        }));
         if (event.mediaUrl) {
           downloadInboundMediaAndAttach(deps, {
             tenantId: event.tenantId,
@@ -671,7 +660,6 @@ async function main(): Promise<void> {
             thumbnailBase64: event.thumbnailBase64,
           })
             .then((result) => {
-              console.log("[DIAG-MEDIA-RESULT]", JSON.stringify({ attached: result.attached, messageId: message.id }));
               if (result.attached) publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
             })
             .catch((error) => {

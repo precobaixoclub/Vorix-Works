@@ -662,10 +662,27 @@ export type DownloadInboundMediaInput = {
  * payload sem os campos esperados) é tratada como "mídia indisponível", nunca lançada — quem
  * chama já espera isso e só loga.
  */
-export async function downloadInboundMediaAndAttach(deps: InboxUseCaseDeps, input: DownloadInboundMediaInput): Promise<{ attached: boolean }> {
+export async function downloadInboundMediaAndAttach(deps: InboxUseCaseDeps, input: DownloadInboundMediaInput): Promise<{ attached: boolean; reason?: "no_media_key_unsupported_source" }> {
   if (!deps.inboxMediaStorage || !deps.provider.downloadMedia) return { attached: false };
   const connection = await deps.connectionRepository.getById(input.connectionId);
   if (!connection?.externalSessionId) return { attached: false };
+
+  // ACHADO AO VIVO (diagnóstico temporário em produção — ver
+  // docs/conversas-inbox-organization-media-runtime.md) — mídia de WhatsApp normal (DM/grupo) é
+  // E2E criptografada e SEMPRE traz `mediaKey` (confirmado no .proto real do whatsmeow,
+  // `waE2E.ImageMessage.mediaKey` etc.); mensagens de CANAL/NEWSLETTER (`@newsletter`) não são
+  // criptografadas por destinatário e por isso NUNCA trazem `mediaKey` — o endpoint de download do
+  // WuzAPI (`/chat/download*`) exige o par completo (Url+MediaKey) pra descriptografar e responde
+  // um erro genérico ("no url present", mesmo quando só o MediaKey falta) nesse caso. Sem essa
+  // checagem, o worker tentava o download de toda mídia de canal, sempre falhando com uma
+  // mensagem enganosa. Nunca fingir recuperação aqui (seção 25 do pedido original) — só marca a
+  // causa raiz real e desiste sem tentar a chamada HTTP que sabemos que vai falhar.
+  if (!input.mediaKey) {
+    console.warn(
+      `[inbox] mensagem "${input.messageId}" do tipo "${input.type}" sem mediaKey — provável Canal/Newsletter do WhatsApp (mídia não criptografada por destinatário, o endpoint de download do WuzAPI exige mediaKey). Mídia não pôde ser baixada; isto NÃO é um erro transitório, não adianta reprocessar sem uma chave real.`,
+    );
+    return { attached: false, reason: "no_media_key_unsupported_source" };
+  }
 
   const downloaded = await deps.provider.downloadMedia({
     externalSessionId: connection.externalSessionId,

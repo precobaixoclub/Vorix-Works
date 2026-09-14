@@ -96,7 +96,7 @@ export type MessagingProvider = {
   downloadMedia?(input: {
     externalSessionId: string;
     type: Exclude<MessagingMediaKind, "text">;
-    ref: { url: string; mediaKey?: string; mimeType?: string; fileSha256?: string; fileSizeBytes?: number; fileEncSha256?: string };
+    ref: { url: string; directPath?: string; mediaKey?: string; mimeType?: string; fileSha256?: string; fileSizeBytes?: number; fileEncSha256?: string };
   }): Promise<{ body: Buffer; mimeType?: string } | undefined>;
 
   /**

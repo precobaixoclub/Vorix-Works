@@ -195,6 +195,12 @@ function parseWuzApiTimestamp(value: unknown): string {
 
 type ExtractedMediaFields = {
   mediaUrl?: string;
+  /** CAUSA RAIZ REAL do bug "toda mídia falha ao baixar" (confirmado lendo o código-fonte real do
+   * whatsmeow, `download.go`, `Client.Download()`): a função verifica `len(msg.GetDirectPath()) ==
+   * 0` e retorna `ErrNoURLPresent` ("no url present") — o campo `URL` não é sequer consultado pra
+   * essa checagem. `directPath` NUNCA foi extraído/enviado ao WuzAPI antes desta correção, então
+   * 100% das tentativas de download falhavam com esse erro, mesmo com `mediaKey` presente. */
+  mediaDirectPath?: string;
   mimeType?: string;
   caption?: string;
   fileName?: string;
@@ -230,7 +236,8 @@ function pickNumber(object: Record<string, unknown>, keys: string[]): number | u
 function extractMediaFields(messageType: InboxMessageType, media: Record<string, unknown>): ExtractedMediaFields | undefined {
   if (messageType !== "image" && messageType !== "video" && messageType !== "audio" && messageType !== "document") return undefined;
   return {
-    mediaUrl: pickString(media, ["url", "Url", "URL", "directPath", "DirectPath"]),
+    mediaUrl: pickString(media, ["url", "Url", "URL"]),
+    mediaDirectPath: pickString(media, ["directPath", "DirectPath"]),
     mimeType: pickString(media, ["mimetype", "Mimetype", "mimeType"]),
     caption: pickString(media, ["caption", "Caption"]),
     fileName: pickString(media, ["fileName", "FileName"]),

@@ -643,6 +643,9 @@ export type DownloadInboundMediaInput = {
   messageId: string;
   type: Exclude<InboxMessage["type"], "text" | "location" | "contact" | "other">;
   mediaUrl: string;
+  /** Campo CRÍTICO pro download funcionar — ver comentário em `downloadMedia` (`wuzapi-client.ts`):
+   * `whatsmeow.Client.Download()` exige isto não-vazio, nunca olha `mediaUrl` pra essa checagem. */
+  mediaDirectPath?: string;
   mimeType?: string;
   mediaKey?: string;
   fileSha256?: string;
@@ -662,7 +665,7 @@ export type DownloadInboundMediaInput = {
  * payload sem os campos esperados) é tratada como "mídia indisponível", nunca lançada — quem
  * chama já espera isso e só loga.
  */
-export async function downloadInboundMediaAndAttach(deps: InboxUseCaseDeps, input: DownloadInboundMediaInput): Promise<{ attached: boolean; reason?: "no_media_key_unsupported_source" }> {
+export async function downloadInboundMediaAndAttach(deps: InboxUseCaseDeps, input: DownloadInboundMediaInput): Promise<{ attached: boolean; reason?: "no_media_key_unsupported_source" | "no_direct_path" }> {
   if (!deps.inboxMediaStorage || !deps.provider.downloadMedia) return { attached: false };
   const connection = await deps.connectionRepository.getById(input.connectionId);
   if (!connection?.externalSessionId) return { attached: false };
@@ -683,11 +686,31 @@ export async function downloadInboundMediaAndAttach(deps: InboxUseCaseDeps, inpu
     );
     return { attached: false, reason: "no_media_key_unsupported_source" };
   }
+  // CAUSA RAIZ REAL (encontrada lendo o código-fonte de `whatsmeow`/`wuzapi`, não suposição) do
+  // motivo pelo qual `mediaKey` presente NUNCA foi suficiente pra baixar com sucesso: o handler do
+  // WuzAPI monta um `waE2E.ImageMessage` a partir do que enviamos e chama
+  // `whatsmeow.Client.Download()`, que checa `len(msg.GetDirectPath()) == 0` (NUNCA olha `mediaUrl`
+  // pra essa checagem) e retorna `"no url present"` se vazio — ver `wuzapi-client.ts:downloadMedia`.
+  // `mediaDirectPath` só começou a ser extraído do payload nesta correção.
+  if (!input.mediaDirectPath) {
+    console.warn(
+      `[inbox] mensagem "${input.messageId}" do tipo "${input.type}" com mediaKey mas SEM directPath — o download do WuzAPI vai falhar com "no url present" (whatsmeow.Client.Download() exige directPath, nunca usa a url). Mídia não pôde ser baixada.`,
+    );
+    return { attached: false, reason: "no_direct_path" };
+  }
 
   const downloaded = await deps.provider.downloadMedia({
     externalSessionId: connection.externalSessionId,
     type: input.type,
-    ref: { url: input.mediaUrl, mediaKey: input.mediaKey, mimeType: input.mimeType, fileSha256: input.fileSha256, fileSizeBytes: input.fileSizeBytes, fileEncSha256: input.fileEncSha256 },
+    ref: {
+      url: input.mediaUrl,
+      directPath: input.mediaDirectPath,
+      mediaKey: input.mediaKey,
+      mimeType: input.mimeType,
+      fileSha256: input.fileSha256,
+      fileSizeBytes: input.fileSizeBytes,
+      fileEncSha256: input.fileEncSha256,
+    },
   });
   if (!downloaded) return { attached: false };
 

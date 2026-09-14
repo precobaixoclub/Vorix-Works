@@ -24,10 +24,11 @@ function rawEvent(message, overrides = {}) {
   };
 }
 
-test("mapWuzApiEvent: imageMessage extrai url/mimetype/caption(->body)/fileLength/mediaKey/hashes/thumbnail", () => {
+test("mapWuzApiEvent: imageMessage extrai url/directPath/mimetype/caption(->body)/fileLength/mediaKey/hashes/thumbnail", () => {
   const mapped = mapWuzApiEvent(rawEvent({
     imageMessage: {
       url: "https://mmg.whatsapp.net/xyz",
+      directPath: "/v/t62.7118-24/fake-direct-path",
       mimetype: "image/jpeg",
       caption: "Segue a foto combinada",
       fileLength: 204800,
@@ -43,6 +44,7 @@ test("mapWuzApiEvent: imageMessage extrai url/mimetype/caption(->body)/fileLengt
   assert.ok(mapped && mapped.type === "message.inbound");
   assert.equal(mapped.messageType, "image");
   assert.equal(mapped.mediaUrl, "https://mmg.whatsapp.net/xyz");
+  assert.equal(mapped.mediaDirectPath, "/v/t62.7118-24/fake-direct-path", "directPath é o campo CRÍTICO pro download real funcionar — whatsmeow.Client.Download() exige isso, nunca usa a url");
   assert.equal(mapped.mimeType, "image/jpeg");
   assert.equal(mapped.body, "Segue a foto combinada", "caption vira body — mesma UX do WhatsApp");
   assert.equal(mapped.caption, "Segue a foto combinada");

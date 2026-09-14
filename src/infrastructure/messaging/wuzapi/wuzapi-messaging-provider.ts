@@ -89,7 +89,7 @@ export class WuzApiMessagingProvider implements MessagingProvider {
   async downloadMedia(input: {
     externalSessionId: string;
     type: "image" | "audio" | "video" | "document";
-    ref: { url: string; mediaKey?: string; mimeType?: string; fileSha256?: string; fileSizeBytes?: number; fileEncSha256?: string };
+    ref: { url: string; directPath?: string; mediaKey?: string; mimeType?: string; fileSha256?: string; fileSizeBytes?: number; fileEncSha256?: string };
   }): Promise<{ body: Buffer; mimeType?: string } | undefined> {
     return this.client.downloadMedia(input.externalSessionId, input.type, input.ref);
   }

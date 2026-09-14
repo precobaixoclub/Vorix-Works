@@ -50,12 +50,43 @@ test("downloadInboundMediaAndAttach: sem mediaKey nunca tenta a chamada ao provi
   assert.equal(downloadCalled, false, "nunca deve tentar a chamada HTTP ao provider sabendo que vai falhar");
 });
 
-test("downloadInboundMediaAndAttach: com mediaKey presente, segue o caminho normal (chama o provider)", async () => {
+test("downloadInboundMediaAndAttach: com mediaKey MAS SEM directPath, nunca tenta a chamada ao provider — reason=no_direct_path", async () => {
+  // Causa raiz real (lendo o código-fonte de whatsmeow/wuzapi): `Client.Download()` exige
+  // `DirectPath` não-vazio e nunca olha `mediaUrl` pra essa checagem — sem isso, a chamada HTTP
+  // sempre falharia com "no url present" mesmo com mediaKey presente. Era exatamente isso que
+  // fazia 100% dos downloads falharem em produção antes desta correção.
+  let downloadCalled = false;
+  const provider = {
+    downloadMedia: async () => {
+      downloadCalled = true;
+      return { body: Buffer.from("nunca deveria chegar aqui"), mimeType: "image/jpeg" };
+    },
+  };
+  const deps = {
+    inboxMediaStorage: makeFakeMediaStorage(),
+    provider,
+    connectionRepository: { getById: async () => ({ id: "conn-1", externalSessionId: "sess-1" }) },
+    messageRepository: { attachMedia: async () => { throw new Error("não deveria ser chamado"); } },
+  };
+
+  const result = await downloadInboundMediaAndAttach(deps, {
+    tenantId: "t1", workspaceId: "w1", connectionId: "conn-1", messageId: "msg-2",
+    type: "image", mediaUrl: "https://mmg.whatsapp.net/fake-url", mediaKey: "chave-real-de-teste",
+    // mediaDirectPath ausente de propósito.
+  });
+
+  assert.equal(result.attached, false);
+  assert.equal(result.reason, "no_direct_path");
+  assert.equal(downloadCalled, false, "nunca deve tentar a chamada HTTP sabendo que vai falhar com 'no url present'");
+});
+
+test("downloadInboundMediaAndAttach: com mediaKey e directPath presentes, segue o caminho normal (chama o provider com DirectPath)", async () => {
   const mediaStorage = makeFakeMediaStorage();
   let attachedMediaCall;
   const provider = {
     downloadMedia: async (input) => {
       assert.equal(input.ref.mediaKey, "chave-real-de-teste");
+      assert.equal(input.ref.directPath, "/v/t62.7118-24/fake-direct-path");
       return { body: Buffer.from("bytes reais da imagem"), mimeType: "image/jpeg" };
     },
   };
@@ -67,12 +98,13 @@ test("downloadInboundMediaAndAttach: com mediaKey presente, segue o caminho norm
   };
 
   const result = await downloadInboundMediaAndAttach(deps, {
-    tenantId: "t1", workspaceId: "w1", connectionId: "conn-1", messageId: "msg-2",
+    tenantId: "t1", workspaceId: "w1", connectionId: "conn-1", messageId: "msg-3",
     type: "image", mediaUrl: "https://mmg.whatsapp.net/fake-url", mediaKey: "chave-real-de-teste",
+    mediaDirectPath: "/v/t62.7118-24/fake-direct-path",
   });
 
   assert.equal(result.attached, true);
   assert.equal(result.reason, undefined);
-  assert.equal(attachedMediaCall.id, "msg-2");
+  assert.equal(attachedMediaCall.id, "msg-3");
   assert.ok(attachedMediaCall.input.mediaStorageRef?.objectKey);
 });

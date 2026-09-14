@@ -43,14 +43,20 @@ import { MessagingProviderError } from "../../../application/ports/messaging-pro
  * mais para assumir por analogia sem testar cada uma. Também não confirmado: se existem OUTRAS
  * mensagens de erro de "sessão não autenticada" além das duas listadas acima.
  *
- * PENDING (redesign operacional — mídia real, `downloadMedia` abaixo) — endpoints e parâmetros
- * documentados publicamente (`API.md` do `asternic/wuzapi`, não confirmados ao vivo como o resto
- * deste arquivo): `POST /chat/downloadimage`/`downloadvideo`/`downloadaudio`/`downloaddocument`,
- * todos recebendo `{ Url, MediaKey, Mimetype, FileSHA256, FileLength, FileEncSHA256 }` (os mesmos
- * campos extraídos pelo mapper do evento recebido — ver `wuzapi-event-mapper.ts`) e devolvendo o
- * arquivo em base64. A forma exata do campo de resposta (`data` como string pura vs.
- * `data.Data`/`data.Base64`/`data.Image` etc.) é desconhecida até validação real — `downloadMedia`
- * tenta as variantes mais prováveis antes de desistir.
+ * CONFIRMADO (redesign operacional — mídia real, `downloadMedia` abaixo) — lendo o código-fonte
+ * REAL do handler (`asternic/wuzapi`, `handlers.go`) e da função que ele chama por baixo
+ * (`tulir/whatsmeow`, `download.go`, `Client.Download()`), não mais só a documentação pública:
+ * `POST /chat/downloadimage`/`downloadvideo`/`downloadaudio`/`downloaddocument` recebem
+ * `{ Url, DirectPath, MediaKey, Mimetype, FileSHA256, FileLength, FileEncSHA256 }` (a struct do
+ * WuzAPI não tem tags `json:"..."`, então o decoder do Go casa por nome case-insensitive — o
+ * casing exato do payload de saída não importa, mas os NOMES dos campos sim). Resposta:
+ * `{"Mimetype": ..., "Data": "data:<mime>;base64,<...>"}` — `Data` é uma DATA URL completa (pacote
+ * Go `vincent-petithory/dataurl`), não base64 puro — `extractBase64Payload` remove o prefixo.
+ * `DirectPath` é o campo CRÍTICO: `Client.Download()` do whatsmeow checa só
+ * `len(msg.GetDirectPath()) == 0` (nunca olha `URL`) e retorna `"no url present"` se estiver
+ * vazio — esta é a causa raiz real de 100% das tentativas de download falharem em produção antes
+ * desta correção (`docs/conversas-inbox-organization-media-runtime.md` documentava isso como
+ * ainda não resolvido; encontrado e corrigido lendo o código-fonte real dos dois projetos).
  */
 
 export type WuzApiClientConfig = {
@@ -201,23 +207,34 @@ export class WuzApiClient {
   }
 
   /**
-   * Baixa e descriptografa mídia recebida (PENDING — ver comentário no topo do arquivo). O
-   * WuzAPI faz a descriptografia E2E server-side (nunca dá para buscar `mediaUrl` direto com
-   * `fetch` — é ciphertext na CDN do WhatsApp, precisa da `mediaKey`) e devolve os bytes em
-   * base64. `undefined` = resposta em formato inesperado (nenhuma das variantes de campo
-   * conhecidas continha uma string base64) — quem chama trata como "mídia indisponível", nunca
-   * lança.
+   * Baixa e descriptografa mídia recebida. O WuzAPI faz a descriptografia E2E server-side (nunca
+   * dá para buscar `mediaUrl` direto com `fetch` — é ciphertext na CDN do WhatsApp, precisa da
+   * `mediaKey`) e devolve os bytes em base64. `undefined` = resposta em formato inesperado
+   * (nenhuma das variantes de campo conhecidas continha uma string base64) — quem chama trata
+   * como "mídia indisponível", nunca lança.
+   *
+   * CONFIRMADO lendo o código-fonte real do handler (`asternic/wuzapi`, `handlers.go`,
+   * `DownloadImage`/`DownloadVideo`/`DownloadAudio`/`DownloadDocument`) e da função que ele chama
+   * por baixo (`tulir/whatsmeow`, `download.go`, `Client.Download()`): a struct de request do
+   * WuzAPI (`Url`, `DirectPath`, `MediaKey`, `Mimetype`, `FileEncSHA256`, `FileSHA256`,
+   * `FileLength`, sem tags `json:"..."` — o decoder do Go casa por nome case-insensitive, então o
+   * casing exato do payload não importa aqui) monta um `waE2E.ImageMessage` e chama
+   * `whatsmeow.Client.Download()`. Essa função verifica `len(msg.GetDirectPath()) == 0` — **nunca
+   * olha pra `URL`** — e retorna `ErrNoURLPresent` ("no url present") se `DirectPath` estiver
+   * vazio. Causa raiz real de "toda mídia falha ao baixar em produção" (272 mensagens, 0% de
+   * sucesso, mesmo erro sempre): `directPath` nunca era extraído/enviado antes desta correção.
    */
   async downloadMedia(
     sessionToken: string,
     type: "image" | "video" | "audio" | "document",
-    input: { url: string; mediaKey?: string; mimeType?: string; fileSha256?: string; fileSizeBytes?: number; fileEncSha256?: string },
+    input: { url: string; directPath?: string; mediaKey?: string; mimeType?: string; fileSha256?: string; fileSizeBytes?: number; fileEncSha256?: string },
   ): Promise<{ body: Buffer; mimeType?: string } | undefined> {
     const path = { image: "/chat/downloadimage", video: "/chat/downloadvideo", audio: "/chat/downloadaudio", document: "/chat/downloaddocument" }[type];
     const raw = await this.sessionRequest<unknown>(sessionToken, path, {
       method: "POST",
       body: {
         Url: input.url,
+        DirectPath: input.directPath,
         MediaKey: input.mediaKey,
         Mimetype: input.mimeType,
         FileSHA256: input.fileSha256,
@@ -235,12 +252,23 @@ export class WuzApiClient {
   }
 }
 
+/** CONFIRMADO lendo o handler real (`handlers.go`, `DownloadImage` etc.): a resposta é
+ * `{"Mimetype": ..., "Data": dataurl.New(bytes, mimetype).String()}` — o pacote Go
+ * `vincent-petithory/dataurl` produz uma DATA URL completa (`data:<mimetype>;base64,<base64>`),
+ * nunca base64 puro. Decodificar isso com `Buffer.from(x, "base64")` sem remover o prefixo
+ * `data:...;base64,` corrompe o arquivo (o prefixo não é base64 válido). Mantém o fallback pra
+ * base64 puro só por segurança, caso uma versão futura do WuzAPI mude o formato. */
 function extractBase64Payload(raw: unknown): string | undefined {
-  if (typeof raw === "string") return raw;
-  if (raw && typeof raw === "object") {
-    const record = raw as Record<string, unknown>;
-    const candidate = record.Data ?? record.data ?? record.Base64 ?? record.base64 ?? record.Image ?? record.File ?? record.Content;
-    if (typeof candidate === "string") return candidate;
-  }
-  return undefined;
+  const candidate = (() => {
+    if (typeof raw === "string") return raw;
+    if (raw && typeof raw === "object") {
+      const record = raw as Record<string, unknown>;
+      const value = record.Data ?? record.data ?? record.Base64 ?? record.base64 ?? record.Image ?? record.File ?? record.Content;
+      if (typeof value === "string") return value;
+    }
+    return undefined;
+  })();
+  if (!candidate) return undefined;
+  const dataUrlMatch = /^data:[^,]*;base64,(.+)$/s.exec(candidate);
+  return dataUrlMatch ? dataUrlMatch[1] : candidate;
 }

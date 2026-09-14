@@ -650,6 +650,7 @@ async function main(): Promise<void> {
             messageId: message.id,
             type: event.messageType,
             mediaUrl: event.mediaUrl,
+            mediaDirectPath: event.mediaDirectPath,
             mimeType: event.mimeType,
             mediaKey: event.mediaKey,
             fileSha256: event.fileSha256,

@@ -47,6 +47,10 @@ export type InboundMessageReceived = {
   messageType: InboxMessageType;
   body?: string;
   mediaUrl?: string;
+  /** Causa raiz real do bug "mídia nunca baixa" (confirmado no código-fonte do whatsmeow,
+   * `Client.Download()`): a função exige `DirectPath` não-vazio e nem chega a olhar `mediaUrl`
+   * para essa checagem — sem isso, o download falha sempre com "no url present". */
+  mediaDirectPath?: string;
   mimeType?: string;
   /**
    * Redesign operacional (mídia) — campos extraídos do payload bruto do WuzAPI só para tipos de

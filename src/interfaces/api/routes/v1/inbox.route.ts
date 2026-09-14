@@ -232,7 +232,26 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
       throw new AppError({ code: "INBOX_MEDIA_NOT_FOUND", message: "Mídia não encontrada.", statusCode: 404, recoverable: true });
     }
     reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    reply.header("Accept-Ranges", "bytes");
     reply.type(message.mimeType ?? stored.contentType);
+    const fileName = (message.metadata as { fileName?: string } | undefined)?.fileName;
+    // `inline` pra tipos que o browser sabe renderizar direto (imagem/áudio/vídeo — nunca forçar
+    // download); `attachment` só pra documento, com o nome real do arquivo quando conhecido (seção
+    // 20/27 do pedido original — nunca só "Documento recebido").
+    reply.header("Content-Disposition", message.type === "document" ? `attachment; filename="${sanitizeContentDispositionFileName(fileName ?? "documento")}"` : "inline");
+
+    // Suporte a HTTP Range (seções 18/19/27 do pedido original) — essencial pra seek de áudio/
+    // vídeo no player nativo do browser; sem isso, `<audio>`/`<video>` não sabem pular pra um ponto
+    // do arquivo sem rebaixar tudo de novo. Range em memória (nunca stream do disco/storage aqui —
+    // aceitável pro tamanho de mídia de WhatsApp, limitado por `maxUploadBytes`).
+    const range = parseRangeHeader(request.headers.range, stored.body.length);
+    if (range) {
+      reply.status(206);
+      reply.header("Content-Range", `bytes ${range.start}-${range.end}/${stored.body.length}`);
+      reply.header("Content-Length", String(range.end - range.start + 1));
+      return reply.send(stored.body.subarray(range.start, range.end + 1));
+    }
+    reply.header("Content-Length", String(stored.body.length));
     return reply.send(stored.body);
   });
 
@@ -571,4 +590,33 @@ function classifyOutboundMediaMime(mimeType: string): "image" | "audio" | "video
   if (VIDEO.has(mimeType)) return "video";
   if (DOCUMENT.has(mimeType)) return "document";
   return undefined;
+}
+
+/** `Range: bytes=start-end` (RFC 7233, forma simples de UM range — nunca multipart/byteranges,
+ * que nenhum player de mídia usado aqui pede) — `undefined` = sem range pedido, ou range inválido
+ * (nesse caso o chamador cai pro corpo inteiro, nunca lança). */
+export function parseRangeHeader(rangeHeader: string | undefined, totalLength: number): { start: number; end: number } | undefined {
+  if (!rangeHeader) return undefined;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match) return undefined;
+  const [, startRaw, endRaw] = match;
+  let start = startRaw ? Number(startRaw) : undefined;
+  let end = endRaw ? Number(endRaw) : undefined;
+  if (start === undefined && end === undefined) return undefined;
+  if (start === undefined) {
+    // `bytes=-500` = últimos 500 bytes.
+    start = Math.max(totalLength - (end ?? 0), 0);
+    end = totalLength - 1;
+  } else if (end === undefined) {
+    end = totalLength - 1;
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end >= totalLength || start > end) return undefined;
+  return { start, end };
+}
+
+/** Nunca usa o `fileName` do usuário direto num header HTTP — remove aspas/controle que
+ * quebrariam o parsing de `Content-Disposition` do browser (nunca path traversal aqui, isto é só
+ * um header de exibição, o `objectKey` no storage já é gerado pelo servidor). */
+export function sanitizeContentDispositionFileName(fileName: string): string {
+  return fileName.replace(/["\r\n]/g, "").slice(0, 200) || "documento";
 }

@@ -104,10 +104,26 @@ services:
       INBOX_WUZAPI_BASE_URL: "${INBOX_WUZAPI_BASE_URL:-http://wuzapi:8080}"
       INBOX_WUZAPI_ADMIN_TOKEN: "${WUZAPI_ADMIN_TOKEN:-}"
       INBOX_RABBITMQ_URL: "${INBOX_RABBITMQ_URL:-}"
+      # Bloco "Media Storage" (ver docs/conversas-whatsapp-experience-completion.md) — mídia real
+      # de Conversas (inbound baixada pelo worker, outbound composta aqui) precisa sobreviver a
+      # restart/rebuild/deploy: volume nomeado dedicado (`zuno_inbox_media`, NUNCA `zuno_uploads` —
+      # esse é do object storage PÚBLICO de outro domínio, mídia de conversa é privada, servida só
+      # via proxy autenticado de curta duração, ver `GET /v1/inbox/media/:id`), montado no MESMO
+      # path em `zuno-api` (serve) e `vorix-worker` (escreve mídia inbound) — sem isso os dois
+      # processos veriam sistemas de arquivo diferentes e nunca enxergariam o arquivo um do outro.
+      INBOX_MEDIA_STORAGE_ENABLED: "${INBOX_MEDIA_STORAGE_ENABLED:-true}"
+      INBOX_MEDIA_STORAGE_DRIVER: "${INBOX_MEDIA_STORAGE_DRIVER:-local}"
+      INBOX_MEDIA_STORAGE_LOCAL_DIR: "${INBOX_MEDIA_STORAGE_LOCAL_DIR:-/app/inbox-media}"
+      INBOX_MEDIA_STORAGE_BUCKET: "${INBOX_MEDIA_STORAGE_BUCKET:-}"
+      INBOX_MEDIA_STORAGE_ENDPOINT: "${INBOX_MEDIA_STORAGE_ENDPOINT:-}"
+      INBOX_MEDIA_STORAGE_REGION: "${INBOX_MEDIA_STORAGE_REGION:-auto}"
+      INBOX_MEDIA_STORAGE_ACCESS_KEY_ID: "${INBOX_MEDIA_STORAGE_ACCESS_KEY_ID:-}"
+      INBOX_MEDIA_STORAGE_SECRET_ACCESS_KEY: "${INBOX_MEDIA_STORAGE_SECRET_ACCESS_KEY:-}"
     ports:
       - "${ZUNO_API_PORT:-8090}:3000"
     volumes:
       - zuno_uploads:/app/uploads
+      - zuno_inbox_media:/app/inbox-media
     # `conversas_internal` — módulo Conversas (Fase 1): permite à API chamar `http://wuzapi:8080`
     # (admin/QR/status/envio) sem expor o WuzAPI na rede pública. Ver docker-compose.conversas-gateway.yml.
     networks: [zuno_network, cmdesk_cmdesk-network, conversas_internal]
@@ -207,7 +223,19 @@ services:
       INBOX_WORKER_HEARTBEAT_FILE: /tmp/inbox-worker-heartbeat
       # Fase 7 — kill switches de emergência (ver docs/conversas-runbook.md). Nunca "true" por padrão.
       INBOX_OUTBOUND_SEND_PAUSED: "${INBOX_OUTBOUND_SEND_PAUSED:-false}"
+      # Mesmo volume/config de `zuno-api` (ver comentário lá) — o worker é quem BAIXA mídia
+      # inbound (`downloadInboundMediaAndAttach`), a API é quem SERVE (`GET /v1/inbox/media/:id`).
+      INBOX_MEDIA_STORAGE_ENABLED: "${INBOX_MEDIA_STORAGE_ENABLED:-true}"
+      INBOX_MEDIA_STORAGE_DRIVER: "${INBOX_MEDIA_STORAGE_DRIVER:-local}"
+      INBOX_MEDIA_STORAGE_LOCAL_DIR: "${INBOX_MEDIA_STORAGE_LOCAL_DIR:-/app/inbox-media}"
+      INBOX_MEDIA_STORAGE_BUCKET: "${INBOX_MEDIA_STORAGE_BUCKET:-}"
+      INBOX_MEDIA_STORAGE_ENDPOINT: "${INBOX_MEDIA_STORAGE_ENDPOINT:-}"
+      INBOX_MEDIA_STORAGE_REGION: "${INBOX_MEDIA_STORAGE_REGION:-auto}"
+      INBOX_MEDIA_STORAGE_ACCESS_KEY_ID: "${INBOX_MEDIA_STORAGE_ACCESS_KEY_ID:-}"
+      INBOX_MEDIA_STORAGE_SECRET_ACCESS_KEY: "${INBOX_MEDIA_STORAGE_SECRET_ACCESS_KEY:-}"
       ZUNO_LOG_LEVEL: info
+    volumes:
+      - zuno_inbox_media:/app/inbox-media
     networks: [zuno_network, conversas_internal]
     init: true
     # Fase 6 — healthcheck real de liveness (heartbeat em arquivo, ver
@@ -240,3 +268,5 @@ volumes:
     name: zuno_postgres_data
   zuno_uploads:
     name: zuno_uploads
+  zuno_inbox_media:
+    name: zuno_inbox_media

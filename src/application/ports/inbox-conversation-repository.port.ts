@@ -54,6 +54,10 @@ export type InboxConversationRepositoryPort = {
   getById(id: string): Promise<InboxConversation | undefined>;
   listByWorkspace(input: { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string }): Promise<InboxConversationListItem[]>;
   markLastMessage(id: string, input: { lastMessageAt: string; incrementUnread: boolean }): Promise<void>;
+  /** Bloco "Identity UX" — metadata de grupo (nome real/quantidade de participantes), buscada via
+   * `MessagingProvider.getGroupInfo` (ver `syncGroupMetadata` em inbox-use-cases.ts). Só grava
+   * campos presentes em `input` (nunca apaga um valor já conhecido com `undefined`). */
+  updateGroupMetadata(id: string, input: { groupName?: string; participantCount?: number; metadataUpdatedAt: string }): Promise<void>;
   markRead(id: string): Promise<void>;
   /** Atribuição DIRETA (por um supervisor, ou remoção com `undefined`) — nunca usada pelo fluxo
    * "assumir conversa" (ver `tryTakeOver`, que é atômico/compare-and-set). Não tem proteção de

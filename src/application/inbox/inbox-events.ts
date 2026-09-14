@@ -27,9 +27,23 @@ export type InboundMessageReceived = {
   chatId: string;
   isGroup: boolean;
   groupName?: string;
+  /**
+   * Bloco "Identity UX" (ver docs/conversas-whatsapp-experience-completion.md) — telefone E.164
+   * canônico do PEER desta conversa DIRECT, quando resolvível a partir do próprio provider
+   * (`Info.Chat`/`Info.RecipientAlt`, via `resolveWhatsAppPersonIdentity`). `undefined` em grupo/
+   * canal, ou quando só o LID é conhecido e o provider nunca mandou o `*Alt` correspondente
+   * (pivô degradado — ver `src/domain/inbox/whatsapp-identity.ts`).
+   */
+  chatPhoneE164?: string;
+  chatPn?: string;
+  chatLid?: string;
   fromMe: boolean;
   senderId: string;
   senderName?: string;
+  /** Aliases técnicos de quem mandou ESTA mensagem — relevante mesmo em grupo (cada participante
+   * tem seu próprio PN/LID). `undefined` quando não resolvível. */
+  senderPn?: string;
+  senderLid?: string;
   messageType: InboxMessageType;
   body?: string;
   mediaUrl?: string;

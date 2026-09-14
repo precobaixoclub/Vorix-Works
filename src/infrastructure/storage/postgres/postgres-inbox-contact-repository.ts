@@ -14,6 +14,8 @@ type Row = {
   external_id: string | null;
   metadata: Record<string, unknown> | null;
   contact_id: string | null;
+  whatsapp_pn: string | null;
+  whatsapp_lid: string | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -22,18 +24,46 @@ export class PostgresInboxContactRepository implements InboxContactRepositoryPor
   constructor(private readonly pool: Pool) {}
 
   async upsertByPhone(input: UpsertInboxContactInput): Promise<InboxContact> {
+    try {
+      return await this.doUpsert(input);
+    } catch (error) {
+      // Conflito real de identidade (seção 43 do pedido original: "NÃO auto-merge... melhor
+      // duplicar temporariamente do que fundir pessoas erradas") — o mesmo alias PN/LID já está
+      // gravado em OUTRO contato deste workspace (`unique index ... where whatsapp_pn/lid is not
+      // null`, migration 0116). Nunca deixa isso derrubar o processamento da mensagem: registra o
+      // conflito (log — nunca lançado silenciosamente pra um reprocessamento infinito) e faz o
+      // upsert de novo SEM o(s) alias(es) conflitante(s), preservando o comportamento normal
+      // (telefone continua a identidade canônica; só o alias técnico fica sem registrar agora).
+      const code = (error as { code?: string } | undefined)?.code;
+      if (code === "23505" && (input.whatsappPn || input.whatsappLid)) {
+        console.warn(
+          `[inbox] CONFLITO DE IDENTIDADE: alias whatsapp_pn/whatsapp_lid já pertence a outro contato no workspace "${input.workspaceId}" ` +
+            `— nunca fundido automaticamente. telefone="${input.phoneNormalized}". Revisar manualmente.`,
+        );
+        return this.doUpsert({ ...input, whatsappPn: undefined, whatsappLid: undefined });
+      }
+      throw error;
+    }
+  }
+
+  private async doUpsert(input: UpsertInboxContactInput): Promise<InboxContact> {
     const id = idGenerator();
     const result = await this.pool.query<Row>(
-      `insert into inbox_contacts (id, tenant_id, workspace_id, phone_normalized, name, profile_picture_url, external_id, metadata)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)
+      `insert into inbox_contacts (id, tenant_id, workspace_id, phone_normalized, name, profile_picture_url, external_id, metadata, whatsapp_pn, whatsapp_lid)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        on conflict (workspace_id, phone_normalized) do update set
          name = coalesce(excluded.name, inbox_contacts.name),
          profile_picture_url = coalesce(excluded.profile_picture_url, inbox_contacts.profile_picture_url),
          external_id = coalesce(excluded.external_id, inbox_contacts.external_id),
          metadata = coalesce(excluded.metadata, inbox_contacts.metadata),
+         whatsapp_pn = coalesce(excluded.whatsapp_pn, inbox_contacts.whatsapp_pn),
+         whatsapp_lid = coalesce(excluded.whatsapp_lid, inbox_contacts.whatsapp_lid),
          updated_at = now()
        returning *`,
-      [id, input.tenantId, input.workspaceId, input.phoneNormalized, input.name ?? null, input.profilePictureUrl ?? null, input.externalId ?? null, input.metadata ?? null],
+      [
+        id, input.tenantId, input.workspaceId, input.phoneNormalized, input.name ?? null, input.profilePictureUrl ?? null, input.externalId ?? null, input.metadata ?? null,
+        input.whatsappPn ?? null, input.whatsappLid ?? null,
+      ],
     );
     return this.toDomain(result.rows[0]);
   }
@@ -62,6 +92,8 @@ export class PostgresInboxContactRepository implements InboxContactRepositoryPor
       externalId: row.external_id ?? undefined,
       metadata: row.metadata ?? undefined,
       crmContactId: row.contact_id ?? undefined,
+      whatsappPn: row.whatsapp_pn ?? undefined,
+      whatsappLid: row.whatsapp_lid ?? undefined,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
     };

@@ -8,7 +8,7 @@ import { PostgresMessagingConnectionRepository } from "../dist/infrastructure/st
 import { PostgresInboxContactRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-contact-repository.js";
 import { PostgresInboxConversationRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-conversation-repository.js";
 import { PostgresInboxMessageRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-message-repository.js";
-import { registerInboundMessage } from "../dist/application/inbox/inbox-use-cases.js";
+import { registerInboundMessage, syncGroupMetadata } from "../dist/application/inbox/inbox-use-cases.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
 /**
@@ -408,4 +408,123 @@ test("CONCURRENT_GROUP_MESSAGES: dois participantes mandando ao mesmo tempo no m
 
   const allConversations = await conversationRepo.listByWorkspace({ tenantId: "tenant-group-concurrency-1", workspaceId: workspace.id });
   assert.equal(allConversations.length, 1, "concorrência nunca pode criar uma segunda conversa pro mesmo grupo (constraint unique (connection_id, external_chat_id))");
+});
+
+/**
+ * Bloco "Identity UX" (ver docs/conversas-whatsapp-experience-completion.md) — telefone como pivô
+ * central da pessoa, LID/PN só como aliases técnicos resolvidos a partir de dado real do provider.
+ */
+
+test("PHONE_IDENTITY_CANONICAL: LID com RecipientAlt real vira contato keyed por TELEFONE, com o LID gravado como alias", async () => {
+  const workspace = await makeWorkspace("tenant-identity-1");
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo };
+
+  const connection = await connectionRepo.create({ tenantId: "tenant-identity-1", workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+
+  const r1 = await registerInboundMessage(deps, {
+    tenantId: "tenant-identity-1", workspaceId: workspace.id, connectionId: connection.id,
+    chatId: "+123456789012345", isGroup: false, fromMe: false,
+    chatPhoneE164: "+5511988889999", chatPn: "+5511988889999", chatLid: "+123456789012345",
+    senderId: "+123456789012345", senderName: "Costureira Cleo", senderPn: "+5511988889999", senderLid: "+123456789012345",
+    externalMessageId: "wamid.identity-1", type: "text", body: "Oi", occurredAt: new Date().toISOString(),
+  });
+
+  assert.equal(r1.contact.phoneNormalized, "+5511988889999", "telefone é o pivô canônico quando o provider confirma o alias");
+  assert.equal(r1.contact.whatsappLid, "+123456789012345");
+  assert.equal(r1.contact.whatsappPn, "+5511988889999");
+
+  const messages = await messageRepo.listByConversation({ tenantId: "tenant-identity-1", workspaceId: workspace.id, conversationId: r1.conversation.id, limit: 1 });
+  assert.equal(messages[0].senderPhoneE164, "+5511988889999");
+});
+
+test("PHONE_IDENTITY_CANONICAL: LID SEM alt não inventa telefone — pivô degradado documentado", async () => {
+  const workspace = await makeWorkspace("tenant-identity-2");
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo };
+
+  const connection = await connectionRepo.create({ tenantId: "tenant-identity-2", workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+
+  const r1 = await registerInboundMessage(deps, {
+    tenantId: "tenant-identity-2", workspaceId: workspace.id, connectionId: connection.id,
+    chatId: "+123456789099999", isGroup: false, fromMe: false,
+    // sem chatPhoneE164/chatPn — provider nunca confirmou o alias.
+    chatLid: "+123456789099999",
+    senderId: "+123456789099999", senderName: "Alguém",
+    externalMessageId: "wamid.identity-2", type: "text", body: "Oi", occurredAt: new Date().toISOString(),
+  });
+
+  assert.equal(r1.contact.phoneNormalized, "+123456789099999", "sem alt, o LID vira o pivô degradado — nunca telefone inventado");
+  assert.equal(r1.contact.whatsappPn, undefined);
+});
+
+test("LID_PHONE_ALIAS_RESOLUTION: mesmo alias LID em telefones DIFERENTES nunca funde automaticamente — registra conflito e segue sem o alias", async () => {
+  const workspace = await makeWorkspace("tenant-identity-conflict-1");
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+
+  const contactA = await contactRepo.upsertByPhone({ tenantId: "tenant-identity-conflict-1", workspaceId: workspace.id, phoneNormalized: "+5511911112222", whatsappLid: "+999999999999999" });
+  assert.equal(contactA.whatsappLid, "+999999999999999");
+
+  // Um evento DIFERENTE tenta atribuir o MESMO lid a um telefone diferente — nunca funde os dois
+  // contatos, nunca lança (o worker não pode crashar por causa de um conflito de identidade).
+  const contactB = await contactRepo.upsertByPhone({ tenantId: "tenant-identity-conflict-1", workspaceId: workspace.id, phoneNormalized: "+5511922223333", whatsappLid: "+999999999999999" });
+
+  assert.notEqual(contactB.id, contactA.id, "nunca funde automaticamente — dois contatos distintos permanecem distintos");
+  assert.equal(contactB.whatsappLid, undefined, "o alias conflitante não é gravado no segundo contato — evita reivindicação dupla silenciosa");
+
+  const stillA = await contactRepo.getById(contactA.id);
+  assert.equal(stillA.whatsappLid, "+999999999999999", "o primeiro contato preserva seu alias original, intocado");
+});
+
+test("GROUP_METADATA: syncGroupMetadata preenche groupName/participantCount reais via MessagingProvider.getGroupInfo", async () => {
+  const workspace = await makeWorkspace("tenant-group-metadata-1");
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+
+  const connection = await connectionRepo.create({ tenantId: "tenant-group-metadata-1", workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+  await connectionRepo.updateStatus(connection.id, { status: "connected", externalSessionId: "sess-group-meta" });
+  const group = await conversationRepo.findOrCreate({
+    tenantId: "tenant-group-metadata-1", workspaceId: workspace.id, connectionId: connection.id,
+    chatType: "group", externalChatId: "120363999999999999@g.us",
+  });
+  assert.equal(group.groupName, undefined, "sem metadata ainda — fallback \"Grupo\" no frontend, nunca \"Grupo do WhatsApp\" permanente");
+
+  const provider = {
+    async getGroupInfo({ groupJid }) {
+      assert.equal(groupJid, "120363999999999999@g.us");
+      return { name: "Futebol Terça", participantCount: 18 };
+    },
+  };
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, provider };
+
+  const result = await syncGroupMetadata(deps, { tenantId: "tenant-group-metadata-1", workspaceId: workspace.id, connectionId: connection.id, conversationId: group.id });
+  assert.equal(result.synced, true);
+
+  const updated = await conversationRepo.getById(group.id);
+  assert.equal(updated.groupName, "Futebol Terça");
+  assert.equal(updated.groupParticipantCount, 18);
+  assert.ok(updated.groupMetadataUpdatedAt);
+});
+
+test("GROUP_METADATA: provider sem getGroupInfo (ex. FakeMessagingProvider) nunca lança — synced:false", async () => {
+  const workspace = await makeWorkspace("tenant-group-metadata-2");
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+
+  const connection = await connectionRepo.create({ tenantId: "tenant-group-metadata-2", workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+  const group = await conversationRepo.findOrCreate({ tenantId: "tenant-group-metadata-2", workspaceId: workspace.id, connectionId: connection.id, chatType: "group", externalChatId: "120363888888888888@g.us" });
+
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, provider: {} };
+  const result = await syncGroupMetadata(deps, { tenantId: "tenant-group-metadata-2", workspaceId: workspace.id, connectionId: connection.id, conversationId: group.id });
+  assert.equal(result.synced, false);
 });

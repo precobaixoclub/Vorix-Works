@@ -188,6 +188,19 @@ export class WuzApiClient {
   }
 
   /**
+   * Metadata de grupo (bloco "Identity UX" — ver docs/conversas-whatsapp-experience-completion.md)
+   * — contrato confirmado via `API.md` documentado no repositório real do `asternic/wuzapi`
+   * (nunca visto ao vivo contra este container ainda, diferente do resto deste arquivo — tratar
+   * como alta-confiança, não 100% verificado, mesmo padrão de risco documentado já usado pro
+   * `Timestamp`/`Chat`/`IsGroup` antes de confirmação ao vivo). `GET` com corpo JSON (padrão
+   * incomum, mas é o que a documentação mostra) contendo `GroupJID`. Resposta: `Name` (assunto do
+   * grupo), `Topic`, `Participants: [{ JID, IsAdmin, IsSuperAdmin }]`, `GroupCreated`, `JID`.
+   */
+  async getGroupInfo(sessionToken: string, groupJid: string): Promise<{ Name?: string; Topic?: string; Participants?: Array<{ JID: string; IsAdmin?: boolean; IsSuperAdmin?: boolean }>; GroupCreated?: string; JID?: string }> {
+    return this.sessionRequest(sessionToken, "/group/info", { method: "GET", body: { GroupJID: groupJid } });
+  }
+
+  /**
    * Baixa e descriptografa mídia recebida (PENDING — ver comentário no topo do arquivo). O
    * WuzAPI faz a descriptografia E2E server-side (nunca dá para buscar `mediaUrl` direto com
    * `fetch` — é ciphertext na CDN do WhatsApp, precisa da `mediaKey`) e devolve os bytes em

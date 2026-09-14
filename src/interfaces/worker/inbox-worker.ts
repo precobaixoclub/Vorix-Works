@@ -35,6 +35,7 @@ import {
   reconcileConnectionsHealth,
   reconcileOrphanedOutboundMessages,
   registerInboundMessage,
+  syncGroupMetadata,
   type InboxUseCaseDeps,
 } from "../../application/inbox/inbox-use-cases.js";
 import type { NormalizedInboxEvent } from "../../application/inbox/inbox-events.js";
@@ -552,26 +553,31 @@ async function main(): Promise<void> {
   await consumeQueue(channel, WUZAPI_RAW_QUEUE, async (content) => {
     const raw = JSON.parse(content.toString("utf8")) as RawWuzApiEvent;
     logRawEventShapeForDiagnosis(raw);
-    const mapped = mapWuzApiEvent(raw);
-    captureSpikeFixture(spikeFixturesDir, mapped ? `recognized-${mapped.type}` : "unrecognized", raw, mapped);
-    if (!mapped) {
+    const mappedResult = mapWuzApiEvent(raw);
+    // Receipt em lote (ver `mapStatusReceipts`) pode devolver vários eventos pro MESMO evento
+    // bruto — normaliza pra sempre iterar uma lista, nunca assume um único objeto.
+    const mappedList = Array.isArray(mappedResult) ? mappedResult : mappedResult ? [mappedResult] : [];
+    captureSpikeFixture(spikeFixturesDir, mappedList[0] ? `recognized-${mappedList[0].type}` : "unrecognized", raw, mappedResult);
+    if (mappedList.length === 0) {
       console.warn("[inbox-worker] evento WuzAPI não reconhecido, descartado:", raw.type);
       return;
     }
-    // `mapped.connectionId` já É o id real da conexão (o mapper usa `instanceName`, que o Vorix
-    // sempre define como o próprio `MessagingConnection.id` ao provisionar — ver
-    // `wuzapi-messaging-provider.ts:connect`) — nunca precisa de índice por token aqui.
-    const connectionRow = await deps.connectionRepository.getById(mapped.connectionId);
-    if (!connectionRow) {
-      console.warn(`[inbox-worker] evento para conexão desconhecida "${mapped.connectionId}", descartado.`);
-      return;
-    }
-    // Todo evento normalizado carrega tenantId/workspaceId — mais barato enriquecer aqui (já
-    // temos `connectionRow`) do que cada consumer de fila fazer sua própria consulta.
-    const enriched: NormalizedInboxEvent = { ...mapped, tenantId: connectionRow.tenantId, workspaceId: connectionRow.workspaceId } as NormalizedInboxEvent;
+    for (const mapped of mappedList) {
+      // `mapped.connectionId` já É o id real da conexão (o mapper usa `instanceName`, que o Vorix
+      // sempre define como o próprio `MessagingConnection.id` ao provisionar — ver
+      // `wuzapi-messaging-provider.ts:connect`) — nunca precisa de índice por token aqui.
+      const connectionRow = await deps.connectionRepository.getById(mapped.connectionId);
+      if (!connectionRow) {
+        console.warn(`[inbox-worker] evento para conexão desconhecida "${mapped.connectionId}", descartado.`);
+        continue;
+      }
+      // Todo evento normalizado carrega tenantId/workspaceId — mais barato enriquecer aqui (já
+      // temos `connectionRow`) do que cada consumer de fila fazer sua própria consulta.
+      const enriched: NormalizedInboxEvent = { ...mapped, tenantId: connectionRow.tenantId, workspaceId: connectionRow.workspaceId } as NormalizedInboxEvent;
 
-    const routingKey = enriched.type;
-    channel.publish(INBOX_EVENTS_EXCHANGE, routingKey, Buffer.from(JSON.stringify(enriched)), { persistent: true });
+      const routingKey = enriched.type;
+      channel.publish(INBOX_EVENTS_EXCHANGE, routingKey, Buffer.from(JSON.stringify(enriched)), { persistent: true });
+    }
   }, metrics);
 
   // 2) Fan-out por assunto — cada fila só processa o seu tipo de evento normalizado. Cada um
@@ -586,15 +592,34 @@ async function main(): Promise<void> {
       chatId: event.chatId,
       isGroup: event.isGroup,
       groupName: event.groupName,
+      chatPhoneE164: event.chatPhoneE164,
+      chatPn: event.chatPn,
+      chatLid: event.chatLid,
       fromMe: event.fromMe,
       senderId: event.senderId,
       senderName: event.senderName,
+      senderPn: event.senderPn,
+      senderLid: event.senderLid,
       externalMessageId: event.externalMessageId,
       type: event.messageType,
       body: event.body,
       occurredAt: event.occurredAt,
     });
     publishRealtimeNotification(channel, { type: "message.created", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
+
+    // Bloco "Identity UX" — sincroniza nome/participantes do grupo enquanto ainda não tiver sido
+    // resolvido (nunca refaz a cada mensagem: `groupMetadataUpdatedAt` já preenchido = já buscou
+    // antes, não busca de novo aqui — reconciliação periódica, se necessária no futuro, é outra
+    // preocupação). Best-effort, nunca no caminho crítico do ack.
+    if (conversation.chatType === "group" && !conversation.groupMetadataUpdatedAt) {
+      syncGroupMetadata(deps, { tenantId: event.tenantId, workspaceId: event.workspaceId, connectionId: event.connectionId, conversationId: conversation.id })
+        .then((result) => {
+          if (result.synced) publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
+        })
+        .catch((error) => {
+          console.error("[inbox-worker] falha ao sincronizar metadata de grupo:", error instanceof Error ? error.message : error);
+        });
+    }
 
     // `wasCreated` é a MESMA guarda de idempotência que já protege `markLastMessage`/unread —
     // uma reentrega do mesmo evento (mensagem corretamente deduplicada) nunca dispara uma segunda

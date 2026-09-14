@@ -118,6 +118,18 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     });
   }
 
+  async updateGroupMetadata(id: string, input: { groupName?: string; participantCount?: number; metadataUpdatedAt: string }): Promise<void> {
+    const existing = this.rows.get(id);
+    if (!existing) return;
+    this.rows.set(id, {
+      ...existing,
+      groupName: input.groupName ?? existing.groupName,
+      groupParticipantCount: input.participantCount ?? existing.groupParticipantCount,
+      groupMetadataUpdatedAt: input.metadataUpdatedAt,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   async markRead(id: string): Promise<void> {
     const existing = this.rows.get(id);
     if (!existing) return;

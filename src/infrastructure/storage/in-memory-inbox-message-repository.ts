@@ -33,6 +33,7 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
       sentByAutomation: input.sentByAutomation ?? false,
       senderExternalId: input.senderExternalId,
       senderDisplayName: input.senderDisplayName,
+      senderPhoneE164: input.senderPhoneE164,
       attemptCount: 0,
       publishAttempts: 0,
       createdAt: now,

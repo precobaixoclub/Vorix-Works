@@ -415,24 +415,79 @@ export async function sendInboxMessage(deps: InboxUseCaseDeps, input: SendInboxM
     sentByUserId: input.sentByUserId,
     sentByAi: input.sentByAi ?? false,
   });
+  return finishEnqueueingOutboundMessage(deps, { conversationId: conversation.id, connectionId: conversation.connectionId, message, sentByAi: input.sentByAi ?? false, tenantId: input.tenantId, workspaceId: input.workspaceId });
+}
+
+export type SendInboxMediaMessageInput = {
+  tenantId: string;
+  workspaceId: string;
+  conversationId: string;
+  sentByUserId?: string;
+  type: Exclude<InboxMessage["type"], "text" | "location" | "contact" | "other">;
+  body: Buffer;
+  mimeType: string;
+  fileName?: string;
+  caption?: string;
+};
+
+/**
+ * Bloco "Media Outbound" (ver docs/conversas-whatsapp-experience-completion.md) — envio de
+ * imagem/áudio/vídeo/documento pela UI. Guarda uma cópia PRÓPRIA no `InboxMediaStoragePort` (pra
+ * preview imediato na UI, igual ao caminho inbound — ver `downloadInboundMediaAndAttach`) e
+ * enfileira exatamente como texto: `processOutboundMessage` (worker) é quem de fato chama o
+ * provider, reaproveitando TODA a resiliência já existente (circuit breaker, rate limiter, retry,
+ * DLQ) sem duplicar nenhuma dessa lógica aqui. Nunca lê o arquivo do disco/request aqui além de
+ * gravar no storage — o envio de verdade ao WhatsApp é assíncrono, como qualquer outbound.
+ */
+export async function sendInboxMediaMessage(deps: InboxUseCaseDeps, input: SendInboxMediaMessageInput): Promise<InboxMessage> {
+  if (!deps.inboxMediaStorage) throw new Error("INBOX_MEDIA_STORAGE_NOT_CONFIGURED: envio de mídia não está disponível neste ambiente.");
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+
+  const objectKey = `${input.tenantId}/${input.workspaceId}/${conversation.id}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  await deps.inboxMediaStorage.put({ key: objectKey, body: input.body, contentType: input.mimeType });
+
+  const metadata: Record<string, unknown> = { fileSizeBytes: input.body.length };
+  if (input.fileName) metadata.fileName = input.fileName;
+
+  const { message } = await deps.messageRepository.create({
+    tenantId: input.tenantId,
+    workspaceId: input.workspaceId,
+    conversationId: conversation.id,
+    connectionId: conversation.connectionId,
+    direction: "outbound",
+    type: input.type,
+    status: "queued",
+    body: input.caption,
+    mediaStorageRef: { provider: "inbox-media", objectKey, metadata: { tenantId: input.tenantId } },
+    mimeType: input.mimeType,
+    metadata,
+    sentByUserId: input.sentByUserId,
+  });
+  return finishEnqueueingOutboundMessage(deps, { conversationId: conversation.id, connectionId: conversation.connectionId, message, sentByAi: false, tenantId: input.tenantId, workspaceId: input.workspaceId });
+}
+
+async function finishEnqueueingOutboundMessage(
+  deps: InboxUseCaseDeps,
+  input: { conversationId: string; connectionId: string; message: InboxMessage; sentByAi: boolean; tenantId: string; workspaceId: string },
+): Promise<InboxMessage> {
   try {
-    await deps.outboundQueue.publish({ messageId: message.id, tenantId: input.tenantId, workspaceId: input.workspaceId, connectionId: conversation.connectionId });
-    await deps.messageRepository.markOutboundPublished(message.id, { publishedAt: new Date().toISOString() });
+    await deps.outboundQueue.publish({ messageId: input.message.id, tenantId: input.tenantId, workspaceId: input.workspaceId, connectionId: input.connectionId });
+    await deps.messageRepository.markOutboundPublished(input.message.id, { publishedAt: new Date().toISOString() });
   } catch (error) {
-    await deps.messageRepository.recordPublishAttempt(message.id, {
+    await deps.messageRepository.recordPublishAttempt(input.message.id, {
       lastPublishError: error instanceof Error ? error.message : String(error),
       attemptedAt: new Date().toISOString(),
     });
     deps.metrics?.incOutboundPublishFailed();
     throw error;
   }
-  await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: message.createdAt, incrementUnread: false });
+  await deps.conversationRepository.markLastMessage(input.conversationId, { lastMessageAt: input.message.createdAt, incrementUnread: false });
   if (deps.productAnalytics && !input.sentByAi) {
     // "Reply" no sentido do funil de ativação é uma resposta HUMANA — resposta automática de IA
     // não conta como o marco de "alguém do time respondeu pela primeira vez".
     await recordFirstEvent(deps.productAnalytics, { eventName: "first_conversation_replied", source: "server", tenantId: input.tenantId, workspaceId: input.workspaceId });
   }
-  return message;
+  return input.message;
 }
 
 export type RegisterInboundMessageInput = {
@@ -444,11 +499,19 @@ export type RegisterInboundMessageInput = {
   chatId: string;
   isGroup: boolean;
   groupName?: string;
+  /** Bloco "Identity UX" — telefone canônico do peer, quando o provider confirmou o alias PN/LID
+   * (ver `src/domain/inbox/whatsapp-identity.ts`). `undefined` em grupo, ou DM só-LID sem alias
+   * conhecido ainda (pivô degradado, documentado). */
+  chatPhoneE164?: string;
+  chatPn?: string;
+  chatLid?: string;
   /** `true` = self-echo do WuzAPI (o PRÓPRIO número conectado mandou esta mensagem, via Vorix ou
    * direto do celular pareado) — nunca um contato externo. Ver comentário na função abaixo. */
   fromMe: boolean;
   senderId: string;
   senderName?: string;
+  senderPn?: string;
+  senderLid?: string;
   externalMessageId: string;
   type: InboxMessage["type"];
   body?: string;
@@ -493,7 +556,10 @@ export async function registerInboundMessage(
 
   let contact: InboxContact | undefined;
   if (!input.isGroup) {
-    const phoneNormalized = normalizePhoneNumber(input.chatId);
+    // Bloco "Identity UX" — telefone é o pivô CANÔNICO da pessoa quando o provider confirmou o
+    // alias PN/LID (`chatPhoneE164`); só cai pro LID-como-pseudo-telefone quando isso ainda não
+    // foi observado (pivô degradado, documentado — ver src/domain/inbox/whatsapp-identity.ts).
+    const phoneNormalized = input.chatPhoneE164 ?? normalizePhoneNumber(input.chatId);
     contact = await deps.contactRepository.upsertByPhone({
       tenantId: input.tenantId,
       workspaceId: input.workspaceId,
@@ -501,6 +567,8 @@ export async function registerInboundMessage(
       // Self-echo nunca deveria sobrescrever o nome do CONTATO com o nome do próprio operador —
       // `PushName` num evento `fromMe` é o nome de quem mandou (o bot), não da pessoa do outro lado.
       name: input.fromMe ? undefined : input.senderName,
+      whatsappPn: input.chatPn,
+      whatsappLid: input.chatLid,
     });
   }
 
@@ -524,6 +592,7 @@ export async function registerInboundMessage(
     body: input.body,
     senderExternalId: input.senderId,
     senderDisplayName: input.senderName,
+    senderPhoneE164: input.senderPn,
     ...(input.fromMe ? { status: "sent" as const } : {}),
   });
   if (wasCreated) {
@@ -538,6 +607,33 @@ export async function registerInboundMessage(
     }
   }
   return { contact, conversation, message, wasCreated };
+}
+
+export type SyncGroupMetadataInput = { tenantId: string; workspaceId: string; connectionId: string; conversationId: string };
+
+/**
+ * Bloco "Identity UX" — busca nome/quantidade de participantes de uma conversa de grupo via
+ * `MessagingProvider.getGroupInfo` (ver docs/conversas-whatsapp-experience-completion.md).
+ * Best-effort, sempre chamado FORA do caminho crítico do ack (mesmo racional de
+ * `downloadInboundMediaAndAttach`): a conversa já existe e funciona sem isso, sucesso aqui só
+ * ENRIQUECE com o nome real em vez do fallback genérico "Grupo". Nunca lança — provider sem
+ * suporte (`getGroupInfo` ausente), conexão sem sessão ativa, ou erro do gateway viram no-op.
+ */
+export async function syncGroupMetadata(deps: InboxUseCaseDeps, input: SyncGroupMetadataInput): Promise<{ synced: boolean }> {
+  if (!deps.provider.getGroupInfo) return { synced: false };
+  const conversation = await deps.conversationRepository.getById(input.conversationId);
+  if (!conversation || conversation.chatType !== "group") return { synced: false };
+  const connection = await deps.connectionRepository.getById(input.connectionId);
+  if (!connection?.externalSessionId) return { synced: false };
+
+  const info = await deps.provider.getGroupInfo({ externalSessionId: connection.externalSessionId, groupJid: conversation.externalChatId });
+  if (!info) return { synced: false };
+  await deps.conversationRepository.updateGroupMetadata(conversation.id, {
+    groupName: info.name,
+    participantCount: info.participantCount,
+    metadataUpdatedAt: new Date().toISOString(),
+  });
+  return { synced: true };
 }
 
 export type DownloadInboundMediaInput = {
@@ -630,6 +726,40 @@ export async function applyConnectionStateChanged(deps: InboxUseCaseDeps, input:
 }
 
 export type ProcessOutboundMessageInput = { messageId: string };
+
+/**
+ * Bloco "Media Outbound" — escolhe o método certo do `MessagingProvider` conforme `message.type`.
+ * Pra mídia, lê os bytes de volta do `InboxMediaStoragePort` (gravados por `sendInboxMediaMessage`)
+ * e monta um data URI (`data:&lt;mime&gt;;base64,...`) — contrato CONFIRMADO via documentação real do
+ * `asternic/wuzapi` (`API.md`: `/chat/send/image`/`audio`/`video`/`document` esperam
+ * `Image`/`Audio`/`Video`/`Document` como data URI base64, nunca uma URL fetchável — diferente da
+ * suposição original deste arquivo, nunca verificada ao vivo). `to`/`mediaUrl` no port continuam
+ * chamados `mediaUrl` por compatibilidade de nome — o VALOR passado é o data URI, que também é
+ * tecnicamente uma URL (`data:` é um scheme de URL válido), então o port não precisou mudar.
+ */
+async function sendOutboundByType(
+  deps: InboxUseCaseDeps,
+  input: { externalSessionId: string; to: string; message: InboxMessage },
+): Promise<{ externalMessageId: string }> {
+  const { message } = input;
+  if (message.type === "text") {
+    return deps.provider.sendText({ externalSessionId: input.externalSessionId, to: input.to, body: message.body ?? "" });
+  }
+  if (!deps.inboxMediaStorage) throw new MessagingProviderError("permanent", "Envio de mídia sem storage configurado neste processo.");
+  if (!message.mediaStorageRef) throw new MessagingProviderError("permanent", `Mensagem "${message.id}" do tipo "${message.type}" sem mediaStorageRef — nada pra enviar.`);
+  const stored = await deps.inboxMediaStorage.get(message.mediaStorageRef.objectKey);
+  if (!stored) throw new MessagingProviderError("permanent", `Mídia da mensagem "${message.id}" não encontrada no storage.`);
+  const dataUri = `data:${stored.contentType};base64,${stored.body.toString("base64")}`;
+
+  if (message.type === "image") return deps.provider.sendImage({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, caption: message.body });
+  if (message.type === "audio") return deps.provider.sendAudio({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri });
+  if (message.type === "video") return deps.provider.sendVideo({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, caption: message.body });
+  if (message.type === "document") {
+    const fileName = (message.metadata?.fileName as string | undefined) ?? "documento";
+    return deps.provider.sendDocument({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, fileName });
+  }
+  throw new MessagingProviderError("permanent", `Tipo de mensagem "${message.type}" não tem envio outbound suportado.`);
+}
 
 /** Fase 6 — categoria de circuit breaker correspondente a cada `MessagingProviderErrorKind`.
  * Deliberadamente NUNCA conta `session_logged_out`/`permanent` — erro de UMA sessão específica
@@ -738,7 +868,7 @@ export async function processOutboundMessage(deps: InboxUseCaseDeps, input: Proc
     // identidade de conversa), e usar o remetente da ÚLTIMA mensagem recebida como destino
     // (em vez do chat) mandaria a resposta pro participante errado, nunca pro grupo. Ver
     // docs/conversas-canonical-chat-identity.md.
-    const result = await deps.provider.sendText({ externalSessionId: connection.externalSessionId, to: conversation.externalChatId, body: message.body ?? "" });
+    const result = await sendOutboundByType(deps, { externalSessionId: connection.externalSessionId, to: conversation.externalChatId, message });
     if (deps.circuitBreaker) await deps.circuitBreaker.recordSuccess(circuitKey);
     deps.metrics?.incMessageOutbound();
     return await deps.messageRepository.markSent(message.id, { externalMessageId: result.externalMessageId, sentAt: new Date().toISOString() });

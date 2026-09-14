@@ -9,6 +9,17 @@ export class InMemoryInboxContactRepository implements InboxContactRepositoryPor
   async upsertByPhone(input: UpsertInboxContactInput): Promise<InboxContact> {
     const existing = await this.findByPhone(input);
     const now = new Date().toISOString();
+    // Mesmo conflito de identidade que o adapter Postgres detecta via unique index (migration
+    // 0116) — nunca funde automaticamente: se o alias já pertence a OUTRO contato deste workspace,
+    // registra o conflito e ignora o alias desta chamada (telefone continua a identidade canônica).
+    if (input.whatsappPn && (await this.findByAlias(input.tenantId, input.workspaceId, "whatsappPn", input.whatsappPn, existing?.id))) {
+      console.warn(`[inbox] CONFLITO DE IDENTIDADE: whatsappPn "${input.whatsappPn}" já pertence a outro contato — não fundido automaticamente.`);
+      input = { ...input, whatsappPn: undefined };
+    }
+    if (input.whatsappLid && (await this.findByAlias(input.tenantId, input.workspaceId, "whatsappLid", input.whatsappLid, existing?.id))) {
+      console.warn(`[inbox] CONFLITO DE IDENTIDADE: whatsappLid "${input.whatsappLid}" já pertence a outro contato — não fundido automaticamente.`);
+      input = { ...input, whatsappLid: undefined };
+    }
     if (existing) {
       const updated: InboxContact = {
         ...existing,
@@ -16,6 +27,8 @@ export class InMemoryInboxContactRepository implements InboxContactRepositoryPor
         profilePictureUrl: input.profilePictureUrl ?? existing.profilePictureUrl,
         externalId: input.externalId ?? existing.externalId,
         metadata: input.metadata ?? existing.metadata,
+        whatsappPn: input.whatsappPn ?? existing.whatsappPn,
+        whatsappLid: input.whatsappLid ?? existing.whatsappLid,
         updatedAt: now,
       };
       this.rows.set(updated.id, updated);
@@ -30,6 +43,8 @@ export class InMemoryInboxContactRepository implements InboxContactRepositoryPor
       profilePictureUrl: input.profilePictureUrl,
       externalId: input.externalId,
       metadata: input.metadata,
+      whatsappPn: input.whatsappPn,
+      whatsappLid: input.whatsappLid,
       createdAt: now,
       updatedAt: now,
     };
@@ -44,6 +59,18 @@ export class InMemoryInboxContactRepository implements InboxContactRepositoryPor
   async findByPhone(input: { tenantId: string; workspaceId: string; phoneNormalized: string }): Promise<InboxContact | undefined> {
     return [...this.rows.values()].find(
       (row) => row.tenantId === input.tenantId && row.workspaceId === input.workspaceId && row.phoneNormalized === input.phoneNormalized,
+    );
+  }
+
+  private async findByAlias(
+    tenantId: string,
+    workspaceId: string,
+    field: "whatsappPn" | "whatsappLid",
+    value: string,
+    excludeId: string | undefined,
+  ): Promise<InboxContact | undefined> {
+    return [...this.rows.values()].find(
+      (row) => row.tenantId === tenantId && row.workspaceId === workspaceId && row[field] === value && row.id !== excludeId,
     );
   }
 }

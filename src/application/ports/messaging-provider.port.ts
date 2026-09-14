@@ -98,4 +98,13 @@ export type MessagingProvider = {
     type: Exclude<MessagingMediaKind, "text">;
     ref: { url: string; mediaKey?: string; mimeType?: string; fileSha256?: string; fileSizeBytes?: number; fileEncSha256?: string };
   }): Promise<{ body: Buffer; mimeType?: string } | undefined>;
+
+  /**
+   * Bloco "Identity UX" — nome/quantidade de participantes de um grupo, pra parar de mostrar
+   * "Grupo do WhatsApp" genérico (ver docs/conversas-whatsapp-experience-completion.md). Opcional:
+   * um provider sem suporte a grupos (`FakeMessagingProvider`, um futuro canal stateless) não
+   * preenche isto — `syncGroupMetadata` trata a ausência como "metadata indisponível", nunca erro
+   * fatal. `groupJid` é o `externalChatId` da conversa (já preservado como JID de grupo).
+   */
+  getGroupInfo?(input: { externalSessionId: string; groupJid: string }): Promise<{ name?: string; participantCount?: number } | undefined>;
 };

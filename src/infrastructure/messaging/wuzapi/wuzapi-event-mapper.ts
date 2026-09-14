@@ -1,5 +1,6 @@
 import type { ConnectionStateChanged, InboundMessageReceived, MessageStatusChanged, NormalizedInboxEvent } from "../../../application/inbox/inbox-events.js";
 import type { InboxMessageStatus, InboxMessageType } from "../../../domain/inbox/inbox.model.js";
+import { resolveWhatsAppPersonIdentity } from "../../../domain/inbox/whatsapp-identity.js";
 
 /**
  * Camada anti-corrupção — módulo Conversas (Fase 2). Único arquivo que conhece o formato bruto de
@@ -89,12 +90,16 @@ export type RawWuzApiEvent = {
   instanceName?: string;
 };
 
-export function mapWuzApiEvent(raw: RawWuzApiEvent): NormalizedInboxEvent | undefined {
+export function mapWuzApiEvent(raw: RawWuzApiEvent): NormalizedInboxEvent | NormalizedInboxEvent[] | undefined {
   const instanceName = raw.instanceName;
   if (!raw.type || !instanceName) return undefined;
 
   if (raw.type === "Message" && raw.event) return mapInboundMessage(instanceName, raw.event);
-  if (raw.type === "ReadReceipt" && raw.event) return mapStatusReceipt(instanceName, raw.event, raw.state);
+  // `MessageIDs` pode conter mais de um id no mesmo evento (WuzAPI batching um receipt pra vários
+  // envios recentes) — devolve UM MessageStatusChanged por id, nunca só o primeiro (achado de
+  // revisão: a versão anterior só olhava `MessageIDs[0]`, silenciosamente nunca atualizando o
+  // status das demais mensagens do mesmo lote).
+  if (raw.type === "ReadReceipt" && raw.event) return mapStatusReceipts(instanceName, raw.event, raw.state);
   if (raw.type === "Connected" || raw.type === "Disconnected" || raw.type === "LoggedOut") {
     return mapConnectionState(raw.type, instanceName, raw.event ?? {});
   }
@@ -125,6 +130,15 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
   const isGroup = Boolean(info?.IsGroup) || !isPersonJid;
   const chatId = isGroup ? normalizeWhatsmeowGroupJid(chatRaw) : normalizeWhatsmeowJid(chatRaw);
 
+  // Bloco "Identity UX" — telefone é o pivô da PESSOA, `chatId` continua o pivô do CHAT (podem
+  // divergir: `chatId` fica estável mesmo sem `*Alt`, o telefone só existe quando o provider
+  // confirma — ver `src/domain/inbox/whatsapp-identity.ts`). `RecipientAlt` é o par alternante de
+  // `Chat` (achado ao vivo, ver docs/conversas-whatsapp-experience-completion.md); `SenderAlt` o de
+  // `Sender`. Em DM, `Chat` e `Sender` normalmente são o mesmo peer — resolvido separadamente aqui
+  // sem assumir isso, cada um com seu próprio `*Alt`.
+  const chatIdentity = isGroup ? undefined : resolveWhatsAppPersonIdentity(chatRaw, info?.RecipientAlt as string | undefined);
+  const senderIdentity = resolveWhatsAppPersonIdentity(sender, info?.SenderAlt as string | undefined);
+
   const message = event.Message as Record<string, unknown> | undefined;
   const kind = message ? Object.keys(message).find((key) => key in MESSAGE_TYPE_BY_WHATSMEOW_KIND) : undefined;
   const messageType = kind ? MESSAGE_TYPE_BY_WHATSMEOW_KIND[kind] ?? "other" : "other";
@@ -143,13 +157,17 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
     externalMessageId: messageId,
     chatId,
     isGroup,
-    // Nome do grupo não vem no evento de mensagem do whatsmeow (só em metadata de grupo, uma
-    // chamada separada nunca implementada aqui) — `undefined` de propósito; o frontend cai no
-    // fallback visual (ver `docs/conversas-canonical-chat-identity.md`, seção "riscos restantes").
+    // Nome do grupo não vem no evento de mensagem do whatsmeow — resolvido separadamente via
+    // metadata de grupo (`syncGroupMetadata`, ver inbox-use-cases.ts), nunca aqui.
     groupName: undefined,
+    chatPhoneE164: chatIdentity?.phoneE164,
+    chatPn: chatIdentity?.pn,
+    chatLid: chatIdentity?.lid,
     fromMe,
     senderId: normalizeWhatsmeowJid(sender),
     senderName: info?.PushName as string | undefined,
+    senderPn: senderIdentity.pn,
+    senderLid: senderIdentity.lid,
     messageType,
     // Caption de imagem/vídeo vira o `body` da mensagem — mesma UX do WhatsApp (mídia com legenda
     // aparece como uma coisa só, não texto separado da mídia).
@@ -225,13 +243,13 @@ function extractMediaFields(messageType: InboxMessageType, media: Record<string,
   };
 }
 
-function mapStatusReceipt(instanceName: string, event: Record<string, unknown>, state: string | undefined): MessageStatusChanged | undefined {
-  const messageIds = event.MessageIDs as string[] | undefined;
+function mapStatusReceipts(instanceName: string, event: Record<string, unknown>, state: string | undefined): MessageStatusChanged[] | undefined {
+  const messageIds = (event.MessageIDs as string[] | undefined)?.filter((id) => typeof id === "string" && id.length > 0);
   const status = state ? STATUS_BY_RECEIPT_STATE[state] : undefined;
-  const externalMessageId = messageIds?.[0];
-  if (!status || !externalMessageId) return undefined;
+  if (!status || !messageIds || messageIds.length === 0) return undefined;
 
-  return {
+  const occurredAt = new Date().toISOString();
+  return messageIds.map((externalMessageId) => ({
     type: "message.status",
     // tenantId/workspaceId são preenchidos pelo worker (já tem `connectionRow` em mãos) — o
     // mapper não tem acesso a repositório, só normaliza o payload.
@@ -241,8 +259,8 @@ function mapStatusReceipt(instanceName: string, event: Record<string, unknown>, 
     externalSessionId: instanceName,
     externalMessageId,
     status,
-    occurredAt: new Date().toISOString(),
-  };
+    occurredAt,
+  }));
 }
 
 function mapConnectionState(type: "Connected" | "Disconnected" | "LoggedOut", instanceName: string, event: Record<string, unknown>): ConnectionStateChanged {

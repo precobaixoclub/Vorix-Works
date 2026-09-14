@@ -94,6 +94,17 @@ export class WuzApiMessagingProvider implements MessagingProvider {
     return this.client.downloadMedia(input.externalSessionId, input.type, input.ref);
   }
 
+  async getGroupInfo(input: { externalSessionId: string; groupJid: string }): Promise<{ name?: string; participantCount?: number } | undefined> {
+    try {
+      const info = await this.client.getGroupInfo(input.externalSessionId, input.groupJid);
+      return { name: info.Name, participantCount: info.Participants?.length };
+    } catch {
+      // Best-effort — `syncGroupMetadata` (use case) já trata `undefined` como "sem metadata
+      // ainda", nunca propaga erro pro chamador (não pode derrubar o processamento de mensagem).
+      return undefined;
+    }
+  }
+
   private toSendResult(result: { Id: string }): MessagingSendResult {
     if (!result?.Id) throw new MessagingProviderError("transient", "WuzAPI não retornou um id de mensagem.");
     return { externalMessageId: result.Id };

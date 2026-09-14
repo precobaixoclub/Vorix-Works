@@ -63,10 +63,17 @@ export type InboxContact = {
   tenantId: string;
   workspaceId: string;
   name?: string;
-  /** E.164 — chave de deduplicação junto com `workspaceId` (ver `unique (workspace_id, phone_normalized)`). */
+  /** E.164 — chave de deduplicação junto com `workspaceId` (ver `unique (workspace_id, phone_normalized)`).
+   * Pivô comercial central da PESSOA (ver `src/domain/inbox/whatsapp-identity.ts`) — nunca o LID. */
   phoneNormalized: string;
   profilePictureUrl?: string;
   externalId?: string;
+  /** Bloco "Identity UX" — aliases técnicos de WhatsApp, reportados pelo próprio provider
+   * (`Info.SenderAlt`/`Info.RecipientAlt`), nunca inferidos por heurística. Só roteamento/
+   * diagnóstico — nunca mostrados como identidade principal ao usuário (ver
+   * `docs/conversas-whatsapp-experience-completion.md`). `undefined` até o provider reportar. */
+  whatsappPn?: string;
+  whatsappLid?: string;
   metadata?: Record<string, unknown>;
   /** CRM/Comercial (Fase 4) — `contacts.id` ligado via `ContactIdentity` (migration 0092, coluna
    * `inbox_contacts.contact_id`). `undefined` até alguém vincular este contato do WhatsApp a um
@@ -112,6 +119,10 @@ export type InboxConversation = {
   /** Só para `chatType: "group"` — nome/assunto do grupo quando o provider fornece. `undefined` =
    * sem nome conhecido (fallback visual no frontend), nunca inventado a partir do primeiro remetente. */
   groupName?: string;
+  /** Bloco "Identity UX" — metadata mínima de grupo (ver docs/conversas-whatsapp-experience-completion.md),
+   * buscada via `MessagingProvider.getGroupInfo`. `undefined` até a primeira sincronização. */
+  groupParticipantCount?: number;
+  groupMetadataUpdatedAt?: string;
   /** Só para `chatType: "direct"` — o `InboxContact` (pessoa) do outro lado. `undefined` em
    * conversas de grupo: um grupo não é uma pessoa/Contact do CRM, nunca fundido automaticamente
    * (ver `crm-panel.tsx` — vínculo ao CRM continua manual e só aparece para conversas diretas). */
@@ -187,6 +198,9 @@ export type InboxMessage = {
    * representa o grupo inteiro, não mais um remetente). `undefined` em mensagens outbound enviadas
    * pelo próprio Vorix (o remetente já é conhecido: `sentByUserId`/`sentByAi`/`sentByAutomation`). */
   senderExternalId?: string;
+  /** Bloco "Identity UX" — telefone resolvido de quem mandou ESTA mensagem, quando o provider
+   * confirmou o alias (ver `whatsapp-identity.ts`). `undefined` quando só o LID é conhecido. */
+  senderPhoneE164?: string;
   /** Nome de exibição do remetente (`PushName` do WhatsApp) no momento do envio — snapshot, nunca
    * resolvido de novo depois (o nome de alguém pode mudar; a mensagem antiga mostra o nome de quando
    * foi mandada). Usado pelo frontend para rotular cada bolha dentro de uma conversa de grupo. */

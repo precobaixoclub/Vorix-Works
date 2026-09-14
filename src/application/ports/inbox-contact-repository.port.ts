@@ -10,6 +10,11 @@ export type UpsertInboxContactInput = {
   profilePictureUrl?: string;
   externalId?: string;
   metadata?: Record<string, unknown>;
+  /** Bloco "Identity UX" — aliases técnicos observados neste evento (ver
+   * `InboxContact.whatsappPn`/`whatsappLid`). `undefined` = não observado neste evento, nunca
+   * apaga um alias já conhecido (upsert é sempre `coalesce`, nunca sobrescreve com nulo). */
+  whatsappPn?: string;
+  whatsappLid?: string;
 };
 
 export type InboxContactRepositoryPort = {

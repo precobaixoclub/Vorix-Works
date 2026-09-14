@@ -22,6 +22,8 @@ export type CreateInboxMessageInput = {
    * `InboxMessage.senderExternalId`/`senderDisplayName`). */
   senderExternalId?: string;
   senderDisplayName?: string;
+  /** Bloco "Identity UX" — telefone resolvido de quem mandou (ver `InboxContact.whatsappPn`). */
+  senderPhoneE164?: string;
 };
 
 export type InboxMessageRepositoryPort = {

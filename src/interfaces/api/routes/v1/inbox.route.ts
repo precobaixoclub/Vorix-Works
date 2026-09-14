@@ -26,6 +26,7 @@ import {
   markConversationRead,
   refreshConnectionStatus,
   reopenConversation,
+  sendInboxMediaMessage,
   sendInboxMessage,
   setAiConversationEnabled,
   takeOverConversation,
@@ -119,6 +120,10 @@ export type InboxRoutesDeps = {
    * configurado; `GET /inbox/media/:messageId`/`POST /inbox/media-token` respondem 503 nesse
    * caso, nunca tentam servir algo sem as duas peças presentes. */
   inboxMediaStorage?: InboxMediaStoragePort;
+  /** Bloco "Media Outbound" — mesmo limite de tamanho já usado pelo upload de mídia de publicação
+   * (`MEDIA_UPLOAD_MAX_BYTES`, ver `publication-media.route.ts`) — nunca um limite próprio
+   * duplicado; um valor de configuração, um lugar só. */
+  maxUploadBytes: number;
 };
 
 function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {
@@ -497,4 +502,73 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
       rethrowInboxError(error);
     }
   });
+
+  // Bloco "Media Outbound" (ver docs/conversas-whatsapp-experience-completion.md) — imagem/áudio/
+  // vídeo/documento pelo composer. Multipart (mesmo padrão de `publication-media.route.ts`) —
+  // `workspaceId`/`caption` chegam como campos de formulário ao lado do arquivo, nunca querystring
+  // (evita vazar em logs de acesso, mesmo racional do upload de publicação).
+  app.post("/inbox/conversations/:id/media", { schema: { params: ID_PARAMS_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { id } = request.params as { id: string };
+    if (!deps.inboxMediaStorage) {
+      throw new AppError({ code: "INBOX_MEDIA_STORAGE_UNAVAILABLE", message: "Envio de mídia não configurado neste ambiente.", statusCode: 503, recoverable: true });
+    }
+    try {
+      const file = await request.file({ limits: { fileSize: deps.maxUploadBytes } });
+      if (!file) throw new Error("INBOX_MEDIA_UPLOAD_FILE_MISSING: envie o arquivo no campo multipart.");
+      const workspaceId = (file.fields.workspaceId as { value?: string } | undefined)?.value;
+      if (!workspaceId) throw new Error("INBOX_MEDIA_UPLOAD_WORKSPACE_MISSING: campo workspaceId é obrigatório.");
+      const caption = (file.fields.caption as { value?: string } | undefined)?.value?.trim() || undefined;
+      const fileName = (file.fields.fileName as { value?: string } | undefined)?.value || file.filename;
+
+      const type = classifyOutboundMediaMime(file.mimetype);
+      if (!type) {
+        throw new Error(`INBOX_MEDIA_UPLOAD_TYPE_UNSUPPORTED: tipo "${file.mimetype}" não é aceito.`);
+      }
+
+      const buffer = await file.toBuffer().catch((cause: unknown) => {
+        if (cause instanceof Error && cause.message.includes("File size limit")) {
+          throw new Error(`INBOX_MEDIA_UPLOAD_TOO_LARGE: arquivo maior que o limite de ${Math.floor(deps.maxUploadBytes / 1_000_000)}MB.`);
+        }
+        throw cause;
+      });
+      if (file.file.truncated) {
+        throw new Error(`INBOX_MEDIA_UPLOAD_TOO_LARGE: arquivo maior que o limite de ${Math.floor(deps.maxUploadBytes / 1_000_000)}MB.`);
+      }
+
+      const message = await sendInboxMediaMessage(useCaseDeps, {
+        tenantId: principal.tenantId, workspaceId, conversationId: id, sentByUserId: principal.userId,
+        type, body: buffer, mimeType: file.mimetype, fileName, caption,
+      });
+      reply.status(202);
+      return successEnvelope(message, request.id);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("INBOX_MEDIA_UPLOAD_")) {
+        const [code, ...rest] = error.message.split(": ");
+        throw new AppError({ code, message: rest.join(": ") || error.message, statusCode: 422, recoverable: true });
+      }
+      rethrowInboxError(error);
+    }
+  });
+}
+
+/** Classifica o mimetype do upload em um `InboxMessage["type"]` de mídia, ou `undefined` se não
+ * suportado. Imagem/áudio/vídeo restritos a um allowlist seguro (mesmo racional de
+ * `publication-media.route.ts`); documento aceita um allowlist mais amplo de tipos de escritório
+ * comuns — nunca um executável/script (`.exe`/`.sh`/etc — fora do allowlist, rejeitado). */
+function classifyOutboundMediaMime(mimeType: string): "image" | "audio" | "video" | "document" | undefined {
+  const IMAGE = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+  const AUDIO = new Set(["audio/ogg", "audio/mpeg", "audio/mp4", "audio/webm", "audio/aac", "audio/wav", "audio/x-wav", "audio/opus"]);
+  const VIDEO = new Set(["video/mp4", "video/quicktime", "video/webm"]);
+  const DOCUMENT = new Set([
+    "application/pdf", "text/plain", "application/zip",
+    "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ]);
+  if (IMAGE.has(mimeType)) return "image";
+  if (AUDIO.has(mimeType)) return "audio";
+  if (VIDEO.has(mimeType)) return "video";
+  if (DOCUMENT.has(mimeType)) return "document";
+  return undefined;
 }

@@ -165,6 +165,28 @@ test("mapWuzApiEvent: SELF-ECHO (IsFromMe=true) — chatId continua o PEER (não
   assert.notEqual(mapped.chatId, mapped.senderId, "self-echo: chatId (peer) e senderId (o próprio bot) são DIFERENTES de propósito");
 });
 
+test("mapWuzApiEvent: ReadReceipt com MessageIDs em lote produz UM MessageStatusChanged POR id, nunca só o primeiro", () => {
+  const events = mapWuzApiEvent({
+    type: "ReadReceipt",
+    instanceName: "conn-1",
+    state: "Read",
+    event: { MessageIDs: ["wamid-a", "wamid-b", "wamid-c"] },
+  });
+
+  assert.ok(Array.isArray(events), "receipt em lote deve devolver um array");
+  assert.equal(events.length, 3);
+  assert.deepEqual(events.map((e) => e.externalMessageId), ["wamid-a", "wamid-b", "wamid-c"]);
+  assert.ok(events.every((e) => e.type === "message.status" && e.status === "read"));
+});
+
+test("mapWuzApiEvent: ReadReceipt Delivered/ReadSelf mapeiam pros status corretos", () => {
+  const delivered = mapWuzApiEvent({ type: "ReadReceipt", instanceName: "conn-1", state: "Delivered", event: { MessageIDs: ["wamid-x"] } });
+  assert.equal(delivered[0].status, "delivered");
+
+  const readSelf = mapWuzApiEvent({ type: "ReadReceipt", instanceName: "conn-1", state: "ReadSelf", event: { MessageIDs: ["wamid-y"] } });
+  assert.equal(readSelf[0].status, "read");
+});
+
 test("mapWuzApiEvent: sem Info.Chat (defensivo) cai pra Info.Sender como chatId", () => {
   const mapped = mapWuzApiEvent(rawEvent({ conversation: "Oi" }, { info: {} }));
   assert.equal(mapped.chatId, "+5511999998888", "fallback defensivo — nunca deveria acontecer no envelope real, mas nunca deve descartar o evento inteiro");

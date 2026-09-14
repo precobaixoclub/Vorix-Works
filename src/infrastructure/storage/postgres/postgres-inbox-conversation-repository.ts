@@ -17,6 +17,8 @@ type Row = {
   chat_type: string;
   external_chat_id: string;
   group_name: string | null;
+  group_participant_count: number | null;
+  group_metadata_updated_at: Date | null;
   contact_id: string | null;
   status: string;
   assigned_user_id: string | null;
@@ -133,6 +135,18 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     );
   }
 
+  async updateGroupMetadata(id: string, input: { groupName?: string; participantCount?: number; metadataUpdatedAt: string }): Promise<void> {
+    await this.pool.query(
+      `update inbox_conversations set
+         group_name = coalesce($2, group_name),
+         group_participant_count = coalesce($3, group_participant_count),
+         group_metadata_updated_at = $4,
+         updated_at = now()
+       where id = $1`,
+      [id, input.groupName ?? null, input.participantCount ?? null, input.metadataUpdatedAt],
+    );
+  }
+
   async markRead(id: string): Promise<void> {
     await this.pool.query("update inbox_conversations set unread_count = 0, updated_at = now() where id = $1", [id]);
   }
@@ -220,6 +234,8 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       chatType: row.chat_type as InboxChatType,
       externalChatId: row.external_chat_id,
       groupName: row.group_name ?? undefined,
+      groupParticipantCount: row.group_participant_count ?? undefined,
+      groupMetadataUpdatedAt: row.group_metadata_updated_at?.toISOString(),
       contactId: row.contact_id ?? undefined,
       status: row.status as InboxConversationStatus,
       assignedUserId: row.assigned_user_id ?? undefined,

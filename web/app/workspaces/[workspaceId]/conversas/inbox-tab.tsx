@@ -63,6 +63,16 @@ const QUICK_FILTERS: { value: InboxConversationFilter; label: string }[] = [
   { value: "unread", label: "Não lidas" },
 ];
 
+/** Bloco "Organização da lista" (ver docs/conversas-inbox-organization-media-runtime.md) — filtro
+ * por `chatType`, deliberadamente client-side (a lista de um workspace é pequena o bastante pra
+ * não justificar mais um parâmetro de servidor/índice novo) — nunca esconde o filtro de status já
+ * existente, os dois combinam (ex.: "Não lidas" + "Grupos"). */
+const CHAT_TYPE_FILTERS: { value: "all" | "group" | "direct"; label: string }[] = [
+  { value: "all", label: "Todos os tipos" },
+  { value: "group", label: "Grupos" },
+  { value: "direct", label: "Diretas" },
+];
+
 const ADVANCED_FILTERS: { value: InboxConversationFilter; label: string; description: string }[] = [
   { value: "open", label: "Em atendimento", description: "Conversas abertas agora." },
   { value: "pending", label: "Pendentes", description: "Aguardando retorno ou decisão." },
@@ -80,6 +90,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
   const { state } = useAuth();
   const currentUserId = state.status === "authenticated" ? state.user.id : undefined;
   const [filter, setFilter] = useState<InboxConversationFilter>("all");
+  const [chatTypeFilter, setChatTypeFilter] = useState<"all" | "group" | "direct">("all");
   const [search, setSearch] = useState("");
   const [mobileView, setMobileView] = useState<MobileView>(searchParams.get("conversation") ? "conversation" : "list");
   const [contextOpen, setContextOpen] = useState(false);
@@ -96,12 +107,16 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
   const selectedConversation = conversations.find((conversation) => conversation.id === selectedConversationId);
 
   const filteredConversations = useMemo(() => {
+    const byType = chatTypeFilter === "all" ? conversations : conversations.filter((conversation) => conversation.chatType === chatTypeFilter);
     const term = search.trim().toLowerCase();
-    if (!term) return conversations;
-    return conversations.filter((conversation) => {
+    if (!term) return byType;
+    return byType.filter((conversation) => {
+      // Grupo: busca por nome do grupo (groupName/subject) — nunca por LID (seção 34 do pedido:
+      // "não buscar por LID como experiência principal"). Direta: nome/telefone, como já era.
       const haystack = [
         conversation.contactName,
         conversation.contactPhone,
+        conversation.groupName,
         statusLabelFor(conversation.status),
         agentLabel(conversation.assignedUserId, currentUserId, members),
       ]
@@ -110,7 +125,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
         .toLowerCase();
       return haystack.includes(term);
     });
-  }, [conversations, currentUserId, members, search]);
+  }, [chatTypeFilter, conversations, currentUserId, members, search]);
 
   useEffect(() => {
     if (selectedConversationId) setMobileView("conversation");
@@ -157,6 +172,8 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
             onRetry={() => mutate()}
             filter={filter}
             onFilterChange={setFilter}
+            chatTypeFilter={chatTypeFilter}
+            onChatTypeFilterChange={setChatTypeFilter}
             search={search}
             onSearchChange={setSearch}
             selectedConversationId={selectedConversationId}
@@ -229,6 +246,8 @@ function ConversationListPane({
   onRetry,
   filter,
   onFilterChange,
+  chatTypeFilter,
+  onChatTypeFilterChange,
   search,
   onSearchChange,
   selectedConversationId,
@@ -243,6 +262,8 @@ function ConversationListPane({
   onRetry: () => void;
   filter: InboxConversationFilter;
   onFilterChange: (filter: InboxConversationFilter) => void;
+  chatTypeFilter: "all" | "group" | "direct";
+  onChatTypeFilterChange: (value: "all" | "group" | "direct") => void;
   search: string;
   onSearchChange: (value: string) => void;
   selectedConversationId: string | undefined;
@@ -318,6 +339,24 @@ function ConversationListPane({
               </div>
             </PopoverContent>
           </Popover>
+        </div>
+
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+          {CHAT_TYPE_FILTERS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onChatTypeFilterChange(item.value)}
+              className={cn(
+                "h-7 shrink-0 rounded-full border px-2.5 text-[11px] font-medium transition-colors duration-150",
+                chatTypeFilter === item.value
+                  ? "border-primary/30 bg-primary/10 text-primary dark:border-primary-glow/30 dark:bg-primary-glow/10 dark:text-primary-glow"
+                  : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -556,7 +595,7 @@ function ConversationTimelinePane({
               <StatusDot status={conversation.status} />
             </div>
             <p className="truncate text-xs text-muted-foreground">
-              {conversationSubtitle(conversation)} · {statusLabelFor(conversation.status)} · {agentLabel(conversation.assignedUserId, currentUserId, members)}
+              {conversationHeaderSubtitle(conversation)} · {statusLabelFor(conversation.status)} · {agentLabel(conversation.assignedUserId, currentUserId, members)}
             </p>
           </div>
 
@@ -1396,7 +1435,22 @@ function lastMessagePreviewLabel(conversation: InboxConversation): string {
         ? `${preview.senderDisplayName}: `
         : "";
   if (preview.type === "text") return `${prefix}${preview.body?.trim() || "Mensagem sem texto"}`;
-  return `${prefix}${mediaLabelFor(preview.type)}`;
+  return `${prefix}${mediaPreviewLabel(preview.type)}`;
+}
+
+/** Rótulo curto com ícone pra PREVIEW DA LISTA (ex.: "Daniel: 📷 Foto") — distinto do rótulo mais
+ * longo usado como fallback dentro da bolha da conversa (`mediaLabelFor`, mantido como estava).
+ * Ver seção 11 do pedido original ("carregamento real de mídia"). */
+function mediaPreviewLabel(type: InboxMessage["type"]): string {
+  switch (type) {
+    case "image": return "📷 Foto";
+    case "video": return "🎥 Vídeo";
+    case "audio": return "🎤 Áudio";
+    case "document": return "📄 Documento";
+    case "location": return "📍 Localização";
+    case "contact": return "👤 Contato";
+    default: return mediaLabelFor(type);
+  }
 }
 
 export function mediaLabelFor(type: InboxMessage["type"]): string {
@@ -1417,12 +1471,26 @@ export function mediaLabelFor(type: InboxMessage["type"]): string {
  * WhatsApp"), nunca no nome do primeiro remetente (ver docs/conversas-canonical-chat-identity.md,
  * seção 10 do pedido original). */
 function conversationTitle(conversation: InboxConversation): string {
-  if (conversation.chatType === "group") return conversation.groupName ?? "Grupo do WhatsApp";
+  // Fallback "Grupo" (nunca "Grupo do WhatsApp" permanente) — a metadata real chega sozinha via
+  // `syncGroupMetadata` (worker) logo após a primeira mensagem; isto só aparece na janela curta
+  // antes disso resolver (ver docs/conversas-inbox-organization-media-runtime.md).
+  if (conversation.chatType === "group") return conversation.groupName ?? "Grupo";
   return conversation.contactName ?? conversation.contactPhone ?? "Contato";
 }
 
 function conversationSubtitle(conversation: InboxConversation): string {
   return conversation.chatType === "group" ? "WhatsApp · Grupo" : `WhatsApp · ${conversation.contactPhone ?? "—"}`;
+}
+
+/** Só pro HEADER da conversa aberta (nunca a lista, que fica só "WhatsApp · Grupo") — inclui
+ * contagem de participantes quando `syncGroupMetadata` já resolveu isso (ver seção 12 do pedido:
+ * "18 participantes quando esses dados realmente existirem", nunca inventado). */
+function conversationHeaderSubtitle(conversation: InboxConversation): string {
+  const base = conversationSubtitle(conversation);
+  if (conversation.chatType === "group" && conversation.groupParticipantCount) {
+    return `${base} · ${conversation.groupParticipantCount} participantes`;
+  }
+  return base;
 }
 
 function initials(value: string): string {

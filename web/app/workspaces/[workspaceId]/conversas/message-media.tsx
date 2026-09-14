@@ -54,12 +54,28 @@ function formatDuration(seconds: number | undefined): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
+const MEDIA_ERROR_LABEL: Record<InboxMessage["type"], string> = {
+  image: "Não foi possível carregar esta imagem.",
+  video: "Não foi possível carregar este vídeo.",
+  audio: "Não foi possível carregar este áudio.",
+  document: "Não foi possível carregar este documento.",
+  location: "Não foi possível carregar esta localização.",
+  contact: "Não foi possível carregar este contato.",
+  text: "Não foi possível carregar esta mensagem.",
+  other: "Não foi possível carregar esta mídia.",
+};
+
+/** `retry` presente = falha real ao BUSCAR uma mídia que existe (seção 17/40 do pedido original:
+ * mensagem específica de erro + botão, nunca o rótulo genérico de "ainda processando"). Sem
+ * `retry` = a mídia nunca chegou a ser baixada (best-effort assíncrono, ver `downloadInboundMediaAndAttach`)
+ * — não dá pra distinguir "ainda processando" de "nunca vai chegar" sem um campo de status
+ * dedicado nesta rodada, então usa o rótulo neutro (nunca "erro" quando pode só estar em voo). */
 function MediaFallback({ type, retry }: { type: InboxMessage["type"]; retry?: () => void }) {
   const Icon = mediaIconFor(type);
   return (
     <div className="flex items-center gap-2 rounded-lg bg-muted/70 px-3 py-2 text-muted-foreground">
       <Icon className="h-4 w-4 shrink-0" />
-      <span className="text-xs">{mediaLabelFor(type)}</span>
+      <span className="text-xs">{retry ? MEDIA_ERROR_LABEL[type] : mediaLabelFor(type)}</span>
       {retry ? (
         <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={retry}>
           Tentar novamente
@@ -148,9 +164,22 @@ function AudioMedia({ workspaceId, message }: { workspaceId: string; message: In
         {state.status === "loading" ? <Spinner className="h-4 w-4" /> : playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
       </Button>
       <div className="min-w-0 flex-1">
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
+        <button
+          type="button"
+          aria-label="Avançar para um ponto do áudio"
+          disabled={!duration || state.status !== "ready"}
+          onClick={(event) => {
+            const audio = audioRef.current;
+            if (!audio || !duration) return;
+            const bounds = event.currentTarget.getBoundingClientRect();
+            const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+            audio.currentTime = ratio * duration;
+            setProgress(audio.currentTime);
+          }}
+          className="h-1.5 w-full overflow-hidden rounded-full bg-border disabled:cursor-default"
+        >
           <div className="h-full bg-primary dark:bg-primary-glow" style={{ width: duration ? `${Math.min(100, (progress / duration) * 100)}%` : "0%" }} />
-        </div>
+        </button>
       </div>
       <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{formatDuration(duration - progress > 0 ? duration - progress : duration)}</span>
       {state.status === "ready" && state.url ? (

@@ -31,6 +31,9 @@ export type InboxConversation = {
   /** Só em `chatType: "group"` — nome do grupo/canal quando o provider fornece. `undefined` = sem
    * nome conhecido, o frontend cai no fallback visual (nunca inventa um nome). */
   groupName?: string;
+  /** Bloco "Identity UX" — quantidade de participantes, resolvida via `syncGroupMetadata`
+   * (backend). `undefined` até a primeira sincronização bem-sucedida — nunca inventado. */
+  groupParticipantCount?: number;
   /** Só em `chatType: "direct"` — `undefined` em conversas de grupo (nunca fundido com um Contact
    * do CRM, ver `ContactContextPane`/`CrmContextSection`). */
   contactId?: string;

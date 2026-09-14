@@ -47,6 +47,7 @@ import { OperationalCircuitBreaker, OperationalRateLimiter } from "../../applica
 import { PostgresAiProvidersRepository } from "../../infrastructure/storage/postgres/postgres-ai-providers-repository.js";
 import { PostgresPlatformBillingRepository } from "../../infrastructure/storage/postgres/postgres-platform-billing-repository.js";
 import { createPromInboxMetrics, inboxMetricsRegistry } from "../../infrastructure/observability/prom-inbox-metrics.js";
+import { reconcileMergeableIdentities, reconcileUnresolvedLidContacts } from "../../infrastructure/storage/postgres/inbox-identity-reconciliation.js";
 
 /**
  * Processo separado do módulo Conversas — `vorix-worker` (Fase 1/2, resiliência reforçada na
@@ -96,6 +97,11 @@ type InboxWorkerConfig = {
      * reconcilia algo recém-criado que `sendInboxMessage` ainda pode estar publicando sozinho. */
     outboundReconcileIntervalMs: number;
     outboundReconcileGracePeriodMs: number;
+    /** Bloco "réplica de identidade" (Fase 4) — dois workers de reconciliação, mesmo idioma dos
+     * demais `setInterval` deste arquivo. Só têm efeito com `PERSISTENCE_DRIVER=postgres`
+     * (`repositories.pool` ausente em memória = ambos viram no-op, sem erro). */
+    identityMergeScanIntervalMs: number;
+    identityReconcileIntervalMs: number;
   };
   /** Redesign operacional (Conversas) — storage PRIVADO de mídia recebida via WhatsApp; config
    * mínima independente de `loadApiConfig()`, mesmo racional do resto deste tipo. `enabled: false`
@@ -154,6 +160,8 @@ function loadInboxWorkerConfig(): InboxWorkerConfig {
       outboundSendPaused: process.env.INBOX_OUTBOUND_SEND_PAUSED?.trim() === "true",
       outboundReconcileIntervalMs: parsePositiveInt(process.env.INBOX_OUTBOUND_RECONCILE_INTERVAL_MS, 60_000),
       outboundReconcileGracePeriodMs: parsePositiveInt(process.env.INBOX_OUTBOUND_RECONCILE_GRACE_PERIOD_MS, 120_000),
+      identityMergeScanIntervalMs: parsePositiveInt(process.env.INBOX_IDENTITY_MERGE_SCAN_INTERVAL_MS, 180_000),
+      identityReconcileIntervalMs: parsePositiveInt(process.env.INBOX_IDENTITY_RECONCILE_INTERVAL_MS, 300_000),
     },
     inboxMediaStorage: {
       enabled: process.env.INBOX_MEDIA_STORAGE_ENABLED?.trim() === "true",
@@ -513,6 +521,7 @@ async function main(): Promise<void> {
     conversationEventRepository: repositories.inboxConversationEventRepository,
     messageRepository: repositories.inboxMessageRepository,
     workspaceRepository: repositories.workspaceRepository,
+    identityLinkRepository: repositories.inboxIdentityLinkRepository,
     // Correção de bug real (homologação de runtime) — antes, um stub no-op de propósito ("o
     // worker nunca publica outbound, só drena"); agora `reconcileOrphanedOutboundMessages` (ver
     // abaixo) PRECISA republicar mensagens órfãs de verdade, então reusa o MESMO canal já aberto
@@ -758,6 +767,58 @@ async function main(): Promise<void> {
   const reconcileTimer = setInterval(runOutboundReconciliation, config.resilience.outboundReconcileIntervalMs);
   reconcileTimer.unref();
 
+  // Bloco "réplica de identidade" (Fase 4) — dois workers novos, só ativos com Postgres real
+  // (`repositories.pool`): em memória (dev/teste), ambos ficam ausentes — sem erro, sem timer.
+  let identityMergeTimer: ReturnType<typeof setInterval> | undefined;
+  let identityReconcileTimer: ReturnType<typeof setInterval> | undefined;
+  if (repositories.pool) {
+    const pool = repositories.pool;
+
+    // `lastMergeScanAt` começa "no passado" (10 anos) pra pegar QUALQUER link já persistido no
+    // primeiro tick após o boot (inclusive o backlog de links criados antes deste deploy) — depois
+    // avança pra "agora" a cada tick, revarrendo só o que mudou desde a última rodada (mesmo
+    // racional do `outboundReconcileGracePeriodMs`, nunca revarre o dataset inteiro a cada ciclo).
+    let lastMergeScanAt = new Date(0).toISOString();
+    let mergeScanRunning = false;
+    const runIdentityMergeScan = (): void => {
+      if (mergeScanRunning) return;
+      mergeScanRunning = true;
+      const sinceIso = lastMergeScanAt;
+      const tickStartedAt = new Date().toISOString();
+      reconcileMergeableIdentities(pool, { sinceIso })
+        .then(({ scanned, contactsMerged, conversationsMerged }) => {
+          lastMergeScanAt = tickStartedAt;
+          if (contactsMerged > 0 || conversationsMerged > 0) {
+            console.log(`[inbox-worker] reconciliação de identidade: ${scanned} link(s) revisado(s), ${contactsMerged} contato(s) fundido(s), ${conversationsMerged} conversa(s) fundida(s).`);
+          }
+        })
+        .catch((error) => console.error("[inbox-worker] scan de merge de identidade falhou:", error instanceof Error ? error.message : error))
+        .finally(() => {
+          mergeScanRunning = false;
+        });
+    };
+    runIdentityMergeScan();
+    identityMergeTimer = setInterval(runIdentityMergeScan, config.resilience.identityMergeScanIntervalMs);
+    identityMergeTimer.unref();
+
+    let lidReconcileRunning = false;
+    const runLidReconciliation = (): void => {
+      if (lidReconcileRunning) return;
+      lidReconcileRunning = true;
+      reconcileUnresolvedLidContacts(pool, {})
+        .then(({ scanned, resolved }) => {
+          if (resolved > 0) console.log(`[inbox-worker] reconciliação de contatos LID: ${resolved}/${scanned} contato(s) completado(s) com telefone resolvido.`);
+        })
+        .catch((error) => console.error("[inbox-worker] reconciliação de contatos LID falhou:", error instanceof Error ? error.message : error))
+        .finally(() => {
+          lidReconcileRunning = false;
+        });
+    };
+    runLidReconciliation();
+    identityReconcileTimer = setInterval(runLidReconciliation, config.resilience.identityReconcileIntervalMs);
+    identityReconcileTimer.unref();
+  }
+
   // Graceful shutdown (Fase 1/6): para de consumir, espera o que já estava em voo terminar (com
   // um teto de tempo — nunca trava o shutdown para sempre por um handler pendurado), fecha
   // RabbitMQ/pool. Fase 6 corrige um gap real encontrado na auditoria: `channel.close()` sozinho
@@ -767,6 +828,8 @@ async function main(): Promise<void> {
     clearInterval(healthTimer);
     clearInterval(heartbeatTimer);
     clearInterval(reconcileTimer);
+    if (identityMergeTimer) clearInterval(identityMergeTimer);
+    if (identityReconcileTimer) clearInterval(identityReconcileTimer);
     // Remove os listeners de 'error'/'close' ANTES de fechar de propósito — sem isso, o
     // `connection.close()" abaixo dispara o handler de "queda inesperada" (achado ao vivo acima)
     // e o processo sairia com código 1 mesmo num shutdown limpo, pedido por SIGTERM/SIGINT.

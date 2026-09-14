@@ -97,10 +97,15 @@ export class WuzApiMessagingProvider implements MessagingProvider {
   async getGroupInfo(input: { externalSessionId: string; groupJid: string }): Promise<{ name?: string; participantCount?: number } | undefined> {
     try {
       const info = await this.client.getGroupInfo(input.externalSessionId, input.groupJid);
-      return { name: info.Name, participantCount: info.Participants?.length };
-    } catch {
+      return { name: info.Name, participantCount: info.ParticipantCount ?? info.Participants?.length };
+    } catch (error) {
       // Best-effort — `syncGroupMetadata` (use case) já trata `undefined` como "sem metadata
       // ainda", nunca propaga erro pro chamador (não pode derrubar o processamento de mensagem).
+      // AINDA loga (achado real: o silêncio total aqui foi o que escondeu por dias um bug de
+      // cliente — GET com body, `fetch()` lança TypeError síncrono — sem nenhum rastro em lugar
+      // nenhum, nem nos logs do WuzAPI, porque a requisição nunca saía do processo). Nunca deixar
+      // um best-effort ficar mudo de novo.
+      console.warn("[wuzapi] getGroupInfo falhou (best-effort, nunca bloqueia o processamento):", error instanceof Error ? error.message : error);
       return undefined;
     }
   }

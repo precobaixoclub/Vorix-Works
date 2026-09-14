@@ -194,16 +194,33 @@ export class WuzApiClient {
   }
 
   /**
-   * Metadata de grupo (bloco "Identity UX" — ver docs/conversas-whatsapp-experience-completion.md)
-   * — contrato confirmado via `API.md` documentado no repositório real do `asternic/wuzapi`
-   * (nunca visto ao vivo contra este container ainda, diferente do resto deste arquivo — tratar
-   * como alta-confiança, não 100% verificado, mesmo padrão de risco documentado já usado pro
-   * `Timestamp`/`Chat`/`IsGroup` antes de confirmação ao vivo). `GET` com corpo JSON (padrão
-   * incomum, mas é o que a documentação mostra) contendo `GroupJID`. Resposta: `Name` (assunto do
-   * grupo), `Topic`, `Participants: [{ JID, IsAdmin, IsSuperAdmin }]`, `GroupCreated`, `JID`.
+   * Metadata de grupo (bloco "Identity UX" — ver docs/conversas-whatsapp-experience-completion.md).
+   *
+   * CAUSA RAIZ REAL (confirmado lendo o handler de verdade, `handlers.go`,
+   * `func (s *server) GetGroupInfo()`) de "nunca sincronizou nem uma vez em produção": o endpoint
+   * espera `groupJID` como QUERY PARAMETER (`r.URL.Query().Get("groupJID")`), NUNCA um corpo JSON
+   * — a versão anterior desta função mandava `GET` com `body: { GroupJID }`, e `fetch()` (spec
+   * WHATWG) LANÇA `TypeError: Request with GET/HEAD method cannot have body` de forma síncrona
+   * antes mesmo de abrir a conexão. Esse erro nunca aparecia nos logs porque
+   * `WuzApiMessagingProvider.getGroupInfo` engole qualquer exceção silenciosamente (best-effort,
+   * "nunca lança") — resultado: zero requisições `/group/info` chegaram ao WuzAPI, confirmado
+   * pelos logs do container (nenhuma menção a "group/info" em 72h).
+   *
+   * Resposta: `resp` do handler é um `*types.GroupInfo` (whatsmeow, `types/group.go`) serializado
+   * DIRETO, sem tags `json:"..."` — campos embutidos (`GroupName`/`GroupTopic`) são promovidos pro
+   * nível raiz pelo encoding padrão do Go. `ParticipantCount` é um campo `int` direto e confiável;
+   * `Name`/`Topic` são best-effort (a promoção exata do nome do campo embutido nunca foi
+   * confirmada ao vivo) — `getGroupInfo` tenta variantes prováveis antes de desistir.
    */
-  async getGroupInfo(sessionToken: string, groupJid: string): Promise<{ Name?: string; Topic?: string; Participants?: Array<{ JID: string; IsAdmin?: boolean; IsSuperAdmin?: boolean }>; GroupCreated?: string; JID?: string }> {
-    return this.sessionRequest(sessionToken, "/group/info", { method: "GET", body: { GroupJID: groupJid } });
+  async getGroupInfo(sessionToken: string, groupJid: string): Promise<{
+    Name?: string;
+    Topic?: string;
+    Participants?: Array<{ JID: string; IsAdmin?: boolean; IsSuperAdmin?: boolean }>;
+    ParticipantCount?: number;
+    GroupCreated?: string;
+    JID?: string;
+  }> {
+    return this.sessionRequest(sessionToken, `/group/info?groupJID=${encodeURIComponent(groupJid)}`, { method: "GET" });
   }
 
   /**

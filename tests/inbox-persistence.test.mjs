@@ -528,3 +528,28 @@ test("GROUP_METADATA: provider sem getGroupInfo (ex. FakeMessagingProvider) nunc
   const result = await syncGroupMetadata(deps, { tenantId: "tenant-group-metadata-2", workspaceId: workspace.id, connectionId: connection.id, conversationId: group.id });
   assert.equal(result.synced, false);
 });
+
+test("GROUP_METADATA: Canal/Newsletter do WhatsApp (@newsletter, chatType também \"group\" de propósito) NUNCA chama getGroupInfo — achado ao vivo em produção (WuzAPI trava/500 pra JID de newsletter)", async () => {
+  const workspace = await makeWorkspace("tenant-group-metadata-3");
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+
+  const connection = await connectionRepo.create({ tenantId: "tenant-group-metadata-3", workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+  await connectionRepo.updateStatus(connection.id, { status: "connected", externalSessionId: "sess-group-meta-3" });
+  // Canal do WhatsApp — chatType é "group" de propósito (ver wuzapi-event-mapper.ts: nunca vira um
+  // InboxContact com telefone fake), mas o JID termina em @newsletter, nunca @g.us.
+  const channel = await conversationRepo.findOrCreate({
+    tenantId: "tenant-group-metadata-3", workspaceId: workspace.id, connectionId: connection.id,
+    chatType: "group", externalChatId: "120363410095637401@newsletter",
+  });
+
+  let called = false;
+  const provider = { async getGroupInfo() { called = true; return { name: "nunca deveria ser chamado" }; } };
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, provider };
+
+  const result = await syncGroupMetadata(deps, { tenantId: "tenant-group-metadata-3", workspaceId: workspace.id, connectionId: connection.id, conversationId: channel.id });
+  assert.equal(result.synced, false);
+  assert.equal(called, false, "getGroupInfo nunca é chamado pra um JID de newsletter — whatsmeow.Client.GetGroupInfo só entende @g.us");
+});

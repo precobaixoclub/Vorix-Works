@@ -678,6 +678,15 @@ export async function syncGroupMetadata(deps: InboxUseCaseDeps, input: SyncGroup
   if (!deps.provider.getGroupInfo) return { synced: false };
   const conversation = await deps.conversationRepository.getById(input.conversationId);
   if (!conversation || conversation.chatType !== "group") return { synced: false };
+  // ACHADO AO VIVO (produção, pós-deploy da réplica de identidade) — `chatType: "group"` também é
+  // usado pro Canal/Newsletter do WhatsApp (`@newsletter`), de propósito (ver
+  // `wuzapi-event-mapper.ts`: "qualquer coisa que não seja pessoa vira group, nunca um telefone
+  // fake") — mas um Canal NUNCA é um grupo de verdade pro protocolo: `whatsmeow.Client.GetGroupInfo`
+  // só entende `@g.us`. Chamar isto com `@newsletter` trava até o WuzAPI desistir por timeout
+  // ("info query timed out"), devolvendo um corpo de erro que nem é JSON — nunca uma falha
+  // transitória que valha reprocessar. Guarda aqui, na fonte única de verdade, em vez de duplicar
+  // a checagem em cada chamador.
+  if (!conversation.externalChatId.endsWith("@g.us")) return { synced: false };
   const connection = await deps.connectionRepository.getById(input.connectionId);
   if (!connection?.externalSessionId) return { synced: false };
 

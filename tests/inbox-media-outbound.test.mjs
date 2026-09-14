@@ -65,7 +65,9 @@ async function makeConversation(tenantId) {
   const workspace = await workspaceRepo.create({ tenantId, name: "W" });
   const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
   await connectionRepo.updateStatus(connection.id, { status: "connected", externalSessionId: `sess-${connection.id}` });
-  const phone = `+55119${++counter}0000`;
+  // Formato fixo de 8 dígitos zero-padded — ver mesmo comentário em inbox-ai-responder.test.mjs
+  // (bloco "réplica de identidade"): garante um celular BR válido e já canônico sempre.
+  const phone = `+55119${String(++counter).padStart(8, "0")}`;
   const contact = await contactRepo.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: phone });
   const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "direct", externalChatId: phone, contactId: contact.id });
   return { workspace, connection: await connectionRepo.getById(connection.id), conversation };

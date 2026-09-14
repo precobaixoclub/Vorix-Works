@@ -117,7 +117,12 @@ async function makeConversation(tenantId, { aiEnabled = false } = {}) {
 
   const workspace = await workspaceRepo.create({ tenantId, name: "W" });
   const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
-  const phone = `+55119${++counter}0000`;
+  // Formato fixo de 8 dígitos zero-padded (nunca "+55119${counter}0000" de largura variável) —
+  // desde a canonicalização de telefone brasileiro (bloco "réplica de identidade"), um número
+  // sintético mal formado pode cair no caso ambíguo de `canonicalizeBrazilianPhone` (11 dígitos
+  // totais sem como distinguir DDI de DDD) e sair diferente de como entrou; este formato sempre
+  // gera um celular BR válido e já canônico (`normalizePhoneNumber(phone) === phone` sempre).
+  const phone = `+55119${String(++counter).padStart(8, "0")}`;
   const contact = await contactRepo.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: phone, name: "Cliente Teste" });
   const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "direct", externalChatId: phone, contactId: contact.id });
   if (aiEnabled) await conversationRepo.setAiEnabled(conversation.id, true);

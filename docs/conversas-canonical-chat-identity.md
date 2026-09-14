@@ -218,18 +218,29 @@ resposta foi enviada pela UI do Vorix durante a janela observada.
 
 ## 15. Runtime — grupo real
 
-**NÃO VERIFICADO.** Nenhum evento com `Info.Chat` terminando em `@g.us` chegou durante a janela de
-observação — a homologação recebeu DMs (`@lid`) e um evento de Canal (`@newsletter`), não um grupo
-tradicional. A lógica está coberta por testes automatizados determinísticos (contra Postgres real,
-seção 13) usando os nomes de campo confirmados via código-fonte do `asternic/wuzapi`
-(`Info.Chat`/`Info.IsGroup`/`Info.Sender` — mesma fonte já citada no cabeçalho original do mapper),
-mas isso **não substitui** uma verificação com um grupo real de homologação.
+**VERIFICADO** contra produção, com um grupo real do WhatsApp (`554699758123-1560728831@g.us`,
+conversa `inboxconv-mu0f86bx-2nv9up`, criada 2026-09-13 23:04 UTC). Conferido direto no banco:
+
+```
+select id, direction, type, sender_external_id, sender_display_name from inbox_messages
+where conversation_id = 'inboxconv-mu0f86bx-2nv9up' order by created_at;
+```
+
+5 mensagens de **5 remetentes diferentes** (Daniel, Alisson Duarte, Rodrigo Devens, JDF, Samuel
+Davi — nomes reais, sanitizados aqui só na citação), todas na **mesma** `InboxConversation`, cada
+uma com `sender_external_id`/`sender_display_name` do participante correto. `contact_id` da
+conversa é `NULL` (nunca virou um Contact do CRM). Confirma `GROUP_CONVERSATION_IDENTITY` e
+`GROUP_PARTICIPANT_ATTRIBUTION` com payload real, não só com os testes automatizados da seção 13.
 
 ## 16. Mídia em grupo
 
-**NÃO VERIFICADO** (depende da seção 15 — precisa de um grupo real primeiro). O caminho de código é
-o mesmo de DM (`downloadInboundMediaAndAttach`, inalterado por esta correção) — mídia recebida num
-grupo entra na mesma `InboxConversation` do grupo, com `senderExternalId` da mensagem preservado.
+**NÃO EXECUTADO.** A mesma conversa de grupo real (seção 15) só recebeu mensagens `text` e duas
+`other` (sem `media_storage_ref`/`mime_type` preenchidos — provavelmente figurinha/reação, não
+imagem/vídeo/áudio real; o mapper ainda não diferencia esses tipos do WhatsApp, fora do escopo
+desta correção). Nenhuma imagem/vídeo/áudio de verdade foi enviada nesse grupo até o momento —
+`GROUP_MEDIA_SAME_CONVERSATION` continua sem evidência real, não pela lógica de identidade (essa é
+a mesma de DM, `downloadInboundMediaAndAttach`, inalterada por esta correção), mas porque o teste
+em si não ocorreu ainda.
 
 ## 17. Commits
 
@@ -268,9 +279,10 @@ Ordem seguida (produção real, `209.97.152.212`):
 
 Deploy do frontend (`zuno-web`) concluído em seguida (`docker compose up -d --build`, todos os 4
 containers): `vorixworks.com`/`api.vorixworks.com` respondendo 200/OK, 115 migrations aplicadas, 0
-conversas duplicadas, 2 conversas `chat_type='group'` (Canal/`@newsletter`, corretamente sem
-`contact_id`) confirmadas no banco pós-deploy, sem erros nos logs de `zuno-api`/`vorix-worker` nos
-minutos seguintes.
+conversas duplicadas, sem erros nos logs de `zuno-api`/`vorix-worker` nos minutos seguintes. Nas
+horas seguintes ao deploy, 2 conversas `chat_type='group'` foram criadas organicamente por tráfego
+real: um Canal (`@newsletter`) e um **grupo de verdade** (`@g.us`, ver seção 15) — ambas
+corretamente sem `contact_id`.
 
 ## 20. Riscos restantes
 
@@ -293,21 +305,32 @@ minutos seguintes.
 
 ## 21. Classificação final
 
+Atualizada depois de tráfego real (grupo `@g.us` verdadeiro recebido em produção, ver seção 15) e
+de conferência direta no banco (não só a afirmação — `select direction, count(*) from
+inbox_messages group by direction` confirmou **0 mensagens outbound em todo o banco** até o
+momento desta atualização):
+
 ```
-DIRECT_CONVERSATION_IDENTITY        = VERIFIED_AUTOMATED (testes) + PARTIAL_RUNTIME (produção: sem duplicatas em tráfego real; ciclo completo com reply humano não observado nesta sessão)
-GROUP_CONVERSATION_IDENTITY         = VERIFIED_AUTOMATED (testes) / RUNTIME NÃO VERIFICADO (nenhum @g.us real recebido)
-GROUP_PARTICIPANT_ATTRIBUTION       = VERIFIED_AUTOMATED (testes) / RUNTIME NÃO VERIFICADO
-OUTBOUND_DIRECT_SAME_CONVERSATION   = VERIFIED_AUTOMATED (testes) / RUNTIME NÃO VERIFICADO (nenhuma resposta enviada pela UI durante a janela observada)
-OUTBOUND_GROUP_SAME_CONVERSATION    = VERIFIED_AUTOMATED (testes) / RUNTIME NÃO VERIFICADO
-CONCURRENT_GROUP_MESSAGES           = VERIFIED_AUTOMATED (Promise.all real contra Postgres real)
+CANONICAL_CHAT_IDENTITY             = PARTIAL_RUNTIME_VERIFICATION
+DIRECT_CONVERSATION_IDENTITY        = VERIFIED_AUTOMATED (testes) + VERIFIED_RUNTIME parcial (produção: 40 conversas diretas, 0 duplicatas por (connection_id, external_chat_id) em tráfego real contínuo)
+GROUP_CONVERSATION_IDENTITY         = VERIFIED_RUNTIME (grupo real @g.us, 5 remetentes diferentes → 1 única InboxConversation, ver seção 15)
+GROUP_PARTICIPANT_ATTRIBUTION       = VERIFIED_RUNTIME (mesmo grupo — sender_external_id/sender_display_name corretos por mensagem, ver seção 15)
+OUTBOUND_DIRECT_SAME_CONVERSATION   = NOT_EXECUTED (nenhuma mensagem outbound existe no banco ainda — nem via UI, nem self-echo direto do celular)
+OUTBOUND_GROUP_SAME_CONVERSATION    = NOT_EXECUTED (mesmo motivo)
+GROUP_MEDIA_SAME_CONVERSATION       = NOT_EXECUTED (grupo real só recebeu texto + 2 mensagens tipo "other" sem mídia até agora, ver seção 16)
+CONCURRENT_GROUP_MESSAGES           = VERIFIED_AUTOMATED (Promise.all real contra Postgres real — cenário difícil de forçar em runtime real, cobertura automatizada é a evidência válida aqui)
 EXISTING_DUPLICATES_RECONCILED      = NO (deliberado — dado insuficiente pra merge seguro; auditoria somente-leitura criada e executada, ver seção 11)
 ```
 
 ## 22. Próximos passos (aguardando revisão humana)
 
-1. Deploy do frontend + verificação visual manual de uma conversa direta real.
-2. Teste com um grupo de homologação real do WhatsApp — confirmar `@g.us` ao vivo e completar a
-   verificação de runtime das seções 15/16/21.
-3. Testar o ciclo completo de resposta humana (outbound via UI) com um contato direto real.
-4. Revisão manual das 40 conversas pré-fix (script de auditoria já disponível).
-5. **Não ativar IA nem iniciar piloto até a revisão acima.**
+1. Responder pela tela do Conversas a uma conversa **direta** real — confirma
+   `OUTBOUND_DIRECT_SAME_CONVERSATION` (a resposta precisa cair na mesma conversa, sem criar uma
+   segunda).
+2. Responder pela tela do Conversas dentro do **grupo real já confirmado**
+   (`554699758123-1560728831@g.us`) — confirma `OUTBOUND_GROUP_SAME_CONVERSATION`.
+3. Mandar uma imagem/vídeo/áudio de verdade nesse mesmo grupo — confirma
+   `GROUP_MEDIA_SAME_CONVERSATION`.
+4. Revisão manual das 40 conversas pré-fix (script de auditoria já disponível,
+   `scripts/audit-inbox-pre-fix-duplicates.mjs`).
+5. **Não ativar IA nem iniciar piloto até os itens 1-3 acima saírem de `NOT_EXECUTED`.**

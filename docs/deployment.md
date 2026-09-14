@@ -96,12 +96,20 @@ Passo a passo:
      'cd /opt/zuno && docker compose --env-file .env.zuno -f docker-compose.zuno.yml up -d --build'
    ```
 
-7. Checar saúde:
+7. **Se o deploy incluir migration nova**, aplicar DEPOIS do rebuild (o container já precisa estar
+   de pé com o código novo — `scripts/migrate.mjs` faz parte da imagem, não do host):
+
+   ```bash
+   ssh root@209.97.152.212 \
+     'cd /opt/zuno && docker compose --env-file .env.zuno -f docker-compose.zuno.yml exec -T zuno-api node scripts/migrate.mjs'
+   ```
+
+8. Checar saúde:
 
    ```bash
    curl -I https://vorixworks.com
    curl -s https://api.vorixworks.com/v1/health
-   ssh root@209.97.152.212 'docker ps | grep zuno'
+   ssh root@209.97.152.212 'docker ps --filter name=zuno --format "table {{.Names}}\t{{.Status}}"'
    ```
 
 Regras:

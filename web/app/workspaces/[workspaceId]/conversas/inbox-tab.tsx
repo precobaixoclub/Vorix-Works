@@ -1159,7 +1159,21 @@ function MessageBubble({
         )}
       >
         {senderLabel ? <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">{senderLabel}</p> : null}
-        {isMedia ? <MessageMedia workspaceId={workspaceId} message={message} /> : null}
+        {isMedia ? (
+          <MessageMedia workspaceId={workspaceId} message={message} />
+        ) : !body ? (
+          // Bug real corrigido: tipo sem renderizador dedicado (location/contact/other/sticker) e
+          // sem body deixava a bolha completamente vazia (só timestamp) — nunca mais "nada".
+          (() => {
+            const Icon = mediaIconFor(message.type);
+            return (
+              <div className="flex items-center gap-2 rounded-lg bg-muted/70 px-3 py-2 text-muted-foreground">
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="text-xs">{mediaLabelFor(message.type)}</span>
+              </div>
+            );
+          })()
+        ) : null}
         {body ? <p className={cn("whitespace-pre-wrap break-words", isMedia && "mt-1.5")}>{body}</p> : null}
         <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1 text-[10px] opacity-70">
           <span className="tabular-nums">{timeLabel(message.sentAt ?? message.createdAt)}</span>

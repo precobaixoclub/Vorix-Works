@@ -40,7 +40,7 @@ test("Conversas preenche a altura da viewport sem scroll na página (só dentro 
 
 test("lista de conversas mostra preview real da última mensagem (texto e rótulo de mídia), não mais um placeholder genérico", async ({ page }) => {
   await page.goto(`/workspaces/${WORKSPACE_ID}/conversas`);
-  await expect(page.getByText("Documento recebido")).toBeVisible();
+  await expect(page.getByText("📄 Documento")).toBeVisible();
   await expect(page.getByText("Você: Perfeito, vou verificar e já te retorno!")).toBeVisible();
   await expect(page.getByText("Muito obrigada pelo atendimento!")).toBeVisible();
 });

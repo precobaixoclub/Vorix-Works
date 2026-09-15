@@ -49,6 +49,10 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
     return this.rows.get(id);
   }
 
+  async delete(id: string): Promise<void> {
+    this.rows.delete(id);
+  }
+
   async findByExternalId(input: { connectionId: string; externalMessageId: string }): Promise<InboxMessage | undefined> {
     return [...this.rows.values()].find(
       (row) => row.connectionId === input.connectionId && row.externalMessageId === input.externalMessageId,

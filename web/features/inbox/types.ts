@@ -44,6 +44,9 @@ export type InboxConversation = {
   assignedUserId?: string;
   lastMessageAt?: string;
   unreadCount: number;
+  /** Bloco "urgente" (pedido explícito do usuário em produção) — marcação manual, mostrada como um
+   * ícone de fogo na listagem. */
+  isUrgent: boolean;
   aiEnabled: boolean;
   aiPausedReason?: InboxAiPauseReason;
   automationEnabled: boolean;
@@ -67,7 +70,7 @@ export type InboxConversation = {
 
 /** Fase 4 — `open`/`pending`/`resolved` filtram por status normalizado (ver
  * `InboxConversationStatus`); os demais continuam os filtros operacionais da Fase 3. */
-export type InboxConversationFilter = "all" | "mine" | "unassigned" | "unread" | "open" | "pending" | "resolved";
+export type InboxConversationFilter = "all" | "mine" | "unassigned" | "unread" | "urgent" | "open" | "pending" | "resolved";
 
 /** Fase 4 — evento discreto de atendimento (nunca uma mensagem enviada ao WhatsApp). Timeline do
  * frontend intercala isso com `InboxMessage` por `createdAt`, renderizando como um "pill" central

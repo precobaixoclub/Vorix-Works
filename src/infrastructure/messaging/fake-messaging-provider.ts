@@ -16,7 +16,9 @@ export class FakeMessagingProvider implements MessagingProvider {
     supportsReadReceipts: false,
     supportsTypingIndicator: false,
   };
-  readonly sentMessages: Array<{ to: string; body: string }> = [];
+  readonly sentMessages: Array<{ to: string; body: string; replyTo?: { externalMessageId: string; participantJid?: string; quotedText?: string } }> = [];
+  readonly sentReactions: Array<{ to: string; externalMessageId: string; emoji: string; fromMe: boolean; participantJid?: string }> = [];
+  readonly revokedMessages: Array<{ to: string; externalMessageId: string }> = [];
   private sequence = 0;
 
   async connect(): Promise<{ phoneNumber?: string }> {
@@ -34,8 +36,8 @@ export class FakeMessagingProvider implements MessagingProvider {
     return { qrCode: "fake-qr-code", expiresAt: new Date(Date.now() + 60_000).toISOString() };
   }
 
-  async sendText(input: { to: string; body: string }): Promise<MessagingSendResult> {
-    this.sentMessages.push({ to: input.to, body: input.body });
+  async sendText(input: { to: string; body: string; replyTo?: { externalMessageId: string; participantJid?: string; quotedText?: string } }): Promise<MessagingSendResult> {
+    this.sentMessages.push({ to: input.to, body: input.body, replyTo: input.replyTo });
     return { externalMessageId: `fake-${++this.sequence}` };
   }
 
@@ -53,5 +55,13 @@ export class FakeMessagingProvider implements MessagingProvider {
 
   async sendDocument(): Promise<MessagingSendResult> {
     return { externalMessageId: `fake-${++this.sequence}` };
+  }
+
+  async sendReaction(input: { to: string; externalMessageId: string; emoji: string; fromMe: boolean; participantJid?: string }): Promise<void> {
+    this.sentReactions.push({ to: input.to, externalMessageId: input.externalMessageId, emoji: input.emoji, fromMe: input.fromMe, participantJid: input.participantJid });
+  }
+
+  async revokeMessage(input: { to: string; externalMessageId: string }): Promise<void> {
+    this.revokedMessages.push({ to: input.to, externalMessageId: input.externalMessageId });
   }
 }

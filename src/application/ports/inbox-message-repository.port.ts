@@ -45,6 +45,11 @@ export type InboxMessageRepositoryPort = {
    */
   create(input: CreateInboxMessageInput): Promise<{ message: InboxMessage; wasCreated: boolean }>;
   getById(id: string): Promise<InboxMessage | undefined>;
+  /** Bloco "excluir mensagem" (pedido explícito do usuário em produção) — remoção PERMANENTE, só do
+   * lado do Vorix (revogação real no WhatsApp, quando aplicável, é responsabilidade separada do
+   * caso de uso — ver `deleteInboxMessage`, que tenta `provider.revokeMessage` ANTES de chamar
+   * isto). Idempotente — excluir de novo uma mensagem já excluída nunca lança. */
+  delete(id: string): Promise<void>;
   /** Correção do bug de self-echo (ver docs/conversas-canonical-chat-identity.md) — lookup puro
    * por `(connectionId, externalMessageId)`, sem inserir nada. Usado para distinguir "o WuzAPI está
    * só confirmando uma mensagem que o Vorix já registrou via `sendInboxMessage`" (achado ==

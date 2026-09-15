@@ -83,6 +83,10 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
+  async delete(id: string): Promise<void> {
+    await this.pool.query("delete from inbox_messages where id = $1", [id]);
+  }
+
   async findByExternalId(input: { connectionId: string; externalMessageId: string }): Promise<InboxMessage | undefined> {
     const result = await this.pool.query<Row>(
       "select * from inbox_messages where connection_id = $1 and external_message_id = $2",

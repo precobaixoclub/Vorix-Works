@@ -25,6 +25,7 @@ type Row = {
   department_id: string | null;
   last_message_at: Date | null;
   unread_count: number;
+  is_urgent: boolean;
   ai_enabled: boolean;
   ai_paused_reason: string | null;
   ai_processing_since: Date | null;
@@ -98,6 +99,8 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       conditions.push("c.assigned_user_id is null and c.status <> 'resolved' and c.status <> 'archived'");
     } else if (input.filter === "unread") {
       conditions.push("c.unread_count > 0");
+    } else if (input.filter === "urgent") {
+      conditions.push("c.is_urgent = true");
     } else if (input.filter === "open" || input.filter === "pending" || input.filter === "resolved") {
       params.push(input.filter);
       conditions.push(`c.status = $${params.length}`);
@@ -180,6 +183,22 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
 
   async markRead(id: string): Promise<void> {
     await this.pool.query("update inbox_conversations set unread_count = 0, updated_at = now() where id = $1", [id]);
+  }
+
+  async markUnread(id: string): Promise<void> {
+    // `greatest` nunca reduz uma contagem real já maior — só garante pelo menos 1 quando estava
+    // zerada (mesmo filtro `unread_count > 0` já usado pelo filtro "Não lidas", nenhum campo novo).
+    await this.pool.query("update inbox_conversations set unread_count = greatest(unread_count, 1), updated_at = now() where id = $1", [id]);
+  }
+
+  async setUrgent(id: string, isUrgent: boolean): Promise<InboxConversation> {
+    const result = await this.pool.query<Row>(
+      "update inbox_conversations set is_urgent = $2, updated_at = now() where id = $1 returning *",
+      [id, isUrgent],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
+    return this.toDomain(row);
   }
 
   async assign(id: string, assignedUserId: string | undefined): Promise<InboxConversation> {
@@ -275,6 +294,7 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       departmentId: row.department_id ?? undefined,
       lastMessageAt: row.last_message_at?.toISOString(),
       unreadCount: row.unread_count,
+      isUrgent: row.is_urgent,
       aiEnabled: row.ai_enabled,
       aiPausedReason: (row.ai_paused_reason as InboxAiPauseReason | null) ?? undefined,
       aiProcessingSince: row.ai_processing_since?.toISOString(),

@@ -47,6 +47,7 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
       contactId: input.contactId,
       status: "open",
       unreadCount: 0,
+      isUrgent: false,
       aiEnabled: false,
       automationEnabled: false,
       createdAt: now,
@@ -89,6 +90,9 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
         break;
       case "unread":
         rows = rows.filter((row) => row.unreadCount > 0);
+        break;
+      case "urgent":
+        rows = rows.filter((row) => row.isUrgent);
         break;
       case "open":
       case "pending":
@@ -154,6 +158,20 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     const existing = this.rows.get(id);
     if (!existing) return;
     this.rows.set(id, { ...existing, unreadCount: 0, updatedAt: new Date().toISOString() });
+  }
+
+  async markUnread(id: string): Promise<void> {
+    const existing = this.rows.get(id);
+    if (!existing) return;
+    this.rows.set(id, { ...existing, unreadCount: Math.max(existing.unreadCount, 1), updatedAt: new Date().toISOString() });
+  }
+
+  async setUrgent(id: string, isUrgent: boolean): Promise<InboxConversation> {
+    const existing = this.rows.get(id);
+    if (!existing) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
+    const updated = { ...existing, isUrgent, updatedAt: new Date().toISOString() };
+    this.rows.set(id, updated);
+    return updated;
   }
 
   async assign(id: string, assignedUserId: string | undefined): Promise<InboxConversation> {

@@ -79,7 +79,10 @@ export type MessagingProvider = {
   getConnectionStatus(input: { externalSessionId: string }): Promise<NormalizedConnectionStatus>;
   getQrCode(input: { externalSessionId: string }): Promise<{ qrCode: string; expiresAt: string }>;
 
-  sendText(input: { externalSessionId: string; to: string; body: string }): Promise<MessagingSendResult>;
+  /** `replyTo` (pedido explícito do usuário em produção: "clicar para reponder uma mensagem
+   * especifica") — presente quando esta mensagem responde a outra já existente na mesma conversa;
+   * `undefined` é o caso comum (mensagem normal, sem citação). */
+  sendText(input: { externalSessionId: string; to: string; body: string; replyTo?: { externalMessageId: string; participantJid?: string; quotedText?: string } }): Promise<MessagingSendResult>;
   sendImage(input: { externalSessionId: string; to: string; mediaUrl: string; caption?: string }): Promise<MessagingSendResult>;
   sendAudio(input: { externalSessionId: string; to: string; mediaUrl: string }): Promise<MessagingSendResult>;
   sendVideo(input: { externalSessionId: string; to: string; mediaUrl: string; caption?: string }): Promise<MessagingSendResult>;
@@ -118,4 +121,17 @@ export type MessagingProvider = {
    * a ausência como "sem foto ainda", nunca erro fatal. Opcional, mesmo racional de `getGroupInfo`.
    */
   getProfilePicture?(input: { externalSessionId: string; jid: string }): Promise<{ body: Buffer; mimeType: string } | undefined>;
+
+  /** Bloco "reagir a uma mensagem" (pedido explícito do usuário em produção) — reação enviada PELO
+   * atendente, de dentro do Vorix, a uma mensagem existente. `emoji: ""` remove a reação já
+   * mandada. Opcional: um provider sem suporte (`FakeMessagingProvider`, um futuro canal stateless)
+   * simplesmente não preenche isto — quem chama trata a ausência como "reação indisponível neste
+   * canal", nunca erro fatal. */
+  sendReaction?(input: { externalSessionId: string; to: string; externalMessageId: string; emoji: string; fromMe: boolean; participantJid?: string }): Promise<void>;
+
+  /** Bloco "excluir mensagem" (pedido explícito do usuário em produção) — revogação REAL no
+   * WhatsApp ("apagar para todos"). Limitação do protocolo (não do Vorix): só funciona para
+   * mensagens que O PRÓPRIO número conectado mandou (`direction: "outbound"`) — nunca mensagens de
+   * um contato/participante. Opcional, mesmo racional de `sendReaction`. */
+  revokeMessage?(input: { externalSessionId: string; to: string; externalMessageId: string }): Promise<void>;
 };

@@ -55,7 +55,7 @@ export function useInboxMembers(workspaceId: string) {
   return useSWR(workspaceId ? ["inbox-members", workspaceId] : null, () => listInboxMembers());
 }
 
-const ALL_FILTERS = ["all", "mine", "unassigned", "unread", "open", "pending", "resolved"] as const;
+const ALL_FILTERS = ["all", "mine", "unassigned", "unread", "urgent", "open", "pending", "resolved"] as const;
 
 const REALTIME_EVENT_TYPES = ["message.created", "message.updated", "conversation.updated", "connection.status_changed"] as const;
 

@@ -172,8 +172,49 @@ export class WuzApiClient {
     return this.sessionRequest(sessionToken, "/session/qr", { method: "GET" });
   }
 
-  async sendText(sessionToken: string, input: { phone: string; body: string }): Promise<{ Id: string; Timestamp: string }> {
-    return this.sessionRequest(sessionToken, "/chat/send/text", { method: "POST", body: { Phone: input.phone, Body: input.body } });
+  /**
+   * Bloco "responder mensagem específica" (pedido explícito do usuário em produção) —
+   * `replyTo`/`ContextInfo` CONFIRMADO no código-fonte real do WuzAPI (`handlers.go`, `SendMessage()`
+   * e `validateMessageFields`, achado via `gh api`): `StanzaId`+`Participant` precisam vir JUNTOS
+   * (um sem o outro é rejeitado); `QuotedText` é opcional mas garante a caixa de citação renderizar
+   * corretamente no destinatário mesmo sem reconstruir o `QuotedMessage` proto inteiro (WuzAPI cai
+   * pra `ExtendedTextMessage{Text: QuotedText}` internamente quando só isso é passado).
+   */
+  async sendText(sessionToken: string, input: { phone: string; body: string; replyTo?: { stanzaId: string; participant?: string; quotedText?: string } }): Promise<{ Id: string; Timestamp: string }> {
+    const body: Record<string, unknown> = { Phone: input.phone, Body: input.body };
+    if (input.replyTo) {
+      body.ContextInfo = { StanzaId: input.replyTo.stanzaId, Participant: input.replyTo.participant ?? "" };
+      if (input.replyTo.quotedText) body.QuotedText = input.replyTo.quotedText;
+    }
+    return this.sessionRequest(sessionToken, "/chat/send/text", { method: "POST", body });
+  }
+
+  /**
+   * Bloco "reagir a uma mensagem" (pedido explícito do usuário em produção) — CONFIRMADO no
+   * código-fonte real (`handlers.go`, `React()`, achado via `gh api`): `Id` prefixado com `"me:"`
+   * sinaliza `fromMe` (reagindo a uma mensagem que O PRÓPRIO número mandou); `Participant` só é
+   * honrado quando `fromMe` é falso (reagindo a mensagem de OUTRO participante num grupo). Remover
+   * uma reação não aceita `Body` vazio (400 — campo obrigatório) — o sentinela real da API é a
+   * string literal `"remove"`, traduzida internamente pro `""` do protocolo.
+   */
+  async sendReaction(sessionToken: string, input: { phone: string; externalMessageId: string; emoji: string; fromMe: boolean; participantJid?: string }): Promise<{ Id: string; Timestamp: string }> {
+    const id = input.fromMe ? `me:${input.externalMessageId}` : input.externalMessageId;
+    const body: Record<string, unknown> = { Phone: input.phone, Body: input.emoji || "remove", Id: id };
+    if (!input.fromMe && input.participantJid) body.Participant = input.participantJid;
+    return this.sessionRequest(sessionToken, "/chat/react", { method: "POST", body });
+  }
+
+  /**
+   * Bloco "excluir mensagem" (pedido explícito do usuário em produção) — CONFIRMADO no código-fonte
+   * real (`handlers.go`, `DeleteMessage()`, achado via `gh api`): chama `whatsmeow.BuildRevoke` com
+   * `sender: types.EmptyJID`, que força `fromMe: true` incondicionalmente — só revoga mensagens que
+   * O PRÓPRIO número conectado mandou, nunca mensagens de outro participante/contato (limitação
+   * real da API, não do Vorix). `registerInboundMessage`/o caso de uso que chama isto só deve tentar
+   * pra mensagens `direction: "outbound"` com `externalMessageId` conhecido — best-effort, nunca
+   * bloqueia a exclusão local se isto falhar (mensagem antiga demais, sessão sem esta conversa etc.).
+   */
+  async deleteMessage(sessionToken: string, input: { phone: string; externalMessageId: string }): Promise<{ Id: string; Timestamp: string }> {
+    return this.sessionRequest(sessionToken, "/chat/delete", { method: "POST", body: { Phone: input.phone, Id: input.externalMessageId } });
   }
 
   // PENDENTE DE CONFIRMAÇÃO (ver comentário no topo do arquivo) — nomes de campo por analogia com sendText.

@@ -131,6 +131,135 @@ test("RBAC: editor (inbox:assign) consegue assumir, transferir, finalizar e reab
   await app.close();
 });
 
+test("RBAC: viewer recebe 403 em /unread e /urgent; editor (inbox:reply) consegue marcar não lida e urgente com sucesso", async () => {
+  const tenantId = "tenant-http-unread-urgent";
+  const viewerApp = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "viewer", tenantId })) });
+  const { workspace, conversationId } = await seedConversation(viewerApp, { tenantId });
+
+  const unreadBlocked = await viewerApp.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/unread`, payload: { workspaceId: workspace.id } });
+  assert.equal(unreadBlocked.statusCode, 403, "viewer não tem inbox:reply");
+  const urgentBlocked = await viewerApp.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/urgent`, payload: { workspaceId: workspace.id, isUrgent: true } });
+  assert.equal(urgentBlocked.statusCode, 403);
+
+  // Mesmo container (mesmo repositório in-memory) — troca só o principal, replicando dois papéis
+  // acessando a MESMA conversa (padrão já usado no teste de concorrência de take-over abaixo).
+  const editorApp = await buildApp({
+    config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop", CONVERSATIONS_MODULE_ENABLED: "true" }),
+    container: { ...viewerApp.zunoContainer, authPort: fakeAuthPortFor(principal({ role: "editor", tenantId })) },
+  });
+  await viewerApp.close();
+
+  const unread = await editorApp.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/unread`, payload: { workspaceId: workspace.id } });
+  assert.equal(unread.statusCode, 200);
+  assert.equal(unread.json().data.read, false);
+  const afterUnread = await editorApp.zunoContainer.inboxConversationRepository.getById(conversationId);
+  assert.ok(afterUnread.unreadCount > 0, "reaproveita unread_count > 0 — mesmo filtro/badge já existentes");
+
+  const read = await editorApp.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/read`, payload: { workspaceId: workspace.id } });
+  assert.equal(read.statusCode, 200);
+  const afterRead = await editorApp.zunoContainer.inboxConversationRepository.getById(conversationId);
+  assert.equal(afterRead.unreadCount, 0);
+
+  const urgent = await editorApp.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/urgent`, payload: { workspaceId: workspace.id, isUrgent: true } });
+  assert.equal(urgent.statusCode, 200);
+  assert.equal(urgent.json().data.isUrgent, true);
+
+  const list = await editorApp.inject({ method: "GET", url: `/v1/inbox/conversations?workspaceId=${workspace.id}&filter=urgent` });
+  assert.equal(list.statusCode, 200);
+  assert.equal(list.json().data.conversations.some((item) => item.id === conversationId), true);
+
+  const notUrgent = await editorApp.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/urgent`, payload: { workspaceId: workspace.id, isUrgent: false } });
+  assert.equal(notUrgent.json().data.isUrgent, false);
+  const listAfter = await editorApp.inject({ method: "GET", url: `/v1/inbox/conversations?workspaceId=${workspace.id}&filter=urgent` });
+  assert.equal(listAfter.json().data.conversations.some((item) => item.id === conversationId), false, "removida do filtro urgent assim que desmarcada");
+
+  await editorApp.close();
+});
+
+test("Isolamento cross-tenant: POST /unread e /urgent numa conversa de OUTRO tenant respondem 404, nunca 403", async () => {
+  const owner = await (async () => {
+    const app = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "editor", tenantId: "tenant-http-unread-owner" })) });
+    const { workspace, conversationId } = await seedConversation(app, { tenantId: "tenant-http-unread-owner" });
+    await app.close();
+    return { workspace, conversationId };
+  })();
+
+  const intruderApp = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "editor", tenantId: "tenant-http-unread-intruder" })) });
+  const unread = await intruderApp.inject({ method: "POST", url: `/v1/inbox/conversations/${owner.conversationId}/unread`, payload: { workspaceId: owner.workspace.id } });
+  assert.equal(unread.statusCode, 404);
+  const urgent = await intruderApp.inject({ method: "POST", url: `/v1/inbox/conversations/${owner.conversationId}/urgent`, payload: { workspaceId: owner.workspace.id, isUrgent: true } });
+  assert.equal(urgent.statusCode, 404);
+  await intruderApp.close();
+});
+
+async function seedMessage(app, { tenantId, workspaceId, conversationId, connectionId, direction = "inbound", externalMessageId }) {
+  const { message } = await app.zunoContainer.inboxMessageRepository.create({
+    tenantId, workspaceId, conversationId, connectionId, direction, type: "text", body: "Mensagem de teste", externalMessageId,
+  });
+  return message;
+}
+
+test("RBAC: 3 pontinhos de mensagem — viewer recebe 403 em DELETE/react; editor (inbox:reply) exclui e reage com sucesso", async () => {
+  const tenantId = "tenant-http-msgactions-1";
+  const viewerApp = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "viewer", tenantId })) });
+  const { workspace, connection, conversationId } = await seedConversation(viewerApp, { tenantId });
+  await viewerApp.zunoContainer.messagingConnectionRepository.updateStatus(connection.id, { status: "connected", externalSessionId: "session-token-http-1" });
+  const message = await seedMessage(viewerApp, { tenantId, workspaceId: workspace.id, conversationId, connectionId: connection.id, externalMessageId: "wamid.http-msgaction-1" });
+
+  const delBlocked = await viewerApp.inject({ method: "DELETE", url: `/v1/inbox/conversations/${conversationId}/messages/${message.id}?workspaceId=${workspace.id}` });
+  assert.equal(delBlocked.statusCode, 403, "viewer não tem inbox:reply");
+  const reactBlocked = await viewerApp.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/messages/${message.id}/react`, payload: { workspaceId: workspace.id, emoji: "👍" } });
+  assert.equal(reactBlocked.statusCode, 403);
+
+  const editorApp = await buildApp({
+    config: loadApiConfig({ ZUNO_LOG_LEVEL: "silent", AUTH_MODE: "noop", CONVERSATIONS_MODULE_ENABLED: "true" }),
+    container: { ...viewerApp.zunoContainer, authPort: fakeAuthPortFor(principal({ role: "editor", tenantId })) },
+  });
+  await viewerApp.close();
+
+  const react = await editorApp.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/messages/${message.id}/react`, payload: { workspaceId: workspace.id, emoji: "👍" } });
+  assert.equal(react.statusCode, 200);
+  assert.deepEqual(react.json().data.reactions, [{ reactorId: "user-a", emoji: "👍" }]);
+
+  const del = await editorApp.inject({ method: "DELETE", url: `/v1/inbox/conversations/${conversationId}/messages/${message.id}?workspaceId=${workspace.id}` });
+  assert.equal(del.statusCode, 200);
+  assert.equal(del.json().data.deleted, true);
+  const gone = await editorApp.zunoContainer.inboxMessageRepository.getById(message.id);
+  assert.equal(gone, undefined);
+
+  await editorApp.close();
+});
+
+test("Isolamento cross-tenant: DELETE/react numa mensagem de OUTRO tenant respondem 404, nunca 403", async () => {
+  const owner = await (async () => {
+    const app = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "editor", tenantId: "tenant-http-msgactions-owner" })) });
+    const { workspace, connection, conversationId } = await seedConversation(app, { tenantId: "tenant-http-msgactions-owner" });
+    const message = await seedMessage(app, { tenantId: "tenant-http-msgactions-owner", workspaceId: workspace.id, conversationId, connectionId: connection.id, externalMessageId: "wamid.http-msgaction-2" });
+    await app.close();
+    return { workspace, conversationId, message };
+  })();
+
+  const intruderApp = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "editor", tenantId: "tenant-http-msgactions-intruder" })) });
+  const del = await intruderApp.inject({ method: "DELETE", url: `/v1/inbox/conversations/${owner.conversationId}/messages/${owner.message.id}?workspaceId=${owner.workspace.id}` });
+  assert.equal(del.statusCode, 404);
+  const react = await intruderApp.inject({ method: "POST", url: `/v1/inbox/conversations/${owner.conversationId}/messages/${owner.message.id}/react`, payload: { workspaceId: owner.workspace.id, emoji: "👍" } });
+  assert.equal(react.statusCode, 404);
+  await intruderApp.close();
+});
+
+test("POST /messages com replyToMessageId responde 202 e a mensagem criada carrega o snapshot da citação", async () => {
+  const tenantId = "tenant-http-msgactions-reply";
+  const app = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "editor", tenantId, userId: "user-a" })) });
+  const { workspace, connection, conversationId } = await seedConversation(app, { tenantId });
+  const original = await seedMessage(app, { tenantId, workspaceId: workspace.id, conversationId, connectionId: connection.id, externalMessageId: "wamid.http-reply-1" });
+
+  const reply = await app.inject({ method: "POST", url: `/v1/inbox/conversations/${conversationId}/messages`, payload: { workspaceId: workspace.id, body: "Resposta", replyToMessageId: original.id } });
+  assert.equal(reply.statusCode, 202);
+  assert.equal(reply.json().data.quotedMessage.externalMessageId, "wamid.http-reply-1");
+
+  await app.close();
+});
+
 test("Concorrência via HTTP: duas requisições de take-over simultâneas na mesma conversa — só uma retorna 200, a outra 409", async () => {
   const tenantId = "tenant-http-race";
   const appA = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "editor", tenantId, userId: "user-a" })) });

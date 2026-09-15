@@ -64,6 +64,17 @@ export function markInboxConversationRead(workspaceId: string, conversationId: s
   return apiClient.post<{ read: boolean }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/read`, { workspaceId });
 }
 
+/** Bloco "ler/não lida" (pedido explícito do usuário em produção) — volta a conversa pra "não
+ * lida" na listagem, sem esperar mensagem nova. */
+export function markInboxConversationUnread(workspaceId: string, conversationId: string): Promise<{ read: boolean }> {
+  return apiClient.post<{ read: boolean }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/unread`, { workspaceId });
+}
+
+/** Bloco "urgente" (pedido explícito do usuário em produção) — marcação manual, liga/desliga. */
+export function setInboxConversationUrgent(workspaceId: string, conversationId: string, isUrgent: boolean): Promise<InboxConversation> {
+  return apiClient.post<InboxConversation>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/urgent`, { workspaceId, isUrgent });
+}
+
 export function assignInboxConversation(workspaceId: string, conversationId: string, assignedUserId: string | undefined): Promise<InboxConversation> {
   return apiClient.post<InboxConversation>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/assign`, { workspaceId, assignedUserId });
 }
@@ -104,8 +115,23 @@ export function listInboxConversationEvents(workspaceId: string, conversationId:
   return apiClient.get<{ events: InboxConversationEvent[] }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/events?${query.toString()}`);
 }
 
-export function sendInboxMessage(workspaceId: string, conversationId: string, body: string): Promise<InboxMessage> {
-  return apiClient.post<InboxMessage>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, { workspaceId, body });
+/** `replyToMessageId` (pedido explícito do usuário: "clicar para reponder uma mensagem
+ * especifica") — id (do Vorix) da mensagem sendo respondida, quando presente. */
+export function sendInboxMessage(workspaceId: string, conversationId: string, body: string, replyToMessageId?: string): Promise<InboxMessage> {
+  return apiClient.post<InboxMessage>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, { workspaceId, body, replyToMessageId });
+}
+
+/** Bloco "excluir mensagem" (pedido explícito do usuário em produção) — permanente, ver
+ * `deleteInboxMessage` (backend). Tenta revogar de verdade no WhatsApp quando a mensagem é
+ * outbound (best-effort, nunca bloqueia a exclusão local). */
+export function deleteInboxMessage(workspaceId: string, conversationId: string, messageId: string): Promise<{ deleted: boolean }> {
+  return apiClient.delete<{ deleted: boolean }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+/** Bloco "reagir a uma mensagem" (pedido explícito do usuário em produção) — `emoji: ""` remove a
+ * reação já mandada pelo atendente. */
+export function reactToInboxMessage(workspaceId: string, conversationId: string, messageId: string, emoji: string): Promise<InboxMessage> {
+  return apiClient.post<InboxMessage>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/react`, { workspaceId, emoji });
 }
 
 /** Bloco "Media Outbound" — imagem/áudio/vídeo/documento pelo composer. `workspaceId`/`caption`/

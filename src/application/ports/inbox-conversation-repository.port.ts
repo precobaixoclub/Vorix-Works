@@ -21,7 +21,7 @@ export type FindOrCreateInboxConversationInput = {
  * `open`/`pending`/`resolved` (Fase 4) mapeiam direto pro status normalizado da conversa — ver
  * comentário em `INBOX_CONVERSATION_STATUSES` (`resolved` = "Finalizada"/CLOSED na UI).
  */
-export type InboxConversationListFilter = "all" | "mine" | "unassigned" | "unread" | "open" | "pending" | "resolved";
+export type InboxConversationListFilter = "all" | "mine" | "unassigned" | "unread" | "urgent" | "open" | "pending" | "resolved";
 
 /** Read-model só de listagem (Fase 3) — denormaliza nome/telefone do contato pra Inbox não
  * precisar de uma segunda chamada por conversa. Nunca usado fora de `listByWorkspace`; toda
@@ -74,6 +74,13 @@ export type InboxConversationRepositoryPort = {
    * preenchida de forma assíncrona/best-effort, nunca no caminho crítico do ack). */
   updateGroupPicture(id: string, input: { storageRef: InboxMediaStorageRef; syncedAt: string }): Promise<void>;
   markRead(id: string): Promise<void>;
+  /** Bloco "ler/não lida" (pedido explícito do usuário em produção) — força a conversa de volta
+   * pra "não lida" mesmo sem mensagem nova (nunca um campo booleano separado: reaproveita
+   * `unread_count`, subindo pra pelo menos 1 — o mesmo filtro `unread` já existente, e qualquer
+   * mensagem nova de verdade continua incrementando a partir daí normalmente). */
+  markUnread(id: string): Promise<void>;
+  /** Bloco "urgente" (pedido explícito do usuário em produção) — marcação manual, liga/desliga. */
+  setUrgent(id: string, isUrgent: boolean): Promise<InboxConversation>;
   /** Atribuição DIRETA (por um supervisor, ou remoção com `undefined`) — nunca usada pelo fluxo
    * "assumir conversa" (ver `tryTakeOver`, que é atômico/compare-and-set). Não tem proteção de
    * concorrência própria: é uma ação autoritativa, não uma disputa entre atendentes. */

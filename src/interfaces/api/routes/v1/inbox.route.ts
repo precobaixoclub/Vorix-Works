@@ -17,6 +17,7 @@ import {
   assignConversation,
   closeConversation,
   deleteConversation,
+  deleteInboxMessage,
   createConnection,
   disconnectConnection,
   getConnectionQrCode,
@@ -25,11 +26,14 @@ import {
   listConversationMessages,
   listConversations,
   markConversationRead,
+  markConversationUnread,
+  reactToInboxMessage,
   refreshConnectionStatus,
   reopenConversation,
   sendInboxMediaMessage,
   sendInboxMessage,
   setAiConversationEnabled,
+  setConversationUrgent,
   takeOverConversation,
   transferConversation,
   type InboxUseCaseDeps,
@@ -45,14 +49,21 @@ const WORKSPACE_QUERY_SCHEMA = { type: "object", required: ["workspaceId"], prop
 const ID_PARAMS_SCHEMA = { type: "object", required: ["id"], properties: { id: { type: "string", minLength: 1 } } } as const;
 const WORKSPACE_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 } } } as const;
 const CREATE_CONNECTION_BODY_SCHEMA = { type: "object", required: ["workspaceId", "displayName"], properties: { workspaceId: { type: "string", minLength: 1 }, displayName: { type: "string", minLength: 1 } } } as const;
-const SEND_MESSAGE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "body"], properties: { workspaceId: { type: "string", minLength: 1 }, body: { type: "string", minLength: 1 } } } as const;
+const SEND_MESSAGE_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId", "body"],
+  properties: { workspaceId: { type: "string", minLength: 1 }, body: { type: "string", minLength: 1 }, replyToMessageId: { type: "string", minLength: 1 } },
+} as const;
+const REACT_MESSAGE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "emoji"], properties: { workspaceId: { type: "string", minLength: 1 }, emoji: { type: "string" } } } as const;
+const MESSAGE_PARAMS_SCHEMA = { type: "object", required: ["id", "messageId"], properties: { id: { type: "string", minLength: 1 }, messageId: { type: "string", minLength: 1 } } } as const;
 const ASSIGN_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, assignedUserId: { type: "string" } } } as const;
 const TRANSFER_BODY_SCHEMA = { type: "object", required: ["workspaceId", "toUserId"], properties: { workspaceId: { type: "string", minLength: 1 }, toUserId: { type: "string", minLength: 1 } } } as const;
 const AI_ENABLED_BODY_SCHEMA = { type: "object", required: ["workspaceId", "aiEnabled"], properties: { workspaceId: { type: "string", minLength: 1 }, aiEnabled: { type: "boolean" } } } as const;
+const URGENT_BODY_SCHEMA = { type: "object", required: ["workspaceId", "isUrgent"], properties: { workspaceId: { type: "string", minLength: 1 }, isUrgent: { type: "boolean" } } } as const;
 const CONVERSATIONS_QUERY_SCHEMA = {
   type: "object",
   required: ["workspaceId"],
-  properties: { workspaceId: { type: "string", minLength: 1 }, filter: { type: "string", enum: ["all", "mine", "unassigned", "unread", "open", "pending", "resolved"] } },
+  properties: { workspaceId: { type: "string", minLength: 1 }, filter: { type: "string", enum: ["all", "mine", "unassigned", "unread", "urgent", "open", "pending", "resolved"] } },
 } as const;
 const MESSAGES_QUERY_SCHEMA = {
   type: "object",
@@ -502,6 +513,35 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     }
   });
 
+  /** Bloco "ler/não lida" (pedido explícito do usuário em produção) — força de volta pra "não
+   * lida" sem esperar mensagem nova, direto na listagem (ver `ConversationListItem`, frontend). */
+  app.post("/inbox/conversations/:id/unread", { schema: { params: ID_PARAMS_SCHEMA, body: WORKSPACE_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.body as { workspaceId: string };
+    try {
+      await markConversationUnread(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
+      publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
+      return successEnvelope({ read: false }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  /** Bloco "urgente" (pedido explícito do usuário em produção) — marcação manual, liga/desliga. */
+  app.post("/inbox/conversations/:id/urgent", { schema: { params: ID_PARAMS_SCHEMA, body: URGENT_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { id } = request.params as { id: string };
+    const { workspaceId, isUrgent } = request.body as { workspaceId: string; isUrgent: boolean };
+    try {
+      const conversation = await setConversationUrgent(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, isUrgent });
+      publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
+      return successEnvelope(conversation, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
   /** Atribuição DIRETA (supervisor definindo/removendo responsável) — nunca usada pelo fluxo
    * "assumir" (ver `/take-over`, que é atômico/CAS). */
   app.post("/inbox/conversations/:id/assign", { schema: { params: ID_PARAMS_SCHEMA, body: ASSIGN_BODY_SCHEMA } }, async (request) => {
@@ -607,10 +647,49 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
   app.post("/inbox/conversations/:id/messages", { schema: { params: ID_PARAMS_SCHEMA, body: SEND_MESSAGE_BODY_SCHEMA } }, async (request, reply) => {
     const principal = requirePermission(request, "inbox:reply");
     const { id } = request.params as { id: string };
-    const { workspaceId, body } = request.body as { workspaceId: string; body: string };
+    const { workspaceId, body, replyToMessageId } = request.body as { workspaceId: string; body: string; replyToMessageId?: string };
     try {
-      const message = await sendInboxMessage(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, body, sentByUserId: principal.userId });
+      const message = await sendInboxMessage(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, body, sentByUserId: principal.userId, replyToMessageId });
       reply.status(202);
+      return successEnvelope(message, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  /** Bloco "excluir mensagem" (pedido explícito do usuário em produção) — permanente, ver
+   * `deleteInboxMessage`. Mesmo degrau de permissão de responder (nunca `inbox:delete_conversations`
+   * — excluir UMA mensagem é uma ação operacional do dia a dia, não administrativa como excluir a
+   * conversa inteira). */
+  app.delete("/inbox/conversations/:id/messages/:messageId", { schema: { params: MESSAGE_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { id, messageId } = request.params as { id: string; messageId: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      await deleteInboxMessage(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, messageId });
+      publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
+      return successEnvelope({ deleted: true }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  /** Bloco "reagir a uma mensagem" (pedido explícito do usuário em produção) — o atendente
+   * reagindo de dentro do Vorix, ver `reactToInboxMessage`. `emoji: ""` remove a reação já
+   * mandada. */
+  app.post("/inbox/conversations/:id/messages/:messageId/react", { schema: { params: MESSAGE_PARAMS_SCHEMA, body: REACT_MESSAGE_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { id, messageId } = request.params as { id: string; messageId: string };
+    const { workspaceId, emoji } = request.body as { workspaceId: string; emoji: string };
+    try {
+      // Nome real do atendente no badge de reação (tooltip) — `undefined` quando o repositório não
+      // está configurado neste ambiente (ex.: `AUTH_MODE=noop`), mesmo fallback de `/inbox/members`.
+      const reactorUser = deps.userRepository ? await deps.userRepository.getById(principal.userId) : undefined;
+      const message = await reactToInboxMessage(useCaseDeps, {
+        tenantId: principal.tenantId, workspaceId, conversationId: id, messageId, emoji,
+        reactorId: principal.userId, reactorName: reactorUser?.name,
+      });
+      publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
       return successEnvelope(message, request.id);
     } catch (error) {
       rethrowInboxError(error);

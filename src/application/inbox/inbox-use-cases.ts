@@ -243,6 +243,24 @@ export async function markConversationRead(deps: InboxUseCaseDeps, input: MarkCo
   await deps.conversationRepository.markRead(conversation.id);
 }
 
+export type MarkConversationUnreadInput = { tenantId: string; workspaceId: string; conversationId: string };
+
+/** Bloco "ler/não lida" (pedido explícito do usuário em produção) — marcação manual do atendente
+ * pra voltar a chamar atenção pra uma conversa já lida, sem esperar mensagem nova. */
+export async function markConversationUnread(deps: InboxUseCaseDeps, input: MarkConversationUnreadInput): Promise<void> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  await deps.conversationRepository.markUnread(conversation.id);
+}
+
+export type SetConversationUrgentInput = { tenantId: string; workspaceId: string; conversationId: string; isUrgent: boolean };
+
+/** Bloco "urgente" (pedido explícito do usuário em produção: "criar uma opção de marcar como
+ * urgente... onde fica um foguinho do lado da conversa") — marcação manual, liga/desliga. */
+export async function setConversationUrgent(deps: InboxUseCaseDeps, input: SetConversationUrgentInput): Promise<InboxConversation> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  return deps.conversationRepository.setUrgent(conversation.id, input.isUrgent);
+}
+
 export type DeleteConversationInput = { tenantId: string; workspaceId: string; conversationId: string };
 
 /**
@@ -254,6 +272,40 @@ export type DeleteConversationInput = { tenantId: string; workspaceId: string; c
 export async function deleteConversation(deps: InboxUseCaseDeps, input: DeleteConversationInput): Promise<void> {
   const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
   await deps.conversationRepository.delete(conversation.id);
+}
+
+export type DeleteInboxMessageInput = { tenantId: string; workspaceId: string; conversationId: string; messageId: string };
+
+/**
+ * Bloco "excluir mensagem" (pedido explícito do usuário em produção: "excluir uma mensagem que eu
+ * queira") — sempre remove a mensagem do lado do Vorix (permanente, mesmo racional de
+ * `deleteConversation`). Adicionalmente, para mensagens `direction: "outbound"` já confirmadas
+ * pelo WhatsApp, tenta revogar de verdade ("apagar para todos") via `provider.revokeMessage` —
+ * limitação REAL do protocolo (confirmada via `gh api` no código-fonte do WuzAPI/whatsmeow): só
+ * funciona pra mensagens que O PRÓPRIO número conectado mandou, nunca mensagens de um
+ * contato/participante (por isso nunca tentado para `direction: "inbound"`). Best-effort — uma
+ * falha na revogação (mensagem antiga demais, sessão sem esta conversa, canal sem suporte) NUNCA
+ * impede a exclusão local, que é a garantia principal deste caso de uso.
+ */
+export async function deleteInboxMessage(deps: InboxUseCaseDeps, input: DeleteInboxMessageInput): Promise<void> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  const message = await deps.messageRepository.getById(input.messageId);
+  if (!message || message.conversationId !== conversation.id) {
+    throw new Error(`INBOX_MESSAGE_NOT_FOUND: mensagem "${input.messageId}" não existe nesta conversa.`);
+  }
+
+  if (message.direction === "outbound" && message.externalMessageId && deps.provider.revokeMessage) {
+    try {
+      const connection = await deps.connectionRepository.getById(conversation.connectionId);
+      if (connection?.externalSessionId) {
+        await deps.provider.revokeMessage({ externalSessionId: connection.externalSessionId, to: conversation.externalChatId, externalMessageId: message.externalMessageId });
+      }
+    } catch (error) {
+      console.warn(`[inbox] falha ao revogar mensagem "${message.id}" no WhatsApp (best-effort, exclusão local segue normalmente):`, error instanceof Error ? error.message : error);
+    }
+  }
+
+  await deps.messageRepository.delete(input.messageId);
 }
 
 export type AssignConversationInput = { tenantId: string; workspaceId: string; conversationId: string; assignedUserId?: string; performedBy: string };
@@ -414,7 +466,18 @@ export async function listConversationEvents(deps: InboxUseCaseDeps, input: List
   return deps.conversationEventRepository.listByConversation(input);
 }
 
-export type SendInboxMessageInput = { tenantId: string; workspaceId: string; conversationId: string; body: string; sentByUserId?: string; sentByAi?: boolean };
+export type SendInboxMessageInput = {
+  tenantId: string;
+  workspaceId: string;
+  conversationId: string;
+  body: string;
+  sentByUserId?: string;
+  sentByAi?: boolean;
+  /** Bloco "responder mensagem específica" (pedido explícito do usuário em produção: "clicar para
+   * reponder uma mensagem especifica") — id (do Vorix, nunca o `externalMessageId` do WhatsApp) da
+   * mensagem sendo respondida, quando presente. */
+  replyToMessageId?: string;
+};
 
 /**
  * Envio outbound — nunca espera a confirmação do WhatsApp. Persiste `status: "queued"` e publica
@@ -434,6 +497,29 @@ export async function sendInboxMessage(deps: InboxUseCaseDeps, input: SendInboxM
   const body = input.body.trim();
   if (!body) throw new Error("INBOX_MESSAGE_BODY_EMPTY: a mensagem não pode ser vazia.");
 
+  // Bloco "responder mensagem específica" — snapshot gravado AGORA (mesmo padrão de
+  // `InboxMessage.quotedMessage` já usado pra respostas RECEBIDAS, ver `registerInboundMessage`),
+  // nunca resolvido de novo depois. Exige `externalMessageId` conhecido: sem ele não há como montar
+  // o `ContextInfo.StanzaId` que o WuzAPI exige pra citar de verdade (ver `sendOutboundByType`)
+  // — nunca finge uma citação que não vai aparecer de verdade pro contato.
+  let quotedMessage: InboxMessage["quotedMessage"];
+  if (input.replyToMessageId) {
+    const target = await deps.messageRepository.getById(input.replyToMessageId);
+    if (!target || target.conversationId !== conversation.id) {
+      throw new Error(`INBOX_MESSAGE_NOT_FOUND: mensagem "${input.replyToMessageId}" não existe nesta conversa.`);
+    }
+    if (!target.externalMessageId) {
+      throw new Error(`INBOX_QUOTED_MESSAGE_NOT_SENT_YET: mensagem "${input.replyToMessageId}" ainda não foi confirmada pelo WhatsApp — tente responder de novo em instantes.`);
+    }
+    // `Participant` (quem MANDOU a mensagem citada) é obrigatório junto de `StanzaId` no WuzAPI
+    // (achado real, `gh api`/`validateMessageFields`) — em mensagem INBOUND já é `senderExternalId`;
+    // numa mensagem OUTBOUND (respondendo à PRÓPRIA mensagem anterior do Vorix) não há
+    // `senderExternalId` gravado (ver comentário em `InboxMessage`), então cai pro telefone da
+    // própria conexão pareada.
+    const participantJid = target.senderExternalId ?? (target.direction === "outbound" ? (await deps.connectionRepository.getById(conversation.connectionId))?.phoneNumber : undefined);
+    quotedMessage = { externalMessageId: target.externalMessageId, senderId: participantJid, body: target.body, type: target.type };
+  }
+
   const { message } = await deps.messageRepository.create({
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
@@ -445,6 +531,7 @@ export async function sendInboxMessage(deps: InboxUseCaseDeps, input: SendInboxM
     body,
     sentByUserId: input.sentByUserId,
     sentByAi: input.sentByAi ?? false,
+    quotedMessage,
   });
   return finishEnqueueingOutboundMessage(deps, { conversationId: conversation.id, connectionId: conversation.connectionId, message, sentByAi: input.sentByAi ?? false, tenantId: input.tenantId, workspaceId: input.workspaceId });
 }
@@ -956,6 +1043,59 @@ export async function applyMessageReaction(deps: InboxUseCaseDeps, input: ApplyM
   return { applied: true, conversationId: message.conversationId, tenantId: message.tenantId, workspaceId: message.workspaceId };
 }
 
+export type ReactToInboxMessageInput = {
+  tenantId: string;
+  workspaceId: string;
+  conversationId: string;
+  messageId: string;
+  /** `""` remove a reação já mandada pelo atendente. */
+  emoji: string;
+  reactorId: string;
+  reactorName?: string;
+};
+
+/**
+ * Bloco "reagir a uma mensagem" (pedido explícito do usuário em produção: "reagir com emoji a uma
+ * mensagem especifica") — o ATENDENTE reagindo de dentro do Vorix (distinto de `applyMessageReaction`,
+ * que aplica uma reação que JÁ chegou de um contato/participante via WuzAPI). Chama o provider
+ * PRIMEIRO — se a reação não sai de verdade pro WhatsApp, nunca grava localmente (mostraria um
+ * badge de reação que ninguém do outro lado realmente vê, uma mentira visual).
+ */
+export async function reactToInboxMessage(deps: InboxUseCaseDeps, input: ReactToInboxMessageInput): Promise<InboxMessage> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  const message = await deps.messageRepository.getById(input.messageId);
+  if (!message || message.conversationId !== conversation.id) {
+    throw new Error(`INBOX_MESSAGE_NOT_FOUND: mensagem "${input.messageId}" não existe nesta conversa.`);
+  }
+  if (!message.externalMessageId) {
+    throw new Error(`INBOX_MESSAGE_NOT_SENT_YET: mensagem "${input.messageId}" ainda não foi confirmada pelo WhatsApp.`);
+  }
+  if (!deps.provider.sendReaction) {
+    throw new Error("INBOX_REACTION_NOT_SUPPORTED: este canal não suporta reações enviadas pelo Vorix.");
+  }
+  const connection = await deps.connectionRepository.getById(conversation.connectionId);
+  if (!connection?.externalSessionId) throw new MessagingProviderError("transient", `Conexão "${conversation.connectionId}" sem sessão ativa no gateway.`);
+
+  // `Participant` só faz sentido (e só é honrado pelo WuzAPI) reagindo à mensagem de OUTRO
+  // participante dentro de um GRUPO — nunca numa conversa direta, nunca reagindo à própria
+  // mensagem (ver achado real documentado em `WuzApiClient.sendReaction`).
+  const fromMe = message.direction === "outbound";
+  const participantJid = !fromMe && conversation.chatType === "group" ? message.senderExternalId : undefined;
+
+  await deps.provider.sendReaction({
+    externalSessionId: connection.externalSessionId,
+    to: conversation.externalChatId,
+    externalMessageId: message.externalMessageId,
+    emoji: input.emoji,
+    fromMe,
+    participantJid,
+  });
+  await deps.messageRepository.setReaction(input.messageId, { reactorId: input.reactorId, reactorName: input.reactorName, emoji: input.emoji });
+  const updated = await deps.messageRepository.getById(input.messageId);
+  if (!updated) throw new Error(`INBOX_MESSAGE_NOT_FOUND: mensagem "${input.messageId}" não existe nesta conversa.`);
+  return updated;
+}
+
 export type ApplyConnectionStateChangedInput = { connectionId: string; status: MessagingConnectionStatus; phoneNumber?: string };
 
 /**
@@ -1001,7 +1141,13 @@ async function sendOutboundByType(
 ): Promise<{ externalMessageId: string }> {
   const { message } = input;
   if (message.type === "text") {
-    return deps.provider.sendText({ externalSessionId: input.externalSessionId, to: input.to, body: message.body ?? "" });
+    // Bloco "responder mensagem específica" — `quotedMessage` já é o mesmo snapshot usado pra
+    // exibir respostas RECEBIDAS (ver `registerInboundMessage`); aqui, reaproveitado pra CONSTRUIR
+    // o `ContextInfo` real que o WuzAPI espera (achado via `gh api`, `handlers.go SendMessage()`).
+    const replyTo = message.quotedMessage?.externalMessageId
+      ? { externalMessageId: message.quotedMessage.externalMessageId, participantJid: message.quotedMessage.senderId, quotedText: message.quotedMessage.body }
+      : undefined;
+    return deps.provider.sendText({ externalSessionId: input.externalSessionId, to: input.to, body: message.body ?? "", replyTo });
   }
   if (!deps.inboxMediaStorage) throw new MessagingProviderError("permanent", "Envio de mídia sem storage configurado neste processo.");
   if (!message.mediaStorageRef) throw new MessagingProviderError("permanent", `Mensagem "${message.id}" do tipo "${message.type}" sem mediaStorageRef — nada pra enviar.`);

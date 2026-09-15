@@ -153,6 +153,9 @@ export type InboxConversation = {
   departmentId?: string;
   lastMessageAt?: string;
   unreadCount: number;
+  /** Bloco "urgente" (pedido explícito do usuário em produção) — marcação manual de um atendente,
+   * nunca inferida automaticamente. Mostrada como um ícone de fogo na listagem e filtrável. */
+  isUrgent: boolean;
   /** IA responde automaticamente enquanto `true`; "assumir conversa" desliga isto só NESTA
    * conversa (nunca globalmente) — ver Fase 5. O gate real de elegibilidade da IA (Fase 5,
    * `isConversationEligibleForAi` em `inbox-use-cases.ts`) também exige `!assignedUserId`

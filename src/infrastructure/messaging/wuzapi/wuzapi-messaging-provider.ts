@@ -61,8 +61,12 @@ export class WuzApiMessagingProvider implements MessagingProvider {
     return { qrCode: result.QRCode, expiresAt: new Date(Date.now() + 20_000).toISOString() };
   }
 
-  async sendText(input: { externalSessionId: string; to: string; body: string }): Promise<MessagingSendResult> {
-    const result = await this.client.sendText(input.externalSessionId, { phone: input.to, body: input.body });
+  async sendText(input: { externalSessionId: string; to: string; body: string; replyTo?: { externalMessageId: string; participantJid?: string; quotedText?: string } }): Promise<MessagingSendResult> {
+    const result = await this.client.sendText(input.externalSessionId, {
+      phone: input.to,
+      body: input.body,
+      replyTo: input.replyTo ? { stanzaId: input.replyTo.externalMessageId, participant: input.replyTo.participantJid, quotedText: input.replyTo.quotedText } : undefined,
+    });
     return this.toSendResult(result);
   }
 
@@ -119,6 +123,20 @@ export class WuzApiMessagingProvider implements MessagingProvider {
       console.warn("[wuzapi] getProfilePicture falhou (best-effort, nunca bloqueia o processamento):", error instanceof Error ? error.message : error);
       return undefined;
     }
+  }
+
+  async sendReaction(input: { externalSessionId: string; to: string; externalMessageId: string; emoji: string; fromMe: boolean; participantJid?: string }): Promise<void> {
+    await this.client.sendReaction(input.externalSessionId, {
+      phone: input.to,
+      externalMessageId: input.externalMessageId,
+      emoji: input.emoji,
+      fromMe: input.fromMe,
+      participantJid: input.participantJid,
+    });
+  }
+
+  async revokeMessage(input: { externalSessionId: string; to: string; externalMessageId: string }): Promise<void> {
+    await this.client.deleteMessage(input.externalSessionId, { phone: input.to, externalMessageId: input.externalMessageId });
   }
 
   private toSendResult(result: { Id: string }): MessagingSendResult {

@@ -11,11 +11,15 @@ import {
   CheckCheck,
   Clock,
   FileText,
+  Flame,
   Image as ImageIcon,
+  Mail,
+  MailOpen,
   Mic,
   MoreHorizontal,
   Paperclip,
   PauseCircle,
+  Reply,
   Search,
   Send,
   Smile,
@@ -45,11 +49,15 @@ import {
   assignInboxConversation,
   closeInboxConversation,
   deleteInboxConversation,
+  deleteInboxMessage,
   markInboxConversationRead,
+  markInboxConversationUnread,
+  reactToInboxMessage,
   reopenInboxConversation,
   sendInboxMediaMessage,
   sendInboxMessage,
   setInboxConversationAiEnabled,
+  setInboxConversationUrgent,
   takeOverInboxConversation,
   transferInboxConversation,
 } from "@/features/inbox/api";
@@ -63,6 +71,7 @@ const QUICK_FILTERS: { value: InboxConversationFilter; label: string }[] = [
   { value: "all", label: "Todos" },
   { value: "mine", label: "Minhas" },
   { value: "unread", label: "Não lidas" },
+  { value: "urgent", label: "Urgentes" },
 ];
 
 /** Bloco "Organização da lista" (ver docs/conversas-inbox-organization-media-runtime.md) — filtro
@@ -183,6 +192,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
             onSelect={handleSelect}
             currentUserId={currentUserId}
             members={members}
+            onConversationChanged={() => mutate()}
           />
         </div>
 
@@ -258,6 +268,7 @@ function ConversationListPane({
   onSelect,
   currentUserId,
   members,
+  onConversationChanged,
 }: {
   workspaceId: string;
   conversations: InboxConversation[];
@@ -275,6 +286,7 @@ function ConversationListPane({
   onSelect: (conversation: InboxConversation) => void;
   currentUserId: string | undefined;
   members: readonly InboxTenantMember[];
+  onConversationChanged: () => void;
 }) {
   const activeAdvancedFilter = ADVANCED_FILTERS.find((item) => item.value === filter);
 
@@ -306,10 +318,15 @@ function ConversationListPane({
               type="button"
               onClick={() => onFilterChange(item.value)}
               className={cn(
-                "h-8 shrink-0 rounded-full px-3 text-xs font-medium transition-colors duration-150",
-                filter === item.value ? "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background" : "bg-muted text-muted-foreground hover:bg-muted/80",
+                "flex h-8 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
+                filter === item.value
+                  ? item.value === "urgent"
+                    ? "bg-destructive text-destructive-foreground"
+                    : "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80",
               )}
             >
+              {item.value === "urgent" ? <Flame className="h-3.5 w-3.5" /> : null}
               {item.label}
             </button>
           ))}
@@ -387,6 +404,7 @@ function ConversationListPane({
               currentUserId={currentUserId}
               members={members}
               onSelect={() => onSelect(conversation)}
+              onConversationChanged={onConversationChanged}
             />
           ))
         )}
@@ -402,6 +420,7 @@ function ConversationListItem({
   currentUserId,
   members,
   onSelect,
+  onConversationChanged,
 }: {
   workspaceId: string;
   conversation: InboxConversation;
@@ -409,14 +428,26 @@ function ConversationListItem({
   currentUserId: string | undefined;
   members: readonly InboxTenantMember[];
   onSelect: () => void;
+  onConversationChanged: () => void;
 }) {
   const avatarProps = avatarPropsFor(conversation);
+  // Bloco "3 pontinhos na listagem" (pedido explícito do usuário: "sem precisar clicar e abrir
+  // para isso") — o item inteiro continua clicável (abre a conversa), mas precisa deixar de ser um
+  // `<button>` de verdade pra poder conter o botão do menu dentro (botão dentro de botão é HTML
+  // inválido) — `role="button"`/`tabIndex`/`onKeyDown` preservam a acessibilidade de teclado.
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
       className={cn(
-        "group flex w-full gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors duration-150 hover:bg-muted/50",
+        "group flex w-full cursor-pointer gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors duration-150 hover:bg-muted/50",
         selected && "bg-muted/80",
       )}
     >
@@ -431,10 +462,16 @@ function ConversationListItem({
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
-          <p className={cn("truncate text-sm text-foreground", conversation.unreadCount > 0 ? "font-semibold" : "font-medium")}>
-            {conversationTitle(conversation)}
-          </p>
-          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{timeLabel(conversation.lastMessageAt)}</span>
+          <div className="flex min-w-0 items-center gap-1">
+            {conversation.isUrgent ? <Flame className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="Urgente" /> : null}
+            <p className={cn("truncate text-sm text-foreground", conversation.unreadCount > 0 ? "font-semibold" : "font-medium")}>
+              {conversationTitle(conversation)}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <span className="text-[11px] tabular-nums text-muted-foreground">{timeLabel(conversation.lastMessageAt)}</span>
+            <ConversationListItemMenu workspaceId={workspaceId} conversation={conversation} onChanged={onConversationChanged} />
+          </div>
         </div>
         <p className="mt-0.5 truncate text-xs text-muted-foreground">{conversationSubtitle(conversation)}</p>
         <p className="mt-1 line-clamp-1 text-xs text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
@@ -449,7 +486,77 @@ function ConversationListItem({
           ) : null}
         </div>
       </div>
-    </button>
+    </div>
+  );
+}
+
+/** Bloco "3 pontinhos na listagem" — versão compacta do `ConversationActionsMenu` (que vive no
+ * cabeçalho da conversa aberta): só as ações pedidas explicitamente pra funcionar sem abrir a
+ * conversa (ler/não lida, urgente). Nunca duplica as ações administrativas (transferir/excluir/IA)
+ * do menu completo — aquelas continuam exigindo a conversa aberta. */
+function ConversationListItemMenu({
+  workspaceId,
+  conversation,
+  onChanged,
+}: {
+  workspaceId: string;
+  conversation: InboxConversation;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function run(action: () => Promise<unknown>) {
+    setBusy(true);
+    try {
+      await action();
+      onChanged();
+    } catch {
+      // Ação secundária best-effort — a revalidação normal (SSE/polling) eventualmente corrige a
+      // UI se isto falhar; sem toast dedicado pra não pesar um menu deliberadamente leve.
+    } finally {
+      setBusy(false);
+      setOpen(false);
+    }
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Mais ações"
+          onClick={(event) => event.stopPropagation()}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100 data-[state=open]:opacity-100"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-56 p-1"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => run(() => (conversation.unreadCount > 0 ? markInboxConversationRead(workspaceId, conversation.id) : markInboxConversationUnread(workspaceId, conversation.id)))}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+        >
+          {conversation.unreadCount > 0 ? <MailOpen className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
+          {conversation.unreadCount > 0 ? "Marcar como lida" : "Marcar como não lida"}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => run(() => setInboxConversationUrgent(workspaceId, conversation.id, !conversation.isUrgent))}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+        >
+          <Flame className={cn("h-4 w-4", conversation.isUrgent && "text-destructive")} />
+          {conversation.isUrgent ? "Remover urgência" : "Marcar como urgente"}
+        </button>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -482,6 +589,9 @@ function ConversationTimelinePane({
   const [deleting, setDeleting] = useState(false);
   const [sendError, setSendError] = useState<string | undefined>();
   const [failedDraft, setFailedDraft] = useState<string | undefined>();
+  // Bloco "responder mensagem específica" (pedido explícito do usuário: "clicar para reponder uma
+  // mensagem especifica") — mensagem sendo respondida, mostrada como preview acima do composer.
+  const [replyingTo, setReplyingTo] = useState<InboxMessage | undefined>();
   const [busyAction, setBusyAction] = useState<string | undefined>();
   const [actionError, setActionError] = useState<string | undefined>();
   const [transferTarget, setTransferTarget] = useState("");
@@ -548,12 +658,16 @@ function ConversationTimelinePane({
     if (!canOperate) return;
     const body = (bodyFromRetry ?? draft).trim();
     if (!body) return;
+    // Retry de uma mensagem que falhou antes é sempre reenviada como mensagem normal — a citação
+    // original (se houver) não é reconstruída aqui (edge case deliberadamente fora de escopo).
+    const replyToMessageId = bodyFromRetry ? undefined : replyingTo?.id;
     setSending(true);
     setSendError(undefined);
     try {
-      await sendInboxMessage(workspaceId, conversation.id, body);
+      await sendInboxMessage(workspaceId, conversation.id, body, replyToMessageId);
       setDraft((current) => (current.trim() === body ? "" : current));
       setFailedDraft(undefined);
+      setReplyingTo(undefined);
       await refreshThread();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Não foi possível enviar a mensagem.";
@@ -716,11 +830,15 @@ function ConversationTimelinePane({
                 <MessageBubble
                   key={`msg-${entry.message.id}`}
                   workspaceId={workspaceId}
+                  conversationId={conversation.id}
                   message={entry.message}
                   messages={messages}
                   isGroup={conversation.chatType === "group"}
                   onRetry={(body) => handleSend(body)}
                   retrying={sending}
+                  canOperate={canOperate}
+                  onReplyTo={setReplyingTo}
+                  onChanged={() => mutate()}
                 />
               ) : (
                 <EventPill key={`evt-${entry.event.id}`} event={entry.event} currentUserId={currentUserId} members={members} />
@@ -751,6 +869,17 @@ function ConversationTimelinePane({
           {attachError ? (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               <span className="min-w-0 flex-1">{attachError}</span>
+            </div>
+          ) : null}
+          {replyingTo ? (
+            <div className="flex items-center gap-2 rounded-lg border-l-2 border-primary bg-muted/60 py-1.5 pl-2.5 pr-1.5 text-xs">
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-foreground">Respondendo</p>
+                <p className="line-clamp-1 text-muted-foreground">{replyingTo.body?.trim() || mediaLabelFor(replyingTo.type, replyingTo.direction === "outbound")}</p>
+              </div>
+              <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setReplyingTo(undefined)} aria-label="Cancelar resposta">
+                <X className="h-3.5 w-3.5" />
+              </Button>
             </div>
           ) : null}
           <input
@@ -1189,13 +1318,18 @@ function formatRecordingTime(totalSeconds: number): string {
 
 function MessageBubble({
   workspaceId,
+  conversationId,
   message,
   messages,
   isGroup,
   onRetry,
   retrying,
+  canOperate,
+  onReplyTo,
+  onChanged,
 }: {
   workspaceId: string;
+  conversationId: string;
   message: InboxMessage;
   /** Timeline inteira já carregada — usada só para resolver o conteúdo AO VIVO de uma resposta
    * citada (`message.quotedMessage.externalMessageId`) quando a mensagem original ainda está
@@ -1205,6 +1339,12 @@ function MessageBubble({
   isGroup: boolean;
   onRetry: (body: string) => void;
   retrying: boolean;
+  canOperate: boolean;
+  /** Bloco "responder mensagem específica" — abre o preview de resposta no composer com esta
+   * mensagem. */
+  onReplyTo: (message: InboxMessage) => void;
+  /** Bloco "3 pontinhos em cada mensagem" — revalida a timeline depois de excluir/reagir. */
+  onChanged: () => void;
 }) {
   const isOutbound = message.direction === "outbound";
   // Grupo: mostra quem dos participantes mandou (a conversa representa o grupo inteiro, não mais
@@ -1239,7 +1379,7 @@ function MessageBubble({
   const reactionGroups = groupReactionsByEmoji(message.reactions);
 
   return (
-    <div className={cn("flex flex-col gap-1", isOutbound ? "items-end" : "items-start")}>
+    <div className={cn("group/msg flex flex-col gap-1", isOutbound ? "items-end" : "items-start")}>
       <div
         className={cn(
           "max-w-[min(78%,42rem)] rounded-xl border px-3 py-2 text-sm shadow-sm",
@@ -1285,6 +1425,11 @@ function MessageBubble({
           </div>
         ) : null}
       </div>
+      {canOperate ? (
+        <div className={cn("flex opacity-0 transition-opacity group-hover/msg:opacity-100", isOutbound ? "justify-end" : "justify-start")}>
+          <MessageActionsMenu workspaceId={workspaceId} conversationId={conversationId} message={message} onReplyTo={onReplyTo} onChanged={onChanged} />
+        </div>
+      ) : null}
       {reactionGroups.length > 0 ? (
         <div className="flex flex-wrap gap-1 px-1">
           {reactionGroups.map((group) => (
@@ -1311,6 +1456,124 @@ function groupReactionsByEmoji(reactions: readonly InboxMessage["reactions"][num
     byEmoji.set(reaction.emoji, names);
   }
   return [...byEmoji.entries()].map(([emoji, reactorNames]) => ({ emoji, count: reactorNames.length, reactorNames }));
+}
+
+/** Bloco "3 pontinhos em cada mensagem" (pedido explícito do usuário: "excluir uma mensagem que eu
+ * queira.. ou clicar para reponder uma mensagem esquecifica.... reagir com emoji a uma mensagem
+ * especifica") — mesmo racional de curadoria rápida do WhatsApp (6 reações comuns direto no menu,
+ * sem precisar abrir o seletor completo de emoji). */
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+function MessageActionsMenu({
+  workspaceId,
+  conversationId,
+  message,
+  onReplyTo,
+  onChanged,
+}: {
+  workspaceId: string;
+  conversationId: string;
+  message: InboxMessage;
+  onReplyTo: (message: InboxMessage) => void;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Reagir exige a mensagem já confirmada pelo WhatsApp (externalMessageId) — o backend rejeita
+  // sem isso; nunca oferece a ação pra uma mensagem ainda "enviando"/na fila.
+  const canReact = Boolean(message.externalMessageId);
+
+  async function react(emoji: string) {
+    if (!canReact || busy) return;
+    setBusy(true);
+    try {
+      await reactToInboxMessage(workspaceId, conversationId, message.id, emoji);
+      onChanged();
+    } catch {
+      // Best-effort de UI — este menu é deliberadamente compacto, sem um lugar próprio pra exibir o
+      // motivo específico da falha (ex.: canal sem suporte a reações); a reação simplesmente não
+      // aparece, e o atendente pode tentar de novo.
+    } finally {
+      setBusy(false);
+      setOpen(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await deleteInboxMessage(workspaceId, conversationId, message.id);
+      onChanged();
+    } finally {
+      setDeleting(false);
+      setDeleteConfirmOpen(false);
+    }
+  }
+
+  return (
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button type="button" aria-label="Mais ações da mensagem" className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted">
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-56 p-1">
+          {canReact ? (
+            <div className="flex items-center justify-between gap-0.5 border-b border-border px-0.5 pb-1.5 pt-0.5">
+              {QUICK_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => react(emoji)}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-base transition-colors hover:bg-muted disabled:opacity-50"
+                  aria-label={`Reagir com ${emoji}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              onReplyTo(message);
+              setOpen(false);
+            }}
+            className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted"
+          >
+            <Reply className="h-4 w-4" />
+            Responder
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setDeleteConfirmOpen(true);
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-destructive transition-colors hover:bg-destructive/10"
+          >
+            <Trash2 className="h-4 w-4" />
+            Excluir mensagem
+          </button>
+        </PopoverContent>
+      </Popover>
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="Excluir mensagem"
+        description="Isto remove a mensagem do Vorix. Se foi você quem mandou, o Vorix também tenta apagá-la para todos no WhatsApp — mensagens de um contato só somem daqui, nunca do celular dele."
+        confirmLabel="Excluir"
+        variant="danger"
+        busy={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteConfirmOpen(false)}
+      />
+    </>
+  );
 }
 
 function EventPill({ event, currentUserId, members }: { event: InboxConversationEvent; currentUserId: string | undefined; members: readonly InboxTenantMember[] }) {

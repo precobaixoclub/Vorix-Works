@@ -597,6 +597,83 @@ test("DELETE_CONVERSATION: excluir uma conversa que já não existe (duplo cliqu
   await assert.doesNotReject(conversationRepo.delete("inboxconv-nao-existe"));
 });
 
+test("UNREAD_URGENT: markUnread reaproveita unread_count (>= 1, nunca reduz uma contagem real maior); markRead sempre zera", async () => {
+  const tenantId = "tenant-unread-urgent-1";
+  const workspace = await makeWorkspace(tenantId);
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+  const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo };
+
+  const registered = await registerInboundMessage(deps, {
+    tenantId, workspaceId: workspace.id, connectionId: connection.id,
+    chatId: "+5511911112222", isGroup: false, fromMe: false,
+    senderId: "+5511911112222", senderName: "Cliente",
+    externalMessageId: "wamid.unread-1", type: "text", body: "Oi", occurredAt: new Date().toISOString(),
+  });
+  const conversationId = registered.conversation.id;
+
+  // Já lida (unread_count = 0) — markUnread sobe pra 1, o mínimo pra aparecer no filtro "unread".
+  await conversationRepo.markRead(conversationId);
+  await conversationRepo.markUnread(conversationId);
+  const afterMarkUnread = await conversationRepo.getById(conversationId);
+  assert.equal(afterMarkUnread.unreadCount, 1);
+
+  // 2ª mensagem real chega DEPOIS do markUnread manual — unread_count sobe normalmente a partir
+  // do que já estava (nunca reseta pra 1 de novo, nunca perde a contagem real).
+  await registerInboundMessage(deps, {
+    tenantId, workspaceId: workspace.id, connectionId: connection.id,
+    chatId: "+5511911112222", isGroup: false, fromMe: false,
+    senderId: "+5511911112222", senderName: "Cliente",
+    externalMessageId: "wamid.unread-2", type: "text", body: "Você viu minha mensagem?", occurredAt: new Date().toISOString(),
+  });
+  const afterSecondMessage = await conversationRepo.getById(conversationId);
+  assert.equal(afterSecondMessage.unreadCount, 2);
+
+  // markUnread numa conversa JÁ com contagem real > 1 nunca reduz pra 1.
+  await conversationRepo.markUnread(conversationId);
+  const afterMarkUnreadAgain = await conversationRepo.getById(conversationId);
+  assert.equal(afterMarkUnreadAgain.unreadCount, 2, "markUnread nunca reduz uma contagem real já maior — só garante pelo menos 1");
+
+  await conversationRepo.markRead(conversationId);
+  const afterRead = await conversationRepo.getById(conversationId);
+  assert.equal(afterRead.unreadCount, 0);
+});
+
+test("UNREAD_URGENT: setUrgent liga/desliga a flag e o filtro 'urgent' reflete o estado atual", async () => {
+  const tenantId = "tenant-unread-urgent-2";
+  const workspace = await makeWorkspace(tenantId);
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+  const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo };
+
+  const registered = await registerInboundMessage(deps, {
+    tenantId, workspaceId: workspace.id, connectionId: connection.id,
+    chatId: "+5511922223333", isGroup: false, fromMe: false,
+    senderId: "+5511922223333", senderName: "Cliente",
+    externalMessageId: "wamid.urgent-1", type: "text", body: "Preciso de ajuda urgente", occurredAt: new Date().toISOString(),
+  });
+  const conversationId = registered.conversation.id;
+  assert.equal(registered.conversation.isUrgent, false, "nasce sem urgência — marcação sempre manual");
+
+  const marked = await conversationRepo.setUrgent(conversationId, true);
+  assert.equal(marked.isUrgent, true);
+
+  const urgentList = await conversationRepo.listByWorkspace({ tenantId, workspaceId: workspace.id, filter: "urgent" });
+  assert.equal(urgentList.some((item) => item.id === conversationId), true);
+
+  const unmarked = await conversationRepo.setUrgent(conversationId, false);
+  assert.equal(unmarked.isUrgent, false);
+
+  const urgentListAfter = await conversationRepo.listByWorkspace({ tenantId, workspaceId: workspace.id, filter: "urgent" });
+  assert.equal(urgentListAfter.some((item) => item.id === conversationId), false, "removida do filtro assim que desmarcada");
+});
+
 function makeFakeAvatarMediaStorage() {
   const objects = new Map();
   return {

@@ -51,6 +51,7 @@ import { PostgresPlatformBillingRepository } from "../../infrastructure/storage/
 import { createPromInboxMetrics, inboxMetricsRegistry } from "../../infrastructure/observability/prom-inbox-metrics.js";
 import { reconcileMergeableIdentities, reconcileUnresolvedLidContacts } from "../../infrastructure/storage/postgres/inbox-identity-reconciliation.js";
 import { reconcilePendingContactPictures, reconcilePendingGroupPictures } from "../../infrastructure/storage/postgres/inbox-avatar-reconciliation.js";
+import { reconcilePendingMediaDownloads } from "../../infrastructure/storage/postgres/inbox-media-retry-reconciliation.js";
 
 /**
  * Processo separado do módulo Conversas — `vorix-worker` (Fase 1/2, resiliência reforçada na
@@ -109,6 +110,10 @@ type InboxWorkerConfig = {
      * existiam ANTES do deploy nunca ganhavam foto até uma mensagem nova chegar. Varre o que já
      * existe e busca retroativamente, mesmo idioma dos demais `setInterval` deste arquivo. */
     avatarReconcileIntervalMs: number;
+    /** Bloco "retry de mídia" — achado ao vivo em produção: mídia que falhou ao baixar (rede
+     * instável, WuzAPI reiniciando no meio) nunca era tentada de novo. Varre mensagens com o ref
+     * bruto persistido (`attachMediaSourceRef`) mas ainda sem mídia baixada. */
+    mediaRetryIntervalMs: number;
   };
   /** Redesign operacional (Conversas) — storage PRIVADO de mídia recebida via WhatsApp; config
    * mínima independente de `loadApiConfig()`, mesmo racional do resto deste tipo. `enabled: false`
@@ -170,6 +175,7 @@ function loadInboxWorkerConfig(): InboxWorkerConfig {
       identityMergeScanIntervalMs: parsePositiveInt(process.env.INBOX_IDENTITY_MERGE_SCAN_INTERVAL_MS, 180_000),
       identityReconcileIntervalMs: parsePositiveInt(process.env.INBOX_IDENTITY_RECONCILE_INTERVAL_MS, 300_000),
       avatarReconcileIntervalMs: parsePositiveInt(process.env.INBOX_AVATAR_RECONCILE_INTERVAL_MS, 600_000),
+      mediaRetryIntervalMs: parsePositiveInt(process.env.INBOX_MEDIA_RETRY_INTERVAL_MS, 300_000),
     },
     inboxMediaStorage: {
       enabled: process.env.INBOX_MEDIA_STORAGE_ENABLED?.trim() === "true",
@@ -801,6 +807,7 @@ async function main(): Promise<void> {
   let identityMergeTimer: ReturnType<typeof setInterval> | undefined;
   let identityReconcileTimer: ReturnType<typeof setInterval> | undefined;
   let avatarReconcileTimer: ReturnType<typeof setInterval> | undefined;
+  let mediaRetryTimer: ReturnType<typeof setInterval> | undefined;
   if (repositories.pool) {
     const pool = repositories.pool;
 
@@ -880,6 +887,26 @@ async function main(): Promise<void> {
     runAvatarReconciliation();
     avatarReconcileTimer = setInterval(runAvatarReconciliation, config.resilience.avatarReconcileIntervalMs);
     avatarReconcileTimer.unref();
+
+    // Bloco "retry de mídia" — achado ao vivo em produção (relatado pelo usuário: mensagens "só
+    // informação de mídia recebida e que não carregou"): sem isto, uma falha transitória no
+    // download (rede instável, WuzAPI reiniciando no meio) nunca era tentada de novo.
+    let mediaRetryRunning = false;
+    const runMediaRetry = (): void => {
+      if (mediaRetryRunning) return;
+      mediaRetryRunning = true;
+      reconcilePendingMediaDownloads(pool, provider, deps.inboxMediaStorage)
+        .then(({ scanned, synced }) => {
+          if (synced > 0) console.log(`[inbox-worker] retry de mídia: ${synced}/${scanned} mensagem(ns) baixada(s) com sucesso.`);
+        })
+        .catch((error) => console.error("[inbox-worker] retry de mídia falhou:", error instanceof Error ? error.message : error))
+        .finally(() => {
+          mediaRetryRunning = false;
+        });
+    };
+    runMediaRetry();
+    mediaRetryTimer = setInterval(runMediaRetry, config.resilience.mediaRetryIntervalMs);
+    mediaRetryTimer.unref();
   }
 
   // Graceful shutdown (Fase 1/6): para de consumir, espera o que já estava em voo terminar (com
@@ -894,6 +921,7 @@ async function main(): Promise<void> {
     if (identityMergeTimer) clearInterval(identityMergeTimer);
     if (identityReconcileTimer) clearInterval(identityReconcileTimer);
     if (avatarReconcileTimer) clearInterval(avatarReconcileTimer);
+    if (mediaRetryTimer) clearInterval(mediaRetryTimer);
     // Remove os listeners de 'error'/'close' ANTES de fechar de propósito — sem isso, o
     // `connection.close()" abaixo dispara o handler de "queda inesperada" (achado ao vivo acima)
     // e o processo sairia com código 1 mesmo num shutdown limpo, pedido por SIGTERM/SIGINT.

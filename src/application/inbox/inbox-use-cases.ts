@@ -832,6 +832,17 @@ export async function downloadInboundMediaAndAttach(deps: InboxUseCaseDeps, inpu
     return { attached: false, reason: "no_direct_path" };
   }
 
+  // Bloco "retry de mídia" (pedido explícito do usuário em produção) — grava o ref bruto ANTES da
+  // tentativa em si (nunca depois): se `provider.downloadMedia` falhar por qualquer motivo
+  // transitório (rede instável, WuzAPI reiniciando no meio), o reconciliador periódico
+  // (`reconcilePendingMediaDownloads`) ainda tem como tentar de novo mais tarde, em vez de perder a
+  // única chance de baixar essa mídia pra sempre.
+  await deps.messageRepository.attachMediaSourceRef(input.messageId, {
+    url: input.mediaUrl, directPath: input.mediaDirectPath, mediaKey: input.mediaKey, mimeType: input.mimeType,
+    fileSha256: input.fileSha256, fileEncSha256: input.fileEncSha256, fileSizeBytes: input.fileSizeBytes,
+    fileName: input.fileName, durationSeconds: input.durationSeconds, thumbnailBase64: input.thumbnailBase64,
+  });
+
   const downloaded = await deps.provider.downloadMedia({
     externalSessionId: connection.externalSessionId,
     type: input.type,

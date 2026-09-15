@@ -16,6 +16,7 @@ type Row = {
   status: string;
   body: string | null;
   media_storage_ref: InboxMediaStorageRef | null;
+  media_source_ref: Record<string, unknown> | null;
   mime_type: string | null;
   metadata: Record<string, unknown> | null;
   sent_by_user_id: string | null;
@@ -93,6 +94,10 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
       "update inbox_messages set media_storage_ref = $2, mime_type = coalesce($3, mime_type), metadata = coalesce(metadata, '{}'::jsonb) || $4::jsonb where id = $1",
       [id, input.mediaStorageRef, input.mimeType ?? null, JSON.stringify(input.metadata ?? {})],
     );
+  }
+
+  async attachMediaSourceRef(id: string, ref: Record<string, unknown>): Promise<void> {
+    await this.pool.query("update inbox_messages set media_source_ref = $2 where id = $1", [id, JSON.stringify(ref)]);
   }
 
   async listByConversation(input: { tenantId: string; workspaceId: string; conversationId: string; cursor?: string; limit?: number }): Promise<InboxMessage[]> {
@@ -237,6 +242,7 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
       status: row.status as InboxMessageStatus,
       body: row.body ?? undefined,
       mediaStorageRef: row.media_storage_ref ?? undefined,
+      mediaSourceRef: row.media_source_ref ?? undefined,
       mimeType: row.mime_type ?? undefined,
       metadata: row.metadata ?? undefined,
       sentByUserId: row.sent_by_user_id ?? undefined,

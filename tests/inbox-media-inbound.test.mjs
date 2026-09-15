@@ -36,7 +36,10 @@ test("downloadInboundMediaAndAttach: sem mediaKey nunca tenta a chamada ao provi
     inboxMediaStorage: makeFakeMediaStorage(),
     provider,
     connectionRepository: { getById: async () => ({ id: "conn-1", externalSessionId: "sess-1" }) },
-    messageRepository: { attachMedia: async () => { throw new Error("não deveria ser chamado"); } },
+    messageRepository: {
+      attachMedia: async () => { throw new Error("não deveria ser chamado"); },
+      attachMediaSourceRef: async () => { throw new Error("não deveria ser chamado — falhou antes de chegar no ref bruto"); },
+    },
   };
 
   const result = await downloadInboundMediaAndAttach(deps, {
@@ -66,7 +69,10 @@ test("downloadInboundMediaAndAttach: com mediaKey MAS SEM directPath, nunca tent
     inboxMediaStorage: makeFakeMediaStorage(),
     provider,
     connectionRepository: { getById: async () => ({ id: "conn-1", externalSessionId: "sess-1" }) },
-    messageRepository: { attachMedia: async () => { throw new Error("não deveria ser chamado"); } },
+    messageRepository: {
+      attachMedia: async () => { throw new Error("não deveria ser chamado"); },
+      attachMediaSourceRef: async () => { throw new Error("não deveria ser chamado — falhou antes de chegar no ref bruto"); },
+    },
   };
 
   const result = await downloadInboundMediaAndAttach(deps, {
@@ -83,10 +89,14 @@ test("downloadInboundMediaAndAttach: com mediaKey MAS SEM directPath, nunca tent
 test("downloadInboundMediaAndAttach: com mediaKey e directPath presentes, segue o caminho normal (chama o provider com DirectPath)", async () => {
   const mediaStorage = makeFakeMediaStorage();
   let attachedMediaCall;
+  let sourceRefCall;
   const provider = {
     downloadMedia: async (input) => {
       assert.equal(input.ref.mediaKey, "chave-real-de-teste");
       assert.equal(input.ref.directPath, "/v/t62.7118-24/fake-direct-path");
+      // Bloco "retry de mídia" — o ref bruto precisa ter sido gravado ANTES desta chamada (nunca
+      // depois), senão uma falha aqui perderia a chance de retry.
+      assert.ok(sourceRefCall, "attachMediaSourceRef precisa ter sido chamado ANTES de downloadMedia");
       return { body: Buffer.from("bytes reais da imagem"), mimeType: "image/jpeg" };
     },
   };
@@ -94,7 +104,10 @@ test("downloadInboundMediaAndAttach: com mediaKey e directPath presentes, segue 
     inboxMediaStorage: mediaStorage,
     provider,
     connectionRepository: { getById: async () => ({ id: "conn-1", externalSessionId: "sess-1" }) },
-    messageRepository: { attachMedia: async (id, input) => { attachedMediaCall = { id, input }; } },
+    messageRepository: {
+      attachMedia: async (id, input) => { attachedMediaCall = { id, input }; },
+      attachMediaSourceRef: async (id, ref) => { sourceRefCall = { id, ref }; },
+    },
   };
 
   const result = await downloadInboundMediaAndAttach(deps, {
@@ -107,4 +120,30 @@ test("downloadInboundMediaAndAttach: com mediaKey e directPath presentes, segue 
   assert.equal(result.reason, undefined);
   assert.equal(attachedMediaCall.id, "msg-3");
   assert.ok(attachedMediaCall.input.mediaStorageRef?.objectKey);
+  assert.equal(sourceRefCall.id, "msg-3");
+  assert.equal(sourceRefCall.ref.directPath, "/v/t62.7118-24/fake-direct-path");
+});
+
+test("downloadInboundMediaAndAttach: retry de mídia (bloco novo) — o ref bruto é gravado MESMO quando o download falha (nunca perde a chance de tentar de novo depois)", async () => {
+  let sourceRefCall;
+  const provider = { downloadMedia: async () => undefined }; // simula falha (ex.: WuzAPI reiniciando no meio).
+  const deps = {
+    inboxMediaStorage: makeFakeMediaStorage(),
+    provider,
+    connectionRepository: { getById: async () => ({ id: "conn-1", externalSessionId: "sess-1" }) },
+    messageRepository: {
+      attachMedia: async () => { throw new Error("nunca deveria ser chamado — download falhou"); },
+      attachMediaSourceRef: async (id, ref) => { sourceRefCall = { id, ref }; },
+    },
+  };
+
+  const result = await downloadInboundMediaAndAttach(deps, {
+    tenantId: "t1", workspaceId: "w1", connectionId: "conn-1", messageId: "msg-4",
+    type: "image", mediaUrl: "https://mmg.whatsapp.net/fake-url", mediaKey: "chave-real-de-teste",
+    mediaDirectPath: "/v/t62.7118-24/fake-direct-path",
+  });
+
+  assert.equal(result.attached, false);
+  assert.ok(sourceRefCall, "o ref bruto precisa ter sido persistido MESMO com o download falhando — é dele que o reconciliador de retry depende depois");
+  assert.equal(sourceRefCall.id, "msg-4");
 });

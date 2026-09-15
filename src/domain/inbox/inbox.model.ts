@@ -234,6 +234,12 @@ export type InboxMessage = {
   senderDisplayName?: string;
   body?: string;
   mediaStorageRef?: InboxMediaStorageRef;
+  /** Bloco "retry de mídia" (pedido explícito do usuário em produção) — ref BRUTO usado pra tentar
+   * o download (url/directPath/mediaKey/etc.), gravado ANTES da tentativa em si. `undefined` até a
+   * primeira tentativa, ou em mensagens que nunca foram mídia. Nunca exibido/usado pelo frontend —
+   * só o reconciliador (`reconcilePendingMediaDownloads`) lê isto, pra tentar de novo uma mídia que
+   * falhou (rede instável, WuzAPI reiniciando no meio) sem perder a única chance de baixar. */
+  mediaSourceRef?: Record<string, unknown>;
   mimeType?: string;
   metadata?: Record<string, unknown>;
   sentByUserId?: string;

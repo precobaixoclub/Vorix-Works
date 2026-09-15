@@ -56,6 +56,15 @@ export type InboxMessageRepositoryPort = {
    * registro e a conclusão do download — silenciosamente vira no-op).
    */
   attachMedia(id: string, input: { mediaStorageRef: InboxMediaStorageRef; mimeType?: string; metadata?: Record<string, unknown> }): Promise<void>;
+  /**
+   * Bloco "retry de mídia" (pedido explícito do usuário em produção: mensagens "só informação de
+   * mídia recebida que não carregou"). Grava o ref BRUTO (url/directPath/mediaKey/etc.) usado pra
+   * tentar o download — ANTES da tentativa em si, nunca depois — pra que uma falha (rede instável,
+   * WuzAPI reiniciando no meio) não perca a única chance de baixar essa mídia; o reconciliador
+   * periódico (`reconcilePendingMediaDownloads`) usa este ref pra tentar de novo mais tarde. Nunca
+   * sobrescreve `mediaStorageRef` (que continua exclusivo de `attachMedia`, só em caso de sucesso).
+   */
+  attachMediaSourceRef(id: string, ref: Record<string, unknown>): Promise<void>;
   listByConversation(input: { tenantId: string; workspaceId: string; conversationId: string; cursor?: string; limit?: number }): Promise<InboxMessage[]>;
   /** Usado pelo consumer de status (delivery/read receipts) e pelo `OutboxSenderConsumer`. Ignora
    * silenciosamente se a mensagem já estiver num status terminal — retries podem chegar tarde. */

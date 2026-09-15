@@ -64,6 +64,12 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
     });
   }
 
+  async attachMediaSourceRef(id: string, ref: Record<string, unknown>): Promise<void> {
+    const existing = this.rows.get(id);
+    if (!existing) return;
+    this.rows.set(id, { ...existing, mediaSourceRef: ref });
+  }
+
   async listByConversation(input: { tenantId: string; workspaceId: string; conversationId: string; cursor?: string; limit?: number }): Promise<InboxMessage[]> {
     const limit = input.limit ?? 50;
     return [...this.rows.values()]

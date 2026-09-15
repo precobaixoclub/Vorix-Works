@@ -95,6 +95,24 @@ test("mapWuzApiEvent: mensagem de texto simples (conversation) nunca preenche ca
   assert.equal(mapped.mediaKey, undefined);
 });
 
+/**
+ * CORREÇÃO DE BUG REAL (achado ao vivo em produção, 2026-09-15, relatado pelo usuário: "mensagens
+ * enviadas diretamente pelo whatsapp" não carregavam) — payload real capturado nos logs do WuzAPI:
+ * um self-echo (mensagem enviada do próprio celular, `IsFromMe:true`) com `Message.extendedTextMessage.text`
+ * preenchido (nunca `Message.conversation`, usado só pro texto MAIS simples possível, sem nenhum
+ * contexto adicional). `messageType` já classificava corretamente como "text", mas `body` ficava
+ * `undefined` — confirmado em produção: 33/45 mensagens recebidas e 13/20 enviadas com corpo vazio
+ * num único workspace, a MAIORIA das mensagens de texto reais.
+ */
+test("mapWuzApiEvent: extendedTextMessage (resposta citada/preview de link/self-echo de outro dispositivo) preenche body — bug real de produção corrigido", () => {
+  const mapped = mapWuzApiEvent(rawEvent(
+    { extendedTextMessage: { text: "Não não", contextInfo: { disappearingMode: { initiator: 0 } } } },
+    { info: { IsFromMe: true } },
+  ));
+  assert.equal(mapped.messageType, "text");
+  assert.equal(mapped.body, "Não não", "extendedTextMessage.text nunca deveria ficar undefined — é a forma MAIS COMUM de mensagem de texto real (qualquer contexto adicional usa este formato, não `conversation`)");
+});
+
 test("mapWuzApiEvent: imageMessage sem url/mediaKey (payload incompleto) não lança — degrada com campos ausentes", () => {
   const mapped = mapWuzApiEvent(rawEvent({ imageMessage: { mimetype: "image/jpeg" } }));
   assert.equal(mapped.messageType, "image");

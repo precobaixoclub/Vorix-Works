@@ -164,7 +164,17 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
   const message = event.Message as Record<string, unknown> | undefined;
   const kind = message ? Object.keys(message).find((key) => key in MESSAGE_TYPE_BY_WHATSMEOW_KIND) : undefined;
   const messageType = kind ? MESSAGE_TYPE_BY_WHATSMEOW_KIND[kind] ?? "other" : "other";
-  const body = typeof message?.conversation === "string" ? (message.conversation as string) : undefined;
+  // ACHADO AO VIVO (relatado pelo usuário em produção, 2026-09-15: "mensagens enviadas diretamente
+  // pelo whatsapp" não carregavam) — `Message.conversation` só existe pro texto MAIS simples
+  // possível (sem nenhum contexto adicional). Qualquer mensagem com contexto — resposta citada,
+  // preview de link, modo de mensagem temporária, ou enviada por OUTRO dispositivo vinculado
+  // (self-echo do próprio celular, como confirmado no payload real que motivou esta correção) — usa
+  // `Message.extendedTextMessage.text` em vez disso. `messageType` já classificava os dois como
+  // "text" corretamente (ver `MESSAGE_TYPE_BY_WHATSMEOW_KIND`), mas `body` só lia `conversation` —
+  // resultado: a MAIORIA das mensagens de texto reais (confirmado: 33/45 inbound e 13/20 outbound
+  // num workspace de produção) ficavam com corpo vazio, aparecendo em branco na Inbox.
+  const extendedText = (message?.extendedTextMessage as Record<string, unknown> | undefined)?.text;
+  const body = typeof message?.conversation === "string" ? (message.conversation as string) : typeof extendedText === "string" ? extendedText : undefined;
   const mediaObject = kind && message ? (message[kind] as Record<string, unknown> | undefined) : undefined;
   const media = mediaObject ? extractMediaFields(messageType, mediaObject) : undefined;
 

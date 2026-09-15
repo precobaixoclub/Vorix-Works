@@ -56,6 +56,10 @@ export type InboxConversationRepositoryPort = {
    * pra checar se já existem DUAS conversas divergentes (pseudo-telefone-por-LID vs. telefone
    * real) pro mesmo `connectionId`, antes de decidir fundir. */
   getByExternalChatId(input: { connectionId: string; externalChatId: string }): Promise<InboxConversation | undefined>;
+  /** Exclusão PERMANENTE, pedida explicitamente por um humano (nunca automática) — mensagens e
+   * eventos desta conversa cascateiam junto (ver `db/migrations/0083`/`0084`). Sem efeito se a
+   * conversa já não existir (idempotente — um duplo-clique/retry nunca lança). */
+  delete(id: string): Promise<void>;
   listByWorkspace(input: { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string }): Promise<InboxConversationListItem[]>;
   markLastMessage(id: string, input: { lastMessageAt: string; incrementUnread: boolean }): Promise<void>;
   /** Bloco "Identity UX" — metadata de grupo (nome real/quantidade de participantes), buscada via

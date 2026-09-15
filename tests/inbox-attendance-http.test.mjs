@@ -61,6 +61,52 @@ test("RBAC: viewer (só inbox:read) recebe 403 ao tentar assumir/transferir/fina
   await app.close();
 });
 
+test("RBAC: editor (inbox:assign, sem inbox:delete_conversations) recebe 403 ao tentar excluir uma conversa/grupo", async () => {
+  const tenantId = "tenant-http-rbac-delete";
+  const app = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "editor", tenantId })) });
+  const { workspace, conversationId } = await seedConversation(app, { tenantId });
+
+  const del = await app.inject({ method: "DELETE", url: `/v1/inbox/conversations/${conversationId}?workspaceId=${workspace.id}` });
+  assert.equal(del.statusCode, 403, "excluir conversa/grupo é um degrau administrativo — editor não tem inbox:delete_conversations");
+
+  const still = await app.zunoContainer.inboxConversationRepository.getById(conversationId);
+  assert.ok(still, "nada foi excluído — a conversa continua existindo");
+
+  await app.close();
+});
+
+test("RBAC: admin (inbox:delete_conversations) exclui uma conversa/grupo com sucesso — some da listagem", async () => {
+  const tenantId = "tenant-http-rbac-delete-2";
+  const app = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "admin", tenantId })) });
+  const { workspace, conversationId } = await seedConversation(app, { tenantId });
+
+  const del = await app.inject({ method: "DELETE", url: `/v1/inbox/conversations/${conversationId}?workspaceId=${workspace.id}` });
+  assert.equal(del.statusCode, 200);
+  assert.equal(del.json().data.deleted, true);
+
+  const gone = await app.zunoContainer.inboxConversationRepository.getById(conversationId);
+  assert.equal(gone, undefined, "a conversa foi realmente removida, não só marcada");
+
+  const list = await app.inject({ method: "GET", url: `/v1/inbox/conversations?workspaceId=${workspace.id}` });
+  assert.equal(list.json().data.conversations.some((item) => item.id === conversationId), false);
+
+  await app.close();
+});
+
+test("Isolamento cross-tenant: DELETE numa conversa de OUTRO tenant responde 404, nunca 403 — não revela existência", async () => {
+  const del = await (async () => {
+    const app = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "admin", tenantId: "tenant-http-delete-owner" })) });
+    const { workspace, conversationId } = await seedConversation(app, { tenantId: "tenant-http-delete-owner" });
+    await app.close();
+
+    const otherApp = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "admin", tenantId: "tenant-http-delete-intruder" })) });
+    const response = await otherApp.inject({ method: "DELETE", url: `/v1/inbox/conversations/${conversationId}?workspaceId=${workspace.id}` });
+    await otherApp.close();
+    return response;
+  })();
+  assert.equal(del.statusCode, 404);
+});
+
 test("RBAC: editor (inbox:assign) consegue assumir, transferir, finalizar e reabrir com sucesso", async () => {
   const tenantId = "tenant-http-rbac-2";
   const app = await buildTestApp({ authPort: fakeAuthPortFor(principal({ role: "editor", tenantId, userId: "user-a" })) });

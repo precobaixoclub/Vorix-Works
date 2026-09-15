@@ -16,6 +16,7 @@ import type { ProductAnalyticsUseCaseDeps } from "../../../../application/produc
 import {
   assignConversation,
   closeConversation,
+  deleteConversation,
   createConnection,
   disconnectConnection,
   getConnectionQrCode,
@@ -491,6 +492,22 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
       const conversation = await reopenConversation(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, performedBy: principal.userId });
       publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
       return successEnvelope(conversation, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  /** Exclusão PERMANENTE — nunca a mesma coisa que "fechar"/"arquivar" (`close`/`reopen` acima,
+   * reversíveis). Degrau administrativo (`inbox:delete_conversations`, só owner/admin) porque
+   * mensagens/eventos cascateiam junto e não há como desfazer. */
+  app.delete("/inbox/conversations/:id", { schema: { params: ID_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:delete_conversations");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      await deleteConversation(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
+      publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
+      return successEnvelope({ deleted: true }, request.id);
     } catch (error) {
       rethrowInboxError(error);
     }

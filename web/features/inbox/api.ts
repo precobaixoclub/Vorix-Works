@@ -85,6 +85,12 @@ export function reopenInboxConversation(workspaceId: string, conversationId: str
   return apiClient.post<InboxConversation>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/reopen`, { workspaceId });
 }
 
+/** Exclusão PERMANENTE (conversa direta OU grupo) — nunca "fechar"/"arquivar" (reversíveis, acima).
+ * Só owner/admin (`inbox:delete_conversations`, degrau administrativo no backend). */
+export function deleteInboxConversation(workspaceId: string, conversationId: string): Promise<{ deleted: boolean }> {
+  return apiClient.delete<{ deleted: boolean }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
 /** Timeline de eventos operacionais (Fase 4) — nunca mensagens; o frontend intercala isso com
  * `listInboxConversationMessages` por `createdAt`. */
 export function listInboxConversationEvents(workspaceId: string, conversationId: string): Promise<{ events: InboxConversationEvent[] }> {

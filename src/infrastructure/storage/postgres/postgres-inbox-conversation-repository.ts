@@ -63,6 +63,10 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
+  async delete(id: string): Promise<void> {
+    await this.pool.query("delete from inbox_conversations where id = $1", [id]);
+  }
+
   async getByExternalChatId(input: { connectionId: string; externalChatId: string }): Promise<InboxConversation | undefined> {
     // Inclui linhas já mescladas de propósito (`merge_status` não filtrado aqui) — o reconciliador
     // (Fase 4) precisa enxergar o registro-perdedor pra decidir que já foi fundido e não repetir o

@@ -553,3 +553,46 @@ test("GROUP_METADATA: Canal/Newsletter do WhatsApp (@newsletter, chatType també
   assert.equal(result.synced, false);
   assert.equal(called, false, "getGroupInfo nunca é chamado pra um JID de newsletter — whatsmeow.Client.GetGroupInfo só entende @g.us");
 });
+
+test("DELETE_CONVERSATION: exclusão de uma conversa (grupo ou direta) é PERMANENTE e cascateia mensagens/eventos de verdade (FK real, não in-memory)", async () => {
+  const tenantId = "tenant-delete-conversation-1";
+  const workspace = await makeWorkspace(tenantId);
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+
+  const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo };
+
+  // Um grupo real, com 2 mensagens — o cenário que motivou o pedido ("excluir conversas e grupos").
+  const r1 = await registerInboundMessage(deps, {
+    tenantId, workspaceId: workspace.id, connectionId: connection.id,
+    chatId: "120363999888777666@g.us", isGroup: true, groupName: "Grupo de Teste", fromMe: false,
+    senderId: "+5511988887777", senderName: "Fulano",
+    externalMessageId: "wamid.delete-1", type: "text", body: "Mensagem 1", occurredAt: new Date().toISOString(),
+  });
+  await registerInboundMessage(deps, {
+    tenantId, workspaceId: workspace.id, connectionId: connection.id,
+    chatId: "120363999888777666@g.us", isGroup: true, fromMe: false,
+    senderId: "+5511977776666", senderName: "Beltrano",
+    externalMessageId: "wamid.delete-2", type: "text", body: "Mensagem 2", occurredAt: new Date().toISOString(),
+  });
+
+  const beforeCount = await db.pool.query("select count(*)::int as count from inbox_messages where conversation_id = $1", [r1.conversation.id]);
+  assert.equal(beforeCount.rows[0].count, 2, "pré-condição: as 2 mensagens existem antes da exclusão");
+
+  await conversationRepo.delete(r1.conversation.id);
+
+  const gone = await conversationRepo.getById(r1.conversation.id);
+  assert.equal(gone, undefined, "a conversa foi realmente removida, nunca um soft-delete/tombstone");
+
+  const afterCount = await db.pool.query("select count(*)::int as count from inbox_messages where conversation_id = $1", [r1.conversation.id]);
+  assert.equal(afterCount.rows[0].count, 0, "as mensagens cascateiam junto (FK on delete cascade) — nunca ficam órfãs apontando pra uma conversa inexistente");
+});
+
+test("DELETE_CONVERSATION: excluir uma conversa que já não existe (duplo clique/retry) nunca lança — idempotente", async () => {
+  const workspace = await makeWorkspace("tenant-delete-conversation-2");
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  await assert.doesNotReject(conversationRepo.delete("inboxconv-nao-existe"));
+});

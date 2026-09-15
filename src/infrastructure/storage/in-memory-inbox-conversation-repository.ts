@@ -60,6 +60,10 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     return this.rows.get(id);
   }
 
+  async delete(id: string): Promise<void> {
+    this.rows.delete(id);
+  }
+
   async getByExternalChatId(input: { connectionId: string; externalChatId: string }): Promise<InboxConversation | undefined> {
     // Mesmo racional do adapter Postgres: prefere o registro ATIVO se houver, mas ainda devolve um
     // tombstone se for a única correspondência (o reconciliador precisa enxergá-lo).

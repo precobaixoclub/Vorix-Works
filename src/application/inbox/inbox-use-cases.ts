@@ -243,6 +243,19 @@ export async function markConversationRead(deps: InboxUseCaseDeps, input: MarkCo
   await deps.conversationRepository.markRead(conversation.id);
 }
 
+export type DeleteConversationInput = { tenantId: string; workspaceId: string; conversationId: string };
+
+/**
+ * Exclusão PERMANENTE de uma conversa (direta ou de grupo) — pedida explicitamente por um humano
+ * (nunca automática, nunca parte do fluxo de merge de identidade, que usa tombstone/preserva
+ * histórico). Mensagens e eventos cascateiam junto (FK `on delete cascade`, ver
+ * `db/migrations/0083`/`0084`) — não há como recuperar depois desta chamada.
+ */
+export async function deleteConversation(deps: InboxUseCaseDeps, input: DeleteConversationInput): Promise<void> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  await deps.conversationRepository.delete(conversation.id);
+}
+
 export type AssignConversationInput = { tenantId: string; workspaceId: string; conversationId: string; assignedUserId?: string; performedBy: string };
 
 /**

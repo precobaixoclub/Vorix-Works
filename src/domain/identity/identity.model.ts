@@ -146,6 +146,10 @@ export const PERMISSIONS = [
   "inbox:assign",
   "inbox:manage_connections",
   "inbox:manage_ai",
+  // Excluir uma conversa/grupo é permanente (mensagens/eventos cascateiam junto, ver
+  // `db/migrations/0083`/`0084`) — mesmo degrau administrativo de `manage_connections`, nunca
+  // liberado pra `editor` (que só tem `reply`/`assign`, ações reversíveis do dia a dia).
+  "inbox:delete_conversations",
   // CRM/Comercial (Fase 1) — auditoria em docs/crm-omnichannel-architecture-audit.md.
   // `tenant_member:manage`/`team:manage` ficam num degrau administrativo (convidar/remover
   // membro e criar/editar equipe são ações de gestão de conta, mesmo raciocínio de
@@ -199,7 +203,7 @@ const INSTAGRAM_DM_OPERATOR_PERMISSIONS: readonly Permission[] = ["instagram_dm:
 const INSTAGRAM_DM_ADMIN_PERMISSIONS: readonly Permission[] = ["instagram_dm:automation_manage"];
 const INBOX_READ_PERMISSIONS: readonly Permission[] = ["inbox:read"];
 const INBOX_OPERATOR_PERMISSIONS: readonly Permission[] = ["inbox:reply", "inbox:assign"];
-const INBOX_ADMIN_PERMISSIONS: readonly Permission[] = ["inbox:manage_connections", "inbox:manage_ai"];
+const INBOX_ADMIN_PERMISSIONS: readonly Permission[] = ["inbox:manage_connections", "inbox:manage_ai", "inbox:delete_conversations"];
 const CRM_READ_PERMISSIONS: readonly Permission[] = ["contact:read", "deal:read", "task:read", "product:read", "proposal:read"];
 const CRM_OPERATOR_PERMISSIONS: readonly Permission[] = ["contact:manage", "deal:manage", "task:manage", "product:manage", "proposal:manage", "proposal:send"];
 const CRM_ADMIN_PERMISSIONS: readonly Permission[] = ["tenant_member:manage", "team:manage", "automation:manage"];

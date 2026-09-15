@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { GuardedButton } from "@/components/GuardedButton";
 import { Input } from "@/components/Field";
 import { SearchableCombo } from "@/components/SearchableCombo";
@@ -40,10 +41,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
-import { canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
+import { canManageTenant, canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
 import {
   assignInboxConversation,
   closeInboxConversation,
+  deleteInboxConversation,
   markInboxConversationRead,
   reopenInboxConversation,
   sendInboxMediaMessage,
@@ -460,10 +462,13 @@ function ConversationTimelinePane({
   const { state } = useAuth();
   const role = state.status === "authenticated" ? state.role : undefined;
   const canOperate = canOperateWorkspace(role);
+  const canDelete = canManageTenant(role);
   const { data, isLoading, error, mutate } = useInboxConversationMessages(workspaceId, conversation.id);
   const { data: eventsData, mutate: mutateEvents } = useInboxConversationEvents(workspaceId, conversation.id);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [sendError, setSendError] = useState<string | undefined>();
   const [failedDraft, setFailedDraft] = useState<string | undefined>();
   const [busyAction, setBusyAction] = useState<string | undefined>();
@@ -505,6 +510,25 @@ function ConversationTimelinePane({
       setActionError(cause instanceof Error ? cause.message : "Não foi possível concluir a ação.");
     } finally {
       setBusyAction(undefined);
+    }
+  }
+
+  /** Exclusão PERMANENTE — nunca "fechar"/"arquivar" (`runAction("status", ...)` acima, reversível).
+   * Some da lista pro lado de quem excluiu (`onConversationChanged`) e sai da tela da conversa
+   * (`onBack`) — não há mais nada pra mostrar aqui depois disto. */
+  async function handleDelete() {
+    if (!canDelete) return;
+    setDeleting(true);
+    setActionError(undefined);
+    try {
+      await deleteInboxConversation(workspaceId, conversation.id);
+      setDeleteConfirmOpen(false);
+      onBack();
+      await onConversationChanged();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Não foi possível excluir esta conversa.");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -629,6 +653,7 @@ function ConversationTimelinePane({
 
           <ConversationActionsMenu
             canOperate={canOperate}
+            canDelete={canDelete}
             conversation={conversation}
             workspaceId={workspaceId}
             busyAction={busyAction}
@@ -637,6 +662,7 @@ function ConversationTimelinePane({
             onTransferTargetChange={setTransferTarget}
             onRunAction={runAction}
             onOpenContext={onOpenContext}
+            onRequestDelete={() => setDeleteConfirmOpen(true)}
           />
 
           <Button variant="ghost" size="sm" onClick={onOpenContext}>
@@ -648,6 +674,17 @@ function ConversationTimelinePane({
           {actionError ? <span className="text-xs text-destructive">{actionError}</span> : null}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title={conversation.chatType === "group" ? "Excluir grupo" : "Excluir conversa"}
+        description={`Isto apaga permanentemente ${conversation.chatType === "group" ? `o grupo "${conversationTitle(conversation)}"` : `a conversa com "${conversationTitle(conversation)}"`} e todo o histórico de mensagens. Não pode ser desfeito.`}
+        confirmLabel="Excluir"
+        variant="danger"
+        busy={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteConfirmOpen(false)}
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
@@ -788,6 +825,7 @@ function ConversationTimelinePane({
 
 function ConversationActionsMenu({
   canOperate,
+  canDelete,
   conversation,
   workspaceId,
   busyAction,
@@ -796,8 +834,10 @@ function ConversationActionsMenu({
   onTransferTargetChange,
   onRunAction,
   onOpenContext,
+  onRequestDelete,
 }: {
   canOperate: boolean;
+  canDelete: boolean;
   conversation: InboxConversation;
   workspaceId: string;
   busyAction: string | undefined;
@@ -806,6 +846,7 @@ function ConversationActionsMenu({
   onTransferTargetChange: (value: string) => void;
   onRunAction: (key: string, action: () => Promise<InboxConversation>) => void;
   onOpenContext: () => void;
+  onRequestDelete: () => void;
 }) {
   return (
     <Popover>
@@ -872,6 +913,19 @@ function ConversationActionsMenu({
               OK
             </GuardedButton>
           </div>
+        </div>
+
+        <div className="border-t border-border pt-3">
+          <GuardedButton
+            variant="danger"
+            className="w-full justify-start"
+            allowed={canDelete}
+            blockedReason={RBAC_COPY.deleteConversations}
+            onClick={onRequestDelete}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {conversation.chatType === "group" ? "Excluir grupo" : "Excluir conversa"}
+          </GuardedButton>
         </div>
       </PopoverContent>
     </Popover>

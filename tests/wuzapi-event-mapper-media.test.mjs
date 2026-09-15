@@ -167,6 +167,48 @@ test("mapWuzApiEvent: SELF-ECHO (IsFromMe=true) — chatId continua o PEER (não
   assert.notEqual(mapped.chatId, mapped.senderId, "self-echo: chatId (peer) e senderId (o próprio bot) são DIFERENTES de propósito");
 });
 
+/**
+ * CORREÇÃO DE BUG REAL (achado ao vivo em produção, 2026-09-14, logo após o deploy da réplica de
+ * identidade) — payload real capturado nos logs do WuzAPI: DM inbound com o peer endereçado por
+ * LID, `SenderAlt` preenchido com o telefone real, `RecipientAlt` vazio. `chatPhoneE164` nunca
+ * resolvia (contato ficava preso no pivô degradado/LID puro para sempre, mesmo com evidência forte
+ * disponível no mesmo evento) porque o código só olhava `RecipientAlt` pra identidade do Chat,
+ * incondicionalmente — nunca `SenderAlt`, que é onde o alt do peer realmente vem quando é ELE quem
+ * mandou a mensagem (`IsFromMe:false`).
+ */
+test("mapWuzApiEvent: DM inbound com peer via LID + SenderAlt real (RecipientAlt vazio) — chatPhoneE164 resolve (bug real de produção corrigido)", () => {
+  const mapped = mapWuzApiEvent(rawEvent(
+    { conversation: "Cara não sei" },
+    {
+      info: {
+        Chat: "159154828243108@lid", Sender: "159154828243108@lid",
+        SenderAlt: "554691086107@s.whatsapp.net", RecipientAlt: "",
+        IsGroup: false, IsFromMe: false,
+      },
+    },
+  ));
+
+  assert.equal(mapped.chatPhoneE164, "+554691086107", "inbound: o alt do PEER vem em SenderAlt (ele é quem mandou) — RecipientAlt vazio nunca deveria bloquear a resolução");
+  assert.equal(mapped.chatLid, "+159154828243108");
+  assert.equal(mapped.senderPn, "+554691086107");
+});
+
+test("mapWuzApiEvent: self-echo (IsFromMe=true) com SenderAlt sendo o NOSSO próprio alt — chatPhoneE164 usa RecipientAlt (do peer), nunca SenderAlt (nosso)", () => {
+  const mapped = mapWuzApiEvent(rawEvent(
+    { conversation: "Aqui é a empresa" },
+    {
+      info: {
+        Chat: "554691086107@s.whatsapp.net", Sender: "999888777666555@lid",
+        SenderAlt: "5511900000000@s.whatsapp.net", RecipientAlt: "159154828243108@lid",
+        IsGroup: false, IsFromMe: true,
+      },
+    },
+  ));
+
+  assert.equal(mapped.chatPhoneE164, "+554691086107", "self-echo: Chat já vem como PN direto, resolve normalmente");
+  assert.equal(mapped.chatLid, "+159154828243108", "o LID do PEER vem de RecipientAlt (nós somos o Sender aqui) — nunca de SenderAlt, que seria o nosso próprio alias");
+});
+
 test("mapWuzApiEvent: ReadReceipt com MessageIDs em lote produz UM MessageStatusChanged POR id, nunca só o primeiro", () => {
   const events = mapWuzApiEvent({
     type: "ReadReceipt",

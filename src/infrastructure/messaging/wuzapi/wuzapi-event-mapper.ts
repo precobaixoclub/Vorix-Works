@@ -132,11 +132,21 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
 
   // Bloco "Identity UX" — telefone é o pivô da PESSOA, `chatId` continua o pivô do CHAT (podem
   // divergir: `chatId` fica estável mesmo sem `*Alt`, o telefone só existe quando o provider
-  // confirma — ver `src/domain/inbox/whatsapp-identity.ts`). `RecipientAlt` é o par alternante de
-  // `Chat` (achado ao vivo, ver docs/conversas-whatsapp-experience-completion.md); `SenderAlt` o de
-  // `Sender`. Em DM, `Chat` e `Sender` normalmente são o mesmo peer — resolvido separadamente aqui
-  // sem assumir isso, cada um com seu próprio `*Alt`.
-  const chatIdentity = isGroup ? undefined : resolveWhatsAppPersonIdentity(chatRaw, info?.RecipientAlt as string | undefined);
+  // confirma — ver `src/domain/inbox/whatsapp-identity.ts`).
+  //
+  // CORREÇÃO DE BUG REAL (achado ao vivo em produção pós-deploy da réplica de identidade,
+  // 2026-09-14): em DM (`isGroup=false`), `Chat` e `Sender` são o MESMO peer — mas qual `*Alt`
+  // carrega o telefone real do PEER depende de quem é o remetente da MENSAGEM, não de quem é o
+  // "Chat": inbound (`fromMe=false`) tem o peer como `Sender`, então o alt do peer vem em
+  // `SenderAlt` (`RecipientAlt` aqui seria o alt de NÓS MESMOS — somos o destinatário — nunca do
+  // peer); self-echo (`fromMe=true`) tem NÓS MESMOS como `Sender`, então o alt do peer vem em
+  // `RecipientAlt` (`SenderAlt` aqui seria o nosso próprio alt). A versão anterior sempre usava
+  // `RecipientAlt` incondicionalmente — em payload real confirmado (`Sender: "...@lid"`,
+  // `SenderAlt: "55...@s.whatsapp.net"` preenchido, `RecipientAlt: ""` vazio, `IsFromMe: false`),
+  // isso nunca resolvia o telefone real: o contato ficava permanentemente preso no pivô degradado
+  // (LID puro) mesmo com evidência forte disponível no MESMO evento.
+  const chatAltJid = (fromMe ? info?.RecipientAlt : info?.SenderAlt) as string | undefined;
+  const chatIdentity = isGroup ? undefined : resolveWhatsAppPersonIdentity(chatRaw, chatAltJid);
   const senderIdentity = resolveWhatsAppPersonIdentity(sender, info?.SenderAlt as string | undefined);
 
   const message = event.Message as Record<string, unknown> | undefined;

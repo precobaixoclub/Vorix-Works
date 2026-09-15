@@ -717,6 +717,7 @@ function ConversationTimelinePane({
                   key={`msg-${entry.message.id}`}
                   workspaceId={workspaceId}
                   message={entry.message}
+                  messages={messages}
                   isGroup={conversation.chatType === "group"}
                   onRetry={(body) => handleSend(body)}
                   retrying={sending}
@@ -1189,12 +1190,18 @@ function formatRecordingTime(totalSeconds: number): string {
 function MessageBubble({
   workspaceId,
   message,
+  messages,
   isGroup,
   onRetry,
   retrying,
 }: {
   workspaceId: string;
   message: InboxMessage;
+  /** Timeline inteira já carregada — usada só para resolver o conteúdo AO VIVO de uma resposta
+   * citada (`message.quotedMessage.externalMessageId`) quando a mensagem original ainda está
+   * visível aqui. Cai no snapshot gravado no momento do evento (`quotedMessage.body`/`type`) quando
+   * a original não está (ou nunca esteve) carregada — nunca busca de novo no backend. */
+  messages: readonly InboxMessage[];
   isGroup: boolean;
   onRetry: (body: string) => void;
   retrying: boolean;
@@ -1216,8 +1223,23 @@ function MessageBubble({
   const isMedia = message.type === "image" || message.type === "video" || message.type === "audio" || message.type === "document";
   const failed = isOutbound && message.status === "failed";
 
+  // Bloco "resposta citada" (pedido explícito do usuário: "quando alguem responde uma mensagem não
+  // esta mostrando o conteudo corretamente") — prefere o conteúdo AO VIVO da mensagem original
+  // quando ela ainda está carregada nesta timeline (pode ter sido editada/apagada desde então,
+  // embora o Vorix não suporte edição hoje), caindo no snapshot gravado no momento da resposta
+  // quando ela não está (fora da janela carregada, ou de uma conversa já fundida).
+  const quoted = message.quotedMessage;
+  const quotedLive = quoted?.externalMessageId ? messages.find((candidate) => candidate.externalMessageId === quoted.externalMessageId) : undefined;
+  const quotedBody = (quotedLive?.body ?? quoted?.body)?.trim();
+  const quotedType = quotedLive?.type ?? quoted?.type;
+  // Nome de quem mandou a original só é confiável quando ela ainda está carregada (`senderId` no
+  // snapshot é um JID/telefone cru, nunca resolvido pra nome — mostrar isso seria pior que omitir).
+  const quotedSenderLabel = quotedLive?.senderDisplayName;
+
+  const reactionGroups = groupReactionsByEmoji(message.reactions);
+
   return (
-    <div className={cn("flex", isOutbound ? "justify-end" : "justify-start")}>
+    <div className={cn("flex flex-col gap-1", isOutbound ? "items-end" : "items-start")}>
       <div
         className={cn(
           "max-w-[min(78%,42rem)] rounded-xl border px-3 py-2 text-sm shadow-sm",
@@ -1229,6 +1251,12 @@ function MessageBubble({
         )}
       >
         {senderLabel ? <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">{senderLabel}</p> : null}
+        {quoted ? (
+          <div className={cn("mb-1.5 rounded-md border-l-2 px-2 py-1 text-xs opacity-80", isOutbound ? "border-primary-foreground/50 bg-black/10" : "border-primary/50 bg-muted/60")}>
+            {quotedSenderLabel ? <p className="mb-0.5 font-semibold">{quotedSenderLabel}</p> : null}
+            <p className="line-clamp-2 break-words">{quotedBody || mediaLabelFor(quotedType ?? "other")}</p>
+          </div>
+        ) : null}
         {isMedia ? (
           <MessageMedia workspaceId={workspaceId} message={message} />
         ) : !body ? (
@@ -1257,8 +1285,32 @@ function MessageBubble({
           </div>
         ) : null}
       </div>
+      {reactionGroups.length > 0 ? (
+        <div className="flex flex-wrap gap-1 px-1">
+          {reactionGroups.map((group) => (
+            <span
+              key={group.emoji}
+              title={group.reactorNames.join(", ")}
+              className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card px-1.5 py-0.5 text-[11px] shadow-sm"
+            >
+              <span>{group.emoji}</span>
+              {group.count > 1 ? <span className="tabular-nums text-[10px] text-muted-foreground">{group.count}</span> : null}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function groupReactionsByEmoji(reactions: readonly InboxMessage["reactions"][number][]): { emoji: string; count: number; reactorNames: string[] }[] {
+  const byEmoji = new Map<string, string[]>();
+  for (const reaction of reactions) {
+    const names = byEmoji.get(reaction.emoji) ?? [];
+    names.push(reaction.reactorName ?? reaction.reactorId);
+    byEmoji.set(reaction.emoji, names);
+  }
+  return [...byEmoji.entries()].map(([emoji, reactorNames]) => ({ emoji, count: reactorNames.length, reactorNames }));
 }
 
 function EventPill({ event, currentUserId, members }: { event: InboxConversationEvent; currentUserId: string | undefined; members: readonly InboxTenantMember[] }) {

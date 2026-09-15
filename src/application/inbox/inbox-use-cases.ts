@@ -546,6 +546,15 @@ export type RegisterInboundMessageInput = {
   externalMessageId: string;
   type: InboxMessage["type"];
   body?: string;
+  /** Bloco "resposta citada" (pedido explícito do usuário em produção) — presentes só quando esta
+   * mensagem é uma resposta a outra (ver `wuzapi-event-mapper.ts`). */
+  quotedExternalMessageId?: string;
+  quotedSenderId?: string;
+  quotedBody?: string;
+  quotedType?: InboxMessage["type"];
+  /** Bloco "menção em grupo" (pedido explícito do usuário) — JIDs crus mencionados no `body`
+   * (`@<dígitos>`, ainda não resolvidos pro nome real da pessoa). */
+  mentionedJids?: string[];
   occurredAt: string;
 };
 
@@ -606,6 +615,38 @@ async function resolveInboundPivotPhone(deps: InboxUseCaseDeps, input: RegisterI
   return normalizePhoneNumber(input.chatId);
 }
 
+/**
+ * Bloco "menção em grupo" (pedido explícito do usuário em produção: "quando marca uma pessoa em
+ * um grupo... não esta funcionando corretamente") — o WhatsApp entrega o texto já com um
+ * placeholder CRU (`@<dígitos-do-jid>`, nunca o nome da pessoa) e uma lista separada
+ * (`mentionedJids`) dos JIDs de fato mencionados; é responsabilidade de quem exibe resolver isso
+ * pro nome real. Substitui cada placeholder pelo nome do contato já conhecido (ou o telefone
+ * normalizado, se o nome ainda não foi observado) — nunca lança, um JID que não resolve fica como
+ * veio (melhor mostrar o número cru do que quebrar a mensagem inteira).
+ */
+async function resolveMentionsInBody(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string; body: string; mentionedJids: string[] }): Promise<string> {
+  let body = input.body;
+  for (const rawJid of input.mentionedJids) {
+    const digits = rawJid.split("@")[0];
+    if (!digits) continue;
+    const placeholder = `@${digits}`;
+    if (!body.includes(placeholder)) continue;
+
+    let phoneE164: string | undefined;
+    if (rawJid.endsWith("@lid") && deps.identityLinkRepository) {
+      const link = await deps.identityLinkRepository.getByLid(input.workspaceId, `+${digits}`);
+      phoneE164 = link?.phoneE164;
+    } else if (rawJid.endsWith("@s.whatsapp.net")) {
+      phoneE164 = `+${digits}`;
+    }
+    if (!phoneE164) continue; // LID sem link conhecido ainda — pivô degradado, mesmo racional do resto do módulo. Deixa o placeholder cru.
+
+    const contact = await deps.contactRepository.findByPhone({ tenantId: input.tenantId, workspaceId: input.workspaceId, phoneNormalized: phoneE164 });
+    body = body.split(placeholder).join(`@${contact?.name ?? phoneE164}`);
+  }
+  return body;
+}
+
 export async function registerInboundMessage(
   deps: InboxUseCaseDeps,
   input: RegisterInboundMessageInput,
@@ -649,6 +690,10 @@ export async function registerInboundMessage(
     groupName: input.groupName,
     contactId: contact?.id,
   });
+  const resolvedBody = input.body && input.mentionedJids?.length
+    ? await resolveMentionsInBody(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, body: input.body, mentionedJids: input.mentionedJids })
+    : input.body;
+
   const { message, wasCreated } = await deps.messageRepository.create({
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
@@ -657,10 +702,15 @@ export async function registerInboundMessage(
     externalMessageId: input.externalMessageId,
     direction: input.fromMe ? "outbound" : "inbound",
     type: input.type,
-    body: input.body,
+    body: resolvedBody,
     senderExternalId: input.senderId,
     senderDisplayName: input.senderName,
     senderPhoneE164: input.senderPn,
+    // Bloco "resposta citada" — snapshot no momento da criação, nunca resolvido de novo depois
+    // (ver `InboxMessage.quotedMessage`).
+    quotedMessage: input.quotedExternalMessageId
+      ? { externalMessageId: input.quotedExternalMessageId, senderId: input.quotedSenderId, body: input.quotedBody, type: input.quotedType }
+      : undefined,
     ...(input.fromMe ? { status: "sent" as const } : {}),
   });
   if (wasCreated) {
@@ -880,6 +930,30 @@ export type ApplyMessageStatusChangedInput = { connectionId: string; externalMes
 /** Usado pelo consumer de `inbox.status.queue` (Fase 2) — recibo de entrega/leitura do WhatsApp. */
 export async function applyMessageStatusChanged(deps: InboxUseCaseDeps, input: ApplyMessageStatusChangedInput): Promise<void> {
   await deps.messageRepository.updateStatusByExternalId(input);
+}
+
+export type ApplyMessageReactionInput = {
+  connectionId: string;
+  targetExternalMessageId: string;
+  emoji: string;
+  reactorId: string;
+  reactorName?: string;
+};
+
+/**
+ * Bloco "reações" (pedido explícito do usuário em produção: "ajuste tambem para quando alguem
+ * reagir a uma mensagem") — usado pelo consumer de `inbox.reaction.queue`. NUNCA cria uma mensagem
+ * nova (uma reação é uma atualização de uma mensagem já existente — ver `mapReactionMessage`,
+ * `wuzapi-event-mapper.ts`). `undefined` (mensagem-alvo não encontrada) é um resultado normal, não
+ * um erro: a mensagem reagida pode ter sido apagada por retenção, ou pertencer a um período antes
+ * do Vorix começar a rastrear esta conversa — nunca lança, quem chama só decide se publica ou não
+ * uma notificação de tempo real.
+ */
+export async function applyMessageReaction(deps: InboxUseCaseDeps, input: ApplyMessageReactionInput): Promise<{ applied: boolean; conversationId?: string; tenantId?: string; workspaceId?: string }> {
+  const message = await deps.messageRepository.findByExternalId({ connectionId: input.connectionId, externalMessageId: input.targetExternalMessageId });
+  if (!message) return { applied: false };
+  await deps.messageRepository.setReaction(message.id, { reactorId: input.reactorId, reactorName: input.reactorName, emoji: input.emoji });
+  return { applied: true, conversationId: message.conversationId, tenantId: message.tenantId, workspaceId: message.workspaceId };
 }
 
 export type ApplyConnectionStateChangedInput = { connectionId: string; status: MessagingConnectionStatus; phoneNumber?: string };

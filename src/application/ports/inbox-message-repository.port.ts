@@ -1,4 +1,4 @@
-import type { InboxMediaStorageRef, InboxMessage, InboxMessageStatus, InboxMessageType } from "../../domain/inbox/inbox.model.js";
+import type { InboxMediaStorageRef, InboxMessage, InboxMessageStatus, InboxMessageType, InboxQuotedMessage } from "../../domain/inbox/inbox.model.js";
 
 /** Módulo Conversas (Fase 1). Ver `db/migrations/0083_inbox_messages.sql`. */
 
@@ -24,6 +24,9 @@ export type CreateInboxMessageInput = {
   senderDisplayName?: string;
   /** Bloco "Identity UX" — telefone resolvido de quem mandou (ver `InboxContact.whatsappPn`). */
   senderPhoneE164?: string;
+  /** Bloco "resposta citada" (pedido explícito do usuário em produção) — snapshot no momento da
+   * criação, nunca atualizado depois (ver `InboxMessage.quotedMessage`). */
+  quotedMessage?: InboxQuotedMessage;
 };
 
 export type InboxMessageRepositoryPort = {
@@ -65,6 +68,14 @@ export type InboxMessageRepositoryPort = {
    * sobrescreve `mediaStorageRef` (que continua exclusivo de `attachMedia`, só em caso de sucesso).
    */
   attachMediaSourceRef(id: string, ref: Record<string, unknown>): Promise<void>;
+  /**
+   * Bloco "reações" (pedido explícito do usuário em produção) — upsert por `reactorId` (no máximo
+   * uma entrada por pessoa, ver `InboxMessage.reactions`); `emoji: ""` REMOVE a entrada dessa
+   * pessoa (nunca fica um registro "vazio"). Nunca lança para mensagem inexistente (a mensagem
+   * reagida pode ter sido apagada por retenção entre o evento e o processamento — silenciosamente
+   * vira no-op, mesmo racional de `attachMedia`).
+   */
+  setReaction(id: string, input: { reactorId: string; reactorName?: string; emoji: string }): Promise<void>;
   listByConversation(input: { tenantId: string; workspaceId: string; conversationId: string; cursor?: string; limit?: number }): Promise<InboxMessage[]>;
   /** Usado pelo consumer de status (delivery/read receipts) e pelo `OutboxSenderConsumer`. Ignora
    * silenciosamente se a mensagem já estiver num status terminal — retries podem chegar tarde. */

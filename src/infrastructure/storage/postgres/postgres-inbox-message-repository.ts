@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import type { CreateInboxMessageInput, InboxMessageRepositoryPort } from "../../../application/ports/inbox-message-repository.port.js";
-import type { InboxMediaStorageRef, InboxMessage, InboxMessageStatus } from "../../../domain/inbox/inbox.model.js";
+import type { InboxMediaStorageRef, InboxMessage, InboxMessageReaction, InboxMessageStatus, InboxQuotedMessage } from "../../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxmsg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -40,6 +40,8 @@ type Row = {
   sender_external_id: string | null;
   sender_display_name: string | null;
   sender_phone_e164: string | null;
+  reactions: InboxMessageReaction[];
+  quoted_message: InboxQuotedMessage | null;
 };
 
 export class PostgresInboxMessageRepository implements InboxMessageRepositoryPort {
@@ -55,15 +57,15 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
       `insert into inbox_messages (
          id, tenant_id, workspace_id, conversation_id, connection_id, external_message_id,
          direction, type, status, body, media_storage_ref, mime_type, metadata,
-         sent_by_user_id, sent_by_ai, sent_by_automation, sender_external_id, sender_display_name, sender_phone_e164, sent_at
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, case when $7 = 'inbound' then now() else null end)
+         sent_by_user_id, sent_by_ai, sent_by_automation, sender_external_id, sender_display_name, sender_phone_e164, quoted_message, sent_at
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, case when $7 = 'inbound' then now() else null end)
        on conflict (connection_id, external_message_id) do nothing
        returning *`,
       [
         id, input.tenantId, input.workspaceId, input.conversationId, input.connectionId, input.externalMessageId ?? null,
         input.direction, input.type, defaultStatus, input.body ?? null, input.mediaStorageRef ?? null, input.mimeType ?? null, input.metadata ?? null,
         input.sentByUserId ?? null, input.sentByAi ?? false, input.sentByAutomation ?? false, input.senderExternalId ?? null, input.senderDisplayName ?? null,
-        input.senderPhoneE164 ?? null,
+        input.senderPhoneE164 ?? null, input.quotedMessage ? JSON.stringify(input.quotedMessage) : null,
       ],
     );
     if (insertResult.rows[0]) return { message: this.toDomain(insertResult.rows[0]), wasCreated: true };
@@ -98,6 +100,18 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
 
   async attachMediaSourceRef(id: string, ref: Record<string, unknown>): Promise<void> {
     await this.pool.query("update inbox_messages set media_source_ref = $2 where id = $1", [id, JSON.stringify(ref)]);
+  }
+
+  async setReaction(id: string, input: { reactorId: string; reactorName?: string; emoji: string }): Promise<void> {
+    // Leitura-decisão-escrita não atômica de propósito — reações são baixa frequência/baixo risco
+    // (a pior corrida possível é uma reação simultânea da MESMA pessoa se sobrepor, o que já seria
+    // ambíguo no WhatsApp real também). Uma trava por linha aqui seria complexidade desproporcional
+    // ao risco real.
+    const current = await this.pool.query<{ reactions: InboxMessageReaction[] }>("select reactions from inbox_messages where id = $1", [id]);
+    if (!current.rows[0]) return;
+    const withoutReactor = current.rows[0].reactions.filter((reaction) => reaction.reactorId !== input.reactorId);
+    const next = input.emoji ? [...withoutReactor, { reactorId: input.reactorId, reactorName: input.reactorName, emoji: input.emoji }] : withoutReactor;
+    await this.pool.query("update inbox_messages set reactions = $2 where id = $1", [id, JSON.stringify(next)]);
   }
 
   async listByConversation(input: { tenantId: string; workspaceId: string; conversationId: string; cursor?: string; limit?: number }): Promise<InboxMessage[]> {
@@ -266,6 +280,8 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
       senderExternalId: row.sender_external_id ?? undefined,
       senderDisplayName: row.sender_display_name ?? undefined,
       senderPhoneE164: row.sender_phone_e164 ?? undefined,
+      reactions: row.reactions ?? [],
+      quotedMessage: row.quoted_message ?? undefined,
     };
   }
 }

@@ -117,9 +117,24 @@ export type InboxMediaStorageRef = { provider: string; bucket?: string; objectKe
  * mídia já foi baixada e enriquecida (ver `downloadInboundMediaAndAttach`). */
 export type InboxMediaMetadata = { fileName?: string; fileSizeBytes?: number; durationSeconds?: number; thumbnailDataUrl?: string };
 
+/** Bloco "reações" (pedido explícito do usuário: "ajuste tambem para quando alguem reagir a uma
+ * mensagem") — espelha `InboxMessageReaction` do backend. Uma entrada por `reactorId` (a última
+ * reação dessa pessoa vence — nunca uma lista histórica de todas as reações já dadas). */
+export type InboxMessageReaction = { reactorId: string; reactorName?: string; emoji: string };
+
+/** Bloco "resposta citada" (pedido explícito do usuário: "quando alguem responde uma mensagem não
+ * esta mostrando o conteudo corretamente") — espelha `InboxQuotedMessage` do backend. Snapshot
+ * gravado no momento em que a resposta chegou, nunca resolvido de novo depois — se a mensagem
+ * original ainda estiver carregada na timeline atual, o frontend prefere mostrar o conteúdo AO VIVO
+ * dela (via `externalMessageId`), caindo neste snapshot só quando ela não está mais visível. */
+export type InboxQuotedMessage = { externalMessageId?: string; senderId?: string; body?: string; type?: InboxMessageType };
+
 export type InboxMessage = {
   id: string;
   conversationId: string;
+  /** Id da mensagem no WhatsApp (`wamid...`) — usado para casar `quotedMessage.externalMessageId`
+   * com uma mensagem já carregada na timeline atual (conteúdo ao vivo em vez do snapshot). */
+  externalMessageId?: string;
   direction: InboxMessageDirection;
   type: InboxMessageType;
   status: InboxMessageStatus;
@@ -140,6 +155,11 @@ export type InboxMessage = {
    * `sentByAutomation`). */
   senderExternalId?: string;
   senderDisplayName?: string;
+  /** Bloco "resposta citada" — snapshot da mensagem original, presente só quando esta mensagem é
+   * uma resposta a outra. */
+  quotedMessage?: InboxQuotedMessage;
+  /** Bloco "reações" — sempre presente (lista vazia quando ninguém reagiu ainda). */
+  reactions: readonly InboxMessageReaction[];
   createdAt: string;
   sentAt?: string;
 };

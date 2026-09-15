@@ -1,4 +1,4 @@
-import type { ConnectionStateChanged, InboundMessageReceived, MessageStatusChanged, NormalizedInboxEvent } from "../../../application/inbox/inbox-events.js";
+import type { ConnectionStateChanged, InboundMessageReceived, MessageReactionReceived, MessageStatusChanged, NormalizedInboxEvent } from "../../../application/inbox/inbox-events.js";
 import type { InboxMessageStatus, InboxMessageType } from "../../../domain/inbox/inbox.model.js";
 import { resolveWhatsAppPersonIdentity } from "../../../domain/inbox/whatsapp-identity.js";
 
@@ -94,7 +94,7 @@ export function mapWuzApiEvent(raw: RawWuzApiEvent): NormalizedInboxEvent | Norm
   const instanceName = raw.instanceName;
   if (!raw.type || !instanceName) return undefined;
 
-  if (raw.type === "Message" && raw.event) return mapInboundMessage(instanceName, raw.event);
+  if (raw.type === "Message" && raw.event) return mapInboundMessageOrReaction(instanceName, raw.event);
   // `MessageIDs` pode conter mais de um id no mesmo evento (WuzAPI batching um receipt pra vários
   // envios recentes) — devolve UM MessageStatusChanged por id, nunca só o primeiro (achado de
   // revisão: a versão anterior só olhava `MessageIDs[0]`, silenciosamente nunca atualizando o
@@ -106,11 +106,43 @@ export function mapWuzApiEvent(raw: RawWuzApiEvent): NormalizedInboxEvent | Norm
   return undefined;
 }
 
-function mapInboundMessage(instanceName: string, event: Record<string, unknown>): InboundMessageReceived | undefined {
+/**
+ * Bloco "reações" (pedido explícito do usuário: "ajuste tambem para quando alguem reagir a uma
+ * mensagem") — confirmado no proto real do whatsmeow (`proto/waE2E/WAWebProtobufsE2E.proto`,
+ * `message ReactionMessage`): `key` (`waCommon.MessageKey`: `remoteJID`/`fromMe`/`ID`/`participant`)
+ * identifica a mensagem sendo reagida via `key.ID` (o `externalMessageId` dela), `text` é o emoji
+ * (string VAZIA = reação removida, nunca "reagiu com nada"). Nunca uma mensagem nova na conversa —
+ * sempre uma atualização de uma mensagem já existente (ver `applyMessageReaction`,
+ * `inbox-use-cases.ts`).
+ */
+function mapReactionMessage(instanceName: string, event: Record<string, unknown>, reactionMessage: Record<string, unknown>): MessageReactionReceived | undefined {
+  const info = event.Info as Record<string, unknown> | undefined;
+  const sender = info?.Sender as string | undefined;
+  const key = reactionMessage.key as Record<string, unknown> | undefined;
+  const targetExternalMessageId = key?.ID as string | undefined;
+  if (!sender || !targetExternalMessageId) return undefined;
+
+  return {
+    type: "message.reaction",
+    tenantId: "",
+    workspaceId: "",
+    connectionId: instanceName,
+    targetExternalMessageId,
+    emoji: typeof reactionMessage.text === "string" ? reactionMessage.text : "",
+    reactorId: normalizeWhatsmeowJid(sender),
+    reactorName: info?.PushName as string | undefined,
+    occurredAt: parseWuzApiTimestamp(info?.Timestamp),
+  };
+}
+
+function mapInboundMessageOrReaction(instanceName: string, event: Record<string, unknown>): InboundMessageReceived | MessageReactionReceived | undefined {
   const info = event.Info as Record<string, unknown> | undefined;
   const messageId = info?.ID as string | undefined;
   const sender = info?.Sender as string | undefined;
   if (!messageId || !sender) return undefined;
+
+  const reactionMessage = (event.Message as Record<string, unknown> | undefined)?.reactionMessage as Record<string, unknown> | undefined;
+  if (reactionMessage) return mapReactionMessage(instanceName, event, reactionMessage);
 
   const fromMe = Boolean(info?.IsFromMe);
   // `Chat` é a identidade CANÔNICA da conversa (grupo ou peer) — ver comentário no topo do
@@ -189,6 +221,18 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
   const mediaObject = kind && message ? (message[kind] as Record<string, unknown> | undefined) : undefined;
   const media = mediaObject ? extractMediaFields(messageType, mediaObject) : undefined;
 
+  // Bloco "resposta citada" + "menção em grupo" — `contextInfo` vive dentro do objeto do tipo
+  // específico (`extendedTextMessage.contextInfo`, `imageMessage.contextInfo` etc.), confirmado em
+  // payload real. Presente na MAIORIA das mensagens reais (mesmo sem responder/mencionar nada —
+  // carrega metadado de "modo de mensagem temporária" etc.), então `stanzaID`/`mentionedJID`
+  // ausentes é o caso comum, não um erro.
+  const contextInfo = mediaObject?.contextInfo as Record<string, unknown> | undefined;
+  const quotedExternalMessageId = contextInfo?.stanzaID as string | undefined;
+  const quotedSenderId = contextInfo?.participant as string | undefined;
+  const quotedRaw = contextInfo?.quotedMessage as Record<string, unknown> | undefined;
+  const { body: quotedBody, type: quotedType } = extractFallbackBodyAndType(quotedRaw);
+  const mentionedJids = Array.isArray(contextInfo?.mentionedJID) ? (contextInfo!.mentionedJID as unknown[]).filter((jid): jid is string => typeof jid === "string") : undefined;
+
   return {
     type: "message.inbound",
     // tenantId/workspaceId são resolvidos pelo worker a partir de `messaging_connections` (busca
@@ -216,8 +260,29 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
     // aparece como uma coisa só, não texto separado da mídia).
     body: body ?? media?.caption,
     ...media,
+    quotedExternalMessageId,
+    quotedSenderId,
+    quotedBody,
+    quotedType,
+    mentionedJids,
     occurredAt: parseWuzApiTimestamp(info?.Timestamp),
   };
+}
+
+/** Extração best-effort de corpo/tipo a partir de um objeto de mensagem bruto qualquer — reusa a
+ * MESMA lógica do corpo principal (`conversation`/`extendedTextMessage.text`, ou `caption` pro
+ * tipo de mídia certo), usada tanto pra mensagem citada (`contextInfo.quotedMessage`, aninhada no
+ * MESMO formato de `Message`) quanto poderia ser reusada por qualquer outro aninhamento futuro. */
+function extractFallbackBodyAndType(rawMessage: Record<string, unknown> | undefined): { body?: string; type?: InboxMessageType } {
+  if (!rawMessage) return {};
+  const keys = Object.keys(rawMessage);
+  const kind = keys.find((key) => key in MESSAGE_TYPE_BY_WHATSMEOW_KIND);
+  const type = kind ? MESSAGE_TYPE_BY_WHATSMEOW_KIND[kind] : undefined;
+  const extendedText = (rawMessage.extendedTextMessage as Record<string, unknown> | undefined)?.text;
+  const mediaObject = kind ? (rawMessage[kind] as Record<string, unknown> | undefined) : undefined;
+  const caption = typeof mediaObject?.caption === "string" ? (mediaObject.caption as string) : undefined;
+  const body = typeof rawMessage.conversation === "string" ? (rawMessage.conversation as string) : typeof extendedText === "string" ? extendedText : caption;
+  return { body, type };
 }
 
 /** ACHADO AO VIVO (diagnóstico temporário em produção) — `Info.Timestamp` chega como STRING

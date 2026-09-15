@@ -206,6 +206,24 @@ export type InboxMediaMetadata = {
   thumbnailDataUrl?: string;
 };
 
+/** Bloco "reações" — uma pessoa reagindo a uma mensagem (nunca uma mensagem nova, ver comentário em
+ * `InboxMessage.reactions`). `reactorName` é um snapshot do `PushName` no momento da reação (mesmo
+ * racional de `InboxMessage.senderDisplayName` — nome pode mudar, a reação antiga preserva o nome
+ * de quando aconteceu). */
+export type InboxMessageReaction = {
+  reactorId: string;
+  reactorName?: string;
+  emoji: string;
+};
+
+/** Bloco "resposta citada" — ver comentário em `InboxMessage.quotedMessage`. */
+export type InboxQuotedMessage = {
+  externalMessageId?: string;
+  senderId?: string;
+  body?: string;
+  type?: InboxMessageType;
+};
+
 export type InboxMessage = {
   id: string;
   tenantId: string;
@@ -242,6 +260,17 @@ export type InboxMessage = {
   mediaSourceRef?: Record<string, unknown>;
   mimeType?: string;
   metadata?: Record<string, unknown>;
+  /** Bloco "reações" (pedido explícito do usuário em produção) — no máximo UMA entrada por
+   * `reactorId` (uma nova reação da mesma pessoa substitui a anterior, nunca acumula; ver
+   * `applyMessageReaction`). `[]` = sem reação nenhuma, nunca `undefined` (sempre inicializado). */
+  reactions: InboxMessageReaction[];
+  /** Bloco "resposta citada" (pedido explícito do usuário em produção: "quando alguem responde uma
+   * mensagem não esta mostrando o conteudo corretamente") — snapshot da mensagem CITADA no momento
+   * do envio, nunca resolvido de novo depois. `undefined` = esta mensagem não é uma resposta a
+   * nenhuma outra. O frontend prefere resolver `externalMessageId` contra a própria timeline já
+   * carregada (conteúdo sempre atualizado, inclusive mídia já baixada) — isto é só o fallback para
+   * quando a mensagem original não estiver mais na página. */
+  quotedMessage?: InboxQuotedMessage;
   sentByUserId?: string;
   sentByAi: boolean;
   sentByAutomation: boolean;

@@ -38,6 +38,8 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
       publishAttempts: 0,
       createdAt: now,
       sentAt: input.direction === "inbound" ? now : undefined,
+      reactions: [],
+      quotedMessage: input.quotedMessage,
     };
     this.rows.set(created.id, created);
     return { message: created, wasCreated: true };
@@ -68,6 +70,14 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
     const existing = this.rows.get(id);
     if (!existing) return;
     this.rows.set(id, { ...existing, mediaSourceRef: ref });
+  }
+
+  async setReaction(id: string, input: { reactorId: string; reactorName?: string; emoji: string }): Promise<void> {
+    const existing = this.rows.get(id);
+    if (!existing) return;
+    const withoutReactor = existing.reactions.filter((reaction) => reaction.reactorId !== input.reactorId);
+    const reactions = input.emoji ? [...withoutReactor, { reactorId: input.reactorId, reactorName: input.reactorName, emoji: input.emoji }] : withoutReactor;
+    this.rows.set(id, { ...existing, reactions });
   }
 
   async listByConversation(input: { tenantId: string; workspaceId: string; conversationId: string; cursor?: string; limit?: number }): Promise<InboxMessage[]> {

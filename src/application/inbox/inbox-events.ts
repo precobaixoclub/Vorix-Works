@@ -67,6 +67,26 @@ export type InboundMessageReceived = {
   mediaKey?: string;
   fileSha256?: string;
   fileEncSha256?: string;
+  /**
+   * Bloco "resposta citada" (pedido explícito do usuário em produção: "quando alguem responde uma
+   * mensagem não esta mostrando o conteudo corretamente") — confirmado via payload real do WuzAPI:
+   * `contextInfo.stanzaID` é o `externalMessageId` da mensagem original, `contextInfo.participant`
+   * quem a mandou, `contextInfo.quotedMessage` o conteúdo bruto dela (mesmo formato de `Message`,
+   * aninhado). `quotedBody`/`quotedType` são um FALLBACK best-effort (extraídos aqui, mesma lógica
+   * de `body`/`messageType`) — o caso feliz é o frontend resolver `quotedExternalMessageId` contra
+   * uma mensagem já carregada na timeline (conteúdo sempre atualizado/completo, inclusive mídia já
+   * baixada); o fallback só importa quando a mensagem original não está mais na página carregada.
+   */
+  quotedExternalMessageId?: string;
+  quotedSenderId?: string;
+  quotedBody?: string;
+  quotedType?: InboxMessageType;
+  /** Bloco "menção em grupo" (pedido explícito do usuário: "quando marca uma pessoa em um grupo...
+   * não esta funcionando corretamente") — JIDs crus de `contextInfo.mentionedJID`, resolvidos pro
+   * nome/telefone real da pessoa em `registerInboundMessage` (nunca aqui — o mapper não tem acesso
+   * a repositório). `body` chega com o placeholder cru do WhatsApp (`@<dígitos do JID>`) até essa
+   * resolução acontecer. */
+  mentionedJids?: string[];
   occurredAt: string;
 };
 
@@ -92,4 +112,22 @@ export type ConnectionStateChanged = {
   occurredAt: string;
 };
 
-export type NormalizedInboxEvent = InboundMessageReceived | MessageStatusChanged | ConnectionStateChanged;
+/**
+ * Bloco "reações" (pedido explícito do usuário: "ajuste tambem para quando alguem reagir a uma
+ * mensagem") — confirmado no proto real do whatsmeow (`waE2E.ReactionMessage`): nunca uma
+ * mensagem nova na conversa, é uma ATUALIZAÇÃO de uma mensagem já existente (`key.ID` = a mensagem
+ * reagida). `emoji: ""` (string vazia) = reação REMOVIDA, nunca tratado como "reagiu com nada".
+ */
+export type MessageReactionReceived = {
+  type: "message.reaction";
+  tenantId: string;
+  workspaceId: string;
+  connectionId: string;
+  targetExternalMessageId: string;
+  emoji: string;
+  reactorId: string;
+  reactorName?: string;
+  occurredAt: string;
+};
+
+export type NormalizedInboxEvent = InboundMessageReceived | MessageStatusChanged | ConnectionStateChanged | MessageReactionReceived;

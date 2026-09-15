@@ -28,6 +28,7 @@ import type { MessagingProvider } from "../../application/ports/messaging-provid
 import type { InboxAiResponderPort } from "../../application/ports/inbox-ai-responder.port.js";
 import {
   applyConnectionStateChanged,
+  applyMessageReaction,
   applyMessageStatusChanged,
   downloadInboundMediaAndAttach,
   maybeGenerateAiResponse,
@@ -626,6 +627,11 @@ async function main(): Promise<void> {
       externalMessageId: event.externalMessageId,
       type: event.messageType,
       body: event.body,
+      quotedExternalMessageId: event.quotedExternalMessageId,
+      quotedSenderId: event.quotedSenderId,
+      quotedBody: event.quotedBody,
+      quotedType: event.quotedType,
+      mentionedJids: event.mentionedJids,
       occurredAt: event.occurredAt,
     });
     publishRealtimeNotification(channel, { type: "message.created", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
@@ -727,6 +733,23 @@ async function main(): Promise<void> {
     const event = JSON.parse(content.toString("utf8")) as Extract<NormalizedInboxEvent, { type: "connection.state" }>;
     await applyConnectionStateChanged(deps, { connectionId: event.connectionId, status: event.status, phoneNumber: event.phoneNumber });
     publishRealtimeNotification(channel, { type: "connection.status_changed", tenantId: event.tenantId, workspaceId: event.workspaceId, connectionId: event.connectionId, status: event.status });
+  }, metrics);
+
+  // Bloco "reações" (pedido explícito do usuário em produção) — nunca cria mensagem nova, só marca
+  // a reação na mensagem-alvo (ver `applyMessageReaction`). `applied: false` (mensagem-alvo não
+  // encontrada) é um resultado normal — não publica notificação nenhuma nesse caso.
+  await consumeQueue(channel, INBOX_QUEUES.reaction, async (content) => {
+    const event = JSON.parse(content.toString("utf8")) as Extract<NormalizedInboxEvent, { type: "message.reaction" }>;
+    const result = await applyMessageReaction(deps, {
+      connectionId: event.connectionId,
+      targetExternalMessageId: event.targetExternalMessageId,
+      emoji: event.emoji,
+      reactorId: event.reactorId,
+      reactorName: event.reactorName,
+    });
+    if (result.applied && result.tenantId && result.workspaceId) {
+      publishRealtimeNotification(channel, { type: "message.updated", tenantId: result.tenantId, workspaceId: result.workspaceId, conversationId: result.conversationId });
+    }
   }, metrics);
 
   // 3) OutboxSenderConsumer — drena o envio outbound enfileirado pela API (`inbox.route.ts`).

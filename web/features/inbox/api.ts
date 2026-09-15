@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxMetricsReport, InboxModuleStatus, InboxStreamToken, InboxTenantMember, MessagingConnection } from "./types";
+import type { ChannelDistributionMode, ChannelRoutingSnapshot, InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxMetricsReport, InboxModuleStatus, InboxStreamToken, InboxTenantMember, MessagingConnection } from "./types";
 
 /** Fase 10 (Pre-Pilot Hardening) — sempre disponível, mesmo com o módulo desligado. */
 export function getInboxModuleStatus(): Promise<InboxModuleStatus> {
@@ -73,6 +73,20 @@ export function markInboxConversationUnread(workspaceId: string, conversationId:
 /** Bloco "urgente" (pedido explícito do usuário em produção) — marcação manual, liga/desliga. */
 export function setInboxConversationUrgent(workspaceId: string, conversationId: string, isUrgent: boolean): Promise<InboxConversation> {
   return apiClient.post<InboxConversation>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/urgent`, { workspaceId, isUrgent });
+}
+
+/** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+ * equipes vinculadas ao canal + config de distribuição. */
+export function getChannelRouting(workspaceId: string, connectionId: string): Promise<ChannelRoutingSnapshot> {
+  return apiClient.get<ChannelRoutingSnapshot>(`/v1/inbox/connections/${encodeURIComponent(connectionId)}/routing?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+export function updateChannelRouting(
+  workspaceId: string,
+  connectionId: string,
+  input: { teamIds: string[]; defaultTeamId: string; distributionMode: ChannelDistributionMode },
+): Promise<ChannelRoutingSnapshot> {
+  return apiClient.put<ChannelRoutingSnapshot>(`/v1/inbox/connections/${encodeURIComponent(connectionId)}/routing`, { workspaceId, ...input });
 }
 
 export function assignInboxConversation(workspaceId: string, conversationId: string, assignedUserId: string | undefined): Promise<InboxConversation> {

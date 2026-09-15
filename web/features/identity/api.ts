@@ -9,8 +9,8 @@ export function createTeam(workspaceId: string, name: string): Promise<Team> {
   return apiClient.post<Team>("/v1/teams", { workspaceId, name });
 }
 
-export function updateTeam(teamId: string, workspaceId: string, name: string): Promise<Team> {
-  return apiClient.patch<Team>(`/v1/teams/${encodeURIComponent(teamId)}`, { workspaceId, name });
+export function updateTeam(teamId: string, workspaceId: string, name: string, options?: { roundRobinEnabled?: boolean; timezone?: string }): Promise<Team> {
+  return apiClient.patch<Team>(`/v1/teams/${encodeURIComponent(teamId)}`, { workspaceId, name, ...options });
 }
 
 export function deleteTeam(teamId: string, workspaceId: string): Promise<void> {
@@ -21,12 +21,29 @@ export function listTeamMembers(teamId: string, workspaceId: string): Promise<Te
   return apiClient.get<TeamMembership[]>(`/v1/teams/${encodeURIComponent(teamId)}/members?workspaceId=${encodeURIComponent(workspaceId)}`);
 }
 
-export function addTeamMember(teamId: string, workspaceId: string, userId: string, role: TenantRole): Promise<TeamMembership> {
-  return apiClient.post<TeamMembership>(`/v1/teams/${encodeURIComponent(teamId)}/members`, { workspaceId, userId, role });
+export function addTeamMember(
+  teamId: string,
+  workspaceId: string,
+  userId: string,
+  role: TenantRole,
+  options?: { attendanceLevel?: string; participatesInRoundRobin?: boolean },
+): Promise<TeamMembership> {
+  return apiClient.post<TeamMembership>(`/v1/teams/${encodeURIComponent(teamId)}/members`, { workspaceId, userId, role, ...options });
 }
 
 export function removeTeamMember(teamId: string, workspaceId: string, userId: string): Promise<void> {
   return apiClient.delete<void>(`/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+/** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) — nível
+ * de atendimento, participa do rodízio, e marcar como principal do nível. */
+export function updateTeamMember(
+  teamId: string,
+  workspaceId: string,
+  userId: string,
+  input: { attendanceLevel?: string; participatesInRoundRobin?: boolean; setPrincipal?: boolean },
+): Promise<TeamMembership> {
+  return apiClient.patch<TeamMembership>(`/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`, { workspaceId, ...input });
 }
 
 export function listTenantMembers(): Promise<TenantMembershipType[]> {

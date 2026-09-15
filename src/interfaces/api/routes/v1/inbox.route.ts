@@ -20,6 +20,7 @@ import {
   deleteInboxMessage,
   createConnection,
   disconnectConnection,
+  getChannelRouting,
   getConnectionQrCode,
   listConnections,
   listConversationEvents,
@@ -36,8 +37,11 @@ import {
   setConversationUrgent,
   takeOverConversation,
   transferConversation,
+  updateChannelRouting,
   type InboxUseCaseDeps,
 } from "../../../../application/inbox/inbox-use-cases.js";
+import type { ChannelRoutingRepositoryPort } from "../../../../application/ports/channel-routing-repository.port.js";
+import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../../../application/ports/team-repository.port.js";
 import { AppError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -60,6 +64,18 @@ const ASSIGN_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properti
 const TRANSFER_BODY_SCHEMA = { type: "object", required: ["workspaceId", "toUserId"], properties: { workspaceId: { type: "string", minLength: 1 }, toUserId: { type: "string", minLength: 1 } } } as const;
 const AI_ENABLED_BODY_SCHEMA = { type: "object", required: ["workspaceId", "aiEnabled"], properties: { workspaceId: { type: "string", minLength: 1 }, aiEnabled: { type: "boolean" } } } as const;
 const URGENT_BODY_SCHEMA = { type: "object", required: ["workspaceId", "isUrgent"], properties: { workspaceId: { type: "string", minLength: 1 }, isUrgent: { type: "boolean" } } } as const;
+/** Bloco "roteamento por equipe" (réplica adaptada do CMDesk) — `teamIds` é sempre a lista
+ * COMPLETA de equipes vinculadas (substituição total, nunca incremental). */
+const CHANNEL_ROUTING_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId", "teamIds", "defaultTeamId", "distributionMode"],
+  properties: {
+    workspaceId: { type: "string", minLength: 1 },
+    teamIds: { type: "array", items: { type: "string", minLength: 1 } },
+    defaultTeamId: { type: "string", minLength: 1 },
+    distributionMode: { type: "string", enum: ["default", "round_robin"] },
+  },
+} as const;
 const CONVERSATIONS_QUERY_SCHEMA = {
   type: "object",
   required: ["workspaceId"],
@@ -102,6 +118,9 @@ const INBOX_ERROR_STATUS: Record<string, number> = {
   INBOX_CONVERSATION_TRANSFER_CONFLICT: 409,
   INBOX_CONVERSATION_NOT_ASSIGNED: 422,
   INBOX_TARGET_USER_NOT_IN_TENANT: 404,
+  // Bloco "roteamento por equipe".
+  INBOX_TEAM_ROUTING_NOT_CONFIGURED: 503,
+  INBOX_DEFAULT_TEAM_NOT_LINKED: 422,
 };
 
 function rethrowInboxError(error: unknown): never {
@@ -150,6 +169,12 @@ export type InboxRoutesDeps = {
    * (`MEDIA_UPLOAD_MAX_BYTES`, ver `publication-media.route.ts`) — nunca um limite próprio
    * duplicado; um valor de configuração, um lugar só. */
   maxUploadBytes: number;
+  /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+   * `undefined` = módulo de equipes não configurado neste processo; rotas de roteamento respondem
+   * lista vazia / erro claro em vez de tentar operar sem repositório. */
+  channelRoutingRepository?: ChannelRoutingRepositoryPort;
+  teamRepository?: TeamRepositoryPort;
+  teamMembershipRepository?: TeamMembershipRepositoryPort;
 };
 
 function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {
@@ -439,6 +464,34 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     try {
       const connection = await disconnectConnection(useCaseDeps, { tenantId: principal.tenantId, workspaceId, connectionId: id });
       return successEnvelope(connection, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+   * equipes vinculadas ao canal + config de distribuição (padrão fixo vs. rodízio entre elas). */
+  app.get("/inbox/connections/:id/routing", { schema: { params: ID_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:manage_connections");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      const routing = await getChannelRouting(useCaseDeps, { tenantId: principal.tenantId, workspaceId, connectionId: id });
+      return successEnvelope(routing, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.put("/inbox/connections/:id/routing", { schema: { params: ID_PARAMS_SCHEMA, body: CHANNEL_ROUTING_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:manage_connections");
+    const { id } = request.params as { id: string };
+    const { workspaceId, teamIds, defaultTeamId, distributionMode } = request.body as {
+      workspaceId: string; teamIds: string[]; defaultTeamId: string; distributionMode: "default" | "round_robin";
+    };
+    try {
+      const routing = await updateChannelRouting(useCaseDeps, { tenantId: principal.tenantId, workspaceId, connectionId: id, teamIds, defaultTeamId, distributionMode });
+      return successEnvelope(routing, request.id);
     } catch (error) {
       rethrowInboxError(error);
     }

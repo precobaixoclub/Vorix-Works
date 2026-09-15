@@ -281,11 +281,22 @@ export type TenantMembership = {
  * CRM/Comercial (Fase 1) — Equipe: sub-grupo dentro de um workspace, mais fino que
  * `TenantMembership` (que é por tenant inteiro). Ver auditoria, seção 3/4/9.
  */
+/** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+ * `roundRobinEnabled`/`lastAssignedIndexByLevel`/`timezone` só importam pro módulo Conversas
+ * (rodízio de atendimento); times criados só pra RBAC do CRM (uso original desta entidade) nunca
+ * precisam preenchê-los, os defaults já bastam. */
 export type Team = {
   id: string;
   tenantId: string;
   workspaceId: string;
   name: string;
+  /** Interruptor mestre do rodízio — `false` = sempre usa o principal do nível, nunca gira o
+   * ponteiro (mesmo racional do `roletaAtiva` do CMDesk). */
+  roundRobinEnabled: boolean;
+  /** Ponteiro circular POR NÍVEL de atendimento (`{"N1": 3, "N2": 1}`) — cada nível gira
+   * independente dentro da mesma equipe. */
+  lastAssignedIndexByLevel: Record<string, number>;
+  timezone: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -295,8 +306,27 @@ export type TeamMembership = {
   teamId: string;
   userId: string;
   role: TenantRole;
+  /** Nível de atendimento (N1/N2/...) — string livre normalizada (ver `normalizeAttendanceLevel`),
+   * nunca um enum fechado. Cada nível tem sua própria roleta independente dentro da equipe. */
+  attendanceLevel: string;
+  /** Exatamente um membro por (teamId, attendanceLevel) deve ter isto true — fallback fixo quando
+   * o rodízio está desligado ou ninguém do nível participa dele. */
+  isPrincipalForLevel: boolean;
+  participatesInRoundRobin: boolean;
+  lastAssignedAt?: string;
   createdAt: string;
 };
+
+export const DEFAULT_ATTENDANCE_LEVEL = "N1";
+
+/** Mesma normalização do CMDesk: "2" -> "N2", "n3"/"N3" -> "N3", qualquer outra coisa cai em
+ * maiúsculas cortada em 20 caracteres. Nunca lança — todo valor tem uma normalização válida. */
+export function normalizeAttendanceLevel(value: string | undefined): string {
+  const raw = (value ?? DEFAULT_ATTENDANCE_LEVEL).trim().toUpperCase();
+  if (/^\d+$/.test(raw)) return `N${raw}`;
+  if (/^N\d+$/.test(raw)) return raw;
+  return raw.slice(0, 20) || DEFAULT_ATTENDANCE_LEVEL;
+}
 
 export const TENANT_MEMBER_INVITE_STATUSES = ["pending", "accepted", "revoked", "expired"] as const;
 export type TenantMemberInviteStatus = (typeof TENANT_MEMBER_INVITE_STATUSES)[number];

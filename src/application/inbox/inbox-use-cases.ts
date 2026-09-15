@@ -1,6 +1,7 @@
 import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, MessagingConnection, MessagingConnectionStatus } from "../../domain/inbox/inbox.model.js";
 import { INBOX_AI_ACTOR, MESSAGING_CONNECTION_TERMINAL_STATUSES, normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
 import type { OperationalCircuitBreaker, OperationalRateLimiter } from "../operations/operational-services.js";
+import type { ChannelRoutingConfig, ChannelRoutingRepositoryPort } from "../ports/channel-routing-repository.port.js";
 import type { InboxAiResponderPort } from "../ports/inbox-ai-responder.port.js";
 import type { InboxContactRepositoryPort } from "../ports/inbox-contact-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../ports/inbox-conversation-event-repository.port.js";
@@ -13,8 +14,10 @@ import type { MessagingConnectionRepositoryPort } from "../ports/messaging-conne
 import type { MessagingProvider, MessagingProviderErrorKind } from "../ports/messaging-provider.port.js";
 import { MessagingProviderError } from "../ports/messaging-provider.port.js";
 import type { OutboundMessageQueuePort } from "../ports/outbound-message-queue.port.js";
+import type { TeamMembershipRepositoryPort, TeamRepositoryPort } from "../ports/team-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
 import { recordFirstEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
+import { resolveNextTeamMember } from "../identity/team-use-cases.js";
 
 /**
  * Casos de uso do módulo Conversas — Fase 1/3/4/5/6. Mesmo padrão de `conversation-use-cases.ts`:
@@ -75,6 +78,13 @@ export type InboxUseCaseDeps = {
    * `first_conversation_received`, `first_conversation_replied`). Nenhuma regra de Conversas
    * muda por causa disto. */
   productAnalytics?: ProductAnalyticsUseCaseDeps;
+  /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+   * `undefined` = canal sem roteamento por equipe configurado neste processo; conversas novas
+   * nunca ganham `currentTeamId`/atribuição automática nesse caso (comportamento anterior a esta
+   * entrega, 100% preservado). */
+  channelRoutingRepository?: ChannelRoutingRepositoryPort;
+  teamRepository?: TeamRepositoryPort;
+  teamMembershipRepository?: TeamMembershipRepositoryPort;
 };
 
 const defaultIdGenerator = () => `wuzsess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -158,6 +168,46 @@ export async function refreshConnectionStatus(deps: InboxUseCaseDeps, input: Ref
   if (!connection.externalSessionId) return connection;
   const status = await deps.provider.getConnectionStatus({ externalSessionId: connection.externalSessionId });
   return deps.connectionRepository.updateStatus(connection.id, { status: status.status, phoneNumber: status.phoneNumber, connectionHealth: "healthy" });
+}
+
+export type GetChannelRoutingInput = { tenantId: string; workspaceId: string; connectionId: string };
+export type ChannelRoutingSnapshot = { teamIds: string[]; config?: ChannelRoutingConfig };
+
+/** Bloco "roteamento por equipe" (réplica adaptada do CMDesk) — equipes vinculadas ao canal +
+ * config de distribuição. `deps.channelRoutingRepository` ausente = módulo não configurado neste
+ * processo, devolve lista vazia (nunca erro — mesmo racional de `inboxMediaStorage`/etc.). */
+export async function getChannelRouting(deps: InboxUseCaseDeps, input: GetChannelRoutingInput): Promise<ChannelRoutingSnapshot> {
+  await mustConnectionBelongToTenantAndWorkspace(deps, input.connectionId, input.tenantId, input.workspaceId);
+  if (!deps.channelRoutingRepository) return { teamIds: [] };
+  const [teamIds, config] = await Promise.all([
+    deps.channelRoutingRepository.listTeamIdsByConnection(input.connectionId),
+    deps.channelRoutingRepository.getRoutingConfig(input.connectionId),
+  ]);
+  return { teamIds, config };
+}
+
+export type UpdateChannelRoutingInput = {
+  tenantId: string;
+  workspaceId: string;
+  connectionId: string;
+  /** Substituição TOTAL da lista de equipes vinculadas — mesmo idioma do CMDesk ("salvar canal"
+   * sempre reescreve a lista inteira, nunca um patch incremental). */
+  teamIds: string[];
+  defaultTeamId: string;
+  distributionMode: "default" | "round_robin";
+};
+
+/** `defaultTeamId` precisa estar entre `teamIds` — mesma trava do CMDesk (a UI só oferece as
+ * equipes vinculadas no seletor, o backend reforça de novo aqui). */
+export async function updateChannelRouting(deps: InboxUseCaseDeps, input: UpdateChannelRoutingInput): Promise<ChannelRoutingSnapshot> {
+  await mustConnectionBelongToTenantAndWorkspace(deps, input.connectionId, input.tenantId, input.workspaceId);
+  if (!deps.channelRoutingRepository) throw new Error("INBOX_TEAM_ROUTING_NOT_CONFIGURED: roteamento por equipe não está disponível neste ambiente.");
+  if (!input.teamIds.includes(input.defaultTeamId)) {
+    throw new Error("INBOX_DEFAULT_TEAM_NOT_LINKED: a equipe padrão precisa estar entre as equipes vinculadas ao canal.");
+  }
+  await deps.channelRoutingRepository.replaceLinkedTeams(input.connectionId, input.teamIds);
+  const config = await deps.channelRoutingRepository.upsertRoutingConfig({ connectionId: input.connectionId, defaultTeamId: input.defaultTeamId, distributionMode: input.distributionMode });
+  return { teamIds: input.teamIds, config };
 }
 
 /**
@@ -766,7 +816,7 @@ export async function registerInboundMessage(
     });
   }
 
-  const conversation = await deps.conversationRepository.findOrCreate({
+  let conversation = await deps.conversationRepository.findOrCreate({
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
     connectionId: input.connectionId,
@@ -777,6 +827,14 @@ export async function registerInboundMessage(
     groupName: input.groupName,
     contactId: contact?.id,
   });
+  // Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) — só
+  // decide UMA vez, na criação da conversa (nunca reavalia depois: uma vez atribuída, fica com
+  // quem pegou, até uma transferência manual explícita). `createdAt === updatedAt` é o MESMO sinal
+  // já usado acima pra "conversa acabou de nascer agora" — nunca refaz em reentregas/mensagens
+  // seguintes da mesma conversa.
+  if (!input.fromMe && conversation.createdAt === conversation.updatedAt && !conversation.currentTeamId && !conversation.assignedUserId) {
+    conversation = await maybeRouteNewConversationToTeam(deps, conversation);
+  }
   const resolvedBody = input.body && input.mentionedJids?.length
     ? await resolveMentionsInBody(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, body: input.body, mentionedJids: input.mentionedJids })
     : input.body;
@@ -812,6 +870,33 @@ export async function registerInboundMessage(
     }
   }
   return { contact, conversation, message, wasCreated };
+}
+
+/**
+ * Bloco "roteamento por equipe" (réplica adaptada do CMDesk) — chamado só na criação da conversa
+ * (ver `registerInboundMessage`). Dois passos independentes, cada um best-effort na ausência de
+ * config (nunca lança, nunca impede a mensagem de ser registrada): (1) resolve a EQUIPE do canal
+ * (`ChannelRoutingRepositoryPort`); (2) se achou equipe e as duas dependências de round-robin
+ * estão configuradas, resolve o PRÓXIMO AGENTE dentro dela. Uma equipe sem agente elegível
+ * (`resolveNextTeamMember` devolve `undefined`) fica só com `currentTeamId`, sem
+ * `assignedUserId` — mesmo fallback do CMDesk (conversa cai na equipe certa, mesmo sem dono).
+ */
+async function maybeRouteNewConversationToTeam(deps: InboxUseCaseDeps, conversation: InboxConversation): Promise<InboxConversation> {
+  if (!deps.channelRoutingRepository) return conversation;
+  try {
+    const teamId = await deps.channelRoutingRepository.resolveTeamForNewConversation(conversation.connectionId);
+    if (!teamId) return conversation;
+    let updated = await deps.conversationRepository.setTeam(conversation.id, teamId);
+
+    if (deps.teamRepository && deps.teamMembershipRepository) {
+      const nextMember = await resolveNextTeamMember({ teamRepository: deps.teamRepository, teamMembershipRepository: deps.teamMembershipRepository }, { teamId });
+      if (nextMember) updated = await deps.conversationRepository.assign(conversation.id, nextMember.userId);
+    }
+    return updated;
+  } catch (error) {
+    console.warn("[inbox] falha ao rotear conversa nova por equipe (best-effort, nunca bloqueia o registro da mensagem):", error instanceof Error ? error.message : error);
+    return conversation;
+  }
 }
 
 export type SyncGroupMetadataInput = { tenantId: string; workspaceId: string; connectionId: string; conversationId: string };

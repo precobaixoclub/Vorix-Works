@@ -23,6 +23,7 @@ type Row = {
   status: string;
   assigned_user_id: string | null;
   department_id: string | null;
+  current_team_id: string | null;
   last_message_at: Date | null;
   unread_count: number;
   is_urgent: boolean;
@@ -211,6 +212,16 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     return this.toDomain(row);
   }
 
+  async setTeam(id: string, teamId: string | undefined): Promise<InboxConversation> {
+    const result = await this.pool.query<Row>(
+      "update inbox_conversations set current_team_id = $2, updated_at = now() where id = $1 returning *",
+      [id, teamId ?? null],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
+    return this.toDomain(row);
+  }
+
   async setStatus(id: string, status: InboxConversationStatus): Promise<InboxConversation> {
     const result = await this.pool.query<Row>(
       "update inbox_conversations set status = $2, updated_at = now() where id = $1 returning *",
@@ -292,6 +303,7 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       status: row.status as InboxConversationStatus,
       assignedUserId: row.assigned_user_id ?? undefined,
       departmentId: row.department_id ?? undefined,
+      currentTeamId: row.current_team_id ?? undefined,
       lastMessageAt: row.last_message_at?.toISOString(),
       unreadCount: row.unread_count,
       isUrgent: row.is_urgent,

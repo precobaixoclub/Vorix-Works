@@ -151,6 +151,11 @@ export type InboxConversation = {
   status: InboxConversationStatus;
   assignedUserId?: string;
   departmentId?: string;
+  /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk) — equipe atualmente responsável
+   * pela conversa, um nível ACIMA de `assignedUserId` (o agente humano específico dentro dela).
+   * `undefined` = canal sem roteamento por equipe configurado, ou conversa criada antes desta
+   * migration. Nunca sobrescreve uma atribuição humana já feita manualmente. */
+  currentTeamId?: string;
   lastMessageAt?: string;
   unreadCount: number;
   /** Bloco "urgente" (pedido explícito do usuário em produção) — marcação manual de um atendente,

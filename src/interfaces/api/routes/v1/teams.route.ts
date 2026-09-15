@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { addTeamMember, createTeam, deleteTeam, listTeamMembers, listTeams, removeTeamMember, updateTeam } from "../../../../application/identity/team-use-cases.js";
+import { addTeamMember, createTeam, deleteTeam, listTeamMembers, listTeams, removeTeamMember, updateTeam, updateTeamMember } from "../../../../application/identity/team-use-cases.js";
 import type { TeamUseCaseDeps } from "../../../../application/identity/team-use-cases.js";
 import { NotFoundError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
@@ -8,16 +8,45 @@ import { successEnvelope } from "../../http/response-envelope.js";
 const WORKSPACE_QUERY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 } } } as const;
 const ID_PARAMS_SCHEMA = { type: "object", required: ["id"], properties: { id: { type: "string", minLength: 1 } } } as const;
 const CREATE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "name"], additionalProperties: false, properties: { workspaceId: { type: "string", minLength: 1 }, name: { type: "string", minLength: 1, maxLength: 200 } } } as const;
-const UPDATE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "name"], additionalProperties: false, properties: { workspaceId: { type: "string", minLength: 1 }, name: { type: "string", minLength: 1, maxLength: 200 } } } as const;
+/** Bloco "roteamento por equipe" (réplica adaptada do CMDesk) — `roundRobinEnabled`/`timezone` são
+ * opcionais na atualização (`coalesce` no repositório preserva o valor atual quando ausentes). */
+const UPDATE_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId", "name"],
+  additionalProperties: false,
+  properties: {
+    workspaceId: { type: "string", minLength: 1 },
+    name: { type: "string", minLength: 1, maxLength: 200 },
+    roundRobinEnabled: { type: "boolean" },
+    timezone: { type: "string", minLength: 1, maxLength: 100 },
+  },
+} as const;
 const ADD_MEMBER_BODY_SCHEMA = {
   type: "object",
   required: ["workspaceId", "userId", "role"],
   additionalProperties: false,
-  properties: { workspaceId: { type: "string", minLength: 1 }, userId: { type: "string", minLength: 1 }, role: { type: "string", enum: ["owner", "admin", "editor", "viewer"] } },
+  properties: {
+    workspaceId: { type: "string", minLength: 1 },
+    userId: { type: "string", minLength: 1 },
+    role: { type: "string", enum: ["owner", "admin", "editor", "viewer"] },
+    attendanceLevel: { type: "string", minLength: 1, maxLength: 20 },
+    participatesInRoundRobin: { type: "boolean" },
+  },
+} as const;
+const UPDATE_MEMBER_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId"],
+  additionalProperties: false,
+  properties: {
+    workspaceId: { type: "string", minLength: 1 },
+    attendanceLevel: { type: "string", minLength: 1, maxLength: 20 },
+    participatesInRoundRobin: { type: "boolean" },
+    setPrincipal: { type: "boolean" },
+  },
 } as const;
 
 function translateTeamError(error: unknown): never {
-  if (error instanceof Error && error.message.startsWith("TEAM_NOT_FOUND")) throw new NotFoundError(error.message);
+  if (error instanceof Error && (error.message.startsWith("TEAM_NOT_FOUND") || error.message.startsWith("TEAM_MEMBER_NOT_FOUND"))) throw new NotFoundError(error.message);
   throw error;
 }
 
@@ -40,9 +69,9 @@ export async function registerTeamsRoutes(app: FastifyInstance, deps: TeamUseCas
   app.patch("/teams/:id", { schema: { params: ID_PARAMS_SCHEMA, body: UPDATE_BODY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "team:manage");
     const { id } = request.params as { id: string };
-    const { workspaceId, name } = request.body as { workspaceId: string; name: string };
+    const { workspaceId, name, roundRobinEnabled, timezone } = request.body as { workspaceId: string; name: string; roundRobinEnabled?: boolean; timezone?: string };
     try {
-      const team = await updateTeam(deps, { teamId: id, tenantId: principal.tenantId, workspaceId, name });
+      const team = await updateTeam(deps, { teamId: id, tenantId: principal.tenantId, workspaceId, name, roundRobinEnabled, timezone });
       return successEnvelope(team, request.id);
     } catch (error) {
       translateTeamError(error);
@@ -77,10 +106,29 @@ export async function registerTeamsRoutes(app: FastifyInstance, deps: TeamUseCas
   app.post("/teams/:id/members", { schema: { params: ID_PARAMS_SCHEMA, body: ADD_MEMBER_BODY_SCHEMA } }, async (request, reply) => {
     const principal = requirePermission(request, "team:manage");
     const { id } = request.params as { id: string };
-    const { workspaceId, userId, role } = request.body as { workspaceId: string; userId: string; role: "owner" | "admin" | "editor" | "viewer" };
+    const { workspaceId, userId, role, attendanceLevel, participatesInRoundRobin } = request.body as {
+      workspaceId: string; userId: string; role: "owner" | "admin" | "editor" | "viewer"; attendanceLevel?: string; participatesInRoundRobin?: boolean;
+    };
     try {
-      const membership = await addTeamMember(deps, { teamId: id, tenantId: principal.tenantId, workspaceId, userId, role });
+      const membership = await addTeamMember(deps, { teamId: id, tenantId: principal.tenantId, workspaceId, userId, role, attendanceLevel, participatesInRoundRobin });
       reply.code(201);
+      return successEnvelope(membership, request.id);
+    } catch (error) {
+      translateTeamError(error);
+    }
+  });
+
+  /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk) — nível de atendimento, participa
+   * do rodízio, e marcar como principal do nível. `setPrincipal:true` desmarca automaticamente
+   * qualquer outro principal do MESMO nível (ver `updateTeamMember`). */
+  app.patch("/teams/:id/members/:userId", { schema: { params: { type: "object", required: ["id", "userId"], properties: { id: { type: "string" }, userId: { type: "string" } } }, body: UPDATE_MEMBER_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "team:manage");
+    const { id, userId } = request.params as { id: string; userId: string };
+    const { workspaceId, attendanceLevel, participatesInRoundRobin, setPrincipal } = request.body as {
+      workspaceId: string; attendanceLevel?: string; participatesInRoundRobin?: boolean; setPrincipal?: boolean;
+    };
+    try {
+      const membership = await updateTeamMember(deps, { teamId: id, tenantId: principal.tenantId, workspaceId, userId, attendanceLevel, participatesInRoundRobin, setPrincipal });
       return successEnvelope(membership, request.id);
     } catch (error) {
       translateTeamError(error);

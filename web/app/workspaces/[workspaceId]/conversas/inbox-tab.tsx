@@ -62,7 +62,9 @@ import {
   transferInboxConversation,
 } from "@/features/inbox/api";
 import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime } from "@/features/inbox/hooks";
+import { useTeams } from "@/features/identity/hooks";
 import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMediaStorageRef, InboxMessage, InboxTenantMember } from "@/features/inbox/types";
+import type { Team } from "@/features/identity/types";
 import { CrmContextSection } from "./crm-panel";
 import { MessageMedia } from "./message-media";
 import { InboxAvatar } from "./inbox-avatar";
@@ -114,6 +116,9 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
   const { data, isLoading, error, mutate } = useInboxConversations(workspaceId, filter);
   const { data: membersData } = useInboxMembers(workspaceId);
   const members = membersData?.members ?? [];
+  // Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) — só
+  // pra rotular `conversation.currentTeamId` na lista/cabeçalho, nunca usado pra decidir nada.
+  const { data: teams } = useTeams(workspaceId);
   const conversations = data?.conversations ?? [];
   const selectedConversation = conversations.find((conversation) => conversation.id === selectedConversationId);
 
@@ -192,6 +197,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
             onSelect={handleSelect}
             currentUserId={currentUserId}
             members={members}
+            teams={teams ?? []}
             onConversationChanged={() => mutate()}
           />
         </div>
@@ -203,6 +209,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
               conversation={selectedConversation}
               currentUserId={currentUserId}
               members={members}
+              teams={teams ?? []}
               onBack={() => {
                 setSelectedConversationId(undefined);
                 setMobileView("list");
@@ -268,6 +275,7 @@ function ConversationListPane({
   onSelect,
   currentUserId,
   members,
+  teams,
   onConversationChanged,
 }: {
   workspaceId: string;
@@ -286,6 +294,7 @@ function ConversationListPane({
   onSelect: (conversation: InboxConversation) => void;
   currentUserId: string | undefined;
   members: readonly InboxTenantMember[];
+  teams: readonly Team[];
   onConversationChanged: () => void;
 }) {
   const activeAdvancedFilter = ADVANCED_FILTERS.find((item) => item.value === filter);
@@ -403,6 +412,7 @@ function ConversationListPane({
               selected={selectedConversationId === conversation.id}
               currentUserId={currentUserId}
               members={members}
+              teams={teams}
               onSelect={() => onSelect(conversation)}
               onConversationChanged={onConversationChanged}
             />
@@ -419,6 +429,7 @@ function ConversationListItem({
   selected,
   currentUserId,
   members,
+  teams,
   onSelect,
   onConversationChanged,
 }: {
@@ -427,6 +438,7 @@ function ConversationListItem({
   selected: boolean;
   currentUserId: string | undefined;
   members: readonly InboxTenantMember[];
+  teams: readonly Team[];
   onSelect: () => void;
   onConversationChanged: () => void;
 }) {
@@ -477,6 +489,9 @@ function ConversationListItem({
         <p className="mt-1 line-clamp-1 text-xs text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
         <div className="mt-2 flex min-w-0 items-center gap-1.5">
           <StatusDot status={conversation.status} />
+          {conversation.currentTeamId ? (
+            <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{teamLabel(conversation.currentTeamId, teams)}</span>
+          ) : null}
           <span className="truncate text-[11px] text-muted-foreground">{agentLabel(conversation.assignedUserId, currentUserId, members)}</span>
           <AiStateBadge conversation={conversation} compact />
           {conversation.unreadCount > 0 ? (
@@ -565,6 +580,7 @@ function ConversationTimelinePane({
   conversation,
   currentUserId,
   members,
+  teams,
   onBack,
   onOpenContext,
   onConversationChanged,
@@ -573,6 +589,7 @@ function ConversationTimelinePane({
   conversation: InboxConversation;
   currentUserId: string | undefined;
   members: readonly InboxTenantMember[];
+  teams: readonly Team[];
   onBack: () => void;
   onOpenContext: () => void;
   onConversationChanged: () => Promise<unknown> | void;
@@ -749,7 +766,8 @@ function ConversationTimelinePane({
               <StatusDot status={conversation.status} />
             </div>
             <p className="truncate text-xs text-muted-foreground">
-              {conversationHeaderSubtitle(conversation)} · {statusLabelFor(conversation.status)} · {agentLabel(conversation.assignedUserId, currentUserId, members)}
+              {conversationHeaderSubtitle(conversation)} · {statusLabelFor(conversation.status)}
+              {conversation.currentTeamId ? ` · ${teamLabel(conversation.currentTeamId, teams)}` : ""} · {agentLabel(conversation.assignedUserId, currentUserId, members)}
             </p>
           </div>
 
@@ -1736,6 +1754,13 @@ function agentLabel(userId: string | undefined, currentUserId: string | undefine
   const member = members.find((item) => item.userId === userId);
   if (member) return member.name;
   return userId.length > 10 ? `${userId.slice(0, 8)}...` : userId;
+}
+
+/** Bloco "roteamento por equipe" (réplica adaptada do CMDesk) — nunca decide nada, só rotula
+ * `conversation.currentTeamId` na UI. `teams` ainda não carregado/equipe já excluída — mostra o
+ * id cru em vez de sumir a informação (melhor um id feio do que nenhum sinal). */
+function teamLabel(teamId: string, teams: readonly Team[]): string {
+  return teams.find((team) => team.id === teamId)?.name ?? teamId;
 }
 
 function statusLabelFor(status: InboxConversation["status"]): string {

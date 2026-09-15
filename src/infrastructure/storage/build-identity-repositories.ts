@@ -21,6 +21,7 @@ import type { TaskRepositoryPort } from "../../application/ports/task-repository
 import type { UsageCounterRepositoryPort } from "../../application/ports/usage-counter-repository.port.js";
 import type { SessionRepositoryPort } from "../../application/ports/session-repository.port.js";
 import type { TeamMembershipRepositoryPort, TeamRepositoryPort } from "../../application/ports/team-repository.port.js";
+import type { ChannelRoutingRepositoryPort } from "../../application/ports/channel-routing-repository.port.js";
 import type { TenantMemberInviteRepositoryPort } from "../../application/ports/tenant-member-invite-repository.port.js";
 import type { TenantMembershipRepositoryPort } from "../../application/ports/tenant-membership-repository.port.js";
 import type { TimelineEventRepositoryPort } from "../../application/ports/timeline-event-repository.port.js";
@@ -50,6 +51,7 @@ import { PostgresTaskRepository } from "./postgres/postgres-task-repository.js";
 import { PostgresUsageCounterRepository } from "./postgres/postgres-usage-counter-repository.js";
 import { PostgresSessionRepository } from "./postgres/postgres-session-repository.js";
 import { PostgresTeamMembershipRepository, PostgresTeamRepository } from "./postgres/postgres-team-repository.js";
+import { PostgresChannelRoutingRepository } from "./postgres/postgres-channel-routing-repository.js";
 import { PostgresTenantMemberInviteRepository } from "./postgres/postgres-tenant-member-invite-repository.js";
 import { PostgresTenantMembershipRepository } from "./postgres/postgres-tenant-membership-repository.js";
 import { PostgresTimelineEventRepository } from "./postgres/postgres-timeline-event-repository.js";
@@ -75,6 +77,11 @@ export type IdentityRepositories = {
   /** CRM/Comercial (Fase 1) — Equipes, convites, Contato 360°/identidade por canal, Timeline. */
   teamRepository: TeamRepositoryPort;
   teamMembershipRepository: TeamMembershipRepositoryPort;
+  /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+   * mesmo pool: `messaging_connection_teams`/`inbox_channel_routing_configs` referenciam `teams`
+   * via FK, e `teams`/`messaging_connections` vivem no MESMO banco físico (só pools/processos de
+   * conexão diferentes por organização do código, nunca bancos diferentes). */
+  channelRoutingRepository: ChannelRoutingRepositoryPort;
   tenantMemberInviteRepository: TenantMemberInviteRepositoryPort;
   contactRepository: ContactRepositoryPort;
   contactIdentityRepository: ContactIdentityRepositoryPort;
@@ -127,6 +134,7 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     aiProvidersRepository: new PostgresAiProvidersRepository(pool),
     teamRepository: new PostgresTeamRepository(pool),
     teamMembershipRepository: new PostgresTeamMembershipRepository(pool),
+    channelRoutingRepository: new PostgresChannelRoutingRepository(pool),
     tenantMemberInviteRepository: new PostgresTenantMemberInviteRepository(pool),
     contactRepository: new PostgresContactRepository(pool),
     contactIdentityRepository: new PostgresContactIdentityRepository(pool),

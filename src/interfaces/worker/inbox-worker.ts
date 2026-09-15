@@ -549,6 +549,12 @@ async function main(): Promise<void> {
     metrics,
     outboundSendPaused: config.resilience.outboundSendPaused,
     inboxMediaStorage: buildInboxMediaStorage(config.inboxMediaStorage),
+    // Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+    // `undefined` no driver memória (dev/teste); `registerInboundMessage` trata como "sem
+    // roteamento por equipe configurado", nunca erro.
+    channelRoutingRepository: repositories.channelRoutingRepository,
+    teamRepository: repositories.teamRepository,
+    teamMembershipRepository: repositories.teamMembershipRepository,
   };
   if (config.resilience.outboundSendPaused) {
     console.warn("[inbox-worker] INBOX_OUTBOUND_SEND_PAUSED=true — kill switch de emergência ATIVO: nenhuma mensagem outbound será enviada ao WuzAPI (permanecem queued). Inbound/IA/humano continuam funcionando normalmente.");

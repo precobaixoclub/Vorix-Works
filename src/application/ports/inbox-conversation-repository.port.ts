@@ -85,6 +85,9 @@ export type InboxConversationRepositoryPort = {
    * "assumir conversa" (ver `tryTakeOver`, que é atômico/compare-and-set). Não tem proteção de
    * concorrência própria: é uma ação autoritativa, não uma disputa entre atendentes. */
   assign(id: string, assignedUserId: string | undefined): Promise<InboxConversation>;
+  /** Bloco "roteamento por equipe" — grava a equipe resolvida pelo roteamento do canal. Nunca
+   * mexe em `assignedUserId` (isso é papel do round-robin de agentes, chamado separadamente). */
+  setTeam(id: string, teamId: string | undefined): Promise<InboxConversation>;
   setStatus(id: string, status: InboxConversationStatus): Promise<InboxConversation>;
   /** "Assumir conversa" desliga a IA só aqui — nunca globalmente. `reason` (Fase 5) é gravado
    * junto quando `aiEnabled` é `false`; ignorado (sempre limpo para `null`) quando `aiEnabled` é

@@ -95,6 +95,7 @@ import type { SessionRepositoryPort } from "../../../application/ports/session-r
 import type { TenantMembershipRepositoryPort } from "../../../application/ports/tenant-membership-repository.port.js";
 import type { TenantMemberInviteRepositoryPort } from "../../../application/ports/tenant-member-invite-repository.port.js";
 import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../../application/ports/team-repository.port.js";
+import type { ChannelRoutingRepositoryPort } from "../../../application/ports/channel-routing-repository.port.js";
 import type { AutomationRuleRepositoryPort } from "../../../application/ports/automation-rule-repository.port.js";
 import type { AutomationRunLogRepositoryPort } from "../../../application/ports/automation-run-log-repository.port.js";
 import type { BillingEventRepositoryPort, InvoiceRepositoryPort, PaymentMethodRepositoryPort, PaymentWebhookEventRepositoryPort } from "../../../application/ports/billing-ops-repository.port.js";
@@ -446,6 +447,8 @@ export type ApiContainer = {
     /** CRM/Comercial (Fase 1) — Equipes, convites, Contato 360°/identidade por canal, Timeline. */
     teamRepository: TeamRepositoryPort;
     teamMembershipRepository: TeamMembershipRepositoryPort;
+    /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário). */
+    channelRoutingRepository: ChannelRoutingRepositoryPort;
     tenantMemberInviteRepository: TenantMemberInviteRepositoryPort;
     contactRepository: ContactRepositoryPort;
     contactIdentityRepository: ContactIdentityRepositoryPort;

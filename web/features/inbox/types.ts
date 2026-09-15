@@ -42,6 +42,10 @@ export type InboxConversation = {
   groupPictureStorageRef?: InboxMediaStorageRef;
   status: InboxConversationStatus;
   assignedUserId?: string;
+  /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk) — equipe atualmente responsável
+   * pela conversa, um nível acima de `assignedUserId`. `undefined` = canal sem roteamento por
+   * equipe configurado, ou conversa anterior a esta funcionalidade. */
+  currentTeamId?: string;
   lastMessageAt?: string;
   unreadCount: number;
   /** Bloco "urgente" (pedido explícito do usuário em produção) — marcação manual, mostrada como um
@@ -71,6 +75,23 @@ export type InboxConversation = {
 /** Fase 4 — `open`/`pending`/`resolved` filtram por status normalizado (ver
  * `InboxConversationStatus`); os demais continuam os filtros operacionais da Fase 3. */
 export type InboxConversationFilter = "all" | "mine" | "unassigned" | "unread" | "urgent" | "open" | "pending" | "resolved";
+
+/** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+ * versão simplificada do `ChannelRoutingConfig`: só equipe padrão + distribuição fixa vs rodízio
+ * entre as equipes vinculadas ao canal. Sem menu hierárquico, sem sticky/pinned por contato+canal
+ * (fora de escopo desta rodada). */
+export type ChannelDistributionMode = "default" | "round_robin";
+
+export type ChannelRoutingConfig = {
+  id: string;
+  connectionId: string;
+  defaultTeamId: string;
+  distributionMode: ChannelDistributionMode;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ChannelRoutingSnapshot = { teamIds: string[]; config?: ChannelRoutingConfig };
 
 /** Fase 4 — evento discreto de atendimento (nunca uma mensagem enviada ao WhatsApp). Timeline do
  * frontend intercala isso com `InboxMessage` por `createdAt`, renderizando como um "pill" central

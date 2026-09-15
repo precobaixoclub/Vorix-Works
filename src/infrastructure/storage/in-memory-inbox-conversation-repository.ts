@@ -182,6 +182,14 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     return updated;
   }
 
+  async setTeam(id: string, teamId: string | undefined): Promise<InboxConversation> {
+    const existing = this.rows.get(id);
+    if (!existing) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
+    const updated = { ...existing, currentTeamId: teamId, updatedAt: new Date().toISOString() };
+    this.rows.set(id, updated);
+    return updated;
+  }
+
   async setStatus(id: string, status: InboxConversationStatus): Promise<InboxConversation> {
     const existing = this.rows.get(id);
     if (!existing) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);

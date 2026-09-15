@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { getApiBaseUrl } from "@/lib/api-error";
-import { getInboxMetrics, getInboxModuleStatus, listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers, mintInboxStreamToken } from "./api";
+import { getChannelRouting, getInboxMetrics, getInboxModuleStatus, listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers, mintInboxStreamToken } from "./api";
 import type { InboxConversationFilter } from "./types";
 
 /**
@@ -21,6 +21,11 @@ export function useInboxModuleStatus() {
  */
 export function useInboxConnections(workspaceId: string) {
   return useSWR(["inbox-connections", workspaceId], () => listInboxConnections(workspaceId), { refreshInterval: 30_000 });
+}
+
+/** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário). */
+export function useChannelRouting(workspaceId: string, connectionId: string) {
+  return useSWR(["channel-routing", workspaceId, connectionId], () => getChannelRouting(workspaceId, connectionId));
 }
 
 /** `enabled: false` (Fase 10 — chamador já sabe, via `useInboxModuleStatus`, que o módulo está

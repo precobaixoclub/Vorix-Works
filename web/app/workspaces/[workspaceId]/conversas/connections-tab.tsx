@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { ChevronDown, ChevronUp, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/Button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -10,9 +14,10 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useAuth } from "@/contexts/auth-context";
-import { createInboxConnection, disconnectInboxConnection, getInboxConnectionQrCode, refreshInboxConnectionStatus } from "@/features/inbox/api";
-import { useInboxConnections } from "@/features/inbox/hooks";
-import type { MessagingConnection } from "@/features/inbox/types";
+import { createInboxConnection, disconnectInboxConnection, getInboxConnectionQrCode, refreshInboxConnectionStatus, updateChannelRouting } from "@/features/inbox/api";
+import { useChannelRouting, useInboxConnections } from "@/features/inbox/hooks";
+import { useTeams } from "@/features/identity/hooks";
+import type { ChannelDistributionMode, MessagingConnection } from "@/features/inbox/types";
 import { canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
 
 export function ConnectionsTab({ workspaceId }: { workspaceId: string }) {
@@ -126,6 +131,7 @@ export function ConnectionsTab({ workspaceId }: { workspaceId: string }) {
           {connections.map((connection) => (
             <ConnectionRow
               key={connection.id}
+              workspaceId={workspaceId}
               connection={connection}
               qrCode={qrByConnectionId[connection.id]}
               canOperate={canOperate}
@@ -153,6 +159,7 @@ export function ConnectionsTab({ workspaceId }: { workspaceId: string }) {
 }
 
 function ConnectionRow({
+  workspaceId,
   connection,
   qrCode,
   canOperate,
@@ -161,6 +168,7 @@ function ConnectionRow({
   onRefreshStatus,
   onDisconnect,
 }: {
+  workspaceId: string;
   connection: MessagingConnection;
   qrCode: string | undefined;
   canOperate: boolean;
@@ -179,6 +187,7 @@ function ConnectionRow({
     connection.status === "requires_repair" ||
     connection.status === "logged_out" ||
     connection.status === "error";
+  const [routingOpen, setRoutingOpen] = useState(false);
   return (
     <Card>
       <CardContent className="flex flex-col gap-3 py-4">
@@ -197,17 +206,129 @@ function ConnectionRow({
                 Mostrar QR Code
               </GuardedButton>
             ) : null}
+            <Button variant="secondary" onClick={() => setRoutingOpen((value) => !value)}>
+              <Users className="h-3.5 w-3.5" />
+              Roteamento
+              {routingOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </Button>
             <GuardedButton variant="danger" onClick={onDisconnect} disabled={busy} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
               Desconectar
             </GuardedButton>
           </div>
         </div>
+        {routingOpen ? <ChannelRoutingPanel workspaceId={workspaceId} connectionId={connection.id} canOperate={canOperate} /> : null}
         {connection.status === "requires_repair" || connection.status === "logged_out" || connection.status === "error" ? (
           <p className="text-sm text-danger">WhatsApp precisa ser conectado novamente. Escaneie um novo QR Code.</p>
         ) : null}
         {qrCode ? <QrPreview value={qrCode} /> : null}
       </CardContent>
     </Card>
+  );
+}
+
+/** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+ * versão simplificada: equipes vinculadas ao canal + equipe padrão + distribuição fixa vs rodízio
+ * entre elas. Sem menu hierárquico/sticky-pinned (fora de escopo desta rodada). */
+function ChannelRoutingPanel({ workspaceId, connectionId, canOperate }: { workspaceId: string; connectionId: string; canOperate: boolean }) {
+  const { data: teams } = useTeams(workspaceId);
+  const { data: routing, error, isLoading, mutate } = useChannelRouting(workspaceId, connectionId);
+  const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
+  const [defaultTeamId, setDefaultTeamId] = useState<string>("");
+  const [distributionMode, setDistributionMode] = useState<ChannelDistributionMode>("default");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | undefined>();
+
+  // Sincroniza o estado local com o que veio do backend só quando os dados chegam/mudam — depois
+  // disso, o usuário controla livremente (nunca sobrescreve uma edição em andamento com um
+  // refetch do SWR).
+  useEffect(() => {
+    if (!routing) return;
+    setSelectedTeamIds(routing.teamIds);
+    setDefaultTeamId(routing.config?.defaultTeamId ?? routing.teamIds[0] ?? "");
+    setDistributionMode(routing.config?.distributionMode ?? "default");
+  }, [routing]);
+
+  function toggleTeam(teamId: string, checked: boolean) {
+    setSelectedTeamIds((current) => {
+      const next = checked ? [...current, teamId] : current.filter((id) => id !== teamId);
+      // Equipe padrão nunca pode ficar fora da lista vinculada — se foi removida, cai pra
+      // primeira que sobrou (mesma trava que o backend reforça de novo no save).
+      if (!next.includes(defaultTeamId)) setDefaultTeamId(next[0] ?? "");
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    if (!canOperate || !defaultTeamId) return;
+    setSaving(true);
+    setSaveError(undefined);
+    try {
+      await updateChannelRouting(workspaceId, connectionId, { teamIds: selectedTeamIds, defaultTeamId, distributionMode });
+      await mutate();
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : "Não foi possível salvar o roteamento.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const linkedTeams = (teams ?? []).filter((team) => selectedTeamIds.includes(team.id));
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm">
+      {isLoading ? (
+        <div className="flex justify-center py-4"><Spinner className="h-4 w-4" /></div>
+      ) : error ? (
+        <ErrorState error={error} onRetry={() => mutate()} />
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Equipes vinculadas</p>
+            {(teams ?? []).length === 0 ? (
+              <p className="text-xs text-muted-foreground">Nenhuma equipe cadastrada — crie equipes em Configurações → Equipes.</p>
+            ) : (
+              <div className="flex flex-wrap gap-3">
+                {(teams ?? []).map((team) => (
+                  <label key={team.id} className="flex items-center gap-1.5 text-xs text-foreground">
+                    <Checkbox checked={selectedTeamIds.includes(team.id)} onCheckedChange={(checked) => toggleTeam(team.id, checked === true)} disabled={!canOperate || saving} />
+                    {team.name}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {linkedTeams.length > 0 ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Equipe padrão</p>
+                <Select value={defaultTeamId} onValueChange={setDefaultTeamId} disabled={!canOperate || saving}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Escolha a equipe padrão" /></SelectTrigger>
+                  <SelectContent>{linkedTeams.map((team) => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Distribuição</p>
+                <Select value={distributionMode} onValueChange={(value) => setDistributionMode(value as ChannelDistributionMode)} disabled={!canOperate || saving || linkedTeams.length < 2}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Sempre a equipe padrão</SelectItem>
+                    <SelectItem value="round_robin">Rodízio entre as equipes vinculadas</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : null}
+
+          {saveError ? <p className="text-xs text-destructive">{saveError}</p> : null}
+          <div className="flex justify-end">
+            <GuardedButton onClick={handleSave} loading={saving} disabled={saving || !defaultTeamId} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
+              Salvar roteamento
+            </GuardedButton>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -5,6 +5,11 @@ export type Team = {
   tenantId: string;
   workspaceId: string;
   name: string;
+  /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk) — interruptor mestre do rodízio de
+   * atendimento; `false` = sempre usa o principal do nível, nunca gira. */
+  roundRobinEnabled: boolean;
+  lastAssignedIndexByLevel: Record<string, number>;
+  timezone: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -14,6 +19,13 @@ export type TeamMembership = {
   teamId: string;
   userId: string;
   role: TenantRole;
+  /** Nível de atendimento (N1/N2/...) — cada nível tem sua própria roleta independente. */
+  attendanceLevel: string;
+  /** Fallback fixo do nível quando o rodízio está desligado, ou ninguém do nível participa dele —
+   * exatamente um membro por nível deve ter isto `true`. */
+  isPrincipalForLevel: boolean;
+  participatesInRoundRobin: boolean;
+  lastAssignedAt?: string;
   createdAt: string;
 };
 

@@ -307,6 +307,38 @@ test("mapWuzApiEvent: status@broadcast (feed de Status/Stories do WhatsApp) é d
   assert.equal(mapped, undefined, "status@broadcast nunca deveria virar um evento reconhecido — descartado inteiro, como um evento corrompido");
 });
 
+/**
+ * ACHADO AO VIVO EM PRODUÇÃO (2026-09-15, relatado pelo usuário: "mensagens sem texto... que não
+ * carregou") — payload real capturado nos logs do WuzAPI: um evento de grupo com `Message`
+ * contendo SOMENTE `senderKeyDistributionMessage` (+ `messageContextInfo`, metadado nunca
+ * conteúdo). Isto é uma mensagem de PROTOCOLO (distribuição de chave de criptografia do grupo,
+ * enviada automaticamente pelo whatsmeow), nunca algo que uma pessoa escreveu.
+ */
+test("mapWuzApiEvent: senderKeyDistributionMessage sozinho (mensagem de protocolo, nunca conteúdo real) é descartado inteiro", () => {
+  const mapped = mapWuzApiEvent(rawEvent(
+    {
+      senderKeyDistributionMessage: { groupID: "554699758123-1560728831@g.us", axolotlSenderKeyDistributionMessage: "base64==" },
+      messageContextInfo: { deviceListMetadata: { senderTimestamp: 1789388401 }, deviceListMetadataVersion: 2 },
+    },
+    { info: { Chat: "554699758123-1560728831@g.us", IsGroup: true, IsFromMe: false } },
+  ));
+
+  assert.equal(mapped, undefined, "mensagem de protocolo pura (só distribuição de chave) nunca deveria virar uma mensagem visível na Inbox");
+});
+
+test("mapWuzApiEvent: senderKeyDistributionMessage JUNTO com conteúdo real (ex.: extendedTextMessage) NUNCA é descartado", () => {
+  const mapped = mapWuzApiEvent(rawEvent(
+    {
+      senderKeyDistributionMessage: { groupID: "554699758123-1560728831@g.us", axolotlSenderKeyDistributionMessage: "base64==" },
+      extendedTextMessage: { text: "Mensagem real que veio junto" },
+    },
+    { info: { Chat: "554699758123-1560728831@g.us", IsGroup: true, IsFromMe: false } },
+  ));
+
+  assert.ok(mapped, "presença de conteúdo real (mesmo ao lado de metadado de protocolo) nunca deve ser descartada");
+  assert.equal(mapped.body, "Mensagem real que veio junto");
+});
+
 test("mapWuzApiEvent: Info.Timestamp como STRING ISO-8601 com offset (formato real confirmado) é convertido corretamente para occurredAt", () => {
   const mapped = mapWuzApiEvent(rawEvent({ conversation: "Oi" }, { info: { Timestamp: "2026-09-13T20:03:49-03:00" } }));
   assert.equal(mapped.occurredAt, new Date("2026-09-13T20:03:49-03:00").toISOString());

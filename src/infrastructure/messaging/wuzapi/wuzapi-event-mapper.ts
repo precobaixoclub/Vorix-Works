@@ -162,7 +162,18 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
   const senderIdentity = resolveWhatsAppPersonIdentity(sender, info?.SenderAlt as string | undefined);
 
   const message = event.Message as Record<string, unknown> | undefined;
-  const kind = message ? Object.keys(message).find((key) => key in MESSAGE_TYPE_BY_WHATSMEOW_KIND) : undefined;
+  // ACHADO AO VIVO (relatado pelo usuário em produção, 2026-09-15: "mensagens sem texto... que não
+  // carregou") — payload real capturado nos logs do WuzAPI: um evento com `Message` contendo
+  // SOMENTE `senderKeyDistributionMessage` (mais `messageContextInfo`, que é metadado, nunca
+  // conteúdo) — isto é uma mensagem de PROTOCOLO (distribuição de chave de criptografia do grupo,
+  // enviada automaticamente pelo whatsmeow sempre que uma sessão de chave precisa ser
+  // estabelecida/renovada), NUNCA algo que uma pessoa escreveu. Sem esta guarda, virava uma
+  // "mensagem" tipo `other` sem texto nem mídia nenhuma — exatamente a bolha vazia relatada.
+  // Descartado por completo, mesmo caminho de `@broadcast`/`@newsletter` acima.
+  const NON_CONTENT_MESSAGE_KEYS = new Set(["messageContextInfo", "senderKeyDistributionMessage"]);
+  const messageKeys = message ? Object.keys(message) : [];
+  if (messageKeys.length > 0 && messageKeys.every((key) => NON_CONTENT_MESSAGE_KEYS.has(key))) return undefined;
+  const kind = message ? messageKeys.find((key) => key in MESSAGE_TYPE_BY_WHATSMEOW_KIND) : undefined;
   const messageType = kind ? MESSAGE_TYPE_BY_WHATSMEOW_KIND[kind] ?? "other" : "other";
   // ACHADO AO VIVO (relatado pelo usuário em produção, 2026-09-15: "mensagens enviadas diretamente
   // pelo whatsapp" não carregavam) — `Message.conversation` só existe pro texto MAIS simples

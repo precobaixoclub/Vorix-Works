@@ -20,6 +20,7 @@ export const MAIN_NAV_SECTIONS: readonly WorkspaceNavSection[] = [
     label: "CONVERSAS",
     items: [
       { href: "/conversas", label: "Conversas", icon: "conversas" },
+      { href: "/kanban", label: "Kanban", icon: "kanban" },
       { href: "/instagram-dm", label: "DM Instagram", icon: "messages" },
     ],
   },
@@ -110,6 +111,7 @@ export const MOBILE_MENU_SECTIONS: readonly WorkspaceNavSection[] = [
       { href: "/connections", label: "Integrações", icon: "connections" },
       { href: "/settings", label: "Configurações", icon: "settings" },
       { href: "/instagram-dm", label: "DM Instagram", icon: "messages" },
+      { href: "/kanban", label: "Kanban", icon: "kanban" },
     ],
   },
 ] as const;

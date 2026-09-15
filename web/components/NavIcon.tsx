@@ -9,6 +9,7 @@ export type NavIconId =
   | "ads"
   | "messages"
   | "conversas"
+  | "kanban"
   | "contacts"
   | "deals"
   | "tasks"
@@ -104,6 +105,14 @@ export function NavIcon({ id, className = "h-[18px] w-[18px]" }: { id: NavIconId
         <svg {...shared}>
           <path d="M2.2 3.4a1 1 0 011-1h6.4a1 1 0 011 1v4.4a1 1 0 01-1 1H6.2l-2.4 2v-2h-.6a1 1 0 01-1-1V3.4z" {...stroke} strokeLinejoin="round" />
           <path d="M8.4 6h4.4a1 1 0 011 1v4.4a1 1 0 01-1 1h-.4v2l-2.4-2H8.4a1 1 0 01-1-1V10" {...stroke} strokeLinejoin="round" />
+        </svg>
+      );
+    case "kanban":
+      return (
+        <svg {...shared}>
+          <rect x="2.2" y="2.6" width="3.2" height="6.4" rx="1" {...stroke} />
+          <rect x="6.4" y="2.6" width="3.2" height="10.8" rx="1" {...stroke} />
+          <rect x="10.6" y="2.6" width="3.2" height="4.2" rx="1" {...stroke} />
         </svg>
       );
     case "contacts":

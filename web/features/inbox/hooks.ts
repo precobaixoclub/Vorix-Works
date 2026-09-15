@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { getApiBaseUrl } from "@/lib/api-error";
-import { getChannelRouting, getInboxMetrics, getInboxModuleStatus, listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers, mintInboxStreamToken } from "./api";
+import { getChannelRouting, getConversationsServiceTime, getInboxMetrics, getInboxModuleStatus, listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers, listKanbanPhases, mintInboxStreamToken } from "./api";
 import type { InboxConversationFilter } from "./types";
 
 /**
@@ -26,6 +26,18 @@ export function useInboxConnections(workspaceId: string) {
 /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário). */
 export function useChannelRouting(workspaceId: string, connectionId: string) {
   return useSWR(["channel-routing", workspaceId, connectionId], () => getChannelRouting(workspaceId, connectionId));
+}
+
+/** Bloco "kanban de atendimento" (réplica adaptada do CMDesk, pedido explícito do usuário). */
+export function useKanbanPhases(workspaceId: string, teamId: string | undefined) {
+  return useSWR(teamId ? ["kanban-phases", workspaceId, teamId] : null, () => listKanbanPhases(workspaceId, teamId!));
+}
+
+/** Poll espaçado (60s) — nunca a cada segundo; o "cronômetro rodando" no card é só visual, via
+ * `setInterval` local no componente (ver `useLiveServiceSeconds`). */
+export function useConversationsServiceTime(workspaceId: string, teamId: string | undefined, conversationIds: readonly string[]) {
+  const key = teamId && conversationIds.length > 0 ? ["kanban-service-time", workspaceId, teamId, conversationIds.join(",")] : null;
+  return useSWR(key, () => getConversationsServiceTime(workspaceId, teamId!, [...conversationIds]), { refreshInterval: 60_000 });
 }
 
 /** `enabled: false` (Fase 10 — chamador já sabe, via `useInboxModuleStatus`, que o módulo está

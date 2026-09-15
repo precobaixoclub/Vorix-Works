@@ -96,6 +96,8 @@ import type { TenantMembershipRepositoryPort } from "../../../application/ports/
 import type { TenantMemberInviteRepositoryPort } from "../../../application/ports/tenant-member-invite-repository.port.js";
 import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../../application/ports/team-repository.port.js";
 import type { ChannelRoutingRepositoryPort } from "../../../application/ports/channel-routing-repository.port.js";
+import type { TeamKanbanPhaseRepositoryPort } from "../../../application/ports/team-kanban-phase-repository.port.js";
+import type { ConversationTimeEntryRepositoryPort } from "../../../application/ports/inbox-conversation-time-entry-repository.port.js";
 import type { AutomationRuleRepositoryPort } from "../../../application/ports/automation-rule-repository.port.js";
 import type { AutomationRunLogRepositoryPort } from "../../../application/ports/automation-run-log-repository.port.js";
 import type { BillingEventRepositoryPort, InvoiceRepositoryPort, PaymentMethodRepositoryPort, PaymentWebhookEventRepositoryPort } from "../../../application/ports/billing-ops-repository.port.js";
@@ -449,6 +451,9 @@ export type ApiContainer = {
     teamMembershipRepository: TeamMembershipRepositoryPort;
     /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário). */
     channelRoutingRepository: ChannelRoutingRepositoryPort;
+    /** Bloco "kanban de atendimento" (réplica adaptada do CMDesk, pedido explícito do usuário). */
+    teamKanbanPhaseRepository: TeamKanbanPhaseRepositoryPort;
+    conversationTimeEntryRepository: ConversationTimeEntryRepositoryPort;
     tenantMemberInviteRepository: TenantMemberInviteRepositoryPort;
     contactRepository: ContactRepositoryPort;
     contactIdentityRepository: ContactIdentityRepositoryPort;

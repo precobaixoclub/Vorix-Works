@@ -22,6 +22,8 @@ import type { UsageCounterRepositoryPort } from "../../application/ports/usage-c
 import type { SessionRepositoryPort } from "../../application/ports/session-repository.port.js";
 import type { TeamMembershipRepositoryPort, TeamRepositoryPort } from "../../application/ports/team-repository.port.js";
 import type { ChannelRoutingRepositoryPort } from "../../application/ports/channel-routing-repository.port.js";
+import type { TeamKanbanPhaseRepositoryPort } from "../../application/ports/team-kanban-phase-repository.port.js";
+import type { ConversationTimeEntryRepositoryPort } from "../../application/ports/inbox-conversation-time-entry-repository.port.js";
 import type { TenantMemberInviteRepositoryPort } from "../../application/ports/tenant-member-invite-repository.port.js";
 import type { TenantMembershipRepositoryPort } from "../../application/ports/tenant-membership-repository.port.js";
 import type { TimelineEventRepositoryPort } from "../../application/ports/timeline-event-repository.port.js";
@@ -52,6 +54,8 @@ import { PostgresUsageCounterRepository } from "./postgres/postgres-usage-counte
 import { PostgresSessionRepository } from "./postgres/postgres-session-repository.js";
 import { PostgresTeamMembershipRepository, PostgresTeamRepository } from "./postgres/postgres-team-repository.js";
 import { PostgresChannelRoutingRepository } from "./postgres/postgres-channel-routing-repository.js";
+import { PostgresTeamKanbanPhaseRepository } from "./postgres/postgres-team-kanban-phase-repository.js";
+import { PostgresConversationTimeEntryRepository } from "./postgres/postgres-inbox-conversation-time-entry-repository.js";
 import { PostgresTenantMemberInviteRepository } from "./postgres/postgres-tenant-member-invite-repository.js";
 import { PostgresTenantMembershipRepository } from "./postgres/postgres-tenant-membership-repository.js";
 import { PostgresTimelineEventRepository } from "./postgres/postgres-timeline-event-repository.js";
@@ -82,6 +86,10 @@ export type IdentityRepositories = {
    * via FK, e `teams`/`messaging_connections` vivem no MESMO banco físico (só pools/processos de
    * conexão diferentes por organização do código, nunca bancos diferentes). */
   channelRoutingRepository: ChannelRoutingRepositoryPort;
+  /** Bloco "kanban de atendimento" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+   * mesmo pool/racional de `channelRoutingRepository` acima. */
+  teamKanbanPhaseRepository: TeamKanbanPhaseRepositoryPort;
+  conversationTimeEntryRepository: ConversationTimeEntryRepositoryPort;
   tenantMemberInviteRepository: TenantMemberInviteRepositoryPort;
   contactRepository: ContactRepositoryPort;
   contactIdentityRepository: ContactIdentityRepositoryPort;
@@ -135,6 +143,8 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     teamRepository: new PostgresTeamRepository(pool),
     teamMembershipRepository: new PostgresTeamMembershipRepository(pool),
     channelRoutingRepository: new PostgresChannelRoutingRepository(pool),
+    teamKanbanPhaseRepository: new PostgresTeamKanbanPhaseRepository(pool),
+    conversationTimeEntryRepository: new PostgresConversationTimeEntryRepository(pool),
     tenantMemberInviteRepository: new PostgresTenantMemberInviteRepository(pool),
     contactRepository: new PostgresContactRepository(pool),
     contactIdentityRepository: new PostgresContactIdentityRepository(pool),

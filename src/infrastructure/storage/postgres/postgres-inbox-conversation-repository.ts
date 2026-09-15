@@ -24,6 +24,9 @@ type Row = {
   assigned_user_id: string | null;
   department_id: string | null;
   current_team_id: string | null;
+  current_phase_id: string | null;
+  is_pinned: boolean;
+  pinned_at: Date | null;
   last_message_at: Date | null;
   unread_count: number;
   is_urgent: boolean;
@@ -222,6 +225,26 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     return this.toDomain(row);
   }
 
+  async setPhase(id: string, phaseId: string | undefined): Promise<InboxConversation> {
+    const result = await this.pool.query<Row>(
+      "update inbox_conversations set current_phase_id = $2, updated_at = now() where id = $1 returning *",
+      [id, phaseId ?? null],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
+    return this.toDomain(row);
+  }
+
+  async setPinned(id: string, pinned: boolean): Promise<InboxConversation> {
+    const result = await this.pool.query<Row>(
+      "update inbox_conversations set is_pinned = $2, pinned_at = case when $2 then now() else null end, updated_at = now() where id = $1 returning *",
+      [id, pinned],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
+    return this.toDomain(row);
+  }
+
   async setStatus(id: string, status: InboxConversationStatus): Promise<InboxConversation> {
     const result = await this.pool.query<Row>(
       "update inbox_conversations set status = $2, updated_at = now() where id = $1 returning *",
@@ -304,6 +327,9 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       assignedUserId: row.assigned_user_id ?? undefined,
       departmentId: row.department_id ?? undefined,
       currentTeamId: row.current_team_id ?? undefined,
+      currentPhaseId: row.current_phase_id ?? undefined,
+      isPinned: row.is_pinned,
+      pinnedAt: row.pinned_at?.toISOString(),
       lastMessageAt: row.last_message_at?.toISOString(),
       unreadCount: row.unread_count,
       isUrgent: row.is_urgent,

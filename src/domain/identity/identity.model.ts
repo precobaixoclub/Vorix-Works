@@ -328,6 +328,29 @@ export function normalizeAttendanceLevel(value: string | undefined): string {
   return raw.slice(0, 20) || DEFAULT_ATTENDANCE_LEVEL;
 }
 
+/** Bloco "kanban de atendimento" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+ * colunas do quadro, por equipe. `RUNNING` = tempo na fase conta como atendimento ativo; `PAUSED`
+ * = tempo pausado/aguardando (ver `ConversationTimeEntry.phaseType`, `src/domain/inbox/inbox.model.ts`). */
+export const KANBAN_PHASE_TYPES = ["RUNNING", "PAUSED"] as const;
+export type KanbanPhaseType = (typeof KANBAN_PHASE_TYPES)[number];
+
+export type TeamKanbanPhase = {
+  id: string;
+  tenantId: string;
+  teamId: string;
+  name: string;
+  orderIndex: number;
+  /** Exatamente uma fase por equipe deve ter isto `true` — é pra onde toda conversa nova da
+   * equipe entra. Mantido automaticamente (nunca duas marcadas). */
+  isDefaultFirst: boolean;
+  phaseType: KanbanPhaseType;
+  /** Exclui conversas desta fase de contagens do Painel Operacional — nunca usado pra lógica de
+   * roteamento/SLA, só pra filtro de relatório. */
+  naoContabilizaOperacional: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export const TENANT_MEMBER_INVITE_STATUSES = ["pending", "accepted", "revoked", "expired"] as const;
 export type TenantMemberInviteStatus = (typeof TENANT_MEMBER_INVITE_STATUSES)[number];
 

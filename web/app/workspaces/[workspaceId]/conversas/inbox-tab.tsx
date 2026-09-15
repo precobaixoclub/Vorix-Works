@@ -63,7 +63,7 @@ import {
 } from "@/features/inbox/api";
 import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime } from "@/features/inbox/hooks";
 import { useTeams } from "@/features/identity/hooks";
-import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMediaStorageRef, InboxMessage, InboxTenantMember } from "@/features/inbox/types";
+import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMediaStorageRef, InboxMessage, InboxTenantMember, TeamKanbanPhase } from "@/features/inbox/types";
 import type { Team } from "@/features/identity/types";
 import { CrmContextSection } from "./crm-panel";
 import { MessageMedia } from "./message-media";
@@ -423,7 +423,12 @@ function ConversationListPane({
   );
 }
 
-function ConversationListItem({
+/** Exportado para reuso no board do Kanban (`kanban/kanban-board.tsx`) — o board não tem card
+ * próprio, usa este mesmo componente, só passando `phaseOptions`/`onMoveToPhase` (caminho sem
+ * drag, pro menu de 3 pontinhos ganhar um "Mover para fase...", necessário pra mobile/touch onde
+ * arrastar é ruim de usar). Nas telas que não são o board, essas duas props ficam `undefined` e o
+ * item some do menu — comportamento idêntico ao de antes desta mudança. */
+export function ConversationListItem({
   workspaceId,
   conversation,
   selected,
@@ -432,6 +437,8 @@ function ConversationListItem({
   teams,
   onSelect,
   onConversationChanged,
+  phaseOptions,
+  onMoveToPhase,
 }: {
   workspaceId: string;
   conversation: InboxConversation;
@@ -441,6 +448,8 @@ function ConversationListItem({
   teams: readonly Team[];
   onSelect: () => void;
   onConversationChanged: () => void;
+  phaseOptions?: readonly TeamKanbanPhase[];
+  onMoveToPhase?: (phaseId: string) => void;
 }) {
   const avatarProps = avatarPropsFor(conversation);
   // Bloco "3 pontinhos na listagem" (pedido explícito do usuário: "sem precisar clicar e abrir
@@ -482,7 +491,13 @@ function ConversationListItem({
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
             <span className="text-[11px] tabular-nums text-muted-foreground">{timeLabel(conversation.lastMessageAt)}</span>
-            <ConversationListItemMenu workspaceId={workspaceId} conversation={conversation} onChanged={onConversationChanged} />
+            <ConversationListItemMenu
+              workspaceId={workspaceId}
+              conversation={conversation}
+              onChanged={onConversationChanged}
+              phaseOptions={phaseOptions}
+              onMoveToPhase={onMoveToPhase}
+            />
           </div>
         </div>
         <p className="mt-0.5 truncate text-xs text-muted-foreground">{conversationSubtitle(conversation)}</p>
@@ -513,10 +528,14 @@ function ConversationListItemMenu({
   workspaceId,
   conversation,
   onChanged,
+  phaseOptions,
+  onMoveToPhase,
 }: {
   workspaceId: string;
   conversation: InboxConversation;
   onChanged: () => void;
+  phaseOptions?: readonly TeamKanbanPhase[];
+  onMoveToPhase?: (phaseId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -570,6 +589,24 @@ function ConversationListItemMenu({
           <Flame className={cn("h-4 w-4", conversation.isUrgent && "text-destructive")} />
           {conversation.isUrgent ? "Remover urgência" : "Marcar como urgente"}
         </button>
+        {phaseOptions && phaseOptions.length > 0 && onMoveToPhase ? (
+          <>
+            <div className="my-1 border-t border-border/60" />
+            <p className="px-2 py-1 text-xs font-medium text-muted-foreground">Mover para fase</p>
+            {phaseOptions.map((phase) => (
+              <button
+                key={phase.id}
+                type="button"
+                disabled={busy || phase.id === conversation.currentPhaseId}
+                onClick={() => run(() => Promise.resolve(onMoveToPhase(phase.id)))}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+              >
+                <span className={cn("h-2 w-2 shrink-0 rounded-full", phase.id === conversation.currentPhaseId ? "bg-primary" : "bg-muted-foreground/40")} />
+                {phase.name}
+              </button>
+            ))}
+          </>
+        ) : null}
       </PopoverContent>
     </Popover>
   );

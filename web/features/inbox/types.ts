@@ -46,11 +46,19 @@ export type InboxConversation = {
    * pela conversa, um nível acima de `assignedUserId`. `undefined` = canal sem roteamento por
    * equipe configurado, ou conversa anterior a esta funcionalidade. */
   currentTeamId?: string;
+  /** Bloco "kanban de atendimento" (réplica adaptada do CMDesk) — fase atual da conversa DENTRO de
+   * `currentTeamId` (coluna do quadro). `undefined` = sem equipe, ou equipe sem quadro aberto
+   * ainda (ver `ensureConversationPhaseStates`). */
+  currentPhaseId?: string;
   lastMessageAt?: string;
   unreadCount: number;
   /** Bloco "urgente" (pedido explícito do usuário em produção) — marcação manual, mostrada como um
    * ícone de fogo na listagem. */
   isUrgent: boolean;
+  /** Bloco "kanban de atendimento" — fixar um card no topo do quadro. Distinto de qualquer outro
+   * "sticky"/pin de roteamento (conceitos diferentes). */
+  isPinned: boolean;
+  pinnedAt?: string;
   aiEnabled: boolean;
   aiPausedReason?: InboxAiPauseReason;
   automationEnabled: boolean;
@@ -92,6 +100,32 @@ export type ChannelRoutingConfig = {
 };
 
 export type ChannelRoutingSnapshot = { teamIds: string[]; config?: ChannelRoutingConfig };
+
+/** Bloco "kanban de atendimento" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+ * colunas do quadro, por equipe. */
+export type KanbanPhaseType = "RUNNING" | "PAUSED";
+
+export type TeamKanbanPhase = {
+  id: string;
+  teamId: string;
+  name: string;
+  orderIndex: number;
+  isDefaultFirst: boolean;
+  phaseType: KanbanPhaseType;
+  naoContabilizaOperacional: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Tempo de atendimento em lote (badge "rodando" dos cards) — o frontend incrementa
+ * `totalSeconds` ao vivo via `setInterval` local ENQUANTO `isRunning`, nunca reconsulta o backend
+ * a cada segundo (ver `useLiveServiceSeconds`). */
+export type ConversationServiceTime = {
+  conversationId: string;
+  totalSeconds: number;
+  currentPhaseStartedAt?: string;
+  isRunning: boolean;
+};
 
 /** Fase 4 — evento discreto de atendimento (nunca uma mensagem enviada ao WhatsApp). Timeline do
  * frontend intercala isso com `InboxMessage` por `createdAt`, renderizando como um "pill" central

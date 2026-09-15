@@ -48,6 +48,7 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
       status: "open",
       unreadCount: 0,
       isUrgent: false,
+      isPinned: false,
       aiEnabled: false,
       automationEnabled: false,
       createdAt: now,
@@ -186,6 +187,22 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     const existing = this.rows.get(id);
     if (!existing) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
     const updated = { ...existing, currentTeamId: teamId, updatedAt: new Date().toISOString() };
+    this.rows.set(id, updated);
+    return updated;
+  }
+
+  async setPhase(id: string, phaseId: string | undefined): Promise<InboxConversation> {
+    const existing = this.rows.get(id);
+    if (!existing) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
+    const updated = { ...existing, currentPhaseId: phaseId, updatedAt: new Date().toISOString() };
+    this.rows.set(id, updated);
+    return updated;
+  }
+
+  async setPinned(id: string, pinned: boolean): Promise<InboxConversation> {
+    const existing = this.rows.get(id);
+    if (!existing) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
+    const updated = { ...existing, isPinned: pinned, pinnedAt: pinned ? new Date().toISOString() : undefined, updatedAt: new Date().toISOString() };
     this.rows.set(id, updated);
     return updated;
   }

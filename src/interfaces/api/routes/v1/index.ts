@@ -257,6 +257,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       channelRoutingRepository: app.zunoContainer.identity?.channelRoutingRepository,
       teamRepository: app.zunoContainer.identity?.teamRepository,
       teamMembershipRepository: app.zunoContainer.identity?.teamMembershipRepository,
+      teamKanbanPhaseRepository: app.zunoContainer.identity?.teamKanbanPhaseRepository,
+      conversationTimeEntryRepository: app.zunoContainer.identity?.conversationTimeEntryRepository,
     });
     // Fase 7 (Resultados) — métricas agregadas de atendimento, mesmo kill switch do módulo.
     await registerInboxMetricsRoutes(app, { inboxMetricsRepository: app.zunoContainer.inboxMetricsRepository });

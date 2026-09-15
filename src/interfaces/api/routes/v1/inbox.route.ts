@@ -16,32 +16,43 @@ import type { ProductAnalyticsUseCaseDeps } from "../../../../application/produc
 import {
   assignConversation,
   closeConversation,
+  createKanbanPhase,
   deleteConversation,
   deleteInboxMessage,
+  deleteKanbanPhase,
   createConnection,
   disconnectConnection,
+  ensureConversationPhaseStates,
   getChannelRouting,
   getConnectionQrCode,
+  getConversationsServiceTime,
   listConnections,
   listConversationEvents,
   listConversationMessages,
   listConversations,
+  listKanbanPhases,
   markConversationRead,
   markConversationUnread,
+  moveConversationPhase,
   reactToInboxMessage,
   refreshConnectionStatus,
   reopenConversation,
+  reorderKanbanPhases,
   sendInboxMediaMessage,
   sendInboxMessage,
   setAiConversationEnabled,
+  setConversationPinned,
   setConversationUrgent,
   takeOverConversation,
   transferConversation,
   updateChannelRouting,
+  updateKanbanPhase,
   type InboxUseCaseDeps,
 } from "../../../../application/inbox/inbox-use-cases.js";
 import type { ChannelRoutingRepositoryPort } from "../../../../application/ports/channel-routing-repository.port.js";
 import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../../../application/ports/team-repository.port.js";
+import type { TeamKanbanPhaseRepositoryPort } from "../../../../application/ports/team-kanban-phase-repository.port.js";
+import type { ConversationTimeEntryRepositoryPort } from "../../../../application/ports/inbox-conversation-time-entry-repository.port.js";
 import { AppError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -75,6 +86,42 @@ const CHANNEL_ROUTING_BODY_SCHEMA = {
     defaultTeamId: { type: "string", minLength: 1 },
     distributionMode: { type: "string", enum: ["default", "round_robin"] },
   },
+} as const;
+// Bloco "kanban de atendimento" (réplica adaptada do CMDesk, pedido explícito do usuário).
+const TEAM_ID_PARAMS_SCHEMA = { type: "object", required: ["teamId"], properties: { teamId: { type: "string", minLength: 1 } } } as const;
+const TEAM_PHASE_PARAMS_SCHEMA = { type: "object", required: ["teamId", "phaseId"], properties: { teamId: { type: "string", minLength: 1 }, phaseId: { type: "string", minLength: 1 } } } as const;
+const TEAM_CONVERSATION_PARAMS_SCHEMA = {
+  type: "object",
+  required: ["teamId", "conversationId"],
+  properties: { teamId: { type: "string", minLength: 1 }, conversationId: { type: "string", minLength: 1 } },
+} as const;
+const CREATE_KANBAN_PHASE_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId", "name"],
+  properties: { workspaceId: { type: "string", minLength: 1 }, name: { type: "string", minLength: 1, maxLength: 100 }, phaseType: { type: "string", enum: ["RUNNING", "PAUSED"] } },
+} as const;
+const UPDATE_KANBAN_PHASE_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId"],
+  properties: {
+    workspaceId: { type: "string", minLength: 1 },
+    name: { type: "string", minLength: 1, maxLength: 100 },
+    isDefaultFirst: { type: "boolean" },
+    phaseType: { type: "string", enum: ["RUNNING", "PAUSED"] },
+    naoContabilizaOperacional: { type: "boolean" },
+  },
+} as const;
+const REORDER_KANBAN_PHASES_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId", "phaseIds"],
+  properties: { workspaceId: { type: "string", minLength: 1 }, phaseIds: { type: "array", items: { type: "string", minLength: 1 } } },
+} as const;
+const MOVE_CONVERSATION_PHASE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "phaseId"], properties: { workspaceId: { type: "string", minLength: 1 }, phaseId: { type: "string", minLength: 1 } } } as const;
+const PIN_CONVERSATION_BODY_SCHEMA = { type: "object", required: ["workspaceId", "pinned"], properties: { workspaceId: { type: "string", minLength: 1 }, pinned: { type: "boolean" } } } as const;
+const KANBAN_CONVERSATION_IDS_QUERY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId", "conversationIds"],
+  properties: { workspaceId: { type: "string", minLength: 1 }, conversationIds: { type: "string", minLength: 1 } },
 } as const;
 const CONVERSATIONS_QUERY_SCHEMA = {
   type: "object",
@@ -121,6 +168,13 @@ const INBOX_ERROR_STATUS: Record<string, number> = {
   // Bloco "roteamento por equipe".
   INBOX_TEAM_ROUTING_NOT_CONFIGURED: 503,
   INBOX_DEFAULT_TEAM_NOT_LINKED: 422,
+  // Bloco "kanban de atendimento".
+  INBOX_KANBAN_NOT_CONFIGURED: 503,
+  TEAM_NOT_FOUND: 404,
+  KANBAN_PHASE_NOT_FOUND: 404,
+  KANBAN_LAST_PHASE: 422,
+  KANBAN_REORDER_MISMATCH: 422,
+  KANBAN_CONVERSATION_NOT_IN_TEAM: 422,
 };
 
 function rethrowInboxError(error: unknown): never {
@@ -175,6 +229,10 @@ export type InboxRoutesDeps = {
   channelRoutingRepository?: ChannelRoutingRepositoryPort;
   teamRepository?: TeamRepositoryPort;
   teamMembershipRepository?: TeamMembershipRepositoryPort;
+  /** Bloco "kanban de atendimento" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+   * `undefined` = módulo de kanban não configurado neste processo. */
+  teamKanbanPhaseRepository?: TeamKanbanPhaseRepositoryPort;
+  conversationTimeEntryRepository?: ConversationTimeEntryRepositoryPort;
 };
 
 function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {
@@ -492,6 +550,130 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     try {
       const routing = await updateChannelRouting(useCaseDeps, { tenantId: principal.tenantId, workspaceId, connectionId: id, teamIds, defaultTeamId, distributionMode });
       return successEnvelope(routing, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  // ==========================================================================================
+  // Bloco "kanban de atendimento" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+  // quadro estilo Trello POR EQUIPE. Listar fases/mover card/fixar são liberados pra qualquer
+  // membro autenticado com `inbox:reply` (uso operacional do dia a dia, mesmo degrau de "responder
+  // conversa"); criar/editar/excluir/reordenar fase (configurar as COLUNAS do quadro) usa
+  // `inbox:assign` (mesmo degrau de supervisor já usado por take-over/transferência).
+  // ==========================================================================================
+
+  app.get("/inbox/teams/:teamId/kanban-phases", { schema: { params: TEAM_ID_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { teamId } = request.params as { teamId: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      const phases = await listKanbanPhases(useCaseDeps, { teamId, tenantId: principal.tenantId, workspaceId });
+      return successEnvelope({ phases }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.post("/inbox/teams/:teamId/kanban-phases", { schema: { params: TEAM_ID_PARAMS_SCHEMA, body: CREATE_KANBAN_PHASE_BODY_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:assign");
+    const { teamId } = request.params as { teamId: string };
+    const { workspaceId, name, phaseType } = request.body as { workspaceId: string; name: string; phaseType?: "RUNNING" | "PAUSED" };
+    try {
+      const phase = await createKanbanPhase(useCaseDeps, { teamId, tenantId: principal.tenantId, workspaceId, name, phaseType });
+      reply.status(201);
+      return successEnvelope(phase, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.patch("/inbox/teams/:teamId/kanban-phases/:phaseId", { schema: { params: TEAM_PHASE_PARAMS_SCHEMA, body: UPDATE_KANBAN_PHASE_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:assign");
+    const { teamId, phaseId } = request.params as { teamId: string; phaseId: string };
+    const { workspaceId, name, isDefaultFirst, phaseType, naoContabilizaOperacional } = request.body as {
+      workspaceId: string; name?: string; isDefaultFirst?: boolean; phaseType?: "RUNNING" | "PAUSED"; naoContabilizaOperacional?: boolean;
+    };
+    try {
+      const phase = await updateKanbanPhase(useCaseDeps, { teamId, phaseId, tenantId: principal.tenantId, workspaceId, name, isDefaultFirst, phaseType, naoContabilizaOperacional });
+      return successEnvelope(phase, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.delete("/inbox/teams/:teamId/kanban-phases/:phaseId", { schema: { params: TEAM_PHASE_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:assign");
+    const { teamId, phaseId } = request.params as { teamId: string; phaseId: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      await deleteKanbanPhase(useCaseDeps, { teamId, phaseId, tenantId: principal.tenantId, workspaceId });
+      return successEnvelope({ deleted: true }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.post("/inbox/teams/:teamId/kanban-phases/reorder", { schema: { params: TEAM_ID_PARAMS_SCHEMA, body: REORDER_KANBAN_PHASES_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:assign");
+    const { teamId } = request.params as { teamId: string };
+    const { workspaceId, phaseIds } = request.body as { workspaceId: string; phaseIds: string[] };
+    try {
+      const phases = await reorderKanbanPhases(useCaseDeps, { teamId, tenantId: principal.tenantId, workspaceId, phaseIds });
+      return successEnvelope({ phases }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  /** Board carregando conversas sem `currentPhaseId` ainda (conversa nova, ou primeira vez que o
+   * quadro desta equipe é aberto) — cria o estado na fase padrão, idempotente (seção 4.3 do guia
+   * do usuário). O frontend chama isto ANTES de renderizar o board. */
+  app.post("/inbox/teams/:teamId/conversations/ensure-phase-states", { schema: { params: TEAM_ID_PARAMS_SCHEMA, body: { type: "object", required: ["workspaceId", "conversationIds"], properties: { workspaceId: { type: "string", minLength: 1 }, conversationIds: { type: "array", items: { type: "string", minLength: 1 } } } } } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { teamId } = request.params as { teamId: string };
+    const { workspaceId, conversationIds } = request.body as { workspaceId: string; conversationIds: string[] };
+    try {
+      await ensureConversationPhaseStates(useCaseDeps, { teamId, tenantId: principal.tenantId, workspaceId, conversationIds });
+      return successEnvelope({ ensured: true }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.get("/inbox/teams/:teamId/conversations/service-time", { schema: { params: TEAM_ID_PARAMS_SCHEMA, querystring: KANBAN_CONVERSATION_IDS_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { teamId } = request.params as { teamId: string };
+    const { workspaceId, conversationIds } = request.query as { workspaceId: string; conversationIds: string };
+    try {
+      const serviceTime = await getConversationsServiceTime(useCaseDeps, { teamId, tenantId: principal.tenantId, workspaceId, conversationIds: conversationIds.split(",").filter(Boolean) });
+      return successEnvelope({ serviceTime }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.patch("/inbox/teams/:teamId/conversations/:conversationId/phase", { schema: { params: TEAM_CONVERSATION_PARAMS_SCHEMA, body: MOVE_CONVERSATION_PHASE_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { teamId, conversationId } = request.params as { teamId: string; conversationId: string };
+    const { workspaceId, phaseId } = request.body as { workspaceId: string; phaseId: string };
+    try {
+      const conversation = await moveConversationPhase(useCaseDeps, { teamId, conversationId, tenantId: principal.tenantId, workspaceId, phaseId, performedBy: principal.userId });
+      publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId });
+      return successEnvelope(conversation, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.patch("/inbox/teams/:teamId/conversations/:conversationId/pin", { schema: { params: TEAM_CONVERSATION_PARAMS_SCHEMA, body: PIN_CONVERSATION_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { conversationId } = request.params as { teamId: string; conversationId: string };
+    const { workspaceId, pinned } = request.body as { workspaceId: string; pinned: boolean };
+    try {
+      const conversation = await setConversationPinned(useCaseDeps, { conversationId, tenantId: principal.tenantId, workspaceId, pinned });
+      publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId });
+      return successEnvelope(conversation, request.id);
     } catch (error) {
       rethrowInboxError(error);
     }

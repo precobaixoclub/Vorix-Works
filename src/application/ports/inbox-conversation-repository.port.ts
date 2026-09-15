@@ -88,6 +88,13 @@ export type InboxConversationRepositoryPort = {
   /** Bloco "roteamento por equipe" — grava a equipe resolvida pelo roteamento do canal. Nunca
    * mexe em `assignedUserId` (isso é papel do round-robin de agentes, chamado separadamente). */
   setTeam(id: string, teamId: string | undefined): Promise<InboxConversation>;
+  /** Bloco "kanban de atendimento" — grava a fase resolvida por `moveConversationPhase`. Nunca
+   * chamado sozinho fora dele (sempre junto da abertura/fechamento de `ConversationTimeEntry`,
+   * na mesma transação com lock). */
+  setPhase(id: string, phaseId: string | undefined): Promise<InboxConversation>;
+  /** Bloco "kanban de atendimento" — fixar/desafixar um card no quadro. `pinned: false` sempre
+   * limpa `pinnedAt` junto (nunca deixa uma data "presa" de uma fixação antiga). */
+  setPinned(id: string, pinned: boolean): Promise<InboxConversation>;
   setStatus(id: string, status: InboxConversationStatus): Promise<InboxConversation>;
   /** "Assumir conversa" desliga a IA só aqui — nunca globalmente. `reason` (Fase 5) é gravado
    * junto quando `aiEnabled` é `false`; ignorado (sempre limpo para `null`) quando `aiEnabled` é

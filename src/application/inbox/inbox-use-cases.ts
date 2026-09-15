@@ -1,7 +1,10 @@
 import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, MessagingConnection, MessagingConnectionStatus } from "../../domain/inbox/inbox.model.js";
 import { INBOX_AI_ACTOR, MESSAGING_CONNECTION_TERMINAL_STATUSES, normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
+import type { KanbanPhaseType, TeamKanbanPhase } from "../../domain/identity/identity.model.js";
+import { KANBAN_PHASE_TYPES } from "../../domain/identity/identity.model.js";
 import type { OperationalCircuitBreaker, OperationalRateLimiter } from "../operations/operational-services.js";
 import type { ChannelRoutingConfig, ChannelRoutingRepositoryPort } from "../ports/channel-routing-repository.port.js";
+import type { ConversationServiceTime, ConversationTimeEntryRepositoryPort } from "../ports/inbox-conversation-time-entry-repository.port.js";
 import type { InboxAiResponderPort } from "../ports/inbox-ai-responder.port.js";
 import type { InboxContactRepositoryPort } from "../ports/inbox-contact-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../ports/inbox-conversation-event-repository.port.js";
@@ -14,10 +17,11 @@ import type { MessagingConnectionRepositoryPort } from "../ports/messaging-conne
 import type { MessagingProvider, MessagingProviderErrorKind } from "../ports/messaging-provider.port.js";
 import { MessagingProviderError } from "../ports/messaging-provider.port.js";
 import type { OutboundMessageQueuePort } from "../ports/outbound-message-queue.port.js";
+import type { TeamKanbanPhaseRepositoryPort } from "../ports/team-kanban-phase-repository.port.js";
 import type { TeamMembershipRepositoryPort, TeamRepositoryPort } from "../ports/team-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
 import { recordFirstEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
-import { resolveNextTeamMember } from "../identity/team-use-cases.js";
+import { mustTeamBelongToTenantAndWorkspace, resolveNextTeamMember } from "../identity/team-use-cases.js";
 
 /**
  * Casos de uso do módulo Conversas — Fase 1/3/4/5/6. Mesmo padrão de `conversation-use-cases.ts`:
@@ -85,6 +89,11 @@ export type InboxUseCaseDeps = {
   channelRoutingRepository?: ChannelRoutingRepositoryPort;
   teamRepository?: TeamRepositoryPort;
   teamMembershipRepository?: TeamMembershipRepositoryPort;
+  /** Bloco "kanban de atendimento" (réplica adaptada do CMDesk, pedido explícito do usuário) —
+   * `undefined` = módulo de kanban não configurado neste processo (mesmo racional dos deps de
+   * roteamento por equipe acima). */
+  teamKanbanPhaseRepository?: TeamKanbanPhaseRepositoryPort;
+  conversationTimeEntryRepository?: ConversationTimeEntryRepositoryPort;
 };
 
 const defaultIdGenerator = () => `wuzsess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1682,4 +1691,247 @@ async function drainAiResponses(deps: InboxUseCaseDeps, ctx: { tenantId: string;
     // é assim que várias mensagens consecutivas do mesmo contato viram UMA resposta coerente por
     // rodada em vez de N respostas paralelas desconexas, sem precisar de debounce/timer nenhum.
   }
+}
+
+// ============================================================================================
+// Bloco "kanban de atendimento" (réplica adaptada do CMDesk, pedido explícito do usuário: "criar
+// uma kanban de atendimento dentro do VORIX onde eu consigo controlar as conversas por fases
+// igual no CMDESK"). Quadro estilo Trello POR EQUIPE — cada coluna é uma `TeamKanbanPhase`, cada
+// card é uma `InboxConversation`. Fora de escopo desta rodada (marcado como opcional no próprio
+// guia do usuário): motor de automação por fase (SEND_MESSAGE/MOVE_PHASE automático) e a
+// varredura de "ciclo obsoleto" (depende de `AttendanceSession`, que o Vorix não tem).
+// ============================================================================================
+
+function requireKanbanDeps(deps: InboxUseCaseDeps): { teamKanbanPhaseRepository: TeamKanbanPhaseRepositoryPort; conversationTimeEntryRepository: ConversationTimeEntryRepositoryPort } {
+  if (!deps.teamKanbanPhaseRepository || !deps.conversationTimeEntryRepository) {
+    throw new Error("INBOX_KANBAN_NOT_CONFIGURED: quadro de atendimento não está disponível neste ambiente.");
+  }
+  return { teamKanbanPhaseRepository: deps.teamKanbanPhaseRepository, conversationTimeEntryRepository: deps.conversationTimeEntryRepository };
+}
+
+function requireTeamDeps(deps: InboxUseCaseDeps): { teamRepository: TeamRepositoryPort; teamMembershipRepository: TeamMembershipRepositoryPort } {
+  if (!deps.teamRepository || !deps.teamMembershipRepository) {
+    throw new Error("INBOX_KANBAN_NOT_CONFIGURED: quadro de atendimento não está disponível neste ambiente.");
+  }
+  return { teamRepository: deps.teamRepository, teamMembershipRepository: deps.teamMembershipRepository };
+}
+
+async function mustKanbanPhaseBelongToTeam(deps: InboxUseCaseDeps, phaseId: string, teamId: string): Promise<TeamKanbanPhase> {
+  const { teamKanbanPhaseRepository } = requireKanbanDeps(deps);
+  const phase = await teamKanbanPhaseRepository.getById(phaseId);
+  if (!phase || phase.teamId !== teamId) throw new Error(`KANBAN_PHASE_NOT_FOUND: fase "${phaseId}" não existe nesta equipe.`);
+  return phase;
+}
+
+/** Mesmas 3 fases padrão do CMDesk (seção 4.1 do guia do usuário) — nomes/ordem/tipo idênticos. */
+const DEFAULT_KANBAN_PHASES: { name: string; isDefaultFirst: boolean; phaseType: KanbanPhaseType }[] = [
+  { name: "Novos", isDefaultFirst: true, phaseType: "RUNNING" },
+  { name: "Em atendimento", isDefaultFirst: false, phaseType: "RUNNING" },
+  { name: "Aguardando retorno", isDefaultFirst: false, phaseType: "PAUSED" },
+];
+
+/** Criação PREGUIÇOSA — nunca no `createTeam`, só na primeira vez que qualquer operação de fase
+ * roda pra uma equipe (seção 4.1/seção 7.6 do guia do usuário: "não precisa de migration/seed
+ * manual"). Chamado no início de toda função pública de fase abaixo. */
+async function ensureDefaultKanbanPhases(deps: InboxUseCaseDeps, input: { tenantId: string; teamId: string }): Promise<void> {
+  const { teamKanbanPhaseRepository } = requireKanbanDeps(deps);
+  const count = await teamKanbanPhaseRepository.countByTeam(input.teamId);
+  if (count > 0) return;
+  await teamKanbanPhaseRepository.createMany(
+    DEFAULT_KANBAN_PHASES.map((phase, index) => ({
+      tenantId: input.tenantId,
+      teamId: input.teamId,
+      name: phase.name,
+      orderIndex: index,
+      isDefaultFirst: phase.isDefaultFirst,
+      phaseType: phase.phaseType,
+    })),
+  );
+}
+
+export type ListKanbanPhasesInput = { teamId: string; tenantId: string; workspaceId: string };
+
+export async function listKanbanPhases(deps: InboxUseCaseDeps, input: ListKanbanPhasesInput): Promise<TeamKanbanPhase[]> {
+  const { teamKanbanPhaseRepository } = requireKanbanDeps(deps);
+  await mustTeamBelongToTenantAndWorkspace(requireTeamDeps(deps), input.teamId, input.tenantId, input.workspaceId);
+  await ensureDefaultKanbanPhases(deps, { tenantId: input.tenantId, teamId: input.teamId });
+  return teamKanbanPhaseRepository.listByTeam(input.teamId);
+}
+
+export type CreateKanbanPhaseInput = { teamId: string; tenantId: string; workspaceId: string; name: string; phaseType?: KanbanPhaseType };
+
+export async function createKanbanPhase(deps: InboxUseCaseDeps, input: CreateKanbanPhaseInput): Promise<TeamKanbanPhase> {
+  const { teamKanbanPhaseRepository } = requireKanbanDeps(deps);
+  await mustTeamBelongToTenantAndWorkspace(requireTeamDeps(deps), input.teamId, input.tenantId, input.workspaceId);
+  await ensureDefaultKanbanPhases(deps, { tenantId: input.tenantId, teamId: input.teamId });
+  const existing = await teamKanbanPhaseRepository.listByTeam(input.teamId);
+  const nextOrderIndex = existing.length > 0 ? Math.max(...existing.map((phase) => phase.orderIndex)) + 1 : 0;
+  return teamKanbanPhaseRepository.create({ tenantId: input.tenantId, teamId: input.teamId, name: input.name, phaseType: input.phaseType, orderIndex: nextOrderIndex });
+}
+
+export type UpdateKanbanPhaseInput = {
+  teamId: string;
+  phaseId: string;
+  tenantId: string;
+  workspaceId: string;
+  name?: string;
+  isDefaultFirst?: boolean;
+  phaseType?: KanbanPhaseType;
+  naoContabilizaOperacional?: boolean;
+};
+
+/** Exatamente uma fase padrão por equipe — desmarca as outras ANTES de marcar esta (seção 1.5/7.3
+ * do guia do usuário: "ao marcar uma nova, desmarque todas as outras da mesma equipe"). */
+export async function updateKanbanPhase(deps: InboxUseCaseDeps, input: UpdateKanbanPhaseInput): Promise<TeamKanbanPhase> {
+  const { teamKanbanPhaseRepository } = requireKanbanDeps(deps);
+  await mustTeamBelongToTenantAndWorkspace(requireTeamDeps(deps), input.teamId, input.tenantId, input.workspaceId);
+  await mustKanbanPhaseBelongToTeam(deps, input.phaseId, input.teamId);
+  if (input.isDefaultFirst === true) await teamKanbanPhaseRepository.clearDefaultFirst(input.teamId, input.phaseId);
+  return teamKanbanPhaseRepository.update(input.phaseId, {
+    name: input.name,
+    isDefaultFirst: input.isDefaultFirst,
+    phaseType: input.phaseType,
+    naoContabilizaOperacional: input.naoContabilizaOperacional,
+  });
+}
+
+export type DeleteKanbanPhaseInput = { teamId: string; phaseId: string; tenantId: string; workspaceId: string };
+
+/** Bloqueado se restar só 1 fase (seção 4.4/7.4 do guia do usuário). Migra os cards da fase
+ * excluída pro fallback (padrão da equipe > primeira por ordem > qualquer outra) e reindexa as
+ * fases restantes (fecha os buracos de `orderIndex`) — mesmo algoritmo documentado. */
+export async function deleteKanbanPhase(deps: InboxUseCaseDeps, input: DeleteKanbanPhaseInput): Promise<void> {
+  const { teamKanbanPhaseRepository } = requireKanbanDeps(deps);
+  await mustTeamBelongToTenantAndWorkspace(requireTeamDeps(deps), input.teamId, input.tenantId, input.workspaceId);
+  const target = await mustKanbanPhaseBelongToTeam(deps, input.phaseId, input.teamId);
+  const phases = await teamKanbanPhaseRepository.listByTeam(input.teamId);
+  if (phases.length <= 1) throw new Error("KANBAN_LAST_PHASE: é necessário manter ao menos uma fase.");
+
+  const fallback =
+    phases.find((phase) => phase.id !== input.phaseId && phase.isDefaultFirst) ??
+    phases.find((phase) => phase.id !== input.phaseId && phase.orderIndex === 0) ??
+    phases.find((phase) => phase.id !== input.phaseId);
+  if (!fallback) throw new Error("KANBAN_LAST_PHASE: é necessário manter ao menos uma fase.");
+
+  await teamKanbanPhaseRepository.deleteWithFallback(input.phaseId, fallback.id);
+  if (target.isDefaultFirst) await teamKanbanPhaseRepository.update(fallback.id, { isDefaultFirst: true });
+
+  const remaining = await teamKanbanPhaseRepository.listByTeam(input.teamId);
+  await teamKanbanPhaseRepository.reorder(input.teamId, remaining.map((phase) => phase.id));
+}
+
+export type ReorderKanbanPhasesInput = { teamId: string; tenantId: string; workspaceId: string; phaseIds: string[] };
+
+/** A lista precisa conter TODAS as fases da equipe, exatamente uma vez cada — nunca um reorder
+ * parcial (mesmo racional do "salvar canal" já usado em `updateChannelRouting`: substituição
+ * total, nunca patch incremental). */
+export async function reorderKanbanPhases(deps: InboxUseCaseDeps, input: ReorderKanbanPhasesInput): Promise<TeamKanbanPhase[]> {
+  const { teamKanbanPhaseRepository } = requireKanbanDeps(deps);
+  await mustTeamBelongToTenantAndWorkspace(requireTeamDeps(deps), input.teamId, input.tenantId, input.workspaceId);
+  const existing = await teamKanbanPhaseRepository.listByTeam(input.teamId);
+  const existingIds = new Set(existing.map((phase) => phase.id));
+  if (input.phaseIds.length !== existing.length || !input.phaseIds.every((id) => existingIds.has(id))) {
+    throw new Error("KANBAN_REORDER_MISMATCH: a lista precisa conter exatamente todas as fases da equipe, uma vez cada.");
+  }
+  await teamKanbanPhaseRepository.reorder(input.teamId, input.phaseIds);
+  return teamKanbanPhaseRepository.listByTeam(input.teamId);
+}
+
+export type MoveConversationPhaseInput = { teamId: string; conversationId: string; tenantId: string; workspaceId: string; phaseId: string; performedBy: string };
+
+/**
+ * O ALGORITMO CENTRAL do kanban (seção 4.2 do guia do usuário) — o lock+transação de verdade vive
+ * inteiro no adapter Postgres (`ConversationTimeEntryRepositoryPort.moveConversationPhase`); esta
+ * função só valida (equipe/conversa/fase pertencem ao tenant/workspace certo, e a conversa
+ * REALMENTE pertence à equipe deste quadro — adaptação ao Vorix: like o CMDesk documenta,
+ * `current_team_id` é a equipe DONA da conversa agora, uma conversa nunca pode ter uma fase de
+ * uma equipe que não é a sua atual) e registra o evento de auditoria (fire-and-forget, fora do
+ * caminho crítico — mesmo racional de `logPhaseChangedActivity` no guia do usuário).
+ */
+export async function moveConversationPhase(deps: InboxUseCaseDeps, input: MoveConversationPhaseInput): Promise<InboxConversation> {
+  const { conversationTimeEntryRepository } = requireKanbanDeps(deps);
+  await mustTeamBelongToTenantAndWorkspace(requireTeamDeps(deps), input.teamId, input.tenantId, input.workspaceId);
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  if (conversation.currentTeamId !== input.teamId) {
+    throw new Error("KANBAN_CONVERSATION_NOT_IN_TEAM: esta conversa não pertence à equipe deste quadro.");
+  }
+  const targetPhase = await mustKanbanPhaseBelongToTeam(deps, input.phaseId, input.teamId);
+  const fromPhaseId = conversation.currentPhaseId;
+
+  await conversationTimeEntryRepository.moveConversationPhase({
+    tenantId: input.tenantId,
+    conversationId: conversation.id,
+    teamId: input.teamId,
+    phaseId: targetPhase.id,
+    phaseType: targetPhase.phaseType,
+  });
+
+  deps.conversationEventRepository
+    .record({
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+      conversationId: conversation.id,
+      type: "kanban_phase_changed",
+      performedBy: input.performedBy,
+      metadata: { fromPhaseId, toPhaseId: targetPhase.id, toPhaseName: targetPhase.name },
+    })
+    .catch((error) => {
+      console.warn("[inbox] falha ao registrar evento de mudança de fase (best-effort, nunca desfaz a mudança):", error instanceof Error ? error.message : error);
+    });
+
+  const updated = await deps.conversationRepository.getById(conversation.id);
+  if (!updated) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${conversation.id}" não existe.`);
+  return updated;
+}
+
+export type EnsureConversationPhaseStatesInput = { teamId: string; tenantId: string; workspaceId: string; conversationIds: readonly string[] };
+
+/**
+ * Seção 4.3 do guia do usuário — chamado quando o board é aberto, pra conversas que já pertencem
+ * à equipe (`currentTeamId`) mas ainda não têm `currentPhaseId` (conversa nova recém-roteada, ou
+ * primeira vez que o board desta equipe é aberto). Idempotente: nunca mexe em quem já tem fase.
+ */
+export async function ensureConversationPhaseStates(deps: InboxUseCaseDeps, input: EnsureConversationPhaseStatesInput): Promise<void> {
+  const { teamKanbanPhaseRepository, conversationTimeEntryRepository } = requireKanbanDeps(deps);
+  await mustTeamBelongToTenantAndWorkspace(requireTeamDeps(deps), input.teamId, input.tenantId, input.workspaceId);
+  await ensureDefaultKanbanPhases(deps, { tenantId: input.tenantId, teamId: input.teamId });
+  if (input.conversationIds.length === 0) return;
+
+  const phases = await teamKanbanPhaseRepository.listByTeam(input.teamId);
+  const firstPhase = phases.find((phase) => phase.isDefaultFirst) ?? phases[0];
+  if (!firstPhase) return;
+
+  for (const conversationId of input.conversationIds) {
+    const conversation = await deps.conversationRepository.getById(conversationId);
+    if (!conversation || conversation.tenantId !== input.tenantId || conversation.currentTeamId !== input.teamId) continue;
+    if (!conversation.currentPhaseId) {
+      await deps.conversationRepository.setPhase(conversationId, firstPhase.id);
+    }
+    await conversationTimeEntryRepository.openFirstIfMissing({
+      tenantId: input.tenantId,
+      conversationId,
+      teamId: input.teamId,
+      phaseId: conversation.currentPhaseId ?? firstPhase.id,
+      phaseType: (phases.find((phase) => phase.id === (conversation.currentPhaseId ?? firstPhase.id)) ?? firstPhase).phaseType,
+    });
+  }
+}
+
+export type GetConversationsServiceTimeInput = { teamId: string; tenantId: string; workspaceId: string; conversationIds: readonly string[] };
+
+/** Seção 4.6 do guia do usuário — simplificado (Vorix não tem horário comercial por equipe ainda,
+ * ver relatório de canal/equipe): `isRunning = phaseType !== "PAUSED"` da entrada aberta, sem gate
+ * de expediente. O frontend incrementa visualmente via `setInterval` local (seção 5.3) — este
+ * endpoint NUNCA é chamado a cada segundo. */
+export async function getConversationsServiceTime(deps: InboxUseCaseDeps, input: GetConversationsServiceTimeInput): Promise<ConversationServiceTime[]> {
+  const { conversationTimeEntryRepository } = requireKanbanDeps(deps);
+  await mustTeamBelongToTenantAndWorkspace(requireTeamDeps(deps), input.teamId, input.tenantId, input.workspaceId);
+  return conversationTimeEntryRepository.getServiceTimeBulk({ tenantId: input.tenantId, teamId: input.teamId, conversationIds: input.conversationIds });
+}
+
+export type SetConversationPinnedInput = { conversationId: string; tenantId: string; workspaceId: string; pinned: boolean };
+
+export async function setConversationPinned(deps: InboxUseCaseDeps, input: SetConversationPinnedInput): Promise<InboxConversation> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  return deps.conversationRepository.setPinned(conversation.id, input.pinned);
 }

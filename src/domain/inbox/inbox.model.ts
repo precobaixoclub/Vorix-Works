@@ -156,11 +156,22 @@ export type InboxConversation = {
    * `undefined` = canal sem roteamento por equipe configurado, ou conversa criada antes desta
    * migration. Nunca sobrescreve uma atribuição humana já feita manualmente. */
   currentTeamId?: string;
+  /** Bloco "kanban de atendimento" (réplica adaptada do CMDesk) — fase atual da conversa DENTRO de
+   * `currentTeamId` (coluna do quadro). Adaptação ao Vorix: o CMDesk usa uma tabela própria
+   * (`ConversationTeamState`, 1 por conversa+equipe, permitindo uma conversa em várias equipes ao
+   * mesmo tempo); aqui vira só um campo, porque uma conversa só tem UMA equipe responsável por vez
+   * (`currentTeamId`) — a fase só faz sentido enquanto coerente com essa equipe. `undefined` =
+   * conversa sem equipe, ou equipe sem quadro ainda aberto (ver `ensureConversationPhaseState`). */
+  currentPhaseId?: string;
   lastMessageAt?: string;
   unreadCount: number;
   /** Bloco "urgente" (pedido explícito do usuário em produção) — marcação manual de um atendente,
    * nunca inferida automaticamente. Mostrada como um ícone de fogo na listagem e filtrável. */
   isUrgent: boolean;
+  /** Bloco "kanban de atendimento" — fixar um card no topo do quadro, independente de qualquer
+   * outro "sticky"/pin de roteamento (conceitos distintos, nunca confundir). */
+  isPinned: boolean;
+  pinnedAt?: string;
   /** IA responde automaticamente enquanto `true`; "assumir conversa" desliga isto só NESTA
    * conversa (nunca globalmente) — ver Fase 5. O gate real de elegibilidade da IA (Fase 5,
    * `isConversationEligibleForAi` em `inbox-use-cases.ts`) também exige `!assignedUserId`
@@ -355,6 +366,9 @@ export const INBOX_CONVERSATION_EVENT_TYPES = [
   // Fase 6 — a IA não gerou resposta por falta de crédito Vorix (nunca desliga a IA nem a Inbox
   // por isso; a conversa continua disponível para um humano responder normalmente).
   "ai_response_skipped_insufficient_credits",
+  // Bloco "kanban de atendimento" (réplica adaptada do CMDesk) — card movido de coluna/fase,
+  // manual (drag) ou futuramente automático. `metadata`: `{fromPhaseId?, toPhaseId, toPhaseName}`.
+  "kanban_phase_changed",
 ] as const;
 export type InboxConversationEventType = (typeof INBOX_CONVERSATION_EVENT_TYPES)[number];
 
@@ -383,6 +397,32 @@ export type InboxConversationEvent = {
    * `reason?: string` (ex.: "human_took_over_during_generation" em `ai_response_cancelled`).
    */
   metadata?: Record<string, unknown>;
+  createdAt: string;
+};
+
+/** Espelha `KanbanPhaseType` de `src/domain/identity/identity.model.ts` (dono real de
+ * `TeamKanbanPhase`) — duplicado aqui de propósito, nunca importado: este arquivo é um bounded
+ * context deliberadamente sem imports cruzados (ver comentário no topo do arquivo). */
+export const CONVERSATION_TIME_ENTRY_PHASE_TYPES = ["RUNNING", "PAUSED"] as const;
+export type ConversationTimeEntryPhaseType = (typeof CONVERSATION_TIME_ENTRY_PHASE_TYPES)[number];
+
+/** Bloco "kanban de atendimento" (réplica adaptada do CMDesk) — HISTÓRICO de cada permanência de
+ * uma conversa numa fase (uma linha nova a cada troca). No máximo UMA linha aberta (`endedAt`
+ * undefined) por `(conversationId, teamId)` a qualquer momento — garantido por lock em
+ * `moveConversationPhase`, nunca por constraint de banco. `phaseType` é um SNAPSHOT gravado na
+ * abertura (nunca relido da fase depois) — reconfigurar a fase não reescreve histórico antigo. */
+export type ConversationTimeEntry = {
+  id: string;
+  tenantId: string;
+  conversationId: string;
+  teamId: string;
+  /** `undefined` = a fase referenciada foi excluída depois (ver `deleteKanbanPhase`) — o histórico
+   * sobrevive, só perde a referência (nunca bloqueia a exclusão da fase). */
+  phaseId?: string;
+  phaseType: ConversationTimeEntryPhaseType;
+  startedAt: string;
+  endedAt?: string;
+  durationSeconds?: number;
   createdAt: string;
 };
 

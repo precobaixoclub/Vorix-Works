@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { ChannelDistributionMode, ChannelRoutingSnapshot, InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxMetricsReport, InboxModuleStatus, InboxStreamToken, InboxTenantMember, MessagingConnection } from "./types";
+import type { ChannelDistributionMode, ChannelRoutingSnapshot, ConversationServiceTime, InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxMetricsReport, InboxModuleStatus, InboxStreamToken, InboxTenantMember, KanbanPhaseType, MessagingConnection, TeamKanbanPhase } from "./types";
 
 /** Fase 10 (Pre-Pilot Hardening) — sempre disponível, mesmo com o módulo desligado. */
 export function getInboxModuleStatus(): Promise<InboxModuleStatus> {
@@ -174,4 +174,53 @@ export function getInboxMetrics(workspaceId: string, params?: { dateFrom?: strin
   if (params?.dateFrom) query.set("dateFrom", params.dateFrom);
   if (params?.dateTo) query.set("dateTo", params.dateTo);
   return apiClient.get<InboxMetricsReport>(`/v1/inbox/metrics?${query.toString()}`);
+}
+
+// ==============================================================================================
+// Bloco "kanban de atendimento" (réplica adaptada do CMDesk, pedido explícito do usuário).
+// ==============================================================================================
+
+export function listKanbanPhases(workspaceId: string, teamId: string): Promise<{ phases: TeamKanbanPhase[] }> {
+  return apiClient.get<{ phases: TeamKanbanPhase[] }>(`/v1/inbox/teams/${encodeURIComponent(teamId)}/kanban-phases?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+export function createKanbanPhase(workspaceId: string, teamId: string, name: string, phaseType?: KanbanPhaseType): Promise<TeamKanbanPhase> {
+  return apiClient.post<TeamKanbanPhase>(`/v1/inbox/teams/${encodeURIComponent(teamId)}/kanban-phases`, { workspaceId, name, phaseType });
+}
+
+export function updateKanbanPhase(
+  workspaceId: string,
+  teamId: string,
+  phaseId: string,
+  input: { name?: string; isDefaultFirst?: boolean; phaseType?: KanbanPhaseType; naoContabilizaOperacional?: boolean },
+): Promise<TeamKanbanPhase> {
+  return apiClient.patch<TeamKanbanPhase>(`/v1/inbox/teams/${encodeURIComponent(teamId)}/kanban-phases/${encodeURIComponent(phaseId)}`, { workspaceId, ...input });
+}
+
+export function deleteKanbanPhase(workspaceId: string, teamId: string, phaseId: string): Promise<{ deleted: boolean }> {
+  return apiClient.delete<{ deleted: boolean }>(`/v1/inbox/teams/${encodeURIComponent(teamId)}/kanban-phases/${encodeURIComponent(phaseId)}?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+/** Substituição TOTAL da ordem — `phaseIds` precisa conter todas as fases da equipe. */
+export function reorderKanbanPhases(workspaceId: string, teamId: string, phaseIds: string[]): Promise<{ phases: TeamKanbanPhase[] }> {
+  return apiClient.post<{ phases: TeamKanbanPhase[] }>(`/v1/inbox/teams/${encodeURIComponent(teamId)}/kanban-phases/reorder`, { workspaceId, phaseIds });
+}
+
+/** Chamado ANTES de renderizar o board — conversas roteadas pra equipe sem fase ainda ganham a
+ * fase padrão (idempotente). */
+export function ensureKanbanConversationPhaseStates(workspaceId: string, teamId: string, conversationIds: string[]): Promise<{ ensured: boolean }> {
+  return apiClient.post<{ ensured: boolean }>(`/v1/inbox/teams/${encodeURIComponent(teamId)}/conversations/ensure-phase-states`, { workspaceId, conversationIds });
+}
+
+export function getConversationsServiceTime(workspaceId: string, teamId: string, conversationIds: string[]): Promise<{ serviceTime: ConversationServiceTime[] }> {
+  const query = new URLSearchParams({ workspaceId, conversationIds: conversationIds.join(",") });
+  return apiClient.get<{ serviceTime: ConversationServiceTime[] }>(`/v1/inbox/teams/${encodeURIComponent(teamId)}/conversations/service-time?${query.toString()}`);
+}
+
+export function moveConversationPhase(workspaceId: string, teamId: string, conversationId: string, phaseId: string): Promise<InboxConversation> {
+  return apiClient.patch<InboxConversation>(`/v1/inbox/teams/${encodeURIComponent(teamId)}/conversations/${encodeURIComponent(conversationId)}/phase`, { workspaceId, phaseId });
+}
+
+export function setConversationPinned(workspaceId: string, teamId: string, conversationId: string, pinned: boolean): Promise<InboxConversation> {
+  return apiClient.patch<InboxConversation>(`/v1/inbox/teams/${encodeURIComponent(teamId)}/conversations/${encodeURIComponent(conversationId)}/pin`, { workspaceId, pinned });
 }

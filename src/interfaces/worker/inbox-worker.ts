@@ -50,6 +50,7 @@ import { PostgresAiProvidersRepository } from "../../infrastructure/storage/post
 import { PostgresPlatformBillingRepository } from "../../infrastructure/storage/postgres/postgres-platform-billing-repository.js";
 import { createPromInboxMetrics, inboxMetricsRegistry } from "../../infrastructure/observability/prom-inbox-metrics.js";
 import { reconcileMergeableIdentities, reconcileUnresolvedLidContacts } from "../../infrastructure/storage/postgres/inbox-identity-reconciliation.js";
+import { reconcilePendingContactPictures, reconcilePendingGroupPictures } from "../../infrastructure/storage/postgres/inbox-avatar-reconciliation.js";
 
 /**
  * Processo separado do módulo Conversas — `vorix-worker` (Fase 1/2, resiliência reforçada na
@@ -104,6 +105,10 @@ type InboxWorkerConfig = {
      * (`repositories.pool` ausente em memória = ambos viram no-op, sem erro). */
     identityMergeScanIntervalMs: number;
     identityReconcileIntervalMs: number;
+    /** Bloco "fotos de grupo/contato" — achado ao vivo em produção: contatos/grupos que já
+     * existiam ANTES do deploy nunca ganhavam foto até uma mensagem nova chegar. Varre o que já
+     * existe e busca retroativamente, mesmo idioma dos demais `setInterval` deste arquivo. */
+    avatarReconcileIntervalMs: number;
   };
   /** Redesign operacional (Conversas) — storage PRIVADO de mídia recebida via WhatsApp; config
    * mínima independente de `loadApiConfig()`, mesmo racional do resto deste tipo. `enabled: false`
@@ -164,6 +169,7 @@ function loadInboxWorkerConfig(): InboxWorkerConfig {
       outboundReconcileGracePeriodMs: parsePositiveInt(process.env.INBOX_OUTBOUND_RECONCILE_GRACE_PERIOD_MS, 120_000),
       identityMergeScanIntervalMs: parsePositiveInt(process.env.INBOX_IDENTITY_MERGE_SCAN_INTERVAL_MS, 180_000),
       identityReconcileIntervalMs: parsePositiveInt(process.env.INBOX_IDENTITY_RECONCILE_INTERVAL_MS, 300_000),
+      avatarReconcileIntervalMs: parsePositiveInt(process.env.INBOX_AVATAR_RECONCILE_INTERVAL_MS, 600_000),
     },
     inboxMediaStorage: {
       enabled: process.env.INBOX_MEDIA_STORAGE_ENABLED?.trim() === "true",
@@ -794,6 +800,7 @@ async function main(): Promise<void> {
   // (`repositories.pool`): em memória (dev/teste), ambos ficam ausentes — sem erro, sem timer.
   let identityMergeTimer: ReturnType<typeof setInterval> | undefined;
   let identityReconcileTimer: ReturnType<typeof setInterval> | undefined;
+  let avatarReconcileTimer: ReturnType<typeof setInterval> | undefined;
   if (repositories.pool) {
     const pool = repositories.pool;
 
@@ -847,6 +854,32 @@ async function main(): Promise<void> {
     runLidReconciliation();
     identityReconcileTimer = setInterval(runLidReconciliation, config.resilience.identityReconcileIntervalMs);
     identityReconcileTimer.unref();
+
+    // Bloco "fotos de grupo/contato" — achado ao vivo em produção logo após o deploy da feature de
+    // avatares: sem isto, contato/grupo criado ANTES deste deploy só ganharia foto quando uma
+    // mensagem nova chegasse (poderia levar dias). Roda imediatamente no boot, mesmo racional dos
+    // outros reconciliadores acima.
+    let avatarReconcileRunning = false;
+    const runAvatarReconciliation = (): void => {
+      if (avatarReconcileRunning) return;
+      avatarReconcileRunning = true;
+      Promise.all([
+        reconcilePendingContactPictures(pool, provider, deps.inboxMediaStorage),
+        reconcilePendingGroupPictures(pool, provider, deps.inboxMediaStorage),
+      ])
+        .then(([contacts, groups]) => {
+          if (contacts.synced > 0 || groups.synced > 0) {
+            console.log(`[inbox-worker] reconciliação de fotos: ${contacts.synced}/${contacts.scanned} contato(s), ${groups.synced}/${groups.scanned} grupo(s).`);
+          }
+        })
+        .catch((error) => console.error("[inbox-worker] reconciliação de fotos falhou:", error instanceof Error ? error.message : error))
+        .finally(() => {
+          avatarReconcileRunning = false;
+        });
+    };
+    runAvatarReconciliation();
+    avatarReconcileTimer = setInterval(runAvatarReconciliation, config.resilience.avatarReconcileIntervalMs);
+    avatarReconcileTimer.unref();
   }
 
   // Graceful shutdown (Fase 1/6): para de consumir, espera o que já estava em voo terminar (com
@@ -860,6 +893,7 @@ async function main(): Promise<void> {
     clearInterval(reconcileTimer);
     if (identityMergeTimer) clearInterval(identityMergeTimer);
     if (identityReconcileTimer) clearInterval(identityReconcileTimer);
+    if (avatarReconcileTimer) clearInterval(avatarReconcileTimer);
     // Remove os listeners de 'error'/'close' ANTES de fechar de propósito — sem isso, o
     // `connection.close()" abaixo dispara o handler de "queda inesperada" (achado ao vivo acima)
     // e o processo sairia com código 1 mesmo num shutdown limpo, pedido por SIGTERM/SIGINT.

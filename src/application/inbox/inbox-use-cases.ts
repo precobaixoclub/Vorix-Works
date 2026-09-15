@@ -497,6 +497,40 @@ async function transitionConversationStatus(
     fromStatus: conversation.status,
     toStatus,
   });
+
+  // Kanban (achado de revisão) — sair do quadro (resolvida/arquivada) precisa fechar o cronômetro
+  // aberto, senão reabrir a conversa depois conta o tempo "parada" como atendimento ativo na mesma
+  // fase (o board só mostra status open/pending, ver `BOARD_STATUSES` no frontend). AWAIT (não
+  // fire-and-forget como o evento de auditoria acima): isto afeta um NÚMERO reportado (tempo de
+  // atendimento), não só uma trilha informativa — vale esperar terminar antes de devolver. Ainda
+  // assim nunca desfaz a transição de status: erro aqui só gera um warning, sempre dentro de
+  // try/catch — resolver/reabrir uma conversa é um fluxo sempre-precisa-funcionar, kanban é
+  // infraestrutura opcional (ver `requireKanbanDeps`).
+  const wasBoardVisible = conversation.status === "open" || conversation.status === "pending";
+  const isBoardVisible = toStatus === "open" || toStatus === "pending";
+  if (deps.teamKanbanPhaseRepository && deps.conversationTimeEntryRepository && conversation.currentTeamId && conversation.currentPhaseId) {
+    const teamId = conversation.currentTeamId;
+    const phaseId = conversation.currentPhaseId;
+    try {
+      if (wasBoardVisible && !isBoardVisible) {
+        await deps.conversationTimeEntryRepository.closeOpenEntry({ conversationId: conversation.id, teamId });
+      } else if (!wasBoardVisible && isBoardVisible) {
+        const phase = await deps.teamKanbanPhaseRepository.getById(phaseId);
+        if (phase) {
+          await deps.conversationTimeEntryRepository.moveConversationPhase({
+            tenantId: input.tenantId,
+            conversationId: conversation.id,
+            teamId,
+            phaseId: phase.id,
+            phaseType: phase.phaseType,
+          });
+        }
+      }
+    } catch (error) {
+      console.warn("[inbox] falha ao sincronizar o cronômetro do kanban na transição de status (best-effort):", error instanceof Error ? error.message : error);
+    }
+  }
+
   return updated;
 }
 

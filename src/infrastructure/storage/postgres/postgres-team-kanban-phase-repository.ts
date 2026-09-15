@@ -3,6 +3,7 @@ import type { CreateKanbanPhaseInput, TeamKanbanPhaseRepositoryPort, UpdateKanba
 import type { KanbanPhaseType, TeamKanbanPhase } from "../../../domain/identity/identity.model.js";
 
 const idGenerator = () => `kanbanphase-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const timeEntryIdGenerator = () => `timeentry-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 type Row = {
   id: string; tenant_id: string; team_id: string; name: string; order_index: number;
@@ -93,6 +94,35 @@ export class PostgresTeamKanbanPhaseRepository implements TeamKanbanPhaseReposit
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+
+      const fallbackResult = await client.query<{ phase_type: string }>("select phase_type from team_kanban_phases where id = $1", [fallbackPhaseId]);
+      const fallbackPhaseType = fallbackResult.rows[0]?.phase_type ?? "RUNNING";
+      const affected = await client.query<{ id: string; tenant_id: string; current_team_id: string | null }>(
+        "select id, tenant_id, current_team_id from inbox_conversations where current_phase_id = $1",
+        [id],
+      );
+
+      // Achado de revisão: a FK `phase_id ... on delete set null` só limpa a REFERÊNCIA da entrada
+      // de tempo — sozinha, ela nunca fecha a entrada aberta nem abre uma nova pro fallback. Sem
+      // isto, o card migraria visualmente de coluna mas o cronômetro continuaria "rodando" com o
+      // snapshot de `phaseType` da fase JÁ EXCLUÍDA (ex.: badge "rodando" preso num RUNNING antigo
+      // mesmo depois do card cair numa coluna PAUSED) — mesmo racional de `moveConversationPhase`,
+      // só que em lote, para toda conversa que estava na fase excluída.
+      await client.query(
+        `update conversation_time_entries
+           set ended_at = now(), duration_seconds = extract(epoch from (now() - started_at))::int
+         where phase_id = $1 and ended_at is null`,
+        [id],
+      );
+      for (const row of affected.rows) {
+        if (!row.current_team_id) continue;
+        await client.query(
+          `insert into conversation_time_entries (id, tenant_id, conversation_id, team_id, phase_id, phase_type, started_at, created_at)
+           values ($1, $2, $3, $4, $5, $6, now(), now())`,
+          [timeEntryIdGenerator(), row.tenant_id, row.id, row.current_team_id, fallbackPhaseId, fallbackPhaseType],
+        );
+      }
+
       // Migra os cards da fase excluída pro fallback ANTES de excluir — nunca deixa uma conversa
       // com `current_phase_id` apontando pra uma fase que já não existe (mesmo sem a FK ser
       // `on delete restrict`, é o comportamento certo pro usuário: card nunca "some" do quadro).

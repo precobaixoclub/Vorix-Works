@@ -38,5 +38,12 @@ export type ConversationTimeEntryRepositoryPort = {
    * por `ensureConversationPhaseState` (conversa entrando na fase padrão pela primeira vez, nunca
    * fecha nada porque não há nada aberto). No-op silencioso se já existir alguma entrada. */
   openFirstIfMissing(input: { tenantId: string; conversationId: string; teamId: string; phaseId: string; phaseType: ConversationTimeEntryPhaseType }): Promise<void>;
+  /** Achado de revisão: a conversa sair do quadro (resolvida/arquivada) precisa fechar o
+   * cronômetro — sem isto, reabri-la depois faria o tempo "parada" (fora de atendimento) contar
+   * como se fosse tempo ativo na mesma fase, inflando `totalSeconds`. Nunca abre uma entrada nova
+   * (não há fase pra ela enquanto a conversa está fora do quadro) — ver `reopenConversation`
+   * (via `moveConversationPhase` pra mesma fase) para o caminho inverso. No-op se não houver
+   * nenhuma entrada aberta. */
+  closeOpenEntry(input: { conversationId: string; teamId: string }): Promise<void>;
   getServiceTimeBulk(input: { tenantId: string; teamId: string; conversationIds: readonly string[] }): Promise<ConversationServiceTime[]>;
 };

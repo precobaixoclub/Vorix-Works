@@ -45,6 +45,15 @@ export class PostgresConversationTimeEntryRepository implements ConversationTime
     }
   }
 
+  async closeOpenEntry(input: { conversationId: string; teamId: string }): Promise<void> {
+    await this.pool.query(
+      `update conversation_time_entries
+         set ended_at = now(), duration_seconds = extract(epoch from (now() - started_at))::int
+       where conversation_id = $1 and team_id = $2 and ended_at is null`,
+      [input.conversationId, input.teamId],
+    );
+  }
+
   async openFirstIfMissing(input: { tenantId: string; conversationId: string; teamId: string; phaseId: string; phaseType: ConversationTimeEntryPhaseType }): Promise<void> {
     await this.pool.query(
       `insert into conversation_time_entries (id, tenant_id, conversation_id, team_id, phase_id, phase_type, started_at, created_at)

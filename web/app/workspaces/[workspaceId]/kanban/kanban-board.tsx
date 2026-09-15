@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import useSWR from "swr";
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { Clock, GripVertical, Pin, Plus, Settings2 } from "lucide-react";
 import { Button } from "@/components/Button";
@@ -13,19 +12,20 @@ import { Input, Label } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/Spinner";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/auth-context";
-import { canManageTenant, canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
+import { canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import {
   createKanbanPhase,
   deleteKanbanPhase,
   ensureKanbanConversationPhaseStates,
-  listInboxConversations,
   moveConversationPhase,
   reorderKanbanPhases,
   updateKanbanPhase,
 } from "@/features/inbox/api";
-import { useConversationsServiceTime, useInboxMembers, useInboxRealtime, useKanbanPhases } from "@/features/inbox/hooks";
+import { useConversationsServiceTime, useInboxConversations, useInboxMembers, useInboxRealtime, useKanbanPhases } from "@/features/inbox/hooks";
 import type { InboxConversation, InboxTenantMember, KanbanPhaseType, TeamKanbanPhase } from "@/features/inbox/types";
 import type { Team } from "@/features/identity/types";
 import { ConversationListItem } from "../conversas/inbox-tab";
@@ -42,16 +42,18 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
   const { state } = useAuth();
   const role = state.status === "authenticated" ? state.role : undefined;
   const currentUserId = state.status === "authenticated" ? state.user.id : undefined;
+  // Achado de revisão: `inbox:assign` (permissão que o backend exige pra CRUD de fase, ver
+  // inbox.route.ts) está em `INBOX_OPERATOR_PERMISSIONS` — concedida a editor/admin/owner, o MESMO
+  // grupo de `inbox:reply` (mover card/fixar). Nunca `canManageTenant` (só admin/owner) — isso
+  // bloquearia editores de uma ação que o backend já permite pra eles.
   const canOperate = canOperateWorkspace(role);
-  const canManage = canManageTenant(role);
+  const canManage = canOperate;
 
   const { data: phasesData, error: phasesError, isLoading: phasesLoading, mutate: mutatePhases } = useKanbanPhases(workspaceId, teamId);
-  const {
-    data: conversationsData,
-    error: conversationsError,
-    isLoading: conversationsLoading,
-    mutate: mutateConversations,
-  } = useSWR(["kanban-conversations", workspaceId], () => listInboxConversations(workspaceId, "all"), { refreshInterval: 30_000 });
+  // Mesma chave de cache (`["inbox-conversations", workspaceId, "all"]`) da aba Conversas — nunca
+  // uma chave própria do board: `useInboxRealtime` só revalida essa chave (ver `hooks.ts`), então
+  // reusá-la é o que torna o board realmente "tempo real" (SSE), não só o polling de 30s.
+  const { data: conversationsData, error: conversationsError, isLoading: conversationsLoading, mutate: mutateConversations } = useInboxConversations(workspaceId, "all");
   const { data: membersData } = useInboxMembers(workspaceId);
 
   useInboxRealtime(workspaceId, undefined);
@@ -64,7 +66,6 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
   );
 
   const conversationIds = useMemo(() => teamConversations.map((conversation) => conversation.id), [teamConversations]);
-  const conversationIdsKey = conversationIds.join(",");
 
   // Conversas recém-roteadas pra equipe (ou de antes desta funcionalidade) ainda não têm
   // `currentPhaseId` — chamada idempotente, sempre antes de desenhar as colunas de verdade.
@@ -174,7 +175,7 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
         title="Sem fases configuradas"
         description="Esta equipe ainda não tem fases no quadro. Configure as colunas para começar."
         action={
-          <GuardedButton allowed={canManage} blockedReason={RBAC_COPY.manageTenant} onClick={() => setPhaseManagerOpen(true)}>
+          <GuardedButton allowed={canManage} blockedReason={RBAC_COPY.operateConversations} onClick={() => setPhaseManagerOpen(true)}>
             Configurar fases
           </GuardedButton>
         }
@@ -190,7 +191,7 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
         </p>
         <GuardedButton
           allowed={canManage}
-          blockedReason={RBAC_COPY.manageTenant}
+          blockedReason={RBAC_COPY.operateConversations}
           variant="secondary"
           size="sm"
           onClick={() => setPhaseManagerOpen(true)}
@@ -352,7 +353,7 @@ function KanbanCard({
           currentUserId={currentUserId}
           members={members ?? []}
           teams={teams}
-          onSelect={() => window.open(`/workspaces/${workspaceId}/conversas?conversationId=${conversation.id}`, "_blank")}
+          onSelect={() => window.open(`/workspaces/${workspaceId}/conversas?conversation=${conversation.id}`, "_blank")}
           onConversationChanged={onConversationChanged}
           phaseOptions={phaseOptions}
           onMoveToPhase={onMoveToPhase}
@@ -465,6 +466,19 @@ function PhaseManagerModal({
     }
   }
 
+  async function handleToggleNaoContabiliza(phase: TeamKanbanPhase, value: boolean) {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await updateKanbanPhase(workspaceId, teamId, phase.id, { naoContabilizaOperacional: value });
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível atualizar a fase.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleReorder(phaseId: string, direction: -1 | 1) {
     const index = phases.findIndex((p) => p.id === phaseId);
     const targetIndex = index + direction;
@@ -523,6 +537,19 @@ function PhaseManagerModal({
                   {PHASE_TYPE_LABEL[phase.phaseType]}
                 </button>
               </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex shrink-0 flex-col items-center gap-0.5">
+                    <Switch
+                      checked={phase.naoContabilizaOperacional}
+                      onCheckedChange={(value) => handleToggleNaoContabiliza(phase, value)}
+                      disabled={busy}
+                    />
+                    <span className="text-[9px] leading-none text-muted-foreground">Fora do operacional</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Conversas nesta fase não entram nas métricas de tempo operacional (relatórios).</TooltipContent>
+              </Tooltip>
               {!phase.isDefaultFirst ? (
                 <Button variant="ghost" size="sm" disabled={busy} onClick={() => handleSetDefaultFirst(phase)}>
                   Tornar inicial

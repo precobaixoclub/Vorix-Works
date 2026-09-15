@@ -24,6 +24,8 @@ import {
   ensureConversationPhaseStates,
   getConversationsServiceTime,
   setConversationPinned,
+  closeConversation,
+  reopenConversation,
 } from "../dist/application/inbox/inbox-use-cases.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
@@ -143,6 +145,19 @@ test("FASE_DELETE: bloqueia excluir a última fase; migra cards pro fallback; he
   const afterDelete = await conversationRepo.getById(conversation.id);
   assert.equal(afterDelete.currentPhaseId, novos.id, "card migra pro fallback (fase padrão) — nunca fica órfão");
 
+  // Achado de revisão: excluir a fase não pode deixar a entrada de tempo ABERTA presa na fase já
+  // excluída — sem fechar/reabrir, o badge "rodando" ficaria com o snapshot de phaseType antigo.
+  const entriesAfterDelete = await db.pool.query(
+    "select phase_id, phase_type, ended_at from conversation_time_entries where conversation_id = $1 order by created_at",
+    [conversation.id],
+  );
+  assert.equal(entriesAfterDelete.rows.length, 2, "fecha a entrada da fase excluída e abre uma nova no fallback");
+  assert.notEqual(entriesAfterDelete.rows[0].ended_at, null, "entrada da fase excluída foi fechada, nunca fica órfã aberta");
+  assert.equal(entriesAfterDelete.rows[1].ended_at, null, "nova entrada no fallback fica aberta");
+  assert.equal(entriesAfterDelete.rows[1].phase_id, novos.id);
+  const serviceTimeAfterDelete = await getConversationsServiceTime(deps, { teamId: team.id, tenantId, workspaceId: workspace.id, conversationIds: [conversation.id] });
+  assert.equal(serviceTimeAfterDelete[0].isRunning, true, "fallback (Novos) é RUNNING — cronômetro continua 'rodando', nunca preso na fase excluída");
+
   const remaining = await teamKanbanPhaseRepository.listByTeam(team.id);
   assert.equal(remaining.length, 2);
   assert.deepEqual(remaining.map((phase) => phase.orderIndex), [0, 1], "reindexado, sem buracos");
@@ -158,6 +173,60 @@ test("FASE_DELETE: bloqueia excluir a última fase; migra cards pro fallback; he
     deleteKanbanPhase(deps, { teamId: team.id, phaseId: aguardando.id, tenantId, workspaceId: workspace.id }),
     /KANBAN_LAST_PHASE/,
   );
+});
+
+test("FASE_DELETE_CRONOMETRO: fallback PAUSED faz o cronômetro parar — nunca preso no phaseType RUNNING da fase excluída", async () => {
+  const tenantId = "tenant-kanban-3b";
+  const { workspace, connectionRepo, deps } = await makeSetup(tenantId);
+  const team = await createTeam(deps, { tenantId, workspaceId: workspace.id, name: "Suporte" });
+  const phases = await listKanbanPhases(deps, { teamId: team.id, tenantId, workspaceId: workspace.id });
+  const emAtendimento = phases.find((phase) => phase.name === "Em atendimento");
+
+  const pausada = await createKanbanPhase(deps, { teamId: team.id, tenantId, workspaceId: workspace.id, name: "Pausada", phaseType: "PAUSED" });
+  await updateKanbanPhase(deps, { teamId: team.id, phaseId: pausada.id, tenantId, workspaceId: workspace.id, isDefaultFirst: true });
+
+  const conversation = await makeConversation(tenantId, workspace, connectionRepo, deps, "wamid.kanban-delete-2");
+  await deps.conversationRepository.setTeam(conversation.id, team.id);
+  await moveConversationPhase(deps, { teamId: team.id, conversationId: conversation.id, tenantId, workspaceId: workspace.id, phaseId: emAtendimento.id, performedBy: "user-1" });
+
+  let serviceTime = await getConversationsServiceTime(deps, { teamId: team.id, tenantId, workspaceId: workspace.id, conversationIds: [conversation.id] });
+  assert.equal(serviceTime[0].isRunning, true, "em 'Em atendimento' (RUNNING) o cronômetro está rodando antes da exclusão");
+
+  // "Pausada" é isDefaultFirst agora — vira o fallback ao excluir "Em atendimento" (RUNNING).
+  await deleteKanbanPhase(deps, { teamId: team.id, phaseId: emAtendimento.id, tenantId, workspaceId: workspace.id });
+
+  serviceTime = await getConversationsServiceTime(deps, { teamId: team.id, tenantId, workspaceId: workspace.id, conversationIds: [conversation.id] });
+  assert.equal(serviceTime[0].isRunning, false, "fallback é PAUSED — o cronômetro para; sem o fix ficaria preso em 'rodando' (snapshot da fase já excluída)");
+});
+
+test("FECHAR/REABRIR: resolver a conversa fecha o cronômetro do kanban; reabrir reabre na MESMA fase", async () => {
+  const tenantId = "tenant-kanban-close-reopen";
+  const { workspace, connectionRepo, deps } = await makeSetup(tenantId);
+  const team = await createTeam(deps, { tenantId, workspaceId: workspace.id, name: "Suporte" });
+  const phases = await listKanbanPhases(deps, { teamId: team.id, tenantId, workspaceId: workspace.id });
+  const emAtendimento = phases.find((phase) => phase.name === "Em atendimento");
+
+  const conversation = await makeConversation(tenantId, workspace, connectionRepo, deps, "wamid.kanban-close-1");
+  await deps.conversationRepository.setTeam(conversation.id, team.id);
+  await moveConversationPhase(deps, { teamId: team.id, conversationId: conversation.id, tenantId, workspaceId: workspace.id, phaseId: emAtendimento.id, performedBy: "user-1" });
+
+  await closeConversation(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, performedBy: "user-1" });
+  const afterClose = await db.pool.query(
+    "select ended_at from conversation_time_entries where conversation_id = $1 order by created_at desc limit 1",
+    [conversation.id],
+  );
+  assert.notEqual(afterClose.rows[0].ended_at, null, "resolver a conversa fecha a entrada de tempo aberta — nunca conta tempo 'parada' como atendimento");
+
+  await reopenConversation(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, performedBy: "user-1" });
+  const afterReopen = await db.pool.query(
+    "select phase_id, ended_at from conversation_time_entries where conversation_id = $1 order by created_at desc limit 1",
+    [conversation.id],
+  );
+  assert.equal(afterReopen.rows[0].ended_at, null, "reabrir a conversa abre uma nova entrada de tempo");
+  assert.equal(afterReopen.rows[0].phase_id, emAtendimento.id, "reabre na MESMA fase de antes, nunca reseta pra fase padrão");
+
+  const serviceTime = await getConversationsServiceTime(deps, { teamId: team.id, tenantId, workspaceId: workspace.id, conversationIds: [conversation.id] });
+  assert.equal(serviceTime[0].isRunning, true);
 });
 
 test("FASE_REORDER: substituição total, duas passadas nunca violam a constraint única de order_index", async () => {

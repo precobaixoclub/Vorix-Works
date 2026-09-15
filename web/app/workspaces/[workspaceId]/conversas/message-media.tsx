@@ -137,12 +137,27 @@ function ImageMedia({ workspaceId, message }: { workspaceId: string; message: In
   );
 }
 
+/** Ciclo de velocidade — mesmo conjunto/ordem do player nativo do WhatsApp (1x → 1,5x → 2x → 1x). */
+const AUDIO_PLAYBACK_RATES = [1, 1.5, 2] as const;
+
 function AudioMedia({ workspaceId, message }: { workspaceId: string; message: InboxMessage }) {
   const { state, load } = useMediaUrl(workspaceId, message);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(message.metadata?.durationSeconds ?? 0);
+  const [playbackRateIndex, setPlaybackRateIndex] = useState(0);
+  const playbackRate = AUDIO_PLAYBACK_RATES[playbackRateIndex];
+
+  // Reaplica sempre que a taxa muda OU quando o elemento <audio> só agora existe (`state.status`
+  // vira "ready") — setar `playbackRate` num elemento ainda não montado seria um no-op silencioso.
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = playbackRate;
+  }, [playbackRate, state.status]);
+
+  function cyclePlaybackRate() {
+    setPlaybackRateIndex((current) => (current + 1) % AUDIO_PLAYBACK_RATES.length);
+  }
 
   function togglePlay() {
     if (state.status === "idle") {
@@ -182,6 +197,16 @@ function AudioMedia({ workspaceId, message }: { workspaceId: string; message: In
         </button>
       </div>
       <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{formatDuration(duration - progress > 0 ? duration - progress : duration)}</span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 shrink-0 px-1.5 text-[11px] font-semibold tabular-nums"
+        disabled={state.status !== "ready"}
+        onClick={cyclePlaybackRate}
+        aria-label="Velocidade de reprodução"
+      >
+        {playbackRate}x
+      </Button>
       {state.status === "ready" && state.url ? (
         <audio
           ref={audioRef}
@@ -191,7 +216,10 @@ function AudioMedia({ workspaceId, message }: { workspaceId: string; message: In
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
           onEnded={() => setPlaying(false)}
-          onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || duration)}
+          onLoadedMetadata={(event) => {
+            setDuration(event.currentTarget.duration || duration);
+            event.currentTarget.playbackRate = playbackRate;
+          }}
           onTimeUpdate={(event) => setProgress(event.currentTarget.currentTime)}
         />
       ) : null}

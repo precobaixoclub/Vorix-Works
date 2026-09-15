@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { addTeamMember, createTeam, deleteTeam, listTeamMembers, listTeams, removeTeamMember, updateTeam, updateTeamMember } from "../../../../application/identity/team-use-cases.js";
 import type { TeamUseCaseDeps } from "../../../../application/identity/team-use-cases.js";
-import { NotFoundError } from "../../http/app-error.js";
+import { ConflictError, NotFoundError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 
@@ -47,6 +47,8 @@ const UPDATE_MEMBER_BODY_SCHEMA = {
 
 function translateTeamError(error: unknown): never {
   if (error instanceof Error && (error.message.startsWith("TEAM_NOT_FOUND") || error.message.startsWith("TEAM_MEMBER_NOT_FOUND"))) throw new NotFoundError(error.message);
+  // Bloco "roteamento por equipe" — achado de revisão (ver `PostgresTeamRepository.delete`).
+  if (error instanceof Error && error.message.startsWith("TEAM_LINKED_TO_CHANNEL_ROUTING")) throw new ConflictError(error.message);
   throw error;
 }
 

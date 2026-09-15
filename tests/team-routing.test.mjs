@@ -10,7 +10,7 @@ import { PostgresInboxConversationRepository } from "../dist/infrastructure/stor
 import { PostgresInboxMessageRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-message-repository.js";
 import { PostgresTeamRepository, PostgresTeamMembershipRepository } from "../dist/infrastructure/storage/postgres/postgres-team-repository.js";
 import { PostgresChannelRoutingRepository } from "../dist/infrastructure/storage/postgres/postgres-channel-routing-repository.js";
-import { addTeamMember, createTeam, removeTeamMember, resolveNextTeamMember, updateTeam, updateTeamMember } from "../dist/application/identity/team-use-cases.js";
+import { addTeamMember, createTeam, deleteTeam, removeTeamMember, resolveNextTeamMember, updateTeam, updateTeamMember } from "../dist/application/identity/team-use-cases.js";
 import { registerInboundMessage } from "../dist/application/inbox/inbox-use-cases.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
@@ -150,6 +150,33 @@ test("PRINCIPAL_DO_NIVEL: mudar de nível some do nível antigo (promove substit
   assert.equal(remainingN1.isPrincipalForLevel, true, "N1 nunca fica sem principal — user-a já era o único, segue principal");
 });
 
+test("PRINCIPAL_DO_NIVEL: mover o principal de um nível pra outro nível que JÁ TEM principal nunca cria dois principais no destino (achado de revisão)", async () => {
+  const tenantId = "tenant-team-routing-5b";
+  const workspace = await makeWorkspace(tenantId);
+  const teamRepository = new PostgresTeamRepository(db.pool);
+  const teamMembershipRepository = new PostgresTeamMembershipRepository(db.pool);
+  const deps = { teamRepository, teamMembershipRepository };
+
+  const team = await createTeam(deps, { tenantId, workspaceId: workspace.id, name: "Suporte" });
+  // N1: user-a é principal. N2: user-c já é principal (único membro de lá).
+  await addTeamMember(deps, { teamId: team.id, tenantId, workspaceId: workspace.id, userId: "user-a", role: "editor", attendanceLevel: "N1" });
+  await addTeamMember(deps, { teamId: team.id, tenantId, workspaceId: workspace.id, userId: "user-b", role: "editor", attendanceLevel: "N1" });
+  await addTeamMember(deps, { teamId: team.id, tenantId, workspaceId: workspace.id, userId: "user-c", role: "editor", attendanceLevel: "N2" });
+
+  // Move o PRINCIPAL do N1 (user-a) pro N2, sem pedir setPrincipal explicitamente.
+  const moved = await updateTeamMember(deps, { teamId: team.id, tenantId, workspaceId: workspace.id, userId: "user-a", attendanceLevel: "N2" });
+  assert.equal(moved.isPrincipalForLevel, false, "nunca carrega a marcação de principal do nível antigo pro novo — N2 já tinha dono");
+
+  const members = await teamMembershipRepository.listByTeam(team.id);
+  const n2Principals = members.filter((member) => member.attendanceLevel === "N2" && member.isPrincipalForLevel);
+  assert.equal(n2Principals.length, 1, "N2 continua com EXATAMENTE um principal, nunca dois");
+  assert.equal(n2Principals[0].userId, "user-c", "o principal original do N2 nunca é desalojado por um membro chegando de outro nível");
+
+  const n1Principals = members.filter((member) => member.attendanceLevel === "N1" && member.isPrincipalForLevel);
+  assert.equal(n1Principals.length, 1, "N1 nunca fica sem principal — user-b foi promovido ao sair user-a");
+  assert.equal(n1Principals[0].userId, "user-b");
+});
+
 test("CHANNEL_ROUTING: distribuição DEFAULT sempre devolve a mesma equipe; ROUND_ROBIN gira entre as equipes vinculadas", async () => {
   const tenantId = "tenant-team-routing-6";
   const workspace = await makeWorkspace(tenantId);
@@ -256,4 +283,70 @@ test("INTEGRACAO: canal sem roteamento configurado (sem channelRoutingRepository
 
   assert.equal(registered.conversation.currentTeamId, undefined);
   assert.equal(registered.conversation.assignedUserId, undefined);
+});
+
+test("DELETE_GUARD (achado de revisão): excluir uma equipe que é a padrão de roteamento de um canal é bloqueado com erro claro, nunca um erro cru de FK", async () => {
+  const tenantId = "tenant-team-routing-10";
+  const workspace = await makeWorkspace(tenantId);
+  const teamRepository = new PostgresTeamRepository(db.pool);
+  const teamMembershipRepository = new PostgresTeamMembershipRepository(db.pool);
+  const channelRoutingRepository = new PostgresChannelRoutingRepository(db.pool);
+  const deps = { teamRepository, teamMembershipRepository };
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+
+  const team = await createTeam(deps, { tenantId, workspaceId: workspace.id, name: "Suporte" });
+  const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Canal" });
+  await channelRoutingRepository.replaceLinkedTeams(connection.id, [team.id]);
+  await channelRoutingRepository.upsertRoutingConfig({ connectionId: connection.id, defaultTeamId: team.id, distributionMode: "default" });
+
+  await assert.rejects(
+    deleteTeam(deps, { teamId: team.id, tenantId, workspaceId: workspace.id }),
+    /TEAM_LINKED_TO_CHANNEL_ROUTING/,
+  );
+  assert.ok(await teamRepository.getById(team.id), "a equipe continua existindo — a exclusão foi de fato recusada, nunca parcial");
+
+  // Trocar a equipe padrão do canal libera a exclusão.
+  const other = await createTeam(deps, { tenantId, workspaceId: workspace.id, name: "Outra" });
+  await channelRoutingRepository.replaceLinkedTeams(connection.id, [team.id, other.id]);
+  await channelRoutingRepository.upsertRoutingConfig({ connectionId: connection.id, defaultTeamId: other.id, distributionMode: "default" });
+  await assert.doesNotReject(deleteTeam(deps, { teamId: team.id, tenantId, workspaceId: workspace.id }));
+});
+
+test("DELETE_GUARD (achado de revisão): excluir uma equipe que só tem conversas HISTÓRICAS roteadas pra ela nunca é bloqueado — current_team_id só fica null", async () => {
+  const tenantId = "tenant-team-routing-11";
+  const workspace = await makeWorkspace(tenantId);
+  const teamRepository = new PostgresTeamRepository(db.pool);
+  const teamMembershipRepository = new PostgresTeamMembershipRepository(db.pool);
+  const channelRoutingRepository = new PostgresChannelRoutingRepository(db.pool);
+  const teamDeps = { teamRepository, teamMembershipRepository };
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+
+  const team = await createTeam(teamDeps, { tenantId, workspaceId: workspace.id, name: "Suporte" });
+  await addTeamMember(teamDeps, { teamId: team.id, tenantId, workspaceId: workspace.id, userId: "user-agent-1", role: "editor" });
+  const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Canal" });
+  await channelRoutingRepository.replaceLinkedTeams(connection.id, [team.id]);
+  await channelRoutingRepository.upsertRoutingConfig({ connectionId: connection.id, defaultTeamId: team.id, distributionMode: "default" });
+
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, teamRepository, teamMembershipRepository, channelRoutingRepository };
+  const registered = await registerInboundMessage(deps, {
+    tenantId, workspaceId: workspace.id, connectionId: connection.id,
+    chatId: "+5511955554444", isGroup: false, fromMe: false,
+    senderId: "+5511955554444", senderName: "Cliente",
+    externalMessageId: "wamid.delete-guard-1", type: "text", body: "Oi", occurredAt: new Date().toISOString(),
+  });
+  assert.equal(registered.conversation.currentTeamId, team.id, "pré-condição: a conversa foi roteada pra esta equipe");
+
+  // Desvincula a equipe do canal (limpa o vínculo ativo de roteamento) antes de excluir — só o
+  // vínculo ATIVO (`default_team_id`) bloqueia; a referência histórica na conversa nunca bloqueia.
+  const other = await createTeam(teamDeps, { tenantId, workspaceId: workspace.id, name: "Outra" });
+  await channelRoutingRepository.replaceLinkedTeams(connection.id, [other.id]);
+  await channelRoutingRepository.upsertRoutingConfig({ connectionId: connection.id, defaultTeamId: other.id, distributionMode: "default" });
+
+  await assert.doesNotReject(deleteTeam(teamDeps, { teamId: team.id, tenantId, workspaceId: workspace.id }));
+
+  const conversationAfter = await conversationRepo.getById(registered.conversation.id);
+  assert.equal(conversationAfter.currentTeamId, undefined, "a referência histórica é limpa (ON DELETE SET NULL), nunca bloqueia nem deixa lixo");
 });

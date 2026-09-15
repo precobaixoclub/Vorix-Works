@@ -13,17 +13,6 @@ type ConfigRow = {
 export class PostgresChannelRoutingRepository implements ChannelRoutingRepositoryPort {
   constructor(private readonly pool: Pool) {}
 
-  async linkTeam(connectionId: string, teamId: string): Promise<void> {
-    await this.pool.query(
-      "insert into messaging_connection_teams (id, connection_id, team_id) values ($1, $2, $3) on conflict (connection_id, team_id) do nothing",
-      [linkIdGenerator(), connectionId, teamId],
-    );
-  }
-
-  async unlinkTeam(connectionId: string, teamId: string): Promise<void> {
-    await this.pool.query("delete from messaging_connection_teams where connection_id = $1 and team_id = $2", [connectionId, teamId]);
-  }
-
   async replaceLinkedTeams(connectionId: string, teamIds: readonly string[]): Promise<void> {
     const client = await this.pool.connect();
     try {

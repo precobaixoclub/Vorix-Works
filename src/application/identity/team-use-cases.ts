@@ -107,10 +107,19 @@ export async function updateTeamMember(deps: TeamUseCaseDeps, input: UpdateTeamM
     await deps.teamMembershipRepository.clearPrincipalForLevel(input.teamId, nextLevel, input.userId);
   }
 
+  // Achado de revisão: mudar de nível NUNCA pode carregar a marcação de principal do nível ANTIGO
+  // pro nível NOVO sem decidir de novo — sem isto, mover o principal de N1 pra um N2 que já tem
+  // principal próprio criava DOIS principais em N2 (a marcação antiga sobrevivia via `coalesce` no
+  // repositório, que só troca o valor quando algo é passado explicitamente). Se o chamador não
+  // pediu `setPrincipal` explicitamente, uma mudança de nível força `false` — o bloco abaixo
+  // (`changingLevel && !updated.isPrincipalForLevel`) decide de novo se este deve ser o principal
+  // automático do nível novo (só quando for o primeiro/único membro dele).
+  const explicitPrincipal = input.setPrincipal !== undefined ? input.setPrincipal : changingLevel ? false : undefined;
+
   const updated = await deps.teamMembershipRepository.update(input.teamId, input.userId, {
     attendanceLevel: input.attendanceLevel,
     participatesInRoundRobin: input.participatesInRoundRobin,
-    isPrincipalForLevel: input.setPrincipal,
+    isPrincipalForLevel: explicitPrincipal,
   });
 
   if (losingPrincipal) await promoteReplacementPrincipal(deps, input.teamId, current.attendanceLevel, input.userId);

@@ -19,10 +19,9 @@ export type ChannelRoutingConfig = {
 };
 
 export type ChannelRoutingRepositoryPort = {
-  linkTeam(connectionId: string, teamId: string): Promise<void>;
-  unlinkTeam(connectionId: string, teamId: string): Promise<void>;
   /** Substituição total (mesmo idioma do CMDesk: "salvar canal" sempre reescreve a lista inteira de
-   * equipes vinculadas, nunca um patch incremental). */
+   * equipes vinculadas, nunca um patch incremental) — único jeito de mudar o vínculo, nunca
+   * link/unlink individuais (nenhum caso de uso real precisa disso além de "salvar o formulário"). */
   replaceLinkedTeams(connectionId: string, teamIds: readonly string[]): Promise<void>;
   listTeamIdsByConnection(connectionId: string): Promise<string[]>;
   upsertRoutingConfig(input: { connectionId: string; defaultTeamId: string; distributionMode: ChannelDistributionMode }): Promise<ChannelRoutingConfig>;

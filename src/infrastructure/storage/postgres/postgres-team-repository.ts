@@ -14,6 +14,13 @@ import { withIdentityLock } from "./identity-advisory-lock.js";
 const idGenerator = () => `team-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const membershipIdGenerator = () => `teammember-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+/** SQLSTATE `23503` (foreign_key_violation) — código padrão do Postgres, o driver `pg` sempre
+ * anexa em `error.code`. Checagem estrutural (nunca `instanceof`, o driver não exporta uma classe
+ * de erro própria para isto). */
+function isForeignKeyViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "23503";
+}
+
 type TeamRow = {
   id: string; tenant_id: string; workspace_id: string; name: string;
   round_robin_enabled: boolean; last_assigned_index_by_level: Record<string, number>; timezone: string;
@@ -64,8 +71,24 @@ export class PostgresTeamRepository implements TeamRepositoryPort {
     return this.toDomain(result.rows[0]);
   }
 
+  /**
+   * Achado de revisão — `inbox_channel_routing_configs.default_team_id` referencia `teams` sem
+   * `on delete cascade`/`set null` DE PROPÓSITO (é config ATIVA de um canal, precisa de resolução
+   * explícita, nunca deveria sumir silenciosamente) — mas isso faz o Postgres recusar o DELETE com
+   * uma violação de FK crua (`23503`). Traduz pra um erro de domínio claro, mesmo padrão do resto
+   * do módulo (`TEAM_NOT_FOUND` etc.) — nunca deixa o erro cru do driver vazar pro HTTP.
+   * `inbox_conversations.current_team_id` já é `on delete set null` (migration 0124) — nunca
+   * bloqueia a exclusão por causa de uma conversa antiga, só limpa a referência.
+   */
   async delete(id: string): Promise<void> {
-    await this.pool.query("delete from teams where id = $1", [id]);
+    try {
+      await this.pool.query("delete from teams where id = $1", [id]);
+    } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        throw new Error("TEAM_LINKED_TO_CHANNEL_ROUTING: esta equipe é a equipe padrão de roteamento de um ou mais canais — escolha outra equipe padrão nesses canais antes de excluir.");
+      }
+      throw error;
+    }
   }
 
   async selectNextMemberForLevel(teamId: string, level: string): Promise<{ userId: string; usedRoundRobin: boolean } | undefined> {

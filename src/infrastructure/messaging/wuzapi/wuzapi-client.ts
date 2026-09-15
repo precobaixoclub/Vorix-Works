@@ -284,13 +284,23 @@ export class WuzApiClient {
    * `ProfilePictureInfo.URL`) — ao contrário de mídia de mensagem, nunca precisa de
    * `mediaKey`/decrypt server-side, então busca os bytes direto daqui, sem precisar de um segundo
    * endpoint do WuzAPI.
+   *
+   * ACHADO AO VIVO EM PRODUÇÃO (2026-09-15, logo após o primeiro deploy desta feature) — a mensagem
+   * de erro REAL do handler nunca é o "no avatar found" que o código-fonte sugeria (esse só
+   * dispara se `pic == nil` SEM erro nenhum, caminho que na prática nunca é alcançado): o erro real
+   * vem de `GetProfilePictureInfo()` do whatsmeow falhando ANTES disso, com mensagens como "that
+   * user or group does not have a profile picture" ou "the user has hidden their profile picture
+   * from you" — ambos estados NORMAIS (boa parte das pessoas/grupos não tem foto, ou escondeu),
+   * nunca uma falha de verdade. Confirmado ao vivo: 5/7 contatos e 0/4 grupos caíam aqui na
+   * primeira reconciliação retroativa em produção — sem tratar essas mensagens, cada um logava
+   * como "falhou" mesmo sendo o resultado esperado.
    */
   async downloadAvatar(sessionToken: string, jid: string): Promise<{ body: Buffer; mimeType: string } | undefined> {
     let avatar: { url?: string } | undefined;
     try {
       avatar = await this.sessionRequest<{ url?: string }>(sessionToken, "/user/avatar", { method: "POST", body: { Phone: jid, Preview: false } });
     } catch (error) {
-      if (error instanceof MessagingProviderError && /no avatar found/i.test(error.message)) return undefined;
+      if (error instanceof MessagingProviderError && /no avatar found|does not have a profile picture|hidden their profile picture/i.test(error.message)) return undefined;
       throw error;
     }
     if (!avatar?.url) return undefined;

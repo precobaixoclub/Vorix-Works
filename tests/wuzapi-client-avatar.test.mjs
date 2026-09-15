@@ -40,14 +40,27 @@ test("downloadAvatar: chama POST /user/avatar com {Phone, Preview:false} e baixa
   assert.equal(result.mimeType, "image/jpeg");
 });
 
-test("downloadAvatar: pessoa/grupo SEM foto de perfil (WuzAPI responde 500 'no avatar found') devolve undefined, nunca lança", async () => {
-  const fetchImpl = async () => new Response("no avatar found", { status: 500 });
+/**
+ * ACHADO AO VIVO EM PRODUÇÃO (2026-09-15, logo após o primeiro deploy) — as duas mensagens de erro
+ * REAIS confirmadas na primeira reconciliação retroativa (5/7 contatos e 0/4 grupos caíram aqui);
+ * "no avatar found" (a mensagem que o código-fonte sugeria) nunca é alcançada na prática, porque
+ * `GetProfilePictureInfo()` do whatsmeow já falha ANTES disso com uma destas duas.
+ */
+test("downloadAvatar: contato/grupo SEM foto de perfil (mensagem real 'does not have a profile picture') devolve undefined, nunca lança", async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({ code: 500, success: false, error: "failed to get avatar: that user or group does not have a profile picture" }), { status: 500 });
   const client = clientWithFetch(fetchImpl);
   const result = await client.downloadAvatar("sess-1", "5511999998888@s.whatsapp.net");
   assert.equal(result, undefined, "ausência de foto é o estado normal pra boa parte dos contatos — nunca deveria lançar nem logar como falha");
 });
 
-test("downloadAvatar: outro erro 500 genuíno (não 'no avatar found') ainda propaga como MessagingProviderError transient", async () => {
+test("downloadAvatar: pessoa escondeu a foto de perfil (mensagem real 'hidden their profile picture') devolve undefined, nunca lança", async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({ code: 500, success: false, error: "failed to get avatar: the user has hidden their profile picture from you" }), { status: 500 });
+  const client = clientWithFetch(fetchImpl);
+  const result = await client.downloadAvatar("sess-1", "5511999998888@s.whatsapp.net");
+  assert.equal(result, undefined);
+});
+
+test("downloadAvatar: outro erro 500 genuíno (não relacionado a ausência de foto) ainda propaga como MessagingProviderError transient", async () => {
   const fetchImpl = async () => new Response("internal server error", { status: 500 });
   const client = clientWithFetch(fetchImpl);
   await assert.rejects(() => client.downloadAvatar("sess-1", "5511999998888@s.whatsapp.net"));

@@ -1254,7 +1254,7 @@ function MessageBubble({
         {quoted ? (
           <div className={cn("mb-1.5 rounded-md border-l-2 px-2 py-1 text-xs opacity-80", isOutbound ? "border-primary-foreground/50 bg-black/10" : "border-primary/50 bg-muted/60")}>
             {quotedSenderLabel ? <p className="mb-0.5 font-semibold">{quotedSenderLabel}</p> : null}
-            <p className="line-clamp-2 break-words">{quotedBody || mediaLabelFor(quotedType ?? "other")}</p>
+            <p className="line-clamp-2 break-words">{quotedBody || mediaLabelFor(quotedType ?? "other", quotedLive?.direction === "outbound")}</p>
           </div>
         ) : null}
         {isMedia ? (
@@ -1267,7 +1267,7 @@ function MessageBubble({
             return (
               <div className="flex items-center gap-2 rounded-lg bg-muted/70 px-3 py-2 text-muted-foreground">
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className="text-xs">{mediaLabelFor(message.type)}</span>
+                <span className="text-xs">{mediaLabelFor(message.type, isOutbound)}</span>
               </div>
             );
           })()
@@ -1594,16 +1594,23 @@ function mediaPreviewLabel(type: InboxMessage["type"]): string {
   }
 }
 
-export function mediaLabelFor(type: InboxMessage["type"]): string {
+/** ACHADO AO VIVO (relatado pelo usuário em produção, screenshot de um áudio ENVIADO direto pelo
+ * celular pareado, fora do Vorix) — o rótulo de fallback dizia "recebido" incondicionalmente,
+ * mesmo pra mídia outbound (self-echo). `isOutbound` (default `false`, mantém o comportamento
+ * anterior nos poucos call sites que não sabem a direção — ex.: preview de mensagem citada sem a
+ * original carregada) troca pro particípio de "enviado(a)". */
+export function mediaLabelFor(type: InboxMessage["type"], isOutbound = false): string {
+  const masc = isOutbound ? "enviado" : "recebido";
+  const fem = isOutbound ? "enviada" : "recebida";
   switch (type) {
-    case "image": return "Imagem recebida";
-    case "video": return "Video recebido";
-    case "audio": return "Audio recebido";
-    case "document": return "Documento recebido";
-    case "location": return "Localização recebida";
-    case "contact": return "Contato recebido";
+    case "image": return `Imagem ${fem}`;
+    case "video": return `Video ${masc}`;
+    case "audio": return `Audio ${masc}`;
+    case "document": return `Documento ${masc}`;
+    case "location": return `Localização ${fem}`;
+    case "contact": return `Contato ${masc}`;
     case "text": return "Mensagem sem texto";
-    default: return "Mídia recebida";
+    default: return `Mídia ${fem}`;
   }
 }
 

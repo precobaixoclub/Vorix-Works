@@ -70,12 +70,12 @@ const MEDIA_ERROR_LABEL: Record<InboxMessage["type"], string> = {
  * `retry` = a mídia nunca chegou a ser baixada (best-effort assíncrono, ver `downloadInboundMediaAndAttach`)
  * — não dá pra distinguir "ainda processando" de "nunca vai chegar" sem um campo de status
  * dedicado nesta rodada, então usa o rótulo neutro (nunca "erro" quando pode só estar em voo). */
-function MediaFallback({ type, retry }: { type: InboxMessage["type"]; retry?: () => void }) {
+function MediaFallback({ type, retry, isOutbound }: { type: InboxMessage["type"]; retry?: () => void; isOutbound?: boolean }) {
   const Icon = mediaIconFor(type);
   return (
     <div className="flex items-center gap-2 rounded-lg bg-muted/70 px-3 py-2 text-muted-foreground">
       <Icon className="h-4 w-4 shrink-0" />
-      <span className="text-xs">{retry ? MEDIA_ERROR_LABEL[type] : mediaLabelFor(type)}</span>
+      <span className="text-xs">{retry ? MEDIA_ERROR_LABEL[type] : mediaLabelFor(type, isOutbound)}</span>
       {retry ? (
         <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={retry}>
           Tentar novamente
@@ -91,13 +91,13 @@ export function MessageMedia({ workspaceId, message }: { workspaceId: string; me
     // será (download falhou/não configurado). Mesmo rótulo nos dois casos: não dá para o
     // frontend distinguir "ainda processando" de "nunca vai chegar" sem um campo de status
     // dedicado, e não vale a pena inventar um polling só para isso nesta rodada.
-    return <MediaFallback type={message.type} />;
+    return <MediaFallback type={message.type} isOutbound={message.direction === "outbound"} />;
   }
   if (message.type === "image") return <ImageMedia workspaceId={workspaceId} message={message} />;
   if (message.type === "audio") return <AudioMedia workspaceId={workspaceId} message={message} />;
   if (message.type === "video") return <VideoMedia workspaceId={workspaceId} message={message} />;
   if (message.type === "document") return <DocumentMedia workspaceId={workspaceId} message={message} />;
-  return <MediaFallback type={message.type} />;
+  return <MediaFallback type={message.type} isOutbound={message.direction === "outbound"} />;
 }
 
 function ImageMedia({ workspaceId, message }: { workspaceId: string; message: InboxMessage }) {

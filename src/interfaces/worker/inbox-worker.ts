@@ -687,38 +687,45 @@ async function main(): Promise<void> {
         .catch((error) => {
           console.error("[inbox-worker] falha ao processar resposta automática de IA:", error instanceof Error ? error.message : error);
         });
+    }
 
-      // Mesmo racional: best-effort, nunca no caminho crítico do ack. A mensagem já existe com
-      // `type` correto; sucesso aqui só enriquece com `mediaStorageRef` um instante depois — o
-      // frontend revalida via `message.updated` quando isso acontece.
-      if (event.messageType === "image" || event.messageType === "video" || event.messageType === "audio" || event.messageType === "document") {
-        if (event.mediaUrl) {
-          downloadInboundMediaAndAttach(deps, {
-            tenantId: event.tenantId,
-            workspaceId: event.workspaceId,
-            connectionId: event.connectionId,
-            messageId: message.id,
-            type: event.messageType,
-            mediaUrl: event.mediaUrl,
-            mediaDirectPath: event.mediaDirectPath,
-            mimeType: event.mimeType,
-            mediaKey: event.mediaKey,
-            fileSha256: event.fileSha256,
-            fileEncSha256: event.fileEncSha256,
-            fileName: event.fileName,
-            fileSizeBytes: event.fileSizeBytes,
-            durationSeconds: event.durationSeconds,
-            thumbnailBase64: event.thumbnailBase64,
+    // ACHADO AO VIVO (relatado pelo usuário em produção, 2026-09-15: "mandei um audio pelo
+    // celular e não carregou dentro do sistema... preciso que você ajuste para carregar o que
+    // envio e recebo no whatsapp mesmo não sendo por dentro do zuno") — este bloco estava preso
+    // dentro do `if (message.direction === "inbound")` acima, junto com a IA. Mídia enviada/
+    // recebida DIRETO pelo celular pareado (fora do Vorix) vira uma mensagem `outbound`
+    // (self-echo, ver comentário acima) — nunca `inbound` — então o download NUNCA rodava pra
+    // ela, ficando presa pra sempre no placeholder de ícone+rótulo (mesmo bug pra mídia mandada
+    // DE OUTRO contato, se o self-echo for de uma mensagem recebida por um dispositivo vinculado
+    // diferente). Mesmo racional de "best-effort, nunca no caminho crítico do ack" — só a guarda
+    // de direção que era o bug real; `wasCreated` sozinho já cobre os dois sentidos.
+    if (wasCreated && (event.messageType === "image" || event.messageType === "video" || event.messageType === "audio" || event.messageType === "document")) {
+      if (event.mediaUrl) {
+        downloadInboundMediaAndAttach(deps, {
+          tenantId: event.tenantId,
+          workspaceId: event.workspaceId,
+          connectionId: event.connectionId,
+          messageId: message.id,
+          type: event.messageType,
+          mediaUrl: event.mediaUrl,
+          mediaDirectPath: event.mediaDirectPath,
+          mimeType: event.mimeType,
+          mediaKey: event.mediaKey,
+          fileSha256: event.fileSha256,
+          fileEncSha256: event.fileEncSha256,
+          fileName: event.fileName,
+          fileSizeBytes: event.fileSizeBytes,
+          durationSeconds: event.durationSeconds,
+          thumbnailBase64: event.thumbnailBase64,
+        })
+          .then((result) => {
+            if (result.attached) publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
           })
-            .then((result) => {
-              if (result.attached) publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
-            })
-            .catch((error) => {
-              console.error("[inbox-worker] falha ao baixar mídia recebida:", error instanceof Error ? error.message : error);
-            });
-        } else {
-          console.warn(`[inbox-worker] mensagem "${message.id}" do tipo "${event.messageType}" sem mediaUrl no evento — mídia não pôde ser localizada (payload PENDING de validação, ver wuzapi-event-mapper.ts).`);
-        }
+          .catch((error) => {
+            console.error("[inbox-worker] falha ao baixar mídia recebida:", error instanceof Error ? error.message : error);
+          });
+      } else {
+        console.warn(`[inbox-worker] mensagem "${message.id}" do tipo "${event.messageType}" sem mediaUrl no evento — mídia não pôde ser localizada (payload PENDING de validação, ver wuzapi-event-mapper.ts).`);
       }
     }
   }, metrics);

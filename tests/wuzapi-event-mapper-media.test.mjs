@@ -256,14 +256,21 @@ test("mapWuzApiEvent: @lid é tratado como DM normal (é uma pessoa) — mesmo c
   assert.equal(mapped.chatId, "+123456789012345");
 });
 
-test("mapWuzApiEvent: @newsletter (Canal do WhatsApp) — IsGroup=false no payload real, mas NUNCA pode virar um InboxContact/telefone fake", () => {
+/**
+ * ACHADO AO VIVO (pedido explícito do usuário em produção, 2026-09-15: "quero somente conversas do
+ * whatsapp e grupos") — Canal/Newsletter (`@newsletter`) nunca é uma conversa de atendimento: é um
+ * feed de transmissão, nunca respondido/gerenciado pelo atendimento, e a mídia nem pode ser baixada
+ * (WhatsApp não criptografa por destinatário nesse caso). Antes disto, o Canal virava uma
+ * "conversa" (mesmo caminho seguro de grupo, pra nunca virar um InboxContact/telefone fake) — agora
+ * é descartado por completo, mesmo caminho de `status@broadcast` abaixo.
+ */
+test("mapWuzApiEvent: @newsletter (Canal do WhatsApp) é descartado inteiro — nunca vira conversa/mensagem", () => {
   const mapped = mapWuzApiEvent(rawEvent(
     { conversation: "Notícia do dia" },
     { info: { Sender: "120363111222333444@newsletter", Chat: "120363111222333444@newsletter", IsGroup: false, IsFromMe: false } },
   ));
 
-  assert.equal(mapped.isGroup, true, "Canal/Newsletter nunca é uma pessoa — tratado pelo mesmo caminho seguro de grupo (JID preservado, nunca vira InboxContact)");
-  assert.equal(mapped.chatId, "120363111222333444@newsletter", "JID do canal preservado como veio, nunca convertido em formato de telefone");
+  assert.equal(mapped, undefined, "Canal/Newsletter nunca deveria virar um evento reconhecido — descartado inteiro");
 });
 
 /**

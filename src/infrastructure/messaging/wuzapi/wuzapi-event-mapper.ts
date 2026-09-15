@@ -125,15 +125,19 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
   // evento INTEIRO (nunca cria conversa/contato/mensagem nenhuma), mesmo caminho de "evento
   // corrompido/sem campo obrigatório" logo acima.
   if (chatRaw.endsWith("@broadcast")) return undefined;
-  // ACHADO AO VIVO (diagnóstico temporário em produção, ver commit "debug(inbox)") — `Info.IsGroup`
-  // sozinho NÃO cobre todo chat que não é uma pessoa: um Canal/Newsletter do WhatsApp
-  // (`Info.Chat` termina em `@newsletter`) chega com `IsGroup: false`, mas não é uma pessoa e não
-  // pode virar um `InboxContact` (um "telefone" fake feito do id do canal). `@lid` (identidade
-  // "Linked ID" do whatsmeow — mensagens 1:1 aparecem assim em vez de `@s.whatsapp.net` nesta
-  // versão do WuzAPI) É uma pessoa normal, tratada como DM. Só `@s.whatsapp.net`/`@lid` são
-  // "telefone de uma pessoa" — qualquer outro sufixo (`@g.us`, `@newsletter`, ou algo não previsto)
-  // é tratado como não-pessoa (mesmo caminho de armazenamento de grupo: JID preservado como
-  // `externalChatId`, nunca vira um `InboxContact`/CRM). Ver docs/conversas-canonical-chat-identity.md.
+  // ACHADO AO VIVO (pedido explícito do usuário em produção, 2026-09-15: "quero somente conversas
+  // do whatsapp e grupos") — Canal/Newsletter do WhatsApp (`@newsletter`) nunca é uma conversa de
+  // atendimento de verdade: é um feed de transmissão (a mídia nem pode ser baixada — WhatsApp não
+  // criptografa por destinatário nesse caso, ver `mediaKey` ausente documentado em
+  // `downloadInboundMediaAndAttach`), nunca algo que o atendimento responde ou gerencia. Descartado
+  // por completo, mesmo caminho de `@broadcast` logo acima — nunca cria conversa/contato/mensagem.
+  if (chatRaw.endsWith("@newsletter")) return undefined;
+  // `Info.IsGroup` sozinho não cobre todo chat que não é uma pessoa — `@lid` (identidade "Linked
+  // ID" do whatsmeow — mensagens 1:1 aparecem assim em vez de `@s.whatsapp.net` nesta versão do
+  // WuzAPI) É uma pessoa normal, tratada como DM. Só `@s.whatsapp.net`/`@lid` são "telefone de uma
+  // pessoa" — qualquer outro sufixo (`@g.us`, ou algo não previsto) é tratado como não-pessoa
+  // (mesmo caminho de armazenamento de grupo: JID preservado como `externalChatId`, nunca vira um
+  // `InboxContact`/CRM). Ver docs/conversas-canonical-chat-identity.md.
   const isPersonJid = /@(s\.whatsapp\.net|lid)$/.test(chatRaw);
   const isGroup = Boolean(info?.IsGroup) || !isPersonJid;
   const chatId = isGroup ? normalizeWhatsmeowGroupJid(chatRaw) : normalizeWhatsmeowJid(chatRaw);

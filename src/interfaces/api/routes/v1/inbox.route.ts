@@ -53,6 +53,8 @@ import type { ChannelRoutingRepositoryPort } from "../../../../application/ports
 import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../../../application/ports/team-repository.port.js";
 import type { TeamKanbanPhaseRepositoryPort } from "../../../../application/ports/team-kanban-phase-repository.port.js";
 import type { ConversationTimeEntryRepositoryPort } from "../../../../application/ports/inbox-conversation-time-entry-repository.port.js";
+import type { NotificationRepositoryPort } from "../../../../application/ports/notification-repository.port.js";
+import type { NotificationRealtimePublisherPort } from "../../../../application/ports/notification-realtime-publisher.port.js";
 import { AppError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -233,6 +235,10 @@ export type InboxRoutesDeps = {
    * `undefined` = módulo de kanban não configurado neste processo. */
   teamKanbanPhaseRepository?: TeamKanbanPhaseRepositoryPort;
   conversationTimeEntryRepository?: ConversationTimeEntryRepositoryPort;
+  /** Central de notificações in-app (réplica adaptada do CMDesk, pedido explícito do usuário) —
+   * `undefined` = notificação desligada neste processo. */
+  notificationRepository?: NotificationRepositoryPort;
+  notificationRealtimePublisher?: NotificationRealtimePublisherPort;
 };
 
 function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {

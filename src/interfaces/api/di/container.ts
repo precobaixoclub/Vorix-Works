@@ -45,6 +45,9 @@ import { FakeMessagingProvider } from "../../../infrastructure/messaging/fake-me
 import { InMemoryOutboundMessageQueue } from "../../../infrastructure/messaging/in-memory-outbound-message-queue.js";
 import { RabbitMqOutboundMessageQueue } from "../../../infrastructure/messaging/rabbitmq/rabbitmq-outbound-message-queue.js";
 import { InboxRealtimeSubscriber } from "../../../infrastructure/messaging/rabbitmq/inbox-realtime-subscriber.js";
+import { InProcessNotificationRealtimePublisher } from "../../../infrastructure/realtime/notification-event-bus.js";
+import type { NotificationRealtimePublisherPort } from "../../../application/ports/notification-realtime-publisher.port.js";
+import type { NotificationRepositoryPort } from "../../../application/ports/notification-repository.port.js";
 import { WuzApiClient } from "../../../infrastructure/messaging/wuzapi/wuzapi-client.js";
 import { WuzApiMessagingProvider } from "../../../infrastructure/messaging/wuzapi/wuzapi-messaging-provider.js";
 import type { AIProviderPort } from "../../../application/ports/ai-provider.port.js";
@@ -282,6 +285,8 @@ export type ApiContainer = {
   schedulingRepository: SchedulingRepositoryPort;
   analyticsRepository: AnalyticsRepositoryPort;
   clock: ClockPort;
+  notificationRepository: NotificationRepositoryPort;
+  notificationRealtimePublisher: NotificationRealtimePublisherPort;
   publicationProviders: readonly PublicationProviderPort[];
   publicationProviderAdapters: readonly PublicationProviderAdapterPort[];
   publicationProviderRegistry: PublicationProviderRegistry;
@@ -1326,6 +1331,11 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   });
   const publicationQueue = new InMemoryPublicationQueue();
   const clock = new SystemClock();
+  // Central de notificações in-app (réplica adaptada do CMDesk, pedido explícito do usuário) —
+  // sempre construído, mesmo racional de `clock`: singleton barato, sem dependência de driver de
+  // persistência. Ver `infrastructure/realtime/notification-event-bus.ts` (trade-off in-process,
+  // não RabbitMQ, documentado lá).
+  const notificationRealtimePublisher = new InProcessNotificationRealtimePublisher();
   const scheduleOccurrenceGenerator = new ScheduleOccurrenceGenerator({
     windowDays: config?.scheduling.occurrenceWindowDays ?? 30,
     maxOccurrencesPerRun: config?.scheduling.maxOccurrencesPerRun ?? 200,
@@ -1452,6 +1462,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       inboxProvider,
       inboxOutboundQueue,
       inboxRealtimeSubscriber,
+      notificationRealtimePublisher,
       aiGateway: gatedAiGateway,
       aiExtractionEnabled,
       aiCommercialCopilotEnabled,
@@ -1545,6 +1556,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     inboxProvider,
     inboxOutboundQueue,
     inboxRealtimeSubscriber,
+    notificationRealtimePublisher,
     aiGateway,
     aiExtractionEnabled,
     aiCommercialCopilotEnabled,

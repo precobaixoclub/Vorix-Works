@@ -52,6 +52,7 @@ import type { PreparedCommandRepositoryPort } from "../../application/ports/prep
 import type { RuntimeRepositoryPort } from "../../application/ports/runtime-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../../application/ports/workspace-repository.port.js";
 import type { WebhookEventRepositoryPort } from "../../application/ports/webhook-event-repository.port.js";
+import type { NotificationRepositoryPort } from "../../application/ports/notification-repository.port.js";
 import { createAssetLibraryAssetMetadataSource } from "../briefing/asset-library-asset-metadata-source.js";
 import { createNotConnectedCompanyKnowledgeSource } from "../briefing/not-connected-company-knowledge-source.js";
 import { InMemoryAiExecutionRepository } from "./in-memory-ai-execution-repository.js";
@@ -101,6 +102,7 @@ import { InMemoryRuntimeRepository } from "./in-memory-runtime-repository.js";
 import { InMemorySchedulingRepository } from "./in-memory-scheduling-repository.js";
 import { InMemoryWebhookEventRepository } from "./in-memory-webhook-event-repository.js";
 import { InMemoryWorkspaceRepository } from "./in-memory-workspace-repository.js";
+import { InMemoryNotificationRepository } from "./in-memory-notification-repository.js";
 import { PostgresAiExecutionRepository } from "./postgres/postgres-ai-execution-repository.js";
 import { PostgresAnalyticsRepository } from "./postgres/postgres-analytics-repository.js";
 import { PostgresAssetLibraryRepository } from "./postgres/postgres-asset-library-repository.js";
@@ -154,6 +156,7 @@ import { PostgresRuntimeRepository } from "./postgres/postgres-runtime-repositor
 import { PostgresSchedulingRepository } from "./postgres/postgres-scheduling-repository.js";
 import { PostgresWebhookEventRepository } from "./postgres/postgres-webhook-event-repository.js";
 import { PostgresWorkspaceRepository } from "./postgres/postgres-workspace-repository.js";
+import { PostgresNotificationRepository } from "./postgres/postgres-notification-repository.js";
 
 const { Pool } = pg;
 
@@ -245,6 +248,10 @@ export type PlatformRepositories = {
   teamRepository?: TeamRepositoryPort;
   teamMembershipRepository?: TeamMembershipRepositoryPort;
   channelRoutingRepository?: ChannelRoutingRepositoryPort;
+  /** Central de notificações in-app (réplica adaptada do CMDesk, pedido explícito do usuário, ver
+   * `db/migrations/0126_notifications.sql`) — sempre presente nos dois drivers (contexto fino,
+   * sem dependência de identidade/Postgres específico). */
+  notificationRepository: NotificationRepositoryPort;
   /** Só existe quando `driver === "postgres"` — quem chama esta função é responsável por fechar (`pool.end()`) no shutdown. */
   pool?: InstanceType<typeof Pool>;
 };
@@ -316,6 +323,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       inboxConversationEventRepository: new InMemoryInboxConversationEventRepository(),
       inboxMetricsRepository: new InMemoryInboxMetricsRepository(),
       inboxIdentityLinkRepository: new InMemoryInboxIdentityLinkRepository(),
+      notificationRepository: new InMemoryNotificationRepository(),
     };
   }
 
@@ -386,6 +394,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     teamRepository: new PostgresTeamRepository(pool),
     teamMembershipRepository: new PostgresTeamMembershipRepository(pool),
     channelRoutingRepository: new PostgresChannelRoutingRepository(pool),
+    notificationRepository: new PostgresNotificationRepository(pool),
     pool,
   };
 }

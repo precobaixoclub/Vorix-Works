@@ -18,6 +18,9 @@ import type { MessagingProvider, MessagingProviderErrorKind } from "../ports/mes
 import { MessagingProviderError } from "../ports/messaging-provider.port.js";
 import type { OutboundMessageQueuePort } from "../ports/outbound-message-queue.port.js";
 import type { TeamKanbanPhaseRepositoryPort } from "../ports/team-kanban-phase-repository.port.js";
+import type { NotificationRepositoryPort } from "../ports/notification-repository.port.js";
+import type { NotificationRealtimePublisherPort } from "../ports/notification-realtime-publisher.port.js";
+import { notifyBestEffort } from "../notification/notification-use-cases.js";
 import type { TeamMembershipRepositoryPort, TeamRepositoryPort } from "../ports/team-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
 import { recordFirstEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
@@ -94,6 +97,11 @@ export type InboxUseCaseDeps = {
    * roteamento por equipe acima). */
   teamKanbanPhaseRepository?: TeamKanbanPhaseRepositoryPort;
   conversationTimeEntryRepository?: ConversationTimeEntryRepositoryPort;
+  /** Central de notificações in-app (réplica adaptada do CMDesk, pedido explícito do usuário) —
+   * `undefined` = notificação desligada neste processo; `assignConversation` simplesmente não
+   * notifica ninguém nesse caso (nunca bloqueia a atribuição em si). */
+  notificationRepository?: NotificationRepositoryPort;
+  notificationRealtimePublisher?: NotificationRealtimePublisherPort;
 };
 
 const defaultIdGenerator = () => `wuzsess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -388,6 +396,25 @@ export async function assignConversation(deps: InboxUseCaseDeps, input: AssignCo
     fromUserId: conversation.assignedUserId,
     toUserId: input.assignedUserId,
   });
+
+  // Central de notificações in-app — gatilho concreto (réplica adaptada do catálogo do CMDesk,
+  // "serviço atribuído a alguém" vira "conversa atribuída a alguém" aqui). Só notifica quando o
+  // NOVO responsável é de fato alguém (nunca no unassign) e é uma pessoa diferente de quem
+  // executou a ação (ninguém precisa ser avisado de algo que a própria pessoa acabou de fazer).
+  if (input.assignedUserId && input.assignedUserId !== input.performedBy) {
+    const conversationLabel = conversation.groupName || "uma conversa";
+    notifyBestEffort(deps, {
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+      userId: input.assignedUserId,
+      title: "Conversa atribuída a você",
+      body: `Você agora é responsável por ${conversationLabel}.`,
+      sourceType: "inbox_conversation_assigned",
+      sourceId: conversation.id,
+      sourceUrl: `/workspaces/${input.workspaceId}/conversas?conversation=${conversation.id}`,
+    });
+  }
+
   return updated;
 }
 

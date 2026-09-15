@@ -23,6 +23,7 @@ import { registerYouTubeRoutes } from "./youtube.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
 import { registerInstagramDmRoutes } from "./instagram-dm.route.js";
 import { registerInboxRoutes } from "./inbox.route.js";
+import { registerNotificationRoutes } from "./notifications.route.js";
 import { registerInboxMetricsRoutes } from "./inbox-metrics.route.js";
 import { registerTeamsRoutes } from "./teams.route.js";
 import { registerTenantMembersRoutes } from "./tenant-members.route.js";
@@ -79,6 +80,13 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     : undefined;
 
   await registerHealthRoutes(app);
+  // Central de notificações in-app (réplica adaptada do CMDesk, pedido explícito do usuário) —
+  // SEMPRE registrada (nunca atrás de um kill switch de módulo, ao contrário de `/v1/inbox/*`).
+  await registerNotificationRoutes(app, {
+    notificationRepository: app.zunoContainer.notificationRepository,
+    realtimePublisher: app.zunoContainer.notificationRealtimePublisher,
+    jwtPort: app.zunoContainer.identity?.jwt,
+  });
   await registerWorkspaceRoutes(app, {
     workspaceRepository: app.zunoContainer.workspaceRepository,
     platformBillingRepository: app.zunoContainer.identity?.platformBillingRepository,
@@ -259,6 +267,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       teamMembershipRepository: app.zunoContainer.identity?.teamMembershipRepository,
       teamKanbanPhaseRepository: app.zunoContainer.identity?.teamKanbanPhaseRepository,
       conversationTimeEntryRepository: app.zunoContainer.identity?.conversationTimeEntryRepository,
+      notificationRepository: app.zunoContainer.notificationRepository,
+      notificationRealtimePublisher: app.zunoContainer.notificationRealtimePublisher,
     });
     // Fase 7 (Resultados) — métricas agregadas de atendimento, mesmo kill switch do módulo.
     await registerInboxMetricsRoutes(app, { inboxMetricsRepository: app.zunoContainer.inboxMetricsRepository });

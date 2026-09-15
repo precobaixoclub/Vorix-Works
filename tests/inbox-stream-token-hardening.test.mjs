@@ -189,6 +189,17 @@ test("isPrincipalAuthorizedForRequest: matriz completa de decisão", () => {
   assert.equal(isPrincipalAuthorizedForRequest(avatarPrincipal, { avatarRouteTarget: { kind: "conversation", id: "contact-1" }, tokenSource: "query" }), false, "mesmo id, kind diferente — nunca autentica");
   assert.equal(isPrincipalAuthorizedForRequest(avatarPrincipal, { avatarRouteTarget: { kind: "contact", id: "contact-1" }, tokenSource: "header" }), false, "token de foto nunca via header");
   assert.equal(isPrincipalAuthorizedForRequest(avatarPrincipal, { tokenSource: "query" }), false, "fora da rota de avatares (sem avatarRouteTarget) nunca autentica");
+
+  // Token de stream do sino de notificações (purpose=notification_stream) — mesmo racional exato
+  // de inbox_stream, contexto diferente (Central de Notificações, réplica adaptada do CMDesk).
+  const notificationStreamPrincipal = { ...normalPrincipal, purpose: "notification_stream" };
+  assert.equal(isPrincipalAuthorizedForRequest(notificationStreamPrincipal, { isNotificationStreamRoute: true, tokenSource: "query" }), true);
+  assert.equal(isPrincipalAuthorizedForRequest(notificationStreamPrincipal, { isNotificationStreamRoute: true, tokenSource: "header" }), false);
+  assert.equal(isPrincipalAuthorizedForRequest(notificationStreamPrincipal, { isNotificationStreamRoute: false, tokenSource: "query" }), false);
+  assert.equal(isPrincipalAuthorizedForRequest(notificationStreamPrincipal, { tokenSource: "query" }), false, "fora da rota de stream de notificações (sem isNotificationStreamRoute) nunca autentica");
+  // Nunca cross-autentica a rota de stream da Inbox, nem o inverso.
+  assert.equal(isPrincipalAuthorizedForRequest(notificationStreamPrincipal, { isStreamRoute: true, isNotificationStreamRoute: false, tokenSource: "query" }), false, "token do sino nunca autentica o stream da Inbox");
+  assert.equal(isPrincipalAuthorizedForRequest(streamPrincipal, { isStreamRoute: false, isNotificationStreamRoute: true, tokenSource: "query" }), false, "token da Inbox nunca autentica o stream do sino");
 });
 
 // ------------------------------------------------------------------------------------------

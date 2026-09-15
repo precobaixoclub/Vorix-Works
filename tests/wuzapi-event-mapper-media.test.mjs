@@ -266,6 +266,22 @@ test("mapWuzApiEvent: @newsletter (Canal do WhatsApp) — IsGroup=false no paylo
   assert.equal(mapped.chatId, "120363111222333444@newsletter", "JID do canal preservado como veio, nunca convertido em formato de telefone");
 });
 
+/**
+ * ACHADO AO VIVO (relatado pelo usuário em produção, 2026-09-15): "status@broadcast" é o feed de
+ * Status/Stories do WhatsApp — atualizações postadas por QUALQUER contato, nunca uma conversa real
+ * com uma pessoa/grupo específico. Sem descartar este evento, cada Status virava uma mensagem
+ * acumulada numa única conversa fantasma sem nome, aparecendo como um "grupo" cheio de fotos
+ * aleatórias de stories.
+ */
+test("mapWuzApiEvent: status@broadcast (feed de Status/Stories do WhatsApp) é descartado inteiro — nunca vira conversa/mensagem", () => {
+  const mapped = mapWuzApiEvent(rawEvent(
+    { imageMessage: { url: "https://mmg.whatsapp.net/status-photo", mimetype: "image/jpeg" } },
+    { info: { Sender: "5511988887777@s.whatsapp.net", Chat: "status@broadcast", IsGroup: false, IsFromMe: false } },
+  ));
+
+  assert.equal(mapped, undefined, "status@broadcast nunca deveria virar um evento reconhecido — descartado inteiro, como um evento corrompido");
+});
+
 test("mapWuzApiEvent: Info.Timestamp como STRING ISO-8601 com offset (formato real confirmado) é convertido corretamente para occurredAt", () => {
   const mapped = mapWuzApiEvent(rawEvent({ conversation: "Oi" }, { info: { Timestamp: "2026-09-13T20:03:49-03:00" } }));
   assert.equal(mapped.occurredAt, new Date("2026-09-13T20:03:49-03:00").toISOString());

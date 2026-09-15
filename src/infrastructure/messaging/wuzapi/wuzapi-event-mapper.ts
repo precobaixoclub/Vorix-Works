@@ -117,6 +117,14 @@ function mapInboundMessage(instanceName: string, event: Record<string, unknown>)
   // arquivo. Fallback pra `Sender` só se `Chat` vier ausente (não deveria, é confirmado no
   // envelope, mas nunca deixar o evento inteiro cair por um campo defensivo faltando).
   const chatRaw = (info?.Chat as string | undefined) ?? sender;
+  // ACHADO AO VIVO (relatado pelo usuário em produção, 2026-09-15) — `status@broadcast` é o feed de
+  // Status/Stories do WhatsApp (atualizações postadas por QUALQUER contato, nunca uma conversa de
+  // verdade com uma pessoa/grupo específico). Sem esta guarda, cada Status virava uma mensagem
+  // acumulada numa única "conversa" fantasma sem nome, aparecendo pro usuário como um "grupo" cheio
+  // de fotos aleatórias de stories — nunca algo que o atendimento deveria ver/gerenciar. Descarta o
+  // evento INTEIRO (nunca cria conversa/contato/mensagem nenhuma), mesmo caminho de "evento
+  // corrompido/sem campo obrigatório" logo acima.
+  if (chatRaw.endsWith("@broadcast")) return undefined;
   // ACHADO AO VIVO (diagnóstico temporário em produção, ver commit "debug(inbox)") — `Info.IsGroup`
   // sozinho NÃO cobre todo chat que não é uma pessoa: um Canal/Newsletter do WhatsApp
   // (`Info.Chat` termina em `@newsletter`) chega com `IsGroup: false`, mas não é uma pessoa e não

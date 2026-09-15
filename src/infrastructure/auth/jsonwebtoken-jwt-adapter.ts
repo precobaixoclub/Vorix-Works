@@ -14,10 +14,18 @@ export class JsonWebTokenJwtAdapter implements JwtPort {
     try {
       const decoded = jwt.verify(token, this.secret, { algorithms: ["HS256"] });
       if (typeof decoded !== "object" || decoded === null) return { valid: false, reason: "invalid" };
-      const { userId, tenantId, role, sessionId, isPlatformAdmin, purpose, messageId } = decoded as Partial<JwtAccessTokenPayload>;
+      const { userId, tenantId, role, sessionId, isPlatformAdmin, purpose, messageId, avatarKind, avatarTargetId } = decoded as Partial<JwtAccessTokenPayload>;
       if (!userId || !tenantId || !role || !sessionId) return { valid: false, reason: "invalid" };
-      const safePurpose = purpose === "inbox_stream" || purpose === "inbox_media" ? purpose : undefined;
-      return { valid: true, payload: { userId, tenantId, role, sessionId, isPlatformAdmin: isPlatformAdmin === true, purpose: safePurpose, messageId: safePurpose === "inbox_media" ? messageId : undefined } };
+      const safePurpose = purpose === "inbox_stream" || purpose === "inbox_media" || purpose === "inbox_avatar" ? purpose : undefined;
+      return {
+        valid: true,
+        payload: {
+          userId, tenantId, role, sessionId, isPlatformAdmin: isPlatformAdmin === true, purpose: safePurpose,
+          messageId: safePurpose === "inbox_media" ? messageId : undefined,
+          avatarKind: safePurpose === "inbox_avatar" && (avatarKind === "contact" || avatarKind === "conversation") ? avatarKind : undefined,
+          avatarTargetId: safePurpose === "inbox_avatar" ? avatarTargetId : undefined,
+        },
+      };
     } catch (error) {
       if (error instanceof jwt.TokenExpiredError) return { valid: false, reason: "expired" };
       return { valid: false, reason: "invalid" };

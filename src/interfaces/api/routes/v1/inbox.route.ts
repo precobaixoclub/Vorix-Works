@@ -64,6 +64,20 @@ const MEDIA_TOKEN_BODY_SCHEMA = {
   required: ["workspaceId", "messageId"],
   properties: { workspaceId: { type: "string", minLength: 1 }, messageId: { type: "string", minLength: 1 } },
 } as const;
+const AVATAR_TOKEN_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId", "kind", "targetId"],
+  properties: {
+    workspaceId: { type: "string", minLength: 1 },
+    kind: { type: "string", enum: ["contact", "conversation"] },
+    targetId: { type: "string", minLength: 1 },
+  },
+} as const;
+const AVATAR_PARAMS_SCHEMA = {
+  type: "object",
+  required: ["kind", "id"],
+  properties: { kind: { type: "string", enum: ["contact", "conversation"] }, id: { type: "string", minLength: 1 } },
+} as const;
 
 const INBOX_ERROR_STATUS: Record<string, number> = {
   INBOX_WORKSPACE_NOT_FOUND: 404,
@@ -163,6 +177,8 @@ const STREAM_TOKEN_TTL_SECONDS = 60;
 /** Redesign operacional (mídia real) — mesmo teto de 60s do `stream-token`: só precisa sobreviver
  * entre "mintar o token" e "o `<img>`/`<audio>`/`<video>` disparar o `GET`", nunca mais que isso. */
 const MEDIA_TOKEN_TTL_SECONDS = 60;
+/** Fotos de grupo/contato — mesmo teto de 60s dos outros tokens de curta duração acima. */
+const AVATAR_TOKEN_TTL_SECONDS = 60;
 
 export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoutesDeps): Promise<void> {
   const useCaseDeps = toUseCaseDeps(deps);
@@ -252,6 +268,68 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
       reply.header("Content-Length", String(range.end - range.start + 1));
       return reply.send(stored.body.subarray(range.start, range.end + 1));
     }
+    reply.header("Content-Length", String(stored.body.length));
+    return reply.send(stored.body);
+  });
+
+  /**
+   * Fotos de grupo/contato (pedido explícito do usuário em produção, "ajustar para carregar as
+   * fotos dos grupos e conversas") — mesmo racional do `media-token` acima. Escopado a UM
+   * contato/conversa específico (`avatarKind`+`avatarTargetId` no claim).
+   */
+  app.post("/inbox/avatar-token", { schema: { body: AVATAR_TOKEN_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:read");
+    const { workspaceId, kind, targetId } = request.body as { workspaceId: string; kind: "contact" | "conversation"; targetId: string };
+    if (!deps.jwtPort) {
+      throw new AppError({ code: "INBOX_AVATAR_TOKEN_UNAVAILABLE", message: "Emissão de token de foto indisponível nesta configuração.", statusCode: 503, recoverable: true });
+    }
+    // Nunca vaza existência entre tenants — alvo inexistente E alvo de outro tenant/workspace
+    // respondem exatamente o mesmo 404, mesmo racional de `media-token`.
+    const exists =
+      kind === "contact"
+        ? await deps.contactRepository.getById(targetId)
+        : await deps.conversationRepository.getById(targetId);
+    if (!exists || exists.tenantId !== principal.tenantId || exists.workspaceId !== workspaceId) {
+      throw new AppError({ code: "INBOX_AVATAR_TARGET_NOT_FOUND", message: `${kind === "contact" ? "Contato" : "Conversa"} "${targetId}" não existe.`, statusCode: 404, recoverable: true });
+    }
+    const avatarToken = deps.jwtPort.sign(
+      { userId: principal.userId, tenantId: principal.tenantId, role: principal.role, sessionId: principal.sessionId, isPlatformAdmin: principal.isPlatformAdmin, purpose: "inbox_avatar", avatarKind: kind, avatarTargetId: targetId },
+      AVATAR_TOKEN_TTL_SECONDS,
+    );
+    return successEnvelope({ avatarToken, expiresIn: AVATAR_TOKEN_TTL_SECONDS }, request.id);
+  });
+
+  /**
+   * Proxy autenticado de foto de perfil/grupo — mesmo racional do proxy de mídia: nunca expõe a
+   * URL do WuzAPI/WhatsApp diretamente ao navegador. Credential via `?avatar_token=` (rota acima)
+   * OU o header `Authorization` normal — o middleware já garante que um `avatar_token` só autentica
+   * o `kind`+`id` exatos gravados nele.
+   */
+  app.get("/inbox/avatars/:kind/:id", { schema: { params: AVATAR_PARAMS_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:read");
+    const { kind, id } = request.params as { kind: "contact" | "conversation"; id: string };
+    if (!deps.inboxMediaStorage) {
+      throw new AppError({ code: "INBOX_MEDIA_STORAGE_UNAVAILABLE", message: "Mídia de conversas não configurada neste ambiente.", statusCode: 503, recoverable: true });
+    }
+    const storageRef =
+      kind === "contact"
+        ? await (async () => {
+            const contact = await deps.contactRepository.getById(id);
+            return contact && contact.tenantId === principal.tenantId ? contact.profilePictureStorageRef : undefined;
+          })()
+        : await (async () => {
+            const conversation = await deps.conversationRepository.getById(id);
+            return conversation && conversation.tenantId === principal.tenantId ? conversation.groupPictureStorageRef : undefined;
+          })();
+    if (!storageRef) {
+      throw new AppError({ code: "INBOX_AVATAR_NOT_FOUND", message: "Foto não encontrada.", statusCode: 404, recoverable: true });
+    }
+    const stored = await deps.inboxMediaStorage.get(storageRef.objectKey);
+    if (!stored) {
+      throw new AppError({ code: "INBOX_AVATAR_NOT_FOUND", message: "Foto não encontrada.", statusCode: 404, recoverable: true });
+    }
+    reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    reply.type(stored.contentType);
     reply.header("Content-Length", String(stored.body.length));
     return reply.send(stored.body);
   });

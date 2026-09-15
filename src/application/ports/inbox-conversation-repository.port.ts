@@ -1,4 +1,4 @@
-import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMessageDirection, InboxMessageType } from "../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType } from "../../domain/inbox/inbox.model.js";
 
 /** Módulo Conversas (Fase 1/4). Ver `db/migrations/0082_inbox_conversations.sql` e
  * `db/migrations/0115_inbox_canonical_chat_identity.sql` (identidade canônica de chat). */
@@ -43,6 +43,9 @@ export type InboxConversationListItem = InboxConversation & {
   contactName?: string;
   contactPhone?: string;
   crmContactId?: string;
+  /** Foto de perfil (pedido explícito do usuário em produção) — denormalizada do mesmo join,
+   * pra lista de conversas mostrar o avatar real sem uma segunda chamada por item. */
+  contactProfilePictureStorageRef?: InboxMediaStorageRef;
   lastMessagePreview?: InboxConversationLastMessagePreview;
 };
 
@@ -66,6 +69,10 @@ export type InboxConversationRepositoryPort = {
    * `MessagingProvider.getGroupInfo` (ver `syncGroupMetadata` em inbox-use-cases.ts). Só grava
    * campos presentes em `input` (nunca apaga um valor já conhecido com `undefined`). */
   updateGroupMetadata(id: string, input: { groupName?: string; participantCount?: number; metadataUpdatedAt: string }): Promise<void>;
+  /** Foto do grupo — pedido explícito do usuário em produção, gravada separadamente de
+   * `updateGroupMetadata` (mesmo racional de `InboxContactRepositoryPort.updateProfilePicture`:
+   * preenchida de forma assíncrona/best-effort, nunca no caminho crítico do ack). */
+  updateGroupPicture(id: string, input: { storageRef: InboxMediaStorageRef; syncedAt: string }): Promise<void>;
   markRead(id: string): Promise<void>;
   /** Atribuição DIRETA (por um supervisor, ou remoção com `undefined`) — nunca usada pelo fluxo
    * "assumir conversa" (ver `tryTakeOver`, que é atômico/compare-and-set). Não tem proteção de

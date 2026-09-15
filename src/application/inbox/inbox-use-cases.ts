@@ -713,6 +713,62 @@ export async function syncGroupMetadata(deps: InboxUseCaseDeps, input: SyncGroup
   return { synced: true };
 }
 
+export type SyncGroupPictureInput = { tenantId: string; workspaceId: string; connectionId: string; conversationId: string };
+
+/**
+ * Foto do grupo — pedido explícito do usuário em produção ("ajustar para carregar as fotos dos
+ * grupos"). Mesmo racional/guardas de `syncGroupMetadata` (best-effort, nunca refaz se já
+ * sincronizada, nunca chama pra Canal/Newsletter). Separado de `syncGroupMetadata` porque usa outro
+ * endpoint do provider (`getProfilePicture`, não `getGroupInfo`) e pode falhar/suceder
+ * independentemente (um grupo pode ter nome mas nunca ter definido uma foto, e vice-versa).
+ */
+export async function syncGroupPicture(deps: InboxUseCaseDeps, input: SyncGroupPictureInput): Promise<{ synced: boolean }> {
+  if (!deps.provider.getProfilePicture || !deps.inboxMediaStorage) return { synced: false };
+  const conversation = await deps.conversationRepository.getById(input.conversationId);
+  if (!conversation || conversation.chatType !== "group" || conversation.groupPictureStorageRef) return { synced: false };
+  if (!conversation.externalChatId.endsWith("@g.us")) return { synced: false };
+  const connection = await deps.connectionRepository.getById(input.connectionId);
+  if (!connection?.externalSessionId) return { synced: false };
+
+  const picture = await deps.provider.getProfilePicture({ externalSessionId: connection.externalSessionId, jid: conversation.externalChatId });
+  if (!picture) return { synced: false };
+
+  const objectKey = `${input.tenantId}/${input.workspaceId}/avatar-group-${conversation.id}`;
+  await deps.inboxMediaStorage.put({ key: objectKey, body: picture.body, contentType: picture.mimeType });
+  await deps.conversationRepository.updateGroupPicture(conversation.id, {
+    storageRef: { provider: "inbox-media", objectKey, metadata: { tenantId: input.tenantId } },
+    syncedAt: new Date().toISOString(),
+  });
+  return { synced: true };
+}
+
+export type SyncContactProfilePictureInput = { tenantId: string; workspaceId: string; connectionId: string; contactId: string };
+
+/**
+ * Foto de perfil de um contato direto — mesmo racional de `syncGroupPicture`, para o outro lado do
+ * chat (pessoa em vez de grupo). `jid` usado é `contact.phoneNormalized` (mesmo valor já usado como
+ * `to` em `sendOutboundByType`/`conversation.externalChatId` — confirmado funcionando ao vivo pro
+ * envio de mensagens, então o WuzAPI já sabe resolver esse formato).
+ */
+export async function syncContactProfilePicture(deps: InboxUseCaseDeps, input: SyncContactProfilePictureInput): Promise<{ synced: boolean }> {
+  if (!deps.provider.getProfilePicture || !deps.inboxMediaStorage) return { synced: false };
+  const contact = await deps.contactRepository.getById(input.contactId);
+  if (!contact || contact.profilePictureStorageRef) return { synced: false };
+  const connection = await deps.connectionRepository.getById(input.connectionId);
+  if (!connection?.externalSessionId) return { synced: false };
+
+  const picture = await deps.provider.getProfilePicture({ externalSessionId: connection.externalSessionId, jid: contact.phoneNormalized });
+  if (!picture) return { synced: false };
+
+  const objectKey = `${input.tenantId}/${input.workspaceId}/avatar-contact-${contact.id}`;
+  await deps.inboxMediaStorage.put({ key: objectKey, body: picture.body, contentType: picture.mimeType });
+  await deps.contactRepository.updateProfilePicture(contact.id, {
+    storageRef: { provider: "inbox-media", objectKey, metadata: { tenantId: input.tenantId } },
+    syncedAt: new Date().toISOString(),
+  });
+  return { synced: true };
+}
+
 export type DownloadInboundMediaInput = {
   tenantId: string;
   workspaceId: string;

@@ -107,4 +107,15 @@ export type MessagingProvider = {
    * fatal. `groupJid` é o `externalChatId` da conversa (já preservado como JID de grupo).
    */
   getGroupInfo?(input: { externalSessionId: string; groupJid: string }): Promise<{ name?: string; participantCount?: number } | undefined>;
+
+  /**
+   * Foto de perfil de um contato OU de um grupo (mesmo endpoint HTTP do WuzAPI, `jid` decide qual).
+   * Diferente de `downloadMedia`: a URL que o WuzAPI devolve já é baixável direto por HTTP simples
+   * (nunca precisa de `mediaKey`/decrypt — confirmado no código-fonte do whatsmeow,
+   * `types.ProfilePictureInfo.URL`: "can be downloaded with a simple HTTP request"), então o
+   * cliente já entrega os bytes prontos aqui. `undefined` = SEM foto de perfil (estado normal pra
+   * boa parte dos contatos/grupos, nunca um erro) — `syncProfilePicture`/`syncGroupMetadata` tratam
+   * a ausência como "sem foto ainda", nunca erro fatal. Opcional, mesmo racional de `getGroupInfo`.
+   */
+  getProfilePicture?(input: { externalSessionId: string; jid: string }): Promise<{ body: Buffer; mimeType: string } | undefined>;
 };

@@ -29,6 +29,8 @@ export class JwtAuthAdapter implements AuthPort {
         isPlatformAdmin: result.payload.isPlatformAdmin === true,
         purpose: result.payload.purpose,
         messageId: result.payload.messageId,
+        avatarKind: result.payload.avatarKind,
+        avatarTargetId: result.payload.avatarTargetId,
       },
     };
   }

@@ -110,6 +110,17 @@ export class WuzApiMessagingProvider implements MessagingProvider {
     }
   }
 
+  async getProfilePicture(input: { externalSessionId: string; jid: string }): Promise<{ body: Buffer; mimeType: string } | undefined> {
+    try {
+      return await this.client.downloadAvatar(input.externalSessionId, input.jid);
+    } catch (error) {
+      // Best-effort, mesmo racional de getGroupInfo — nunca derruba o processamento por causa de
+      // uma foto de perfil que falhou ao baixar.
+      console.warn("[wuzapi] getProfilePicture falhou (best-effort, nunca bloqueia o processamento):", error instanceof Error ? error.message : error);
+      return undefined;
+    }
+  }
+
   private toSendResult(result: { Id: string }): MessagingSendResult {
     if (!result?.Id) throw new MessagingProviderError("transient", "WuzAPI não retornou um id de mensagem.");
     return { externalMessageId: result.Id };

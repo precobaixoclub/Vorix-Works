@@ -180,6 +180,15 @@ test("isPrincipalAuthorizedForRequest: matriz completa de decisão", () => {
   assert.equal(isPrincipalAuthorizedForRequest(mediaPrincipal, { mediaRouteMessageId: "msg-2", tokenSource: "query" }), false, "token minted pra mensagem A nunca autentica a mensagem B");
   assert.equal(isPrincipalAuthorizedForRequest(mediaPrincipal, { mediaRouteMessageId: "msg-1", tokenSource: "header" }), false, "token de mídia nunca via header");
   assert.equal(isPrincipalAuthorizedForRequest(mediaPrincipal, { tokenSource: "query" }), false, "fora da rota de mídia (sem mediaRouteMessageId) nunca autentica");
+
+  // Token de foto (purpose=inbox_avatar) — mesmo racional de inbox_media: só a rota de avatares,
+  // só via querystring, e só para o kind+id exatos gravados no token.
+  const avatarPrincipal = { ...normalPrincipal, purpose: "inbox_avatar", avatarKind: "contact", avatarTargetId: "contact-1" };
+  assert.equal(isPrincipalAuthorizedForRequest(avatarPrincipal, { avatarRouteTarget: { kind: "contact", id: "contact-1" }, tokenSource: "query" }), true);
+  assert.equal(isPrincipalAuthorizedForRequest(avatarPrincipal, { avatarRouteTarget: { kind: "contact", id: "contact-2" }, tokenSource: "query" }), false, "token minted pro contato A nunca autentica o contato B");
+  assert.equal(isPrincipalAuthorizedForRequest(avatarPrincipal, { avatarRouteTarget: { kind: "conversation", id: "contact-1" }, tokenSource: "query" }), false, "mesmo id, kind diferente — nunca autentica");
+  assert.equal(isPrincipalAuthorizedForRequest(avatarPrincipal, { avatarRouteTarget: { kind: "contact", id: "contact-1" }, tokenSource: "header" }), false, "token de foto nunca via header");
+  assert.equal(isPrincipalAuthorizedForRequest(avatarPrincipal, { tokenSource: "query" }), false, "fora da rota de avatares (sem avatarRouteTarget) nunca autentica");
 });
 
 // ------------------------------------------------------------------------------------------
@@ -277,6 +286,79 @@ test("GET /inbox/media/:id sem storage de mídia configurado (DisabledInboxMedia
   const { message } = await seedMediaMessage(app, { tenantId: "tenant-hardening", workspaceId: "ws-1" });
   const accessToken = jwt.sign(accessPayload(), 3600);
   const response = await app.inject({ method: "GET", url: `/v1/inbox/media/${message.id}`, headers: { authorization: `Bearer ${accessToken}` } });
+  assert.equal(response.statusCode, 404);
+  await app.close();
+});
+
+// ------------------------------------------------------------------------------------------
+// Fotos de grupo/contato (pedido explícito do usuário em produção) — POST /inbox/avatar-token +
+// GET /inbox/avatars/:kind/:id. Mesmo racional/estrutura dos testes de mídia acima.
+// ------------------------------------------------------------------------------------------
+
+async function seedContact(app, { tenantId, workspaceId }) {
+  return app.zunoContainer.inboxContactRepository.upsertByPhone({ tenantId, workspaceId, phoneNormalized: "+5511988887777", name: "Cliente com foto" });
+}
+
+test("POST /v1/inbox/avatar-token emite token escopado (purpose=inbox_avatar) e GET /inbox/avatars/:kind/:id serve os bytes reais", async () => {
+  const mediaDir = mkdtempSync(join(tmpdir(), "inbox-avatar-test-"));
+  const inboxMediaStorage = new LocalInboxMediaStorage({ rootDir: mediaDir });
+  const { app, jwt } = await buildRealJwtTestApp({ conversationsModuleEnabled: true, inboxMediaStorage });
+
+  const accessToken = jwt.sign(accessPayload(), 3600);
+  const contact = await seedContact(app, { tenantId: "tenant-hardening", workspaceId: "ws-1" });
+  const objectKey = "tenant-hardening/ws-1/avatar-contact-test";
+  await inboxMediaStorage.put({ key: objectKey, body: Buffer.from("fake-avatar-bytes"), contentType: "image/jpeg" });
+  await app.zunoContainer.inboxContactRepository.updateProfilePicture(contact.id, { storageRef: { provider: "inbox-media", objectKey }, syncedAt: new Date().toISOString() });
+
+  const tokenResponse = await app.inject({
+    method: "POST", url: "/v1/inbox/avatar-token",
+    headers: { authorization: `Bearer ${accessToken}` },
+    payload: { workspaceId: "ws-1", kind: "contact", targetId: contact.id },
+  });
+  assert.equal(tokenResponse.statusCode, 200);
+  const { avatarToken, expiresIn } = JSON.parse(tokenResponse.body).data;
+  assert.equal(expiresIn, 60);
+  const verified = jwt.verify(avatarToken);
+  assert.equal(verified.payload.purpose, "inbox_avatar");
+  assert.equal(verified.payload.avatarKind, "contact");
+  assert.equal(verified.payload.avatarTargetId, contact.id);
+
+  const avatarResponse = await app.inject({ method: "GET", url: `/v1/inbox/avatars/contact/${contact.id}?avatar_token=${avatarToken}` });
+  assert.equal(avatarResponse.statusCode, 200);
+  assert.equal(avatarResponse.headers["content-type"], "image/jpeg");
+  assert.equal(avatarResponse.body, "fake-avatar-bytes");
+  await app.close();
+});
+
+test("GET /inbox/avatars/:kind/:id com avatar_token válido para OUTRO alvo é rejeitado (401)", async () => {
+  const mediaDir = mkdtempSync(join(tmpdir(), "inbox-avatar-test-"));
+  const { app, jwt } = await buildRealJwtTestApp({ conversationsModuleEnabled: true, inboxMediaStorage: new LocalInboxMediaStorage({ rootDir: mediaDir }) });
+  const contactA = await seedContact(app, { tenantId: "tenant-hardening", workspaceId: "ws-1" });
+
+  const tokenForA = jwt.sign({ ...accessPayload(), purpose: "inbox_avatar", avatarKind: "contact", avatarTargetId: contactA.id }, 60);
+  const response = await app.inject({ method: "GET", url: `/v1/inbox/avatars/contact/outro-contato-qualquer?avatar_token=${tokenForA}` });
+  assert.equal(response.statusCode, 401, "token minted pro contato A nunca serve para ler a foto de outro alvo");
+  await app.close();
+});
+
+test("POST /v1/inbox/avatar-token para contato de OUTRO tenant responde 404 (nunca vaza existência)", async () => {
+  const { app, jwt } = await buildRealJwtTestApp({ conversationsModuleEnabled: true });
+  const contact = await seedContact(app, { tenantId: "tenant-outro", workspaceId: "ws-1" });
+  const accessToken = jwt.sign(accessPayload({ tenantId: "tenant-hardening" }), 3600); // tenant DIFERENTE do dono do contato
+  const response = await app.inject({
+    method: "POST", url: "/v1/inbox/avatar-token",
+    headers: { authorization: `Bearer ${accessToken}` },
+    payload: { workspaceId: "ws-1", kind: "contact", targetId: contact.id },
+  });
+  assert.equal(response.statusCode, 404);
+  await app.close();
+});
+
+test("GET /inbox/avatars/:kind/:id sem storage de mídia configurado responde 404, nunca 500", async () => {
+  const { app, jwt } = await buildRealJwtTestApp({ conversationsModuleEnabled: true });
+  const contact = await seedContact(app, { tenantId: "tenant-hardening", workspaceId: "ws-1" });
+  const accessToken = jwt.sign(accessPayload(), 3600);
+  const response = await app.inject({ method: "GET", url: `/v1/inbox/avatars/contact/${contact.id}`, headers: { authorization: `Bearer ${accessToken}` } });
   assert.equal(response.statusCode, 404);
   await app.close();
 });

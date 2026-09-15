@@ -6,7 +6,7 @@ import type {
 } from "../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxContactRepositoryPort } from "../../application/ports/inbox-contact-repository.port.js";
 import type { InboxMessageRepositoryPort } from "../../application/ports/inbox-message-repository.port.js";
-import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus } from "../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus, InboxMediaStorageRef } from "../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -112,6 +112,7 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
         ...row,
         contactName: contact?.name,
         contactPhone: contact?.phoneNormalized,
+        contactProfilePictureStorageRef: contact?.profilePictureStorageRef,
         lastMessagePreview: lastMessage
           ? { type: lastMessage.type, body: lastMessage.body, direction: lastMessage.direction, senderDisplayName: lastMessage.senderDisplayName }
           : undefined,
@@ -141,6 +142,12 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
       groupMetadataUpdatedAt: input.metadataUpdatedAt,
       updatedAt: new Date().toISOString(),
     });
+  }
+
+  async updateGroupPicture(id: string, input: { storageRef: InboxMediaStorageRef; syncedAt: string }): Promise<void> {
+    const existing = this.rows.get(id);
+    if (!existing) return;
+    this.rows.set(id, { ...existing, groupPictureStorageRef: input.storageRef, groupPictureSyncedAt: input.syncedAt, updatedAt: new Date().toISOString() });
   }
 
   async markRead(id: string): Promise<void> {

@@ -88,6 +88,14 @@ export type InboxContact = {
   mergeStatus?: "merged";
   mergedIntoContactId?: string;
   mergedAt?: string;
+  /** Foto de perfil do WhatsApp — pedida explicitamente pelo usuário em produção ("ajustar para
+   * carregar as fotos"). Mesmo padrão de privacidade de `InboxMessage.mediaStorageRef`: nunca a URL
+   * bruta do WhatsApp (expira, e exporia o CDN do gateway direto ao navegador) — sempre um ref pro
+   * `InboxMediaStoragePort`, servido de volta só pelo proxy autenticado (`GET
+   * /inbox/avatars/contact/:id`, ver `inbox.route.ts`). `undefined` = ainda não sincronizada (best-
+   * effort, pode chegar em instantes) OU a pessoa não tem foto de perfil (estado normal). */
+  profilePictureStorageRef?: InboxMediaStorageRef;
+  profilePictureSyncedAt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -132,6 +140,10 @@ export type InboxConversation = {
    * buscada via `MessagingProvider.getGroupInfo`. `undefined` até a primeira sincronização. */
   groupParticipantCount?: number;
   groupMetadataUpdatedAt?: string;
+  /** Foto do grupo — mesmo racional/proxy de `InboxContact.profilePictureStorageRef`. `undefined` =
+   * ainda não sincronizada ou o grupo não tem foto definida (estado normal). */
+  groupPictureStorageRef?: InboxMediaStorageRef;
+  groupPictureSyncedAt?: string;
   /** Só para `chatType: "direct"` — o `InboxContact` (pessoa) do outro lado. `undefined` em
    * conversas de grupo: um grupo não é uma pessoa/Contact do CRM, nunca fundido automaticamente
    * (ver `crm-panel.tsx` — vínculo ao CRM continua manual e só aparece para conversas diretas). */

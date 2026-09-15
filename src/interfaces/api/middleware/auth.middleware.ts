@@ -26,6 +26,22 @@ function inboxMediaRouteMessageId(url: string): string | undefined {
   return decodeURIComponent(path.slice(INBOX_MEDIA_ROUTE_PREFIX.length)) || undefined;
 }
 
+/** Fotos de grupo/contato (pedido explícito do usuário em produção) — mesmo racional de
+ * `INBOX_MEDIA_ROUTE_PREFIX`: `<img>` não manda `Authorization`, então `GET
+ * /v1/inbox/avatars/:kind/:id` também aceita credential via querystring (`avatar_token`, `purpose:
+ * "inbox_avatar"`, emitido por `POST /v1/inbox/avatar-token`). */
+const INBOX_AVATAR_ROUTE_PREFIX = "/v1/inbox/avatars/";
+
+function inboxAvatarRouteTarget(url: string): { kind: "contact" | "conversation"; id: string } | undefined {
+  const path = url.split("?")[0] ?? url;
+  if (!path.startsWith(INBOX_AVATAR_ROUTE_PREFIX)) return undefined;
+  const rest = path.slice(INBOX_AVATAR_ROUTE_PREFIX.length);
+  const [kindRaw, idRaw] = rest.split("/");
+  if ((kindRaw !== "contact" && kindRaw !== "conversation") || !idRaw) return undefined;
+  const id = decodeURIComponent(idRaw);
+  return id ? { kind: kindRaw, id } : undefined;
+}
+
 /**
  * Decide se um principal já verificado (assinatura/expiração OK) pode de fato autenticar ESTA
  * requisição, dado de onde o token veio. Extraído como função pura e exportado especificamente
@@ -41,16 +57,33 @@ function inboxMediaRouteMessageId(url: string): string | undefined {
  *     querystring (`media_token`), E só para o `:id` exato gravado no próprio token
  *     (`principal.messageId`) — um token minted para a mídia da mensagem A nunca autentica a
  *     mensagem B, mesmo dentro da janela de validade.
+ * 1c. Um principal com `purpose === "inbox_avatar"` só autentica `GET
+ *     /v1/inbox/avatars/:kind/:id`, só via querystring (`avatar_token`), E só para o `kind`+`id`
+ *     exatos gravados no próprio token — mesmo racional de `inbox_media`, escopado a UM
+ *     contato/conversa específico.
  * 2. Um principal SEM `purpose` (access token normal) só autentica quando chegou pelo header — a
  *    querystring nunca mais aceita o access token normal, em rota nenhuma.
  */
 export function isPrincipalAuthorizedForRequest(
   principal: AuthPrincipal,
-  context: { isStreamRoute: boolean; mediaRouteMessageId?: string; tokenSource: "header" | "query" },
+  context: {
+    isStreamRoute: boolean;
+    mediaRouteMessageId?: string;
+    avatarRouteTarget?: { kind: "contact" | "conversation"; id: string };
+    tokenSource: "header" | "query";
+  },
 ): boolean {
   if (principal.purpose === "inbox_stream") return context.isStreamRoute && context.tokenSource === "query";
   if (principal.purpose === "inbox_media") {
     return context.tokenSource === "query" && context.mediaRouteMessageId !== undefined && principal.messageId === context.mediaRouteMessageId;
+  }
+  if (principal.purpose === "inbox_avatar") {
+    return (
+      context.tokenSource === "query" &&
+      context.avatarRouteTarget !== undefined &&
+      principal.avatarKind === context.avatarRouteTarget.kind &&
+      principal.avatarTargetId === context.avatarRouteTarget.id
+    );
   }
   return context.tokenSource === "header";
 }
@@ -69,11 +102,13 @@ export function registerAuthMiddleware(app: FastifyInstance, authPort: AuthPort)
 
     const isStreamRoute = isInboxStreamRoute(request.url);
     const mediaRouteMessageId = inboxMediaRouteMessageId(request.url);
+    const avatarRouteTarget = inboxAvatarRouteTarget(request.url);
     const query = request.query as Record<string, unknown> | undefined;
     const streamQueryToken = isStreamRoute && typeof query?.stream_token === "string" ? query.stream_token : undefined;
     const mediaQueryToken = mediaRouteMessageId !== undefined && typeof query?.media_token === "string" ? query.media_token : undefined;
+    const avatarQueryToken = avatarRouteTarget !== undefined && typeof query?.avatar_token === "string" ? query.avatar_token : undefined;
 
-    const token = headerToken ?? streamQueryToken ?? mediaQueryToken;
+    const token = headerToken ?? streamQueryToken ?? mediaQueryToken ?? avatarQueryToken;
     const tokenSource: "header" | "query" = headerToken ? "header" : "query";
 
     const result = await authPort.verifyToken(token);
@@ -86,7 +121,7 @@ export function registerAuthMiddleware(app: FastifyInstance, authPort: AuthPort)
     // extraído — com `token === undefined`, não há "fonte" nenhuma pra restringir (ex.: dublês de
     // teste de `AuthPort` que autenticam sem token nenhum; um `JwtAuthAdapter` real já teria
     // recusado com "missing_token" antes de chegar aqui, então isto nunca acontece em produção).
-    if (token !== undefined && !isPrincipalAuthorizedForRequest(result.principal, { isStreamRoute, mediaRouteMessageId, tokenSource })) {
+    if (token !== undefined && !isPrincipalAuthorizedForRequest(result.principal, { isStreamRoute, mediaRouteMessageId, avatarRouteTarget, tokenSource })) {
       // Mesmo motivo de falha que "token inválido" pro chamador — nunca vazamos QUAL regra
       // específica de escopo barrou (ex.: "purpose errado"), só que a autenticação não vale aqui.
       request.zunoContext.authFailureReason = "invalid_token";

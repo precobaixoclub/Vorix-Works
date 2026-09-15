@@ -35,7 +35,9 @@ import {
   reconcileConnectionsHealth,
   reconcileOrphanedOutboundMessages,
   registerInboundMessage,
+  syncContactProfilePicture,
   syncGroupMetadata,
+  syncGroupPicture,
   type InboxUseCaseDeps,
 } from "../../application/inbox/inbox-use-cases.js";
 import type { NormalizedInboxEvent } from "../../application/inbox/inbox-events.js";
@@ -594,7 +596,7 @@ async function main(): Promise<void> {
   // só usa isso como gatilho pra revalidar, nunca como fonte de verdade (ver publishRealtimeNotification).
   await consumeQueue(channel, INBOX_QUEUES.incoming, async (content) => {
     const event = JSON.parse(content.toString("utf8")) as Extract<NormalizedInboxEvent, { type: "message.inbound" }>;
-    const { conversation, message, wasCreated } = await registerInboundMessage(deps, {
+    const { contact, conversation, message, wasCreated } = await registerInboundMessage(deps, {
       tenantId: event.tenantId,
       workspaceId: event.workspaceId,
       connectionId: event.connectionId,
@@ -627,6 +629,27 @@ async function main(): Promise<void> {
         })
         .catch((error) => {
           console.error("[inbox-worker] falha ao sincronizar metadata de grupo:", error instanceof Error ? error.message : error);
+        });
+    }
+
+    // Fotos (pedido explícito do usuário em produção) — mesmo racional/guardas de metadata de
+    // grupo acima: best-effort, nunca refaz se já sincronizada, nunca no caminho crítico do ack.
+    if (conversation.chatType === "group" && !conversation.groupPictureStorageRef) {
+      syncGroupPicture(deps, { tenantId: event.tenantId, workspaceId: event.workspaceId, connectionId: event.connectionId, conversationId: conversation.id })
+        .then((result) => {
+          if (result.synced) publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
+        })
+        .catch((error) => {
+          console.error("[inbox-worker] falha ao sincronizar foto de grupo:", error instanceof Error ? error.message : error);
+        });
+    }
+    if (contact && !contact.profilePictureStorageRef) {
+      syncContactProfilePicture(deps, { tenantId: event.tenantId, workspaceId: event.workspaceId, connectionId: event.connectionId, contactId: contact.id })
+        .then((result) => {
+          if (result.synced) publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
+        })
+        .catch((error) => {
+          console.error("[inbox-worker] falha ao sincronizar foto de perfil:", error instanceof Error ? error.message : error);
         });
     }
 

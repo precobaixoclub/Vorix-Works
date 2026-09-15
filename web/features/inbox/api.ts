@@ -54,6 +54,12 @@ export function getInboxMediaToken(workspaceId: string, messageId: string): Prom
   return apiClient.post<{ mediaToken: string; expiresIn: number }>("/v1/inbox/media-token", { workspaceId, messageId });
 }
 
+/** Foto de grupo/contato (pedido explícito do usuário em produção) — mesmo racional de
+ * `getInboxMediaToken`: mintado sob demanda, nunca cacheado além do componente que o usa. */
+export function getInboxAvatarToken(workspaceId: string, kind: "contact" | "conversation", targetId: string): Promise<{ avatarToken: string; expiresIn: number }> {
+  return apiClient.post<{ avatarToken: string; expiresIn: number }>("/v1/inbox/avatar-token", { workspaceId, kind, targetId });
+}
+
 export function markInboxConversationRead(workspaceId: string, conversationId: string): Promise<{ read: boolean }> {
   return apiClient.post<{ read: boolean }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/read`, { workspaceId });
 }

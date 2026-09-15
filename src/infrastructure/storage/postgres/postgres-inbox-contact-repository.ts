@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import type { InboxContactRepositoryPort, UpsertInboxContactInput } from "../../../application/ports/inbox-contact-repository.port.js";
-import type { InboxContact } from "../../../domain/inbox/inbox.model.js";
+import type { InboxContact, InboxMediaStorageRef } from "../../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `contact-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -19,6 +19,8 @@ type Row = {
   merge_status: string | null;
   merged_into_contact_id: string | null;
   merged_at: Date | null;
+  profile_picture_storage_ref: InboxMediaStorageRef | null;
+  profile_picture_synced_at: Date | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -86,6 +88,13 @@ export class PostgresInboxContactRepository implements InboxContactRepositoryPor
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
+  async updateProfilePicture(id: string, input: { storageRef: InboxMediaStorageRef; syncedAt: string }): Promise<void> {
+    await this.pool.query(
+      "update inbox_contacts set profile_picture_storage_ref = $2, profile_picture_synced_at = $3, updated_at = now() where id = $1",
+      [id, JSON.stringify(input.storageRef), input.syncedAt],
+    );
+  }
+
   private toDomain(row: Row): InboxContact {
     return {
       id: row.id,
@@ -102,6 +111,8 @@ export class PostgresInboxContactRepository implements InboxContactRepositoryPor
       mergeStatus: (row.merge_status as "merged" | null) ?? undefined,
       mergedIntoContactId: row.merged_into_contact_id ?? undefined,
       mergedAt: row.merged_at?.toISOString(),
+      profilePictureStorageRef: row.profile_picture_storage_ref ?? undefined,
+      profilePictureSyncedAt: row.profile_picture_synced_at?.toISOString(),
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
     };

@@ -1,4 +1,4 @@
-import type { InboxContact } from "../../domain/inbox/inbox.model.js";
+import type { InboxContact, InboxMediaStorageRef } from "../../domain/inbox/inbox.model.js";
 
 /** Módulo Conversas (Fase 1). Ver `db/migrations/0081_inbox_contacts.sql`. */
 
@@ -23,4 +23,8 @@ export type InboxContactRepositoryPort = {
   upsertByPhone(input: UpsertInboxContactInput): Promise<InboxContact>;
   getById(id: string): Promise<InboxContact | undefined>;
   findByPhone(input: { tenantId: string; workspaceId: string; phoneNormalized: string }): Promise<InboxContact | undefined>;
+  /** Foto de perfil (pedido explícito do usuário em produção) — gravada separadamente do upsert
+   * principal porque é preenchida de forma assíncrona/best-effort (ver `syncContactProfilePicture`,
+   * `inbox-use-cases.ts`), nunca no caminho crítico do ack de uma mensagem. */
+  updateProfilePicture(id: string, input: { storageRef: InboxMediaStorageRef; syncedAt: string }): Promise<void>;
 };

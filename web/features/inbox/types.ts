@@ -37,6 +37,9 @@ export type InboxConversation = {
   /** Só em `chatType: "direct"` — `undefined` em conversas de grupo (nunca fundido com um Contact
    * do CRM, ver `ContactContextPane`/`CrmContextSection`). */
   contactId?: string;
+  /** Foto do grupo (pedido explícito do usuário em produção). `undefined` = ainda não sincronizada
+   * ou o grupo não tem foto definida — nunca tratado como erro, ver `GroupAvatar`. */
+  groupPictureStorageRef?: InboxMediaStorageRef;
   status: InboxConversationStatus;
   assignedUserId?: string;
   lastMessageAt?: string;
@@ -52,6 +55,9 @@ export type InboxConversation = {
   /** CRM/Comercial (Fase 4) — `contacts.id` do CRM já vinculado a este contato do WhatsApp
    * (`inbox_contacts.contact_id`), se algum vínculo já foi feito. `undefined` até alguém vincular. */
   crmContactId?: string;
+  /** Foto de perfil do contato (pedido explícito do usuário em produção). `undefined` em conversas
+   * de grupo, ou ainda não sincronizada, ou a pessoa não tem foto — nunca tratado como erro. */
+  contactProfilePictureStorageRef?: InboxMediaStorageRef;
   /** Redesign operacional — resumo da última mensagem, denormalizado pela listagem
    * (`GET /v1/inbox/conversations`) para a lista mostrar um preview real em vez de um texto
    * genérico. `undefined` em conversas sem nenhuma mensagem ainda, ou em ambientes que ainda não

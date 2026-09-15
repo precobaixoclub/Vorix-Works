@@ -1,5 +1,5 @@
 import type { InboxContactRepositoryPort, UpsertInboxContactInput } from "../../application/ports/inbox-contact-repository.port.js";
-import type { InboxContact } from "../../domain/inbox/inbox.model.js";
+import type { InboxContact, InboxMediaStorageRef } from "../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `contact-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -60,6 +60,12 @@ export class InMemoryInboxContactRepository implements InboxContactRepositoryPor
     return [...this.rows.values()].find(
       (row) => row.tenantId === input.tenantId && row.workspaceId === input.workspaceId && row.phoneNormalized === input.phoneNormalized && !row.mergeStatus,
     );
+  }
+
+  async updateProfilePicture(id: string, input: { storageRef: InboxMediaStorageRef; syncedAt: string }): Promise<void> {
+    const existing = this.rows.get(id);
+    if (!existing) return;
+    this.rows.set(id, { ...existing, profilePictureStorageRef: input.storageRef, profilePictureSyncedAt: input.syncedAt, updatedAt: new Date().toISOString() });
   }
 
   private async findByAlias(

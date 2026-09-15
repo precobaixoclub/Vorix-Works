@@ -5,7 +5,7 @@ import type {
   InboxConversationListItem,
   InboxConversationRepositoryPort,
 } from "../../../application/ports/inbox-conversation-repository.port.js";
-import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMessageDirection, InboxMessageType } from "../../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType } from "../../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -32,6 +32,8 @@ type Row = {
   merge_status: string | null;
   merged_into_conversation_id: string | null;
   merged_at: Date | null;
+  group_picture_storage_ref: InboxMediaStorageRef | null;
+  group_picture_synced_at: Date | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -111,10 +113,12 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     const result = await this.pool.query<
       Row & {
         contact_name: string | null; contact_phone: string | null; crm_contact_id: string | null;
+        contact_profile_picture_storage_ref: InboxMediaStorageRef | null;
         lm_type: string | null; lm_body: string | null; lm_direction: string | null; lm_sender_display_name: string | null;
       }
     >(
       `select c.*, ct.name as contact_name, ct.phone_normalized as contact_phone, ct.contact_id as crm_contact_id,
+              ct.profile_picture_storage_ref as contact_profile_picture_storage_ref,
               lm.type as lm_type, lm.body as lm_body, lm.direction as lm_direction, lm.sender_display_name as lm_sender_display_name
        from inbox_conversations c
        left join inbox_contacts ct on ct.id = c.contact_id
@@ -134,6 +138,7 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       contactName: row.contact_name ?? undefined,
       contactPhone: row.contact_phone ?? undefined,
       crmContactId: row.crm_contact_id ?? undefined,
+      contactProfilePictureStorageRef: row.contact_profile_picture_storage_ref ?? undefined,
       lastMessagePreview: row.lm_type
         ? {
             type: row.lm_type as InboxMessageType, body: row.lm_body ?? undefined, direction: row.lm_direction as InboxMessageDirection,
@@ -163,6 +168,13 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
          updated_at = now()
        where id = $1`,
       [id, input.groupName ?? null, input.participantCount ?? null, input.metadataUpdatedAt],
+    );
+  }
+
+  async updateGroupPicture(id: string, input: { storageRef: InboxMediaStorageRef; syncedAt: string }): Promise<void> {
+    await this.pool.query(
+      "update inbox_conversations set group_picture_storage_ref = $2, group_picture_synced_at = $3, updated_at = now() where id = $1",
+      [id, JSON.stringify(input.storageRef), input.syncedAt],
     );
   }
 
@@ -255,6 +267,8 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       groupName: row.group_name ?? undefined,
       groupParticipantCount: row.group_participant_count ?? undefined,
       groupMetadataUpdatedAt: row.group_metadata_updated_at?.toISOString(),
+      groupPictureStorageRef: row.group_picture_storage_ref ?? undefined,
+      groupPictureSyncedAt: row.group_picture_synced_at?.toISOString(),
       contactId: row.contact_id ?? undefined,
       status: row.status as InboxConversationStatus,
       assignedUserId: row.assigned_user_id ?? undefined,

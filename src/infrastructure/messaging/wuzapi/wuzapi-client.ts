@@ -267,6 +267,44 @@ export class WuzApiClient {
       return undefined;
     }
   }
+
+  /**
+   * Foto de perfil (contato OU grupo — mesmo endpoint, `jid` decide qual). Bloco "réplica de
+   * identidade"/UX de avatares.
+   *
+   * CONFIRMADO lendo o handler real (`asternic/wuzapi`, `handlers.go`, `func (s *server)
+   * GetAvatar()`): `POST /user/avatar` (nunca GET — diferente de `/group/info`, aqui um corpo JSON
+   * é esperado e válido) com `{Phone, Preview}`; devolve `types.ProfilePictureInfo` (whatsmeow,
+   * `types/user.go`) serializado com tags `json:"..."` explícitas (`url`/`id`/`type`/`direct_path`
+   * — lowercase, confiável, ao contrário do `GroupInfo` sem tags). `pic == nil` (pessoa/grupo sem
+   * foto, ou perfil privado) faz o handler responder 500 com a mensagem literal "no avatar found"
+   * — tratado aqui como ausência normal (`undefined`), NUNCA como falha transitória a repetir.
+   *
+   * `url` é servida "com uma requisição HTTP simples" (comentário do próprio whatsmeow no struct
+   * `ProfilePictureInfo.URL`) — ao contrário de mídia de mensagem, nunca precisa de
+   * `mediaKey`/decrypt server-side, então busca os bytes direto daqui, sem precisar de um segundo
+   * endpoint do WuzAPI.
+   */
+  async downloadAvatar(sessionToken: string, jid: string): Promise<{ body: Buffer; mimeType: string } | undefined> {
+    let avatar: { url?: string } | undefined;
+    try {
+      avatar = await this.sessionRequest<{ url?: string }>(sessionToken, "/user/avatar", { method: "POST", body: { Phone: jid, Preview: false } });
+    } catch (error) {
+      if (error instanceof MessagingProviderError && /no avatar found/i.test(error.message)) return undefined;
+      throw error;
+    }
+    if (!avatar?.url) return undefined;
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(avatar.url);
+    } catch (error) {
+      throw new MessagingProviderError("transient", `Falha ao baixar a foto de perfil: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (!response.ok) return undefined;
+    const arrayBuffer = await response.arrayBuffer();
+    return { body: Buffer.from(arrayBuffer), mimeType: response.headers.get("content-type") ?? "image/jpeg" };
+  }
 }
 
 /** CONFIRMADO lendo o handler real (`handlers.go`, `DownloadImage` etc.): a resposta é

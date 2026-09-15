@@ -8,7 +8,7 @@ import { PostgresMessagingConnectionRepository } from "../dist/infrastructure/st
 import { PostgresInboxContactRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-contact-repository.js";
 import { PostgresInboxConversationRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-conversation-repository.js";
 import { PostgresInboxMessageRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-message-repository.js";
-import { registerInboundMessage, syncGroupMetadata } from "../dist/application/inbox/inbox-use-cases.js";
+import { registerInboundMessage, syncContactProfilePicture, syncGroupMetadata, syncGroupPicture } from "../dist/application/inbox/inbox-use-cases.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
 /**
@@ -595,4 +595,104 @@ test("DELETE_CONVERSATION: excluir uma conversa que já não existe (duplo cliqu
   const workspace = await makeWorkspace("tenant-delete-conversation-2");
   const conversationRepo = new PostgresInboxConversationRepository(db.pool);
   await assert.doesNotReject(conversationRepo.delete("inboxconv-nao-existe"));
+});
+
+function makeFakeAvatarMediaStorage() {
+  const objects = new Map();
+  return {
+    async health() { return { ok: true }; },
+    async put(input) { objects.set(input.key, { body: input.body, contentType: input.contentType }); },
+    async get(key) { return objects.get(key); },
+    async delete(key) { objects.delete(key); },
+    objects,
+  };
+}
+
+test("FOTOS: syncContactProfilePicture baixa e grava a foto de perfil real, nunca refaz se já sincronizada", async () => {
+  const tenantId = "tenant-avatar-contact-1";
+  const workspace = await makeWorkspace(tenantId);
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+  const inboxMediaStorage = makeFakeAvatarMediaStorage();
+
+  const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+  await connectionRepo.updateStatus(connection.id, { status: "connected", externalSessionId: "sess-avatar-1" });
+  const contact = await contactRepo.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: "+5511977778888" });
+
+  let requestedJid;
+  const provider = {
+    async getProfilePicture({ jid }) { requestedJid = jid; return { body: Buffer.from("foto real"), mimeType: "image/jpeg" }; },
+  };
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, provider, inboxMediaStorage };
+
+  const result = await syncContactProfilePicture(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: contact.id });
+  assert.equal(result.synced, true);
+  assert.equal(requestedJid, "+5511977778888");
+
+  const updated = await contactRepo.getById(contact.id);
+  assert.ok(updated.profilePictureStorageRef);
+  const stored = await inboxMediaStorage.get(updated.profilePictureStorageRef.objectKey);
+  assert.equal(stored.body.toString("utf8"), "foto real");
+  assert.ok(updated.profilePictureSyncedAt);
+
+  let calledAgain = false;
+  const providerSpy = { async getProfilePicture() { calledAgain = true; return { body: Buffer.from("outra"), mimeType: "image/jpeg" }; } };
+  await syncContactProfilePicture({ ...deps, provider: providerSpy }, { tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: contact.id });
+  assert.equal(calledAgain, false, "já sincronizada — nunca refaz o download");
+});
+
+test("FOTOS: syncGroupPicture baixa e grava a foto do grupo, nunca chama pra Canal/Newsletter", async () => {
+  const tenantId = "tenant-avatar-group-1";
+  const workspace = await makeWorkspace(tenantId);
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+  const inboxMediaStorage = makeFakeAvatarMediaStorage();
+
+  const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+  await connectionRepo.updateStatus(connection.id, { status: "connected", externalSessionId: "sess-avatar-2" });
+  const group = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "group", externalChatId: "120363555444333222@g.us" });
+
+  const provider = { async getProfilePicture() { return { body: Buffer.from("foto do grupo"), mimeType: "image/jpeg" }; } };
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, provider, inboxMediaStorage };
+
+  const result = await syncGroupPicture(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, conversationId: group.id });
+  assert.equal(result.synced, true);
+
+  const updated = await conversationRepo.getById(group.id);
+  assert.ok(updated.groupPictureStorageRef);
+  const stored = await inboxMediaStorage.get(updated.groupPictureStorageRef.objectKey);
+  assert.equal(stored.body.toString("utf8"), "foto do grupo");
+
+  // Canal/Newsletter — nunca chama getProfilePicture, mesma guarda de syncGroupMetadata.
+  const channel = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "group", externalChatId: "120363999888777666@newsletter" });
+  let calledForChannel = false;
+  const providerSpy = { async getProfilePicture() { calledForChannel = true; return { body: Buffer.from("x"), mimeType: "image/jpeg" }; } };
+  await syncGroupPicture({ ...deps, provider: providerSpy }, { tenantId, workspaceId: workspace.id, connectionId: connection.id, conversationId: channel.id });
+  assert.equal(calledForChannel, false);
+});
+
+test("FOTOS: pessoa/grupo sem foto de perfil (provider devolve undefined) nunca lança, synced:false", async () => {
+  const tenantId = "tenant-avatar-no-picture";
+  const workspace = await makeWorkspace(tenantId);
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const contactRepo = new PostgresInboxContactRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+  const inboxMediaStorage = makeFakeAvatarMediaStorage();
+
+  const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
+  await connectionRepo.updateStatus(connection.id, { status: "connected", externalSessionId: "sess-avatar-3" });
+  const contact = await contactRepo.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: "+5511966665555" });
+
+  const provider = { async getProfilePicture() { return undefined; } };
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, provider, inboxMediaStorage };
+
+  const result = await syncContactProfilePicture(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: contact.id });
+  assert.equal(result.synced, false);
+  const updated = await contactRepo.getById(contact.id);
+  assert.equal(updated.profilePictureStorageRef, undefined);
 });

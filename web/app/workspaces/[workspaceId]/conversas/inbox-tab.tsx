@@ -27,7 +27,6 @@ import {
   Volume2,
   X,
 } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
@@ -55,9 +54,10 @@ import {
   transferInboxConversation,
 } from "@/features/inbox/api";
 import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime } from "@/features/inbox/hooks";
-import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxTenantMember } from "@/features/inbox/types";
+import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMediaStorageRef, InboxMessage, InboxTenantMember } from "@/features/inbox/types";
 import { CrmContextSection } from "./crm-panel";
 import { MessageMedia } from "./message-media";
+import { InboxAvatar } from "./inbox-avatar";
 
 const QUICK_FILTERS: { value: InboxConversationFilter; label: string }[] = [
   { value: "all", label: "Todos" },
@@ -167,6 +167,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
       >
         <div className={cn("min-h-0 border-border md:block md:border-r", mobileView === "list" ? "block" : "hidden")}>
           <ConversationListPane
+            workspaceId={workspaceId}
             conversations={filteredConversations}
             totalConversations={conversations.length}
             isLoading={isLoading}
@@ -241,6 +242,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
 }
 
 function ConversationListPane({
+  workspaceId,
   conversations,
   totalConversations,
   isLoading,
@@ -257,6 +259,7 @@ function ConversationListPane({
   currentUserId,
   members,
 }: {
+  workspaceId: string;
   conversations: InboxConversation[];
   totalConversations: number;
   isLoading: boolean;
@@ -378,6 +381,7 @@ function ConversationListPane({
           conversations.map((conversation) => (
             <ConversationListItem
               key={conversation.id}
+              workspaceId={workspaceId}
               conversation={conversation}
               selected={selectedConversationId === conversation.id}
               currentUserId={currentUserId}
@@ -392,18 +396,21 @@ function ConversationListPane({
 }
 
 function ConversationListItem({
+  workspaceId,
   conversation,
   selected,
   currentUserId,
   members,
   onSelect,
 }: {
+  workspaceId: string;
   conversation: InboxConversation;
   selected: boolean;
   currentUserId: string | undefined;
   members: readonly InboxTenantMember[];
   onSelect: () => void;
 }) {
+  const avatarProps = avatarPropsFor(conversation);
   return (
     <button
       type="button"
@@ -413,11 +420,15 @@ function ConversationListItem({
         selected && "bg-muted/80",
       )}
     >
-      <Avatar className="h-10 w-10 shrink-0 rounded-xl">
-        <AvatarFallback className="rounded-xl bg-muted text-xs font-semibold text-foreground">
-          {initials(conversationTitle(conversation))}
-        </AvatarFallback>
-      </Avatar>
+      <InboxAvatar
+        workspaceId={workspaceId}
+        kind={avatarProps.kind}
+        targetId={avatarProps.targetId}
+        storageRef={avatarProps.storageRef}
+        fallback={initials(conversationTitle(conversation))}
+        className="h-10 w-10 shrink-0 rounded-xl"
+        fallbackClassName="rounded-xl bg-muted text-xs text-foreground"
+      />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <p className={cn("truncate text-sm text-foreground", conversation.unreadCount > 0 ? "font-semibold" : "font-medium")}>
@@ -490,6 +501,7 @@ function ConversationTimelinePane({
     ...events.map((event): TimelineEntry => ({ kind: "event", at: event.createdAt, event })),
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
+  const headerAvatarProps = avatarPropsFor(conversation);
   const isAssignedToMe = conversation.assignedUserId === currentUserId;
   const isResolved = conversation.status === "resolved";
   const transferOptions = members.filter((member) => member.userId !== conversation.assignedUserId).map((member) => ({ id: member.userId, label: `${member.name} · ${member.email}` }));
@@ -608,11 +620,15 @@ function ConversationTimelinePane({
           <Button variant="ghost" size="icon" className="md:hidden" onClick={onBack} aria-label="Voltar para a lista">
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <Avatar className="h-10 w-10 shrink-0 rounded-xl">
-            <AvatarFallback className="rounded-xl bg-primary/10 text-xs font-semibold text-primary dark:bg-primary-glow/10 dark:text-primary-glow">
-              {initials(conversationTitle(conversation))}
-            </AvatarFallback>
-          </Avatar>
+          <InboxAvatar
+            workspaceId={workspaceId}
+            kind={headerAvatarProps.kind}
+            targetId={headerAvatarProps.targetId}
+            storageRef={headerAvatarProps.storageRef}
+            fallback={initials(conversationTitle(conversation))}
+            className="h-10 w-10 shrink-0 rounded-xl"
+            fallbackClassName="rounded-xl bg-primary/10 text-xs text-primary dark:bg-primary-glow/10 dark:text-primary-glow"
+          />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
               <p className="truncate text-sm font-semibold text-foreground">{conversationTitle(conversation)}</p>
@@ -1272,6 +1288,7 @@ function ContactContextPane({
   onPinnedChange: (value: boolean) => void;
   onConversationChanged: () => void;
 }) {
+  const contextAvatarProps = avatarPropsFor(conversation);
   return (
     <aside className="flex h-full min-h-0 flex-col bg-card">
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
@@ -1291,11 +1308,15 @@ function ContactContextPane({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mb-4 flex items-center gap-3">
-          <Avatar className="h-12 w-12 rounded-xl">
-            <AvatarFallback className="rounded-xl bg-primary/10 text-sm font-semibold text-primary dark:bg-primary-glow/10 dark:text-primary-glow">
-              {initials(conversationTitle(conversation))}
-            </AvatarFallback>
-          </Avatar>
+          <InboxAvatar
+            workspaceId={workspaceId}
+            kind={contextAvatarProps.kind}
+            targetId={contextAvatarProps.targetId}
+            storageRef={contextAvatarProps.storageRef}
+            fallback={initials(conversationTitle(conversation))}
+            className="h-12 w-12 rounded-xl"
+            fallbackClassName="rounded-xl bg-primary/10 text-sm text-primary dark:bg-primary-glow/10 dark:text-primary-glow"
+          />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-foreground">{conversationTitle(conversation)}</p>
             {conversation.chatType === "direct" ? <p className="truncate text-xs text-muted-foreground">{conversation.contactPhone}</p> : null}
@@ -1559,6 +1580,14 @@ function conversationHeaderSubtitle(conversation: InboxConversation): string {
     return `${base} · ${conversation.groupParticipantCount} participantes`;
   }
   return base;
+}
+
+/** Deriva os parâmetros de `InboxAvatar` a partir de uma conversa — grupo usa a própria conversa
+ * como alvo, direta usa o contato do outro lado (`undefined` até o primeiro contato ser vinculado,
+ * ex.: grupo sem contactId — `InboxAvatar` já trata `targetId: undefined` como "sem foto ainda"). */
+function avatarPropsFor(conversation: InboxConversation): { kind: "contact" | "conversation"; targetId: string | undefined; storageRef: InboxMediaStorageRef | undefined } {
+  if (conversation.chatType === "group") return { kind: "conversation", targetId: conversation.id, storageRef: conversation.groupPictureStorageRef };
+  return { kind: "contact", targetId: conversation.contactId, storageRef: conversation.contactProfilePictureStorageRef };
 }
 
 function initials(value: string): string {

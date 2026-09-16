@@ -51,7 +51,7 @@ function buildDeps(tenantId) {
     messageRepository: new PostgresInboxMessageRepository(db.pool),
     workspaceRepository: new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") }),
     outboundQueue: { publish: async () => {} },
-    provider: undefined,
+    providers: {},
   };
 }
 

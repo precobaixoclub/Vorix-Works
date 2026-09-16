@@ -33,6 +33,10 @@ export class InMemoryMessagingConnectionRepository implements MessagingConnectio
     return this.rows.get(id);
   }
 
+  async getByProviderAndExternalSessionId(provider: MessagingConnection["provider"], externalSessionId: string): Promise<MessagingConnection | undefined> {
+    return [...this.rows.values()].find((row) => row.provider === provider && row.externalSessionId === externalSessionId);
+  }
+
   async listByWorkspace(input: { tenantId: string; workspaceId: string }): Promise<MessagingConnection[]> {
     return [...this.rows.values()]
       .filter((row) => row.tenantId === input.tenantId && row.workspaceId === input.workspaceId)

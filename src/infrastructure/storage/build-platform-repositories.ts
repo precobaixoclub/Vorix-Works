@@ -28,9 +28,6 @@ import type { MetaCustomAudienceRepositoryPort } from "../../application/ports/m
 import type { MetaPixelRepositoryPort } from "../../application/ports/meta-pixel-repository.port.js";
 import type { MetaCapiEventRepositoryPort } from "../../application/ports/meta-capi-event-repository.port.js";
 import type { InstagramDmAccountRouteRepositoryPort } from "../../application/ports/instagram-dm-account-route-repository.port.js";
-import type { InstagramDmConversationRepositoryPort } from "../../application/ports/instagram-dm-conversation-repository.port.js";
-import type { InstagramDmMessageRepositoryPort } from "../../application/ports/instagram-dm-message-repository.port.js";
-import type { InstagramDmAutomationRuleRepositoryPort } from "../../application/ports/instagram-dm-automation-rule-repository.port.js";
 import type { MessagingConnectionRepositoryPort } from "../../application/ports/messaging-connection-repository.port.js";
 import type { InboxContactRepositoryPort } from "../../application/ports/inbox-contact-repository.port.js";
 import type { InboxConversationRepositoryPort } from "../../application/ports/inbox-conversation-repository.port.js";
@@ -71,9 +68,6 @@ import { InMemoryMetaCustomAudienceRepository } from "./in-memory-meta-custom-au
 import { InMemoryMetaPixelRepository } from "./in-memory-meta-pixel-repository.js";
 import { InMemoryMetaCapiEventRepository } from "./in-memory-meta-capi-event-repository.js";
 import { InMemoryInstagramDmAccountRouteRepository } from "./in-memory-instagram-dm-account-route-repository.js";
-import { InMemoryInstagramDmConversationRepository } from "./in-memory-instagram-dm-conversation-repository.js";
-import { InMemoryInstagramDmMessageRepository } from "./in-memory-instagram-dm-message-repository.js";
-import { InMemoryInstagramDmAutomationRuleRepository } from "./in-memory-instagram-dm-automation-rule-repository.js";
 import { InMemoryMessagingConnectionRepository } from "./in-memory-messaging-connection-repository.js";
 import { InMemoryInboxContactRepository } from "./in-memory-inbox-contact-repository.js";
 import { InMemoryInboxConversationRepository } from "./in-memory-inbox-conversation-repository.js";
@@ -119,9 +113,6 @@ import { PostgresMetaCustomAudienceRepository } from "./postgres/postgres-meta-c
 import { PostgresMetaPixelRepository } from "./postgres/postgres-meta-pixel-repository.js";
 import { PostgresMetaCapiEventRepository } from "./postgres/postgres-meta-capi-event-repository.js";
 import { PostgresInstagramDmAccountRouteRepository } from "./postgres/postgres-instagram-dm-account-route-repository.js";
-import { PostgresInstagramDmConversationRepository } from "./postgres/postgres-instagram-dm-conversation-repository.js";
-import { PostgresInstagramDmMessageRepository } from "./postgres/postgres-instagram-dm-message-repository.js";
-import { PostgresInstagramDmAutomationRuleRepository } from "./postgres/postgres-instagram-dm-automation-rule-repository.js";
 import { PostgresMessagingConnectionRepository } from "./postgres/postgres-messaging-connection-repository.js";
 import { PostgresInboxContactRepository } from "./postgres/postgres-inbox-contact-repository.js";
 import { PostgresInboxConversationRepository } from "./postgres/postgres-inbox-conversation-repository.js";
@@ -226,9 +217,6 @@ export type PlatformRepositories = {
   metaCapiEventRepository: MetaCapiEventRepositoryPort;
   /** Módulo Instagram DM Automation (Fase 5) — ver `db/migrations/0076-0079`. */
   instagramDmAccountRouteRepository: InstagramDmAccountRouteRepositoryPort;
-  instagramDmConversationRepository: InstagramDmConversationRepositoryPort;
-  instagramDmMessageRepository: InstagramDmMessageRepositoryPort;
-  instagramDmAutomationRuleRepository: InstagramDmAutomationRuleRepositoryPort;
   /** Módulo Conversas (Fase 1) — ver `db/migrations/0080-0083`. */
   messagingConnectionRepository: MessagingConnectionRepositoryPort;
   inboxContactRepository: InboxContactRepositoryPort;
@@ -271,6 +259,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     const workspaceRepository = new InMemoryWorkspaceRepository();
     const assetLibraryRepository = new InMemoryAssetLibraryRepository();
     const inboxContactRepository = new InMemoryInboxContactRepository();
+    const messagingConnectionRepository = new InMemoryMessagingConnectionRepository();
     return {
       workspaceRepository,
       assetLibraryRepository,
@@ -313,12 +302,9 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       metaPixelRepository: new InMemoryMetaPixelRepository(),
       metaCapiEventRepository: new InMemoryMetaCapiEventRepository(),
       instagramDmAccountRouteRepository: new InMemoryInstagramDmAccountRouteRepository(),
-      instagramDmConversationRepository: new InMemoryInstagramDmConversationRepository(),
-      instagramDmMessageRepository: new InMemoryInstagramDmMessageRepository(),
-      instagramDmAutomationRuleRepository: new InMemoryInstagramDmAutomationRuleRepository(),
-      messagingConnectionRepository: new InMemoryMessagingConnectionRepository(),
+      messagingConnectionRepository,
       inboxContactRepository,
-      inboxConversationRepository: new InMemoryInboxConversationRepository(inboxContactRepository),
+      inboxConversationRepository: new InMemoryInboxConversationRepository(inboxContactRepository, undefined, messagingConnectionRepository),
       inboxMessageRepository: new InMemoryInboxMessageRepository(),
       inboxConversationEventRepository: new InMemoryInboxConversationEventRepository(),
       inboxMetricsRepository: new InMemoryInboxMetricsRepository(),
@@ -376,9 +362,6 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     metaPixelRepository: new PostgresMetaPixelRepository(pool),
     metaCapiEventRepository: new PostgresMetaCapiEventRepository(pool),
     instagramDmAccountRouteRepository: new PostgresInstagramDmAccountRouteRepository(pool),
-    instagramDmConversationRepository: new PostgresInstagramDmConversationRepository(pool),
-    instagramDmMessageRepository: new PostgresInstagramDmMessageRepository(pool),
-    instagramDmAutomationRuleRepository: new PostgresInstagramDmAutomationRuleRepository(pool),
     messagingConnectionRepository: new PostgresMessagingConnectionRepository(pool),
     inboxContactRepository: new PostgresInboxContactRepository(pool),
     inboxConversationRepository: new PostgresInboxConversationRepository(pool),

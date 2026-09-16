@@ -21,7 +21,6 @@ import { registerSystemRoutes } from "./system.route.js";
 import { registerTikTokRoutes } from "./tiktok.route.js";
 import { registerYouTubeRoutes } from "./youtube.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
-import { registerInstagramDmRoutes } from "./instagram-dm.route.js";
 import { registerInboxRoutes } from "./inbox.route.js";
 import { registerNotificationRoutes } from "./notifications.route.js";
 import { registerInboxMetricsRoutes } from "./inbox-metrics.route.js";
@@ -226,13 +225,6 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     idGenerator: () => `instagram-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     instagramDmAccountRouteRepository: app.zunoContainer.instagramDmAccountRouteRepository,
   });
-  await registerInstagramDmRoutes(app, {
-    conversationRepository: app.zunoContainer.instagramDmConversationRepository,
-    messageRepository: app.zunoContainer.instagramDmMessageRepository,
-    automationRuleRepository: app.zunoContainer.instagramDmAutomationRuleRepository,
-    publicationRepository: app.zunoContainer.publicationRepository,
-    publicationSecretStore: app.zunoContainer.publicationSecretStore,
-  });
   // Fase 10 (Pre-Pilot Hardening) — SEMPRE registrada, mesmo com o módulo desligado (nunca 404):
   // é assim que o frontend distingue "Conversas está desligado neste ambiente" (esperado, UX
   // neutra) de "algo quebrou" (erro real) ANTES de tentar qualquer outra rota `/v1/inbox/*`. Não
@@ -254,7 +246,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       messageRepository: app.zunoContainer.inboxMessageRepository,
       workspaceRepository: app.zunoContainer.workspaceRepository,
       outboundQueue: app.zunoContainer.inboxOutboundQueue,
-      provider: app.zunoContainer.inboxProvider,
+      providers: { wuzapi: app.zunoContainer.inboxProvider, instagram: app.zunoContainer.instagramMessagingProvider },
       realtimeSubscriber: app.zunoContainer.inboxRealtimeSubscriber,
       membershipRepository: app.zunoContainer.identity?.membershipRepository,
       userRepository: app.zunoContainer.identity?.userRepository,
@@ -426,7 +418,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         messageRepository: app.zunoContainer.inboxMessageRepository,
         workspaceRepository: app.zunoContainer.workspaceRepository,
         outboundQueue: app.zunoContainer.inboxOutboundQueue,
-        provider: app.zunoContainer.inboxProvider,
+        providers: { wuzapi: app.zunoContainer.inboxProvider, instagram: app.zunoContainer.instagramMessagingProvider },
         productAnalytics: productAnalyticsDeps,
       },
       // Independente do entitlement de messaging_connections: isto é o kill switch operacional

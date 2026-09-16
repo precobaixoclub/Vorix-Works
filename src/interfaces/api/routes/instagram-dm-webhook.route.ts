@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { verifyMetaWebhookSignature } from "../../../infrastructure/meta/meta-webhook-signature-verifier.js";
 import { receiveInstagramDmWebhook, type ReceiveInstagramDmWebhookDeps } from "../../../application/instagram-dm/receive-instagram-dm-webhook.js";
+import type { InboxRealtimeSubscriber } from "../../../infrastructure/messaging/rabbitmq/inbox-realtime-subscriber.js";
 
 /**
  * Webhook de Mensageria do Instagram (Meta) — módulo Instagram DM Automation, Fase 5.
@@ -23,6 +24,11 @@ declare module "fastify" {
 export type InstagramDmWebhookRoutesDeps = ReceiveInstagramDmWebhookDeps & {
   appSecret?: string;
   webhookVerifyToken?: string;
+  /** Instagram DM virou canal de primeira classe do Inbox — o SSE que a tela de Conversas escuta
+   * (`GET /inbox/stream`) precisa ser avisado por aqui também, mesmo publisher que
+   * `publishConversationUpdated` usa em `inbox.route.ts`. `undefined` só em setups sem RabbitMQ
+   * configurado (dev/teste) — o polling de fallback do frontend ainda garante consistência. */
+  realtimeSubscriber?: InboxRealtimeSubscriber;
 };
 
 const VERIFY_QUERY_SCHEMA = {
@@ -81,7 +87,10 @@ export async function registerInstagramDmWebhookRoutes(app: FastifyInstance, dep
       // dentro é aceitável porque o trabalho por evento é pequeno (poucos INSERTs + no máximo UMA
       // chamada de Graph API pra automação) — nunca uma fila separada só pra isto, ainda.
       try {
-        await receiveInstagramDmWebhook(deps, request.body);
+        const result = await receiveInstagramDmWebhook(deps, request.body);
+        for (const updated of result.updatedConversations) {
+          deps.realtimeSubscriber?.publish({ type: "conversation.updated", ...updated });
+        }
       } catch (error) {
         // Nunca deixa uma falha de processamento virar um não-200 pra Meta — isso faria a Meta
         // reentregar o MESMO evento repetidamente. O erro já foi contido dentro de

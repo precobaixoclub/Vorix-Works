@@ -34,8 +34,8 @@ test("downloadInboundMediaAndAttach: sem mediaKey nunca tenta a chamada ao provi
   };
   const deps = {
     inboxMediaStorage: makeFakeMediaStorage(),
-    provider,
-    connectionRepository: { getById: async () => ({ id: "conn-1", externalSessionId: "sess-1" }) },
+    providers: { wuzapi: provider },
+    connectionRepository: { getById: async () => ({ id: "conn-1", provider: "wuzapi", externalSessionId: "sess-1" }) },
     messageRepository: {
       attachMedia: async () => { throw new Error("não deveria ser chamado"); },
       attachMediaSourceRef: async () => { throw new Error("não deveria ser chamado — falhou antes de chegar no ref bruto"); },
@@ -67,8 +67,8 @@ test("downloadInboundMediaAndAttach: com mediaKey MAS SEM directPath, nunca tent
   };
   const deps = {
     inboxMediaStorage: makeFakeMediaStorage(),
-    provider,
-    connectionRepository: { getById: async () => ({ id: "conn-1", externalSessionId: "sess-1" }) },
+    providers: { wuzapi: provider },
+    connectionRepository: { getById: async () => ({ id: "conn-1", provider: "wuzapi", externalSessionId: "sess-1" }) },
     messageRepository: {
       attachMedia: async () => { throw new Error("não deveria ser chamado"); },
       attachMediaSourceRef: async () => { throw new Error("não deveria ser chamado — falhou antes de chegar no ref bruto"); },
@@ -102,8 +102,8 @@ test("downloadInboundMediaAndAttach: com mediaKey e directPath presentes, segue 
   };
   const deps = {
     inboxMediaStorage: mediaStorage,
-    provider,
-    connectionRepository: { getById: async () => ({ id: "conn-1", externalSessionId: "sess-1" }) },
+    providers: { wuzapi: provider },
+    connectionRepository: { getById: async () => ({ id: "conn-1", provider: "wuzapi", externalSessionId: "sess-1" }) },
     messageRepository: {
       attachMedia: async (id, input) => { attachedMediaCall = { id, input }; },
       attachMediaSourceRef: async (id, ref) => { sourceRefCall = { id, ref }; },
@@ -129,8 +129,8 @@ test("downloadInboundMediaAndAttach: retry de mídia (bloco novo) — o ref brut
   const provider = { downloadMedia: async () => undefined }; // simula falha (ex.: WuzAPI reiniciando no meio).
   const deps = {
     inboxMediaStorage: makeFakeMediaStorage(),
-    provider,
-    connectionRepository: { getById: async () => ({ id: "conn-1", externalSessionId: "sess-1" }) },
+    providers: { wuzapi: provider },
+    connectionRepository: { getById: async () => ({ id: "conn-1", provider: "wuzapi", externalSessionId: "sess-1" }) },
     messageRepository: {
       attachMedia: async () => { throw new Error("nunca deveria ser chamado — download falhou"); },
       attachMediaSourceRef: async (id, ref) => { sourceRefCall = { id, ref }; },

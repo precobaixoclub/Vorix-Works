@@ -7,6 +7,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Bot,
+  Camera,
   Check,
   CheckCheck,
   Clock,
@@ -15,6 +16,7 @@ import {
   Image as ImageIcon,
   Mail,
   MailOpen,
+  MessageCircle,
   Mic,
   MoreHorizontal,
   Paperclip,
@@ -64,7 +66,7 @@ import {
 } from "@/features/inbox/api";
 import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime } from "@/features/inbox/hooks";
 import { useTeams } from "@/features/identity/hooks";
-import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMediaStorageRef, InboxMessage, InboxTenantMember, TeamKanbanPhase } from "@/features/inbox/types";
+import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMediaStorageRef, InboxMessage, InboxTenantMember, MessagingProviderId, TeamKanbanPhase } from "@/features/inbox/types";
 import type { Team } from "@/features/identity/types";
 import { CrmContextSection } from "./crm-panel";
 import { MessageMedia } from "./message-media";
@@ -87,6 +89,23 @@ const CHAT_TYPE_FILTERS: { value: "all" | "group" | "direct"; label: string }[] 
   { value: "direct", label: "Diretas" },
 ];
 
+/** Bloco "canal unificado" (pedido explícito do usuário: "colocar o icone do whatsapp e do
+ * instagram para diferenciar na conversa e um filtro tambem caso eu precise filtrar") — Instagram
+ * DM virou canal de primeira classe do Inbox, `connectionProvider` é quem diferencia. Client-side,
+ * mesmo racional de `CHAT_TYPE_FILTERS` (combina com os outros filtros, nunca os substitui).
+ * `undefined` conta como "wuzapi" (ambiente que ainda não atualizou o backend, sempre foi só
+ * WhatsApp). */
+const CHANNEL_FILTERS: { value: "all" | MessagingProviderId; label: string }[] = [
+  { value: "all", label: "Todos os canais" },
+  { value: "wuzapi", label: "WhatsApp" },
+  { value: "instagram", label: "Instagram" },
+];
+
+function ChannelIcon({ provider, className }: { provider: MessagingProviderId | undefined; className?: string }) {
+  if (provider === "instagram") return <Camera className={className} aria-label="Instagram" />;
+  return <MessageCircle className={className} aria-label="WhatsApp" />;
+}
+
 const ADVANCED_FILTERS: { value: InboxConversationFilter; label: string; description: string }[] = [
   { value: "open", label: "Em atendimento", description: "Conversas abertas agora." },
   { value: "pending", label: "Pendentes", description: "Aguardando retorno ou decisão." },
@@ -105,6 +124,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
   const currentUserId = state.status === "authenticated" ? state.user.id : undefined;
   const [filter, setFilter] = useState<InboxConversationFilter>("all");
   const [chatTypeFilter, setChatTypeFilter] = useState<"all" | "group" | "direct">("all");
+  const [channelFilter, setChannelFilter] = useState<"all" | MessagingProviderId>("all");
   const [search, setSearch] = useState("");
   const [mobileView, setMobileView] = useState<MobileView>(searchParams.get("conversation") ? "conversation" : "list");
   const [contextOpen, setContextOpen] = useState(false);
@@ -125,9 +145,11 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
 
   const filteredConversations = useMemo(() => {
     const byType = chatTypeFilter === "all" ? conversations : conversations.filter((conversation) => conversation.chatType === chatTypeFilter);
+    const byChannel =
+      channelFilter === "all" ? byType : byType.filter((conversation) => (conversation.connectionProvider ?? "wuzapi") === channelFilter);
     const term = search.trim().toLowerCase();
-    if (!term) return byType;
-    return byType.filter((conversation) => {
+    if (!term) return byChannel;
+    return byChannel.filter((conversation) => {
       // Grupo: busca por nome do grupo (groupName/subject) — nunca por LID (seção 34 do pedido:
       // "não buscar por LID como experiência principal"). Direta: nome/telefone, como já era.
       const haystack = [
@@ -142,7 +164,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
         .toLowerCase();
       return haystack.includes(term);
     });
-  }, [chatTypeFilter, conversations, currentUserId, members, search]);
+  }, [channelFilter, chatTypeFilter, conversations, currentUserId, members, search]);
 
   useEffect(() => {
     if (selectedConversationId) setMobileView("conversation");
@@ -192,6 +214,8 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
             onFilterChange={setFilter}
             chatTypeFilter={chatTypeFilter}
             onChatTypeFilterChange={setChatTypeFilter}
+            channelFilter={channelFilter}
+            onChannelFilterChange={setChannelFilter}
             search={search}
             onSearchChange={setSearch}
             selectedConversationId={selectedConversationId}
@@ -270,6 +294,8 @@ function ConversationListPane({
   onFilterChange,
   chatTypeFilter,
   onChatTypeFilterChange,
+  channelFilter,
+  onChannelFilterChange,
   search,
   onSearchChange,
   selectedConversationId,
@@ -289,6 +315,8 @@ function ConversationListPane({
   onFilterChange: (filter: InboxConversationFilter) => void;
   chatTypeFilter: "all" | "group" | "direct";
   onChatTypeFilterChange: (value: "all" | "group" | "direct") => void;
+  channelFilter: "all" | MessagingProviderId;
+  onChannelFilterChange: (value: "all" | MessagingProviderId) => void;
   search: string;
   onSearchChange: (value: string) => void;
   selectedConversationId: string | undefined;
@@ -391,6 +419,25 @@ function ConversationListPane({
             </button>
           ))}
         </div>
+
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+          {CHANNEL_FILTERS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onChannelFilterChange(item.value)}
+              className={cn(
+                "flex h-7 shrink-0 items-center gap-1 rounded-full border px-2.5 text-[11px] font-medium transition-colors duration-150",
+                channelFilter === item.value
+                  ? "border-primary/30 bg-primary/10 text-primary dark:border-primary-glow/30 dark:bg-primary-glow/10 dark:text-primary-glow"
+                  : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {item.value !== "all" ? <ChannelIcon provider={item.value} className="h-3 w-3" /> : null}
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -474,15 +521,25 @@ export function ConversationListItem({
         selected && "bg-muted/80",
       )}
     >
-      <InboxAvatar
-        workspaceId={workspaceId}
-        kind={avatarProps.kind}
-        targetId={avatarProps.targetId}
-        storageRef={avatarProps.storageRef}
-        fallback={initials(conversationTitle(conversation))}
-        className="h-10 w-10 shrink-0 rounded-xl"
-        fallbackClassName="rounded-xl bg-muted text-xs text-foreground"
-      />
+      <div className="relative shrink-0">
+        <InboxAvatar
+          workspaceId={workspaceId}
+          kind={avatarProps.kind}
+          targetId={avatarProps.targetId}
+          storageRef={avatarProps.storageRef}
+          fallback={initials(conversationTitle(conversation))}
+          className="h-10 w-10 rounded-xl"
+          fallbackClassName="rounded-xl bg-muted text-xs text-foreground"
+        />
+        <span
+          className={cn(
+            "absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-card",
+            conversation.connectionProvider === "instagram" ? "bg-rose-500" : "bg-emerald-500",
+          )}
+        >
+          <ChannelIcon provider={conversation.connectionProvider} className="h-2.5 w-2.5 text-white" />
+        </span>
+      </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1">

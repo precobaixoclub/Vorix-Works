@@ -1,4 +1,4 @@
-import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType } from "../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType, MessagingProviderId } from "../../domain/inbox/inbox.model.js";
 
 /** Módulo Conversas (Fase 1/4). Ver `db/migrations/0082_inbox_conversations.sql` e
  * `db/migrations/0115_inbox_canonical_chat_identity.sql` (identidade canônica de chat). */
@@ -43,6 +43,10 @@ export type InboxConversationListItem = InboxConversation & {
   contactName?: string;
   contactPhone?: string;
   crmContactId?: string;
+  /** Canal da conexão dona desta conversa (`messaging_connections.provider`), denormalizado do
+   * mesmo join — pedido explícito do usuário para diferenciar WhatsApp/Instagram na lista e
+   * permitir filtro por canal, sem uma segunda chamada por item. */
+  connectionProvider?: MessagingProviderId;
   /** Foto de perfil (pedido explícito do usuário em produção) — denormalizada do mesmo join,
    * pra lista de conversas mostrar o avatar real sem uma segunda chamada por item. */
   contactProfilePictureStorageRef?: InboxMediaStorageRef;

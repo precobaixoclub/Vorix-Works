@@ -89,23 +89,31 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
   await registerVersionRoute(app);
   await registerWebhookReceiverRoutes(app, { ingestionService: container.webhookIngestionService });
+  // Instagram DM virou canal de primeira classe do Inbox (pedido explícito do usuário) — o webhook
+  // agora chama `registerInboundMessage`, o MESMO caminho do WhatsApp, com os MESMOS repositórios
+  // singleton do container (nunca uma segunda pilha de dependências). `accountRouteRepository`
+  // continua sendo a ÚNICA peça própria do módulo Instagram DM original ainda em uso — é como o
+  // webhook resolve `tenantId`/`workspaceId` a partir do `instagramBusinessAccountId` da Meta.
   await registerInstagramDmWebhookRoutes(app, {
-    messageRepository: container.instagramDmMessageRepository,
-    conversationRepository: container.instagramDmConversationRepository,
-    automationRuleRepository: container.instagramDmAutomationRuleRepository,
+    connectionRepository: container.messagingConnectionRepository,
+    contactRepository: container.inboxContactRepository,
+    conversationRepository: container.inboxConversationRepository,
+    conversationEventRepository: container.inboxConversationEventRepository,
+    messageRepository: container.inboxMessageRepository,
+    workspaceRepository: container.workspaceRepository,
+    outboundQueue: container.inboxOutboundQueue,
+    providers: { wuzapi: container.inboxProvider, instagram: container.instagramMessagingProvider },
+    channelRoutingRepository: container.identity?.channelRoutingRepository,
+    teamRepository: container.identity?.teamRepository,
+    teamMembershipRepository: container.identity?.teamMembershipRepository,
+    teamKanbanPhaseRepository: container.identity?.teamKanbanPhaseRepository,
+    conversationTimeEntryRepository: container.identity?.conversationTimeEntryRepository,
+    notificationRepository: container.notificationRepository,
+    notificationRealtimePublisher: container.notificationRealtimePublisher,
+    realtimeSubscriber: container.inboxRealtimeSubscriber,
     accountRouteRepository: container.instagramDmAccountRouteRepository,
-    publicationRepository: container.publicationRepository,
-    publicationSecretStore: container.publicationSecretStore,
-    aiReplyProvider: container.instagramDmAiReplyProvider,
     appSecret: config.publication.metaAppSecret,
     webhookVerifyToken: config.instagramDm.webhookVerifyToken,
-    resolveAccountName: async (input) => {
-      const references = await container.publicationRepository.listCredentialReferences({ tenantId: input.tenantId, workspaceId: input.workspaceId, providerId: "instagram" });
-      const reference = references.find((candidate) => candidate.providerSubjectId === input.instagramBusinessAccountId);
-      if (!reference) return undefined;
-      const secret = await container.publicationSecretStore.get({ tenantId: input.tenantId, workspaceId: input.workspaceId, providerId: "instagram", credentialReferenceId: reference.credentialReferenceId });
-      return secret?.value.displayName;
-    },
   });
 
   if (container.identity) {

@@ -6,6 +6,7 @@ import type {
 } from "../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxContactRepositoryPort } from "../../application/ports/inbox-contact-repository.port.js";
 import type { InboxMessageRepositoryPort } from "../../application/ports/inbox-message-repository.port.js";
+import type { MessagingConnectionRepositoryPort } from "../../application/ports/messaging-connection-repository.port.js";
 import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus, InboxMediaStorageRef } from "../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -19,6 +20,7 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
   constructor(
     private readonly contactRepository?: InboxContactRepositoryPort,
     private readonly messageRepository?: InboxMessageRepositoryPort,
+    private readonly connectionRepository?: MessagingConnectionRepositoryPort,
   ) {}
 
   async findOrCreate(input: FindOrCreateInboxConversationInput): Promise<InboxConversation> {
@@ -107,6 +109,7 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     const items: InboxConversationListItem[] = [];
     for (const row of sorted) {
       const contact = row.contactId ? await this.contactRepository?.getById(row.contactId) : undefined;
+      const connection = await this.connectionRepository?.getById(row.connectionId);
       const [lastMessage] = (await this.messageRepository?.listByConversation({
         tenantId: row.tenantId,
         workspaceId: row.workspaceId,
@@ -118,6 +121,7 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
         contactName: contact?.name,
         contactPhone: contact?.phoneNormalized,
         contactProfilePictureStorageRef: contact?.profilePictureStorageRef,
+        connectionProvider: connection?.provider,
         lastMessagePreview: lastMessage
           ? { type: lastMessage.type, body: lastMessage.body, direction: lastMessage.direction, senderDisplayName: lastMessage.senderDisplayName }
           : undefined,

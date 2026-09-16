@@ -97,7 +97,7 @@ function buildDeps(tenantId, { aiResponder, outboundQueue, provider } = {}) {
     messageRepository: new PostgresInboxMessageRepository(db.pool),
     workspaceRepository: new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") }),
     outboundQueue: outboundQueue ?? { published: [], publish: async function publish(input) { this.published.push(input); } },
-    provider: provider ?? makeFakeMessagingProvider(),
+    providers: { wuzapi: provider ?? makeFakeMessagingProvider() },
     aiResponder,
   };
 }
@@ -150,7 +150,7 @@ test("Inbound com IA ativa gera exatamente uma resposta, que passa pela fila out
   });
 
   assert.equal(aiResponder.state.callCount, 1, "exatamente uma geração de IA");
-  assert.equal(deps.provider.sentMessages.length, 0, "IA NUNCA chama o MessagingProvider diretamente");
+  assert.equal(deps.providers.wuzapi.sentMessages.length, 0, "IA NUNCA chama o MessagingProvider diretamente");
   assert.equal(deps.outboundQueue.published.length, 1, "a resposta da IA passa pela MESMA fila outbound que uma mensagem humana");
 
   const messages = await deps.messageRepository.listByConversation({ tenantId, workspaceId: workspace.id, conversationId: conversation.id });

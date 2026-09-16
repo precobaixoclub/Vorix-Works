@@ -20,6 +20,11 @@ export type UpdateMessagingConnectionStatusInput = {
 export type MessagingConnectionRepositoryPort = {
   create(input: CreateMessagingConnectionInput): Promise<MessagingConnection>;
   getById(id: string): Promise<MessagingConnection | undefined>;
+  /** Achado necessário pro Instagram virar canal de primeira classe — diferente do WhatsApp
+   * (pareado via QR, 1 conexão criada manualmente pelo usuário), uma conexão Instagram é
+   * encontrada/criada de forma IDEMPOTENTE a partir do `instagramBusinessAccountId` que chega em
+   * todo evento de webhook (nunca duplica conexão a cada mensagem recebida). */
+  getByProviderAndExternalSessionId(provider: MessagingProviderId, externalSessionId: string): Promise<MessagingConnection | undefined>;
   listByWorkspace(input: { tenantId: string; workspaceId: string }): Promise<MessagingConnection[]>;
   /** Usado pelo worker/health monitor, que só tem `connectionId` (sem tenant/workspace) vindo do
    * evento de fila — nunca exposto a uma rota HTTP. */

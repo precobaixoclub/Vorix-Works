@@ -24,9 +24,17 @@ export type InboxAiPauseReason = "human_takeover" | "manual";
  * mandam mensagem pra MESMA conversa (nunca uma pessoa/Contact do CRM). */
 export type InboxChatType = "direct" | "group";
 
+/** Canal da conexão dona da conversa — WhatsApp (WuzAPI) é o único desde sempre; Instagram DM virou
+ * canal de primeira classe do Inbox (pedido explícito do usuário: "colocar o icone do whatsapp e
+ * do instagram para diferenciar na conversa e um filtro tambem"). */
+export type MessagingProviderId = "wuzapi" | "instagram";
+
 export type InboxConversation = {
   id: string;
   connectionId: string;
+  /** Denormalizado pela listagem — `undefined` só em ambientes que ainda não atualizaram o backend
+   * para preenchê-lo (nunca em uso normal, toda conexão tem um `provider`). */
+  connectionProvider?: MessagingProviderId;
   chatType: InboxChatType;
   /** Só em `chatType: "group"` — nome do grupo/canal quando o provider fornece. `undefined` = sem
    * nome conhecido, o frontend cai no fallback visual (nunca inventa um nome). */

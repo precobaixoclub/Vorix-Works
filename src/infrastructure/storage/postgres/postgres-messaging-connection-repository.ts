@@ -48,6 +48,14 @@ export class PostgresMessagingConnectionRepository implements MessagingConnectio
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
+  async getByProviderAndExternalSessionId(provider: MessagingConnection["provider"], externalSessionId: string): Promise<MessagingConnection | undefined> {
+    const result = await this.pool.query<Row>(
+      "select * from messaging_connections where provider = $1 and external_session_id = $2",
+      [provider, externalSessionId],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
   async listByWorkspace(input: { tenantId: string; workspaceId: string }): Promise<MessagingConnection[]> {
     const result = await this.pool.query<Row>(
       "select * from messaging_connections where tenant_id = $1 and workspace_id = $2 order by created_at desc",

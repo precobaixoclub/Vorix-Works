@@ -28,9 +28,6 @@ import type { MetaCustomAudienceRepositoryPort } from "../../../application/port
 import type { MetaPixelRepositoryPort } from "../../../application/ports/meta-pixel-repository.port.js";
 import type { MetaCapiEventRepositoryPort } from "../../../application/ports/meta-capi-event-repository.port.js";
 import type { InstagramDmAccountRouteRepositoryPort } from "../../../application/ports/instagram-dm-account-route-repository.port.js";
-import type { InstagramDmConversationRepositoryPort } from "../../../application/ports/instagram-dm-conversation-repository.port.js";
-import type { InstagramDmMessageRepositoryPort } from "../../../application/ports/instagram-dm-message-repository.port.js";
-import type { InstagramDmAutomationRuleRepositoryPort } from "../../../application/ports/instagram-dm-automation-rule-repository.port.js";
 import type { MessagingConnectionRepositoryPort } from "../../../application/ports/messaging-connection-repository.port.js";
 import type { InboxContactRepositoryPort } from "../../../application/ports/inbox-contact-repository.port.js";
 import type { InboxConversationRepositoryPort } from "../../../application/ports/inbox-conversation-repository.port.js";
@@ -42,6 +39,7 @@ import type { OutboundMessageQueuePort } from "../../../application/ports/outbou
 import type { InboxFeatureFlags } from "../../../application/inbox/inbox-feature-flags.js";
 import { DEFAULT_INBOX_FEATURE_FLAGS } from "../../../application/inbox/inbox-feature-flags.js";
 import { FakeMessagingProvider } from "../../../infrastructure/messaging/fake-messaging-provider.js";
+import { InstagramMessagingProvider } from "../../../infrastructure/messaging/instagram/instagram-messaging-provider.js";
 import { InMemoryOutboundMessageQueue } from "../../../infrastructure/messaging/in-memory-outbound-message-queue.js";
 import { RabbitMqOutboundMessageQueue } from "../../../infrastructure/messaging/rabbitmq/rabbitmq-outbound-message-queue.js";
 import { InboxRealtimeSubscriber } from "../../../infrastructure/messaging/rabbitmq/inbox-realtime-subscriber.js";
@@ -352,9 +350,6 @@ export type ApiContainer = {
   metaCapiEventRepository: MetaCapiEventRepositoryPort;
   /** Módulo Instagram DM Automation (Fase 5). */
   instagramDmAccountRouteRepository: InstagramDmAccountRouteRepositoryPort;
-  instagramDmConversationRepository: InstagramDmConversationRepositoryPort;
-  instagramDmMessageRepository: InstagramDmMessageRepositoryPort;
-  instagramDmAutomationRuleRepository: InstagramDmAutomationRuleRepositoryPort;
   /** Módulo Conversas (Fase 1) — ver `db/migrations/0080-0083`. Rotas só são registradas quando
    * `inboxFeatureFlags.enabled === true` (ver `routes/v1/index.ts`). */
   messagingConnectionRepository: MessagingConnectionRepositoryPort;
@@ -369,6 +364,10 @@ export type ApiContainer = {
   /** Adapter real (WuzAPI) quando configurado; `FakeMessagingProvider` em dev/teste sem
    * `INBOX_WUZAPI_BASE_URL` — nunca undefined, o módulo sempre tem ALGUM provider funcional. */
   inboxProvider: MessagingProvider;
+  /** Instagram DM virou canal de primeira classe do Inbox (pedido explícito do usuário) — sempre
+   * construído (nunca depende de config externa própria, reaproveita a MESMA credencial OAuth já
+   * usada pra publicação de conteúdo do Instagram, resolvida sob demanda em cada envio). */
+  instagramMessagingProvider: MessagingProvider;
   /** `RabbitMqOutboundMessageQueue` quando `INBOX_RABBITMQ_URL` está configurado; senão
    * `InMemoryOutboundMessageQueue` (dev/teste, sem broker). */
   inboxOutboundQueue: OutboundMessageQueuePort;
@@ -1202,6 +1201,14 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   const aiMediaProviderRegistry = createDefaultAiMediaProviderRegistry(aiMediaProviderAdapters);
 
   const publicationSecretStore = new SecretManagerPublicationSecretStore(secretManager);
+  // Instagram DM como canal de primeira classe do Inbox (pedido explícito do usuário) — reaproveita
+  // a MESMA credencial OAuth de publicação de conteúdo (`publicationRepository`/
+  // `publicationSecretStore`, construídos acima), nunca uma pilha de credencial separada.
+  const instagramMessagingProvider: MessagingProvider = new InstagramMessagingProvider({
+    connectionRepository: repositories.messagingConnectionRepository,
+    publicationRepository: repositories.publicationRepository,
+    publicationSecretStore,
+  });
   const publicationSecretResolver = new CompositePublicationSecretResolver(new StoredPublicationSecretResolver(publicationSecretStore), new FakePublicationSecretResolver());
   const publicationProviderPolicy = new PublicationProviderPolicy(
     { environment: config?.publication.providerEnvironment ?? "sandbox", productionEnabled: config?.publication.productionEnabled ?? false },
@@ -1460,6 +1467,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       authPort: new JwtAuthAdapter(jwtPort),
       inboxFeatureFlags,
       inboxProvider,
+      instagramMessagingProvider,
       inboxOutboundQueue,
       inboxRealtimeSubscriber,
       notificationRealtimePublisher,
@@ -1554,6 +1562,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     authPort: createNoopAuthAdapter({ devPrincipal: config?.devPrincipal }),
     inboxFeatureFlags,
     inboxProvider,
+    instagramMessagingProvider,
     inboxOutboundQueue,
     inboxRealtimeSubscriber,
     notificationRealtimePublisher,

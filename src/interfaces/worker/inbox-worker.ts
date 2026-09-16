@@ -6,6 +6,10 @@ import type { PersistenceDriver } from "../../infrastructure/storage/build-platf
 import { sanitizeWuzApiEventForFixture } from "../../infrastructure/messaging/wuzapi/sanitize-fixture.js";
 import { buildPlatformRepositories } from "../../infrastructure/storage/build-platform-repositories.js";
 import { FakeMessagingProvider } from "../../infrastructure/messaging/fake-messaging-provider.js";
+import { InstagramMessagingProvider } from "../../infrastructure/messaging/instagram/instagram-messaging-provider.js";
+import { InMemorySecretManager } from "../../infrastructure/operations/secret-managers.js";
+import { PostgresSecretManager } from "../../infrastructure/operations/postgres-secret-manager.js";
+import { SecretManagerPublicationSecretStore } from "../../application/operations/operational-services.js";
 import { WuzApiClient } from "../../infrastructure/messaging/wuzapi/wuzapi-client.js";
 import { WuzApiMessagingProvider } from "../../infrastructure/messaging/wuzapi/wuzapi-messaging-provider.js";
 import type { InboxMediaStoragePort } from "../../application/ports/inbox-media-storage.port.js";
@@ -448,6 +452,23 @@ async function main(): Promise<void> {
   const provider: MessagingProvider = config.inbox.wuzApiBaseUrl && config.inbox.wuzApiAdminToken
     ? new WuzApiMessagingProvider(new WuzApiClient({ baseUrl: config.inbox.wuzApiBaseUrl, adminToken: config.inbox.wuzApiAdminToken }))
     : new FakeMessagingProvider();
+  // Instagram DM como canal de primeira classe do Inbox (pedido explícito do usuário) — o worker é
+  // quem de fato ENVIA (`processOutboundMessage`/`sendOutboundByType`), então precisa da mesma
+  // credencial OAuth de publicação que a API usa, decifrada com a MESMA chave mestra. Leitura
+  // direta de `process.env` (nunca `loadApiConfig()`) — mantém a independência deliberada deste
+  // processo em relação à config de autenticação da API (ver comentário no topo do arquivo: "nunca
+  // falhar o boot por um motivo que não tem nada a ver com sua responsabilidade"). Sem
+  // `JWT_SECRET`/Postgres configurados, cai num secret manager em memória — Instagram simplesmente
+  // não consegue enviar (erro claro só quando alguém tentar), nunca impede o worker de subir.
+  const inboxWorkerJwtSecret = process.env.JWT_SECRET?.trim();
+  const inboxWorkerSecretManager = repositories.pool && inboxWorkerJwtSecret
+    ? new PostgresSecretManager(repositories.pool, inboxWorkerJwtSecret)
+    : new InMemorySecretManager();
+  const instagramMessagingProvider: MessagingProvider = new InstagramMessagingProvider({
+    connectionRepository: repositories.messagingConnectionRepository,
+    publicationRepository: repositories.publicationRepository,
+    publicationSecretStore: new SecretManagerPublicationSecretStore(inboxWorkerSecretManager),
+  });
 
   // Fase 6 — métricas Prometheus (primeira introdução no Vorix, ver `prom-inbox-metrics.ts`).
   const metrics = config.resilience.metricsEnabled ? createPromInboxMetrics() : undefined;
@@ -542,7 +563,7 @@ async function main(): Promise<void> {
     // abaixo) PRECISA republicar mensagens órfãs de verdade, então reusa o MESMO canal já aberto
     // pra consumo (nunca uma segunda conexão AMQP só pra isto).
     outboundQueue: { publish: async (input) => { channel.sendToQueue(INBOX_QUEUES.outgoing, Buffer.from(JSON.stringify(input)), { persistent: true }); } },
-    provider,
+    providers: { wuzapi: provider, instagram: instagramMessagingProvider },
     aiResponder,
     circuitBreaker,
     rateLimiter,

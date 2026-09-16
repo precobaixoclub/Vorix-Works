@@ -85,7 +85,7 @@ test("IDOR: mensagens/eventos de uma conversa de outro tenant nunca são lidos (
       connectionRepository: appB.zunoContainer.messagingConnectionRepository,
       workspaceRepository: appB.zunoContainer.workspaceRepository,
       outboundQueue: appB.zunoContainer.inboxOutboundQueue,
-      provider: appB.zunoContainer.inboxProvider,
+      providers: { wuzapi: appB.zunoContainer.inboxProvider },
     },
     { tenantId: tenantB, workspaceId: workspaceB.id, conversationId: conversationIdB, body: "Segredo do tenant B — nunca deveria vazar.", sentByUserId: "user-b" },
   );
@@ -185,7 +185,7 @@ test("Kill switch: INBOX_OUTBOUND_SEND_PAUSED nunca envia ao provider, mensagem 
     messageRepository: app.zunoContainer.inboxMessageRepository,
     workspaceRepository: app.zunoContainer.workspaceRepository,
     outboundQueue: { publish: async () => {} },
-    provider: app.zunoContainer.inboxProvider,
+    providers: { wuzapi: app.zunoContainer.inboxProvider },
     outboundSendPaused: true,
   };
 

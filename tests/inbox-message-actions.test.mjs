@@ -44,7 +44,7 @@ async function makeSetup(tenantId) {
   await connectionRepo.updateStatus(connection.id, { status: "connected", externalSessionId: "session-token-1" });
   const provider = new FakeMessagingProvider();
   const outboundQueue = { published: [], async publish(input) { this.published.push(input); } };
-  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, provider, outboundQueue };
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, providers: { wuzapi: provider }, outboundQueue };
   return { workspace, connection, contactRepo, conversationRepo, messageRepo, provider, deps };
 }
 
@@ -116,7 +116,7 @@ test("DELETE: mensagem OUTBOUND já enviada tenta revogar de verdade no WhatsApp
   await deleteInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: inbound.conversation.id, messageId: outbound.id });
 
   assert.equal(await messageRepo.getById(outbound.id), undefined, "removida localmente");
-  assert.deepEqual(deps.provider.revokedMessages, [{ to: inbound.conversation.externalChatId, externalMessageId: "wamid.outbound-1" }], "tentou revogar de verdade — mensagem era OUTBOUND com externalMessageId conhecido");
+  assert.deepEqual(deps.providers.wuzapi.revokedMessages, [{ to: inbound.conversation.externalChatId, externalMessageId: "wamid.outbound-1" }], "tentou revogar de verdade — mensagem era OUTBOUND com externalMessageId conhecido");
 });
 
 test("DELETE: mensagem INBOUND (de um contato) NUNCA tenta revogar no WhatsApp — só remove localmente (limitação real do protocolo)", async () => {
@@ -134,7 +134,7 @@ test("DELETE: mensagem INBOUND (de um contato) NUNCA tenta revogar no WhatsApp �
   await deleteInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: inbound.conversation.id, messageId: inbound.message.id });
 
   assert.equal(await messageRepo.getById(inbound.message.id), undefined);
-  assert.deepEqual(deps.provider.revokedMessages, [], "nunca tenta revogar mensagem de outra pessoa — a API real nem suporta isso");
+  assert.deepEqual(deps.providers.wuzapi.revokedMessages, [], "nunca tenta revogar mensagem de outra pessoa — a API real nem suporta isso");
 });
 
 test("DELETE: mensagem de outra conversa/tenant nunca é encontrada — lança, nunca apaga por engano", async () => {
@@ -178,7 +178,7 @@ test("REACT: atendente reagindo a uma mensagem chama o provider PRIMEIRO e só p
   const reacted = await reactToInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: inbound.conversation.id, messageId: inbound.message.id, emoji: "❤️", reactorId: "user-1", reactorName: "Atendente Um" });
 
   assert.deepEqual(reacted.reactions, [{ reactorId: "user-1", reactorName: "Atendente Um", emoji: "❤️" }]);
-  assert.deepEqual(deps.provider.sentReactions, [{ to: inbound.conversation.externalChatId, externalMessageId: "wamid.react-target-1", emoji: "❤️", fromMe: false, participantJid: undefined }], "DM: nunca manda Participant (só faz sentido em grupo)");
+  assert.deepEqual(deps.providers.wuzapi.sentReactions, [{ to: inbound.conversation.externalChatId, externalMessageId: "wamid.react-target-1", emoji: "❤️", fromMe: false, participantJid: undefined }], "DM: nunca manda Participant (só faz sentido em grupo)");
 
   const reloaded = await messageRepo.getById(inbound.message.id);
   assert.deepEqual(reloaded.reactions, reacted.reactions);
@@ -197,7 +197,7 @@ test("REACT: reagindo à mensagem de um PARTICIPANTE de GRUPO (não a própria) 
   });
   await reactToInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: groupMessage.conversation.id, messageId: groupMessage.message.id, emoji: "👍", reactorId: "user-1" });
 
-  assert.deepEqual(deps.provider.sentReactions[0], {
+  assert.deepEqual(deps.providers.wuzapi.sentReactions[0], {
     to: groupMessage.conversation.externalChatId, externalMessageId: "wamid.react-group-1", emoji: "👍", fromMe: false, participantJid: "+5511911110006",
   });
 
@@ -211,7 +211,7 @@ test("REACT: reagindo à mensagem de um PARTICIPANTE de GRUPO (não a própria) 
   });
   await reactToInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: groupMessage.conversation.id, messageId: ownMessage.message.id, emoji: "🔥", reactorId: "user-1" });
 
-  assert.deepEqual(deps.provider.sentReactions[1], {
+  assert.deepEqual(deps.providers.wuzapi.sentReactions[1], {
     to: groupMessage.conversation.externalChatId, externalMessageId: "wamid.react-group-2", emoji: "🔥", fromMe: true, participantJid: undefined,
   });
 });

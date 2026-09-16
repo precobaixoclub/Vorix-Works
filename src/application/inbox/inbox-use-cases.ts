@@ -1,4 +1,4 @@
-import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, MessagingConnection, MessagingConnectionStatus } from "../../domain/inbox/inbox.model.js";
+import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, MessagingConnection, MessagingConnectionStatus, MessagingProviderId } from "../../domain/inbox/inbox.model.js";
 import { INBOX_AI_ACTOR, MESSAGING_CONNECTION_TERMINAL_STATUSES, normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
 import type { KanbanPhaseType, TeamKanbanPhase } from "../../domain/identity/identity.model.js";
 import { KANBAN_PHASE_TYPES } from "../../domain/identity/identity.model.js";
@@ -41,7 +41,13 @@ export type InboxUseCaseDeps = {
   messageRepository: InboxMessageRepositoryPort;
   workspaceRepository: WorkspaceRepositoryPort;
   outboundQueue: OutboundMessageQueuePort;
-  provider: MessagingProvider;
+  /** Instagram DM virou canal de primeira classe (pedido explícito do usuário) — o provider deixou
+   * de ser um singleton global (WuzAPI era o único canal) e virou um registro POR CANAL, resolvido
+   * a partir de `connection.provider` em cada chamada (`resolveProvider`, abaixo). `wuzapi` é
+   * sempre obrigatório (o módulo inteiro depende dele); `instagram` é opcional — `undefined` nesse
+   * processo faz `resolveProvider` lançar `INBOX_PROVIDER_NOT_CONFIGURED` só quando alguém tenta
+   * de fato usar uma conexão Instagram, nunca afeta o WhatsApp. */
+  providers: { wuzapi: MessagingProvider } & Partial<Record<Exclude<MessagingProviderId, "wuzapi">, MessagingProvider>>;
   /** Fase 5 — `undefined` = IA de atendimento não configurada neste processo (ex.: API, ou worker
    * sem `ANTHROPIC_API_KEY`). `maybeGenerateAiResponse` vira um no-op silencioso nesse caso — a
    * Inbox continua 100% funcional sem IA (IA caiu != Inbox caiu). */
@@ -106,6 +112,16 @@ export type InboxUseCaseDeps = {
 
 const defaultIdGenerator = () => `wuzsess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+/** Resolve o adapter certo pra UMA conexão específica (Instagram DM virou canal de primeira
+ * classe — pedido explícito do usuário). Nunca `deps.providers.wuzapi` direto fora daqui: todo
+ * lugar que precisa falar com o canal de uma conversa/conexão passa por este resolver, pra nunca
+ * disparar a chamada errada (ex.: pedir QR code pro adapter do Instagram). */
+function resolveProvider(deps: InboxUseCaseDeps, provider: MessagingProviderId): MessagingProvider {
+  const resolved = deps.providers[provider];
+  if (!resolved) throw new Error(`INBOX_PROVIDER_NOT_CONFIGURED: canal "${provider}" não está configurado neste ambiente.`);
+  return resolved;
+}
+
 async function mustConnectionBelongToTenantAndWorkspace(deps: InboxUseCaseDeps, id: string, tenantId: string, workspaceId: string): Promise<MessagingConnection> {
   const connection = await deps.connectionRepository.getById(id);
   if (!connection || connection.tenantId !== tenantId || connection.workspaceId !== workspaceId) {
@@ -148,7 +164,7 @@ export async function createConnection(deps: InboxUseCaseDeps, input: CreateConn
   const externalSessionId = (deps.idGenerator ?? defaultIdGenerator)();
   // `instanceName: connection.id` — o RawEventConsumer do worker correlaciona eventos de volta a
   // esta conexão por esse id direto (ver `wuzapi-event-mapper.ts`), nunca pelo token de sessão.
-  const { phoneNumber } = await deps.provider.connect({ externalSessionId, instanceName: connection.id });
+  const { phoneNumber } = await resolveProvider(deps, "wuzapi").connect({ externalSessionId, instanceName: connection.id });
   const updated = await deps.connectionRepository.updateStatus(connection.id, { status: "connecting", externalSessionId, phoneNumber });
   if (deps.productAnalytics) {
     await recordFirstEvent(deps.productAnalytics, { eventName: "first_channel_connected", source: "server", tenantId: input.tenantId, workspaceId: input.workspaceId });
@@ -172,8 +188,9 @@ export async function getConnectionQrCode(deps: InboxUseCaseDeps, input: GetQrCo
   // o gateway derruba o cliente whatsmeow no logout, e `/session/qr` exige um cliente ativo.
   // `connect()` reabre a sessão (idempotente — `createAdminUser` tolera "já existe") antes de
   // pedir o QR; para uma conexão que acabou de ser criada isso é um no-op inofensivo.
-  await deps.provider.connect({ externalSessionId: connection.externalSessionId, instanceName: connection.id });
-  return deps.provider.getQrCode({ externalSessionId: connection.externalSessionId });
+  const provider = resolveProvider(deps, connection.provider);
+  await provider.connect({ externalSessionId: connection.externalSessionId, instanceName: connection.id });
+  return provider.getQrCode({ externalSessionId: connection.externalSessionId });
 }
 
 export type RefreshConnectionStatusInput = { tenantId: string; workspaceId: string; connectionId: string };
@@ -183,7 +200,7 @@ export type RefreshConnectionStatusInput = { tenantId: string; workspaceId: stri
 export async function refreshConnectionStatus(deps: InboxUseCaseDeps, input: RefreshConnectionStatusInput): Promise<MessagingConnection> {
   const connection = await mustConnectionBelongToTenantAndWorkspace(deps, input.connectionId, input.tenantId, input.workspaceId);
   if (!connection.externalSessionId) return connection;
-  const status = await deps.provider.getConnectionStatus({ externalSessionId: connection.externalSessionId });
+  const status = await resolveProvider(deps, connection.provider).getConnectionStatus({ externalSessionId: connection.externalSessionId });
   return deps.connectionRepository.updateStatus(connection.id, { status: status.status, phoneNumber: status.phoneNumber, connectionHealth: "healthy" });
 }
 
@@ -249,8 +266,12 @@ export async function reconcileConnectionsHealth(deps: InboxUseCaseDeps): Promis
 
   for (const connection of connections) {
     if (!connection.externalSessionId) continue;
+    // Instagram (canal stateless, token OAuth) fica de fora deste monitor — "saúde do gateway" não
+    // se aplica da mesma forma a uma API HTTP sem sessão pareada; a validade do token é checada sob
+    // demanda no envio (`resolveProvider(deps, "instagram")`), nunca por um poll periódico aqui.
+    if (connection.provider !== "wuzapi") continue;
     try {
-      const status = await deps.provider.getConnectionStatus({ externalSessionId: connection.externalSessionId });
+      const status = await resolveProvider(deps, connection.provider).getConnectionStatus({ externalSessionId: connection.externalSessionId });
       await deps.connectionRepository.recordHealthCheck(connection.id, { connectionHealth: "healthy", at });
       // Só reconcilia `status` em sucesso — nunca infere um novo status a partir de uma FALHA de
       // checagem (isso seria inventar informação que não temos: "não consegui perguntar" não é o
@@ -284,7 +305,7 @@ export type DisconnectConnectionInput = { tenantId: string; workspaceId: string;
 
 export async function disconnectConnection(deps: InboxUseCaseDeps, input: DisconnectConnectionInput): Promise<MessagingConnection> {
   const connection = await mustConnectionBelongToTenantAndWorkspace(deps, input.connectionId, input.tenantId, input.workspaceId);
-  if (connection.externalSessionId) await deps.provider.disconnect({ externalSessionId: connection.externalSessionId });
+  if (connection.externalSessionId) await resolveProvider(deps, connection.provider).disconnect({ externalSessionId: connection.externalSessionId });
   return deps.connectionRepository.updateStatus(connection.id, { status: "disconnected" });
 }
 
@@ -361,11 +382,12 @@ export async function deleteInboxMessage(deps: InboxUseCaseDeps, input: DeleteIn
     throw new Error(`INBOX_MESSAGE_NOT_FOUND: mensagem "${input.messageId}" não existe nesta conversa.`);
   }
 
-  if (message.direction === "outbound" && message.externalMessageId && deps.provider.revokeMessage) {
+  if (message.direction === "outbound" && message.externalMessageId) {
     try {
       const connection = await deps.connectionRepository.getById(conversation.connectionId);
-      if (connection?.externalSessionId) {
-        await deps.provider.revokeMessage({ externalSessionId: connection.externalSessionId, to: conversation.externalChatId, externalMessageId: message.externalMessageId });
+      const provider = connection ? deps.providers[connection.provider] : undefined;
+      if (connection?.externalSessionId && provider?.revokeMessage) {
+        await provider.revokeMessage({ externalSessionId: connection.externalSessionId, to: conversation.externalChatId, externalMessageId: message.externalMessageId });
       }
     } catch (error) {
       console.warn(`[inbox] falha ao revogar mensagem "${message.id}" no WhatsApp (best-effort, exclusão local segue normalmente):`, error instanceof Error ? error.message : error);
@@ -1011,7 +1033,10 @@ export type SyncGroupMetadataInput = { tenantId: string; workspaceId: string; co
  * suporte (`getGroupInfo` ausente), conexão sem sessão ativa, ou erro do gateway viram no-op.
  */
 export async function syncGroupMetadata(deps: InboxUseCaseDeps, input: SyncGroupMetadataInput): Promise<{ synced: boolean }> {
-  if (!deps.provider.getGroupInfo) return { synced: false };
+  const connection = await deps.connectionRepository.getById(input.connectionId);
+  if (!connection?.externalSessionId) return { synced: false };
+  const provider = deps.providers[connection.provider];
+  if (!provider?.getGroupInfo) return { synced: false };
   const conversation = await deps.conversationRepository.getById(input.conversationId);
   if (!conversation || conversation.chatType !== "group") return { synced: false };
   // ACHADO AO VIVO (produção, pós-deploy da réplica de identidade) — `chatType: "group"` também é
@@ -1023,10 +1048,8 @@ export async function syncGroupMetadata(deps: InboxUseCaseDeps, input: SyncGroup
   // transitória que valha reprocessar. Guarda aqui, na fonte única de verdade, em vez de duplicar
   // a checagem em cada chamador.
   if (!conversation.externalChatId.endsWith("@g.us")) return { synced: false };
-  const connection = await deps.connectionRepository.getById(input.connectionId);
-  if (!connection?.externalSessionId) return { synced: false };
 
-  const info = await deps.provider.getGroupInfo({ externalSessionId: connection.externalSessionId, groupJid: conversation.externalChatId });
+  const info = await provider.getGroupInfo({ externalSessionId: connection.externalSessionId, groupJid: conversation.externalChatId });
   if (!info) return { synced: false };
   await deps.conversationRepository.updateGroupMetadata(conversation.id, {
     groupName: info.name,
@@ -1046,14 +1069,16 @@ export type SyncGroupPictureInput = { tenantId: string; workspaceId: string; con
  * independentemente (um grupo pode ter nome mas nunca ter definido uma foto, e vice-versa).
  */
 export async function syncGroupPicture(deps: InboxUseCaseDeps, input: SyncGroupPictureInput): Promise<{ synced: boolean }> {
-  if (!deps.provider.getProfilePicture || !deps.inboxMediaStorage) return { synced: false };
+  if (!deps.inboxMediaStorage) return { synced: false };
+  const connection = await deps.connectionRepository.getById(input.connectionId);
+  if (!connection?.externalSessionId) return { synced: false };
+  const provider = deps.providers[connection.provider];
+  if (!provider?.getProfilePicture) return { synced: false };
   const conversation = await deps.conversationRepository.getById(input.conversationId);
   if (!conversation || conversation.chatType !== "group" || conversation.groupPictureStorageRef) return { synced: false };
   if (!conversation.externalChatId.endsWith("@g.us")) return { synced: false };
-  const connection = await deps.connectionRepository.getById(input.connectionId);
-  if (!connection?.externalSessionId) return { synced: false };
 
-  const picture = await deps.provider.getProfilePicture({ externalSessionId: connection.externalSessionId, jid: conversation.externalChatId });
+  const picture = await provider.getProfilePicture({ externalSessionId: connection.externalSessionId, jid: conversation.externalChatId });
   if (!picture) return { synced: false };
 
   const objectKey = `${input.tenantId}/${input.workspaceId}/avatar-group-${conversation.id}`;
@@ -1074,13 +1099,15 @@ export type SyncContactProfilePictureInput = { tenantId: string; workspaceId: st
  * envio de mensagens, então o WuzAPI já sabe resolver esse formato).
  */
 export async function syncContactProfilePicture(deps: InboxUseCaseDeps, input: SyncContactProfilePictureInput): Promise<{ synced: boolean }> {
-  if (!deps.provider.getProfilePicture || !deps.inboxMediaStorage) return { synced: false };
-  const contact = await deps.contactRepository.getById(input.contactId);
-  if (!contact || contact.profilePictureStorageRef) return { synced: false };
+  if (!deps.inboxMediaStorage) return { synced: false };
   const connection = await deps.connectionRepository.getById(input.connectionId);
   if (!connection?.externalSessionId) return { synced: false };
+  const provider = deps.providers[connection.provider];
+  if (!provider?.getProfilePicture) return { synced: false };
+  const contact = await deps.contactRepository.getById(input.contactId);
+  if (!contact || contact.profilePictureStorageRef) return { synced: false };
 
-  const picture = await deps.provider.getProfilePicture({ externalSessionId: connection.externalSessionId, jid: contact.phoneNormalized });
+  const picture = await provider.getProfilePicture({ externalSessionId: connection.externalSessionId, jid: contact.phoneNormalized });
   if (!picture) return { synced: false };
 
   const objectKey = `${input.tenantId}/${input.workspaceId}/avatar-contact-${contact.id}`;
@@ -1122,9 +1149,11 @@ export type DownloadInboundMediaInput = {
  * chama já espera isso e só loga.
  */
 export async function downloadInboundMediaAndAttach(deps: InboxUseCaseDeps, input: DownloadInboundMediaInput): Promise<{ attached: boolean; reason?: "no_media_key_unsupported_source" | "no_direct_path" }> {
-  if (!deps.inboxMediaStorage || !deps.provider.downloadMedia) return { attached: false };
+  if (!deps.inboxMediaStorage) return { attached: false };
   const connection = await deps.connectionRepository.getById(input.connectionId);
   if (!connection?.externalSessionId) return { attached: false };
+  const provider = deps.providers[connection.provider];
+  if (!provider?.downloadMedia) return { attached: false };
 
   // ACHADO AO VIVO (diagnóstico temporário em produção — ver
   // docs/conversas-inbox-organization-media-runtime.md) — mídia de WhatsApp normal (DM/grupo) é
@@ -1166,7 +1195,7 @@ export async function downloadInboundMediaAndAttach(deps: InboxUseCaseDeps, inpu
     fileName: input.fileName, durationSeconds: input.durationSeconds, thumbnailBase64: input.thumbnailBase64,
   });
 
-  const downloaded = await deps.provider.downloadMedia({
+  const downloaded = await provider.downloadMedia({
     externalSessionId: connection.externalSessionId,
     type: input.type,
     ref: {
@@ -1256,11 +1285,12 @@ export async function reactToInboxMessage(deps: InboxUseCaseDeps, input: ReactTo
   if (!message.externalMessageId) {
     throw new Error(`INBOX_MESSAGE_NOT_SENT_YET: mensagem "${input.messageId}" ainda não foi confirmada pelo WhatsApp.`);
   }
-  if (!deps.provider.sendReaction) {
-    throw new Error("INBOX_REACTION_NOT_SUPPORTED: este canal não suporta reações enviadas pelo Vorix.");
-  }
   const connection = await deps.connectionRepository.getById(conversation.connectionId);
   if (!connection?.externalSessionId) throw new MessagingProviderError("transient", `Conexão "${conversation.connectionId}" sem sessão ativa no gateway.`);
+  const provider = resolveProvider(deps, connection.provider);
+  if (!provider.sendReaction) {
+    throw new Error("INBOX_REACTION_NOT_SUPPORTED: este canal não suporta reações enviadas pelo Vorix.");
+  }
 
   // `Participant` só faz sentido (e só é honrado pelo WuzAPI) reagindo à mensagem de OUTRO
   // participante dentro de um GRUPO — nunca numa conversa direta, nunca reagindo à própria
@@ -1268,7 +1298,7 @@ export async function reactToInboxMessage(deps: InboxUseCaseDeps, input: ReactTo
   const fromMe = message.direction === "outbound";
   const participantJid = !fromMe && conversation.chatType === "group" ? message.senderExternalId : undefined;
 
-  await deps.provider.sendReaction({
+  await provider.sendReaction({
     externalSessionId: connection.externalSessionId,
     to: conversation.externalChatId,
     externalMessageId: message.externalMessageId,
@@ -1323,9 +1353,9 @@ export type ProcessOutboundMessageInput = { messageId: string };
  */
 async function sendOutboundByType(
   deps: InboxUseCaseDeps,
-  input: { externalSessionId: string; to: string; message: InboxMessage },
+  input: { provider: MessagingProvider; externalSessionId: string; to: string; message: InboxMessage },
 ): Promise<{ externalMessageId: string }> {
-  const { message } = input;
+  const { message, provider } = input;
   if (message.type === "text") {
     // Bloco "responder mensagem específica" — `quotedMessage` já é o mesmo snapshot usado pra
     // exibir respostas RECEBIDAS (ver `registerInboundMessage`); aqui, reaproveitado pra CONSTRUIR
@@ -1333,7 +1363,7 @@ async function sendOutboundByType(
     const replyTo = message.quotedMessage?.externalMessageId
       ? { externalMessageId: message.quotedMessage.externalMessageId, participantJid: message.quotedMessage.senderId, quotedText: message.quotedMessage.body }
       : undefined;
-    return deps.provider.sendText({ externalSessionId: input.externalSessionId, to: input.to, body: message.body ?? "", replyTo });
+    return provider.sendText({ externalSessionId: input.externalSessionId, to: input.to, body: message.body ?? "", replyTo });
   }
   if (!deps.inboxMediaStorage) throw new MessagingProviderError("permanent", "Envio de mídia sem storage configurado neste processo.");
   if (!message.mediaStorageRef) throw new MessagingProviderError("permanent", `Mensagem "${message.id}" do tipo "${message.type}" sem mediaStorageRef — nada pra enviar.`);
@@ -1341,12 +1371,12 @@ async function sendOutboundByType(
   if (!stored) throw new MessagingProviderError("permanent", `Mídia da mensagem "${message.id}" não encontrada no storage.`);
   const dataUri = `data:${stored.contentType};base64,${stored.body.toString("base64")}`;
 
-  if (message.type === "image") return deps.provider.sendImage({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, caption: message.body });
-  if (message.type === "audio") return deps.provider.sendAudio({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri });
-  if (message.type === "video") return deps.provider.sendVideo({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, caption: message.body });
+  if (message.type === "image") return provider.sendImage({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, caption: message.body });
+  if (message.type === "audio") return provider.sendAudio({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri });
+  if (message.type === "video") return provider.sendVideo({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, caption: message.body });
   if (message.type === "document") {
     const fileName = (message.metadata?.fileName as string | undefined) ?? "documento";
-    return deps.provider.sendDocument({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, fileName });
+    return provider.sendDocument({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, fileName });
   }
   throw new MessagingProviderError("permanent", `Tipo de mensagem "${message.type}" não tem envio outbound suportado.`);
 }
@@ -1458,7 +1488,7 @@ export async function processOutboundMessage(deps: InboxUseCaseDeps, input: Proc
     // identidade de conversa), e usar o remetente da ÚLTIMA mensagem recebida como destino
     // (em vez do chat) mandaria a resposta pro participante errado, nunca pro grupo. Ver
     // docs/conversas-canonical-chat-identity.md.
-    const result = await sendOutboundByType(deps, { externalSessionId: connection.externalSessionId, to: conversation.externalChatId, message });
+    const result = await sendOutboundByType(deps, { provider: resolveProvider(deps, connection.provider), externalSessionId: connection.externalSessionId, to: conversation.externalChatId, message });
     if (deps.circuitBreaker) await deps.circuitBreaker.recordSuccess(circuitKey);
     deps.metrics?.incMessageOutbound();
     return await deps.messageRepository.markSent(message.id, { externalMessageId: result.externalMessageId, sentAt: new Date().toISOString() });

@@ -503,7 +503,7 @@ test("GROUP_METADATA: syncGroupMetadata preenche groupName/participantCount reai
       return { name: "Futebol Terça", participantCount: 18 };
     },
   };
-  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, provider };
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, providers: { wuzapi: provider } };
 
   const result = await syncGroupMetadata(deps, { tenantId: "tenant-group-metadata-1", workspaceId: workspace.id, connectionId: connection.id, conversationId: group.id });
   assert.equal(result.synced, true);
@@ -524,7 +524,7 @@ test("GROUP_METADATA: provider sem getGroupInfo (ex. FakeMessagingProvider) nunc
   const connection = await connectionRepo.create({ tenantId: "tenant-group-metadata-2", workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
   const group = await conversationRepo.findOrCreate({ tenantId: "tenant-group-metadata-2", workspaceId: workspace.id, connectionId: connection.id, chatType: "group", externalChatId: "120363888888888888@g.us" });
 
-  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, provider: {} };
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, providers: { wuzapi: {} } };
   const result = await syncGroupMetadata(deps, { tenantId: "tenant-group-metadata-2", workspaceId: workspace.id, connectionId: connection.id, conversationId: group.id });
   assert.equal(result.synced, false);
 });
@@ -547,7 +547,7 @@ test("GROUP_METADATA: Canal/Newsletter do WhatsApp (@newsletter, chatType també
 
   let called = false;
   const provider = { async getGroupInfo() { called = true; return { name: "nunca deveria ser chamado" }; } };
-  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, provider };
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, providers: { wuzapi: provider } };
 
   const result = await syncGroupMetadata(deps, { tenantId: "tenant-group-metadata-3", workspaceId: workspace.id, connectionId: connection.id, conversationId: channel.id });
   assert.equal(result.synced, false);
@@ -702,7 +702,7 @@ test("FOTOS: syncContactProfilePicture baixa e grava a foto de perfil real, nunc
   const provider = {
     async getProfilePicture({ jid }) { requestedJid = jid; return { body: Buffer.from("foto real"), mimeType: "image/jpeg" }; },
   };
-  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, provider, inboxMediaStorage };
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, providers: { wuzapi: provider }, inboxMediaStorage };
 
   const result = await syncContactProfilePicture(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: contact.id });
   assert.equal(result.synced, true);
@@ -716,7 +716,7 @@ test("FOTOS: syncContactProfilePicture baixa e grava a foto de perfil real, nunc
 
   let calledAgain = false;
   const providerSpy = { async getProfilePicture() { calledAgain = true; return { body: Buffer.from("outra"), mimeType: "image/jpeg" }; } };
-  await syncContactProfilePicture({ ...deps, provider: providerSpy }, { tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: contact.id });
+  await syncContactProfilePicture({ ...deps, providers: { wuzapi: providerSpy } }, { tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: contact.id });
   assert.equal(calledAgain, false, "já sincronizada — nunca refaz o download");
 });
 
@@ -734,7 +734,7 @@ test("FOTOS: syncGroupPicture baixa e grava a foto do grupo, nunca chama pra Can
   const group = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "group", externalChatId: "120363555444333222@g.us" });
 
   const provider = { async getProfilePicture() { return { body: Buffer.from("foto do grupo"), mimeType: "image/jpeg" }; } };
-  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, provider, inboxMediaStorage };
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, providers: { wuzapi: provider }, inboxMediaStorage };
 
   const result = await syncGroupPicture(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, conversationId: group.id });
   assert.equal(result.synced, true);
@@ -748,7 +748,7 @@ test("FOTOS: syncGroupPicture baixa e grava a foto do grupo, nunca chama pra Can
   const channel = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "group", externalChatId: "120363999888777666@newsletter" });
   let calledForChannel = false;
   const providerSpy = { async getProfilePicture() { calledForChannel = true; return { body: Buffer.from("x"), mimeType: "image/jpeg" }; } };
-  await syncGroupPicture({ ...deps, provider: providerSpy }, { tenantId, workspaceId: workspace.id, connectionId: connection.id, conversationId: channel.id });
+  await syncGroupPicture({ ...deps, providers: { wuzapi: providerSpy } }, { tenantId, workspaceId: workspace.id, connectionId: connection.id, conversationId: channel.id });
   assert.equal(calledForChannel, false);
 });
 
@@ -766,7 +766,7 @@ test("FOTOS: pessoa/grupo sem foto de perfil (provider devolve undefined) nunca 
   const contact = await contactRepo.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: "+5511966665555" });
 
   const provider = { async getProfilePicture() { return undefined; } };
-  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, provider, inboxMediaStorage };
+  const deps = { contactRepository: contactRepo, conversationRepository: conversationRepo, messageRepository: messageRepo, connectionRepository: connectionRepo, providers: { wuzapi: provider }, inboxMediaStorage };
 
   const result = await syncContactProfilePicture(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, contactId: contact.id });
   assert.equal(result.synced, false);

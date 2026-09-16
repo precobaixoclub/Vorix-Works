@@ -102,7 +102,7 @@ function buildDeps(overrides = {}) {
     conversationEventRepository: new PostgresInboxConversationEventRepository(db.pool),
     messageRepository: new PostgresInboxMessageRepository(db.pool),
     workspaceRepository: new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") }),
-    provider: makeFakeMessagingProvider(),
+    providers: { wuzapi: makeFakeMessagingProvider() },
     outboundQueue: makeFakeOutboundQueue(),
     ...overrides,
   };
@@ -172,7 +172,7 @@ test("CENÁRIO REAL DO BUG: publish falha após o commit (RabbitMQ off) → mens
   // Worker consome a mensagem republicada: queued → sending → sent, exatamente como o fluxo normal.
   const processed = await processOutboundMessage(deps, { messageId: orphan.id });
   assert.equal(processed.status, "sent");
-  assert.equal(deps.provider.sentMessages.length, 1, "mensagem não fica órfã — o provider foi chamado exatamente uma vez, resultado final é 'sent'");
+  assert.equal(deps.providers.wuzapi.sentMessages.length, 1, "mensagem não fica órfã — o provider foi chamado exatamente uma vez, resultado final é 'sent'");
 });
 
 // -----------------------------------------------------------------------------------------------
@@ -201,7 +201,7 @@ test("idempotência: reconciliador republica uma mensagem que JÁ estava no brok
   const first = await processOutboundMessage(deps, { messageId: message.id });
   const second = await processOutboundMessage(deps, { messageId: message.id });
 
-  assert.equal(deps.provider.sentMessages.length, 1, "provider.sendText chamado EXATAMENTE uma vez, mesmo com duas entregas do mesmo messageId");
+  assert.equal(deps.providers.wuzapi.sentMessages.length, 1, "provider.sendText chamado EXATAMENTE uma vez, mesmo com duas entregas do mesmo messageId");
   assert.equal(first.status, "sent");
   assert.equal(second.status, "sent", "a segunda entrega encontra status !== 'queued' e retorna sem reenviar (guard já existente em processOutboundMessage)");
 });
@@ -251,7 +251,7 @@ test("duas instâncias reconciliando a MESMA mensagem simultaneamente — nenhum
   // Mesmo que ambas tenham publicado (corrida real), o CAS no worker garante só um send real.
   const processed1 = await processOutboundMessage(deps, { messageId: orphan.id });
   const processed2 = await processOutboundMessage(deps, { messageId: orphan.id });
-  assert.equal(deps.provider.sentMessages.length, 1, "mesmo sob corrida entre reconciliadores, o provider nunca é chamado mais de uma vez");
+  assert.equal(deps.providers.wuzapi.sentMessages.length, 1, "mesmo sob corrida entre reconciliadores, o provider nunca é chamado mais de uma vez");
 });
 
 // -----------------------------------------------------------------------------------------------
@@ -387,7 +387,7 @@ test("pause: reconciliador republica normalmente, mas o worker pausado NUNCA cha
 
   const pausedDeps = buildDeps({ outboundQueue: brokerDownQueue, messageRepository: deps.messageRepository, outboundSendPaused: true });
   await assert.rejects(() => processOutboundMessage(pausedDeps, { messageId: message.id }), /operator_paused|pausado/i);
-  assert.equal(pausedDeps.provider.sentMessages.length, 0, "provider NUNCA chamado enquanto pausado, mesmo pra uma mensagem que acabou de ser reconciliada");
+  assert.equal(pausedDeps.providers.wuzapi.sentMessages.length, 0, "provider NUNCA chamado enquanto pausado, mesmo pra uma mensagem que acabou de ser reconciliada");
 
   const stillQueued = await deps.messageRepository.getById(message.id);
   assert.equal(stillQueued.status, "queued", "mensagem continua recuperável — nunca perdida nem marcada failed só por estar pausada");

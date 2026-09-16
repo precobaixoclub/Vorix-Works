@@ -68,7 +68,7 @@ function onboardingDeps({ inboxModuleEnabled = true } = {}) {
     messageRepository: new PostgresInboxMessageRepository(db.pool),
     workspaceRepository: new PostgresWorkspaceRepository(db.pool),
     outboundQueue: { enqueue: async () => {} },
-    provider: new FakeMessagingProvider(),
+    providers: { wuzapi: new FakeMessagingProvider() },
   };
   const entitlementDeps = {
     subscriptionRepository: new PostgresSubscriptionRepository(db.pool),

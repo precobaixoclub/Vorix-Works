@@ -83,7 +83,7 @@ test("IMAGE_OUTBOUND: sendInboxMediaMessage grava cópia própria + processOutbo
     conversationRepository: new PostgresInboxConversationRepository(db.pool),
     messageRepository: new PostgresInboxMessageRepository(db.pool),
     outboundQueue: { async publish() {} },
-    provider,
+    providers: { wuzapi: provider },
     inboxMediaStorage: mediaStorage,
   };
 
@@ -123,7 +123,7 @@ test("DOCUMENT_OUTBOUND: fileName é repassado ao provider", async () => {
     conversationRepository: new PostgresInboxConversationRepository(db.pool),
     messageRepository: new PostgresInboxMessageRepository(db.pool),
     outboundQueue: { async publish() {} },
-    provider,
+    providers: { wuzapi: provider },
     inboxMediaStorage: mediaStorage,
   };
 
@@ -146,7 +146,7 @@ test("AUDIO_OUTBOUND: sem InboxMediaStoragePort configurado, sendInboxMediaMessa
     conversationRepository: new PostgresInboxConversationRepository(db.pool),
     messageRepository: new PostgresInboxMessageRepository(db.pool),
     outboundQueue: { async publish() {} },
-    provider: makeFakeMessagingProvider(),
+    providers: { wuzapi: makeFakeMessagingProvider() },
     // inboxMediaStorage ausente de propósito.
   };
 

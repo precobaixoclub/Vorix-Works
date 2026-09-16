@@ -7,6 +7,7 @@ import type { InboxMediaStoragePort } from "../../../../application/ports/inbox-
 import type { InboxMessageRepositoryPort } from "../../../../application/ports/inbox-message-repository.port.js";
 import type { MessagingConnectionRepositoryPort } from "../../../../application/ports/messaging-connection-repository.port.js";
 import type { MessagingProvider } from "../../../../application/ports/messaging-provider.port.js";
+import type { MessagingProviderId } from "../../../../domain/inbox/inbox.model.js";
 import type { OutboundMessageQueuePort } from "../../../../application/ports/outbound-message-queue.port.js";
 import type { TenantMembershipRepositoryPort } from "../../../../application/ports/tenant-membership-repository.port.js";
 import type { UserRepositoryPort } from "../../../../application/ports/user-repository.port.js";
@@ -198,7 +199,7 @@ export type InboxRoutesDeps = {
   messageRepository: InboxMessageRepositoryPort;
   workspaceRepository: WorkspaceRepositoryPort;
   outboundQueue: OutboundMessageQueuePort;
-  provider: MessagingProvider;
+  providers: { wuzapi: MessagingProvider } & Partial<Record<Exclude<MessagingProviderId, "wuzapi">, MessagingProvider>>;
   /** `undefined` quando `INBOX_RABBITMQ_URL` não está configurado (dev/teste sem broker) — nesse
    * caso a rota SSE ainda funciona (conecta, manda heartbeat), só nunca recebe notificação
    * nenhuma; o polling de fallback do frontend continua garantindo consistência eventual. */
@@ -483,8 +484,11 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     const connections = await listConnections(useCaseDeps, { tenantId: principal.tenantId, workspaceId });
     // Fase 6 (Omnichannel) — o frontend usa isto para decidir se mostra o fluxo de QR/pareamento
     // (só faz sentido pra um canal com `supportsQrConnect`), sem precisar hardcoded conhecer que
-    // "o" provider hoje é WuzAPI.
-    return successEnvelope({ connections, providerId: deps.provider.providerId, providerCapabilities: deps.provider.capabilities }, request.id);
+    // "o" provider hoje é WuzAPI. Instagram virou canal de primeira classe (pedido explícito do
+    // usuário), mas `POST /inbox/connections` (abaixo) só cria conexões WuzAPI — conexões
+    // Instagram nascem sozinhas via OAuth de publicação + primeiro webhook, nunca por este fluxo
+    // de criação manual — por isso esta resposta segue descrevendo especificamente o WuzAPI.
+    return successEnvelope({ connections, providerId: deps.providers.wuzapi.providerId, providerCapabilities: deps.providers.wuzapi.capabilities }, request.id);
   });
 
   app.post("/inbox/connections", { schema: { body: CREATE_CONNECTION_BODY_SCHEMA } }, async (request, reply) => {

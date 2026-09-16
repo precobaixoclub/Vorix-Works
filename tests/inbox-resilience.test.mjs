@@ -86,6 +86,10 @@ function makeFakeMetrics() {
 }
 
 function buildDeps(tenantId, overrides = {}) {
+  // Aceita `provider` como atalho (usado por quase todo teste deste arquivo) e traduz para o
+  // formato real `providers.wuzapi` — evita reescrever dezenas de call sites depois do refactor
+  // de `InboxUseCaseDeps.provider` -> `providers` (dispatcher por canal, ver instagram-messaging-provider.ts).
+  const { provider, ...rest } = overrides;
   return {
     connectionRepository: new PostgresMessagingConnectionRepository(db.pool),
     contactRepository: new PostgresInboxContactRepository(db.pool),
@@ -94,8 +98,8 @@ function buildDeps(tenantId, overrides = {}) {
     messageRepository: new PostgresInboxMessageRepository(db.pool),
     workspaceRepository: new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") }),
     outboundQueue: { published: [], publish: async function publish(input) { this.published.push(input); } },
-    provider: makeFakeMessagingProvider(),
-    ...overrides,
+    providers: { wuzapi: provider ?? makeFakeMessagingProvider() },
+    ...rest,
   };
 }
 
@@ -575,7 +579,7 @@ test("Crash simulado: mensagem travada em 'sending' (crash entre sendText e mark
   // Redelivery (mesma messageId, via RabbitMQ) chega numa NOVA execução de `processOutboundMessage`.
   const result = await processOutboundMessage(deps, { messageId: message.id });
 
-  assert.equal(deps.provider.sentMessages.length, 0, "o provider NUNCA é chamado de novo para uma mensagem já 'sending' — isso é o que evita o envio duplicado");
+  assert.equal(deps.providers.wuzapi.sentMessages.length, 0, "o provider NUNCA é chamado de novo para uma mensagem já 'sending' — isso é o que evita o envio duplicado");
   assert.equal(result.status, "sending", "a mensagem fica parada em 'sending' para reconciliação manual, nunca é reenviada nem perdida");
 });
 
@@ -626,7 +630,7 @@ test("Kill switch de outbound pausado lança MessagingProviderError com kind 'op
     assert.ok(error instanceof MessagingProviderError);
     assert.equal(error.kind, "operator_paused", "kind distinto de 'transient' — é isso que impede o worker de esgotar a escada de retry e mandar pra DLQ enquanto a pausa durar (ver inbox-worker.ts)");
   }
-  assert.equal(deps.provider.sentMessages.length, 0);
+  assert.equal(deps.providers.wuzapi.sentMessages.length, 0);
 });
 
 // ------------------------------------------------------------------------------------------

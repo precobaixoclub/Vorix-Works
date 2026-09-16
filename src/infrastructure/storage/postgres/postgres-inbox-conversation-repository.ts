@@ -5,7 +5,7 @@ import type {
   InboxConversationListItem,
   InboxConversationRepositoryPort,
 } from "../../../application/ports/inbox-conversation-repository.port.js";
-import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType } from "../../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType, MessagingProviderId } from "../../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -122,13 +122,16 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
         contact_name: string | null; contact_phone: string | null; crm_contact_id: string | null;
         contact_profile_picture_storage_ref: InboxMediaStorageRef | null;
         lm_type: string | null; lm_body: string | null; lm_direction: string | null; lm_sender_display_name: string | null;
+        connection_provider: string | null;
       }
     >(
       `select c.*, ct.name as contact_name, ct.phone_normalized as contact_phone, ct.contact_id as crm_contact_id,
               ct.profile_picture_storage_ref as contact_profile_picture_storage_ref,
-              lm.type as lm_type, lm.body as lm_body, lm.direction as lm_direction, lm.sender_display_name as lm_sender_display_name
+              lm.type as lm_type, lm.body as lm_body, lm.direction as lm_direction, lm.sender_display_name as lm_sender_display_name,
+              mc.provider as connection_provider
        from inbox_conversations c
        left join inbox_contacts ct on ct.id = c.contact_id
+       left join messaging_connections mc on mc.id = c.connection_id
        left join lateral (
          select type, body, direction, sender_display_name
          from inbox_messages m
@@ -146,6 +149,7 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       contactPhone: row.contact_phone ?? undefined,
       crmContactId: row.crm_contact_id ?? undefined,
       contactProfilePictureStorageRef: row.contact_profile_picture_storage_ref ?? undefined,
+      connectionProvider: (row.connection_provider as MessagingProviderId | null) ?? undefined,
       lastMessagePreview: row.lm_type
         ? {
             type: row.lm_type as InboxMessageType, body: row.lm_body ?? undefined, direction: row.lm_direction as InboxMessageDirection,

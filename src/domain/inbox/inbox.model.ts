@@ -13,7 +13,10 @@
 
 import { canonicalizeBrazilianPhone } from "./brazilian-phone-identity.js";
 
-export const MESSAGING_PROVIDERS = ["wuzapi"] as const;
+/** Instagram DM (réplica adaptada, pedido explícito do usuário: "junte só a tela, contabilizando
+ * no kanban também") — canal stateless (token OAuth, sem QR/pareamento), ver
+ * `MessagingProviderCapabilities.supportsQrConnect` no port. */
+export const MESSAGING_PROVIDERS = ["wuzapi", "instagram"] as const;
 export type MessagingProviderId = (typeof MESSAGING_PROVIDERS)[number];
 
 export const MESSAGING_CONNECTION_STATUSES = [

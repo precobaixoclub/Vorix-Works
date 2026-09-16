@@ -236,7 +236,7 @@ function inboxDeps() {
     messageRepository: new PostgresInboxMessageRepository(db.pool),
     workspaceRepository: new PostgresWorkspaceRepository(db.pool),
     outboundQueue: { publish: async () => {} },
-    provider: new FakeMessagingProvider(),
+    providers: { wuzapi: new FakeMessagingProvider() },
     productAnalytics: analyticsDeps(),
   };
 }
@@ -325,7 +325,7 @@ function onboardingAnalyticsDeps({ inboxModuleEnabled = true } = {}) {
       messageRepository: new PostgresInboxMessageRepository(db.pool),
       workspaceRepository: new PostgresWorkspaceRepository(db.pool),
       outboundQueue: { publish: async () => {} },
-      provider: new FakeMessagingProvider(),
+      providers: { wuzapi: new FakeMessagingProvider() },
     },
     inboxModuleEnabled,
     productAnalytics: analyticsDeps(),

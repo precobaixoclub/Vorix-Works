@@ -184,6 +184,18 @@ export type ApiConfig = {
     enabled: boolean;
     webhookVerifyToken?: string;
   };
+  /** Agenda (réplica adaptada do CMDesk, pedido explícito do usuário) — OAuth POR USUÁRIO
+   * (nunca por tenant+workspace como os providers de publicação acima), sem watch/webhook nesta
+   * rodada (só o scheduler periódico, ver `calendar.model.ts`). */
+  calendar: {
+    enabled: boolean;
+    clientId?: string;
+    clientSecret?: string;
+    redirectUri?: string;
+    scopes: readonly string[];
+    syncSchedulerEnabled: boolean;
+    syncSchedulerIntervalMs: number;
+  };
   /** Trial + Product Analytics — kill switch de `POST /v1/product-events` e de toda
    * instrumentação server-side (`recordProductEvent`/`recordFirstEvent`). `false` = todo registro
    * é um no-op silencioso, nunca afeta a operação principal que o chama. */
@@ -339,6 +351,17 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const instagramDmEnabled = env.META_INSTAGRAM_DM_ENABLED?.trim() === "true";
   const productAnalyticsEnabled = env.PRODUCT_ANALYTICS_ENABLED?.trim() === "true";
   const instagramDmWebhookVerifyToken = env.META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN?.trim() || undefined;
+  // Agenda (réplica adaptada do CMDesk, pedido explícito do usuário) — variáveis PRÓPRIAS
+  // (GOOGLE_CALENDAR_*), nunca reaproveita client id/secret de outro provider Google (não há
+  // nenhum outro hoje, mas o padrão do projeto é sempre credenciais dedicadas por integração).
+  const calendarEnabled = env.GOOGLE_CALENDAR_ENABLED?.trim() === "true";
+  const calendarClientId = env.GOOGLE_CALENDAR_CLIENT_ID?.trim() || undefined;
+  const calendarClientSecret = env.GOOGLE_CALENDAR_CLIENT_SECRET?.trim() || undefined;
+  const calendarRedirectUri = env.GOOGLE_CALENDAR_OAUTH_REDIRECT_URI?.trim() || undefined;
+  const calendarScopes = parseCsv(env.GOOGLE_CALENDAR_SCOPES);
+  // ~2min (seção 2.3 do relatório do usuário: "confirmado por spot-check: default 120_000ms").
+  const calendarSyncSchedulerEnabled = env.GOOGLE_CALENDAR_SYNC_SCHEDULER_ENABLED?.trim() !== "false";
+  const calendarSyncSchedulerIntervalMs = parsePositiveInt(env.GOOGLE_CALENDAR_SYNC_SCHEDULER_INTERVAL_MS) ?? 120_000;
   const tiktokEnabled = env.TIKTOK_ENABLED?.trim() === "true";
   const tiktokClientKey = env.TIKTOK_CLIENT_KEY?.trim() || undefined;
   const tiktokClientSecret = env.TIKTOK_CLIENT_SECRET?.trim() || undefined;
@@ -539,6 +562,15 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     instagramDm: {
       enabled: instagramDmEnabled,
       webhookVerifyToken: instagramDmWebhookVerifyToken,
+    },
+    calendar: {
+      enabled: calendarEnabled,
+      clientId: calendarClientId,
+      clientSecret: calendarClientSecret,
+      redirectUri: calendarRedirectUri,
+      scopes: calendarScopes,
+      syncSchedulerEnabled: calendarSyncSchedulerEnabled,
+      syncSchedulerIntervalMs: calendarSyncSchedulerIntervalMs,
     },
     productAnalytics: {
       enabled: productAnalyticsEnabled,

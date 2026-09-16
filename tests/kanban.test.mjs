@@ -26,6 +26,7 @@ import {
   setConversationPinned,
   closeConversation,
   reopenConversation,
+  setConversationTeam,
 } from "../dist/application/inbox/inbox-use-cases.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
@@ -384,5 +385,52 @@ test("KANBAN_NAO_CONFIGURADO: deps sem teamKanbanPhaseRepository/conversationTim
   await assert.rejects(
     listKanbanPhases(depsWithoutKanban, { teamId: team.id, tenantId, workspaceId: workspace.id }),
     /INBOX_KANBAN_NOT_CONFIGURED/,
+  );
+});
+
+test("ATRIBUICAO_MANUAL_DE_EQUIPE: setConversationTeam coloca uma conversa existente numa equipe (achado de suporte: sem isto o Kanban ficava vazio pra sempre sem roteamento por canal configurado)", async () => {
+  const tenantId = "tenant-kanban-11";
+  const { workspace, connectionRepo, deps, conversationRepo } = await makeSetup(tenantId);
+  const teamA = await createTeam(deps, { tenantId, workspaceId: workspace.id, name: "Suporte" });
+  const teamB = await createTeam(deps, { tenantId, workspaceId: workspace.id, name: "Vendas" });
+
+  const conversation = await makeConversation(tenantId, workspace, connectionRepo, deps, "wamid.kanban-manual-team-1");
+  assert.equal(conversation.currentTeamId, undefined, "conversa nasce sem equipe (sem roteamento por canal configurado)");
+
+  const assigned = await setConversationTeam(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, teamId: teamA.id, performedBy: "supervisor-1" });
+  assert.equal(assigned.currentTeamId, teamA.id, "agora a conversa aparece no board da equipe A");
+
+  // Board da equipe A: ensureConversationPhaseStates + moveConversationPhase precisam funcionar
+  // normalmente numa conversa que só ganhou a equipe manualmente (nunca via roteamento).
+  await ensureConversationPhaseStates(deps, { teamId: teamA.id, tenantId, workspaceId: workspace.id, conversationIds: [conversation.id] });
+  const afterEnsure = await conversationRepo.getById(conversation.id);
+  assert.ok(afterEnsure.currentPhaseId, "ganhou a fase padrão da equipe A");
+  const phasesA = await listKanbanPhases(deps, { teamId: teamA.id, tenantId, workspaceId: workspace.id });
+  await moveConversationPhase(deps, { teamId: teamA.id, conversationId: conversation.id, tenantId, workspaceId: workspace.id, phaseId: phasesA[1].id, performedBy: "agente-1" });
+
+  // Reatribuir pra equipe B: a fase antiga (da equipe A) não pode sobreviver — senão o board da
+  // equipe B quebraria (moveConversationPhase valida que a fase pertence à equipe atual).
+  const reassigned = await setConversationTeam(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, teamId: teamB.id, performedBy: "supervisor-1" });
+  assert.equal(reassigned.currentTeamId, teamB.id);
+  assert.equal(reassigned.currentPhaseId, undefined, "trocar de equipe limpa a fase da equipe anterior");
+
+  const entriesAfterReassign = await db.pool.query(
+    "select ended_at from conversation_time_entries where conversation_id = $1 and team_id = $2 order by created_at desc limit 1",
+    [conversation.id, teamA.id],
+  );
+  assert.notEqual(entriesAfterReassign.rows[0].ended_at, null, "cronômetro da equipe antiga foi fechado, nunca fica aberto pra sempre");
+
+  // Tirar de qualquer equipe (teamId: undefined) — some do Kanban de novo.
+  const removed = await setConversationTeam(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, teamId: undefined, performedBy: "supervisor-1" });
+  assert.equal(removed.currentTeamId, undefined);
+
+  // Mesma equipe de novo é no-op (nunca duplica trabalho/fecha cronômetro à toa).
+  const noop = await setConversationTeam(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, teamId: undefined, performedBy: "supervisor-1" });
+  assert.equal(noop.currentTeamId, undefined);
+
+  // Equipe de OUTRO tenant/workspace nunca é aceita.
+  await assert.rejects(
+    setConversationTeam(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, teamId: "team-inexistente", performedBy: "supervisor-1" }),
+    /TEAM_NOT_FOUND/,
   );
 });

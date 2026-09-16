@@ -42,6 +42,7 @@ import {
   sendInboxMessage,
   setAiConversationEnabled,
   setConversationPinned,
+  setConversationTeam,
   setConversationUrgent,
   takeOverConversation,
   transferConversation,
@@ -74,6 +75,7 @@ const SEND_MESSAGE_BODY_SCHEMA = {
 const REACT_MESSAGE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "emoji"], properties: { workspaceId: { type: "string", minLength: 1 }, emoji: { type: "string" } } } as const;
 const MESSAGE_PARAMS_SCHEMA = { type: "object", required: ["id", "messageId"], properties: { id: { type: "string", minLength: 1 }, messageId: { type: "string", minLength: 1 } } } as const;
 const ASSIGN_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, assignedUserId: { type: "string" } } } as const;
+const SET_TEAM_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, teamId: { type: "string" } } } as const;
 const TRANSFER_BODY_SCHEMA = { type: "object", required: ["workspaceId", "toUserId"], properties: { workspaceId: { type: "string", minLength: 1 }, toUserId: { type: "string", minLength: 1 } } } as const;
 const AI_ENABLED_BODY_SCHEMA = { type: "object", required: ["workspaceId", "aiEnabled"], properties: { workspaceId: { type: "string", minLength: 1 }, aiEnabled: { type: "boolean" } } } as const;
 const URGENT_BODY_SCHEMA = { type: "object", required: ["workspaceId", "isUrgent"], properties: { workspaceId: { type: "string", minLength: 1 }, isUrgent: { type: "boolean" } } } as const;
@@ -823,6 +825,24 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     try {
       await assertUserBelongsToTenant(deps, toUserId, principal.tenantId);
       const conversation = await transferConversation(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, toUserId, performedBy: principal.userId });
+      publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
+      return successEnvelope(conversation, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  /** Atribuição manual de equipe (achado de suporte: "por que as conversas não carregam no
+   * Kanban" — sem isto, `currentTeamId` só era setado pelo roteamento automático de canal em
+   * conversas NOVAS; sem essa configuração, ou pra qualquer conversa já existente, não havia
+   * nenhum jeito de colocar uma conversa numa equipe). `teamId` ausente/vazio tira a conversa de
+   * qualquer equipe (some do quadro Kanban de novo). */
+  app.post("/inbox/conversations/:id/team", { schema: { params: ID_PARAMS_SCHEMA, body: SET_TEAM_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:assign");
+    const { id } = request.params as { id: string };
+    const { workspaceId, teamId } = request.body as { workspaceId: string; teamId?: string };
+    try {
+      const conversation = await setConversationTeam(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, teamId: teamId || undefined, performedBy: principal.userId });
       publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
       return successEnvelope(conversation, request.id);
     } catch (error) {

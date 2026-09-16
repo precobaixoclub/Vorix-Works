@@ -492,6 +492,37 @@ export async function transferConversation(deps: InboxUseCaseDeps, input: Transf
   return updated;
 }
 
+export type SetConversationTeamInput = { tenantId: string; workspaceId: string; conversationId: string; teamId: string | undefined; performedBy: string };
+
+/**
+ * Atribuição manual de equipe (achado de suporte: "por que as conversas não carregam no
+ * Kanban" — antes desta função, `currentTeamId` só era setado automaticamente pelo roteamento por
+ * canal em conversas NOVAS; sem canal roteado configurado — ou pra qualquer conversa já
+ * existente antes da funcionalidade — não havia NENHUM jeito de colocar uma conversa numa equipe,
+ * então o quadro Kanban ficava vazio pra sempre, mesmo com conversas de sobra). `teamId: undefined`
+ * tira a conversa de qualquer equipe (some do quadro Kanban de novo).
+ */
+export async function setConversationTeam(deps: InboxUseCaseDeps, input: SetConversationTeamInput): Promise<InboxConversation> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  if (input.teamId) {
+    await mustTeamBelongToTenantAndWorkspace(requireTeamDeps(deps), input.teamId, input.tenantId, input.workspaceId);
+  }
+  if (conversation.currentTeamId === input.teamId) return conversation;
+
+  // Trocar (ou tirar) de equipe invalida a fase atual — ela pertence à equipe ANTERIOR; deixar
+  // `currentPhaseId` apontando pra lá quebraria o board da equipe nova (`moveConversationPhase`
+  // valida que a fase pertence à equipe atual da conversa antes de qualquer operação). Fecha
+  // também o cronômetro aberto — mesmo racional de `transitionConversationStatus` saindo do board.
+  if (conversation.currentTeamId && conversation.currentPhaseId && deps.conversationTimeEntryRepository) {
+    await deps.conversationTimeEntryRepository.closeOpenEntry({ conversationId: conversation.id, teamId: conversation.currentTeamId }).catch((error) => {
+      console.warn("[inbox] falha ao fechar cronômetro do kanban ao trocar de equipe (best-effort):", error instanceof Error ? error.message : error);
+    });
+    await deps.conversationRepository.setPhase(conversation.id, undefined);
+  }
+
+  return deps.conversationRepository.setTeam(conversation.id, input.teamId);
+}
+
 export type CloseConversationInput = { tenantId: string; workspaceId: string; conversationId: string; performedBy: string };
 
 /** Finalizar atendimento — status vira `resolved` ("Finalizada" na UI). Idempotente: já

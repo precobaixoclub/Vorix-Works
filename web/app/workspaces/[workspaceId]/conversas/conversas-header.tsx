@@ -20,7 +20,7 @@ export function ConversasHeader<T extends string>({
   onTabChange: (key: T) => void;
 }) {
   return (
-    <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-3 sm:px-4">
+    <div className="flex h-9 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-3 sm:px-4">
       <p className="text-sm font-semibold text-foreground">Conversas</p>
       <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
         {tabs.map((tab) => (
@@ -30,7 +30,7 @@ export function ConversasHeader<T extends string>({
             onClick={() => onTabChange(tab.key)}
             aria-current={activeTab === tab.key ? "page" : undefined}
             className={cn(
-              "h-7 rounded-md px-3 text-xs font-medium transition-colors duration-150",
+              "h-6 rounded-md px-2.5 text-xs font-medium transition-colors duration-150",
               activeTab === tab.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
             )}
           >

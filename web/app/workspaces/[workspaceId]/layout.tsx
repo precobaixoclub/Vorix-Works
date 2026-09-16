@@ -97,7 +97,7 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 : "flex min-h-0 min-w-0 flex-1 flex-col md:min-h-dvh"
             }
           >
-            <WorkspaceTopBar workspaceId={workspace.id} name={workspace.name} status={workspace.status} />
+            <WorkspaceTopBar workspaceId={workspace.id} name={workspace.name} status={workspace.status} hideBreadcrumb={isConversasPath} />
             <div
               className={
                 isConversasPath

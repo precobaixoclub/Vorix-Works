@@ -108,6 +108,13 @@ export function transferInboxConversation(workspaceId: string, conversationId: s
   return apiClient.post<InboxConversation>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/transfer`, { workspaceId, toUserId });
 }
 
+/** Atribuição manual de equipe (achado de suporte: "por que as conversas não carregam no
+ * Kanban" — sem isto, `currentTeamId` só era setado pelo roteamento automático de canal em
+ * conversas novas). `teamId: undefined` tira a conversa de qualquer equipe. */
+export function setInboxConversationTeam(workspaceId: string, conversationId: string, teamId: string | undefined): Promise<InboxConversation> {
+  return apiClient.post<InboxConversation>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/team`, { workspaceId, teamId });
+}
+
 export function closeInboxConversation(workspaceId: string, conversationId: string): Promise<InboxConversation> {
   return apiClient.post<InboxConversation>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/close`, { workspaceId });
 }

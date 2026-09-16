@@ -57,6 +57,7 @@ import {
   sendInboxMediaMessage,
   sendInboxMessage,
   setInboxConversationAiEnabled,
+  setInboxConversationTeam,
   setInboxConversationUrgent,
   takeOverInboxConversation,
   transferInboxConversation,
@@ -301,12 +302,13 @@ function ConversationListPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
-      <div className="space-y-3 border-b border-border p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Fila viva</p>
-            <p className="mt-0.5 text-sm font-semibold text-foreground">Atendimento</p>
-          </div>
+      {/* Otimização de espaço vertical (pedido explícito do usuário — captura de tela mostrando
+         o topo da tela de Conversas tomando espaço demais no celular e no desktop): "Fila viva"
+         (eyebrow decorativo) removido — "Atendimento" numa linha só com o contador já basta,
+         economiza uma linha inteira; padding/gaps e alturas de controle reduzidos em seguida. */}
+      <div className="space-y-2 border-b border-border p-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-foreground">Atendimento</p>
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">{totalConversations}</span>
         </div>
 
@@ -316,7 +318,7 @@ function ConversationListPane({
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Buscar conversa"
-            className="h-9 pl-8"
+            className="h-8 pl-8"
           />
         </div>
 
@@ -327,7 +329,7 @@ function ConversationListPane({
               type="button"
               onClick={() => onFilterChange(item.value)}
               className={cn(
-                "flex h-8 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
+                "flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
                 filter === item.value
                   ? item.value === "urgent"
                     ? "bg-destructive text-destructive-foreground"
@@ -344,7 +346,7 @@ function ConversationListPane({
               <button
                 type="button"
                 className={cn(
-                  "h-8 shrink-0 rounded-full px-3 text-xs font-medium transition-colors duration-150",
+                  "h-7 shrink-0 rounded-full px-3 text-xs font-medium transition-colors duration-150",
                   activeAdvancedFilter ? "bg-ai-soft text-ai dark:bg-ai/15 dark:text-ai-glow" : "bg-muted text-muted-foreground hover:bg-muted/80",
                 )}
               >
@@ -841,6 +843,7 @@ function ConversationTimelinePane({
             canDelete={canDelete}
             conversation={conversation}
             workspaceId={workspaceId}
+            teams={teams}
             busyAction={busyAction}
             transferTarget={transferTarget}
             transferOptions={transferOptions}
@@ -872,7 +875,7 @@ function ConversationTimelinePane({
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-1">
           {isLoading ? (
             <MessageSkeleton />
           ) : error ? (
@@ -1029,6 +1032,7 @@ function ConversationActionsMenu({
   canDelete,
   conversation,
   workspaceId,
+  teams,
   busyAction,
   transferTarget,
   transferOptions,
@@ -1041,6 +1045,7 @@ function ConversationActionsMenu({
   canDelete: boolean;
   conversation: InboxConversation;
   workspaceId: string;
+  teams: readonly Team[];
   busyAction: string | undefined;
   transferTarget: string;
   transferOptions: readonly { id: string; label: string }[];
@@ -1115,6 +1120,24 @@ function ConversationActionsMenu({
             </GuardedButton>
           </div>
         </div>
+
+        {teams.length > 0 ? (
+          <div className="border-t border-border pt-3">
+            {/* Bloco "atribuição manual de equipe" (achado de suporte: "por que as conversas não
+               carregam no Kanban" — sem isto, currentTeamId só era setado pelo roteamento
+               automático de canal em conversas NOVAS; conversas existentes nunca ganhavam equipe). */}
+            <p className="mb-1.5 text-xs font-medium text-foreground">Equipe (Kanban)</p>
+            <SearchableCombo
+              items={teams.map((team) => ({ id: team.id, label: team.name }))}
+              value={conversation.currentTeamId ?? ""}
+              onValueChange={(teamId) => onRunAction("team", () => setInboxConversationTeam(workspaceId, conversation.id, teamId || undefined))}
+              placeholder="Sem equipe"
+              searchPlaceholder="Buscar equipe..."
+              extraOption={{ value: "", label: "Sem equipe" }}
+              disabled={!canOperate || Boolean(busyAction)}
+            />
+          </div>
+        ) : null}
 
         <div className="border-t border-border pt-3">
           <GuardedButton
@@ -1435,70 +1458,79 @@ function MessageBubble({
 
   return (
     <div className={cn("group/msg flex flex-col gap-1", isOutbound ? "items-end" : "items-start")}>
-      <div
-        className={cn(
-          "max-w-[min(78%,42rem)] rounded-xl border px-3 py-2 text-sm shadow-sm",
-          isOutbound
-            ? failed
-              ? "border-destructive/40 bg-destructive/10 text-foreground"
-              : "border-primary/20 bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
-            : "border-border bg-card text-foreground",
-        )}
-      >
-        {senderLabel ? <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">{senderLabel}</p> : null}
-        {quoted ? (
-          <div className={cn("mb-1.5 rounded-md border-l-2 px-2 py-1 text-xs opacity-80", isOutbound ? "border-primary-foreground/50 bg-black/10" : "border-primary/50 bg-muted/60")}>
-            {quotedSenderLabel ? <p className="mb-0.5 font-semibold">{quotedSenderLabel}</p> : null}
-            <p className="line-clamp-2 break-words">{quotedBody || mediaLabelFor(quotedType ?? "other", quotedLive?.direction === "outbound")}</p>
+      {/* Bloco "3 pontinhos ao lado, não embaixo" (pedido explícito do usuário: consumia uma linha
+         inteira por mensagem, mesmo com opacity-0 — `opacity` nunca remove algo do fluxo do layout).
+         Agora o menu vive na "sobra" horizontal ao lado da bolha (que já não usa 100% da largura,
+         `max-w-[min(78%,42rem)]`), como o próprio WhatsApp faz — nunca mais reserva altura própria. */}
+      <div className={cn("flex max-w-[min(85%,45rem)] items-center gap-1", reactionGroups.length > 0 && "mb-2.5", isOutbound ? "flex-row-reverse" : "flex-row")}>
+        <div
+          className={cn(
+            "relative min-w-0 max-w-[min(78%,42rem)] rounded-xl border px-3 py-2 text-sm shadow-sm",
+            isOutbound
+              ? failed
+                ? "border-destructive/40 bg-destructive/10 text-foreground"
+                : "border-primary/20 bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
+              : "border-border bg-card text-foreground",
+          )}
+        >
+          {senderLabel ? <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">{senderLabel}</p> : null}
+          {quoted ? (
+            <div className={cn("mb-1.5 rounded-md border-l-2 px-2 py-1 text-xs opacity-80", isOutbound ? "border-primary-foreground/50 bg-black/10" : "border-primary/50 bg-muted/60")}>
+              {quotedSenderLabel ? <p className="mb-0.5 font-semibold">{quotedSenderLabel}</p> : null}
+              <p className="line-clamp-2 break-words">{quotedBody || mediaLabelFor(quotedType ?? "other", quotedLive?.direction === "outbound")}</p>
+            </div>
+          ) : null}
+          {isMedia ? (
+            <MessageMedia workspaceId={workspaceId} message={message} />
+          ) : !body ? (
+            // Bug real corrigido: tipo sem renderizador dedicado (location/contact/other/sticker) e
+            // sem body deixava a bolha completamente vazia (só timestamp) — nunca mais "nada".
+            (() => {
+              const Icon = mediaIconFor(message.type);
+              return (
+                <div className="flex items-center gap-2 rounded-lg bg-muted/70 px-3 py-2 text-muted-foreground">
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="text-xs">{mediaLabelFor(message.type, isOutbound)}</span>
+                </div>
+              );
+            })()
+          ) : null}
+          {body ? <p className={cn("whitespace-pre-wrap break-words", isMedia && "mt-1.5")}>{body}</p> : null}
+          <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1 text-[10px] opacity-70">
+            <span className="tabular-nums">{timeLabel(message.sentAt ?? message.createdAt)}</span>
+            {isOutbound ? <MessageStatusTicks status={message.status} /> : null}
           </div>
-        ) : null}
-        {isMedia ? (
-          <MessageMedia workspaceId={workspaceId} message={message} />
-        ) : !body ? (
-          // Bug real corrigido: tipo sem renderizador dedicado (location/contact/other/sticker) e
-          // sem body deixava a bolha completamente vazia (só timestamp) — nunca mais "nada".
-          (() => {
-            const Icon = mediaIconFor(message.type);
-            return (
-              <div className="flex items-center gap-2 rounded-lg bg-muted/70 px-3 py-2 text-muted-foreground">
-                <Icon className="h-4 w-4 shrink-0" />
-                <span className="text-xs">{mediaLabelFor(message.type, isOutbound)}</span>
-              </div>
-            );
-          })()
-        ) : null}
-        {body ? <p className={cn("whitespace-pre-wrap break-words", isMedia && "mt-1.5")}>{body}</p> : null}
-        <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1 text-[10px] opacity-70">
-          <span className="tabular-nums">{timeLabel(message.sentAt ?? message.createdAt)}</span>
-          {isOutbound ? <MessageStatusTicks status={message.status} /> : null}
+          {failed && body ? (
+            <div className="mt-2 flex justify-end">
+              <Button variant="secondary" size="sm" loading={retrying} onClick={() => onRetry(body)}>
+                Tentar novamente
+              </Button>
+            </div>
+          ) : null}
+          {/* Bloco "reação ao lado, não embaixo" (pedido explícito do usuário) — pendurada no canto
+             inferior da própria bolha (mesmo tratamento do WhatsApp), nunca mais uma linha cheia só
+             pra ela. `mb-2.5` no wrapper acima abre espaço pra ela não ficar colada na mensagem seguinte. */}
+          {reactionGroups.length > 0 ? (
+            <div className={cn("absolute -bottom-2.5 flex gap-0.5", isOutbound ? "right-2" : "left-2")}>
+              {reactionGroups.map((group) => (
+                <span
+                  key={group.emoji}
+                  title={group.reactorNames.join(", ")}
+                  className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card px-1.5 py-0.5 text-[11px] text-foreground shadow-sm"
+                >
+                  <span>{group.emoji}</span>
+                  {group.count > 1 ? <span className="tabular-nums text-[10px] text-muted-foreground">{group.count}</span> : null}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
-        {failed && body ? (
-          <div className="mt-2 flex justify-end">
-            <Button variant="secondary" size="sm" loading={retrying} onClick={() => onRetry(body)}>
-              Tentar novamente
-            </Button>
+        {canOperate ? (
+          <div className="shrink-0 self-end opacity-0 transition-opacity group-hover/msg:opacity-100">
+            <MessageActionsMenu workspaceId={workspaceId} conversationId={conversationId} message={message} onReplyTo={onReplyTo} onChanged={onChanged} />
           </div>
         ) : null}
       </div>
-      {canOperate ? (
-        <div className={cn("flex opacity-0 transition-opacity group-hover/msg:opacity-100", isOutbound ? "justify-end" : "justify-start")}>
-          <MessageActionsMenu workspaceId={workspaceId} conversationId={conversationId} message={message} onReplyTo={onReplyTo} onChanged={onChanged} />
-        </div>
-      ) : null}
-      {reactionGroups.length > 0 ? (
-        <div className="flex flex-wrap gap-1 px-1">
-          {reactionGroups.map((group) => (
-            <span
-              key={group.emoji}
-              title={group.reactorNames.join(", ")}
-              className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card px-1.5 py-0.5 text-[11px] shadow-sm"
-            >
-              <span>{group.emoji}</span>
-              {group.count > 1 ? <span className="tabular-nums text-[10px] text-muted-foreground">{group.count}</span> : null}
-            </span>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }

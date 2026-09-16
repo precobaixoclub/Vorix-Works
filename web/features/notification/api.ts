@@ -20,7 +20,11 @@ export function dismissAllNotifications(workspaceId: string): Promise<{ dismisse
   return apiClient.post<{ dismissed: number }>("/v1/notifications/dismiss-all", { workspaceId });
 }
 
-/** Curtíssima duração/escopo único — mesmo racional de `mintInboxStreamToken`. */
+/** Curtíssima duração/escopo único — mesmo racional de `mintInboxStreamToken`. Achado real de
+ * produção: `apiClient.post` sempre manda `Content-Type: application/json`, mesmo sem payload —
+ * passar `undefined` deixa o corpo vazio com esse header, e o Fastify rejeita
+ * (`FST_ERR_CTP_EMPTY_JSON_BODY`, 400) antes de a rota nem rodar. `{}` explícito é obrigatório
+ * aqui (mesmo padrão já usado por `mintInboxStreamToken`). */
 export function mintNotificationStreamToken(): Promise<NotificationStreamToken> {
-  return apiClient.post<NotificationStreamToken>("/v1/notifications/stream-token");
+  return apiClient.post<NotificationStreamToken>("/v1/notifications/stream-token", {});
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { getApiBaseUrl } from "@/lib/api-error";
-import { getChannelRouting, getConversationsServiceTime, getInboxMetrics, getInboxModuleStatus, listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers, listKanbanPhases, mintInboxStreamToken } from "./api";
+import { getChannelRouting, getConversationsServiceTime, getInboxMetrics, getInboxModuleStatus, listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers, listInboxTags, listKanbanPhases, mintInboxStreamToken } from "./api";
 import type { InboxConversationFilter } from "./types";
 
 /**
@@ -31,6 +31,12 @@ export function useChannelRouting(workspaceId: string, connectionId: string) {
 /** Bloco "kanban de atendimento" (réplica adaptada do CMDesk, pedido explícito do usuário). */
 export function useKanbanPhases(workspaceId: string, teamId: string | undefined) {
   return useSWR(teamId ? ["kanban-phases", workspaceId, teamId] : null, () => listKanbanPhases(workspaceId, teamId!));
+}
+
+/** Bloco "etiquetas" (pedido explícito do usuário) — taxonomia muda pouco, `refreshInterval`
+ * mais espaçado que o de conversas (nunca precisa ser tempo real). */
+export function useInboxTags(workspaceId: string) {
+  return useSWR(["inbox-tags", workspaceId], () => listInboxTags(workspaceId), { refreshInterval: 60_000 });
 }
 
 /** Poll espaçado (60s) — nunca a cada segundo; o "cronômetro rodando" no card é só visual, via

@@ -1,4 +1,4 @@
-import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType, MessagingProviderId } from "../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType, InboxTag, MessagingProviderId } from "../../domain/inbox/inbox.model.js";
 
 /** Módulo Conversas (Fase 1/4). Ver `db/migrations/0082_inbox_conversations.sql` e
  * `db/migrations/0115_inbox_canonical_chat_identity.sql` (identidade canônica de chat). */
@@ -51,6 +51,11 @@ export type InboxConversationListItem = InboxConversation & {
    * pra lista de conversas mostrar o avatar real sem uma segunda chamada por item. */
   contactProfilePictureStorageRef?: InboxMediaStorageRef;
   lastMessagePreview?: InboxConversationLastMessagePreview;
+  /** Bloco "etiquetas" — denormalizado pela camada de caso de uso (`listConversations` em
+   * `inbox-use-cases.ts`, nunca este repositório), a partir de
+   * `InboxTagRepositoryPort.listTagsByConversationIds`. `undefined` = módulo de etiquetas não
+   * configurado neste processo; `[]` = configurado, sem etiquetas nesta conversa. */
+  tags?: InboxTag[];
 };
 
 export type InboxConversationRepositoryPort = {

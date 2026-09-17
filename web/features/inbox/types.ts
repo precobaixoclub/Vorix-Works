@@ -29,6 +29,24 @@ export type InboxChatType = "direct" | "group";
  * do instagram para diferenciar na conversa e um filtro tambem"). */
 export type MessagingProviderId = "wuzapi" | "instagram";
 
+/** Bloco "etiquetas" (pedido explícito do usuário: "criar e configurar etiquetas dentro do
+ * sistema e nas conversas ser possível adicionar mais do que uma"). Cor vem de um vocabulário
+ * fechado (mesmo racional de design do resto do produto, ver `web/CLAUDE.md`) — reaproveitada
+ * entre várias etiquetas, nunca um seletor de cor livre. */
+export const INBOX_TAG_COLORS = ["emerald", "sky", "violet", "amber", "rose", "slate"] as const;
+export type InboxTagColor = (typeof INBOX_TAG_COLORS)[number];
+
+/** Por WORKSPACE (nunca por equipe/canal) — a mesma etiqueta serve qualquer conversa, WhatsApp ou
+ * Instagram. Relação com `InboxConversation` é N:N — uma conversa pode ter várias. */
+export type InboxTag = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  color: InboxTagColor;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type InboxConversation = {
   id: string;
   connectionId: string;
@@ -86,6 +104,9 @@ export type InboxConversation = {
    * genérico. `undefined` em conversas sem nenhuma mensagem ainda, ou em ambientes que ainda não
    * atualizaram o backend para preenchê-lo. */
   lastMessagePreview?: { type: InboxMessageType; body?: string; direction: InboxMessageDirection; senderDisplayName?: string };
+  /** Bloco "etiquetas" — denormalizado pela listagem. `undefined` = ambiente que ainda não
+   * atualizou o backend; `[]` = módulo configurado, sem etiquetas nesta conversa. */
+  tags?: InboxTag[];
 };
 
 /** Fase 4 — `open`/`pending`/`resolved` filtram por status normalizado (ver

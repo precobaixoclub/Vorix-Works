@@ -5,6 +5,8 @@ import type { InboxConversationEventRepositoryPort } from "../../../../applicati
 import type { InboxConversationListFilter, InboxConversationRepositoryPort } from "../../../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxMediaStoragePort } from "../../../../application/ports/inbox-media-storage.port.js";
 import type { InboxMessageRepositoryPort } from "../../../../application/ports/inbox-message-repository.port.js";
+import type { InboxTagRepositoryPort } from "../../../../application/ports/inbox-tag-repository.port.js";
+import type { InboxTagColor } from "../../../../domain/inbox/inbox.model.js";
 import type { MessagingConnectionRepositoryPort } from "../../../../application/ports/messaging-connection-repository.port.js";
 import type { MessagingProvider } from "../../../../application/ports/messaging-provider.port.js";
 import type { MessagingProviderId } from "../../../../domain/inbox/inbox.model.js";
@@ -15,11 +17,14 @@ import type { WorkspaceRepositoryPort } from "../../../../application/ports/work
 import type { InboxRealtimeSubscriber } from "../../../../infrastructure/messaging/rabbitmq/inbox-realtime-subscriber.js";
 import type { ProductAnalyticsUseCaseDeps } from "../../../../application/product-analytics/product-analytics-use-cases.js";
 import {
+  addTagToConversation,
   assignConversation,
   closeConversation,
+  createInboxTag,
   createKanbanPhase,
   deleteConversation,
   deleteInboxMessage,
+  deleteInboxTag,
   deleteKanbanPhase,
   createConnection,
   disconnectConnection,
@@ -31,12 +36,14 @@ import {
   listConversationEvents,
   listConversationMessages,
   listConversations,
+  listInboxTags,
   listKanbanPhases,
   markConversationRead,
   markConversationUnread,
   moveConversationPhase,
   reactToInboxMessage,
   refreshConnectionStatus,
+  removeTagFromConversation,
   reopenConversation,
   reorderKanbanPhases,
   sendInboxMediaMessage,
@@ -48,6 +55,7 @@ import {
   takeOverConversation,
   transferConversation,
   updateChannelRouting,
+  updateInboxTag,
   updateKanbanPhase,
   type InboxUseCaseDeps,
 } from "../../../../application/inbox/inbox-use-cases.js";
@@ -77,6 +85,11 @@ const REACT_MESSAGE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "e
 const MESSAGE_PARAMS_SCHEMA = { type: "object", required: ["id", "messageId"], properties: { id: { type: "string", minLength: 1 }, messageId: { type: "string", minLength: 1 } } } as const;
 const ASSIGN_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, assignedUserId: { type: "string" } } } as const;
 const SET_TEAM_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, teamId: { type: "string" } } } as const;
+const CREATE_TAG_BODY_SCHEMA = { type: "object", required: ["workspaceId", "name"], properties: { workspaceId: { type: "string", minLength: 1 }, name: { type: "string", minLength: 1 }, color: { type: "string" } } } as const;
+const UPDATE_TAG_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, name: { type: "string", minLength: 1 }, color: { type: "string" } } } as const;
+const TAG_ID_PARAMS_SCHEMA = { type: "object", required: ["tagId"], properties: { tagId: { type: "string", minLength: 1 } } } as const;
+const CONVERSATION_TAG_PARAMS_SCHEMA = { type: "object", required: ["id", "tagId"], properties: { id: { type: "string", minLength: 1 }, tagId: { type: "string", minLength: 1 } } } as const;
+const ADD_TAG_BODY_SCHEMA = { type: "object", required: ["workspaceId", "tagId"], properties: { workspaceId: { type: "string", minLength: 1 }, tagId: { type: "string", minLength: 1 } } } as const;
 const TRANSFER_BODY_SCHEMA = { type: "object", required: ["workspaceId", "toUserId"], properties: { workspaceId: { type: "string", minLength: 1 }, toUserId: { type: "string", minLength: 1 } } } as const;
 const AI_ENABLED_BODY_SCHEMA = { type: "object", required: ["workspaceId", "aiEnabled"], properties: { workspaceId: { type: "string", minLength: 1 }, aiEnabled: { type: "boolean" } } } as const;
 const URGENT_BODY_SCHEMA = { type: "object", required: ["workspaceId", "isUrgent"], properties: { workspaceId: { type: "string", minLength: 1 }, isUrgent: { type: "boolean" } } } as const;
@@ -180,6 +193,11 @@ const INBOX_ERROR_STATUS: Record<string, number> = {
   KANBAN_LAST_PHASE: 422,
   KANBAN_REORDER_MISMATCH: 422,
   KANBAN_CONVERSATION_NOT_IN_TEAM: 422,
+  // Bloco "etiquetas".
+  INBOX_TAGS_NOT_CONFIGURED: 503,
+  INBOX_TAG_NOT_FOUND: 404,
+  INBOX_TAG_NAME_EMPTY: 422,
+  INBOX_TAG_NAME_TAKEN: 409,
 };
 
 function rethrowInboxError(error: unknown): never {
@@ -242,6 +260,9 @@ export type InboxRoutesDeps = {
    * `undefined` = notificação desligada neste processo. */
   notificationRepository?: NotificationRepositoryPort;
   notificationRealtimePublisher?: NotificationRealtimePublisherPort;
+  /** Bloco "etiquetas" (pedido explícito do usuário) — `undefined` = módulo de etiquetas não
+   * configurado neste processo; as rotas abaixo respondem 503 nesse caso. */
+  tagRepository?: InboxTagRepositoryPort;
 };
 
 function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {
@@ -849,6 +870,85 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
       const conversation = await setConversationTeam(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, teamId: teamId || undefined, performedBy: principal.userId });
       publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
       return successEnvelope(conversation, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  // ------------------------------------------------------------------------------------------
+  // Bloco "etiquetas" (pedido explícito do usuário: "criar e configurar etiquetas dentro do
+  // sistema e nas conversas ser possível adicionar mais do que uma"). Taxonomia por WORKSPACE —
+  // `inbox:reply` pra ler/aplicar no dia a dia (mesmo degrau de "marcar urgente"), `inbox:assign`
+  // pra criar/editar/excluir a taxonomia em si (mesmo degrau de configurar fases do Kanban).
+  // ------------------------------------------------------------------------------------------
+
+  app.get("/inbox/tags", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      const tags = await listInboxTags(useCaseDeps, { tenantId: principal.tenantId, workspaceId });
+      return successEnvelope({ tags }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.post("/inbox/tags", { schema: { body: CREATE_TAG_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:assign");
+    const { workspaceId, name, color } = request.body as { workspaceId: string; name: string; color?: InboxTagColor };
+    try {
+      const tag = await createInboxTag(useCaseDeps, { tenantId: principal.tenantId, workspaceId, name, color });
+      return successEnvelope(tag, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.patch("/inbox/tags/:tagId", { schema: { params: TAG_ID_PARAMS_SCHEMA, body: UPDATE_TAG_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:assign");
+    const { tagId } = request.params as { tagId: string };
+    const { workspaceId, name, color } = request.body as { workspaceId: string; name?: string; color?: InboxTagColor };
+    try {
+      const tag = await updateInboxTag(useCaseDeps, { tenantId: principal.tenantId, workspaceId, tagId, name, color });
+      return successEnvelope(tag, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.delete("/inbox/tags/:tagId", { schema: { params: TAG_ID_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:assign");
+    const { tagId } = request.params as { tagId: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      await deleteInboxTag(useCaseDeps, { tenantId: principal.tenantId, workspaceId, tagId });
+      return successEnvelope({ deleted: true }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.post("/inbox/conversations/:id/tags", { schema: { params: ID_PARAMS_SCHEMA, body: ADD_TAG_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { id } = request.params as { id: string };
+    const { workspaceId, tagId } = request.body as { workspaceId: string; tagId: string };
+    try {
+      await addTagToConversation(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, tagId });
+      publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
+      return successEnvelope({ tagged: true }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.delete("/inbox/conversations/:id/tags/:tagId", { schema: { params: CONVERSATION_TAG_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { id, tagId } = request.params as { id: string; tagId: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      await removeTagFromConversation(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, tagId });
+      publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
+      return successEnvelope({ tagged: false }, request.id);
     } catch (error) {
       rethrowInboxError(error);
     }

@@ -32,6 +32,7 @@ import type { MessagingConnectionRepositoryPort } from "../../../application/por
 import type { InboxContactRepositoryPort } from "../../../application/ports/inbox-contact-repository.port.js";
 import type { InboxConversationRepositoryPort } from "../../../application/ports/inbox-conversation-repository.port.js";
 import type { InboxMessageRepositoryPort } from "../../../application/ports/inbox-message-repository.port.js";
+import type { InboxTagRepositoryPort } from "../../../application/ports/inbox-tag-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../../../application/ports/inbox-conversation-event-repository.port.js";
 import type { InboxMetricsRepositoryPort } from "../../../application/ports/inbox-metrics-repository.port.js";
 import type { MessagingProvider } from "../../../application/ports/messaging-provider.port.js";
@@ -356,6 +357,8 @@ export type ApiContainer = {
   inboxContactRepository: InboxContactRepositoryPort;
   inboxConversationRepository: InboxConversationRepositoryPort;
   inboxMessageRepository: InboxMessageRepositoryPort;
+  /** Bloco "etiquetas" (pedido explícito do usuário) — ver `db/migrations/0129_inbox_tags.sql`. */
+  inboxTagRepository: InboxTagRepositoryPort;
   /** Fase 4 (Atendimento) — auditoria + timeline de eventos operacionais, ver `db/migrations/0084`. */
   inboxConversationEventRepository: InboxConversationEventRepositoryPort;
   /** Fase 7 (Resultados) — relatório agregado de atendimento (read-only). */

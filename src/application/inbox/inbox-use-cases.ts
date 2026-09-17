@@ -1,4 +1,4 @@
-import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, MessagingConnection, MessagingConnectionStatus, MessagingProviderId } from "../../domain/inbox/inbox.model.js";
+import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, InboxTag, InboxTagColor, MessagingConnection, MessagingConnectionStatus, MessagingProviderId } from "../../domain/inbox/inbox.model.js";
 import { INBOX_AI_ACTOR, MESSAGING_CONNECTION_TERMINAL_STATUSES, normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
 import type { KanbanPhaseType, TeamKanbanPhase } from "../../domain/identity/identity.model.js";
 import { KANBAN_PHASE_TYPES } from "../../domain/identity/identity.model.js";
@@ -13,6 +13,7 @@ import type { InboxIdentityLinkRepositoryPort } from "../ports/inbox-identity-li
 import type { InboxMediaStoragePort } from "../ports/inbox-media-storage.port.js";
 import type { InboxMessageRepositoryPort } from "../ports/inbox-message-repository.port.js";
 import type { InboxMetricsRecorder } from "../ports/inbox-metrics.port.js";
+import type { InboxTagRepositoryPort } from "../ports/inbox-tag-repository.port.js";
 import type { MessagingConnectionRepositoryPort } from "../ports/messaging-connection-repository.port.js";
 import type { MessagingProvider, MessagingProviderErrorKind } from "../ports/messaging-provider.port.js";
 import { MessagingProviderError } from "../ports/messaging-provider.port.js";
@@ -108,6 +109,11 @@ export type InboxUseCaseDeps = {
    * notifica ninguém nesse caso (nunca bloqueia a atribuição em si). */
   notificationRepository?: NotificationRepositoryPort;
   notificationRealtimePublisher?: NotificationRealtimePublisherPort;
+  /** Bloco "etiquetas" (pedido explícito do usuário: "criar e configurar etiquetas dentro do
+   * sistema e nas conversas ser possível adicionar mais do que uma") — `undefined` = módulo de
+   * etiquetas não configurado neste processo; `listConversations` simplesmente não denormaliza
+   * `tags` nesse caso (nunca bloqueia a listagem em si). */
+  tagRepository?: InboxTagRepositoryPort;
 };
 
 const defaultIdGenerator = () => `wuzsess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -312,7 +318,14 @@ export async function disconnectConnection(deps: InboxUseCaseDeps, input: Discon
 export type ListConversationsInput = { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string };
 
 export async function listConversations(deps: InboxUseCaseDeps, input: ListConversationsInput): Promise<InboxConversationListItem[]> {
-  return deps.conversationRepository.listByWorkspace(input);
+  const conversations = await deps.conversationRepository.listByWorkspace(input);
+  if (!deps.tagRepository) return conversations;
+  // Denormaliza etiquetas em lote (mesmo racional de `contactName`/`lastMessagePreview`, ver
+  // `InboxConversationListItem`) — nunca uma chamada por conversa. `InboxTagRepositoryPort` é um
+  // port separado do de conversas de propósito (etiqueta é sua própria entidade, com seu próprio
+  // CRUD); a junção acontece aqui, na camada de caso de uso, não dentro do repositório.
+  const tagsByConversation = await deps.tagRepository.listTagsByConversationIds(conversations.map((conversation) => conversation.id));
+  return conversations.map((conversation) => ({ ...conversation, tags: tagsByConversation.get(conversation.id) ?? [] }));
 }
 
 export type ListConversationMessagesInput = { tenantId: string; workspaceId: string; conversationId: string; cursor?: string; limit?: number };
@@ -543,6 +556,92 @@ export async function setConversationTeam(deps: InboxUseCaseDeps, input: SetConv
   }
 
   return deps.conversationRepository.setTeam(conversation.id, input.teamId);
+}
+
+// ------------------------------------------------------------------------------------------
+// Bloco "etiquetas" (pedido explícito do usuário: "criar e configurar etiquetas dentro do
+// sistema e nas conversas ser possível adicionar mais do que uma"). Taxonomia por WORKSPACE
+// (nunca por equipe/canal); relação com a conversa é N:N. `tagRepository` é opcional em
+// `InboxUseCaseDeps` (mesmo racional do resto do módulo) — todas as funções abaixo lançam um erro
+// de domínio claro (`INBOX_TAGS_NOT_CONFIGURED`) se chamadas sem ele configurado, nunca um erro
+// cru de `undefined`.
+// ------------------------------------------------------------------------------------------
+
+function requireTagRepository(deps: InboxUseCaseDeps): InboxTagRepositoryPort {
+  if (!deps.tagRepository) throw new Error("INBOX_TAGS_NOT_CONFIGURED: módulo de etiquetas não está configurado neste processo.");
+  return deps.tagRepository;
+}
+
+async function mustTagBelongToWorkspace(deps: InboxUseCaseDeps, tagId: string, tenantId: string, workspaceId: string): Promise<InboxTag> {
+  const tag = await requireTagRepository(deps).getById(tagId);
+  if (!tag || tag.tenantId !== tenantId || tag.workspaceId !== workspaceId) {
+    throw new Error(`INBOX_TAG_NOT_FOUND: etiqueta "${tagId}" não existe.`);
+  }
+  return tag;
+}
+
+export type ListInboxTagsInput = { tenantId: string; workspaceId: string };
+
+export async function listInboxTags(deps: InboxUseCaseDeps, input: ListInboxTagsInput): Promise<InboxTag[]> {
+  return requireTagRepository(deps).listByWorkspace(input.workspaceId);
+}
+
+export type CreateInboxTagUseCaseInput = { tenantId: string; workspaceId: string; name: string; color?: InboxTagColor };
+
+export async function createInboxTag(deps: InboxUseCaseDeps, input: CreateInboxTagUseCaseInput): Promise<InboxTag> {
+  const name = input.name.trim();
+  if (!name) throw new Error("INBOX_TAG_NAME_EMPTY: informe um nome pra etiqueta.");
+  const repository = requireTagRepository(deps);
+  const existing = await repository.listByWorkspace(input.workspaceId);
+  // Checagem de duplicidade (case-insensitive) na camada de aplicação — a constraint única do
+  // banco (`workspace_id, name`) é case-SENSITIVE, então "Urgente" e "urgente" não colidiriam lá;
+  // aqui evitamos duas etiquetas visualmente idênticas na mesma lista.
+  if (existing.some((tag) => tag.name.toLowerCase() === name.toLowerCase())) {
+    throw new Error(`INBOX_TAG_NAME_TAKEN: já existe uma etiqueta chamada "${name}" neste workspace.`);
+  }
+  return repository.create({ tenantId: input.tenantId, workspaceId: input.workspaceId, name, color: input.color });
+}
+
+export type UpdateInboxTagUseCaseInput = { tenantId: string; workspaceId: string; tagId: string; name?: string; color?: InboxTagColor };
+
+export async function updateInboxTag(deps: InboxUseCaseDeps, input: UpdateInboxTagUseCaseInput): Promise<InboxTag> {
+  const repository = requireTagRepository(deps);
+  const current = await mustTagBelongToWorkspace(deps, input.tagId, input.tenantId, input.workspaceId);
+  const name = input.name?.trim();
+  if (input.name !== undefined && !name) throw new Error("INBOX_TAG_NAME_EMPTY: informe um nome pra etiqueta.");
+  // Mesma checagem de duplicidade de `createInboxTag` — sem isto, renomear pra um nome já em uso
+  // por OUTRA etiqueta bateria na constraint única do banco (`workspace_id, name`) e vazaria um
+  // erro cru de banco em vez de um `INBOX_TAG_NAME_TAKEN` claro.
+  if (name && name.toLowerCase() !== current.name.toLowerCase()) {
+    const existing = await repository.listByWorkspace(input.workspaceId);
+    if (existing.some((tag) => tag.id !== input.tagId && tag.name.toLowerCase() === name.toLowerCase())) {
+      throw new Error(`INBOX_TAG_NAME_TAKEN: já existe uma etiqueta chamada "${name}" neste workspace.`);
+    }
+  }
+  return repository.update(input.tagId, { name, color: input.color });
+}
+
+export type DeleteInboxTagInput = { tenantId: string; workspaceId: string; tagId: string };
+
+export async function deleteInboxTag(deps: InboxUseCaseDeps, input: DeleteInboxTagInput): Promise<void> {
+  await mustTagBelongToWorkspace(deps, input.tagId, input.tenantId, input.workspaceId);
+  await requireTagRepository(deps).delete(input.tagId);
+}
+
+export type TagConversationInput = { tenantId: string; workspaceId: string; conversationId: string; tagId: string };
+
+export async function addTagToConversation(deps: InboxUseCaseDeps, input: TagConversationInput): Promise<void> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  await mustTagBelongToWorkspace(deps, input.tagId, input.tenantId, input.workspaceId);
+  await requireTagRepository(deps).attachToConversation(conversation.id, input.tagId);
+}
+
+export async function removeTagFromConversation(deps: InboxUseCaseDeps, input: TagConversationInput): Promise<void> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  // Nunca exige que a etiqueta ainda exista pra REMOVER (etiqueta pode ter sido excluída depois de
+  // aplicada — a linha em `inbox_conversation_tags` já teria sido cascateada nesse caso, então isto
+  // seria um no-op idempotente de qualquer forma; só confere que a conversa é do tenant/workspace certo).
+  await requireTagRepository(deps).detachFromConversation(conversation.id, input.tagId);
 }
 
 export type CloseConversationInput = { tenantId: string; workspaceId: string; conversationId: string; performedBy: string };

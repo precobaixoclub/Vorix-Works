@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { ChannelDistributionMode, ChannelRoutingSnapshot, ConversationServiceTime, InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxMetricsReport, InboxModuleStatus, InboxStreamToken, InboxTenantMember, KanbanPhaseType, MessagingConnection, TeamKanbanPhase } from "./types";
+import type { ChannelDistributionMode, ChannelRoutingSnapshot, ConversationServiceTime, InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxMetricsReport, InboxModuleStatus, InboxStreamToken, InboxTag, InboxTagColor, InboxTenantMember, KanbanPhaseType, MessagingConnection, TeamKanbanPhase } from "./types";
 
 /** Fase 10 (Pre-Pilot Hardening) — sempre disponível, mesmo com o módulo desligado. */
 export function getInboxModuleStatus(): Promise<InboxModuleStatus> {
@@ -211,6 +211,35 @@ export function deleteKanbanPhase(workspaceId: string, teamId: string, phaseId: 
 /** Substituição TOTAL da ordem — `phaseIds` precisa conter todas as fases da equipe. */
 export function reorderKanbanPhases(workspaceId: string, teamId: string, phaseIds: string[]): Promise<{ phases: TeamKanbanPhase[] }> {
   return apiClient.post<{ phases: TeamKanbanPhase[] }>(`/v1/inbox/teams/${encodeURIComponent(teamId)}/kanban-phases/reorder`, { workspaceId, phaseIds });
+}
+
+// ==============================================================================================
+// Bloco "etiquetas" (pedido explícito do usuário: "criar e configurar etiquetas dentro do sistema
+// e nas conversas ser possível adicionar mais do que uma").
+// ==============================================================================================
+
+export function listInboxTags(workspaceId: string): Promise<{ tags: InboxTag[] }> {
+  return apiClient.get<{ tags: InboxTag[] }>(`/v1/inbox/tags?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+export function createInboxTag(workspaceId: string, name: string, color?: InboxTagColor): Promise<InboxTag> {
+  return apiClient.post<InboxTag>("/v1/inbox/tags", { workspaceId, name, color });
+}
+
+export function updateInboxTag(workspaceId: string, tagId: string, input: { name?: string; color?: InboxTagColor }): Promise<InboxTag> {
+  return apiClient.patch<InboxTag>(`/v1/inbox/tags/${encodeURIComponent(tagId)}`, { workspaceId, ...input });
+}
+
+export function deleteInboxTag(workspaceId: string, tagId: string): Promise<{ deleted: boolean }> {
+  return apiClient.delete<{ deleted: boolean }>(`/v1/inbox/tags/${encodeURIComponent(tagId)}?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+export function addTagToConversation(workspaceId: string, conversationId: string, tagId: string): Promise<{ tagged: boolean }> {
+  return apiClient.post<{ tagged: boolean }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/tags`, { workspaceId, tagId });
+}
+
+export function removeTagFromConversation(workspaceId: string, conversationId: string, tagId: string): Promise<{ tagged: boolean }> {
+  return apiClient.delete<{ tagged: boolean }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/tags/${encodeURIComponent(tagId)}?workspaceId=${encodeURIComponent(workspaceId)}`);
 }
 
 /** Chamado ANTES de renderizar o board — conversas roteadas pra equipe sem fase ainda ganham a

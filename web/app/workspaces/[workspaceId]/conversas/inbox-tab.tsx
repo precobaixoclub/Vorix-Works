@@ -21,12 +21,14 @@ import {
   MoreHorizontal,
   Paperclip,
   PauseCircle,
+  Plus,
   Reply,
   Search,
   Send,
   Smile,
   Sparkles,
   Square,
+  Tag,
   Trash2,
   UserCheck,
   Video,
@@ -39,7 +41,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { GuardedButton } from "@/components/GuardedButton";
-import { Input } from "@/components/Field";
+import { Input, Label } from "@/components/Field";
+import { Modal } from "@/components/Modal";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -48,13 +51,17 @@ import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
 import { canManageTenant, canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
 import {
+  addTagToConversation,
   assignInboxConversation,
   closeInboxConversation,
+  createInboxTag,
   deleteInboxConversation,
   deleteInboxMessage,
+  deleteInboxTag,
   markInboxConversationRead,
   markInboxConversationUnread,
   reactToInboxMessage,
+  removeTagFromConversation,
   reopenInboxConversation,
   sendInboxMediaMessage,
   sendInboxMessage,
@@ -63,10 +70,12 @@ import {
   setInboxConversationUrgent,
   takeOverInboxConversation,
   transferInboxConversation,
+  updateInboxTag,
 } from "@/features/inbox/api";
-import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime } from "@/features/inbox/hooks";
+import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime, useInboxTags } from "@/features/inbox/hooks";
 import { useTeams } from "@/features/identity/hooks";
-import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMediaStorageRef, InboxMessage, InboxTenantMember, MessagingProviderId, TeamKanbanPhase } from "@/features/inbox/types";
+import { INBOX_TAG_COLORS } from "@/features/inbox/types";
+import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMediaStorageRef, InboxMessage, InboxTag, InboxTagColor, InboxTenantMember, MessagingProviderId, TeamKanbanPhase } from "@/features/inbox/types";
 import type { Team } from "@/features/identity/types";
 import { CrmContextSection } from "./crm-panel";
 import { MessageMedia } from "./message-media";
@@ -106,6 +115,44 @@ export function ChannelIcon({ provider, className }: { provider: MessagingProvid
   return <MessageCircle className={className} aria-label="WhatsApp" />;
 }
 
+/** Bloco "etiquetas" (pedido explícito do usuário: "criar e configurar etiquetas dentro do
+ * sistema e nas conversas ser possível adicionar mais do que uma") — cor vem do vocabulário
+ * fechado (`INBOX_TAG_COLORS`), nunca hex livre (ver `web/CLAUDE.md`). Um mapa fixo em vez de
+ * montar a classe Tailwind dinamicamente (`bg-${color}-500`) — o compilador do Tailwind só gera
+ * CSS pra classe que aparece LITERALMENTE no código-fonte. */
+const INBOX_TAG_COLOR_CLASSES: Record<InboxTagColor, { dot: string; chip: string }> = {
+  emerald: { dot: "bg-emerald-500", chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" },
+  sky: { dot: "bg-sky-500", chip: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300" },
+  violet: { dot: "bg-violet-500", chip: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300" },
+  amber: { dot: "bg-amber-500", chip: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300" },
+  rose: { dot: "bg-rose-500", chip: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300" },
+  slate: { dot: "bg-slate-500", chip: "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300" },
+};
+
+function TagChip({ tag, onRemove, className }: { tag: InboxTag; onRemove?: () => void; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-medium",
+        INBOX_TAG_COLOR_CLASSES[tag.color].chip,
+        className,
+      )}
+    >
+      <span className="truncate">{tag.name}</span>
+      {onRemove ? (
+        <button
+          type="button"
+          aria-label={`Remover etiqueta ${tag.name}`}
+          onClick={(event) => { event.stopPropagation(); onRemove(); }}
+          className="shrink-0 rounded-full opacity-70 hover:opacity-100"
+        >
+          <X className="h-2.5 w-2.5" />
+        </button>
+      ) : null}
+    </span>
+  );
+}
+
 const ADVANCED_FILTERS: { value: InboxConversationFilter; label: string; description: string }[] = [
   { value: "open", label: "Em atendimento", description: "Conversas abertas agora." },
   { value: "pending", label: "Pendentes", description: "Aguardando retorno ou decisão." },
@@ -125,6 +172,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
   const [filter, setFilter] = useState<InboxConversationFilter>("all");
   const [chatTypeFilter, setChatTypeFilter] = useState<"all" | "group" | "direct">("all");
   const [channelFilter, setChannelFilter] = useState<"all" | MessagingProviderId>("all");
+  const [tagFilter, setTagFilter] = useState<string>("");
   const [search, setSearch] = useState("");
   const [mobileView, setMobileView] = useState<MobileView>(searchParams.get("conversation") ? "conversation" : "list");
   const [contextOpen, setContextOpen] = useState(false);
@@ -147,9 +195,10 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
     const byType = chatTypeFilter === "all" ? conversations : conversations.filter((conversation) => conversation.chatType === chatTypeFilter);
     const byChannel =
       channelFilter === "all" ? byType : byType.filter((conversation) => (conversation.connectionProvider ?? "wuzapi") === channelFilter);
+    const byTag = !tagFilter ? byChannel : byChannel.filter((conversation) => conversation.tags?.some((tag) => tag.id === tagFilter));
     const term = search.trim().toLowerCase();
-    if (!term) return byChannel;
-    return byChannel.filter((conversation) => {
+    if (!term) return byTag;
+    return byTag.filter((conversation) => {
       // Grupo: busca por nome do grupo (groupName/subject) — nunca por LID (seção 34 do pedido:
       // "não buscar por LID como experiência principal"). Direta: nome/telefone, como já era.
       const haystack = [
@@ -164,7 +213,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
         .toLowerCase();
       return haystack.includes(term);
     });
-  }, [channelFilter, chatTypeFilter, conversations, currentUserId, members, search]);
+  }, [channelFilter, chatTypeFilter, conversations, currentUserId, members, search, tagFilter]);
 
   useEffect(() => {
     if (selectedConversationId) setMobileView("conversation");
@@ -216,6 +265,8 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
             onChatTypeFilterChange={setChatTypeFilter}
             channelFilter={channelFilter}
             onChannelFilterChange={setChannelFilter}
+            tagFilter={tagFilter}
+            onTagFilterChange={setTagFilter}
             search={search}
             onSearchChange={setSearch}
             selectedConversationId={selectedConversationId}
@@ -296,6 +347,8 @@ function ConversationListPane({
   onChatTypeFilterChange,
   channelFilter,
   onChannelFilterChange,
+  tagFilter,
+  onTagFilterChange,
   search,
   onSearchChange,
   selectedConversationId,
@@ -317,6 +370,8 @@ function ConversationListPane({
   onChatTypeFilterChange: (value: "all" | "group" | "direct") => void;
   channelFilter: "all" | MessagingProviderId;
   onChannelFilterChange: (value: "all" | MessagingProviderId) => void;
+  tagFilter: string;
+  onTagFilterChange: (value: string) => void;
   search: string;
   onSearchChange: (value: string) => void;
   selectedConversationId: string | undefined;
@@ -327,6 +382,8 @@ function ConversationListPane({
   onConversationChanged: () => void;
 }) {
   const activeAdvancedFilter = ADVANCED_FILTERS.find((item) => item.value === filter);
+  const { data: tagsData } = useInboxTags(workspaceId);
+  const tagFilterOptions = (tagsData?.tags ?? []).map((tag) => ({ id: tag.id, label: tag.name }));
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
@@ -438,6 +495,16 @@ function ConversationListPane({
             </button>
           ))}
         </div>
+
+        {tagFilterOptions.length > 0 ? (
+          <SearchableCombo
+            items={tagFilterOptions}
+            value={tagFilter}
+            onValueChange={onTagFilterChange}
+            placeholder="Filtrar por etiqueta"
+            extraOption={{ value: "", label: "Todas as etiquetas" }}
+          />
+        ) : null}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -550,6 +617,7 @@ export function ConversationListItem({
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
             <span className="text-[11px] tabular-nums text-muted-foreground">{timeLabel(conversation.lastMessageAt)}</span>
+            <TagPicker workspaceId={workspaceId} conversation={conversation} onChanged={onConversationChanged} />
             <ConversationListItemMenu
               workspaceId={workspaceId}
               conversation={conversation}
@@ -561,6 +629,11 @@ export function ConversationListItem({
         </div>
         <p className="mt-0.5 truncate text-xs text-muted-foreground">{conversationSubtitle(conversation)}</p>
         <p className="mt-1 line-clamp-1 text-xs text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
+        {conversation.tags && conversation.tags.length > 0 ? (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {conversation.tags.map((tag) => <TagChip key={tag.id} tag={tag} />)}
+          </div>
+        ) : null}
         <div className="mt-2 flex min-w-0 items-center gap-1.5">
           <StatusDot status={conversation.status} />
           {conversation.currentTeamId ? (
@@ -668,6 +741,324 @@ function ConversationListItemMenu({
         ) : null}
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** Bloco "etiquetas" (pedido explícito do usuário: "criar e configurar etiquetas dentro do
+ * sistema e nas conversas ser possível adicionar mais do que uma") — funciona tanto na listagem
+ * (sem abrir a conversa, `ConversationListItem`) quanto no cabeçalho da conversa aberta
+ * (`ConversationTimelinePane`), sempre este MESMO componente (nunca dois pickers diferentes). */
+function TagPicker({
+  workspaceId,
+  conversation,
+  onChanged,
+}: {
+  workspaceId: string;
+  conversation: InboxConversation;
+  onChanged: () => void;
+}) {
+  const { data, mutate } = useInboxTags(workspaceId);
+  const allTags = data?.tags ?? [];
+  const appliedIds = new Set((conversation.tags ?? []).map((tag) => tag.id));
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState<InboxTagColor>("emerald");
+  const [createError, setCreateError] = useState<string | undefined>();
+  const [managerOpen, setManagerOpen] = useState(false);
+
+  async function toggle(tag: InboxTag) {
+    setBusy(true);
+    try {
+      if (appliedIds.has(tag.id)) await removeTagFromConversation(workspaceId, conversation.id, tag.id);
+      else await addTagToConversation(workspaceId, conversation.id, tag.id);
+      onChanged();
+    } catch {
+      // Best-effort — mesmo racional do resto deste menu compacto (ver `ConversationListItemMenu`).
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCreate() {
+    const name = newName.trim();
+    if (!name) return;
+    setBusy(true);
+    setCreateError(undefined);
+    try {
+      const tag = await createInboxTag(workspaceId, name, newColor);
+      await mutate();
+      await addTagToConversation(workspaceId, conversation.id, tag.id);
+      setNewName("");
+      setCreating(false);
+      onChanged();
+    } catch (cause) {
+      setCreateError(cause instanceof Error ? cause.message : "Não foi possível criar a etiqueta.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Etiquetas"
+          onClick={(event) => event.stopPropagation()}
+          className={cn(
+            // Sem `group-hover` de propósito (achado de revisão): este componente é reusado tanto
+            // na listagem (tem um ancestral `.group`) quanto no cabeçalho da conversa aberta (não
+            // tem) — depender de `group-hover` deixaria o botão permanentemente invisível ali.
+            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-opacity hover:bg-muted hover:opacity-100 data-[state=open]:opacity-100",
+            appliedIds.size > 0 ? "opacity-100" : "opacity-70",
+          )}
+        >
+          <Tag className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 p-2" onClick={(event) => event.stopPropagation()}>
+        <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Etiquetas</p>
+        {allTags.length === 0 ? (
+          <p className="px-1 py-2 text-xs text-muted-foreground">Nenhuma etiqueta ainda neste workspace.</p>
+        ) : (
+          <div className="max-h-48 space-y-0.5 overflow-y-auto">
+            {allTags.map((tag) => (
+              <button
+                key={tag.id}
+                type="button"
+                disabled={busy}
+                onClick={() => toggle(tag)}
+                className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+              >
+                <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", INBOX_TAG_COLOR_CLASSES[tag.color].dot)} />
+                <span className="min-w-0 flex-1 truncate">{tag.name}</span>
+                {appliedIds.has(tag.id) ? <Check className="h-3.5 w-3.5 shrink-0 text-primary" /> : null}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="my-1.5 border-t border-border/60" />
+        {creating ? (
+          <div className="space-y-2 px-1 py-1">
+            <Input
+              autoFocus
+              value={newName}
+              onChange={(event) => setNewName(event.target.value)}
+              placeholder="Nome da etiqueta"
+              className="h-8 text-sm"
+              onKeyDown={(event) => { if (event.key === "Enter") handleCreate(); }}
+            />
+            <div className="flex items-center gap-1.5">
+              {INBOX_TAG_COLORS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  aria-label={`Cor ${color}`}
+                  onClick={() => setNewColor(color)}
+                  className={cn(
+                    "h-5 w-5 rounded-full ring-offset-1 transition-shadow",
+                    INBOX_TAG_COLOR_CLASSES[color].dot,
+                    newColor === color && "ring-2 ring-foreground ring-offset-background",
+                  )}
+                />
+              ))}
+            </div>
+            {createError ? <p className="text-xs text-destructive">{createError}</p> : null}
+            <div className="flex justify-end gap-1.5">
+              <Button variant="ghost" size="sm" onClick={() => { setCreating(false); setNewName(""); setCreateError(undefined); }}>Cancelar</Button>
+              <Button size="sm" loading={busy} disabled={!newName.trim() || busy} onClick={handleCreate}>Criar</Button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted"
+          >
+            <Plus className="h-3.5 w-3.5" /> Nova etiqueta
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setManagerOpen(true)}
+          className="mt-1 flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
+        >
+          Gerenciar etiquetas
+        </button>
+      </PopoverContent>
+      {managerOpen ? (
+        <TagManagerModal
+          workspaceId={workspaceId}
+          onClose={() => setManagerOpen(false)}
+          onChanged={() => { void mutate(); onChanged(); }}
+        />
+      ) : null}
+    </Popover>
+  );
+}
+
+/** Gestão da taxonomia (renomear/recolorir/excluir) — mesmo racional de `PhaseManagerModal`
+ * (`kanban-board.tsx`): lista curta, sem reorder nenhum (etiqueta não tem ordem, só nome/cor). */
+function TagManagerModal({
+  workspaceId,
+  onClose,
+  onChanged,
+}: {
+  workspaceId: string;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const { data, mutate } = useInboxTags(workspaceId);
+  const tags = data?.tags ?? [];
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState<InboxTagColor>("emerald");
+  const [pendingDelete, setPendingDelete] = useState<InboxTag | undefined>();
+
+  async function handleCreate() {
+    const name = newName.trim();
+    if (!name) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await createInboxTag(workspaceId, name, newColor);
+      setNewName("");
+      await mutate();
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível criar a etiqueta.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRename(tag: InboxTag, name: string) {
+    if (!name.trim() || name === tag.name) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await updateInboxTag(workspaceId, tag.id, { name: name.trim() });
+      await mutate();
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível renomear a etiqueta.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRecolor(tag: InboxTag, color: InboxTagColor) {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await updateInboxTag(workspaceId, tag.id, { color });
+      await mutate();
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível recolorir a etiqueta.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!pendingDelete) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await deleteInboxTag(workspaceId, pendingDelete.id);
+      setPendingDelete(undefined);
+      await mutate();
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível excluir a etiqueta.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Etiquetas" onClose={onClose} maxWidthClass="sm:max-w-lg">
+      <div className="flex flex-col gap-4">
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+        <div className="flex flex-col gap-2">
+          {tags.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhuma etiqueta ainda — crie a primeira abaixo.</p>
+          ) : (
+            tags.map((tag) => (
+              <div key={tag.id} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+                <div className="flex shrink-0 items-center gap-1">
+                  {INBOX_TAG_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      aria-label={`Cor ${color}`}
+                      disabled={busy}
+                      onClick={() => handleRecolor(tag, color)}
+                      className={cn(
+                        "h-4 w-4 rounded-full ring-offset-1 transition-shadow disabled:opacity-50",
+                        INBOX_TAG_COLOR_CLASSES[color].dot,
+                        tag.color === color && "ring-2 ring-foreground ring-offset-background",
+                      )}
+                    />
+                  ))}
+                </div>
+                <Input
+                  defaultValue={tag.name}
+                  disabled={busy}
+                  className="h-8 flex-1 text-sm"
+                  onBlur={(event) => handleRename(tag, event.target.value)}
+                  onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+                />
+                <Button variant="ghost" size="sm" disabled={busy} onClick={() => setPendingDelete(tag)}>Excluir</Button>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="flex items-end gap-2 border-t border-border/60 pt-4">
+          <div className="flex-1">
+            <Label htmlFor="new-tag-name">Nova etiqueta</Label>
+            <Input id="new-tag-name" value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Ex.: Urgente" disabled={busy} />
+          </div>
+          <div className="flex items-center gap-1.5 pb-2">
+            {INBOX_TAG_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                aria-label={`Cor ${color}`}
+                onClick={() => setNewColor(color)}
+                className={cn(
+                  "h-5 w-5 rounded-full ring-offset-1 transition-shadow",
+                  INBOX_TAG_COLOR_CLASSES[color].dot,
+                  newColor === color && "ring-2 ring-foreground ring-offset-background",
+                )}
+              />
+            ))}
+          </div>
+          <Button onClick={handleCreate} loading={busy} disabled={busy || !newName.trim()}>
+            <Plus className="h-4 w-4" /> Criar
+          </Button>
+        </div>
+      </div>
+
+      {pendingDelete ? (
+        <ConfirmDialog
+          open
+          variant="danger"
+          busy={busy}
+          title="Excluir etiqueta"
+          description={`"${pendingDelete.name}" será removida de toda conversa que a tiver. Esta ação não pode ser desfeita.`}
+          confirmLabel="Excluir"
+          onConfirm={handleDelete}
+          onCancel={() => setPendingDelete(undefined)}
+        />
+      ) : null}
+    </Modal>
   );
 }
 
@@ -899,6 +1290,8 @@ export function ConversationTimelinePane({
             </GuardedButton>
           </div>
 
+          <TagPicker workspaceId={workspaceId} conversation={conversation} onChanged={refreshThread} />
+
           <ConversationActionsMenu
             canOperate={canOperate}
             canDelete={canDelete}
@@ -920,6 +1313,7 @@ export function ConversationTimelinePane({
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <AiStateBadge conversation={conversation} />
+          {conversation.tags && conversation.tags.length > 0 ? conversation.tags.map((tag) => <TagChip key={tag.id} tag={tag} />) : null}
           {actionError ? <span className="text-xs text-destructive">{actionError}</span> : null}
         </div>
       </div>

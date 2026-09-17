@@ -429,6 +429,28 @@ export type ConversationTimeEntry = {
   createdAt: string;
 };
 
+/** Bloco "etiquetas" (pedido explícito do usuário: "criar e configurar etiquetas dentro do
+ * sistema e nas conversas ser possível adicionar mais do que uma") — cor vem de um vocabulário
+ * FECHADO (mesmo racional de design do resto do produto: nunca hex livre), reaproveitado entre
+ * várias etiquetas (nunca uma cor única por etiqueta, como um seletor de cor livre permitiria).
+ * `primary` fica de fora de propósito — é a cor de marca/ação do produto, nunca a de um dado do
+ * usuário. */
+export const INBOX_TAG_COLORS = ["emerald", "sky", "violet", "amber", "rose", "slate"] as const;
+export type InboxTagColor = (typeof INBOX_TAG_COLORS)[number];
+
+/** Etiqueta é por WORKSPACE (nunca por equipe/canal) — a mesma taxonomia serve pra toda conversa
+ * do workspace, WhatsApp ou Instagram, com equipe ou sem. Relação com `InboxConversation` é N:N
+ * (`inbox_conversation_tags`) — uma conversa pode ter várias, uma etiqueta serve várias conversas. */
+export type InboxTag = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  name: string;
+  color: InboxTagColor;
+  createdAt: string;
+  updatedAt: string;
+};
+
 /** Normaliza um telefone para E.164 simplificado — usado como chave de deduplicação de
  * `InboxContact`. Tenta a canonicalização brasileira primeiro (bloco "réplica de identidade" —
  * ver `brazilian-phone-identity.ts`: mesmo número real, com ou sem o 9º dígito do celular, sempre

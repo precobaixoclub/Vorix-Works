@@ -101,7 +101,7 @@ const CHANNEL_FILTERS: { value: "all" | MessagingProviderId; label: string }[] =
   { value: "instagram", label: "Instagram" },
 ];
 
-function ChannelIcon({ provider, className }: { provider: MessagingProviderId | undefined; className?: string }) {
+export function ChannelIcon({ provider, className }: { provider: MessagingProviderId | undefined; className?: string }) {
   if (provider === "instagram") return <Camera className={className} aria-label="Instagram" />;
   return <MessageCircle className={className} aria-label="WhatsApp" />;
 }
@@ -671,7 +671,11 @@ function ConversationListItemMenu({
   );
 }
 
-function ConversationTimelinePane({
+/** Exportado para reuso fora da tela Conversas (pedido explícito do usuário: abrir a conversa do
+ * contato "ali mesmo", direto do card do negócio no Kanban de Negócios, "sem direcionar para
+ * outras telas") — mesmo racional de `ConversationListItem` já reusado no board de atendimento:
+ * nunca uma segunda UI de chat paralela, sempre esta mesma (composer, mídia, reações, IA...). */
+export function ConversationTimelinePane({
   workspaceId,
   conversation,
   currentUserId,
@@ -1978,7 +1982,7 @@ export function mediaIconFor(type: InboxMessage["type"]) {
   }
 }
 
-function lastMessagePreviewLabel(conversation: InboxConversation): string {
+export function lastMessagePreviewLabel(conversation: InboxConversation): string {
   const preview = conversation.lastMessagePreview;
   if (!preview) return conversation.lastMessageAt ? "Última interação registrada." : "Sem mensagens recentes.";
   // Grupo: "Maria: Fechou" — sem isso, a lista mostraria só "Fechou" sem dizer quem, dos N
@@ -2071,7 +2075,7 @@ function initials(value: string): string {
   return parts.map((part) => part[0]).join("").toUpperCase();
 }
 
-function timeLabel(iso: string | undefined): string {
+export function timeLabel(iso: string | undefined): string {
   if (!iso) return "--";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "--";

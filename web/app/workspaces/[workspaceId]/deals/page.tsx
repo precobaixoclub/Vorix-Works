@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { MoreHorizontal, Search, SlidersHorizontal } from "lucide-react";
+import { Mail, MailOpen, MessageSquareText, MoreHorizontal, Search, SlidersHorizontal } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
@@ -14,9 +14,11 @@ import { Modal } from "@/components/Modal";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { TeamPicker, teamLabel } from "@/components/TeamPicker";
 import { UserPicker, userInitials, userLabel } from "@/components/UserPicker";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { createDeal, moveDealStage } from "@/features/crm/api";
 import { useContacts, useDeals, usePipelines, usePipelineStages, useProposals, useTasks } from "@/features/crm/hooks";
@@ -24,10 +26,13 @@ import { centsFromCurrencyInput, nextPendingTask, TASK_TYPE_LABEL } from "@/feat
 import type { Contact, Deal, PipelineStage, Task } from "@/features/crm/types";
 import { useTeams } from "@/features/identity/hooks";
 import type { Team } from "@/features/identity/types";
-import { useInboxMembers } from "@/features/inbox/hooks";
+import { markInboxConversationRead, markInboxConversationUnread } from "@/features/inbox/api";
+import { useInboxConversations, useInboxMembers, useInboxRealtime } from "@/features/inbox/hooks";
+import type { InboxConversation } from "@/features/inbox/types";
 import { useDebounce } from "@/hooks/useDebounce";
 import { formatCurrencyCents, formatDate, formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { ChannelIcon, ConversationTimelinePane, lastMessagePreviewLabel, timeLabel } from "../conversas/inbox-tab";
 
 function stageDotClass(stage: PipelineStage): string {
   if (stage.isWon) return "bg-emerald-500";
@@ -57,6 +62,8 @@ function DealsView() {
   const router = useRouter();
   const workspace = useCurrentWorkspace();
   const searchParams = useSearchParams();
+  const { state: authState } = useAuth();
+  const currentUserId = authState.status === "authenticated" ? authState.user.id : undefined;
   const { data: pipelines } = usePipelines(workspace.id);
   const [pipelineId, setPipelineId] = useState<string | undefined>();
   const [search, setSearch] = useState("");
@@ -77,6 +84,21 @@ function DealsView() {
   const { data: proposals } = useProposals(workspace.id);
   const { data: membersData } = useInboxMembers(workspace.id);
   const { data: teams } = useTeams(workspace.id);
+  // Bloco "conversa no card do negócio" (pedido explícito do usuário: mostrar a conversa
+  // WhatsApp/Instagram do contato vinculado direto no Kanban de Negócios, "sem direcionar para
+  // outras telas") — mesma chave de cache (`["inbox-conversations", workspaceId, "all"]`) já usada
+  // pela Inbox/Kanban de atendimento, então `useInboxRealtime` mantém isto atualizado em tempo real
+  // aqui também, nunca uma segunda fonte de verdade.
+  const { data: inboxConversationsData, mutate: mutateInboxConversations } = useInboxConversations(workspace.id, "all");
+  const [chatConversation, setChatConversation] = useState<InboxConversation | undefined>();
+  useInboxRealtime(workspace.id, chatConversation?.id);
+  const conversationByContactId = useMemo(() => {
+    const map = new Map<string, InboxConversation>();
+    for (const conversation of inboxConversationsData?.conversations ?? []) {
+      if (conversation.crmContactId) map.set(conversation.crmContactId, conversation);
+    }
+    return map;
+  }, [inboxConversationsData]);
   const filterParams = {
     pipelineId,
     search: debouncedSearch || undefined,
@@ -221,6 +243,29 @@ function DealsView() {
     }
   }
 
+  async function handleToggleConversationRead(conversation: InboxConversation) {
+    try {
+      if (conversation.unreadCount > 0) await markInboxConversationRead(workspace.id, conversation.id);
+      else await markInboxConversationUnread(workspace.id, conversation.id);
+      await mutateInboxConversations();
+    } catch (cause) {
+      toast.error("Não foi possível atualizar a conversa", { description: cause instanceof Error ? cause.message : "Tente novamente." });
+    }
+  }
+
+  // Pedido explícito do usuário: destaque de não lida some "até ser respondida ou marcada como
+  // lida" — abrir a conversa (card/menu) já conta como lida, mesmo racional de `handleSelect` na
+  // tela Conversas (`inbox-tab.tsx`). Aqui precisa ser explícito porque só reusamos
+  // `ConversationTimelinePane` sozinho, sem o `InboxTab` que faria isso por conta própria.
+  function handleOpenConversation(conversation: InboxConversation) {
+    setChatConversation(conversation);
+    if (conversation.unreadCount > 0) {
+      markInboxConversationRead(workspace.id, conversation.id)
+        .then(() => mutateInboxConversations())
+        .catch(() => undefined);
+    }
+  }
+
   async function confirmLossReason() {
     if (!lossPrompt || !lossReason.trim()) return;
     const reason = lossNotes.trim() ? `${lossReason.trim()} — ${lossNotes.trim()}` : lossReason.trim();
@@ -246,6 +291,7 @@ function DealsView() {
         key={deal.id}
         deal={deal}
         contact={contactsList.find((item) => item.id === deal.contactId)}
+        conversation={deal.contactId ? conversationByContactId.get(deal.contactId) : undefined}
         stages={orderedStages}
         tasks={tasksList}
         members={members}
@@ -253,6 +299,8 @@ function DealsView() {
         moving={movingDealId === deal.id}
         onOpen={() => setSelectedDealId(deal.id)}
         onMove={(stage) => requestMoveDeal(deal, stage)}
+        onOpenConversation={handleOpenConversation}
+        onToggleConversationRead={handleToggleConversationRead}
         onDragStart={(event) => {
           event.dataTransfer.effectAllowed = "move";
           event.dataTransfer.setData("text/plain", deal.id);
@@ -459,6 +507,32 @@ function DealsView() {
         </Modal>
       ) : null}
 
+      {chatConversation ? (
+        <Dialog open onOpenChange={(open) => { if (!open) setChatConversation(undefined); }}>
+          <DialogContent className="flex h-[85vh] w-[calc(100vw-1.5rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 pt-10 sm:rounded-xl">
+            <DialogTitle className="sr-only">Conversa</DialogTitle>
+            {/* `pt-10` acima reserva espaço pro X de fechar do Radix (absolute right-4 top-4) nunca
+               sobrepor os botões do próprio cabeçalho da conversa ("Detalhes"/menu de ações). */}
+            <div className="min-h-0 flex-1">
+              <ConversationTimelinePane
+                workspaceId={workspace.id}
+                conversation={chatConversation}
+                currentUserId={currentUserId}
+                members={members}
+                teams={teamsList}
+                onBack={() => setChatConversation(undefined)}
+                onOpenContext={() => {
+                  const owningDeal = visibleDeals.find((item) => item.contactId === chatConversation.crmContactId);
+                  setChatConversation(undefined);
+                  if (owningDeal) setSelectedDealId(owningDeal.id);
+                }}
+                onConversationChanged={() => mutateInboxConversations()}
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
       <DealDetailModal
         open={Boolean(selectedDeal)}
         onOpenChange={(open) => { if (!open) setSelectedDealId(undefined); }}
@@ -483,6 +557,7 @@ function DealsView() {
 function DealCard({
   deal,
   contact,
+  conversation,
   stages,
   tasks,
   members,
@@ -491,9 +566,14 @@ function DealCard({
   onOpen,
   onDragStart,
   onMove,
+  onOpenConversation,
+  onToggleConversationRead,
 }: {
   deal: Deal;
   contact: Contact | undefined;
+  /** Conversa (WhatsApp/Instagram) do Inbox vinculada ao contato deste negócio, se houver — pedido
+   * explícito do usuário: ver e agir sobre ela direto no card, sem abrir o negócio. */
+  conversation: InboxConversation | undefined;
   stages: readonly PipelineStage[];
   tasks: readonly Task[];
   members: readonly { userId: string; name: string; email: string }[];
@@ -502,16 +582,26 @@ function DealCard({
   onOpen: () => void;
   onDragStart: (event: React.DragEvent) => void;
   onMove: (stage: PipelineStage) => void;
+  onOpenConversation: (conversation: InboxConversation) => void;
+  onToggleConversationRead: (conversation: InboxConversation) => void;
 }) {
   const moveTargets = stages.filter((stage) => stage.id !== deal.stageId);
   const nextTask = nextPendingTask(tasks, { dealId: deal.id });
+  const isUnread = Boolean(conversation && conversation.unreadCount > 0);
 
   return (
     <article
       draggable
       onDragStart={onDragStart}
       onClick={onOpen}
-      className={cn("group rounded-xl border border-border/70 bg-background px-3 py-3 shadow-sm transition hover:border-primary/40 hover:shadow-md md:cursor-grab md:active:cursor-grabbing", moving && "pointer-events-none opacity-60")}
+      className={cn(
+        "group rounded-xl border border-border/70 bg-background px-3 py-3 shadow-sm transition hover:border-primary/40 hover:shadow-md md:cursor-grab md:active:cursor-grabbing",
+        moving && "pointer-events-none opacity-60",
+        // Pedido explícito do usuário: conversa não lida do contato "circulada e destacada em
+        // verde até ser respondida ou marcada como lida" — abrir a conversa (`onOpenConversation`)
+        // já marca como lida (ver `ConversationTimelinePane`), o que faz este destaque sumir sozinho.
+        isUnread && "ring-2 ring-emerald-500 bg-emerald-50/70 hover:bg-emerald-50 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/15",
+      )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -525,6 +615,29 @@ function DealCard({
             </Button>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-60 p-2" onClick={(event) => event.stopPropagation()}>
+            {conversation ? (
+              <>
+                <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Conversa</p>
+                <div className="space-y-1 pb-2">
+                  <button
+                    type="button"
+                    onClick={() => onOpenConversation(conversation)}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
+                  >
+                    <MessageSquareText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">Conversar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onToggleConversationRead(conversation)}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
+                  >
+                    {isUnread ? <MailOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                    <span className="truncate">{isUnread ? "Marcar como lida" : "Marcar como não lida"}</span>
+                  </button>
+                </div>
+              </>
+            ) : null}
             <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Mover para</p>
             <div className="space-y-1">
               {moveTargets.map((stage) => (
@@ -543,6 +656,27 @@ function DealCard({
           </PopoverContent>
         </Popover>
       </div>
+      {conversation ? (
+        <button
+          type="button"
+          onClick={(event) => { event.stopPropagation(); onOpenConversation(conversation); }}
+          className={cn(
+            "mt-2 flex w-full min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition-colors",
+            isUnread
+              ? "border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/15"
+              : "border-border/70 bg-muted/40 text-muted-foreground hover:bg-muted",
+          )}
+        >
+          <ChannelIcon provider={conversation.connectionProvider} className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <span className={cn("min-w-0 flex-1 truncate", isUnread && "font-medium text-foreground")}>{lastMessagePreviewLabel(conversation)}</span>
+          <span className="shrink-0 tabular-nums text-muted-foreground">{timeLabel(conversation.lastMessageAt)}</span>
+          {isUnread ? (
+            <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-semibold tabular-nums text-white">
+              {conversation.unreadCount}
+            </span>
+          ) : null}
+        </button>
+      ) : null}
       <p className="mt-3 text-lg font-semibold tabular-nums text-foreground">{formatCurrencyCents(deal.valueCents, deal.currency)}</p>
       <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span className="flex min-w-0 items-center gap-2">

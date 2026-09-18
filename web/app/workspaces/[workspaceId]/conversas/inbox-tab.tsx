@@ -20,13 +20,11 @@ import {
   Mic,
   MoreHorizontal,
   Paperclip,
-  PauseCircle,
   Plus,
   Reply,
   Search,
   Send,
   Smile,
-  Sparkles,
   Square,
   Tag,
   Trash2,
@@ -35,7 +33,6 @@ import {
   Volume2,
   X,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -85,17 +82,18 @@ const QUICK_FILTERS: { value: InboxConversationFilter; label: string }[] = [
   { value: "all", label: "Todos" },
   { value: "mine", label: "Minhas" },
   { value: "unread", label: "Não lidas" },
-  { value: "urgent", label: "Urgentes" },
 ];
 
 /** Bloco "Organização da lista" (ver docs/conversas-inbox-organization-media-runtime.md) — filtro
  * por `chatType`, deliberadamente client-side (a lista de um workspace é pequena o bastante pra
  * não justificar mais um parâmetro de servidor/índice novo) — nunca esconde o filtro de status já
- * existente, os dois combinam (ex.: "Não lidas" + "Grupos"). */
+ * existente, os dois combinam (ex.: "Não lidas" + "Grupos"). Melhoria visual (pedido explícito do
+ * usuário: "filtros demais visíveis ao mesmo tempo") — junto com `CHANNEL_FILTERS`/`ADVANCED_FILTERS`/
+ * a "Prioridade" (urgente), tudo isto agora vive dentro do popover único "Filtros", nunca mais uma
+ * fileira própria de chips — reduz poluição visual sem remover nenhum filtro que já existia. */
 const CHAT_TYPE_FILTERS: { value: "all" | "group" | "direct"; label: string }[] = [
-  { value: "all", label: "Todos os tipos" },
-  { value: "group", label: "Grupos" },
   { value: "direct", label: "Diretas" },
+  { value: "group", label: "Grupos" },
 ];
 
 /** Bloco "canal unificado" (pedido explícito do usuário: "colocar o icone do whatsapp e do
@@ -104,8 +102,7 @@ const CHAT_TYPE_FILTERS: { value: "all" | "group" | "direct"; label: string }[] 
  * mesmo racional de `CHAT_TYPE_FILTERS` (combina com os outros filtros, nunca os substitui).
  * `undefined` conta como "wuzapi" (ambiente que ainda não atualizou o backend, sempre foi só
  * WhatsApp). */
-const CHANNEL_FILTERS: { value: "all" | MessagingProviderId; label: string }[] = [
-  { value: "all", label: "Todos os canais" },
+const CHANNEL_FILTERS: { value: MessagingProviderId; label: string }[] = [
   { value: "wuzapi", label: "WhatsApp" },
   { value: "instagram", label: "Instagram" },
 ];
@@ -115,43 +112,46 @@ export function ChannelIcon({ provider, className }: { provider: MessagingProvid
   return <MessageCircle className={className} aria-label="WhatsApp" />;
 }
 
+/** Melhoria visual (pedido explícito do usuário: "considerar visualmente Conversas [Lista][Kanban],
+ * mesmo que internamente as rotas continuem separadas") — nunca junta as duas rotas (`/conversas`
+ * e `/kanban` continuam páginas próprias, sem mudança de arquitetura), só deixa visualmente claro
+ * que são o mesmo módulo de atendimento. Usado nos dois cabeçalhos. */
+export function AttendanceModuleToggle({ workspaceId, active }: { workspaceId: string; active: "lista" | "kanban" }) {
+  const items: { href: string; value: "lista" | "kanban"; label: string }[] = [
+    { href: `/workspaces/${workspaceId}/conversas`, value: "lista", label: "Lista" },
+    { href: `/workspaces/${workspaceId}/kanban`, value: "kanban", label: "Kanban" },
+  ];
+  return (
+    <div className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-border bg-muted/40 p-0.5">
+      {items.map((item) => (
+        <Link
+          key={item.value}
+          href={item.href}
+          className={cn(
+            "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+            active === item.value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {item.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 /** Bloco "etiquetas" (pedido explícito do usuário: "criar e configurar etiquetas dentro do
  * sistema e nas conversas ser possível adicionar mais do que uma") — cor vem do vocabulário
  * fechado (`INBOX_TAG_COLORS`), nunca hex livre (ver `web/CLAUDE.md`). Um mapa fixo em vez de
  * montar a classe Tailwind dinamicamente (`bg-${color}-500`) — o compilador do Tailwind só gera
  * CSS pra classe que aparece LITERALMENTE no código-fonte. */
-const INBOX_TAG_COLOR_CLASSES: Record<InboxTagColor, { dot: string; chip: string }> = {
-  emerald: { dot: "bg-emerald-500", chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" },
-  sky: { dot: "bg-sky-500", chip: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300" },
-  violet: { dot: "bg-violet-500", chip: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300" },
-  amber: { dot: "bg-amber-500", chip: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300" },
-  rose: { dot: "bg-rose-500", chip: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300" },
-  slate: { dot: "bg-slate-500", chip: "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300" },
+const INBOX_TAG_COLOR_CLASSES: Record<InboxTagColor, { dot: string }> = {
+  emerald: { dot: "bg-emerald-500" },
+  sky: { dot: "bg-sky-500" },
+  violet: { dot: "bg-violet-500" },
+  amber: { dot: "bg-amber-500" },
+  rose: { dot: "bg-rose-500" },
+  slate: { dot: "bg-slate-500" },
 };
-
-function TagChip({ tag, onRemove, className }: { tag: InboxTag; onRemove?: () => void; className?: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex max-w-full items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-medium",
-        INBOX_TAG_COLOR_CLASSES[tag.color].chip,
-        className,
-      )}
-    >
-      <span className="truncate">{tag.name}</span>
-      {onRemove ? (
-        <button
-          type="button"
-          aria-label={`Remover etiqueta ${tag.name}`}
-          onClick={(event) => { event.stopPropagation(); onRemove(); }}
-          className="shrink-0 rounded-full opacity-70 hover:opacity-100"
-        >
-          <X className="h-2.5 w-2.5" />
-        </button>
-      ) : null}
-    </span>
-  );
-}
 
 const ADVANCED_FILTERS: { value: InboxConversationFilter; label: string; description: string }[] = [
   { value: "open", label: "Em atendimento", description: "Conversas abertas agora." },
@@ -248,7 +248,11 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
           // `h-full`/`min-h-0` do item) — sem isso, uma conversa longa empurra a linha (e a página
           // inteira) além da viewport no mobile, mesmo com overflow-y-auto interno correto.
           "grid h-full min-h-0 grid-rows-[minmax(0,1fr)]",
-          contextOpen && contextPinned ? "xl:grid-cols-[320px_minmax(0,1fr)_384px]" : "md:grid-cols-[320px_minmax(0,1fr)]",
+          // Largura da lista lateral (pedido explícito do usuário: "muito estreita para a
+          // quantidade de informação exibida") — 356px em vez de 320px, dentro da faixa 340-360px
+          // pedida; telas menores continuam caindo pro layout de 1 coluna (abaixo de `md`), sem
+          // mudança nenhuma aí.
+          contextOpen && contextPinned ? "xl:grid-cols-[356px_minmax(0,1fr)_384px]" : "md:grid-cols-[356px_minmax(0,1fr)]",
         )}
       >
         <div className={cn("min-h-0 border-border md:block md:border-r", mobileView === "list" ? "block" : "hidden")}>
@@ -382,6 +386,7 @@ function ConversationListPane({
   onConversationChanged: () => void;
 }) {
   const activeAdvancedFilter = ADVANCED_FILTERS.find((item) => item.value === filter);
+  const hasSecondaryFilterActive = Boolean(activeAdvancedFilter) || filter === "urgent" || chatTypeFilter !== "all" || channelFilter !== "all" || Boolean(tagFilter);
   const { data: tagsData } = useInboxTags(workspaceId);
   const tagFilterOptions = (tagsData?.tags ?? []).map((tag) => ({ id: tag.id, label: tag.name }));
 
@@ -393,8 +398,11 @@ function ConversationListPane({
          economiza uma linha inteira; padding/gaps e alturas de controle reduzidos em seguida. */}
       <div className="space-y-2 border-b border-border p-2.5">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-foreground">Atendimento</p>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">{totalConversations}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="text-sm font-semibold text-foreground">Atendimento</p>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">{totalConversations}</span>
+          </div>
+          <AttendanceModuleToggle workspaceId={workspaceId} active="lista" />
         </div>
 
         <div className="relative">
@@ -407,7 +415,7 @@ function ConversationListPane({
           />
         </div>
 
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
           {QUICK_FILTERS.map((item) => (
             <button
               key={item.value}
@@ -416,37 +424,42 @@ function ConversationListPane({
               className={cn(
                 "flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
                 filter === item.value
-                  ? item.value === "urgent"
-                    ? "bg-destructive text-destructive-foreground"
-                    : "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
+                  ? "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
                   : "bg-muted text-muted-foreground hover:bg-muted/80",
               )}
             >
-              {item.value === "urgent" ? <Flame className="h-3.5 w-3.5" /> : null}
               {item.label}
             </button>
           ))}
+          {/* Melhoria visual (pedido explícito do usuário: "filtros demais visíveis ao mesmo
+             tempo") — Tipo/Canal/Prioridade/Etiqueta e os filtros de status avançados (antes 4
+             fileiras de chips próprias) viraram seções dentro deste ÚNICO popover "Filtros".
+             Nenhum filtro foi removido, só reorganizado — ganha espaço vertical sem perder
+             capacidade. Um ponto no botão avisa quando algo além de "Todos/Minhas/Não lidas"
+             está ativo, já que o rótulo do botão não muda mais para nomear um filtro específico. */}
           <Popover>
             <PopoverTrigger asChild>
               <button
                 type="button"
                 className={cn(
-                  "h-7 shrink-0 rounded-full px-3 text-xs font-medium transition-colors duration-150",
-                  activeAdvancedFilter ? "bg-ai-soft text-ai dark:bg-ai/15 dark:text-ai-glow" : "bg-muted text-muted-foreground hover:bg-muted/80",
+                  "relative flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
+                  hasSecondaryFilterActive ? "bg-ai-soft text-ai dark:bg-ai/15 dark:text-ai-glow" : "bg-muted text-muted-foreground hover:bg-muted/80",
                 )}
               >
-                {activeAdvancedFilter?.label ?? "Filtros"}
+                Filtros
+                {hasSecondaryFilterActive ? <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" /> : null}
               </button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-72 p-2">
+            <PopoverContent align="start" className="w-72 space-y-3 p-2">
               <div className="space-y-1">
+                <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Status</p>
                 {ADVANCED_FILTERS.map((item) => (
                   <button
                     key={item.value}
                     type="button"
                     onClick={() => onFilterChange(item.value)}
                     className={cn(
-                      "flex w-full flex-col rounded-md px-3 py-2 text-left transition-colors",
+                      "flex w-full flex-col rounded-md px-2 py-1.5 text-left transition-colors",
                       filter === item.value ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                     )}
                   >
@@ -455,56 +468,79 @@ function ConversationListPane({
                   </button>
                 ))}
               </div>
+
+              <div className="space-y-1 border-t border-border/60 pt-2">
+                <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Prioridade</p>
+                <button
+                  type="button"
+                  onClick={() => onFilterChange(filter === "urgent" ? "all" : "urgent")}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium transition-colors",
+                    filter === "urgent" ? "bg-destructive/10 text-destructive" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                  )}
+                >
+                  <Flame className="h-3.5 w-3.5" /> Urgentes
+                </button>
+              </div>
+
+              <div className="space-y-1 border-t border-border/60 pt-2">
+                <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Tipo</p>
+                <div className="flex gap-1.5 px-1">
+                  {CHAT_TYPE_FILTERS.map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => onChatTypeFilterChange(chatTypeFilter === item.value ? "all" : item.value)}
+                      className={cn(
+                        "h-7 flex-1 rounded-md border text-xs font-medium transition-colors",
+                        chatTypeFilter === item.value
+                          ? "border-primary/30 bg-primary/10 text-primary dark:border-primary-glow/30 dark:bg-primary-glow/10 dark:text-primary-glow"
+                          : "border-border/60 text-muted-foreground hover:bg-muted/60",
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1 border-t border-border/60 pt-2">
+                <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Canal</p>
+                <div className="flex gap-1.5 px-1">
+                  {CHANNEL_FILTERS.map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => onChannelFilterChange(channelFilter === item.value ? "all" : item.value)}
+                      className={cn(
+                        "flex h-7 flex-1 items-center justify-center gap-1 rounded-md border text-xs font-medium transition-colors",
+                        channelFilter === item.value
+                          ? "border-primary/30 bg-primary/10 text-primary dark:border-primary-glow/30 dark:bg-primary-glow/10 dark:text-primary-glow"
+                          : "border-border/60 text-muted-foreground hover:bg-muted/60",
+                      )}
+                    >
+                      <ChannelIcon provider={item.value} className="h-3 w-3" />
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {tagFilterOptions.length > 0 ? (
+                <div className="space-y-1 border-t border-border/60 pt-2">
+                  <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Etiqueta</p>
+                  <SearchableCombo
+                    items={tagFilterOptions}
+                    value={tagFilter}
+                    onValueChange={onTagFilterChange}
+                    placeholder="Filtrar por etiqueta"
+                    extraOption={{ value: "", label: "Todas as etiquetas" }}
+                  />
+                </div>
+              ) : null}
             </PopoverContent>
           </Popover>
         </div>
-
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-          {CHAT_TYPE_FILTERS.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              onClick={() => onChatTypeFilterChange(item.value)}
-              className={cn(
-                "h-7 shrink-0 rounded-full border px-2.5 text-[11px] font-medium transition-colors duration-150",
-                chatTypeFilter === item.value
-                  ? "border-primary/30 bg-primary/10 text-primary dark:border-primary-glow/30 dark:bg-primary-glow/10 dark:text-primary-glow"
-                  : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted",
-              )}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-          {CHANNEL_FILTERS.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              onClick={() => onChannelFilterChange(item.value)}
-              className={cn(
-                "flex h-7 shrink-0 items-center gap-1 rounded-full border px-2.5 text-[11px] font-medium transition-colors duration-150",
-                channelFilter === item.value
-                  ? "border-primary/30 bg-primary/10 text-primary dark:border-primary-glow/30 dark:bg-primary-glow/10 dark:text-primary-glow"
-                  : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted",
-              )}
-            >
-              {item.value !== "all" ? <ChannelIcon provider={item.value} className="h-3 w-3" /> : null}
-              {item.label}
-            </button>
-          ))}
-        </div>
-
-        {tagFilterOptions.length > 0 ? (
-          <SearchableCombo
-            items={tagFilterOptions}
-            value={tagFilter}
-            onValueChange={onTagFilterChange}
-            placeholder="Filtrar por etiqueta"
-            extraOption={{ value: "", label: "Todas as etiquetas" }}
-          />
-        ) : null}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -628,22 +664,33 @@ export function ConversationListItem({
           </div>
         </div>
         <p className="mt-0.5 truncate text-xs text-muted-foreground">{conversationSubtitle(conversation)}</p>
-        <p className="mt-1 line-clamp-1 text-xs text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
-        {conversation.tags && conversation.tags.length > 0 ? (
-          <div className="mt-1.5 flex flex-wrap gap-1">
-            {conversation.tags.map((tag) => <TagChip key={tag.id} tag={tag} />)}
-          </div>
-        ) : null}
-        <div className="mt-2 flex min-w-0 items-center gap-1.5">
-          <StatusDot status={conversation.status} />
-          {conversation.currentTeamId ? (
-            <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{teamLabel(conversation.currentTeamId, teams)}</span>
-          ) : null}
-          <span className="truncate text-[11px] text-muted-foreground">{agentLabel(conversation.assignedUserId, currentUserId, members)}</span>
-          <AiStateBadge conversation={conversation} compact />
+        {/* Melhoria visual (pedido explícito do usuário — hierarquia de 4 linhas): linha 3 é
+           preview + contador de não lidas (antes ficava numa 4ª linha própria, competindo com
+           status/responsável); linha 4 fica bem discreta, texto único em vez de vários badges. */}
+        <div className="mt-1 flex items-center gap-1.5">
+          <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
           {conversation.unreadCount > 0 ? (
-            <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold tabular-nums text-primary-foreground dark:bg-primary-glow dark:text-background">
+            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold tabular-nums text-primary-foreground dark:bg-primary-glow dark:text-background">
               {conversation.unreadCount}
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+          <StatusDot status={conversation.status} />
+          <span className="truncate">
+            {statusLabelFor(conversation.status)}
+            {conversation.currentTeamId ? ` · ${teamLabel(conversation.currentTeamId, teams)}` : ""}
+            {` · ${agentLabel(conversation.assignedUserId, currentUserId, members)}`}
+          </span>
+          {/* "IA pausada" fica só um ícone discreto (pedido explícito do usuário) — nunca mais um
+             badge colorido com texto competindo com o resto da linha; "Humano"/"IA ativa" já são
+             óbvios pelo responsável mostrado acima, então não precisam de indicador próprio aqui. */}
+          {!conversation.assignedUserId && !conversation.aiEnabled ? <Bot className="h-3 w-3 shrink-0 opacity-60" aria-label="IA pausada" /> : null}
+          {conversation.tags && conversation.tags.length > 0 ? (
+            <span className="flex shrink-0 items-center gap-0.5">
+              {conversation.tags.slice(0, 3).map((tag) => (
+                <span key={tag.id} className={cn("h-1.5 w-1.5 rounded-full", INBOX_TAG_COLOR_CLASSES[tag.color].dot)} aria-hidden="true" />
+              ))}
             </span>
           ) : null}
         </div>
@@ -656,7 +703,7 @@ export function ConversationListItem({
  * cabeçalho da conversa aberta): só as ações pedidas explicitamente pra funcionar sem abrir a
  * conversa (ler/não lida, urgente). Nunca duplica as ações administrativas (transferir/excluir/IA)
  * do menu completo — aquelas continuam exigindo a conversa aberta. */
-function ConversationListItemMenu({
+export function ConversationListItemMenu({
   workspaceId,
   conversation,
   onChanged,
@@ -748,7 +795,7 @@ function ConversationListItemMenu({
  * sistema e nas conversas ser possível adicionar mais do que uma") — funciona tanto na listagem
  * (sem abrir a conversa, `ConversationListItem`) quanto no cabeçalho da conversa aberta
  * (`ConversationTimelinePane`), sempre este MESMO componente (nunca dois pickers diferentes). */
-function TagPicker({
+export function TagPicker({
   workspaceId,
   conversation,
   onChanged,
@@ -1311,11 +1358,12 @@ export function ConversationTimelinePane({
             Detalhes
           </Button>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <AiStateBadge conversation={conversation} />
-          {conversation.tags && conversation.tags.length > 0 ? conversation.tags.map((tag) => <TagChip key={tag.id} tag={tag} />) : null}
-          {actionError ? <span className="text-xs text-destructive">{actionError}</span> : null}
-        </div>
+        {/* Cabeçalho compacto (pedido explícito do usuário: "evitar muitos badges e textos ao
+           mesmo tempo") — a linha de badges (IA/"Humano"/etiquetas) some daqui; o estado da IA já
+           é visível no responsável (linha acima) e as etiquetas continuam acessíveis pelo ícone de
+           etiqueta, sem precisar de uma segunda fileira permanente. Erro de ação é a única coisa
+           que ainda pode aparecer abaixo, e só quando existe. */}
+        {actionError ? <p className="mt-1.5 text-xs text-destructive">{actionError}</p> : null}
       </div>
 
       <ConfirmDialog
@@ -1330,7 +1378,7 @@ export function ConversationTimelinePane({
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-1">
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-1">
           {isLoading ? (
             <MessageSkeleton />
           ) : error ? (
@@ -1368,7 +1416,7 @@ export function ConversationTimelinePane({
       </div>
 
       <div className="border-t border-border bg-card px-3 py-3">
-        <div className="mx-auto w-full max-w-3xl space-y-2">
+        <div className="mx-auto w-full max-w-4xl space-y-2">
           {sendError ? (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               <span className="min-w-0 flex-1">{sendError}</span>
@@ -1417,7 +1465,11 @@ export function ConversationTimelinePane({
               if (file) void handleAttach(file);
             }}
           />
-          <div className="flex items-end gap-2">
+          {/* Composer como UMA superfície só (pedido explícito do usuário: "não parecer input
+             simples com ícones soltos") — os ícones (anexo/emoji/enviar-ou-microfone) ficam
+             integrados ao mesmo container bordado do texto, em vez de cada um com sua própria
+             borda/fundo flutuando ao lado. */}
+          <div className="flex items-end gap-0.5 rounded-2xl border border-border bg-background px-1.5 py-1.5 transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20">
             <Popover>
               <PopoverTrigger asChild>
                 <span className="inline-flex">
@@ -1457,20 +1509,22 @@ export function ConversationTimelinePane({
                 }
               }}
               placeholder={canOperate ? "Digite uma mensagem..." : "Seu papel permite visualizar, mas não operar esta conversa."}
-              className="max-h-36 min-h-[42px] flex-1 resize-none"
+              className="max-h-36 min-h-[36px] flex-1 resize-none border-0 bg-transparent px-1.5 py-1.5 shadow-none focus:border-0 focus:ring-0"
               rows={1}
               disabled={!canOperate || sending}
             />
             {draft.trim() ? (
               <GuardedButton
+                size="icon"
+                className="rounded-full"
                 onClick={() => handleSend()}
                 loading={sending}
                 disabled={sending || !draft.trim()}
                 allowed={canOperate}
                 blockedReason={RBAC_COPY.operateConversations}
+                aria-label="Enviar mensagem"
               >
                 <Send className="h-4 w-4" />
-                <span className="hidden sm:inline">Enviar</span>
               </GuardedButton>
             ) : (
               <VoiceRecorderButton disabled={!canOperate || attaching} onSend={handleSendVoiceNote} />
@@ -1916,16 +1970,21 @@ function MessageBubble({
       {/* Bloco "3 pontinhos ao lado, não embaixo" (pedido explícito do usuário: consumia uma linha
          inteira por mensagem, mesmo com opacity-0 — `opacity` nunca remove algo do fluxo do layout).
          Agora o menu vive na "sobra" horizontal ao lado da bolha (que já não usa 100% da largura,
-         `max-w-[min(78%,42rem)]`), como o próprio WhatsApp faz — nunca mais reserva altura própria. */}
-      <div className={cn("flex max-w-[min(85%,45rem)] items-center gap-1", reactionGroups.length > 0 && "mb-2.5", isOutbound ? "flex-row-reverse" : "flex-row")}>
+         `max-w-[min(70%,44rem)]`), como o próprio WhatsApp faz — nunca mais reserva altura própria. */}
+      <div className={cn("flex max-w-[min(88%,48rem)] items-center gap-1", reactionGroups.length > 0 && "mb-2.5", isOutbound ? "flex-row-reverse" : "flex-row")}>
         <div
           className={cn(
-            "relative min-w-0 max-w-[min(78%,42rem)] rounded-xl border px-3 py-2 text-sm shadow-sm",
+            // Bolhas mais "mensageiro moderno, não painel administrativo" (pedido explícito do
+            // usuário) — sem sombra, sem borda na bolha normal (só a de erro mantém, é um alerta,
+            // não uma mensagem comum), cantos mais arredondados com um "bico" discreto no canto
+            // que aponta pra quem mandou, em vez do retângulo uniforme de antes.
+            "relative min-w-0 max-w-[min(70%,44rem)] rounded-2xl px-3.5 py-2.5 text-sm",
+            isOutbound ? "rounded-br-md" : "rounded-bl-md",
             isOutbound
               ? failed
-                ? "border-destructive/40 bg-destructive/10 text-foreground"
-                : "border-primary/20 bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
-              : "border-border bg-card text-foreground",
+                ? "border border-destructive/40 bg-destructive/10 text-foreground"
+                : "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
+              : "bg-muted/70 text-foreground dark:bg-muted/40",
           )}
         >
           {senderLabel ? <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">{senderLabel}</p> : null}
@@ -1943,7 +2002,11 @@ function MessageBubble({
             (() => {
               const Icon = mediaIconFor(message.type);
               return (
-                <div className="flex items-center gap-2 rounded-lg bg-muted/70 px-3 py-2 text-muted-foreground">
+                // Achado de revisão: com a bolha inbound agora usando `bg-muted/70` (bolhas mais
+                // "mensageiro moderno"), este fallback precisa de um tom DIFERENTE do fundo da
+                // própria bolha pra continuar visível — mesmo racional do box de resposta citada
+                // logo acima (`bg-black/10` no outbound, um tom próprio no inbound).
+                <div className={cn("flex items-center gap-2 rounded-lg px-3 py-2", isOutbound ? "bg-black/10" : "bg-card/80 text-muted-foreground")}>
                   <Icon className="h-4 w-4 shrink-0" />
                   <span className="text-xs">{mediaLabelFor(message.type, isOutbound)}</span>
                 </div>
@@ -2208,32 +2271,7 @@ function ContactContextPane({
   );
 }
 
-function AiStateBadge({ conversation, compact = false }: { conversation: InboxConversation; compact?: boolean }) {
-  if (conversation.assignedUserId) {
-    return (
-      <Badge variant="info" className={cn("gap-1 border-transparent", compact && "px-1.5 py-0 text-[10px]")}>
-        <PauseCircle className="h-3 w-3" />
-        Humano
-      </Badge>
-    );
-  }
-  if (conversation.aiEnabled) {
-    return (
-      <Badge variant="accent" className={cn("gap-1 border-transparent", compact && "px-1.5 py-0 text-[10px]")}>
-        <Sparkles className="h-3 w-3" />
-        IA ativa
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="outline" className={cn("gap-1 text-muted-foreground", compact && "px-1.5 py-0 text-[10px]")}>
-      <Bot className="h-3 w-3" />
-      IA pausada
-    </Badge>
-  );
-}
-
-function StatusDot({ status }: { status: InboxConversation["status"] }) {
+export function StatusDot({ status }: { status: InboxConversation["status"] }) {
   const classes: Record<InboxConversation["status"], string> = {
     open: "bg-primary dark:bg-primary-glow",
     pending: "bg-warning",
@@ -2287,7 +2325,7 @@ function teamLabel(teamId: string, teams: readonly Team[]): string {
   return teams.find((team) => team.id === teamId)?.name ?? teamId;
 }
 
-function statusLabelFor(status: InboxConversation["status"]): string {
+export function statusLabelFor(status: InboxConversation["status"]): string {
   switch (status) {
     case "open": return "Em atendimento";
     case "pending": return "Pendente";
@@ -2430,7 +2468,7 @@ export function mediaLabelFor(type: InboxMessage["type"], isOutbound = false): s
  * inventar nada: grupo sem `groupName` conhecido cai num rótulo genérico seguro ("Grupo do
  * WhatsApp"), nunca no nome do primeiro remetente (ver docs/conversas-canonical-chat-identity.md,
  * seção 10 do pedido original). */
-function conversationTitle(conversation: InboxConversation): string {
+export function conversationTitle(conversation: InboxConversation): string {
   // Fallback "Grupo" (nunca "Grupo do WhatsApp" permanente) — a metadata real chega sozinha via
   // `syncGroupMetadata` (worker) logo após a primeira mensagem; isto só aparece na janela curta
   // antes disso resolver (ver docs/conversas-inbox-organization-media-runtime.md).
@@ -2438,8 +2476,17 @@ function conversationTitle(conversation: InboxConversation): string {
   return conversation.contactName ?? conversation.contactPhone ?? "Contato";
 }
 
+/** Melhoria visual (pedido explícito do usuário: linha 2 do item da lista mostra "canal +
+ * telefone/grupo") — achado de revisão: antes hardcoded "WhatsApp", nunca refletia Instagram
+ * mesmo já sendo um canal de primeira classe do Inbox. `channelLabelFor` é a mesma fonte usada
+ * pelo filtro de canal (`CHANNEL_FILTERS`), nunca um rótulo próprio duplicado. */
+export function channelLabelFor(conversation: InboxConversation): string {
+  return conversation.connectionProvider === "instagram" ? "Instagram" : "WhatsApp";
+}
+
 function conversationSubtitle(conversation: InboxConversation): string {
-  return conversation.chatType === "group" ? "WhatsApp · Grupo" : `WhatsApp · ${conversation.contactPhone ?? "—"}`;
+  const channel = channelLabelFor(conversation);
+  return conversation.chatType === "group" ? `${channel} · Grupo` : `${channel} · ${conversation.contactPhone ?? "—"}`;
 }
 
 /** Só pro HEADER da conversa aberta (nunca a lista, que fica só "WhatsApp · Grupo") — inclui
@@ -2456,12 +2503,12 @@ function conversationHeaderSubtitle(conversation: InboxConversation): string {
 /** Deriva os parâmetros de `InboxAvatar` a partir de uma conversa — grupo usa a própria conversa
  * como alvo, direta usa o contato do outro lado (`undefined` até o primeiro contato ser vinculado,
  * ex.: grupo sem contactId — `InboxAvatar` já trata `targetId: undefined` como "sem foto ainda"). */
-function avatarPropsFor(conversation: InboxConversation): { kind: "contact" | "conversation"; targetId: string | undefined; storageRef: InboxMediaStorageRef | undefined } {
+export function avatarPropsFor(conversation: InboxConversation): { kind: "contact" | "conversation"; targetId: string | undefined; storageRef: InboxMediaStorageRef | undefined } {
   if (conversation.chatType === "group") return { kind: "conversation", targetId: conversation.id, storageRef: conversation.groupPictureStorageRef };
   return { kind: "contact", targetId: conversation.contactId, storageRef: conversation.contactProfilePictureStorageRef };
 }
 
-function initials(value: string): string {
+export function initials(value: string): string {
   const normalized = value.trim();
   if (!normalized) return "VX";
   const parts = normalized.split(/\s+/).slice(0, 2);

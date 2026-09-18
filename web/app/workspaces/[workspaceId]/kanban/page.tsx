@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
-import { PageHeader } from "@/components/PageHeader";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { Spinner } from "@/components/Spinner";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useTeams } from "@/features/identity/hooks";
 import { useInboxModuleStatus } from "@/features/inbox/hooks";
+import { AttendanceModuleToggle } from "../conversas/inbox-tab";
 import { KanbanBoard } from "./kanban-board";
 
 /**
@@ -74,20 +74,25 @@ export default function KanbanPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-3 sm:p-6">
-      <PageHeader
-        title="Kanban de atendimento"
-        description="Acompanhe as conversas da equipe por fase, igual num quadro Trello."
-        actions={
-          <SearchableCombo
-            items={teams.map((team) => ({ id: team.id, label: team.name }))}
-            value={teamId}
-            onValueChange={setTeamId}
-            placeholder="Selecione a equipe"
-            className="w-56"
-          />
-        }
-      />
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3 sm:p-4">
+      {/* Cabeçalho compacto (pedido explícito do usuário: "hoje existe espaço demais entre
+         título/descrição/contagem/seletor/botão Fases/quadro") — título, alternância Lista/Kanban
+         e seletor de equipe numa linha só, sem parágrafo de descrição (o nome da tela já é
+         autoexplicativo) — o resto (contagem + botão Fases) continua dentro do próprio
+         `KanbanBoard`, já compacto numa linha própria logo abaixo. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="truncate text-lg font-semibold text-foreground">Kanban de atendimento</h1>
+          <AttendanceModuleToggle workspaceId={workspace.id} active="kanban" />
+        </div>
+        <SearchableCombo
+          items={teams.map((team) => ({ id: team.id, label: team.name }))}
+          value={teamId}
+          onValueChange={setTeamId}
+          placeholder="Selecione a equipe"
+          className="w-48"
+        />
+      </div>
       {teamId ? (
         <div className="min-h-0 flex-1">
           <KanbanBoard workspaceId={workspace.id} teamId={teamId} teams={teams} />

@@ -72,17 +72,21 @@ import {
 import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime, useInboxTags } from "@/features/inbox/hooks";
 import { useTeams } from "@/features/identity/hooks";
 import { INBOX_TAG_COLORS } from "@/features/inbox/types";
-import type { InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMediaStorageRef, InboxMessage, InboxTag, InboxTagColor, InboxTenantMember, MessagingProviderId, TeamKanbanPhase } from "@/features/inbox/types";
+import type { InboxConversation, InboxConversationEvent, InboxConversationStatus, InboxMediaStorageRef, InboxMessage, InboxTag, InboxTagColor, InboxTenantMember, MessagingProviderId, TeamKanbanPhase } from "@/features/inbox/types";
 import type { Team } from "@/features/identity/types";
+import {
+  applyInboxFilters,
+  CONVERSAS_FILTER_SECTIONS,
+  countActiveInboxFilters,
+  KANBAN_FILTER_SECTIONS,
+  ownerOptionsFor,
+  teamOptionsFor,
+  useInboxFilterState,
+} from "@/features/inbox/inbox-filters";
+import type { InboxAiFilter, InboxFilterSection, InboxFilterState, InboxPeriodFilter, InboxReadFilter } from "@/features/inbox/inbox-filters";
 import { CrmContextSection } from "./crm-panel";
 import { MessageMedia } from "./message-media";
 import { InboxAvatar } from "./inbox-avatar";
-
-const QUICK_FILTERS: { value: InboxConversationFilter; label: string }[] = [
-  { value: "all", label: "Todos" },
-  { value: "mine", label: "Minhas" },
-  { value: "unread", label: "Não lidas" },
-];
 
 /** Bloco "Organização da lista" (ver docs/conversas-inbox-organization-media-runtime.md) — filtro
  * por `chatType`, deliberadamente client-side (a lista de um workspace é pequena o bastante pra
@@ -115,11 +119,22 @@ export function ChannelIcon({ provider, className }: { provider: MessagingProvid
 /** Melhoria visual (pedido explícito do usuário: "considerar visualmente Conversas [Lista][Kanban],
  * mesmo que internamente as rotas continuem separadas") — nunca junta as duas rotas (`/conversas`
  * e `/kanban` continuam páginas próprias, sem mudança de arquitetura), só deixa visualmente claro
- * que são o mesmo módulo de atendimento. Usado nos dois cabeçalhos. */
+ * que são o mesmo módulo de atendimento. Usado nos dois cabeçalhos.
+ *
+ * Ajuste de ergonomia (pedido explícito do usuário: "Lista → Kanban não perder todos os filtros
+ * inesperadamente") — propaga a querystring ATUAL (filtros, busca, equipe) pro destino: como as
+ * duas telas leem os MESMOS nomes de parâmetro (`useInboxFilterState`), trocar de rota preserva o
+ * filtro sozinho, sem precisar de estado global/localStorage. Nunca carrega `conversation=` pro
+ * Kanban (não existe lá) nem `team=` pra Conversas quando a origem é Kanban mudando de equipe via
+ * um link que não passou por aqui — só o que está na URL no momento do clique. */
 export function AttendanceModuleToggle({ workspaceId, active }: { workspaceId: string; active: "lista" | "kanban" }) {
+  const searchParams = useSearchParams();
+  const carryParams = new URLSearchParams(searchParams.toString());
+  carryParams.delete("conversation");
+  const query = carryParams.toString();
   const items: { href: string; value: "lista" | "kanban"; label: string }[] = [
-    { href: `/workspaces/${workspaceId}/conversas`, value: "lista", label: "Lista" },
-    { href: `/workspaces/${workspaceId}/kanban`, value: "kanban", label: "Kanban" },
+    { href: `/workspaces/${workspaceId}/conversas${query ? `?${query}` : ""}`, value: "lista", label: "Lista" },
+    { href: `/workspaces/${workspaceId}/kanban${query ? `?${query}` : ""}`, value: "kanban", label: "Kanban" },
   ];
   return (
     <div className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-border bg-muted/40 p-0.5">
@@ -139,6 +154,290 @@ export function AttendanceModuleToggle({ workspaceId, active }: { workspaceId: s
   );
 }
 
+const STATUS_FILTER_OPTIONS: { value: InboxConversationStatus; label: string }[] = [
+  { value: "open", label: "Em atendimento" },
+  { value: "pending", label: "Pendente" },
+  { value: "resolved", label: "Finalizada" },
+  { value: "archived", label: "Arquivada" },
+];
+
+const AI_FILTER_OPTIONS: { value: InboxAiFilter; label: string }[] = [
+  { value: "active", label: "IA ativa" },
+  { value: "paused", label: "IA pausada" },
+  { value: "human", label: "Atendimento humano" },
+];
+
+const READ_FILTER_OPTIONS: { value: InboxReadFilter; label: string }[] = [
+  { value: "unread", label: "Não lidas" },
+  { value: "read", label: "Lidas" },
+];
+
+const PERIOD_FILTER_OPTIONS: { value: InboxPeriodFilter; label: string }[] = [
+  { value: "today", label: "Hoje" },
+  { value: "24h", label: "Últimas 24h" },
+  { value: "7d", label: "Últimos 7 dias" },
+];
+
+/** Bloco "grupo de botões de filtro" — mesmo idioma visual pras 4 seções da `InboxFilterBar` que
+ * são "escolha única, clicar de novo no ativo volta pra 'Todas'" (Tipo/Status/IA/Leitura/Período).
+ * Um componente genérico em vez de 5 blocos JSX quase idênticos. */
+function FilterButtonGroup<T extends string>({
+  title,
+  options,
+  value,
+  onChange,
+}: {
+  title: string;
+  options: readonly { value: T; label: string }[];
+  value: T | "all";
+  onChange: (value: T | "all") => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
+      <div className="flex flex-wrap gap-1.5 px-1">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(value === option.value ? "all" : option.value)}
+            className={cn(
+              "h-7 rounded-md border px-2.5 text-xs font-medium transition-colors",
+              value === option.value
+                ? "border-primary/30 bg-primary/10 text-primary dark:border-primary-glow/30 dark:bg-primary-glow/10 dark:text-primary-glow"
+                : "border-border/60 text-muted-foreground hover:bg-muted/60",
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Bloco "ajuste de ergonomia e filtros" (pedido explícito do usuário: "Conversas e Kanban
+ * representam a MESMA operação de atendimento... criar/reutilizar um componente compartilhado,
+ * como FilterBar/InboxFilters") — ÚNICA FilterBar do módulo, usada tanto em Conversas quanto no
+ * Kanban (`sections`/`inlineSections` decidem o que aparece em cada tela; Kanban nunca mostra
+ * Status/Equipe — ver `KANBAN_FILTER_SECTIONS`). Estado vem de fora (`useInboxFilterState`, URL),
+ * nunca duplicado aqui.
+ */
+export function InboxFilterBar({
+  workspaceId,
+  sections,
+  inlineSections = [],
+  quickChips = false,
+  filters,
+  onFilterChange,
+  onClearFilters,
+  search,
+  onSearchChange,
+  members,
+  teams,
+  currentUserId,
+}: {
+  workspaceId: string;
+  sections: readonly InboxFilterSection[];
+  inlineSections?: readonly InboxFilterSection[];
+  quickChips?: boolean;
+  filters: InboxFilterState;
+  onFilterChange: <K extends keyof InboxFilterState>(key: K, value: InboxFilterState[K]) => void;
+  onClearFilters: () => void;
+  search: string;
+  onSearchChange: (value: string) => void;
+  members: readonly InboxTenantMember[];
+  teams: readonly Team[];
+  currentUserId: string | undefined;
+}) {
+  const { data: tagsData } = useInboxTags(workspaceId);
+  const tagOptions = (tagsData?.tags ?? []).map((tag) => ({ id: tag.id, label: tag.name }));
+  const ownerOptions = [{ id: "me", label: "Eu" }, { id: "unassigned", label: "Sem responsável" }, ...ownerOptionsFor(members)];
+  const teamOptions = teamOptionsFor(teams);
+  const activeCount = countActiveInboxFilters(filters);
+  const has = (section: InboxFilterSection) => sections.includes(section);
+  const isInline = (section: InboxFilterSection) => inlineSections.includes(section) && has(section);
+  const popoverSections = sections.filter((section) => !inlineSections.includes(section));
+
+  return (
+    <div className="space-y-1.5">
+      {quickChips ? (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+          <button
+            type="button"
+            onClick={() => { onFilterChange("owner", filters.owner === "me" ? "all" : filters.owner); onFilterChange("read", filters.read === "unread" ? "all" : filters.read); onFilterChange("urgent", false); }}
+            className={cn(
+              "flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
+              filters.owner !== "me" && filters.read !== "unread" && !filters.urgent
+                ? "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
+                : "bg-muted text-muted-foreground hover:bg-muted/80",
+            )}
+          >
+            Todos
+          </button>
+          <button
+            type="button"
+            onClick={() => onFilterChange("owner", filters.owner === "me" ? "all" : "me")}
+            className={cn(
+              "flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
+              filters.owner === "me" ? "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background" : "bg-muted text-muted-foreground hover:bg-muted/80",
+            )}
+          >
+            Minhas
+          </button>
+          <button
+            type="button"
+            onClick={() => onFilterChange("read", filters.read === "unread" ? "all" : "unread")}
+            className={cn(
+              "flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
+              filters.read === "unread" ? "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background" : "bg-muted text-muted-foreground hover:bg-muted/80",
+            )}
+          >
+            Não lidas
+          </button>
+          <button
+            type="button"
+            onClick={() => onFilterChange("urgent", !filters.urgent)}
+            className={cn(
+              "flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
+              filters.urgent ? "bg-destructive text-destructive-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80",
+            )}
+          >
+            <Flame className="h-3.5 w-3.5" /> Urgentes
+          </button>
+        </div>
+      ) : null}
+
+      {/* `overflow-x-auto` + `min-w-[140px]` na busca (em vez de `min-w-0`) — achado via QA real em
+         390px (Playwright): no Kanban, busca + Responsável + Canal + Filtros não cabem juntos; com
+         `min-w-0` a busca simplesmente espremia até ficar ilegível. Agora ela mantém um piso
+         utilizável e o EXCESSO rola horizontalmente (mesmo padrão já usado pelos chips rápidos de
+         Conversas), nunca esconde nem espreme um filtro até sumir. */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+        <div className="relative min-w-[140px] flex-1">
+          <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Buscar conversa" className="h-8 pl-8" />
+        </div>
+        {isInline("owner") ? (
+          <SearchableCombo
+            items={ownerOptions}
+            value={filters.owner === "all" ? "" : filters.owner}
+            onValueChange={(value) => onFilterChange("owner", value || "all")}
+            placeholder="Responsável"
+            extraOption={{ value: "", label: "Todos" }}
+            className="h-8 w-36 shrink-0"
+          />
+        ) : null}
+        {isInline("channel") ? (
+          <SearchableCombo
+            items={CHANNEL_FILTERS.map((item) => ({ id: item.value, label: item.label }))}
+            value={filters.channel === "all" ? "" : filters.channel}
+            onValueChange={(value) => onFilterChange("channel", (value || "all") as InboxFilterState["channel"])}
+            placeholder="Canal"
+            extraOption={{ value: "", label: "Todos" }}
+            className="h-8 w-32 shrink-0"
+          />
+        ) : null}
+        {popoverSections.length > 0 ? (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 text-xs font-medium transition-colors duration-150",
+                  activeCount > 0
+                    ? "border-primary/30 bg-primary/10 text-primary dark:border-primary-glow/30 dark:bg-primary-glow/10 dark:text-primary-glow"
+                    : "border-border bg-muted/60 text-muted-foreground hover:bg-muted",
+                )}
+              >
+                Filtros{activeCount > 0 ? ` (${activeCount})` : ""}
+              </button>
+            </PopoverTrigger>
+            {/* `w-[min(20rem,calc(100vw-2rem))]` em vez de `w-80` fixo — achado via QA real em
+               390px (Playwright): um popover de 320px encostado em `align="end"` estourava a
+               viewport móvel e cobria a própria busca. O `min()` mantém 20rem (320px) em telas
+               largas e cai pra "viewport menos a margem" só quando precisa, sem duplicar o
+               componente pra um "Sheet" mobile à parte. */}
+            <PopoverContent align="end" className="max-h-[70vh] w-[min(20rem,calc(100vw-2rem))] space-y-3 overflow-y-auto p-3">
+              {has("type") && !isInline("type") ? (
+                <FilterButtonGroup title="Tipo" options={CHAT_TYPE_FILTERS} value={filters.chatType} onChange={(value) => onFilterChange("chatType", value)} />
+              ) : null}
+              {has("channel") && !isInline("channel") ? (
+                <FilterButtonGroup title="Canal" options={CHANNEL_FILTERS} value={filters.channel} onChange={(value) => onFilterChange("channel", value)} />
+              ) : null}
+              {has("owner") && !isInline("owner") ? (
+                <div className="space-y-1">
+                  <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Responsável</p>
+                  <SearchableCombo
+                    items={ownerOptions}
+                    value={filters.owner === "all" ? "" : filters.owner}
+                    onValueChange={(value) => onFilterChange("owner", value || "all")}
+                    placeholder="Todos"
+                    extraOption={{ value: "", label: "Todos" }}
+                  />
+                </div>
+              ) : null}
+              {has("team") && teamOptions.length > 0 ? (
+                <div className="space-y-1">
+                  <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Equipe</p>
+                  <SearchableCombo
+                    items={teamOptions}
+                    value={filters.teamId}
+                    onValueChange={(value) => onFilterChange("teamId", value)}
+                    placeholder="Todas"
+                    extraOption={{ value: "", label: "Todas" }}
+                  />
+                </div>
+              ) : null}
+              {has("status") ? (
+                <FilterButtonGroup title="Status / Fase" options={STATUS_FILTER_OPTIONS} value={filters.status} onChange={(value) => onFilterChange("status", value)} />
+              ) : null}
+              {has("ai") ? <FilterButtonGroup title="IA" options={AI_FILTER_OPTIONS} value={filters.ai} onChange={(value) => onFilterChange("ai", value)} /> : null}
+              {has("read") ? <FilterButtonGroup title="Leitura" options={READ_FILTER_OPTIONS} value={filters.read} onChange={(value) => onFilterChange("read", value)} /> : null}
+              {has("urgent") ? (
+                <div className="space-y-1">
+                  <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Prioridade</p>
+                  <button
+                    type="button"
+                    onClick={() => onFilterChange("urgent", !filters.urgent)}
+                    className={cn(
+                      "flex h-7 items-center gap-2 rounded-md border px-2.5 text-xs font-medium transition-colors",
+                      filters.urgent ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-border/60 text-muted-foreground hover:bg-muted/60",
+                    )}
+                  >
+                    <Flame className="h-3.5 w-3.5" /> Urgentes
+                  </button>
+                </div>
+              ) : null}
+              {has("tag") && tagOptions.length > 0 ? (
+                <div className="space-y-1">
+                  <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Etiqueta</p>
+                  <SearchableCombo
+                    items={tagOptions}
+                    value={filters.tagId}
+                    onValueChange={(value) => onFilterChange("tagId", value)}
+                    placeholder="Todas as etiquetas"
+                    extraOption={{ value: "", label: "Todas as etiquetas" }}
+                  />
+                </div>
+              ) : null}
+              {has("period") ? (
+                <FilterButtonGroup title="Período" options={PERIOD_FILTER_OPTIONS} value={filters.period} onChange={(value) => onFilterChange("period", value)} />
+              ) : null}
+              {activeCount > 0 ? (
+                <button type="button" onClick={onClearFilters} className="w-full rounded-md border-t border-border/60 pt-2.5 text-center text-xs font-medium text-muted-foreground hover:text-foreground">
+                  Limpar filtros
+                </button>
+              ) : null}
+            </PopoverContent>
+          </Popover>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 /** Bloco "etiquetas" (pedido explícito do usuário: "criar e configurar etiquetas dentro do
  * sistema e nas conversas ser possível adicionar mais do que uma") — cor vem do vocabulário
  * fechado (`INBOX_TAG_COLORS`), nunca hex livre (ver `web/CLAUDE.md`). Um mapa fixo em vez de
@@ -153,13 +452,6 @@ const INBOX_TAG_COLOR_CLASSES: Record<InboxTagColor, { dot: string }> = {
   slate: { dot: "bg-slate-500" },
 };
 
-const ADVANCED_FILTERS: { value: InboxConversationFilter; label: string; description: string }[] = [
-  { value: "open", label: "Em atendimento", description: "Conversas abertas agora." },
-  { value: "pending", label: "Pendentes", description: "Aguardando retorno ou decisão." },
-  { value: "resolved", label: "Finalizadas", description: "Atendimentos encerrados." },
-  { value: "unassigned", label: "Sem responsável", description: "Fila livre para assumir." },
-];
-
 type MobileView = "list" | "conversation";
 type TimelineEntry = { kind: "message"; at: string; message: InboxMessage } | { kind: "event"; at: string; event: InboxConversationEvent };
 
@@ -169,11 +461,22 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
   const searchParams = useSearchParams();
   const { state } = useAuth();
   const currentUserId = state.status === "authenticated" ? state.user.id : undefined;
-  const [filter, setFilter] = useState<InboxConversationFilter>("all");
-  const [chatTypeFilter, setChatTypeFilter] = useState<"all" | "group" | "direct">("all");
-  const [channelFilter, setChannelFilter] = useState<"all" | MessagingProviderId>("all");
-  const [tagFilter, setTagFilter] = useState<string>("");
-  const [search, setSearch] = useState("");
+  // Bloco "ajuste de ergonomia e filtros" (pedido explícito do usuário) — TODA filtragem virou
+  // client-side sobre a MESMA lista buscada uma vez com `filter: "all"` (mesmo padrão que o Kanban
+  // já usava antes desta mudança, ver `KanbanBoard`). Nunca mais um fetch novo por clique de
+  // filtro (seção 32 do pedido: "não fazer requisição a cada clique").
+  const { filters, search: urlSearch, setFilter, setSearch: setUrlSearch, clearFilters } = useInboxFilterState();
+  // Busca: o INPUT reage instantaneamente (filtragem é local, sem custo de rede — não precisa
+  // esperar debounce pra "sentir" a busca), só a ESCRITA na URL é debounced (evita empilhar
+  // `router.replace` a cada tecla). Resincroniza quando a URL muda por fora (voltar do navegador,
+  // "Limpar filtros").
+  const [searchInput, setSearchInput] = useState(urlSearch);
+  useEffect(() => { setSearchInput(urlSearch); }, [urlSearch]);
+  useEffect(() => {
+    const handle = setTimeout(() => { if (searchInput !== urlSearch) setUrlSearch(searchInput); }, 400);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
   const [mobileView, setMobileView] = useState<MobileView>(searchParams.get("conversation") ? "conversation" : "list");
   const [contextOpen, setContextOpen] = useState(false);
   const [contextPinned, setContextPinned] = useState(false);
@@ -182,7 +485,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
 
   useInboxRealtime(workspaceId, selectedConversationId);
 
-  const { data, isLoading, error, mutate } = useInboxConversations(workspaceId, filter);
+  const { data, isLoading, error, mutate } = useInboxConversations(workspaceId, "all");
   const { data: membersData } = useInboxMembers(workspaceId);
   const members = membersData?.members ?? [];
   // Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) — só
@@ -192,13 +495,13 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
   const selectedConversation = conversations.find((conversation) => conversation.id === selectedConversationId);
 
   const filteredConversations = useMemo(() => {
-    const byType = chatTypeFilter === "all" ? conversations : conversations.filter((conversation) => conversation.chatType === chatTypeFilter);
-    const byChannel =
-      channelFilter === "all" ? byType : byType.filter((conversation) => (conversation.connectionProvider ?? "wuzapi") === channelFilter);
-    const byTag = !tagFilter ? byChannel : byChannel.filter((conversation) => conversation.tags?.some((tag) => tag.id === tagFilter));
-    const term = search.trim().toLowerCase();
-    if (!term) return byTag;
-    return byTag.filter((conversation) => {
+    // Todas as dimensões combinam com AND (pedido explícito do usuário, seção 5: busca + canal +
+    // não lidas + sem responsável "deve retornar apenas conversas que atendam a TODOS os
+    // critérios") — `applyInboxFilters` é a MESMA função usada pelo Kanban, nunca duas lógicas.
+    const byFilters = applyInboxFilters(conversations, filters, { currentUserId });
+    const term = searchInput.trim().toLowerCase();
+    if (!term) return byFilters;
+    return byFilters.filter((conversation) => {
       // Grupo: busca por nome do grupo (groupName/subject) — nunca por LID (seção 34 do pedido:
       // "não buscar por LID como experiência principal"). Direta: nome/telefone, como já era.
       const haystack = [
@@ -213,7 +516,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
         .toLowerCase();
       return haystack.includes(term);
     });
-  }, [channelFilter, chatTypeFilter, conversations, currentUserId, members, search, tagFilter]);
+  }, [conversations, currentUserId, filters, members, searchInput]);
 
   useEffect(() => {
     if (selectedConversationId) setMobileView("conversation");
@@ -263,16 +566,11 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
             isLoading={isLoading}
             error={error}
             onRetry={() => mutate()}
-            filter={filter}
+            filters={filters}
             onFilterChange={setFilter}
-            chatTypeFilter={chatTypeFilter}
-            onChatTypeFilterChange={setChatTypeFilter}
-            channelFilter={channelFilter}
-            onChannelFilterChange={setChannelFilter}
-            tagFilter={tagFilter}
-            onTagFilterChange={setTagFilter}
-            search={search}
-            onSearchChange={setSearch}
+            onClearFilters={clearFilters}
+            search={searchInput}
+            onSearchChange={setSearchInput}
             selectedConversationId={selectedConversationId}
             onSelect={handleSelect}
             currentUserId={currentUserId}
@@ -345,14 +643,9 @@ function ConversationListPane({
   isLoading,
   error,
   onRetry,
-  filter,
+  filters,
   onFilterChange,
-  chatTypeFilter,
-  onChatTypeFilterChange,
-  channelFilter,
-  onChannelFilterChange,
-  tagFilter,
-  onTagFilterChange,
+  onClearFilters,
   search,
   onSearchChange,
   selectedConversationId,
@@ -368,14 +661,9 @@ function ConversationListPane({
   isLoading: boolean;
   error: unknown;
   onRetry: () => void;
-  filter: InboxConversationFilter;
-  onFilterChange: (filter: InboxConversationFilter) => void;
-  chatTypeFilter: "all" | "group" | "direct";
-  onChatTypeFilterChange: (value: "all" | "group" | "direct") => void;
-  channelFilter: "all" | MessagingProviderId;
-  onChannelFilterChange: (value: "all" | MessagingProviderId) => void;
-  tagFilter: string;
-  onTagFilterChange: (value: string) => void;
+  filters: InboxFilterState;
+  onFilterChange: <K extends keyof InboxFilterState>(key: K, value: InboxFilterState[K]) => void;
+  onClearFilters: () => void;
   search: string;
   onSearchChange: (value: string) => void;
   selectedConversationId: string | undefined;
@@ -385,11 +673,6 @@ function ConversationListPane({
   teams: readonly Team[];
   onConversationChanged: () => void;
 }) {
-  const activeAdvancedFilter = ADVANCED_FILTERS.find((item) => item.value === filter);
-  const hasSecondaryFilterActive = Boolean(activeAdvancedFilter) || filter === "urgent" || chatTypeFilter !== "all" || channelFilter !== "all" || Boolean(tagFilter);
-  const { data: tagsData } = useInboxTags(workspaceId);
-  const tagFilterOptions = (tagsData?.tags ?? []).map((tag) => ({ id: tag.id, label: tag.name }));
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
       {/* Otimização de espaço vertical (pedido explícito do usuário — captura de tela mostrando
@@ -405,142 +688,19 @@ function ConversationListPane({
           <AttendanceModuleToggle workspaceId={workspaceId} active="lista" />
         </div>
 
-        <div className="relative">
-          <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Buscar conversa"
-            className="h-8 pl-8"
-          />
-        </div>
-
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-          {QUICK_FILTERS.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              onClick={() => onFilterChange(item.value)}
-              className={cn(
-                "flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
-                filter === item.value
-                  ? "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80",
-              )}
-            >
-              {item.label}
-            </button>
-          ))}
-          {/* Melhoria visual (pedido explícito do usuário: "filtros demais visíveis ao mesmo
-             tempo") — Tipo/Canal/Prioridade/Etiqueta e os filtros de status avançados (antes 4
-             fileiras de chips próprias) viraram seções dentro deste ÚNICO popover "Filtros".
-             Nenhum filtro foi removido, só reorganizado — ganha espaço vertical sem perder
-             capacidade. Um ponto no botão avisa quando algo além de "Todos/Minhas/Não lidas"
-             está ativo, já que o rótulo do botão não muda mais para nomear um filtro específico. */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  "relative flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
-                  hasSecondaryFilterActive ? "bg-ai-soft text-ai dark:bg-ai/15 dark:text-ai-glow" : "bg-muted text-muted-foreground hover:bg-muted/80",
-                )}
-              >
-                Filtros
-                {hasSecondaryFilterActive ? <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" /> : null}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-72 space-y-3 p-2">
-              <div className="space-y-1">
-                <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Status</p>
-                {ADVANCED_FILTERS.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    onClick={() => onFilterChange(item.value)}
-                    className={cn(
-                      "flex w-full flex-col rounded-md px-2 py-1.5 text-left transition-colors",
-                      filter === item.value ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                    )}
-                  >
-                    <span className="text-sm font-medium">{item.label}</span>
-                    <span className="text-xs">{item.description}</span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="space-y-1 border-t border-border/60 pt-2">
-                <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Prioridade</p>
-                <button
-                  type="button"
-                  onClick={() => onFilterChange(filter === "urgent" ? "all" : "urgent")}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium transition-colors",
-                    filter === "urgent" ? "bg-destructive/10 text-destructive" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                  )}
-                >
-                  <Flame className="h-3.5 w-3.5" /> Urgentes
-                </button>
-              </div>
-
-              <div className="space-y-1 border-t border-border/60 pt-2">
-                <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Tipo</p>
-                <div className="flex gap-1.5 px-1">
-                  {CHAT_TYPE_FILTERS.map((item) => (
-                    <button
-                      key={item.value}
-                      type="button"
-                      onClick={() => onChatTypeFilterChange(chatTypeFilter === item.value ? "all" : item.value)}
-                      className={cn(
-                        "h-7 flex-1 rounded-md border text-xs font-medium transition-colors",
-                        chatTypeFilter === item.value
-                          ? "border-primary/30 bg-primary/10 text-primary dark:border-primary-glow/30 dark:bg-primary-glow/10 dark:text-primary-glow"
-                          : "border-border/60 text-muted-foreground hover:bg-muted/60",
-                      )}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1 border-t border-border/60 pt-2">
-                <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Canal</p>
-                <div className="flex gap-1.5 px-1">
-                  {CHANNEL_FILTERS.map((item) => (
-                    <button
-                      key={item.value}
-                      type="button"
-                      onClick={() => onChannelFilterChange(channelFilter === item.value ? "all" : item.value)}
-                      className={cn(
-                        "flex h-7 flex-1 items-center justify-center gap-1 rounded-md border text-xs font-medium transition-colors",
-                        channelFilter === item.value
-                          ? "border-primary/30 bg-primary/10 text-primary dark:border-primary-glow/30 dark:bg-primary-glow/10 dark:text-primary-glow"
-                          : "border-border/60 text-muted-foreground hover:bg-muted/60",
-                      )}
-                    >
-                      <ChannelIcon provider={item.value} className="h-3 w-3" />
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {tagFilterOptions.length > 0 ? (
-                <div className="space-y-1 border-t border-border/60 pt-2">
-                  <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Etiqueta</p>
-                  <SearchableCombo
-                    items={tagFilterOptions}
-                    value={tagFilter}
-                    onValueChange={onTagFilterChange}
-                    placeholder="Filtrar por etiqueta"
-                    extraOption={{ value: "", label: "Todas as etiquetas" }}
-                  />
-                </div>
-              ) : null}
-            </PopoverContent>
-          </Popover>
-        </div>
+        <InboxFilterBar
+          workspaceId={workspaceId}
+          sections={CONVERSAS_FILTER_SECTIONS}
+          quickChips
+          filters={filters}
+          onFilterChange={onFilterChange}
+          onClearFilters={onClearFilters}
+          search={search}
+          onSearchChange={onSearchChange}
+          members={members}
+          teams={teams}
+          currentUserId={currentUserId}
+        />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -740,7 +900,16 @@ export function ConversationListItemMenu({
           type="button"
           aria-label="Mais ações"
           onClick={(event) => event.stopPropagation()}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100 data-[state=open]:opacity-100"
+          className={cn(
+            // Achado de revisão (pedido explícito do usuário, seção 17: "hoje os cards não exibem
+            // claramente o menu contextual") — este componente é reusado tanto na listagem (tem um
+            // ancestral `.group` sem escopo) quanto no card do Kanban (`group/kanban-card`, um
+            // grupo NOMEADO — `group-hover:` sem nome nunca casa com um grupo nomeado, então o
+            // botão ficava permanentemente invisível ali, mesmo passando o mouse). Mesmo racional
+            // já aplicado em `TagPicker`: nunca depender de `group-hover`, sempre parcialmente
+            // visível — funciona em qualquer contexto e em touch (onde não existe hover).
+            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-60 transition-opacity hover:bg-muted hover:opacity-100 data-[state=open]:opacity-100",
+          )}
         >
           <MoreHorizontal className="h-4 w-4" />
         </button>
@@ -1969,16 +2138,26 @@ function MessageBubble({
     <div className={cn("group/msg flex flex-col gap-1", isOutbound ? "items-end" : "items-start")}>
       {/* Bloco "3 pontinhos ao lado, não embaixo" (pedido explícito do usuário: consumia uma linha
          inteira por mensagem, mesmo com opacity-0 — `opacity` nunca remove algo do fluxo do layout).
-         Agora o menu vive na "sobra" horizontal ao lado da bolha (que já não usa 100% da largura,
-         `max-w-[min(70%,44rem)]`), como o próprio WhatsApp faz — nunca mais reserva altura própria. */}
-      <div className={cn("flex max-w-[min(88%,48rem)] items-center gap-1", reactionGroups.length > 0 && "mb-2.5", isOutbound ? "flex-row-reverse" : "flex-row")}>
+         Agora o menu vive na "sobra" horizontal ao lado da bolha, como o próprio WhatsApp faz —
+         nunca mais reserva altura própria.
+         Achado de revisão (pedido explícito do usuário: "Vai / saber" quebrando quando cabia numa
+         linha só) — a causa real era `max-width: %` na BOLHA calculado contra ESTE wrapper, que por
+         sua vez é shrink-to-fit (largura dele mesmo depende do conteúdo, ou seja, da bolha) —
+         dependência CIRCULAR: o navegador não consegue resolver "70% de uma largura que depende de
+         mim", e alguns motores de layout caem pro mínimo possível, quebrando palavra por palavra.
+         O `max-w-[min(70%,44rem)]` (a regra de largura pedida, seção 22) precisa estar aqui, neste
+         wrapper — cuja largura É determinada (`group/msg`, acima, ocupa 100% do container de
+         mensagens via `align-items: stretch` padrão, nunca shrink-to-fit) — nunca na bolha. A bolha
+         em si fica sem `max-width` própria: ela já nasce do tamanho do texto (fit-content) e o teto
+         de 70% do WRAPPER a contém sozinho, sem nova dependência circular. */}
+      <div className={cn("flex max-w-[min(70%,44rem)] items-center gap-1", reactionGroups.length > 0 && "mb-2.5", isOutbound ? "flex-row-reverse" : "flex-row")}>
         <div
           className={cn(
             // Bolhas mais "mensageiro moderno, não painel administrativo" (pedido explícito do
             // usuário) — sem sombra, sem borda na bolha normal (só a de erro mantém, é um alerta,
             // não uma mensagem comum), cantos mais arredondados com um "bico" discreto no canto
             // que aponta pra quem mandou, em vez do retângulo uniforme de antes.
-            "relative min-w-0 max-w-[min(70%,44rem)] rounded-2xl px-3.5 py-2.5 text-sm",
+            "relative min-w-0 rounded-2xl px-3.5 py-2.5 text-sm",
             isOutbound ? "rounded-br-md" : "rounded-bl-md",
             isOutbound
               ? failed
@@ -2013,7 +2192,11 @@ function MessageBubble({
               );
             })()
           ) : null}
-          {body ? <p className={cn("whitespace-pre-wrap break-words", isMedia && "mt-1.5")}>{body}</p> : null}
+          {/* `[overflow-wrap:anywhere]` em vez de `break-words` (pedido explícito do usuário, seção
+             23) — quebra palavra normal só quando REALMENTE não cabe (uma URL longa, por exemplo),
+             nunca palavras curtas que cabiam na linha; nunca `break-all`, que quebraria QUALQUER
+             palavra no meio mesmo sobrando espaço. */}
+          {body ? <p className={cn("whitespace-pre-wrap [overflow-wrap:anywhere]", isMedia && "mt-1.5")}>{body}</p> : null}
           <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1 text-[10px] opacity-70">
             <span className="tabular-nums">{timeLabel(message.sentAt ?? message.createdAt)}</span>
             {isOutbound ? <MessageStatusTicks status={message.status} /> : null}
@@ -2309,7 +2492,7 @@ function MessageSkeleton() {
   );
 }
 
-function agentLabel(userId: string | undefined, currentUserId: string | undefined, members: readonly InboxTenantMember[]): string {
+export function agentLabel(userId: string | undefined, currentUserId: string | undefined, members: readonly InboxTenantMember[]): string {
   if (!userId) return "Sem responsável";
   if (userId === "ai") return "Vorix";
   if (userId === currentUserId) return "Você";

@@ -75,9 +75,15 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Conversas entra em "modo foco": sem scroll na página (o scroll fica dentro de cada painel do
-  // Inbox), preenchendo 100% da altura restante em vez do padding/scroll padrão de página comum.
+  // Conversas e Kanban entram em "modo foco": sem scroll na PÁGINA (o scroll fica dentro de cada
+  // painel do Inbox / de cada coluna do board), preenchendo 100% da altura restante em vez do
+  // padding/scroll padrão de página comum. Kanban entrou aqui no ajuste de ergonomia pedido pelo
+  // usuário — "hoje a página inteira desce pra ver os cards" era exatamente este wrapper de layout
+  // (fora do controle de `kanban/page.tsx`) tendo `overflow-y-auto` sem altura travada, então o
+  // scroll por coluna do board nunca tinha um viewport limitado pra funcionar dentro dele.
   const isConversasPath = pathname === `${base}/conversas`;
+  const isKanbanPath = pathname === `${base}/kanban`;
+  const isFocusPath = isConversasPath || isKanbanPath;
 
   return (
     <WorkspaceProvider workspace={workspace}>
@@ -86,7 +92,7 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
           <WorkspaceSidebar workspaceId={workspace.id} />
           <div
             className={
-              isConversasPath
+              isFocusPath
                 ? // `md:flex-1` (não `flex-1` incondicional) de propósito: no mobile o eixo principal
                   // deste flex é vertical (flex-col) — `flex-1` ali reinterpretaria como
                   // flex-basis:0% na ALTURA, entrando em conflito com o `h-dvh` explícito e inflando
@@ -97,10 +103,10 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 : "flex min-h-0 min-w-0 flex-1 flex-col md:min-h-dvh"
             }
           >
-            <WorkspaceTopBar workspaceId={workspace.id} name={workspace.name} status={workspace.status} hideBreadcrumb={isConversasPath} />
+            <WorkspaceTopBar workspaceId={workspace.id} name={workspace.name} status={workspace.status} hideBreadcrumb={isFocusPath} />
             <div
               className={
-                isConversasPath
+                isFocusPath
                   ? "min-h-0 min-w-0 flex-1 overflow-hidden bg-surface-sunken pb-16 md:pb-0"
                   : "min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-surface-sunken pb-24 md:pb-0"
               }

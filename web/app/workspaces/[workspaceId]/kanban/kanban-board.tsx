@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { applyInboxFilters, KANBAN_FILTER_SECTIONS, useInboxFilterState } from "@/features/inbox/inbox-filters";
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { Clock, GripVertical, Pin, Plus, Settings2 } from "lucide-react";
 import { Button } from "@/components/Button";
@@ -26,10 +27,22 @@ import {
   reorderKanbanPhases,
   updateKanbanPhase,
 } from "@/features/inbox/api";
-import { useConversationsServiceTime, useInboxConversations, useInboxRealtime, useKanbanPhases } from "@/features/inbox/hooks";
+import { useConversationsServiceTime, useInboxConversations, useInboxMembers, useInboxRealtime, useKanbanPhases } from "@/features/inbox/hooks";
 import type { InboxConversation, KanbanPhaseType, TeamKanbanPhase } from "@/features/inbox/types";
 import type { Team } from "@/features/identity/types";
-import { ChannelIcon, ConversationListItemMenu, channelLabelFor, conversationTitle, lastMessagePreviewLabel, statusLabelFor, StatusDot, TagPicker, timeLabel } from "../conversas/inbox-tab";
+import {
+  agentLabel,
+  ChannelIcon,
+  ConversationListItemMenu,
+  channelLabelFor,
+  conversationTitle,
+  InboxFilterBar,
+  lastMessagePreviewLabel,
+  statusLabelFor,
+  StatusDot,
+  TagPicker,
+  timeLabel,
+} from "../conversas/inbox-tab";
 
 const BOARD_STATUSES = new Set(["open", "pending"]);
 
@@ -51,21 +64,62 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
   // bloquearia editores de uma ação que o backend já permite pra eles.
   const canOperate = canOperateWorkspace(role);
   const canManage = canOperate;
+  const currentUserId = state.status === "authenticated" ? state.user.id : undefined;
 
   const { data: phasesData, error: phasesError, isLoading: phasesLoading, mutate: mutatePhases } = useKanbanPhases(workspaceId, teamId);
   // Mesma chave de cache (`["inbox-conversations", workspaceId, "all"]`) da aba Conversas — nunca
   // uma chave própria do board: `useInboxRealtime` só revalida essa chave (ver `hooks.ts`), então
   // reusá-la é o que torna o board realmente "tempo real" (SSE), não só o polling de 30s.
   const { data: conversationsData, error: conversationsError, isLoading: conversationsLoading, mutate: mutateConversations } = useInboxConversations(workspaceId, "all");
+  const { data: membersData } = useInboxMembers(workspaceId);
+  const members = membersData?.members ?? [];
 
   useInboxRealtime(workspaceId, undefined);
 
+  // Mesma FilterBar/estado de URL da tela Conversas (pedido explícito do usuário: "não criar um
+  // sistema de filtros diferente para cada tela") — `KANBAN_FILTER_SECTIONS` nunca inclui
+  // Status/Equipe (a coluna já É a fase; o board já está escopado a UMA equipe pelo seletor do
+  // cabeçalho). Como as duas telas leem os MESMOS parâmetros de querystring, aplicar um filtro em
+  // Conversas e trocar pra Kanban preserva o mesmo subconjunto (seção 9 do pedido).
+  const { filters, search: urlSearch, setFilter, setSearch: setUrlSearch, clearFilters } = useInboxFilterState();
+  const [searchInput, setSearchInput] = useState(urlSearch);
+  useEffect(() => { setSearchInput(urlSearch); }, [urlSearch]);
+  useEffect(() => {
+    const handle = setTimeout(() => { if (searchInput !== urlSearch) setUrlSearch(searchInput); }, 400);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
+
   const phases = useMemo(() => [...(phasesData?.phases ?? [])].sort((a, b) => a.orderIndex - b.orderIndex), [phasesData]);
 
+  // `teamConversations` fica com o conjunto BRUTO (equipe + status de board, sem os filtros da
+  // FilterBar) — usado pra garantir estado de fase e buscar tempo de atendimento de TODA conversa
+  // da equipe, nunca só das visíveis (senão uma conversa filtrada fora nunca ganharia fase/cronômetro
+  // corretos quando o filtro fosse removido depois). `visibleConversations` é quem alimenta as
+  // colunas — contagem por coluna reflete o filtro (seção 11 do pedido: "12" e não "33").
   const teamConversations = useMemo(
     () => (conversationsData?.conversations ?? []).filter((conversation) => conversation.currentTeamId === teamId && BOARD_STATUSES.has(conversation.status)),
     [conversationsData, teamId],
   );
+
+  const visibleConversations = useMemo(() => {
+    const byFilters = applyInboxFilters(teamConversations, filters, { currentUserId });
+    const term = searchInput.trim().toLowerCase();
+    if (!term) return byFilters;
+    return byFilters.filter((conversation) => {
+      const haystack = [
+        conversation.contactName,
+        conversation.contactPhone,
+        conversation.groupName,
+        statusLabelFor(conversation.status),
+        agentLabel(conversation.assignedUserId, currentUserId, members),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [teamConversations, filters, searchInput, currentUserId, members]);
 
   const conversationIds = useMemo(() => teamConversations.map((conversation) => conversation.id), [teamConversations]);
 
@@ -105,7 +159,7 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
   const conversationsByPhase = useMemo(() => {
     const map = new Map<string, InboxConversation[]>();
     for (const phase of phases) map.set(phase.id, []);
-    for (const conversation of teamConversations) {
+    for (const conversation of visibleConversations) {
       const key = phaseKeyFor(conversation);
       if (!key) continue;
       const bucket = map.get(key);
@@ -117,6 +171,22 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
         if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
         return (b.lastMessageAt ?? "").localeCompare(a.lastMessageAt ?? "");
       });
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleConversations, phases]);
+
+  // Contagem SEM filtro por fase, só pra distinguir "coluna genuinamente vazia" de "coluna com
+  // conversas escondidas pelo filtro atual" (o texto de vazio muda entre as duas, seção 11 do
+  // pedido — nunca sugerir "arraste uma conversa pra cá" quando na verdade existem conversas ali,
+  // só invisíveis pelo filtro).
+  const rawCountByPhase = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const phase of phases) map.set(phase.id, 0);
+    for (const conversation of teamConversations) {
+      const key = phaseKeyFor(conversation);
+      if (!key) continue;
+      map.set(key, (map.get(key) ?? 0) + 1);
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -187,7 +257,7 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          {teamConversations.length} conversa{teamConversations.length === 1 ? "" : "s"} em atendimento{ensuring ? " · organizando fases..." : ""}
+          {visibleConversations.length} conversa{visibleConversations.length === 1 ? "" : "s"} em atendimento{ensuring ? " · organizando fases..." : ""}
         </p>
         <GuardedButton
           allowed={canManage}
@@ -199,6 +269,20 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
           <Settings2 className="h-4 w-4" /> Fases
         </GuardedButton>
       </div>
+
+      <InboxFilterBar
+        workspaceId={workspaceId}
+        sections={KANBAN_FILTER_SECTIONS}
+        inlineSections={["owner", "channel"]}
+        filters={filters}
+        onFilterChange={setFilter}
+        onClearFilters={clearFilters}
+        search={searchInput}
+        onSearchChange={setSearchInput}
+        members={members}
+        teams={teams}
+        currentUserId={currentUserId}
+      />
 
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
         {/* Melhoria visual (pedido explícito do usuário: "o Kanban está usando muito pouco da
@@ -218,6 +302,7 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
               phase={phase}
               phases={phases}
               conversations={conversationsByPhase.get(phase.id) ?? []}
+              rawTotal={rawCountByPhase.get(phase.id) ?? 0}
               canOperate={canOperate}
               serviceTimeByConversation={serviceTimeByConversation}
               onMoveToPhase={handleMoveToPhase}
@@ -246,6 +331,7 @@ function KanbanColumn({
   phase,
   phases,
   conversations,
+  rawTotal,
   canOperate,
   serviceTimeByConversation,
   onMoveToPhase,
@@ -256,6 +342,7 @@ function KanbanColumn({
   phase: TeamKanbanPhase;
   phases: readonly TeamKanbanPhase[];
   conversations: readonly InboxConversation[];
+  rawTotal: number;
   canOperate: boolean;
   serviceTimeByConversation: Map<string, { totalSeconds: number; currentPhaseStartedAt?: string; isRunning: boolean }>;
   onMoveToPhase: (conversationId: string, phaseId: string) => void;
@@ -269,7 +356,15 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "flex h-full min-w-0 flex-col rounded-xl border border-border bg-surface-sunken/60 transition-colors",
+        // `min-h-0` é o ponto crítico (achado só via teste real de scroll no Chromium, não por
+        // leitura de código): a coluna é item de um CSS GRID (`grid-template-columns`), e um item
+        // de grid tem `min-height: auto` por padrão — igual ao bug clássico do flexbox, ele cresce
+        // pra caber TODO o conteúdo em vez de respeitar a altura da trilha do grid. Sem isto, com
+        // muitos cards a coluna estourava a altura do board inteiro (antes vazava como "a página
+        // inteira desce"; depois do `overflow-hidden` da página, os cards excedentes ficavam
+        // CORTADOS/invisíveis — pior ainda). Com `min-h-0`, a coluna respeita a altura da trilha e
+        // só o `overflow-y-auto` do conteúdo (abaixo) rola.
+        "flex h-full min-h-0 min-w-0 flex-col rounded-xl border border-border bg-surface-sunken/60 transition-colors",
         isOver && "border-primary/60 bg-primary/5",
       )}
     >
@@ -278,13 +373,30 @@ function KanbanColumn({
           <span className={cn("h-2 w-2 shrink-0 rounded-full", phase.phaseType === "PAUSED" ? "bg-amber-500" : "bg-emerald-500")} />
           <p className="truncate text-sm font-semibold text-foreground">{phase.name}</p>
         </div>
-        <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">{conversations.length}</span>
+        {conversations.length !== rawTotal ? (
+          // Contagem reflete o FILTRO, nunca o total bruto (seção 11 do pedido) — o tooltip só
+          // aparece quando os dois números divergem, sem poluir visualmente o caso comum.
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-primary dark:bg-primary-glow/10 dark:text-primary-glow">
+                {conversations.length}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{conversations.length} de {rawTotal} conversas nesta fase (com o filtro atual)</TooltipContent>
+          </Tooltip>
+        ) : (
+          <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">{conversations.length}</span>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto">
         {conversations.length === 0 ? (
           // Empty state discreto (pedido explícito do usuário: "hoje colunas vazias viram grandes
-          // blocos sem conteúdo") — uma linha de texto simples, sem caixa/borda própria.
-          <p className="px-3 py-4 text-xs text-muted-foreground">Arraste uma conversa para cá.</p>
+          // blocos sem conteúdo") — uma linha de texto simples, sem caixa/borda própria. Texto muda
+          // quando a coluna só está vazia por causa do filtro (nunca sugerir "arraste aqui" se na
+          // verdade existem conversas ali, só escondidas).
+          <p className="px-3 py-4 text-xs text-muted-foreground">
+            {rawTotal > 0 ? "Nenhuma conversa com os filtros atuais nesta fase." : "Arraste uma conversa para cá."}
+          </p>
         ) : (
           conversations.map((conversation) => (
             <KanbanCard

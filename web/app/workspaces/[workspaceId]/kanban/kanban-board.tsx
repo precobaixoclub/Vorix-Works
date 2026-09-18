@@ -2,11 +2,24 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { applyInboxFilters, KANBAN_FILTER_SECTIONS, useInboxFilterState } from "@/features/inbox/inbox-filters";
-import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { Clock, GripVertical, Pin, Plus, Settings2 } from "lucide-react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { Clock, Pin, Plus, Settings2, X } from "lucide-react";
 import { Button } from "@/components/Button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Dialog, DialogClose, DialogOverlay, DialogPortal, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { GuardedButton } from "@/components/GuardedButton";
@@ -23,6 +36,7 @@ import {
   createKanbanPhase,
   deleteKanbanPhase,
   ensureKanbanConversationPhaseStates,
+  markInboxConversationRead,
   moveConversationPhase,
   reorderKanbanPhases,
   updateKanbanPhase,
@@ -35,6 +49,7 @@ import {
   ChannelIcon,
   ConversationListItemMenu,
   channelLabelFor,
+  ConversationTimelinePane,
   conversationTitle,
   InboxFilterBar,
   lastMessagePreviewLabel,
@@ -45,6 +60,31 @@ import {
 } from "../conversas/inbox-tab";
 
 const BOARD_STATUSES = new Set(["open", "pending"]);
+
+/**
+ * Sensor de drag próprio (pedido explícito do usuário: "o card inteiro deve poder ser agarrado...
+ * não exigir clicar em um ícone específico") — o card INTEIRO vira a alça de arraste (listeners no
+ * div raiz do `KanbanCard`, não mais um grip isolado). O risco disso é óbvio: clicar em •••, na
+ * etiqueta ou em qualquer botão dentro do card iniciaria um drag também, já que pointerdown
+ * borbulha. A correção oficial do dnd-kit pra isso é um sensor que IGNORA pointerdown de dentro de
+ * qualquer elemento marcado `data-no-dnd` — nunca um `stopPropagation` espalhado pelos filhos (que
+ * quebraria clique neles de outras formas). `activationConstraint.distance` (abaixo, no
+ * `useSensor`) é o que já resolve "clique vira abrir, não vira mover" (pedido, seção 5) — abaixo do
+ * limiar o dnd-kit nunca ativa o drag e o `click` nativo do card dispara normalmente; acima do
+ * limiar o próprio dnd-kit suprime o `click` sintético que viria depois do `pointerup`.
+ */
+class CardPointerSensor extends PointerSensor {
+  static activators = [
+    {
+      eventName: "onPointerDown" as const,
+      handler: ({ nativeEvent }: React.PointerEvent) => {
+        const target = nativeEvent.target as HTMLElement | null;
+        if (target?.closest("[data-no-dnd]")) return false;
+        return true;
+      },
+    },
+  ];
+}
 
 /**
  * Board Kanban de UMA equipe — quadro estilo Trello (réplica adaptada do CMDesk, pedido explícito
@@ -74,7 +114,25 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
   const { data: membersData } = useInboxMembers(workspaceId);
   const members = membersData?.members ?? [];
 
-  useInboxRealtime(workspaceId, undefined);
+  // Bloco "conversa dentro do Kanban" (pedido explícito do usuário: "quero abrir a conversa DENTRO
+  // DO KANBAN... ao fechar, continuar exatamente onde estava") — estado local, nunca navegação. O
+  // board inteiro (filtros, busca, scroll de cada coluna) nunca desmonta: só um `Dialog` sobe por
+  // cima. `openConversationId` (não o objeto inteiro) porque a conversa precisa continuar reativa a
+  // updates (SSE/otimista) enquanto o painel está aberto — resolvida de novo a cada render.
+  const [openConversationId, setOpenConversationId] = useState<string | undefined>(undefined);
+  const openConversation = (conversationsData?.conversations ?? []).find((conversation) => conversation.id === openConversationId);
+
+  useInboxRealtime(workspaceId, openConversationId);
+
+  function handleOpenConversation(conversationId: string) {
+    setOpenConversationId(conversationId);
+    const conversation = (conversationsData?.conversations ?? []).find((item) => item.id === conversationId);
+    if (conversation && conversation.unreadCount > 0) {
+      markInboxConversationRead(workspaceId, conversationId)
+        .then(() => mutateConversations())
+        .catch(() => undefined);
+    }
+  }
 
   // Mesma FilterBar/estado de URL da tela Conversas (pedido explícito do usuário: "não criar um
   // sistema de filtros diferente para cada tela") — `KANBAN_FILTER_SECTIONS` nunca inclui
@@ -194,7 +252,13 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
 
   const [phaseManagerOpen, setPhaseManagerOpen] = useState(false);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  // `distance: 8` é o que separa CLIQUE de ARRASTE (pedido explícito do usuário, seção 5) — abaixo
+  // do limiar o dnd-kit nunca ativa o drag (o `click` nativo do card dispara normal, abrindo a
+  // conversa); acima dele o dnd-kit ativa e suprime o `click` sintético seguinte sozinho. Não
+  // precisa de nenhum estado manual "acabei de arrastar" — é o comportamento documentado do
+  // `PointerSensor` com `activationConstraint`.
+  const sensors = useSensors(useSensor(CardPointerSensor, { activationConstraint: { distance: 8 } }));
+  const [activeConversation, setActiveConversation] = useState<InboxConversation | undefined>(undefined);
 
   async function handleMoveToPhase(conversationId: string, phaseId: string) {
     if (!canOperate) return;
@@ -210,15 +274,24 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
     );
     try {
       await moveConversationPhase(workspaceId, teamId, conversationId, phaseId);
-    } catch {
+    } catch (cause) {
+      // Rollback (pedido explícito do usuário, seção 4) + toast — sem isto o card ficaria "movido"
+      // na tela mesmo quando o servidor recusou, uma mentira visual silenciosa.
       void mutateConversations(previous, { revalidate: false });
+      toast.error("Não foi possível mover a conversa.", { description: cause instanceof Error ? cause.message : "Tente novamente." });
     } finally {
       void mutateConversations();
       void mutateServiceTime();
     }
   }
 
+  function handleDragStart(event: DragStartEvent) {
+    const conversation = teamConversations.find((c) => c.id === String(event.active.id));
+    setActiveConversation(conversation);
+  }
+
   function handleDragEnd(event: DragEndEvent) {
+    setActiveConversation(undefined);
     const conversationId = String(event.active.id);
     const overPhaseId = event.over?.id ? String(event.over.id) : undefined;
     if (!overPhaseId) return;
@@ -284,7 +357,7 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
         currentUserId={currentUserId}
       />
 
-      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setActiveConversation(undefined)}>
         {/* Melhoria visual (pedido explícito do usuário: "o Kanban está usando muito pouco da
            largura disponível... quero que ocupe praticamente toda a largura útil da tela") — grid
            com `minmax(280px, 1fr)` por coluna, em vez de colunas de largura FIXA (`w-72`) soltas
@@ -307,11 +380,69 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
               serviceTimeByConversation={serviceTimeByConversation}
               onMoveToPhase={handleMoveToPhase}
               onConversationChanged={() => mutateConversations()}
-              onOpenConversation={(conversationId) => router.push(`/workspaces/${workspaceId}/conversas?conversation=${conversationId}`)}
+              onOpenConversation={handleOpenConversation}
             />
           ))}
         </div>
+
+        {/* DragOverlay (pedido explícito do usuário, seção 2: "mostrar DragOverlay/ghost do card")
+           — o card ORIGINAL fica só discretamente transparente e PARADO no lugar (ver `isDragging`
+           dentro de `KanbanCard`, sem `transform` nele); quem segue o cursor é este clone, fora do
+           fluxo normal do grid, então nunca empurra/redimensiona as colunas por baixo. */}
+        <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
+          {activeConversation ? (
+            <div className="w-72 rotate-1 cursor-grabbing rounded-lg border border-primary/40 bg-card px-2.5 py-2 shadow-xl">
+              <KanbanCardBody conversation={activeConversation} serviceTime={serviceTimeByConversation.get(activeConversation.id)} />
+            </div>
+          ) : null}
+        </DragOverlay>
       </DndContext>
+
+      {openConversation ? (
+        <Dialog open onOpenChange={(open) => { if (!open) setOpenConversationId(undefined); }}>
+          {/* Painel lateral grande (pedido explícito do usuário, seção 8: "criar/reutilizar um
+             painel grande lateral para a conversa... KANBAN continua atrás"). Achado via QA real
+             (computando o `cn`/`tailwind-merge` de verdade, não só lendo o código): estender a
+             `DialogContent` compartilhada (centralizada, usada no Kanban de Negócios) SOBRESCREVENDO
+             a posição por className não funciona de forma confiável aqui — `tailwind-merge` não
+             conhece as classes de animação do `tailwindcss-animate` (`slide-in-from-left-1/2`,
+             `zoom-in-95`...) como um grupo, então elas sobrevivem ao lado das novas e brigam pela
+             mesma `transform`; e `rounded-none` (sem variante) nunca cancela o `sm:rounded-lg` da
+             base (são variantes de breakpoint diferentes pro tailwind-merge). Por isso este painel
+             usa os primitivos do Radix DIRETO (`DialogPrimitive.Content`), com uma className própria
+             do zero — nunca herda a base "dialog centralizado", nunca briga com ela. Ainda é só uma
+             composição a mais do MESMO `Dialog`/`DialogOverlay`/`DialogClose` de sempre, não um
+             componente de Sheet novo e paralelo. O board por baixo nunca desmonta (é só isto por
+             cima) — filtros, busca e o scroll de cada coluna continuam exatamente onde estavam. */}
+          <DialogPortal>
+            <DialogOverlay />
+            <DialogPrimitive.Content className="fixed right-0 top-0 z-50 flex h-dvh w-full max-w-full flex-col overflow-hidden border-l border-border bg-popover text-popover-foreground shadow-2xl duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-xl md:max-w-2xl">
+              <DialogTitle className="sr-only">Conversa</DialogTitle>
+              <DialogClose className="absolute right-3 top-3 z-10 rounded-sm p-1 text-muted-foreground opacity-70 ring-offset-background transition-opacity hover:opacity-100 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+                <X className="h-4 w-4" />
+                <span className="sr-only">Fechar</span>
+              </DialogClose>
+              <div className="min-h-0 flex-1 pt-10">
+                <ConversationTimelinePane
+                  workspaceId={workspaceId}
+                  conversation={openConversation}
+                  currentUserId={currentUserId}
+                  members={members}
+                  teams={teams}
+                  onBack={() => setOpenConversationId(undefined)}
+                  // "Detalhes" no Kanban não tem um painel de contexto CRM próprio pra abrir aqui
+                  // (isso existe só na tela Conversas) — reaproveitado como escape hatch deliberado
+                  // pra quem quer a experiência completa: fecha o painel e abre a conversa na tela
+                  // cheia de Conversas, mesma conversa, sem perder o Kanban (o board continua do
+                  // jeito que estava quando a pessoa voltar pra esta aba).
+                  onOpenContext={() => router.push(`/workspaces/${workspaceId}/conversas?conversation=${openConversation.id}`)}
+                  onConversationChanged={() => mutateConversations()}
+                />
+              </div>
+            </DialogPrimitive.Content>
+          </DialogPortal>
+        </Dialog>
+      ) : null}
 
       {phaseManagerOpen ? (
         <PhaseManagerModal
@@ -388,13 +519,13 @@ function KanbanColumn({
           <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">{conversations.length}</span>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 space-y-1.5 overflow-y-auto p-1.5">
         {conversations.length === 0 ? (
           // Empty state discreto (pedido explícito do usuário: "hoje colunas vazias viram grandes
           // blocos sem conteúdo") — uma linha de texto simples, sem caixa/borda própria. Texto muda
           // quando a coluna só está vazia por causa do filtro (nunca sugerir "arraste aqui" se na
           // verdade existem conversas ali, só escondidas).
-          <p className="px-3 py-4 text-xs text-muted-foreground">
+          <p className="px-1.5 py-3 text-xs text-muted-foreground">
             {rawTotal > 0 ? "Nenhuma conversa com os filtros atuais nesta fase." : "Arraste uma conversa para cá."}
           </p>
         ) : (
@@ -419,12 +550,18 @@ function KanbanColumn({
 
 /**
  * Card do Kanban (melhoria visual, pedido explícito do usuário: "hoje eles estão parecendo uma
- * cópia comprimida da lista de Conversas... mostrar apenas informações realmente úteis") — card
- * PRÓPRIO, mais enxuto que `ConversationListItem`: nome+hora, canal+identidade, preview, e um
- * rodapé bem discreto com status+tempo de atendimento. Sem avatar nem responsável (deliberado,
- * conversa aberta mostra os dois) — ainda reusa `TagPicker`/`ConversationListItemMenu` da tela
- * Conversas pras mesmas ações de sempre (etiquetar, marcar lida/urgente, mover de fase), nunca uma
- * lógica paralela.
+ * cópia comprimida da lista de Conversas... mostrar apenas informações realmente úteis"; e depois,
+ * na rodada de UX de drag-and-drop: "os cards estão visualmente largos/grandes demais... reduzir
+ * padding/altura e dar um pequeno espaçamento entre eles") — card PRÓPRIO, mais enxuto que
+ * `ConversationListItem`, agora como um "chip" com borda e cantos arredondados (em vez da lista
+ * antiga com `border-b` encostada) — o pequeno `space-y-1.5` do container em `KanbanColumn` é quem
+ * dá o respiro entre os cards. Ainda reusa `TagPicker`/`ConversationListItemMenu` da tela Conversas
+ * pras mesmas ações de sempre, nunca uma lógica paralela.
+ *
+ * O CARD INTEIRO é a alça de arraste (pedido explícito do usuário: "não exigir clicar em um ícone
+ * específico pra começar o drag") — `{...listeners} {...attributes}` no próprio div raiz. Os únicos
+ * elementos que NÃO iniciam drag são os marcados `data-no-dnd` (ver `CardPointerSensor`, acima):
+ * hoje, só a fileira de ações (etiqueta + •••) dentro de `KanbanCardBody`.
  */
 function KanbanCard({
   workspaceId,
@@ -445,14 +582,13 @@ function KanbanCard({
   onConversationChanged: () => void;
   onOpenConversation: (conversationId: string) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: conversation.id, disabled: !canOperate });
-  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
-  const identity = conversation.chatType === "group" ? "Grupo" : conversation.contactPhone ?? "—";
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: conversation.id, disabled: !canOperate });
 
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      {...listeners}
+      {...attributes}
       role="button"
       tabIndex={0}
       onClick={() => onOpenConversation(conversation.id)}
@@ -463,39 +599,59 @@ function KanbanCard({
         }
       }}
       className={cn(
-        "group/kanban-card relative cursor-pointer border-b border-border/40 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-muted/40",
-        canOperate && "pl-6",
-        isDragging && "z-10 opacity-60",
+        "relative rounded-lg border border-border/60 bg-card px-2.5 py-2 text-left shadow-sm transition-colors hover:border-primary/30 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        canOperate ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-pointer",
+        // Discretamente transparente, mas PARADA no lugar (pedido explícito do usuário, seção 2:
+        // "não deixar card simplesmente desaparecer") — quem se move é o `DragOverlay` no board.
+        isDragging && "opacity-40",
       )}
     >
-      {canOperate ? (
-        <button
-          type="button"
-          {...listeners}
-          {...attributes}
-          onClick={(event) => event.stopPropagation()}
-          aria-label="Arrastar para outra fase"
-          className="absolute left-0.5 top-1/2 z-10 flex h-6 w-4 -translate-y-1/2 cursor-grab items-center justify-center text-muted-foreground opacity-0 transition-opacity group-hover/kanban-card:opacity-100 active:cursor-grabbing"
-        >
-          <GripVertical className="h-3.5 w-3.5" />
-        </button>
-      ) : null}
-      {conversation.isPinned ? <Pin className="absolute right-2 top-2 h-3 w-3 text-primary" aria-label="Fixado" /> : null}
+      <KanbanCardBody
+        conversation={conversation}
+        serviceTime={serviceTime}
+        actions={
+          <>
+            <TagPicker workspaceId={workspaceId} conversation={conversation} onChanged={onConversationChanged} />
+            <ConversationListItemMenu
+              workspaceId={workspaceId}
+              conversation={conversation}
+              onChanged={onConversationChanged}
+              phaseOptions={phaseOptions}
+              onMoveToPhase={onMoveToPhase}
+            />
+          </>
+        }
+      />
+    </div>
+  );
+}
 
+/** Conteúdo visual do card, sem hooks/handlers de drag — reusado pelo `KanbanCard` de verdade
+ * (arrastável/clicável) e pelo clone dentro do `DragOverlay` (só visual, sem `actions` nenhuma:
+ * botões de etiqueta/menu não fariam sentido num clone que segue o cursor). Nome+hora, canal+
+ * identidade+não-lidas, preview, status+tempo de atendimento — a mesma informação de sempre, só com
+ * menos espaço vertical entre as linhas. */
+function KanbanCardBody({
+  conversation,
+  serviceTime,
+  actions,
+}: {
+  conversation: InboxConversation;
+  serviceTime: { totalSeconds: number; currentPhaseStartedAt?: string; isRunning: boolean } | undefined;
+  actions?: React.ReactNode;
+}) {
+  const identity = conversation.chatType === "group" ? "Grupo" : conversation.contactPhone ?? "—";
+
+  return (
+    <>
+      {conversation.isPinned ? <Pin className="absolute right-1.5 top-1.5 h-3 w-3 text-primary" aria-label="Fixado" /> : null}
       <div className="flex items-center justify-between gap-2">
         <p className={cn("min-w-0 truncate text-sm text-foreground", conversation.unreadCount > 0 ? "font-semibold" : "font-medium")}>
           {conversationTitle(conversation)}
         </p>
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-0.5" data-no-dnd={actions ? "true" : undefined}>
           <span className="text-[11px] tabular-nums text-muted-foreground">{timeLabel(conversation.lastMessageAt)}</span>
-          <TagPicker workspaceId={workspaceId} conversation={conversation} onChanged={onConversationChanged} />
-          <ConversationListItemMenu
-            workspaceId={workspaceId}
-            conversation={conversation}
-            onChanged={onConversationChanged}
-            phaseOptions={phaseOptions}
-            onMoveToPhase={onMoveToPhase}
-          />
+          {actions}
         </div>
       </div>
       <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
@@ -507,15 +663,15 @@ function KanbanCard({
           </span>
         ) : null}
       </div>
-      <p className="mt-1 line-clamp-1 text-xs text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
-      <div className="mt-1.5 flex items-center justify-between gap-2">
+      <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
+      <div className="mt-1 flex items-center justify-between gap-2">
         <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
           <StatusDot status={conversation.status} />
           {statusLabelFor(conversation.status)}
         </span>
         {serviceTime ? <LiveServiceBadge serviceTime={serviceTime} /> : null}
       </div>
-    </div>
+    </>
   );
 }
 

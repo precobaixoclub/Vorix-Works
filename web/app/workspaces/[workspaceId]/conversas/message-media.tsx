@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { FileText, Pause, Play, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type React from "react";
+import { ChevronLeft, ChevronRight, FileText, Pause, Play, X } from "lucide-react";
 import { Button } from "@/components/Button";
 import { Spinner } from "@/components/Spinner";
 import { getApiBaseUrl } from "@/lib/api-error";
 import { getInboxMediaToken } from "@/features/inbox/api";
 import type { InboxMessage } from "@/features/inbox/types";
 import { cn } from "@/lib/utils";
-import { mediaIconFor, mediaLabelFor } from "./inbox-tab";
+import { mediaIconFor, mediaLabelFor, messageSenderLabel } from "./inbox-tab";
 
 /**
  * Redesign operacional (mídia real) — renderizadores reais de imagem/áudio/vídeo/documento,
@@ -19,12 +20,18 @@ import { mediaIconFor, mediaLabelFor } from "./inbox-tab";
 
 type MediaUrlState = { status: "idle" | "loading" | "ready" | "error"; url?: string };
 
-function useMediaUrl(workspaceId: string, message: InboxMessage) {
+/** Nunca expõe token principal, URL privada da WuzAPI nem path interno do storage no frontend
+ * (seção 14 do pedido de mídia) — só um `media_token` de curtíssima duração, escopado a ESTA
+ * mensagem, trocado por um proxy do próprio backend (`/v1/inbox/media/:messageId`). Mesmo mecanismo
+ * usado pela bolha inline e pelo `ConversationMediaViewer` — nunca dois caminhos de acesso a mídia.
+ * `message` pode ser `undefined` (usado pelo preload de vizinhas no viewer, que precisa chamar o
+ * hook incondicionalmente mesmo quando não há uma mídia anterior/próxima). */
+export function useMediaUrl(workspaceId: string, message: InboxMessage | undefined) {
   const [state, setState] = useState<MediaUrlState>({ status: "idle" });
   const requestIdRef = useRef(0);
 
   async function load() {
-    if (!message.mediaStorageRef) return;
+    if (!message?.mediaStorageRef) return;
     const requestId = ++requestIdRef.current;
     setState({ status: "loading" });
     try {
@@ -85,7 +92,7 @@ function MediaFallback({ type, retry, isOutbound }: { type: InboxMessage["type"]
   );
 }
 
-export function MessageMedia({ workspaceId, message }: { workspaceId: string; message: InboxMessage }) {
+export function MessageMedia({ workspaceId, message, onOpen }: { workspaceId: string; message: InboxMessage; onOpen: () => void }) {
   if (!message.mediaStorageRef) {
     // Mídia ainda não foi baixada (best-effort/assíncrono — pode chegar em instantes) ou nunca
     // será (download falhou/não configurado). Mesmo rótulo nos dois casos: não dá para o
@@ -93,16 +100,18 @@ export function MessageMedia({ workspaceId, message }: { workspaceId: string; me
     // dedicado, e não vale a pena inventar um polling só para isso nesta rodada.
     return <MediaFallback type={message.type} isOutbound={message.direction === "outbound"} />;
   }
-  if (message.type === "image") return <ImageMedia workspaceId={workspaceId} message={message} />;
+  if (message.type === "image") return <ImageMedia workspaceId={workspaceId} message={message} onOpen={onOpen} />;
   if (message.type === "audio") return <AudioMedia workspaceId={workspaceId} message={message} />;
-  if (message.type === "video") return <VideoMedia workspaceId={workspaceId} message={message} />;
+  if (message.type === "video") return <VideoMedia message={message} onOpen={onOpen} />;
   if (message.type === "document") return <DocumentMedia workspaceId={workspaceId} message={message} />;
   return <MediaFallback type={message.type} isOutbound={message.direction === "outbound"} />;
 }
 
-function ImageMedia({ workspaceId, message }: { workspaceId: string; message: InboxMessage }) {
+/** Clique abre o `ConversationMediaViewer` compartilhado (seção 1 do pedido de mídia) — nunca mais
+ * um lightbox próprio e básico aqui. A miniatura inline continua carregando a imagem de verdade
+ * (leve o bastante pra valer a pena mostrar já na bolha, ao contrário do vídeo — ver `VideoMedia`). */
+function ImageMedia({ workspaceId, message, onOpen }: { workspaceId: string; message: InboxMessage; onOpen: () => void }) {
   const { state, load } = useMediaUrl(workspaceId, message);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   useEffect(() => {
     void load();
@@ -119,21 +128,10 @@ function ImageMedia({ workspaceId, message }: { workspaceId: string; message: In
   }
 
   return (
-    <>
-      <button type="button" onClick={() => setLightboxOpen(true)} className="block max-w-[260px] overflow-hidden rounded-lg">
-        {/* eslint-disable-next-line @next/next/no-img-element -- mídia privada servida via proxy autenticado, nunca otimizável pelo loader padrão do Next */}
-        <img src={state.url} alt="Imagem recebida" loading="lazy" className="max-h-72 w-full object-cover" />
-      </button>
-      {lightboxOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 p-4" onClick={() => setLightboxOpen(false)}>
-          <button type="button" aria-label="Fechar" className="absolute right-4 top-4 text-foreground/80 hover:text-foreground" onClick={() => setLightboxOpen(false)}>
-            <X className="h-6 w-6" />
-          </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={state.url} alt="Imagem recebida (ampliada)" className="max-h-full max-w-full rounded-lg object-contain" onClick={(event) => event.stopPropagation()} />
-        </div>
-      ) : null}
-    </>
+    <button type="button" onClick={onOpen} className="block max-w-[260px] overflow-hidden rounded-lg">
+      {/* eslint-disable-next-line @next/next/no-img-element -- mídia privada servida via proxy autenticado, nunca otimizável pelo loader padrão do Next */}
+      <img src={state.url} alt="Imagem recebida" loading="lazy" className="max-h-72 w-full object-cover" />
+    </button>
   );
 }
 
@@ -227,36 +225,27 @@ function AudioMedia({ workspaceId, message }: { workspaceId: string; message: In
   );
 }
 
-function VideoMedia({ workspaceId, message }: { workspaceId: string; message: InboxMessage }) {
-  const { state, load } = useMediaUrl(workspaceId, message);
+/** Miniatura clicável, nunca um player inline (pedido explícito do usuário: "ao clicar em uma foto
+ * ou vídeo, abrir um visualizador completo") — o player DE VERDADE (controles nativos completos:
+ * play/pause, barra de progresso, volume, fullscreen) só existe dentro do
+ * `ConversationMediaViewer`. Isso também é o que evita baixar o vídeo inteiro só por ele aparecer
+ * na timeline (seção 10 do pedido): `thumbnailDataUrl` já vem local no `metadata` da mensagem — o
+ * token/URL de mídia real só é buscado quando o visualizador abre de verdade. */
+function VideoMedia({ message, onOpen }: { message: InboxMessage; onOpen: () => void }) {
   const thumbnail = message.metadata?.thumbnailDataUrl;
 
-  if (state.status === "error") return <MediaFallback type="video" retry={load} />;
-
-  if (state.status !== "ready" || !state.url) {
-    return (
-      <button
-        type="button"
-        onClick={() => void load()}
-        aria-label="Reproduzir vídeo"
-        className="relative flex h-40 w-64 items-center justify-center overflow-hidden rounded-lg bg-muted/70 bg-cover bg-center"
-        style={thumbnail ? { backgroundImage: `url(${thumbnail})` } : undefined}
-      >
-        {state.status === "loading" ? (
-          <Spinner className="h-6 w-6 text-foreground" />
-        ) : (
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-background/80">
-            <Play className="h-5 w-5 translate-x-0.5" />
-          </span>
-        )}
-      </button>
-    );
-  }
-
   return (
-    <div className="max-w-[280px]">
-      <video src={state.url} poster={thumbnail} controls preload="metadata" className="max-h-72 w-full rounded-lg" />
-    </div>
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label="Abrir vídeo"
+      className="relative flex h-40 w-64 items-center justify-center overflow-hidden rounded-lg bg-muted/70 bg-cover bg-center"
+      style={thumbnail ? { backgroundImage: `url(${thumbnail})` } : undefined}
+    >
+      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-background/80">
+        <Play className="h-5 w-5 translate-x-0.5" />
+      </span>
+    </button>
   );
 }
 
@@ -284,4 +273,222 @@ function DocumentMedia({ workspaceId, message }: { workspaceId: string; message:
       </Button>
     </div>
   );
+}
+
+function mediaViewerTimestamp(iso: string | undefined): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const datePart = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+  const timePart = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(date);
+  return `${datePart} · ${timePart}`;
+}
+
+/**
+ * Visualizador de mídia (pedido explícito do usuário: "experiência semelhante ao WhatsApp Web") —
+ * componente ÚNICO reusado pra imagem E vídeo (seção 15: "não implementar uma versão pra imagem e
+ * outra totalmente diferente pra vídeo"). Renderizado UMA vez em `ConversationTimelinePane`, nunca
+ * dentro da área de scroll da timeline — é um overlay `fixed`, então abrir/fechar nunca desmonta a
+ * conversa nem mexe no scroll dela (seção 11 do pedido).
+ */
+export function ConversationMediaViewer({
+  workspaceId,
+  media,
+  initialMessageId,
+  isGroup,
+  onClose,
+}: {
+  workspaceId: string;
+  /** Mídias (imagem/vídeo) da conversa, já em ordem cronológica — o viewer só FILTRA/NAVEGA essa
+   * lista, nunca busca uma lista própria (a Inbox não é refeita só por abrir uma mídia). */
+  media: readonly InboxMessage[];
+  initialMessageId: string;
+  isGroup: boolean;
+  onClose: () => void;
+}) {
+  const [index, setIndex] = useState(() => Math.max(0, media.findIndex((item) => item.id === initialMessageId)));
+  const current = media[index];
+  const hasPrev = index > 0;
+  const hasNext = index < media.length - 1;
+
+  const goPrev = useCallback(() => setIndex((value) => Math.max(0, value - 1)), []);
+  const goNext = useCallback(() => setIndex((value) => Math.min(media.length - 1, value + 1)), [media.length]);
+
+  // Teclado (seção 4 do pedido): ArrowLeft/ArrowRight navegam, Escape fecha.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+      else if (event.key === "ArrowRight") goNext();
+      else if (event.key === "ArrowLeft") goPrev();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose, goNext, goPrev]);
+
+  // Trava só o scroll do <body> (a página por trás) enquanto o viewer está aberto — nunca o scroll
+  // da timeline em si, que nem existe dentro deste componente (seção 11: "não alterar scroll da
+  // timeline").
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  // Swipe simples (seção 5, mobile: "se for simples e seguro, pode implementar") — só um delta
+  // horizontal mínimo entre toque inicial e final, sem biblioteca nova.
+  const touchStartXRef = useRef<number | undefined>(undefined);
+  function handleTouchStart(event: React.TouchEvent) {
+    touchStartXRef.current = event.touches[0]?.clientX;
+  }
+  function handleTouchEnd(event: React.TouchEvent) {
+    const startX = touchStartXRef.current;
+    touchStartXRef.current = undefined;
+    const endX = event.changedTouches[0]?.clientX;
+    if (startX === undefined || endX === undefined) return;
+    const delta = endX - startX;
+    if (Math.abs(delta) < 50) return; // limiar mínimo — nunca confunde um toque comum com swipe
+    if (delta < 0) goNext();
+    else goPrev();
+  }
+
+  if (!current) return null;
+
+  const senderLabel = messageSenderLabel(current, isGroup);
+  const caption = current.body?.trim();
+  const timestamp = mediaViewerTimestamp(current.sentAt ?? current.createdAt);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Visualizador de mídia"
+      className="fixed inset-0 z-[70] flex flex-col bg-black/95"
+      onClick={onClose}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2 p-3" onClick={(event) => event.stopPropagation()}>
+        <span className="text-xs tabular-nums text-white/70">{index + 1} de {media.length}</span>
+        <button type="button" onClick={onClose} aria-label="Fechar" className="rounded-full p-1.5 text-white/90 hover:bg-white/10 hover:text-white">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="relative flex min-h-0 flex-1 items-center justify-center px-1 sm:px-4">
+        {hasPrev ? (
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); goPrev(); }}
+            aria-label="Mídia anterior"
+            className="absolute left-1 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/40 p-2 text-white hover:bg-black/60 sm:left-3"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </button>
+        ) : null}
+
+        <div className="flex h-full w-full items-center justify-center" onClick={(event) => event.stopPropagation()}>
+          <ViewerSlide key={current.id} workspaceId={workspaceId} message={current} />
+        </div>
+
+        {hasNext ? (
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); goNext(); }}
+            aria-label="Próxima mídia"
+            className="absolute right-1 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/40 p-2 text-white hover:bg-black/60 sm:right-3"
+          >
+            <ChevronRight className="h-6 w-6" />
+          </button>
+        ) : null}
+      </div>
+
+      {/* Preload só da vizinha (anterior/próxima), nunca a galeria inteira (seção 10 do pedido) —
+         e só imagem: vídeo fica pro clique de verdade, nunca baixa por antecipação. */}
+      <ViewerPreload workspaceId={workspaceId} message={hasPrev ? media[index - 1] : undefined} />
+      <ViewerPreload workspaceId={workspaceId} message={hasNext ? media[index + 1] : undefined} />
+
+      {senderLabel || caption ? (
+        <div className="shrink-0 px-4 pb-4 pt-1 text-center" onClick={(event) => event.stopPropagation()}>
+          {/* Discreto (seção 8: "não poluir o viewer") — só nome/hora pequenos, caption um pouco
+             maior, tudo em tom claro sobre o fundo escuro, nunca um cartão/caixa própria. */}
+          {senderLabel || timestamp ? (
+            <p className="text-xs text-white/60">{[senderLabel, timestamp].filter(Boolean).join(" · ")}</p>
+          ) : null}
+          {caption ? <p className="mt-1 text-sm text-white/90">{caption}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Conteúdo real de UM slide — imagem/vídeo/carregando/erro. Vídeo aqui É o player de verdade
+ * (controles nativos: play/pause, progresso, volume, fullscreen — seção 7 do pedido), nunca o
+ * player inline enxuto da bolha. Trocar de slide desmonta este componente (a `key={current.id}` no
+ * componente pai) — é isso que PARA o vídeo anterior sozinho, sem código extra (seção 7: "quando
+ * trocar de mídia, parar o vídeo anterior"). */
+function ViewerSlide({ workspaceId, message }: { workspaceId: string; message: InboxMessage }) {
+  const { state, load } = useMediaUrl(workspaceId, message);
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message.id]);
+
+  if (!message.mediaStorageRef) {
+    return <p className="px-6 text-center text-sm text-white/70">Esta mídia ainda não está disponível.</p>;
+  }
+
+  if (state.status === "error") {
+    // Texto exato pedido (seção 13) — nunca spinner infinito, tela preta ou modal vazio.
+    return (
+      <div className="flex flex-col items-center gap-3 px-6 text-center">
+        <p className="text-sm text-white/85">Não foi possível carregar esta mídia.</p>
+        <Button variant="secondary" size="sm" onClick={() => void load()}>
+          Tentar novamente
+        </Button>
+      </div>
+    );
+  }
+
+  if (state.status !== "ready" || !state.url) {
+    return <Spinner className="h-8 w-8 text-white/80" />;
+  }
+
+  if (message.type === "video") {
+    return (
+      <video
+        key={state.url}
+        src={state.url}
+        poster={message.metadata?.thumbnailDataUrl}
+        controls
+        autoPlay={false}
+        className="max-h-full max-w-full"
+      />
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- mídia privada servida via proxy autenticado
+    <img src={state.url} alt={message.body?.trim() || "Imagem"} className="max-h-full max-w-full object-contain" />
+  );
+}
+
+/** Preload discreto de UMA mídia vizinha (seção 10: "pode fazer preload só da anterior/atual/
+ * próxima") — só resolve o token/URL e, se for IMAGEM, deixa um `<img>` escondido puxar os bytes
+ * pro cache do navegador. Vídeo nunca preloada aqui (seção 10 também pede "não baixar 200 arquivos
+ * de uma vez" — um vídeo inteiro adiantado por navegação que talvez nem aconteça é exatamente o
+ * desperdício que a seção quer evitar). `message` pode ser `undefined` (sem vizinha nessa ponta). */
+function ViewerPreload({ workspaceId, message }: { workspaceId: string; message: InboxMessage | undefined }) {
+  const { state, load } = useMediaUrl(workspaceId, message);
+
+  useEffect(() => {
+    if (message?.type === "image" && message.mediaStorageRef) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message?.id]);
+
+  if (!message || message.type !== "image" || state.status !== "ready" || !state.url) return null;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={state.url} alt="" aria-hidden="true" className="hidden" />;
 }

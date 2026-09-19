@@ -85,7 +85,7 @@ import {
 } from "@/features/inbox/inbox-filters";
 import type { InboxAiFilter, InboxFilterSection, InboxFilterState, InboxPeriodFilter, InboxReadFilter } from "@/features/inbox/inbox-filters";
 import { CrmContextSection } from "./crm-panel";
-import { MessageMedia } from "./message-media";
+import { ConversationMediaViewer, MessageMedia } from "./message-media";
 import { InboxAvatar } from "./inbox-avatar";
 
 /** Bloco "Organização da lista" (ver docs/conversas-inbox-organization-media-runtime.md) — filtro
@@ -1335,6 +1335,15 @@ export function ConversationTimelinePane({
     ...events.map((event): TimelineEntry => ({ kind: "event", at: event.createdAt, event })),
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
+  // Bloco "visualizador de mídia" (pedido explícito do usuário: "navegar entre outras fotos e
+  // vídeos da MESMA conversa... ordem cronológica") — `messages` já vem em ordem cronológica (ver
+  // acima), então só filtrar por tipo já dá a galeria na ordem certa, sem outro fetch. Estado é só
+  // o ID da mensagem aberta — o próprio `ConversationMediaViewer` nunca desmonta esta pane (é um
+  // overlay renderizado como IRMÃO da área de scroll, nunca dentro dela), então filtros, scroll e
+  // composer continuam exatamente como estavam quando o visualizador fecha (seção 11 do pedido).
+  const mediaMessages = messages.filter((message) => message.type === "image" || message.type === "video");
+  const [openMediaMessageId, setOpenMediaMessageId] = useState<string | undefined>(undefined);
+
   const headerAvatarProps = avatarPropsFor(conversation);
   const isAssignedToMe = conversation.assignedUserId === currentUserId;
   const isResolved = conversation.status === "resolved";
@@ -1393,6 +1402,12 @@ export function ConversationTimelinePane({
       setFailedDraft(undefined);
       setReplyingTo(undefined);
       await refreshThread();
+      // Foco automático pós-envio (pedido explícito do usuário: "digito → envio → campo limpa →
+      // cursor continua no campo") — não é um paliativo de "focar de novo", é a resposta ao clique
+      // no botão Enviar mover o foco pra ELE (comportamento padrão do navegador em qualquer botão
+      // clicado); pelo teclado (Enter) o foco nunca sai daqui pra começar — ver também o
+      // `disabled` removido do `Textarea` abaixo, que era quem derrubava o foco durante `sending`.
+      textareaRef.current?.focus();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Não foi possível enviar a mensagem.";
       setDraft((current) => (current.trim() ? current : body));
@@ -1410,6 +1425,10 @@ export function ConversationTimelinePane({
     try {
       await sendInboxMediaMessage(workspaceId, conversation.id, file);
       await refreshThread();
+      // Mesma lógica do envio de texto (seção 22 do pedido: "enviei uma foto → posso começar a
+      // digitar imediatamente") — o clique no item do popover de anexo também move o foco pra fora
+      // do textarea, então devolve explicitamente aqui.
+      textareaRef.current?.focus();
     } catch (cause) {
       setAttachError(cause instanceof Error ? cause.message : "Não foi possível enviar o arquivo.");
     } finally {
@@ -1425,6 +1444,9 @@ export function ConversationTimelinePane({
       const extension = blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "m4a" : "webm";
       await sendInboxMediaMessage(workspaceId, conversation.id, blob, { fileName: `audio-${Date.now()}.${extension}` });
       await refreshThread();
+      // Seção 23 do pedido: "depois de enviar ou descartar gravação, o composer volta ao estado
+      // normal" — normal inclui poder digitar na hora, sem precisar clicar no campo de novo.
+      textareaRef.current?.focus();
     } catch (cause) {
       setAttachError(cause instanceof Error ? cause.message : "Não foi possível enviar o áudio.");
     } finally {
@@ -1569,6 +1591,7 @@ export function ConversationTimelinePane({
                   canOperate={canOperate}
                   onReplyTo={setReplyingTo}
                   onChanged={() => mutate()}
+                  onOpenMedia={setOpenMediaMessageId}
                 />
               ) : (
                 <EventPill key={`evt-${entry.event.id}`} event={entry.event} currentUserId={currentUserId} members={members} />
@@ -1680,7 +1703,13 @@ export function ConversationTimelinePane({
               placeholder={canOperate ? "Digite uma mensagem..." : "Seu papel permite visualizar, mas não operar esta conversa."}
               className="max-h-36 min-h-[36px] flex-1 resize-none border-0 bg-transparent px-1.5 py-1.5 shadow-none focus:border-0 focus:ring-0"
               rows={1}
-              disabled={!canOperate || sending}
+              // Nunca `|| sending` aqui (achado da causa raiz do bug de foco, pedido explícito do
+              // usuário: "preciso clicar novamente no campo") — desabilitar um elemento FOCADO faz o
+              // navegador tirar o foco dele imediatamente (vai pro <body>), e ele nunca volta sozinho
+              // quando reabilita. `sending` já desabilita o BOTÃO de enviar (abaixo); o campo
+              // continua digitável (e focado) o tempo todo, inclusive durante o envio da mensagem
+              // anterior — é exatamente isso que deixa "já posso digitar a próxima" verdadeiro.
+              disabled={!canOperate}
             />
             {draft.trim() ? (
               <GuardedButton
@@ -1701,6 +1730,16 @@ export function ConversationTimelinePane({
           </div>
         </div>
       </div>
+
+      {openMediaMessageId ? (
+        <ConversationMediaViewer
+          workspaceId={workspaceId}
+          media={mediaMessages}
+          initialMessageId={openMediaMessageId}
+          isGroup={conversation.chatType === "group"}
+          onClose={() => setOpenMediaMessageId(undefined)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -2072,6 +2111,19 @@ function formatRecordingTime(totalSeconds: number): string {
   return `${minutes}:${seconds}`;
 }
 
+/** Rótulo de remetente de UMA mensagem — extraído de `MessageBubble` pra ser reusado também pelo
+ * `ConversationMediaViewer` (seção 8 do pedido de mídia: "nome/remetente" discreto no rodapé do
+ * visualizador). Grupo: mostra quem dos participantes mandou (a conversa representa o grupo
+ * inteiro, não mais um remetente). DM: `undefined` (o contato da conversa já é óbvio pelo contexto,
+ * nunca repetido mensagem a mensagem). */
+export function messageSenderLabel(message: InboxMessage, isGroup: boolean): string | undefined {
+  if (message.sentByAi) return "Vorix IA";
+  if (message.sentByAutomation) return "Automação";
+  if (message.direction === "outbound") return "Atendente";
+  if (isGroup) return message.senderDisplayName ?? "Participante";
+  return undefined;
+}
+
 function MessageBubble({
   workspaceId,
   conversationId,
@@ -2083,6 +2135,7 @@ function MessageBubble({
   canOperate,
   onReplyTo,
   onChanged,
+  onOpenMedia,
 }: {
   workspaceId: string;
   conversationId: string;
@@ -2101,20 +2154,12 @@ function MessageBubble({
   onReplyTo: (message: InboxMessage) => void;
   /** Bloco "3 pontinhos em cada mensagem" — revalida a timeline depois de excluir/reagir. */
   onChanged: () => void;
+  /** Bloco "visualizador de mídia" (pedido explícito do usuário) — abre o `ConversationMediaViewer`
+   * nesta mensagem (só chamado por `MessageMedia` quando `message.type` é imagem/vídeo). */
+  onOpenMedia: (messageId: string) => void;
 }) {
   const isOutbound = message.direction === "outbound";
-  // Grupo: mostra quem dos participantes mandou (a conversa representa o grupo inteiro, não mais
-  // um remetente — ver docs/conversas-canonical-chat-identity.md). DM: mantém o comportamento
-  // original (nunca repete o nome do contato acima de toda mensagem, ele já está no header).
-  const senderLabel = message.sentByAi
-    ? "Vorix IA"
-    : message.sentByAutomation
-      ? "Automação"
-      : isOutbound
-        ? "Atendente"
-        : isGroup
-          ? (message.senderDisplayName ?? "Participante")
-          : undefined;
+  const senderLabel = messageSenderLabel(message, isGroup);
   const body = message.body?.trim();
   const isMedia = message.type === "image" || message.type === "video" || message.type === "audio" || message.type === "document";
   const failed = isOutbound && message.status === "failed";
@@ -2174,7 +2219,7 @@ function MessageBubble({
             </div>
           ) : null}
           {isMedia ? (
-            <MessageMedia workspaceId={workspaceId} message={message} />
+            <MessageMedia workspaceId={workspaceId} message={message} onOpen={() => onOpenMedia(message.id)} />
           ) : !body ? (
             // Bug real corrigido: tipo sem renderizador dedicado (location/contact/other/sticker) e
             // sem body deixava a bolha completamente vazia (só timestamp) — nunca mais "nada".
@@ -2439,7 +2484,11 @@ function ContactContextPane({
         </div>
 
         {conversation.chatType === "direct" && conversation.crmContactId ? (
-          <Link href={`/workspaces/${workspaceId}/contacts`} className="mb-4 inline-flex text-xs font-medium text-primary hover:underline dark:text-primary-glow">
+          // Bug real corrigido (auditoria, "Jornada Comercial Integrada" — item P0): antes levava
+          // pra lista GERAL de contatos, sem abrir o contato específico. `?contactId=` já é o
+          // deep-link real e funcional (a própria tela de Contatos já reage a ele, `contacts/page.tsx`)
+          // — só nunca tinha sido usado aqui.
+          <Link href={`/workspaces/${workspaceId}/contacts?contactId=${conversation.crmContactId}`} className="mb-4 inline-flex text-xs font-medium text-primary hover:underline dark:text-primary-glow">
             Abrir contato completo
           </Link>
         ) : null}

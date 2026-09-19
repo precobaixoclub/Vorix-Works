@@ -95,6 +95,18 @@ export class PostgresInboxContactRepository implements InboxContactRepositoryPor
     );
   }
 
+  async linkCrmContact(id: string, contactId: string): Promise<InboxContact | undefined> {
+    // `where contact_id is null` — nunca sobrescreve um vínculo já existente (idempotente: uma
+    // segunda chamada, ou uma corrida entre o vínculo manual e a ponte automática, nunca troca o
+    // Contact já ligado por outro).
+    const result = await this.pool.query<Row>(
+      "update inbox_contacts set contact_id = $2, updated_at = now() where id = $1 and contact_id is null returning *",
+      [id, contactId],
+    );
+    if (result.rows[0]) return this.toDomain(result.rows[0]);
+    return this.getById(id);
+  }
+
   private toDomain(row: Row): InboxContact {
     return {
       id: row.id,

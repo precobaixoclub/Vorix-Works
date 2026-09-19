@@ -82,6 +82,10 @@ export type InboxMessageRepositoryPort = {
    */
   setReaction(id: string, input: { reactorId: string; reactorName?: string; emoji: string }): Promise<void>;
   listByConversation(input: { tenantId: string; workspaceId: string; conversationId: string; cursor?: string; limit?: number }): Promise<InboxMessage[]>;
+  /** Jornada Comercial Integrada, Fase 1 — contagem real (nunca `listByConversation(...).length`,
+   * que é limitado por página) usada só pelo GATILHO da ponte automática Inbox→CRM (ver
+   * `inbox-crm-bridge-use-cases.ts`): "esta conversa já tem sinal mínimo de relacionamento real?". */
+  countByConversation(input: { conversationId: string }): Promise<number>;
   /** Usado pelo consumer de status (delivery/read receipts) e pelo `OutboxSenderConsumer`. Ignora
    * silenciosamente se a mensagem já estiver num status terminal — retries podem chegar tarde. */
   updateStatusByExternalId(input: { connectionId: string; externalMessageId: string; status: InboxMessageStatus; occurredAt: string }): Promise<void>;

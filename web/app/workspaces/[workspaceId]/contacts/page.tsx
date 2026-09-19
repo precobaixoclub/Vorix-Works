@@ -60,6 +60,9 @@ function ContactsView() {
   const debouncedSearch = useDebounce(search, 300);
 
   const { data: contacts, error, isLoading, mutate } = useContacts(workspace.id, { search: debouncedSearch || undefined, ownerUserId: ownerUserId || undefined, teamId: teamId || undefined });
+  // Workspace inteiro (nunca escopado por contato) — necessário aqui: cada card da GRADE precisa
+  // das próprias métricas (pipeline aberto, próxima atividade, nº de propostas), então não dá pra
+  // buscar só o de um contato por vez enquanto a grade inteira está visível.
   const { data: deals, mutate: mutateDeals } = useDeals(workspace.id);
   const { data: tasks } = useTasks(workspace.id);
   const { data: proposals } = useProposals(workspace.id);
@@ -87,6 +90,14 @@ function ContactsView() {
   const members = membersData?.members ?? [];
   const teamsList = teams ?? [];
   const selectedContact = contactsList.find((contact) => contact.id === selectedContactId);
+  // Auditoria (seção 17 do pedido) — o `ContactDetailModal` só precisa dos dados DESTE contato, e a
+  // API já aceita `contactId` como filtro real (nunca usado antes aqui) — reusa a MESMA chave de
+  // cache de `useDeals(workspace.id)` (ambas têm `contactId: undefined` no array-chave do SWR)
+  // quando nenhum contato está selecionado, então abrir/fechar o modal nunca dispara uma requisição
+  // extra à toa; só quando um contato é selecionado é que vira uma chamada genuinamente escopada.
+  const { data: selectedContactDeals } = useDeals(workspace.id, { contactId: selectedContactId });
+  const { data: selectedContactTasks } = useTasks(workspace.id, { contactId: selectedContactId });
+  const { data: selectedContactProposals } = useProposals(workspace.id, { contactId: selectedContactId });
   const selectedDeal = dealsList.find((deal) => deal.id === selectedDealId);
   const selectedDealPipeline = selectedDeal ? pipelines?.find((pipeline) => pipeline.id === selectedDeal.pipelineId) : undefined;
   const { data: selectedDealStages } = usePipelineStages(selectedDeal?.pipelineId, workspace.id);
@@ -248,9 +259,9 @@ function ContactsView() {
         onOpenChange={(open) => { if (!open) setSelectedContactId(undefined); }}
         workspaceId={workspace.id}
         contact={selectedContact}
-        deals={dealsList.filter((deal) => deal.contactId === selectedContact?.id)}
-        tasks={tasksList.filter((task) => task.contactId === selectedContact?.id)}
-        proposals={proposalsList.filter((proposal) => proposal.contactId === selectedContact?.id)}
+        deals={selectedContactDeals ?? []}
+        tasks={selectedContactTasks ?? []}
+        proposals={selectedContactProposals ?? []}
         conversations={conversationsList.filter((conversation) => conversation.crmContactId === selectedContact?.id)}
         members={members}
         teams={teamsList}
@@ -382,6 +393,12 @@ function ContactDetailModal({
 
   const primaryConversation = conversations[0];
   const activeDealsValue = deals.filter((deal) => !deal.wonAt && !deal.lostAt).reduce((sum, deal) => sum + deal.valueCents, 0);
+  // Header conceitual da auditoria (seção 15 do pedido: "Elen Mitrut / +55 46 9... / WhatsApp") —
+  // `Contact` não tem coluna de telefone própria (vive em `ContactIdentity`/`inbox_contacts`, nunca
+  // replicado pro CRM, por desenho); a conversa vinculada já denormaliza isso mesmo assim
+  // (`contactPhone`), então o header mostra o telefone SEM precisar de nenhuma mudança de schema —
+  // e, por não existir no schema, LID/PN nunca têm como aparecer aqui (nunca precisou de um filtro).
+  const headerSubtitle = [contact.company ?? contact.origin, primaryConversation?.contactPhone].filter(Boolean).join(" · ");
 
   return (
     <>
@@ -389,7 +406,7 @@ function ContactDetailModal({
         open={open}
         onOpenChange={onOpenChange}
         title={contact.name}
-        description={<span className="text-sm text-muted-foreground">{contact.company ?? contact.origin ?? "Contato comercial"}</span>}
+        description={<span className="text-sm text-muted-foreground">{headerSubtitle || "Contato comercial"}</span>}
         eyebrow="Contato 360"
         avatar={<Avatar name={contact.name} large />}
         headerExtra={primaryConversation ? <StatusBadge status={primaryConversation.status} /> : undefined}

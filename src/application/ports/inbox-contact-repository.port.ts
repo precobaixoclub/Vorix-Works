@@ -27,4 +27,13 @@ export type InboxContactRepositoryPort = {
    * principal porque é preenchida de forma assíncrona/best-effort (ver `syncContactProfilePicture`,
    * `inbox-use-cases.ts`), nunca no caminho crítico do ack de uma mensagem. */
   updateProfilePicture(id: string, input: { storageRef: InboxMediaStorageRef; syncedAt: string }): Promise<void>;
+  /**
+   * Jornada Comercial Integrada, Fase 1 — grava `inbox_contacts.contact_id` (o único vínculo
+   * sancionado com o CRM, migration 0092). Idempotente e NUNCA sobrescreve um vínculo já existente
+   * (`where contact_id is null`) — mesma filosofia de "nunca merge/overwrite silencioso" do resto do
+   * módulo. Quem chama (a ponte Inbox→CRM) decide o que fazer se o contato já estiver vinculado a
+   * OUTRO `contactId` (nunca deveria acontecer sob uso normal — ver
+   * `docs/vorix-jornada-comercial-fase1-contatos.md`). Retorna `undefined` se o contato não existir.
+   */
+  linkCrmContact(id: string, contactId: string): Promise<InboxContact | undefined>;
 };

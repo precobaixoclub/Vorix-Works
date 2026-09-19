@@ -57,6 +57,22 @@ import { createPromInboxMetrics, inboxMetricsRegistry } from "../../infrastructu
 import { reconcileMergeableIdentities, reconcileUnresolvedLidContacts } from "../../infrastructure/storage/postgres/inbox-identity-reconciliation.js";
 import { reconcilePendingContactPictures, reconcilePendingGroupPictures } from "../../infrastructure/storage/postgres/inbox-avatar-reconciliation.js";
 import { reconcilePendingMediaDownloads } from "../../infrastructure/storage/postgres/inbox-media-retry-reconciliation.js";
+// Jornada Comercial Integrada, Fase 1 — ponte Inbox→CRM (ver comentário no topo do próprio módulo:
+// deliberadamente FORA de /application/{crm,inbox}/, o único jeito de um orquestrador depender dos
+// dois lados sem violar `scripts/check-crm-isolation.mjs`). Repositórios do CRM importados direto
+// aqui (nunca via `buildPlatformRepositories`, que nunca os expôs — nem deveria, esse builder é
+// compartilhado com a API, que já constrói CRM através de `buildIdentityRepositories` por um
+// caminho totalmente diferente) — mesmo espírito de "o worker constrói só o que precisa" já
+// documentado no topo deste arquivo.
+import {
+  AUTO_CONTACT_ORIGIN,
+  MIN_MESSAGES_FOR_AUTO_CRM_CONTACT,
+  maybeAutoLinkInboxContactToCrm,
+  type InboxCrmBridgeDeps,
+} from "../../application/commercial-bridge/inbox-crm-bridge-use-cases.js";
+import { PostgresContactRepository } from "../../infrastructure/storage/postgres/postgres-contact-repository.js";
+import { PostgresContactIdentityRepository } from "../../infrastructure/storage/postgres/postgres-contact-identity-repository.js";
+import { PostgresTimelineEventRepository } from "../../infrastructure/storage/postgres/postgres-timeline-event-repository.js";
 
 /**
  * Processo separado do módulo Conversas — `vorix-worker` (Fase 1/2, resiliência reforçada na
@@ -120,6 +136,13 @@ type InboxWorkerConfig = {
      * bruto persistido (`attachMediaSourceRef`) mas ainda sem mídia baixada. */
     mediaRetryIntervalMs: number;
   };
+  /** Jornada Comercial Integrada, Fase 1 — desligado por padrão de propósito (mesmo racional de
+   * `ai.enabled`/`AI_INBOX_AUTO_REPLY_ENABLED`: uma mudança de comportamento automático sobre dados
+   * reais só liga com opt-in explícito, nunca por omissão) — ativar é só setar a env var em
+   * produção, sem precisar de outro deploy. Só tem efeito com `PERSISTENCE_DRIVER=postgres` (mesmo
+   * guard dos outros blocos deste tipo — `repositories.pool` ausente em memória = a ponte inteira
+   * vira no-op, sem erro). */
+  commercialBridge: { autoContactEnabled: boolean };
   /** Redesign operacional (Conversas) — storage PRIVADO de mídia recebida via WhatsApp; config
    * mínima independente de `loadApiConfig()`, mesmo racional do resto deste tipo. `enabled: false`
    * (padrão) não impede o worker de funcionar, só deixa `downloadInboundMediaAndAttach` em no-op. */
@@ -181,6 +204,9 @@ function loadInboxWorkerConfig(): InboxWorkerConfig {
       identityReconcileIntervalMs: parsePositiveInt(process.env.INBOX_IDENTITY_RECONCILE_INTERVAL_MS, 300_000),
       avatarReconcileIntervalMs: parsePositiveInt(process.env.INBOX_AVATAR_RECONCILE_INTERVAL_MS, 600_000),
       mediaRetryIntervalMs: parsePositiveInt(process.env.INBOX_MEDIA_RETRY_INTERVAL_MS, 300_000),
+    },
+    commercialBridge: {
+      autoContactEnabled: process.env.INBOX_CRM_AUTO_CONTACT_ENABLED?.trim() === "true",
     },
     inboxMediaStorage: {
       enabled: process.env.INBOX_MEDIA_STORAGE_ENABLED?.trim() === "true",
@@ -581,6 +607,32 @@ async function main(): Promise<void> {
     console.warn("[inbox-worker] INBOX_OUTBOUND_SEND_PAUSED=true — kill switch de emergência ATIVO: nenhuma mensagem outbound será enviada ao WuzAPI (permanecem queued). Inbound/IA/humano continuam funcionando normalmente.");
   }
 
+  // Jornada Comercial Integrada, Fase 1 — ponte Inbox→CRM. Repositórios do CRM construídos direto
+  // aqui, reusando o MESMO pool já aberto por `buildPlatformRepositories` (nunca uma segunda
+  // conexão) — `undefined` em driver memória (sem `repositories.pool`) ou com o opt-in desligado,
+  // e `maybeAutoLinkInboxContactToCrm` nunca é chamado nesse caso (ver dentro do consumer abaixo).
+  const commercialBridgeDeps: InboxCrmBridgeDeps | undefined =
+    config.commercialBridge.autoContactEnabled && repositories.pool
+      ? {
+          inboxContactRepository: repositories.inboxContactRepository,
+          inboxMessageRepository: repositories.inboxMessageRepository,
+          contact: {
+            contactRepository: new PostgresContactRepository(repositories.pool),
+            contactIdentityRepository: new PostgresContactIdentityRepository(repositories.pool),
+            timelineEventRepository: new PostgresTimelineEventRepository(repositories.pool),
+            // `automation` deliberadamente omitido nesta fase — ver comentário em
+            // `inbox-crm-bridge-use-cases.ts` (decisão consciente, não esquecimento).
+          },
+        }
+      : undefined;
+  if (config.commercialBridge.autoContactEnabled && !repositories.pool) {
+    console.warn("[inbox-worker] INBOX_CRM_AUTO_CONTACT_ENABLED=true, mas PERSISTENCE_DRIVER != postgres — ponte Inbox→CRM desligada (CRM real sempre vive em Postgres).");
+  } else if (config.commercialBridge.autoContactEnabled) {
+    console.log(`[inbox-worker] ponte Inbox→CRM habilitada — Contact automático a partir de ${MIN_MESSAGES_FOR_AUTO_CRM_CONTACT} mensagens numa conversa direta (origin="${AUTO_CONTACT_ORIGIN}").`);
+  } else {
+    console.log("[inbox-worker] INBOX_CRM_AUTO_CONTACT_ENABLED=false — ponte Inbox→CRM desligada, vínculo continua só manual (\"Vincular ao CRM\").");
+  }
+
   // ACHADO AO VIVO (spike Fase 2): sem isto, uma queda do RabbitMQ (`docker stop rabbitmq`)
   // derrubava o processo em SILÊNCIO — nenhuma linha de log, nada — porque amqplib emite 'error'/
   // 'close' na conexão/canal, e um listener de 'error' ausente faz o Node lançar e crashar o
@@ -695,6 +747,20 @@ async function main(): Promise<void> {
         })
         .catch((error) => {
           console.error("[inbox-worker] falha ao sincronizar foto de perfil:", error instanceof Error ? error.message : error);
+        });
+    }
+
+    // Jornada Comercial Integrada, Fase 1 — ponte Inbox→CRM. `contact` só existe pra conversa
+    // DIRETA (grupo nunca chega aqui, ver `registerInboundMessage`); best-effort, nunca no caminho
+    // crítico do ACK, mesmo padrão de todo o resto deste bloco. `commercialBridgeDeps` é
+    // `undefined` com o opt-in desligado ou em driver memória — a chamada nem acontece nesse caso.
+    if (contact && commercialBridgeDeps) {
+      maybeAutoLinkInboxContactToCrm(commercialBridgeDeps, { tenantId: event.tenantId, workspaceId: event.workspaceId, inboxContact: contact, conversationId: conversation.id })
+        .then((result) => {
+          if (result) publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
+        })
+        .catch((error) => {
+          console.error("[inbox-worker] falha na ponte automática Inbox→CRM:", error instanceof Error ? error.message : error);
         });
     }
 

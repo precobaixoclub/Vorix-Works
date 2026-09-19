@@ -81,8 +81,12 @@ export type InboxContact = {
   whatsappLid?: string;
   metadata?: Record<string, unknown>;
   /** CRM/Comercial (Fase 4) — `contacts.id` ligado via `ContactIdentity` (migration 0092, coluna
-   * `inbox_contacts.contact_id`). `undefined` até alguém vincular este contato do WhatsApp a um
-   * Contact do CRM — nunca preenchido automaticamente (ver `docs/crm-omnichannel-architecture-audit.md`). */
+   * `inbox_contacts.contact_id`). `undefined` até este contato ser vinculado a um Contact do CRM —
+   * por ação manual ("Vincular ao CRM", `crm-panel.tsx`) OU, desde a Jornada Comercial Integrada
+   * Fase 1, automaticamente pela ponte assíncrona (ver `inbox-crm-bridge-use-cases.ts`), disparada
+   * quando a conversa direta atinge um sinal mínimo de relacionamento real (nunca no primeiro "oi"
+   * — ver `docs/vorix-jornada-comercial-fase1-contatos.md`). Grupo nunca tem `InboxContact`, então
+   * nunca chega a ter este campo preenchido por nenhum dos dois caminhos. */
   crmContactId?: string;
   /** Bloco "réplica de identidade" — padrão tombstone (ver `db/migrations/0118_inbox_identity_merge.sql`):
    * quando `mergeStatus === "merged"`, este contato foi fundido em `mergedIntoContactId` — o `id`

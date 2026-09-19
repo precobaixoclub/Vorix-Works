@@ -15,6 +15,13 @@ import { PostgresTimelineEventRepository } from "../dist/infrastructure/storage/
 import { createContact, linkContactIdentity } from "../dist/application/crm/contact-use-cases.js";
 import { createPipeline, createStage } from "../dist/application/crm/pipeline-use-cases.js";
 import { createDeal, listDeals } from "../dist/application/crm/deal-use-cases.js";
+import { PostgresInboxMessageRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-message-repository.js";
+import {
+  AUTO_CONTACT_ORIGIN,
+  MIN_MESSAGES_FOR_AUTO_CRM_CONTACT,
+  ensureCrmContactForInboxContact,
+  maybeAutoLinkInboxContactToCrm,
+} from "../dist/application/commercial-bridge/inbox-crm-bridge-use-cases.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
 /**
@@ -100,4 +107,132 @@ test("Negócios filtrados por contactId retornam só os negócios daquele contat
   const dealsOfA = await listDeals(dealDeps, { tenantId, workspaceId: workspace.id, contactId: contactA.id });
   assert.equal(dealsOfA.length, 1);
   assert.equal(dealsOfA[0].title, "Negócio de A");
+});
+
+/**
+ * Jornada Comercial Integrada, Fase 1 — ponte automática Inbox→CRM
+ * (`src/application/commercial-bridge/inbox-crm-bridge-use-cases.ts`). Mesmo harness/convenções dos
+ * testes acima (Postgres real via pglite, nunca mocks) — a ponte só é "real" se sobreviver a
+ * concorrência/reentrega de verdade, não a um double do repositório.
+ */
+function bridgeDeps() {
+  return { inboxContactRepository: new PostgresInboxContactRepository(db.pool), inboxMessageRepository: new PostgresInboxMessageRepository(db.pool), contact: contactDeps() };
+}
+
+async function makeDirectConversationWithMessages(tenantId, workspace, phone, messageCount) {
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const inboxContactRepo = new PostgresInboxContactRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+
+  const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "WhatsApp" });
+  const inboxContact = await inboxContactRepo.upsertByPhone({ tenantId, workspaceId: workspace.id, phoneNormalized: phone, name: "Cliente Automático" });
+  const conversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "direct", externalChatId: phone, contactId: inboxContact.id });
+  for (let i = 0; i < messageCount; i += 1) {
+    await messageRepo.create({ tenantId, workspaceId: workspace.id, conversationId: conversation.id, connectionId: connection.id, direction: "inbound", type: "text", body: `mensagem ${i + 1}` });
+  }
+  return { inboxContact, conversation, inboxContactRepo };
+}
+
+test("Ponte automática: conversa direta com sinal mínimo de mensagens cria e vincula um Contact do CRM automaticamente", async () => {
+  const tenantId = "tenant-bridge-1";
+  const workspace = await makeWorkspace(tenantId);
+  const { inboxContact, conversation, inboxContactRepo } = await makeDirectConversationWithMessages(tenantId, workspace, "+5511911112222", MIN_MESSAGES_FOR_AUTO_CRM_CONTACT);
+
+  const result = await maybeAutoLinkInboxContactToCrm(bridgeDeps(), { tenantId, workspaceId: workspace.id, inboxContact, conversationId: conversation.id });
+  assert.ok(result, "deveria ter criado/vinculado um Contact");
+  assert.equal(result.created, true);
+
+  const linked = await inboxContactRepo.getById(inboxContact.id);
+  assert.equal(linked.crmContactId, result.contactId);
+
+  const contact = await contactDeps().contactRepository.getById(result.contactId);
+  assert.equal(contact.origin, AUTO_CONTACT_ORIGIN, "origem deve ser distinguível do vínculo manual (whatsapp_auto vs whatsapp)");
+  assert.equal(contact.name, "Cliente Automático");
+
+  const identity = await contactDeps().contactIdentityRepository.findByChannelAndExternalId("whatsapp", inboxContact.id);
+  assert.equal(identity.contactId, result.contactId, "mesma convenção do vínculo manual: externalId = InboxContact.id");
+});
+
+test("Ponte automática: NUNCA dispara antes do sinal mínimo de mensagens (evita virar lixo por uma mensagem isolada)", async () => {
+  const tenantId = "tenant-bridge-2";
+  const workspace = await makeWorkspace(tenantId);
+  const { inboxContact, conversation, inboxContactRepo } = await makeDirectConversationWithMessages(tenantId, workspace, "+5511922223333", MIN_MESSAGES_FOR_AUTO_CRM_CONTACT - 1);
+
+  const result = await maybeAutoLinkInboxContactToCrm(bridgeDeps(), { tenantId, workspaceId: workspace.id, inboxContact, conversationId: conversation.id });
+  assert.equal(result, undefined);
+
+  const stillUnlinked = await inboxContactRepo.getById(inboxContact.id);
+  assert.equal(stillUnlinked.crmContactId, undefined);
+});
+
+test("Ponte automática: idempotente — chamar duas vezes para o mesmo InboxContact nunca cria um segundo Contact", async () => {
+  const tenantId = "tenant-bridge-3";
+  const workspace = await makeWorkspace(tenantId);
+  const { inboxContact } = await makeDirectConversationWithMessages(tenantId, workspace, "+5511933334444", MIN_MESSAGES_FOR_AUTO_CRM_CONTACT);
+
+  const first = await ensureCrmContactForInboxContact(bridgeDeps(), { tenantId, workspaceId: workspace.id, inboxContactId: inboxContact.id, contactName: inboxContact.name, contactPhone: inboxContact.phoneNormalized });
+  const second = await ensureCrmContactForInboxContact(bridgeDeps(), { tenantId, workspaceId: workspace.id, inboxContactId: inboxContact.id, contactName: inboxContact.name, contactPhone: inboxContact.phoneNormalized });
+
+  assert.equal(first.created, true);
+  assert.equal(second.created, false);
+  assert.equal(second.contactId, first.contactId);
+
+  const allContacts = await contactDeps().contactRepository.listByWorkspace({ tenantId, workspaceId: workspace.id });
+  assert.equal(allContacts.length, 1, "nunca deveria existir um segundo Contact pro mesmo InboxContact");
+});
+
+test("Ponte automática: simula uma corrida concorrente (duas chamadas em paralelo) — só um Contact sobrevive, nunca duas identidades divergentes", async () => {
+  const tenantId = "tenant-bridge-4";
+  const workspace = await makeWorkspace(tenantId);
+  const { inboxContact, inboxContactRepo } = await makeDirectConversationWithMessages(tenantId, workspace, "+5511944445555", MIN_MESSAGES_FOR_AUTO_CRM_CONTACT);
+
+  const [a, b] = await Promise.all([
+    ensureCrmContactForInboxContact(bridgeDeps(), { tenantId, workspaceId: workspace.id, inboxContactId: inboxContact.id, contactName: inboxContact.name, contactPhone: inboxContact.phoneNormalized }),
+    ensureCrmContactForInboxContact(bridgeDeps(), { tenantId, workspaceId: workspace.id, inboxContactId: inboxContact.id, contactName: inboxContact.name, contactPhone: inboxContact.phoneNormalized }),
+  ]);
+
+  // As duas chamadas devem convergir pro MESMO Contact vencedor — nunca fundem silenciosamente,
+  // nunca deixam o InboxContact vinculado a duas identidades diferentes.
+  assert.equal(a.contactId, b.contactId);
+  const linked = await inboxContactRepo.getById(inboxContact.id);
+  assert.equal(linked.crmContactId, a.contactId);
+
+  const identities = await contactDeps().contactIdentityRepository.listByContact(a.contactId);
+  assert.equal(identities.filter((identity) => identity.externalId === inboxContact.id).length, 1);
+});
+
+test("Ponte automática: contato de GRUPO nunca é chamado (grupo nunca tem InboxContact) — checagem estrutural do gatilho", async () => {
+  const tenantId = "tenant-bridge-5";
+  const workspace = await makeWorkspace(tenantId);
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const conversationRepo = new PostgresInboxConversationRepository(db.pool);
+  const messageRepo = new PostgresInboxMessageRepository(db.pool);
+  const connection = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "WhatsApp" });
+  // Grupo: SEM contactId, exatamente como `registerInboundMessage` cria (nunca resolve InboxContact
+  // pra grupo) — não há `contact` nenhum pra passar pro gatilho, então a ponte estruturalmente nunca
+  // é chamada por um evento de grupo (ver `inbox-worker.ts`: `if (contact && ...)`).
+  const groupConversation = await conversationRepo.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "group", externalChatId: "123@g.us", groupName: "Grupo Teste" });
+  for (let i = 0; i < MIN_MESSAGES_FOR_AUTO_CRM_CONTACT + 5; i += 1) {
+    await messageRepo.create({ tenantId, workspaceId: workspace.id, conversationId: groupConversation.id, connectionId: connection.id, direction: "inbound", type: "text", body: `mensagem de grupo ${i}` });
+  }
+  assert.equal(groupConversation.contactId, undefined);
+  // Nenhuma chamada à ponte é feita aqui de propósito — o teste documenta a garantia estrutural
+  // (a própria assinatura de `maybeAutoLinkInboxContactToCrm` exige um `InboxContact`, que um
+  // grupo nunca tem pra oferecer).
+});
+
+test("Ponte automática: multi-tenant — mesmo número de telefone em tenants diferentes nunca se cruza", async () => {
+  const phone = "+5511955556666";
+  const workspaceX = await makeWorkspace("tenant-bridge-6x");
+  const workspaceY = await makeWorkspace("tenant-bridge-6y");
+  const { inboxContact: contactX, conversation: conversationX, inboxContactRepo } = await makeDirectConversationWithMessages("tenant-bridge-6x", workspaceX, phone, MIN_MESSAGES_FOR_AUTO_CRM_CONTACT);
+  const { inboxContact: contactY, conversation: conversationY } = await makeDirectConversationWithMessages("tenant-bridge-6y", workspaceY, phone, MIN_MESSAGES_FOR_AUTO_CRM_CONTACT);
+
+  const resultX = await maybeAutoLinkInboxContactToCrm(bridgeDeps(), { tenantId: "tenant-bridge-6x", workspaceId: workspaceX.id, inboxContact: contactX, conversationId: conversationX.id });
+  const resultY = await maybeAutoLinkInboxContactToCrm(bridgeDeps(), { tenantId: "tenant-bridge-6y", workspaceId: workspaceY.id, inboxContact: contactY, conversationId: conversationY.id });
+
+  assert.notEqual(resultX.contactId, resultY.contactId, "tenants diferentes nunca compartilham o mesmo Contact, mesmo com o mesmo telefone");
+  const linkedX = await inboxContactRepo.getById(contactX.id);
+  assert.equal(linkedX.crmContactId, resultX.contactId);
 });

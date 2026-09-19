@@ -92,6 +92,10 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
       .slice(0, limit);
   }
 
+  async countByConversation(input: { conversationId: string }): Promise<number> {
+    return [...this.rows.values()].filter((row) => row.conversationId === input.conversationId).length;
+  }
+
   async updateStatusByExternalId(input: { connectionId: string; externalMessageId: string; status: InboxMessageStatus; occurredAt: string }): Promise<void> {
     const existing = [...this.rows.values()].find(
       (row) => row.connectionId === input.connectionId && row.externalMessageId === input.externalMessageId,

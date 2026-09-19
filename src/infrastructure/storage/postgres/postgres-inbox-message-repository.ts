@@ -133,6 +133,11 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
     return result.rows.map((row) => this.toDomain(row));
   }
 
+  async countByConversation(input: { conversationId: string }): Promise<number> {
+    const result = await this.pool.query<{ count: string }>("select count(*)::text as count from inbox_messages where conversation_id = $1", [input.conversationId]);
+    return Number.parseInt(result.rows[0]?.count ?? "0", 10);
+  }
+
   async updateStatusByExternalId(input: { connectionId: string; externalMessageId: string; status: InboxMessageStatus; occurredAt: string }): Promise<void> {
     await this.pool.query(
       `update inbox_messages set

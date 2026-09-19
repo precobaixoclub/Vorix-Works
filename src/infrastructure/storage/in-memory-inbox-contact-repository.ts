@@ -68,6 +68,15 @@ export class InMemoryInboxContactRepository implements InboxContactRepositoryPor
     this.rows.set(id, { ...existing, profilePictureStorageRef: input.storageRef, profilePictureSyncedAt: input.syncedAt, updatedAt: new Date().toISOString() });
   }
 
+  async linkCrmContact(id: string, contactId: string): Promise<InboxContact | undefined> {
+    const existing = this.rows.get(id);
+    if (!existing) return undefined;
+    if (existing.crmContactId) return existing; // nunca sobrescreve um vínculo já existente
+    const updated: InboxContact = { ...existing, crmContactId: contactId, updatedAt: new Date().toISOString() };
+    this.rows.set(id, updated);
+    return updated;
+  }
+
   private async findByAlias(
     tenantId: string,
     workspaceId: string,

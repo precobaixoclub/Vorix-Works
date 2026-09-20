@@ -8,7 +8,8 @@ import { Button } from "@/components/Button";
 import { ErrorState } from "@/components/ErrorState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { acceptCommercialSuggestion, completeTask, dismissCommercialSuggestion } from "@/features/crm/api";
-import { useCommercialMetrics, useCommercialSuggestions, useTasks } from "@/features/crm/hooks";
+import { useCommercialMetrics, useCommercialSuggestions, useProposals, useTasks } from "@/features/crm/hooks";
+import { isTaskOverdue } from "@/features/crm/presentation";
 import { formatCurrencyCents, formatDate } from "@/lib/format";
 
 type IntelligenceLevel = "critical" | "attention" | "opportunity" | "info";
@@ -38,9 +39,17 @@ export function VorixIntelligencePanel({ workspaceId }: { workspaceId: string })
   const { data: metrics, isLoading: metricsLoading, error: metricsError, mutate: mutateMetrics } = useCommercialMetrics(workspaceId);
   const [resolvingId, setResolvingId] = useState<string | undefined>();
 
-  const loading = suggestionsLoading || tasksLoading || metricsLoading;
-  const error = suggestionsError || tasksError || metricsError;
-  const overdueTasks = (tasks ?? []).filter((task) => task.dueAt && new Date(task.dueAt) < new Date());
+  const { data: proposals, isLoading: proposalsLoading, error: proposalsError, mutate: mutateProposals } = useProposals(workspaceId, { status: "viewed" });
+
+  const loading = suggestionsLoading || tasksLoading || metricsLoading || proposalsLoading;
+  const error = suggestionsError || tasksError || metricsError || proposalsError;
+  // Jornada Comercial, Fase 5 — antes deste ponto o Home calculava "atrasada" comparando contra o
+  // INSTANTE atual (`new Date(task.dueAt) < new Date()`), enquanto o resto do produto (Contact 360,
+  // tela de Tarefas) usa `isTaskOverdue` (início do dia corrente) — duas semânticas silenciosamente
+  // diferentes pro mesmo conceito. Decisão: unificar em `isTaskOverdue` (o critério já estabelecido
+  // e usado em mais lugares) — uma tarefa com vencimento HOJE às 17h não vira "atrasada" às 17h01,
+  // só a partir do dia seguinte, mesmo padrão que o usuário já vê em Contact 360/Tarefas.
+  const overdueTasks = (tasks ?? []).filter((task) => isTaskOverdue(task));
 
   async function handleAcceptSuggestion(id: string) {
     setResolvingId(id);
@@ -111,6 +120,19 @@ export function VorixIntelligencePanel({ workspaceId }: { workspaceId: string })
           onAction: () => router.push(`/workspaces/${workspaceId}/deals`),
         }]
       : []),
+    // Jornada Comercial, Fase 5, item 19 — proposta visualizada pelo cliente e ainda sem
+    // aceite/recusa/expiração é exatamente o tipo de pendência que o Home deveria destacar (alguém
+    // já olhou a proposta, ninguém do time percebeu ainda). `useProposals(..., {status: "viewed"})`
+    // já filtra no backend — nunca carrega o workspace inteiro pra isso.
+    ...(proposals ?? []).slice(0, 3).map((proposal) => ({
+      id: `proposal-viewed-${proposal.id}`,
+      level: "opportunity" as const,
+      title: `Proposta "${proposal.title}" visualizada sem resposta`,
+      context: `${formatCurrencyCents(proposal.totalCents, proposal.currency)}${proposal.lastViewedAt ? ` · vista em ${formatDate(proposal.lastViewedAt)}` : ""}`,
+      actionLabel: "Abrir proposta",
+      onAction: () => router.push(`/workspaces/${workspaceId}/proposals?proposal=${proposal.id}`),
+      ...(proposal.contactId ? { secondaryLabel: "Abrir contato", onSecondary: () => router.push(`/workspaces/${workspaceId}/contacts?contactId=${proposal.contactId}`) } : {}),
+    })),
   ].slice(0, 6);
 
   return (
@@ -134,7 +156,7 @@ export function VorixIntelligencePanel({ workspaceId }: { workspaceId: string })
 
         <div className="mt-4">
           {loading ? <IntelligenceSkeleton /> : null}
-          {error ? <ErrorState error={error} onRetry={() => { void Promise.all([mutateSuggestions(), mutateTasks(), mutateMetrics()]); }} /> : null}
+          {error ? <ErrorState error={error} onRetry={() => { void Promise.all([mutateSuggestions(), mutateTasks(), mutateMetrics(), mutateProposals()]); }} /> : null}
           {!loading && !error && items.length === 0 ? <CompactAllClear /> : null}
           {!loading && !error && items.length > 0 ? (
             <div className="divide-y divide-border/70">

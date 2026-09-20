@@ -1,8 +1,63 @@
 # Jornada Comercial Integrada — Fase 5: Amarração Final
 
-> Escopo implementado localmente em 20 de setembro de 2026. Não foi feito deploy nesta rodada
-> (sem autorização explícita — ver §22 "Entrega"). Os itens `PENDING_QA` das Fases 1–4 continuam
-> `PENDING_QA`; nada foi reclassificado artificialmente por conta desta fase.
+> Implementado localmente em 20 de setembro de 2026 e **fechado operacionalmente no mesmo dia**:
+> commitado (5 commits semânticos), push para `origin/main`, deploy real via SSH em produção.
+> `DEPLOYED_SHA = 4a388aa`. Os itens `PENDING_QA` das Fases 1–4 continuam `PENDING_QA` — nenhuma
+> evidência nova de QA autenticado real foi produzida nesta rodada de fechamento, então nada foi
+> promovido artificialmente (ver §24 do fechamento operacional, abaixo).
+
+## 0. Fechamento operacional (20 de setembro de 2026)
+
+**Commits** (5, semânticos, todos com `tsc --noEmit`/`build`/`architecture:check` verdes antes):
+
+| SHA | Mensagem |
+|---|---|
+| `05997dc` | `feat(crm): adiciona timeline comercial 360` |
+| `86a9b8e` | `fix(crm): unifica contexto comercial e tarefas` |
+| `e501dc1` | `feat(home): adiciona inteligencia comercial contextual` |
+| `3b3d5ad` | `test(crm): cobre jornada comercial integrada` |
+| `4a388aa` | `docs: registra Fase 5 da jornada comercial` |
+
+**Push**: `origin/main` avançou de `e89fd4b` para `4a388aa`. `HEAD == origin/main` confirmado
+(`git fetch` + comparação de SHA), working tree limpa.
+
+**Deploy**: backup pré-deploy em `deploy_backups/pre-fase5-jornada-comercial-20260920220721.tgz`
+no servidor; `git archive HEAD | gzip` → `scp` → extração preservando `.env.zuno` intocado →
+`docker compose up -d --build`. Sem migration (nenhuma nova nesta fase — confirmado antes e depois:
+`130 aplicada(s), 0 pendente(s)`, idêntico ao estado pós-Fase-4).
+
+**Saúde pós-deploy**: os 4 containers (`zuno-zuno-web-1`, `zuno-zuno-api-1`, `zuno-vorix-worker-1`,
+`zuno-zuno-postgres-1`) subiram saudáveis. `https://vorixworks.com` → 200. `/v1/health` → `ok`.
+`/readyz` → `ready: true`, `status: degraded` só por causa de `production_guard: warn` — **o mesmo
+warning pré-existente já documentado no fechamento da Fase 4** (config de produção/canary sempre
+ativa neste ambiente, não relacionado a nenhuma fase específica), demais checks (`database`,
+`secret_manager`, `operational_state`, `publication_queue`) = `pass`. Logs sem `error`/`exception`/
+`fatal` novos. Flag `INBOX_CRM_AUTO_CONTACT_ENABLED=false` confirmada intacta no log do worker.
+
+**Smoke da rota nova**: `GET /v1/contacts/:id/activity` sem autenticação retornou `401
+UNAUTHORIZED` (nunca 500) — confirma que a rota está registrada e o guard de permissão
+(`contact:read`) roda antes de qualquer lógica de negócio. O log do servidor mostra o stack trace
+exato apontando pra `contacts.route.js:110` (a linha nova desta fase), confirmando que o código
+deployado é de fato o código novo. QA autenticado real (contato de verdade, dados agregados de
+verdade) segue fora do alcance deste ambiente — ver classificação em §22.
+
+**Achado da varredura de testes backend (não é bug da Fase 5)**: ao rodar a suíte COMPLETA do
+repositório (243 arquivos, não só os de CRM) como checagem extra de regressão, 2 arquivos falharam
+— ambos pré-existentes e sem nenhuma relação com esta fase:
+- `tests/instagram-dm-persistence.test.mjs` importa
+  `postgres-instagram-dm-conversation-repository.js`, um módulo que **nunca existiu** em `src/`
+  (confirmado por busca no código-fonte) — o arquivo de teste foi commitado em `7b24f64` ("feat
+  (instagram-dm): Fase 5 — Instagram DM Automation", uma numeração de fase interna do produto
+  totalmente diferente da Jornada Comercial), órfão desde então.
+- `tests/cli.smoke.test.mjs` (teste `LOCAL_PRODUCTION resolve assets visuais...`) trava por >60s e
+  é encerrado (`SIGTERM`) — arquivo do commit inicial do repositório, sobre renderização de vídeo,
+  sem nenhuma relação com CRM/Comercial.
+
+Nenhum dos dois toca em qualquer arquivo desta fase. A suíte relevante (87 testes de backend —
+66 CRM + 14 atendimento + 7 novos da Fase 5 — e 56 de frontend) permanece 100% verde, batendo com o
+baseline informado. Classificado como `OPERATIONAL_QA` (achado registrado, não corrigido nesta
+rodada — corrigir um teste órfão de um módulo não-comercial seria escopo fora do pedido desta
+fase).
 
 ## 1. Visão final da jornada
 
@@ -365,36 +420,43 @@ ferramenta):
 - `ProposalDetailModal` duplicado (shared vs. local em `proposals/page.tsx`) — lacuna já registrada
   na Fase 4, não resolvida aqui (não bloqueia nada, é uma duplicação de componente, não de dado).
 
-**BUG** — nenhum bug novo encontrado nesta rodada além dos gaps reais já corrigidos (§22).
+**OPERATIONAL_QA**:
+- `tests/instagram-dm-persistence.test.mjs` e `tests/cli.smoke.test.mjs` — dois testes
+  pré-existentes e sem nenhuma relação com a Jornada Comercial que falham na suíte completa do
+  repositório (evidência em §0); não corrigidos aqui por serem fora de escopo (módulos Instagram DM
+  Automation e renderização de vídeo, respectivamente).
 
-## 22. Classificação final
+**BUG** — nenhum bug novo encontrado nesta rodada além dos gaps reais já corrigidos (§11/§9, ver
+também a lista de arquivos alterados em §18).
+
+## 22. Classificação final (atualizada no fechamento operacional)
 
 | Item | Classificação | Evidência |
 |---|---|---|
-| `TIMELINE_360_BACKEND` | `VERIFIED_AUTOMATED` | 7 testes de integração real (Postgres), §15 |
-| `TIMELINE_360_CONTACT` | `VERIFIED_LOCAL` | build+typecheck limpos, código lido linha a linha; sem QA de navegador |
+| `DEPLOYED_SHA` | `4a388aa` | push + deploy confirmados, `HEAD == origin/main`, §0 |
+| `PRODUCTION_HEALTH` | `PASS` | 4 containers saudáveis, web 200, `/v1/health` ok, `/readyz` ready=true (só warning pré-existente), logs sem erro novo, §0 |
+| `TIMELINE_360_BACKEND` | `VERIFIED_AUTOMATED` | 7 testes de integração real (Postgres), §15; rota nova confirmada viva em produção (401 correto, nunca 500, §0) — leitura de dados agregados reais exige sessão autenticada, não alcançável neste ambiente |
+| `TIMELINE_360_CONTACT` | `VERIFIED_LOCAL` | build+typecheck limpos, código lido linha a linha; abertura visual da aba Histórico em produção exige navegador autenticado |
 | `TIMELINE_ORDERING` | `VERIFIED_AUTOMATED` | teste 1 de §15 (assert de ordem decrescente) |
 | `TIMELINE_DEDUP` | `VERIFIED_AUTOMATED` | dedupe defensivo coberto pelo desenho (§4); nenhuma duplicata real possível no fluxo testado |
 | `TIMELINE_MULTI_TENANT` | `VERIFIED_AUTOMATED` | teste 5 de §15 |
 | `CONTACT_360_SUMMARY` | `VERIFIED_LOCAL` | já existia das Fases 2–4 com dados reais; não alterado além do Histórico |
-| `HOME_COMMERCIAL_INTELLIGENCE` | `VERIFIED_LOCAL` | build+typecheck limpos; sem QA de navegador autenticado |
-| `CONVERSATION_COMMERCIAL_CONTEXT` | `VERIFIED_LOCAL` | conferido por leitura, já atendia ao pedido, nenhuma mudança necessária |
+| `HOME_COMMERCIAL_INTELLIGENCE` | `VERIFIED_LOCAL` | build+typecheck limpos; bloco novo depende de dados reais de produção pra ver renderizado, exige navegador autenticado |
+| `CONVERSATION_COMMERCIAL_CONTEXT` | `VERIFIED_LOCAL` | gap real do "Abrir cliente" corrigido (§9/§11); confirmação visual exige navegador autenticado |
 | `CROSS_SCREEN_CONSISTENCY` | `VERIFIED_LOCAL` | Timeline 360 nunca duplica estado — sempre lê da mesma fonte que cada tela já usa |
 | `DEEP_LINKS` | `VERIFIED_LOCAL` | `?proposal=` novo, testado por leitura de código e padrão idêntico ao `?contactId=` existente; sem QA de navegador |
 | `MOBILE_COMMERCIAL_FLOW` | `PENDING_QA` | sem ferramenta de navegador neste ambiente |
 | `COMMERCIAL_E2E_ACCEPT` | `VERIFIED_AUTOMATED` | teste 1 de §15 (integração real, não navegador) |
 | `COMMERCIAL_E2E_REJECT` | `VERIFIED_AUTOMATED` | teste 2 de §15 (integração real, não navegador) |
-| `PHASE_5_READY_FOR_DEPLOY` | `NO` (ainda) | funcional e testado localmente; falta QA de navegador autenticado antes de deploy, mesmo padrão das fases anteriores |
+| `COMMERCIAL_JOURNEY_PRODUCTION_READY` | `NO` (ainda) | código deployado e saudável; falta QA de navegador autenticado real (clicar em Histórico/Home/deep-links/mobile com dados de produção) pra fechar o ciclo — mesmo padrão de todas as fases anteriores |
 
 ## 23. Entrega
 
-Implementado e validado localmente: `tsc --noEmit` limpo (backend e frontend), `npm run build`
+Implementado, testado e **deployado**: `tsc --noEmit` limpo (backend e frontend), `npm run build`
 limpo (backend e frontend), `npm run architecture:check` completo passando (`check-crm-isolation`
 incluído), 66 testes de backend de CRM pré-existentes + 14 de atendimento sem regressão, 7 testes
 novos de backend (`commercial-timeline-fase5.test.mjs`), 56 testes de frontend pré-existentes sem
-regressão + 4 novos (`contact-activity-presentation.test.ts`).
-
-**Não foi feito deploy nesta rodada** — sem autorização explícita para isso nesta mensagem, seguindo
-a mesma regra das fases anteriores. Nada foi commitado ainda (aguardando instrução).
+regressão + 4 novos (`contact-activity-presentation.test.ts`) — todos re-executados no fechamento
+operacional e continuam verdes. Push feito, deploy real feito, saúde confirmada (§0).
 
 PARE — Fase 6 não é iniciada automaticamente.

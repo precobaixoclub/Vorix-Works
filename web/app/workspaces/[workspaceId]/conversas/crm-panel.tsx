@@ -6,19 +6,22 @@ import { Button } from "@/components/Button";
 import { DealDetailModal } from "@/components/crm/DealDetailModal";
 import { LossReasonModal } from "@/components/crm/LossReasonModal";
 import { QuickCreateDealModal } from "@/components/crm/QuickCreateDealModal";
+import { QuickCreateTaskModal } from "@/components/crm/QuickCreateTaskModal";
+import { RescheduleTaskPopover } from "@/components/crm/RescheduleTaskPopover";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label } from "@/components/Field";
 import { GuardedButton } from "@/components/GuardedButton";
 import { Modal } from "@/components/Modal";
 import { SearchableCombo } from "@/components/SearchableCombo";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/Spinner";
+import { userLabel } from "@/components/UserPicker";
+import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
 import {
   acceptCommercialSuggestion,
+  completeTask,
   createContact,
   createProposal,
-  createTask,
   dismissCommercialSuggestion,
   generateCommercialSuggestions,
   linkContactIdentity,
@@ -27,24 +30,15 @@ import {
 } from "@/features/crm/api";
 import { resolveActiveDeal } from "@/features/crm/deal-resolution";
 import { useCommercialSuggestions, useContact, useDeals, useLeadScore, usePipelines, usePipelineStages, useProposals, useTasks } from "@/features/crm/hooks";
-import { nextPendingTask } from "@/features/crm/presentation";
-import type { Deal, LeadTemperature, PipelineStage, TaskType } from "@/features/crm/types";
+import { isTaskOverdue, nextPendingTask, TASK_TYPE_LABEL } from "@/features/crm/presentation";
+import { resolveTaskDealChoice } from "@/features/crm/task-scheduling";
+import type { Deal, LeadTemperature, PipelineStage, Task } from "@/features/crm/types";
 import { useTeams } from "@/features/identity/hooks";
 import { useInboxConversationMessages } from "@/features/inbox/hooks";
 import type { InboxConversation, InboxTenantMember } from "@/features/inbox/types";
-import { formatCurrencyCents } from "@/lib/format";
+import { formatCurrencyCents, formatDateTime } from "@/lib/format";
 import { canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
-
-const TASK_TYPE_LABEL: Record<TaskType, string> = {
-  ligacao: "Ligação",
-  whatsapp: "WhatsApp",
-  reuniao: "Reunião",
-  enviar_proposta: "Enviar proposta",
-  follow_up: "Follow-up",
-  personalizada: "Personalizada",
-};
-
-type QuickAction = "task" | "proposal";
+import { cn } from "@/lib/utils";
 
 const TEMPERATURE_LABEL: Record<LeadTemperature, string> = { frio: "Frio", morno: "Morno", quente: "Quente" };
 const TEMPERATURE_VARIANT: Record<LeadTemperature, "outline" | "secondary" | "default"> = { frio: "outline", morno: "secondary", quente: "default" };
@@ -125,10 +119,10 @@ function LinkedCrmSection({
 }) {
   const { data: contact, error: contactError, mutate: mutateContact } = useContact(contactId, workspaceId);
   const { data: deals, mutate: mutateDeals } = useDeals(workspaceId, { contactId });
-  const { data: tasks, mutate: mutateTasks } = useTasks(workspaceId, { contactId, status: "pending" });
-  // Atividades/histórico de UM negócio específico (para o `DealDetailModal` embutido abaixo) —
-  // separado da lista `tasks` acima, que é só as pendentes usadas no bloco "Tarefas pendentes".
-  const { data: allTasks } = useTasks(workspaceId, { contactId });
+  // Todas as tarefas do contato (não só pendentes) — alimenta a seção "Próxima ação" (via
+  // `nextPendingTask`, que já filtra por `pending` internamente) e o `DealDetailModal` embutido
+  // abaixo (aba Atividades mostra histórico completo, não só pendentes).
+  const { data: allTasks, mutate: mutateAllTasks } = useTasks(workspaceId, { contactId });
   const { data: proposals } = useProposals(workspaceId, { contactId });
   const { data: pipelines } = usePipelines(workspaceId);
   const { data: leadScore } = useLeadScore(contactId, workspaceId);
@@ -148,8 +142,14 @@ function LinkedCrmSection({
   const [creatingDeal, setCreatingDeal] = useState(false);
   const [lossPrompt, setLossPrompt] = useState<{ deal: Deal; stage: PipelineStage } | undefined>();
 
-  const [quickAction, setQuickAction] = useState<QuickAction | undefined>();
-  const [quickActionDealId, setQuickActionDealId] = useState<string | undefined>();
+  // Jornada Comercial Fase 3, item 9 — nunca escolhe um negócio errado em silêncio: com 1 negócio
+  // aberto usa ele automaticamente, com mais de 1 força uma escolha explícita no próprio modal.
+  const dealChoice = resolveTaskDealChoice(openDeals);
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [completingTaskId, setCompletingTaskId] = useState<string | undefined>();
+
+  const [creatingProposal, setCreatingProposal] = useState(false);
+  const [proposalDealId, setProposalDealId] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | undefined>();
   const [newTag, setNewTag] = useState("");
@@ -159,7 +159,6 @@ function LinkedCrmSection({
   const [resolvingSuggestionId, setResolvingSuggestionId] = useState<string | undefined>();
   const [title, setTitle] = useState("");
   const [valueReais, setValueReais] = useState("");
-  const [taskType, setTaskType] = useState<TaskType>("follow_up");
 
   useEffect(() => {
     if (contact?.ownerUserId) setOwnerInput(contact.ownerUserId);
@@ -167,9 +166,9 @@ function LinkedCrmSection({
 
   const memberOptions = members.map((member) => ({ id: member.userId, label: `${member.name} · ${member.email}` }));
 
-  function closeQuickAction() {
-    setQuickAction(undefined);
-    setQuickActionDealId(undefined);
+  function closeProposalModal() {
+    setCreatingProposal(false);
+    setProposalDealId(undefined);
     setTitle("");
     setValueReais("");
   }
@@ -193,7 +192,7 @@ function LinkedCrmSection({
     setResolvingSuggestionId(suggestionId);
     try {
       await acceptCommercialSuggestion(suggestionId, workspaceId);
-      await Promise.all([mutateSuggestions(), mutateTasks()]);
+      await Promise.all([mutateSuggestions(), mutateAllTasks()]);
     } finally {
       setResolvingSuggestionId(undefined);
     }
@@ -223,24 +222,32 @@ function LinkedCrmSection({
     await mutateContact();
   }
 
-  async function handleQuickActionSubmit() {
-    if (!canOperate || !quickAction || !title.trim()) return;
+  async function handleCreateProposal() {
+    if (!canOperate || !title.trim()) return;
     setBusy(true);
     setActionError(undefined);
     try {
       const cents = Math.round(Number(valueReais.replace(",", ".")) * 100) || 0;
-      if (quickAction === "task") {
-        await createTask({ workspaceId, contactId, dealId: quickActionDealId, type: taskType, title: title.trim() });
-        await mutateTasks();
-      } else if (quickAction === "proposal") {
-        const { publicToken } = await createProposal({ workspaceId, contactId, dealId: quickActionDealId, title: title.trim(), items: [{ name: title.trim(), quantity: 1, unitPriceCents: cents }] });
-        setProposalLink(`${window.location.origin}/p/${publicToken}`);
-      }
-      closeQuickAction();
+      const { publicToken } = await createProposal({ workspaceId, contactId, dealId: proposalDealId, title: title.trim(), items: [{ name: title.trim(), quantity: 1, unitPriceCents: cents }] });
+      setProposalLink(`${window.location.origin}/p/${publicToken}`);
+      closeProposalModal();
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : "Não foi possível criar o item.");
+      setActionError(cause instanceof Error ? cause.message : "Não foi possível criar a proposta.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleCompleteNextTask(task: Task) {
+    if (!canOperate) return;
+    setCompletingTaskId(task.id);
+    try {
+      await completeTask(task.id, workspaceId);
+      await mutateAllTasks();
+    } catch (cause) {
+      toast.error("Não foi possível concluir a tarefa", { description: cause instanceof Error ? cause.message : "Tente novamente." });
+    } finally {
+      setCompletingTaskId(undefined);
     }
   }
 
@@ -341,8 +348,7 @@ function LinkedCrmSection({
             </p>
             <div className="flex flex-wrap gap-1.5 pt-1">
               <Button variant="secondary" size="sm" onClick={() => setOpenDealId(currentDeal.id)}>Abrir negócio</Button>
-              <Button variant="secondary" size="sm" onClick={() => { setQuickAction("task"); setQuickActionDealId(currentDeal.id); }}>+ Próxima ação</Button>
-              <Button variant="secondary" size="sm" onClick={() => { setQuickAction("proposal"); setQuickActionDealId(currentDeal.id); }}>Gerar proposta</Button>
+              <Button variant="secondary" size="sm" onClick={() => { setCreatingProposal(true); setProposalDealId(currentDeal.id); }}>Gerar proposta</Button>
             </div>
           </div>
         ) : (
@@ -363,16 +369,61 @@ function LinkedCrmSection({
         )}
       </div>
 
-      {tasks && tasks.length > 0 ? (
-        <div>
-          <p className="mb-1 text-[11px] text-muted-foreground">Tarefas pendentes ({tasks.length})</p>
-          <div className="space-y-1">
-            {tasks.slice(0, 3).map((task) => (
-              <div key={task.id} className="rounded-lg bg-muted/40 px-2 py-1.5 text-xs text-foreground">{task.title}</div>
-            ))}
-          </div>
-        </div>
-      ) : null}
+      <div>
+        <p className="mb-1 text-[11px] text-muted-foreground">Próxima ação</p>
+        {(() => {
+          // Jornada Comercial Fase 3, item 6 — regra centralizada (`nextPendingTask`, já reusada
+          // por Tarefas/Home/Deal), nunca reimplementada aqui: pending com menor `dueAt`, o que já
+          // coloca uma tarefa atrasada na frente de qualquer futura (item 28: sem lógica duplicada).
+          const nextTask = nextPendingTask(allTasks ?? [], { contactId });
+          if (!nextTask) {
+            return (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Nenhuma próxima atividade.</p>
+                <GuardedButton variant="secondary" className="w-full" onClick={() => setCreatingTask(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
+                  + Criar próxima ação
+                </GuardedButton>
+              </div>
+            );
+          }
+          const overdue = isTaskOverdue(nextTask);
+          return (
+            <div className={cn("space-y-1.5 rounded-lg border p-2.5", overdue ? "border-destructive/30 bg-destructive/5" : "border-border/70 bg-muted/30")}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-sm font-medium text-foreground">{TASK_TYPE_LABEL[nextTask.type]}</span>
+                {overdue ? <Badge variant="destructive">Atrasada</Badge> : null}
+              </div>
+              <p className={cn("text-xs", overdue ? "font-medium text-destructive" : "text-muted-foreground")}>
+                {nextTask.dueAt ? formatDateTime(nextTask.dueAt) : "Sem prazo"}
+              </p>
+              {nextTask.title !== TASK_TYPE_LABEL[nextTask.type] ? <p className="text-xs text-muted-foreground">{nextTask.title}</p> : null}
+              <p className="text-xs text-muted-foreground">Responsável: {userLabel(nextTask.ownerUserId, members)}</p>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                <GuardedButton
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleCompleteNextTask(nextTask)}
+                  loading={completingTaskId === nextTask.id}
+                  disabled={Boolean(completingTaskId)}
+                  allowed={canOperate}
+                  blockedReason={RBAC_COPY.operateConversations}
+                >
+                  Concluir
+                </GuardedButton>
+                {canOperate ? (
+                  <RescheduleTaskPopover
+                    task={nextTask}
+                    workspaceId={workspaceId}
+                    onRescheduled={async () => { await mutateAllTasks(); }}
+                    trigger={<Button variant="secondary" size="sm">Reagendar</Button>}
+                  />
+                ) : null}
+                {nextTask.dealId ? <Button variant="ghost" size="sm" onClick={() => setOpenDealId(nextTask.dealId)}>Ver</Button> : null}
+              </div>
+            </div>
+          );
+        })()}
+      </div>
 
       <div>
         <div className="mb-1 flex items-center justify-between gap-2">
@@ -402,40 +453,40 @@ function LinkedCrmSection({
 
       <div className="grid grid-cols-3 gap-1.5">
         <GuardedButton variant="secondary" onClick={() => setCreatingDeal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Negócio</GuardedButton>
-        <GuardedButton variant="secondary" onClick={() => setQuickAction("task")} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Tarefa</GuardedButton>
-        <GuardedButton variant="secondary" onClick={() => setQuickAction("proposal")} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Proposta</GuardedButton>
+        <GuardedButton variant="secondary" onClick={() => setCreatingTask(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Tarefa</GuardedButton>
+        <GuardedButton variant="secondary" onClick={() => setCreatingProposal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Proposta</GuardedButton>
       </div>
 
-      {quickAction ? (
-        <Modal title={quickAction === "task" ? "Nova tarefa" : "Nova proposta"} onClose={closeQuickAction}>
+      {creatingProposal ? (
+        <Modal title="Nova proposta" onClose={closeProposalModal}>
           <div className="space-y-3">
-            {quickAction === "task" ? (
-              <div>
-                <Label htmlFor="quick-task-type">Tipo</Label>
-                <Select value={taskType} onValueChange={(value) => setTaskType(value as TaskType)}>
-                  <SelectTrigger id="quick-task-type"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {(Object.keys(TASK_TYPE_LABEL) as TaskType[]).map((type) => <SelectItem key={type} value={type}>{TASK_TYPE_LABEL[type]}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
             <div>
-              <Label htmlFor="quick-title">{quickAction === "task" ? "Titulo" : "Item / titulo da proposta"}</Label>
+              <Label htmlFor="quick-title">Item / titulo da proposta</Label>
               <Input id="quick-title" value={title} onChange={(event) => setTitle(event.target.value)} />
             </div>
-            {quickAction === "proposal" ? (
-              <div>
-                <Label htmlFor="quick-value">Valor (R$)</Label>
-                <Input id="quick-value" value={valueReais} onChange={(event) => setValueReais(event.target.value)} placeholder="0,00" inputMode="decimal" />
-              </div>
-            ) : null}
+            <div>
+              <Label htmlFor="quick-value">Valor (R$)</Label>
+              <Input id="quick-value" value={valueReais} onChange={(event) => setValueReais(event.target.value)} placeholder="0,00" inputMode="decimal" />
+            </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="secondary" onClick={closeQuickAction} disabled={busy}>Cancelar</Button>
-              <Button onClick={handleQuickActionSubmit} loading={busy} disabled={!title.trim() || busy}>Criar</Button>
+              <Button variant="secondary" onClick={closeProposalModal} disabled={busy}>Cancelar</Button>
+              <Button onClick={handleCreateProposal} loading={busy} disabled={!title.trim() || busy}>Criar</Button>
             </div>
           </div>
         </Modal>
+      ) : null}
+
+      {creatingTask ? (
+        <QuickCreateTaskModal
+          workspaceId={workspaceId}
+          contactId={contactId}
+          dealChoice={dealChoice}
+          onClose={() => setCreatingTask(false)}
+          onCreated={async () => {
+            setCreatingTask(false);
+            await mutateAllTasks();
+          }}
+        />
       ) : null}
 
       {creatingDeal ? (
@@ -464,7 +515,7 @@ function LinkedCrmSection({
           proposals={proposals ?? []}
           members={members}
           teams={teams ?? []}
-          onChanged={async () => { await mutateDeals(); }}
+          onChanged={async () => { await Promise.all([mutateDeals(), mutateAllTasks()]); }}
           onMove={(deal, stage) => {
             if (stage.isLost) {
               setLossPrompt({ deal, stage });

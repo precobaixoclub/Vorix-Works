@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ClipboardCheck, FileText, History, Info, MoveRight, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
+import { RescheduleTaskPopover } from "@/components/crm/RescheduleTaskPopover";
+import { QuickCreateTaskModal } from "@/components/crm/QuickCreateTaskModal";
 import { DetailBlock, DetailModal } from "@/components/DetailModal";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label } from "@/components/Field";
@@ -13,9 +15,9 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { TeamPicker, teamLabel } from "@/components/TeamPicker";
 import { UserPicker, type UserPickerMember, userLabel } from "@/components/UserPicker";
 import { Skeleton } from "@/components/ui/skeleton";
-import { updateDeal } from "@/features/crm/api";
+import { completeTask, updateDeal } from "@/features/crm/api";
 import { useDealTimeline } from "@/features/crm/hooks";
-import { centsFromCurrencyInput, currencyInputFromCents, nextPendingTask, PROPOSAL_STATUS_LABEL, TASK_TYPE_LABEL, timelineEventLabel } from "@/features/crm/presentation";
+import { centsFromCurrencyInput, currencyInputFromCents, isTaskOverdue, nextPendingTask, PROPOSAL_STATUS_LABEL, TASK_TYPE_LABEL, timelineEventLabel } from "@/features/crm/presentation";
 import type { Contact, Deal, Pipeline, PipelineStage, Proposal, Task } from "@/features/crm/types";
 import type { Team } from "@/features/identity/types";
 import { formatCurrencyCents, formatDate, formatDateTime } from "@/lib/format";
@@ -37,7 +39,6 @@ export function DealDetailModal({
   teams,
   onChanged,
   onMove,
-  onCreateTask,
   onCreateProposal,
   onOpenConversation,
 }: {
@@ -54,7 +55,6 @@ export function DealDetailModal({
   teams: readonly Team[];
   onChanged: () => void | Promise<void>;
   onMove: (deal: Deal, stage: PipelineStage) => void | Promise<void>;
-  onCreateTask?: (deal: Deal) => void;
   onCreateProposal?: (deal: Deal) => void;
   /** Jornada Comercial Fase 2, item 16 — se o Contact do negócio tiver conversa, mostra "Abrir
    * conversa" abrindo a InboxConversation correta. Omitido (undefined) quando o chamador não sabe
@@ -64,11 +64,30 @@ export function DealDetailModal({
 }) {
   const [section, setSection] = useState<Section>("summary");
   const [editing, setEditing] = useState(false);
+  // Jornada Comercial Fase 3, item 18 — criação de tarefa a partir do negócio é SEMPRE inline
+  // (nunca navega pra outra tela); `dealId` nunca é ambíguo aqui (é sempre ESTE negócio).
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [completingTaskId, setCompletingTaskId] = useState<string | undefined>();
   const dealTasks = deal ? tasks.filter((task) => task.dealId === deal.id) : [];
+  const pendingDealTasks = [...dealTasks]
+    .filter((task) => task.status === "pending")
+    .sort((a, b) => (a.dueAt ? new Date(a.dueAt).getTime() : Number.MAX_SAFE_INTEGER) - (b.dueAt ? new Date(b.dueAt).getTime() : Number.MAX_SAFE_INTEGER));
   const dealProposals = deal ? proposals.filter((proposal) => proposal.dealId === deal.id) : [];
   const contact = deal?.contactId ? contacts.find((item) => item.id === deal.contactId) : undefined;
   const stage = deal ? stages.find((item) => item.id === deal.stageId) : undefined;
   const nextTask = nextPendingTask(dealTasks, { dealId: deal?.id });
+
+  async function handleCompleteTask(task: Task) {
+    setCompletingTaskId(task.id);
+    try {
+      await completeTask(task.id, workspaceId);
+      await onChanged();
+    } catch (cause) {
+      toast.error("Não foi possível concluir a tarefa", { description: cause instanceof Error ? cause.message : "Tente novamente." });
+    } finally {
+      setCompletingTaskId(undefined);
+    }
+  }
 
   if (!deal) return null;
 
@@ -102,16 +121,22 @@ export function DealDetailModal({
         {section === "summary" ? (
           <DealSummary
             deal={deal}
+            workspaceId={workspaceId}
             contact={contact}
             pipeline={pipeline}
             stage={stage}
             nextTask={nextTask}
+            pendingTasks={pendingDealTasks}
+            completingTaskId={completingTaskId}
             stages={stages}
             ownerLabel={userLabel(deal.ownerUserId, members)}
             teamLabel={teamLabel(deal.teamId, teams)}
             onEdit={() => setEditing(true)}
             onMove={(targetStage) => { void onMove(deal, targetStage); }}
-            onCreateTask={onCreateTask ? () => onCreateTask(deal) : undefined}
+            onCreateTask={() => setCreatingTask(true)}
+            onCompleteTask={handleCompleteTask}
+            onTaskRescheduled={onChanged}
+            onViewAllTasks={() => setSection("activities")}
             onCreateProposal={onCreateProposal ? () => onCreateProposal(deal) : undefined}
             onOpenConversation={onOpenConversation ? () => onOpenConversation(deal) : undefined}
           />
@@ -133,36 +158,62 @@ export function DealDetailModal({
           }}
         />
       ) : null}
+
+      {creatingTask ? (
+        <QuickCreateTaskModal
+          workspaceId={workspaceId}
+          contactId={deal.contactId}
+          dealChoice={{ mode: "auto", dealId: deal.id }}
+          title="Nova tarefa"
+          onClose={() => setCreatingTask(false)}
+          onCreated={async () => {
+            setCreatingTask(false);
+            await onChanged();
+          }}
+        />
+      ) : null}
     </>
   );
 }
 
 function DealSummary({
   deal,
+  workspaceId,
   contact,
   pipeline,
   stage,
   nextTask,
+  pendingTasks,
+  completingTaskId,
   stages,
   ownerLabel,
   teamLabel,
   onEdit,
   onMove,
   onCreateTask,
+  onCompleteTask,
+  onTaskRescheduled,
+  onViewAllTasks,
   onCreateProposal,
   onOpenConversation,
 }: {
   deal: Deal;
+  workspaceId: string;
   contact: Contact | undefined;
   pipeline: Pipeline | undefined;
   stage: PipelineStage | undefined;
   nextTask: Task | undefined;
+  pendingTasks: readonly Task[];
+  completingTaskId: string | undefined;
   stages: readonly PipelineStage[];
   ownerLabel: string;
   teamLabel: string;
   onEdit: () => void;
   onMove: (stage: PipelineStage) => void;
-  onCreateTask?: () => void;
+  onCreateTask: () => void;
+  onCompleteTask: (task: Task) => void;
+  onTaskRescheduled: () => void | Promise<void>;
+  onViewAllTasks: () => void;
   onCreateProposal?: () => void;
   onOpenConversation?: () => void;
 }) {
@@ -186,10 +237,48 @@ function DealSummary({
         </div>
       </DetailBlock>
 
+      <DetailBlock
+        label="Próximas atividades"
+        action={<Button variant="ghost" size="sm" onClick={onCreateTask}>+ Nova tarefa</Button>}
+      >
+        {pendingTasks.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhuma atividade pendente.</p>
+        ) : (
+          <div className="space-y-2">
+            {pendingTasks.slice(0, 5).map((task) => {
+              const overdue = isTaskOverdue(task);
+              return (
+                <div key={task.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-card px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {TASK_TYPE_LABEL[task.type]}{task.title !== TASK_TYPE_LABEL[task.type] ? ` · ${task.title}` : ""}
+                    </p>
+                    <p className={cn("text-xs", overdue ? "font-medium text-destructive" : "text-muted-foreground")}>
+                      {task.dueAt ? formatDateTime(task.dueAt) : "Sem prazo"}{overdue ? " · Atrasada" : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-1.5">
+                    <Button variant="secondary" size="sm" loading={completingTaskId === task.id} disabled={Boolean(completingTaskId)} onClick={() => onCompleteTask(task)}>
+                      Concluir
+                    </Button>
+                    <RescheduleTaskPopover
+                      task={task}
+                      workspaceId={workspaceId}
+                      onRescheduled={onTaskRescheduled}
+                      trigger={<Button variant="ghost" size="sm">Reagendar</Button>}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+            <Button variant="ghost" size="sm" onClick={onViewAllTasks}>Ver atividades</Button>
+          </div>
+        )}
+      </DetailBlock>
+
       <DetailBlock label="Ações contextuais">
         <div className="flex flex-wrap gap-2">
           {onOpenConversation ? <Button variant="secondary" onClick={onOpenConversation}>Abrir conversa</Button> : null}
-          {onCreateTask ? <Button variant="secondary" onClick={onCreateTask}>Criar tarefa</Button> : null}
           {onCreateProposal ? <Button variant="secondary" onClick={onCreateProposal}>Criar proposta</Button> : null}
         </div>
       </DetailBlock>

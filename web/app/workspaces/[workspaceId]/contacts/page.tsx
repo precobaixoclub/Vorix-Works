@@ -8,6 +8,8 @@ import { Button } from "@/components/Button";
 import { DealDetailModal } from "@/components/crm/DealDetailModal";
 import { LossReasonModal } from "@/components/crm/LossReasonModal";
 import { QuickCreateDealModal } from "@/components/crm/QuickCreateDealModal";
+import { QuickCreateTaskModal } from "@/components/crm/QuickCreateTaskModal";
+import { RescheduleTaskPopover } from "@/components/crm/RescheduleTaskPopover";
 import { DetailBlock, DetailModal } from "@/components/DetailModal";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -21,10 +23,11 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { createContact, linkContactIdentity, moveDealStage, updateContact } from "@/features/crm/api";
+import { completeTask, createContact, linkContactIdentity, moveDealStage, updateContact } from "@/features/crm/api";
 import { groupDealsByStatus } from "@/features/crm/deal-resolution";
 import { useContactTimeline, useContacts, useDeals, useLeadScore, usePipelineStages, usePipelines, useProposals, useStagesByPipeline, useTasks } from "@/features/crm/hooks";
-import { nextPendingTask, PROPOSAL_STATUS_LABEL, TASK_STATUS_LABEL, TASK_TYPE_LABEL, timelineEventLabel } from "@/features/crm/presentation";
+import { isTaskOverdue, nextPendingTask, PROPOSAL_STATUS_LABEL, TASK_TYPE_LABEL, timelineEventLabel } from "@/features/crm/presentation";
+import { resolveTaskDealChoice } from "@/features/crm/task-scheduling";
 import type { Contact, Deal, PipelineStage, Proposal, Task } from "@/features/crm/types";
 import type { Team } from "@/features/identity/types";
 import { useTeams } from "@/features/identity/hooks";
@@ -68,7 +71,7 @@ function ContactsView() {
   // das próprias métricas (pipeline aberto, próxima atividade, nº de propostas), então não dá pra
   // buscar só o de um contato por vez enquanto a grade inteira está visível.
   const { data: deals, mutate: mutateDeals } = useDeals(workspace.id);
-  const { data: tasks } = useTasks(workspace.id);
+  const { data: tasks, mutate: mutateTasks } = useTasks(workspace.id);
   const { data: proposals } = useProposals(workspace.id);
   const { data: conversations } = useInboxConversations(workspace.id);
   const { data: membersData } = useInboxMembers(workspace.id);
@@ -116,7 +119,7 @@ function ContactsView() {
   // quando nenhum contato está selecionado, então abrir/fechar o modal nunca dispara uma requisição
   // extra à toa; só quando um contato é selecionado é que vira uma chamada genuinamente escopada.
   const { data: selectedContactDeals, mutate: mutateSelectedContactDeals } = useDeals(workspace.id, { contactId: selectedContactId });
-  const { data: selectedContactTasks } = useTasks(workspace.id, { contactId: selectedContactId });
+  const { data: selectedContactTasks, mutate: mutateSelectedContactTasks } = useTasks(workspace.id, { contactId: selectedContactId });
   const { data: selectedContactProposals } = useProposals(workspace.id, { contactId: selectedContactId });
   // Mesmo racional acima, agora para a aba Conversas do Contact 360 (item 17 do pedido: antes
   // buscava o workspace inteiro e filtrava no frontend — a API já aceita `contactId` de verdade).
@@ -306,11 +309,11 @@ function ContactsView() {
         teams={teamsList}
         onChanged={async () => { await mutate(); }}
         onDealsChanged={async () => { await mutateSelectedContactDeals(); }}
+        onTasksChanged={async () => { await Promise.all([mutateSelectedContactTasks(), mutateTasks()]); }}
         onOpenDeal={(dealId) => {
           closeContact();
           setSelectedDealId(dealId);
         }}
-        onCreateTask={(contact) => router.push(`/workspaces/${workspace.id}/tasks?contactId=${contact.id}`)}
         onCreateProposal={(contact) => router.push(`/workspaces/${workspace.id}/proposals?contactId=${contact.id}`)}
       />
 
@@ -326,9 +329,8 @@ function ContactsView() {
         proposals={proposalsList}
         members={members}
         teams={teamsList}
-        onChanged={async () => { await Promise.all([mutateDeals(), mutate()]); }}
+        onChanged={async () => { await Promise.all([mutateDeals(), mutate(), mutateTasks(), mutateSelectedContactTasks()]); }}
         onMove={(deal, stage) => requestMoveDeal(deal, stage)}
-        onCreateTask={(deal) => router.push(`/workspaces/${workspace.id}/tasks?dealId=${deal.id}${deal.contactId ? `&contactId=${deal.contactId}` : ""}`)}
         onCreateProposal={(deal) => router.push(`/workspaces/${workspace.id}/proposals?dealId=${deal.id}${deal.contactId ? `&contactId=${deal.contactId}` : ""}`)}
         onOpenConversation={selectedDeal?.contactId && conversationByContactId.has(selectedDeal.contactId) ? (deal) => {
           const conversation = deal.contactId ? conversationByContactId.get(deal.contactId) : undefined;
@@ -406,8 +408,8 @@ function ContactDetailModal({
   teams,
   onChanged,
   onDealsChanged,
+  onTasksChanged,
   onOpenDeal,
-  onCreateTask,
   onCreateProposal,
 }: {
   open: boolean;
@@ -422,19 +424,36 @@ function ContactDetailModal({
   teams: readonly Team[];
   onChanged: () => void | Promise<void>;
   onDealsChanged: () => void | Promise<void>;
+  onTasksChanged: () => void | Promise<void>;
   onOpenDeal: (dealId: string) => void;
-  onCreateTask: (contact: Contact) => void;
   onCreateProposal: (contact: Contact) => void;
 }) {
   const router = useRouter();
   const [section, setSection] = useState<ContactSection>("summary");
   const [editing, setEditing] = useState(false);
   const [creatingDeal, setCreatingDeal] = useState(false);
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [completingTaskId, setCompletingTaskId] = useState<string | undefined>();
   const { data: timeline, isLoading: timelineLoading, error: timelineError, mutate: mutateTimeline } = useContactTimeline(contact?.id, workspaceId);
   const { data: leadScore, isLoading: scoreLoading } = useLeadScore(contact?.id, workspaceId);
   const pipelineIds = useMemo(() => Array.from(new Set(deals.map((deal) => deal.pipelineId))), [deals]);
   const { data: stagesByPipeline } = useStagesByPipeline(workspaceId, pipelineIds);
   const dealGroups = useMemo(() => groupDealsByStatus(deals), [deals]);
+  // Jornada Comercial Fase 3, item 9 — mesma regra da conversa: 1 negócio aberto preenche sozinho,
+  // mais de 1 exige escolha explícita no próprio modal, nenhum deixa a tarefa só no Contact.
+  const dealChoice = resolveTaskDealChoice(dealGroups.open.map((deal) => ({ id: deal.id, title: deal.title })));
+
+  async function handleCompleteTask(task: Task) {
+    setCompletingTaskId(task.id);
+    try {
+      await completeTask(task.id, workspaceId);
+      await onTasksChanged();
+    } catch (cause) {
+      toast.error("Não foi possível concluir a tarefa", { description: cause instanceof Error ? cause.message : "Tente novamente." });
+    } finally {
+      setCompletingTaskId(undefined);
+    }
+  }
 
   if (!contact) return null;
 
@@ -493,7 +512,7 @@ function ContactDetailModal({
               <div className="flex flex-wrap gap-2">
                 {primaryConversation ? <Button variant="secondary" onClick={() => router.push(`/workspaces/${workspaceId}/conversas?conversation=${primaryConversation.id}`)}>Enviar mensagem</Button> : null}
                 <Button variant="secondary" onClick={() => setCreatingDeal(true)}>Criar negócio</Button>
-                <Button variant="secondary" onClick={() => onCreateTask(contact)}>Criar tarefa</Button>
+                <Button variant="secondary" onClick={() => setCreatingTask(true)}>Criar tarefa</Button>
                 <Button variant="secondary" onClick={() => onCreateProposal(contact)}>Criar proposta</Button>
               </div>
             </DetailBlock>
@@ -539,17 +558,36 @@ function ContactDetailModal({
         ) : null}
 
         {section === "tasks" ? (
-          <ListBlock empty="Nenhuma tarefa vinculada a este contato.">
-            {tasks.map((task) => (
-              <div key={task.id} className="rounded-xl border border-border/70 bg-card px-3 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-foreground">{task.title}</p>
-                  <StatusBadge status={task.status} />
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">{TASK_TYPE_LABEL[task.type]} · {TASK_STATUS_LABEL[task.status]} · {formatDateTime(task.dueAt)}</p>
-              </div>
-            ))}
-          </ListBlock>
+          <div className="space-y-5">
+            <div className="flex justify-end">
+              <Button variant="secondary" size="sm" onClick={() => setCreatingTask(true)}>+ Tarefa</Button>
+            </div>
+            {tasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhuma tarefa vinculada a este contato.</p>
+            ) : (
+              <>
+                <TaskStatusGroup
+                  title="Atrasadas"
+                  tasks={tasks.filter((task) => isTaskOverdue(task))}
+                  members={members}
+                  workspaceId={workspaceId}
+                  completingTaskId={completingTaskId}
+                  onComplete={handleCompleteTask}
+                  onRescheduled={onTasksChanged}
+                />
+                <TaskStatusGroup
+                  title="Próximas"
+                  tasks={tasks.filter((task) => task.status === "pending" && !isTaskOverdue(task))}
+                  members={members}
+                  workspaceId={workspaceId}
+                  completingTaskId={completingTaskId}
+                  onComplete={handleCompleteTask}
+                  onRescheduled={onTasksChanged}
+                />
+                <TaskStatusGroup title="Concluídas" tasks={tasks.filter((task) => task.status === "done")} members={members} />
+              </>
+            )}
+          </div>
         ) : null}
 
         {section === "proposals" ? (
@@ -594,7 +632,75 @@ function ContactDetailModal({
           }}
         />
       ) : null}
+
+      {creatingTask ? (
+        <QuickCreateTaskModal
+          workspaceId={workspaceId}
+          contactId={contact.id}
+          dealChoice={dealChoice}
+          onClose={() => setCreatingTask(false)}
+          onCreated={async () => {
+            setCreatingTask(false);
+            await onTasksChanged();
+          }}
+        />
+      ) : null}
     </>
+  );
+}
+
+function TaskStatusGroup({
+  title,
+  tasks,
+  members,
+  workspaceId,
+  completingTaskId,
+  onComplete,
+  onRescheduled,
+}: {
+  title: string;
+  tasks: readonly Task[];
+  members: readonly UserPickerMember[];
+  workspaceId?: string;
+  completingTaskId?: string;
+  onComplete?: (task: Task) => void;
+  onRescheduled?: () => void | Promise<void>;
+}) {
+  if (tasks.length === 0) return null;
+  const actionable = Boolean(workspaceId && onComplete && onRescheduled);
+  return (
+    <div>
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title} ({tasks.length})</p>
+      <div className="space-y-2">
+        {tasks.map((task) => (
+          <div key={task.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-card px-3 py-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-foreground">
+                {TASK_TYPE_LABEL[task.type]}{task.title !== TASK_TYPE_LABEL[task.type] ? ` · ${task.title}` : ""}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {task.dueAt ? formatDateTime(task.dueAt) : "Sem prazo"} · {userLabel(task.ownerUserId, members)}
+              </p>
+            </div>
+            {actionable ? (
+              <div className="flex shrink-0 gap-1.5">
+                <Button variant="secondary" size="sm" loading={completingTaskId === task.id} disabled={Boolean(completingTaskId)} onClick={() => onComplete?.(task)}>
+                  Concluir
+                </Button>
+                <RescheduleTaskPopover
+                  task={task}
+                  workspaceId={workspaceId!}
+                  onRescheduled={() => onRescheduled?.()}
+                  trigger={<Button variant="ghost" size="sm">Reagendar</Button>}
+                />
+              </div>
+            ) : (
+              <StatusBadge status={task.status} />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

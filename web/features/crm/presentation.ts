@@ -6,7 +6,8 @@ export const TASK_TYPE_LABEL: Record<TaskType, string> = {
   reuniao: "Reunião",
   enviar_proposta: "Enviar proposta",
   follow_up: "Follow-up",
-  personalizada: "Personalizada",
+  // Jornada Comercial Fase 3, item 11 — nunca expor o enum técnico ("personalizada") ao usuário.
+  personalizada: "Outra",
 };
 
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {

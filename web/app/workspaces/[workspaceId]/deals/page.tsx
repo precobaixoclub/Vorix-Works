@@ -81,7 +81,7 @@ function DealsView() {
 
   const { data: stages } = usePipelineStages(pipelineId, workspace.id);
   const { data: contacts, error: contactsError } = useContacts(workspace.id);
-  const { data: tasks } = useTasks(workspace.id, { status: "pending" });
+  const { data: tasks, mutate: mutateTasks } = useTasks(workspace.id);
   const { data: proposals } = useProposals(workspace.id);
   const { data: membersData } = useInboxMembers(workspace.id);
   const { data: teams } = useTeams(workspace.id);
@@ -182,7 +182,7 @@ function DealsView() {
   const contactOptions = contactsList.map((contact) => ({ id: contact.id, label: contactLabel(contact) }));
 
   async function refresh() {
-    await mutateDeals();
+    await Promise.all([mutateDeals(), mutateTasks()]);
   }
 
   async function handleCreate() {
@@ -522,7 +522,6 @@ function DealsView() {
         teams={teamsList}
         onChanged={refresh}
         onMove={(deal, stage) => requestMoveDeal(deal, stage)}
-        onCreateTask={(deal) => router.push(`/workspaces/${workspace.id}/tasks?dealId=${deal.id}${deal.contactId ? `&contactId=${deal.contactId}` : ""}`)}
         onCreateProposal={(deal) => router.push(`/workspaces/${workspace.id}/proposals?dealId=${deal.id}${deal.contactId ? `&contactId=${deal.contactId}` : ""}`)}
         onOpenConversation={selectedDeal?.contactId && conversationByContactId.has(selectedDeal.contactId) ? (deal) => {
           const conversation = deal.contactId ? conversationByContactId.get(deal.contactId) : undefined;

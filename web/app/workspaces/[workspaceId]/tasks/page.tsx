@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { RescheduleTaskPopover } from "@/components/crm/RescheduleTaskPopover";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FilterBar } from "@/components/FilterBar";
@@ -15,6 +16,7 @@ import { SearchableCombo } from "@/components/SearchableCombo";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TeamPicker, teamLabel } from "@/components/TeamPicker";
 import { UserPicker, type UserPickerMember, userLabel } from "@/components/UserPicker";
+import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,7 +27,8 @@ import { isTaskOverdue, isTaskToday, isTaskUpcoming, TASK_STATUS_LABEL, TASK_TYP
 import type { Contact, Deal, Task, TaskStatus, TaskType } from "@/features/crm/types";
 import { useTeams } from "@/features/identity/hooks";
 import type { Team } from "@/features/identity/types";
-import { useInboxMembers } from "@/features/inbox/hooks";
+import { useInboxConversations, useInboxMembers } from "@/features/inbox/hooks";
+import type { InboxConversation } from "@/features/inbox/types";
 import { useDebounce } from "@/hooks/useDebounce";
 import { formatDateTime, formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -79,6 +82,16 @@ function TasksView() {
   const { data: deals } = useDeals(workspace.id);
   const { data: membersData } = useInboxMembers(workspace.id);
   const { data: teams } = useTeams(workspace.id);
+  // Jornada Comercial Fase 3, item 25 — "Abrir conversa" a partir de uma tarefa, quando o Contact
+  // dela tiver uma conversa vinculada; mesmo mapa já usado em contacts/page.tsx e deals/page.tsx.
+  const { data: conversationsData } = useInboxConversations(workspace.id);
+  const conversationByContactId = useMemo(() => {
+    const map = new Map<string, InboxConversation>();
+    for (const conversation of conversationsData?.conversations ?? []) {
+      if (conversation.crmContactId) map.set(conversation.crmContactId, conversation);
+    }
+    return map;
+  }, [conversationsData]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [type, setType] = useState<TaskType>("follow_up");
@@ -295,11 +308,15 @@ function TasksView() {
               deal={dealsList.find((deal) => deal.id === task.dealId)}
               members={members}
               teams={teamsList}
+              workspaceId={workspace.id}
               acting={actingId === task.id}
               onComplete={() => handleComplete(task)}
               onCancel={() => setPendingCancel(task)}
+              onRescheduled={async () => { await mutate(); }}
               onOpenContact={(contactId) => router.push(`/workspaces/${workspace.id}/contacts?contactId=${contactId}`)}
               onOpenDeal={(dealId) => router.push(`/workspaces/${workspace.id}/deals?dealId=${dealId}`)}
+              conversation={task.contactId ? conversationByContactId.get(task.contactId) : undefined}
+              onOpenConversation={(conversationId) => router.push(`/workspaces/${workspace.id}/conversas?conversation=${conversationId}`)}
             />
           ))}
         </section>
@@ -373,22 +390,32 @@ function TaskRow({
   deal,
   members,
   teams,
+  workspaceId,
   acting,
   onComplete,
   onCancel,
+  onRescheduled,
   onOpenContact,
   onOpenDeal,
+  conversation,
+  onOpenConversation,
 }: {
   task: Task;
   contact: Contact | undefined;
   deal: Deal | undefined;
   members: readonly UserPickerMember[];
   teams: readonly Team[];
+  workspaceId: string;
   acting: boolean;
   onComplete: () => void;
   onCancel: () => void;
+  onRescheduled: () => void | Promise<void>;
   onOpenContact: (contactId: string) => void;
   onOpenDeal: (dealId: string) => void;
+  /** Conversa vinculada ao Contact. Mantém a resolução das telas de Contatos/Negócios:
+   * quando há várias, o mapa conserva a última retornada pela listagem. */
+  conversation: InboxConversation | undefined;
+  onOpenConversation: (conversationId: string) => void;
 }) {
   const overdue = isTaskOverdue(task);
   return (
@@ -398,6 +425,7 @@ function TaskRow({
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={task.status} />
             <span className="text-xs text-muted-foreground">{TASK_TYPE_LABEL[task.type]}</span>
+            {overdue ? <Badge variant="destructive">Atrasada</Badge> : null}
           </div>
           <h2 className="mt-2 text-sm font-semibold text-foreground">{task.title}</h2>
           {task.description ? <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{task.description}</p> : null}
@@ -413,6 +441,7 @@ function TaskRow({
           <div className="mt-3 flex flex-wrap gap-2">
             {contact ? <Button variant="ghost" size="sm" onClick={() => onOpenContact(contact.id)}>{contact.name}</Button> : null}
             {deal ? <Button variant="ghost" size="sm" onClick={() => onOpenDeal(deal.id)}>{deal.title}</Button> : null}
+            {conversation ? <Button variant="ghost" size="sm" onClick={() => onOpenConversation(conversation.id)}>Abrir conversa</Button> : null}
           </div>
         </div>
         {task.status === "pending" ? (
@@ -420,6 +449,12 @@ function TaskRow({
             <Button variant="secondary" size="sm" loading={acting} disabled={acting} onClick={onComplete}>
               <Check className="mr-2 h-4 w-4" /> Concluir
             </Button>
+            <RescheduleTaskPopover
+              task={task}
+              workspaceId={workspaceId}
+              onRescheduled={onRescheduled}
+              trigger={<Button variant="secondary" size="sm">Reagendar</Button>}
+            />
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Ações da tarefa">

@@ -81,6 +81,8 @@ export function timelineEventLabel(event: TimelineEvent): string {
     proposal_viewed: "Proposta visualizada",
     proposal_accepted: "Proposta aceita",
     proposal_rejected: "Proposta recusada",
+    proposal_resent: "Proposta reenviada",
+    proposal_link_regenerated: "Link da proposta regenerado",
   };
   return labels[event.eventType] ?? humanizeEventCode(event.eventType);
 }

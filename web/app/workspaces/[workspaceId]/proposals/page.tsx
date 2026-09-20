@@ -6,6 +6,9 @@ import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { DetailBlock, DetailModal } from "@/components/DetailModal";
+import { LossReasonModal } from "@/components/crm/LossReasonModal";
+import { ProposalTemplatesPanel } from "@/components/crm/ProposalTemplatesPanel";
+import { QuickCreateTaskModal } from "@/components/crm/QuickCreateTaskModal";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FilterBar } from "@/components/FilterBar";
@@ -17,8 +20,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { createProposal, sendProposal } from "@/features/crm/api";
-import { useContacts, useDeals, useProducts, useProposalTimeline, useProposals } from "@/features/crm/hooks";
+import { createProposal, moveDealStage, regenerateProposalLink, revokeProposalLink, sendProposal } from "@/features/crm/api";
+import { useContacts, useDeals, usePipelineStages, useProducts, useProposalTemplates, useProposalTimeline, useProposals } from "@/features/crm/hooks";
+import { useInboxConversations } from "@/features/inbox/hooks";
 import { centsFromCurrencyInput, PROPOSAL_STATUS_LABEL, timelineEventLabel } from "@/features/crm/presentation";
 import type { Contact, Deal, Product, Proposal, ProposalStatus } from "@/features/crm/types";
 import { formatCurrencyCents, formatDate, formatDateTime } from "@/lib/format";
@@ -54,15 +58,26 @@ function ProposalsView() {
   const [search, setSearch] = useState("");
   const [contactFilter, setContactFilter] = useState("");
   const [dealFilter, setDealFilter] = useState("");
+  const [view, setView] = useState<"proposals" | "templates">("proposals");
 
   const { data: proposals, error, isLoading, mutate } = useProposals(workspace.id, { status: statusFilter === "all" ? undefined : statusFilter });
   const { data: products } = useProducts(workspace.id, { activeOnly: true });
+  const { data: templates } = useProposalTemplates(workspace.id, true);
   const { data: contacts } = useContacts(workspace.id);
   const { data: deals } = useDeals(workspace.id);
+  const { data: conversations } = useInboxConversations(workspace.id);
 
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const selected = proposals?.find((proposal) => proposal.id === selectedId);
   const [sendingId, setSendingId] = useState<string | undefined>();
+  // Item 36 do pedido — depois de uma recusa, a tela central também precisa oferecer "Criar
+  // follow-up"/"Marcar negócio como perdido" (antes só os pontos de entrada contextuais —
+  // Conversa/Deal/Contact 360 — tinham isso; a central ficava só com o motivo, sem ação).
+  const [creatingFollowUpFor, setCreatingFollowUpFor] = useState<Proposal | undefined>();
+  const [lossPromptFor, setLossPromptFor] = useState<Proposal | undefined>();
+  const lossPromptDeal = (deals ?? []).find((deal) => deal.id === lossPromptFor?.dealId);
+  const { data: lossPromptStages } = usePipelineStages(lossPromptDeal?.pipelineId, workspace.id);
+  const [lossBusy, setLossBusy] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -72,6 +87,7 @@ function ProposalsView() {
   const [discountReais, setDiscountReais] = useState("");
   const [validUntil, setValidUntil] = useState("");
   const [conditions, setConditions] = useState("");
+  const [templateId, setTemplateId] = useState("none");
   const [busy, setBusy] = useState(false);
   const [newLink, setNewLink] = useState<string | undefined>();
 
@@ -157,16 +173,60 @@ function ProposalsView() {
     }
   }
 
+  function applyTemplate(id: string) {
+    setTemplateId(id);
+    if (id === "none") return;
+    const template = templates?.find((item) => item.id === id);
+    if (!template) return;
+    setTitle(template.defaultTitle);
+    setItems(template.defaultItems.map((item) => ({ productId: item.productId, name: item.name, quantity: item.quantity, unitPriceCents: item.unitPriceCents })));
+    setConditions(template.defaultConditions ?? "");
+    const date = new Date(); date.setDate(date.getDate() + template.defaultValidDays);
+    setValidUntil(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`);
+  }
+
   async function handleSend(proposal: Proposal) {
     setSendingId(proposal.id);
     try {
-      await sendProposal(proposal.id, workspace.id);
+      const conversation = conversations?.conversations.find((item) => item.crmContactId === proposal.contactId);
+      if (!conversation) throw new Error("Este contato não possui conversa vinculada para envio.");
+      const contact = contactsList.find((item) => item.id === proposal.contactId);
+      const message = `${contact?.name ? `Olá, ${contact.name}! ` : "Olá! "}Preparei sua proposta comercial.\n\nVocê pode visualizar aqui:\n{{proposalUrl}}`;
+      await sendProposal(proposal.id, { workspaceId: workspace.id, conversationId: conversation.id, message, idempotencyKey: crypto.randomUUID() });
       await mutate();
-      toast.success("Proposta marcada como enviada.");
+      toast.success(proposal.status === "draft" ? "Proposta enviada." : "Proposta reenviada.");
     } catch (cause) {
       toast.error("Não foi possível enviar", { description: cause instanceof Error ? cause.message : "Tente novamente." });
     } finally {
       setSendingId(undefined);
+    }
+  }
+
+  function handleCreateNewProposalFrom(proposal: Proposal) {
+    setSelectedId(undefined);
+    setContactId(proposal.contactId ?? "");
+    setDealId(proposal.dealId ?? "");
+    setTitle("");
+    setCreateOpen(true);
+  }
+
+  async function handleConfirmLossReason(reason: string) {
+    if (!lossPromptFor || !lossPromptDeal) return;
+    const lostStage = lossPromptStages?.find((stage) => stage.isLost);
+    if (!lostStage) {
+      toast.error("Este pipeline não tem uma etapa de perda configurada.");
+      return;
+    }
+    setLossBusy(true);
+    try {
+      await moveDealStage(lossPromptDeal.id, workspace.id, lostStage.id, reason);
+      toast.success("Negócio marcado como perdido.");
+      setLossPromptFor(undefined);
+      setSelectedId(undefined);
+    } catch (cause) {
+      toast.error("Não foi possível marcar o negócio como perdido", { description: cause instanceof Error ? cause.message : "Tente novamente." });
+    } finally {
+      setLossBusy(false);
     }
   }
 
@@ -178,6 +238,11 @@ function ProposalsView() {
     setDiscountReais("");
     setValidUntil("");
     setConditions("");
+    setTemplateId("none");
+  }
+
+  if (view === "templates") {
+    return <main className="mx-auto max-w-[1280px] px-3 py-5 sm:px-6 sm:py-8"><div className="mb-5 flex items-end justify-between gap-3"><div><h1 className="text-2xl font-semibold tracking-tight">Propostas</h1><div className="mt-3 flex gap-2"><Button variant="secondary" onClick={() => setView("proposals")}>Propostas</Button><Button onClick={() => setView("templates")}>Modelos</Button></div></div></div><ProposalTemplatesPanel workspaceId={workspace.id} /></main>;
   }
 
   return (
@@ -187,7 +252,7 @@ function ProposalsView() {
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Propostas</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Crie, envie e acompanhe propostas conectadas a contatos e negocios reais.</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>Nova proposta</Button>
+        <div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => setView("templates")}>Modelos</Button><Button onClick={() => setCreateOpen(true)}>Nova proposta</Button></div>
       </div>
 
       <FilterBar summary={`${visibleProposals.length} propostas`}>
@@ -248,6 +313,7 @@ function ProposalsView() {
       {createOpen ? (
         <Modal title="Nova proposta" onClose={() => { setCreateOpen(false); resetCreateForm(); }} maxWidthClass="sm:max-w-3xl">
           <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2"><Label htmlFor="proposal-template">Modelo</Label><Select value={templateId} onValueChange={applyTemplate}><SelectTrigger id="proposal-template"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sem modelo</SelectItem>{(templates ?? []).map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}</SelectContent></Select></div>
             <div className="sm:col-span-2">
               <Label htmlFor="proposal-title">Titulo</Label>
               <Input id="proposal-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ex.: Proposta · Plano Pro" />
@@ -339,7 +405,29 @@ function ProposalsView() {
         products={productsList}
         sending={selected ? sendingId === selected.id : false}
         onSend={(proposal) => handleSend(proposal)}
+        onChanged={mutate}
+        onCreateNewProposal={handleCreateNewProposalFrom}
+        onCreateFollowUp={(proposal) => { setSelectedId(undefined); setCreatingFollowUpFor(proposal); }}
+        onMarkDealLost={(proposal) => { setSelectedId(undefined); setLossPromptFor(proposal); }}
       />
+
+      {creatingFollowUpFor ? (
+        <QuickCreateTaskModal
+          workspaceId={workspace.id}
+          contactId={creatingFollowUpFor.contactId}
+          dealChoice={creatingFollowUpFor.dealId ? { mode: "auto", dealId: creatingFollowUpFor.dealId } : { mode: "none" }}
+          title="Criar follow-up"
+          onClose={() => setCreatingFollowUpFor(undefined)}
+          onCreated={async () => {
+            setCreatingFollowUpFor(undefined);
+            toast.success("Follow-up criado.");
+          }}
+        />
+      ) : null}
+
+      {lossPromptFor ? (
+        <LossReasonModal onClose={() => setLossPromptFor(undefined)} onConfirm={handleConfirmLossReason} busy={lossBusy} />
+      ) : null}
     </main>
   );
 }
@@ -384,6 +472,8 @@ function ProposalCard({
   );
 }
 
+const REJECTION_REASON_LABEL: Record<string, string> = { price: "Preço", deadline: "Prazo", scope: "Escopo", other: "Outro" };
+
 function ProposalDetailModal({
   open,
   onOpenChange,
@@ -394,6 +484,10 @@ function ProposalDetailModal({
   products,
   sending,
   onSend,
+  onChanged,
+  onCreateNewProposal,
+  onCreateFollowUp,
+  onMarkDealLost,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -404,8 +498,17 @@ function ProposalDetailModal({
   products: readonly Product[];
   sending: boolean;
   onSend: (proposal: Proposal) => void | Promise<void>;
+  onChanged: () => void | Promise<unknown>;
+  /** Item 36 do pedido — recusar uma proposta nunca significa perder o negócio automaticamente;
+   * essas 3 ações continuam sendo decisão humana, oferecidas aqui na tela central (antes só
+   * existiam nos pontos de entrada contextuais — Conversa/Deal/Contact 360). */
+  onCreateNewProposal?: (proposal: Proposal) => void;
+  onCreateFollowUp?: (proposal: Proposal) => void;
+  onMarkDealLost?: (proposal: Proposal) => void;
 }) {
   const [section, setSection] = useState<ProposalSection>("summary");
+  const [publicLink, setPublicLink] = useState<string>();
+  const [linkBusy, setLinkBusy] = useState(false);
   const { data: timeline, isLoading: timelineLoading, error: timelineError, mutate: mutateTimeline } = useProposalTimeline(proposal?.id, workspaceId);
 
   if (!proposal) return null;
@@ -433,7 +536,7 @@ function ProposalDetailModal({
         <div className="space-y-7">
           <DetailBlock
             label="Resumo"
-            action={proposal.status === "draft" ? <Button size="sm" loading={sending} disabled={sending} onClick={() => { void onSend(proposal); }}>Enviar proposta</Button> : undefined}
+            action={["draft", "sent", "viewed"].includes(proposal.status) ? <Button size="sm" loading={sending} disabled={sending} onClick={() => { void onSend(proposal); }}>{proposal.status === "draft" ? "Enviar proposta" : "Reenviar proposta"}</Button> : undefined}
           >
             <div className="grid gap-3 sm:grid-cols-2">
               <InfoCell label="Cliente" value={contact?.name ?? "Sem contato"} />
@@ -443,14 +546,37 @@ function ProposalDetailModal({
               <InfoCell label="Validade" value={formatDate(proposal.validUntil)} />
               <InfoCell label="Criada" value={formatDateTime(proposal.createdAt)} />
               <InfoCell label="Enviada" value={formatDateTime(proposal.sentAt)} />
+              <InfoCell label="Primeira visualização" value={formatDateTime(proposal.viewedAt)} />
+              <InfoCell label="Última visualização" value={formatDateTime(proposal.lastViewedAt)} />
+              <InfoCell label="Visualizações" value={String(proposal.viewCount ?? 0)} />
               <InfoCell label="Respondida" value={formatDateTime(proposal.respondedAt)} />
             </div>
             {proposal.conditions ? <p className="mt-4 rounded-xl bg-muted/30 px-3 py-3 text-sm text-muted-foreground">{proposal.conditions}</p> : null}
           </DetailBlock>
-          <DetailBlock label="Link público">
-            <p className="text-sm text-muted-foreground">
-              Por segurança, o token bruto não é recuperado depois da criação. Para reexibir um link seria necessário um fluxo explícito de rotação/revogação no backend.
-            </p>
+
+          {proposal.status === "rejected" ? (
+            <DetailBlock label="Proposta recusada">
+              <p className="text-sm text-muted-foreground">
+                Motivo: {proposal.rejectionReason ? REJECTION_REASON_LABEL[proposal.rejectionReason] ?? proposal.rejectionReason : "Não informado"}
+                {proposal.rejectionComment ? ` · ${proposal.rejectionComment}` : ""}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">O negócio continua aberto — recusar uma proposta não significa perder a venda.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button variant="secondary" onClick={() => onCreateNewProposal?.(proposal)}>Criar nova proposta</Button>
+                {onCreateFollowUp ? <Button variant="secondary" onClick={() => onCreateFollowUp(proposal)}>Criar follow-up</Button> : null}
+                {onMarkDealLost && deal ? <Button variant="ghost" onClick={() => onMarkDealLost(proposal)}>Marcar negócio como perdido</Button> : null}
+              </div>
+            </DetailBlock>
+          ) : null}
+
+          <DetailBlock label="Link publico">
+            <p className="text-sm text-muted-foreground">O token bruto nao e armazenado. Gerar outro link invalida o anterior.</p>
+            {publicLink ? <Input className="mt-2" readOnly value={publicLink} onFocus={(event) => event.target.select()} /> : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="secondary" loading={linkBusy} disabled={linkBusy || !["draft", "sent", "viewed"].includes(proposal.status)} onClick={async () => { setLinkBusy(true); try { const result = await regenerateProposalLink(proposal.id, workspaceId); setPublicLink(`${window.location.origin}/p/${result.publicToken}`); await onChanged(); } catch (cause) { toast.error("Nao foi possivel gerar o link", { description: cause instanceof Error ? cause.message : "Tente novamente." }); } finally { setLinkBusy(false); } }}>Gerar novo link</Button>
+              <Button variant="ghost" disabled={linkBusy || Boolean(proposal.publicLinkRevokedAt)} onClick={async () => { setLinkBusy(true); try { await revokeProposalLink(proposal.id, workspaceId); await onChanged(); toast.success("Link revogado."); } catch (cause) { toast.error("Nao foi possivel revogar o link", { description: cause instanceof Error ? cause.message : "Tente novamente." }); } finally { setLinkBusy(false); } }}>Revogar link</Button>
+              {publicLink ? <Button variant="ghost" onClick={() => void navigator.clipboard.writeText(publicLink)}>Copiar</Button> : null}
+            </div>
           </DetailBlock>
         </div>
       ) : null}

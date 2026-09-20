@@ -60,6 +60,23 @@ const MESSAGING_FILE_PATTERNS = [
   /\/infrastructure\/messaging\//,
 ];
 
+/**
+ * Pontes NEUTRAS entre crm e inbox (Fase 1: `commercial-bridge`, Contact automático;
+ * Fase 4: `commercial`, envio de Proposal por WhatsApp) — de propósito NÃO aparecem em
+ * `CRM_FILE_PATTERNS` nem em `MESSAGING_FILE_PATTERNS`: elas precisam importar dos dois lados
+ * (é o que as torna uma ponte), então tratá-las como "crm" ou "messaging" geraria falso-positivo
+ * nas checagens acima. O invariante que continua valendo pra elas: só podem falar com o Inbox
+ * através dos casos de uso já expostos por `/application/inbox/` (`sendInboxMessage` etc.) —
+ * NUNCA importando `/infrastructure/messaging/` (o cliente WuzAPI) diretamente, o que recriaria
+ * um segundo cliente de mensageria fora da Inbox (achado real de auditoria, Fase 4 — commercial
+ * bridge nunca tinha essa regra automatizada, só verificação manual pontual).
+ */
+const BRIDGE_FILE_PATTERNS = [
+  /\/application\/commercial-bridge\//,
+  /\/application\/commercial\//,
+];
+const INFRA_MESSAGING_IMPORT_MARKERS = ["/infrastructure/messaging/"];
+
 const CRM_IMPORT_MARKERS = [
   "/domain/crm/", "/application/crm/", "/ports/contact-", "/ports/timeline-event-repository",
   "/ports/pipeline-repository", "/ports/deal-repository", "/ports/task-repository", "/ports/product-repository", "/ports/proposal-repository",
@@ -98,6 +115,19 @@ async function main() {
     const relPath = relative(projectRoot, file).replace(/\\/g, "/");
     const isCrm = matchesAny(relPath, CRM_FILE_PATTERNS);
     const isMessaging = matchesAny(relPath, MESSAGING_FILE_PATTERNS);
+    const isBridge = matchesAny(relPath, BRIDGE_FILE_PATTERNS);
+
+    if (isBridge) {
+      const content = await readFile(file, "utf8");
+      for (const line of importLinesOf(content)) {
+        const marker = INFRA_MESSAGING_IMPORT_MARKERS.find((candidate) => line.includes(candidate));
+        if (marker) {
+          violations.push(`${relPath}: ponte crm/inbox importando "${marker}" diretamente — deve falar com o Inbox só via /application/inbox/ (nunca o cliente de mensageria direto).`);
+        }
+      }
+      continue;
+    }
+
     if (!isCrm && !isMessaging) continue;
 
     const content = await readFile(file, "utf8");

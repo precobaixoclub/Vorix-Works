@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { RescheduleTaskPopover } from "@/components/crm/RescheduleTaskPopover";
 import { QuickCreateTaskModal } from "@/components/crm/QuickCreateTaskModal";
+import { QuickCreateProposalModal } from "@/components/crm/QuickCreateProposalModal";
+import { ProposalDetailModal } from "@/components/crm/ProposalDetailModal";
 import { DetailBlock, DetailModal } from "@/components/DetailModal";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label } from "@/components/Field";
@@ -39,7 +41,6 @@ export function DealDetailModal({
   teams,
   onChanged,
   onMove,
-  onCreateProposal,
   onOpenConversation,
 }: {
   open: boolean;
@@ -55,7 +56,6 @@ export function DealDetailModal({
   teams: readonly Team[];
   onChanged: () => void | Promise<void>;
   onMove: (deal: Deal, stage: PipelineStage) => void | Promise<void>;
-  onCreateProposal?: (deal: Deal) => void;
   /** Jornada Comercial Fase 2, item 16 — se o Contact do negócio tiver conversa, mostra "Abrir
    * conversa" abrindo a InboxConversation correta. Omitido (undefined) quando o chamador não sabe
    * resolver a conversa daquele contato ou quando não faz sentido no contexto (ex.: dentro do
@@ -67,6 +67,8 @@ export function DealDetailModal({
   // Jornada Comercial Fase 3, item 18 — criação de tarefa a partir do negócio é SEMPRE inline
   // (nunca navega pra outra tela); `dealId` nunca é ambíguo aqui (é sempre ESTE negócio).
   const [creatingTask, setCreatingTask] = useState(false);
+  const [creatingProposal, setCreatingProposal] = useState(false);
+  const [openProposalId, setOpenProposalId] = useState<string>();
   const [completingTaskId, setCompletingTaskId] = useState<string | undefined>();
   const dealTasks = deal ? tasks.filter((task) => task.dealId === deal.id) : [];
   const pendingDealTasks = [...dealTasks]
@@ -137,12 +139,12 @@ export function DealDetailModal({
             onCompleteTask={handleCompleteTask}
             onTaskRescheduled={onChanged}
             onViewAllTasks={() => setSection("activities")}
-            onCreateProposal={onCreateProposal ? () => onCreateProposal(deal) : undefined}
+            onCreateProposal={() => setCreatingProposal(true)}
             onOpenConversation={onOpenConversation ? () => onOpenConversation(deal) : undefined}
           />
         ) : null}
         {section === "activities" ? <DealActivities tasks={dealTasks} members={members} /> : null}
-        {section === "proposals" ? <DealProposals proposals={dealProposals} /> : null}
+        {section === "proposals" ? <DealProposals proposals={dealProposals} onCreate={() => setCreatingProposal(true)} onOpen={setOpenProposalId} /> : null}
         {section === "timeline" ? <DealTimeline dealId={deal.id} workspaceId={workspaceId} /> : null}
       </DetailModal>
 
@@ -171,6 +173,19 @@ export function DealDetailModal({
             await onChanged();
           }}
         />
+      ) : null}
+      {creatingProposal ? (
+        <QuickCreateProposalModal
+          workspaceId={workspaceId}
+          contactId={deal.contactId}
+          contactName={contact?.name}
+          dealChoice={{ mode: "auto", dealId: deal.id }}
+          onClose={() => setCreatingProposal(false)}
+          onCreated={async () => { setCreatingProposal(false); await onChanged(); }}
+        />
+      ) : null}
+      {openProposalId ? (
+        <ProposalDetailModal workspaceId={workspaceId} proposal={dealProposals.find((proposal) => proposal.id === openProposalId)!} contactName={contact?.name} dealTitle={deal.title} onClose={() => setOpenProposalId(undefined)} onChanged={onChanged} onCreateNewProposal={() => { setOpenProposalId(undefined); setCreatingProposal(true); }} onCreateFollowUp={() => { setOpenProposalId(undefined); setCreatingTask(true); }} onMarkDealLost={stages.some((stage) => stage.isLost) ? () => { setOpenProposalId(undefined); void onMove(deal, stages.find((stage) => stage.isLost)!); } : undefined} />
       ) : null}
     </>
   );
@@ -317,20 +332,21 @@ function DealActivities({ tasks, members }: { tasks: readonly Task[]; members: r
   );
 }
 
-function DealProposals({ proposals }: { proposals: readonly Proposal[] }) {
-  if (proposals.length === 0) return <p className="text-sm text-muted-foreground">Nenhuma proposta vinculada a este negócio.</p>;
+function DealProposals({ proposals, onCreate, onOpen }: { proposals: readonly Proposal[]; onCreate: () => void; onOpen: (id: string) => void }) {
   return (
     <div className="space-y-2">
+      <div className="flex justify-end"><Button size="sm" onClick={onCreate}>+ Nova proposta</Button></div>
+      {proposals.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma proposta vinculada a este negócio.</p> : null}
       {proposals.map((proposal) => (
-        <div key={proposal.id} className="rounded-xl border border-border/70 bg-card px-3 py-3">
+        <button type="button" onClick={() => onOpen(proposal.id)} key={proposal.id} className="block w-full rounded-xl border border-border/70 bg-card px-3 py-3 text-left hover:border-primary/40">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium text-foreground">{proposal.title}</p>
             <StatusBadge status={proposal.status} />
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            {formatCurrencyCents(proposal.totalCents, proposal.currency)} · {PROPOSAL_STATUS_LABEL[proposal.status]} · validade {formatDate(proposal.validUntil)}
+            {formatCurrencyCents(proposal.totalCents, proposal.currency)} · {PROPOSAL_STATUS_LABEL[proposal.status]} · validade {formatDate(proposal.validUntil)}{proposal.viewCount ? ` · ${proposal.viewCount} visualização${proposal.viewCount === 1 ? "" : "ões"}` : ""}
           </p>
-        </div>
+        </button>
       ))}
     </div>
   );

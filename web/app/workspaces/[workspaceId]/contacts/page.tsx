@@ -9,6 +9,8 @@ import { DealDetailModal } from "@/components/crm/DealDetailModal";
 import { LossReasonModal } from "@/components/crm/LossReasonModal";
 import { QuickCreateDealModal } from "@/components/crm/QuickCreateDealModal";
 import { QuickCreateTaskModal } from "@/components/crm/QuickCreateTaskModal";
+import { QuickCreateProposalModal } from "@/components/crm/QuickCreateProposalModal";
+import { ProposalDetailModal } from "@/components/crm/ProposalDetailModal";
 import { RescheduleTaskPopover } from "@/components/crm/RescheduleTaskPopover";
 import { DetailBlock, DetailModal } from "@/components/DetailModal";
 import { EmptyState } from "@/components/EmptyState";
@@ -72,7 +74,7 @@ function ContactsView() {
   // buscar só o de um contato por vez enquanto a grade inteira está visível.
   const { data: deals, mutate: mutateDeals } = useDeals(workspace.id);
   const { data: tasks, mutate: mutateTasks } = useTasks(workspace.id);
-  const { data: proposals } = useProposals(workspace.id);
+  const { data: proposals, mutate: mutateProposals } = useProposals(workspace.id);
   const { data: conversations } = useInboxConversations(workspace.id);
   const { data: membersData } = useInboxMembers(workspace.id);
   const { data: teams } = useTeams(workspace.id);
@@ -120,7 +122,7 @@ function ContactsView() {
   // extra à toa; só quando um contato é selecionado é que vira uma chamada genuinamente escopada.
   const { data: selectedContactDeals, mutate: mutateSelectedContactDeals } = useDeals(workspace.id, { contactId: selectedContactId });
   const { data: selectedContactTasks, mutate: mutateSelectedContactTasks } = useTasks(workspace.id, { contactId: selectedContactId });
-  const { data: selectedContactProposals } = useProposals(workspace.id, { contactId: selectedContactId });
+  const { data: selectedContactProposals, mutate: mutateSelectedContactProposals } = useProposals(workspace.id, { contactId: selectedContactId });
   // Mesmo racional acima, agora para a aba Conversas do Contact 360 (item 17 do pedido: antes
   // buscava o workspace inteiro e filtrava no frontend — a API já aceita `contactId` de verdade).
   const { data: selectedContactConversations } = useInboxConversations(workspace.id, "all", selectedContactId);
@@ -310,11 +312,11 @@ function ContactsView() {
         onChanged={async () => { await mutate(); }}
         onDealsChanged={async () => { await mutateSelectedContactDeals(); }}
         onTasksChanged={async () => { await Promise.all([mutateSelectedContactTasks(), mutateTasks()]); }}
+        onProposalsChanged={async () => { await Promise.all([mutateSelectedContactProposals(), mutateProposals()]); }}
         onOpenDeal={(dealId) => {
           closeContact();
           setSelectedDealId(dealId);
         }}
-        onCreateProposal={(contact) => router.push(`/workspaces/${workspace.id}/proposals?contactId=${contact.id}`)}
       />
 
       <DealDetailModal
@@ -331,7 +333,6 @@ function ContactsView() {
         teams={teamsList}
         onChanged={async () => { await Promise.all([mutateDeals(), mutate(), mutateTasks(), mutateSelectedContactTasks()]); }}
         onMove={(deal, stage) => requestMoveDeal(deal, stage)}
-        onCreateProposal={(deal) => router.push(`/workspaces/${workspace.id}/proposals?dealId=${deal.id}${deal.contactId ? `&contactId=${deal.contactId}` : ""}`)}
         onOpenConversation={selectedDeal?.contactId && conversationByContactId.has(selectedDeal.contactId) ? (deal) => {
           const conversation = deal.contactId ? conversationByContactId.get(deal.contactId) : undefined;
           if (!conversation) return;
@@ -410,7 +411,7 @@ function ContactDetailModal({
   onDealsChanged,
   onTasksChanged,
   onOpenDeal,
-  onCreateProposal,
+  onProposalsChanged,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -425,14 +426,16 @@ function ContactDetailModal({
   onChanged: () => void | Promise<void>;
   onDealsChanged: () => void | Promise<void>;
   onTasksChanged: () => void | Promise<void>;
+  onProposalsChanged: () => void | Promise<void>;
   onOpenDeal: (dealId: string) => void;
-  onCreateProposal: (contact: Contact) => void;
 }) {
   const router = useRouter();
   const [section, setSection] = useState<ContactSection>("summary");
   const [editing, setEditing] = useState(false);
   const [creatingDeal, setCreatingDeal] = useState(false);
   const [creatingTask, setCreatingTask] = useState(false);
+  const [creatingProposal, setCreatingProposal] = useState(false);
+  const [openProposalId, setOpenProposalId] = useState<string>();
   const [completingTaskId, setCompletingTaskId] = useState<string | undefined>();
   const { data: timeline, isLoading: timelineLoading, error: timelineError, mutate: mutateTimeline } = useContactTimeline(contact?.id, workspaceId);
   const { data: leadScore, isLoading: scoreLoading } = useLeadScore(contact?.id, workspaceId);
@@ -513,7 +516,7 @@ function ContactDetailModal({
                 {primaryConversation ? <Button variant="secondary" onClick={() => router.push(`/workspaces/${workspaceId}/conversas?conversation=${primaryConversation.id}`)}>Enviar mensagem</Button> : null}
                 <Button variant="secondary" onClick={() => setCreatingDeal(true)}>Criar negócio</Button>
                 <Button variant="secondary" onClick={() => setCreatingTask(true)}>Criar tarefa</Button>
-                <Button variant="secondary" onClick={() => onCreateProposal(contact)}>Criar proposta</Button>
+                <Button variant="secondary" onClick={() => setCreatingProposal(true)}>Criar proposta</Button>
               </div>
             </DetailBlock>
           </div>
@@ -591,17 +594,26 @@ function ContactDetailModal({
         ) : null}
 
         {section === "proposals" ? (
-          <ListBlock empty="Nenhuma proposta vinculada a este contato.">
-            {proposals.map((proposal) => (
-              <div key={proposal.id} className="rounded-xl border border-border/70 bg-card px-3 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-foreground">{proposal.title}</p>
-                  <StatusBadge status={proposal.status} />
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">{formatCurrencyCents(proposal.totalCents, proposal.currency)} · {PROPOSAL_STATUS_LABEL[proposal.status]}</p>
+          <div className="space-y-5">
+            <div className="flex justify-end"><Button variant="secondary" size="sm" onClick={() => setCreatingProposal(true)}>+ Criar proposta</Button></div>
+            {proposals.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma proposta vinculada a este contato.</p> : null}
+            {[
+              { title: "Ativas", items: proposals.filter((proposal) => ["draft", "sent", "viewed"].includes(proposal.status)) },
+              { title: "Aceitas", items: proposals.filter((proposal) => proposal.status === "accepted") },
+              { title: "Recusadas", items: proposals.filter((proposal) => proposal.status === "rejected") },
+              { title: "Expiradas", items: proposals.filter((proposal) => proposal.status === "expired") },
+            ].filter((group) => group.items.length > 0).map((group) => (
+              <div key={group.title}>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{group.title} ({group.items.length})</p>
+                <div className="space-y-2">{group.items.map((proposal) => (
+                  <button type="button" onClick={() => setOpenProposalId(proposal.id)} key={proposal.id} className="block w-full rounded-xl border border-border/70 bg-card px-3 py-3 text-left hover:border-primary/40">
+                    <div className="flex items-center justify-between gap-2"><p className="text-sm font-medium text-foreground">{proposal.title}</p><StatusBadge status={proposal.status} /></div>
+                    <p className="mt-1 text-xs text-muted-foreground">{formatCurrencyCents(proposal.totalCents, proposal.currency)} · {PROPOSAL_STATUS_LABEL[proposal.status]}{proposal.viewCount ? ` · ${proposal.viewCount} visualização${proposal.viewCount === 1 ? "" : "ões"}` : ""}</p>
+                  </button>
+                ))}</div>
               </div>
             ))}
-          </ListBlock>
+          </div>
         ) : null}
 
         {section === "timeline" ? (
@@ -643,6 +655,29 @@ function ContactDetailModal({
             setCreatingTask(false);
             await onTasksChanged();
           }}
+        />
+      ) : null}
+      {creatingProposal ? (
+        <QuickCreateProposalModal
+          workspaceId={workspaceId}
+          contactId={contact.id}
+          contactName={contact.name}
+          dealChoice={dealChoice}
+          onClose={() => setCreatingProposal(false)}
+          onCreated={async () => { setCreatingProposal(false); await onProposalsChanged(); }}
+        />
+      ) : null}
+      {openProposalId ? (
+        <ProposalDetailModal
+          workspaceId={workspaceId}
+          proposal={proposals.find((proposal) => proposal.id === openProposalId)!}
+          contactName={contact.name}
+          dealTitle={deals.find((deal) => deal.id === proposals.find((proposal) => proposal.id === openProposalId)?.dealId)?.title}
+          conversationId={primaryConversation?.id}
+          onClose={() => setOpenProposalId(undefined)}
+          onChanged={onProposalsChanged}
+          onCreateNewProposal={() => { setOpenProposalId(undefined); setCreatingProposal(true); }}
+          onCreateFollowUp={() => { setOpenProposalId(undefined); setCreatingTask(true); }}
         />
       ) : null}
     </>

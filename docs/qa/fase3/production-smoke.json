@@ -1,0 +1,140 @@
+{
+  "recordedAt": "2026-09-20T02:33:26.728Z",
+  "scope": "Production anonymous browser and HTTP smoke; no authenticated business QA",
+  "pages": [
+    {
+      "page": "login",
+      "width": 1440,
+      "status": 200,
+      "overflow": false
+    },
+    {
+      "page": "/home",
+      "status": 200,
+      "finalPath": "/login",
+      "authenticated": false
+    },
+    {
+      "page": "/conversas",
+      "status": 200,
+      "finalPath": "/login",
+      "authenticated": false
+    },
+    {
+      "page": "/contacts",
+      "status": 200,
+      "finalPath": "/login",
+      "authenticated": false
+    },
+    {
+      "page": "/deals",
+      "status": 200,
+      "finalPath": "/login",
+      "authenticated": false
+    },
+    {
+      "page": "/tasks",
+      "status": 200,
+      "finalPath": "/login",
+      "authenticated": false
+    },
+    {
+      "page": "login",
+      "width": 390,
+      "status": 200,
+      "overflow": false
+    }
+  ],
+  "errors": [],
+  "/v1/health": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "data": {
+        "status": "ok",
+        "uptimeSeconds": 137,
+        "version": "v1"
+      },
+      "meta": {
+        "requestId": "22901775-eead-46ba-9e53-852a70847587"
+      }
+    }
+  },
+  "/readyz": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "data": {
+        "ready": true,
+        "status": "degraded",
+        "generatedAt": "2026-09-20T02:33:38.409Z",
+        "checks": [
+          {
+            "id": "database",
+            "component": "database",
+            "status": "pass",
+            "safeMessage": "PostgreSQL acessivel.",
+            "observedAt": "2026-09-20T02:33:38.408Z",
+            "latencyMs": 1
+          },
+          {
+            "id": "secret_manager",
+            "component": "secrets",
+            "status": "pass",
+            "safeMessage": "Secret Manager de produção (Postgres, AES-256-GCM) disponível.",
+            "observedAt": "2026-09-20T02:33:38.409Z",
+            "latencyMs": 1,
+            "details": {
+              "provider": "production"
+            }
+          },
+          {
+            "id": "operational_state",
+            "component": "operations",
+            "status": "pass",
+            "safeMessage": "Repositorio operacional PostgreSQL disponivel.",
+            "observedAt": "2026-09-20T02:33:38.409Z",
+            "latencyMs": 0
+          },
+          {
+            "id": "production_guard",
+            "component": "release",
+            "status": "warn",
+            "safeMessage": "Production habilitado por configuracao.",
+            "observedAt": "2026-09-20T02:33:38.409Z",
+            "details": {
+              "environment": "production",
+              "productionEnabled": true,
+              "providerEnvironment": "production",
+              "canaryEnabled": true,
+              "canaryTenantCount": 1,
+              "canaryWorkspaceCount": 1,
+              "allowedProductionProviders": [
+                "instagram",
+                "facebook",
+                "linkedin",
+                "x",
+                "tiktok",
+                "youtube"
+              ]
+            }
+          },
+          {
+            "id": "publication_queue",
+            "component": "publication",
+            "status": "pass",
+            "safeMessage": "Fila local de publication com 0 jobs.",
+            "observedAt": "2026-09-20T02:33:38.409Z",
+            "latencyMs": 0,
+            "details": {
+              "size": 0
+            }
+          }
+        ]
+      },
+      "meta": {
+        "requestId": "3a125904-bc9a-4310-b8a0-b35d6d98012d"
+      }
+    }
+  }
+}

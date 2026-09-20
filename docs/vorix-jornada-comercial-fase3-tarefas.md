@@ -170,11 +170,114 @@ Inclui as correções descobertas na revisão, 14 testes unitários de agendamen
 
 ### Deploy e QA de produção
 
-Fechamento em andamento. Acesso SSH confirmado no host documentado em `docs/deployment.md`.
-Acesso autenticado ao workspace foi solicitado ao operador e ainda não foi disponibilizado.
-Nenhum resultado de fixture local será classificado como VERIFIED_RUNTIME de produção.
-O deploy usa `git archive` do SHA confirmado no `origin/main`, backup prévio e comparação do
-arquivo de ambiente e das variáveis de runtime dos três serviços.
-`INBOX_CRM_AUTO_CONTACT_ENABLED` permanece efetivamente false (ausente, default false).
+`DEPLOYED_SHA = 5bd44a3fc0b0fe9b3952581ae09febaac39828b3`.
 
-`PHASE_3_PRODUCTION_READY = NO` — até deploy, smoke e QA autenticado concluídos.
+Esse commit (`docs: registra validação local da Fase 3 comercial`) inclui a implementação
+`9737237a3033ea8026c9858784db48588dd11582`. Push normal para `origin/main`, sem force;
+HEAD == origin/main e working tree limpa antes do empacotamento.
+
+- Pacote: `git archive --format=tar` do SHA exato, 26.163.200 bytes.
+- SHA-256 conferido localmente e no servidor:
+  `7c78ac412b80d0731bef4e49c3361a1f29c5d1b6f9a26c39807535f4ce2b46e0`.
+- Backup: `/opt/zuno/deploy_backups/pre-phase3-20260920T022921Z.tgz`.
+- Extração em `/opt/zuno`; `tar -df` confirmou o conteúdo do archive antes e depois do build.
+- Build/recreate dirigido a `zuno-api`, `zuno-web`, `vorix-worker`, usando o Compose existente.
+- Nenhuma migration nova, nenhum comando de migration/backfill executado. Os hooks idempotentes
+  já existentes no startup da API foram preservados.
+- SHA-256 de `.env.zuno` antes/depois idêntico:
+  `3470644bf708162fba7590256a2c4cc0e2c3acd981c39396b064888e91e4fa5c`.
+- `INBOX_CRM_AUTO_CONTACT_ENABLED=false` efetivo, confirmado no worker após o deploy.
+- Nenhuma flag foi editada.
+
+**Ocorrência operacional:** a comparação inicial do texto bruto de `Config.Env` divergiu e
+interrompeu o script depois de iniciar os containers. A investigação confirmou o mesmo
+`com.docker.compose.config-hash` dos três serviços antes/depois, o mesmo `.env.zuno`, e nenhuma
+divergência de valor entre o runtime e a configuração resolvida do Compose/imagem. O hash bruto
+não foi usado como prova de equivalência. O registro do SHA só foi finalizado após essas
+verificações e nova conferência do archive. Não foi necessária alteração de aplicação nem redeploy.
+
+### Saúde e smoke pós-deploy
+
+Verificado em **2026-09-20 02:33 UTC** (19/09, 23:33 em São Paulo).
+
+`PRODUCTION_HEALTH = PASS`, com o aviso preexistente de readiness descrito abaixo.
+
+| Checagem | Resultado |
+|---|---|
+| API | running / Docker healthy; `/v1/health` HTTP 200, status ok |
+| WORKER | running / Docker healthy; ponte automática false |
+| WEB | running; `/` e `/login` HTTP 200; login renderiza no Chrome |
+| `/readyz` | HTTP 200, ready=true; database, secrets, operations e fila PASS |
+| Aviso de readiness | status degraded por production_guard=warn, preexistente na Fase 2; configuração preservada |
+| Logs desde 02:29:21Z | 0 ocorrências de error/fatal/uncaught/unhandled/níveis 50–60 nos três serviços |
+| Login, 1440 e 390 | Campos e botão renderizam, sem pageerror ou overflow horizontal |
+| Home, Conversas, Contatos, Negócios, Tarefas sem sessão | Redirecionam corretamente ao login; conteúdo autenticado não foi exercitado |
+
+O frontend não possui Docker healthcheck; sua saúde foi verificada por HTTP e renderização real,
+sem atribuir a ele um status Docker healthy inexistente.
+**SMOKE_ANONYMOUS = PASS; SMOKE_AUTHENTICATED = PENDING_ACCESS**. Renderizar o login não comprova
+autenticação bem-sucedida nem o funcionamento interno das cinco telas protegidas.
+
+Evidências: [smoke JSON](qa/fase3/production-smoke.json),
+[login de produção 1440](qa/fase3/production-login-1440.png),
+[login de produção 390](qa/fase3/production-login-390.png).
+
+### Histórico de commits do fechamento
+
+- `9737237a3033ea8026c9858784db48588dd11582`: implementação final e regressões.
+- `5bd44a3fc0b0fe9b3952581ae09febaac39828b3`: documentação pré-deploy; **SHA publicado**.
+- O commit que contém esta atualização final e `docs/qa/fase3/` registra smoke, imagens e
+  classificação; é somente documental e não altera o código da aplicação publicada.
+
+### Browser QA e screenshots
+
+Regressão local: 10/10 cenários passaram. Uma execução adicional de quatro cenários passou
+para persistir os screenshots (a primeira usava anexos em memória do reporter).
+Os dados das imagens são fixtures controladas; não são clientes de produção.
+
+| Evidência local | Desktop | 390px |
+|---|---|---|
+| Criação inline | [1440](qa/fase3/local-1440-phase3-criacao-inline.png) | [390](qa/fase3/local-390-phase3-criacao-inline.png) |
+| Reagendamento | [1440](qa/fase3/local-1440-phase3-reagendar.png) | [390](qa/fase3/local-390-phase3-reagendar.png) |
+| Próxima ação e toast 403 | [1440](qa/fase3/local-1440-phase3-conversa.png) | [390](qa/fase3/local-390-phase3-conversa.png) |
+| Contact 360 / atrasada | [1440](qa/fase3/local-1440-phase3-contact360.png) | [390](qa/fase3/local-390-phase3-contact360.png) |
+| Home / tarefa atrasada | [1440](qa/fase3/local-1440-phase3-home.png) | [390](qa/fase3/local-390-phase3-home.png) |
+
+Os screenshots de criação, reagendamento, próxima ação e Contact 360 foram inspecionados visualmente.
+O Chrome confirma criação inline, ausência de overflow horizontal, nomes acessíveis dos inputs,
+mesmo ID ao reagendar/concluir e navegação para `?conversation=conv-phase3`.
+O teclado virtual real permanece sem evidência: viewport reduzida não equivale a aparelho físico.
+
+### Limite da classificação de produção
+
+Não foi fornecida conta de teste nem sessão autenticada de produção após a solicitação nesta rodada.
+Não foram criados tokens artificialmente, alteradas credenciais, semeados dados pelo banco nem
+modificadas conversas de clientes. O QA real autenticado continua bloqueado por esse acesso.
+`PENDING_QA` distingue ausência de evidência de uma falha reproduzida; marcar esses itens como
+`VERIFIED_RUNTIME` ou declarar um bug `FAILED` sem executar o fluxo seria incorreto.
+
+| Critério em produção | Classificação | Evidência disponível / falta |
+|---|---|---|
+| CONVERSATION_CREATE_TASK | PENDING_QA | UI local: criação inline com Contact e Deal corretos |
+| CONTACT_ONLY_TASK | PENDING_QA | UI local: contactId correto e dealId ausente |
+| MULTIPLE_DEALS_TASK_CONTEXT | PENDING_QA | UI local: Sem negócio por padrão; escolha explícita do segundo Deal |
+| NEXT_PENDING_TASK | PENDING_QA | UI local: tarefa criada exibida; prioridade da atrasada; vazio após concluir |
+| DEAL_CREATE_TASK | PENDING_QA | UI local: negócio embutido atualiza imediatamente após criar/concluir |
+| CONTACT_CREATE_TASK | PENDING_QA | UI local: Contact 360 cria sem navegar |
+| TASK_RESCHEDULE | PENDING_QA | UI local: mesmo ID, ISO correto, erro 403 visível, sucesso atualiza |
+| TASK_COMPLETE | PENDING_QA | UI local e backend: status done, completedAt; falta clique autenticado |
+| OVERDUE_TASK | PENDING_QA | Fixture local aparece em Atrasadas, conversa, Contact 360 e Home |
+| TASKS_SCREEN | PENDING_QA | UI local: agrupamento Atrasadas e contexto; demais ações sem QA produtivo |
+| TASK_OPEN_CONVERSATION | PENDING_QA | UI local navega à conversa exata do Contact |
+| TASK_HOME_INTEGRATION | PENDING_QA | UI local: tarefa controlada exibida no painel existente |
+| TASK_CROSS_SCREEN_CONSISTENCY | PENDING_QA | Fixture única em Contact 360, Tarefas, Conversas e Home; sem duplicata |
+| MOBILE_TASK_FLOW | PENDING_QA | 5/5 cenários em 390px; falta backend real e teclado virtual |
+| WORKSPACE_TIMEZONE | NOT_IMPLEMENTED_PREEXISTING | Risco sistêmico documentado; não é o bloqueador desta fase |
+| PHASE_3_PRODUCTION_READY | NO | Falta QA real autenticado, incluindo smoke funcional das telas privadas |
+
+Para concluir, usar um workspace de teste autenticado e repetir o roteiro original completo:
+conversa com Deal, sem Deal e múltiplos Deals; responsável atribuído; próxima tarefa após conclusão;
+concluir/reagendar nas quatro telas; Ver no negócio; indicadores; mesma Task após reload; mobile
+com teclado. Só então substituir PENDING_QA por VERIFIED_RUNTIME/PASS ou FAILED com evidência.
+
+Fase 4 não iniciada. Nenhuma funcionalidade de Propostas adicionada.

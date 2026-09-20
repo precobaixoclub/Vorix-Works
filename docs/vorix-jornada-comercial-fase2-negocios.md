@@ -183,7 +183,7 @@ Feitos na rodada de fechamento (2026-09-19), depois de revisar o diff completo
 
 - `9d4fee8` — `fix(crm): fecha gaps da Fase 1 — deep-link, fetch escopado e backfill controlado`
 - `c8344e4` — `feat(crm): integra negócios à conversa e Contact 360 (Fase 2)`
-- (este commit de documentação, hash abaixo)
+- `bf3e598` — `docs: registra Fase 2 da jornada comercial` (este documento)
 
 Working tree limpo depois dos commits (só o `dist/` gerado pelo build local, ignorado pelo git).
 

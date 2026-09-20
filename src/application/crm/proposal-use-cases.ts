@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { DealRepositoryPort } from "../ports/deal-repository.port.js";
 import type { PipelineStageRepositoryPort } from "../ports/pipeline-repository.port.js";
 import type { ProposalRepositoryPort, UpdateProposalInput } from "../ports/proposal-repository.port.js";
+import type { ContactRepositoryPort } from "../ports/contact-repository.port.js";
+import type { DealRepositoryPort } from "../ports/deal-repository.port.js";
 import type { TimelineEventRepositoryPort } from "../ports/timeline-event-repository.port.js";
 import { evaluateAutomationTrigger, type AutomationUseCaseDeps } from "./automation-use-cases.js";
 import type { Proposal, ProposalItem } from "../../domain/crm/crm.model.js";
@@ -10,6 +11,8 @@ import { recordFirstEvent, type ProductAnalyticsUseCaseDeps } from "../product-a
 export type ProposalUseCaseDeps = {
   proposalRepository: ProposalRepositoryPort;
   timelineEventRepository: TimelineEventRepositoryPort;
+  contactRepository?: ContactRepositoryPort;
+  dealRepository?: DealRepositoryPort;
   /** Fase 6 — opcional de propósito, mesmo racional de `DealUseCaseDeps.automation`. Dispara
    * `proposal_accepted`/`proposal_rejected` a partir de `respondToPublicProposal`. */
   automation?: AutomationUseCaseDeps;
@@ -62,10 +65,27 @@ export async function mustProposalBelongToTenantAndWorkspace(deps: ProposalUseCa
 }
 
 export async function createProposal(deps: ProposalUseCaseDeps, input: { tenantId: string; workspaceId: string; dealId?: string; contactId?: string; title: string; items: readonly ProposalItem[]; discountCents?: number; currency?: string; validUntil?: string; conditions?: string }): Promise<{ proposal: Proposal; rawToken: string }> {
+  let contactId = input.contactId;
+  if (contactId && deps.contactRepository) {
+    const contact = await deps.contactRepository.getById(contactId);
+    if (!contact || contact.tenantId !== input.tenantId || contact.workspaceId !== input.workspaceId) {
+      throw new Error("PROPOSAL_CONTEXT_INVALID: contato não pertence a este workspace.");
+    }
+  }
+  if (input.dealId && deps.dealRepository) {
+    const deal = await deps.dealRepository.getById(input.dealId);
+    if (!deal || deal.tenantId !== input.tenantId || deal.workspaceId !== input.workspaceId) {
+      throw new Error("PROPOSAL_CONTEXT_INVALID: negócio não pertence a este workspace.");
+    }
+    if (contactId && deal.contactId && deal.contactId !== contactId) {
+      throw new Error("PROPOSAL_CONTEXT_INVALID: negócio e contato não correspondem.");
+    }
+    contactId ??= deal.contactId;
+  }
   const discountCents = input.discountCents ?? 0;
   const { items, totalCents } = computeItemsAndTotal(input.items, discountCents);
   const rawToken = generateProposalToken();
-  const proposal = await deps.proposalRepository.create({ ...input, items, discountCents, totalCents, publicTokenHash: hashProposalToken(rawToken) });
+  const proposal = await deps.proposalRepository.create({ ...input, contactId, items, discountCents, totalCents, publicTokenHash: hashProposalToken(rawToken) });
   await deps.timelineEventRepository.record({
     tenantId: proposal.tenantId,
     workspaceId: proposal.workspaceId,
@@ -82,7 +102,10 @@ export async function createProposal(deps: ProposalUseCaseDeps, input: { tenantI
 }
 
 export async function listProposals(deps: ProposalUseCaseDeps, input: { tenantId: string; workspaceId: string; dealId?: string; contactId?: string }): Promise<Proposal[]> {
-  return deps.proposalRepository.listByWorkspace(input);
+  const proposals = await deps.proposalRepository.listByWorkspace(input);
+  return Promise.all(proposals.map((proposal) => isExpired(proposal) && !["accepted", "rejected", "expired"].includes(proposal.status)
+    ? deps.proposalRepository.setStatus(proposal.id, { status: "expired" })
+    : proposal));
 }
 
 export async function getProposal(deps: ProposalUseCaseDeps, input: { proposalId: string; tenantId: string; workspaceId: string }): Promise<Proposal> {
@@ -104,16 +127,17 @@ export async function updateProposal(deps: ProposalUseCaseDeps, input: { proposa
 
 export async function sendProposal(deps: ProposalUseCaseDeps, input: { proposalId: string; tenantId: string; workspaceId: string }): Promise<Proposal> {
   const existing = await mustProposalBelongToTenantAndWorkspace(deps, input.proposalId, input.tenantId, input.workspaceId);
-  if (existing.status !== "draft") {
-    throw new Error("PROPOSAL_ALREADY_SENT: esta proposta já foi enviada.");
+  if (!["draft", "sent", "viewed"].includes(existing.status)) {
+    throw new Error(`PROPOSAL_NOT_SENDABLE: proposta com status "${existing.status}" não pode ser enviada.`);
   }
-  const proposal = await deps.proposalRepository.setStatus(input.proposalId, { status: "sent", sentAt: new Date().toISOString() });
+  const isResend = existing.status !== "draft";
+  const proposal = await deps.proposalRepository.setStatus(input.proposalId, { status: existing.status === "draft" ? "sent" : existing.status, sentAt: existing.sentAt ?? new Date().toISOString() });
   await deps.timelineEventRepository.record({
     tenantId: proposal.tenantId,
     workspaceId: proposal.workspaceId,
     entityType: "proposal",
     entityId: proposal.id,
-    eventType: "proposal_sent",
+    eventType: isResend ? "proposal_resent" : "proposal_sent",
     actorType: "user",
     payload: {},
   });
@@ -121,6 +145,21 @@ export async function sendProposal(deps: ProposalUseCaseDeps, input: { proposalI
     await recordFirstEvent(deps.productAnalytics, { eventName: "first_proposal_sent", source: "server", tenantId: proposal.tenantId, workspaceId: proposal.workspaceId });
   }
   return proposal;
+}
+
+export async function regenerateProposalLink(deps: ProposalUseCaseDeps, input: { proposalId: string; tenantId: string; workspaceId: string }): Promise<{ proposal: Proposal; rawToken: string }> {
+  const existing = await mustProposalBelongToTenantAndWorkspace(deps, input.proposalId, input.tenantId, input.workspaceId);
+  if (["accepted", "rejected", "expired"].includes(existing.status)) throw new Error("PROPOSAL_LINK_NOT_AVAILABLE: esta proposta já foi encerrada.");
+  const rawToken = generateProposalToken();
+  const proposal = await deps.proposalRepository.rotatePublicToken(existing.id, hashProposalToken(rawToken));
+  await deps.timelineEventRepository.record({ tenantId: proposal.tenantId, workspaceId: proposal.workspaceId, entityType: "proposal", entityId: proposal.id, eventType: "proposal_link_regenerated", actorType: "user", payload: {} });
+  return { proposal, rawToken };
+}
+
+export async function revokeProposalLink(deps: ProposalUseCaseDeps, input: { proposalId: string; tenantId: string; workspaceId: string }): Promise<Proposal> {
+  const existing = await mustProposalBelongToTenantAndWorkspace(deps, input.proposalId, input.tenantId, input.workspaceId);
+  if (existing.publicLinkRevokedAt) return existing;
+  return deps.proposalRepository.revokePublicToken(existing.id, new Date().toISOString());
 }
 
 export async function getProposalTimeline(deps: ProposalUseCaseDeps, input: { proposalId: string; tenantId: string; workspaceId: string }) {
@@ -133,7 +172,7 @@ export async function getProposalTimeline(deps: ProposalUseCaseDeps, input: { pr
 // -------------------------------------------------------------------------------------------
 
 function isExpired(proposal: Proposal): boolean {
-  return Boolean(proposal.validUntil) && new Date(proposal.validUntil as string) < new Date();
+  return Boolean(proposal.validUntil) && new Date(`${proposal.validUntil as string}T23:59:59.999Z`) < new Date();
 }
 
 /** Busca por token bruto (o link público) — se a proposta passou da validade, transiciona pra
@@ -142,11 +181,14 @@ function isExpired(proposal: Proposal): boolean {
 export async function getPublicProposal(deps: ProposalUseCaseDeps, rawToken: string): Promise<Proposal> {
   const proposal = await deps.proposalRepository.getByTokenHash(hashProposalToken(rawToken));
   if (!proposal) throw new Error("PROPOSAL_NOT_FOUND: link inválido.");
+  if (proposal.publicLinkRevokedAt) throw new Error("PROPOSAL_LINK_REVOKED: este link foi revogado.");
   if (isExpired(proposal) && proposal.status !== "expired" && proposal.status !== "accepted" && proposal.status !== "rejected") {
     return deps.proposalRepository.setStatus(proposal.id, { status: "expired" });
   }
-  if (proposal.status === "sent") {
-    const viewed = await deps.proposalRepository.setStatus(proposal.id, { status: "viewed", viewedAt: new Date().toISOString() });
+  if (proposal.status === "sent" || proposal.status === "viewed") {
+    const firstView = proposal.viewCount === 0;
+    const viewed = await deps.proposalRepository.recordView(proposal.id, new Date().toISOString());
+    if (firstView) {
     await deps.timelineEventRepository.record({
       tenantId: viewed.tenantId,
       workspaceId: viewed.workspaceId,
@@ -156,27 +198,31 @@ export async function getPublicProposal(deps: ProposalUseCaseDeps, rawToken: str
       actorType: "system",
       payload: {},
     });
+    }
     return viewed;
   }
   return proposal;
 }
 
-async function respondToPublicProposal(deps: ProposalUseCaseDeps, rawToken: string, decision: "accepted" | "rejected"): Promise<Proposal> {
+async function respondToPublicProposal(deps: ProposalUseCaseDeps, rawToken: string, decision: "accepted" | "rejected", rejection?: { reason?: string; comment?: string }): Promise<Proposal> {
   const proposal = await deps.proposalRepository.getByTokenHash(hashProposalToken(rawToken));
   if (!proposal) throw new Error("PROPOSAL_NOT_FOUND: link inválido.");
+  if (proposal.publicLinkRevokedAt) throw new Error("PROPOSAL_LINK_REVOKED: este link foi revogado.");
   if (isExpired(proposal)) throw new Error("PROPOSAL_EXPIRED: esta proposta expirou.");
+  if (proposal.status === decision) return proposal;
   if (proposal.status !== "sent" && proposal.status !== "viewed") {
     throw new Error(`PROPOSAL_ALREADY_RESPONDED: esta proposta já está com status "${proposal.status}".`);
   }
   const updated = await deps.proposalRepository.setStatus(proposal.id, { status: decision, respondedAt: new Date().toISOString() });
+  const responded = decision === "rejected" && rejection ? await deps.proposalRepository.setRejection(updated.id, rejection) : updated;
   await deps.timelineEventRepository.record({
-    tenantId: updated.tenantId,
-    workspaceId: updated.workspaceId,
+      tenantId: responded.tenantId,
+      workspaceId: responded.workspaceId,
     entityType: "proposal",
-    entityId: updated.id,
+      entityId: responded.id,
     eventType: decision === "accepted" ? "proposal_accepted" : "proposal_rejected",
     actorType: "system",
-    payload: {},
+    payload: decision === "rejected" ? { reason: rejection?.reason } : {},
   });
   if (deps.automation) {
     const contact = updated.contactId ? await deps.automation.contactRepository.getById(updated.contactId) : undefined;
@@ -186,15 +232,15 @@ async function respondToPublicProposal(deps: ProposalUseCaseDeps, rawToken: stri
   if (deps.productAnalytics && decision === "accepted") {
     await recordFirstEvent(deps.productAnalytics, { eventName: "first_proposal_accepted", source: "server", tenantId: updated.tenantId, workspaceId: updated.workspaceId });
   }
-  return updated;
+  return responded;
 }
 
 export async function acceptPublicProposal(deps: ProposalUseCaseDeps, rawToken: string): Promise<Proposal> {
   return respondToPublicProposal(deps, rawToken, "accepted");
 }
 
-export async function rejectPublicProposal(deps: ProposalUseCaseDeps, rawToken: string): Promise<Proposal> {
-  return respondToPublicProposal(deps, rawToken, "rejected");
+export async function rejectPublicProposal(deps: ProposalUseCaseDeps, rawToken: string, rejection?: { reason?: string; comment?: string }): Promise<Proposal> {
+  return respondToPublicProposal(deps, rawToken, "rejected", rejection);
 }
 
 /**

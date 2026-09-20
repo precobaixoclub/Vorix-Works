@@ -1,11 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useMemo, useState, type ReactNode } from "react";
 import { BriefcaseBusiness, ClipboardCheck, FileText, History, Info, MessageSquareText, Search, SlidersHorizontal } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { DealDetailModal } from "@/components/crm/DealDetailModal";
+import { LossReasonModal } from "@/components/crm/LossReasonModal";
+import { QuickCreateDealModal } from "@/components/crm/QuickCreateDealModal";
 import { DetailBlock, DetailModal } from "@/components/DetailModal";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -20,11 +22,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { createContact, linkContactIdentity, moveDealStage, updateContact } from "@/features/crm/api";
-import { useContactTimeline, useContacts, useDeals, useLeadScore, usePipelineStages, usePipelines, useProposals, useTasks } from "@/features/crm/hooks";
+import { groupDealsByStatus } from "@/features/crm/deal-resolution";
+import { useContactTimeline, useContacts, useDeals, useLeadScore, usePipelineStages, usePipelines, useProposals, useStagesByPipeline, useTasks } from "@/features/crm/hooks";
 import { nextPendingTask, PROPOSAL_STATUS_LABEL, TASK_STATUS_LABEL, TASK_TYPE_LABEL, timelineEventLabel } from "@/features/crm/presentation";
-import type { Contact, Deal, Proposal, Task } from "@/features/crm/types";
+import type { Contact, Deal, PipelineStage, Proposal, Task } from "@/features/crm/types";
 import type { Team } from "@/features/identity/types";
 import { useTeams } from "@/features/identity/hooks";
+import type { InboxConversation } from "@/features/inbox/types";
 import { useInboxConversations, useInboxMembers } from "@/features/inbox/hooks";
 import { useDebounce } from "@/hooks/useDebounce";
 import { formatCurrencyCents, formatDate, formatDateTime } from "@/lib/format";
@@ -79,8 +83,9 @@ function ContactsView() {
   const [createOwnerUserId, setCreateOwnerUserId] = useState("");
   const [createTeamId, setCreateTeamId] = useState("");
   const [busy, setBusy] = useState(false);
-  const [selectedContactId, setSelectedContactId] = useState<string | undefined>();
   const [selectedDealId, setSelectedDealId] = useState<string | undefined>();
+  const [lossPrompt, setLossPrompt] = useState<{ deal: Deal; stage: PipelineStage } | undefined>();
+  const pathname = usePathname();
 
   const contactsList = contacts ?? [];
   const dealsList = deals ?? [];
@@ -89,25 +94,59 @@ function ContactsView() {
   const conversationsList = conversations?.conversations ?? [];
   const members = membersData?.members ?? [];
   const teamsList = teams ?? [];
+
+  // Jornada Comercial Fase 1, item 20 (deep-link estável) — o contato selecionado vem direto da
+  // URL, nunca duplicado em `useState`: abrir empurra `?contactId=` (nova entrada de histórico),
+  // fechar limpa a URL, e o botão Voltar do navegador (que também muda `searchParams`) fecha o
+  // modal sozinho, sem precisar de listener de `popstate` manual.
+  const selectedContactId = searchParams.get("contactId") ?? undefined;
   const selectedContact = contactsList.find((contact) => contact.id === selectedContactId);
+
+  function openContact(contactId: string) {
+    router.push(`${pathname}?contactId=${encodeURIComponent(contactId)}`, { scroll: false });
+  }
+
+  function closeContact() {
+    router.replace(pathname, { scroll: false });
+  }
+
   // Auditoria (seção 17 do pedido) — o `ContactDetailModal` só precisa dos dados DESTE contato, e a
   // API já aceita `contactId` como filtro real (nunca usado antes aqui) — reusa a MESMA chave de
   // cache de `useDeals(workspace.id)` (ambas têm `contactId: undefined` no array-chave do SWR)
   // quando nenhum contato está selecionado, então abrir/fechar o modal nunca dispara uma requisição
   // extra à toa; só quando um contato é selecionado é que vira uma chamada genuinamente escopada.
-  const { data: selectedContactDeals } = useDeals(workspace.id, { contactId: selectedContactId });
+  const { data: selectedContactDeals, mutate: mutateSelectedContactDeals } = useDeals(workspace.id, { contactId: selectedContactId });
   const { data: selectedContactTasks } = useTasks(workspace.id, { contactId: selectedContactId });
   const { data: selectedContactProposals } = useProposals(workspace.id, { contactId: selectedContactId });
+  // Mesmo racional acima, agora para a aba Conversas do Contact 360 (item 17 do pedido: antes
+  // buscava o workspace inteiro e filtrava no frontend — a API já aceita `contactId` de verdade).
+  const { data: selectedContactConversations } = useInboxConversations(workspace.id, "all", selectedContactId);
+  const conversationByContactId = useMemo(() => {
+    const map = new Map<string, InboxConversation>();
+    for (const conversation of conversationsList) {
+      if (conversation.crmContactId) map.set(conversation.crmContactId, conversation);
+    }
+    return map;
+  }, [conversationsList]);
   const selectedDeal = dealsList.find((deal) => deal.id === selectedDealId);
   const selectedDealPipeline = selectedDeal ? pipelines?.find((pipeline) => pipeline.id === selectedDeal.pipelineId) : undefined;
   const { data: selectedDealStages } = usePipelineStages(selectedDeal?.pipelineId, workspace.id);
 
-  useEffect(() => {
-    const queryContactId = searchParams.get("contactId");
-    if (queryContactId) setSelectedContactId(queryContactId);
-  }, [searchParams]);
-
   const visibleContacts = contactsList;
+
+  function requestMoveDeal(deal: Deal, stage: PipelineStage) {
+    if (stage.isLost) {
+      setLossPrompt({ deal, stage });
+      return;
+    }
+    void handleMoveDeal(deal, stage.id);
+  }
+
+  async function confirmLossReason(reason: string) {
+    if (!lossPrompt) return;
+    await handleMoveDeal(lossPrompt.deal, lossPrompt.stage.id, reason);
+    setLossPrompt(undefined);
+  }
 
   async function handleCreate() {
     setBusy(true);
@@ -150,7 +189,7 @@ function ContactsView() {
   async function handleMoveDeal(deal: Deal, stageId: string, lossReason?: string) {
     try {
       await moveDealStage(deal.id, workspace.id, stageId, lossReason);
-      await mutateDeals();
+      await Promise.all([mutateDeals(), mutateSelectedContactDeals()]);
       toast.success("Negócio atualizado.");
     } catch (cause) {
       toast.error("Não foi possível mover o negócio", { description: cause instanceof Error ? cause.message : "Tente novamente." });
@@ -213,7 +252,7 @@ function ContactsView() {
               conversations={conversationsList.filter((conversation) => conversation.crmContactId === contact.id)}
               members={members}
               teams={teamsList}
-              onOpen={() => setSelectedContactId(contact.id)}
+              onOpen={() => openContact(contact.id)}
             />
           ))}
         </section>
@@ -256,21 +295,21 @@ function ContactsView() {
 
       <ContactDetailModal
         open={Boolean(selectedContact)}
-        onOpenChange={(open) => { if (!open) setSelectedContactId(undefined); }}
+        onOpenChange={(open) => { if (!open) closeContact(); }}
         workspaceId={workspace.id}
         contact={selectedContact}
         deals={selectedContactDeals ?? []}
         tasks={selectedContactTasks ?? []}
         proposals={selectedContactProposals ?? []}
-        conversations={conversationsList.filter((conversation) => conversation.crmContactId === selectedContact?.id)}
+        conversations={selectedContactConversations?.conversations ?? []}
         members={members}
         teams={teamsList}
         onChanged={async () => { await mutate(); }}
+        onDealsChanged={async () => { await mutateSelectedContactDeals(); }}
         onOpenDeal={(dealId) => {
-          setSelectedContactId(undefined);
+          closeContact();
           setSelectedDealId(dealId);
         }}
-        onCreateDeal={(contact) => router.push(`/workspaces/${workspace.id}/deals?contactId=${contact.id}`)}
         onCreateTask={(contact) => router.push(`/workspaces/${workspace.id}/tasks?contactId=${contact.id}`)}
         onCreateProposal={(contact) => router.push(`/workspaces/${workspace.id}/proposals?contactId=${contact.id}`)}
       />
@@ -288,16 +327,20 @@ function ContactsView() {
         members={members}
         teams={teamsList}
         onChanged={async () => { await Promise.all([mutateDeals(), mutate()]); }}
-        onMove={(deal, stage) => {
-          if (stage.isLost) {
-            toast.error("Mover para Perdido exige motivo. Use o Kanban de Negócios para registrar a perda.");
-            return;
-          }
-          void handleMoveDeal(deal, stage.id);
-        }}
+        onMove={(deal, stage) => requestMoveDeal(deal, stage)}
         onCreateTask={(deal) => router.push(`/workspaces/${workspace.id}/tasks?dealId=${deal.id}${deal.contactId ? `&contactId=${deal.contactId}` : ""}`)}
         onCreateProposal={(deal) => router.push(`/workspaces/${workspace.id}/proposals?dealId=${deal.id}${deal.contactId ? `&contactId=${deal.contactId}` : ""}`)}
+        onOpenConversation={selectedDeal?.contactId && conversationByContactId.has(selectedDeal.contactId) ? (deal) => {
+          const conversation = deal.contactId ? conversationByContactId.get(deal.contactId) : undefined;
+          if (!conversation) return;
+          setSelectedDealId(undefined);
+          router.push(`/workspaces/${workspace.id}/conversas?conversation=${conversation.id}`);
+        } : undefined}
       />
+
+      {lossPrompt ? (
+        <LossReasonModal onClose={() => setLossPrompt(undefined)} onConfirm={confirmLossReason} />
+      ) : null}
     </main>
   );
 }
@@ -362,8 +405,8 @@ function ContactDetailModal({
   members,
   teams,
   onChanged,
+  onDealsChanged,
   onOpenDeal,
-  onCreateDeal,
   onCreateTask,
   onCreateProposal,
 }: {
@@ -378,16 +421,20 @@ function ContactDetailModal({
   members: readonly UserPickerMember[];
   teams: readonly Team[];
   onChanged: () => void | Promise<void>;
+  onDealsChanged: () => void | Promise<void>;
   onOpenDeal: (dealId: string) => void;
-  onCreateDeal: (contact: Contact) => void;
   onCreateTask: (contact: Contact) => void;
   onCreateProposal: (contact: Contact) => void;
 }) {
   const router = useRouter();
   const [section, setSection] = useState<ContactSection>("summary");
   const [editing, setEditing] = useState(false);
+  const [creatingDeal, setCreatingDeal] = useState(false);
   const { data: timeline, isLoading: timelineLoading, error: timelineError, mutate: mutateTimeline } = useContactTimeline(contact?.id, workspaceId);
   const { data: leadScore, isLoading: scoreLoading } = useLeadScore(contact?.id, workspaceId);
+  const pipelineIds = useMemo(() => Array.from(new Set(deals.map((deal) => deal.pipelineId))), [deals]);
+  const { data: stagesByPipeline } = useStagesByPipeline(workspaceId, pipelineIds);
+  const dealGroups = useMemo(() => groupDealsByStatus(deals), [deals]);
 
   if (!contact) return null;
 
@@ -445,7 +492,7 @@ function ContactDetailModal({
             <DetailBlock label="Ações contextuais">
               <div className="flex flex-wrap gap-2">
                 {primaryConversation ? <Button variant="secondary" onClick={() => router.push(`/workspaces/${workspaceId}/conversas?conversation=${primaryConversation.id}`)}>Enviar mensagem</Button> : null}
-                <Button variant="secondary" onClick={() => onCreateDeal(contact)}>Criar negócio</Button>
+                <Button variant="secondary" onClick={() => setCreatingDeal(true)}>Criar negócio</Button>
                 <Button variant="secondary" onClick={() => onCreateTask(contact)}>Criar tarefa</Button>
                 <Button variant="secondary" onClick={() => onCreateProposal(contact)}>Criar proposta</Button>
               </div>
@@ -468,17 +515,27 @@ function ContactDetailModal({
         ) : null}
 
         {section === "deals" ? (
-          <ListBlock empty="Nenhum negócio vinculado a este contato.">
-            {deals.map((deal) => (
-              <button key={deal.id} type="button" onClick={() => onOpenDeal(deal.id)} className="w-full rounded-xl border border-border/70 bg-card px-3 py-3 text-left transition hover:border-primary/40">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-foreground">{deal.title}</p>
-                  <p className="text-sm font-semibold tabular-nums text-foreground">{formatCurrencyCents(deal.valueCents, deal.currency)}</p>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">{userLabel(deal.ownerUserId, members)} · atualizado {formatDateTime(deal.updatedAt)}</p>
-              </button>
-            ))}
-          </ListBlock>
+          <div className="space-y-5">
+            <div className="flex justify-end">
+              <Button variant="secondary" size="sm" onClick={() => setCreatingDeal(true)}>+ Negócio</Button>
+            </div>
+            {deals.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum negócio vinculado a este contato.</p>
+            ) : (
+              <>
+                <DealStatusGroup
+                  title="Em andamento"
+                  deals={dealGroups.open}
+                  tasks={tasks}
+                  members={members}
+                  stagesByPipeline={stagesByPipeline}
+                  onOpenDeal={onOpenDeal}
+                />
+                <DealStatusGroup title="Ganhos" deals={dealGroups.won} tasks={tasks} members={members} stagesByPipeline={stagesByPipeline} onOpenDeal={onOpenDeal} />
+                <DealStatusGroup title="Perdidos" deals={dealGroups.lost} tasks={tasks} members={members} stagesByPipeline={stagesByPipeline} onOpenDeal={onOpenDeal} />
+              </>
+            )}
+          </div>
         ) : null}
 
         {section === "tasks" ? (
@@ -525,7 +582,58 @@ function ContactDetailModal({
       </DetailModal>
 
       {editing ? <EditContactModal workspaceId={workspaceId} contact={contact} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await onChanged(); }} /> : null}
+
+      {creatingDeal ? (
+        <QuickCreateDealModal
+          workspaceId={workspaceId}
+          contactId={contact.id}
+          onClose={() => setCreatingDeal(false)}
+          onCreated={async () => {
+            setCreatingDeal(false);
+            await onDealsChanged();
+          }}
+        />
+      ) : null}
     </>
+  );
+}
+
+function DealStatusGroup({
+  title,
+  deals,
+  tasks,
+  members,
+  stagesByPipeline,
+  onOpenDeal,
+}: {
+  title: string;
+  deals: readonly Deal[];
+  tasks: readonly Task[];
+  members: readonly UserPickerMember[];
+  stagesByPipeline: Map<string, readonly PipelineStage[]> | undefined;
+  onOpenDeal: (dealId: string) => void;
+}) {
+  if (deals.length === 0) return null;
+  return (
+    <div>
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title} ({deals.length})</p>
+      <div className="space-y-2">
+        {deals.map((deal) => {
+          const stage = stagesByPipeline?.get(deal.pipelineId)?.find((item) => item.id === deal.stageId);
+          const nextTask = nextPendingTask(tasks, { dealId: deal.id });
+          return (
+            <button key={deal.id} type="button" onClick={() => onOpenDeal(deal.id)} className="w-full rounded-xl border border-border/70 bg-card px-3 py-3 text-left transition hover:border-primary/40">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium text-foreground">{deal.title}</p>
+                <p className="text-sm font-semibold tabular-nums text-foreground">{formatCurrencyCents(deal.valueCents, deal.currency)}</p>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">{stage?.name ?? "Sem etapa"} · {userLabel(deal.ownerUserId, members)}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{nextTask ? `${TASK_TYPE_LABEL[nextTask.type]} · ${nextTask.title}` : "Sem próxima atividade"}</p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

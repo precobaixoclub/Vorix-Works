@@ -6,10 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { DealDetailModal } from "@/components/crm/DealDetailModal";
+import { LossReasonModal } from "@/components/crm/LossReasonModal";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FilterBar } from "@/components/FilterBar";
-import { Input, Label, Textarea } from "@/components/Field";
+import { Input, Label } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { TeamPicker, teamLabel } from "@/components/TeamPicker";
@@ -162,8 +163,6 @@ function DealsView() {
   const [hoveredStageId, setHoveredStageId] = useState<string | undefined>();
   const [movingDealId, setMovingDealId] = useState<string | undefined>();
   const [lossPrompt, setLossPrompt] = useState<{ deal: Deal; stage: PipelineStage } | undefined>();
-  const [lossReason, setLossReason] = useState("");
-  const [lossNotes, setLossNotes] = useState("");
   const [selectedDealId, setSelectedDealId] = useState<string | undefined>();
 
   useEffect(() => {
@@ -234,7 +233,7 @@ function DealsView() {
     try {
       await moveDealStage(deal.id, workspace.id, targetStage.id, lossReasonValue);
       await refresh();
-      if (targetStage.isWon) toast.success("Negócio marcado como ganho.");
+      if (targetStage.isWon) toast.success("Negócio ganho 🎉");
     } catch (cause) {
       await mutateDeals(previousDeals, { revalidate: false });
       toast.error("Não foi possível mover o negócio", { description: cause instanceof Error ? cause.message : "Tente novamente." });
@@ -266,13 +265,10 @@ function DealsView() {
     }
   }
 
-  async function confirmLossReason() {
-    if (!lossPrompt || !lossReason.trim()) return;
-    const reason = lossNotes.trim() ? `${lossReason.trim()} — ${lossNotes.trim()}` : lossReason.trim();
+  async function confirmLossReason(reason: string) {
+    if (!lossPrompt) return;
     await performMoveDeal(lossPrompt.deal, lossPrompt.stage, reason);
     setLossPrompt(undefined);
-    setLossReason("");
-    setLossNotes("");
   }
 
   function resetCreateForm() {
@@ -317,7 +313,7 @@ function DealsView() {
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Negócios</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Pipeline comercial com contexto de contato, responsável, próxima atividade e propostas.</p>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Acompanhe as oportunidades comerciais da sua empresa, da primeira conversa até o fechamento.</p>
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
             <span><strong className="font-semibold text-foreground">{formatCurrencyCents(pipelineValue)}</strong> em pipeline</span>
             <span><strong className="font-semibold text-foreground">{visibleDeals.length}</strong> negócios</span>
@@ -483,28 +479,7 @@ function DealsView() {
       ) : null}
 
       {lossPrompt ? (
-        <Modal title="Motivo da perda" onClose={() => { setLossPrompt(undefined); setLossReason(""); setLossNotes(""); }}>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Escolha o motivo principal. Isso alimenta o historico comercial sem expor erro tecnico ao operador.</p>
-            <div>
-              <Label htmlFor="loss-reason">Motivo</Label>
-              <Select value={lossReason} onValueChange={setLossReason}>
-                <SelectTrigger id="loss-reason"><SelectValue placeholder="Selecionar motivo" /></SelectTrigger>
-                <SelectContent>
-                  {["Sem orçamento", "Concorrente", "Sem timing", "Sem fit", "Não respondeu"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="loss-notes">Observacao opcional</Label>
-              <Textarea id="loss-notes" value={lossNotes} onChange={(event) => setLossNotes(event.target.value)} rows={3} />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="secondary" onClick={() => { setLossPrompt(undefined); setLossReason(""); setLossNotes(""); }}>Cancelar</Button>
-              <Button variant="danger" onClick={confirmLossReason} loading={Boolean(movingDealId)} disabled={!lossReason.trim()}>Confirmar perda</Button>
-            </div>
-          </div>
-        </Modal>
+        <LossReasonModal onClose={() => setLossPrompt(undefined)} onConfirm={confirmLossReason} busy={Boolean(movingDealId)} />
       ) : null}
 
       {chatConversation ? (
@@ -549,6 +524,12 @@ function DealsView() {
         onMove={(deal, stage) => requestMoveDeal(deal, stage)}
         onCreateTask={(deal) => router.push(`/workspaces/${workspace.id}/tasks?dealId=${deal.id}${deal.contactId ? `&contactId=${deal.contactId}` : ""}`)}
         onCreateProposal={(deal) => router.push(`/workspaces/${workspace.id}/proposals?dealId=${deal.id}${deal.contactId ? `&contactId=${deal.contactId}` : ""}`)}
+        onOpenConversation={selectedDeal?.contactId && conversationByContactId.has(selectedDeal.contactId) ? (deal) => {
+          const conversation = deal.contactId ? conversationByContactId.get(deal.contactId) : undefined;
+          if (!conversation) return;
+          setSelectedDealId(undefined);
+          handleOpenConversation(conversation);
+        } : undefined}
       />
     </main>
   );

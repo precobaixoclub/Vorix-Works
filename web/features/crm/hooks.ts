@@ -41,6 +41,18 @@ export function usePipelineStages(pipelineId: string | undefined, workspaceId: s
   return useSWR(pipelineId ? ["pipeline-stages", pipelineId, workspaceId] : null, () => listPipelineStages(pipelineId!, workspaceId));
 }
 
+/** Contact 360 (Jornada Comercial Fase 2, item 11/12) — os negócios de um contato podem pertencer a
+ * pipelines diferentes; para mostrar o nome da etapa de cada um sem violar as regras de hooks (não
+ * dá pra chamar `usePipelineStages` dentro de um loop), busca as etapas de todos os pipelines
+ * envolvidos de uma vez, chaveado pela lista ordenada de ids. */
+export function useStagesByPipeline(workspaceId: string, pipelineIds: readonly string[]) {
+  const key = pipelineIds.length > 0 ? ["stages-by-pipeline", workspaceId, [...pipelineIds].sort().join(",")] : null;
+  return useSWR(key, async () => {
+    const entries = await Promise.all(pipelineIds.map(async (pipelineId) => [pipelineId, await listPipelineStages(pipelineId, workspaceId)] as const));
+    return new Map(entries);
+  });
+}
+
 export function useDeals(workspaceId: string, params?: ListDealsParams) {
   return useSWR(
     ["deals", workspaceId, params?.pipelineId, params?.stageId, params?.contactId, params?.ownerUserId, params?.teamId, params?.origin, params?.search],

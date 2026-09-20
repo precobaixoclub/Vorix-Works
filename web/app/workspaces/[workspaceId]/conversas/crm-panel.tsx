@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/Button";
+import { DealDetailModal } from "@/components/crm/DealDetailModal";
+import { LossReasonModal } from "@/components/crm/LossReasonModal";
+import { QuickCreateDealModal } from "@/components/crm/QuickCreateDealModal";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label } from "@/components/Field";
 import { GuardedButton } from "@/components/GuardedButton";
@@ -14,16 +17,19 @@ import { useAuth } from "@/contexts/auth-context";
 import {
   acceptCommercialSuggestion,
   createContact,
-  createDeal,
   createProposal,
   createTask,
   dismissCommercialSuggestion,
   generateCommercialSuggestions,
   linkContactIdentity,
+  moveDealStage,
   updateContact,
 } from "@/features/crm/api";
-import { useCommercialSuggestions, useContact, useDeals, useLeadScore, usePipelines, usePipelineStages, useTasks } from "@/features/crm/hooks";
-import type { LeadTemperature, TaskType } from "@/features/crm/types";
+import { resolveActiveDeal } from "@/features/crm/deal-resolution";
+import { useCommercialSuggestions, useContact, useDeals, useLeadScore, usePipelines, usePipelineStages, useProposals, useTasks } from "@/features/crm/hooks";
+import { nextPendingTask } from "@/features/crm/presentation";
+import type { Deal, LeadTemperature, PipelineStage, TaskType } from "@/features/crm/types";
+import { useTeams } from "@/features/identity/hooks";
 import { useInboxConversationMessages } from "@/features/inbox/hooks";
 import type { InboxConversation, InboxTenantMember } from "@/features/inbox/types";
 import { formatCurrencyCents } from "@/lib/format";
@@ -38,7 +44,7 @@ const TASK_TYPE_LABEL: Record<TaskType, string> = {
   personalizada: "Personalizada",
 };
 
-type QuickAction = "deal" | "task" | "proposal";
+type QuickAction = "task" | "proposal";
 
 const TEMPERATURE_LABEL: Record<LeadTemperature, string> = { frio: "Frio", morno: "Morno", quente: "Quente" };
 const TEMPERATURE_VARIANT: Record<LeadTemperature, "outline" | "secondary" | "default"> = { frio: "outline", morno: "secondary", quente: "default" };
@@ -120,14 +126,30 @@ function LinkedCrmSection({
   const { data: contact, error: contactError, mutate: mutateContact } = useContact(contactId, workspaceId);
   const { data: deals, mutate: mutateDeals } = useDeals(workspaceId, { contactId });
   const { data: tasks, mutate: mutateTasks } = useTasks(workspaceId, { contactId, status: "pending" });
+  // Atividades/histórico de UM negócio específico (para o `DealDetailModal` embutido abaixo) —
+  // separado da lista `tasks` acima, que é só as pendentes usadas no bloco "Tarefas pendentes".
+  const { data: allTasks } = useTasks(workspaceId, { contactId });
+  const { data: proposals } = useProposals(workspaceId, { contactId });
   const { data: pipelines } = usePipelines(workspaceId);
-  const defaultPipeline = pipelines?.[0];
-  const { data: stages } = usePipelineStages(defaultPipeline?.id, workspaceId);
-  const defaultStage = stages?.[0];
   const { data: leadScore } = useLeadScore(contactId, workspaceId);
   const { data: suggestions, mutate: mutateSuggestions } = useCommercialSuggestions(workspaceId, { contactId, status: "pending" });
+  const { data: teams } = useTeams(workspaceId);
+
+  // Jornada Comercial Fase 2, item 7 — "negócio atual" da conversa é o negócio ABERTO mais
+  // recentemente atualizado; Ganho/Perdido nunca contam como atual enquanto houver outro aberto.
+  const { current: currentDeal, openDeals } = resolveActiveDeal(deals ?? []);
+  const [openDealId, setOpenDealId] = useState<string | undefined>();
+  const dealForModal = (deals ?? []).find((deal) => deal.id === openDealId);
+  const { data: modalStages } = usePipelineStages(dealForModal?.pipelineId, workspaceId);
+  const modalPipeline = pipelines?.find((pipeline) => pipeline.id === dealForModal?.pipelineId);
+  // Etapa do negócio atual mostrado no card (pode ser de um pipeline diferente do embutido acima).
+  const { data: currentDealStages } = usePipelineStages(currentDeal?.pipelineId, workspaceId);
+  const currentDealStage = currentDealStages?.find((stage) => stage.id === currentDeal?.stageId);
+  const [creatingDeal, setCreatingDeal] = useState(false);
+  const [lossPrompt, setLossPrompt] = useState<{ deal: Deal; stage: PipelineStage } | undefined>();
 
   const [quickAction, setQuickAction] = useState<QuickAction | undefined>();
+  const [quickActionDealId, setQuickActionDealId] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | undefined>();
   const [newTag, setNewTag] = useState("");
@@ -147,6 +169,7 @@ function LinkedCrmSection({
 
   function closeQuickAction() {
     setQuickAction(undefined);
+    setQuickActionDealId(undefined);
     setTitle("");
     setValueReais("");
   }
@@ -206,14 +229,11 @@ function LinkedCrmSection({
     setActionError(undefined);
     try {
       const cents = Math.round(Number(valueReais.replace(",", ".")) * 100) || 0;
-      if (quickAction === "deal" && defaultPipeline && defaultStage) {
-        await createDeal({ workspaceId, pipelineId: defaultPipeline.id, stageId: defaultStage.id, contactId, title: title.trim(), valueCents: cents });
-        await mutateDeals();
-      } else if (quickAction === "task") {
-        await createTask({ workspaceId, contactId, type: taskType, title: title.trim() });
+      if (quickAction === "task") {
+        await createTask({ workspaceId, contactId, dealId: quickActionDealId, type: taskType, title: title.trim() });
         await mutateTasks();
       } else if (quickAction === "proposal") {
-        const { publicToken } = await createProposal({ workspaceId, contactId, title: title.trim(), items: [{ name: title.trim(), quantity: 1, unitPriceCents: cents }] });
+        const { publicToken } = await createProposal({ workspaceId, contactId, dealId: quickActionDealId, title: title.trim(), items: [{ name: title.trim(), quantity: 1, unitPriceCents: cents }] });
         setProposalLink(`${window.location.origin}/p/${publicToken}`);
       }
       closeQuickAction();
@@ -242,7 +262,7 @@ function LinkedCrmSection({
 
   return (
     <section className="mt-4 space-y-3 border-t border-border pt-4">
-      <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">CRM</h3>
+      <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">COMERCIAL</h3>
       {actionError ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{actionError}</p> : null}
 
       {leadScore ? (
@@ -298,16 +318,49 @@ function LinkedCrmSection({
       </div>
 
       <div>
-        <p className="mb-1 text-[11px] text-muted-foreground">Negócios ({deals?.length ?? 0})</p>
-        <div className="space-y-1">
-          {(deals ?? []).slice(0, 4).map((deal) => (
-            <div key={deal.id} className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-2 py-1.5 text-xs">
-              <span className="truncate text-foreground">{deal.title}</span>
-              <span className="shrink-0 tabular-nums text-muted-foreground">{formatCurrencyCents(deal.valueCents, deal.currency)}</span>
+        <p className="mb-1 text-[11px] text-muted-foreground">Negócio atual</p>
+        {!currentDeal ? (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">Nenhum negócio aberto.</p>
+            <GuardedButton variant="secondary" className="w-full" onClick={() => setCreatingDeal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
+              + Criar negócio
+            </GuardedButton>
+          </div>
+        ) : openDeals.length === 1 ? (
+          <div className="space-y-2 rounded-lg border border-border/70 bg-muted/30 p-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-sm font-medium text-foreground">{currentDeal.title}</span>
+              <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">{formatCurrencyCents(currentDeal.valueCents, currentDeal.currency)}</span>
             </div>
-          ))}
-          {deals && deals.length === 0 ? <p className="text-xs text-muted-foreground">Nenhum negócio ativo.</p> : null}
-        </div>
+            <p className="text-[11px] text-muted-foreground">{currentDealStage?.name ?? "Sem etapa"} · {ownerLabel(currentDeal.ownerUserId, members)}</p>
+            <p className="text-[11px] text-muted-foreground">
+              {(() => {
+                const nextTask = nextPendingTask(allTasks ?? [], { dealId: currentDeal.id });
+                return nextTask ? `${TASK_TYPE_LABEL[nextTask.type]} · ${nextTask.title}` : "Sem próxima atividade";
+              })()}
+            </p>
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              <Button variant="secondary" size="sm" onClick={() => setOpenDealId(currentDeal.id)}>Abrir negócio</Button>
+              <Button variant="secondary" size="sm" onClick={() => { setQuickAction("task"); setQuickActionDealId(currentDeal.id); }}>+ Próxima ação</Button>
+              <Button variant="secondary" size="sm" onClick={() => { setQuickAction("proposal"); setQuickActionDealId(currentDeal.id); }}>Gerar proposta</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-foreground">{openDeals.length} negócios em andamento</p>
+            {openDeals.slice(0, 4).map((deal) => (
+              <button
+                key={deal.id}
+                type="button"
+                onClick={() => setOpenDealId(deal.id)}
+                className="flex w-full items-center justify-between gap-2 rounded-lg bg-muted/40 px-2 py-1.5 text-left text-xs transition hover:bg-muted"
+              >
+                <span className="truncate text-foreground">{deal.title}</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">{formatCurrencyCents(deal.valueCents, deal.currency)}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {tasks && tasks.length > 0 ? (
@@ -348,13 +401,13 @@ function LinkedCrmSection({
       </div>
 
       <div className="grid grid-cols-3 gap-1.5">
-        <GuardedButton variant="secondary" onClick={() => setQuickAction("deal")} disabled={!defaultPipeline || !defaultStage} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Negócio</GuardedButton>
+        <GuardedButton variant="secondary" onClick={() => setCreatingDeal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Negócio</GuardedButton>
         <GuardedButton variant="secondary" onClick={() => setQuickAction("task")} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Tarefa</GuardedButton>
         <GuardedButton variant="secondary" onClick={() => setQuickAction("proposal")} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Proposta</GuardedButton>
       </div>
 
       {quickAction ? (
-        <Modal title={quickAction === "deal" ? "Novo negócio" : quickAction === "task" ? "Nova tarefa" : "Nova proposta"} onClose={closeQuickAction}>
+        <Modal title={quickAction === "task" ? "Nova tarefa" : "Nova proposta"} onClose={closeQuickAction}>
           <div className="space-y-3">
             {quickAction === "task" ? (
               <div>
@@ -368,10 +421,10 @@ function LinkedCrmSection({
               </div>
             ) : null}
             <div>
-              <Label htmlFor="quick-title">{quickAction === "task" ? "Titulo" : quickAction === "proposal" ? "Item / titulo da proposta" : "Titulo"}</Label>
+              <Label htmlFor="quick-title">{quickAction === "task" ? "Titulo" : "Item / titulo da proposta"}</Label>
               <Input id="quick-title" value={title} onChange={(event) => setTitle(event.target.value)} />
             </div>
-            {quickAction === "deal" || quickAction === "proposal" ? (
+            {quickAction === "proposal" ? (
               <div>
                 <Label htmlFor="quick-value">Valor (R$)</Label>
                 <Input id="quick-value" value={valueReais} onChange={(event) => setValueReais(event.target.value)} placeholder="0,00" inputMode="decimal" />
@@ -383,6 +436,55 @@ function LinkedCrmSection({
             </div>
           </div>
         </Modal>
+      ) : null}
+
+      {creatingDeal ? (
+        <QuickCreateDealModal
+          workspaceId={workspaceId}
+          contactId={contactId}
+          defaultOrigin="whatsapp"
+          onClose={() => setCreatingDeal(false)}
+          onCreated={async () => {
+            setCreatingDeal(false);
+            await mutateDeals();
+          }}
+        />
+      ) : null}
+
+      {dealForModal ? (
+        <DealDetailModal
+          open={Boolean(dealForModal)}
+          onOpenChange={(open) => { if (!open) setOpenDealId(undefined); }}
+          workspaceId={workspaceId}
+          deal={dealForModal}
+          pipeline={modalPipeline}
+          stages={modalStages ?? []}
+          contacts={contact ? [contact] : []}
+          tasks={allTasks ?? []}
+          proposals={proposals ?? []}
+          members={members}
+          teams={teams ?? []}
+          onChanged={async () => { await mutateDeals(); }}
+          onMove={(deal, stage) => {
+            if (stage.isLost) {
+              setLossPrompt({ deal, stage });
+              return;
+            }
+            void moveDealStage(deal.id, workspaceId, stage.id).then(() => mutateDeals());
+          }}
+        />
+      ) : null}
+
+      {lossPrompt ? (
+        <LossReasonModal
+          onClose={() => setLossPrompt(undefined)}
+          onConfirm={async (reason) => {
+            if (!lossPrompt) return;
+            await moveDealStage(lossPrompt.deal.id, workspaceId, lossPrompt.stage.id, reason);
+            await mutateDeals();
+            setLossPrompt(undefined);
+          }}
+        />
       ) : null}
 
       {proposalLink ? (

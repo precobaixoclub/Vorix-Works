@@ -39,6 +39,7 @@ export function DealDetailModal({
   onMove,
   onCreateTask,
   onCreateProposal,
+  onOpenConversation,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,6 +56,11 @@ export function DealDetailModal({
   onMove: (deal: Deal, stage: PipelineStage) => void | Promise<void>;
   onCreateTask?: (deal: Deal) => void;
   onCreateProposal?: (deal: Deal) => void;
+  /** Jornada Comercial Fase 2, item 16 — se o Contact do negócio tiver conversa, mostra "Abrir
+   * conversa" abrindo a InboxConversation correta. Omitido (undefined) quando o chamador não sabe
+   * resolver a conversa daquele contato ou quando não faz sentido no contexto (ex.: dentro do
+   * próprio painel da conversa). */
+  onOpenConversation?: (deal: Deal) => void;
 }) {
   const [section, setSection] = useState<Section>("summary");
   const [editing, setEditing] = useState(false);
@@ -107,6 +113,7 @@ export function DealDetailModal({
             onMove={(targetStage) => { void onMove(deal, targetStage); }}
             onCreateTask={onCreateTask ? () => onCreateTask(deal) : undefined}
             onCreateProposal={onCreateProposal ? () => onCreateProposal(deal) : undefined}
+            onOpenConversation={onOpenConversation ? () => onOpenConversation(deal) : undefined}
           />
         ) : null}
         {section === "activities" ? <DealActivities tasks={dealTasks} members={members} /> : null}
@@ -143,6 +150,7 @@ function DealSummary({
   onMove,
   onCreateTask,
   onCreateProposal,
+  onOpenConversation,
 }: {
   deal: Deal;
   contact: Contact | undefined;
@@ -156,6 +164,7 @@ function DealSummary({
   onMove: (stage: PipelineStage) => void;
   onCreateTask?: () => void;
   onCreateProposal?: () => void;
+  onOpenConversation?: () => void;
 }) {
   return (
     <div className="space-y-7">
@@ -179,6 +188,7 @@ function DealSummary({
 
       <DetailBlock label="Ações contextuais">
         <div className="flex flex-wrap gap-2">
+          {onOpenConversation ? <Button variant="secondary" onClick={onOpenConversation}>Abrir conversa</Button> : null}
           {onCreateTask ? <Button variant="secondary" onClick={onCreateTask}>Criar tarefa</Button> : null}
           {onCreateProposal ? <Button variant="secondary" onClick={onCreateProposal}>Criar proposta</Button> : null}
         </div>

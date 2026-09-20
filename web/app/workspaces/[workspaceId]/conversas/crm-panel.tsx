@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/Button";
 import { DealDetailModal } from "@/components/crm/DealDetailModal";
@@ -119,6 +120,7 @@ function LinkedCrmSection({
   members: readonly InboxTenantMember[];
   canOperate: boolean;
 }) {
+  const router = useRouter();
   const { data: contact, error: contactError, mutate: mutateContact } = useContact(contactId, workspaceId);
   const { data: deals, mutate: mutateDeals } = useDeals(workspaceId, { contactId });
   // Todas as tarefas do contato (não só pendentes) — alimenta a seção "Próxima ação" (via
@@ -246,7 +248,12 @@ function LinkedCrmSection({
 
   return (
     <section className="mt-4 space-y-3 border-t border-border pt-4">
-      <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">COMERCIAL</h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">COMERCIAL</h3>
+        {/* Jornada Comercial Fase 5, item 9 — a seção fica enxuta (Negócio atual/Próxima ação/
+         * Proposta atual), mas precisa de UMA saída pro contexto completo: o Contact 360. */}
+        <Button variant="ghost" size="sm" onClick={() => router.push(`/workspaces/${workspaceId}/contacts?contactId=${contactId}`)}>Abrir cliente</Button>
+      </div>
       {actionError ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{actionError}</p> : null}
 
       {leadScore ? (
@@ -469,6 +476,7 @@ function LinkedCrmSection({
           onChanged={async () => { await mutateProposals(); }}
           onCreateNewProposal={() => { setOpenProposalId(undefined); setCreatingProposal(true); }}
           onCreateFollowUp={() => { setOpenProposalId(undefined); setCreatingTask(true); }}
+          onOpenDeal={(dealId) => setOpenDealId(dealId)}
         />
       ) : null}
 

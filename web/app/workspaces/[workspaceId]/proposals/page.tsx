@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Copy, FileText, History, Info, Search, Send, SlidersHorizontal } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { DetailBlock, DetailModal } from "@/components/DetailModal";
@@ -103,6 +103,13 @@ function ProposalsView() {
       setDealId(queryDealId ?? "");
       setCreateOpen(true);
     }
+  }, [searchParams]);
+
+  // Jornada Comercial, Fase 5 — deep-link `?proposal=<id>` (ex.: vindo do Home/Timeline 360/outra
+  // tela), abre direto o detalhe da proposta em vez de exigir que o usuário a encontre na lista.
+  useEffect(() => {
+    const queryProposalId = searchParams.get("proposal");
+    if (queryProposalId) setSelectedId(queryProposalId);
   }, [searchParams]);
 
   useEffect(() => {
@@ -506,6 +513,7 @@ function ProposalDetailModal({
   onCreateFollowUp?: (proposal: Proposal) => void;
   onMarkDealLost?: (proposal: Proposal) => void;
 }) {
+  const router = useRouter();
   const [section, setSection] = useState<ProposalSection>("summary");
   const [publicLink, setPublicLink] = useState<string>();
   const [linkBusy, setLinkBusy] = useState(false);
@@ -518,7 +526,14 @@ function ProposalDetailModal({
       open={open}
       onOpenChange={onOpenChange}
       title={proposal.title}
-      description={<span className="text-sm text-muted-foreground">{contact?.name ?? "Sem contato"}{deal ? ` · ${deal.title}` : ""}</span>}
+      description={
+        // Jornada Comercial Fase 5, item 11 — nome do contato/negócio no header nunca deveria ser
+        // texto morto quando dá pra abrir o Contact 360/o Deal direto.
+        <span className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
+          {contact ? <button type="button" onClick={() => router.push(`/workspaces/${workspaceId}/contacts?contactId=${contact.id}`)} className="underline-offset-2 hover:text-foreground hover:underline">{contact.name}</button> : <span>Sem contato</span>}
+          {deal ? <><span>·</span><button type="button" onClick={() => router.push(`/workspaces/${workspaceId}/deals?dealId=${deal.id}`)} className="underline-offset-2 hover:text-foreground hover:underline">{deal.title}</button></> : null}
+        </span>
+      }
       eyebrow="Proposta"
       avatar={<span className="flex h-12 w-12 items-center justify-center rounded-xl bg-ai-soft text-ai"><FileText className="h-5 w-5" /></span>}
       headerExtra={<StatusBadge status={proposal.status} />}

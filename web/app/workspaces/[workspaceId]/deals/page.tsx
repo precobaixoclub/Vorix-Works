@@ -528,6 +528,7 @@ function DealsView() {
           setSelectedDealId(undefined);
           handleOpenConversation(conversation);
         } : undefined}
+        onOpenContact={(contactId) => router.push(`/workspaces/${workspace.id}/contacts?contactId=${contactId}`)}
       />
     </main>
   );

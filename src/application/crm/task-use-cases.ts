@@ -39,8 +39,23 @@ export async function getTask(deps: TaskUseCaseDeps, input: { taskId: string; te
 }
 
 export async function updateTask(deps: TaskUseCaseDeps, input: { taskId: string; tenantId: string; workspaceId: string; patch: UpdateTaskInput }): Promise<Task> {
-  await mustTaskBelongToTenantAndWorkspace(deps, input.taskId, input.tenantId, input.workspaceId);
-  return deps.taskRepository.update(input.taskId, input.patch);
+  const existing = await mustTaskBelongToTenantAndWorkspace(deps, input.taskId, input.tenantId, input.workspaceId);
+  const task = await deps.taskRepository.update(input.taskId, input.patch);
+  // Jornada Comercial, Fase 5 — a Timeline 360 precisa de `task_rescheduled` pra mostrar
+  // reagendamentos (item já existia via `PATCH /tasks/:id` com `dueAt`, mas nunca tinha sido
+  // registrado como evento; só grava quando `dueAt` de fato muda, nunca em qualquer outro patch).
+  if (input.patch.dueAt !== undefined && input.patch.dueAt !== existing.dueAt) {
+    await deps.timelineEventRepository.record({
+      tenantId: task.tenantId,
+      workspaceId: task.workspaceId,
+      entityType: "task",
+      entityId: task.id,
+      eventType: "task_rescheduled",
+      actorType: "user",
+      payload: { fromDueAt: existing.dueAt, toDueAt: task.dueAt },
+    });
+  }
+  return task;
 }
 
 export async function completeTask(deps: TaskUseCaseDeps, input: { taskId: string; tenantId: string; workspaceId: string }): Promise<Task> {

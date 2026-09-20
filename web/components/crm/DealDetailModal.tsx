@@ -42,6 +42,7 @@ export function DealDetailModal({
   onChanged,
   onMove,
   onOpenConversation,
+  onOpenContact,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -61,6 +62,10 @@ export function DealDetailModal({
    * resolver a conversa daquele contato ou quando não faz sentido no contexto (ex.: dentro do
    * próprio painel da conversa). */
   onOpenConversation?: (deal: Deal) => void;
+  /** Jornada Comercial Fase 5, item 11 — nome do contato no header nunca deveria ser texto morto
+   * quando dá pra abrir o Contact 360 direto. Omitido quando o chamador está dentro do próprio
+   * Contact 360 (não faz sentido "abrir" o contato que já está aberto). */
+  onOpenContact?: (contactId: string) => void;
 }) {
   const [section, setSection] = useState<Section>("summary");
   const [editing, setEditing] = useState(false);
@@ -101,7 +106,11 @@ export function DealDetailModal({
         title={deal.title}
         description={
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span>{contact?.name ?? "Sem contato vinculado"}</span>
+            {contact && onOpenContact ? (
+              <button type="button" onClick={() => onOpenContact(contact.id)} className="underline-offset-2 hover:text-foreground hover:underline">{contact.name}</button>
+            ) : (
+              <span>{contact?.name ?? "Sem contato vinculado"}</span>
+            )}
             <span>·</span>
             <span>{formatCurrencyCents(deal.valueCents, deal.currency)}</span>
           </div>
@@ -185,7 +194,7 @@ export function DealDetailModal({
         />
       ) : null}
       {openProposalId ? (
-        <ProposalDetailModal workspaceId={workspaceId} proposal={dealProposals.find((proposal) => proposal.id === openProposalId)!} contactName={contact?.name} dealTitle={deal.title} onClose={() => setOpenProposalId(undefined)} onChanged={onChanged} onCreateNewProposal={() => { setOpenProposalId(undefined); setCreatingProposal(true); }} onCreateFollowUp={() => { setOpenProposalId(undefined); setCreatingTask(true); }} onMarkDealLost={stages.some((stage) => stage.isLost) ? () => { setOpenProposalId(undefined); void onMove(deal, stages.find((stage) => stage.isLost)!); } : undefined} />
+        <ProposalDetailModal workspaceId={workspaceId} proposal={dealProposals.find((proposal) => proposal.id === openProposalId)!} contactName={contact?.name} dealTitle={deal.title} onClose={() => setOpenProposalId(undefined)} onChanged={onChanged} onCreateNewProposal={() => { setOpenProposalId(undefined); setCreatingProposal(true); }} onCreateFollowUp={() => { setOpenProposalId(undefined); setCreatingTask(true); }} onMarkDealLost={stages.some((stage) => stage.isLost) ? () => { setOpenProposalId(undefined); void onMove(deal, stages.find((stage) => stage.isLost)!); } : undefined} onOpenContact={onOpenContact} />
       ) : null}
     </>
   );

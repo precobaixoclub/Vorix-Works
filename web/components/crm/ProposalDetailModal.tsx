@@ -10,7 +10,7 @@ import { regenerateProposalLink, revokeProposalLink, sendProposal } from "@/feat
 import type { Proposal } from "@/features/crm/types";
 import { formatCurrencyCents, formatDate, formatDateTime } from "@/lib/format";
 
-export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTitle, conversationId, onClose, onChanged, onCreateNewProposal, onCreateFollowUp, onMarkDealLost }: {
+export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTitle, conversationId, onClose, onChanged, onCreateNewProposal, onCreateFollowUp, onMarkDealLost, onOpenContact, onOpenDeal }: {
   workspaceId: string;
   proposal: Proposal;
   contactName?: string;
@@ -21,6 +21,11 @@ export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTi
   onCreateNewProposal?: () => void;
   onCreateFollowUp?: () => void;
   onMarkDealLost?: () => void;
+  /** Jornada Comercial Fase 5, item 11 — nome do contato/negócio no header nunca deveria ser texto
+   * morto quando dá pra abrir aquele contexto direto. Omitidos quando o chamador não tem como
+   * navegar (ex.: sem `proposal.contactId`) ou não faz sentido no contexto atual. */
+  onOpenContact?: (contactId: string) => void;
+  onOpenDeal?: (dealId: string) => void;
 }) {
   const [message, setMessage] = useState(`${contactName ? `Olá, ${contactName}! ` : "Olá! "}Preparei sua proposta comercial.\n\nVocê pode visualizar aqui:\n{{proposalUrl}}`);
   const [generatedLink, setGeneratedLink] = useState<string>();
@@ -62,7 +67,26 @@ export function ProposalDetailModal({ workspaceId, proposal, contactName, dealTi
   return (
     <Modal title={proposal.title} onClose={onClose} maxWidthClass="sm:max-w-2xl">
       <div className="space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm text-muted-foreground">{contactName ?? "Sem contato"}{dealTitle ? ` · ${dealTitle}` : ""}</p><StatusBadge status={proposal.status} /></div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
+            {proposal.contactId && onOpenContact ? (
+              <button type="button" onClick={() => onOpenContact(proposal.contactId!)} className="underline-offset-2 hover:text-foreground hover:underline">{contactName ?? "Sem contato"}</button>
+            ) : (
+              <span>{contactName ?? "Sem contato"}</span>
+            )}
+            {dealTitle ? (
+              <>
+                <span>·</span>
+                {proposal.dealId && onOpenDeal ? (
+                  <button type="button" onClick={() => onOpenDeal(proposal.dealId!)} className="underline-offset-2 hover:text-foreground hover:underline">{dealTitle}</button>
+                ) : (
+                  <span>{dealTitle}</span>
+                )}
+              </>
+            ) : null}
+          </p>
+          <StatusBadge status={proposal.status} />
+        </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <Info label="Subtotal" value={formatCurrencyCents(subtotalCents, proposal.currency)} />
           <Info label="Desconto" value={formatCurrencyCents(proposal.discountCents, proposal.currency)} />

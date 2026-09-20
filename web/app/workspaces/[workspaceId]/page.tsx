@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { useCommercialMetrics, useTasks } from "@/features/crm/hooks";
+import { isTaskOverdue } from "@/features/crm/presentation";
 import { useInboxMetrics, useInboxModuleStatus } from "@/features/inbox/hooks";
 import { useOnboarding } from "@/features/onboarding/hooks";
 import type { OnboardingStep } from "@/features/onboarding/types";
@@ -50,7 +51,10 @@ export default function WorkspaceHomePage() {
   const { data: onboarding, isLoading: onboardingLoading } = useOnboarding(workspace.id);
 
   const now = useMemo(() => new Date(), []);
-  const overdueTasks = (tasks ?? []).filter((task) => task.dueAt && new Date(task.dueAt) < now);
+  // Jornada Comercial, Fase 5 — mesma unificação de semântica feita em `vorix-intelligence-panel.tsx`:
+  // esta página tinha sua PRÓPRIA terceira definição de "atrasada" (instante atual), diferente das
+  // outras duas. Agora as três (aqui, Intelligence e Contact 360/Tarefas) usam `isTaskOverdue`.
+  const overdueTasks = (tasks ?? []).filter((task) => isTaskOverdue(task, now));
   const scheduledPublications = (publications ?? []).filter((post) => derivePublicationStatus(post) === "scheduled");
   const loading = (inboxEnabled && inboxLoading) || commercialLoading || tasksLoading || publicationsLoading;
   const error = (inboxEnabled && inboxError) || commercialError || tasksError || publicationsError;

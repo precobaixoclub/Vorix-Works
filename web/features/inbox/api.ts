@@ -36,8 +36,8 @@ export function disconnectInboxConnection(workspaceId: string, connectionId: str
   return apiClient.post<MessagingConnection>(`/v1/inbox/connections/${encodeURIComponent(connectionId)}/disconnect`, { workspaceId });
 }
 
-export function listInboxConversations(workspaceId: string, filter?: InboxConversationFilter): Promise<{ conversations: InboxConversation[] }> {
-  const query = new URLSearchParams({ workspaceId, ...(filter ? { filter } : {}) });
+export function listInboxConversations(workspaceId: string, filter?: InboxConversationFilter, contactId?: string): Promise<{ conversations: InboxConversation[] }> {
+  const query = new URLSearchParams({ workspaceId, ...(filter ? { filter } : {}), ...(contactId ? { contactId } : {}) });
   return apiClient.get<{ conversations: InboxConversation[] }>(`/v1/inbox/conversations?${query.toString()}`);
 }
 

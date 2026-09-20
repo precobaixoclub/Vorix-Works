@@ -91,9 +91,17 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     workspaceId: string;
     filter?: InboxConversationListFilter;
     assignedUserId?: string;
+    contactId?: string;
   }): Promise<InboxConversationListItem[]> {
     const conditions = ["c.tenant_id = $1", "c.workspace_id = $2", "c.merge_status is null"];
     const params: unknown[] = [input.tenantId, input.workspaceId];
+    if (input.contactId) {
+      // Contact 360 (Jornada Comercial Fase 1, item 17) — escopo real por Contact CRM em vez de
+      // trazer o workspace inteiro e filtrar no frontend. `ct` é o LEFT JOIN com `inbox_contacts`
+      // logo abaixo; `ct.contact_id` é o vínculo com o CRM (`crmContactId` no read-model).
+      params.push(input.contactId);
+      conditions.push(`ct.contact_id = $${params.length}`);
+    }
     if (input.filter === "mine" && input.assignedUserId) {
       params.push(input.assignedUserId);
       conditions.push(`c.assigned_user_id = $${params.length}`);

@@ -315,7 +315,7 @@ export async function disconnectConnection(deps: InboxUseCaseDeps, input: Discon
   return deps.connectionRepository.updateStatus(connection.id, { status: "disconnected" });
 }
 
-export type ListConversationsInput = { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string };
+export type ListConversationsInput = { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string; contactId?: string };
 
 export async function listConversations(deps: InboxUseCaseDeps, input: ListConversationsInput): Promise<InboxConversationListItem[]> {
   const conversations = await deps.conversationRepository.listByWorkspace(input);

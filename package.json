@@ -18,6 +18,8 @@
     "db:migrate": "npm run build && node scripts/migrate.mjs",
     "db:migrate:status": "npm run build && node scripts/migrate.mjs status",
     "db:seed-user": "npm run build && node scripts/seed-user.mjs",
+    "crm:audit-inbox-bridge": "npm run build && node scripts/audit-inbox-crm-bridge-candidates.mjs",
+    "crm:backfill-inbox-bridge": "npm run build && node scripts/backfill-inbox-crm-bridge.mjs",
     "test:persistence": "npm run build && node --test tests/migration-runner.test.mjs tests/postgres-adapters.test.mjs tests/postgres-secret-manager.test.mjs tests/identity-adapters.test.mjs tests/conversation-adapters.test.mjs tests/briefing-adapters.test.mjs tests/ai-execution-postgres-adapter.test.mjs",
     "test:identity": "npm run build && node --test tests/identity-adapters.test.mjs tests/identity-use-cases.test.mjs tests/auth-api.test.mjs",
     "test:conversation": "npm run build && node --test tests/conversation-intent-router.test.mjs tests/conversation-arthur-decision.test.mjs tests/conversation-adapters.test.mjs tests/conversation-engine.test.mjs tests/conversation-api.test.mjs",

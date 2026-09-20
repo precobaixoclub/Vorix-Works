@@ -249,6 +249,65 @@ CONTACT_SCOPED_FETCHES        = YES
 
 ---
 
+## 20. Addendum — fechamento dos gaps PARTIAL/AUSENTE (revisão posterior)
+
+Revisão pedida explicitamente pelo usuário ("revise e aplique os 2 prompts, caso algum não tenha
+sido aplicado ainda"). Uma auditoria de código (não só do relatório) confirmou que a bridge em si
+está correta, mas encontrou 3 gaps reais que este addendum fecha:
+
+**Deep-link (`CONTACT_DEEP_LINK`)** — antes, `?contactId=` só era lido na montagem da página
+(`useEffect` + `useState` local); abrir um contato por clique não atualizava a URL, e o botão Voltar
+do navegador não fechava o modal. Agora `selectedContactId` é derivado diretamente de
+`useSearchParams()` (nunca duplicado em `useState`): abrir empurra `router.push` (nova entrada de
+histórico), fechar usa `router.replace` (limpa o parâmetro sem empilhar entrada), e o botão Voltar —
+que muda `searchParams` como qualquer outra navegação — fecha o modal sozinho, sem precisar de
+listener de `popstate` manual. `web/app/workspaces/[workspaceId]/contacts/page.tsx`.
+
+**Scoped fetch da aba Conversas (`CONTACT_SCOPED_FETCHES`)** — a API de listagem de conversas
+(`GET /v1/inbox/conversations`) não tinha filtro por `contactId`; a aba Conversas do Contact 360
+buscava o workspace inteiro e filtrava no frontend. Adicionado `contactId` como filtro de verdade em
+toda a cadeia: `InboxConversationRepositoryPort.listByWorkspace` → implementação Postgres (`and
+ct.contact_id = $N`, reaproveitando o LEFT JOIN com `inbox_contacts` já existente) → implementação
+in-memory (usada pelos testes; também corrigido um bug pré-existente nela, que nunca preenchia
+`crmContactId` no item retornado) → `listConversations` (use-case) → schema/rota HTTP → cliente
+(`listInboxConversations`/`useInboxConversations`) → `contacts/page.tsx`, que agora chama
+`useInboxConversations(workspace.id, "all", selectedContactId)` em vez de filtrar
+`conversationsList` no client. A grade de cartões continua workspace-wide (decisão já documentada em
+§9 — cada cartão precisa das próprias métricas).
+
+**Backfill controlado (§8/§13)** — criado `scripts/backfill-inbox-crm-bridge.mjs`: reusa a MESMA
+`ensureCrmContactForInboxContact` da ponte em tempo real (nenhuma segunda lógica de criação),
+DRY RUN por padrão, `--apply` para executar de fato, `--limit N` para rodar em lotes, idempotente,
+com log por candidato. **Não foi executado contra produção nesta rodada** — a decisão de rodar o
+backfill continua sendo do operador, como o pedido original exigia ("permitir backfill somente...
+depois da auditoria... decisão humana").
+
+**Runtime desta revisão**: `npm install` (raiz e `web/`), `npx tsc --noEmit` limpo em ambos,
+`npm run build` (raiz) limpo, `node scripts/check-crm-isolation.mjs` e
+`check-inbox-conversation-isolation.mjs` OK, suítes de teste do backend relevantes
+(`crm-conversas-integration`, `crm-pipelines-deals`, `crm-fundacao`, `crm-execucao-comercial`,
+`inbox-persistence`, `inbox-attendance`) — **79/79 passando**, incluindo o teste já existente que
+agora exercita o novo filtro `contactId` de conversas. `cd web && npx vitest run` — **38/38
+passando**, incluindo 8 testes novos para `resolveActiveDeal`/`groupDealsByStatus` (fundação
+reaproveitada pela Fase 2). Sem QA de navegador ao vivo (mesma limitação já registrada em §14).
+
+Classificação atualizada:
+
+```
+CONTACT_DEEP_LINK             = VERIFIED_RUNTIME   (era PARTIAL — URL como fonte da verdade, back fecha o modal; sem clique real de navegador)
+CONTACT_SCOPED_FETCHES        = YES                (era PARTIAL — Conversas do Contact 360 agora também escopada, não só Negócios/Tarefas/Propostas)
+CONTACT_360_CONTEXTUAL        = PARTIAL            (ainda navega em vez de criar inline — resolvido para Negócios pela Fase 2; Tarefas/Propostas seguem navegação, fora do escopo desta fase)
+```
+
+Arquivos adicionais desta revisão: `src/application/ports/inbox-conversation-repository.port.ts`,
+`src/infrastructure/storage/{postgres/postgres-inbox-conversation-repository,in-memory-inbox-conversation-repository}.ts`,
+`src/application/inbox/inbox-use-cases.ts`, `src/interfaces/api/routes/v1/inbox.route.ts`,
+`web/features/inbox/{api,hooks}.ts`, `web/app/workspaces/[workspaceId]/contacts/page.tsx`,
+`scripts/backfill-inbox-crm-bridge.mjs` (novo), `package.json` (scripts `crm:audit-inbox-bridge`/
+`crm:backfill-inbox-bridge`).
+
+---
+
 ## Arquivos alterados/criados
 
 - `src/application/commercial-bridge/inbox-crm-bridge-use-cases.ts` (novo)

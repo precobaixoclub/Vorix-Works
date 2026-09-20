@@ -144,7 +144,13 @@ const KANBAN_CONVERSATION_IDS_QUERY_SCHEMA = {
 const CONVERSATIONS_QUERY_SCHEMA = {
   type: "object",
   required: ["workspaceId"],
-  properties: { workspaceId: { type: "string", minLength: 1 }, filter: { type: "string", enum: ["all", "mine", "unassigned", "unread", "urgent", "open", "pending", "resolved"] } },
+  properties: {
+    workspaceId: { type: "string", minLength: 1 },
+    filter: { type: "string", enum: ["all", "mine", "unassigned", "unread", "urgent", "open", "pending", "resolved"] },
+    // Contact 360 (Jornada Comercial Fase 1, item 17) — escopa a listagem por Contact CRM já
+    // vinculado, em vez do frontend buscar o workspace inteiro e filtrar client-side.
+    contactId: { type: "string", minLength: 1 },
+  },
 } as const;
 const MESSAGES_QUERY_SCHEMA = {
   type: "object",
@@ -737,8 +743,8 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
 
   app.get("/inbox/conversations", { schema: { querystring: CONVERSATIONS_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "inbox:read");
-    const { workspaceId, filter } = request.query as { workspaceId: string; filter?: InboxConversationListFilter };
-    const conversations = await listConversations(useCaseDeps, { tenantId: principal.tenantId, workspaceId, filter, assignedUserId: principal.userId });
+    const { workspaceId, filter, contactId } = request.query as { workspaceId: string; filter?: InboxConversationListFilter; contactId?: string };
+    const conversations = await listConversations(useCaseDeps, { tenantId: principal.tenantId, workspaceId, filter, assignedUserId: principal.userId, contactId });
     return successEnvelope({ conversations }, request.id);
   });
 

@@ -82,8 +82,18 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     workspaceId: string;
     filter?: InboxConversationListFilter;
     assignedUserId?: string;
+    contactId?: string;
   }): Promise<InboxConversationListItem[]> {
     let rows = [...this.rows.values()].filter((row) => row.tenantId === input.tenantId && row.workspaceId === input.workspaceId && !row.mergeStatus);
+    if (input.contactId) {
+      const contactIds = new Set<string>();
+      for (const row of rows) {
+        if (!row.contactId) continue;
+        const inboxContact = await this.contactRepository?.getById(row.contactId);
+        if (inboxContact?.crmContactId === input.contactId) contactIds.add(row.id);
+      }
+      rows = rows.filter((row) => contactIds.has(row.id));
+    }
     switch (input.filter) {
       case "mine":
         rows = rows.filter((row) => row.assignedUserId === input.assignedUserId);
@@ -120,6 +130,7 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
         ...row,
         contactName: contact?.name,
         contactPhone: contact?.phoneNormalized,
+        crmContactId: contact?.crmContactId,
         contactProfilePictureStorageRef: contact?.profilePictureStorageRef,
         connectionProvider: connection?.provider,
         lastMessagePreview: lastMessage

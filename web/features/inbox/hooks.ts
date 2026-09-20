@@ -54,8 +54,8 @@ export function useInboxMetrics(workspaceId: string, params?: { dateFrom?: strin
   return useSWR(shouldFetch ? ["inbox-metrics", workspaceId, params?.dateFrom, params?.dateTo] : null, () => getInboxMetrics(workspaceId, params));
 }
 
-export function useInboxConversations(workspaceId: string, filter: InboxConversationFilter = "all") {
-  return useSWR(["inbox-conversations", workspaceId, filter], () => listInboxConversations(workspaceId, filter), { refreshInterval: 30_000 });
+export function useInboxConversations(workspaceId: string, filter: InboxConversationFilter = "all", contactId?: string) {
+  return useSWR(["inbox-conversations", workspaceId, filter, contactId], () => listInboxConversations(workspaceId, filter, contactId), { refreshInterval: 30_000 });
 }
 
 export function useInboxConversationMessages(workspaceId: string, conversationId: string | undefined) {

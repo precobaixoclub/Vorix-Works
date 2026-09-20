@@ -72,7 +72,10 @@ export type InboxConversationRepositoryPort = {
    * eventos desta conversa cascateiam junto (ver `db/migrations/0083`/`0084`). Sem efeito se a
    * conversa já não existir (idempotente — um duplo-clique/retry nunca lança). */
   delete(id: string): Promise<void>;
-  listByWorkspace(input: { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string }): Promise<InboxConversationListItem[]>;
+  /** `contactId` (Jornada Comercial Fase 1, item 17) filtra pelo Contact CRM já vinculado
+   * (`inbox_contacts.contact_id`) — permite ao Contact 360 buscar só as conversas daquela pessoa
+   * em vez de trazer o workspace inteiro e filtrar no frontend. */
+  listByWorkspace(input: { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string; contactId?: string }): Promise<InboxConversationListItem[]>;
   markLastMessage(id: string, input: { lastMessageAt: string; incrementUnread: boolean }): Promise<void>;
   /** Bloco "Identity UX" — metadata de grupo (nome real/quantidade de participantes), buscada via
    * `MessagingProvider.getGroupInfo` (ver `syncGroupMetadata` em inbox-use-cases.ts). Só grava

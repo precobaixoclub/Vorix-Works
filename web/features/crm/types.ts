@@ -133,6 +133,20 @@ export type ProposalItem = {
 
 export type ProposalStatus = "draft" | "sent" | "viewed" | "accepted" | "rejected" | "expired";
 
+export type ProposalTemplate = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  name: string;
+  defaultTitle: string;
+  defaultItems: readonly ProposalItem[];
+  defaultConditions?: string;
+  defaultValidDays: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Proposal = {
   id: string;
   tenantId: string;
@@ -147,10 +161,18 @@ export type Proposal = {
   validUntil?: string;
   conditions?: string;
   status: ProposalStatus;
-  publicTokenHash: string;
+  publicTokenHash?: string;
   sentAt?: string;
   viewedAt?: string;
+  lastViewedAt?: string;
+  viewCount: number;
   respondedAt?: string;
+  publicLinkRevokedAt?: string;
+  rejectionReason?: string;
+  rejectionComment?: string;
+  customerName?: string;
+  customerCompany?: string;
+  issuerName?: string;
   createdAt: string;
   updatedAt: string;
 };

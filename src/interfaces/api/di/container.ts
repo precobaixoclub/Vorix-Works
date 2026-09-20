@@ -118,6 +118,7 @@ import type { DealRepositoryPort } from "../../../application/ports/deal-reposit
 import type { PipelineRepositoryPort, PipelineStageRepositoryPort } from "../../../application/ports/pipeline-repository.port.js";
 import type { ProductRepositoryPort } from "../../../application/ports/product-repository.port.js";
 import type { ProposalRepositoryPort } from "../../../application/ports/proposal-repository.port.js";
+import type { ProposalTemplateRepositoryPort } from "../../../application/ports/proposal-template-repository.port.js";
 import type { TaskRepositoryPort } from "../../../application/ports/task-repository.port.js";
 import type { TimelineEventRepositoryPort } from "../../../application/ports/timeline-event-repository.port.js";
 import type { UserRepositoryPort } from "../../../application/ports/user-repository.port.js";
@@ -473,6 +474,7 @@ export type ApiContainer = {
     taskRepository: TaskRepositoryPort;
     productRepository: ProductRepositoryPort;
     proposalRepository: ProposalRepositoryPort;
+    proposalTemplateRepository: ProposalTemplateRepositoryPort;
     /** CRM/Comercial (Fase 5) — Sugestões do Copiloto Comercial (IA). */
     commercialSuggestionRepository: CommercialSuggestionRepositoryPort;
     /** CRM/Comercial (Fase 6) — Regras de automação e seu log de execução. */

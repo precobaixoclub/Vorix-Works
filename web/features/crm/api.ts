@@ -21,6 +21,7 @@ import type {
   Proposal,
   ProposalStatus,
   ProposalWithToken,
+  ProposalTemplate,
   Task,
   TaskStatus,
   TaskType,
@@ -221,8 +222,48 @@ export function updateProposal(proposalId: string, workspaceId: string, patch: P
   return apiClient.patch<Proposal>(`/v1/proposals/${encodeURIComponent(proposalId)}`, { workspaceId, ...patch });
 }
 
-export function sendProposal(proposalId: string, workspaceId: string): Promise<Proposal> {
-  return apiClient.post<Proposal>(`/v1/proposals/${encodeURIComponent(proposalId)}/send`, { workspaceId });
+export function sendProposal(proposalId: string, input: { workspaceId: string; conversationId: string; message: string; idempotencyKey: string }): Promise<Proposal> {
+  return apiClient.post<Proposal>(`/v1/proposals/${encodeURIComponent(proposalId)}/send-whatsapp`, input);
+}
+
+export function regenerateProposalLink(proposalId: string, workspaceId: string): Promise<ProposalWithToken> {
+  return apiClient.post<ProposalWithToken>(`/v1/proposals/${encodeURIComponent(proposalId)}/link/regenerate`, { workspaceId });
+}
+
+export function revokeProposalLink(proposalId: string, workspaceId: string): Promise<Proposal> {
+  return apiClient.post<Proposal>(`/v1/proposals/${encodeURIComponent(proposalId)}/link/revoke`, { workspaceId });
+}
+
+export type ProposalTemplateInput = {
+  workspaceId: string;
+  name: string;
+  defaultTitle: string;
+  defaultItems: ReadonlyArray<{ productId?: string; name: string; quantity: number; unitPriceCents: number; subtotalCents?: number }>;
+  defaultConditions?: string;
+  defaultValidDays: number;
+  active?: boolean;
+};
+
+export function listProposalTemplates(workspaceId: string, activeOnly?: boolean): Promise<ProposalTemplate[]> {
+  const query = new URLSearchParams({ workspaceId });
+  if (activeOnly !== undefined) query.set("activeOnly", String(activeOnly));
+  return apiClient.get<ProposalTemplate[]>(`/v1/proposal-templates?${query}`);
+}
+
+export function createProposalTemplate(input: ProposalTemplateInput): Promise<ProposalTemplate> {
+  return apiClient.post<ProposalTemplate>("/v1/proposal-templates", input);
+}
+
+export function updateProposalTemplate(id: string, workspaceId: string, patch: Partial<Omit<ProposalTemplateInput, "workspaceId">>): Promise<ProposalTemplate> {
+  return apiClient.patch<ProposalTemplate>(`/v1/proposal-templates/${encodeURIComponent(id)}`, { workspaceId, ...patch });
+}
+
+export function duplicateProposalTemplate(id: string, workspaceId: string): Promise<ProposalTemplate> {
+  return apiClient.post<ProposalTemplate>(`/v1/proposal-templates/${encodeURIComponent(id)}/duplicate`, { workspaceId });
+}
+
+export function deleteProposalTemplate(id: string, workspaceId: string): Promise<void> {
+  return apiClient.delete<void>(`/v1/proposal-templates/${encodeURIComponent(id)}?workspaceId=${encodeURIComponent(workspaceId)}`);
 }
 
 export function getProposalTimeline(proposalId: string, workspaceId: string): Promise<TimelineEvent[]> {

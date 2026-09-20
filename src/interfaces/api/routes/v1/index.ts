@@ -44,6 +44,7 @@ import { registerOnboardingRoutes } from "./onboarding.route.js";
 import { DefaultResourceCounterAdapter } from "../../../../infrastructure/billing/resource-counter-adapter.js";
 import { registerProposalsRoutes } from "./proposals.route.js";
 import { registerPublicProposalsRoutes } from "./public-proposals.route.js";
+import { registerProposalTemplatesRoutes } from "./proposal-templates.route.js";
 import { AiGatewayCommercialCopilotGenerator } from "../../../../infrastructure/ai-gateway/commercial-copilot-generator-adapter.js";
 import { registerMetaAdsRoutes } from "./meta-ads.route.js";
 import { registerMetaAdCampaignsRoutes } from "./meta-ad-campaigns.route.js";
@@ -237,8 +238,9 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
 
   // Módulo Conversas (Fase 1) — kill switch global via `CONVERSATIONS_MODULE_ENABLED`; sem isto,
   // `/v1/inbox/*` nem existe (nenhum tenant vê o módulo até habilitação explícita).
+  let sharedInboxDeps: Parameters<typeof registerInboxRoutes>[1] | undefined;
   if (app.zunoContainer.inboxFeatureFlags.enabled) {
-    await registerInboxRoutes(app, {
+    sharedInboxDeps = {
       connectionRepository: app.zunoContainer.messagingConnectionRepository,
       contactRepository: app.zunoContainer.inboxContactRepository,
       conversationRepository: app.zunoContainer.inboxConversationRepository,
@@ -262,7 +264,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       notificationRepository: app.zunoContainer.notificationRepository,
       notificationRealtimePublisher: app.zunoContainer.notificationRealtimePublisher,
       tagRepository: app.zunoContainer.inboxTagRepository,
-    });
+    };
+    await registerInboxRoutes(app, sharedInboxDeps);
     // Fase 7 (Resultados) — métricas agregadas de atendimento, mesmo kill switch do módulo.
     await registerInboxMetricsRoutes(app, { inboxMetricsRepository: app.zunoContainer.inboxMetricsRepository });
   }
@@ -320,12 +323,27 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     await registerProposalsRoutes(app, {
       proposalRepository: identity.proposalRepository,
       timelineEventRepository: identity.timelineEventRepository,
+      contactRepository: identity.contactRepository,
+      dealRepository: identity.dealRepository,
       automation: automationDeps,
       productAnalytics: productAnalyticsDeps,
+      delivery: sharedInboxDeps ? {
+        proposalRepository: identity.proposalRepository,
+        timelineEventRepository: identity.timelineEventRepository,
+        contactRepository: identity.contactRepository,
+        dealRepository: identity.dealRepository,
+        automation: automationDeps,
+        productAnalytics: productAnalyticsDeps,
+        inbox: sharedInboxDeps,
+        appBaseUrl: app.zunoConfig.billing.appBaseUrl,
+      } : undefined,
     });
+    await registerProposalTemplatesRoutes(app, { proposalTemplateRepository: identity.proposalTemplateRepository });
     await registerPublicProposalsRoutes(app, {
       proposalRepository: identity.proposalRepository,
       timelineEventRepository: identity.timelineEventRepository,
+      contactRepository: identity.contactRepository,
+      workspaceRepository: app.zunoContainer.workspaceRepository,
       dealRepository: identity.dealRepository,
       pipelineStageRepository: identity.pipelineStageRepository,
       // Fase 6 — dispara `proposal_accepted`/`proposal_rejected` ao responder ao link público.

@@ -34,4 +34,11 @@ export type ProposalRepositoryPort = {
   listByWorkspace(filter: ListProposalsFilter): Promise<Proposal[]>;
   update(id: string, input: UpdateProposalInput): Promise<Proposal>;
   setStatus(id: string, input: { status: ProposalStatus; sentAt?: string | null; viewedAt?: string | null; respondedAt?: string | null }): Promise<Proposal>;
+  rotatePublicToken(id: string, tokenHash: string): Promise<Proposal>;
+  revokePublicToken(id: string, revokedAt: string): Promise<Proposal>;
+  recordView(id: string, viewedAt: string): Promise<Proposal>;
+  setRejection(id: string, input: { reason?: string; comment?: string }): Promise<Proposal>;
+  reserveDelivery(input: { id: string; tenantId: string; workspaceId: string; proposalId: string; conversationId: string; idempotencyKey: string }): Promise<"reserved" | "pending" | "queued">;
+  completeDelivery(input: { tenantId: string; workspaceId: string; idempotencyKey: string; inboxMessageId: string; queuedAt: string }): Promise<void>;
+  failDelivery(input: { tenantId: string; workspaceId: string; idempotencyKey: string; errorMessage: string }): Promise<void>;
 };

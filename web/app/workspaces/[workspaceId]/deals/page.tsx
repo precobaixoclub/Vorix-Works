@@ -522,7 +522,6 @@ function DealsView() {
         teams={teamsList}
         onChanged={refresh}
         onMove={(deal, stage) => requestMoveDeal(deal, stage)}
-        onCreateProposal={(deal) => router.push(`/workspaces/${workspace.id}/proposals?dealId=${deal.id}${deal.contactId ? `&contactId=${deal.contactId}` : ""}`)}
         onOpenConversation={selectedDeal?.contactId && conversationByContactId.has(selectedDeal.contactId) ? (deal) => {
           const conversation = deal.contactId ? conversationByContactId.get(deal.contactId) : undefined;
           if (!conversation) return;

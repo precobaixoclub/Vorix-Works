@@ -27,7 +27,7 @@ export async function acceptPublicProposal(token: string): Promise<Proposal> {
   return unwrap<Proposal>(response);
 }
 
-export async function rejectPublicProposal(token: string): Promise<Proposal> {
-  const response = await fetch(`${getApiBaseUrl()}/v1/public/proposals/${encodeURIComponent(token)}/reject`, { method: "POST" });
+export async function rejectPublicProposal(token: string, rejection?: { reason?: string; comment?: string }): Promise<Proposal> {
+  const response = await fetch(`${getApiBaseUrl()}/v1/public/proposals/${encodeURIComponent(token)}/reject`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(rejection ?? {}) });
   return unwrap<Proposal>(response);
 }

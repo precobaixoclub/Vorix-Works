@@ -4,10 +4,13 @@ import {
   getProposal,
   getProposalTimeline,
   listProposals,
+  regenerateProposalLink,
+  revokeProposalLink,
   sendProposal,
   updateProposal,
 } from "../../../../application/crm/proposal-use-cases.js";
 import type { ProposalUseCaseDeps } from "../../../../application/crm/proposal-use-cases.js";
+import { deliverProposalThroughInbox, type ProposalDeliveryDeps } from "../../../../application/commercial/proposal-delivery-use-cases.js";
 import { PROPOSAL_STATUSES } from "../../../../domain/crm/crm.model.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
@@ -51,13 +54,15 @@ const UPDATE_BODY_SCHEMA = { ...CREATE_BODY_SCHEMA, required: ["workspaceId"], p
 
 function translateProposalError(error: unknown): never {
   if (error instanceof Error && error.message.startsWith("PROPOSAL_NOT_FOUND")) throw new NotFoundError(error.message);
-  if (error instanceof Error && (error.message.startsWith("PROPOSAL_NOT_EDITABLE") || error.message.startsWith("PROPOSAL_ALREADY_SENT"))) {
+  if (error instanceof Error && (error.message.startsWith("PROPOSAL_NOT_EDITABLE") || error.message.startsWith("PROPOSAL_NOT_SENDABLE") || error.message.startsWith("PROPOSAL_LINK_NOT_AVAILABLE") || error.message.startsWith("PROPOSAL_CONTEXT_INVALID") || error.message.startsWith("PROPOSAL_SEND_"))) {
     throw new ValidationError(error.message);
   }
   throw error;
 }
 
-export async function registerProposalsRoutes(app: FastifyInstance, deps: ProposalUseCaseDeps): Promise<void> {
+export type ProposalsRoutesDeps = ProposalUseCaseDeps & { delivery?: ProposalDeliveryDeps };
+
+export async function registerProposalsRoutes(app: FastifyInstance, deps: ProposalsRoutesDeps): Promise<void> {
   app.get("/proposals", { schema: { querystring: LIST_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "proposal:read");
     const { workspaceId, dealId, contactId } = request.query as { workspaceId: string; dealId?: string; contactId?: string };
@@ -97,16 +102,38 @@ export async function registerProposalsRoutes(app: FastifyInstance, deps: Propos
     }
   });
 
-  app.post("/proposals/:id/send", { schema: { params: ID_PARAMS_SCHEMA, body: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+  app.post("/proposals/:id/link/regenerate", { schema: { params: ID_PARAMS_SCHEMA, body: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "proposal:send");
     const { id } = request.params as { id: string };
     const { workspaceId } = request.body as { workspaceId: string };
     try {
-      const proposal = await sendProposal(deps, { proposalId: id, tenantId: principal.tenantId, workspaceId });
-      return successEnvelope(proposal, request.id);
+      const { proposal, rawToken } = await regenerateProposalLink(deps, { proposalId: id, tenantId: principal.tenantId, workspaceId });
+      return successEnvelope({ ...proposal, publicToken: rawToken }, request.id);
     } catch (error) {
       translateProposalError(error);
     }
+  });
+
+  app.post("/proposals/:id/link/revoke", { schema: { params: ID_PARAMS_SCHEMA, body: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "proposal:send");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.body as { workspaceId: string };
+    try { return successEnvelope(await revokeProposalLink(deps, { proposalId: id, tenantId: principal.tenantId, workspaceId }), request.id); } catch (error) { translateProposalError(error); }
+  });
+
+  app.post("/proposals/:id/send-whatsapp", { schema: { params: ID_PARAMS_SCHEMA, body: {
+    type: "object", required: ["workspaceId", "conversationId", "message", "idempotencyKey"], additionalProperties: false,
+    properties: { workspaceId: { type: "string" }, conversationId: { type: "string" }, message: { type: "string", minLength: 1, maxLength: 4000 }, idempotencyKey: { type: "string", minLength: 8, maxLength: 200 } },
+  } } }, async (request) => {
+    const principal = requirePermission(request, "proposal:send");
+    requirePermission(request, "inbox:reply");
+    if (!deps.delivery) throw new ValidationError("PROPOSAL_SEND_UNAVAILABLE: o módulo Conversas está desabilitado.");
+    const { id } = request.params as { id: string };
+    const body = request.body as { workspaceId: string; conversationId: string; message: string; idempotencyKey: string };
+    try {
+      const sent = await deliverProposalThroughInbox(deps.delivery, { proposalId: id, tenantId: principal.tenantId, workspaceId: body.workspaceId, conversationId: body.conversationId, message: body.message, idempotencyKey: body.idempotencyKey, sentByUserId: principal.userId });
+      return successEnvelope(sent, request.id);
+    } catch (error) { translateProposalError(error); }
   });
 
   app.get("/proposals/:id/timeline", { schema: { params: ID_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {

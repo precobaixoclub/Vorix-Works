@@ -16,6 +16,7 @@ import {
   listPipelineStages,
   listProducts,
   listProposals,
+  listProposalTemplates,
   listTasks,
 } from "./api";
 import type { CommercialMetricsParams, ListDealsParams } from "./api";
@@ -84,6 +85,10 @@ export function useProducts(workspaceId: string, params?: { search?: string; act
 
 export function useProposals(workspaceId: string, params?: { dealId?: string; contactId?: string; status?: ProposalStatus }) {
   return useSWR(["proposals", workspaceId, params?.dealId, params?.contactId, params?.status], () => listProposals(workspaceId, params));
+}
+
+export function useProposalTemplates(workspaceId: string, activeOnly?: boolean) {
+  return useSWR(["proposal-templates", workspaceId, activeOnly], () => listProposalTemplates(workspaceId, activeOnly));
 }
 
 export function useProposalTimeline(proposalId: string | undefined, workspaceId: string) {

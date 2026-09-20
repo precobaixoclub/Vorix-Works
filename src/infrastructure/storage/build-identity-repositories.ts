@@ -15,6 +15,7 @@ import type { PlatformAiSettingsRepositoryPort } from "../../application/ports/p
 import type { PlatformBillingRepositoryPort } from "../../application/ports/platform-billing-repository.port.js";
 import type { ProductRepositoryPort } from "../../application/ports/product-repository.port.js";
 import type { ProposalRepositoryPort } from "../../application/ports/proposal-repository.port.js";
+import type { ProposalTemplateRepositoryPort } from "../../application/ports/proposal-template-repository.port.js";
 import type { RefreshTokenRepositoryPort } from "../../application/ports/refresh-token-repository.port.js";
 import type { SubscriptionItemRepositoryPort, SubscriptionRepositoryPort } from "../../application/ports/subscription-repository.port.js";
 import type { TaskRepositoryPort } from "../../application/ports/task-repository.port.js";
@@ -47,6 +48,7 @@ import { PostgresPlatformAiSettingsRepository } from "./postgres/postgres-platfo
 import { PostgresPlatformBillingRepository } from "./postgres/postgres-platform-billing-repository.js";
 import { PostgresProductRepository } from "./postgres/postgres-product-repository.js";
 import { PostgresProposalRepository } from "./postgres/postgres-proposal-repository.js";
+import { PostgresProposalTemplateRepository } from "./postgres/postgres-proposal-template-repository.js";
 import { PostgresRefreshTokenRepository } from "./postgres/postgres-refresh-token-repository.js";
 import { PostgresSubscriptionItemRepository, PostgresSubscriptionRepository } from "./postgres/postgres-subscription-repository.js";
 import { PostgresTaskRepository } from "./postgres/postgres-task-repository.js";
@@ -102,6 +104,7 @@ export type IdentityRepositories = {
   taskRepository: TaskRepositoryPort;
   productRepository: ProductRepositoryPort;
   proposalRepository: ProposalRepositoryPort;
+  proposalTemplateRepository: ProposalTemplateRepositoryPort;
   /** CRM/Comercial (Fase 5) — Sugestões do Copiloto Comercial (IA). */
   commercialSuggestionRepository: CommercialSuggestionRepositoryPort;
   /** CRM/Comercial (Fase 6) — Regras de automação e seu log de execução. */
@@ -155,6 +158,7 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     taskRepository: new PostgresTaskRepository(pool),
     productRepository: new PostgresProductRepository(pool),
     proposalRepository: new PostgresProposalRepository(pool),
+    proposalTemplateRepository: new PostgresProposalTemplateRepository(pool),
     commercialSuggestionRepository: new PostgresCommercialSuggestionRepository(pool),
     automationRuleRepository: new PostgresAutomationRuleRepository(pool),
     automationRunLogRepository: new PostgresAutomationRunLogRepository(pool),

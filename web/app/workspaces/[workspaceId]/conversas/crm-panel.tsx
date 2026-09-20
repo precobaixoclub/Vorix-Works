@@ -7,11 +7,12 @@ import { DealDetailModal } from "@/components/crm/DealDetailModal";
 import { LossReasonModal } from "@/components/crm/LossReasonModal";
 import { QuickCreateDealModal } from "@/components/crm/QuickCreateDealModal";
 import { QuickCreateTaskModal } from "@/components/crm/QuickCreateTaskModal";
+import { QuickCreateProposalModal } from "@/components/crm/QuickCreateProposalModal";
+import { ProposalDetailModal } from "@/components/crm/ProposalDetailModal";
 import { RescheduleTaskPopover } from "@/components/crm/RescheduleTaskPopover";
 import { ErrorState } from "@/components/ErrorState";
-import { Input, Label } from "@/components/Field";
+import { Input } from "@/components/Field";
 import { GuardedButton } from "@/components/GuardedButton";
-import { Modal } from "@/components/Modal";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { Spinner } from "@/components/Spinner";
 import { userLabel } from "@/components/UserPicker";
@@ -21,7 +22,6 @@ import {
   acceptCommercialSuggestion,
   completeTask,
   createContact,
-  createProposal,
   dismissCommercialSuggestion,
   generateCommercialSuggestions,
   linkContactIdentity,
@@ -103,17 +103,19 @@ export function CrmContextSection({
     );
   }
 
-  return <LinkedCrmSection workspaceId={workspaceId} contactId={conversation.crmContactId} members={members} canOperate={canOperate} />;
+  return <LinkedCrmSection workspaceId={workspaceId} contactId={conversation.crmContactId} conversationId={conversation.id} members={members} canOperate={canOperate} />;
 }
 
 function LinkedCrmSection({
   workspaceId,
   contactId,
+  conversationId,
   members,
   canOperate,
 }: {
   workspaceId: string;
   contactId: string;
+  conversationId: string;
   members: readonly InboxTenantMember[];
   canOperate: boolean;
 }) {
@@ -123,7 +125,7 @@ function LinkedCrmSection({
   // `nextPendingTask`, que já filtra por `pending` internamente) e o `DealDetailModal` embutido
   // abaixo (aba Atividades mostra histórico completo, não só pendentes).
   const { data: allTasks, mutate: mutateAllTasks } = useTasks(workspaceId, { contactId });
-  const { data: proposals } = useProposals(workspaceId, { contactId });
+  const { data: proposals, mutate: mutateProposals } = useProposals(workspaceId, { contactId });
   const { data: pipelines } = usePipelines(workspaceId);
   const { data: leadScore } = useLeadScore(contactId, workspaceId);
   const { data: suggestions, mutate: mutateSuggestions } = useCommercialSuggestions(workspaceId, { contactId, status: "pending" });
@@ -149,29 +151,20 @@ function LinkedCrmSection({
   const [completingTaskId, setCompletingTaskId] = useState<string | undefined>();
 
   const [creatingProposal, setCreatingProposal] = useState(false);
-  const [proposalDealId, setProposalDealId] = useState<string | undefined>();
-  const [busy, setBusy] = useState(false);
+  const [openProposalId, setOpenProposalId] = useState<string | undefined>();
+  const currentProposal = (proposals ?? []).find((proposal) => ["draft", "sent", "viewed"].includes(proposal.status)) ?? proposals?.[0];
+  const openProposal = (proposals ?? []).find((proposal) => proposal.id === openProposalId);
   const [actionError, setActionError] = useState<string | undefined>();
   const [newTag, setNewTag] = useState("");
   const [ownerInput, setOwnerInput] = useState("");
-  const [proposalLink, setProposalLink] = useState<string | undefined>();
   const [generatingSuggestions, setGeneratingSuggestions] = useState(false);
   const [resolvingSuggestionId, setResolvingSuggestionId] = useState<string | undefined>();
-  const [title, setTitle] = useState("");
-  const [valueReais, setValueReais] = useState("");
 
   useEffect(() => {
     if (contact?.ownerUserId) setOwnerInput(contact.ownerUserId);
   }, [contact?.ownerUserId]);
 
   const memberOptions = members.map((member) => ({ id: member.userId, label: `${member.name} · ${member.email}` }));
-
-  function closeProposalModal() {
-    setCreatingProposal(false);
-    setProposalDealId(undefined);
-    setTitle("");
-    setValueReais("");
-  }
 
   async function handleGenerateSuggestions() {
     if (!canOperate) return;
@@ -220,22 +213,6 @@ function LinkedCrmSection({
     if (!canOperate || !ownerInput.trim()) return;
     await updateContact(contactId, workspaceId, { ownerUserId: ownerInput.trim() });
     await mutateContact();
-  }
-
-  async function handleCreateProposal() {
-    if (!canOperate || !title.trim()) return;
-    setBusy(true);
-    setActionError(undefined);
-    try {
-      const cents = Math.round(Number(valueReais.replace(",", ".")) * 100) || 0;
-      const { publicToken } = await createProposal({ workspaceId, contactId, dealId: proposalDealId, title: title.trim(), items: [{ name: title.trim(), quantity: 1, unitPriceCents: cents }] });
-      setProposalLink(`${window.location.origin}/p/${publicToken}`);
-      closeProposalModal();
-    } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : "Não foi possível criar a proposta.");
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function handleCompleteNextTask(task: Task) {
@@ -348,7 +325,7 @@ function LinkedCrmSection({
             </p>
             <div className="flex flex-wrap gap-1.5 pt-1">
               <Button variant="secondary" size="sm" onClick={() => setOpenDealId(currentDeal.id)}>Abrir negócio</Button>
-              <Button variant="secondary" size="sm" onClick={() => { setCreatingProposal(true); setProposalDealId(currentDeal.id); }}>Gerar proposta</Button>
+              <Button variant="secondary" size="sm" onClick={() => setCreatingProposal(true)}>Gerar proposta</Button>
             </div>
           </div>
         ) : (
@@ -426,6 +403,19 @@ function LinkedCrmSection({
       </div>
 
       <div>
+        <p className="mb-1 text-[11px] text-muted-foreground">Proposta</p>
+        {!currentProposal ? (
+          <div className="space-y-2"><p className="text-xs text-muted-foreground">Nenhuma proposta ativa.</p><GuardedButton variant="secondary" className="w-full" onClick={() => setCreatingProposal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Gerar proposta</GuardedButton></div>
+        ) : (
+          <div className="space-y-2 rounded-lg border border-border/70 bg-muted/30 p-2.5">
+            <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-medium text-foreground">{currentProposal.title}</p><p className="text-xs font-semibold tabular-nums text-foreground">{formatCurrencyCents(currentProposal.totalCents, currentProposal.currency)}</p></div><Badge variant="secondary">{currentProposal.status === "viewed" ? "Visualizada" : currentProposal.status === "sent" ? "Enviada" : currentProposal.status === "accepted" ? "Aceita" : currentProposal.status === "rejected" ? "Recusada" : "Rascunho"}</Badge></div>
+            {currentProposal.viewCount ? <p className="text-[11px] text-muted-foreground">Visualizada {currentProposal.viewCount} vez{currentProposal.viewCount === 1 ? "" : "es"} · última {formatDateTime(currentProposal.lastViewedAt)}</p> : null}
+            <div className="flex gap-1.5"><Button variant="secondary" size="sm" onClick={() => setOpenProposalId(currentProposal.id)}>Abrir</Button>{["sent", "viewed"].includes(currentProposal.status) ? <Button variant="ghost" size="sm" onClick={() => setOpenProposalId(currentProposal.id)}>Reenviar</Button> : null}</div>
+          </div>
+        )}
+      </div>
+
+      <div>
         <div className="mb-1 flex items-center justify-between gap-2">
           <p className="text-[11px] text-muted-foreground">Vorix Intelligence</p>
           <GuardedButton variant="ghost" onClick={handleGenerateSuggestions} loading={generatingSuggestions} disabled={generatingSuggestions} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
@@ -458,22 +448,28 @@ function LinkedCrmSection({
       </div>
 
       {creatingProposal ? (
-        <Modal title="Nova proposta" onClose={closeProposalModal}>
-          <div className="space-y-3">
-            <div>
-              <Label htmlFor="quick-title">Item / titulo da proposta</Label>
-              <Input id="quick-title" value={title} onChange={(event) => setTitle(event.target.value)} />
-            </div>
-            <div>
-              <Label htmlFor="quick-value">Valor (R$)</Label>
-              <Input id="quick-value" value={valueReais} onChange={(event) => setValueReais(event.target.value)} placeholder="0,00" inputMode="decimal" />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="secondary" onClick={closeProposalModal} disabled={busy}>Cancelar</Button>
-              <Button onClick={handleCreateProposal} loading={busy} disabled={!title.trim() || busy}>Criar</Button>
-            </div>
-          </div>
-        </Modal>
+        <QuickCreateProposalModal
+          workspaceId={workspaceId}
+          contactId={contactId}
+          contactName={contact.name}
+          dealChoice={dealChoice}
+          onClose={() => setCreatingProposal(false)}
+          onCreated={async (proposal) => { setCreatingProposal(false); await mutateProposals(); setOpenProposalId(proposal.id); }}
+        />
+      ) : null}
+
+      {openProposal ? (
+        <ProposalDetailModal
+          workspaceId={workspaceId}
+          proposal={openProposal}
+          contactName={contact.name}
+          dealTitle={(deals ?? []).find((deal) => deal.id === openProposal.dealId)?.title}
+          conversationId={conversationId}
+          onClose={() => setOpenProposalId(undefined)}
+          onChanged={async () => { await mutateProposals(); }}
+          onCreateNewProposal={() => { setOpenProposalId(undefined); setCreatingProposal(true); }}
+          onCreateFollowUp={() => { setOpenProposalId(undefined); setCreatingTask(true); }}
+        />
       ) : null}
 
       {creatingTask ? (
@@ -515,7 +511,7 @@ function LinkedCrmSection({
           proposals={proposals ?? []}
           members={members}
           teams={teams ?? []}
-          onChanged={async () => { await Promise.all([mutateDeals(), mutateAllTasks()]); }}
+          onChanged={async () => { await Promise.all([mutateDeals(), mutateAllTasks(), mutateProposals()]); }}
           onMove={(deal, stage) => {
             if (stage.isLost) {
               setLossPrompt({ deal, stage });
@@ -538,18 +534,6 @@ function LinkedCrmSection({
         />
       ) : null}
 
-      {proposalLink ? (
-        <Modal title="Proposta criada" onClose={() => setProposalLink(undefined)}>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Guarde este link. Ele não será mostrado novamente.</p>
-            <Input readOnly value={proposalLink} onFocus={(event) => event.target.select()} />
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="secondary" onClick={() => { void navigator.clipboard.writeText(proposalLink); }}>Copiar link</Button>
-              <Button onClick={() => setProposalLink(undefined)}>Fechar</Button>
-            </div>
-          </div>
-        </Modal>
-      ) : null}
     </section>
   );
 }

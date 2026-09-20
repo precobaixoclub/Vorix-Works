@@ -21,7 +21,12 @@ type ProposalRow = {
   public_token_hash: string;
   sent_at: Date | null;
   viewed_at: Date | null;
+  last_viewed_at: Date | null;
+  view_count: number;
   responded_at: Date | null;
+  public_link_revoked_at: Date | null;
+  rejection_reason: string | null;
+  rejection_comment: string | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -44,7 +49,12 @@ function toDomain(row: ProposalRow): Proposal {
     publicTokenHash: row.public_token_hash,
     sentAt: row.sent_at?.toISOString(),
     viewedAt: row.viewed_at?.toISOString(),
+    lastViewedAt: row.last_viewed_at?.toISOString(),
+    viewCount: Number(row.view_count ?? 0),
     respondedAt: row.responded_at?.toISOString(),
+    publicLinkRevokedAt: row.public_link_revoked_at?.toISOString(),
+    rejectionReason: row.rejection_reason ?? undefined,
+    rejectionComment: row.rejection_comment ?? undefined,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };
@@ -145,5 +155,96 @@ export class PostgresProposalRepository implements ProposalRepositoryPort {
       ],
     );
     return toDomain(result.rows[0]);
+  }
+
+  async rotatePublicToken(id: string, tokenHash: string): Promise<Proposal> {
+    const result = await this.pool.query<ProposalRow>(
+      "update proposals set public_token_hash = $2, public_link_revoked_at = null, updated_at = now() where id = $1 returning *",
+      [id, tokenHash],
+    );
+    if (!result.rows[0]) throw new Error(`PROPOSAL_NOT_FOUND: proposta "${id}" não existe.`);
+    return toDomain(result.rows[0]);
+  }
+
+  async revokePublicToken(id: string, revokedAt: string): Promise<Proposal> {
+    const result = await this.pool.query<ProposalRow>(
+      "update proposals set public_link_revoked_at = $2, updated_at = now() where id = $1 returning *",
+      [id, revokedAt],
+    );
+    if (!result.rows[0]) throw new Error(`PROPOSAL_NOT_FOUND: proposta "${id}" não existe.`);
+    return toDomain(result.rows[0]);
+  }
+
+  async recordView(id: string, viewedAt: string): Promise<Proposal> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        "insert into proposal_views (id, proposal_id, viewed_at) values ($1, $2, $3)",
+        [`proposal-view-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, id, viewedAt],
+      );
+      const result = await client.query<ProposalRow>(
+        `update proposals set
+           status = case when status = 'sent' then 'viewed' else status end,
+           viewed_at = coalesce(viewed_at, $2), last_viewed_at = $2,
+           view_count = view_count + 1, updated_at = now()
+         where id = $1 returning *`,
+        [id, viewedAt],
+      );
+      if (!result.rows[0]) throw new Error(`PROPOSAL_NOT_FOUND: proposta "${id}" não existe.`);
+      await client.query("commit");
+      return toDomain(result.rows[0]);
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async setRejection(id: string, input: { reason?: string; comment?: string }): Promise<Proposal> {
+    const result = await this.pool.query<ProposalRow>(
+      "update proposals set rejection_reason = $2, rejection_comment = $3, updated_at = now() where id = $1 returning *",
+      [id, input.reason ?? null, input.comment ?? null],
+    );
+    if (!result.rows[0]) throw new Error(`PROPOSAL_NOT_FOUND: proposta "${id}" não existe.`);
+    return toDomain(result.rows[0]);
+  }
+
+  async reserveDelivery(input: { id: string; tenantId: string; workspaceId: string; proposalId: string; conversationId: string; idempotencyKey: string }): Promise<"reserved" | "pending" | "queued"> {
+    const inserted = await this.pool.query<{ status: "pending" }>(
+      `insert into proposal_deliveries (id, tenant_id, workspace_id, proposal_id, conversation_id, idempotency_key, status)
+       values ($1,$2,$3,$4,$5,$6,'pending') on conflict (tenant_id, workspace_id, idempotency_key) do nothing returning status`,
+      [input.id, input.tenantId, input.workspaceId, input.proposalId, input.conversationId, input.idempotencyKey],
+    );
+    if (inserted.rows[0]) return "reserved";
+    const existing = await this.pool.query<{ proposal_id: string; conversation_id: string; status: "pending" | "queued" | "failed" }>(
+      "select proposal_id, conversation_id, status from proposal_deliveries where tenant_id=$1 and workspace_id=$2 and idempotency_key=$3",
+      [input.tenantId, input.workspaceId, input.idempotencyKey],
+    );
+    const row = existing.rows[0];
+    if (!row || row.proposal_id !== input.proposalId || row.conversation_id !== input.conversationId) throw new Error("PROPOSAL_SEND_IDEMPOTENCY_CONFLICT: chave já utilizada em outro envio.");
+    if (row.status === "failed") {
+      const retried = await this.pool.query(
+        "update proposal_deliveries set status='pending', error_message=null where tenant_id=$1 and workspace_id=$2 and idempotency_key=$3 and status='failed' returning id",
+        [input.tenantId, input.workspaceId, input.idempotencyKey],
+      );
+      if (retried.rowCount) return "reserved";
+    }
+    return row.status === "queued" ? "queued" : "pending";
+  }
+
+  async completeDelivery(input: { tenantId: string; workspaceId: string; idempotencyKey: string; inboxMessageId: string; queuedAt: string }): Promise<void> {
+    await this.pool.query(
+      "update proposal_deliveries set status='queued', inbox_message_id=$4, queued_at=$5, error_message=null where tenant_id=$1 and workspace_id=$2 and idempotency_key=$3",
+      [input.tenantId, input.workspaceId, input.idempotencyKey, input.inboxMessageId, input.queuedAt],
+    );
+  }
+
+  async failDelivery(input: { tenantId: string; workspaceId: string; idempotencyKey: string; errorMessage: string }): Promise<void> {
+    await this.pool.query(
+      "update proposal_deliveries set status='failed', error_message=$4 where tenant_id=$1 and workspace_id=$2 and idempotency_key=$3",
+      [input.tenantId, input.workspaceId, input.idempotencyKey, input.errorMessage.slice(0, 1000)],
+    );
   }
 }

@@ -294,6 +294,20 @@ export type ProposalItem = {
   subtotalCents: number;
 };
 
+export type ProposalTemplate = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  name: string;
+  defaultTitle: string;
+  defaultItems: readonly ProposalItem[];
+  defaultConditions?: string;
+  defaultValidDays: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export const PROPOSAL_STATUSES = ["draft", "sent", "viewed", "accepted", "rejected", "expired"] as const;
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
 
@@ -314,7 +328,12 @@ export type Proposal = {
   publicTokenHash: string;
   sentAt?: string;
   viewedAt?: string;
+  lastViewedAt?: string;
+  viewCount: number;
   respondedAt?: string;
+  publicLinkRevokedAt?: string;
+  rejectionReason?: string;
+  rejectionComment?: string;
   createdAt: string;
   updatedAt: string;
 };

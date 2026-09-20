@@ -168,7 +168,9 @@ test("Proposta: só edita em rascunho; enviar uma vez só", async () => {
   assert.equal(sent.status, "sent");
   assert.ok(sent.sentAt);
 
-  await assert.rejects(() => sendProposal(deps, { proposalId: proposal.id, tenantId, workspaceId: workspace.id }), /PROPOSAL_ALREADY_SENT/);
+  const resent = await sendProposal(deps, { proposalId: proposal.id, tenantId, workspaceId: workspace.id });
+  assert.equal(resent.id, proposal.id);
+  assert.equal(resent.sentAt, sent.sentAt);
   await assert.rejects(
     () => updateProposal(deps, { proposalId: proposal.id, tenantId, workspaceId: workspace.id, patch: { title: "Não pode" } }),
     /PROPOSAL_NOT_EDITABLE/,

@@ -3,6 +3,8 @@ import { createContact, getContact, getContactTimeline, linkContactIdentity, lis
 import type { ContactUseCaseDeps } from "../../../../application/crm/contact-use-cases.js";
 import { getLeadScore } from "../../../../application/crm/lead-scoring-use-cases.js";
 import type { LeadScoringUseCaseDeps } from "../../../../application/crm/lead-scoring-use-cases.js";
+import { getContactActivity } from "../../../../application/commercial/contact-activity-use-cases.js";
+import type { ContactActivityUseCaseDeps } from "../../../../application/commercial/contact-activity-use-cases.js";
 import { CONTACT_CHANNELS } from "../../../../domain/crm/crm.model.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
@@ -56,7 +58,7 @@ function translateContactError(error: unknown): never {
   throw error;
 }
 
-export async function registerContactsRoutes(app: FastifyInstance, deps: ContactUseCaseDeps & LeadScoringUseCaseDeps): Promise<void> {
+export async function registerContactsRoutes(app: FastifyInstance, deps: ContactUseCaseDeps & LeadScoringUseCaseDeps & ContactActivityUseCaseDeps): Promise<void> {
   app.get("/contacts", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "contact:read");
     const { workspaceId, search, ownerUserId, teamId, cursor, limit } = request.query as { workspaceId: string; search?: string; ownerUserId?: string; teamId?: string; cursor?: string; limit?: number };
@@ -103,6 +105,22 @@ export async function registerContactsRoutes(app: FastifyInstance, deps: Contact
     try {
       const timeline = await getContactTimeline(deps, { contactId: id, tenantId: principal.tenantId, workspaceId, limit });
       return successEnvelope(timeline, request.id);
+    } catch (error) {
+      translateContactError(error);
+    }
+  });
+
+  // Jornada Comercial, Fase 5 — TIMELINE COMERCIAL 360: agrega contato + negócios + tarefas +
+  // propostas + (quando o módulo Conversas estiver ligado) eventos operacionais da conversa, numa
+  // única lista cronológica normalizada. Ver `contact-activity-use-cases.ts` para o porquê de viver
+  // em `/application/commercial/` (ponte neutra) em vez de `/application/crm/`.
+  app.get("/contacts/:id/activity", { schema: { params: ID_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "contact:read");
+    const { id } = request.params as { id: string };
+    const { workspaceId, limit } = request.query as { workspaceId: string; limit?: number };
+    try {
+      const activity = await getContactActivity(deps, { contactId: id, tenantId: principal.tenantId, workspaceId, limit });
+      return successEnvelope(activity, request.id);
     } catch (error) {
       translateContactError(error);
     }

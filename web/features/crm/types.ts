@@ -41,6 +41,27 @@ export type TimelineEvent = {
   occurredAt: string;
 };
 
+/** Jornada Comercial, Fase 5 — item normalizado da TIMELINE COMERCIAL 360 (`GET
+ * /contacts/:id/activity`). `actor.type === "user"` é o único caso em que o frontend precisa
+ * resolver um nome (via `userLabel(actor.id, members)`, mesmo padrão já usado no resto do Contact
+ * 360) — os demais tipos já vêm com um rótulo fixo (Sistema/IA/Automação/Cliente). */
+export type ContactActivityActor = { type: "user"; id: string } | { type: "system" | "ai" | "automation" | "contact" };
+
+export type ContactActivityCategory = "contact" | "conversation" | "deal" | "task" | "proposal";
+
+export type ContactActivityItem = {
+  id: string;
+  type: string;
+  category: ContactActivityCategory;
+  occurredAt: string;
+  actor: ContactActivityActor;
+  title: string;
+  description?: string;
+  entityType?: "contact" | "deal" | "task" | "proposal" | "conversation";
+  entityId?: string;
+  metadata?: Record<string, unknown>;
+};
+
 export type Pipeline = {
   id: string;
   tenantId: string;

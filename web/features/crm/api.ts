@@ -10,6 +10,7 @@ import type {
   CommercialSuggestion,
   CommercialSuggestionStatus,
   Contact,
+  ContactActivityItem,
   ContactChannel,
   ContactIdentity,
   Deal,
@@ -59,6 +60,15 @@ export function updateContact(contactId: string, workspaceId: string, patch: Par
 
 export function getContactTimeline(contactId: string, workspaceId: string): Promise<TimelineEvent[]> {
   return apiClient.get<TimelineEvent[]>(`/v1/contacts/${encodeURIComponent(contactId)}/timeline?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+/** Jornada Comercial, Fase 5 — TIMELINE COMERCIAL 360 (agrega contato/negócio/tarefa/proposta e,
+ * quando o módulo Conversas estiver ligado, eventos operacionais da conversa). Substitui
+ * `getContactTimeline` na aba "Histórico" do Contact 360 — aquele endpoint continua existindo
+ * (outros consumidores podem usá-lo), só não é mais a fonte da aba. */
+export function getContactActivity(contactId: string, workspaceId: string, limit?: number): Promise<ContactActivityItem[]> {
+  const query = new URLSearchParams({ workspaceId, ...(limit ? { limit: String(limit) } : {}) });
+  return apiClient.get<ContactActivityItem[]>(`/v1/contacts/${encodeURIComponent(contactId)}/activity?${query.toString()}`);
 }
 
 export function linkContactIdentity(contactId: string, workspaceId: string, channel: ContactChannel, externalId: string): Promise<ContactIdentity> {

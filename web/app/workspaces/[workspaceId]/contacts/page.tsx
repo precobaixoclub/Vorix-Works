@@ -27,8 +27,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { completeTask, createContact, linkContactIdentity, moveDealStage, updateContact } from "@/features/crm/api";
 import { groupDealsByStatus } from "@/features/crm/deal-resolution";
-import { useContactTimeline, useContacts, useDeals, useLeadScore, usePipelineStages, usePipelines, useProposals, useStagesByPipeline, useTasks } from "@/features/crm/hooks";
-import { isTaskOverdue, nextPendingTask, PROPOSAL_STATUS_LABEL, TASK_TYPE_LABEL, timelineEventLabel } from "@/features/crm/presentation";
+import { useContactActivity, useContacts, useDeals, useLeadScore, usePipelineStages, usePipelines, useProposals, useStagesByPipeline, useTasks } from "@/features/crm/hooks";
+import { activityActorLabel, isTaskOverdue, nextPendingTask, PROPOSAL_STATUS_LABEL, TASK_TYPE_LABEL } from "@/features/crm/presentation";
 import { resolveTaskDealChoice } from "@/features/crm/task-scheduling";
 import type { Contact, Deal, PipelineStage, Proposal, Task } from "@/features/crm/types";
 import type { Team } from "@/features/identity/types";
@@ -437,7 +437,7 @@ function ContactDetailModal({
   const [creatingProposal, setCreatingProposal] = useState(false);
   const [openProposalId, setOpenProposalId] = useState<string>();
   const [completingTaskId, setCompletingTaskId] = useState<string | undefined>();
-  const { data: timeline, isLoading: timelineLoading, error: timelineError, mutate: mutateTimeline } = useContactTimeline(contact?.id, workspaceId);
+  const { data: activity, isLoading: activityLoading, error: activityError, mutate: mutateActivity } = useContactActivity(contact?.id, workspaceId);
   const { data: leadScore, isLoading: scoreLoading } = useLeadScore(contact?.id, workspaceId);
   const pipelineIds = useMemo(() => Array.from(new Set(deals.map((deal) => deal.pipelineId))), [deals]);
   const { data: stagesByPipeline } = useStagesByPipeline(workspaceId, pipelineIds);
@@ -485,7 +485,7 @@ function ContactDetailModal({
           { value: "deals", label: "Negócios", icon: BriefcaseBusiness, badge: deals.length || undefined },
           { value: "tasks", label: "Tarefas", icon: ClipboardCheck, badge: tasks.length || undefined },
           { value: "proposals", label: "Propostas", icon: FileText, badge: proposals.length || undefined },
-          { value: "timeline", label: "Timeline", icon: History },
+          { value: "timeline", label: "Histórico", icon: History },
         ]}
         value={section}
         onValueChange={(value) => setSection(value as ContactSection)}
@@ -617,15 +617,26 @@ function ContactDetailModal({
         ) : null}
 
         {section === "timeline" ? (
-          timelineLoading ? <TimelineSkeleton /> : timelineError ? <ErrorState error={timelineError} onRetry={() => mutateTimeline()} /> : (
+          activityLoading ? <TimelineSkeleton /> : activityError ? <ErrorState error={activityError} onRetry={() => mutateActivity()} /> : (
             <ListBlock empty="Nenhum evento registrado ainda.">
-              {(timeline ?? []).map((event) => (
-                <div key={event.id} className="relative pl-5">
-                  <span className="absolute left-0 top-1.5 h-2 w-2 rounded-full bg-primary" />
-                  <p className="text-sm font-medium text-foreground">{timelineEventLabel(event)}</p>
-                  <p className="text-xs text-muted-foreground">{formatDateTime(event.occurredAt)}</p>
-                </div>
-              ))}
+              {(activity ?? []).map((item) => {
+                const clickable = Boolean(item.entityType && item.entityType !== "contact");
+                const handleClick = () => {
+                  if (item.entityType === "deal" && item.entityId) onOpenDeal(item.entityId);
+                  else if (item.entityType === "proposal" && item.entityId) { setSection("proposals"); setOpenProposalId(item.entityId); }
+                  else if (item.entityType === "conversation" && item.entityId) router.push(`/workspaces/${workspaceId}/conversas?conversation=${item.entityId}`);
+                  else if (item.entityType === "task") setSection("tasks");
+                };
+                const Wrapper = clickable ? "button" : "div";
+                return (
+                  <Wrapper key={item.id} type={clickable ? "button" : undefined} onClick={clickable ? handleClick : undefined} className={cn("relative block w-full pl-5 text-left", clickable && "rounded-lg transition hover:bg-muted/50")}>
+                    <span className="absolute left-0 top-1.5 h-2 w-2 rounded-full bg-primary" />
+                    <p className="text-sm font-medium text-foreground">{item.title}</p>
+                    {item.description ? <p className="text-xs text-muted-foreground">{item.description}</p> : null}
+                    <p className="text-xs text-muted-foreground">{formatDateTime(item.occurredAt)} · {activityActorLabel(item.actor, members)}</p>
+                  </Wrapper>
+                );
+              })}
             </ListBlock>
           )
         ) : null}

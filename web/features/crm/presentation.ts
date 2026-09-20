@@ -1,4 +1,4 @@
-import type { ProposalStatus, Task, TaskStatus, TaskType, TimelineEvent } from "./types";
+import type { ContactActivityActor, ProposalStatus, Task, TaskStatus, TaskType, TimelineEvent } from "./types";
 
 export const TASK_TYPE_LABEL: Record<TaskType, string> = {
   ligacao: "Ligação",
@@ -85,6 +85,21 @@ export function timelineEventLabel(event: TimelineEvent): string {
     proposal_link_regenerated: "Link da proposta regenerado",
   };
   return labels[event.eventType] ?? humanizeEventCode(event.eventType);
+}
+
+/** Jornada Comercial, Fase 5 — nunca mostra um UUID cru na Timeline 360: `type: "user"` resolve o
+ * nome real na mesma lista de membros já carregada pelo Contact 360 (mesmo padrão de `userLabel`
+ * em `components/UserPicker.tsx`, duplicado aqui em vez de importado pra não fazer `features/crm`
+ * depender de `components/`); os demais tipos já têm um rótulo fixo. */
+export function activityActorLabel(actor: ContactActivityActor, members: readonly { userId: string; name: string }[] | undefined): string {
+  if (actor.type === "user") {
+    const member = members?.find((item) => item.userId === actor.id);
+    return member ? member.name : "Responsável não encontrado";
+  }
+  if (actor.type === "ai") return "IA";
+  if (actor.type === "automation") return "Automação";
+  if (actor.type === "contact") return "Cliente";
+  return "Sistema";
 }
 
 function humanizeEventCode(code: string): string {

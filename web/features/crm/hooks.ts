@@ -1,6 +1,7 @@
 import useSWR from "swr";
 import {
   getContact,
+  getContactActivity,
   getContactTimeline,
   getDealsSummary,
   getDealTimeline,
@@ -32,6 +33,11 @@ export function useContact(contactId: string | undefined, workspaceId: string) {
 
 export function useContactTimeline(contactId: string | undefined, workspaceId: string) {
   return useSWR(contactId ? ["contact-timeline", contactId, workspaceId] : null, () => getContactTimeline(contactId!, workspaceId));
+}
+
+/** Jornada Comercial, Fase 5 — TIMELINE COMERCIAL 360, usada na aba "Histórico" do Contact 360. */
+export function useContactActivity(contactId: string | undefined, workspaceId: string) {
+  return useSWR(contactId ? ["contact-activity", contactId, workspaceId] : null, () => getContactActivity(contactId!, workspaceId));
 }
 
 export function usePipelines(workspaceId: string) {

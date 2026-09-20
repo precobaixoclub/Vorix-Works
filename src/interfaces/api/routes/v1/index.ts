@@ -301,6 +301,12 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       // Fase 5 — GET /contacts/:id/lead-score.
       dealRepository: identity.dealRepository,
       taskRepository: identity.taskRepository,
+      // Jornada Comercial, Fase 5 — GET /contacts/:id/activity (Timeline 360).
+      proposalRepository: identity.proposalRepository,
+      inbox: sharedInboxDeps ? {
+        conversationRepository: app.zunoContainer.inboxConversationRepository,
+        conversationEventRepository: app.zunoContainer.inboxConversationEventRepository,
+      } : undefined,
       // Fase 6 — dispara `contact_created` ao criar um contato.
       automation: automationDeps,
     });

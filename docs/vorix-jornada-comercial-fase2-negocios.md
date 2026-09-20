@@ -137,12 +137,14 @@ os mesmos eventos são gravados automaticamente, sem nenhum caminho novo de escr
 
 ## 15. Browser QA
 
-**Não realizado.** Confirmado explicitamente na rodada de fechamento (2026-09-19): este ambiente não
-tem acesso SSH/servidor de produção nem a um workspace Vorix autenticado com dados reais — o usuário
-optou por assumir deploy e QA de navegador ele mesmo, em vez de me dar acesso ou aceitar um QA local
-com dados de teste como substituto. O plano de QA completo (roteiro passo a passo, o que validar em
-cada tela, critérios de classificação por item) está na §21, pronto para ser executado após o
-deploy.
+**Não realizado por mim.** Numa primeira rodada de fechamento (2026-09-19), sem acesso a deploy, o
+usuário optou por fazer deploy e QA ele mesmo. Numa segunda rodada, no mesmo dia, ele pediu deploy
+real (§18) — que executei com sucesso via SSH — mas o QA de navegador autenticado (clicar numa
+conversa/Contact reais) continua fora do meu alcance: este ambiente não tem ferramenta de automação
+de navegador nem credenciais de login para o Vorix. Perguntei como prosseguir e ele optou por rodar
+esse roteiro pessoalmente e reportar o resultado. O plano de QA completo (roteiro passo a passo, o
+que validar em cada tela, critérios de classificação por item) está na §22, pronto para ser
+executado — o código já está em produção (§18).
 
 Mitigado, na ausência de QA de navegador, com a verificação mais forte disponível: `tsc --noEmit`
 limpo (backend e frontend), `npm run build` de produção do frontend limpo, `npm run
@@ -189,24 +191,50 @@ Working tree limpo depois dos commits (só o `dist/` gerado pelo build local, ig
 
 ## 18. Deploy
 
-**Não realizado — por decisão explícita do usuário nesta rodada de fechamento**, não só por falta de
-acesso: perguntei diretamente se deveria fazer deploy/QA eu mesmo (com acesso que ele forneceria) ou
-deixar por conta dele, e a resposta foi "só commit + push; você faz deploy e QA". Então:
+**Realizado em 2026-09-20**, na rodada de fechamento operacional, seguindo exatamente o runbook de
+`docs/deployment.md` — deploy do SHA `7fa49b8` (confirmado idêntico entre `HEAD` e `origin/main`
+antes de começar):
 
-- Commits acima já estão em `main` local, com push para `origin/main` feito nesta mesma rodada
-  (ver confirmação de SHA idêntico entre `HEAD` e `origin/main` abaixo).
-- Deploy real fica com você, seguindo o runbook já documentado na Fase 1 (§17 daquele relatório):
-  `git pull` no servidor → build → `docker compose up -d --build`. **Sem migration para rodar**
-  (nenhuma mudança de schema nesta fase).
-- `INBOX_CRM_AUTO_CONTACT_ENABLED` permanece `false` — não foi tocado nesta rodada, como pedido.
+1. Backup pré-deploy criado no servidor: `deploy_backups/pre-fase2-negocios-deploy-20260920004205.tgz`.
+2. Código sincronizado via `git archive HEAD | gzip` → `scp` → extraído em `/opt/zuno`, preservando
+   `.env.zuno` e `deploy_backups/` (nunca sobrescritos).
+3. `docker compose --env-file .env.zuno -f docker-compose.zuno.yml up -d --build` — as 3 imagens
+   (`zuno-zuno-web`, `zuno-zuno-api`, `zuno-vorix-worker`) foram reconstruídas e os containers
+   recriados com sucesso.
+4. **Sem migration rodada** — nenhuma mudança de schema nesta fase, como esperado.
+5. `INBOX_CRM_AUTO_CONTACT_ENABLED` **não foi tocado** — confirmado ausente de `.env.zuno` (default
+   `false` no código), e o log do worker pós-deploy confirma:
+   `[inbox-worker] INBOX_CRM_AUTO_CONTACT_ENABLED=false — ponte Inbox→CRM desligada, vínculo continua
+   só manual ("Vincular ao CRM").`
 
-## 19. Riscos restantes
+## 19. Smoke test
 
-- **PHASE_2_PRODUCTION_READY = NO** — código pronto, testado e commitado, mas sem deploy nem QA de
-  navegador reais ainda. Não deve ser tratado como "pronto para produção" até você rodar o plano da
-  §21.
-- **Sem QA de navegador ao vivo** (§15) — mesmo risco já assumido na Fase 1, mitigado da mesma forma
-  (typecheck + build + testes de integração reais, sem mock). Plano de QA detalhado na §21.
+Executado logo após o rebuild, todos os itens verificáveis sem sessão autenticada:
+
+| Verificação | Resultado |
+|---|---|
+| `docker ps` (4 containers) | `zuno-zuno-web-1` up, `zuno-zuno-api-1` healthy, `zuno-vorix-worker-1` healthy, `zuno-zuno-postgres-1` healthy |
+| `curl https://vorixworks.com` | `HTTP 200` |
+| `curl https://vorixworks.com/login` | `HTTP 200` |
+| `curl https://api.vorixworks.com/v1/health` | `{"status":"ok","uptimeSeconds":40,...}` |
+| `curl https://api.vorixworks.com/readyz` | `ready:true` — `database`/`secret_manager`/`operational_state`/`publication_queue` = `pass`; `production_guard` = `warn` (pré-existente, sobre `PUBLICATION_PRODUCTION_ENABLED`, **não relacionado** a esta fase) |
+| Logs `zuno-zuno-api-1` (últimas 40 linhas) | nenhum erro/fatal |
+| Logs `zuno-zuno-web-1` | `✓ Ready`, sem erro |
+| Logs `zuno-vorix-worker-1` | conectado ao RabbitMQ, flag da Fase 1 confirmada desligada |
+
+**`PRODUCTION_HEALTH = PASS`** — nenhum 5xx, nenhum erro nos logs, todos os containers saudáveis.
+
+Não verificado por HTTP anônimo (requer sessão autenticada, ver §21): que Conversas/Contatos/
+Negócios/Kanban comercial de fato renderizam com dados reais depois do login — isso faz parte do QA
+real da §21, não do smoke test de infraestrutura.
+
+## 20. Riscos restantes
+
+- **PHASE_2_PRODUCTION_READY = NO (ainda)** — deploy e smoke test em produção PASSARAM, mas o QA
+  real autenticado (clicar numa conversa/Contact real, criar negócio, mover etapa, ganho/perda) não
+  foi feito por mim: este ambiente não tem ferramenta de navegador nem credenciais de login para o
+  Vorix. Perguntei como proceder e você optou por rodar esse roteiro pessoalmente (§21) e me passar
+  o resultado depois — a tabela da §21 fica pendente até então.
 - **Ações "Criar tarefa"/"Criar proposta" no Contact 360 continuam navegando** (não inline) — só
   "Criar negócio" ganhou o fluxo inline nesta fase, por ser o foco explícito do pedido; unificar os
   outros dois fica para uma fase futura, se desejado.
@@ -218,11 +246,16 @@ deixar por conta dele, e a resposta foi "só commit + push; você faz deploy e Q
   `tsc --noEmit` limpo (garante que os tipos/props entre `QuickCreateDealModal`/`LossReasonModal` e
   seus três chamadores estão corretos) e pela reutilização estrita de `createDeal`/`moveDealStage`
   sem alteração de contrato.
+- **`production_guard: warn`** no `/readyz` (§19) — pré-existente à esta fase (relacionado a
+  `PUBLICATION_PRODUCTION_ENABLED`, módulo de Publication/redes sociais), não introduzido nem
+  agravado por este deploy; citado aqui só por transparência, não é um risco desta Fase 2.
 
-## 20. Classificação final
+## 21. Classificação final
 
-Itens confirmados por teste de integração de backend contra Postgres real (não mudaram de
-comportamento nesta fase, só ganharam novos pontos de entrada na UI, já cobertos pelo typecheck):
+`DEPLOYED_SHA = 7fa49b8` · `PRODUCTION_HEALTH = PASS` (ver §19).
+
+Itens confirmados por teste de integração de backend contra Postgres real (comportamento inalterado
+nesta fase, só ganhou novos pontos de entrada na UI, já em produção e com smoke test PASS):
 
 ```
 DEAL_DETAIL_CONTEXT            = VERIFIED_RUNTIME   (DealDetailModal reusado sem regressão — testes de backend confirmam)
@@ -232,26 +265,30 @@ DEAL_LOST                      = VERIFIED_RUNTIME   (lossReason obrigatório tes
 DEAL_REOPEN                    = VERIFIED_RUNTIME   (limpeza de wonAt/lostAt/lossReason testada, inalterada)
 ```
 
-Itens que dependem de clicar de verdade numa conversa/contato reais — **não posso classificar como
-VERIFIED_RUNTIME sem ter feito isso**; ficam como pendentes até você rodar o plano da §21:
+Itens que dependem de clicar de verdade numa conversa/contato reais, autenticado — **não posso
+classificar como VERIFIED_RUNTIME sem ter feito isso**; aguardando você rodar o roteiro da §22 e
+reportar o resultado:
 
 ```
-CONVERSATION_CREATE_DEAL       = PENDING_QA   (tipado e buildado; requer §21.7)
-CONTACT_CREATE_DEAL            = PENDING_QA   (tipado e buildado; requer §21.10)
-DEAL_CONTEXT_IN_CONVERSATION   = PENDING_QA   (tipado e buildado; requer §21.7-9)
-MULTIPLE_OPEN_DEALS            = VERIFIED_AUTOMATED + PENDING_QA   (regra tem 8 testes unitários; visual na conversa/Contact 360 requer §21.9)
-DEAL_OPEN_CONVERSATION         = PENDING_QA   (botão existe e tipado; requer §21.11)
+CONVERSATION_CREATE_DEAL       = PENDING_QA   (código em produção; requer §22.1)
+CONTACT_CREATE_DEAL            = PENDING_QA   (código em produção; requer §22.4)
+DEAL_CONTEXT_IN_CONVERSATION   = PENDING_QA   (código em produção; requer §22.2)
+MULTIPLE_OPEN_DEALS            = VERIFIED_AUTOMATED + PENDING_QA   (regra tem 8 testes unitários; visual em produção requer §22.3)
+DEAL_OPEN_CONVERSATION         = PENDING_QA   (código em produção; requer §22.5)
+CROSS_SCREEN_CONSISTENCY       = PENDING_QA   (requer §22.10)
+MOBILE_QA                      = PENDING_QA   (requer §22.12, viewport 390)
 
-PHASE_2_PRODUCTION_READY       = NO   (aguardando deploy + QA da §21)
+PHASE_2_PRODUCTION_READY       = NO   (deploy+smoke OK; aguardando QA autenticado da §22)
 ```
 
 ---
 
-## 21. Plano de QA em produção (pendente — a ser executado por você)
+## 22. Plano de QA em produção (pendente — a ser executado por você)
 
-Roteiro para rodar depois do deploy, com um Contact real já vinculado ao CRM (ou uma fixture
-controlada) — nunca dados de cliente sensíveis sem necessidade. Depois de cada bloco, preencha o
-veredito (`VERIFIED_RUNTIME`/`FAILED`) na tabela da §20 acima.
+Código já está em produção (SHA `7fa49b8`, deploy confirmado §18). Roteiro para rodar com um Contact
+real já vinculado ao CRM (ou uma fixture controlada) — nunca dados de cliente sensíveis sem
+necessidade. Depois de cada bloco, preencha o veredito (`VERIFIED_RUNTIME`/`FAILED`) na tabela da
+§21 acima.
 
 1. **Conversa** — abrir uma conversa DIRETA real com Contact CRM vinculado. Sem negócio: deve
    mostrar "Nenhum negócio em andamento" + "+ Criar negócio". Criar "Teste Comercial Vorix" / R$
@@ -284,7 +321,7 @@ veredito (`VERIFIED_RUNTIME`/`FAILED`) na tabela da §20 acima.
 13. **Cleanup** — se usou negócio/contato de teste descartável, remover ao final; nunca apagar dado
     real de cliente.
 
-Depois de rodar: atualizar a tabela da §20 com os vereditos reais e marcar
+Depois de rodar: atualizar a tabela da §21 com os vereditos reais e marcar
 `PHASE_2_PRODUCTION_READY = YES` só se tudo vier `VERIFIED_RUNTIME`.
 
 ---

@@ -220,7 +220,7 @@ bloqueantes):
 - E2E (`web/e2e/phase4-proposals.spec.ts`) continua sem um cenário de aceite terminando em "Deal
   Ganho" — coberto por teste de backend real (novo, ver acima), mas não por Chrome/Playwright.
 
-## Classificação atualizada (pós-fechamento)
+## Classificação atualizada (pós-fechamento da auditoria, ainda local)
 
 ```
 PROPOSAL_ACCEPT_IDEMPOTENCY = PASS_LOCAL → agora com teste automatizado direto (antes só descrito)
@@ -229,3 +229,125 @@ POST_REJECTION_ACTIONS_CENTRAL_SCREEN = PASS_LOCAL (novo — tela central agora 
 BRIDGE_ISOLATION_GUARD_COVERAGE = PASS_LOCAL (novo — guard cobre commercial-bridge/commercial agora)
 PHASE_4_PRODUCTION_READY = NO (inalterado — ainda sem migration/deploy/QA autenticado real)
 ```
+
+---
+
+## Fechamento operacional (2026-09-20) — commit, push, deploy, smoke
+
+Rodada seguinte, pedida explicitamente: revisar → commitar → push → deploy → smoke → QA real →
+corrigir bugs → classificar.
+
+### Revisão do working tree
+
+`git status`/`git diff --stat`/`--name-status` confirmaram que TODO o diff pertencia à Fase 4
+(feature original + correções da auditoria + testes + doc) — nenhum arquivo fora de escopo.
+
+### Verificação pré-commit (repetida, tudo verde)
+
+Backend `tsc --noEmit`: limpo. Backend `npm run build`: limpo. `npm run architecture:check`
+completo: OK (1016 arquivos, incluindo a nova cobertura do guard sobre as pontes). Testes de
+backend relevantes: **47/47** (`crm-execucao-comercial`, `crm-pipelines-deals`,
+`crm-conversas-integration`, `crm-fundacao`, `crm-propostas-fase4`). Frontend `tsc --noEmit`:
+limpo. Frontend `next build`: limpo. Frontend `vitest`: **52/52**. Quantidades idênticas às
+esperadas pelo pedido — nada mudou.
+
+### Commits
+
+Divididos por assunto, revisando cuidadosamente quais arquivos eu de fato tinha alterado nesta
+rodada de auditoria versus os que já vinham prontos do trabalho anterior (dois deles precisaram de
+correção via `git reset --soft` local, sem perda de nada, porque a área de staging manteve arquivos
+de uma etapa anterior por engano — nunca chegou a ser enviado ao GitHub errado):
+
+- `b69670d` — `feat(crm): integra propostas à jornada comercial (Fase 4)`
+- `5c80d4b` — `feat(crm): inclui proposal-use-cases.ts e ProposalDetailModal.tsx esquecidos no commit da Fase 4`
+- `b808edd` — `fix(crm): fecha gaps da auditoria da Fase 4`
+- `e250a98` — `test(crm): amplia cobertura de propostas`
+- `ee4e4ba` — `docs: registra Fase 4 da jornada comercial`
+
+### Push
+
+`git push origin main` — `HEAD == origin/main == ee4e4ba` confirmado. Working tree limpo.
+
+### Deploy
+
+Runbook de `docs/deployment.md`, SHA exato `ee4e4ba`:
+
+1. Backup pré-deploy: `deploy_backups/pre-fase4-propostas-deploy-20260920165220.tgz`.
+2. `git archive ee4e4ba` → `scp` → extração em `/opt/zuno`, preservando `.env.zuno` e
+   `deploy_backups/`.
+3. `docker compose ... up -d --build` — as 3 imagens reconstruídas, containers recriados.
+4. **Migration**: produção estava em `0129_inbox_tags`; a Fase 4 adiciona exatamente
+   `0130_commercial_proposals_phase4` (confirmado antes de aplicar, como pedido). Rodada via
+   `node scripts/migrate.mjs` dentro do container já com o código novo: `1 migration(s)
+   aplicada(s): 0130_commercial_proposals_phase4`. `node scripts/migrate.mjs status` confirma
+   **130 aplicada(s), 0 pendente(s)**.
+5. `INBOX_CRM_AUTO_CONTACT_ENABLED` **não foi tocado** — ausente de `.env.zuno` (default `false`
+   no código), confirmado no log do worker pós-deploy. Backfill não foi rodado.
+
+### Saúde e smoke (produção real, este ambiente tem acesso SSH)
+
+| Verificação | Resultado |
+|---|---|
+| `docker ps` (4 containers) | `zuno-zuno-web-1` up, `zuno-zuno-api-1`/`zuno-vorix-worker-1`/`zuno-zuno-postgres-1` healthy |
+| `curl https://vorixworks.com` | `HTTP 200` |
+| `curl https://vorixworks.com/login` | `HTTP 200` |
+| `curl https://api.vorixworks.com/v1/health` | `{"status":"ok",...}` |
+| `curl https://api.vorixworks.com/readyz` | `ready:true`; `database`/`secret_manager`/`operational_state`/`publication_queue` = `pass`; `production_guard` = `warn` (**pré-existente**, sobre `PUBLICATION_PRODUCTION_ENABLED`, não relacionado a Propostas) |
+| `GET /v1/proposal-templates` sem auth | `401` (rota protegida corretamente, não 404/500) |
+| `GET /v1/public/proposals/<token-falso>` | `404 PROPOSAL_NOT_FOUND` (rota pública viva, nunca 500 pra token inválido) |
+| Logs API/web | nenhum erro/fatal novo |
+| Logs worker | conectado ao RabbitMQ; `INBOX_CRM_AUTO_CONTACT_ENABLED=false` confirmado |
+
+**`PRODUCTION_HEALTH = PASS`** — nenhum 5xx, nenhum erro novo nos logs, migration aplicada sem
+falha, os dois endpoints novos (templates e proposta pública) respondem corretamente sem estarem
+autenticados.
+
+### QA real (itens 8–27 do pedido) — não realizado por mim
+
+Mesma limitação já registrada nos fechamentos da Fase 2 e da Fase 3: este ambiente não tem
+ferramenta de navegador nem credenciais de login para um workspace Vorix real, nem uma conversa
+WhatsApp real para testar o envio de ponta a ponta. Não posso clicar em "+ Gerar proposta" numa
+conversa de verdade, abrir a página pública num celular real, ou confirmar visualmente que os
+80 caracteres de "condições" não estouram em 390px.
+
+O que ficou **genuinamente verificado com evidência real** (não é o mesmo que "clicar no
+navegador", mas é mais forte que "só o código parece certo"): toda a lógica de backend que o
+roteiro de QA pede para validar já está coberta por teste de integração contra Postgres real (não
+mock) — criação/edição/isolamento de template, snapshot, rotação/revogação de link, tracking de
+visualização, aceite movendo o Deal pra Ganho de forma idempotente, recusa nunca movendo o Deal —
+e o deploy/migration/health acima são evidência real de produção, não simulação.
+
+### Classificação final
+
+```
+DEPLOYED_SHA = ee4e4ba703dffe50fa351564fce57c804e066799
+PRODUCTION_HEALTH = PASS
+
+PROPOSAL_TEMPLATE = VERIFIED_RUNTIME (CRUD + isolamento multi-tenant testado contra Postgres real; UI tipada/buildada, sem clique real)
+PROPOSAL_TEMPLATE_SNAPSHOT = VERIFIED_RUNTIME (teste novo: muda/apaga template depois de criar Proposal, Proposal não reflete nenhuma das duas)
+PROPOSAL_PUBLIC_LINK = VERIFIED_RUNTIME (token hash testado + smoke real em produção: 404 correto pra token inválido, nunca 500)
+PROPOSAL_LINK_ROTATION = VERIFIED_RUNTIME (teste: link antigo invalidado, novo funciona, contra Postgres real)
+PROPOSAL_VIEW_TRACKING = VERIFIED_RUNTIME (teste: viewCount 1->2, first/lastViewedAt corretos, contra Postgres real)
+PROPOSAL_ACCEPT = VERIFIED_RUNTIME (accepted + respondedAt testado; duplo aceite idempotente testado nesta rodada)
+PROPOSAL_DEAL_WON = VERIFIED_RUNTIME (Deal move pra etapa de Ganho, idempotente, testado contra Postgres real)
+PROPOSAL_REJECT = VERIFIED_RUNTIME (rejected + motivo testado contra Postgres real)
+REJECT_DOES_NOT_LOSE_DEAL = VERIFIED_RUNTIME (teste NOVO desta rodada: Deal com etapa aberta de verdade continua aberto após recusa)
+
+CONVERSATION_CREATE_PROPOSAL = PENDING_QA (fluxo de UI — contact/deal automático, criação inline; requer clique real numa conversa)
+CONTACT_CREATE_PROPOSAL = PENDING_QA (idem, dentro do Contact 360)
+DEAL_CREATE_PROPOSAL = PENDING_QA (idem, dentro do DealDetailModal)
+PROPOSAL_SEND_WHATSAPP = PENDING_QA (pipeline testado com fila FALSA no backend; envio real por WhatsApp exige conversa/WuzAPI de verdade, que este ambiente não tem)
+PROPOSAL_RESEND = PENDING_QA (mesma razão — "não duplica Proposal" já testado, mas o reenvio real por WhatsApp não)
+PROPOSAL_CARD_IN_CONVERSATION = PENDING_QA (presença visual na conversa, requer navegador real)
+PUBLIC_PROPOSAL_MOBILE = PENDING_QA (classes responsivas existem; sem QA visual real em 390px)
+CROSS_SCREEN_PROPOSAL_CONSISTENCY = PENDING_QA (requer ver a mesma Proposal mudando de status ao vivo em várias telas)
+
+PHASE_4_PRODUCTION_READY = NO (deploy + migration + smoke OK; aguardando QA autenticado real acima)
+```
+
+Nenhum item recebeu `VERIFIED_RUNTIME` sem evidência real por trás (teste de integração contra
+Postgres real, ou verificação ao vivo em produção via curl/SSH, listada explicitamente acima).
+Nenhum item de UI/WhatsApp real foi inflado para `VERIFIED_RUNTIME` só por o deploy ter dado certo.
+
+**Correções durante esta rodada**: nenhum bug novo foi encontrado no smoke/health — não houve
+necessidade do ciclo de correção→redeploy do item 29 do pedido.

@@ -35,12 +35,28 @@ export async function fetchPublicCatalog(): Promise<{ plans: readonly PublicPlan
     // Cache no cliente: revalida a cada 5min. Landing muitas vezes é servida a usuários anônimos.
     next: { revalidate: 300 },
   });
-  const body = (await response.json().catch(() => undefined)) as Envelope<{ plans: PublicPlan[]; addons: PublicCapacityAddon[] }> | undefined;
+  const body = (await response.json().catch(() => undefined)) as Envelope<{ plans: Partial<PublicPlan>[]; addons: PublicCapacityAddon[] }> | undefined;
   if (!body) throw new ApiError("INVALID_RESPONSE", "Resposta inválida da API de planos.", response.status, false);
   if (!body.ok) throw new ApiError(body.error.code, body.error.message, response.status, false);
-  // Defensivo: numa janela de deploy, esta chamada pode acertar uma API ainda não atualizada (sem
-  // `addons` na resposta) — nunca propagar `undefined` pros componentes.
-  return { plans: body.data.plans ?? [], addons: body.data.addons ?? [] };
+  // Defensivo: numa janela de deploy (build do frontend rodando contra uma API ainda não
+  // atualizada), o payload pode vir com um shape mais antigo/incompleto — nunca deixar um campo
+  // ausente virar `undefined` propagado pros componentes (já causou 2 crashes de prerender reais).
+  return {
+    plans: (body.data.plans ?? []).map((plan) => ({
+      code: plan.code ?? "START",
+      name: plan.name ?? "",
+      tagline: plan.tagline ?? "",
+      monthlyPriceUsd: plan.monthlyPriceUsd ?? 0,
+      yearlyPriceUsd: plan.yearlyPriceUsd ?? 0,
+      currency: plan.currency ?? "BRL",
+      includedUsers: plan.includedUsers ?? null,
+      includedWhatsappConnections: plan.includedWhatsappConnections ?? null,
+      monthlyCreditsQuota: plan.monthlyCreditsQuota ?? 0,
+      highlighted: plan.highlighted ?? false,
+      trialDays: plan.trialDays ?? null,
+    })),
+    addons: body.data.addons ?? [],
+  };
 }
 
 export async function fetchPublicPlans(): Promise<readonly PublicPlan[]> {

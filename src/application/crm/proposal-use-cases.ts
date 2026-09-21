@@ -101,7 +101,7 @@ export async function createProposal(deps: ProposalUseCaseDeps, input: { tenantI
   return { proposal, rawToken };
 }
 
-export async function listProposals(deps: ProposalUseCaseDeps, input: { tenantId: string; workspaceId: string; dealId?: string; contactId?: string }): Promise<Proposal[]> {
+export async function listProposals(deps: ProposalUseCaseDeps, input: { tenantId: string; workspaceId: string; dealId?: string; contactId?: string; status?: Proposal["status"] }): Promise<Proposal[]> {
   const proposals = await deps.proposalRepository.listByWorkspace(input);
   return Promise.all(proposals.map((proposal) => isExpired(proposal) && !["accepted", "rejected", "expired"].includes(proposal.status)
     ? deps.proposalRepository.setStatus(proposal.id, { status: "expired" })

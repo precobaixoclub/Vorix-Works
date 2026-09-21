@@ -15,7 +15,7 @@ import { PostgresDealRepository } from "../dist/infrastructure/storage/postgres/
 import { PostgresPipelineRepository, PostgresPipelineStageRepository } from "../dist/infrastructure/storage/postgres/postgres-pipeline-repository.js";
 import { ensureDefaultPipeline } from "../dist/application/crm/pipeline-use-cases.js";
 import { createDeal } from "../dist/application/crm/deal-use-cases.js";
-import { acceptPublicProposal, applyProposalAcceptanceToDeal, createProposal, getPublicProposal, regenerateProposalLink, rejectPublicProposal, revokeProposalLink, sendProposal } from "../dist/application/crm/proposal-use-cases.js";
+import { acceptPublicProposal, applyProposalAcceptanceToDeal, createProposal, getPublicProposal, listProposals, regenerateProposalLink, rejectPublicProposal, revokeProposalLink, sendProposal } from "../dist/application/crm/proposal-use-cases.js";
 import { createProposalTemplate, deleteProposalTemplate, duplicateProposalTemplate, listProposalTemplates, updateProposalTemplate } from "../dist/application/crm/proposal-template-use-cases.js";
 import { deliverProposalThroughInbox } from "../dist/application/commercial/proposal-delivery-use-cases.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
@@ -65,6 +65,17 @@ test("Fase 4 registra primeira/ultima abertura e quantidade sem dados invasivos"
   assert.ok(second.lastViewedAt);
   const columns = await db.pool.query("select column_name from information_schema.columns where table_name='proposal_views'");
   assert.deepEqual(columns.rows.map((row) => row.column_name).sort(), ["id", "proposal_id", "viewed_at"]);
+});
+
+test("Fase 4 lista propostas pelo status solicitado", async () => {
+  const tenantId = "tenant-phase4-list-status";
+  const ws = await workspace(tenantId);
+  const deps = proposalDeps();
+  const draft = await createProposal(deps, { tenantId, workspaceId: ws.id, title: "Rascunho", items: [{ name: "Item", quantity: 1, unitPriceCents: 100 }] });
+  const sent = await createProposal(deps, { tenantId, workspaceId: ws.id, title: "Enviada", items: [{ name: "Item", quantity: 1, unitPriceCents: 100 }] });
+  await sendProposal(deps, { proposalId: sent.proposal.id, tenantId, workspaceId: ws.id });
+  assert.deepEqual((await listProposals(deps, { tenantId, workspaceId: ws.id, status: "draft" })).map((proposal) => proposal.id), [draft.proposal.id]);
+  assert.deepEqual((await listProposals(deps, { tenantId, workspaceId: ws.id, status: "sent" })).map((proposal) => proposal.id), [sent.proposal.id]);
 });
 
 test("Fase 4 rotaciona e revoga token; resposta repetida e idempotente", async () => {

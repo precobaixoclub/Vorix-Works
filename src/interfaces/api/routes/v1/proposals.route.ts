@@ -65,8 +65,8 @@ export type ProposalsRoutesDeps = ProposalUseCaseDeps & { delivery?: ProposalDel
 export async function registerProposalsRoutes(app: FastifyInstance, deps: ProposalsRoutesDeps): Promise<void> {
   app.get("/proposals", { schema: { querystring: LIST_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "proposal:read");
-    const { workspaceId, dealId, contactId } = request.query as { workspaceId: string; dealId?: string; contactId?: string };
-    const proposals = await listProposals(deps, { tenantId: principal.tenantId, workspaceId, dealId, contactId });
+    const { workspaceId, dealId, contactId, status } = request.query as { workspaceId: string; dealId?: string; contactId?: string; status?: (typeof PROPOSAL_STATUSES)[number] };
+    const proposals = await listProposals(deps, { tenantId: principal.tenantId, workspaceId, dealId, contactId, status });
     return successEnvelope(proposals, request.id);
   });
 

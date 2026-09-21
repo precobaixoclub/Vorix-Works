@@ -35,6 +35,7 @@ import { registerCommercialSuggestionsRoutes } from "./commercial-suggestions.ro
 import { registerAutomationRulesRoutes } from "./automation-rules.route.js";
 import { registerCommercialMetricsRoutes } from "./commercial-metrics.route.js";
 import { registerBillingEntitlementsRoutes } from "./billing-entitlements.route.js";
+import { registerReadOnlyGuard } from "../../http/read-only-guard.js";
 import { registerAdminPlanVersionsRoutes } from "./admin-plan-versions.route.js";
 import { registerBillingCheckoutRoutes, registerBillingTrialRoutes } from "./billing-checkout.route.js";
 import { registerProductEventsRoutes } from "./product-events.route.js";
@@ -387,6 +388,10 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       }),
     };
     await registerBillingEntitlementsRoutes(app, entitlementDeps);
+    // Aquisição self-service — bloqueia criação operacional (Contato/Negócio/Tarefa/Proposta/
+    // Automação) quando o tenant está em modo somente-leitura (trial vencido/pagamento pendente/
+    // suspenso). Opt-in por rota via `config.readOnlyGuard`, ver `read-only-guard.ts`.
+    registerReadOnlyGuard(app, entitlementDeps);
     await registerAdminPlanVersionsRoutes(app, { planVersionRepository: identity.planVersionRepository, addonDefinitionRepository: identity.addonDefinitionRepository });
     // SaaS Commercialization (Fase 2) — Checkout self-service. A ativação real da Subscription só
     // acontece via webhook confirmado (`billing-webhook.route.ts`, fora de `/v1`), nunca aqui.

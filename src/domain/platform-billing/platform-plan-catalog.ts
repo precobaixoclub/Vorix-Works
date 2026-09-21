@@ -144,9 +144,16 @@ export function getPlatformPlan(code: PlatformPlanCode): PlatformPlanDefinition 
   return plan;
 }
 
-/** Preview de todos os planos p\u00fablicos (exclui ENTERPRISE, que \u00e9 vendido por contato). */
+/**
+ * Preview dos planos oferecidos publicamente (Home/Pricing/Signup) \u2014 aquisi\u00e7\u00e3o self-service
+ * (se\u00e7\u00e3o 1 do pedido): "O Vorix N\u00c3O ter\u00e1 plano gratuito permanente... N\u00e3o oferecer FREE".
+ * `FREE` continua existindo no cat\u00e1logo/banco (\u00e9 o estado legado de `tenant_billing` para tenants
+ * antigos e o fallback de `ensureTenantBilling` \u2014 mudar isso \u00e9 uma migra\u00e7\u00e3o de dados separada,
+ * fora de escopo aqui) mas nunca mais aparece como op\u00e7\u00e3o para um cliente novo. `ENTERPRISE`
+ * tamb\u00e9m fica de fora \u2014 \u00e9 vendido por contato, nunca self-service.
+ */
 export function listPublicPlans(): readonly PlatformPlanDefinition[] {
   return PLATFORM_PLAN_CODES
-    .filter((code) => code !== "ENTERPRISE")
+    .filter((code) => code !== "ENTERPRISE" && code !== "FREE")
     .map((code) => PLATFORM_PLAN_CATALOG[code]);
 }

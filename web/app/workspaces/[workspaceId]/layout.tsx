@@ -6,6 +6,7 @@ import { BottomNav } from "@/components/BottomNav";
 import { EmptyState } from "@/components/EmptyState";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Spinner } from "@/components/Spinner";
+import { WorkspaceReadOnlyBanner } from "@/components/WorkspaceReadOnlyBanner";
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { WorkspaceTopBar } from "@/components/WorkspaceTopBar";
 import { BACKSTAGE_NAV, canUseBackstage } from "@/components/workspace-navigation";
@@ -104,6 +105,7 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
             }
           >
             <WorkspaceTopBar workspaceId={workspace.id} name={workspace.name} status={workspace.status} hideBreadcrumb={isFocusPath} />
+            <WorkspaceReadOnlyBanner workspaceId={workspace.id} />
             <div
               className={
                 isFocusPath

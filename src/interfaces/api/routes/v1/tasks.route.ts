@@ -53,7 +53,7 @@ export async function registerTasksRoutes(app: FastifyInstance, deps: TaskUseCas
     return successEnvelope(tasks, request.id);
   });
 
-  app.post("/tasks", { schema: { body: CREATE_BODY_SCHEMA } }, async (request, reply) => {
+  app.post("/tasks", { schema: { body: CREATE_BODY_SCHEMA }, config: { readOnlyGuard: true } }, async (request, reply) => {
     const principal = requirePermission(request, "task:manage");
     const body = request.body as Record<string, unknown> & { workspaceId: string; type: (typeof TASK_TYPES)[number]; title: string };
     const task = await createTask(deps, { tenantId: principal.tenantId, ...body } as never);

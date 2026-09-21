@@ -95,7 +95,7 @@ async function ensureTenant(tenantId) {
   await new PostgresPlatformBillingRepository(db.pool).ensureTenantBilling({ tenantId, now: new Date().toISOString() });
 }
 
-test("startTrial: cria uma Subscription real em status trial, com trialStart/trialEnd calculados a partir de PlanVersion.trialDays (14 do PRO), nunca hardcoded", async () => {
+test("startTrial: cria uma Subscription real em status trial, com trialStart/trialEnd calculados a partir de PlanVersion.trialDays (7 do PRO desde a migration 0131), nunca hardcoded", async () => {
   const deps = trialDeps();
   const tenantId = "tenant-trial-1";
   await ensureTenant(tenantId);

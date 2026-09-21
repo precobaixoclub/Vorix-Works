@@ -133,6 +133,11 @@ const SIGNUP_BODY_SCHEMA = {
     password: { type: "string", minLength: 8, maxLength: 200 },
     name: { type: "string", minLength: 1, maxLength: 120 },
     workspaceName: { type: "string", maxLength: 120 },
+    // Aquisição self-service (seção 23/25 do pedido) — plano escolhido na Home/Pricing, preservado
+    // até aqui via querystring. Nunca FREE/ENTERPRISE (não são oferecidos nesse fluxo) — só os 3
+    // planos pagos com trial. Backend nunca confia em preço vindo do cliente (não existe campo de
+    // preço aqui, só o código do plano — o valor sempre vem do catálogo no servidor).
+    planCode: { type: "string", enum: ["START", "PRO", "BUSINESS"] },
   },
 } as const;
 
@@ -177,7 +182,7 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?
   // abuso básico.
   app.post("/auth/signup", { schema: { body: SIGNUP_BODY_SCHEMA } }, async (request, reply) => {
     const identity = requireIdentity(deps.identity);
-    const body = request.body as { email: string; password: string; name: string; workspaceName?: string };
+    const body = request.body as { email: string; password: string; name: string; workspaceName?: string; planCode?: "START" | "PRO" | "BUSINESS" };
 
     const result = await signupPublicTransactional(
       identity.pool,
@@ -189,12 +194,14 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?
         idGenerator: (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
         now: () => new Date(),
         productAnalytics: deps.productAnalytics,
+        trialEnabled: deps.config.billing.trialEnabled,
       },
       {
         email: body.email,
         password: body.password,
         name: body.name,
         workspaceName: body.workspaceName,
+        planCode: body.planCode,
         userAgent: request.headers["user-agent"],
         ipAddress: request.ip,
       },
@@ -209,6 +216,7 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: { identity?
         user: result.user,
         tenantId: result.tenantId,
         role: result.role,
+        trialStarted: result.trialStarted,
       },
       request.id,
     );

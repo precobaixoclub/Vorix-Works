@@ -28,13 +28,14 @@ import {
 // Domínio puro — cotas, plano, markup, lucro, período.
 // -------------------------------------------------------------------------------------------------
 
-test("plan catalog: FREE tem 50 créditos; PRO tem cota maior; PRO destacado; ENTERPRISE fora do público", () => {
+test("plan catalog: FREE tem 50 créditos; PRO tem cota maior; PRO destacado; ENTERPRISE e FREE fora do público (aquisição self-service, seção 1: sem plano gratuito permanente)", () => {
   assert.equal(PLATFORM_PLAN_CATALOG.FREE.monthlyCreditsQuota, 50);
   assert.ok(PLATFORM_PLAN_CATALOG.PRO.monthlyCreditsQuota > PLATFORM_PLAN_CATALOG.START.monthlyCreditsQuota);
   assert.equal(PLATFORM_PLAN_CATALOG.PRO.highlighted, true);
   const publics = listPublicPlans().map((plan) => plan.code);
   assert.equal(publics.includes("ENTERPRISE"), false);
-  assert.equal(publics.includes("FREE"), true);
+  assert.equal(publics.includes("FREE"), false, "FREE continua existindo no catálogo (tenants legados), mas nunca é oferecido publicamente");
+  assert.deepEqual(publics, ["START", "PRO", "BUSINESS"]);
 });
 
 test("getPlatformPlan retorna a definição; código desconhecido lança", () => {

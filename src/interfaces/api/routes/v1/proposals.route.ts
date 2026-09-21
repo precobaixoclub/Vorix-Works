@@ -70,7 +70,7 @@ export async function registerProposalsRoutes(app: FastifyInstance, deps: Propos
     return successEnvelope(proposals, request.id);
   });
 
-  app.post("/proposals", { schema: { body: CREATE_BODY_SCHEMA } }, async (request, reply) => {
+  app.post("/proposals", { schema: { body: CREATE_BODY_SCHEMA }, config: { readOnlyGuard: true } }, async (request, reply) => {
     const principal = requirePermission(request, "proposal:manage");
     const body = request.body as Record<string, unknown> & { workspaceId: string; title: string; items: unknown[] };
     const { proposal, rawToken } = await createProposal(deps, { tenantId: principal.tenantId, ...body } as never);

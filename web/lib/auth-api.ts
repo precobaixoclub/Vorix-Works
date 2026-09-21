@@ -29,6 +29,9 @@ export type LoginResult = {
   user: { id: string; email: string; name: string; isPlatformAdmin: boolean };
   tenantId: string;
   role: TenantRole;
+  /** Só presente na resposta de `/auth/signup` — se o plano escolhido virou uma Subscription real
+   * de trial (seção 25 do pedido). `undefined` em `/auth/login`. */
+  trialStarted?: boolean;
 };
 
 export async function apiLogin(email: string, password: string): Promise<LoginResult> {
@@ -69,6 +72,9 @@ export type SignupInput = {
   password: string;
   name: string;
   workspaceName?: string;
+  /** Plano escolhido na Home/Pricing, preservado até aqui (seção 23 do pedido). Nunca FREE/
+   * ENTERPRISE — não são oferecidos no fluxo self-service. */
+  planCode?: "START" | "PRO" | "BUSINESS";
 };
 
 /** Cadastro público — Fase 2. Devolve o mesmo envelope de `/auth/login` já autenticado. */

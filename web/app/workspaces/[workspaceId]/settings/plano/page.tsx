@@ -295,7 +295,6 @@ function AddonRow({ addon, interval, busy, canManage, onPurchase }: { addon: Bil
 }
 
 function cyclePrice(plan: PublicPlan, interval: BillingInterval): string {
-  if (plan.monthlyPriceUsd === 0) return "Grátis";
-  if (interval === "monthly") return `US$ ${plan.monthlyPriceUsd}/mês`;
-  return "Valor anual não informado pela API";
+  if (interval === "yearly") return `US$ ${plan.monthlyPriceUsd}/mês (ciclo anual)`;
+  return `US$ ${plan.monthlyPriceUsd}/mês`;
 }

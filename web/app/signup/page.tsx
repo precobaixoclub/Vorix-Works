@@ -20,12 +20,20 @@ export default function SignupPage() {
   );
 }
 
+const VALID_PLAN_CODES = ["START", "PRO", "BUSINESS"] as const;
+type ValidPlanCode = (typeof VALID_PLAN_CODES)[number];
+
+const PLAN_LABEL: Record<ValidPlanCode, string> = { START: "Start", PRO: "Pro", BUSINESS: "Business" };
+
 function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { signup } = useAuth();
-  const selectedPlan = searchParams.get("plan");
-  const wantsPaidPlan = Boolean(selectedPlan && selectedPlan !== "FREE");
+  const rawPlan = searchParams.get("plan");
+  // Nunca envia um plano desconhecido/FREE pro backend (que rejeitaria) — sem plano reconhecido,
+  // o cadastro segue normal, só sem trial automático (mesmo estado de sempre).
+  const selectedPlan = VALID_PLAN_CODES.includes(rawPlan as ValidPlanCode) ? (rawPlan as ValidPlanCode) : undefined;
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -37,10 +45,11 @@ function SignupForm() {
     setError(undefined);
     trackProductEvent("signup_started", selectedPlan ? { planKey: selectedPlan } : undefined);
     try {
-      await signup({ email: email.trim(), password, name: nameFromEmail(email), workspaceName: undefined });
+      await signup({ email: email.trim(), password, name: name.trim() || nameFromEmail(email), planCode: selectedPlan });
+      // Nunca leva pro Billing (seção 27 do pedido) — mesmo quem escolheu um plano pago já saiu do
+      // signup com o trial rodando (sem cartão). O caminho é sempre o onboarding.
       const workspaces = await listWorkspaces().catch(() => []);
-      if (workspaces[0] && wantsPaidPlan) router.push(`/workspaces/${workspaces[0].id}/settings/plano`);
-      else if (workspaces[0]) router.push(`/workspaces/${workspaces[0].id}/onboarding`);
+      if (workspaces[0]) router.push(`/workspaces/${workspaces[0].id}/onboarding`);
       else router.push("/workspaces");
     } catch (err) {
       setError(err instanceof ApiError ? translateSignupError(err) : "Não foi possível criar a conta. Tente novamente.");
@@ -64,13 +73,23 @@ function SignupForm() {
           <CardBody className="flex flex-col gap-5 py-8">
             <div className="text-center">
               <Logo className="mx-auto h-12 w-auto text-foreground lg:hidden" />
-              <h2 className="mt-4 text-xl font-semibold">{wantsPaidPlan ? "Criar conta" : "Começar no Vorix"}</h2>
-              {selectedPlan ? <p className="mt-2 text-sm text-muted-foreground">Plano selecionado: <span className="font-medium text-foreground">{selectedPlan}</span> · <Link href="/pricing" className="text-primary hover:underline">Alterar</Link></p> : null}
+              <h2 className="mt-4 text-xl font-semibold">Criar conta</h2>
+              {selectedPlan ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Plano <span className="font-medium text-foreground">{PLAN_LABEL[selectedPlan]}</span> · 7 dias de teste, sem cartão · <Link href="/pricing" className="text-primary hover:underline">Trocar</Link>
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-muted-foreground">Teste o Vorix por 7 dias, sem cartão.</p>
+              )}
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
+                <Label htmlFor="signup-name">Nome</Label>
+                <Input id="signup-name" type="text" autoComplete="name" required value={name} onChange={(event) => setName(event.target.value)} placeholder="Seu nome" autoFocus />
+              </div>
+              <div>
                 <Label htmlFor="signup-email">E-mail</Label>
-                <Input id="signup-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" autoFocus />
+                <Input id="signup-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" />
               </div>
               <div>
                 <Label htmlFor="signup-password">Senha</Label>

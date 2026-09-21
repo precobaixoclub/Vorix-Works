@@ -111,7 +111,7 @@ export async function registerDealsRoutes(app: FastifyInstance, deps: DealUseCas
     return successEnvelope(summary, request.id);
   });
 
-  app.post("/deals", { schema: { body: CREATE_BODY_SCHEMA } }, async (request, reply) => {
+  app.post("/deals", { schema: { body: CREATE_BODY_SCHEMA }, config: { readOnlyGuard: true } }, async (request, reply) => {
     const principal = requirePermission(request, "deal:manage");
     const body = request.body as Record<string, unknown> & { workspaceId: string; pipelineId: string; stageId: string; title: string };
     try {

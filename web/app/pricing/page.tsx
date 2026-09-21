@@ -23,12 +23,12 @@ export default async function PricingPage() {
       <PublicHeader />
 
       <section className="mx-auto max-w-7xl px-4 py-16 text-center sm:px-6">
-        <p className="text-sm font-semibold uppercase tracking-wide text-primary">Planos reais</p>
+        <p className="text-sm font-semibold uppercase tracking-wide text-primary">Planos</p>
         <h1 className="mx-auto mt-4 max-w-3xl text-balance text-4xl font-semibold tracking-tight sm:text-5xl">Escolha pelo volume que sua operação usa hoje.</h1>
-        <p className="mx-auto mt-4 max-w-2xl text-balance text-muted-foreground">A API pública informa preço mensal, créditos, publicações e principais limites. Sem anual decorativo enquanto o catálogo não entregar ciclo anual.</p>
+        <p className="mx-auto mt-4 max-w-2xl text-balance text-muted-foreground">Todo plano inclui 7 dias de teste, sem cartão de crédito. Mude ou cancele quando quiser, direto no Vorix.</p>
       </section>
 
-      <section className="mx-auto grid max-w-7xl gap-4 px-4 pb-16 sm:px-6 md:grid-cols-2 xl:grid-cols-4">
+      <section className="mx-auto grid max-w-7xl gap-4 px-4 pb-16 sm:px-6 md:grid-cols-3">
         {loadError ? (
           <div className="col-span-full rounded-xl border border-destructive/40 bg-destructive/10 p-6 text-center text-sm text-destructive">{loadError}</div>
         ) : plans.map((plan) => <PlanCard key={plan.code} plan={plan} />)}
@@ -36,9 +36,12 @@ export default async function PricingPage() {
 
       <section className="mx-auto max-w-5xl px-4 pb-16 sm:px-6">
         <div className="rounded-xl border border-border bg-card p-6 text-center">
-          <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Comparação simples</p>
-          <h2 className="mt-2 text-2xl font-semibold">Os limites importantes, sem tabela infinita.</h2>
-          <p className="mx-auto mt-2 max-w-2xl text-sm text-muted-foreground">Compare créditos, publicações e recursos principais. Billing detalhado, add-ons e downgrade seguro ficam dentro do Vorix, em Plano e cobrança.</p>
+          <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Como funciona o teste</p>
+          <h2 className="mt-2 text-2xl font-semibold">7 dias para usar o Vorix de verdade, sem compromisso.</h2>
+          <p className="mx-auto mt-2 max-w-2xl text-sm text-muted-foreground">
+            Você escolhe um plano e começa a usar na hora, sem cadastrar cartão. Quando quiser continuar, ativa o
+            plano dentro do Vorix — a cobrança só começa depois da sua confirmação. Cancele quando quiser.
+          </p>
         </div>
       </section>
 
@@ -48,13 +51,12 @@ export default async function PricingPage() {
 }
 
 function PlanCard({ plan }: { plan: PublicPlan }) {
-  const isFree = plan.monthlyPriceUsd === 0;
   return (
     <div className={`flex flex-col rounded-xl border p-6 ${plan.highlighted ? "border-primary bg-primary/10 shadow-lg" : "border-border bg-card"}`}>
       {plan.highlighted ? <span className="mb-3 w-fit rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">Mais escolhido</span> : null}
       <h2 className="text-lg font-semibold">{plan.name}</h2>
       <p className="mt-1 min-h-10 text-sm text-muted-foreground">{plan.tagline}</p>
-      <p className="mt-5 text-3xl font-semibold tracking-tight">{isFree ? "Grátis" : `US$ ${plan.monthlyPriceUsd}`}{!isFree ? <span className="text-sm font-normal text-muted-foreground">/mês</span> : null}</p>
+      <p className="mt-5 text-3xl font-semibold tracking-tight">US$ {plan.monthlyPriceUsd}<span className="text-sm font-normal text-muted-foreground">/mês</span></p>
       <p className="mt-1 text-sm text-muted-foreground">{formatCreditsQuota(plan.monthlyCreditsQuota)} · {plan.monthlyPublicationsQuota.toLocaleString("pt-BR")} publicações</p>
       <ul className="mt-6 flex flex-1 flex-col gap-3 text-sm text-muted-foreground">
         {plan.features.slice(0, 5).map((feature) => (
@@ -62,7 +64,7 @@ function PlanCard({ plan }: { plan: PublicPlan }) {
         ))}
       </ul>
       <PlanSelectLink planCode={plan.code} className="mt-6" variant={plan.highlighted ? "primary" : "secondary"}>
-        {isFree ? "Começar grátis" : `Selecionar ${plan.name}`}
+        Testar {plan.name} por 7 dias
       </PlanSelectLink>
     </div>
   );

@@ -66,7 +66,7 @@ export async function registerContactsRoutes(app: FastifyInstance, deps: Contact
     return successEnvelope(contacts, request.id);
   });
 
-  app.post("/contacts", { schema: { body: CREATE_BODY_SCHEMA } }, async (request, reply) => {
+  app.post("/contacts", { schema: { body: CREATE_BODY_SCHEMA }, config: { readOnlyGuard: true } }, async (request, reply) => {
     const principal = requirePermission(request, "contact:manage");
     const body = request.body as Record<string, unknown> & { workspaceId: string; name: string };
     const contact = await createContact(deps, { tenantId: principal.tenantId, ...body } as never);

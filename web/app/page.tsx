@@ -1,21 +1,41 @@
 import Link from "next/link";
 import type React from "react";
-import { ArrowRight, CheckCircle2, MessageSquareText, Sparkles, TrendingUp } from "lucide-react";
+import { CheckCircle2, FileText, MessageSquareText, Sparkles, TrendingUp } from "lucide-react";
 import { Button } from "@/components/Button";
+import { PlanSelectLink } from "@/components/PlanSelectLink";
 import { PublicFooter } from "@/components/public/PublicFooter";
 import { PublicHeader } from "@/components/public/PublicHeader";
 import { TrackPageView } from "@/components/TrackPageView";
-import { fetchPublicPlans, type PublicPlan } from "@/features/platform-plans/api";
+import { fetchPublicPlans, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
 
 export const revalidate = 300;
 
-const JOURNEY = ["Criar", "Publicar", "Conversar", "Vender", "Medir"];
+const JOURNEY = ["Marketing", "Conversa", "Contato", "Negócio", "Follow-up", "Proposta", "Venda"];
+
+const PILLARS: readonly { title: string; description: string; icon: React.ReactNode }[] = [
+  { title: "Marketing", description: "Crie e publique conteúdo com IA nos canais conectados.", icon: <Sparkles className="h-5 w-5" /> },
+  { title: "Conversas", description: "Centralize o atendimento e os canais num único lugar.", icon: <MessageSquareText className="h-5 w-5" /> },
+  { title: "CRM Comercial", description: "Organize contatos, negócios e follow-ups sem perder contexto.", icon: <TrendingUp className="h-5 w-5" /> },
+  { title: "Propostas", description: "Crie, envie e acompanhe propostas com link público.", icon: <FileText className="h-5 w-5" /> },
+  { title: "IA", description: "Apoio em toda a operação — criação, organização e insights.", icon: <Sparkles className="h-5 w-5" /> },
+  { title: "Resultados", description: "Acompanhe o que está acontecendo na sua operação.", icon: <TrendingUp className="h-5 w-5" /> },
+];
 
 const WHY = [
   ["Menos ferramentas", "Marketing, atendimento, CRM e resultados na mesma operação."],
   ["Mais contexto", "A conversa vira contato, negócio, tarefa e proposta sem perder histórico."],
   ["IA integrada", "Apoio para criar conteúdo, responder melhor e enxergar oportunidades."],
   ["Operação conectada", "O time vê o que aconteceu e o que precisa fazer agora."],
+];
+
+const FAQ: readonly { question: string; answer: string }[] = [
+  { question: "O teste é gratuito?", answer: "Sim. Você usa o Vorix por 7 dias sem pagar nada." },
+  { question: "Preciso cadastrar cartão?", answer: "Não. Você cria a conta e começa a usar sem informar nenhuma forma de pagamento." },
+  { question: "O que acontece depois dos 7 dias?", answer: "Seu acesso operacional é pausado até você escolher um plano. Nada do que você criou é apagado." },
+  { question: "Quando começa a cobrança?", answer: "Só depois que você confirmar a contratação de um plano, dentro do Vorix — nunca automaticamente." },
+  { question: "Posso cancelar?", answer: "Sim, a qualquer momento, direto em Plano e cobrança. Seu acesso continua até o fim do período já pago." },
+  { question: "Posso trocar de plano?", answer: "Sim. Upgrade e downgrade são self-service, sem precisar falar com o suporte." },
+  { question: "Meus dados são apagados se eu não contratar?", answer: "Não. Contatos, negócios, tarefas, propostas e configurações continuam salvos." },
 ];
 
 export default async function RootPage() {
@@ -41,35 +61,47 @@ export default async function RootPage() {
               Marketing, atendimento e vendas conectados por IA.
             </h1>
             <p className="mt-5 max-w-xl text-balance text-base leading-7 text-muted-foreground sm:text-lg">
-              Do primeiro conteúdo à venda, o Vorix conecta a jornada da sua empresa em uma operação simples por fora e poderosa por dentro.
+              Centralize sua operação comercial, converse com seus clientes, organize oportunidades e use IA para transformar contatos em vendas.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <Link href="/signup"><Button className="px-5 py-3">Criar conta</Button></Link>
+              <Link href="/signup"><Button className="px-5 py-3">Testar por 7 dias</Button></Link>
               <Link href="#produto"><Button variant="secondary" className="px-5 py-3">Ver como funciona</Button></Link>
             </div>
+            <p className="mt-4 text-sm text-muted-foreground">Sem cartão de crédito para começar.</p>
           </div>
 
           <ProductPreview />
         </div>
       </section>
 
+      <section className="mx-auto max-w-5xl px-4 py-16 text-center sm:px-6">
+        <p className="text-sm font-semibold uppercase tracking-wide text-primary">O problema</p>
+        <h2 className="mx-auto mt-3 max-w-3xl text-balance text-2xl font-semibold tracking-tight sm:text-3xl">
+          Marketing em uma ferramenta. WhatsApp em outra. CRM em outra. Follow-up esquecido. Proposta perdida.
+        </h2>
+        <p className="mt-4 text-muted-foreground">Com o Vorix, tudo se conecta — do primeiro contato até a venda.</p>
+      </section>
+
       <section id="produto" className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           {JOURNEY.map((step, index) => (
             <div key={step} className="rounded-xl border border-border bg-card p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{String(index + 1).padStart(2, "0")}</p>
-              <p className="mt-3 text-lg font-semibold">{step}</p>
-              <p className="mt-2 text-sm text-muted-foreground">{journeyCopy(step)}</p>
+              <p className="mt-3 text-base font-semibold">{step}</p>
+              <p className="mt-2 text-xs text-muted-foreground">{journeyCopy(step)}</p>
             </div>
           ))}
         </div>
       </section>
 
       <section id="solucoes" className="border-y border-border bg-muted/20">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-3">
-          <Feature title="Marketing" icon={<Sparkles className="h-5 w-5" />} items={["Crie conteúdo com IA", "Organize produção", "Publique nas redes conectadas", "Acompanhe performance"]} />
-          <Feature title="Conversas" icon={<MessageSquareText className="h-5 w-5" />} items={["Atenda no WhatsApp", "Humano + IA no mesmo fluxo", "CRM contextual", "Takeover quando necessário"]} />
-          <Feature title="CRM" icon={<TrendingUp className="h-5 w-5" />} items={["Contatos", "Pipeline", "Tarefas", "Propostas", "Da conversa ao negócio sem perder contexto"]} />
+        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-16 sm:px-6 md:grid-cols-2 lg:grid-cols-3">
+          {PILLARS.map((pillar) => (
+            <div key={pillar.title} className="rounded-xl border border-border bg-card p-5">
+              <div className="flex items-center gap-2 text-primary">{pillar.icon}<h2 className="text-lg font-semibold text-foreground">{pillar.title}</h2></div>
+              <p className="mt-3 text-sm text-muted-foreground">{pillar.description}</p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -103,15 +135,50 @@ export default async function RootPage() {
 
       {plans.length > 0 ? (
         <section className="border-t border-border bg-muted/20">
-          <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-14 sm:px-6 md:flex-row md:items-center md:justify-between">
-            <div>
+          <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
+            <div className="text-center">
               <h2 className="text-2xl font-semibold">Comece simples. Cresça quando precisar.</h2>
-              <p className="mt-2 text-sm text-muted-foreground">{plans.length} planos reais carregados da API de pricing.</p>
+              <p className="mt-2 text-sm text-muted-foreground">7 dias de teste em qualquer plano, sem cartão de crédito.</p>
             </div>
-            <Link href="/pricing"><Button>Ver preços <ArrowRight className="ml-2 h-4 w-4" /></Button></Link>
+            <div className="mx-auto mt-8 grid max-w-4xl gap-4 sm:grid-cols-3">
+              {plans.map((plan) => (
+                <div key={plan.code} className={`flex flex-col rounded-xl border p-5 ${plan.highlighted ? "border-primary bg-primary/10" : "border-border bg-card"}`}>
+                  {plan.highlighted ? <span className="mb-2 w-fit rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">Mais escolhido</span> : null}
+                  <p className="font-semibold">{plan.name}</p>
+                  <p className="mt-1 text-2xl font-semibold tracking-tight">US$ {plan.monthlyPriceUsd}<span className="text-xs font-normal text-muted-foreground">/mês</span></p>
+                  <p className="mt-1 text-xs text-muted-foreground">{formatCreditsQuota(plan.monthlyCreditsQuota)}</p>
+                  <PlanSelectLink planCode={plan.code} className="mt-4" variant={plan.highlighted ? "primary" : "secondary"}>
+                    Testar {plan.name}
+                  </PlanSelectLink>
+                </div>
+              ))}
+            </div>
+            <p className="mt-6 text-center text-sm">
+              <Link href="/pricing" className="font-medium text-primary hover:underline">Ver todos os detalhes dos planos</Link>
+            </p>
           </div>
         </section>
       ) : null}
+
+      <section className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
+        <h2 className="text-center text-2xl font-semibold">Perguntas frequentes</h2>
+        <div className="mt-8 space-y-6">
+          {FAQ.map((item) => (
+            <div key={item.question}>
+              <p className="font-medium">{item.question}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{item.answer}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="border-t border-border bg-muted/20">
+        <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6">
+          <h2 className="text-balance text-3xl font-semibold tracking-tight">Pronto para conectar marketing, atendimento e vendas?</h2>
+          <p className="mt-3 text-muted-foreground">Teste o Vorix por 7 dias, sem cartão de crédito.</p>
+          <Link href="/signup"><Button className="mt-6 px-6 py-3">Começar meu teste</Button></Link>
+        </div>
+      </section>
 
       <PublicFooter />
     </main>
@@ -153,21 +220,12 @@ function ProductPreview() {
   );
 }
 
-function Feature({ title, icon, items }: { title: string; icon: React.ReactNode; items: readonly string[] }) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <div className="flex items-center gap-2 text-primary">{icon}<h2 className="text-lg font-semibold text-foreground">{title}</h2></div>
-      <ul className="mt-5 space-y-3 text-sm text-muted-foreground">
-        {items.map((item) => <li key={item} className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />{item}</li>)}
-      </ul>
-    </div>
-  );
-}
-
 function journeyCopy(step: string) {
-  if (step === "Criar") return "Transforme ideia em conteúdo com contexto da marca.";
-  if (step === "Publicar") return "Envie ou agende nos canais conectados.";
-  if (step === "Conversar") return "Atenda clientes no WhatsApp com histórico.";
-  if (step === "Vender") return "Crie negócios, tarefas e propostas.";
-  return "Veja marketing, atendimento e comercial juntos.";
+  if (step === "Marketing") return "Crie e publique conteúdo com IA.";
+  if (step === "Conversa") return "Atenda clientes no WhatsApp com histórico.";
+  if (step === "Contato") return "A conversa vira contato pesquisável no CRM.";
+  if (step === "Negócio") return "Organize a oportunidade com valor e etapa.";
+  if (step === "Follow-up") return "Nunca perca o próximo passo.";
+  if (step === "Proposta") return "Crie, envie e acompanhe com link público.";
+  return "Feche o negócio sem sair do Vorix.";
 }

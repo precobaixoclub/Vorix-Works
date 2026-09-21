@@ -66,7 +66,7 @@ export async function registerAutomationRulesRoutes(app: FastifyInstance, deps: 
     return successEnvelope(rules, request.id);
   });
 
-  app.post("/automation-rules", { schema: { body: CREATE_BODY_SCHEMA } }, async (request, reply) => {
+  app.post("/automation-rules", { schema: { body: CREATE_BODY_SCHEMA }, config: { readOnlyGuard: true } }, async (request, reply) => {
     const principal = requirePermission(request, "automation:manage");
     const body = request.body as Record<string, unknown> & { workspaceId: string };
     const rule = await createAutomationRule(deps, { tenantId: principal.tenantId, conditions: [], ...body } as never);

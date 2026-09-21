@@ -63,3 +63,14 @@ export class NotImplementedError extends AppError {
     this.name = "NotImplementedError";
   }
 }
+
+/** Aquisição self-service — trial vencido / pagamento pendente / suspensão (mesmo modo somente-
+ * leitura de `resolveEffectiveEntitlements`, seção 42 do pedido: "bloquear operações que geram uso
+ * ou custo... sem apagar dado"). 402 é o código HTTP mais próximo do significado real ("regularize
+ * o pagamento"), nunca confundido com 403 (que aqui significaria "seu papel não pode fazer isto"). */
+export class PaymentRequiredError extends AppError {
+  constructor(message = "Regularize o pagamento ou escolha um plano para continuar usando o Vorix. Nenhum dado foi apagado.", details?: Record<string, unknown>) {
+    super({ code: "ENTITLEMENT_ACCOUNT_READ_ONLY", message, statusCode: 402, recoverable: true, details });
+    this.name = "PaymentRequiredError";
+  }
+}

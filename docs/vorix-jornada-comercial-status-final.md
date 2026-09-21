@@ -1,102 +1,130 @@
-# Jornada Comercial Integrada — Status Consolidado (Fases 1–5)
+# Jornada Comercial Integrada — Status Final (Fases 1–5)
 
-> Atualizado em 20 de setembro de 2026, no fechamento operacional da Fase 5.
-> `DEPLOYED_SHA = 4a388aa`. Este documento resume o estado de cada fase; os documentos individuais
-> (`vorix-jornada-comercial-fase1-contatos.md` até `fase5-integracao-final.md`) têm o detalhe
-> completo de cada um.
+> Operational QA final executado em produção em 20 de setembro de 2026 (21 de setembro UTC).
+> `DEPLOYED_SHA = c010919`. Workspace exclusivo: `ws-homolog-whatsapp` (`Homologacao WhatsApp Real`).
+> Usuário real de QA com papel `editor`; nenhum bypass de autenticação, JWT fabricado, backfill,
+> migration ou alteração de flag.
 
-## Fase 1 — Ponte Inbox → CRM (Contatos)
+## Resultado operacional
 
-**O quê**: bridge automática que cria/atualiza `Contact`/`ContactIdentity` a partir de conversas do
-Inbox, controlada pela flag `INBOX_CRM_AUTO_CONTACT_ENABLED` (permanece `false` em produção — nunca
-ativada sem pedido explícito). Deep-link do Contact 360, filtro de Conversas por `contactId`, e
-backfill controlado (nunca executado em produção).
+O QA percorreu a jornada com dados controlados criados pela interface: um Contact, dois Deals, uma
+Task, um Proposal Template e duas Proposals. A mesma identidade foi conferida em Home, Contact 360,
+Negócios, Tarefas, Propostas e Timeline. A sessão real foi usada de forma sequencial e o
+`storageState` rotativo permaneceu fora do Git.
 
-- Implementada: sim.
-- Testada: sim (testes de integração real, isolamento multi-tenant).
-- Deployada: sim (SHA `7fa49b8`).
-- Runtime verificado: smoke real (containers saudáveis, flag confirmada `false` no log do worker).
-- Pendências: QA autenticado (clicar numa conversa/Contact reais) nunca foi feito neste ambiente —
-  `PENDING_QA` desde então, roteiro em `fase2-negocios.md` §22 (documentado junto da Fase 2 por
-  terem sido fechadas na mesma rodada).
+Não havia conversa controlada no workspace e não foi fornecido número WhatsApp externo de teste.
+Esses dois pontos continuam pendentes externos; nenhum telefone real ou aleatório foi usado.
 
-## Fase 2 — Conversa → Contato → Negócio
+Para exercitar o ciclo público sem enviar WhatsApp, as duas Proposals criadas pela UI foram
+transicionadas para `sent` por uma chamada temporária e auditável ao use case `sendProposal` dentro
+do container da API. Isso registrou `proposal_sent`, não chamou o provedor e não é evidência de
+envio por WhatsApp.
 
-**O quê**: `QuickCreateDealModal`, seção COMERCIAL na conversa, negócios em andamento/ganhos/
-perdidos no Contact 360, `LossReasonModal`, `resolveActiveDeal`/`groupDealsByStatus`.
+## Cenários executados
 
-- Implementada: sim.
-- Testada: sim (79 testes de backend, 38 de frontend na época).
-- Deployada: sim (SHA `7fa49b8`, mesmo deploy da Fase 1).
-- Runtime verificado: smoke real PASS.
-- Pendências: QA autenticado real nunca reportado pelo usuário — `PENDING_QA`.
+- Login real, Home e telas privadas: PASS.
+- Contact 360: seis seções carregaram dados reais; nenhum UUID/JID/LID/token apareceu na UI.
+- Deal `QA Comercial`, R$ 1.500: criado inline, pipeline padrão, etapa inicial `Novo`.
+- Task `Follow-up`: criada para Contact/Deal, reagendada mantendo o ID, exibida atrasada na Home e
+  concluída; permaneceu em Concluídas e saiu das pendências.
+- Template: defaults selecionados. Depois da criação, o modelo foi alterado e a Proposal preservou
+  `Proposta QA Comercial`, confirmando snapshot.
+- Proposal 1: criada para o primeiro Deal, aberta anonimamente mais de uma vez, tracking registrado,
+  aceita; Proposal `accepted` e Deal em `Ganho`.
+- Proposal 2: criada para o segundo Deal, visualizada e recusada; Proposal `rejected` e Deal em
+  `Novo`, com ações de nova tarefa/proposta e perda manual disponíveis.
+- Home Intelligence: tarefa atrasada, oportunidade sem próxima ação e Proposal visualizada sem
+  resposta apareceram quando aplicáveis. Após resolução, tarefa e Proposal encerradas sumiram.
+- Timeline 360: contato, negócios, Task, Proposals e ganho apareceram em ordem, sem IDs crus. Links
+  de Deal e Proposal abriram o contexto correto.
+- Deep links suportados `?contactId=`, `?dealId=` e `?proposal=` passaram em abertura, refresh e
+  Back. A aplicação não implementa `?contact=`; o contrato existente é `?contactId=`.
+- Mobile 390 px: Home, Contact 360, Deal, Tarefas, Proposal, Timeline e página pública sem overflow
+  horizontal crítico; botões, modais e scroll acessíveis.
 
-## Fase 3 — Negócio → Tarefa / Próxima Ação
+## Bugs encontrados e corrigidos
 
-**O quê**: seção "Próxima ação" na conversa, "Próximas atividades" no `DealDetailModal`, aba
-Tarefas do Contact 360 (Atrasadas/Próximas/Concluídas), Reagendar/"Abrir conversa" na tela Tarefas.
-Backend de Task já existia pronto antes desta fase — o trabalho foi todo frontend.
+1. **Página pública exigia login.** `/p/<token>` era redirecionado para `/login`. O proxy agora
+   libera `/p/`; foi adicionado E2E sem cookie. Commit `a8e12d8`.
+2. **Home ignorava o encerramento da Proposal.** O frontend enviava `status=viewed`, o repositório
+   já suportava o filtro, mas a rota descartava o parâmetro. A rota/use case agora o propagam e há
+   regressão `draft`/`sent`. Commit `c010919`.
 
-- Implementada: sim (parte por outra sessão, backend; frontend nesta jornada).
-- Testada: sim (12 testes novos de frontend, suíte de backend relevante sem regressão).
-- Deployada: sim (commits `9737237`/`5bd44a3`/`df885cc`, incluídos no deploy da Fase 4).
-- Runtime verificado: smoke real PASS junto do deploy da Fase 4.
-- Pendências: QA autenticado real — `PENDING_QA`.
+As correções foram publicadas e retestadas no mesmo cenário. O commit documental seguro `f08f6c4`
+também entrou no push; `.qa/` continua ignorado.
 
-## Fase 4 — Propostas
+## Verificação
 
-**O quê**: ciclo completo de Proposta (templates, envio por WhatsApp via ponte
-`proposal-delivery-use-cases.ts`, link público com token só em hash SHA-256, tracking de
-visualização, aceite move o Deal pra Ganho, recusa nunca move o Deal).
+- Frontend: typecheck, build e 56/56 testes Vitest.
+- E2E: página pública sem cookie e fluxo público em 1440/390; execução focal final 4/4.
+- Backend: `architecture:check`; suíte Fase 4 de propostas 9/9 em PGlite.
+- Builds de produção sem migration; backups preservados em `/opt/zuno/deploy_backups/`.
 
-- Implementada: sim (substancialmente pré-existente, auditada e com gaps reais fechados nesta
-  jornada: mojibake, guard de isolamento sem cobrir `commercial`/`commercial-bridge`,
-  `ProposalDetailModal` incompleto, mensagens técnicas vazando na página pública, +4 testes).
-- Testada: sim (suíte de propostas completa, isolamento multi-tenant, idempotência de envio).
-- Deployada: sim (SHA `e89fd4b`, migration `0130_commercial_proposals_phase4` aplicada).
-- Runtime verificado: smoke real PASS (rotas novas respondendo certo, sem erro nos logs).
-- Pendências: QA autenticado real (aceitar/recusar uma proposta de verdade pela página pública,
-  clicar no fluxo inteiro) — `PENDING_QA`.
+## Saúde pós-deploy
 
-## Fase 5 — Amarração Final (Timeline Comercial 360)
+Verificado em 21/09/2026 02:20 UTC:
 
-**O quê**: `GET /contacts/:id/activity` — ponte neutra que agrega `timeline_events` +
-`inbox_conversation_events` numa Timeline 360 por Contato; Contact 360 "Histórico" consumindo isso;
-ator sempre resolvido (nunca UUID cru); itens clicáveis; `isTaskOverdue` unificado (3 definições
-divergentes viravam 1); `task_rescheduled` passou a ser gravado; bloco "Proposta visualizada sem
-resposta" no Home; deep-link `?proposal=`; ação "Abrir cliente" na seção COMERCIAL da conversa
-(gap real encontrado e corrigido); nomes de contato/negócio deixaram de ser texto morto em
-`DealDetailModal`/`ProposalDetailModal`.
+| Checagem | Resultado |
+|---|---|
+| API `/v1/health` | HTTP 200, status `ok` |
+| `/readyz` | HTTP 200, `ready=true`; aviso preexistente `production_guard=warn` |
+| WEB | HTTP 200; página pública anônima e telas autenticadas em Chrome |
+| Containers | API/worker/PostgreSQL healthy; web running |
+| Logs críticos (30 min) | 0 em API, web e worker |
 
-- Implementada: sim.
-- Testada: sim (7 testes novos de backend — integração real via Postgres/pglite — + 4 de frontend;
-  87 testes de backend de CRM/atendimento e 56 de frontend sem regressão).
-- Deployada: sim (SHA `4a388aa`).
-- Runtime verificado: smoke real PASS; rota nova confirmada viva em produção (401 correto pra
-  requisição sem autenticação, nunca 500).
-- Pendências: QA autenticado real (abrir o Histórico de um Contact de verdade, ver o bloco novo do
-  Home renderizado com dados reais, testar os deep-links num navegador, QA mobile 390px) —
-  `PENDING_QA`, mesma classificação de todas as fases anteriores.
+Na renovação houve 401/403 esperados do refresh antigo após rotação/restart. A UI também consulta
+`/teams` com o papel `editor` e recebe 403, e o stream do Inbox pode registrar reconexão/CORS quando
+expira; nenhum bloqueou os fluxos. Não houve 5xx, pageerror, erro React ou loop anormal no final.
 
-## Visão geral
+## Evidências
 
-| Fase | Implementada | Testada | Deployada | Runtime (smoke) | QA autenticado real |
-|---|---|---|---|---|---|
-| 1 — Contatos | Sim | Sim | Sim (`7fa49b8`) | PASS | `PENDING_QA` |
-| 2 — Negócios | Sim | Sim | Sim (`7fa49b8`) | PASS | `PENDING_QA` |
-| 3 — Tarefas | Sim | Sim | Sim (via Fase 4) | PASS | `PENDING_QA` |
-| 4 — Propostas | Sim | Sim | Sim (`e89fd4b`) | PASS | `PENDING_QA` |
-| 5 — Timeline 360 | Sim | Sim | Sim (`4a388aa`) | PASS | `PENDING_QA` |
+- [Contact 360 desktop](qa/commercial-final/contact360-desktop.png)
+- [Home Intelligence](qa/commercial-final/home-intelligence-desktop.png)
+- [Home após resolver as pendências](qa/commercial-final/home-resolved-desktop.png)
+- [Deal ganho](qa/commercial-final/deal-won-desktop.png)
+- [Task concluída](qa/commercial-final/tasks-completed-desktop.png)
+- [Proposal aceita](qa/commercial-final/proposal-accepted-desktop.png)
+- [Snapshot da Proposal](qa/commercial-final/proposal-snapshot-desktop.png)
+- [Timeline desktop](qa/commercial-final/timeline-desktop.png)
+- [Página pública desktop](qa/commercial-final/public-proposal-desktop.png)
+- [Contact 360 mobile](qa/commercial-final/contact360-mobile.png)
+- [Timeline mobile](qa/commercial-final/timeline-mobile.png)
+- [Página pública mobile](qa/commercial-final/public-proposal-mobile.png)
 
-**O único item verdadeiramente pendente em todas as 5 fases é o mesmo**: uma sessão de navegador
-autenticada real, clicando pelo produto com dados de produção — algo que nenhuma rodada deste
-projeto teve ferramenta para fazer neste ambiente. O código está implementado, testado
-automaticamente (unitário + integração real contra Postgres) e deployado com saúde confirmada em
-todas as 5 fases; nenhuma classificação foi inflada para `VERIFIED_RUNTIME` sem essa evidência.
+As imagens contêm somente dados do workspace de QA. Nenhum segredo ou token está visível.
 
-`COMMERCIAL_JOURNEY_PRODUCTION_READY = NO` — a lacuna exata para virar `YES` é: alguém com acesso
-de navegador autenticado em produção percorrer os roteiros de QA já documentados em cada doc de
-fase (Fase 1 `fase1-contatos.md` §20+, Fase 2 `fase2-negocios.md` §21–22, Fase 3
-`fase3-tarefas.md`, Fase 4 `fase4-propostas.md` classificação final, Fase 5
-`fase5-integracao-final.md` §22) e reportar o resultado — nenhuma nova feature nem correção de
-código é necessária para isso, só a execução do QA real.
+## Classificação final
+
+```text
+AUTHENTICATED_QA = PASS
+PRODUCTION_HEALTH = PASS
+CONVERSATION_COMMERCIAL_CONTEXT = PENDING_EXTERNAL_CONVERSATION
+CONTACT_360 = VERIFIED_RUNTIME
+DEAL_FLOW = VERIFIED_RUNTIME
+TASK_FLOW = VERIFIED_RUNTIME
+TASK_RESCHEDULE = VERIFIED_RUNTIME
+TASK_COMPLETE = VERIFIED_RUNTIME
+PROPOSAL_TEMPLATE = VERIFIED_RUNTIME
+PROPOSAL_CREATE = VERIFIED_RUNTIME
+PUBLIC_PROPOSAL = VERIFIED_RUNTIME
+PROPOSAL_VIEW_TRACKING = VERIFIED_RUNTIME
+PROPOSAL_ACCEPT = VERIFIED_RUNTIME
+DEAL_WON_FROM_PROPOSAL = VERIFIED_RUNTIME
+PROPOSAL_REJECT = VERIFIED_RUNTIME
+REJECT_KEEPS_DEAL_OPEN = VERIFIED_RUNTIME
+TIMELINE_360 = VERIFIED_RUNTIME
+TIMELINE_DEEP_LINKS = VERIFIED_RUNTIME
+DEEP_LINKS = VERIFIED_RUNTIME
+HOME_COMMERCIAL_INTELLIGENCE = VERIFIED_RUNTIME
+CROSS_SCREEN_CONSISTENCY = VERIFIED_RUNTIME
+MOBILE_COMMERCIAL_FLOW = PASS
+PROPOSAL_SEND_WHATSAPP = PENDING_EXTERNAL_TEST_NUMBER
+
+COMMERCIAL_CORE_PRODUCTION_READY = YES
+WHATSAPP_PROPOSAL_RUNTIME_VERIFIED = NO
+COMMERCIAL_JOURNEY_PRODUCTION_READY = NO
+```
+
+O core interno está pronto. A jornada completa continua `NO` por dois critérios externos sem
+evidência: contexto comercial dentro de uma conversa QA e envio real da Proposal por WhatsApp para
+um número controlado. Fase 6 não foi iniciada.

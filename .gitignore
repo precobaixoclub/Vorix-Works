@@ -10,6 +10,7 @@ web/next-env.d.ts
 /artifacts/
 /data/
 .zuno-data/
+.qa/
 zuno-deploy.tar
 .env
 .env.zuno

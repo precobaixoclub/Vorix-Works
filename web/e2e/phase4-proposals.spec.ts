@@ -56,6 +56,16 @@ async function commercialFixture(page: Page, dealCount = 2) {
 
 test.beforeEach(async ({ context }) => { await loginCookie(context); });
 
+test("link público abre sem cookie de sessão", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.route("**/v1/public/proposals/**", (route) => route.fulfill({ json: { ok: true, data: { id: "public-anonymous", title: "Proposta Pública", status: "sent", currency: "BRL", items: [{ name: "Serviço", quantity: 1, unitPriceCents: 10000, subtotalCents: 10000 }], discountCents: 0, totalCents: 10000, viewCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } } }));
+  await page.goto("/p/token-anonymous");
+  await expect(page).toHaveURL(/\/p\/token-anonymous$/);
+  await expect(page.getByText("Proposta Pública", { exact: true })).toBeVisible();
+  await context.close();
+});
+
 test("cria pela conversa com modelo, escolhe Deal e envia no pipeline", async ({ page }) => {
   const state = await commercialFixture(page, 2);
   await page.goto(`/workspaces/${WORKSPACE_ID}/conversas?conversation=conversation-phase4`);
@@ -108,10 +118,10 @@ test("pagina publica e legivel e recusa com motivo", async ({ page }) => {
   await expect(page.getByText("Cliente: Cliente Mobile · Empresa Mobile")).toBeVisible();
   await page.getByRole("button", { name: "Recusar", exact: true }).click();
   await page.getByLabel("Motivo").click();
-  await page.getByRole("option", { name: "Preco", exact: true }).click();
-  await page.getByLabel("Comentario (opcional)").fill("Preciso renegociar");
+  await page.getByRole("option", { name: /Pre.o/, exact: true }).click();
+  await page.getByLabel(/Coment.rio \(opcional\)/).fill("Preciso renegociar");
   await page.getByRole("button", { name: "Confirmar recusa" }).click();
   expect(rejection).toEqual({ reason: "price", comment: "Preciso renegociar" });
-  await expect(page.getByText("Voce recusou esta proposta.")).toBeVisible();
+  await expect(page.getByText(/Voc. recusou esta proposta\./)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

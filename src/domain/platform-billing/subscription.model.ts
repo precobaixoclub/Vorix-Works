@@ -40,9 +40,35 @@ export type SubscriptionItem = {
   addonCode: string;
   quantity: number;
   unitPriceUsd: number;
+  /** Pricing/Capacity Etapa B — moeda de `unitPriceUsd` NO MOMENTO da compra, congelada (o preço
+   * atual do `AddonDefinition` pode já ter mudado desde então — nunca reescrito aqui). */
+  currency: string;
   providerItemId?: string;
   createdAt: string;
   updatedAt: string;
+};
+
+/**
+ * Redução de capacidade agendada pro fim do ciclo atual (Pricing/Capacity Etapa B, seção 15/22-23
+ * do pedido: "reduções entram no próximo ciclo... não criar cálculo financeiro paralelo se Stripe
+ * já resolve"). Não usa `Stripe.SubscriptionSchedule` (superfície nova que o projeto nunca usou) —
+ * reaproveita o MESMO idioma já comprovado por `Subscription.cancelAtPeriodEnd` (marca a intenção
+ * agora, um scheduler periódico já existente no mesmo padrão de `trial-expiration-scheduler.ts`
+ * aplica de fato no fim do ciclo). `targetQuantity` é a quantidade final desejada do addon — pode
+ * ser `0` (remover o item por completo).
+ */
+export type SubscriptionPendingChange = {
+  id: string;
+  subscriptionId: string;
+  tenantId: string;
+  addonCode: string;
+  subscriptionItemId: string | undefined;
+  fromQuantity: number;
+  targetQuantity: number;
+  effectiveAt: string;
+  appliedAt?: string;
+  cancelledAt?: string;
+  createdAt: string;
 };
 
 /** Entitlements efetivos de um tenant — resultado de resolver a `Subscription` (real ou virtual,

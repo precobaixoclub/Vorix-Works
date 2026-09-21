@@ -107,6 +107,7 @@ type AddonRow = {
   description: string;
   monthly_price_usd: string;
   yearly_price_usd: string;
+  currency: string;
   resource: string;
   increment: number;
   active: boolean;
@@ -122,6 +123,7 @@ function addonToDomain(row: AddonRow): AddonDefinition {
     description: row.description,
     monthlyPriceUsd: Number(row.monthly_price_usd),
     yearlyPriceUsd: Number(row.yearly_price_usd),
+    currency: row.currency,
     resource: row.resource as PlanLimitResource,
     increment: row.increment,
     active: row.active,

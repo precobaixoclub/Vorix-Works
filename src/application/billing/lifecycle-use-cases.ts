@@ -16,7 +16,9 @@ export type LifecycleUseCaseDeps = EntitlementUseCaseDeps & {
   productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
 
-async function getRealActiveSubscription(deps: LifecycleUseCaseDeps, tenantId: string) {
+/** Exportado para reuso por `capacity-use-cases.ts` (Pricing/Capacity Etapa B) — nunca duplicar
+ * esta checagem. */
+export async function getRealActiveSubscription(deps: LifecycleUseCaseDeps, tenantId: string) {
   const subscription = await deps.subscriptionRepository.getActiveByTenant(tenantId);
   if (!subscription) {
     throw new Error("SUBSCRIPTION_NOT_FOUND: este tenant não tem uma assinatura paga ativa — use o checkout para assinar um plano.");
@@ -109,6 +111,12 @@ export async function changePlan(deps: LifecycleUseCaseDeps, input: ChangePlanIn
 
 export type PurchaseAddonInput = { tenantId: string; addonCode: string; quantity: number; billingInterval: BillingInterval };
 
+/**
+ * Pricing/Capacity Etapa B (seção 7 do pedido) — se a assinatura JÁ tem um `SubscriptionItem` deste
+ * addon, SOMA na quantidade existente (via `incrementQuantity`, `UPDATE ... SET quantity =
+ * quantity + $delta` atômico no banco — duas compras concorrentes do mesmo addon nunca se perdem
+ * uma na outra). Nunca cria uma segunda linha pro mesmo `addonCode` na mesma assinatura.
+ */
 export async function purchaseAddon(deps: LifecycleUseCaseDeps, input: PurchaseAddonInput): Promise<void> {
   if (input.quantity < 1) throw new Error("ADDON_INVALID_QUANTITY: quantidade precisa ser pelo menos 1.");
   const subscription = await getRealActiveSubscription(deps, input.tenantId);
@@ -124,20 +132,50 @@ export async function purchaseAddon(deps: LifecycleUseCaseDeps, input: PurchaseA
     throw new Error(`ADDON_NOT_FOUND: add-on "${input.addonCode}" não existe ou está inativo.`);
   }
 
-  const priceRef = priceRefFor(deps.billingProvider.providerId, addon.code, input.billingInterval === "monthly" ? addon.monthlyProviderPriceRef : addon.yearlyProviderPriceRef);
-  const result = await deps.billingProvider.addSubscriptionItem({ providerSubscriptionId: subscription.providerSubscriptionId, providerPriceRef: priceRef, quantity: input.quantity });
-  if (!result.ok) {
-    throw new Error(`ADDON_PROVIDER_ERROR(${result.kind}): ${result.message}`);
+  // A DECISÃO "já existe item deste addon?" precisa ser atômica junto da escrita — só o incremento
+  // sozinho não bastava (duas compras concorrentes do MESMO addon, nenhuma ainda tinha criado a
+  // linha, as duas decidiam "criar" e viravam 2 linhas). `upsertIncrement` (INSERT ... ON CONFLICT
+  // DO UPDATE) resolve isso no banco, não em código — fonte de verdade sempre correta mesmo sob
+  // concorrência real (seção 7-8 do pedido).
+  const existingItems = await deps.subscriptionItemRepository.listBySubscription(subscription.id);
+  const existing = existingItems.find((item) => item.addonCode === input.addonCode);
+
+  if (existing?.providerItemId) {
+    const result = await deps.billingProvider.updateSubscriptionItemQuantity({ providerItemId: existing.providerItemId, quantity: existing.quantity + input.quantity });
+    if (!result.ok) throw new Error(`ADDON_PROVIDER_ERROR(${result.kind}): ${result.message}`);
+  }
+  let providerItemId = existing?.providerItemId;
+  if (!existing) {
+    const priceRef = priceRefFor(deps.billingProvider.providerId, addon.code, input.billingInterval === "monthly" ? addon.monthlyProviderPriceRef : addon.yearlyProviderPriceRef);
+    const result = await deps.billingProvider.addSubscriptionItem({ providerSubscriptionId: subscription.providerSubscriptionId, providerPriceRef: priceRef, quantity: input.quantity });
+    if (!result.ok) throw new Error(`ADDON_PROVIDER_ERROR(${result.kind}): ${result.message}`);
+    providerItemId = result.providerItemId;
   }
 
-  await deps.subscriptionItemRepository.create({
+  const updated = await deps.subscriptionItemRepository.upsertIncrement({
     subscriptionId: subscription.id,
     addonCode: input.addonCode,
     quantity: input.quantity,
     unitPriceUsd: input.billingInterval === "monthly" ? addon.monthlyPriceUsd : addon.yearlyPriceUsd,
-    providerItemId: result.providerItemId,
+    currency: addon.currency,
+    providerItemId,
   });
-  await deps.billingEventRepository.record({ tenantId: input.tenantId, subscriptionId: subscription.id, eventType: "addon_purchased", payload: { addonCode: input.addonCode, quantity: input.quantity } });
+  await deps.billingEventRepository.record({ tenantId: input.tenantId, subscriptionId: subscription.id, eventType: "addon_purchased", payload: { addonCode: input.addonCode, quantityAdded: input.quantity, newQuantity: updated.quantity } });
+}
+
+/** Limite efetivo de um recurso SEM um determinado `SubscriptionItem` — usado pra validar remoção/
+ * redução ANTES de executar (seção 13-14/19-20 do pedido: nunca deixar a capacidade contratada cair
+ * abaixo do uso real sem avisar primeiro). `null` = ilimitado (nunca bloqueia). */
+async function limitWithoutItem(deps: LifecycleUseCaseDeps, input: { planLimits: Record<string, number | null>; items: readonly { addonCode: string; quantity: number }[]; excludeItemAddonCode?: string; excludeQuantity?: number; resource: string }): Promise<number | null> {
+  const base = input.planLimits[input.resource];
+  if (base === null) return null;
+  let total = base;
+  for (const item of input.items) {
+    if (item.addonCode === input.excludeItemAddonCode) continue;
+    const addon = await deps.addonDefinitionRepository.getByCode(item.addonCode);
+    if (addon && addon.resource === input.resource) total += addon.increment * item.quantity;
+  }
+  return total;
 }
 
 export async function removeAddon(deps: LifecycleUseCaseDeps, input: { tenantId: string; subscriptionItemId: string }): Promise<void> {
@@ -146,6 +184,18 @@ export async function removeAddon(deps: LifecycleUseCaseDeps, input: { tenantId:
   const item = items.find((candidate) => candidate.id === input.subscriptionItemId);
   if (!item) {
     throw new Error("ADDON_ITEM_NOT_FOUND: este item de add-on não pertence à assinatura do tenant.");
+  }
+
+  const addon = await deps.addonDefinitionRepository.getByCode(item.addonCode);
+  if (addon) {
+    const planVersion = await deps.planVersionRepository.getById(subscription.planVersionId);
+    const newLimit = await limitWithoutItem(deps, { planLimits: planVersion?.limits ?? {}, items, excludeItemAddonCode: item.addonCode, resource: addon.resource });
+    if (newLimit !== null) {
+      const { used } = await getLimit(deps, { tenantId: input.tenantId, resource: addon.resource as never });
+      if (used > newLimit) {
+        throw new Error(`ADDON_REMOVAL_BELOW_USAGE: remover este add-on deixaria "${addon.resource}" em ${newLimit}, mas o uso atual é ${used}. Libere capacidade antes de remover.`);
+      }
+    }
   }
 
   if (item.providerItemId) {

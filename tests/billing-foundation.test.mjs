@@ -117,7 +117,7 @@ test("Entitlements: uma Subscription real (PRO) muda virtual para false e usa os
   assert.equal(entitlements.virtual, false);
   assert.equal(entitlements.planCode, "PRO");
   assert.equal(entitlements.capabilities.automation, true);
-  assert.equal(entitlements.limits.users, 8);
+  assert.equal(entitlements.limits.users, 5, "PRO passou a incluir 5 usuários (Pricing/Capacity Etapa B)");
 });
 
 test("Entitlements: add-on de usuário soma sobre o limite base do plano", async () => {
@@ -128,12 +128,12 @@ test("Entitlements: add-on de usuário soma sobre o limite base do plano", async
   const subscription = await deps.subscriptionRepository.create({
     tenantId, planVersionId: startVersion.id, status: "active", billingProvider: "sandbox", billingInterval: "monthly",
   });
-  assert.equal(startVersion.limits.users, 3);
+  assert.equal(startVersion.limits.users, 2, "START passou a incluir 2 usuários (Pricing/Capacity Etapa B)");
 
-  await deps.subscriptionItemRepository.create({ subscriptionId: subscription.id, addonCode: "extra_user", quantity: 2, unitPriceUsd: 15 });
+  await deps.subscriptionItemRepository.create({ subscriptionId: subscription.id, addonCode: "extra_user", quantity: 2, unitPriceUsd: 39, currency: "BRL" });
 
   const entitlements = await resolveEffectiveEntitlements(deps, tenantId);
-  assert.equal(entitlements.limits.users, 5, "3 do plano + 2 do addon (quantity=2, increment=1 cada)");
+  assert.equal(entitlements.limits.users, 4, "2 do plano + 2 do addon (quantity=2, increment=1 cada)");
 });
 
 test("Limite: assertWithinLimit lança USAGE_LIMIT_REACHED quando o uso real atinge o teto do plano", async () => {

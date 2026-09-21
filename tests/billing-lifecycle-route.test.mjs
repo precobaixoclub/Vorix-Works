@@ -116,6 +116,6 @@ test("POST /v1/billing/addons: compra e remove um add-on via HTTP", async () => 
   assert.equal(purchase.statusCode, 201);
 
   const entitlements = await app.inject({ method: "GET", url: "/v1/entitlements", headers: auth });
-  assert.equal(entitlements.json().data.limits.find((l) => l.resource === "users").max, 9, "8 do PRO + 1 do addon");
+  assert.equal(entitlements.json().data.limits.find((l) => l.resource === "users").max, 6, "5 do PRO + 1 do addon (Pricing/Capacity Etapa B)");
   await app.close();
 });

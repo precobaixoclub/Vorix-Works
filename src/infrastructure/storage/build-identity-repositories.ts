@@ -17,7 +17,7 @@ import type { ProductRepositoryPort } from "../../application/ports/product-repo
 import type { ProposalRepositoryPort } from "../../application/ports/proposal-repository.port.js";
 import type { ProposalTemplateRepositoryPort } from "../../application/ports/proposal-template-repository.port.js";
 import type { RefreshTokenRepositoryPort } from "../../application/ports/refresh-token-repository.port.js";
-import type { SubscriptionItemRepositoryPort, SubscriptionRepositoryPort } from "../../application/ports/subscription-repository.port.js";
+import type { SubscriptionItemRepositoryPort, SubscriptionPendingChangeRepositoryPort, SubscriptionRepositoryPort } from "../../application/ports/subscription-repository.port.js";
 import type { TaskRepositoryPort } from "../../application/ports/task-repository.port.js";
 import type { UsageCounterRepositoryPort } from "../../application/ports/usage-counter-repository.port.js";
 import type { SessionRepositoryPort } from "../../application/ports/session-repository.port.js";
@@ -51,6 +51,7 @@ import { PostgresProposalRepository } from "./postgres/postgres-proposal-reposit
 import { PostgresProposalTemplateRepository } from "./postgres/postgres-proposal-template-repository.js";
 import { PostgresRefreshTokenRepository } from "./postgres/postgres-refresh-token-repository.js";
 import { PostgresSubscriptionItemRepository, PostgresSubscriptionRepository } from "./postgres/postgres-subscription-repository.js";
+import { PostgresSubscriptionPendingChangeRepository } from "./postgres/postgres-subscription-pending-change-repository.js";
 import { PostgresTaskRepository } from "./postgres/postgres-task-repository.js";
 import { PostgresUsageCounterRepository } from "./postgres/postgres-usage-counter-repository.js";
 import { PostgresSessionRepository } from "./postgres/postgres-session-repository.js";
@@ -118,6 +119,8 @@ export type IdentityRepositories = {
   addonDefinitionRepository: AddonDefinitionRepositoryPort;
   subscriptionRepository: SubscriptionRepositoryPort;
   subscriptionItemRepository: SubscriptionItemRepositoryPort;
+  /** Pricing/Capacity Etapa B — reduções de capacidade agendadas pro fim do ciclo. */
+  subscriptionPendingChangeRepository: SubscriptionPendingChangeRepositoryPort;
   usageCounterRepository: UsageCounterRepositoryPort;
   paymentMethodRepository: PaymentMethodRepositoryPort;
   invoiceRepository: InvoiceRepositoryPort;
@@ -167,6 +170,7 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     addonDefinitionRepository: new PostgresAddonDefinitionRepository(pool),
     subscriptionRepository: new PostgresSubscriptionRepository(pool),
     subscriptionItemRepository: new PostgresSubscriptionItemRepository(pool),
+    subscriptionPendingChangeRepository: new PostgresSubscriptionPendingChangeRepository(pool),
     usageCounterRepository: new PostgresUsageCounterRepository(pool),
     paymentMethodRepository: new PostgresPaymentMethodRepository(pool),
     invoiceRepository: new PostgresInvoiceRepository(pool),

@@ -39,6 +39,11 @@ export type AddonDefinition = {
   description: string;
   monthlyPriceUsd: number;
   yearlyPriceUsd: number;
+  /** Pricing/Capacity Etapa B — moeda do preço acima (`monthlyPriceUsd`/`yearlyPriceUsd` guardam o
+   * nome do campo original da Fase 1, mas o valor está nesta moeda; nunca assumir USD). Mudar isto
+   * afeta só COMPRAS NOVAS — o preço já pago por um `SubscriptionItem` existente fica congelado em
+   * `SubscriptionItem.unitPriceUsd`/`SubscriptionItem.currency`, nunca reescrito. */
+  currency: string;
   /** Recurso que este addon incrementa (ex.: comprar "addon_extra_user" soma a `increment` no
    * limite de `users` calculado pelo `resolveEffectiveEntitlements`). */
   resource: import("./plan-entitlements.model.js").PlanLimitResource;

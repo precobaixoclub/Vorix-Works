@@ -54,3 +54,47 @@ export type BillingOverview = {
 };
 
 export type DowngradePreview = { overages: Array<{ resource: PlanLimitResource; used: number; newMax: number }>; safeToChange: boolean };
+
+/** Pricing/Capacity Etapa B — espelham `capacity.model.ts`/`capacity-use-cases.ts` do backend.
+ * Backend é a autoridade do cálculo (seção 9/35 do pedido) — este arquivo só formata o que a API
+ * já devolve pronto, nunca reimplementa a conta. */
+export type CapacitySnapshot = {
+  planCode: PlatformPlanCode;
+  currency: string;
+  includedUsers: number | null;
+  additionalUsers: number;
+  totalUsers: number | null;
+  includedWhatsappConnections: number | null;
+  additionalWhatsappConnections: number;
+  totalWhatsappConnections: number | null;
+  baseMonthlyAmount: number;
+  addonsMonthlyAmount: number;
+  totalMonthlyAmount: number;
+};
+
+export type CapacityPendingChange = { resource: PlanLimitResource; addonCode: string; targetQuantity: number; effectiveAt: string };
+
+export type CapacityState = { current: CapacitySnapshot; pending: readonly CapacityPendingChange[] };
+
+export type CapacityCostBreakdown = {
+  planCode: PlatformPlanCode;
+  currency: string;
+  baseMonthlyAmount: number;
+  includedUsers: number | null;
+  includedWhatsappConnections: number | null;
+  additionalUsers: number;
+  additionalWhatsappConnections: number;
+  userAddonMonthlyAmount: number;
+  whatsappAddonMonthlyAmount: number;
+  addonsMonthlyAmount: number;
+  totalMonthlyAmount: number;
+  feasible: boolean;
+};
+
+export type PlanRecommendation = { options: CapacityCostBreakdown[]; recommended: CapacityCostBreakdown | undefined };
+
+export type CapacityPreviewResult = { current: CapacitySnapshot; requestedOnCurrentPlan: CapacityCostBreakdown; recommendation: PlanRecommendation };
+
+export type CapacityChangeOutcome = { resource: PlanLimitResource; kind: "unchanged" | "increased" | "decrease_scheduled"; fromQuantity: number; toQuantity: number; effectiveAt?: string };
+
+export type CapacityChangeResult = { outcomes: CapacityChangeOutcome[] };

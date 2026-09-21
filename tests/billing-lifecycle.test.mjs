@@ -91,7 +91,7 @@ test("changePlan: upgrade START -> PRO troca o planVersionId e recalcula tenant_
   assert.equal(billing.planCode, "PRO");
 
   const entitlements = await resolveEffectiveEntitlements(deps, tenantId);
-  assert.equal(entitlements.limits.users, 8, "deveria já enxergar os limites do PRO");
+  assert.equal(entitlements.limits.users, 5, "deveria já enxergar os limites do PRO (Pricing/Capacity Etapa B)");
 });
 
 test("changePlan: downgrade bloqueado quando o uso atual excede o novo teto (nenhuma chamada ao gateway, nenhum dado apagado)", async () => {
@@ -101,7 +101,7 @@ test("changePlan: downgrade bloqueado quando o uso atual excede o novo teto (nen
   const workspaceRepo = new PostgresWorkspaceRepository(db.pool);
   const workspace = await workspaceRepo.create({ tenantId, name: "W" });
 
-  // START permite só 3 usuários; PRO permite 8 — cria 5 memberships reais pra estourar o teto do START.
+  // START permite só 2 usuários; PRO permite 5 — cria 5 memberships reais pra estourar o teto do START (mas não o do PRO).
   const userRepo = new PostgresUserRepository(db.pool);
   const membershipRepo = new PostgresTenantMembershipRepository(db.pool);
   for (let i = 0; i < 5; i++) {
@@ -128,7 +128,7 @@ test("addons: comprar soma sobre o limite base; remover volta ao limite original
 
   await purchaseAddon(deps, { tenantId, addonCode: "extra_user", quantity: 2, billingInterval: "monthly" });
   let entitlements = await resolveEffectiveEntitlements(deps, tenantId);
-  assert.equal(entitlements.limits.users, 5, "3 do START + 2 do addon");
+  assert.equal(entitlements.limits.users, 4, "2 do START + 2 do addon (Pricing/Capacity Etapa B)");
 
   const subscription = await deps.subscriptionRepository.getActiveByTenant(tenantId);
   const items = await deps.subscriptionItemRepository.listBySubscription(subscription.id);
@@ -137,7 +137,7 @@ test("addons: comprar soma sobre o limite base; remover volta ao limite original
 
   await removeAddon(deps, { tenantId, subscriptionItemId: items[0].id });
   entitlements = await resolveEffectiveEntitlements(deps, tenantId);
-  assert.equal(entitlements.limits.users, 3, "removido o addon, volta ao limite base do plano");
+  assert.equal(entitlements.limits.users, 2, "removido o addon, volta ao limite base do plano");
 });
 
 test("addons: add-on fora da lista permitida do plano é rejeitado", async () => {

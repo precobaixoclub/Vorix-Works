@@ -136,6 +136,7 @@ type SubscriptionItemRow = {
   addon_code: string;
   quantity: number;
   unit_price_usd: string;
+  currency: string;
   provider_item_id: string | null;
   created_at: Date;
   updated_at: Date;
@@ -148,6 +149,7 @@ function itemToDomain(row: SubscriptionItemRow): SubscriptionItem {
     addonCode: row.addon_code,
     quantity: row.quantity,
     unitPriceUsd: Number(row.unit_price_usd),
+    currency: row.currency,
     providerItemId: row.provider_item_id ?? undefined,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
@@ -159,9 +161,9 @@ export class PostgresSubscriptionItemRepository implements SubscriptionItemRepos
 
   async create(input: CreateSubscriptionItemInput): Promise<SubscriptionItem> {
     const result = await this.pool.query<SubscriptionItemRow>(
-      `insert into subscription_items (id, subscription_id, addon_code, quantity, unit_price_usd, provider_item_id)
-       values ($1, $2, $3, $4, $5, $6) returning *`,
-      [subscriptionItemId(), input.subscriptionId, input.addonCode, input.quantity, input.unitPriceUsd, input.providerItemId ?? null],
+      `insert into subscription_items (id, subscription_id, addon_code, quantity, unit_price_usd, currency, provider_item_id)
+       values ($1, $2, $3, $4, $5, $6, $7) returning *`,
+      [subscriptionItemId(), input.subscriptionId, input.addonCode, input.quantity, input.unitPriceUsd, input.currency ?? "USD", input.providerItemId ?? null],
     );
     return itemToDomain(result.rows[0]);
   }
@@ -180,6 +182,27 @@ export class PostgresSubscriptionItemRepository implements SubscriptionItemRepos
       [id, quantity],
     );
     if (!result.rows[0]) throw new Error(`SUBSCRIPTION_ITEM_NOT_FOUND: item "${id}" não existe.`);
+    return itemToDomain(result.rows[0]);
+  }
+
+  async incrementQuantity(id: string, delta: number): Promise<SubscriptionItem> {
+    const result = await this.pool.query<SubscriptionItemRow>(
+      "update subscription_items set quantity = quantity + $2, updated_at = now() where id = $1 returning *",
+      [id, delta],
+    );
+    if (!result.rows[0]) throw new Error(`SUBSCRIPTION_ITEM_NOT_FOUND: item "${id}" não existe.`);
+    return itemToDomain(result.rows[0]);
+  }
+
+  async upsertIncrement(input: CreateSubscriptionItemInput): Promise<SubscriptionItem> {
+    const result = await this.pool.query<SubscriptionItemRow>(
+      `insert into subscription_items (id, subscription_id, addon_code, quantity, unit_price_usd, currency, provider_item_id)
+       values ($1, $2, $3, $4, $5, $6, $7)
+       on conflict (subscription_id, addon_code)
+       do update set quantity = subscription_items.quantity + excluded.quantity, updated_at = now()
+       returning *`,
+      [subscriptionItemId(), input.subscriptionId, input.addonCode, input.quantity, input.unitPriceUsd, input.currency ?? "USD", input.providerItemId ?? null],
+    );
     return itemToDomain(result.rows[0]);
   }
 

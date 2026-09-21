@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { BillingInterval, BillingOverview, DowngradePreview, PlatformPlanCode } from "./types";
+import type { BillingInterval, BillingOverview, CapacityChangeResult, CapacityPreviewResult, CapacityState, DowngradePreview, PlatformPlanCode } from "./types";
 
 /** Rotas `/v1/billing/*` — SaaS Commercialization, Fases 2-4. Escopadas ao tenant do usuário
  * autenticado (`requirePrincipal`); nenhum parâmetro de tenant é passado pelo cliente. */
@@ -43,4 +43,27 @@ export async function reactivateSubscription(): Promise<{ reactivated: true }> {
 
 export async function openBillingPortal(returnPath?: string): Promise<{ portalUrl: string }> {
   return apiClient.post("/v1/billing/portal", returnPath ? { returnPath } : {});
+}
+
+/** Pricing/Capacity Etapa B — capacidade (usuários/números WhatsApp) self-service. */
+export async function fetchCapacityState(): Promise<CapacityState> {
+  return apiClient.get<CapacityState>("/v1/billing/capacity");
+}
+
+/** Preview NUNCA muda nada (seção 10-11 do pedido) — só o backend calcula, frontend só exibe. */
+export async function previewCapacity(input: { users: number; whatsappConnections: number }): Promise<CapacityPreviewResult> {
+  return apiClient.post("/v1/billing/capacity/preview", input);
+}
+
+/** Idempotency-Key gerado por confirmação (seção 8 do pedido: duplo clique nunca dobra o efeito) —
+ * cada chamada de `applyCapacity` recebe uma chave nova, então dois cliques distintos SÃO duas
+ * intenções reais; só o retry automático de uma MESMA chamada reusaria a mesma chave (o
+ * `apiClient` não faz retry de POST sozinho hoje, então isto já cobre o caso prático de duplo
+ * clique acidental no botão — cada clique gera sua própria chave). */
+export async function applyCapacity(input: { users?: number; whatsappConnections?: number }): Promise<CapacityChangeResult> {
+  return apiClient.post("/v1/billing/capacity/apply", input, { headers: { "Idempotency-Key": crypto.randomUUID() } });
+}
+
+export async function cancelPendingCapacityChange(pendingChangeId: string): Promise<{ cancelled: true }> {
+  return apiClient.post(`/v1/billing/capacity/pending/${encodeURIComponent(pendingChangeId)}/cancel`, {});
 }

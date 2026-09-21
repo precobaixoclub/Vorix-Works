@@ -108,7 +108,7 @@ import type { WorkspaceOnboardingRepositoryPort } from "../../../application/por
 import type { ProductEventRepositoryPort } from "../../../application/ports/product-event-repository.port.js";
 import type { GrowthMetricsRepositoryPort } from "../../../application/ports/growth-metrics-repository.port.js";
 import type { AddonDefinitionRepositoryPort, PlanVersionRepositoryPort } from "../../../application/ports/plan-version-repository.port.js";
-import type { SubscriptionItemRepositoryPort, SubscriptionRepositoryPort } from "../../../application/ports/subscription-repository.port.js";
+import type { SubscriptionItemRepositoryPort, SubscriptionPendingChangeRepositoryPort, SubscriptionRepositoryPort } from "../../../application/ports/subscription-repository.port.js";
 import type { UsageCounterRepositoryPort } from "../../../application/ports/usage-counter-repository.port.js";
 import type { CommercialMetricsRepositoryPort } from "../../../application/ports/commercial-metrics-repository.port.js";
 import type { CommercialSuggestionRepositoryPort } from "../../../application/ports/commercial-suggestion-repository.port.js";
@@ -487,6 +487,7 @@ export type ApiContainer = {
     addonDefinitionRepository: AddonDefinitionRepositoryPort;
     subscriptionRepository: SubscriptionRepositoryPort;
     subscriptionItemRepository: SubscriptionItemRepositoryPort;
+    subscriptionPendingChangeRepository: SubscriptionPendingChangeRepositoryPort;
     usageCounterRepository: UsageCounterRepositoryPort;
     paymentMethodRepository: PaymentMethodRepositoryPort;
     invoiceRepository: InvoiceRepositoryPort;

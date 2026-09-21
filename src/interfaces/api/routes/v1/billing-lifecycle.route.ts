@@ -24,6 +24,9 @@ function translateLifecycleError(error: unknown): never {
     if (error.message.startsWith("CHANGE_PLAN_DOWNGRADE_OVERAGE")) {
       throw new ConflictError(error.message, { overages: (error as Error & { overages?: unknown }).overages });
     }
+    if (error.message.startsWith("ADDON_REMOVAL_BELOW_USAGE")) {
+      throw new ConflictError(error.message);
+    }
     if (error.message.startsWith("REACTIVATE_NOT_CANCELED")) {
       throw new ConflictError(error.message);
     }
@@ -96,7 +99,7 @@ export async function registerBillingLifecycleRoutes(app: FastifyInstance, deps:
     return successEnvelope({ changed: true }, request.id);
   });
 
-  app.post("/billing/addons", { schema: { body: ADDON_BODY_SCHEMA } }, async (request, reply) => {
+  app.post("/billing/addons", { schema: { body: ADDON_BODY_SCHEMA }, config: { idempotent: true } }, async (request, reply) => {
     const principal = requirePrincipal(request);
     const body = request.body as { addonCode: string; quantity: number; billingInterval: (typeof BILLING_INTERVALS)[number] };
     await purchaseAddon(deps, { tenantId: principal.tenantId, ...body }).catch(translateLifecycleError);

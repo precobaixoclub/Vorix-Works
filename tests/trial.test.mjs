@@ -170,7 +170,7 @@ test("Entitlements durante trial: usa os limites do PlanVersion normalmente, sem
   assert.equal(entitlements.virtual, false);
   assert.equal(entitlements.planCode, "PRO");
   assert.equal(entitlements.readOnly, false);
-  assert.equal(entitlements.limits.users, 8, "mesmos limites do PlanVersion PRO — nada especial pra trial");
+  assert.equal(entitlements.limits.users, 5, "mesmos limites do PlanVersion PRO (Pricing/Capacity Etapa B) — nada especial pra trial");
 
   await assertCanUse(eDeps, { tenantId, capability: "automation" });
   await assertWithinLimit(eDeps, { tenantId, resource: "contacts" });

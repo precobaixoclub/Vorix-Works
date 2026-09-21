@@ -6,7 +6,7 @@ import { PlanSelectLink } from "@/components/PlanSelectLink";
 import { PublicFooter } from "@/components/public/PublicFooter";
 import { PublicHeader } from "@/components/public/PublicHeader";
 import { TrackPageView } from "@/components/TrackPageView";
-import { fetchPublicPlans, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
+import { fetchPublicPlans, formatCapacityLine, formatPlanPrice, type PublicPlan } from "@/features/platform-plans/api";
 
 export const revalidate = 300;
 
@@ -143,10 +143,10 @@ export default async function RootPage() {
             <div className="mx-auto mt-8 grid max-w-4xl gap-4 sm:grid-cols-3">
               {plans.map((plan) => (
                 <div key={plan.code} className={`flex flex-col rounded-xl border p-5 ${plan.highlighted ? "border-primary bg-primary/10" : "border-border bg-card"}`}>
-                  {plan.highlighted ? <span className="mb-2 w-fit rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">Mais escolhido</span> : null}
+                  {plan.highlighted ? <span className="mb-2 w-fit rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">Recomendado</span> : null}
                   <p className="font-semibold">{plan.name}</p>
-                  <p className="mt-1 text-2xl font-semibold tracking-tight">US$ {plan.monthlyPriceUsd}<span className="text-xs font-normal text-muted-foreground">/mês</span></p>
-                  <p className="mt-1 text-xs text-muted-foreground">{formatCreditsQuota(plan.monthlyCreditsQuota)}</p>
+                  <p className="mt-1 text-2xl font-semibold tracking-tight">{formatPlanPrice(plan)}<span className="text-xs font-normal text-muted-foreground">/mês</span></p>
+                  <p className="mt-1 text-xs text-muted-foreground">{formatCapacityLine(plan)}</p>
                   <PlanSelectLink planCode={plan.code} className="mt-4" variant={plan.highlighted ? "primary" : "secondary"}>
                     Testar {plan.name}
                   </PlanSelectLink>

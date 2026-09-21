@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { Button } from "@/components/Button";
@@ -12,9 +13,9 @@ import { SettingsShell } from "@/components/settings/SettingsShell";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useAuth } from "@/contexts/auth-context";
-import { cancelSubscription, changePlan, fetchDowngradePreview, openBillingPortal, purchaseAddon, reactivateSubscription, removeAddon, startCheckout, startTrial } from "@/features/billing/api";
-import { useBillingOverview } from "@/features/billing/hooks";
-import { RESOURCE_LABELS, type BillingInterval, type BillingOverviewAvailableAddon, type PlatformPlanCode } from "@/features/billing/types";
+import { applyCapacity, cancelPendingCapacityChange, cancelSubscription, changePlan, fetchDowngradePreview, openBillingPortal, previewCapacity, purchaseAddon, reactivateSubscription, removeAddon, startCheckout, startTrial } from "@/features/billing/api";
+import { useBillingOverview, useCapacityState } from "@/features/billing/hooks";
+import { RESOURCE_LABELS, type BillingInterval, type BillingOverviewAvailableAddon, type CapacityPreviewResult, type PlatformPlanCode } from "@/features/billing/types";
 import { fetchPublicPlans, formatCreditsQuota, type PublicPlan } from "@/features/platform-plans/api";
 import { formatCurrencyCents, formatDate } from "@/lib/format";
 import { canManageBilling, RBAC_COPY } from "@/lib/rbac";
@@ -176,6 +177,8 @@ export default function BillingSettingsPage() {
         </Card>
       </div>
 
+      {!data.virtual ? <CapacityCard canManage={canManage} /> : null}
+
       <Card className="mt-5">
         <CardHeader>
           <div>
@@ -252,6 +255,184 @@ export default function BillingSettingsPage() {
         }}
       />
     </SettingsShell>
+  );
+}
+
+function formatAmount(amount: number, currency: string): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(amount);
+}
+
+/**
+ * Pricing/Capacity Etapa B (seção 12 do pedido) — "Sua estrutura": steppers de usuários/números,
+ * preview automático quando o valor pedido difere do atual (seção 10-11: "nenhuma mudança acontece
+ * no preview"), confirmação explícita separada do clique no stepper, e a alteração pendente
+ * agendada (seção 23) sempre visível com opção de cancelar.
+ */
+function CapacityCard({ canManage }: { canManage: boolean }) {
+  const { data: state, error, isLoading, mutate } = useCapacityState();
+  const [users, setUsers] = useState<number | undefined>();
+  const [whatsappConnections, setWhatsappConnections] = useState<number | undefined>();
+  const [preview, setPreview] = useState<CapacityPreviewResult | undefined>();
+  const [previewing, setPreviewing] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (!state) return;
+    setUsers((current) => current ?? state.current.totalUsers ?? 0);
+    setWhatsappConnections((current) => current ?? state.current.totalWhatsappConnections ?? 0);
+  }, [state]);
+
+  const dirty = Boolean(state && users !== undefined && whatsappConnections !== undefined && (users !== state.current.totalUsers || whatsappConnections !== state.current.totalWhatsappConnections));
+
+  useEffect(() => {
+    if (!dirty || users === undefined || whatsappConnections === undefined) {
+      setPreview(undefined);
+      return;
+    }
+    let cancelled = false;
+    setPreviewing(true);
+    previewCapacity({ users, whatsappConnections })
+      .then((result) => { if (!cancelled) setPreview(result); })
+      .catch(() => { if (!cancelled) setPreview(undefined); })
+      .finally(() => { if (!cancelled) setPreviewing(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, users, whatsappConnections]);
+
+  async function handleConfirm() {
+    if (users === undefined || whatsappConnections === undefined) return;
+    setApplying(true);
+    try {
+      await applyCapacity({ users, whatsappConnections });
+      await mutate();
+      setPreview(undefined);
+      toast.success("Capacidade atualizada.");
+    } catch (err) {
+      toast.error("Não foi possível atualizar a capacidade", { description: err instanceof Error ? err.message : "Tente novamente." });
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  async function handleCancelPending(pendingChangeId: string) {
+    setCancellingId(pendingChangeId);
+    try {
+      await cancelPendingCapacityChange(pendingChangeId);
+      await mutate();
+      toast.success("Alteração agendada cancelada.");
+    } catch (err) {
+      toast.error("Não foi possível cancelar", { description: err instanceof Error ? err.message : "Tente novamente." });
+    } finally {
+      setCancellingId(undefined);
+    }
+  }
+
+  if (error) return <Card className="mt-5"><CardBody><ErrorState error={error} onRetry={() => mutate()} /></CardBody></Card>;
+  if (isLoading || !state || users === undefined || whatsappConnections === undefined) {
+    return <Card className="mt-5"><CardBody><div className="flex justify-center py-6"><Spinner /></div></CardBody></Card>;
+  }
+
+  return (
+    <Card className="mt-5">
+      <CardHeader>
+        <div>
+          <p className="text-sm font-semibold text-foreground">Sua estrutura</p>
+          <p className="mt-1 text-xs text-muted-foreground">Aumente ou reduza usuários e números conectados quando precisar.</p>
+        </div>
+      </CardHeader>
+      <CardBody className="space-y-5">
+        {state.pending.map((pending) => (
+          <div key={pending.addonCode} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/50 bg-warning/5 px-3 py-2.5 text-sm">
+            <span className="text-foreground">
+              A partir de {formatDate(pending.effectiveAt)}: {RESOURCE_LABELS[pending.resource]} passa a ser {pending.targetQuantity + (pending.resource === "users" ? (state.current.includedUsers ?? 0) : (state.current.includedWhatsappConnections ?? 0))}.
+            </span>
+            <GuardedButton variant="ghost" size="sm" loading={cancellingId === pending.addonCode} onClick={() => handleCancelPending(pending.addonCode)} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>
+              Cancelar alteração
+            </GuardedButton>
+          </div>
+        ))}
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <CapacityStepper
+            label="Usuários"
+            hint={`${state.current.includedUsers ?? 0} incluídos · ${state.current.additionalUsers} adicionais`}
+            value={users}
+            min={state.current.includedUsers ?? 0}
+            onChange={setUsers}
+            disabled={!canManage}
+          />
+          <CapacityStepper
+            label="Números conectados"
+            hint={`${state.current.includedWhatsappConnections ?? 0} incluídos · ${state.current.additionalWhatsappConnections} adicionais`}
+            value={whatsappConnections}
+            min={state.current.includedWhatsappConnections ?? 0}
+            onChange={setWhatsappConnections}
+            disabled={!canManage}
+          />
+        </div>
+
+        <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Plano {state.current.planCode}</span>
+            <span className="font-medium tabular-nums text-foreground">{formatAmount(state.current.baseMonthlyAmount, state.current.currency)}</span>
+          </div>
+          <div className="mt-1 flex items-center justify-between">
+            <span className="text-muted-foreground">Adicionais</span>
+            <span className="font-medium tabular-nums text-foreground">{formatAmount((dirty ? preview?.requestedOnCurrentPlan.addonsMonthlyAmount : state.current.addonsMonthlyAmount) ?? state.current.addonsMonthlyAmount, state.current.currency)}</span>
+          </div>
+          <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-base">
+            <span className="font-semibold text-foreground">Total</span>
+            <span className="font-semibold tabular-nums text-foreground">
+              {previewing ? "Calculando..." : formatAmount((dirty ? preview?.requestedOnCurrentPlan.totalMonthlyAmount : state.current.totalMonthlyAmount) ?? state.current.totalMonthlyAmount, state.current.currency)}
+            </span>
+          </div>
+
+          {dirty && preview?.recommendation.recommended && preview.recommendation.recommended.planCode !== state.current.planCode && preview.recommendation.recommended.totalMonthlyAmount < (preview.requestedOnCurrentPlan.totalMonthlyAmount ?? Infinity) ? (
+            <p className="mt-3 rounded-md bg-primary/10 px-3 py-2 text-xs text-foreground">
+              {preview.recommendation.recommended.planCode} é mais econômico para sua estrutura — economia de {formatAmount(preview.requestedOnCurrentPlan.totalMonthlyAmount - preview.recommendation.recommended.totalMonthlyAmount, state.current.currency)}/mês. Fale com o suporte para trocar de plano.
+            </p>
+          ) : null}
+
+          {dirty ? (
+            <div className="mt-3 flex justify-end gap-2">
+              <Button variant="secondary" disabled={applying} onClick={() => { setUsers(state.current.totalUsers ?? 0); setWhatsappConnections(state.current.totalWhatsappConnections ?? 0); }}>Cancelar</Button>
+              <GuardedButton loading={applying} disabled={previewing} onClick={handleConfirm} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>Confirmar alteração</GuardedButton>
+            </div>
+          ) : null}
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function CapacityStepper({ label, hint, value, min, onChange, disabled }: { label: string; hint: string; value: number; min: number; onChange: (value: number) => void; disabled: boolean }) {
+  return (
+    <div>
+      <p className="text-sm text-foreground">{label}</p>
+      <p className="text-xs text-muted-foreground">{hint}</p>
+      <div className="mt-2 flex items-center gap-3">
+        <button
+          type="button"
+          disabled={disabled || value <= min}
+          onClick={() => onChange(Math.max(min, value - 1))}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground hover:bg-muted disabled:opacity-40"
+          aria-label={`Diminuir ${label}`}
+        >
+          <Minus className="h-4 w-4" />
+        </button>
+        <span className="w-10 text-center text-lg font-semibold tabular-nums">{value}</span>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(value + 1)}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground hover:bg-muted disabled:opacity-40"
+          aria-label={`Aumentar ${label}`}
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
   );
 }
 

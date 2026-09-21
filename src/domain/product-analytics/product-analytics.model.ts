@@ -45,6 +45,12 @@ export const PRODUCT_EVENT_NAMES = [
   "subscription_downgraded",
   "subscription_canceled",
   "subscription_reactivated",
+  // Pricing/Capacity Etapa B (seção 39 do pedido) — "plan_changed" NÃO foi adicionado de propósito:
+  // já é coberto por subscription_upgraded/subscription_downgraded (nunca duplicar taxonomia).
+  "capacity_previewed",
+  "capacity_increased",
+  "capacity_decrease_scheduled",
+  "plan_recommended",
 ] as const;
 export type ProductEventName = (typeof PRODUCT_EVENT_NAMES)[number];
 

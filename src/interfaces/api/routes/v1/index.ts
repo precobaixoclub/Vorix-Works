@@ -38,6 +38,7 @@ import { registerBillingEntitlementsRoutes } from "./billing-entitlements.route.
 import { registerReadOnlyGuard } from "../../http/read-only-guard.js";
 import { registerAdminPlanVersionsRoutes } from "./admin-plan-versions.route.js";
 import { registerBillingCheckoutRoutes, registerBillingTrialRoutes } from "./billing-checkout.route.js";
+import { registerBillingCapacityRoutes } from "./billing-capacity.route.js";
 import { registerProductEventsRoutes } from "./product-events.route.js";
 import { registerBillingLifecycleRoutes } from "./billing-lifecycle.route.js";
 import { registerBillingOverviewRoutes } from "./billing-overview.route.js";
@@ -98,7 +99,9 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     workspaceRepository: app.zunoContainer.workspaceRepository,
     productAnalytics: productAnalyticsDeps,
   });
-  await registerPlatformPlansRoutes(app);
+  // Pricing/Capacity Etapa B (P0 da auditoria) — lê de `plan_versions` (banco), nunca mais do
+  // catálogo TS hardcoded, quando `identity`/Postgres estão disponíveis (sempre em produção real).
+  await registerPlatformPlansRoutes(app, app.zunoContainer.identity ? { planVersionRepository: app.zunoContainer.identity.planVersionRepository, addonDefinitionRepository: app.zunoContainer.identity.addonDefinitionRepository } : {});
   await registerConversationRoutes(app, {
     conversationRepository: app.zunoContainer.conversationRepository,
     eventRepository: app.zunoContainer.conversationEventRepository,
@@ -420,6 +423,15 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     await registerProductEventsRoutes(app, productAnalyticsDeps!);
     // SaaS Commercialization (Fase 3) — upgrade/downgrade, add-ons, cancelamento/reativação.
     await registerBillingLifecycleRoutes(app, { ...entitlementDeps, billingProvider: app.zunoContainer.billingProvider, billingEventRepository: identity.billingEventRepository, productAnalytics: productAnalyticsDeps });
+    // Pricing/Capacity Etapa B — capacidade (usuários/números WhatsApp) self-service: estado,
+    // preview financeiro, aplicar (aumento imediato/redução agendada), cancelar redução pendente.
+    await registerBillingCapacityRoutes(app, {
+      ...entitlementDeps,
+      billingProvider: app.zunoContainer.billingProvider,
+      billingEventRepository: identity.billingEventRepository,
+      subscriptionPendingChangeRepository: identity.subscriptionPendingChangeRepository,
+      productAnalytics: productAnalyticsDeps,
+    });
     // SaaS Commercialization (Fase 4) — tela "Plano e Cobrança" self-service.
     await registerBillingOverviewRoutes(app, {
       ...entitlementDeps,

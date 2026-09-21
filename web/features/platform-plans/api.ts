@@ -38,7 +38,9 @@ export async function fetchPublicCatalog(): Promise<{ plans: readonly PublicPlan
   const body = (await response.json().catch(() => undefined)) as Envelope<{ plans: PublicPlan[]; addons: PublicCapacityAddon[] }> | undefined;
   if (!body) throw new ApiError("INVALID_RESPONSE", "Resposta inválida da API de planos.", response.status, false);
   if (!body.ok) throw new ApiError(body.error.code, body.error.message, response.status, false);
-  return body.data;
+  // Defensivo: numa janela de deploy, esta chamada pode acertar uma API ainda não atualizada (sem
+  // `addons` na resposta) — nunca propagar `undefined` pros componentes.
+  return { plans: body.data.plans ?? [], addons: body.data.addons ?? [] };
 }
 
 export async function fetchPublicPlans(): Promise<readonly PublicPlan[]> {

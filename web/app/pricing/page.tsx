@@ -14,8 +14,10 @@ export default async function PricingPage() {
   let loadError: string | undefined;
   try {
     const catalog = await fetchPublicCatalog();
-    plans = catalog.plans;
-    addons = catalog.addons;
+    plans = catalog.plans ?? [];
+    // Defensivo: numa janela de deploy, o build do frontend pode prerenderizar contra uma API
+    // ainda não atualizada (resposta antiga sem `addons`) — nunca deixar isso quebrar o build/SSR.
+    addons = catalog.addons ?? [];
   } catch (err) {
     loadError = err instanceof Error ? err.message : "Não foi possível carregar os planos.";
   }

@@ -272,3 +272,54 @@ executado, pelo mesmo motivo — não há um checkout real pra abrir sem `init_p
 
 Nenhuma cobrança real foi processada. Nenhuma credencial Live foi usada ou solicitada. Parando aqui
 conforme instruído.
+
+## 21. Tela de admin "Mercado Pago" (credenciais editáveis em runtime)
+
+Adicionada depois da rodada de homologação acima — o usuário perguntou onde configurar o Mercado
+Pago dentro do próprio Vorix. Antes disso, `MERCADOPAGO_ACCESS_TOKEN`/`MERCADOPAGO_WEBHOOK_SECRET`/
+`MERCADOPAGO_NOTIFICATION_URL` só existiam como variável de ambiente lida uma vez no boot, sem
+nenhuma tela — ao contrário das "Chaves OpenAI/Gemini"/"Configurações (Anthropic)".
+
+**Escopo, decisão explícita do usuário**: a tela controla SÓ as credenciais. Qual provider está
+ATIVO (`sandbox`/`stripe`/`mercadopago`) continua sendo `BILLING_PROVIDER_ENABLED`/
+`BILLING_PROVIDER` (env + deploy) — a rota de webhook é registrada uma vez no boot a partir do
+provider ativo, e tornar isso dinâmico também foi avaliado e descartado por aumentar
+significativamente o escopo/risco sem necessidade real.
+
+**Implementação** (mesmo molde de `platform_ai_settings`/Anthropic, Sprint 25/Fase 3 — nenhuma
+arquitetura nova):
+- Migration `0134_billing_provider_settings.sql` — tabela singleton `billing_provider_settings`,
+  access token e webhook secret gravados criptografados (AES-256-GCM, chave derivada de
+  `JWT_SECRET`), só os últimos 4 caracteres expostos ao admin; `notification_url` em claro (não é
+  segredo).
+- `BillingProviderSettingsRepositoryPort` + `PostgresBillingProviderSettingsRepository`
+  (`src/infrastructure/storage/postgres/postgres-billing-provider-settings-repository.ts`).
+- `MercadoPagoBillingProviderOptions` passou a aceitar `string | (() => Promise<string|undefined>)`
+  em cada campo (`accessToken`/`webhookSecret`/`notificationUrl`) — string fixa preserva 100% o
+  comportamento anterior (env-only, usado quando não há Postgres/identity); uma closure é resolvida
+  com cache de 60s dentro do próprio provider (mesmo padrão de `OpenAiImageProviderAdapter`), nunca
+  uma consulta ao banco por chamada de API.
+- `container.ts` passa a construir essas closures quando `identityRepositories.
+  billingProviderSettingsRepository` existe — valor da tela vence, cai pro env quando ausente.
+- Rotas `GET`/`PUT /admin/billing-provider-settings` (mesmo guard `requirePlatformAdmin` de
+  `/admin/platform-ai-settings`), tela `web/app/admin/billing-provider/page.tsx` (mesmo padrão
+  visual de "Configurações (Anthropic)": mascarado + last4 + remover com confirmação para os dois
+  segredos; campo de texto simples para a Notification URL).
+- **Achado corrigido nesta rodada**: a função que gera a "visão pública" (`toPublicSettings`,
+  usada tanto aqui quanto no padrão original do Anthropic) fazia `{...settings, hasX}` — como o
+  objeto passado em runtime é o `*Resolved` (que carrega os segredos em claro), o spread copiava
+  essas propriedades pro JSON da resposta HTTP mesmo sem aparecerem no tipo TypeScript declarado
+  (proteção só em tempo de compilação, nunca em runtime). Corrigido aqui construindo o objeto campo
+  a campo. **O mesmo padrão em `platform-ai-settings.model.ts` (`toPublicSettings`, tela
+  Anthropic) provavelmente tem o mesmo problema — não foi tocado nesta rodada por estar fora do
+  escopo pedido, mas vale uma correção separada.**
+- Testes novos: `tests/billing-provider-settings.test.mjs` (7 testes — singleton, criptografia/
+  last4, `undefined` mantém/`""` remove, validação de URL, visão pública nunca vaza segredo, cache
+  TTL do provider com closure vs. string fixa). `tests/mercadopago-billing-provider.test.mjs` (11)
+  e `tests/mercadopago-lifecycle-scheduler.test.mjs` (6) continuam passando sem nenhuma edição —
+  confirma que o refactor pra aceitar closures é 100% compatível com o uso por string simples.
+- Verificação: `npm run typecheck`/`build` (raiz e `web/`) limpos, `npm run architecture:check`
+  limpo, suíte completa (3116 testes) — 3113 passaram; as 3 falhas (`analytics.test.mjs`,
+  `cli.smoke.test.mjs`, `inbox-resilience.test.mjs`) são flakes pré-existentes/de timing sob carga
+  da suíte completa, não relacionadas a estas mudanças — todas reproduzidas em arquivos nunca
+  tocados nesta rodada; a de `inbox-resilience` passou limpa quando reexecutada isolada.

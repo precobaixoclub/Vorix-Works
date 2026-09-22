@@ -15,6 +15,11 @@ import {
   updatePlatformAiSettings,
   type PlatformAiSettingsUseCaseDeps,
 } from "../../../../application/platform-admin/platform-ai-settings.usecases.js";
+import {
+  getBillingProviderSettings,
+  updateBillingProviderSettings,
+  type BillingProviderSettingsUseCaseDeps,
+} from "../../../../application/platform-admin/billing-provider-settings.usecases.js";
 import { PLATFORM_PLAN_CODES } from "../../../../domain/platform-billing/platform-plan-catalog.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
 import { requirePlatformAdmin } from "../../http/require-principal.js";
@@ -72,6 +77,16 @@ const AI_SETTINGS_BODY_SCHEMA = {
   },
 } as const;
 
+const BILLING_PROVIDER_SETTINGS_BODY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    mercadoPagoAccessToken: { type: "string", maxLength: 500 },
+    mercadoPagoWebhookSecret: { type: "string", maxLength: 500 },
+    mercadoPagoNotificationUrl: { type: "string", maxLength: 300 },
+  },
+} as const;
+
 function translatePlatformError(error: unknown): never {
   if (error instanceof Error) {
     if (error.message.startsWith("PLATFORM_ADMIN_TENANT_NOT_FOUND")) throw new NotFoundError(error.message);
@@ -81,13 +96,14 @@ function translatePlatformError(error: unknown): never {
     if (error.message.startsWith("PLATFORM_BILLING_INVALID_MULTIPLIER")) throw new ValidationError(error.message);
     if (error.message.startsWith("PLATFORM_AI_SETTINGS_INVALID_KEY")) throw new ValidationError(error.message);
     if (error.message.startsWith("PLATFORM_AI_SETTINGS_INVALID_MODEL")) throw new ValidationError(error.message);
+    if (error.message.startsWith("BILLING_PROVIDER_SETTINGS_INVALID_URL")) throw new ValidationError(error.message);
   }
   throw error;
 }
 
 export async function registerAdminRoutes(
   app: FastifyInstance,
-  deps: PlatformAdminUseCaseDeps & { platformAiSettings?: PlatformAiSettingsUseCaseDeps },
+  deps: PlatformAdminUseCaseDeps & { platformAiSettings?: PlatformAiSettingsUseCaseDeps; billingProviderSettings?: BillingProviderSettingsUseCaseDeps },
 ): Promise<void> {
   // Dashboard geral \u2014 receita/lucro agregado do m\u00eas + top clientes.
   app.get("/admin/dashboard", async (request) => {
@@ -212,6 +228,36 @@ export async function registerAdminRoutes(
           anthropicBriefingExtractionModel?: string;
         };
         const settings = await updatePlatformAiSettings(settingsDeps, {
+          ...body,
+          actor: { userId: principal.userId },
+        }).catch(translatePlatformError);
+        return successEnvelope(settings, request.id);
+      },
+    );
+  }
+
+  // Tela de admin "Mercado Pago" — credenciais do billing provider editáveis em runtime (mesmo
+  // padrão de `platformAiSettings` acima). Escopo só CREDENCIAIS — qual provider está ATIVO
+  // continua sendo `BILLING_PROVIDER_ENABLED`/`BILLING_PROVIDER` (env + deploy).
+  if (deps.billingProviderSettings) {
+    const billingSettingsDeps = deps.billingProviderSettings;
+    app.get("/admin/billing-provider-settings", async (request) => {
+      requirePlatformAdmin(request);
+      const settings = await getBillingProviderSettings(billingSettingsDeps).catch(translatePlatformError);
+      return successEnvelope(settings, request.id);
+    });
+
+    app.put(
+      "/admin/billing-provider-settings",
+      { schema: { body: BILLING_PROVIDER_SETTINGS_BODY_SCHEMA } },
+      async (request) => {
+        const principal = requirePlatformAdmin(request);
+        const body = request.body as {
+          mercadoPagoAccessToken?: string;
+          mercadoPagoWebhookSecret?: string;
+          mercadoPagoNotificationUrl?: string;
+        };
+        const settings = await updateBillingProviderSettings(billingSettingsDeps, {
           ...body,
           actor: { userId: principal.userId },
         }).catch(translatePlatformError);

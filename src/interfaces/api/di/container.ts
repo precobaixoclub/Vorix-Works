@@ -60,6 +60,7 @@ import type { PlanningDecisionRepositoryPort } from "../../../application/ports/
 import type { PlanningRepositoryPort } from "../../../application/ports/planning-repository.port.js";
 import type { PlatformBillingRepositoryPort } from "../../../application/ports/platform-billing-repository.port.js";
 import type { PlatformAiSettingsRepositoryPort } from "../../../application/ports/platform-ai-settings-repository.port.js";
+import type { BillingProviderSettingsRepositoryPort } from "../../../application/ports/billing-provider-settings-repository.port.js";
 import type { AiProvidersRepositoryPort } from "../../../application/ports/ai-providers-repository.port.js";
 import type { AiMediaProviderAdapterPort } from "../../../application/ports/ai-media-provider-adapter.port.js";
 import { createDefaultAiMediaProviderRegistry, type AiMediaProviderRegistry } from "../../../application/ai-providers/ai-media-provider-registry.js";
@@ -450,6 +451,8 @@ export type ApiContainer = {
     auditLog: AuditLogPort;
     platformBillingRepository: PlatformBillingRepositoryPort;
     platformAiSettingsRepository: PlatformAiSettingsRepositoryPort;
+    /** Tela de admin "Mercado Pago" — credenciais do billing provider editáveis em runtime. */
+    billingProviderSettingsRepository: BillingProviderSettingsRepositoryPort;
     aiProvidersRepository: AiProvidersRepositoryPort;
     passwordHasher: PasswordHasherPort;
     jwt: JwtPort;
@@ -535,12 +538,27 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // cai no comportamento histórico: Stripe só se `enabled` + `stripeSecretKey`, senão Sandbox —
   // nunca derruba o boot (mesmo racional de `aiGateway` sem `anthropicApiKey`).
   const billingProviderSelection = config?.billing?.provider ?? (config?.billing?.enabled && config.billing.stripeSecretKey ? "stripe" : "sandbox");
+  // Tela de admin "Mercado Pago" — credenciais editáveis em runtime (mesmo padrão de `getApiKey`
+  // em `build-ai-gateway.ts`): com Postgres/identity disponível, cada campo vira uma closure que
+  // relê `billingProviderSettingsRepository.get()` (valor da tela vence, cai pro env quando
+  // ausente); sem identity (dev/teste sem Postgres), continua o valor de env puro — comportamento
+  // idêntico ao anterior a esta mudança, zero regressão.
+  const billingProviderSettingsRepository = identityRepositories?.billingProviderSettingsRepository;
+  const resolveMercadoPagoAccessToken = billingProviderSettingsRepository
+    ? async () => (await billingProviderSettingsRepository.get()).resolvedMercadoPagoAccessToken ?? config?.billing?.mercadoPagoAccessToken
+    : config?.billing?.mercadoPagoAccessToken;
+  const resolveMercadoPagoWebhookSecret = billingProviderSettingsRepository
+    ? async () => (await billingProviderSettingsRepository.get()).resolvedMercadoPagoWebhookSecret ?? config?.billing?.mercadoPagoWebhookSecret
+    : config?.billing?.mercadoPagoWebhookSecret;
+  const resolveMercadoPagoNotificationUrl = billingProviderSettingsRepository
+    ? async () => (await billingProviderSettingsRepository.get()).mercadoPagoNotificationUrl ?? config?.billing?.mercadoPagoNotificationUrl
+    : config?.billing?.mercadoPagoNotificationUrl;
   const billingProvider: BillingProviderPort =
     billingProviderSelection === "mercadopago"
       ? new MercadoPagoBillingProvider({
-          accessToken: config?.billing?.mercadoPagoAccessToken,
-          webhookSecret: config?.billing?.mercadoPagoWebhookSecret,
-          notificationUrl: config?.billing?.mercadoPagoNotificationUrl,
+          accessToken: resolveMercadoPagoAccessToken,
+          webhookSecret: resolveMercadoPagoWebhookSecret,
+          notificationUrl: resolveMercadoPagoNotificationUrl,
         })
       : billingProviderSelection === "stripe"
         ? new StripeBillingProvider({ secretKey: config?.billing?.stripeSecretKey, webhookSecret: config?.billing?.stripeWebhookSecret })

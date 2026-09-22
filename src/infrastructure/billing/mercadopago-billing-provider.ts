@@ -22,24 +22,33 @@ import type {
   UpdateSubscriptionItemQuantityInput,
 } from "../../application/ports/billing-provider.port.js";
 
+/** Um valor fixo (env, comportamento histórico) OU uma closure resolvida a cada chamada — usada
+ * pela tela de admin "Mercado Pago" (`billing-provider-settings.usecases.ts`) pra ler a credencial
+ * configurada em runtime, sem restart. O provider faz seu próprio cache com TTL (ver
+ * `CREDENTIAL_CACHE_TTL_MS` abaixo) — mesmo padrão já usado por `OpenAiImageProviderAdapter`. */
+type CredentialSource = string | (() => Promise<string | undefined>);
+
 export type MercadoPagoBillingProviderOptions = {
   /** `undefined` = Mercado Pago não está configurado — todo método devolve `not_configured`,
    * mesmo padrão de `StripeBillingProvider` sem `secretKey`. Em test mode, este é o Access Token
    * de TEST (`TEST-...`), nunca live (`APP_USR-...`) sem autorização explícita. */
-  accessToken?: string;
+  accessToken?: CredentialSource;
   /** Chave de assinatura de webhook (aba "Webhooks" de "Tuas integrações", NUNCA o access token —
    * são dois segredos diferentes no Mercado Pago). */
-  webhookSecret?: string;
+  webhookSecret?: CredentialSource;
   /** URL pública que o Mercado Pago chama com notificações (`notification_url` em cada
    * preapproval) — precisa ser o host da API (`https://api.vorixworks.com/webhooks/billing/mercadopago`),
    * nunca o host do site (diferente do `back_url`, que é pra onde o NAVEGADOR volta). */
-  notificationUrl?: string;
+  notificationUrl?: CredentialSource;
   /** Injeção pra teste — nunca usado em produção real (default: `fetch` global do Node 20+). */
   fetchImpl?: typeof fetch;
 };
 
 const NOT_CONFIGURED: BillingProviderFailure = { ok: false, kind: "not_configured", message: "Mercado Pago não está configurado (MERCADOPAGO_ACCESS_TOKEN ausente)." };
 const API_BASE = "https://api.mercadopago.com";
+/** Mesmo TTL de `OpenAiImageProviderAdapter` — a tela de admin "Mercado Pago" documenta "efeito em
+ * até 60 segundos", nunca instantâneo (evita 1 SELECT por chamada de API). */
+const CREDENTIAL_CACHE_TTL_MS = 60_000;
 
 type PreapprovalMetadata = { tenantId: string; planVersionId: string; billingInterval: string };
 
@@ -75,24 +84,53 @@ function decodeExternalReference(externalReference: string | undefined): Preappr
 export class MercadoPagoBillingProvider implements BillingProviderPort {
   readonly providerId = "mercadopago";
   readonly supportsNativeScheduledCancellation = false;
-  private readonly accessToken?: string;
-  private readonly webhookSecret?: string;
-  private readonly notificationUrl?: string;
+  private readonly accessTokenSource?: CredentialSource;
+  private readonly webhookSecretSource?: CredentialSource;
+  private readonly notificationUrlSource?: CredentialSource;
   private readonly fetchImpl: typeof fetch;
+  private accessTokenCache: { value?: string; at: number } = { at: 0 };
+  private webhookSecretCache: { value?: string; at: number } = { at: 0 };
+  private notificationUrlCache: { value?: string; at: number } = { at: 0 };
 
   constructor(options: MercadoPagoBillingProviderOptions) {
-    this.accessToken = options.accessToken;
-    this.webhookSecret = options.webhookSecret;
-    this.notificationUrl = options.notificationUrl;
+    this.accessTokenSource = options.accessToken;
+    this.webhookSecretSource = options.webhookSecret;
+    this.notificationUrlSource = options.notificationUrl;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
+  /** Resolve um `CredentialSource` — string fixa devolvida direto (sem cache, é síncrono por
+   * natureza); closure (tela de admin) resolvida com cache de `CREDENTIAL_CACHE_TTL_MS`, nunca uma
+   * consulta por chamada de API. */
+  private async resolveCredential(source: CredentialSource | undefined, cache: { value?: string; at: number }): Promise<string | undefined> {
+    if (typeof source !== "function") return source;
+    const now = Date.now();
+    if (now - cache.at > CREDENTIAL_CACHE_TTL_MS) {
+      cache.value = await source();
+      cache.at = now;
+    }
+    return cache.value;
+  }
+
+  private resolveAccessToken(): Promise<string | undefined> {
+    return this.resolveCredential(this.accessTokenSource, this.accessTokenCache);
+  }
+
+  private resolveWebhookSecret(): Promise<string | undefined> {
+    return this.resolveCredential(this.webhookSecretSource, this.webhookSecretCache);
+  }
+
+  private resolveNotificationUrl(): Promise<string | undefined> {
+    return this.resolveCredential(this.notificationUrlSource, this.notificationUrlCache);
+  }
+
   private async request<T>(method: string, path: string, body?: Record<string, unknown>): Promise<{ ok: true; data: T } | BillingProviderFailure> {
-    if (!this.accessToken) return NOT_CONFIGURED;
+    const accessToken = await this.resolveAccessToken();
+    if (!accessToken) return NOT_CONFIGURED;
     try {
       const response = await this.fetchImpl(`${API_BASE}${path}`, {
         method,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.accessToken}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         body: body ? JSON.stringify(body) : undefined,
       });
       const json = (await response.json().catch(() => undefined)) as (T & { message?: string; error?: string }) | undefined;
@@ -111,12 +149,13 @@ export class MercadoPagoBillingProvider implements BillingProviderPort {
     if (input.amount === undefined || !input.currency) {
       return { ok: false, kind: "invalid_request", message: "Mercado Pago exige amount/currency calculados pelo chamador — nenhum catálogo de preço nativo." };
     }
+    const notificationUrl = await this.resolveNotificationUrl();
     const result = await this.request<{ id: string; init_point: string }>("POST", "/preapproval", {
       reason: "Assinatura Vorix",
       external_reference: encodeExternalReference({ tenantId: input.tenantId, planVersionId: input.planVersionId, billingInterval: input.billingInterval }),
       payer_email: input.customerEmail,
       back_url: input.successUrl,
-      notification_url: this.notificationUrl,
+      notification_url: notificationUrl,
       auto_recurring: { frequency: 1, frequency_type: "months", transaction_amount: input.amount, currency_id: input.currency },
       status: "pending",
     });
@@ -225,7 +264,8 @@ export class MercadoPagoBillingProvider implements BillingProviderPort {
    * via GET antes de normalizar pro `BillingWebhookEvent` canônico.
    */
   async handleWebhook(input: HandleWebhookInput): Promise<HandleWebhookResult | BillingProviderFailure> {
-    if (!this.accessToken || !this.webhookSecret) return NOT_CONFIGURED;
+    const [accessToken, webhookSecret] = await Promise.all([this.resolveAccessToken(), this.resolveWebhookSecret()]);
+    if (!accessToken || !webhookSecret) return NOT_CONFIGURED;
 
     let notification: { type?: string; action?: string; data?: { id?: string } };
     try {
@@ -250,7 +290,7 @@ export class MercadoPagoBillingProvider implements BillingProviderPort {
     manifestParts.push(`ts:${ts};`);
     const manifest = manifestParts.join("");
 
-    const expected = createHmac("sha256", this.webhookSecret).update(manifest).digest("hex");
+    const expected = createHmac("sha256", webhookSecret).update(manifest).digest("hex");
     const expectedBuffer = Buffer.from(expected, "utf8");
     const actualBuffer = Buffer.from(v1, "utf8");
     if (expectedBuffer.length !== actualBuffer.length || !timingSafeEqual(expectedBuffer, actualBuffer)) {

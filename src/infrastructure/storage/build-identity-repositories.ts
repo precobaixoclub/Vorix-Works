@@ -12,6 +12,7 @@ import type { DealRepositoryPort } from "../../application/ports/deal-repository
 import type { AddonDefinitionRepositoryPort, PlanVersionRepositoryPort } from "../../application/ports/plan-version-repository.port.js";
 import type { PipelineRepositoryPort, PipelineStageRepositoryPort } from "../../application/ports/pipeline-repository.port.js";
 import type { PlatformAiSettingsRepositoryPort } from "../../application/ports/platform-ai-settings-repository.port.js";
+import type { BillingProviderSettingsRepositoryPort } from "../../application/ports/billing-provider-settings-repository.port.js";
 import type { PlatformBillingRepositoryPort } from "../../application/ports/platform-billing-repository.port.js";
 import type { ProductRepositoryPort } from "../../application/ports/product-repository.port.js";
 import type { ProposalRepositoryPort } from "../../application/ports/proposal-repository.port.js";
@@ -45,6 +46,7 @@ import { PostgresDealRepository } from "./postgres/postgres-deal-repository.js";
 import { PostgresAddonDefinitionRepository, PostgresPlanVersionRepository } from "./postgres/postgres-plan-version-repository.js";
 import { PostgresPipelineRepository, PostgresPipelineStageRepository } from "./postgres/postgres-pipeline-repository.js";
 import { PostgresPlatformAiSettingsRepository } from "./postgres/postgres-platform-ai-settings-repository.js";
+import { PostgresBillingProviderSettingsRepository } from "./postgres/postgres-billing-provider-settings-repository.js";
 import { PostgresPlatformBillingRepository } from "./postgres/postgres-platform-billing-repository.js";
 import { PostgresProductRepository } from "./postgres/postgres-product-repository.js";
 import { PostgresProposalRepository } from "./postgres/postgres-proposal-repository.js";
@@ -79,6 +81,9 @@ export type IdentityRepositories = {
   platformBillingRepository: PlatformBillingRepositoryPort;
   /** Sprint 25/Fase 3 — configuração global do AI Gateway gerida pelo painel admin. */
   platformAiSettingsRepository: PlatformAiSettingsRepositoryPort;
+  /** Tela de admin "Mercado Pago" — credenciais do billing provider (access token/webhook secret/
+   * notification URL) editáveis em runtime, mesmo molde de `platformAiSettingsRepository`. */
+  billingProviderSettingsRepository: BillingProviderSettingsRepositoryPort;
   /** Sprint 26 — cadastro de Provedores de IA, catálogo de operações e ledger financeiro. */
   aiProvidersRepository: AiProvidersRepositoryPort;
   /** CRM/Comercial (Fase 1) — Equipes, convites, Contato 360°/identidade por canal, Timeline. */
@@ -145,6 +150,7 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     auditLog: new PostgresAuditLogRepository(pool),
     platformBillingRepository: new PostgresPlatformBillingRepository(pool),
     platformAiSettingsRepository: new PostgresPlatformAiSettingsRepository(pool, options.secretsMasterKey),
+    billingProviderSettingsRepository: new PostgresBillingProviderSettingsRepository(pool, options.secretsMasterKey),
     aiProvidersRepository: new PostgresAiProvidersRepository(pool),
     teamRepository: new PostgresTeamRepository(pool),
     teamMembershipRepository: new PostgresTeamMembershipRepository(pool),

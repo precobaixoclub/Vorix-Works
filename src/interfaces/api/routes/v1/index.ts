@@ -590,6 +590,10 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         platformAiSettingsRepository: identity.platformAiSettingsRepository,
         now: () => new Date(),
       },
+      billingProviderSettings: {
+        billingProviderSettingsRepository: identity.billingProviderSettingsRepository,
+        now: () => new Date(),
+      },
     });
 
     await registerAiProvidersRoutes(app, {

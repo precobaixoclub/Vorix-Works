@@ -75,6 +75,9 @@ function AdminShell({ children }: { children: ReactNode }) {
           <SidebarLink href="/admin/settings" active={isActive("/admin/settings")}>
             Configurações
           </SidebarLink>
+          <SidebarLink href="/admin/billing-provider" active={isActive("/admin/billing-provider")}>
+            Mercado Pago
+          </SidebarLink>
         </nav>
       </div>
       <aside className="hidden w-60 shrink-0 border-r border-border bg-surface-raised p-4 md:block">
@@ -97,6 +100,9 @@ function AdminShell({ children }: { children: ReactNode }) {
           </SidebarLink>
           <SidebarLink href="/admin/settings" active={isActive("/admin/settings")}>
             Configurações (Anthropic)
+          </SidebarLink>
+          <SidebarLink href="/admin/billing-provider" active={isActive("/admin/billing-provider")}>
+            Mercado Pago (billing)
           </SidebarLink>
         </nav>
         <div className="mt-8 border-t border-border pt-4 text-xs text-ink-muted">

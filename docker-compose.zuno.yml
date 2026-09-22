@@ -53,6 +53,21 @@ services:
       CREATIVE_ENGINE: "${CREATIVE_ENGINE:-legacy}"
       SECRET_MANAGER_PROVIDER: "${SECRET_MANAGER_PROVIDER:-production}"
       API_CORS_ORIGIN: "${ZUNO_WEB_ORIGIN}"
+      # SaaS Commercialization / Pricing & Capacity — mesmo achado que o comentário de
+      # CREATIVE_ENGINE já documentava: sem wiring explícito aqui, `.env.zuno` sozinho NUNCA chega
+      # ao container, mesmo com a variável definida — achado ao vivo durante a homologação
+      # operacional (TRIAL_ENABLED setado em .env.zuno, mas o processo continuava vendo `undefined`
+      # até esta linha existir). TRIAL_ENABLED é seguro (startTrial nunca chama o gateway de
+      # pagamento); BILLING_PROVIDER_ENABLED/STRIPE_* só devem ir para `true`/preenchidos depois de
+      # Stripe Test Mode homologado (ver docs/vorix-billing-operational-homologation.md).
+      TRIAL_ENABLED: "${TRIAL_ENABLED:-false}"
+      TRIAL_EXPIRATION_CHECK_INTERVAL_MS: "${TRIAL_EXPIRATION_CHECK_INTERVAL_MS:-3600000}"
+      BILLING_PROVIDER_ENABLED: "${BILLING_PROVIDER_ENABLED:-false}"
+      STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
+      STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
+      # Docker Compose não confiavelmente resolve `${VAR:-${OUTRA_VAR}}` aninhado — default literal
+      # aqui, nunca aninhado, para não silenciosamente virar a string literal "${ZUNO_WEB_ORIGIN}".
+      APP_BASE_URL: "${APP_BASE_URL:-https://vorixworks.com}"
       COOKIE_SECURE: "${ZUNO_COOKIE_SECURE:-false}"
       COOKIE_DOMAIN: "${ZUNO_COOKIE_DOMAIN:-}"
       ZUNO_LOG_LEVEL: info

@@ -7,6 +7,15 @@
 > produção (comandos executados agora, respostas coladas abaixo) do que precisa da sua ação. Nenhum
 > flag de produção foi alterado, nenhuma cobrança foi feita, nenhum segredo foi exposto.
 
+> **Addendum (mesma sessão, depois da sua decisão)**: você autorizou ligar `TRIAL_ENABLED=true`.
+> Ao fazer isso, descobri e corrigi um segundo problema real: `docker-compose.zuno.yml` nunca
+> conectava `TRIAL_ENABLED`/`BILLING_PROVIDER_ENABLED`/`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/
+> `APP_BASE_URL` ao container da API (lista explícita de variáveis, não `env_file` solto — setar em
+> `.env.zuno` sozinho nunca teria efeito nenhum, com ou sem esta rodada). Corrigido
+> (`docker-compose.zuno.yml`), deployado, e `TRIAL_ENABLED=true` confirmado DENTRO do container
+> rodando. Testei os 3 planos de novo contra produção real — resultados na seção 1.1. A seção 1
+> abaixo é o relato ORIGINAL (antes da correção), preservado como evidência; a 1.1 é o estado ATUAL.
+
 ## 1. Achado principal (antes de qualquer outra coisa)
 
 **`PUBLIC_TRIAL_PROMISE_MISMATCH = YES` — confirmado com evidência real, não suspeita.**
@@ -41,6 +50,22 @@ Isto não é um bug de código — o mecanismo funciona corretamente quando habi
 automatizados locais confirmam, seção 8). É uma **divergência entre o que o marketing publica e o
 que a configuração de produção permite**, ativa neste exato momento. Ver decisão pendente na seção
 14.
+
+## 1.1 Estado ATUAL (depois da correção) — VERIFIED_RUNTIME real
+
+`TRIAL_ENABLED=true` confirmado dentro do container (`docker exec zuno-zuno-api-1 sh -c 'echo
+$TRIAL_ENABLED'` → `true`). Testei os 3 planos de novo, com contas novas, contra produção real:
+
+| Plano | `trialStarted` | `status` | `trialDaysRemaining` | usuários (used/max) | números (used/max) |
+|---|---|---|---|---|---|
+| START | `true` | `trial` | 7 | 1/**2** | 0/**1** |
+| PRO | `true` | `trial` | 7 | 1/**5** | 0/**2** |
+| BUSINESS | `true` | `trial` | 7 | 1/**10** | 0/**5** |
+
+Todos exatos à capacidade aprovada. Nenhuma das 3 chamadas de signup pediu/aceitou cartão (o schema
+de `/auth/signup` nem tem esse campo). **`PUBLIC_TRIAL_PROMISE_MISMATCH` está corrigido em
+produção agora** — o que a Home promete, o signup real entrega. `BILLING_PROVIDER_ENABLED`
+continua `false` (você optou por configurar Stripe manualmente) — nenhuma outra flag foi tocada.
 
 ## 2. Verificação de produção (seção 2 do pedido)
 
@@ -201,13 +226,13 @@ achado preocupante.
 | Chave | Valor |
 |---|---|
 | PUBLIC_PRICING_RUNTIME | **PASS** |
-| PUBLIC_TRIAL_PROMISE_MISMATCH | **YES** |
+| PUBLIC_TRIAL_PROMISE_MISMATCH | **NO** (era YES; corrigido e reverificado em produção, seção 1.1) |
 | BROWSER_QA_DESKTOP | **FAILED** (não executado — sem navegador neste ambiente) |
 | BROWSER_QA_MOBILE | **FAILED** (não executado — mesmo motivo) |
-| START_TRIAL | **FAILED** (produção; mecanismo VERIFIED_LOCAL) |
-| PRO_TRIAL | **FAILED** (produção; mecanismo VERIFIED_LOCAL) |
-| BUSINESS_TRIAL | **FAILED** (produção; mecanismo VERIFIED_LOCAL) |
-| TRIAL_WITHOUT_CARD | **FAILED** (produção; mecanismo VERIFIED_LOCAL) |
+| START_TRIAL | **VERIFIED_RUNTIME** (produção, seção 1.1) |
+| PRO_TRIAL | **VERIFIED_RUNTIME** (produção, seção 1.1) |
+| BUSINESS_TRIAL | **VERIFIED_RUNTIME** (produção, seção 1.1) |
+| TRIAL_WITHOUT_CARD | **VERIFIED_RUNTIME** (produção — signup sem campo de cartão, 3 planos confirmados) |
 | STRIPE_TEST_PRODUCTS_BRL | **NOT_CONFIGURED** (não verificável por mim sem acesso à conta) |
 | STRIPE_TEST_CHECKOUT | **FAILED** (não executável sem Price IDs de teste + navegador) |
 | PUBLIC_PRICE_EQUALS_CHECKOUT | **FAILED** (não executável — mas ver nota¹) |
@@ -222,8 +247,8 @@ achado preocupante.
 | REACTIVATE_RUNTIME | **VERIFIED_LOCAL** |
 | TRIAL_EXPIRED_RUNTIME | **VERIFIED_LOCAL** |
 | STRIPE_LIVE_PRODUCTS_BRL | **NOT_CONFIGURED** (não verificável por mim) |
-| TRIAL_ENABLED_PRODUCTION | **OFF** |
-| BILLING_PROVIDER_ENABLED_PRODUCTION | **OFF** |
+| TRIAL_ENABLED_PRODUCTION | **ON** (corrigido nesta rodada, seção 1.1) |
+| BILLING_PROVIDER_ENABLED_PRODUCTION | **OFF** (mantido — Stripe Test Mode fica com você) |
 | SAAS_SELF_SERVICE_RUNTIME_VERIFIED | **NO** |
 | SAAS_SELF_SERVICE_LIVE_READY | **NO** |
 
@@ -243,12 +268,17 @@ produção. Nenhum flag foi alterado nesta rodada.**
 
 ## 9. Bugs encontrados (seção 40 — só o comprovado, nada de redesign)
 
-1. **`PUBLIC_TRIAL_PROMISE_MISMATCH`** (seção 1) — o único bug realmente comprovado nesta rodada.
-   Não é um bug de código (o mecanismo funciona quando habilitado); é uma consequência real e ativa
-   de `TRIAL_ENABLED=false` em produção combinada com a Home já anunciar o trial. Correção possível
-   sem redesenho: (a) ligar `TRIAL_ENABLED=true` (o próprio pedido já documenta este flag como
-   seguro, sem dinheiro envolvido), ou (b) ajustar a copy da Home enquanto o flag continuar
-   desligado. Decisão na seção 14.
+1. **`PUBLIC_TRIAL_PROMISE_MISMATCH`** (seção 1) — **corrigido nesta rodada**. Não era um bug de
+   código (o mecanismo já funcionava quando habilitado); era `TRIAL_ENABLED=false` em produção
+   combinado com a Home já anunciando o trial. Você autorizou ligar o flag; feito e reverificado
+   (seção 1.1).
+2. **Gap de infraestrutura, descoberto ao vivo ao corrigir o item 1**: `docker-compose.zuno.yml`
+   nunca conectava `TRIAL_ENABLED`/`BILLING_PROVIDER_ENABLED`/`STRIPE_SECRET_KEY`/
+   `STRIPE_WEBHOOK_SECRET`/`APP_BASE_URL` ao container (`environment:` é uma lista explícita, não
+   `env_file` solto — setar em `.env.zuno` nunca teria tido efeito, mesmo antes desta rodada).
+   Corrigido, commitado, deployado. Sem este achado, ligar `TRIAL_ENABLED=true` no `.env.zuno`
+   pareceria ter funcionado mas não mudaria nada de verdade — só descobri porque testei contra
+   produção real em vez de confiar no arquivo de configuração sozinho.
 
 Nenhum outro bug foi encontrado — nem no catálogo, nem nos preços, nem na lógica de capacidade/
 addon/lifecycle (todos os 122 testes de backend + 60 de frontend continuam verdes,
@@ -263,10 +293,10 @@ por variável (seção 5), exatamente como pedido.
 
 ## 11. As 13 perguntas da seção 45, direto
 
-1. **O site público está coerente?** Sim nos preços (PASS, seção 2). Não na promessa de trial —
-   anuncia algo que a configuração atual não entrega (seção 1).
-2. **Trial funciona realmente?** O mecanismo sim (46 testes reais, Postgres real). Em produção, não
-   — está desligado (`trialStarted:false` confirmado com uma conta real agora mesmo).
+1. **O site público está coerente?** Sim — preços (PASS, seção 2) e agora também a promessa de
+   trial: corrigido e reverificado em produção (seção 1.1).
+2. **Trial funciona realmente?** Sim, agora confirmado em produção real, nos 3 planos, com a
+   capacidade certa e sem pedir cartão (seção 1.1).
 3. **Checkout Test Mode funciona?** Não testável — sem `STRIPE_SECRET_KEY` de teste configurada e
    sem navegador.
 4. **Os preços exibidos e cobrados são os mesmos?** Estruturalmente sim (mesma `plan_version`,
@@ -285,11 +315,12 @@ por variável (seção 5), exatamente como pedido.
    `VERIFIED_LOCAL`.
 10. **Cancelamento funciona?** Sim — `cancel_at_period_end`, nunca imediato — `VERIFIED_LOCAL`.
 11. **Reativação funciona?** Sim, enquanto ainda não passou do fim do período — `VERIFIED_LOCAL`.
-12. **O que ainda falta para ligar produção?** (a) decidir e corrigir o mismatch da seção 1; (b)
-    acesso a uma `STRIPE_SECRET_KEY` de test mode (sua conta, suas credenciais) pra eu configurar
-    Prices BRL de teste e rodar o checkout/webhook real pelo menos uma vez; (c) só depois disso,
-    browser QA real (que também depende de alguém — você ou uma sessão com navegador — operar); (d)
-    só então Live Prices + `BILLING_PROVIDER_ENABLED=true`.
+12. **O que ainda falta para ligar produção?** (a) ~~decidir e corrigir o mismatch da seção 1~~ —
+    feito nesta rodada; (b) você configura Stripe Test Mode manualmente (5 Products/Prices BRL,
+    valores exatos na seção 5.1) e me avisa quando os Price IDs existirem, pra eu gravar em
+    `plan_versions`/`addon_definitions`; (c) rodar pelo menos um checkout/webhook real em Test Mode
+    (precisa de alguém operando um navegador — você, ou uma sessão futura com acesso a um); (d)
+    browser QA real (mesma dependência); (e) só então Live Prices + `BILLING_PROVIDER_ENABLED=true`.
 13. **Há alguma ação manual necessária na conta Stripe?** Sim — criar (ou confirmar que já existem)
     5 Products/Prices em BRL, mensais, nos valores exatos da seção 5.1/5.2, em Test Mode primeiro.
     Isso só pode ser feito por quem tem acesso ao dashboard Stripe, ou me passando uma chave de API

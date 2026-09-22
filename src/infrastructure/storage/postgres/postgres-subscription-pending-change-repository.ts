@@ -3,7 +3,7 @@ import type {
   CreateSubscriptionPendingChangeInput,
   SubscriptionPendingChangeRepositoryPort,
 } from "../../../application/ports/subscription-repository.port.js";
-import type { SubscriptionPendingChange } from "../../../domain/platform-billing/subscription.model.js";
+import type { SubscriptionPendingChange, SubscriptionPendingChangeType } from "../../../domain/platform-billing/subscription.model.js";
 
 const pendingChangeId = () => `pendchg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -11,10 +11,11 @@ type PendingChangeRow = {
   id: string;
   subscription_id: string;
   tenant_id: string;
-  addon_code: string;
+  change_type: SubscriptionPendingChangeType;
+  addon_code: string | null;
   subscription_item_id: string | null;
-  from_quantity: number;
-  target_quantity: number;
+  from_quantity: number | null;
+  target_quantity: number | null;
   effective_at: Date;
   applied_at: Date | null;
   cancelled_at: Date | null;
@@ -26,10 +27,11 @@ function toDomain(row: PendingChangeRow): SubscriptionPendingChange {
     id: row.id,
     subscriptionId: row.subscription_id,
     tenantId: row.tenant_id,
-    addonCode: row.addon_code,
+    changeType: row.change_type,
+    addonCode: row.addon_code ?? undefined,
     subscriptionItemId: row.subscription_item_id ?? undefined,
-    fromQuantity: row.from_quantity,
-    targetQuantity: row.target_quantity,
+    fromQuantity: row.from_quantity ?? undefined,
+    targetQuantity: row.target_quantity ?? undefined,
     effectiveAt: row.effective_at.toISOString(),
     appliedAt: row.applied_at?.toISOString(),
     cancelledAt: row.cancelled_at?.toISOString(),
@@ -42,9 +44,19 @@ export class PostgresSubscriptionPendingChangeRepository implements Subscription
 
   async create(input: CreateSubscriptionPendingChangeInput): Promise<SubscriptionPendingChange> {
     const result = await this.pool.query<PendingChangeRow>(
-      `insert into subscription_pending_changes (id, subscription_id, tenant_id, addon_code, subscription_item_id, from_quantity, target_quantity, effective_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
-      [pendingChangeId(), input.subscriptionId, input.tenantId, input.addonCode, input.subscriptionItemId ?? null, input.fromQuantity, input.targetQuantity, input.effectiveAt],
+      `insert into subscription_pending_changes (id, subscription_id, tenant_id, change_type, addon_code, subscription_item_id, from_quantity, target_quantity, effective_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning *`,
+      [
+        pendingChangeId(),
+        input.subscriptionId,
+        input.tenantId,
+        input.changeType ?? "capacity_decrease",
+        input.addonCode ?? null,
+        input.subscriptionItemId ?? null,
+        input.fromQuantity ?? null,
+        input.targetQuantity ?? null,
+        input.effectiveAt,
+      ],
     );
     return toDomain(result.rows[0]);
   }

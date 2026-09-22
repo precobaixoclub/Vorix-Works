@@ -40,6 +40,7 @@ const NOT_CONFIGURED: BillingProviderFailure = { ok: false, kind: "not_configure
  */
 export class StripeBillingProvider implements BillingProviderPort {
   readonly providerId = "stripe";
+  readonly supportsNativeScheduledCancellation = true;
   private readonly client?: Stripe;
   private readonly webhookSecret?: string;
 

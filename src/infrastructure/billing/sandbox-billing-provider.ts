@@ -32,6 +32,7 @@ import type {
  */
 export class SandboxBillingProvider implements BillingProviderPort {
   readonly providerId = "sandbox";
+  readonly supportsNativeScheduledCancellation = true;
 
   async createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutResult> {
     const providerSessionId = `sandbox-session-${randomUUID()}`;

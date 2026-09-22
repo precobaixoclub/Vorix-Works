@@ -422,7 +422,13 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     // decidiu `productAnalyticsDeps` lá em cima — nunca `undefined` neste ponto.
     await registerProductEventsRoutes(app, productAnalyticsDeps!);
     // SaaS Commercialization (Fase 3) — upgrade/downgrade, add-ons, cancelamento/reativação.
-    await registerBillingLifecycleRoutes(app, { ...entitlementDeps, billingProvider: app.zunoContainer.billingProvider, billingEventRepository: identity.billingEventRepository, productAnalytics: productAnalyticsDeps });
+    await registerBillingLifecycleRoutes(app, {
+      ...entitlementDeps,
+      billingProvider: app.zunoContainer.billingProvider,
+      billingEventRepository: identity.billingEventRepository,
+      subscriptionPendingChangeRepository: identity.subscriptionPendingChangeRepository,
+      productAnalytics: productAnalyticsDeps,
+    });
     // Pricing/Capacity Etapa B — capacidade (usuários/números WhatsApp) self-service: estado,
     // preview financeiro, aplicar (aumento imediato/redução agendada), cancelar redução pendente.
     await registerBillingCapacityRoutes(app, {

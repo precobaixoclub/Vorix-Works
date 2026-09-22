@@ -48,23 +48,31 @@ export type SubscriptionItem = {
   updatedAt: string;
 };
 
+export const SUBSCRIPTION_PENDING_CHANGE_TYPES = ["capacity_decrease", "cancellation"] as const;
+export type SubscriptionPendingChangeType = (typeof SUBSCRIPTION_PENDING_CHANGE_TYPES)[number];
+
 /**
- * Redução de capacidade agendada pro fim do ciclo atual (Pricing/Capacity Etapa B, seção 15/22-23
- * do pedido: "reduções entram no próximo ciclo... não criar cálculo financeiro paralelo se Stripe
- * já resolve"). Não usa `Stripe.SubscriptionSchedule` (superfície nova que o projeto nunca usou) —
- * reaproveita o MESMO idioma já comprovado por `Subscription.cancelAtPeriodEnd` (marca a intenção
- * agora, um scheduler periódico já existente no mesmo padrão de `trial-expiration-scheduler.ts`
- * aplica de fato no fim do ciclo). `targetQuantity` é a quantidade final desejada do addon — pode
- * ser `0` (remover o item por completo).
+ * Mudança agendada pro fim do ciclo atual — redução de capacidade (Pricing/Capacity Etapa B, seção
+ * 15/22-23 do pedido: "reduções entram no próximo ciclo... não criar cálculo financeiro paralelo se
+ * Stripe já resolve") OU cancelamento (Etapa C/Mercado Pago, seção 16: Mercado Pago não tem
+ * `cancel_at_period_end` nativo — reaproveita esta MESMA fila em vez de um mecanismo paralelo). Não
+ * usa `Stripe.SubscriptionSchedule` (superfície nova que o projeto nunca usou) — reaproveita o
+ * MESMO idioma já comprovado por `Subscription.cancelAtPeriodEnd` (marca a intenção agora, um
+ * scheduler periódico já existente no mesmo padrão de `trial-expiration-scheduler.ts` aplica de
+ * fato no fim do ciclo). `targetQuantity` é a quantidade final desejada do addon — pode ser `0`
+ * (remover o item por completo). Para `changeType:"cancellation"`, `addonCode`/`subscriptionItemId`/
+ * `fromQuantity`/`targetQuantity` não têm sentido e ficam `undefined` — o registro representa só
+ * "cancelar esta Subscription em `effectiveAt`".
  */
 export type SubscriptionPendingChange = {
   id: string;
   subscriptionId: string;
   tenantId: string;
-  addonCode: string;
+  changeType: SubscriptionPendingChangeType;
+  addonCode: string | undefined;
   subscriptionItemId: string | undefined;
-  fromQuantity: number;
-  targetQuantity: number;
+  fromQuantity: number | undefined;
+  targetQuantity: number | undefined;
   effectiveAt: string;
   appliedAt?: string;
   cancelledAt?: string;

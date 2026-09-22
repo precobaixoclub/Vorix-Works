@@ -1,4 +1,10 @@
-import type { BillingInterval, Subscription, SubscriptionItem, SubscriptionPendingChange } from "../../domain/platform-billing/subscription.model.js";
+import type {
+  BillingInterval,
+  Subscription,
+  SubscriptionItem,
+  SubscriptionPendingChange,
+  SubscriptionPendingChangeType,
+} from "../../domain/platform-billing/subscription.model.js";
 import type { PlatformSubscriptionStatus } from "../../domain/platform-billing/platform-plan-catalog.js";
 
 export type CreateSubscriptionInput = {
@@ -75,20 +81,25 @@ export type SubscriptionItemRepositoryPort = {
 export type CreateSubscriptionPendingChangeInput = {
   subscriptionId: string;
   tenantId: string;
-  addonCode: string;
-  subscriptionItemId: string | undefined;
-  fromQuantity: number;
-  targetQuantity: number;
+  /** Default `"capacity_decrease"` — compatível com todo call site anterior à Etapa C (Mercado
+   * Pago), que nunca precisou pensar em `changeType`. */
+  changeType?: SubscriptionPendingChangeType;
+  addonCode?: string;
+  subscriptionItemId?: string;
+  fromQuantity?: number;
+  targetQuantity?: number;
   effectiveAt: string;
 };
 
 /** Pricing/Capacity Etapa B — fila de reduções de capacidade agendadas pro fim do ciclo (seção
- * 15/22-23 do pedido). Ver `SubscriptionPendingChange` no domínio para o racional completo de por
- * que isto existe em vez de `Stripe.SubscriptionSchedule`. */
+ * 15/22-23 do pedido), estendida na Etapa C (Mercado Pago) para também representar cancelamento
+ * agendado (`changeType:"cancellation"`, seção 16 do pedido). Ver `SubscriptionPendingChange` no
+ * domínio para o racional completo de por que isto existe em vez de `Stripe.SubscriptionSchedule`. */
 export type SubscriptionPendingChangeRepositoryPort = {
   create(input: CreateSubscriptionPendingChangeInput): Promise<SubscriptionPendingChange>;
   /** Pendências ainda não aplicadas nem canceladas de um tenant — no máximo uma por `addonCode`
-   * (garantido pelo caso de uso, nunca só pelo repositório). */
+   * (garantido pelo caso de uso, nunca só pelo repositório) e, separadamente, no máximo uma
+   * `changeType:"cancellation"` (mesma garantia, mesmo lugar). */
   listPendingByTenant(tenantId: string): Promise<SubscriptionPendingChange[]>;
   getById(id: string): Promise<SubscriptionPendingChange | undefined>;
   /** Pendências com `effectiveAt <= now` ainda não aplicadas nem canceladas — varredura periódica

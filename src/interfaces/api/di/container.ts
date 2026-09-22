@@ -131,6 +131,7 @@ import { createNoopAuthAdapter } from "../../../infrastructure/auth/noop-auth-ad
 import { buildAiGateway } from "../../../infrastructure/ai-gateway/build-ai-gateway.js";
 import { SandboxBillingProvider } from "../../../infrastructure/billing/sandbox-billing-provider.js";
 import { StripeBillingProvider } from "../../../infrastructure/billing/stripe-billing-provider.js";
+import { MercadoPagoBillingProvider } from "../../../infrastructure/billing/mercadopago-billing-provider.js";
 import { CreditGatedAiGateway } from "../../../application/ai-gateway/credit-gated-ai-gateway.js";
 import { DeterministicExecutionTaskHandler } from "../../../application/execution/deterministic-handlers.js";
 import type { ExecutionHandlerResolver } from "../../../application/execution/handler-resolver.js";
@@ -528,12 +529,22 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     platformAiSettingsRepository: identityRepositories?.platformAiSettingsRepository,
   });
 
-  // SaaS Commercialization (Fase 1) — `SandboxBillingProvider` sem chave real configurada, nunca
-  // derruba o boot (mesmo racional de `aiGateway` sem `anthropicApiKey`).
+  // SaaS Commercialization (Fase 1) / Pricing-Capacity Etapa C — seleção central via
+  // `config.billing.provider` (`BILLING_PROVIDER`, ver `api-config.ts`). Sem configuração
+  // explícita (`config?.billing?.provider` ausente, ex.: um teste construindo `config` à mão),
+  // cai no comportamento histórico: Stripe só se `enabled` + `stripeSecretKey`, senão Sandbox —
+  // nunca derruba o boot (mesmo racional de `aiGateway` sem `anthropicApiKey`).
+  const billingProviderSelection = config?.billing?.provider ?? (config?.billing?.enabled && config.billing.stripeSecretKey ? "stripe" : "sandbox");
   const billingProvider: BillingProviderPort =
-    config?.billing?.enabled && config.billing.stripeSecretKey
-      ? new StripeBillingProvider({ secretKey: config.billing.stripeSecretKey, webhookSecret: config.billing.stripeWebhookSecret })
-      : new SandboxBillingProvider();
+    billingProviderSelection === "mercadopago"
+      ? new MercadoPagoBillingProvider({
+          accessToken: config?.billing?.mercadoPagoAccessToken,
+          webhookSecret: config?.billing?.mercadoPagoWebhookSecret,
+          notificationUrl: config?.billing?.mercadoPagoNotificationUrl,
+        })
+      : billingProviderSelection === "stripe"
+        ? new StripeBillingProvider({ secretKey: config?.billing?.stripeSecretKey, webhookSecret: config?.billing?.stripeWebhookSecret })
+        : new SandboxBillingProvider();
 
   const runtimeEngineHook = new RuntimeEnginePlanningHook({
     runtimeRepository: repositories.runtimeRepository,

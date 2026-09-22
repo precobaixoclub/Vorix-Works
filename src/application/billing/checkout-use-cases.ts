@@ -62,6 +62,10 @@ export async function startCheckout(deps: CheckoutUseCaseDeps, input: StartCheck
   );
 
   const addonPriceRefs: string[] = [];
+  // Soma acompanhando o loop — valor TOTAL do checkout (plano + add-ons, 1 unidade cada, mesma
+  // regra do `createCheckout` do Stripe: cada addonPriceRef vira 1 item de quantidade 1). Sempre
+  // calculado aqui (seção 4/9 do pedido), nunca dentro do provider; Stripe/Sandbox ignoram.
+  let addonsTotalAmount = 0;
   for (const code of input.addonCodes ?? []) {
     if (!planVersion.allowedAddonCodes.includes(code)) {
       throw new Error(`CHECKOUT_ADDON_NOT_ALLOWED: o add-on "${code}" não é permitido no plano "${input.planCode}".`);
@@ -73,7 +77,9 @@ export async function startCheckout(deps: CheckoutUseCaseDeps, input: StartCheck
     addonPriceRefs.push(
       priceRefFor(providerId, addon.code, input.billingInterval === "monthly" ? addon.monthlyProviderPriceRef : addon.yearlyProviderPriceRef),
     );
+    addonsTotalAmount += input.billingInterval === "monthly" ? addon.monthlyPriceUsd : addon.yearlyPriceUsd;
   }
+  const baseAmount = input.billingInterval === "monthly" ? planVersion.monthlyPriceUsd : planVersion.yearlyPriceUsd;
 
   const result = await deps.billingProvider.createCheckout({
     tenantId: input.tenantId,
@@ -87,6 +93,8 @@ export async function startCheckout(deps: CheckoutUseCaseDeps, input: StartCheck
     // cartão) — o período de teste já foi (ou está sendo) usado.
     trialDays: isUnconvertedTrial ? undefined : planVersion.trialDays ?? undefined,
     addonPriceRefs,
+    amount: baseAmount + addonsTotalAmount,
+    currency: planVersion.currency,
   });
 
   if (!result.ok) {

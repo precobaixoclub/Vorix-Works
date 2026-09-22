@@ -36,10 +36,16 @@ export async function registerBillingWebhookRoutes(app: FastifyInstance, deps: B
       }
     });
 
+    // Cabeçalho de assinatura varia por provider — Stripe usa `stripe-signature`, Mercado Pago usa
+    // `x-signature` (+ `x-request-id`, que entra no manifest HMAC). Cada `BillingProviderPort`
+    // sabe validar o seu; a rota só encaminha o cabeçalho certo.
+    const signatureHeaderName = deps.billingProvider.providerId === "mercadopago" ? "x-signature" : "stripe-signature";
+
     instance.post(`/webhooks/billing/${deps.billingProvider.providerId}`, async (request, reply) => {
       const result = await processBillingWebhook(deps, {
         rawBody: request.rawBody ?? Buffer.alloc(0),
-        signatureHeader: request.headers["stripe-signature"],
+        signatureHeader: request.headers[signatureHeaderName],
+        requestIdHeader: request.headers["x-request-id"],
       });
 
       if (!result.ok) {

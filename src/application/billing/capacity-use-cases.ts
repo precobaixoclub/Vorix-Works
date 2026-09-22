@@ -4,6 +4,7 @@ import type { SubscriptionPendingChangeRepositoryPort } from "../ports/subscript
 import type { EntitlementUseCaseDeps } from "./entitlement-use-cases.js";
 import { getLimit, resolveEffectiveEntitlements } from "./entitlement-use-cases.js";
 import { getRealActiveSubscription, purchaseAddon } from "./lifecycle-use-cases.js";
+import { syncTenantBilling } from "./webhook-use-cases.js";
 import { recordProductEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
 import {
   computeCapacityCost,
@@ -43,11 +44,16 @@ export async function getCapacityState(deps: CapacityUseCaseDeps, tenantId: stri
   const addons = await deps.addonDefinitionRepository.listActive();
   const current = resolveCommercialCapacity(planVersion, addons, items);
 
+  // `changeType:"cancellation"` (Etapa C/Mercado Pago) não é uma mudança de CAPACIDADE — o
+  // cancelamento agendado já é visível via `Subscription.cancelAtPeriodEnd`/`currentPeriodEnd`;
+  // aqui só entram reduções de addon.
   const pendingChanges = subscription ? await deps.subscriptionPendingChangeRepository.listPendingByTenant(tenantId) : [];
-  const pending = pendingChanges.map((change) => {
-    const addon = addons.find((item) => item.code === change.addonCode);
-    return { resource: (addon?.resource ?? "users") as PlanLimitResource, addonCode: change.addonCode, targetQuantity: change.targetQuantity, effectiveAt: change.effectiveAt };
-  });
+  const pending = pendingChanges
+    .filter((change) => change.changeType === "capacity_decrease")
+    .map((change) => {
+      const addon = addons.find((item) => item.code === change.addonCode);
+      return { resource: (addon?.resource ?? "users") as PlanLimitResource, addonCode: change.addonCode as string, targetQuantity: change.targetQuantity as number, effectiveAt: change.effectiveAt };
+    });
 
   return { current, pending };
 }
@@ -152,7 +158,9 @@ export async function applyCapacityChange(deps: CapacityUseCaseDeps, input: Capa
     const targetAddonQuantity = Math.max(0, Math.floor((target - included) / addon.increment));
     const effectiveAt = subscription.currentPeriodEnd ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const alreadyPending = (await deps.subscriptionPendingChangeRepository.listPendingByTenant(input.tenantId)).find((change) => change.addonCode === addon.code);
+    const alreadyPending = (await deps.subscriptionPendingChangeRepository.listPendingByTenant(input.tenantId)).find(
+      (change) => change.changeType === "capacity_decrease" && change.addonCode === addon.code,
+    );
     if (alreadyPending) {
       throw new Error(`CAPACITY_PENDING_CHANGE_EXISTS: já existe uma redução agendada para "${resource}" — cancele-a antes de pedir outra.`);
     }
@@ -160,6 +168,7 @@ export async function applyCapacityChange(deps: CapacityUseCaseDeps, input: Capa
     await deps.subscriptionPendingChangeRepository.create({
       subscriptionId: subscription.id,
       tenantId: input.tenantId,
+      changeType: "capacity_decrease",
       addonCode: addon.code,
       subscriptionItemId: existing.id,
       fromQuantity: existing.quantity,
@@ -188,29 +197,81 @@ export async function cancelPendingCapacityChange(deps: CapacityUseCaseDeps, inp
   await deps.subscriptionPendingChangeRepository.markCancelled(pending.id);
 }
 
-/** Varredura periódica (mesmo padrão de `expireTrials`) — aplica reduções cujo `effectiveAt` já
- * passou. Cada pendência isolada: uma falha nunca impede as outras de serem aplicadas. */
+/** Varredura periódica (mesmo padrão de `expireTrials`) — aplica reduções de capacidade E
+ * cancelamentos agendados (`changeType`, Etapa C/Mercado Pago) cujo `effectiveAt` já passou. Cada
+ * pendência isolada: uma falha nunca impede as outras de serem aplicadas. */
 export async function applyDuePendingCapacityChanges(deps: CapacityUseCaseDeps, now: () => Date = () => new Date()): Promise<{ appliedCount: number; failedIds: string[] }> {
   const due = await deps.subscriptionPendingChangeRepository.listDueForApplication(now().toISOString());
   let appliedCount = 0;
   const failedIds: string[] = [];
   for (const change of due) {
     try {
-      if (change.subscriptionItemId) {
-        if (change.targetQuantity <= 0) {
-          const item = (await deps.subscriptionItemRepository.listBySubscription(change.subscriptionId)).find((candidate) => candidate.id === change.subscriptionItemId);
+      if (change.changeType === "cancellation") {
+        // Mercado Pago (seção 16-19 do pedido): sem `cancel_at_period_end` nativo — o
+        // cancelamento real no provider só acontece agora, quando o período de fato terminou.
+        // Providers com suporte nativo (`supportsNativeScheduledCancellation`) nunca chegam a
+        // criar uma pendência deste tipo (`cancelSubscriptionSelfService` já resolve tudo de
+        // forma síncrona), então nunca duplicam a chamada aqui.
+        const subscription = await deps.subscriptionRepository.getById(change.subscriptionId);
+        if (!subscription) throw new Error("CAPACITY_SCHEDULER_SUBSCRIPTION_NOT_FOUND: assinatura da pendência de cancelamento não encontrada.");
+        if (subscription.providerSubscriptionId && !deps.billingProvider.supportsNativeScheduledCancellation) {
+          const result = await deps.billingProvider.cancelSubscription({ providerSubscriptionId: subscription.providerSubscriptionId, atPeriodEnd: false });
+          if (!result.ok) throw new Error(`CAPACITY_SCHEDULER_PROVIDER_ERROR(${result.kind}): ${result.message}`);
+        }
+        // Mesmo efeito de `handleSubscriptionUpdated(deps, event, deleted:true)` em
+        // `webhook-use-cases.ts` — se o webhook assíncrono do provider chegar depois confirmando
+        // o mesmo cancelamento, é um no-op idempotente (mesmo status, mesmo plano FREE).
+        await deps.subscriptionRepository.update(subscription.id, { status: "cancelled", canceledAt: now().toISOString() });
+        const freeVersion = await deps.planVersionRepository.getActiveVersion("FREE");
+        if (freeVersion) {
+          await syncTenantBilling(deps, { tenantId: subscription.tenantId, planVersionId: freeVersion.id, status: "active" });
+        }
+        await deps.subscriptionPendingChangeRepository.markApplied(change.id);
+        await deps.billingEventRepository.record({ tenantId: change.tenantId, subscriptionId: change.subscriptionId, eventType: "subscription_canceled", payload: { scheduledCancellation: true } });
+        appliedCount += 1;
+        continue;
+      }
+
+      if (change.subscriptionItemId && change.targetQuantity !== undefined) {
+        const subscription = await deps.subscriptionRepository.getById(change.subscriptionId);
+        const planVersion = subscription ? await deps.planVersionRepository.getById(subscription.planVersionId) : undefined;
+        const allAddons = await deps.addonDefinitionRepository.listActive();
+        const items = await deps.subscriptionItemRepository.listBySubscription(change.subscriptionId);
+        const item = items.find((candidate) => candidate.id === change.subscriptionItemId);
+        const targetQuantity = change.targetQuantity;
+
+        // Valor TOTAL projetado após a redução — sempre via `capacity.model.ts` (seção 4 do
+        // pedido), nunca recalculado dentro do provider. Só usado por providers sem catálogo de
+        // preço nativo (Mercado Pago); Stripe/Sandbox ignoram `amount`/`currency`.
+        const projectedItems =
+          targetQuantity <= 0
+            ? items.filter((candidate) => candidate.id !== change.subscriptionItemId)
+            : items.map((candidate) => (candidate.id === change.subscriptionItemId ? { ...candidate, quantity: targetQuantity } : candidate));
+        const projectedCapacity = planVersion ? resolveCommercialCapacity(planVersion, allAddons, projectedItems) : undefined;
+
+        if (targetQuantity <= 0) {
           if (item?.providerItemId) {
-            const result = await deps.billingProvider.removeSubscriptionItem({ providerItemId: item.providerItemId });
+            const result = await deps.billingProvider.removeSubscriptionItem({
+              providerItemId: item.providerItemId,
+              providerSubscriptionId: subscription?.providerSubscriptionId,
+              amount: projectedCapacity?.totalMonthlyAmount,
+              currency: projectedCapacity?.currency,
+            });
             if (!result.ok) throw new Error(`CAPACITY_SCHEDULER_PROVIDER_ERROR(${result.kind}): ${result.message}`);
           }
           await deps.subscriptionItemRepository.delete(change.subscriptionItemId);
         } else {
-          const item = (await deps.subscriptionItemRepository.listBySubscription(change.subscriptionId)).find((candidate) => candidate.id === change.subscriptionItemId);
           if (item?.providerItemId) {
-            const result = await deps.billingProvider.updateSubscriptionItemQuantity({ providerItemId: item.providerItemId, quantity: change.targetQuantity });
+            const result = await deps.billingProvider.updateSubscriptionItemQuantity({
+              providerItemId: item.providerItemId,
+              quantity: targetQuantity,
+              providerSubscriptionId: subscription?.providerSubscriptionId,
+              amount: projectedCapacity?.totalMonthlyAmount,
+              currency: projectedCapacity?.currency,
+            });
             if (!result.ok) throw new Error(`CAPACITY_SCHEDULER_PROVIDER_ERROR(${result.kind}): ${result.message}`);
           }
-          await deps.subscriptionItemRepository.updateQuantity(change.subscriptionItemId, change.targetQuantity);
+          await deps.subscriptionItemRepository.updateQuantity(change.subscriptionItemId, targetQuantity);
         }
       }
       await deps.subscriptionPendingChangeRepository.markApplied(change.id);

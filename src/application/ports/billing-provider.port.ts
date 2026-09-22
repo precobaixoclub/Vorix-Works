@@ -30,6 +30,15 @@ export type BillingProviderErrorKind = (typeof BILLING_PROVIDER_ERROR_KINDS)[num
 
 export type BillingProviderFailure = { ok: false; kind: BillingProviderErrorKind; message: string };
 
+/**
+ * `amount`/`currency` — Pricing/Capacity Etapa C (integração Mercado Pago). Opcionais: Stripe/
+ * Sandbox continuam ignorando-os (o preço já vive no `providerPlanPriceRef`/Price catalogado no
+ * gateway). Providers SEM catálogo de preço nativo (Mercado Pago: uma `preapproval` cobra um valor
+ * único e fixo por ciclo, nunca "itens de linha com quantidade") usam estes campos como a fonte de
+ * verdade do valor a cobrar — sempre calculado por `capacity.model.ts` no caso de uso chamador,
+ * NUNCA recalculado dentro do provider (seção 4 do pedido: "não duplicar cálculo dentro do
+ * MercadoPagoBillingProvider").
+ */
 export type CreateCheckoutInput = {
   tenantId: string;
   planVersionId: string;
@@ -41,6 +50,8 @@ export type CreateCheckoutInput = {
   cancelUrl: string;
   trialDays?: number;
   addonPriceRefs?: readonly string[];
+  amount?: number;
+  currency?: string;
 };
 export type CreateCheckoutResult = { ok: true; checkoutUrl: string; providerSessionId: string };
 
@@ -50,6 +61,8 @@ export type CreateSubscriptionInput = {
   providerPlanPriceRef: string;
   billingInterval: BillingInterval;
   addonPriceRefs?: readonly string[];
+  amount?: number;
+  currency?: string;
 };
 export type CreateSubscriptionResult = { ok: true; providerSubscriptionId: string; status: string };
 
@@ -59,16 +72,18 @@ export type ChangeSubscriptionInput = {
   billingInterval: BillingInterval;
   addonPriceRefs?: readonly string[];
   prorate: boolean;
+  amount?: number;
+  currency?: string;
 };
 export type ChangeSubscriptionResult = { ok: true; status: string; prorationAmountCents?: number };
 
 export type CancelSubscriptionInput = { providerSubscriptionId: string; atPeriodEnd: boolean; reason?: string };
 export type ResumeSubscriptionInput = { providerSubscriptionId: string };
 
-export type AddSubscriptionItemInput = { providerSubscriptionId: string; providerPriceRef: string; quantity: number };
+export type AddSubscriptionItemInput = { providerSubscriptionId: string; providerPriceRef: string; quantity: number; amount?: number; currency?: string };
 export type AddSubscriptionItemResult = { ok: true; providerItemId: string };
-export type RemoveSubscriptionItemInput = { providerItemId: string };
-export type UpdateSubscriptionItemQuantityInput = { providerItemId: string; quantity: number };
+export type RemoveSubscriptionItemInput = { providerItemId: string; providerSubscriptionId?: string; amount?: number; currency?: string };
+export type UpdateSubscriptionItemQuantityInput = { providerItemId: string; quantity: number; providerSubscriptionId?: string; amount?: number; currency?: string };
 
 export type PaymentMethodSnapshot = { providerPaymentMethodId: string; brand?: string; last4?: string; expMonth?: number; expYear?: number };
 export type GetPaymentMethodInput = { providerCustomerId: string };
@@ -87,11 +102,21 @@ export type BillingWebhookEvent = {
   providerSubscriptionId?: string;
   data: Record<string, unknown>;
 };
-export type HandleWebhookInput = { rawBody: Buffer; signatureHeader: string | string[] | undefined };
+/** `requestIdHeader` — só o Mercado Pago usa (`x-request-id`, entra no manifest de assinatura);
+ * Stripe/Sandbox ignoram. */
+export type HandleWebhookInput = { rawBody: Buffer; signatureHeader: string | string[] | undefined; requestIdHeader?: string | string[] | undefined };
 export type HandleWebhookResult = { ok: true; event: BillingWebhookEvent };
 
 export type BillingProviderPort = {
   readonly providerId: string;
+  /** `true` (Stripe/Sandbox): o gateway agenda nativamente "cancelar no fim do período" — a
+   * chamada síncrona a `cancelSubscription({atPeriodEnd:true})` já resolve tudo. `false` (Mercado
+   * Pago): a `preapproval` não tem esse conceito nativo — o caso de uso chamador (nunca o
+   * provider) precisa agendar via `subscription_pending_changes`/scheduler e só chamar
+   * `cancelSubscription({atPeriodEnd:false})` quando o período realmente terminar. Mesmo padrão de
+   * capability já usado por `SocialPublisherPort.capabilities` — nunca um `if (providerId ===
+   * "mercadopago")` espalhado pela aplicação. */
+  readonly supportsNativeScheduledCancellation: boolean;
   createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutResult | BillingProviderFailure>;
   createSubscription(input: CreateSubscriptionInput): Promise<CreateSubscriptionResult | BillingProviderFailure>;
   changeSubscription(input: ChangeSubscriptionInput): Promise<ChangeSubscriptionResult | BillingProviderFailure>;

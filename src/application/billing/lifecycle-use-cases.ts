@@ -1,5 +1,6 @@
 import type { BillingProviderPort } from "../ports/billing-provider.port.js";
 import type { BillingEventRepositoryPort } from "../ports/billing-ops-repository.port.js";
+import type { SubscriptionPendingChangeRepositoryPort } from "../ports/subscription-repository.port.js";
 import type { EntitlementUseCaseDeps } from "./entitlement-use-cases.js";
 import { getLimit } from "./entitlement-use-cases.js";
 import { priceRefFor } from "./price-ref.js";
@@ -8,10 +9,15 @@ import { recordProductEvent, type ProductAnalyticsUseCaseDeps } from "../product
 import type { BillingInterval } from "../../domain/platform-billing/subscription.model.js";
 import type { PlatformPlanCode } from "../../domain/platform-billing/platform-plan-catalog.js";
 import { PLAN_LIMIT_RESOURCES } from "../../domain/platform-billing/plan-entitlements.model.js";
+import { resolveCommercialCapacity } from "../../domain/platform-billing/capacity.model.js";
 
 export type LifecycleUseCaseDeps = EntitlementUseCaseDeps & {
   billingProvider: BillingProviderPort;
   billingEventRepository: BillingEventRepositoryPort;
+  /** Pricing/Capacity Etapa C (Mercado Pago) — agenda de cancelamento quando o provider não
+   * suporta `cancel_at_period_end` nativamente (ver `cancelSubscriptionSelfService`/
+   * `reactivateSubscription` abaixo). */
+  subscriptionPendingChangeRepository: SubscriptionPendingChangeRepositoryPort;
   /** Trial + Product Analytics — integração mínima, mesmo racional de `trial-use-cases.ts`. */
   productAnalytics?: ProductAnalyticsUseCaseDeps;
 };
@@ -81,11 +87,20 @@ export async function changePlan(deps: LifecycleUseCaseDeps, input: ChangePlanIn
     input.billingInterval === "monthly" ? newPlanVersion.monthlyProviderPriceRef : newPlanVersion.yearlyProviderPriceRef,
   );
 
+  // Valor TOTAL projetado no plano NOVO + add-ons já contratados — sempre via `capacity.model.ts`
+  // (seção 4/9 do pedido), nunca recalculado dentro do provider. Só usado por providers sem
+  // catálogo de preço nativo (Mercado Pago); Stripe/Sandbox ignoram `amount`/`currency`.
+  const existingItems = await deps.subscriptionItemRepository.listBySubscription(subscription.id);
+  const allAddons = await deps.addonDefinitionRepository.listActive();
+  const projectedCapacity = resolveCommercialCapacity(newPlanVersion, allAddons, existingItems);
+
   const result = await deps.billingProvider.changeSubscription({
     providerSubscriptionId: subscription.providerSubscriptionId,
     newProviderPlanPriceRef: newPriceRef,
     billingInterval: input.billingInterval,
     prorate: input.prorate ?? true,
+    amount: projectedCapacity.totalMonthlyAmount,
+    currency: projectedCapacity.currency,
   });
   if (!result.ok) {
     throw new Error(`CHANGE_PLAN_PROVIDER_ERROR(${result.kind}): ${result.message}`);
@@ -140,14 +155,35 @@ export async function purchaseAddon(deps: LifecycleUseCaseDeps, input: PurchaseA
   const existingItems = await deps.subscriptionItemRepository.listBySubscription(subscription.id);
   const existing = existingItems.find((item) => item.addonCode === input.addonCode);
 
+  // Valor TOTAL projetado após a compra — sempre via `capacity.model.ts` (seção 4 do pedido),
+  // nunca recalculado dentro do provider. O preço unitário do delta é o do item já existente
+  // quando incrementando (congelado, nunca reescrito — mesma regra do `upsertIncrement` abaixo),
+  // ou o preço atual do catálogo quando é a primeira compra deste addon.
+  const allAddons = await deps.addonDefinitionRepository.listActive();
+  const currentCapacity = resolveCommercialCapacity(planVersion, allAddons, existingItems);
+  const unitPriceForDelta = existing ? existing.unitPriceUsd : input.billingInterval === "monthly" ? addon.monthlyPriceUsd : addon.yearlyPriceUsd;
+  const projectedTotalMonthlyAmount = currentCapacity.totalMonthlyAmount + input.quantity * unitPriceForDelta;
+
   if (existing?.providerItemId) {
-    const result = await deps.billingProvider.updateSubscriptionItemQuantity({ providerItemId: existing.providerItemId, quantity: existing.quantity + input.quantity });
+    const result = await deps.billingProvider.updateSubscriptionItemQuantity({
+      providerItemId: existing.providerItemId,
+      quantity: existing.quantity + input.quantity,
+      providerSubscriptionId: subscription.providerSubscriptionId,
+      amount: projectedTotalMonthlyAmount,
+      currency: currentCapacity.currency,
+    });
     if (!result.ok) throw new Error(`ADDON_PROVIDER_ERROR(${result.kind}): ${result.message}`);
   }
   let providerItemId = existing?.providerItemId;
   if (!existing) {
     const priceRef = priceRefFor(deps.billingProvider.providerId, addon.code, input.billingInterval === "monthly" ? addon.monthlyProviderPriceRef : addon.yearlyProviderPriceRef);
-    const result = await deps.billingProvider.addSubscriptionItem({ providerSubscriptionId: subscription.providerSubscriptionId, providerPriceRef: priceRef, quantity: input.quantity });
+    const result = await deps.billingProvider.addSubscriptionItem({
+      providerSubscriptionId: subscription.providerSubscriptionId,
+      providerPriceRef: priceRef,
+      quantity: input.quantity,
+      amount: projectedTotalMonthlyAmount,
+      currency: currentCapacity.currency,
+    });
     if (!result.ok) throw new Error(`ADDON_PROVIDER_ERROR(${result.kind}): ${result.message}`);
     providerItemId = result.providerItemId;
   }
@@ -186,9 +222,9 @@ export async function removeAddon(deps: LifecycleUseCaseDeps, input: { tenantId:
     throw new Error("ADDON_ITEM_NOT_FOUND: este item de add-on não pertence à assinatura do tenant.");
   }
 
+  const planVersion = await deps.planVersionRepository.getById(subscription.planVersionId);
   const addon = await deps.addonDefinitionRepository.getByCode(item.addonCode);
   if (addon) {
-    const planVersion = await deps.planVersionRepository.getById(subscription.planVersionId);
     const newLimit = await limitWithoutItem(deps, { planLimits: planVersion?.limits ?? {}, items, excludeItemAddonCode: item.addonCode, resource: addon.resource });
     if (newLimit !== null) {
       const { used } = await getLimit(deps, { tenantId: input.tenantId, resource: addon.resource as never });
@@ -199,25 +235,51 @@ export async function removeAddon(deps: LifecycleUseCaseDeps, input: { tenantId:
   }
 
   if (item.providerItemId) {
-    const result = await deps.billingProvider.removeSubscriptionItem({ providerItemId: item.providerItemId });
+    // Valor TOTAL projetado após a remoção — sempre via `capacity.model.ts`, nunca recalculado
+    // dentro do provider (seção 4 do pedido).
+    const allAddons = await deps.addonDefinitionRepository.listActive();
+    const projectedCapacity = planVersion
+      ? resolveCommercialCapacity(planVersion, allAddons, items.filter((candidate) => candidate.id !== item.id))
+      : undefined;
+    const result = await deps.billingProvider.removeSubscriptionItem({
+      providerItemId: item.providerItemId,
+      providerSubscriptionId: subscription.providerSubscriptionId,
+      amount: projectedCapacity?.totalMonthlyAmount,
+      currency: projectedCapacity?.currency,
+    });
     if (!result.ok) throw new Error(`ADDON_PROVIDER_ERROR(${result.kind}): ${result.message}`);
   }
   await deps.subscriptionItemRepository.delete(item.id);
   await deps.billingEventRepository.record({ tenantId: input.tenantId, subscriptionId: subscription.id, eventType: "addon_removed", payload: { addonCode: item.addonCode } });
 }
 
-/** Cancelamento self-service — SEMPRE `cancel_at_period_end: true` (nunca imediato): o tenant
- * continua com acesso total até o fim do período já pago, exatamente como qualquer SaaS cobrado
- * por assinatura. Nenhum dado é removido aqui nem quando o período efetivamente terminar (isso
- * fica a cargo do webhook `customer.subscription.deleted`, que só reverte entitlements pro FREE —
- * ver `webhook-use-cases.ts`). */
+/** Cancelamento self-service — SEMPRE efetivo só no fim do período já pago (nunca imediato): o
+ * tenant continua com acesso total até lá, exatamente como qualquer SaaS cobrado por assinatura.
+ * Providers com suporte nativo (Stripe/Sandbox, `supportsNativeScheduledCancellation:true`) usam
+ * `cancel_at_period_end` de verdade. Mercado Pago (seção 16-19 do pedido, `false`) não tem esse
+ * conceito nativo — reaproveita a MESMA fila `subscription_pending_changes` já usada para redução
+ * de capacidade (`changeType:"cancellation"`); o cancelamento real no provider só acontece quando
+ * o scheduler perceber que o período terminou (`applyDuePendingCapacityChanges`). Nenhum dado é
+ * removido aqui nem quando o período efetivamente terminar (isso fica a cargo do webhook
+ * `customer.subscription.deleted`/do scheduler, que só revertem entitlements pro FREE). */
 export async function cancelSubscriptionSelfService(deps: LifecycleUseCaseDeps, input: { tenantId: string; reason?: string }): Promise<void> {
   const subscription = await getRealActiveSubscription(deps, input.tenantId);
   if (!subscription.providerSubscriptionId) {
     throw new Error("CANCEL_NO_PROVIDER_SUBSCRIPTION: assinatura sem vínculo com o gateway de pagamento.");
   }
-  const result = await deps.billingProvider.cancelSubscription({ providerSubscriptionId: subscription.providerSubscriptionId, atPeriodEnd: true, reason: input.reason });
-  if (!result.ok) throw new Error(`CANCEL_PROVIDER_ERROR(${result.kind}): ${result.message}`);
+
+  if (deps.billingProvider.supportsNativeScheduledCancellation) {
+    const result = await deps.billingProvider.cancelSubscription({ providerSubscriptionId: subscription.providerSubscriptionId, atPeriodEnd: true, reason: input.reason });
+    if (!result.ok) throw new Error(`CANCEL_PROVIDER_ERROR(${result.kind}): ${result.message}`);
+  } else {
+    const alreadyPending = (await deps.subscriptionPendingChangeRepository.listPendingByTenant(input.tenantId)).find(
+      (change) => change.changeType === "cancellation" && change.subscriptionId === subscription.id,
+    );
+    if (!alreadyPending) {
+      const effectiveAt = subscription.currentPeriodEnd ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      await deps.subscriptionPendingChangeRepository.create({ subscriptionId: subscription.id, tenantId: input.tenantId, changeType: "cancellation", effectiveAt });
+    }
+  }
 
   await deps.subscriptionRepository.update(subscription.id, { cancelAtPeriodEnd: true, cancellationReason: input.reason ?? null });
   await deps.billingEventRepository.record({ tenantId: input.tenantId, subscriptionId: subscription.id, eventType: "subscription_canceled", payload: { reason: input.reason, atPeriodEnd: true } });
@@ -228,7 +290,11 @@ export async function cancelSubscriptionSelfService(deps: LifecycleUseCaseDeps, 
 
 /** Reativação — só possível ENQUANTO a assinatura ainda não passou do fim do período
  * (`cancel_at_period_end: true` mas `status` ainda não é terminal). Depois que
- * `customer.subscription.deleted` chegar, não existe mais "reativar": é um checkout novo. */
+ * `customer.subscription.deleted` chegar (ou, no Mercado Pago, depois que o scheduler já tiver
+ * executado o cancelamento agendado), não existe mais "reativar": `getRealActiveSubscription`
+ * já lança `SUBSCRIPTION_NOT_FOUND` nesse caso (a Subscription saiu do conjunto não-terminal) —
+ * nunca finge que uma assinatura já cancelada no provider é reutilizável (seção 19 do pedido); o
+ * cliente precisa de um checkout novo. */
 export async function reactivateSubscription(deps: LifecycleUseCaseDeps, input: { tenantId: string }): Promise<void> {
   const subscription = await getRealActiveSubscription(deps, input.tenantId);
   if (!subscription.cancelAtPeriodEnd) {
@@ -237,8 +303,18 @@ export async function reactivateSubscription(deps: LifecycleUseCaseDeps, input: 
   if (!subscription.providerSubscriptionId) {
     throw new Error("REACTIVATE_NO_PROVIDER_SUBSCRIPTION: assinatura sem vínculo com o gateway de pagamento.");
   }
-  const result = await deps.billingProvider.resumeSubscription({ providerSubscriptionId: subscription.providerSubscriptionId });
-  if (!result.ok) throw new Error(`REACTIVATE_PROVIDER_ERROR(${result.kind}): ${result.message}`);
+
+  if (deps.billingProvider.supportsNativeScheduledCancellation) {
+    const result = await deps.billingProvider.resumeSubscription({ providerSubscriptionId: subscription.providerSubscriptionId });
+    if (!result.ok) throw new Error(`REACTIVATE_PROVIDER_ERROR(${result.kind}): ${result.message}`);
+  } else {
+    const pending = (await deps.subscriptionPendingChangeRepository.listPendingByTenant(input.tenantId)).find(
+      (change) => change.changeType === "cancellation" && change.subscriptionId === subscription.id,
+    );
+    if (pending) {
+      await deps.subscriptionPendingChangeRepository.markCancelled(pending.id);
+    }
+  }
 
   await deps.subscriptionRepository.update(subscription.id, { cancelAtPeriodEnd: false, cancellationReason: null });
   await deps.billingEventRepository.record({ tenantId: input.tenantId, subscriptionId: subscription.id, eventType: "subscription_resumed", payload: {} });

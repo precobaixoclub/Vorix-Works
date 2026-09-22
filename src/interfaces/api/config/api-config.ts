@@ -72,8 +72,18 @@ export type ApiConfig = {
    */
   billing: {
     enabled: boolean;
+    /** Pricing/Capacity Etapa C — seleção central do provider ativo, único lugar que decide isto
+     * (nunca vários booleans que poderiam divergir). `"sandbox"` quando `enabled=false`, senão o
+     * valor explícito de `BILLING_PROVIDER` — cai em `"stripe"` se ausente (compatível com o
+     * comportamento anterior a esta variável existir). */
+    provider: "sandbox" | "stripe" | "mercadopago";
     stripeSecretKey?: string;
     stripeWebhookSecret?: string;
+    mercadoPagoAccessToken?: string;
+    mercadoPagoWebhookSecret?: string;
+    /** `notification_url` enviado em cada `preapproval` criada — precisa ser o host da API
+     * (`/webhooks/billing/mercadopago`), nunca o host do site. */
+    mercadoPagoNotificationUrl?: string;
     /** Base para as URLs de sucesso/cancelamento do Checkout (Fase 2) — nunca uma URL vinda do
      * cliente; sempre `APP_BASE_URL` combinada com um `successPath`/`cancelPath` relativo. */
     appBaseUrl: string;
@@ -305,8 +315,17 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const aiCommercialCopilotEnabled = aiGatewayEnabled && env.AI_COMMERCIAL_COPILOT_ENABLED?.trim() === "true";
   const anthropicCommercialCopilotModel = env.ANTHROPIC_COMMERCIAL_COPILOT_MODEL?.trim() || DEFAULT_ANTHROPIC_COMMERCIAL_COPILOT_MODEL;
   const billingProviderEnabled = env.BILLING_PROVIDER_ENABLED?.trim() === "true";
+  const billingProviderSelection = env.BILLING_PROVIDER?.trim();
+  const billingProvider: "sandbox" | "stripe" | "mercadopago" = !billingProviderEnabled
+    ? "sandbox"
+    : billingProviderSelection === "mercadopago" || billingProviderSelection === "sandbox"
+      ? billingProviderSelection
+      : "stripe";
   const stripeSecretKey = env.STRIPE_SECRET_KEY?.trim() || undefined;
   const stripeWebhookSecret = env.STRIPE_WEBHOOK_SECRET?.trim() || undefined;
+  const mercadoPagoAccessToken = env.MERCADOPAGO_ACCESS_TOKEN?.trim() || undefined;
+  const mercadoPagoWebhookSecret = env.MERCADOPAGO_WEBHOOK_SECRET?.trim() || undefined;
+  const mercadoPagoNotificationUrl = env.MERCADOPAGO_NOTIFICATION_URL?.trim() || undefined;
   const billingAppBaseUrl = env.APP_BASE_URL?.trim() || "http://localhost:3001";
   const trialEnabled = env.TRIAL_ENABLED?.trim() === "true";
   const trialExpirationCheckIntervalMs = parsePositiveInt(env.TRIAL_EXPIRATION_CHECK_INTERVAL_MS) ?? 3_600_000;
@@ -480,8 +499,12 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     },
     billing: {
       enabled: billingProviderEnabled,
+      provider: billingProvider,
       stripeSecretKey,
       stripeWebhookSecret,
+      mercadoPagoAccessToken,
+      mercadoPagoWebhookSecret,
+      mercadoPagoNotificationUrl,
       appBaseUrl: billingAppBaseUrl,
       trialEnabled,
       trialExpirationCheckIntervalMs,

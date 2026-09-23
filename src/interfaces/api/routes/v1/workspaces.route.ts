@@ -60,6 +60,7 @@ const PATCH_BODY_SCHEMA = {
         language: { type: "string" },
         defaultAspectRatio: { type: "string" },
         logoUrl: { type: "string" },
+        autoContactEnabled: { type: "boolean" },
       },
     },
   },

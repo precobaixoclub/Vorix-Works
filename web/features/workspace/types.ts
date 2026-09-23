@@ -26,6 +26,8 @@ export type WorkspaceSettings = {
   language?: string;
   defaultAspectRatio?: string;
   logoUrl?: string;
+  /** Ponte Inbox→CRM — `undefined` = ligado (default do produto), só `false` desliga. */
+  autoContactEnabled?: boolean;
 };
 
 export type TenantCreditsSummary = {

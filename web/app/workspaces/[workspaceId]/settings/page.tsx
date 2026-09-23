@@ -10,6 +10,7 @@ import { Input, Label } from "@/components/Field";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { updateWorkspace } from "@/features/workspace/api";
@@ -29,6 +30,9 @@ export default function SettingsPage() {
   const [language, setLanguage] = useState(workspace.settings.language ?? "pt-BR");
   const [defaultAspectRatio, setDefaultAspectRatio] = useState(workspace.settings.defaultAspectRatio ?? "1:1");
   const [busy, setBusy] = useState(false);
+  // `undefined` (nunca configurado) = ligado, default do produto; só `false` explícito desliga.
+  const [autoContactEnabled, setAutoContactEnabled] = useState(workspace.settings.autoContactEnabled !== false);
+  const [autoContactBusy, setAutoContactBusy] = useState(false);
 
   const marketingIntegrations = useMemo(
     () => workspace.integrations.filter((integration) => ["instagram", "facebook", "tiktok", "youtube", "meta"].some((key) => integration.channel.toLowerCase().includes(key))),
@@ -49,6 +53,22 @@ export default function SettingsPage() {
       toast.error("Não foi possível salvar", { description: error instanceof Error ? error.message : "Tente novamente." });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function toggleAutoContact(next: boolean) {
+    setAutoContactBusy(true);
+    const previous = autoContactEnabled;
+    setAutoContactEnabled(next);
+    try {
+      await updateWorkspace(workspace.id, { settings: { ...workspace.settings, autoContactEnabled: next } });
+      toast.success(next ? "Contato automático ligado." : "Contato automático desligado — o vínculo com o CRM volta a ser só manual.");
+      router.refresh();
+    } catch (error) {
+      setAutoContactEnabled(previous);
+      toast.error("Não foi possível salvar", { description: error instanceof Error ? error.message : "Tente novamente." });
+    } finally {
+      setAutoContactBusy(false);
     }
   }
 
@@ -109,6 +129,23 @@ export default function SettingsPage() {
               <Info label="Atualizado em" value={formatDateTime(workspace.updatedAt)} />
               <Info label="Membros" value={String(workspace.members.length)} />
               <Info label="Conta atual" value={state.status === "authenticated" ? state.user.email : "—"} />
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div>
+                <p className="text-sm font-semibold text-foreground">Contato automático (CRM)</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Cria um Contato no CRM automaticamente depois de 3 mensagens numa conversa direta do WhatsApp. Desligado, o vínculo continua disponível manualmente ("Vincular ao CRM").
+                </p>
+              </div>
+            </CardHeader>
+            <CardBody>
+              <label className="flex items-center justify-between gap-3 text-sm text-foreground">
+                <span>Criar contato automaticamente</span>
+                <Switch checked={autoContactEnabled} onCheckedChange={toggleAutoContact} disabled={autoContactBusy} />
+              </label>
             </CardBody>
           </Card>
 

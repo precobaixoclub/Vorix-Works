@@ -90,6 +90,12 @@ export type WorkspaceSettings = {
   language?: string;
   defaultAspectRatio?: string;
   logoUrl?: string;
+  /** Ponte Inbox→CRM (Jornada Comercial Integrada, Fase 1) — cria automaticamente um Contact do
+   * CRM a partir de um contato do WhatsApp depois de 3 mensagens numa conversa direta (ver
+   * `maybeAutoLinkInboxContactToCrm`). `undefined` = ligado (default do produto); só `false`
+   * desliga. Substituiu o antigo `INBOX_CRM_AUTO_CONTACT_ENABLED` (variável de ambiente global,
+   * a mesma decisão pra todo workspace da plataforma) — cada workspace decide por si. */
+  autoContactEnabled?: boolean;
 };
 
 /**

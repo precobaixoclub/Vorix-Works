@@ -8,6 +8,7 @@ import { buildPlatformRepositories } from "../../infrastructure/storage/build-pl
 import { FakeMessagingProvider } from "../../infrastructure/messaging/fake-messaging-provider.js";
 import { InstagramMessagingProvider } from "../../infrastructure/messaging/instagram/instagram-messaging-provider.js";
 import { InMemorySecretManager } from "../../infrastructure/operations/secret-managers.js";
+import { InMemoryTtlCache } from "../../application/operations/operational-services.js";
 import { PostgresSecretManager } from "../../infrastructure/operations/postgres-secret-manager.js";
 import { SecretManagerPublicationSecretStore } from "../../application/operations/operational-services.js";
 import { WuzApiClient } from "../../infrastructure/messaging/wuzapi/wuzapi-client.js";
@@ -136,13 +137,6 @@ type InboxWorkerConfig = {
      * bruto persistido (`attachMediaSourceRef`) mas ainda sem mídia baixada. */
     mediaRetryIntervalMs: number;
   };
-  /** Jornada Comercial Integrada, Fase 1 — desligado por padrão de propósito (mesmo racional de
-   * `ai.enabled`/`AI_INBOX_AUTO_REPLY_ENABLED`: uma mudança de comportamento automático sobre dados
-   * reais só liga com opt-in explícito, nunca por omissão) — ativar é só setar a env var em
-   * produção, sem precisar de outro deploy. Só tem efeito com `PERSISTENCE_DRIVER=postgres` (mesmo
-   * guard dos outros blocos deste tipo — `repositories.pool` ausente em memória = a ponte inteira
-   * vira no-op, sem erro). */
-  commercialBridge: { autoContactEnabled: boolean };
   /** Redesign operacional (Conversas) — storage PRIVADO de mídia recebida via WhatsApp; config
    * mínima independente de `loadApiConfig()`, mesmo racional do resto deste tipo. `enabled: false`
    * (padrão) não impede o worker de funcionar, só deixa `downloadInboundMediaAndAttach` em no-op. */
@@ -204,9 +198,6 @@ function loadInboxWorkerConfig(): InboxWorkerConfig {
       identityReconcileIntervalMs: parsePositiveInt(process.env.INBOX_IDENTITY_RECONCILE_INTERVAL_MS, 300_000),
       avatarReconcileIntervalMs: parsePositiveInt(process.env.INBOX_AVATAR_RECONCILE_INTERVAL_MS, 600_000),
       mediaRetryIntervalMs: parsePositiveInt(process.env.INBOX_MEDIA_RETRY_INTERVAL_MS, 300_000),
-    },
-    commercialBridge: {
-      autoContactEnabled: process.env.INBOX_CRM_AUTO_CONTACT_ENABLED?.trim() === "true",
     },
     inboxMediaStorage: {
       enabled: process.env.INBOX_MEDIA_STORAGE_ENABLED?.trim() === "true",
@@ -607,30 +598,45 @@ async function main(): Promise<void> {
     console.warn("[inbox-worker] INBOX_OUTBOUND_SEND_PAUSED=true — kill switch de emergência ATIVO: nenhuma mensagem outbound será enviada ao WuzAPI (permanecem queued). Inbound/IA/humano continuam funcionando normalmente.");
   }
 
-  // Jornada Comercial Integrada, Fase 1 — ponte Inbox→CRM. Repositórios do CRM construídos direto
-  // aqui, reusando o MESMO pool já aberto por `buildPlatformRepositories` (nunca uma segunda
-  // conexão) — `undefined` em driver memória (sem `repositories.pool`) ou com o opt-in desligado,
-  // e `maybeAutoLinkInboxContactToCrm` nunca é chamado nesse caso (ver dentro do consumer abaixo).
-  const commercialBridgeDeps: InboxCrmBridgeDeps | undefined =
-    config.commercialBridge.autoContactEnabled && repositories.pool
-      ? {
-          inboxContactRepository: repositories.inboxContactRepository,
-          inboxMessageRepository: repositories.inboxMessageRepository,
-          contact: {
-            contactRepository: new PostgresContactRepository(repositories.pool),
-            contactIdentityRepository: new PostgresContactIdentityRepository(repositories.pool),
-            timelineEventRepository: new PostgresTimelineEventRepository(repositories.pool),
-            // `automation` deliberadamente omitido nesta fase — ver comentário em
-            // `inbox-crm-bridge-use-cases.ts` (decisão consciente, não esquecimento).
-          },
-        }
-      : undefined;
-  if (config.commercialBridge.autoContactEnabled && !repositories.pool) {
-    console.warn("[inbox-worker] INBOX_CRM_AUTO_CONTACT_ENABLED=true, mas PERSISTENCE_DRIVER != postgres — ponte Inbox→CRM desligada (CRM real sempre vive em Postgres).");
-  } else if (config.commercialBridge.autoContactEnabled) {
-    console.log(`[inbox-worker] ponte Inbox→CRM habilitada — Contact automático a partir de ${MIN_MESSAGES_FOR_AUTO_CRM_CONTACT} mensagens numa conversa direta (origin="${AUTO_CONTACT_ORIGIN}").`);
+  // Jornada Comercial Integrada, Fase 1 — ponte Inbox→CRM. LIGADA por padrão pra todo workspace
+  // (decisão de produto explícita — substituiu o antigo opt-in global `INBOX_CRM_AUTO_CONTACT_
+  // ENABLED`); cada workspace pode desligar individualmente em Configurações
+  // (`WorkspaceSettings.autoContactEnabled = false`, ver `workspaceAutoContactCache` abaixo,
+  // consultado no ponto de chamada, nunca aqui — aqui só existe o guard de infraestrutura).
+  // Repositórios do CRM construídos direto aqui, reusando o MESMO pool já aberto por
+  // `buildPlatformRepositories` (nunca uma segunda conexão) — `undefined` só em driver memória
+  // (sem `repositories.pool`), e `maybeAutoLinkInboxContactToCrm` nunca é chamado nesse caso (ver
+  // dentro do consumer abaixo).
+  const commercialBridgeDeps: InboxCrmBridgeDeps | undefined = repositories.pool
+    ? {
+        inboxContactRepository: repositories.inboxContactRepository,
+        inboxMessageRepository: repositories.inboxMessageRepository,
+        contact: {
+          contactRepository: new PostgresContactRepository(repositories.pool),
+          contactIdentityRepository: new PostgresContactIdentityRepository(repositories.pool),
+          timelineEventRepository: new PostgresTimelineEventRepository(repositories.pool),
+          // `automation` deliberadamente omitido nesta fase — ver comentário em
+          // `inbox-crm-bridge-use-cases.ts` (decisão consciente, não esquecimento).
+        },
+      }
+    : undefined;
+  if (commercialBridgeDeps) {
+    console.log(`[inbox-worker] ponte Inbox→CRM ligada por padrão (por workspace, ver Configurações) — Contact automático a partir de ${MIN_MESSAGES_FOR_AUTO_CRM_CONTACT} mensagens numa conversa direta (origin="${AUTO_CONTACT_ORIGIN}").`);
   } else {
-    console.log("[inbox-worker] INBOX_CRM_AUTO_CONTACT_ENABLED=false — ponte Inbox→CRM desligada, vínculo continua só manual (\"Vincular ao CRM\").");
+    console.log("[inbox-worker] PERSISTENCE_DRIVER != postgres — ponte Inbox→CRM desligada (CRM real sempre vive em Postgres).");
+  }
+  // Cache curto (30s) do WorkspaceSettings.autoContactEnabled por workspace — evita 1 SELECT extra
+  // por mensagem inbound; mesma classe já usada pela API (`InMemoryTtlCache`), primeiro uso dela
+  // no worker.
+  const workspaceAutoContactCache = new InMemoryTtlCache();
+  async function isAutoContactEnabledForWorkspace(workspaceId: string): Promise<boolean> {
+    const cached = workspaceAutoContactCache.get<boolean>(workspaceId);
+    if (cached !== undefined) return cached;
+    const workspace = await repositories.workspaceRepository.getById(workspaceId);
+    // `undefined` (nunca configurado) = ligado, default do produto; só `false` explícito desliga.
+    const enabled = workspace?.settings?.autoContactEnabled !== false;
+    workspaceAutoContactCache.set(workspaceId, enabled, 30_000);
+    return enabled;
   }
 
   // ACHADO AO VIVO (spike Fase 2): sem isto, uma queda do RabbitMQ (`docker stop rabbitmq`)
@@ -753,9 +759,15 @@ async function main(): Promise<void> {
     // Jornada Comercial Integrada, Fase 1 — ponte Inbox→CRM. `contact` só existe pra conversa
     // DIRETA (grupo nunca chega aqui, ver `registerInboundMessage`); best-effort, nunca no caminho
     // crítico do ACK, mesmo padrão de todo o resto deste bloco. `commercialBridgeDeps` é
-    // `undefined` com o opt-in desligado ou em driver memória — a chamada nem acontece nesse caso.
+    // `undefined` só em driver memória; ligada por padrão, mas cada workspace pode desligar em
+    // Configurações — checado aqui (cache de 30s), nunca no boot do processo (decisão passou a
+    // ser por workspace, não mais global).
     if (contact && commercialBridgeDeps) {
-      maybeAutoLinkInboxContactToCrm(commercialBridgeDeps, { tenantId: event.tenantId, workspaceId: event.workspaceId, inboxContact: contact, conversationId: conversation.id })
+      isAutoContactEnabledForWorkspace(event.workspaceId)
+        .then((enabled) => {
+          if (!enabled) return undefined;
+          return maybeAutoLinkInboxContactToCrm(commercialBridgeDeps, { tenantId: event.tenantId, workspaceId: event.workspaceId, inboxContact: contact, conversationId: conversation.id });
+        })
         .then((result) => {
           if (result) publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
         })

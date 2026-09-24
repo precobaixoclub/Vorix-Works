@@ -6,12 +6,13 @@ export function PublicFooter() {
     <footer className="border-t border-border bg-background px-4 py-10 sm:px-6">
       <div className="mx-auto grid max-w-7xl gap-8 md:grid-cols-[minmax(0,1.2fr)_repeat(3,minmax(140px,1fr))]">
         <div>
-          <Logo className="h-10 w-auto text-foreground" />
-          <p className="mt-3 max-w-sm text-sm text-muted-foreground">Marketing, atendimento e vendas conectados por IA.</p>
+          <Logo className="h-12 w-auto text-foreground" />
+          <p className="mt-3 text-sm font-semibold text-foreground">Transforme contexto em ação.</p>
+          <p className="mt-2 max-w-sm text-sm text-muted-foreground">Marketing, atendimento e vendas conectados por IA.</p>
           <p className="mt-4 text-xs text-muted-foreground">© {new Date().getFullYear()} Vorix. Todos os direitos reservados.</p>
         </div>
         <FooterGroup title="Produto" links={[["/", "Visão geral"], ["/pricing", "Preços"], ["/signup", "Criar conta"]]} />
-        <FooterGroup title="Empresa" links={[["mailto:comercial@vorixworks.com", "Contato"]]} />
+        <FooterGroup title="Empresa" links={[["/empresa", "Por que existimos"], ["mailto:comercial@vorixworks.com", "Contato"]]} />
         <FooterGroup title="Legal" links={[["/privacy", "Privacidade"], ["/terms", "Termos"], ["/data-deletion", "Exclusão de dados"]]} />
       </div>
     </footer>

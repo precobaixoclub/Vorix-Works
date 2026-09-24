@@ -1,7 +1,7 @@
 import type { SVGProps } from "react";
 
 /**
- * Marca Vonix — as duas hastes diagonais do topo (o "V") usam a cor de marca fixa
+ * Marca Vorix — as duas hastes diagonais do topo (o "V") usam a cor de marca fixa
  * (`--color-brand`, o lima #ADDB46 do arquivo original); as demais letras herdam `currentColor`
  * para acompanhar `text-ink` automaticamente entre os temas claro/escuro.
  */
@@ -10,7 +10,7 @@ export function Logo({ className, ...props }: SVGProps<SVGSVGElement>) {
     <svg
       viewBox="0 0 272 256"
       role="img"
-      aria-label="Vonix"
+      aria-label="Vorix"
       className={className}
       {...props}
     >

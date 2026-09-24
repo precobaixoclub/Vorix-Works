@@ -32,6 +32,7 @@ export function proxy(request: NextRequest) {
   if (
     pathname.startsWith("/p/") ||
     pathname.startsWith("/product-shots/") ||
+    pathname === "/empresa" ||
     pathname === "/pricing" ||
     pathname === "/privacy" ||
     pathname === "/terms" ||

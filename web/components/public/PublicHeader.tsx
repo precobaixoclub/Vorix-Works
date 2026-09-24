@@ -18,15 +18,15 @@ export function PublicHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-white/10 bg-[#070b12]/90 text-white backdrop-blur-xl">
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" aria-label="Vorix">
-          <Logo className="h-10 w-auto text-white" />
+        <Link href="/" aria-label="Vorix" className="flex items-center">
+          <Logo className="h-12 w-auto text-white sm:h-[52px]" />
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-slate-300 md:flex">
           {LINKS.map((link) => <Link key={link.href} href={link.href} className="hover:text-white">{link.label}</Link>)}
         </nav>
         <div className="hidden items-center gap-2 md:flex">
           <Link href="/login"><Button variant="ghost" className="text-white hover:bg-white/10">Entrar</Button></Link>
-          <Link href="/signup"><Button className="bg-[#addb46] text-[#071009] hover:bg-[#c7f45b]">Criar conta</Button></Link>
+          <Link href="/signup"><Button className="bg-[#addb46] text-[#071009] hover:bg-[#c7f45b]">Testar por 7 dias</Button></Link>
         </div>
         <button type="button" className="flex h-10 w-10 items-center justify-center rounded-md text-white hover:bg-white/10 md:hidden" onClick={() => setOpen((value) => !value)} aria-label="Abrir menu">
           {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -39,7 +39,7 @@ export function PublicHeader() {
           </nav>
           <div className="mt-4 grid gap-2">
             <Link href="/login" onClick={() => setOpen(false)}><Button variant="secondary" className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10">Entrar</Button></Link>
-            <Link href="/signup" onClick={() => setOpen(false)}><Button className="w-full bg-[#addb46] text-[#071009] hover:bg-[#c7f45b]">Criar conta</Button></Link>
+            <Link href="/signup" onClick={() => setOpen(false)}><Button className="w-full bg-[#addb46] text-[#071009] hover:bg-[#c7f45b]">Testar por 7 dias</Button></Link>
           </div>
         </div>
       ) : null}

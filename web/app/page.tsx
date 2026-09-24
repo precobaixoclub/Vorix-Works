@@ -92,14 +92,15 @@ export default async function RootPage() {
       <section className="relative border-b border-white/10 bg-[#080c13]">
         <div className="mx-auto grid max-w-7xl items-center gap-9 px-4 py-14 sm:px-6 sm:py-18 lg:grid-cols-[0.76fr_1.24fr] lg:py-20">
           <div className="max-w-2xl">
-            <p className="inline-flex rounded-full border border-[#addb46]/35 bg-[#addb46]/10 px-3 py-1 text-xs font-medium text-[#d7ff74]">
-              Vorix Intelligence
-            </p>
+            <div className="inline-flex flex-col gap-1">
+              <span className="font-mono text-sm font-semibold uppercase tracking-[0.28em] text-[#d7ff74]">Vorix</span>
+              <span className="text-sm font-medium text-slate-300">Transforme contexto em ação.</span>
+            </div>
             <h1 className="mt-5 text-balance font-display text-4xl font-semibold sm:text-5xl lg:text-6xl">
               Marketing, atendimento e vendas conectados por IA.
             </h1>
             <p className="mt-5 max-w-xl text-balance text-base leading-7 text-slate-300 sm:text-lg">
-              O Vorix conecta conteudo, conversas, CRM e resultados para sua equipe transformar contexto em receita.
+              O Vorix conecta conteudo, conversas, CRM e resultados para sua equipe transformar contexto em ação e ação em receita.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link href="/signup">
@@ -134,6 +135,8 @@ export default async function RootPage() {
           </div>
         </div>
       </section>
+
+      <BrandMissionSection />
 
       <section id="intelligence" className="border-y border-white/10 bg-[#070b12]">
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[0.72fr_1.28fr] lg:py-20">
@@ -203,8 +206,9 @@ export default async function RootPage() {
 
       <section className="border-y border-white/10 bg-[#0b1019]">
         <div className="mx-auto max-w-4xl px-4 py-16 text-center sm:px-6 lg:py-20">
-          <h2 className="font-display text-3xl font-semibold text-white sm:text-4xl">Pronto para conectar sua operacao?</h2>
-          <p className="mx-auto mt-3 max-w-2xl text-slate-300">Marketing, atendimento e vendas trabalhando juntos no mesmo fluxo.</p>
+          <p className="font-mono text-sm font-semibold uppercase tracking-[0.28em] text-[#addb46]">Vorix</p>
+          <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">Crie. Atenda. Venda. Tudo conectado.</h2>
+          <p className="mx-auto mt-3 max-w-2xl text-slate-300">Transforme contexto em ação com marketing, conversas e vendas trabalhando no mesmo fluxo.</p>
           <Link href="/signup">
             <Button className="mt-7 bg-[#addb46] px-6 py-3 text-[#071009] hover:bg-[#c7f45b]">Testar o Vorix por 7 dias</Button>
           </Link>
@@ -249,6 +253,64 @@ type ProductSection = {
     className: string;
   };
 };
+
+function BrandMissionSection() {
+  const flow = ["Criar", "Atender", "Vender"];
+  return (
+    <section className="border-y border-white/10 bg-[#0a0f18]">
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-center lg:py-20">
+        <div>
+          <p className="font-mono text-sm font-semibold uppercase tracking-[0.26em] text-[#addb46]">Por que o Vorix existe</p>
+          <h2 className="mt-4 max-w-2xl font-display text-3xl font-semibold text-white sm:text-4xl">
+            Criar, atender e vender não deveriam acontecer em mundos separados.
+          </h2>
+          <p className="mt-5 max-w-2xl text-base leading-7 text-slate-300">
+            Empresas ainda operam marketing, atendimento e vendas como áreas isoladas. O resultado é perda de contexto, retrabalho e oportunidades esquecidas.
+          </p>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
+            O Vorix nasceu para eliminar essas rupturas: conectar criação, conversas e gestão comercial em uma operação inteligente.
+          </p>
+          <div className="mt-7 flex flex-wrap gap-3">
+            <Link href="#produto">
+              <Button variant="secondary" className="border-white/20 bg-white/5 text-white hover:bg-white/10">
+                Ver o Vorix em ação
+              </Button>
+            </Link>
+            <Link href="/empresa">
+              <Button variant="ghost" className="text-white hover:bg-white/10">Conhecer a missão</Button>
+            </Link>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-[#101827] p-5 shadow-2xl shadow-black/30 sm:p-6">
+          <div className="mb-6">
+            <p className="font-mono text-xs font-semibold uppercase tracking-[0.24em] text-[#d7ff74]">Vorix</p>
+            <p className="mt-2 text-2xl font-semibold text-white">Transforme contexto em ação.</p>
+            <p className="mt-1 text-sm text-slate-400">Transforme ação em resultado.</p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            {flow.map((item, index) => (
+              <div key={item} className="relative rounded-xl border border-white/10 bg-white/[0.04] p-4">
+                {index < flow.length - 1 ? (
+                  <ArrowRight className="absolute -right-5 top-1/2 hidden h-5 w-5 -translate-y-1/2 text-[#addb46] md:block" />
+                ) : null}
+                <p className="font-mono text-xs text-slate-500">0{index + 1}</p>
+                <p className="mt-3 text-xl font-semibold text-white">{item}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-400">{brandFlowCopy(item)}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 rounded-xl border border-[#addb46]/25 bg-[#addb46]/10 p-4">
+            <p className="text-sm font-medium text-[#e6ff9f]">O contexto atravessa a operação.</p>
+            <p className="mt-1 text-sm leading-6 text-slate-300">
+              A conversa carrega o contato. O CRM conhece a conversa. A proposta conhece o negócio. O time decide com menos ruptura.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 type ProductShotName =
   | "command-center"
@@ -419,4 +481,10 @@ function journeyCopy(step: (typeof JOURNEY)[number]) {
   if (step === "Conversar") return "O retorno entra no atendimento com historico.";
   if (step === "Vender") return "Contato vira oportunidade, tarefa e proposta.";
   return "O time acompanha sinais e resultado sem perder contexto.";
+}
+
+function brandFlowCopy(step: string) {
+  if (step === "Criar") return "Marketing gera demanda com identidade e direção.";
+  if (step === "Atender") return "Conversas preservam histórico e intenção.";
+  return "Oportunidades, tarefas e propostas avançam com contexto.";
 }

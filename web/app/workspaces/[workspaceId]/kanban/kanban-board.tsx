@@ -358,16 +358,15 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
       />
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setActiveConversation(undefined)}>
-        {/* Melhoria visual (pedido explícito do usuário: "o Kanban está usando muito pouco da
-           largura disponível... quero que ocupe praticamente toda a largura útil da tela") — grid
-           com `minmax(280px, 1fr)` por coluna, em vez de colunas de largura FIXA (`w-72`) soltas
-           num flex: poucas fases (o caso comum) se espalham proporcionalmente pela tela inteira;
-           se um dia houver fases demais pra caber em 280px cada, o mesmo container cai pra scroll
-           horizontal sozinho (`overflow-x-auto`), sem nenhum código a mais pra isso. */}
-        <div
-          className="grid min-h-0 flex-1 gap-3 overflow-x-auto pb-2"
-          style={{ gridTemplateColumns: `repeat(${phases.length}, minmax(280px, 1fr))` }}
-        >
+        {/* Ajuste de densidade visual (pedido explícito do usuário: "as fases/colunas estão largas
+           demais... o quadro ficou visualmente espalhado") — REVERTE a direção de uma rodada
+           anterior (`minmax(280px, 1fr)`, que esticava cada coluna proporcionalmente pra ocupar
+           toda a largura da tela): poucas fases (o caso comum) ficavam enormes, e o card dentro
+           esticava junto. Agora `flex` com coluna de largura FIXA/semi-fixa (`w-64`, ver
+           `KanbanColumn`) — quadro compacto tipo Trello/CRM operacional, nunca esticado; quando
+           houver fases demais pra caber, o PRÓPRIO board rola horizontalmente (`overflow-x-auto`
+           aqui), sem esticar nada. */}
+        <div className="flex min-h-0 flex-1 gap-2 overflow-x-auto pb-2">
           {phases.map((phase) => (
             <KanbanColumn
               key={phase.id}
@@ -391,7 +390,7 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
            fluxo normal do grid, então nunca empurra/redimensiona as colunas por baixo. */}
         <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
           {activeConversation ? (
-            <div className="w-72 rotate-1 cursor-grabbing rounded-lg border border-primary/40 bg-card px-2.5 py-2 shadow-xl">
+            <div className="w-64 rotate-1 cursor-grabbing rounded-lg border border-primary/40 bg-card px-2 py-1.5 shadow-xl">
               <KanbanCardBody conversation={activeConversation} serviceTime={serviceTimeByConversation.get(activeConversation.id)} />
             </div>
           ) : null}
@@ -495,14 +494,18 @@ function KanbanColumn({
         // inteira desce"; depois do `overflow-hidden` da página, os cards excedentes ficavam
         // CORTADOS/invisíveis — pior ainda). Com `min-h-0`, a coluna respeita a altura da trilha e
         // só o `overflow-y-auto` do conteúdo (abaixo) rola.
-        "flex h-full min-h-0 min-w-0 flex-col rounded-xl border border-border bg-surface-sunken/60 transition-colors",
+        // `w-64 shrink-0` (pedido explícito do usuário: "largura fixa ou semi-fixa... coluna não
+        // deve ocupar largura excessiva quando tiver pouco conteúdo") — mesma largura pro
+        // `DragOverlay` (ver `KanbanBoard`), pra o clone que segue o cursor não parecer maior/menor
+        // que a coluna de origem.
+        "flex h-full w-64 min-h-0 shrink-0 flex-col rounded-xl border border-border bg-surface-sunken/60 transition-colors",
         isOver && "border-primary/60 bg-primary/5",
       )}
     >
-      <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 px-2.5 py-2">
         <div className="flex min-w-0 items-center gap-1.5">
           <span className={cn("h-2 w-2 shrink-0 rounded-full", phase.phaseType === "PAUSED" ? "bg-amber-500" : "bg-emerald-500")} />
-          <p className="truncate text-sm font-semibold text-foreground">{phase.name}</p>
+          <p className="truncate text-[13px] font-semibold text-foreground">{phase.name}</p>
         </div>
         {conversations.length !== rawTotal ? (
           // Contagem reflete o FILTRO, nunca o total bruto (seção 11 do pedido) — o tooltip só
@@ -519,7 +522,7 @@ function KanbanColumn({
           <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">{conversations.length}</span>
         )}
       </div>
-      <div className="flex-1 space-y-1.5 overflow-y-auto p-1.5">
+      <div className="flex-1 space-y-1 overflow-y-auto p-1.5">
         {conversations.length === 0 ? (
           // Empty state discreto (pedido explícito do usuário: "hoje colunas vazias viram grandes
           // blocos sem conteúdo") — uma linha de texto simples, sem caixa/borda própria. Texto muda
@@ -599,7 +602,7 @@ function KanbanCard({
         }
       }}
       className={cn(
-        "relative rounded-lg border border-border/60 bg-card px-2.5 py-2 text-left shadow-sm transition-colors hover:border-primary/30 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "relative rounded-lg border border-border/60 bg-card px-2 py-1.5 text-left shadow-sm transition-colors hover:border-primary/30 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         canOperate ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-pointer",
         // Discretamente transparente, mas PARADA no lugar (pedido explícito do usuário, seção 2:
         // "não deixar card simplesmente desaparecer") — quem se move é o `DragOverlay` no board.
@@ -646,7 +649,7 @@ function KanbanCardBody({
     <>
       {conversation.isPinned ? <Pin className="absolute right-1.5 top-1.5 h-3 w-3 text-primary" aria-label="Fixado" /> : null}
       <div className="flex items-center justify-between gap-2">
-        <p className={cn("min-w-0 truncate text-sm text-foreground", conversation.unreadCount > 0 ? "font-semibold" : "font-medium")}>
+        <p className={cn("min-w-0 truncate text-[13px] text-foreground", conversation.unreadCount > 0 ? "font-semibold" : "font-medium")}>
           {conversationTitle(conversation)}
         </p>
         <div className="flex shrink-0 items-center gap-0.5" data-no-dnd={actions ? "true" : undefined}>
@@ -663,8 +666,8 @@ function KanbanCardBody({
           </span>
         ) : null}
       </div>
-      <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
-      <div className="mt-1 flex items-center justify-between gap-2">
+      <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
+      <div className="mt-0.5 flex items-center justify-between gap-2">
         <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
           <StatusDot status={conversation.status} />
           {statusLabelFor(conversation.status)}

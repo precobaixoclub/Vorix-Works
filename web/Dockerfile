@@ -23,8 +23,7 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
-# Sem web/public ainda (nenhum arquivo estático hoje) — quando existir, adicionar:
-#   COPY --from=build /app/public ./public
+COPY --from=build /app/public ./public
 
 EXPOSE 3001
 ENV PORT=3001

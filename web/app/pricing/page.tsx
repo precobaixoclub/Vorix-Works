@@ -4,7 +4,7 @@ import { PlanSelectLink } from "@/components/PlanSelectLink";
 import { PublicFooter } from "@/components/public/PublicFooter";
 import { PublicHeader } from "@/components/public/PublicHeader";
 import { TrackPageView } from "@/components/TrackPageView";
-import { fetchPublicCatalog, formatCapacityLine, formatCreditsQuota, formatPlanPrice, type PublicCapacityAddon, type PublicPlan } from "@/features/platform-plans/api";
+import { fetchPublicCatalog, formatCapacityLine, formatCreditsQuota, formatPlanPrice, getPublicPlanTagline, type PublicCapacityAddon, type PublicPlan } from "@/features/platform-plans/api";
 
 export const revalidate = 300;
 
@@ -74,7 +74,7 @@ function PlanCard({ plan }: { plan: PublicPlan }) {
     <div className={`flex flex-col rounded-xl border p-6 ${plan.highlighted ? "border-primary bg-primary/10 shadow-lg" : "border-border bg-card"}`}>
       {plan.highlighted ? <span className="mb-3 w-fit rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">Recomendado</span> : null}
       <h2 className="text-lg font-semibold">{plan.name}</h2>
-      <p className="mt-1 min-h-10 text-sm text-muted-foreground">{plan.tagline}</p>
+      <p className="mt-1 min-h-10 text-sm text-muted-foreground">{getPublicPlanTagline(plan)}</p>
       <p className="mt-5 text-3xl font-semibold tracking-tight">{formatPlanPrice(plan)}<span className="text-sm font-normal text-muted-foreground">/mês</span></p>
       <ul className="mt-4 flex flex-1 flex-col gap-2 text-sm text-muted-foreground">
         <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />{formatCapacityLine(plan)}</li>

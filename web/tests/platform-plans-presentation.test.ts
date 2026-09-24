@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCapacityLine, formatPlanPrice } from "../features/platform-plans/api";
+import { formatCapacityLine, formatPlanPrice, getPublicPlanTagline } from "../features/platform-plans/api";
 import type { PublicPlan } from "../features/platform-plans/api";
 
 /** Pricing/Capacity Etapa B — formatação BRL e linha de capacidade (nunca calcula preço/plano,
@@ -40,5 +40,13 @@ describe("formatCapacityLine", () => {
 
   it("trata null como ilimitado, nunca mostra 'null' cru", () => {
     expect(formatCapacityLine({ includedUsers: null, includedWhatsappConnections: null })).toBe("usuários ilimitados · números ilimitados");
+  });
+});
+
+describe("getPublicPlanTagline", () => {
+  it("descreve os planos pelo estágio da operação, sem restringir por nicho", () => {
+    expect(getPublicPlanTagline({ code: "START", tagline: "tag antiga" })).toBe("Para pequenas operações começarem com tudo conectado.");
+    expect(getPublicPlanTagline({ code: "PRO", tagline: "tag antiga" })).toBe("Para equipes que já operam marketing, atendimento e vendas.");
+    expect(getPublicPlanTagline({ code: "BUSINESS", tagline: "tag antiga" })).toBe("Para operações maiores que precisam de mais equipe, canais e capacidade.");
   });
 });

@@ -8,7 +8,7 @@ import { Logo } from "@/components/Logo";
 
 const LINKS = [
   { href: "/#produto", label: "Produto" },
-  { href: "/#intelligence", label: "Intelligence" },
+  { href: "/#resultados", label: "Resultados" },
   { href: "/pricing", label: "Preços" },
 ];
 
@@ -19,7 +19,7 @@ export function PublicHeader() {
     <header className="sticky top-0 z-40 border-b border-white/10 bg-[#070b12]/90 text-white backdrop-blur-xl">
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link href="/" aria-label="Vorix" className="flex items-center">
-          <Logo className="h-12 w-auto text-white sm:h-[52px]" />
+          <Logo className="h-14 w-auto text-white sm:h-16" />
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-slate-300 md:flex">
           {LINKS.map((link) => <Link key={link.href} href={link.href} className="hover:text-white">{link.label}</Link>)}

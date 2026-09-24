@@ -6,7 +6,7 @@ import { PlanSelectLink } from "@/components/PlanSelectLink";
 import { PublicFooter } from "@/components/public/PublicFooter";
 import { PublicHeader } from "@/components/public/PublicHeader";
 import { TrackPageView } from "@/components/TrackPageView";
-import { fetchPublicPlans, formatCapacityLine, formatPlanPrice, type PublicPlan } from "@/features/platform-plans/api";
+import { fetchPublicPlans, formatCapacityLine, formatPlanPrice, getPublicPlanTagline, type PublicPlan } from "@/features/platform-plans/api";
 import { cn } from "@/lib/utils";
 
 export const revalidate = 300;
@@ -122,10 +122,10 @@ export default async function RootPage() {
       <section id="produto" className="bg-[#0b1019]">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:py-20">
           <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase text-[#addb46]">Produto real</p>
-            <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">O Vorix conecta toda a sua operacao.</h2>
+            <p className="text-sm font-semibold uppercase text-[#addb46]">Veja o Vorix em operação</p>
+            <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">O Vorix conecta toda a sua operação.</h2>
             <p className="mt-3 text-base leading-7 text-slate-300">
-              As telas abaixo sao capturas da interface real do Vorix com dados ficticios controlados.
+              Marketing, conversas e vendas trabalhando no mesmo fluxo.
             </p>
           </div>
           <div className="mt-10 space-y-14">
@@ -138,16 +138,16 @@ export default async function RootPage() {
 
       <BrandMissionSection />
 
-      <section id="intelligence" className="border-y border-white/10 bg-[#070b12]">
+      <section id="resultados" className="border-y border-white/10 bg-[#070b12]">
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[0.72fr_1.28fr] lg:py-20">
           <div>
-            <p className="text-sm font-semibold uppercase text-[#addb46]">Intelligence</p>
+            <p className="text-sm font-semibold uppercase text-[#addb46]">Resultados</p>
             <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">Sinais uteis, no ritmo da operacao.</h2>
             <p className="mt-4 text-slate-300">
               O Command Center e Resultados destacam oportunidades e riscos operacionais no contexto certo: conversa, tarefa, proposta ou pipeline.
             </p>
           </div>
-          <ProductBrowserFrame label="Resultados / Intelligence" className="shadow-2xl shadow-black/35">
+          <ProductBrowserFrame label="Resultados" className="shadow-2xl shadow-black/35">
             <ProductShot
               name="resultados"
               alt="Tela real de Resultados do Vorix com metricas de marketing, atendimento, receita e alerta de analytics"
@@ -331,7 +331,7 @@ function HeroProductVisual() {
         <ProductBrowserFrame label="Command Center" priority>
           <ProductShot
             name="command-center"
-            alt="Tela real da Home do Vorix com Command Center, KPIs e Vorix Intelligence"
+            alt="Tela real da Home do Vorix com Command Center, KPIs e resultados"
             width={1280}
             widths={[960, 1280]}
             className="h-full w-full object-cover"
@@ -468,6 +468,7 @@ function PlanSummary({ plan }: { plan: PublicPlan }) {
         <span className="text-sm font-normal text-slate-500">/mes</span>
       </p>
       <p className="mt-3 text-sm text-slate-600">{formatCapacityLine(plan)}</p>
+      <p className="mt-2 text-sm text-slate-600">{getPublicPlanTagline(plan)}</p>
       <PlanSelectLink planCode={plan.code} className="mt-5" variant={plan.highlighted ? "primary" : "secondary"}>
         Testar {plan.name}
       </PlanSelectLink>

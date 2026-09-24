@@ -58,11 +58,17 @@ services:
       # ao container, mesmo com a variável definida — achado ao vivo durante a homologação
       # operacional (TRIAL_ENABLED setado em .env.zuno, mas o processo continuava vendo `undefined`
       # até esta linha existir). TRIAL_ENABLED é seguro (startTrial nunca chama o gateway de
-      # pagamento); BILLING_PROVIDER_ENABLED/STRIPE_* só devem ir para `true`/preenchidos depois de
-      # Stripe Test Mode homologado (ver docs/vorix-billing-operational-homologation.md).
+      # pagamento); BILLING_PROVIDER_ENABLED/BILLING_PROVIDER/STRIPE_* só devem ir para
+      # `true`/`mercadopago`/preenchidos depois do provider homologado (ver
+      # docs/vorix-billing-operational-homologation.md /
+      # docs/vorix-billing-mercadopago-implementation.md). BILLING_PROVIDER faltava aqui até
+      # 2026-09-24 — mesmo achado do CREATIVE_ENGINE: sem esta linha, `.env.zuno` sozinho nunca
+      # chega ao container, então `BILLING_PROVIDER=mercadopago` era ignorado e a seleção caía
+      # sempre para "stripe" (com BILLING_PROVIDER_ENABLED=true) ou "sandbox" (com false).
       TRIAL_ENABLED: "${TRIAL_ENABLED:-false}"
       TRIAL_EXPIRATION_CHECK_INTERVAL_MS: "${TRIAL_EXPIRATION_CHECK_INTERVAL_MS:-3600000}"
       BILLING_PROVIDER_ENABLED: "${BILLING_PROVIDER_ENABLED:-false}"
+      BILLING_PROVIDER: "${BILLING_PROVIDER:-sandbox}"
       STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
       STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
       # Docker Compose não confiavelmente resolve `${VAR:-${OUTRA_VAR}}` aninhado — default literal

@@ -90,6 +90,11 @@ export class WuzApiMessagingProvider implements MessagingProvider {
     return this.toSendResult(result);
   }
 
+  async sendContact(input: { externalSessionId: string; to: string; name: string; vcard: string }): Promise<MessagingSendResult> {
+    const result = await this.client.sendContact(input.externalSessionId, { phone: input.to, name: input.name, vcard: input.vcard });
+    return this.toSendResult(result);
+  }
+
   async downloadMedia(input: {
     externalSessionId: string;
     type: "image" | "audio" | "video" | "document";

@@ -109,6 +109,10 @@ export class InstagramMessagingProvider implements MessagingProvider {
     throw new MessagingProviderError("permanent", "Envio de documento ainda não suportado no canal Instagram.");
   }
 
+  async sendContact(): Promise<MessagingSendResult> {
+    throw new MessagingProviderError("permanent", "Envio de contato ainda não suportado no canal Instagram.");
+  }
+
   // downloadMedia / getGroupInfo / getProfilePicture / sendReaction / revokeMessage deliberadamente
   // OMITIDOS (métodos opcionais do port) — Instagram DM não tem grupo, mídia inbound e reação/
   // revogação via API ficam fora de escopo desta rodada; os chamadores já tratam a ausência como

@@ -23,6 +23,13 @@ export type InboxContactRepositoryPort = {
   upsertByPhone(input: UpsertInboxContactInput): Promise<InboxContact>;
   getById(id: string): Promise<InboxContact | undefined>;
   findByPhone(input: { tenantId: string; workspaceId: string; phoneNormalized: string }): Promise<InboxContact | undefined>;
+  /** Bloco "enviar contato salvo" (pedido explícito do usuário: "selecionar um dos contatos salvos
+   * no sistema para estar enviando") — busca por nome/telefone (case-insensitive, substring) entre
+   * os contatos de WhatsApp já conhecidos no workspace (cada um tem `phoneNormalized` garantido,
+   * ao contrário do `Contact` do CRM — ver `sendInboxContactCardMessage`). `query` vazio/ausente
+   * devolve os mais recentes primeiro, até `limit` (default 20). Nunca devolve um contato já
+   * fundido (`mergeStatus`), mesmo racional de `findByPhone`. */
+  search(input: { tenantId: string; workspaceId: string; query?: string; limit?: number }): Promise<InboxContact[]>;
   /** Foto de perfil (pedido explícito do usuário em produção) — gravada separadamente do upsert
    * principal porque é preenchida de forma assíncrona/best-effort (ver `syncContactProfilePicture`,
    * `inbox-use-cases.ts`), nunca no caminho crítico do ack de uma mensagem. */

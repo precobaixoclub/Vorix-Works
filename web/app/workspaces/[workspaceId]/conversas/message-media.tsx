@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type React from "react";
-import { ChevronLeft, ChevronRight, FileText, Pause, Play, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Pause, Play, UserRound, X } from "lucide-react";
 import { Button } from "@/components/Button";
 import { Spinner } from "@/components/Spinner";
 import { getApiBaseUrl } from "@/lib/api-error";
@@ -92,7 +92,32 @@ function MediaFallback({ type, retry, isOutbound }: { type: InboxMessage["type"]
   );
 }
 
+/** Bloco "enviar/receber contato" (pedido explícito do usuário: "quando eu receber ou enviar um
+ * contato carregar corretamente"). Nunca tem `mediaStorageRef` (um contato não é mídia baixada) —
+ * o nome/telefone já vêm prontos em `message.metadata` (ver `extractContactFields`,
+ * `sendInboxContactCardMessage`), então renderiza direto, sem token/proxy nenhum. Achado real
+ * corrigido: antes desta correção `MessageMedia` caía sempre no ramo `!mediaStorageRef` pra
+ * qualquer contato (inbound ou outbound), mostrando permanentemente "Não foi possível carregar
+ * este contato." mesmo com o nome/telefone já salvos. */
+function ContactCardMedia({ message }: { message: InboxMessage }) {
+  const name = message.metadata?.contactName;
+  const phone = message.metadata?.contactPhone;
+  if (!name && !phone) return <MediaFallback type="contact" isOutbound={message.direction === "outbound"} />;
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg bg-black/5 px-3 py-2 dark:bg-white/5">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/10 dark:bg-white/10">
+        <UserRound className="h-4 w-4" />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium">{name || phone}</span>
+        {name && phone ? <span className="block truncate text-xs opacity-70">{phone}</span> : null}
+      </span>
+    </div>
+  );
+}
+
 export function MessageMedia({ workspaceId, message, onOpen }: { workspaceId: string; message: InboxMessage; onOpen: () => void }) {
+  if (message.type === "contact") return <ContactCardMedia message={message} />;
   if (!message.mediaStorageRef) {
     // Mídia ainda não foi baixada (best-effort/assíncrono — pode chegar em instantes) ou nunca
     // será (download falhou/não configurado). Mesmo rótulo nos dois casos: não dá para o

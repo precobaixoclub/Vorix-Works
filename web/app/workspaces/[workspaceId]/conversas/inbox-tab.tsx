@@ -29,6 +29,7 @@ import {
   Tag,
   Trash2,
   UserCheck,
+  UserRound,
   Video,
   Volume2,
   X,
@@ -45,6 +46,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/auth-context";
+import { useDebounce } from "@/hooks/useDebounce";
 import { cn } from "@/lib/utils";
 import { canManageTenant, canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
 import {
@@ -60,6 +62,8 @@ import {
   reactToInboxMessage,
   removeTagFromConversation,
   reopenInboxConversation,
+  searchInboxContacts,
+  sendInboxContactMessage,
   sendInboxMediaMessage,
   sendInboxMessage,
   setInboxConversationAiEnabled,
@@ -1324,6 +1328,11 @@ export function ConversationTimelinePane({
   // `sending`/`sendError` do texto — são caminhos independentes que podem estar em voo ao mesmo tempo).
   const [attaching, setAttaching] = useState(false);
   const [attachError, setAttachError] = useState<string | undefined>();
+  // Bloco "enviar contato salvo" (pedido explícito do usuário: "criar uma opção para eu clicar e
+  // conseguir selecionar um dos contatos salvos no sistema para estar enviando") — mesmo caminho
+  // de `attaching`/`attachError` acima, estado próprio (independe do texto/anexo, pode estar em
+  // voo ao mesmo tempo).
+  const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const documentInputRef = useRef<HTMLInputElement | null>(null);
@@ -1449,6 +1458,22 @@ export function ConversationTimelinePane({
       textareaRef.current?.focus();
     } catch (cause) {
       setAttachError(cause instanceof Error ? cause.message : "Não foi possível enviar o áudio.");
+    } finally {
+      setAttaching(false);
+    }
+  }
+
+  async function handleSendContact(contact: { name?: string; phoneNormalized: string }) {
+    if (!canOperate) return;
+    setContactPickerOpen(false);
+    setAttaching(true);
+    setAttachError(undefined);
+    try {
+      await sendInboxContactMessage(workspaceId, conversation.id, { contactName: contact.name || contact.phoneNormalized, contactPhone: contact.phoneNormalized });
+      await refreshThread();
+      textareaRef.current?.focus();
+    } catch (cause) {
+      setAttachError(cause instanceof Error ? cause.message : "Não foi possível enviar o contato.");
     } finally {
       setAttaching(false);
     }
@@ -1687,6 +1712,14 @@ export function ConversationTimelinePane({
                   <FileText className="h-4 w-4 text-muted-foreground" />
                   Documento
                 </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+                  onClick={() => setContactPickerOpen(true)}
+                >
+                  <UserRound className="h-4 w-4 text-muted-foreground" />
+                  Contato
+                </button>
               </PopoverContent>
             </Popover>
             <EmojiPickerButton disabled={!canOperate} onSelect={insertEmoji} />
@@ -1739,6 +1772,10 @@ export function ConversationTimelinePane({
           isGroup={conversation.chatType === "group"}
           onClose={() => setOpenMediaMessageId(undefined)}
         />
+      ) : null}
+
+      {contactPickerOpen ? (
+        <ContactPickerModal workspaceId={workspaceId} onClose={() => setContactPickerOpen(false)} onSelect={handleSendContact} />
       ) : null}
     </div>
   );
@@ -2094,6 +2131,86 @@ function VoiceRecorderButton({ disabled, onSend }: { disabled: boolean; onSend: 
   );
 }
 
+/** Bloco "enviar contato salvo" (pedido explícito do usuário: "criar uma opção para eu clicar e
+ * conseguir selecionar um dos contatos salvos no sistema para estar enviando... pois hoje temos a
+ * aba de contatos") — busca contra `inbox_contacts` (contatos de WhatsApp já conhecidos no
+ * workspace, cada um com telefone garantido), não contra o CRM (`Contact` não tem telefone
+ * resolvido sem um join extra que não existe hoje — ver `InboxContactRepositoryPort.search`).
+ * Mesmo padrão de busca-com-debounce já usado em `contacts/page.tsx`/`campaigns/page.tsx`. */
+function ContactPickerModal({
+  workspaceId,
+  onClose,
+  onSelect,
+}: {
+  workspaceId: string;
+  onClose: () => void;
+  onSelect: (contact: { name?: string; phoneNormalized: string }) => void | Promise<void>;
+}) {
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
+  const [contacts, setContacts] = useState<{ id: string; name?: string; phoneNormalized: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | undefined>();
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(undefined);
+    searchInboxContacts(workspaceId, debouncedSearch)
+      .then((result) => {
+        if (!cancelled) setContacts(result);
+      })
+      .catch((cause) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Não foi possível buscar os contatos.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, debouncedSearch]);
+
+  return (
+    <Modal title="Enviar contato" onClose={onClose}>
+      <div className="space-y-3">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input autoFocus placeholder="Buscar por nome ou telefone..." className="pl-8" value={search} onChange={(event) => setSearch(event.target.value)} />
+        </div>
+        <div className="max-h-80 space-y-0.5 overflow-y-auto">
+          {loading ? (
+            <p className="px-2 py-6 text-center text-sm text-muted-foreground">Buscando...</p>
+          ) : error ? (
+            <p className="px-2 py-6 text-center text-sm text-destructive">{error}</p>
+          ) : contacts.length === 0 ? (
+            <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+              {search.trim() ? "Nenhum contato encontrado." : "Nenhum contato salvo ainda — converse com alguém no WhatsApp primeiro."}
+            </p>
+          ) : (
+            contacts.map((contact) => (
+              <button
+                key={contact.id}
+                type="button"
+                className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+                onClick={() => void onSelect(contact)}
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <UserRound className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-foreground">{contact.name || contact.phoneNormalized}</span>
+                  {contact.name ? <span className="block truncate text-xs text-muted-foreground">{contact.phoneNormalized}</span> : null}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function describeRecorderError(cause: unknown): string {
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
     return "Seu navegador não suporta gravação de áudio.";
@@ -2160,8 +2277,11 @@ function MessageBubble({
 }) {
   const isOutbound = message.direction === "outbound";
   const senderLabel = messageSenderLabel(message, isGroup);
-  const body = message.body?.trim();
-  const isMedia = message.type === "image" || message.type === "video" || message.type === "audio" || message.type === "document";
+  // Contato usa `body` só como fallback pra quem lê só texto (preview de lista/notificação) — o
+  // cartão renderizado de verdade (`ContactCardMedia`) já mostra o nome, então nunca repete como
+  // parágrafo separado embaixo (mesmo nome duas vezes na mesma bolha).
+  const body = message.type === "contact" ? undefined : message.body?.trim();
+  const isMedia = message.type === "image" || message.type === "video" || message.type === "audio" || message.type === "document" || message.type === "contact";
   const failed = isOutbound && message.status === "failed";
 
   // Bloco "resposta citada" (pedido explícito do usuário: "quando alguem responde uma mensagem não

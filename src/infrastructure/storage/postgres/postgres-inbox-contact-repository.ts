@@ -88,6 +88,26 @@ export class PostgresInboxContactRepository implements InboxContactRepositoryPor
     return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
   }
 
+  async search(input: { tenantId: string; workspaceId: string; query?: string; limit?: number }): Promise<InboxContact[]> {
+    const limit = Math.min(Math.max(input.limit ?? 20, 1), 50);
+    const query = input.query?.trim();
+    if (!query) {
+      const result = await this.pool.query<Row>(
+        "select * from inbox_contacts where tenant_id = $1 and workspace_id = $2 and merge_status is null order by updated_at desc limit $3",
+        [input.tenantId, input.workspaceId, limit],
+      );
+      return result.rows.map((row) => this.toDomain(row));
+    }
+    const result = await this.pool.query<Row>(
+      `select * from inbox_contacts
+       where tenant_id = $1 and workspace_id = $2 and merge_status is null
+         and (name ilike $3 or phone_normalized ilike $3)
+       order by updated_at desc limit $4`,
+      [input.tenantId, input.workspaceId, `%${query}%`, limit],
+    );
+    return result.rows.map((row) => this.toDomain(row));
+  }
+
   async updateProfilePicture(id: string, input: { storageRef: InboxMediaStorageRef; syncedAt: string }): Promise<void> {
     await this.pool.query(
       "update inbox_contacts set profile_picture_storage_ref = $2, profile_picture_synced_at = $3, updated_at = now() where id = $1",

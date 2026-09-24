@@ -57,6 +57,10 @@ export class FakeMessagingProvider implements MessagingProvider {
     return { externalMessageId: `fake-${++this.sequence}` };
   }
 
+  async sendContact(): Promise<MessagingSendResult> {
+    return { externalMessageId: `fake-${++this.sequence}` };
+  }
+
   async sendReaction(input: { to: string; externalMessageId: string; emoji: string; fromMe: boolean; participantJid?: string }): Promise<void> {
     this.sentReactions.push({ to: input.to, externalMessageId: input.externalMessageId, emoji: input.emoji, fromMe: input.fromMe, participantJid: input.participantJid });
   }

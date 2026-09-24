@@ -87,6 +87,10 @@ export type MessagingProvider = {
   sendAudio(input: { externalSessionId: string; to: string; mediaUrl: string }): Promise<MessagingSendResult>;
   sendVideo(input: { externalSessionId: string; to: string; mediaUrl: string; caption?: string }): Promise<MessagingSendResult>;
   sendDocument(input: { externalSessionId: string; to: string; mediaUrl: string; fileName: string }): Promise<MessagingSendResult>;
+  /** Bloco "enviar contato salvo" (pedido explícito do usuário em produção) — compartilha um cartão
+   * de contato (vCard) na conversa, mesmo recurso do anexo "Contato" do WhatsApp nativo. `vcard` já
+   * vem pronto (montado pelo caso de uso a partir de nome/telefone) — o provider só repassa. */
+  sendContact(input: { externalSessionId: string; to: string; name: string; vcard: string }): Promise<MessagingSendResult>;
 
   /**
    * Redesign operacional (mídia real) — baixa e descriptografa mídia RECEBIDA a partir das

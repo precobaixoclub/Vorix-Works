@@ -87,6 +87,37 @@ test("mapWuzApiEvent: documentMessage extrai fileName", () => {
   assert.equal(mapped.mimeType, "application/pdf");
 });
 
+test("mapWuzApiEvent: contactMessage extrai displayName/vcard, telefone resolvido via waid (bug real corrigido: contato chegava sem nenhum campo)", () => {
+  const mapped = mapWuzApiEvent(rawEvent({
+    contactMessage: {
+      displayName: "Fornecedor Principal",
+      vcard: "BEGIN:VCARD\nVERSION:3.0\nN:;Fornecedor Principal;;;\nFN:Fornecedor Principal\nTEL;type=CELL;waid=5511988887777:+55 11 98888-7777\nEND:VCARD",
+    },
+  }));
+
+  assert.equal(mapped.messageType, "contact");
+  assert.equal(mapped.contactName, "Fornecedor Principal");
+  assert.equal(mapped.contactPhoneE164, "+5511988887777", "resolvido a partir de waid=, nunca do texto formatado após os dois-pontos");
+  assert.ok(mapped.contactVcard.includes("BEGIN:VCARD"));
+  assert.equal(mapped.body, "Fornecedor Principal", "nome vira fallback de body — nunca bolha vazia em quem só lê body");
+});
+
+test("mapWuzApiEvent: contactMessage sem waid (contato salvo só com telefone fixo) cai pro valor cru após os dois-pontos", () => {
+  const mapped = mapWuzApiEvent(rawEvent({
+    contactMessage: { displayName: "Escritório", vcard: "BEGIN:VCARD\nVERSION:3.0\nFN:Escritório\nTEL;type=WORK:+55 11 3333-4444\nEND:VCARD" },
+  }));
+
+  assert.equal(mapped.contactPhoneE164, "+551133334444");
+});
+
+test("mapWuzApiEvent: contactMessage sem vcard nenhum não lança — degrada com telefone ausente", () => {
+  const mapped = mapWuzApiEvent(rawEvent({ contactMessage: { displayName: "Sem vCard" } }));
+
+  assert.equal(mapped.messageType, "contact");
+  assert.equal(mapped.contactName, "Sem vCard");
+  assert.equal(mapped.contactPhoneE164, undefined);
+});
+
 test("mapWuzApiEvent: mensagem de texto simples (conversation) nunca preenche campos de mídia", () => {
   const mapped = mapWuzApiEvent(rawEvent({ conversation: "Oi, tudo bem?" }));
   assert.equal(mapped.messageType, "text");

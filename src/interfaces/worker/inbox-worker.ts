@@ -717,6 +717,9 @@ async function main(): Promise<void> {
       quotedBody: event.quotedBody,
       quotedType: event.quotedType,
       mentionedJids: event.mentionedJids,
+      contactName: event.contactName,
+      contactVcard: event.contactVcard,
+      contactPhoneE164: event.contactPhoneE164,
       occurredAt: event.occurredAt,
     });
     publishRealtimeNotification(channel, { type: "message.created", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });

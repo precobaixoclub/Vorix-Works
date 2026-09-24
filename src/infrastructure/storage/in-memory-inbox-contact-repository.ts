@@ -62,6 +62,16 @@ export class InMemoryInboxContactRepository implements InboxContactRepositoryPor
     );
   }
 
+  async search(input: { tenantId: string; workspaceId: string; query?: string; limit?: number }): Promise<InboxContact[]> {
+    const limit = Math.min(Math.max(input.limit ?? 20, 1), 50);
+    const query = input.query?.trim().toLowerCase();
+    const matches = [...this.rows.values()]
+      .filter((row) => row.tenantId === input.tenantId && row.workspaceId === input.workspaceId && !row.mergeStatus)
+      .filter((row) => !query || row.name?.toLowerCase().includes(query) || row.phoneNormalized.toLowerCase().includes(query))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return matches.slice(0, limit);
+  }
+
   async updateProfilePicture(id: string, input: { storageRef: InboxMediaStorageRef; syncedAt: string }): Promise<void> {
     const existing = this.rows.get(id);
     if (!existing) return;

@@ -201,8 +201,18 @@ export type InboxMessageStatus = "queued" | "sending" | "sent" | "delivered" | "
 export type InboxMediaStorageRef = { provider: string; bucket?: string; objectKey: string };
 
 /** Metadados auxiliares de exibição (`InboxMediaMetadata` no backend) — presentes só quando a
- * mídia já foi baixada e enriquecida (ver `downloadInboundMediaAndAttach`). */
-export type InboxMediaMetadata = { fileName?: string; fileSizeBytes?: number; durationSeconds?: number; thumbnailDataUrl?: string };
+ * mídia já foi baixada e enriquecida (ver `downloadInboundMediaAndAttach`). `contactName`/
+ * `contactPhone`/`vcard` (bloco "enviar/receber contato") são a mesma convenção jsonb, só
+ * preenchidos quando `InboxMessage.type === "contact"` — ver `extractContactFields` no mapper. */
+export type InboxMediaMetadata = {
+  fileName?: string;
+  fileSizeBytes?: number;
+  durationSeconds?: number;
+  thumbnailDataUrl?: string;
+  contactName?: string;
+  contactPhone?: string;
+  vcard?: string;
+};
 
 /** Bloco "reações" (pedido explícito do usuário: "ajuste tambem para quando alguem reagir a uma
  * mensagem") — espelha `InboxMessageReaction` do backend. Uma entrada por `reactorId` (a última

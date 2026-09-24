@@ -168,6 +168,22 @@ export function sendInboxMediaMessage(workspaceId: string, conversationId: strin
   return apiClient.upload<InboxMessage>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/media`, formData);
 }
 
+/** Bloco "enviar contato salvo" (pedido explícito do usuário: "criar uma opção para eu clicar e
+ * conseguir selecionar um dos contatos salvos no sistema para estar enviando") — lista os contatos
+ * de WhatsApp já conhecidos neste workspace (cada um com telefone garantido), pro picker do
+ * composer. `search` vazio devolve os mais recentes. */
+export function searchInboxContacts(workspaceId: string, search?: string): Promise<{ id: string; name?: string; phoneNormalized: string }[]> {
+  const query = new URLSearchParams({ workspaceId });
+  if (search?.trim()) query.set("search", search.trim());
+  return apiClient.get<{ id: string; name?: string; phoneNormalized: string }[]>(`/v1/inbox/contacts?${query.toString()}`);
+}
+
+/** Envia um cartão de contato (vCard) na conversa — mesmo recurso do anexo "Contato" do WhatsApp
+ * nativo. `contactPhone` aceita qualquer formatação (o backend normaliza). */
+export function sendInboxContactMessage(workspaceId: string, conversationId: string, contact: { contactName: string; contactPhone: string }): Promise<InboxMessage> {
+  return apiClient.post<InboxMessage>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/contact`, { workspaceId, ...contact });
+}
+
 /** Fase 5 — membros do tenant atual, para o seletor de transferência (substitui o campo manual de
  * userId da Fase 4). Sempre escopado pelo tenant do principal autenticado no backend — nunca por
  * um parâmetro vindo daqui. */

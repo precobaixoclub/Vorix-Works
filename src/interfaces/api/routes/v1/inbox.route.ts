@@ -46,6 +46,7 @@ import {
   removeTagFromConversation,
   reopenConversation,
   reorderKanbanPhases,
+  sendInboxContactCardMessage,
   sendInboxMediaMessage,
   sendInboxMessage,
   setAiConversationEnabled,
@@ -93,6 +94,20 @@ const ADD_TAG_BODY_SCHEMA = { type: "object", required: ["workspaceId", "tagId"]
 const TRANSFER_BODY_SCHEMA = { type: "object", required: ["workspaceId", "toUserId"], properties: { workspaceId: { type: "string", minLength: 1 }, toUserId: { type: "string", minLength: 1 } } } as const;
 const AI_ENABLED_BODY_SCHEMA = { type: "object", required: ["workspaceId", "aiEnabled"], properties: { workspaceId: { type: "string", minLength: 1 }, aiEnabled: { type: "boolean" } } } as const;
 const URGENT_BODY_SCHEMA = { type: "object", required: ["workspaceId", "isUrgent"], properties: { workspaceId: { type: "string", minLength: 1 }, isUrgent: { type: "boolean" } } } as const;
+const SEND_CONTACT_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId", "contactName", "contactPhone"],
+  properties: {
+    workspaceId: { type: "string", minLength: 1 },
+    contactName: { type: "string", minLength: 1 },
+    contactPhone: { type: "string", minLength: 1 },
+  },
+} as const;
+const CONTACTS_SEARCH_QUERYSTRING_SCHEMA = {
+  type: "object",
+  required: ["workspaceId"],
+  properties: { workspaceId: { type: "string", minLength: 1 }, search: { type: "string" } },
+} as const;
 /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk) — `teamIds` é sempre a lista
  * COMPLETA de equipes vinculadas (substituição total, nunca incremental). */
 const CHANNEL_ROUTING_BODY_SCHEMA = {
@@ -1111,6 +1126,36 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
         const [code, ...rest] = error.message.split(": ");
         throw new AppError({ code, message: rest.join(": ") || error.message, statusCode: 422, recoverable: true });
       }
+      rethrowInboxError(error);
+    }
+  });
+
+  // Bloco "enviar contato salvo" (pedido explícito do usuário em produção: "criar uma opção para
+  // eu clicar e conseguir selecionar um dos contatos salvos no sistema para estar enviando") — o
+  // picker do composer chama esta rota pra buscar os contatos (já conhecidos do WhatsApp neste
+  // workspace, cada um com telefone garantido — ver comentário em `InboxContactRepositoryPort.search`).
+  app.get("/inbox/contacts", { schema: { querystring: CONTACTS_SEARCH_QUERYSTRING_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:read");
+    const { workspaceId, search } = request.query as { workspaceId: string; search?: string };
+    const contacts = await deps.contactRepository.search({ tenantId: principal.tenantId, workspaceId, query: search });
+    return successEnvelope(
+      contacts.map((contact) => ({ id: contact.id, name: contact.name, phoneNormalized: contact.phoneNormalized })),
+      request.id,
+    );
+  });
+
+  app.post("/inbox/conversations/:id/contact", { schema: { params: ID_PARAMS_SCHEMA, body: SEND_CONTACT_BODY_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { id } = request.params as { id: string };
+    const { workspaceId, contactName, contactPhone } = request.body as { workspaceId: string; contactName: string; contactPhone: string };
+    try {
+      const message = await sendInboxContactCardMessage(useCaseDeps, {
+        tenantId: principal.tenantId, workspaceId, conversationId: id, sentByUserId: principal.userId,
+        contactName, contactPhone,
+      });
+      reply.status(202);
+      return successEnvelope(message, request.id);
+    } catch (error) {
       rethrowInboxError(error);
     }
   });

@@ -856,6 +856,62 @@ export async function sendInboxMediaMessage(deps: InboxUseCaseDeps, input: SendI
   return finishEnqueueingOutboundMessage(deps, { conversationId: conversation.id, connectionId: conversation.connectionId, message, sentByAi: false, tenantId: input.tenantId, workspaceId: input.workspaceId });
 }
 
+export type SendInboxContactCardMessageInput = {
+  tenantId: string;
+  workspaceId: string;
+  conversationId: string;
+  sentByUserId?: string;
+  contactName: string;
+  contactPhone: string;
+};
+
+/** Monta o vCard mínimo que o WhatsApp/whatsmeow espera para um cartão de contato — mesmo formato
+ * já confirmado na LEITURA de contatos recebidos (`extractPhoneFromVcard`, `wuzapi-event-mapper.ts`):
+ * `TEL;...;waid=<dígitos>:<telefone>` é a propriedade que o próprio WhatsApp usa pra reconhecer o
+ * número como um contato de WhatsApp de verdade (sem isso, alguns clientes mostram "contato" sem
+ * o atalho de conversar). `N`/`FN` repetem o nome — `N` é o campo "estruturado" (obrigatório pelo
+ * padrão vCard 3.0), `FN` o "formatado" que os clientes de fato exibem. */
+function buildOutboundVcard(name: string, phoneE164: string): string {
+  const digits = phoneE164.replace(/[^\d]/g, "");
+  const safeName = name.replace(/[\r\n]/g, " ").trim() || phoneE164;
+  return [
+    "BEGIN:VCARD",
+    "VERSION:3.0",
+    `N:;${safeName};;;`,
+    `FN:${safeName}`,
+    `TEL;type=CELL;waid=${digits}:${phoneE164}`,
+    "END:VCARD",
+  ].join("\n");
+}
+
+/**
+ * Bloco "enviar contato salvo" (pedido explícito do usuário em produção: "criar uma opção para eu
+ * clicar e conseguir selecionar um dos contatos salvos no sistema para estar enviando") — mesmo
+ * padrão de `sendInboxMediaMessage` (grava a mensagem `queued` e enfileira; `processOutboundMessage`
+ * no worker é quem de fato chama o provider). Nunca depende de `InboxMediaStoragePort` (um contato
+ * não é mídia) — o vCard inteiro cabe direto em `metadata`, sem custo de armazenamento externo.
+ */
+export async function sendInboxContactCardMessage(deps: InboxUseCaseDeps, input: SendInboxContactCardMessageInput): Promise<InboxMessage> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  const contactPhone = normalizePhoneNumber(input.contactPhone);
+  const contactName = input.contactName.trim();
+  if (!contactName) throw new Error("INBOX_CONTACT_CARD_NAME_REQUIRED: informe o nome do contato a enviar.");
+  const vcard = buildOutboundVcard(contactName, contactPhone);
+
+  const { message } = await deps.messageRepository.create({
+    tenantId: input.tenantId,
+    workspaceId: input.workspaceId,
+    conversationId: conversation.id,
+    connectionId: conversation.connectionId,
+    direction: "outbound",
+    type: "contact",
+    status: "queued",
+    metadata: { contactName, contactPhone, vcard },
+    sentByUserId: input.sentByUserId,
+  });
+  return finishEnqueueingOutboundMessage(deps, { conversationId: conversation.id, connectionId: conversation.connectionId, message, sentByAi: false, tenantId: input.tenantId, workspaceId: input.workspaceId });
+}
+
 async function finishEnqueueingOutboundMessage(
   deps: InboxUseCaseDeps,
   input: { conversationId: string; connectionId: string; message: InboxMessage; sentByAi: boolean; tenantId: string; workspaceId: string },
@@ -914,6 +970,13 @@ export type RegisterInboundMessageInput = {
   /** Bloco "menção em grupo" (pedido explícito do usuário) — JIDs crus mencionados no `body`
    * (`@<dígitos>`, ainda não resolvidos pro nome real da pessoa). */
   mentionedJids?: string[];
+  /** Bloco "enviar/receber contato" (pedido explícito do usuário: "quando eu receber ou enviar um
+   * contato carregar corretamente") — presentes só quando `type === "contact"` (ver
+   * `wuzapi-event-mapper.ts`). Gravados em `InboxMessage.metadata` (mesma convenção jsonb já usada
+   * pra metadata de mídia — ver `InboxMediaMetadata`), nunca colunas dedicadas. */
+  contactName?: string;
+  contactVcard?: string;
+  contactPhoneE164?: string;
   occurredAt: string;
 };
 
@@ -1078,6 +1141,9 @@ export async function registerInboundMessage(
     quotedMessage: input.quotedExternalMessageId
       ? { externalMessageId: input.quotedExternalMessageId, senderId: input.quotedSenderId, body: input.quotedBody, type: input.quotedType }
       : undefined,
+    // Bloco "enviar/receber contato" — mesma convenção jsonb já usada pra metadata de mídia
+    // (`InboxMediaMetadata`), nunca colunas dedicadas (ver comentário em `RegisterInboundMessageInput`).
+    metadata: input.type === "contact" ? { contactName: input.contactName, contactPhone: input.contactPhoneE164, vcard: input.contactVcard } : undefined,
     ...(input.fromMe ? { status: "sent" as const } : {}),
   });
   if (wasCreated) {
@@ -1463,6 +1529,12 @@ async function sendOutboundByType(
       ? { externalMessageId: message.quotedMessage.externalMessageId, participantJid: message.quotedMessage.senderId, quotedText: message.quotedMessage.body }
       : undefined;
     return provider.sendText({ externalSessionId: input.externalSessionId, to: input.to, body: message.body ?? "", replyTo });
+  }
+  if (message.type === "contact") {
+    const contactName = message.metadata?.contactName as string | undefined;
+    const vcard = message.metadata?.vcard as string | undefined;
+    if (!contactName || !vcard) throw new MessagingProviderError("permanent", `Mensagem "${message.id}" do tipo "contact" sem nome/vcard — nada pra enviar.`);
+    return provider.sendContact({ externalSessionId: input.externalSessionId, to: input.to, name: contactName, vcard });
   }
   if (!deps.inboxMediaStorage) throw new MessagingProviderError("permanent", "Envio de mídia sem storage configurado neste processo.");
   if (!message.mediaStorageRef) throw new MessagingProviderError("permanent", `Mensagem "${message.id}" do tipo "${message.type}" sem mediaStorageRef — nada pra enviar.`);

@@ -87,6 +87,14 @@ export type InboundMessageReceived = {
    * a repositório). `body` chega com o placeholder cru do WhatsApp (`@<dígitos do JID>`) até essa
    * resolução acontecer. */
   mentionedJids?: string[];
+  /** Bloco "enviar/receber contato" (pedido explícito do usuário: "quando eu receber ou enviar um
+   * contato carregar corretamente") — só presente quando `messageType === "contact"`. `contactVcard`
+   * é o vCard completo (guardado pra reenvio/exportação futura); `contactPhoneE164` é best-effort
+   * (extraído da propriedade `waid` do vCard — ver `extractPhoneFromVcard` no mapper), `undefined`
+   * se o contato foi salvo sem número de WhatsApp confirmado. */
+  contactName?: string;
+  contactVcard?: string;
+  contactPhoneE164?: string;
   occurredAt: string;
 };
 

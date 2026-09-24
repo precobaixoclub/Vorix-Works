@@ -234,6 +234,13 @@ export class WuzApiClient {
     return this.sessionRequest(sessionToken, "/chat/send/document", { method: "POST", body: { Phone: input.phone, Document: input.mediaUrl, FileName: input.fileName } });
   }
 
+  /** Bloco "enviar contato salvo" — CONFIRMADO via documentação real do `asternic/wuzapi`
+   * (`API.md`): `POST /chat/send/contact` espera `Phone`/`Name`/`Vcard` (vCard completo, não só o
+   * telefone) — mesmo casing `Phone`/`Caption`/`FileName` já usado nos outros `send*` acima. */
+  async sendContact(sessionToken: string, input: { phone: string; name: string; vcard: string }): Promise<{ Id: string; Timestamp: string }> {
+    return this.sessionRequest(sessionToken, "/chat/send/contact", { method: "POST", body: { Phone: input.phone, Name: input.name, Vcard: input.vcard } });
+  }
+
   /**
    * Metadata de grupo (bloco "Identity UX" — ver docs/conversas-whatsapp-experience-completion.md).
    *

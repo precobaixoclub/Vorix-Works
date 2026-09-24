@@ -8,7 +8,7 @@ import { PostgresMessagingConnectionRepository } from "../dist/infrastructure/st
 import { PostgresInboxContactRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-contact-repository.js";
 import { PostgresInboxConversationRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-conversation-repository.js";
 import { PostgresInboxMessageRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-message-repository.js";
-import { processOutboundMessage, sendInboxMediaMessage } from "../dist/application/inbox/inbox-use-cases.js";
+import { processOutboundMessage, sendInboxContactCardMessage, sendInboxMediaMessage } from "../dist/application/inbox/inbox-use-cases.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
 /**
@@ -53,6 +53,7 @@ function makeFakeMessagingProvider() {
     async sendAudio(input) { this.sent.push({ method: "sendAudio", input }); return { externalMessageId: `fake-audio-${this.sent.length}` }; },
     async sendVideo(input) { this.sent.push({ method: "sendVideo", input }); return { externalMessageId: `fake-video-${this.sent.length}` }; },
     async sendDocument(input) { this.sent.push({ method: "sendDocument", input }); return { externalMessageId: `fake-document-${this.sent.length}` }; },
+    async sendContact(input) { this.sent.push({ method: "sendContact", input }); return { externalMessageId: `fake-contact-${this.sent.length}` }; },
   };
 }
 
@@ -153,5 +154,62 @@ test("AUDIO_OUTBOUND: sem InboxMediaStoragePort configurado, sendInboxMediaMessa
   await assert.rejects(
     () => sendInboxMediaMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, type: "audio", body: Buffer.from("x"), mimeType: "audio/ogg" }),
     /INBOX_MEDIA_STORAGE_NOT_CONFIGURED/,
+  );
+});
+
+/**
+ * Bloco "enviar contato salvo" (pedido explícito do usuário em produção: "criar uma opção para eu
+ * clicar e conseguir selecionar um dos contatos salvos no sistema para estar enviando") — cobre:
+ * (1) `sendInboxContactCardMessage` monta o vCard e enfileira SEM precisar de `inboxMediaStorage`
+ * (um contato não é mídia); (2) `processOutboundMessage` despacha pro `provider.sendContact` real
+ * (`POST /chat/send/contact`, `API.md`), nunca cai no caminho de mídia.
+ */
+test("CONTACT_OUTBOUND: sendInboxContactCardMessage monta vcard e enfileira sem storage; processOutboundMessage chama provider.sendContact", async () => {
+  const tenantId = "tenant-contact-out-1";
+  const { workspace, conversation } = await makeConversation(tenantId);
+  const provider = makeFakeMessagingProvider();
+  const deps = {
+    connectionRepository: new PostgresMessagingConnectionRepository(db.pool),
+    conversationRepository: new PostgresInboxConversationRepository(db.pool),
+    messageRepository: new PostgresInboxMessageRepository(db.pool),
+    outboundQueue: { async publish() {} },
+    providers: { wuzapi: provider },
+    // inboxMediaStorage ausente de propósito — contato não deve precisar disso.
+  };
+
+  const message = await sendInboxContactCardMessage(deps, {
+    tenantId, workspaceId: workspace.id, conversationId: conversation.id, sentByUserId: "user-1",
+    contactName: "Fornecedor Principal", contactPhone: "+5511988887777",
+  });
+
+  assert.equal(message.status, "queued");
+  assert.equal(message.type, "contact");
+  assert.equal(message.metadata?.contactName, "Fornecedor Principal");
+  assert.equal(message.metadata?.contactPhone, "+5511988887777");
+  assert.ok(message.metadata?.vcard?.includes("waid=5511988887777"), "vcard tem que trazer waid= sem o + (WhatsApp usa dígitos puros)");
+
+  const sent = await processOutboundMessage(deps, { messageId: message.id });
+  assert.equal(sent.status, "sent");
+  assert.equal(provider.sent.length, 1);
+  assert.equal(provider.sent[0].method, "sendContact");
+  assert.equal(provider.sent[0].input.to, conversation.externalChatId);
+  assert.equal(provider.sent[0].input.name, "Fornecedor Principal");
+  assert.ok(provider.sent[0].input.vcard.includes("BEGIN:VCARD"));
+});
+
+test("CONTACT_OUTBOUND: nome vazio é rejeitado explicitamente — nunca envia um cartão sem nome", async () => {
+  const tenantId = "tenant-contact-out-2";
+  const { workspace, conversation } = await makeConversation(tenantId);
+  const deps = {
+    connectionRepository: new PostgresMessagingConnectionRepository(db.pool),
+    conversationRepository: new PostgresInboxConversationRepository(db.pool),
+    messageRepository: new PostgresInboxMessageRepository(db.pool),
+    outboundQueue: { async publish() {} },
+    providers: { wuzapi: makeFakeMessagingProvider() },
+  };
+
+  await assert.rejects(
+    () => sendInboxContactCardMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, contactName: "   ", contactPhone: "+5511988887777" }),
+    /INBOX_CONTACT_CARD_NAME_REQUIRED/,
   );
 });

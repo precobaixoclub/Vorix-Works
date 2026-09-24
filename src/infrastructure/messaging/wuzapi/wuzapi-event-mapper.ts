@@ -220,6 +220,7 @@ function mapInboundMessageOrReaction(instanceName: string, event: Record<string,
   const body = typeof message?.conversation === "string" ? (message.conversation as string) : typeof extendedText === "string" ? extendedText : undefined;
   const mediaObject = kind && message ? (message[kind] as Record<string, unknown> | undefined) : undefined;
   const media = mediaObject ? extractMediaFields(messageType, mediaObject) : undefined;
+  const contact = mediaObject ? extractContactFields(messageType, mediaObject) : undefined;
 
   // Bloco "resposta citada" + "menção em grupo" — `contextInfo` vive dentro do objeto do tipo
   // específico (`extendedTextMessage.contextInfo`, `imageMessage.contextInfo` etc.), confirmado em
@@ -257,9 +258,12 @@ function mapInboundMessageOrReaction(instanceName: string, event: Record<string,
     senderLid: senderIdentity.lid,
     messageType,
     // Caption de imagem/vídeo vira o `body` da mensagem — mesma UX do WhatsApp (mídia com legenda
-    // aparece como uma coisa só, não texto separado da mídia).
-    body: body ?? media?.caption,
+    // aparece como uma coisa só, não texto separado da mídia). Contato usa o nome como fallback de
+    // `body` pelo mesmo motivo — qualquer lugar que só sabe ler `body` (preview de lista antigo,
+    // notificação) mostra o nome em vez de bolha vazia; o cartão renderizado de verdade usa `contact*`.
+    body: body ?? media?.caption ?? contact?.contactName,
     ...media,
+    ...contact,
     quotedExternalMessageId,
     quotedSenderId,
     quotedBody,
@@ -356,6 +360,40 @@ function extractMediaFields(messageType: InboxMessageType, media: Record<string,
     fileSha256: pickString(media, ["fileSha256", "FileSHA256", "fileSHA256"]),
     fileEncSha256: pickString(media, ["fileEncSha256", "FileEncSHA256", "fileEncSHA256"]),
   };
+}
+
+type ExtractedContactFields = {
+  contactName?: string;
+  contactVcard?: string;
+  contactPhoneE164?: string;
+};
+
+/** Bloco "enviar/receber contato" (pedido explícito do usuário: "quando eu receber ou enviar um
+ * contato carregar corretamente"). Nomes de campo CONFIRMADOS no proto real do whatsmeow
+ * (`waE2E.ContactMessage`, `WAWebProtobufsE2E.proto`): `displayName` (campo 1), `vcard` (campo 16)
+ * — camelCase, mesma convenção já confirmada pros outros tipos de mensagem neste arquivo. Antes
+ * desta correção `messageType` já virava "contact" (ver `MESSAGE_TYPE_BY_WHATSMEOW_KIND`), mas
+ * nenhum campo era extraído — a mensagem chegava sem nome/telefone/vcard nenhum, sempre uma bolha
+ * vazia no frontend. */
+function extractContactFields(messageType: InboxMessageType, contact: Record<string, unknown>): ExtractedContactFields | undefined {
+  if (messageType !== "contact") return undefined;
+  const contactName = pickString(contact, ["displayName", "DisplayName"]);
+  const contactVcard = pickString(contact, ["vcard", "Vcard", "VCard"]);
+  return { contactName, contactVcard, contactPhoneE164: contactVcard ? extractPhoneFromVcard(contactVcard) : undefined };
+}
+
+/** vCard do WhatsApp sempre traz o telefone real (WhatsApp ID) na propriedade `waid` de uma linha
+ * `TEL` (ex.: `TEL;type=CELL;waid=5511999999999:+55 11 99999-9999`) — `waid` é o dígitos-puros já
+ * na forma que o WhatsApp usa internamente, preferível a tentar reformatar o valor legível depois
+ * de `:`. Cai pro valor após `:` da primeira linha `TEL` só se `waid` não estiver presente (contato
+ * salvo sem número de WhatsApp confirmado, ex.: só telefone fixo). */
+function extractPhoneFromVcard(vcard: string): string | undefined {
+  const waidMatch = vcard.match(/waid=(\d+)/);
+  if (waidMatch) return `+${waidMatch[1]}`;
+  const telLine = vcard.split(/\r?\n/).find((line) => line.toUpperCase().startsWith("TEL"));
+  const rawValue = telLine?.split(":").slice(1).join(":").trim();
+  const digitsOnly = rawValue?.replace(/[^\d+]/g, "");
+  return digitsOnly && digitsOnly.length >= 8 ? (digitsOnly.startsWith("+") ? digitsOnly : `+${digitsOnly}`) : undefined;
 }
 
 function mapStatusReceipts(instanceName: string, event: Record<string, unknown>, state: string | undefined): MessageStatusChanged[] | undefined {

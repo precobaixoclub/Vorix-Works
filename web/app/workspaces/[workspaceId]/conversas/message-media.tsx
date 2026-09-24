@@ -482,6 +482,13 @@ function ViewerSlide({ workspaceId, message }: { workspaceId: string; message: I
   }
 
   if (message.type === "video") {
+    // Achado real (relatado pelo usuário em produção, com print): vídeos do WhatsApp costumam ter
+    // resolução nativa BAIXA (ex.: notas de vídeo, ~240x320) — `max-h-full max-w-full` sozinho só
+    // LIMITA o tamanho, nunca AUMENTA além do pixel nativo, então o player abria minúsculo no meio
+    // de toda a área preta do viewer. `h-full w-full` faz o elemento ocupar o container inteiro;
+    // `object-contain` preserva a proporção (nunca distorce), esticando pra cima quando o vídeo é
+    // pequeno e encolhendo quando é maior que a tela — mesmo comportamento que a imagem já tinha
+    // (que só "funcionava" porque fotos reais raramente são menores que o viewport).
     return (
       <video
         key={state.url}
@@ -489,7 +496,7 @@ function ViewerSlide({ workspaceId, message }: { workspaceId: string; message: I
         poster={message.metadata?.thumbnailDataUrl}
         controls
         autoPlay={false}
-        className="max-h-full max-w-full"
+        className="h-full max-h-full w-full max-w-full object-contain"
       />
     );
   }

@@ -31,11 +31,13 @@ export function proxy(request: NextRequest) {
   // Páginas públicas exigidas por plataformas externas (Meta/TikTok/YouTube) e por visitantes.
   if (
     pathname.startsWith("/p/") ||
+    pathname.startsWith("/product-shots/") ||
     pathname === "/pricing" ||
     pathname === "/privacy" ||
     pathname === "/terms" ||
     pathname === "/data-deletion" ||
-    pathname === "/opengraph-image"
+    pathname === "/opengraph-image" ||
+    pathname === "/opengraph-image.png"
   ) {
     return NextResponse.next();
   }

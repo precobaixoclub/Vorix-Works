@@ -1,182 +1,198 @@
 import Link from "next/link";
 import type React from "react";
-import { CheckCircle2, FileText, MessageSquareText, Sparkles, TrendingUp } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart3,
+  CheckCircle2,
+  CircleDollarSign,
+  Clock3,
+  FileText,
+  Lightbulb,
+  MessageSquareText,
+  type LucideIcon,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/Button";
 import { PlanSelectLink } from "@/components/PlanSelectLink";
 import { PublicFooter } from "@/components/public/PublicFooter";
 import { PublicHeader } from "@/components/public/PublicHeader";
 import { TrackPageView } from "@/components/TrackPageView";
 import { fetchPublicPlans, formatCapacityLine, formatPlanPrice, type PublicPlan } from "@/features/platform-plans/api";
+import { cn } from "@/lib/utils";
 
 export const revalidate = 300;
 
-const JOURNEY = ["Marketing", "Conversa", "Contato", "Negócio", "Follow-up", "Proposta", "Venda"];
+const JOURNEY = ["Criar", "Publicar", "Conversar", "Vender", "Medir"] as const;
 
-const PILLARS: readonly { title: string; description: string; icon: React.ReactNode }[] = [
-  { title: "Marketing", description: "Crie e publique conteúdo com IA nos canais conectados.", icon: <Sparkles className="h-5 w-5" /> },
-  { title: "Conversas", description: "Centralize o atendimento e os canais num único lugar.", icon: <MessageSquareText className="h-5 w-5" /> },
-  { title: "CRM Comercial", description: "Organize contatos, negócios e follow-ups sem perder contexto.", icon: <TrendingUp className="h-5 w-5" /> },
-  { title: "Propostas", description: "Crie, envie e acompanhe propostas com link público.", icon: <FileText className="h-5 w-5" /> },
-  { title: "IA", description: "Apoio em toda a operação — criação, organização e insights.", icon: <Sparkles className="h-5 w-5" /> },
-  { title: "Resultados", description: "Acompanhe o que está acontecendo na sua operação.", icon: <TrendingUp className="h-5 w-5" /> },
-];
-
-const WHY = [
-  ["Menos ferramentas", "Marketing, atendimento, CRM e resultados na mesma operação."],
-  ["Mais contexto", "A conversa vira contato, negócio, tarefa e proposta sem perder histórico."],
-  ["IA integrada", "Apoio para criar conteúdo, responder melhor e enxergar oportunidades."],
-  ["Operação conectada", "O time vê o que aconteceu e o que precisa fazer agora."],
+const PRODUCT_SECTIONS: readonly ProductSection[] = [
+  {
+    eyebrow: "Conversas",
+    title: "Atenda seus clientes sem perder o contexto comercial.",
+    description: "Inbox, contato, negocio e proximos passos ficam na mesma tela para o time responder com clareza.",
+    visual: "conversations",
+  },
+  {
+    eyebrow: "CRM",
+    title: "Da conversa ao negocio sem trocar de ferramenta.",
+    description: "O pipeline mostra em que etapa cada oportunidade esta, quem e responsavel e qual follow-up vem agora.",
+    visual: "crm",
+    reverse: true,
+  },
+  {
+    eyebrow: "Marketing + IA",
+    title: "Crie conteudo com a identidade da sua marca e organize a producao.",
+    description: "A IA participa do fluxo de criacao, revisao e agenda sem virar uma caixa preta fora da operacao.",
+    visual: "marketing",
+  },
 ];
 
 const FAQ: readonly { question: string; answer: string }[] = [
-  { question: "O teste é gratuito?", answer: "Sim. Você usa o Vorix por 7 dias sem pagar nada." },
-  { question: "Preciso cadastrar cartão?", answer: "Não. Você cria a conta e começa a usar sem informar nenhuma forma de pagamento." },
-  { question: "O que acontece depois dos 7 dias?", answer: "Seu acesso operacional é pausado até você escolher um plano. Nada do que você criou é apagado." },
-  { question: "Quando começa a cobrança?", answer: "Só depois que você confirmar a contratação de um plano, dentro do Vorix — nunca automaticamente." },
-  { question: "Posso cancelar?", answer: "Sim, a qualquer momento, direto em Plano e cobrança. Seu acesso continua até o fim do período já pago." },
-  { question: "Posso trocar de plano?", answer: "Sim. Upgrade e downgrade são self-service, sem precisar falar com o suporte." },
-  { question: "Meus dados são apagados se eu não contratar?", answer: "Não. Contatos, negócios, tarefas, propostas e configurações continuam salvos." },
+  { question: "Preciso cadastrar cartao?", answer: "Nao. Voce cria a conta e comeca a testar sem informar forma de pagamento." },
+  { question: "Quanto tempo dura o teste?", answer: "Sao 7 dias para usar o Vorix antes de contratar um plano." },
+  { question: "O que acontece depois dos 7 dias?", answer: "Seu acesso operacional e pausado ate voce escolher um plano. Nada do que voce criou e apagado." },
+  { question: "Quando comeca a cobranca?", answer: "So depois que voce confirmar a contratacao de um plano dentro do Vorix." },
+  { question: "Posso cancelar?", answer: "Sim, a qualquer momento, direto em Plano e cobranca. Seu acesso continua ate o fim do periodo ja pago." },
 ];
 
 export default async function RootPage() {
   let plans: readonly PublicPlan[] = [];
   try {
-    plans = await fetchPublicPlans();
+    plans = (await fetchPublicPlans()).filter((plan) => plan.code !== "FREE");
   } catch {
     plans = [];
   }
 
   return (
-    <main className="min-h-dvh bg-background text-foreground">
+    <main className="min-h-dvh overflow-hidden bg-[#070b12] text-white">
       <TrackPageView eventName="landing_view" />
       <PublicHeader />
 
-      <section className="relative overflow-hidden border-b border-border">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,hsl(var(--border)/0.35)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border)/0.25)_1px,transparent_1px)] bg-[size:56px_56px] opacity-30" aria-hidden />
-        <div className="absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-primary/10 to-transparent" aria-hidden />
-        <div className="relative mx-auto grid min-h-[calc(100dvh-4rem)] max-w-7xl items-center gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[minmax(0,0.86fr)_minmax(520px,1.14fr)]">
+      <section className="relative border-b border-white/10 bg-[radial-gradient(circle_at_20%_12%,rgba(173,219,70,0.18),transparent_30%),radial-gradient(circle_at_85%_20%,rgba(96,165,250,0.16),transparent_28%),linear-gradient(180deg,#08111f_0%,#070b12_72%)]">
+        <div className="mx-auto grid max-w-7xl items-center gap-8 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[0.8fr_1.2fr] lg:py-24">
           <div className="max-w-2xl">
-            <p className="inline-flex rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">Vorix Intelligence</p>
-            <h1 className="mt-5 text-balance text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
+            <p className="inline-flex rounded-full border border-[#addb46]/35 bg-[#addb46]/10 px-3 py-1 text-xs font-medium text-[#d7ff74]">
+              Vorix Intelligence
+            </p>
+            <h1 className="mt-5 text-balance font-display text-4xl font-semibold sm:text-5xl lg:text-6xl">
               Marketing, atendimento e vendas conectados por IA.
             </h1>
-            <p className="mt-5 max-w-xl text-balance text-base leading-7 text-muted-foreground sm:text-lg">
-              Centralize sua operação comercial, converse com seus clientes, organize oportunidades e use IA para transformar contatos em vendas.
+            <p className="mt-5 max-w-xl text-balance text-base leading-7 text-slate-300 sm:text-lg">
+              O Vorix conecta conteudo, conversas, CRM e resultados para sua equipe transformar contexto em receita.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <Link href="/signup"><Button className="px-5 py-3">Testar por 7 dias</Button></Link>
-              <Link href="#produto"><Button variant="secondary" className="px-5 py-3">Ver como funciona</Button></Link>
+              <Link href="/signup">
+                <Button className="bg-[#addb46] px-5 py-3 text-[#071009] hover:bg-[#c7f45b]">Testar por 7 dias</Button>
+              </Link>
+              <Link href="#produto">
+                <Button variant="secondary" className="border-white/20 bg-white/5 px-5 py-3 text-white hover:bg-white/10">
+                  Ver o Vorix em acao
+                </Button>
+              </Link>
             </div>
-            <p className="mt-4 text-sm text-muted-foreground">Sem cartão de crédito para começar.</p>
+            <p className="mt-4 text-sm text-slate-400">7 dias para testar · sem cartao para comecar</p>
           </div>
 
-          <ProductPreview />
+          <HeroProductVisual />
         </div>
       </section>
 
-      <section className="mx-auto max-w-5xl px-4 py-16 text-center sm:px-6">
-        <p className="text-sm font-semibold uppercase tracking-wide text-primary">O problema</p>
-        <h2 className="mx-auto mt-3 max-w-3xl text-balance text-2xl font-semibold tracking-tight sm:text-3xl">
-          Marketing em uma ferramenta. WhatsApp em outra. CRM em outra. Follow-up esquecido. Proposta perdida.
-        </h2>
-        <p className="mt-4 text-muted-foreground">Com o Vorix, tudo se conecta — do primeiro contato até a venda.</p>
+      <section id="produto" className="bg-[#0b1019]">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:py-20">
+          <div className="max-w-3xl">
+            <p className="text-sm font-semibold uppercase text-[#addb46]">Produto em foco</p>
+            <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">Uma operacao inteira. Um unico lugar.</h2>
+            <p className="mt-3 text-base leading-7 text-slate-300">
+              Veja como marketing, atendimento e vendas se conectam no Vorix sem depender de listas longas para explicar o produto.
+            </p>
+          </div>
+          <div className="mt-10 space-y-14">
+            {PRODUCT_SECTIONS.map((section) => (
+              <ProductShowcase key={section.eyebrow} section={section} />
+            ))}
+          </div>
+        </div>
       </section>
 
-      <section id="produto" className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          {JOURNEY.map((step, index) => (
-            <div key={step} className="rounded-xl border border-border bg-card p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{String(index + 1).padStart(2, "0")}</p>
-              <p className="mt-3 text-base font-semibold">{step}</p>
-              <p className="mt-2 text-xs text-muted-foreground">{journeyCopy(step)}</p>
+      <section id="intelligence" className="border-y border-white/10 bg-[#070b12]">
+        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[0.78fr_1.22fr] lg:py-20">
+          <div>
+            <p className="text-sm font-semibold uppercase text-[#addb46]">Intelligence</p>
+            <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">Sinais uteis, no ritmo da operacao.</h2>
+            <p className="mt-4 text-slate-300">
+              O Command Center destaca oportunidades e riscos operacionais no contexto certo: conversa, tarefa, proposta ou pipeline.
+            </p>
+          </div>
+          <IntelligenceVisual />
+        </div>
+      </section>
+
+      <section className="bg-[#f7f8fb] text-slate-950">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:py-20">
+          <div className="grid gap-8 lg:grid-cols-[0.7fr_1.3fr] lg:items-center">
+            <div>
+              <p className="text-sm font-semibold uppercase text-[#4f6b1a]">Jornada</p>
+              <h2 className="mt-3 font-display text-3xl font-semibold sm:text-4xl">Do conteudo ao resultado, sem perder o fio.</h2>
             </div>
-          ))}
-        </div>
-      </section>
-
-      <section id="solucoes" className="border-y border-border bg-muted/20">
-        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-16 sm:px-6 md:grid-cols-2 lg:grid-cols-3">
-          {PILLARS.map((pillar) => (
-            <div key={pillar.title} className="rounded-xl border border-border bg-card p-5">
-              <div className="flex items-center gap-2 text-primary">{pillar.icon}<h2 className="text-lg font-semibold text-foreground">{pillar.title}</h2></div>
-              <p className="mt-3 text-sm text-muted-foreground">{pillar.description}</p>
+            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+              <div className="grid min-w-[680px] grid-cols-5">
+                {JOURNEY.map((step, index) => (
+                  <div key={step} className="relative border-r border-slate-200 px-4 py-5 last:border-r-0">
+                    {index < JOURNEY.length - 1 ? <ArrowRight className="absolute right-3 top-6 h-4 w-4 text-slate-300" /> : null}
+                    <p className="text-xs font-medium text-slate-500">{String(index + 1).padStart(2, "0")}</p>
+                    <p className="mt-3 font-semibold">{step}</p>
+                    <p className="mt-2 text-sm leading-5 text-slate-600">{journeyCopy(step)}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[0.85fr_1.15fr]">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-primary">Vorix Intelligence</p>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight">Sinais úteis, decisões nas mãos do time.</h2>
-          <p className="mt-4 text-muted-foreground">A IA destaca oportunidades e riscos operacionais sem prometer decisões críticas autônomas.</p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {["Lead quente sem resposta", "Proposta sem retorno", "Tarefa atrasada", "Oportunidade no pipeline"].map((item) => (
-            <div key={item} className="rounded-xl border border-border bg-card p-4">
-              <CheckCircle2 className="h-5 w-5 text-primary" />
-              <p className="mt-3 font-medium">{item}</p>
-              <p className="mt-1 text-sm text-muted-foreground">O Vorix aponta o contexto e sugere o próximo passo.</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6">
-        <div className="grid gap-4 md:grid-cols-4">
-          {WHY.map(([title, description]) => (
-            <div key={title} className="rounded-xl border border-border bg-card p-5">
-              <p className="font-semibold">{title}</p>
-              <p className="mt-2 text-sm text-muted-foreground">{description}</p>
-            </div>
-          ))}
+          </div>
         </div>
       </section>
 
       {plans.length > 0 ? (
-        <section className="border-t border-border bg-muted/20">
-          <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
-            <div className="text-center">
-              <h2 className="text-2xl font-semibold">Comece simples. Cresça quando precisar.</h2>
-              <p className="mt-2 text-sm text-muted-foreground">7 dias de teste em qualquer plano, sem cartão de crédito.</p>
+        <section className="bg-white text-slate-950">
+          <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:py-20">
+            <div className="mx-auto max-w-3xl text-center">
+              <p className="text-sm font-semibold uppercase text-[#4f6b1a]">Planos</p>
+              <h2 className="mt-3 font-display text-3xl font-semibold sm:text-4xl">Comece com o que sua operacao precisa hoje.</h2>
+              <p className="mt-3 text-sm text-slate-600">7 dias de teste em qualquer plano, sem cartao para comecar.</p>
             </div>
-            <div className="mx-auto mt-8 grid max-w-4xl gap-4 sm:grid-cols-3">
+            <div className="mx-auto mt-9 grid max-w-5xl gap-4 md:grid-cols-3">
               {plans.map((plan) => (
-                <div key={plan.code} className={`flex flex-col rounded-xl border p-5 ${plan.highlighted ? "border-primary bg-primary/10" : "border-border bg-card"}`}>
-                  {plan.highlighted ? <span className="mb-2 w-fit rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">Recomendado</span> : null}
-                  <p className="font-semibold">{plan.name}</p>
-                  <p className="mt-1 text-2xl font-semibold tracking-tight">{formatPlanPrice(plan)}<span className="text-xs font-normal text-muted-foreground">/mês</span></p>
-                  <p className="mt-1 text-xs text-muted-foreground">{formatCapacityLine(plan)}</p>
-                  <PlanSelectLink planCode={plan.code} className="mt-4" variant={plan.highlighted ? "primary" : "secondary"}>
-                    Testar {plan.name}
-                  </PlanSelectLink>
-                </div>
+                <PlanSummary key={plan.code} plan={plan} />
               ))}
             </div>
             <p className="mt-6 text-center text-sm">
-              <Link href="/pricing" className="font-medium text-primary hover:underline">Ver todos os detalhes dos planos</Link>
+              <Link href="/pricing" className="font-medium text-[#4f6b1a] hover:underline">
+                Ver todos os detalhes dos planos
+              </Link>
             </p>
           </div>
         </section>
       ) : null}
 
-      <section className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
-        <h2 className="text-center text-2xl font-semibold">Perguntas frequentes</h2>
-        <div className="mt-8 space-y-6">
-          {FAQ.map((item) => (
-            <div key={item.question}>
-              <p className="font-medium">{item.question}</p>
-              <p className="mt-1 text-sm text-muted-foreground">{item.answer}</p>
-            </div>
-          ))}
+      <section className="border-y border-white/10 bg-[#0b1019]">
+        <div className="mx-auto max-w-4xl px-4 py-16 text-center sm:px-6 lg:py-20">
+          <h2 className="font-display text-3xl font-semibold text-white sm:text-4xl">Pronto para conectar sua operacao?</h2>
+          <p className="mx-auto mt-3 max-w-2xl text-slate-300">Marketing, atendimento e vendas trabalhando juntos no mesmo fluxo.</p>
+          <Link href="/signup">
+            <Button className="mt-7 bg-[#addb46] px-6 py-3 text-[#071009] hover:bg-[#c7f45b]">Testar o Vorix por 7 dias</Button>
+          </Link>
+          <p className="mt-3 text-sm text-slate-400">Sem cartao para comecar.</p>
         </div>
       </section>
 
-      <section className="border-t border-border bg-muted/20">
-        <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6">
-          <h2 className="text-balance text-3xl font-semibold tracking-tight">Pronto para conectar marketing, atendimento e vendas?</h2>
-          <p className="mt-3 text-muted-foreground">Teste o Vorix por 7 dias, sem cartão de crédito.</p>
-          <Link href="/signup"><Button className="mt-6 px-6 py-3">Começar meu teste</Button></Link>
+      <section className="bg-white text-slate-950">
+        <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
+          <h2 className="text-center font-display text-2xl font-semibold">Perguntas frequentes</h2>
+          <div className="mt-8 space-y-5">
+            {FAQ.map((item) => (
+              <div key={item.question} className="border-b border-slate-200 pb-5 last:border-b-0">
+                <p className="font-medium">{item.question}</p>
+                <p className="mt-1 text-sm text-slate-600">{item.answer}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -185,47 +201,315 @@ export default async function RootPage() {
   );
 }
 
-function ProductPreview() {
+type ProductSection = {
+  eyebrow: string;
+  title: string;
+  description: string;
+  visual: "conversations" | "crm" | "marketing";
+  reverse?: boolean;
+};
+
+function ProductShowcase({ section }: { section: ProductSection }) {
   return (
-    <div className="relative min-h-[460px] lg:min-h-[560px]" aria-label="Preview do produto Vorix">
-      <div className="absolute right-0 top-0 w-[88%] rounded-xl border border-border bg-card p-4 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border pb-3">
-          <p className="text-sm font-semibold">Command Center</p>
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">Ao vivo</span>
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          {["Marketing", "Atendimento", "Comercial"].map((label, index) => (
-            <div key={label} className="rounded-lg bg-muted/45 p-3">
-              <p className="text-xs text-muted-foreground">{label}</p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums">{[18, 42, 7][index]}</p>
+    <section className={cn("grid gap-7 lg:grid-cols-[0.68fr_1.32fr] lg:items-center", section.reverse && "lg:grid-cols-[1.32fr_0.68fr]")}>
+      <div className={cn("max-w-xl", section.reverse && "lg:order-2")}>
+        <p className="text-sm font-semibold uppercase text-[#addb46]">{section.eyebrow}</p>
+        <h3 className="mt-3 font-display text-2xl font-semibold text-white sm:text-3xl">{section.title}</h3>
+        <p className="mt-3 text-base leading-7 text-slate-300">{section.description}</p>
+      </div>
+      <div className={cn(section.reverse && "lg:order-1")}>
+        <ProductFrame label={section.eyebrow}>
+          {section.visual === "conversations" ? <ConversationsVisual /> : null}
+          {section.visual === "crm" ? <CrmVisual /> : null}
+          {section.visual === "marketing" ? <MarketingVisual /> : null}
+        </ProductFrame>
+      </div>
+    </section>
+  );
+}
+
+function HeroProductVisual() {
+  return (
+    <div className="relative" aria-label="Command Center do Vorix com conversas, pipeline e insights">
+      <div className="absolute -inset-4 rounded-[2rem] bg-[#addb46]/10 blur-3xl" aria-hidden />
+      <ProductFrame label="Command Center" priority>
+        <div className="grid gap-4 lg:grid-cols-[1fr_0.86fr]">
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <Metric label="Conversas" value="12" tone="lime" />
+              <Metric label="Pipeline" value="R$ 48k" tone="blue" />
+              <Metric label="Follow-ups" value="8" tone="violet" />
             </div>
-          ))}
+            <div className="rounded-lg border border-white/10 bg-[#0f1724] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-medium text-white">Prioridades de hoje</p>
+                <span className="rounded-full bg-[#addb46]/12 px-2 py-1 text-xs text-[#d7ff74]">prioridade</span>
+              </div>
+              <div className="mt-4 space-y-3">
+                <InsightLine icon={MessageSquareText} title="Lead quente sem resposta" meta="Conversa aberta ha 18 min" />
+                <InsightLine icon={FileText} title="Proposta visualizada" meta="Enviar follow-up comercial" />
+                <InsightLine icon={Clock3} title="Tarefa atrasada" meta="Renovar contato com decisor" />
+              </div>
+            </div>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-[#0d1420] p-3">
+            <p className="text-sm font-medium text-white">Pipeline</p>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {["Novo", "Proposta", "Ganho"].map((stage, index) => (
+                <div key={stage} className="min-h-44 rounded-md bg-white/[0.04] p-2">
+                  <p className="text-xs text-slate-400">{stage}</p>
+                  <DealCard title={["Casa Aurora", "Studio Nexo", "Metodo Viva"][index]} value={["R$ 8,4k", "R$ 14k", "R$ 22k"][index]} compact />
+                  {index === 1 ? <DealCard title="Clube Prisma" value="R$ 6,8k" compact /> : null}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="mt-4 h-32 rounded-lg bg-[linear-gradient(135deg,hsl(var(--primary)/0.26),hsl(var(--muted)))]" />
+      </ProductFrame>
+    </div>
+  );
+}
+
+function ProductFrame({ label, priority, children }: { label: string; priority?: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-lg border border-white/10 bg-[#101827] p-2 shadow-2xl shadow-black/30",
+        priority && "lg:translate-y-3",
+      )}
+    >
+      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+        <div className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-[#ff6b6b]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#f6c85f]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#addb46]" />
+        </div>
+        <span className="text-xs text-slate-400">{label}</span>
       </div>
-      <div className="absolute bottom-20 left-0 w-[44%] rounded-xl border border-border bg-background p-4 shadow-xl">
-        <p className="text-sm font-semibold">Conversas</p>
-        <div className="mt-4 space-y-3">
-          <div className="rounded-lg bg-muted p-3 text-sm">Cliente pediu proposta pelo WhatsApp.</div>
-          <div className="rounded-lg bg-primary/15 p-3 text-sm">IA sugeriu resposta com contexto do CRM.</div>
+      <div className="bg-[#0a101a] p-3 sm:p-4">{children}</div>
+    </div>
+  );
+}
+
+function ConversationsVisual() {
+  return (
+    <div className="grid min-h-[390px] gap-3 md:grid-cols-[0.72fr_1.1fr_0.78fr]">
+      <div className="space-y-2 rounded-lg border border-white/10 bg-[#101827] p-3">
+        {["Marina Costa", "Joao Lima", "Studio Nexo", "Casa Aurora"].map((name, index) => (
+          <div key={name} className={cn("rounded-md p-3", index === 0 ? "bg-[#addb46]/12 ring-1 ring-[#addb46]/30" : "bg-white/[0.04]")}>
+            <p className="text-sm font-medium text-white">{name}</p>
+            <p className="mt-1 truncate text-xs text-slate-400">{["Pediu uma proposta", "Quer reagendar", "Aguardando retorno", "Novo lead"][index]}</p>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-col rounded-lg border border-white/10 bg-[#101827] p-3">
+        <div className="border-b border-white/10 pb-3">
+          <p className="font-medium text-white">Marina Costa</p>
+          <p className="text-xs text-slate-400">WhatsApp · oportunidade aberta</p>
+        </div>
+        <div className="flex flex-1 flex-col justify-end gap-3 py-4">
+          <ChatBubble side="left">Gostei do pacote Pro. Voce consegue enviar uma proposta hoje?</ChatBubble>
+          <ChatBubble side="right">Consigo sim. Vou montar com os pontos que voce comentou.</ChatBubble>
+          <ChatBubble side="left">Perfeito. Preciso validar com meu socio ainda hoje.</ChatBubble>
+        </div>
+        <div className="flex items-center gap-2 rounded-md border border-white/10 bg-[#0b111d] px-3 py-2 text-sm text-slate-400">
+          <Sparkles className="h-4 w-4 text-[#9aa7ff]" />
+          Resposta sugerida com contexto do negocio
         </div>
       </div>
-      <div className="absolute bottom-0 right-8 w-[52%] rounded-xl border border-border bg-card p-4 shadow-xl">
-        <p className="text-sm font-semibold">Pipeline</p>
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          {["Novo", "Proposta", "Ganho"].map((stage) => <div key={stage} className="h-28 rounded-lg bg-muted/55 p-2 text-xs text-muted-foreground">{stage}</div>)}
+      <div className="rounded-lg border border-white/10 bg-[#101827] p-3">
+        <p className="text-sm font-medium text-white">Contexto comercial</p>
+        <div className="mt-4 space-y-3 text-sm">
+          <InfoRow label="Etapa" value="Proposta" />
+          <InfoRow label="Valor" value="R$ 14.000" />
+          <InfoRow label="Proximo passo" value="Enviar follow-up" />
         </div>
       </div>
     </div>
   );
 }
 
-function journeyCopy(step: string) {
-  if (step === "Marketing") return "Crie e publique conteúdo com IA.";
-  if (step === "Conversa") return "Atenda clientes no WhatsApp com histórico.";
-  if (step === "Contato") return "A conversa vira contato pesquisável no CRM.";
-  if (step === "Negócio") return "Organize a oportunidade com valor e etapa.";
-  if (step === "Follow-up") return "Nunca perca o próximo passo.";
-  if (step === "Proposta") return "Crie, envie e acompanhe com link público.";
-  return "Feche o negócio sem sair do Vorix.";
+function CrmVisual() {
+  return (
+    <div className="grid min-h-[390px] grid-cols-[repeat(3,minmax(210px,1fr))] gap-3 overflow-x-auto pb-2">
+      {[
+        ["Novo", ["Casa Aurora", "Metodo Viva"]],
+        ["Proposta", ["Studio Nexo", "Clube Prisma"]],
+        ["Fechamento", ["Marina Costa"]],
+      ].map(([stage, deals]) => (
+        <div key={stage as string} className="rounded-lg border border-white/10 bg-[#101827] p-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-white">{stage as string}</p>
+            <span className="text-xs text-slate-500">{(deals as string[]).length}</span>
+          </div>
+          <div className="mt-3 space-y-3">
+            {(deals as string[]).map((deal, index) => (
+              <DealCard key={deal} title={deal} value={index === 0 ? "R$ 14k" : "R$ 8k"} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MarketingVisual() {
+  return (
+    <div className="grid min-h-[390px] gap-3 md:grid-cols-[0.92fr_1.08fr]">
+      <div className="rounded-lg border border-white/10 bg-[#101827] p-4">
+        <p className="text-sm font-medium text-white">Criar conteudo</p>
+        <div className="mt-4 rounded-md border border-[#9aa7ff]/20 bg-[#9aa7ff]/10 p-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-white">
+            <Sparkles className="h-4 w-4 text-[#9aa7ff]" />
+            Direcao de IA
+          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-300">
+            Gerar sequencia educativa para leads que chegaram pelo WhatsApp e ainda nao receberam proposta.
+          </p>
+        </div>
+        <div className="mt-4 space-y-2">
+          {["Tom da marca aplicado", "Argumentos comerciais", "Revisao pendente"].map((item) => (
+            <div key={item} className="flex items-center gap-2 rounded-md bg-white/[0.04] px-3 py-2 text-sm text-slate-300">
+              <CheckCircle2 className="h-4 w-4 text-[#addb46]" />
+              {item}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="rounded-lg border border-white/10 bg-[#101827] p-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-white">Producao</p>
+          <span className="text-xs text-slate-500">Semana atual</span>
+        </div>
+        <div className="mt-4 grid gap-3">
+          {["Ideia", "Roteiro", "Arte", "Agendado"].map((stage, index) => (
+            <div key={stage} className="grid grid-cols-[90px_1fr] items-center gap-3">
+              <p className="text-xs text-slate-500">{stage}</p>
+              <div className="h-9 rounded-md bg-white/[0.04]">
+                <div
+                  className={cn("h-full rounded-md", index < 3 ? "bg-[#addb46]/70" : "bg-[#60a5fa]/70")}
+                  style={{ width: `${[82, 66, 48, 36][index]}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IntelligenceVisual() {
+  return (
+    <ProductFrame label="Vorix Intelligence">
+      <div className="relative min-h-[420px] rounded-lg border border-white/10 bg-[#0f1724] p-4">
+        <div className="grid gap-3 md:grid-cols-3">
+          <Metric label="Conversas abertas" value="12" tone="lime" />
+          <Metric label="Propostas ativas" value="5" tone="blue" />
+          <Metric label="Tarefas vencendo" value="3" tone="violet" />
+        </div>
+        <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_0.9fr]">
+          <div className="rounded-lg border border-white/10 bg-[#0a101a] p-4">
+            <p className="font-medium text-white">Fila de atencao</p>
+            <div className="mt-4 space-y-3">
+              <InsightLine icon={Lightbulb} title="Oportunidade no pipeline" meta="Negocio parado na etapa Proposta" />
+              <InsightLine icon={MessageSquareText} title="Lead quente sem resposta" meta="Ultima mensagem ha 18 min" />
+              <InsightLine icon={Clock3} title="Tarefa atrasada" meta="Responsavel ja definido" />
+            </div>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-[#0a101a] p-4">
+            <p className="font-medium text-white">Resultado</p>
+            <div className="mt-4 h-40 rounded-md bg-[linear-gradient(135deg,rgba(173,219,70,0.22),rgba(96,165,250,0.14))] p-4">
+              <BarChart3 className="h-5 w-5 text-[#addb46]" />
+              <p className="mt-16 text-sm text-slate-300">Volume de resposta e avancos comerciais por semana</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </ProductFrame>
+  );
+}
+
+function PlanSummary({ plan }: { plan: PublicPlan }) {
+  return (
+    <div className={cn("flex flex-col rounded-lg border p-5", plan.highlighted ? "border-[#addb46] bg-[#f5fde6]" : "border-slate-200 bg-white")}>
+      {plan.highlighted ? <span className="mb-3 w-fit rounded-full bg-[#4f6b1a] px-2.5 py-1 text-xs font-semibold uppercase text-white">Recomendado</span> : null}
+      <p className="font-semibold">{plan.name}</p>
+      <p className="mt-1 text-3xl font-semibold">
+        {formatPlanPrice(plan)}
+        <span className="text-sm font-normal text-slate-500">/mes</span>
+      </p>
+      <p className="mt-3 text-sm text-slate-600">{formatCapacityLine(plan)}</p>
+      <PlanSelectLink planCode={plan.code} className="mt-5" variant={plan.highlighted ? "primary" : "secondary"}>
+        Testar {plan.name}
+      </PlanSelectLink>
+    </div>
+  );
+}
+
+function Metric({ label, value, tone }: { label: string; value: string; tone: "lime" | "blue" | "violet" }) {
+  const toneClass = {
+    lime: "text-[#d7ff74] bg-[#addb46]/10 border-[#addb46]/20",
+    blue: "text-[#93c5fd] bg-[#60a5fa]/10 border-[#60a5fa]/20",
+    violet: "text-[#c4b5fd] bg-[#8b5cf6]/10 border-[#8b5cf6]/20",
+  }[tone];
+
+  return (
+    <div className={cn("rounded-lg border p-3", toneClass)}>
+      <p className="text-xs text-slate-400">{label}</p>
+      <p className="mt-2 text-xl font-semibold text-white">{value}</p>
+    </div>
+  );
+}
+
+function InsightLine({ icon: Icon, title, meta }: { icon: LucideIcon; title: string; meta: string }) {
+  return (
+    <div className="flex items-start gap-3 rounded-md border border-white/10 bg-white/[0.04] p-3">
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[#addb46]" />
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-white">{title}</p>
+        <p className="mt-1 truncate text-xs text-slate-400">{meta}</p>
+      </div>
+    </div>
+  );
+}
+
+function DealCard({ title, value, compact }: { title: string; value: string; compact?: boolean }) {
+  return (
+    <div className={cn("mt-3 rounded-md border border-white/10 bg-[#0a101a] p-3", compact && "p-2")}>
+      <p className="truncate text-sm font-medium text-white">{title}</p>
+      <p className="mt-1 text-xs text-slate-400">{value} · proximo passo definido</p>
+      {!compact ? (
+        <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+          <CircleDollarSign className="h-3.5 w-3.5 text-[#addb46]" />
+          Proposta em acompanhamento
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ChatBubble({ side, children }: { side: "left" | "right"; children: React.ReactNode }) {
+  return (
+    <div className={cn("max-w-[82%] rounded-lg px-3 py-2 text-sm leading-6", side === "right" ? "ml-auto bg-[#addb46] text-[#071009]" : "bg-white/[0.06] text-slate-200")}>
+      {children}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-white/[0.04] px-3 py-2">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-1 font-medium text-slate-200">{value}</p>
+    </div>
+  );
+}
+
+function journeyCopy(step: (typeof JOURNEY)[number]) {
+  if (step === "Criar") return "Briefing, marca e IA no mesmo ponto de partida.";
+  if (step === "Publicar") return "Conteudo revisado segue para os canais certos.";
+  if (step === "Conversar") return "O retorno entra no atendimento com historico.";
+  if (step === "Vender") return "Contato vira oportunidade, tarefa e proposta.";
+  return "O time acompanha sinais e resultado sem perder contexto.";
 }

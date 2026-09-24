@@ -12,8 +12,24 @@ const instrumentSans = Instrument_Sans({ subsets: ["latin"], weight: ["500", "60
 const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://vorixworks.com"),
   title: "Vorix",
-  description: "Experiência de Espaço de Trabalho — a plataforma de Marketing com IA da Vorix.",
+  description: "Marketing, atendimento e vendas conectados por IA.",
+  openGraph: {
+    title: "Vorix",
+    description: "Marketing, atendimento e vendas conectados por IA.",
+    url: "https://vorixworks.com",
+    siteName: "Vorix",
+    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "Vorix Command Center" }],
+    locale: "pt_BR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Vorix",
+    description: "Marketing, atendimento e vendas conectados por IA.",
+    images: ["/opengraph-image"],
+  },
   other: {
     "facebook-domain-verification": "0slbgshopmsabjin5tk6xt2ylbi4eg",
   },

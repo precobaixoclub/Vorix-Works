@@ -25,7 +25,7 @@ export class WuzApiMessagingProvider implements MessagingProvider {
   readonly capabilities: MessagingProviderCapabilities = {
     supportsQrConnect: true,
     supportsTemplates: false,
-    supportedMediaKinds: ["text", "image", "audio", "video", "document"],
+    supportedMediaKinds: ["text", "image", "audio", "video", "document", "sticker"],
     supportsReadReceipts: false,
     supportsTypingIndicator: false,
   };
@@ -95,9 +95,14 @@ export class WuzApiMessagingProvider implements MessagingProvider {
     return this.toSendResult(result);
   }
 
+  async sendSticker(input: { externalSessionId: string; to: string; mediaUrl: string }): Promise<MessagingSendResult> {
+    const result = await this.client.sendSticker(input.externalSessionId, { phone: input.to, mediaUrl: input.mediaUrl });
+    return this.toSendResult(result);
+  }
+
   async downloadMedia(input: {
     externalSessionId: string;
-    type: "image" | "audio" | "video" | "document";
+    type: "image" | "audio" | "video" | "document" | "sticker";
     ref: { url: string; directPath?: string; mediaKey?: string; mimeType?: string; fileSha256?: string; fileSizeBytes?: number; fileEncSha256?: string };
   }): Promise<{ body: Buffer; mimeType?: string } | undefined> {
     return this.client.downloadMedia(input.externalSessionId, input.type, input.ref);

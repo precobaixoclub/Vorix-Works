@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type React from "react";
-import { ChevronLeft, ChevronRight, FileText, Pause, Play, UserRound, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FileText, Pause, Play, UserRound, X } from "lucide-react";
 import { Button } from "@/components/Button";
 import { Spinner } from "@/components/Spinner";
 import { getApiBaseUrl } from "@/lib/api-error";
@@ -68,6 +68,7 @@ const MEDIA_ERROR_LABEL: Record<InboxMessage["type"], string> = {
   document: "Não foi possível carregar este documento.",
   location: "Não foi possível carregar esta localização.",
   contact: "Não foi possível carregar este contato.",
+  sticker: "Não foi possível carregar esta figurinha.",
   text: "Não foi possível carregar esta mensagem.",
   other: "Não foi possível carregar esta mídia.",
 };
@@ -129,6 +130,7 @@ export function MessageMedia({ workspaceId, message, onOpen }: { workspaceId: st
   if (message.type === "audio") return <AudioMedia workspaceId={workspaceId} message={message} />;
   if (message.type === "video") return <VideoMedia message={message} onOpen={onOpen} />;
   if (message.type === "document") return <DocumentMedia workspaceId={workspaceId} message={message} />;
+  if (message.type === "sticker") return <StickerMedia workspaceId={workspaceId} message={message} />;
   return <MediaFallback type={message.type} isOutbound={message.direction === "outbound"} />;
 }
 
@@ -157,6 +159,60 @@ function ImageMedia({ workspaceId, message, onOpen }: { workspaceId: string; mes
       {/* eslint-disable-next-line @next/next/no-img-element -- mídia privada servida via proxy autenticado, nunca otimizável pelo loader padrão do Next */}
       <img src={state.url} alt="Imagem recebida" loading="lazy" className="max-h-72 w-full object-cover" />
     </button>
+  );
+}
+
+/** Dispara o download de verdade (pedido explícito do usuário: "preciso conseguir... salvar") —
+ * `state.url` já é a URL do proxy autenticado (com `media_token` embutido na querystring), então um
+ * `<a download>` programático funciona sem nenhuma chamada extra: o navegador refaz a MESMA
+ * requisição que já carregou a prévia, só que salva em vez de exibir inline. */
+function downloadMediaUrl(url: string, fileName: string) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+/** Bloco "figurinhas" (pedido explícito do usuário, com print: "quando é figurinha esta ficando
+ * como mídia recebida... preciso conseguir ver, salvar e ainda enviar quando necessário") — sem
+ * moldura/fundo de bolha (mesmo tratamento do WhatsApp: figurinha "flutua" sobre o fundo da
+ * conversa, nunca dentro de um retângulo colorido) e SEM abrir o `ConversationMediaViewer`
+ * (figurinha não entra na galeria de fotos/vídeos — ver `mediaMessages` em `inbox-tab.tsx`, nunca
+ * alterado). Botão de download aparece só no hover (discreto, mesmo racional do menu de ações da
+ * mensagem) pra não poluir uma imagem já pequena.
+ */
+function StickerMedia({ workspaceId, message }: { workspaceId: string; message: InboxMessage }) {
+  const { state, load } = useMediaUrl(workspaceId, message);
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message.id]);
+
+  if (state.status === "error") return <MediaFallback type="sticker" retry={load} />;
+  if (state.status !== "ready" || !state.url) {
+    return (
+      <div className="flex h-28 w-28 items-center justify-center">
+        <Spinner className="h-5 w-5 text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="group/sticker relative h-28 w-28">
+      {/* eslint-disable-next-line @next/next/no-img-element -- mídia privada servida via proxy autenticado */}
+      <img src={state.url} alt="Figurinha" loading="lazy" className="h-full w-full object-contain" />
+      <button
+        type="button"
+        onClick={() => downloadMediaUrl(state.url!, `figurinha-${message.id}.webp`)}
+        aria-label="Salvar figurinha"
+        className="absolute bottom-0.5 right-0.5 rounded-full bg-black/50 p-1 text-white opacity-0 transition-opacity hover:bg-black/70 group-hover/sticker:opacity-100"
+      >
+        <Download className="h-3.5 w-3.5" />
+      </button>
+    </div>
   );
 }
 

@@ -191,7 +191,7 @@ export type InboxConversationEvent = {
 export type InboxTenantMember = { userId: string; email: string; name: string; role: string };
 
 export type InboxMessageDirection = "inbound" | "outbound";
-export type InboxMessageType = "text" | "image" | "video" | "audio" | "document" | "location" | "contact" | "other";
+export type InboxMessageType = "text" | "image" | "video" | "audio" | "document" | "location" | "contact" | "sticker" | "other";
 export type InboxMessageStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed";
 
 /** Redesign operacional (mídia real) — espelha `InboxMediaStorageRef` do backend

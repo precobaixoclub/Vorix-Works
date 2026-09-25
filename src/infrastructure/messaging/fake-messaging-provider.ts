@@ -12,7 +12,7 @@ export class FakeMessagingProvider implements MessagingProvider {
   readonly capabilities: MessagingProviderCapabilities = {
     supportsQrConnect: true,
     supportsTemplates: false,
-    supportedMediaKinds: ["text", "image", "audio", "video", "document"],
+    supportedMediaKinds: ["text", "image", "audio", "video", "document", "sticker"],
     supportsReadReceipts: false,
     supportsTypingIndicator: false,
   };
@@ -58,6 +58,10 @@ export class FakeMessagingProvider implements MessagingProvider {
   }
 
   async sendContact(): Promise<MessagingSendResult> {
+    return { externalMessageId: `fake-${++this.sequence}` };
+  }
+
+  async sendSticker(): Promise<MessagingSendResult> {
     return { externalMessageId: `fake-${++this.sequence}` };
   }
 

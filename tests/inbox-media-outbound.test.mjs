@@ -54,6 +54,7 @@ function makeFakeMessagingProvider() {
     async sendVideo(input) { this.sent.push({ method: "sendVideo", input }); return { externalMessageId: `fake-video-${this.sent.length}` }; },
     async sendDocument(input) { this.sent.push({ method: "sendDocument", input }); return { externalMessageId: `fake-document-${this.sent.length}` }; },
     async sendContact(input) { this.sent.push({ method: "sendContact", input }); return { externalMessageId: `fake-contact-${this.sent.length}` }; },
+    async sendSticker(input) { this.sent.push({ method: "sendSticker", input }); return { externalMessageId: `fake-sticker-${this.sent.length}` }; },
   };
 }
 
@@ -112,6 +113,38 @@ test("IMAGE_OUTBOUND: sendInboxMediaMessage grava cópia própria + processOutbo
     `data:image/jpeg;base64,${imageBytes.toString("base64")}`,
     "contrato real do WuzAPI (API.md): campo de mídia é um data URI base64, nunca uma URL fetchável",
   );
+});
+
+test("STICKER_OUTBOUND: sendInboxMediaMessage(type: sticker) grava cópia própria + processOutboundMessage chama provider.sendSticker (nunca sendImage)", async () => {
+  const tenantId = "tenant-media-out-sticker-1";
+  const { workspace, connection, conversation } = await makeConversation(tenantId);
+  const mediaStorage = makeFakeMediaStorage();
+  const provider = makeFakeMessagingProvider();
+  const deps = {
+    connectionRepository: new PostgresMessagingConnectionRepository(db.pool),
+    conversationRepository: new PostgresInboxConversationRepository(db.pool),
+    messageRepository: new PostgresInboxMessageRepository(db.pool),
+    outboundQueue: { async publish() {} },
+    providers: { wuzapi: provider },
+    inboxMediaStorage: mediaStorage,
+  };
+
+  const webpBytes = Buffer.from("fake-webp-bytes");
+  const message = await sendInboxMediaMessage(deps, {
+    tenantId, workspaceId: workspace.id, conversationId: conversation.id, sentByUserId: "user-1",
+    type: "sticker", body: webpBytes, mimeType: "image/webp",
+  });
+
+  assert.equal(message.status, "queued");
+  assert.equal(message.type, "sticker");
+  assert.ok(message.mediaStorageRef?.objectKey);
+
+  const sent = await processOutboundMessage(deps, { messageId: message.id });
+  assert.equal(sent.status, "sent");
+  assert.equal(provider.sent.length, 1);
+  assert.equal(provider.sent[0].method, "sendSticker", "figurinha usa POST /chat/send/sticker (confirmado em API.md), nunca /chat/send/image");
+  assert.equal(provider.sent[0].input.to, conversation.externalChatId);
+  assert.equal(provider.sent[0].input.mediaUrl, `data:image/webp;base64,${webpBytes.toString("base64")}`);
 });
 
 test("DOCUMENT_OUTBOUND: fileName é repassado ao provider", async () => {

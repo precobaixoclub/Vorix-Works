@@ -241,6 +241,13 @@ export class WuzApiClient {
     return this.sessionRequest(sessionToken, "/chat/send/contact", { method: "POST", body: { Phone: input.phone, Name: input.name, Vcard: input.vcard } });
   }
 
+  /** Bloco "figurinhas" — CONFIRMADO via documentação real do `asternic/wuzapi` (`API.md`): `POST
+   * /chat/send/sticker` espera `Phone`/`Sticker` (data URI base64, `image/webp` estático ou
+   * `video/mp4` animado — mesmo formato já usado por `sendImage`/`sendVideo`/etc.). */
+  async sendSticker(sessionToken: string, input: { phone: string; mediaUrl: string }): Promise<{ Id: string; Timestamp: string }> {
+    return this.sessionRequest(sessionToken, "/chat/send/sticker", { method: "POST", body: { Phone: input.phone, Sticker: input.mediaUrl } });
+  }
+
   /**
    * Metadata de grupo (bloco "Identity UX" — ver docs/conversas-whatsapp-experience-completion.md).
    *
@@ -291,10 +298,20 @@ export class WuzApiClient {
    */
   async downloadMedia(
     sessionToken: string,
-    type: "image" | "video" | "audio" | "document",
+    type: "image" | "video" | "audio" | "document" | "sticker",
     input: { url: string; directPath?: string; mediaKey?: string; mimeType?: string; fileSha256?: string; fileSizeBytes?: number; fileEncSha256?: string },
   ): Promise<{ body: Buffer; mimeType?: string } | undefined> {
-    const path = { image: "/chat/downloadimage", video: "/chat/downloadvideo", audio: "/chat/downloadaudio", document: "/chat/downloaddocument" }[type];
+    // Bloco "figurinhas" — o WuzAPI/API.md NÃO documenta um `/chat/downloadsticker` dedicado (só
+    // image/video/audio/document). Roteado para `/chat/downloadimage` de propósito: uma figurinha
+    // (`waE2E.StickerMessage`) é estruturalmente um `waE2E.ImageMessage` com campos extras
+    // (`isAnimated`/`pngThumbnail`/pack) — mesmos campos exigidos aqui (Url/DirectPath/MediaKey/
+    // Mimetype/hashes) e o protocolo do WhatsApp deriva a chave de mídia de figurinha com o MESMO
+    // rótulo "Image" usado por fotos (confirmado em implementações públicas do protocolo E2E do
+    // WhatsApp, não uma suposição às cegas) — mas, diferente do resto deste arquivo, isto NUNCA foi
+    // confirmado contra um payload real capturado ao vivo. Degrada com segurança se estiver errado:
+    // `downloadInboundMediaAndAttach` já trata qualquer falha de download como "mídia indisponível"
+    // (nunca quebra a mensagem), então o pior caso é a figurinha continuar sem preview, nunca um erro.
+    const path = { image: "/chat/downloadimage", video: "/chat/downloadvideo", audio: "/chat/downloadaudio", document: "/chat/downloaddocument", sticker: "/chat/downloadimage" }[type];
     const raw = await this.sessionRequest<unknown>(sessionToken, path, {
       method: "POST",
       body: {

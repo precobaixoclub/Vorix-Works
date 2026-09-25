@@ -41,7 +41,7 @@ export class MessagingProviderError extends Error {
   }
 }
 
-export const MESSAGING_MEDIA_KINDS = ["text", "image", "audio", "video", "document"] as const;
+export const MESSAGING_MEDIA_KINDS = ["text", "image", "audio", "video", "document", "sticker"] as const;
 export type MessagingMediaKind = (typeof MESSAGING_MEDIA_KINDS)[number];
 
 /** Declaração de capacidades por canal — SaaS Commercialization, Fase 6 (Omnichannel). Mesmo
@@ -91,6 +91,11 @@ export type MessagingProvider = {
    * de contato (vCard) na conversa, mesmo recurso do anexo "Contato" do WhatsApp nativo. `vcard` já
    * vem pronto (montado pelo caso de uso a partir de nome/telefone) — o provider só repassa. */
   sendContact(input: { externalSessionId: string; to: string; name: string; vcard: string }): Promise<MessagingSendResult>;
+  /** Bloco "figurinhas" (pedido explícito do usuário: "quando é figurinha esta ficando como mídia
+   * recebida... preciso conseguir ver, salvar e ainda enviar quando necessário") — `POST
+   * /chat/send/sticker` do WuzAPI (confirmado em API.md), mesmo formato data URI base64 já usado
+   * por `sendImage`/`sendVideo`/etc. (`mediaUrl`). */
+  sendSticker(input: { externalSessionId: string; to: string; mediaUrl: string }): Promise<MessagingSendResult>;
 
   /**
    * Redesign operacional (mídia real) — baixa e descriptografa mídia RECEBIDA a partir das

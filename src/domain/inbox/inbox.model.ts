@@ -204,7 +204,7 @@ export type InboxConversation = {
 export const INBOX_MESSAGE_DIRECTIONS = ["inbound", "outbound"] as const;
 export type InboxMessageDirection = (typeof INBOX_MESSAGE_DIRECTIONS)[number];
 
-export const INBOX_MESSAGE_TYPES = ["text", "image", "video", "audio", "document", "location", "contact", "other"] as const;
+export const INBOX_MESSAGE_TYPES = ["text", "image", "video", "audio", "document", "location", "contact", "sticker", "other"] as const;
 export type InboxMessageType = (typeof INBOX_MESSAGE_TYPES)[number];
 
 export const INBOX_MESSAGE_STATUSES = ["queued", "sending", "sent", "delivered", "read", "failed"] as const;

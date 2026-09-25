@@ -74,6 +74,12 @@ const MESSAGE_TYPE_BY_WHATSMEOW_KIND: Record<string, InboxMessageType> = {
   documentMessage: "document",
   locationMessage: "location",
   contactMessage: "contact",
+  // Bloco "figurinhas" (pedido explícito do usuário, com print: "quando é figurinha esta ficando
+  // como mídia recebida") — nomes de campo CONFIRMADOS no proto real do whatsmeow
+  // (`waE2E.StickerMessage`, `WAWebProtobufsE2E.proto`): mesmo shape de `imageMessage`
+  // (url/directPath/mimetype/fileLength/mediaKey/fileSha256/fileEncSha256), sem `caption` (figurinha
+  // nunca tem legenda no WhatsApp) — reaproveita `extractMediaFields` sem duplicar nada.
+  stickerMessage: "sticker",
 };
 
 const STATUS_BY_RECEIPT_STATE: Record<string, InboxMessageStatus> = {
@@ -346,7 +352,7 @@ function pickNumber(object: Record<string, unknown>, keys: string[]): number | u
 }
 
 function extractMediaFields(messageType: InboxMessageType, media: Record<string, unknown>): ExtractedMediaFields | undefined {
-  if (messageType !== "image" && messageType !== "video" && messageType !== "audio" && messageType !== "document") return undefined;
+  if (messageType !== "image" && messageType !== "video" && messageType !== "audio" && messageType !== "document" && messageType !== "sticker") return undefined;
   return {
     mediaUrl: pickString(media, ["url", "Url", "URL"]),
     mediaDirectPath: pickString(media, ["directPath", "DirectPath"]),

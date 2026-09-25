@@ -1165,8 +1165,14 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
  * suportado. Imagem/áudio/vídeo restritos a um allowlist seguro (mesmo racional de
  * `publication-media.route.ts`); documento aceita um allowlist mais amplo de tipos de escritório
  * comuns — nunca um executável/script (`.exe`/`.sh`/etc — fora do allowlist, rejeitado). */
-function classifyOutboundMediaMime(mimeType: string): "image" | "audio" | "video" | "document" | undefined {
-  const IMAGE = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+function classifyOutboundMediaMime(mimeType: string): "image" | "audio" | "video" | "document" | "sticker" | undefined {
+  // Bloco "figurinhas" (pedido explícito do usuário, com print: "preciso conseguir... enviar
+  // quando necessário") — `image/webp` SEMPRE vira figurinha, nunca "foto" (mesmo comportamento já
+  // conhecido do WhatsApp Web: arrastar um .webp pra uma conversa manda como figurinha
+  // automaticamente, nunca como imagem normal — fotos reais de câmera/galeria são JPEG/PNG/HEIC,
+  // nunca webp). Por isso `image/webp` saiu do allowlist de IMAGE abaixo.
+  if (mimeType === "image/webp") return "sticker";
+  const IMAGE = new Set(["image/jpeg", "image/png", "image/gif"]);
   const AUDIO = new Set(["audio/ogg", "audio/mpeg", "audio/mp4", "audio/webm", "audio/aac", "audio/wav", "audio/x-wav", "audio/opus"]);
   const VIDEO = new Set(["video/mp4", "video/quicktime", "video/webm"]);
   const DOCUMENT = new Set([

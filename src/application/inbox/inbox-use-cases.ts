@@ -1549,6 +1549,7 @@ async function sendOutboundByType(
     const fileName = (message.metadata?.fileName as string | undefined) ?? "documento";
     return provider.sendDocument({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri, fileName });
   }
+  if (message.type === "sticker") return provider.sendSticker({ externalSessionId: input.externalSessionId, to: input.to, mediaUrl: dataUri });
   throw new MessagingProviderError("permanent", `Tipo de mensagem "${message.type}" não tem envio outbound suportado.`);
 }
 

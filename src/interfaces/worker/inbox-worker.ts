@@ -807,7 +807,7 @@ async function main(): Promise<void> {
     // DE OUTRO contato, se o self-echo for de uma mensagem recebida por um dispositivo vinculado
     // diferente). Mesmo racional de "best-effort, nunca no caminho crítico do ack" — só a guarda
     // de direção que era o bug real; `wasCreated` sozinho já cobre os dois sentidos.
-    if (wasCreated && (event.messageType === "image" || event.messageType === "video" || event.messageType === "audio" || event.messageType === "document")) {
+    if (wasCreated && (event.messageType === "image" || event.messageType === "video" || event.messageType === "audio" || event.messageType === "document" || event.messageType === "sticker")) {
       if (event.mediaUrl) {
         downloadInboundMediaAndAttach(deps, {
           tenantId: event.tenantId,

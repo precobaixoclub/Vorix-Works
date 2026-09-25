@@ -26,6 +26,7 @@ import {
   Send,
   Smile,
   Square,
+  Sticker as StickerIcon,
   Tag,
   Trash2,
   UserCheck,
@@ -1336,6 +1337,7 @@ export function ConversationTimelinePane({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const documentInputRef = useRef<HTMLInputElement | null>(null);
+  const stickerInputRef = useRef<HTMLInputElement | null>(null);
 
   const messages = [...(data?.messages ?? [])].reverse();
   const events = eventsData?.events ?? [];
@@ -1682,6 +1684,17 @@ export function ConversationTimelinePane({
               if (file) void handleAttach(file);
             }}
           />
+          <input
+            ref={stickerInputRef}
+            type="file"
+            accept="image/webp"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void handleAttach(file);
+            }}
+          />
           {/* Composer como UMA superfície só (pedido explícito do usuário: "não parecer input
              simples com ícones soltos") — os ícones (anexo/emoji/enviar-ou-microfone) ficam
              integrados ao mesmo container bordado do texto, em vez de cada um com sua própria
@@ -1711,6 +1724,14 @@ export function ConversationTimelinePane({
                 >
                   <FileText className="h-4 w-4 text-muted-foreground" />
                   Documento
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+                  onClick={() => stickerInputRef.current?.click()}
+                >
+                  <StickerIcon className="h-4 w-4 text-muted-foreground" />
+                  Figurinha
                 </button>
                 <button
                   type="button"
@@ -2281,7 +2302,7 @@ function MessageBubble({
   // cartão renderizado de verdade (`ContactCardMedia`) já mostra o nome, então nunca repete como
   // parágrafo separado embaixo (mesmo nome duas vezes na mesma bolha).
   const body = message.type === "contact" ? undefined : message.body?.trim();
-  const isMedia = message.type === "image" || message.type === "video" || message.type === "audio" || message.type === "document" || message.type === "contact";
+  const isMedia = message.type === "image" || message.type === "video" || message.type === "audio" || message.type === "document" || message.type === "contact" || message.type === "sticker";
   const failed = isOutbound && message.status === "failed";
 
   // Bloco "resposta citada" (pedido explícito do usuário: "quando alguem responde uma mensagem não
@@ -2322,13 +2343,21 @@ function MessageBubble({
             // usuário) — sem sombra, sem borda na bolha normal (só a de erro mantém, é um alerta,
             // não uma mensagem comum), cantos mais arredondados com um "bico" discreto no canto
             // que aponta pra quem mandou, em vez do retângulo uniforme de antes.
-            "relative min-w-0 rounded-2xl px-3.5 py-2.5 text-sm",
-            isOutbound ? "rounded-br-md" : "rounded-bl-md",
-            isOutbound
-              ? failed
-                ? "border border-destructive/40 bg-destructive/10 text-foreground"
-                : "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
-              : "bg-muted/70 text-foreground dark:bg-muted/40",
+            "relative min-w-0 rounded-2xl text-sm",
+            // Figurinha "flutua" sobre o fundo da conversa, sem moldura/fundo colorido — mesmo
+            // tratamento do WhatsApp nativo (pedido explícito do usuário, com print: "quando é
+            // figurinha esta ficando como mídia recebida"). Nunca aplica a mesma regra a mensagens
+            // COM texto (`body`) — só a figurinha pura fica sem chrome, uma legenda ainda precisa
+            // da bolha normal pra ser legível.
+            message.type === "sticker" && !body ? "bg-transparent p-0" : "px-3.5 py-2.5",
+            message.type === "sticker" && !body ? "" : isOutbound ? "rounded-br-md" : "rounded-bl-md",
+            message.type === "sticker" && !body
+              ? ""
+              : isOutbound
+                ? failed
+                  ? "border border-destructive/40 bg-destructive/10 text-foreground"
+                  : "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
+                : "bg-muted/70 text-foreground dark:bg-muted/40",
           )}
         >
           {senderLabel ? <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">{senderLabel}</p> : null}
@@ -2762,6 +2791,7 @@ export function mediaIconFor(type: InboxMessage["type"]) {
     case "video": return Video;
     case "audio": return Volume2;
     case "document": return FileText;
+    case "sticker": return StickerIcon;
     default: return AlertCircle;
   }
 }
@@ -2792,6 +2822,7 @@ function mediaPreviewLabel(type: InboxMessage["type"]): string {
     case "document": return "📄 Documento";
     case "location": return "📍 Localização";
     case "contact": return "👤 Contato";
+    case "sticker": return "🏷️ Figurinha";
     default: return mediaLabelFor(type);
   }
 }
@@ -2811,6 +2842,7 @@ export function mediaLabelFor(type: InboxMessage["type"], isOutbound = false): s
     case "document": return `Documento ${masc}`;
     case "location": return `Localização ${fem}`;
     case "contact": return `Contato ${masc}`;
+    case "sticker": return `Figurinha ${fem}`;
     case "text": return "Mensagem sem texto";
     default: return `Mídia ${fem}`;
   }

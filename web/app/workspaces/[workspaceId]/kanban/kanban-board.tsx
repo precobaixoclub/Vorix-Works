@@ -362,7 +362,7 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
            demais... o quadro ficou visualmente espalhado") — REVERTE a direção de uma rodada
            anterior (`minmax(280px, 1fr)`, que esticava cada coluna proporcionalmente pra ocupar
            toda a largura da tela): poucas fases (o caso comum) ficavam enormes, e o card dentro
-           esticava junto. Agora `flex` com coluna de largura FIXA/semi-fixa (`w-64`, ver
+           esticava junto. Agora `flex` com coluna de largura FIXA/semi-fixa (`w-72`, ver
            `KanbanColumn`) — quadro compacto tipo Trello/CRM operacional, nunca esticado; quando
            houver fases demais pra caber, o PRÓPRIO board rola horizontalmente (`overflow-x-auto`
            aqui), sem esticar nada. */}
@@ -390,7 +390,7 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
            fluxo normal do grid, então nunca empurra/redimensiona as colunas por baixo. */}
         <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
           {activeConversation ? (
-            <div className="w-64 rotate-1 cursor-grabbing rounded-lg border border-primary/40 bg-card px-2 py-1.5 shadow-xl">
+            <div className="w-72 rotate-1 cursor-grabbing rounded-lg border border-primary/40 bg-card px-2 py-1.5 shadow-xl">
               <KanbanCardBody conversation={activeConversation} serviceTime={serviceTimeByConversation.get(activeConversation.id)} />
             </div>
           ) : null}
@@ -494,11 +494,11 @@ function KanbanColumn({
         // inteira desce"; depois do `overflow-hidden` da página, os cards excedentes ficavam
         // CORTADOS/invisíveis — pior ainda). Com `min-h-0`, a coluna respeita a altura da trilha e
         // só o `overflow-y-auto` do conteúdo (abaixo) rola.
-        // `w-64 shrink-0` (pedido explícito do usuário: "largura fixa ou semi-fixa... coluna não
+        // `w-72 shrink-0` (pedido explícito do usuário: "largura fixa ou semi-fixa... coluna não
         // deve ocupar largura excessiva quando tiver pouco conteúdo") — mesma largura pro
         // `DragOverlay` (ver `KanbanBoard`), pra o clone que segue o cursor não parecer maior/menor
         // que a coluna de origem.
-        "flex h-full w-64 min-h-0 shrink-0 flex-col rounded-xl border border-border bg-surface-sunken/60 transition-colors",
+        "flex h-full w-72 min-h-0 shrink-0 flex-col rounded-xl border border-border bg-surface-sunken/60 transition-colors",
         isOver && "border-primary/60 bg-primary/5",
       )}
     >

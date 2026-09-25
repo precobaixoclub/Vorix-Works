@@ -118,6 +118,30 @@ test("mapWuzApiEvent: contactMessage sem vcard nenhum não lança — degrada co
   assert.equal(mapped.contactPhoneE164, undefined);
 });
 
+test("mapWuzApiEvent: stickerMessage extrai url/directPath/mimetype/mediaKey (mesmo shape de imageMessage), sem caption/body", () => {
+  const mapped = mapWuzApiEvent(rawEvent({
+    stickerMessage: {
+      url: "https://mmg.whatsapp.net/sticker-xyz",
+      directPath: "/v/t62.15575-24/fake-sticker-path",
+      mimetype: "image/webp",
+      fileLength: 18_500,
+      fileSha256: "sha-sticker",
+      fileEncSha256: "encsha-sticker",
+      mediaKey: "key-sticker",
+      isAnimated: false,
+    },
+  }));
+
+  assert.equal(mapped.messageType, "sticker", "bug real corrigido: figurinha caía em 'other' (sem field map), virando bolha 'Mídia recebida' genérica");
+  assert.equal(mapped.mediaUrl, "https://mmg.whatsapp.net/sticker-xyz");
+  assert.equal(mapped.mediaDirectPath, "/v/t62.15575-24/fake-sticker-path");
+  assert.equal(mapped.mimeType, "image/webp");
+  assert.equal(mapped.mediaKey, "key-sticker");
+  assert.equal(mapped.fileSha256, "sha-sticker");
+  assert.equal(mapped.fileEncSha256, "encsha-sticker");
+  assert.equal(mapped.body, undefined, "figurinha nunca tem legenda no WhatsApp — nunca inventar um body");
+});
+
 test("mapWuzApiEvent: mensagem de texto simples (conversation) nunca preenche campos de mídia", () => {
   const mapped = mapWuzApiEvent(rawEvent({ conversation: "Oi, tudo bem?" }));
   assert.equal(mapped.messageType, "text");

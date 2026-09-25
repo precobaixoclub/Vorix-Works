@@ -234,11 +234,12 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
       if (bucket) bucket.push(conversation);
       else map.set(key, [conversation]);
     }
+    // Ordenação ÚNICA por última interação (pedido explícito do usuário) — nunca mais prioriza
+    // fixados primeiro dentro da coluna. `isPinned` continua existindo e sendo exibido (o ícone de
+    // alfinete no card, ver `KanbanCardBody`), só não influencia mais a ORDEM: quem interagiu por
+    // último sobe, ponto, fixado ou não.
     for (const bucket of map.values()) {
-      bucket.sort((a, b) => {
-        if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-        return (b.lastMessageAt ?? "").localeCompare(a.lastMessageAt ?? "");
-      });
+      bucket.sort((a, b) => (b.lastMessageAt ?? "").localeCompare(a.lastMessageAt ?? ""));
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps

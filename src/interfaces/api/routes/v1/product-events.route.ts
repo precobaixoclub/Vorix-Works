@@ -8,7 +8,7 @@ import { successEnvelope } from "../../http/response-envelope.js";
  * só nasce no backend, a partir do próprio use-case que já sabe que aquilo de fato aconteceu —
  * este endpoint público rejeita qualquer nome fora desta lista, mesmo que o vocabulário geral
  * (`PRODUCT_EVENT_NAMES`) o reconheça. */
-const CLIENT_ALLOWED_EVENT_NAMES = ["landing_view", "pricing_view", "plan_selected", "signup_started"] as const;
+const CLIENT_ALLOWED_EVENT_NAMES = ["landing_view", "pricing_view", "plan_selected", "signup_started", "support_whatsapp_clicked"] as const;
 
 export type ProductEventsRoutesDeps = ProductAnalyticsUseCaseDeps;
 
@@ -26,7 +26,7 @@ const RECORD_BODY_SCHEMA = {
 
 /**
  * `POST /v1/product-events` — único ponto de entrada para eventos de COMPORTAMENTO reportados
- * pelo navegador (landing/pricing/plan_selected/signup_started), inclusive ANTES do login
+ * pelo navegador (landing/pricing/plan_selected/signup_started/support_whatsapp_clicked), inclusive ANTES do login
  * (`anonymousId` do visitante, nunca um fingerprint invasivo). Quando o request já carrega um
  * JWT válido, `tenantId`/`userId` são anexados a partir do principal — NUNCA do corpo — pra
  * nunca permitir que um cliente reivindique ser outro tenant. Nunca lança por falha de escrita

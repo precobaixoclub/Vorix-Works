@@ -51,6 +51,10 @@ export const PRODUCT_EVENT_NAMES = [
   "capacity_increased",
   "capacity_decrease_scheduled",
   "plan_recommended",
+  // Polimento final do site público (pedido explícito do usuário) — clique no CTA discreto de
+  // suporte (footer/FAQ, ver `SupportWhatsAppLink`). Comportamental, não estado real — mesma
+  // categoria de `landing_view`/`plan_selected`, nunca duplica um evento já existente.
+  "support_whatsapp_clicked",
 ] as const;
 export type ProductEventName = (typeof PRODUCT_EVENT_NAMES)[number];
 

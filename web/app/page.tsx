@@ -5,6 +5,7 @@ import { Button } from "@/components/Button";
 import { PlanSelectLink } from "@/components/PlanSelectLink";
 import { PublicFooter } from "@/components/public/PublicFooter";
 import { PublicHeader } from "@/components/public/PublicHeader";
+import { SupportWhatsAppLink } from "@/components/public/SupportWhatsAppLink";
 import { TrackPageView } from "@/components/TrackPageView";
 import { fetchPublicPlans, formatCapacityLine, formatPlanPrice, getPublicPlanTagline, type PublicPlan } from "@/features/platform-plans/api";
 import { cn } from "@/lib/utils";
@@ -33,8 +34,8 @@ const PRODUCT_SECTIONS: readonly ProductSection[] = [
   },
   {
     eyebrow: "CRM",
-    title: "Transforme conversas em oportunidades e acompanhe cada negociacao.",
-    description: "O Kanban real mostra etapa, responsavel, origem, valor e proximo passo sem tirar o time da operacao.",
+    title: "Transforme conversas em oportunidades e acompanhe cada negociação.",
+    description: "O Kanban real mostra etapa, responsável, origem, valor e próximo passo sem tirar o time da operação.",
     label: "CRM / Kanban",
     image: "crm-kanban",
     width: 1120,
@@ -51,15 +52,15 @@ const PRODUCT_SECTIONS: readonly ProductSection[] = [
   },
   {
     eyebrow: "Marketing + IA",
-    title: "Crie e organize conteudo com IA sem sair da plataforma.",
-    description: "A tela de Criar e o planejamento de Producao mostram como a IA entra no fluxo real de marketing.",
-    label: "Criar conteudo",
+    title: "Crie e organize conteúdo com IA sem sair da plataforma.",
+    description: "A tela de Criar e o planejamento de Produção mostram como a IA entra no fluxo real de marketing.",
+    label: "Criar conteúdo",
     image: "marketing-criar",
     width: 1120,
     widths: [900, 1120],
     aspect: "aspect-[1120/825]",
     overlay: {
-      label: "Producao",
+      label: "Produção",
       image: "producao",
       width: 1120,
       widths: [900, 1120],
@@ -69,11 +70,11 @@ const PRODUCT_SECTIONS: readonly ProductSection[] = [
 ];
 
 const FAQ: readonly { question: string; answer: string }[] = [
-  { question: "Preciso cadastrar cartao?", answer: "Nao. Voce cria a conta e comeca a testar sem informar forma de pagamento." },
-  { question: "Quanto tempo dura o teste?", answer: "Sao 7 dias para usar o Vorix antes de contratar um plano." },
-  { question: "O que acontece depois dos 7 dias?", answer: "Seu acesso operacional e pausado ate voce escolher um plano. Nada do que voce criou e apagado." },
-  { question: "Quando comeca a cobranca?", answer: "So depois que voce confirmar a contratacao de um plano dentro do Vorix." },
-  { question: "Posso cancelar?", answer: "Sim, a qualquer momento, direto em Plano e cobranca. Seu acesso continua ate o fim do periodo ja pago." },
+  { question: "Preciso cadastrar cartão?", answer: "Não. Você cria a conta e começa a testar sem informar forma de pagamento." },
+  { question: "Quanto tempo dura o teste?", answer: "São 7 dias para usar o Vorix antes de contratar um plano." },
+  { question: "O que acontece depois dos 7 dias?", answer: "Seu acesso operacional é pausado até você escolher um plano. Nada do que você criou é apagado." },
+  { question: "Quando começa a cobrança?", answer: "Só depois que você confirmar a contratação de um plano dentro do Vorix." },
+  { question: "Posso cancelar?", answer: "Sim, a qualquer momento, direto em Plano e cobrança. Seu acesso continua até o fim do período já pago." },
 ];
 
 export default async function RootPage() {
@@ -90,7 +91,14 @@ export default async function RootPage() {
       <PublicHeader />
 
       <section className="relative border-b border-white/10 bg-[#080c13]">
-        <div className="mx-auto grid max-w-7xl items-center gap-9 px-4 py-14 sm:px-6 sm:py-18 lg:grid-cols-[0.76fr_1.24fr] lg:py-20">
+        {/* Bloco "protagonismo do produto no Hero" (pedido explícito do usuário: "a composição real
+           do Vorix ainda pode ganhar um pouco mais de presença... 8% a 12%, sem refazer
+           composição") — `max-w-[88rem]` (1408px) em vez do `max-w-7xl` (1280px) usado no resto do
+           site: a proporção do grid (`0.76fr_1.24fr`) e o espaçamento internos ficam IDÊNTICOS, só
+           a LARGURA TOTAL disponível cresce (~+10%, dentro da faixa pedida) em telas grandes — a
+           coluna do produto (1.24fr) recebe a mesma fatia proporcional de um espaço maior. Nunca
+           toca a borda (`px-4 sm:px-6` preservado) — em 1920px ainda sobra ~256px de cada lado. */}
+        <div className="mx-auto grid max-w-[88rem] items-center gap-9 px-4 py-14 sm:px-6 sm:py-18 lg:grid-cols-[0.76fr_1.24fr] lg:py-20">
           <div className="max-w-2xl">
             <div className="inline-flex flex-col gap-1">
               <span className="font-mono text-sm font-semibold uppercase tracking-[0.28em] text-[#d7ff74]">Vorix</span>
@@ -100,7 +108,7 @@ export default async function RootPage() {
               Marketing, atendimento e vendas conectados por IA.
             </h1>
             <p className="mt-5 max-w-xl text-balance text-base leading-7 text-slate-300 sm:text-lg">
-              O Vorix conecta conteudo, conversas, CRM e resultados para sua equipe transformar contexto em ação e ação em receita.
+              O Vorix conecta conteúdo, conversas, CRM e resultados para sua equipe transformar contexto em ação e ação em receita.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link href="/signup">
@@ -108,11 +116,11 @@ export default async function RootPage() {
               </Link>
               <Link href="#produto">
                 <Button variant="secondary" className="border-white/20 bg-white/5 px-5 py-3 text-white hover:bg-white/10">
-                  Ver o Vorix em acao
+                  Ver o Vorix em ação
                 </Button>
               </Link>
             </div>
-            <p className="mt-4 text-sm text-slate-400">7 dias para testar · sem cartao para comecar</p>
+            <p className="mt-4 text-sm text-slate-400">7 dias para testar · sem cartão para começar</p>
           </div>
 
           <HeroProductVisual />
@@ -142,7 +150,7 @@ export default async function RootPage() {
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[0.72fr_1.28fr] lg:py-20">
           <div>
             <p className="text-sm font-semibold uppercase text-[#addb46]">Resultados</p>
-            <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">Sinais uteis, no ritmo da operacao.</h2>
+            <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">Sinais úteis, no ritmo da operação.</h2>
             <p className="mt-4 text-slate-300">
               O Command Center e Resultados destacam oportunidades e riscos operacionais no contexto certo: conversa, tarefa, proposta ou pipeline.
             </p>
@@ -150,7 +158,7 @@ export default async function RootPage() {
           <ProductBrowserFrame label="Resultados" className="shadow-2xl shadow-black/35">
             <ProductShot
               name="resultados"
-              alt="Tela real de Resultados do Vorix com metricas de marketing, atendimento, receita e alerta de analytics"
+              alt="Tela real de Resultados do Vorix com métricas de marketing, atendimento, receita e alerta de analytics"
               width={1120}
               widths={[900, 1120]}
               className="h-full w-full object-cover"
@@ -164,7 +172,7 @@ export default async function RootPage() {
           <div className="grid gap-8 lg:grid-cols-[0.7fr_1.3fr] lg:items-center">
             <div>
               <p className="text-sm font-semibold uppercase text-[#4f6b1a]">Jornada</p>
-              <h2 className="mt-3 font-display text-3xl font-semibold sm:text-4xl">Do conteudo ao resultado, sem perder o fio.</h2>
+              <h2 className="mt-3 font-display text-3xl font-semibold sm:text-4xl">Do conteúdo ao resultado, sem perder o fio.</h2>
             </div>
             <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
               <div className="grid min-w-[680px] grid-cols-5">
@@ -187,8 +195,8 @@ export default async function RootPage() {
           <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:py-20">
             <div className="mx-auto max-w-3xl text-center">
               <p className="text-sm font-semibold uppercase text-[#4f6b1a]">Planos</p>
-              <h2 className="mt-3 font-display text-3xl font-semibold sm:text-4xl">Comece com o que sua operacao precisa hoje.</h2>
-              <p className="mt-3 text-sm text-slate-600">7 dias de teste em qualquer plano, sem cartao para comecar.</p>
+              <h2 className="mt-3 font-display text-3xl font-semibold sm:text-4xl">Comece com o que sua operação precisa hoje.</h2>
+              <p className="mt-3 text-sm text-slate-600">7 dias de teste em qualquer plano, sem cartão para começar.</p>
             </div>
             <div className="mx-auto mt-9 grid max-w-5xl gap-4 md:grid-cols-3">
               {plans.map((plan) => (
@@ -212,7 +220,7 @@ export default async function RootPage() {
           <Link href="/signup">
             <Button className="mt-7 bg-[#addb46] px-6 py-3 text-[#071009] hover:bg-[#c7f45b]">Testar o Vorix por 7 dias</Button>
           </Link>
-          <p className="mt-3 text-sm text-slate-400">Sem cartao para comecar.</p>
+          <p className="mt-3 text-sm text-slate-400">Sem cartão para começar.</p>
         </div>
       </section>
 
@@ -227,6 +235,14 @@ export default async function RootPage() {
               </div>
             ))}
           </div>
+          {/* Bloco "suporte discreto" (pedido explícito do usuário: "não quero suporte competindo
+             com aquisição... se fizer sentido, colocar discretamente próximo ao FAQ") — nunca no
+             Hero, nunca chamativo: texto pequeno, um único link, sem card/borda própria chamando
+             atenção mais que o CTA primário ("Testar por 7 dias") lá em cima. */}
+          <p className="mt-8 text-center text-sm text-slate-500">
+            Precisa de ajuda?{" "}
+            <SupportWhatsAppLink className="font-medium text-[#4f6b1a] hover:underline">Falar com suporte</SupportWhatsAppLink>
+          </p>
         </div>
       </section>
 
@@ -353,7 +369,7 @@ function HeroProductVisual() {
       <div className="absolute -bottom-5 right-4 hidden w-[40%] rounded-xl border border-white/14 bg-[#0d1420] p-1.5 shadow-2xl shadow-black/45 lg:block">
         <ProductShot
           name="deal-context"
-          alt="Modal real de negocio do Vorix com contexto comercial"
+          alt="Modal real de negócio do Vorix com contexto comercial"
           width={920}
           widths={[920]}
           className="aspect-[920/740] w-full rounded-lg object-cover object-top"
@@ -478,8 +494,8 @@ function PlanSummary({ plan }: { plan: PublicPlan }) {
 
 function journeyCopy(step: (typeof JOURNEY)[number]) {
   if (step === "Criar") return "Briefing, marca e IA no mesmo ponto de partida.";
-  if (step === "Publicar") return "Conteudo revisado segue para os canais certos.";
-  if (step === "Conversar") return "O retorno entra no atendimento com historico.";
+  if (step === "Publicar") return "Conteúdo revisado segue para os canais certos.";
+  if (step === "Conversar") return "O retorno entra no atendimento com histórico.";
   if (step === "Vender") return "Contato vira oportunidade, tarefa e proposta.";
   return "O time acompanha sinais e resultado sem perder contexto.";
 }

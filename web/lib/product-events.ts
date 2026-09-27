@@ -11,7 +11,7 @@ import { getAccessToken } from "./auth-token";
  */
 
 const ANONYMOUS_ID_STORAGE_KEY = "vorix_anonymous_id";
-const CLIENT_EVENT_NAMES = ["landing_view", "pricing_view", "plan_selected", "signup_started"] as const;
+const CLIENT_EVENT_NAMES = ["landing_view", "pricing_view", "plan_selected", "signup_started", "support_whatsapp_clicked"] as const;
 export type ClientProductEventName = (typeof CLIENT_EVENT_NAMES)[number];
 
 /** Nunca fingerprint — só um id aleatório persistido no navegador (seção 8: "nunca fingerprinting

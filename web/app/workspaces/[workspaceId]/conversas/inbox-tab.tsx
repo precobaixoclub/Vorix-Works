@@ -187,31 +187,52 @@ const PERIOD_FILTER_OPTIONS: { value: InboxPeriodFilter; label: string }[] = [
   { value: "7d", label: "Últimos 7 dias" },
 ];
 
-/** Bloco "grupo de botões de filtro" — mesmo idioma visual pras 4 seções da `InboxFilterBar` que
- * são "escolha única, clicar de novo no ativo volta pra 'Todas'" (Tipo/Status/IA/Leitura/Período).
- * Um componente genérico em vez de 5 blocos JSX quase idênticos. */
+/** Ajuste de layout do popover de filtros — em vez de 9 seções empilhadas em uma única coluna
+ * (achado real: popover gigantesco, cobrindo quase toda a lista), pares de seções curtas dividem
+ * a largura em 2 colunas. Só vira grid de fato quando os DOIS lados existem (uma tela como o
+ * Kanban pode não ter "Equipe", por exemplo — nesse caso o lado que sobra ocupa a linha inteira
+ * sozinho, nunca deixa metade vazia). */
+function FilterPairRow({ left, right }: { left?: React.ReactNode; right?: React.ReactNode }) {
+  if (left && right) return <div className="grid grid-cols-2 gap-3">{left}{right}</div>;
+  if (left) return <>{left}</>;
+  if (right) return <>{right}</>;
+  return null;
+}
+
+/** Bloco "grupo de botões de filtro" — mesmo idioma visual pras seções da `InboxFilterBar` que são
+ * "escolha única, clicar de novo no ativo volta pra 'Todas'" (Tipo/Status/IA/Leitura/Período). Um
+ * componente genérico em vez de 5 blocos JSX quase idênticos.
+ *
+ * Ajuste de layout (achado real via print do usuário: "Arquivada" sozinha numa linha, flutuando
+ * sem alinhar com nada, depois de Em atendimento/Pendente/Finalizada) — `grid` de largura FIXA em
+ * vez de `flex-wrap` de largura livre: cada opção ocupa sempre a mesma coluna, então a última
+ * opção de uma lista ímpar cai alinhada na primeira coluna da própria linha (nunca centralizada
+ * sozinha "boiando"). `columns` deixa o chamador escolher 2 (padrão, cabe qualquer rótulo) ou 3
+ * (só pra grupos de rótulo bem curto, como Tipo/Canal). */
 function FilterButtonGroup<T extends string>({
   title,
   options,
   value,
   onChange,
+  columns = 2,
 }: {
   title: string;
   options: readonly { value: T; label: string }[];
   value: T | "all";
   onChange: (value: T | "all") => void;
+  columns?: 2 | 3;
 }) {
   return (
-    <div className="space-y-1">
-      <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
-      <div className="flex flex-wrap gap-1.5 px-1">
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
+      <div className={cn("grid gap-1.5", columns === 3 ? "grid-cols-3" : "grid-cols-2")}>
         {options.map((option) => (
           <button
             key={option.value}
             type="button"
             onClick={() => onChange(value === option.value ? "all" : option.value)}
             className={cn(
-              "h-7 rounded-md border px-2.5 text-xs font-medium transition-colors",
+              "h-7 rounded-md border px-2 text-xs font-medium transition-colors",
               value === option.value
                 ? "border-primary/30 bg-primary/10 text-primary dark:border-primary-glow/30 dark:bg-primary-glow/10 dark:text-primary-glow"
                 : "border-border/60 text-muted-foreground hover:bg-muted/60",
@@ -397,76 +418,110 @@ export function InboxFilterBar({
                 Filtros{activeCount > 0 ? ` (${activeCount})` : ""}
               </button>
             </PopoverTrigger>
-            {/* `w-[min(20rem,calc(100vw-2rem))]` em vez de `w-80` fixo — achado via QA real em
-               390px (Playwright): um popover de 320px encostado em `align="end"` estourava a
-               viewport móvel e cobria a própria busca. O `min()` mantém 20rem (320px) em telas
-               largas e cai pra "viewport menos a margem" só quando precisa, sem duplicar o
-               componente pra um "Sheet" mobile à parte. */}
-            <PopoverContent align="end" className="max-h-[70vh] w-[min(20rem,calc(100vw-2rem))] space-y-3 overflow-y-auto p-3">
-              {has("type") && !isInline("type") ? (
-                <FilterButtonGroup title="Tipo" options={CHAT_TYPE_FILTERS} value={filters.chatType} onChange={(value) => onFilterChange("chatType", value)} />
-              ) : null}
-              {has("channel") && !isInline("channel") ? (
-                <FilterButtonGroup title="Canal" options={CHANNEL_FILTERS} value={filters.channel} onChange={(value) => onFilterChange("channel", value)} />
-              ) : null}
-              {has("owner") && !isInline("owner") ? (
-                <div className="space-y-1">
-                  <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Responsável</p>
-                  <SearchableCombo
-                    items={ownerOptions}
-                    value={filters.owner === "all" ? "" : filters.owner}
-                    onValueChange={(value) => onFilterChange("owner", value || "all")}
-                    placeholder="Todos"
-                    extraOption={{ value: "", label: "Todos" }}
-                  />
-                </div>
-              ) : null}
-              {has("team") && teamOptions.length > 0 ? (
-                <div className="space-y-1">
-                  <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Equipe</p>
-                  <SearchableCombo
-                    items={teamOptions}
-                    value={filters.teamId}
-                    onValueChange={(value) => onFilterChange("teamId", value)}
-                    placeholder="Todas"
-                    extraOption={{ value: "", label: "Todas" }}
-                  />
-                </div>
-              ) : null}
+            {/* Ajuste de layout (achado real via print do usuário: o popover antigo, `align="end"`
+               sem `side`, caía PRA BAIXO do gatilho e cobria quase toda a lista de conversas —
+               só sobrava uma lasca do primeiro item à esquerda). `side="right"` usa o espaço
+               aberto do painel de conversa ao lado (bem mais largo que a coluna da lista), com
+               `collisionPadding`/`avoidCollisions` (padrão do Radix) reposicionando sozinho pra
+               baixo/esquerda quando não há espaço à direita — exatamente o caso do celular, onde
+               a lista ocupa a tela inteira. A lista nunca fica coberta em nenhum dos dois casos.
+               `w-[min(24rem,calc(100vw-2rem))]` (era 20rem fixo): um pouco mais largo pra caber 2
+               grupos lado a lado sem espremer rótulo, ainda limitado à viewport no celular. */}
+            <PopoverContent
+              side="right"
+              align="start"
+              sideOffset={8}
+              collisionPadding={16}
+              className="max-h-[75vh] w-[min(24rem,calc(100vw-2rem))] space-y-3.5 overflow-y-auto p-3.5"
+            >
+              <FilterPairRow
+                left={has("type") && !isInline("type") ? <FilterButtonGroup title="Tipo" options={CHAT_TYPE_FILTERS} value={filters.chatType} onChange={(value) => onFilterChange("chatType", value)} /> : undefined}
+                right={has("channel") && !isInline("channel") ? <FilterButtonGroup title="Canal" options={CHANNEL_FILTERS} value={filters.channel} onChange={(value) => onFilterChange("channel", value)} /> : undefined}
+              />
+              <FilterPairRow
+                left={
+                  has("owner") && !isInline("owner") ? (
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Responsável</p>
+                      <SearchableCombo
+                        items={ownerOptions}
+                        value={filters.owner === "all" ? "" : filters.owner}
+                        onValueChange={(value) => onFilterChange("owner", value || "all")}
+                        placeholder="Todos"
+                        extraOption={{ value: "", label: "Todos" }}
+                        className="h-8"
+                      />
+                    </div>
+                  ) : undefined
+                }
+                right={
+                  has("team") && teamOptions.length > 0 ? (
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Equipe</p>
+                      <SearchableCombo
+                        items={teamOptions}
+                        value={filters.teamId}
+                        onValueChange={(value) => onFilterChange("teamId", value)}
+                        placeholder="Todas"
+                        extraOption={{ value: "", label: "Todas" }}
+                        className="h-8"
+                      />
+                    </div>
+                  ) : undefined
+                }
+              />
+
               {has("status") ? (
-                <FilterButtonGroup title="Status / Fase" options={STATUS_FILTER_OPTIONS} value={filters.status} onChange={(value) => onFilterChange("status", value)} />
-              ) : null}
-              {has("ai") ? <FilterButtonGroup title="IA" options={AI_FILTER_OPTIONS} value={filters.ai} onChange={(value) => onFilterChange("ai", value)} /> : null}
-              {has("read") ? <FilterButtonGroup title="Leitura" options={READ_FILTER_OPTIONS} value={filters.read} onChange={(value) => onFilterChange("read", value)} /> : null}
-              {has("urgent") ? (
-                <div className="space-y-1">
-                  <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Prioridade</p>
-                  <button
-                    type="button"
-                    onClick={() => onFilterChange("urgent", !filters.urgent)}
-                    className={cn(
-                      "flex h-7 items-center gap-2 rounded-md border px-2.5 text-xs font-medium transition-colors",
-                      filters.urgent ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-border/60 text-muted-foreground hover:bg-muted/60",
-                    )}
-                  >
-                    <Flame className="h-3.5 w-3.5" /> Urgentes
-                  </button>
+                <div className="space-y-3.5 border-t border-border/60 pt-3.5">
+                  <FilterButtonGroup title="Status / Fase" options={STATUS_FILTER_OPTIONS} value={filters.status} onChange={(value) => onFilterChange("status", value)} />
                 </div>
               ) : null}
-              {has("tag") && tagOptions.length > 0 ? (
-                <div className="space-y-1">
-                  <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Etiqueta</p>
-                  <SearchableCombo
-                    items={tagOptions}
-                    value={filters.tagId}
-                    onValueChange={(value) => onFilterChange("tagId", value)}
-                    placeholder="Todas as etiquetas"
-                    extraOption={{ value: "", label: "Todas as etiquetas" }}
+
+              {has("ai") || has("read") || has("urgent") ? (
+                <div className="space-y-3.5 border-t border-border/60 pt-3.5">
+                  {has("ai") ? <FilterButtonGroup title="IA" options={AI_FILTER_OPTIONS} value={filters.ai} onChange={(value) => onFilterChange("ai", value)} /> : null}
+                  <FilterPairRow
+                    left={has("read") ? <FilterButtonGroup title="Leitura" options={READ_FILTER_OPTIONS} value={filters.read} onChange={(value) => onFilterChange("read", value)} /> : undefined}
+                    right={
+                      has("urgent") ? (
+                        <div className="space-y-1.5">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Prioridade</p>
+                          <button
+                            type="button"
+                            onClick={() => onFilterChange("urgent", !filters.urgent)}
+                            className={cn(
+                              "flex h-8 w-full items-center justify-center gap-1.5 rounded-md border text-xs font-medium transition-colors",
+                              filters.urgent ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-border/60 text-muted-foreground hover:bg-muted/60",
+                            )}
+                          >
+                            <Flame className="h-3.5 w-3.5" /> Urgentes
+                          </button>
+                        </div>
+                      ) : undefined
+                    }
                   />
                 </div>
               ) : null}
-              {has("period") ? (
-                <FilterButtonGroup title="Período" options={PERIOD_FILTER_OPTIONS} value={filters.period} onChange={(value) => onFilterChange("period", value)} />
+
+              {(has("tag") && tagOptions.length > 0) || has("period") ? (
+                <div className="space-y-3.5 border-t border-border/60 pt-3.5">
+                  {has("tag") && tagOptions.length > 0 ? (
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Etiqueta</p>
+                      <SearchableCombo
+                        items={tagOptions}
+                        value={filters.tagId}
+                        onValueChange={(value) => onFilterChange("tagId", value)}
+                        placeholder="Todas as etiquetas"
+                        extraOption={{ value: "", label: "Todas as etiquetas" }}
+                        className="h-8"
+                      />
+                    </div>
+                  ) : null}
+                  {has("period") ? (
+                    <FilterButtonGroup title="Período" options={PERIOD_FILTER_OPTIONS} value={filters.period} onChange={(value) => onFilterChange("period", value)} columns={3} />
+                  ) : null}
+                </div>
               ) : null}
               {activeCount > 0 ? (
                 <button type="button" onClick={onClearFilters} className="w-full rounded-md border-t border-border/60 pt-2.5 text-center text-xs font-medium text-muted-foreground hover:text-foreground">

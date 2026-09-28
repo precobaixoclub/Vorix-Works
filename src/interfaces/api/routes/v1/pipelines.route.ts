@@ -51,7 +51,7 @@ function translatePipelineError(error: unknown): never {
     throw new NotFoundError(error.message);
   }
   if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "23503") {
-    throw new ValidationError("PIPELINE_STAGE_HAS_DEALS: esta etapa tem negócios associados — mova-os antes de excluir a etapa.");
+    throw new ValidationError("PIPELINE_STAGE_HAS_DEALS: esta etapa tem oportunidades associadas — mova-as antes de excluir a etapa.");
   }
   throw error;
 }

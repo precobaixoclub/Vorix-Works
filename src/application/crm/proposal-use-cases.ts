@@ -75,10 +75,10 @@ export async function createProposal(deps: ProposalUseCaseDeps, input: { tenantI
   if (input.dealId && deps.dealRepository) {
     const deal = await deps.dealRepository.getById(input.dealId);
     if (!deal || deal.tenantId !== input.tenantId || deal.workspaceId !== input.workspaceId) {
-      throw new Error("PROPOSAL_CONTEXT_INVALID: negócio não pertence a este workspace.");
+      throw new Error("PROPOSAL_CONTEXT_INVALID: oportunidade não pertence a este workspace.");
     }
     if (contactId && deal.contactId && deal.contactId !== contactId) {
-      throw new Error("PROPOSAL_CONTEXT_INVALID: negócio e contato não correspondem.");
+      throw new Error("PROPOSAL_CONTEXT_INVALID: oportunidade e contato não correspondem.");
     }
     contactId ??= deal.contactId;
   }

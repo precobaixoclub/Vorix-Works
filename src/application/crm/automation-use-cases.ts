@@ -86,10 +86,10 @@ function conditionsMatch(conditions: readonly AutomationCondition[], context: Au
 async function executeMoveDealStage(deps: AutomationUseCaseDeps, deal: Deal, targetStageId: string): Promise<void> {
   const targetStage = await deps.pipelineStageRepository.getById(targetStageId);
   if (!targetStage || targetStage.pipelineId !== deal.pipelineId) {
-    throw new Error("AUTOMATION_ACTION_STAGE_PIPELINE_MISMATCH: etapa alvo não pertence ao pipeline deste negócio.");
+    throw new Error("AUTOMATION_ACTION_STAGE_PIPELINE_MISMATCH: etapa alvo não pertence ao pipeline desta oportunidade.");
   }
   if (targetStage.isLost) {
-    throw new Error("AUTOMATION_ACTION_CANNOT_AUTO_LOSE: automação nunca move um negócio pra uma etapa de perda (exige motivo humano).");
+    throw new Error("AUTOMATION_ACTION_CANNOT_AUTO_LOSE: automação nunca move uma oportunidade pra uma etapa de perda (exige motivo humano).");
   }
   const now = new Date().toISOString();
   await deps.dealRepository.moveStage(deal.id, { stageId: targetStageId, wonAt: targetStage.isWon ? now : null, lostAt: null, lossReason: null });
@@ -148,7 +148,7 @@ async function executeAction(deps: AutomationUseCaseDeps, rule: AutomationRule, 
       return;
     }
     case "move_deal_stage": {
-      if (!context.deal || !rule.actionConfig.targetStageId) throw new Error("AUTOMATION_ACTION_MISSING_DEAL_OR_STAGE: ação exige `actionConfig.targetStageId` e um negócio.");
+      if (!context.deal || !rule.actionConfig.targetStageId) throw new Error("AUTOMATION_ACTION_MISSING_DEAL_OR_STAGE: ação exige `actionConfig.targetStageId` e uma oportunidade.");
       await executeMoveDealStage(deps, context.deal, rule.actionConfig.targetStageId);
       return;
     }

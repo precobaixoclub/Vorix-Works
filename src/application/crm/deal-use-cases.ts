@@ -20,7 +20,7 @@ export type DealUseCaseDeps = {
 export async function mustDealBelongToTenantAndWorkspace(deps: DealUseCaseDeps, dealId: string, tenantId: string, workspaceId: string): Promise<Deal> {
   const deal = await deps.dealRepository.getById(dealId);
   if (!deal || deal.tenantId !== tenantId || deal.workspaceId !== workspaceId) {
-    throw new Error(`DEAL_NOT_FOUND: negócio "${dealId}" não existe.`);
+    throw new Error(`DEAL_NOT_FOUND: oportunidade "${dealId}" não existe.`);
   }
   return deal;
 }
@@ -73,10 +73,10 @@ export async function moveDealStage(deps: DealUseCaseDeps, input: { dealId: stri
   const deal = await mustDealBelongToTenantAndWorkspace(deps, input.dealId, input.tenantId, input.workspaceId);
   const targetStage = await deps.pipelineStageRepository.getById(input.targetStageId);
   if (!targetStage || targetStage.pipelineId !== deal.pipelineId) {
-    throw new Error(`DEAL_STAGE_PIPELINE_MISMATCH: etapa "${input.targetStageId}" não pertence ao pipeline deste negócio.`);
+    throw new Error(`DEAL_STAGE_PIPELINE_MISMATCH: etapa "${input.targetStageId}" não pertence ao pipeline desta oportunidade.`);
   }
   if (targetStage.isLost && !input.lossReason?.trim()) {
-    throw new Error("DEAL_LOSS_REASON_REQUIRED: informe o motivo da perda para mover um negócio para uma etapa de perda.");
+    throw new Error("DEAL_LOSS_REASON_REQUIRED: informe o motivo da perda para mover uma oportunidade para uma etapa de perda.");
   }
   const now = new Date().toISOString();
   const updated = await deps.dealRepository.moveStage(input.dealId, {

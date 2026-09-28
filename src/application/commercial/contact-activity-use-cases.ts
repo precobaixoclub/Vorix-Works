@@ -91,9 +91,9 @@ function mapDealEvents(deal: Deal, events: readonly TimelineEvent[]): ContactAct
     const isLost = event.payload?.isLost === true;
     let type = "deal_stage_changed";
     let title = `Etapa de "${deal.title}" alterada`;
-    if (isWon) { type = "deal_won"; title = `Negócio "${deal.title}" ganho`; }
-    else if (isLost) { type = "deal_lost"; title = `Negócio "${deal.title}" perdido`; }
-    else if (wasTerminal) { type = "deal_reopened"; title = `Negócio "${deal.title}" reaberto`; }
+    if (isWon) { type = "deal_won"; title = `Oportunidade "${deal.title}" ganha`; }
+    else if (isLost) { type = "deal_lost"; title = `Oportunidade "${deal.title}" perdida`; }
+    else if (wasTerminal) { type = "deal_reopened"; title = `Oportunidade "${deal.title}" reaberta`; }
     wasTerminal = isWon || isLost;
     const lossReason = typeof event.payload?.lossReason === "string" ? event.payload.lossReason : undefined;
     const trigger = typeof event.payload?.trigger === "string" ? event.payload.trigger : undefined;
@@ -112,7 +112,7 @@ function mapDealEvents(deal: Deal, events: readonly TimelineEvent[]): ContactAct
   });
   const createdEvent = events.find((event) => event.eventType === "deal_created");
   const createdItem: ContactActivityItem[] = createdEvent
-    ? [{ id: createdEvent.id, type: "deal_created", category: "deal", occurredAt: createdEvent.occurredAt, actor: actorFor(createdEvent), title: `Negócio "${deal.title}" criado`, entityType: "deal", entityId: deal.id, metadata: { dealId: deal.id } }]
+    ? [{ id: createdEvent.id, type: "deal_created", category: "deal", occurredAt: createdEvent.occurredAt, actor: actorFor(createdEvent), title: `Oportunidade "${deal.title}" criada`, entityType: "deal", entityId: deal.id, metadata: { dealId: deal.id } }]
     : [];
   return [...createdItem, ...stageItems];
 }

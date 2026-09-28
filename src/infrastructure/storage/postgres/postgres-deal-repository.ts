@@ -129,7 +129,7 @@ export class PostgresDealRepository implements DealRepositoryPort {
 
   async update(id: string, input: UpdateDealInput): Promise<Deal> {
     const existing = await this.getById(id);
-    if (!existing) throw new Error(`DEAL_NOT_FOUND: negócio "${id}" não existe.`);
+    if (!existing) throw new Error(`DEAL_NOT_FOUND: oportunidade "${id}" não existe.`);
     const result = await this.pool.query<DealRow>(
       `update deals set
          contact_id = $2, title = $3, value_cents = $4, currency = $5, owner_user_id = $6,
@@ -160,7 +160,7 @@ export class PostgresDealRepository implements DealRepositoryPort {
        returning *`,
       [id, input.stageId, input.lossReason ?? null, input.wonAt ?? null, input.lostAt ?? null],
     );
-    if (!result.rows[0]) throw new Error(`DEAL_NOT_FOUND: negócio "${id}" não existe.`);
+    if (!result.rows[0]) throw new Error(`DEAL_NOT_FOUND: oportunidade "${id}" não existe.`);
     return toDomain(result.rows[0]);
   }
 

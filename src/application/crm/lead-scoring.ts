@@ -27,13 +27,13 @@ export function computeLeadScore(input: { contact: Contact; deals: readonly Deal
 
   const openDeals = input.deals.filter((deal) => !deal.wonAt && !deal.lostAt);
   if (openDeals.length > 0) {
-    factors.push({ label: `${openDeals.length} negócio(s) aberto(s)`, points: 20 });
+    factors.push({ label: `${openDeals.length} oportunidade(s) aberta(s)`, points: 20 });
     const highestValue = Math.max(...openDeals.map((deal) => deal.valueCents));
-    if (highestValue >= 100_000) factors.push({ label: "Negócio de alto valor (≥ R$ 1.000)", points: 10 });
+    if (highestValue >= 100_000) factors.push({ label: "Oportunidade de alto valor (≥ R$ 1.000)", points: 10 });
   }
 
   const wonDeals = input.deals.filter((deal) => deal.wonAt);
-  if (wonDeals.length > 0) factors.push({ label: "Já teve negócio ganho com este contato", points: 15 });
+  if (wonDeals.length > 0) factors.push({ label: "Já teve oportunidade ganha com este contato", points: 15 });
 
   const pendingTasks = input.tasks.filter((task) => task.status === "pending");
   const overdueTasks = pendingTasks.filter((task) => task.dueAt && new Date(task.dueAt) < now);

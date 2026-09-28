@@ -148,7 +148,7 @@ test("getLeadScore: calcula a partir dos dados reais do contato (negócio + tare
   await createDeal(dealDeps(), { tenantId, workspaceId: workspace.id, pipelineId: pipeline.id, stageId: stage.id, contactId: contact.id, title: "Negócio", valueCents: 200_000 });
 
   const score = await getLeadScore(leadScoringDeps(), { contactId: contact.id, tenantId, workspaceId: workspace.id });
-  assert.ok(score.factors.some((f) => f.label.includes("negócio")));
+  assert.ok(score.factors.some((f) => f.label.includes("oportunidade")));
 
   await assert.rejects(
     () => getLeadScore(leadScoringDeps(), { contactId: contact.id, tenantId: "outro-tenant", workspaceId: workspace.id }),

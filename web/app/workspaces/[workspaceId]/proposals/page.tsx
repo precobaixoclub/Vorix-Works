@@ -261,7 +261,7 @@ function ProposalsView() {
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Propostas</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Crie, envie e acompanhe propostas conectadas a contatos e negocios reais.</p>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Crie, envie e acompanhe propostas conectadas a contatos e oportunidades reais.</p>
         </div>
         <div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => setView("templates")}>Modelos</Button><Button onClick={() => setCreateOpen(true)}>Nova proposta</Button></div>
       </div>

@@ -43,7 +43,7 @@ const PRODUCT_SECTIONS: readonly ProductSection[] = [
     aspect: "aspect-[1120/700]",
     reverse: true,
     overlay: {
-      label: "Negocio",
+      label: "Oportunidade",
       image: "deal-context",
       width: 920,
       widths: [920],

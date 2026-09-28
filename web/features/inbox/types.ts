@@ -257,6 +257,7 @@ export type InboxMessage = {
   quotedMessage?: InboxQuotedMessage;
   /** Bloco "reações" — sempre presente (lista vazia quando ninguém reagiu ainda). */
   reactions: readonly InboxMessageReaction[];
+  scheduledAt?: string;
   createdAt: string;
   sentAt?: string;
 };

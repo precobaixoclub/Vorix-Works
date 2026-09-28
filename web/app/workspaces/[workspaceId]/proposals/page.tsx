@@ -156,6 +156,10 @@ function ProposalsView() {
   const dealOptions = dealsList.map((deal) => ({ id: deal.id, label: deal.title }));
 
   async function handleCreate() {
+    if (!dealId) {
+      toast.error("Selecione uma oportunidade antes de criar a proposta.");
+      return;
+    }
     setBusy(true);
     try {
       const { publicToken } = await createProposal({
@@ -296,7 +300,7 @@ function ProposalsView() {
       {!isLoading && !error && visibleProposals.length === 0 ? (
         <EmptyState
           title="Nenhuma proposta nesta visão"
-          description="Crie uma proposta vinculada a um contato ou negócio para acompanhar envio, visualização e aceite."
+          description="Crie uma proposta vinculada a uma oportunidade para acompanhar envio, visualização e aceite."
           action={<Button onClick={() => setCreateOpen(true)}>Criar proposta</Button>}
         />
       ) : null}
@@ -330,8 +334,9 @@ function ProposalsView() {
               <SearchableCombo items={contactOptions} value={contactId} onValueChange={setContactId} placeholder="Contato" extraOption={{ value: "", label: "Sem contato" }} />
             </div>
             <div>
-              <Label>Negocio</Label>
-              <SearchableCombo items={dealOptions} value={dealId} onValueChange={setDealId} placeholder="Negócio" extraOption={{ value: "", label: "Sem negócio" }} />
+              <Label>Oportunidade</Label>
+              <SearchableCombo items={dealOptions} value={dealId} onValueChange={setDealId} placeholder="Escolher oportunidade" />
+              {!dealId ? <p className="mt-1 text-xs text-muted-foreground">A proposta precisa estar ligada a uma oportunidade.</p> : null}
             </div>
           </div>
 
@@ -382,7 +387,7 @@ function ProposalsView() {
 
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="secondary" onClick={() => { setCreateOpen(false); resetCreateForm(); }} disabled={busy}>Cancelar</Button>
-            <Button onClick={handleCreate} loading={busy} disabled={!title.trim() || items.filter((item) => item.name.trim()).length === 0 || busy}>Criar</Button>
+            <Button onClick={handleCreate} loading={busy} disabled={!title.trim() || !dealId || items.filter((item) => item.name.trim()).length === 0 || busy}>Criar</Button>
           </div>
         </Modal>
       ) : null}

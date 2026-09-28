@@ -277,6 +277,8 @@ export type InboxMessage = {
    * foi mandada). Usado pelo frontend para rotular cada bolha dentro de uma conversa de grupo. */
   senderDisplayName?: string;
   body?: string;
+  /** Preenchido enquanto uma mensagem outbound aguarda o horário definido pelo atendente. */
+  scheduledAt?: string;
   mediaStorageRef?: InboxMediaStorageRef;
   /** Bloco "retry de mídia" (pedido explícito do usuário em produção) — ref BRUTO usado pra tentar
    * o download (url/directPath/mediaKey/etc.), gravado ANTES da tentativa em si. `undefined` até a

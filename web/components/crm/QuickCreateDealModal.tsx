@@ -81,7 +81,7 @@ export function QuickCreateDealModal({
   }
 
   return (
-    <Modal title="Criar negócio" onClose={onClose}>
+    <Modal title="Criar oportunidade" onClose={onClose}>
       <div className="space-y-3">
         {error ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p> : null}
         <div>
@@ -136,7 +136,7 @@ export function QuickCreateDealModal({
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
-          <Button onClick={handleSubmit} loading={busy} disabled={!title.trim() || !pipelineId || !stageId || busy}>Criar negócio</Button>
+          <Button onClick={handleSubmit} loading={busy} disabled={!title.trim() || !pipelineId || !stageId || busy}>Criar oportunidade</Button>
         </div>
       </div>
     </Modal>

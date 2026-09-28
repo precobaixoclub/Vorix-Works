@@ -138,8 +138,12 @@ export function listInboxConversationEvents(workspaceId: string, conversationId:
 
 /** `replyToMessageId` (pedido explícito do usuário: "clicar para reponder uma mensagem
  * especifica") — id (do Vorix) da mensagem sendo respondida, quando presente. */
-export function sendInboxMessage(workspaceId: string, conversationId: string, body: string, replyToMessageId?: string): Promise<InboxMessage> {
-  return apiClient.post<InboxMessage>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, { workspaceId, body, replyToMessageId });
+export function sendInboxMessage(workspaceId: string, conversationId: string, body: string, options?: { replyToMessageId?: string; scheduledAt?: string }): Promise<InboxMessage> {
+  return apiClient.post<InboxMessage>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, { workspaceId, body, ...options });
+}
+
+export function cancelScheduledInboxMessage(workspaceId: string, conversationId: string, messageId: string): Promise<{ cancelled: boolean }> {
+  return apiClient.post<{ cancelled: boolean }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/cancel-schedule`, { workspaceId });
 }
 
 /** Bloco "excluir mensagem" (pedido explícito do usuário em produção) — permanente, ver

@@ -11,6 +11,7 @@ export type CreateInboxMessageInput = {
   direction: InboxMessage["direction"];
   type: InboxMessageType;
   body?: string;
+  scheduledAt?: string;
   mediaStorageRef?: InboxMediaStorageRef;
   mimeType?: string;
   metadata?: Record<string, unknown>;
@@ -50,6 +51,8 @@ export type InboxMessageRepositoryPort = {
    * caso de uso — ver `deleteInboxMessage`, que tenta `provider.revokeMessage` ANTES de chamar
    * isto). Idempotente — excluir de novo uma mensagem já excluída nunca lança. */
   delete(id: string): Promise<void>;
+  /** Remove apenas uma mensagem ainda agendada. A operação é atômica contra o dispatcher do worker. */
+  cancelScheduled(id: string): Promise<boolean>;
   /** Correção do bug de self-echo (ver docs/conversas-canonical-chat-identity.md) — lookup puro
    * por `(connectionId, externalMessageId)`, sem inserir nada. Usado para distinguir "o WuzAPI está
    * só confirmando uma mensagem que o Vorix já registrou via `sendInboxMessage`" (achado ==
@@ -129,6 +132,8 @@ export type InboxMessageRepositoryPort = {
    * cronológica ascendente (mais antiga primeiro) — mesmo padrão de
    * `listUnansweredInboundByConversation`. */
   listOrphanedOutboundMessages(input: { olderThanIso: string; limit: number }): Promise<InboxMessage[]>;
+  /** Reivindica mensagens vencidas e remove o horário para que apenas um worker publique cada uma. */
+  claimDueScheduledMessages(input: { nowIso: string; limit: number }): Promise<InboxMessage[]>;
 
   /**
    * Fase 5/6 — claim atômico (CAS/lease) de "quem gera/envia a resposta de IA para esta mensagem

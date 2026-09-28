@@ -433,6 +433,7 @@ function ContactDetailModal({
   const [section, setSection] = useState<ContactSection>("summary");
   const [editing, setEditing] = useState(false);
   const [creatingDeal, setCreatingDeal] = useState(false);
+  const [createProposalAfterDeal, setCreateProposalAfterDeal] = useState(false);
   const [creatingTask, setCreatingTask] = useState(false);
   const [creatingProposal, setCreatingProposal] = useState(false);
   const [openProposalId, setOpenProposalId] = useState<string>();
@@ -445,6 +446,15 @@ function ContactDetailModal({
   // Jornada Comercial Fase 3, item 9 — mesma regra da conversa: 1 negócio aberto preenche sozinho,
   // mais de 1 exige escolha explícita no próprio modal, nenhum deixa a tarefa só no Contact.
   const dealChoice = resolveTaskDealChoice(dealGroups.open.map((deal) => ({ id: deal.id, title: deal.title })));
+
+  function requestCreateProposal() {
+    if (dealChoice.mode === "none") {
+      setCreateProposalAfterDeal(true);
+      setCreatingDeal(true);
+      return;
+    }
+    setCreatingProposal(true);
+  }
 
   async function handleCompleteTask(task: Task) {
     setCompletingTaskId(task.id);
@@ -478,7 +488,15 @@ function ContactDetailModal({
         description={<span className="text-sm text-muted-foreground">{headerSubtitle || "Contato comercial"}</span>}
         eyebrow="Contato 360"
         avatar={<Avatar name={contact.name} large />}
-        headerExtra={primaryConversation ? <StatusBadge status={primaryConversation.status} /> : undefined}
+        headerExtra={(
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <Button size="sm" onClick={() => setCreatingDeal(true)}>
+              <BriefcaseBusiness className="mr-1.5 h-4 w-4" />
+              Criar oportunidade
+            </Button>
+            {primaryConversation ? <StatusBadge status={primaryConversation.status} /> : null}
+          </div>
+        )}
         sections={[
           { value: "summary", label: "Resumo", icon: Info },
           { value: "conversations", label: "Conversas", icon: MessageSquareText, badge: conversations.length || undefined },
@@ -514,9 +532,9 @@ function ContactDetailModal({
             <DetailBlock label="Ações contextuais">
               <div className="flex flex-wrap gap-2">
                 {primaryConversation ? <Button variant="secondary" onClick={() => router.push(`/workspaces/${workspaceId}/conversas?conversation=${primaryConversation.id}`)}>Enviar mensagem</Button> : null}
-                <Button variant="secondary" onClick={() => setCreatingDeal(true)}>Criar negócio</Button>
+                <Button variant="secondary" onClick={() => setCreatingDeal(true)}>Criar oportunidade</Button>
                 <Button variant="secondary" onClick={() => setCreatingTask(true)}>Criar tarefa</Button>
-                <Button variant="secondary" onClick={() => setCreatingProposal(true)}>Criar proposta</Button>
+                <Button variant="secondary" onClick={requestCreateProposal}>Criar proposta</Button>
               </div>
             </DetailBlock>
           </div>
@@ -539,7 +557,7 @@ function ContactDetailModal({
         {section === "deals" ? (
           <div className="space-y-5">
             <div className="flex justify-end">
-              <Button variant="secondary" size="sm" onClick={() => setCreatingDeal(true)}>+ Negócio</Button>
+              <Button variant="secondary" size="sm" onClick={() => setCreatingDeal(true)}>Criar oportunidade</Button>
             </div>
             {deals.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nenhum negócio vinculado a este contato.</p>
@@ -595,7 +613,7 @@ function ContactDetailModal({
 
         {section === "proposals" ? (
           <div className="space-y-5">
-            <div className="flex justify-end"><Button variant="secondary" size="sm" onClick={() => setCreatingProposal(true)}>+ Criar proposta</Button></div>
+            <div className="flex justify-end"><Button variant="secondary" size="sm" onClick={requestCreateProposal}>Criar proposta</Button></div>
             {proposals.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma proposta vinculada a este contato.</p> : null}
             {[
               { title: "Ativas", items: proposals.filter((proposal) => ["draft", "sent", "viewed"].includes(proposal.status)) },
@@ -648,10 +666,14 @@ function ContactDetailModal({
         <QuickCreateDealModal
           workspaceId={workspaceId}
           contactId={contact.id}
-          onClose={() => setCreatingDeal(false)}
+          onClose={() => { setCreatingDeal(false); setCreateProposalAfterDeal(false); }}
           onCreated={async () => {
             setCreatingDeal(false);
             await onDealsChanged();
+            if (createProposalAfterDeal) {
+              setCreateProposalAfterDeal(false);
+              setCreatingProposal(true);
+            }
           }}
         />
       ) : null}
@@ -675,6 +697,7 @@ function ContactDetailModal({
           contactName={contact.name}
           dealChoice={dealChoice}
           onClose={() => setCreatingProposal(false)}
+          onCreateOpportunity={() => { setCreatingProposal(false); setCreateProposalAfterDeal(true); setCreatingDeal(true); }}
           onCreated={async () => { setCreatingProposal(false); await onProposalsChanged(); }}
         />
       ) : null}
@@ -687,7 +710,7 @@ function ContactDetailModal({
           conversationId={primaryConversation?.id}
           onClose={() => setOpenProposalId(undefined)}
           onChanged={onProposalsChanged}
-          onCreateNewProposal={() => { setOpenProposalId(undefined); setCreatingProposal(true); }}
+          onCreateNewProposal={() => { setOpenProposalId(undefined); requestCreateProposal(); }}
           onCreateFollowUp={() => { setOpenProposalId(undefined); setCreatingTask(true); }}
         />
       ) : null}

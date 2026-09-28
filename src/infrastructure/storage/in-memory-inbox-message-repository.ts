@@ -25,6 +25,7 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
       type: input.type,
       status: input.status ?? (input.direction === "inbound" ? "delivered" : "queued"),
       body: input.body,
+      scheduledAt: input.scheduledAt,
       mediaStorageRef: input.mediaStorageRef,
       mimeType: input.mimeType,
       metadata: input.metadata,
@@ -51,6 +52,13 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
 
   async delete(id: string): Promise<void> {
     this.rows.delete(id);
+  }
+
+  async cancelScheduled(id: string): Promise<boolean> {
+    const existing = this.rows.get(id);
+    if (!existing || existing.direction !== "outbound" || existing.status !== "queued" || !existing.scheduledAt) return false;
+    this.rows.delete(id);
+    return true;
   }
 
   async findByExternalId(input: { connectionId: string; externalMessageId: string }): Promise<InboxMessage | undefined> {
@@ -167,9 +175,19 @@ export class InMemoryInboxMessageRepository implements InboxMessageRepositoryPor
 
   async listOrphanedOutboundMessages(input: { olderThanIso: string; limit: number }): Promise<InboxMessage[]> {
     return [...this.rows.values()]
-      .filter((row) => row.direction === "outbound" && row.status === "queued" && !row.outboundPublishedAt && row.createdAt < input.olderThanIso)
+      .filter((row) => row.direction === "outbound" && row.status === "queued" && !row.scheduledAt && !row.outboundPublishedAt && row.createdAt < input.olderThanIso)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
       .slice(0, input.limit);
+  }
+
+  async claimDueScheduledMessages(input: { nowIso: string; limit: number }): Promise<InboxMessage[]> {
+    const due = [...this.rows.values()]
+      .filter((row) => row.direction === "outbound" && row.status === "queued" && Boolean(row.scheduledAt) && row.scheduledAt! <= input.nowIso)
+      .sort((a, b) => (a.scheduledAt ?? "").localeCompare(b.scheduledAt ?? ""))
+      .slice(0, input.limit);
+    const claimed = due.map((row) => ({ ...row, scheduledAt: undefined }));
+    for (const row of claimed) this.rows.set(row.id, row);
+    return claimed;
   }
 
   async tryClaimForAiResponse(id: string, claimedAt: string, staleBeforeIso: string): Promise<InboxMessage | undefined> {

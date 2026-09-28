@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BriefcaseBusiness } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/Button";
@@ -153,6 +154,7 @@ function LinkedCrmSection({
   const [completingTaskId, setCompletingTaskId] = useState<string | undefined>();
 
   const [creatingProposal, setCreatingProposal] = useState(false);
+  const [createProposalAfterDeal, setCreateProposalAfterDeal] = useState(false);
   const [openProposalId, setOpenProposalId] = useState<string | undefined>();
   const currentProposal = (proposals ?? []).find((proposal) => ["draft", "sent", "viewed"].includes(proposal.status)) ?? proposals?.[0];
   const openProposal = (proposals ?? []).find((proposal) => proposal.id === openProposalId);
@@ -161,6 +163,15 @@ function LinkedCrmSection({
   const [ownerInput, setOwnerInput] = useState("");
   const [generatingSuggestions, setGeneratingSuggestions] = useState(false);
   const [resolvingSuggestionId, setResolvingSuggestionId] = useState<string | undefined>();
+
+  function requestCreateProposal() {
+    if (dealChoice.mode === "none") {
+      setCreateProposalAfterDeal(true);
+      setCreatingDeal(true);
+      return;
+    }
+    setCreatingProposal(true);
+  }
 
   useEffect(() => {
     if (contact?.ownerUserId) setOwnerInput(contact.ownerUserId);
@@ -248,11 +259,22 @@ function LinkedCrmSection({
 
   return (
     <section className="mt-4 space-y-3 border-t border-border pt-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">COMERCIAL</h3>
-        {/* Jornada Comercial Fase 5, item 9 — a seção fica enxuta (Negócio atual/Próxima ação/
-         * Proposta atual), mas precisa de UMA saída pro contexto completo: o Contact 360. */}
-        <Button variant="ghost" size="sm" onClick={() => router.push(`/workspaces/${workspaceId}/contacts?contactId=${contactId}`)}>Abrir cliente</Button>
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <GuardedButton
+            size="sm"
+            onClick={() => setCreatingDeal(true)}
+            allowed={canOperate}
+            blockedReason={RBAC_COPY.operateConversations}
+          >
+            <BriefcaseBusiness className="mr-1.5 h-4 w-4" />
+            Criar oportunidade
+          </GuardedButton>
+          {/* Jornada Comercial Fase 5, item 9 — a seção fica enxuta (Negócio atual/Próxima ação/
+           * Proposta atual), mas precisa de UMA saída pro contexto completo: o Contact 360. */}
+          <Button variant="ghost" size="sm" onClick={() => router.push(`/workspaces/${workspaceId}/contacts?contactId=${contactId}`)}>Abrir cliente</Button>
+        </div>
       </div>
       {actionError ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{actionError}</p> : null}
 
@@ -314,7 +336,7 @@ function LinkedCrmSection({
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">Nenhum negócio aberto.</p>
             <GuardedButton variant="secondary" className="w-full" onClick={() => setCreatingDeal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
-              + Criar negócio
+              Criar oportunidade
             </GuardedButton>
           </div>
         ) : openDeals.length === 1 ? (
@@ -332,7 +354,7 @@ function LinkedCrmSection({
             </p>
             <div className="flex flex-wrap gap-1.5 pt-1">
               <Button variant="secondary" size="sm" onClick={() => setOpenDealId(currentDeal.id)}>Abrir negócio</Button>
-              <Button variant="secondary" size="sm" onClick={() => setCreatingProposal(true)}>Gerar proposta</Button>
+              <Button variant="secondary" size="sm" onClick={requestCreateProposal}>Gerar proposta</Button>
             </div>
           </div>
         ) : (
@@ -412,7 +434,7 @@ function LinkedCrmSection({
       <div>
         <p className="mb-1 text-[11px] text-muted-foreground">Proposta</p>
         {!currentProposal ? (
-          <div className="space-y-2"><p className="text-xs text-muted-foreground">Nenhuma proposta ativa.</p><GuardedButton variant="secondary" className="w-full" onClick={() => setCreatingProposal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Gerar proposta</GuardedButton></div>
+          <div className="space-y-2"><p className="text-xs text-muted-foreground">Nenhuma proposta ativa.</p><GuardedButton variant="secondary" className="w-full" onClick={requestCreateProposal} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Gerar proposta</GuardedButton></div>
         ) : (
           <div className="space-y-2 rounded-lg border border-border/70 bg-muted/30 p-2.5">
             <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-medium text-foreground">{currentProposal.title}</p><p className="text-xs font-semibold tabular-nums text-foreground">{formatCurrencyCents(currentProposal.totalCents, currentProposal.currency)}</p></div><Badge variant="secondary">{currentProposal.status === "viewed" ? "Visualizada" : currentProposal.status === "sent" ? "Enviada" : currentProposal.status === "accepted" ? "Aceita" : currentProposal.status === "rejected" ? "Recusada" : "Rascunho"}</Badge></div>
@@ -448,10 +470,10 @@ function LinkedCrmSection({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-1.5">
-        <GuardedButton variant="secondary" onClick={() => setCreatingDeal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Negócio</GuardedButton>
+      <div className="grid gap-1.5 sm:grid-cols-3">
+        <GuardedButton variant="secondary" onClick={() => setCreatingDeal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>Criar oportunidade</GuardedButton>
         <GuardedButton variant="secondary" onClick={() => setCreatingTask(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Tarefa</GuardedButton>
-        <GuardedButton variant="secondary" onClick={() => setCreatingProposal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Proposta</GuardedButton>
+        <GuardedButton variant="secondary" onClick={requestCreateProposal} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Proposta</GuardedButton>
       </div>
 
       {creatingProposal ? (
@@ -461,6 +483,7 @@ function LinkedCrmSection({
           contactName={contact.name}
           dealChoice={dealChoice}
           onClose={() => setCreatingProposal(false)}
+          onCreateOpportunity={() => { setCreatingProposal(false); setCreateProposalAfterDeal(true); setCreatingDeal(true); }}
           onCreated={async (proposal) => { setCreatingProposal(false); await mutateProposals(); setOpenProposalId(proposal.id); }}
         />
       ) : null}
@@ -474,7 +497,7 @@ function LinkedCrmSection({
           conversationId={conversationId}
           onClose={() => setOpenProposalId(undefined)}
           onChanged={async () => { await mutateProposals(); }}
-          onCreateNewProposal={() => { setOpenProposalId(undefined); setCreatingProposal(true); }}
+          onCreateNewProposal={() => { setOpenProposalId(undefined); requestCreateProposal(); }}
           onCreateFollowUp={() => { setOpenProposalId(undefined); setCreatingTask(true); }}
           onOpenDeal={(dealId) => setOpenDealId(dealId)}
         />
@@ -498,10 +521,14 @@ function LinkedCrmSection({
           workspaceId={workspaceId}
           contactId={contactId}
           defaultOrigin="whatsapp"
-          onClose={() => setCreatingDeal(false)}
+          onClose={() => { setCreatingDeal(false); setCreateProposalAfterDeal(false); }}
           onCreated={async () => {
             setCreatingDeal(false);
             await mutateDeals();
+            if (createProposalAfterDeal) {
+              setCreateProposalAfterDeal(false);
+              setCreatingProposal(true);
+            }
           }}
         />
       ) : null}

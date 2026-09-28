@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   Bot,
   Camera,
+  CalendarClock,
   Check,
   CheckCheck,
   Clock,
@@ -24,6 +25,7 @@ import {
   Reply,
   Search,
   Send,
+  SlidersHorizontal,
   Smile,
   Square,
   Sticker as StickerIcon,
@@ -35,6 +37,7 @@ import {
   Volume2,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -52,6 +55,7 @@ import { cn } from "@/lib/utils";
 import { canManageTenant, canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
 import {
   addTagToConversation,
+  cancelScheduledInboxMessage,
   assignInboxConversation,
   closeInboxConversation,
   createInboxTag,
@@ -98,8 +102,8 @@ import { InboxAvatar } from "./inbox-avatar";
  * não justificar mais um parâmetro de servidor/índice novo) — nunca esconde o filtro de status já
  * existente, os dois combinam (ex.: "Não lidas" + "Grupos"). Melhoria visual (pedido explícito do
  * usuário: "filtros demais visíveis ao mesmo tempo") — junto com `CHANNEL_FILTERS`/`ADVANCED_FILTERS`/
- * a "Prioridade" (urgente), tudo isto agora vive dentro do popover único "Filtros", nunca mais uma
- * fileira própria de chips — reduz poluição visual sem remover nenhum filtro que já existia. */
+ * a "Prioridade" (urgente), as opções vivem dentro do popover único "Filtros" e os filtros
+ * escolhidos aparecem como chips removíveis logo abaixo. */
 const CHAT_TYPE_FILTERS: { value: "all" | "group" | "direct"; label: string }[] = [
   { value: "direct", label: "Diretas" },
   { value: "group", label: "Grupos" },
@@ -264,6 +268,39 @@ export function InboxFilterBar({
   const has = (section: InboxFilterSection) => sections.includes(section);
   const isInline = (section: InboxFilterSection) => inlineSections.includes(section) && has(section);
   const popoverSections = sections.filter((section) => !inlineSections.includes(section));
+  const activeFilterChips: { key: string; label: string; onRemove: () => void }[] = [];
+
+  if (filters.chatType !== "all") {
+    activeFilterChips.push({ key: "type", label: `Tipo: ${CHAT_TYPE_FILTERS.find((item) => item.value === filters.chatType)?.label ?? filters.chatType}`, onRemove: () => onFilterChange("chatType", "all") });
+  }
+  if (filters.channel !== "all") {
+    activeFilterChips.push({ key: "channel", label: `Canal: ${CHANNEL_FILTERS.find((item) => item.value === filters.channel)?.label ?? filters.channel}`, onRemove: () => onFilterChange("channel", "all") });
+  }
+  if (filters.owner !== "all") {
+    const ownerLabel = filters.owner === "me" ? "Eu" : filters.owner === "unassigned" ? "Sem responsável" : ownerOptions.find((item) => item.id === filters.owner)?.label ?? "Responsável";
+    activeFilterChips.push({ key: "owner", label: `Responsável: ${ownerLabel}`, onRemove: () => onFilterChange("owner", "all") });
+  }
+  if (filters.teamId) {
+    activeFilterChips.push({ key: "team", label: `Equipe: ${teamOptions.find((item) => item.id === filters.teamId)?.label ?? "Selecionada"}`, onRemove: () => onFilterChange("teamId", "") });
+  }
+  if (filters.status !== "all") {
+    activeFilterChips.push({ key: "status", label: `Status: ${STATUS_FILTER_OPTIONS.find((item) => item.value === filters.status)?.label ?? filters.status}`, onRemove: () => onFilterChange("status", "all") });
+  }
+  if (filters.ai !== "all") {
+    activeFilterChips.push({ key: "ai", label: `IA: ${AI_FILTER_OPTIONS.find((item) => item.value === filters.ai)?.label ?? filters.ai}`, onRemove: () => onFilterChange("ai", "all") });
+  }
+  if (filters.read !== "all") {
+    activeFilterChips.push({ key: "read", label: `Leitura: ${READ_FILTER_OPTIONS.find((item) => item.value === filters.read)?.label ?? filters.read}`, onRemove: () => onFilterChange("read", "all") });
+  }
+  if (filters.urgent) {
+    activeFilterChips.push({ key: "urgent", label: "Prioridade: Urgentes", onRemove: () => onFilterChange("urgent", false) });
+  }
+  if (filters.tagId) {
+    activeFilterChips.push({ key: "tag", label: `Etiqueta: ${tagOptions.find((item) => item.id === filters.tagId)?.label ?? "Selecionada"}`, onRemove: () => onFilterChange("tagId", "") });
+  }
+  if (filters.period !== "all") {
+    activeFilterChips.push({ key: "period", label: `Período: ${PERIOD_FILTER_OPTIONS.find((item) => item.value === filters.period)?.label ?? filters.period}`, onRemove: () => onFilterChange("period", "all") });
+  }
 
   return (
     <div className="space-y-1.5">
@@ -271,10 +308,10 @@ export function InboxFilterBar({
         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
           <button
             type="button"
-            onClick={() => { onFilterChange("owner", filters.owner === "me" ? "all" : filters.owner); onFilterChange("read", filters.read === "unread" ? "all" : filters.read); onFilterChange("urgent", false); }}
+            onClick={onClearFilters}
             className={cn(
               "flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors duration-150",
-              filters.owner !== "me" && filters.read !== "unread" && !filters.urgent
+              activeCount === 0
                 ? "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
                 : "bg-muted text-muted-foreground hover:bg-muted/80",
             )}
@@ -319,8 +356,8 @@ export function InboxFilterBar({
          `min-w-0` a busca simplesmente espremia até ficar ilegível. Agora ela mantém um piso
          utilizável e o EXCESSO rola horizontalmente (mesmo padrão já usado pelos chips rápidos de
          Conversas), nunca esconde nem espreme um filtro até sumir. */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-        <div className="relative min-w-[140px] flex-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <div className="relative basis-full sm:min-w-[140px] sm:flex-1 sm:basis-auto">
           <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Buscar conversa" className="h-8 pl-8" />
         </div>
@@ -356,6 +393,7 @@ export function InboxFilterBar({
                     : "border-border bg-muted/60 text-muted-foreground hover:bg-muted",
                 )}
               >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
                 Filtros{activeCount > 0 ? ` (${activeCount})` : ""}
               </button>
             </PopoverTrigger>
@@ -439,6 +477,28 @@ export function InboxFilterBar({
           </Popover>
         ) : null}
       </div>
+
+      {activeFilterChips.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5" aria-label="Filtros ativos">
+          <span className="mr-0.5 text-[11px] font-medium text-muted-foreground">Aplicados:</span>
+          {activeFilterChips.map((chip) => (
+            <button
+              key={chip.key}
+              type="button"
+              onClick={chip.onRemove}
+              className="inline-flex min-h-7 max-w-full items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-left text-xs font-medium text-primary transition-colors hover:bg-primary/15 dark:border-primary-glow/25 dark:bg-primary-glow/10 dark:text-primary-glow"
+              aria-label={`Remover filtro ${chip.label}`}
+              title="Remover filtro"
+            >
+              <span className="truncate">{chip.label}</span>
+              <X className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            </button>
+          ))}
+          <button type="button" onClick={onClearFilters} className="min-h-7 px-1.5 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+            Limpar tudo
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1314,6 +1374,9 @@ export function ConversationTimelinePane({
   const { data: eventsData, mutate: mutateEvents } = useInboxConversationEvents(workspaceId, conversation.id);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState(() => toLocalDateTimeInput(new Date(Date.now() + 10 * 60 * 1000)));
+  const [scheduling, setScheduling] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [sendError, setSendError] = useState<string | undefined>();
@@ -1408,7 +1471,7 @@ export function ConversationTimelinePane({
     setSending(true);
     setSendError(undefined);
     try {
-      await sendInboxMessage(workspaceId, conversation.id, body, replyToMessageId);
+      await sendInboxMessage(workspaceId, conversation.id, body, { replyToMessageId });
       setDraft((current) => (current.trim() === body ? "" : current));
       setFailedDraft(undefined);
       setReplyingTo(undefined);
@@ -1426,6 +1489,42 @@ export function ConversationTimelinePane({
       setSendError(message);
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleSchedule() {
+    if (!canOperate) return;
+    const body = draft.trim();
+    const scheduled = new Date(scheduleDate);
+    if (!body) return;
+    if (!scheduleDate || Number.isNaN(scheduled.getTime()) || scheduled.getTime() <= Date.now()) {
+      toast.error("Escolha um horário futuro para o disparo.");
+      return;
+    }
+    setScheduling(true);
+    setSendError(undefined);
+    try {
+      await sendInboxMessage(workspaceId, conversation.id, body, { replyToMessageId: replyingTo?.id, scheduledAt: scheduled.toISOString() });
+      setDraft((current) => (current.trim() === body ? "" : current));
+      setReplyingTo(undefined);
+      setScheduleOpen(false);
+      await refreshThread();
+      toast.success(`Mensagem agendada para ${formatScheduledAt(scheduled.toISOString())}.`);
+      textareaRef.current?.focus();
+    } catch (cause) {
+      toast.error("Não foi possível agendar a mensagem.", { description: cause instanceof Error ? cause.message : "Tente novamente." });
+    } finally {
+      setScheduling(false);
+    }
+  }
+
+  async function handleCancelScheduled(messageId: string) {
+    try {
+      await cancelScheduledInboxMessage(workspaceId, conversation.id, messageId);
+      await refreshThread();
+      toast.success("Agendamento cancelado.");
+    } catch (cause) {
+      toast.error("Não foi possível cancelar o agendamento.", { description: cause instanceof Error ? cause.message : "A mensagem pode já ter sido disparada." });
     }
   }
 
@@ -1618,6 +1717,7 @@ export function ConversationTimelinePane({
                   canOperate={canOperate}
                   onReplyTo={setReplyingTo}
                   onChanged={() => mutate()}
+                  onCancelScheduled={handleCancelScheduled}
                   onOpenMedia={setOpenMediaMessageId}
                 />
               ) : (
@@ -1766,18 +1866,33 @@ export function ConversationTimelinePane({
               disabled={!canOperate}
             />
             {draft.trim() ? (
-              <GuardedButton
-                size="icon"
-                className="rounded-full"
-                onClick={() => handleSend()}
-                loading={sending}
-                disabled={sending || !draft.trim()}
-                allowed={canOperate}
-                blockedReason={RBAC_COPY.operateConversations}
-                aria-label="Enviar mensagem"
-              >
-                <Send className="h-4 w-4" />
-              </GuardedButton>
+              <>
+                <GuardedButton
+                  size="icon"
+                  variant="ghost"
+                  className="rounded-full"
+                  onClick={() => { setScheduleDate(toLocalDateTimeInput(new Date(Date.now() + 10 * 60 * 1000))); setScheduleOpen(true); }}
+                  disabled={sending || scheduling}
+                  allowed={canOperate}
+                  blockedReason={RBAC_COPY.operateConversations}
+                  aria-label="Agendar mensagem"
+                  title="Agendar mensagem"
+                >
+                  <CalendarClock className="h-4 w-4" />
+                </GuardedButton>
+                <GuardedButton
+                  size="icon"
+                  className="rounded-full"
+                  onClick={() => handleSend()}
+                  loading={sending}
+                  disabled={sending || scheduling || !draft.trim()}
+                  allowed={canOperate}
+                  blockedReason={RBAC_COPY.operateConversations}
+                  aria-label="Enviar mensagem"
+                >
+                  <Send className="h-4 w-4" />
+                </GuardedButton>
+              </>
             ) : (
               <VoiceRecorderButton disabled={!canOperate || attaching} onSend={handleSendVoiceNote} />
             )}
@@ -1797,6 +1912,34 @@ export function ConversationTimelinePane({
 
       {contactPickerOpen ? (
         <ContactPickerModal workspaceId={workspaceId} onClose={() => setContactPickerOpen(false)} onSelect={handleSendContact} />
+      ) : null}
+      {scheduleOpen ? (
+        <Modal title="Agendar mensagem" onClose={() => { if (!scheduling) setScheduleOpen(false); }}>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">A mensagem será disparada automaticamente</p>
+              <p className="mt-1 line-clamp-3 whitespace-pre-wrap">{draft.trim()}</p>
+            </div>
+            <div>
+              <Label htmlFor="scheduled-message-at">Data e horário</Label>
+              <Input
+                id="scheduled-message-at"
+                type="datetime-local"
+                value={scheduleDate}
+                min={toLocalDateTimeInput(new Date(Date.now() + 60 * 1000))}
+                onChange={(event) => setScheduleDate(event.target.value)}
+                disabled={scheduling}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Horário local deste dispositivo.</p>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="secondary" onClick={() => setScheduleOpen(false)} disabled={scheduling}>Cancelar</Button>
+              <Button onClick={() => void handleSchedule()} loading={scheduling} disabled={scheduling || !draft.trim() || !scheduleDate}>
+                <CalendarClock className="h-4 w-4" /> Agendar disparo
+              </Button>
+            </div>
+          </div>
+        </Modal>
       ) : null}
     </div>
   );
@@ -2273,6 +2416,7 @@ function MessageBubble({
   canOperate,
   onReplyTo,
   onChanged,
+  onCancelScheduled,
   onOpenMedia,
 }: {
   workspaceId: string;
@@ -2292,6 +2436,7 @@ function MessageBubble({
   onReplyTo: (message: InboxMessage) => void;
   /** Bloco "3 pontinhos em cada mensagem" — revalida a timeline depois de excluir/reagir. */
   onChanged: () => void;
+  onCancelScheduled: (messageId: string) => void | Promise<void>;
   /** Bloco "visualizador de mídia" (pedido explícito do usuário) — abre o `ConversationMediaViewer`
    * nesta mensagem (só chamado por `MessageMedia` quando `message.type` é imagem/vídeo). */
   onOpenMedia: (messageId: string) => void;
@@ -2393,6 +2538,7 @@ function MessageBubble({
           {body ? <p className={cn("whitespace-pre-wrap [overflow-wrap:anywhere]", isMedia && "mt-1.5")}>{body}</p> : null}
           <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1 text-[10px] opacity-70">
             <span className="tabular-nums">{timeLabel(message.sentAt ?? message.createdAt)}</span>
+            {message.scheduledAt ? <span className="inline-flex items-center gap-0.5"><CalendarClock className="h-3 w-3" /> Agendada para {formatScheduledAt(message.scheduledAt)}</span> : null}
             {isOutbound ? <MessageStatusTicks status={message.status} /> : null}
           </div>
           {failed && body ? (
@@ -2422,7 +2568,7 @@ function MessageBubble({
         </div>
         {canOperate ? (
           <div className="shrink-0 self-end opacity-0 transition-opacity group-hover/msg:opacity-100">
-            <MessageActionsMenu workspaceId={workspaceId} conversationId={conversationId} message={message} onReplyTo={onReplyTo} onChanged={onChanged} />
+            <MessageActionsMenu workspaceId={workspaceId} conversationId={conversationId} message={message} onReplyTo={onReplyTo} onChanged={onChanged} onCancelScheduled={onCancelScheduled} />
           </div>
         ) : null}
       </div>
@@ -2452,21 +2598,26 @@ function MessageActionsMenu({
   message,
   onReplyTo,
   onChanged,
+  onCancelScheduled,
 }: {
   workspaceId: string;
   conversationId: string;
   message: InboxMessage;
   onReplyTo: (message: InboxMessage) => void;
   onChanged: () => void;
+  onCancelScheduled: (messageId: string) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [cancelScheduleConfirmOpen, setCancelScheduleConfirmOpen] = useState(false);
+  const [cancellingSchedule, setCancellingSchedule] = useState(false);
 
   // Reagir exige a mensagem já confirmada pelo WhatsApp (externalMessageId) — o backend rejeita
   // sem isso; nunca oferece a ação pra uma mensagem ainda "enviando"/na fila.
   const canReact = Boolean(message.externalMessageId);
+  const isScheduled = Boolean(message.scheduledAt && message.status === "queued");
 
   async function react(emoji: string) {
     if (!canReact || busy) return;
@@ -2492,6 +2643,16 @@ function MessageActionsMenu({
     } finally {
       setDeleting(false);
       setDeleteConfirmOpen(false);
+    }
+  }
+
+  async function handleCancelSchedule() {
+    setCancellingSchedule(true);
+    try {
+      await onCancelScheduled(message.id);
+    } finally {
+      setCancellingSchedule(false);
+      setCancelScheduleConfirmOpen(false);
     }
   }
 
@@ -2531,6 +2692,16 @@ function MessageActionsMenu({
             <Reply className="h-4 w-4" />
             Responder
           </button>
+          {isScheduled ? (
+            <button
+              type="button"
+              onClick={() => { setOpen(false); setCancelScheduleConfirmOpen(true); }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-destructive transition-colors hover:bg-destructive/10"
+            >
+              <CalendarClock className="h-4 w-4" />
+              Cancelar agendamento
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => {
@@ -2553,6 +2724,16 @@ function MessageActionsMenu({
         busy={deleting}
         onConfirm={handleDelete}
         onCancel={() => setDeleteConfirmOpen(false)}
+      />
+      <ConfirmDialog
+        open={cancelScheduleConfirmOpen}
+        title="Cancelar agendamento"
+        description="A mensagem será removida da conversa e não será disparada."
+        confirmLabel="Cancelar agendamento"
+        variant="danger"
+        busy={cancellingSchedule}
+        onConfirm={() => void handleCancelSchedule()}
+        onCancel={() => setCancelScheduleConfirmOpen(false)}
       />
     </>
   );
@@ -2908,4 +3089,15 @@ export function timeLabel(iso: string | undefined): string {
   const sameDay = date.toDateString() === now.toDateString();
   if (sameDay) return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+}
+
+function toLocalDateTimeInput(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function formatScheduledAt(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "horário inválido";
+  return date.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }

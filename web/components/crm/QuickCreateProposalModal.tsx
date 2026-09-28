@@ -22,12 +22,13 @@ function dateAfter(days: number): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-export function QuickCreateProposalModal({ workspaceId, contactId, contactName, dealChoice, onClose, onCreated }: {
+export function QuickCreateProposalModal({ workspaceId, contactId, contactName, dealChoice, onClose, onCreateOpportunity, onCreated }: {
   workspaceId: string;
   contactId?: string;
   contactName?: string;
   dealChoice: TaskDealChoice;
   onClose: () => void;
+  onCreateOpportunity?: () => void;
   onCreated: (proposal: ProposalWithToken) => void | Promise<void>;
 }) {
   const { data: templates } = useProposalTemplates(workspaceId, true);
@@ -63,12 +64,27 @@ export function QuickCreateProposalModal({ workspaceId, contactId, contactName, 
   async function submit() {
     setBusy(true);
     try {
-      const proposal = await createProposal({ workspaceId, contactId, dealId: dealChoice.mode === "auto" ? dealChoice.dealId : dealChoice.mode === "choose" ? dealId || undefined : undefined, title: title.trim(), items: items.filter((item) => item.name.trim()), discountCents: centsFromCurrencyInput(discount), validUntil: validUntil || undefined, conditions: conditions.trim() || undefined });
+      const proposal = await createProposal({ workspaceId, contactId, dealId: dealChoice.mode === "auto" ? dealChoice.dealId : dealChoice.mode === "choose" ? dealId : undefined, title: title.trim(), items: items.filter((item) => item.name.trim()), discountCents: centsFromCurrencyInput(discount), validUntil: validUntil || undefined, conditions: conditions.trim() || undefined });
       await onCreated(proposal);
       toast.success("Proposta criada.");
     } catch (cause) {
       toast.error("Não foi possível criar a proposta", { description: cause instanceof Error ? cause.message : "Tente novamente." });
     } finally { setBusy(false); }
+  }
+
+  if (dealChoice.mode === "none") {
+    return (
+      <Modal title="Gerar proposta" onClose={onClose}>
+        <div className="space-y-3">
+          <p className="font-medium text-foreground">Crie uma oportunidade antes da proposta</p>
+          <p className="text-sm text-muted-foreground">A proposta precisa ficar ligada a uma oportunidade para acompanhar o avanço comercial.</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+            <Button onClick={onCreateOpportunity} disabled={!onCreateOpportunity}>Criar oportunidade</Button>
+          </div>
+        </div>
+      </Modal>
+    );
   }
 
   return (
@@ -77,7 +93,7 @@ export function QuickCreateProposalModal({ workspaceId, contactId, contactName, 
         <div className="grid gap-3 sm:grid-cols-2">
           <div><Label htmlFor="proposal-template">Modelo</Label><Select value={templateId} onValueChange={applyTemplate}><SelectTrigger id="proposal-template"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sem modelo</SelectItem>{(templates ?? []).map((template: ProposalTemplate) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}</SelectContent></Select></div>
           <div><Label>Cliente</Label><Input value={contactName ?? "Contato selecionado"} readOnly /></div>
-          {dealChoice.mode === "choose" ? <div className="sm:col-span-2"><Label htmlFor="proposal-deal">Negócio</Label><Select value={dealId || "none"} onValueChange={(value) => setDealId(value === "none" ? "" : value)}><SelectTrigger id="proposal-deal"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sem negócio</SelectItem>{dealChoice.options.map((option) => <SelectItem key={option.id} value={option.id}>{option.title}</SelectItem>)}</SelectContent></Select></div> : null}
+          {dealChoice.mode === "choose" ? <div className="sm:col-span-2"><Label htmlFor="proposal-deal">Oportunidade</Label><Select value={dealId} onValueChange={setDealId}><SelectTrigger id="proposal-deal"><SelectValue placeholder="Escolher oportunidade" /></SelectTrigger><SelectContent>{dealChoice.options.map((option) => <SelectItem key={option.id} value={option.id}>{option.title}</SelectItem>)}</SelectContent></Select></div> : null}
           <div className="sm:col-span-2"><Label htmlFor="proposal-title">Título</Label><Input id="proposal-title" value={title} onChange={(event) => setTitle(event.target.value)} /></div>
         </div>
 
@@ -86,7 +102,7 @@ export function QuickCreateProposalModal({ workspaceId, contactId, contactName, 
         <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="proposal-discount">Desconto</Label><Input id="proposal-discount" value={discount} onChange={(event) => setDiscount(event.target.value)} inputMode="decimal" placeholder="0,00" /></div><div><Label htmlFor="proposal-validity">Validade</Label><Input id="proposal-validity" type="date" value={validUntil} onChange={(event) => setValidUntil(event.target.value)} /></div><div className="sm:col-span-2"><Label htmlFor="proposal-conditions">Condições</Label><Textarea id="proposal-conditions" value={conditions} onChange={(event) => setConditions(event.target.value)} rows={3} /></div></div>
         <div className="flex items-center justify-between border-t pt-3 font-semibold"><span>Total</span><span>{formatCurrencyCents(total)}</span></div>
         {preview ? <div className="rounded-xl border bg-muted/20 p-4"><p className="font-semibold">{title || "Sem título"}</p>{items.map((item, index) => <div key={index} className="mt-2 flex justify-between gap-3 text-sm"><span>{item.quantity}× {item.name}</span><span>{formatCurrencyCents(item.quantity * item.unitPriceCents)}</span></div>)}<p className="mt-3 border-t pt-2 text-right font-semibold">{formatCurrencyCents(total)}</p></div> : null}
-        <div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setPreview((value) => !value)}>{preview ? "Ocultar" : "Visualizar"}</Button><Button onClick={submit} loading={busy} disabled={busy || !title.trim() || items.filter((item) => item.name.trim()).length === 0}>Criar proposta</Button></div>
+        <div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setPreview((value) => !value)}>{preview ? "Ocultar" : "Visualizar"}</Button><Button onClick={submit} loading={busy} disabled={busy || !title.trim() || items.filter((item) => item.name.trim()).length === 0 || (dealChoice.mode === "choose" && !dealId)}>Criar proposta</Button></div>
       </div>
     </Modal>
   );

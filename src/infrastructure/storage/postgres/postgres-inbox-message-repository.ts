@@ -15,6 +15,7 @@ type Row = {
   type: string;
   status: string;
   body: string | null;
+  scheduled_at: Date | null;
   media_storage_ref: InboxMediaStorageRef | null;
   media_source_ref: Record<string, unknown> | null;
   mime_type: string | null;
@@ -56,14 +57,14 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
     const insertResult = await this.pool.query<Row>(
       `insert into inbox_messages (
          id, tenant_id, workspace_id, conversation_id, connection_id, external_message_id,
-         direction, type, status, body, media_storage_ref, mime_type, metadata,
+         direction, type, status, body, scheduled_at, media_storage_ref, mime_type, metadata,
          sent_by_user_id, sent_by_ai, sent_by_automation, sender_external_id, sender_display_name, sender_phone_e164, quoted_message, sent_at
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, case when $7 = 'inbound' then now() else null end)
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, case when $7 = 'inbound' then now() else null end)
        on conflict (connection_id, external_message_id) do nothing
        returning *`,
       [
         id, input.tenantId, input.workspaceId, input.conversationId, input.connectionId, input.externalMessageId ?? null,
-        input.direction, input.type, defaultStatus, input.body ?? null, input.mediaStorageRef ?? null, input.mimeType ?? null, input.metadata ?? null,
+        input.direction, input.type, defaultStatus, input.body ?? null, input.scheduledAt ?? null, input.mediaStorageRef ?? null, input.mimeType ?? null, input.metadata ?? null,
         input.sentByUserId ?? null, input.sentByAi ?? false, input.sentByAutomation ?? false, input.senderExternalId ?? null, input.senderDisplayName ?? null,
         input.senderPhoneE164 ?? null, input.quotedMessage ? JSON.stringify(input.quotedMessage) : null,
       ],
@@ -85,6 +86,14 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
 
   async delete(id: string): Promise<void> {
     await this.pool.query("delete from inbox_messages where id = $1", [id]);
+  }
+
+  async cancelScheduled(id: string): Promise<boolean> {
+    const result = await this.pool.query(
+      "delete from inbox_messages where id = $1 and direction = 'outbound' and status = 'queued' and scheduled_at is not null returning id",
+      [id],
+    );
+    return result.rowCount === 1;
   }
 
   async findByExternalId(input: { connectionId: string; externalMessageId: string }): Promise<InboxMessage | undefined> {
@@ -215,10 +224,27 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
   async listOrphanedOutboundMessages(input: { olderThanIso: string; limit: number }): Promise<InboxMessage[]> {
     const result = await this.pool.query<Row>(
       `select * from inbox_messages
-       where direction = 'outbound' and status = 'queued' and outbound_published_at is null and created_at < $1
+       where direction = 'outbound' and status = 'queued' and scheduled_at is null and outbound_published_at is null and created_at < $1
        order by created_at asc
        limit $2`,
       [input.olderThanIso, input.limit],
+    );
+    return result.rows.map((row) => this.toDomain(row));
+  }
+
+  async claimDueScheduledMessages(input: { nowIso: string; limit: number }): Promise<InboxMessage[]> {
+    const result = await this.pool.query<Row>(
+      `update inbox_messages
+       set scheduled_at = null
+       where id in (
+         select id from inbox_messages
+         where direction = 'outbound' and status = 'queued' and scheduled_at is not null and scheduled_at <= $1
+         order by scheduled_at asc
+         for update skip locked
+         limit $2
+       )
+       returning *`,
+      [input.nowIso, input.limit],
     );
     return result.rows.map((row) => this.toDomain(row));
   }
@@ -264,6 +290,7 @@ export class PostgresInboxMessageRepository implements InboxMessageRepositoryPor
       type: row.type as InboxMessage["type"],
       status: row.status as InboxMessageStatus,
       body: row.body ?? undefined,
+      scheduledAt: row.scheduled_at?.toISOString(),
       mediaStorageRef: row.media_storage_ref ?? undefined,
       mediaSourceRef: row.media_source_ref ?? undefined,
       mimeType: row.mime_type ?? undefined,

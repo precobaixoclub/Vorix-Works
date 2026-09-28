@@ -20,6 +20,7 @@ import {
   addTagToConversation,
   assignConversation,
   closeConversation,
+  cancelScheduledInboxMessage,
   createInboxTag,
   createKanbanPhase,
   deleteConversation,
@@ -80,7 +81,7 @@ const CREATE_CONNECTION_BODY_SCHEMA = { type: "object", required: ["workspaceId"
 const SEND_MESSAGE_BODY_SCHEMA = {
   type: "object",
   required: ["workspaceId", "body"],
-  properties: { workspaceId: { type: "string", minLength: 1 }, body: { type: "string", minLength: 1 }, replyToMessageId: { type: "string", minLength: 1 } },
+  properties: { workspaceId: { type: "string", minLength: 1 }, body: { type: "string", minLength: 1 }, replyToMessageId: { type: "string", minLength: 1 }, scheduledAt: { type: "string", format: "date-time" } },
 } as const;
 const REACT_MESSAGE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "emoji"], properties: { workspaceId: { type: "string", minLength: 1 }, emoji: { type: "string" } } } as const;
 const MESSAGE_PARAMS_SCHEMA = { type: "object", required: ["id", "messageId"], properties: { id: { type: "string", minLength: 1 }, messageId: { type: "string", minLength: 1 } } } as const;
@@ -219,6 +220,8 @@ const INBOX_ERROR_STATUS: Record<string, number> = {
   INBOX_TAG_NOT_FOUND: 404,
   INBOX_TAG_NAME_EMPTY: 422,
   INBOX_TAG_NAME_TAKEN: 409,
+  INBOX_SCHEDULE_TIME_INVALID: 422,
+  INBOX_MESSAGE_NOT_SCHEDULED: 409,
 };
 
 function rethrowInboxError(error: unknown): never {
@@ -1033,11 +1036,24 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
   app.post("/inbox/conversations/:id/messages", { schema: { params: ID_PARAMS_SCHEMA, body: SEND_MESSAGE_BODY_SCHEMA } }, async (request, reply) => {
     const principal = requirePermission(request, "inbox:reply");
     const { id } = request.params as { id: string };
-    const { workspaceId, body, replyToMessageId } = request.body as { workspaceId: string; body: string; replyToMessageId?: string };
+    const { workspaceId, body, replyToMessageId, scheduledAt } = request.body as { workspaceId: string; body: string; replyToMessageId?: string; scheduledAt?: string };
     try {
-      const message = await sendInboxMessage(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, body, sentByUserId: principal.userId, replyToMessageId });
+      const message = await sendInboxMessage(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, body, sentByUserId: principal.userId, replyToMessageId, scheduledAt });
       reply.status(202);
       return successEnvelope(message, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.post("/inbox/conversations/:id/messages/:messageId/cancel-schedule", { schema: { params: MESSAGE_PARAMS_SCHEMA, body: WORKSPACE_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { id, messageId } = request.params as { id: string; messageId: string };
+    const { workspaceId } = request.body as { workspaceId: string };
+    try {
+      await cancelScheduledInboxMessage(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, messageId });
+      publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
+      return successEnvelope({ cancelled: true }, request.id);
     } catch (error) {
       rethrowInboxError(error);
     }

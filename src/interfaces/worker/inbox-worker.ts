@@ -35,6 +35,7 @@ import {
   applyConnectionStateChanged,
   applyMessageReaction,
   applyMessageStatusChanged,
+  dispatchDueScheduledMessages,
   downloadInboundMediaAndAttach,
   maybeGenerateAiResponse,
   processOutboundMessage,
@@ -123,6 +124,7 @@ type InboxWorkerConfig = {
      * reconcilia algo recém-criado que `sendInboxMessage` ainda pode estar publicando sozinho. */
     outboundReconcileIntervalMs: number;
     outboundReconcileGracePeriodMs: number;
+    scheduledMessageIntervalMs: number;
     /** Bloco "réplica de identidade" (Fase 4) — dois workers de reconciliação, mesmo idioma dos
      * demais `setInterval` deste arquivo. Só têm efeito com `PERSISTENCE_DRIVER=postgres`
      * (`repositories.pool` ausente em memória = ambos viram no-op, sem erro). */
@@ -194,6 +196,7 @@ function loadInboxWorkerConfig(): InboxWorkerConfig {
       outboundSendPaused: process.env.INBOX_OUTBOUND_SEND_PAUSED?.trim() === "true",
       outboundReconcileIntervalMs: parsePositiveInt(process.env.INBOX_OUTBOUND_RECONCILE_INTERVAL_MS, 60_000),
       outboundReconcileGracePeriodMs: parsePositiveInt(process.env.INBOX_OUTBOUND_RECONCILE_GRACE_PERIOD_MS, 120_000),
+      scheduledMessageIntervalMs: parsePositiveInt(process.env.INBOX_SCHEDULED_MESSAGE_INTERVAL_MS, 10_000),
       identityMergeScanIntervalMs: parsePositiveInt(process.env.INBOX_IDENTITY_MERGE_SCAN_INTERVAL_MS, 180_000),
       identityReconcileIntervalMs: parsePositiveInt(process.env.INBOX_IDENTITY_RECONCILE_INTERVAL_MS, 300_000),
       avatarReconcileIntervalMs: parsePositiveInt(process.env.INBOX_AVATAR_RECONCILE_INTERVAL_MS, 600_000),
@@ -940,6 +943,23 @@ async function main(): Promise<void> {
   const reconcileTimer = setInterval(runOutboundReconciliation, config.resilience.outboundReconcileIntervalMs);
   reconcileTimer.unref();
 
+  let scheduledDispatchRunning = false;
+  const runScheduledDispatch = (): void => {
+    if (scheduledDispatchRunning) return;
+    scheduledDispatchRunning = true;
+    dispatchDueScheduledMessages(deps)
+      .then(({ dispatched, failed }) => {
+        if (dispatched > 0 || failed > 0) console.log(`[inbox-worker] mensagens agendadas: ${dispatched} liberada(s), ${failed} falha(s).`);
+      })
+      .catch((error) => console.error("[inbox-worker] despacho de mensagens agendadas falhou:", error instanceof Error ? error.message : error))
+      .finally(() => {
+        scheduledDispatchRunning = false;
+      });
+  };
+  runScheduledDispatch();
+  const scheduledDispatchTimer = setInterval(runScheduledDispatch, config.resilience.scheduledMessageIntervalMs);
+  scheduledDispatchTimer.unref();
+
   // Bloco "réplica de identidade" (Fase 4) — dois workers novos, só ativos com Postgres real
   // (`repositories.pool`): em memória (dev/teste), ambos ficam ausentes — sem erro, sem timer.
   let identityMergeTimer: ReturnType<typeof setInterval> | undefined;
@@ -1056,6 +1076,7 @@ async function main(): Promise<void> {
     clearInterval(healthTimer);
     clearInterval(heartbeatTimer);
     clearInterval(reconcileTimer);
+    clearInterval(scheduledDispatchTimer);
     if (identityMergeTimer) clearInterval(identityMergeTimer);
     if (identityReconcileTimer) clearInterval(identityReconcileTimer);
     if (avatarReconcileTimer) clearInterval(avatarReconcileTimer);

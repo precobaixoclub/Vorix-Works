@@ -749,6 +749,8 @@ export type SendInboxMessageInput = {
    * reponder uma mensagem especifica") — id (do Vorix, nunca o `externalMessageId` do WhatsApp) da
    * mensagem sendo respondida, quando presente. */
   replyToMessageId?: string;
+  /** ISO UTC; quando preenchido, a mensagem fica persistida e só entra na fila no horário definido. */
+  scheduledAt?: string;
 };
 
 /**
@@ -768,6 +770,10 @@ export async function sendInboxMessage(deps: InboxUseCaseDeps, input: SendInboxM
   const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
   const body = input.body.trim();
   if (!body) throw new Error("INBOX_MESSAGE_BODY_EMPTY: a mensagem não pode ser vazia.");
+  const scheduledAt = input.scheduledAt ? new Date(input.scheduledAt) : undefined;
+  if (input.scheduledAt && (!scheduledAt || Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now())) {
+    throw new Error("INBOX_SCHEDULE_TIME_INVALID: escolha um horário futuro para o disparo.");
+  }
 
   // Bloco "responder mensagem específica" — snapshot gravado AGORA (mesmo padrão de
   // `InboxMessage.quotedMessage` já usado pra respostas RECEBIDAS, ver `registerInboundMessage`),
@@ -801,11 +807,51 @@ export async function sendInboxMessage(deps: InboxUseCaseDeps, input: SendInboxM
     type: "text",
     status: "queued",
     body,
+    scheduledAt: scheduledAt?.toISOString(),
     sentByUserId: input.sentByUserId,
     sentByAi: input.sentByAi ?? false,
     quotedMessage,
   });
+  if (scheduledAt) {
+    await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: message.createdAt, incrementUnread: false });
+    return message;
+  }
   return finishEnqueueingOutboundMessage(deps, { conversationId: conversation.id, connectionId: conversation.connectionId, message, sentByAi: input.sentByAi ?? false, tenantId: input.tenantId, workspaceId: input.workspaceId });
+}
+
+export async function cancelScheduledInboxMessage(
+  deps: InboxUseCaseDeps,
+  input: { tenantId: string; workspaceId: string; conversationId: string; messageId: string },
+): Promise<void> {
+  await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  const message = await deps.messageRepository.getById(input.messageId);
+  if (!message || message.tenantId !== input.tenantId || message.workspaceId !== input.workspaceId || message.conversationId !== input.conversationId) {
+    throw new Error(`INBOX_MESSAGE_NOT_FOUND: mensagem "${input.messageId}" não existe nesta conversa.`);
+  }
+  if (!message.scheduledAt) throw new Error("INBOX_MESSAGE_NOT_SCHEDULED: esta mensagem já foi liberada ou enviada.");
+  const cancelled = await deps.messageRepository.cancelScheduled(input.messageId);
+  if (!cancelled) throw new Error("INBOX_MESSAGE_NOT_SCHEDULED: esta mensagem já foi liberada ou enviada.");
+}
+
+/** Dispatcher do worker — reivindica por CAS as mensagens vencidas antes de publicar no RabbitMQ,
+ * então dois processos não conseguem disparar a mesma mensagem. Falhas ficam elegíveis para a
+ * reconciliação outbound já existente. */
+export async function dispatchDueScheduledMessages(deps: InboxUseCaseDeps, input: { limit?: number } = {}): Promise<{ dispatched: number; failed: number }> {
+  const due = await deps.messageRepository.claimDueScheduledMessages({ nowIso: new Date().toISOString(), limit: input.limit ?? 100 });
+  let dispatched = 0;
+  let failed = 0;
+  for (const message of due) {
+    try {
+      await deps.outboundQueue.publish({ messageId: message.id, tenantId: message.tenantId, workspaceId: message.workspaceId, connectionId: message.connectionId });
+      await deps.messageRepository.markOutboundPublished(message.id, { publishedAt: new Date().toISOString() });
+      dispatched += 1;
+    } catch (error) {
+      failed += 1;
+      await deps.messageRepository.recordPublishAttempt(message.id, { lastPublishError: error instanceof Error ? error.message : String(error), attemptedAt: new Date().toISOString() });
+      deps.metrics?.incOutboundPublishFailed();
+    }
+  }
+  return { dispatched, failed };
 }
 
 export type SendInboxMediaMessageInput = {

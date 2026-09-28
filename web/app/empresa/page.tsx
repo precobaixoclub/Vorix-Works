@@ -48,7 +48,7 @@ export default function EmpresaPage() {
             Existimos para eliminar rupturas entre criar, atender e vender.
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
-            Marketing cria demanda. A demanda vira conversa. A conversa vira contato. O contato vira negócio. O contexto não deveria se perder nesse caminho.
+            Marketing cria demanda. A demanda vira conversa. A conversa vira contato. O contato vira oportunidade. O contexto não deveria se perder nesse caminho.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link href="/signup">

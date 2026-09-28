@@ -204,9 +204,9 @@ function DealsView() {
       setCreateOpen(false);
       resetCreateForm();
       await refresh();
-      toast.success("Negócio criado.");
+      toast.success("Oportunidade criada.");
     } catch (cause) {
-      toast.error("Não foi possível criar o negócio", { description: cause instanceof Error ? cause.message : "Tente novamente." });
+      toast.error("Não foi possível criar a oportunidade", { description: cause instanceof Error ? cause.message : "Tente novamente." });
     } finally {
       setBusy(false);
     }
@@ -233,10 +233,10 @@ function DealsView() {
     try {
       await moveDealStage(deal.id, workspace.id, targetStage.id, lossReasonValue);
       await refresh();
-      if (targetStage.isWon) toast.success("Negócio ganho 🎉");
+      if (targetStage.isWon) toast.success("Oportunidade ganha 🎉");
     } catch (cause) {
       await mutateDeals(previousDeals, { revalidate: false });
-      toast.error("Não foi possível mover o negócio", { description: cause instanceof Error ? cause.message : "Tente novamente." });
+      toast.error("Não foi possível mover a oportunidade", { description: cause instanceof Error ? cause.message : "Tente novamente." });
     } finally {
       setMovingDealId(undefined);
     }
@@ -312,11 +312,11 @@ function DealsView() {
     <main className="mx-auto max-w-[1540px] px-3 py-5 sm:px-6 sm:py-8">
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Negócios</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Oportunidades</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Acompanhe as oportunidades comerciais da sua empresa, da primeira conversa até o fechamento.</p>
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
             <span><strong className="font-semibold text-foreground">{formatCurrencyCents(pipelineValue)}</strong> em pipeline</span>
-            <span><strong className="font-semibold text-foreground">{visibleDeals.length}</strong> negócios</span>
+            <span><strong className="font-semibold text-foreground">{visibleDeals.length}</strong> oportunidades</span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -328,7 +328,7 @@ function DealsView() {
               </SelectContent>
             </Select>
           ) : null}
-          <Button onClick={() => setCreateOpen(true)} disabled={!pipelineId || orderedStages.length === 0}>Novo negócio</Button>
+          <Button onClick={() => setCreateOpen(true)} disabled={!pipelineId || orderedStages.length === 0}>Nova oportunidade</Button>
         </div>
       </div>
 
@@ -337,7 +337,7 @@ function DealsView() {
       >
         <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar negócio ou contato" className="pl-9" />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar oportunidade ou contato" className="pl-9" />
         </div>
         <Popover>
           <PopoverTrigger asChild>
@@ -399,7 +399,7 @@ function DealsView() {
             </div>
             <div className="space-y-2">
               {mobileDeals.map(renderDeal)}
-              {mobileDeals.length === 0 ? <EmptyState title="Sem negócios nesta etapa" description="Escolha outra etapa ou ajuste os filtros." /> : null}
+              {mobileDeals.length === 0 ? <EmptyState title="Sem oportunidades nesta etapa" description="Escolha outra etapa ou ajuste os filtros." /> : null}
             </div>
           </div>
 
@@ -430,7 +430,7 @@ function DealsView() {
                   </header>
                   <div className="min-h-[220px] flex-1 space-y-2 overflow-y-auto p-2">
                     {stageDeals.map(renderDeal)}
-                    {stageDeals.length === 0 ? <p className="px-1 py-8 text-center text-xs text-muted-foreground">Solte negócios aqui</p> : null}
+                    {stageDeals.length === 0 ? <p className="px-1 py-8 text-center text-xs text-muted-foreground">Solte oportunidades aqui</p> : null}
                   </div>
                 </section>
               );
@@ -440,7 +440,7 @@ function DealsView() {
       ) : null}
 
       {createOpen ? (
-        <Modal title="Novo negócio" onClose={() => { setCreateOpen(false); resetCreateForm(); }} maxWidthClass="sm:max-w-2xl">
+        <Modal title="Nova oportunidade" onClose={() => { setCreateOpen(false); resetCreateForm(); }} maxWidthClass="sm:max-w-2xl">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <Label htmlFor="deal-title">Titulo</Label>
@@ -590,7 +590,7 @@ function DealCard({
         </div>
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label="Ações do negócio" onClick={(event) => event.stopPropagation()}>
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label="Ações da oportunidade" onClick={(event) => event.stopPropagation()}>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </PopoverTrigger>

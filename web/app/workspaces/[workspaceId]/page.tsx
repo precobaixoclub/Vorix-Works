@@ -31,7 +31,7 @@ const CHECKLIST_ITEMS: ReadonlyArray<{ step: OnboardingStep; label: string }> = 
 const ACTIVATION_ITEMS: ReadonlyArray<{ step: OnboardingStep; title: string; description: string; route: string; icon: typeof Rocket }> = [
   { step: "channel", title: "Conectar canal", description: "Ative o primeiro WhatsApp de atendimento.", route: "conversas?tab=connections", icon: MessageSquareText },
   { step: "team", title: "Convidar equipe", description: "Traga quem vai operar vendas e atendimento.", route: "settings/users", icon: UsersRound },
-  { step: "commercial", title: "Criar primeiro negócio", description: "Abra a primeira oportunidade comercial.", route: "deals", icon: WalletCards },
+  { step: "commercial", title: "Criar primeira oportunidade", description: "Abra a primeira oportunidade comercial.", route: "deals", icon: WalletCards },
   { step: "brand", title: "Criar primeiro conteúdo", description: "Prepare a base de marketing do workspace.", route: "create", icon: Rocket },
 ];
 
@@ -79,7 +79,7 @@ export default function WorkspaceHomePage() {
     {
       label: "Pipeline comercial",
       value: commercialMetrics ? formatCurrencyCents(commercialMetrics.openPipelineValueCents) : undefined,
-      hint: commercialMetrics ? `${commercialMetrics.dealsCreatedCount} negócios no período` : undefined,
+      hint: commercialMetrics ? `${commercialMetrics.dealsCreatedCount} oportunidades no período` : undefined,
       route: `/workspaces/${workspace.id}/deals`,
       icon: WalletCards,
       tone: "default" as const,
@@ -205,7 +205,7 @@ function QuickActions({ workspaceId }: { workspaceId: string }) {
   const actions = [
     { label: "Criar conteúdo", route: "create" },
     { label: "Abrir Conversas", route: "conversas" },
-    { label: "Novo negócio", route: "deals" },
+    { label: "Nova oportunidade", route: "deals" },
     { label: "Publicar", route: "publish" },
   ];
   return (

@@ -115,7 +115,7 @@ export function DealDetailModal({
             <span>{formatCurrencyCents(deal.valueCents, deal.currency)}</span>
           </div>
         }
-        eyebrow="Negócio"
+        eyebrow="Oportunidade"
         avatar={<DealAvatar title={deal.title} stage={stage} />}
         headerExtra={<StatusBadge status={stage?.isWon ? "won" : stage?.isLost ? "lost" : "open"} />}
         sections={[
@@ -322,7 +322,7 @@ function DealSummary({
 }
 
 function DealActivities({ tasks, members }: { tasks: readonly Task[]; members: readonly UserPickerMember[] }) {
-  if (tasks.length === 0) return <p className="text-sm text-muted-foreground">Nenhuma atividade vinculada a este negócio.</p>;
+  if (tasks.length === 0) return <p className="text-sm text-muted-foreground">Nenhuma atividade vinculada a esta oportunidade.</p>;
   return (
     <div className="space-y-2">
       {tasks.map((task) => (
@@ -345,7 +345,7 @@ function DealProposals({ proposals, onCreate, onOpen }: { proposals: readonly Pr
   return (
     <div className="space-y-2">
       <div className="flex justify-end"><Button size="sm" onClick={onCreate}>+ Nova proposta</Button></div>
-      {proposals.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma proposta vinculada a este negócio.</p> : null}
+      {proposals.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma proposta vinculada a esta oportunidade.</p> : null}
       {proposals.map((proposal) => (
         <button type="button" onClick={() => onOpen(proposal.id)} key={proposal.id} className="block w-full rounded-xl border border-border/70 bg-card px-3 py-3 text-left hover:border-primary/40">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -425,7 +425,7 @@ function EditDealModal({
         contactId: contactId || undefined,
       });
       await onSaved();
-      toast.success("Negócio atualizado.");
+      toast.success("Oportunidade atualizada.");
     } catch (cause) {
       toast.error("Não foi possível salvar", { description: cause instanceof Error ? cause.message : "Tente novamente." });
     } finally {
@@ -436,7 +436,7 @@ function EditDealModal({
   const contactOptions = contacts.map((contact) => ({ id: contact.id, label: contact.company ? `${contact.name} · ${contact.company}` : contact.name }));
 
   return (
-    <Modal title="Editar negócio" onClose={onClose} maxWidthClass="sm:max-w-2xl">
+    <Modal title="Editar oportunidade" onClose={onClose} maxWidthClass="sm:max-w-2xl">
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <Label htmlFor="edit-deal-title">Titulo</Label>

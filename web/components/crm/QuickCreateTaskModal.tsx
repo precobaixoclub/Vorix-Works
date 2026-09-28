@@ -110,11 +110,11 @@ export function QuickCreateTaskModal({
 
         {dealChoice.mode === "choose" ? (
           <div>
-            <Label htmlFor="quick-task-deal">Relacionar esta tarefa a qual negócio?</Label>
+            <Label htmlFor="quick-task-deal">Relacionar esta tarefa a qual oportunidade?</Label>
             <Select value={selectedDealId || "none"} onValueChange={(value) => setSelectedDealId(value === "none" ? "" : value)}>
               <SelectTrigger id="quick-task-deal"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Sem negócio</SelectItem>
+                <SelectItem value="none">Sem oportunidade</SelectItem>
                 {dealChoice.options.map((option) => <SelectItem key={option.id} value={option.id}>{option.title}</SelectItem>)}
               </SelectContent>
             </Select>

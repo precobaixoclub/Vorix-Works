@@ -22,7 +22,7 @@ import type { AutomationActionType, AutomationCondition, AutomationConditionFiel
 import { formatDateTime } from "@/lib/format";
 
 const TRIGGER_LABEL: Record<AutomationTrigger, string> = {
-  deal_stage_changed: "Negócio mudar de etapa",
+  deal_stage_changed: "Oportunidade mudar de etapa",
   contact_created: "Contato criado",
   proposal_accepted: "Proposta aceita",
   proposal_rejected: "Proposta recusada",
@@ -33,7 +33,7 @@ const ACTION_LABEL: Record<AutomationActionType, string> = {
   add_tag: "Adicionar tag",
   assign_owner: "Definir responsável",
   assign_owner_least_loaded_in_team: "Distribuir para equipe",
-  move_deal_stage: "Mover negócio de etapa",
+  move_deal_stage: "Mover oportunidade de etapa",
 };
 
 const FIELD_LABEL: Record<AutomationConditionField, string> = {

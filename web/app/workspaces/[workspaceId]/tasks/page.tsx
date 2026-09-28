@@ -271,8 +271,8 @@ function TasksView() {
               <SearchableCombo items={contactOptions} value={contactFilter} onValueChange={setContactFilter} placeholder="Contato" extraOption={{ value: "", label: "Todos" }} />
             </div>
             <div>
-              <Label>Negócio</Label>
-              <SearchableCombo items={dealOptions} value={dealFilter} onValueChange={setDealFilter} placeholder="Negócio" extraOption={{ value: "", label: "Todos" }} />
+              <Label>Oportunidade</Label>
+              <SearchableCombo items={dealOptions} value={dealFilter} onValueChange={setDealFilter} placeholder="Oportunidade" extraOption={{ value: "", label: "Todos" }} />
             </div>
             <div>
               <Label htmlFor="task-type-filter">Tipo</Label>
@@ -293,7 +293,7 @@ function TasksView() {
       {!isLoading && !error && filteredTasks.length === 0 ? (
         <EmptyState
           title="Nenhuma tarefa nesta visão"
-          description={view === "overdue" ? "Nada atrasado. Bom sinal." : "Crie uma tarefa vinculada a um contato ou negócio para manter a cadência comercial."}
+          description={view === "overdue" ? "Nada atrasado. Bom sinal." : "Crie uma tarefa vinculada a um contato ou oportunidade para manter a cadência comercial."}
           action={<Button onClick={() => setCreateOpen(true)}>Criar tarefa</Button>}
         />
       ) : null}
@@ -347,8 +347,8 @@ function TasksView() {
               <SearchableCombo items={contactOptions} value={createContactId} onValueChange={setCreateContactId} placeholder="Contato" extraOption={{ value: "", label: "Sem contato" }} />
             </div>
             <div>
-              <Label>Negócio</Label>
-              <SearchableCombo items={dealOptions} value={createDealId} onValueChange={setCreateDealId} placeholder="Negócio" extraOption={{ value: "", label: "Sem negócio" }} />
+              <Label>Oportunidade</Label>
+              <SearchableCombo items={dealOptions} value={createDealId} onValueChange={setCreateDealId} placeholder="Oportunidade" extraOption={{ value: "", label: "Sem oportunidade" }} />
             </div>
             <div className="sm:col-span-2">
               <Label>Responsável</Label>

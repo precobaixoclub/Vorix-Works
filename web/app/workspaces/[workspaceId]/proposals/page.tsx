@@ -231,11 +231,11 @@ function ProposalsView() {
     setLossBusy(true);
     try {
       await moveDealStage(lossPromptDeal.id, workspace.id, lostStage.id, reason);
-      toast.success("Negócio marcado como perdido.");
+      toast.success("Oportunidade marcada como perdida.");
       setLossPromptFor(undefined);
       setSelectedId(undefined);
     } catch (cause) {
-      toast.error("Não foi possível marcar o negócio como perdido", { description: cause instanceof Error ? cause.message : "Tente novamente." });
+      toast.error("Não foi possível marcar a oportunidade como perdida", { description: cause instanceof Error ? cause.message : "Tente novamente." });
     } finally {
       setLossBusy(false);
     }
@@ -269,7 +269,7 @@ function ProposalsView() {
       <FilterBar summary={`${visibleProposals.length} propostas`}>
         <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar proposta, cliente ou negócio" className="pl-9" />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar proposta, cliente ou oportunidade" className="pl-9" />
         </div>
         <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as ProposalStatus | "all")}>
           <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
@@ -288,8 +288,8 @@ function ProposalsView() {
               <SearchableCombo items={contactOptions} value={contactFilter} onValueChange={setContactFilter} placeholder="Contato" extraOption={{ value: "", label: "Todos" }} />
             </div>
             <div>
-              <Label>Negocio</Label>
-              <SearchableCombo items={dealOptions} value={dealFilter} onValueChange={setDealFilter} placeholder="Negócio" extraOption={{ value: "", label: "Todos" }} />
+              <Label>Oportunidade</Label>
+              <SearchableCombo items={dealOptions} value={dealFilter} onValueChange={setDealFilter} placeholder="Oportunidade" extraOption={{ value: "", label: "Todos" }} />
             </div>
           </PopoverContent>
         </Popover>
@@ -560,7 +560,7 @@ function ProposalDetailModal({
           >
             <div className="grid gap-3 sm:grid-cols-2">
               <InfoCell label="Cliente" value={contact?.name ?? "Sem contato"} />
-              <InfoCell label="Negócio" value={deal?.title ?? "Sem negócio"} />
+              <InfoCell label="Oportunidade" value={deal?.title ?? "Sem oportunidade"} />
               <InfoCell label="Status" value={PROPOSAL_STATUS_LABEL[proposal.status]} />
               <InfoCell label="Total" value={formatCurrencyCents(proposal.totalCents, proposal.currency)} strong />
               <InfoCell label="Validade" value={formatDate(proposal.validUntil)} />
@@ -580,11 +580,11 @@ function ProposalDetailModal({
                 Motivo: {proposal.rejectionReason ? REJECTION_REASON_LABEL[proposal.rejectionReason] ?? proposal.rejectionReason : "Não informado"}
                 {proposal.rejectionComment ? ` · ${proposal.rejectionComment}` : ""}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">O negócio continua aberto — recusar uma proposta não significa perder a venda.</p>
+              <p className="mt-1 text-xs text-muted-foreground">A oportunidade continua aberta — recusar uma proposta não significa perder a venda.</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button variant="secondary" onClick={() => onCreateNewProposal?.(proposal)}>Criar nova proposta</Button>
                 {onCreateFollowUp ? <Button variant="secondary" onClick={() => onCreateFollowUp(proposal)}>Criar follow-up</Button> : null}
-                {onMarkDealLost && deal ? <Button variant="ghost" onClick={() => onMarkDealLost(proposal)}>Marcar negócio como perdido</Button> : null}
+                {onMarkDealLost && deal ? <Button variant="ghost" onClick={() => onMarkDealLost(proposal)}>Marcar oportunidade como perdida</Button> : null}
               </div>
             </DetailBlock>
           ) : null}

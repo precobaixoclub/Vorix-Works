@@ -9,7 +9,7 @@ async function commercialFixture(page: Page, dealCount = 2) {
   await mockConversasBackend(page);
   const now = new Date().toISOString();
   const contact = { id: "contact-phase4", name: "Cliente Fase 4", company: "Empresa QA", tags: [], createdAt: now };
-  const deals = Array.from({ length: dealCount }, (_, index) => ({ id: `deal-phase4-${index + 1}`, contactId: contact.id, pipelineId: "pipeline-phase4", stageId: "stage-open", title: `Negocio Fase 4 ${index + 1}`, valueCents: 450000, currency: "BRL", lastStageChangedAt: now }));
+  const deals = Array.from({ length: dealCount }, (_, index) => ({ id: `deal-phase4-${index + 1}`, contactId: contact.id, pipelineId: "pipeline-phase4", stageId: "stage-open", title: `Oportunidade Fase 4 ${index + 1}`, valueCents: 450000, currency: "BRL", lastStageChangedAt: now }));
   const templates = [{ id: "template-phase4", tenantId: "tenant", workspaceId: WORKSPACE_ID, name: "Plano Premium", defaultTitle: "Proposta Comercial - Plano Premium", defaultItems: [{ name: "Plano Premium", quantity: 1, unitPriceCents: 450000, subtotalCents: 450000 }], defaultConditions: "Pagamento em 2 parcelas", defaultValidDays: 7, active: true, createdAt: now, updatedAt: now }];
   const proposals: Proposal[] = [];
   const sends: any[] = [];
@@ -70,12 +70,12 @@ test("cria pela conversa com modelo, escolhe Deal e envia no pipeline", async ({
   const state = await commercialFixture(page, 2);
   await page.goto(`/workspaces/${WORKSPACE_ID}/conversas?conversation=conversation-phase4`);
   await page.getByRole("button", { name: "Detalhes", exact: true }).click();
-  await page.getByRole("button", { name: "+ Gerar proposta", exact: true }).click();
+  await page.getByRole("button", { name: "Gerar proposta", exact: true }).click();
   const create = page.getByRole("dialog", { name: "Gerar proposta" });
   await create.getByLabel("Modelo").click();
   await page.getByRole("option", { name: "Plano Premium", exact: true }).click();
-  await create.getByLabel(/Neg.cio/).click();
-  await page.getByRole("option", { name: "Negocio Fase 4 2", exact: true }).click();
+  await create.getByLabel("Oportunidade").click();
+  await page.getByRole("option", { name: "Oportunidade Fase 4 2", exact: true }).click();
   await expect(create.getByLabel(/T.tulo/)).toHaveValue("Proposta Comercial - Plano Premium");
   await create.getByRole("button", { name: "Criar proposta", exact: true }).click();
   await expect(create).toBeHidden();

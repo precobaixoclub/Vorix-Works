@@ -233,7 +233,7 @@ function OverviewSection({
       <StatsGrid>
         <KpiCard label="Publicações" value={metricText(publicationAnalytics, "publication_completed_total", marketing.published)} hint={`${num(marketing.scheduled)} agendadas`} icon={<Megaphone className="h-4 w-4" />} />
         <KpiCard label="Atendimentos recebidos" value={definedNum(attendance?.receivedCount)} hint={`${definedNum(attendance?.resolvedCount)} resolvidos`} icon={<Headphones className="h-4 w-4" />} />
-        <KpiCard label="Receita ganha" value={moneyFromCents(commercial?.wonValueCents)} hint={`${definedNum(commercial?.wonCount)} negócios ganhos`} accent="positive" icon={<CheckCircle2 className="h-4 w-4" />} />
+        <KpiCard label="Receita ganha" value={moneyFromCents(commercial?.wonValueCents)} hint={`${definedNum(commercial?.wonCount)} oportunidades ganhas`} accent="positive" icon={<CheckCircle2 className="h-4 w-4" />} />
         <KpiCard label="Alertas ativos" value={num(alerts.filter((alert) => alert.status === "active").length)} accent={alerts.some((alert) => alert.status === "active") ? "negative" : "default"} icon={<Activity className="h-4 w-4" />} />
       </StatsGrid>
 
@@ -369,7 +369,7 @@ function CommercialSection({ loading, report }: { loading: boolean; report?: Com
   return (
     <div className="space-y-5">
       <StatsGrid>
-        <KpiCard label="Negócios criados" value={num(report.dealsCreatedCount)} />
+        <KpiCard label="Oportunidades criadas" value={num(report.dealsCreatedCount)} />
         <KpiCard label="Valor em aberto" value={moneyFromCents(report.openPipelineValueCents)} />
         <KpiCard label="Ganhos" value={num(report.wonCount)} hint={moneyFromCents(report.wonValueCents)} accent="positive" />
         <KpiCard label="Perdidos" value={num(report.lostCount)} accent={report.lostCount > 0 ? "negative" : "default"} />

@@ -195,9 +195,9 @@ function ContactsView() {
     try {
       await moveDealStage(deal.id, workspace.id, stageId, lossReason);
       await Promise.all([mutateDeals(), mutateSelectedContactDeals()]);
-      toast.success("Negócio atualizado.");
+      toast.success("Oportunidade atualizada.");
     } catch (cause) {
-      toast.error("Não foi possível mover o negócio", { description: cause instanceof Error ? cause.message : "Tente novamente." });
+      toast.error("Não foi possível mover a oportunidade", { description: cause instanceof Error ? cause.message : "Tente novamente." });
     }
   }
 
@@ -500,7 +500,7 @@ function ContactDetailModal({
         sections={[
           { value: "summary", label: "Resumo", icon: Info },
           { value: "conversations", label: "Conversas", icon: MessageSquareText, badge: conversations.length || undefined },
-          { value: "deals", label: "Negócios", icon: BriefcaseBusiness, badge: deals.length || undefined },
+          { value: "deals", label: "Oportunidades", icon: BriefcaseBusiness, badge: deals.length || undefined },
           { value: "tasks", label: "Tarefas", icon: ClipboardCheck, badge: tasks.length || undefined },
           { value: "proposals", label: "Propostas", icon: FileText, badge: proposals.length || undefined },
           { value: "timeline", label: "Histórico", icon: History },
@@ -560,7 +560,7 @@ function ContactDetailModal({
               <Button variant="secondary" size="sm" onClick={() => setCreatingDeal(true)}>Criar oportunidade</Button>
             </div>
             {deals.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum negócio vinculado a este contato.</p>
+              <p className="text-sm text-muted-foreground">Nenhuma oportunidade vinculada a este contato.</p>
             ) : (
               <>
                 <DealStatusGroup

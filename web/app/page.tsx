@@ -319,7 +319,7 @@ function BrandMissionSection() {
           <div className="mt-5 rounded-xl border border-[#addb46]/25 bg-[#addb46]/10 p-4">
             <p className="text-sm font-medium text-[#e6ff9f]">O contexto atravessa a operação.</p>
             <p className="mt-1 text-sm leading-6 text-slate-300">
-              A conversa carrega o contato. O CRM conhece a conversa. A proposta conhece o negócio. O time decide com menos ruptura.
+              A conversa carrega o contato. O CRM conhece a conversa. A proposta conhece a oportunidade. O time decide com menos ruptura.
             </p>
           </div>
         </div>
@@ -369,7 +369,7 @@ function HeroProductVisual() {
       <div className="absolute -bottom-5 right-4 hidden w-[40%] rounded-xl border border-white/14 bg-[#0d1420] p-1.5 shadow-2xl shadow-black/45 lg:block">
         <ProductShot
           name="deal-context"
-          alt="Modal real de negócio do Vorix com contexto comercial"
+          alt="Modal real de oportunidade do Vorix com contexto comercial"
           width={920}
           widths={[920]}
           className="aspect-[920/740] w-full rounded-lg object-cover object-top"

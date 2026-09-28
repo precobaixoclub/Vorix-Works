@@ -26,7 +26,7 @@ export const MAIN_NAV_SECTIONS: readonly WorkspaceNavSection[] = [
   {
     label: "COMERCIAL",
     items: [
-      { href: "/deals", label: "Negócios", icon: "deals" },
+      { href: "/deals", label: "Oportunidades", icon: "deals" },
       { href: "/contacts", label: "Contatos", icon: "contacts" },
       { href: "/tasks", label: "Tarefas", icon: "tasks" },
       { href: "/proposals", label: "Propostas", icon: "proposals" },
@@ -75,7 +75,7 @@ export const PRIMARY_MOBILE_NAV: readonly WorkspaceNavItem[] = [
   HOME_NAV_ITEM,
   { href: "/conversas", label: "Conversas", icon: "conversas" },
   CREATE_NAV_ITEM,
-  { href: "/deals", label: "Negócios", icon: "deals" },
+  { href: "/deals", label: "Oportunidades", icon: "deals" },
 ] as const;
 
 export const MOBILE_MENU_SECTIONS: readonly WorkspaceNavSection[] = [

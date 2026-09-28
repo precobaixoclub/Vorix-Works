@@ -331,7 +331,7 @@ function LinkedCrmSection({
       </div>
 
       <div>
-        <p className="mb-1 text-[11px] text-muted-foreground">Negócio atual</p>
+        <p className="mb-1 text-[11px] text-muted-foreground">Oportunidade atual</p>
         {!currentDeal ? (
           // Achado real (print do usuário: "criar uma oportunidade através de uma conversa não
           // está intuitivo... ou até mesmo gerar uma proposta e fazer tudo junto") — duas opções
@@ -339,7 +339,7 @@ function LinkedCrmSection({
           // quem só quer registrar o lead agora) ou oportunidade + proposta num fluxo só
           // (`requestCreateProposal` já encadeia os dois modais — nunca duplicado aqui).
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">Nenhum negócio aberto.</p>
+            <p className="text-xs text-muted-foreground">Nenhuma oportunidade aberta.</p>
             <GuardedButton className="w-full" onClick={() => setCreatingDeal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
               <BriefcaseBusiness className="h-4 w-4" />
               Criar oportunidade
@@ -363,13 +363,13 @@ function LinkedCrmSection({
               })()}
             </p>
             <div className="flex flex-wrap gap-1.5 pt-1">
-              <Button variant="secondary" size="sm" onClick={() => setOpenDealId(currentDeal.id)}>Abrir negócio</Button>
+              <Button variant="secondary" size="sm" onClick={() => setOpenDealId(currentDeal.id)}>Abrir oportunidade</Button>
               <Button variant="secondary" size="sm" onClick={requestCreateProposal}>Gerar proposta</Button>
             </div>
           </div>
         ) : (
           <div className="space-y-1.5">
-            <p className="text-xs font-medium text-foreground">{openDeals.length} negócios em andamento</p>
+            <p className="text-xs font-medium text-foreground">{openDeals.length} oportunidades em andamento</p>
             {openDeals.slice(0, 4).map((deal) => (
               <button
                 key={deal.id}
@@ -453,7 +453,7 @@ function LinkedCrmSection({
             {/* Mesmo esclarecimento pedido pelo usuário — o clique acima resolve os dois passos
                sozinho quando ainda não existe negócio, nunca deixa a pessoa procurando onde
                criar a oportunidade primeiro. */}
-            {dealChoice.mode === "none" ? <p className="text-[11px] text-muted-foreground">Sem negócio aberto ainda — a oportunidade é criada automaticamente antes da proposta.</p> : null}
+            {dealChoice.mode === "none" ? <p className="text-[11px] text-muted-foreground">Sem oportunidade aberta ainda — ela é criada automaticamente antes da proposta.</p> : null}
           </div>
         ) : (
           <div className="space-y-2 rounded-lg border border-border/70 bg-muted/30 p-2.5">

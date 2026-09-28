@@ -74,7 +74,7 @@ export function QuickCreateDealModal({
       });
       await onCreated(deal);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível criar o negócio.");
+      setError(cause instanceof Error ? cause.message : "Não foi possível criar a oportunidade.");
     } finally {
       setBusy(false);
     }

@@ -13,7 +13,7 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
 async function fixture(page: Page, dealCount = 1) {
   await mockConversasBackend(page);
   const contact = { id: "crm-phase3", name: "Cliente QA Fase 3", tags: [], createdAt: new Date().toISOString() };
-  const deals = Array.from({ length: dealCount }, (_, i) => ({ id: `deal-${i}`, contactId: contact.id, pipelineId: "pipeline-qa", stageId: "stage-qa", title: `Negócio QA ${i + 1}`, valueCents: 10000, currency: "BRL", lastStageChangedAt: new Date().toISOString() }));
+  const deals = Array.from({ length: dealCount }, (_, i) => ({ id: `deal-${i}`, contactId: contact.id, pipelineId: "pipeline-qa", stageId: "stage-qa", title: `Oportunidade QA ${i + 1}`, valueCents: 10000, currency: "BRL", lastStageChangedAt: new Date().toISOString() }));
   const tasks: any[] = [];
   let denyPatch = false;
   await page.route("**/v1/**", async route => {
@@ -58,7 +58,7 @@ async function openConversation(page: Page) {
 test.beforeEach(async ({ context }) => { await loginCookie(context); });
 
 for (const dealCount of [0, 1, 2]) {
-  test(`criar na conversa com ${dealCount} negócios, reagendar e concluir`, async ({ page }, testInfo) => {
+  test(`criar na conversa com ${dealCount} oportunidades, reagendar e concluir`, async ({ page }, testInfo) => {
     const state = await fixture(page, dealCount);
     await openConversation(page);
     await page.getByRole("button", { name: "+ Criar próxima ação", exact: true }).click();
@@ -67,11 +67,11 @@ for (const dealCount of [0, 1, 2]) {
     const day = (await dialog.getByLabel("Quando").inputValue()).slice(0, 10);
     await dialog.getByLabel("Quando").fill(`${day}T14:00`);
     if (dealCount === 2) {
-      await expect(dialog.getByLabel("Relacionar esta tarefa a qual negócio?")).toContainText("Sem negócio");
-      await dialog.getByLabel("Relacionar esta tarefa a qual negócio?").click();
-      await page.getByRole("option", { name: "Negócio QA 2", exact: true }).click();
+      await expect(dialog.getByLabel("Relacionar esta tarefa a qual oportunidade?")).toContainText("Sem oportunidade");
+      await dialog.getByLabel("Relacionar esta tarefa a qual oportunidade?").click();
+      await page.getByRole("option", { name: "Oportunidade QA 2", exact: true }).click();
     } else {
-      await expect(dialog.getByLabel("Relacionar esta tarefa a qual negócio?")).toHaveCount(0);
+      await expect(dialog.getByLabel("Relacionar esta tarefa a qual oportunidade?")).toHaveCount(0);
     }
     await capture(page, testInfo, "phase3-criacao-inline");
     const bounds = await dialog.boundingBox();
@@ -107,10 +107,10 @@ for (const dealCount of [0, 1, 2]) {
   });
 }
 
-test("negócio embutido recarrega tarefas imediatamente na conversa", async ({ page }) => {
+test("oportunidade embutida recarrega tarefas imediatamente na conversa", async ({ page }) => {
   const state = await fixture(page);
   await openConversation(page);
-  await page.getByRole("button", { name: "Abrir negócio", exact: true }).click();
+  await page.getByRole("button", { name: "Abrir oportunidade", exact: true }).click();
   await page.getByRole("button", { name: "+ Nova tarefa", exact: true }).click();
   await page.getByRole("dialog").last().getByRole("button", { name: "Criar", exact: true }).click();
   await expect(page.getByRole("button", { name: "Reagendar", exact: true }).last()).toBeVisible();

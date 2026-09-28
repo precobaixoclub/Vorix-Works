@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BriefcaseBusiness } from "lucide-react";
+import { BriefcaseBusiness, FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/Button";
@@ -333,10 +333,20 @@ function LinkedCrmSection({
       <div>
         <p className="mb-1 text-[11px] text-muted-foreground">Negócio atual</p>
         {!currentDeal ? (
+          // Achado real (print do usuário: "criar uma oportunidade através de uma conversa não
+          // está intuitivo... ou até mesmo gerar uma proposta e fazer tudo junto") — duas opções
+          // claras lado a lado em vez de escondidas em seções diferentes: só a oportunidade (pra
+          // quem só quer registrar o lead agora) ou oportunidade + proposta num fluxo só
+          // (`requestCreateProposal` já encadeia os dois modais — nunca duplicado aqui).
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">Nenhum negócio aberto.</p>
-            <GuardedButton variant="secondary" className="w-full" onClick={() => setCreatingDeal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
+            <GuardedButton className="w-full" onClick={() => setCreatingDeal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
+              <BriefcaseBusiness className="h-4 w-4" />
               Criar oportunidade
+            </GuardedButton>
+            <GuardedButton variant="secondary" className="w-full" onClick={requestCreateProposal} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
+              <FileText className="h-4 w-4" />
+              Criar oportunidade e gerar proposta
             </GuardedButton>
           </div>
         ) : openDeals.length === 1 ? (
@@ -434,7 +444,17 @@ function LinkedCrmSection({
       <div>
         <p className="mb-1 text-[11px] text-muted-foreground">Proposta</p>
         {!currentProposal ? (
-          <div className="space-y-2"><p className="text-xs text-muted-foreground">Nenhuma proposta ativa.</p><GuardedButton variant="secondary" className="w-full" onClick={requestCreateProposal} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Gerar proposta</GuardedButton></div>
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground">Nenhuma proposta ativa.</p>
+            <GuardedButton variant="secondary" className="w-full" onClick={requestCreateProposal} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
+              <FileText className="h-4 w-4" />
+              Gerar proposta
+            </GuardedButton>
+            {/* Mesmo esclarecimento pedido pelo usuário — o clique acima resolve os dois passos
+               sozinho quando ainda não existe negócio, nunca deixa a pessoa procurando onde
+               criar a oportunidade primeiro. */}
+            {dealChoice.mode === "none" ? <p className="text-[11px] text-muted-foreground">Sem negócio aberto ainda — a oportunidade é criada automaticamente antes da proposta.</p> : null}
+          </div>
         ) : (
           <div className="space-y-2 rounded-lg border border-border/70 bg-muted/30 p-2.5">
             <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-medium text-foreground">{currentProposal.title}</p><p className="text-xs font-semibold tabular-nums text-foreground">{formatCurrencyCents(currentProposal.totalCents, currentProposal.currency)}</p></div><Badge variant="secondary">{currentProposal.status === "viewed" ? "Visualizada" : currentProposal.status === "sent" ? "Enviada" : currentProposal.status === "accepted" ? "Aceita" : currentProposal.status === "rejected" ? "Recusada" : "Rascunho"}</Badge></div>
@@ -468,12 +488,6 @@ function LinkedCrmSection({
           ))}
           {suggestions && suggestions.length === 0 ? <p className="text-xs text-muted-foreground">Nenhuma sugestao pendente.</p> : null}
         </div>
-      </div>
-
-      <div className="grid gap-1.5 sm:grid-cols-3">
-        <GuardedButton variant="secondary" onClick={() => setCreatingDeal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>Criar oportunidade</GuardedButton>
-        <GuardedButton variant="secondary" onClick={() => setCreatingTask(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Tarefa</GuardedButton>
-        <GuardedButton variant="secondary" onClick={requestCreateProposal} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>+ Proposta</GuardedButton>
       </div>
 
       {creatingProposal ? (

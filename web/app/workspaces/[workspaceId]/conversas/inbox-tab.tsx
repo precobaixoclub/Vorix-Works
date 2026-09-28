@@ -12,6 +12,7 @@ import {
   Check,
   CheckCheck,
   Clock,
+  ExternalLink,
   FileText,
   Flame,
   Image as ImageIcon,
@@ -1726,7 +1727,15 @@ export function ConversationTimelinePane({
             onRequestDelete={() => setDeleteConfirmOpen(true)}
           />
 
-          <Button variant="ghost" size="sm" onClick={onOpenContext}>
+          {/* Achado real (print do usuário: "clicar nos detalhes do contato... não é um botão
+             muito intuitivo") — era `variant="ghost"` (texto puro, sem contorno), a única ação
+             sem chrome nenhum no meio de Assumir/Finalizar (ambos `secondary`) e dos ícones de
+             etiqueta/menu. Mesmo peso visual dos vizinhos + ícone, pra ficar óbvio que é clicável
+             — é a porta de entrada pro painel inteiro de Contexto/CRM/Oportunidade/Proposta.
+             Nunca `GuardedButton` aqui — abrir o painel é só leitura, não uma operação que
+             precise de permissão de atendimento. */}
+          <Button size="sm" variant="secondary" onClick={onOpenContext}>
+            <UserRound className="h-3.5 w-3.5" />
             Detalhes
           </Button>
         </div>
@@ -2873,9 +2882,17 @@ function ContactContextPane({
           // pra lista GERAL de contatos, sem abrir o contato específico. `?contactId=` já é o
           // deep-link real e funcional (a própria tela de Contatos já reage a ele, `contacts/page.tsx`)
           // — só nunca tinha sido usado aqui.
-          <Link href={`/workspaces/${workspaceId}/contacts?contactId=${conversation.crmContactId}`} className="mb-4 inline-flex text-xs font-medium text-primary hover:underline dark:text-primary-glow">
-            Abrir contato completo
-          </Link>
+          //
+          // Achado real (print do usuário: "não é um botão muito intuitivo e que incentiva o
+          // pessoal a clicar") — era um `<Link>` puro (texto azul sublinhado, sem chrome nenhum),
+          // fácil de nunca notar no meio de cards com borda. Vira botão de verdade (`asChild`
+          // preserva a navegação real do Next `<Link>`, nunca um `onClick` com `router.push`).
+          <Button asChild variant="secondary" className="mb-4 w-full">
+            <Link href={`/workspaces/${workspaceId}/contacts?contactId=${conversation.crmContactId}`}>
+              <ExternalLink className="h-3.5 w-3.5" />
+              Abrir contato completo
+            </Link>
+          </Button>
         ) : null}
 
         {/* Grupo nunca é uma pessoa/Contact do CRM — vínculo manual só faz sentido pra conversas

@@ -46,11 +46,13 @@ import type { InboxConversation, KanbanPhaseType, TeamKanbanPhase } from "@/feat
 import type { Team } from "@/features/identity/types";
 import {
   agentLabel,
+  avatarPropsFor,
   ChannelIcon,
   ConversationListItemMenu,
   channelLabelFor,
   ConversationTimelinePane,
   conversationTitle,
+  initials,
   InboxFilterBar,
   lastMessagePreviewLabel,
   statusLabelFor,
@@ -58,6 +60,7 @@ import {
   TagPicker,
   timeLabel,
 } from "../conversas/inbox-tab";
+import { InboxAvatar } from "../conversas/inbox-avatar";
 
 const BOARD_STATUSES = new Set(["open", "pending"]);
 
@@ -403,7 +406,7 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
         <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
           {activeConversation ? (
             <div className={cn(KANBAN_COLUMN_WIDTH_CLASS, "rotate-1 cursor-grabbing rounded-lg border border-primary/40 bg-card px-2 py-1.5 shadow-xl")}>
-              <KanbanCardBody conversation={activeConversation} serviceTime={serviceTimeByConversation.get(activeConversation.id)} />
+              <KanbanCardBody workspaceId={workspaceId} conversation={activeConversation} serviceTime={serviceTimeByConversation.get(activeConversation.id)} />
             </div>
           ) : null}
         </DragOverlay>
@@ -623,6 +626,7 @@ function KanbanCard({
       )}
     >
       <KanbanCardBody
+        workspaceId={workspaceId}
         conversation={conversation}
         serviceTime={serviceTime}
         actions={
@@ -648,44 +652,66 @@ function KanbanCard({
  * identidade+não-lidas, preview, status+tempo de atendimento — a mesma informação de sempre, só com
  * menos espaço vertical entre as linhas. */
 function KanbanCardBody({
+  workspaceId,
   conversation,
   serviceTime,
   actions,
 }: {
+  workspaceId: string;
   conversation: InboxConversation;
   serviceTime: { totalSeconds: number; currentPhaseStartedAt?: string; isRunning: boolean } | undefined;
   actions?: React.ReactNode;
 }) {
   const identity = conversation.chatType === "group" ? "Grupo" : conversation.contactPhone ?? "—";
+  // Achado real (pedido explícito do usuário: "no kanban de atendimento apareça a foto igual na
+  // tela de Conversas, foto dos contatos e grupos") — mesmo helper (`avatarPropsFor`) e mesmo
+  // componente (`InboxAvatar`) da lista de Conversas, nunca uma segunda lógica de resolução de
+  // foto: grupo usa a própria conversa como alvo (`groupPictureStorageRef`), direta usa o contato
+  // do outro lado (`contactProfilePictureStorageRef`) — `InboxAvatar` já trata `targetId`
+  // ausente como "sem foto ainda", caindo pras iniciais.
+  const avatarProps = avatarPropsFor(conversation);
 
   return (
     <>
       {conversation.isPinned ? <Pin className="absolute right-1.5 top-1.5 h-3 w-3 text-primary" aria-label="Fixado" /> : null}
-      <div className="flex items-center justify-between gap-2">
-        <p className={cn("min-w-0 truncate text-[13px] text-foreground", conversation.unreadCount > 0 ? "font-semibold" : "font-medium")}>
-          {conversationTitle(conversation)}
-        </p>
-        <div className="flex shrink-0 items-center gap-0.5" data-no-dnd={actions ? "true" : undefined}>
-          <span className="text-[11px] tabular-nums text-muted-foreground">{timeLabel(conversation.lastMessageAt)}</span>
-          {actions}
+      <div className="flex min-w-0 items-start gap-2">
+        <InboxAvatar
+          workspaceId={workspaceId}
+          kind={avatarProps.kind}
+          targetId={avatarProps.targetId}
+          storageRef={avatarProps.storageRef}
+          fallback={initials(conversationTitle(conversation))}
+          className="h-8 w-8 shrink-0 rounded-lg"
+          fallbackClassName="rounded-lg bg-muted text-[10px] text-foreground"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className={cn("min-w-0 truncate text-[13px] text-foreground", conversation.unreadCount > 0 ? "font-semibold" : "font-medium")}>
+              {conversationTitle(conversation)}
+            </p>
+            <div className="flex shrink-0 items-center gap-0.5" data-no-dnd={actions ? "true" : undefined}>
+              <span className="text-[11px] tabular-nums text-muted-foreground">{timeLabel(conversation.lastMessageAt)}</span>
+              {actions}
+            </div>
+          </div>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+            <ChannelIcon provider={conversation.connectionProvider} className="h-3 w-3 shrink-0" />
+            <span className="truncate">{channelLabelFor(conversation)} · {identity}</span>
+            {conversation.unreadCount > 0 ? (
+              <span className="ml-auto flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground dark:bg-primary-glow dark:text-background">
+                {conversation.unreadCount}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
+          <div className="mt-0.5 flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <StatusDot status={conversation.status} />
+              {statusLabelFor(conversation.status)}
+            </span>
+            {serviceTime ? <LiveServiceBadge serviceTime={serviceTime} /> : null}
+          </div>
         </div>
-      </div>
-      <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
-        <ChannelIcon provider={conversation.connectionProvider} className="h-3 w-3 shrink-0" />
-        <span className="truncate">{channelLabelFor(conversation)} · {identity}</span>
-        {conversation.unreadCount > 0 ? (
-          <span className="ml-auto flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground dark:bg-primary-glow dark:text-background">
-            {conversation.unreadCount}
-          </span>
-        ) : null}
-      </div>
-      <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground/80">{lastMessagePreviewLabel(conversation)}</p>
-      <div className="mt-0.5 flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          <StatusDot status={conversation.status} />
-          {statusLabelFor(conversation.status)}
-        </span>
-        {serviceTime ? <LiveServiceBadge serviceTime={serviceTime} /> : null}
       </div>
     </>
   );

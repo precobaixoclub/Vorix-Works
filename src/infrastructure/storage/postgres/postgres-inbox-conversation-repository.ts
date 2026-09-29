@@ -74,6 +74,22 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     await this.pool.query("delete from inbox_conversations where id = $1", [id]);
   }
 
+  async listContactIdsByConnection(connectionId: string): Promise<string[]> {
+    const result = await this.pool.query<{ contact_id: string }>(
+      "select distinct contact_id from inbox_conversations where connection_id = $1 and contact_id is not null",
+      [connectionId],
+    );
+    return result.rows.map((row) => row.contact_id);
+  }
+
+  async hasAnyConversationForContact(contactId: string): Promise<boolean> {
+    const result = await this.pool.query<{ exists: boolean }>(
+      "select exists(select 1 from inbox_conversations where contact_id = $1) as exists",
+      [contactId],
+    );
+    return result.rows[0]?.exists ?? false;
+  }
+
   async getByExternalChatId(input: { connectionId: string; externalChatId: string }): Promise<InboxConversation | undefined> {
     // Inclui linhas já mescladas de propósito (`merge_status` não filtrado aqui) — o reconciliador
     // (Fase 4) precisa enxergar o registro-perdedor pra decidir que já foi fundido e não repetir o

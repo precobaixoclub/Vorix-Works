@@ -92,6 +92,10 @@ export class PostgresMessagingConnectionRepository implements MessagingConnectio
     return this.toDomain(row);
   }
 
+  async delete(id: string): Promise<void> {
+    await this.pool.query("delete from messaging_connections where id = $1", [id]);
+  }
+
   async touchEvent(id: string, at: string): Promise<void> {
     await this.pool.query("update messaging_connections set last_event_at = $2 where id = $1", [id, at]);
   }

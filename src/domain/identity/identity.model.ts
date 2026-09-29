@@ -145,6 +145,12 @@ export const PERMISSIONS = [
   // `db/migrations/0083`/`0084`) — mesmo degrau administrativo de `manage_connections`, nunca
   // liberado pra `editor` (que só tem `reply`/`assign`, ações reversíveis do dia a dia).
   "inbox:delete_conversations",
+  // Excluir um CANAL inteiro (pedido explícito do usuário: "excluir automaticamente todas as
+  // conversas e contatos relacionados a esse número") tem um raio de efeito muito maior que
+  // excluir uma única conversa — apaga TODAS as conversas/mensagens do canal de uma vez e ainda
+  // pode apagar contatos que ficarem órfãos. Degrau próprio, nunca reaproveita
+  // `inbox:delete_conversations` silenciosamente pra uma ação bem mais destrutiva.
+  "inbox:delete_connections",
   // CRM/Comercial (Fase 1) — auditoria em docs/crm-omnichannel-architecture-audit.md.
   // `tenant_member:manage`/`team:manage` ficam num degrau administrativo (convidar/remover
   // membro e criar/editar equipe são ações de gestão de conta, mesmo raciocínio de
@@ -204,7 +210,7 @@ const INBOX_READ_PERMISSIONS: readonly Permission[] = ["inbox:read"];
 const CALENDAR_EVENT_READ_PERMISSIONS: readonly Permission[] = ["calendar_event:read"];
 const CALENDAR_EVENT_WRITE_PERMISSIONS: readonly Permission[] = ["calendar_event:write"];
 const INBOX_OPERATOR_PERMISSIONS: readonly Permission[] = ["inbox:reply", "inbox:assign"];
-const INBOX_ADMIN_PERMISSIONS: readonly Permission[] = ["inbox:manage_connections", "inbox:manage_ai", "inbox:delete_conversations"];
+const INBOX_ADMIN_PERMISSIONS: readonly Permission[] = ["inbox:manage_connections", "inbox:manage_ai", "inbox:delete_conversations", "inbox:delete_connections"];
 const CRM_READ_PERMISSIONS: readonly Permission[] = ["contact:read", "deal:read", "task:read", "product:read", "proposal:read"];
 const CRM_OPERATOR_PERMISSIONS: readonly Permission[] = ["contact:manage", "deal:manage", "task:manage", "product:manage", "proposal:manage", "proposal:send"];
 const CRM_ADMIN_PERMISSIONS: readonly Permission[] = ["tenant_member:manage", "team:manage", "automation:manage"];

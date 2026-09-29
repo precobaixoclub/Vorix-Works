@@ -66,6 +66,10 @@ export class InMemoryMessagingConnectionRepository implements MessagingConnectio
     return updated;
   }
 
+  async delete(id: string): Promise<void> {
+    this.rows.delete(id);
+  }
+
   async touchEvent(id: string, at: string): Promise<void> {
     const existing = this.rows.get(id);
     if (!existing) return;

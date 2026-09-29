@@ -30,6 +30,15 @@ export type MessagingConnectionRepositoryPort = {
    * evento de fila — nunca exposto a uma rota HTTP. */
   listAllActive(): Promise<MessagingConnection[]>;
   updateStatus(id: string, input: UpdateMessagingConnectionStatusInput): Promise<MessagingConnection>;
+  /** Exclusão de canal (pedido explícito do usuário) — permanente, cascateia conversas/mensagens/
+   * eventos/tags/roteamento (`db/migrations/0082`/`0083`/`0084`/`0123`/`0129`, todos `on delete
+   * cascade` a partir de `messaging_connections`). NUNCA cascateia `inbox_contacts` (não é FK
+   * direta — ver `deleteConnection` em `inbox-use-cases.ts` pra limpeza de contato órfão) nem CRM
+   * (`contacts`/`deals`/`tasks`/`proposals`, sem FK nenhuma vinda daqui). Pode lançar um erro de
+   * violação de FK (`23503`) se existir `proposal_deliveries` vinculada a uma conversa deste canal
+   * (`on delete restrict` de propósito — nunca apagar histórico de entrega de proposta em
+   * silêncio); `deleteConnection` traduz isso pra uma mensagem clara antes de propagar. */
+  delete(id: string): Promise<void>;
   touchEvent(id: string, at: string): Promise<void>;
   touchHeartbeat(id: string, at: string): Promise<void>;
   /**

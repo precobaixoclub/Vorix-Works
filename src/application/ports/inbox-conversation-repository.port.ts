@@ -72,6 +72,17 @@ export type InboxConversationRepositoryPort = {
    * eventos desta conversa cascateiam junto (ver `db/migrations/0083`/`0084`). Sem efeito se a
    * conversa já não existir (idempotente — um duplo-clique/retry nunca lança). */
   delete(id: string): Promise<void>;
+  /** Exclusão de CANAL (pedido explícito do usuário) — antes de apagar o `messaging_connections`
+   * (que cascateia estas conversas junto), o caso de uso precisa saber quais contatos ficarão
+   * potencialmente órfãos. Só conversas diretas têm `contactId` (grupo nunca tem); duplicatas
+   * removidas porque o mesmo contato pode ter mais de uma conversa no mesmo canal (raro, mas
+   * possível após uma fusão de identidade). */
+  listContactIdsByConnection(connectionId: string): Promise<string[]>;
+  /** Idem — chamado DEPOIS de apagar o canal (as conversas dele já não existem mais nesse ponto),
+   * pra decidir se um `InboxContact` agora órfão (nenhuma conversa em NENHUM canal do workspace)
+   * pode ser apagado com segurança. Nunca apaga um contato que ainda tenha conversa viva noutro
+   * canal do mesmo workspace. */
+  hasAnyConversationForContact(contactId: string): Promise<boolean>;
   /** `contactId` (Jornada Comercial Fase 1, item 17) filtra pelo Contact CRM já vinculado
    * (`inbox_contacts.contact_id`) — permite ao Contact 360 buscar só as conversas daquela pessoa
    * em vez de trazer o workspace inteiro e filtrar no frontend. */

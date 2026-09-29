@@ -87,6 +87,10 @@ export class InMemoryInboxContactRepository implements InboxContactRepositoryPor
     return updated;
   }
 
+  async delete(id: string): Promise<void> {
+    this.rows.delete(id);
+  }
+
   private async findByAlias(
     tenantId: string,
     workspaceId: string,

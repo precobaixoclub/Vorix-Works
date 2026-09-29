@@ -23,6 +23,7 @@ import {
   cancelScheduledInboxMessage,
   createInboxTag,
   createKanbanPhase,
+  deleteConnection,
   deleteConversation,
   deleteInboxMessage,
   deleteInboxTag,
@@ -222,6 +223,8 @@ const INBOX_ERROR_STATUS: Record<string, number> = {
   INBOX_TAG_NAME_TAKEN: 409,
   INBOX_SCHEDULE_TIME_INVALID: 422,
   INBOX_MESSAGE_NOT_SCHEDULED: 409,
+  // Bloco "excluir canal" (pedido explícito do usuário).
+  INBOX_CONNECTION_HAS_PROPOSAL_DELIVERIES: 409,
 };
 
 function rethrowInboxError(error: unknown): never {
@@ -579,6 +582,23 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     try {
       const connection = await disconnectConnection(useCaseDeps, { tenantId: principal.tenantId, workspaceId, connectionId: id });
       return successEnvelope(connection, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  // Bloco "excluir canal" (pedido explícito do usuário: "excluir automaticamente todas as
+  // conversas e contatos relacionados a esse número") — degrau de permissão PRÓPRIO
+  // (`inbox:delete_connections`), mais restrito que `inbox:manage_connections`: apaga o canal
+  // inteiro de uma vez, nunca reaproveita o mesmo degrau de "desconectar"/"criar" pra uma ação bem
+  // mais destrutiva.
+  app.delete("/inbox/connections/:id", { schema: { params: ID_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:delete_connections");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      await deleteConnection(useCaseDeps, { tenantId: principal.tenantId, workspaceId, connectionId: id });
+      return successEnvelope({ deleted: true }, request.id);
     } catch (error) {
       rethrowInboxError(error);
     }

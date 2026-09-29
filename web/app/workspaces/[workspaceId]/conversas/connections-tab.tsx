@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useAuth } from "@/contexts/auth-context";
-import { createInboxConnection, disconnectInboxConnection, getInboxConnectionQrCode, refreshInboxConnectionStatus, updateChannelRouting } from "@/features/inbox/api";
+import { createInboxConnection, deleteInboxConnection, disconnectInboxConnection, getInboxConnectionQrCode, refreshInboxConnectionStatus, updateChannelRouting } from "@/features/inbox/api";
 import { useChannelRouting, useInboxConnections } from "@/features/inbox/hooks";
 import { useTeams } from "@/features/identity/hooks";
 import type { ChannelDistributionMode, MessagingConnection } from "@/features/inbox/types";
@@ -28,6 +28,7 @@ export function ConnectionsTab({ workspaceId }: { workspaceId: string }) {
   const [creating, setCreating] = useState(false);
   const [qrByConnectionId, setQrByConnectionId] = useState<Record<string, string>>({});
   const [pendingDisconnect, setPendingDisconnect] = useState<MessagingConnection | undefined>();
+  const [pendingDelete, setPendingDelete] = useState<MessagingConnection | undefined>();
   const [busyConnectionId, setBusyConnectionId] = useState<string | undefined>();
   const [actionError, setActionError] = useState<string | undefined>();
 
@@ -91,6 +92,25 @@ export function ConnectionsTab({ workspaceId }: { workspaceId: string }) {
     }
   }
 
+  // Bloco "excluir canal" (pedido explícito do usuário: "excluir automaticamente todas as
+  // conversas e contatos relacionados a esse número... se excluir o canal limpa a base do canal
+  // excluído") — permanente, nunca reaproveita `handleDisconnect` (são ações completamente
+  // diferentes: desconectar preserva tudo, excluir apaga a base do canal).
+  async function handleDeleteConnection(connection: MessagingConnection) {
+    if (!canOperate) return;
+    setBusyConnectionId(connection.id);
+    setActionError(undefined);
+    try {
+      await deleteInboxConnection(workspaceId, connection.id);
+      setPendingDelete(undefined);
+      await mutate();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Não foi possível excluir o canal.");
+    } finally {
+      setBusyConnectionId(undefined);
+    }
+  }
+
   if (isLoading) {
     return <div className="flex justify-center py-16"><Spinner className="h-6 w-6 text-primary" /></div>;
   }
@@ -139,6 +159,7 @@ export function ConnectionsTab({ workspaceId }: { workspaceId: string }) {
               onShowQrCode={() => handleShowQrCode(connection.id)}
               onRefreshStatus={() => handleRefreshStatus(connection.id)}
               onDisconnect={() => setPendingDisconnect(connection)}
+              onDelete={() => setPendingDelete(connection)}
             />
           ))}
         </div>
@@ -154,6 +175,17 @@ export function ConnectionsTab({ workspaceId }: { workspaceId: string }) {
         onCancel={() => setPendingDisconnect(undefined)}
         onConfirm={() => { if (pendingDisconnect) return handleDisconnect(pendingDisconnect); }}
       />
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Excluir canal?"
+        description={`Isso apaga PERMANENTEMENTE o canal "${pendingDelete?.displayName ?? "selecionado"}" e todas as conversas e mensagens que existem só por causa dele. Contatos que também conversam por outro canal deste workspace são preservados; os demais são apagados junto. Essa ação não pode ser desfeita.`}
+        confirmLabel="Excluir canal"
+        variant="danger"
+        busy={Boolean(busyConnectionId)}
+        onCancel={() => setPendingDelete(undefined)}
+        onConfirm={() => { if (pendingDelete) return handleDeleteConnection(pendingDelete); }}
+      />
     </div>
   );
 }
@@ -167,6 +199,7 @@ function ConnectionRow({
   onShowQrCode,
   onRefreshStatus,
   onDisconnect,
+  onDelete,
 }: {
   workspaceId: string;
   connection: MessagingConnection;
@@ -176,17 +209,21 @@ function ConnectionRow({
   onShowQrCode: () => void;
   onRefreshStatus: () => void;
   onDisconnect: () => void;
+  onDelete: () => void;
 }) {
-  // "requires_repair"/"logged_out"/"error" são estados terminais por design (nunca reconectam
-  // sozinhos, ver docs/conversas-runbook.md seção 2) — precisam do mesmo pareamento manual via QR
-  // que "connecting". Mesmo agrupamento já usado em app/workspaces/[workspaceId]/onboarding/page.tsx
-  // (`needsRepair`); aqui faltava "logged_out" e "error", deixando um canal deslogado sem nenhum
-  // caminho de volta na UI.
-  const needsQrCode =
-    connection.status === "connecting" ||
+  // "requires_repair"/"logged_out"/"error"/"disconnected" são estados terminais por design (nunca
+  // reconectam sozinhos, ver docs/conversas-runbook.md seção 2) — precisam do mesmo pareamento
+  // manual via QR que "connecting". Mesmo agrupamento já usado em
+  // app/workspaces/[workspaceId]/onboarding/page.tsx (`needsRepair`); aqui faltava "logged_out",
+  // "error" e "disconnected" — deixando um canal deslogado/desconectado sem nenhum caminho de
+  // volta na UI (achado real do usuário: clicou em "Desconectar" e o botão continuou vermelho
+  // como se ainda estivesse conectado, sem nenhum "Conectar" pra voltar).
+  const isDisconnectedState =
+    connection.status === "disconnected" ||
     connection.status === "requires_repair" ||
     connection.status === "logged_out" ||
     connection.status === "error";
+  const needsQrCode = connection.status === "connecting" || isDisconnectedState;
   const [routingOpen, setRoutingOpen] = useState(false);
   return (
     <Card>
@@ -202,8 +239,12 @@ function ConnectionRow({
               Atualizar status
             </GuardedButton>
             {needsQrCode ? (
-              <GuardedButton variant="secondary" onClick={onShowQrCode} loading={busy} disabled={busy} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
-                Mostrar QR Code
+              // Rótulo distingue "ainda pareando pela primeira vez" (mostrar o QR que já está no
+              // ar) de "precisa conectar de novo" (canal desconectado/deslogado) — mesmo botão,
+              // mesma ação (`onShowQrCode`), só o texto muda pra nunca parecer que dá pra
+              // desconectar algo que já está desconectado.
+              <GuardedButton variant={isDisconnectedState ? "primary" : "secondary"} onClick={onShowQrCode} loading={busy} disabled={busy} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
+                {isDisconnectedState ? "Conectar" : "Mostrar QR Code"}
               </GuardedButton>
             ) : null}
             <Button variant="secondary" onClick={() => setRoutingOpen((value) => !value)}>
@@ -211,13 +252,24 @@ function ConnectionRow({
               Roteamento
               {routingOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             </Button>
-            <GuardedButton variant="danger" onClick={onDisconnect} disabled={busy} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
-              Desconectar
+            {/* Achado real do usuário: "Desconectar" continuava vermelho/clicável depois de já ter
+               desconectado, como se fosse possível desconectar de novo. Só faz sentido enquanto o
+               canal está de fato conectado (ou tentando conectar/reconectar) — num estado já
+               desconectado, a única ação válida é "Conectar" (acima), nunca as duas ao mesmo tempo. */}
+            {!isDisconnectedState ? (
+              <GuardedButton variant="danger" onClick={onDisconnect} disabled={busy} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
+                Desconectar
+              </GuardedButton>
+            ) : null}
+            <GuardedButton variant="danger" onClick={onDelete} disabled={busy} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
+              Excluir canal
             </GuardedButton>
           </div>
         </div>
         {routingOpen ? <ChannelRoutingPanel workspaceId={workspaceId} connectionId={connection.id} canOperate={canOperate} /> : null}
-        {connection.status === "requires_repair" || connection.status === "logged_out" || connection.status === "error" ? (
+        {connection.status === "disconnected" ? (
+          <p className="text-sm text-muted-foreground">Canal desconectado. Clique em "Conectar" e escaneie um novo QR Code para voltar a receber mensagens.</p>
+        ) : connection.status === "requires_repair" || connection.status === "logged_out" || connection.status === "error" ? (
           <p className="text-sm text-danger">WhatsApp precisa ser conectado novamente. Escaneie um novo QR Code.</p>
         ) : null}
         {qrCode ? <QrPreview value={qrCode} /> : null}

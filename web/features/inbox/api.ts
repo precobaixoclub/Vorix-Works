@@ -36,6 +36,13 @@ export function disconnectInboxConnection(workspaceId: string, connectionId: str
   return apiClient.post<MessagingConnection>(`/v1/inbox/connections/${encodeURIComponent(connectionId)}/disconnect`, { workspaceId });
 }
 
+/** Bloco "excluir canal" (pedido explícito do usuário) — permanente, apaga conversas/mensagens do
+ * canal e qualquer contato que fique órfão (ver `deleteConnection` em `inbox-use-cases.ts`). */
+export function deleteInboxConnection(workspaceId: string, connectionId: string): Promise<{ deleted: true }> {
+  const query = new URLSearchParams({ workspaceId });
+  return apiClient.delete<{ deleted: true }>(`/v1/inbox/connections/${encodeURIComponent(connectionId)}?${query.toString()}`);
+}
+
 export function listInboxConversations(workspaceId: string, filter?: InboxConversationFilter, contactId?: string): Promise<{ conversations: InboxConversation[] }> {
   const query = new URLSearchParams({ workspaceId, ...(filter ? { filter } : {}), ...(contactId ? { contactId } : {}) });
   return apiClient.get<{ conversations: InboxConversation[] }>(`/v1/inbox/conversations?${query.toString()}`);

@@ -43,4 +43,10 @@ export type InboxContactRepositoryPort = {
    * `docs/vorix-jornada-comercial-fase1-contatos.md`). Retorna `undefined` se o contato não existir.
    */
   linkCrmContact(id: string, contactId: string): Promise<InboxContact | undefined>;
+  /** Exclusão de canal (pedido explícito do usuário) — só chamada pra um contato já confirmado
+   * ÓRFÃO (`hasAnyConversationForContact` devolveu `false` pra TODOS os canais do workspace, ver
+   * `deleteConnection` em `inbox-use-cases.ts`), nunca em outro fluxo. Permanente; nunca apaga o
+   * `Contact` do CRM (`inbox_contacts.contact_id` aponta PRA FORA, é `on delete set null` — ver
+   * migration 0092), só o registro de identidade técnica do WhatsApp em si. */
+  delete(id: string): Promise<void>;
 };

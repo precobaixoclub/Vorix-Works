@@ -68,6 +68,18 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     this.rows.delete(id);
   }
 
+  async listContactIdsByConnection(connectionId: string): Promise<string[]> {
+    const ids = new Set<string>();
+    for (const row of this.rows.values()) {
+      if (row.connectionId === connectionId && row.contactId) ids.add(row.contactId);
+    }
+    return [...ids];
+  }
+
+  async hasAnyConversationForContact(contactId: string): Promise<boolean> {
+    return [...this.rows.values()].some((row) => row.contactId === contactId);
+  }
+
   async getByExternalChatId(input: { connectionId: string; externalChatId: string }): Promise<InboxConversation | undefined> {
     // Mesmo racional do adapter Postgres: prefere o registro ATIVO se houver, mas ainda devolve um
     // tombstone se for a única correspondência (o reconciliador precisa enxergá-lo).

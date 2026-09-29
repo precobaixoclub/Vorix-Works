@@ -315,6 +315,58 @@ export async function disconnectConnection(deps: InboxUseCaseDeps, input: Discon
   return deps.connectionRepository.updateStatus(connection.id, { status: "disconnected" });
 }
 
+export type DeleteConnectionInput = { tenantId: string; workspaceId: string; connectionId: string };
+
+/**
+ * Exclusão PERMANENTE de um canal inteiro (pedido explícito do usuário: "deveria ter uma opção de
+ * excluir o canal onde excluir automaticamente todas as conversas e contatos relacionados a esse
+ * número"). Conversas/mensagens/eventos/tags/roteamento cascateiam via FK (`db/migrations/0082`/
+ * `0083`/`0084`/`0123`/`0129`, todas `on delete cascade` a partir de `messaging_connections`) —
+ * não há como recuperar depois desta chamada.
+ *
+ * `InboxContact` NUNCA cascateia automaticamente (não é FK direta de `messaging_connections` — um
+ * contato pode ter conversas em MAIS de um canal do mesmo workspace, ver `db/migrations/0081`):
+ * só é apagado se, depois do canal sumir, não sobrar NENHUMA conversa dele em nenhum outro canal.
+ * Nunca toca o Contact do CRM (`inbox_contacts.contact_id` aponta pra FORA da tabela, `on delete
+ * set null` — a ficha comercial/negócios/tarefas/propostas nunca desaparecem por causa de um
+ * canal de WhatsApp excluído).
+ */
+export async function deleteConnection(deps: InboxUseCaseDeps, input: DeleteConnectionInput): Promise<void> {
+  const connection = await mustConnectionBelongToTenantAndWorkspace(deps, input.connectionId, input.tenantId, input.workspaceId);
+
+  // Coletado ANTES de apagar — depois que o canal sumir (cascata), as conversas dele já não
+  // existem mais pra consultar quais contatos elas apontavam.
+  const contactIds = await deps.conversationRepository.listContactIdsByConnection(connection.id);
+
+  // Best-effort: uma falha ao encerrar a sessão no provider nunca deve impedir a exclusão local
+  // (mesmo racional de `deleteInboxMessage`/revogação de mensagem, logo abaixo).
+  if (connection.externalSessionId) {
+    try {
+      await resolveProvider(deps, connection.provider).disconnect({ externalSessionId: connection.externalSessionId });
+    } catch (error) {
+      console.warn(`[inbox] falha ao encerrar sessão do canal "${connection.id}" no provider (best-effort, exclusão local segue normalmente):`, error instanceof Error ? error.message : error);
+    }
+  }
+
+  try {
+    await deps.connectionRepository.delete(connection.id);
+  } catch (error) {
+    // `proposal_deliveries.conversation_id` é `on delete restrict` de propósito (migration 0130)
+    // — nunca apagar histórico de entrega de proposta comercial em silêncio. Traduz a violação de
+    // FK crua (código 23503 do Postgres) pra uma mensagem clara, mesmo vocabulário `CODE: mensagem`
+    // já usado pelo resto do módulo (ver `rethrowInboxError`).
+    if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "23503") {
+      throw new Error("INBOX_CONNECTION_HAS_PROPOSAL_DELIVERIES: este canal tem propostas comerciais entregues através dele — não é possível excluir.");
+    }
+    throw error;
+  }
+
+  for (const contactId of contactIds) {
+    const stillHasConversation = await deps.conversationRepository.hasAnyConversationForContact(contactId);
+    if (!stillHasConversation) await deps.contactRepository.delete(contactId);
+  }
+}
+
 export type ListConversationsInput = { tenantId: string; workspaceId: string; filter?: InboxConversationListFilter; assignedUserId?: string; contactId?: string };
 
 export async function listConversations(deps: InboxUseCaseDeps, input: ListConversationsInput): Promise<InboxConversationListItem[]> {

@@ -127,6 +127,10 @@ export class PostgresInboxContactRepository implements InboxContactRepositoryPor
     return this.getById(id);
   }
 
+  async delete(id: string): Promise<void> {
+    await this.pool.query("delete from inbox_contacts where id = $1", [id]);
+  }
+
   private toDomain(row: Row): InboxContact {
     return {
       id: row.id,

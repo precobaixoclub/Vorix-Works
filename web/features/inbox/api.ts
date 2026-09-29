@@ -154,10 +154,12 @@ export function cancelScheduledInboxMessage(workspaceId: string, conversationId:
 }
 
 /** Bloco "excluir mensagem" (pedido explícito do usuário em produção) — permanente, ver
- * `deleteInboxMessage` (backend). Tenta revogar de verdade no WhatsApp quando a mensagem é
- * outbound (best-effort, nunca bloqueia a exclusão local). */
-export function deleteInboxMessage(workspaceId: string, conversationId: string, messageId: string): Promise<{ deleted: boolean }> {
-  return apiClient.delete<{ deleted: boolean }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}?workspaceId=${encodeURIComponent(workspaceId)}`);
+ * `deleteInboxMessage` (backend). `forEveryone` espelha a escolha do usuário no diálogo "Apagar
+ * para todos"/"Apagar só para mim" (default `true`); só tem efeito real em mensagens outbound já
+ * confirmadas pelo WhatsApp — best-effort, nunca bloqueia a exclusão local. */
+export function deleteInboxMessage(workspaceId: string, conversationId: string, messageId: string, forEveryone = true): Promise<{ deleted: boolean }> {
+  const query = new URLSearchParams({ workspaceId, mode: forEveryone ? "everyone" : "me" });
+  return apiClient.delete<{ deleted: boolean }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}?${query.toString()}`);
 }
 
 /** Bloco "reagir a uma mensagem" (pedido explícito do usuário em produção) — `emoji: ""` remove a

@@ -25,6 +25,10 @@ export function ConfirmDialog({
   busy = false,
   onConfirm,
   onCancel,
+  secondaryLabel,
+  secondaryVariant = "danger",
+  secondaryBusy = false,
+  onSecondary,
 }: {
   open: boolean;
   title: string;
@@ -35,18 +39,34 @@ export function ConfirmDialog({
   busy?: boolean;
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
+  /** Segunda escolha destrutiva opcional (ex.: "Apagar para todos" vs "Apagar só para mim" —
+   * mesmo espírito do próprio diálogo do WhatsApp). Sem isto, o diálogo continua confirmar/cancelar. */
+  secondaryLabel?: string;
+  secondaryVariant?: "primary" | "danger";
+  secondaryBusy?: boolean;
+  onSecondary?: () => void | Promise<void>;
 }) {
+  const anyBusy = busy || secondaryBusy;
   return (
-    <AlertDialog open={open} onOpenChange={(next) => { if (!next && !busy) onCancel(); }}>
+    <AlertDialog open={open} onOpenChange={(next) => { if (!next && !anyBusy) onCancel(); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy} onClick={onCancel}>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel disabled={anyBusy} onClick={onCancel}>{cancelLabel}</AlertDialogCancel>
+          {secondaryLabel && onSecondary ? (
+            <AlertDialogAction
+              disabled={anyBusy}
+              onClick={(event) => { event.preventDefault(); onSecondary(); }}
+              className={cn(secondaryVariant === "danger" ? buttonVariants({ variant: "destructive" }) : buttonVariants({ variant: "secondary" }))}
+            >
+              {secondaryBusy ? "Processando..." : secondaryLabel}
+            </AlertDialogAction>
+          ) : null}
           <AlertDialogAction
-            disabled={busy}
+            disabled={anyBusy}
             onClick={(event) => { event.preventDefault(); onConfirm(); }}
             className={cn(variant === "danger" && buttonVariants({ variant: "destructive" }))}
           >

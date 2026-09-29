@@ -2674,7 +2674,7 @@ function MessageActionsMenu({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [deleting, setDeleting] = useState<"everyone" | "me" | false>(false);
   const [cancelScheduleConfirmOpen, setCancelScheduleConfirmOpen] = useState(false);
   const [cancellingSchedule, setCancellingSchedule] = useState(false);
 
@@ -2682,6 +2682,10 @@ function MessageActionsMenu({
   // sem isso; nunca oferece a ação pra uma mensagem ainda "enviando"/na fila.
   const canReact = Boolean(message.externalMessageId);
   const isScheduled = Boolean(message.scheduledAt && message.status === "queued");
+  // "Apagar para todos" só é uma escolha real pra mensagens que o Vorix mandou e que o WhatsApp já
+  // confirmou (mesma limitação de protocolo do `canReact`) — só aí faz sentido oferecer as duas
+  // opções; caso contrário o menu mantém um único botão "Excluir" (sempre local).
+  const canDeleteForEveryone = message.direction === "outbound" && Boolean(message.externalMessageId);
 
   async function react(emoji: string) {
     if (!canReact || busy) return;
@@ -2699,10 +2703,10 @@ function MessageActionsMenu({
     }
   }
 
-  async function handleDelete() {
-    setDeleting(true);
+  async function handleDelete(forEveryone: boolean) {
+    setDeleting(forEveryone ? "everyone" : "me");
     try {
-      await deleteInboxMessage(workspaceId, conversationId, message.id);
+      await deleteInboxMessage(workspaceId, conversationId, message.id, forEveryone);
       onChanged();
     } finally {
       setDeleting(false);
@@ -2782,12 +2786,19 @@ function MessageActionsMenu({
       <ConfirmDialog
         open={deleteConfirmOpen}
         title="Excluir mensagem"
-        description="Isto remove a mensagem do Vorix. Se foi você quem mandou, o Vorix também tenta apagá-la para todos no WhatsApp — mensagens de um contato só somem daqui, nunca do celular dele."
-        confirmLabel="Excluir"
+        description={
+          canDeleteForEveryone
+            ? "Você enviou esta mensagem. \"Apagar para todos\" também tenta apagá-la do WhatsApp de quem recebeu (só funciona pra mensagens recentes); \"Apagar só para mim\" remove apenas daqui do Vorix."
+            : "Isto remove a mensagem do Vorix. Mensagens de um contato só somem daqui, nunca do celular dele."
+        }
+        confirmLabel={canDeleteForEveryone ? "Apagar para todos" : "Excluir"}
         variant="danger"
-        busy={deleting}
-        onConfirm={handleDelete}
+        busy={deleting === "everyone"}
+        onConfirm={() => handleDelete(true)}
         onCancel={() => setDeleteConfirmOpen(false)}
+        {...(canDeleteForEveryone
+          ? { secondaryLabel: "Apagar só para mim", secondaryBusy: deleting === "me", onSecondary: () => handleDelete(false) }
+          : {})}
       />
       <ConfirmDialog
         open={cancelScheduleConfirmOpen}

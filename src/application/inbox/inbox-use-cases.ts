@@ -427,13 +427,24 @@ export async function deleteConversation(deps: InboxUseCaseDeps, input: DeleteCo
   await deps.conversationRepository.delete(conversation.id);
 }
 
-export type DeleteInboxMessageInput = { tenantId: string; workspaceId: string; conversationId: string; messageId: string };
+export type DeleteInboxMessageInput = {
+  tenantId: string;
+  workspaceId: string;
+  conversationId: string;
+  messageId: string;
+  /** Escolha explícita do usuário (espelha o próprio diálogo do WhatsApp: "Apagar para todos" vs
+   * "Apagar só para mim") — default `true` preserva o comportamento anterior a essa escolha
+   * existir. Só tem efeito real quando a mensagem é elegível pra revogação (ver abaixo); pedir
+   * `true` numa mensagem `inbound` é inofensivo, simplesmente não tenta revogar nada. */
+  forEveryone?: boolean;
+};
 
 /**
  * Bloco "excluir mensagem" (pedido explícito do usuário em produção: "excluir uma mensagem que eu
- * queira") — sempre remove a mensagem do lado do Vorix (permanente, mesmo racional de
- * `deleteConversation`). Adicionalmente, para mensagens `direction: "outbound"` já confirmadas
- * pelo WhatsApp, tenta revogar de verdade ("apagar para todos") via `provider.revokeMessage` —
+ * queira", depois "excluir para todos" como escolha explícita) — sempre remove a mensagem do lado
+ * do Vorix (permanente, mesmo racional de `deleteConversation`). Adicionalmente, quando
+ * `forEveryone` é pedido (default) e a mensagem é `direction: "outbound"` já confirmada pelo
+ * WhatsApp, tenta revogar de verdade ("apagar para todos") via `provider.revokeMessage` —
  * limitação REAL do protocolo (confirmada via `gh api` no código-fonte do WuzAPI/whatsmeow): só
  * funciona pra mensagens que O PRÓPRIO número conectado mandou, nunca mensagens de um
  * contato/participante (por isso nunca tentado para `direction: "inbound"`). Best-effort — uma
@@ -447,7 +458,8 @@ export async function deleteInboxMessage(deps: InboxUseCaseDeps, input: DeleteIn
     throw new Error(`INBOX_MESSAGE_NOT_FOUND: mensagem "${input.messageId}" não existe nesta conversa.`);
   }
 
-  if (message.direction === "outbound" && message.externalMessageId) {
+  const forEveryone = input.forEveryone ?? true;
+  if (forEveryone && message.direction === "outbound" && message.externalMessageId) {
     try {
       const connection = await deps.connectionRepository.getById(conversation.connectionId);
       const provider = connection ? deps.providers[connection.provider] : undefined;

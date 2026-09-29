@@ -119,6 +119,27 @@ test("DELETE: mensagem OUTBOUND já enviada tenta revogar de verdade no WhatsApp
   assert.deepEqual(deps.providers.wuzapi.revokedMessages, [{ to: inbound.conversation.externalChatId, externalMessageId: "wamid.outbound-1" }], "tentou revogar de verdade — mensagem era OUTBOUND com externalMessageId conhecido");
 });
 
+test("DELETE: forEveryone=false (\"Apagar só para mim\") NUNCA tenta revogar no WhatsApp, mesmo numa OUTBOUND revogável — escolha explícita do usuário", async () => {
+  const tenantId = "tenant-msgaction-delete-1b";
+  const { workspace, connection, deps, messageRepo } = await makeSetup(tenantId);
+
+  const inbound = await registerInboundMessage(deps, {
+    tenantId, workspaceId: workspace.id, connectionId: connection.id,
+    chatId: "+5511911110002", isGroup: false, fromMe: false,
+    senderId: "+5511911110002", senderName: "Cliente",
+    externalMessageId: "wamid.delete-target-1b", type: "text", body: "Oi",
+    occurredAt: new Date().toISOString(),
+  });
+  const outbound = await sendInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: inbound.conversation.id, body: "Resposta que será apagada só localmente" });
+  const claimed = await messageRepo.tryMarkSending(outbound.id);
+  await messageRepo.markSent(claimed.id, { externalMessageId: "wamid.outbound-1b", sentAt: new Date().toISOString() });
+
+  await deleteInboxMessage(deps, { tenantId, workspaceId: workspace.id, conversationId: inbound.conversation.id, messageId: outbound.id, forEveryone: false });
+
+  assert.equal(await messageRepo.getById(outbound.id), undefined, "removida localmente");
+  assert.deepEqual(deps.providers.wuzapi.revokedMessages, [], "usuário escolheu \"só para mim\" — nunca chama o provider, mesmo sendo uma mensagem revogável");
+});
+
 test("DELETE: mensagem INBOUND (de um contato) NUNCA tenta revogar no WhatsApp — só remove localmente (limitação real do protocolo)", async () => {
   const tenantId = "tenant-msgaction-delete-2";
   const { workspace, connection, deps, messageRepo } = await makeSetup(tenantId);

@@ -77,6 +77,13 @@ import { successEnvelope } from "../../http/response-envelope.js";
 
 const WORKSPACE_QUERY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 } } } as const;
 const ID_PARAMS_SCHEMA = { type: "object", required: ["id"], properties: { id: { type: "string", minLength: 1 } } } as const;
+/** `mode` espelha a escolha do usuário no diálogo "Apagar para todos"/"Apagar só para mim" — ver
+ * `deleteInboxMessage`. Omitido = "everyone" (preserva o comportamento anterior à escolha existir). */
+const DELETE_MESSAGE_QUERY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId"],
+  properties: { workspaceId: { type: "string", minLength: 1 }, mode: { type: "string", enum: ["everyone", "me"] } },
+} as const;
 const WORKSPACE_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 } } } as const;
 const CREATE_CONNECTION_BODY_SCHEMA = { type: "object", required: ["workspaceId", "displayName"], properties: { workspaceId: { type: "string", minLength: 1 }, displayName: { type: "string", minLength: 1 } } } as const;
 const SEND_MESSAGE_BODY_SCHEMA = {
@@ -1083,12 +1090,12 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
    * `deleteInboxMessage`. Mesmo degrau de permissão de responder (nunca `inbox:delete_conversations`
    * — excluir UMA mensagem é uma ação operacional do dia a dia, não administrativa como excluir a
    * conversa inteira). */
-  app.delete("/inbox/conversations/:id/messages/:messageId", { schema: { params: MESSAGE_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+  app.delete("/inbox/conversations/:id/messages/:messageId", { schema: { params: MESSAGE_PARAMS_SCHEMA, querystring: DELETE_MESSAGE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "inbox:reply");
     const { id, messageId } = request.params as { id: string; messageId: string };
-    const { workspaceId } = request.query as { workspaceId: string };
+    const { workspaceId, mode } = request.query as { workspaceId: string; mode?: "everyone" | "me" };
     try {
-      await deleteInboxMessage(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, messageId });
+      await deleteInboxMessage(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, messageId, forEveryone: mode !== "me" });
       publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
       return successEnvelope({ deleted: true }, request.id);
     } catch (error) {

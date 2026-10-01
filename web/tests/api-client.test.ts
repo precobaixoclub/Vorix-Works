@@ -57,4 +57,38 @@ describe("apiClient", () => {
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body)).toEqual({ name: "Novo" });
   });
+
+  // Achado real do usuário: excluir um canal sempre dava "Erro interno inesperado" — o DELETE
+  // nunca manda `body`, mas o cliente mandava "Content-Type: application/json" do mesmo jeito, e
+  // o Fastify rejeita isso com FST_ERR_CTP_EMPTY_JSON_BODY antes até de checar autenticação (bug
+  // universal de todo `apiClient.delete(...)`, não só do canal — confirmado contra produção).
+  it("DELETE nunca manda Content-Type (sem body nenhum pra descrever)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      json: async () => ({ ok: true, data: { deleted: true } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiClient.delete("/v1/inbox/connections/conn-1?workspaceId=workspace-1");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.method).toBe("DELETE");
+    expect(init.body).toBeUndefined();
+    expect(init.headers["Content-Type"]).toBeUndefined();
+  });
+
+  it("POST sem payload (undefined) também não manda Content-Type, igual ao DELETE", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      json: async () => ({ ok: true, data: { ok: true } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiClient.post("/v1/inbox/connections/conn-1/refresh-status", undefined);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.body).toBeUndefined();
+    expect(init.headers["Content-Type"]).toBeUndefined();
+  });
 });

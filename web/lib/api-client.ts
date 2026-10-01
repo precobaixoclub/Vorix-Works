@@ -39,8 +39,17 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
   // FormData (upload de arquivo) precisa que o navegador defina o Content-Type (com o boundary do
   // multipart) sozinho — setar "application/json" aqui quebraria o parsing no servidor.
   const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
+  // Achado real do usuário (exclusão de canal sempre dava "Erro interno inesperado"): `apiClient.
+  // delete()` nunca manda `body`, mas antes desta correção o header ia "Content-Type:
+  // application/json" do mesmo jeito — o parser padrão do Fastify rejeita isso com
+  // FST_ERR_CTP_EMPTY_JSON_BODY ANTES de chegar na rota (nem autenticação roda). Bug universal
+  // de TODO `apiClient.delete(...)` do app (confirmado contra produção em outro endpoint já
+  // existente, não é algo novo desta rota) — só nunca tinha sido notado porque a maioria das
+  // telas de excluir é pouco usada. Corrigido na raiz: só manda o header quando há `body` de
+  // verdade.
+  const hasBody = init.body !== undefined && init.body !== null;
   const headers: Record<string, string> = {
-    ...(isFormData ? {} : { "Content-Type": "application/json" }),
+    ...(hasBody && !isFormData ? { "Content-Type": "application/json" } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(init.headers as Record<string, string> | undefined),
   };

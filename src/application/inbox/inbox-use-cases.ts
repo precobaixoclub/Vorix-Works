@@ -353,9 +353,18 @@ export async function deleteConnection(deps: InboxUseCaseDeps, input: DeleteConn
   } catch (error) {
     // `proposal_deliveries.conversation_id` é `on delete restrict` de propósito (migration 0130)
     // — nunca apagar histórico de entrega de proposta comercial em silêncio. Traduz a violação de
-    // FK crua (código 23503 do Postgres) pra uma mensagem clara, mesmo vocabulário `CODE: mensagem`
-    // já usado pelo resto do módulo (ver `rethrowInboxError`).
-    if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "23503") {
+    // FK crua pra uma mensagem clara, mesmo vocabulário `CODE: mensagem` já usado pelo resto do
+    // módulo (ver `rethrowInboxError`).
+    //
+    // ACHADO REAL (auditoria do bug "não dá pra excluir o canal"): o SQLSTATE de uma violação de
+    // `ON DELETE RESTRICT` é "23001" (restrict_violation), NUNCA "23503" (foreign_key_violation,
+    // a classe genérica — usada ao INSERIR um filho sem o pai existir, não ao tentar apagar um pai
+    // referenciado). Verificado contra um Postgres real (via `pg`/wire protocol). O código antigo só
+    // checava "23503" e por isso NUNCA capturava este erro — o Postgres cru vazava pro usuário
+    // (gerando exatamente a falha silenciosa/confusa reportada), e esta causa raiz nunca tinha sido
+    // coberta por teste até esta auditoria (ver `tests/delete-connection.test.mjs`).
+    const code = error && typeof error === "object" && "code" in error ? (error as { code?: string }).code : undefined;
+    if (code === "23001" || code === "23503") {
       throw new Error("INBOX_CONNECTION_HAS_PROPOSAL_DELIVERIES: este canal tem propostas comerciais entregues através dele — não é possível excluir.");
     }
     throw error;

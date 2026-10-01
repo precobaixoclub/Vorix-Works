@@ -17,4 +17,5 @@ export const RBAC_COPY = {
   operateConversations: "Apenas owner, admin e editor podem operar conversas.",
   manageBilling: "Apenas owner e admin podem gerenciar plano e cobranca.",
   deleteConversations: "Apenas owner e admin podem excluir conversas e grupos.",
+  deleteConnections: "Apenas owner e admin podem excluir canais.",
 } as const;

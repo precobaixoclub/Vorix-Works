@@ -23,12 +23,14 @@ export function ConfirmDialog({
   cancelLabel = "Cancelar",
   variant = "primary",
   busy = false,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
   secondaryLabel,
   secondaryVariant = "danger",
   secondaryBusy = false,
   onSecondary,
+  children,
 }: {
   open: boolean;
   title: string;
@@ -37,6 +39,9 @@ export function ConfirmDialog({
   cancelLabel?: string;
   variant?: "primary" | "danger";
   busy?: boolean;
+  /** Trava extra pro botão de confirmar, além de `busy` (ex.: exigir que o usuário digite o nome
+   * exato do registro antes de liberar uma exclusão em 2 etapas — ver "Excluir canal"). */
+  confirmDisabled?: boolean;
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
   /** Segunda escolha destrutiva opcional (ex.: "Apagar para todos" vs "Apagar só para mim" —
@@ -45,6 +50,9 @@ export function ConfirmDialog({
   secondaryVariant?: "primary" | "danger";
   secondaryBusy?: boolean;
   onSecondary?: () => void | Promise<void>;
+  /** Conteúdo extra entre a descrição e os botões (ex.: campo "digite o nome pra confirmar" numa
+   * segunda etapa de confirmação). */
+  children?: React.ReactNode;
 }) {
   const anyBusy = busy || secondaryBusy;
   return (
@@ -54,6 +62,7 @@ export function ConfirmDialog({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
+        {children}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={anyBusy} onClick={onCancel}>{cancelLabel}</AlertDialogCancel>
           {secondaryLabel && onSecondary ? (
@@ -66,7 +75,7 @@ export function ConfirmDialog({
             </AlertDialogAction>
           ) : null}
           <AlertDialogAction
-            disabled={anyBusy}
+            disabled={anyBusy || confirmDisabled}
             onClick={(event) => { event.preventDefault(); onConfirm(); }}
             className={cn(variant === "danger" && buttonVariants({ variant: "destructive" }))}
           >

@@ -18,19 +18,36 @@ import { createInboxConnection, deleteInboxConnection, disconnectInboxConnection
 import { useChannelRouting, useInboxConnections } from "@/features/inbox/hooks";
 import { useTeams } from "@/features/identity/hooks";
 import type { ChannelDistributionMode, MessagingConnection } from "@/features/inbox/types";
-import { canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
+import { canManageTenant, canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
 
 export function ConnectionsTab({ workspaceId }: { workspaceId: string }) {
   const { state } = useAuth();
-  const canOperate = canOperateWorkspace(state.status === "authenticated" ? state.role : undefined);
+  const role = state.status === "authenticated" ? state.role : undefined;
+  const canOperate = canOperateWorkspace(role);
+  // Achado real do usuário ("não tá sendo possível excluir o canal"): o botão usava `canOperate`
+  // (inclui "editor"), mas o backend exige `inbox:delete_connections` — degrau restrito a
+  // owner/admin (mesmo tier de `inbox:delete_conversations`, ver `canDelete` em `inbox-tab.tsx`).
+  // Um editor via o botão habilitado e a exclusão sempre falhava com 403.
+  const canDelete = canManageTenant(role);
   const { data, isLoading, error, mutate } = useInboxConnections(workspaceId);
   const [newDisplayName, setNewDisplayName] = useState("");
   const [creating, setCreating] = useState(false);
   const [qrByConnectionId, setQrByConnectionId] = useState<Record<string, string>>({});
   const [pendingDisconnect, setPendingDisconnect] = useState<MessagingConnection | undefined>();
   const [pendingDelete, setPendingDelete] = useState<MessagingConnection | undefined>();
+  // Segunda confirmação (pedido explícito do usuário: "adicionar uma segunda confirmação... e o
+  // impacto que vai ter") — etapa 1 explica o impacto, etapa 2 exige digitar o nome exato do canal
+  // antes de liberar o botão final, mesmo padrão usado por ações irreversíveis de alto risco.
+  const [deleteStage, setDeleteStage] = useState<"impact" | "final">("impact");
+  const [deleteNameInput, setDeleteNameInput] = useState("");
   const [busyConnectionId, setBusyConnectionId] = useState<string | undefined>();
   const [actionError, setActionError] = useState<string | undefined>();
+
+  function resetDeleteFlow() {
+    setPendingDelete(undefined);
+    setDeleteStage("impact");
+    setDeleteNameInput("");
+  }
 
   async function handleCreateConnection() {
     if (!canOperate) return;
@@ -97,12 +114,12 @@ export function ConnectionsTab({ workspaceId }: { workspaceId: string }) {
   // excluído") — permanente, nunca reaproveita `handleDisconnect` (são ações completamente
   // diferentes: desconectar preserva tudo, excluir apaga a base do canal).
   async function handleDeleteConnection(connection: MessagingConnection) {
-    if (!canOperate) return;
+    if (!canDelete) return;
     setBusyConnectionId(connection.id);
     setActionError(undefined);
     try {
       await deleteInboxConnection(workspaceId, connection.id);
-      setPendingDelete(undefined);
+      resetDeleteFlow();
       await mutate();
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Não foi possível excluir o canal.");
@@ -159,7 +176,8 @@ export function ConnectionsTab({ workspaceId }: { workspaceId: string }) {
               onShowQrCode={() => handleShowQrCode(connection.id)}
               onRefreshStatus={() => handleRefreshStatus(connection.id)}
               onDisconnect={() => setPendingDisconnect(connection)}
-              onDelete={() => setPendingDelete(connection)}
+              canDelete={canDelete}
+              onDelete={() => { setPendingDelete(connection); setDeleteStage("impact"); setDeleteNameInput(""); }}
             />
           ))}
         </div>
@@ -176,16 +194,40 @@ export function ConnectionsTab({ workspaceId }: { workspaceId: string }) {
         onConfirm={() => { if (pendingDisconnect) return handleDisconnect(pendingDisconnect); }}
       />
 
+      {/* Etapa 1/2 — explica o impacto completo antes de qualquer coisa acontecer de verdade.
+         "Continuar" só avança pra etapa 2, nunca exclui. */}
       <ConfirmDialog
-        open={Boolean(pendingDelete)}
+        open={Boolean(pendingDelete) && deleteStage === "impact"}
         title="Excluir canal?"
         description={`Isso apaga PERMANENTEMENTE o canal "${pendingDelete?.displayName ?? "selecionado"}" e todas as conversas e mensagens que existem só por causa dele. Contatos que também conversam por outro canal deste workspace são preservados; os demais são apagados junto. Essa ação não pode ser desfeita.`}
-        confirmLabel="Excluir canal"
+        confirmLabel="Continuar"
+        variant="danger"
+        onCancel={resetDeleteFlow}
+        onConfirm={() => setDeleteStage("final")}
+      />
+
+      {/* Etapa 2/2 — confirmação final: só libera o botão quando o nome digitado bate exatamente
+         com o do canal (mesmo padrão de ações destrutivas de alto risco), reforçando que não tem
+         volta. */}
+      <ConfirmDialog
+        open={Boolean(pendingDelete) && deleteStage === "final"}
+        title="Confirme a exclusão definitiva"
+        description={`Para confirmar, digite o nome exato do canal: "${pendingDelete?.displayName ?? ""}". Ao confirmar, TODAS as conversas e mensagens deste canal são apagadas agora, junto com os contatos que não conversam por nenhum outro canal deste workspace. Não existe desfazer.`}
+        confirmLabel="Excluir canal definitivamente"
+        confirmDisabled={deleteNameInput.trim() !== (pendingDelete?.displayName ?? "")}
         variant="danger"
         busy={Boolean(busyConnectionId)}
-        onCancel={() => setPendingDelete(undefined)}
+        onCancel={resetDeleteFlow}
         onConfirm={() => { if (pendingDelete) return handleDeleteConnection(pendingDelete); }}
-      />
+      >
+        <Input
+          autoFocus
+          value={deleteNameInput}
+          onChange={(event) => setDeleteNameInput(event.target.value)}
+          placeholder={pendingDelete?.displayName ?? ""}
+          disabled={Boolean(busyConnectionId)}
+        />
+      </ConfirmDialog>
     </div>
   );
 }
@@ -195,6 +237,7 @@ function ConnectionRow({
   connection,
   qrCode,
   canOperate,
+  canDelete,
   busy,
   onShowQrCode,
   onRefreshStatus,
@@ -205,6 +248,10 @@ function ConnectionRow({
   connection: MessagingConnection;
   qrCode: string | undefined;
   canOperate: boolean;
+  /** Degrau de permissão PRÓPRIO (owner/admin, `inbox:delete_connections`) — mais restrito que
+   * `canOperate`. Achado real: usar `canOperate` aqui deixava o botão "habilitado" pra um editor,
+   * que então sempre tomava 403 do backend ao tentar excluir. */
+  canDelete: boolean;
   busy: boolean;
   onShowQrCode: () => void;
   onRefreshStatus: () => void;
@@ -261,7 +308,7 @@ function ConnectionRow({
                 Desconectar
               </GuardedButton>
             ) : null}
-            <GuardedButton variant="danger" onClick={onDelete} disabled={busy} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
+            <GuardedButton variant="danger" onClick={onDelete} disabled={busy} allowed={canDelete} blockedReason={RBAC_COPY.deleteConnections}>
               Excluir canal
             </GuardedButton>
           </div>

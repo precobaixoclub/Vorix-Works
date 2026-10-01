@@ -281,6 +281,12 @@ function ConnectionRow({
     connection.status === "logged_out" ||
     connection.status === "error";
   const needsQrCode = connection.status === "connecting" || isDisconnectedState;
+  // Achado real do usuário: um canal RECÉM-CRIADO nasce em "connecting" (aguardando o primeiro QR
+  // ser escaneado, nunca esteve pareado) — mas "Desconectar" aparecia do mesmo jeito, como se já
+  // houvesse algo pra desconectar, obrigando a desconectar/reconectar só pra conseguir o QR.
+  // "Desconectar" só faz sentido quando existe uma sessão de verdade (pareada uma vez, mesmo que
+  // agora tentando se recuperar) — nunca no primeiro pareamento.
+  const canDisconnectNow = connection.status === "connected" || connection.status === "reconnecting";
   const [routingOpen, setRoutingOpen] = useState(false);
   return (
     <Card>
@@ -310,10 +316,11 @@ function ConnectionRow({
               {routingOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             </Button>
             {/* Achado real do usuário: "Desconectar" continuava vermelho/clicável depois de já ter
-               desconectado, como se fosse possível desconectar de novo. Só faz sentido enquanto o
-               canal está de fato conectado (ou tentando conectar/reconectar) — num estado já
-               desconectado, a única ação válida é "Conectar" (acima), nunca as duas ao mesmo tempo. */}
-            {!isDisconnectedState ? (
+               desconectado, como se fosse possível desconectar de novo — e também aparecia num
+               canal RECÉM-CRIADO ("connecting", nunca pareado), fazendo o usuário ter que
+               desconectar/reconectar só pra conseguir o primeiro QR. Só faz sentido quando existe
+               uma sessão de verdade (pareada uma vez, mesmo tentando se recuperar agora). */}
+            {canDisconnectNow ? (
               <GuardedButton variant="danger" onClick={onDisconnect} disabled={busy} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
                 Desconectar
               </GuardedButton>

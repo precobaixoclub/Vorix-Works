@@ -27,6 +27,7 @@ import {
   maybeGenerateAiResponse,
   processOutboundMessage,
   reconcileConnectionsHealth,
+  refreshConnectionStatus,
   registerInboundMessage,
   sendInboxMessage,
 } from "../dist/application/inbox/inbox-use-cases.js";
@@ -332,6 +333,59 @@ test("Monitor de saúde nunca checa (nem toca) conexões em status terminal — 
   const afterTick = await deps.connectionRepository.getById(connection.id);
   assert.equal(afterTick.status, "logged_out", "conexão terminal permanece intocada pelo monitor de saúde");
   assert.equal(afterTick.connectionHealth, "unknown", "connectionHealth também nunca é escrito para uma conexão terminal");
+});
+
+// Achado real do usuário (produção): escanear o QR do PRIMEIRO pareamento às vezes terminava em
+// "logged_out" em vez de "connected" — o WuzAPI reporta `loggedIn: false` por alguns segundos
+// DURANTE o próprio handshake do WhatsApp (normal), e se uma checagem cai bem nessa janela, o
+// canal ficava preso num status TERMINAL (nunca mais re-checado sozinho pelo monitor periódico),
+// mesmo a sessão tendo pareado de verdade segundos depois. Estes dois testes cobrem a correção
+// (`reconcileLiveConnectionStatus`) nos dois pontos que consultam o provider: o monitor periódico
+// e o botão manual "Atualizar status".
+async function makeNeverPairedConnection(tenantId) {
+  const workspaceRepo = new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") });
+  const connectionRepo = new PostgresMessagingConnectionRepository(db.pool);
+  const workspace = await workspaceRepo.create({ tenantId, name: "W" });
+  const created = await connectionRepo.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Canal novo" });
+  // Mesmo estado que `createConnection` deixa um canal recém-criado: "connecting", com sessão já
+  // aberta no gateway mas NUNCA pareado (sem phoneNumber nenhum ainda).
+  const connection = await connectionRepo.updateStatus(created.id, { status: "connecting", externalSessionId: `sess-${created.id}` });
+  return { workspace, connection };
+}
+
+test("Monitor de saúde: \"logged_out\" bruto do provider NUNCA vira terminal para um canal que ainda nem pareou — mantém \"connecting\"", async () => {
+  const tenantId = "tenant-res-health-3";
+  const { connection } = await makeNeverPairedConnection(tenantId);
+  const provider = makeFakeMessagingProvider({ getConnectionStatus: async () => ({ status: "logged_out" }) });
+  const deps = buildDeps(tenantId, { provider });
+
+  await reconcileConnectionsHealth(deps);
+
+  const after = await deps.connectionRepository.getById(connection.id);
+  assert.equal(after.status, "connecting", "handshake do primeiro pareamento nunca é lido como logout real");
+});
+
+test("Monitor de saúde: \"logged_out\" bruto É respeitado normalmente quando a conexão JÁ pareou antes (tem phoneNumber)", async () => {
+  const tenantId = "tenant-res-health-4";
+  const { connection } = await makeConversation(tenantId); // já nasce "connected" com phoneNumber, ver makeConversation
+  const provider = makeFakeMessagingProvider({ getConnectionStatus: async () => ({ status: "logged_out" }) });
+  const deps = buildDeps(tenantId, { provider });
+
+  await reconcileConnectionsHealth(deps);
+
+  const after = await deps.connectionRepository.getById(connection.id);
+  assert.equal(after.status, "logged_out", "uma sessão que JÁ pareou antes e agora reporta logout é um logout de verdade — nunca suprimido");
+});
+
+test("\"Atualizar status\" (manual): mesma proteção do monitor periódico — nunca marca terminal um canal que ainda nem pareou", async () => {
+  const tenantId = "tenant-res-health-5";
+  const { workspace, connection } = await makeNeverPairedConnection(tenantId);
+  const provider = makeFakeMessagingProvider({ getConnectionStatus: async () => ({ status: "logged_out" }) });
+  const deps = buildDeps(tenantId, { provider });
+
+  const updated = await refreshConnectionStatus(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id });
+
+  assert.equal(updated.status, "connecting");
 });
 
 // ------------------------------------------------------------------------------------------

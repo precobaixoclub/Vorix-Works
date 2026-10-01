@@ -357,12 +357,26 @@ function ChannelRoutingPanel({ workspaceId, connectionId, canOperate }: { worksp
   // Sincroniza o estado local com o que veio do backend só quando os dados chegam/mudam — depois
   // disso, o usuário controla livremente (nunca sobrescreve uma edição em andamento com um
   // refetch do SWR).
+  //
+  // Achado real do usuário: um canal sem roteamento configurado ainda nasce com a(s) equipe(s)
+  // DESMARCADA(S), obrigando a marcar manualmente mesmo quando só existe UMA equipe no workspace
+  // — a única escolha possível já é óbvia. Nesse caso específico (nenhum roteamento salvo ainda +
+  // exatamente uma equipe cadastrada), pré-marca essa equipe como vinculada/padrão; o usuário
+  // ainda precisa clicar em "Salvar roteamento" pra confirmar — isto só evita o clique extra no
+  // checkbox, nunca salva sozinho. Com 2+ equipes, a escolha é real e continua manual.
   useEffect(() => {
     if (!routing) return;
+    if (routing.teamIds.length === 0 && (teams ?? []).length === 1) {
+      const onlyTeamId = (teams ?? [])[0].id;
+      setSelectedTeamIds([onlyTeamId]);
+      setDefaultTeamId(onlyTeamId);
+      setDistributionMode("default");
+      return;
+    }
     setSelectedTeamIds(routing.teamIds);
     setDefaultTeamId(routing.config?.defaultTeamId ?? routing.teamIds[0] ?? "");
     setDistributionMode(routing.config?.distributionMode ?? "default");
-  }, [routing]);
+  }, [routing, teams]);
 
   function toggleTeam(teamId: string, checked: boolean) {
     setSelectedTeamIds((current) => {

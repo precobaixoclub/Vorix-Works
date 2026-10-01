@@ -15,7 +15,7 @@ import type { InboxMessageRepositoryPort } from "../ports/inbox-message-reposito
 import type { InboxMetricsRecorder } from "../ports/inbox-metrics.port.js";
 import type { InboxTagRepositoryPort } from "../ports/inbox-tag-repository.port.js";
 import type { MessagingConnectionRepositoryPort } from "../ports/messaging-connection-repository.port.js";
-import type { MessagingProvider, MessagingProviderErrorKind } from "../ports/messaging-provider.port.js";
+import type { MessagingProvider, MessagingProviderErrorKind, NormalizedConnectionStatus } from "../ports/messaging-provider.port.js";
 import { MessagingProviderError } from "../ports/messaging-provider.port.js";
 import type { OutboundMessageQueuePort } from "../ports/outbound-message-queue.port.js";
 import type { TeamKanbanPhaseRepositoryPort } from "../ports/team-kanban-phase-repository.port.js";
@@ -199,6 +199,28 @@ export async function getConnectionQrCode(deps: InboxUseCaseDeps, input: GetQrCo
   return provider.getQrCode({ externalSessionId: connection.externalSessionId });
 }
 
+/**
+ * Achado real do usuário (produção): escanear o QR do PRIMEIRO pareamento de um canal novo às
+ * vezes termina em "logged_out" em vez de "connected". Causa: `loggedIn` no WuzAPI fica `false`
+ * por alguns segundos DURANTE o handshake do próprio WhatsApp (normal); se uma checagem de status
+ * (manual ou periódica) cair bem nessa janela, o resultado bruto do provider já vem como
+ * "logged_out" — e esse status é TERMINAL por design (`MESSAGING_CONNECTION_TERMINAL_STATUSES`),
+ * nunca mais re-checado sozinho pelo monitor periódico (`reconcileConnectionsHealth` só opera em
+ * `listAllActive()`), ficando preso pra sempre até uma ação manual.
+ *
+ * "logged_out" só é uma informação real quando existia algo pra deslogar — ou seja, quando a
+ * conexão JÁ pareou antes (tem `phoneNumber` e/ou já saiu de "connecting"). Para uma conexão que
+ * NUNCA pareou (`status` atual ainda é "connecting", sem `phoneNumber`), um "logged_out" bruto é
+ * só o handshake em andamento, nunca uma revogação de verdade — mantém "connecting" nesse caso.
+ */
+function reconcileLiveConnectionStatus(connection: MessagingConnection, live: NormalizedConnectionStatus): NormalizedConnectionStatus {
+  const neverPairedYet = connection.status === "connecting" && !connection.phoneNumber;
+  if (neverPairedYet && live.status === "logged_out") {
+    return { status: "connecting", phoneNumber: live.phoneNumber };
+  }
+  return live;
+}
+
 export type RefreshConnectionStatusInput = { tenantId: string; workspaceId: string; connectionId: string };
 
 /** Consulta o status real no gateway e reconcilia `messaging_connections` — mesma operação usada
@@ -206,7 +228,8 @@ export type RefreshConnectionStatusInput = { tenantId: string; workspaceId: stri
 export async function refreshConnectionStatus(deps: InboxUseCaseDeps, input: RefreshConnectionStatusInput): Promise<MessagingConnection> {
   const connection = await mustConnectionBelongToTenantAndWorkspace(deps, input.connectionId, input.tenantId, input.workspaceId);
   if (!connection.externalSessionId) return connection;
-  const status = await resolveProvider(deps, connection.provider).getConnectionStatus({ externalSessionId: connection.externalSessionId });
+  const live = await resolveProvider(deps, connection.provider).getConnectionStatus({ externalSessionId: connection.externalSessionId });
+  const status = reconcileLiveConnectionStatus(connection, live);
   return deps.connectionRepository.updateStatus(connection.id, { status: status.status, phoneNumber: status.phoneNumber, connectionHealth: "healthy" });
 }
 
@@ -277,11 +300,13 @@ export async function reconcileConnectionsHealth(deps: InboxUseCaseDeps): Promis
     // demanda no envio (`resolveProvider(deps, "instagram")`), nunca por um poll periódico aqui.
     if (connection.provider !== "wuzapi") continue;
     try {
-      const status = await resolveProvider(deps, connection.provider).getConnectionStatus({ externalSessionId: connection.externalSessionId });
+      const live = await resolveProvider(deps, connection.provider).getConnectionStatus({ externalSessionId: connection.externalSessionId });
       await deps.connectionRepository.recordHealthCheck(connection.id, { connectionHealth: "healthy", at });
       // Só reconcilia `status` em sucesso — nunca infere um novo status a partir de uma FALHA de
       // checagem (isso seria inventar informação que não temos: "não consegui perguntar" não é o
-      // mesmo que "a sessão caiu").
+      // mesmo que "a sessão caiu"). `reconcileLiveConnectionStatus` evita que o handshake do
+      // PRIMEIRO pareamento (loggedIn=false transitório) seja lido como logout real.
+      const status = reconcileLiveConnectionStatus(connection, live);
       if (status.status !== connection.status) {
         await deps.connectionRepository.updateStatus(connection.id, { status: status.status, phoneNumber: status.phoneNumber });
       }

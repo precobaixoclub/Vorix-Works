@@ -6,7 +6,7 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { Spinner } from "@/components/Spinner";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { useInboxModuleStatus } from "@/features/inbox/hooks";
+import { useInboxConnections, useInboxModuleStatus } from "@/features/inbox/hooks";
 import { ConnectionsTab } from "./connections-tab";
 import { ConversasHeader } from "./conversas-header";
 import { InboxTab } from "./inbox-tab";
@@ -23,6 +23,12 @@ export default function ConversasPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("inbox");
   const { data: status, isLoading: statusLoading } = useInboxModuleStatus();
+  // Achado real do usuário: quem abre Conversas pela primeira vez, sem nenhum canal CONECTADO
+  // ainda, não tinha nenhum sinal de que precisava ir em "Canais" conectar um número — só via uma
+  // lista vazia genérica. Precisa saber isso ANTES de decidir se mostra o Inbox normal ou o
+  // destaque abaixo, então busca aqui (não dentro de `InboxTab`).
+  const { data: connectionsData } = useInboxConnections(workspace.id);
+  const hasConnectedChannel = (connectionsData?.connections ?? []).some((connection) => connection.status === "connected");
 
   if (statusLoading) {
     return (
@@ -53,7 +59,20 @@ export default function ConversasPage() {
       <ConversasHeader tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
       <div className="min-h-0 flex-1">
         {activeTab === "inbox" ? (
-          <InboxTab workspaceId={workspace.id} />
+          connectionsData && !hasConnectedChannel ? (
+            // Achado real do usuário: "não está intuitivo que precisa clicar em Canais para
+            // conectar" — destaque central, nunca escondido atrás de uma lista vazia genérica.
+            <div className="flex h-full items-center justify-center px-4">
+              <EmptyState
+                icon={<span aria-hidden="true">🔌</span>}
+                title="Nenhum canal conectado ainda"
+                description="Para começar a atender pelo WhatsApp, conecte um número e escaneie o QR Code."
+                action={<Button onClick={() => setActiveTab("connections")}>Conectar canal</Button>}
+              />
+            </div>
+          ) : (
+            <InboxTab workspaceId={workspace.id} />
+          )
         ) : (
           <div className="h-full overflow-y-auto p-3 sm:p-6">
             <ConnectionsTab workspaceId={workspace.id} />

@@ -6,10 +6,11 @@ import { estimateGptImage1CostUsd, type OpenAiImageQuality } from "./gpt-image-1
 
 export type OpenAiCreativeImageProviderConfig = {
   modelId?: string;
-  /** Auditoria de custo — configurável para permitir um preset "econômico" (`"medium"`/`"low"`)
-   * sem duplicar este provider. `"high"` preserva o comportamento de sempre (padrão desde a
-   * primeira auditoria: "extremamente profissional" precisa do parâmetro pedido, não só de um
-   * prompt melhor). */
+  /** Auditoria de custo (pedido explícito do usuário: gasto de token "caminhão" por imagem) —
+   * default `"medium"` desde essa auditoria: ~4x mais barato que `"high"` em tokens de saída
+   * (`gpt-image-1-pricing.ts`), com qualidade ainda adequada pra a maioria das peças. `"high"`
+   * continua disponível passando explicitamente aqui, pra peças que realmente precisem do nível
+   * máximo de fidelidade — nunca mais o default silencioso. */
   quality?: OpenAiImageQuality;
 };
 
@@ -92,7 +93,7 @@ export class OpenAiCreativeImageProvider implements AIProviderPort {
     const modelId = request.model || this.profile.models[0].id;
     const imageAspectRatio = typeof request.context?.imageAspectRatio === "string" ? request.context.imageAspectRatio : undefined;
     const size = resolveOpenAiImageSize(imageAspectRatio);
-    const quality = this.config.quality ?? "high";
+    const quality = this.config.quality ?? "medium";
 
     const finalPrompt = buildCreativeEngineGuardedPrompt(request.prompt, {
       ...creativeGuard,

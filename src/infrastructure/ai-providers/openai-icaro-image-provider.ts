@@ -2,6 +2,7 @@ import type { AIProviderPort, AIProviderProfile, AIProviderRequest, AIProviderRe
 import type { AiMediaProviderAdapterPort } from "../../application/ports/ai-media-provider-adapter.port.js";
 import { fetchAsBuffer, resolveCropAwareCompositionHint, resolveOpenAiImageSize } from "./openai-image-technical-helpers.js";
 import { buildGuardedPrompt } from "./legacy-pedro-image-guard.js";
+import { estimateGptImage1CostUsd } from "./gpt-image-1-pricing.js";
 
 export type OpenAiIcaroImageProviderConfig = {
   modelId?: string;
@@ -83,6 +84,7 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
     const referenceImageUrl = typeof request.context?.referenceImageUrl === "string" ? request.context.referenceImageUrl.trim() : undefined;
     const referenceImageBuffer = referenceImageUrl ? await fetchAsBuffer(referenceImageUrl).catch(() => undefined) : undefined;
 
+    const quality = "high" as const;
     const images: Array<{ uri: string; mimeType: string }> = [];
     for (let index = 0; index < imageCount; index += 1) {
       const result = await this.mediaProvider.generate({
@@ -91,7 +93,7 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
         prompt: finalPrompt,
         tenantId,
         workspaceId,
-        params: { size, quality: "high", targetAspectRatio: imageAspectRatio, ...(referenceImageBuffer ? { referenceImageBuffer } : {}) },
+        params: { size, quality, targetAspectRatio: imageAspectRatio, ...(referenceImageBuffer ? { referenceImageBuffer } : {}) },
         timeoutMs: request.timeoutMs,
       });
       if (!result.ok) {
@@ -100,11 +102,23 @@ export class OpenAiIcaroImageProvider implements AIProviderPort {
       images.push({ uri: result.mediaUrl, mimeType: "image/png" });
     }
 
+    // Auditoria de custo (pedido explícito do usuário) — achado crítico: antes desta correção,
+    // `cost.estimated` era SEMPRE 0 aqui, então a geração de imagem (o passo mais caro do motor
+    // legado) nunca entrava em `icaro_ai_calls`. Mesma estimativa usada pelo motor GPT
+    // (`openai-creative-image-provider.ts`) — ver `gpt-image-1-pricing.ts` pra fonte dos números.
+    const perImageCostUsd = estimateGptImage1CostUsd({
+      size,
+      quality,
+      promptChars: finalPrompt.length,
+      hasReferenceImage: Boolean(referenceImageBuffer),
+    });
+    const totalCostUsd = perImageCostUsd * images.length;
+
     return {
       content: JSON.stringify({ images }),
       model: modelId,
       tokens: { input: 0, output: 0, total: 0 },
-      cost: { estimated: 0, currency: "USD" },
+      cost: { estimated: totalCostUsd, currency: "USD" },
     };
   }
 }

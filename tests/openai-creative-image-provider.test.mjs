@@ -96,14 +96,19 @@ test("OpenAiCreativeImageProvider: response.cost.estimated NUNCA é zero — ger
   assert.ok(response.cost.estimated > 0, `esperava custo > 0, veio ${response.cost.estimated}`);
 });
 
-test("OpenAiCreativeImageProvider: qualidade configurável (preset econômico) reduz o custo estimado sem mudar o padrão 'high'", async () => {
-  const highQuality = new OpenAiCreativeImageProvider(fakeMediaProvider());
-  const economicQuality = new OpenAiCreativeImageProvider(fakeMediaProvider(), { quality: "medium" });
+// Auditoria de token (pedido explícito do usuário: "gastava um caminhão de token pra criar uma
+// única imagem") — default mudou de "high" pra "medium" (~4x mais barato em tokens de saída, ver
+// `gpt-image-1-pricing.ts`); "high" continua disponível, mas só com opt-in explícito.
+test("OpenAiCreativeImageProvider: default de quality agora é 'medium' — 'high' só com opt-in explícito, e custa mais", async () => {
+  const media = fakeMediaProvider();
+  const defaultQuality = new OpenAiCreativeImageProvider(media);
+  const explicitHigh = new OpenAiCreativeImageProvider(fakeMediaProvider(), { quality: "high" });
 
-  const highResponse = await highQuality.execute(baseRequest({ imageAspectRatio: "4:5" }));
-  const economicResponse = await economicQuality.execute(baseRequest({ imageAspectRatio: "4:5" }));
+  const defaultResponse = await defaultQuality.execute(baseRequest({ imageAspectRatio: "4:5" }));
+  const highResponse = await explicitHigh.execute(baseRequest({ imageAspectRatio: "4:5" }));
 
-  assert.ok(economicResponse.cost.estimated < highResponse.cost.estimated);
+  assert.equal(media.calls[0].params.quality, "medium");
+  assert.ok(defaultResponse.cost.estimated < highResponse.cost.estimated);
 });
 
 test("OpenAiCreativeImageProvider: com imageCount > 1, o custo estimado é multiplicado pelo número real de imagens geradas", async () => {

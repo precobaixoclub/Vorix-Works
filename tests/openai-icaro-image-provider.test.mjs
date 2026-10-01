@@ -143,6 +143,29 @@ test("OpenAiIcaroImageProvider: sem authorizedBackgroundOnly, nenhuma regra de p
   assert.equal(media.calls[0].prompt.includes("REGRA DE PRODUTO IGUALMENTE OBRIGATÓRIA"), false);
 });
 
+// Auditoria de token (pedido explícito do usuário: "gastava um caminhão de token pra criar uma
+// única imagem") — achado crítico: `response.cost.estimated` era SEMPRE 0 neste motor legado,
+// então a geração de imagem (o passo mais caro) nunca entrava em `icaro_ai_calls`. Mesma correção
+// já aplicada no motor GPT (`openai-creative-image-provider.ts`).
+test("OpenAiIcaroImageProvider: response.cost.estimated NUNCA é zero — mesma correção de auditoria do motor GPT", async () => {
+  const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1 }));
+  const provider = new OpenAiIcaroImageProvider(media);
+
+  const response = await provider.execute(baseRequest());
+
+  assert.ok(response.cost.estimated > 0, `esperava custo > 0, veio ${response.cost.estimated}`);
+});
+
+test("OpenAiIcaroImageProvider: com imageCount > 1, o custo estimado é multiplicado pelo número real de imagens geradas", async () => {
+  const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1 }));
+  const provider = new OpenAiIcaroImageProvider(media);
+
+  const oneImage = await provider.execute(baseRequest({ imageCount: 1 }));
+  const threeImages = await provider.execute(baseRequest({ imageCount: 3 }));
+
+  assert.ok(Math.abs(threeImages.cost.estimated - oneImage.cost.estimated * 3) < 0.0001);
+});
+
 test("OpenAiIcaroImageProvider: as três guardas (texto, cor, fidelidade) coexistem no mesmo prompt final", async () => {
   const media = fakeMediaProvider(async () => ({ ok: true, mediaUrl: "https://x/img.png", billableUnits: 1, latencyMs: 1 }));
   const provider = new OpenAiIcaroImageProvider(media);

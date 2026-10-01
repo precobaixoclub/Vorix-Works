@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/Spinner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useAuth } from "@/contexts/auth-context";
+import { ApiError } from "@/lib/api-client";
 import { createInboxConnection, deleteInboxConnection, disconnectInboxConnection, getInboxConnectionQrCode, refreshInboxConnectionStatus, updateChannelRouting } from "@/features/inbox/api";
 import { useChannelRouting, useInboxConnections } from "@/features/inbox/hooks";
 import { useTeams } from "@/features/identity/hooks";
@@ -122,6 +123,15 @@ export function ConnectionsTab({ workspaceId }: { workspaceId: string }) {
       resetDeleteFlow();
       await mutate();
     } catch (cause) {
+      // Achado real do usuário: a lista pode ficar com um canal "fantasma" (já excluído em outra
+      // aba/sessão, ou por um clique duplo anterior) — o backend responde "não existe", mas o
+      // resultado final é exatamente o que o usuário queria (canal sumido). Trata como sucesso em
+      // vez de mostrar um erro confuso sobre algo que já foi resolvido.
+      if (cause instanceof ApiError && cause.code === "INBOX_CONNECTION_NOT_FOUND") {
+        resetDeleteFlow();
+        await mutate();
+        return;
+      }
       setActionError(cause instanceof Error ? cause.message : "Não foi possível excluir o canal.");
     } finally {
       setBusyConnectionId(undefined);

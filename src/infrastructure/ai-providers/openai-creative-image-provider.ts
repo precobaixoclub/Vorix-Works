@@ -1,7 +1,7 @@
 import type { AIProviderPort, AIProviderProfile, AIProviderRequest, AIProviderResponse } from "../../application/ports/ai-provider.port.js";
 import type { AiMediaProviderAdapterPort } from "../../application/ports/ai-media-provider-adapter.port.js";
 import { buildCreativeEngineGuardedPrompt, type CreativeEngineImageGuardInput } from "../../shared/utils/creative-engine-image-guard.js";
-import { fetchAsBuffer, resolveCropAwareCompositionHint, resolveOpenAiImageSize } from "./openai-image-technical-helpers.js";
+import { fetchAsBuffer, resolveCropAwareCompositionHint, resolveOpenAiImageSize, throwMediaGenerationFailure } from "./openai-image-technical-helpers.js";
 import { estimateGptImage1CostUsd, type OpenAiImageQuality } from "./gpt-image-1-pricing.js";
 
 export type OpenAiCreativeImageProviderConfig = {
@@ -118,7 +118,7 @@ export class OpenAiCreativeImageProvider implements AIProviderPort {
         timeoutMs: request.timeoutMs,
       });
       if (!result.ok) {
-        throw new Error(`OpenAI (${result.category}): ${result.message}`);
+        throwMediaGenerationFailure(result.category, result.message);
       }
       images.push({ uri: result.mediaUrl, mimeType: "image/png" });
     }

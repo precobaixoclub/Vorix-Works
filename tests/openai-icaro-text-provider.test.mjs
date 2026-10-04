@@ -70,3 +70,51 @@ test("OpenAiIcaroTextProvider: response_format json_object continua funcionando 
   assert.equal(capturedBody.response_format.type, "json_object");
   assert.ok(Array.isArray(capturedBody.messages[0].content));
 });
+
+// Achado real em produção (incidente de quota OpenAI): HTTP 429 cobre tanto rate limit
+// transitório (se resolve sozinho) quanto crédito/saldo da organização esgotado (nunca se resolve
+// sozinho) — confundir os dois fazia o Ícaro tentar de novo (retryable=true) contra um erro que
+// ia repetir idêntico. `quota_exhausted` precisa ser um `kind` DIFERENTE de `rate_limit`, e nunca
+// retryable.
+
+async function captureExecuteError(httpClient) {
+  const provider = new OpenAiIcaroTextProvider({ getApiKey: async () => "sk-test" }, httpClient);
+  try {
+    await provider.execute({ taskType: "analysis", prompt: "x", model: "", temperature: 0.5, maxTokens: 100, timeoutMs: 5000 });
+    throw new Error("esperava que execute() lançasse");
+  } catch (error) {
+    return error;
+  }
+}
+
+test("OpenAiIcaroTextProvider: 429 com credit_balance_exhausted vira kind='quota_exhausted', NUNCA retryable", async () => {
+  const error = await captureExecuteError(async () => jsonResponse(429, { error: { code: "credit_balance_exhausted", type: "insufficient_quota", message: "sem crédito" } }));
+  assert.equal(error.kind, "quota_exhausted");
+  assert.equal(error.retryable, false);
+  assert.doesNotMatch(error.message, /429/, "mensagem de quota esgotada nunca deveria parecer um erro HTTP genérico");
+});
+
+test("OpenAiIcaroTextProvider: 429 com insufficient_quota (sem credit_balance_exhausted) também vira 'quota_exhausted'", async () => {
+  const error = await captureExecuteError(async () => jsonResponse(429, { error: { type: "insufficient_quota", message: "sem crédito" } }));
+  assert.equal(error.kind, "quota_exhausted");
+  assert.equal(error.retryable, false);
+});
+
+test("OpenAiIcaroTextProvider: 429 SEM corpo de quota (rate limit de verdade) continua 'rate_limit', retryable", async () => {
+  const error = await captureExecuteError(async () => jsonResponse(429, { error: { code: "rate_limit_exceeded", message: "muitas requisições" } }));
+  assert.equal(error.kind, "rate_limit");
+  assert.equal(error.retryable, true);
+});
+
+test("OpenAiIcaroTextProvider: 401 continua classificado sem relação nenhuma com quota (regressão)", async () => {
+  const error = await captureExecuteError(async () => jsonResponse(401, { error: { message: "chave inválida" } }));
+  assert.notEqual(error.kind, "quota_exhausted");
+  assert.equal(error.kind, "provider_error");
+  assert.equal(error.retryable, false);
+});
+
+test("OpenAiIcaroTextProvider: 500 continua 'temporary', retryable (regressão)", async () => {
+  const error = await captureExecuteError(async () => jsonResponse(500, { error: { message: "erro interno" } }));
+  assert.equal(error.kind, "temporary");
+  assert.equal(error.retryable, true);
+});

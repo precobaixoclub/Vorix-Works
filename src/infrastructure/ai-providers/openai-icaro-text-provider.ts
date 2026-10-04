@@ -87,12 +87,25 @@ export class OpenAiIcaroTextProvider implements AIProviderPort {
       });
 
       if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        const error = new Error(`OpenAI respondeu ${response.status} ao Provider de texto do Ícaro. ${body}`.trim());
-        Object.assign(error, {
-          kind: response.status === 429 ? "rate_limit" : response.status >= 500 ? "temporary" : "provider_error",
-          retryable: response.status === 429 || response.status >= 500,
-        });
+        const bodyText = await response.text().catch(() => "");
+        // Achado real em produção (incidente de quota OpenAI): HTTP 429 cobre tanto rate limit
+        // transitório quanto crédito/saldo da organização esgotado (`error.code:
+        // "credit_balance_exhausted"` / `error.type: "insufficient_quota"`) — só o corpo distingue
+        // os dois. Tratar os dois como "rate_limit" fazia o Ícaro tentar de nov­o (retryable=true)
+        // contra um erro que NUNCA se resolve sozinho, desperdiçando a 2ª tentativa de JSON do
+        // plano/reparo. `quota_exhausted` nunca é retryable.
+        const parsedBody = (() => { try { return JSON.parse(bodyText) as { error?: { code?: string; type?: string } }; } catch { return undefined; } })();
+        const isQuotaExhausted = response.status === 429
+          && (parsedBody?.error?.code === "credit_balance_exhausted" || parsedBody?.error?.code === "insufficient_quota" || parsedBody?.error?.type === "insufficient_quota");
+        const error = new Error(isQuotaExhausted
+          ? "Crédito/quota da OpenAI esgotado."
+          : `OpenAI respondeu ${response.status} ao Provider de texto do Ícaro. ${bodyText}`.trim());
+        Object.assign(error, isQuotaExhausted
+          ? { kind: "quota_exhausted", retryable: false }
+          : {
+              kind: response.status === 429 ? "rate_limit" : response.status >= 500 ? "temporary" : "provider_error",
+              retryable: response.status === 429 || response.status >= 500,
+            });
         throw error;
       }
 

@@ -14,7 +14,13 @@ export type AIProviderFailureKind =
   | "timeout"
   | "rate_limit"
   | "invalid_request"
-  | "provider_error";
+  | "provider_error"
+  /** Achado real em produção (incidente de quota OpenAI): distinto de `"rate_limit"` de propósito
+   * — um rate limit normal é transitório (se resolve sozinho em segundos); crédito/saldo do
+   * provider esgotado NUNCA se resolve sozinho (precisa de intervenção financeira na conta do
+   * provider). Confundir os dois fazia o pipeline tentar de novo (gastando a 2ª tentativa de JSON
+   * do plano) contra um erro que nunca ia se resolver sozinho. Nunca retryable. */
+  | "quota_exhausted";
 
 export type AITokenUsage = {
   input: number;

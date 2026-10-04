@@ -485,6 +485,13 @@ function classifyError(error: unknown): ClassifiedAIError {
   const candidate = error as Partial<ClassifiedAIError> & { name?: string; kind?: string; retryable?: boolean; message?: string };
   const message = candidate?.message ?? "Erro desconhecido no Provider de IA.";
 
+  // `quota_exhausted` (crédito/saldo do provider esgotado) NUNCA é retryable, mesmo que algum
+  // caller upstream tenha marcado `retryable: true` por engano — diferente de rate limit
+  // transitório, nunca se resolve sozinho tentando de novo (ver `AIProviderFailureKind`).
+  if (candidate?.kind === "quota_exhausted") {
+    return { kind: "quota_exhausted", message, retryable: false };
+  }
+
   if (candidate?.kind === "temporary" || candidate?.kind === "rate_limit" || candidate?.kind === "invalid_request" || candidate?.kind === "provider_error") {
     return {
       kind: candidate.kind,

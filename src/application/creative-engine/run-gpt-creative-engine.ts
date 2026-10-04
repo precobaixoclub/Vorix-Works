@@ -209,7 +209,15 @@ async function requestCreativePlan(
     });
     track(response);
     lastResponse = response;
-    if (response.status !== "completed") continue;
+    if (response.status !== "completed") {
+      // Achado real em produção (incidente de quota OpenAI): quota/crédito esgotado NUNCA se
+      // resolve tentando de novo com o MESMO prompt — insistir só gastava a 2ª tentativa de JSON
+      // contra um erro que vai repetir idêntico. Aborta já na 1ª falha nesse caso específico
+      // (`isProviderQuotaExhausted`, abaixo); qualquer outro motivo de falha continua tentando de
+      // novo normalmente, comportamento inalterado.
+      if (isProviderQuotaExhausted(response)) break;
+      continue;
+    }
     try {
       const plan = parseCreativePlan(extractJson(String(response.content ?? ""), "GPT Creative Plan"));
       if (plan) return { plan, response };
@@ -218,6 +226,12 @@ async function requestCreativePlan(
     }
   }
   return { response: lastResponse };
+}
+
+/** Ver comentário em `requestCreativePlan` — mesmo sinal usado em todos os pontos do motor que
+ * decidem entre "tenta de novo" e "aborta já" (plano inicial, reparo, geração de imagem). */
+function isProviderQuotaExhausted(response: IcaroAIResponse | undefined): boolean {
+  return response?.error?.kind === "quota_exhausted";
 }
 
 // Achado ao vivo em produção (mesma classe de bug do plano inicial, ver `MAX_INITIAL_PLAN_JSON_ATTEMPTS`
@@ -236,8 +250,9 @@ async function requestRepairedPlan(
   executionId: string,
   correlationId: string,
   track: (response: IcaroAIResponse | undefined) => void,
-): Promise<CreativePlan | undefined> {
+): Promise<{ plan?: CreativePlan; response?: IcaroAIResponse }> {
   const repairPrompt = buildCreativePlanRepairPrompt(previousPlan, context, instructions);
+  let lastResponse: IcaroAIResponse | undefined;
   for (let jsonAttempt = 1; jsonAttempt <= MAX_REPAIR_JSON_ATTEMPTS; jsonAttempt++) {
     const repairResponse = await icaro.request({
       taskType: "analysis",
@@ -253,16 +268,21 @@ async function requestRepairedPlan(
       timeoutMs: 45_000,
     });
     track(repairResponse);
+    lastResponse = repairResponse;
     if (repairResponse.status === "completed") {
       try {
         const plan = parseCreativePlan(extractJson(String(repairResponse.content ?? ""), "GPT Creative Plan Repair"));
-        if (plan) return plan;
+        if (plan) return { plan, response: repairResponse };
       } catch {
         // tenta de novo (ou desiste, se for a última tentativa)
       }
+      // Ver comentário em `requestCreativePlan`/`isProviderQuotaExhausted` — mesma regra: quota
+      // esgotada nunca se resolve tentando de novo com o mesmo prompt.
+    } else if (isProviderQuotaExhausted(repairResponse)) {
+      break;
     }
   }
-  return undefined;
+  return { response: lastResponse };
 }
 
 /** Deriva a guarda mínima do motor GPT a partir do `creative_plan` já produzido — nunca a
@@ -410,7 +430,9 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
   );
   directorModel = planResponse?.model?.id;
   if (!initialPlan) {
-    return fail("Não foi possível obter um creative_plan válido do GPT.", "CREATIVE_PLAN_INVALID");
+    return isProviderQuotaExhausted(planResponse)
+      ? fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar a peça até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED")
+      : fail("Não foi possível obter um creative_plan válido do GPT.", "CREATIVE_PLAN_INVALID");
   }
 
   const screenshotAsset = context.assets.find((asset) => asset.role === "screenshot");
@@ -458,7 +480,9 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     track("imageGeneration", imageResponse);
     imageModel = imageResponse?.model?.id ?? imageModel;
     if (!uri) {
-      return fail("Ícaro não devolveu uma imagem gerada.", "IMAGE_GENERATION_FAILED", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
+      return isProviderQuotaExhausted(imageResponse)
+        ? fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar a imagem até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds })
+        : fail("Ícaro não devolveu uma imagem gerada.", "IMAGE_GENERATION_FAILED", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
     }
 
     let baseWithAssetsBuffer: Buffer;
@@ -626,17 +650,21 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
           return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, qualityGate, visualQualityScore, repairRounds, compositionSteps: textCompositionSteps });
         }
 
-        const repairedPlan = await requestRepairedPlan(deps.creativeBrain, plan, context, aestheticInstructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
-        if (!repairedPlan) {
-          return fail("Não foi possível obter um creative_plan de correção estética válido do GPT, mesmo após nova tentativa.", "CREATIVE_PLAN_REPAIR_INVALID", {
-            creativePlan: plan,
-            finalImagePrompt: imagePrompt,
-            qualityGate,
-            visualQualityScore,
-            repairRounds,
-            compositionSteps: textCompositionSteps,
-          });
+        const aestheticRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, aestheticInstructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
+        if (!aestheticRepair.plan) {
+          // Achado real em produção (incidente de quota OpenAI): "não foi possível obter um plano
+          // válido" soa como falha criativa (JSON malformado) — nunca como o que de fato aconteceu
+          // quando é quota/crédito esgotado. Código e mensagem distintos pro operador nunca
+          // confundir os dois motivos.
+          return isProviderQuotaExhausted(aestheticRepair.response)
+            ? fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar ou corrigir a peça até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED", {
+                creativePlan: plan, finalImagePrompt: imagePrompt, qualityGate, visualQualityScore, repairRounds, compositionSteps: textCompositionSteps,
+              })
+            : fail("Não foi possível obter um creative_plan de correção estética válido do GPT, mesmo após nova tentativa.", "CREATIVE_PLAN_REPAIR_INVALID", {
+                creativePlan: plan, finalImagePrompt: imagePrompt, qualityGate, visualQualityScore, repairRounds, compositionSteps: textCompositionSteps,
+              });
         }
+        const repairedPlan = aestheticRepair.plan;
 
         plan = repairedPlan;
         continue outerImageRound;
@@ -679,19 +707,19 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       // (achado ao vivo em produção, ver comentário na definição da função) — nunca conta como uma
       // rodada de reparo nova (o `repairAttempt` já foi incrementado acima, pra continuar contra o
       // limite de rounds normal).
-      const repairedPlan = await requestRepairedPlan(deps.creativeBrain, plan, context, routed.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
+      const gateRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, routed.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
 
-      if (!repairedPlan) {
-        return fail("Não foi possível obter um creative_plan de correção válido do GPT, mesmo após nova tentativa.", "CREATIVE_PLAN_REPAIR_INVALID", {
-          creativePlan: plan,
-          finalImagePrompt: imagePrompt,
-          qualityGate,
-          repairRounds,
-          compositionSteps: textCompositionSteps,
-        });
+      if (!gateRepair.plan) {
+        return isProviderQuotaExhausted(gateRepair.response)
+          ? fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar ou corrigir a peça até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED", {
+              creativePlan: plan, finalImagePrompt: imagePrompt, qualityGate, repairRounds, compositionSteps: textCompositionSteps,
+            })
+          : fail("Não foi possível obter um creative_plan de correção válido do GPT, mesmo após nova tentativa.", "CREATIVE_PLAN_REPAIR_INVALID", {
+              creativePlan: plan, finalImagePrompt: imagePrompt, qualityGate, repairRounds, compositionSteps: textCompositionSteps,
+            });
       }
 
-      plan = repairedPlan;
+      plan = gateRepair.plan;
       continue outerImageRound;
     }
   }

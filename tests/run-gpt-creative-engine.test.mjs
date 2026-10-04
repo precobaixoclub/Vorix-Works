@@ -255,6 +255,31 @@ test("runGptCreativeEngine: creative_plan malformado em AMBAS as tentativas é h
   assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 2);
 }));
 
+// Achado real em produção (incidente de quota OpenAI): "não foi possível obter um plano válido"
+// (CREATIVE_PLAN_INVALID) soa como falha criativa/JSON malformado — nunca como o que de fato
+// aconteceu quando é quota/crédito da OpenAI esgotado. Também nunca deveria gastar a 2ª tentativa
+// de JSON contra um erro que vai repetir idêntico (não é uma falha passageira do modelo).
+
+test("runGptCreativeEngine: quota/crédito da OpenAI esgotado na 1ª tentativa do plano aborta JÁ (nunca gasta a 2ª tentativa) com errorCode distinto", () => withFakeFetch(async () => {
+  const quotaExhausted = { status: "failed", model: {}, error: { kind: "quota_exhausted", message: "Crédito/quota da OpenAI esgotado.", retryable: false }, cost: { estimated: 0, currency: "USD" } };
+  // Só 1 item na fila de propósito — se o motor tentasse de novo, `fakeIcaro` lançaria "fila
+  // vazia" e este teste falharia, provando a ausência de uma 2ª tentativa.
+  const icaro = fakeIcaro({ analysis: [quotaExhausted] });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+  assert.equal(result.errorCode, "PROVIDER_QUOTA_EXHAUSTED");
+  assert.equal(result.publishable, false);
+  assert.doesNotMatch(result.error, /CREATIVE_PLAN_INVALID/);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 1);
+}));
+
+test("runGptCreativeEngine: quota/crédito da OpenAI esgotado na geração de imagem usa errorCode distinto de 'IMAGE_GENERATION_FAILED'", () => withFakeFetch(async () => {
+  const quotaExhausted = { status: "failed", model: {}, error: { kind: "quota_exhausted", message: "Crédito/quota da OpenAI esgotado.", retryable: false }, cost: { estimated: 0, currency: "USD" } };
+  const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [quotaExhausted] });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+  assert.equal(result.errorCode, "PROVIDER_QUOTA_EXHAUSTED");
+  assert.equal(result.publishable, false);
+}));
+
 test("runGptCreativeEngine: screenshot no contexto sem geometria no plano é hard failure ANTES de gerar imagem", () => withFakeFetch(async () => {
   const icaro = fakeIcaro({ analysis: [planResponse({ assetPlacements: [] })], image_generation: [imageResponse()] });
   const input = baseInput({ creativeContext: baseContext({ assets: [{ url: "https://x/screenshot.png", role: "screenshot", description: "" }] }) });

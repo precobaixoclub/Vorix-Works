@@ -195,6 +195,15 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
     await this.persistRun(request, creativeEngineRunId, result).catch(() => undefined);
 
     if (!result.publishable || result.error) {
+      // Achado real em produção (incidente de quota OpenAI): `result.error` é a mensagem INTERNA
+      // detalhada (já persistida por completo em `creativeEngineRunRepository` via `persistRun`
+      // acima, pra log/admin) — nunca deve vazar termos como "OpenAI"/"quota"/"crédito" pro
+      // tenant final. Mensagem genérica, nunca culpando o usuário, pra qualquer código que indique
+      // uma falha do PROVIDER (nunca do pedido do próprio usuário).
+      if (result.errorCode === "PROVIDER_QUOTA_EXHAUSTED") {
+        console.warn(`[gpt-creative-engine] provider=openai category=quota_exhausted operation=image_generation tenantId=${request.context.tenantId}`);
+        return failure("PROVIDER_QUOTA_EXHAUSTED", "Não foi possível gerar a imagem neste momento. Tente novamente mais tarde.", "internal");
+      }
       return failure(result.errorCode ?? "GPT_CREATIVE_ENGINE_FAILED", result.error ?? "O motor GPT não produziu uma peça publicável.", "invalid_output");
     }
 

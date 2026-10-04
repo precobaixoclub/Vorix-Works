@@ -86,6 +86,18 @@ function providerError(message = "Provider falhou") {
   return error;
 }
 
+// Achado real em produção (incidente de quota OpenAI): `retryable: true` setado por engano (ex.:
+// um provider que ainda confunde quota esgotada com rate limit transitório) nunca pode fazer o
+// Ícaro tentar de novo — crédito/saldo esgotado NUNCA se resolve sozinho tentando de novo com o
+// MESMO provider. `classifyError` precisa sobrescrever isso de propósito, nunca confiar cegamente
+// no que o provider mandou.
+function quotaExhaustedError(message = "Crédito/quota da OpenAI esgotado.") {
+  const error = new Error(message);
+  error.kind = "quota_exhausted";
+  error.retryable = true; // de propósito "errado" — testa que o Ícaro corrige mesmo assim
+  return error;
+}
+
 test("Ícaro seleciona Provider e Modelo corretos para geração de texto", async () => {
   const provider = new FakeAIProvider(createProviderProfile(), [
     { content: "texto gerado", model: "text-pro", tokens: { input: 12, output: 7 } },
@@ -180,6 +192,24 @@ test("Ícaro aplica retry quando a falha é temporária", async () => {
   assert.ok(events.list().some((event) => event.name === "AIRetry"));
   assert.ok(logger.list().some((entry) => entry.action === "RetryScheduled"));
   assert.equal(ledger.list()[0].retryCount, 1, "2 tentativas no total = 1 retry");
+});
+
+test("Ícaro NUNCA tenta de novo quando a falha é quota/crédito esgotado — mesmo com maxAttemptsPerProvider alto e retryable=true (errado) vindo do provider", async () => {
+  const provider = new FakeAIProvider(createProviderProfile(), [
+    quotaExhaustedError(),
+    { content: "nunca deveria chegar aqui", model: "text-pro", tokens: { input: 10, output: 5 } },
+  ]);
+  const icaro = new IcaroAIBrain({
+    providers: [provider],
+    retryPolicy: { maxAttemptsPerProvider: 3 },
+  });
+
+  const response = await icaro.request(createIcaroRequest());
+
+  assert.equal(response.status, "failed");
+  assert.equal(response.error.kind, "quota_exhausted");
+  assert.equal(response.error.retryable, false, "classifyError precisa sobrescrever o retryable=true vindo (por engano) do provider");
+  assert.equal(provider.calls.length, 1, "nunca deveria ter tentado uma 2ª vez contra um erro que vai repetir idêntico");
 });
 
 test("Ícaro usa fallback quando o Provider primário falha", async () => {

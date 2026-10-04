@@ -40,7 +40,14 @@ export type AiMediaGenerationFailureCategory =
   | "timeout"
   | "provider_unavailable"
   | "content_blocked"
-  | "internal_error";
+  | "internal_error"
+  /** Achado real em produção (incidente de quota OpenAI): HTTP 429 cobre DOIS casos bem diferentes
+   * na API da OpenAI — rate limit transitório (`rate_limited`, se resolve sozinho) e crédito/saldo
+   * da organização esgotado (`insufficient_quota`/`credit_balance_exhausted` no corpo do erro —
+   * nunca se resolve sozinho, exige adicionar crédito na conta). Nome deliberadamente diferente de
+   * `"quota_exceeded"` (já usado em `MediaGenerationService` para o crédito do TENANT/workspace
+   * dentro do Vorix — conceito totalmente diferente, nunca confundir os dois). */
+  | "quota_exhausted";
 
 export type AiMediaGenerationFailure = {
   ok: false;

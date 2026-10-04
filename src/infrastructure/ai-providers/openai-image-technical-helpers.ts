@@ -14,6 +14,31 @@ export async function fetchAsBuffer(url: string): Promise<Buffer> {
   return Buffer.from(arrayBuffer);
 }
 
+/**
+ * Achado real em produção (incidente de quota OpenAI): os dois providers de imagem (legado e
+ * motor GPT) jogavam fora a categoria estruturada de `AiMediaProviderAdapterPort.generate()`
+ * (`AiMediaGenerationFailureCategory`) ao virar um `Error` genérico pro `IcaroAIBrain` — a
+ * distinção entre "rate limit transitório" e "crédito/quota esgotado" (ou qualquer outra
+ * categoria) se perdia nessa ponte, e `classifyError` (icaro-brain.ts) sempre caía no fallback
+ * genérico `"provider_error"`. Esta função propaga a categoria real como `error.kind`, igual ao
+ * que `openai-icaro-text-provider.ts` já faz inline pras chamadas de texto.
+ */
+export function throwMediaGenerationFailure(category: string, message: string): never {
+  const error = new Error(`OpenAI (${category}): ${message}`);
+  const kindByCategory: Record<string, { kind: string; retryable: boolean }> = {
+    quota_exhausted: { kind: "quota_exhausted", retryable: false },
+    rate_limited: { kind: "rate_limit", retryable: true },
+    timeout: { kind: "timeout", retryable: true },
+    provider_unavailable: { kind: "temporary", retryable: true },
+    authentication_failed: { kind: "invalid_request", retryable: false },
+    content_blocked: { kind: "invalid_request", retryable: false },
+    invalid_request: { kind: "invalid_request", retryable: false },
+    not_configured: { kind: "invalid_request", retryable: false },
+  };
+  Object.assign(error, kindByCategory[category] ?? { kind: "provider_error", retryable: false });
+  throw error;
+}
+
 // `gpt-image-1` só aceita 3 tamanhos fixos (mais "auto"): quadrado, retrato e paisagem — nunca a
 // resolução exata que Sofia calcula por formato (`resolveAspectRatio`/`KNOWN_RESOLUTIONS`, ex.:
 // 1080x1920 para Story). Achado ao vivo: antes disto, TODA imagem saía "1024x1024" fixo, mesmo

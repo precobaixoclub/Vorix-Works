@@ -37,6 +37,13 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
   readonly descriptor: AiMediaProviderDescriptor;
   private cachedKey?: string;
   private cachedAt = 0;
+  // Auditoria/incidente de quota OpenAI — sinal de saúde LEVE (pedido explícito do usuário: "não
+  // quero chamada paga frequente só pra health check"). Nunca faz uma chamada nova só pra checar
+  // — só reflete o resultado da ÚLTIMA geração REAL que já ia acontecer de qualquer jeito (tráfego
+  // de produção), e volta a `false` sozinho assim que uma geração seguinte tiver sucesso. Consumido
+  // por `health()`, exibido no painel /admin/ai-providers (campo `health.ok`/`health.safeMessage`
+  // já existente — nenhuma tela nova precisou ser criada).
+  private lastKnownQuotaExhausted = false;
 
   constructor(private readonly config: OpenAiImageProviderConfig, private readonly httpClient: typeof fetch = fetch) {
     this.descriptor = {
@@ -57,6 +64,12 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
   }
 
   async generate(request: AiMediaGenerationRequest): Promise<AiMediaGenerationResult> {
+    const result = await this.generateInternal(request);
+    this.lastKnownQuotaExhausted = !result.ok && result.category === "quota_exhausted";
+    return result;
+  }
+
+  private async generateInternal(request: AiMediaGenerationRequest): Promise<AiMediaGenerationResult> {
     const startedAt = Date.now();
     const apiKey = await this.resolveApiKey();
     if (!apiKey) {
@@ -143,7 +156,11 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
 
   async health(): Promise<{ ok: boolean; safeMessage?: string }> {
     const apiKey = await this.resolveApiKey();
-    return { ok: Boolean(apiKey), safeMessage: apiKey ? undefined : "API key da OpenAI não configurada." };
+    if (!apiKey) return { ok: false, safeMessage: "API key da OpenAI não configurada." };
+    if (this.lastKnownQuotaExhausted) {
+      return { ok: false, safeMessage: "Atenção — quota/crédito indisponível (última geração falhou por falta de crédito na conta do provider)." };
+    }
+    return { ok: true };
   }
 }
 
@@ -158,9 +175,26 @@ function buildEditsFormData(input: { modelId: string; prompt: string; size: stri
   return formData;
 }
 
+// Achado real em produção (incidente de quota OpenAI): o Vorix classificava TODO HTTP 429 como
+// "Rate limit da OpenAI", mas a OpenAI usa o mesmo status 429 tanto para rate limit transitório
+// quanto para crédito/saldo da organização esgotado (`error.code: "credit_balance_exhausted"` /
+// `error.type: "insufficient_quota"`, confirmado contra a API real) — only o CORPO do erro
+// distingue os dois. Nunca tratar como o mesmo problema: um se resolve sozinho, o outro exige
+// adicionar crédito na conta OpenAI.
+const QUOTA_EXHAUSTED_ERROR_CODES = new Set(["credit_balance_exhausted", "insufficient_quota"]);
+
 async function classifyOpenAiError(response: Response): Promise<{ category: AiMediaGenerationFailureCategory; message: string }> {
   if (response.status === 401 || response.status === 403) return { category: "authentication_failed", message: "Credencial OpenAI inválida ou sem permissão." };
-  if (response.status === 429) return { category: "rate_limited", message: "Rate limit da OpenAI." };
+  if (response.status === 429) {
+    const body = await response.json().catch(() => undefined) as { error?: { code?: string; type?: string; message?: string } } | undefined;
+    if (body?.error?.code && QUOTA_EXHAUSTED_ERROR_CODES.has(body.error.code)) {
+      return { category: "quota_exhausted", message: "Crédito/quota da OpenAI esgotado." };
+    }
+    if (body?.error?.type === "insufficient_quota") {
+      return { category: "quota_exhausted", message: "Crédito/quota da OpenAI esgotado." };
+    }
+    return { category: "rate_limited", message: "Rate limit da OpenAI." };
+  }
   if (response.status >= 500) return { category: "provider_unavailable", message: "Erro interno da OpenAI." };
   if (response.status === 400) {
     const body = await response.json().catch(() => undefined) as { error?: { code?: string; message?: string; type?: string } } | undefined;

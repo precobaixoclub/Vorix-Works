@@ -492,8 +492,20 @@ export function buildCreativePlanPrompt(context: CreativeContext, chosenDirectio
     // desenhado livremente pelo modelo de imagem sem um retângulo determinístico, saiu cortado nas
     // bordas do canvas nas duas vezes, sempre reprovado e sem chance real de reparo (um novo plano
     // cai na mesma armadilha). `renderedBy: "renderer"` nunca corta: o compositor ajusta a fonte
-    // pra caber no retângulo. Virou o padrão pra TODO texto principal, não só factual.
-    "- `textZones`: para headline/subheadline/CTA/preço/desconto/URL/badge que devem aparecer na peça, defina o retângulo exato e se você (o modelo de imagem) vai desenhar o texto (`renderedBy: \"image_model\"`) ou se um renderer determinístico vai desenhá-lo depois com legibilidade perfeita e SEM risco de cortar nas bordas (`renderedBy: \"renderer\"`) — PREFIRA `\"renderer\"` para TODO texto principal (headline, subheadline, CTA, preço, desconto, URL, badge) por padrão. Só use `\"image_model\"` quando o texto for parte física e pequena de um cenário real dentro da composição (ex.: uma placa/vitrine ao fundo da cena), nunca para o headline/CTA principal da peça.",
+    // pra caber no retângulo. Virou o padrão pra TODO texto principal.
+    //
+    // Revisão (pedido explícito do usuário: a peça final parecia "caixa colada em cima de uma
+    // foto" comparado a pedir a mesma imagem direto num GPT de imagem — nunca um resultado
+    // integrado). O que causou a falha do headline NÃO se aplica igual a CTA/preço/desconto/URL/
+    // badge: são elementos menores, nunca o maior bloco de texto da peça, e desde aquele incidente
+    // a margem de segurança de borda passou a ser a EXATA área removida pelo corte automático
+    // (`computeCropSafeMarginPct`, abaixo), não mais um valor arbitrário — o fator que mais
+    // contribuiu pro corte na época já foi corrigido. Volta a permitir `"image_model"` pra esses
+    // elementos secundários (ganho visual real: tipografia integrada na cena, sem caixa colada),
+    // mas headline/subheadline CONTINUAM OBRIGATORIAMENTE `"renderer"` — são o texto maior/mais
+    // perto do topo da peça, exatamente onde a falha documentada aconteceu; nunca reabrir esse
+    // risco específico sem um motivo novo e testado.
+    "- `textZones`: para headline/subheadline/CTA/preço/desconto/URL/badge que devem aparecer na peça, defina o retângulo exato e se você (o modelo de imagem) vai desenhar o texto (`renderedBy: \"image_model\"`) ou se um renderer determinístico vai desenhá-lo depois com legibilidade perfeita e SEM risco de cortar nas bordas (`renderedBy: \"renderer\"`). Para `headline` e `subheadline`, SEMPRE use `\"renderer\"` — nunca `\"image_model\"`, mesmo que pareça seguro desta vez (são o texto maior da peça, mais perto das bordas, histórico real de corte). Para `cta`/`price`/`discount`/`url`/`badge`, PREFIRA `\"image_model\"` por padrão — são elementos menores e mais centrais, e desenhados pelo próprio modelo ficam integrados na cena (iluminação/tipografia natural) em vez de parecer uma caixa colada por cima; só use `\"renderer\"` para esses quando o texto for longo/denso demais pro modelo arriscar cortar.",
     "- Todo texto que você (modelo de imagem) desenhar precisa ter ALTO CONTRASTE com o fundo exato onde ele cai — nunca texto claro sobre fundo claro, nem texto escuro sobre fundo escuro. Se a área por trás do texto for de tom duvidoso, adicione um leve escurecimento/scrim ou uma cor de texto claramente oposta, nunca arrisque legibilidade.",
     // Achado ao vivo em produção: o retângulo do headline e o retângulo da logo se sobrepunham no
     // mesmo plano (a caixa do headline cobria parte da logo) — nenhuma regra proibia isso
@@ -608,12 +620,19 @@ function parseTextZones(value: unknown): CreativePlanTextZone[] | undefined {
     ) {
       return undefined;
     }
+    // Trava determinística, nunca só uma instrução de prompt: headline/subheadline são os únicos
+    // textZones que tiveram um incidente real documentado (corte na borda do canvas, 2x seguidas,
+    // sem reparo possível — ver comentário em `buildCreativePlanPrompt`). O prompt já pede
+    // `renderedBy: "renderer"` pra esses dois, mas o Director é um LLM e pode errar; força aqui
+    // pra nunca depender só dele seguir a instrução.
+    const renderedBy: CreativePlanTextZoneRenderer =
+      (record.kind === "headline" || record.kind === "subheadline") ? "renderer" : record.renderedBy;
     result.push({
       kind: record.kind,
       text: record.text,
       rect: record.rect,
       emphasis: record.emphasis,
-      renderedBy: record.renderedBy,
+      renderedBy,
       align: isCreativePlanTextZoneAlignment(record.align) ? record.align : undefined,
       backingStyle: isCreativePlanTextZoneBackingStyle(record.backingStyle) ? record.backingStyle : undefined,
     });
@@ -807,7 +826,15 @@ function textZoneDrawInstruction(zone: CreativePlanTextZone | undefined, label: 
   if (zone && zone.renderedBy === "renderer") {
     return `Deixe a região de ${zone.rect.xPct}%–${zone.rect.xPct + zone.rect.widthPct}% na horizontal e ${zone.rect.yPct}%–${zone.rect.yPct + zone.rect.heightPct}% na vertical completamente limpa, sem nenhum texto: o ${label.toLowerCase()} será desenhado por cima depois, com tipografia perfeita e legibilidade garantida. NÃO escreva o ${label.toLowerCase()} você mesmo, nem uma versão aproximada, fantasma ou estilizada dele.`;
   }
-  return `${label} (desenhar exatamente este texto${emphasisNote}): "${exactText}"`;
+  // `renderedBy: "image_model"` hoje só chega aqui pra zonas SECUNDÁRIAS (cta/price/discount/url/
+  // badge — headline/subheadline nunca, ver trava em `parseTextZones`). Repete o retângulo exato
+  // aqui também (não só no caso "renderer") — é a mesma defesa usada contra o corte na borda que
+  // causou o incidente original do headline, agora reaplicada no único caminho que ainda desenha
+  // texto livremente.
+  const rectHint = zone
+    ? ` dentro da região de ${zone.rect.xPct}%–${zone.rect.xPct + zone.rect.widthPct}% na horizontal e ${zone.rect.yPct}%–${zone.rect.yPct + zone.rect.heightPct}% na vertical, com folga — nunca encoste nas bordas dessa região nem do canvas`
+    : "";
+  return `${label} (desenhar exatamente este texto${emphasisNote}${rectHint}): "${exactText}"`;
 }
 
 export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: CreativeContext): string {

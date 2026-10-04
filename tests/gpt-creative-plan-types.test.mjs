@@ -254,12 +254,20 @@ test("buildCreativePlanPrompt: com fatos comerciais, lista exatamente os fatos c
 // Achado ao vivo em produção: a orientação anterior ("prefira image_model pro headline") fez o
 // headline sair cortado nas bordas do canvas em duas tentativas reais seguidas — texto desenhado
 // livremente pelo modelo de imagem não tem garantia de caber, ao contrário do renderer
-// determinístico. Agora "renderer" é o padrão pra todo texto principal, não só o factual.
+// determinístico. "renderer" virou obrigatório pra headline/subheadline (único ponto com
+// incidente real documentado). Revisão posterior (pedido do usuário: peça final parecia "caixa
+// colada em cima de foto" comparado a pedir a mesma imagem direto num GPT de imagem): CTA/preço/
+// desconto/URL/badge voltam a preferir "image_model" — são elementos menores/mais centrais, sem
+// o histórico de corte do headline, e integrados na cena evitam o efeito de caixa colada.
 
-test("buildCreativePlanPrompt: instrui preferir renderedBy='renderer' por padrão pra todo texto principal, incluindo headline", () => {
+test("buildCreativePlanPrompt: headline/subheadline são sempre renderedBy='renderer' (nunca image_model) — único ponto com incidente real de corte", () => {
   const prompt = buildCreativePlanPrompt(sampleContext());
-  assert.match(prompt, /PREFIRA `"renderer"` para TODO texto principal/);
-  assert.match(prompt, /nunca para o headline\/CTA principal da peça/);
+  assert.match(prompt, /Para `headline` e `subheadline`, SEMPRE use `"renderer"`/);
+});
+
+test("buildCreativePlanPrompt: CTA/preço/desconto/URL/badge preferem renderedBy='image_model' por padrão — evita o efeito de caixa colada", () => {
+  const prompt = buildCreativePlanPrompt(sampleContext());
+  assert.match(prompt, /Para `cta`\/`price`\/`discount`\/`url`\/`badge`, PREFIRA `"image_model"` por padrão/);
 });
 
 // Auditoria "motor de geração de criativos" — achado ao vivo: texto de peças finais trazia
@@ -436,17 +444,35 @@ test("buildImageGenerationPromptFromPlan: com TODOS os textos autorizados sendo 
   assert.match(imagePrompt, /NUNCA escreva NENHUM texto além do que já foi instruído acima/);
 });
 
-test("buildImageGenerationPromptFromPlan: headline/cta com renderedBy='image_model' continua instruindo o modelo a desenhar o texto exato", () => {
-  const context = sampleContext();
+// Revisão (pedido do usuário): CTA/preço/desconto/URL/badge voltam a preferir "image_model" —
+// nunca headline/subheadline, que têm o incidente real de corte documentado acima. A trava é
+// determinística (`parseTextZones`), nunca só uma instrução de prompt que o Director possa ignorar.
+
+test("parseCreativePlan: headline/subheadline SEMPRE vira renderedBy='renderer', mesmo que o JSON bruto peça 'image_model' (trava determinística, não confia só no Director)", () => {
   const plan = parseCreativePlan(
     samplePlanJson({
       textZones: [
         { kind: "headline", text: "TODAS AS OFERTAS EM UM SÓ SITE", rect: { xPct: 5, yPct: 5, widthPct: 90, heightPct: 20 }, emphasis: "primary", renderedBy: "image_model" },
+        { kind: "subheadline", text: "Compare preços em segundos", rect: { xPct: 5, yPct: 28, widthPct: 90, heightPct: 10 }, emphasis: "secondary", renderedBy: "image_model" },
+        { kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "image_model" },
       ],
     }),
   );
+  assert.equal(plan.textZones.find((zone) => zone.kind === "headline").renderedBy, "renderer");
+  assert.equal(plan.textZones.find((zone) => zone.kind === "subheadline").renderedBy, "renderer");
+  assert.equal(plan.textZones.find((zone) => zone.kind === "cta").renderedBy, "image_model", "cta nunca é forçado — só headline/subheadline têm o incidente documentado");
+});
+
+test("buildImageGenerationPromptFromPlan: CTA com renderedBy='image_model' instrui o modelo a desenhar o texto exato, dentro do retângulo exato (defesa contra corte de borda)", () => {
+  const context = sampleContext();
+  const plan = parseCreativePlan(
+    samplePlanJson({
+      textZones: [{ kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "image_model" }],
+    }),
+  );
   const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
-  assert.match(imagePrompt, /"TODAS AS OFERTAS EM UM SÓ SITE"/);
+  assert.match(imagePrompt, /"ACESSE AGORA"/);
+  assert.match(imagePrompt, /dentro da região de 10%–90% na horizontal e 80%–90% na vertical, com folga/);
 });
 
 test("buildImageGenerationPromptFromPlan: com brandColors configurado, repete a paleta como obrigatória NO prompt que gera a imagem (nunca só no prompt do plano, um passo antes)", () => {

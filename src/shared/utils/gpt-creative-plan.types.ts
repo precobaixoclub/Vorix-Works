@@ -158,8 +158,12 @@ export type CreativePlanTextZoneBackingStyle = (typeof CREATIVE_PLAN_TEXT_ZONE_B
 
 /** Uma zona de texto do plano — `renderedBy: "renderer"` é executada pelo compositor
  * determinístico (`render-creative-plan-text-zones.ts`, Satori+sharp, legibilidade perfeita);
- * `renderedBy: "image_model"` é desenhada pelo próprio modelo de imagem dentro da cena. O
- * renderer NUNCA decide qual dos dois — só executa o que o plano já decidiu.
+ * `renderedBy: "image_model"` é desenhada pelo próprio modelo de imagem dentro da cena. Desde a
+ * Rodada 4 (benchmark de qualidade criativa — corrupção ortográfica e nome de marca alucinado
+ * confirmados em texto `image_model`), `parseTextZones` SEMPRE força `"renderer"`,
+ * independentemente do que o JSON bruto do Director pediu — `"image_model"` permanece no
+ * vocabulário do schema (compat/histórico), mas nunca é o valor final de um plano parseado. O
+ * renderer NUNCA decide isso sozinho — só executa o que o plano (já coerido) determina.
  *
  * Auditoria "qualidade visual e direção de arte" — achado ao vivo: antes de `align`/`backingStyle`
  * existirem, TODA zona `renderedBy: "renderer"` saía com o MESMO tratamento visual fixo
@@ -273,6 +277,21 @@ export type CreativePlan = {
    * que não apareça (`MISSING_REQUIRED_TEXT`) — comparação determinística contra o artefato
    * final, nunca um julgamento subjetivo solto. */
   allowedRenderedTexts: string[];
+  /**
+   * Rodada 4 (benchmark de qualidade criativa, achado confirmado 2x) — dos `confirmedFacts`
+   * disponíveis no contexto, os que ESTA peça decidiu que precisam aparecer visivelmente no
+   * resultado final (preço, parcelamento, desconto, CTA obrigatório). Nunca todos os fatos
+   * disponíveis automaticamente — `availableFacts` (= `CreativeContext.confirmedFacts`) e
+   * `requiredRenderedFacts` são conceitos DIFERENTES: um fato pode estar confirmado e disponível
+   * sem que esta peça específica precise exibi-lo (ex.: peça institucional que só menciona a marca,
+   * sem citar preço). Cada item aqui precisa corresponder a um trecho contido em algum texto
+   * renderável (`headline`/`subheadline`/`cta`/`textZones[].text`) — um fato "obrigatório" que não
+   * tem nenhum texto planejado para exibi-lo é um plano inconsistente (ver `parseCreativePlan`). O
+   * quality gate (`evaluate-creative-quality-gate.ts`) usa esta lista para reprovar objetivamente
+   * uma peça publicada sem um fato que o próprio plano assumiu como obrigatório — achado ao vivo no
+   * benchmark: um preço confirmado e com textZone própria ainda assim saiu ausente da imagem final,
+   * sem nenhum check reprovando isso antes desta correção. */
+  requiredRenderedFacts: string[];
   visualDirection: string;
   compositionIntent: string;
   /** Auditoria "qualidade visual e direção de arte" — ver `CreativePlanArtDirection`. Decisões
@@ -301,7 +320,7 @@ export type CreativePlan = {
 export const CREATIVE_PLAN_RESPONSE_SCHEMA_HINT =
   '{"objective": "...", "angle": "...", "targetAudience": "...", "title": "...", "description": "...", ' +
   '"headline": "...", "subheadline": "...", ' +
-  '"cta": "...", "allowedRenderedTexts": ["..."], "visualDirection": "...", "compositionIntent": "...", ' +
+  '"cta": "...", "allowedRenderedTexts": ["..."], "requiredRenderedFacts": ["..."], "visualDirection": "...", "compositionIntent": "...", ' +
   '"artDirection": {"concept": "...", "visualFocus": "...", "elementHierarchy": ["..."], "primaryMassPct": 0, ' +
   '"contrastStrategy": "...", "chromaticDirection": "...", "atmosphere": "...", "backgroundTreatment": "...", ' +
   '"productTextRelationship": "...", "avoidedCliches": ["..."], "justifiedCliches": ["..."]}, ' +
@@ -460,7 +479,16 @@ export function buildCreativePlanPrompt(context: CreativeContext, chosenDirectio
     // `allowedRenderedTexts` separa rigidamente o que é TEXTO REAL (vai virar pixels) do que é
     // INSTRUÇÃO INTERNA (visualDirection/styleNotes/compositionIntent/rationale/objective/angle/
     // targetAudience/title/description — nenhum desses pode virar texto visível).
-    "- `allowedRenderedTexts`: array com EXATAMENTE os textos que podem aparecer como pixels legíveis na peça — sempre um eco literal de `headline`, `subheadline` (se houver) e `cta`, mais o `text` de cada item de `textZones`. NUNCA inclua aqui, nem deixe aparecer na imagem, nenhuma paráfrase, rótulo técnico, nome de campo ou frase descritiva (\"headline\", \"CTA\", \"texto de destaque\", \"call to action\", \"placeholder\") — esses são nomes de CAMPO do seu próprio JSON, nunca conteúdo visual. Todo texto que não estiver literalmente nesta lista é uma falha grave da peça.",
+    "- `allowedRenderedTexts`: array com EXATAMENTE os textos que podem aparecer como pixels legíveis na peça — sempre um eco literal de `headline`, `subheadline` (se houver) e `cta` (quando houver CTA — peças institucionais/sem venda direta podem ter `cta: \"\"`, e nesse caso NÃO inclua string vazia aqui), mais o `text` de cada item de `textZones`. NUNCA inclua aqui, nem deixe aparecer na imagem, nenhuma paráfrase, rótulo técnico, nome de campo ou frase descritiva (\"headline\", \"CTA\", \"texto de destaque\", \"call to action\", \"placeholder\") — esses são nomes de CAMPO do seu próprio JSON, nunca conteúdo visual. Todo texto que não estiver literalmente nesta lista é uma falha grave da peça.",
+    // Rodada 4 — `cta` pode legitimamente ser `""`: nem toda peça tem venda direta (institucional,
+    // branding, "sem CTA" é uma decisão válida, não uma omissão). Antes desta correção o plano
+    // inteiro era rejeitado sempre que `cta` vinha vazio, porque nenhuma string vazia pode constar
+    // em `allowedRenderedTexts` — bug confirmado 2x no benchmark, reprovava 100% das peças
+    // institucionais antes mesmo da imagem ser gerada.
+    "- `cta` pode ser uma string vazia (`\"\"`) quando esta peça genuinamente NÃO tem uma ação comercial direta (ex.: institucional, branding, construção de marca) — isso é válido e esperado, nunca invente um CTA só para preencher o campo.",
+    // Rodada 4 (benchmark de qualidade criativa) — distinção `availableFacts` vs
+    // `requiredRenderedFacts`: nem todo fato confirmado precisa aparecer visualmente; a peça decide.
+    "- `requiredRenderedFacts`: dos fatos comerciais CONFIRMADOS listados acima (`availableFacts`), liste APENAS os que ESTA peça decidiu que precisam aparecer de forma legível no resultado final (ex.: um preço que é o motivo da peça existir). Fatos confirmados disponíveis mas irrelevantes para este objetivo específico NÃO entram aqui — isso evita poluição visual. Cada item precisa ser um trecho literal que também aparece em `headline`, `subheadline`, `cta` ou em algum `textZones[].text` — nunca declare um fato obrigatório sem também planejar o texto que vai exibi-lo. Lista vazia é o caminho normal quando nenhum fato comercial precisa ser citado nesta peça (ex.: institucional).",
     "- `visualDirection`/`styleNotes`/`compositionIntent`/`rationale`/`objective`/`angle`/`targetAudience`/`title`/`description` são só para SEU planejamento interno e para o modelo de imagem entender atmosfera/composição — nenhuma palavra desses campos pode ser desenhada como texto na peça final.",
     // Auditoria "qualidade visual e direção de arte" — achado ao vivo: sem uma estrutura forçando
     // concretude, `visualDirection`/`styleNotes` viravam frases genéricas e não-reproduzíveis
@@ -487,26 +515,17 @@ export function buildCreativePlanPrompt(context: CreativeContext, chosenDirectio
     // vácuo" sem declarar intenção de distribuição.
     "- `layoutPlan`: declare pelo menos uma zona de cada tipo relevante pra esta peça (`hero` para o foco visual principal — produto/screenshot real ou o conceito central; `headline`; `cta`; `logo`; `support` para elementos secundários se houver; `negativeSpace` para pelo menos uma área de respiro REAL, sem elemento nenhum dentro, com espaço suficiente pra a composição não parecer congestionada). Cada zona leva um `rationale` curto — nunca \"porque sim\". As zonas de `layoutPlan` guiam `assetPlacements`/`textZones`, mas a geometria final de cada elemento renderizável continua sendo decidida ali, não aqui.",
     "- `assetPlacements`: para cada asset REAL (produto/screenshot/logo) da lista acima, defina a geometria exata (retângulo em percentual do canvas final, 0-100) de onde ele vai entrar na composição — essa geometria será usada por composição determinística depois, então precisa ser definida ANTES da imagem existir, nunca improvisada depois.",
-    // Achado ao vivo em produção: a orientação anterior ("prefira image_model pro headline") deu
-    // errado nas duas primeiras tentativas reais após este pipeline entrar no ar — o headline,
-    // desenhado livremente pelo modelo de imagem sem um retângulo determinístico, saiu cortado nas
-    // bordas do canvas nas duas vezes, sempre reprovado e sem chance real de reparo (um novo plano
-    // cai na mesma armadilha). `renderedBy: "renderer"` nunca corta: o compositor ajusta a fonte
-    // pra caber no retângulo. Virou o padrão pra TODO texto principal.
-    //
-    // Revisão (pedido explícito do usuário: a peça final parecia "caixa colada em cima de uma
-    // foto" comparado a pedir a mesma imagem direto num GPT de imagem — nunca um resultado
-    // integrado). O que causou a falha do headline NÃO se aplica igual a CTA/preço/desconto/URL/
-    // badge: são elementos menores, nunca o maior bloco de texto da peça, e desde aquele incidente
-    // a margem de segurança de borda passou a ser a EXATA área removida pelo corte automático
-    // (`computeCropSafeMarginPct`, abaixo), não mais um valor arbitrário — o fator que mais
-    // contribuiu pro corte na época já foi corrigido. Volta a permitir `"image_model"` pra esses
-    // elementos secundários (ganho visual real: tipografia integrada na cena, sem caixa colada),
-    // mas headline/subheadline CONTINUAM OBRIGATORIAMENTE `"renderer"` — são o texto maior/mais
-    // perto do topo da peça, exatamente onde a falha documentada aconteceu; nunca reabrir esse
-    // risco específico sem um motivo novo e testado.
-    "- `textZones`: para headline/subheadline/CTA/preço/desconto/URL/badge que devem aparecer na peça, defina o retângulo exato e se você (o modelo de imagem) vai desenhar o texto (`renderedBy: \"image_model\"`) ou se um renderer determinístico vai desenhá-lo depois com legibilidade perfeita e SEM risco de cortar nas bordas (`renderedBy: \"renderer\"`). Para `headline` e `subheadline`, SEMPRE use `\"renderer\"` — nunca `\"image_model\"`, mesmo que pareça seguro desta vez (são o texto maior da peça, mais perto das bordas, histórico real de corte). Para `cta`/`price`/`discount`/`url`/`badge`, PREFIRA `\"image_model\"` por padrão — são elementos menores e mais centrais, e desenhados pelo próprio modelo ficam integrados na cena (iluminação/tipografia natural) em vez de parecer uma caixa colada por cima; só use `\"renderer\"` para esses quando o texto for longo/denso demais pro modelo arriscar cortar.",
-    "- Todo texto que você (modelo de imagem) desenhar precisa ter ALTO CONTRASTE com o fundo exato onde ele cai — nunca texto claro sobre fundo claro, nem texto escuro sobre fundo escuro. Se a área por trás do texto for de tom duvidoso, adicione um leve escurecimento/scrim ou uma cor de texto claramente oposta, nunca arrisque legibilidade.",
+    // Histórico: a orientação de Rodada 2/3 preferia `"image_model"` para CTA/preço/desconto/URL/
+    // badge (ganho visual de integração, evitando "caixa colada"). Revisão de Rodada 4 (benchmark
+    // de qualidade criativa, 10 cenários reais Vorix vs. GPT direto, achado confirmado 2x):
+    // corrupção ortográfica recorrente em texto desenhado pelo modelo ("Duracad", "necessidada",
+    // "creidito") e um nome de marca inteiro alucinado errado ("ANCORA SAVITAL" em vez de "Âncora
+    // Capital") — inaceitável para texto comercial em produção. Decisão: `renderedBy` é sempre
+    // `"renderer"` agora, PARA TODO textZone — `parseTextZones` força isso deterministicamente
+    // (nunca confia só nesta instrução), mas o campo continua existindo no schema de resposta.
+    "- `textZones`: para headline/subheadline/CTA/preço/desconto/URL/badge que devem aparecer na peça, defina o retângulo exato. SEMPRE use `renderedBy: \"renderer\"` para TODO texto comercial — nunca `\"image_model\"`, mesmo que pareça seguro desta vez. Motivo: texto desenhado pelo modelo de imagem comete erros ortográficos e pode até errar o nome da própria marca; um renderer determinístico tem legibilidade perfeita e nunca erra uma letra. Você (modelo de imagem) é responsável pelo CONCEITO VISUAL desta região — fotografia, cenário, iluminação, composição ao redor — nunca pelo texto exato.",
+    "- Dentro de cada retângulo de `textZone`, use `backingStyle` (`\"scrim\"`, `\"solid\"` ou `\"none\"`) e `align` para o texto parecer PARTE da composição, nunca uma caixa genérica colada por cima — use `\"none\"` sempre que a área por trás já tiver contraste suficiente por conta própria (ex.: uma região de cor sólida conhecida do próprio fundo), reservando `\"scrim\"`/`\"solid\"` para quando o fundo real daquela região for imprevisível ou de tom duvidoso.",
+    "- Garanta ALTO CONTRASTE em cada região de `textZone`: mesmo sem desenhar o texto você mesmo, a composição de fundo exata atrás de onde o texto será aplicado depois precisa ter tom consistente o bastante para legibilidade — nunca texto claro sobre fundo claro, nem texto escuro sobre fundo escuro.",
     // Achado ao vivo em produção: o retângulo do headline e o retângulo da logo se sobrepunham no
     // mesmo plano (a caixa do headline cobria parte da logo) — nenhuma regra proibia isso
     // explicitamente antes.
@@ -620,13 +639,21 @@ function parseTextZones(value: unknown): CreativePlanTextZone[] | undefined {
     ) {
       return undefined;
     }
-    // Trava determinística, nunca só uma instrução de prompt: headline/subheadline são os únicos
-    // textZones que tiveram um incidente real documentado (corte na borda do canvas, 2x seguidas,
-    // sem reparo possível — ver comentário em `buildCreativePlanPrompt`). O prompt já pede
-    // `renderedBy: "renderer"` pra esses dois, mas o Director é um LLM e pode errar; força aqui
-    // pra nunca depender só dele seguir a instrução.
-    const renderedBy: CreativePlanTextZoneRenderer =
-      (record.kind === "headline" || record.kind === "subheadline") ? "renderer" : record.renderedBy;
+    // Rodada 4 (benchmark de qualidade criativa) — revisão da decisão de Rodada 2/3: o benchmark
+    // real (10 cenários, Vorix vs. GPT direto) confirmou que texto comercial desenhado pelo modelo
+    // de imagem (`renderedBy: "image_model"`) sai com corrupção ortográfica recorrente (cenários
+    // 02/08: "Duracad", "necessidada", "creidito") e um nome de marca inteiro alucinado errado
+    // (cenário 02: "ANCORA SAVITAL" em vez de "Âncora Capital") — inaceitável para texto comercial
+    // em produção. TODO textZone agora é SEMPRE `renderedBy: "renderer"`, não só headline/
+    // subheadline — trava determinística, nunca só uma instrução de prompt que o Director possa
+    // ignorar (mesmo princípio já usado pra headline/subheadline desde o incidente de corte de
+    // borda). O modelo de imagem passa a ser responsável só por conceito visual/fotografia/
+    // cenário/produto/iluminação/composição — nunca por texto comercial exato (ver
+    // `buildCreativePlanPrompt`). `backingStyle`/`align` (Rodada 2) continuam dando ao Director
+    // controle real sobre o tratamento visual do texto — a decisão de NUNCA usar `image_model` para
+    // texto comercial não reabre o "sticker look" da Rodada 1, porque o renderer já sabe variar
+    // alinhamento e fundo (scrim/solid/none) por zona, em vez de um bloco fixo igual pra tudo.
+    const renderedBy: CreativePlanTextZoneRenderer = "renderer";
     result.push({
       kind: record.kind,
       text: record.text,
@@ -736,6 +763,25 @@ function parseAllowedRenderedTexts(value: unknown): string[] | undefined {
   return result;
 }
 
+/** Rodada 4 (benchmark de qualidade criativa) — `undefined` (campo ausente, plano antigo) vira
+ * lista vazia, nunca rejeita. Cada item precisa ser uma string não-vazia e precisa corresponder a
+ * um trecho CONTIDO em algum texto que de fato vai ser renderizado (`allowedRenderedTexts`) — um
+ * fato "obrigatório" sem nenhum texto planejado pra exibi-lo é um plano auto-inconsistente, rejeita
+ * o plano inteiro (mesma filosofia estrita de `assetPlacements`/`textZones`: nunca descarta
+ * silenciosamente só o item ruim). */
+function parseRequiredRenderedFacts(value: unknown, allowedRenderedTexts: readonly string[]): string[] | undefined {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return undefined;
+  const result: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string" || !item.trim()) return undefined;
+    const hasCorrespondingText = allowedRenderedTexts.some((text) => text.includes(item));
+    if (!hasCorrespondingText) return undefined;
+    result.push(item);
+  }
+  return result;
+}
+
 /** Parser tolerante — nunca lança; devolve `undefined` em qualquer entrada malformada (mesmo
  * padrão best-effort do resto do pipeline de visão/texto do Vorix). Campos ausentes recebem
  * valores neutros nunca inventados como "preenchidos". Exceção deliberada: `assetPlacements`/
@@ -767,7 +813,16 @@ export function parseCreativePlan(raw: string): CreativePlan | undefined {
     // confiável.
     const allowedRenderedTexts = parseAllowedRenderedTexts(parsed.allowedRenderedTexts);
     if (allowedRenderedTexts === undefined) return undefined;
-    if (!allowedRenderedTexts.includes(parsed.headline) || !allowedRenderedTexts.includes(parsed.cta)) return undefined;
+    if (!allowedRenderedTexts.includes(parsed.headline)) return undefined;
+    // Rodada 4 (benchmark de qualidade criativa) — bug confirmado 2x: `cta: ""` é uma decisão
+    // VÁLIDA (peça institucional/sem venda direta), mas uma string vazia nunca pode constar em
+    // `allowedRenderedTexts` (ver `parseAllowedRenderedTexts`) — a checagem antiga exigia
+    // `allowedRenderedTexts.includes("")`, impossível de satisfazer, reprovando 100% dessas peças
+    // antes mesmo de gerar imagem. Só exige presença na lista quando `cta` não é vazio.
+    if (parsed.cta.trim() !== "" && !allowedRenderedTexts.includes(parsed.cta)) return undefined;
+
+    const requiredRenderedFacts = parseRequiredRenderedFacts(parsed.requiredRenderedFacts, allowedRenderedTexts);
+    if (requiredRenderedFacts === undefined) return undefined;
 
     // Auditoria "qualidade visual e direção de arte" — mesma filosofia estrita: sem artDirection
     // concreta (ou com qualquer campo sendo só uma frase vaga banida), o plano inteiro é rejeitado
@@ -787,6 +842,7 @@ export function parseCreativePlan(raw: string): CreativePlan | undefined {
       subheadline: typeof parsed.subheadline === "string" && parsed.subheadline.trim() ? parsed.subheadline : undefined,
       cta: parsed.cta,
       allowedRenderedTexts,
+      requiredRenderedFacts,
       visualDirection: typeof parsed.visualDirection === "string" ? parsed.visualDirection : "",
       compositionIntent: typeof parsed.compositionIntent === "string" ? parsed.compositionIntent : "",
       artDirection,
@@ -826,11 +882,11 @@ function textZoneDrawInstruction(zone: CreativePlanTextZone | undefined, label: 
   if (zone && zone.renderedBy === "renderer") {
     return `Deixe a região de ${zone.rect.xPct}%–${zone.rect.xPct + zone.rect.widthPct}% na horizontal e ${zone.rect.yPct}%–${zone.rect.yPct + zone.rect.heightPct}% na vertical completamente limpa, sem nenhum texto: o ${label.toLowerCase()} será desenhado por cima depois, com tipografia perfeita e legibilidade garantida. NÃO escreva o ${label.toLowerCase()} você mesmo, nem uma versão aproximada, fantasma ou estilizada dele.`;
   }
-  // `renderedBy: "image_model"` hoje só chega aqui pra zonas SECUNDÁRIAS (cta/price/discount/url/
-  // badge — headline/subheadline nunca, ver trava em `parseTextZones`). Repete o retângulo exato
-  // aqui também (não só no caso "renderer") — é a mesma defesa usada contra o corte na borda que
-  // causou o incidente original do headline, agora reaplicada no único caminho que ainda desenha
-  // texto livremente.
+  // Rodada 4: `parseTextZones` sempre força `renderedBy: "renderer"` — este branch
+  // (`"image_model"`) é inalcançável a partir de um plano parseado em produção, mantido só como
+  // caminho defensivo caso uma zona chegue aqui construída fora do parser (ex.: fixture de teste
+  // legado). Repete o retângulo exato aqui também, pela mesma razão histórica (defesa contra corte
+  // na borda).
   const rectHint = zone
     ? ` dentro da região de ${zone.rect.xPct}%–${zone.rect.xPct + zone.rect.widthPct}% na horizontal e ${zone.rect.yPct}%–${zone.rect.yPct + zone.rect.heightPct}% na vertical, com folga — nunca encoste nas bordas dessa região nem do canvas`
     : "";
@@ -885,7 +941,9 @@ export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: 
   }
   lines.push(textZoneDrawInstruction(headlineZone, "Headline", plan.headline, ", com destaque tipográfico forte"));
   if (plan.subheadline) lines.push(textZoneDrawInstruction(subheadlineZone, "Subheadline", plan.subheadline, ""));
-  lines.push(textZoneDrawInstruction(ctaZone, "CTA", plan.cta, ""));
+  // Rodada 4 — `cta` pode ser `""` (peça institucional/sem venda direta, decisão válida, ver
+  // `parseCreativePlan`); sem isso o prompt pedia pro modelo "desenhar exatamente este texto: """.
+  if (plan.cta.trim()) lines.push(textZoneDrawInstruction(ctaZone, "CTA", plan.cta, ""));
   // Auditoria "motor de geração de criativos" — achado ao vivo: mesmo com headline/subheadline
   // corretamente desenhados pelo renderer determinístico, o modelo de imagem inventou tipografia
   // decorativa extra por conta própria (um slogan diferente, um rótulo técnico como "TEXTO DE

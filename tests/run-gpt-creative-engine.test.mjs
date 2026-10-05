@@ -170,12 +170,26 @@ function passingVisualScore(cost = 0) {
   return { status: "completed", content: JSON.stringify(body), cost: { estimated: cost, currency: "USD" } };
 }
 
-/** Uma única dimensão crítica (abaixo do piso individual de 4) — reprova sozinha mesmo com as
- * outras 11 dimensões altas, testando o piso POR DIMENSÃO (nunca só a média). */
+/** Uma única dimensão crítica (abaixo do piso catastrófico de 3, Rodada 4) — reprova sozinha mesmo
+ * com as outras 11 dimensões altas, testando o piso POR DIMENSÃO (nunca só a média). */
 function lowVisualScore(weakKey = "visualHierarchy", justification = "produto ocupa menos de 15% do canvas, sem protagonismo") {
   const body = {};
   for (const key of VISUAL_QUALITY_DIMENSION_KEYS) {
     body[key] = key === weakKey ? { score: 2, justification } : { score: 8, justification: `${key}: ok.` };
+  }
+  return { status: "completed", content: JSON.stringify(body) };
+}
+
+/** Rodada 4 (benchmark de qualidade criativa) — achado confirmado: exatamente o exemplo do
+ * benchmark que NÃO deveria mais consumir uma rodada de reparo (média ~6.2, uma dimensão em 3.8,
+ * nenhuma catastrófica) — abaixo do piso MÉDIO antigo (`belowThreshold`), mas acima do novo piso
+ * catastrófico (`requiresRepair`). */
+function mildlyWeakVisualScore(weakKey = "compositionBalance") {
+  const body = {};
+  for (const key of VISUAL_QUALITY_DIMENSION_KEYS) {
+    body[key] = key === weakKey
+      ? { score: 3.8, justification: "espaçamento um pouco desequilibrado, nada grave." }
+      : { score: 6.2, justification: `${key}: mediano, nada grave.` };
   }
   return { status: "completed", content: JSON.stringify(body) };
 }
@@ -484,6 +498,23 @@ test("runGptCreativeEngine: Visual Quality Score abaixo do piso aciona reparo es
   assert.equal(result.visualQualityScore.belowThreshold, false);
 }));
 
+test("runGptCreativeEngine: dip MEDIANO de score estético (média 6.2, uma dimensão 3.8) NUNCA consome rodada de reparo — publica direto, score vira só telemetria (Rodada 4, retry waste corrigido)", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse()],
+    image_generation: [imageResponse()],
+    review: [passingReview(), mildlyWeakVisualScore()],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.publishable, true);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 1, "dip mediano nunca gera um novo plano");
+  assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 1, "dip mediano nunca gera uma nova imagem");
+  assert.equal(result.repairRounds.length, 0);
+  assert.equal(result.visualQualityScore.belowThreshold, true, "continua registrado como sinal de telemetria");
+  assert.equal(result.visualQualityScore.requiresRepair, false, "não é catastrófico o bastante para consumir a rodada de reparo");
+}));
+
 test("runGptCreativeEngine: Visual Quality Score abaixo do piso em TODAS as rodadas esgota o reparo e vira unrecoverable — nunca publica só por não ter falha técnica dura", () => withFakeFetch(async () => {
   // Auditoria de custo urgente — MAX_CREATIVE_REPAIR_ROUNDS reduzido de 2 para 1: só 2 tentativas
   // totais agora (1 inicial + 1 rodada de reparo), nunca 3.
@@ -503,6 +534,7 @@ test("runGptCreativeEngine: Visual Quality Score abaixo do piso em TODAS as roda
   assert.equal(result.repairRounds.length, 1);
   assert.ok(result.repairRounds.every((round) => round.route === "gpt_replan"));
   assert.ok(result.visualQualityScore.belowThreshold);
+  assert.ok(result.visualQualityScore.requiresRepair, "dimensão em 2/10 é catastrófica o bastante para justificar a rodada de reparo gasta");
 }));
 
 test("runGptCreativeEngine: com exploração de direções bem-sucedida, a direção escolhida ancora o prompt do plano E fica registrada em chosenCreativeDirection", () => withFakeFetch(async () => {

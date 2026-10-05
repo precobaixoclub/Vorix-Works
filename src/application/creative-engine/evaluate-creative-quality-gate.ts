@@ -35,6 +35,12 @@ export const CREATIVE_QUALITY_ISSUE_CODES = [
   "UNAUTHORIZED_TEXT",
   "PLACEHOLDER_RENDERED",
   "MISSING_REQUIRED_TEXT",
+  // Rodada 4 (benchmark de qualidade criativa) — achado confirmado: um preço com `textZone`
+  // própria e presente em `allowedRenderedTexts` ainda assim saiu AUSENTE da imagem final, e
+  // `MISSING_REQUIRED_TEXT` (que trata todo texto autorizado com peso igual) não reprovou. Código
+  // dedicado, sempre hard failure, nunca `renderer_reflow`-elegível (a causa pode ser geométrica OU
+  // de conceito — só uma nova decisão resolve com segurança) — ver `checkCreativeVisualIntegrity`.
+  "REQUIRED_FACT_MISSING",
   // Novo: colisão geométrica de um assetPlacement (produto/screenshot) com a margem de segurança
   // do canvas — mesmo princípio de `checkSafeAreaCompliance`, agora cobrindo assets, não só texto.
   // (Auditoria: `LOGO_DISTORTED` NÃO foi adicionado — `logo-compositor.ts` já usa
@@ -292,7 +298,11 @@ export function checkTextZoneCollisions(plan: CreativePlan): CreativeQualityIssu
  * cores oficiais só entram no prompt (e no schema pede o campo) quando `brandColors` vem
  * preenchido — sem paleta configurada, a instrução explícita é sempre responder `false`, nunca
  * inventar uma expectativa de cor que a marca não definiu. */
-function buildVisualIntegrityPrompt(brandColors: readonly string[] | undefined, allowedRenderedTexts: readonly string[]): string {
+function buildVisualIntegrityPrompt(
+  brandColors: readonly string[] | undefined,
+  allowedRenderedTexts: readonly string[],
+  requiredRenderedFacts: readonly string[],
+): string {
   const colorsLine = brandColors && brandColors.length > 0
     ? `Paleta de cores oficial configurada para esta marca: ${brandColors.join(", ")}.`
     : "Nenhuma paleta de cores oficial foi configurada para esta marca.";
@@ -305,8 +315,13 @@ function buildVisualIntegrityPrompt(brandColors: readonly string[] | undefined, 
     // lista EXATA de textos autorizados e pedir uma TRANSCRIÇÃO OBJETIVA do que está visível —
     // comparada depois em CÓDIGO, nunca só no julgamento subjetivo da IA — é muito mais confiável.
     `LISTA FECHADA DE TEXTOS AUTORIZADOS NESTA PEÇA (a marca/logo colada por composição não conta, veja regra abaixo): ${allowedRenderedTexts.map((text) => `"${text}"`).join(", ")}.`,
+    ...(requiredRenderedFacts.length > 0
+      ? [
+          `FATOS COMERCIAIS CRÍTICOS que o plano desta peça marcou como OBRIGATÓRIOS de aparecer legíveis (preço, parcelamento, desconto etc.) — verifique CADA um com atenção redobrada, é a parte mais importante desta revisão: ${requiredRenderedFacts.map((fact) => `"${fact}"`).join(", ")}.`,
+        ]
+      : []),
     "Responda APENAS com JSON válido, sem markdown, no formato exato:",
-    '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "unauthorizedTexts": ["..."], "missingRequiredTexts": ["..."], "reasoning": "1-2 frases objetivas"}',
+    '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "unauthorizedTexts": ["..."], "missingRequiredTexts": ["..."], "missingRequiredFacts": ["..."], "reasoning": "1-2 frases objetivas"}',
     "REGRAS:",
     "- \"productMismatch\": true SOMENTE se havia uma foto de produto real de referência e o produto na peça final é claramente outro produto (nunca marque true sem uma referência real para comparar).",
     "- \"wrongLogo\": true SOMENTE se havia uma logo real de referência e a logo na peça final é visivelmente diferente (cores, proporções, símbolo) — nunca marque true sem uma referência real.",
@@ -318,7 +333,8 @@ function buildVisualIntegrityPrompt(brandColors: readonly string[] | undefined, 
     "- \"colorPaletteViolated\": true SOMENTE se uma paleta oficial foi informada acima E a peça final claramente NÃO usa essas cores (ex.: fundo e cores predominantes totalmente diferentes do pedido, nenhuma cor da paleta aparece de forma reconhecível). Sem paleta oficial informada, responda sempre false — nunca microgerencie tom/saturação exatos, só a ausência clara da paleta inteira.",
     "- \"unauthorizedTexts\": liste CADA palavra/frase/rótulo/botão legível na peça que NÃO está na lista de textos autorizados acima — transcreva exatamente como está escrito na imagem. NUNCA inclua aqui o nome/wordmark que aparece DENTRO da logo colada (isso é a marca real, não texto gerado). NUNCA inclua um FRAGMENTO/LINHA/TRECHO de um texto autorizado — se o texto quebrou em várias linhas na composição (comum quando um texto longo tem que caber numa caixa), cada linha sozinha NÃO conta como não autorizada, só o texto INTEIRO conta como \"bateu\" com a lista. Lista vazia se todo texto visível bate (inteiro ou em fragmentos de um mesmo texto autorizado) com a lista autorizada.",
     "- \"missingRequiredTexts\": liste CADA item da lista de textos autorizados que NÃO está legível/visível em nenhum lugar da peça final. Lista vazia se todos apareceram.",
-    "- Na dúvida sobre os outros critérios booleanos, prefira false — este gate é para pegar defeitos ÓBVIOS, não para microgerenciar qualidade estética. Mas \"unauthorizedTexts\"/\"missingRequiredTexts\" devem ser objetivos e completos: transcreva tudo que você conseguir ler.",
+    "- \"missingRequiredFacts\": dos FATOS COMERCIAIS CRÍTICOS listados acima (se houver), liste CADA um que não está claramente legível na peça final — este campo é sobre FATOS COMERCIAIS (preço, parcelamento, desconto), não sobre qualquer texto. Lista vazia se todos os fatos obrigatórios apareceram, ou se nenhum fato crítico foi listado.",
+    "- Na dúvida sobre os outros critérios booleanos, prefira false — este gate é para pegar defeitos ÓBVIOS, não para microgerenciar qualidade estética. Mas \"unauthorizedTexts\"/\"missingRequiredTexts\"/\"missingRequiredFacts\" devem ser objetivos e completos: transcreva tudo que você conseguir ler.",
   ].join("\n");
 }
 
@@ -358,6 +374,9 @@ export async function checkCreativeVisualIntegrity(
     specialistId: string;
     brandColors?: readonly string[];
     allowedRenderedTexts: readonly string[];
+    /** Rodada 4 (benchmark de qualidade criativa) — ver `CreativePlan.requiredRenderedFacts`.
+     * Lista vazia (plano sem fatos obrigatórios, ou plano antigo) nunca gera checagem extra. */
+    requiredRenderedFacts: readonly string[];
     /** Auditoria de custo — achado crítico: esta chamada de visão nunca entrava em NENHUM total
      * de custo do motor antes desta correção (`run-gpt-creative-engine.ts` só rastreava
      * plano/imagem). Opcional e best-effort, mesmo espírito do resto da função — nunca lançar por
@@ -370,9 +389,12 @@ export async function checkCreativeVisualIntegrity(
       (url): url is string => Boolean(url),
     );
     const imageUrls = [...referenceUrls, input.finalImageUrl];
+    // `?? []` — mesma tolerância de `allowedRenderedTexts` ausente em planos antigos/fixtures de
+    // teste: nunca lançar por um campo novo e opcional faltando, só significa "nenhum fato crítico
+    // declarado nesta peça".
     const response = await icaro.request({
       taskType: "review",
-      prompt: buildVisualIntegrityPrompt(input.brandColors, input.allowedRenderedTexts),
+      prompt: buildVisualIntegrityPrompt(input.brandColors, input.allowedRenderedTexts, input.requiredRenderedFacts ?? []),
       specialistId: input.specialistId,
       imageUrls,
       expectedOutput: "json",
@@ -395,6 +417,7 @@ export async function checkCreativeVisualIntegrity(
       colorPaletteViolated?: unknown;
       unauthorizedTexts?: unknown;
       missingRequiredTexts?: unknown;
+      missingRequiredFacts?: unknown;
       reasoning?: unknown;
     };
     const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : undefined;
@@ -454,6 +477,21 @@ export async function checkCreativeVisualIntegrity(
         issues.push({
           code: "MISSING_REQUIRED_TEXT",
           message: `O texto autorizado "${item}" não está visível/legível na peça final — inclua-o exatamente como definido no plano.`,
+          source: "vision",
+        });
+      }
+    }
+    // Rodada 4 (benchmark de qualidade criativa) — hard failure dedicado: um fato comercial que o
+    // PRÓPRIO plano marcou como obrigatório (`requiredRenderedFacts`) e que não apareceu na peça
+    // final nunca pode publicar, mesmo que o resto da peça esteja tecnicamente correto. Código
+    // distinto de `MISSING_REQUIRED_TEXT` (que trata todo texto autorizado com peso igual) —
+    // achado confirmado no benchmark: um preço com textZone própria saiu ausente sem reprovação.
+    if (Array.isArray(parsed.missingRequiredFacts)) {
+      for (const item of parsed.missingRequiredFacts) {
+        if (typeof item !== "string" || !item.trim()) continue;
+        issues.push({
+          code: "REQUIRED_FACT_MISSING",
+          message: `O fato comercial obrigatório "${item}" (marcado por este plano como necessário) não está legível na peça final — nunca publicar sem ele.`,
           source: "vision",
         });
       }
@@ -590,6 +628,7 @@ export async function evaluateCreativeQualityGate(
     specialistId: input.specialistId,
     brandColors: input.context.brandColors,
     allowedRenderedTexts: input.plan.allowedRenderedTexts,
+    requiredRenderedFacts: input.plan.requiredRenderedFacts,
     onCost: input.onCost,
   });
   const productionGuidelinesIssues = await checkProductionGuidelinesCompliance(icaro, {

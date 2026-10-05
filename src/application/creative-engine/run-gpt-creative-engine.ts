@@ -598,8 +598,13 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         });
 
         // `undefined` (chamada falhou/resposta incompleta) nunca bloqueia — best-effort, mesmo
-        // espírito do resto do gate. Só um resultado EXPLÍCITO abaixo do piso reprova.
-        if (!visualQualityScore || !visualQualityScore.belowThreshold) {
+        // espírito do resto do gate. Rodada 4 (benchmark de qualidade criativa) — achado
+        // confirmado: um dip isolado de score estético (`belowThreshold`, ex.: média 6.2, uma
+        // dimensão 3.8) consumia a MESMA única rodada de reparo compartilhada com falhas técnicas
+        // duras, sem motivo concreto nomeado ("retry desperdiçado"). Só `requiresRepair`
+        // (catastrófico, ver `evaluate-visual-quality-score.ts`) aciona reparo agora —
+        // `belowThreshold` sozinho publica normalmente, vira só dado de telemetria.
+        if (!visualQualityScore || !visualQualityScore.requiresRepair) {
           return {
             engineMode: "gpt",
             directorModel,

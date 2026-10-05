@@ -270,6 +270,38 @@ test("checkCreativeVisualIntegrity: missingRequiredTexts vira MISSING_REQUIRED_T
   assert.match(issues[0].message, /ACESSE AGORA/);
 });
 
+// Rodada 4 (benchmark de qualidade criativa) — achado confirmado: um preço com textZone própria
+// e presente em allowedRenderedTexts ainda assim saiu ausente da peça final, sem reprovação.
+// REQUIRED_FACT_MISSING é um código dedicado, distinto de MISSING_REQUIRED_TEXT, para fatos
+// comerciais que o PRÓPRIO plano marcou como obrigatórios (`requiredRenderedFacts`).
+test("checkCreativeVisualIntegrity: missingRequiredFacts vira REQUIRED_FACT_MISSING (distinto de MISSING_REQUIRED_TEXT)", async () => {
+  const icaro = {
+    request: async () => ({
+      status: "completed",
+      content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, missingRequiredFacts: ["R$ 2.499,00"] }),
+    }),
+  };
+  const issues = await checkCreativeVisualIntegrity(icaro, {
+    finalImageUrl: "https://x/final.jpg",
+    specialistId: "gpt-creative-director",
+    allowedRenderedTexts: ["A partir de R$ 2.499,00"],
+    requiredRenderedFacts: ["R$ 2.499,00"],
+  });
+  assert.deepEqual(issues.map((issue) => issue.code), ["REQUIRED_FACT_MISSING"]);
+  assert.match(issues[0].message, /R\$ 2\.499,00/);
+});
+
+test("checkCreativeVisualIntegrity: sem requiredRenderedFacts declarado (campo ausente), nunca lança e não gera REQUIRED_FACT_MISSING mesmo se a IA devolver algo nesse campo", async () => {
+  const icaro = {
+    request: async () => ({
+      status: "completed",
+      content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, missingRequiredFacts: [] }),
+    }),
+  };
+  const issues = await checkCreativeVisualIntegrity(icaro, { finalImageUrl: "https://x/final.jpg", specialistId: "gpt-creative-director", allowedRenderedTexts: ["ACESSE AGORA"] });
+  assert.deepEqual(issues, []);
+});
+
 test("checkCreativeVisualIntegrity: unauthorizedTexts/missingRequiredTexts vazios ou ausentes nunca geram issue", async () => {
   const icaro = {
     request: async () => ({

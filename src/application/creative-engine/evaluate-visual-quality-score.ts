@@ -45,18 +45,38 @@ export type VisualQualityDimensionScore = {
 export type VisualQualityScoreResult = {
   overallScore: number;
   dimensions: VisualQualityDimensionScore[];
+  /** Sinal informativo (telemetria/relatório) — "esta peça ficou abaixo do piso médio de
+   * qualidade percebida". Desde a Rodada 4, NUNCA aciona reparo/regeneração sozinho (ver
+   * `requiresRepair`) — mantido só para análise e para `buildAestheticRepairInstructions`
+   * continuar tendo candidatos a citar quando `requiresRepair` for true por outro motivo. */
   belowThreshold: boolean;
   weakDimensions: VisualQualityDimensionScore[];
+  /** Rodada 4 (benchmark de qualidade criativa) — achado confirmado: um dip isolado de score
+   * estético (ex.: média 6.2, uma dimensão em 3.8) consumia a MESMA única rodada de reparo
+   * compartilhada com falhas técnicas duras, sem nenhum "motivo concreto" nomeado — "retry
+   * desperdiçado" documentado no benchmark. `requiresRepair` é o sinal estrito que de fato aciona
+   * `gpt_replan` em `run-gpt-creative-engine.ts`: só dispara para um defeito estético genuinamente
+   * CATASTRÓFICO (ver `VISUAL_QUALITY_CRITICAL_*`), nunca uma média "mediana" ou uma dimensão só
+   * "abaixo da média". Uma peça com `belowThreshold: true` e `requiresRepair: false` publica
+   * normalmente (o gate técnico já garantiu que não tem defeito grave) — o score baixo vira só
+   * dado de telemetria, nunca motivo de regeneração ou de bloqueio de publicação. */
+  requiresRepair: boolean;
 };
 
 /**
- * Limiares fixos e documentados — nunca "achismo" caso a caso. `MIN_OVERALL` é a média mínima
- * pedida pelo usuário como piso de qualidade percebida; `MIN_DIMENSION` existe porque uma peça com
- * média alta mas UMA dimensão catastrófica (ex.: legibilidade 1/10) nunca deveria passar só porque
- * as outras 11 compensam a média — qualquer dimensão abaixo do piso individual já reprova sozinha.
+ * Limiares fixos e documentados — nunca "achismo" caso a caso. `MIN_OVERALL`/`MIN_DIMENSION` são
+ * o piso de qualidade MÉDIA esperada (telemetria/relatório — `belowThreshold`/`weakDimensions`,
+ * nunca mais o gatilho de reparo desde a Rodada 4). `CRITICAL_*` é o piso estritamente mais baixo
+ * que de fato aciona uma rodada de reparo (`requiresRepair`) — reservado para um defeito estético
+ * genuinamente catastrófico (a peça claramente parece quebrada), nunca uma peça só "mediana".
  */
 export const VISUAL_QUALITY_MIN_OVERALL_SCORE = 6.5;
 export const VISUAL_QUALITY_MIN_DIMENSION_SCORE = 4;
+// Calibrados para NUNCA disparar no exemplo do benchmark que não deveria mais consumir reparo
+// (média 6.2, uma dimensão 3.8) e CONTINUAR disparando para um defeito realmente catastrófico
+// isolado (ex.: uma dimensão em 2/10 — "a hierarquia visual não existe", não "está mediana").
+export const VISUAL_QUALITY_CRITICAL_OVERALL_SCORE = 4.5;
+export const VISUAL_QUALITY_CRITICAL_DIMENSION_SCORE = 3;
 
 function buildVisualQualityScorePrompt(plan: CreativePlan, brandColors: readonly string[] | undefined): string {
   const art = plan.artDirection;
@@ -136,8 +156,9 @@ export async function evaluateVisualQualityScore(
     const overallScore = dimensions.reduce((sum, dimension) => sum + dimension.score, 0) / dimensions.length;
     const weakDimensions = dimensions.filter((dimension) => dimension.score < VISUAL_QUALITY_MIN_DIMENSION_SCORE);
     const belowThreshold = overallScore < VISUAL_QUALITY_MIN_OVERALL_SCORE || weakDimensions.length > 0;
+    const requiresRepair = overallScore < VISUAL_QUALITY_CRITICAL_OVERALL_SCORE || dimensions.some((dimension) => dimension.score < VISUAL_QUALITY_CRITICAL_DIMENSION_SCORE);
 
-    return { overallScore, dimensions, belowThreshold, weakDimensions };
+    return { overallScore, dimensions, belowThreshold, weakDimensions, requiresRepair };
   } catch {
     return undefined;
   }

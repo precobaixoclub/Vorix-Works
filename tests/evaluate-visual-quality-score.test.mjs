@@ -4,6 +4,8 @@ import {
   VISUAL_QUALITY_DIMENSIONS,
   VISUAL_QUALITY_MIN_OVERALL_SCORE,
   VISUAL_QUALITY_MIN_DIMENSION_SCORE,
+  VISUAL_QUALITY_CRITICAL_OVERALL_SCORE,
+  VISUAL_QUALITY_CRITICAL_DIMENSION_SCORE,
   evaluateVisualQualityScore,
   buildAestheticRepairInstructions,
 } from "../dist/application/creative-engine/evaluate-visual-quality-score.js";
@@ -97,6 +99,45 @@ test("evaluateVisualQualityScore: uma única dimensão abaixo do piso individual
   assert.equal(result.weakDimensions.length, 1);
   assert.equal(result.weakDimensions[0].key, "legibility");
   assert.ok(result.weakDimensions[0].score < VISUAL_QUALITY_MIN_DIMENSION_SCORE);
+  assert.equal(result.requiresRepair, true, "2/10 é catastrófico o bastante (< piso crítico) para justificar consumir a rodada de reparo");
+});
+
+// Rodada 4 (benchmark de qualidade criativa) — `requiresRepair`: achado confirmado no benchmark
+// real, um dip MEDIANO de score estético (média 6.2, uma dimensão 3.8) consumia a mesma única
+// rodada de reparo compartilhada com falhas técnicas duras, sem motivo concreto nomeado. Só um
+// defeito genuinamente CATASTRÓFICO deve consumir a rodada agora — `belowThreshold` continua
+// existindo só como sinal de telemetria/relatório.
+
+test("evaluateVisualQualityScore: dip MEDIANO (média 6.2, uma dimensão 3.8) fica belowThreshold=true mas requiresRepair=false — nunca consome reparo", async () => {
+  const body = allDimensionsResponse(6.2);
+  body.compositionBalance = { score: 3.8, justification: "espaçamento um pouco desequilibrado, nada grave" };
+  const icaro = { request: async () => ({ status: "completed", content: JSON.stringify(body) }) };
+  const result = await evaluateVisualQualityScore(icaro, { finalImageUrl: "https://x/final.jpg", plan: basePlan(), specialistId: "gpt-creative-director" });
+
+  assert.ok(result.overallScore < VISUAL_QUALITY_MIN_OVERALL_SCORE);
+  assert.equal(result.belowThreshold, true, "continua registrado — útil para telemetria/relatório");
+  assert.equal(result.requiresRepair, false, "nem a média nem a dimensão cruzam o piso catastrófico — nunca gasta a rodada de reparo num dip mediano");
+});
+
+test("evaluateVisualQualityScore: notas altas em todas as 12 dimensões — belowThreshold e requiresRepair ambos false", async () => {
+  const icaro = { request: async () => ({ status: "completed", content: JSON.stringify(allDimensionsResponse(8)) }) };
+  const result = await evaluateVisualQualityScore(icaro, { finalImageUrl: "https://x/final.jpg", plan: basePlan(), specialistId: "gpt-creative-director" });
+  assert.equal(result.belowThreshold, false);
+  assert.equal(result.requiresRepair, false);
+});
+
+test("evaluateVisualQualityScore: uma dimensão isolada exatamente no piso crítico (3) NÃO aciona requiresRepair (só ABAIXO do piso aciona, nunca igual)", async () => {
+  const body = allDimensionsResponse(8);
+  body.legibility = { score: VISUAL_QUALITY_CRITICAL_DIMENSION_SCORE, justification: "limítrofe" };
+  const icaro = { request: async () => ({ status: "completed", content: JSON.stringify(body) }) };
+  const result = await evaluateVisualQualityScore(icaro, { finalImageUrl: "https://x/final.jpg", plan: basePlan(), specialistId: "gpt-creative-director" });
+  assert.equal(result.requiresRepair, false);
+});
+
+test("evaluateVisualQualityScore: média geral catastroficamente baixa (abaixo do piso crítico) aciona requiresRepair mesmo sem nenhuma dimensão isolada abaixo de 3", async () => {
+  const icaro = { request: async () => ({ status: "completed", content: JSON.stringify(allDimensionsResponse(VISUAL_QUALITY_CRITICAL_OVERALL_SCORE - 0.5)) }) };
+  const result = await evaluateVisualQualityScore(icaro, { finalImageUrl: "https://x/final.jpg", plan: basePlan(), specialistId: "gpt-creative-director" });
+  assert.equal(result.requiresRepair, true);
 });
 
 test("evaluateVisualQualityScore: dimensão ausente na resposta devolve undefined, nunca inventa uma nota", async () => {

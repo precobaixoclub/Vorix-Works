@@ -122,6 +122,73 @@ test("parseCreativePlan: devolve undefined quando allowedRenderedTexts não incl
   assert.equal(parseCreativePlan(samplePlanJson({ allowedRenderedTexts: ["TODAS AS OFERTAS EM UM SÓ SITE"] })), undefined);
 });
 
+// Rodada 4 (benchmark de qualidade criativa) — bug confirmado 2x: `cta: ""` é uma decisão válida
+// (peça institucional/sem venda direta), mas a checagem antiga exigia
+// `allowedRenderedTexts.includes("")`, impossível de satisfazer (string vazia nunca pode constar
+// em `allowedRenderedTexts`, ver `parseAllowedRenderedTexts`) — reprovava 100% dessas peças.
+test("parseCreativePlan: aceita cta vazio (peça institucional/sem venda direta) mesmo sem nenhuma string vazia em allowedRenderedTexts", () => {
+  const plan = parseCreativePlan(samplePlanJson({
+    cta: "",
+    subheadline: undefined,
+    allowedRenderedTexts: ["TODAS AS OFERTAS EM UM SÓ SITE"],
+  }));
+  assert.ok(plan, "plano com cta vazio deve ser válido");
+  assert.equal(plan.cta, "");
+});
+
+test("parseCreativePlan: cta NÃO vazio continua exigindo presença exata em allowedRenderedTexts (regressão)", () => {
+  const plan = parseCreativePlan(samplePlanJson({ cta: "ACESSE AGORA", allowedRenderedTexts: ["TODAS AS OFERTAS EM UM SÓ SITE"] }));
+  assert.equal(plan, undefined);
+});
+
+test("buildImageGenerationPromptFromPlan: cta vazio nunca gera instrução de desenhar texto vazio", () => {
+  const plan = parseCreativePlan(samplePlanJson({
+    cta: "",
+    subheadline: undefined,
+    allowedRenderedTexts: ["TODAS AS OFERTAS EM UM SÓ SITE"],
+  }));
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, sampleContext());
+  assert.doesNotMatch(imagePrompt, /CTA \(desenhar exatamente este texto\)/);
+  assert.doesNotMatch(imagePrompt, /desenhar exatamente este texto[^"]*""/);
+});
+
+// Rodada 4 (benchmark de qualidade criativa) — `requiredRenderedFacts`: distinção entre fatos
+// confirmados DISPONÍVEIS (`CreativeContext.confirmedFacts`) e fatos que ESTA peça decidiu exibir.
+
+test("parseCreativePlan: requiredRenderedFacts ausente vira lista vazia, nunca rejeita (plano antigo continua válido)", () => {
+  const plan = parseCreativePlan(samplePlanJson({ requiredRenderedFacts: undefined }));
+  assert.ok(plan);
+  assert.deepEqual(plan.requiredRenderedFacts, []);
+});
+
+test("parseCreativePlan: aceita requiredRenderedFacts quando cada item está contido em algum texto renderável (allowedRenderedTexts)", () => {
+  const plan = parseCreativePlan(samplePlanJson({
+    headline: "A partir de R$ 2.499,00",
+    allowedRenderedTexts: ["A partir de R$ 2.499,00", "Shopee + Mercado Livre", "ACESSE AGORA"],
+    requiredRenderedFacts: ["R$ 2.499,00"],
+  }));
+  assert.ok(plan);
+  assert.deepEqual(plan.requiredRenderedFacts, ["R$ 2.499,00"]);
+});
+
+test("parseCreativePlan: rejeita o plano inteiro quando um requiredRenderedFact não corresponde a nenhum texto renderável planejado", () => {
+  const plan = parseCreativePlan(samplePlanJson({
+    requiredRenderedFacts: ["R$ 2.499,00"],
+  }));
+  assert.equal(plan, undefined, "fato obrigatório sem nenhum texto planejado pra exibi-lo é plano inconsistente");
+});
+
+test("parseCreativePlan: rejeita o plano inteiro quando requiredRenderedFacts contém item vazio/não-string", () => {
+  assert.equal(parseCreativePlan(samplePlanJson({ requiredRenderedFacts: ["ACESSE AGORA", ""] })), undefined);
+  assert.equal(parseCreativePlan(samplePlanJson({ requiredRenderedFacts: ["ACESSE AGORA", 123] })), undefined);
+});
+
+test("parseCreativePlan: requiredRenderedFacts vazio é válido (peça institucional sem fato comercial a exibir)", () => {
+  const plan = parseCreativePlan(samplePlanJson({ requiredRenderedFacts: [] }));
+  assert.ok(plan);
+  assert.deepEqual(plan.requiredRenderedFacts, []);
+});
+
 test("parseCreativePlan: devolve undefined para JSON inválido, nunca lança", () => {
   assert.equal(parseCreativePlan("isto não é JSON"), undefined);
 });
@@ -251,23 +318,25 @@ test("buildCreativePlanPrompt: com fatos comerciais, lista exatamente os fatos c
   assert.match(prompt, /Desconto: 20%/);
 });
 
-// Achado ao vivo em produção: a orientação anterior ("prefira image_model pro headline") fez o
-// headline sair cortado nas bordas do canvas em duas tentativas reais seguidas — texto desenhado
-// livremente pelo modelo de imagem não tem garantia de caber, ao contrário do renderer
-// determinístico. "renderer" virou obrigatório pra headline/subheadline (único ponto com
-// incidente real documentado). Revisão posterior (pedido do usuário: peça final parecia "caixa
-// colada em cima de foto" comparado a pedir a mesma imagem direto num GPT de imagem): CTA/preço/
-// desconto/URL/badge voltam a preferir "image_model" — são elementos menores/mais centrais, sem
-// o histórico de corte do headline, e integrados na cena evitam o efeito de caixa colada.
+// Histórico: "renderer" obrigatório nasceu só pra headline/subheadline (incidente real de corte
+// na borda). Depois, CTA/preço/desconto/URL/badge passaram a preferir "image_model" (evitar
+// "caixa colada"). Rodada 4 (benchmark de qualidade criativa) reverteu essa preferência: o
+// benchmark real confirmou corrupção ortográfica e um nome de marca alucinado em texto
+// `image_model` — TODO texto comercial agora é sempre "renderer".
 
-test("buildCreativePlanPrompt: headline/subheadline são sempre renderedBy='renderer' (nunca image_model) — único ponto com incidente real de corte", () => {
+test("buildCreativePlanPrompt: instrui headline/subheadline/CTA/etc. a usarem sempre renderedBy='renderer' (nunca image_model)", () => {
   const prompt = buildCreativePlanPrompt(sampleContext());
-  assert.match(prompt, /Para `headline` e `subheadline`, SEMPRE use `"renderer"`/);
+  assert.match(prompt, /para headline\/subheadline\/CTA\/preço\/desconto\/URL\/badge que devem aparecer na peça/);
+  assert.match(prompt, /SEMPRE use `renderedBy: "renderer"` para TODO texto comercial/);
 });
 
-test("buildCreativePlanPrompt: CTA/preço/desconto/URL/badge preferem renderedBy='image_model' por padrão — evita o efeito de caixa colada", () => {
+// Rodada 4 (benchmark de qualidade criativa) — revisão: a preferência por `image_model` pra
+// CTA/preço/desconto/URL/badge (Rodada 2/3) foi revertida depois do benchmark real confirmar
+// corrupção ortográfica e um nome de marca alucinado nesse tipo de texto. Todo texto comercial
+// agora é sempre `renderer`.
+test("buildCreativePlanPrompt: instrui TODO texto comercial (CTA/preço/desconto/URL/badge) a ser sempre renderedBy='renderer', nunca 'image_model'", () => {
   const prompt = buildCreativePlanPrompt(sampleContext());
-  assert.match(prompt, /Para `cta`\/`price`\/`discount`\/`url`\/`badge`, PREFIRA `"image_model"` por padrão/);
+  assert.match(prompt, /SEMPRE use `renderedBy: "renderer"` para TODO texto comercial — nunca `"image_model"`/);
 });
 
 // Auditoria "motor de geração de criativos" — achado ao vivo: texto de peças finais trazia
@@ -444,11 +513,11 @@ test("buildImageGenerationPromptFromPlan: com TODOS os textos autorizados sendo 
   assert.match(imagePrompt, /NUNCA escreva NENHUM texto além do que já foi instruído acima/);
 });
 
-// Revisão (pedido do usuário): CTA/preço/desconto/URL/badge voltam a preferir "image_model" —
-// nunca headline/subheadline, que têm o incidente real de corte documentado acima. A trava é
-// determinística (`parseTextZones`), nunca só uma instrução de prompt que o Director possa ignorar.
+// Rodada 4 (benchmark de qualidade criativa) — revisão: TODO textZone agora é forçado
+// deterministicamente a `renderedBy: "renderer"`, não só headline/subheadline (ver comentário em
+// `parseTextZones`). `"image_model"` nunca é o valor final de um plano parseado.
 
-test("parseCreativePlan: headline/subheadline SEMPRE vira renderedBy='renderer', mesmo que o JSON bruto peça 'image_model' (trava determinística, não confia só no Director)", () => {
+test("parseCreativePlan: TODO textZone SEMPRE vira renderedBy='renderer', mesmo que o JSON bruto peça 'image_model' para qualquer kind (trava determinística, não confia só no Director)", () => {
   const plan = parseCreativePlan(
     samplePlanJson({
       textZones: [
@@ -460,10 +529,10 @@ test("parseCreativePlan: headline/subheadline SEMPRE vira renderedBy='renderer',
   );
   assert.equal(plan.textZones.find((zone) => zone.kind === "headline").renderedBy, "renderer");
   assert.equal(plan.textZones.find((zone) => zone.kind === "subheadline").renderedBy, "renderer");
-  assert.equal(plan.textZones.find((zone) => zone.kind === "cta").renderedBy, "image_model", "cta nunca é forçado — só headline/subheadline têm o incidente documentado");
+  assert.equal(plan.textZones.find((zone) => zone.kind === "cta").renderedBy, "renderer", "Rodada 4: cta também é forçado — corrupção ortográfica/nome de marca errado confirmados no benchmark quando desenhado pelo modelo");
 });
 
-test("buildImageGenerationPromptFromPlan: CTA com renderedBy='image_model' instrui o modelo a desenhar o texto exato, dentro do retângulo exato (defesa contra corte de borda)", () => {
+test("buildImageGenerationPromptFromPlan: CTA sempre vira renderedBy='renderer' (Rodada 4) — manda deixar a região limpa, NUNCA desenhar o texto", () => {
   const context = sampleContext();
   const plan = parseCreativePlan(
     samplePlanJson({
@@ -471,8 +540,8 @@ test("buildImageGenerationPromptFromPlan: CTA com renderedBy='image_model' instr
     }),
   );
   const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
-  assert.match(imagePrompt, /"ACESSE AGORA"/);
-  assert.match(imagePrompt, /dentro da região de 10%–90% na horizontal e 80%–90% na vertical, com folga/);
+  assert.doesNotMatch(imagePrompt, /CTA \(desenhar exatamente este texto/);
+  assert.match(imagePrompt, /10%–90% na horizontal e 80%–90% na vertical completamente limpa, sem nenhum texto: o cta será desenhado por cima depois/);
 });
 
 test("buildImageGenerationPromptFromPlan: com brandColors configurado, repete a paleta como obrigatória NO prompt que gera a imagem (nunca só no prompt do plano, um passo antes)", () => {

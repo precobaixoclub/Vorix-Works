@@ -5,7 +5,7 @@ import { runGptCreativeEngine } from "../dist/application/creative-engine/run-gp
 import { compositeLogoOntoImage } from "../dist/infrastructure/media/logo-compositor.js";
 import { compositeScreenshotIntoDeviceMockup } from "../dist/infrastructure/media/screenshot-mockup-compositor.js";
 import { renderCreativePlanTextZones } from "../dist/infrastructure/rendering/render-creative-plan-text-zones.js";
-import { computeRegionPixelStats, applyLocalBlur } from "../dist/infrastructure/image-processing/region-pixel-stats.js";
+import { computeRegionPixelStats, applyLocalBlur, applyLocalScrim, extractRegionBuffer } from "../dist/infrastructure/image-processing/region-pixel-stats.js";
 
 /**
  * ETAPA 3 (Rodada 4, benchmark de qualidade criativa) — SMOKE LOCAL (brief, ponto 24/25): 5
@@ -285,3 +285,62 @@ test("SMOKE LOCAL (defesa de texto fantasma): headline com ghost_text detectado 
     assert.match(adjustmentStep.detail, /realocado/);
   },
 ));
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.2 (Rodada 4) — SMOKE LOCAL com cobertura geométrica real (brief, ponto 21): texto
+// inserido propositalmente FORA da zona planejada, usando o pipeline de pixel REAL (blur+véu+
+// recorte reais), provando PLANNED ZONE != ACTUAL TEXT REGION e que o sistema ainda corrige.
+// ---------------------------------------------------------------------------------------------
+
+function fullBaseDeps() {
+  return { ...baseDeps(), applyLocalScrim, extractRegionBuffer };
+}
+
+test("SMOKE LOCAL (ETAPA 3.2): texto fantasma com bbox REAL fora da zona planejada é tratado no lugar certo (pixel real)", async () => withScriptedFetch(
+  { "https://x/generated.png": await makePng(1024, 1280, { r: 20, g: 20, b: 24 }) },
+  async () => {
+    const context = {
+      brandName: "Marca Teste", objective: "Divulgar", channel: "instagram", format: "4:5",
+      ideaText: "Peça de teste", assets: [], confirmedFacts: ["Preço: R$ 149,00"],
+    };
+    const cleanRegion = { hasText: false, hasProduct: false, hasFace: false, complexity: "low" };
+    const icaro = fakeIcaro({
+      analysis: [planResponse({
+        headline: "OFERTA ESPECIAL", cta: "", allowedRenderedTexts: ["OFERTA ESPECIAL", "R$ 149,00"],
+        requiredRenderedFacts: ["R$ 149,00"],
+        textZones: [
+          { kind: "headline", text: "OFERTA ESPECIAL", rect: { xPct: 5, yPct: 5, widthPct: 90, heightPct: 15 }, emphasis: "primary", renderedBy: "renderer" },
+          { kind: "price", text: "R$ 149,00", rect: { xPct: 10, yPct: 30, widthPct: 40, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },
+        ],
+      })],
+      image_generation: [imageResponse("https://x/generated.png")],
+      review: [
+        {
+          status: "completed",
+          content: JSON.stringify({
+            // "R$ 149,00" fantasma aparece no canto INFERIOR direito — bem longe da zona
+            // planejada ("price", x=10-50/y=30-40).
+            spuriousTexts: [{ text: "R$ 149,00", classification: "duplicated_text", matchedZoneKind: "price", bbox: { xPct: 55, yPct: 80, widthPct: 30, heightPct: 10 } }],
+            plannedZonesClear: { headline: true, price: true },
+            regions: { "top-left": cleanRegion, "top-right": cleanRegion, "center-left": cleanRegion, "center-right": cleanRegion, "bottom-left": cleanRegion, "bottom-right": cleanRegion },
+          }),
+        },
+        { status: "completed", content: JSON.stringify({ hasLegibleText: false }) }, // reverificação LOCAL (recorte da bbox tratada)
+        globalRecheckResponseLocal(false), // reverificação GLOBAL (peça inteira)
+        passingVisualIntegrity(),
+      ],
+    });
+    const result = await runGptCreativeEngine({ ...fullBaseDeps(), creativeBrain: icaro, objectStorage: { put: async () => ({ url: "https://x/final.jpg", key: "k" }) } }, baseInput(context));
+
+    assertNoRound4Defects(result);
+    assert.equal(result.repairRounds.length, 0, "tratamento local resolveu — nunca consumiu rodada de reparo");
+    const adjustmentStep = result.compositionSteps.find((step) => step.step === "safe_area_adjustment");
+    assert.ok(adjustmentStep);
+    assert.match(adjustmentStep.detail, /NEUTRALIZADO LOCALMENTE/);
+    assert.match(adjustmentStep.detail, /bbox real detectada/);
+  },
+));
+
+function globalRecheckResponseLocal(hasUnresolvedText) {
+  return { status: "completed", content: JSON.stringify({ hasUnresolvedText }) };
+}

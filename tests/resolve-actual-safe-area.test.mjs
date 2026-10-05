@@ -11,6 +11,11 @@ import {
   classifyGhostTextIntensity,
   escalateGhostTextIntensity,
   resolveGhostTextTreatmentParams,
+  expandBboxWithPadding,
+  normalizeTextForMatching,
+  textsMatchApproximately,
+  sortTextZonesByPriority,
+  TEXT_ZONE_KIND_PRIORITY,
 } from "../dist/application/creative-engine/resolve-actual-safe-area.js";
 
 /**
@@ -169,4 +174,63 @@ test("resolveGhostTextTreatmentParams: cada nível escala TANTO o blur quanto a 
   const high = resolveGhostTextTreatmentParams("high");
   assert.ok(low.blurSigma < medium.blurSigma && medium.blurSigma < high.blurSigma);
   assert.ok(low.scrimOpacity < medium.scrimOpacity && medium.scrimOpacity < high.scrimOpacity);
+});
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.2 (Rodada 4) — cobertura geométrica real: tratar só o retângulo PLANEJADO não é garantia
+// de cobrir onde o texto espúrio REALMENTE apareceu. expandBboxWithPadding/textsMatchApproximately/
+// sortTextZonesByPriority são as peças puras dessa correção.
+// ---------------------------------------------------------------------------------------------
+
+test("expandBboxWithPadding: expande proporcionalmente ao próprio tamanho da bbox, clampado aos limites do canvas", () => {
+  const bbox = { xPct: 20, yPct: 20, widthPct: 20, heightPct: 10 };
+  const expanded = expandBboxWithPadding(bbox, 20);
+  assert.ok(expanded.xPct < bbox.xPct, "deveria expandir pra esquerda");
+  assert.ok(expanded.yPct < bbox.yPct, "deveria expandir pra cima");
+  assert.ok(expanded.widthPct > bbox.widthPct, "deveria ficar mais largo");
+  assert.ok(expanded.heightPct > bbox.heightPct, "deveria ficar mais alto");
+});
+
+test("expandBboxWithPadding: nunca ultrapassa os limites do canvas (0-100)", () => {
+  const bbox = { xPct: 2, yPct: 2, widthPct: 10, heightPct: 10 };
+  const expanded = expandBboxWithPadding(bbox, 50);
+  assert.ok(expanded.xPct >= 0);
+  assert.ok(expanded.yPct >= 0);
+  assert.ok(expanded.xPct + expanded.widthPct <= 100);
+  assert.ok(expanded.yPct + expanded.heightPct <= 100);
+});
+
+test("normalizeTextForMatching: remove acento, caixa, espaço e pontuação/símbolo monetário", () => {
+  assert.equal(normalizeTextForMatching("R$ 149,00"), normalizeTextForMatching("r$149.00"));
+  assert.equal(normalizeTextForMatching("ÁÇÃO"), "acao");
+});
+
+test("textsMatchApproximately: 'R$ 149,00' / 'R$149' / '149,00' são reconhecidos como o MESMO fato (normalização simples, nunca fuzzy matching elaborado)", () => {
+  assert.equal(textsMatchApproximately("R$ 149,00", "R$149"), true);
+  assert.equal(textsMatchApproximately("R$ 149,00", "149,00"), true);
+  assert.equal(textsMatchApproximately("R$ 149,00", "R$ 299,00"), false, "valores DIFERENTES nunca devem bater");
+});
+
+test("textsMatchApproximately: strings vazias nunca combinam com nada", () => {
+  assert.equal(textsMatchApproximately("", "qualquer coisa"), false);
+  assert.equal(textsMatchApproximately("qualquer coisa", ""), false);
+});
+
+test("TEXT_ZONE_KIND_PRIORITY: headline > price > cta > subheadline (ordem pedida pelo brief)", () => {
+  assert.ok(TEXT_ZONE_KIND_PRIORITY.headline < TEXT_ZONE_KIND_PRIORITY.price);
+  assert.ok(TEXT_ZONE_KIND_PRIORITY.price < TEXT_ZONE_KIND_PRIORITY.cta);
+  assert.ok(TEXT_ZONE_KIND_PRIORITY.cta < TEXT_ZONE_KIND_PRIORITY.subheadline);
+});
+
+test("sortTextZonesByPriority: reordena zonas de MENOR prioridade (badge) pra DEPOIS de zonas de maior prioridade (headline), independente da ordem de entrada", () => {
+  const zones = [{ kind: "badge" }, { kind: "headline" }, { kind: "cta" }];
+  const sorted = sortTextZonesByPriority(zones);
+  assert.deepEqual(sorted.map((z) => z.kind), ["headline", "cta", "badge"]);
+});
+
+test("sortTextZonesByPriority: nunca muta o array original", () => {
+  const zones = [{ kind: "badge" }, { kind: "headline" }];
+  const original = [...zones];
+  sortTextZonesByPriority(zones);
+  assert.deepEqual(zones, original);
 });

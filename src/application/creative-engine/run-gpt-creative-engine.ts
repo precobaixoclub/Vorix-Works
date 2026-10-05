@@ -5,6 +5,7 @@ import { extractJson } from "../../shared/utils/skill-parsing.js";
 import {
   buildCreativePlanPrompt,
   buildImageGenerationPromptFromPlan,
+  diagnoseCreativePlanInvalidity,
   parseCreativePlan,
   type ChosenCreativeDirection,
   type CreativeContext,
@@ -18,13 +19,22 @@ import type { CreativeEngineImageGuardInput } from "../../shared/utils/creative-
 import { resolveProductRenderMode, type AssetSuitabilityScore, type ProductRenderModeDecision } from "../../shared/utils/product-asset.types.js";
 import {
   evaluateCreativeQualityGate,
+  rectsOverlap,
   type CreativeQualityGateResult,
   type CreativeQualityIssue,
 } from "./evaluate-creative-quality-gate.js";
 import { buildCreativePlanRepairPrompt, classifyRepairStrategy, MAX_CREATIVE_REPAIR_ROUNDS, routeCreativeRepair, type CreativeRepairRound } from "./creative-repair.js";
 import { evaluateVisualQualityScore, buildAestheticRepairInstructions, type VisualQualityScoreResult } from "./evaluate-visual-quality-score.js";
-import { analyzePreCompositionImage, type PreCompositionAnalysis } from "./analyze-pre-composition-image.js";
-import { resolveActualTextZoneRect, chooseTextBackingTreatment, textBackingTreatmentToRendererStyle, type RegionSemanticFlags, type SafeAreaCandidateRegion } from "./resolve-actual-safe-area.js";
+import { analyzePreCompositionImage, checkGlobalTextLegibility, type PreCompositionAnalysis } from "./analyze-pre-composition-image.js";
+import {
+  resolveActualTextZoneRect,
+  chooseTextBackingTreatment,
+  textBackingTreatmentToRendererStyle,
+  sortTextZonesByPriority,
+  expandBboxWithPadding,
+  type RegionSemanticFlags,
+  type SafeAreaCandidateRegion,
+} from "./resolve-actual-safe-area.js";
 import { neutralizeGhostTextZone } from "./neutralize-ghost-text.js";
 
 /**
@@ -222,6 +232,16 @@ const MAX_INITIAL_PLAN_JSON_ATTEMPTS = 2;
 // sobra nunca piora nada; cortar o JSON no meio sempre reprova o plano inteiro.
 const CREATIVE_PLAN_MAX_TOKENS = 2_400;
 
+/** ETAPA 3.2 (Rodada 4) — achado do smoke real: a 2ª tentativa recebia o MESMO prompt da 1ª, sem
+ * nenhum feedback sobre o que invalidou a resposta anterior — podia (e às vezes repetia) o mesmo
+ * erro estrutural. Anexa a causa diagnosticada (`diagnoseCreativePlanInvalidity`) como instrução
+ * concreta de correção, mesmo princípio já usado no reparo pós-gate (`buildCreativePlanRepairPrompt`),
+ * mas aqui ainda ANTES de existir um `creative_plan` válido pra reparar. */
+function appendPlanRetryDiagnostic(prompt: string, diagnostic: string | undefined): string {
+  if (!diagnostic) return prompt;
+  return `${prompt}\n\nSUA RESPOSTA ANTERIOR FALHOU NESTA VALIDAÇÃO ESPECÍFICA: ${diagnostic} Corrija EXATAMENTE isso na nova resposta, mantendo o resto do plano coerente.`;
+}
+
 async function requestCreativePlan(
   icaro: IcaroBrainPort,
   context: CreativeContext,
@@ -229,12 +249,15 @@ async function requestCreativePlan(
   correlationId: string,
   track: (response: IcaroAIResponse | undefined) => void,
   chosenDirection?: ChosenCreativeDirection,
-): Promise<{ plan?: CreativePlan; response?: IcaroAIResponse }> {
+): Promise<{ plan?: CreativePlan; response?: IcaroAIResponse; lastDiagnostic?: string; repeatedDiagnostic?: boolean }> {
   let lastResponse: IcaroAIResponse | undefined;
+  let previousDiagnostic: string | undefined;
+  let lastDiagnostic: string | undefined;
+  let repeatedDiagnostic = false;
   for (let jsonAttempt = 1; jsonAttempt <= MAX_INITIAL_PLAN_JSON_ATTEMPTS; jsonAttempt++) {
     const response = await icaro.request({
       taskType: "analysis",
-      prompt: buildCreativePlanPrompt(context, chosenDirection),
+      prompt: appendPlanRetryDiagnostic(buildCreativePlanPrompt(context, chosenDirection), jsonAttempt > 1 ? previousDiagnostic : undefined),
       specialistId: SPECIALIST_ID,
       executionId,
       correlationId,
@@ -256,14 +279,22 @@ async function requestCreativePlan(
       if (isProviderQuotaExhausted(response)) break;
       continue;
     }
+    // `extractJson` por dentro do try/catch (igual ao comportamento histórico antes desta
+    // auditoria): uma resposta sem NENHUM JSON reconhecível lança, e isso precisa continuar
+    // significando "tenta de novo", nunca derrubar a execução inteira.
+    let rawContent: string | undefined;
     try {
-      const plan = parseCreativePlan(extractJson(String(response.content ?? ""), "GPT Creative Plan"));
+      rawContent = extractJson(String(response.content ?? ""), "GPT Creative Plan");
+      const plan = parseCreativePlan(rawContent);
       if (plan) return { plan, response };
     } catch {
       // tenta de novo (ou desiste, se for a última tentativa)
     }
+    lastDiagnostic = rawContent !== undefined ? diagnoseCreativePlanInvalidity(rawContent) : "Ícaro não devolveu nenhum JSON reconhecível na resposta.";
+    repeatedDiagnostic = Boolean(lastDiagnostic && previousDiagnostic && lastDiagnostic === previousDiagnostic);
+    previousDiagnostic = lastDiagnostic;
   }
-  return { response: lastResponse };
+  return { response: lastResponse, lastDiagnostic, repeatedDiagnostic };
 }
 
 /** Ver comentário em `requestCreativePlan` — mesmo sinal usado em todos os pontos do motor que
@@ -398,12 +429,64 @@ async function applySafeAreaAdjustments(
   const unrecoverableGhostTextZoneKinds: string[] = [];
   const occupiedRects = [...input.occupiedRects];
   const regionFlags: Partial<Record<SafeAreaCandidateRegion, RegionSemanticFlags>> = input.analysis?.regions ?? {};
+  const hasFullNeutralizationDeps = Boolean(deps.applyLocalBlur && deps.applyLocalScrim && deps.extractRegionBuffer && deps.computeRegionPixelStats);
 
-  for (const zone of input.rendererZones) {
-    const ghostFinding = input.analysis?.spuriousTexts.find((finding) => finding.classification === "ghost_text" && finding.matchedZoneKind === zone.kind);
-    // Sem dado de visão confiável pra esta zona (chamada falhou, ou plano antigo), assume limpa —
-    // nunca realoca às cegas sem evidência real de ocupação.
-    const plannedIsClear = (input.analysis?.plannedZonesClear[zone.kind] ?? true) && !ghostFinding;
+  // ETAPA 3.2 (Rodada 4) — achado do smoke real da ETAPA 3.1: tratar só o retângulo PLANEJADO da
+  // zona não é garantia de cobrir onde o modelo REALMENTE desenhou o texto espúrio (pode estar
+  // fora dele, ou em mais de um lugar). Trata CADA achado de texto espúrio na sua localização REAL
+  // (bbox reportada pela visão, com margem de segurança — nunca só a bbox exata), independente de
+  // qual zona ele "corresponde" — uma passada ANTES do loop de zonas, que agora só cuida de
+  // ocupação/geometria, não mais de texto fantasma por zona.
+  const treatedFindingRects: CreativePlanRect[] = [];
+  if (hasFullNeutralizationDeps && input.analysis?.spuriousTexts.length) {
+    for (const finding of input.analysis.spuriousTexts) {
+      const fallbackZone = input.rendererZones.find((zone) => zone.kind === finding.matchedZoneKind);
+      const rawRect = finding.bbox ?? fallbackZone?.rect;
+      if (!rawRect) {
+        steps.push(`texto espúrio "${finding.text}" (${finding.classification}) sem localização (bbox ausente e sem zona correspondente) — não foi possível tratar.`);
+        continue;
+      }
+      const paddedRect = expandBboxWithPadding(rawRect);
+      const neutralization = await neutralizeGhostTextZone(deps.creativeBrain, {
+        computeRegionPixelStats: deps.computeRegionPixelStats!,
+        applyLocalBlur: deps.applyLocalBlur!,
+        applyLocalScrim: deps.applyLocalScrim!,
+        extractRegionBuffer: deps.extractRegionBuffer!,
+        objectStorage: deps.objectStorage,
+      }, {
+        imageBuffer,
+        rect: paddedRect,
+        tenantId: input.tenantId,
+        specialistId: input.specialistId,
+        onCost: input.onCost,
+      });
+      imageBuffer = neutralization.imageBuffer;
+      treatedFindingRects.push(paddedRect);
+
+      if (!neutralization.result.neutralizedLocally) {
+        unrecoverableGhostTextZoneKinds.push(finding.matchedZoneKind ?? finding.classification);
+        steps.push(`texto espúrio "${finding.text}" (${finding.classification}, bbox real ${finding.bbox ? "detectada" : "via zona planejada (fallback)"}) NÃO neutralizado após ${neutralization.result.passes} passe(s) (intensidade "${neutralization.result.finalIntensity}") — UNRECOVERABLE_GHOST_TEXT.`);
+        continue;
+      }
+      steps.push(
+        `texto espúrio "${finding.text}" (${finding.classification}, bbox real ${finding.bbox ? "detectada" : "via zona planejada (fallback)"}) NEUTRALIZADO LOCALMENTE em ${neutralization.result.passes} passe(s) (intensidade final "${neutralization.result.finalIntensity}") — GHOST_TEXT_NEUTRALIZED_LOCALLY, nenhuma nova geração de imagem.`,
+      );
+    }
+  }
+  occupiedRects.push(...treatedFindingRects);
+
+  // Zonas: agora só cuidam de OCUPAÇÃO (produto/rosto/texto detectado pela visão nas 6 regiões, ou
+  // sobreposição GEOMÉTRICA determinística com um asset real já posicionado — ver comentário em
+  // `TEXT_ZONE_KIND_PRIORITY`) — texto fantasma já foi tratado na passada acima, na localização
+  // REAL, nunca mais por zona. Processadas em ordem de PRIORIDADE (headline > price > cta > ...)
+  // pra decidir quem relocaliza quando duas zonas colidem entre si.
+  for (const zone of sortTextZonesByPriority(input.rendererZones)) {
+    // ETAPA 3.2 — achado do smoke real: `TEXT_ZONE_OVERLAPS_ASSET` (headline sobre a logo) chegou
+    // ao gate técnico porque só a visão decidia "ocupado"; um retângulo conhecido com certeza
+    // (asset real já posicionado, ou outra zona de maior prioridade) precisa derrubar
+    // `plannedIsClear` mesmo que a visão não tenha reportado nada ali.
+    const overlapsKnownOccupiedRect = occupiedRects.some((rect) => rectsOverlap(zone.rect, rect));
+    const plannedIsClear = (input.analysis?.plannedZonesClear[zone.kind] ?? true) && !overlapsKnownOccupiedRect;
 
     const decision = resolveActualTextZoneRect({
       plannedRect: zone.rect,
@@ -412,66 +495,14 @@ async function applySafeAreaAdjustments(
       occupiedRects,
     });
 
-    // Texto fantasma só continua "ativo" se NÃO conseguimos fugir dele reposicionando — se a zona
-    // foi realocada pra uma região livre, o texto fantasma original fica fora da nova área.
-    const hasGhostTextHere = Boolean(ghostFinding) && !decision.relocated;
-
-    if (hasGhostTextHere && deps.applyLocalBlur && deps.applyLocalScrim && deps.extractRegionBuffer && deps.computeRegionPixelStats) {
-      // ETAPA 3.1 (achado do smoke real: blur sozinho às vezes não bastou) — trata, reavalia a
-      // região tratada (visão, isolada), escala até 2 vezes, nunca cobre com texto sem confirmar.
-      const neutralization = await neutralizeGhostTextZone(deps.creativeBrain, {
-        computeRegionPixelStats: deps.computeRegionPixelStats,
-        applyLocalBlur: deps.applyLocalBlur,
-        applyLocalScrim: deps.applyLocalScrim,
-        extractRegionBuffer: deps.extractRegionBuffer,
-        objectStorage: deps.objectStorage,
-      }, {
-        imageBuffer,
-        rect: decision.rect,
-        tenantId: input.tenantId,
-        specialistId: input.specialistId,
-        onCost: input.onCost,
-      });
-      imageBuffer = neutralization.imageBuffer;
-
-      if (!neutralization.result.neutralizedLocally) {
-        unrecoverableGhostTextZoneKinds.push(zone.kind);
-        steps.push(`${zone.kind}: texto fantasma NÃO neutralizado após ${neutralization.result.passes} passe(s) (intensidade "${neutralization.result.finalIntensity}") — UNRECOVERABLE_GHOST_TEXT.`);
-        occupiedRects.push(decision.rect);
-        zones.push({ ...zone, rect: decision.rect });
-        continue;
-      }
-
-      occupiedRects.push(decision.rect);
-      zones.push({
-        ...zone,
-        rect: decision.rect,
-        backingStyle: "none",
-        textColorOverride: neutralization.result.backgroundIsDark ? "light" : "dark",
-      });
-      steps.push(
-        `${zone.kind}: ${decision.relocated ? `realocado para região "${decision.relocatedTo}"` : "manteve posição planejada"}, ` +
-          `texto fantasma NEUTRALIZADO LOCALMENTE em ${neutralization.result.passes} passe(s) (intensidade final "${neutralization.result.finalIntensity}") — GHOST_TEXT_NEUTRALIZED_LOCALLY, nenhuma nova geração de imagem.`,
-      );
-      continue;
-    }
-
-    // Fallback ETAPA 3 (sem reverificação): se os deps novos da ETAPA 3.1 não estiverem
-    // disponíveis (ex.: ambiente/teste que só injeta `applyLocalBlur`), texto fantasma ainda força
-    // pelo menos o blur simples — nunca silenciosamente ignorado só porque a reverificação não
-    // está disponível.
     const pixelStats = await deps.computeRegionPixelStats?.(imageBuffer, decision.rect);
-    const treatment = chooseTextBackingTreatment({ pixelStats, hasGhostTextHere, plannedBackingStyle: zone.backingStyle });
-
-    if (treatment === "local_blur" && deps.applyLocalBlur) {
-      imageBuffer = await deps.applyLocalBlur(imageBuffer, decision.rect);
-    }
+    const treatment = chooseTextBackingTreatment({ pixelStats, hasGhostTextHere: false, plannedBackingStyle: zone.backingStyle });
 
     occupiedRects.push(decision.rect);
     zones.push({ ...zone, rect: decision.rect, backingStyle: textBackingTreatmentToRendererStyle(treatment) });
     steps.push(
       `${zone.kind}: ${decision.relocated ? `realocado para região "${decision.relocatedTo}"` : "manteve posição planejada"}, tratamento="${treatment}"` +
-        (hasGhostTextHere ? " (texto fantasma detectado nesta região — reverificação indisponível, sem escalonamento)" : ""),
+        (overlapsKnownOccupiedRect && !decision.relocated ? " (sobrepunha um asset/zona conhecida e nenhuma região alternativa estava livre)" : ""),
     );
   }
 
@@ -571,7 +602,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
 
   if (budgetExceeded()) return failBudgetExceeded();
 
-  const { plan: initialPlan, response: planResponse } = await requestCreativePlan(
+  const { plan: initialPlan, response: planResponse, lastDiagnostic: planDiagnostic, repeatedDiagnostic: planRepeatedDiagnostic } = await requestCreativePlan(
     deps.creativeBrain,
     context,
     input.executionRunId,
@@ -581,9 +612,16 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
   );
   directorModel = planResponse?.model?.id;
   if (!initialPlan) {
-    return isProviderQuotaExhausted(planResponse)
-      ? fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar a peça até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED")
-      : fail("Não foi possível obter um creative_plan válido do GPT.", "CREATIVE_PLAN_INVALID");
+    if (isProviderQuotaExhausted(planResponse)) {
+      return fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar a peça até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED");
+    }
+    // ETAPA 3.2 (Rodada 4) — achado do smoke real: quando o MESMO erro estrutural se repete nas 2
+    // tentativas (mesmo depois de receber a causa exata na 2ª), é um sinal de que o Director está
+    // preso num padrão, não um acaso — nomear isso distinto (`CREATIVE_PLAN_REPEAT_INVALID`) nunca
+    // tenta uma 3ª vez (continua gastando zero imagens), só torna a causa visível pro operador.
+    return planRepeatedDiagnostic
+      ? fail(`CREATIVE_PLAN_REPEAT_INVALID: o mesmo erro estrutural se repetiu em ambas as tentativas do plano inicial — causa: ${planDiagnostic}`, "CREATIVE_PLAN_REPEAT_INVALID")
+      : fail(`Não foi possível obter um creative_plan válido do GPT.${planDiagnostic ? ` Causa: ${planDiagnostic}` : ""}`, "CREATIVE_PLAN_INVALID");
   }
 
   const screenshotAsset = context.assets.find((asset) => asset.role === "screenshot");
@@ -803,6 +841,63 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       continue outerImageRound;
     }
 
+    // ETAPA 3.2 (Rodada 4) — achado do smoke real da ETAPA 3.1: a reverificação LOCAL (só o
+    // recorte da região tratada) confirmava sucesso, mas o gate final (peça inteira) ainda
+    // encontrava o mesmo texto duplicado em outro lugar não coberto pelo tratamento. Depois de
+    // TODAS as regiões detectadas já terem sido tratadas, uma checagem GLOBAL da imagem base
+    // tratada inteira — só roda quando havia algo pra verificar (nunca gasta a chamada à toa).
+    // Só roda quando havia ALGO detectado E a capacidade completa de tratamento local estava
+    // disponível (senão nada foi tratado nesta rodada — rodar o recheck global não serviria pra
+    // nada além de gastar uma chamada extra, já que não há como agir sobre o que ele encontrar).
+    if (preCompositionAnalysis?.spuriousTexts && preCompositionAnalysis.spuriousTexts.length > 0 && deps.applyLocalBlur && deps.applyLocalScrim && deps.extractRegionBuffer && deps.computeRegionPixelStats) {
+      if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, compositionSteps: roundCompositionSteps });
+      const globalCheckUpload = await deps.objectStorage.put({ key: buildObjectKey(input.tenantId, "global-recheck"), body: baseWithAssetsBuffer, contentType: "image/jpeg" });
+      const stillHasUnresolvedText = await checkGlobalTextLegibility(deps.creativeBrain, {
+        imageUrl: globalCheckUpload.url,
+        allowedRenderedTexts: plan.allowedRenderedTexts,
+        specialistId: SPECIALIST_ID,
+        onCost: (response) => track("ghostTextNeutralization", response),
+      });
+      roundCompositionSteps.push({
+        step: "safe_area_adjustment",
+        ok: !stillHasUnresolvedText,
+        detail: stillHasUnresolvedText
+          ? "GLOBAL_RECHECK: ainda há texto não autorizado/duplicado legível na peça, mesmo depois de tratar todas as regiões detectadas."
+          : "GLOBAL_RECHECK: confirmado — nenhum texto não autorizado/duplicado legível na imagem base tratada.",
+      });
+
+      if (stillHasUnresolvedText) {
+        const globalIssues: CreativeQualityIssue[] = [{
+          code: "UNRECOVERABLE_GHOST_TEXT",
+          message: "A reverificação GLOBAL (peça inteira) encontrou texto não autorizado/duplicado legível mesmo depois de tratar todas as regiões detectadas individualmente — provável ocorrência em local não coberto pelo tratamento local.",
+          source: "vision",
+        }];
+        const routedGlobal = routeCreativeRepair(globalIssues, repairAttempt);
+        repairRounds.push({ round: repairAttempt + 1, route: routedGlobal.route, issues: globalIssues, instructions: routedGlobal.instructions, resolved: false, strategies: globalIssues.map(classifyRepairStrategy) });
+
+        if (routedGlobal.route === "unrecoverable") {
+          return fail(
+            "CREATIVE_QUALITY_GATE_NOT_PASSED: a reverificação global encontrou texto não resolvido mesmo após o tratamento local, e o limite de tentativas de reparo foi atingido.",
+            "CREATIVE_QUALITY_GATE_NOT_PASSED",
+            { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, compositionSteps: roundCompositionSteps },
+          );
+        }
+
+        repairAttempt += 1;
+        isRepairRound = true;
+        if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
+
+        const globalRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, routedGlobal.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
+        if (!globalRepair.plan) {
+          return isProviderQuotaExhausted(globalRepair.response)
+            ? fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar ou corrigir a peça até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds })
+            : fail("Não foi possível obter um creative_plan de correção válido do GPT, mesmo após nova tentativa.", "CREATIVE_PLAN_REPAIR_INVALID", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
+        }
+        plan = globalRepair.plan;
+        continue outerImageRound;
+      }
+    }
+
     const rendererZones = safeAreaAdjustment.zones;
     let fontScale = 1;
 
@@ -837,6 +932,16 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, compositionSteps: textCompositionSteps, finalImageUrl: uploaded.url, finalImageWidth, finalImageHeight });
       }
 
+      // ETAPA 3.2 (Rodada 4) — achado real ao escrever os testes desta etapa: os checks
+      // determinísticos de geometria (`checkAssetPlacementOverlap`/`checkTextZoneCollisions`/
+      // `checkSafeAreaCompliance`) recebiam `plan.textZones` — os retângulos ORIGINAIS declarados
+      // pelo Director, nunca os retângulos REALOCADOS por `applySafeAreaAdjustments`. Resultado:
+      // uma colisão genuinamente corrigida em tempo de composição (ex.: headline que sobrepunha a
+      // logo, movida pra uma região livre) ainda assim reprovava o gate, porque o gate olhava pra
+      // geometria antiga. `planForGate` é o MESMO plano, só com `textZones` trocado pelos
+      // retângulos REAIS que vão pro compositor — nunca usado pro reparo em si (`plan` original
+      // continua sendo o que volta pro Director, pra não confundi-lo sobre o que ele decidiu).
+      const planForGate: CreativePlan = { ...plan, textZones: rendererZones };
       const qualityGate = await evaluateCreativeQualityGate(deps.creativeBrain, {
         finalImageUrl: uploaded.url,
         finalImageWidth,
@@ -844,7 +949,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         expectedAspectRatio: context.format,
         compositedAssetRoles,
         context,
-        plan,
+        plan: planForGate,
         specialistId: SPECIALIST_ID,
         onCost: (response) => track("technicalQualityGate", response),
       });

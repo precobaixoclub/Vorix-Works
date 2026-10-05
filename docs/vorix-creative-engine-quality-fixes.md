@@ -1,11 +1,12 @@
 # Correções do Creative Engine — Rodada 4 (parcial)
 
-> Status: ETAPAS 1, 2, 4 e 3 — implementadas, testadas, verificadas e **já em produção** (ETAPA
-> 3 no commit `16c6d18`, smoke de produção confirmado — `STAGE_3_PRODUCTION = VERIFIED`). ETAPA 3.1
-> (ajuste fino da defesa contra texto fantasma) — ver seção própria abaixo. ETAPAS 5 e 6
-> (convergência de Brand Profile, novo benchmark de 13 cenários) **não foram iniciadas**. Por isso,
-> **o Creative Engine NÃO é declarado resolvido** ao final deste documento — ver seção de
-> classificação.
+> Status: ETAPAS 1, 2, 4, 3 e 3.1 — implementadas, testadas, verificadas e **já em produção**
+> (ETAPA 3.1 no commit `7d89b16`, smoke de produção confirmado). ETAPA 3.2 (cobertura geométrica
+> real — ver seção própria abaixo) — implementada e testada localmente (typecheck/build/suíte
+> completa/architecture-check/smoke local, todos PASS), **commitada mas AINDA NÃO deployada**
+> (aguardando autorização explícita, conforme instruído nesta rodada). ETAPAS 5 e 6 (convergência
+> de Brand Profile, novo benchmark de 13 cenários) **não foram iniciadas**. Por isso, **o Creative
+> Engine NÃO é declarado resolvido** ao final deste documento — ver seção de classificação.
 
 ## Princípio seguido
 
@@ -260,6 +261,88 @@ escalonamento pro 2º passe, e `UNRECOVERABLE_GHOST_TEXT` roteando pra nova gera
 ### Smoke real de produção (commit a ser confirmado na entrega)
 Ver bloco de classificação e entrega ao final deste documento.
 
+## ETAPA 3.2 — Cobertura geométrica real (PLANNED ZONE != ACTUAL TEXT REGION) + plan-invalid root cause
+
+### Achado real que motivou esta etapa (smoke de produção da ETAPA 3.1, commit 7d89b16)
+A reverificação LOCAL (só o recorte da região tratada) confirmava corretamente que o texto
+fantasma sumiu DALI — mas o gate final (peça inteira) ainda encontrava o mesmo preço duplicado em
+outro lugar. Conclusão: tratar só o retângulo PLANEJADO da zona nunca foi garantia de cobrir onde o
+modelo REALMENTE desenhou o texto. O smoke também revelou `TEXT_ZONE_OVERLAPS_ASSET` (headline
+sobre a logo) chegando ao gate, e um `CREATIVE_PLAN_INVALID` sem nenhuma pista do motivo.
+
+### Correção — localização REAL (bbox), nunca mais só a zona planejada
+- **`analyze-pre-composition-image.ts`**: cada achado de texto espúrio agora pede também `bbox`
+  (retângulo aproximado REAL, percentual do canvas) e `confidence` — nunca um projeto de OCR,
+  localização aproximada já basta. O mesmo texto em mais de um lugar vira entradas SEPARADAS, cada
+  uma com sua própria bbox.
+- **`expandBboxWithPadding`** (`resolve-actual-safe-area.ts`): expande a bbox detectada
+  proporcionalmente ao próprio tamanho (18% por padrão) antes de tratar — nunca a bbox exata, pra
+  não sobrar contorno/letra na borda do tratamento.
+- **`applySafeAreaAdjustments` reestruturado**: agora trata CADA achado de texto espúrio na sua
+  bbox real (expandida) — nunca mais amarrado à zona planejada. Quando a visão não consegue
+  localizar (`bbox` ausente), cai no fallback antigo (rect da zona correspondente). A lógica de
+  zonas (relocação) ficou separada e agora cuida só de OCUPAÇÃO (produto/rosto/geometria), não mais
+  de texto fantasma por zona.
+- **Checagem GLOBAL pós-tratamento** (`checkGlobalTextLegibility`): depois de tratar TODAS as
+  regiões detectadas, uma pergunta sobre a imagem BASE tratada INTEIRA — "ainda há texto não
+  autorizado/duplicado legível em QUALQUER lugar?". Só roda quando havia algo detectado E a
+  capacidade completa de tratamento estava disponível (nunca gasta a chamada à toa). Falha ⇒ rota
+  normal de reparo (`UNRECOVERABLE_GHOST_TEXT`, igual à ETAPA 3.1), ANTES de desenhar texto
+  determinístico.
+
+### Correção — `TEXT_ZONE_OVERLAPS_ASSET` (geometria determinística, não só visão)
+- A relocação de zonas agora considera overlap GEOMÉTRICO determinístico contra assets reais já
+  posicionados (logo/screenshot) e contra outras zonas de maior prioridade — nunca só o que a
+  visão relatou como "ocupado". `TEXT_ZONE_KIND_PRIORITY` (headline > price > cta > subheadline >
+  discount > url > badge) decide quem relocaliza primeiro quando duas zonas colidem entre si.
+  Resolvido sem regenerar imagem sempre que existe uma região alternativa genuinamente livre.
+- **Achado e corrigido durante os testes desta etapa**: o gate técnico
+  (`checkAssetPlacementOverlap`/`checkTextZoneCollisions`/`checkSafeAreaCompliance`) recebia
+  `plan.textZones` — os retângulos ORIGINAIS do Director, nunca os retângulos REALOCADOS. Uma
+  colisão genuinamente corrigida em tempo de composição ainda assim reprovava o gate, porque ele
+  olhava para a geometria antiga. Corrigido: o gate agora recebe um "plano para avaliação"
+  (`planForGate`) com `textZones` substituído pelos retângulos REAIS pós-ajuste — o `plan` original
+  (nunca alterado) continua sendo o que volta pro Director em caso de reparo.
+- Quando NENHUMA região alternativa está livre, a colisão permanece e o gate corretamente reprova
+  (nunca silenciosamente deixa passar um overlap real só porque existe um mecanismo de correção).
+
+### Correção — causa raiz do `CREATIVE_PLAN_INVALID`
+- **`diagnoseCreativePlanInvalidity`** (`gpt-creative-plan.types.ts`, novo): re-percorre as MESMAS
+  validações de `parseCreativePlan`, na mesma ordem, devolvendo a frase legível da PRIMEIRA regra
+  que falhou (campo exato, valor, regra) — nunca muda o contrato de `parseCreativePlan` (ainda só
+  `CreativePlan | undefined`, as dezenas de testes existentes continuam valendo).
+- A 2ª tentativa do plano inicial agora recebe essa causa anexada ao prompt
+  (`appendPlanRetryDiagnostic`) — nunca mais uma re-pergunta cega com o prompt idêntico.
+- **`CREATIVE_PLAN_REPEAT_INVALID`** (novo `errorCode`, distinto de `CREATIVE_PLAN_INVALID`):
+  quando o MESMO diagnóstico se repete nas duas tentativas (mesmo depois de receber a causa exata),
+  nomeia isso como um padrão, não um acaso — nunca tenta uma 3ª vez, continua gastando zero
+  gerações de imagem.
+
+### Limitações documentadas (honestas)
+- A checagem global roda sobre a imagem BASE já com screenshot/logo compostos (ordem real do
+  pipeline), não sobre o resultado puro do modelo de imagem — uma simplificação deliberada de
+  escopo, documentada aqui.
+- `requiredRenderedFacts`/`textsMatchApproximately` (normalização de texto) existem como utilidade
+  testada, mas a decisão de QUAL achado tratar continua sendo "todo achado com bbox", não uma
+  classificação distinta de "fato duplicado" vs. "texto não autorizado" — ambos recebem o mesmo
+  tratamento (mesma urgência, mesmo mecanismo), por design (brief, ponto 7).
+- `resolveFinalCompositionGeometry()` como módulo central dedicado não foi criado — a correção de
+  overlap foi feita extendendo a lógica de relocação já existente (`resolveActualTextZoneRect`),
+  mais simples e sem duplicar regras, mas significa que a resolução de geometria está distribuída
+  entre `applySafeAreaAdjustments` e as funções puras de `resolve-actual-safe-area.ts`, não
+  centralizada num único módulo com esse nome exato.
+
+### Testes novos (ETAPA 3.2)
+`resolve-actual-safe-area.test.mjs` (+9: expandBboxWithPadding, normalização/match aproximado,
+prioridade/ordenação), `analyze-pre-composition-image.test.mjs` (+8: bbox/confidence,
+múltiplas ocorrências, `checkGlobalTextLegibility`), `gpt-creative-plan-types.test.mjs` (+7:
+`diagnoseCreativePlanInvalidity`), e 5 novos testes de integração em `run-gpt-creative-engine.test.mjs`
+(bbox fora da zona tratado no lugar certo, overlap geométrico relocalizado sem regen, overlap
+genuinamente sem solução ainda reprova corretamente, recheck global aciona reparo, causa exata
+anexada à 2ª tentativa do plano, repetição de causa estrutural vira `CREATIVE_PLAN_REPEAT_INVALID`)
++ 1 novo cenário de smoke local com pixels reais (`round4-etapa3-local-smoke.test.mjs`) confirmando
+texto fora da zona planejada sendo tratado corretamente.
+
 ## O que NÃO foi feito nesta rodada (ETAPAS 5, 6 — pendentes)
 
 - **ETAPA 5** (convergência de Brand Profile): o benchmark confirmou que `BrandVisualProfile`
@@ -275,13 +358,14 @@ Ver bloco de classificação e entrega ao final deste documento.
 
 ## Verificação desta rodada
 
-`npm run typecheck` (raiz) — PASS. `npm run build` — PASS. `node --test tests/*.test.mjs` — 3257
+`npm run typecheck` (raiz) — PASS. `npm run build` — PASS. `node --test tests/*.test.mjs` — 3287
 testes, 2 flakes pré-existentes e não relacionados (`tests/analytics.test.mjs:192`,
 `tests/cli.smoke.test.mjs:280`), zero falhas novas. `npm run architecture:check` — PASS (49
 contratos, 7 checks de isolamento arquitetural, 1032 arquivos). Smoke local ETAPA 3: 6/6 cenários
-PASS. Smoke local ETAPA 3.1: 3/3 cenários LOW/MEDIUM/HIGH contraste PASS + 4/4 testes de integração
-(preço fantasma, marca fantasma, escalonamento, unrecoverable) PASS, todos usando o pipeline de
-composição real.
+PASS. Smoke local ETAPA 3.1: 3/3 cenários LOW/MEDIUM/HIGH contraste + 4/4 testes de integração
+PASS. Smoke local ETAPA 3.2: 1 cenário dedicado de bbox-fora-da-zona (pixel real) + 5 testes de
+integração (bbox, overlap geométrico resolvido/não-resolvido, recheck global, diagnóstico de plano)
+PASS — todos usando o pipeline de composição real onde aplicável.
 
 ## Bloco de classificação
 
@@ -298,12 +382,12 @@ DYNAMIC_TEXT_REGION = PASS
 ADAPTIVE_CONTRAST = PASS
 LOGO_ADAPTIVE = PARTIAL (sem variantes light/dark reais cadastradas — só direct/subtle_scrim/card_fallback a partir do asset único)
 LOGO_STICKER_DEFAULT_REMOVED = YES
-LOGO_OVERLAP_GUARD = PASS (via checkAssetPlacementOverlap/checkTextZoneCollisions pré-existentes, geometria agora também ajustada em tempo de composição)
+LOGO_OVERLAP_GUARD = PASS (via checkAssetPlacementOverlap/checkTextZoneCollisions, agora contra geometria pós-ajuste, não mais a planejada)
 SCREENSHOT_SLOT = PASS
 SCREENSHOT_COORDINATION = PASS (detecção + reparo completo; fallback de crop/recomposição automática NÃO implementado — ver limitações)
 RENDERER_FIX_WITHOUT_REGEN = PASS
 LOCAL_SMOKE = PASS (6/6 cenários ETAPA 3)
-STAGE_3_PRODUCTION = VERIFIED (deployado e smoke-testado em produção, ver histórico desta sessão)
+STAGE_3_PRODUCTION = VERIFIED (deployado e smoke-testado em produção)
 
 ADAPTIVE_BLUR = PASS
 ADAPTIVE_SCRIM = PASS
@@ -314,7 +398,23 @@ BRAND_GHOST_CASE = PASS
 LOCAL_FIX_WITHOUT_REGEN = PASS
 UNRECOVERABLE_GHOST_ROUTING = PASS
 LOCAL_SMOKE_3_1 = PASS (3/3 cenários LOW/MEDIUM/HIGH contraste + 4/4 testes de integração)
-STAGE_3_1_READY_FOR_PRODUCTION = (ver entrega desta sessão para o resultado do smoke real)
+STAGE_3_1_READY_FOR_PRODUCTION = YES — deployado e smoke-testado em produção (commit 7d89b16); achado real: blur+véu local funcionam e são confirmados por recheck, mas o gate final ainda encontrou duplicata em local não coberto pelo tratamento (motivou a ETAPA 3.2)
+
+ACTUAL_TEXT_BBOX = PASS
+MULTIPLE_TEXT_OCCURRENCES = PASS
+BBOX_PADDING = PASS
+LOCAL_RECHECK = PASS
+GLOBAL_RECHECK = PASS
+DUPLICATED_PRICE_OUTSIDE_PLANNED_ZONE = PASS (testado localmente — tratado na bbox real, fora da zona planejada; ainda não confirmado contra o modelo real em produção, ver REAL_SMOKE)
+UNAUTHORIZED_TEXT_OUTSIDE_ZONE = PASS (mesmo mecanismo, testado com texto não-numérico)
+GEOMETRY_RESOLVER = PASS (via extensão da relocação existente + plano-para-gate; não um módulo central dedicado, ver limitações)
+TEXT_ZONE_OVERLAPS_ASSET = RESOLVED (quando há região alternativa livre; corretamente ainda reprova quando genuinamente não há)
+PLAN_INVALID_ROOT_CAUSE = IDENTIFIED (ver `diagnoseCreativePlanInvalidity` — a causa real do CREATIVE_PLAN_INVALID do smoke anterior não pôde ser retroativamente recuperada, mas o mecanismo de diagnóstico agora captura isso para qualquer falha futura)
+PLAN_REPAIR_CONTEXT = PASS (causa exata anexada à 2ª tentativa, testado)
+REPEAT_INVALID_PLAN = CONTROLLED (CREATIVE_PLAN_REPEAT_INVALID, nunca uma 3ª tentativa)
+LOCAL_SMOKE_3_2 = PASS
+REAL_SMOKE_3_2 = NOT_EXECUTED (depende de deploy — não autorizado nesta rodada, ver instrução explícita "NÃO deployar automaticamente")
+STAGE_3_2_READY_FOR_PRODUCTION = YES, verificado localmente — smoke real pendente de autorização de deploy
 
 BRAND_PROFILE_CONVERGENCE = NOT_STARTED (ETAPA 5 não iniciada)
 PRODUCT_REFERENCE_PATH = NOT_TESTED (auditado em código na Rodada 3, nenhum cenário de benchmark o exercitou; ETAPA 6 não executada)
@@ -325,11 +425,12 @@ DIRECT_GPT_BETTER = N/A
 COMMERCIAL_TEXT_ERRORS = N/A (seriam medidos no novo benchmark, não executado)
 QUALITY_TARGET_80_PERCENT = NOT_RE_MEASURED
 AVERAGE_COST_BEFORE = ver docs/vorix-creative-quality-benchmark.md seção 6
-AVERAGE_COST_AFTER = N/A (sem novo benchmark nesta rodada; ETAPA 3 adiciona 1 chamada de visão barata por geração com zona de renderer/screenshot — ver costBreakdown.preCompositionAnalysis)
+AVERAGE_COST_AFTER = N/A (sem novo benchmark nesta rodada; ETAPA 3.2 adiciona, na pior hipótese, 1 chamada de visão global extra por geração com achado de texto espúrio — ver costBreakdown.ghostTextNeutralization)
 ```
 
-**Conforme instruído: como as ETAPAS 5/6 não foram concluídas e a meta de 80% não foi
-remedida, o Creative Engine NÃO é declarado resolvido.**
+**Conforme instruído: como as ETAPAS 5/6 não foram concluídas, a meta de 80% não foi remedida, e
+o smoke real da ETAPA 3.2 ainda não foi executado (deploy não autorizado nesta rodada), o Creative
+Engine NÃO é declarado resolvido.**
 
 ## Respostas às 10 perguntas de fechamento da ETAPA 3
 
@@ -368,3 +469,44 @@ remedida, o Creative Engine NÃO é declarado resolvido.**
     explícita conforme instruído.
 
 **Como as ETAPAS 5/6 não foram atingidas, não declaro o Creative Engine resolvido.**
+
+## Respostas às 11 perguntas de fechamento da ETAPA 3.2
+
+1. **Onde exatamente o texto fantasma estava aparecendo?** Não temos o caso ORIGINAL do smoke da
+   ETAPA 3.1 re-executado (a pergunta é respondida pelo MECANISMO novo, não por um novo dado
+   daquele caso específico): agora a visão reporta uma `bbox` aproximada da localização REAL, que
+   pode ser diferente do retângulo planejado da zona — confirmado funcionando em teste local com
+   texto deliberadamente fora da zona planejada.
+2. **A bbox real é diferente da planned zone?** Sim, pode ser — e o sistema agora trata a BBOX
+   real (expandida com margem), nunca mais assume que é a mesma coisa.
+3. **Quantas ocorrências do mesmo texto foram encontradas?** O mecanismo agora suporta QUALQUER
+   número de ocorrências (cada uma uma entrada separada com sua própria bbox) — testado com 2
+   ocorrências simultâneas do mesmo preço em lugares diferentes.
+4. **Global recheck funciona?** Sim — testado isoladamente (`checkGlobalTextLegibility`) e
+   integrado (aciona reparo quando encontra algo, mesmo depois de todo tratamento local ter
+   reportado sucesso).
+5. **O preço duplicado residual foi eliminado?** Resolvido no nível de MECANISMO (tratamento na
+   bbox real + confirmação global) e confirmado em testes locais — ainda não re-testado contra o
+   modelo real em produção (depende de deploy, não autorizado nesta rodada).
+6. **Headline ainda colide com logo?** Não mais, quando existe uma região alternativa livre —
+   relocaliza sem regenerar imagem. Quando genuinamente não há alternativa, o gate continua
+   reprovando corretamente (nunca deixa passar).
+7. **Qual era a causa do CREATIVE_PLAN_INVALID?** Não recuperável retroativamente (o smoke
+   anterior não logou o diagnóstico, que não existia ainda) — mas o mecanismo agora criado
+   (`diagnoseCreativePlanInvalidity`) captura a causa exata de qualquer falha futura.
+8. **O repair agora corrige a causa ou repete?** A 2ª tentativa recebe a causa exata anexada ao
+   prompt (testado). Quando o MESMO erro estrutural se repete mesmo assim, isso é nomeado
+   (`CREATIVE_PLAN_REPEAT_INVALID`) em vez de uma 3ª tentativa silenciosa.
+9. **Quantas regenerações foram evitadas?** Nos testes: toda neutralização de texto fantasma
+   (bbox real) e toda relocação de overlap geométrico resolvido localmente — zero gerações extras
+   nesses casos, confirmado por contagem de chamadas `image_generation` nos testes de integração.
+10. **Qual custo do smoke?** Não executado nesta rodada (smoke real depende de deploy, não
+    autorizado). Custo marginal esperado por chamada: 1 checagem global extra (texto, barata)
+    quando há achado de texto espúrio — mesma ordem de grandeza da análise pré-composição já
+    existente, nunca perto do custo de uma imagem.
+11. **ETAPA 3.2 está pronta para produção?** Verificada localmente (typecheck/build/suíte
+    completa/architecture-check/smoke local, todos PASS) e commitada — aguardando autorização
+    explícita de deploy pra confirmar com o modelo real.
+
+**Como o smoke real não foi executado (deploy não autorizado) e as ETAPAS 5/6 continuam
+pendentes, não declaro o Creative Engine resolvido.**

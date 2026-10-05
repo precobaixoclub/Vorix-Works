@@ -39,6 +39,28 @@ export type RegionSemanticFlags = {
   complexity: RegionComplexity;
 };
 
+// ETAPA 3.2 (Rodada 4) — achado do smoke real: `TEXT_ZONE_OVERLAPS_ASSET` (headline sobrepondo a
+// logo) chegou ao gate técnico porque a relocalização de zonas (abaixo) só considerava o que a
+// VISÃO relatou como "ocupado" — nunca o geométrico determinístico (a logo já tem um retângulo
+// conhecido com certeza, não precisa de visão pra saber que está ali). Prioridade (brief, ponto
+// 14) decide QUEM relocaliza quando duas zonas de texto colidem entre si — menor número = maior
+// prioridade, processado primeiro, "ganha" a posição; zonas de menor prioridade são as que se
+// movem. Assets reais (logo/screenshot) nunca entram nesta lista — são sempre mais prioritários
+// que qualquer texto (já populam `occupiedRects` ANTES do loop começar).
+export const TEXT_ZONE_KIND_PRIORITY: Record<string, number> = {
+  headline: 1,
+  price: 2,
+  cta: 3,
+  subheadline: 4,
+  discount: 5,
+  url: 6,
+  badge: 7,
+};
+
+export function sortTextZonesByPriority<T extends { kind: string }>(zones: readonly T[]): T[] {
+  return [...zones].sort((a, b) => (TEXT_ZONE_KIND_PRIORITY[a.kind] ?? 99) - (TEXT_ZONE_KIND_PRIORITY[b.kind] ?? 99));
+}
+
 export function isRegionSafeForText(flags: RegionSemanticFlags): boolean {
   return !flags.hasText && !flags.hasProduct && !flags.hasFace && flags.complexity !== "high";
 }
@@ -185,6 +207,50 @@ const GHOST_TEXT_INTENSITY_PARAMS: Record<GhostTextIntensity, GhostTextTreatment
 
 export function resolveGhostTextTreatmentParams(intensity: GhostTextIntensity): GhostTextTreatmentParams {
   return GHOST_TEXT_INTENSITY_PARAMS[intensity];
+}
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.2 (Rodada 4) — achado do smoke real da ETAPA 3.1: tratar só o retângulo PLANEJADO da
+// zona não é garantia de cobrir onde o modelo REALMENTE desenhou o texto espúrio. A visão agora
+// reporta uma `bbox` aproximada (ver `analyze-pre-composition-image.ts`); estas funções PURAS
+// expandem essa bbox com margem de segurança e fazem o match semântico simples pedido no brief
+// (nunca fuzzy matching excessivo — só normalização de caixa/espaço/pontuação/símbolo monetário).
+// ---------------------------------------------------------------------------------------------
+
+/** Expande uma bbox detectada com margem de segurança (percentual, proporcional ao próprio
+ * tamanho da bbox — uma bbox pequena ganha uma margem pequena em termos absolutos, uma grande
+ * ganha mais, sempre a mesma proporção) — nunca trata só a bbox exata (brief, ponto 4: "evitar
+ * sobrar contorno/letra na borda do tratamento"). Clampada aos limites do canvas (0-100). */
+export function expandBboxWithPadding(bbox: CreativePlanRect, paddingPct = 18): CreativePlanRect {
+  const padX = (bbox.widthPct * paddingPct) / 100;
+  const padY = (bbox.heightPct * paddingPct) / 100;
+  const xPct = Math.max(0, bbox.xPct - padX);
+  const yPct = Math.max(0, bbox.yPct - padY);
+  const widthPct = Math.min(100 - xPct, bbox.widthPct + padX * 2);
+  const heightPct = Math.min(100 - yPct, bbox.heightPct + padY * 2);
+  return { xPct, yPct, widthPct, heightPct };
+}
+
+/** Normalização simples (brief, ponto 6): minúsculas, sem acento, só letras/números — nunca fuzzy
+ * matching elaborado. "R$ 149,00", "R$149" e "149,00" normalizam pra formas que uma contém a
+ * outra como substring, suficiente pra reconhecer que é o MESMO fato comercial sem inventar
+ * heurística complexa. */
+export function normalizeTextForMatching(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+/** `true` quando os dois textos normalizados são iguais ou um contém o outro como substring —
+ * cobre variações de formatação do mesmo fato comercial (preço com/sem símbolo de moeda, com/sem
+ * casas decimais) sem precisar de uma biblioteca de fuzzy matching. */
+export function textsMatchApproximately(a: string, b: string): boolean {
+  const normalizedA = normalizeTextForMatching(a);
+  const normalizedB = normalizeTextForMatching(b);
+  if (!normalizedA || !normalizedB) return false;
+  return normalizedA === normalizedB || normalizedA.includes(normalizedB) || normalizedB.includes(normalizedA);
 }
 
 /** Tradução do vocabulário de tratamento pra primitiva real do renderer determinístico — ver

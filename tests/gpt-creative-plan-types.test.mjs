@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCreativePlanPrompt, buildImageGenerationPromptFromPlan, parseCreativePlan } from "../dist/shared/utils/gpt-creative-plan.types.js";
+import { buildCreativePlanPrompt, buildImageGenerationPromptFromPlan, parseCreativePlan, diagnoseCreativePlanInvalidity } from "../dist/shared/utils/gpt-creative-plan.types.js";
 
 function sampleContext(overrides = {}) {
   return {
@@ -703,4 +703,46 @@ test("buildImageGenerationPromptFromPlan: com assetPlacement de logo/screenshot,
   assert.match(imagePrompt, /notebook/);
   assert.match(imagePrompt, /NÃO desenhe uma logo/);
   assert.match(imagePrompt, /NUNCA a interface do site/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.2 (Rodada 4) — diagnoseCreativePlanInvalidity: nunca muda o contrato de parseCreativePlan
+// (ainda devolve só CreativePlan | undefined, todos os testes acima continuam valendo), só dá uma
+// causa legível pra alimentar a 2ª tentativa com um motivo CONCRETO em vez de re-perguntar cego.
+// ---------------------------------------------------------------------------------------------
+
+test("diagnoseCreativePlanInvalidity: JSON ilegível -> causa genérica de parse, nunca lança", () => {
+  const cause = diagnoseCreativePlanInvalidity("isto não é JSON");
+  assert.match(cause, /JSON malformado/);
+});
+
+test("diagnoseCreativePlanInvalidity: headline ausente -> aponta o campo exato", () => {
+  const cause = diagnoseCreativePlanInvalidity(JSON.stringify({ cta: "x" }));
+  assert.match(cause, /"headline"/);
+});
+
+test("diagnoseCreativePlanInvalidity: cta ausente -> aponta o campo exato", () => {
+  const cause = diagnoseCreativePlanInvalidity(JSON.stringify({ headline: "x" }));
+  assert.match(cause, /"cta"/);
+});
+
+test("diagnoseCreativePlanInvalidity: allowedRenderedTexts sem o headline exato -> aponta a regra exata, citando o valor", () => {
+  const cause = diagnoseCreativePlanInvalidity(JSON.stringify({ headline: "MEU HEADLINE", cta: "", allowedRenderedTexts: ["outro texto"] }));
+  assert.match(cause, /allowedRenderedTexts/);
+  assert.match(cause, /MEU HEADLINE/);
+});
+
+test("diagnoseCreativePlanInvalidity: artDirection com frase vaga banida -> aponta a regra exata", () => {
+  const cause = diagnoseCreativePlanInvalidity(samplePlanJson({ artDirection: sampleArtDirection({ concept: "visual moderno" }) }));
+  assert.match(cause, /artDirection/);
+});
+
+test("diagnoseCreativePlanInvalidity: plano genuinamente válido -> undefined (nada a diagnosticar)", () => {
+  const cause = diagnoseCreativePlanInvalidity(samplePlanJson());
+  assert.equal(cause, undefined);
+});
+
+test("diagnoseCreativePlanInvalidity: duas respostas com a MESMA causa estrutural produzem o MESMO diagnóstico (base pro CREATIVE_PLAN_REPEAT_INVALID)", () => {
+  const raw = JSON.stringify({ cta: "x" }); // sem headline
+  assert.equal(diagnoseCreativePlanInvalidity(raw), diagnoseCreativePlanInvalidity(raw));
 });

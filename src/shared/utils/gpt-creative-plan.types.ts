@@ -868,6 +868,54 @@ export function parseCreativePlan(raw: string): CreativePlan | undefined {
 }
 
 /**
+ * ETAPA 3.2 (Rodada 4, benchmark de qualidade criativa) — achado do smoke real: `requestCreativePlan`
+ * tentava uma 2ª vez com o MESMO prompt quando a 1ª resposta falhava `parseCreativePlan`, sem
+ * NENHUM feedback sobre o que especificamente estava errado — a 2ª tentativa podia (e às vezes
+ * repetia) o mesmo erro estrutural. Esta função re-percorre as MESMAS validações de
+ * `parseCreativePlan`, na MESMA ordem, mas devolve uma frase legível apontando a PRIMEIRA regra que
+ * falhou — nunca muda o contrato de `parseCreativePlan` (que `requestCreativePlan`/dezenas de
+ * testes existentes dependem continuar devolvendo só `CreativePlan | undefined`), existe só pra dar
+ * ao Director um motivo CONCRETO na tentativa seguinte, em vez de uma re-pergunta cega. Nunca
+ * lança — falha de parse devolve a causa mais genérica possível ("JSON malformado").
+ */
+export function diagnoseCreativePlanInvalidity(raw: string): string | undefined {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof parsed.headline !== "string") return "campo \"headline\" ausente ou não é uma string.";
+    if (typeof parsed.cta !== "string") return "campo \"cta\" ausente ou não é uma string (use \"\" quando a peça não tem CTA, nunca omita o campo).";
+
+    const assetPlacements = parseAssetPlacements(parsed.assetPlacements);
+    if (assetPlacements === undefined) return "campo \"assetPlacements\" inválido — algum item tem role/url/rect malformado, ou um retângulo fora dos limites do canvas (0-100) ou com largura/altura zero.";
+
+    const textZones = parseTextZones(parsed.textZones);
+    if (textZones === undefined) return "campo \"textZones\" inválido — algum item tem kind/rect/emphasis/renderedBy malformado, ou um retângulo fora dos limites do canvas ou com largura/altura zero.";
+
+    const allowedRenderedTexts = parseAllowedRenderedTexts(parsed.allowedRenderedTexts);
+    if (allowedRenderedTexts === undefined) return "campo \"allowedRenderedTexts\" ausente, vazio, ou contém um item vazio/não-string.";
+
+    if (!allowedRenderedTexts.includes(parsed.headline)) {
+      return `"allowedRenderedTexts" precisa conter o "headline" EXATO como um dos itens — o headline era "${parsed.headline}", mas não apareceu literalmente na lista.`;
+    }
+    if (parsed.cta.trim() !== "" && !allowedRenderedTexts.includes(parsed.cta)) {
+      return `"allowedRenderedTexts" precisa conter o "cta" EXATO como um dos itens (a menos que cta seja "") — o cta era "${parsed.cta}", mas não apareceu literalmente na lista.`;
+    }
+
+    const requiredRenderedFacts = parseRequiredRenderedFacts(parsed.requiredRenderedFacts, allowedRenderedTexts);
+    if (requiredRenderedFacts === undefined) return "campo \"requiredRenderedFacts\" contém um fato que não corresponde a nenhum trecho de \"allowedRenderedTexts\" — todo fato obrigatório precisa também estar planejado em algum texto renderável.";
+
+    const artDirection = parseArtDirection(parsed.artDirection);
+    if (artDirection === undefined) return "campo \"artDirection\" ausente, incompleto, ou algum campo é só uma frase vaga banida (ex.: \"visual moderno\", \"premium\") em vez de uma decisão concreta e específica desta peça.";
+
+    const layoutPlan = parseLayoutPlan(parsed.layoutPlan);
+    if (layoutPlan === undefined) return "campo \"layoutPlan\" inválido — alguma zona tem kind/rect/priority/rationale malformado.";
+
+    return undefined;
+  } catch {
+    return "JSON malformado/ilegível (falha ao fazer JSON.parse da resposta).";
+  }
+}
+
+/**
  * Deriva o prompt de GERAÇÃO DE IMAGEM a partir do `creative_plan` — substitui a árvore de regras
  * da Bianca + guard clauses do Pedro. Elementos que serão colados por composição determinística
  * depois (logo, screenshot) são explicitamente excluídos da instrução de desenho — o modelo deve

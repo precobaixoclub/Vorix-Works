@@ -1,7 +1,7 @@
 import type { IcaroBrainPort } from "../ai/icaro-brain.contract.js";
 import type { IcaroAIResponse } from "../ai/icaro.types.js";
 import { extractJson } from "../../shared/utils/skill-parsing.js";
-import type { CreativePlanTextZone, CreativePlanTextZoneKind } from "../../shared/utils/gpt-creative-plan.types.js";
+import type { CreativePlanRect, CreativePlanTextZone, CreativePlanTextZoneKind } from "../../shared/utils/gpt-creative-plan.types.js";
 import { SAFE_AREA_CANDIDATE_REGIONS, type RegionComplexity, type RegionSemanticFlags, type SafeAreaCandidateRegion } from "./resolve-actual-safe-area.js";
 
 /**
@@ -26,6 +26,16 @@ export type SpuriousTextFinding = {
    * texto o modelo já desenhou sozinho por conta própria (o caso que o renderer precisa
    * NEUTRALIZAR antes de desenhar a sua própria versão por cima, nunca só desenhar ao lado). */
   matchedZoneKind?: CreativePlanTextZoneKind;
+  /** ETAPA 3.2 (Rodada 4) — achado do smoke real: tratar só o retângulo PLANEJADO da zona não é
+   * garantia de cobrir onde o modelo REALMENTE desenhou o texto espúrio (pode estar fora, ou em
+   * mais de um lugar). `bbox` é a localização aproximada REAL reportada pela visão — percentual do
+   * canvas, mesmo formato de `CreativePlanRect`. `undefined` quando a visão não conseguiu
+   * localizar (cai no fallback do retângulo da zona planejada, nunca trava a execução). Nunca um
+   * projeto de OCR — localização aproximada já é suficiente pra neutralizar (brief, ponto 3). */
+  bbox?: CreativePlanRect;
+  /** 0-1, confiança da visão nesta detecção específica — usado só como sinal auxiliar (nunca um
+   * filtro rígido que descarta achados "menos confiantes"), `undefined` quando não informado. */
+  confidence?: number;
 };
 
 export type PreCompositionAnalysis = {
@@ -67,6 +77,10 @@ function buildPreCompositionAnalysisPrompt(input: {
     "- \"unauthorized_text\": texto que não está na lista de textos autorizados E não corresponde a nenhuma zona do renderer listada acima.",
     "- \"ghost_text\": texto que o modelo desenhou e que é IGUAL (ou muito parecido) ao texto de uma das zonas do renderer listadas acima — o modelo antecipou um texto que deveria ter deixado em branco.",
     "- \"duplicated_text\": o MESMO texto aparece mais de uma vez na imagem.",
+    // ETAPA 3.2 — achado do smoke real: tratar só o retângulo PLANEJADO da zona não é garantia de
+    // cobrir onde o texto espúrio REALMENTE está. Pede a localização REAL, não a planejada.
+    "- Para CADA texto espúrio encontrado, informe também \"bbox\" (retângulo aproximado em PERCENTUAL do canvas, 0-100, onde esse texto REALMENTE aparece na imagem — nunca o retângulo planejado da zona, a localização REAL observada) e \"confidence\" (0 a 1, sua confiança nesta detecção). Localização aproximada já é suficiente — isto NÃO é uma tarefa de OCR perfeito.",
+    "- Se o MESMO texto aparecer em MAIS de um lugar, reporte uma entrada SEPARADA em \"spuriousTexts\" para CADA ocorrência, cada uma com seu próprio \"bbox\".",
     "",
     "Avalie também 6 regiões fixas do canvas (cada uma ~40% de largura x 20% de altura): top-left, top-right, center-left, center-right, bottom-left, bottom-right. Para cada uma, diga se tem texto legível, se tem parte do produto/elemento principal, se tem um rosto, e a complexidade visual geral (low/medium/high).",
     input.hasScreenshotSlot
@@ -74,13 +88,23 @@ function buildPreCompositionAnalysisPrompt(input: {
       : "",
     "",
     "Responda APENAS com JSON válido, sem markdown, no formato exato:",
-    '{"spuriousTexts": [{"text": "...", "classification": "unauthorized_text"|"ghost_text"|"duplicated_text", "matchedZoneKind": "headline"|"subheadline"|"cta"|"price"|"discount"|"url"|"badge"|null}], ' +
+    '{"spuriousTexts": [{"text": "...", "classification": "unauthorized_text"|"ghost_text"|"duplicated_text", "matchedZoneKind": "headline"|"subheadline"|"cta"|"price"|"discount"|"url"|"badge"|null, "bbox": {"xPct": 0, "yPct": 0, "widthPct": 0, "heightPct": 0}, "confidence": 0.0}], ' +
       '"plannedZonesClear": {"<kind>": true|false}, ' +
       '"regions": {"top-left": {"hasText": true|false, "hasProduct": true|false, "hasFace": true|false, "complexity": "low"|"medium"|"high"}, "top-right": {...}, "center-left": {...}, "center-right": {...}, "bottom-left": {...}, "bottom-right": {...}}' +
       (input.hasScreenshotSlot ? ', "screenshotSlotLooksFake": true|false' : "") +
       "}",
   );
   return lines.filter(Boolean).join("\n");
+}
+
+function isValidBboxRect(value: unknown): value is CreativePlanRect {
+  if (typeof value !== "object" || value === null) return false;
+  const rect = value as Record<string, unknown>;
+  const { xPct, yPct, widthPct, heightPct } = rect;
+  if (typeof xPct !== "number" || typeof yPct !== "number" || typeof widthPct !== "number" || typeof heightPct !== "number") return false;
+  if (![xPct, yPct, widthPct, heightPct].every(Number.isFinite)) return false;
+  if (xPct < 0 || yPct < 0 || widthPct <= 0 || heightPct <= 0) return false;
+  return true;
 }
 
 function isSpuriousTextClassification(value: unknown): value is SpuriousTextClassification {
@@ -146,6 +170,8 @@ export async function analyzePreCompositionImage(
           text: record.text,
           classification: record.classification,
           matchedZoneKind: typeof record.matchedZoneKind === "string" ? (record.matchedZoneKind as CreativePlanTextZoneKind) : undefined,
+          bbox: isValidBboxRect(record.bbox) ? record.bbox : undefined,
+          confidence: typeof record.confidence === "number" && Number.isFinite(record.confidence) ? Math.max(0, Math.min(1, record.confidence)) : undefined,
         });
       }
     }
@@ -173,5 +199,43 @@ export async function analyzePreCompositionImage(
     };
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * ETAPA 3.2 (Rodada 4) — achado do smoke real da ETAPA 3.1: a reverificação LOCAL (só o recorte
+ * da região tratada) confirmava sucesso, mas o gate final (peça inteira) ainda encontrava o mesmo
+ * texto duplicado em outro lugar não coberto pelo tratamento. Esta checagem GLOBAL roda depois de
+ * TODAS as regiões detectadas já terem sido tratadas — pergunta sobre a imagem BASE inteira já
+ * tratada, nunca só uma região isolada (brief, ponto 9/10: "LOCAL RECHECK + GLOBAL RECHECK, ambos
+ * precisam passar"). Conservadora: só aceita "limpo" com um `false` explícito.
+ */
+export async function checkGlobalTextLegibility(
+  icaro: IcaroBrainPort,
+  input: { imageUrl: string; allowedRenderedTexts: readonly string[]; specialistId: string; onCost?: (response: IcaroAIResponse | undefined) => void },
+): Promise<boolean> {
+  try {
+    const response = await icaro.request({
+      taskType: "review",
+      prompt: [
+        "Esta é a imagem BASE (antes de logo/screenshot/texto do renderer), depois de um tratamento local para esconder texto espúrio em regiões específicas.",
+        `LISTA FECHADA DE TEXTOS AUTORIZADOS (qualquer outro texto legível é um problema): ${input.allowedRenderedTexts.map((text) => `"${text}"`).join(", ") || "(nenhum texto autorizado nesta peça)"}.`,
+        "Olhando a imagem INTEIRA (não só uma região), há ALGUM texto legível que NÃO está na lista de textos autorizados, ou o MESMO texto autorizado aparecendo mais de uma vez?",
+        "Responda APENAS com JSON válido, sem markdown, no formato exato: {\"hasUnresolvedText\": true|false}",
+      ].join("\n"),
+      specialistId: input.specialistId,
+      imageUrls: [input.imageUrl],
+      expectedOutput: "json",
+      priority: "quality",
+      temperature: 0.1,
+      maxTokens: 50,
+      timeoutMs: 20_000,
+    });
+    input.onCost?.(response);
+    if (response.status !== "completed") return true;
+    const parsed = JSON.parse(extractJson(String(response.content ?? ""), "Global Text Recheck")) as { hasUnresolvedText?: unknown };
+    return parsed.hasUnresolvedText !== false;
+  } catch {
+    return true;
   }
 }

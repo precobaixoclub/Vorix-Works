@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { analyzePreCompositionImage } from "../dist/application/creative-engine/analyze-pre-composition-image.js";
+import { analyzePreCompositionImage, checkGlobalTextLegibility } from "../dist/application/creative-engine/analyze-pre-composition-image.js";
 
 /**
  * ETAPA 3 (Rodada 4, benchmark de qualidade criativa) — testes do módulo de análise de visão da
@@ -123,4 +123,83 @@ test("analyzePreCompositionImage: com screenshot slot, o prompt pede o campo scr
   };
   await analyzePreCompositionImage(icaro, baseInput({ hasScreenshotSlot: true }));
   assert.match(capturedPrompt, /screenshotSlotLooksFake/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.2 (Rodada 4) — bbox/confidence por achado, e a checagem GLOBAL pós-tratamento.
+// ---------------------------------------------------------------------------------------------
+
+test("analyzePreCompositionImage: parseia bbox/confidence por achado de texto espúrio", async () => {
+  const icaro = {
+    request: async () => ({
+      status: "completed",
+      content: JSON.stringify({
+        spuriousTexts: [{ text: "R$ 149,00", classification: "duplicated_text", bbox: { xPct: 60, yPct: 70, widthPct: 20, heightPct: 8 }, confidence: 0.85 }],
+      }),
+    }),
+  };
+  const result = await analyzePreCompositionImage(icaro, baseInput());
+  assert.deepEqual(result.spuriousTexts[0].bbox, { xPct: 60, yPct: 70, widthPct: 20, heightPct: 8 });
+  assert.equal(result.spuriousTexts[0].confidence, 0.85);
+});
+
+test("analyzePreCompositionImage: bbox malformada (fora dos limites/campo faltando) vira undefined, nunca derruba o achado inteiro", async () => {
+  const icaro = {
+    request: async () => ({
+      status: "completed",
+      content: JSON.stringify({ spuriousTexts: [{ text: "x", classification: "unauthorized_text", bbox: { xPct: -5, yPct: 0, widthPct: 10, heightPct: 10 } }] }),
+    }),
+  };
+  const result = await analyzePreCompositionImage(icaro, baseInput());
+  assert.equal(result.spuriousTexts.length, 1);
+  assert.equal(result.spuriousTexts[0].bbox, undefined);
+});
+
+test("analyzePreCompositionImage: confidence fora de 0-1 é clampado, nunca rejeitado", async () => {
+  const icaro = { request: async () => ({ status: "completed", content: JSON.stringify({ spuriousTexts: [{ text: "x", classification: "unauthorized_text", confidence: 1.5 }] }) }) };
+  const result = await analyzePreCompositionImage(icaro, baseInput());
+  assert.equal(result.spuriousTexts[0].confidence, 1);
+});
+
+test("analyzePreCompositionImage: múltiplas ocorrências do MESMO texto viram entradas SEPARADAS, cada uma com sua própria bbox", async () => {
+  const icaro = {
+    request: async () => ({
+      status: "completed",
+      content: JSON.stringify({
+        spuriousTexts: [
+          { text: "R$ 149,00", classification: "duplicated_text", bbox: { xPct: 10, yPct: 10, widthPct: 20, heightPct: 8 } },
+          { text: "R$ 149,00", classification: "duplicated_text", bbox: { xPct: 60, yPct: 70, widthPct: 20, heightPct: 8 } },
+        ],
+      }),
+    }),
+  };
+  const result = await analyzePreCompositionImage(icaro, baseInput());
+  assert.equal(result.spuriousTexts.length, 2);
+  assert.notDeepEqual(result.spuriousTexts[0].bbox, result.spuriousTexts[1].bbox);
+});
+
+test("checkGlobalTextLegibility: hasUnresolvedText=false explícito -> false (limpo)", async () => {
+  const icaro = { request: async () => ({ status: "completed", content: JSON.stringify({ hasUnresolvedText: false }) }) };
+  const result = await checkGlobalTextLegibility(icaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" });
+  assert.equal(result, false);
+});
+
+test("checkGlobalTextLegibility: hasUnresolvedText=true -> true (ainda tem problema)", async () => {
+  const icaro = { request: async () => ({ status: "completed", content: JSON.stringify({ hasUnresolvedText: true }) }) };
+  const result = await checkGlobalTextLegibility(icaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" });
+  assert.equal(result, true);
+});
+
+test("checkGlobalTextLegibility: conservador — resposta falha/ambígua conta como 'ainda tem problema', nunca declara limpo sem confirmação", async () => {
+  const failedIcaro = { request: async () => ({ status: "failed" }) };
+  assert.equal(await checkGlobalTextLegibility(failedIcaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" }), true);
+
+  const ambiguousIcaro = { request: async () => ({ status: "completed", content: JSON.stringify({}) }) };
+  assert.equal(await checkGlobalTextLegibility(ambiguousIcaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" }), true);
+});
+
+test("checkGlobalTextLegibility: exceção na chamada nunca lança — conservador (true)", async () => {
+  const icaro = { request: async () => { throw new Error("timeout"); } };
+  const result = await checkGlobalTextLegibility(icaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" });
+  assert.equal(result, true);
 });

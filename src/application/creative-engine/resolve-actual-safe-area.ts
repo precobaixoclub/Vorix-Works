@@ -139,6 +139,54 @@ export function chooseTextBackingTreatment(input: {
   return "direct_text";
 }
 
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.1 (Rodada 4) — achado do smoke real de produção: `local_blur` com sigma FIXO (18) às
+// vezes não foi suficiente pra esconder texto fantasma de alto contraste (preço fantasma
+// continuou parcialmente legível em 2 tentativas seguidas). Detecção/roteamento estavam corretos;
+// só o TRATAMENTO VISUAL precisava de intensidade adaptativa + confirmação — ver
+// `neutralize-ghost-text.ts` pra a orquestração completa (blur+scrim+reverificação+escalonamento).
+// ---------------------------------------------------------------------------------------------
+
+export const GHOST_TEXT_INTENSITIES = ["low", "medium", "high"] as const;
+export type GhostTextIntensity = (typeof GHOST_TEXT_INTENSITIES)[number];
+
+/** Calibrado sobre o mesmo desvio-padrão de luminância (0-255) já usado por
+ * `chooseTextBackingTreatment` — mas com limiares PRÓPRIOS: aqui a pergunta não é "esta região
+ * precisa de algum tratamento" (resposta já é sim, é texto fantasma), é "quão FORTE o tratamento
+ * precisa ser". Sem estatística confiável, cai no nível intermediário — nunca o mais fraco (não
+ * arrisca deixar texto fantasma visível só por falta de dado) nem automaticamente o mais forte
+ * (evita destruir a composição sem necessidade real). */
+export function classifyGhostTextIntensity(pixelStats: RegionPixelStats | undefined): GhostTextIntensity {
+  if (!pixelStats) return "medium";
+  if (pixelStats.stdDevLuminance > 70) return "high";
+  if (pixelStats.stdDevLuminance > 40) return "medium";
+  return "low";
+}
+
+/** Máximo de 2 passes (brief, ponto 9) — nunca um loop infinito. Na 2ª escalada, "high" já é o
+ * teto: satura ali, nunca inventa um 4º nível. */
+export function escalateGhostTextIntensity(current: GhostTextIntensity): GhostTextIntensity {
+  if (current === "low") return "medium";
+  return "high";
+}
+
+export type GhostTextTreatmentParams = {
+  blurSigma: number;
+  scrimOpacity: number;
+};
+
+const GHOST_TEXT_INTENSITY_PARAMS: Record<GhostTextIntensity, GhostTextTreatmentParams> = {
+  // Blur sozinho (achado real): sigma 18 não bastou pra um preço de alto contraste. Os 3 níveis
+  // abaixo escalam TANTO o blur quanto a opacidade do véu junto — nunca só um dos dois.
+  low: { blurSigma: 16, scrimOpacity: 0.4 },
+  medium: { blurSigma: 26, scrimOpacity: 0.55 },
+  high: { blurSigma: 40, scrimOpacity: 0.7 },
+};
+
+export function resolveGhostTextTreatmentParams(intensity: GhostTextIntensity): GhostTextTreatmentParams {
+  return GHOST_TEXT_INTENSITY_PARAMS[intensity];
+}
+
 /** Tradução do vocabulário de tratamento pra primitiva real do renderer determinístico — ver
  * `render-creative-plan-text-zones.ts`. `local_blur` vira `"scrim"` no nível do renderer porque o
  * blur em si é aplicado ANTES, como pré-processamento de pixel (`applyLocalBlur`,

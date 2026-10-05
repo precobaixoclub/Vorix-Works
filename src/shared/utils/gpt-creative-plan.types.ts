@@ -188,6 +188,12 @@ export type CreativePlanTextZone = {
    * o que já está atrás, ex.: uma área de cor sólida conhecida do próprio plano). Ausente cai no
    * padrão histórico por `emphasis`. */
   backingStyle?: CreativePlanTextZoneBackingStyle;
+  /** ETAPA 3.1 (Rodada 4) — campo de EXECUÇÃO, nunca preenchido pelo Director/parser (não existe
+   * no schema de resposta do GPT): quando `neutralize-ghost-text.ts` já borrou+aplicou um véu real
+   * nos pixels da região (texto fantasma neutralizado), `backingStyle` vira `"none"` (o fundo já
+   * está resolvido na imagem) e este campo diz qual cor de texto contrasta com o véu REAL
+   * aplicado — nunca o branco fixo que `"none"` assume por padrão. */
+  textColorOverride?: "light" | "dark";
 };
 
 export const CREATIVE_LAYOUT_ZONE_KINDS = ["hero", "headline", "cta", "logo", "support", "negativeSpace"] as const;

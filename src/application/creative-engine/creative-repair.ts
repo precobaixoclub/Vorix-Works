@@ -81,6 +81,9 @@ export type RepairStrategy = (typeof REPAIR_STRATEGIES)[number];
 export function classifyRepairStrategy(issue: Pick<CreativeQualityIssue, "code" | "source">): RepairStrategy {
   if ((issue.code === "TEXT_ILLEGIBLE_OR_CUT" || issue.code === "ELEMENT_CUT_OFF") && issue.source !== "vision") return "renderer_fixable";
   if (issue.code === "DUPLICATED_TEXT" || issue.code === "CRITICAL_ASSET_OCCLUDED") return "image_repair_required";
+  // ETAPA 3.1 — `UNRECOVERABLE_GHOST_TEXT` cai aqui (no padrão): já esgotou o tratamento local (2
+  // passes de blur+véu escalado, confirmado por reverificação) — nenhum reparo de pixel local
+  // resolveria, precisa de uma geração nova inteira.
   return "full_regen_required";
 }
 

@@ -106,6 +106,12 @@ function toPx(pct: number, totalPx: number): number {
  * `emphasis` — nunca quebra um plano antigo que não conhece o campo.
  */
 function resolveZoneBacking(zone: CreativePlanTextZone, accentColor: string): { backgroundColor?: string; textColor: string } {
+  // ETAPA 3.1 — campo de execução (nunca vem do Director): quando o fundo real já foi resolvido
+  // nos pixels (blur+véu de `neutralize-ghost-text.ts`), a cor de texto precisa contrastar com o
+  // véu REAL aplicado, nunca o branco fixo que "none" assume por padrão.
+  if (zone.backingStyle === "none" && zone.textColorOverride) {
+    return { textColor: zone.textColorOverride === "light" ? "#FFFFFF" : "#000000" };
+  }
   if (zone.backingStyle === "none") return { textColor: "#FFFFFF" };
   if (zone.backingStyle === "scrim") return { backgroundColor: "rgba(0, 0, 0, 0.55)", textColor: "#FFFFFF" };
   if (zone.backingStyle === "solid") return { backgroundColor: accentColor, textColor: pickReadableTextColor(accentColor) };

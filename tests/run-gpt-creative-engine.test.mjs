@@ -663,3 +663,131 @@ test("runGptCreativeEngine: Ícaro não devolve imagem gerada é hard failure", 
   const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
   assert.equal(result.errorCode, "IMAGE_GENERATION_FAILED");
 }));
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.1 (Rodada 4, benchmark de qualidade criativa) — ajuste fino da defesa contra texto
+// fantasma: achado do smoke real de produção, blur de sigma fixo às vezes não bastava. Agora a
+// intensidade é adaptativa e uma reverificação de visão CONFIRMA que o texto sumiu antes de
+// seguir — nunca "cobre com texto" sem confirmar (brief, ponto 12).
+// ---------------------------------------------------------------------------------------------
+
+function occupiedRegionFlags() {
+  const occupied = { hasText: true, hasProduct: false, hasFace: false, complexity: "high" };
+  return { "top-left": occupied, "top-right": occupied, "center-left": occupied, "center-right": occupied, "bottom-left": occupied, "bottom-right": occupied };
+}
+
+function ghostTextPreCompositionAnalysis(zoneKind, regions = occupiedRegionFlags()) {
+  return {
+    status: "completed",
+    content: JSON.stringify({
+      spuriousTexts: [{ text: "texto fantasma", classification: "ghost_text", matchedZoneKind: zoneKind }],
+      plannedZonesClear: { [zoneKind]: false },
+      regions,
+    }),
+  };
+}
+
+function recheckResponse(hasLegibleText) {
+  return { status: "completed", content: JSON.stringify({ hasLegibleText }) };
+}
+
+test("runGptCreativeEngine (ETAPA 3.1): preço fantasma neutralizado em 1 passe — publica com UMA imagem só, sem nova geração, registra GHOST_TEXT_NEUTRALIZED_LOCALLY", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({
+      textZones: [{ kind: "price", text: "R$ 149,00", rect: { xPct: 10, yPct: 60, widthPct: 50, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" }],
+    })],
+    image_generation: [imageResponse()],
+    review: [ghostTextPreCompositionAnalysis("price"), recheckResponse(false), passingReview(), passingVisualScore()],
+  });
+  const deps = baseDeps({
+    creativeBrain: icaro,
+    computeRegionPixelStats: async () => ({ meanLuminance: 180, stdDevLuminance: 50 }),
+    applyLocalBlur: async (imageBuffer) => imageBuffer,
+    applyLocalScrim: async (imageBuffer) => imageBuffer,
+    extractRegionBuffer: async (imageBuffer) => imageBuffer,
+  });
+  // confirmedFacts precisa bater com o preço do textZone — senão o gate determinístico
+  // (checkCommercialFactIntegrity) reprova por INVENTED_COMMERCIAL_FACT antes mesmo de chegar
+  // na parte que este teste quer exercitar.
+  const result = await runGptCreativeEngine(deps, baseInput({ creativeContext: baseContext({ confirmedFacts: ["Preço: R$ 149,00"] }) }));
+
+  assert.equal(result.error, undefined, `esperava sucesso, erro: ${result.error}`);
+  assert.equal(result.publishable, true);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 1, "nenhuma nova geração — o fix local resolveu");
+  assert.equal(result.repairRounds.length, 0, "neutralização local nunca consome rodada de reparo");
+  assert.ok(result.compositionSteps.some((step) => step.step === "safe_area_adjustment" && /GHOST_TEXT_NEUTRALIZED_LOCALLY/.test(step.detail)));
+}));
+
+test("runGptCreativeEngine (ETAPA 3.1): nome de marca fantasma (texto não-numérico) também é neutralizado — o tratamento não é só pra preço", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({
+      textZones: [{ kind: "badge", text: "Marca Oficial", rect: { xPct: 10, yPct: 10, widthPct: 30, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer" }],
+    })],
+    image_generation: [imageResponse()],
+    review: [ghostTextPreCompositionAnalysis("badge"), recheckResponse(false), passingReview(), passingVisualScore()],
+  });
+  const deps = baseDeps({
+    creativeBrain: icaro,
+    computeRegionPixelStats: async () => ({ meanLuminance: 60, stdDevLuminance: 50 }),
+    applyLocalBlur: async (imageBuffer) => imageBuffer,
+    applyLocalScrim: async (imageBuffer) => imageBuffer,
+    extractRegionBuffer: async (imageBuffer) => imageBuffer,
+  });
+  const result = await runGptCreativeEngine(deps, baseInput());
+
+  assert.equal(result.publishable, true);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 1);
+  assert.ok(result.compositionSteps.some((step) => step.step === "safe_area_adjustment" && /GHOST_TEXT_NEUTRALIZED_LOCALLY/.test(step.detail)));
+}));
+
+test("runGptCreativeEngine (ETAPA 3.1): blur insuficiente no 1º passe -> escala pro 2º, que resolve — ainda sem nova geração de imagem", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({
+      textZones: [{ kind: "price", text: "R$ 149,00", rect: { xPct: 10, yPct: 60, widthPct: 50, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" }],
+    })],
+    image_generation: [imageResponse()],
+    review: [ghostTextPreCompositionAnalysis("price"), recheckResponse(true), recheckResponse(false), passingReview(), passingVisualScore()],
+  });
+  const deps = baseDeps({
+    creativeBrain: icaro,
+    computeRegionPixelStats: async () => ({ meanLuminance: 180, stdDevLuminance: 50 }),
+    applyLocalBlur: async (imageBuffer) => imageBuffer,
+    applyLocalScrim: async (imageBuffer) => imageBuffer,
+    extractRegionBuffer: async (imageBuffer) => imageBuffer,
+  });
+  const result = await runGptCreativeEngine(deps, baseInput({ creativeContext: baseContext({ confirmedFacts: ["Preço: R$ 149,00"] }) }));
+
+  assert.equal(result.publishable, true);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 1, "2 passes de tratamento local, ainda zero novas gerações");
+  assert.ok(result.compositionSteps.some((step) => step.step === "safe_area_adjustment" && /em 2 passe\(s\)/.test(step.detail)));
+}));
+
+test("runGptCreativeEngine (ETAPA 3.1): texto fantasma NÃO neutralizado após 2 passes -> UNRECOVERABLE_GHOST_TEXT roteia para gpt_replan (nova imagem)", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({
+      headline: "Plano original",
+      textZones: [{ kind: "price", text: "R$ 149,00", rect: { xPct: 10, yPct: 60, widthPct: 50, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" }],
+    }), planResponse({ headline: "Plano corrigido" })],
+    image_generation: [imageResponse("https://x/v1.png"), imageResponse("https://x/v2.png")],
+    review: [
+      ghostTextPreCompositionAnalysis("price"), recheckResponse(true), recheckResponse(true),
+      passingReview(), passingVisualScore(),
+    ],
+  });
+  const deps = baseDeps({
+    creativeBrain: icaro,
+    computeRegionPixelStats: async () => ({ meanLuminance: 180, stdDevLuminance: 50 }),
+    applyLocalBlur: async (imageBuffer) => imageBuffer,
+    applyLocalScrim: async (imageBuffer) => imageBuffer,
+    extractRegionBuffer: async (imageBuffer) => imageBuffer,
+  });
+  const result = await runGptCreativeEngine(deps, baseInput({ creativeContext: baseContext({ confirmedFacts: ["Preço: R$ 149,00"] }) }));
+
+  assert.equal(result.error, undefined, `esperava sucesso na 2ª rodada, erro: ${result.error}`);
+  assert.equal(result.publishable, true);
+  assert.equal(result.creativePlan.headline, "Plano corrigido");
+  assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 2, "esgotou o tratamento local — precisou de uma nova geração");
+  assert.equal(result.repairRounds.length, 1);
+  assert.equal(result.repairRounds[0].route, "gpt_replan");
+  assert.equal(result.repairRounds[0].issues[0].code, "UNRECOVERABLE_GHOST_TEXT");
+}));

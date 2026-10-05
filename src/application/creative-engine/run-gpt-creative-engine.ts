@@ -25,6 +25,7 @@ import { buildCreativePlanRepairPrompt, classifyRepairStrategy, MAX_CREATIVE_REP
 import { evaluateVisualQualityScore, buildAestheticRepairInstructions, type VisualQualityScoreResult } from "./evaluate-visual-quality-score.js";
 import { analyzePreCompositionImage, type PreCompositionAnalysis } from "./analyze-pre-composition-image.js";
 import { resolveActualTextZoneRect, chooseTextBackingTreatment, textBackingTreatmentToRendererStyle, type RegionSemanticFlags, type SafeAreaCandidateRegion } from "./resolve-actual-safe-area.js";
+import { neutralizeGhostTextZone } from "./neutralize-ghost-text.js";
 
 /**
  * Motor criativo GPT — migração "GPT como motor criativo único" (PR 5/9). Promove
@@ -89,7 +90,15 @@ export type GptCreativeEngineDeps = {
    * cima, pra neutralizar texto fantasma que o modelo de imagem desenhou sozinho (ver
    * `region-pixel-stats.ts`). Opcional: sem isso injetado, o motor cai direto no tratamento de
    * scrim (mais fraco, mas nunca pior que o comportamento anterior a esta rodada). */
-  applyLocalBlur?(imageBuffer: Buffer, rect: CreativePlanRect): Promise<Buffer>;
+  applyLocalBlur?(imageBuffer: Buffer, rect: CreativePlanRect, sigma?: number): Promise<Buffer>;
+  /** ETAPA 3.1 — véu semi-opaco adaptativo aplicado POR CIMA do blur local (ver
+   * `region-pixel-stats.ts`), parte da defesa escalável contra texto fantasma
+   * (`neutralize-ghost-text.ts`). Opcional: sem isso injetado, a neutralização de texto fantasma
+   * cai no tratamento mais simples (`chooseTextBackingTreatment`), nunca bloqueia a execução. */
+  applyLocalScrim?(imageBuffer: Buffer, rect: CreativePlanRect, opacity: number, color: "light" | "dark"): Promise<Buffer>;
+  /** ETAPA 3.1 — recorta só uma região (percentual do canvas) pra reverificação visual isolada
+   * (`neutralize-ghost-text.ts`) — nunca a peça inteira. */
+  extractRegionBuffer?(imageBuffer: Buffer, rect: CreativePlanRect): Promise<Buffer | undefined>;
   now?(): Date;
 };
 
@@ -129,6 +138,11 @@ export type CreativeEngineCostBreakdown = {
    * barata (uma chamada de texto, nunca uma nova imagem) — existe PRA EVITAR gastar uma nova
    * geração de imagem por um problema que o renderer já resolve sozinho. */
   preCompositionAnalysis: number;
+  /** ETAPA 3.1 (Rodada 4) — reverificações de visão (só o recorte da região tratada) durante a
+   * neutralização de texto fantasma (`neutralize-ghost-text.ts`) — deliberadamente barato (texto
+   * curto, imagem pequena, pergunta sim/não), existe pra EVITAR gastar uma nova geração de imagem
+   * inteira quando o tratamento local já resolveu. */
+  ghostTextNeutralization: number;
   /** Gate técnico (`checkCreativeVisualIntegrity` + `checkProductionGuidelinesCompliance`) — toda
    * rodada em que o gate técnico roda. */
   technicalQualityGate: number;
@@ -373,11 +387,15 @@ async function applySafeAreaAdjustments(
     rendererZones: readonly CreativePlanTextZone[];
     analysis: PreCompositionAnalysis | undefined;
     occupiedRects: readonly CreativePlanRect[];
+    tenantId: string;
+    specialistId: string;
+    onCost?: (response: IcaroAIResponse | undefined) => void;
   },
-): Promise<{ imageBuffer: Buffer; zones: CreativePlanTextZone[]; steps: string[] }> {
+): Promise<{ imageBuffer: Buffer; zones: CreativePlanTextZone[]; steps: string[]; unrecoverableGhostTextZoneKinds: string[] }> {
   let imageBuffer = input.imageBuffer;
   const zones: CreativePlanTextZone[] = [];
   const steps: string[] = [];
+  const unrecoverableGhostTextZoneKinds: string[] = [];
   const occupiedRects = [...input.occupiedRects];
   const regionFlags: Partial<Record<SafeAreaCandidateRegion, RegionSemanticFlags>> = input.analysis?.regions ?? {};
 
@@ -394,10 +412,55 @@ async function applySafeAreaAdjustments(
       occupiedRects,
     });
 
-    const pixelStats = await deps.computeRegionPixelStats?.(imageBuffer, decision.rect);
     // Texto fantasma só continua "ativo" se NÃO conseguimos fugir dele reposicionando — se a zona
     // foi realocada pra uma região livre, o texto fantasma original fica fora da nova área.
     const hasGhostTextHere = Boolean(ghostFinding) && !decision.relocated;
+
+    if (hasGhostTextHere && deps.applyLocalBlur && deps.applyLocalScrim && deps.extractRegionBuffer && deps.computeRegionPixelStats) {
+      // ETAPA 3.1 (achado do smoke real: blur sozinho às vezes não bastou) — trata, reavalia a
+      // região tratada (visão, isolada), escala até 2 vezes, nunca cobre com texto sem confirmar.
+      const neutralization = await neutralizeGhostTextZone(deps.creativeBrain, {
+        computeRegionPixelStats: deps.computeRegionPixelStats,
+        applyLocalBlur: deps.applyLocalBlur,
+        applyLocalScrim: deps.applyLocalScrim,
+        extractRegionBuffer: deps.extractRegionBuffer,
+        objectStorage: deps.objectStorage,
+      }, {
+        imageBuffer,
+        rect: decision.rect,
+        tenantId: input.tenantId,
+        specialistId: input.specialistId,
+        onCost: input.onCost,
+      });
+      imageBuffer = neutralization.imageBuffer;
+
+      if (!neutralization.result.neutralizedLocally) {
+        unrecoverableGhostTextZoneKinds.push(zone.kind);
+        steps.push(`${zone.kind}: texto fantasma NÃO neutralizado após ${neutralization.result.passes} passe(s) (intensidade "${neutralization.result.finalIntensity}") — UNRECOVERABLE_GHOST_TEXT.`);
+        occupiedRects.push(decision.rect);
+        zones.push({ ...zone, rect: decision.rect });
+        continue;
+      }
+
+      occupiedRects.push(decision.rect);
+      zones.push({
+        ...zone,
+        rect: decision.rect,
+        backingStyle: "none",
+        textColorOverride: neutralization.result.backgroundIsDark ? "light" : "dark",
+      });
+      steps.push(
+        `${zone.kind}: ${decision.relocated ? `realocado para região "${decision.relocatedTo}"` : "manteve posição planejada"}, ` +
+          `texto fantasma NEUTRALIZADO LOCALMENTE em ${neutralization.result.passes} passe(s) (intensidade final "${neutralization.result.finalIntensity}") — GHOST_TEXT_NEUTRALIZED_LOCALLY, nenhuma nova geração de imagem.`,
+      );
+      continue;
+    }
+
+    // Fallback ETAPA 3 (sem reverificação): se os deps novos da ETAPA 3.1 não estiverem
+    // disponíveis (ex.: ambiente/teste que só injeta `applyLocalBlur`), texto fantasma ainda força
+    // pelo menos o blur simples — nunca silenciosamente ignorado só porque a reverificação não
+    // está disponível.
+    const pixelStats = await deps.computeRegionPixelStats?.(imageBuffer, decision.rect);
     const treatment = chooseTextBackingTreatment({ pixelStats, hasGhostTextHere, plannedBackingStyle: zone.backingStyle });
 
     if (treatment === "local_blur" && deps.applyLocalBlur) {
@@ -408,11 +471,11 @@ async function applySafeAreaAdjustments(
     zones.push({ ...zone, rect: decision.rect, backingStyle: textBackingTreatmentToRendererStyle(treatment) });
     steps.push(
       `${zone.kind}: ${decision.relocated ? `realocado para região "${decision.relocatedTo}"` : "manteve posição planejada"}, tratamento="${treatment}"` +
-        (hasGhostTextHere ? " (texto fantasma detectado nesta região)" : ""),
+        (hasGhostTextHere ? " (texto fantasma detectado nesta região — reverificação indisponível, sem escalonamento)" : ""),
     );
   }
 
-  return { imageBuffer, zones, steps };
+  return { imageBuffer, zones, steps, unrecoverableGhostTextZoneKinds };
 }
 
 export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: GptCreativeEngineInput): Promise<GptCreativeEngineResult> {
@@ -434,6 +497,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     directionExploration: 0,
     imageGeneration: 0,
     preCompositionAnalysis: 0,
+    ghostTextNeutralization: 0,
     technicalQualityGate: 0,
     visualQualityScore: 0,
     repairRoundsCost: 0,
@@ -696,10 +760,47 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       rendererZones: rendererOwnedZonesForAnalysis,
       analysis: preCompositionAnalysis,
       occupiedRects: assetOccupiedRects,
+      tenantId: input.tenantId,
+      specialistId: SPECIALIST_ID,
+      onCost: (response) => track("ghostTextNeutralization", response),
     });
     baseWithAssetsBuffer = safeAreaAdjustment.imageBuffer;
     if (safeAreaAdjustment.steps.length > 0) {
       roundCompositionSteps.push({ step: "safe_area_adjustment", ok: true, detail: safeAreaAdjustment.steps.join("; ") });
+    }
+
+    // ETAPA 3.1 — texto fantasma que resistiu a 2 passes escalados de blur+véu, confirmado por
+    // reverificação de visão: nenhum tratamento local a mais resolveria. Roteia pro reparo normal
+    // (gpt_replan), sem gastar screenshot/logo/upload/gate técnico desta rodada.
+    if (safeAreaAdjustment.unrecoverableGhostTextZoneKinds.length > 0) {
+      const unrecoverableIssues: CreativeQualityIssue[] = safeAreaAdjustment.unrecoverableGhostTextZoneKinds.map((kind) => ({
+        code: "UNRECOVERABLE_GHOST_TEXT",
+        message: `A zona "${kind}" tem texto fantasma (desenhado pelo modelo de imagem) que continuou legível mesmo após 2 passes escalados de blur+véu local, confirmado por reverificação de visão — nenhum tratamento local a mais resolveria.`,
+        source: "vision",
+      }));
+      const routedGhostText = routeCreativeRepair(unrecoverableIssues, repairAttempt);
+      repairRounds.push({ round: repairAttempt + 1, route: routedGhostText.route, issues: unrecoverableIssues, instructions: routedGhostText.instructions, resolved: false, strategies: unrecoverableIssues.map(classifyRepairStrategy) });
+
+      if (routedGhostText.route === "unrecoverable") {
+        return fail(
+          "CREATIVE_QUALITY_GATE_NOT_PASSED: texto fantasma não pôde ser neutralizado localmente mesmo após 2 passes escalados, e o limite de tentativas de reparo foi atingido.",
+          "CREATIVE_QUALITY_GATE_NOT_PASSED",
+          { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds },
+        );
+      }
+
+      repairAttempt += 1;
+      isRepairRound = true;
+      if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
+
+      const ghostTextRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, routedGhostText.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
+      if (!ghostTextRepair.plan) {
+        return isProviderQuotaExhausted(ghostTextRepair.response)
+          ? fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar ou corrigir a peça até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds })
+          : fail("Não foi possível obter um creative_plan de correção válido do GPT, mesmo após nova tentativa.", "CREATIVE_PLAN_REPAIR_INVALID", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
+      }
+      plan = ghostTextRepair.plan;
+      continue outerImageRound;
     }
 
     const rendererZones = safeAreaAdjustment.zones;

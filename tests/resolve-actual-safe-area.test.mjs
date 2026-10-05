@@ -8,6 +8,9 @@ import {
   resolveActualTextZoneRect,
   chooseTextBackingTreatment,
   textBackingTreatmentToRendererStyle,
+  classifyGhostTextIntensity,
+  escalateGhostTextIntensity,
+  resolveGhostTextTreatmentParams,
 } from "../dist/application/creative-engine/resolve-actual-safe-area.js";
 
 /**
@@ -131,4 +134,39 @@ test("textBackingTreatmentToRendererStyle: mapeia pro vocabulário real do rende
   assert.equal(textBackingTreatmentToRendererStyle("gradient_scrim"), "scrim");
   assert.equal(textBackingTreatmentToRendererStyle("local_blur"), "scrim");
   assert.equal(textBackingTreatmentToRendererStyle("card_fallback"), "solid");
+});
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.1 (Rodada 4) — intensidade adaptativa de neutralização de texto fantasma. Achado do
+// smoke real: blur de sigma FIXO não bastou pra um preço fantasma de alto contraste.
+// ---------------------------------------------------------------------------------------------
+
+test("classifyGhostTextIntensity: sem estatística confiável, nível intermediário (nunca o mais fraco nem automaticamente o mais forte)", () => {
+  assert.equal(classifyGhostTextIntensity(undefined), "medium");
+});
+
+test("classifyGhostTextIntensity: região de baixo desvio-padrão -> low", () => {
+  assert.equal(classifyGhostTextIntensity({ meanLuminance: 128, stdDevLuminance: 20 }), "low");
+});
+
+test("classifyGhostTextIntensity: região de desvio-padrão moderado -> medium", () => {
+  assert.equal(classifyGhostTextIntensity({ meanLuminance: 128, stdDevLuminance: 55 }), "medium");
+});
+
+test("classifyGhostTextIntensity: região de desvio-padrão alto (texto de alto contraste, caso real do smoke) -> high", () => {
+  assert.equal(classifyGhostTextIntensity({ meanLuminance: 128, stdDevLuminance: 85 }), "high");
+});
+
+test("escalateGhostTextIntensity: low -> medium -> high, satura em high (nunca inventa um 4º nível)", () => {
+  assert.equal(escalateGhostTextIntensity("low"), "medium");
+  assert.equal(escalateGhostTextIntensity("medium"), "high");
+  assert.equal(escalateGhostTextIntensity("high"), "high");
+});
+
+test("resolveGhostTextTreatmentParams: cada nível escala TANTO o blur quanto a opacidade do véu (nunca só um dos dois)", () => {
+  const low = resolveGhostTextTreatmentParams("low");
+  const medium = resolveGhostTextTreatmentParams("medium");
+  const high = resolveGhostTextTreatmentParams("high");
+  assert.ok(low.blurSigma < medium.blurSigma && medium.blurSigma < high.blurSigma);
+  assert.ok(low.scrimOpacity < medium.scrimOpacity && medium.scrimOpacity < high.scrimOpacity);
 });

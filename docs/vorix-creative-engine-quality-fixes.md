@@ -1,11 +1,11 @@
 # Correções do Creative Engine — Rodada 4 (parcial)
 
-> Status: ETAPAS 1, 2 e 4 — implementadas, testadas, verificadas e **já em produção** (commit
-> `fc53a17`, smoke de produção confirmado). ETAPA 3 — implementada, testada (typecheck/build/suíte
-> completa/architecture-check + smoke local, todos PASS) e **commitada, mas AINDA NÃO deployada em
-> produção** (aguardando autorização explícita, conforme instruído). ETAPAS 5 e 6 (convergência de
-> Brand Profile, novo benchmark de 13 cenários) **não foram iniciadas**. Por isso, **o Creative
-> Engine NÃO é declarado resolvido** ao final deste documento — ver seção de classificação.
+> Status: ETAPAS 1, 2, 4 e 3 — implementadas, testadas, verificadas e **já em produção** (ETAPA
+> 3 no commit `16c6d18`, smoke de produção confirmado — `STAGE_3_PRODUCTION = VERIFIED`). ETAPA 3.1
+> (ajuste fino da defesa contra texto fantasma) — ver seção própria abaixo. ETAPAS 5 e 6
+> (convergência de Brand Profile, novo benchmark de 13 cenários) **não foram iniciadas**. Por isso,
+> **o Creative Engine NÃO é declarado resolvido** ao final deste documento — ver seção de
+> classificação.
 
 ## Princípio seguido
 
@@ -202,6 +202,64 @@ Todos os 6 cenários publicam sem `UNAUTHORIZED_TEXT`/`DUPLICATED_TEXT`/`SCREENS
 `TEXT_ZONE_OVERLAPS_ASSET`/`ELEMENT_CUT_OFF`/`TEXT_ILLEGIBLE_OR_CUT`/`CRITICAL_ASSET_OCCLUDED`
 (critério do brief, ponto 25) — ver `assertNoRound4Defects` no arquivo de teste.
 
+## ETAPA 3.1 — Ajuste fino da defesa contra texto fantasma
+
+### Problema real observado (smoke de produção da ETAPA 3, commit 16c6d18)
+Detecção e roteamento de texto fantasma funcionaram corretamente, mas o TRATAMENTO VISUAL
+(`applyLocalBlur` com sigma fixo = 18) não foi suficiente: um preço fantasma de alto contraste
+continuou parcialmente legível em 2 tentativas seguidas, confirmado pelo check final de visão
+(`DUPLICATED_TEXT`, a mesma string aparecendo duas vezes).
+
+### Correção — intensidade adaptativa + confirmação real (nunca mais "assumir que funcionou")
+- **Intensidade calculada, não fixa**: `classifyGhostTextIntensity` (`resolve-actual-safe-area.ts`)
+  deriva LOW/MEDIUM/HIGH do desvio-padrão de luminância REAL da região (nunca um sigma universal).
+  Cada nível escala TANTO o blur quanto a opacidade do véu junto (nunca só um dos dois) —
+  `resolveGhostTextTreatmentParams`.
+- **Blur + véu combinados de verdade, nos pixels** (não mais deferido pro renderer): o novo módulo
+  `neutralize-ghost-text.ts` aplica `applyLocalBlur` + `applyLocalScrim` (novo, cor
+  clara/escura adaptativa conforme o fundo medido) diretamente no buffer, ANTES de desenhar
+  qualquer texto por cima.
+- **Reavaliação real, isolada**: depois de cada tratamento, `extractRegionBuffer` recorta SÓ a
+  região tratada (nunca a peça inteira — mais barato e mais preciso) e uma chamada de visão
+  dedicada pergunta objetivamente "há texto legível aqui? sim/não". Só aceita "resolvido" com um
+  `false` EXPLÍCITO — qualquer falha/ambiguidade conta como "ainda pode estar legível"
+  (conservador, nunca declara sucesso sem confirmação real).
+- **Escalonamento limitado a 2 passes** (nunca um loop infinito): se o pass 1 (intensidade inicial)
+  ainda deixa texto legível, escala pra uma intensidade mais forte e tenta de novo; se o pass 2
+  AINDA deixa texto legível, para — não existe pass 3.
+- **`UNRECOVERABLE_GHOST_TEXT`** (novo `CreativeQualityIssueCode`): quando os 2 passes esgotam sem
+  sucesso, a zona é classificada assim e o motor roteia DIRETO pro reparo normal (`gpt_replan`),
+  ANTES de gastar screenshot/logo/upload/gate técnico daquela rodada — mesmo princípio de
+  `SCREENSHOT_SLOT_MISMATCH` (ETAPA 3).
+- **Nenhuma regeneração quando o fix local funciona**: confirmado por teste — quando a
+  reverificação confirma sucesso (em 1 ou 2 passes), zero chamadas extras de `image_generation`;
+  `compositionSteps` registra `GHOST_TEXT_NEUTRALIZED_LOCALLY` com o número de passes e a
+  intensidade final, para auditoria.
+- **`textColorOverride`** (novo campo de EXECUÇÃO em `CreativePlanTextZone`, nunca preenchido pelo
+  Director/parser): quando o fundo já foi resolvido nos pixels pela neutralização, o renderer
+  determinístico precisa saber qual cor de texto contrasta com o véu REAL aplicado — nunca o
+  branco fixo que `backingStyle: "none"` assumia por padrão antes desta correção.
+
+### Fallback preservado (ETAPA 3, sem regressão)
+Em qualquer ambiente onde os deps novos (`applyLocalScrim`/`extractRegionBuffer`) não estiverem
+disponíveis, o motor cai no comportamento da ETAPA 3 (um único blur, sem reverificação) — texto
+fantasma NUNCA é silenciosamente ignorado, mesmo num ambiente degradado.
+
+### Testes novos (ETAPA 3.1)
+`resolve-actual-safe-area.test.mjs` (+6 testes de intensidade/escalonamento),
+`region-pixel-stats.test.mjs` (+10 testes: `applyLocalScrim`/`extractRegionBuffer` reais, e um
+SMOKE LOCAL dedicado com 3 cenários sintéticos LOW/MEDIUM/HIGH contraste com texto de verdade
+desenhado via SVG, confirmando redução mensurável de contraste residual em todos os níveis),
+**`neutralize-ghost-text.test.mjs`** (8 testes da orquestração completa: resolve em 1 passe, escala
+pro 2º, esgota os 2 e fica unrecoverable, conservador em falha de reverificação/recorte,
+intensidade/cor derivadas de estatística real, custo rastreado), e 4 novos testes de integração em
+`run-gpt-creative-engine.test.mjs` cobrindo exatamente os casos pedidos: preço fantasma resolvido
+em 1 passe, nome de marca fantasma (texto não-numérico, confirma que não é só pra preço),
+escalonamento pro 2º passe, e `UNRECOVERABLE_GHOST_TEXT` roteando pra nova geração.
+
+### Smoke real de produção (commit a ser confirmado na entrega)
+Ver bloco de classificação e entrega ao final deste documento.
+
 ## O que NÃO foi feito nesta rodada (ETAPAS 5, 6 — pendentes)
 
 - **ETAPA 5** (convergência de Brand Profile): o benchmark confirmou que `BrandVisualProfile`
@@ -217,11 +275,13 @@ Todos os 6 cenários publicam sem `UNAUTHORIZED_TEXT`/`DUPLICATED_TEXT`/`SCREENS
 
 ## Verificação desta rodada
 
-`npm run typecheck` (raiz) — PASS. `npm run build` — PASS. `node --test tests/*.test.mjs` — 3230
+`npm run typecheck` (raiz) — PASS. `npm run build` — PASS. `node --test tests/*.test.mjs` — 3257
 testes, 2 flakes pré-existentes e não relacionados (`tests/analytics.test.mjs:192`,
 `tests/cli.smoke.test.mjs:280`), zero falhas novas. `npm run architecture:check` — PASS (49
-contratos, 7 checks de isolamento arquitetural, 1031 arquivos). Smoke local (ETAPA 3, seção
-acima): 6/6 cenários PASS usando o pipeline de composição real.
+contratos, 7 checks de isolamento arquitetural, 1032 arquivos). Smoke local ETAPA 3: 6/6 cenários
+PASS. Smoke local ETAPA 3.1: 3/3 cenários LOW/MEDIUM/HIGH contraste PASS + 4/4 testes de integração
+(preço fantasma, marca fantasma, escalonamento, unrecoverable) PASS, todos usando o pipeline de
+composição real.
 
 ## Bloco de classificação
 
@@ -242,8 +302,19 @@ LOGO_OVERLAP_GUARD = PASS (via checkAssetPlacementOverlap/checkTextZoneCollision
 SCREENSHOT_SLOT = PASS
 SCREENSHOT_COORDINATION = PASS (detecção + reparo completo; fallback de crop/recomposição automática NÃO implementado — ver limitações)
 RENDERER_FIX_WITHOUT_REGEN = PASS
-LOCAL_SMOKE = PASS (6/6 cenários)
-STAGE_3_READY_FOR_PRODUCTION = YES (verificado localmente; deploy pendente de autorização explícita)
+LOCAL_SMOKE = PASS (6/6 cenários ETAPA 3)
+STAGE_3_PRODUCTION = VERIFIED (deployado e smoke-testado em produção, ver histórico desta sessão)
+
+ADAPTIVE_BLUR = PASS
+ADAPTIVE_SCRIM = PASS
+POST_TREATMENT_RECHECK = PASS
+GHOST_TEXT_ESCALATION = PASS
+PRICE_GHOST_CASE = PASS
+BRAND_GHOST_CASE = PASS
+LOCAL_FIX_WITHOUT_REGEN = PASS
+UNRECOVERABLE_GHOST_ROUTING = PASS
+LOCAL_SMOKE_3_1 = PASS (3/3 cenários LOW/MEDIUM/HIGH contraste + 4/4 testes de integração)
+STAGE_3_1_READY_FOR_PRODUCTION = (ver entrega desta sessão para o resultado do smoke real)
 
 BRAND_PROFILE_CONVERGENCE = NOT_STARTED (ETAPA 5 não iniciada)
 PRODUCT_REFERENCE_PATH = NOT_TESTED (auditado em código na Rodada 3, nenhum cenário de benchmark o exercitou; ETAPA 6 não executada)

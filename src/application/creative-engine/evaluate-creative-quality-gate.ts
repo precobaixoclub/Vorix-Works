@@ -41,16 +41,24 @@ export const CREATIVE_QUALITY_ISSUE_CODES = [
   // dedicado, sempre hard failure, nunca `renderer_reflow`-elegível (a causa pode ser geométrica OU
   // de conceito — só uma nova decisão resolve com segurança) — ver `checkCreativeVisualIntegrity`.
   "REQUIRED_FACT_MISSING",
-  // ETAPA 3 (Rodada 4) — refinamento de `UNAUTHORIZED_TEXT`: texto fantasma (o modelo desenhou
+  // ETAPA 3/3.1 (Rodada 4) — refinamento de `UNAUTHORIZED_TEXT`: texto fantasma (o modelo desenhou
   // sozinho ANTECIPANDO o conteúdo de uma zona do renderer) é detectado e CLASSIFICADO como
-  // `"ghost_text"` na análise pré-composição (`analyze-pre-composition-image.ts`), mas isso nunca
-  // vira um `CreativeQualityIssueCode` de gate por si só — é tratado SILENCIOSAMENTE antes do gate
-  // rodar (`applySafeAreaAdjustments` reposiciona a zona ou aplica blur local + scrim,
-  // `run-gpt-creative-engine.ts`), exatamente para não gastar uma rodada de reparo num problema que
-  // o renderer já resolve sozinho. Quando a mitigação falha (caso residual), o SINTOMA observável no
-  // gate final é o MESMO texto aparecendo duas vezes — `DUPLICATED_TEXT` cobre esse caso, sempre um
-  // defeito, nunca intencional.
+  // `"ghost_text"` na análise pré-composição (`analyze-pre-composition-image.ts`), e tratado ANTES
+  // do gate rodar — `neutralize-ghost-text.ts` aplica blur+véu adaptativos e CONFIRMA via
+  // reverificação de visão (só da região tratada) que o texto realmente sumiu, escalando a
+  // intensidade até 2 vezes antes de desistir (ver `UNRECOVERABLE_GHOST_TEXT` abaixo). Nada disso
+  // consome uma rodada de reparo — é tratamento de composição, não reparo. Mesmo com a
+  // reverificação, um caso residual AINDA pode escapar (a reverificação olha só o recorte, o gate
+  // final olha a peça inteira já composta) — o sintoma observável nesse caso residual é o MESMO
+  // texto aparecendo duas vezes — `DUPLICATED_TEXT` cobre isso, defesa em profundidade.
   "DUPLICATED_TEXT",
+  // ETAPA 3.1 (Rodada 4) — achado do smoke real: blur+véu locais às vezes não bastam pra esconder
+  // um texto fantasma de alto contraste, mesmo depois de 2 passes escalados. Quando a
+  // reverificação de `neutralize-ghost-text.ts` ainda confirma texto legível após o máximo de
+  // passes, a zona é classificada como `UNRECOVERABLE_GHOST_TEXT` ANTES mesmo de compor
+  // logo/screenshot/texto — nenhum tratamento local a mais resolveria, só uma nova geração
+  // completa (`full_regen_required`, ver `classifyRepairStrategy`, `creative-repair.ts`).
+  "UNRECOVERABLE_GHOST_TEXT",
   // ETAPA 3 (Rodada 4) — o benchmark mostrou um screenshot real colado sobre uma cena que o
   // modelo já tinha desenhado como uma interface fictícia completa e desalinhada. A defesa
   // pré-composição intercepta a maioria dos casos antes mesmo de compor (ver

@@ -6,6 +6,7 @@ import {
   checkCommercialFactIntegrity,
   checkCreativeVisualIntegrity,
   checkProductionGuidelinesCompliance,
+  checkOverdenseLayout,
   checkSafeAreaCompliance,
   checkTextZoneCollisions,
   combineCreativeQualityIssues,
@@ -569,6 +570,52 @@ test("checkTextZoneCollisions: com menos de duas textZones, nunca gera issue", (
     textZones: [{ kind: "headline", text: "OFERTA", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" }],
   });
   assert.deepEqual(checkTextZoneCollisions(plan), []);
+});
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.3 (Rodada 4) — checkOverdenseLayout: sinal de densidade, só dispara QUANDO já sobra uma
+// sobreposição geométrica real (o motor já tentou descartar conteúdo opcional antes — ver
+// `manage-text-budget.ts`) E o número de elementos já é alto — nunca substitui
+// TEXT_ZONE_OVERLAPS_ASSET/TEXT_ZONE_OVERLAPS_TEXT_ZONE, só se soma a eles.
+// ---------------------------------------------------------------------------------------------
+
+test("checkOverdenseLayout: sobreposição real + muitos elementos (>=5) vira OVERDENSE_LAYOUT", () => {
+  const plan = basePlan({
+    textZones: [
+      { kind: "headline", text: "OFERTA", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 20 }, emphasis: "primary", renderedBy: "renderer" },
+      { kind: "subheadline", text: "Detalhes", rect: { xPct: 10, yPct: 25, widthPct: 80, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },
+      { kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" },
+      { kind: "price", text: "R$ 10", rect: { xPct: 10, yPct: 60, widthPct: 30, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+    assetPlacements: [{ role: "logo", url: "https://x/logo.png", rect: { xPct: 70, yPct: 5, widthPct: 20, heightPct: 20 } }],
+  });
+  const issues = checkOverdenseLayout(plan);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].code, "OVERDENSE_LAYOUT");
+});
+
+test("checkOverdenseLayout: sobreposição real mas POUCOS elementos nunca gera OVERDENSE_LAYOUT (continua só TEXT_ZONE_OVERLAPS_TEXT_ZONE)", () => {
+  const plan = basePlan({
+    textZones: [
+      { kind: "headline", text: "OFERTA", rect: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 20 }, emphasis: "primary", renderedBy: "renderer" },
+      { kind: "subheadline", text: "Detalhes", rect: { xPct: 10, yPct: 25, widthPct: 80, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+  });
+  assert.deepEqual(checkOverdenseLayout(plan), []);
+  assert.equal(checkTextZoneCollisions(plan).length, 1);
+});
+
+test("checkOverdenseLayout: muitos elementos mas SEM nenhuma sobreposição geométrica real nunca gera issue (densidade sozinha não é defeito)", () => {
+  const plan = basePlan({
+    textZones: [
+      { kind: "headline", text: "OFERTA", rect: { xPct: 5, yPct: 5, widthPct: 90, heightPct: 15 }, emphasis: "primary", renderedBy: "renderer" },
+      { kind: "cta", text: "ACESSE AGORA", rect: { xPct: 5, yPct: 85, widthPct: 90, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" },
+      { kind: "price", text: "R$ 10", rect: { xPct: 5, yPct: 25, widthPct: 40, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },
+      { kind: "badge", text: "NOVO", rect: { xPct: 55, yPct: 25, widthPct: 20, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+    assetPlacements: [{ role: "logo", url: "https://x/logo.png", rect: { xPct: 5, yPct: 40, widthPct: 20, heightPct: 20 } }],
+  });
+  assert.deepEqual(checkOverdenseLayout(plan), []);
 });
 
 // Auditoria "motor de geração de criativos" — achado ao revisar checkSafeAreaCompliance: aquele

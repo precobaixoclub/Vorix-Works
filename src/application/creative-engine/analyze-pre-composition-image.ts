@@ -124,6 +124,27 @@ function parseRegionFlags(value: unknown): RegionSemanticFlags | undefined {
   return { hasText: record.hasText, hasProduct: record.hasProduct, hasFace: record.hasFace, complexity: record.complexity };
 }
 
+/** Extraído em ETAPA 3.3 — o MESMO parsing de achados espúrios (texto/classificação/bbox/
+ * confiança/zona) é usado tanto pela análise pré-composição quanto pela reverificação global
+ * (`checkGlobalTextLegibility`, abaixo), que antes da ETAPA 3.3 só devolvia um booleano. */
+function parseSpuriousTexts(value: unknown): SpuriousTextFinding[] {
+  const spuriousTexts: SpuriousTextFinding[] = [];
+  if (!Array.isArray(value)) return spuriousTexts;
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) continue;
+    const record = item as Record<string, unknown>;
+    if (typeof record.text !== "string" || !record.text.trim() || !isSpuriousTextClassification(record.classification)) continue;
+    spuriousTexts.push({
+      text: record.text,
+      classification: record.classification,
+      matchedZoneKind: typeof record.matchedZoneKind === "string" ? (record.matchedZoneKind as CreativePlanTextZoneKind) : undefined,
+      bbox: isValidBboxRect(record.bbox) ? record.bbox : undefined,
+      confidence: typeof record.confidence === "number" && Number.isFinite(record.confidence) ? Math.max(0, Math.min(1, record.confidence)) : undefined,
+    });
+  }
+  return spuriousTexts;
+}
+
 /** Best-effort — falha ou resposta ilegível nunca bloqueia a peça (mesmo princípio do resto do
  * motor): `undefined` é tratado pelo chamador como "sem dado confiável", caindo nos tratamentos
  * mais conservadores (ver `resolve-actual-safe-area.ts`), nunca travando a execução. */
@@ -160,21 +181,7 @@ export async function analyzePreCompositionImage(
       screenshotSlotLooksFake?: unknown;
     };
 
-    const spuriousTexts: SpuriousTextFinding[] = [];
-    if (Array.isArray(parsed.spuriousTexts)) {
-      for (const item of parsed.spuriousTexts) {
-        if (typeof item !== "object" || item === null) continue;
-        const record = item as Record<string, unknown>;
-        if (typeof record.text !== "string" || !record.text.trim() || !isSpuriousTextClassification(record.classification)) continue;
-        spuriousTexts.push({
-          text: record.text,
-          classification: record.classification,
-          matchedZoneKind: typeof record.matchedZoneKind === "string" ? (record.matchedZoneKind as CreativePlanTextZoneKind) : undefined,
-          bbox: isValidBboxRect(record.bbox) ? record.bbox : undefined,
-          confidence: typeof record.confidence === "number" && Number.isFinite(record.confidence) ? Math.max(0, Math.min(1, record.confidence)) : undefined,
-        });
-      }
-    }
+    const spuriousTexts = parseSpuriousTexts(parsed.spuriousTexts);
 
     const plannedZonesClear: Partial<Record<CreativePlanTextZoneKind, boolean>> = {};
     if (parsed.plannedZonesClear && typeof parsed.plannedZonesClear === "object") {
@@ -202,6 +209,17 @@ export async function analyzePreCompositionImage(
   }
 }
 
+/** ETAPA 3.3 (Rodada 4) — achado do smoke real da ETAPA 3.2: a reverificação global sabia dizer
+ * "ainda existe texto não autorizado", mas nunca ONDE — nada no motor conseguia agir sobre um
+ * achado sem localização. `residualFindings` usa o MESMO formato de `SpuriousTextFinding` (texto,
+ * classificação, bbox, confiança) — quando a visão reporta uma bbox real, o chamador pode tratar
+ * essa ocorrência residual exatamente como um achado da análise pré-composição (ver
+ * `run-gpt-creative-engine.ts`, bloco de reverificação global com passe residual único). */
+export type GlobalTextCheckResult = {
+  hasUnresolvedText: boolean;
+  residualFindings: SpuriousTextFinding[];
+};
+
 /**
  * ETAPA 3.2 (Rodada 4) — achado do smoke real da ETAPA 3.1: a reverificação LOCAL (só o recorte
  * da região tratada) confirmava sucesso, mas o gate final (peça inteira) ainda encontrava o mesmo
@@ -213,7 +231,7 @@ export async function analyzePreCompositionImage(
 export async function checkGlobalTextLegibility(
   icaro: IcaroBrainPort,
   input: { imageUrl: string; allowedRenderedTexts: readonly string[]; specialistId: string; onCost?: (response: IcaroAIResponse | undefined) => void },
-): Promise<boolean> {
+): Promise<GlobalTextCheckResult> {
   try {
     const response = await icaro.request({
       taskType: "review",
@@ -221,21 +239,35 @@ export async function checkGlobalTextLegibility(
         "Esta é a imagem BASE (antes de logo/screenshot/texto do renderer), depois de um tratamento local para esconder texto espúrio em regiões específicas.",
         `LISTA FECHADA DE TEXTOS AUTORIZADOS (qualquer outro texto legível é um problema): ${input.allowedRenderedTexts.map((text) => `"${text}"`).join(", ") || "(nenhum texto autorizado nesta peça)"}.`,
         "Olhando a imagem INTEIRA (não só uma região), há ALGUM texto legível que NÃO está na lista de textos autorizados, ou o MESMO texto autorizado aparecendo mais de uma vez?",
-        "Responda APENAS com JSON válido, sem markdown, no formato exato: {\"hasUnresolvedText\": true|false}",
+        // ETAPA 3.3 — achado do smoke real da ETAPA 3.2: saber que "ainda há texto" sem saber ONDE
+        // não permite agir. Pede o MESMO formato estruturado da análise pré-composição (nunca só
+        // um booleano), pra qualquer achado residual poder ser tratado na localização real.
+        "Para CADA texto espúrio que você encontrar, reporte também \"bbox\" (retângulo aproximado em PERCENTUAL do canvas, 0-100, onde ele REALMENTE aparece) e \"confidence\" (0 a 1). Localização aproximada já basta — isto NÃO é uma tarefa de OCR perfeito.",
+        "Responda APENAS com JSON válido, sem markdown, no formato exato: {\"hasUnresolvedText\": true|false, \"spuriousTexts\": [{\"text\": \"...\", \"classification\": \"unauthorized_text\"|\"ghost_text\"|\"duplicated_text\", \"bbox\": {\"xPct\": 0, \"yPct\": 0, \"widthPct\": 0, \"heightPct\": 0}, \"confidence\": 0.0}]}",
       ].join("\n"),
       specialistId: input.specialistId,
       imageUrls: [input.imageUrl],
       expectedOutput: "json",
       priority: "quality",
       temperature: 0.1,
-      maxTokens: 50,
+      // ETAPA 3.3 — era 50 (só cabia o booleano); achados estruturados (texto/bbox/confiança) por
+      // ocorrência exigem mais espaço, mesmo orçamento usado pela análise pré-composição.
+      maxTokens: 400,
       timeoutMs: 20_000,
     });
     input.onCost?.(response);
-    if (response.status !== "completed") return true;
-    const parsed = JSON.parse(extractJson(String(response.content ?? ""), "Global Text Recheck")) as { hasUnresolvedText?: unknown };
-    return parsed.hasUnresolvedText !== false;
+    // Conservador (brief): resposta incompleta nunca declara "limpo" — mas sem achados
+    // estruturados pra agir, o chamador não tem como localizar o residual (passe residual
+    // simplesmente não roda, vai direto pro `UNRECOVERABLE_GLOBAL_TEXT`).
+    if (response.status !== "completed") return { hasUnresolvedText: true, residualFindings: [] };
+    const parsed = JSON.parse(extractJson(String(response.content ?? ""), "Global Text Recheck")) as { hasUnresolvedText?: unknown; spuriousTexts?: unknown };
+    const residualFindings = parseSpuriousTexts(parsed.spuriousTexts);
+    // `hasUnresolvedText` explícito continua sendo a fonte de verdade do veredito (conservador:
+    // `!== false`); achados SEM o booleano mas com a lista não-vazia ainda contam como "ainda tem
+    // problema" — nunca confia só na lista pra decidir o veredito geral, só pra localizar.
+    const hasUnresolvedText = parsed.hasUnresolvedText !== false || residualFindings.length > 0;
+    return { hasUnresolvedText, residualFindings };
   } catch {
-    return true;
+    return { hasUnresolvedText: true, residualFindings: [] };
   }
 }

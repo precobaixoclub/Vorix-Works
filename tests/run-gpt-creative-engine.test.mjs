@@ -933,7 +933,7 @@ test("runGptCreativeEngine (ETAPA 3.2): reverificação GLOBAL encontra texto n�
   assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 2, "recheck local passou, mas o GLOBAL encontrou problema -> precisou de nova geração");
   assert.equal(result.repairRounds.length, 1);
   assert.equal(result.repairRounds[0].route, "gpt_replan");
-  assert.equal(result.repairRounds[0].issues[0].code, "UNRECOVERABLE_GHOST_TEXT");
+  assert.equal(result.repairRounds[0].issues[0].code, "UNRECOVERABLE_GLOBAL_TEXT");
 }));
 
 test("runGptCreativeEngine (ETAPA 3.2): headline sobrepõe a logo e NENHUMA região alternativa está livre — gate ainda reprova corretamente (nunca deixa passar um overlap real)", () => withFakeFetch(async () => {
@@ -957,4 +957,151 @@ test("runGptCreativeEngine (ETAPA 3.2): headline sobrepõe a logo e NENHUMA regi
   assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 2, "overlap genuinamente sem solução local precisou de replan");
   assert.equal(result.repairRounds.length, 1);
   assert.equal(result.repairRounds[0].issues.some((issue) => issue.code === "TEXT_ZONE_OVERLAPS_ASSET"), true);
+}));
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.3 (Rodada 4) — "fechar o bloco 3.x tornando a peça efetivamente publicável": reverificação
+// global ACIONÁVEL com passe residual único, "VISUAL TEXT BUDGET" (preflight + degradação pós-
+// geometria real), e `layoutPlan` malformado alimentando a 2ª tentativa com a causa exata.
+// ---------------------------------------------------------------------------------------------
+
+test("runGptCreativeEngine (ETAPA 3.3): reverificação GLOBAL aponta achado residual COM bbox -> tratado na localização real, reverificação final limpa, publica com UMA imagem só (GLOBAL_RESIDUAL_BBOX/RESIDUAL_SECOND_PASS)", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({
+      textZones: [{ kind: "price", text: "R$ 149,00", rect: { xPct: 10, yPct: 60, widthPct: 50, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" }],
+    })],
+    image_generation: [imageResponse()],
+    review: [
+      ghostTextPreCompositionAnalysis("price"), recheckResponse(false),
+      // Reverificação GLOBAL inicial: ainda acusa problema, mas agora com um achado residual
+      // estruturado (texto/bbox/classificação/confiança) — um 4º texto fantasma em posição
+      // inesperada, fora de tudo que a detecção inicial já tinha coberto.
+      { status: "completed", content: JSON.stringify({ hasUnresolvedText: true, spuriousTexts: [{ text: "Marca Fantasma", classification: "ghost_text", bbox: { xPct: 70, yPct: 2, widthPct: 25, heightPct: 8 }, confidence: 0.7 }] }) },
+      recheckResponse(false), // reverificação do passe residual (neutralizeGhostTextZone, pass 1)
+      globalRecheckResponse(false), // reverificação GLOBAL final: limpo
+      passingReview(), passingVisualScore(),
+    ],
+  });
+  const deps = baseDeps({
+    creativeBrain: icaro,
+    computeRegionPixelStats: async () => ({ meanLuminance: 180, stdDevLuminance: 50 }),
+    applyLocalBlur: async (imageBuffer) => imageBuffer,
+    applyLocalScrim: async (imageBuffer) => imageBuffer,
+    extractRegionBuffer: async (imageBuffer) => imageBuffer,
+  });
+  const result = await runGptCreativeEngine(deps, baseInput({ creativeContext: baseContext({ confirmedFacts: ["Preço: R$ 149,00"] }) }));
+
+  assert.equal(result.error, undefined, `esperava sucesso, erro: ${result.error}`);
+  assert.equal(result.publishable, true);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 1, "achado residual tratado na bbox real — nunca precisou de nova geração");
+  assert.equal(result.repairRounds.length, 0, "recuperação residual nunca consome rodada de reparo");
+  assert.ok(result.compositionSteps.some((step) => step.step === "safe_area_adjustment" && /GLOBAL_RESIDUAL_BBOX/.test(step.detail) && /Marca Fantasma/.test(step.detail)));
+  assert.ok(result.compositionSteps.some((step) => step.step === "safe_area_adjustment" && /GLOBAL_FINAL_RECHECK.*após 1 passe residual, recuperado/.test(step.detail)));
+}));
+
+test("runGptCreativeEngine (ETAPA 3.3): layout denso (headline+subheadline+CTA+preço+logo) é simplificado ANTES da geração — subheadline descartado, nunca aparece no prompt de imagem nem é exigido no gate (DENSITY_PREFLIGHT)", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({
+      requiredRenderedFacts: ["R$ 149,00"],
+      allowedRenderedTexts: ["TODAS AS OFERTAS EM UM SÓ SITE", "Shopee + Mercado Livre", "ACESSE AGORA", "R$ 149,00"],
+      assetPlacements: [{ role: "logo", url: "https://x/logo.png", rect: { xPct: 80, yPct: 5, widthPct: 15, heightPct: 10 } }],
+      textZones: [
+        { kind: "headline", text: "TODAS AS OFERTAS EM UM SÓ SITE", rect: { xPct: 5, yPct: 5, widthPct: 70, heightPct: 15 }, emphasis: "primary", renderedBy: "renderer" },
+        { kind: "subheadline", text: "Shopee + Mercado Livre", rect: { xPct: 10, yPct: 25, widthPct: 80, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },
+        { kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" },
+        { kind: "price", text: "R$ 149,00", rect: { xPct: 10, yPct: 60, widthPct: 50, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },
+      ],
+    })],
+    image_generation: [imageResponse()],
+    review: [
+      { status: "completed", content: JSON.stringify({ spuriousTexts: [], plannedZonesClear: { headline: true, cta: true, price: true }, regions: {} }) },
+      passingReview(), passingVisualScore(),
+    ],
+  });
+  const deps = baseDeps({ creativeBrain: icaro });
+  const result = await runGptCreativeEngine(deps, baseInput({ creativeContext: baseContext({ confirmedFacts: ["Preço: R$ 149,00"] }) }));
+
+  assert.equal(result.error, undefined, `esperava sucesso, erro: ${result.error}`);
+  assert.equal(result.publishable, true);
+  assert.ok(result.warnings.some((warning) => /DENSITY_PREFLIGHT/.test(warning) && /subheadline/.test(warning)), "preflight deveria ter avisado sobre o descarte do subheadline");
+  assert.ok(!result.finalImagePrompt.includes("Shopee + Mercado Livre"), "subheadline descartado nunca deveria chegar a pedir desenho ao modelo de imagem");
+  assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 1, "preflight nunca gasta uma geração de imagem a mais");
+}));
+
+test("runGptCreativeEngine (ETAPA 3.3): 2+ zonas OPCIONAIS presas em sobreposição mesmo após realocação real -> descartadas da composição (OVERDENSE_LAYOUT_CONTROL), nunca vira peça cheia de card_fallback", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({
+      cta: "",
+      subheadline: undefined,
+      allowedRenderedTexts: ["TODAS AS OFERTAS EM UM SÓ SITE", "NOVO", "loja.com"],
+      textZones: [
+        { kind: "headline", text: "TODAS AS OFERTAS EM UM SÓ SITE", rect: { xPct: 5, yPct: 5, widthPct: 90, heightPct: 30 }, emphasis: "primary", renderedBy: "renderer" },
+        { kind: "badge", text: "NOVO", rect: { xPct: 10, yPct: 10, widthPct: 20, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },
+        { kind: "url", text: "loja.com", rect: { xPct: 40, yPct: 15, widthPct: 20, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },
+      ],
+    })],
+    image_generation: [imageResponse()],
+    review: [
+      {
+        status: "completed",
+        content: JSON.stringify({ spuriousTexts: [], plannedZonesClear: { headline: true, badge: true, url: true }, regions: occupiedRegionFlags() }),
+      },
+      passingReview(), passingVisualScore(),
+    ],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+
+  assert.equal(result.error, undefined, `esperava sucesso, erro: ${result.error}`);
+  assert.equal(result.publishable, true);
+  assert.ok(result.compositionSteps.some((step) => step.step === "safe_area_adjustment" && /OVERDENSE_LAYOUT: 2 zona\(s\)/.test(step.detail) && /badge/.test(step.detail) && /url/.test(step.detail)));
+  assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 1, "degradação de conteúdo opcional nunca gera uma imagem nova");
+  assert.equal(result.repairRounds.length, 0);
+}));
+
+test("runGptCreativeEngine (ETAPA 3.3): layoutPlan malformado na 1ª tentativa do plano inicial -> 2ª tentativa recebe a causa exata (\"layoutPlan\") e produz um plano válido", () => withFakeFetch(async () => {
+  const malformedLayoutPlan = {
+    status: "completed",
+    model: { id: "gpt-4o" },
+    content: JSON.stringify({
+      objective: "x", angle: "x", targetAudience: "x", title: "x", description: "x",
+      headline: "TODAS AS OFERTAS EM UM SÓ SITE",
+      cta: "ACESSE AGORA",
+      allowedRenderedTexts: ["TODAS AS OFERTAS EM UM SÓ SITE", "ACESSE AGORA"],
+      requiredRenderedFacts: [],
+      visualDirection: "x",
+      compositionIntent: "x",
+      artDirection: sampleArtDirection(),
+      // "kind" fora da lista permitida — exatamente a causa que `diagnoseCreativePlanInvalidity`
+      // precisa apontar na 2ª tentativa.
+      layoutPlan: [{ kind: "nao_existe", rect: { xPct: 0, yPct: 0, widthPct: 10, heightPct: 10 }, priority: 1, rationale: "x" }],
+      assetUsage: {},
+      assetPlacements: [],
+      textZones: [],
+      requiredElements: [],
+      forbiddenElements: [],
+      visualDensity: "clean",
+      styleNotes: "",
+      rationale: "x",
+    }),
+  };
+  let secondPrompt;
+  const icaro = {
+    calls: [],
+    request: async (request) => {
+      icaro.calls.push(request);
+      const analysisCallCount = icaro.calls.filter((call) => call.taskType === "analysis").length;
+      if (request.taskType === "analysis") {
+        if (analysisCallCount === 2) secondPrompt = request.prompt;
+        return analysisCallCount === 1 ? malformedLayoutPlan : planResponse();
+      }
+      if (request.taskType === "image_generation") return imageResponse();
+      if (request.taskType === "review") return icaro.calls.filter((call) => call.taskType === "review").length <= 1 ? passingReview() : passingVisualScore();
+      throw new Error(`fila vazia para taskType "${request.taskType}"`);
+    },
+  };
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+
+  assert.match(secondPrompt, /campo "layoutPlan" inválido/);
+  assert.equal(result.error, undefined, `esperava que a 2ª tentativa produzisse um plano válido, erro: ${result.error}`);
+  assert.equal(result.publishable, true);
 }));

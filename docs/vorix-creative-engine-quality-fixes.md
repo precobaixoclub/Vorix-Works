@@ -1,12 +1,13 @@
 # Correções do Creative Engine — Rodada 4 (parcial)
 
-> Status: ETAPAS 1, 2, 4, 3 e 3.1 — implementadas, testadas, verificadas e **já em produção**
-> (ETAPA 3.1 no commit `7d89b16`, smoke de produção confirmado). ETAPA 3.2 (cobertura geométrica
-> real — ver seção própria abaixo) — implementada e testada localmente (typecheck/build/suíte
-> completa/architecture-check/smoke local, todos PASS), **commitada mas AINDA NÃO deployada**
-> (aguardando autorização explícita, conforme instruído nesta rodada). ETAPAS 5 e 6 (convergência
-> de Brand Profile, novo benchmark de 13 cenários) **não foram iniciadas**. Por isso, **o Creative
-> Engine NÃO é declarado resolvido** ao final deste documento — ver seção de classificação.
+> Status: ETAPAS 1, 2, 4, 3, 3.1 e 3.2 — implementadas, testadas, verificadas e **já em produção**
+> (ETAPA 3.2 no commit `850ac04`, smoke de produção confirmado — revelou os 3 gaps que definem o
+> escopo da ETAPA 3.3). ETAPA 3.3 ("fechar o bloco 3.x tornando a peça efetivamente publicável" —
+> ver seção própria abaixo) — implementada e testada localmente (typecheck/build/suíte completa/
+> architecture-check/smoke local, todos PASS), **commitada mas AINDA NÃO deployada** (aguardando
+> autorização explícita, conforme instruído nesta rodada). ETAPAS 5 e 6 (convergência de Brand
+> Profile, novo benchmark de 13 cenários) **não foram iniciadas**. Por isso, **o Creative Engine
+> NÃO é declarado resolvido** ao final deste documento — ver seção de classificação.
 
 ## Princípio seguido
 
@@ -510,3 +511,216 @@ Engine NÃO é declarado resolvido.**
 
 **Como o smoke real não foi executado (deploy não autorizado) e as ETAPAS 5/6 continuam
 pendentes, não declaro o Creative Engine resolvido.**
+
+## ETAPA 3.3 — "VISUAL TEXT BUDGET", reverificação GLOBAL acionável e fechamento do bloco 3.x
+
+### Contexto — os 3 gaps do smoke real da ETAPA 3.2
+
+O smoke real de produção da ETAPA 3.2 (cenário denso: headline+subheadline+CTA+preço+logo)
+confirmou bbox/múltiplas ocorrências/recheck local/recheck global funcionando corretamente (3
+achados fantasmas neutralizados em 1 passe, N==N), mas revelou três gaps concretos: (i) a
+reverificação global só devolvia um booleano — ao encontrar um residual, nada podia ser feito
+sobre ele; (ii) o layout denso genuinamente não teve região candidata livre para 4 zonas de texto
+competindo com a logo, e todas caíram em `card_fallback` mesmo assim sobrepondo o asset; (iii)
+`planForGate`/`technicalQualityGate` nunca chegaram a rodar de verdade, porque o curto-circuito da
+reverificação global sempre interceptava antes. O objetivo desta ETAPA, declarado explicitamente
+no brief: parar de só provar que o gate rejeita corretamente peças ruins, e produzir evidência de
+uma peça DENSA que de fato chega publicável ao fim do pipeline.
+
+### 1) Reverificação GLOBAL agora é ACIONÁVEL
+
+**Antes:** `checkGlobalTextLegibility` devolvia só `boolean` — "ainda há texto não resolvido",
+sem localização nenhuma. Quando positivo, a ÚNICA ação possível era rotear pra reparo completo
+(nova imagem), mesmo quando o problema residual era pequeno e localizável.
+
+**Depois:** `checkGlobalTextLegibility` devolve `GlobalTextCheckResult = { hasUnresolvedText,
+residualFindings: SpuriousTextFinding[] }` — o MESMO formato (texto/classificação/bbox/
+confiança) já usado pela análise pré-composição, reaproveitando o parser (`parseSpuriousTexts`,
+extraído em `analyze-pre-composition-image.ts`). Fluxo completo em
+`run-gpt-creative-engine.ts`: detecção inicial → tratamento local por achado → reverificação
+GLOBAL inicial → se aponta um residual COM bbox, trata-o na localização REAL (mesmo mecanismo de
+`neutralizeGhostTextZone`) → reverificação GLOBAL final. **Máximo de 1 passe residual** (nunca um
+loop) — se ainda houver texto não resolvido depois disso (ou o residual não tiver bbox pra agir),
+classifica `UNRECOVERABLE_GLOBAL_TEXT` (novo código, distinto de `UNRECOVERABLE_GHOST_TEXT`, que
+continua cobrindo o caso de achado POR ZONA que não neutraliza nem com 2 passes escalados) e
+segue a política de reparo já existente (`routeCreativeRepair`/`classifyRepairStrategy`, que trata
+o novo código no branch padrão `full_regen_required`, sem precisar de nenhuma regra nova).
+
+### 2) "VISUAL TEXT BUDGET" — obrigatório vs. opcional, e descarte de conteúdo sob densidade
+
+Novo módulo `src/application/creative-engine/manage-text-budget.ts` — lógica PURA e
+determinística, mesmo princípio de `resolve-actual-safe-area.ts` (sem IA, sem `sharp`, só decide
+a partir de dados que já existem):
+
+- `isTextZoneRequired(zone, plan)`: `headline` é sempre obrigatório; `cta` é obrigatório só
+  quando tem texto (`cta: ""` continua sendo "sem CTA", decisão válida); qualquer outra zona
+  (subheadline/preço/desconto/url/badge) só é obrigatória quando seu texto corresponde a um
+  `requiredRenderedFacts` já declarado pelo plano — o único sinal que o PRÓPRIO plano usa pra
+  dizer "esta peça não existe sem isto".
+- `isLayoutOverdense(zones, assetPlacements)`: dois sinais deliberadamente simples (nunca um
+  "designer de regras", conforme pedido) — contagem de elementos (≥5, o próprio cenário nomeado
+  no brief) OU soma bruta de área ocupada (>60% do canvas).
+- `simplifyOverdenseTextZones`/`applyTextBudgetSimplification`: **preflight de densidade**,
+  chamado em `run-gpt-creative-engine.ts` ANTES de construir o prompt de geração de imagem, sobre
+  a geometria DECLARADA do plano (nunca gasta uma geração de imagem só pra descobrir uma
+  geometria que o plano já mostra inviável). Descarta zonas OPCIONAIS na ordem
+  `url → badge → discount → subheadline` (brief, prioridade conceitual 6/7/8), parando assim que
+  o layout deixa de ser denso — nunca descarta a mais do que o necessário, nunca toca uma zona
+  obrigatória. Também mantém `allowedRenderedTexts`/`subheadline` coerentes com o que de fato será
+  desenhado (um texto descartado cujo nome continuasse "autorizado" reprovaria depois por
+  `MISSING_REQUIRED_TEXT` — um bug pior que o original).
+- `degradeOptionalZonesOnUnresolvedOverlap`: **degradação PÓS-geometria real**, chamada depois de
+  `applySafeAreaAdjustments` (relocação com dados reais de visão/pixel). Quando 2+ zonas
+  continuam sobrepondo um asset/outra zona mesmo sem nenhuma região candidata genuinamente livre
+  (`unresolvedOverlapKinds`, novo retorno de `applySafeAreaAdjustments`) — o sinal explícito do
+  brief de "`card_fallback` virando solução pra tudo" — descarta as OPCIONAIS entre elas (nunca
+  as obrigatórias, que continuam reprovando normalmente se o overlap persistir).
+- Novo código de gate `OVERDENSE_LAYOUT` (`evaluate-creative-quality-gate.ts`,
+  `checkOverdenseLayout`): só dispara quando o `planForGate` (geometria FINAL, já pós-descarte)
+  ainda assim tem uma sobreposição geométrica real E o número de elementos já é alto — nunca
+  substitui `TEXT_ZONE_OVERLAPS_ASSET`/`TEXT_ZONE_OVERLAPS_TEXT_ZONE` (soma-se a eles), e só
+  acontece depois que o motor já tentou simplificar — exatamente a ordem pedida ("sempre tentar
+  descartar conteúdo opcional ANTES de reprovar por este motivo").
+
+### 3) `planForGate` com geometria final confirmada (incluindo `allowedRenderedTexts`)
+
+Achado ao escrever esta rodada: a correção da ETAPA 3.2 já trocava `textZones` por
+`rendererZones` no `planForGate`, mas `allowedRenderedTexts` continuava sendo o do plano
+ORIGINAL — uma zona descartada pelo "VISUAL TEXT BUDGET" (preflight OU degradação pós-geometria)
+deixaria seu texto "autorizado" para sempre, reprovando por `MISSING_REQUIRED_TEXT` um texto que o
+próprio motor decidiu não desenhar mais. Corrigido: `planForGate.allowedRenderedTexts` agora
+filtra os textos de TODAS as zonas descartadas nesta rodada (preflight + degradação), nas duas
+fontes. O smoke local novo (ver abaixo) exercita isso de ponta a ponta: o `qualityGate` roda de
+verdade (`checkCreativeVisualIntegrity` é chamado com a resposta roteirizada do teste) e aprova.
+
+### 4) Hardening do prompt de `layoutPlan` (sem relaxar o parser)
+
+`buildCreativePlanPrompt` ganhou um exemplo CONCRETO do formato exato de um item de `layoutPlan`
+(os 4 campos obrigatórios, valores válidos de `kind`, limites de `rect`) — conforme instruído,
+"não construir sistema novo" de enforcement estrutural adicional, e "não relaxar o parser para
+aceitar lixo": `parseLayoutPlan`/`parseCreativePlan` continuam rejeitando o plano inteiro da
+mesma forma de antes. Teste novo prova o mecanismo de repair-context que já existia
+(`diagnoseCreativePlanInvalidity` + `appendPlanRetryDiagnostic`) especificamente para o caso
+`layoutPlan` malformado: a 2ª tentativa recebe a causa exata (`campo "layoutPlan" inválido...`) e
+produz um plano válido.
+
+### Limitações desta rodada
+
+- `isLayoutOverdense` é uma heurística DELIBERADAMENTE simples (contagem + área bruta) — não
+  calcula colisão geométrica real (isso já existe, com custo de IA, no gate). Pode, em tese,
+  deixar passar um layout denso cuja soma de áreas é baixa mas cuja disposição real colide (esse
+  caso residual ainda é pego pelo gate via `TEXT_ZONE_OVERLAPS_ASSET`/`TEXT_ZONE_OVERLAPS_TEXT_ZONE`/
+  `OVERDENSE_LAYOUT`, nunca publica silenciosamente).
+- A ordem de descarte (`url → badge → discount → subheadline`) é fixa e simples, conforme pedido
+  explicitamente ("não transformar isso em dezenas de regras") — não pondera caso a caso qual
+  conteúdo é mais valioso para o objetivo específico da peça.
+- `layoutPlan` (mapa de zonas conceituais `hero`/`headline`/`cta`/`logo`/`support`/
+  `negativeSpace`) não é automaticamente resync'd quando uma `textZone` é descartada pelo "VISUAL
+  TEXT BUDGET" — é só uma camada de DECISÃO/auditoria (nunca a de execução, que são
+  `textZones`/`assetPlacements`), então uma referência textual a "subheadline" pode sobrar ali
+  mesmo depois do descarte; sem efeito prático na composição final.
+- Não foi implementado enforcement de JSON Schema estruturado mais forte na chamada do Director
+  (ex.: `response_format` com schema estrito) — o hardening desta rodada ficou no nível de
+  PROMPT (exemplo concreto + lembrete de campos obrigatórios), conforme instruído ("não construir
+  sistema novo só por isso").
+
+### Testes
+
+- `tests/manage-text-budget.test.mjs` (NOVO, 18 testes) — lógica pura: `isTextZoneRequired`
+  (headline sempre obrigatório, cta vazio nunca obrigatório, match aproximado contra
+  `requiredRenderedFacts`), `isLayoutOverdense` (por contagem e por área), 5 cenários de
+  densidade do grupo (A) do brief (headline+subheadline+CTA+preço+logo; headline+CTA+preço+
+  badge+logo; ordem de descarte url→badge→discount→subheadline; "small story" com muitos
+  elementos; nunca descarta um obrigatório), `applyTextBudgetSimplification` (remove texto
+  descartado de `allowedRenderedTexts`, limpa `plan.subheadline`, no-op quando não denso), e o
+  grupo (B) obrigatório/opcional sob sobreposição real (`degradeOptionalZonesOnUnresolvedOverlap`
+  — abaixo do limiar não descarta nada, 2+ sobreposições descarta só as opcionais mantendo
+  headline/price/cta, nunca descarta uma zona que já relocalizou com sucesso).
+- `tests/evaluate-creative-quality-gate.test.mjs` (+3 testes) — `checkOverdenseLayout`: dispara
+  com sobreposição real + muitos elementos; nunca dispara só com sobreposição (poucos elementos);
+  nunca dispara só com muitos elementos (sem sobreposição real).
+- `tests/analyze-pre-composition-image.test.mjs` (+1 teste, 4 reescritos) — `checkGlobalTextLegibility`
+  agora parseia achados residuais estruturados (texto/bbox/confiança); os 4 testes booleanos
+  preexistentes foram adaptados pro novo formato de retorno (`result.hasUnresolvedText`), sem
+  mudar o que cada um prova.
+- `tests/run-gpt-creative-engine.test.mjs` (+4 testes de integração): (1) achado residual GLOBAL
+  com bbox é tratado na localização real e a reverificação final confirma limpo, publicando com
+  UMA imagem só (`GLOBAL_RESIDUAL_BBOX`/`RESIDUAL_SECOND_PASS`); (2) layout denso nomeado no brief
+  é simplificado ANTES da geração, subheadline nunca aparece no prompt de imagem nem é exigido no
+  gate (`DENSITY_PREFLIGHT`); (3) 2+ zonas opcionais presas em sobreposição mesmo após
+  realocação real são descartadas da composição, nunca virando peça cheia de `card_fallback`
+  (`OVERDENSE_LAYOUT_CONTROL`); (4) `layoutPlan` malformado na 1ª tentativa do plano inicial
+  alimenta a 2ª tentativa com a causa exata e produz um plano válido.
+- `tests/round4-etapa3-local-smoke.test.mjs` (+1 cenário, pipeline de pixel REAL) — o cenário
+  denso NOMEADO no brief (headline+subheadline+CTA+preço+logo) de ponta a ponta: densidade
+  simplificada ANTES da geração, achado residual GLOBAL com bbox recuperado numa única rodada
+  extra, e a geometria FINAL (`planForGate`) chegando de fato ao gate técnico
+  (`checkCreativeVisualIntegrity` roda e aprova) — publica com uma única imagem gerada, zero
+  rodadas de reparo.
+- Suíte completa (3314 testes, 2 flakes pré-existentes e não relacionados — `analytics.test.mjs`/
+  `cli.smoke.test.mjs`, os mesmos já observados em rodadas anteriores), `typecheck`, `build` e
+  `architecture:check` — todos verdes antes do commit desta ETAPA.
+
+### Bloco de classificação — ETAPA 3.3
+
+```
+GLOBAL_RESIDUAL_BBOX = PASS
+RESIDUAL_SECOND_PASS = PASS (máximo 1 passe residual, nunca um loop — testado em integração e no smoke local de pixel real)
+GLOBAL_FINAL_RECHECK = PASS
+VISUAL_TEXT_BUDGET = PASS (obrigatório/opcional via `isTextZoneRequired`, 18 testes unitários dedicados)
+REQUIRED_OPTIONAL_CLASSIFICATION = PASS
+DENSITY_PREFLIGHT = PASS (testado em integração e no smoke local de pixel real — subheadline descartado ANTES da geração)
+OPTIONAL_TEXT_DEGRADATION = PASS (preflight E pós-geometria real, duas fontes, ambas filtradas em `planForGate.allowedRenderedTexts`)
+OVERDENSE_LAYOUT_CONTROL = PASS (novo código de gate `OVERDENSE_LAYOUT`, só dispara depois de tentar simplificar — nunca substitui os checks geométricos existentes)
+PLAN_FOR_GATE_FINAL_GEOMETRY = PASS (bug da ETAPA 3.2 em `allowedRenderedTexts` corrigido nesta rodada; smoke local de pixel real confirma o gate técnico rodando com a geometria final e aprovando)
+LAYOUT_PLAN_SCHEMA_HARDENING = PASS (exemplo concreto + lembrete de campos obrigatórios no prompt; parser NÃO foi relaxado)
+LAYOUT_PLAN_REPAIR = PASS (teste dedicado: causa exata de `layoutPlan` malformado anexada à 2ª tentativa, produz plano válido)
+LOCAL_DENSE_SMOKE = PASS (cenário denso nomeado no brief, pipeline de pixel REAL, publica de ponta a ponta)
+STAGE_3_3_READY_FOR_PRODUCTION = YES — verificado localmente (typecheck/build/suíte completa/architecture-check/smoke local, todos PASS) e commitado; smoke real de produção (reusando o MESMO cenário denso) pendente de autorização explícita de deploy
+```
+
+### Respostas às 11 perguntas de fechamento da ETAPA 3.3
+
+1. **A reverificação global agora localiza o achado residual?** Sim — devolve texto/
+   classificação/bbox/confiança, o mesmo formato da análise pré-composição, nunca mais só um
+   booleano.
+2. **Quantos passes residuais no máximo?** Exatamente 1 (inicial + 1 residual) — nunca um loop.
+   Sem bbox utilizável no residual, ou ainda não resolvido depois do passe, classifica
+   `UNRECOVERABLE_GLOBAL_TEXT` e segue a política de reparo normal.
+3. **Como o motor decide que "é texto demais"?** Dois sinais simples e determinísticos: contagem
+   de elementos (texto + assets) ≥5, ou soma bruta de área ocupada >60% do canvas — nunca uma
+   régua de dezenas de regras.
+4. **O que é removido primeiro?** Conteúdo OPCIONAL, nesta ordem: URL → badge → desconto →
+   subheadline — nunca headline, nunca um CTA que a peça de fato tem, nunca um fato de
+   `requiredRenderedFacts`.
+5. **Os fatos obrigatórios continuam garantidos?** Sim — `isTextZoneRequired` nunca marca como
+   descartável uma zona que corresponde a `requiredRenderedFacts`, mesmo que o layout continue
+   denso depois de esgotar as opcionais disponíveis (esse caso residual seguiria pro gate
+   geométrico normal, nunca é escondido).
+6. **`card_fallback` parou de mascarar layouts congestionados?** Quando 2+ zonas ficam presas em
+   sobreposição mesmo sem região livre, o motor agora descarta o conteúdo OPCIONAL entre elas em
+   vez de publicar todas empilhadas em cartões — testado em integração.
+7. **`planForGate` sempre usa a geometria final?** Sim, incluindo `allowedRenderedTexts` agora
+   (gap da ETAPA 3.2 corrigido nesta rodada) — confirmado pelo smoke local de pixel real, onde o
+   gate técnico roda de verdade (não é mais `NOT_TRIGGERED`) e aprova com a geometria pós-
+   simplificação.
+8. **`CREATIVE_PLAN_INVALID` por `layoutPlan` ficou menos provável?** O prompt agora traz um
+   exemplo concreto do formato exato — reduz a chance na 1ª tentativa; quando ainda assim
+   acontece, a 2ª tentativa recebe a causa exata (testado) e o parser não foi relaxado.
+9. **A peça densa passou localmente?** Sim — smoke local novo com o pipeline de pixel REAL
+   (sharp de verdade: blur/scrim/logo/texto), reproduzindo o EXATO cenário nomeado no brief, do
+   plano inicial até `publishable: true`, zero rodadas de reparo.
+10. **Houve aumento relevante de custo?** Marginal e condicional: o passe residual só roda
+    quando a reverificação global aponta algo COM bbox (na prática, 1 chamada de visão barata a
+    mais só nesse caso específico); a densidade/degradação são lógica pura, sem nenhum custo de
+    IA — e quando a simplificação evita uma rodada de reparo completa (nova imagem), o efeito
+    líquido tende a ser REDUÇÃO de custo, não aumento.
+11. **Pronto para deploy/smoke real?** Verificado localmente (typecheck/build/suíte completa/
+    architecture-check/smoke local de pixel real, todos PASS) e commitado — aguardando
+    autorização explícita de deploy para reusar o MESMO cenário denso contra o modelo real, com o
+    objetivo explícito de finalmente alcançar uma peça publicável de ponta a ponta.
+
+**Como as ETAPAS 5/6 continuam pendentes, mesmo com a ETAPA 3.3 verificada localmente e pronta
+para produção, não declaro o Creative Engine resolvido — o smoke real de produção (deploy não
+autorizado nesta rodada) ainda precisa confirmar contra o modelo real o que já está comprovado
+localmente.**

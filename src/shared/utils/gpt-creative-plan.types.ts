@@ -520,6 +520,13 @@ export function buildCreativePlanPrompt(context: CreativeContext, chosenDirectio
     // rígidos do motor legado — o Director ainda decide a criatividade, só não pode decidir "no
     // vácuo" sem declarar intenção de distribuição.
     "- `layoutPlan`: declare pelo menos uma zona de cada tipo relevante pra esta peça (`hero` para o foco visual principal — produto/screenshot real ou o conceito central; `headline`; `cta`; `logo`; `support` para elementos secundários se houver; `negativeSpace` para pelo menos uma área de respiro REAL, sem elemento nenhum dentro, com espaço suficiente pra a composição não parecer congestionada). Cada zona leva um `rationale` curto — nunca \"porque sim\". As zonas de `layoutPlan` guiam `assetPlacements`/`textZones`, mas a geometria final de cada elemento renderizável continua sendo decidida ali, não aqui.",
+    // ETAPA 3.3 (Rodada 4) — achado real: `layoutPlan` malformado (kind fora da lista, rect fora
+    // dos limites, priority não-numérico, rationale vazio) é a causa mais comum de
+    // `CREATIVE_PLAN_INVALID`/`CREATIVE_PLAN_REPEAT_INVALID`. Um exemplo CONCRETO e um lembrete
+    // explícito dos 4 campos obrigatórios reduz a chance de formato errado logo na 1ª tentativa —
+    // sem relaxar NENHUMA validação do parser (`parseLayoutPlan` continua rejeitando o plano
+    // inteiro se um item vier malformado, de propósito).
+    "- Formato EXATO de cada item de `layoutPlan` (os 4 campos são OBRIGATÓRIOS, sempre): `{\"kind\": \"hero\", \"rect\": {\"xPct\": 10, \"yPct\": 10, \"widthPct\": 50, \"heightPct\": 40}, \"priority\": 1, \"rationale\": \"produto real ocupa o quadrante central-esquerdo, foco visual principal\"}`. `kind` precisa ser EXATAMENTE um destes 6 valores: \"hero\"|\"headline\"|\"cta\"|\"logo\"|\"support\"|\"negativeSpace\" — nunca outro nome. `rect` precisa ter os 4 números (`xPct`/`yPct`/`widthPct`/`heightPct`) dentro de 0-100, com `xPct+widthPct<=100` e `yPct+heightPct<=100`. `priority` é um número (1 = maior prioridade visual). `rationale` nunca pode ser uma string vazia.",
     "- `assetPlacements`: para cada asset REAL (produto/screenshot/logo) da lista acima, defina a geometria exata (retângulo em percentual do canvas final, 0-100) de onde ele vai entrar na composição — essa geometria será usada por composição determinística depois, então precisa ser definida ANTES da imagem existir, nunca improvisada depois.",
     // Histórico: a orientação de Rodada 2/3 preferia `"image_model"` para CTA/preço/desconto/URL/
     // badge (ganho visual de integração, evitando "caixa colada"). Revisão de Rodada 4 (benchmark

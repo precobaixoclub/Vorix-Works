@@ -178,28 +178,47 @@ test("analyzePreCompositionImage: múltiplas ocorrências do MESMO texto viram e
   assert.notDeepEqual(result.spuriousTexts[0].bbox, result.spuriousTexts[1].bbox);
 });
 
-test("checkGlobalTextLegibility: hasUnresolvedText=false explícito -> false (limpo)", async () => {
+test("checkGlobalTextLegibility: hasUnresolvedText=false explícito -> limpo, sem achados residuais", async () => {
   const icaro = { request: async () => ({ status: "completed", content: JSON.stringify({ hasUnresolvedText: false }) }) };
   const result = await checkGlobalTextLegibility(icaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" });
-  assert.equal(result, false);
+  assert.equal(result.hasUnresolvedText, false);
+  assert.deepEqual(result.residualFindings, []);
 });
 
-test("checkGlobalTextLegibility: hasUnresolvedText=true -> true (ainda tem problema)", async () => {
+test("checkGlobalTextLegibility: hasUnresolvedText=true -> ainda tem problema", async () => {
   const icaro = { request: async () => ({ status: "completed", content: JSON.stringify({ hasUnresolvedText: true }) }) };
   const result = await checkGlobalTextLegibility(icaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" });
-  assert.equal(result, true);
+  assert.equal(result.hasUnresolvedText, true);
 });
 
 test("checkGlobalTextLegibility: conservador — resposta falha/ambígua conta como 'ainda tem problema', nunca declara limpo sem confirmação", async () => {
   const failedIcaro = { request: async () => ({ status: "failed" }) };
-  assert.equal(await checkGlobalTextLegibility(failedIcaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" }), true);
+  assert.equal((await checkGlobalTextLegibility(failedIcaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" })).hasUnresolvedText, true);
 
   const ambiguousIcaro = { request: async () => ({ status: "completed", content: JSON.stringify({}) }) };
-  assert.equal(await checkGlobalTextLegibility(ambiguousIcaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" }), true);
+  assert.equal((await checkGlobalTextLegibility(ambiguousIcaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" })).hasUnresolvedText, true);
 });
 
 test("checkGlobalTextLegibility: exceção na chamada nunca lança — conservador (true)", async () => {
   const icaro = { request: async () => { throw new Error("timeout"); } };
   const result = await checkGlobalTextLegibility(icaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" });
-  assert.equal(result, true);
+  assert.equal(result.hasUnresolvedText, true);
+});
+
+test("checkGlobalTextLegibility: achado residual com bbox/classification/confidence é parseado (ETAPA 3.3 — nunca só um booleano)", async () => {
+  const icaro = {
+    request: async () => ({
+      status: "completed",
+      content: JSON.stringify({
+        hasUnresolvedText: true,
+        spuriousTexts: [{ text: "R$ 149,00", classification: "duplicated_text", bbox: { xPct: 60, yPct: 70, widthPct: 20, heightPct: 8 }, confidence: 0.77 }],
+      }),
+    }),
+  };
+  const result = await checkGlobalTextLegibility(icaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" });
+  assert.equal(result.hasUnresolvedText, true);
+  assert.equal(result.residualFindings.length, 1);
+  assert.equal(result.residualFindings[0].text, "R$ 149,00");
+  assert.deepEqual(result.residualFindings[0].bbox, { xPct: 60, yPct: 70, widthPct: 20, heightPct: 8 });
+  assert.equal(result.residualFindings[0].confidence, 0.77);
 });

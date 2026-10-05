@@ -344,3 +344,79 @@ test("SMOKE LOCAL (ETAPA 3.2): texto fantasma com bbox REAL fora da zona planeja
 function globalRecheckResponseLocal(hasUnresolvedText) {
   return { status: "completed", content: JSON.stringify({ hasUnresolvedText }) };
 }
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.3 (Rodada 4) — SMOKE LOCAL do cenário denso NOMEADO no brief (headline+subheadline+CTA+
+// preço+logo), com o pipeline de pixel REAL. Objetivo explícito (brief, ponto 31): não basta o
+// gate rejeitar corretamente uma peça ruim — precisa existir uma peça DENSA que (1) teve conteúdo
+// opcional simplificado ANTES da geração (DENSITY_PREFLIGHT), (2) teve um achado GLOBAL residual
+// COM localização recuperado numa única rodada extra (GLOBAL_RESIDUAL_BBOX), e (3) chegou ao gate
+// técnico com a geometria FINAL (planForGate) e foi considerada publicável.
+// ---------------------------------------------------------------------------------------------
+
+test("SMOKE LOCAL (ETAPA 3.3): cenário denso headline+subheadline+CTA+preço+logo — densidade simplificada, residual GLOBAL recuperado, geometria FINAL chega ao gate e PUBLICA", async () => withScriptedFetch(
+  { "https://x/generated.png": await makePng(1024, 1280, { r: 20, g: 20, b: 24 }), "https://x/logo.png": await makePng(200, 200, { r: 255, g: 255, b: 255 }) },
+  async () => {
+    const context = {
+      brandName: "Marca Teste", objective: "Divulgar", channel: "instagram", format: "4:5",
+      ideaText: "Peça de teste densa", assets: [{ url: "https://x/logo.png", role: "logo", description: "Logo oficial" }],
+      confirmedFacts: ["Preço: R$ 149,00"],
+    };
+    const busyRegion = { hasText: true, hasProduct: false, hasFace: false, complexity: "high" };
+    const allBusyRegions = { "top-left": busyRegion, "top-right": busyRegion, "center-left": busyRegion, "center-right": busyRegion, "bottom-left": busyRegion, "bottom-right": busyRegion };
+    const icaro = fakeIcaro({
+      analysis: [planResponse({
+        headline: "TODAS AS OFERTAS", subheadline: "Shopee + Mercado Livre", cta: "ACESSE AGORA",
+        allowedRenderedTexts: ["TODAS AS OFERTAS", "Shopee + Mercado Livre", "ACESSE AGORA", "R$ 149,00"],
+        requiredRenderedFacts: ["R$ 149,00"],
+        assetPlacements: [{ role: "logo", url: "https://x/logo.png", rect: { xPct: 80, yPct: 5, widthPct: 15, heightPct: 10 } }],
+        textZones: [
+          { kind: "headline", text: "TODAS AS OFERTAS", rect: { xPct: 5, yPct: 5, widthPct: 70, heightPct: 15 }, emphasis: "primary", renderedBy: "renderer" },
+          { kind: "subheadline", text: "Shopee + Mercado Livre", rect: { xPct: 10, yPct: 25, widthPct: 80, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },
+          { kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 85, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" },
+          { kind: "price", text: "R$ 149,00", rect: { xPct: 10, yPct: 60, widthPct: 50, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },
+        ],
+      })],
+      image_generation: [imageResponse("https://x/generated.png")],
+      review: [
+        // 1) Análise pré-composição: só 3 zonas chegam aqui (subheadline já descartado pelo
+        // preflight de densidade, ANTES mesmo da imagem existir) — ghost text de preço detectado.
+        {
+          status: "completed",
+          content: JSON.stringify({
+            spuriousTexts: [{ text: "R$ 149,00", classification: "ghost_text", matchedZoneKind: "price", bbox: { xPct: 10, yPct: 60, widthPct: 50, heightPct: 10 } }],
+            plannedZonesClear: { headline: true, cta: true, price: false },
+            regions: allBusyRegions,
+          }),
+        },
+        { status: "completed", content: JSON.stringify({ hasLegibleText: false }) }, // reverificação LOCAL do ghost text de preço — neutralizado em 1 passe
+        // 2) Reverificação GLOBAL inicial: ainda acusa um achado residual COM bbox — o CTA
+        // aparecendo duplicado em posição inesperada, fora de tudo já tratado.
+        {
+          status: "completed",
+          content: JSON.stringify({
+            hasUnresolvedText: true,
+            spuriousTexts: [{ text: "ACESSE AGORA", classification: "duplicated_text", bbox: { xPct: 5, yPct: 45, widthPct: 40, heightPct: 8 }, confidence: 0.8 }],
+          }),
+        },
+        { status: "completed", content: JSON.stringify({ hasLegibleText: false }) }, // reverificação LOCAL do passe residual — neutralizado em 1 passe
+        globalRecheckResponseLocal(false), // 3) Reverificação GLOBAL final: confirmado limpo
+        passingVisualIntegrity(), // 4) Gate técnico — recebe a geometria FINAL (planForGate)
+      ],
+    });
+    const result = await runGptCreativeEngine(
+      { ...fullBaseDeps(), creativeBrain: icaro, objectStorage: { put: async () => ({ url: "https://x/final.jpg", key: "k" }) } },
+      baseInput(context),
+    );
+
+    assertNoRound4Defects(result);
+    // A fila `image_generation` tem DELIBERADAMENTE só 1 item — se o motor tivesse tentado uma 2ª
+    // geração (densidade ou residual mal resolvidos), `fakeIcaro` lançaria "fila vazia" e o teste
+    // falharia antes mesmo de chegar aqui.
+    assert.equal(result.repairRounds.length, 0, "densidade e residual resolvidos sem nenhuma rodada de reparo, nunca gastando uma 2ª geração de imagem");
+    assert.ok(result.warnings.some((warning) => /DENSITY_PREFLIGHT/.test(warning) && /subheadline/.test(warning)), "preflight deveria ter descartado o subheadline opcional ANTES da geração");
+    assert.ok(!result.finalImagePrompt.includes("Shopee + Mercado Livre"), "subheadline descartado nunca deveria chegar a pedir desenho ao modelo de imagem");
+    assert.ok(result.compositionSteps.some((step) => step.step === "safe_area_adjustment" && /GLOBAL_RESIDUAL_BBOX/.test(step.detail) && /ACESSE AGORA/.test(step.detail)));
+    assert.ok(result.compositionSteps.some((step) => step.step === "safe_area_adjustment" && /GLOBAL_FINAL_RECHECK.*recuperado/.test(step.detail)));
+  },
+));

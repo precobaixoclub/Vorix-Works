@@ -59,6 +59,21 @@ export const CREATIVE_QUALITY_ISSUE_CODES = [
   // logo/screenshot/texto — nenhum tratamento local a mais resolveria, só uma nova geração
   // completa (`full_regen_required`, ver `classifyRepairStrategy`, `creative-repair.ts`).
   "UNRECOVERABLE_GHOST_TEXT",
+  // ETAPA 3.3 (Rodada 4) — achado do smoke real da ETAPA 3.2: a reverificação global (peça
+  // inteira, depois de TODAS as regiões detectadas já tratadas) às vezes ainda encontrava texto
+  // residual, sem nenhuma chance de agir sobre ele (só um booleano). Desde a ETAPA 3.3, um achado
+  // residual COM localização é tratado numa única rodada extra (`run-gpt-creative-engine.ts`) antes
+  // de desistir — `UNRECOVERABLE_GLOBAL_TEXT` só acontece se, mesmo depois desse passe residual (ou
+  // sem bbox nenhuma pra agir), a reverificação final ainda encontra texto não resolvido.
+  "UNRECOVERABLE_GLOBAL_TEXT",
+  // ETAPA 3.3 (Rodada 4) — "VISUAL TEXT BUDGET" (ver `manage-text-budget.ts`): antes de reprovar
+  // por uma simples colisão geométrica, o motor já tenta descartar conteúdo OPCIONAL (brief, ponto
+  // 16). Quando isso não é suficiente — ainda sobra sobreposição real E o número de elementos já é
+  // alto — o problema de fundo não é "reposicionar um retângulo", é excesso de conteúdo para o
+  // formato. Código deliberadamente distinto de `TEXT_ZONE_OVERLAPS_ASSET`/
+  // `TEXT_ZONE_OVERLAPS_TEXT_ZONE` (que continuam disparando junto, nunca substituídos) — dá ao
+  // diretor uma instrução mais específica ("simplifique", não só "mova").
+  "OVERDENSE_LAYOUT",
   // ETAPA 3 (Rodada 4) — o benchmark mostrou um screenshot real colado sobre uma cena que o
   // modelo já tinha desenhado como uma interface fictícia completa e desalinhada. A defesa
   // pré-composição intercepta a maioria dos casos antes mesmo de compor (ver
@@ -319,6 +334,28 @@ export function checkTextZoneCollisions(plan: CreativePlan): CreativeQualityIssu
     }
   }
   return issues;
+}
+
+/** ETAPA 3.3 (Rodada 4) — "VISUAL TEXT BUDGET" (brief, ponto 16/19): o motor já tenta descartar
+ * conteúdo OPCIONAL antes de chegar até aqui (`manage-text-budget.ts`, chamado de
+ * `run-gpt-creative-engine.ts`). Quando o `planForGate` (geometria FINAL, já pós-descarte) ainda
+ * assim tem uma sobreposição geométrica real E o número de elementos já é alto, o problema de fundo
+ * é excesso de conteúdo pro formato — nunca microgerencia "quanto é demais" com uma régua nova,
+ * reaproveita os mesmos checks geométricos determinísticos já existentes como sinal de entrada. */
+const OVERDENSE_LAYOUT_ELEMENT_THRESHOLD = 5;
+
+export function checkOverdenseLayout(plan: CreativePlan): CreativeQualityIssue[] {
+  const hasGeometricOverlap = checkAssetPlacementOverlap(plan).length > 0 || checkTextZoneCollisions(plan).length > 0;
+  if (!hasGeometricOverlap) return [];
+  const elementCount = plan.textZones.length + plan.assetPlacements.length;
+  if (elementCount < OVERDENSE_LAYOUT_ELEMENT_THRESHOLD) return [];
+  return [
+    {
+      code: "OVERDENSE_LAYOUT",
+      message: `A peça tem ${elementCount} elementos (texto + assets) competindo por espaço e pelo menos uma sobreposição geométrica real, mesmo depois de descartar conteúdo opcional — provável excesso de conteúdo para este formato, não só um ajuste de posição. Reduza o número de elementos (ex.: remova subheadline/badge/URL, ou simplifique o headline) em vez de só tentar reposicionar.`,
+      source: "safe_area",
+    },
+  ];
 }
 
 /** Achado ao vivo em produção (cliente real): uma peça saiu com fundo branco e cores
@@ -667,6 +704,7 @@ export async function evaluateCreativeQualityGate(
   const assetSafeAreaIssues = checkAssetSafeAreaCompliance(input.plan);
   const assetPlacementOverlapIssues = checkAssetPlacementOverlap(input.plan);
   const textZoneCollisionIssues = checkTextZoneCollisions(input.plan);
+  const overdenseLayoutIssues = checkOverdenseLayout(input.plan);
 
   const referenceProductImageUrl = input.context.assets.find((asset) => asset.role === "product_photo")?.url;
   const referenceLogoUrl = input.context.assets.find((asset) => asset.role === "logo")?.url;
@@ -696,6 +734,7 @@ export async function evaluateCreativeQualityGate(
     assetSafeAreaIssues,
     assetPlacementOverlapIssues,
     textZoneCollisionIssues,
+    overdenseLayoutIssues,
     visualIssues,
     productionGuidelinesIssues,
   );

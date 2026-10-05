@@ -36,6 +36,7 @@ import {
   type SafeAreaCandidateRegion,
 } from "./resolve-actual-safe-area.js";
 import { neutralizeGhostTextZone } from "./neutralize-ghost-text.js";
+import { applyTextBudgetSimplification, degradeOptionalZonesOnUnresolvedOverlap, isLayoutOverdense } from "./manage-text-budget.js";
 
 /**
  * Motor criativo GPT — migração "GPT como motor criativo único" (PR 5/9). Promove
@@ -422,11 +423,16 @@ async function applySafeAreaAdjustments(
     specialistId: string;
     onCost?: (response: IcaroAIResponse | undefined) => void;
   },
-): Promise<{ imageBuffer: Buffer; zones: CreativePlanTextZone[]; steps: string[]; unrecoverableGhostTextZoneKinds: string[] }> {
+): Promise<{ imageBuffer: Buffer; zones: CreativePlanTextZone[]; steps: string[]; unrecoverableGhostTextZoneKinds: string[]; unresolvedOverlapKinds: string[] }> {
   let imageBuffer = input.imageBuffer;
   const zones: CreativePlanTextZone[] = [];
   const steps: string[] = [];
   const unrecoverableGhostTextZoneKinds: string[] = [];
+  // ETAPA 3.3 (Rodada 4) — "VISUAL TEXT BUDGET" (brief, ponto 12/16): zonas que continuam
+  // sobrepondo um asset/outra zona mesmo DEPOIS da tentativa de realocação (nenhuma região
+  // candidata genuinamente livre) — sinal de layout congestionado, usado pelo chamador pra decidir
+  // se descarta conteúdo OPCIONAL (ver `manage-text-budget.ts`), nunca decidido aqui dentro.
+  const unresolvedOverlapKinds: string[] = [];
   const occupiedRects = [...input.occupiedRects];
   const regionFlags: Partial<Record<SafeAreaCandidateRegion, RegionSemanticFlags>> = input.analysis?.regions ?? {};
   const hasFullNeutralizationDeps = Boolean(deps.applyLocalBlur && deps.applyLocalScrim && deps.extractRegionBuffer && deps.computeRegionPixelStats);
@@ -500,13 +506,14 @@ async function applySafeAreaAdjustments(
 
     occupiedRects.push(decision.rect);
     zones.push({ ...zone, rect: decision.rect, backingStyle: textBackingTreatmentToRendererStyle(treatment) });
+    if (overlapsKnownOccupiedRect && !decision.relocated) unresolvedOverlapKinds.push(zone.kind);
     steps.push(
       `${zone.kind}: ${decision.relocated ? `realocado para região "${decision.relocatedTo}"` : "manteve posição planejada"}, tratamento="${treatment}"` +
         (overlapsKnownOccupiedRect && !decision.relocated ? " (sobrepunha um asset/zona conhecida e nenhuma região alternativa estava livre)" : ""),
     );
   }
 
-  return { imageBuffer, zones, steps, unrecoverableGhostTextZoneKinds };
+  return { imageBuffer, zones, steps, unrecoverableGhostTextZoneKinds, unresolvedOverlapKinds };
 }
 
 export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: GptCreativeEngineInput): Promise<GptCreativeEngineResult> {
@@ -653,7 +660,22 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       );
     }
 
-    const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+    // ETAPA 3.3 (Rodada 4) — "VISUAL TEXT BUDGET", preflight de densidade (brief, ponto 11): nunca
+    // gasta uma geração de imagem só pra descobrir uma geometria que o próprio plano já mostra ser
+    // inviável. Roda sobre a geometria DECLARADA (ainda não existe pixel real nesse ponto) — quando
+    // o layout já está congestionado, descarta conteúdo OPCIONAL (nunca `requiredRenderedFacts`,
+    // nunca headline) ANTES de desenhar. `plan` (pristine, decisão do diretor) nunca é sobrescrito —
+    // só `planForGeneration` (derivado) é usado daqui pra frente nesta rodada de imagem, mesmo
+    // princípio já usado por `planForGate`.
+    const densityPreflight = isLayoutOverdense(plan.textZones, plan.assetPlacements) ? applyTextBudgetSimplification(plan) : undefined;
+    const planForGeneration = densityPreflight?.plan ?? plan;
+    if (densityPreflight && densityPreflight.droppedZones.length > 0) {
+      warnings.push(
+        `ETAPA 3.3 — DENSITY_PREFLIGHT: layout denso detectado antes da geração (${plan.textZones.length} zona(s) de texto + ${plan.assetPlacements.length} asset(s)) — conteúdo OPCIONAL removido da arte: ${densityPreflight.droppedZones.map((zone) => zone.kind).join(", ")} (continua disponível só como legenda/descrição, nunca na peça).`,
+      );
+    }
+
+    const imagePrompt = buildImageGenerationPromptFromPlan(planForGeneration, context);
     const creativeGuard = buildGuardInputFromPlan(plan, context);
 
     if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
@@ -685,7 +707,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     // modelo "não desenhe texto aqui" não é suficiente, ele pode desenhar mesmo assim. Analisa a
     // imagem BASE (antes de qualquer composição determinística) pra ter dado REAL sobre texto
     // espúrio/fantasma e ocupação de regiões, nunca só a instrução estática do plano.
-    const rendererOwnedZonesForAnalysis = plan.textZones.filter((zone) => zone.renderedBy === "renderer");
+    const rendererOwnedZonesForAnalysis = planForGeneration.textZones.filter((zone) => zone.renderedBy === "renderer");
     const screenshotPlacementForAnalysis = screenshotAsset ? plan.assetPlacements.find((candidate) => candidate.role === "screenshot") : undefined;
     let preCompositionAnalysis: PreCompositionAnalysis | undefined;
     if (rendererOwnedZonesForAnalysis.length > 0 || screenshotPlacementForAnalysis) {
@@ -693,7 +715,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       preCompositionAnalysis = await analyzePreCompositionImage(deps.creativeBrain, {
         imageUrl: uri,
         rendererOwnedZones: rendererOwnedZonesForAnalysis,
-        allowedRenderedTexts: plan.allowedRenderedTexts,
+        allowedRenderedTexts: planForGeneration.allowedRenderedTexts,
         hasScreenshotSlot: Boolean(screenshotPlacementForAnalysis),
         specialistId: SPECIALIST_ID,
         onCost: (response) => track("preCompositionAnalysis", response),
@@ -849,27 +871,73 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     // Só roda quando havia ALGO detectado E a capacidade completa de tratamento local estava
     // disponível (senão nada foi tratado nesta rodada — rodar o recheck global não serviria pra
     // nada além de gastar uma chamada extra, já que não há como agir sobre o que ele encontrar).
-    if (preCompositionAnalysis?.spuriousTexts && preCompositionAnalysis.spuriousTexts.length > 0 && deps.applyLocalBlur && deps.applyLocalScrim && deps.extractRegionBuffer && deps.computeRegionPixelStats) {
+    const hasFullNeutralizationCapability = Boolean(deps.applyLocalBlur && deps.applyLocalScrim && deps.extractRegionBuffer && deps.computeRegionPixelStats);
+    if (preCompositionAnalysis?.spuriousTexts && preCompositionAnalysis.spuriousTexts.length > 0 && hasFullNeutralizationCapability) {
       if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, compositionSteps: roundCompositionSteps });
       const globalCheckUpload = await deps.objectStorage.put({ key: buildObjectKey(input.tenantId, "global-recheck"), body: baseWithAssetsBuffer, contentType: "image/jpeg" });
-      const stillHasUnresolvedText = await checkGlobalTextLegibility(deps.creativeBrain, {
+      let globalCheck = await checkGlobalTextLegibility(deps.creativeBrain, {
         imageUrl: globalCheckUpload.url,
-        allowedRenderedTexts: plan.allowedRenderedTexts,
+        allowedRenderedTexts: planForGeneration.allowedRenderedTexts,
         specialistId: SPECIALIST_ID,
         onCost: (response) => track("ghostTextNeutralization", response),
       });
+
+      // ETAPA 3.3 (Rodada 4) — achado do smoke real da ETAPA 3.2: a reverificação global agora
+      // devolve achados ESTRUTURADOS (texto/bbox/confiança), não só um booleano (brief, ponto 1).
+      // Quando aponta uma ocorrência residual COM localização, trata-a na mesma localização REAL
+      // (mesmo mecanismo da análise pré-composição), numa ÚNICA rodada residual extra (brief, ponto
+      // 3: "INICIAL + 1 RESIDUAL, nunca um loop"), e reverifica uma ÚLTIMA vez antes de desistir.
+      let globalResidualPassApplied = false;
+      const treatableResidualFindings = globalCheck.residualFindings.filter((finding) => finding.bbox);
+      if (globalCheck.hasUnresolvedText && treatableResidualFindings.length > 0) {
+        globalResidualPassApplied = true;
+        for (const finding of treatableResidualFindings) {
+          if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, compositionSteps: roundCompositionSteps });
+          const paddedRect = expandBboxWithPadding(finding.bbox!);
+          const residualNeutralization = await neutralizeGhostTextZone(deps.creativeBrain, {
+            computeRegionPixelStats: deps.computeRegionPixelStats!,
+            applyLocalBlur: deps.applyLocalBlur!,
+            applyLocalScrim: deps.applyLocalScrim!,
+            extractRegionBuffer: deps.extractRegionBuffer!,
+            objectStorage: deps.objectStorage,
+          }, {
+            imageBuffer: baseWithAssetsBuffer,
+            rect: paddedRect,
+            tenantId: input.tenantId,
+            specialistId: SPECIALIST_ID,
+            onCost: (response) => track("ghostTextNeutralization", response),
+          });
+          baseWithAssetsBuffer = residualNeutralization.imageBuffer;
+          roundCompositionSteps.push({
+            step: "safe_area_adjustment",
+            ok: residualNeutralization.result.neutralizedLocally,
+            detail: `GLOBAL_RESIDUAL_BBOX: texto "${finding.text}" (${finding.classification}) reportado pela reverificação global (fora da detecção inicial) tratado na bbox real — ${residualNeutralization.result.neutralizedLocally ? "neutralizado" : "NÃO neutralizado"} em ${residualNeutralization.result.passes} passe(s).`,
+          });
+        }
+        if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, compositionSteps: roundCompositionSteps });
+        const residualCheckUpload = await deps.objectStorage.put({ key: buildObjectKey(input.tenantId, "global-recheck-final"), body: baseWithAssetsBuffer, contentType: "image/jpeg" });
+        globalCheck = await checkGlobalTextLegibility(deps.creativeBrain, {
+          imageUrl: residualCheckUpload.url,
+          allowedRenderedTexts: planForGeneration.allowedRenderedTexts,
+          specialistId: SPECIALIST_ID,
+          onCost: (response) => track("ghostTextNeutralization", response),
+        });
+      }
+
       roundCompositionSteps.push({
         step: "safe_area_adjustment",
-        ok: !stillHasUnresolvedText,
-        detail: stillHasUnresolvedText
-          ? "GLOBAL_RECHECK: ainda há texto não autorizado/duplicado legível na peça, mesmo depois de tratar todas as regiões detectadas."
-          : "GLOBAL_RECHECK: confirmado — nenhum texto não autorizado/duplicado legível na imagem base tratada.",
+        ok: !globalCheck.hasUnresolvedText,
+        detail: globalCheck.hasUnresolvedText
+          ? `GLOBAL_FINAL_RECHECK${globalResidualPassApplied ? " (após 1 passe residual)" : ""}: ainda há texto não autorizado/duplicado legível na peça.`
+          : `GLOBAL_FINAL_RECHECK${globalResidualPassApplied ? " (após 1 passe residual, recuperado)" : ""}: confirmado — nenhum texto não autorizado/duplicado legível na imagem base tratada.`,
       });
 
-      if (stillHasUnresolvedText) {
+      if (globalCheck.hasUnresolvedText) {
         const globalIssues: CreativeQualityIssue[] = [{
-          code: "UNRECOVERABLE_GHOST_TEXT",
-          message: "A reverificação GLOBAL (peça inteira) encontrou texto não autorizado/duplicado legível mesmo depois de tratar todas as regiões detectadas individualmente — provável ocorrência em local não coberto pelo tratamento local.",
+          code: "UNRECOVERABLE_GLOBAL_TEXT",
+          message: globalResidualPassApplied
+            ? "A reverificação GLOBAL (peça inteira) encontrou texto não autorizado/duplicado legível mesmo depois de tratar todas as regiões detectadas inicialmente E a rodada residual de recuperação — nenhum tratamento local a mais resolveria."
+            : "A reverificação GLOBAL (peça inteira) encontrou texto não autorizado/duplicado legível mesmo depois de tratar todas as regiões detectadas individualmente, sem localização suficiente para uma rodada residual de recuperação.",
           source: "vision",
         }];
         const routedGlobal = routeCreativeRepair(globalIssues, repairAttempt);
@@ -877,7 +945,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
 
         if (routedGlobal.route === "unrecoverable") {
           return fail(
-            "CREATIVE_QUALITY_GATE_NOT_PASSED: a reverificação global encontrou texto não resolvido mesmo após o tratamento local, e o limite de tentativas de reparo foi atingido.",
+            "CREATIVE_QUALITY_GATE_NOT_PASSED: a reverificação global encontrou texto não resolvido mesmo após o tratamento local e a rodada residual, e o limite de tentativas de reparo foi atingido.",
             "CREATIVE_QUALITY_GATE_NOT_PASSED",
             { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, compositionSteps: roundCompositionSteps },
           );
@@ -898,7 +966,25 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       }
     }
 
-    const rendererZones = safeAreaAdjustment.zones;
+    // ETAPA 3.3 (Rodada 4) — "VISUAL TEXT BUDGET", degradação PÓS-geometria real (brief, ponto 12):
+    // o preflight (acima) só via a geometria DECLARADA; agora a geometria é REAL (pós-relocalização
+    // com dados de visão/pixel). Quando 2+ zonas continuam sobrepondo um asset/outra zona mesmo
+    // sem região candidata livre (`unresolvedOverlapKinds`), isso é o sinal explícito do brief de
+    // "card_fallback virando solução pra tudo" — descarta conteúdo OPCIONAL em vez de publicar uma
+    // peça cheia de caixas empilhadas, nunca gera uma imagem nova só por isso.
+    const densityDegradation = degradeOptionalZonesOnUnresolvedOverlap(safeAreaAdjustment.zones, plan, safeAreaAdjustment.unresolvedOverlapKinds);
+    if (densityDegradation.droppedZones.length > 0) {
+      roundCompositionSteps.push({
+        step: "safe_area_adjustment",
+        ok: true,
+        detail: `OVERDENSE_LAYOUT: ${densityDegradation.droppedZones.length} zona(s) opcional(is) removida(s) da composição por congestionamento pós-geometria real (${densityDegradation.droppedZones.map((zone) => zone.kind).join(", ")}) — nenhuma nova geração de imagem.`,
+      });
+    }
+    const rendererZones = densityDegradation.zones;
+    // Geometria final (ver `planForGate` abaixo) nunca pode autorizar um texto que não vai mais ser
+    // desenhado — some junto da zona descartada em QUALQUER das duas simplificações desta rodada
+    // (preflight sobre o plano declarado + degradação sobre a geometria real), nunca só uma delas.
+    const allDroppedTexts = new Set([...(densityPreflight?.droppedZones ?? []), ...densityDegradation.droppedZones].map((zone) => zone.text));
     let fontScale = 1;
 
     innerTextRound: for (;;) {
@@ -941,7 +1027,15 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       // geometria antiga. `planForGate` é o MESMO plano, só com `textZones` trocado pelos
       // retângulos REAIS que vão pro compositor — nunca usado pro reparo em si (`plan` original
       // continua sendo o que volta pro Director, pra não confundi-lo sobre o que ele decidiu).
-      const planForGate: CreativePlan = { ...plan, textZones: rendererZones };
+      // ETAPA 3.3 — `allowedRenderedTexts` também precisa refletir a geometria FINAL: um texto cuja
+      // zona foi descartada pelo "VISUAL TEXT BUDGET" (preflight ou degradação pós-geometria) nunca
+      // pode continuar "autorizado" — senão o próprio gate reprovaria por `MISSING_REQUIRED_TEXT`
+      // um texto que o motor decidiu, de propósito, não desenhar mais.
+      const planForGate: CreativePlan = {
+        ...plan,
+        textZones: rendererZones,
+        allowedRenderedTexts: plan.allowedRenderedTexts.filter((text) => !allDroppedTexts.has(text)),
+      };
       const qualityGate = await evaluateCreativeQualityGate(deps.creativeBrain, {
         finalImageUrl: uploaded.url,
         finalImageWidth,

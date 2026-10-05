@@ -325,7 +325,11 @@ test("runGptCreativeEngine: com logo e screenshot posicionados, compõe os dois 
       ],
     })],
     image_generation: [imageResponse()],
-    review: [passingReview(), passingVisualScore()],
+    // ETAPA 3 (Rodada 4) — com screenshot posicionado, o motor roda MAIS uma chamada de visão
+    // (análise pré-composição, `analyzePreCompositionImage`) ANTES do gate técnico — uma entrada
+    // extra de `passingReview()` cobre essa chamada nova, nunca deixando o gate/score reais
+    // "roubarem" a resposta errada da fila.
+    review: [passingReview(), passingReview(), passingVisualScore()],
   });
   const input = baseInput({
     creativeContext: baseContext({

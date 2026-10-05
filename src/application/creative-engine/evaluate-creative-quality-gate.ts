@@ -41,6 +41,27 @@ export const CREATIVE_QUALITY_ISSUE_CODES = [
   // dedicado, sempre hard failure, nunca `renderer_reflow`-elegível (a causa pode ser geométrica OU
   // de conceito — só uma nova decisão resolve com segurança) — ver `checkCreativeVisualIntegrity`.
   "REQUIRED_FACT_MISSING",
+  // ETAPA 3 (Rodada 4) — refinamento de `UNAUTHORIZED_TEXT`: texto fantasma (o modelo desenhou
+  // sozinho ANTECIPANDO o conteúdo de uma zona do renderer) é detectado e CLASSIFICADO como
+  // `"ghost_text"` na análise pré-composição (`analyze-pre-composition-image.ts`), mas isso nunca
+  // vira um `CreativeQualityIssueCode` de gate por si só — é tratado SILENCIOSAMENTE antes do gate
+  // rodar (`applySafeAreaAdjustments` reposiciona a zona ou aplica blur local + scrim,
+  // `run-gpt-creative-engine.ts`), exatamente para não gastar uma rodada de reparo num problema que
+  // o renderer já resolve sozinho. Quando a mitigação falha (caso residual), o SINTOMA observável no
+  // gate final é o MESMO texto aparecendo duas vezes — `DUPLICATED_TEXT` cobre esse caso, sempre um
+  // defeito, nunca intencional.
+  "DUPLICATED_TEXT",
+  // ETAPA 3 (Rodada 4) — o benchmark mostrou um screenshot real colado sobre uma cena que o
+  // modelo já tinha desenhado como uma interface fictícia completa e desalinhada. A defesa
+  // pré-composição intercepta a maioria dos casos antes mesmo de compor (ver
+  // `run-gpt-creative-engine.ts`, checagem de `screenshotSlotLooksFake`); este código cobre o caso
+  // em que isso só fica claro depois da composição final (ex.: o screenshot real colado por cima
+  // ainda assim não combina com o que o modelo desenhou ao redor).
+  "SCREENSHOT_SLOT_MISMATCH",
+  // ETAPA 3 (Rodada 4) — distinto de `ELEMENT_CUT_OFF` (elemento cortado na BORDA do canvas):
+  // aqui o elemento crítico (produto, logo, screenshot) está inteiro dentro do canvas, mas
+  // COBERTO por outro elemento (ex.: um badge/CTA desenhado por cima do rosto do produto).
+  "CRITICAL_ASSET_OCCLUDED",
   // Novo: colisão geométrica de um assetPlacement (produto/screenshot) com a margem de segurança
   // do canvas — mesmo princípio de `checkSafeAreaCompliance`, agora cobrindo assets, não só texto.
   // (Auditoria: `LOGO_DISTORTED` NÃO foi adicionado — `logo-compositor.ts` já usa
@@ -233,7 +254,7 @@ export function checkAssetSafeAreaCompliance(plan: CreativePlan): CreativeQualit
   return issues;
 }
 
-function rectsOverlap(a: CreativePlanRect, b: CreativePlanRect): boolean {
+export function rectsOverlap(a: CreativePlanRect, b: CreativePlanRect): boolean {
   return a.xPct < b.xPct + b.widthPct && a.xPct + a.widthPct > b.xPct && a.yPct < b.yPct + b.heightPct && a.yPct + a.heightPct > b.yPct;
 }
 
@@ -321,7 +342,7 @@ function buildVisualIntegrityPrompt(
         ]
       : []),
     "Responda APENAS com JSON válido, sem markdown, no formato exato:",
-    '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "unauthorizedTexts": ["..."], "missingRequiredTexts": ["..."], "missingRequiredFacts": ["..."], "reasoning": "1-2 frases objetivas"}',
+    '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "criticalAssetOccluded": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "unauthorizedTexts": ["..."], "duplicatedTexts": ["..."], "missingRequiredTexts": ["..."], "missingRequiredFacts": ["..."], "reasoning": "1-2 frases objetivas"}',
     "REGRAS:",
     "- \"productMismatch\": true SOMENTE se havia uma foto de produto real de referência e o produto na peça final é claramente outro produto (nunca marque true sem uma referência real para comparar).",
     "- \"wrongLogo\": true SOMENTE se havia uma logo real de referência e a logo na peça final é visivelmente diferente (cores, proporções, símbolo) — nunca marque true sem uma referência real.",
@@ -329,9 +350,11 @@ function buildVisualIntegrityPrompt(
     "- \"textIllegibleOrCut\": true se algum texto principal (headline, CTA, preço) está cortado nas bordas, sobreposto de forma ilegível, ou com contraste tão baixo que não dá pra ler.",
     "- \"elementCutOff\": true se qualquer elemento visual importante (produto, logo, dispositivo/mockup) está cortado de forma que perde informação essencial.",
     "- \"criticalOverlap\": true se um elemento comercial (preço, CTA, badge) sobrepõe de forma destrutiva um rosto, o produto principal ou outro elemento essencial.",
+    "- \"criticalAssetOccluded\": true se o produto real, a logo real ou o screenshot real estão INTEIROS dentro do canvas (não cortados na borda — isso é `elementCutOff`), mas parcialmente COBERTOS por outro elemento a ponto de perder identidade/legibilidade (ex.: um badge grande desenhado por cima do centro do produto).",
     "- \"compositionBroken\": true se a composição está visivelmente quebrada — elementos deformados, pillarboxing (barras vazias nas laterais), ou artefatos visuais graves.",
     "- \"colorPaletteViolated\": true SOMENTE se uma paleta oficial foi informada acima E a peça final claramente NÃO usa essas cores (ex.: fundo e cores predominantes totalmente diferentes do pedido, nenhuma cor da paleta aparece de forma reconhecível). Sem paleta oficial informada, responda sempre false — nunca microgerencie tom/saturação exatos, só a ausência clara da paleta inteira.",
     "- \"unauthorizedTexts\": liste CADA palavra/frase/rótulo/botão legível na peça que NÃO está na lista de textos autorizados acima — transcreva exatamente como está escrito na imagem. NUNCA inclua aqui o nome/wordmark que aparece DENTRO da logo colada (isso é a marca real, não texto gerado). NUNCA inclua um FRAGMENTO/LINHA/TRECHO de um texto autorizado — se o texto quebrou em várias linhas na composição (comum quando um texto longo tem que caber numa caixa), cada linha sozinha NÃO conta como não autorizada, só o texto INTEIRO conta como \"bateu\" com a lista. Lista vazia se todo texto visível bate (inteiro ou em fragmentos de um mesmo texto autorizado) com a lista autorizada.",
+    "- \"duplicatedTexts\": liste CADA texto autorizado que aparece MAIS DE UMA VEZ na peça final (ex.: o mesmo preço escrito duas vezes em lugares diferentes) — isso nunca é intencional. Lista vazia se cada texto autorizado aparece só uma vez.",
     "- \"missingRequiredTexts\": liste CADA item da lista de textos autorizados que NÃO está legível/visível em nenhum lugar da peça final. Lista vazia se todos apareceram.",
     "- \"missingRequiredFacts\": dos FATOS COMERCIAIS CRÍTICOS listados acima (se houver), liste CADA um que não está claramente legível na peça final — este campo é sobre FATOS COMERCIAIS (preço, parcelamento, desconto), não sobre qualquer texto. Lista vazia se todos os fatos obrigatórios apareceram, ou se nenhum fato crítico foi listado.",
     "- Na dúvida sobre os outros critérios booleanos, prefira false — este gate é para pegar defeitos ÓBVIOS, não para microgerenciar qualidade estética. Mas \"unauthorizedTexts\"/\"missingRequiredTexts\"/\"missingRequiredFacts\" devem ser objetivos e completos: transcreva tudo que você conseguir ler.",
@@ -413,9 +436,11 @@ export async function checkCreativeVisualIntegrity(
       textIllegibleOrCut?: unknown;
       elementCutOff?: unknown;
       criticalOverlap?: unknown;
+      criticalAssetOccluded?: unknown;
       compositionBroken?: unknown;
       colorPaletteViolated?: unknown;
       unauthorizedTexts?: unknown;
+      duplicatedTexts?: unknown;
       missingRequiredTexts?: unknown;
       missingRequiredFacts?: unknown;
       reasoning?: unknown;
@@ -444,6 +469,9 @@ export async function checkCreativeVisualIntegrity(
     if (parsed.textIllegibleOrCut === true) issues.push({ code: "TEXT_ILLEGIBLE_OR_CUT", message: reasoning ?? "Texto principal ilegível ou cortado.", source: "vision" });
     if (parsed.elementCutOff === true) issues.push({ code: "ELEMENT_CUT_OFF", message: reasoning ?? "Elemento visual importante cortado, perdendo informação essencial.", source: "vision" });
     if (parsed.criticalOverlap === true) issues.push({ code: "CRITICAL_OVERLAP", message: reasoning ?? "Elemento comercial sobrepõe destrutivamente rosto/produto/outro elemento essencial.", source: "vision" });
+    // ETAPA 3 (Rodada 4) — distinto de ELEMENT_CUT_OFF (borda do canvas): aqui o elemento está
+    // inteiro, só coberto por outro elemento desenhado por cima.
+    if (parsed.criticalAssetOccluded === true) issues.push({ code: "CRITICAL_ASSET_OCCLUDED", message: reasoning ?? "Produto/logo/screenshot real está coberto por outro elemento, perdendo identidade/legibilidade.", source: "vision" });
     if (parsed.compositionBroken === true) issues.push({ code: "COMPOSITION_BROKEN", message: reasoning ?? "Composição visivelmente quebrada.", source: "vision" });
     // Garantia no CÓDIGO, nunca só na instrução do prompt — sem paleta configurada, um "true"
     // vindo da IA (alucinação, ou simplesmente não seguiu a instrução) nunca reprova por conta
@@ -467,6 +495,21 @@ export async function checkCreativeVisualIntegrity(
           message: placeholder
             ? `A peça contém um placeholder/rótulo técnico renderizado como texto real: "${item}" — isso é nome de campo do plano, nunca conteúdo visual. Remova e substitua pelo texto autorizado correspondente.`
             : `A peça contém texto não autorizado: "${item}" — não está na lista de textos permitidos do plano. Remova completamente.`,
+          source: "vision",
+        });
+      }
+    }
+    // ETAPA 3 (Rodada 4) — defesa em profundidade: a maioria dos casos de texto fantasma é
+    // neutralizada ANTES da composição final (ver `applySafeAreaAdjustments`,
+    // `run-gpt-creative-engine.ts`); quando isso falha, o texto fantasma aparece aqui como o MESMO
+    // texto repetido (uma vez do modelo, uma vez do renderer por cima) — `DUPLICATED_TEXT` cobre
+    // esse caso residual, nunca intencional.
+    if (Array.isArray(parsed.duplicatedTexts)) {
+      for (const item of parsed.duplicatedTexts) {
+        if (typeof item !== "string" || !item.trim()) continue;
+        issues.push({
+          code: "DUPLICATED_TEXT",
+          message: `O texto "${item}" aparece mais de uma vez na peça final — provável texto fantasma do modelo de imagem não neutralizado antes da composição do renderer. Remova a duplicata.`,
           source: "vision",
         });
       }

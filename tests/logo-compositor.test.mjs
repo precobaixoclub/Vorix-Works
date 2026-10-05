@@ -7,6 +7,13 @@ async function makeSolidPng(width, height, color) {
   return sharp({ create: { width, height, channels: 4, background: color } }).png().toBuffer();
 }
 
+// ETAPA 3 (Rodada 4) — JPEG nunca tem canal alfa (`hasRealTransparency` sempre `false`), forçando
+// deterministicamente o tratamento `card_fallback` (o comportamento histórico de cartão) — usado
+// nos testes de GEOMETRIA (canto/placement), que não são sobre qual tratamento é escolhido.
+async function makeSolidJpegLogo(width, height, color) {
+  return sharp({ create: { width, height, channels: 3, background: color } }).jpeg().toBuffer();
+}
+
 test("compositeLogoOntoImage: mantém as dimensões da imagem original e devolve JPEG válido", async () => {
   // JPEG, não PNG: peça publicitária fotográfica não precisa de transparência, e PNG (sem perdas)
   // deixava cada imagem com 3-4MB, tornando a tela de Revisão lenta pra carregar.
@@ -34,7 +41,7 @@ test("compositeLogoOntoImage: funciona com logo em proporção retrato (mais alt
 
 test("compositeLogoOntoImage: o resultado difere do original (a logo foi de fato colada)", async () => {
   const imageBuffer = await makeSolidPng(800, 800, { r: 0, g: 0, b: 0, alpha: 1 });
-  const logoBuffer = await makeSolidPng(200, 200, { r: 255, g: 255, b: 255, alpha: 1 });
+  const logoBuffer = await makeSolidJpegLogo(200, 200, { r: 255, g: 255, b: 255 });
 
   const result = await compositeLogoOntoImage({ imageBuffer, logoBuffer });
   assert.notEqual(Buffer.compare(result, imageBuffer), 0);
@@ -50,7 +57,7 @@ test("compositeLogoOntoImage: o resultado difere do original (a logo foi de fato
 
 test("compositeLogoOntoImage: respeita o canto pedido (bottom-right)", async () => {
   const imageBuffer = await makeSolidPng(800, 800, { r: 0, g: 0, b: 0, alpha: 1 });
-  const logoBuffer = await makeSolidPng(200, 200, { r: 255, g: 255, b: 255, alpha: 1 });
+  const logoBuffer = await makeSolidJpegLogo(200, 200, { r: 255, g: 255, b: 255 });
 
   const result = await compositeLogoOntoImage({ imageBuffer, logoBuffer, corner: "bottom-right" });
 
@@ -97,9 +104,68 @@ test("compositeLogoOntoImage: com placement do creative_plan, a logo ocupa a reg
   assert.equal(topLeftPixel[0], 0, "canto superior esquerdo (sem placement, sem corner) deveria continuar preto");
 });
 
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3 (Rodada 4, benchmark de qualidade criativa) — tratamento ADAPTATIVO: achado confirmado
+// no benchmark, a logo sempre saía sobre um cartão branco fixo ("aparência de sticker"),
+// independente do asset ou do fundo real. Ver `LogoTreatment`/`compositeLogoOntoImage`.
+// ---------------------------------------------------------------------------------------------
+
+test("compositeLogoOntoImage: logo com transparência real sobre fundo LIMPO/uniforme usa tratamento 'direct' (sem cartão nenhum)", async () => {
+  const imageBuffer = await makeSolidPng(800, 800, { r: 10, g: 10, b: 10, alpha: 1 });
+  const logoBuffer = await makeSolidPng(200, 200, { r: 255, g: 255, b: 255, alpha: 1 });
+
+  let chosenTreatment;
+  await compositeLogoOntoImage({ imageBuffer, logoBuffer, onTreatmentChosen: (t) => { chosenTreatment = t; } });
+
+  assert.equal(chosenTreatment, "direct");
+});
+
+test("compositeLogoOntoImage: logo SEM transparência real (JPEG) sempre usa 'card_fallback', mesmo sobre fundo limpo", async () => {
+  const imageBuffer = await makeSolidPng(800, 800, { r: 10, g: 10, b: 10, alpha: 1 });
+  const logoBuffer = await makeSolidJpegLogo(200, 200, { r: 255, g: 255, b: 255 });
+
+  let chosenTreatment;
+  await compositeLogoOntoImage({ imageBuffer, logoBuffer, onTreatmentChosen: (t) => { chosenTreatment = t; } });
+
+  assert.equal(chosenTreatment, "card_fallback");
+});
+
+test("compositeLogoOntoImage: logo com transparência real sobre fundo RUIDOSO usa 'subtle_scrim' (nunca o cartão sólido antigo)", async () => {
+  const noisyImageBuffer = await sharp({ create: { width: 800, height: 800, channels: 3, noise: { type: "gaussian", mean: 128, sigma: 60 } } }).png().toBuffer();
+  const logoBuffer = await makeSolidPng(200, 200, { r: 255, g: 255, b: 255, alpha: 1 });
+
+  let chosenTreatment;
+  await compositeLogoOntoImage({ imageBuffer: noisyImageBuffer, logoBuffer, onTreatmentChosen: (t) => { chosenTreatment = t; } });
+
+  assert.equal(chosenTreatment, "subtle_scrim");
+});
+
+test("compositeLogoOntoImage: card_fallback adapta a cor do cartão ao fundo — branco sobre fundo ESCURO", async () => {
+  const imageBuffer = await makeSolidPng(800, 800, { r: 5, g: 5, b: 5, alpha: 1 });
+  const logoBuffer = await makeSolidJpegLogo(200, 200, { r: 10, g: 10, b: 10 });
+
+  const result = await compositeLogoOntoImage({ imageBuffer, logoBuffer });
+  // Canto do cartão (fora da logo em si, mas dentro do padding) deveria ficar claro — cartão branco.
+  // (108, 40): dentro do retângulo do cartão mas longe o bastante do canto arredondado (que corta
+  // o pixel exato do canto) e fora da área da própria logo (que começa em x=52).
+  const padCornerPixel = await sharp(result).extract({ left: 108, top: 40, width: 1, height: 1 }).raw().toBuffer();
+  assert.ok(padCornerPixel[0] > 150, `esperava cartão branco sobre fundo escuro, veio ${padCornerPixel[0]}`);
+});
+
+test("compositeLogoOntoImage: card_fallback adapta a cor do cartão ao fundo — escuro sobre fundo CLARO", async () => {
+  const imageBuffer = await makeSolidPng(800, 800, { r: 245, g: 245, b: 245, alpha: 1 });
+  const logoBuffer = await makeSolidJpegLogo(200, 200, { r: 250, g: 250, b: 250 });
+
+  const result = await compositeLogoOntoImage({ imageBuffer, logoBuffer });
+  // (108, 40): dentro do retângulo do cartão mas longe o bastante do canto arredondado (que corta
+  // o pixel exato do canto) e fora da área da própria logo (que começa em x=52).
+  const padCornerPixel = await sharp(result).extract({ left: 108, top: 40, width: 1, height: 1 }).raw().toBuffer();
+  assert.ok(padCornerPixel[0] < 100, `esperava cartão escuro sobre fundo claro, veio ${padCornerPixel[0]}`);
+});
+
 test("compositeLogoOntoImage: placement tem prioridade sobre corner quando ambos são passados", async () => {
   const imageBuffer = await makeSolidPng(1000, 1000, { r: 0, g: 0, b: 0, alpha: 1 });
-  const logoBuffer = await makeSolidPng(200, 200, { r: 255, g: 255, b: 255, alpha: 1 });
+  const logoBuffer = await makeSolidJpegLogo(200, 200, { r: 255, g: 255, b: 255 });
 
   // corner pede "bottom-right", mas placement pede o canto superior esquerdo — placement vence.
   const result = await compositeLogoOntoImage({

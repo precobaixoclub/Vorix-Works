@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCreativePlanRepairPrompt, MAX_CREATIVE_REPAIR_ROUNDS, routeCreativeRepair } from "../dist/application/creative-engine/creative-repair.js";
+import { buildCreativePlanRepairPrompt, classifyRepairStrategy, MAX_CREATIVE_REPAIR_ROUNDS, routeCreativeRepair } from "../dist/application/creative-engine/creative-repair.js";
 
 function issue(code, message = "motivo") {
   return { code, message };
@@ -16,7 +16,7 @@ test("routeCreativeRepair: qualquer issue criativa/factual manda a rodada inteir
   assert.equal(result.route, "gpt_replan");
 });
 
-for (const code of ["PRODUCT_MISMATCH", "WRONG_LOGO", "SCREENSHOT_MISCHARACTERIZED", "INVENTED_COMMERCIAL_FACT", "WRONG_PRICE", "CRITICAL_OVERLAP", "COMPOSITION_BROKEN", "WRONG_ASPECT_RATIO", "REQUIRED_ASSET_MISSING", "NON_PUBLISHABLE_SOURCE", "TEXT_ZONE_OVERLAPS_ASSET", "TEXT_ZONE_OVERLAPS_TEXT_ZONE", "UNAUTHORIZED_TEXT", "PLACEHOLDER_RENDERED", "MISSING_REQUIRED_TEXT", "CRITICAL_ASSET_CROP"]) {
+for (const code of ["PRODUCT_MISMATCH", "WRONG_LOGO", "SCREENSHOT_MISCHARACTERIZED", "INVENTED_COMMERCIAL_FACT", "WRONG_PRICE", "CRITICAL_OVERLAP", "COMPOSITION_BROKEN", "WRONG_ASPECT_RATIO", "REQUIRED_ASSET_MISSING", "NON_PUBLISHABLE_SOURCE", "TEXT_ZONE_OVERLAPS_ASSET", "TEXT_ZONE_OVERLAPS_TEXT_ZONE", "UNAUTHORIZED_TEXT", "PLACEHOLDER_RENDERED", "MISSING_REQUIRED_TEXT", "CRITICAL_ASSET_CROP", "REQUIRED_FACT_MISSING", "DUPLICATED_TEXT", "SCREENSHOT_SLOT_MISMATCH", "CRITICAL_ASSET_OCCLUDED"]) {
   test(`routeCreativeRepair: "${code}" sozinho sempre vai para gpt_replan — nunca ao motor/renderer legado`, () => {
     const result = routeCreativeRepair([issue(code)], 0);
     assert.equal(result.route, "gpt_replan");
@@ -26,6 +26,32 @@ for (const code of ["PRODUCT_MISMATCH", "WRONG_LOGO", "SCREENSHOT_MISCHARACTERIZ
 test("routeCreativeRepair: no limite de tentativas, vira unrecoverable independente do tipo de issue", () => {
   const result = routeCreativeRepair([issue("TEXT_ILLEGIBLE_OR_CUT")], MAX_CREATIVE_REPAIR_ROUNDS);
   assert.equal(result.route, "unrecoverable");
+});
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3 (Rodada 4) — classifyRepairStrategy: classificação de AUDITORIA/relatório (brief, pontos
+// 21/22), nunca usada para decidir a rota (isso continua sendo routeCreativeRepair).
+// ---------------------------------------------------------------------------------------------
+
+test("classifyRepairStrategy: TEXT_ILLEGIBLE_OR_CUT/ELEMENT_CUT_OFF de origem safe_area (geometria) são renderer_fixable", () => {
+  assert.equal(classifyRepairStrategy({ code: "TEXT_ILLEGIBLE_OR_CUT", source: "safe_area" }), "renderer_fixable");
+  assert.equal(classifyRepairStrategy({ code: "ELEMENT_CUT_OFF", source: "safe_area" }), "renderer_fixable");
+});
+
+test("classifyRepairStrategy: TEXT_ILLEGIBLE_OR_CUT/ELEMENT_CUT_OFF de origem vision NUNCA são renderer_fixable (mesmo código, origem diferente)", () => {
+  assert.equal(classifyRepairStrategy({ code: "TEXT_ILLEGIBLE_OR_CUT", source: "vision" }), "full_regen_required");
+  assert.equal(classifyRepairStrategy({ code: "ELEMENT_CUT_OFF", source: "vision" }), "full_regen_required");
+});
+
+test("classifyRepairStrategy: DUPLICATED_TEXT/CRITICAL_ASSET_OCCLUDED são image_repair_required (conceitual — sem inpainting implementado, roteado como full_regen na prática)", () => {
+  assert.equal(classifyRepairStrategy({ code: "DUPLICATED_TEXT" }), "image_repair_required");
+  assert.equal(classifyRepairStrategy({ code: "CRITICAL_ASSET_OCCLUDED" }), "image_repair_required");
+});
+
+test("classifyRepairStrategy: todo o resto (produto errado, fato crítico, screenshot slot etc.) é full_regen_required", () => {
+  for (const code of ["PRODUCT_MISMATCH", "WRONG_PRICE", "REQUIRED_FACT_MISSING", "SCREENSHOT_SLOT_MISMATCH", "COMPOSITION_BROKEN"]) {
+    assert.equal(classifyRepairStrategy({ code }), "full_regen_required");
+  }
 });
 
 test("routeCreativeRepair: instructions carregam a mensagem literal de cada issue", () => {

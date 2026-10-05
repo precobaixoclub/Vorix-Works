@@ -11,6 +11,7 @@ import {
   type CreativePlan,
   type CreativePlanAssetRole,
   type CreativePlanRect,
+  type CreativePlanTextZone,
 } from "../../shared/utils/gpt-creative-plan.types.js";
 import { exploreCreativeDirections, type CreativeDirectionExploration } from "./explore-creative-directions.js";
 import type { CreativeEngineImageGuardInput } from "../../shared/utils/creative-engine-image-guard.js";
@@ -18,9 +19,12 @@ import { resolveProductRenderMode, type AssetSuitabilityScore, type ProductRende
 import {
   evaluateCreativeQualityGate,
   type CreativeQualityGateResult,
+  type CreativeQualityIssue,
 } from "./evaluate-creative-quality-gate.js";
-import { buildCreativePlanRepairPrompt, MAX_CREATIVE_REPAIR_ROUNDS, routeCreativeRepair, type CreativeRepairRound } from "./creative-repair.js";
+import { buildCreativePlanRepairPrompt, classifyRepairStrategy, MAX_CREATIVE_REPAIR_ROUNDS, routeCreativeRepair, type CreativeRepairRound } from "./creative-repair.js";
 import { evaluateVisualQualityScore, buildAestheticRepairInstructions, type VisualQualityScoreResult } from "./evaluate-visual-quality-score.js";
+import { analyzePreCompositionImage, type PreCompositionAnalysis } from "./analyze-pre-composition-image.js";
+import { resolveActualTextZoneRect, chooseTextBackingTreatment, textBackingTreatmentToRendererStyle, type RegionSemanticFlags, type SafeAreaCandidateRegion } from "./resolve-actual-safe-area.js";
 
 /**
  * Motor criativo GPT — migração "GPT como motor criativo único" (PR 5/9). Promove
@@ -45,7 +49,7 @@ export async function fetchAsBuffer(url: string): Promise<Buffer> {
   return Buffer.from(await response.arrayBuffer());
 }
 
-export type CompositionStepKind = "screenshot_mockup" | "logo_overlay" | "text_zones";
+export type CompositionStepKind = "screenshot_mockup" | "logo_overlay" | "text_zones" | "safe_area_adjustment";
 
 export type CompositionStep = {
   step: CompositionStepKind;
@@ -66,7 +70,7 @@ export type GptCreativeEngineDeps = {
   /** Composição determinística (sharp) — injetada como porta, nunca importada de
    * `src/infrastructure` diretamente (camada de aplicação não depende de infraestrutura
    * concreta). `placement` vem sempre do `creative_plan.assetPlacements`. */
-  compositeLogo(input: { imageBuffer: Buffer; logoBuffer: Buffer; placement?: CreativePlanRect }): Promise<Buffer>;
+  compositeLogo(input: { imageBuffer: Buffer; logoBuffer: Buffer; placement?: CreativePlanRect; onTreatmentChosen?: (treatment: string) => void }): Promise<Buffer>;
   compositeScreenshot(input: { imageBuffer: Buffer; screenshotBuffer: Buffer; placement: CreativePlanRect; frame?: "phone" | "laptop" }): Promise<Buffer>;
   renderTextZones(input: {
     baseImageBuffer: Buffer;
@@ -76,6 +80,16 @@ export type GptCreativeEngineDeps = {
   }): Promise<{ buffer: Buffer; renderedZones: unknown[] }>;
   computeAssetSuitability?(buffer: Buffer): Promise<AssetSuitabilityScore | undefined>;
   readImageDimensions(buffer: Buffer): Promise<{ width?: number; height?: number }>;
+  /** ETAPA 3 (Rodada 4, benchmark de qualidade criativa) — medida determinística e gratuita do
+   * fundo real de uma região (ver `region-pixel-stats.ts`). Opcional e best-effort: `undefined`
+   * (não injetado, ou falha de leitura) cai no tratamento mais conservador
+   * (`chooseTextBackingTreatment`), nunca bloqueia a execução. */
+  computeRegionPixelStats?(imageBuffer: Buffer, rect: CreativePlanRect): Promise<{ meanLuminance: number; stdDevLuminance: number } | undefined>;
+  /** ETAPA 3 — borra uma região (percentual do canvas) ANTES de desenhar texto determinístico por
+   * cima, pra neutralizar texto fantasma que o modelo de imagem desenhou sozinho (ver
+   * `region-pixel-stats.ts`). Opcional: sem isso injetado, o motor cai direto no tratamento de
+   * scrim (mais fraco, mas nunca pior que o comportamento anterior a esta rodada). */
+  applyLocalBlur?(imageBuffer: Buffer, rect: CreativePlanRect): Promise<Buffer>;
   now?(): Date;
 };
 
@@ -110,6 +124,11 @@ export type CreativeEngineCostBreakdown = {
    * do pipeline (ver `gpt-image-1-pricing.ts`), e o único que nunca era contabilizado antes desta
    * auditoria (`OpenAiCreativeImageProvider` sempre devolvia custo $0). */
   imageGeneration: number;
+  /** ETAPA 3 (Rodada 4) — a análise de visão da imagem BASE (texto espúrio/fantasma, regiões
+   * candidatas, slot de screenshot), ver `analyze-pre-composition-image.ts`. Deliberadamente
+   * barata (uma chamada de texto, nunca uma nova imagem) — existe PRA EVITAR gastar uma nova
+   * geração de imagem por um problema que o renderer já resolve sozinho. */
+  preCompositionAnalysis: number;
   /** Gate técnico (`checkCreativeVisualIntegrity` + `checkProductionGuidelinesCompliance`) — toda
    * rodada em que o gate técnico roda. */
   technicalQualityGate: number;
@@ -136,6 +155,11 @@ export type GptCreativeEngineResult = {
   assetsUsed: { role: CreativePlanAssetRole; url: string }[];
   compositedAssetRoles: CreativePlanAssetRole[];
   compositionSteps: CompositionStep[];
+  /** ETAPA 3 (Rodada 4) — resultado da análise de visão da imagem base, quando executada (ver
+   * `analyze-pre-composition-image.ts`). `undefined` quando não havia zona de renderer/screenshot
+   * pra analisar, ou a chamada falhou (best-effort, nunca bloqueia a peça). Exposto para auditoria
+   * e para os cenários de smoke local validarem o comportamento sem reimplementar a lógica. */
+  preCompositionAnalysis?: PreCompositionAnalysis;
   qualityGate?: CreativeQualityGateResult;
   /** Auditoria "qualidade visual e direção de arte" — DELIBERADAMENTE separado de `qualityGate`
    * (pass/fail técnico). `undefined` quando o gate técnico nunca chegou a passar (score nunca roda
@@ -329,6 +353,68 @@ async function requestGeneratedImage(
   }
 }
 
+/**
+ * ETAPA 3 (Rodada 4, benchmark de qualidade criativa) — ajusta, ANTES de qualquer composição
+ * determinística, a geometria/tratamento de cada zona `renderedBy: "renderer"` a partir de dados
+ * REAIS da imagem base (nunca só a instrução estática do plano). Nunca consome uma rodada de
+ * reparo (`MAX_CREATIVE_REPAIR_ROUNDS`) — é um ajuste de composição silencioso, sempre tentado
+ * antes de considerar qualquer coisa "falha" (brief, ponto 22: "não consumir repair round
+ * desnecessariamente").
+ *
+ * Ordem de preferência (brief, ponto 7): 1) reposicionar pra outra região livre; 2) só se não
+ * houver região livre, aplicar o tratamento de fundo mais forte necessário no lugar original
+ * (blur local pra texto fantasma, scrim/card pra fundo ruidoso/pouco contrastante) — nunca
+ * regenerar a imagem por um problema que esta função já resolve.
+ */
+async function applySafeAreaAdjustments(
+  deps: GptCreativeEngineDeps,
+  input: {
+    imageBuffer: Buffer;
+    rendererZones: readonly CreativePlanTextZone[];
+    analysis: PreCompositionAnalysis | undefined;
+    occupiedRects: readonly CreativePlanRect[];
+  },
+): Promise<{ imageBuffer: Buffer; zones: CreativePlanTextZone[]; steps: string[] }> {
+  let imageBuffer = input.imageBuffer;
+  const zones: CreativePlanTextZone[] = [];
+  const steps: string[] = [];
+  const occupiedRects = [...input.occupiedRects];
+  const regionFlags: Partial<Record<SafeAreaCandidateRegion, RegionSemanticFlags>> = input.analysis?.regions ?? {};
+
+  for (const zone of input.rendererZones) {
+    const ghostFinding = input.analysis?.spuriousTexts.find((finding) => finding.classification === "ghost_text" && finding.matchedZoneKind === zone.kind);
+    // Sem dado de visão confiável pra esta zona (chamada falhou, ou plano antigo), assume limpa —
+    // nunca realoca às cegas sem evidência real de ocupação.
+    const plannedIsClear = (input.analysis?.plannedZonesClear[zone.kind] ?? true) && !ghostFinding;
+
+    const decision = resolveActualTextZoneRect({
+      plannedRect: zone.rect,
+      plannedRectIsClear: plannedIsClear,
+      regionFlags,
+      occupiedRects,
+    });
+
+    const pixelStats = await deps.computeRegionPixelStats?.(imageBuffer, decision.rect);
+    // Texto fantasma só continua "ativo" se NÃO conseguimos fugir dele reposicionando — se a zona
+    // foi realocada pra uma região livre, o texto fantasma original fica fora da nova área.
+    const hasGhostTextHere = Boolean(ghostFinding) && !decision.relocated;
+    const treatment = chooseTextBackingTreatment({ pixelStats, hasGhostTextHere, plannedBackingStyle: zone.backingStyle });
+
+    if (treatment === "local_blur" && deps.applyLocalBlur) {
+      imageBuffer = await deps.applyLocalBlur(imageBuffer, decision.rect);
+    }
+
+    occupiedRects.push(decision.rect);
+    zones.push({ ...zone, rect: decision.rect, backingStyle: textBackingTreatmentToRendererStyle(treatment) });
+    steps.push(
+      `${zone.kind}: ${decision.relocated ? `realocado para região "${decision.relocatedTo}"` : "manteve posição planejada"}, tratamento="${treatment}"` +
+        (hasGhostTextHere ? " (texto fantasma detectado nesta região)" : ""),
+    );
+  }
+
+  return { imageBuffer, zones, steps };
+}
+
 export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: GptCreativeEngineInput): Promise<GptCreativeEngineResult> {
   const startedAt = (deps.now?.() ?? new Date()).getTime();
   const warnings: string[] = [];
@@ -347,6 +433,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     director: 0,
     directionExploration: 0,
     imageGeneration: 0,
+    preCompositionAnalysis: 0,
     technicalQualityGate: 0,
     visualQualityScore: 0,
     repairRoundsCost: 0,
@@ -492,6 +579,62 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       return fail(`Falha ao baixar a imagem gerada: ${error instanceof Error ? error.message : "erro desconhecido"}.`, "IMAGE_DOWNLOAD_FAILED", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
     }
 
+    // ETAPA 3 (Rodada 4, benchmark de qualidade criativa) — achado do smoke de produção: pedir ao
+    // modelo "não desenhe texto aqui" não é suficiente, ele pode desenhar mesmo assim. Analisa a
+    // imagem BASE (antes de qualquer composição determinística) pra ter dado REAL sobre texto
+    // espúrio/fantasma e ocupação de regiões, nunca só a instrução estática do plano.
+    const rendererOwnedZonesForAnalysis = plan.textZones.filter((zone) => zone.renderedBy === "renderer");
+    const screenshotPlacementForAnalysis = screenshotAsset ? plan.assetPlacements.find((candidate) => candidate.role === "screenshot") : undefined;
+    let preCompositionAnalysis: PreCompositionAnalysis | undefined;
+    if (rendererOwnedZonesForAnalysis.length > 0 || screenshotPlacementForAnalysis) {
+      if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
+      preCompositionAnalysis = await analyzePreCompositionImage(deps.creativeBrain, {
+        imageUrl: uri,
+        rendererOwnedZones: rendererOwnedZonesForAnalysis,
+        allowedRenderedTexts: plan.allowedRenderedTexts,
+        hasScreenshotSlot: Boolean(screenshotPlacementForAnalysis),
+        specialistId: SPECIALIST_ID,
+        onCost: (response) => track("preCompositionAnalysis", response),
+      });
+    }
+
+    // Screenshot slot: o modelo já "assou" uma interface completa (provavelmente falsa) na região
+    // reservada pro screenshot real — não é um problema de geometria que o renderer resolva
+    // sozinho (o conteúdo já está nos pixels), então roteia direto pro reparo normal (gpt_replan),
+    // sem gastar screenshot/logo/texto/upload/gate técnico desta rodada.
+    if (preCompositionAnalysis?.screenshotSlotLooksFake === true) {
+      const screenshotSlotIssues: CreativeQualityIssue[] = [
+        {
+          code: "SCREENSHOT_SLOT_MISMATCH",
+          message: "A imagem base já mostra uma interface/tela completa (provavelmente falsa) na região reservada para o screenshot real — essa região deveria estar vazia/neutra, pronta para receber o screenshot real por composição determinística.",
+          source: "vision",
+        },
+      ];
+      const routedScreenshot = routeCreativeRepair(screenshotSlotIssues, repairAttempt);
+      repairRounds.push({ round: repairAttempt + 1, route: routedScreenshot.route, issues: screenshotSlotIssues, instructions: routedScreenshot.instructions, resolved: false, strategies: screenshotSlotIssues.map(classifyRepairStrategy) });
+
+      if (routedScreenshot.route === "unrecoverable") {
+        return fail(
+          "CREATIVE_QUALITY_GATE_NOT_PASSED: a imagem base já mostra uma interface falsa na região do screenshot, e o limite de tentativas de reparo foi atingido.",
+          "CREATIVE_QUALITY_GATE_NOT_PASSED",
+          { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds },
+        );
+      }
+
+      repairAttempt += 1;
+      isRepairRound = true;
+      if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
+
+      const screenshotSlotRepair = await requestRepairedPlan(deps.creativeBrain, plan, context, routedScreenshot.instructions, input.executionRunId, input.creativeEngineRunId, (response) => track("director", response));
+      if (!screenshotSlotRepair.plan) {
+        return isProviderQuotaExhausted(screenshotSlotRepair.response)
+          ? fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar ou corrigir a peça até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds })
+          : fail("Não foi possível obter um creative_plan de correção válido do GPT, mesmo após nova tentativa.", "CREATIVE_PLAN_REPAIR_INVALID", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
+      }
+      plan = screenshotSlotRepair.plan;
+      continue outerImageRound;
+    }
+
     const compositedAssetRoles: CreativePlanAssetRole[] = [];
     const assetsUsed: { role: CreativePlanAssetRole; url: string }[] = [];
     const roundCompositionSteps: CompositionStep[] = [];
@@ -522,10 +665,18 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       const placement = plan.assetPlacements.find((candidate) => candidate.role === "logo");
       try {
         const logoBuffer = await fetchAsBuffer(logoAsset.url);
-        baseWithAssetsBuffer = await deps.compositeLogo({ imageBuffer: baseWithAssetsBuffer, logoBuffer, placement: placement?.rect });
+        let logoTreatment = "direct";
+        baseWithAssetsBuffer = await deps.compositeLogo({
+          imageBuffer: baseWithAssetsBuffer,
+          logoBuffer,
+          placement: placement?.rect,
+          onTreatmentChosen: (treatment) => { logoTreatment = treatment; },
+        });
         compositedAssetRoles.push("logo");
         assetsUsed.push({ role: "logo", url: logoAsset.url });
-        roundCompositionSteps.push({ step: "logo_overlay", rect: placement?.rect, ok: true, detail: "Logo real colada." });
+        // ETAPA 3 (Rodada 4) — tratamento adaptativo (ver `logo-compositor.ts`): nunca mais
+        // sempre "cartão branco", registrado aqui pra auditoria/smoke local.
+        roundCompositionSteps.push({ step: "logo_overlay", rect: placement?.rect, ok: true, detail: `Logo real colada (tratamento="${logoTreatment}").` });
       } catch (error) {
         return fail(
           `Falha ao compor a logo real: ${error instanceof Error ? error.message : "erro desconhecido"}.`,
@@ -536,7 +687,22 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     }
     if (productAsset) assetsUsed.push({ role: "product_photo", url: productAsset.url });
 
-    const rendererZones = plan.textZones.filter((zone) => zone.renderedBy === "renderer");
+    // ETAPA 3 (Rodada 4) — ajusta geometria/tratamento de cada zona do renderer a partir de dados
+    // REAIS da imagem (texto fantasma/espúrio, ocupação de regiões) ANTES de desenhar texto por
+    // cima — nunca consome uma rodada de reparo, é um ajuste de composição sempre tentado.
+    const assetOccupiedRects = plan.assetPlacements.filter((placement) => placement.role === "logo" || placement.role === "screenshot").map((placement) => placement.rect);
+    const safeAreaAdjustment = await applySafeAreaAdjustments(deps, {
+      imageBuffer: baseWithAssetsBuffer,
+      rendererZones: rendererOwnedZonesForAnalysis,
+      analysis: preCompositionAnalysis,
+      occupiedRects: assetOccupiedRects,
+    });
+    baseWithAssetsBuffer = safeAreaAdjustment.imageBuffer;
+    if (safeAreaAdjustment.steps.length > 0) {
+      roundCompositionSteps.push({ step: "safe_area_adjustment", ok: true, detail: safeAreaAdjustment.steps.join("; ") });
+    }
+
+    const rendererZones = safeAreaAdjustment.zones;
     let fontScale = 1;
 
     innerTextRound: for (;;) {
@@ -617,6 +783,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
             assetsUsed,
             compositedAssetRoles,
             compositionSteps: textCompositionSteps,
+            preCompositionAnalysis,
             qualityGate,
             visualQualityScore,
             chosenCreativeDirection,
@@ -645,7 +812,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         // geométrico-de-renderer. Compartilha o MESMO contador `repairAttempt`/limite do gate
         // técnico — ver auditoria, ponto 15 ("não aumentar complexidade/custo indefinidamente").
         const aestheticInstructions = buildAestheticRepairInstructions(visualQualityScore);
-        repairRounds.push({ round: repairAttempt + 1, route: "gpt_replan", issues: [], instructions: aestheticInstructions, resolved: false });
+        repairRounds.push({ round: repairAttempt + 1, route: "gpt_replan", issues: [], instructions: aestheticInstructions, resolved: false, strategies: [] });
         repairAttempt += 1;
         // Auditoria de custo urgente — a partir daqui, todo gasto seguinte É gasto de reparo
         // (nunca volta a `false` na mesma execução, ver `costBreakdown.repairRoundsCost`).
@@ -676,7 +843,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       }
 
       const routed = routeCreativeRepair(qualityGate.issues, repairAttempt);
-      repairRounds.push({ round: repairAttempt + 1, route: routed.route, issues: qualityGate.issues, instructions: routed.instructions, resolved: false });
+      repairRounds.push({ round: repairAttempt + 1, route: routed.route, issues: qualityGate.issues, instructions: routed.instructions, resolved: false, strategies: qualityGate.issues.map(classifyRepairStrategy) });
 
       if (routed.route === "unrecoverable") {
         return fail("CREATIVE_QUALITY_GATE_NOT_PASSED: o quality gate reprovou a peça e o limite de tentativas de reparo foi atingido.", "CREATIVE_QUALITY_GATE_NOT_PASSED", {

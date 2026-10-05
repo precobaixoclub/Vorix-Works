@@ -144,6 +144,7 @@ import { compositeLogoOntoImage } from "../../../infrastructure/media/logo-compo
 import { compositeScreenshotIntoDeviceMockup } from "../../../infrastructure/media/screenshot-mockup-compositor.js";
 import { renderCreativePlanTextZones } from "../../../infrastructure/rendering/render-creative-plan-text-zones.js";
 import { computeAssetSuitabilityScore } from "../../../infrastructure/image-processing/product-background.js";
+import { computeRegionPixelStats, applyLocalBlur } from "../../../infrastructure/image-processing/region-pixel-stats.js";
 import sharp from "sharp";
 import { createDefaultExecutionContractRegistry, type ExecutionContractRegistry } from "../../../application/execution/execution-contract-registry.js";
 import { createExecutionEnvironmentPolicy, SideEffectGuard, type ExecutionEnvironmentPolicy } from "../../../application/execution/execution-operational-policy.js";
@@ -1040,6 +1041,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     renderTextZones: renderCreativePlanTextZones,
     computeAssetSuitability: computeAssetSuitabilityScore,
     readImageDimensions: readCreativeImageDimensions,
+    computeRegionPixelStats,
+    applyLocalBlur,
     resolveRecentHistory: async (workspaceId: string, limit?: number) => {
       const entries = await contentGenerationHistory.getRecentForWorkspace(workspaceId, limit);
       return entries.map((entry) => ({ headline: entry.headline, cta: entry.cta, visualConcept: entry.visualConcept }));

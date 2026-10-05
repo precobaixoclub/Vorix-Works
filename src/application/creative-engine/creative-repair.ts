@@ -27,6 +27,10 @@ export type CreativeRepairRound = {
   issues: CreativeQualityIssue[];
   instructions: string[];
   resolved: boolean;
+  /** ETAPA 3 (Rodada 4) — auditoria/relatório (brief, ponto 22): classificação de cada issue desta
+   * rodada (mesma ordem de `issues`) — nunca usada pra decidir a rota (isso é `route`, decidido por
+   * `routeCreativeRepair`), só pra tornar visível o motivo de cada rodada ter consumido reparo. */
+  strategies?: RepairStrategy[];
 };
 
 /** Únicos códigos cuja causa é geométrica E cuja origem é sempre uma zona de texto que o
@@ -54,6 +58,32 @@ const RENDERER_REFLOW_CODES: readonly CreativeQualityIssueCode[] = ["TEXT_ILLEGI
  * reflow nunca poderia ter resolvido isso, só um `gpt_replan` (nova imagem) poderia. Só a origem
  * `"safe_area"` (determinística, sempre sabe se a zona é renderer-drawn) é segura pra reflow.
  */
+// ETAPA 3 (Rodada 4) — classificação de AUDITORIA/relatório (brief, pontos 21/22): nomeia POR QUE
+// uma issue consumiu (ou não) uma rodada de reparo cara. Deliberadamente não usada para decidir a
+// rota (isso continua sendo `routeCreativeRepair`/`RENDERER_REFLOW_CODES`) — existe só para tornar
+// "renderer resolveu sozinho, sem gastar reparo" e "precisou de reparo completo" visíveis e
+// auditáveis, nunca pra criar uma segunda árvore de decisão paralela.
+export const REPAIR_STRATEGIES = ["renderer_fixable", "image_repair_required", "full_regen_required"] as const;
+export type RepairStrategy = (typeof REPAIR_STRATEGIES)[number];
+
+/**
+ * `renderer_fixable`: resolvido ANTES mesmo de chegar ao quality gate, por `applySafeAreaAdjustments`
+ * (realocação de região, blur local, scrim/card) — zero chamada de IA nova, nunca aparece aqui como
+ * issue de gate (ver comentário em `CREATIVE_QUALITY_ISSUE_CODES`, `evaluate-creative-quality-gate.ts`).
+ * `image_repair_required`: conceitualmente, um defeito que precisaria de reparo LOCAL de pixel
+ * (inpainting) em vez de um novo plano inteiro — NÃO IMPLEMENTADO nesta rodada (sem capacidade de
+ * inpainting real); classificado aqui só para auditoria/relatório, mas roteado como
+ * `full_regen_required` na prática (ver limitação documentada em
+ * `docs/vorix-creative-engine-quality-fixes.md`).
+ * `full_regen_required`: precisa de um novo `creative_plan` + nova imagem (`gpt_replan`) — produto
+ * errado, fato crítico errado, screenshot slot incompatível, composição quebrada.
+ */
+export function classifyRepairStrategy(issue: Pick<CreativeQualityIssue, "code" | "source">): RepairStrategy {
+  if ((issue.code === "TEXT_ILLEGIBLE_OR_CUT" || issue.code === "ELEMENT_CUT_OFF") && issue.source !== "vision") return "renderer_fixable";
+  if (issue.code === "DUPLICATED_TEXT" || issue.code === "CRITICAL_ASSET_OCCLUDED") return "image_repair_required";
+  return "full_regen_required";
+}
+
 export function routeCreativeRepair(
   issues: readonly CreativeQualityIssue[],
   attempt: number,

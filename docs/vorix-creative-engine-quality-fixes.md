@@ -1,13 +1,11 @@
 # Correções do Creative Engine — Rodada 4 (parcial)
 
-> Status desta rodada: **PARCIAL, intencionalmente**. Das 6 etapas pedidas (ver brief completo na
-> sessão), as ETAPAS 1, 2 e 4 foram implementadas, testadas e verificadas (typecheck/build/suíte
-> completa/architecture-check, todos PASS). As ETAPAS 3, 5 e 6 (defesa pós-geração de safe-area,
-> logo adaptativa, screenshot slot, convergência de Brand Profile, e o novo benchmark de 13
-> cenários) **não foram iniciadas** — exigem capacidades novas (análise visual pós-geração,
-> unificação de duas fontes de dados de marca) maiores do que cabia nesta rodada sem virar
-> "big-bang sem testes intermediários". Por isso, **o Creative Engine NÃO é declarado resolvido**
-> ao final deste documento — ver seção de classificação.
+> Status: ETAPAS 1, 2 e 4 — implementadas, testadas, verificadas e **já em produção** (commit
+> `fc53a17`, smoke de produção confirmado). ETAPA 3 — implementada, testada (typecheck/build/suíte
+> completa/architecture-check + smoke local, todos PASS) e **commitada, mas AINDA NÃO deployada em
+> produção** (aguardando autorização explícita, conforme instruído). ETAPAS 5 e 6 (convergência de
+> Brand Profile, novo benchmark de 13 cenários) **não foram iniciadas**. Por isso, **o Creative
+> Engine NÃO é declarado resolvido** ao final deste documento — ver seção de classificação.
 
 ## Princípio seguido
 
@@ -101,47 +99,153 @@ Conforme instruído: nenhuma mudança de modelo, quality, budget ou número de r
   chamadas extras de plano/imagem e `repairRounds.length === 0`; testes existentes recalibrados
   para o novo piso catastrófico (dimensão 2/10 continua disparando reparo, como antes).
 
-## O que NÃO foi feito nesta rodada (ETAPAS 3, 5, 6 — pendentes)
+## ETAPA 3 — Coordenação IMAGE MODEL → safe-area → renderer → logo/screenshot → Quality Gate
 
-- **ETAPA 3** (safe-area pós-geração, logo adaptativa, screenshot slot): exigiria uma nova
-  capacidade de análise visual da imagem JÁ GERADA antes de compor texto/assets por cima (hoje o
-  Quality Gate só analisa a peça já FINALIZADA) — escopo de design novo, não uma correção pontual.
-  A logo continua sempre colada sobre cartão branco fixo (`logo-compositor.ts`, confirmado no
-  benchmark, não alterado). O prompt de screenshot (seção 20 do brief) já instruía o modelo a
-  nunca desenhar a interface do site quando há screenshot real — isso já existia antes desta
-  rodada e não mudou; a coordenação de "slot" geométrico validado pós-geração (seção 21) não foi
-  implementada.
+### Antes
+- O prompt já pedia ao modelo para não desenhar texto em zonas `renderedBy: "renderer"` — o smoke
+  de produção da Rodada 4 (fc53a17) confirmou que isso NÃO é suficiente: o modelo desenhou um fato
+  confirmado por conta própria e a peça foi reprovada por `UNAUTHORIZED_TEXT`, sem nenhuma defesa
+  além de descartar a peça inteira (`gpt_replan`, nova geração completa).
+- A logo sempre era colada sobre um cartão branco semi-opaco fixo (`logo-compositor.ts`),
+  independente do asset ter transparência real ou do fundo por trás — a "aparência de sticker"
+  confirmada no benchmark.
+- Não existia nenhuma validação de que a região reservada para texto (ou logo) estivesse de fato
+  livre na imagem REAL gerada — só a intenção declarada no `creative_plan`.
+
+### Depois — defesa pré-composição (novo módulo `analyze-pre-composition-image.ts`)
+Uma ÚNICA chamada de visão adicional, sobre a imagem BASE (antes de qualquer composição
+determinística), deliberadamente mais barata que uma nova geração de imagem — existe
+especificamente para EVITAR gastar uma. Ela classifica:
+- **Texto espúrio** em três categorias: `unauthorized_text` (não autorizado e sem zona
+  correspondente), `ghost_text` (o modelo antecipou o conteúdo de uma zona do renderer),
+  `duplicated_text` (o mesmo texto aparece mais de uma vez).
+- **6 regiões candidatas fixas** (top-left/top-right/center-left/center-right/bottom-left/
+  bottom-right — `resolve-actual-safe-area.ts`), cada uma com `hasText`/`hasProduct`/`hasFace`/
+  `complexity`.
+- **Slot de screenshot** (`screenshotSlotLooksFake`), só perguntado quando há screenshot real no
+  contexto.
+
+### Depois — ajuste silencioso de composição (`applySafeAreaAdjustments`, `run-gpt-creative-engine.ts`)
+Para CADA zona `renderedBy: "renderer"`, ANTES de desenhar qualquer texto:
+1. **Reposicionamento primeiro** (brief, ponto 7): se a região planejada não está livre (vision
+   diz que há texto/produto/rosto ali, OU há um `ghost_text` batendo com aquela zona), escolhe a
+   melhor região candidata genuinamente livre (sem sobrepor assets reais já posicionados) —
+   `resolveActualTextZoneRect`/`pickBestAlternateRegion`. **Nunca consome uma rodada de reparo** —
+   é um ajuste automático, sempre tentado, registrado em `compositionSteps` (`safe_area_adjustment`).
+2. **Se não há região livre**, o tratamento de fundo escala pra compensar
+   (`chooseTextBackingTreatment`, baseado em estatística de pixel REAL e gratuita — contraste/
+   complexidade da região final, nunca uma chamada de IA): `direct_text` (sem fundo, região já
+   limpa) → `gradient_scrim` (fundo fotográfico imprevisível) → `local_blur` (texto fantasma
+   detectado — borra a região real via `sharp` ANTES de desenhar por cima, depois ainda aplica um
+   scrim como segunda camada de segurança) → `card_fallback` (região caótica demais, último
+   recurso). Texto fantasma SEMPRE força pelo menos `local_blur`.
+3. **Screenshot slot incompatível** (`screenshotSlotLooksFake: true`) é tratado como um problema
+   que o renderer NÃO pode corrigir sozinho (o conteúdo já está "assado" nos pixels) — roteia
+   direto para `gpt_replan` (nova rodada de reparo), mas ANTES de gastar screenshot/logo/texto/
+   upload/gate técnico daquela tentativa (mais barato que descobrir isso só no final).
+
+### Depois — logo adaptativa (`logo-compositor.ts` reescrito)
+Tratamento decidido a partir de 2 dados reais (nunca mais sempre cartão branco):
+`hasRealTransparency` (o asset tem canal alfa de verdade?) + contraste real do fundo na posição
+exata onde a logo vai cair (`sharp().stats()`). Três tratamentos: `direct` (asset com
+transparência real, fundo limpo — sem fundo nenhum), `subtle_scrim` (asset com transparência
+real, fundo ruidoso — forma suave e discreta, opacidade bem mais baixa que o cartão antigo, nunca
+um retângulo duro), `card_fallback` (asset SEM transparência real — sempre vai mostrar seu
+próprio fundo de qualquer jeito — cor do cartão agora ADAPTADA ao fundo medido, branco sobre
+fundo escuro / escuro sobre fundo claro, nunca sempre branco).
+
+### Depois — Quality Gate (defesa em profundidade)
+Novos códigos (`evaluate-creative-quality-gate.ts`): `REQUIRED_FACT_MISSING` (ETAPA 1),
+`DUPLICATED_TEXT`, `SCREENSHOT_SLOT_MISMATCH`, `CRITICAL_ASSET_OCCLUDED`. `GHOST_TEXT` é detectado
+e tratado na fase PRÉ-composição (acima) e deliberadamente NUNCA virou um código de gate — se a
+mitigação funciona (o caso comum), não há nada a reprovar; se falha, o sintoma observável é o
+MESMO texto duplicado na peça final, coberto por `DUPLICATED_TEXT` (defesa em profundidade, nunca
+uma segunda categoria sem sinal real pra produzi-la).
+
+### Depois — classificação de estratégia de reparo (`creative-repair.ts`)
+`classifyRepairStrategy(issue)` — auditoria/relatório (brief, pontos 21/22), nunca usada para
+decidir a rota: `renderer_fixable` (geometria pura, `TEXT_ILLEGIBLE_OR_CUT`/`ELEMENT_CUT_OFF` de
+origem `safe_area`), `image_repair_required` (`DUPLICATED_TEXT`/`CRITICAL_ASSET_OCCLUDED` —
+conceitualmente pediriam reparo LOCAL de pixel, nunca um plano inteiro novo), `full_regen_required`
+(todo o resto). Anexada a cada `CreativeRepairRound.strategies` para auditoria.
+
+### Limitações documentadas (honestas, não implementadas nesta rodada)
+- **Sem inpainting real**: `image_repair_required` é só uma etiqueta de auditoria — na prática,
+  hoje, roteia pra `full_regen_required` (nova imagem inteira) porque não existe nenhuma
+  capacidade de reparo LOCAL de pixel (seção 7, item 4 do brief, "somente se necessário") — ficou
+  de fora deliberadamente, por ser uma capacidade nova grande, não uma correção pontual.
+- **Logo**: sem `logoLight`/`logoDark`/`logoTransparent` reais cadastrados por marca nesta rodada
+  — a adaptação é só DIRECT/SUBTLE_SCRIM/CARD_FALLBACK a partir do ÚNICO asset existente, nunca
+  escolhe entre variantes (`LOGO_ADAPTIVE = PARTIAL` na classificação abaixo, valor explicitamente
+  previsto pelo brief).
+- **Screenshot fallback de crop/recomposição** (brief, ponto 18: "tentar outro crop, frame
+  simples, composição editorial antes de regenerar"): não implementado — hoje
+  `screenshotSlotLooksFake` só tem DOIS desfechos, reparo completo (`gpt_replan`) ou nada; o
+  degrau intermediário de recorte/recomposição automática ficou de fora.
+- **EDITORIAL_BAND** (vocabulário do brief) foi deliberadamente fundido em `card_fallback` — o
+  renderer determinístico só tem 3 primitivas reais de desenho (`none`/`scrim`/`solid`,
+  `render-creative-plan-text-zones.ts`), e os dois tratamentos "fortes" do brief convergem na
+  mesma primitiva nesta rodada (nunca construir uma 4ª primitiva só por completude de nome, ver
+  brief ponto 20/32).
+
+### Testes novos (ETAPA 3)
+`resolve-actual-safe-area.test.mjs` (24 testes, lógica pura), `analyze-pre-composition-image.test.mjs`
+(9 testes, parsing/prompt da chamada de visão), `region-pixel-stats.test.mjs` (7 testes, sharp
+real — contraste/blur), `logo-compositor.test.mjs` (+6 testes de tratamento adaptativo),
+`creative-repair.test.mjs` (+8 testes de `classifyRepairStrategy` e novos códigos no roteamento),
+`evaluate-creative-quality-gate.test.mjs` (+2 testes de `DUPLICATED_TEXT`/campos novos),
+**`round4-etapa3-local-smoke.test.mjs`** — os 5 cenários mínimos pedidos (A: headline+CTA+preço,
+B: institucional sem CTA, C: screenshot SaaS, D: logo sobre fundo claro, E: logo sobre fundo
+escuro) + 1 cenário dedicado de defesa de texto fantasma, todos usando os compositores REAIS
+(sharp de verdade — logo/screenshot/texto), nunca uma chamada real à OpenAI (Ícaro roteirizado).
+Todos os 6 cenários publicam sem `UNAUTHORIZED_TEXT`/`DUPLICATED_TEXT`/`SCREENSHOT_SLOT_MISMATCH`/
+`TEXT_ZONE_OVERLAPS_ASSET`/`ELEMENT_CUT_OFF`/`TEXT_ILLEGIBLE_OR_CUT`/`CRITICAL_ASSET_OCCLUDED`
+(critério do brief, ponto 25) — ver `assertNoRound4Defects` no arquivo de teste.
+
+## O que NÃO foi feito nesta rodada (ETAPAS 5, 6 — pendentes)
+
 - **ETAPA 5** (convergência de Brand Profile): o benchmark confirmou que `BrandVisualProfile`
   (cores/tipografia estruturadas) e `CreativeBrandProfile.brandColors` (usado pelo GPT Creative
   Engine) são duas fontes de dados diferentes, servindo caminhos diferentes (legado Bianca/Pedro
   vs. motor GPT) — unificar isso é uma migração de dados, não uma correção de bug, e não foi
   iniciada.
-- **ETAPA 6** (novo benchmark, 10 cenários + 3 com foto real de produto): depende de ETAPA 3/5
-  estarem completas para que a comparação seja justa — rodar o benchmark agora mediria só o
-  efeito de ETAPAS 1/2/4, sem capturar o que mais pesou nos achados do benchmark original
-  (coordenação de safe-area, logo). Não executado.
+- **ETAPA 6** (novo benchmark, 10 cenários + 3 com foto real de produto): ainda não executado —
+  agora que ETAPA 3 está implementada (testada localmente, mas ainda não deployada em produção
+  neste momento do documento), rodar o benchmark real contra produção é o próximo passo natural,
+  mas depende de autorização explícita de deploy (seção seguinte) e, idealmente, da ETAPA 5
+  também, para medir o efeito completo.
 
 ## Verificação desta rodada
 
-`npm run typecheck` (raiz) — PASS. `npm run build` — PASS. `node --test tests/*.test.mjs` — 2
-flakes pré-existentes e não relacionados (`tests/analytics.test.mjs:192`,
+`npm run typecheck` (raiz) — PASS. `npm run build` — PASS. `node --test tests/*.test.mjs` — 3230
+testes, 2 flakes pré-existentes e não relacionados (`tests/analytics.test.mjs:192`,
 `tests/cli.smoke.test.mjs:280`), zero falhas novas. `npm run architecture:check` — PASS (49
-contratos, 7 checks de isolamento arquitetural). Testes direcionados somam 165 (antes: 94) nos
-arquivos tocados (`gpt-creative-plan-types`, `evaluate-creative-quality-gate`,
-`evaluate-visual-quality-score`, `run-gpt-creative-engine`).
+contratos, 7 checks de isolamento arquitetural, 1031 arquivos). Smoke local (ETAPA 3, seção
+acima): 6/6 cenários PASS usando o pipeline de composição real.
 
-## Bloco de classificação (parcial — ver nota no topo)
+## Bloco de classificação
 
 ```
 CTA_EMPTY_BUG = FIXED
 EXACT_TEXT_STRATEGY = DETERMINISTIC
 REQUIRED_FACT_GATE = PASS
-GHOST_TEXT_DEFENSE = NOT_STARTED (ETAPA 3 não iniciada)
-SAFE_AREA_POST_GENERATION = NOT_STARTED (ETAPA 3 não iniciada)
-LOGO_ADAPTIVE = NOT_STARTED (ETAPA 3 não iniciada — logo continua sempre cartão branco fixo)
-SCREENSHOT_COORDINATION = PARTIAL (prompt já pedia frame vazio antes desta rodada; slot geométrico validado pós-geração não implementado)
-BRAND_PROFILE_CONVERGENCE = NOT_STARTED (ETAPA 5 não iniciada)
 RETRY_POLICY = FIXED
+
+UNAUTHORIZED_TEXT_DETECTION = PASS
+GHOST_TEXT_DETECTION = PASS
+ACTUAL_SAFE_AREA = PASS
+DYNAMIC_TEXT_REGION = PASS
+ADAPTIVE_CONTRAST = PASS
+LOGO_ADAPTIVE = PARTIAL (sem variantes light/dark reais cadastradas — só direct/subtle_scrim/card_fallback a partir do asset único)
+LOGO_STICKER_DEFAULT_REMOVED = YES
+LOGO_OVERLAP_GUARD = PASS (via checkAssetPlacementOverlap/checkTextZoneCollisions pré-existentes, geometria agora também ajustada em tempo de composição)
+SCREENSHOT_SLOT = PASS
+SCREENSHOT_COORDINATION = PASS (detecção + reparo completo; fallback de crop/recomposição automática NÃO implementado — ver limitações)
+RENDERER_FIX_WITHOUT_REGEN = PASS
+LOCAL_SMOKE = PASS (6/6 cenários)
+STAGE_3_READY_FOR_PRODUCTION = YES (verificado localmente; deploy pendente de autorização explícita)
+
+BRAND_PROFILE_CONVERGENCE = NOT_STARTED (ETAPA 5 não iniciada)
 PRODUCT_REFERENCE_PATH = NOT_TESTED (auditado em código na Rodada 3, nenhum cenário de benchmark o exercitou; ETAPA 6 não executada)
 BENCHMARK_SCENARIOS = N/A (ETAPA 6 não executada nesta rodada)
 VORIX_BETTER = N/A
@@ -150,35 +254,46 @@ DIRECT_GPT_BETTER = N/A
 COMMERCIAL_TEXT_ERRORS = N/A (seriam medidos no novo benchmark, não executado)
 QUALITY_TARGET_80_PERCENT = NOT_RE_MEASURED
 AVERAGE_COST_BEFORE = ver docs/vorix-creative-quality-benchmark.md seção 6
-AVERAGE_COST_AFTER = N/A (sem novo benchmark nesta rodada)
+AVERAGE_COST_AFTER = N/A (sem novo benchmark nesta rodada; ETAPA 3 adiciona 1 chamada de visão barata por geração com zona de renderer/screenshot — ver costBreakdown.preCompositionAnalysis)
 ```
 
-**Conforme instruído: como as ETAPAS 3/5/6 não foram concluídas e a meta de 80% não foi
+**Conforme instruído: como as ETAPAS 5/6 não foram concluídas e a meta de 80% não foi
 remedida, o Creative Engine NÃO é declarado resolvido.**
 
-## Respostas (parciais, às 13 perguntas do brief)
+## Respostas às 10 perguntas de fechamento da ETAPA 3
 
-1. **O CTA vazio foi corrigido?** Sim — corrigido, testado, verificado.
-2. **Todo texto comercial exato agora é determinístico?** Sim — todo `textZone` (headline,
-   subheadline, CTA, preço, desconto, URL, badge) é forçado a `renderedBy: "renderer"`.
-3. **A aparência de "texto colado" foi eliminada?** Não totalmente verificável sem rodar o
-   benchmark novamente — o mecanismo para evitar isso (`backingStyle: "none"`) já existia e foi
-   reforçado na instrução de prompt, mas sem uma nova geração real não há confirmação visual.
-4. **Texto fantasma está protegido?** Não — essa é a ETAPA 3 (defesa pós-geração), não iniciada.
-5. **Preço obrigatório nunca some?** Para peças que o declaram via `requiredRenderedFacts`, agora
-   há um gate dedicado reprovando a publicação se sumir — mas depende do Director de fato marcar o
-   fato como obrigatório; não há garantia de que ele sempre o fará.
-6. **Logo continua parecendo sticker?** Sim, sem alteração nesta rodada (ETAPA 3 não iniciada).
-7. **Screenshot real está integrado corretamente?** Sem mudança nesta rodada além do que já
-   existia antes (prompt já pedia frame vazio); a validação de slot pós-geração não foi feita.
-8. **Retry inútil caiu?** Sim — um dip mediano de score estético não consome mais a rodada de
-   reparo compartilhada; testado explicitamente com o exemplo do brief (média 6.2/dimensão 3.8).
-9. **Brand Profile está unificado?** Não — ETAPA 5 não iniciada.
-10. **Foto real de produto foi testada?** Não nesta rodada (ETAPA 6 não executada).
-11. **Qual o novo resultado Vorix vs. GPT direto?** Não medido nesta rodada — rodar o benchmark
-    agora mediria só ETAPAS 1/2/4, sem capturar os achados mais impactantes do benchmark original.
-12. **Atingimos 80%?** Não remedido.
-13. **Qual o custo médio antes/depois?** Antes: ver relatório da Rodada 3. Depois: não medido
-    (nenhuma nova geração real foi feita nesta rodada).
+1. **Como texto espúrio é detectado agora?** Uma chamada de visão sobre a imagem BASE (antes de
+   qualquer composição), classificando cada achado como `unauthorized_text`/`ghost_text`/
+   `duplicated_text` contra a lista fechada de textos autorizados e as zonas do renderer
+   (`analyze-pre-composition-image.ts`).
+2. **O que acontece quando o modelo ocupa a região planejada?** O renderer tenta reposicionar a
+   zona pra uma das 6 regiões candidatas genuinamente livres (sem texto/produto/rosto, sem
+   sobrepor assets reais) — nunca consome uma rodada de reparo.
+3. **Como o renderer escolhe outra região?** `pickBestAlternateRegion` — filtra regiões seguras e
+   sem colisão, escolhe a de menor complexidade visual entre as candidatas.
+4. **Quando usa gradient/scrim/card?** Decidido por estatística de pixel REAL (contraste/
+   complexidade), nunca "achismo": `direct_text` → `gradient_scrim` → `local_blur` (texto
+   fantasma) → `card_fallback` (último recurso, região caótica demais).
+5. **Logo ainda usa cartão branco por padrão?** Não — só quando o asset não tem transparência
+   real (nesse caso o cartão é inevitável, mas a COR agora se adapta ao fundo). Com transparência
+   real, é `direct` (sem cartão) ou `subtle_scrim` (forma suave), nunca mais sempre branco.
+6. **Como escolhe variante de logo?** Não escolhe entre variantes reais (não implementado — sem
+   `logoLight`/`logoDark` cadastrados nesta rodada); escolhe o TRATAMENTO (direct/subtle_scrim/
+   card_fallback) a partir do único asset existente.
+7. **Screenshot real continua desalinhando?** A detecção (`screenshotSlotLooksFake`) existe e
+   roteia pra reparo completo quando o modelo já desenhou uma interface falsa no slot — mas o
+   fallback de recorte/recomposição automática (sem regenerar) não foi implementado.
+8. **Quantos problemas agora são corrigidos sem regenerar imagem?** Reposicionamento de zona de
+   texto e escolha de tratamento de fundo (incluindo blur local pra texto fantasma) — nenhum dos
+   dois consome mais `MAX_CREATIVE_REPAIR_ROUNDS`. Sobreposição de logo/texto já era prevenida
+   antes da geração (checks pré-existentes). O que ainda força regeneração completa: produto/fato
+   errado, composição quebrada, e incompatibilidade de slot de screenshot.
+9. **Houve aumento de custo?** Sim, um aumento pequeno e deliberado: 1 chamada de visão adicional
+   (texto, não imagem) por geração que tenha zona de renderer ou screenshot — da mesma ordem de
+   custo do gate técnico já existente (~$0.002-0.003), nunca perto do custo de uma nova imagem
+   (~$0.07). Existe precisamente para evitar gastar uma nova imagem.
+10. **ETAPA 3 está pronta para produção?** Verificada localmente (typecheck/build/suíte completa/
+    architecture-check/smoke local, todos PASS) — ainda NÃO deployada, aguardando autorização
+    explícita conforme instruído.
 
-**Como a meta não foi atingida nem remedida, não declaro o Creative Engine resolvido.**
+**Como as ETAPAS 5/6 não foram atingidas, não declaro o Creative Engine resolvido.**

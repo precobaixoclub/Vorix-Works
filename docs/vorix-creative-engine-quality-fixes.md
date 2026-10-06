@@ -1,12 +1,14 @@
 # Correções do Creative Engine — Rodada 4 (parcial)
 
-> Status: ETAPAS 1, 2, 4, 3, 3.1, 3.2 e 3.3 — implementadas, testadas e **já em produção** (ETAPA
-> 3.3 no commit `d3e6466`). O smoke real de produção da ETAPA 3.3 revelou um bloqueador pontual:
-> `CREATIVE_PLAN_REPEAT_INVALID` por `layoutPlan` malformado (causa raiz identificada e corrigida
-> na **ETAPA 3.3.1**, ver seção própria — 0/10 → 5/5 planos válidos contra o modelo real, commitada
-> mas **AINDA NÃO deployada**, aguardando autorização explícita). As mecânicas específicas da
-> ETAPA 3.3 (reverificação global residual, VISUAL TEXT BUDGET, `planForGate`, gate técnico) ainda
-> **não foram exercitadas em produção** (`NOT_TRIGGERED`) — **`COMPOSITION_BLOCK_3X = STILL_OPEN`**.
+> Status: ETAPAS 1, 2, 4, 3, 3.1, 3.2, 3.3 e 3.3.1 — implementadas, testadas e **já em produção**
+> (commit `4e3102f`). O smoke real DEFINITIVO confirmou toda a infraestrutura da ETAPA 3.3
+> funcionando de ponta a ponta em produção (plano válido na 1ª tentativa, density preflight,
+> detecção/tratamento de texto fantasma, reverificação global com passe residual, `planForGate`,
+> gate técnico — todos executados e corretos), **mas a revisão visual humana da peça final
+> encontrou um texto fantasma residual visível** que a visão automatizada não capturou — a causa
+> dominante (cobertura de bbox insuficiente para texto decorativo grande) ficou identificada e
+> registrada, sem nova rodada de correção aberta automaticamente. **`COMPOSITION_BLOCK_3X =
+> STILL_OPEN`** — "funcionamento da infraestrutura" confirmado, "sucesso da geração" ainda não.
 > ETAPAS 5 e 6 **não foram iniciadas**. Por isso, **o Creative Engine NÃO é declarado resolvido**.
 
 ## Princípio seguido
@@ -940,3 +942,69 @@ STAGE_3_3_1_READY_FOR_PRODUCTION = YES
 **Como esta foi uma correção pontual sobre um bloqueador específico (nunca o fechamento do bloco
 3.x), `COMPOSITION_BLOCK_3X` permanece `STILL_OPEN` até um novo smoke completo confirmar uma peça
 densa real publicável de ponta a ponta com este fix em produção.**
+
+## Deploy e smoke real DEFINITIVO — ETAPA 3.3 pós-3.3.1 (commit `4e3102f`)
+
+Deployado em produção após autorização explícita (SHA anterior `d3e6466`, backup criado, sem
+migration nova, `.env.zuno` preservado, sha256 conferido byte-a-byte, health check PASS em
+WEB/API/WORKER/POSTGRES antes e depois).
+
+**1 única execução controlada** (das 2 permitidas) foi necessária — fixture QA densa (headline +
+subheadline + preço confirmado + CTA + logo, formato 4:5): o Director produziu `layoutPlan`
+válido JÁ NA PRIMEIRA TENTATIVA (zero confusão de vocabulário `kind` — a correção da ETAPA 3.3.1
+se confirmou em produção real), o preflight de densidade descartou o `subheadline` opcional antes
+da geração, a imagem base saiu com 2 textos fantasma (`"R$ 149,00"` e `"COMPRE AGORA"`), ambos
+neutralizados localmente em 1 passe cada, a reverificação global encontrou um residual
+(`"LOGO"`, texto não autorizado — provável artefato do fixture de logo placeholder, que tem a
+palavra "LOGO" escrita nele) tratado com sucesso na rodada residual única, o renderer desenhou as
+3 zonas finais (headline/preço/CTA), `planForGate` recebeu a geometria final, e o
+`technicalQualityGate` executou e aprovou (verdict `pass`, zero issues).
+
+**Avaliação visual humana da imagem final (obrigatória pelo brief, nunca só o veredito do gate):**
+a peça tem um defeito real que a visão automatizada (local + global, ambas) NÃO capturou — o texto
+fantasma **"COMPRE AGORA"** (estilizado, grande, no mesmo padrão visual do fundo) continua
+PARCIALMENTE LEGÍVEL, vazando por cima/ao redor do cartão do CTA renderizado por cima — a banda de
+texto fantasma é mais alta que a área efetivamente tratada (blur+véu), então as bordas superiores
+ficam expostas. Isso é um **texto fantasma residual real**, exatamente um dos critérios
+desqualificantes que o brief pede para checar manualmente (ponto 4) — mesmo com o pipeline
+inteiro tendo funcionado corretamente e o gate técnico tendo aprovado.
+
+**Conclusão honesta:** a INFRAESTRUTURA da ETAPA 3.3 funcionou de ponta a ponta exatamente como
+projetada (density preflight, residual global, `planForGate`, gate técnico todos executados e
+corretos) — mas isso **não é o mesmo que a GERAÇÃO ter tido sucesso criativo** (brief, ponto 21:
+"não confundir funcionamento da infraestrutura com sucesso da geração"). A causa dominante do
+texto fantasma residual visível é uma limitação de COBERTURA da detecção/tratamento de bbox: a
+visão (local e global) subestimou a extensão real do texto fantasma, então nem o padding de
+segurança nem a reverificação (que também é vision-based, mesma limitação) pegaram o vazamento nas
+bordas. Nenhuma correção de código foi aplicada nesta rodada (conforme instruído, "sem abrir
+automaticamente outra rodada de desenvolvimento") — a causa foi identificada e registrada.
+
+### Bloco de classificação — Deploy e smoke definitivo
+
+```
+DEPLOY_COMMIT = 4e3102f
+PRODUCTION_HEALTH = HEALTHY
+DIRECTOR_PLAN_VALID = YES (layoutPlan válido na 1ª tentativa, zero confusão de vocabulário kind)
+DENSITY_CONTROL_RUNTIME = PASS (preflight descartou subheadline antes da geração)
+GLOBAL_RECHECK_RUNTIME = PASS (automatizado — inicial + 1 passe residual, confirmado limpo; ver ressalva de revisão visual humana abaixo)
+DETERMINISTIC_TEXT_RUNTIME = PASS (headline/preço/CTA renderizados, legíveis, textos corretos)
+PLAN_FOR_GATE_RUNTIME = PASS (geometria final, zero issues geométricas)
+TECHNICAL_GATE_EXECUTED = YES
+TECHNICAL_GATE_RESULT = PASS
+DENSE_REAL_PIECE_PUBLISHABLE = NO (critério humano, brief ponto 4 — texto fantasma residual "COMPRE AGORA" visivelmente parcialmente legível, apesar do gate automatizado ter aprovado)
+VISUAL_QUALITY = NEEDS_REVIEW (confirmado tanto pelo Visual Quality Score automatizado — belowThreshold=true — quanto pela revisão visual humana)
+IMAGE_GENERATIONS = 1
+TOTAL_COST_USD = 0.07537
+COMPOSITION_BLOCK_3X = STILL_OPEN
+```
+
+### Causa dominante (sem nova rodada de desenvolvimento aberta, conforme instruído)
+
+**Cobertura insuficiente da detecção/tratamento de texto fantasma de alto contraste e fonte
+estilizada grande** — o mesmo tipo de achado da ETAPA 3.1 (blur insuficiente), mas desta vez na
+dimensão de EXTENSÃO/ÁREA do bbox detectado pela visão (não mais intensidade de blur/véu, já
+resolvida). A visão (local e global) relatou "não legível" com confiança, mas um texto decorativo
+grande/estilizado pode exceder a bbox com folga que a visão reportou mesmo após o padding de
+segurança (`expandBboxWithPadding`, 18%). Nenhuma mudança de código feita nesta rodada — fica
+registrado como o PRÓXIMO bloqueador concreto do bloco 3.x, caso o usuário autorize uma nova
+etapa de correção.

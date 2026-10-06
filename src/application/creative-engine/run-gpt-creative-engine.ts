@@ -33,6 +33,8 @@ import {
   sortTextZonesByPriority,
   expandBboxWithPadding,
   widenToCommercialBand,
+  findMatchingCommercialZone,
+  overlapsKnownAssetSubstantially,
   type RegionSemanticFlags,
   type SafeAreaCandidateRegion,
 } from "./resolve-actual-safe-area.js";
@@ -447,10 +449,25 @@ async function applySafeAreaAdjustments(
   const treatedFindingRects: CreativePlanRect[] = [];
   if (hasFullNeutralizationDeps && input.analysis?.spuriousTexts.length) {
     for (const finding of input.analysis.spuriousTexts) {
-      const fallbackZone = input.rendererZones.find((zone) => zone.kind === finding.matchedZoneKind);
+      // ETAPA 3.3.3 (Rodada 4) — achado da auditoria: correspondência de zona agora combina sinal
+      // SEMÂNTICO (matchedZoneKind, só existe pra achados "ghost_text") com sobreposição
+      // GEOMÉTRICA real (bbox vs. retângulo da zona) — um CTA/preço INVENTADO pelo modelo
+      // (classificado "unauthorized_text", nunca recebe matchedZoneKind por definição do schema)
+      // mas desenhado exatamente onde o botão/preço real ficaria agora também se beneficia da
+      // ampliação de largura, em vez de só os achados que a visão rotulou como "ghost_text".
+      const fallbackZone = findMatchingCommercialZone(finding, input.rendererZones);
       const rawRect = finding.bbox ?? fallbackZone?.rect;
       if (!rawRect) {
         steps.push(`texto espúrio "${finding.text}" (${finding.classification}) sem localização (bbox ausente e sem zona correspondente) — não foi possível tratar.`);
+        continue;
+      }
+      // ETAPA 3.3.3 — achado da auditoria (imagem real confirmou): texto legível DENTRO de um
+      // asset real já posicionado (logo/screenshot colado por composição determinística) nunca é
+      // texto espúrio do modelo — é o próprio asset. Protege pela GEOMETRIA real do asset, nunca
+      // por comparação textual (nunca uma whitelist de palavras como "LOGO"/nome da marca — se o
+      // mesmo texto aparecer FORA da região real do asset, continua contando normalmente).
+      if (overlapsKnownAssetSubstantially(rawRect, input.occupiedRects)) {
+        steps.push(`texto "${finding.text}" (${finding.classification}) sobrepõe substancialmente um asset real já posicionado (logo/screenshot) — tratado como parte do asset, nunca como texto espúrio; nenhum tratamento aplicado.`);
         continue;
       }
       // ETAPA 3.3.2 (Rodada 4) — achado real do smoke de produção: o texto fantasma de uma zona
@@ -887,10 +904,18 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     const hasFullNeutralizationCapability = Boolean(deps.applyLocalBlur && deps.applyLocalScrim && deps.extractRegionBuffer && deps.computeRegionPixelStats);
     if (preCompositionAnalysis?.spuriousTexts && preCompositionAnalysis.spuriousTexts.length > 0 && hasFullNeutralizationCapability) {
       if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, compositionSteps: roundCompositionSteps });
+      // ETAPA 3.3.3 (Rodada 4) — achado da auditoria: a reverificação global rodava sobre a
+      // imagem JÁ com a logo real colada, mas nunca sabia ONDE a logo real está — texto legível
+      // DENTRO dela (ex.: o wordmark/placeholder do próprio asset) era flagrado como "não
+      // autorizado", um falso positivo confirmado (imagem real do smoke). Passa a região REAL da
+      // logo (nunca uma whitelist de palavras) pra visão poder excluir especificamente aquela
+      // área — se o mesmo texto aparecer FORA dela, continua contando normalmente.
+      const logoPlacementRect = plan.assetPlacements.find((placement) => placement.role === "logo")?.rect;
       const globalCheckUpload = await deps.objectStorage.put({ key: buildObjectKey(input.tenantId, "global-recheck"), body: baseWithAssetsBuffer, contentType: "image/jpeg" });
       let globalCheck = await checkGlobalTextLegibility(deps.creativeBrain, {
         imageUrl: globalCheckUpload.url,
         allowedRenderedTexts: planForGeneration.allowedRenderedTexts,
+        logoRegion: logoPlacementRect,
         specialistId: SPECIALIST_ID,
         onCost: (response) => track("ghostTextNeutralization", response),
       });
@@ -906,11 +931,21 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         globalResidualPassApplied = true;
         for (const finding of treatableResidualFindings) {
           if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, compositionSteps: roundCompositionSteps });
-          // ETAPA 3.3.2 — mesma garantia estrutural de cobertura do passe inicial (ver comentário
-          // acima, em `applySafeAreaAdjustments`): nunca depender só da bbox da visão quando o
-          // achado residual corresponde a uma zona comercial conhecida — amplia só a LARGURA,
-          // nunca a posição/altura vertical (que continua vindo da bbox real detectada).
-          const residualFallbackZone = rendererOwnedZonesForAnalysis.find((zone) => zone.kind === finding.matchedZoneKind);
+          // ETAPA 3.3.3 — mesma proteção geométrica do passe inicial: texto que sobrepõe
+          // substancialmente um asset real já posicionado nunca é tratado como espúrio.
+          if (overlapsKnownAssetSubstantially(finding.bbox!, assetOccupiedRects)) {
+            roundCompositionSteps.push({
+              step: "safe_area_adjustment",
+              ok: true,
+              detail: `GLOBAL_RESIDUAL_BBOX: texto "${finding.text}" (${finding.classification}) sobrepõe substancialmente um asset real já posicionado — tratado como parte do asset, nenhum tratamento aplicado.`,
+            });
+            continue;
+          }
+          // ETAPA 3.3.2/3.3.3 — mesma garantia estrutural de cobertura do passe inicial (ver
+          // comentário acima, em `applySafeAreaAdjustments`): correspondência de zona combina
+          // sinal semântico (matchedZoneKind) com sobreposição geométrica real — amplia só a
+          // LARGURA, nunca a posição/altura vertical (que continua vindo da bbox real detectada).
+          const residualFallbackZone = findMatchingCommercialZone(finding, rendererOwnedZonesForAnalysis);
           const residualPaddedRect = expandBboxWithPadding(finding.bbox!);
           const residualTreatmentRect = residualFallbackZone ? widenToCommercialBand(residualPaddedRect) : residualPaddedRect;
           const residualNeutralization = await neutralizeGhostTextZone(deps.creativeBrain, {
@@ -938,6 +973,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         globalCheck = await checkGlobalTextLegibility(deps.creativeBrain, {
           imageUrl: residualCheckUpload.url,
           allowedRenderedTexts: planForGeneration.allowedRenderedTexts,
+          logoRegion: logoPlacementRect,
           specialistId: SPECIALIST_ID,
           onCost: (response) => track("ghostTextNeutralization", response),
         });

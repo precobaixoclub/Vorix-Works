@@ -230,14 +230,31 @@ export type GlobalTextCheckResult = {
  */
 export async function checkGlobalTextLegibility(
   icaro: IcaroBrainPort,
-  input: { imageUrl: string; allowedRenderedTexts: readonly string[]; specialistId: string; onCost?: (response: IcaroAIResponse | undefined) => void },
+  input: {
+    imageUrl: string;
+    allowedRenderedTexts: readonly string[];
+    specialistId: string;
+    /** ETAPA 3.3.3 (Rodada 4) — achado da auditoria de falsos positivos: texto legível DENTRO da
+     * logo real colada (ex.: um wordmark/placeholder do próprio asset) estava sendo flagrado como
+     * "não autorizado" — um falso positivo confirmado contra a imagem real de um smoke. Esta
+     * região (percentual do canvas, `creative_plan.assetPlacements` da logo) é a geometria REAL
+     * do asset já posicionado — nunca uma whitelist de palavras. Se o MESMO texto aparecer FORA
+     * dela, continua contando normalmente. `undefined` quando não há logo nesta peça. */
+    logoRegion?: CreativePlanRect;
+    onCost?: (response: IcaroAIResponse | undefined) => void;
+  },
 ): Promise<GlobalTextCheckResult> {
   try {
     const response = await icaro.request({
       taskType: "review",
       prompt: [
-        "Esta é a imagem BASE (antes de logo/screenshot/texto do renderer), depois de um tratamento local para esconder texto espúrio em regiões específicas.",
+        "Esta é a imagem BASE já com logo/screenshot reais colados por composição determinística (mas ainda SEM o texto comercial do renderer), depois de um tratamento local para esconder texto espúrio em regiões específicas.",
         `LISTA FECHADA DE TEXTOS AUTORIZADOS (qualquer outro texto legível é um problema): ${input.allowedRenderedTexts.map((text) => `"${text}"`).join(", ") || "(nenhum texto autorizado nesta peça)"}.`,
+        ...(input.logoRegion
+          ? [
+              `A LOGO OFICIAL da marca foi colada por composição determinística exatamente na região x=${input.logoRegion.xPct}%-${input.logoRegion.xPct + input.logoRegion.widthPct}%, y=${input.logoRegion.yPct}%-${input.logoRegion.yPct + input.logoRegion.heightPct}% do canvas. Texto legível DENTRO dessa região exata (ex.: um nome/wordmark que faz parte da própria logo) é a marca real — NUNCA invenção do modelo de imagem, nunca conte como não autorizado. Mas se o MESMO texto (ou qualquer outro texto) aparecer FORA dessa região exata, isso continua contando normalmente como texto espúrio.`,
+            ]
+          : []),
         "Olhando a imagem INTEIRA (não só uma região), há ALGUM texto legível que NÃO está na lista de textos autorizados, ou o MESMO texto autorizado aparecendo mais de uma vez? Conta também uma ocorrência PARCIALMENTE visível — letras ou palavras reconhecíveis vazando por trás ou ao redor de um cartão/caixa de texto, mesmo que a maior parte esteja coberta. Olhe com atenção especial perto das bordas de cartões/caixas de texto e em fundos decorativos/estampados.",
         // ETAPA 3.3 — achado do smoke real da ETAPA 3.2: saber que "ainda há texto" sem saber ONDE
         // não permite agir. Pede o MESMO formato estruturado da análise pré-composição (nunca só

@@ -1,16 +1,17 @@
 # Correções do Creative Engine — Rodada 4 (parcial)
 
-> Status: ETAPAS 1, 2, 4, 3, 3.1, 3.2, 3.3, 3.3.1 e 3.3.2 — implementadas, testadas e **já em
-> produção** (commit `a752cea`). O smoke real da ETAPA 3.3.2 (2 execuções, limite usado por
-> completo) confirmou `widenToCommercialBand` funcionando para achados zone-matched, mas **NENHUMA
-> das duas execuções publicou** — ambas esgotaram a reparo em `UNRECOVERABLE_GLOBAL_TEXT` por
-> achados SEM zona correspondente (`"LOGO"`, fragmentos do nome da marca do fixture) que a
-> ampliação de largura não cobre, e por haver mais ocorrências de texto espúrio do que o único
-> passe residual permitido consegue tratar. Sem peça final, nenhuma avaliação visual foi possível.
-> Causa registrada, **nenhuma correção nova implementada** (conforme instruído). **Technical Gate
-> nunca executou em nenhuma das duas execuções** (custo $0 confirmado — honestamente
-> `NOT_EXECUTED`, nunca fabricado como PASS). **`COMPOSITION_BLOCK_3X = STILL_OPEN`**. ETAPAS 5 e
-> 6 **não foram iniciadas**. **O Creative Engine NÃO é declarado resolvido.**
+> Status: ETAPAS 1, 2, 4, 3, 3.1, 3.2, 3.3, 3.3.1, 3.3.2 e 3.3.3 — implementadas e testadas; commit
+> em produção é `a752cea` (ETAPA 3.3.2). A ETAPA 3.3.3 (auditoria + 2 correções comprovadas —
+> exceção geometricamente ancorada pra texto da logo real + correspondência geométrica pra
+> `widenToCommercialBand` cobrir achados `unauthorized_text` sem `matchedZoneKind`, mais uma
+> proteção geométrica de assets reais) está **commitada, AINDA NÃO deployada**. Verificada contra
+> uma imagem REAL já existente (zero gerações de imagem, custo `$0.0013`) — o defeito original
+> ("LOGO" sinalizado) não se repetiu nessa nova bateria pra confirmar visualmente a reversão
+> (vision é probabilística), mas a causa raiz (exceção ausente) está confirmada e corrigida, com
+> testes unitários provando o mecanismo. `COMPOSITION_BLOCK_3X = STILL_OPEN` — o smoke real
+> completo (com geração de imagem) que validaria o efeito combinado das 3 correções da ETAPA
+> 3.3.x permanece pendente de autorização explícita de deploy. ETAPAS 5 e 6 **não foram
+> iniciadas**. **O Creative Engine NÃO é declarado resolvido.**
 
 ## Princípio seguido
 
@@ -1182,3 +1183,105 @@ ocorrências espalhadas de texto espúrio; (3) possível ruído introduzido pelo
 QA (logo placeholder com texto literal, nome de marca curto) nunca confirmado contra um logo/marca
 real. Nenhuma correção nova foi implementada nesta rodada, conforme instruído explicitamente
 ("não implementar automaticamente uma nova correção, registrar a causa específica").
+
+## ETAPA 3.3.3 — Correções comprovadas pela auditoria (falso positivo de logo + ampliação geométrica)
+
+Disparada pela auditoria anterior, que recuperou 8 imagens reais (4 base + 4 pós-tratamento) das
+duas execuções do smoke da ETAPA 3.3.2 e confirmou: **1 falso positivo real** (texto "LOGO",
+parte do próprio asset de logo colado, flagrado como não autorizado pela reverificação global) e
+**a causa raiz exata** de por que `widenToCommercialBand` não ajudava certos achados: o campo
+`matchedZoneKind` só existe, por definição do schema, para achados classificados `"ghost_text"`
+— nunca para `"unauthorized_text"` (ex.: "Compre agora", "SAIBA MAIS", CTAs inteiramente
+inventados pelo modelo, que não "repetem" o texto planejado).
+
+### 1) Reconhecimento de texto legítimo da logo — geometricamente ancorado, nunca whitelist
+
+`checkGlobalTextLegibility` (`analyze-pre-composition-image.ts`) ganhou um parâmetro opcional
+`logoRegion: CreativePlanRect` — a geometria REAL de `creative_plan.assetPlacements` da logo
+(quando existe). Quando presente, o prompt informa a região EXATA e instrui: texto legível
+DENTRO dela é a marca real, nunca invenção do modelo; o MESMO texto (ou qualquer outro) FORA dela
+continua contando normalmente. **Nunca uma whitelist de palavras** ("LOGO"/nome da marca) — a
+exceção depende de asset oficial reconhecido (há uma logo no plano) + região real onde foi
+aplicada (o retângulo exato) + o próprio julgamento da visão sobre correspondência (ela ainda
+decide se o texto está "dentro" ou "fora"). Também corrigido, no mesmo prompt: uma frase
+desatualizada dizia "antes de logo/screenshot" quando na verdade a checagem roda DEPOIS da
+composição — a própria causa estrutural por trás do texto da logo aparecer "inesperadamente".
+
+### 2) Ampliação geométrica — correspondência de zona por geometria, não só classificação
+
+Nova função pura `findMatchingCommercialZone` (`resolve-actual-safe-area.ts`): combina o sinal
+SEMÂNTICO (`matchedZoneKind`) com sobreposição GEOMÉTRICA real (bbox do achado vs. retângulo da
+zona) — um CTA/preço inventado classificado `"unauthorized_text"`, mas desenhado exatamente onde
+o botão/preço real ficaria, agora também recebe `widenToCommercialBand`. Sem bbox E sem
+`matchedZoneKind` batendo com nenhuma zona, devolve `undefined` — comportamento conservador
+preservado, nunca "inventa" correspondência. Usada tanto no passe inicial quanto no residual.
+
+### 3) Proteção de conteúdo legítimo — geometria do asset, nunca comparação textual
+
+Nova função pura `overlapsKnownAssetSubstantially`: quando um achado de texto espúrio cobre pelo
+menos 50% da ÁREA de um asset real já posicionado (logo/screenshot), o motor NUNCA aplica
+blur/véu ali — trata como parte do próprio asset, não como texto espúrio do modelo. Usa só
+geometria (nunca comparação de string contra "LOGO"/nome da marca), então continua protegendo
+mesmo se o fixture mudar de palavra, e nunca protege um achado genuinamente distinto que só toca
+a borda do asset.
+
+### Reprocessamento de evidências reais (zero gerações de imagem)
+
+Reusei a MESMA imagem real já existente em produção (execução 1, tentativa 1, do smoke da ETAPA
+3.3.2 — ainda hospedada publicamente) para testar `checkGlobalTextLegibility` ANTES e DEPOIS do
+fix, em 3 rodadas (6 chamadas de texto/visão, custo total `$0.001314`, **zero gerações de
+imagem**). **Achado honesto**: nas 3 rodadas, o texto "LOGO" NÃO foi sinalizado nem ANTES nem
+DEPOIS do fix — a visão, nesta nova bateria de tentativas, já ignorou corretamente o wordmark da
+logo por conta própria (julgamento probabilístico, não determinístico — o mesmo princípio que
+motivou todo o cuidado deste bloco inteiro de ETAPAS). **Não consigo afirmar, com estes dados,
+que o fix "reverteu" uma flagração que se repete sob demanda** — a causa raiz (exceção ausente no
+prompt) está confirmada e corrigida de forma sólida e testada (testes unitários provam que o
+prompt muda exatamente como esperado), mas a reprodução visual direta do ANTES/DEPOIS não foi
+possível nesta rodada porque o defeito original não se repetiu. Em ambas as rodadas, a visão
+continuou corretamente encontrando o resíduo REAL ("SAIBA MAIS", o CTA fantasma parcialmente
+visível) — confirmando que o fix não introduziu nenhuma lacuna na detecção de texto genuinamente
+espúrio.
+
+### Fixtures de homologação preparados (nenhuma geração gasta nesta rodada)
+
+- **Cenário A — logo gráfica sintética sem texto**: criado localmente (círculo + triângulo,
+  cores da marca, sem nenhuma palavra) — pronto para uma rodada futura de smoke autorizada.
+  Reduz a interferência do placeholder atual sem "esconder" o problema (nenhuma mudança de
+  código depende deste fixture — ele só isola a variável pra um teste futuro).
+- **Cenário B — logo legítima contendo texto**: o fixture atual (placehold.co com "LOGO" escrito)
+  já serve como esse cenário — mantido, nunca substituído, para provar que o problema não foi
+  "escondido" pela troca de fixture.
+
+Ambos preservam a complexidade comercial pedida (headline + preço + CTA + logo).
+
+### Testes
+
+- `tests/resolve-actual-safe-area.test.mjs` (+8): `findMatchingCommercialZone` (sinal semântico;
+  sobreposição geométrica sem `matchedZoneKind`; sem sobreposição → `undefined`; sem bbox e sem
+  `matchedZoneKind` → `undefined`) e `overlapsKnownAssetSubstantially` (cobertura majoritária →
+  `true`; toque mínimo de borda → `false`; sem assets → `false`; fração customizável).
+- `tests/analyze-pre-composition-image.test.mjs` (+2): com `logoRegion`, o prompt menciona a
+  geometria exata e a instrução de exceção; sem `logoRegion`, o prompt nunca menciona a exceção.
+- `tests/run-gpt-creative-engine.test.mjs` (+2, integração): achado `unauthorized_text` sem
+  `matchedZoneKind` mas geometricamente dentro do CTA recebe a mesma ampliação de um
+  `ghost_text`; texto que sobrepõe substancialmente a logo real nunca é tratado (zero chamadas de
+  blur, zero rodadas de reparo).
+- Suíte completa (3338 testes, 3336 PASS, os mesmos 2 flakes pré-existentes e não relacionados),
+  typecheck/build/architecture-check — todos verdes antes do commit. 12 testes novos no total,
+  todos os 103 testes pré-existentes do Creative Engine continuam passando SEM NENHUMA alteração
+  (prova de regressão: os dois novos guards nunca mudam o comportamento de nenhum cenário já
+  coberto antes desta rodada).
+
+### Bloco de classificação — ETAPA 3.3.3
+
+```
+LOGO_FALSE_POSITIVE = FIXED (mecanismo corrigido e testado; reprodução real não conseguiu reproduzir o defeito original em 3 tentativas pra confirmar visualmente a reversão — ver ressalva honesta acima)
+AUTHORIZED_LOGO_PROTECTION = PASS
+UNAUTHORIZED_TEXT_GEOMETRIC_MATCH = PASS
+COMMERCIAL_BAND_TREATMENT = PASS
+REAL_GHOST_TEXT_STILL_BLOCKED = YES (confirmado: resíduo real "SAIBA MAIS" continuou detectado nas 3 rodadas de reprocessamento; todos os testes de ghost text pré-existentes continuam passando)
+HISTORICAL_FIXTURE_REPLAY = PASS (com ressalva: a imagem real existente foi reprocessada com sucesso; o defeito original específico não se repetiu pra uma comparação visual direta — vision é probabilística)
+REGRESSION_TESTS = PASS (3336/3338 na suíte completa, os mesmos 2 flakes pré-existentes e não relacionados)
+ADDITIONAL_IMAGE_GENERATIONS = 0
+READY_FOR_DEPLOY = YES (localmente verificado e commitado — deploy requer autorização explícita separada)
+```

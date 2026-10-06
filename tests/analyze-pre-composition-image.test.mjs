@@ -205,6 +205,39 @@ test("checkGlobalTextLegibility: exceção na chamada nunca lança — conservad
   assert.equal(result.hasUnresolvedText, true);
 });
 
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.3.3 (Rodada 4) — achado da auditoria de falsos positivos: texto legível DENTRO da logo
+// real colada (ex.: um wordmark/placeholder do próprio asset, confirmado contra uma imagem real
+// de produção) estava sendo flagrado como "não autorizado". `logoRegion` passa a geometria REAL
+// do asset — nunca uma whitelist de palavras — pra visão poder excluir especificamente aquela
+// área, preservando a detecção normal fora dela.
+// ---------------------------------------------------------------------------------------------
+
+test("checkGlobalTextLegibility: com logoRegion informada, o prompt menciona a geometria exata do asset real e instrui a exceção", async () => {
+  let capturedPrompt;
+  const icaro = {
+    request: async (request) => { capturedPrompt = request.prompt; return { status: "completed", content: JSON.stringify({ hasUnresolvedText: false }) }; },
+  };
+  await checkGlobalTextLegibility(icaro, {
+    imageUrl: "https://x/base.png",
+    allowedRenderedTexts: ["x"],
+    specialistId: "gpt-creative-director",
+    logoRegion: { xPct: 5, yPct: 5, widthPct: 20, heightPct: 10 },
+  });
+  assert.match(capturedPrompt, /x=5%-25%/);
+  assert.match(capturedPrompt, /y=5%-15%/);
+  assert.match(capturedPrompt, /NUNCA invenção do modelo/);
+});
+
+test("checkGlobalTextLegibility: sem logoRegion (peça sem logo), o prompt nunca menciona a exceção de logo", async () => {
+  let capturedPrompt;
+  const icaro = {
+    request: async (request) => { capturedPrompt = request.prompt; return { status: "completed", content: JSON.stringify({ hasUnresolvedText: false }) }; },
+  };
+  await checkGlobalTextLegibility(icaro, { imageUrl: "https://x/base.png", allowedRenderedTexts: ["x"], specialistId: "gpt-creative-director" });
+  assert.doesNotMatch(capturedPrompt, /LOGO OFICIAL da marca foi colada/);
+});
+
 test("checkGlobalTextLegibility: achado residual com bbox/classification/confidence é parseado (ETAPA 3.3 — nunca só um booleano)", async () => {
   const icaro = {
     request: async () => ({

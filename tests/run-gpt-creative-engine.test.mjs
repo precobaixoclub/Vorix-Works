@@ -1111,3 +1111,90 @@ test("runGptCreativeEngine (ETAPA 3.3): layoutPlan malformado na 1ª tentativa d
   assert.equal(result.error, undefined, `esperava que a 2ª tentativa produzisse um plano válido, erro: ${result.error}`);
   assert.equal(result.publishable, true);
 }));
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.3.3 (Rodada 4) — achado da auditoria de falsos positivos contra imagens REAIS de
+// produção: (1) um CTA/preço INVENTADO classificado "unauthorized_text" (nunca recebe
+// matchedZoneKind por definição do schema) mas geometricamente dentro da zona comercial real
+// também precisa da ampliação de largura; (2) texto legível que É o próprio asset real (logo
+// colada) nunca pode ser tratado como espúrio — usa geometria do asset, nunca comparação textual.
+// ---------------------------------------------------------------------------------------------
+
+test("runGptCreativeEngine (ETAPA 3.3.3): achado 'unauthorized_text' SEM matchedZoneKind, mas geometricamente dentro da zona de CTA, recebe a MESMA ampliação de largura que um 'ghost_text'", () => withFakeFetch(async () => {
+  let treatedRect;
+  const icaro = fakeIcaro({
+    analysis: [planResponse({
+      cta: "Aproveite Já",
+      textZones: [{ kind: "cta", text: "Aproveite Já", rect: { xPct: 30, yPct: 80, widthPct: 40, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" }],
+    })],
+    image_generation: [imageResponse()],
+    review: [
+      {
+        status: "completed",
+        content: JSON.stringify({
+          // "Compre agora" é um CTA INVENTADO pelo modelo (não é o texto autorizado "Aproveite
+          // Já") — vision classifica como "unauthorized_text" (nunca "ghost_text" nesse caso,
+          // já que não repete o texto planejado), então NUNCA vem com matchedZoneKind. A bbox
+          // real, porém, cai geometricamente dentro da zona de CTA.
+          spuriousTexts: [{ text: "Compre agora", classification: "unauthorized_text", bbox: { xPct: 35, yPct: 82, widthPct: 30, heightPct: 6 } }],
+          plannedZonesClear: { cta: true },
+          regions: occupiedRegionFlags(),
+        }),
+      },
+      recheckResponse(false), globalRecheckResponse(false), passingReview(), passingVisualScore(),
+    ],
+  });
+  const deps = baseDeps({
+    creativeBrain: icaro,
+    computeRegionPixelStats: async () => ({ meanLuminance: 180, stdDevLuminance: 50 }),
+    applyLocalBlur: async (imageBuffer, rect) => { treatedRect = rect; return imageBuffer; },
+    applyLocalScrim: async (imageBuffer) => imageBuffer,
+    extractRegionBuffer: async (imageBuffer) => imageBuffer,
+  });
+  const result = await runGptCreativeEngine(deps, baseInput());
+
+  assert.equal(result.error, undefined, `esperava sucesso, erro: ${result.error}`);
+  assert.equal(result.publishable, true);
+  assert.ok(treatedRect.widthPct > 80, `esperava largura ampliada pra faixa comercial (~90%), tratou com largura=${treatedRect.widthPct}`);
+}));
+
+test("runGptCreativeEngine (ETAPA 3.3.3): texto legível que sobrepõe substancialmente a LOGO real colada nunca é tratado como espúrio (nenhum blur aplicado, nunca consome reparo)", () => withFakeFetch(async () => {
+  let blurCalls = 0;
+  const icaro = fakeIcaro({
+    analysis: [planResponse({
+      assetPlacements: [{ role: "logo", url: "https://x/logo.png", rect: { xPct: 5, yPct: 5, widthPct: 20, heightPct: 10 } }],
+      // Precisa de ao menos uma zona de renderer pra análise pré-composição rodar de verdade
+      // (sem isso, `rendererOwnedZonesForAnalysis` fica vazio e a chamada nunca acontece).
+      textZones: [{ kind: "headline", text: "TODAS AS OFERTAS EM UM SÓ SITE", rect: { xPct: 10, yPct: 60, widthPct: 80, heightPct: 15 }, emphasis: "primary", renderedBy: "renderer" }],
+    })],
+    image_generation: [imageResponse()],
+    review: [
+      {
+        status: "completed",
+        content: JSON.stringify({
+          // "LOGO" é o wordmark/placeholder que faz parte da PRÓPRIA logo real colada — a bbox
+          // reportada coincide com a geometria real do asset (nunca um texto espúrio do modelo).
+          spuriousTexts: [{ text: "LOGO", classification: "unauthorized_text", bbox: { xPct: 5, yPct: 5, widthPct: 20, heightPct: 10 } }],
+          plannedZonesClear: { headline: true },
+          regions: occupiedRegionFlags(),
+        }),
+      },
+      globalRecheckResponse(false), passingReview(), passingVisualScore(),
+    ],
+  });
+  const input = baseInput({ creativeContext: baseContext({ assets: [{ url: "https://x/logo.png", role: "logo", description: "" }] }) });
+  const deps = baseDeps({
+    creativeBrain: icaro,
+    computeRegionPixelStats: async () => ({ meanLuminance: 180, stdDevLuminance: 50 }),
+    applyLocalBlur: async (imageBuffer) => { blurCalls += 1; return imageBuffer; },
+    applyLocalScrim: async (imageBuffer) => imageBuffer,
+    extractRegionBuffer: async (imageBuffer) => imageBuffer,
+  });
+  const result = await runGptCreativeEngine(deps, input);
+
+  assert.equal(result.error, undefined, `esperava sucesso, erro: ${result.error}`);
+  assert.equal(result.publishable, true);
+  assert.equal(blurCalls, 0, "nenhum blur deveria ter sido aplicado sobre a logo real");
+  assert.equal(result.repairRounds.length, 0, "proteção da logo nunca deveria consumir rodada de reparo");
+  assert.ok(result.compositionSteps.some((step) => step.step === "safe_area_adjustment" && /sobrepõe substancialmente um asset real/.test(step.detail)));
+}));

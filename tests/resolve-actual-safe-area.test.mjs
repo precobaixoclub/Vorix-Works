@@ -17,6 +17,8 @@ import {
   sortTextZonesByPriority,
   TEXT_ZONE_KIND_PRIORITY,
   widenToCommercialBand,
+  findMatchingCommercialZone,
+  overlapsKnownAssetSubstantially,
 } from "../dist/application/creative-engine/resolve-actual-safe-area.js";
 
 /**
@@ -268,4 +270,69 @@ test("widenToCommercialBand: aceita margem customizada", () => {
   const widened = widenToCommercialBand({ xPct: 40, yPct: 0, widthPct: 20, heightPct: 10 }, 10);
   assert.equal(widened.xPct, 10);
   assert.equal(widened.widthPct, 80);
+});
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.3.3 (Rodada 4) — achado da auditoria de falsos positivos: `matchedZoneKind` nunca é
+// preenchido pra achados "unauthorized_text" (só "ghost_text"), então um CTA/preço INVENTADO
+// desenhado exatamente dentro da zona comercial real nunca se beneficiava da ampliação de
+// largura. `findMatchingCommercialZone` combina o sinal semântico com sobreposição geométrica
+// real — nunca inventa correspondência sem nenhuma evidência.
+// ---------------------------------------------------------------------------------------------
+
+function zone(kind, rect) {
+  return { kind, rect };
+}
+
+test("findMatchingCommercialZone: usa o sinal SEMÂNTICO (matchedZoneKind) quando disponível", () => {
+  const zones = [zone("cta", { xPct: 30, yPct: 80, widthPct: 40, heightPct: 10 }), zone("price", { xPct: 10, yPct: 40, widthPct: 50, heightPct: 20 })];
+  const match = findMatchingCommercialZone({ matchedZoneKind: "price" }, zones);
+  assert.equal(match.kind, "price");
+});
+
+test("findMatchingCommercialZone: SEM matchedZoneKind (achado 'unauthorized_text'), usa sobreposição GEOMÉTRICA da bbox real", () => {
+  const zones = [zone("cta", { xPct: 30, yPct: 80, widthPct: 40, heightPct: 10 })];
+  // bbox real do achado cai DENTRO da zona de CTA, mas a visão não rotulou matchedZoneKind
+  // (caso real confirmado: "Compre agora"/"SAIBA MAIS" classificados "unauthorized_text").
+  const match = findMatchingCommercialZone({ bbox: { xPct: 35, yPct: 82, widthPct: 30, heightPct: 6 } }, zones);
+  assert.equal(match.kind, "cta");
+});
+
+test("findMatchingCommercialZone: bbox que NÃO sobrepõe nenhuma zona conhecida -> undefined (nunca inventa correspondência)", () => {
+  const zones = [zone("cta", { xPct: 30, yPct: 80, widthPct: 40, heightPct: 10 })];
+  const match = findMatchingCommercialZone({ bbox: { xPct: 0, yPct: 0, widthPct: 10, heightPct: 10 } }, zones);
+  assert.equal(match, undefined);
+});
+
+test("findMatchingCommercialZone: sem matchedZoneKind E sem bbox -> undefined (comportamento conservador preservado)", () => {
+  const zones = [zone("cta", { xPct: 30, yPct: 80, widthPct: 40, heightPct: 10 })];
+  const match = findMatchingCommercialZone({}, zones);
+  assert.equal(match, undefined);
+});
+
+// ---------------------------------------------------------------------------------------------
+// overlapsKnownAssetSubstantially — proteção geométrica de assets reais (logo/screenshot)
+// ---------------------------------------------------------------------------------------------
+
+test("overlapsKnownAssetSubstantially: bbox que cobre a MAIOR PARTE de um asset real -> true (protege, nunca trata como espúrio)", () => {
+  const logoRect = { xPct: 5, yPct: 5, widthPct: 20, heightPct: 10 };
+  const findingBbox = { xPct: 5, yPct: 5, widthPct: 20, heightPct: 10 }; // praticamente idêntico ao asset
+  assert.equal(overlapsKnownAssetSubstantially(findingBbox, [logoRect]), true);
+});
+
+test("overlapsKnownAssetSubstantially: bbox que só toca uma BORDA pequena do asset -> false (não protege um achado genuinamente distinto)", () => {
+  const logoRect = { xPct: 5, yPct: 5, widthPct: 20, heightPct: 10 };
+  const findingBbox = { xPct: 24, yPct: 14, widthPct: 20, heightPct: 10 }; // sobreposição mínima na quina
+  assert.equal(overlapsKnownAssetSubstantially(findingBbox, [logoRect]), false);
+});
+
+test("overlapsKnownAssetSubstantially: sem nenhum asset real -> sempre false", () => {
+  assert.equal(overlapsKnownAssetSubstantially({ xPct: 5, yPct: 5, widthPct: 20, heightPct: 10 }, []), false);
+});
+
+test("overlapsKnownAssetSubstantially: aceita fração mínima customizada", () => {
+  const logoRect = { xPct: 0, yPct: 0, widthPct: 20, heightPct: 10 };
+  const findingBbox = { xPct: 0, yPct: 0, widthPct: 10, heightPct: 10 }; // cobre 50% da área do asset
+  assert.equal(overlapsKnownAssetSubstantially(findingBbox, [logoRect], 0.5), true);
+  assert.equal(overlapsKnownAssetSubstantially(findingBbox, [logoRect], 0.6), false);
 });

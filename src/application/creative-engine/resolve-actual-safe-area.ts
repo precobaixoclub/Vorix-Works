@@ -288,6 +288,63 @@ export function widenToCommercialBand(rect: CreativePlanRect, marginPct = COMMER
   return { xPct: bandXPct, yPct: rect.yPct, widthPct: bandRightPct - bandXPct, heightPct: rect.heightPct };
 }
 
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.3.3 (Rodada 4) — achado da auditoria de falsos positivos: `widenToCommercialBand` só
+// disparava quando `finding.matchedZoneKind` vinha preenchido — mas esse campo, por definição do
+// schema (`analyze-pre-composition-image.ts`), NUNCA é preenchido para achados classificados
+// `"unauthorized_text"` (só para `"ghost_text"`). Um CTA inventado pelo modelo ("Compre agora",
+// "SAIBA MAIS") geometricamente DENTRO do botão de CTA real sempre vem classificado como
+// `unauthorized_text` (não "repete" o texto planejado, é um texto diferente) — nunca se
+// beneficiava da ampliação, mesmo estando claramente dentro da zona comercial. A correspondência
+// GEOMÉTRICA (bbox do achado vs. retângulo da zona) é o sinal que faltava, nunca dependente do
+// vocabulário semântico que a visão escolheu.
+// ---------------------------------------------------------------------------------------------
+
+/** Acha a zona comercial correspondente a um achado de texto espúrio, combinando o sinal
+ * SEMÂNTICO da visão (`matchedZoneKind`) com sobreposição GEOMÉTRICA real (bbox do achado vs.
+ * retângulo da zona) — nunca só um dos dois. Sem bbox E sem `matchedZoneKind` batendo com
+ * nenhuma zona, devolve `undefined` — comportamento conservador preservado (nunca "inventa" uma
+ * zona correspondente sem nenhuma evidência real, geométrica ou semântica). */
+export function findMatchingCommercialZone<T extends { kind: string; rect: CreativePlanRect }>(
+  finding: { matchedZoneKind?: string; bbox?: CreativePlanRect },
+  zones: readonly T[],
+): T | undefined {
+  const semanticMatch = zones.find((zone) => zone.kind === finding.matchedZoneKind);
+  if (semanticMatch) return semanticMatch;
+  if (!finding.bbox) return undefined;
+  return zones.find((zone) => rectsOverlap(finding.bbox!, zone.rect));
+}
+
+function intersectionAreaPct(a: CreativePlanRect, b: CreativePlanRect): number {
+  const left = Math.max(a.xPct, b.xPct);
+  const right = Math.min(a.xPct + a.widthPct, b.xPct + b.widthPct);
+  const top = Math.max(a.yPct, b.yPct);
+  const bottom = Math.min(a.yPct + a.heightPct, b.yPct + b.heightPct);
+  if (right <= left || bottom <= top) return 0;
+  return (right - left) * (bottom - top);
+}
+
+/** Fração mínima da ÁREA DO ASSET (nunca do achado — o achado reportado pode ser maior/menos
+ * preciso que o asset em si) que precisa estar coberta pelo retângulo candidato pra considerar
+ * que ele É, na prática, o próprio asset real — nunca um texto espúrio do modelo. */
+const MIN_ASSET_OVERLAP_FRACTION_TO_PROTECT = 0.5;
+
+/** ETAPA 3.3.3 — nunca trata (blur/véu) uma região que na prática É o próprio asset real (logo/
+ * screenshot colado por composição determinística), nunca um texto espúrio do modelo de imagem —
+ * usa a GEOMETRIA do asset real pra decidir, nunca comparação textual (brief, ponto 3: "usar a
+ * origem e a geometria dos assets pra decidir, não usar somente comparação textual"). */
+export function overlapsKnownAssetSubstantially(
+  candidate: CreativePlanRect,
+  assetRects: readonly CreativePlanRect[],
+  minFraction = MIN_ASSET_OVERLAP_FRACTION_TO_PROTECT,
+): boolean {
+  return assetRects.some((assetRect) => {
+    const assetArea = assetRect.widthPct * assetRect.heightPct;
+    if (assetArea <= 0) return false;
+    return intersectionAreaPct(candidate, assetRect) / assetArea >= minFraction;
+  });
+}
+
 /** Tradução do vocabulário de tratamento pra primitiva real do renderer determinístico — ver
  * `render-creative-plan-text-zones.ts`. `local_blur` vira `"scrim"` no nível do renderer porque o
  * blur em si é aplicado ANTES, como pré-processamento de pixel (`applyLocalBlur`,

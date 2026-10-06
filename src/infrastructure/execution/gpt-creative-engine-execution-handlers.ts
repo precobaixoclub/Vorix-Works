@@ -79,6 +79,20 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function booleanLike(value: unknown): boolean {
+  return typeof value === "string" && ["true", "1", "yes", "sim"].includes(value.trim().toLowerCase());
+}
+
+function isEditorialExperimentalRequested(validatedInputs: Record<string, string>): boolean {
+  return (
+    validatedInputs.creativeEngineCompositionMode?.trim() === "editorial_experimental" ||
+    validatedInputs.creativeEngineMode?.trim() === "editorial_experimental" ||
+    validatedInputs.experimentalCreativeEngine?.trim() === "editorial" ||
+    booleanLike(validatedInputs.experimentalEditorialCreativeEngine) ||
+    booleanLike(validatedInputs.editorialCreativeEngine)
+  );
+}
+
 function parseJsonArray(raw: unknown): unknown[] {
   if (typeof raw !== "string" || !raw.trim()) return [];
   try {
@@ -149,6 +163,8 @@ export type GptCreativeEngineVisualTaskHandlerDeps = GptCreativeEngineDeps &
      * teto — isso é deliberado: produção sempre roda com algum limite explícito, nunca "sem
      * limite" por omissão silenciosa. */
     maxBudgetUsd?: number;
+    /** Kill switch do compositor editorial experimental. Mesmo ligado, exige opt-in por comando. */
+    editorialExperimentalEnabled?: boolean;
   };
 
 export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerPort {
@@ -169,6 +185,14 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
 
     const validatedInputs = preparedCommand.validatedInputs;
     const assets = buildAssetsFromValidatedInputs(validatedInputs);
+    const experimentalEditorialMode = isEditorialExperimentalRequested(validatedInputs);
+    if (experimentalEditorialMode && !this.deps.editorialExperimentalEnabled) {
+      return failure(
+        "EDITORIAL_CREATIVE_ENGINE_DISABLED",
+        "O compositor editorial experimental foi solicitado, mas a feature flag CREATIVE_ENGINE_EDITORIAL_EXPERIMENTAL_ENABLED nao esta habilitada neste ambiente.",
+        "policy_violation",
+      );
+    }
 
     const creativeContext = await buildCreativeContext(this.deps, {
       workspaceId: request.context.workspaceId,
@@ -190,6 +214,7 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
       workspaceId: request.context.workspaceId,
       creativeContext,
       maxBudgetUsd: this.deps.maxBudgetUsd ?? DEFAULT_MAX_BUDGET_USD,
+      experimentalEditorialMode: experimentalEditorialMode && this.deps.editorialExperimentalEnabled === true,
     });
 
     await this.persistRun(request, creativeEngineRunId, result).catch(() => undefined);
@@ -227,6 +252,7 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
       // por `quality_review` (task seguinte) e pela tela de revisão/relatório final.
       creativeEngine: {
         engineMode: "gpt",
+        compositionMode: result.compositionMode ?? "standard",
         creativeEngineRunId,
         directorModel: result.directorModel,
         imageModel: result.imageModel,

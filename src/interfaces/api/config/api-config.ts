@@ -127,6 +127,7 @@ export type ApiConfig = {
     /** Migração "GPT como motor criativo único" (PR 6/9) — mutuamente exclusivas por
      * construção, ver `parseCreativeEngineMode` abaixo. */
     creativeEngineGptEnabled: boolean;
+    creativeEngineEditorialExperimentalEnabled: boolean;
     legacyCreativeEngineEnabled: boolean;
   };
   publication: {
@@ -342,6 +343,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   // for validado em produção (ver plano de rollout) — o PR 8 muda só este literal para "gpt".
   const creativeEngineMode = env.CREATIVE_ENGINE?.trim() === "gpt" ? "gpt" : "legacy";
   const creativeEngineGptEnabled = creativeEngineMode === "gpt";
+  const creativeEngineEditorialExperimentalEnabled = creativeEngineGptEnabled && env.CREATIVE_ENGINE_EDITORIAL_EXPERIMENTAL_ENABLED?.trim() === "true";
   const legacyCreativeEngineEnabled = creativeEngineMode === "legacy";
   const publicationProviderEnvironment = env.PUBLICATION_PROVIDER_ENVIRONMENT?.trim() === "production" ? "production" : "sandbox";
   const publicationProductionEnabled = env.PUBLICATION_PRODUCTION_ENABLED?.trim() === "true";
@@ -528,6 +530,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       realDistributionEnabled,
       environment: executionEnvironment,
       creativeEngineGptEnabled,
+      creativeEngineEditorialExperimentalEnabled,
       legacyCreativeEngineEnabled,
     },
     publication: {

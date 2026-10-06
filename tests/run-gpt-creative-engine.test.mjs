@@ -1198,3 +1198,55 @@ test("runGptCreativeEngine (ETAPA 3.3.3): texto legível que sobrepõe substanci
   assert.equal(result.repairRounds.length, 0, "proteção da logo nunca deveria consumir rodada de reparo");
   assert.ok(result.compositionSteps.some((step) => step.step === "safe_area_adjustment" && /sobrepõe substancialmente um asset real/.test(step.detail)));
 }));
+test("runGptCreativeEngine editorial experimental: usa compositor paralelo, registra geometria e preserva assets reais", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse()],
+    image_generation: [imageResponse()],
+    review: [passingReview(), passingVisualScore()],
+  });
+  let rendererInput;
+  const result = await runGptCreativeEngine(baseDeps({
+    creativeBrain: icaro,
+    renderEditorialCreative: async (input) => {
+      rendererInput = input;
+      return {
+        buffer: Buffer.from("editorial-final"),
+        family: "product_offer",
+        renderedTextZones: [
+          { kind: "headline", text: "TODAS AS OFERTAS EM UM SITE", rect: { xPct: 10, yPct: 10, widthPct: 70, heightPct: 16 }, emphasis: "primary", renderedBy: "renderer", backingStyle: "none", align: "left" },
+          { kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 35, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer", backingStyle: "solid", align: "center" },
+        ],
+        compositedAssetRoles: ["product_photo", "logo"],
+        geometry: { valid: true, boxes: [{ id: "headline", rect: { xPct: 10, yPct: 10, widthPct: 70, heightPct: 16 } }], issues: [] },
+      };
+    },
+  }), baseInput({
+    experimentalEditorialMode: true,
+    creativeContext: contextWithProductReference({
+      assets: [
+        { url: "https://x/product-ref.jpg", role: "product_photo", description: "Produto real" },
+        { url: "https://x/logo.png", role: "logo", description: "Logo oficial" },
+      ],
+      confirmedFacts: ["Preco atual: R$ 149,00"],
+    }),
+  }));
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.publishable, true);
+  assert.equal(result.compositionMode, "editorial_experimental");
+  assert.equal(rendererInput.assets.length, 2);
+  assert.deepEqual(result.compositedAssetRoles.sort(), ["logo", "product_photo"]);
+  assert.ok(result.compositionSteps.some((step) => step.step === "editorial_geometry_validation" && step.ok));
+  assert.ok(result.compositionSteps.some((step) => step.step === "editorial_composition" && step.ok));
+}));
+
+test("runGptCreativeEngine editorial experimental: falha alto se renderer nao foi injetado", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse()],
+    image_generation: [imageResponse()],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro, renderEditorialCreative: undefined }), baseInput({ experimentalEditorialMode: true }));
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.errorCode, "EDITORIAL_RENDERER_MISSING");
+}));

@@ -10,6 +10,9 @@ export type ExecutionFeatureFlags = {
    * variável de ambiente) — nunca as duas ligadas, nunca as duas desligadas. Ver
    * `creative-engine-mode.ts`. */
   creativeEngineGptEnabled: boolean;
+  /** Caminho editorial experimental do motor GPT. Nunca substitui o motor ativo por conta propria:
+   * alem desta flag, a execucao precisa pedir opt-in explicitamente nos inputs validados. */
+  creativeEngineEditorialExperimentalEnabled: boolean;
   legacyCreativeEngineEnabled: boolean;
 };
 
@@ -23,6 +26,7 @@ export const DEFAULT_EXECUTION_FEATURE_FLAGS: ExecutionFeatureFlags = {
   // Default da biblioteca (usado quando nada mais configura as flags, ex.: testes) — espelha o
   // default atual de produção (legado), que só muda no PR 8 (virada explícita do motor padrão).
   creativeEngineGptEnabled: false,
+  creativeEngineEditorialExperimentalEnabled: false,
   legacyCreativeEngineEnabled: true,
 };
 
@@ -35,6 +39,7 @@ export function serializeExecutionFeatureFlags(flags: ExecutionFeatureFlags): Re
     REAL_VISUAL_ENABLED: flags.realVisualEnabled,
     REAL_DISTRIBUTION_ENABLED: flags.realDistributionEnabled,
     CREATIVE_ENGINE_GPT_ENABLED: flags.creativeEngineGptEnabled,
+    CREATIVE_ENGINE_EDITORIAL_EXPERIMENTAL_ENABLED: flags.creativeEngineEditorialExperimentalEnabled,
     LEGACY_CREATIVE_ENGINE_ENABLED: flags.legacyCreativeEngineEnabled,
   };
 }

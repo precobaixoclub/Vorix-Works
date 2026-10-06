@@ -40,6 +40,7 @@ import {
 } from "./resolve-actual-safe-area.js";
 import { neutralizeGhostTextZone } from "./neutralize-ghost-text.js";
 import { applyTextBudgetSimplification, degradeOptionalZonesOnUnresolvedOverlap, isLayoutOverdense } from "./manage-text-budget.js";
+import type { RenderEditorialCreativeInput, RenderEditorialCreativeResult } from "./editorial-composition.types.js";
 
 /**
  * Motor criativo GPT — migração "GPT como motor criativo único" (PR 5/9). Promove
@@ -64,7 +65,7 @@ export async function fetchAsBuffer(url: string): Promise<Buffer> {
   return Buffer.from(await response.arrayBuffer());
 }
 
-export type CompositionStepKind = "screenshot_mockup" | "logo_overlay" | "text_zones" | "safe_area_adjustment";
+export type CompositionStepKind = "screenshot_mockup" | "logo_overlay" | "text_zones" | "safe_area_adjustment" | "editorial_geometry_validation" | "editorial_composition";
 
 export type CompositionStep = {
   step: CompositionStepKind;
@@ -93,6 +94,7 @@ export type GptCreativeEngineDeps = {
     accentColor?: string;
     fontScale?: number;
   }): Promise<{ buffer: Buffer; renderedZones: unknown[] }>;
+  renderEditorialCreative?(input: RenderEditorialCreativeInput): Promise<RenderEditorialCreativeResult>;
   computeAssetSuitability?(buffer: Buffer): Promise<AssetSuitabilityScore | undefined>;
   readImageDimensions(buffer: Buffer): Promise<{ width?: number; height?: number }>;
   /** ETAPA 3 (Rodada 4, benchmark de qualidade criativa) — medida determinística e gratuita do
@@ -130,6 +132,9 @@ export type GptCreativeEngineInput = {
    * com `errorCode: "CREATIVE_ENGINE_BUDGET_EXCEEDED"` e `costBreakdown` completo até aquele
    * ponto, nunca publica nada parcial. */
   maxBudgetUsd?: number;
+  /** Caminho experimental: a IA gera a cena/foto, mas texto/preco/CTA/logo/produto/screenshot sao
+   * renderizados pelo compositor editorial deterministico. Nunca e ligado por padrao. */
+  experimentalEditorialMode?: boolean;
 };
 
 /** Auditoria de custo urgente — breakdown por etapa, pedido explicitamente pelo usuário. Cada
@@ -173,6 +178,7 @@ export type CreativeEngineCostBreakdown = {
 
 export type GptCreativeEngineResult = {
   engineMode: "gpt";
+  compositionMode?: "standard" | "editorial_experimental";
   directorModel?: string;
   imageModel?: string;
   creativeContext: CreativeContext;
@@ -601,6 +607,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
   function fail(error: string, errorCode: string, extra: Partial<GptCreativeEngineResult> = {}): GptCreativeEngineResult {
     return {
       engineMode: "gpt",
+      compositionMode: input.experimentalEditorialMode ? "editorial_experimental" : "standard",
       directorModel,
       imageModel,
       creativeContext: context,
@@ -731,6 +738,158 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       baseWithAssetsBuffer = await fetchAsBuffer(uri);
     } catch (error) {
       return fail(`Falha ao baixar a imagem gerada: ${error instanceof Error ? error.message : "erro desconhecido"}.`, "IMAGE_DOWNLOAD_FAILED", { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
+    }
+
+    if (input.experimentalEditorialMode) {
+      if (!deps.renderEditorialCreative) {
+        return fail(
+          "EDITORIAL_RENDERER_MISSING: experimentalEditorialMode=true exige renderEditorialCreative injetado. O motor atual foi preservado; o caminho editorial nao cai silenciosamente no compositor antigo.",
+          "EDITORIAL_RENDERER_MISSING",
+          { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds },
+        );
+      }
+
+      const editorialAssets: { role: CreativePlanAssetRole; url: string; buffer: Buffer }[] = [];
+      for (const asset of [productAsset, screenshotAsset, logoAsset].filter((candidate): candidate is NonNullable<typeof productAsset> => Boolean(candidate))) {
+        try {
+          editorialAssets.push({ role: asset.role, url: asset.url, buffer: await fetchAsBuffer(asset.url) });
+        } catch (error) {
+          return fail(
+            `EDITORIAL_ASSET_DOWNLOAD_FAILED: falha ao baixar asset real "${asset.role}" para composicao editorial: ${error instanceof Error ? error.message : "erro desconhecido"}.`,
+            "EDITORIAL_ASSET_DOWNLOAD_FAILED",
+            { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds },
+          );
+        }
+      }
+
+      let editorial: RenderEditorialCreativeResult;
+      try {
+        editorial = await deps.renderEditorialCreative({
+          baseImageBuffer: baseWithAssetsBuffer,
+          context,
+          plan: planForGeneration,
+          assets: editorialAssets,
+        });
+      } catch (error) {
+        return fail(
+          `EDITORIAL_COMPOSITION_FAILED: falha no compositor editorial experimental: ${error instanceof Error ? error.message : "erro desconhecido"}.`,
+          "EDITORIAL_COMPOSITION_FAILED",
+          { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds },
+        );
+      }
+
+      const editorialCompositionSteps: CompositionStep[] = [
+        {
+          step: "editorial_geometry_validation",
+          ok: editorial.geometry.valid,
+          detail: editorial.geometry.valid
+            ? `Geometria editorial validada (${editorial.family}); ${editorial.geometry.boxes.length} componente(s) medido(s).`
+            : `Geometria editorial reprovada (${editorial.family}): ${editorial.geometry.issues.map((issue) => `${issue.code}: ${issue.message}`).join("; ")}`,
+        },
+      ];
+      if (!editorial.geometry.valid) {
+        return fail(
+          "EDITORIAL_GEOMETRY_INVALID: o compositor editorial detectou overflow/colisao/mascara antes de publicar a peca.",
+          "EDITORIAL_GEOMETRY_INVALID",
+          { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, compositionSteps: editorialCompositionSteps },
+        );
+      }
+      editorialCompositionSteps.push({
+        step: "editorial_composition",
+        ok: true,
+        detail: `Familia editorial "${editorial.family}" renderizada; roles compostos: ${editorial.compositedAssetRoles.length > 0 ? editorial.compositedAssetRoles.join(", ") : "nenhum"}.`,
+      });
+
+      const uploaded = await deps.objectStorage.put({ key: buildObjectKey(input.tenantId, "editorial-final"), body: editorial.buffer, contentType: "image/jpeg" });
+      const dimensions = await deps.readImageDimensions(editorial.buffer);
+      const finalImageWidth = dimensions.width ?? 0;
+      const finalImageHeight = dimensions.height ?? 0;
+
+      if (budgetExceeded()) {
+        return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, compositionSteps: editorialCompositionSteps, finalImageUrl: uploaded.url, finalImageWidth, finalImageHeight });
+      }
+
+      const renderedTexts = editorial.renderedTextZones.map((zone) => zone.text);
+      const planForGate: CreativePlan = {
+        ...plan,
+        textZones: editorial.renderedTextZones,
+        allowedRenderedTexts: [...new Set([...plan.allowedRenderedTexts, ...renderedTexts])],
+      };
+      const qualityGate = await evaluateCreativeQualityGate(deps.creativeBrain, {
+        finalImageUrl: uploaded.url,
+        finalImageWidth,
+        finalImageHeight,
+        expectedAspectRatio: context.format,
+        compositedAssetRoles: editorial.compositedAssetRoles,
+        context,
+        plan: planForGate,
+        specialistId: SPECIALIST_ID,
+        onCost: (response) => track("technicalQualityGate", response),
+      });
+
+      if (qualityGate.verdict !== "pass") {
+        return fail("CREATIVE_QUALITY_GATE_NOT_PASSED: o caminho editorial experimental gerou a peca, mas o Quality Gate tecnico reprovou.", "CREATIVE_QUALITY_GATE_NOT_PASSED", {
+          creativePlan: planForGate,
+          finalImagePrompt: imagePrompt,
+          qualityGate,
+          repairRounds,
+          compositionSteps: editorialCompositionSteps,
+          finalImageUrl: uploaded.url,
+          finalImageWidth,
+          finalImageHeight,
+        });
+      }
+
+      if (budgetExceeded()) {
+        return failBudgetExceeded({ creativePlan: planForGate, finalImagePrompt: imagePrompt, qualityGate, repairRounds, compositionSteps: editorialCompositionSteps, finalImageUrl: uploaded.url, finalImageWidth, finalImageHeight });
+      }
+      const visualQualityScore = await evaluateVisualQualityScore(deps.creativeBrain, {
+        finalImageUrl: uploaded.url,
+        plan: planForGate,
+        brandColors: context.brandColors,
+        specialistId: SPECIALIST_ID,
+        onCost: (response) => track("visualQualityScore", response),
+      });
+      if (visualQualityScore?.requiresRepair) {
+        return fail("CREATIVE_VISUAL_QUALITY_BELOW_THRESHOLD: o caminho editorial passou no gate tecnico, mas o score visual pediu reparo; nesta integracao experimental o motor para para avaliacao em vez de gastar nova rodada automaticamente.", "CREATIVE_VISUAL_QUALITY_BELOW_THRESHOLD", {
+          creativePlan: planForGate,
+          finalImagePrompt: imagePrompt,
+          qualityGate,
+          visualQualityScore,
+          repairRounds,
+          compositionSteps: editorialCompositionSteps,
+          finalImageUrl: uploaded.url,
+          finalImageWidth,
+          finalImageHeight,
+        });
+      }
+
+      return {
+        engineMode: "gpt",
+        compositionMode: "editorial_experimental",
+        directorModel,
+        imageModel,
+        creativeContext: context,
+        creativePlan: planForGate,
+        finalImagePrompt: imagePrompt,
+        generationMethod,
+        productRenderDecision,
+        assetsUsed: editorialAssets.map((asset) => ({ role: asset.role, url: asset.url })),
+        compositedAssetRoles: editorial.compositedAssetRoles,
+        compositionSteps: editorialCompositionSteps,
+        qualityGate,
+        visualQualityScore,
+        chosenCreativeDirection,
+        repairRounds,
+        finalImageUrl: uploaded.url,
+        finalImageWidth,
+        finalImageHeight,
+        publishable: true,
+        estimatedCostUsd,
+        costBreakdown,
+        latencyMs: Math.max(latencyMs, (deps.now?.() ?? new Date()).getTime() - startedAt),
+        warnings,
+      };
     }
 
     // ETAPA 3 (Rodada 4, benchmark de qualidade criativa) — achado do smoke de produção: pedir ao
@@ -1128,6 +1287,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         if (!visualQualityScore || !visualQualityScore.requiresRepair) {
           return {
             engineMode: "gpt",
+            compositionMode: "standard",
             directorModel,
             imageModel,
             creativeContext: context,

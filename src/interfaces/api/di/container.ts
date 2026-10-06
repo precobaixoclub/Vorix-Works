@@ -143,6 +143,7 @@ import type { CreativeEngineRunRepositoryPort } from "../../../application/ports
 import { compositeLogoOntoImage } from "../../../infrastructure/media/logo-compositor.js";
 import { compositeScreenshotIntoDeviceMockup } from "../../../infrastructure/media/screenshot-mockup-compositor.js";
 import { renderCreativePlanTextZones } from "../../../infrastructure/rendering/render-creative-plan-text-zones.js";
+import { renderEditorialCreative } from "../../../infrastructure/rendering/editorial-creative-renderer.js";
 import { computeAssetSuitabilityScore } from "../../../infrastructure/image-processing/product-background.js";
 import { computeRegionPixelStats, applyLocalBlur, applyLocalScrim, extractRegionBuffer } from "../../../infrastructure/image-processing/region-pixel-stats.js";
 import sharp from "sharp";
@@ -584,6 +585,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     // Migração "GPT como motor criativo único" (PR 6/9) — default do container (sem config)
     // preserva o motor legado, espelhando `DEFAULT_EXECUTION_FEATURE_FLAGS`.
     creativeEngineGptEnabled: config?.execution.creativeEngineGptEnabled ?? false,
+    creativeEngineEditorialExperimentalEnabled: config?.execution.creativeEngineEditorialExperimentalEnabled ?? false,
     legacyCreativeEngineEnabled: config?.execution.legacyCreativeEngineEnabled ?? true,
   };
   // Módulo Conversas (Fase 1) — `enabled=false` (padrão) é o kill switch global (ver
@@ -1039,6 +1041,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     compositeLogo: compositeLogoOntoImage,
     compositeScreenshot: compositeScreenshotIntoDeviceMockup,
     renderTextZones: renderCreativePlanTextZones,
+    renderEditorialCreative,
     computeAssetSuitability: computeAssetSuitabilityScore,
     readImageDimensions: readCreativeImageDimensions,
     computeRegionPixelStats,
@@ -1051,6 +1054,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     },
     referenceIntelligenceExtractor,
     creativeEngineRunRepository: repositories.creativeEngineRunRepository,
+    editorialExperimentalEnabled: executionFeatureFlags.creativeEngineEditorialExperimentalEnabled,
     resolveProductionSettings,
     resolveBrandMaterials,
     resolveBrandProfile,

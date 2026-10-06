@@ -1,13 +1,14 @@
 # Correções do Creative Engine — Rodada 4 (parcial)
 
-> Status: ETAPAS 1, 2, 4, 3, 3.1 e 3.2 — implementadas, testadas, verificadas e **já em produção**
-> (ETAPA 3.2 no commit `850ac04`, smoke de produção confirmado — revelou os 3 gaps que definem o
-> escopo da ETAPA 3.3). ETAPA 3.3 ("fechar o bloco 3.x tornando a peça efetivamente publicável" —
-> ver seção própria abaixo) — implementada e testada localmente (typecheck/build/suíte completa/
-> architecture-check/smoke local, todos PASS), **commitada mas AINDA NÃO deployada** (aguardando
-> autorização explícita, conforme instruído nesta rodada). ETAPAS 5 e 6 (convergência de Brand
-> Profile, novo benchmark de 13 cenários) **não foram iniciadas**. Por isso, **o Creative Engine
-> NÃO é declarado resolvido** ao final deste documento — ver seção de classificação.
+> Status: ETAPAS 1, 2, 4, 3, 3.1, 3.2 e 3.3 — implementadas, testadas e **já em produção** (ETAPA
+> 3.3 no commit `d3e6466`). Smoke real de produção da ETAPA 3.3 executado (2 execuções, limite do
+> brief): o mecanismo de segurança `CREATIVE_PLAN_REPEAT_INVALID` funcionou corretamente (zero
+> custo de imagem desperdiçado), mas o Director real não produziu um `creative_plan` válido desta
+> vez — as mecânicas específicas da ETAPA 3.3 (reverificação global residual, VISUAL TEXT BUDGET,
+> `planForGate`, gate técnico) **não foram exercitadas em produção nesta rodada** (`NOT_TRIGGERED`,
+> ver seção própria). **`COMPOSITION_BLOCK_3X = STILL_OPEN`** — o bloco 3.x NÃO está encerrado.
+> ETAPAS 5 e 6 (convergência de Brand Profile, novo benchmark de 13 cenários) **não foram
+> iniciadas**. Por isso, **o Creative Engine NÃO é declarado resolvido** ao final deste documento.
 
 ## Princípio seguido
 
@@ -724,3 +725,78 @@ STAGE_3_3_READY_FOR_PRODUCTION = YES — verificado localmente (typecheck/build/
 para produção, não declaro o Creative Engine resolvido — o smoke real de produção (deploy não
 autorizado nesta rodada) ainda precisa confirmar contra o modelo real o que já está comprovado
 localmente.**
+
+## Deploy e smoke real de produção — ETAPA 3.3 (commit `d3e6466`)
+
+Deployado em produção (commit `d3e6466`, SHA anterior `850ac04` registrada para rollback) após
+autorização explícita. Health check pós-deploy: WEB/API/WORKER/POSTGRES todos `HEALTHY`, sha256
+dos arquivos alterados conferido byte-a-byte entre local e servidor, `.env.zuno` preservado, sem
+migration nova.
+
+**Execução 1 (fixture bug, não conta como teste do mecanismo):** a URL de logo do fixture
+(`placehold.co/..?text=LOGO`, sem extensão) serviu um formato que a API de visão da OpenAI
+rejeitou (`invalid_image_format`) — `requestCreativePlan` falhou nas duas tentativas (ambas
+`status: failed`, nunca chegaram a `parseCreativePlan`), zero custo de imagem. Corrigido no
+fixture (`.png` explícito na URL) e re-executado — bug do script de smoke, não do Creative Engine.
+
+**Execução 2 (real, dentro do limite de 2):** `director` processou normalmente (custo
+`$0.0025`), mas o `creative_plan` inicial veio com `layoutPlan` estruturalmente malformado NAS
+DUAS tentativas, com a MESMA causa diagnosticada
+(`diagnoseCreativePlanInvalidity`: `campo "layoutPlan" inválido — alguma zona tem kind/rect/
+priority/rationale malformado.`) — classificado corretamente como `CREATIVE_PLAN_REPEAT_INVALID`,
+exatamente o mecanismo da ETAPA 3.2/3.3 funcionando como projetado: nenhuma imagem gerada, custo
+total de apenas `$0.0028`, diagnóstico preciso registrado. **O pipeline nunca chegou a produzir um
+`creative_plan` válido**, então nenhum dos mecanismos específicos da ETAPA 3.3 (reverificação
+global residual, VISUAL TEXT BUDGET, `planForGate`, `technicalQualityGate`) foi exercitado nesta
+rodada — honestamente reportado como `NOT_TRIGGERED`, nunca fabricado como `PASS`.
+
+Com as 2 execuções controladas já usadas (limite do brief), nenhuma terceira tentativa foi feita.
+Produção segue saudável (confirmado health check pós-smoke), nenhum rollback necessário (rejeição
+de qualidade isolada na geração do plano, nunca uma falha estrutural do pipeline/infraestrutura).
+
+### Bloco de classificação — Deploy e smoke real ETAPA 3.3
+
+```
+DEPLOY_COMMIT = d3e6466
+PRODUCTION_DEPLOY = PASS
+WEB = HEALTHY
+API = HEALTHY
+WORKER = HEALTHY
+IMAGE_PROVIDER = HEALTHY (confirmado indiretamente — a chamada de texto ao provider OpenAI completou normalmente; nenhuma geração de imagem foi tentada nesta rodada, nunca chegou lá)
+GLOBAL_RESIDUAL_BBOX_RUNTIME = NOT_TRIGGERED
+RESIDUAL_SECOND_PASS_RUNTIME = NOT_TRIGGERED
+GLOBAL_FINAL_RECHECK_RUNTIME = NOT_TRIGGERED
+VISUAL_TEXT_BUDGET_RUNTIME = NOT_TRIGGERED
+DENSITY_PREFLIGHT_RUNTIME = NOT_TRIGGERED
+OPTIONAL_DEGRADATION_RUNTIME = NOT_TRIGGERED
+REQUIRED_FACTS_PRESERVED = NOT_TRIGGERED (nada a preservar — nenhum plano válido chegou a existir)
+OVERDENSE_LAYOUT_RUNTIME = NOT_TRIGGERED
+PLAN_FOR_GATE_RUNTIME = NOT_TRIGGERED
+TECHNICAL_GATE_EXECUTED = NO
+TECHNICAL_GATE_RESULT = NOT_EXECUTED
+DENSE_REAL_PIECE_PUBLISHABLE = NO
+CREATIVE_ENGINE_SMOKE = PASS (mecanismo de segurança funcionou exatamente como projetado: detectou plano estruturalmente inválido, nunca publicou algo quebrado, zero custo de imagem desperdiçado — mas NÃO validou as mecânicas específicas da ETAPA 3.3, que dependem de um plano válido rio abaixo)
+ROLLBACK_REQUIRED = NO
+COMPOSITION_BLOCK_3X = STILL_OPEN (sem evidência runtime de uma peça densa real publicável — critério do ponto 23 do brief não satisfeito)
+```
+
+### Entrega
+
+1. **SHA anterior:** `850ac04` (ETAPA 3.2, confirmada em produção antes do deploy).
+2. **SHA publicado:** `d3e6466` (ETAPA 3.3, confirmado por sha256sum byte-a-byte).
+3. **Health checks:** WEB=200, API `{"status":"ok"}`, WORKER healthy, POSTGRES healthy — antes E depois do smoke.
+4. **Zonas de texto iniciais:** nenhuma — o `creative_plan` nunca chegou a ser parseado com sucesso (falhou em `layoutPlan` nas duas tentativas).
+5. **Required:** N/A (sem plano válido).
+6. **Optional:** N/A (sem plano válido).
+7. **Removidas:** nenhuma (preflight de densidade nunca rodou — depende de um plano já parseado).
+8. **Global residual apareceu?** Não chegou a essa etapa.
+9. **Residual second pass usado?** Não.
+10. **Resultado do global final recheck:** N/A — não executado.
+11. **Geometria final:** N/A — não existe (sem plano válido, sem imagem gerada).
+12. **`planForGate` executou?** Não — nunca houve geometria pra montar.
+13. **`technicalQualityGate` executou?** Não.
+14. **Peça ficou publicável?** Não.
+15. **Gerações/reparos:** 0 gerações de imagem; 0 rodadas de reparo (a falha aconteceu ANTES do loop de reparo do gate técnico — é a mesma proteção `CREATIVE_PLAN_REPEAT_INVALID` da ETAPA 3.2, que nunca tenta uma 3ª vez o mesmo prompt).
+16. **Custo:** execução 1 (fixture com bug) `$0.00028`; execução 2 (real) `$0.0028` — total `$0.0031` nas duas execuções combinadas, nenhum custo de imagem em nenhuma delas.
+17. **Novo defeito encontrado?** Sim, mas de PROMPT/CONTEÚDO, não de infraestrutura: o Director real (`gpt-4o`) produziu `layoutPlan` malformado duas vezes seguidas para este fixture específico, mesmo com o hardening de prompt desta rodada (exemplo concreto) — o mecanismo de diagnóstico/retry funcionou perfeitamente (zero desperdício), mas não teve sucesso em corrigir o Director desta vez. Nenhum defeito de regressão da ETAPA 3.3 em si foi observado (as mecânicas dela nunca chegaram a ser exercitadas).
+18. **Bloco 3.x pode ser encerrado?** **Não** — sem evidência runtime de uma peça densa real publicável (critério explícito do brief, ponto 23), `COMPOSITION_BLOCK_3X = STILL_OPEN`. O mecanismo de segurança (nunca publica algo quebrado, nunca desperdiça custo) está confirmado funcionando em produção; a demonstração completa de ponta a ponta (plano válido → imagem → simplificação → gate → publicável) permanece pendente de uma nova tentativa de smoke (fora desta rodada, que já usou as 2 execuções permitidas).

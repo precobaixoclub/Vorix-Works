@@ -1,17 +1,16 @@
 # Correções do Creative Engine — Rodada 4 (parcial)
 
-> Status: ETAPAS 1, 2, 4, 3, 3.1, 3.2, 3.3 e 3.3.1 — implementadas, testadas e **já em produção**
-> (commit `4e3102f`). O smoke real DEFINITIVO confirmou toda a infraestrutura da ETAPA 3.3
-> funcionando de ponta a ponta em produção, mas a revisão visual humana encontrou um texto
-> fantasma residual visível ("COMPRE AGORA" vazando do cartão do CTA) que a visão automatizada não
-> capturou. **ETAPA 3.3.2** (ver seção própria) identificou a causa raiz por medição de pixel na
-> imagem real (cobertura HORIZONTAL do tratamento insuficiente pra um banner quase full-width) e
-> implementou `widenToCommercialBand` — validado localmente (sem gastar API) contra a MESMA imagem
-> real: elimina os fragmentos de palavra nas bordas, resíduo bem menor (contorno de letra)
-> permanece como limitação conhecida. **Commitada, AINDA NÃO deployada.**
-> **`COMPOSITION_BLOCK_3X = STILL_OPEN`** — infraestrutura confirmada, sucesso de geração
-> pendente de novo smoke completo. ETAPAS 5 e 6 **não foram iniciadas**. **O Creative Engine NÃO é
-> declarado resolvido.**
+> Status: ETAPAS 1, 2, 4, 3, 3.1, 3.2, 3.3, 3.3.1 e 3.3.2 — implementadas, testadas e **já em
+> produção** (commit `a752cea`). O smoke real da ETAPA 3.3.2 (2 execuções, limite usado por
+> completo) confirmou `widenToCommercialBand` funcionando para achados zone-matched, mas **NENHUMA
+> das duas execuções publicou** — ambas esgotaram a reparo em `UNRECOVERABLE_GLOBAL_TEXT` por
+> achados SEM zona correspondente (`"LOGO"`, fragmentos do nome da marca do fixture) que a
+> ampliação de largura não cobre, e por haver mais ocorrências de texto espúrio do que o único
+> passe residual permitido consegue tratar. Sem peça final, nenhuma avaliação visual foi possível.
+> Causa registrada, **nenhuma correção nova implementada** (conforme instruído). **Technical Gate
+> nunca executou em nenhuma das duas execuções** (custo $0 confirmado — honestamente
+> `NOT_EXECUTED`, nunca fabricado como PASS). **`COMPOSITION_BLOCK_3X = STILL_OPEN`**. ETAPAS 5 e
+> 6 **não foram iniciadas**. **O Creative Engine NÃO é declarado resolvido.**
 
 ## Princípio seguido
 
@@ -1116,3 +1115,70 @@ DENSE_PIECE_PUBLISHABLE = NOT_RE_TESTED (correção validada localmente com a im
 bloco 3.x), `COMPOSITION_BLOCK_3X` permanece `STILL_OPEN` — a validação final (`DENSE_PIECE_
 PUBLISHABLE`) depende de um novo smoke completo com geração de imagem real, pendente de
 autorização explícita de deploy.**
+
+## Deploy e smoke real — ETAPA 3.3.2 (commit `a752cea`)
+
+Deployado em produção após autorização explícita (SHA anterior `4e3102f`, backup criado, sem
+migration nova, `.env.zuno` preservado, sha256 conferido byte-a-byte, `widenToCommercialBand`
+confirmado no dist deployado, health check PASS em WEB/API/WORKER/POSTGRES antes e depois).
+
+**As 2 execuções permitidas foram usadas — NENHUMA das duas publicou.** Ambas falharam no MESMO
+ponto: `CREATIVE_QUALITY_GATE_NOT_PASSED` / `UNRECOVERABLE_GLOBAL_TEXT`, esgotando a única rodada
+de reparo (`MAX_CREATIVE_REPAIR_ROUNDS=1`) sem nunca chegar ao `technicalQualityGate`
+(`costBreakdown.technicalQualityGate = 0` nas duas execuções, confirmando honestamente
+`NOT_EXECUTED`, nunca fabricado como PASS). Sem imagem final publicável, **não há peça pra
+avaliação visual** nesta rodada — a seção de revisão visual do brief não pôde ser executada por
+falta de artefato.
+
+### Causa específica (registrada, nenhuma correção nova implementada)
+
+O mecanismo da ETAPA 3.3.2 (`widenToCommercialBand`) funcionou exatamente como projetado nos
+achados que ele cobre: nos logs das duas execuções, achados zone-matched ("R$149,00"/"Compre
+agora") foram neutralizados localmente sem precisar de nova geração. **Mas esta rodada revelou
+dois gaps DIFERENTES, fora do escopo da correção da ETAPA 3.3.2:**
+
+1. **Achados SEM zona correspondente nunca se beneficiam da ampliação de largura.** A reverificação
+   global encontrou, nas duas execuções, textos não autorizados SEM `matchedZoneKind` nenhum —
+   `"LOGO"` (execução 1), e `"TRA"`/`"QA"`/`"Fixture"` (execução 2, fragmentos aparentes de
+   "Fixture QA Loja", o nome da marca do fixture). `widenToCommercialBand` só amplia quando o
+   achado corresponde a uma zona comercial conhecida — estes não correspondem a nenhuma, então
+   caíram no tratamento antigo (só a bbox detectada), sem a garantia estrutural nova.
+2. **Mais de uma rodada residual teria sido necessária.** Em ambas execuções, mesmo depois do
+   ÚNICO passe residual permitido (brief original, ETAPA 3.3: "INICIAL + 1 RESIDUAL, nunca um
+   loop") tratar os achados daquele momento, a reverificação GLOBAL FINAL ainda encontrou algo —
+   ou seja, havia uma 3ª ocorrência (ou mais) de texto espúrio que só apareceu DEPOIS do passe
+   residual, e o limite de 1 passe (deliberado, para nunca criar um loop) esgotou antes de cobri-la.
+
+**Suspeita adicional, não confirmada**: o achado `"LOGO"` (idêntico ao observado no smoke anterior
+da ETAPA 3.3) e os fragmentos do nome da marca ("Fixture"/"QA") sugerem que o FIXTURE de QA em si
+(logo placeholder com a palavra "LOGO" literalmente escrita nele, nome de marca "Fixture QA Loja")
+pode estar introduzindo ruído que um logo/marca real não produziria — o modelo pode estar
+incorporando fragmentos do que vê/lê no contexto (referência da logo, nome da marca) como texto
+decorativo na cena gerada. Não investigado a fundo nesta rodada (fora do escopo — "não implementar
+automaticamente uma nova correção").
+
+### Bloco de classificação — Deploy e smoke ETAPA 3.3.2
+
+```
+DEPLOY_COMMIT = a752cea
+PRODUCTION_HEALTH = HEALTHY
+CREATIVE_PLAN_VALID = YES (nas duas execuções, 1ª tentativa — fix da ETAPA 3.3.1 seguiu funcionando)
+TEXT_BAND_COVERAGE = PARTIAL (funcionou para achados zone-matched; achados sem zona correspondente não se beneficiam)
+GHOST_TEXT_VISIBLE = NOT_ASSESSABLE (nenhuma peça final existe pra inspecionar)
+COMMERCIAL_TEXT_CORRECT = N/A (sem peça final)
+PRODUCT_AND_LOGO_PRESERVED = N/A (sem peça final)
+GLOBAL_RECHECK = PASS (funcionou corretamente — reportou honestamente "ainda há texto", nunca fabricou "limpo")
+TECHNICAL_GATE = NOT_EXECUTED (nas duas execuções — nunca chegou lá, custo = $0 confirmado)
+VISUAL_QUALITY = FAILED (sem peça publicável, não pode ser PASS)
+DENSE_PIECE_PUBLISHABLE = NO
+IMAGE_GENERATIONS = 4 (2 por execução — geração inicial + 1 regeneração de reparo, dentro do limite interno já existente; 2 execuções no total)
+TOTAL_COST_USD = 0.29757 (0.14823 + 0.14934)
+COMPOSITION_BLOCK_3X = STILL_OPEN
+```
+
+**Limitações remanescentes registradas**: (1) `widenToCommercialBand` não cobre achados sem
+`matchedZoneKind`; (2) o limite de 1 passe residual pode não ser suficiente quando há 3+
+ocorrências espalhadas de texto espúrio; (3) possível ruído introduzido pelo próprio fixture de
+QA (logo placeholder com texto literal, nome de marca curto) nunca confirmado contra um logo/marca
+real. Nenhuma correção nova foi implementada nesta rodada, conforme instruído explicitamente
+("não implementar automaticamente uma nova correção, registrar a causa específica").

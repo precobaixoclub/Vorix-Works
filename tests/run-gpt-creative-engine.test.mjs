@@ -1101,7 +1101,8 @@ test("runGptCreativeEngine (ETAPA 3.3): layoutPlan malformado na 1ª tentativa d
   };
   const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
 
-  assert.match(secondPrompt, /campo "layoutPlan" inválido/);
+  // ETAPA 3.3.1 — diagnóstico agora aponta a zona/campo exatos, não mais a categoria genérica.
+  assert.match(secondPrompt, /layoutPlan\[0\]\.kind/);
   assert.equal(result.error, undefined, `esperava que a 2ª tentativa produzisse um plano válido, erro: ${result.error}`);
   assert.equal(result.publishable, true);
 }));

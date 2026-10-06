@@ -527,6 +527,16 @@ export function buildCreativePlanPrompt(context: CreativeContext, chosenDirectio
     // sem relaxar NENHUMA validação do parser (`parseLayoutPlan` continua rejeitando o plano
     // inteiro se um item vier malformado, de propósito).
     "- Formato EXATO de cada item de `layoutPlan` (os 4 campos são OBRIGATÓRIOS, sempre): `{\"kind\": \"hero\", \"rect\": {\"xPct\": 10, \"yPct\": 10, \"widthPct\": 50, \"heightPct\": 40}, \"priority\": 1, \"rationale\": \"produto real ocupa o quadrante central-esquerdo, foco visual principal\"}`. `kind` precisa ser EXATAMENTE um destes 6 valores: \"hero\"|\"headline\"|\"cta\"|\"logo\"|\"support\"|\"negativeSpace\" — nunca outro nome. `rect` precisa ter os 4 números (`xPct`/`yPct`/`widthPct`/`heightPct`) dentro de 0-100, com `xPct+widthPct<=100` e `yPct+heightPct<=100`. `priority` é um número (1 = maior prioridade visual). `rationale` nunca pode ser uma string vazia.",
+    // ETAPA 3.3.1 (Rodada 4) — achado real, confirmado 10/10 em testes isolados contra o modelo
+    // real: o Director usava SISTEMATICAMENTE `textZones[].kind` (ex.: "price", "subheadline",
+    // "discount", "url", "badge") dentro de `layoutPlan[].kind`, um vocabulário FECHADO e MENOR que
+    // não inclui nenhum desses valores (ver `CREATIVE_LAYOUT_ZONE_KINDS`) — rejeitado pelo parser
+    // 100% das vezes, sempre pela mesma causa. A confusão é compreensível: os dois vocabulários
+    // compartilham "headline"/"cta", então o modelo generaliza e assume que qualquer kind de
+    // conteúdo serve nos dois lugares. Esta regra existe especificamente para desfazer essa
+    // confusão, nunca para relaxar a validação (que continua rejeitando qualquer valor fora da
+    // lista de 6).
+    "- ATENÇÃO — `layoutPlan[].kind` usa um vocabulário DIFERENTE e MENOR do que `textZones[].kind`: APENAS \"hero\"|\"headline\"|\"cta\"|\"logo\"|\"support\"|\"negativeSpace\", nunca outro valor. É um ERRO COMUM (e sempre rejeitado) usar aqui um `kind` de `textZones` como \"price\", \"subheadline\", \"discount\", \"url\" ou \"badge\" — `layoutPlan` é só o MAPA DE MASSA VISUAL, não a lista de textos. Para QUALQUER conteúdo que não seja literalmente headline/cta/logo (ex.: preço, subheadline, desconto, URL, badge, produto, screenshot), use `\"support\"` (elemento secundário) ou `\"hero\"` (quando for o foco visual principal da peça) — nunca o nome do conteúdo em si.",
     "- `assetPlacements`: para cada asset REAL (produto/screenshot/logo) da lista acima, defina a geometria exata (retângulo em percentual do canvas final, 0-100) de onde ele vai entrar na composição — essa geometria será usada por composição determinística depois, então precisa ser definida ANTES da imagem existir, nunca improvisada depois.",
     // Histórico: a orientação de Rodada 2/3 preferia `"image_model"` para CTA/preço/desconto/URL/
     // badge (ganho visual de integração, evitando "caixa colada"). Revisão de Rodada 4 (benchmark
@@ -678,6 +688,44 @@ function parseTextZones(value: unknown): CreativePlanTextZone[] | undefined {
     });
   }
   return result;
+}
+
+/** ETAPA 3.3.1 (Rodada 4) — achado real: `parseLayoutPlan` rejeitava o `layoutPlan` inteiro com
+ * um único motivo genérico ("alguma zona tem kind/rect/priority/rationale malformado"), nunca
+ * dizendo QUAL zona, QUAL campo, nem QUAL valor recebido — insuficiente pra um repair-context
+ * acionável (`diagnoseCreativePlanInvalidity`/`buildCreativePlanRepairPrompt` precisam da causa
+ * EXATA, não uma categoria). Reaproveita as MESMAS validações de `parseLayoutPlan`, na MESMA
+ * ordem, mas aponta a zona (índice) e o campo/valor exatos que falharam — nunca muda o que
+ * `parseLayoutPlan` aceita ou rejeita, só descreve a primeira falha com precisão. */
+function diagnoseLayoutPlanInvalidity(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return "campo \"layoutPlan\" precisa ser um array.";
+  for (let index = 0; index < value.length; index++) {
+    const item = value[index];
+    if (typeof item !== "object" || item === null) {
+      return `layoutPlan[${index}] não é um objeto.`;
+    }
+    const record = item as Record<string, unknown>;
+    if (!isCreativeLayoutZoneKind(record.kind)) {
+      // Achado real (10/10 em teste isolado): o Director usa sistematicamente um `kind` de
+      // `textZones` (price/subheadline/discount/url/badge) aqui — vocabulário ERRADO, não um
+      // valor aleatório. Nomeia esse caso especificamente quando detectado.
+      const looksLikeTextZoneKind = typeof record.kind === "string" && (CREATIVE_PLAN_TEXT_ZONE_KINDS as readonly string[]).includes(record.kind) && !isCreativeLayoutZoneKind(record.kind);
+      return looksLikeTextZoneKind
+        ? `layoutPlan[${index}].kind = "${record.kind}" é um kind de "textZones" (vocabulário ERRADO para layoutPlan) — layoutPlan só aceita hero/headline/cta/logo/support/negativeSpace; use "support" ou "hero" para representar esse conteúdo no mapa de composição.`
+        : `layoutPlan[${index}].kind = ${JSON.stringify(record.kind)} inválido — precisa ser exatamente um de: hero, headline, cta, logo, support, negativeSpace.`;
+    }
+    if (!isValidCreativePlanRect(record.rect)) {
+      return `layoutPlan[${index}].rect = ${JSON.stringify(record.rect)} inválido — precisa ter xPct/yPct/widthPct/heightPct numéricos dentro de 0-100, com xPct+widthPct<=100 e yPct+heightPct<=100.`;
+    }
+    if (typeof record.priority !== "number" || !Number.isFinite(record.priority)) {
+      return `layoutPlan[${index}].priority = ${JSON.stringify(record.priority)} inválido — precisa ser um número.`;
+    }
+    if (typeof record.rationale !== "string" || !record.rationale.trim()) {
+      return `layoutPlan[${index}].rationale = ${JSON.stringify(record.rationale)} inválido — precisa ser uma string não-vazia.`;
+    }
+  }
+  return undefined;
 }
 
 function parseLayoutPlan(value: unknown): CreativePlanLayoutZone[] | undefined {
@@ -914,7 +962,11 @@ export function diagnoseCreativePlanInvalidity(raw: string): string | undefined 
     if (artDirection === undefined) return "campo \"artDirection\" ausente, incompleto, ou algum campo é só uma frase vaga banida (ex.: \"visual moderno\", \"premium\") em vez de uma decisão concreta e específica desta peça.";
 
     const layoutPlan = parseLayoutPlan(parsed.layoutPlan);
-    if (layoutPlan === undefined) return "campo \"layoutPlan\" inválido — alguma zona tem kind/rect/priority/rationale malformado.";
+    if (layoutPlan === undefined) {
+      // ETAPA 3.3.1 — causa PRECISA (zona/campo/valor exatos), nunca a categoria genérica
+      // anterior — ver `diagnoseLayoutPlanInvalidity`.
+      return diagnoseLayoutPlanInvalidity(parsed.layoutPlan) ?? "campo \"layoutPlan\" inválido — alguma zona tem kind/rect/priority/rationale malformado.";
+    }
 
     return undefined;
   } catch {

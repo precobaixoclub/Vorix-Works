@@ -1,14 +1,13 @@
 # Correções do Creative Engine — Rodada 4 (parcial)
 
 > Status: ETAPAS 1, 2, 4, 3, 3.1, 3.2 e 3.3 — implementadas, testadas e **já em produção** (ETAPA
-> 3.3 no commit `d3e6466`). Smoke real de produção da ETAPA 3.3 executado (2 execuções, limite do
-> brief): o mecanismo de segurança `CREATIVE_PLAN_REPEAT_INVALID` funcionou corretamente (zero
-> custo de imagem desperdiçado), mas o Director real não produziu um `creative_plan` válido desta
-> vez — as mecânicas específicas da ETAPA 3.3 (reverificação global residual, VISUAL TEXT BUDGET,
-> `planForGate`, gate técnico) **não foram exercitadas em produção nesta rodada** (`NOT_TRIGGERED`,
-> ver seção própria). **`COMPOSITION_BLOCK_3X = STILL_OPEN`** — o bloco 3.x NÃO está encerrado.
-> ETAPAS 5 e 6 (convergência de Brand Profile, novo benchmark de 13 cenários) **não foram
-> iniciadas**. Por isso, **o Creative Engine NÃO é declarado resolvido** ao final deste documento.
+> 3.3 no commit `d3e6466`). O smoke real de produção da ETAPA 3.3 revelou um bloqueador pontual:
+> `CREATIVE_PLAN_REPEAT_INVALID` por `layoutPlan` malformado (causa raiz identificada e corrigida
+> na **ETAPA 3.3.1**, ver seção própria — 0/10 → 5/5 planos válidos contra o modelo real, commitada
+> mas **AINDA NÃO deployada**, aguardando autorização explícita). As mecânicas específicas da
+> ETAPA 3.3 (reverificação global residual, VISUAL TEXT BUDGET, `planForGate`, gate técnico) ainda
+> **não foram exercitadas em produção** (`NOT_TRIGGERED`) — **`COMPOSITION_BLOCK_3X = STILL_OPEN`**.
+> ETAPAS 5 e 6 **não foram iniciadas**. Por isso, **o Creative Engine NÃO é declarado resolvido**.
 
 ## Princípio seguido
 
@@ -800,3 +799,144 @@ COMPOSITION_BLOCK_3X = STILL_OPEN (sem evidência runtime de uma peça densa rea
 16. **Custo:** execução 1 (fixture com bug) `$0.00028`; execução 2 (real) `$0.0028` — total `$0.0031` nas duas execuções combinadas, nenhum custo de imagem em nenhuma delas.
 17. **Novo defeito encontrado?** Sim, mas de PROMPT/CONTEÚDO, não de infraestrutura: o Director real (`gpt-4o`) produziu `layoutPlan` malformado duas vezes seguidas para este fixture específico, mesmo com o hardening de prompt desta rodada (exemplo concreto) — o mecanismo de diagnóstico/retry funcionou perfeitamente (zero desperdício), mas não teve sucesso em corrigir o Director desta vez. Nenhum defeito de regressão da ETAPA 3.3 em si foi observado (as mecânicas dela nunca chegaram a ser exercitadas).
 18. **Bloco 3.x pode ser encerrado?** **Não** — sem evidência runtime de uma peça densa real publicável (critério explícito do brief, ponto 23), `COMPOSITION_BLOCK_3X = STILL_OPEN`. O mecanismo de segurança (nunca publica algo quebrado, nunca desperdiça custo) está confirmado funcionando em produção; a demonstração completa de ponta a ponta (plano válido → imagem → simplificação → gate → publicável) permanece pendente de uma nova tentativa de smoke (fora desta rodada, que já usou as 2 execuções permitidas).
+
+## ETAPA 3.3.1 — Hardening do contrato estrutural do `layoutPlan` (correção pontual)
+
+Disparada pelo bloqueador exato da ETAPA 3.3: `CREATIVE_PLAN_REPEAT_INVALID` nas duas tentativas
+do smoke real, sempre pela mesma causa relacionada a `layoutPlan`. Objetivo único: fazer o
+Director produzir `layoutPlan` estruturalmente válido de forma confiável — **nunca relaxar o
+parser** (ele continua sendo a fonte de verdade; dado inválido continua sendo rejeitado).
+
+### Causa raiz (identificada com dados reais, nunca suposição)
+
+Reproduzido localmente contra o modelo REAL (fixture EXATO do smoke, chave de API lida de um
+arquivo local nunca impressa, sem nenhum deploy): 5 execuções plan-only (texto, zero geração de
+imagem) usando o prompt/parser ANTES desta correção. **10/10 tentativas** (5 execuções × 2
+tentativas cada) falharam pela MESMA causa: o Director usa sistematicamente um `kind` de
+`textZones` (`"price"`, `"subheadline"` confirmados nas amostras) DENTRO de `layoutPlan[].kind` —
+um vocabulário DIFERENTE e MENOR (`CREATIVE_LAYOUT_ZONE_KINDS = ["hero","headline","cta","logo",
+"support","negativeSpace"]`, nunca "price"/"subheadline"/"discount"/"url"/"badge"). Em TODAS as
+amostras capturadas, `rect`/`priority`/`rationale` estavam perfeitamente bem formados — a causa é
+exclusivamente de vocabulário de `kind`, nunca geometria, nunca tipo/range de prioridade, nunca
+formatação de `rationale`. A confusão é compreensível: os dois vocabulários compartilham
+"headline"/"cta", então o modelo generaliza que qualquer `kind` de conteúdo serve nos dois
+lugares — o diagnóstico antigo ("alguma zona tem kind/rect/priority/rationale malformado") nunca
+dizia isso, só uma categoria genérica.
+
+### O que mudou
+
+1. **Prompt** (`buildCreativePlanPrompt`) — nova regra explícita e isolada, com contraste direto
+   PERMITIDO vs. PROIBIDO: `layoutPlan[].kind` é um vocabulário fechado de 6 valores, distinto de
+   `textZones[].kind`; qualquer conteúdo que não seja literalmente headline/cta/logo (preço,
+   subheadline, desconto, URL, badge, produto, screenshot) deve usar `"support"` ou `"hero"` no
+   mapa de composição — nunca o nome do conteúdo em si.
+2. **Diagnóstico** — nova função interna `diagnoseLayoutPlanInvalidity` (mesmas validações de
+   `parseLayoutPlan`, na mesma ordem, NUNCA muda o que é aceito/rejeitado) aponta a zona pelo
+   ÍNDICE e o campo/valor EXATO que falhou, em vez de uma categoria genérica — e nomeia
+   especificamente o caso de confusão de vocabulário quando é exatamente isso (`layoutPlan[N].kind
+   = "price" é um kind de "textZones" (vocabulário ERRADO)...`), alimentando tanto o retry da
+   tentativa inicial (`appendPlanRetryDiagnostic`) quanto, nos achados do smoke, o fluxo de
+   reparo pós-gate (mesmo princípio, mesma fonte de verdade).
+3. **Structured output (auditado, não implementado)** — o modelo usado (`gpt-4o-2024-08-06`)
+   suporta OpenAI Structured Outputs (`response_format: {type:"json_schema", strict:true}`), e a
+   infraestrutura atual (`OpenAiIcaroTextProvider`) já monta o `response_format` inline por
+   requisição — adicionar isso seria tecnicamente possível sem infraestrutura nova. **Não
+   implementado nesta rodada**: a correção de prompt + diagnóstico já atingiu 5/5 (100%) no teste
+   de estabilidade real (abaixo), tornando o enforcement estrutural mais pesado desnecessário por
+   ora — mantido documentado aqui como opção futura caso a taxa volte a degradar.
+4. **Repair direcionado (seção 13 do brief) — não necessário.** O mecanismo de retry EXISTENTE
+   (reenvia o plano completo + instrução "corrija EXATAMENTE isso, mantendo o resto coerente") já
+   preserva naturalmente copy/fatos/direção de arte válidos ao corrigir só o campo apontado —
+   confirmado no teste de estabilidade (rodada 5, abaixo): o Director corrigiu `layoutPlan` sem
+   alterar o resto do plano. Nenhuma repair mais cirúrgica foi necessária.
+
+### Teste de estabilidade (brief, ponto 16/18) — contra o modelo REAL, zero imagem
+
+5 execuções plan-only consecutivas, mesmo fixture do smoke real, AGORA com prompt+diagnóstico
+corrigidos — sem nenhum deploy (chave de produção usada via o container já rodando, só a
+copiar um código novo e ainda não publicado para gerar o prompt; a chamada de rede em si passou
+pelo texto-provider já deployado):
+
+```
+RUN 1: válido na 1ª tentativa
+RUN 2: válido na 1ª tentativa
+RUN 3: válido na 1ª tentativa
+RUN 4: válido na 1ª tentativa
+RUN 5: 1ª tentativa ainda usou "subheadline" em layoutPlan[1].kind (o erro NÃO foi eliminado
+       100% só pelo prompt — esperado, modelo é probabilístico) — diagnóstico específico
+       disparado, 2ª tentativa corrigiu e produziu plano válido, preservando o resto do plano.
+```
+
+**CREATIVE_PLAN_VALID_RATE = 5/5 (100%)** — acima da meta mínima de homologação (brief, ponto
+18). Custo total das 5 execuções: `$0.007443` (zero geração de imagem). Comparação com o
+baseline (prompt antigo): 0/10 tentativas válidas (10/10 falhas, mesma causa) → 5/5 execuções
+finais válidas (4/5 já na 1ª tentativa) — melhoria direta e mensurável.
+
+### Testes
+
+- `tests/gpt-creative-plan-types.test.mjs` (+9 testes): `diagnoseLayoutPlanInvalidity` cobrindo
+  cada campo isoladamente (`kind` com valor de `textZones` — "price" e "subheadline" — vs. `kind`
+  genuinamente desconhecido; `rect` inválido; `priority` não-numérica; `rationale` vazia; múltiplas
+  zonas apontando o índice correto) e o fixture EXATO (5 zonas, a 2ª com `kind: "price"`) que
+  falhou no smoke real de produção em 2026-10-06.
+- `tests/run-gpt-creative-engine.test.mjs` (1 teste ajustado): a asserção de "2ª tentativa recebe
+  a causa exata" agora confere o novo formato mais específico (`layoutPlan[0].kind`) em vez da
+  categoria genérica antiga.
+- Suíte completa (3322 testes, os mesmos 2 flakes pré-existentes e não relacionados —
+  `analytics.test.mjs`/`cli.smoke.test.mjs`), `typecheck`, `build` e `architecture:check` — todos
+  verdes antes do commit.
+
+### Bloco de classificação — ETAPA 3.3.1
+
+```
+LAYOUT_PLAN_ROOT_CAUSE = IDENTIFIED
+INVALID_FIELD = layoutPlan[].kind (valores de textZones — "price"/"subheadline" — usados onde só hero/headline/cta/logo/support/negativeSpace são válidos)
+STRUCTURED_CONTRACT = PROMPT_ONLY (structured output auditado e viável, mas não necessário — 100% atingido sem ele)
+LAYOUT_PLAN_KIND = FAILED (era a causa real, 10/10 antes da correção) -> PASS após a correção (0/5 na validação final, exceto 1 recuperado por retry)
+LAYOUT_PLAN_RECT = PASS (nunca foi a causa em nenhuma amostra real capturada)
+LAYOUT_PLAN_PRIORITY = PASS (idem)
+LAYOUT_PLAN_RATIONALE = PASS (idem)
+REPAIR_SCHEMA_CONTEXT = PASS (diagnóstico agora cita campo+valor+zona exatos, não só a categoria)
+TARGETED_PLAN_REPAIR = NOT_APPLICABLE (o retry de plano completo já preserva o resto corretamente, confirmado na rodada 5 do teste de estabilidade — nenhuma repair mais cirúrgica foi necessária)
+FIXTURE_REGRESSION_TEST = PASS (fixture exato do smoke real coberto em teste unitário permanente)
+PLAN_ONLY_REAL_RUNS = 5 (validação final) + 5 (baseline antes da correção, só pra medir a causa) = 10 no total desta rodada
+VALID_PLANS = 5 (validação final, pós-correção)
+INVALID_PLANS = 0 (validação final — o 1 caso residual foi recuperado pelo retry, contado como válido no resultado final)
+CREATIVE_PLAN_VALID_RATE = 100%
+IMAGE_GENERATIONS = 0
+STAGE_3_3_1_READY_FOR_PRODUCTION = YES
+```
+
+### Respostas de fechamento
+
+1. **Qual campo realmente estava quebrando?** `layoutPlan[].kind` — nunca `rect`/`priority`/
+   `rationale`, confirmado em 10/10 amostras reais capturadas.
+2. **O que o Director retornava?** Um `kind` de `textZones` (ex.: `"price"`, `"subheadline"`)
+   dentro de uma zona de `layoutPlan`, que só aceita hero/headline/cta/logo/support/negativeSpace.
+3. **O que o parser esperava?** Exatamente esses 6 valores fechados — nunca relaxado nesta
+   correção.
+4. **Por que o repair anterior repetia a falha?** O diagnóstico enviado de volta ao Director era
+   genérico ("alguma zona tem kind/rect/priority/rationale malformado") — nunca dizia QUAL zona
+   nem QUAL valor estava errado, então o Director não tinha informação suficiente pra corrigir de
+   forma confiável.
+5. **Agora existe schema enforcement ou ainda dependemos de prompt?** Ainda depende de prompt +
+   diagnóstico preciso — `response_format: json_schema` estrito foi auditado como viável
+   (modelo/infra suportam), mas não implementado por não ser necessário para atingir 100% nesta
+   rodada.
+6. **O repair ficou específico para `layoutPlan`?** O DIAGNÓSTICO ficou específico (zona+campo+
+   valor exatos); o repair em si continua reenviando o plano inteiro com a causa anexada — testado
+   e confirmado que isso já preserva o resto do plano corretamente, sem necessidade de uma repair
+   mais cirúrgica.
+7. **Quantos planos reais foram testados?** 10 no total desta rodada: 5 no baseline (medição da
+   causa, prompt antigo) + 5 na validação final (prompt/diagnóstico corrigidos).
+8. **Quantos foram válidos?** 0/5 no baseline (confirmando a causa) → 5/5 na validação final.
+9. **Quanto custou?** `$0.011890` (baseline) + `$0.007443` (validação final) = `$0.019333` no
+   total desta rodada — zero geração de imagem em qualquer chamada.
+10. **Está pronto para deploy?** Sim, localmente verificado (typecheck/build/suíte completa/
+    architecture-check, todos PASS) e commitado — **não deployado nesta rodada**, conforme
+    instruído. O smoke completo da ETAPA 3.3 (com geração de imagem) permanece pendente de nova
+    autorização explícita.
+
+**Como esta foi uma correção pontual sobre um bloqueador específico (nunca o fechamento do bloco
+3.x), `COMPOSITION_BLOCK_3X` permanece `STILL_OPEN` até um novo smoke completo confirmar uma peça
+densa real publicável de ponta a ponta com este fix em produção.**

@@ -737,6 +737,89 @@ test("diagnoseCreativePlanInvalidity: artDirection com frase vaga banida -> apon
   assert.match(cause, /artDirection/);
 });
 
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.3.1 (Rodada 4) — achado real em produção (smoke 2026-10-06, 10/10 tentativas): o
+// Director usava sistematicamente um `kind` de `textZones` ("price", "subheadline", "discount",
+// "url", "badge") dentro de `layoutPlan`, um vocabulário DIFERENTE e MENOR (ver
+// `CREATIVE_LAYOUT_ZONE_KINDS`) — rejeitado 100% das vezes, sempre pela mesma causa genérica
+// ("alguma zona tem kind/rect/priority/rationale malformado"), nunca dizendo QUAL zona/campo/valor.
+// `diagnoseLayoutPlanInvalidity` (interno) agora aponta isso com precisão — estes testes cobrem
+// cada campo isoladamente (brief, ponto 15) e o fixture EXATO do smoke que falhou.
+// ---------------------------------------------------------------------------------------------
+
+test("diagnoseCreativePlanInvalidity: layoutPlan.kind = kind de textZones (\"price\") -> aponta o vocabulário ERRADO especificamente, nunca a categoria genérica", () => {
+  const cause = diagnoseCreativePlanInvalidity(samplePlanJson({
+    layoutPlan: [{ kind: "price", rect: { xPct: 5, yPct: 30, widthPct: 90, heightPct: 20 }, priority: 2, rationale: "Preço destacado." }],
+  }));
+  assert.match(cause, /layoutPlan\[0\]\.kind/);
+  assert.match(cause, /"price"/);
+  assert.match(cause, /vocabulário ERRADO/);
+  assert.match(cause, /support/);
+});
+
+test("diagnoseCreativePlanInvalidity: layoutPlan.kind = kind de textZones (\"subheadline\") -> mesmo tratamento específico", () => {
+  const cause = diagnoseCreativePlanInvalidity(samplePlanJson({
+    layoutPlan: [{ kind: "subheadline", rect: { xPct: 5, yPct: 30, widthPct: 90, heightPct: 10 }, priority: 2, rationale: "Detalhe da condição." }],
+  }));
+  assert.match(cause, /layoutPlan\[0\]\.kind/);
+  assert.match(cause, /"subheadline"/);
+  assert.match(cause, /vocabulário ERRADO/);
+});
+
+test("diagnoseCreativePlanInvalidity: layoutPlan.kind com valor genuinamente desconhecido (não é kind de textZones) -> mensagem genérica de enum, não a de confusão de vocabulário", () => {
+  const cause = diagnoseCreativePlanInvalidity(samplePlanJson({
+    layoutPlan: [{ kind: "banner_generico", rect: { xPct: 0, yPct: 0, widthPct: 10, heightPct: 10 }, priority: 1, rationale: "x" }],
+  }));
+  assert.match(cause, /layoutPlan\[0\]\.kind/);
+  assert.doesNotMatch(cause, /vocabulário ERRADO/);
+});
+
+test("diagnoseCreativePlanInvalidity: layoutPlan.rect inválido -> aponta o índice e o retângulo recebido", () => {
+  const cause = diagnoseCreativePlanInvalidity(samplePlanJson({
+    layoutPlan: [{ kind: "hero", rect: { xPct: 90, yPct: 0, widthPct: 50, heightPct: 10 }, priority: 1, rationale: "x" }],
+  }));
+  assert.match(cause, /layoutPlan\[0\]\.rect/);
+});
+
+test("diagnoseCreativePlanInvalidity: layoutPlan.priority não-numérico -> aponta o índice e o valor recebido", () => {
+  const cause = diagnoseCreativePlanInvalidity(samplePlanJson({
+    layoutPlan: [{ kind: "hero", rect: { xPct: 0, yPct: 0, widthPct: 10, heightPct: 10 }, priority: "alta", rationale: "x" }],
+  }));
+  assert.match(cause, /layoutPlan\[0\]\.priority/);
+});
+
+test("diagnoseCreativePlanInvalidity: layoutPlan.rationale vazio -> aponta o índice", () => {
+  const cause = diagnoseCreativePlanInvalidity(samplePlanJson({
+    layoutPlan: [{ kind: "hero", rect: { xPct: 0, yPct: 0, widthPct: 10, heightPct: 10 }, priority: 1, rationale: "" }],
+  }));
+  assert.match(cause, /layoutPlan\[0\]\.rationale/);
+});
+
+test("diagnoseCreativePlanInvalidity: múltiplas zonas, só a 2ª é inválida -> aponta o índice 1, não o 0", () => {
+  const cause = diagnoseCreativePlanInvalidity(samplePlanJson({
+    layoutPlan: [
+      { kind: "headline", rect: { xPct: 0, yPct: 0, widthPct: 50, heightPct: 10 }, priority: 1, rationale: "x" },
+      { kind: "discount", rect: { xPct: 0, yPct: 10, widthPct: 50, heightPct: 10 }, priority: 2, rationale: "y" },
+    ],
+  }));
+  assert.match(cause, /layoutPlan\[1\]\.kind/);
+});
+
+test("diagnoseCreativePlanInvalidity: fixture EXATO do smoke real de produção (2026-10-06) — 5 zonas, a 2ª usa \"price\" -> diagnosticado com precisão", () => {
+  const cause = diagnoseCreativePlanInvalidity(samplePlanJson({
+    layoutPlan: [
+      { kind: "headline", rect: { xPct: 5, yPct: 5, widthPct: 90, heightPct: 20 }, priority: 1, rationale: "Headline no topo para capturar atenção imediata." },
+      { kind: "price", rect: { xPct: 5, yPct: 30, widthPct: 90, heightPct: 20 }, priority: 2, rationale: "Preço destacado logo abaixo da headline." },
+      { kind: "cta", rect: { xPct: 5, yPct: 55, widthPct: 90, heightPct: 20 }, priority: 3, rationale: "CTA centralizado para ação imediata." },
+      { kind: "logo", rect: { xPct: 5, yPct: 80, widthPct: 20, heightPct: 10 }, priority: 4, rationale: "Logo no canto inferior para reforço de marca." },
+      { kind: "negativeSpace", rect: { xPct: 5, yPct: 70, widthPct: 90, heightPct: 10 }, priority: 5, rationale: "Espaço de respiro para evitar congestão visual." },
+    ],
+  }));
+  assert.match(cause, /layoutPlan\[1\]\.kind/);
+  assert.match(cause, /"price"/);
+  assert.match(cause, /vocabulário ERRADO/);
+});
+
 test("diagnoseCreativePlanInvalidity: plano genuinamente válido -> undefined (nada a diagnosticar)", () => {
   const cause = diagnoseCreativePlanInvalidity(samplePlanJson());
   assert.equal(cause, undefined);

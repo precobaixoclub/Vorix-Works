@@ -1055,6 +1055,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     referenceIntelligenceExtractor,
     creativeEngineRunRepository: repositories.creativeEngineRunRepository,
     editorialExperimentalEnabled: executionFeatureFlags.creativeEngineEditorialExperimentalEnabled,
+    editorialExperimentalQaAllowlist: config?.execution.creativeEngineEditorialExperimentalQaAllowlist ?? [],
     resolveProductionSettings,
     resolveBrandMaterials,
     resolveBrandProfile,

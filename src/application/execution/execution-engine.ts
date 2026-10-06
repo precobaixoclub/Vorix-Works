@@ -22,6 +22,7 @@ import { circuitOpenFailure, type HandlerCircuitBreakerPort } from "./handler-ci
 import { SideEffectGuard } from "./execution-operational-policy.js";
 import type { BackoffStrategy } from "../../domain/execution/execution.model.js";
 import { recordFirstEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
+import type { TenantRole } from "../../domain/identity/identity.model.js";
 
 // Achado ao vivo (Rodada 2, Fatia 3): `retryPolicy.backoffStrategy` do descriptor sempre existiu
 // no tipo mas nunca era lido em lugar nenhum — todo retry era imediato (mesmo loop síncrono,
@@ -64,6 +65,11 @@ export type ExecutionEngineDeps = ExecutionPreconditionDeps & {
   sleep?: (ms: number) => Promise<void>;
   /** Trial + Product Analytics — integração MÍNIMA (`first_content_created`). */
   productAnalytics?: ProductAnalyticsUseCaseDeps;
+};
+
+export type ExecutionActorContext = {
+  userId: string;
+  role: TenantRole;
 };
 
 export type CreateExecutionRunInput = {
@@ -113,7 +119,7 @@ export async function createExecutionRun(deps: ExecutionEngineDeps, input: Creat
   return detail.run;
 }
 
-export async function startExecutionRun(deps: ExecutionEngineDeps, input: { tenantId: string; workspaceId: string; runId: string }): Promise<ExecutionRun> {
+export async function startExecutionRun(deps: ExecutionEngineDeps, input: { tenantId: string; workspaceId: string; runId: string; actor?: ExecutionActorContext }): Promise<ExecutionRun> {
   const initial = await mustGetRunForWorkspace(deps.executionRepository, input);
   if (["completed", "failed", "cancelled"].includes(initial.state)) return initial;
   if (initial.state === "waiting_for_approval") return initial;
@@ -126,12 +132,12 @@ export async function startExecutionRun(deps: ExecutionEngineDeps, input: { tena
   run = await deps.executionRepository.updateRunState({ id: run.id, expectedVersion: run.version, state: "running", startedAt: run.startedAt ?? nowIso(deps) });
   await deps.executionRepository.appendEvent({ id: deps.idGenerator(), executionRunId: run.id, eventType: "run_started", correlationId: run.correlationId, causationId: run.id, traceId: run.traceId, payload: { mode: run.mode } });
 
-  return runExecutionLoop(deps, run.id);
+  return runExecutionLoop(deps, run.id, input.actor);
 }
 
 export async function decideExecutionGate(
   deps: ExecutionEngineDeps,
-  input: { tenantId: string; workspaceId: string; runId: string; gateId: string; decision: ExecutionGateDecision; decidedByUserId?: string },
+  input: { tenantId: string; workspaceId: string; runId: string; gateId: string; decision: ExecutionGateDecision; decidedByUserId?: string; actor?: ExecutionActorContext },
 ): Promise<ExecutionRun> {
   const run = await mustGetRunForWorkspace(deps.executionRepository, input);
   if (run.state !== "waiting_for_approval") return run;
@@ -167,7 +173,7 @@ export async function decideExecutionGate(
   await deps.executionRepository.replaceTaskRunState({ id: taskRun.id, state: "completed", finishedAt: nowIso(deps) });
   await deps.executionRepository.appendEvent({ id: deps.idGenerator(), executionRunId: run.id, eventType: "task_completed", taskRunId: taskRun.id, correlationId: run.correlationId, causationId: taskRun.id, traceId: run.traceId });
   await deps.executionRepository.replaceRunState({ id: run.id, state: "running" });
-  return runExecutionLoop(deps, run.id);
+  return runExecutionLoop(deps, run.id, input.actor);
 }
 
 export async function cancelExecutionRun(deps: ExecutionEngineDeps, input: { tenantId: string; workspaceId: string; runId: string }): Promise<ExecutionRun> {
@@ -184,7 +190,7 @@ export async function cancelExecutionRun(deps: ExecutionEngineDeps, input: { ten
   return cancelled;
 }
 
-async function runExecutionLoop(deps: ExecutionEngineDeps, runId: string): Promise<ExecutionRun> {
+async function runExecutionLoop(deps: ExecutionEngineDeps, runId: string, actor?: ExecutionActorContext): Promise<ExecutionRun> {
   while (true) {
     const detail = await deps.executionRepository.getDetail(runId);
     if (!detail) throw new Error(`EXECUTION_RUN_NOT_FOUND: execution run "${runId}" não existe.`);
@@ -211,13 +217,13 @@ async function runExecutionLoop(deps: ExecutionEngineDeps, runId: string): Promi
         if (!run) throw new Error(`EXECUTION_RUN_NOT_FOUND: execution run "${runId}" não existe.`);
         return deps.executionRepository.updateRunState({ id: runId, expectedVersion: run.version, state: "waiting_for_approval" });
       }
-      const maybeFailed = await executeTask(deps, runId, taskRun.id);
+      const maybeFailed = await executeTask(deps, runId, taskRun.id, actor);
       if (maybeFailed?.state === "failed") return maybeFailed;
     }
   }
 }
 
-async function executeTask(deps: ExecutionEngineDeps, runId: string, taskRunId: string): Promise<ExecutionRun | undefined> {
+async function executeTask(deps: ExecutionEngineDeps, runId: string, taskRunId: string, actor?: ExecutionActorContext): Promise<ExecutionRun | undefined> {
   const detail = await deps.executionRepository.getDetail(runId);
   if (!detail) throw new Error(`EXECUTION_RUN_NOT_FOUND: execution run "${runId}" não existe.`);
   const taskRun = detail.taskRuns.find((task) => task.id === taskRunId);
@@ -289,7 +295,7 @@ async function executeTask(deps: ExecutionEngineDeps, runId: string, taskRunId: 
     }
   }
   const traceStartedAt = nowIso(deps);
-  const result = await executeWithTimeout(handler.execute({ task: runtimeTask, inputs, context: { executionRunId: runId, tenantId: detail.run.tenantId, workspaceId: detail.run.workspaceId, mode: detail.run.mode }, attempt }), resolution.descriptor.executionTimeoutMs);
+  const result = await executeWithTimeout(handler.execute({ task: runtimeTask, inputs, context: { executionRunId: runId, tenantId: detail.run.tenantId, workspaceId: detail.run.workspaceId, mode: detail.run.mode, actor }, attempt }), resolution.descriptor.executionTimeoutMs);
   const traceFinishedAt = nowIso(deps);
   await deps.executionRepository.appendTrace({
     id: deps.idGenerator(),

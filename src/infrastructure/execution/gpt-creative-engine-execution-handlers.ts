@@ -13,6 +13,7 @@ import type { CreativeEngineRunRepositoryPort } from "../../application/ports/cr
 import type { CreativeContextAsset } from "../../shared/utils/gpt-creative-plan.types.js";
 import { buildCreativeContext, type BuildCreativeContextDeps } from "../../application/creative-engine/build-creative-context.js";
 import { runGptCreativeEngine, type GptCreativeEngineDeps } from "../../application/creative-engine/run-gpt-creative-engine.js";
+import { hasPermission, type TenantRole } from "../../domain/identity/identity.model.js";
 
 /**
  * Handlers de execução do motor GPT — migração "GPT como motor criativo único" (PR 6/9).
@@ -93,6 +94,61 @@ function isEditorialExperimentalRequested(validatedInputs: Record<string, string
   );
 }
 
+export type EditorialExperimentalQaAllowlistEntry = {
+  tenantId: string;
+  workspaceId: string;
+};
+
+export type EditorialExperimentalAuthorizationInput = {
+  requested: boolean;
+  enabled?: boolean;
+  tenantId: string;
+  workspaceId: string;
+  actor?: {
+    userId: string;
+    role: TenantRole;
+  };
+  allowlist?: readonly EditorialExperimentalQaAllowlistEntry[];
+};
+
+export type EditorialExperimentalAuthorizationResult =
+  | { ok: true; enabled: boolean }
+  | { ok: false; code: string; message: string };
+
+export function resolveEditorialExperimentalAuthorization(input: EditorialExperimentalAuthorizationInput): EditorialExperimentalAuthorizationResult {
+  if (!input.requested) return { ok: true, enabled: false };
+  if (input.enabled !== true) {
+    return {
+      ok: false,
+      code: "EDITORIAL_CREATIVE_ENGINE_DISABLED",
+      message: "O compositor editorial experimental foi solicitado, mas a feature flag CREATIVE_ENGINE_EDITORIAL_EXPERIMENTAL_ENABLED nao esta habilitada neste ambiente.",
+    };
+  }
+  const authorizedWorkspace = input.allowlist?.some((entry) => entry.tenantId === input.tenantId && entry.workspaceId === input.workspaceId) === true;
+  if (!authorizedWorkspace) {
+    return {
+      ok: false,
+      code: "EDITORIAL_CREATIVE_ENGINE_WORKSPACE_NOT_AUTHORIZED",
+      message: "O compositor editorial experimental foi solicitado, mas este tenant/workspace nao esta autorizado para homologacao QA.",
+    };
+  }
+  if (!input.actor) {
+    return {
+      ok: false,
+      code: "EDITORIAL_CREATIVE_ENGINE_ACTOR_REQUIRED",
+      message: "O compositor editorial experimental exige um usuario autenticado no contexto do worker.",
+    };
+  }
+  if (!hasPermission(input.actor.role, "execution:start")) {
+    return {
+      ok: false,
+      code: "EDITORIAL_CREATIVE_ENGINE_ACTOR_FORBIDDEN",
+      message: "O usuario autenticado nao tem permissao para iniciar execucoes reais do compositor editorial experimental.",
+    };
+  }
+  return { ok: true, enabled: true };
+}
+
 function parseJsonArray(raw: unknown): unknown[] {
   if (typeof raw !== "string" || !raw.trim()) return [];
   try {
@@ -165,6 +221,8 @@ export type GptCreativeEngineVisualTaskHandlerDeps = GptCreativeEngineDeps &
     maxBudgetUsd?: number;
     /** Kill switch do compositor editorial experimental. Mesmo ligado, exige opt-in por comando. */
     editorialExperimentalEnabled?: boolean;
+    /** Allowlist obrigatoria de homologacao: tenant/workspace precisam bater no worker. */
+    editorialExperimentalQaAllowlist?: readonly EditorialExperimentalQaAllowlistEntry[];
   };
 
 export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerPort {
@@ -186,13 +244,15 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
     const validatedInputs = preparedCommand.validatedInputs;
     const assets = buildAssetsFromValidatedInputs(validatedInputs);
     const experimentalEditorialMode = isEditorialExperimentalRequested(validatedInputs);
-    if (experimentalEditorialMode && !this.deps.editorialExperimentalEnabled) {
-      return failure(
-        "EDITORIAL_CREATIVE_ENGINE_DISABLED",
-        "O compositor editorial experimental foi solicitado, mas a feature flag CREATIVE_ENGINE_EDITORIAL_EXPERIMENTAL_ENABLED nao esta habilitada neste ambiente.",
-        "policy_violation",
-      );
-    }
+    const editorialAuthorization = resolveEditorialExperimentalAuthorization({
+      requested: experimentalEditorialMode,
+      enabled: this.deps.editorialExperimentalEnabled,
+      tenantId: request.context.tenantId,
+      workspaceId: request.context.workspaceId,
+      actor: request.context.actor,
+      allowlist: this.deps.editorialExperimentalQaAllowlist,
+    });
+    if (!editorialAuthorization.ok) return failure(editorialAuthorization.code, editorialAuthorization.message, "policy_violation");
 
     const creativeContext = await buildCreativeContext(this.deps, {
       workspaceId: request.context.workspaceId,
@@ -214,7 +274,7 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
       workspaceId: request.context.workspaceId,
       creativeContext,
       maxBudgetUsd: this.deps.maxBudgetUsd ?? DEFAULT_MAX_BUDGET_USD,
-      experimentalEditorialMode: experimentalEditorialMode && this.deps.editorialExperimentalEnabled === true,
+      experimentalEditorialMode: editorialAuthorization.enabled,
     });
 
     await this.persistRun(request, creativeEngineRunId, result).catch(() => undefined);

@@ -158,7 +158,7 @@ export async function registerExecutionRunRoutes(app: FastifyInstance, deps: Exe
     const principal = requirePermission(request, "execution:start");
     const { id } = request.params as { id: string };
     const { workspaceId } = request.body as { workspaceId: string };
-    const run = await startExecution(deps, { tenantId: principal.tenantId, workspaceId, id }).catch(translateExecutionError);
+    const run = await startExecution(deps, { tenantId: principal.tenantId, workspaceId, id, actor: { userId: principal.userId, role: principal.role } }).catch(translateExecutionError);
     return successEnvelope(run, request.id);
   });
 
@@ -174,7 +174,7 @@ export async function registerExecutionRunRoutes(app: FastifyInstance, deps: Exe
     const principal = requirePermission(request, "execution:approve");
     const { runId, gateId } = request.params as { runId: string; gateId: string };
     const { workspaceId, decision } = request.body as { workspaceId: string; decision: "approved" | "rejected" };
-    const run = await decideExecutionGateUseCase(deps, { tenantId: principal.tenantId, workspaceId, runId, gateId, decision, decidedByUserId: principal.userId }).catch(translateExecutionError);
+    const run = await decideExecutionGateUseCase(deps, { tenantId: principal.tenantId, workspaceId, runId, gateId, decision, decidedByUserId: principal.userId, actor: { userId: principal.userId, role: principal.role } }).catch(translateExecutionError);
     return successEnvelope(run, request.id);
   });
 }

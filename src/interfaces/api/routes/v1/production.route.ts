@@ -152,7 +152,7 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
     // saber ou tentar de novo. `replaceRunState` aqui é a rede de segurança: sobrescreve
     // incondicionalmente (nunca falha por otimistic-lock, propositalmente — é o último recurso)
     // pra "failed", e é ela mesma best-effort (nunca pode lançar por cima do catch original).
-    startExecution(deps, { tenantId: principal.tenantId, workspaceId: body.workspaceId, id: run.id }).catch(async (error) => {
+    startExecution(deps, { tenantId: principal.tenantId, workspaceId: body.workspaceId, id: run.id, actor: { userId: principal.userId, role: principal.role } }).catch(async (error) => {
       request.log.error({ err: error instanceof Error ? error.message : String(error), executionRunId: run.id }, "Falha ao iniciar execução de produção em background.");
       try {
         await deps.executionRepository.replaceRunState({ id: run.id, state: "failed", finishedAt: new Date().toISOString() });
@@ -185,6 +185,7 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
       gateId: body.gateId,
       decision: "rejected",
       decidedByUserId: principal.userId,
+      actor: { userId: principal.userId, role: principal.role },
     }).catch(translateExecutionError);
 
     await deps.qualityFeedback
@@ -217,4 +218,3 @@ type GenerateBody = {
   referenceAssets?: Array<{ url: string; role: (typeof REFERENCE_ASSET_ROLES)[number]; description?: string }>;
   forbiddenElements?: string[];
 };
-

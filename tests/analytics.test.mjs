@@ -203,29 +203,32 @@ test("Analytics API: dashboard, query, snapshot rebuild, insight, alert, export,
     event({ tenantId: "tenant-analytics-api", workspaceId: "workspace-other", eventId: "api-other", eventType: "publication_requested", providerId: "x_sandbox" }),
   ]);
 
-  const overview = await ownerApp.inject({ method: "GET", url: `/v1/analytics/overview?workspaceId=${workspaceId}&period=last_30_days&timezone=America/Sao_Paulo` });
+  const fixturePeriod = { preset: "custom", from: "2026-07-30T00:00:00.000Z", to: "2026-07-31T00:00:00.000Z", timezone: "America/Sao_Paulo" };
+  const fixturePeriodQuery = "period=custom:2026-07-30:2026-07-31&timezone=America/Sao_Paulo";
+
+  const overview = await ownerApp.inject({ method: "GET", url: `/v1/analytics/overview?workspaceId=${workspaceId}&${fixturePeriodQuery}` });
   assert.equal(overview.statusCode, 200);
   assert.equal(overview.json().data.rows.some((row) => row.values.publication_completed_total === 1), true);
 
-  const query = await ownerApp.inject({ method: "POST", url: "/v1/analytics/query", payload: { workspaceId, timezone: "America/Sao_Paulo", period: { preset: "last_30_days", timezone: "America/Sao_Paulo" }, metrics: ["publication_requested_total"], groupBy: ["provider"] } });
+  const query = await ownerApp.inject({ method: "POST", url: "/v1/analytics/query", payload: { workspaceId, timezone: "America/Sao_Paulo", period: fixturePeriod, metrics: ["publication_requested_total"], groupBy: ["provider"] } });
   assert.equal(query.statusCode, 200);
   assert.equal(query.json().data.rows.some((row) => row.dimensions.provider === "linkedin_sandbox" && row.values.publication_requested_total === 1), true);
   assert.equal(query.json().data.rows.some((row) => row.dimensions.provider === "x_sandbox"), false);
 
-  const rebuild = await ownerApp.inject({ method: "POST", url: "/v1/analytics/admin/rebuild", payload: { workspaceId, timezone: "America/Sao_Paulo", metrics: ["publication_requested_total"], groupBy: ["provider"], granularity: "daily" } });
+  const rebuild = await ownerApp.inject({ method: "POST", url: "/v1/analytics/admin/rebuild", payload: { workspaceId, timezone: "America/Sao_Paulo", period: fixturePeriod, metrics: ["publication_requested_total"], groupBy: ["provider"], granularity: "daily" } });
   assert.equal(rebuild.statusCode, 200);
   assert.equal(rebuild.json().data.rebuilt >= 1, true);
 
-  const insight = await ownerApp.inject({ method: "GET", url: `/v1/analytics/insights?workspaceId=${workspaceId}&period=last_30_days&timezone=America/Sao_Paulo` });
+  const insight = await ownerApp.inject({ method: "GET", url: `/v1/analytics/insights?workspaceId=${workspaceId}&${fixturePeriodQuery}` });
   assert.equal(insight.statusCode, 200);
 
-  const alert = await ownerApp.inject({ method: "GET", url: `/v1/analytics/alerts?workspaceId=${workspaceId}&period=last_30_days&timezone=America/Sao_Paulo` });
+  const alert = await ownerApp.inject({ method: "GET", url: `/v1/analytics/alerts?workspaceId=${workspaceId}&${fixturePeriodQuery}` });
   assert.equal(alert.statusCode, 200);
 
   const dq = await ownerApp.inject({ method: "GET", url: `/v1/analytics/data-quality?workspaceId=${workspaceId}` });
   assert.equal(dq.statusCode, 200);
 
-  const exportCsv = await ownerApp.inject({ method: "POST", url: "/v1/analytics/exports", payload: { workspaceId, format: "csv", query: { timezone: "America/Sao_Paulo", period: { preset: "last_30_days", timezone: "America/Sao_Paulo" }, metrics: ["publication_requested_total"] } } });
+  const exportCsv = await ownerApp.inject({ method: "POST", url: "/v1/analytics/exports", payload: { workspaceId, format: "csv", query: { timezone: "America/Sao_Paulo", period: fixturePeriod, metrics: ["publication_requested_total"] } } });
   assert.equal(exportCsv.statusCode, 200);
   const exportDetail = await ownerApp.inject({ method: "GET", url: `/v1/analytics/exports/${exportCsv.json().data.id}?workspaceId=${workspaceId}` });
   assert.equal(exportDetail.statusCode, 200);

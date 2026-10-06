@@ -128,6 +128,7 @@ export type ApiConfig = {
      * construção, ver `parseCreativeEngineMode` abaixo. */
     creativeEngineGptEnabled: boolean;
     creativeEngineEditorialExperimentalEnabled: boolean;
+    creativeEngineEditorialExperimentalQaAllowlist: readonly { tenantId: string; workspaceId: string }[];
     legacyCreativeEngineEnabled: boolean;
   };
   publication: {
@@ -344,6 +345,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const creativeEngineMode = env.CREATIVE_ENGINE?.trim() === "gpt" ? "gpt" : "legacy";
   const creativeEngineGptEnabled = creativeEngineMode === "gpt";
   const creativeEngineEditorialExperimentalEnabled = creativeEngineGptEnabled && env.CREATIVE_ENGINE_EDITORIAL_EXPERIMENTAL_ENABLED?.trim() === "true";
+  const creativeEngineEditorialExperimentalQaAllowlist = parseTenantWorkspaceAllowlist(env.CREATIVE_ENGINE_EDITORIAL_QA_ALLOWLIST);
   const legacyCreativeEngineEnabled = creativeEngineMode === "legacy";
   const publicationProviderEnvironment = env.PUBLICATION_PROVIDER_ENVIRONMENT?.trim() === "production" ? "production" : "sandbox";
   const publicationProductionEnabled = env.PUBLICATION_PRODUCTION_ENABLED?.trim() === "true";
@@ -531,6 +533,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       environment: executionEnvironment,
       creativeEngineGptEnabled,
       creativeEngineEditorialExperimentalEnabled,
+      creativeEngineEditorialExperimentalQaAllowlist,
       legacyCreativeEngineEnabled,
     },
     publication: {
@@ -703,6 +706,15 @@ function parsePositiveInt(raw: string | undefined): number | undefined {
 
 function parseCsv(raw: string | undefined): readonly string[] {
   return raw?.split(",").map((item) => item.trim()).filter(Boolean) ?? [];
+}
+
+function parseTenantWorkspaceAllowlist(raw: string | undefined): readonly { tenantId: string; workspaceId: string }[] {
+  return parseCsv(raw)
+    .map((item) => {
+      const [tenantId, workspaceId, extra] = item.split(":").map((part) => part.trim());
+      return tenantId && workspaceId && !extra ? { tenantId, workspaceId } : undefined;
+    })
+    .filter((item): item is { tenantId: string; workspaceId: string } => Boolean(item));
 }
 
 /** Ignora silenciosamente ids desconhecidos para não derrubar o boot por typo em variável. */

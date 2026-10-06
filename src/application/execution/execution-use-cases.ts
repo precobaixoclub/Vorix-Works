@@ -2,7 +2,7 @@ import type { ExecutionRunDetail } from "../ports/execution-repository.port.js";
 import type { ExecutionRepositoryPort } from "../ports/execution-repository.port.js";
 import type { ExecutionRun, ExecutionGateDecision } from "../../domain/execution/execution.model.js";
 import type { ExecutionEngineDeps } from "./execution-engine.js";
-import { cancelExecutionRun, createExecutionRun, decideExecutionGate, startExecutionRun } from "./execution-engine.js";
+import { cancelExecutionRun, createExecutionRun, decideExecutionGate, startExecutionRun, type ExecutionActorContext } from "./execution-engine.js";
 
 export type ExecutionUseCaseDeps = ExecutionEngineDeps;
 
@@ -20,15 +20,15 @@ export function createExecution(deps: ExecutionUseCaseDeps, input: CreateExecuti
   return createExecutionRun(deps, input);
 }
 
-export function startExecution(deps: ExecutionUseCaseDeps, input: { tenantId: string; workspaceId: string; id: string }): Promise<ExecutionRun> {
-  return startExecutionRun(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, runId: input.id });
+export function startExecution(deps: ExecutionUseCaseDeps, input: { tenantId: string; workspaceId: string; id: string; actor?: ExecutionActorContext }): Promise<ExecutionRun> {
+  return startExecutionRun(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, runId: input.id, actor: input.actor });
 }
 
 export function cancelExecution(deps: ExecutionUseCaseDeps, input: { tenantId: string; workspaceId: string; id: string }): Promise<ExecutionRun> {
   return cancelExecutionRun(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, runId: input.id });
 }
 
-export function decideExecutionGateUseCase(deps: ExecutionUseCaseDeps, input: { tenantId: string; workspaceId: string; runId: string; gateId: string; decision: ExecutionGateDecision; decidedByUserId?: string }): Promise<ExecutionRun> {
+export function decideExecutionGateUseCase(deps: ExecutionUseCaseDeps, input: { tenantId: string; workspaceId: string; runId: string; gateId: string; decision: ExecutionGateDecision; decidedByUserId?: string; actor?: ExecutionActorContext }): Promise<ExecutionRun> {
   return decideExecutionGate(deps, input);
 }
 

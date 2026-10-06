@@ -6,6 +6,7 @@ import type {
   ExecutionFailure,
 } from "../../domain/execution/execution.model.js";
 import type { ExecutionCapability, TaskType } from "../../domain/planning/planning.model.js";
+import type { TenantRole } from "../../domain/identity/identity.model.js";
 
 export type ExecutionTaskInputs = Record<string, readonly { artifactId: string; payload?: ExecutionArtifactPayload; checksum: string }[]>;
 
@@ -25,6 +26,10 @@ export type ExecutionTaskHandlerRequest = {
     tenantId: string;
     workspaceId: string;
     mode: ExecutionMode;
+    actor?: {
+      userId: string;
+      role: TenantRole;
+    };
   };
   attempt: ExecutionAttempt;
 };

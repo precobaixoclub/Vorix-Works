@@ -32,6 +32,7 @@ import {
   textBackingTreatmentToRendererStyle,
   sortTextZonesByPriority,
   expandBboxWithPadding,
+  widenToCommercialBand,
   type RegionSemanticFlags,
   type SafeAreaCandidateRegion,
 } from "./resolve-actual-safe-area.js";
@@ -452,7 +453,19 @@ async function applySafeAreaAdjustments(
         steps.push(`texto espúrio "${finding.text}" (${finding.classification}) sem localização (bbox ausente e sem zona correspondente) — não foi possível tratar.`);
         continue;
       }
+      // ETAPA 3.3.2 (Rodada 4) — achado real do smoke de produção: o texto fantasma de uma zona
+      // comercial (headline/cta/price) pode sair como um banner estilizado muito mais LARGO do
+      // que a bbox que a visão reporta (confirmado por pixel: ghost text real em ~84% da largura
+      // do canvas, zona de CTA planejada com só 40%) — a bbox da visão sozinha, mesmo com
+      // padding, nunca cobre isso de forma confiável. Quando o achado corresponde a uma zona
+      // comercial conhecida, a LARGURA do retângulo de TRATAMENTO (nunca a altura/posição
+      // vertical, que continua vindo da bbox real detectada — nunca "infla" pra cobrir uma área
+      // vertical distante só porque bateu com o kind de uma zona) é ampliada pra pelo menos a
+      // faixa comercial segura do canvas — garantia ESTRUTURAL de cobertura horizontal, nunca
+      // dependente só da precisão da visão. Nunca afeta o retângulo final que o renderer desenha
+      // (o card/zona continua do tamanho/posição que o Director decidiu).
       const paddedRect = expandBboxWithPadding(rawRect);
+      const treatmentRect = fallbackZone ? widenToCommercialBand(paddedRect) : paddedRect;
       const neutralization = await neutralizeGhostTextZone(deps.creativeBrain, {
         computeRegionPixelStats: deps.computeRegionPixelStats!,
         applyLocalBlur: deps.applyLocalBlur!,
@@ -461,13 +474,13 @@ async function applySafeAreaAdjustments(
         objectStorage: deps.objectStorage,
       }, {
         imageBuffer,
-        rect: paddedRect,
+        rect: treatmentRect,
         tenantId: input.tenantId,
         specialistId: input.specialistId,
         onCost: input.onCost,
       });
       imageBuffer = neutralization.imageBuffer;
-      treatedFindingRects.push(paddedRect);
+      treatedFindingRects.push(treatmentRect);
 
       if (!neutralization.result.neutralizedLocally) {
         unrecoverableGhostTextZoneKinds.push(finding.matchedZoneKind ?? finding.classification);
@@ -893,7 +906,13 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         globalResidualPassApplied = true;
         for (const finding of treatableResidualFindings) {
           if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, compositionSteps: roundCompositionSteps });
-          const paddedRect = expandBboxWithPadding(finding.bbox!);
+          // ETAPA 3.3.2 — mesma garantia estrutural de cobertura do passe inicial (ver comentário
+          // acima, em `applySafeAreaAdjustments`): nunca depender só da bbox da visão quando o
+          // achado residual corresponde a uma zona comercial conhecida — amplia só a LARGURA,
+          // nunca a posição/altura vertical (que continua vindo da bbox real detectada).
+          const residualFallbackZone = rendererOwnedZonesForAnalysis.find((zone) => zone.kind === finding.matchedZoneKind);
+          const residualPaddedRect = expandBboxWithPadding(finding.bbox!);
+          const residualTreatmentRect = residualFallbackZone ? widenToCommercialBand(residualPaddedRect) : residualPaddedRect;
           const residualNeutralization = await neutralizeGhostTextZone(deps.creativeBrain, {
             computeRegionPixelStats: deps.computeRegionPixelStats!,
             applyLocalBlur: deps.applyLocalBlur!,
@@ -902,7 +921,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
             objectStorage: deps.objectStorage,
           }, {
             imageBuffer: baseWithAssetsBuffer,
-            rect: paddedRect,
+            rect: residualTreatmentRect,
             tenantId: input.tenantId,
             specialistId: SPECIALIST_ID,
             onCost: (response) => track("ghostTextNeutralization", response),

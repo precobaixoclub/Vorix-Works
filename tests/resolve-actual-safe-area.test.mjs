@@ -16,6 +16,7 @@ import {
   textsMatchApproximately,
   sortTextZonesByPriority,
   TEXT_ZONE_KIND_PRIORITY,
+  widenToCommercialBand,
 } from "../dist/application/creative-engine/resolve-actual-safe-area.js";
 
 /**
@@ -233,4 +234,38 @@ test("sortTextZonesByPriority: nunca muta o array original", () => {
   const original = [...zones];
   sortTextZonesByPriority(zones);
   assert.deepEqual(zones, original);
+});
+
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.3.2 (Rodada 4) — achado real do smoke de produção: o texto fantasma de uma zona
+// comercial (headline/cta/price) pode sair muito mais LARGO do que a bbox que a visão reporta
+// (confirmado por pixel: ghost text real em ~84% da largura do canvas, zona planejada com só
+// 40%) — `widenToCommercialBand` garante estruturalmente a cobertura horizontal mínima do
+// tratamento, nunca dependente só da precisão da visão.
+// ---------------------------------------------------------------------------------------------
+
+test("widenToCommercialBand: amplia um retângulo estreito pra largura segura do canvas (5%-95%), mantendo y/altura", () => {
+  const widened = widenToCommercialBand({ xPct: 30, yPct: 70, widthPct: 20, heightPct: 10 });
+  assert.equal(widened.xPct, 5);
+  assert.equal(widened.widthPct, 90);
+  assert.equal(widened.yPct, 70, "altura/posição vertical nunca muda — só a largura é ampliada");
+  assert.equal(widened.heightPct, 10);
+});
+
+test("widenToCommercialBand: nunca ENCOLHE um retângulo que já é mais largo que a faixa comercial", () => {
+  const alreadyWide = { xPct: 2, yPct: 20, widthPct: 96, heightPct: 15 };
+  const widened = widenToCommercialBand(alreadyWide);
+  assert.deepEqual(widened, alreadyWide);
+});
+
+test("widenToCommercialBand: retângulo parcialmente fora da faixa (só um dos lados precisa ampliar)", () => {
+  const widened = widenToCommercialBand({ xPct: 1, yPct: 0, widthPct: 50, heightPct: 10 });
+  assert.equal(widened.xPct, 1, "já está dentro da margem esquerda (5%), nunca move pra dentro");
+  assert.equal(widened.xPct + widened.widthPct, 95, "lado direito ampliado até a margem segura");
+});
+
+test("widenToCommercialBand: aceita margem customizada", () => {
+  const widened = widenToCommercialBand({ xPct: 40, yPct: 0, widthPct: 20, heightPct: 10 }, 10);
+  assert.equal(widened.xPct, 10);
+  assert.equal(widened.widthPct, 80);
 });

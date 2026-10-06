@@ -35,6 +35,18 @@ export type GhostTextZoneNeutralizationResult = {
   backgroundIsDark: boolean;
 };
 
+// ETAPA 3.3.2 (Rodada 4) — achado real do smoke de produção: cheguei a tentar uma validação
+// determinística independente aqui (comparar desvio-padrão de luminância antes/depois do
+// tratamento, pra nunca confiar só na mesma visão que diz "limpo"). Descartado depois de medir
+// contra o pipeline real: cada composição (logo, render de texto) passa por reencode JPEG, e o
+// RUÍDO de recompressão sozinho (sem nenhum texto real) já varia o suficiente pra tanto mascarar
+// uma queda real quanto produzir uma queda falsa — não dava pra calibrar um limiar confiável sem
+// arriscar re-escalar tratamento (e eventualmente regenerar) por causa de ruído de compressão,
+// não de texto. A causa raiz confirmada (ver `widenToCommercialBand`,
+// `resolve-actual-safe-area.ts`) já é resolvida estruturalmente pela cobertura de largura da
+// faixa comercial — tratar a reverificação em si como pouco confiável fica documentado aqui como
+// limitação conhecida, não escondido.
+
 export type NeutralizeGhostTextDeps = {
   computeRegionPixelStats(imageBuffer: Buffer, rect: CreativePlanRect): Promise<{ meanLuminance: number; stdDevLuminance: number } | undefined>;
   applyLocalBlur(imageBuffer: Buffer, rect: CreativePlanRect, sigma: number): Promise<Buffer>;

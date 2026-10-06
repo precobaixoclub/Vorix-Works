@@ -238,7 +238,7 @@ export async function checkGlobalTextLegibility(
       prompt: [
         "Esta é a imagem BASE (antes de logo/screenshot/texto do renderer), depois de um tratamento local para esconder texto espúrio em regiões específicas.",
         `LISTA FECHADA DE TEXTOS AUTORIZADOS (qualquer outro texto legível é um problema): ${input.allowedRenderedTexts.map((text) => `"${text}"`).join(", ") || "(nenhum texto autorizado nesta peça)"}.`,
-        "Olhando a imagem INTEIRA (não só uma região), há ALGUM texto legível que NÃO está na lista de textos autorizados, ou o MESMO texto autorizado aparecendo mais de uma vez?",
+        "Olhando a imagem INTEIRA (não só uma região), há ALGUM texto legível que NÃO está na lista de textos autorizados, ou o MESMO texto autorizado aparecendo mais de uma vez? Conta também uma ocorrência PARCIALMENTE visível — letras ou palavras reconhecíveis vazando por trás ou ao redor de um cartão/caixa de texto, mesmo que a maior parte esteja coberta. Olhe com atenção especial perto das bordas de cartões/caixas de texto e em fundos decorativos/estampados.",
         // ETAPA 3.3 — achado do smoke real da ETAPA 3.2: saber que "ainda há texto" sem saber ONDE
         // não permite agir. Pede o MESMO formato estruturado da análise pré-composição (nunca só
         // um booleano), pra qualquer achado residual poder ser tratado na localização real.

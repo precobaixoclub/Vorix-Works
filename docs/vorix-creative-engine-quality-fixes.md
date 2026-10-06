@@ -2,14 +2,16 @@
 
 > Status: ETAPAS 1, 2, 4, 3, 3.1, 3.2, 3.3 e 3.3.1 — implementadas, testadas e **já em produção**
 > (commit `4e3102f`). O smoke real DEFINITIVO confirmou toda a infraestrutura da ETAPA 3.3
-> funcionando de ponta a ponta em produção (plano válido na 1ª tentativa, density preflight,
-> detecção/tratamento de texto fantasma, reverificação global com passe residual, `planForGate`,
-> gate técnico — todos executados e corretos), **mas a revisão visual humana da peça final
-> encontrou um texto fantasma residual visível** que a visão automatizada não capturou — a causa
-> dominante (cobertura de bbox insuficiente para texto decorativo grande) ficou identificada e
-> registrada, sem nova rodada de correção aberta automaticamente. **`COMPOSITION_BLOCK_3X =
-> STILL_OPEN`** — "funcionamento da infraestrutura" confirmado, "sucesso da geração" ainda não.
-> ETAPAS 5 e 6 **não foram iniciadas**. Por isso, **o Creative Engine NÃO é declarado resolvido**.
+> funcionando de ponta a ponta em produção, mas a revisão visual humana encontrou um texto
+> fantasma residual visível ("COMPRE AGORA" vazando do cartão do CTA) que a visão automatizada não
+> capturou. **ETAPA 3.3.2** (ver seção própria) identificou a causa raiz por medição de pixel na
+> imagem real (cobertura HORIZONTAL do tratamento insuficiente pra um banner quase full-width) e
+> implementou `widenToCommercialBand` — validado localmente (sem gastar API) contra a MESMA imagem
+> real: elimina os fragmentos de palavra nas bordas, resíduo bem menor (contorno de letra)
+> permanece como limitação conhecida. **Commitada, AINDA NÃO deployada.**
+> **`COMPOSITION_BLOCK_3X = STILL_OPEN`** — infraestrutura confirmada, sucesso de geração
+> pendente de novo smoke completo. ETAPAS 5 e 6 **não foram iniciadas**. **O Creative Engine NÃO é
+> declarado resolvido.**
 
 ## Princípio seguido
 
@@ -1008,3 +1010,109 @@ grande/estilizado pode exceder a bbox com folga que a visão reportou mesmo apó
 segurança (`expandBboxWithPadding`, 18%). Nenhuma mudança de código feita nesta rodada — fica
 registrado como o PRÓXIMO bloqueador concreto do bloco 3.x, caso o usuário autorize uma nova
 etapa de correção.
+
+## ETAPA 3.3.2 — Correção focada de composição (ghost text residual visível)
+
+Disparada pelo achado visual da ETAPA 3.3: `TECHNICAL_GATE_RESULT = PASS` com o texto fantasma
+"COMPRE AGORA" ainda parcialmente legível na peça publicada. Objetivo único: parar de confiar em
+detecção/correção cada vez mais fina (bbox/blur/padding) e corrigir a causa estrutural.
+
+### 1) Diagnóstico — causa raiz confirmada com a imagem REAL (nunca suposição)
+
+Recuperei a imagem BASE real do último smoke (gerada pelo modelo, antes de qualquer composição —
+achada em `/app/uploads/ai-generated/unknown-tenant/`, pelo timestamp) e medi a extensão real do
+texto fantasma por pixel: **"COMPRE AGORA" ocupa x≈7%-91% do canvas (quase largura total)**,
+enquanto a zona de CTA planejada pelo Director tinha só **40% de largura (x=30%-70%)**. `rect`/
+`priority`/`rationale` nunca foram o problema (sempre bem formados). A causa é puramente de
+COBERTURA HORIZONTAL do tratamento: o modelo desenha um banner estilizado que ocupa quase o
+canvas inteiro, mas o tratamento (blur+véu) só cobria a bbox que a visão reportou — mesmo com
+padding de 18%, uma bbox baseada numa zona de 40% de largura nunca alcançaria 91%. A
+reverificação (local e global) só reconfirma "limpo" olhando o MESMO recorte tratado — se esse
+recorte nunca cobriu a extensão real, a "confirmação" nunca tinha o problema pra ver.
+
+### 2) O que mudou — "superfície de composição controlada" (sem trocar famílias visuais)
+
+Nova função pura `widenToCommercialBand` (`resolve-actual-safe-area.ts`): quando um achado de
+texto espúrio corresponde a uma zona comercial conhecida (headline/cta/price/etc.), a LARGURA do
+retângulo de TRATAMENTO (blur/véu/reverificação) é ampliada estruturalmente pra faixa segura do
+canvas (5%-95%) — **nunca a altura/posição vertical**, que continua vindo da bbox real detectada
+(evita "inflar" o tratamento sobre uma área vertical distante só porque bateu o `kind` de uma
+zona — confirmado necessário por um teste que quebrou exatamente nesse cenário). Aplicado tanto
+no passe inicial (`applySafeAreaAdjustments`) quanto no passe residual global
+(`checkGlobalTextLegibility`). **O retângulo FINAL que o renderer desenha nunca muda** — o card/
+zona continua do tamanho/posição que o Director decidiu, preservando a diversidade visual das
+famílias de composição (nunca um único template "banner" substituindo tudo).
+
+Também reforcei (prompt-only, nenhum mecanismo novo) as perguntas de visão existentes
+(`checkCreativeVisualIntegrity`, `checkGlobalTextLegibility`) para contarem explicitamente uma
+ocorrência PARCIALMENTE visível (letras vazando por trás de um cartão) como duplicata/texto não
+resolvido — antes só pediam "legível sim/não" sem essa ênfase.
+
+### 3) Tentativa descartada — validação determinística por variância de pixel
+
+Tentei uma segunda camada de defesa (brief, ponto 4: "não confiar só na mesma análise visual"):
+comparar desvio-padrão de luminância da região antes/depois do tratamento, pra desconfiar de um
+"limpo" da visão sem queda real de variância. **Descartada após medir contra o pipeline real**:
+cada composição (logo, texto do renderer) passa por recompressão JPEG, e o ruído de recompressão
+SOZINHO (sem nenhum texto real presente) já produz variância na casa de 40-48 depois de 2-3
+gerações — não dava pra calibrar um limiar confiável sem risco de desconfiar de regiões
+genuinamente limpas (falso positivo, escalando tratamento e eventualmente regenerando a peça à
+toa — exatamente o que o brief pediu pra evitar, ponto 3). Documentado como limitação conhecida
+em vez de escondido; a correção estrutural (ponto 2) não depende dela.
+
+### 4) Teste comparativo local (sem gastar API) — imagem REAL antes/depois
+
+Usando a MESMA imagem base real do smoke (zero chamadas novas de API), apliquei o tratamento
+ANTIGO (só a zona/bbox com padding, ~54% de largura) e o NOVO (ampliado pra faixa comercial, 90%
+de largura) sobre a região real do "COMPRE AGORA":
+
+- **Tratamento A (antigo):** as palavras "COM" e "RA" (fragmentos de "COMPRE"/"AGORA")
+  continuam claramente legíveis nas duas bordas, fora da faixa tratada.
+- **Tratamento B (novo):** a largura total do banner agora fica coberta — nenhum fragmento de
+  palavra reconhecível vaza nas laterais. **Limitação honesta ainda presente**: como a largura
+  (não a altura) é o que se amplia por design (evitar "inflar" verticalmente sobre áreas
+  distantes), uma pequena fatia do TOPO das letras (acima da faixa tratada) ainda pode aparecer
+  quando a bbox vertical reportada pela visão for mais curta que a extensão real — residual bem
+  menos grave (contorno de letra, não mais uma palavra inteira reconhecível), mas não
+  100% eliminado nesta correção.
+
+### Bloco de classificação — ETAPA 3.3.2
+
+```
+GHOST_TEXT_VISIBLE = YES (achado original) -> reduzido, não 100% eliminado (ver limitação acima)
+CONTROLLED_COMPOSITION = PASS (cobertura horizontal estrutural implementada e testada; card/zona final preservados)
+TEXT_LEGIBILITY = PASS (fragmentos de PALAVRA inteira eliminados nas bordas; resíduo de contorno de letra no topo é limitação conhecida, não corrigida nesta rodada)
+COMMERCIAL_FACTS = PASS (nenhuma mudança em texto comercial/fatos — fora de escopo, intocado)
+TECHNICAL_GATE = PASS (prompt de visão reforçado pra contar ocorrência parcial como duplicata; gate determinístico intocado)
+VISUAL_QUALITY = PASS (nenhuma mudança na métrica de Visual Quality Score — fora de escopo)
+DENSE_PIECE_PUBLISHABLE = NOT_RE_TESTED (correção validada localmente com a imagem real do último smoke — novo smoke completo com geração de imagem fica pendente de autorização explícita, conforme instruído)
+```
+
+### Entrega
+
+1. **Imagem original rejeitada:** imagem final do smoke da ETAPA 3.3 (`COMPRE AGORA` legível
+   acima/ao redor do cartão do CTA) — já apresentada no relatório da ETAPA 3.3.
+2. **Imagem corrigida:** comparação local `compare-B-novo.jpg` (recorte da banda do CTA) —
+   apresentada no relatório desta entrega.
+3. **Comparação visual:** tratamento antigo (A) deixa "COM"/"RA" legíveis nas bordas; tratamento
+   novo (B) cobre a largura total, só resta um resíduo de contorno no topo (ver limitação).
+4. **Causa raiz confirmada:** cobertura HORIZONTAL do tratamento, não intensidade/padding —
+   medida por pixel na imagem real (ghost text ~84% de largura vs. zona de 40%).
+5. **Mudanças implementadas:** `widenToCommercialBand` (largura apenas, nunca altura/posição);
+   aplicado ao passe inicial e ao passe residual global; prompts de visão reforçados pra contar
+   ocorrência parcial como duplicata/não resolvido.
+6. **Resultados de testes:** suíte completa 3326 testes (3324 PASS, os mesmos 2 flakes
+   pré-existentes e não relacionados), typecheck/build/architecture-check — todos verdes. 16
+   testes novos/ajustados (`widenToCommercialBand` unitário ×4, testes de integração ajustados
+   pra geometria mais larga, mocks de pixel-stats corrigidos).
+7. **Custo adicional:** zero chamadas de API nesta rodada — diagnóstico e teste comparativo usam
+   a imagem já produzida no smoke anterior.
+8. **Possíveis regressões em outros tipos de arte:** nenhuma identificada — a ampliação só afeta
+   zonas que JÁ tinham um achado de texto espúrio correspondente (nunca zonas limpas); testes de
+   todos os cenários de smoke local (A-E, screenshot, logo claro/escuro) continuam passando sem
+   alteração de comportamento.
+
+**Como esta foi uma correção pontual sobre o bloqueador visual específico (nunca o fechamento do
+bloco 3.x), `COMPOSITION_BLOCK_3X` permanece `STILL_OPEN` — a validação final (`DENSE_PIECE_
+PUBLISHABLE`) depende de um novo smoke completo com geração de imagem real, pendente de
+autorização explícita de deploy.**

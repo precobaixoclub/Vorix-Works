@@ -253,6 +253,41 @@ export function textsMatchApproximately(a: string, b: string): boolean {
   return normalizedA === normalizedB || normalizedA.includes(normalizedB) || normalizedB.includes(normalizedA);
 }
 
+// ---------------------------------------------------------------------------------------------
+// ETAPA 3.3.2 (Rodada 4) — achado real do smoke de produção (2026-10-06): o texto fantasma
+// "COMPRE AGORA" saiu como um banner estilizado de LARGURA QUASE TOTAL do canvas (~84% da
+// largura), muito mais largo que a zona de CTA planejada (40% de largura) — a visão reportou uma
+// bbox e o tratamento (blur+véu) rodou sobre ela, mas como `neutralizeGhostTextZone` reverifica
+// recortando o MESMO retângulo tratado, um retângulo estreito demais nunca teria como flagrar (ou
+// tratar) a parte do texto fantasma que sobra fora dele. Nunca foi questão de intensidade de blur
+// ou de padding percentual (já resolvidos na ETAPA 3.1) — é a LARGURA do retângulo de tratamento
+// em si ser estruturalmente pequena demais para o que o modelo de imagem realmente desenha.
+// Confirmado com a imagem real do smoke (medição de pixel): ghost text em x≈7%-91%, zona
+// planejada em x=30%-70%.
+// ---------------------------------------------------------------------------------------------
+
+/** Margem de segurança igual à já usada em `evaluate-creative-quality-gate.ts`
+ * (`SAFE_AREA_MARGIN_PCT`) — nunca um valor novo e desalinhado do resto do motor. */
+const COMMERCIAL_BAND_MARGIN_PCT = 5;
+
+/**
+ * "Superfície de composição controlada" (brief ETAPA 3.3.2): para zonas comerciais de alto risco
+ * (as que o Director força através de um texto fantasma — headline/cta/price são os casos reais
+ * observados), a LARGURA de tratamento nunca pode depender só da bbox estimada pela visão —
+ * estruturalmente, amplia pra pelo menos a largura seguramente utilizável do canvas (5%-95%),
+ * mantendo o Y/altura originais. Só AMPLIA, nunca encolhe: uma zona que já é mais larga que a
+ * faixa (ex.: já span quase o canvas inteiro) fica como está. Aplicado apenas ao retângulo de
+ * TRATAMENTO (blur/véu/reverificação) — nunca ao retângulo final que o renderer desenha (o card
+ * do Director continua do tamanho/posição que ele decidiu), preservando a diversidade visual das
+ * famílias de composição (brief: "não substituir indiscriminadamente todas as famílias visuais
+ * por um único template").
+ */
+export function widenToCommercialBand(rect: CreativePlanRect, marginPct = COMMERCIAL_BAND_MARGIN_PCT): CreativePlanRect {
+  const bandXPct = Math.min(rect.xPct, marginPct);
+  const bandRightPct = Math.max(rect.xPct + rect.widthPct, 100 - marginPct);
+  return { xPct: bandXPct, yPct: rect.yPct, widthPct: bandRightPct - bandXPct, heightPct: rect.heightPct };
+}
+
 /** Tradução do vocabulário de tratamento pra primitiva real do renderer determinístico — ver
  * `render-creative-plan-text-zones.ts`. `local_blur` vira `"scrim"` no nível do renderer porque o
  * blur em si é aplicado ANTES, como pré-processamento de pixel (`applyLocalBlur`,

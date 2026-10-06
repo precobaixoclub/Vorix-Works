@@ -730,6 +730,7 @@ function globalRecheckResponse(hasUnresolvedText) {
   return { status: "completed", content: JSON.stringify({ hasUnresolvedText }) };
 }
 
+
 test("runGptCreativeEngine (ETAPA 3.1): preço fantasma neutralizado em 1 passe — publica com UMA imagem só, sem nova geração, registra GHOST_TEXT_NEUTRALIZED_LOCALLY", () => withFakeFetch(async () => {
   const icaro = fakeIcaro({
     analysis: [planResponse({
@@ -870,10 +871,14 @@ test("runGptCreativeEngine (ETAPA 3.2): texto fantasma detectado FORA do retâng
   const result = await runGptCreativeEngine(deps, baseInput({ creativeContext: baseContext({ confirmedFacts: ["Preço: R$ 149,00"] }) }));
 
   assert.equal(result.publishable, true, `esperava sucesso, erro: ${result.error}`);
-  // A região tratada precisa bater com a BBOX real (60-85, 70-80), nunca com o retângulo
-  // planejado da zona (10-40, 10-20) — com a margem de expansão, ainda deve estar longe do
-  // retângulo planejado.
-  assert.ok(treatedRect.xPct > 40, `esperava tratar perto da bbox real (x~60), tratou em x=${treatedRect.xPct}`);
+  // A região tratada precisa seguir a ALTURA/POSIÇÃO VERTICAL da BBOX real (próxima de y=70),
+  // nunca a do retângulo planejado da zona (y=10) — isso continua provando "bbox real, não zona
+  // estática" (ETAPA 3.2). ETAPA 3.3.2 (achado real do smoke de produção): como o achado
+  // corresponde a uma zona comercial conhecida ("price"), a LARGURA do tratamento agora é
+  // ampliada pra faixa comercial segura do canvas (~5%-95%) — nunca mais restrita à largura
+  // exata reportada pela visão, que se mostrou insuficiente em produção.
+  assert.ok(treatedRect.yPct > 50, `esperava tratar perto da altura da bbox real (y~70), tratou em y=${treatedRect.yPct}`);
+  assert.ok(treatedRect.widthPct > 80, `esperava largura ampliada pra faixa comercial (~90%), tratou com largura=${treatedRect.widthPct}`);
 }));
 
 test("runGptCreativeEngine (ETAPA 3.2): headline sobrepõe a logo geometricamente (vision disse 'clear') — relocaliza SEM regenerar imagem", () => withFakeFetch(async () => {

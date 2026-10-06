@@ -1285,3 +1285,97 @@ REGRESSION_TESTS = PASS (3336/3338 na suíte completa, os mesmos 2 flakes pré-e
 ADDITIONAL_IMAGE_GENERATIONS = 0
 READY_FOR_DEPLOY = YES (localmente verificado e commitado — deploy requer autorização explícita separada)
 ```
+
+## Deploy e homologação real — ETAPA 3.3.3 (commit `ac86b3f`)
+
+Deploy padrão seguido rigorosamente (`docs/deployment.md`): SHA anterior `a752cea` registrado,
+backup do servidor criado (`deploy_backups/pre-local-sync-20261006170346.tgz`), código substituído,
+`.env.zuno`/secrets/config preservados, `docker compose up -d --build`, health-check completo
+(WEB=200, API `{"status":"ok"}`, worker/postgres saudáveis), `sha256sum` de
+`resolve-actual-safe-area.ts` conferido byte-a-byte local vs. servidor, e confirmado em produção
+(`grep -c`) que `findMatchingCommercialZone`/`overlapsKnownAssetSubstantially` estão presentes no
+`dist/` publicado. Zero erros nos logs da API pós-deploy.
+
+Fixture gráfico sintético (círculo+triângulo, cores da marca, sem texto) hospedado publicamente em
+`/app/uploads/qa-fixtures/synthetic-graphic-logo-no-text.png` (HTTP 200 confirmado).
+
+### Homologação — 2 cenários reais, fixture QA apenas
+
+Script rodado DENTRO do container de produção (mesma metodologia das rodadas anteriores), reusando
+os módulos reais compilados, `tenantId="tenant-vorix-qa-smoke"`, `brandName="Fixture QA Loja"`,
+composição densa (headline + preço + CTA + logo) em ambos os cenários:
+
+- **Cenário A** — logo gráfica sintética sem texto.
+- **Cenário B** — logo com a palavra "LOGO" (fixture original, preservado para provar que o
+  reconhecimento de texto legítimo da marca funciona mesmo quando a logo contém texto real).
+
+**Resultado: nenhum dos dois cenários produziu peça publicável.** Ambos esgotaram o limite de
+reparo (2 rodadas: 1ª `gpt_replan`, 2ª `unrecoverable`) com o mesmo issue —
+`UNRECOVERABLE_GLOBAL_TEXT` — e terminaram em `CREATIVE_QUALITY_GATE_NOT_PASSED` **antes** de
+qualquer chamada ao Technical Quality Gate (`technicalQualityGate` custo = `0` nos dois
+`costBreakdown`, confirmando que o pipeline nunca chegou lá). Nenhum `finalImageUrl` foi gerado em
+nenhum dos dois cenários — não há imagem final para inspeção visual.
+
+**Cenário A** — achados tratados localmente: `"R$ 149,00"` (`ghost_text`) e `"CTA"`
+(`unauthorized_text`, sem `matchedZoneKind` por definição de schema), ambos neutralizados em 1
+passe (intensidade `high`). A reverificação global encontrou `"CTA"` de novo
+(`GLOBAL_RESIDUAL_BBOX`), tratado no passe residual — mas o `GLOBAL_FINAL_RECHECK` subsequente
+ainda encontrou texto não autorizado/duplicado legível, derrubando a peça.
+
+**Cenário B** — achados tratados localmente: `"IMMIATIATE"`, `"00:00:09"`, `"Actar"` (todos
+`unauthorized_text`) e `"R$149,00"` (`ghost_text`), 1 passe cada. A reverificação global encontrou
+`"Actar"` de novo (`GLOBAL_RESIDUAL_BBOX`), tratado no residual — mas o `GLOBAL_FINAL_RECHECK`
+também reprovou. Nenhum achado nesta rodada correspondeu ao texto "LOGO" da marca — ou seja, **o
+caso específico que a ETAPA 3.3.3 corrigiu (falso positivo de wordmark da logo) simplesmente não
+se manifestou nesta execução**, confirmando mais uma vez a natureza probabilística da visão já
+registrada na rodada anterior: não há como provar a correção "positivamente" sob demanda, só
+confirmar que ela não introduziu regressão (nenhum achado real foi deixado passar incorretamente).
+
+### Verificação dos mecanismos
+
+- `LOGO_PROTECTION_RUNTIME = NOT_TRIGGERED` — nenhum achado em nenhum cenário coincidiu com a
+  palavra/região da logo; o mecanismo não foi exercitado nesta execução (nem para confirmar nem
+  para refutar).
+- `GEOMETRIC_MATCH_RUNTIME = TRIGGERED` — achados `unauthorized_text` sem `matchedZoneKind`
+  ("CTA", "Actar") foram tratados mesmo assim, evidenciando que `findMatchingCommercialZone`
+  resolveu via geometria.
+- `COMMERCIAL_BAND_RUNTIME = INCONCLUSIVE` — o texto do log de `compositionSteps` não distingue
+  explicitamente se o retângulo de tratamento foi alargado (`widenToCommercialBand`) ou não;
+  honestamente não dá pra confirmar essa aplicação específica só pelos logs produzidos, sem abrir
+  nova instrumentação (fora do escopo desta rodada).
+- `GLOBAL_RECHECK = EXECUTED` — rodou nos dois cenários, nos dois passes (inicial + residual),
+  corretamente pegando resíduo novo (`GLOBAL_RESIDUAL_BBOX`) nos dois casos.
+- `TECHNICAL_GATE_EXECUTED = NOT_TRIGGERED` — custo `0` em ambos; o pipeline nunca chegou lá,
+  pois o Global Recheck já reprovou antes.
+- `REAL_GHOST_TEXT_STILL_BLOCKED = YES` — em nenhum cenário um texto espúrio real passou sem
+  bloqueio; o sistema é consistentemente conservador (talvez até mais do que o necessário — ver
+  causa dominante abaixo).
+
+### Bloco de classificação — Deploy ETAPA 3.3.3
+
+```
+DEPLOY_COMMIT = ac86b3f
+PRODUCTION_HEALTH = OK (WEB=200, API=ok, worker/postgres saudáveis, sha256sum conferido, zero erros nos logs)
+LOGO_PROTECTION_RUNTIME = NOT_TRIGGERED (nenhum achado coincidiu com texto/região da logo em nenhum cenário)
+GEOMETRIC_MATCH_RUNTIME = TRIGGERED (unauthorized_text sem matchedZoneKind foi tratado via geometria nos 2 cenários)
+COMMERCIAL_BAND_RUNTIME = INCONCLUSIVE (log não distingue alargamento aplicado ou não)
+GLOBAL_RECHECK = EXECUTED (2/2 cenários, pass inicial + residual)
+TECHNICAL_GATE_EXECUTED = NOT_TRIGGERED (custo 0 nos 2 cenários — pipeline nunca chegou lá)
+TECHNICAL_GATE_RESULT = NOT_TRIGGERED
+VISUAL_QUALITY = NOT_APPLICABLE (nenhum finalImageUrl produzido em nenhum cenário)
+DENSE_PIECE_PUBLISHABLE = NO (cenário A: NO · cenário B: NO)
+IMAGE_GENERATIONS = 4 (2 por cenário — confirmado via ledger icaro_ai_calls: image_generation count=2 em cada execution_run_id)
+TOTAL_COST_USD = 0.2975399 (cenário A: 0.14855315 · cenário B: 0.14898675 — confirmado contra a soma por categoria no ledger Postgres)
+COMPOSITION_BLOCK_3X = STILL_OPEN
+```
+
+**Causa dominante**: o Global Recheck (reverificação global pós-composição) continua reprovando as
+duas peças densas mesmo depois do tratamento local + 1 passe residual, em ambos os cenários —
+ou seja, o bloqueio de publicação nesta densidade de composição (headline + preço + CTA + logo)
+não foi resolvido pelas duas correções desta rodada, porque os achados que derrubaram as peças
+desta vez ("CTA", "Actar", "IMMIATIATE", "00:00:09") não eram o caso específico corrigido (falso
+positivo de wordmark da logo) — eram resíduos genuinamente visíveis após o tratamento, ou o
+orçamento de 1 passe residual não foi suficiente para esgotá-los, replicando a limitação já
+registrada na auditoria anterior ("o limite de 1 passe residual pode não ser suficiente quando há
+3+ ocorrências espalhadas"). Nenhuma correção nova foi iniciada automaticamente nesta rodada,
+conforme instruído.

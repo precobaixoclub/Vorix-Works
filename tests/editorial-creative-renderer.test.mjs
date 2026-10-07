@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import sharp from "sharp";
-import { assertEditorialRuntimeFontAvailable, renderEditorialCreative } from "../dist/infrastructure/rendering/editorial-creative-renderer.js";
+import { assertEditorialRuntimeFontAvailable, buildEditorialFontFaceCss, renderEditorialCreative } from "../dist/infrastructure/rendering/editorial-creative-renderer.js";
 
 async function image(width, height, color) {
   return sharp({ create: { width, height, channels: 4, background: color } }).png().toBuffer();
@@ -90,6 +90,13 @@ test("renderEditorialCreative: fonte runtime bundled esta disponivel para acento
 
   assert.equal(font.family, "GeistEditorial");
   assert.ok(font.bytes > 1000);
+});
+
+test("renderEditorialCreative: usa familia registrada no runtime sem embutir fonte data-uri no SVG", async () => {
+  const css = await buildEditorialFontFaceCss();
+
+  assert.match(css, /font-family:GeistEditorial/);
+  assert.doesNotMatch(css, /data:font\/truetype/);
 });
 
 test("renderEditorialCreative: renderer aceita acentos, cedilha e R$ sem reprovar geometria", async () => {

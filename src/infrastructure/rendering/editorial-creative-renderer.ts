@@ -40,7 +40,6 @@ const FONT_PATH = join(moduleDir, "assets", "geist-regular.ttf");
 const FONT_FAMILY = "GeistEditorial";
 const AVG_CHAR_WIDTH = 0.54;
 let cachedFontBuffer: Buffer | undefined;
-let cachedFontFaceCss: string | undefined;
 
 async function loadEditorialFont(): Promise<Buffer> {
   if (!cachedFontBuffer) cachedFontBuffer = await readFile(FONT_PATH);
@@ -53,11 +52,8 @@ export async function assertEditorialRuntimeFontAvailable(): Promise<{ family: s
 }
 
 export async function buildEditorialFontFaceCss(): Promise<string> {
-  if (!cachedFontFaceCss) {
-    const font = await loadEditorialFont();
-    cachedFontFaceCss = `<style>@font-face{font-family:${FONT_FAMILY};src:url(data:font/truetype;base64,${font.toString("base64")}) format('truetype');font-weight:100 900;font-style:normal;} text{font-family:${FONT_FAMILY};}</style>`;
-  }
-  return cachedFontFaceCss;
+  await loadEditorialFont();
+  return `<style>text{font-family:${FONT_FAMILY};}</style>`;
 }
 
 function xmlEscape(value: string): string {

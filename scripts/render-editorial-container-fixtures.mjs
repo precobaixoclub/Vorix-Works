@@ -11,19 +11,30 @@ const glyphText = [
   "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
   "abcdefghijklmnopqrstuvwxyz",
   "0123456789",
+  "",
   "R$ 149,00",
+  "R$ 2.499,90",
+  "",
   "Preço",
   "Promoção",
   "Você",
   "Ação",
+  "Coração",
+  "Informações",
+  "Condição",
+  "Não",
+  "Até",
+  "À vista",
   "Comprar agora",
+  "",
+  "ç Ç á à ã â é ê í ó ô õ ú",
 ];
 
-const glyphSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+const glyphSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1400" viewBox="0 0 1400 1400">
   ${fontCss}
-  <rect width="1200" height="900" fill="#FFF8F1"/>
-  <text x="80" y="110" fill="#24171A" font-family="GeistEditorial" font-size="46" font-weight="800">
-    ${glyphText.map((line, index) => `<tspan x="80" dy="${index === 0 ? 0 : 82}">${line}</tspan>`).join("")}
+  <rect width="1400" height="1400" fill="#FFF8F1"/>
+  <text x="80" y="110" fill="#24171A" font-family="GeistEditorial" font-size="44" font-weight="800">
+    ${glyphText.map((line, index) => `<tspan x="80" dy="${index === 0 ? 0 : line ? 72 : 34}">${line}</tspan>`).join("")}
   </text>
 </svg>`;
 const glyphBuffer = await sharp(Buffer.from(glyphSvg)).png().toBuffer();
@@ -46,6 +57,12 @@ const productBuffer = await sharp({
   ])
   .png()
   .toBuffer();
+const logoBuffer = await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="420" height="96" viewBox="0 0 420 96">
+  <rect width="420" height="96" rx="18" fill="#8B2F48"/>
+  <circle cx="54" cy="48" r="24" fill="#FFF8F1"/>
+  <rect x="96" y="28" width="220" height="14" rx="7" fill="#FFF8F1"/>
+  <rect x="96" y="54" width="158" height="14" rx="7" fill="#FFF8F1"/>
+</svg>`)).png().toBuffer();
 
 const editorial = await renderEditorialCreative({
   baseImageBuffer,
@@ -56,8 +73,11 @@ const editorial = await renderEditorialCreative({
     format: "4:5",
     ideaText: "Fixture deterministica sem OpenAI",
     brandColors: ["#8B2F48", "#E8C785"],
-    assets: [{ role: "product_photo", url: "memory://product.png", description: "Produto QA controlado" }],
-    confirmedFacts: ["Preco atual: R$ 149,00"],
+    assets: [
+      { role: "product_photo", url: "memory://product.png", description: "Produto QA controlado" },
+      { role: "logo", url: "memory://logo.png", description: "Logo QA controlado" },
+    ],
+    confirmedFacts: ["Preço atual: R$ 149,00"],
   },
   plan: {
     objective: "Criar fixture editorial",
@@ -75,7 +95,7 @@ const editorial = await renderEditorialCreative({
     textZones: [],
     allowedRenderedTexts: ["Preço e Promoção Você em Ação", "Comprar agora com condição especial.", "Comprar agora", "R$ 149,00"],
     requiredRenderedFacts: ["R$ 149,00"],
-    requiredElements: ["produto", "headline", "cta"],
+    requiredElements: ["produto", "headline", "cta", "logo"],
     forbiddenElements: [],
     visualDensity: "balanced",
     styleNotes: "premium, limpo",
@@ -95,7 +115,10 @@ const editorial = await renderEditorialCreative({
     },
     layoutPlan: [],
   },
-  assets: [{ role: "product_photo", url: "memory://product.png", buffer: productBuffer }],
+  assets: [
+    { role: "product_photo", url: "memory://product.png", buffer: productBuffer },
+    { role: "logo", url: "memory://logo.png", buffer: logoBuffer },
+  ],
 });
 await writeFile(join(outputDir, "container-editorial-renderer-fixture.jpg"), editorial.buffer);
 

@@ -80,6 +80,7 @@ export type CreateExecutionRunInput = {
   executionMode?: "dry_run" | "real";
   correlationId?: string;
   causationId?: string;
+  initiatedByUserId?: string;
 };
 
 export async function createExecutionRun(deps: ExecutionEngineDeps, input: CreateExecutionRunInput): Promise<ExecutionRun> {
@@ -108,6 +109,7 @@ export async function createExecutionRun(deps: ExecutionEngineDeps, input: Creat
       correlationId,
       causationId: input.causationId,
       traceId,
+      initiatedByUserId: input.initiatedByUserId,
     },
     runtimeTasks: validated.runtimeDetails.tasks,
     runtimeDetails: validated.runtimeDetails,

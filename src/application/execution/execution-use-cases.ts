@@ -14,6 +14,7 @@ export type CreateExecutionRunUseCaseInput = {
   executionMode?: "dry_run" | "real";
   correlationId?: string;
   causationId?: string;
+  initiatedByUserId?: string;
 };
 
 export function createExecution(deps: ExecutionUseCaseDeps, input: CreateExecutionRunUseCaseInput): Promise<ExecutionRun> {

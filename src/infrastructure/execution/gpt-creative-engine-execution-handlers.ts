@@ -10,10 +10,15 @@ import type { RuntimeRepositoryPort } from "../../application/ports/runtime-repo
 import type { PreparedCommandRepositoryPort } from "../../application/ports/prepared-command-repository.port.js";
 import type { ContentGenerationHistoryPort } from "../../application/ports/content-generation-history.port.js";
 import type { CreativeEngineRunRepositoryPort } from "../../application/ports/creative-engine-run-repository.port.js";
+import type { ExecutionRepositoryPort } from "../../application/ports/execution-repository.port.js";
+import type { TenantMembershipRepositoryPort } from "../../application/ports/tenant-membership-repository.port.js";
+import type { UserRepositoryPort } from "../../application/ports/user-repository.port.js";
+import type { WorkspaceRepositoryPort } from "../../application/ports/workspace-repository.port.js";
 import type { CreativeContextAsset } from "../../shared/utils/gpt-creative-plan.types.js";
 import { buildCreativeContext, type BuildCreativeContextDeps } from "../../application/creative-engine/build-creative-context.js";
 import { runGptCreativeEngine, type GptCreativeEngineDeps } from "../../application/creative-engine/run-gpt-creative-engine.js";
 import { hasPermission, type TenantRole } from "../../domain/identity/identity.model.js";
+import type { ExecutionRun } from "../../domain/execution/execution.model.js";
 
 /**
  * Handlers de execução do motor GPT — migração "GPT como motor criativo único" (PR 6/9).
@@ -99,15 +104,12 @@ export type EditorialExperimentalQaAllowlistEntry = {
   workspaceId: string;
 };
 
-export type EditorialExperimentalAuthorizationInput = {
+type EditorialExperimentalAuthorizationInput = {
   requested: boolean;
   enabled?: boolean;
   tenantId: string;
   workspaceId: string;
-  actor?: {
-    userId: string;
-    role: TenantRole;
-  };
+  trustedPrincipal?: { userId: string; role: TenantRole };
   allowlist?: readonly EditorialExperimentalQaAllowlistEntry[];
 };
 
@@ -115,7 +117,7 @@ export type EditorialExperimentalAuthorizationResult =
   | { ok: true; enabled: boolean }
   | { ok: false; code: string; message: string };
 
-export function resolveEditorialExperimentalAuthorization(input: EditorialExperimentalAuthorizationInput): EditorialExperimentalAuthorizationResult {
+function resolveEditorialExperimentalAuthorization(input: EditorialExperimentalAuthorizationInput): EditorialExperimentalAuthorizationResult {
   if (!input.requested) return { ok: true, enabled: false };
   if (input.enabled !== true) {
     return {
@@ -132,14 +134,14 @@ export function resolveEditorialExperimentalAuthorization(input: EditorialExperi
       message: "O compositor editorial experimental foi solicitado, mas este tenant/workspace nao esta autorizado para homologacao QA.",
     };
   }
-  if (!input.actor) {
+  if (!input.trustedPrincipal) {
     return {
       ok: false,
-      code: "EDITORIAL_CREATIVE_ENGINE_ACTOR_REQUIRED",
-      message: "O compositor editorial experimental exige um usuario autenticado no contexto do worker.",
+      code: "EDITORIAL_EXECUTION_TRUSTED_ACTOR_UNRESOLVED",
+      message: "O compositor editorial experimental exige um iniciador confiavel persistido e revalidado no worker.",
     };
   }
-  if (!hasPermission(input.actor.role, "execution:start")) {
+  if (!hasPermission(input.trustedPrincipal.role, "execution:start")) {
     return {
       ok: false,
       code: "EDITORIAL_CREATIVE_ENGINE_ACTOR_FORBIDDEN",
@@ -147,6 +149,115 @@ export function resolveEditorialExperimentalAuthorization(input: EditorialExperi
     };
   }
   return { ok: true, enabled: true };
+}
+
+export type TrustedEditorialAuthorizationInput = {
+  requested: boolean;
+  enabled?: boolean;
+  executionRunId: string;
+  contextTenantId: string;
+  contextWorkspaceId: string;
+  allowlist?: readonly EditorialExperimentalQaAllowlistEntry[];
+  executionRepository?: ExecutionRepositoryPort;
+  workspaceRepository?: WorkspaceRepositoryPort;
+  userRepository?: UserRepositoryPort;
+  membershipRepository?: TenantMembershipRepositoryPort;
+};
+
+export async function resolveTrustedEditorialExperimentalAuthorization(input: TrustedEditorialAuthorizationInput): Promise<EditorialExperimentalAuthorizationResult & { trustedPrincipalId?: string; run?: ExecutionRun }> {
+  if (!input.requested) return { ok: true, enabled: false };
+  if (input.enabled !== true) {
+    return {
+      ok: false,
+      code: "EDITORIAL_CREATIVE_ENGINE_DISABLED",
+      message: "O compositor editorial experimental foi solicitado, mas a feature flag CREATIVE_ENGINE_EDITORIAL_EXPERIMENTAL_ENABLED nao esta habilitada neste ambiente.",
+    };
+  }
+  if (!input.executionRepository || !input.workspaceRepository || !input.userRepository || !input.membershipRepository) {
+    return {
+      ok: false,
+      code: "EDITORIAL_EXECUTION_TRUSTED_ACTOR_UNRESOLVED",
+      message: "O compositor editorial experimental nao conseguiu reconstruir a identidade confiavel no worker.",
+    };
+  }
+
+  const run = await input.executionRepository.getRunById(input.executionRunId);
+  if (!run) {
+    return {
+      ok: false,
+      code: "EDITORIAL_EXECUTION_RUN_NOT_FOUND",
+      message: "ExecutionRun persistido nao encontrado para autorizar o compositor editorial experimental.",
+    };
+  }
+  if (run.tenantId !== input.contextTenantId || run.workspaceId !== input.contextWorkspaceId) {
+    return {
+      ok: false,
+      code: "EDITORIAL_EXECUTION_CONTEXT_MISMATCH",
+      message: "Contexto do worker diverge do tenant/workspace persistido no ExecutionRun.",
+      run,
+    };
+  }
+
+  const workspace = await input.workspaceRepository.getById(run.workspaceId);
+  if (!workspace || workspace.tenantId !== run.tenantId) {
+    return {
+      ok: false,
+      code: "EDITORIAL_EXECUTION_WORKSPACE_INVALID",
+      message: "Workspace persistido no ExecutionRun nao pertence ao tenant esperado.",
+      run,
+    };
+  }
+
+  const authorizedWorkspace = input.allowlist?.some((entry) => entry.tenantId === run.tenantId && entry.workspaceId === run.workspaceId) === true;
+  if (!authorizedWorkspace) {
+    return {
+      ok: false,
+      code: "EDITORIAL_CREATIVE_ENGINE_WORKSPACE_NOT_AUTHORIZED",
+      message: "O compositor editorial experimental foi solicitado, mas este tenant/workspace nao esta autorizado para homologacao QA.",
+      trustedPrincipalId: run.initiatedByUserId,
+      run,
+    };
+  }
+  if (!run.initiatedByUserId) {
+    return {
+      ok: false,
+      code: "EDITORIAL_EXECUTION_TRUSTED_ACTOR_UNRESOLVED",
+      message: "ExecutionRun nao possui iniciador confiavel persistido.",
+      run,
+    };
+  }
+
+  const user = await input.userRepository.getById(run.initiatedByUserId);
+  if (!user || user.status !== "active") {
+    return {
+      ok: false,
+      code: "EDITORIAL_EXECUTION_TRUSTED_ACTOR_UNRESOLVED",
+      message: "Iniciador persistido nao existe ou nao esta ativo.",
+      trustedPrincipalId: run.initiatedByUserId,
+      run,
+    };
+  }
+
+  const membership = await input.membershipRepository.getByUserAndTenant(user.id, run.tenantId);
+  if (!membership) {
+    return {
+      ok: false,
+      code: "EDITORIAL_EXECUTION_MEMBERSHIP_NOT_FOUND",
+      message: "Iniciador persistido nao possui membership ativa no tenant da execucao.",
+      trustedPrincipalId: user.id,
+      run,
+    };
+  }
+
+  const authorization = resolveEditorialExperimentalAuthorization({
+    requested: true,
+    enabled: true,
+    tenantId: run.tenantId,
+    workspaceId: run.workspaceId,
+    allowlist: input.allowlist,
+    trustedPrincipal: { userId: user.id, role: membership.role },
+  });
+  return authorization.ok ? { ...authorization, trustedPrincipalId: user.id, run } : { ...authorization, trustedPrincipalId: user.id, run };
 }
 
 function parseJsonArray(raw: unknown): unknown[] {
@@ -210,6 +321,10 @@ export type GptCreativeEngineVisualTaskHandlerDeps = GptCreativeEngineDeps &
   BuildCreativeContextDeps & {
     runtimeRepository: RuntimeRepositoryPort;
     preparedCommandRepository: PreparedCommandRepositoryPort;
+    executionRepository?: ExecutionRepositoryPort;
+    workspaceRepository?: WorkspaceRepositoryPort;
+    userRepository?: UserRepositoryPort;
+    membershipRepository?: TenantMembershipRepositoryPort;
     /** Ausente em memória (in-memory) desativa a persistência auditável — nunca bloqueia a
      * geração; é sempre best-effort (nunca deve derrubar a execução por falha de escrita). */
     creativeEngineRunRepository?: CreativeEngineRunRepositoryPort;
@@ -244,15 +359,24 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
     const validatedInputs = preparedCommand.validatedInputs;
     const assets = buildAssetsFromValidatedInputs(validatedInputs);
     const experimentalEditorialMode = isEditorialExperimentalRequested(validatedInputs);
-    const editorialAuthorization = resolveEditorialExperimentalAuthorization({
+    const editorialAuthorization = await resolveTrustedEditorialExperimentalAuthorization({
       requested: experimentalEditorialMode,
       enabled: this.deps.editorialExperimentalEnabled,
-      tenantId: request.context.tenantId,
-      workspaceId: request.context.workspaceId,
-      actor: request.context.actor,
+      executionRunId: request.context.executionRunId,
+      contextTenantId: request.context.tenantId,
+      contextWorkspaceId: request.context.workspaceId,
       allowlist: this.deps.editorialExperimentalQaAllowlist,
+      executionRepository: this.deps.executionRepository,
+      workspaceRepository: this.deps.workspaceRepository,
+      userRepository: this.deps.userRepository,
+      membershipRepository: this.deps.membershipRepository,
     });
-    if (!editorialAuthorization.ok) return failure(editorialAuthorization.code, editorialAuthorization.message, "policy_violation");
+    if (!editorialAuthorization.ok) {
+      console.warn(
+        `[gpt-creative-engine] editorial_authorization=denied reason=${editorialAuthorization.code} runId=${request.context.executionRunId} tenantId=${request.context.tenantId} workspaceId=${request.context.workspaceId} trustedPrincipalId=${editorialAuthorization.trustedPrincipalId ?? "unresolved"}`,
+      );
+      return failure(editorialAuthorization.code, editorialAuthorization.message, "policy_violation");
+    }
 
     const creativeContext = await buildCreativeContext(this.deps, {
       workspaceId: request.context.workspaceId,

@@ -28,6 +28,7 @@ export type ExecutionRun = {
   correlationId: string;
   causationId?: string;
   traceId: string;
+  initiatedByUserId?: string;
   createdAt: string;
   updatedAt: string;
   startedAt?: string;

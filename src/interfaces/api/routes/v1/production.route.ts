@@ -138,6 +138,7 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
       runtimePlanId,
       idempotencyKey,
       executionMode: "real",
+      initiatedByUserId: principal.userId,
     }).catch(translateExecutionError);
 
     // Fire-and-forget deliberado — o pipeline real (copy/design/imagem/Repair Loop/Quality Gate)

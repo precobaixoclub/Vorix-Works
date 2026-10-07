@@ -111,7 +111,7 @@ export async function registerExecutionRunRoutes(app: FastifyInstance, deps: Exe
   app.post("/execution-runs", { schema: { body: CREATE_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "execution:create");
     const body = request.body as { workspaceId: string; runtimePlanId: string; idempotencyKey: string; executionMode?: "dry_run" | "real" };
-    const run = await createExecution(deps, { tenantId: principal.tenantId, ...body }).catch(translateExecutionError);
+    const run = await createExecution(deps, { tenantId: principal.tenantId, ...body, initiatedByUserId: principal.userId }).catch(translateExecutionError);
     return successEnvelope(run, request.id);
   });
 

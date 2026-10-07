@@ -4,95 +4,10 @@ import assert from "node:assert/strict";
 import { loadApiConfig } from "../dist/interfaces/api/config/api-config.js";
 import {
   GptCreativeEngineVisualTaskHandler,
-  resolveEditorialExperimentalAuthorization,
+  resolveTrustedEditorialExperimentalAuthorization,
 } from "../dist/infrastructure/execution/gpt-creative-engine-execution-handlers.js";
 
 const ALLOWLIST = [{ tenantId: "tenant-qa", workspaceId: "workspace-qa" }];
-
-test("Creative Engine editorial experimental: allowlist exige flag, opt-in, tenant/workspace e permissao do ator", () => {
-  assert.deepEqual(
-    resolveEditorialExperimentalAuthorization({
-      requested: false,
-      enabled: true,
-      tenantId: "tenant-other",
-      workspaceId: "workspace-other",
-      actor: { userId: "user-viewer", role: "viewer" },
-      allowlist: [],
-    }),
-    { ok: true, enabled: false },
-  );
-
-  assert.equal(
-    resolveEditorialExperimentalAuthorization({
-      requested: true,
-      enabled: false,
-      tenantId: "tenant-qa",
-      workspaceId: "workspace-qa",
-      actor: { userId: "user-owner", role: "owner" },
-      allowlist: ALLOWLIST,
-    }).code,
-    "EDITORIAL_CREATIVE_ENGINE_DISABLED",
-  );
-
-  assert.equal(
-    resolveEditorialExperimentalAuthorization({
-      requested: true,
-      enabled: true,
-      tenantId: "tenant-qa",
-      workspaceId: "workspace-other",
-      actor: { userId: "user-owner", role: "owner" },
-      allowlist: ALLOWLIST,
-    }).code,
-    "EDITORIAL_CREATIVE_ENGINE_WORKSPACE_NOT_AUTHORIZED",
-  );
-
-  assert.equal(
-    resolveEditorialExperimentalAuthorization({
-      requested: true,
-      enabled: true,
-      tenantId: "tenant-other",
-      workspaceId: "workspace-qa",
-      actor: { userId: "user-owner", role: "owner" },
-      allowlist: ALLOWLIST,
-    }).code,
-    "EDITORIAL_CREATIVE_ENGINE_WORKSPACE_NOT_AUTHORIZED",
-  );
-
-  assert.equal(
-    resolveEditorialExperimentalAuthorization({
-      requested: true,
-      enabled: true,
-      tenantId: "tenant-qa",
-      workspaceId: "workspace-qa",
-      allowlist: ALLOWLIST,
-    }).code,
-    "EDITORIAL_CREATIVE_ENGINE_ACTOR_REQUIRED",
-  );
-
-  assert.equal(
-    resolveEditorialExperimentalAuthorization({
-      requested: true,
-      enabled: true,
-      tenantId: "tenant-qa",
-      workspaceId: "workspace-qa",
-      actor: { userId: "user-viewer", role: "viewer" },
-      allowlist: ALLOWLIST,
-    }).code,
-    "EDITORIAL_CREATIVE_ENGINE_ACTOR_FORBIDDEN",
-  );
-
-  assert.deepEqual(
-    resolveEditorialExperimentalAuthorization({
-      requested: true,
-      enabled: true,
-      tenantId: "tenant-qa",
-      workspaceId: "workspace-qa",
-      actor: { userId: "user-editor", role: "editor" },
-      allowlist: ALLOWLIST,
-    }),
-    { ok: true, enabled: true },
-  );
-});
 
 test("Creative Engine editorial experimental: config parseia allowlist explicita de QA", () => {
   const config = loadApiConfig({
@@ -109,7 +24,36 @@ test("Creative Engine editorial experimental: config parseia allowlist explicita
   ]);
 });
 
-test("Creative Engine editorial experimental: job reprocessado sem ator nao ultrapassa o worker", async () => {
+test("Creative Engine editorial experimental: autorizacao usa run persistido e permissoes atuais", async () => {
+  const deps = trustedDeps();
+
+  assert.deepEqual(await authorize(deps, { requested: false, contextTenantId: "tenant-other", contextWorkspaceId: "workspace-other" }), { ok: true, enabled: false });
+  assert.equal((await authorize(deps, { enabled: false })).code, "EDITORIAL_CREATIVE_ENGINE_DISABLED");
+  assert.deepEqual(await authorize(deps), { ok: true, enabled: true, trustedPrincipalId: "user-a", run: deps.runs.get("run-qa") });
+
+  assert.equal((await authorize(deps, { contextTenantId: "tenant-b", contextWorkspaceId: "workspace-qa" })).code, "EDITORIAL_EXECUTION_CONTEXT_MISMATCH");
+  assert.equal((await authorize(deps, { runId: "run-same-workspace-other-tenant", contextTenantId: "tenant-b", contextWorkspaceId: "workspace-qa" })).code, "EDITORIAL_EXECUTION_WORKSPACE_INVALID");
+
+  deps.memberships.delete("user-a:tenant-qa");
+  assert.equal((await authorize(deps)).code, "EDITORIAL_EXECUTION_MEMBERSHIP_NOT_FOUND");
+
+  deps.memberships.set("user-a:tenant-qa", membership("user-a", "tenant-qa", "viewer"));
+  assert.equal((await authorize(deps)).code, "EDITORIAL_CREATIVE_ENGINE_ACTOR_FORBIDDEN");
+
+  deps.memberships.set("user-a:tenant-qa", membership("user-a", "tenant-qa", "editor"));
+  deps.users.set("user-a", user("user-a", "disabled"));
+  assert.equal((await authorize(deps)).code, "EDITORIAL_EXECUTION_TRUSTED_ACTOR_UNRESOLVED");
+
+  deps.users.set("user-a", user("user-a", "active"));
+  assert.equal((await authorize(deps, { allowlist: [] })).code, "EDITORIAL_CREATIVE_ENGINE_WORKSPACE_NOT_AUTHORIZED");
+  assert.equal((await authorize(deps, { runId: "run-legacy" })).code, "EDITORIAL_EXECUTION_TRUSTED_ACTOR_UNRESOLVED");
+});
+
+test("Creative Engine editorial experimental: payload actor fabricado nao autoriza o worker nem consome IA", async () => {
+  const deps = trustedDeps();
+  deps.memberships.set("user-a:tenant-qa", membership("user-a", "tenant-qa", "viewer"));
+  let buildContextCalls = 0;
+  let engineCalls = 0;
   const handler = new GptCreativeEngineVisualTaskHandler({
     runtimeRepository: {
       getById: async () => ({ sourceContext: { preparedCommandId: "prepared-1" } }),
@@ -124,18 +68,122 @@ test("Creative Engine editorial experimental: job reprocessado sem ator nao ultr
         },
       }),
     },
+    executionRepository: deps.executionRepository,
+    workspaceRepository: deps.workspaceRepository,
+    userRepository: deps.userRepository,
+    membershipRepository: deps.membershipRepository,
     editorialExperimentalEnabled: true,
     editorialExperimentalQaAllowlist: ALLOWLIST,
+    resolveBrandProfile: async () => {
+      buildContextCalls += 1;
+      return undefined;
+    },
+    creativeBrain: { request: async () => { engineCalls += 1; return { content: "{}" }; } },
   });
 
   const result = await handler.execute({
     task: { id: "task-1", runtimePlanId: "runtime-1", executionTaskId: "execution-task-1", capability: "visual_design", type: "visual_generation" },
     inputs: {},
-    context: { executionRunId: "run-1", tenantId: "tenant-qa", workspaceId: "workspace-qa", mode: "real" },
-    attempt: { id: "attempt-1", executionRunId: "run-1", taskRunId: "task-run-1", attemptNumber: 1, state: "running", startedAt: "2026-10-06T00:00:00.000Z", idempotencyKey: "idem", correlationId: "corr", traceId: "trace" },
+    context: {
+      executionRunId: "run-qa",
+      tenantId: "tenant-qa",
+      workspaceId: "workspace-qa",
+      mode: "real",
+      actor: { userId: "admin-b", role: "owner" },
+    },
+    attempt: { id: "attempt-1", executionRunId: "run-qa", taskRunId: "task-run-1", attemptNumber: 1, state: "running", startedAt: "2026-10-07T00:00:00.000Z", idempotencyKey: "idem", correlationId: "corr", traceId: "trace" },
   });
 
   assert.equal(result.ok, false);
-  assert.equal(result.error.code, "EDITORIAL_CREATIVE_ENGINE_ACTOR_REQUIRED");
+  assert.equal(result.error.code, "EDITORIAL_CREATIVE_ENGINE_ACTOR_FORBIDDEN");
   assert.equal(result.error.category, "policy_violation");
+  assert.equal(buildContextCalls, 0);
+  assert.equal(engineCalls, 0);
 });
+
+test("Creative Engine editorial experimental: engine normal sem opt-in nao exige trusted actor", async () => {
+  const result = await resolveTrustedEditorialExperimentalAuthorization({
+    requested: false,
+    enabled: true,
+    executionRunId: "run-legacy",
+    contextTenantId: "tenant-qa",
+    contextWorkspaceId: "workspace-qa",
+    allowlist: [],
+  });
+
+  assert.deepEqual(result, { ok: true, enabled: false });
+});
+
+function authorize(deps, overrides = {}) {
+  return resolveTrustedEditorialExperimentalAuthorization({
+    requested: overrides.requested ?? true,
+    enabled: overrides.enabled ?? true,
+    executionRunId: overrides.runId ?? "run-qa",
+    contextTenantId: overrides.contextTenantId ?? "tenant-qa",
+    contextWorkspaceId: overrides.contextWorkspaceId ?? "workspace-qa",
+    allowlist: overrides.allowlist ?? ALLOWLIST,
+    executionRepository: deps.executionRepository,
+    workspaceRepository: deps.workspaceRepository,
+    userRepository: deps.userRepository,
+    membershipRepository: deps.membershipRepository,
+  });
+}
+
+function trustedDeps() {
+  const runs = new Map([
+    ["run-qa", run({ id: "run-qa", tenantId: "tenant-qa", workspaceId: "workspace-qa", initiatedByUserId: "user-a" })],
+    ["run-legacy", run({ id: "run-legacy", tenantId: "tenant-qa", workspaceId: "workspace-qa" })],
+    ["run-same-workspace-other-tenant", run({ id: "run-same-workspace-other-tenant", tenantId: "tenant-b", workspaceId: "workspace-qa", initiatedByUserId: "user-b" })],
+  ]);
+  const workspaces = new Map([
+    ["workspace-qa", { id: "workspace-qa", tenantId: "tenant-qa", name: "QA", kind: "brand", status: "active", settings: {}, members: [], integrations: [], createdAt: "2026-10-07T00:00:00.000Z", updatedAt: "2026-10-07T00:00:00.000Z" }],
+  ]);
+  const users = new Map([
+    ["user-a", user("user-a", "active")],
+    ["user-b", user("user-b", "active")],
+  ]);
+  const memberships = new Map([
+    ["user-a:tenant-qa", membership("user-a", "tenant-qa", "editor")],
+    ["user-b:tenant-b", membership("user-b", "tenant-b", "owner")],
+  ]);
+
+  return {
+    runs,
+    workspaces,
+    users,
+    memberships,
+    executionRepository: { getRunById: async (id) => runs.get(id) },
+    workspaceRepository: { getById: async (id) => workspaces.get(id) },
+    userRepository: { getById: async (id) => users.get(id) },
+    membershipRepository: { getByUserAndTenant: async (userId, tenantId) => memberships.get(`${userId}:${tenantId}`) },
+  };
+}
+
+function run(overrides) {
+  return {
+    id: overrides.id,
+    runtimePlanId: "runtime-1",
+    planningId: "planning-1",
+    tenantId: overrides.tenantId,
+    workspaceId: overrides.workspaceId,
+    state: "created",
+    mode: "real",
+    idempotencyKey: overrides.id,
+    sourceGraphFingerprint: "source",
+    runtimeFingerprint: "runtime",
+    correlationId: overrides.id,
+    traceId: overrides.id,
+    initiatedByUserId: overrides.initiatedByUserId,
+    createdAt: "2026-10-07T00:00:00.000Z",
+    updatedAt: "2026-10-07T00:00:00.000Z",
+    version: 1,
+  };
+}
+
+function user(id, status) {
+  return { id, email: `${id}@qa.local`, passwordHash: "hash", name: id, status, createdAt: "2026-10-07T00:00:00.000Z", updatedAt: "2026-10-07T00:00:00.000Z", isPlatformAdmin: false };
+}
+
+function membership(userId, tenantId, role) {
+  return { id: `${userId}:${tenantId}`, userId, tenantId, role, createdAt: "2026-10-07T00:00:00.000Z", updatedAt: "2026-10-07T00:00:00.000Z" };
+}

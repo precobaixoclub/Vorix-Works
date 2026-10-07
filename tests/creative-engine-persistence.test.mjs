@@ -36,10 +36,10 @@ test("0061: colunas aditivas existem em content_generation_history/execution_run
   const columns = await db.pool.query(
     `select table_name, column_name from information_schema.columns
      where (table_name = 'content_generation_history' and column_name in ('engine_mode', 'creative_engine_run_id', 'description'))
-        or (table_name = 'execution_runs' and column_name = 'creative_engine')
+        or (table_name = 'execution_runs' and column_name in ('creative_engine', 'initiated_by_user_id'))
         or (table_name = 'execution_task_runs' and column_name = 'creative_engine')`,
   );
-  assert.equal(columns.rows.length, 5);
+  assert.equal(columns.rows.length, 6);
 });
 
 /** Cadeia mínima de FKs (workspace → conversation → briefing → prepared_command → planning →

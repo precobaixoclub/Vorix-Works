@@ -32,7 +32,7 @@ import type { RuntimeArtifactStatus, RuntimeBinding, RuntimeTask, RuntimeTaskInp
 
 type RunRow = {
   id: string; runtime_plan_id: string; planning_id: string; tenant_id: string; workspace_id: string; state: string; mode: string; idempotency_key: string;
-  source_graph_fingerprint: string; runtime_fingerprint: string; correlation_id: string | null; causation_id: string | null; trace_id: string | null; created_at: Date; updated_at: Date; started_at: Date | null; finished_at: Date | null; cancelled_at: Date | null; version: number;
+  source_graph_fingerprint: string; runtime_fingerprint: string; correlation_id: string | null; causation_id: string | null; trace_id: string | null; initiated_by_user_id: string | null; created_at: Date; updated_at: Date; started_at: Date | null; finished_at: Date | null; cancelled_at: Date | null; version: number;
 };
 type TaskRunRow = {
   id: string; execution_run_id: string; runtime_plan_id: string; runtime_task_id: string; execution_task_id: string; type: string; capability: string; state: string; blocked_reason: string | null;
@@ -71,8 +71,8 @@ export class PostgresExecutionRepository implements ExecutionRepositoryPort {
       await client.query(
         `insert into execution_runs (
           id, runtime_plan_id, planning_id, tenant_id, workspace_id, state, mode, idempotency_key,
-          source_graph_fingerprint, runtime_fingerprint, correlation_id, causation_id, trace_id, created_at, updated_at
-        ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now(), now())`,
+          source_graph_fingerprint, runtime_fingerprint, correlation_id, causation_id, trace_id, initiated_by_user_id, created_at, updated_at
+        ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now(), now())`,
         [
           input.run.id,
           input.run.runtimePlanId,
@@ -87,6 +87,7 @@ export class PostgresExecutionRepository implements ExecutionRepositoryPort {
           input.run.correlationId,
           input.run.causationId ?? null,
           input.run.traceId,
+          input.run.initiatedByUserId ?? null,
         ],
       );
       for (const task of input.runtimeTasks) {
@@ -404,6 +405,7 @@ function toRun(row: RunRow): ExecutionRun {
     correlationId: row.correlation_id ?? row.id,
     causationId: row.causation_id ?? undefined,
     traceId: row.trace_id ?? row.id,
+    initiatedByUserId: row.initiated_by_user_id ?? undefined,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
     startedAt: row.started_at?.toISOString(),

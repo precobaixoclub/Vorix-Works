@@ -51,6 +51,10 @@ services:
       # deploy que reconstrói este arquivo a partir do git sem essa linha volta produção pro motor
       # legado silenciosamente, sem nenhum erro visível).
       CREATIVE_ENGINE: "${CREATIVE_ENGINE:-legacy}"
+      # Motor editorial experimental: fica desligado por padrão e só autoriza workspaces
+      # explicitamente listados em CREATIVE_ENGINE_EDITORIAL_QA_ALLOWLIST.
+      CREATIVE_ENGINE_EDITORIAL_EXPERIMENTAL_ENABLED: "${CREATIVE_ENGINE_EDITORIAL_EXPERIMENTAL_ENABLED:-false}"
+      CREATIVE_ENGINE_EDITORIAL_QA_ALLOWLIST: "${CREATIVE_ENGINE_EDITORIAL_QA_ALLOWLIST:-}"
       SECRET_MANAGER_PROVIDER: "${SECRET_MANAGER_PROVIDER:-production}"
       API_CORS_ORIGIN: "${ZUNO_WEB_ORIGIN}"
       # SaaS Commercialization / Pricing & Capacity — mesmo achado que o comentário de

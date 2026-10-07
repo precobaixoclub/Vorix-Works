@@ -171,6 +171,21 @@ export const CONTENT_REQUEST_SCHEMA_V1: BriefingSchema = {
       confirmationPolicy: "never_required",
     },
     {
+      // Motor editorial experimental — opt-in explícito e determinístico. Sem este campo no schema,
+      // a rota de Produção até poderia receber o parâmetro, mas o PreparedCommand o descartaria
+      // silenciosamente antes do handler visual; com ele registrado, a autorização allowlisted do
+      // worker decide se o caminho editorial pode ou não rodar.
+      key: "creativeEngineCompositionMode",
+      label: "Modo de composição do motor criativo",
+      description: "Opt-in explícito para o compositor editorial experimental do motor GPT.",
+      required: false,
+      dataType: "enum",
+      acceptedValues: ["standard", "editorial_experimental"],
+      sourcePriority: ["user_message"],
+      sensitivity: "normal",
+      confirmationPolicy: "never_required",
+    },
+    {
       // Migração "GPT como motor criativo único" (PR 7/9) — todos os assets de referência reais
       // (produto/screenshot/logo/estilo) COM PAPEL explícito, JSON stringificado de
       // `Array<{url, role, description?}>` (mesmo formato que

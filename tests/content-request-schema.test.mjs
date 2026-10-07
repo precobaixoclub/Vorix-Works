@@ -30,7 +30,7 @@ test("CONTENT_REQUEST_SCHEMA_V1: registra referenceIntelligence como campo pass-
 });
 
 test("CONTENT_REQUEST_SCHEMA_V1: todos os campos 'never_required' (preenchidos automaticamente por generate-visual-from-idea.ts) nunca são required", () => {
-  const autoFilledKeys = ["referenceImageUrl", "referenceImageUrls", "referenceIntelligence", "textCommercialFacts", "aspectRatio", "referenceAssets", "forbiddenElements"];
+  const autoFilledKeys = ["referenceImageUrl", "referenceImageUrls", "referenceIntelligence", "textCommercialFacts", "aspectRatio", "creativeEngineCompositionMode", "referenceAssets", "forbiddenElements"];
   for (const key of autoFilledKeys) {
     const field = CONTENT_REQUEST_SCHEMA_V1.fields.find((f) => f.key === key);
     assert.ok(field, `campo '${key}' deveria existir no schema`);
@@ -51,6 +51,16 @@ test("CONTENT_REQUEST_SCHEMA_V1: registra aspectRatio como campo pass-through (P
   assert.equal(field.confirmationPolicy, "never_required");
   assert.equal(field.dataType, "enum");
   assert.deepEqual(field.acceptedValues, ["1:1", "4:5", "9:16", "16:9"]);
+});
+
+test("CONTENT_REQUEST_SCHEMA_V1: registra creativeEngineCompositionMode como opt-in editorial pass-through", () => {
+  const field = CONTENT_REQUEST_SCHEMA_V1.fields.find((f) => f.key === "creativeEngineCompositionMode");
+
+  assert.ok(field, "campo 'creativeEngineCompositionMode' deveria estar registrado no schema, senão o opt-in editorial é descartado silenciosamente");
+  assert.equal(field.required, false);
+  assert.equal(field.confirmationPolicy, "never_required");
+  assert.equal(field.dataType, "enum");
+  assert.deepEqual(field.acceptedValues, ["standard", "editorial_experimental"]);
 });
 
 test("CONTENT_REQUEST_SCHEMA_V1: registra referenceAssets como campo pass-through (PR 7/9 — motor GPT, assets com papel explícito)", () => {

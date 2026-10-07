@@ -47,6 +47,8 @@ export type GenerateVisualFromIdeaInput = {
    * "9:16"), lida só pelo motor GPT (`creative_context.format`); o motor legado ignora este campo,
    * sem nenhuma mudança de comportamento. */
   aspectRatio?: "1:1" | "4:5" | "9:16" | "16:9";
+  /** Opt-in explícito do compositor editorial experimental. Ausente = comportamento padrão. */
+  creativeEngineCompositionMode?: "standard" | "editorial_experimental";
   /** Migração "GPT como motor criativo único" (PR 7/9) — assets reais COM PAPEL explícito
    * (produto/screenshot/logo/estilo), lidos só pelo motor GPT
    * (`GptCreativeEngineVisualTaskHandler.buildAssetsFromValidatedInputs`). Quando presente,
@@ -163,6 +165,7 @@ export async function generateVisualFromIdea(
   // Migração "GPT como motor criativo único" (PR 7/9) — superfície aditiva exclusiva do motor GPT;
   // o motor legado nunca lê nenhum destes 3 campos, então nada muda para `legacyCreativeEngineEnabled`.
   if (input.aspectRatio) fields.push({ key: "aspectRatio", value: input.aspectRatio });
+  if (input.creativeEngineCompositionMode) fields.push({ key: "creativeEngineCompositionMode", value: input.creativeEngineCompositionMode });
   if (input.referenceAssets && input.referenceAssets.length > 0) {
     fields.push({ key: "referenceAssets", value: JSON.stringify(input.referenceAssets) });
   }

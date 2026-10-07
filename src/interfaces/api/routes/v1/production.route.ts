@@ -59,6 +59,7 @@ const GENERATE_BODY_SCHEMA = {
     // motor GPT (ver `content-request.schema.ts`); ausentes/omitidos, o comportamento é idêntico
     // ao de antes deles existirem, inclusive para o motor legado.
     aspectRatio: { type: "string", enum: ["1:1", "4:5", "9:16", "16:9"] },
+    creativeEngineCompositionMode: { type: "string", enum: ["standard", "editorial_experimental"] },
     referenceAssets: {
       type: "array",
       maxItems: 10,
@@ -127,6 +128,7 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
       targetAudience: body.targetAudience,
       referenceImageUrls: body.referenceImages,
       aspectRatio: body.aspectRatio,
+      creativeEngineCompositionMode: body.creativeEngineCompositionMode,
       referenceAssets: body.referenceAssets,
       forbiddenElements: body.forbiddenElements,
     });
@@ -216,6 +218,7 @@ type GenerateBody = {
   targetAudience?: string;
   referenceImages?: string[];
   aspectRatio?: "1:1" | "4:5" | "9:16" | "16:9";
+  creativeEngineCompositionMode?: "standard" | "editorial_experimental";
   referenceAssets?: Array<{ url: string; role: (typeof REFERENCE_ASSET_ROLES)[number]; description?: string }>;
   forbiddenElements?: string[];
 };

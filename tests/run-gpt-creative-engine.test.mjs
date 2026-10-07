@@ -1250,3 +1250,26 @@ test("runGptCreativeEngine editorial experimental: falha alto se renderer nao fo
   assert.equal(result.publishable, false);
   assert.equal(result.errorCode, "EDITORIAL_RENDERER_MISSING");
 }));
+
+test("runGptCreativeEngine editorial experimental: product_offer sem asset real bloqueia antes da IA de imagem", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({
+      requiredElements: ["produto", "headline", "cta"],
+      assetPlacements: [{ role: "product_photo", url: "product_photo_url", rect: { xPct: 25, yPct: 30, widthPct: 50, heightPct: 40 }, frame: "none", treatment: "Produto real centralizado" }],
+      artDirection: sampleArtDirection({
+        visualFocus: "Produto fisico em destaque no centro",
+        elementHierarchy: ["produto", "headline", "cta"],
+      }),
+    })],
+    image_generation: [imageResponse()],
+  });
+
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({
+    experimentalEditorialMode: true,
+    creativeContext: baseContext({ assets: [], confirmedFacts: ["Preco atual: R$ 149,00"] }),
+  }));
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.errorCode, "REQUIRED_PRODUCT_ASSET_MISSING");
+  assert.equal(icaro.calls.some((call) => call.taskType === "image_generation"), false);
+}));

@@ -1006,7 +1006,115 @@ function textZoneDrawInstruction(zone: CreativePlanTextZone | undefined, label: 
   return `${label} (desenhar exatamente este texto${emphasisNote}${rectHint}): "${exactText}"`;
 }
 
-export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: CreativeContext): string {
+export type ImageGenerationPromptMode = "standard" | "editorial_experimental";
+
+export type EditorialProductAssetRequirementResult =
+  | { requirement: "optional"; ok: true }
+  | { requirement: "required"; ok: true }
+  | { requirement: "required"; ok: false; code: "REQUIRED_PRODUCT_ASSET_MISSING"; reason: string };
+
+function stripCommercialTextForEditorialPrompt(value: string | undefined, plan: CreativePlan): string | undefined {
+  if (!value?.trim()) return undefined;
+  let sanitized = value;
+  const forbiddenText = [
+    plan.headline,
+    plan.subheadline,
+    plan.cta,
+    plan.title,
+    ...plan.allowedRenderedTexts,
+    ...plan.textZones.map((zone) => zone.text),
+  ].filter((text): text is string => Boolean(text?.trim()));
+  for (const text of [...new Set(forbiddenText)]) {
+    sanitized = sanitized.replaceAll(text, "o elemento visual principal");
+  }
+  sanitized = sanitized
+    .replace(/\b(?:R\$|BRL|USD|US\$)\s*\d[\d.,]*/gi, "valor comercial")
+    .replace(/\b\d{1,3}(?:[.,]\d{2})\b/g, "valor comercial")
+    .replace(/\b(?:headline|subheadline|cta|call to action|pre[çc]o|price|desconto|discount|badge|url|logo)\b/gi, "elemento editorial")
+    .replace(/\s+/g, " ")
+    .trim();
+  return sanitized || undefined;
+}
+
+function buildEditorialImageGenerationPromptFromPlan(plan: CreativePlan, context: CreativeContext): string {
+  const visualLines = [
+    "Create only the photographic visual scene/background for a later deterministic marketing composition.",
+    "Do not create an advertisement. Do not render typography. Do not add headlines. Do not add prices. Do not add CTAs. Do not add badges. Do not add labels. Do not add logos. Do not add fake packaging copy. Do not add signs, captions, buttons, UI text, watermarks, or any readable words.",
+    "All commercial text, prices, calls to action, logos, and exact offer facts will be rendered later by a deterministic compositor.",
+    `Final composition format: ${context.format}.`,
+  ];
+
+  const artDirection = plan.artDirection;
+  const concept = stripCommercialTextForEditorialPrompt(artDirection.concept, plan);
+  const visualFocus = stripCommercialTextForEditorialPrompt(artDirection.visualFocus, plan);
+  const visualDirection = stripCommercialTextForEditorialPrompt(plan.visualDirection, plan);
+  const compositionIntent = stripCommercialTextForEditorialPrompt(plan.compositionIntent, plan);
+  const backgroundTreatment = stripCommercialTextForEditorialPrompt(artDirection.backgroundTreatment, plan);
+  const atmosphere = stripCommercialTextForEditorialPrompt(artDirection.atmosphere, plan);
+  const chromaticDirection = stripCommercialTextForEditorialPrompt(artDirection.chromaticDirection, plan);
+  const contrastStrategy = stripCommercialTextForEditorialPrompt(artDirection.contrastStrategy, plan);
+  const styleNotes = stripCommercialTextForEditorialPrompt(plan.styleNotes, plan);
+
+  if (visualDirection) visualLines.push(`Visual direction: ${visualDirection}.`);
+  if (compositionIntent) visualLines.push(`Composition intent: ${compositionIntent}.`);
+  if (concept) visualLines.push(`Scene concept: ${concept}.`);
+  if (visualFocus) visualLines.push(`Main visual focus: ${visualFocus}.`);
+  if (atmosphere) visualLines.push(`Atmosphere: ${atmosphere}.`);
+  if (backgroundTreatment) visualLines.push(`Background/environment treatment: ${backgroundTreatment}.`);
+  if (chromaticDirection) visualLines.push(`Chromatic direction: ${chromaticDirection}.`);
+  if (contrastStrategy) visualLines.push(`Light/contrast strategy: ${contrastStrategy}.`);
+  if (styleNotes) visualLines.push(`Style notes: ${styleNotes}.`);
+
+  const visualLayoutZones = plan.layoutPlan
+    .filter((zone) => zone.kind === "hero" || zone.kind === "support" || zone.kind === "negativeSpace")
+    .slice()
+    .sort((a, b) => a.priority - b.priority)
+    .map((zone) => {
+      const role = zone.kind === "hero" ? "main visual mass" : zone.kind === "support" ? "supporting visual mass" : "negative space";
+      const rationale = stripCommercialTextForEditorialPrompt(zone.rationale, plan) ?? "visual balance";
+      return `${role} (priority ${zone.priority}, x=${zone.rect.xPct}%-${zone.rect.xPct + zone.rect.widthPct}%, y=${zone.rect.yPct}%-${zone.rect.yPct + zone.rect.heightPct}%): ${rationale}`;
+    });
+  if (visualLayoutZones.length > 0) {
+    visualLines.push(`Visual mass map, with no text in any region:\n${visualLayoutZones.join("\n")}`);
+  }
+
+  if (context.assets.some((asset) => asset.role === "product_photo")) {
+    visualLines.push("A real product asset will be provided separately: preserve its shape, color, material, and distinctive details; do not invent a different product and do not add readable packaging copy.");
+  } else {
+    visualLines.push("If the scene contains objects, keep them non-branded and non-textual; do not invent a specific commercial product or readable packaging.");
+  }
+  if (context.assets.some((asset) => asset.role === "screenshot")) {
+    visualLines.push("A real screenshot will be composited later into the device area; create only the device/environment, with a blank or abstract screen and no readable interface text.");
+  }
+  if (context.brandColors && context.brandColors.length > 0) {
+    visualLines.push(`Use this brand color direction only as non-textual color styling: ${context.brandColors.join(", ")}.`);
+  }
+  if (plan.forbiddenElements.length > 0) {
+    visualLines.push(`Also avoid these visual elements: ${plan.forbiddenElements.join(", ")}.`);
+  }
+  visualLines.push("The final image must contain zero readable text. This includes decorative typography, placeholder words, labels, product names, numbers, currency, acronyms, pseudo-text, and fake UI strings.");
+  return visualLines.join("\n");
+}
+
+export function resolveEditorialProductAssetRequirement(plan: CreativePlan, context: CreativeContext): EditorialProductAssetRequirementResult {
+  const hasProductAsset = context.assets.some((asset) => asset.role === "product_photo");
+  const explicitlyPlansProduct = plan.assetPlacements.some((placement) => placement.role === "product_photo")
+    || plan.requiredElements.some((element) => /\b(produto|product|item\s+fisico|item\s+físico)\b/i.test(element))
+    || Object.keys(plan.assetUsage ?? {}).some((key) => /product|produto/i.test(key))
+    || /\b(produto|product)\b/i.test([plan.artDirection.visualFocus, plan.artDirection.elementHierarchy.join(" "), plan.description].join(" "));
+  if (!explicitlyPlansProduct) return { requirement: "optional", ok: true };
+  if (hasProductAsset) return { requirement: "required", ok: true };
+  return {
+    requirement: "required",
+    ok: false,
+    code: "REQUIRED_PRODUCT_ASSET_MISSING",
+    reason: "O plano editorial exige produto fisico/especifico, mas nenhum asset product_photo real foi fornecido ao pipeline.",
+  };
+}
+
+export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: CreativeContext, options: { compositionMode?: ImageGenerationPromptMode } = {}): string {
+  if (options.compositionMode === "editorial_experimental") return buildEditorialImageGenerationPromptFromPlan(plan, context);
+
   const hasScreenshotAsset = context.assets.some((asset) => asset.role === "screenshot");
   const hasLogoAsset = context.assets.some((asset) => asset.role === "logo");
   const headlineZone = plan.textZones.find((zone) => zone.kind === "headline");

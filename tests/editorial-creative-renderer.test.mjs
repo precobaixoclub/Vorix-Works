@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import sharp from "sharp";
-import { renderEditorialCreative } from "../dist/infrastructure/rendering/editorial-creative-renderer.js";
+import { assertEditorialRuntimeFontAvailable, renderEditorialCreative } from "../dist/infrastructure/rendering/editorial-creative-renderer.js";
 
 async function image(width, height, color) {
   return sharp({ create: { width, height, channels: 4, background: color } }).png().toBuffer();
@@ -83,6 +83,34 @@ test("renderEditorialCreative: produto/oferta preserva produto e usa somente pre
   assert.deepEqual(result.compositedAssetRoles.sort(), ["logo", "product_photo"]);
   assert.ok(result.renderedTextZones.some((zone) => zone.text === "R$ 149,00"));
   assert.ok(!result.renderedTextZones.some((zone) => zone.text === "R$ 999,00"));
+});
+
+test("renderEditorialCreative: fonte runtime bundled esta disponivel para acentos e R$", async () => {
+  const font = await assertEditorialRuntimeFontAvailable();
+
+  assert.equal(font.family, "GeistEditorial");
+  assert.ok(font.bytes > 1000);
+});
+
+test("renderEditorialCreative: renderer aceita acentos, cedilha e R$ sem reprovar geometria", async () => {
+  const baseImageBuffer = await image(1080, 1350, "#392229");
+  const product = await image(640, 760, "#E8C785");
+
+  const result = await renderEditorialCreative({
+    baseImageBuffer,
+    context: context({ confirmedFacts: ["Preco atual: R$ 149,00"] }),
+    plan: plan({
+      headline: "Preço e Promoção Você em Ação",
+      subheadline: "Comprar agora com condição especial.",
+      cta: "Comprar agora",
+      allowedRenderedTexts: ["Preço e Promoção Você em Ação", "Comprar agora com condição especial.", "Comprar agora", "R$ 149,00"],
+    }),
+    assets: [{ role: "product_photo", url: "memory://product.png", buffer: product }],
+  });
+
+  assert.equal(result.geometry.valid, true, JSON.stringify(result.geometry.issues));
+  assert.ok(result.renderedTextZones.some((zone) => zone.text.includes("Promoção")));
+  assert.ok(result.renderedTextZones.some((zone) => zone.text === "R$ 149,00"));
 });
 
 test("renderEditorialCreative: servico digital usa screenshot real no mockup 9:16 sem texto QA comercial", async () => {

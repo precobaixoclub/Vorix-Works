@@ -7,6 +7,7 @@ import {
   buildImageGenerationPromptFromPlan,
   diagnoseCreativePlanInvalidity,
   parseCreativePlan,
+  resolveEditorialProductAssetRequirement,
   type ChosenCreativeDirection,
   type CreativeContext,
   type CreativePlan,
@@ -688,6 +689,17 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
   let plan = initialPlan;
   let repairAttempt = 0;
 
+  if (input.experimentalEditorialMode) {
+    const productRequirement = resolveEditorialProductAssetRequirement(plan, context);
+    if (!productRequirement.ok) {
+      return fail(
+        `REQUIRED_PRODUCT_ASSET_MISSING: ${productRequirement.reason}`,
+        "REQUIRED_PRODUCT_ASSET_MISSING",
+        { creativePlan: plan, repairRounds },
+      );
+    }
+  }
+
   outerImageRound: for (;;) {
     if (screenshotAsset && !plan.assetPlacements.some((placement) => placement.role === "screenshot")) {
       return fail(
@@ -712,7 +724,9 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       );
     }
 
-    const imagePrompt = buildImageGenerationPromptFromPlan(planForGeneration, context);
+    const imagePrompt = buildImageGenerationPromptFromPlan(planForGeneration, context, {
+      compositionMode: input.experimentalEditorialMode ? "editorial_experimental" : "standard",
+    });
     const creativeGuard = buildGuardInputFromPlan(plan, context);
 
     if (budgetExceeded()) return failBudgetExceeded({ creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });

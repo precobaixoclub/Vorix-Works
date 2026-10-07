@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import type { CreativeContext, CreativePlan, CreativePlanAssetRole, CreativePlanRect, CreativePlanTextZone } from "../../shared/utils/gpt-creative-plan.types.js";
 import type {
@@ -32,8 +35,30 @@ const DEFAULT_BRAND = {
   champagne: "#E8C785",
 };
 
-const FONT_FAMILY = "Inter, Arial, sans-serif";
+const moduleDir = dirname(fileURLToPath(import.meta.url));
+const FONT_PATH = join(moduleDir, "assets", "geist-regular.ttf");
+const FONT_FAMILY = "GeistEditorial";
 const AVG_CHAR_WIDTH = 0.54;
+let cachedFontBuffer: Buffer | undefined;
+let cachedFontFaceCss: string | undefined;
+
+async function loadEditorialFont(): Promise<Buffer> {
+  if (!cachedFontBuffer) cachedFontBuffer = await readFile(FONT_PATH);
+  return cachedFontBuffer;
+}
+
+export async function assertEditorialRuntimeFontAvailable(): Promise<{ family: string; path: string; bytes: number }> {
+  const font = await loadEditorialFont();
+  return { family: FONT_FAMILY, path: FONT_PATH, bytes: font.length };
+}
+
+export async function buildEditorialFontFaceCss(): Promise<string> {
+  if (!cachedFontFaceCss) {
+    const font = await loadEditorialFont();
+    cachedFontFaceCss = `<style>@font-face{font-family:${FONT_FAMILY};src:url(data:font/truetype;base64,${font.toString("base64")}) format('truetype');font-weight:100 900;font-style:normal;} text{font-family:${FONT_FAMILY};}</style>`;
+  }
+  return cachedFontFaceCss;
+}
 
 function xmlEscape(value: string): string {
   return value
@@ -159,7 +184,7 @@ function buildTextZones(plan: CreativePlan, price: string | undefined, layout: {
   return zones;
 }
 
-async function renderProductOffer(input: RenderEditorialCreativeInput, canvas: Canvas, price: string | undefined, logo: EditorialCreativeAssetBuffer | undefined, product: EditorialCreativeAssetBuffer | undefined, baseFallback: string, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): Promise<{ svg: string; zones: CreativePlanTextZone[]; roles: CreativePlanAssetRole[] }> {
+async function renderProductOffer(input: RenderEditorialCreativeInput, canvas: Canvas, price: string | undefined, logo: EditorialCreativeAssetBuffer | undefined, product: EditorialCreativeAssetBuffer | undefined, baseFallback: string, fontFaceCss: string, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): Promise<{ svg: string; zones: CreativePlanTextZone[]; roles: CreativePlanAssetRole[] }> {
   const accent = pickAccent(input.context);
   const photoRect = canvas.format === "9:16"
     ? { x: 86, y: 110, width: 908, height: 850 }
@@ -185,6 +210,7 @@ async function renderProductOffer(input: RenderEditorialCreativeInput, canvas: C
   if (product) roles.push("product_photo");
   if (logo) roles.push("logo");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${canvas.width} ${canvas.height}">
+    ${fontFaceCss}
     <defs>
       <clipPath id="productPhoto"><rect x="${photoRect.x}" y="${photoRect.y}" width="${photoRect.width}" height="${photoRect.height}" rx="${canvas.format === "9:16" ? 54 : 42}"/></clipPath>
       <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#3B121B" flood-opacity="0.22"/></filter>
@@ -195,18 +221,16 @@ async function renderProductOffer(input: RenderEditorialCreativeInput, canvas: C
     ${imageTag(product, baseFallback, photoRect, { clipId: "productPhoto" })}
     <rect x="${photoRect.x}" y="${photoRect.y}" width="${photoRect.width}" height="${photoRect.height}" rx="${canvas.format === "9:16" ? 54 : 42}" fill="none" stroke="#FFFFFF" stroke-width="10"/>
     ${logo ? imageTag(logo, "", canvas.format === "9:16" ? { x: 92, y: 1038, width: 300, height: 58 } : { x: 92, y: 88, width: 282, height: 54 }, { preserveAspectRatio: "xMidYMid meet" }) : ""}
-    <text x="${headlineRect.x}" y="${canvas.format === "9:16" ? 1224 : 306}" fill="${accent}" font-family="${FONT_FAMILY}" font-size="24" font-weight="850" letter-spacing="2">${xmlEscape("Oferta confirmada".toUpperCase())}</text>
     ${textSvg({ id: "headline", text: input.plan.headline, x: headlineRect.x, y: headlineRect.y + (canvas.format === "9:16" ? 78 : 76), width: headlineRect.width, maxHeight: headlineRect.height, maxFontSize: canvas.format === "9:16" ? 88 : 66, minFontSize: 36, maxLines: canvas.format === "9:16" ? 3 : 4, fill: DEFAULT_BRAND.ink, weight: 850 }, canvas, boxes, issues)}
     ${input.plan.subheadline ? textSvg({ id: "subheadline", text: input.plan.subheadline, x: subRect.x, y: subRect.y + 40, width: subRect.width, maxHeight: subRect.height, maxFontSize: canvas.format === "9:16" ? 30 : 28, minFontSize: 20, maxLines: canvas.format === "9:16" ? 3 : 4, fill: "#60484A", weight: 500 }, canvas, boxes, issues) : ""}
     ${price ? `<g filter="url(#shadow)"><rect x="${commerceRect.x}" y="${commerceRect.y}" width="${commerceRect.width}" height="${commerceRect.height}" rx="${canvas.format === "9:16" ? 28 : 34}" fill="url(#footer)"/><rect x="${ctaRect.x}" y="${ctaRect.y}" width="${ctaRect.width}" height="${ctaRect.height}" rx="${ctaRect.height / 2}" fill="#FFF9F1" opacity="0.96"/></g>
-    <text x="${priceRect.x}" y="${priceRect.y - 28}" fill="#F8E9D8" font-family="${FONT_FAMILY}" font-size="${canvas.format === "9:16" ? 20 : 22}" font-weight="850">PRECO CONFIRMADO</text>
     ${textSvg({ id: "price", text: price, x: priceRect.x, y: priceRect.y + 42, width: priceRect.width, maxHeight: priceRect.height, maxFontSize: canvas.format === "9:16" ? 54 : 64, minFontSize: 30, maxLines: 1, fill: "#FFFFFF", weight: 850 }, canvas, boxes, issues)}
     ${input.plan.cta.trim() ? textSvg({ id: "cta", text: input.plan.cta.toUpperCase(), x: ctaRect.x + ctaRect.width / 2, y: ctaRect.y + ctaRect.height / 2 + 10, width: ctaRect.width - 28, maxHeight: ctaRect.height - 18, maxFontSize: canvas.format === "9:16" ? 27 : 22, minFontSize: 16, maxLines: 1, fill: accent, weight: 850, anchor: "middle" }, canvas, boxes, issues) : ""}` : ""}
   </svg>`;
   return { svg, zones, roles };
 }
 
-async function renderPremiumInstitutional(input: RenderEditorialCreativeInput, canvas: Canvas, logo: EditorialCreativeAssetBuffer | undefined, baseFallback: string, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): Promise<{ svg: string; zones: CreativePlanTextZone[]; roles: CreativePlanAssetRole[] }> {
+async function renderPremiumInstitutional(input: RenderEditorialCreativeInput, canvas: Canvas, logo: EditorialCreativeAssetBuffer | undefined, baseFallback: string, fontFaceCss: string, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): Promise<{ svg: string; zones: CreativePlanTextZone[]; roles: CreativePlanAssetRole[] }> {
   const photoRect = canvas.format === "9:16" ? { x: 0, y: 0, width: canvas.width, height: canvas.height } : { x: 470, y: 96, width: 520, height: 1028 };
   const panelRect = canvas.format === "9:16" ? { x: 146, y: 1008, width: 790, height: 520 } : { x: 96, y: 126, width: 330, height: 1118 };
   const headlineRect = canvas.format === "9:16" ? { x: 196, y: 1118, width: 610, height: 210 } : { x: 112, y: 372, width: 292, height: 310 };
@@ -217,6 +241,7 @@ async function renderPremiumInstitutional(input: RenderEditorialCreativeInput, c
   const roles: CreativePlanAssetRole[] = [];
   if (logo) roles.push("logo");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${canvas.width} ${canvas.height}">
+    ${fontFaceCss}
     <defs>
       <clipPath id="photo"><rect x="${photoRect.x}" y="${photoRect.y}" width="${photoRect.width}" height="${photoRect.height}" rx="${canvas.format === "9:16" ? 0 : 46}"/></clipPath>
       <linearGradient id="base" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#261416"/><stop offset="0.58" stop-color="#783847"/><stop offset="1" stop-color="#C79270"/></linearGradient>
@@ -228,7 +253,6 @@ async function renderPremiumInstitutional(input: RenderEditorialCreativeInput, c
     ${canvas.format === "9:16" ? `<rect width="${canvas.width}" height="${canvas.height}" fill="url(#shade)"/>` : `<rect x="72" y="72" width="936" height="1206" rx="58" fill="none" stroke="#F5DCC6" stroke-opacity="0.24" stroke-width="2"/>`}
     <rect x="${panelRect.x}" y="${panelRect.y}" width="${panelRect.width}" height="${panelRect.height}" rx="${canvas.format === "9:16" ? 44 : 0}" fill="${canvas.format === "9:16" ? "#6B3040" : "#5E2A36"}" opacity="${canvas.format === "9:16" ? 0.90 : 0.72}"/>
     ${logo ? imageTag(logo, "", canvas.format === "9:16" ? { x: 176, y: 110, width: 304, height: 68 } : { x: 112, y: 148, width: 306, height: 66 }, { preserveAspectRatio: "xMidYMid meet" }) : ""}
-    <text x="${headlineRect.x}" y="${canvas.format === "9:16" ? 1092 : 286}" fill="#F3D4BC" font-family="${FONT_FAMILY}" font-size="23" font-weight="850" letter-spacing="3">${xmlEscape("Identidade premium".toUpperCase())}</text>
     ${textSvg({ id: "headline", text: input.plan.headline, x: headlineRect.x, y: headlineRect.y + 80, width: headlineRect.width, maxHeight: headlineRect.height, maxFontSize: canvas.format === "9:16" ? 72 : 48, minFontSize: 30, maxLines: canvas.format === "9:16" ? 3 : 5, fill: "#FFFFFF", weight: 850 }, canvas, boxes, issues)}
     ${input.plan.subheadline ? textSvg({ id: "subheadline", text: input.plan.subheadline, x: subRect.x, y: subRect.y + 38, width: subRect.width, maxHeight: subRect.height, maxFontSize: canvas.format === "9:16" ? 30 : 24, minFontSize: 18, maxLines: 5, fill: "#FFEDE1", weight: 500 }, canvas, boxes, issues) : ""}
     ${input.plan.cta.trim() ? `<rect x="${ctaRect.x}" y="${ctaRect.y}" width="${ctaRect.width}" height="${ctaRect.height}" rx="${ctaRect.height / 2}" fill="#F8E6D8"/>${textSvg({ id: "cta", text: input.plan.cta.toUpperCase(), x: ctaRect.x + ctaRect.width / 2, y: ctaRect.y + ctaRect.height / 2 + 8, width: ctaRect.width - 30, maxHeight: ctaRect.height - 16, maxFontSize: 21, minFontSize: 15, maxLines: 1, fill: DEFAULT_BRAND.roseDark, weight: 850, anchor: "middle" }, canvas, boxes, issues)}` : ""}
@@ -236,7 +260,7 @@ async function renderPremiumInstitutional(input: RenderEditorialCreativeInput, c
   return { svg, zones, roles };
 }
 
-async function renderDigitalService(input: RenderEditorialCreativeInput, canvas: Canvas, price: string | undefined, logo: EditorialCreativeAssetBuffer | undefined, screenshot: EditorialCreativeAssetBuffer | undefined, baseFallback: string, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): Promise<{ svg: string; zones: CreativePlanTextZone[]; roles: CreativePlanAssetRole[] }> {
+async function renderDigitalService(input: RenderEditorialCreativeInput, canvas: Canvas, price: string | undefined, logo: EditorialCreativeAssetBuffer | undefined, screenshot: EditorialCreativeAssetBuffer | undefined, baseFallback: string, fontFaceCss: string, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): Promise<{ svg: string; zones: CreativePlanTextZone[]; roles: CreativePlanAssetRole[] }> {
   const screen = canvas.format === "9:16" ? { x: 608, y: 344, width: 326, height: 562 } : { x: 642, y: 250, width: 296, height: 500 };
   const device = canvas.format === "9:16" ? { x: 570, y: 300, width: 406, height: 658 } : { x: 604, y: 202, width: 374, height: 604 };
   const headlineRect = canvas.format === "9:16" ? { x: 152, y: 474, width: 380, height: 260 } : { x: 150, y: 386, width: 382, height: 250 };
@@ -258,6 +282,7 @@ async function renderDigitalService(input: RenderEditorialCreativeInput, canvas:
     }
   }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${canvas.width} ${canvas.height}">
+    ${fontFaceCss}
     <defs>
       <clipPath id="screen"><rect x="${screen.x}" y="${screen.y}" width="${screen.width}" height="${screen.height}" rx="36"/></clipPath>
       <linearGradient id="photoShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#16090A" stop-opacity="0.08"/><stop offset="1" stop-color="#16090A" stop-opacity="0.72"/></linearGradient>
@@ -268,7 +293,6 @@ async function renderDigitalService(input: RenderEditorialCreativeInput, canvas:
     <path d="${canvas.format === "9:16" ? "M0 0H572C500 282 520 574 650 830C780 1088 720 1488 518 1920H0Z" : "M0 0H594C520 194 526 386 628 558C746 754 708 1010 520 1350H0Z"}" fill="${DEFAULT_BRAND.cream}" opacity="0.97"/>
     <rect x="0" y="0" width="${canvas.format === "9:16" ? 104 : 102}" height="${canvas.height}" fill="${DEFAULT_BRAND.roseDark}"/>
     ${logo ? imageTag(logo, "", canvas.format === "9:16" ? { x: 152, y: 144, width: 292, height: 56 } : { x: 150, y: 116, width: 270, height: 52 }, { preserveAspectRatio: "xMidYMid meet" }) : ""}
-    <text x="${headlineRect.x}" y="${canvas.format === "9:16" ? 392 : 312}" fill="${DEFAULT_BRAND.roseDark}" font-family="${FONT_FAMILY}" font-size="24" font-weight="850" letter-spacing="2">${xmlEscape("Servico completo".toUpperCase())}</text>
     ${textSvg({ id: "headline", text: input.plan.headline, x: headlineRect.x, y: headlineRect.y + 56, width: headlineRect.width, maxHeight: headlineRect.height, maxFontSize: canvas.format === "9:16" ? 58 : 54, minFontSize: 30, maxLines: 4, fill: DEFAULT_BRAND.ink, weight: 850 }, canvas, boxes, issues)}
     ${input.plan.subheadline ? textSvg({ id: "subheadline", text: input.plan.subheadline, x: subRect.x, y: subRect.y + 40, width: subRect.width, maxHeight: subRect.height, maxFontSize: 28, minFontSize: 18, maxLines: 4, fill: "#62484A", weight: 500 }, canvas, boxes, issues) : ""}
     ${price ? `<rect x="${priceRect.x}" y="${priceRect.y}" width="${priceRect.width}" height="${priceRect.height}" rx="20" fill="#F0DDC8"/>${textSvg({ id: "price", text: price, x: priceRect.x + 24, y: priceRect.y + 52, width: priceRect.width - 48, maxHeight: priceRect.height - 18, maxFontSize: 30, minFontSize: 18, maxLines: 1, fill: DEFAULT_BRAND.roseDark, weight: 850 }, canvas, boxes, issues)}` : ""}
@@ -292,12 +316,13 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
   const screenshot = firstAsset(input, "screenshot");
   const price = confirmedPrice(input.context);
   const family = resolveFamily(input, price);
+  const fontFaceCss = await buildEditorialFontFaceCss();
 
   const rendered = family === "product_offer"
-    ? await renderProductOffer(input, canvas, price, logo, product, product ? "" : dataUri(input.baseImageBuffer), boxes, issues)
+    ? await renderProductOffer(input, canvas, price, logo, product, product ? "" : dataUri(input.baseImageBuffer), fontFaceCss, boxes, issues)
     : family === "digital_service"
-      ? await renderDigitalService(input, canvas, price, logo, screenshot, dataUri(input.baseImageBuffer), boxes, issues)
-      : await renderPremiumInstitutional(input, canvas, logo, dataUri(input.baseImageBuffer), boxes, issues);
+      ? await renderDigitalService(input, canvas, price, logo, screenshot, dataUri(input.baseImageBuffer), fontFaceCss, boxes, issues)
+      : await renderPremiumInstitutional(input, canvas, logo, dataUri(input.baseImageBuffer), fontFaceCss, boxes, issues);
 
   for (let index = 0; index < boxes.length; index += 1) {
     const box = boxes[index];

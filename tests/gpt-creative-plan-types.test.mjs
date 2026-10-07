@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCreativePlanPrompt, buildImageGenerationPromptFromPlan, parseCreativePlan, diagnoseCreativePlanInvalidity } from "../dist/shared/utils/gpt-creative-plan.types.js";
+import { buildCreativePlanPrompt, buildImageGenerationPromptFromPlan, parseCreativePlan, diagnoseCreativePlanInvalidity, resolveEditorialProductAssetRequirement } from "../dist/shared/utils/gpt-creative-plan.types.js";
 
 function sampleContext(overrides = {}) {
   return {
@@ -620,6 +620,70 @@ test("buildImageGenerationPromptFromPlan: sem screenshot real cadastrado, proíb
   const plan = parseCreativePlan(samplePlanJson());
   const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
   assert.match(imagePrompt, /NUNCA escreva texto legível dentro dela/);
+});
+
+test("buildImageGenerationPromptFromPlan: modo editorial remove headline, CTA e preco do prompt de imagem", () => {
+  const context = sampleContext({
+    confirmedFacts: ["Preço confirmado: R$ 149,00"],
+    assets: [{ role: "product_photo", url: "https://x/produto.png", description: "Produto QA" }],
+  });
+  const plan = parseCreativePlan(samplePlanJson({
+    headline: "Kit Noivos Sem Correria",
+    subheadline: "Preço especial R$ 149,00",
+    cta: "Comprar agora",
+    allowedRenderedTexts: ["Kit Noivos Sem Correria", "Preço especial R$ 149,00", "Comprar agora", "R$ 149,00"],
+    textZones: [
+      { kind: "headline", text: "Kit Noivos Sem Correria", rect: { xPct: 10, yPct: 10, widthPct: 60, heightPct: 18 }, emphasis: "primary", renderedBy: "renderer", backingStyle: "none", align: "left" },
+      { kind: "price", text: "R$ 149,00", rect: { xPct: 10, yPct: 80, widthPct: 30, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer", backingStyle: "solid", align: "left" },
+      { kind: "cta", text: "Comprar agora", rect: { xPct: 55, yPct: 80, widthPct: 30, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer", backingStyle: "solid", align: "center" },
+    ],
+  }));
+
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context, { compositionMode: "editorial_experimental" });
+
+  assert.match(imagePrompt, /Create only the photographic visual scene\/background/);
+  assert.doesNotMatch(imagePrompt, /Kit Noivos Sem Correria/);
+  assert.doesNotMatch(imagePrompt, /Comprar agora/);
+  assert.doesNotMatch(imagePrompt, /R\$ 149,00/);
+  assert.match(imagePrompt, /Do not add CTAs/);
+});
+
+test("resolveEditorialProductAssetRequirement: product_offer especifico sem asset real bloqueia antes da imagem", () => {
+  const context = sampleContext({ assets: [] });
+  const plan = parseCreativePlan(samplePlanJson({
+    requiredElements: ["produto", "headline", "cta"],
+    assetPlacements: [{ role: "product_photo", url: "product_photo_url", rect: { xPct: 25, yPct: 30, widthPct: 50, heightPct: 40 }, frame: "none", treatment: "produto real" }],
+  }));
+
+  const result = resolveEditorialProductAssetRequirement(plan, context);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "REQUIRED_PRODUCT_ASSET_MISSING");
+});
+
+test("resolveEditorialProductAssetRequirement: product_offer com asset real e permitido", () => {
+  const context = sampleContext({ assets: [{ role: "product_photo", url: "https://x/produto.png", description: "Produto QA" }] });
+  const plan = parseCreativePlan(samplePlanJson({
+    requiredElements: ["produto", "headline", "cta"],
+    assetPlacements: [{ role: "product_photo", url: "https://x/produto.png", rect: { xPct: 25, yPct: 30, widthPct: 50, heightPct: 40 }, frame: "none", treatment: "produto real" }],
+  }));
+
+  assert.deepEqual(resolveEditorialProductAssetRequirement(plan, context), { requirement: "required", ok: true });
+});
+
+test("resolveEditorialProductAssetRequirement: servico/institucional nao exige produto fisico", () => {
+  const context = sampleContext({ assets: [] });
+  const plan = parseCreativePlan(samplePlanJson({
+    requiredElements: ["headline", "cta"],
+    assetPlacements: [],
+    artDirection: sampleArtDirection({
+      concept: "Cena institucional premium com pessoas em atendimento consultivo",
+      visualFocus: "Ambiente de servico com luz natural e composicao editorial",
+      elementHierarchy: ["ambiente", "headline", "cta"],
+    }),
+  }));
+
+  assert.deepEqual(resolveEditorialProductAssetRequirement(plan, context), { requirement: "optional", ok: true });
 });
 
 test("buildImageGenerationPromptFromPlan: com screenshot real cadastrado, não repete a proibição genérica de texto no mockup (já instrui deixar a região limpa)", () => {

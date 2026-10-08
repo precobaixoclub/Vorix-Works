@@ -1,11 +1,36 @@
 [
   {
-    "name": "product-offer-smoke-a-replay",
-    "file": "/out/product-offer-smoke-a-replay.jpg",
-    "format": "4:5",
-    "family": "product_offer",
+    "file": "/out/01-hero-short.jpg",
+    "background": "light",
+    "composition": {
+      "variant": "HERO_DOMINANT",
+      "selectionReasons": [
+        "diretor pediu massa visual do produto de 65% (>= 60): produto protagonista, copy secundária"
+      ],
+      "priceTreatment": "COMMERCIAL_FOOTER",
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.413,
+      "largestEmptyBandPct": 0.015,
+      "contentCentroidOffset": 0.021,
+      "occupiedAreaRatio": 0.615
+    },
     "geometryValid": true,
     "issues": [],
+    "verification": [
+      {
+        "role": "product_photo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 3.81
+      },
+      {
+        "role": "logo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 5.81
+      }
+    ],
     "renderedGeometry": {
       "source": "final_rendered_geometry",
       "family": "product_offer",
@@ -14,52 +39,52 @@
           "id": "headline",
           "kind": "text",
           "rect": {
-            "xPct": 6.667,
-            "yPct": 18.741,
-            "widthPct": 32.593,
-            "heightPct": 25.6
+            "xPct": 7.407,
+            "yPct": 70.815,
+            "widthPct": 85.185,
+            "heightPct": 6.317
           },
-          "text": "Kit Noivos Sem Correria",
-          "fontSizePx": 80,
-          "lineCount": 4
+          "text": "Sem Correria",
+          "fontSizePx": 82,
+          "lineCount": 1
         },
         {
           "id": "subheadline",
           "kind": "text",
           "rect": {
-            "xPct": 6.667,
-            "yPct": 49.674,
-            "widthPct": 32.593,
-            "heightPct": 8.667
+            "xPct": 14.815,
+            "yPct": 78.741,
+            "widthPct": 70.37,
+            "heightPct": 5.724
           },
-          "text": "Organize presentes, lista de presentes e RSVP em um só lugar.",
-          "fontSizePx": 30,
-          "lineCount": 3
+          "text": "Presentes, lista e RSVP organizados em um só lugar.",
+          "fontSizePx": 28,
+          "lineCount": 2
         },
         {
           "id": "price",
           "kind": "text",
           "rect": {
-            "xPct": 6.667,
-            "yPct": 85.037,
-            "widthPct": 53.704,
-            "heightPct": 8
+            "xPct": 17.13,
+            "yPct": 88.741,
+            "widthPct": 35.556,
+            "heightPct": 6.519
           },
           "text": "R$ 149,00",
-          "fontSizePx": 100,
+          "fontSizePx": 76,
           "lineCount": 1
         },
         {
           "id": "cta",
           "kind": "text",
           "rect": {
-            "xPct": 66.111,
-            "yPct": 85.481,
-            "widthPct": 25,
-            "heightPct": 7.111
+            "xPct": 59.352,
+            "yPct": 89.111,
+            "widthPct": 20.926,
+            "heightPct": 5.778
           },
           "text": "COMPRAR AGORA",
-          "fontSizePx": 26,
+          "fontSizePx": 23,
           "lineCount": 1
         }
       ],
@@ -69,10 +94,10 @@
           "kind": "asset",
           "role": "product_photo",
           "rect": {
-            "xPct": 43.519,
-            "yPct": 6.222,
-            "widthPct": 50.741,
-            "heightPct": 64.593
+            "xPct": 14.074,
+            "yPct": 10.519,
+            "widthPct": 71.852,
+            "heightPct": 57.481
           }
         },
         {
@@ -80,42 +105,47 @@
           "kind": "asset",
           "role": "logo",
           "rect": {
-            "xPct": 6.667,
-            "yPct": 6.222,
-            "widthPct": 27.778,
-            "heightPct": 4.741
+            "xPct": 39.352,
+            "yPct": 4.296,
+            "widthPct": 21.296,
+            "heightPct": 3.704
           }
         }
       ]
+    }
+  },
+  {
+    "file": "/out/02-hero-long.jpg",
+    "background": "gradient",
+    "composition": {
+      "variant": "HERO_DOMINANT",
+      "selectionReasons": [
+        "diretor pediu massa visual do produto de 65% (>= 60): produto protagonista, copy secundária"
+      ],
+      "priceTreatment": "COMMERCIAL_FOOTER",
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.362,
+      "largestEmptyBandPct": 0.015,
+      "contentCentroidOffset": 0.008,
+      "occupiedAreaRatio": 0.599
     },
-    "assetVerification": [
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
       {
         "role": "product_photo",
-        "detectedMime": "image/jpeg",
         "visible": true,
-        "informativePixelRatio": 0.9961,
-        "assetMatchRatio": 1,
-        "fidelityMeanAbsDiff": 7.54,
-        "fidelityPass": true
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 2.72
       },
       {
         "role": "logo",
-        "detectedMime": "image/png",
         "visible": true,
-        "informativePixelRatio": 0.1514,
-        "assetMatchRatio": 1,
-        "fidelityMeanAbsDiff": 10.01,
-        "fidelityPass": true
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 5.68
       }
-    ]
-  },
-  {
-    "name": "product-offer-a-short-headline",
-    "file": "/out/product-offer-a-short-headline.jpg",
-    "format": "4:5",
-    "family": "product_offer",
-    "geometryValid": true,
-    "issues": [],
+    ],
     "renderedGeometry": {
       "source": "final_rendered_geometry",
       "family": "product_offer",
@@ -124,162 +154,52 @@
           "id": "headline",
           "kind": "text",
           "rect": {
-            "xPct": 6.667,
-            "yPct": 25.111,
-            "widthPct": 32.593,
-            "heightPct": 12.8
+            "xPct": 7.407,
+            "yPct": 67.111,
+            "widthPct": 85.185,
+            "heightPct": 10.015
           },
-          "text": "Sem Correria",
-          "fontSizePx": 80,
+          "text": "Kit Noivos Sem Correria Para Celebrar Cada Detalhe",
+          "fontSizePx": 65,
           "lineCount": 2
         },
         {
           "id": "subheadline",
           "kind": "text",
           "rect": {
-            "xPct": 6.667,
-            "yPct": 43.244,
-            "widthPct": 32.593,
-            "heightPct": 8.667
-          },
-          "text": "Presentes, lista e RSVP organizados em um só lugar.",
-          "fontSizePx": 30,
-          "lineCount": 3
-        },
-        {
-          "id": "price",
-          "kind": "text",
-          "rect": {
-            "xPct": 6.667,
-            "yPct": 85.037,
-            "widthPct": 53.704,
-            "heightPct": 8
-          },
-          "text": "R$ 149,00",
-          "fontSizePx": 100,
-          "lineCount": 1
-        },
-        {
-          "id": "cta",
-          "kind": "text",
-          "rect": {
-            "xPct": 66.111,
-            "yPct": 85.481,
-            "widthPct": 25,
-            "heightPct": 7.111
-          },
-          "text": "COMPRAR AGORA",
-          "fontSizePx": 26,
-          "lineCount": 1
-        }
-      ],
-      "assetBoxes": [
-        {
-          "id": "product_photo",
-          "kind": "asset",
-          "role": "product_photo",
-          "rect": {
-            "xPct": 43.519,
-            "yPct": 6.222,
-            "widthPct": 50.741,
-            "heightPct": 64.593
-          }
-        },
-        {
-          "id": "logo",
-          "kind": "asset",
-          "role": "logo",
-          "rect": {
-            "xPct": 6.667,
-            "yPct": 6.222,
-            "widthPct": 27.778,
-            "heightPct": 4.741
-          }
-        }
-      ]
-    },
-    "assetVerification": [
-      {
-        "role": "product_photo",
-        "detectedMime": "image/jpeg",
-        "visible": true,
-        "informativePixelRatio": 0.9961,
-        "assetMatchRatio": 1,
-        "fidelityMeanAbsDiff": 7.54,
-        "fidelityPass": true
-      },
-      {
-        "role": "logo",
-        "detectedMime": "image/png",
-        "visible": true,
-        "informativePixelRatio": 0.1514,
-        "assetMatchRatio": 1,
-        "fidelityMeanAbsDiff": 10.01,
-        "fidelityPass": true
-      }
-    ]
-  },
-  {
-    "name": "product-offer-b-long-headline",
-    "file": "/out/product-offer-b-long-headline.jpg",
-    "format": "4:5",
-    "family": "product_offer",
-    "geometryValid": true,
-    "issues": [],
-    "renderedGeometry": {
-      "source": "final_rendered_geometry",
-      "family": "product_offer",
-      "textBoxes": [
-        {
-          "id": "headline",
-          "kind": "text",
-          "rect": {
-            "xPct": 6.667,
-            "yPct": 17.852,
-            "widthPct": 32.593,
-            "heightPct": 21.6
-          },
-          "text": "Kit Noivos Sem Correria Para Celebrar Cada Detalhe",
-          "fontSizePx": 54,
-          "lineCount": 5
-        },
-        {
-          "id": "subheadline",
-          "kind": "text",
-          "rect": {
-            "xPct": 6.667,
-            "yPct": 44.785,
-            "widthPct": 32.593,
-            "heightPct": 14.444
+            "xPct": 14.815,
+            "yPct": 78.741,
+            "widthPct": 70.37,
+            "heightPct": 5.724
           },
           "text": "Uma oferta direta para tirar a organização do casamento do improviso.",
-          "fontSizePx": 30,
-          "lineCount": 5
+          "fontSizePx": 28,
+          "lineCount": 2
         },
         {
           "id": "price",
           "kind": "text",
           "rect": {
-            "xPct": 6.667,
-            "yPct": 85.037,
-            "widthPct": 53.704,
-            "heightPct": 8
+            "xPct": 17.13,
+            "yPct": 88.741,
+            "widthPct": 35.556,
+            "heightPct": 6.519
           },
           "text": "R$ 149,00",
-          "fontSizePx": 100,
+          "fontSizePx": 76,
           "lineCount": 1
         },
         {
           "id": "cta",
           "kind": "text",
           "rect": {
-            "xPct": 66.111,
-            "yPct": 85.481,
-            "widthPct": 25,
-            "heightPct": 7.111
+            "xPct": 59.352,
+            "yPct": 89.111,
+            "widthPct": 20.926,
+            "heightPct": 5.778
           },
           "text": "COMPRAR AGORA",
-          "fontSizePx": 26,
+          "fontSizePx": 23,
           "lineCount": 1
         }
       ],
@@ -289,10 +209,10 @@
           "kind": "asset",
           "role": "product_photo",
           "rect": {
-            "xPct": 43.519,
-            "yPct": 6.222,
-            "widthPct": 50.741,
-            "heightPct": 64.593
+            "xPct": 16.389,
+            "yPct": 10.519,
+            "widthPct": 67.222,
+            "heightPct": 53.778
           }
         },
         {
@@ -300,42 +220,47 @@
           "kind": "asset",
           "role": "logo",
           "rect": {
-            "xPct": 6.667,
-            "yPct": 6.222,
-            "widthPct": 27.778,
-            "heightPct": 4.741
+            "xPct": 39.352,
+            "yPct": 4.296,
+            "widthPct": 21.296,
+            "heightPct": 3.704
           }
         }
       ]
+    }
+  },
+  {
+    "file": "/out/03-split-medium.jpg",
+    "background": "texture",
+    "composition": {
+      "variant": "SPLIT_EDITORIAL",
+      "selectionReasons": [
+        "conteúdo equilibrado: produto e copy dividem a composição"
+      ],
+      "priceTreatment": "INLINE_PRICE",
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.372,
+      "largestEmptyBandPct": 0.119,
+      "contentCentroidOffset": 0.058,
+      "occupiedAreaRatio": 0.531
     },
-    "assetVerification": [
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
       {
         "role": "product_photo",
-        "detectedMime": "image/jpeg",
         "visible": true,
-        "informativePixelRatio": 0.9961,
-        "assetMatchRatio": 1,
-        "fidelityMeanAbsDiff": 7.54,
-        "fidelityPass": true
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 4.26
       },
       {
         "role": "logo",
-        "detectedMime": "image/png",
         "visible": true,
-        "informativePixelRatio": 0.1514,
-        "assetMatchRatio": 1,
-        "fidelityMeanAbsDiff": 10.01,
-        "fidelityPass": true
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 6.33
       }
-    ]
-  },
-  {
-    "name": "product-offer-c-wide-price",
-    "file": "/out/product-offer-c-wide-price.jpg",
-    "format": "4:5",
-    "family": "product_offer",
-    "geometryValid": true,
-    "issues": [],
+    ],
     "renderedGeometry": {
       "source": "final_rendered_geometry",
       "family": "product_offer",
@@ -344,52 +269,52 @@
           "id": "headline",
           "kind": "text",
           "rect": {
-            "xPct": 6.667,
-            "yPct": 21.926,
-            "widthPct": 32.593,
-            "heightPct": 19.2
+            "xPct": 5.926,
+            "yPct": 25.778,
+            "widthPct": 28.148,
+            "heightPct": 22.803
           },
-          "text": "Kit Noivos Premium",
-          "fontSizePx": 80,
-          "lineCount": 3
+          "text": "Kit Noivos Sem Correria",
+          "fontSizePx": 74,
+          "lineCount": 4
         },
         {
           "id": "subheadline",
           "kind": "text",
           "rect": {
-            "xPct": 6.667,
-            "yPct": 46.459,
-            "widthPct": 32.593,
-            "heightPct": 8.667
+            "xPct": 5.926,
+            "yPct": 50.507,
+            "widthPct": 28.148,
+            "heightPct": 7.889
           },
-          "text": "Produto real em destaque com chamada comercial clara.",
-          "fontSizePx": 30,
+          "text": "Organize presentes, lista de presentes e RSVP em um só lugar.",
+          "fontSizePx": 25,
           "lineCount": 3
         },
         {
           "id": "price",
           "kind": "text",
           "rect": {
-            "xPct": 6.667,
-            "yPct": 85.037,
-            "widthPct": 53.704,
-            "heightPct": 8
+            "xPct": 5.926,
+            "yPct": 61.655,
+            "widthPct": 28.148,
+            "heightPct": 4.96
           },
-          "text": "R$ 12.499,90",
-          "fontSizePx": 89,
+          "text": "R$ 149,00",
+          "fontSizePx": 62,
           "lineCount": 1
         },
         {
           "id": "cta",
           "kind": "text",
           "rect": {
-            "xPct": 66.111,
-            "yPct": 85.481,
-            "widthPct": 25,
-            "heightPct": 7.111
+            "xPct": 8.519,
+            "yPct": 68.393,
+            "widthPct": 20.926,
+            "heightPct": 5.778
           },
-          "text": "RESERVAR AGORA",
-          "fontSizePx": 26,
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 23,
           "lineCount": 1
         }
       ],
@@ -399,10 +324,240 @@
           "kind": "asset",
           "role": "product_photo",
           "rect": {
-            "xPct": 43.519,
-            "yPct": 6.222,
-            "widthPct": 50.741,
-            "heightPct": 64.593
+            "xPct": 37.037,
+            "yPct": 17.407,
+            "widthPct": 57.037,
+            "heightPct": 65.185
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 4.741,
+            "widthPct": 19.63,
+            "heightPct": 3.407
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/04-split-wide-price.jpg",
+    "background": "light",
+    "composition": {
+      "variant": "SPLIT_EDITORIAL",
+      "selectionReasons": [
+        "preço largo (12 > 10) pede rodapé comercial"
+      ],
+      "priceTreatment": "COMMERCIAL_FOOTER",
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.372,
+      "largestEmptyBandPct": 0.089,
+      "contentCentroidOffset": 0.084,
+      "occupiedAreaRatio": 0.542
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "product_photo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 3.25
+      },
+      {
+        "role": "logo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 6.32
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 31.926,
+            "widthPct": 28.148,
+            "heightPct": 17.102
+          },
+          "text": "Kit Noivos Premium",
+          "fontSizePx": 74,
+          "lineCount": 3
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 50.954,
+            "widthPct": 28.148,
+            "heightPct": 7.889
+          },
+          "text": "Produto real em destaque com chamada comercial clara.",
+          "fontSizePx": 25,
+          "lineCount": 3
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 88.741,
+            "widthPct": 44.815,
+            "heightPct": 6.519
+          },
+          "text": "R$ 12.499,90",
+          "fontSizePx": 72,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 69.167,
+            "yPct": 89.111,
+            "widthPct": 22.315,
+            "heightPct": 5.778
+          },
+          "text": "RESERVAR AGORA",
+          "fontSizePx": 23,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 37.037,
+            "yPct": 12.815,
+            "widthPct": 57.037,
+            "heightPct": 65.185
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 4.741,
+            "widthPct": 19.63,
+            "heightPct": 3.407
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/05-overlay-short.jpg",
+    "background": "darkPhoto",
+    "composition": {
+      "variant": "OVERLAY_EDITORIAL",
+      "selectionReasons": [
+        "densidade clean + headline curta (<= 26) + foto de cena: produto domina e a copy usa a extensão desfocada da própria cena"
+      ],
+      "priceTreatment": "INLINE_PRICE",
+      "logoTreatment": "CHIP",
+      "pageTone": "dark",
+      "productVisualProminence": 0.466,
+      "largestEmptyBandPct": 0.03,
+      "contentCentroidOffset": 0.035,
+      "occupiedAreaRatio": 0.633
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "product_photo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 4.12
+      },
+      {
+        "role": "logo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 5.75
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 74.519,
+            "widthPct": 83.333,
+            "heightPct": 6.963
+          },
+          "text": "Sem Correria",
+          "fontSizePx": 94,
+          "lineCount": 1
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 82.963,
+            "widthPct": 72.222,
+            "heightPct": 2.8
+          },
+          "text": "Presentes, lista e RSVP em um só lugar.",
+          "fontSizePx": 27,
+          "lineCount": 1
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 88.889,
+            "widthPct": 31.759,
+            "heightPct": 6.37
+          },
+          "text": "R$ 149,00",
+          "fontSizePx": 68,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 43.981,
+            "yPct": 89.185,
+            "widthPct": 20.926,
+            "heightPct": 5.778
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 23,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 11.852,
+            "yPct": 10.074,
+            "widthPct": 76.296,
+            "heightPct": 61.037
           }
         },
         {
@@ -411,32 +566,1162 @@
           "role": "logo",
           "rect": {
             "xPct": 6.667,
-            "yPct": 6.222,
-            "widthPct": 27.778,
-            "heightPct": 4.741
+            "yPct": 4.444,
+            "widthPct": 19.63,
+            "heightPct": 3.407
           }
         }
       ]
+    }
+  },
+  {
+    "file": "/out/06-overlay-long-subheadline.jpg",
+    "background": "light",
+    "composition": {
+      "variant": "OVERLAY_EDITORIAL",
+      "selectionReasons": [
+        "densidade clean + headline curta (<= 26) + foto de cena: produto domina e a copy usa a extensão desfocada da própria cena"
+      ],
+      "priceTreatment": "INLINE_PRICE",
+      "logoTreatment": "CHIP",
+      "pageTone": "dark",
+      "productVisualProminence": 0.385,
+      "largestEmptyBandPct": 0.03,
+      "contentCentroidOffset": 0.033,
+      "occupiedAreaRatio": 0.599
     },
-    "assetVerification": [
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
       {
         "role": "product_photo",
-        "detectedMime": "image/jpeg",
         "visible": true,
-        "informativePixelRatio": 0.9961,
-        "assetMatchRatio": 1,
-        "fidelityMeanAbsDiff": 7.54,
-        "fidelityPass": true
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 4.36
       },
       {
         "role": "logo",
-        "detectedMime": "image/png",
         "visible": true,
-        "informativePixelRatio": 0.1514,
-        "assetMatchRatio": 1,
-        "fidelityMeanAbsDiff": 10.01,
-        "fidelityPass": true
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 5.75
       }
-    ]
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 68.963,
+            "widthPct": 83.333,
+            "heightPct": 6.963
+          },
+          "text": "Tempo de Amor",
+          "fontSizePx": 94,
+          "lineCount": 1
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 77.407,
+            "widthPct": 72.222,
+            "heightPct": 8.4
+          },
+          "text": "Organize presentes, lista de presentes, confirmação de presença e cada detalhe do grande dia em um só lugar, sem correria.",
+          "fontSizePx": 27,
+          "lineCount": 3
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 88.889,
+            "widthPct": 31.759,
+            "heightPct": 6.37
+          },
+          "text": "R$ 149,00",
+          "fontSizePx": 68,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 43.981,
+            "yPct": 89.185,
+            "widthPct": 20.926,
+            "heightPct": 5.778
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 23,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 15.37,
+            "yPct": 10.074,
+            "widthPct": 69.352,
+            "heightPct": 55.481
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 4.444,
+            "widthPct": 19.63,
+            "heightPct": 3.407
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/matrix/m01-split-dark-background.jpg",
+    "background": "darkPhoto",
+    "composition": {
+      "variant": "SPLIT_EDITORIAL",
+      "selectionReasons": [
+        "conteúdo equilibrado: produto e copy dividem a composição"
+      ],
+      "priceTreatment": "INLINE_PRICE",
+      "logoTreatment": "CHIP",
+      "pageTone": "dark",
+      "productVisualProminence": 0.372,
+      "largestEmptyBandPct": 0.119,
+      "contentCentroidOffset": 0.058,
+      "occupiedAreaRatio": 0.531
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "product_photo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 4.26
+      },
+      {
+        "role": "logo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 6.66
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 25.778,
+            "widthPct": 28.148,
+            "heightPct": 22.803
+          },
+          "text": "Kit Noivos Sem Correria",
+          "fontSizePx": 74,
+          "lineCount": 4
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 50.507,
+            "widthPct": 28.148,
+            "heightPct": 7.889
+          },
+          "text": "Organize presentes, lista de presentes e RSVP em um só lugar.",
+          "fontSizePx": 25,
+          "lineCount": 3
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 61.655,
+            "widthPct": 28.148,
+            "heightPct": 4.96
+          },
+          "text": "R$ 149,00",
+          "fontSizePx": 62,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 68.393,
+            "widthPct": 20.926,
+            "heightPct": 5.778
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 23,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 37.037,
+            "yPct": 17.407,
+            "widthPct": 57.037,
+            "heightPct": 65.185
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 4.741,
+            "widthPct": 19.63,
+            "heightPct": 3.407
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/matrix/m02-hero-price-129999.jpg",
+    "background": "light",
+    "composition": {
+      "variant": "HERO_DOMINANT",
+      "selectionReasons": [
+        "diretor pediu massa visual do produto de 65% (>= 60): produto protagonista, copy secundária"
+      ],
+      "priceTreatment": "COMMERCIAL_FOOTER",
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.327,
+      "largestEmptyBandPct": 0.015,
+      "contentCentroidOffset": 0.016,
+      "occupiedAreaRatio": 0.6
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "product_photo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 3.06
+      },
+      {
+        "role": "logo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 5.77
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 7.407,
+            "yPct": 64.444,
+            "widthPct": 85.185,
+            "heightPct": 12.634
+          },
+          "text": "Kit Noivos Sem Correria",
+          "fontSizePx": 82,
+          "lineCount": 2
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 14.815,
+            "yPct": 78.741,
+            "widthPct": 70.37,
+            "heightPct": 5.724
+          },
+          "text": "Organize presentes, lista de presentes e RSVP em um só lugar.",
+          "fontSizePx": 28,
+          "lineCount": 2
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 9.259,
+            "yPct": 88.741,
+            "widthPct": 51.296,
+            "heightPct": 6.519
+          },
+          "text": "R$ 129.999,90",
+          "fontSizePx": 76,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 67.222,
+            "yPct": 89.111,
+            "widthPct": 20.926,
+            "heightPct": 5.778
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 23,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 18.056,
+            "yPct": 10.519,
+            "widthPct": 63.889,
+            "heightPct": 51.111
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 39.352,
+            "yPct": 4.296,
+            "widthPct": 21.296,
+            "heightPct": 3.704
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/matrix/m03-split-price-129999.jpg",
+    "background": "light",
+    "composition": {
+      "variant": "SPLIT_EDITORIAL",
+      "selectionReasons": [
+        "preço largo (13 > 10) pede rodapé comercial"
+      ],
+      "priceTreatment": "COMMERCIAL_FOOTER",
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.372,
+      "largestEmptyBandPct": 0.089,
+      "contentCentroidOffset": 0.083,
+      "occupiedAreaRatio": 0.544
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "product_photo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 3.25
+      },
+      {
+        "role": "logo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 6.32
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 31.926,
+            "widthPct": 28.148,
+            "heightPct": 17.102
+          },
+          "text": "Kit Noivos Premium",
+          "fontSizePx": 74,
+          "lineCount": 3
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 50.954,
+            "widthPct": 28.148,
+            "heightPct": 7.889
+          },
+          "text": "Organize presentes, lista de presentes e RSVP em um só lugar.",
+          "fontSizePx": 25,
+          "lineCount": 3
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 88.741,
+            "widthPct": 48.611,
+            "heightPct": 6.519
+          },
+          "text": "R$ 129.999,90",
+          "fontSizePx": 72,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 70.556,
+            "yPct": 89.111,
+            "widthPct": 20.926,
+            "heightPct": 5.778
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 23,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 37.037,
+            "yPct": 12.815,
+            "widthPct": 57.037,
+            "heightPct": 65.185
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 4.741,
+            "widthPct": 19.63,
+            "heightPct": 3.407
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/matrix/m04-overlay-price-12499.jpg",
+    "background": "light",
+    "composition": {
+      "variant": "OVERLAY_EDITORIAL",
+      "selectionReasons": [
+        "densidade clean + headline curta (<= 26) + foto de cena: produto domina e a copy usa a extensão desfocada da própria cena"
+      ],
+      "priceTreatment": "INLINE_PRICE",
+      "logoTreatment": "CHIP",
+      "pageTone": "dark",
+      "productVisualProminence": 0.424,
+      "largestEmptyBandPct": 0.03,
+      "contentCentroidOffset": 0.027,
+      "occupiedAreaRatio": 0.627
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "product_photo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 4.32
+      },
+      {
+        "role": "logo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 5.74
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 71.704,
+            "widthPct": 83.333,
+            "heightPct": 6.963
+          },
+          "text": "Sem Correria",
+          "fontSizePx": 94,
+          "lineCount": 1
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 80.148,
+            "widthPct": 72.222,
+            "heightPct": 5.6
+          },
+          "text": "Organize presentes, lista de presentes e RSVP em um só lugar.",
+          "fontSizePx": 27,
+          "lineCount": 2
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 88.889,
+            "widthPct": 42.315,
+            "heightPct": 6.37
+          },
+          "text": "R$ 12.499,90",
+          "fontSizePx": 68,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 54.537,
+            "yPct": 89.185,
+            "widthPct": 20.926,
+            "heightPct": 5.778
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 23,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 13.611,
+            "yPct": 10.074,
+            "widthPct": 72.778,
+            "heightPct": 58.222
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 4.444,
+            "widthPct": 19.63,
+            "heightPct": 3.407
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/matrix/m05-split-product-vertical.jpg",
+    "background": "light",
+    "composition": {
+      "variant": "SPLIT_EDITORIAL",
+      "selectionReasons": [
+        "conteúdo equilibrado: produto e copy dividem a composição"
+      ],
+      "priceTreatment": "INLINE_PRICE",
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.386,
+      "largestEmptyBandPct": 0.104,
+      "contentCentroidOffset": 0.061,
+      "occupiedAreaRatio": 0.553
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "product_photo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 6.77
+      },
+      {
+        "role": "logo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 6.34
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 25.852,
+            "widthPct": 28.148,
+            "heightPct": 22.803
+          },
+          "text": "Kit Noivos Sem Correria",
+          "fontSizePx": 74,
+          "lineCount": 4
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 50.581,
+            "widthPct": 28.148,
+            "heightPct": 7.889
+          },
+          "text": "Organize presentes, lista de presentes e RSVP em um só lugar.",
+          "fontSizePx": 25,
+          "lineCount": 3
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 61.729,
+            "widthPct": 28.148,
+            "heightPct": 4.96
+          },
+          "text": "R$ 149,00",
+          "fontSizePx": 62,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 68.467,
+            "widthPct": 20.926,
+            "heightPct": 5.778
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 23,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 37.037,
+            "yPct": 16.222,
+            "widthPct": 57.037,
+            "heightPct": 67.63
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 4.741,
+            "widthPct": 19.63,
+            "heightPct": 3.407
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/matrix/m06-auto-product-horizontal.jpg",
+    "background": "light",
+    "composition": {
+      "variant": "HERO_DOMINANT",
+      "selectionReasons": [
+        "produto horizontal (proporção 1.48 >= 1.15) ocupa bem uma faixa larga"
+      ],
+      "priceTreatment": "COMMERCIAL_FOOTER",
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.429,
+      "largestEmptyBandPct": 0.03,
+      "contentCentroidOffset": 0.033,
+      "occupiedAreaRatio": 0.686
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "product_photo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 6.96
+      },
+      {
+        "role": "logo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 5.71
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 7.407,
+            "yPct": 64.444,
+            "widthPct": 85.185,
+            "heightPct": 12.634
+          },
+          "text": "Kit Noivos Sem Correria",
+          "fontSizePx": 82,
+          "lineCount": 2
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 14.815,
+            "yPct": 78.741,
+            "widthPct": 70.37,
+            "heightPct": 5.724
+          },
+          "text": "Organize presentes, lista de presentes e RSVP em um só lugar.",
+          "fontSizePx": 28,
+          "lineCount": 2
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 17.13,
+            "yPct": 88.741,
+            "widthPct": 35.556,
+            "heightPct": 6.519
+          },
+          "text": "R$ 149,00",
+          "fontSizePx": 76,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 59.352,
+            "yPct": 89.111,
+            "widthPct": 20.926,
+            "heightPct": 5.778
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 23,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 11.778,
+            "widthPct": 88.148,
+            "heightPct": 48.667
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 39.352,
+            "yPct": 4.296,
+            "widthPct": 21.296,
+            "heightPct": 3.704
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/matrix/m07-hero-logo-square.jpg",
+    "background": "light",
+    "composition": {
+      "variant": "HERO_DOMINANT",
+      "selectionReasons": [
+        "diretor pediu massa visual do produto de 65% (>= 60): produto protagonista, copy secundária"
+      ],
+      "priceTreatment": "COMMERCIAL_FOOTER",
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.384,
+      "largestEmptyBandPct": 0.015,
+      "contentCentroidOffset": 0.005,
+      "occupiedAreaRatio": 0.576
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "product_photo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 4.75
+      },
+      {
+        "role": "logo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 5.34
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 7.407,
+            "yPct": 70.815,
+            "widthPct": 85.185,
+            "heightPct": 6.317
+          },
+          "text": "Sem Correria",
+          "fontSizePx": 82,
+          "lineCount": 1
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 14.815,
+            "yPct": 78.741,
+            "widthPct": 70.37,
+            "heightPct": 5.724
+          },
+          "text": "Organize presentes, lista de presentes e RSVP em um só lugar.",
+          "fontSizePx": 28,
+          "lineCount": 2
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 17.13,
+            "yPct": 88.741,
+            "widthPct": 35.556,
+            "heightPct": 6.519
+          },
+          "text": "R$ 149,00",
+          "fontSizePx": 76,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 59.352,
+            "yPct": 89.111,
+            "widthPct": 20.926,
+            "heightPct": 5.778
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 23,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 15.37,
+            "yPct": 12.593,
+            "widthPct": 69.259,
+            "heightPct": 55.407
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 46.389,
+            "yPct": 4.296,
+            "widthPct": 7.222,
+            "heightPct": 5.778
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/matrix/m08-overlay-logo-square.jpg",
+    "background": "light",
+    "composition": {
+      "variant": "OVERLAY_EDITORIAL",
+      "selectionReasons": [
+        "densidade clean + headline curta (<= 26) + foto de cena: produto domina e a copy usa a extensão desfocada da própria cena"
+      ],
+      "priceTreatment": "INLINE_PRICE",
+      "logoTreatment": "CHIP",
+      "pageTone": "dark",
+      "productVisualProminence": 0.397,
+      "largestEmptyBandPct": 0.03,
+      "contentCentroidOffset": 0.026,
+      "occupiedAreaRatio": 0.582
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "product_photo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 6.02
+      },
+      {
+        "role": "logo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 4.72
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 71.704,
+            "widthPct": 83.333,
+            "heightPct": 6.963
+          },
+          "text": "Sem Correria",
+          "fontSizePx": 94,
+          "lineCount": 1
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 80.148,
+            "widthPct": 72.222,
+            "heightPct": 5.6
+          },
+          "text": "Organize presentes, lista de presentes e RSVP em um só lugar.",
+          "fontSizePx": 27,
+          "lineCount": 2
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 88.889,
+            "widthPct": 31.759,
+            "heightPct": 6.37
+          },
+          "text": "R$ 149,00",
+          "fontSizePx": 68,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 43.981,
+            "yPct": 89.185,
+            "widthPct": 20.926,
+            "heightPct": 5.778
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 23,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 14.815,
+            "yPct": 11.926,
+            "widthPct": 70.463,
+            "heightPct": 56.37
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 4.444,
+            "widthPct": 6.574,
+            "heightPct": 5.259
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/matrix/m09-hero-medium-headline-texture.jpg",
+    "background": "texture",
+    "composition": {
+      "variant": "HERO_DOMINANT",
+      "selectionReasons": [
+        "diretor pediu massa visual do produto de 65% (>= 60): produto protagonista, copy secundária"
+      ],
+      "priceTreatment": "COMMERCIAL_FOOTER",
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.327,
+      "largestEmptyBandPct": 0.015,
+      "contentCentroidOffset": 0.004,
+      "occupiedAreaRatio": 0.585
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "product_photo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 3.06
+      },
+      {
+        "role": "logo",
+        "visible": true,
+        "fidelityPass": true,
+        "fidelityMeanAbsDiff": 5.78
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 7.407,
+            "yPct": 64.444,
+            "widthPct": 85.185,
+            "heightPct": 12.634
+          },
+          "text": "Kit Noivos Sem Correria",
+          "fontSizePx": 82,
+          "lineCount": 2
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 14.815,
+            "yPct": 78.741,
+            "widthPct": 70.37,
+            "heightPct": 5.724
+          },
+          "text": "Organize presentes, lista de presentes e RSVP em um só lugar.",
+          "fontSizePx": 28,
+          "lineCount": 2
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 17.13,
+            "yPct": 88.741,
+            "widthPct": 35.556,
+            "heightPct": 6.519
+          },
+          "text": "R$ 149,00",
+          "fontSizePx": 76,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 59.352,
+            "yPct": 89.111,
+            "widthPct": 20.926,
+            "heightPct": 5.778
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 23,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 18.056,
+            "yPct": 10.519,
+            "widthPct": 63.889,
+            "heightPct": 51.111
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 39.352,
+            "yPct": 4.296,
+            "widthPct": 21.296,
+            "heightPct": 3.704
+          }
+        }
+      ]
+    }
   }
 ]

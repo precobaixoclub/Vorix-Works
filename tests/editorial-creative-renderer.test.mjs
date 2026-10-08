@@ -8,7 +8,10 @@ import {
   checkEditorialSafeArea,
   detectImageMime,
   measureCompositedAssetFidelity,
+  PRODUCT_OFFER_MAX_EMPTY_BAND,
+  PRODUCT_OFFER_MIN_PROMINENCE,
   productShadowExtent,
+  selectProductOfferVariant,
   renderEditorialCreative,
 } from "../dist/infrastructure/rendering/editorial-creative-renderer.js";
 
@@ -433,4 +436,134 @@ test("renderEditorialCreative: manifesto final_rendered_geometry tem produto, he
   assert.ok(!result.geometry.issues.some((issue) => issue.code === "COLLISION"), JSON.stringify(result.geometry.issues));
   const headlineZone = result.renderedTextZones.find((zone) => zone.kind === "headline");
   assert.deepEqual(headlineZone.rect, box(result, "headline").rect, "zona entregue ao gate deve ser a mesma bbox renderizada");
+});
+
+// ---------------------------------------------------------------------------------------------
+// product_offer 4:5 — compositor adaptativo (HERO_DOMINANT / SPLIT_EDITORIAL / OVERLAY_EDITORIAL).
+// ---------------------------------------------------------------------------------------------
+
+function adaptivePlan(overrides = {}) {
+  const headline = overrides.headline ?? "Kit Noivos Sem Correria";
+  const subheadline = Object.prototype.hasOwnProperty.call(overrides, "subheadline") ? overrides.subheadline : "Organize presentes, lista de presentes e RSVP em um só lugar.";
+  const cta = overrides.cta ?? "Comprar agora";
+  return plan({
+    headline,
+    subheadline,
+    cta,
+    allowedRenderedTexts: [headline, subheadline, cta].filter(Boolean),
+    requiredElements: ["headline", "cta", "price", ...(subheadline ? ["subheadline"] : [])],
+    visualDensity: overrides.visualDensity ?? "balanced",
+    artDirection: { ...plan().artDirection, primaryMassPct: overrides.primaryMassPct ?? 50 },
+  });
+}
+
+async function renderAdaptive(overrides = {}) {
+  return renderEditorialCreative({
+    baseImageBuffer: overrides.baseImageBuffer ?? await studioBase(),
+    context: context({ brandName: "Rumo ao Altar", confirmedFacts: [`Preço atual: ${overrides.price ?? "R$ 149,00"}`] }),
+    plan: adaptivePlan(overrides),
+    assets: [
+      { role: "product_photo", url: "fixture://product.jpg", buffer: overrides.product ?? REAL_PRODUCT_JPEG },
+      { role: "logo", url: "fixture://logo.png", buffer: overrides.logo ?? REAL_LOGO_PNG },
+    ],
+  });
+}
+
+async function darkBase() {
+  return sharp({ create: { width: 1024, height: 1280, channels: 3, background: "#1C110E" } }).jpeg().toBuffer();
+}
+
+function assertAdaptiveTechnicalPass(result, label) {
+  assert.equal(result.geometry.valid, true, `${label}: ${JSON.stringify(result.geometry.issues)}`);
+  for (const role of ["product_photo", "logo"]) {
+    const verification = result.assetVerification.find((item) => item.role === role);
+    assert.equal(verification?.visible, true, `${label}: ${role} ${JSON.stringify(verification)}`);
+    assert.equal(verification?.fidelityPass, true, `${label}: ${role} fidelidade`);
+  }
+  assert.equal(result.renderedGeometry.source, "final_rendered_geometry");
+  for (const id of ["product_photo", "logo", "headline", "price", "cta"]) assert.ok(box(result, id), `${label}: caixa ${id}`);
+  assert.ok(result.composition.productVisualProminence >= PRODUCT_OFFER_MIN_PROMINENCE, `${label}: proeminência ${result.composition.productVisualProminence}`);
+  assert.ok(result.composition.largestEmptyBandPct <= PRODUCT_OFFER_MAX_EMPTY_BAND, `${label}: faixa vazia ${result.composition.largestEmptyBandPct}`);
+}
+
+test("selectProductOfferVariant: regras determinísticas por sinais do plano e do conteúdo", () => {
+  const base = { productAspect: 1, productComplexity: 60, productIsCutout: false, headlineChars: 23, subheadlineChars: 60, priceChars: 9, hasCta: true, primaryMassPct: 50, visualDensity: "balanced" };
+  assert.equal(selectProductOfferVariant({ ...base, primaryMassPct: 65 }).variant, "HERO_DOMINANT");
+  assert.equal(selectProductOfferVariant({ ...base, primaryMassPct: 65, headlineChars: 50 }).variant, "HERO_DOMINANT");
+  assert.equal(selectProductOfferVariant({ ...base, visualDensity: "clean", headlineChars: 12 }).variant, "OVERLAY_EDITORIAL");
+  assert.equal(selectProductOfferVariant({ ...base, visualDensity: "clean", headlineChars: 12, productIsCutout: true }).variant, "SPLIT_EDITORIAL", "recorte transparente não vira overlay de cena");
+  assert.equal(selectProductOfferVariant({ ...base, priceChars: 12 }).variant, "SPLIT_EDITORIAL");
+  assert.equal(selectProductOfferVariant({ ...base, productAspect: 1.4 }).variant, "HERO_DOMINANT");
+  assert.equal(selectProductOfferVariant(base).variant, "SPLIT_EDITORIAL");
+  assert.deepEqual(selectProductOfferVariant(base), selectProductOfferVariant({ ...base }), "mesmo input → mesma escolha");
+  assert.ok(selectProductOfferVariant(base).reasons.length > 0);
+});
+
+test("product_offer adaptativo: as três variantes passam tecnicamente com a foto JPEG real", async () => {
+  const cases = [
+    ["HERO_DOMINANT", { primaryMassPct: 65, headline: "Sem Correria" }],
+    ["SPLIT_EDITORIAL", {}],
+    ["OVERLAY_EDITORIAL", { visualDensity: "clean", headline: "Sem Correria" }],
+  ];
+  for (const [variant, overrides] of cases) {
+    const result = await renderAdaptive(overrides);
+    assert.equal(result.composition.variant, variant);
+    assertAdaptiveTechnicalPass(result, variant);
+  }
+});
+
+test("product_offer adaptativo: tratamento de preço é adaptativo (inline vs rodapé comercial)", async () => {
+  assert.equal((await renderAdaptive()).composition.priceTreatment, "INLINE_PRICE");
+  assert.equal((await renderAdaptive({ price: "R$ 12.499,90", headline: "Kit Noivos Premium" })).composition.priceTreatment, "COMMERCIAL_FOOTER");
+  assert.equal((await renderAdaptive({ visualDensity: "clean", headline: "Sem Correria" })).composition.priceTreatment, "INLINE_PRICE");
+});
+
+test("product_offer adaptativo: preços largos (R$ 12.499,90 e R$ 129.999,90) cabem em todas as variantes", async () => {
+  for (const price of ["R$ 12.499,90", "R$ 129.999,90"]) {
+    for (const overrides of [{ primaryMassPct: 65 }, { headline: "Kit Noivos Premium" }, { visualDensity: "clean", headline: "Sem Correria" }]) {
+      const result = await renderAdaptive({ ...overrides, price });
+      assertAdaptiveTechnicalPass(result, `${price} ${result.composition.variant}`);
+      assert.ok(result.renderedTextZones.some((zone) => zone.kind === "price" && zone.text === price));
+    }
+  }
+});
+
+test("product_offer adaptativo: headline longa não comprime o produto nem empurra preço/CTA para fora", async () => {
+  const result = await renderAdaptive({ primaryMassPct: 65, headline: "Kit Noivos Sem Correria Para Celebrar Cada Detalhe", subheadline: "Uma oferta direta para tirar a organização do casamento do improviso." });
+  assertAdaptiveTechnicalPass(result, "hero longa");
+  assert.ok(result.composition.productVisualProminence >= 0.3, `proeminência ${result.composition.productVisualProminence}`);
+  assert.ok(box(result, "headline").lineCount <= 3);
+});
+
+test("product_offer adaptativo: logo com caixa branca — multiply no claro (sem caixa visível) e chip só no escuro, pixel fiel nos dois", async () => {
+  const light = await renderAdaptive();
+  assert.equal(light.composition.logoTreatment, "MULTIPLY_ON_LIGHT");
+  assertAdaptiveTechnicalPass(light, "logo claro");
+  const dark = await renderAdaptive({ baseImageBuffer: await darkBase() });
+  assert.equal(dark.composition.pageTone, "dark");
+  assert.equal(dark.composition.logoTreatment, "CHIP");
+  assertAdaptiveTechnicalPass(dark, "logo escuro");
+});
+
+test("product_offer adaptativo: produto vertical/horizontal e logo compacta não quebram a composição", async () => {
+  const vertical = await sharp(REAL_PRODUCT_JPEG).extract({ left: 130, top: 0, width: 540, height: 800 }).jpeg().toBuffer();
+  const horizontal = await sharp(REAL_PRODUCT_JPEG).extract({ left: 0, top: 120, width: 800, height: 540 }).jpeg().toBuffer();
+  const squareLogo = await sharp(REAL_LOGO_PNG).extract({ left: 0, top: 0, width: 50, height: 50 }).png().toBuffer();
+  for (const [label, overrides] of [["vertical", { product: vertical }], ["horizontal", { product: horizontal }], ["logo quadrada hero", { logo: squareLogo, primaryMassPct: 65 }], ["logo quadrada overlay", { logo: squareLogo, visualDensity: "clean", headline: "Sem Correria" }]]) {
+    assertAdaptiveTechnicalPass(await renderAdaptive(overrides), label);
+  }
+});
+
+test("product_offer adaptativo: mesmo input produz exatamente a mesma peça", async () => {
+  const base = await studioBase();
+  const first = await renderAdaptive({ baseImageBuffer: base, visualDensity: "clean", headline: "Sem Correria" });
+  const second = await renderAdaptive({ baseImageBuffer: base, visualDensity: "clean", headline: "Sem Correria" });
+  assert.deepEqual(first.composition, second.composition);
+  assert.equal(first.buffer.equals(second.buffer), true);
+});
+
+test("product_offer 9:16 continua no layout anterior (fora do escopo desta rodada)", async () => {
+  const result = await renderEditorialCreative({ ...productOfferInput(), context: context({ format: "9:16", confirmedFacts: ["Preço atual: R$ 149,00"] }), baseImageBuffer: await studioBase(1080, 1920) });
+  assert.equal(result.composition, undefined);
+  assert.equal(result.geometry.valid, true, JSON.stringify(result.geometry.issues));
 });

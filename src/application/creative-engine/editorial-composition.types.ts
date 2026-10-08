@@ -94,6 +94,29 @@ export type RenderEditorialCreativeInput = {
   assets: readonly EditorialCreativeAssetBuffer[];
 };
 
+/** Variantes internas da família product_offer (nunca uma família nova). */
+export const PRODUCT_OFFER_VARIANTS = ["HERO_DOMINANT", "SPLIT_EDITORIAL", "OVERLAY_EDITORIAL"] as const;
+export type ProductOfferVariant = (typeof PRODUCT_OFFER_VARIANTS)[number];
+export type ProductOfferPriceTreatment = "INLINE_PRICE" | "COMMERCIAL_FOOTER";
+export type EditorialLogoTreatment = "DIRECT" | "MULTIPLY_ON_LIGHT" | "CHIP";
+
+/** Diagnóstico da composição adaptativa — heurísticas registradas para revisão, nunca um gate. */
+export type EditorialCompositionDiagnostics = {
+  variant: ProductOfferVariant;
+  selectionReasons: string[];
+  priceTreatment: ProductOfferPriceTreatment;
+  logoTreatment?: EditorialLogoTreatment;
+  pageTone: "light" | "dark";
+  /** Fração do canvas ocupada pela bbox final do produto. */
+  productVisualProminence: number;
+  /** Maior faixa horizontal sem nenhum elemento (fração da altura). */
+  largestEmptyBandPct: number;
+  /** Distância do centroide ponderado dos elementos ao centro do canvas (0 = centrado, 1 = canto). */
+  contentCentroidOffset: number;
+  /** Fração do canvas coberta por elementos. */
+  occupiedAreaRatio: number;
+};
+
 export type RenderEditorialCreativeResult = {
   buffer: Buffer;
   family: EditorialCreativeFamily;
@@ -102,6 +125,8 @@ export type RenderEditorialCreativeResult = {
   compositedAssetRoles: CreativePlanAssetRole[];
   renderedGeometry: EditorialRenderedGeometryManifest;
   assetVerification: EditorialAssetVerification[];
+  /** Só no product_offer 4:5 (compositor adaptativo). */
+  composition?: EditorialCompositionDiagnostics;
   geometry: {
     valid: boolean;
     boxes: EditorialGeometryBox[];

@@ -6,6 +6,10 @@ import type { CreativeContext, CreativePlan, CreativePlanAssetRole, CreativePlan
 import {
   EditorialCompositionError,
   type EditorialAssetVerification,
+  type EditorialCompositionDiagnostics,
+  type EditorialLogoTreatment,
+  type ProductOfferPriceTreatment,
+  type ProductOfferVariant,
   type EditorialCreativeAssetBuffer,
   type EditorialCreativeFamily,
   type EditorialGeometryBox,
@@ -53,9 +57,10 @@ type PreparedAsset = EditorialCreativeAssetBuffer & {
   href: string;
   width: number;
   height: number;
+  stats: AssetContentStats;
 };
 
-type FamilyRender = { svg: string; zones: CreativePlanTextZone[]; assets: CreativePlan["assetPlacements"]; roles: CreativePlanAssetRole[]; verify: AssetVerifySpec[] };
+type FamilyRender = { svg: string; zones: CreativePlanTextZone[]; assets: CreativePlan["assetPlacements"]; roles: CreativePlanAssetRole[]; verify: AssetVerifySpec[]; composition?: EditorialCompositionDiagnostics };
 
 type AssetVerifySpec = {
   role: CreativePlanAssetRole;
@@ -66,6 +71,9 @@ type AssetVerifySpec = {
    * layout garante estar dentro do clip. */
   inset: { left: number; right: number; top: number; bottom: number };
   checkFidelity: boolean;
+  /** Mistura usada na composição. `multiply`: o esperado é fonte × fundo (logo com caixa branca
+   * sobre fundo claro) — a verificação reproduz exatamente essa conta, nunca afrouxa. */
+  blend?: "multiply";
 };
 
 const DESIGN_CANVAS: Record<Canvas["format"], { width: number; height: number }> = {
@@ -159,7 +167,9 @@ const SHARP_FORMAT_BY_MIME: Record<DetectedImageMime, string> = {
   "image/svg+xml": "svg",
 };
 
-async function measureAssetContent(png: Buffer): Promise<{ alphaCoverage: number; lumaStdev: number }> {
+type AssetContentStats = { alphaCoverage: number; lumaStdev: number; meanLuma: number; borderLuma: number; borderOpaqueRatio: number };
+
+async function measureAssetContent(png: Buffer): Promise<AssetContentStats> {
   const { data, info } = await sharp(png).resize(128, 128, { fit: "inside" }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   let opaque = 0;
   let sum = 0;
@@ -174,7 +184,28 @@ async function measureAssetContent(png: Buffer): Promise<{ alphaCoverage: number
   }
   const total = info.width * info.height;
   const mean = opaque > 0 ? sum / opaque : 0;
-  return { alphaCoverage: opaque / total, lumaStdev: opaque > 0 ? Math.sqrt(Math.max(0, sumSq / opaque - mean * mean)) : 0 };
+  // Borda (1px): diz se o asset tem fundo opaco claro "embutido" (ex.: logo em caixa branca).
+  let borderCount = 0;
+  let borderOpaque = 0;
+  let borderLumaSum = 0;
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      if (x !== 0 && y !== 0 && x !== info.width - 1 && y !== info.height - 1) continue;
+      const offset = (y * info.width + x) * 4;
+      borderCount += 1;
+      if (data[offset + 3] > 240) {
+        borderOpaque += 1;
+        borderLumaSum += 0.299 * data[offset] + 0.587 * data[offset + 1] + 0.114 * data[offset + 2];
+      }
+    }
+  }
+  return {
+    alphaCoverage: opaque / total,
+    lumaStdev: opaque > 0 ? Math.sqrt(Math.max(0, sumSq / opaque - mean * mean)) : 0,
+    meanLuma: mean,
+    borderLuma: borderOpaque > 0 ? borderLumaSum / borderOpaque : 0,
+    borderOpaqueRatio: borderCount > 0 ? borderOpaque / borderCount : 0,
+  };
 }
 
 /** Decodifica de verdade (sharp) e normaliza para PNG. Falha explícita, nunca frame vazio. */
@@ -203,8 +234,8 @@ async function prepareAsset(asset: EditorialCreativeAssetBuffer): Promise<Prepar
   if (!width || !height) {
     throw new EditorialCompositionError(failCode, `asset "${asset.role}" (${asset.url}) decodificou sem dimensões válidas.`);
   }
+  const content = await measureAssetContent(png);
   if (asset.role === "product_photo") {
-    const content = await measureAssetContent(png);
     if (content.alphaCoverage < MIN_ASSET_ALPHA_COVERAGE || content.lumaStdev < MIN_ASSET_LUMA_STDEV) {
       throw new EditorialCompositionError(
         "PRODUCT_ASSET_EMPTY",
@@ -212,7 +243,7 @@ async function prepareAsset(asset: EditorialCreativeAssetBuffer): Promise<Prepar
       );
     }
   }
-  return { ...asset, detectedMime, png, href: pngDataUri(png), width, height };
+  return { ...asset, detectedMime, png, href: pngDataUri(png), width, height, stats: content };
 }
 
 /** Preflight de asset editorial — EXATAMENTE a mesma decodificação que o renderer aplica
@@ -292,6 +323,9 @@ type TextSvgInput = {
    * texto ocupa) e `y` é ignorado. `valign: "center"` centraliza o bloco em `maxHeight`. */
   top?: number;
   valign?: "top" | "center";
+  /** Só existe Geist Regular no runtime (BOLD_FONT_BACKLOG): contorno da própria cor engrossa o
+   * traço de forma controlada, sem trocar fonte nem fontconfig. Em px de traço. */
+  embolden?: number;
 };
 
 function textSvg(input: TextSvgInput, canvas: Canvas, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): string {
@@ -317,7 +351,7 @@ function textSvg(input: TextSvgInput, canvas: Canvas, boxes: EditorialGeometryBo
   if (!fit.fits) {
     issues.push({ code: "TEXT_OVERFLOW", message: `Texto "${input.id}" não coube no bloco editorial sem quebrar a hierarquia.` });
   }
-  return `<text x="${input.x}" y="${baseline}" fill="${input.fill}" font-family="${FONT_FAMILY}" font-size="${fit.fontSize}" font-weight="${input.weight ?? 800}" text-anchor="${input.anchor ?? "start"}" letter-spacing="${input.letterSpacing ?? 0}">${fit.lines.map((line, index) => `<tspan x="${input.x}" dy="${index === 0 ? 0 : fit.fontSize * fit.lineHeight}">${xmlEscape(line)}</tspan>`).join("")}</text>`;
+  return `<text x="${input.x}" y="${baseline}" fill="${input.fill}" font-family="${FONT_FAMILY}" font-size="${fit.fontSize}" font-weight="${input.weight ?? 800}" text-anchor="${input.anchor ?? "start"}" letter-spacing="${input.letterSpacing ?? 0}"${input.embolden ? ` stroke="${input.fill}" stroke-width="${input.embolden}" stroke-linejoin="round" paint-order="stroke"` : ""}>${fit.lines.map((line, index) => `<tspan x="${input.x}" dy="${index === 0 ? 0 : fit.fontSize * fit.lineHeight}">${xmlEscape(line)}</tspan>`).join("")}</text>`;
 }
 
 function assetBox(role: CreativePlanAssetRole, rect: PxRect, canvas: Canvas, boxes: EditorialGeometryBox[]): void {
@@ -330,10 +364,10 @@ function assetPlacement(asset: EditorialCreativeAssetBuffer, rect: PxRect, canva
 
 /** `data-asset-role` marca a tag do asset real para o render de controle (mesmo SVG sem o asset)
  * usado na verificação de pixel. */
-function imageTag(asset: PreparedAsset | undefined, fallback: string, rect: PxRect, options?: { clipId?: string; opacity?: number; preserveAspectRatio?: string }): string {
+function imageTag(asset: PreparedAsset | undefined, fallback: string, rect: PxRect, options?: { clipId?: string; maskId?: string; opacity?: number; preserveAspectRatio?: string; style?: string }): string {
   const href = asset ? asset.href : fallback;
   if (!href) return "";
-  return `<image${asset ? ` data-asset-role="${asset.role}"` : ""} href="${href}" x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" preserveAspectRatio="${options?.preserveAspectRatio ?? "xMidYMid slice"}"${options?.clipId ? ` clip-path="url(#${options.clipId})"` : ""}${options?.opacity !== undefined ? ` opacity="${options.opacity}"` : ""}/>`;
+  return `<image${asset ? ` data-asset-role="${asset.role}"` : ""} href="${href}" x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" preserveAspectRatio="${options?.preserveAspectRatio ?? "xMidYMid slice"}"${options?.clipId ? ` clip-path="url(#${options.clipId})"` : ""}${options?.maskId ? ` mask="url(#${options.maskId})"` : ""}${options?.opacity !== undefined ? ` opacity="${options.opacity}"` : ""}${options?.style ? ` style="${options.style}"` : ""}/>`;
 }
 
 async function blankFallback(width: number, height: number, color: string): Promise<string> {
@@ -365,6 +399,7 @@ function verifySpec(role: CreativePlanAssetRole, rect: PxRect, options: Partial<
     position: options.position ?? "centre",
     inset: options.inset ?? { left: 0, right: 0, top: 0, bottom: 0 },
     checkFidelity: options.checkFidelity ?? false,
+    ...(options.blend ? { blend: options.blend } : {}),
   };
 }
 
@@ -504,6 +539,480 @@ async function renderProductOffer(input: RenderEditorialCreativeInput, canvas: C
     ${textSvg({ id: "cta", text: input.plan.cta.toUpperCase(), x: ctaRect.x + ctaRect.width / 2, y: 0, top: ctaRect.y, valign: "center", width: ctaRect.width - 48, maxHeight: ctaRect.height, maxFontSize: layout.cta.maxFontSize, minFontSize: layout.cta.minFontSize, maxLines: 1, fill: "#FFF8F1", weight: 850, letterSpacing: 1.5, anchor: "middle" }, canvas, boxes, issues)}` : ""}
   </svg>`;
   return { svg, zones, assets, roles, verify };
+}
+
+// =================================================================================================
+// product_offer 4:5 — compositor editorial ADAPTATIVO (não um template de slots). O produto real é
+// o elemento principal; headline, subheadline, preço, CTA e logo se organizam ao redor dele, em uma
+// de três variantes da MESMA família, escolhida de forma determinística. Toda bbox continua sendo a
+// geometria final renderizada (fonte de verdade do gate), dentro da safe area e sem sobreposição
+// de texto sobre o produto (`TEXT_ZONE_OVERLAPS_ASSET` não é afrouxado).
+// =================================================================================================
+
+export type ProductOfferSelectionSignals = {
+  productAspect: number;
+  productComplexity: number;
+  productIsCutout: boolean;
+  headlineChars: number;
+  subheadlineChars: number;
+  priceChars: number;
+  hasCta: boolean;
+  primaryMassPct?: number;
+  visualDensity?: string;
+};
+
+/** Mesmo input → mesma variante. Ordem das regras = prioridade. */
+export function selectProductOfferVariant(signals: ProductOfferSelectionSignals): { variant: ProductOfferVariant; reasons: string[] } {
+  if ((signals.primaryMassPct ?? 0) >= 60) {
+    return { variant: "HERO_DOMINANT", reasons: [`diretor pediu massa visual do produto de ${signals.primaryMassPct}% (>= 60): produto protagonista, copy secundária`] };
+  }
+  if (signals.visualDensity === "clean" && signals.headlineChars <= 26 && !signals.productIsCutout) {
+    return { variant: "OVERLAY_EDITORIAL", reasons: ["densidade clean + headline curta (<= 26) + foto de cena: produto domina e a copy usa a extensão desfocada da própria cena"] };
+  }
+  const splitReasons = [
+    signals.headlineChars > 34 ? `headline longa (${signals.headlineChars} > 34) precisa de coluna própria` : undefined,
+    signals.priceChars > 10 ? `preço largo (${signals.priceChars} > 10) pede rodapé comercial` : undefined,
+    signals.subheadlineChars > 72 ? `subheadline longa (${signals.subheadlineChars} > 72)` : undefined,
+  ].filter((reason): reason is string => Boolean(reason));
+  if (splitReasons.length > 0) return { variant: "SPLIT_EDITORIAL", reasons: splitReasons };
+  if (signals.productAspect >= 1.15) {
+    return { variant: "HERO_DOMINANT", reasons: [`produto horizontal (proporção ${signals.productAspect.toFixed(2)} >= 1.15) ocupa bem uma faixa larga`] };
+  }
+  return { variant: "SPLIT_EDITORIAL", reasons: ["conteúdo equilibrado: produto e copy dividem a composição"] };
+}
+
+type ProductOfferPalette = {
+  tone: "light" | "dark";
+  page: string;
+  ink: string;
+  muted: string;
+  price: string;
+  ctaFill: string;
+  ctaFillEnd: string;
+  ctaText: string;
+  hairline: string;
+};
+
+function productOfferPalette(tone: "light" | "dark", accent: string): ProductOfferPalette {
+  return tone === "dark"
+    ? { tone, page: "#120B0D", ink: "#FFF6EC", muted: "#E6D6CB", price: "#EBCB8B", ctaFill: "#EBCB8B", ctaFillEnd: "#C9A35E", ctaText: "#24160F", hairline: "#EBCB8B" }
+    : { tone, page: "#F5EEE6", ink: "#1E1315", muted: "#5B4648", price: accent, ctaFill: accent, ctaFillEnd: "#5E2533", ctaText: "#FFF8F1", hairline: "#C9A35E" };
+}
+
+type TextSpec = {
+  id: "headline" | "subheadline" | "price" | "cta";
+  text: string;
+  width: number;
+  maxHeight: number;
+  maxFontSize: number;
+  minFontSize: number;
+  maxLines: number;
+  lineHeight?: number;
+  letterSpacing?: number;
+  uppercase?: boolean;
+};
+
+function measureSpec(spec: TextSpec): TextFit {
+  return fitText(spec.uppercase ? spec.text.toUpperCase() : spec.text, spec.width, spec.maxHeight, spec);
+}
+
+/** Largura estimada de uma linha (mesma métrica do wrap, com folga para tracking). */
+function estimateLineWidth(text: string, fontSize: number, letterSpacing = 0): number {
+  return Math.ceil(text.length * fontSize * 0.56 + Math.max(0, letterSpacing) * text.length);
+}
+
+function fitAspectInto(area: PxRect, aspect: number): PxRect {
+  let width = area.width;
+  let height = width / aspect;
+  if (height > area.height) {
+    height = area.height;
+    width = height * aspect;
+  }
+  return { x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width: Math.round(width), height: Math.round(height) };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/** Logo horizontal fica baixa e larga; logo compacta/quadrada ganha altura para ter presença. */
+function logoSize(logo: PreparedAsset, maxWidth: number, horizontalHeight: number): { width: number; height: number } {
+  const aspect = logo.width / logo.height;
+  if (aspect >= 2.2) return { width: Math.round(Math.min(maxWidth, horizontalHeight * aspect)), height: horizontalHeight };
+  const height = Math.round(horizontalHeight * 1.55);
+  return { width: Math.round(Math.min(maxWidth, height * aspect)), height };
+}
+
+/** Backing só quando necessário: logo com caixa branca embutida em fundo claro some por multiply
+ * (pixels do asset intactos, só a mistura muda); em fundo escuro, ou logo escura sem caixa, vira um
+ * chip discreto; logo transparente com contraste suficiente entra direto. */
+function resolveLogoTreatment(logo: PreparedAsset, tone: "light" | "dark"): EditorialLogoTreatment {
+  const hasOpaqueLightBox = logo.stats.borderOpaqueRatio > 0.9 && logo.stats.borderLuma > 228;
+  if (tone === "light") return hasOpaqueLightBox ? "MULTIPLY_ON_LIGHT" : "DIRECT";
+  return hasOpaqueLightBox || logo.stats.meanLuma < 120 ? "CHIP" : "DIRECT";
+}
+
+function compositionMetrics(boxes: readonly EditorialGeometryBox[], canvas: Canvas, productRect: PxRect | undefined): Omit<EditorialCompositionDiagnostics, "variant" | "selectionReasons" | "priceTreatment" | "logoTreatment" | "pageTone"> {
+  const cell = 20;
+  const cols = Math.ceil(canvas.width / cell);
+  const rows = Math.ceil(canvas.height / cell);
+  const covered = new Uint8Array(cols * rows);
+  let weightedX = 0;
+  let weightedY = 0;
+  let totalArea = 0;
+  for (const box of boxes) {
+    const rect = boxPxRect(box, canvas);
+    const area = rect.width * rect.height;
+    weightedX += (rect.x + rect.width / 2) * area;
+    weightedY += (rect.y + rect.height / 2) * area;
+    totalArea += area;
+    for (let row = Math.floor(rect.y / cell); row < Math.min(rows, Math.ceil((rect.y + rect.height) / cell)); row += 1) {
+      for (let col = Math.floor(rect.x / cell); col < Math.min(cols, Math.ceil((rect.x + rect.width) / cell)); col += 1) covered[row * cols + col] = 1;
+    }
+  }
+  let longestEmpty = 0;
+  let currentEmpty = 0;
+  const marginRows = Math.ceil(64 / cell);
+  for (let row = marginRows; row < rows - marginRows; row += 1) {
+    let any = false;
+    for (let col = 0; col < cols && !any; col += 1) any = covered[row * cols + col] === 1;
+    currentEmpty = any ? 0 : currentEmpty + 1;
+    longestEmpty = Math.max(longestEmpty, currentEmpty);
+  }
+  const occupied = covered.reduce((sum, value) => sum + value, 0) / covered.length;
+  const cx = totalArea > 0 ? weightedX / totalArea : canvas.width / 2;
+  const cy = totalArea > 0 ? weightedY / totalArea : canvas.height / 2;
+  const halfDiagonal = Math.hypot(canvas.width / 2, canvas.height / 2);
+  return {
+    productVisualProminence: productRect ? Number(((productRect.width * productRect.height) / (canvas.width * canvas.height)).toFixed(3)) : 0,
+    largestEmptyBandPct: Number(((longestEmpty * cell) / canvas.height).toFixed(3)),
+    contentCentroidOffset: Number((Math.hypot(cx - canvas.width / 2, cy - canvas.height / 2) / halfDiagonal).toFixed(3)),
+    occupiedAreaRatio: Number(occupied.toFixed(3)),
+  };
+}
+
+/** Limiares de revisão (heurística registrada, não gate): produto com presença real e sem faixa
+ * morta grande. */
+export const PRODUCT_OFFER_MIN_PROMINENCE = 0.28;
+export const PRODUCT_OFFER_MAX_EMPTY_BAND = 0.12;
+
+type ProductOfferLayout = {
+  productRect?: PxRect;
+  productFeather: number;
+  logoRect?: PxRect;
+  head: { spec: TextSpec; rect: PxRect; anchor: "start" | "middle" };
+  sub?: { spec: TextSpec; rect: PxRect; anchor: "start" | "middle" };
+  price?: { spec: TextSpec; rect: PxRect; valign: "top" | "center" };
+  cta?: { spec: TextSpec; pill: PxRect };
+  hairline?: { x1: number; x2: number; y: number };
+  scrimTop?: number;
+};
+
+async function renderProductOfferAdaptive(
+  input: RenderEditorialCreativeInput,
+  canvas: Canvas,
+  price: string | undefined,
+  logo: PreparedAsset | undefined,
+  product: PreparedAsset | undefined,
+  backdrop: { ambientHref: string; productAmbientHref?: string; baseTone: "light" | "dark" },
+  fontFaceCss: string,
+  boxes: EditorialGeometryBox[],
+  issues: EditorialGeometryIssue[],
+): Promise<FamilyRender> {
+  const W = canvas.width;
+  const H = canvas.height;
+  const M = 64;
+  const plan = input.plan;
+  const headline = plan.headline;
+  const subheadline = plan.subheadline?.trim() ? plan.subheadline : undefined;
+  const cta = plan.cta.trim() ? plan.cta : undefined;
+  const productAspect = product ? product.width / product.height : 1;
+  const productIsCutout = product ? product.stats.alphaCoverage < 0.95 : false;
+  const { variant, reasons } = selectProductOfferVariant({
+    productAspect,
+    productComplexity: product?.stats.lumaStdev ?? 0,
+    productIsCutout,
+    headlineChars: headline.length,
+    subheadlineChars: subheadline?.length ?? 0,
+    priceChars: price?.length ?? 0,
+    hasCta: Boolean(cta),
+    primaryMassPct: plan.artDirection?.primaryMassPct,
+    visualDensity: plan.visualDensity,
+  });
+  const tone: "light" | "dark" = variant === "OVERLAY_EDITORIAL" || backdrop.baseTone === "dark" ? "dark" : "light";
+  const palette = productOfferPalette(tone, pickAccent(input.context));
+  const priceTreatment: ProductOfferPriceTreatment = variant === "HERO_DOMINANT" || (variant === "SPLIT_EDITORIAL" && (price?.length ?? 0) > 10) ? "COMMERCIAL_FOOTER" : "INLINE_PRICE";
+  const logoTreatment = logo ? resolveLogoTreatment(logo, tone) : undefined;
+  const ctaFont = 23;
+  const ctaH = 78;
+  const ctaW = cta ? clamp(estimateLineWidth(cta.toUpperCase(), ctaFont, 2) + 88, 240, 430) : 0;
+  const ctaSpec = (pill: PxRect): TextSpec => ({ id: "cta", text: cta!, width: pill.width - 56, maxHeight: pill.height, maxFontSize: ctaFont, minFontSize: 15, maxLines: 1, letterSpacing: 2, uppercase: true });
+  const photoAspect = (min: number, max: number): number => (productIsCutout ? productAspect : clamp(productAspect, min, max));
+
+  const layout: ProductOfferLayout = (() => {
+    if (variant === "HERO_DOMINANT") {
+      const logoBox = logo ? logoSize(logo, 300, 50) : undefined;
+      const logoRect = logoBox ? { x: Math.round((W - logoBox.width) / 2), y: 58, ...logoBox } : undefined;
+      const top = logoRect ? logoRect.y + logoRect.height + 34 : M + 8;
+      const rowH = 88;
+      const rowTop = H - M - rowH;
+      const priceSpec: TextSpec | undefined = price ? { id: "price", text: price, width: 600, maxHeight: rowH, maxFontSize: 76, minFontSize: 34, maxLines: 1, letterSpacing: 0 } : undefined;
+      const priceFont = priceSpec ? measureSpec(priceSpec).fontSize : 0;
+      const priceW = price ? Math.min(600, estimateLineWidth(price, priceFont)) : 0;
+      const gap = cta && price ? 44 : 0;
+      const startX = Math.round((W - (priceW + gap + (cta ? ctaW : 0))) / 2);
+      const priceRect = price ? { x: startX, y: rowTop, width: priceW, height: rowH } : undefined;
+      const pill = cta ? { x: startX + priceW + gap, y: rowTop + Math.round((rowH - ctaH) / 2), width: ctaW, height: ctaH } : undefined;
+      const headTwo: TextSpec = { id: "headline", text: headline, width: 920, maxHeight: 176, maxFontSize: 82, minFontSize: 40, maxLines: 2, lineHeight: 1.04, letterSpacing: -0.4 };
+      const headSpec = measureSpec(headTwo).fits ? headTwo : { ...headTwo, maxLines: 3, maxHeight: 210 };
+      const headFit = measureSpec(headSpec);
+      const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: 760, maxHeight: subheadline.length > 90 ? 120 : 84, maxFontSize: 28, minFontSize: 20, maxLines: subheadline.length > 90 ? 3 : 2, lineHeight: 1.38, letterSpacing: 0.2 } : undefined;
+      const subFit = subSpec ? measureSpec(subSpec) : undefined;
+      const textBottom = rowTop - 58;
+      const subRect = subFit ? { x: Math.round((W - 760) / 2), y: Math.round(textBottom - subFit.height), width: 760, height: subFit.height } : undefined;
+      const headRect = { x: Math.round((W - 920) / 2), y: Math.round((subRect ? subRect.y - 22 : textBottom) - headFit.height), width: 920, height: headFit.height };
+      const area = { x: M, y: top, width: W - 2 * M, height: headRect.y - 38 - top };
+      return {
+        productRect: product ? fitAspectInto(area, photoAspect(0.8, 1.45)) : undefined,
+        productFeather: productIsCutout ? 0 : 40,
+        logoRect,
+        head: { spec: headSpec, rect: headRect, anchor: "middle" },
+        sub: subSpec && subRect ? { spec: subSpec, rect: subRect, anchor: "middle" } : undefined,
+        price: priceSpec && priceRect ? { spec: { ...priceSpec, width: priceW }, rect: priceRect, valign: "center" } : undefined,
+        cta: pill ? { spec: ctaSpec(pill), pill } : undefined,
+        hairline: { x1: W / 2 - 90, x2: W / 2 + 90, y: rowTop - 30 },
+      };
+    }
+
+    if (variant === "SPLIT_EDITORIAL") {
+      const logoBox = logo ? logoSize(logo, 260, 46) : undefined;
+      const logoRect = logoBox ? { x: M, y: 64, ...logoBox } : undefined;
+      const footer = priceTreatment === "COMMERCIAL_FOOTER";
+      const rowH = 88;
+      const rowTop = H - M - rowH;
+      const productArea = { x: 400, y: M + 8, width: W - M - 400, height: (footer ? rowTop - 44 : H - M - 8) - (M + 8) };
+      const productRect = product ? fitAspectInto(productArea, photoAspect(0.64, 0.7)) : undefined;
+      const colX = M;
+      const colW = 304;
+      const headSpec: TextSpec = { id: "headline", text: headline, width: colW, maxHeight: 380, maxFontSize: 74, minFontSize: 38, maxLines: 5, lineHeight: 1.04, letterSpacing: -0.2 };
+      const headFit = measureSpec(headSpec);
+      const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: colW, maxHeight: 190, maxFontSize: 25, minFontSize: 19, maxLines: 6, lineHeight: 1.42, letterSpacing: 0.2 } : undefined;
+      const subFit = subSpec ? measureSpec(subSpec) : undefined;
+      const priceSpec: TextSpec | undefined = price ? { id: "price", text: price, width: footer ? 600 : colW, maxHeight: footer ? rowH : 84, maxFontSize: footer ? 72 : 70, minFontSize: 32, maxLines: 1, letterSpacing: 0 } : undefined;
+      const priceFit = priceSpec ? measureSpec(priceSpec) : undefined;
+      const inlinePill = cta && !footer ? Math.min(colW, ctaW) : 0;
+      const colHeight = headFit.height + (subFit ? 26 + subFit.height : 0) + (!footer && priceFit ? 44 + priceFit.height : 0) + (inlinePill ? 24 + ctaH : 0);
+      const centre = productRect ? productRect.y + productRect.height / 2 : H / 2;
+      const minTop = (logoRect ? logoRect.y + logoRect.height : M) + 56;
+      const maxBottom = footer ? rowTop - 44 : H - M;
+      const colTop = Math.round(clamp(centre - colHeight / 2, minTop, maxBottom - colHeight));
+      const headRect = { x: colX, y: colTop, width: colW, height: headFit.height };
+      const subRect = subFit ? { x: colX, y: headRect.y + headRect.height + 26, width: colW, height: subFit.height } : undefined;
+      let cursor = (subRect ?? headRect).y + (subRect ?? headRect).height;
+      let priceRect: PxRect | undefined;
+      let pill: PxRect | undefined;
+      if (footer) {
+        const priceW = price && priceFit ? Math.min(600, estimateLineWidth(price, priceFit.fontSize)) : 0;
+        priceRect = price ? { x: M, y: rowTop, width: priceW, height: rowH } : undefined;
+        pill = cta ? { x: W - M - ctaW, y: rowTop + Math.round((rowH - ctaH) / 2), width: ctaW, height: ctaH } : undefined;
+      } else {
+        if (priceFit) {
+          priceRect = { x: colX, y: cursor + 44, width: colW, height: priceFit.height };
+          cursor = priceRect.y + priceRect.height;
+        }
+        pill = inlinePill ? { x: colX, y: cursor + 24, width: inlinePill, height: ctaH } : undefined;
+      }
+      return {
+        productRect,
+        productFeather: productIsCutout ? 0 : 36,
+        logoRect,
+        head: { spec: headSpec, rect: headRect, anchor: "start" },
+        sub: subSpec && subRect ? { spec: subSpec, rect: subRect, anchor: "start" } : undefined,
+        price: priceSpec && priceRect ? { spec: { ...priceSpec, width: priceRect.width }, rect: priceRect, valign: footer ? "center" : "top" } : undefined,
+        cta: pill ? { spec: ctaSpec(pill), pill } : undefined,
+        hairline: footer ? { x1: M, x2: W - M, y: rowTop - 24 } : undefined,
+      };
+    }
+
+    // OVERLAY_EDITORIAL
+    const logoBox = logo ? logoSize(logo, 260, 46) : undefined;
+    const logoRect = logoBox ? { x: M + 8, y: 60, ...logoBox } : undefined;
+    const rowH = 86;
+    const rowTop = H - M - rowH;
+    const priceSpec: TextSpec | undefined = price ? { id: "price", text: price, width: 520, maxHeight: rowH, maxFontSize: 68, minFontSize: 32, maxLines: 1, letterSpacing: 0 } : undefined;
+    const priceFont = priceSpec ? measureSpec(priceSpec).fontSize : 0;
+    const priceW = price ? Math.min(520, estimateLineWidth(price, priceFont)) : 0;
+    const priceRect = price ? { x: M, y: rowTop, width: priceW, height: rowH } : undefined;
+    const pill = cta ? { x: M + priceW + (price ? 40 : 0), y: rowTop + Math.round((rowH - ctaH) / 2), width: ctaW, height: ctaH } : undefined;
+    const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: 780, maxHeight: 118, maxFontSize: 27, minFontSize: 19, maxLines: 3, lineHeight: 1.4, letterSpacing: 0.2 } : undefined;
+    const subFit = subSpec ? measureSpec(subSpec) : undefined;
+    const headSpec: TextSpec = { id: "headline", text: headline, width: 900, maxHeight: 196, maxFontSize: 94, minFontSize: 48, maxLines: 2, lineHeight: 1.0, letterSpacing: -0.6 };
+    const headFit = measureSpec(headSpec);
+    const subRect = subFit ? { x: M, y: Math.round(rowTop - 42 - subFit.height), width: 780, height: subFit.height } : undefined;
+    const headRect = { x: M, y: Math.round((subRect ? subRect.y - 20 : rowTop - 42) - headFit.height), width: 900, height: headFit.height };
+    const areaTop = (logoRect ? logoRect.y + logoRect.height : M) + 30;
+    const area = { x: M, y: areaTop, width: W - 2 * M, height: headRect.y - 46 - areaTop };
+    return {
+      productRect: product ? fitAspectInto(area, photoAspect(0.8, 1.5)) : undefined,
+      productFeather: productIsCutout ? 0 : 56,
+      logoRect,
+      head: { spec: headSpec, rect: headRect, anchor: "start" },
+      sub: subSpec && subRect ? { spec: subSpec, rect: subRect, anchor: "start" } : undefined,
+      price: priceSpec && priceRect ? { spec: { ...priceSpec, width: priceW }, rect: priceRect, valign: "center" } : undefined,
+      cta: pill ? { spec: ctaSpec(pill), pill } : undefined,
+      scrimTop: headRect.y - 170,
+    };
+  })();
+
+  const { productRect, productFeather, logoRect } = layout;
+  if (productRect && rectsOverlap(layout.head.rect, productRect)) issues.push({ code: "MASK_VIOLATION", message: "Headline de produto atravessa a fotografia." });
+  const zones = buildTextZones(plan, price, {
+    headline: layout.head.rect,
+    subheadline: layout.sub?.rect,
+    price: layout.price?.rect,
+    cta: layout.cta ? { x: layout.cta.pill.x + 28, y: layout.cta.pill.y, width: layout.cta.pill.width - 56, height: layout.cta.pill.height } : undefined,
+  }, canvas);
+
+  const roles: CreativePlanAssetRole[] = [];
+  const assets: CreativePlan["assetPlacements"] = [];
+  const verify: AssetVerifySpec[] = [];
+  if (product && productRect) {
+    roles.push("product_photo");
+    assets.push(assetPlacement(product, productRect, canvas, `final rendered product photo (${variant})`));
+    assetBox("product_photo", productRect, canvas, boxes);
+    const inset = productFeather > 0 ? (productFeather * 2.1 + 6) / Math.min(productRect.width, productRect.height) : 0.02;
+    verify.push(verifySpec("product_photo", productRect, { fit: productIsCutout ? "contain" : "cover", inset: { left: inset, right: inset, top: inset, bottom: inset }, checkFidelity: true }));
+  }
+  if (logo && logoRect) {
+    roles.push("logo");
+    assets.push(assetPlacement(logo, logoRect, canvas, `final rendered logo (${logoTreatment})`));
+    assetBox("logo", logoRect, canvas, boxes);
+    verify.push(verifySpec("logo", logoRect, { fit: "contain", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { blend: "multiply" as const } : {}) }));
+  }
+
+  const isDark = palette.tone === "dark";
+  const productTag = product && productRect
+    ? imageTag(product, "", productRect, {
+        preserveAspectRatio: productIsCutout ? "xMidYMid meet" : "xMidYMid slice",
+        ...(productFeather > 0 ? { maskId: "productFeather" } : {}),
+      })
+    : "";
+  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
+  const chip = logo && logoRect && logoTreatment === "CHIP"
+    ? `<rect x="${logoRect.x - 14}" y="${logoRect.y - 10}" width="${logoRect.width + 28}" height="${logoRect.height + 20}" rx="${Math.min(18, (logoRect.height + 20) / 2)}" fill="#FFF8F1" opacity="0.96" filter="url(#softShadow)"/>`
+    : "";
+  const glow = productRect
+    ? `<ellipse cx="${productRect.x + productRect.width / 2}" cy="${productRect.y + productRect.height * 0.48}" rx="${productRect.width * 0.75}" ry="${productRect.height * 0.7}" fill="url(#glow)"/>`
+    : "";
+  const cutoutShadow = product && productRect && productIsCutout
+    ? `<ellipse cx="${productRect.x + productRect.width / 2}" cy="${productRect.y + productRect.height - 8}" rx="${productRect.width * 0.36}" ry="18" fill="#2A1A14" opacity="0.28" filter="url(#contactBlur)"/>`
+    : "";
+  const textFill = (id: TextSpec["id"]): string => (id === "headline" ? palette.ink : id === "subheadline" ? palette.muted : id === "price" ? palette.price : palette.ctaText);
+  const renderText = (block: { spec: TextSpec; rect: PxRect; anchor?: "start" | "middle"; valign?: "top" | "center" }, weight: number, embolden: (size: number) => number): string => {
+    const fit = measureSpec(block.spec);
+    const anchor = block.anchor ?? "start";
+    return textSvg({
+      id: block.spec.id,
+      text: block.spec.text,
+      x: anchor === "middle" ? block.rect.x + block.rect.width / 2 : block.rect.x,
+      y: 0,
+      top: block.rect.y,
+      valign: block.valign,
+      width: block.spec.width,
+      maxHeight: block.valign === "center" ? block.rect.height : block.spec.maxHeight,
+      maxFontSize: block.spec.maxFontSize,
+      minFontSize: block.spec.minFontSize,
+      maxLines: block.spec.maxLines,
+      lineHeight: block.spec.lineHeight,
+      letterSpacing: block.spec.letterSpacing,
+      uppercase: block.spec.uppercase,
+      anchor,
+      fill: textFill(block.spec.id),
+      weight,
+      embolden: embolden(fit.fontSize),
+    }, canvas, boxes, issues);
+  };
+
+  const headSvg = renderText(layout.head, 850, (size) => Number((size * 0.026).toFixed(2)));
+  const subSvg = layout.sub ? renderText(layout.sub, 500, () => 0) : "";
+  const priceSvg = layout.price ? renderText({ spec: layout.price.spec, rect: layout.price.rect, valign: layout.price.valign }, 850, (size) => Number((size * 0.024).toFixed(2))) : "";
+  const ctaSvg = layout.cta
+    ? `<g filter="url(#ctaShadow)"><rect x="${layout.cta.pill.x}" y="${layout.cta.pill.y}" width="${layout.cta.pill.width}" height="${layout.cta.pill.height}" rx="${layout.cta.pill.height / 2}" fill="url(#ctaFill)"/></g>
+      <rect x="${layout.cta.pill.x + 1}" y="${layout.cta.pill.y + 1}" width="${layout.cta.pill.width - 2}" height="${layout.cta.pill.height - 2}" rx="${(layout.cta.pill.height - 2) / 2}" fill="none" stroke="#FFFFFF" stroke-opacity="${isDark ? 0.35 : 0.22}" stroke-width="1.5"/>
+      ${renderText({ spec: layout.cta.spec, rect: { x: layout.cta.pill.x + 28, y: layout.cta.pill.y, width: layout.cta.pill.width - 56, height: layout.cta.pill.height }, anchor: "middle", valign: "center" }, 850, () => 0.4)}`
+    : "";
+  const hairline = layout.hairline ? `<line x1="${layout.hairline.x1}" y1="${layout.hairline.y}" x2="${layout.hairline.x2}" y2="${layout.hairline.y}" stroke="${palette.hairline}" stroke-opacity="0.7" stroke-width="2"/>` : "";
+  const f = productFeather;
+  const featherMask = productRect && f > 0
+    ? `<filter id="featherBlur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="${f / 2.2}"/></filter>
+      <mask id="productFeather" maskUnits="userSpaceOnUse" x="${productRect.x}" y="${productRect.y}" width="${productRect.width}" height="${productRect.height}"><rect x="${productRect.x}" y="${productRect.y}" width="${productRect.width}" height="${productRect.height}" fill="black"/><rect x="${productRect.x + f}" y="${productRect.y + f}" width="${productRect.width - 2 * f}" height="${productRect.height - 2 * f}" rx="${f}" fill="white" filter="url(#featherBlur)"/></mask>`
+    : "";
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    ${fontFaceCss}
+    <defs>
+      ${featherMask}
+      <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="${isDark ? "#EBCB8B" : "#FFFFFF"}" stop-opacity="${isDark ? 0.16 : 0.7}"/>
+        <stop offset="1" stop-color="${isDark ? "#EBCB8B" : "#FFFFFF"}" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#0E0809" stop-opacity="0"/>
+        <stop offset="0.45" stop-color="#0E0809" stop-opacity="0.62"/>
+        <stop offset="1" stop-color="#0E0809" stop-opacity="0.84"/>
+      </linearGradient>
+      <linearGradient id="copyVeil" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="${palette.page}" stop-opacity="0.94"/>
+        <stop offset="0.42" stop-color="${palette.page}" stop-opacity="0.82"/>
+        <stop offset="0.7" stop-color="${palette.page}" stop-opacity="0.35"/>
+        <stop offset="1" stop-color="${palette.page}" stop-opacity="0.18"/>
+      </linearGradient>
+      <linearGradient id="footVeil" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${palette.page}" stop-opacity="0.25"/>
+        <stop offset="0.55" stop-color="${palette.page}" stop-opacity="0.85"/>
+        <stop offset="1" stop-color="${palette.page}" stop-opacity="0.95"/>
+      </linearGradient>
+      <radialGradient id="vignette" cx="0.5" cy="0.45" r="0.75">
+        <stop offset="0.6" stop-color="#000000" stop-opacity="0"/>
+        <stop offset="1" stop-color="#000000" stop-opacity="${isDark ? 0.45 : 0.08}"/>
+      </radialGradient>
+      <linearGradient id="ctaFill" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="${palette.ctaFill}"/>
+        <stop offset="1" stop-color="${palette.ctaFillEnd}"/>
+      </linearGradient>
+      <filter id="ctaShadow" x="-20%" y="-30%" width="140%" height="190%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#2A1014" flood-opacity="${isDark ? 0.45 : 0.24}"/></filter>
+      <filter id="softShadow" x="-20%" y="-30%" width="140%" height="190%"><feDropShadow dx="0" dy="6" stdDeviation="9" flood-color="#000000" flood-opacity="0.28"/></filter>
+      <filter id="contactBlur" x="-30%" y="-200%" width="160%" height="500%"><feGaussianBlur stdDeviation="14"/></filter>
+    </defs>
+    <rect width="${W}" height="${H}" fill="${palette.page}"/>
+    ${imageTag(undefined, backdrop.ambientHref, { x: 0, y: 0, width: W, height: H }, { opacity: isDark ? 0.45 : 0.85 })}
+    ${backdrop.productAmbientHref ? imageTag(undefined, backdrop.productAmbientHref, { x: 0, y: 0, width: W, height: H }, { opacity: isDark ? 0.95 : 0.5 }) : ""}
+    <rect width="${W}" height="${H}" fill="${palette.page}" opacity="${isDark ? 0.38 : 0.45}"/>
+    ${variant === "SPLIT_EDITORIAL" ? `<rect width="${W}" height="${H}" fill="url(#copyVeil)"/>` : ""}
+    ${variant === "HERO_DOMINANT" ? `<rect y="${Math.round(layout.head.rect.y - 120)}" width="${W}" height="${Math.round(H - layout.head.rect.y + 120)}" fill="url(#footVeil)"/>` : ""}
+    ${glow}
+    ${cutoutShadow}
+    ${productTag}
+    ${layout.scrimTop !== undefined ? `<rect y="${Math.round(layout.scrimTop)}" width="${W}" height="${Math.round(H - layout.scrimTop)}" fill="url(#scrim)"/>` : ""}
+    <rect width="${W}" height="${H}" fill="url(#vignette)"/>
+    ${chip}
+    ${logoTag}
+    ${hairline}
+    ${headSvg}
+    ${subSvg}
+    ${priceSvg}
+    ${ctaSvg}
+  </svg>`;
+
+  const metrics = compositionMetrics(boxes, canvas, productRect);
+  return {
+    svg,
+    zones,
+    assets,
+    roles,
+    verify,
+    composition: { variant, selectionReasons: reasons, priceTreatment, logoTreatment, pageTone: palette.tone, ...metrics },
+  };
 }
 
 async function renderPremiumInstitutional(input: RenderEditorialCreativeInput, canvas: Canvas, logo: PreparedAsset | undefined, baseFallback: string, fontFaceCss: string, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): Promise<FamilyRender> {
@@ -664,7 +1173,7 @@ async function fittedSource(png: Buffer, region: PxRect, fit: AssetVerifySpec["f
  * Um frame vazio fica idêntico ao controle → `assetMatchRatio ≈ 0`. Sem controle (auditoria de um
  * artefato já publicado), só a fidelidade decide.
  */
-async function measureAssetPixels(input: { final: RawImage; control?: RawImage; sourcePng: Buffer; expectedRegion?: Buffer; rect: CreativePlanRect; fit: AssetVerifySpec["fit"]; position: AssetVerifySpec["position"]; inset: AssetVerifySpec["inset"] }): Promise<{ informativePixelRatio: number; assetMatchRatio: number; fidelityMeanAbsDiff: number; opaquePixels: number }> {
+async function measureAssetPixels(input: { final: RawImage; control?: RawImage; sourcePng: Buffer; expectedRegion?: Buffer; rect: CreativePlanRect; fit: AssetVerifySpec["fit"]; position: AssetVerifySpec["position"]; inset: AssetVerifySpec["inset"]; blend?: AssetVerifySpec["blend"] }): Promise<{ informativePixelRatio: number; assetMatchRatio: number; fidelityMeanAbsDiff: number; opaquePixels: number }> {
   const region = regionPx(input.rect, input.final.width, input.final.height);
   // RGBA do tamanho da região: o asset renderizado pelo mesmo rasterizador (render normal) ou,
   // na auditoria de artefato já publicado, o asset reencaixado pelo sharp.
@@ -699,8 +1208,9 @@ async function measureAssetPixels(input: { final: RawImage; control?: RawImage; 
             const controlValue = c >= 0 ? input.control!.data[c + k] : finalValue;
             sums[k] += finalValue;
             sums[3 + k] += controlValue;
-            sums[6 + k] += source[s + k] * alpha + controlValue * (1 - alpha);
-            channelAbsSum += Math.abs(finalValue - source[s + k]);
+            const sourceValue = input.blend === "multiply" && c >= 0 ? (source[s + k] * controlValue) / 255 : source[s + k];
+            sums[6 + k] += sourceValue * alpha + controlValue * (1 - alpha);
+            channelAbsSum += Math.abs(finalValue - sourceValue);
           }
           if (alpha > 0.94) {
             opaque += 1;
@@ -756,10 +1266,11 @@ async function renderExpectedAsset(spec: AssetVerifySpec, asset: PreparedAsset, 
 async function verifyAsset(spec: AssetVerifySpec, asset: PreparedAsset, final: RawImage, control: RawImage, canvas: Canvas, output: OutputSize): Promise<EditorialAssetVerification> {
   const rect = pctRect(spec.rect, canvas);
   const expected = await renderExpectedAsset(spec, asset, canvas, output);
-  const presence = await measureAssetPixels({ final, control, sourcePng: asset.png, expectedRegion: expected, rect, fit: spec.fit, position: spec.position, inset: spec.inset });
+  const presence = await measureAssetPixels({ final, control, sourcePng: asset.png, expectedRegion: expected, rect, fit: spec.fit, position: spec.position, inset: spec.inset, blend: spec.blend });
   // Fidelidade sempre contra o ORIGINAL decodificado pelo sharp (independente do rasterizador do
   // SVG): se o rasterizador descartasse/corrompesse o asset nos dois renders, isto ainda reprova.
-  const original = await measureAssetPixels({ final, sourcePng: asset.png, rect, fit: spec.fit, position: spec.position, inset: spec.inset });
+  // Multiply precisa do fundo (controle) para montar o esperado; o asset continua vindo do original decodificado.
+  const original = await measureAssetPixels({ final, sourcePng: asset.png, rect, fit: spec.fit, position: spec.position, inset: spec.inset, ...(spec.blend ? { control, blend: spec.blend } : {}) });
   const measured = { ...presence, fidelityMeanAbsDiff: original.fidelityMeanAbsDiff, opaquePixels: original.opaquePixels };
   const fidelityPass = measured.opaquePixels > 0 && measured.fidelityMeanAbsDiff <= MAX_FIDELITY_MEAN_ABS_DIFF;
   const present = measured.informativePixelRatio >= MIN_INFORMATIVE_RATIO && measured.assetMatchRatio >= MIN_ASSET_MATCH_RATIO;
@@ -830,6 +1341,27 @@ async function buildAmbient(png: Buffer, canvas: Canvas): Promise<string> {
   return pngDataUri(ambient);
 }
 
+/** Extensão desfocada da PRÓPRIA foto do produto, atrás de tudo: as bordas esfumadas da foto real
+ * se fundem nela (integração sem card). Puramente decorativa — nunca entra em assetPlacements, e a
+ * foto real nítida continua intacta na sua bbox. Recortes transparentes são achatados no creme. */
+async function buildProductAmbient(product: PreparedAsset, canvas: Canvas): Promise<string> {
+  const ambient = await sharp(product.png)
+    .flatten({ background: "#F5EEE6" })
+    .resize(Math.round(canvas.width / 2), Math.round(canvas.height / 2), { fit: "cover" })
+    .blur(26)
+    .modulate({ saturation: 0.9 })
+    .png()
+    .toBuffer();
+  return pngDataUri(ambient);
+}
+
+/** Tom da base (luminância média) — decide paleta clara/escura do texto sobre ela. */
+async function resolveBackgroundTone(png: Buffer): Promise<"light" | "dark"> {
+  const { channels } = await sharp(png).stats();
+  const luma = (0.299 * channels[0]!.mean + 0.587 * (channels[1]?.mean ?? channels[0]!.mean) + 0.114 * (channels[2]?.mean ?? channels[0]!.mean)) / 255;
+  return luma < 0.42 ? "dark" : "light";
+}
+
 function resolveOutputSize(base: { width: number; height: number }, design: Canvas): OutputSize {
   const designRatio = design.width / design.height;
   const baseRatio = base.width / base.height;
@@ -853,7 +1385,13 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
   const fontFaceCss = await buildEditorialFontFaceCss();
 
   const rendered = family === "product_offer"
-    ? await renderProductOffer(input, canvas, price, logo, product, await buildAmbient(base.png, canvas), fontFaceCss, boxes, issues)
+    ? canvas.format === "4:5"
+      ? await renderProductOfferAdaptive(input, canvas, price, logo, product, {
+          ambientHref: await buildAmbient(base.png, canvas),
+          productAmbientHref: product ? await buildProductAmbient(product, canvas) : undefined,
+          baseTone: await resolveBackgroundTone(base.png),
+        }, fontFaceCss, boxes, issues)
+      : await renderProductOffer(input, canvas, price, logo, product, await buildAmbient(base.png, canvas), fontFaceCss, boxes, issues)
     : family === "digital_service"
       ? await renderDigitalService(input, canvas, price, logo, screenshot, baseHref || (await blankFallback(canvas.width, canvas.height, "#1a1012")), fontFaceCss, boxes, issues)
       : await renderPremiumInstitutional(input, canvas, logo, baseHref, fontFaceCss, boxes, issues);
@@ -909,6 +1447,7 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
     compositedAssetRoles: [...new Set(rendered.roles)],
     renderedGeometry: { source: "final_rendered_geometry", family, textBoxes, assetBoxes },
     assetVerification,
+    ...(rendered.composition ? { composition: rendered.composition } : {}),
     geometry: { valid: issues.length === 0, boxes, issues },
   };
 }

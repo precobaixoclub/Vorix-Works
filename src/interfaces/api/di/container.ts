@@ -143,6 +143,7 @@ import type { CreativeEngineRunRepositoryPort } from "../../../application/ports
 import { compositeLogoOntoImage } from "../../../infrastructure/media/logo-compositor.js";
 import { compositeScreenshotIntoDeviceMockup } from "../../../infrastructure/media/screenshot-mockup-compositor.js";
 import { renderCreativePlanTextZones } from "../../../infrastructure/rendering/render-creative-plan-text-zones.js";
+import { createReferenceAssetResolver, type ReferenceAssetResolverPort } from "../../../application/assets/reference-asset-policy.js";
 import { preflightEditorialAsset, renderEditorialCreative } from "../../../infrastructure/rendering/editorial-creative-renderer.js";
 import { computeAssetSuitabilityScore } from "../../../infrastructure/image-processing/product-background.js";
 import { computeRegionPixelStats, applyLocalBlur, applyLocalScrim, extractRegionBuffer } from "../../../infrastructure/image-processing/region-pixel-stats.js";
@@ -400,6 +401,9 @@ export type ApiContainer = {
   mediaGenerationService?: MediaGenerationService;
   executionHandlers: [DeterministicExecutionTaskHandler];
   executionFeatureFlags: ExecutionFeatureFlags;
+  /** Política única de reference assets — `undefined` sem storage gerenciado (falha fechado). */
+  referenceAssetResolver?: ReferenceAssetResolverPort;
+  creativeEngineEditorialQaAllowlist?: readonly { tenantId: string; workspaceId: string }[];
   executionContractRegistry: ExecutionContractRegistry;
   executionEnvironmentPolicy: ExecutionEnvironmentPolicy;
   executionSideEffectGuard: SideEffectGuard;
@@ -650,6 +654,19 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       });
     }
     return new DisabledObjectStorage();
+  })();
+  // Política única de reference assets (ver `reference-asset-policy.ts`): só a base pública do
+  // storage gerenciado é aceita e a leitura é pela chave — sem storage configurado não há resolver,
+  // e os motores falham fechado quando recebem assets.
+  const referenceAssetResolver: ReferenceAssetResolverPort | undefined = (() => {
+    if (!objectStorage.read) return undefined;
+    let publicBaseUrl: string;
+    try {
+      publicBaseUrl = objectStorage.resolvePublicUrl("__reference_asset_probe__").replace(/__reference_asset_probe__$/, "");
+    } catch {
+      return undefined;
+    }
+    return createReferenceAssetResolver({ publicBaseUrl }, { read: (key, options) => objectStorage.read!(key, options) });
   })();
   const inboxMediaStorage: InboxMediaStoragePort = (() => {
     const ims = config?.inboxMediaStorage;
@@ -1043,6 +1060,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     renderTextZones: renderCreativePlanTextZones,
     renderEditorialCreative,
     preflightEditorialAsset,
+    referenceAssetResolver,
     computeAssetSuitability: computeAssetSuitabilityScore,
     readImageDimensions: readCreativeImageDimensions,
     computeRegionPixelStats,
@@ -1075,6 +1093,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       qualityFeedback,
       clara,
       objectStorage,
+      referenceAssetResolver,
       ensureBrandVisualProfile,
       semanticOcclusionChecker,
       gptCreativeEngine: gptCreativeEngineDeps,
@@ -1530,6 +1549,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       mediaGenerationService,
       executionHandlers,
       executionFeatureFlags,
+      referenceAssetResolver,
+      creativeEngineEditorialQaAllowlist: config?.execution.creativeEngineEditorialExperimentalQaAllowlist ?? [],
       executionContractRegistry,
       executionEnvironmentPolicy,
       executionSideEffectGuard,
@@ -1624,6 +1645,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     aiMediaProviderRegistry,
     executionHandlers,
     executionFeatureFlags,
+    referenceAssetResolver,
+    creativeEngineEditorialQaAllowlist: config?.execution.creativeEngineEditorialExperimentalQaAllowlist ?? [],
     executionContractRegistry,
     executionEnvironmentPolicy,
     executionSideEffectGuard,

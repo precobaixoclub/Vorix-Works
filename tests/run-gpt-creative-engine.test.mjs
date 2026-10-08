@@ -205,6 +205,16 @@ function baseDeps(overrides = {}) {
     computeAssetSuitability: async () => undefined,
     readImageDimensions: async () => ({ width: 1080, height: 1350 }),
     preflightEditorialAsset: async () => ({ detectedMime: "image/jpeg" }),
+    // Resolver permissivo de teste: autoriza qualquer referência e lê pelo fetch falso do teste.
+    // A política real é coberta em tests/reference-asset-policy.test.mjs e no e2e editorial.
+    referenceAssetResolver: {
+      authorize: () => ({ ok: true, category: "TENANT_MANAGED_ASSET", objectKey: "test/object" }),
+      load: async (url) => {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar ${url}`);
+        return Buffer.from(await response.arrayBuffer());
+      },
+    },
     ...overrides,
   };
 }

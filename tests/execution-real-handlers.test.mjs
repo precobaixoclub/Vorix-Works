@@ -15,6 +15,17 @@ import { SideEffectGuard, createExecutionEnvironmentPolicy } from "../dist/appli
 import { InMemoryHandlerCircuitBreaker } from "../dist/application/execution/handler-circuit-breaker.js";
 import { collectExecutionMetrics } from "../dist/application/execution/execution-observability.js";
 import { SingleSkillExecutionTaskHandler, VisualPipelineExecutionTaskHandler } from "../dist/infrastructure/execution/real-skill-execution-handlers.js";
+
+// Resolver permissivo de teste (autoriza e lê pelo fetch falso). A política real é coberta em
+// tests/reference-asset-policy.test.mjs.
+const permissiveReferenceAssetResolver = {
+  authorize: () => ({ ok: true, category: "TENANT_MANAGED_ASSET", objectKey: "test/object" }),
+  load: async (url) => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return Buffer.from(await response.arrayBuffer());
+  },
+};
 import { EXECUTION_CAPABILITIES } from "../dist/domain/planning/planning.model.js";
 import { InMemoryPlanningRepository } from "../dist/infrastructure/storage/in-memory-planning-repository.js";
 import { InMemoryExecutionTaskRepository } from "../dist/infrastructure/storage/in-memory-execution-task-repository.js";
@@ -597,6 +608,7 @@ test("VisualPipelineExecutionTaskHandler: compõe preço/desconto/CTA determiní
   };
 
   const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    referenceAssetResolver: permissiveReferenceAssetResolver,
     helena: helena.manager,
     provider: "helena",
     clara: fakeClara,
@@ -696,6 +708,7 @@ test("VisualPipelineExecutionTaskHandler: campos de auditoria do Multi-Candidate
   const fakeClara = { requestContext: async () => ({ clientId: "tenant-1", deliveredAt: FIXED_NOW, modules: {}, records: [] }) };
 
   const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    referenceAssetResolver: permissiveReferenceAssetResolver,
     helena: helena.manager,
     provider: "helena",
     clara: fakeClara,
@@ -827,6 +840,7 @@ test("VisualPipelineExecutionTaskHandler: Repair Loop reposiciona a zona (headli
   };
 
   const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    referenceAssetResolver: permissiveReferenceAssetResolver,
     helena: helena.manager,
     provider: "helena",
     clara: fakeClara,
@@ -928,6 +942,7 @@ test("VisualPipelineExecutionTaskHandler: Repair Loop nunca ultrapassa 2 tentati
   };
 
   const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    referenceAssetResolver: permissiveReferenceAssetResolver,
     helena: helena.manager,
     provider: "helena",
     clara: fakeClara,
@@ -1053,6 +1068,7 @@ test("VisualPipelineExecutionTaskHandler: Repair Loop corrige MÚLTIPLAS zonas v
   };
 
   const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    referenceAssetResolver: permissiveReferenceAssetResolver,
     helena: helena.manager,
     provider: "helena",
     clara: fakeClara,
@@ -1176,6 +1192,7 @@ test("VisualPipelineExecutionTaskHandler: Repair Loop usa a 2ª rodada só para 
   };
 
   const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    referenceAssetResolver: permissiveReferenceAssetResolver,
     helena: helena.manager,
     provider: "helena",
     clara: fakeClara,
@@ -1300,6 +1317,7 @@ test("VisualPipelineExecutionTaskHandler: Product Asset Pipeline (Rodada 2) reco
   const fakePreparedCommandRepository = { getById: async (id) => (id === "prepared-1" ? { validatedInputs: { referenceImageUrl: `${baseUrl}/reference.png` } } : undefined) };
 
   const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    referenceAssetResolver: permissiveReferenceAssetResolver,
     helena: helena.manager,
     provider: "helena",
     objectStorage: fakeObjectStorage,
@@ -1405,6 +1423,7 @@ test("VisualPipelineExecutionTaskHandler: sem performanceCreativePlan/adLayoutSp
   };
 
   const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    referenceAssetResolver: permissiveReferenceAssetResolver,
     helena: helena.manager,
     provider: "helena",
     clara: fakeClara,
@@ -1493,6 +1512,7 @@ test("VisualPipelineExecutionTaskHandler: cola a logo real da marca sobre a imag
   };
 
   const handler = new (await import("../dist/infrastructure/execution/real-skill-execution-handlers.js")).VisualPipelineExecutionTaskHandler({
+    referenceAssetResolver: permissiveReferenceAssetResolver,
     helena: helena.manager,
     provider: "helena",
     clara: fakeClara,

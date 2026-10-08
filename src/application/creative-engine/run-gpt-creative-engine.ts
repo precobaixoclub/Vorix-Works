@@ -45,6 +45,7 @@ import { neutralizeGhostTextZone } from "./neutralize-ghost-text.js";
 import { applyTextBudgetSimplification, degradeOptionalZonesOnUnresolvedOverlap, isLayoutOverdense } from "./manage-text-budget.js";
 import { isEditorialCompositionError, type EditorialCreativeAssetBuffer, type RenderEditorialCreativeInput, type RenderEditorialCreativeResult } from "./editorial-composition.types.js";
 import { describeEditorialTextGaps, findEditorialRequiredTextsWithoutContent, resolveEditorialRequiredTexts } from "./editorial-text-contract.js";
+import { describeReferenceAssetDecision, isReferenceAssetError, ReferenceAssetError, type ReferenceAssetResolverPort, type ReferenceAssetScope } from "../assets/reference-asset-policy.js";
 
 /**
  * Motor criativo GPT — migração "GPT como motor criativo único" (PR 5/9). Promove
@@ -104,6 +105,9 @@ export type GptCreativeEngineDeps = {
    * `EditorialCompositionError` (PRODUCT_ASSET_DECODE_FAILED/EDITORIAL_ASSET_DECODE_FAILED/
    * PRODUCT_ASSET_EMPTY). */
   preflightEditorialAsset?(asset: EditorialCreativeAssetBuffer): Promise<{ detectedMime: string }>;
+  /** Autoriza (origem/posse) e lê reference assets pelo storage gerenciado — ver
+   * `reference-asset-policy.ts`. Obrigatório sempre que o contexto tem assets. */
+  referenceAssetResolver?: ReferenceAssetResolverPort;
   computeAssetSuitability?(buffer: Buffer): Promise<AssetSuitabilityScore | undefined>;
   readImageDimensions(buffer: Buffer): Promise<{ width?: number; height?: number }>;
   /** ETAPA 3 (Rodada 4, benchmark de qualidade criativa) — medida determinística e gratuita do
@@ -144,6 +148,9 @@ export type GptCreativeEngineInput = {
   /** Caminho experimental: a IA gera a cena/foto, mas texto/preco/CTA/logo/produto/screenshot sao
    * renderizados pelo compositor editorial deterministico. Nunca e ligado por padrao. */
   experimentalEditorialMode?: boolean;
+  /** `true` só quando o worker comprovou homologação editorial (flag + allowlist + trusted actor) —
+   * única condição em que o namespace SYSTEM_QA_ASSET (`qa-assets/`) é aceito. */
+  qaReferenceAssetsAllowed?: boolean;
 };
 
 /** Auditoria de custo urgente — breakdown por etapa, pedido explicitamente pelo usuário. Cada
@@ -693,6 +700,31 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
   // exploração de direções existir.
   let chosenCreativeDirection: CreativeDirectionExploration | undefined;
   const preflightedAssetBuffers = new Map<string, Buffer>();
+  // Autorização de reference assets (os dois modos) ANTES de qualquer leitura ou IA: as URLs do
+  // contexto também viram `imageUrls` das chamadas de visão. Política única em
+  // `reference-asset-policy.ts`; leitura sempre pelo storage gerenciado, nunca `fetch` de URL livre.
+  const referenceScope: ReferenceAssetScope = {
+    tenantId: input.tenantId,
+    workspaceId: input.workspaceId,
+    qaNamespaceAllowed: input.qaReferenceAssetsAllowed === true,
+  };
+  if (context.assets.length > 0) {
+    if (!deps.referenceAssetResolver) {
+      return fail(
+        "REFERENCE_ASSET_RESOLVER_MISSING: reference assets exigem referenceAssetResolver injetado — nenhuma URL é baixada nem enviada à IA sem autorização de origem/posse.",
+        "REFERENCE_ASSET_RESOLVER_MISSING",
+      );
+    }
+    for (const asset of context.assets) {
+      const decision = deps.referenceAssetResolver.authorize(asset.url, referenceScope);
+      if (!decision.ok) {
+        console.warn(describeReferenceAssetDecision({ scope: referenceScope, role: asset.role, result: decision }));
+        const error = new ReferenceAssetError(decision.code, decision.reasonCategory);
+        return fail(error.message, error.code);
+      }
+    }
+  }
+
   if (input.experimentalEditorialMode) {
     const editorialInputAssets = context.assets.filter((asset) => asset.role === "product_photo" || asset.role === "screenshot" || asset.role === "logo");
     if (editorialInputAssets.length > 0 && !deps.preflightEditorialAsset) {
@@ -704,8 +736,9 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     for (const asset of editorialInputAssets) {
       let buffer: Buffer;
       try {
-        buffer = await fetchAsBuffer(asset.url);
+        buffer = await loadAssetBuffer(asset.url);
       } catch (error) {
+        if (isReferenceAssetError(error)) return fail(error.message, error.code);
         return fail(
           `EDITORIAL_ASSET_DOWNLOAD_FAILED: falha ao baixar asset real "${asset.role}" antes de qualquer IA: ${error instanceof Error ? error.message : "erro desconhecido"}.`,
           "EDITORIAL_ASSET_DOWNLOAD_FAILED",
@@ -724,7 +757,10 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     }
   }
   async function loadAssetBuffer(url: string): Promise<Buffer> {
-    return preflightedAssetBuffers.get(url) ?? fetchAsBuffer(url);
+    const cached = preflightedAssetBuffers.get(url);
+    if (cached) return cached;
+    if (!deps.referenceAssetResolver) throw new ReferenceAssetError("REFERENCE_ASSET_SOURCE_NOT_ALLOWED", "resolver_missing");
+    return deps.referenceAssetResolver.load(url, referenceScope);
   }
 
   // Ponto 9 da auditoria "qualidade visual e direção de arte" — uma ÚNICA chamada de texto barata
@@ -1134,7 +1170,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     if (screenshotAsset) {
       const placement = plan.assetPlacements.find((candidate) => candidate.role === "screenshot")!;
       try {
-        const screenshotBuffer = await fetchAsBuffer(screenshotAsset.url);
+        const screenshotBuffer = await loadAssetBuffer(screenshotAsset.url);
         baseWithAssetsBuffer = await deps.compositeScreenshot({
           imageBuffer: baseWithAssetsBuffer,
           screenshotBuffer,
@@ -1156,7 +1192,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     if (logoAsset) {
       const placement = plan.assetPlacements.find((candidate) => candidate.role === "logo");
       try {
-        const logoBuffer = await fetchAsBuffer(logoAsset.url);
+        const logoBuffer = await loadAssetBuffer(logoAsset.url);
         let logoTreatment = "direct";
         baseWithAssetsBuffer = await deps.compositeLogo({
           imageBuffer: baseWithAssetsBuffer,

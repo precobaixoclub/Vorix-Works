@@ -7,10 +7,27 @@ import { readFile } from "node:fs/promises";
 import sharp from "sharp";
 import { runGptCreativeEngine } from "../dist/application/creative-engine/run-gpt-creative-engine.js";
 import { preflightEditorialAsset, renderEditorialCreative } from "../dist/infrastructure/rendering/editorial-creative-renderer.js";
+import { createReferenceAssetResolver } from "../dist/application/assets/reference-asset-policy.js";
 
-const PRODUCT_URL = "https://qa.local/editorial/product-ring-reminder.jpg";
-const LOGO_URL = "https://qa.local/editorial/logo-rumo-ao-altar.png";
-const BASE_URL = "https://qa.local/editorial/generated-base.png";
+// Storage gerenciado em memória: o resolver REAL (política de origem/posse) lê daqui pela chave —
+// nenhum fetch HTTP de reference asset. `currentFixtureAssets`/`currentDownloads` são trocados por
+// `withFixtureFetch` a cada teste.
+let currentFixtureAssets = {};
+let currentDownloads = [];
+const referenceAssetResolver = createReferenceAssetResolver({ publicBaseUrl: "https://qa.local/uploads" }, {
+  read: async (key) => {
+    const url = `https://qa.local/uploads/${key}`;
+    currentDownloads.push(url);
+    const body = currentFixtureAssets[url];
+    if (!body) throw new Error("not found");
+    return Buffer.from(body);
+  },
+});
+
+const STORAGE_BASE = "https://qa.local/uploads";
+const PRODUCT_URL = `${STORAGE_BASE}/qa-assets/editorial/product-ring-reminder.jpg`;
+const LOGO_URL = `${STORAGE_BASE}/qa-assets/editorial/logo-rumo-ao-altar.png`;
+const BASE_URL = "https://provider.local/generated-base.png";
 
 const PRODUCT_JPEG = await readFile(new URL("./fixtures/editorial/product-ring-reminder.jpg", import.meta.url));
 const LOGO_PNG = await readFile(new URL("./fixtures/editorial/logo-rumo-ao-altar.png", import.meta.url));
@@ -99,6 +116,8 @@ const passingVisualScore = () => completed(JSON.stringify(Object.fromEntries(VIS
 async function withFixtureFetch(assets, run) {
   const previous = global.fetch;
   const downloads = [];
+  currentFixtureAssets = assets;
+  currentDownloads = downloads;
   global.fetch = async (url) => {
     downloads.push(String(url));
     const body = assets[String(url)];
@@ -126,6 +145,7 @@ function deps(icaro, stored) {
     },
     renderEditorialCreative,
     preflightEditorialAsset,
+    referenceAssetResolver,
   };
 }
 
@@ -136,6 +156,7 @@ function input(assets) {
     tenantId: "tenant-qa",
     workspaceId: "workspace-qa",
     experimentalEditorialMode: true,
+    qaReferenceAssetsAllowed: true,
     creativeContext: {
       brandName: "Rumo ao Altar",
       objective: "Arte product_offer 4:5",

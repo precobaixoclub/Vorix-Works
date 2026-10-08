@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { createExecution, decideExecutionGateUseCase, startExecution, type ExecutionUseCaseDeps } from "../../../../application/execution/execution-use-cases.js";
 import { generateVisualFromIdea, type GenerateVisualFromIdeaDeps } from "../../../../application/production/generate-visual-from-idea.js";
 import type { QualityFeedbackCategory, QualityFeedbackPort } from "../../../../application/quality-feedback/index.js";
-import { NotImplementedError } from "../../http/app-error.js";
+import { ForbiddenError, NotImplementedError } from "../../http/app-error.js";
+import { describeReferenceAssetDecision, type ReferenceAssetResolverPort, type ReferenceAssetScope } from "../../../../application/assets/reference-asset-policy.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 import { translateExecutionError } from "./execution-error-translator.js";
@@ -82,6 +83,9 @@ export type ProductionRoutesDeps = GenerateVisualFromIdeaDeps &
   ExecutionUseCaseDeps & {
     ensureHouseTenantProfile(tenantId: string, workspaceId: string): Promise<void>;
     qualityFeedback: QualityFeedbackPort;
+    /** Política única de reference assets — sem ela, requisições com referências falham fechado. */
+    referenceAssetResolver?: ReferenceAssetResolverPort;
+    editorialQaAllowlist?: readonly { tenantId: string; workspaceId: string }[];
   };
 
 /**
@@ -103,6 +107,41 @@ export type ProductionRoutesDeps = GenerateVisualFromIdeaDeps &
  * foi reprovação de qualidade (antes decidida aqui) migrou pro cliente, que já vê o resultado de
  * cada tentativa via poll.
  */
+/**
+ * Autoriza (origem + posse) todas as referências da requisição ANTES de qualquer IA —
+ * `generateVisualFromIdea` envia essas URLs para a visão na mesma requisição. `qa-assets/` só para
+ * o tenant/workspace da allowlist editorial, com a flag ligada e o modo editorial pedido (o
+ * principal autenticado é o trusted actor neste ponto; o worker revalida depois). Lança
+ * `ForbiddenError` com mensagem genérica — nunca revela a quem um asset pertence.
+ */
+export function authorizeProductionReferenceAssets(
+  body: Pick<GenerateBody, "workspaceId" | "referenceImages" | "referenceAssets" | "creativeEngineCompositionMode">,
+  tenantId: string,
+  deps: Pick<ProductionRoutesDeps, "referenceAssetResolver" | "editorialQaAllowlist" | "featureFlags">,
+  log: (line: string) => void,
+): void {
+  const references = [
+    ...(body.referenceImages ?? []).map((url) => ({ url, role: "reference_image" })),
+    ...(body.referenceAssets ?? []).map((asset) => ({ url: asset.url, role: asset.role })),
+  ];
+  if (references.length === 0) return;
+  if (!deps.referenceAssetResolver) throw new ForbiddenError("Referências de imagem exigem o storage gerenciado configurado.", { code: "REFERENCE_ASSET_SOURCE_NOT_ALLOWED" });
+  const scope: ReferenceAssetScope = {
+    tenantId,
+    workspaceId: body.workspaceId,
+    qaNamespaceAllowed: body.creativeEngineCompositionMode === "editorial_experimental"
+      && deps.featureFlags?.creativeEngineEditorialExperimentalEnabled === true
+      && (deps.editorialQaAllowlist ?? []).some((entry) => entry.tenantId === tenantId && entry.workspaceId === body.workspaceId),
+  };
+  for (const reference of references) {
+    const decision = deps.referenceAssetResolver.authorize(reference.url, scope);
+    if (!decision.ok) {
+      log(describeReferenceAssetDecision({ scope, role: reference.role, result: decision }));
+      throw new ForbiddenError("Asset de referência não autorizado ou origem não permitida — use imagens enviadas para este workspace.", { code: decision.code });
+    }
+  }
+}
+
 export async function registerProductionRoutes(app: FastifyInstance, deps: ProductionRoutesDeps): Promise<void> {
   app.post("/production/ideas/generate", { schema: { body: GENERATE_BODY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "execution:create");
@@ -114,6 +153,11 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
       throw new NotImplementedError("Geração real de imagem ainda não está ligada neste servidor (REAL_EXECUTION_ENABLED/REAL_VISUAL_ENABLED).");
     }
     const body = request.body as GenerateBody;
+
+    // Reference assets autorizados (origem + posse) ANTES de qualquer IA: `generateVisualFromIdea`
+    // já envia essas URLs para a visão nesta mesma requisição. `qa-assets/` só para o
+    // tenant/workspace da allowlist editorial, com a flag ligada e o modo editorial pedido.
+    authorizeProductionReferenceAssets(body, principal.tenantId, deps, (line) => request.log.warn(line));
 
     await deps.ensureHouseTenantProfile(principal.tenantId, body.workspaceId);
 

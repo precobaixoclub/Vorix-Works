@@ -1,4 +1,5 @@
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { ReferenceAssetError } from "../../application/assets/reference-asset-policy.js";
 import type { ObjectStoragePort, ObjectStoragePutInput } from "../../application/ports/object-storage.port.js";
 
 /**
@@ -63,5 +64,27 @@ export class S3ObjectStorage implements ObjectStoragePort {
 
   resolvePublicUrl(key: string): string {
     return resolvePublicUrl(this.config, key);
+  }
+
+  async read(key: string, options: { maxBytes: number }): Promise<Buffer> {
+    let response;
+    try {
+      response = await this.client.send(new GetObjectCommand({ Bucket: this.config.bucket, Key: key }));
+    } catch {
+      throw new ReferenceAssetError("REFERENCE_ASSET_NOT_FOUND", "object_missing");
+    }
+    if (typeof response.ContentLength === "number" && response.ContentLength > options.maxBytes) {
+      throw new ReferenceAssetError("REFERENCE_ASSET_TOO_LARGE", "size_limit");
+    }
+    const body = response.Body as AsyncIterable<Uint8Array> | undefined;
+    if (!body) throw new ReferenceAssetError("REFERENCE_ASSET_NOT_FOUND", "object_missing");
+    const chunks: Buffer[] = [];
+    let total = 0;
+    for await (const chunk of body) {
+      total += chunk.byteLength;
+      if (total > options.maxBytes) throw new ReferenceAssetError("REFERENCE_ASSET_TOO_LARGE", "size_limit");
+      chunks.push(Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
   }
 }

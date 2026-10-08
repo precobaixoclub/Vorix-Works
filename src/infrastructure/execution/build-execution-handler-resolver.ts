@@ -16,6 +16,7 @@ import { HelenaSkillManager, SkillManifestValidator, SkillRegistry } from "../..
 import { FileSystemSkillDiscovery } from "../skills/file-system-skill-discovery.js";
 import { FileSystemSkillModuleLoader } from "../skills/file-system-skill-module-loader.js";
 import { ContentBriefExecutionTaskHandler, QualityGateExecutionTaskHandler, SingleSkillExecutionTaskHandler, VisualPipelineExecutionTaskHandler } from "./real-skill-execution-handlers.js";
+import type { ReferenceAssetResolverPort } from "../../application/assets/reference-asset-policy.js";
 import { GptCreativeEngineQualityTaskHandler, GptCreativeEngineVisualTaskHandler, type GptCreativeEngineVisualTaskHandlerDeps } from "./gpt-creative-engine-execution-handlers.js";
 
 export async function buildExecutionHandlerResolver(input: {
@@ -28,6 +29,8 @@ export async function buildExecutionHandlerResolver(input: {
   qualityFeedback?: QualityFeedbackPort;
   clara?: ClaraKnowledgePort;
   objectStorage?: ObjectStoragePort;
+  /** Política única de reference assets — compartilhada pelos dois motores. */
+  referenceAssetResolver?: ReferenceAssetResolverPort;
   ensureBrandVisualProfile?: (workspaceId: string) => Promise<BrandVisualProfile>;
   semanticOcclusionChecker?: OpenAiSemanticOcclusionChecker;
   /** Migração "GPT como motor criativo único" (PR 6/9) — deps exclusivas do motor GPT (segunda
@@ -91,6 +94,7 @@ export async function buildExecutionHandlerResolver(input: {
           preparedCommandRepository: input.preparedCommandRepository,
           ensureBrandVisualProfile: input.ensureBrandVisualProfile,
           semanticOcclusionChecker: input.semanticOcclusionChecker,
+          referenceAssetResolver: input.referenceAssetResolver,
         }),
         executionModes: ["real"],
         enabled: true,
@@ -116,6 +120,7 @@ export async function buildExecutionHandlerResolver(input: {
           contentGenerationHistory: input.contentGenerationHistory,
           runtimeRepository: input.runtimeRepository,
           preparedCommandRepository: input.preparedCommandRepository,
+          referenceAssetResolver: input.referenceAssetResolver,
         }),
         executionModes: ["real"],
         enabled: true,

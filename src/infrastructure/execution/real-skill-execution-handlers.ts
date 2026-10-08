@@ -24,6 +24,7 @@ import { buildRepairInstructionFromOcclusion, type RepairInstruction } from "../
 import type { SemanticOcclusionViolation } from "../../shared/utils/semantic-occlusion.types.js";
 import { DEFAULT_ZONE_ALTERNATIVES } from "../../shared/utils/zone-collision.js";
 import { clampZoneToSafeArea } from "../../shared/utils/ad-safe-zones.js";
+import { describeReferenceAssetDecision, type ReferenceAssetResolverPort, type ReferenceAssetScope } from "../../application/assets/reference-asset-policy.js";
 
 type SkillCallResult = {
   output: Record<string, unknown>;
@@ -90,6 +91,7 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
       preparedCommandRepository?: PreparedCommandRepositoryPort;
       ensureBrandVisualProfile?: (workspaceId: string) => Promise<BrandVisualProfile>;
       semanticOcclusionChecker?: OpenAiSemanticOcclusionChecker;
+      referenceAssetResolver?: ReferenceAssetResolverPort;
     },
   ) {}
 
@@ -192,15 +194,31 @@ export class VisualPipelineExecutionTaskHandler implements ExecutionTaskHandlerP
   }
 }
 
+/** Escopo do motor legado: nunca aceita o namespace QA (homologação editorial é só do motor GPT). */
+function legacyReferenceScope(request: ExecutionTaskHandlerRequest): ReferenceAssetScope {
+  return { tenantId: request.context.tenantId, workspaceId: request.context.workspaceId, qaNamespaceAllowed: false };
+}
+
+/** Só devolve a URL quando ela passa na política única de reference assets
+ * (`reference-asset-policy.ts`). Referência não autorizada é tratada como "sem referência" — o
+ * motor legado é best-effort por desenho — e nunca chega a download, Pedro ou Lucas. */
 async function lookupReferenceImageUrl(
-  deps: { runtimeRepository?: RuntimeRepositoryPort; preparedCommandRepository?: PreparedCommandRepositoryPort },
+  deps: { runtimeRepository?: RuntimeRepositoryPort; preparedCommandRepository?: PreparedCommandRepositoryPort; referenceAssetResolver?: ReferenceAssetResolverPort },
   request: ExecutionTaskHandlerRequest,
 ): Promise<string | undefined> {
   if (!deps.runtimeRepository || !deps.preparedCommandRepository) return undefined;
   const runtimePlan = await deps.runtimeRepository.getById(request.task.runtimePlanId);
   if (!runtimePlan) return undefined;
   const preparedCommand = await deps.preparedCommandRepository.getById(runtimePlan.sourceContext.preparedCommandId);
-  return preparedCommand?.validatedInputs.referenceImageUrl?.trim() || undefined;
+  const url = preparedCommand?.validatedInputs.referenceImageUrl?.trim() || undefined;
+  if (!url) return undefined;
+  const scope = legacyReferenceScope(request);
+  const decision = deps.referenceAssetResolver?.authorize(url, scope) ?? { ok: false as const, code: "REFERENCE_ASSET_SOURCE_NOT_ALLOWED" as const, reasonCategory: "resolver_missing", category: "UNTRUSTED_URL" as const };
+  if (!decision.ok) {
+    console.warn(describeReferenceAssetDecision({ scope, role: "product_photo", result: decision }));
+    return undefined;
+  }
+  return url;
 }
 
 export type ProductAssetPipelineResult = { mode: ProductRenderMode; reasoning: string; heroProductAssetUrl?: string; suitability?: AssetSuitabilityScore };
@@ -216,7 +234,7 @@ export type ProductAssetPipelineResult = { mode: ProductRenderMode; reasoning: s
  * específica falhou).
  */
 async function resolveProductAssetPipeline(
-  deps: { objectStorage?: ObjectStoragePort },
+  deps: { objectStorage?: ObjectStoragePort; referenceAssetResolver?: ReferenceAssetResolverPort },
   request: ExecutionTaskHandlerRequest,
   referenceImageUrl: string | undefined,
 ): Promise<ProductAssetPipelineResult> {
@@ -225,7 +243,8 @@ async function resolveProductAssetPipeline(
   }
   let buffer: Buffer;
   try {
-    buffer = await fetchAsBuffer(referenceImageUrl);
+    if (!deps.referenceAssetResolver) throw new Error("resolver de reference assets indisponível");
+    buffer = await deps.referenceAssetResolver.load(referenceImageUrl, legacyReferenceScope(request));
   } catch (error) {
     return {
       mode: "reference_edit",
@@ -449,7 +468,7 @@ async function applyAdCreativeOverlay(
  * adiante sem logo em vez de travar a geração inteira.
  */
 async function applyLogoToGeneratedImages(
-  deps: { clara?: ClaraKnowledgePort; objectStorage?: ObjectStoragePort },
+  deps: { clara?: ClaraKnowledgePort; objectStorage?: ObjectStoragePort; referenceAssetResolver?: ReferenceAssetResolverPort },
   request: ExecutionTaskHandlerRequest,
   pedroOutput: Record<string, unknown>,
   biancaOutput: Record<string, unknown>,
@@ -468,7 +487,15 @@ async function applyLogoToGeneratedImages(
   const logoUri = typeof identity?.payload.logoUri === "string" ? identity.payload.logoUri : undefined;
   if (!logoUri) return { output: pedroOutput, warnings: [] };
 
-  const logoBuffer = await fetchAsBuffer(logoUri);
+  // `logoUri` pode vir de crawling do site da marca (URL externa) — só é baixado quando passa na
+  // política única de reference assets; caso contrário a peça segue sem logo (best-effort).
+  const logoScope = legacyReferenceScope(request);
+  const logoDecision = deps.referenceAssetResolver?.authorize(logoUri, logoScope);
+  if (!deps.referenceAssetResolver || !logoDecision?.ok) {
+    if (logoDecision && !logoDecision.ok) console.warn(describeReferenceAssetDecision({ scope: logoScope, role: "logo", result: logoDecision }));
+    return { output: pedroOutput, warnings: ["Logo da marca não composta: origem não autorizada — envie a logo para a Asset Library deste workspace."] };
+  }
+  const logoBuffer = await deps.referenceAssetResolver.load(logoUri, logoScope);
   const corner = resolveLogoCorner(typeof biancaOutput.logoPlacement === "string" ? biancaOutput.logoPlacement : undefined);
   const warnings: string[] = [];
   const updatedImages: Record<string, unknown>[] = [];
@@ -543,6 +570,7 @@ export class QualityGateExecutionTaskHandler implements ExecutionTaskHandlerPort
       contentGenerationHistory?: ContentGenerationHistoryPort;
       runtimeRepository?: RuntimeRepositoryPort;
       preparedCommandRepository?: PreparedCommandRepositoryPort;
+      referenceAssetResolver?: ReferenceAssetResolverPort;
     },
   ) {}
 

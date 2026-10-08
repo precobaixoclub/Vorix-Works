@@ -20,4 +20,8 @@ export type ObjectStoragePort = {
    * `AssetStorageRef` (Asset Library) nunca persiste a URL em si (decisão obrigatória, ver
    * `asset-library.model.ts`), só `objectKey`. Sempre a mesma fórmula que `put()` usaria. */
   resolvePublicUrl(key: string): string;
+  /** Leitura pela chave para reference assets já autorizados (`reference-asset-policy.ts`) —
+   * nunca por HTTP. Lança `ReferenceAssetError` (NOT_FOUND/TOO_LARGE/INVALID); `maxBytes` é
+   * checado antes de carregar o conteúdo inteiro em memória. Opcional para adapters de teste. */
+  read?(key: string, options: { maxBytes: number }): Promise<Buffer>;
 };

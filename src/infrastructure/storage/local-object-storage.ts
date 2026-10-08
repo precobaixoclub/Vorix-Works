@@ -1,6 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import type { ObjectStoragePort, ObjectStoragePutInput } from "../../application/ports/object-storage.port.js";
+import { ReferenceAssetError } from "../../application/assets/reference-asset-policy.js";
 
 export type LocalObjectStorageConfig = {
   rootDir: string;
@@ -33,6 +34,27 @@ export class LocalObjectStorage implements ObjectStoragePort {
 
   resolvePublicUrl(key: string): string {
     return `${this.config.publicBaseUrl.replace(/\/$/, "")}/${encodeKey(key)}`;
+  }
+
+  async read(key: string, options: { maxBytes: number }): Promise<Buffer> {
+    let absolutePath: string;
+    try {
+      absolutePath = resolveObjectPath(this.rootDir, key);
+    } catch {
+      throw new ReferenceAssetError("REFERENCE_ASSET_INVALID", "path_traversal");
+    }
+    // Contenção canônica: resolve symlinks do alvo E da raiz antes de comparar — um symlink dentro
+    // do storage apontando para fora nunca é seguido.
+    const [realRoot, realTarget] = await Promise.all([
+      realpath(this.rootDir).catch(() => undefined),
+      realpath(absolutePath).catch(() => undefined),
+    ]);
+    if (!realRoot || !realTarget) throw new ReferenceAssetError("REFERENCE_ASSET_NOT_FOUND", "object_missing");
+    if (!realTarget.startsWith(`${realRoot}${sep}`)) throw new ReferenceAssetError("REFERENCE_ASSET_INVALID", "symlink_escape");
+    const fileStat = await stat(realTarget).catch(() => undefined);
+    if (!fileStat?.isFile()) throw new ReferenceAssetError("REFERENCE_ASSET_NOT_FOUND", "object_missing");
+    if (fileStat.size > options.maxBytes) throw new ReferenceAssetError("REFERENCE_ASSET_TOO_LARGE", "size_limit");
+    return readFile(realTarget);
   }
 }
 

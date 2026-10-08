@@ -16,6 +16,7 @@ import type { UserRepositoryPort } from "../../application/ports/user-repository
 import type { WorkspaceRepositoryPort } from "../../application/ports/workspace-repository.port.js";
 import type { CreativeContextAsset } from "../../shared/utils/gpt-creative-plan.types.js";
 import { buildCreativeContext, type BuildCreativeContextDeps } from "../../application/creative-engine/build-creative-context.js";
+import { describeReferenceAssetDecision, ReferenceAssetError, type ReferenceAssetScope } from "../../application/assets/reference-asset-policy.js";
 import { runGptCreativeEngine, type GptCreativeEngineDeps } from "../../application/creative-engine/run-gpt-creative-engine.js";
 import { hasPermission, type TenantRole } from "../../domain/identity/identity.model.js";
 import type { ExecutionRun } from "../../domain/execution/execution.model.js";
@@ -378,6 +379,28 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
       return failure(editorialAuthorization.code, editorialAuthorization.message, "policy_violation");
     }
 
+    // Reference assets autorizados (origem + posse) ANTES de `buildCreativeContext`, que já envia
+    // URLs de produto/screenshot para a visão. `qa-assets/` só com homologação editorial comprovada
+    // (flag + allowlist + trusted actor, resolvidos acima). Nenhum download acontece aqui.
+    const referenceScope: ReferenceAssetScope = {
+      tenantId: request.context.tenantId,
+      workspaceId: request.context.workspaceId,
+      qaNamespaceAllowed: editorialAuthorization.enabled,
+    };
+    if (assets.length > 0) {
+      if (!this.deps.referenceAssetResolver) {
+        return failure("REFERENCE_ASSET_RESOLVER_MISSING", "Reference assets exigem o resolver de origem/posse configurado.", "policy_violation");
+      }
+      for (const asset of assets) {
+        const decision = this.deps.referenceAssetResolver.authorize(asset.url, referenceScope);
+        if (!decision.ok) {
+          console.warn(describeReferenceAssetDecision({ scope: referenceScope, role: asset.role, result: decision }));
+          const error = new ReferenceAssetError(decision.code, decision.reasonCategory);
+          return failure(error.code, error.message, "policy_violation");
+        }
+      }
+    }
+
     const creativeContext = await buildCreativeContext(this.deps, {
       workspaceId: request.context.workspaceId,
       brandName: stringValue(validatedInputs.brandName, "Marca"),
@@ -399,6 +422,7 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
       creativeContext,
       maxBudgetUsd: this.deps.maxBudgetUsd ?? DEFAULT_MAX_BUDGET_USD,
       experimentalEditorialMode: editorialAuthorization.enabled,
+      qaReferenceAssetsAllowed: editorialAuthorization.enabled,
     });
 
     await this.persistRun(request, creativeEngineRunId, result).catch(() => undefined);

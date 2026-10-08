@@ -172,6 +172,8 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     handlers: app.zunoContainer.executionHandlers,
     handlerResolver: executionHandlerResolver,
     featureFlags: app.zunoContainer.executionFeatureFlags,
+    referenceAssetResolver: app.zunoContainer.referenceAssetResolver,
+    editorialQaAllowlist: app.zunoContainer.creativeEngineEditorialQaAllowlist,
     contractRegistry: app.zunoContainer.executionContractRegistry,
     sideEffectGuard: app.zunoContainer.executionSideEffectGuard,
     circuitBreaker: app.zunoContainer.executionCircuitBreaker,

@@ -8,6 +8,7 @@ import type {
   EditorialCreativeFamily,
   EditorialGeometryBox,
   EditorialGeometryIssue,
+  EditorialRenderedGeometryManifest,
   RenderEditorialCreativeInput,
   RenderEditorialCreativeResult,
 } from "../../application/creative-engine/editorial-composition.types.js";
@@ -17,6 +18,7 @@ export type {
   EditorialCreativeFamily,
   EditorialGeometryBox,
   EditorialGeometryIssue,
+  EditorialRenderedGeometryManifest,
   RenderEditorialCreativeInput,
   RenderEditorialCreativeResult,
 } from "../../application/creative-engine/editorial-composition.types.js";
@@ -147,11 +149,19 @@ function textSvg(input: { text: string; x: number; y: number; width: number; max
   });
   const rectX = input.anchor === "middle" ? input.x - input.width / 2 : input.anchor === "end" ? input.x - input.width : input.x;
   const rect = { x: rectX, y: input.y - input.maxFontSize, width: input.width, height: Math.max(input.maxHeight, fit.height) };
-  boxes.push({ id: input.id, rect: pctRect(rect, canvas), text: value, fontSizePx: fit.fontSize, lineCount: fit.lines.length });
+  boxes.push({ id: input.id, kind: "text", rect: pctRect(rect, canvas), text: value, fontSizePx: fit.fontSize, lineCount: fit.lines.length });
   if (!fit.fits) {
     issues.push({ code: "TEXT_OVERFLOW", message: `Texto "${input.id}" não coube no bloco editorial sem quebrar a hierarquia.` });
   }
   return `<text x="${input.x}" y="${input.y}" fill="${input.fill}" font-family="${FONT_FAMILY}" font-size="${fit.fontSize}" font-weight="${input.weight ?? 800}" text-anchor="${input.anchor ?? "start"}" letter-spacing="${input.letterSpacing ?? 0}">${fit.lines.map((line, index) => `<tspan x="${input.x}" dy="${index === 0 ? 0 : fit.fontSize * fit.lineHeight}">${xmlEscape(line)}</tspan>`).join("")}</text>`;
+}
+
+function assetBox(role: CreativePlanAssetRole, rect: PxRect, canvas: Canvas, boxes: EditorialGeometryBox[]): void {
+  boxes.push({ id: role, kind: "asset", role, rect: pctRect(rect, canvas) });
+}
+
+function assetPlacement(asset: EditorialCreativeAssetBuffer, rect: PxRect, canvas: Canvas, treatment: string): CreativePlan["assetPlacements"][number] {
+  return { role: asset.role, url: asset.url, rect: pctRect(rect, canvas), frame: "none", treatment };
 }
 
 function imageTag(asset: EditorialCreativeAssetBuffer | undefined, fallback: string, rect: PxRect, options?: { clipId?: string; opacity?: number; preserveAspectRatio?: string }): string {
@@ -180,17 +190,17 @@ function buildTextZones(plan: CreativePlan, price: string | undefined, layout: {
   return zones;
 }
 
-async function renderProductOffer(input: RenderEditorialCreativeInput, canvas: Canvas, price: string | undefined, logo: EditorialCreativeAssetBuffer | undefined, product: EditorialCreativeAssetBuffer | undefined, baseFallback: string, fontFaceCss: string, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): Promise<{ svg: string; zones: CreativePlanTextZone[]; roles: CreativePlanAssetRole[] }> {
+async function renderProductOffer(input: RenderEditorialCreativeInput, canvas: Canvas, price: string | undefined, logo: EditorialCreativeAssetBuffer | undefined, product: EditorialCreativeAssetBuffer | undefined, baseFallback: string, fontFaceCss: string, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): Promise<{ svg: string; zones: CreativePlanTextZone[]; assets: CreativePlan["assetPlacements"]; roles: CreativePlanAssetRole[] }> {
   const accent = pickAccent(input.context);
   const photoRect = canvas.format === "9:16"
-    ? { x: 86, y: 110, width: 908, height: 850 }
-    : { x: 486, y: 86, width: 518, height: 812 };
+    ? { x: 104, y: 112, width: 872, height: 812 }
+    : { x: 474, y: 86, width: 530, height: 790 };
   const headlineRect = canvas.format === "9:16"
     ? { x: 92, y: 1236, width: 700, height: 250 }
-    : { x: 92, y: 340, width: 336, height: 260 };
+    : { x: 92, y: 324, width: 350, height: 268 };
   const subRect = canvas.format === "9:16"
     ? { x: 92, y: 1488, width: 640, height: 96 }
-    : { x: 96, y: 654, width: 322, height: 130 };
+    : { x: 96, y: 628, width: 330, height: 128 };
   const commerceRect = canvas.format === "9:16"
     ? { x: 92, y: 1644, width: 794, height: 130 }
     : { x: 76, y: 1010, width: 928, height: 170 };
@@ -203,30 +213,44 @@ async function renderProductOffer(input: RenderEditorialCreativeInput, canvas: C
   if (rectsOverlap(headlineRect, photoRect)) issues.push({ code: "MASK_VIOLATION", message: "Headline de produto atravessa a fotografia." });
   const zones = buildTextZones(input.plan, price, { headline: headlineRect, subheadline: subRect, cta: ctaRect, price: priceRect }, canvas);
   const roles: CreativePlanAssetRole[] = [];
-  if (product) roles.push("product_photo");
-  if (logo) roles.push("logo");
+  const assets: CreativePlan["assetPlacements"] = [];
+  if (product) {
+    roles.push("product_photo");
+    assets.push(assetPlacement(product, photoRect, canvas, "final rendered product frame"));
+    assetBox("product_photo", photoRect, canvas, boxes);
+  }
+  const logoRect = canvas.format === "9:16" ? { x: 92, y: 1038, width: 300, height: 58 } : { x: 92, y: 88, width: 282, height: 54 };
+  if (logo) {
+    roles.push("logo");
+    assets.push(assetPlacement(logo, logoRect, canvas, "final rendered logo"));
+    assetBox("logo", logoRect, canvas, boxes);
+  }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${canvas.width} ${canvas.height}">
     ${fontFaceCss}
     <defs>
       <clipPath id="productPhoto"><rect x="${photoRect.x}" y="${photoRect.y}" width="${photoRect.width}" height="${photoRect.height}" rx="${canvas.format === "9:16" ? 54 : 42}"/></clipPath>
+      <filter id="softBlur"><feGaussianBlur stdDeviation="14"/></filter>
       <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#3B121B" flood-opacity="0.22"/></filter>
       <linearGradient id="footer" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${DEFAULT_BRAND.roseDark}"/><stop offset="0.66" stop-color="#923E4F"/><stop offset="0.66" stop-color="${DEFAULT_BRAND.champagne}"/><stop offset="1" stop-color="#F2D798"/></linearGradient>
+      <linearGradient id="copyPanel" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFDF8"/><stop offset="1" stop-color="#F8E8DA"/></linearGradient>
     </defs>
     <rect width="${canvas.width}" height="${canvas.height}" fill="${DEFAULT_BRAND.cream}"/>
-    ${canvas.format === "4:5" ? `<rect x="56" y="56" width="968" height="1238" rx="54" fill="#FFFDF8" opacity="0.76"/><path d="M70 930C210 870 356 892 478 970C636 1072 820 1058 1008 930V1294H70Z" fill="#F7E7D8"/>` : ""}
-    ${imageTag(product, baseFallback, photoRect, { clipId: "productPhoto" })}
+    ${imageTag(undefined, baseFallback, { x: 0, y: 0, width: canvas.width, height: canvas.height }, { opacity: 0.22 })}
+    <rect width="${canvas.width}" height="${canvas.height}" fill="#FFF8F1" opacity="0.72"/>
+    ${canvas.format === "4:5" ? `<rect x="56" y="56" width="968" height="1238" rx="54" fill="#FFFDF8" opacity="0.72"/><path d="M70 922C218 870 358 894 486 972C646 1068 820 1058 1008 926V1294H70Z" fill="#F4E1D2"/><rect x="74" y="296" width="390" height="502" rx="44" fill="url(#copyPanel)" opacity="0.88"/>` : `<rect x="62" y="1180" width="850" height="414" rx="50" fill="url(#copyPanel)" opacity="0.90"/>`}
+    <g filter="url(#shadow)">${imageTag(product, baseFallback, photoRect, { clipId: "productPhoto" })}</g>
     <rect x="${photoRect.x}" y="${photoRect.y}" width="${photoRect.width}" height="${photoRect.height}" rx="${canvas.format === "9:16" ? 54 : 42}" fill="none" stroke="#FFFFFF" stroke-width="10"/>
-    ${logo ? imageTag(logo, "", canvas.format === "9:16" ? { x: 92, y: 1038, width: 300, height: 58 } : { x: 92, y: 88, width: 282, height: 54 }, { preserveAspectRatio: "xMidYMid meet" }) : ""}
+    ${logo ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet" }) : ""}
     ${textSvg({ id: "headline", text: input.plan.headline, x: headlineRect.x, y: headlineRect.y + (canvas.format === "9:16" ? 78 : 76), width: headlineRect.width, maxHeight: headlineRect.height, maxFontSize: canvas.format === "9:16" ? 88 : 66, minFontSize: 36, maxLines: canvas.format === "9:16" ? 3 : 4, fill: DEFAULT_BRAND.ink, weight: 850 }, canvas, boxes, issues)}
     ${input.plan.subheadline ? textSvg({ id: "subheadline", text: input.plan.subheadline, x: subRect.x, y: subRect.y + 40, width: subRect.width, maxHeight: subRect.height, maxFontSize: canvas.format === "9:16" ? 30 : 28, minFontSize: 20, maxLines: canvas.format === "9:16" ? 3 : 4, fill: "#60484A", weight: 500 }, canvas, boxes, issues) : ""}
     ${price ? `<g filter="url(#shadow)"><rect x="${commerceRect.x}" y="${commerceRect.y}" width="${commerceRect.width}" height="${commerceRect.height}" rx="${canvas.format === "9:16" ? 28 : 34}" fill="url(#footer)"/><rect x="${ctaRect.x}" y="${ctaRect.y}" width="${ctaRect.width}" height="${ctaRect.height}" rx="${ctaRect.height / 2}" fill="#FFF9F1" opacity="0.96"/></g>
     ${textSvg({ id: "price", text: price, x: priceRect.x, y: priceRect.y + 42, width: priceRect.width, maxHeight: priceRect.height, maxFontSize: canvas.format === "9:16" ? 54 : 64, minFontSize: 30, maxLines: 1, fill: "#FFFFFF", weight: 850 }, canvas, boxes, issues)}
     ${input.plan.cta.trim() ? textSvg({ id: "cta", text: input.plan.cta.toUpperCase(), x: ctaRect.x + ctaRect.width / 2, y: ctaRect.y + ctaRect.height / 2 + 10, width: ctaRect.width - 28, maxHeight: ctaRect.height - 18, maxFontSize: canvas.format === "9:16" ? 27 : 22, minFontSize: 16, maxLines: 1, fill: accent, weight: 850, anchor: "middle" }, canvas, boxes, issues) : ""}` : ""}
   </svg>`;
-  return { svg, zones, roles };
+  return { svg, zones, assets, roles };
 }
 
-async function renderPremiumInstitutional(input: RenderEditorialCreativeInput, canvas: Canvas, logo: EditorialCreativeAssetBuffer | undefined, baseFallback: string, fontFaceCss: string, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): Promise<{ svg: string; zones: CreativePlanTextZone[]; roles: CreativePlanAssetRole[] }> {
+async function renderPremiumInstitutional(input: RenderEditorialCreativeInput, canvas: Canvas, logo: EditorialCreativeAssetBuffer | undefined, baseFallback: string, fontFaceCss: string, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): Promise<{ svg: string; zones: CreativePlanTextZone[]; assets: CreativePlan["assetPlacements"]; roles: CreativePlanAssetRole[] }> {
   const photoRect = canvas.format === "9:16" ? { x: 0, y: 0, width: canvas.width, height: canvas.height } : { x: 470, y: 96, width: 520, height: 1028 };
   const panelRect = canvas.format === "9:16" ? { x: 146, y: 1008, width: 790, height: 520 } : { x: 96, y: 126, width: 330, height: 1118 };
   const headlineRect = canvas.format === "9:16" ? { x: 196, y: 1118, width: 610, height: 210 } : { x: 112, y: 372, width: 292, height: 310 };
@@ -235,7 +259,13 @@ async function renderPremiumInstitutional(input: RenderEditorialCreativeInput, c
   if (!within(headlineRect, { x: panelRect.x, y: panelRect.y, width: panelRect.width, height: panelRect.height })) issues.push({ code: "COMPONENT_OVERFLOW", message: "Headline institucional saiu da coluna editorial." });
   const zones = buildTextZones(input.plan, undefined, { headline: headlineRect, subheadline: subRect, cta: ctaRect }, canvas);
   const roles: CreativePlanAssetRole[] = [];
-  if (logo) roles.push("logo");
+  const assets: CreativePlan["assetPlacements"] = [];
+  const logoRect = canvas.format === "9:16" ? { x: 176, y: 110, width: 304, height: 68 } : { x: 112, y: 148, width: 306, height: 66 };
+  if (logo) {
+    roles.push("logo");
+    assets.push(assetPlacement(logo, logoRect, canvas, "final rendered logo"));
+    assetBox("logo", logoRect, canvas, boxes);
+  }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${canvas.width} ${canvas.height}">
     ${fontFaceCss}
     <defs>
@@ -248,15 +278,15 @@ async function renderPremiumInstitutional(input: RenderEditorialCreativeInput, c
     ${imageTag(undefined, baseFallback, photoRect, { clipId: "photo" })}
     ${canvas.format === "9:16" ? `<rect width="${canvas.width}" height="${canvas.height}" fill="url(#shade)"/>` : `<rect x="72" y="72" width="936" height="1206" rx="58" fill="none" stroke="#F5DCC6" stroke-opacity="0.24" stroke-width="2"/>`}
     <rect x="${panelRect.x}" y="${panelRect.y}" width="${panelRect.width}" height="${panelRect.height}" rx="${canvas.format === "9:16" ? 44 : 0}" fill="${canvas.format === "9:16" ? "#6B3040" : "#5E2A36"}" opacity="${canvas.format === "9:16" ? 0.90 : 0.72}"/>
-    ${logo ? imageTag(logo, "", canvas.format === "9:16" ? { x: 176, y: 110, width: 304, height: 68 } : { x: 112, y: 148, width: 306, height: 66 }, { preserveAspectRatio: "xMidYMid meet" }) : ""}
+    ${logo ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet" }) : ""}
     ${textSvg({ id: "headline", text: input.plan.headline, x: headlineRect.x, y: headlineRect.y + 80, width: headlineRect.width, maxHeight: headlineRect.height, maxFontSize: canvas.format === "9:16" ? 72 : 48, minFontSize: 30, maxLines: canvas.format === "9:16" ? 3 : 5, fill: "#FFFFFF", weight: 850 }, canvas, boxes, issues)}
     ${input.plan.subheadline ? textSvg({ id: "subheadline", text: input.plan.subheadline, x: subRect.x, y: subRect.y + 38, width: subRect.width, maxHeight: subRect.height, maxFontSize: canvas.format === "9:16" ? 30 : 24, minFontSize: 18, maxLines: 5, fill: "#FFEDE1", weight: 500 }, canvas, boxes, issues) : ""}
     ${input.plan.cta.trim() ? `<rect x="${ctaRect.x}" y="${ctaRect.y}" width="${ctaRect.width}" height="${ctaRect.height}" rx="${ctaRect.height / 2}" fill="#F8E6D8"/>${textSvg({ id: "cta", text: input.plan.cta.toUpperCase(), x: ctaRect.x + ctaRect.width / 2, y: ctaRect.y + ctaRect.height / 2 + 8, width: ctaRect.width - 30, maxHeight: ctaRect.height - 16, maxFontSize: 21, minFontSize: 15, maxLines: 1, fill: DEFAULT_BRAND.roseDark, weight: 850, anchor: "middle" }, canvas, boxes, issues)}` : ""}
   </svg>`;
-  return { svg, zones, roles };
+  return { svg, zones, assets, roles };
 }
 
-async function renderDigitalService(input: RenderEditorialCreativeInput, canvas: Canvas, price: string | undefined, logo: EditorialCreativeAssetBuffer | undefined, screenshot: EditorialCreativeAssetBuffer | undefined, baseFallback: string, fontFaceCss: string, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): Promise<{ svg: string; zones: CreativePlanTextZone[]; roles: CreativePlanAssetRole[] }> {
+async function renderDigitalService(input: RenderEditorialCreativeInput, canvas: Canvas, price: string | undefined, logo: EditorialCreativeAssetBuffer | undefined, screenshot: EditorialCreativeAssetBuffer | undefined, baseFallback: string, fontFaceCss: string, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): Promise<{ svg: string; zones: CreativePlanTextZone[]; assets: CreativePlan["assetPlacements"]; roles: CreativePlanAssetRole[] }> {
   const screen = canvas.format === "9:16" ? { x: 608, y: 344, width: 326, height: 562 } : { x: 642, y: 250, width: 296, height: 500 };
   const device = canvas.format === "9:16" ? { x: 570, y: 300, width: 406, height: 658 } : { x: 604, y: 202, width: 374, height: 604 };
   const headlineRect = canvas.format === "9:16" ? { x: 152, y: 474, width: 380, height: 260 } : { x: 150, y: 386, width: 382, height: 250 };
@@ -265,8 +295,18 @@ async function renderDigitalService(input: RenderEditorialCreativeInput, canvas:
   const ctaRect = canvas.format === "9:16" ? { x: 152, y: 1222, width: 326, height: 80 } : { x: 150, y: 1028, width: 326, height: 80 };
   const zones = buildTextZones(input.plan, price, { headline: headlineRect, subheadline: subRect, price: priceRect, cta: ctaRect }, canvas);
   const roles: CreativePlanAssetRole[] = [];
-  if (screenshot) roles.push("screenshot");
-  if (logo) roles.push("logo");
+  const assets: CreativePlan["assetPlacements"] = [];
+  const logoRect = canvas.format === "9:16" ? { x: 152, y: 144, width: 292, height: 56 } : { x: 150, y: 116, width: 270, height: 52 };
+  if (screenshot) {
+    roles.push("screenshot");
+    assets.push(assetPlacement(screenshot, screen, canvas, "final rendered screenshot inside device"));
+    assetBox("screenshot", screen, canvas, boxes);
+  }
+  if (logo) {
+    roles.push("logo");
+    assets.push(assetPlacement(logo, logoRect, canvas, "final rendered logo"));
+    assetBox("logo", logoRect, canvas, boxes);
+  }
   if (screenshot) {
     const meta = await sharp(screenshot.buffer).metadata();
     if (meta.width && meta.height) {
@@ -288,14 +328,14 @@ async function renderDigitalService(input: RenderEditorialCreativeInput, canvas:
     <rect width="${canvas.width}" height="${canvas.height}" fill="url(#photoShade)"/>
     <path d="${canvas.format === "9:16" ? "M0 0H572C500 282 520 574 650 830C780 1088 720 1488 518 1920H0Z" : "M0 0H594C520 194 526 386 628 558C746 754 708 1010 520 1350H0Z"}" fill="${DEFAULT_BRAND.cream}" opacity="0.97"/>
     <rect x="0" y="0" width="${canvas.format === "9:16" ? 104 : 102}" height="${canvas.height}" fill="${DEFAULT_BRAND.roseDark}"/>
-    ${logo ? imageTag(logo, "", canvas.format === "9:16" ? { x: 152, y: 144, width: 292, height: 56 } : { x: 150, y: 116, width: 270, height: 52 }, { preserveAspectRatio: "xMidYMid meet" }) : ""}
+    ${logo ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet" }) : ""}
     ${textSvg({ id: "headline", text: input.plan.headline, x: headlineRect.x, y: headlineRect.y + 56, width: headlineRect.width, maxHeight: headlineRect.height, maxFontSize: canvas.format === "9:16" ? 58 : 54, minFontSize: 30, maxLines: 4, fill: DEFAULT_BRAND.ink, weight: 850 }, canvas, boxes, issues)}
     ${input.plan.subheadline ? textSvg({ id: "subheadline", text: input.plan.subheadline, x: subRect.x, y: subRect.y + 40, width: subRect.width, maxHeight: subRect.height, maxFontSize: 28, minFontSize: 18, maxLines: 4, fill: "#62484A", weight: 500 }, canvas, boxes, issues) : ""}
     ${price ? `<rect x="${priceRect.x}" y="${priceRect.y}" width="${priceRect.width}" height="${priceRect.height}" rx="20" fill="#F0DDC8"/>${textSvg({ id: "price", text: price, x: priceRect.x + 24, y: priceRect.y + 52, width: priceRect.width - 48, maxHeight: priceRect.height - 18, maxFontSize: 30, minFontSize: 18, maxLines: 1, fill: DEFAULT_BRAND.roseDark, weight: 850 }, canvas, boxes, issues)}` : ""}
     ${input.plan.cta.trim() ? `<rect x="${ctaRect.x}" y="${ctaRect.y}" width="${ctaRect.width}" height="${ctaRect.height}" rx="${ctaRect.height / 2}" fill="${DEFAULT_BRAND.roseDark}"/>${textSvg({ id: "cta", text: input.plan.cta.toUpperCase(), x: ctaRect.x + ctaRect.width / 2, y: ctaRect.y + ctaRect.height / 2 + 8, width: ctaRect.width - 34, maxHeight: ctaRect.height - 18, maxFontSize: 27, minFontSize: 16, maxLines: 1, fill: "#FFFFFF", weight: 850, anchor: "middle" }, canvas, boxes, issues)}` : ""}
     <g filter="url(#shadow)"><rect x="${device.x}" y="${device.y}" width="${device.width}" height="${device.height}" rx="64" fill="#171011"/><rect x="${device.x + 20}" y="${device.y + 20}" width="${device.width - 40}" height="${device.height - 40}" rx="48" fill="#FFFDF8"/>${imageTag(screenshot, baseFallback, screen, { clipId: "screen", preserveAspectRatio: "xMidYMin slice" })}</g>
   </svg>`;
-  return { svg, zones, roles };
+  return { svg, zones, assets, roles };
 }
 
 export async function renderEditorialCreative(input: RenderEditorialCreativeInput): Promise<RenderEditorialCreativeResult> {
@@ -315,7 +355,7 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
   const fontFaceCss = await buildEditorialFontFaceCss();
 
   const rendered = family === "product_offer"
-    ? await renderProductOffer(input, canvas, price, logo, product, product ? "" : dataUri(input.baseImageBuffer), fontFaceCss, boxes, issues)
+    ? await renderProductOffer(input, canvas, price, logo, product, dataUri(input.baseImageBuffer), fontFaceCss, boxes, issues)
     : family === "digital_service"
       ? await renderDigitalService(input, canvas, price, logo, screenshot, dataUri(input.baseImageBuffer), fontFaceCss, boxes, issues)
       : await renderPremiumInstitutional(input, canvas, logo, dataUri(input.baseImageBuffer), fontFaceCss, boxes, issues);
@@ -339,6 +379,7 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
         width: (other.rect.widthPct / 100) * width,
         height: (other.rect.heightPct / 100) * height,
       };
+      if (box.kind === "asset" && other.kind === "asset") continue;
       if (rectsOverlap(rect, otherRect)) {
         issues.push({ code: "COLLISION", message: `Componentes "${box.id}" e "${other.id}" colidem.` });
       }
@@ -346,11 +387,15 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
   }
 
   const buffer = await sharp(Buffer.from(rendered.svg)).jpeg({ quality: 90 }).toBuffer();
+  const textBoxes = boxes.filter((box) => box.kind === "text");
+  const assetBoxes = boxes.filter((box) => box.kind === "asset");
   return {
     buffer,
     family,
     renderedTextZones: rendered.zones,
+    renderedAssetPlacements: rendered.assets,
     compositedAssetRoles: [...new Set(rendered.roles)],
+    renderedGeometry: { source: "final_rendered_geometry", family, textBoxes, assetBoxes },
     geometry: { valid: issues.length === 0, boxes, issues },
   };
 }

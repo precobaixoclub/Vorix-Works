@@ -25,11 +25,18 @@ after(async () => {
   await db.stop();
 });
 
-test("Migrations: 0060 (creative_engine_runs), 0061 (provenance), 0062 (icaro_ai_calls) e 0063 (icaro_ai_call_errors) aplicam sem erro", async () => {
+test("Migrations: creative_engine_runs/provenance/cost ledger aplicam sem erro", async () => {
   const status = await db.pool.query(
-    "select id from schema_migrations where id in ('0060_creative_engine_runs', '0061_creative_engine_provenance', '0062_icaro_ai_calls', '0063_icaro_ai_call_errors')",
+    "select id from schema_migrations where id in ('0060_creative_engine_runs', '0061_creative_engine_provenance', '0062_icaro_ai_calls', '0063_icaro_ai_call_errors', '0138_creative_engine_artifact_provenance')",
   );
-  assert.equal(status.rows.length, 4);
+  assert.equal(status.rows.length, 5);
+});
+
+test("0138: creative_engine_runs possui artifact_provenance", async () => {
+  const columns = await db.pool.query(
+    "select column_name from information_schema.columns where table_name = 'creative_engine_runs' and column_name = 'artifact_provenance'",
+  );
+  assert.equal(columns.rows.length, 1);
 });
 
 test("0061: colunas aditivas existem em content_generation_history/execution_runs/execution_task_runs", async () => {
@@ -297,4 +304,40 @@ test("InMemoryCreativeEngineRunRepository: create()/getByExecutionRunId()/listBy
   const listed = await repo.listByWorkspace({ workspaceId: "w1" });
   assert.equal(listed.length, 1);
   assert.equal(await repo.getByExecutionRunId("nope"), undefined);
+});
+test("PostgresCreativeEngineRunRepository: artifactProvenance round-trip", async () => {
+  const workspaceRepo = new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") });
+  const workspace = await workspaceRepo.create({ tenantId: "tenant-cer-provenance", name: "W" });
+  const { executionRunId } = await createExecutionRunFixture(db.pool, { tenantId: "tenant-cer-provenance", workspaceId: workspace.id });
+  const repo = new PostgresCreativeEngineRunRepository(db.pool);
+  const artifactProvenance = {
+    compositionMode: "editorial_experimental",
+    baseImage: { url: "https://example.com/base.jpg", source: "ai_generated_pre_renderer", publishable: false },
+    finalImage: { url: "https://example.com/final.jpg", source: "final_rendered_image", publishable: true },
+    inputAssets: [{ role: "product_photo", url: "https://example.com/product.png", source: "input_asset" }],
+    imagePromptSanitization: { promptChars: 100, containsHeadline: false, containsPrice: false, containsCta: false },
+  };
+
+  await repo.create({
+    id: nextId("cer"),
+    tenantId: "tenant-cer-provenance",
+    workspaceId: workspace.id,
+    executionRunId,
+    engineMode: "gpt",
+    planningTemplate: "content_request-gpt-creative-v3",
+    directorModel: "gpt-4o",
+    creativeContext: {},
+    assetsUsed: [],
+    compositionSteps: [],
+    artifactProvenance,
+    repairRounds: [],
+    publishable: true,
+    estimatedCostUsd: 0.01,
+    latencyMs: 100,
+    status: "completed",
+  });
+
+  const found = await repo.getByExecutionRunId(executionRunId);
+  assert.ok(found);
+  assert.deepEqual(found.artifactProvenance, artifactProvenance);
 });

@@ -1,0 +1,755 @@
+[
+  {
+    "name": "product-offer-balanced",
+    "file": "docs\\creative-editorial-prototype\\product-offer-fixtures\\product-offer-balanced.jpg",
+    "family": "product_offer",
+    "geometry": {
+      "valid": true,
+      "boxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 43.889,
+            "yPct": 6.37,
+            "widthPct": 49.074,
+            "heightPct": 58.519
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 6.519,
+            "widthPct": 26.111,
+            "heightPct": 4
+          }
+        },
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 24.741,
+            "widthPct": 32.407,
+            "heightPct": 19.852
+          },
+          "text": "Kit Noivos Sem Correria",
+          "fontSizePx": 64,
+          "lineCount": 3
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.889,
+            "yPct": 47.407,
+            "widthPct": 30.556,
+            "heightPct": 9.481
+          },
+          "text": "Organize presentes, listas e RSVP com acabamento simples de vender.",
+          "fontSizePx": 28,
+          "lineCount": 4
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 11.667,
+            "yPct": 78.519,
+            "widthPct": 48.148,
+            "heightPct": 5.481
+          },
+          "text": "R$ 149,00",
+          "fontSizePx": 64,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 70.556,
+            "yPct": 80.222,
+            "widthPct": 18.333,
+            "heightPct": 7.704
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 22,
+          "lineCount": 1
+        }
+      ],
+      "issues": []
+    },
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 24.741,
+            "widthPct": 32.407,
+            "heightPct": 19.852
+          },
+          "text": "Kit Noivos Sem Correria",
+          "fontSizePx": 64,
+          "lineCount": 3
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.889,
+            "yPct": 47.407,
+            "widthPct": 30.556,
+            "heightPct": 9.481
+          },
+          "text": "Organize presentes, listas e RSVP com acabamento simples de vender.",
+          "fontSizePx": 28,
+          "lineCount": 4
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 11.667,
+            "yPct": 78.519,
+            "widthPct": 48.148,
+            "heightPct": 5.481
+          },
+          "text": "R$ 149,00",
+          "fontSizePx": 64,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 70.556,
+            "yPct": 80.222,
+            "widthPct": 18.333,
+            "heightPct": 7.704
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 22,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 43.889,
+            "yPct": 6.37,
+            "widthPct": 49.074,
+            "heightPct": 58.519
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 6.519,
+            "widthPct": 26.111,
+            "heightPct": 4
+          }
+        }
+      ]
+    },
+    "textZones": [
+      {
+        "kind": "headline",
+        "text": "Kit Noivos Sem Correria",
+        "rect": {
+          "xPct": 8.519,
+          "yPct": 24,
+          "widthPct": 32.407,
+          "heightPct": 19.852
+        },
+        "emphasis": "primary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "subheadline",
+        "text": "Organize presentes, listas e RSVP com acabamento simples de vender.",
+        "rect": {
+          "xPct": 8.889,
+          "yPct": 46.519,
+          "widthPct": 30.556,
+          "heightPct": 9.481
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "price",
+        "text": "R$ 149,00",
+        "rect": {
+          "xPct": 11.667,
+          "yPct": 80.148,
+          "widthPct": 48.148,
+          "heightPct": 5.481
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "left"
+      },
+      {
+        "kind": "cta",
+        "text": "Comprar agora",
+        "rect": {
+          "xPct": 69.259,
+          "yPct": 76.593,
+          "widthPct": 20.926,
+          "heightPct": 9.037
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "center"
+      }
+    ],
+    "assetPlacements": [
+      {
+        "role": "product_photo",
+        "url": "fixture://product.png",
+        "rect": {
+          "xPct": 43.889,
+          "yPct": 6.37,
+          "widthPct": 49.074,
+          "heightPct": 58.519
+        },
+        "frame": "none",
+        "treatment": "final rendered product frame"
+      },
+      {
+        "role": "logo",
+        "url": "fixture://logo.png",
+        "rect": {
+          "xPct": 8.519,
+          "yPct": 6.519,
+          "widthPct": 26.111,
+          "heightPct": 4
+        },
+        "frame": "none",
+        "treatment": "final rendered logo"
+      }
+    ]
+  },
+  {
+    "name": "product-offer-long-headline",
+    "file": "docs\\creative-editorial-prototype\\product-offer-fixtures\\product-offer-long-headline.jpg",
+    "family": "product_offer",
+    "geometry": {
+      "valid": true,
+      "boxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 43.889,
+            "yPct": 6.37,
+            "widthPct": 49.074,
+            "heightPct": 58.519
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 6.519,
+            "widthPct": 26.111,
+            "heightPct": 4
+          }
+        },
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 24.741,
+            "widthPct": 32.407,
+            "heightPct": 19.852
+          },
+          "text": "Kit Noivos Sem Correria Para Celebrar Melhor",
+          "fontSizePx": 49,
+          "lineCount": 4
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.889,
+            "yPct": 47.407,
+            "widthPct": 30.556,
+            "heightPct": 9.481
+          },
+          "text": "Uma oferta direta para tirar a organizacao do improviso.",
+          "fontSizePx": 28,
+          "lineCount": 4
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 11.667,
+            "yPct": 78.519,
+            "widthPct": 48.148,
+            "heightPct": 5.481
+          },
+          "text": "R$ 149,00",
+          "fontSizePx": 64,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 70.556,
+            "yPct": 80.222,
+            "widthPct": 18.333,
+            "heightPct": 7.704
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 22,
+          "lineCount": 1
+        }
+      ],
+      "issues": []
+    },
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 24.741,
+            "widthPct": 32.407,
+            "heightPct": 19.852
+          },
+          "text": "Kit Noivos Sem Correria Para Celebrar Melhor",
+          "fontSizePx": 49,
+          "lineCount": 4
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.889,
+            "yPct": 47.407,
+            "widthPct": 30.556,
+            "heightPct": 9.481
+          },
+          "text": "Uma oferta direta para tirar a organizacao do improviso.",
+          "fontSizePx": 28,
+          "lineCount": 4
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 11.667,
+            "yPct": 78.519,
+            "widthPct": 48.148,
+            "heightPct": 5.481
+          },
+          "text": "R$ 149,00",
+          "fontSizePx": 64,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 70.556,
+            "yPct": 80.222,
+            "widthPct": 18.333,
+            "heightPct": 7.704
+          },
+          "text": "COMPRAR AGORA",
+          "fontSizePx": 22,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 43.889,
+            "yPct": 6.37,
+            "widthPct": 49.074,
+            "heightPct": 58.519
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 6.519,
+            "widthPct": 26.111,
+            "heightPct": 4
+          }
+        }
+      ]
+    },
+    "textZones": [
+      {
+        "kind": "headline",
+        "text": "Kit Noivos Sem Correria Para Celebrar Melhor",
+        "rect": {
+          "xPct": 8.519,
+          "yPct": 24,
+          "widthPct": 32.407,
+          "heightPct": 19.852
+        },
+        "emphasis": "primary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "subheadline",
+        "text": "Uma oferta direta para tirar a organizacao do improviso.",
+        "rect": {
+          "xPct": 8.889,
+          "yPct": 46.519,
+          "widthPct": 30.556,
+          "heightPct": 9.481
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "price",
+        "text": "R$ 149,00",
+        "rect": {
+          "xPct": 11.667,
+          "yPct": 80.148,
+          "widthPct": 48.148,
+          "heightPct": 5.481
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "left"
+      },
+      {
+        "kind": "cta",
+        "text": "Comprar agora",
+        "rect": {
+          "xPct": 69.259,
+          "yPct": 76.593,
+          "widthPct": 20.926,
+          "heightPct": 9.037
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "center"
+      }
+    ],
+    "assetPlacements": [
+      {
+        "role": "product_photo",
+        "url": "fixture://product.png",
+        "rect": {
+          "xPct": 43.889,
+          "yPct": 6.37,
+          "widthPct": 49.074,
+          "heightPct": 58.519
+        },
+        "frame": "none",
+        "treatment": "final rendered product frame"
+      },
+      {
+        "role": "logo",
+        "url": "fixture://logo.png",
+        "rect": {
+          "xPct": 8.519,
+          "yPct": 6.519,
+          "widthPct": 26.111,
+          "heightPct": 4
+        },
+        "frame": "none",
+        "treatment": "final rendered logo"
+      }
+    ]
+  },
+  {
+    "name": "product-offer-wide-price",
+    "file": "docs\\creative-editorial-prototype\\product-offer-fixtures\\product-offer-wide-price.jpg",
+    "family": "product_offer",
+    "geometry": {
+      "valid": true,
+      "boxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 43.889,
+            "yPct": 6.37,
+            "widthPct": 49.074,
+            "heightPct": 58.519
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 6.519,
+            "widthPct": 26.111,
+            "heightPct": 4
+          }
+        },
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 24.741,
+            "widthPct": 32.407,
+            "heightPct": 19.852
+          },
+          "text": "Kit Noivos Premium",
+          "fontSizePx": 66,
+          "lineCount": 3
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.889,
+            "yPct": 47.407,
+            "widthPct": 30.556,
+            "heightPct": 9.481
+          },
+          "text": "Produto real em destaque com chamada comercial clara.",
+          "fontSizePx": 28,
+          "lineCount": 3
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 11.667,
+            "yPct": 78.519,
+            "widthPct": 48.148,
+            "heightPct": 5.481
+          },
+          "text": "R$ 12.499,90",
+          "fontSizePx": 64,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 70.556,
+            "yPct": 80.222,
+            "widthPct": 18.333,
+            "heightPct": 7.704
+          },
+          "text": "RESERVAR AGORA",
+          "fontSizePx": 22,
+          "lineCount": 1
+        }
+      ],
+      "issues": []
+    },
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "product_offer",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 24.741,
+            "widthPct": 32.407,
+            "heightPct": 19.852
+          },
+          "text": "Kit Noivos Premium",
+          "fontSizePx": 66,
+          "lineCount": 3
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.889,
+            "yPct": 47.407,
+            "widthPct": 30.556,
+            "heightPct": 9.481
+          },
+          "text": "Produto real em destaque com chamada comercial clara.",
+          "fontSizePx": 28,
+          "lineCount": 3
+        },
+        {
+          "id": "price",
+          "kind": "text",
+          "rect": {
+            "xPct": 11.667,
+            "yPct": 78.519,
+            "widthPct": 48.148,
+            "heightPct": 5.481
+          },
+          "text": "R$ 12.499,90",
+          "fontSizePx": 64,
+          "lineCount": 1
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 70.556,
+            "yPct": 80.222,
+            "widthPct": 18.333,
+            "heightPct": 7.704
+          },
+          "text": "RESERVAR AGORA",
+          "fontSizePx": 22,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "product_photo",
+          "kind": "asset",
+          "role": "product_photo",
+          "rect": {
+            "xPct": 43.889,
+            "yPct": 6.37,
+            "widthPct": 49.074,
+            "heightPct": 58.519
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 6.519,
+            "widthPct": 26.111,
+            "heightPct": 4
+          }
+        }
+      ]
+    },
+    "textZones": [
+      {
+        "kind": "headline",
+        "text": "Kit Noivos Premium",
+        "rect": {
+          "xPct": 8.519,
+          "yPct": 24,
+          "widthPct": 32.407,
+          "heightPct": 19.852
+        },
+        "emphasis": "primary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "subheadline",
+        "text": "Produto real em destaque com chamada comercial clara.",
+        "rect": {
+          "xPct": 8.889,
+          "yPct": 46.519,
+          "widthPct": 30.556,
+          "heightPct": 9.481
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "price",
+        "text": "R$ 12.499,90",
+        "rect": {
+          "xPct": 11.667,
+          "yPct": 80.148,
+          "widthPct": 48.148,
+          "heightPct": 5.481
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "left"
+      },
+      {
+        "kind": "cta",
+        "text": "Reservar agora",
+        "rect": {
+          "xPct": 69.259,
+          "yPct": 76.593,
+          "widthPct": 20.926,
+          "heightPct": 9.037
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "center"
+      }
+    ],
+    "assetPlacements": [
+      {
+        "role": "product_photo",
+        "url": "fixture://product.png",
+        "rect": {
+          "xPct": 43.889,
+          "yPct": 6.37,
+          "widthPct": 49.074,
+          "heightPct": 58.519
+        },
+        "frame": "none",
+        "treatment": "final rendered product frame"
+      },
+      {
+        "role": "logo",
+        "url": "fixture://logo.png",
+        "rect": {
+          "xPct": 8.519,
+          "yPct": 6.519,
+          "widthPct": 26.111,
+          "heightPct": 4
+        },
+        "frame": "none",
+        "treatment": "final rendered logo"
+      }
+    ]
+  }
+]

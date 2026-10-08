@@ -281,6 +281,18 @@ export function rectsOverlap(a: CreativePlanRect, b: CreativePlanRect): boolean 
   return a.xPct < b.xPct + b.widthPct && a.xPct + a.widthPct > b.xPct && a.yPct < b.yPct + b.heightPct && a.yPct + a.heightPct > b.yPct;
 }
 
+function rectArea(rect: CreativePlanRect): number {
+  return Math.max(0, rect.widthPct) * Math.max(0, rect.heightPct);
+}
+
+function rectOverlapArea(a: CreativePlanRect, b: CreativePlanRect): number {
+  const x1 = Math.max(a.xPct, b.xPct);
+  const y1 = Math.max(a.yPct, b.yPct);
+  const x2 = Math.min(a.xPct + a.widthPct, b.xPct + b.widthPct);
+  const y2 = Math.min(a.yPct + a.heightPct, b.yPct + b.heightPct);
+  return Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+}
+
 /**
  * Achado ao vivo em produção: o retângulo do headline (textZone) e o retângulo da logo
  * (assetPlacement) se sobrepunham geometricamente no MESMO plano — a caixa semi-opaca do headline
@@ -343,12 +355,28 @@ export function checkTextZoneCollisions(plan: CreativePlan): CreativeQualityIssu
  * é excesso de conteúdo pro formato — nunca microgerencia "quanto é demais" com uma régua nova,
  * reaproveita os mesmos checks geométricos determinísticos já existentes como sinal de entrada. */
 const OVERDENSE_LAYOUT_ELEMENT_THRESHOLD = 5;
+const OVERDENSE_LAYOUT_MIN_OVERLAP_AREA_PCT = 18;
+const OVERDENSE_LAYOUT_MIN_OCCUPIED_RATIO = 0.48;
+
+function layoutDensitySignals(plan: CreativePlan): { elementCount: number; occupiedAreaRatio: number; overlapArea: number } {
+  const rects = [...plan.textZones.map((zone) => zone.rect), ...plan.assetPlacements.map((placement) => placement.rect)];
+  let occupiedArea = 0;
+  let overlapArea = 0;
+  for (let i = 0; i < rects.length; i += 1) {
+    occupiedArea += rectArea(rects[i]);
+    for (let j = i + 1; j < rects.length; j += 1) {
+      overlapArea += rectOverlapArea(rects[i], rects[j]);
+    }
+  }
+  return { elementCount: rects.length, occupiedAreaRatio: occupiedArea / 10_000, overlapArea };
+}
 
 export function checkOverdenseLayout(plan: CreativePlan): CreativeQualityIssue[] {
   const hasGeometricOverlap = checkAssetPlacementOverlap(plan).length > 0 || checkTextZoneCollisions(plan).length > 0;
   if (!hasGeometricOverlap) return [];
-  const elementCount = plan.textZones.length + plan.assetPlacements.length;
+  const { elementCount, occupiedAreaRatio, overlapArea } = layoutDensitySignals(plan);
   if (elementCount < OVERDENSE_LAYOUT_ELEMENT_THRESHOLD) return [];
+  if (overlapArea < OVERDENSE_LAYOUT_MIN_OVERLAP_AREA_PCT && occupiedAreaRatio < OVERDENSE_LAYOUT_MIN_OCCUPIED_RATIO) return [];
   return [
     {
       code: "OVERDENSE_LAYOUT",

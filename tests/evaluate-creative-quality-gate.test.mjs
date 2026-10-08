@@ -663,3 +663,20 @@ test("evaluateCreativeQualityGate: violação de safe area reprova o gate (fail)
   assert.equal(result.verdict, "fail");
   assert.ok(result.issues.some((issue) => issue.code === "TEXT_ILLEGIBLE_OR_CUT"));
 });
+test("checkAssetPlacementOverlap: Smoke A final geometry with product on the right does not fail on stale planned placement", () => {
+  const plan = basePlan({
+    textZones: [{ kind: "headline", text: "Kit Noivos Sem Correria", rect: { xPct: 8.984, yPct: 26.563, widthPct: 32.813, heightPct: 20.313 }, emphasis: "primary", renderedBy: "renderer" }],
+    assetPlacements: [{ role: "product_photo", url: "https://x/product.png", rect: { xPct: 43.889, yPct: 6.37, widthPct: 49.074, heightPct: 58.519 }, frame: "none", treatment: "final rendered product frame" }],
+  });
+  assert.deepEqual(checkAssetPlacementOverlap(plan), []);
+});
+
+test("checkAssetPlacementOverlap: Smoke A final geometry with product invading headline fails real overlap", () => {
+  const plan = basePlan({
+    textZones: [{ kind: "headline", text: "Kit Noivos Sem Correria", rect: { xPct: 8.984, yPct: 26.563, widthPct: 32.813, heightPct: 20.313 }, emphasis: "primary", renderedBy: "renderer" }],
+    assetPlacements: [{ role: "product_photo", url: "https://x/product.png", rect: { xPct: 30, yPct: 20, widthPct: 36, heightPct: 45 }, frame: "none", treatment: "deliberate overlap fixture" }],
+  });
+  const issues = checkAssetPlacementOverlap(plan);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].code, "TEXT_ZONE_OVERLAPS_ASSET");
+});

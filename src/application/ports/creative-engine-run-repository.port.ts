@@ -50,6 +50,9 @@ export type CreativeEngineRun = {
    * chamada paga — `undefined` só em falhas anteriores a isso (nunca deveria acontecer no caminho
    * real, mas o tipo permanece opcional pra nunca quebrar uma linha histórica). */
   costBreakdown?: unknown;
+  /** ProveniÃªncia dos artefatos intermediÃ¡rios/finais do motor, incluindo base image prÃ©-renderer
+   * e manifesto de geometria final quando o modo editorial experimental Ã© usado. */
+  artifactProvenance?: unknown;
   repairRounds: unknown[];
   finalImageUrl?: string;
   finalImageWidth?: number;

@@ -1213,11 +1213,21 @@ test("runGptCreativeEngine editorial experimental: usa compositor paralelo, regi
         buffer: Buffer.from("editorial-final"),
         family: "product_offer",
         renderedTextZones: [
-          { kind: "headline", text: "TODAS AS OFERTAS EM UM SITE", rect: { xPct: 10, yPct: 10, widthPct: 70, heightPct: 16 }, emphasis: "primary", renderedBy: "renderer", backingStyle: "none", align: "left" },
+          { kind: "headline", text: "TODAS AS OFERTAS EM UM SITE", rect: { xPct: 10, yPct: 10, widthPct: 32, heightPct: 16 }, emphasis: "primary", renderedBy: "renderer", backingStyle: "none", align: "left" },
           { kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 80, widthPct: 35, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer", backingStyle: "solid", align: "center" },
         ],
+        renderedAssetPlacements: [
+          { role: "product_photo", url: "https://x/product-ref.jpg", rect: { xPct: 55, yPct: 20, widthPct: 35, heightPct: 45 }, frame: "none", treatment: "final rendered product" },
+          { role: "logo", url: "https://x/logo.png", rect: { xPct: 82, yPct: 5, widthPct: 12, heightPct: 8 }, frame: "none", treatment: "final rendered logo" },
+        ],
         compositedAssetRoles: ["product_photo", "logo"],
-        geometry: { valid: true, boxes: [{ id: "headline", rect: { xPct: 10, yPct: 10, widthPct: 70, heightPct: 16 } }], issues: [] },
+        renderedGeometry: {
+          source: "final_rendered_geometry",
+          family: "product_offer",
+          textBoxes: [{ id: "headline", kind: "text", rect: { xPct: 10, yPct: 10, widthPct: 32, heightPct: 16 } }],
+          assetBoxes: [{ id: "product_photo", kind: "asset", role: "product_photo", rect: { xPct: 55, yPct: 20, widthPct: 35, heightPct: 45 } }],
+        },
+        geometry: { valid: true, boxes: [{ id: "headline", kind: "text", rect: { xPct: 10, yPct: 10, widthPct: 32, heightPct: 16 } }], issues: [] },
       };
     },
   }), baseInput({
@@ -1238,6 +1248,11 @@ test("runGptCreativeEngine editorial experimental: usa compositor paralelo, regi
   assert.deepEqual(result.compositedAssetRoles.sort(), ["logo", "product_photo"]);
   assert.ok(result.compositionSteps.some((step) => step.step === "editorial_geometry_validation" && step.ok));
   assert.ok(result.compositionSteps.some((step) => step.step === "editorial_composition" && step.ok));
+  assert.equal(result.creativePlan.assetPlacements[0].rect.xPct, 55, "gate deve receber geometria final renderizada, nao o assetPlacement planejado");
+  assert.equal(result.artifactProvenance.baseImage.publishable, false);
+  assert.equal(result.artifactProvenance.finalImage.publishable, true);
+  assert.equal(result.artifactProvenance.productAsset.url, "https://x/product-ref.jpg");
+  assert.equal(result.artifactProvenance.imagePromptSanitization.containsHeadline, false);
 }));
 
 test("runGptCreativeEngine editorial experimental: falha alto se renderer nao foi injetado", () => withFakeFetch(async () => {

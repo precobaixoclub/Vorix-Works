@@ -16,10 +16,19 @@ export type EditorialGeometryIssue = {
 
 export type EditorialGeometryBox = {
   id: string;
+  kind: "text" | "asset";
+  role?: CreativePlanAssetRole;
   rect: CreativePlanTextZone["rect"];
   text?: string;
   fontSizePx?: number;
   lineCount?: number;
+};
+
+export type EditorialRenderedGeometryManifest = {
+  source: "final_rendered_geometry";
+  family: EditorialCreativeFamily;
+  textBoxes: EditorialGeometryBox[];
+  assetBoxes: EditorialGeometryBox[];
 };
 
 export type RenderEditorialCreativeInput = {
@@ -33,7 +42,9 @@ export type RenderEditorialCreativeResult = {
   buffer: Buffer;
   family: EditorialCreativeFamily;
   renderedTextZones: CreativePlanTextZone[];
+  renderedAssetPlacements: CreativePlan["assetPlacements"];
   compositedAssetRoles: CreativePlanAssetRole[];
+  renderedGeometry: EditorialRenderedGeometryManifest;
   geometry: {
     valid: boolean;
     boxes: EditorialGeometryBox[];

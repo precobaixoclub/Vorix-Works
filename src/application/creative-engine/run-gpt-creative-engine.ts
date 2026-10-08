@@ -2,6 +2,7 @@ import type { IcaroBrainPort } from "../ai/icaro-brain.contract.js";
 import type { IcaroAIResponse } from "../ai/icaro.types.js";
 import type { ObjectStoragePort } from "../ports/object-storage.port.js";
 import { extractJson } from "../../shared/utils/skill-parsing.js";
+import { extractCommercialFactsFromText } from "../../shared/utils/commercial-fact-normalizer.js";
 import {
   buildCreativePlanPrompt,
   buildImageGenerationPromptFromPlan,
@@ -177,6 +178,37 @@ export type CreativeEngineCostBreakdown = {
   total: number;
 };
 
+export type CreativeEngineArtifactProvenance = {
+  compositionMode: "standard" | "editorial_experimental";
+  baseImage?: {
+    url: string;
+    width?: number;
+    height?: number;
+    source: "ai_generated_pre_renderer";
+    publishable: false;
+  };
+  finalImage?: {
+    url: string;
+    width?: number;
+    height?: number;
+    source: "final_rendered_image";
+    publishable: boolean;
+  };
+  productAsset?: {
+    role: "product_photo";
+    url: string;
+    source: "input_asset";
+  };
+  inputAssets: { role: CreativePlanAssetRole; url: string; source: "input_asset" }[];
+  imagePromptSanitization?: {
+    promptChars: number;
+    containsHeadline: boolean;
+    containsPrice: boolean;
+    containsCta: boolean;
+  };
+  renderedGeometry?: RenderEditorialCreativeResult["renderedGeometry"];
+};
+
 export type GptCreativeEngineResult = {
   engineMode: "gpt";
   compositionMode?: "standard" | "editorial_experimental";
@@ -216,6 +248,7 @@ export type GptCreativeEngineResult = {
    * presente (mesmo em falha antes de qualquer chamada paga — nesse caso, todas as categorias
    * zeradas). */
   costBreakdown: CreativeEngineCostBreakdown;
+  artifactProvenance?: CreativeEngineArtifactProvenance;
   latencyMs: number;
   warnings: string[];
   error?: string;
@@ -226,6 +259,18 @@ const SPECIALIST_ID = "gpt-creative-director";
 
 function buildObjectKey(tenantId: string, suffix: string): string {
   return `gpt-creative-engine/${tenantId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${suffix}.jpg`;
+}
+
+function buildImagePromptSanitizationAudit(prompt: string, plan: CreativePlan, context: CreativeContext): CreativeEngineArtifactProvenance["imagePromptSanitization"] {
+  const priceFacts = extractCommercialFactsFromText(context.confirmedFacts.join("\n"))
+    .filter((fact) => fact.type === "current_price")
+    .map((fact) => fact.value);
+  return {
+    promptChars: prompt.length,
+    containsHeadline: Boolean(plan.headline.trim() && prompt.includes(plan.headline)),
+    containsPrice: priceFacts.some((price) => prompt.includes(price)),
+    containsCta: Boolean(plan.cta.trim() && prompt.includes(plan.cta)),
+  };
 }
 
 // Achado ao vivo em produção: a primeira resposta do plano veio com JSON malformado/incompleto
@@ -763,6 +808,25 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         );
       }
 
+      let baseImageArtifact: CreativeEngineArtifactProvenance["baseImage"];
+      try {
+        const baseUpload = await deps.objectStorage.put({ key: buildObjectKey(input.tenantId, "editorial-base"), body: baseWithAssetsBuffer, contentType: "image/jpeg" });
+        const baseDimensions = await deps.readImageDimensions(baseWithAssetsBuffer);
+        baseImageArtifact = {
+          url: baseUpload.url,
+          width: baseDimensions.width,
+          height: baseDimensions.height,
+          source: "ai_generated_pre_renderer",
+          publishable: false,
+        };
+      } catch (error) {
+        return fail(
+          `EDITORIAL_BASE_IMAGE_PERSIST_FAILED: falha ao persistir imagem base para auditoria: ${error instanceof Error ? error.message : "erro desconhecido"}.`,
+          "EDITORIAL_BASE_IMAGE_PERSIST_FAILED",
+          { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds },
+        );
+      }
+
       const editorialAssets: { role: CreativePlanAssetRole; url: string; buffer: Buffer }[] = [];
       for (const asset of [productAsset, screenshotAsset, logoAsset].filter((candidate): candidate is NonNullable<typeof productAsset> => Boolean(candidate))) {
         try {
@@ -827,7 +891,23 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       const planForGate: CreativePlan = {
         ...plan,
         textZones: editorial.renderedTextZones,
+        assetPlacements: editorial.renderedAssetPlacements,
         allowedRenderedTexts: [...new Set([...plan.allowedRenderedTexts, ...renderedTexts])],
+      };
+      const artifactProvenance: CreativeEngineArtifactProvenance = {
+        compositionMode: "editorial_experimental",
+        baseImage: baseImageArtifact,
+        finalImage: {
+          url: uploaded.url,
+          width: finalImageWidth,
+          height: finalImageHeight,
+          source: "final_rendered_image",
+          publishable: false,
+        },
+        productAsset: productAsset ? { role: "product_photo", url: productAsset.url, source: "input_asset" } : undefined,
+        inputAssets: editorialAssets.map((asset) => ({ role: asset.role, url: asset.url, source: "input_asset" })),
+        imagePromptSanitization: buildImagePromptSanitizationAudit(imagePrompt, planForGeneration, context),
+        renderedGeometry: editorial.renderedGeometry,
       };
       const qualityGate = await evaluateCreativeQualityGate(deps.creativeBrain, {
         finalImageUrl: uploaded.url,
@@ -848,6 +928,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
           qualityGate,
           repairRounds,
           compositionSteps: editorialCompositionSteps,
+          artifactProvenance,
           finalImageUrl: uploaded.url,
           finalImageWidth,
           finalImageHeight,
@@ -855,7 +936,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       }
 
       if (budgetExceeded()) {
-        return failBudgetExceeded({ creativePlan: planForGate, finalImagePrompt: imagePrompt, qualityGate, repairRounds, compositionSteps: editorialCompositionSteps, finalImageUrl: uploaded.url, finalImageWidth, finalImageHeight });
+        return failBudgetExceeded({ creativePlan: planForGate, finalImagePrompt: imagePrompt, qualityGate, repairRounds, compositionSteps: editorialCompositionSteps, artifactProvenance, finalImageUrl: uploaded.url, finalImageWidth, finalImageHeight });
       }
       const visualQualityScore = await evaluateVisualQualityScore(deps.creativeBrain, {
         finalImageUrl: uploaded.url,
@@ -872,11 +953,14 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
           visualQualityScore,
           repairRounds,
           compositionSteps: editorialCompositionSteps,
+          artifactProvenance,
           finalImageUrl: uploaded.url,
           finalImageWidth,
           finalImageHeight,
         });
       }
+
+      artifactProvenance.finalImage = { ...artifactProvenance.finalImage!, publishable: true };
 
       return {
         engineMode: "gpt",
@@ -895,6 +979,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         visualQualityScore,
         chosenCreativeDirection,
         repairRounds,
+        artifactProvenance,
         finalImageUrl: uploaded.url,
         finalImageWidth,
         finalImageHeight,

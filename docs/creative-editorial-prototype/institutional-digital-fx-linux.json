@@ -121,12 +121,12 @@
   },
   "logo": "MULTIPLY_ON_LIGHT",
   "prominence": 0.506,
-  "emptyBand": 0.074,
+  "emptyBand": 0.089,
   "valid": true,
   "issues": [],
   "verify": [
    "screenshot:true/true/5.04",
-   "logo:true/true/5.43"
+   "logo:true/true/7.47"
   ]
  },
  {
@@ -160,7 +160,7 @@
   "issues": [],
   "verify": [
    "screenshot:true/true/6.25",
-   "logo:true/true/5.55"
+   "logo:true/true/6.94"
   ]
  },
  {
@@ -179,8 +179,8 @@
    "aspect": 1.422,
    "frame": "EDITORIAL_SURFACE",
    "fit": "contain",
-   "displayScale": 0.511,
-   "displayWidthPx": 654,
+   "displayScale": 0.8,
+   "displayWidthPx": 1024,
    "option": "a",
    "palette": {
     "dominant": "#fbfbfb",
@@ -198,12 +198,12 @@
       "height": 308
      },
      "placedRect": {
-      "xPct": 65.926,
-      "yPct": 48.963,
-      "widthPct": 31.481,
-      "heightPct": 22.074
+      "xPct": 60.741,
+      "yPct": 3.926,
+      "widthPct": 36.667,
+      "heightPct": 25.704
      },
-     "zoomVsMain": 1.89
+     "zoomVsMain": 1.41
     },
     {
      "source": "SCREENSHOT_SOURCE",
@@ -215,25 +215,25 @@
       "height": 104
      },
      "placedRect": {
-      "xPct": 65.926,
-      "yPct": 73.259,
-      "widthPct": 31.481,
-      "heightPct": 8.296
+      "xPct": 60.741,
+      "yPct": 31.111,
+      "widthPct": 36.667,
+      "heightPct": 9.63
      },
-     "zoomVsMain": 2.11
+     "zoomVsMain": 1.57
     }
    ]
   },
   "logo": "MULTIPLY_ON_LIGHT",
-  "prominence": 0.302,
-  "emptyBand": 0.119,
+  "prominence": 0.635,
+  "emptyBand": 0.03,
   "valid": true,
   "issues": [],
   "verify": [
-   "screenshot:true/true/5.45",
-   "screenshot:true/true/5.42",
-   "screenshot:true/true/10",
-   "logo:true/true/6.86"
+   "screenshot:true/true/5.04",
+   "screenshot:true/true/5.59",
+   "screenshot:true/true/5.96",
+   "logo:true/true/6.46"
   ]
  },
  {
@@ -252,8 +252,8 @@
    "aspect": 1.422,
    "frame": "EDITORIAL_SURFACE",
    "fit": "contain",
-   "displayScale": 0.511,
-   "displayWidthPx": 654,
+   "displayScale": 0.8,
+   "displayWidthPx": 1024,
    "option": "b",
    "palette": {
     "dominant": "#fbfbfb",
@@ -272,11 +272,11 @@
      },
      "placedRect": {
       "xPct": 2.593,
-      "yPct": 45.185,
+      "yPct": 2.667,
       "widthPct": 31.481,
       "heightPct": 6.889
      },
-     "zoomVsMain": 1.98
+     "zoomVsMain": 1.26
     },
     {
      "source": "SCREENSHOT_SOURCE",
@@ -289,24 +289,24 @@
      },
      "placedRect": {
       "xPct": 2.593,
-      "yPct": 54.296,
+      "yPct": 11.037,
       "widthPct": 31.481,
       "heightPct": 31.037
      },
-     "zoomVsMain": 1.85
+     "zoomVsMain": 1.18
     }
    ]
   },
   "logo": "MULTIPLY_ON_LIGHT",
-  "prominence": 0.326,
-  "emptyBand": 0.089,
+  "prominence": 0.625,
+  "emptyBand": 0.015,
   "valid": true,
   "issues": [],
   "verify": [
-   "screenshot:true/true/5.44",
-   "screenshot:true/true/10.67",
-   "screenshot:true/true/4.74",
-   "logo:true/true/6.36"
+   "screenshot:true/true/5.09",
+   "screenshot:true/true/8.29",
+   "screenshot:true/true/6.11",
+   "logo:true/true/8.22"
   ]
  },
  {
@@ -324,8 +324,8 @@
    "aspect": 1.422,
    "frame": "FLOATING_SCREEN",
    "fit": "contain",
-   "displayScale": 0.745,
-   "displayWidthPx": 954,
+   "displayScale": 0.8,
+   "displayWidthPx": 1024,
    "option": "light",
    "palette": {
     "dominant": "#fbfbfb",
@@ -334,13 +334,13 @@
    }
   },
   "logo": "MULTIPLY_ON_LIGHT",
-  "prominence": 0.439,
-  "emptyBand": 0.074,
+  "prominence": 0.506,
+  "emptyBand": 0.104,
   "valid": true,
   "issues": [],
   "verify": [
-   "screenshot:true/true/4.57",
-   "logo:true/true/5.35"
+   "screenshot:true/true/4.12",
+   "logo:true/true/7.44"
   ]
  },
  {
@@ -358,8 +358,8 @@
    "aspect": 1.422,
    "frame": "FLOATING_SCREEN",
    "fit": "contain",
-   "displayScale": 0.745,
-   "displayWidthPx": 954,
+   "displayScale": 0.8,
+   "displayWidthPx": 1024,
    "option": "dark",
    "palette": {
     "dominant": "#fbfbfb",
@@ -368,13 +368,13 @@
    }
   },
   "logo": "CHIP",
-  "prominence": 0.439,
-  "emptyBand": 0.074,
+  "prominence": 0.506,
+  "emptyBand": 0.104,
   "valid": true,
   "issues": [],
   "verify": [
-   "screenshot:true/true/4.57",
-   "logo:true/true/5.16"
+   "screenshot:true/true/4.12",
+   "logo:true/true/7.57"
   ]
  },
  {
@@ -391,8 +391,8 @@
    "aspect": 1.422,
    "frame": "EDITORIAL_SURFACE",
    "fit": "contain",
-   "displayScale": 0.511,
-   "displayWidthPx": 654,
+   "displayScale": 0.8,
+   "displayWidthPx": 1024,
    "option": "a",
    "palette": {
     "dominant": "#fbfbfb",
@@ -410,12 +410,12 @@
       "height": 308
      },
      "placedRect": {
-      "xPct": 65.926,
-      "yPct": 48.963,
-      "widthPct": 31.481,
-      "heightPct": 22.074
+      "xPct": 60.741,
+      "yPct": 3.926,
+      "widthPct": 36.667,
+      "heightPct": 25.704
      },
-     "zoomVsMain": 1.89
+     "zoomVsMain": 1.41
     },
     {
      "source": "SCREENSHOT_SOURCE",
@@ -427,25 +427,25 @@
       "height": 104
      },
      "placedRect": {
-      "xPct": 65.926,
-      "yPct": 73.259,
-      "widthPct": 31.481,
-      "heightPct": 8.296
+      "xPct": 60.741,
+      "yPct": 31.111,
+      "widthPct": 36.667,
+      "heightPct": 9.63
      },
-     "zoomVsMain": 2.11
+     "zoomVsMain": 1.57
     }
    ]
   },
   "logo": "MULTIPLY_ON_LIGHT",
-  "prominence": 0.302,
-  "emptyBand": 0.119,
+  "prominence": 0.635,
+  "emptyBand": 0.03,
   "valid": true,
   "issues": [],
   "verify": [
-   "screenshot:true/true/5.45",
-   "screenshot:true/true/5.42",
-   "screenshot:true/true/10",
-   "logo:true/true/6.86"
+   "screenshot:true/true/5.04",
+   "screenshot:true/true/5.59",
+   "screenshot:true/true/5.96",
+   "logo:true/true/6.46"
   ]
  }
 ]

@@ -1839,7 +1839,7 @@ async function renderDigitalServiceAdaptive(
     // Copy alinhada à esquerda no alto, CTA ancorado à direita da copy; tela inteira embaixo.
     shot = shotAt(EDGE, 0, W - 2 * EDGE);
     shot.y = H - EDGE - shot.height;
-    const hs = headSpec(620, 62);
+    const hs = headSpec(620, 56);
     const ss = subSpec(560);
     const block = (logoBox ? logoBox.height + 30 : 0) + copyHeight(hs, ss);
     const top = Math.round(M + Math.max(0, (shot.y - 40 - M - block) / 2));
@@ -1849,7 +1849,7 @@ async function renderDigitalServiceAdaptive(
   } else if (variant === "UI_HERO") {
     // Tela inteira no alto; copy embaixo alinhada à direita; logo à esquerda, na mesma linha do CTA.
     shot = shotAt(EDGE, EDGE, W - 2 * EDGE);
-    const hs = headSpec(660, 58);
+    const hs = headSpec(660, 54);
     const ss = subSpec(560);
     const rowH = Math.max(CTA_H, logoBox?.height ?? 0);
     const block = copyHeight(hs, ss) + (cta || logoBox ? 34 + rowH : 0);
@@ -1860,55 +1860,61 @@ async function renderDigitalServiceAdaptive(
     if (cta) pill = { x: W - M - ctaW, y: rowTop + Math.round((rowH - CTA_H) / 2), width: ctaW, height: CTA_H };
     logoRect = logoBox ? { x: M, y: rowTop + Math.round((rowH - logoBox.height) / 2), ...logoBox } : undefined;
   } else if (variant === "UI_DETAIL_FOCUS") {
-    // Interface + 2 recortes ampliados de regiões REAIS do mesmo screenshot, em coluna ao lado.
+    // Tela inteira em largura total embaixo (UI protagonista) + 2 recortes ampliados de regiões
+    // REAIS do mesmo screenshot, em coluna no alto ao lado da copy — nunca sobre a tela.
     ghost = false;
     const found = option === "b"
       ? await findScreenshotDetailRegions(screenshot.png, screenshot.width, screenshot.height, DETAIL_CROP_SETS.b, autoCrops.map((item) => item.rect))
       : autoCrops;
-    const mainLeft = option !== "b";
-    const hs = headSpec(W - 2 * M, 56, 2);
-    const ss = subSpec(760);
-    const colW = 340;
-    const gap = 30;
-    const mainW = W - 2 * EDGE - colW - gap;
+    const cropsRight = option !== "b";
+    shot = shotAt(EDGE, 0, W - 2 * EDGE);
+    shot.y = H - EDGE - shot.height;
+    const gap = 20;
+    const bandTop = EDGE + 8;
+    const bandBottom = shot.y - 36;
+    const copyW = 560;
+    const colMaxW = W - M - copyW - 40 - EDGE;
+    const naturalH = found.reduce((sum, item) => sum + colMaxW / (item.rect.width / item.rect.height), 0) + gap * Math.max(0, found.length - 1);
+    const colW = Math.round(Math.min(colMaxW, (colMaxW * (bandBottom - bandTop)) / Math.max(1, naturalH)));
     const cropHeights = found.map((item) => Math.round(colW / (item.rect.width / item.rect.height)));
     const colH = cropHeights.reduce((sum, value) => sum + value, 0) + gap * Math.max(0, found.length - 1);
-    const mainH = Math.round(mainW / aspect);
-    const copyH = (logoBox ? logoBox.height + 28 : 0) + copyHeight(hs, ss) + (cta ? 30 + CTA_H : 0);
-    const visualH = Math.max(mainH, colH);
-    const top = Math.round(Math.max(M, (H - copyH - 56 - visualH) / 2));
-    logoRect = logoBox ? { x: M, y: top, ...logoBox } : undefined;
-    const copyBottom = placeCopy(M, (logoRect ? logoRect.y + logoRect.height + 28 : top), hs, ss);
-    if (cta) pill = { x: M, y: Math.round(copyBottom + 30), width: ctaW, height: CTA_H };
-    const zoneTop = (pill ? pill.y + pill.height : copyBottom) + 56;
-    const zoneH = Math.min(visualH, H - EDGE - zoneTop);
-    const mainX = mainLeft ? EDGE : W - EDGE - mainW;
-    const colX = mainLeft ? W - EDGE - colW : EDGE;
-    shot = shotAt(mainX, zoneTop + Math.max(0, (zoneH - mainH) / 2), mainW);
-    let cursor = zoneTop + Math.max(0, (zoneH - colH) / 2);
+    const colX = cropsRight ? W - EDGE - colW : EDGE;
+    const copyX = cropsRight ? M : W - M;
+    const hs = headSpec(copyW, 52, 3);
+    const ss = subSpec(copyW - 20);
+    const copyH = (logoBox ? logoBox.height + 26 : 0) + copyHeight(hs, ss) + (cta ? 28 + CTA_H : 0);
+    const copyTop = Math.round(bandTop + Math.max(0, (bandBottom - bandTop - copyH) / 2));
+    logoRect = logoBox ? { x: cropsRight ? M : W - M - logoBox.width, y: copyTop, ...logoBox } : undefined;
+    const copyBottom = placeCopy(copyX, logoRect ? logoRect.y + logoRect.height + 26 : copyTop, hs, ss, cropsRight ? "start" : "end");
+    if (cta) pill = { x: cropsRight ? M : W - M - ctaW, y: Math.round(copyBottom + 28), width: ctaW, height: CTA_H };
+    let cursor = bandTop + Math.max(0, (bandBottom - bandTop - colH) / 2);
     found.forEach((item, index) => {
       const placed = { x: colX, y: Math.round(cursor), width: colW, height: cropHeights[index]! };
       crops.push({ rect: item.rect, placed });
-      // Conector discreto: da altura da região de origem na tela até o recorte (sem tocar a tela).
-      const sourceY = shot.y + ((item.rect.y + item.rect.height / 2) / screenshot.height) * shot.height;
-      const fromX = mainLeft ? shot.x + shot.width + 6 : shot.x - 6;
-      const toX = mainLeft ? placed.x - 6 : placed.x + placed.width + 6;
-      connectors.push(`<path d="M${fromX} ${sourceY.toFixed(1)} L${toX} ${(placed.y + placed.height / 2).toFixed(1)}" stroke="${accentHex}" stroke-opacity="0.55" stroke-width="1.5" stroke-dasharray="4 5" fill="none"/><circle cx="${fromX}" cy="${sourceY.toFixed(1)}" r="4" fill="${accentHex}"/>`);
+      // Conector discreto: sai pela lateral da coluna, desce pelo vão entre copy e recortes e corre
+      // na faixa livre acima da tela até a posição de origem (nunca cruza copy, CTA ou a tela).
+      const sourceX = shot.x + ((item.rect.x + item.rect.width / 2) / screenshot.width) * shot.width;
+      const laneX = cropsRight ? placed.x - 12 - index * 10 : placed.x + placed.width + 12 + index * 10;
+      const laneY = shot.y - 12 - index * 8;
+      const fromY = placed.y + placed.height / 2;
+      const edgeX = cropsRight ? placed.x : placed.x + placed.width;
+      connectors.push(`<path d="M${edgeX} ${fromY.toFixed(1)} L${laneX} ${fromY.toFixed(1)} L${laneX} ${laneY} L${sourceX.toFixed(1)} ${laneY}" stroke="${accentHex}" stroke-opacity="0.5" stroke-width="1.5" stroke-dasharray="4 5" fill="none"/><circle cx="${sourceX.toFixed(1)}" cy="${laneY}" r="4" fill="${accentHex}"/>`);
       cursor += placed.height + gap;
     });
     reasons.push(`recortes ${option === "b" ? "b" : "a"}: ${found.map((item) => `${item.rect.width}x${item.rect.height}@${item.rect.x},${item.rect.y} (detalhe ${item.relativeScore}x a média)`).join("; ")}`);
   } else {
-    // FLOATING_PRODUCT: tela inteira flutuando com camadas de profundidade (cópias desfocadas,
-    // ilegíveis, levemente giradas) — sem chrome de navegador.
-    const hs = headSpec(600, 60);
-    const ss = subSpec(520);
-    logoRect = logoBox ? { x: M, y: M, ...logoBox } : undefined;
-    const copyTop = (logoRect ? logoRect.y + logoRect.height : M) + 34;
-    const bottom = placeCopy(M, copyTop, hs, ss);
-    if (cta) pill = { x: M, y: Math.round(bottom + 30), width: ctaW, height: CTA_H };
-    const areaTop = (pill ? pill.y + pill.height : bottom) + 70;
-    const width = Math.min(W - 2 * EDGE - 70, ((H - EDGE - 40 - areaTop) * aspect));
-    shot = shotAt(W - EDGE - 20 - width, H - EDGE - 40 - width / aspect, width);
+    // FLOATING_PRODUCT: tela inteira em largura total flutuando sobre camadas nítidas giradas
+    // (profundidade só atrás dela) — sem chrome de navegador; copy compacta no alto.
+    shot = shotAt(EDGE, 0, W - 2 * EDGE);
+    shot.y = H - EDGE - 24 - shot.height;
+    const hs = headSpec(640, 54);
+    const ss = subSpec(560);
+    const areaBottom = shot.y - shot.height * 0.16 - 20;
+    const block = (logoBox ? logoBox.height + 30 : 0) + copyHeight(hs, ss);
+    const copyTop = Math.round(M + Math.max(0, (areaBottom - M - block) / 2));
+    logoRect = logoBox ? { x: M, y: copyTop, ...logoBox } : undefined;
+    const bottom = placeCopy(M, logoRect ? logoRect.y + logoRect.height + 30 : copyTop, hs, ss);
+    if (cta) pill = { x: W - M - ctaW, y: Math.round(bottom - CTA_H), width: ctaW, height: CTA_H };
   }
 
   const displayScale = shot.width / screenshot.width;

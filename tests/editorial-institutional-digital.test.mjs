@@ -203,7 +203,7 @@ for (const [variant, option] of DIGITAL_CASES) {
     const main = result.renderedAssetPlacements.find((item) => item.role === "screenshot");
     const placedAspect = (main.rect.widthPct * 1080) / (main.rect.heightPct * 1350);
     assert.ok(Math.abs(placedAspect - 1280 / 900) / (1280 / 900) < 0.01, `tela principal sem deformação/crop: ${placedAspect}`);
-    assert.ok(result.composition.productVisualProminence >= 0.3, `UI protagonista: ${result.composition.productVisualProminence}`);
+    assert.ok(result.composition.productVisualProminence >= 0.5 && result.composition.productVisualProminence <= 0.75, `UI protagonista (50–75%): ${result.composition.productVisualProminence}`);
     assert.ok(result.composition.largestEmptyBandPct <= 0.12, String(result.composition.largestEmptyBandPct));
     const zones = Object.fromEntries(result.renderedTextZones.map((zone) => [zone.kind, zone.text]));
     assert.deepEqual(zones, { headline: COPY_C.headline, subheadline: COPY_C.subheadline, cta: COPY_C.cta });

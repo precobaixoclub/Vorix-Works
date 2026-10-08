@@ -219,6 +219,56 @@ export function matchRenderedTextRegion(
   });
 }
 
+/**
+ * Duplicidade por OCORRÊNCIA. Cada ocorrência é classificada pela região + proveniência:
+ * zona do renderer (texto equivalente dentro da bbox final), logo verificada, screenshot real
+ * verificado, ou desconhecida. O texto repetido só é legítimo quando TODA ocorrência tem origem
+ * comprovada e nenhuma zona do renderer aparece duas vezes (ex.: "Criar meu site" no site real +
+ * no CTA = ALLOWED_TWO_LEGITIMATE_OCCURRENCES). Sem regiões (motor padrão) = regra antiga.
+ */
+function resolveDuplicateOccurrences(
+  raw: unknown,
+  itemIndex: number,
+  regions: { renderedTextRegions: readonly CreativeRenderedTextRegion[]; verifiedLogoRegions: readonly CreativePlanRect[]; verifiedScreenshotRegions: readonly CreativePlanRect[] },
+): { text: string; legitimate: boolean; rejectedReason?: string; occurrences: CreativeTextOccurrenceDiagnostic[] } | undefined {
+  const text = typeof raw === "string" ? raw : typeof raw === "object" && raw !== null && typeof (raw as { text?: unknown }).text === "string" ? (raw as { text: string }).text : "";
+  if (!text.trim()) return undefined;
+  const normalizedText = normalizeRenderedText(text);
+  const rawOccurrences = typeof raw === "object" && raw !== null && Array.isArray((raw as { occurrences?: unknown }).occurrences) ? ((raw as { occurrences: unknown[] }).occurrences) : [];
+  const hasRegionModel = regions.renderedTextRegions.length > 0 || regions.verifiedLogoRegions.length > 0 || regions.verifiedScreenshotRegions.length > 0;
+  if (!hasRegionModel || rawOccurrences.length < 2) {
+    const reason = !hasRegionModel ? "sem geometria final verificada (motor padrão): duplicidade pela string" : "visão não informou as regiões de cada ocorrência — sem prova espacial";
+    return { text, legitimate: false, rejectedReason: hasRegionModel ? reason : undefined, occurrences: [{ occurrenceId: `dup-${itemIndex}`, normalizedText, matchedRegion: "unknown", provenance: "UNVERIFIED", decision: "rejected", reason }] };
+  }
+  const usedZones = new Set<CreativeRenderedTextRegion>();
+  const occurrences = rawOccurrences.map((entry, occurrenceIndex): CreativeTextOccurrenceDiagnostic => {
+    const record = typeof entry === "object" && entry !== null ? (entry as { region?: unknown }) : {};
+    const detected = parseDetectedText({ text, region: record.region ?? entry });
+    const occurrenceId = `dup-${itemIndex}-${occurrenceIndex}`;
+    const bbox = detected?.region;
+    if (!bbox) return { occurrenceId, normalizedText, matchedRegion: "unknown", provenance: "UNVERIFIED", decision: "rejected", reason: "ocorrência sem região — sem prova espacial" };
+    const zone = matchRenderedTextRegion({ text, region: bbox }, regions.renderedTextRegions);
+    if (zone) {
+      if (usedZones.has(zone)) return { occurrenceId, normalizedText, bbox, matchedRegion: zone.kind, provenance: "RENDERER_TEXT_ZONE", decision: "rejected", reason: `segunda ocorrência dentro da mesma zona ${zone.kind}` };
+      usedZones.add(zone);
+      return { occurrenceId, normalizedText, bbox, matchedRegion: zone.kind, provenance: "RENDERER_TEXT_ZONE", decision: "allowed", reason: `equivalente dentro da bbox final da zona ${zone.kind}` };
+    }
+    if (regions.verifiedLogoRegions.length > 0 && isTextRegionInsideVerifiedLogo(bbox, regions.verifiedLogoRegions)) {
+      return { occurrenceId, normalizedText, bbox, matchedRegion: "logo", provenance: "VERIFIED_LOGO", decision: "allowed", reason: "dentro da bbox final da logo oficial verificada" };
+    }
+    if (regions.verifiedScreenshotRegions.length > 0 && isTextRegionInsideVerifiedLogo(bbox, regions.verifiedScreenshotRegions)) {
+      return { occurrenceId, normalizedText, bbox, matchedRegion: "SCREENSHOT_CONTENT", provenance: "VERIFIED_SCREENSHOT", decision: "allowed", reason: "conteúdo do screenshot real verificado (proveniência + pixel)" };
+    }
+    return { occurrenceId, normalizedText, bbox, matchedRegion: "unknown", provenance: "UNVERIFIED", decision: "rejected", reason: "fora de qualquer zona do renderer, logo ou screenshot verificados" };
+  });
+  const rejected = occurrences.find((item) => item.decision === "rejected");
+  if (!rejected) {
+    for (const item of occurrences) item.reason = `ALLOWED_TWO_LEGITIMATE_OCCURRENCES: ${item.reason}`;
+    return { text, legitimate: true, occurrences };
+  }
+  return { text, legitimate: false, rejectedReason: `${rejected.occurrenceId}: ${rejected.reason}`, occurrences };
+}
+
 function parseDetectedText(raw: unknown): { text: string; region?: CreativePlanRect } | undefined {
   if (typeof raw === "string") return raw.trim() ? { text: raw } : undefined;
   if (typeof raw !== "object" || raw === null) return undefined;
@@ -241,6 +291,18 @@ export type CreativeTextDiagnostic = {
   reason: string;
 };
 
+/** Diagnóstico sanitizado de cada OCORRÊNCIA de um texto repetido: duplicidade é decidida por
+ * ocorrência (região + proveniência), nunca só pela string. */
+export type CreativeTextOccurrenceDiagnostic = {
+  occurrenceId: string;
+  normalizedText: string;
+  bbox?: CreativePlanRect;
+  matchedRegion: string;
+  provenance: "RENDERER_TEXT_ZONE" | "VERIFIED_LOGO" | "VERIFIED_SCREENSHOT" | "UNVERIFIED";
+  decision: "allowed" | "rejected";
+  reason: string;
+};
+
 /** Texto desenhado na geometria FINAL do renderer — base da autorização regional. */
 export type CreativeRenderedTextRegion = { kind: string; text: string; rect: CreativePlanRect };
 
@@ -248,6 +310,7 @@ export type CreativeQualityGateResult = {
   verdict: "pass" | "fail";
   issues: CreativeQualityIssue[];
   textDiagnostics?: CreativeTextDiagnostic[];
+  occurrenceDiagnostics?: CreativeTextOccurrenceDiagnostic[];
 };
 
 const ASPECT_RATIO_TOLERANCE = 0.06;
@@ -569,7 +632,7 @@ function buildVisualIntegrityPrompt(
       : []),
     "Responda APENAS com JSON válido, sem markdown, no formato exato:",
     options.withTextRegions
-      ? '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "criticalAssetOccluded": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "unauthorizedTexts": [{"text": "...", "region": {"xPct": 0, "yPct": 0, "widthPct": 0, "heightPct": 0}}], "duplicatedTexts": ["..."], "missingRequiredTexts": ["..."], "missingRequiredFacts": ["..."], "reasoning": "1-2 frases objetivas"}'
+      ? '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "criticalAssetOccluded": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "unauthorizedTexts": [{"text": "...", "region": {"xPct": 0, "yPct": 0, "widthPct": 0, "heightPct": 0}}], "duplicatedTexts": [{"text": "...", "occurrences": [{"region": {"xPct": 0, "yPct": 0, "widthPct": 0, "heightPct": 0}}]}], "missingRequiredTexts": ["..."], "missingRequiredFacts": ["..."], "reasoning": "1-2 frases objetivas"}'
       : '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "criticalAssetOccluded": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "unauthorizedTexts": ["..."], "duplicatedTexts": ["..."], "missingRequiredTexts": ["..."], "missingRequiredFacts": ["..."], "reasoning": "1-2 frases objetivas"}',
     "REGRAS:",
     "- \"productMismatch\": true SOMENTE se havia uma foto de produto real de referência e o produto na peça final é claramente outro produto (nunca marque true sem uma referência real para comparar).",
@@ -585,6 +648,9 @@ function buildVisualIntegrityPrompt(
       ? "- \"unauthorizedTexts\": liste CADA palavra/frase/rótulo/botão legível na peça que NÃO está na lista de textos autorizados acima — transcreva exatamente como está escrito na imagem, INCLUSIVE texto que pareça nome de marca, wordmark ou logo (o sistema confere em código quais estão dentro da logo oficial ou do screenshot real verificados; não decida isso você). Isso inclui texto da interface dentro de um screenshot/tela de site. Inclua também texto que só difere de um autorizado em MAIÚSCULAS/minúsculas ou pontuação (ex.: botão em caixa alta) — o sistema confere a equivalência e a região em código. Para CADA item informe \"region\": o retângulo aproximado onde o texto aparece, em porcentagem do canvas (xPct/yPct = canto superior esquerdo, widthPct/heightPct = tamanho). NUNCA inclua um FRAGMENTO/LINHA/TRECHO de um texto autorizado — se o texto quebrou em várias linhas na composição, cada linha sozinha NÃO conta como não autorizada. Lista vazia se todo texto visível bate com a lista autorizada."
       : "- \"unauthorizedTexts\": liste CADA palavra/frase/rótulo/botão legível na peça que NÃO está na lista de textos autorizados acima — transcreva exatamente como está escrito na imagem. NUNCA inclua aqui o nome/wordmark que aparece DENTRO da logo colada (isso é a marca real, não texto gerado). NUNCA inclua um FRAGMENTO/LINHA/TRECHO de um texto autorizado — se o texto quebrou em várias linhas na composição (comum quando um texto longo tem que caber numa caixa), cada linha sozinha NÃO conta como não autorizada, só o texto INTEIRO conta como \"bateu\" com a lista. Lista vazia se todo texto visível bate (inteiro ou em fragmentos de um mesmo texto autorizado) com a lista autorizada.",
     "- \"duplicatedTexts\": liste CADA texto autorizado que aparece MAIS DE UMA VEZ na peça final (ex.: o mesmo preço escrito duas vezes em lugares diferentes) — isso nunca é intencional. CONTA TAMBÉM uma ocorrência PARCIALMENTE visível — letras ou palavras de um texto autorizado vazando por trás ou ao redor de um cartão/caixa desenhado por cima, mesmo que a maior parte esteja coberta: se dá pra reconhecer QUE TEXTO é mesmo vendo só um pedaço, conta como uma 2ª ocorrência. Olhe com atenção especial perto das bordas de cartões/caixas de texto e em fundos decorativos/estampados, onde esse vazamento é mais fácil de passar despercebido. Lista vazia só quando cada texto autorizado aparece claramente uma única vez, sem nenhum traço reconhecível dele em outro lugar.",
+    ...(options.withTextRegions
+      ? ["- Para CADA item de \"duplicatedTexts\" informe \"occurrences\": a região de CADA ocorrência visível desse texto (inclusive dentro de um screenshot/tela de site, da logo ou de um botão), em porcentagem do canvas. O sistema decide em código quais ocorrências são legítimas — não omita nenhuma."]
+      : []),
     "- \"missingRequiredTexts\": liste CADA item da lista de textos autorizados que NÃO está legível/visível em nenhum lugar da peça final. Lista vazia se todos apareceram.",
     "- \"missingRequiredFacts\": dos FATOS COMERCIAIS CRÍTICOS listados acima (se houver), liste CADA um que não está claramente legível na peça final — este campo é sobre FATOS COMERCIAIS (preço, parcelamento, desconto), não sobre qualquer texto. Lista vazia se todos os fatos obrigatórios apareceram, ou se nenhum fato crítico foi listado.",
     "- Na dúvida sobre os outros critérios booleanos, prefira false — este gate é para pegar defeitos ÓBVIOS, não para microgerenciar qualidade estética. Mas \"unauthorizedTexts\"/\"missingRequiredTexts\"/\"missingRequiredFacts\" devem ser objetivos e completos: transcreva tudo que você conseguir ler.",
@@ -641,6 +707,8 @@ export async function checkCreativeVisualIntegrity(
     verifiedScreenshotRegions?: readonly CreativePlanRect[];
     /** Coletor do diagnóstico sanitizado de cada texto reportado pela visão. */
     textDiagnostics?: CreativeTextDiagnostic[];
+    /** Coletor do diagnóstico de cada ocorrência de texto repetido. */
+    occurrenceDiagnostics?: CreativeTextOccurrenceDiagnostic[];
     /** Auditoria de custo — achado crítico: esta chamada de visão nunca entrava em NENHUM total
      * de custo do motor antes desta correção (`run-gpt-creative-engine.ts` só rastreava
      * plano/imagem). Opcional e best-effort, mesmo espírito do resto da função — nunca lançar por
@@ -790,14 +858,21 @@ export async function checkCreativeVisualIntegrity(
     // texto repetido (uma vez do modelo, uma vez do renderer por cima) — `DUPLICATED_TEXT` cobre
     // esse caso residual, nunca intencional.
     if (Array.isArray(parsed.duplicatedTexts)) {
-      for (const item of parsed.duplicatedTexts) {
-        if (typeof item !== "string" || !item.trim()) continue;
+      parsed.duplicatedTexts.forEach((raw, itemIndex) => {
+        const decision = resolveDuplicateOccurrences(raw, itemIndex, {
+          renderedTextRegions: input.renderedTextRegions ?? [],
+          verifiedLogoRegions: input.verifiedLogoRegions ?? [],
+          verifiedScreenshotRegions: input.verifiedScreenshotRegions ?? [],
+        });
+        if (!decision) return;
+        input.occurrenceDiagnostics?.push(...decision.occurrences);
+        if (decision.legitimate) return;
         issues.push({
           code: "DUPLICATED_TEXT",
-          message: `O texto "${item}" aparece mais de uma vez na peça final — provável texto fantasma do modelo de imagem não neutralizado antes da composição do renderer. Remova a duplicata.`,
+          message: `O texto "${decision.text}" aparece mais de uma vez na peça final — provável texto fantasma do modelo de imagem não neutralizado antes da composição do renderer. Remova a duplicata.${decision.rejectedReason ? ` (${decision.rejectedReason})` : ""}`,
           source: "vision",
         });
-      }
+      });
     }
     if (Array.isArray(parsed.missingRequiredTexts)) {
       for (const item of parsed.missingRequiredTexts) {
@@ -961,6 +1036,7 @@ export async function evaluateCreativeQualityGate(
   const referenceLogoUrl = input.context.assets.find((asset) => asset.role === "logo")?.url;
   const referenceScreenshotUrl = input.context.assets.find((asset) => asset.role === "screenshot")?.url;
   const textDiagnostics: CreativeTextDiagnostic[] = [];
+  const occurrenceDiagnostics: CreativeTextOccurrenceDiagnostic[] = [];
   const visualIssues = await checkCreativeVisualIntegrity(icaro, {
     finalImageUrl: input.finalImageUrl,
     referenceProductImageUrl,
@@ -976,6 +1052,7 @@ export async function evaluateCreativeQualityGate(
     ...(input.assetPixelEvidence ? { renderedTextRegions: input.plan.textZones.map((zone) => ({ kind: zone.kind, text: zone.text, rect: zone.rect })) } : {}),
     verifiedScreenshotRegions: resolveVerifiedScreenshotRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence }),
     textDiagnostics,
+    occurrenceDiagnostics,
     onCost: input.onCost,
   });
   const productionGuidelinesIssues = await checkProductionGuidelinesCompliance(icaro, {
@@ -996,5 +1073,9 @@ export async function evaluateCreativeQualityGate(
     visualIssues,
     productionGuidelinesIssues,
   );
-  return textDiagnostics.length > 0 ? { ...result, textDiagnostics } : result;
+  return {
+    ...result,
+    ...(textDiagnostics.length > 0 ? { textDiagnostics } : {}),
+    ...(occurrenceDiagnostics.length > 0 ? { occurrenceDiagnostics } : {}),
+  };
 }

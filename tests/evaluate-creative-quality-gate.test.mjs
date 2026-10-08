@@ -978,3 +978,119 @@ test("screenshot real verificado: texto da interface dentro da bbox do screensho
   const unverified = await evaluateCreativeQualityGate(visionReturning([uiTexts[0]]), input({ role: "screenshot", visible: true, fidelityPass: false }));
   assert.ok(unverified.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
 });
+
+// ---------------------------------------------------------------------------------------------
+// Duplicidade por OCORRÊNCIA (região + proveniência), não por string: o screenshot real do site
+// contém "Criar meu site" e o CTA determinístico também (cenário C).
+// ---------------------------------------------------------------------------------------------
+
+const C_CTA = "Criar meu site";
+const C_CTA_RECT = { xPct: 8.148, yPct: 85.333, widthPct: 21.111, heightPct: 5.333 };
+const C_HEAD_RECT = { xPct: 6.667, yPct: 13, widthPct: 86.667, heightPct: 12 };
+const C_OUTSIDE = { xPct: 55, yPct: 91, widthPct: 30, heightPct: 3 };
+const C_SHOT_RECT = { xPct: 5.926, yPct: 34.5, widthPct: 88.148, heightPct: 46 };
+const SHOT_CTA_REGION = { xPct: 82, yPct: 36.2, widthPct: 8, heightPct: 1.6 };
+const CTA_REGION = { xPct: 9.5, yPct: 86, widthPct: 18, heightPct: 3.8 };
+
+function cGateInput(screenshotEvidence = { role: "screenshot", visible: true, fidelityPass: true }, overrides = {}) {
+  return {
+    ...logoGateInput(),
+    compositedAssetRoles: ["screenshot", "logo"],
+    context: baseContext({ assets: [{ url: LOGO_URL, role: "logo", description: "Logo" }, { url: SHOT_URL, role: "screenshot", description: "Site real" }] }),
+    plan: basePlan({
+      headline: "Sua lista de presentes, linda e sem planilha",
+      cta: C_CTA,
+      assetPlacements: [
+        { role: "logo", url: LOGO_URL, rect: LOGO_RECT, frame: "none" },
+        { role: "screenshot", url: SHOT_URL, rect: C_SHOT_RECT, frame: "none" },
+      ],
+      textZones: [
+        { kind: "headline", text: "Sua lista de presentes, linda e sem planilha", rect: C_HEAD_RECT, emphasis: "primary", renderedBy: "renderer" },
+        { kind: "cta", text: C_CTA, rect: C_CTA_RECT, emphasis: "secondary", renderedBy: "renderer" },
+      ],
+    }),
+    assetPixelEvidence: [{ role: "logo", visible: true, fidelityPass: true }, screenshotEvidence],
+    ...overrides,
+  };
+}
+
+function duplicated(text, regions) {
+  return { duplicatedTexts: [{ text, occurrences: regions.map((region) => ({ region })) }] };
+}
+
+test("duplicidade C: Criar meu site no screenshot fiel + no CTA = duas ocorrências legítimas (PASS)", async () => {
+  const icaro = visionReturning([], duplicated(C_CTA, [SHOT_CTA_REGION, CTA_REGION]));
+  const result = await evaluateCreativeQualityGate(icaro, cGateInput());
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  assert.match(icaro.prompts[0], /"occurrences"/);
+  assert.deepEqual(result.occurrenceDiagnostics.map((item) => [item.matchedRegion, item.provenance, item.decision]), [
+    ["SCREENSHOT_CONTENT", "VERIFIED_SCREENSHOT", "allowed"],
+    ["cta", "RENDERER_TEXT_ZONE", "allowed"],
+  ]);
+  assert.ok(result.occurrenceDiagnostics.every((item) => item.reason.startsWith("ALLOWED_TWO_LEGITIMATE_OCCURRENCES")));
+});
+
+test("duplicidade C: CTA renderizado em CAIXA ALTA + screenshot com caixa original continuam legítimos", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([], duplicated("CRIAR MEU SITE", [SHOT_CTA_REGION, CTA_REGION])), cGateInput());
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  assert.equal(result.occurrenceDiagnostics[1].matchedRegion, "cta");
+  assert.equal(result.occurrenceDiagnostics[1].normalizedText, "criar meu site");
+});
+
+test("duplicidade C: terceira ocorrência em região desconhecida reprova", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([], duplicated(C_CTA, [SHOT_CTA_REGION, CTA_REGION, { xPct: 60, yPct: 26, widthPct: 25, heightPct: 4 }])), cGateInput());
+  assert.ok(result.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+  const rejected = result.occurrenceDiagnostics.find((item) => item.decision === "rejected");
+  assert.equal(rejected.provenance, "UNVERIFIED");
+  assert.equal(rejected.occurrenceId, "dup-0-2");
+});
+
+test("duplicidade C: screenshot SEM prova de fidelidade/visibilidade não concede isenção", async () => {
+  for (const evidence of [{ role: "screenshot", visible: true, fidelityPass: false }, { role: "screenshot", visible: false, fidelityPass: true }]) {
+    const result = await evaluateCreativeQualityGate(visionReturning([], duplicated(C_CTA, [SHOT_CTA_REGION, CTA_REGION])), cGateInput(evidence));
+    assert.ok(result.issues.some((issue) => issue.code === "DUPLICATED_TEXT"), JSON.stringify(evidence));
+  }
+});
+
+test("duplicidade C: placement do screenshot apontando para outro asset não isenta", async () => {
+  const input = cGateInput();
+  input.plan = { ...input.plan, assetPlacements: [input.plan.assetPlacements[0], { role: "screenshot", url: "https://evil.example/site.png", rect: C_SHOT_RECT, frame: "none" }] };
+  const result = await evaluateCreativeQualityGate(visionReturning([], duplicated(C_CTA, [SHOT_CTA_REGION, CTA_REGION])), input);
+  assert.ok(result.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+});
+
+test("duplicidade real: duas vezes como CTA, ou duas vezes fora das regiões, continua reprovando", async () => {
+  const twiceCta = await evaluateCreativeQualityGate(visionReturning([], duplicated(C_CTA, [CTA_REGION, { ...CTA_REGION, xPct: 10 }])), cGateInput());
+  assert.ok(twiceCta.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+  assert.match(twiceCta.occurrenceDiagnostics[1].reason, /segunda ocorrência dentro da mesma zona cta/);
+  const twiceOutside = await evaluateCreativeQualityGate(visionReturning([], duplicated(C_CTA, [{ xPct: 60, yPct: 26, widthPct: 25, heightPct: 4 }, C_OUTSIDE])), cGateInput());
+  assert.ok(twiceOutside.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+});
+
+test("duplicidade: screenshot não isenta globalmente (texto do site fora da bbox do screenshot é UNAUTHORIZED)", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([{ text: "Voltar ao site", region: C_OUTSIDE }]), cGateInput());
+  assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+});
+
+test("duplicidade: sem regiões por ocorrência a regra antiga vale (string repetida reprova)", async () => {
+  const stringOnly = await evaluateCreativeQualityGate(visionReturning([], { duplicatedTexts: [C_CTA] }), cGateInput());
+  assert.ok(stringOnly.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+  const standard = await evaluateCreativeQualityGate(visionReturning([], { duplicatedTexts: [C_CTA] }), cGateInput(undefined, { assetPixelEvidence: undefined }));
+  assert.ok(standard.issues.some((issue) => issue.code === "DUPLICATED_TEXT" && !/\(/.test(issue.message.split("Remova a duplicata.")[1] ?? "")));
+});
+
+test("duplicidade: logo continua legítima só dentro da bbox da logo", async () => {
+  const inside = await evaluateCreativeQualityGate(visionReturning([], duplicated("Rumo ao Altar", [LOGO_TEXT_REGION, SHOT_CTA_REGION])), cGateInput());
+  assert.equal(inside.verdict, "pass", JSON.stringify(inside.issues));
+  assert.equal(inside.occurrenceDiagnostics[0].provenance, "VERIFIED_LOGO");
+  const outside = await evaluateCreativeQualityGate(visionReturning([], duplicated("Rumo ao Altar", [LOGO_TEXT_REGION, C_OUTSIDE])), cGateInput());
+  assert.ok(outside.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+});
+
+test("duplicidade: diagnóstico de ocorrência é sanitizado", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([], { ...duplicated(C_CTA, [SHOT_CTA_REGION, CTA_REGION]), reasoning: "RAW" }), cGateInput());
+  for (const item of result.occurrenceDiagnostics) {
+    for (const key of Object.keys(item)) assert.ok(["occurrenceId", "normalizedText", "bbox", "matchedRegion", "provenance", "decision", "reason"].includes(key), key);
+  }
+  assert.doesNotMatch(JSON.stringify(result.occurrenceDiagnostics), /RAW/);
+});

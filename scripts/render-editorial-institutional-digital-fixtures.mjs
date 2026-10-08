@@ -2,7 +2,8 @@
 //  - B: reaproveita a base OpenAI REAL do cenário B (execution-muzqmi4q-f7qx3f) com copy acentuada.
 //  - C: screenshot desktop REAL do site (1280x900) sobre fundo local controlado (C nunca rodou, não
 //    existe base OpenAI de C).
-// As 3 saídas de cada cenário usam `qaVariantOverride` (só fixture) para comparar as variantes da
+// C: 6 composições (3 variantes x 2 opções) + a escolha automática, sem override.
+// As saídas de cada cenário usam `qaVariantOverride` (só fixture) para comparar as variantes da
 // mesma família com a mesma base; o summary registra também qual variante a regra escolheria.
 //
 // Uso: node scripts/render-editorial-institutional-digital-fixtures.mjs [outDirB] [outDirC]
@@ -59,13 +60,14 @@ const COPY_C = {
   cta: "Criar meu site",
 };
 
-async function renderCase(outDir, file, { base, assets, copy, override }) {
+async function renderCase(outDir, file, { base, assets, copy, override, option }) {
   const result = await renderEditorialCreative({
     baseImageBuffer: base,
     context: { brandName: "Rumo ao Altar", objective: "Fixture local", channel: "instagram", format: "4:5", ideaText: "Fixture local sem OpenAI", assets: [], confirmedFacts: [] },
     plan: plan(copy),
     assets,
     qaVariantOverride: override,
+    qaVariantOption: option,
   });
   const path = join(outDir, file);
   await writeFile(path, result.buffer);
@@ -89,16 +91,19 @@ const B = [
   ["03-institutional-collage.jpg", "COLLAGE_EDITORIAL"],
 ];
 const C = [
-  ["01-digital-desktop-hero.jpg", "DESKTOP_HERO"],
-  ["02-digital-split-ui.jpg", "SPLIT_PRODUCT_UI"],
-  ["03-digital-floating-browser.jpg", "FLOATING_BROWSER"],
+  ["01-ui-hero-left.jpg", "UI_HERO", "left"],
+  ["02-ui-hero-right.jpg", "UI_HERO", "right"],
+  ["03-ui-detail-focus-a.jpg", "UI_DETAIL_FOCUS", "a"],
+  ["04-ui-detail-focus-b.jpg", "UI_DETAIL_FOCUS", "b"],
+  ["05-floating-product-light.jpg", "FLOATING_PRODUCT", "light"],
+  ["06-floating-product-dark.jpg", "FLOATING_PRODUCT", "dark"],
 ];
 
 const resultsB = [];
 for (const [file, override] of B) resultsB.push(await renderCase(outB, file, { base: BASE_B, assets: [logoAsset], copy: COPY_B, override }));
 resultsB.push(await renderCase(outB, "00-institutional-auto.jpg", { base: BASE_B, assets: [logoAsset], copy: COPY_B }));
 const resultsC = [];
-for (const [file, override] of C) resultsC.push(await renderCase(outC, file, { base: BASE_C, assets: [shotAsset, logoAsset], copy: COPY_C, override }));
+for (const [file, override, option] of C) resultsC.push(await renderCase(outC, file, { base: BASE_C, assets: [shotAsset, logoAsset], copy: COPY_C, override, option }));
 resultsC.push(await renderCase(outC, "00-digital-auto.jpg", { base: BASE_C, assets: [shotAsset, logoAsset], copy: COPY_C }));
 await writeFile(join(outB, "summary.json"), JSON.stringify(resultsB, null, 2));
 await writeFile(join(outC, "summary.json"), JSON.stringify(resultsC, null, 2));

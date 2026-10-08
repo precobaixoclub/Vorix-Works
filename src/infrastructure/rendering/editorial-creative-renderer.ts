@@ -13,7 +13,8 @@ import {
   type DigitalServiceVariant,
   type InstitutionalVariant,
   type ScreenshotClass,
-  type ScreenshotFrame,
+  type DigitalServiceOption,
+  type EditorialScreenshotCrop,
   INSTITUTIONAL_VARIANTS,
   type ProductOfferPriceTreatment,
   type ProductOfferVariant,
@@ -81,6 +82,8 @@ type AssetVerifySpec = {
   /** Mistura usada na composição. `multiply`: o esperado é fonte × fundo (logo com caixa branca
    * sobre fundo claro) — a verificação reproduz exatamente essa conta, nunca afrouxa. */
   blend?: "multiply";
+  /** Recorte de detalhe: a região do asset original (px da fonte) que esta bbox mostra ampliada. */
+  crop?: { x: number; y: number; width: number; height: number };
 };
 
 const DESIGN_CANVAS: Record<Canvas["format"], { width: number; height: number }> = {
@@ -1116,14 +1119,14 @@ async function renderDigitalService(input: RenderEditorialCreativeInput, canvas:
 // Bloco compartilhado institucional/digital (4:5): texto medido, CTA editorial, encaixe da base.
 // =================================================================================================
 
-type TextBlock = { spec: TextSpec; rect: PxRect; anchor?: "start" | "middle"; valign?: "top" | "center" };
+type TextBlock = { spec: TextSpec; rect: PxRect; anchor?: "start" | "middle" | "end"; valign?: "top" | "center" };
 
 function renderTextBlock(block: TextBlock, fill: string, weight: number, embolden: number, canvas: Canvas, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): string {
   const anchor = block.anchor ?? "start";
   return textSvg({
     id: block.spec.id,
     text: block.spec.text,
-    x: anchor === "middle" ? block.rect.x + block.rect.width / 2 : block.rect.x,
+    x: anchor === "middle" ? block.rect.x + block.rect.width / 2 : anchor === "end" ? block.rect.x + block.rect.width : block.rect.x,
     y: 0,
     top: block.rect.y,
     valign: block.valign,
@@ -1569,53 +1572,170 @@ export function classifyScreenshot(width: number, height: number): ScreenshotCla
   return "DESKTOP";
 }
 
-/** Largura mínima exibida (espaço de design 1080) para o screenshot desktop continuar legível. */
-export const DESKTOP_SCREENSHOT_MIN_DISPLAY_SCALE = 0.4;
-
 export type DigitalSelectionSignals = {
   classification: ScreenshotClass;
   headlineChars: number;
   subheadlineChars: number;
   hasPrice: boolean;
+  /** Regiões reais do screenshot com detalhe suficiente para virar recorte ampliado. */
+  detailRegions: number;
   visualDensity?: string;
   primaryMassPct?: number;
 };
 
+/** Mesmo input → mesma variante. Ordem das regras = prioridade. */
 export function selectDigitalServiceVariant(signals: DigitalSelectionSignals): { variant: DigitalServiceVariant; reasons: string[] } {
   if (signals.classification === "MOBILE") return { variant: "MOBILE_DEVICE", reasons: ["screenshot com proporção de celular: mockup de aparelho"] };
   if (signals.classification !== "DESKTOP") {
-    return { variant: "FLOATING_BROWSER", reasons: [`screenshot ${signals.classification} (não é celular nem desktop): tela flutuante sem moldura de aparelho, inteira`] };
+    return { variant: "FLOATING_PRODUCT", reasons: [`screenshot ${signals.classification} (nem celular nem desktop): superfície flutuante, inteira`] };
   }
-  if ((signals.primaryMassPct ?? 0) >= 60) return { variant: "DESKTOP_HERO", reasons: [`diretor pediu massa ${signals.primaryMassPct}% (>= 60): interface protagonista em largura máxima`] };
-  if (signals.visualDensity === "clean" && signals.headlineChars <= 40) {
-    return { variant: "FLOATING_BROWSER", reasons: ["densidade clean + headline curta (<= 40): navegador flutuante centralizado sobre a ambientação"] };
+  if ((signals.primaryMassPct ?? 0) >= 60) return { variant: "UI_HERO", reasons: [`diretor pediu massa ${signals.primaryMassPct}% (>= 60): interface domina a peça`] };
+  if (signals.visualDensity === "clean") return { variant: "FLOATING_PRODUCT", reasons: ["densidade clean: produto flutuante com profundidade e respiro"] };
+  if (signals.detailRegions >= 2 && signals.headlineChars <= 56) {
+    return { variant: "UI_DETAIL_FOCUS", reasons: [`screenshot tem ${signals.detailRegions} regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício`] };
   }
-  if (signals.headlineChars <= 34 && signals.subheadlineChars <= 90) {
-    return { variant: "SPLIT_PRODUCT_UI", reasons: [`copy curta (headline ${signals.headlineChars} <= 34, sub ${signals.subheadlineChars} <= 90) cabe em coluna ao lado da interface`] };
-  }
-  return { variant: "DESKTOP_HERO", reasons: ["copy longa: texto em cima em largura total, interface grande embaixo (máxima legibilidade)"] };
+  return { variant: "UI_HERO", reasons: ["interface sem regiões de detalhe destacáveis: tela inteira em destaque"] };
 }
 
-const BROWSER_CHROME = 42;
-const BROWSER_RADIUS = 16;
+// ---------------------------------- paleta e regiões do screenshot ------------------------------
 
-/** Moldura de navegador sem texto (barra de endereço vazia) — o screenshot fica INTEIRO no corpo. */
-function browserFrameSvg(frame: PxRect, kind: ScreenshotFrame, clipId: string, screenshotTag: string): string {
-  const chrome = kind === "FLOATING_SCREEN" ? 0 : BROWSER_CHROME;
-  const dots = kind === "BROWSER_FRAME"
-    ? [0, 1, 2].map((index) => `<circle cx="${frame.x + 24 + index * 20}" cy="${frame.y + chrome / 2}" r="6" fill="${["#E6A39A", "#E8C785", "#A9C9A0"][index]}"/>`).join("") +
-      `<rect x="${frame.x + 100}" y="${frame.y + 10}" width="${Math.max(60, frame.width - 200)}" height="${chrome - 20}" rx="${(chrome - 20) / 2}" fill="#F4EEE9"/>`
-    : kind === "DESKTOP_WINDOW"
-      ? `<rect x="${frame.x + frame.width - 92}" y="${frame.y + chrome / 2 - 1}" width="16" height="2" fill="#8C7B78"/><rect x="${frame.x + frame.width - 62}" y="${frame.y + chrome / 2 - 7}" width="14" height="14" fill="none" stroke="#8C7B78" stroke-width="2"/><path d="M${frame.x + frame.width - 34} ${frame.y + chrome / 2 - 7}l14 14M${frame.x + frame.width - 20} ${frame.y + chrome / 2 - 7}l-14 14" stroke="#8C7B78" stroke-width="2"/>`
-      : "";
-  return `<clipPath id="${clipId}"><rect x="${frame.x}" y="${frame.y}" width="${frame.width}" height="${frame.height}" rx="${BROWSER_RADIUS}"/></clipPath>
-    <g filter="url(#browserShadow)"><rect x="${frame.x}" y="${frame.y}" width="${frame.width}" height="${frame.height}" rx="${BROWSER_RADIUS}" fill="#FFFFFF"/></g>
-    <g clip-path="url(#${clipId})">
-      ${chrome > 0 ? `<rect x="${frame.x}" y="${frame.y}" width="${frame.width}" height="${chrome}" fill="#FFFFFF"/><line x1="${frame.x}" y1="${frame.y + chrome - 0.5}" x2="${frame.x + frame.width}" y2="${frame.y + chrome - 0.5}" stroke="#E7DDD7" stroke-width="1"/>${dots}` : ""}
-      ${screenshotTag}
-    </g>
-    <rect x="${frame.x + 0.5}" y="${frame.y + 0.5}" width="${frame.width - 1}" height="${frame.height - 1}" rx="${BROWSER_RADIUS}" fill="none" stroke="#2A1A1C" stroke-opacity="0.12" stroke-width="1"/>`;
+type Rgb = { r: number; g: number; b: number };
+const toHex = (c: Rgb): string => `#${[c.r, c.g, c.b].map((v) => clamp(Math.round(v), 0, 255).toString(16).padStart(2, "0")).join("")}`;
+const mixRgb = (a: Rgb, b: Rgb, t: number): Rgb => ({ r: a.r + (b.r - a.r) * t, g: a.g + (b.g - a.g) * t, b: a.b + (b.b - a.b) * t });
+const WHITE: Rgb = { r: 255, g: 255, b: 255 };
+const BLACK: Rgb = { r: 0, g: 0, b: 0 };
+
+function saturation(c: Rgb): number {
+  const max = Math.max(c.r, c.g, c.b);
+  const min = Math.min(c.r, c.g, c.b);
+  return max === 0 ? 0 : (max - min) / max;
 }
+
+/** Paleta aproximada do screenshot real (dominante, secundária, acento) por quantização. Só tinge
+ * fundo e superfícies — o screenshot nunca é alterado. */
+export async function extractScreenshotPalette(png: Buffer): Promise<{ dominant: Rgb; secondary: Rgb; accent: Rgb }> {
+  const { data, info } = await sharp(png).flatten({ background: "#ffffff" }).resize(160, 160, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true });
+  const buckets = new Map<number, { count: number; r: number; g: number; b: number }>();
+  const flatBuckets = new Map<number, { count: number; r: number; g: number; b: number }>();
+  const luma = (index: number): number => 0.299 * data[index * 3]! + 0.587 * data[index * 3 + 1]! + 0.114 * data[index * 3 + 2]!;
+  for (let index = 0; index < info.width * info.height; index += 1) {
+    const x = index % info.width;
+    const y = Math.floor(index / info.width);
+    const flat = x > 0 && y > 0 && x < info.width - 1 && y < info.height - 1 &&
+      Math.abs(luma(index + 1) - luma(index - 1)) + Math.abs(luma(index + info.width) - luma(index - info.width)) < 10;
+    const r = data[index * 3]!;
+    const g = data[index * 3 + 1]!;
+    const b = data[index * 3 + 2]!;
+    const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+    const bucket = buckets.get(key) ?? { count: 0, r: 0, g: 0, b: 0 };
+    bucket.count += 1;
+    bucket.r += r;
+    bucket.g += g;
+    bucket.b += b;
+    buckets.set(key, bucket);
+    if (flat) {
+      const flatBucket = flatBuckets.get(key) ?? { count: 0, r: 0, g: 0, b: 0 };
+      flatBucket.count += 1;
+      flatBucket.r += r;
+      flatBucket.g += g;
+      flatBucket.b += b;
+      flatBuckets.set(key, flatBucket);
+    }
+  }
+  const colors = [...buckets.values()].map((bucket) => ({ count: bucket.count, c: { r: bucket.r / bucket.count, g: bucket.g / bucket.count, b: bucket.b / bucket.count } })).sort((a, b) => b.count - a.count);
+  const distance = (a: Rgb, b: Rgb): number => Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
+  const dominant = colors[0]?.c ?? WHITE;
+  const secondary = colors.find((item) => distance(item.c, dominant) > 70)?.c ?? mixRgb(dominant, BLACK, 0.6);
+  const total = info.width * info.height;
+  const flatColors = [...flatBuckets.values()].map((bucket) => ({ count: bucket.count, c: { r: bucket.r / bucket.count, g: bucket.g / bucket.count, b: bucket.b / bucket.count } }));
+  const accent = [...flatColors]
+    .filter((item) => saturation(item.c) > 0.22 && item.count / total > 0.002 && Math.max(item.c.r, item.c.g, item.c.b) > 70)
+    .sort((a, b) => b.count * saturation(b.c) - a.count * saturation(a.c))[0]?.c ?? { r: 177, g: 91, b: 108 };
+  return { dominant, secondary, accent };
+}
+
+type CropSpec = { relWidth: number; aspect: number };
+type SourceRect = { x: number; y: number; width: number; height: number };
+
+/** Regiões REAIS mais detalhadas do screenshot (gradiente local), sem sobreposição entre si. Ignora a
+ * barra global de navegação (topo) e a borda inferior possivelmente cortada. Determinístico. */
+export async function findScreenshotDetailRegions(png: Buffer, sourceWidth: number, sourceHeight: number, specs: readonly CropSpec[], exclude: readonly SourceRect[] = []): Promise<{ rect: SourceRect; score: number; relativeScore: number }[]> {
+  const AW = 320;
+  const AH = Math.max(80, Math.round((AW * sourceHeight) / sourceWidth));
+  const { data } = await sharp(png).flatten({ background: "#ffffff" }).resize(AW, AH, { fit: "fill" }).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const at = (x: number, y: number): number => data[clamp(y, 0, AH - 1) * AW + clamp(x, 0, AW - 1)]!;
+  // Imagem integral do gradiente: média de qualquer janela em O(1).
+  const integral = new Float64Array((AW + 1) * (AH + 1));
+  let total = 0;
+  for (let y = 0; y < AH; y += 1) {
+    let row = 0;
+    for (let x = 0; x < AW; x += 1) {
+      const gradient = Math.abs(at(x + 1, y) - at(x - 1, y)) + Math.abs(at(x, y + 1) - at(x, y - 1));
+      row += gradient;
+      total += gradient;
+      integral[(y + 1) * (AW + 1) + x + 1] = integral[y * (AW + 1) + x + 1]! + row;
+    }
+  }
+  const globalMean = total / (AW * AH) || 1;
+  const windowMean = (x: number, y: number, w: number, h: number): number =>
+    (integral[(y + h) * (AW + 1) + x + w]! - integral[y * (AW + 1) + x + w]! - integral[(y + h) * (AW + 1) + x]! + integral[y * (AW + 1) + x]!) / (w * h);
+  const top = Math.round(AH * 0.08);
+  const bottom = AH - Math.round(AH * 0.04);
+  const chosen: { x: number; y: number; w: number; h: number; score: number }[] = [];
+  // Regiões já usadas (ex.: pelo conjunto "a") ficam bloqueadas — o conjunto "b" mostra outros detalhes.
+  const blocked = exclude.map((rect) => ({ x: Math.floor((rect.x * AW) / sourceWidth), y: Math.floor((rect.y * AH) / sourceHeight), w: Math.ceil((rect.width * AW) / sourceWidth), h: Math.ceil((rect.height * AH) / sourceHeight) }));
+  for (const spec of specs) {
+    const w = Math.max(8, Math.round(AW * spec.relWidth));
+    const h = Math.max(6, Math.round(w / spec.aspect));
+    let best: { x: number; y: number; w: number; h: number; score: number } | undefined;
+    for (let y = top; y + h <= bottom; y += 3) {
+      for (let x = 3; x + w <= AW - 3; x += 3) {
+        if ([...chosen, ...blocked].some((other) => x < other.x + other.w && x + w > other.x && y < other.y + other.h && y + h > other.y)) continue;
+        // Detalhe interno menos a "energia" da borda: a janela ideal envolve um componente
+        // inteiro (card, linha de preço+botão) em vez de cortar no meio de uma foto.
+        const ring = Math.max(1, Math.round(Math.min(w, h) * 0.08));
+        const outer = windowMean(x, y, w, h) * w * h;
+        const inner = windowMean(x + ring, y + ring, w - 2 * ring, h - 2 * ring) * (w - 2 * ring) * (h - 2 * ring);
+        const border = (outer - inner) / (w * h - (w - 2 * ring) * (h - 2 * ring));
+        const score = inner / ((w - 2 * ring) * (h - 2 * ring)) - 2.5 * border;
+        if (!best || score > best.score) best = { x, y, w, h, score };
+      }
+    }
+    if (best) chosen.push(tightenWindow(best));
+  }
+  const sx = sourceWidth / AW;
+  const sy = sourceHeight / AH;
+  function tightenWindow(item: { x: number; y: number; w: number; h: number; score: number }): { x: number; y: number; w: number; h: number; score: number } {
+    const quiet = globalMean * 0.2;
+    let { x, y, w, h } = item;
+    const pad = 3;
+    while (h > 12 && windowMean(x, y, w, 1) < quiet) { y += 1; h -= 1; }
+    while (h > 12 && windowMean(x, y + h - 1, w, 1) < quiet) h -= 1;
+    while (w > 12 && windowMean(x, y, 1, h) < quiet) { x += 1; w -= 1; }
+    while (w > 12 && windowMean(x + w - 1, y, 1, h) < quiet) w -= 1;
+    const nx = Math.max(item.x, x - pad);
+    const ny = Math.max(item.y, y - pad);
+    return { x: nx, y: ny, w: Math.min(item.x + item.w, x + w + pad) - nx, h: Math.min(item.y + item.h, y + h + pad) - ny, score: item.score };
+  }
+  return chosen.map((item) => ({
+    rect: { x: Math.round(item.x * sx), y: Math.round(item.y * sy), width: Math.round(item.w * sx), height: Math.round(item.h * sy) },
+    score: Number(item.score.toFixed(2)),
+    relativeScore: Number((windowMean(item.x, item.y, item.w, item.h) / globalMean).toFixed(2)),
+  }));
+}
+
+/** Detalhe mínimo (relativo à média da tela) para um componente de borda limpa virar recorte. */
+const DETAIL_REGION_MIN_RELATIVE_SCORE = 0.9;
+const DETAIL_CROP_SETS: Record<"a" | "b", readonly CropSpec[]> = {
+  a: [{ relWidth: 0.28, aspect: 0.82 }, { relWidth: 0.27, aspect: 3.2 }],
+  b: [{ relWidth: 0.27, aspect: 3.6 }, { relWidth: 0.29, aspect: 0.84 }],
+};
+
+// ---------------------------------- digital_service 4:5 (render) --------------------------------
+
+/** Largura mínima exibida (espaço de design 1080) para o screenshot desktop continuar legível. */
+export const DESKTOP_SCREENSHOT_MIN_DISPLAY_SCALE = 0.4;
+const SHOT_RADIUS = 18;
 
 async function renderDigitalServiceAdaptive(
   input: RenderEditorialCreativeInput,
@@ -1623,183 +1743,275 @@ async function renderDigitalServiceAdaptive(
   price: string | undefined,
   logo: PreparedAsset | undefined,
   screenshot: PreparedAsset,
-  base: { png: Buffer; width: number; height: number },
-  baseHref: string,
+  _base: { png: Buffer; width: number; height: number },
+  _baseHref: string,
   fontFaceCss: string,
   boxes: EditorialGeometryBox[],
   issues: EditorialGeometryIssue[],
 ): Promise<FamilyRender> {
   const W = canvas.width;
   const H = canvas.height;
-  const M = 64;
+  const M = 56;
+  const EDGE = 28; // a superfície do screenshot pode chegar até aqui (safe area de 2% = 21,6 / 27 px)
   const plan = input.plan;
   const headline = plan.headline;
   const subheadline = plan.subheadline?.trim() ? plan.subheadline : undefined;
   const cta = plan.cta.trim() ? plan.cta : undefined;
   const classification = classifyScreenshot(screenshot.width, screenshot.height);
+  const aspect = screenshot.width / screenshot.height;
+  const paletteRgb = await extractScreenshotPalette(screenshot.png);
+  const autoCrops = await findScreenshotDetailRegions(screenshot.png, screenshot.width, screenshot.height, DETAIL_CROP_SETS.a);
+  // Componente destacável = borda limpa (pontuação positiva) e detalhe ao menos perto da média da tela.
+  const detailRegions = autoCrops.filter((item) => item.score > 0 && item.relativeScore >= DETAIL_REGION_MIN_RELATIVE_SCORE).length;
   const selected = selectDigitalServiceVariant({
     classification,
     headlineChars: headline.length,
     subheadlineChars: subheadline?.length ?? 0,
     hasPrice: Boolean(price),
+    detailRegions,
     visualDensity: plan.visualDensity,
     primaryMassPct: plan.artDirection?.primaryMassPct,
   });
-  const override = input.qaVariantOverride && classification === "DESKTOP" && (["DESKTOP_HERO", "SPLIT_PRODUCT_UI", "FLOATING_BROWSER"] as const).includes(input.qaVariantOverride as "DESKTOP_HERO") ? (input.qaVariantOverride as DigitalServiceVariant) : undefined;
+  const overridable = classification === "DESKTOP" ? ["UI_HERO", "UI_DETAIL_FOCUS", "FLOATING_PRODUCT"] : ["FLOATING_PRODUCT"];
+  const override = input.qaVariantOverride && overridable.includes(input.qaVariantOverride) ? (input.qaVariantOverride as DigitalServiceVariant) : undefined;
   const variant = override ?? selected.variant;
-  const reasons = override ? [`QA_VARIANT_OVERRIDE=${override} (fixture local; regra escolheria ${selected.variant})`, ...selected.reasons] : selected.reasons;
-  const aspect = screenshot.width / screenshot.height;
-  const frameKind: ScreenshotFrame = classification === "DESKTOP" ? (variant === "SPLIT_PRODUCT_UI" ? "DESKTOP_WINDOW" : "BROWSER_FRAME") : "FLOATING_SCREEN";
-  const chrome = frameKind === "FLOATING_SCREEN" ? 0 : BROWSER_CHROME;
-  const palette = productOfferPalette("light", pickAccent(input.context));
-  const logoTreatment = logo ? resolveLogoTreatment(logo, "light") : undefined;
-  const ctaW = cta ? editorialCtaWidth(cta, 420) : 0;
-  const ctaH = 72;
-  const logoBox = logo ? logoSize(logo, 260, 44) : undefined;
-  const priceSpecFor = (width: number): TextSpec | undefined => (price ? { id: "price", text: price, width, maxHeight: 72, maxFontSize: 56, minFontSize: 28, maxLines: 1, letterSpacing: 0 } : undefined);
+  const reasons = override ? [`QA_VARIANT_OVERRIDE=${override} (fixture local; regra escolheria ${selected.variant})`, ...selected.reasons] : [...selected.reasons];
+  const allowedOptions: Record<string, readonly DigitalServiceOption[]> = { UI_HERO: ["left", "right"], UI_DETAIL_FOCUS: ["a", "b"], FLOATING_PRODUCT: ["light", "dark"] };
+  const defaultOption: DigitalServiceOption = variant === "UI_HERO" ? "left" : variant === "UI_DETAIL_FOCUS" ? "a" : "light";
+  const option: DigitalServiceOption = input.qaVariantOption && allowedOptions[variant]?.includes(input.qaVariantOption) ? input.qaVariantOption : defaultOption;
+  if (input.qaVariantOption && option === input.qaVariantOption) reasons.push(`QA_VARIANT_OPTION=${option}`);
+  const dark = variant === "FLOATING_PRODUCT" && option === "dark";
 
-  // Corpo do navegador com a proporção EXATA do screenshot (contain sem barra) dentro da área.
-  const frameFor = (area: PxRect): { frame: PxRect; shot: PxRect } => {
-    let width = area.width;
-    let shotHeight = width / aspect;
-    if (shotHeight + chrome > area.height) {
-      shotHeight = area.height - chrome;
-      width = shotHeight * aspect;
-    }
-    const frame = { x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - shotHeight - chrome) / 2), width: Math.round(width), height: Math.round(shotHeight + chrome) };
-    return { frame, shot: { x: frame.x, y: frame.y + chrome, width: frame.width, height: frame.height - chrome } };
-  };
+  // Superfícies derivadas da paleta do screenshot (nada neon): claro = tom do acento muito diluído;
+  // escuro = acento afundado em quase preto.
+  const accent = paletteRgb.accent;
+  const surface = dark
+    ? { top: toHex(mixRgb(accent, BLACK, 0.86)), bottom: toHex(mixRgb(accent, BLACK, 0.93)), glowA: toHex(mixRgb(accent, WHITE, 0.1)), glowB: toHex(mixRgb(paletteRgb.secondary, accent, 0.5)) }
+    : { top: toHex(mixRgb(accent, WHITE, 0.9)), bottom: toHex(mixRgb(accent, WHITE, 0.74)), glowA: toHex(mixRgb(accent, WHITE, 0.45)), glowB: toHex(mixRgb(paletteRgb.dominant, accent, 0.25)) };
+  const ink = dark ? "#FFF5EE" : "#1F1416";
+  const muted = dark ? "#E9D9D2" : "#5A4547";
+  const accentHex = toHex(dark ? mixRgb(accent, WHITE, 0.82) : mixRgb(accent, BLACK, 0.18));
+  const ctaText = dark ? toHex(mixRgb(accent, BLACK, 0.75)) : "#FFF8F3";
+  const logoTreatment = logo ? resolveLogoTreatment(logo, dark ? "dark" : "light") : undefined;
+  const logoBox = logo ? logoSize(logo, 230, 40) : undefined;
+  const CTA_H = 58;
+  const ctaW = cta ? clamp(estimateLineWidth(cta.toUpperCase(), 18, 2.4) + 64, 200, 400) : 0;
+  const shotAt = (x: number, y: number, width: number): PxRect => ({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(width / aspect) });
+  const headSpec = (width: number, max: number, lines = 3): TextSpec => ({ id: "headline", text: headline, width, maxHeight: max * 1.06 * lines, maxFontSize: max, minFontSize: 32, maxLines: lines, lineHeight: 1.06, letterSpacing: -0.5 });
+  const subSpec = (width: number): TextSpec | undefined =>
+    subheadline ? { id: "subheadline", text: subheadline, width, maxHeight: subheadline.length > 80 ? 96 : 70, maxFontSize: subheadline.length > 80 ? 21 : 23, minFontSize: 17, maxLines: subheadline.length > 80 ? 3 : 2, lineHeight: 1.4, letterSpacing: 0.1 } : undefined;
+  const priceSpec = (width: number): TextSpec | undefined => (price ? { id: "price", text: price, width, maxHeight: 60, maxFontSize: 46, minFontSize: 26, maxLines: 1 } : undefined);
 
+  let shot: PxRect;
   let logoRect: PxRect | undefined;
   let head: TextBlock;
   let sub: TextBlock | undefined;
   let priceBlock: TextBlock | undefined;
   let pill: PxRect | undefined;
-  let frame: PxRect;
-  let shot: PxRect;
+  const crops: { rect: SourceRect; placed: PxRect }[] = [];
+  const connectors: string[] = [];
+  let ghost = true;
 
-  if (variant === "SPLIT_PRODUCT_UI") {
-    // Split diagonal: copy em coluna no alto à esquerda, janela grande ancorada embaixo à direita
-    // (o 4:5 é alto e o screenshot desktop é largo — lado a lado puro deixava faixas mortas).
-    const colX = M + 8;
-    const colW = 600;
-    logoRect = logoBox ? { x: colX, y: M + 4, ...logoBox } : undefined;
-    const headSpec: TextSpec = { id: "headline", text: headline, width: colW, maxHeight: 240, maxFontSize: 68, minFontSize: 34, maxLines: 3, lineHeight: 1.04, letterSpacing: -0.3 };
-    const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: 560, maxHeight: 120, maxFontSize: 25, minFontSize: 18, maxLines: 3, lineHeight: 1.4, letterSpacing: 0.2 } : undefined;
-    const priceSpec = priceSpecFor(colW);
-    const headFit = measureSpec(headSpec);
-    const subFit = subSpec ? measureSpec(subSpec) : undefined;
-    const priceFit = priceSpec ? measureSpec(priceSpec) : undefined;
-    let cursor = (logoRect ? logoRect.y + logoRect.height : M) + 34;
-    head = { spec: headSpec, rect: { x: colX, y: cursor, width: colW, height: headFit.height } };
-    cursor += headFit.height;
-    if (subSpec && subFit) {
-      cursor += 20;
-      sub = { spec: subSpec, rect: { x: colX, y: cursor, width: subSpec.width, height: subFit.height } };
-      cursor += subFit.height;
-    }
-    if (priceSpec && priceFit) {
-      cursor += 26;
-      priceBlock = { spec: priceSpec, rect: { x: colX, y: cursor, width: colW, height: priceFit.height } };
-      cursor += priceFit.height;
-    }
-    if (cta) {
-      pill = { x: colX, y: cursor + 32, width: Math.min(colW, ctaW), height: ctaH };
-      cursor = pill.y + pill.height;
-    }
-    const areaTop = cursor + 40;
-    const right = W - 40;
-    const available = { x: 0, y: areaTop, width: right - (M + 150), height: H - M - areaTop };
-    const placedFrame = frameFor(available);
-    const width = placedFrame.frame.width;
-    const height = placedFrame.frame.height;
-    frame = { x: right - width, y: H - M - height, width, height };
-    shot = { x: frame.x, y: frame.y + chrome, width: frame.width, height: frame.height - chrome };
-  } else {
-    const centred = variant === "FLOATING_BROWSER";
-    const anchor: "start" | "middle" = centred ? "middle" : "start";
-    const textX = M + 8;
-    const textW = W - 2 * M - 16;
-    logoRect = logoBox ? { x: centred ? Math.round((W - logoBox.width) / 2) : textX, y: M + 4, ...logoBox } : undefined;
-    const headSpec: TextSpec = { id: "headline", text: headline, width: textW, maxHeight: 170, maxFontSize: centred ? 70 : 74, minFontSize: 36, maxLines: 2, lineHeight: 1.04, letterSpacing: -0.4 };
-    const headFit = measureSpec(headSpec);
-    const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: centred ? 820 : textW, maxHeight: 84, maxFontSize: 26, minFontSize: 18, maxLines: 2, lineHeight: 1.38, letterSpacing: 0.2 } : undefined;
-    const subFit = subSpec ? measureSpec(subSpec) : undefined;
-    let cursor = (logoRect ? logoRect.y + logoRect.height : M) + 30;
-    head = { spec: headSpec, rect: { x: textX, y: cursor, width: textW, height: headFit.height }, anchor };
-    cursor += headFit.height;
-    if (subSpec && subFit) {
+  /** Pilha de copy (headline → sub → preço) a partir de `top`; devolve o fundo. */
+  const placeCopy = (x: number, top: number, hs: TextSpec, ss: TextSpec | undefined, anchor: "start" | "end" = "start"): number => {
+    const hf = measureSpec(hs);
+    const rx = anchor === "end" ? x - hs.width : x;
+    head = { spec: hs, rect: { x: rx, y: Math.round(top), width: hs.width, height: hf.height }, anchor: anchor };
+    let cursor = top + hf.height;
+    if (ss) {
+      const sf = measureSpec(ss);
       cursor += 18;
-      sub = { spec: subSpec, rect: { x: centred ? Math.round((W - subSpec.width) / 2) : textX, y: cursor, width: subSpec.width, height: subFit.height }, anchor };
-      cursor += subFit.height;
+      sub = { spec: ss, rect: { x: anchor === "end" ? x - ss.width : x, y: Math.round(cursor), width: ss.width, height: sf.height }, anchor: anchor };
+      cursor += sf.height;
     }
-    const rowH = cta || price ? Math.max(ctaH, price ? 72 : 0) : 0;
-    const rowTop = H - M - rowH;
-    const areaTop = cursor + 36;
-    const areaBottom = rowH > 0 ? rowTop - 34 : H - M;
-    const sideInset = centred ? 60 : 0;
-    const placedFrame = frameFor({ x: M + sideInset, y: areaTop, width: W - 2 * M - 2 * sideInset, height: areaBottom - areaTop });
-    frame = placedFrame.frame;
-    shot = placedFrame.shot;
-    const priceSpec = priceSpecFor(420);
-    const priceW = price && priceSpec ? Math.min(420, estimateLineWidth(price, measureSpec(priceSpec).fontSize)) : 0;
-    const gap = cta && price ? 40 : 0;
-    const rowW = priceW + gap + (cta ? ctaW : 0);
-    const startX = centred ? Math.round((W - rowW) / 2) : textX;
-    if (price && priceSpec) priceBlock = { spec: { ...priceSpec, width: priceW }, rect: { x: startX, y: rowTop, width: priceW, height: rowH }, valign: "center" };
-    if (cta) pill = { x: startX + priceW + gap, y: rowTop + Math.round((rowH - ctaH) / 2), width: ctaW, height: ctaH };
+    const ps = priceSpec(Math.min(hs.width, 420));
+    if (ps) {
+      const pf = measureSpec(ps);
+      cursor += 16;
+      priceBlock = { spec: ps, rect: { x: anchor === "end" ? x - ps.width : x, y: Math.round(cursor), width: ps.width, height: pf.height }, anchor: anchor };
+      cursor += pf.height;
+    }
+    return cursor;
+  };
+  const copyHeight = (hs: TextSpec, ss: TextSpec | undefined): number => measureSpec(hs).height + (ss ? 18 + measureSpec(ss).height : 0) + (price ? 16 + 60 : 0);
+
+  if (variant === "UI_HERO" && option === "left") {
+    // Copy alinhada à esquerda no alto, CTA ancorado à direita da copy; tela inteira embaixo.
+    shot = shotAt(EDGE, 0, W - 2 * EDGE);
+    shot.y = H - EDGE - shot.height;
+    const hs = headSpec(620, 62);
+    const ss = subSpec(560);
+    const block = (logoBox ? logoBox.height + 30 : 0) + copyHeight(hs, ss);
+    const top = Math.round(M + Math.max(0, (shot.y - 40 - M - block) / 2));
+    logoRect = logoBox ? { x: M, y: top, ...logoBox } : undefined;
+    const bottom = placeCopy(M, logoRect ? logoRect.y + logoRect.height + 30 : top, hs, ss);
+    if (cta) pill = { x: W - M - ctaW, y: Math.round(bottom - CTA_H), width: ctaW, height: CTA_H };
+  } else if (variant === "UI_HERO") {
+    // Tela inteira no alto; copy embaixo alinhada à direita; logo à esquerda, na mesma linha do CTA.
+    shot = shotAt(EDGE, EDGE, W - 2 * EDGE);
+    const hs = headSpec(660, 58);
+    const ss = subSpec(560);
+    const rowH = Math.max(CTA_H, logoBox?.height ?? 0);
+    const block = copyHeight(hs, ss) + (cta || logoBox ? 34 + rowH : 0);
+    const areaTop = shot.y + shot.height + 40;
+    const top = Math.round(areaTop + Math.max(0, (H - M - areaTop - block) / 2));
+    const bottom = placeCopy(W - M, top, hs, ss, "end");
+    const rowTop = Math.round(bottom + 34);
+    if (cta) pill = { x: W - M - ctaW, y: rowTop + Math.round((rowH - CTA_H) / 2), width: ctaW, height: CTA_H };
+    logoRect = logoBox ? { x: M, y: rowTop + Math.round((rowH - logoBox.height) / 2), ...logoBox } : undefined;
+  } else if (variant === "UI_DETAIL_FOCUS") {
+    // Interface + 2 recortes ampliados de regiões REAIS do mesmo screenshot, em coluna ao lado.
+    ghost = false;
+    const found = option === "b"
+      ? await findScreenshotDetailRegions(screenshot.png, screenshot.width, screenshot.height, DETAIL_CROP_SETS.b, autoCrops.map((item) => item.rect))
+      : autoCrops;
+    const mainLeft = option !== "b";
+    const hs = headSpec(W - 2 * M, 56, 2);
+    const ss = subSpec(760);
+    const colW = 340;
+    const gap = 30;
+    const mainW = W - 2 * EDGE - colW - gap;
+    const cropHeights = found.map((item) => Math.round(colW / (item.rect.width / item.rect.height)));
+    const colH = cropHeights.reduce((sum, value) => sum + value, 0) + gap * Math.max(0, found.length - 1);
+    const mainH = Math.round(mainW / aspect);
+    const copyH = (logoBox ? logoBox.height + 28 : 0) + copyHeight(hs, ss) + (cta ? 30 + CTA_H : 0);
+    const visualH = Math.max(mainH, colH);
+    const top = Math.round(Math.max(M, (H - copyH - 56 - visualH) / 2));
+    logoRect = logoBox ? { x: M, y: top, ...logoBox } : undefined;
+    const copyBottom = placeCopy(M, (logoRect ? logoRect.y + logoRect.height + 28 : top), hs, ss);
+    if (cta) pill = { x: M, y: Math.round(copyBottom + 30), width: ctaW, height: CTA_H };
+    const zoneTop = (pill ? pill.y + pill.height : copyBottom) + 56;
+    const zoneH = Math.min(visualH, H - EDGE - zoneTop);
+    const mainX = mainLeft ? EDGE : W - EDGE - mainW;
+    const colX = mainLeft ? W - EDGE - colW : EDGE;
+    shot = shotAt(mainX, zoneTop + Math.max(0, (zoneH - mainH) / 2), mainW);
+    let cursor = zoneTop + Math.max(0, (zoneH - colH) / 2);
+    found.forEach((item, index) => {
+      const placed = { x: colX, y: Math.round(cursor), width: colW, height: cropHeights[index]! };
+      crops.push({ rect: item.rect, placed });
+      // Conector discreto: da altura da região de origem na tela até o recorte (sem tocar a tela).
+      const sourceY = shot.y + ((item.rect.y + item.rect.height / 2) / screenshot.height) * shot.height;
+      const fromX = mainLeft ? shot.x + shot.width + 6 : shot.x - 6;
+      const toX = mainLeft ? placed.x - 6 : placed.x + placed.width + 6;
+      connectors.push(`<path d="M${fromX} ${sourceY.toFixed(1)} L${toX} ${(placed.y + placed.height / 2).toFixed(1)}" stroke="${accentHex}" stroke-opacity="0.55" stroke-width="1.5" stroke-dasharray="4 5" fill="none"/><circle cx="${fromX}" cy="${sourceY.toFixed(1)}" r="4" fill="${accentHex}"/>`);
+      cursor += placed.height + gap;
+    });
+    reasons.push(`recortes ${option === "b" ? "b" : "a"}: ${found.map((item) => `${item.rect.width}x${item.rect.height}@${item.rect.x},${item.rect.y} (detalhe ${item.relativeScore}x a média)`).join("; ")}`);
+  } else {
+    // FLOATING_PRODUCT: tela inteira flutuando com camadas de profundidade (cópias desfocadas,
+    // ilegíveis, levemente giradas) — sem chrome de navegador.
+    const hs = headSpec(600, 60);
+    const ss = subSpec(520);
+    logoRect = logoBox ? { x: M, y: M, ...logoBox } : undefined;
+    const copyTop = (logoRect ? logoRect.y + logoRect.height : M) + 34;
+    const bottom = placeCopy(M, copyTop, hs, ss);
+    if (cta) pill = { x: M, y: Math.round(bottom + 30), width: ctaW, height: CTA_H };
+    const areaTop = (pill ? pill.y + pill.height : bottom) + 70;
+    const width = Math.min(W - 2 * EDGE - 70, ((H - EDGE - 40 - areaTop) * aspect));
+    shot = shotAt(W - EDGE - 20 - width, H - EDGE - 40 - width / aspect, width);
   }
 
   const displayScale = shot.width / screenshot.width;
   if (classification === "DESKTOP" && displayScale < DESKTOP_SCREENSHOT_MIN_DISPLAY_SCALE) {
     issues.push({ code: "SCREENSHOT_ILLEGIBLE", message: `Screenshot desktop exibido a ${(displayScale * 100).toFixed(0)}% da largura original (< ${DESKTOP_SCREENSHOT_MIN_DISPLAY_SCALE * 100}%) — interface ilegível.` });
   }
-  const zones = buildTextZones(plan, price, { headline: head.rect, subheadline: sub?.rect, price: priceBlock?.rect, cta: pill ? ctaZoneRect(pill) : undefined }, canvas);
+  const zones = buildTextZones(plan, price, { headline: head!.rect, subheadline: sub?.rect, price: priceBlock?.rect, cta: pill ? ctaZoneRect(pill) : undefined }, canvas);
   const roles: CreativePlanAssetRole[] = ["screenshot"];
-  const assets: CreativePlan["assetPlacements"] = [assetPlacement(screenshot, shot, canvas, `final rendered screenshot (${variant}, ${frameKind}, contain)`)];
+  const assets: CreativePlan["assetPlacements"] = [assetPlacement(screenshot, shot, canvas, `final rendered screenshot (${variant}/${option}, inteiro, contain)`)];
   assetBox("screenshot", shot, canvas, boxes);
-  const insetX = (BROWSER_RADIUS + 4) / shot.width;
-  const insetY = (BROWSER_RADIUS + 4) / shot.height;
-  const verify: AssetVerifySpec[] = [verifySpec("screenshot", shot, { fit: "contain", inset: { left: insetX, right: insetX, top: chrome > 0 ? 0.004 : insetY, bottom: insetY }, checkFidelity: true })];
+  const inset = { left: (SHOT_RADIUS + 4) / shot.width, right: (SHOT_RADIUS + 4) / shot.width, top: (SHOT_RADIUS + 4) / shot.height, bottom: (SHOT_RADIUS + 4) / shot.height };
+  const verify: AssetVerifySpec[] = [verifySpec("screenshot", shot, { fit: "contain", inset, checkFidelity: true })];
+  const cropTags: string[] = [];
+  const cropDiagnostics: EditorialScreenshotCrop[] = [];
+  for (const [index, crop] of crops.entries()) {
+    const cropPng = await sharp(screenshot.png).extract({ left: crop.rect.x, top: crop.rect.y, width: crop.rect.width, height: crop.rect.height }).png().toBuffer();
+    const id = `detailClip${index}`;
+    cropTags.push(`<clipPath id="${id}"><rect x="${crop.placed.x}" y="${crop.placed.y}" width="${crop.placed.width}" height="${crop.placed.height}" rx="14"/></clipPath>
+      <g filter="url(#surfaceShadow)"><rect x="${crop.placed.x}" y="${crop.placed.y}" width="${crop.placed.width}" height="${crop.placed.height}" rx="14" fill="#FFFFFF"/></g>
+      <image data-asset-role="screenshot" href="${pngDataUri(cropPng)}" x="${crop.placed.x}" y="${crop.placed.y}" width="${crop.placed.width}" height="${crop.placed.height}" preserveAspectRatio="xMidYMid meet" clip-path="url(#${id})"/>
+      <rect x="${crop.placed.x + 0.75}" y="${crop.placed.y + 0.75}" width="${crop.placed.width - 1.5}" height="${crop.placed.height - 1.5}" rx="14" fill="none" stroke="${accentHex}" stroke-opacity="0.35" stroke-width="1.5"/>`);
+    assets.push(assetPlacement(screenshot, crop.placed, canvas, `final rendered screenshot detail crop (SCREENSHOT_SOURCE ${crop.rect.width}x${crop.rect.height}@${crop.rect.x},${crop.rect.y})`));
+    assetBox("screenshot", crop.placed, canvas, boxes);
+    const cropInset = { left: 18 / crop.placed.width, right: 18 / crop.placed.width, top: 18 / crop.placed.height, bottom: 18 / crop.placed.height };
+    verify.push({ ...verifySpec("screenshot", crop.placed, { fit: "contain", inset: cropInset, checkFidelity: true }), crop: crop.rect });
+    cropDiagnostics.push({ source: "SCREENSHOT_SOURCE", url: screenshot.url, cropSourceRect: crop.rect, placedRect: pctRect(crop.placed, canvas), zoomVsMain: Number((crop.placed.width / crop.rect.width / displayScale).toFixed(2)) });
+  }
   if (logo && logoRect) {
     roles.push("logo");
     assets.push(assetPlacement(logo, logoRect, canvas, `final rendered logo (${logoTreatment})`));
     assetBox("logo", logoRect, canvas, boxes);
     verify.push(verifySpec("logo", logoRect, { fit: "contain", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { blend: "multiply" as const } : {}) }));
   }
-  const ambientHref = await buildAmbient(base.png, canvas);
-  const screenshotTag = imageTag(screenshot, "", shot, { preserveAspectRatio: "xMidYMid meet" });
-  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
-  const chip = logo && logoRect && logoTreatment === "CHIP" ? `<rect x="${logoRect.x - 12}" y="${logoRect.y - 8}" width="${logoRect.width + 24}" height="${logoRect.height + 16}" rx="14" fill="#FFF8F1"/>` : "";
-  const headSvg = renderTextBlock(head, palette.ink, 850, Number((measureSpec(head.spec).fontSize * 0.024).toFixed(2)), canvas, boxes, issues);
-  const subSvg = sub ? renderTextBlock(sub, palette.muted, 500, 0, canvas, boxes, issues) : "";
-  const priceSvg = priceBlock ? renderTextBlock(priceBlock, palette.price, 850, Number((measureSpec(priceBlock.spec).fontSize * 0.022).toFixed(2)), canvas, boxes, issues) : "";
-  const ctaSvg = cta && pill
-    ? `<g filter="url(#ctaLift)"><rect x="${pill.x}" y="${pill.y}" width="${pill.width}" height="${pill.height}" rx="${pill.height / 2}" fill="${palette.ctaFill}"/></g>
-      ${renderTextBlock({ spec: editorialCtaSpec(cta, pill), rect: ctaZoneRect(pill), anchor: "middle", valign: "center" }, palette.ctaText, 800, 0.4, canvas, boxes, issues)}`
+
+  // Camadas de profundidade derivadas do PRÓPRIO screenshot: desfocadas a ponto de não ter texto
+  // legível, nunca dentro da bbox da tela verdadeira (ficam atrás dela).
+  const blurred = pngDataUri(await sharp(screenshot.png).resize(Math.round(screenshot.width / 8)).blur(2.2).modulate({ saturation: 0.9 }).png().toBuffer());
+  const cx = shot.x + shot.width / 2;
+  const cy = shot.y + shot.height / 2;
+  const card = (rotate: number, dx: number, dy: number, fill: string, opacity: number, withImage: boolean): string =>
+    `<g transform="rotate(${rotate} ${cx} ${cy}) translate(${dx.toFixed(1)} ${dy.toFixed(1)})" opacity="${opacity}"><g filter="url(#layerShadow)"><rect x="${shot.x}" y="${shot.y}" width="${shot.width}" height="${shot.height}" rx="${SHOT_RADIUS}" fill="${fill}"/></g>${withImage ? `<clipPath id="ghostClip${rotate}"><rect x="${shot.x}" y="${shot.y}" width="${shot.width}" height="${shot.height}" rx="${SHOT_RADIUS}"/></clipPath><image href="${blurred}" x="${shot.x}" y="${shot.y}" width="${shot.width}" height="${shot.height}" preserveAspectRatio="none" opacity="0.45" clip-path="url(#ghostClip${rotate})"/>` : ""}</g>`;
+  const ghostLayers = ghost
+    ? variant === "FLOATING_PRODUCT"
+      ? card(-7, -shot.width * 0.06, -shot.height * 0.14, toHex(dark ? mixRgb(accent, BLACK, 0.55) : mixRgb(accent, WHITE, 0.55)), 0.9, false) +
+        card(-3.5, -shot.width * 0.03, -shot.height * 0.07, dark ? toHex(mixRgb(accent, BLACK, 0.72)) : "#FFFFFF", 0.9, false)
+      : card(option === "right" ? -2.2 : 2.2, 0, option === "right" ? 16 : -20, toHex(mixRgb(accent, WHITE, 0.6)), 0.7, false)
     : "";
+  const shotTag = `<clipPath id="shotClip"><rect x="${shot.x}" y="${shot.y}" width="${shot.width}" height="${shot.height}" rx="${SHOT_RADIUS}"/></clipPath>
+    <g filter="url(#surfaceShadow)"><rect x="${shot.x}" y="${shot.y}" width="${shot.width}" height="${shot.height}" rx="${SHOT_RADIUS}" fill="#FFFFFF"/></g>
+    ${imageTag(screenshot, "", shot, { preserveAspectRatio: "xMidYMid meet", clipId: "shotClip" })}
+    <rect x="${shot.x + 0.5}" y="${shot.y + 0.5}" width="${shot.width - 1}" height="${shot.height - 1}" rx="${SHOT_RADIUS}" fill="none" stroke="${dark ? "#FFFFFF" : "#2A1A1C"}" stroke-opacity="${dark ? 0.18 : 0.1}" stroke-width="1"/>`;
+  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
+  const chip = logo && logoRect && logoTreatment === "CHIP" ? `<rect x="${logoRect.x - 12}" y="${logoRect.y - 8}" width="${logoRect.width + 24}" height="${logoRect.height + 16}" rx="12" fill="#FFF8F1" opacity="0.95"/>` : "";
+  const renderBlock = (block: TextBlock, fill: string, weight: number, embolden: number): string => {
+    const anchor = block.anchor ?? "start";
+    return textSvg({ id: block.spec.id, text: block.spec.text, x: anchor === "end" ? block.rect.x + block.rect.width : block.rect.x, y: 0, top: block.rect.y, width: block.spec.width, maxHeight: block.spec.maxHeight, maxFontSize: block.spec.maxFontSize, minFontSize: block.spec.minFontSize, maxLines: block.spec.maxLines, lineHeight: block.spec.lineHeight, letterSpacing: block.spec.letterSpacing, anchor, fill, weight, embolden }, canvas, boxes, issues);
+  };
+  const headSvg = renderBlock(head!, ink, 850, Number((measureSpec(head!.spec).fontSize * 0.024).toFixed(2)));
+  const subSvg = sub ? renderBlock(sub, muted, 500, 0) : "";
+  const priceSvg = priceBlock ? renderBlock(priceBlock, accentHex, 850, 0.8) : "";
+  // CTA comercial: pílula baixa, cor da marca do próprio produto, caixa alta espaçada, brilho sutil.
+  const ctaSvg = cta && pill
+    ? `<g filter="url(#ctaLift)"><rect x="${pill.x}" y="${pill.y}" width="${pill.width}" height="${pill.height}" rx="${pill.height / 2}" fill="url(#ctaFill)"/></g>
+      <rect x="${pill.x + 1}" y="${pill.y + 1}" width="${pill.width - 2}" height="${pill.height / 2}" rx="${pill.height / 2 - 1}" fill="#FFFFFF" opacity="${dark ? 0.12 : 0.1}"/>
+      ${renderTextBlock({ spec: { id: "cta", text: cta, width: pill.width - 40, maxHeight: pill.height, maxFontSize: 18, minFontSize: 13, maxLines: 1, letterSpacing: 2.4, uppercase: true }, rect: ctaZoneRect(pill), anchor: "middle", valign: "center" }, ctaText, 800, 0.35, canvas, boxes, issues)}`
+    : "";
+  const ctaFillA = dark ? "#FFF3EA" : toHex(mixRgb(accent, BLACK, 0.12));
+  const ctaFillB = dark ? toHex(mixRgb(accent, WHITE, 0.7)) : toHex(mixRgb(accent, BLACK, 0.38));
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
     ${fontFaceCss}
     <defs>
-      <filter id="browserShadow" x="-12%" y="-12%" width="124%" height="134%"><feDropShadow dx="0" dy="${variant === "FLOATING_BROWSER" ? 34 : 22}" stdDeviation="${variant === "FLOATING_BROWSER" ? 34 : 24}" flood-color="#3A1E22" flood-opacity="${variant === "FLOATING_BROWSER" ? 0.34 : 0.24}"/></filter>
-      <filter id="ctaLift" x="-20%" y="-30%" width="140%" height="190%"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#2A1014" flood-opacity="0.22"/></filter>
-      <radialGradient id="digitalGlow" cx="0.5" cy="0.62" r="0.6"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.75"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+      <linearGradient id="digitalSurface" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="${surface.top}"/><stop offset="1" stop-color="${surface.bottom}"/></linearGradient>
+      <radialGradient id="meshA" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="${surface.glowA}" stop-opacity="${dark ? 0.55 : 0.75}"/><stop offset="1" stop-color="${surface.glowA}" stop-opacity="0"/></radialGradient>
+      <radialGradient id="meshB" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="${surface.glowB}" stop-opacity="${dark ? 0.4 : 0.6}"/><stop offset="1" stop-color="${surface.glowB}" stop-opacity="0"/></radialGradient>
+      <radialGradient id="shotGlow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="${toHex(dark ? mixRgb(accent, BLACK, 0.2) : mixRgb(accent, WHITE, 0.35))}" stop-opacity="${dark ? 0.55 : 0.6}"/><stop offset="1" stop-color="${toHex(accent)}" stop-opacity="0"/></radialGradient>
+      <linearGradient id="ctaFill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${ctaFillA}"/><stop offset="1" stop-color="${ctaFillB}"/></linearGradient>
+      <filter id="surfaceShadow" x="-15%" y="-15%" width="130%" height="140%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#1A0B0E" flood-opacity="${dark ? 0.4 : 0.12}"/><feDropShadow dx="0" dy="34" stdDeviation="38" flood-color="#2A1014" flood-opacity="${dark ? 0.55 : 0.24}"/></filter>
+      <filter id="ctaLift" x="-20%" y="-40%" width="140%" height="200%"><feDropShadow dx="0" dy="8" stdDeviation="9" flood-color="#2A1014" flood-opacity="${dark ? 0.45 : 0.22}"/></filter>
+      <filter id="layerShadow" x="-15%" y="-15%" width="130%" height="140%"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#1A0B0E" flood-opacity="${dark ? 0.5 : 0.16}"/></filter>
+      <filter id="softBlur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="14"/></filter>
+      <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.05"/></feComponentTransfer></filter>
     </defs>
-    <rect width="${W}" height="${H}" fill="${palette.page}"/>
-    ${imageTag(undefined, ambientHref || baseHref, { x: 0, y: 0, width: W, height: H }, { opacity: variant === "FLOATING_BROWSER" ? 0.9 : 0.6 })}
-    <rect width="${W}" height="${H}" fill="${palette.page}" opacity="${variant === "FLOATING_BROWSER" ? 0.32 : 0.55}"/>
-    <ellipse cx="${frame.x + frame.width / 2}" cy="${frame.y + frame.height / 2}" rx="${frame.width * 0.72}" ry="${frame.height * 0.8}" fill="url(#digitalGlow)"/>
+    <rect width="${W}" height="${H}" fill="url(#digitalSurface)"/>
+    <ellipse cx="${cx}" cy="${cy}" rx="${shot.width * 0.7}" ry="${shot.height * 0.75}" fill="url(#shotGlow)"/>
+    <ellipse cx="${variant === "UI_HERO" && option === "right" ? W * 0.18 : W * 0.86}" cy="${H * 0.12}" rx="${W * 0.55}" ry="${H * 0.32}" fill="url(#meshA)"/>
+    <ellipse cx="${W * 0.1}" cy="${H * 0.92}" rx="${W * 0.6}" ry="${H * 0.3}" fill="url(#meshB)"/>
+    <rect width="${W}" height="${H}" filter="url(#grain)" opacity="0.9"/>
+    ${ghostLayers}
+    ${shotTag}
+    ${connectors.join("")}
+    ${cropTags.join("")}
     ${chip}
     ${logoTag}
     ${headSvg}
     ${subSvg}
-    ${browserFrameSvg(frame, frameKind, "browserClip", screenshotTag)}
     ${priceSvg}
     ${ctaSvg}
   </svg>`;
 
-  const metrics = compositionMetrics(boxes, canvas, frame, [frame]);
+  const prominenceRect = { x: 0, y: 0, width: Math.sqrt(shot.width * shot.height + crops.reduce((sum, crop) => sum + crop.placed.width * crop.placed.height, 0)), height: 0 };
+  prominenceRect.height = prominenceRect.width;
+  const metrics = compositionMetrics(boxes, canvas, prominenceRect, [shot, ...crops.map((crop) => crop.placed)]);
   return {
     svg,
     zones,
@@ -1811,9 +2023,21 @@ async function renderDigitalServiceAdaptive(
       selectionReasons: reasons,
       ...(price ? { priceTreatment: "INLINE_PRICE" as const } : {}),
       logoTreatment,
-      pageTone: "light",
+      pageTone: dark ? "dark" : "light",
       ...metrics,
-      screenshot: { classification, sourceWidth: screenshot.width, sourceHeight: screenshot.height, aspect: Number(aspect.toFixed(3)), frame: frameKind, fit: "contain", displayScale: Number(displayScale.toFixed(3)), displayWidthPx: shot.width },
+      screenshot: {
+        classification,
+        sourceWidth: screenshot.width,
+        sourceHeight: screenshot.height,
+        aspect: Number(aspect.toFixed(3)),
+        frame: variant === "FLOATING_PRODUCT" ? "FLOATING_SCREEN" : "EDITORIAL_SURFACE",
+        fit: "contain",
+        displayScale: Number(displayScale.toFixed(3)),
+        displayWidthPx: shot.width,
+        option,
+        palette: { dominant: toHex(paletteRgb.dominant), secondary: toHex(paletteRgb.secondary), accent: toHex(paletteRgb.accent) },
+        ...(cropDiagnostics.length > 0 ? { crops: cropDiagnostics } : {}),
+      },
     },
   };
 }
@@ -2039,6 +2263,12 @@ export async function measureCompositedAssetFidelity(input: { finalImage: Buffer
   return { fidelityMeanAbsDiff: Number(measured.fidelityMeanAbsDiff.toFixed(2)), fidelityPass: measured.opaquePixels > 0 && measured.fidelityMeanAbsDiff <= MAX_FIDELITY_MEAN_ABS_DIFF };
 }
 
+/** Região do asset ORIGINAL decodificado — base da prova em pixel de um recorte de detalhe. */
+async function cropPreparedAsset(asset: PreparedAsset, crop: { x: number; y: number; width: number; height: number }): Promise<PreparedAsset> {
+  const png = await sharp(asset.png).extract({ left: crop.x, top: crop.y, width: crop.width, height: crop.height }).png().toBuffer();
+  return { ...asset, png, href: pngDataUri(png), width: crop.width, height: crop.height };
+}
+
 function rasterize(svg: string, design: Canvas, output: OutputSize): Sharp {
   return sharp(Buffer.from(svg), { density: (72 * output.width) / design.width }).resize(output.width, output.height, { fit: "fill" });
 }
@@ -2171,9 +2401,10 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
     const final = await toRaw(sharp(buffer));
     const control = await toRaw(rasterize(withoutAssetImages(rendered.svg), canvas, output));
     for (const spec of rendered.verify) {
-      const asset = firstAsset(prepared, spec.role);
-      if (!asset) continue;
-      const verification = await verifyAsset(spec, asset, final, control, canvas, output);
+      const sourceAsset = firstAsset(prepared, spec.role);
+      if (!sourceAsset) continue;
+      const asset = spec.crop ? await cropPreparedAsset(sourceAsset, spec.crop) : sourceAsset;
+      const verification = { ...(await verifyAsset(spec, asset, final, control, canvas, output)), ...(spec.crop ? { cropSourceRect: spec.crop } : {}) };
       assetVerification.push(verification);
       if (!verification.visible) {
         issues.push({

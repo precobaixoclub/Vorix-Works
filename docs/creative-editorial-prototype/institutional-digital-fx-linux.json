@@ -96,110 +96,356 @@
   ]
  },
  {
-  "file": "/out/c/01-digital-desktop-hero.jpg",
-  "variant": "DESKTOP_HERO",
+  "file": "/out/c/01-ui-hero-left.jpg",
+  "variant": "UI_HERO",
   "reasons": [
-   "QA_VARIANT_OVERRIDE=DESKTOP_HERO (fixture local; regra escolheria DESKTOP_HERO)",
-   "copy longa: texto em cima em largura total, interface grande embaixo (máxima legibilidade)"
+   "QA_VARIANT_OVERRIDE=UI_HERO (fixture local; regra escolheria UI_DETAIL_FOCUS)",
+   "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
+   "QA_VARIANT_OPTION=left"
   ],
   "screenshot": {
    "classification": "DESKTOP",
    "sourceWidth": 1280,
    "sourceHeight": 900,
    "aspect": 1.422,
-   "frame": "BROWSER_FRAME",
+   "frame": "EDITORIAL_SURFACE",
    "fit": "contain",
-   "displayScale": 0.744,
-   "displayWidthPx": 952
+   "displayScale": 0.8,
+   "displayWidthPx": 1024,
+   "option": "left",
+   "palette": {
+    "dominant": "#fbfbfb",
+    "secondary": "#080808",
+    "accent": "#b66b77"
+   }
   },
   "logo": "MULTIPLY_ON_LIGHT",
-  "prominence": 0.464,
-  "emptyBand": 0.03,
-  "valid": true,
-  "issues": [],
-  "verify": [
-   "screenshot:true/true/2.69",
-   "logo:true/true/4.38"
-  ]
- },
- {
-  "file": "/out/c/02-digital-split-ui.jpg",
-  "variant": "SPLIT_PRODUCT_UI",
-  "reasons": [
-   "QA_VARIANT_OVERRIDE=SPLIT_PRODUCT_UI (fixture local; regra escolheria DESKTOP_HERO)",
-   "copy longa: texto em cima em largura total, interface grande embaixo (máxima legibilidade)"
-  ],
-  "screenshot": {
-   "classification": "DESKTOP",
-   "sourceWidth": 1280,
-   "sourceHeight": 900,
-   "aspect": 1.422,
-   "frame": "DESKTOP_WINDOW",
-   "fit": "contain",
-   "displayScale": 0.645,
-   "displayWidthPx": 826
-  },
-  "logo": "MULTIPLY_ON_LIGHT",
-  "prominence": 0.353,
+  "prominence": 0.506,
   "emptyBand": 0.074,
   "valid": true,
   "issues": [],
   "verify": [
-   "screenshot:true/true/4.15",
-   "logo:true/true/4.38"
+   "screenshot:true/true/5.04",
+   "logo:true/true/5.43"
   ]
  },
  {
-  "file": "/out/c/03-digital-floating-browser.jpg",
-  "variant": "FLOATING_BROWSER",
+  "file": "/out/c/02-ui-hero-right.jpg",
+  "variant": "UI_HERO",
   "reasons": [
-   "QA_VARIANT_OVERRIDE=FLOATING_BROWSER (fixture local; regra escolheria DESKTOP_HERO)",
-   "copy longa: texto em cima em largura total, interface grande embaixo (máxima legibilidade)"
+   "QA_VARIANT_OVERRIDE=UI_HERO (fixture local; regra escolheria UI_DETAIL_FOCUS)",
+   "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
+   "QA_VARIANT_OPTION=right"
   ],
   "screenshot": {
    "classification": "DESKTOP",
    "sourceWidth": 1280,
    "sourceHeight": 900,
    "aspect": 1.422,
-   "frame": "BROWSER_FRAME",
+   "frame": "EDITORIAL_SURFACE",
    "fit": "contain",
-   "displayScale": 0.65,
-   "displayWidthPx": 832
+   "displayScale": 0.8,
+   "displayWidthPx": 1024,
+   "option": "right",
+   "palette": {
+    "dominant": "#fbfbfb",
+    "secondary": "#080808",
+    "accent": "#b66b77"
+   }
   },
   "logo": "MULTIPLY_ON_LIGHT",
-  "prominence": 0.358,
+  "prominence": 0.506,
   "emptyBand": 0.074,
   "valid": true,
   "issues": [],
   "verify": [
-   "screenshot:true/true/5.58",
-   "logo:true/true/4.56"
+   "screenshot:true/true/6.25",
+   "logo:true/true/5.55"
+  ]
+ },
+ {
+  "file": "/out/c/03-ui-detail-focus-a.jpg",
+  "variant": "UI_DETAIL_FOCUS",
+  "reasons": [
+   "QA_VARIANT_OVERRIDE=UI_DETAIL_FOCUS (fixture local; regra escolheria UI_DETAIL_FOCUS)",
+   "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
+   "QA_VARIANT_OPTION=a",
+   "recortes a: 352x308@448,264 (detalhe 1.53x a média); 316x104@72,156 (detalhe 1.12x a média)"
+  ],
+  "screenshot": {
+   "classification": "DESKTOP",
+   "sourceWidth": 1280,
+   "sourceHeight": 900,
+   "aspect": 1.422,
+   "frame": "EDITORIAL_SURFACE",
+   "fit": "contain",
+   "displayScale": 0.511,
+   "displayWidthPx": 654,
+   "option": "a",
+   "palette": {
+    "dominant": "#fbfbfb",
+    "secondary": "#080808",
+    "accent": "#b66b77"
+   },
+   "crops": [
+    {
+     "source": "SCREENSHOT_SOURCE",
+     "url": "fixture://site-demo-presentes.png",
+     "cropSourceRect": {
+      "x": 448,
+      "y": 264,
+      "width": 352,
+      "height": 308
+     },
+     "placedRect": {
+      "xPct": 65.926,
+      "yPct": 48.963,
+      "widthPct": 31.481,
+      "heightPct": 22.074
+     },
+     "zoomVsMain": 1.89
+    },
+    {
+     "source": "SCREENSHOT_SOURCE",
+     "url": "fixture://site-demo-presentes.png",
+     "cropSourceRect": {
+      "x": 72,
+      "y": 156,
+      "width": 316,
+      "height": 104
+     },
+     "placedRect": {
+      "xPct": 65.926,
+      "yPct": 73.259,
+      "widthPct": 31.481,
+      "heightPct": 8.296
+     },
+     "zoomVsMain": 2.11
+    }
+   ]
+  },
+  "logo": "MULTIPLY_ON_LIGHT",
+  "prominence": 0.302,
+  "emptyBand": 0.119,
+  "valid": true,
+  "issues": [],
+  "verify": [
+   "screenshot:true/true/5.45",
+   "screenshot:true/true/5.42",
+   "screenshot:true/true/10",
+   "logo:true/true/6.86"
+  ]
+ },
+ {
+  "file": "/out/c/04-ui-detail-focus-b.jpg",
+  "variant": "UI_DETAIL_FOCUS",
+  "reasons": [
+   "QA_VARIANT_OVERRIDE=UI_DETAIL_FOCUS (fixture local; regra escolheria UI_DETAIL_FOCUS)",
+   "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
+   "QA_VARIANT_OPTION=b",
+   "recortes b: 336x92@828,480 (detalhe 0.83x a média); 360x444@72,264 (detalhe 1.24x a média)"
+  ],
+  "screenshot": {
+   "classification": "DESKTOP",
+   "sourceWidth": 1280,
+   "sourceHeight": 900,
+   "aspect": 1.422,
+   "frame": "EDITORIAL_SURFACE",
+   "fit": "contain",
+   "displayScale": 0.511,
+   "displayWidthPx": 654,
+   "option": "b",
+   "palette": {
+    "dominant": "#fbfbfb",
+    "secondary": "#080808",
+    "accent": "#b66b77"
+   },
+   "crops": [
+    {
+     "source": "SCREENSHOT_SOURCE",
+     "url": "fixture://site-demo-presentes.png",
+     "cropSourceRect": {
+      "x": 828,
+      "y": 480,
+      "width": 336,
+      "height": 92
+     },
+     "placedRect": {
+      "xPct": 2.593,
+      "yPct": 45.185,
+      "widthPct": 31.481,
+      "heightPct": 6.889
+     },
+     "zoomVsMain": 1.98
+    },
+    {
+     "source": "SCREENSHOT_SOURCE",
+     "url": "fixture://site-demo-presentes.png",
+     "cropSourceRect": {
+      "x": 72,
+      "y": 264,
+      "width": 360,
+      "height": 444
+     },
+     "placedRect": {
+      "xPct": 2.593,
+      "yPct": 54.296,
+      "widthPct": 31.481,
+      "heightPct": 31.037
+     },
+     "zoomVsMain": 1.85
+    }
+   ]
+  },
+  "logo": "MULTIPLY_ON_LIGHT",
+  "prominence": 0.326,
+  "emptyBand": 0.089,
+  "valid": true,
+  "issues": [],
+  "verify": [
+   "screenshot:true/true/5.44",
+   "screenshot:true/true/10.67",
+   "screenshot:true/true/4.74",
+   "logo:true/true/6.36"
+  ]
+ },
+ {
+  "file": "/out/c/05-floating-product-light.jpg",
+  "variant": "FLOATING_PRODUCT",
+  "reasons": [
+   "QA_VARIANT_OVERRIDE=FLOATING_PRODUCT (fixture local; regra escolheria UI_DETAIL_FOCUS)",
+   "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
+   "QA_VARIANT_OPTION=light"
+  ],
+  "screenshot": {
+   "classification": "DESKTOP",
+   "sourceWidth": 1280,
+   "sourceHeight": 900,
+   "aspect": 1.422,
+   "frame": "FLOATING_SCREEN",
+   "fit": "contain",
+   "displayScale": 0.745,
+   "displayWidthPx": 954,
+   "option": "light",
+   "palette": {
+    "dominant": "#fbfbfb",
+    "secondary": "#080808",
+    "accent": "#b66b77"
+   }
+  },
+  "logo": "MULTIPLY_ON_LIGHT",
+  "prominence": 0.439,
+  "emptyBand": 0.074,
+  "valid": true,
+  "issues": [],
+  "verify": [
+   "screenshot:true/true/4.57",
+   "logo:true/true/5.35"
+  ]
+ },
+ {
+  "file": "/out/c/06-floating-product-dark.jpg",
+  "variant": "FLOATING_PRODUCT",
+  "reasons": [
+   "QA_VARIANT_OVERRIDE=FLOATING_PRODUCT (fixture local; regra escolheria UI_DETAIL_FOCUS)",
+   "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
+   "QA_VARIANT_OPTION=dark"
+  ],
+  "screenshot": {
+   "classification": "DESKTOP",
+   "sourceWidth": 1280,
+   "sourceHeight": 900,
+   "aspect": 1.422,
+   "frame": "FLOATING_SCREEN",
+   "fit": "contain",
+   "displayScale": 0.745,
+   "displayWidthPx": 954,
+   "option": "dark",
+   "palette": {
+    "dominant": "#fbfbfb",
+    "secondary": "#080808",
+    "accent": "#b66b77"
+   }
+  },
+  "logo": "CHIP",
+  "prominence": 0.439,
+  "emptyBand": 0.074,
+  "valid": true,
+  "issues": [],
+  "verify": [
+   "screenshot:true/true/4.57",
+   "logo:true/true/5.16"
   ]
  },
  {
   "file": "/out/c/00-digital-auto.jpg",
-  "variant": "DESKTOP_HERO",
+  "variant": "UI_DETAIL_FOCUS",
   "reasons": [
-   "copy longa: texto em cima em largura total, interface grande embaixo (máxima legibilidade)"
+   "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
+   "recortes a: 352x308@448,264 (detalhe 1.53x a média); 316x104@72,156 (detalhe 1.12x a média)"
   ],
   "screenshot": {
    "classification": "DESKTOP",
    "sourceWidth": 1280,
    "sourceHeight": 900,
    "aspect": 1.422,
-   "frame": "BROWSER_FRAME",
+   "frame": "EDITORIAL_SURFACE",
    "fit": "contain",
-   "displayScale": 0.744,
-   "displayWidthPx": 952
+   "displayScale": 0.511,
+   "displayWidthPx": 654,
+   "option": "a",
+   "palette": {
+    "dominant": "#fbfbfb",
+    "secondary": "#080808",
+    "accent": "#b66b77"
+   },
+   "crops": [
+    {
+     "source": "SCREENSHOT_SOURCE",
+     "url": "fixture://site-demo-presentes.png",
+     "cropSourceRect": {
+      "x": 448,
+      "y": 264,
+      "width": 352,
+      "height": 308
+     },
+     "placedRect": {
+      "xPct": 65.926,
+      "yPct": 48.963,
+      "widthPct": 31.481,
+      "heightPct": 22.074
+     },
+     "zoomVsMain": 1.89
+    },
+    {
+     "source": "SCREENSHOT_SOURCE",
+     "url": "fixture://site-demo-presentes.png",
+     "cropSourceRect": {
+      "x": 72,
+      "y": 156,
+      "width": 316,
+      "height": 104
+     },
+     "placedRect": {
+      "xPct": 65.926,
+      "yPct": 73.259,
+      "widthPct": 31.481,
+      "heightPct": 8.296
+     },
+     "zoomVsMain": 2.11
+    }
+   ]
   },
   "logo": "MULTIPLY_ON_LIGHT",
-  "prominence": 0.464,
-  "emptyBand": 0.03,
+  "prominence": 0.302,
+  "emptyBand": 0.119,
   "valid": true,
   "issues": [],
   "verify": [
-   "screenshot:true/true/2.69",
-   "logo:true/true/4.38"
+   "screenshot:true/true/5.45",
+   "screenshot:true/true/5.42",
+   "screenshot:true/true/10",
+   "logo:true/true/6.86"
   ]
  }
 ]

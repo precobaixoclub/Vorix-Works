@@ -70,6 +70,8 @@ export type EditorialAssetVerification = {
   fidelityMeanAbsDiff: number;
   fidelityPass: boolean;
   reason?: string;
+  /** Recorte de detalhe: região do asset original que foi verificada (pixels da fonte). */
+  cropSourceRect?: { x: number; y: number; width: number; height: number };
 };
 
 export type EditorialGeometryBox = {
@@ -97,6 +99,8 @@ export type RenderEditorialCreativeInput = {
   /** SOMENTE QA/fixtures locais: força uma variante da família para comparar composições da mesma
    * base. Nunca preenchido pelo motor de produção; registrado nas razões de seleção. */
   qaVariantOverride?: EditorialCompositionVariant;
+  /** SOMENTE QA/fixtures locais: força a opção visual da variante digital. */
+  qaVariantOption?: DigitalServiceOption;
 };
 
 /** Variantes internas da família product_offer (nunca uma família nova). */
@@ -110,7 +114,7 @@ export const INSTITUTIONAL_VARIANTS = ["FULL_BLEED_EDITORIAL", "SPLIT_STORY", "C
 export type InstitutionalVariant = (typeof INSTITUTIONAL_VARIANTS)[number];
 
 /** Variantes internas da família digital_service. MOBILE_DEVICE = screenshot de celular no mockup. */
-export const DIGITAL_SERVICE_VARIANTS = ["DESKTOP_HERO", "SPLIT_PRODUCT_UI", "FLOATING_BROWSER", "MOBILE_DEVICE"] as const;
+export const DIGITAL_SERVICE_VARIANTS = ["UI_HERO", "UI_DETAIL_FOCUS", "FLOATING_PRODUCT", "MOBILE_DEVICE"] as const;
 export type DigitalServiceVariant = (typeof DIGITAL_SERVICE_VARIANTS)[number];
 
 export type EditorialCompositionVariant = ProductOfferVariant | InstitutionalVariant | DigitalServiceVariant;
@@ -151,7 +155,22 @@ export type EditorialBaseAnalysis = {
 
 export const SCREENSHOT_CLASSES = ["MOBILE", "DESKTOP", "TABLET", "OTHER"] as const;
 export type ScreenshotClass = (typeof SCREENSHOT_CLASSES)[number];
-export type ScreenshotFrame = "BROWSER_FRAME" | "DESKTOP_WINDOW" | "FLOATING_SCREEN" | "PHONE_DEVICE";
+/** EDITORIAL_SURFACE = screenshot inteiro como superfície (cantos + sombra), sem chrome de navegador. */
+export type ScreenshotFrame = "EDITORIAL_SURFACE" | "FLOATING_SCREEN" | "PHONE_DEVICE";
+
+/** Opção visual da variante digital (lado/tom/conjunto de recortes). */
+export type DigitalServiceOption = "left" | "right" | "a" | "b" | "light" | "dark";
+
+/** Recorte ampliado de uma região REAL do screenshot (nada inventado), rastreável à origem. */
+export type EditorialScreenshotCrop = {
+  source: "SCREENSHOT_SOURCE";
+  url: string;
+  /** Retângulo da região no screenshot ORIGINAL, em pixels da fonte. */
+  cropSourceRect: { x: number; y: number; width: number; height: number };
+  placedRect: { xPct: number; yPct: number; widthPct: number; heightPct: number };
+  /** Ampliação relativa ao screenshot principal (>1 = detalhe ampliado). */
+  zoomVsMain: number;
+};
 
 export type EditorialScreenshotDiagnostics = {
   classification: ScreenshotClass;
@@ -164,6 +183,10 @@ export type EditorialScreenshotDiagnostics = {
   /** Largura exibida / largura original (no espaço de design 1080). */
   displayScale: number;
   displayWidthPx: number;
+  option?: DigitalServiceOption;
+  /** Paleta aproximada extraída do screenshot (aplicada só ao fundo/superfícies). */
+  palette?: { dominant: string; secondary: string; accent: string };
+  crops?: EditorialScreenshotCrop[];
 };
 
 /** Diagnóstico da composição adaptativa — heurísticas registradas para revisão, nunca um gate. */

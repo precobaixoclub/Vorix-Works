@@ -1,0 +1,642 @@
+[
+  {
+    "file": "/out/b/01-institutional-full-bleed.jpg",
+    "family": "premium_institutional",
+    "composition": {
+      "variant": "FULL_BLEED_EDITORIAL",
+      "selectionReasons": [
+        "QA_VARIANT_OVERRIDE=FULL_BLEED_EDITORIAL (fixture local; regra escolheria COLLAGE_EDITORIAL)",
+        "base com 7 focos de detalhe separados e pouco espaço negativo (29%): texto por cima cobriria fotos e recorte perderia peças — base inteira como colagem, texto em faixa própria",
+        "texto embaixo (faixa quieta topo 5% / base 5%, foco y=47.9%)"
+      ],
+      "logoTreatment": "CHIP",
+      "pageTone": "dark",
+      "productVisualProminence": 1,
+      "largestEmptyBandPct": 0,
+      "contentCentroidOffset": 0.071,
+      "occupiedAreaRatio": 1,
+      "baseAnalysis": {
+        "visualDensity": 1,
+        "negativeSpaceRatio": 0.287,
+        "focalConcentration": 0.434,
+        "focalPoint": {
+          "xPct": 49.2,
+          "yPct": 47.9
+        },
+        "detailBox": {
+          "xPct": 6.3,
+          "yPct": 5,
+          "widthPct": 87.5,
+          "heightPct": 90
+        },
+        "detailClusters": 7,
+        "quietTopPct": 0.05,
+        "quietBottomPct": 0.05,
+        "meanLuma": 0.299,
+        "transparentRatio": 0.452
+      },
+      "baseFit": {
+        "strategy": "FULL_BLEED",
+        "cropLossPct": 0,
+        "detailRetainedPct": 1,
+        "reasons": [
+          "proporção da base (0.800) já bate com a área (0.800): base inteira, sem recorte relevante"
+        ]
+      }
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.7124,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 7.7,
+        "fidelityPass": true
+      }
+    ],
+    "renderedTextZones": [
+      {
+        "kind": "headline",
+        "text": "O casamento organizado como vocês sonharam",
+        "rect": {
+          "xPct": 6.667,
+          "yPct": 60.815,
+          "widthPct": 86.667,
+          "heightPct": 19.413
+        },
+        "emphasis": "primary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "subheadline",
+        "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+        "rect": {
+          "xPct": 6.667,
+          "yPct": 81.852,
+          "widthPct": 75.926,
+          "heightPct": 5.52
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "cta",
+        "text": "Conheça o Rumo ao Altar",
+        "rect": {
+          "xPct": 8.519,
+          "yPct": 89.926,
+          "widthPct": 32.5,
+          "heightPct": 4.741
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "center"
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "premium_institutional",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 60.815,
+            "widthPct": 86.667,
+            "heightPct": 19.413
+          },
+          "text": "O casamento organizado como vocês sonharam",
+          "fontSizePx": 84,
+          "lineCount": 3
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 81.852,
+            "widthPct": 75.926,
+            "heightPct": 5.52
+          },
+          "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+          "fontSizePx": 27,
+          "lineCount": 2
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 89.926,
+            "widthPct": 32.5,
+            "heightPct": 4.741
+          },
+          "text": "CONHEÇA O RUMO AO ALTAR",
+          "fontSizePx": 20,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 54.889,
+            "widthPct": 19.63,
+            "heightPct": 3.407
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/b/02-institutional-split-story.jpg",
+    "family": "premium_institutional",
+    "composition": {
+      "variant": "SPLIT_STORY",
+      "selectionReasons": [
+        "QA_VARIANT_OVERRIDE=SPLIT_STORY (fixture local; regra escolheria COLLAGE_EDITORIAL)",
+        "base com 7 focos de detalhe separados e pouco espaço negativo (29%): texto por cima cobriria fotos e recorte perderia peças — base inteira como colagem, texto em faixa própria"
+      ],
+      "logoTreatment": "CHIP",
+      "pageTone": "dark",
+      "productVisualProminence": 0.309,
+      "largestEmptyBandPct": 0.015,
+      "contentCentroidOffset": 0.037,
+      "occupiedAreaRatio": 0.508,
+      "baseAnalysis": {
+        "visualDensity": 1,
+        "negativeSpaceRatio": 0.287,
+        "focalConcentration": 0.434,
+        "focalPoint": {
+          "xPct": 49.2,
+          "yPct": 47.9
+        },
+        "detailBox": {
+          "xPct": 6.3,
+          "yPct": 5,
+          "widthPct": 87.5,
+          "heightPct": 90
+        },
+        "detailClusters": 7,
+        "quietTopPct": 0.05,
+        "quietBottomPct": 0.05,
+        "meanLuma": 0.299,
+        "transparentRatio": 0.452
+      },
+      "baseFit": {
+        "strategy": "CONTAIN_WITH_BACKGROUND",
+        "cropLossPct": 0,
+        "detailRetainedPct": 1,
+        "reasons": [
+          "recorte para a área perderia detalhe (77% < 92%): base inteira + extensão desfocada dela mesma"
+        ]
+      }
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.7811,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 8.21,
+        "fidelityPass": true
+      }
+    ],
+    "renderedTextZones": [
+      {
+        "kind": "headline",
+        "text": "O casamento organizado como vocês sonharam",
+        "rect": {
+          "xPct": 6.667,
+          "yPct": 69.481,
+          "widthPct": 86.667,
+          "heightPct": 10.785
+        },
+        "emphasis": "primary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "subheadline",
+        "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+        "rect": {
+          "xPct": 6.667,
+          "yPct": 81.852,
+          "widthPct": 75.926,
+          "heightPct": 5.52
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "cta",
+        "text": "Conheça o Rumo ao Altar",
+        "rect": {
+          "xPct": 8.519,
+          "yPct": 89.926,
+          "widthPct": 32.5,
+          "heightPct": 4.741
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "center"
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "premium_institutional",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 69.481,
+            "widthPct": 86.667,
+            "heightPct": 10.785
+          },
+          "text": "O casamento organizado como vocês sonharam",
+          "fontSizePx": 70,
+          "lineCount": 2
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 81.852,
+            "widthPct": 75.926,
+            "heightPct": 5.52
+          },
+          "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+          "fontSizePx": 27,
+          "lineCount": 2
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 89.926,
+            "widthPct": 32.5,
+            "heightPct": 4.741
+          },
+          "text": "CONHEÇA O RUMO AO ALTAR",
+          "fontSizePx": 20,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 63.556,
+            "widthPct": 19.63,
+            "heightPct": 3.407
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/b/03-institutional-collage.jpg",
+    "family": "premium_institutional",
+    "composition": {
+      "variant": "COLLAGE_EDITORIAL",
+      "selectionReasons": [
+        "QA_VARIANT_OVERRIDE=COLLAGE_EDITORIAL (fixture local; regra escolheria COLLAGE_EDITORIAL)",
+        "base com 7 focos de detalhe separados e pouco espaço negativo (29%): texto por cima cobriria fotos e recorte perderia peças — base inteira como colagem, texto em faixa própria"
+      ],
+      "logoTreatment": "CHIP",
+      "pageTone": "dark",
+      "productVisualProminence": 0.307,
+      "largestEmptyBandPct": 0.03,
+      "contentCentroidOffset": 0.027,
+      "occupiedAreaRatio": 0.49,
+      "baseAnalysis": {
+        "visualDensity": 1,
+        "negativeSpaceRatio": 0.287,
+        "focalConcentration": 0.434,
+        "focalPoint": {
+          "xPct": 49.2,
+          "yPct": 47.9
+        },
+        "detailBox": {
+          "xPct": 6.3,
+          "yPct": 5,
+          "widthPct": 87.5,
+          "heightPct": 90
+        },
+        "detailClusters": 7,
+        "quietTopPct": 0.05,
+        "quietBottomPct": 0.05,
+        "meanLuma": 0.299,
+        "transparentRatio": 0.452
+      },
+      "baseFit": {
+        "strategy": "CONTAIN_WITH_BACKGROUND",
+        "cropLossPct": 0,
+        "detailRetainedPct": 1,
+        "reasons": [
+          "colagem: base inteira preservada (contain), sem recorte — cada foto da base continua visível"
+        ]
+      }
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.795,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 7.15,
+        "fidelityPass": true
+      }
+    ],
+    "renderedTextZones": [
+      {
+        "kind": "headline",
+        "text": "O casamento organizado como vocês sonharam",
+        "rect": {
+          "xPct": 6.667,
+          "yPct": 70.074,
+          "widthPct": 86.667,
+          "heightPct": 10.169
+        },
+        "emphasis": "primary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "subheadline",
+        "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+        "rect": {
+          "xPct": 12.037,
+          "yPct": 81.852,
+          "widthPct": 75.926,
+          "heightPct": 5.52
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "cta",
+        "text": "Conheça o Rumo ao Altar",
+        "rect": {
+          "xPct": 33.796,
+          "yPct": 89.926,
+          "widthPct": 32.5,
+          "heightPct": 4.741
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "center"
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "premium_institutional",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 70.074,
+            "widthPct": 86.667,
+            "heightPct": 10.169
+          },
+          "text": "O casamento organizado como vocês sonharam",
+          "fontSizePx": 66,
+          "lineCount": 2
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 12.037,
+            "yPct": 81.852,
+            "widthPct": 75.926,
+            "heightPct": 5.52
+          },
+          "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+          "fontSizePx": 27,
+          "lineCount": 2
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 33.796,
+            "yPct": 89.926,
+            "widthPct": 32.5,
+            "heightPct": 4.741
+          },
+          "text": "CONHEÇA O RUMO AO ALTAR",
+          "fontSizePx": 20,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 40.185,
+            "yPct": 64.148,
+            "widthPct": 19.63,
+            "heightPct": 3.407
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/b/00-institutional-auto.jpg",
+    "family": "premium_institutional",
+    "composition": {
+      "variant": "COLLAGE_EDITORIAL",
+      "selectionReasons": [
+        "base com 7 focos de detalhe separados e pouco espaço negativo (29%): texto por cima cobriria fotos e recorte perderia peças — base inteira como colagem, texto em faixa própria"
+      ],
+      "logoTreatment": "CHIP",
+      "pageTone": "dark",
+      "productVisualProminence": 0.307,
+      "largestEmptyBandPct": 0.03,
+      "contentCentroidOffset": 0.027,
+      "occupiedAreaRatio": 0.49,
+      "baseAnalysis": {
+        "visualDensity": 1,
+        "negativeSpaceRatio": 0.287,
+        "focalConcentration": 0.434,
+        "focalPoint": {
+          "xPct": 49.2,
+          "yPct": 47.9
+        },
+        "detailBox": {
+          "xPct": 6.3,
+          "yPct": 5,
+          "widthPct": 87.5,
+          "heightPct": 90
+        },
+        "detailClusters": 7,
+        "quietTopPct": 0.05,
+        "quietBottomPct": 0.05,
+        "meanLuma": 0.299,
+        "transparentRatio": 0.452
+      },
+      "baseFit": {
+        "strategy": "CONTAIN_WITH_BACKGROUND",
+        "cropLossPct": 0,
+        "detailRetainedPct": 1,
+        "reasons": [
+          "colagem: base inteira preservada (contain), sem recorte — cada foto da base continua visível"
+        ]
+      }
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.795,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 7.15,
+        "fidelityPass": true
+      }
+    ],
+    "renderedTextZones": [
+      {
+        "kind": "headline",
+        "text": "O casamento organizado como vocês sonharam",
+        "rect": {
+          "xPct": 6.667,
+          "yPct": 70.074,
+          "widthPct": 86.667,
+          "heightPct": 10.169
+        },
+        "emphasis": "primary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "subheadline",
+        "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+        "rect": {
+          "xPct": 12.037,
+          "yPct": 81.852,
+          "widthPct": 75.926,
+          "heightPct": 5.52
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "cta",
+        "text": "Conheça o Rumo ao Altar",
+        "rect": {
+          "xPct": 33.796,
+          "yPct": 89.926,
+          "widthPct": 32.5,
+          "heightPct": 4.741
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "center"
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "premium_institutional",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 70.074,
+            "widthPct": 86.667,
+            "heightPct": 10.169
+          },
+          "text": "O casamento organizado como vocês sonharam",
+          "fontSizePx": 66,
+          "lineCount": 2
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 12.037,
+            "yPct": 81.852,
+            "widthPct": 75.926,
+            "heightPct": 5.52
+          },
+          "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+          "fontSizePx": 27,
+          "lineCount": 2
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 33.796,
+            "yPct": 89.926,
+            "widthPct": 32.5,
+            "heightPct": 4.741
+          },
+          "text": "CONHEÇA O RUMO AO ALTAR",
+          "fontSizePx": 20,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 40.185,
+            "yPct": 64.148,
+            "widthPct": 19.63,
+            "heightPct": 3.407
+          }
+        }
+      ]
+    }
+  }
+]

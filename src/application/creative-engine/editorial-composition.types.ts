@@ -22,7 +22,9 @@ export type EditorialGeometryIssue = {
     // Achado do Smoke A (cer-runtime-muyx4qzs-hoinur): bbox declarada, pixels ausentes. Medido sobre
     // a imagem final rasterizada, nunca sobre a geometria declarada.
     | "ASSET_NOT_VISIBLE"
-    | "ASSET_FIDELITY_MISMATCH";
+    | "ASSET_FIDELITY_MISMATCH"
+    // Screenshot real exibido pequeno demais para continuar legível (escala mínima por classe).
+    | "SCREENSHOT_ILLEGIBLE";
   message: string;
 };
 
@@ -92,6 +94,9 @@ export type RenderEditorialCreativeInput = {
   context: CreativeContext;
   plan: CreativePlan;
   assets: readonly EditorialCreativeAssetBuffer[];
+  /** SOMENTE QA/fixtures locais: força uma variante da família para comparar composições da mesma
+   * base. Nunca preenchido pelo motor de produção; registrado nas razões de seleção. */
+  qaVariantOverride?: EditorialCompositionVariant;
 };
 
 /** Variantes internas da família product_offer (nunca uma família nova). */
@@ -100,14 +105,75 @@ export type ProductOfferVariant = (typeof PRODUCT_OFFER_VARIANTS)[number];
 export type ProductOfferPriceTreatment = "INLINE_PRICE" | "COMMERCIAL_FOOTER";
 export type EditorialLogoTreatment = "DIRECT" | "MULTIPLY_ON_LIGHT" | "CHIP";
 
+/** Variantes internas da família premium_institutional (base da IA é a protagonista). */
+export const INSTITUTIONAL_VARIANTS = ["FULL_BLEED_EDITORIAL", "SPLIT_STORY", "COLLAGE_EDITORIAL"] as const;
+export type InstitutionalVariant = (typeof INSTITUTIONAL_VARIANTS)[number];
+
+/** Variantes internas da família digital_service. MOBILE_DEVICE = screenshot de celular no mockup. */
+export const DIGITAL_SERVICE_VARIANTS = ["DESKTOP_HERO", "SPLIT_PRODUCT_UI", "FLOATING_BROWSER", "MOBILE_DEVICE"] as const;
+export type DigitalServiceVariant = (typeof DIGITAL_SERVICE_VARIANTS)[number];
+
+export type EditorialCompositionVariant = ProductOfferVariant | InstitutionalVariant | DigitalServiceVariant;
+
+/** Como a base entrou na área dela: nunca crop central cego. */
+export type EditorialBaseFitStrategy = "FULL_BLEED" | "COVER_FOCAL_SAFE_CROP" | "CONTAIN_WITH_BACKGROUND";
+
+export type EditorialBaseFit = {
+  strategy: EditorialBaseFitStrategy;
+  /** Fração da área da base que ficou fora do enquadramento (0 = base inteira visível). */
+  cropLossPct: number;
+  /** Fração do detalhe visual (mapa de gradiente local) preservada dentro do enquadramento. */
+  detailRetainedPct: number;
+  reasons: string[];
+};
+
+/** Análise local da base (sem IA): mapa de detalhe em grade. */
+export type EditorialBaseAnalysis = {
+  /** Detalhe médio normalizado 0..1 (gradiente local). */
+  visualDensity: number;
+  /** Fração das células quietas (detalhe baixo) — espaço negativo real. */
+  negativeSpaceRatio: number;
+  /** Fração do detalhe total concentrada nas 20% células mais detalhadas. */
+  focalConcentration: number;
+  /** Centroide do detalhe (% do canvas da base). */
+  focalPoint: { xPct: number; yPct: number };
+  /** Bbox das células de alto detalhe (% da base). */
+  detailBox: { xPct: number; yPct: number; widthPct: number; heightPct: number };
+  /** Quantidade de agrupamentos separados de alto detalhe (colagem/múltiplas fotos). */
+  detailClusters: number;
+  /** Faixa quieta mais alta no topo e na base (fração da altura). */
+  quietTopPct: number;
+  quietBottomPct: number;
+  meanLuma: number;
+  /** Fração da base com alfa < 50% (colagem/recorte): aparece o fundo da peça, nunca o RGB escondido. */
+  transparentRatio: number;
+};
+
+export const SCREENSHOT_CLASSES = ["MOBILE", "DESKTOP", "TABLET", "OTHER"] as const;
+export type ScreenshotClass = (typeof SCREENSHOT_CLASSES)[number];
+export type ScreenshotFrame = "BROWSER_FRAME" | "DESKTOP_WINDOW" | "FLOATING_SCREEN" | "PHONE_DEVICE";
+
+export type EditorialScreenshotDiagnostics = {
+  classification: ScreenshotClass;
+  sourceWidth: number;
+  sourceHeight: number;
+  aspect: number;
+  frame: ScreenshotFrame;
+  /** contain = screenshot inteiro, sem crop; top-crop só no mockup de celular legado. */
+  fit: "contain" | "top_crop";
+  /** Largura exibida / largura original (no espaço de design 1080). */
+  displayScale: number;
+  displayWidthPx: number;
+};
+
 /** Diagnóstico da composição adaptativa — heurísticas registradas para revisão, nunca um gate. */
 export type EditorialCompositionDiagnostics = {
-  variant: ProductOfferVariant;
+  variant: EditorialCompositionVariant;
   selectionReasons: string[];
-  priceTreatment: ProductOfferPriceTreatment;
+  priceTreatment?: ProductOfferPriceTreatment;
   logoTreatment?: EditorialLogoTreatment;
   pageTone: "light" | "dark";
-  /** Fração do canvas ocupada pela bbox final do produto. */
+  /** Fração do canvas ocupada pela bbox final do protagonista (produto, base ou screenshot). */
   productVisualProminence: number;
   /** Maior faixa horizontal sem nenhum elemento (fração da altura). */
   largestEmptyBandPct: number;
@@ -115,6 +181,9 @@ export type EditorialCompositionDiagnostics = {
   contentCentroidOffset: number;
   /** Fração do canvas coberta por elementos. */
   occupiedAreaRatio: number;
+  baseAnalysis?: EditorialBaseAnalysis;
+  baseFit?: EditorialBaseFit;
+  screenshot?: EditorialScreenshotDiagnostics;
 };
 
 export type RenderEditorialCreativeResult = {

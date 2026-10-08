@@ -3,6 +3,7 @@ import type { IcaroAIResponse } from "../ai/icaro.types.js";
 import type { ObjectStoragePort } from "../ports/object-storage.port.js";
 import { extractJson } from "../../shared/utils/skill-parsing.js";
 import { extractCommercialFactsFromText } from "../../shared/utils/commercial-fact-normalizer.js";
+import { describePtBrCopyWarnings, findPtBrMissingAccents } from "../../shared/utils/ptbr-copy-check.js";
 import {
   buildCreativePlanPrompt,
   buildImageGenerationPromptFromPlan,
@@ -859,6 +860,16 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         "EDITORIAL_REQUIRED_TEXT_MISSING",
         { creativePlan: plan, repairRounds },
       );
+    }
+    // Preflight de copy pt-BR: só aviso, nunca autocorreção — o renderer desenha o texto exato.
+    const copyWarnings = findPtBrMissingAccents({
+      headline: plan.headline,
+      subheadline: plan.subheadline,
+      cta: plan.cta,
+      ...Object.fromEntries(plan.textZones.map((zone, index) => [`textZones[${index}].${zone.kind}`, zone.text])),
+    });
+    if (copyWarnings.length > 0) {
+      warnings.push(`PTBR_COPY_WARNING: possível acento ausente na copy (não corrigido automaticamente): ${describePtBrCopyWarnings(copyWarnings)}.`);
     }
   }
 

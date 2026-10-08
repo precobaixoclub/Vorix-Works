@@ -1,0 +1,649 @@
+[
+  {
+    "file": "/out/c/01-digital-desktop-hero.jpg",
+    "family": "digital_service",
+    "composition": {
+      "variant": "DESKTOP_HERO",
+      "selectionReasons": [
+        "QA_VARIANT_OVERRIDE=DESKTOP_HERO (fixture local; regra escolheria DESKTOP_HERO)",
+        "copy longa: texto em cima em largura total, interface grande embaixo (máxima legibilidade)"
+      ],
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.464,
+      "largestEmptyBandPct": 0.03,
+      "contentCentroidOffset": 0.071,
+      "occupiedAreaRatio": 0.666,
+      "screenshot": {
+        "classification": "DESKTOP",
+        "sourceWidth": 1280,
+        "sourceHeight": 900,
+        "aspect": 1.422,
+        "frame": "BROWSER_FRAME",
+        "fit": "contain",
+        "displayScale": 0.744,
+        "displayWidthPx": 952
+      }
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "screenshot",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.4222,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 2.69,
+        "fidelityPass": true
+      },
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.2121,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 4.38,
+        "fidelityPass": true
+      }
+    ],
+    "renderedTextZones": [
+      {
+        "kind": "headline",
+        "text": "Sua lista de presentes, linda e sem planilha",
+        "rect": {
+          "xPct": 6.667,
+          "yPct": 10.519,
+          "widthPct": 86.667,
+          "heightPct": 11.401
+        },
+        "emphasis": "primary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "subheadline",
+        "text": "Convidados escolhem, presenteiam e confirmam presença no site do casal.",
+        "rect": {
+          "xPct": 6.667,
+          "yPct": 23.253,
+          "widthPct": 86.667,
+          "heightPct": 5.316
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "cta",
+        "text": "Criar meu site",
+        "rect": {
+          "xPct": 8.519,
+          "yPct": 89.926,
+          "widthPct": 20.648,
+          "heightPct": 5.333
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "center"
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "digital_service",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 10.519,
+            "widthPct": 86.667,
+            "heightPct": 11.401
+          },
+          "text": "Sua lista de presentes, linda e sem planilha",
+          "fontSizePx": 74,
+          "lineCount": 2
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 23.253,
+            "widthPct": 86.667,
+            "heightPct": 5.316
+          },
+          "text": "Convidados escolhem, presenteiam e confirmam presença no site do casal.",
+          "fontSizePx": 26,
+          "lineCount": 2
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 89.926,
+            "widthPct": 20.648,
+            "heightPct": 5.333
+          },
+          "text": "CRIAR MEU SITE",
+          "fontSizePx": 20,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "screenshot",
+          "kind": "asset",
+          "role": "screenshot",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 36.074,
+            "widthPct": 88.148,
+            "heightPct": 49.556
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 5.037,
+            "widthPct": 18.704,
+            "heightPct": 3.259
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/c/02-digital-split-ui.jpg",
+    "family": "digital_service",
+    "composition": {
+      "variant": "SPLIT_PRODUCT_UI",
+      "selectionReasons": [
+        "QA_VARIANT_OVERRIDE=SPLIT_PRODUCT_UI (fixture local; regra escolheria DESKTOP_HERO)",
+        "copy longa: texto em cima em largura total, interface grande embaixo (máxima legibilidade)"
+      ],
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.353,
+      "largestEmptyBandPct": 0.074,
+      "contentCentroidOffset": 0.235,
+      "occupiedAreaRatio": 0.52,
+      "screenshot": {
+        "classification": "DESKTOP",
+        "sourceWidth": 1280,
+        "sourceHeight": 900,
+        "aspect": 1.422,
+        "frame": "DESKTOP_WINDOW",
+        "fit": "contain",
+        "displayScale": 0.645,
+        "displayWidthPx": 826
+      }
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "screenshot",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.4213,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 4.15,
+        "fidelityPass": true
+      },
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.2121,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 4.38,
+        "fidelityPass": true
+      }
+    ],
+    "renderedTextZones": [
+      {
+        "kind": "headline",
+        "text": "Sua lista de presentes, linda e sem planilha",
+        "rect": {
+          "xPct": 6.667,
+          "yPct": 10.815,
+          "widthPct": 55.556,
+          "heightPct": 15.716
+        },
+        "emphasis": "primary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "subheadline",
+        "text": "Convidados escolhem, presenteiam e confirmam presença no site do casal.",
+        "rect": {
+          "xPct": 6.667,
+          "yPct": 28.012,
+          "widthPct": 51.852,
+          "heightPct": 5.185
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "cta",
+        "text": "Criar meu site",
+        "rect": {
+          "xPct": 8.519,
+          "yPct": 35.567,
+          "widthPct": 20.648,
+          "heightPct": 5.333
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "center"
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "digital_service",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 10.815,
+            "widthPct": 55.556,
+            "heightPct": 15.716
+          },
+          "text": "Sua lista de presentes, linda e sem planilha",
+          "fontSizePx": 68,
+          "lineCount": 3
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 28.012,
+            "widthPct": 51.852,
+            "heightPct": 5.185
+          },
+          "text": "Convidados escolhem, presenteiam e confirmam presença no site do casal.",
+          "fontSizePx": 25,
+          "lineCount": 2
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 35.567,
+            "widthPct": 20.648,
+            "heightPct": 5.333
+          },
+          "text": "CRIAR MEU SITE",
+          "fontSizePx": 20,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "screenshot",
+          "kind": "asset",
+          "role": "screenshot",
+          "rect": {
+            "xPct": 19.815,
+            "yPct": 52.222,
+            "widthPct": 76.481,
+            "heightPct": 43.037
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 5.037,
+            "widthPct": 18.704,
+            "heightPct": 3.259
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/c/03-digital-floating-browser.jpg",
+    "family": "digital_service",
+    "composition": {
+      "variant": "FLOATING_BROWSER",
+      "selectionReasons": [
+        "QA_VARIANT_OVERRIDE=FLOATING_BROWSER (fixture local; regra escolheria DESKTOP_HERO)",
+        "copy longa: texto em cima em largura total, interface grande embaixo (máxima legibilidade)"
+      ],
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.358,
+      "largestEmptyBandPct": 0.074,
+      "contentCentroidOffset": 0.051,
+      "occupiedAreaRatio": 0.542,
+      "screenshot": {
+        "classification": "DESKTOP",
+        "sourceWidth": 1280,
+        "sourceHeight": 900,
+        "aspect": 1.422,
+        "frame": "BROWSER_FRAME",
+        "fit": "contain",
+        "displayScale": 0.65,
+        "displayWidthPx": 832
+      }
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "screenshot",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.4234,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 5.58,
+        "fidelityPass": true
+      },
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.2109,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 4.56,
+        "fidelityPass": true
+      }
+    ],
+    "renderedTextZones": [
+      {
+        "kind": "headline",
+        "text": "Sua lista de presentes, linda e sem planilha",
+        "rect": {
+          "xPct": 6.667,
+          "yPct": 10.519,
+          "widthPct": 86.667,
+          "heightPct": 10.785
+        },
+        "emphasis": "primary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "subheadline",
+        "text": "Convidados escolhem, presenteiam e confirmam presença no site do casal.",
+        "rect": {
+          "xPct": 12.037,
+          "yPct": 22.637,
+          "widthPct": 75.926,
+          "heightPct": 5.316
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "cta",
+        "text": "Criar meu site",
+        "rect": {
+          "xPct": 39.722,
+          "yPct": 89.926,
+          "widthPct": 20.648,
+          "heightPct": 5.333
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "center"
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "digital_service",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 10.519,
+            "widthPct": 86.667,
+            "heightPct": 10.785
+          },
+          "text": "Sua lista de presentes, linda e sem planilha",
+          "fontSizePx": 70,
+          "lineCount": 2
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 12.037,
+            "yPct": 22.637,
+            "widthPct": 75.926,
+            "heightPct": 5.316
+          },
+          "text": "Convidados escolhem, presenteiam e confirmam presença no site do casal.",
+          "fontSizePx": 26,
+          "lineCount": 2
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 39.722,
+            "yPct": 89.926,
+            "widthPct": 20.648,
+            "heightPct": 5.333
+          },
+          "text": "CRIAR MEU SITE",
+          "fontSizePx": 20,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "screenshot",
+          "kind": "asset",
+          "role": "screenshot",
+          "rect": {
+            "xPct": 11.481,
+            "yPct": 38.889,
+            "widthPct": 77.037,
+            "heightPct": 43.333
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 40.648,
+            "yPct": 5.037,
+            "widthPct": 18.704,
+            "heightPct": 3.259
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "/out/c/00-digital-auto.jpg",
+    "family": "digital_service",
+    "composition": {
+      "variant": "DESKTOP_HERO",
+      "selectionReasons": [
+        "copy longa: texto em cima em largura total, interface grande embaixo (máxima legibilidade)"
+      ],
+      "logoTreatment": "MULTIPLY_ON_LIGHT",
+      "pageTone": "light",
+      "productVisualProminence": 0.464,
+      "largestEmptyBandPct": 0.03,
+      "contentCentroidOffset": 0.071,
+      "occupiedAreaRatio": 0.666,
+      "screenshot": {
+        "classification": "DESKTOP",
+        "sourceWidth": 1280,
+        "sourceHeight": 900,
+        "aspect": 1.422,
+        "frame": "BROWSER_FRAME",
+        "fit": "contain",
+        "displayScale": 0.744,
+        "displayWidthPx": 952
+      }
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "screenshot",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.4222,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 2.69,
+        "fidelityPass": true
+      },
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.2121,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 4.38,
+        "fidelityPass": true
+      }
+    ],
+    "renderedTextZones": [
+      {
+        "kind": "headline",
+        "text": "Sua lista de presentes, linda e sem planilha",
+        "rect": {
+          "xPct": 6.667,
+          "yPct": 10.519,
+          "widthPct": 86.667,
+          "heightPct": 11.401
+        },
+        "emphasis": "primary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "subheadline",
+        "text": "Convidados escolhem, presenteiam e confirmam presença no site do casal.",
+        "rect": {
+          "xPct": 6.667,
+          "yPct": 23.253,
+          "widthPct": 86.667,
+          "heightPct": 5.316
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "none",
+        "align": "left"
+      },
+      {
+        "kind": "cta",
+        "text": "Criar meu site",
+        "rect": {
+          "xPct": 8.519,
+          "yPct": 89.926,
+          "widthPct": 20.648,
+          "heightPct": 5.333
+        },
+        "emphasis": "secondary",
+        "renderedBy": "renderer",
+        "backingStyle": "solid",
+        "align": "center"
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "digital_service",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 10.519,
+            "widthPct": 86.667,
+            "heightPct": 11.401
+          },
+          "text": "Sua lista de presentes, linda e sem planilha",
+          "fontSizePx": 74,
+          "lineCount": 2
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 23.253,
+            "widthPct": 86.667,
+            "heightPct": 5.316
+          },
+          "text": "Convidados escolhem, presenteiam e confirmam presença no site do casal.",
+          "fontSizePx": 26,
+          "lineCount": 2
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 8.519,
+            "yPct": 89.926,
+            "widthPct": 20.648,
+            "heightPct": 5.333
+          },
+          "text": "CRIAR MEU SITE",
+          "fontSizePx": 20,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "screenshot",
+          "kind": "asset",
+          "role": "screenshot",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 36.074,
+            "widthPct": 88.148,
+            "heightPct": 49.556
+          }
+        },
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 6.667,
+            "yPct": 5.037,
+            "widthPct": 18.704,
+            "heightPct": 3.259
+          }
+        }
+      ]
+    }
+  }
+]

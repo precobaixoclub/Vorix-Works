@@ -145,6 +145,26 @@ export function resolveVerifiedLogoRegions(input: {
   return input.plan.assetPlacements.filter((placement) => placement.role === "logo" && logoUrls.has(placement.url)).map((placement) => placement.rect);
 }
 
+/**
+ * Mesma regra de proveniência para o screenshot REAL: a interface do cliente tem texto próprio
+ * (menus, títulos, preços do site) que não é copy gerada. Só isenta dentro da bbox final do
+ * screenshot composto pelo renderer, apontando para o MESMO asset do contexto, visível e fiel ao
+ * original em pixel. Mesmo texto fora dessa bbox continua não autorizado.
+ */
+export function resolveVerifiedScreenshotRegions(input: {
+  plan: Pick<CreativePlan, "assetPlacements">;
+  context: Pick<CreativeContext, "assets">;
+  compositedAssetRoles: readonly CreativePlanAssetRole[];
+  assetPixelEvidence?: readonly CreativeAssetPixelEvidence[];
+}): CreativePlanRect[] {
+  if (!input.assetPixelEvidence || !input.compositedAssetRoles.includes("screenshot")) return [];
+  const evidence = input.assetPixelEvidence.find((item) => item.role === "screenshot");
+  if (!evidence?.visible || evidence.fidelityPass !== true) return [];
+  const urls = new Set(input.context.assets.filter((asset) => asset.role === "screenshot").map((asset) => asset.url));
+  if (urls.size === 0) return [];
+  return input.plan.assetPlacements.filter((placement) => placement.role === "screenshot" && urls.has(placement.url)).map((placement) => placement.rect);
+}
+
 function intersectionArea(a: CreativePlanRect, b: CreativePlanRect): number {
   const width = Math.min(a.xPct + a.widthPct, b.xPct + b.widthPct) - Math.max(a.xPct, b.xPct);
   const height = Math.min(a.yPct + a.heightPct, b.yPct + b.heightPct) - Math.max(a.yPct, b.yPct);
@@ -170,6 +190,35 @@ export function isTextRegionInsideVerifiedLogo(region: CreativePlanRect, logoReg
   });
 }
 
+/**
+ * Equivalência textual do gate: Unicode NFC, caixa, espaços, aspas e pontuação simples de fim de
+ * palavra. NUNCA remove acentos — "Conheca" continua diferente de "Conheça".
+ */
+export function normalizeRenderedText(value: string): string {
+  return value
+    .normalize("NFC")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[\u201C\u201D"\u2018\u2019'\u0060\u00B4]/g, "")
+    .replace(/[.,;:!?\u2026]+(?=\s|$)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Zona renderizada que autoriza o texto detectado: região dentro da bbox final da zona e texto
+ * equivalente (inteiro ou trecho, ex.: "Rumo ao Altar" dentro do CTA "Conheça o Rumo ao Altar"). */
+export function matchRenderedTextRegion(
+  detected: { text: string; region?: CreativePlanRect },
+  regions: readonly CreativeRenderedTextRegion[],
+): CreativeRenderedTextRegion | undefined {
+  if (!detected.region) return undefined;
+  const normalized = normalizeRenderedText(detected.text);
+  if (!normalized) return undefined;
+  return regions.find((zone) => {
+    const expected = normalizeRenderedText(zone.text);
+    return (expected === normalized || expected.includes(normalized)) && isTextRegionInsideVerifiedLogo(detected.region!, [zone.rect]);
+  });
+}
+
 function parseDetectedText(raw: unknown): { text: string; region?: CreativePlanRect } | undefined {
   if (typeof raw === "string") return raw.trim() ? { text: raw } : undefined;
   if (typeof raw !== "object" || raw === null) return undefined;
@@ -180,9 +229,25 @@ function parseDetectedText(raw: unknown): { text: string; region?: CreativePlanR
   return valid ? { text: record.text, region: region as unknown as CreativePlanRect } : { text: record.text };
 }
 
+/** Diagnóstico sanitizado de cada texto que a visão reportou (sem resposta bruta): diz se o texto
+ * veio da logo, do CTA, da headline ou de região desconhecida, e por que foi aceito/rejeitado. */
+export type CreativeTextDiagnostic = {
+  detectedText: string;
+  bbox?: CreativePlanRect;
+  matchedElement?: string;
+  normalizedExpected?: string;
+  normalizedDetected: string;
+  decision: "authorized" | "rejected" | "missing" | "missing_reconciled";
+  reason: string;
+};
+
+/** Texto desenhado na geometria FINAL do renderer — base da autorização regional. */
+export type CreativeRenderedTextRegion = { kind: string; text: string; rect: CreativePlanRect };
+
 export type CreativeQualityGateResult = {
   verdict: "pass" | "fail";
   issues: CreativeQualityIssue[];
+  textDiagnostics?: CreativeTextDiagnostic[];
 };
 
 const ASPECT_RATIO_TOLERANCE = 0.06;
@@ -517,7 +582,7 @@ function buildVisualIntegrityPrompt(
     "- \"compositionBroken\": true se a composição está visivelmente quebrada — elementos deformados, pillarboxing (barras vazias nas laterais), ou artefatos visuais graves.",
     "- \"colorPaletteViolated\": true SOMENTE se uma paleta oficial foi informada acima E a peça final claramente NÃO usa essas cores (ex.: fundo e cores predominantes totalmente diferentes do pedido, nenhuma cor da paleta aparece de forma reconhecível). Sem paleta oficial informada, responda sempre false — nunca microgerencie tom/saturação exatos, só a ausência clara da paleta inteira.",
     options.withTextRegions
-      ? "- \"unauthorizedTexts\": liste CADA palavra/frase/rótulo/botão legível na peça que NÃO está na lista de textos autorizados acima — transcreva exatamente como está escrito na imagem, INCLUSIVE texto que pareça nome de marca, wordmark ou logo (o sistema confere em código quais estão dentro da logo oficial verificada; não decida isso você). Para CADA item informe \"region\": o retângulo aproximado onde o texto aparece, em porcentagem do canvas (xPct/yPct = canto superior esquerdo, widthPct/heightPct = tamanho). NUNCA inclua um FRAGMENTO/LINHA/TRECHO de um texto autorizado — se o texto quebrou em várias linhas na composição, cada linha sozinha NÃO conta como não autorizada. Lista vazia se todo texto visível bate com a lista autorizada."
+      ? "- \"unauthorizedTexts\": liste CADA palavra/frase/rótulo/botão legível na peça que NÃO está na lista de textos autorizados acima — transcreva exatamente como está escrito na imagem, INCLUSIVE texto que pareça nome de marca, wordmark ou logo (o sistema confere em código quais estão dentro da logo oficial ou do screenshot real verificados; não decida isso você). Isso inclui texto da interface dentro de um screenshot/tela de site. Inclua também texto que só difere de um autorizado em MAIÚSCULAS/minúsculas ou pontuação (ex.: botão em caixa alta) — o sistema confere a equivalência e a região em código. Para CADA item informe \"region\": o retângulo aproximado onde o texto aparece, em porcentagem do canvas (xPct/yPct = canto superior esquerdo, widthPct/heightPct = tamanho). NUNCA inclua um FRAGMENTO/LINHA/TRECHO de um texto autorizado — se o texto quebrou em várias linhas na composição, cada linha sozinha NÃO conta como não autorizada. Lista vazia se todo texto visível bate com a lista autorizada."
       : "- \"unauthorizedTexts\": liste CADA palavra/frase/rótulo/botão legível na peça que NÃO está na lista de textos autorizados acima — transcreva exatamente como está escrito na imagem. NUNCA inclua aqui o nome/wordmark que aparece DENTRO da logo colada (isso é a marca real, não texto gerado). NUNCA inclua um FRAGMENTO/LINHA/TRECHO de um texto autorizado — se o texto quebrou em várias linhas na composição (comum quando um texto longo tem que caber numa caixa), cada linha sozinha NÃO conta como não autorizada, só o texto INTEIRO conta como \"bateu\" com a lista. Lista vazia se todo texto visível bate (inteiro ou em fragmentos de um mesmo texto autorizado) com a lista autorizada.",
     "- \"duplicatedTexts\": liste CADA texto autorizado que aparece MAIS DE UMA VEZ na peça final (ex.: o mesmo preço escrito duas vezes em lugares diferentes) — isso nunca é intencional. CONTA TAMBÉM uma ocorrência PARCIALMENTE visível — letras ou palavras de um texto autorizado vazando por trás ou ao redor de um cartão/caixa desenhado por cima, mesmo que a maior parte esteja coberta: se dá pra reconhecer QUE TEXTO é mesmo vendo só um pedaço, conta como uma 2ª ocorrência. Olhe com atenção especial perto das bordas de cartões/caixas de texto e em fundos decorativos/estampados, onde esse vazamento é mais fácil de passar despercebido. Lista vazia só quando cada texto autorizado aparece claramente uma única vez, sem nenhum traço reconhecível dele em outro lugar.",
     "- \"missingRequiredTexts\": liste CADA item da lista de textos autorizados que NÃO está legível/visível em nenhum lugar da peça final. Lista vazia se todos apareceram.",
@@ -569,6 +634,13 @@ export async function checkCreativeVisualIntegrity(
      * a visão devolve a região de cada texto não autorizado e o código isenta só o que cai dentro. */
     verifiedLogoRegions?: readonly CreativePlanRect[];
     onVerifiedLogoTextExempted?: (exempted: { text: string; region: CreativePlanRect }) => void;
+    /** Textos na geometria FINAL do renderer (modo editorial com prova em pixel). Ativa a
+     * autorização regional: equivalência normalizada SÓ dentro da bbox da própria zona. */
+    renderedTextRegions?: readonly CreativeRenderedTextRegion[];
+    /** Regiões FINAIS do screenshot real verificado (`resolveVerifiedScreenshotRegions`). */
+    verifiedScreenshotRegions?: readonly CreativePlanRect[];
+    /** Coletor do diagnóstico sanitizado de cada texto reportado pela visão. */
+    textDiagnostics?: CreativeTextDiagnostic[];
     /** Auditoria de custo — achado crítico: esta chamada de visão nunca entrava em NENHUM total
      * de custo do motor antes desta correção (`run-gpt-creative-engine.ts` só rastreava
      * plano/imagem). Opcional e best-effort, mesmo espírito do resto da função — nunca lançar por
@@ -581,18 +653,19 @@ export async function checkCreativeVisualIntegrity(
       (url): url is string => Boolean(url),
     );
     const imageUrls = [...referenceUrls, input.finalImageUrl];
+    const withTextRegions = (input.verifiedLogoRegions?.length ?? 0) > 0 || (input.renderedTextRegions?.length ?? 0) > 0 || (input.verifiedScreenshotRegions?.length ?? 0) > 0;
     // `?? []` — mesma tolerância de `allowedRenderedTexts` ausente em planos antigos/fixtures de
     // teste: nunca lançar por um campo novo e opcional faltando, só significa "nenhum fato crítico
     // declarado nesta peça".
     const response = await icaro.request({
       taskType: "review",
-      prompt: buildVisualIntegrityPrompt(input.brandColors, input.allowedRenderedTexts, input.requiredRenderedFacts ?? [], { withTextRegions: (input.verifiedLogoRegions?.length ?? 0) > 0 }),
+      prompt: buildVisualIntegrityPrompt(input.brandColors, input.allowedRenderedTexts, input.requiredRenderedFacts ?? [], { withTextRegions }),
       specialistId: input.specialistId,
       imageUrls,
       expectedOutput: "json",
       priority: "quality",
       temperature: 0.2,
-      maxTokens: (input.verifiedLogoRegions?.length ?? 0) > 0 ? 700 : 400,
+      maxTokens: withTextRegions ? 800 : 400,
       timeoutMs: 25_000,
     });
     input.onCost?.(response);
@@ -655,19 +728,52 @@ export async function checkCreativeVisualIntegrity(
     // com esse defeito óbvio às vezes recebia `false`. Comparar a TRANSCRIÇÃO da visão contra
     // `allowedRenderedTexts` (a fonte de verdade do plano) EM CÓDIGO, nunca só confiar no
     // julgamento livre da IA, é o que torna isto um hard failure objetivo de verdade.
+    const authorizedZoneTexts = new Set<string>();
     if (Array.isArray(parsed.unauthorizedTexts)) {
       const verifiedLogoRegions = input.verifiedLogoRegions ?? [];
+      const renderedTextRegions = input.renderedTextRegions ?? [];
       for (const raw of parsed.unauthorizedTexts) {
         const detected = parseDetectedText(raw);
         if (!detected) continue;
         const item = detected.text;
-        // Isenção ESPACIAL decidida em código (nunca pelo julgamento da visão): só texto cuja região
-        // cai dentro de uma logo oficial verificada (proveniência + pixel). Mesmo texto fora dela,
+        const normalizedDetected = normalizeRenderedText(item);
+        // Autorização REGIONAL decidida em código (nunca pelo julgamento da visão): texto
+        // equivalente (caixa/espaço/pontuação, nunca acento) DENTRO da bbox final da zona que o
+        // renderer desenhou — ex.: CTA em caixa alta, ou a marca dentro do próprio CTA.
+        const zone = matchRenderedTextRegion(detected, renderedTextRegions);
+        if (zone) {
+          authorizedZoneTexts.add(normalizeRenderedText(zone.text));
+          input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: zone.kind, normalizedExpected: normalizeRenderedText(zone.text), normalizedDetected, decision: "authorized", reason: `equivalente dentro da bbox final da zona ${zone.kind}` });
+          continue;
+        }
+        // Isenção ESPACIAL da logo oficial verificada (proveniência + pixel). Mesmo texto fora dela,
         // ou sem região informada, continua reprovando.
         if (detected.region && verifiedLogoRegions.length > 0 && isTextRegionInsideVerifiedLogo(detected.region, verifiedLogoRegions)) {
           input.onVerifiedLogoTextExempted?.({ text: item, region: detected.region });
+          input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "logo", normalizedDetected, decision: "authorized", reason: "dentro da bbox final da logo oficial verificada (proveniência + pixel)" });
           continue;
         }
+        const verifiedScreenshotRegions = input.verifiedScreenshotRegions ?? [];
+        if (detected.region && verifiedScreenshotRegions.length > 0 && isTextRegionInsideVerifiedLogo(detected.region, verifiedScreenshotRegions)) {
+          input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "screenshot", normalizedDetected, decision: "authorized", reason: "dentro da bbox final do screenshot real verificado (proveniência + pixel)" });
+          continue;
+        }
+        const equivalentZone = renderedTextRegions.find((candidate) => {
+          const expected = normalizeRenderedText(candidate.text);
+          return expected === normalizedDetected || (normalizedDetected.length > 0 && expected.includes(normalizedDetected));
+        });
+        input.textDiagnostics?.push({
+          detectedText: item,
+          bbox: detected.region,
+          normalizedExpected: equivalentZone ? normalizeRenderedText(equivalentZone.text) : undefined,
+          normalizedDetected,
+          decision: "rejected",
+          reason: !detected.region
+            ? "sem região informada pela visão — sem prova espacial"
+            : equivalentZone
+              ? `equivalente à zona ${equivalentZone.kind}, mas FORA da sua bbox final`
+              : "fora de qualquer zona autorizada e da logo verificada",
+        });
         const placeholder = isPlaceholderLikeText(item);
         issues.push({
           code: placeholder ? "PLACEHOLDER_RENDERED" : "UNAUTHORIZED_TEXT",
@@ -696,6 +802,13 @@ export async function checkCreativeVisualIntegrity(
     if (Array.isArray(parsed.missingRequiredTexts)) {
       for (const item of parsed.missingRequiredTexts) {
         if (typeof item !== "string" || !item.trim()) continue;
+        // Contradição da própria visão: o texto "ausente" foi transcrito, equivalente, dentro da
+        // bbox final da sua zona (ex.: CTA desenhado em caixa alta) — não é ausência.
+        if (authorizedZoneTexts.has(normalizeRenderedText(item))) {
+          input.textDiagnostics?.push({ detectedText: item, normalizedExpected: normalizeRenderedText(item), normalizedDetected: normalizeRenderedText(item), decision: "missing_reconciled", reason: "equivalente encontrado dentro da bbox final da sua zona" });
+          continue;
+        }
+        input.textDiagnostics?.push({ detectedText: item, normalizedExpected: normalizeRenderedText(item), normalizedDetected: "", decision: "missing", reason: "visão não encontrou o texto autorizado" });
         issues.push({
           code: "MISSING_REQUIRED_TEXT",
           message: `O texto autorizado "${item}" não está visível/legível na peça final — inclua-o exatamente como definido no plano.`,
@@ -847,6 +960,7 @@ export async function evaluateCreativeQualityGate(
   const referenceProductImageUrl = input.context.assets.find((asset) => asset.role === "product_photo")?.url;
   const referenceLogoUrl = input.context.assets.find((asset) => asset.role === "logo")?.url;
   const referenceScreenshotUrl = input.context.assets.find((asset) => asset.role === "screenshot")?.url;
+  const textDiagnostics: CreativeTextDiagnostic[] = [];
   const visualIssues = await checkCreativeVisualIntegrity(icaro, {
     finalImageUrl: input.finalImageUrl,
     referenceProductImageUrl,
@@ -858,6 +972,10 @@ export async function evaluateCreativeQualityGate(
     requiredRenderedFacts: input.plan.requiredRenderedFacts,
     verifiedLogoRegions: resolveVerifiedLogoRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence }),
     onVerifiedLogoTextExempted: input.onVerifiedLogoTextExempted,
+    // Só com prova em pixel (modo editorial) as textZones do plano são a geometria FINAL renderizada.
+    ...(input.assetPixelEvidence ? { renderedTextRegions: input.plan.textZones.map((zone) => ({ kind: zone.kind, text: zone.text, rect: zone.rect })) } : {}),
+    verifiedScreenshotRegions: resolveVerifiedScreenshotRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence }),
+    textDiagnostics,
     onCost: input.onCost,
   });
   const productionGuidelinesIssues = await checkProductionGuidelinesCompliance(icaro, {
@@ -867,7 +985,7 @@ export async function evaluateCreativeQualityGate(
     onCost: input.onCost,
   });
 
-  return combineCreativeQualityIssues(
+  const result = combineCreativeQualityIssues(
     deterministicIssues,
     commercialFactIssues,
     safeAreaIssues,
@@ -878,4 +996,5 @@ export async function evaluateCreativeQualityGate(
     visualIssues,
     productionGuidelinesIssues,
   );
+  return textDiagnostics.length > 0 ? { ...result, textDiagnostics } : result;
 }

@@ -13,6 +13,7 @@ import {
   evaluateCreativeQualityGate,
   evaluateDeterministicCreativeChecks,
   isTextRegionInsideVerifiedLogo,
+  normalizeRenderedText,
   resolveVerifiedLogoRegions,
 } from "../dist/application/creative-engine/evaluate-creative-quality-gate.js";
 
@@ -858,4 +859,122 @@ test("resolveVerifiedLogoRegions / isTextRegionInsideVerifiedLogo: geometria e t
   assert.equal(isTextRegionInsideVerifiedLogo({ xPct: 8, yPct: 20, widthPct: 30, heightPct: 20 }, regions), false, "headline logo abaixo não é a logo");
   assert.equal(isTextRegionInsideVerifiedLogo({ xPct: 20, yPct: 6, widthPct: 40, heightPct: 5 }, regions), false, "texto que transborda muito a logo não é isentado");
   assert.equal(isTextRegionInsideVerifiedLogo({ xPct: 10, yPct: 7, widthPct: 0, heightPct: 0 }, regions), false);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Autorização textual REGIONAL e normalizada (cenário B execution-muzqmi4q-f7qx3f: CTA desenhado em
+// caixa alta reprovado como UNAUTHORIZED_TEXT + MISSING_REQUIRED_TEXT, e "Rumo ao Altar" do próprio
+// CTA reprovado). Nunca whitelist: equivalência só dentro da bbox FINAL do elemento.
+// ---------------------------------------------------------------------------------------------
+
+const B_CTA = "Conheça o Rumo ao Altar";
+const B_CTA_RECT = { xPct: 7.778, yPct: 85.185, widthPct: 30.37, heightPct: 4.741 };
+const B_HEAD_RECT = { xPct: 6.667, yPct: 60, widthPct: 86.667, heightPct: 14 };
+const SHOT_URL = "https://api.vorixworks.com/uploads/qa-assets/editorial/site.png";
+const SHOT_RECT = { xPct: 5.926, yPct: 12, widthPct: 88.148, heightPct: 45 };
+const CTA_UPPER_REGION = { xPct: 9, yPct: 85.6, widthPct: 27, heightPct: 3.8 };
+
+function regionalGateInput(overrides = {}) {
+  const base = logoGateInput();
+  return {
+    ...base,
+    compositedAssetRoles: ["logo"],
+    assetPixelEvidence: [{ role: "logo", visible: true, fidelityPass: true }],
+    plan: basePlan({
+      headline: "O casamento organizado como vocês sonharam",
+      cta: B_CTA,
+      assetPlacements: base.plan.assetPlacements,
+      textZones: [
+        { kind: "headline", text: "O casamento organizado como vocês sonharam", rect: B_HEAD_RECT, emphasis: "primary", renderedBy: "renderer" },
+        { kind: "cta", text: B_CTA, rect: B_CTA_RECT, emphasis: "secondary", renderedBy: "renderer" },
+      ],
+    }),
+    ...overrides,
+  };
+}
+
+test("normalizeRenderedText: caixa, NFC, espaços e pontuação simples — NUNCA remove acento", () => {
+  assert.equal(normalizeRenderedText("Conheça o Rumo ao Altar"), normalizeRenderedText("CONHEÇA O RUMO AO ALTAR"));
+  assert.equal(normalizeRenderedText("Conheça o Rumo ao Altar"), normalizeRenderedText("Conheça  o Rumo ao Altar."), "NFD e espaço/ponto final equivalem");
+  assert.equal(normalizeRenderedText("“Sem Correria!”"), "sem correria");
+  assert.notEqual(normalizeRenderedText("Conheca o Rumo ao Altar"), normalizeRenderedText("Conheça o Rumo ao Altar"), "acento ausente nunca é mascarado");
+  assert.equal(normalizeRenderedText("R$ 149,00"), "r$ 149,00", "vírgula decimal (sem espaço depois) é preservada");
+});
+
+test("regional A: CTA em CAIXA ALTA dentro da bbox final do CTA é autorizado e o ausente contraditório é reconciliado", async () => {
+  const icaro = visionReturning([{ text: "CONHEÇA O RUMO AO ALTAR", region: CTA_UPPER_REGION }], { missingRequiredTexts: [B_CTA] });
+  const result = await evaluateCreativeQualityGate(icaro, regionalGateInput());
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  assert.match(icaro.prompts[0], /"region"/);
+  assert.match(icaro.prompts[0], /MAIÚSCULAS\/minúsculas/);
+  const authorized = result.textDiagnostics.find((item) => item.decision === "authorized");
+  assert.equal(authorized.matchedElement, "cta");
+  assert.equal(authorized.normalizedDetected, "conheça o rumo ao altar");
+  assert.equal(authorized.normalizedExpected, "conheça o rumo ao altar");
+  assert.ok(result.textDiagnostics.some((item) => item.decision === "missing_reconciled" && item.detectedText === B_CTA));
+});
+
+test("regional B: o MESMO texto do CTA fora da bbox do CTA continua UNAUTHORIZED_TEXT (com motivo no diagnóstico)", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([{ text: "CONHEÇA O RUMO AO ALTAR", region: { xPct: 50, yPct: 20, widthPct: 30, heightPct: 5 } }]), regionalGateInput());
+  assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+  const rejected = result.textDiagnostics.find((item) => item.decision === "rejected");
+  assert.match(rejected.reason, /FORA da sua bbox final/);
+  assert.equal(rejected.normalizedExpected, "conheça o rumo ao altar");
+});
+
+test("regional C: Rumo ao Altar dentro do CTA autorizado é legítimo; fora do CTA e da logo, não", async () => {
+  const inside = await evaluateCreativeQualityGate(visionReturning([{ text: "Rumo ao Altar", region: { xPct: 20, yPct: 85.6, widthPct: 16, heightPct: 3.6 } }]), regionalGateInput());
+  assert.equal(inside.verdict, "pass", JSON.stringify(inside.issues));
+  assert.equal(inside.textDiagnostics[0].matchedElement, "cta");
+  const outside = await evaluateCreativeQualityGate(visionReturning([{ text: "Rumo ao Altar", region: OUTSIDE_REGION }]), regionalGateInput());
+  assert.ok(outside.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT" && /Rumo ao Altar/.test(issue.message)));
+});
+
+test("regional D: logo continua isentando só dentro da bbox da logo, com diagnóstico", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([{ text: "Rumo ao Altar", region: LOGO_TEXT_REGION }]), regionalGateInput());
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  assert.equal(result.textDiagnostics[0].matchedElement, "logo");
+});
+
+test("regional E: copy SEM acento detectada no CTA acentuado não é equivalente (rejeitada)", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([{ text: "CONHECA O RUMO AO ALTAR", region: CTA_UPPER_REGION }]), regionalGateInput());
+  assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+});
+
+test("regional F: ausência real (sem equivalente na região) continua MISSING_REQUIRED_TEXT", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([], { missingRequiredTexts: [B_CTA] }), regionalGateInput());
+  assert.ok(result.issues.some((issue) => issue.code === "MISSING_REQUIRED_TEXT"));
+  assert.ok(result.textDiagnostics.some((item) => item.decision === "missing"));
+});
+
+test("regional G: sem prova em pixel (motor padrão) não há autorização regional", async () => {
+  const icaro = visionReturning(["CONHEÇA O RUMO AO ALTAR"]);
+  const result = await evaluateCreativeQualityGate(icaro, regionalGateInput({ assetPixelEvidence: undefined }));
+  assert.doesNotMatch(icaro.prompts[0], /"region"/);
+  assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+});
+
+test("regional H: diagnóstico é sanitizado (só campos estruturados, sem resposta bruta da visão)", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([{ text: "CONHEÇA O RUMO AO ALTAR", region: CTA_UPPER_REGION }], { reasoning: "RAW" }), regionalGateInput());
+  for (const item of result.textDiagnostics) {
+    for (const key of Object.keys(item)) assert.ok(["detectedText", "bbox", "matchedElement", "normalizedExpected", "normalizedDetected", "decision", "reason"].includes(key), key);
+  }
+  assert.doesNotMatch(JSON.stringify(result.textDiagnostics), /RAW/);
+});
+
+test("screenshot real verificado: texto da interface dentro da bbox do screenshot é isentado; fora não; sem fidelidade não", async () => {
+  const input = (evidence) => regionalGateInput({
+    compositedAssetRoles: ["screenshot", "logo"],
+    context: baseContext({ assets: [{ url: LOGO_URL, role: "logo", description: "Logo" }, { url: SHOT_URL, role: "screenshot", description: "Site real" }] }),
+    plan: { ...regionalGateInput().plan, assetPlacements: [...regionalGateInput().plan.assetPlacements, { role: "screenshot", url: SHOT_URL, rect: SHOT_RECT, frame: "none" }] },
+    assetPixelEvidence: [{ role: "logo", visible: true, fidelityPass: true }, evidence],
+  });
+  const uiTexts = [{ text: "Lista de presentes", region: { xPct: 12, yPct: 20, widthPct: 20, heightPct: 2.5 } }, { text: "R$ 79,90", region: { xPct: 13, yPct: 45, widthPct: 6, heightPct: 1.8 } }];
+  const inside = await evaluateCreativeQualityGate(visionReturning(uiTexts), input({ role: "screenshot", visible: true, fidelityPass: true }));
+  assert.equal(inside.verdict, "pass", JSON.stringify(inside.issues));
+  assert.ok(inside.textDiagnostics.every((item) => item.matchedElement === "screenshot"));
+  const outside = await evaluateCreativeQualityGate(visionReturning([{ text: "Lista de presentes", region: { xPct: 12, yPct: 90, widthPct: 20, heightPct: 3 } }]), input({ role: "screenshot", visible: true, fidelityPass: true }));
+  assert.ok(outside.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+  const unverified = await evaluateCreativeQualityGate(visionReturning([uiTexts[0]]), input({ role: "screenshot", visible: true, fidelityPass: false }));
+  assert.ok(unverified.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
 });

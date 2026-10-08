@@ -213,9 +213,9 @@ test("renderEditorialCreative: servico digital usa screenshot real no mockup 9:1
 
 test("renderEditorialCreative: institucional premium mantem headline dentro da coluna em 4:5", async () => {
   const baseImageBuffer = await image(1080, 1350, "#3A2230");
-  // Logo claro sobre o painel vinho — um logo vinho ali seria (corretamente) reprovado como
-  // invisível pela verificação de pixel.
-  const logo = await image(420, 120, "#F8E6D8");
+  // Logo REAL (caixa clara + traço rosé): no fundo escuro do institucional adaptativo ganha
+  // plaquinha; um retângulo liso sem traço some sobre ela e é (corretamente) reprovado em pixel.
+  const logo = REAL_LOGO_PNG;
 
   const result = await renderEditorialCreative({
     baseImageBuffer,

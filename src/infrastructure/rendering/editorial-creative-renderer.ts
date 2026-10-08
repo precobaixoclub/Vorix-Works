@@ -6,8 +6,15 @@ import type { CreativeContext, CreativePlan, CreativePlanAssetRole, CreativePlan
 import {
   EditorialCompositionError,
   type EditorialAssetVerification,
+  type EditorialBaseAnalysis,
+  type EditorialBaseFit,
   type EditorialCompositionDiagnostics,
   type EditorialLogoTreatment,
+  type DigitalServiceVariant,
+  type InstitutionalVariant,
+  type ScreenshotClass,
+  type ScreenshotFrame,
+  INSTITUTIONAL_VARIANTS,
   type ProductOfferPriceTreatment,
   type ProductOfferVariant,
   type EditorialCreativeAssetBuffer,
@@ -652,7 +659,7 @@ function resolveLogoTreatment(logo: PreparedAsset, tone: "light" | "dark"): Edit
   return hasOpaqueLightBox || logo.stats.meanLuma < 120 ? "CHIP" : "DIRECT";
 }
 
-function compositionMetrics(boxes: readonly EditorialGeometryBox[], canvas: Canvas, productRect: PxRect | undefined): Omit<EditorialCompositionDiagnostics, "variant" | "selectionReasons" | "priceTreatment" | "logoTreatment" | "pageTone"> {
+function compositionMetrics(boxes: readonly EditorialGeometryBox[], canvas: Canvas, productRect: PxRect | undefined, extraRects: readonly PxRect[] = []): Pick<EditorialCompositionDiagnostics, "productVisualProminence" | "largestEmptyBandPct" | "contentCentroidOffset" | "occupiedAreaRatio"> {
   const cell = 20;
   const cols = Math.ceil(canvas.width / cell);
   const rows = Math.ceil(canvas.height / cell);
@@ -660,8 +667,7 @@ function compositionMetrics(boxes: readonly EditorialGeometryBox[], canvas: Canv
   let weightedX = 0;
   let weightedY = 0;
   let totalArea = 0;
-  for (const box of boxes) {
-    const rect = boxPxRect(box, canvas);
+  for (const rect of [...boxes.map((box) => boxPxRect(box, canvas)), ...extraRects]) {
     const area = rect.width * rect.height;
     weightedX += (rect.x + rect.width / 2) * area;
     weightedY += (rect.y + rect.height / 2) * area;
@@ -1106,6 +1112,732 @@ async function renderDigitalService(input: RenderEditorialCreativeInput, canvas:
   return { svg, zones, assets, roles, verify };
 }
 
+// =================================================================================================
+// Bloco compartilhado institucional/digital (4:5): texto medido, CTA editorial, encaixe da base.
+// =================================================================================================
+
+type TextBlock = { spec: TextSpec; rect: PxRect; anchor?: "start" | "middle"; valign?: "top" | "center" };
+
+function renderTextBlock(block: TextBlock, fill: string, weight: number, embolden: number, canvas: Canvas, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): string {
+  const anchor = block.anchor ?? "start";
+  return textSvg({
+    id: block.spec.id,
+    text: block.spec.text,
+    x: anchor === "middle" ? block.rect.x + block.rect.width / 2 : block.rect.x,
+    y: 0,
+    top: block.rect.y,
+    valign: block.valign,
+    width: block.spec.width,
+    maxHeight: block.valign === "center" ? block.rect.height : block.spec.maxHeight,
+    maxFontSize: block.spec.maxFontSize,
+    minFontSize: block.spec.minFontSize,
+    maxLines: block.spec.maxLines,
+    lineHeight: block.spec.lineHeight,
+    letterSpacing: block.spec.letterSpacing,
+    uppercase: block.spec.uppercase,
+    anchor,
+    fill,
+    weight,
+    embolden,
+  }, canvas, boxes, issues);
+}
+
+const EDITORIAL_CTA = { font: 20, height: 64, letterSpacing: 3, padding: 64 };
+
+function editorialCtaWidth(cta: string, max = 460): number {
+  return clamp(estimateLineWidth(cta.toUpperCase(), EDITORIAL_CTA.font, EDITORIAL_CTA.letterSpacing) + EDITORIAL_CTA.padding, 220, max);
+}
+
+function editorialCtaSpec(cta: string, pill: PxRect): TextSpec {
+  return { id: "cta", text: cta, width: pill.width - 40, maxHeight: pill.height, maxFontSize: EDITORIAL_CTA.font, minFontSize: 14, maxLines: 1, letterSpacing: EDITORIAL_CTA.letterSpacing, uppercase: true };
+}
+
+/** CTA editorial: pílula fina (contorno + véu translúcido), caixa alta espaçada — sem botão pesado. */
+function editorialCtaSvg(cta: string, pill: PxRect, colors: { line: string; veil: string; veilOpacity: number; text: string }, canvas: Canvas, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): string {
+  const inner = { x: pill.x + 20, y: pill.y, width: pill.width - 40, height: pill.height };
+  return `<rect x="${pill.x}" y="${pill.y}" width="${pill.width}" height="${pill.height}" rx="${pill.height / 2}" fill="${colors.veil}" fill-opacity="${colors.veilOpacity}" stroke="${colors.line}" stroke-opacity="0.9" stroke-width="1.6"/>
+      ${renderTextBlock({ spec: editorialCtaSpec(cta, pill), rect: inner, anchor: "middle", valign: "center" }, colors.text, 700, 0.35, canvas, boxes, issues)}`;
+}
+
+function ctaZoneRect(pill: PxRect): PxRect {
+  return { x: pill.x + 20, y: pill.y, width: pill.width - 40, height: pill.height };
+}
+
+// ---------------------------------- Análise local da base (sem IA) -------------------------------
+
+type BaseDetailGrid = { cols: number; rows: number; cells: Float64Array; quietThreshold: number; highThreshold: number };
+
+const BASE_ANALYSIS_SIZE = { width: 128, height: 160 };
+const BASE_CELL = 8;
+
+/** Mapa de detalhe em grade (gradiente local) da base: densidade, espaço negativo, foco, colagem.
+ * Determinístico — mesma base → mesma análise. Nunca chama IA. */
+export async function analyzeEditorialBase(png: Buffer, backdrop = INSTITUTIONAL_BACKDROP): Promise<EditorialBaseAnalysis> {
+  return (await analyzeBaseWithGrid(png, backdrop)).analysis;
+}
+
+/** A base é analisada como vai aparecer: achatada sobre o fundo real da peça. Achado do cenário B
+ * (execution-muzqmi4q-f7qx3f): a base OpenAI veio como colagem recortada com 45% de alfa 0 — o RGB
+ * escondido sob o alfa nunca é usado. */
+async function analyzeBaseWithGrid(png: Buffer, backdrop = INSTITUTIONAL_BACKDROP): Promise<{ analysis: EditorialBaseAnalysis; grid: BaseDetailGrid }> {
+  const { width: AW, height: AH } = BASE_ANALYSIS_SIZE;
+  const rgba = await sharp(png).ensureAlpha().resize(AW, AH, { fit: "fill" }).raw().toBuffer();
+  let transparent = 0;
+  for (let index = 3; index < rgba.length; index += 4) if (rgba[index]! < 128) transparent += 1;
+  const { data } = await sharp(png).flatten({ background: backdrop }).resize(AW, AH, { fit: "fill" }).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const at = (x: number, y: number): number => data[clamp(y, 0, AH - 1) * AW + clamp(x, 0, AW - 1)]!;
+  const cols = AW / BASE_CELL;
+  const rows = AH / BASE_CELL;
+  const cells = new Float64Array(cols * rows);
+  let lumaSum = 0;
+  for (let y = 0; y < AH; y += 1) {
+    for (let x = 0; x < AW; x += 1) {
+      const gradient = Math.abs(at(x + 1, y) - at(x - 1, y)) + Math.abs(at(x, y + 1) - at(x, y - 1));
+      cells[Math.floor(y / BASE_CELL) * cols + Math.floor(x / BASE_CELL)] += gradient;
+      lumaSum += at(x, y);
+    }
+  }
+  for (let index = 0; index < cells.length; index += 1) cells[index] = cells[index]! / (BASE_CELL * BASE_CELL);
+  const sorted = [...cells].sort((a, b) => a - b);
+  const total = sorted.reduce((sum, value) => sum + value, 0) || 1;
+  // Limiares absolutos (gradiente médio por pixel na escala de análise): fundo liso/desfocado < 6;
+  // fotografia com textura > 14. O limiar "alto" acompanha o p70 para bases inteiras detalhadas.
+  const quietThreshold = 6;
+  const highThreshold = Math.max(14, sorted[Math.floor(sorted.length * 0.7)]!);
+  const quiet = (value: number): boolean => value < quietThreshold;
+  const high = (value: number): boolean => value >= highThreshold;
+  let weightX = 0;
+  let weightY = 0;
+  let weight = 0;
+  let minCol = cols;
+  let maxCol = -1;
+  let minRow = rows;
+  let maxRow = -1;
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const value = cells[row * cols + col]!;
+      const excess = Math.max(0, value - quietThreshold);
+      weightX += (col + 0.5) * excess;
+      weightY += (row + 0.5) * excess;
+      weight += excess;
+      if (high(value)) {
+        minCol = Math.min(minCol, col);
+        maxCol = Math.max(maxCol, col);
+        minRow = Math.min(minRow, row);
+        maxRow = Math.max(maxRow, row);
+      }
+    }
+  }
+  // Agrupamentos de alto detalhe (vizinhança 4) com pelo menos 3 células.
+  const seen = new Uint8Array(cells.length);
+  let clusters = 0;
+  for (let index = 0; index < cells.length; index += 1) {
+    if (seen[index] || !high(cells[index]!)) continue;
+    let size = 0;
+    const stack = [index];
+    seen[index] = 1;
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      size += 1;
+      const col = current % cols;
+      const row = Math.floor(current / cols);
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nc = col + dc;
+        const nr = row + dr;
+        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+        const next = nr * cols + nc;
+        if (!seen[next] && high(cells[next]!)) {
+          seen[next] = 1;
+          stack.push(next);
+        }
+      }
+    }
+    if (size >= 3) clusters += 1;
+  }
+  const rowQuiet = (row: number): boolean => {
+    let sum = 0;
+    let peak = 0;
+    for (let col = 0; col < cols; col += 1) {
+      const value = cells[row * cols + col]!;
+      sum += value;
+      peak = Math.max(peak, value);
+    }
+    return sum / cols < quietThreshold && peak < quietThreshold * 2;
+  };
+  let quietTop = 0;
+  while (quietTop < rows && rowQuiet(quietTop)) quietTop += 1;
+  let quietBottom = 0;
+  while (quietBottom < rows && rowQuiet(rows - 1 - quietBottom)) quietBottom += 1;
+  const topCount = Math.max(1, Math.ceil(sorted.length * 0.2));
+  const topSum = sorted.slice(-topCount).reduce((sum, value) => sum + value, 0);
+  const hasHigh = maxCol >= 0;
+  const analysis: EditorialBaseAnalysis = {
+    visualDensity: Number(clamp(total / cells.length / 30, 0, 1).toFixed(3)),
+    negativeSpaceRatio: Number((cells.filter(quiet).length / cells.length).toFixed(3)),
+    focalConcentration: Number((topSum / total).toFixed(3)),
+    focalPoint: weight > 0
+      ? { xPct: Number(((weightX / weight / cols) * 100).toFixed(1)), yPct: Number(((weightY / weight / rows) * 100).toFixed(1)) }
+      : { xPct: 50, yPct: 50 },
+    detailBox: hasHigh
+      ? { xPct: Number(((minCol / cols) * 100).toFixed(1)), yPct: Number(((minRow / rows) * 100).toFixed(1)), widthPct: Number((((maxCol - minCol + 1) / cols) * 100).toFixed(1)), heightPct: Number((((maxRow - minRow + 1) / rows) * 100).toFixed(1)) }
+      : { xPct: 0, yPct: 0, widthPct: 0, heightPct: 0 },
+    detailClusters: clusters,
+    quietTopPct: Number((quietTop / rows).toFixed(3)),
+    quietBottomPct: Number((quietBottom / rows).toFixed(3)),
+    meanLuma: Number((lumaSum / (AW * AH) / 255).toFixed(3)),
+    transparentRatio: Number((transparent / (AW * AH)).toFixed(3)),
+  };
+  return { analysis, grid: { cols, rows, cells, quietThreshold, highThreshold } };
+}
+
+/** Fração do detalhe da base (acima do limiar quieto) dentro de uma janela (frações 0..1). */
+function detailRetained(grid: BaseDetailGrid, window: { x: number; y: number; width: number; height: number }): number {
+  let inside = 0;
+  let total = 0;
+  for (let row = 0; row < grid.rows; row += 1) {
+    for (let col = 0; col < grid.cols; col += 1) {
+      const excess = Math.max(0, grid.cells[row * grid.cols + col]! - grid.quietThreshold);
+      total += excess;
+      const cx = (col + 0.5) / grid.cols;
+      const cy = (row + 0.5) / grid.rows;
+      if (cx >= window.x && cx <= window.x + window.width && cy >= window.y && cy <= window.y + window.height) inside += excess;
+    }
+  }
+  return total > 0 ? inside / total : 1;
+}
+
+/** Recorte mínimo aceito para "cover": a janela precisa manter quase todo o detalhe da base. */
+export const BASE_COVER_MIN_DETAIL_RETAINED = 0.92;
+const BASE_FULL_BLEED_ASPECT_TOLERANCE = 0.03;
+
+type BaseFitPlan = EditorialBaseFit & {
+  /** Janela da base (frações) desenhada na área; ausente = base inteira. */
+  window?: { x: number; y: number; width: number; height: number };
+  /** Retângulo onde a base (ou a janela) é desenhada dentro da área-alvo. */
+  drawRect: PxRect;
+};
+
+/** Encaixe consciente da base numa área: full-bleed quando a proporção já bate, cover com recorte
+ * centrado no foco SÓ se quase todo o detalhe sobrevive, senão contain com fundo da própria base.
+ * Nunca crop central cego, nunca nova chamada de IA. */
+function planBaseFit(analysis: EditorialBaseAnalysis, grid: BaseDetailGrid | undefined, base: { width: number; height: number }, target: PxRect): BaseFitPlan {
+  const baseAspect = base.width / base.height;
+  const targetAspect = target.width / target.height;
+  const windowFor = (): { x: number; y: number; width: number; height: number } => {
+    const width = baseAspect > targetAspect ? targetAspect / baseAspect : 1;
+    const height = baseAspect > targetAspect ? 1 : baseAspect / targetAspect;
+    const x = clamp(analysis.focalPoint.xPct / 100 - width / 2, 0, 1 - width);
+    const y = clamp(analysis.focalPoint.yPct / 100 - height / 2, 0, 1 - height);
+    return { x, y, width, height };
+  };
+  if (Math.abs(baseAspect - targetAspect) / targetAspect <= BASE_FULL_BLEED_ASPECT_TOLERANCE) {
+    const window = windowFor();
+    const retained = grid ? detailRetained(grid, window) : 1;
+    return { strategy: "FULL_BLEED", cropLossPct: Number((1 - window.width * window.height).toFixed(3)), detailRetainedPct: Number(retained.toFixed(3)), reasons: [`proporção da base (${baseAspect.toFixed(3)}) já bate com a área (${targetAspect.toFixed(3)}): base inteira, sem recorte relevante`], window, drawRect: target };
+  }
+  const window = windowFor();
+  const retained = grid ? detailRetained(grid, window) : 0;
+  if (retained >= BASE_COVER_MIN_DETAIL_RETAINED) {
+    return { strategy: "COVER_FOCAL_SAFE_CROP", cropLossPct: Number((1 - window.width * window.height).toFixed(3)), detailRetainedPct: Number(retained.toFixed(3)), reasons: [`recorte centrado no foco (${analysis.focalPoint.xPct}%, ${analysis.focalPoint.yPct}%) preserva ${(retained * 100).toFixed(0)}% do detalhe (>= ${BASE_COVER_MIN_DETAIL_RETAINED * 100}%)`], window, drawRect: target };
+  }
+  return {
+    strategy: "CONTAIN_WITH_BACKGROUND",
+    cropLossPct: 0,
+    detailRetainedPct: 1,
+    reasons: [`recorte para a área perderia detalhe (${(retained * 100).toFixed(0)}% < ${BASE_COVER_MIN_DETAIL_RETAINED * 100}%): base inteira + extensão desfocada dela mesma`],
+    drawRect: fitAspectInto(target, baseAspect),
+  };
+}
+
+async function baseWindowHref(png: Buffer, base: { width: number; height: number }, window: { x: number; y: number; width: number; height: number } | undefined): Promise<string> {
+  if (!window || (window.width >= 0.999 && window.height >= 0.999)) return pngDataUri(png);
+  const left = Math.round(window.x * base.width);
+  const top = Math.round(window.y * base.height);
+  const width = Math.min(base.width - left, Math.round(window.width * base.width));
+  const height = Math.min(base.height - top, Math.round(window.height * base.height));
+  return pngDataUri(await sharp(png).extract({ left, top, width, height }).png().toBuffer());
+}
+
+// ---------------------------------- premium_institutional 4:5 -----------------------------------
+
+export type InstitutionalSelectionSignals = {
+  base: EditorialBaseAnalysis;
+  headlineChars: number;
+  subheadlineChars: number;
+  hasCta: boolean;
+  visualDensity?: string;
+  primaryMassPct?: number;
+};
+
+/** Mesmo input → mesma variante. Ordem das regras = prioridade. */
+export function selectInstitutionalVariant(signals: InstitutionalSelectionSignals): { variant: InstitutionalVariant; reasons: string[] } {
+  const { base } = signals;
+  const quietBand = Math.max(base.quietTopPct, base.quietBottomPct);
+  if (base.detailClusters >= 3 && base.negativeSpaceRatio < 0.5) {
+    return { variant: "COLLAGE_EDITORIAL", reasons: [`base com ${base.detailClusters} focos de detalhe separados e pouco espaço negativo (${(base.negativeSpaceRatio * 100).toFixed(0)}%): texto por cima cobriria fotos e recorte perderia peças — base inteira como colagem, texto em faixa própria`] };
+  }
+  if (quietBand >= 0.24 && signals.headlineChars <= 52) {
+    return { variant: "FULL_BLEED_EDITORIAL", reasons: [`base tem faixa de espaço negativo real de ${(quietBand * 100).toFixed(0)}% (${base.quietBottomPct >= base.quietTopPct ? "embaixo" : "em cima"}): texto entra nela com véu, base em tela cheia`] };
+  }
+  if (signals.headlineChars > 52 || signals.subheadlineChars > 110) {
+    return { variant: "SPLIT_STORY", reasons: [`copy longa (headline ${signals.headlineChars}, sub ${signals.subheadlineChars}) precisa de faixa de leitura própria`] };
+  }
+  if (base.focalConcentration >= 0.5 && (signals.primaryMassPct ?? 0) >= 55) {
+    return { variant: "FULL_BLEED_EDITORIAL", reasons: [`foco concentrado (${(base.focalConcentration * 100).toFixed(0)}% do detalhe em 20% da base) e diretor pediu massa ${signals.primaryMassPct}%: base em tela cheia, véu no lado oposto ao foco`] };
+  }
+  return { variant: "SPLIT_STORY", reasons: ["base sem faixa quieta suficiente para texto por cima: base em painel próprio e copy na extensão desfocada dela"] };
+}
+
+type InstitutionalPalette = { ink: string; muted: string; line: string; veil: string; scrim: string };
+const INSTITUTIONAL_BACKDROP = "#1A0D10";
+const INSTITUTIONAL_DARK: InstitutionalPalette = { ink: "#FFF6EC", muted: "#F3E4D8", line: "#F3DDB8", veil: "#1A0D10", scrim: "#140A0C" };
+
+async function renderInstitutionalAdaptive(
+  input: RenderEditorialCreativeInput,
+  canvas: Canvas,
+  logo: PreparedAsset | undefined,
+  base: { png: Buffer; width: number; height: number },
+  fontFaceCss: string,
+  boxes: EditorialGeometryBox[],
+  issues: EditorialGeometryIssue[],
+): Promise<FamilyRender> {
+  const W = canvas.width;
+  const H = canvas.height;
+  const M = 64;
+  const plan = input.plan;
+  const headline = plan.headline;
+  const subheadline = plan.subheadline?.trim() ? plan.subheadline : undefined;
+  const cta = plan.cta.trim() ? plan.cta : undefined;
+  const { analysis, grid } = await analyzeBaseWithGrid(base.png);
+  const selected = selectInstitutionalVariant({
+    base: analysis,
+    headlineChars: headline.length,
+    subheadlineChars: subheadline?.length ?? 0,
+    hasCta: Boolean(cta),
+    visualDensity: plan.visualDensity,
+    primaryMassPct: plan.artDirection?.primaryMassPct,
+  });
+  const override = input.qaVariantOverride && (INSTITUTIONAL_VARIANTS as readonly string[]).includes(input.qaVariantOverride) ? (input.qaVariantOverride as InstitutionalVariant) : undefined;
+  const variant = override ?? selected.variant;
+  const reasons = override ? [`QA_VARIANT_OVERRIDE=${override} (fixture local; regra escolheria ${selected.variant})`, ...selected.reasons] : selected.reasons;
+  const palette = INSTITUTIONAL_DARK;
+  const logoTreatment = logo ? resolveLogoTreatment(logo, "dark") : undefined;
+  const ctaW = cta ? editorialCtaWidth(cta) : 0;
+  const ambientHref = await buildSoftAmbient(base.png, canvas);
+
+  // Pilha de texto medida (ritmo vertical fixo: nenhum vão maior que o previsto).
+  const GAP = { logoToHead: 34, headToSub: 22, subToCta: 34 };
+  const stack = (x: number, width: number, anchor: "start" | "middle", headMax: number, headLines: number) => {
+    const headSpec: TextSpec = { id: "headline", text: headline, width, maxHeight: headMax * 1.04 * headLines, maxFontSize: headMax, minFontSize: 36, maxLines: headLines, lineHeight: 1.04, letterSpacing: -0.4 };
+    const headFit = measureSpec(headSpec);
+    const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: Math.min(width, 820), maxHeight: 132, maxFontSize: 27, minFontSize: 19, maxLines: 3, lineHeight: 1.38, letterSpacing: 0.2 } : undefined;
+    const subFit = subSpec ? measureSpec(subSpec) : undefined;
+    const logoBox = logo ? logoSize(logo, 280, 46) : undefined;
+    const height = (logoBox ? logoBox.height + GAP.logoToHead : 0) + headFit.height + (subFit ? GAP.headToSub + subFit.height : 0) + (cta ? GAP.subToCta + EDITORIAL_CTA.height : 0);
+    const place = (top: number) => {
+      let cursor = top;
+      const centreX = x + width / 2;
+      const logoRect = logoBox ? { x: Math.round(anchor === "middle" ? centreX - logoBox.width / 2 : x), y: Math.round(cursor), ...logoBox } : undefined;
+      if (logoRect) cursor += logoRect.height + GAP.logoToHead;
+      const headRect = { x, y: Math.round(cursor), width, height: headFit.height };
+      cursor += headFit.height;
+      let subRect: PxRect | undefined;
+      if (subSpec && subFit) {
+        cursor += GAP.headToSub;
+        subRect = { x: anchor === "middle" ? Math.round(centreX - subSpec.width / 2) : x, y: Math.round(cursor), width: subSpec.width, height: subFit.height };
+        cursor += subFit.height;
+      }
+      let pill: PxRect | undefined;
+      if (cta) {
+        cursor += GAP.subToCta;
+        pill = { x: Math.round(anchor === "middle" ? centreX - ctaW / 2 : x), y: Math.round(cursor), width: ctaW, height: EDITORIAL_CTA.height };
+      }
+      return { logoRect, head: { spec: headSpec, rect: headRect, anchor } as TextBlock, sub: subSpec && subRect ? ({ spec: subSpec, rect: subRect, anchor } as TextBlock) : undefined, pill };
+    };
+    return { height, place };
+  };
+
+  let baseLayer = "";
+  let defsExtra = "";
+  let baseRect: PxRect;
+  let fit: BaseFitPlan;
+  let placed: ReturnType<ReturnType<typeof stack>["place"]>;
+  let veil = "";
+
+  if (variant === "FULL_BLEED_EDITORIAL") {
+    const area = { x: 0, y: 0, width: W, height: H };
+    fit = planBaseFit(analysis, grid, base, area);
+    baseRect = fit.drawRect;
+    const href = await baseWindowHref(base.png, base, fit.window);
+    baseLayer = fit.strategy === "CONTAIN_WITH_BACKGROUND"
+      ? `${imageTag(undefined, ambientHref, area, {})}<rect width="${W}" height="${H}" fill="${palette.scrim}" opacity="0.25"/>${imageTag(undefined, href, baseRect, { preserveAspectRatio: "xMidYMid meet" })}`
+      : imageTag(undefined, href, area, { preserveAspectRatio: "xMidYMid slice" });
+    const textAtTop = analysis.quietTopPct > analysis.quietBottomPct || (analysis.quietTopPct === analysis.quietBottomPct && analysis.focalPoint.yPct > 58);
+    const column = stack(M + 8, W - 2 * M - 16, "start", 84, 3);
+    const top = textAtTop ? M + 8 : H - M - 8 - column.height;
+    placed = column.place(top);
+    const veilHeight = Math.round(column.height + 260);
+    defsExtra += `<linearGradient id="instVeil" x1="0" y1="${textAtTop ? 1 : 0}" x2="0" y2="${textAtTop ? 0 : 1}"><stop offset="0" stop-color="${palette.scrim}" stop-opacity="0"/><stop offset="0.38" stop-color="${palette.scrim}" stop-opacity="0.58"/><stop offset="1" stop-color="${palette.scrim}" stop-opacity="0.86"/></linearGradient>`;
+    veil = `<rect x="0" y="${textAtTop ? 0 : H - veilHeight}" width="${W}" height="${veilHeight}" fill="url(#instVeil)"/>`;
+    reasons.push(`texto ${textAtTop ? "no topo" : "embaixo"} (faixa quieta topo ${(analysis.quietTopPct * 100).toFixed(0)}% / base ${(analysis.quietBottomPct * 100).toFixed(0)}%, foco y=${analysis.focalPoint.yPct}%)`);
+  } else if (variant === "SPLIT_STORY") {
+    const column = stack(M + 8, W - 2 * M - 16, "start", 70, 3);
+    const panelBottom = H - M - 8 - column.height - 44;
+    const area = { x: M, y: M, width: W - 2 * M, height: panelBottom - M };
+    fit = planBaseFit(analysis, grid, base, area);
+    baseRect = fit.strategy === "CONTAIN_WITH_BACKGROUND" ? fit.drawRect : area;
+    const href = await baseWindowHref(base.png, base, fit.window);
+    defsExtra += `<clipPath id="storyPanel"><rect x="${area.x}" y="${area.y}" width="${area.width}" height="${area.height}" rx="28"/></clipPath>
+      <filter id="panelShadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000000" flood-opacity="0.35"/></filter>`;
+    baseLayer = `<g filter="url(#panelShadow)"><rect x="${area.x}" y="${area.y}" width="${area.width}" height="${area.height}" rx="28" fill="${palette.scrim}"/></g>
+      <g clip-path="url(#storyPanel)">
+        ${fit.strategy === "CONTAIN_WITH_BACKGROUND" ? `${imageTag(undefined, ambientHref, area, {})}<rect x="${area.x}" y="${area.y}" width="${area.width}" height="${area.height}" fill="${palette.scrim}" opacity="0.18"/>${imageTag(undefined, href, baseRect, { preserveAspectRatio: "xMidYMid meet" })}` : imageTag(undefined, href, area, { preserveAspectRatio: "xMidYMid slice" })}
+      </g>`;
+    placed = column.place(panelBottom + 44);
+    veil = `<line x1="${M + 8}" y1="${panelBottom + 22}" x2="${M + 128}" y2="${panelBottom + 22}" stroke="${palette.line}" stroke-opacity="0.8" stroke-width="2"/>`;
+  } else {
+    // COLLAGE_EDITORIAL: a base inteira vira a colagem (nenhum recorte), sobre a extensão desfocada
+    // dela mesma; texto em faixa própria abaixo.
+    const column = stack(M + 8, W - 2 * M - 16, "middle", 66, 2);
+    const printBottom = H - M - 8 - column.height - 46;
+    const area = { x: M + 24, y: M + 8, width: W - 2 * M - 48, height: printBottom - (M + 8) };
+    fit = { ...planBaseFit(analysis, grid, base, area), strategy: "CONTAIN_WITH_BACKGROUND", cropLossPct: 0, detailRetainedPct: 1 };
+    fit.reasons = ["colagem: base inteira preservada (contain), sem recorte — cada foto da base continua visível"];
+    baseRect = fitAspectInto(area, base.width / base.height);
+    fit.drawRect = baseRect;
+    const border = 10;
+    defsExtra += `<linearGradient id="printPaper" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F8EDE1"/><stop offset="1" stop-color="#E9D6C2"/></linearGradient><filter id="printShadow" x="-15%" y="-10%" width="130%" height="130%"><feDropShadow dx="0" dy="22" stdDeviation="22" flood-color="#000000" flood-opacity="0.42"/></filter>`;
+    baseLayer = `<g transform="rotate(-2.2 ${baseRect.x + baseRect.width / 2} ${baseRect.y + baseRect.height / 2})"><rect x="${baseRect.x - border - 14}" y="${baseRect.y - border + 10}" width="${baseRect.width + 2 * border}" height="${baseRect.height + 2 * border}" fill="#F7EBDD" opacity="0.55"/></g>
+      <g filter="url(#printShadow)"><rect x="${baseRect.x - border}" y="${baseRect.y - border}" width="${baseRect.width + 2 * border}" height="${baseRect.height + 2 * border}" fill="url(#printPaper)"/></g>
+      ${imageTag(undefined, pngDataUri(base.png), baseRect, { preserveAspectRatio: "xMidYMid meet" })}`;
+    placed = column.place(printBottom + 46);
+  }
+
+  const zones = buildTextZones(plan, undefined, { headline: placed.head.rect, subheadline: placed.sub?.rect, cta: placed.pill ? ctaZoneRect(placed.pill) : undefined }, canvas);
+  const roles: CreativePlanAssetRole[] = [];
+  const assets: CreativePlan["assetPlacements"] = [];
+  const verify: AssetVerifySpec[] = [];
+  const logoRect = placed.logoRect;
+  if (logo && logoRect) {
+    roles.push("logo");
+    assets.push(assetPlacement(logo, logoRect, canvas, `final rendered logo (${logoTreatment})`));
+    assetBox("logo", logoRect, canvas, boxes);
+    verify.push(verifySpec("logo", logoRect, { fit: "contain", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { blend: "multiply" as const } : {}) }));
+  }
+  const chip = logo && logoRect && logoTreatment === "CHIP"
+    ? `<rect x="${logoRect.x - 12}" y="${logoRect.y - 8}" width="${logoRect.width + 24}" height="${logoRect.height + 16}" rx="${Math.min(14, (logoRect.height + 16) / 2)}" fill="#FFF8F1" opacity="0.94"/>`
+    : "";
+  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
+  const headSvg = renderTextBlock(placed.head, palette.ink, 850, Number((measureSpec(placed.head.spec).fontSize * 0.022).toFixed(2)), canvas, boxes, issues);
+  const subSvg = placed.sub ? renderTextBlock(placed.sub, palette.muted, 500, 0, canvas, boxes, issues) : "";
+  const ctaSvg = cta && placed.pill ? editorialCtaSvg(cta, placed.pill, { line: palette.line, veil: palette.veil, veilOpacity: 0.35, text: palette.ink }, canvas, boxes, issues) : "";
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    ${fontFaceCss}
+    <defs>
+      ${defsExtra}
+      <radialGradient id="instBackdrop" cx="0.3" cy="0.2" r="1.1"><stop offset="0" stop-color="#4A242B"/><stop offset="0.55" stop-color="#26131A"/><stop offset="1" stop-color="${INSTITUTIONAL_BACKDROP}"/></radialGradient>
+      <radialGradient id="instVignette" cx="0.5" cy="0.45" r="0.78"><stop offset="0.62" stop-color="#000000" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity="0.38"/></radialGradient>
+    </defs>
+    <rect width="${W}" height="${H}" fill="url(#instBackdrop)"/>
+    ${analysis.transparentRatio > 0.02 ? imageTag(undefined, ambientHref, { x: 0, y: 0, width: W, height: H }, { opacity: 0.55 }) : ""}
+    ${variant === "FULL_BLEED_EDITORIAL" ? "" : `${imageTag(undefined, ambientHref, { x: 0, y: 0, width: W, height: H }, { opacity: 0.7 })}<rect width="${W}" height="${H}" fill="${palette.scrim}" opacity="0.5"/>`}
+    ${baseLayer}
+    ${veil}
+    <rect width="${W}" height="${H}" fill="url(#instVignette)"/>
+    ${chip}
+    ${logoTag}
+    ${headSvg}
+    ${subSvg}
+    ${ctaSvg}
+  </svg>`;
+
+  const { window: _window, drawRect: _drawRect, ...baseFit } = fit;
+  const metrics = compositionMetrics(boxes, canvas, baseRect, [baseRect]);
+  return { svg, zones, assets, roles, verify, composition: { variant, selectionReasons: reasons, logoTreatment, pageTone: "dark", ...metrics, baseAnalysis: analysis, baseFit } };
+}
+
+// ---------------------------------- digital_service 4:5 -----------------------------------------
+
+/** Classe do screenshot pela proporção real (largura/altura). Nunca força mobile. */
+export function classifyScreenshot(width: number, height: number): ScreenshotClass {
+  const aspect = width / height;
+  if (!(aspect > 0) || aspect < 0.3 || aspect > 2.6) return "OTHER";
+  if (aspect <= 0.66) return "MOBILE";
+  if (aspect < 0.9) return "TABLET";
+  if (aspect < 1.2) return "OTHER";
+  return "DESKTOP";
+}
+
+/** Largura mínima exibida (espaço de design 1080) para o screenshot desktop continuar legível. */
+export const DESKTOP_SCREENSHOT_MIN_DISPLAY_SCALE = 0.4;
+
+export type DigitalSelectionSignals = {
+  classification: ScreenshotClass;
+  headlineChars: number;
+  subheadlineChars: number;
+  hasPrice: boolean;
+  visualDensity?: string;
+  primaryMassPct?: number;
+};
+
+export function selectDigitalServiceVariant(signals: DigitalSelectionSignals): { variant: DigitalServiceVariant; reasons: string[] } {
+  if (signals.classification === "MOBILE") return { variant: "MOBILE_DEVICE", reasons: ["screenshot com proporção de celular: mockup de aparelho"] };
+  if (signals.classification !== "DESKTOP") {
+    return { variant: "FLOATING_BROWSER", reasons: [`screenshot ${signals.classification} (não é celular nem desktop): tela flutuante sem moldura de aparelho, inteira`] };
+  }
+  if ((signals.primaryMassPct ?? 0) >= 60) return { variant: "DESKTOP_HERO", reasons: [`diretor pediu massa ${signals.primaryMassPct}% (>= 60): interface protagonista em largura máxima`] };
+  if (signals.visualDensity === "clean" && signals.headlineChars <= 40) {
+    return { variant: "FLOATING_BROWSER", reasons: ["densidade clean + headline curta (<= 40): navegador flutuante centralizado sobre a ambientação"] };
+  }
+  if (signals.headlineChars <= 34 && signals.subheadlineChars <= 90) {
+    return { variant: "SPLIT_PRODUCT_UI", reasons: [`copy curta (headline ${signals.headlineChars} <= 34, sub ${signals.subheadlineChars} <= 90) cabe em coluna ao lado da interface`] };
+  }
+  return { variant: "DESKTOP_HERO", reasons: ["copy longa: texto em cima em largura total, interface grande embaixo (máxima legibilidade)"] };
+}
+
+const BROWSER_CHROME = 42;
+const BROWSER_RADIUS = 16;
+
+/** Moldura de navegador sem texto (barra de endereço vazia) — o screenshot fica INTEIRO no corpo. */
+function browserFrameSvg(frame: PxRect, kind: ScreenshotFrame, clipId: string, screenshotTag: string): string {
+  const chrome = kind === "FLOATING_SCREEN" ? 0 : BROWSER_CHROME;
+  const dots = kind === "BROWSER_FRAME"
+    ? [0, 1, 2].map((index) => `<circle cx="${frame.x + 24 + index * 20}" cy="${frame.y + chrome / 2}" r="6" fill="${["#E6A39A", "#E8C785", "#A9C9A0"][index]}"/>`).join("") +
+      `<rect x="${frame.x + 100}" y="${frame.y + 10}" width="${Math.max(60, frame.width - 200)}" height="${chrome - 20}" rx="${(chrome - 20) / 2}" fill="#F4EEE9"/>`
+    : kind === "DESKTOP_WINDOW"
+      ? `<rect x="${frame.x + frame.width - 92}" y="${frame.y + chrome / 2 - 1}" width="16" height="2" fill="#8C7B78"/><rect x="${frame.x + frame.width - 62}" y="${frame.y + chrome / 2 - 7}" width="14" height="14" fill="none" stroke="#8C7B78" stroke-width="2"/><path d="M${frame.x + frame.width - 34} ${frame.y + chrome / 2 - 7}l14 14M${frame.x + frame.width - 20} ${frame.y + chrome / 2 - 7}l-14 14" stroke="#8C7B78" stroke-width="2"/>`
+      : "";
+  return `<clipPath id="${clipId}"><rect x="${frame.x}" y="${frame.y}" width="${frame.width}" height="${frame.height}" rx="${BROWSER_RADIUS}"/></clipPath>
+    <g filter="url(#browserShadow)"><rect x="${frame.x}" y="${frame.y}" width="${frame.width}" height="${frame.height}" rx="${BROWSER_RADIUS}" fill="#FFFFFF"/></g>
+    <g clip-path="url(#${clipId})">
+      ${chrome > 0 ? `<rect x="${frame.x}" y="${frame.y}" width="${frame.width}" height="${chrome}" fill="#FFFFFF"/><line x1="${frame.x}" y1="${frame.y + chrome - 0.5}" x2="${frame.x + frame.width}" y2="${frame.y + chrome - 0.5}" stroke="#E7DDD7" stroke-width="1"/>${dots}` : ""}
+      ${screenshotTag}
+    </g>
+    <rect x="${frame.x + 0.5}" y="${frame.y + 0.5}" width="${frame.width - 1}" height="${frame.height - 1}" rx="${BROWSER_RADIUS}" fill="none" stroke="#2A1A1C" stroke-opacity="0.12" stroke-width="1"/>`;
+}
+
+async function renderDigitalServiceAdaptive(
+  input: RenderEditorialCreativeInput,
+  canvas: Canvas,
+  price: string | undefined,
+  logo: PreparedAsset | undefined,
+  screenshot: PreparedAsset,
+  base: { png: Buffer; width: number; height: number },
+  baseHref: string,
+  fontFaceCss: string,
+  boxes: EditorialGeometryBox[],
+  issues: EditorialGeometryIssue[],
+): Promise<FamilyRender> {
+  const W = canvas.width;
+  const H = canvas.height;
+  const M = 64;
+  const plan = input.plan;
+  const headline = plan.headline;
+  const subheadline = plan.subheadline?.trim() ? plan.subheadline : undefined;
+  const cta = plan.cta.trim() ? plan.cta : undefined;
+  const classification = classifyScreenshot(screenshot.width, screenshot.height);
+  const selected = selectDigitalServiceVariant({
+    classification,
+    headlineChars: headline.length,
+    subheadlineChars: subheadline?.length ?? 0,
+    hasPrice: Boolean(price),
+    visualDensity: plan.visualDensity,
+    primaryMassPct: plan.artDirection?.primaryMassPct,
+  });
+  const override = input.qaVariantOverride && classification === "DESKTOP" && (["DESKTOP_HERO", "SPLIT_PRODUCT_UI", "FLOATING_BROWSER"] as const).includes(input.qaVariantOverride as "DESKTOP_HERO") ? (input.qaVariantOverride as DigitalServiceVariant) : undefined;
+  const variant = override ?? selected.variant;
+  const reasons = override ? [`QA_VARIANT_OVERRIDE=${override} (fixture local; regra escolheria ${selected.variant})`, ...selected.reasons] : selected.reasons;
+  const aspect = screenshot.width / screenshot.height;
+  const frameKind: ScreenshotFrame = classification === "DESKTOP" ? (variant === "SPLIT_PRODUCT_UI" ? "DESKTOP_WINDOW" : "BROWSER_FRAME") : "FLOATING_SCREEN";
+  const chrome = frameKind === "FLOATING_SCREEN" ? 0 : BROWSER_CHROME;
+  const palette = productOfferPalette("light", pickAccent(input.context));
+  const logoTreatment = logo ? resolveLogoTreatment(logo, "light") : undefined;
+  const ctaW = cta ? editorialCtaWidth(cta, 420) : 0;
+  const ctaH = 72;
+  const logoBox = logo ? logoSize(logo, 260, 44) : undefined;
+  const priceSpecFor = (width: number): TextSpec | undefined => (price ? { id: "price", text: price, width, maxHeight: 72, maxFontSize: 56, minFontSize: 28, maxLines: 1, letterSpacing: 0 } : undefined);
+
+  // Corpo do navegador com a proporção EXATA do screenshot (contain sem barra) dentro da área.
+  const frameFor = (area: PxRect): { frame: PxRect; shot: PxRect } => {
+    let width = area.width;
+    let shotHeight = width / aspect;
+    if (shotHeight + chrome > area.height) {
+      shotHeight = area.height - chrome;
+      width = shotHeight * aspect;
+    }
+    const frame = { x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - shotHeight - chrome) / 2), width: Math.round(width), height: Math.round(shotHeight + chrome) };
+    return { frame, shot: { x: frame.x, y: frame.y + chrome, width: frame.width, height: frame.height - chrome } };
+  };
+
+  let logoRect: PxRect | undefined;
+  let head: TextBlock;
+  let sub: TextBlock | undefined;
+  let priceBlock: TextBlock | undefined;
+  let pill: PxRect | undefined;
+  let frame: PxRect;
+  let shot: PxRect;
+
+  if (variant === "SPLIT_PRODUCT_UI") {
+    // Split diagonal: copy em coluna no alto à esquerda, janela grande ancorada embaixo à direita
+    // (o 4:5 é alto e o screenshot desktop é largo — lado a lado puro deixava faixas mortas).
+    const colX = M + 8;
+    const colW = 600;
+    logoRect = logoBox ? { x: colX, y: M + 4, ...logoBox } : undefined;
+    const headSpec: TextSpec = { id: "headline", text: headline, width: colW, maxHeight: 240, maxFontSize: 68, minFontSize: 34, maxLines: 3, lineHeight: 1.04, letterSpacing: -0.3 };
+    const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: 560, maxHeight: 120, maxFontSize: 25, minFontSize: 18, maxLines: 3, lineHeight: 1.4, letterSpacing: 0.2 } : undefined;
+    const priceSpec = priceSpecFor(colW);
+    const headFit = measureSpec(headSpec);
+    const subFit = subSpec ? measureSpec(subSpec) : undefined;
+    const priceFit = priceSpec ? measureSpec(priceSpec) : undefined;
+    let cursor = (logoRect ? logoRect.y + logoRect.height : M) + 34;
+    head = { spec: headSpec, rect: { x: colX, y: cursor, width: colW, height: headFit.height } };
+    cursor += headFit.height;
+    if (subSpec && subFit) {
+      cursor += 20;
+      sub = { spec: subSpec, rect: { x: colX, y: cursor, width: subSpec.width, height: subFit.height } };
+      cursor += subFit.height;
+    }
+    if (priceSpec && priceFit) {
+      cursor += 26;
+      priceBlock = { spec: priceSpec, rect: { x: colX, y: cursor, width: colW, height: priceFit.height } };
+      cursor += priceFit.height;
+    }
+    if (cta) {
+      pill = { x: colX, y: cursor + 32, width: Math.min(colW, ctaW), height: ctaH };
+      cursor = pill.y + pill.height;
+    }
+    const areaTop = cursor + 40;
+    const right = W - 40;
+    const available = { x: 0, y: areaTop, width: right - (M + 150), height: H - M - areaTop };
+    const placedFrame = frameFor(available);
+    const width = placedFrame.frame.width;
+    const height = placedFrame.frame.height;
+    frame = { x: right - width, y: H - M - height, width, height };
+    shot = { x: frame.x, y: frame.y + chrome, width: frame.width, height: frame.height - chrome };
+  } else {
+    const centred = variant === "FLOATING_BROWSER";
+    const anchor: "start" | "middle" = centred ? "middle" : "start";
+    const textX = M + 8;
+    const textW = W - 2 * M - 16;
+    logoRect = logoBox ? { x: centred ? Math.round((W - logoBox.width) / 2) : textX, y: M + 4, ...logoBox } : undefined;
+    const headSpec: TextSpec = { id: "headline", text: headline, width: textW, maxHeight: 170, maxFontSize: centred ? 70 : 74, minFontSize: 36, maxLines: 2, lineHeight: 1.04, letterSpacing: -0.4 };
+    const headFit = measureSpec(headSpec);
+    const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: centred ? 820 : textW, maxHeight: 84, maxFontSize: 26, minFontSize: 18, maxLines: 2, lineHeight: 1.38, letterSpacing: 0.2 } : undefined;
+    const subFit = subSpec ? measureSpec(subSpec) : undefined;
+    let cursor = (logoRect ? logoRect.y + logoRect.height : M) + 30;
+    head = { spec: headSpec, rect: { x: textX, y: cursor, width: textW, height: headFit.height }, anchor };
+    cursor += headFit.height;
+    if (subSpec && subFit) {
+      cursor += 18;
+      sub = { spec: subSpec, rect: { x: centred ? Math.round((W - subSpec.width) / 2) : textX, y: cursor, width: subSpec.width, height: subFit.height }, anchor };
+      cursor += subFit.height;
+    }
+    const rowH = cta || price ? Math.max(ctaH, price ? 72 : 0) : 0;
+    const rowTop = H - M - rowH;
+    const areaTop = cursor + 36;
+    const areaBottom = rowH > 0 ? rowTop - 34 : H - M;
+    const sideInset = centred ? 60 : 0;
+    const placedFrame = frameFor({ x: M + sideInset, y: areaTop, width: W - 2 * M - 2 * sideInset, height: areaBottom - areaTop });
+    frame = placedFrame.frame;
+    shot = placedFrame.shot;
+    const priceSpec = priceSpecFor(420);
+    const priceW = price && priceSpec ? Math.min(420, estimateLineWidth(price, measureSpec(priceSpec).fontSize)) : 0;
+    const gap = cta && price ? 40 : 0;
+    const rowW = priceW + gap + (cta ? ctaW : 0);
+    const startX = centred ? Math.round((W - rowW) / 2) : textX;
+    if (price && priceSpec) priceBlock = { spec: { ...priceSpec, width: priceW }, rect: { x: startX, y: rowTop, width: priceW, height: rowH }, valign: "center" };
+    if (cta) pill = { x: startX + priceW + gap, y: rowTop + Math.round((rowH - ctaH) / 2), width: ctaW, height: ctaH };
+  }
+
+  const displayScale = shot.width / screenshot.width;
+  if (classification === "DESKTOP" && displayScale < DESKTOP_SCREENSHOT_MIN_DISPLAY_SCALE) {
+    issues.push({ code: "SCREENSHOT_ILLEGIBLE", message: `Screenshot desktop exibido a ${(displayScale * 100).toFixed(0)}% da largura original (< ${DESKTOP_SCREENSHOT_MIN_DISPLAY_SCALE * 100}%) — interface ilegível.` });
+  }
+  const zones = buildTextZones(plan, price, { headline: head.rect, subheadline: sub?.rect, price: priceBlock?.rect, cta: pill ? ctaZoneRect(pill) : undefined }, canvas);
+  const roles: CreativePlanAssetRole[] = ["screenshot"];
+  const assets: CreativePlan["assetPlacements"] = [assetPlacement(screenshot, shot, canvas, `final rendered screenshot (${variant}, ${frameKind}, contain)`)];
+  assetBox("screenshot", shot, canvas, boxes);
+  const insetX = (BROWSER_RADIUS + 4) / shot.width;
+  const insetY = (BROWSER_RADIUS + 4) / shot.height;
+  const verify: AssetVerifySpec[] = [verifySpec("screenshot", shot, { fit: "contain", inset: { left: insetX, right: insetX, top: chrome > 0 ? 0.004 : insetY, bottom: insetY }, checkFidelity: true })];
+  if (logo && logoRect) {
+    roles.push("logo");
+    assets.push(assetPlacement(logo, logoRect, canvas, `final rendered logo (${logoTreatment})`));
+    assetBox("logo", logoRect, canvas, boxes);
+    verify.push(verifySpec("logo", logoRect, { fit: "contain", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { blend: "multiply" as const } : {}) }));
+  }
+  const ambientHref = await buildAmbient(base.png, canvas);
+  const screenshotTag = imageTag(screenshot, "", shot, { preserveAspectRatio: "xMidYMid meet" });
+  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
+  const chip = logo && logoRect && logoTreatment === "CHIP" ? `<rect x="${logoRect.x - 12}" y="${logoRect.y - 8}" width="${logoRect.width + 24}" height="${logoRect.height + 16}" rx="14" fill="#FFF8F1"/>` : "";
+  const headSvg = renderTextBlock(head, palette.ink, 850, Number((measureSpec(head.spec).fontSize * 0.024).toFixed(2)), canvas, boxes, issues);
+  const subSvg = sub ? renderTextBlock(sub, palette.muted, 500, 0, canvas, boxes, issues) : "";
+  const priceSvg = priceBlock ? renderTextBlock(priceBlock, palette.price, 850, Number((measureSpec(priceBlock.spec).fontSize * 0.022).toFixed(2)), canvas, boxes, issues) : "";
+  const ctaSvg = cta && pill
+    ? `<g filter="url(#ctaLift)"><rect x="${pill.x}" y="${pill.y}" width="${pill.width}" height="${pill.height}" rx="${pill.height / 2}" fill="${palette.ctaFill}"/></g>
+      ${renderTextBlock({ spec: editorialCtaSpec(cta, pill), rect: ctaZoneRect(pill), anchor: "middle", valign: "center" }, palette.ctaText, 800, 0.4, canvas, boxes, issues)}`
+    : "";
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    ${fontFaceCss}
+    <defs>
+      <filter id="browserShadow" x="-12%" y="-12%" width="124%" height="134%"><feDropShadow dx="0" dy="${variant === "FLOATING_BROWSER" ? 34 : 22}" stdDeviation="${variant === "FLOATING_BROWSER" ? 34 : 24}" flood-color="#3A1E22" flood-opacity="${variant === "FLOATING_BROWSER" ? 0.34 : 0.24}"/></filter>
+      <filter id="ctaLift" x="-20%" y="-30%" width="140%" height="190%"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#2A1014" flood-opacity="0.22"/></filter>
+      <radialGradient id="digitalGlow" cx="0.5" cy="0.62" r="0.6"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.75"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+    </defs>
+    <rect width="${W}" height="${H}" fill="${palette.page}"/>
+    ${imageTag(undefined, ambientHref || baseHref, { x: 0, y: 0, width: W, height: H }, { opacity: variant === "FLOATING_BROWSER" ? 0.9 : 0.6 })}
+    <rect width="${W}" height="${H}" fill="${palette.page}" opacity="${variant === "FLOATING_BROWSER" ? 0.32 : 0.55}"/>
+    <ellipse cx="${frame.x + frame.width / 2}" cy="${frame.y + frame.height / 2}" rx="${frame.width * 0.72}" ry="${frame.height * 0.8}" fill="url(#digitalGlow)"/>
+    ${chip}
+    ${logoTag}
+    ${headSvg}
+    ${subSvg}
+    ${browserFrameSvg(frame, frameKind, "browserClip", screenshotTag)}
+    ${priceSvg}
+    ${ctaSvg}
+  </svg>`;
+
+  const metrics = compositionMetrics(boxes, canvas, frame, [frame]);
+  return {
+    svg,
+    zones,
+    assets,
+    roles,
+    verify,
+    composition: {
+      variant,
+      selectionReasons: reasons,
+      ...(price ? { priceTreatment: "INLINE_PRICE" as const } : {}),
+      logoTreatment,
+      pageTone: "light",
+      ...metrics,
+      screenshot: { classification, sourceWidth: screenshot.width, sourceHeight: screenshot.height, aspect: Number(aspect.toFixed(3)), frame: frameKind, fit: "contain", displayScale: Number(displayScale.toFixed(3)), displayWidthPx: shot.width },
+    },
+  };
+}
+
+/** Mockup de celular (legado) só para screenshot com proporção de celular — registra a classe. */
+function withMobileDiagnostics(rendered: FamilyRender, screenshot: PreparedAsset | undefined, canvas: Canvas): FamilyRender {
+  if (!screenshot || canvas.format !== "4:5") return rendered;
+  const shot = rendered.assets.find((placement) => placement.role === "screenshot");
+  const displayWidthPx = shot ? Math.round((shot.rect.widthPct / 100) * canvas.width) : 0;
+  return {
+    ...rendered,
+    composition: {
+      variant: "MOBILE_DEVICE",
+      selectionReasons: [`screenshot ${screenshot.width}x${screenshot.height} com proporção de celular: mockup de aparelho`],
+      pageTone: "light",
+      productVisualProminence: shot ? Number(((shot.rect.widthPct * shot.rect.heightPct) / 10000).toFixed(3)) : 0,
+      largestEmptyBandPct: 0,
+      contentCentroidOffset: 0,
+      occupiedAreaRatio: 0,
+      screenshot: { classification: "MOBILE", sourceWidth: screenshot.width, sourceHeight: screenshot.height, aspect: Number((screenshot.width / screenshot.height).toFixed(3)), frame: "PHONE_DEVICE", fit: "top_crop", displayScale: Number((displayWidthPx / screenshot.width).toFixed(3)), displayWidthPx },
+    },
+  };
+}
+
 function violatesSafeArea(rect: PxRect, canvas: Canvas): boolean {
   const marginX = (canvas.width * SAFE_AREA_MARGIN_PCT) / 100;
   const marginY = (canvas.height * SAFE_AREA_MARGIN_PCT) / 100;
@@ -1329,6 +2061,17 @@ async function prepareBackground(buffer: Buffer): Promise<{ png: Buffer; width: 
   }
 }
 
+/** Ambiente institucional: desfoque bem mais forte (só luz e cor da base, sem formas). */
+async function buildSoftAmbient(png: Buffer, canvas: Canvas): Promise<string> {
+  const ambient = await sharp(png)
+    .resize(Math.round(canvas.width / 4), Math.round(canvas.height / 4), { fit: "cover" })
+    .blur(30)
+    .modulate({ saturation: 0.85 })
+    .png()
+    .toBuffer();
+  return pngDataUri(ambient);
+}
+
 /** Ambiente do product_offer: a base da IA vira luz/cor de fundo desfocada — nunca um segundo
  * "produto" nítido competindo com a foto real. */
 async function buildAmbient(png: Buffer, canvas: Canvas): Promise<string> {
@@ -1393,8 +2136,12 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
         }, fontFaceCss, boxes, issues)
       : await renderProductOffer(input, canvas, price, logo, product, await buildAmbient(base.png, canvas), fontFaceCss, boxes, issues)
     : family === "digital_service"
-      ? await renderDigitalService(input, canvas, price, logo, screenshot, baseHref || (await blankFallback(canvas.width, canvas.height, "#1a1012")), fontFaceCss, boxes, issues)
-      : await renderPremiumInstitutional(input, canvas, logo, baseHref, fontFaceCss, boxes, issues);
+      ? canvas.format === "4:5" && screenshot && classifyScreenshot(screenshot.width, screenshot.height) !== "MOBILE"
+        ? await renderDigitalServiceAdaptive(input, canvas, price, logo, screenshot, base, baseHref, fontFaceCss, boxes, issues)
+        : withMobileDiagnostics(await renderDigitalService(input, canvas, price, logo, screenshot, baseHref || (await blankFallback(canvas.width, canvas.height, "#1a1012")), fontFaceCss, boxes, issues), screenshot, canvas)
+      : canvas.format === "4:5"
+        ? await renderInstitutionalAdaptive(input, canvas, logo, base, fontFaceCss, boxes, issues)
+        : await renderPremiumInstitutional(input, canvas, logo, baseHref, fontFaceCss, boxes, issues);
 
   // Contrato de texto ANTES de rasterizar: todo texto obrigatório precisa ter virado zona.
   const missingTexts = findEditorialRequiredTextsMissingFromZones(resolveEditorialRequiredTexts(input.plan, input.context), rendered.zones);

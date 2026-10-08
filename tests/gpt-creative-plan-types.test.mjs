@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCreativePlanPrompt, buildImageGenerationPromptFromPlan, parseCreativePlan, diagnoseCreativePlanInvalidity, resolveEditorialProductAssetRequirement } from "../dist/shared/utils/gpt-creative-plan.types.js";
+import { LAYOUT_PLAN_KINDS, TEXT_ZONE_KINDS, buildCreativePlanPrompt, buildImageGenerationPromptFromPlan, parseCreativePlan, diagnoseCreativePlanInvalidity, resolveEditorialProductAssetRequirement } from "../dist/shared/utils/gpt-creative-plan.types.js";
 
 function sampleContext(overrides = {}) {
   return {
@@ -241,6 +241,11 @@ test("parseCreativePlan: avoidedCliches/justifiedCliches ausentes viram listas v
 
 // Auditoria "qualidade visual e direção de arte" — layoutPlan: mapa de zonas e prioridades ANTES
 // da geração, mesma filosofia de rejeitar o plano inteiro (nunca clampar) quando malformado.
+
+test("vocabulários estruturados: TEXT_ZONE_KINDS e LAYOUT_PLAN_KINDS refletem os contratos reais", () => {
+  assert.deepEqual(TEXT_ZONE_KINDS, ["headline", "subheadline", "cta", "price", "discount", "url", "badge"]);
+  assert.deepEqual(LAYOUT_PLAN_KINDS, ["hero", "headline", "cta", "logo", "support", "negativeSpace"]);
+});
 
 test("parseCreativePlan: layoutPlan ausente vira lista vazia (nunca rejeita)", () => {
   const plan = parseCreativePlan(samplePlanJson({ layoutPlan: undefined }));
@@ -911,15 +916,87 @@ const PRODUCT_OFFER_TEXTS = {
   cta: "Comprar agora",
 };
 
-function productOfferPlanJson(textZones) {
+function productOfferPlanJson(textZones, extra = {}) {
   return samplePlanJson({
     ...PRODUCT_OFFER_TEXTS,
     allowedRenderedTexts: [PRODUCT_OFFER_TEXTS.headline, PRODUCT_OFFER_TEXTS.subheadline, PRODUCT_OFFER_TEXTS.cta, "R$ 149,00"],
     requiredRenderedFacts: ["R$ 149,00"],
     requiredElements: ["headline", "subheadline", "price", "cta", "logo"],
     textZones,
+    ...extra,
   });
 }
+
+function layoutZone(kind, index = 0) {
+  return {
+    kind,
+    rect: { xPct: 5 + index * 10, yPct: 5 + index * 10, widthPct: 20, heightPct: 8 },
+    priority: index + 1,
+    rationale: `${kind} ocupa massa visual ${index + 1}`,
+  };
+}
+
+test("parseCreativePlan editorial: layoutPlan[2].kind=subheadline normaliza para support antes de retry", () => {
+  const raw = productOfferPlanJson([], {
+    layoutPlan: [layoutZone("hero", 0), layoutZone("headline", 1), layoutZone("subheadline", 2), layoutZone("cta", 3)],
+  });
+
+  const plan = parseCreativePlan(raw, EDITORIAL);
+  assert.ok(plan);
+  assert.deepEqual(plan.layoutPlan.map((item) => item.kind), ["hero", "headline", "support", "cta"]);
+  assert.deepEqual(plan.editorialLayoutPlanNormalization.normalizedKinds, [{
+    index: 2,
+    field: "kind",
+    invalidValue: "subheadline",
+    allowedValues: ["hero", "headline", "cta", "logo", "support", "negativeSpace"],
+    normalizedTo: "support",
+    reason: "subheadline é conteúdo textual/comercial secundário; no layoutPlan editorial ele representa massa visual de apoio, não um tipo de texto renderizável.",
+  }]);
+  assert.equal(diagnoseCreativePlanInvalidity(raw, EDITORIAL), undefined);
+});
+
+test("parseCreativePlan editorial: layoutPlan.kind=price normaliza para support com detalhe estruturado", () => {
+  const raw = productOfferPlanJson([], {
+    layoutPlan: [layoutZone("hero", 0), layoutZone("price", 1), layoutZone("cta", 2)],
+  });
+
+  const plan = parseCreativePlan(raw, EDITORIAL);
+  assert.ok(plan);
+  assert.equal(plan.layoutPlan[1].kind, "support");
+  assert.equal(plan.editorialLayoutPlanNormalization.normalizedKinds[0].invalidValue, "price");
+  assert.equal(plan.editorialLayoutPlanNormalization.normalizedKinds[0].normalizedTo, "support");
+});
+
+test("parseCreativePlan editorial: layoutPlan.kind totalmente desconhecido continua rejeitado", () => {
+  const raw = productOfferPlanJson([], {
+    layoutPlan: [layoutZone("hero", 0), layoutZone("foobar", 1), layoutZone("cta", 2)],
+  });
+
+  assert.equal(parseCreativePlan(raw, EDITORIAL), undefined);
+  const cause = diagnoseCreativePlanInvalidity(raw, EDITORIAL);
+  assert.match(cause, /layoutPlan\[1\]\.kind/);
+  assert.match(cause, /foobar/);
+  assert.match(cause, /normalizationResult=notRecoverable/);
+});
+
+test("parseCreativePlan padrão: layoutPlan.kind=subheadline continua falhando estrito", () => {
+  const raw = productOfferPlanJson([], {
+    layoutPlan: [layoutZone("hero", 0), layoutZone("subheadline", 1), layoutZone("cta", 2)],
+  });
+
+  assert.equal(parseCreativePlan(raw), undefined);
+  const cause = diagnoseCreativePlanInvalidity(raw);
+  assert.match(cause, /layoutPlan\[1\]\.kind/);
+  assert.match(cause, /"subheadline"/);
+  assert.match(cause, /vocabulário ERRADO/);
+});
+
+test("buildCreativePlanPrompt: reforça enum real de layoutPlan e proíbe textZone kinds conhecidos nesse campo", () => {
+  const prompt = buildCreativePlanPrompt(sampleContext());
+  assert.match(prompt, /layoutPlan\[\]\.kind/);
+  assert.match(prompt, /"hero"\|"headline"\|"cta"\|"logo"\|"support"\|"negativeSpace"/);
+  assert.match(prompt, /Do NOT use "subheadline", "price", "discount", "badge", "url" as layoutPlan kinds/);
+});
 
 test("parseCreativePlan editorial: headline com rect inválido é aceito — só a geometria é descartada", () => {
   const raw = productOfferPlanJson([

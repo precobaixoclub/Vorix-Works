@@ -1442,6 +1442,20 @@ test("runGptCreativeEngine editorial: asset indecodificável vira errorCode pró
 // geometria inválida, embora o renderer editorial descarte essa geometria.
 // ---------------------------------------------------------------------------------------------
 
+const SMOKE_A_LAYOUT_WITH_SUBHEADLINE_KIND = [
+  { kind: "hero", rect: { xPct: 43, yPct: 8, widthPct: 50, heightPct: 55 }, priority: 1, rationale: "Produto real como foco visual principal." },
+  { kind: "headline", rect: { xPct: 7, yPct: 18, widthPct: 34, heightPct: 14 }, priority: 2, rationale: "Headline ocupa a coluna editorial." },
+  { kind: "subheadline", rect: { xPct: 7, yPct: 36, widthPct: 34, heightPct: 10 }, priority: 3, rationale: "Subheadline apoia a mensagem principal sem ser o foco." },
+  { kind: "cta", rect: { xPct: 64, yPct: 86, widthPct: 29, heightPct: 7 }, priority: 4, rationale: "CTA fica no rodape para acao final." },
+];
+
+const VALID_PRODUCT_OFFER_TEXT_ZONES = [
+  { kind: "headline", text: "Kit Noivos Sem Correria", rect: { xPct: 7, yPct: 20, widthPct: 32, heightPct: 16 }, emphasis: "primary", renderedBy: "renderer" },
+  { kind: "subheadline", text: "Organize presentes e RSVP em um so lugar.", rect: { xPct: 7, yPct: 45, widthPct: 32, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer" },
+  { kind: "price", text: "R$ 149,00", rect: { xPct: 7, yPct: 70, widthPct: 26, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer" },
+  { kind: "cta", text: "Comprar agora", rect: { xPct: 64, yPct: 86, widthPct: 29, heightPct: 7 }, emphasis: "secondary", renderedBy: "renderer" },
+];
+
 const INVALID_GEOMETRY_ZONES = [
   { kind: "headline", text: "TODAS AS OFERTAS EM UM SÓ SITE", rect: { xPct: 60, yPct: 10, widthPct: 55, heightPct: 12 }, emphasis: "primary", renderedBy: "renderer" },
   { kind: "subheadline", text: "Shopee + Mercado Livre", rect: { xPct: -4, yPct: 30, widthPct: 40, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer" },
@@ -1506,6 +1520,80 @@ test("runGptCreativeEngine editorial: zona com kind desconhecido (semântica) co
   assert.equal(result.publishable, false);
   assert.equal(result.errorCode, "CREATIVE_PLAN_REPEAT_INVALID");
   assert.match(result.error, /semanticamente inválido/);
+}));
+
+test("runGptCreativeEngine editorial: layoutPlan.kind=subheadline normaliza sem retry e pipeline continua", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({
+      headline: "Kit Noivos Sem Correria",
+      subheadline: "Organize presentes e RSVP em um so lugar.",
+      cta: "Comprar agora",
+      allowedRenderedTexts: ["Kit Noivos Sem Correria", "Organize presentes e RSVP em um so lugar.", "R$ 149,00", "Comprar agora"],
+      requiredRenderedFacts: ["R$ 149,00"],
+      requiredElements: ["produto", "headline", "subheadline", "price", "cta", "logo"],
+      layoutPlan: SMOKE_A_LAYOUT_WITH_SUBHEADLINE_KIND,
+      textZones: VALID_PRODUCT_OFFER_TEXT_ZONES,
+      assetUsage: { "https://x/product-ref.jpg": "produto real preservado na arte", "https://x/logo.png": "logo oficial no rodape" },
+      assetPlacements: [
+        { role: "product_photo", url: "https://x/product-ref.jpg", rect: { xPct: 43, yPct: 8, widthPct: 50, heightPct: 55 }, frame: "none", treatment: "produto real com sombra suave" },
+        { role: "logo", url: "https://x/logo.png", rect: { xPct: 7, yPct: 86, widthPct: 18, heightPct: 7 }, frame: "none", treatment: "logo oficial preservada" },
+      ],
+    })],
+    image_generation: [imageResponse()],
+    review: [passingReview(), passingVisualScore()],
+  });
+  let rendererInput;
+  const result = await runGptCreativeEngine(baseDeps({
+    creativeBrain: icaro,
+    renderEditorialCreative: async (input) => {
+      rendererInput = input;
+      return editorialRendererResult({
+        renderedTextZones: VALID_PRODUCT_OFFER_TEXT_ZONES,
+        renderedAssetPlacements: [
+          { role: "product_photo", url: "https://x/product-ref.jpg", rect: { xPct: 43.5, yPct: 6.2, widthPct: 50.7, heightPct: 64.6 }, frame: "none", treatment: "final rendered product photo" },
+          { role: "logo", url: "https://x/logo.png", rect: { xPct: 7, yPct: 86, widthPct: 18, heightPct: 7 }, frame: "none", treatment: "final rendered logo" },
+        ],
+        compositedAssetRoles: ["product_photo", "logo"],
+        assetVerification: [
+          { role: "product_photo", detectedMime: "image/jpeg", visible: true, informativePixelRatio: 0.9, assetMatchRatio: 1, fidelityMeanAbsDiff: 7.5, fidelityPass: true },
+          { role: "logo", detectedMime: "image/png", visible: true, informativePixelRatio: 0.8, assetMatchRatio: 1, fidelityMeanAbsDiff: 3.5, fidelityPass: true },
+        ],
+      });
+    },
+  }), baseInput({
+    experimentalEditorialMode: true,
+    creativeContext: contextWithProductReference({
+      assets: [
+        { url: "https://x/product-ref.jpg", role: "product_photo", description: "Produto real" },
+        { url: "https://x/logo.png", role: "logo", description: "Logo oficial" },
+      ],
+      confirmedFacts: ["Preco atual: R$ 149,00 BRL"],
+    }),
+  }));
+
+  assert.equal(result.error, undefined, result.error);
+  assert.equal(result.publishable, true);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 1, "kind recuperavel nao deveria consumir retry do diretor");
+  assert.equal(icaro.calls.some((call) => call.taskType === "image_generation"), true, "image stage deveria ser alcancado");
+  assert.equal(icaro.calls.filter((call) => call.taskType === "review").length, 2, "quality gate tecnico e score visual deveriam rodar");
+  assert.ok(rendererInput, "renderer editorial deveria executar");
+  assert.equal(rendererInput.plan.layoutPlan[2].kind, "support");
+  assert.equal(rendererInput.plan.editorialLayoutPlanNormalization.normalizedKinds[0].invalidValue, "subheadline");
+  assert.ok(result.warnings.some((warning) => /EDITORIAL_LAYOUT_PLAN_NORMALIZED/.test(warning)));
+}));
+
+test("runGptCreativeEngine padrao: layoutPlan.kind=subheadline continua estrito e consome retry", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({ layoutPlan: SMOKE_A_LAYOUT_WITH_SUBHEADLINE_KIND }), planResponse({ layoutPlan: SMOKE_A_LAYOUT_WITH_SUBHEADLINE_KIND })],
+    image_generation: [imageResponse()],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.errorCode, "CREATIVE_PLAN_REPEAT_INVALID");
+  assert.match(result.error, /layoutPlan\[2\]\.kind/);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 2);
+  assert.equal(icaro.calls.some((call) => call.taskType === "image_generation"), false);
 }));
 
 // ---------------------------------------------------------------------------------------------

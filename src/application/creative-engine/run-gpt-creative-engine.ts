@@ -799,6 +799,11 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       `EDITORIAL_PLAN_NORMALIZED: geometria de textZones do diretor descartada (o renderer editorial recalcula): ${initialPlan.editorialTextZoneNormalization.discardedGeometry.map((zone) => `${zone.kind} — ${zone.reason}`).join("; ")}.`,
     );
   }
+  if (initialPlan?.editorialLayoutPlanNormalization) {
+    warnings.push(
+      `EDITORIAL_LAYOUT_PLAN_NORMALIZED: kinds de layoutPlan do diretor normalizados antes de retry: ${initialPlan.editorialLayoutPlanNormalization.normalizedKinds.map((item) => `layoutPlan[${item.index}].${item.field}=${item.invalidValue} normalizedTo=${item.normalizedTo}; allowed=${item.allowedValues.join("|")}; reason=${item.reason}`).join("; ")}.`,
+    );
+  }
   if (!initialPlan) {
     if (isProviderQuotaExhausted(planResponse)) {
       return fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar a peça até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED");

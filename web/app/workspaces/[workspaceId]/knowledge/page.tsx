@@ -374,6 +374,7 @@ function MaterialsTab({ workspaceId }: { workspaceId: string }) {
 
       {editingAsset ? (
         <EditAssetModal
+          workspaceId={workspaceId}
           asset={editingAsset}
           onClose={() => setEditingAsset(undefined)}
           onUpdated={() => {

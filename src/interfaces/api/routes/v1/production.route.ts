@@ -2,11 +2,13 @@ import type { FastifyInstance } from "fastify";
 import { createExecution, decideExecutionGateUseCase, startExecution, type ExecutionUseCaseDeps } from "../../../../application/execution/execution-use-cases.js";
 import { generateVisualFromIdea, type GenerateVisualFromIdeaDeps } from "../../../../application/production/generate-visual-from-idea.js";
 import type { QualityFeedbackCategory, QualityFeedbackPort } from "../../../../application/quality-feedback/index.js";
+import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
 import { ForbiddenError, NotImplementedError } from "../../http/app-error.js";
 import { describeReferenceAssetDecision, type ReferenceAssetResolverPort, type ReferenceAssetScope } from "../../../../application/assets/reference-asset-policy.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 import { translateExecutionError } from "./execution-error-translator.js";
+import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
 
 // Motivos de rejeição estruturada da tela de Revisão (requisito "registrar o motivo sempre que
 // disponível, para usar nas próximas gerações") — subconjunto de `QUALITY_FEEDBACK_CATEGORIES`
@@ -81,6 +83,7 @@ const GENERATE_BODY_SCHEMA = {
 
 export type ProductionRoutesDeps = GenerateVisualFromIdeaDeps &
   ExecutionUseCaseDeps & {
+    workspaceRepository: WorkspaceRepositoryPort;
     ensureHouseTenantProfile(tenantId: string, workspaceId: string): Promise<void>;
     qualityFeedback: QualityFeedbackPort;
     /** Política única de reference assets — sem ela, requisições com referências falham fechado. */
@@ -153,6 +156,7 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
       throw new NotImplementedError("Geração real de imagem ainda não está ligada neste servidor (REAL_EXECUTION_ENABLED/REAL_VISUAL_ENABLED).");
     }
     const body = request.body as GenerateBody;
+    await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId: body.workspaceId });
 
     // Reference assets autorizados (origem + posse) ANTES de qualquer IA: `generateVisualFromIdea`
     // já envia essas URLs para a visão nesta mesma requisição. `qa-assets/` só para o

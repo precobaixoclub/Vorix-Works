@@ -25,10 +25,12 @@ const SELECT_CLASSES = "w-full rounded-lg border border-border bg-surface px-3 p
  * partir dele (preservando o arquivo original quando o tipo escolhido não muda a natureza dele,
  * ex.: vídeo continua vídeo mesmo se reclassificado como "Outro"). */
 export function EditAssetModal({
+  workspaceId,
   asset,
   onClose,
   onUpdated,
 }: {
+  workspaceId: string;
   asset: Asset;
   onClose: () => void;
   onUpdated: (asset: Asset) => void;
@@ -49,7 +51,7 @@ export function EditAssetModal({
     setError(undefined);
     try {
       const kind = deriveAssetKind(materialType, asset.storageRef?.metadata?.contentType, asset.kind);
-      const updated = await updateAsset(asset.id, {
+      const updated = await updateAsset(workspaceId, asset.id, {
         name: name.trim(),
         kind,
         tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean),

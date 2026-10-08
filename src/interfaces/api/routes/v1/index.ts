@@ -165,6 +165,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     planningEngine: app.zunoContainer.planningEngineHook,
     planningRepository: app.zunoContainer.planningRepository,
     runtimeRepository: app.zunoContainer.runtimeRepository,
+    workspaceRepository: app.zunoContainer.workspaceRepository,
     executionRepository: app.zunoContainer.executionRepository,
     executionTaskRepository: app.zunoContainer.executionTaskRepository,
     executionGraphRepository: app.zunoContainer.executionGraphRepository,
@@ -508,6 +509,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   });
   await registerAssetsRoutes(app, {
     assetLibraryRepository: app.zunoContainer.assetLibraryRepository,
+    workspaceRepository: app.zunoContainer.workspaceRepository,
     objectStorage: app.zunoContainer.objectStorage,
     maxUploadBytes: app.zunoConfig.objectStorage.maxUploadBytes,
     removeImageBackground: app.zunoContainer.removeImageBackground,

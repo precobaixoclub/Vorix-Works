@@ -55,14 +55,14 @@ export function registerAsset(
   });
 }
 
-export function updateAsset(assetId: string, patch: AssetSemanticFields & { name?: string; kind?: AssetKind; tags?: string[] }): Promise<Asset> {
-  return apiClient.post<Asset>(`/v1/assets/${encodeURIComponent(assetId)}/update`, patch);
+export function updateAsset(workspaceId: string, assetId: string, patch: AssetSemanticFields & { name?: string; kind?: AssetKind; tags?: string[] }): Promise<Asset> {
+  return apiClient.post<Asset>(`/v1/assets/${encodeURIComponent(assetId)}/update`, { workspaceId, ...patch });
 }
 
-export function archiveAsset(_workspaceId: string, assetId: string): Promise<Asset> {
-  return apiClient.post<Asset>(`/v1/assets/${encodeURIComponent(assetId)}/archive`);
+export function archiveAsset(workspaceId: string, assetId: string): Promise<Asset> {
+  return apiClient.post<Asset>(`/v1/assets/${encodeURIComponent(assetId)}/archive`, { workspaceId });
 }
 
-export function deleteAsset(_workspaceId: string, assetId: string): Promise<{ id: string; deleted: boolean }> {
-  return apiClient.post<{ id: string; deleted: boolean }>(`/v1/assets/${encodeURIComponent(assetId)}/delete`);
+export function deleteAsset(workspaceId: string, assetId: string): Promise<{ id: string; deleted: boolean }> {
+  return apiClient.post<{ id: string; deleted: boolean }>(`/v1/assets/${encodeURIComponent(assetId)}/delete`, { workspaceId });
 }

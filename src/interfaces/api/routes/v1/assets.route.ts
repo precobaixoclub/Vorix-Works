@@ -1,15 +1,19 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
+import { assertReferenceAssetUrlAuthorized, isReferenceAssetError } from "../../../../application/assets/reference-asset-policy.js";
 import type { AssetLibraryRepositoryPort } from "../../../../application/ports/asset-library-repository.port.js";
+import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
 import { hasRealTransparency } from "../../../../infrastructure/image-processing/transparency-check.js";
 import type { ObjectStoragePort } from "../../../../application/ports/object-storage.port.js";
 import { ASSET_KINDS, ASSET_MATERIAL_TYPES, ASSET_USAGE_PRIORITIES, type AssetKind, type AssetMaterialType, type AssetUsagePriority } from "../../../../domain/asset-library/asset-library.model.js";
-import { NotFoundError, NotImplementedError, ValidationError } from "../../http/app-error.js";
+import { ForbiddenError, NotFoundError, NotImplementedError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
+import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
 
 export type AssetsRoutesDeps = {
   assetLibraryRepository: AssetLibraryRepositoryPort;
+  workspaceRepository: WorkspaceRepositoryPort;
   objectStorage: ObjectStoragePort;
   maxUploadBytes: number;
   /** Ver `openai-background-removal.ts` — usada só por `/assets/remove-background`, nunca no
@@ -58,12 +62,23 @@ const SEMANTIC_METADATA_PROPERTIES = {
 
 const UPDATE_BODY_SCHEMA = {
   type: "object",
+  required: ["workspaceId"],
   additionalProperties: false,
   properties: {
+    workspaceId: { type: "string", minLength: 1 },
     name: { type: "string", minLength: 1, maxLength: 200 },
     kind: { type: "string", enum: [...ASSET_KINDS] },
     tags: { type: "array", items: { type: "string", maxLength: 60 }, maxItems: 20 },
     ...SEMANTIC_METADATA_PROPERTIES,
+  },
+} as const;
+
+const WORKSPACE_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId"],
+  additionalProperties: false,
+  properties: {
+    workspaceId: { type: "string", minLength: 1 },
   },
 } as const;
 
@@ -130,6 +145,10 @@ function translateAssetError(error: unknown): never {
  * por workspace, criada sob demanda na primeira chamada — nunca um passo separado de "setup".
  */
 export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRoutesDeps): Promise<void> {
+  async function assertWorkspaceAccess(tenantId: string, workspaceId: string): Promise<void> {
+    await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId, workspaceId });
+  }
+
   async function ensureLibraryId(workspaceId: string): Promise<string> {
     const existing = await deps.assetLibraryRepository.getLibraryByWorkspace(workspaceId);
     if (existing) return existing.id;
@@ -137,9 +156,32 @@ export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRou
     return created.id;
   }
 
+  async function getAuthorizedAsset(assetId: string, tenantId: string, workspaceId: string): Promise<Awaited<ReturnType<AssetLibraryRepositoryPort["getAsset"]>> & {}> {
+    await assertWorkspaceAccess(tenantId, workspaceId);
+    const asset = await deps.assetLibraryRepository.getAsset(assetId);
+    if (!asset) throw new NotFoundError("Asset nao encontrado.");
+    const library = await deps.assetLibraryRepository.getLibraryByWorkspace(workspaceId);
+    if (library?.id === asset.libraryId) return asset;
+    throw new NotFoundError("Asset nao encontrado.");
+  }
+
+  function assertStorageRefAuthorized(storageRef: { objectKey: string } | undefined, tenantId: string, workspaceId: string): void {
+    if (!storageRef) return;
+    try {
+      const url = deps.objectStorage.resolvePublicUrl(storageRef.objectKey);
+      assertReferenceAssetUrlAuthorized(url, { tenantId, workspaceId, qaNamespaceAllowed: false }, { publicBaseUrl: deps.objectStorage.resolvePublicUrl("") });
+    } catch (error) {
+      if (isReferenceAssetError(error)) {
+        throw new ForbiddenError("Asset de origem nao autorizado para este workspace.", { code: error.code });
+      }
+      throw error;
+    }
+  }
+
   app.get("/assets", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    requirePermission(request, "asset:read");
+    const principal = requirePermission(request, "asset:read");
     const { workspaceId, kind, search } = request.query as { workspaceId: string; kind?: AssetKind; search?: string };
+    await assertWorkspaceAccess(principal.tenantId, workspaceId);
     const library = await deps.assetLibraryRepository.getLibraryByWorkspace(workspaceId);
     if (!library) return successEnvelope([], request.id);
     const assets = await deps.assetLibraryRepository.listAssets(library.id, { kind });
@@ -151,6 +193,7 @@ export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRou
   app.post("/assets/upload", { schema: { querystring: UPLOAD_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "asset:create");
     const { workspaceId, requireTransparency } = request.query as { workspaceId: string; requireTransparency?: "true" | "false" };
+    await assertWorkspaceAccess(principal.tenantId, workspaceId);
 
     try {
       const file = await request.file({ limits: { fileSize: deps.maxUploadBytes } });
@@ -197,6 +240,7 @@ export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRou
   app.post("/assets/remove-background", { schema: { querystring: UPLOAD_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "asset:create");
     const { workspaceId } = request.query as { workspaceId: string };
+    await assertWorkspaceAccess(principal.tenantId, workspaceId);
 
     try {
       const file = await request.file({ limits: { fileSize: deps.maxUploadBytes } });
@@ -232,7 +276,7 @@ export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRou
   });
 
   app.post("/assets", { schema: { body: REGISTER_BODY_SCHEMA } }, async (request) => {
-    requirePermission(request, "asset:create");
+    const principal = requirePermission(request, "asset:create");
     const body = request.body as {
       workspaceId: string;
       kind: AssetKind;
@@ -244,6 +288,8 @@ export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRou
       usagePriority?: AssetUsagePriority;
       storageRef?: { provider: string; bucket?: string; objectKey: string; metadata?: Record<string, string> };
     };
+    await assertWorkspaceAccess(principal.tenantId, body.workspaceId);
+    assertStorageRefAuthorized(body.storageRef, principal.tenantId, body.workspaceId);
     const libraryId = await ensureLibraryId(body.workspaceId);
     const asset = await deps.assetLibraryRepository
       .registerAsset({
@@ -262,9 +308,10 @@ export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRou
   });
 
   app.post("/assets/:id/update", { schema: { params: ID_PARAMS_SCHEMA, body: UPDATE_BODY_SCHEMA } }, async (request) => {
-    requirePermission(request, "asset:update");
+    const principal = requirePermission(request, "asset:update");
     const { id } = request.params as { id: string };
     const patch = request.body as {
+      workspaceId: string;
       name?: string;
       kind?: AssetKind;
       tags?: string[];
@@ -273,22 +320,28 @@ export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRou
       usageRule?: string;
       usagePriority?: AssetUsagePriority;
     };
-    const asset = await deps.assetLibraryRepository.updateAsset(id, patch).catch(translateAssetError);
+    await getAuthorizedAsset(id, principal.tenantId, patch.workspaceId);
+    const { workspaceId: _workspaceId, ...assetPatch } = patch;
+    const asset = await deps.assetLibraryRepository.updateAsset(id, assetPatch).catch(translateAssetError);
     return successEnvelope(asset, request.id);
   });
 
-  app.post("/assets/:id/archive", { schema: { params: ID_PARAMS_SCHEMA } }, async (request) => {
-    requirePermission(request, "asset:update");
+  app.post("/assets/:id/archive", { schema: { params: ID_PARAMS_SCHEMA, body: WORKSPACE_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "asset:update");
     const { id } = request.params as { id: string };
+    const { workspaceId } = request.body as { workspaceId: string };
+    await getAuthorizedAsset(id, principal.tenantId, workspaceId);
     const asset = await deps.assetLibraryRepository.archiveAsset(id).catch(translateAssetError);
     return successEnvelope(asset, request.id);
   });
 
   // POST, não DELETE — mesma convenção do resto da API (`/x/:id/cancel`, `/x/:id/revoke`...),
   // nenhuma outra rota usa o verbo HTTP DELETE.
-  app.post("/assets/:id/delete", { schema: { params: ID_PARAMS_SCHEMA } }, async (request) => {
-    requirePermission(request, "asset:update");
+  app.post("/assets/:id/delete", { schema: { params: ID_PARAMS_SCHEMA, body: WORKSPACE_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "asset:update");
     const { id } = request.params as { id: string };
+    const { workspaceId } = request.body as { workspaceId: string };
+    await getAuthorizedAsset(id, principal.tenantId, workspaceId);
     await deps.assetLibraryRepository.deleteAsset(id);
     return successEnvelope({ id, deleted: true }, request.id);
   });

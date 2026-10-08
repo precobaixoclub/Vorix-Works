@@ -6,6 +6,7 @@ import { compositeLogoOntoImage } from "../dist/infrastructure/media/logo-compos
 import { compositeScreenshotIntoDeviceMockup } from "../dist/infrastructure/media/screenshot-mockup-compositor.js";
 import { renderCreativePlanTextZones } from "../dist/infrastructure/rendering/render-creative-plan-text-zones.js";
 import { computeRegionPixelStats, applyLocalBlur, applyLocalScrim, extractRegionBuffer } from "../dist/infrastructure/image-processing/region-pixel-stats.js";
+import { createReferenceAssetResolver } from "../dist/application/assets/reference-asset-policy.js";
 
 /**
  * ETAPA 3 (Rodada 4, benchmark de qualidade criativa) — SMOKE LOCAL (brief, ponto 24/25): 5
@@ -17,14 +18,22 @@ import { computeRegionPixelStats, applyLocalBlur, applyLocalScrim, extractRegion
  */
 
 const originalFetch = global.fetch;
+const STORAGE_BASE_URL = "https://api.vorixworks.com/uploads";
+const SCREENSHOT_URL = `${STORAGE_BASE_URL}/assets/tenant-1/workspace-1/shot.png`;
+const LOGO_URL = `${STORAGE_BASE_URL}/assets/tenant-1/workspace-1/logo.png`;
+let activeBuffersByUrl = {};
 
 function withScriptedFetch(buffersByUrl, run) {
+  activeBuffersByUrl = buffersByUrl;
   global.fetch = async (url) => {
     const buffer = buffersByUrl[url];
     if (!buffer) throw new Error(`withScriptedFetch: URL não roteirizada: ${url}`);
     return { ok: true, arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) };
   };
-  return run().finally(() => { global.fetch = originalFetch; });
+  return run().finally(() => {
+    activeBuffersByUrl = {};
+    global.fetch = originalFetch;
+  });
 }
 
 function fakeIcaro(scripts) {
@@ -98,6 +107,16 @@ function baseDeps() {
     renderTextZones: renderCreativePlanTextZones,
     computeRegionPixelStats,
     applyLocalBlur,
+    referenceAssetResolver: createReferenceAssetResolver(
+      { publicBaseUrl: STORAGE_BASE_URL },
+      {
+        read: async (objectKey) => {
+          const buffer = activeBuffersByUrl[`${STORAGE_BASE_URL}/${objectKey}`];
+          if (!buffer) throw new Error(`referenceAssetResolver fixture: objeto nao roteirizado: ${objectKey}`);
+          return buffer;
+        },
+      },
+    ),
     readImageDimensions: async (buffer) => { const meta = await sharp(buffer).metadata(); return { width: meta.width, height: meta.height }; },
   };
 }
@@ -174,19 +193,19 @@ test("SMOKE LOCAL B: institucional sem CTA (cta vazio) — publica normalmente, 
 test("SMOKE LOCAL C: screenshot SaaS — screenshot real colado no slot do plano, sem SCREENSHOT_SLOT_MISMATCH", async () => withScriptedFetch(
   {
     "https://x/generated.png": await makePng(1024, 1280, { r: 30, g: 30, b: 35 }),
-    "https://x/shot.png": await makePng(600, 1000, { r: 240, g: 240, b: 245 }),
+    [SCREENSHOT_URL]: await makePng(600, 1000, { r: 240, g: 240, b: 245 }),
   },
   async () => {
     const context = {
       brandName: "SaaS Teste", objective: "Divulgar produto", channel: "instagram", format: "4:5",
-      ideaText: "Anúncio com screenshot real", assets: [{ url: "https://x/shot.png", role: "screenshot", description: "Dashboard real" }], confirmedFacts: [],
+      ideaText: "Anúncio com screenshot real", assets: [{ url: SCREENSHOT_URL, role: "screenshot", description: "Dashboard real" }], confirmedFacts: [],
     };
     const icaro = fakeIcaro({
       analysis: [planResponse({
         headline: "SEU NEGÓCIO, ORGANIZADO", allowedRenderedTexts: ["SEU NEGÓCIO, ORGANIZADO", "ACESSE AGORA"],
         // Rect proporcional ao screenshot real (600x1000, retrato) — compositeScreenshotIntoDeviceMockup
         // reprova um descasamento grande de aspect ratio (defesa pré-existente, não desta rodada).
-        assetPlacements: [{ role: "screenshot", url: "https://x/shot.png", rect: { xPct: 30, yPct: 25, widthPct: 40, heightPct: 55 }, frame: "phone" }],
+        assetPlacements: [{ role: "screenshot", url: SCREENSHOT_URL, rect: { xPct: 30, yPct: 25, widthPct: 40, heightPct: 55 }, frame: "phone" }],
         textZones: [{ kind: "headline", text: "SEU NEGÓCIO, ORGANIZADO", rect: { xPct: 5, yPct: 5, widthPct: 90, heightPct: 15 }, emphasis: "primary", renderedBy: "renderer" }],
       })],
       image_generation: [imageResponse("https://x/generated.png")],
@@ -205,16 +224,16 @@ test("SMOKE LOCAL C: screenshot SaaS — screenshot real colado no slot do plano
 // Cenário D/E — logo sobre fundo claro / fundo escuro (tratamento adaptativo, nunca sticker fixo)
 // ---------------------------------------------------------------------------------------------
 test("SMOKE LOCAL D: logo sobre fundo CLARO — publica sem sobreposição logo/headline", async () => withScriptedFetch(
-  { "https://x/generated.png": await makePng(1024, 1280, { r: 235, g: 235, b: 240 }), "https://x/logo.png": await makePng(300, 300, { r: 10, g: 10, b: 10 }) },
+  { "https://x/generated.png": await makePng(1024, 1280, { r: 235, g: 235, b: 240 }), [LOGO_URL]: await makePng(300, 300, { r: 10, g: 10, b: 10 }) },
   async () => {
     const context = {
       brandName: "Marca Clara", objective: "Divulgar", channel: "instagram", format: "4:5",
-      ideaText: "Peça com logo sobre fundo claro", assets: [{ url: "https://x/logo.png", role: "logo", description: "Logo oficial" }], confirmedFacts: [],
+      ideaText: "Peça com logo sobre fundo claro", assets: [{ url: LOGO_URL, role: "logo", description: "Logo oficial" }], confirmedFacts: [],
     };
     const icaro = fakeIcaro({
       analysis: [planResponse({
         headline: "NOVIDADES", cta: "", allowedRenderedTexts: ["NOVIDADES"],
-        assetPlacements: [{ role: "logo", url: "https://x/logo.png", rect: { xPct: 4, yPct: 4, widthPct: 16, heightPct: 8 } }],
+        assetPlacements: [{ role: "logo", url: LOGO_URL, rect: { xPct: 4, yPct: 4, widthPct: 16, heightPct: 8 } }],
         textZones: [{ kind: "headline", text: "NOVIDADES", rect: { xPct: 5, yPct: 50, widthPct: 90, heightPct: 15 }, emphasis: "primary", renderedBy: "renderer" }],
       })],
       image_generation: [imageResponse("https://x/generated.png")],
@@ -227,16 +246,16 @@ test("SMOKE LOCAL D: logo sobre fundo CLARO — publica sem sobreposição logo/
 ));
 
 test("SMOKE LOCAL E: logo sobre fundo ESCURO — publica sem sobreposição logo/headline", async () => withScriptedFetch(
-  { "https://x/generated.png": await makePng(1024, 1280, { r: 12, g: 12, b: 16 }), "https://x/logo.png": await makePng(300, 300, { r: 250, g: 250, b: 250 }) },
+  { "https://x/generated.png": await makePng(1024, 1280, { r: 12, g: 12, b: 16 }), [LOGO_URL]: await makePng(300, 300, { r: 250, g: 250, b: 250 }) },
   async () => {
     const context = {
       brandName: "Marca Escura", objective: "Divulgar", channel: "instagram", format: "4:5",
-      ideaText: "Peça com logo sobre fundo escuro", assets: [{ url: "https://x/logo.png", role: "logo", description: "Logo oficial" }], confirmedFacts: [],
+      ideaText: "Peça com logo sobre fundo escuro", assets: [{ url: LOGO_URL, role: "logo", description: "Logo oficial" }], confirmedFacts: [],
     };
     const icaro = fakeIcaro({
       analysis: [planResponse({
         headline: "NOVIDADES", cta: "", allowedRenderedTexts: ["NOVIDADES"],
-        assetPlacements: [{ role: "logo", url: "https://x/logo.png", rect: { xPct: 4, yPct: 4, widthPct: 16, heightPct: 8 } }],
+        assetPlacements: [{ role: "logo", url: LOGO_URL, rect: { xPct: 4, yPct: 4, widthPct: 16, heightPct: 8 } }],
         textZones: [{ kind: "headline", text: "NOVIDADES", rect: { xPct: 5, yPct: 50, widthPct: 90, heightPct: 15 }, emphasis: "primary", renderedBy: "renderer" }],
       })],
       image_generation: [imageResponse("https://x/generated.png")],
@@ -355,11 +374,11 @@ function globalRecheckResponseLocal(hasUnresolvedText) {
 // ---------------------------------------------------------------------------------------------
 
 test("SMOKE LOCAL (ETAPA 3.3): cenário denso headline+subheadline+CTA+preço+logo — densidade simplificada, residual GLOBAL recuperado, geometria FINAL chega ao gate e PUBLICA", async () => withScriptedFetch(
-  { "https://x/generated.png": await makePng(1024, 1280, { r: 20, g: 20, b: 24 }), "https://x/logo.png": await makePng(200, 200, { r: 255, g: 255, b: 255 }) },
+  { "https://x/generated.png": await makePng(1024, 1280, { r: 20, g: 20, b: 24 }), [LOGO_URL]: await makePng(200, 200, { r: 255, g: 255, b: 255 }) },
   async () => {
     const context = {
       brandName: "Marca Teste", objective: "Divulgar", channel: "instagram", format: "4:5",
-      ideaText: "Peça de teste densa", assets: [{ url: "https://x/logo.png", role: "logo", description: "Logo oficial" }],
+      ideaText: "Peça de teste densa", assets: [{ url: LOGO_URL, role: "logo", description: "Logo oficial" }],
       confirmedFacts: ["Preço: R$ 149,00"],
     };
     const busyRegion = { hasText: true, hasProduct: false, hasFace: false, complexity: "high" };
@@ -369,7 +388,7 @@ test("SMOKE LOCAL (ETAPA 3.3): cenário denso headline+subheadline+CTA+preço+lo
         headline: "TODAS AS OFERTAS", subheadline: "Shopee + Mercado Livre", cta: "ACESSE AGORA",
         allowedRenderedTexts: ["TODAS AS OFERTAS", "Shopee + Mercado Livre", "ACESSE AGORA", "R$ 149,00"],
         requiredRenderedFacts: ["R$ 149,00"],
-        assetPlacements: [{ role: "logo", url: "https://x/logo.png", rect: { xPct: 80, yPct: 5, widthPct: 15, heightPct: 10 } }],
+        assetPlacements: [{ role: "logo", url: LOGO_URL, rect: { xPct: 80, yPct: 5, widthPct: 15, heightPct: 10 } }],
         textZones: [
           { kind: "headline", text: "TODAS AS OFERTAS", rect: { xPct: 5, yPct: 5, widthPct: 70, heightPct: 15 }, emphasis: "primary", renderedBy: "renderer" },
           { kind: "subheadline", text: "Shopee + Mercado Livre", rect: { xPct: 10, yPct: 25, widthPct: 80, heightPct: 10 }, emphasis: "secondary", renderedBy: "renderer" },

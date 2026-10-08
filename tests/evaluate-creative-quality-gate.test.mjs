@@ -680,3 +680,72 @@ test("checkAssetPlacementOverlap: Smoke A final geometry with product invading h
   assert.equal(issues.length, 1);
   assert.equal(issues[0].code, "TEXT_ZONE_OVERLAPS_ASSET");
 });
+
+// Smoke A (cer-runtime-muyx4qzs-hoinur): bbox do produto declarada, pixels ausentes. Com prova em
+// pixel disponível, o gate não confia mais só na bbox.
+
+test("evaluateDeterministicCreativeChecks: prova em pixel visível para todo asset composto não gera issue", () => {
+  const issues = evaluateDeterministicCreativeChecks({
+    finalImageWidth: 1024,
+    finalImageHeight: 1280,
+    expectedAspectRatio: "4:5",
+    compositedAssetRoles: ["product_photo", "logo"],
+    contextAssetRoles: ["product_photo", "logo"],
+    assetPixelEvidence: [{ role: "product_photo", visible: true }, { role: "logo", visible: true }],
+  });
+  assert.deepEqual(issues, []);
+});
+
+test("evaluateDeterministicCreativeChecks: product_photo declarado mas sem pixels (frame vazio do Smoke A) vira REQUIRED_ASSET_MISSING", () => {
+  const issues = evaluateDeterministicCreativeChecks({
+    finalImageWidth: 1024,
+    finalImageHeight: 1280,
+    expectedAspectRatio: "4:5",
+    compositedAssetRoles: ["product_photo", "logo"],
+    contextAssetRoles: ["product_photo", "logo"],
+    assetPixelEvidence: [{ role: "product_photo", visible: false, reason: "asset indistinguível do frame vazio" }, { role: "logo", visible: true }],
+  });
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].code, "REQUIRED_ASSET_MISSING");
+  assert.match(issues[0].message, /product_photo/);
+  assert.match(issues[0].message, /frame vazio/);
+});
+
+test("evaluateDeterministicCreativeChecks: asset composto sem nenhuma prova em pixel também reprova", () => {
+  const issues = evaluateDeterministicCreativeChecks({
+    finalImageWidth: 1024,
+    finalImageHeight: 1280,
+    expectedAspectRatio: "4:5",
+    compositedAssetRoles: ["product_photo"],
+    contextAssetRoles: ["product_photo"],
+    assetPixelEvidence: [],
+  });
+  assert.equal(issues[0]?.code, "REQUIRED_ASSET_MISSING");
+});
+
+test("evaluateDeterministicCreativeChecks: sem assetPixelEvidence (caminho padrão) o comportamento legado é preservado", () => {
+  const issues = evaluateDeterministicCreativeChecks({
+    finalImageWidth: 1024,
+    finalImageHeight: 1280,
+    expectedAspectRatio: "4:5",
+    compositedAssetRoles: ["product_photo"],
+    contextAssetRoles: ["product_photo"],
+  });
+  assert.deepEqual(issues, []);
+});
+
+test("checkAssetSafeAreaCompliance: product frame perto da borda mas dentro dos 2% passa", () => {
+  const plan = basePlan({
+    assetPlacements: [{ role: "product_photo", url: "https://x/produto.jpg", rect: { xPct: 43.519, yPct: 6.222, widthPct: 50.741, heightPct: 64.593 }, frame: "none", treatment: "final rendered product photo" }],
+  });
+  assert.deepEqual(checkAssetSafeAreaCompliance(plan), []);
+});
+
+test("checkAssetSafeAreaCompliance: product frame do Smoke A (borda direita em 98,047%) continua reprovando", () => {
+  const plan = basePlan({
+    assetPlacements: [{ role: "product_photo", url: "https://x/produto.jpg", rect: { xPct: 46.289, yPct: 6.719, widthPct: 51.758, heightPct: 61.719 }, frame: "none", treatment: "final rendered product frame" }],
+  });
+  const issues = checkAssetSafeAreaCompliance(plan);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].code, "CRITICAL_ASSET_CROP");
+});

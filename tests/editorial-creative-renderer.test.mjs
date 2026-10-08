@@ -1,10 +1,74 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import sharp from "sharp";
-import { assertEditorialRuntimeFontAvailable, buildEditorialFontFaceCss, renderEditorialCreative } from "../dist/infrastructure/rendering/editorial-creative-renderer.js";
+import { readFile } from "node:fs/promises";
+import {
+  assertEditorialRuntimeFontAvailable,
+  buildEditorialFontFaceCss,
+  checkEditorialSafeArea,
+  detectImageMime,
+  measureCompositedAssetFidelity,
+  productShadowExtent,
+  renderEditorialCreative,
+} from "../dist/infrastructure/rendering/editorial-creative-renderer.js";
+
+// Mesma classe de asset que falhou no Smoke A (cer-runtime-muyx4qzs-hoinur): foto JPEG real.
+const REAL_PRODUCT_JPEG = await readFile(new URL("./fixtures/editorial/product-ring-reminder.jpg", import.meta.url));
+const REAL_LOGO_PNG = await readFile(new URL("./fixtures/editorial/logo-rumo-ao-altar.png", import.meta.url));
+// Arte final publicada pelo Smoke A — frame do produto vazio (JPEG rotulado como PNG).
+const SMOKE_A_EMPTY_FRAME_FINAL = await readFile(new URL("./fixtures/editorial/smoke-a-ea98e88-final-empty-frame.jpg", import.meta.url));
+const SMOKE_A_PRODUCT_RECT = { xPct: 46.289, yPct: 6.719, widthPct: 51.758, heightPct: 61.719 };
 
 async function image(width, height, color) {
   return sharp({ create: { width, height, channels: 4, background: color } }).png().toBuffer();
+}
+
+/** Produto sintético COM conteúdo (formas/cores) — cor sólida agora é rejeitada como asset vazio. */
+async function productImage(width, height) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#F3E2CF"/><rect x="${width * 0.2}" y="${height * 0.12}" width="${width * 0.6}" height="${height * 0.76}" rx="40" fill="#E8C785" stroke="#94324D" stroke-width="24"/><circle cx="${width / 2}" cy="${height * 0.38}" r="${width * 0.16}" fill="#94324D"/><rect x="${width * 0.3}" y="${height * 0.62}" width="${width * 0.4}" height="${height * 0.08}" rx="16" fill="#231418"/></svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+async function screenshotImage(width, height) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#FFFFFF"/><rect width="${width}" height="${height * 0.14}" fill="#8B2F48"/><rect x="${width * 0.08}" y="${height * 0.22}" width="${width * 0.84}" height="${height * 0.2}" rx="24" fill="#F0DDC8"/><rect x="${width * 0.08}" y="${height * 0.48}" width="${width * 0.6}" height="${height * 0.05}" rx="12" fill="#24171A"/><rect x="${width * 0.08}" y="${height * 0.58}" width="${width * 0.84}" height="${height * 0.24}" rx="24" fill="#E8C785"/></svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+/** Fundo neutro controlado (no lugar da base da IA). */
+async function studioBase(width = 1024, height = 1280) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><radialGradient id="g" cx="0.7" cy="0.3" r="0.9"><stop offset="0" stop-color="#FBF1E6"/><stop offset="1" stop-color="#CFB39C"/></radialGradient></defs><rect width="${width}" height="${height}" fill="url(#g)"/></svg>`;
+  return sharp(Buffer.from(svg)).jpeg({ quality: 92 }).toBuffer();
+}
+
+function productOfferInput(overrides = {}) {
+  return {
+    baseImageBuffer: overrides.baseImageBuffer,
+    context: context({ brandName: "Rumo ao Altar", confirmedFacts: [overrides.fact ?? "Preço atual: R$ 149,00 BRL"] }),
+    plan: plan({
+      headline: "Kit Noivos Sem Correria",
+      subheadline: "Organize presentes, lista de presentes e RSVP em um só lugar.",
+      cta: "Comprar agora",
+      allowedRenderedTexts: ["Kit Noivos Sem Correria", "Organize presentes, lista de presentes e RSVP em um só lugar.", "Comprar agora"],
+      requiredElements: ["headline", "subheadline", "cta", "logo", "price"],
+      ...overrides.plan,
+    }),
+    assets: overrides.assets ?? [
+      { role: "product_photo", url: "fixture://product-ring-reminder.jpg", buffer: REAL_PRODUCT_JPEG },
+      { role: "logo", url: "fixture://logo-rumo-ao-altar.png", buffer: REAL_LOGO_PNG },
+    ],
+  };
+}
+
+async function renderProductOffer(overrides = {}) {
+  return renderEditorialCreative(productOfferInput({ ...overrides, baseImageBuffer: overrides.baseImageBuffer ?? await studioBase() }));
+}
+
+function verificationFor(result, role) {
+  return result.assetVerification.find((item) => item.role === role);
+}
+
+function box(result, id) {
+  return [...result.renderedGeometry.textBoxes, ...result.renderedGeometry.assetBoxes].find((item) => item.id === id);
 }
 
 function plan(overrides = {}) {
@@ -62,7 +126,7 @@ function context(overrides = {}) {
 
 test("renderEditorialCreative: produto/oferta preserva produto e usa somente preco confirmado", async () => {
   const baseImageBuffer = await image(1080, 1350, "#392229");
-  const product = await image(640, 760, "#E8C785");
+  const product = await productImage(640, 760);
   const logo = await image(420, 120, "#8B2F48");
 
   const result = await renderEditorialCreative({
@@ -101,7 +165,7 @@ test("renderEditorialCreative: usa familia registrada no runtime sem embutir fon
 
 test("renderEditorialCreative: renderer aceita acentos, cedilha e R$ sem reprovar geometria", async () => {
   const baseImageBuffer = await image(1080, 1350, "#392229");
-  const product = await image(640, 760, "#E8C785");
+  const product = await productImage(640, 760);
 
   const result = await renderEditorialCreative({
     baseImageBuffer,
@@ -122,7 +186,7 @@ test("renderEditorialCreative: renderer aceita acentos, cedilha e R$ sem reprova
 
 test("renderEditorialCreative: servico digital usa screenshot real no mockup 9:16 sem texto QA comercial", async () => {
   const baseImageBuffer = await image(1080, 1920, "#1B1A1F");
-  const screenshot = await image(720, 1280, "#FFFFFF");
+  const screenshot = await screenshotImage(720, 1280);
   const logo = await image(420, 120, "#8B2F48");
 
   const result = await renderEditorialCreative({
@@ -146,7 +210,9 @@ test("renderEditorialCreative: servico digital usa screenshot real no mockup 9:1
 
 test("renderEditorialCreative: institucional premium mantem headline dentro da coluna em 4:5", async () => {
   const baseImageBuffer = await image(1080, 1350, "#3A2230");
-  const logo = await image(420, 120, "#8B2F48");
+  // Logo claro sobre o painel vinho — um logo vinho ali seria (corretamente) reprovado como
+  // invisível pela verificação de pixel.
+  const logo = await image(420, 120, "#F8E6D8");
 
   const result = await renderEditorialCreative({
     baseImageBuffer,
@@ -162,4 +228,209 @@ test("renderEditorialCreative: institucional premium mantem headline dentro da c
   assert.equal(result.family, "premium_institutional");
   assert.equal(result.geometry.valid, true, JSON.stringify(result.geometry.issues));
   assert.ok(result.renderedTextZones.some((zone) => zone.kind === "headline"));
+});
+
+// ---------------------------------------------------------------------------------------------
+// Bloqueador 1 do Smoke A — MIME do asset. dataUri() rotulava todo buffer como image/png; o
+// rasterizador descartava o JPEG real em silêncio e deixava o frame do produto vazio.
+// ---------------------------------------------------------------------------------------------
+
+test("detectImageMime: identifica PNG, JPEG, WEBP e SVG pelo conteúdo, nunca pela extensão", async () => {
+  const png = await productImage(40, 40);
+  const webp = await sharp(REAL_PRODUCT_JPEG).webp().toBuffer();
+  assert.equal(detectImageMime(png), "image/png");
+  assert.equal(detectImageMime(REAL_PRODUCT_JPEG), "image/jpeg");
+  assert.equal(detectImageMime(webp), "image/webp");
+  assert.equal(detectImageMime(Buffer.from('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>')), "image/svg+xml");
+  assert.equal(detectImageMime(Buffer.from("not an image at all")), undefined);
+  assert.equal(detectImageMime(Buffer.alloc(0)), undefined);
+});
+
+test("renderEditorialCreative: foto JPEG real do produto aparece nos pixels da arte final", async () => {
+  const result = await renderProductOffer();
+  const product = verificationFor(result, "product_photo");
+
+  assert.equal(result.geometry.valid, true, JSON.stringify(result.geometry.issues));
+  assert.equal(product.detectedMime, "image/jpeg");
+  assert.equal(product.visible, true, JSON.stringify(product));
+  assert.ok(product.assetMatchRatio >= 0.95, `match ${product.assetMatchRatio}`);
+  assert.equal(product.fidelityPass, true, `fidelidade ${product.fidelityMeanAbsDiff}`);
+  assert.equal(verificationFor(result, "logo").visible, true, JSON.stringify(verificationFor(result, "logo")));
+});
+
+test("renderEditorialCreative: a mesma foto em PNG e em WEBP também aparece", async () => {
+  const variants = [
+    ["image/png", await sharp(REAL_PRODUCT_JPEG).png().toBuffer()],
+    ["image/webp", await sharp(REAL_PRODUCT_JPEG).webp({ quality: 90 }).toBuffer()],
+  ];
+  for (const [mime, buffer] of variants) {
+    const result = await renderProductOffer({ assets: [{ role: "product_photo", url: `fixture://product.${mime.split("/")[1]}`, buffer }] });
+    const product = verificationFor(result, "product_photo");
+    assert.equal(product.detectedMime, mime);
+    assert.equal(product.visible, true, `${mime}: ${JSON.stringify(product)}`);
+    assert.equal(result.geometry.valid, true, `${mime}: ${JSON.stringify(result.geometry.issues)}`);
+  }
+});
+
+test("renderEditorialCreative: asset de produto indecodificável falha fechado (PRODUCT_ASSET_DECODE_FAILED), nunca frame vazio", async () => {
+  const base = await studioBase();
+  for (const buffer of [Buffer.from("isto não é uma imagem"), REAL_PRODUCT_JPEG.subarray(0, 600)]) {
+    await assert.rejects(
+      renderProductOffer({ baseImageBuffer: base, assets: [{ role: "product_photo", url: "fixture://broken.jpg", buffer }] }),
+      (error) => error.code === "PRODUCT_ASSET_DECODE_FAILED",
+    );
+  }
+});
+
+test("renderEditorialCreative: logo indecodificável falha fechado (EDITORIAL_ASSET_DECODE_FAILED)", async () => {
+  const brokenPng = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("quebrado")]);
+  await assert.rejects(
+    renderProductOffer({ assets: [{ role: "product_photo", url: "fixture://product.jpg", buffer: REAL_PRODUCT_JPEG }, { role: "logo", url: "fixture://logo.png", buffer: brokenPng }] }),
+    (error) => error.code === "EDITORIAL_ASSET_DECODE_FAILED",
+  );
+});
+
+test("renderEditorialCreative: asset de produto transparente ou de cor única é rejeitado (PRODUCT_ASSET_EMPTY)", async () => {
+  const transparent = await sharp({ create: { width: 400, height: 400, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+  const flat = await image(400, 400, "#E8C785");
+  for (const buffer of [transparent, flat]) {
+    await assert.rejects(
+      renderProductOffer({ assets: [{ role: "product_photo", url: "fixture://empty.png", buffer }] }),
+      (error) => error.code === "PRODUCT_ASSET_EMPTY",
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Bloqueador 4 — o gate confiava na bbox declarada. Agora existe prova em pixel.
+// ---------------------------------------------------------------------------------------------
+
+test("measureCompositedAssetFidelity: o frame vazio publicado pelo Smoke A é detectado como produto ausente", async () => {
+  const audit = await measureCompositedAssetFidelity({
+    finalImage: SMOKE_A_EMPTY_FRAME_FINAL,
+    rect: SMOKE_A_PRODUCT_RECT,
+    asset: { role: "product_photo", url: "fixture://product-ring-reminder.jpg", buffer: REAL_PRODUCT_JPEG },
+  });
+  assert.equal(audit.fidelityPass, false, `diferença média ${audit.fidelityMeanAbsDiff}`);
+  assert.ok(audit.fidelityMeanAbsDiff > 40, `diferença média ${audit.fidelityMeanAbsDiff}`);
+});
+
+test("measureCompositedAssetFidelity: a mesma foto composta pelo renderer corrigido é comprovada", async () => {
+  const result = await renderProductOffer();
+  const audit = await measureCompositedAssetFidelity({
+    finalImage: result.buffer,
+    rect: box(result, "product_photo").rect,
+    asset: { role: "product_photo", url: "fixture://product-ring-reminder.jpg", buffer: REAL_PRODUCT_JPEG },
+  });
+  assert.equal(audit.fidelityPass, true, `diferença média ${audit.fidelityMeanAbsDiff}`);
+});
+
+test("measureCompositedAssetFidelity: produto parcialmente coberto pelo fundo reprova", async () => {
+  const result = await renderProductOffer();
+  const rect = box(result, "product_photo").rect;
+  const meta = await sharp(result.buffer).metadata();
+  const left = Math.round((rect.xPct / 100) * meta.width);
+  const top = Math.round((rect.yPct / 100) * meta.height);
+  const width = Math.round((rect.widthPct / 100) * meta.width);
+  const height = Math.round((rect.heightPct / 100) * meta.height);
+  const cover = await sharp({ create: { width, height: Math.round(height * 0.6), channels: 3, background: "#F6EDE4" } }).png().toBuffer();
+  const partial = await sharp(result.buffer).composite([{ input: cover, left, top }]).jpeg().toBuffer();
+  const audit = await measureCompositedAssetFidelity({ finalImage: partial, rect, asset: { role: "product_photo", url: "fixture://p.jpg", buffer: REAL_PRODUCT_JPEG } });
+  assert.equal(audit.fidelityPass, false, `diferença média ${audit.fidelityMeanAbsDiff}`);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Bloqueador 3 — CRITICAL_ASSET_CROP estrutural. O frame 4:5 terminava em ~98,05% da largura.
+// ---------------------------------------------------------------------------------------------
+
+test("renderEditorialCreative: product frame 4:5 respeita a safe area de 2% e a sombra cabe no canvas", async () => {
+  for (const baseImageBuffer of [await studioBase(1024, 1280), await studioBase(1080, 1350)]) {
+    const result = await renderProductOffer({ baseImageBuffer });
+    const rect = box(result, "product_photo").rect;
+    assert.ok(rect.xPct >= 2 && rect.yPct >= 2, JSON.stringify(rect));
+    assert.ok(rect.xPct + rect.widthPct <= 98, `borda direita ${rect.xPct + rect.widthPct}%`);
+    assert.ok(rect.yPct + rect.heightPct <= 98, `borda inferior ${rect.yPct + rect.heightPct}%`);
+    const shadow = productShadowExtent({ x: (rect.xPct / 100) * 1080, y: (rect.yPct / 100) * 1350, width: (rect.widthPct / 100) * 1080, height: (rect.heightPct / 100) * 1350 });
+    assert.ok(shadow.x >= 0 && shadow.y >= 0 && shadow.x + shadow.width <= 1080 && shadow.y + shadow.height <= 1350, JSON.stringify(shadow));
+    assert.ok(!result.geometry.issues.some((issue) => issue.code === "SAFE_AREA_VIOLATION"), JSON.stringify(result.geometry.issues));
+  }
+});
+
+test("checkEditorialSafeArea: produto perto da margem mas dentro passa; produto que invade a margem reprova", () => {
+  const canvas = { width: 1080, height: 1350, format: "4:5" };
+  const near = [{ id: "product_photo", kind: "asset", role: "product_photo", rect: { xPct: 46, yPct: 6, widthPct: 51.9, heightPct: 60 } }];
+  const invading = [{ id: "product_photo", kind: "asset", role: "product_photo", rect: { xPct: 46.289, yPct: 6.719, widthPct: 51.758, heightPct: 61.719 } }];
+  assert.deepEqual(checkEditorialSafeArea(near, canvas, "premium_institutional"), []);
+  assert.ok(checkEditorialSafeArea(invading, canvas, "product_offer").some((issue) => issue.code === "SAFE_AREA_VIOLATION"));
+});
+
+test("renderEditorialCreative: canvas de saída 1024x1280 (base real do Smoke A) não deixa componentes vazarem a borda", async () => {
+  const result = await renderProductOffer({ baseImageBuffer: await studioBase(1024, 1280) });
+  const meta = await sharp(result.buffer).metadata();
+  assert.equal(meta.width, 1024);
+  assert.equal(meta.height, 1280);
+  assert.ok(!result.geometry.issues.some((issue) => issue.code === "COMPONENT_OVERFLOW"), JSON.stringify(result.geometry.issues));
+});
+
+// ---------------------------------------------------------------------------------------------
+// Bloqueador 2 — subheadline exigida pelo plano não chegava ao renderer.
+// ---------------------------------------------------------------------------------------------
+
+test("renderEditorialCreative: headline + subheadline são ambas desenhadas e registradas na geometria final", async () => {
+  const result = await renderProductOffer();
+  assert.ok(result.renderedTextZones.some((zone) => zone.kind === "subheadline" && zone.text === "Organize presentes, lista de presentes e RSVP em um só lugar."));
+  assert.ok(box(result, "headline"));
+  assert.ok(box(result, "subheadline"), "subheadline precisa existir na geometria final renderizada");
+});
+
+test("renderEditorialCreative: headline sem subheadline opcional é válido", async () => {
+  const result = await renderProductOffer({ plan: { subheadline: undefined, requiredElements: ["headline", "cta", "price"], allowedRenderedTexts: ["Kit Noivos Sem Correria", "Comprar agora"] } });
+  assert.equal(result.geometry.valid, true, JSON.stringify(result.geometry.issues));
+  assert.equal(box(result, "subheadline"), undefined);
+});
+
+test("renderEditorialCreative: subheadline exigida sem texto rejeita antes de rasterizar (EDITORIAL_REQUIRED_TEXT_MISSING)", async () => {
+  await assert.rejects(
+    renderProductOffer({ plan: { subheadline: undefined, requiredElements: ["headline", "subheadline", "cta"] } }),
+    (error) => error.code === "EDITORIAL_REQUIRED_TEXT_MISSING" && /subheadline/.test(error.message),
+  );
+});
+
+test("renderEditorialCreative: preço exigido sem fato confirmado rejeita antes de rasterizar", async () => {
+  await assert.rejects(
+    renderEditorialCreative({ ...productOfferInput({ fact: "Sem preço" }), baseImageBuffer: await studioBase() }),
+    (error) => error.code === "EDITORIAL_REQUIRED_TEXT_MISSING" && /price/.test(error.message),
+  );
+});
+
+test("renderEditorialCreative: texto longo adapta o layout sem overflow; texto impossível falha fechado", async () => {
+  const long = await renderProductOffer({
+    plan: {
+      headline: "Kit Noivos Sem Correria Para Celebrar Cada Detalhe",
+      subheadline: "Uma oferta direta para tirar a organização do casamento do improviso.",
+    },
+    fact: "Preço atual: R$ 12.499,90",
+  });
+  assert.equal(long.geometry.valid, true, JSON.stringify(long.geometry.issues));
+  assert.ok(box(long, "headline").fontSizePx < 80, "headline longa deveria reduzir a fonte");
+  assert.ok(box(long, "headline").rect.yPct + box(long, "headline").rect.heightPct <= box(long, "subheadline").rect.yPct);
+
+  const impossible = await renderProductOffer({ plan: { headline: "Palavra ".repeat(40).trim() } });
+  assert.ok(impossible.geometry.issues.some((issue) => issue.code === "TEXT_OVERFLOW"));
+  assert.equal(impossible.geometry.valid, false);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Regressão — geometria final renderizada continua sendo a fonte de verdade.
+// ---------------------------------------------------------------------------------------------
+
+test("renderEditorialCreative: manifesto final_rendered_geometry tem produto, headline, subheadline, preço, CTA e logo sem colisão", async () => {
+  const result = await renderProductOffer();
+  assert.equal(result.renderedGeometry.source, "final_rendered_geometry");
+  for (const id of ["product_photo", "headline", "subheadline", "price", "cta", "logo"]) {
+    assert.ok(box(result, id), `caixa ${id} ausente`);
+  }
+  assert.ok(!result.geometry.issues.some((issue) => issue.code === "COLLISION"), JSON.stringify(result.geometry.issues));
+  const headlineZone = result.renderedTextZones.find((zone) => zone.kind === "headline");
+  assert.deepEqual(headlineZone.rect, box(result, "headline").rect, "zona entregue ao gate deve ser a mesma bbox renderizada");
 });

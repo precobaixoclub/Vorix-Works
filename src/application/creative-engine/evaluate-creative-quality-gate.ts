@@ -111,6 +111,12 @@ export type CreativeQualityIssue = {
   source?: "safe_area" | "vision";
 };
 
+export type CreativeAssetPixelEvidence = {
+  role: CreativePlanAssetRole;
+  visible: boolean;
+  reason?: string;
+};
+
 export type CreativeQualityGateResult = {
   verdict: "pass" | "fail";
   issues: CreativeQualityIssue[];
@@ -142,8 +148,24 @@ export function evaluateDeterministicCreativeChecks(input: {
    * `src/shared/utils/artifact-provenance.ts`) — nunca deve acontecer no caminho normal do motor
    * GPT, mas é a última rede de proteção determinística caso algo escape. */
   nonPublishableSource?: boolean;
+  /** Prova em pixel por asset (compositor editorial). Quando presente, o gate deixa de confiar na
+   * bbox declarada: todo role em `compositedAssetRoles` precisa de prova `visible: true`. */
+  assetPixelEvidence?: readonly CreativeAssetPixelEvidence[];
 }): CreativeQualityIssue[] {
   const issues: CreativeQualityIssue[] = [];
+
+  if (input.assetPixelEvidence) {
+    for (const role of input.compositedAssetRoles) {
+      const evidence = input.assetPixelEvidence.find((item) => item.role === role);
+      if (evidence?.visible) continue;
+      issues.push({
+        code: "REQUIRED_ASSET_MISSING",
+        message: evidence
+          ? `Asset "${role}" está declarado na geometria final, mas os pixels não comprovam que ele apareceu na peça (${evidence.reason ?? "verificação de pixel reprovada"}).`
+          : `Asset "${role}" está declarado na geometria final, mas não existe prova em pixel de que ele apareceu na peça.`,
+      });
+    }
+  }
 
   const expectedRatio = parseAspectRatio(input.expectedAspectRatio);
   if (expectedRatio && input.finalImageWidth > 0 && input.finalImageHeight > 0) {
@@ -224,7 +246,9 @@ export function checkCommercialFactIntegrity(plan: CreativePlan, context: Creati
  * `assetPlacements` aqui criaria um defeito sem caminho de reparo correspondente (nunca resolvido,
  * sempre esgotando as tentativas) — escopo deliberadamente restrito ao que o sistema já sabe
  * corrigir sem gerar uma imagem nova. */
-const SAFE_AREA_MARGIN_PCT = 2;
+/** Exportado para o compositor editorial aplicar a MESMA margem antes de publicar — o layout é
+ * corrigido para respeitá-la, nunca o gate afrouxado para aceitar o layout. */
+export const SAFE_AREA_MARGIN_PCT = 2;
 
 function violatesSafeArea(rect: CreativePlanRect, marginPct = SAFE_AREA_MARGIN_PCT): boolean {
   return rect.xPct < marginPct || rect.yPct < marginPct || rect.xPct + rect.widthPct > 100 - marginPct || rect.yPct + rect.heightPct > 100 - marginPct;
@@ -716,6 +740,7 @@ export async function evaluateCreativeQualityGate(
     /** Auditoria de custo — repassado para as duas chamadas de visão internas, ver
      * `checkCreativeVisualIntegrity`/`checkProductionGuidelinesCompliance`. */
     onCost?: (response: IcaroAIResponse | undefined) => void;
+    assetPixelEvidence?: readonly CreativeAssetPixelEvidence[];
   },
 ): Promise<CreativeQualityGateResult> {
   const deterministicIssues = evaluateDeterministicCreativeChecks({
@@ -725,6 +750,7 @@ export async function evaluateCreativeQualityGate(
     compositedAssetRoles: input.compositedAssetRoles,
     contextAssetRoles: input.context.assets.map((asset) => asset.role),
     nonPublishableSource: input.nonPublishableSource,
+    assetPixelEvidence: input.assetPixelEvidence,
   });
 
   const commercialFactIssues = checkCommercialFactIntegrity(input.plan, input.context);

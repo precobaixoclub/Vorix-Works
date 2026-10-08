@@ -316,6 +316,15 @@ test("PostgresCreativeEngineRunRepository: artifactProvenance round-trip", async
     finalImage: { url: "https://example.com/final.jpg", source: "final_rendered_image", publishable: true },
     inputAssets: [{ role: "product_photo", url: "https://example.com/product.png", source: "input_asset" }],
     imagePromptSanitization: { promptChars: 100, containsHeadline: false, containsPrice: false, containsCta: false },
+    renderedGeometry: {
+      source: "final_rendered_geometry",
+      family: "product_offer",
+      textBoxes: [{ id: "subheadline", kind: "text", rect: { xPct: 6.667, yPct: 45.2, widthPct: 32.593, heightPct: 9.2 }, text: "Organize presentes", fontSizePx: 30, lineCount: 3 }],
+      assetBoxes: [{ id: "product_photo", kind: "asset", role: "product_photo", rect: { xPct: 43.519, yPct: 6.222, widthPct: 50.741, heightPct: 64.593 } }],
+    },
+    assetVerification: [
+      { role: "product_photo", detectedMime: "image/jpeg", visible: true, informativePixelRatio: 0.91, assetMatchRatio: 1, fidelityMeanAbsDiff: 7.54, fidelityPass: true },
+    ],
   };
 
   await repo.create({

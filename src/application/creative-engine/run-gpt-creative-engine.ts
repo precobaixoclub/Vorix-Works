@@ -42,7 +42,8 @@ import {
 } from "./resolve-actual-safe-area.js";
 import { neutralizeGhostTextZone } from "./neutralize-ghost-text.js";
 import { applyTextBudgetSimplification, degradeOptionalZonesOnUnresolvedOverlap, isLayoutOverdense } from "./manage-text-budget.js";
-import type { RenderEditorialCreativeInput, RenderEditorialCreativeResult } from "./editorial-composition.types.js";
+import { isEditorialCompositionError, type RenderEditorialCreativeInput, type RenderEditorialCreativeResult } from "./editorial-composition.types.js";
+import { describeEditorialTextGaps, findEditorialRequiredTextsWithoutContent, resolveEditorialRequiredTexts } from "./editorial-text-contract.js";
 
 /**
  * Motor criativo GPT — migração "GPT como motor criativo único" (PR 5/9). Promove
@@ -207,6 +208,8 @@ export type CreativeEngineArtifactProvenance = {
     containsCta: boolean;
   };
   renderedGeometry?: RenderEditorialCreativeResult["renderedGeometry"];
+  /** Prova em pixel de cada asset composto (ver `EditorialAssetVerification`). */
+  assetVerification?: RenderEditorialCreativeResult["assetVerification"];
 };
 
 export type GptCreativeEngineResult = {
@@ -743,6 +746,16 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         { creativePlan: plan, repairRounds },
       );
     }
+    // Contrato de texto (achado do Smoke A cer-runtime-muyx4qzs-hoinur): texto que o plano exige
+    // mas não escreveu nunca vira peça — falha aqui, antes de gastar a geração de imagem.
+    const textsWithoutContent = findEditorialRequiredTextsWithoutContent(resolveEditorialRequiredTexts(plan, context));
+    if (textsWithoutContent.length > 0) {
+      return fail(
+        `EDITORIAL_REQUIRED_TEXT_MISSING: o plano exige texto(s) que não chegariam ao renderer: ${describeEditorialTextGaps(textsWithoutContent)}.`,
+        "EDITORIAL_REQUIRED_TEXT_MISSING",
+        { creativePlan: plan, repairRounds },
+      );
+    }
   }
 
   outerImageRound: for (;;) {
@@ -761,7 +774,10 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     // nunca headline) ANTES de desenhar. `plan` (pristine, decisão do diretor) nunca é sobrescrito —
     // só `planForGeneration` (derivado) é usado daqui pra frente nesta rodada de imagem, mesmo
     // princípio já usado por `planForGate`.
-    const densityPreflight = isLayoutOverdense(plan.textZones, plan.assetPlacements) ? applyTextBudgetSimplification(plan) : undefined;
+    // Modo editorial: o renderer ignora a geometria declarada pelo diretor e mede o próprio layout
+    // (geometria final + TEXT_OVERFLOW/COLLISION/SAFE_AREA_VIOLATION). Simplificar sobre a
+    // geometria declarada removia a subheadline exigida pelo plano (Smoke A) — não roda aqui.
+    const densityPreflight = !input.experimentalEditorialMode && isLayoutOverdense(plan.textZones, plan.assetPlacements) ? applyTextBudgetSimplification(plan) : undefined;
     const planForGeneration = densityPreflight?.plan ?? plan;
     if (densityPreflight && densityPreflight.droppedZones.length > 0) {
       warnings.push(
@@ -849,6 +865,9 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
           assets: editorialAssets,
         });
       } catch (error) {
+        if (isEditorialCompositionError(error)) {
+          return fail(error.message, error.code, { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds });
+        }
         return fail(
           `EDITORIAL_COMPOSITION_FAILED: falha no compositor editorial experimental: ${error instanceof Error ? error.message : "erro desconhecido"}.`,
           "EDITORIAL_COMPOSITION_FAILED",
@@ -908,6 +927,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         inputAssets: editorialAssets.map((asset) => ({ role: asset.role, url: asset.url, source: "input_asset" })),
         imagePromptSanitization: buildImagePromptSanitizationAudit(imagePrompt, planForGeneration, context),
         renderedGeometry: editorial.renderedGeometry,
+        assetVerification: editorial.assetVerification,
       };
       const qualityGate = await evaluateCreativeQualityGate(deps.creativeBrain, {
         finalImageUrl: uploaded.url,
@@ -918,6 +938,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         context,
         plan: planForGate,
         specialistId: SPECIALIST_ID,
+        assetPixelEvidence: editorial.assetVerification ?? [],
         onCost: (response) => track("technicalQualityGate", response),
       });
 

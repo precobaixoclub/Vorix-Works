@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { runGptCreativeEngine } from "../dist/application/creative-engine/run-gpt-creative-engine.js";
+import { EditorialCompositionError } from "../dist/application/creative-engine/editorial-composition.types.js";
 
 function creativePlanJson(overrides = {}) {
   const merged = {
@@ -1227,6 +1228,10 @@ test("runGptCreativeEngine editorial experimental: usa compositor paralelo, regi
           textBoxes: [{ id: "headline", kind: "text", rect: { xPct: 10, yPct: 10, widthPct: 32, heightPct: 16 } }],
           assetBoxes: [{ id: "product_photo", kind: "asset", role: "product_photo", rect: { xPct: 55, yPct: 20, widthPct: 35, heightPct: 45 } }],
         },
+        assetVerification: [
+          { role: "product_photo", detectedMime: "image/jpeg", visible: true, informativePixelRatio: 0.9, assetMatchRatio: 1, fidelityMeanAbsDiff: 7.5, fidelityPass: true },
+          { role: "logo", detectedMime: "image/png", visible: true, informativePixelRatio: 0.3, assetMatchRatio: 1, fidelityMeanAbsDiff: 10, fidelityPass: true },
+        ],
         geometry: { valid: true, boxes: [{ id: "headline", kind: "text", rect: { xPct: 10, yPct: 10, widthPct: 32, heightPct: 16 } }], issues: [] },
       };
     },
@@ -1253,6 +1258,8 @@ test("runGptCreativeEngine editorial experimental: usa compositor paralelo, regi
   assert.equal(result.artifactProvenance.finalImage.publishable, true);
   assert.equal(result.artifactProvenance.productAsset.url, "https://x/product-ref.jpg");
   assert.equal(result.artifactProvenance.imagePromptSanitization.containsHeadline, false);
+  assert.equal(result.artifactProvenance.renderedGeometry.source, "final_rendered_geometry");
+  assert.equal(result.artifactProvenance.assetVerification.find((item) => item.role === "product_photo").visible, true);
 }));
 
 test("runGptCreativeEngine editorial experimental: falha alto se renderer nao foi injetado", () => withFakeFetch(async () => {
@@ -1287,4 +1294,134 @@ test("runGptCreativeEngine editorial experimental: product_offer sem asset real 
   assert.equal(result.publishable, false);
   assert.equal(result.errorCode, "REQUIRED_PRODUCT_ASSET_MISSING");
   assert.equal(icaro.calls.some((call) => call.taskType === "image_generation"), false);
+}));
+
+// ---------------------------------------------------------------------------------------------
+// Bloqueadores do Smoke A (cer-runtime-muyx4qzs-hoinur) no orquestrador editorial.
+// ---------------------------------------------------------------------------------------------
+
+function editorialRendererResult(overrides = {}) {
+  return {
+    buffer: Buffer.from("editorial-final"),
+    family: "product_offer",
+    renderedTextZones: [
+      { kind: "headline", text: "TODAS AS OFERTAS EM UM SÓ SITE", rect: { xPct: 7, yPct: 20, widthPct: 32, heightPct: 16 }, emphasis: "primary", renderedBy: "renderer", backingStyle: "none", align: "left" },
+      { kind: "subheadline", text: "Shopee + Mercado Livre", rect: { xPct: 7, yPct: 45, widthPct: 32, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer", backingStyle: "none", align: "left" },
+      { kind: "cta", text: "ACESSE AGORA", rect: { xPct: 64, yPct: 86, widthPct: 29, heightPct: 7 }, emphasis: "secondary", renderedBy: "renderer", backingStyle: "solid", align: "center" },
+    ],
+    renderedAssetPlacements: [
+      { role: "product_photo", url: "https://x/product-ref.jpg", rect: { xPct: 43.5, yPct: 6.2, widthPct: 50.7, heightPct: 64.6 }, frame: "none", treatment: "final rendered product photo" },
+    ],
+    compositedAssetRoles: ["product_photo"],
+    renderedGeometry: { source: "final_rendered_geometry", family: "product_offer", textBoxes: [], assetBoxes: [] },
+    assetVerification: [
+      { role: "product_photo", detectedMime: "image/jpeg", visible: true, informativePixelRatio: 0.9, assetMatchRatio: 1, fidelityMeanAbsDiff: 7.5, fidelityPass: true },
+    ],
+    geometry: { valid: true, boxes: [], issues: [] },
+    ...overrides,
+  };
+}
+
+test("runGptCreativeEngine editorial: product_photo declarado na bbox mas sem pixels reprova no gate (frame vazio do Smoke A)", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse()],
+    image_generation: [imageResponse()],
+    review: [passingReview(), passingVisualScore()],
+  });
+  const result = await runGptCreativeEngine(baseDeps({
+    creativeBrain: icaro,
+    renderEditorialCreative: async () => editorialRendererResult({
+      assetVerification: [
+        { role: "product_photo", detectedMime: "image/jpeg", visible: false, informativePixelRatio: 0, assetMatchRatio: 0, fidelityMeanAbsDiff: 96, fidelityPass: false, reason: "asset indistinguível do frame vazio" },
+      ],
+    }),
+  }), baseInput({ experimentalEditorialMode: true, creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.errorCode, "CREATIVE_QUALITY_GATE_NOT_PASSED");
+  assert.ok(result.qualityGate.issues.some((issue) => issue.code === "REQUIRED_ASSET_MISSING" && /product_photo/.test(issue.message)), JSON.stringify(result.qualityGate.issues));
+  assert.equal(result.artifactProvenance.assetVerification[0].visible, false, "a prova reprovada precisa ficar persistida na proveniência");
+}));
+
+test("runGptCreativeEngine editorial: renderer sem prova em pixel nunca publica", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()], review: [passingReview(), passingVisualScore()] });
+  const result = await runGptCreativeEngine(baseDeps({
+    creativeBrain: icaro,
+    renderEditorialCreative: async () => editorialRendererResult({ assetVerification: undefined }),
+  }), baseInput({ experimentalEditorialMode: true, creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+
+  assert.equal(result.publishable, false);
+  assert.ok(result.qualityGate.issues.some((issue) => issue.code === "REQUIRED_ASSET_MISSING"));
+}));
+
+test("runGptCreativeEngine editorial: subheadline exigida sem texto falha ANTES de gastar a geração de imagem", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({ subheadline: "", requiredElements: ["headline", "subheadline", "cta"] })],
+    image_generation: [imageResponse()],
+  });
+  let rendererCalled = false;
+  const result = await runGptCreativeEngine(baseDeps({
+    creativeBrain: icaro,
+    renderEditorialCreative: async () => {
+      rendererCalled = true;
+      return editorialRendererResult();
+    },
+  }), baseInput({ experimentalEditorialMode: true, creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.errorCode, "EDITORIAL_REQUIRED_TEXT_MISSING");
+  assert.match(result.error, /subheadline/);
+  assert.equal(icaro.calls.some((call) => call.taskType === "image_generation"), false, "nunca deveria gastar imagem com contrato de texto quebrado");
+  assert.equal(rendererCalled, false);
+}));
+
+test("runGptCreativeEngine editorial: layout declarado denso NÃO remove a subheadline exigida antes do renderer", () => withFakeFetch(async () => {
+  const zone = (kind, text, yPct) => ({ kind, text, rect: { xPct: 8, yPct, widthPct: 40, heightPct: 10 }, emphasis: kind === "headline" ? "primary" : "secondary", renderedBy: "renderer", backingStyle: "none", align: "left" });
+  const icaro = fakeIcaro({
+    analysis: [planResponse({
+      requiredElements: ["headline", "subheadline", "cta", "logo"],
+      textZones: [zone("headline", "TODAS AS OFERTAS EM UM SÓ SITE", 10), zone("subheadline", "Shopee + Mercado Livre", 30), zone("cta", "ACESSE AGORA", 80)],
+      assetPlacements: [
+        { role: "product_photo", url: "https://x/product-ref.jpg", rect: { xPct: 50, yPct: 10, widthPct: 40, heightPct: 60 }, frame: "none", treatment: "Produto real" },
+        { role: "logo", url: "https://x/logo.png", rect: { xPct: 8, yPct: 2, widthPct: 20, heightPct: 5 }, frame: "none", treatment: "Logo" },
+      ],
+    })],
+    image_generation: [imageResponse()],
+    review: [passingReview(), passingVisualScore()],
+  });
+  let rendererInput;
+  await runGptCreativeEngine(baseDeps({
+    creativeBrain: icaro,
+    renderEditorialCreative: async (input) => {
+      rendererInput = input;
+      return editorialRendererResult();
+    },
+  }), baseInput({
+    experimentalEditorialMode: true,
+    creativeContext: contextWithProductReference({
+      assets: [
+        { url: "https://x/product-ref.jpg", role: "product_photo", description: "Produto real" },
+        { url: "https://x/logo.png", role: "logo", description: "Logo oficial" },
+      ],
+      confirmedFacts: [],
+    }),
+  }));
+
+  assert.ok(rendererInput, "renderer deveria ter sido chamado");
+  assert.equal(rendererInput.plan.subheadline, "Shopee + Mercado Livre");
+  assert.ok(rendererInput.plan.allowedRenderedTexts.includes("Shopee + Mercado Livre"));
+}));
+
+test("runGptCreativeEngine editorial: asset indecodificável vira errorCode próprio, nunca EDITORIAL_COMPOSITION_FAILED genérico", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()] });
+  const result = await runGptCreativeEngine(baseDeps({
+    creativeBrain: icaro,
+    renderEditorialCreative: async () => {
+      throw new EditorialCompositionError("PRODUCT_ASSET_DECODE_FAILED", "asset \"product_photo\" não pôde ser decodificado.");
+    },
+  }), baseInput({ experimentalEditorialMode: true, creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.errorCode, "PRODUCT_ASSET_DECODE_FAILED");
+  assert.match(result.error, /^PRODUCT_ASSET_DECODE_FAILED:/);
 }));

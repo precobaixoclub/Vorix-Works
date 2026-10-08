@@ -116,6 +116,9 @@ export type CreativeContext = {
    * as instruções permanentes do workspace, vence sobre dados estruturados de marca). Lista vazia
    * = nenhum material relevante encontrado (nunca a biblioteca inteira despejada aqui). */
   brandMaterials?: CreativeContextBrandMaterial[];
+  /** Literais de marca confirmados (nome, wordmark, slogan) — nunca enviados ao modelo de imagem
+   * no modo editorial (ver `resolveEditorialBrandLiterals`). O renderer continua desenhando a logo real. */
+  brandLiterals?: string[];
 };
 
 export const VISUAL_DENSITIES_GPT_PLAN = ["clean", "balanced", "dense"] as const;
@@ -1156,9 +1159,65 @@ export type EditorialProductAssetRequirementResult =
   | { requirement: "required"; ok: true }
   | { requirement: "required"; ok: false; code: "REQUIRED_PRODUCT_ASSET_MISSING"; reason: string };
 
-function stripCommercialTextForEditorialPrompt(value: string | undefined, plan: CreativePlan): string | undefined {
-  if (!value?.trim()) return undefined;
-  let sanitized = value;
+/** Nomes genéricos que o pipeline usa quando não conhece a marca — nunca tratados como literal. */
+const PLACEHOLDER_BRAND_NAMES = new Set(["marca", "brand", "minha marca", "sua marca", "empresa", "cliente"]);
+const ACCENT_CLASSES: Record<string, string> = {
+  a: "[aáàâãä]", e: "[eéèêë]", i: "[iíìîï]", o: "[oóòôõö]", u: "[uúùûü]", c: "[cç]", n: "[nñ]",
+};
+/** Substituto neutro do literal de marca: mantém a frase gramaticalmente utilizável sem a marca. */
+const NEUTRAL_BRAND_REFERENCE = "the brand's theme";
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Regex tolerante a caixa, acento e espaços para um literal ("Rumo ao Altar" também casa com
+ * "rumo ao altar" vindo da direção visual do diretor). */
+function looseLiteralRegExp(literal: string): RegExp {
+  const pattern = [...literal.normalize("NFD").replace(/[̀-ͯ]/g, "").trim()]
+    .map((char) => (/\s/.test(char) ? "\\s+" : ACCENT_CLASSES[char.toLowerCase()] ?? escapeRegExp(char)))
+    .join("")
+    .replace(/(\\s\+)+/g, "\\s+");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, "giu");
+}
+
+/** Nome declarado na descrição de uma logo ("Logo oficial Rumo ao Altar. Usar somente…"). */
+function brandNameFromLogoDescription(description: string | undefined): string | undefined {
+  const match = description?.match(/\b[Ll]ogo(?:\s+[Oo]ficial)?(?:\s+d[aoe]s?)?\s+((?:\p{Lu}[\p{L}'’-]*)(?:\s+(?:\p{Ll}{1,3}\s+)?\p{Lu}[\p{L}'’-]*)*)/u);
+  return match?.[1]?.trim();
+}
+
+/**
+ * Literais de marca que nunca podem chegar ao modelo de imagem (achado do Smoke A
+ * cer-runtime-muzle2ms-1wftsl: "caminhada organizada rumo ao altar" levou o nome da marca ao prompt
+ * via direção visual do diretor). Fontes genéricas, nunca hardcoded: nome da marca conhecido (exceto
+ * placeholder), nomes de materiais de marca do tipo logo, nome declarado na descrição da logo
+ * fornecida e literais explícitos do contexto. A logo REAL continua sendo desenhada pelo renderer.
+ */
+export function resolveEditorialBrandLiterals(context: Pick<CreativeContext, "brandName" | "assets" | "brandMaterials" | "brandLiterals">): string[] {
+  const candidates = [
+    context.brandName,
+    ...(context.brandLiterals ?? []),
+    ...(context.brandMaterials ?? []).filter((material) => /logo/i.test(material.type)).map((material) => material.name),
+    ...context.assets.filter((asset) => asset.role === "logo").map((asset) => brandNameFromLogoDescription(asset.description)),
+  ];
+  const literals = new Set<string>();
+  for (const candidate of candidates) {
+    const value = candidate?.trim();
+    if (!value || value.length < 3 || PLACEHOLDER_BRAND_NAMES.has(value.toLowerCase())) continue;
+    literals.add(value);
+  }
+  return [...literals].sort((a, b) => b.length - a.length);
+}
+
+type EditorialPromptSanitizer = {
+  /** Texto livre do diretor: sem textos comerciais, preço, rótulos técnicos, marca (e produto, no product_offer). */
+  sanitize: (value: string | undefined) => string | undefined;
+  /** Só remove literais de marca — para listas que precisam manter o sentido literal (ex.: proibições). */
+  stripBrandLiterals: (value: string) => string;
+};
+
+function buildEditorialPromptSanitizer(plan: CreativePlan, brandLiterals: readonly string[], options: { neutralizeProduct: boolean }): EditorialPromptSanitizer {
   const forbiddenText = [
     plan.headline,
     plan.subheadline,
@@ -1170,19 +1229,33 @@ function stripCommercialTextForEditorialPrompt(value: string | undefined, plan: 
     // comercial — nunca podem vazar para o prompt de imagem.
     ...(plan.editorialTextZoneNormalization?.discardedGeometry ?? []).map((zone) => zone.text),
   ].filter((text): text is string => Boolean(text?.trim()));
-  for (const text of [...new Set(forbiddenText)]) {
-    sanitized = sanitized.replaceAll(text, "o elemento visual principal");
-  }
-  sanitized = sanitized
-    .replace(/\b(?:R\$|BRL|USD|US\$)\s*\d[\d.,]*/gi, "valor comercial")
-    .replace(/\b\d{1,3}(?:[.,]\d{2})\b/g, "valor comercial")
-    .replace(/\b(?:headline|subheadline|cta|call to action|pre[çc]o|price|desconto|discount|badge|url|logo)\b/gi, "elemento editorial")
-    .replace(/\s+/g, " ")
-    .trim();
-  return sanitized || undefined;
+  const brandPatterns = brandLiterals.map(looseLiteralRegExp);
+  const stripBrandLiterals = (value: string): string => brandPatterns.reduce((text, pattern) => text.replace(pattern, NEUTRAL_BRAND_REFERENCE), value);
+  const sanitize = (value: string | undefined): string | undefined => {
+    if (!value?.trim()) return undefined;
+    let sanitized = value;
+    for (const text of [...new Set(forbiddenText)]) {
+      sanitized = sanitized.replaceAll(text, "o elemento visual principal");
+    }
+    sanitized = stripBrandLiterals(sanitized);
+    sanitized = sanitized
+      .replace(/\b(?:R\$|BRL|USD|US\$)\s*\d[\d.,]*/gi, "valor comercial")
+      .replace(/\b\d{1,3}(?:[.,]\d{2})\b/g, "valor comercial")
+      .replace(/\b(?:headline|subheadline|cta|call to action|pre[çc]o|price|desconto|discount|badge|url|logo)\b/gi, "elemento editorial");
+    if (options.neutralizeProduct) {
+      // A base de um product_offer é só ambiente: menções ao produto viram o espaço reservado onde a
+      // foto real será composta depois — nunca um convite para o modelo desenhar o produto.
+      sanitized = sanitized.replace(/(?<![\p{L}\p{N}])(?:o\s+|a\s+|the\s+)?(?:produtos?|products?|mercadorias?|merchandise|item\s+f[ií]sico|physical\s+item)(?:\s+(?:reais|real|f[ií]sicos?))?(?![\p{L}\p{N}])/giu, "the reserved empty space");
+    }
+    sanitized = sanitized.replace(/\s+/g, " ").trim();
+    return sanitized || undefined;
+  };
+  return { sanitize, stripBrandLiterals };
 }
 
 function buildEditorialImageGenerationPromptFromPlan(plan: CreativePlan, context: CreativeContext): string {
+  const hasProductPhoto = context.assets.some((asset) => asset.role === "product_photo");
+  const { sanitize, stripBrandLiterals } = buildEditorialPromptSanitizer(plan, resolveEditorialBrandLiterals(context), { neutralizeProduct: hasProductPhoto });
   const visualLines = [
     "Create only the photographic visual scene/background for a later deterministic marketing composition.",
     "Do not create an advertisement. Do not render typography. Do not add headlines. Do not add prices. Do not add CTAs. Do not add badges. Do not add labels. Do not add logos. Do not add fake packaging copy. Do not add signs, captions, buttons, UI text, watermarks, or any readable words.",
@@ -1191,15 +1264,17 @@ function buildEditorialImageGenerationPromptFromPlan(plan: CreativePlan, context
   ];
 
   const artDirection = plan.artDirection;
-  const concept = stripCommercialTextForEditorialPrompt(artDirection.concept, plan);
-  const visualFocus = stripCommercialTextForEditorialPrompt(artDirection.visualFocus, plan);
-  const visualDirection = stripCommercialTextForEditorialPrompt(plan.visualDirection, plan);
-  const compositionIntent = stripCommercialTextForEditorialPrompt(plan.compositionIntent, plan);
-  const backgroundTreatment = stripCommercialTextForEditorialPrompt(artDirection.backgroundTreatment, plan);
-  const atmosphere = stripCommercialTextForEditorialPrompt(artDirection.atmosphere, plan);
-  const chromaticDirection = stripCommercialTextForEditorialPrompt(artDirection.chromaticDirection, plan);
-  const contrastStrategy = stripCommercialTextForEditorialPrompt(artDirection.contrastStrategy, plan);
-  const styleNotes = stripCommercialTextForEditorialPrompt(plan.styleNotes, plan);
+  const visualDirection = sanitize(plan.visualDirection);
+  const compositionIntent = sanitize(plan.compositionIntent);
+  const backgroundTreatment = sanitize(artDirection.backgroundTreatment);
+  const atmosphere = sanitize(artDirection.atmosphere);
+  const chromaticDirection = sanitize(artDirection.chromaticDirection);
+  const contrastStrategy = sanitize(artDirection.contrastStrategy);
+  const styleNotes = sanitize(plan.styleNotes);
+  // `concept`/`visualFocus` descrevem o HERÓI da peça — num product_offer o herói é a foto real,
+  // composta depois. Mandá-los ao modelo de imagem induzia a recriar o produto na base (Smoke A).
+  const concept = hasProductPhoto ? undefined : sanitize(artDirection.concept);
+  const visualFocus = hasProductPhoto ? undefined : sanitize(artDirection.visualFocus);
 
   if (visualDirection) visualLines.push(`Visual direction: ${visualDirection}.`);
   if (compositionIntent) visualLines.push(`Composition intent: ${compositionIntent}.`);
@@ -1216,16 +1291,19 @@ function buildEditorialImageGenerationPromptFromPlan(plan: CreativePlan, context
     .slice()
     .sort((a, b) => a.priority - b.priority)
     .map((zone) => {
-      const role = zone.kind === "hero" ? "main visual mass" : zone.kind === "support" ? "supporting visual mass" : "negative space";
-      const rationale = stripCommercialTextForEditorialPrompt(zone.rationale, plan) ?? "visual balance";
+      const isReservedProductArea = hasProductPhoto && zone.kind === "hero";
+      const role = isReservedProductArea ? "reserved empty area" : zone.kind === "hero" ? "main visual mass" : zone.kind === "support" ? "supporting visual mass" : "negative space";
+      const rationale = isReservedProductArea
+        ? "keep only a soft, uncluttered backdrop surface here (light, texture, depth) — a real product photo will be composited into this area later; no objects"
+        : sanitize(zone.rationale) ?? "visual balance";
       return `${role} (priority ${zone.priority}, x=${zone.rect.xPct}%-${zone.rect.xPct + zone.rect.widthPct}%, y=${zone.rect.yPct}%-${zone.rect.yPct + zone.rect.heightPct}%): ${rationale}`;
     });
   if (visualLayoutZones.length > 0) {
     visualLines.push(`Visual mass map, with no text in any region:\n${visualLayoutZones.join("\n")}`);
   }
 
-  if (context.assets.some((asset) => asset.role === "product_photo")) {
-    visualLines.push("A real product asset will be provided separately: preserve its shape, color, material, and distinctive details; do not invent a different product and do not add readable packaging copy.");
+  if (hasProductPhoto) {
+    visualLines.push("BACKGROUND/ENVIRONMENT ONLY: this image is the setting behind a real product photo that will be composited later by a separate compositor. Do not depict any product, merchandise, hero object or focal item for sale. Do not recreate, imitate or reinterpret any supplied product. Keep the main visual area as an uncluttered surface or backdrop with light, texture and depth only, leaving clear visual space for the externally composed product.");
   } else {
     visualLines.push("If the scene contains objects, keep them non-branded and non-textual; do not invent a specific commercial product or readable packaging.");
   }
@@ -1236,9 +1314,9 @@ function buildEditorialImageGenerationPromptFromPlan(plan: CreativePlan, context
     visualLines.push(`Use this brand color direction only as non-textual color styling: ${context.brandColors.join(", ")}.`);
   }
   if (plan.forbiddenElements.length > 0) {
-    visualLines.push(`Also avoid these visual elements: ${plan.forbiddenElements.join(", ")}.`);
+    visualLines.push(`Also avoid these visual elements: ${plan.forbiddenElements.map(stripBrandLiterals).join(", ")}.`);
   }
-  visualLines.push("The final image must contain zero readable text. This includes decorative typography, placeholder words, labels, product names, numbers, currency, acronyms, pseudo-text, and fake UI strings.");
+  visualLines.push("The final image must contain zero readable text. This includes decorative typography, placeholder words, labels, product names, brand names, numbers, currency, acronyms, pseudo-text, and fake UI strings.");
   return visualLines.join("\n");
 }
 

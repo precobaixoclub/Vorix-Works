@@ -1,0 +1,59 @@
+{
+  "kind": "diagnostic_reevaluation",
+  "sourceCreativeEngineRunId": "cer-runtime-muzle2ms-1wftsl",
+  "sourceExecutionRunId": "execution-muzle2oq-k935t0",
+  "originalResult": {
+    "status": "failed",
+    "errorCode": "CREATIVE_QUALITY_GATE_NOT_PASSED",
+    "qualityGate": {
+      "issues": [
+        {
+          "code": "UNAUTHORIZED_TEXT",
+          "source": "vision",
+          "message": "A peça contém texto não autorizado: \"Rumo ao Altar\" — não está na lista de textos permitidos do plano. Remova completamente."
+        }
+      ],
+      "verdict": "fail"
+    }
+  },
+  "finalImageUrl": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/muzley4a-1prww0-editorial-final.jpg",
+  "imageGenerations": 0,
+  "verifiedLogoRegions": [
+    {
+      "xPct": 6.667,
+      "yPct": 6.222,
+      "widthPct": 27.778,
+      "heightPct": 4.741
+    }
+  ],
+  "exemptedLogoTexts": [
+    {
+      "text": "Rumo ao Altar",
+      "region": {
+        "xPct": 5,
+        "yPct": 5,
+        "widthPct": 20,
+        "heightPct": 5
+      }
+    }
+  ],
+  "reevaluatedQualityGate": {
+    "verdict": "pass",
+    "issues": []
+  },
+  "visionCalls": 1,
+  "visionCostUsd": 0.00057135,
+  "visionRaw": [
+    {
+      "taskType": "review",
+      "status": "completed",
+      "model": "gpt-4o-2024-08-06",
+      "content": "{\"productMismatch\": false, \"wrongLogo\": false, \"screenshotMischaracterized\": false, \"textIllegibleOrCut\": false, \"elementCutOff\": false, \"criticalOverlap\": false, \"criticalAssetOccluded\": false, \"compositionBroken\": false, \"colorPaletteViolated\": false, \"unauthorizedTexts\": [{\"text\": \"Rumo ao Altar\", \"region\": {\"xPct\": 5, \"yPct\": 5, \"widthPct\": 20, \"heightPct\": 5}}], \"duplicatedTexts\": [], \"missingRequiredTexts\": [], \"missingRequiredFacts\": [], \"reasoning\": \"A peça contém um texto não autorizado ('Rumo ao Altar'). Todos os textos obrigatórios e fatos comerciais estão presentes e legíveis.\"}"
+    }
+  ],
+  "brandLiterals": [
+    "Rumo ao Altar"
+  ],
+  "editorialImagePromptWithFix": "Create only the photographic visual scene/background for a later deterministic marketing composition.\nDo not create an advertisement. Do not render typography. Do not add headlines. Do not add prices. Do not add CTAs. Do not add badges. Do not add labels. Do not add logos. Do not add fake packaging copy. Do not add signs, captions, buttons, UI text, watermarks, or any readable words.\nAll commercial text, prices, calls to action, logos, and exact offer facts will be rendered later by a deterministic compositor.\nFinal composition format: 4:5.\nVisual direction: Elegante e simbólica, evocando a ideia de uma caminhada organizada the brand's theme..\nComposition intent: Criar uma cena que simbolize a jornada ao altar, utilizando the reserved empty space como foco central..\nAtmosphere: Romântica e organizada..\nBackground/environment treatment: Fundo suave com pétalas de rosa..\nChromatic direction: Tons suaves com destaque para o dourado do the reserved empty space..\nLight/contrast strategy: Alto contraste entre the reserved empty space dourado e o fundo suave..\nStyle notes: A composição deve evocar uma sensação de organização e romance, com foco no the reserved empty space como símbolo central..\nVisual mass map, with no text in any region:\nreserved empty area (priority 1, x=20%-80%, y=20%-80%): keep only a soft, uncluttered backdrop surface here (light, texture, depth) — a real product photo will be composited into this area later; no objects\nsupporting visual mass (priority 3, x=10%-90%, y=75%-85%): Texto secundário próximo ao the reserved empty space para reforçar a mensagem.\nnegative space (priority 6, x=0%-100%, y=0%-100%): Espaço negativo ao redor do the reserved empty space para evitar poluição visual.\nBACKGROUND/ENVIRONMENT ONLY: this image is the setting behind a real product photo that will be composited later by a separate compositor. Do not depict any product, merchandise, hero object or focal item for sale. Do not recreate, imitate or reinterpret any supplied product. Keep the main visual area as an uncluttered surface or backdrop with light, texture and depth only, leaving clear visual space for the externally composed product.\nAlso avoid these visual elements: texto QA, CAPTURA QA REAL, placeholder, preco inventado, CTA inventado, logo falsa, texto tecnico, labels publicitarios desenhados pela IA.\nThe final image must contain zero readable text. This includes decorative typography, placeholder words, labels, product names, brand names, numbers, currency, acronyms, pseudo-text, and fake UI strings.",
+  "originalImagePrompt": "Create only the photographic visual scene/background for a later deterministic marketing composition.\nDo not create an advertisement. Do not render typography. Do not add headlines. Do not add prices. Do not add CTAs. Do not add badges. Do not add labels. Do not add logos. Do not add fake packaging copy. Do not add signs, captions, buttons, UI text, watermarks, or any readable words.\nAll commercial text, prices, calls to action, logos, and exact offer facts will be rendered later by a deterministic compositor.\nFinal composition format: 4:5.\nVisual direction: Elegante e simbólica, evocando a ideia de uma caminhada organizada rumo ao altar..\nComposition intent: Criar uma cena que simbolize a jornada ao altar, utilizando o produto real como foco central..\nScene concept: Produto centralizado em um caminho de pétalas, simbolizando a jornada ao altar..\nMain visual focus: Produto real no centro da composição..\nAtmosphere: Romântica e organizada..\nBackground/environment treatment: Fundo suave com pétalas de rosa..\nChromatic direction: Tons suaves com destaque para o dourado do produto..\nLight/contrast strategy: Alto contraste entre o produto dourado e o fundo suave..\nStyle notes: A composição deve evocar uma sensação de organização e romance, com foco no produto real como símbolo central..\nVisual mass map, with no text in any region:\nmain visual mass (priority 1, x=20%-80%, y=20%-80%): Produto real ocupa o centro da composição, simbolizando o foco principal.\nsupporting visual mass (priority 3, x=10%-90%, y=75%-85%): Texto secundário próximo ao produto para reforçar a mensagem.\nnegative space (priority 6, x=0%-100%, y=0%-100%): Espaço negativo ao redor do produto para evitar poluição visual.\nA real product asset will be provided separately: preserve its shape, color, material, and distinctive details; do not invent a different product and do not add readable packaging copy.\nAlso avoid these visual elements: texto QA, CAPTURA QA REAL, placeholder, preco inventado, CTA inventado, logo falsa, texto tecnico, labels publicitarios desenhados pela IA.\nThe final image must contain zero readable text. This includes decorative typography, placeholder words, labels, product names, numbers, currency, acronyms, pseudo-text, and fake UI strings."
+}

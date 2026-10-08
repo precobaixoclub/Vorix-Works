@@ -1679,3 +1679,23 @@ test("runGptCreativeEngine padrão: preflight editorial nunca roda fora do modo 
   assert.equal(preflightCalls, 0);
   assert.notEqual(result.errorCode, "EDITORIAL_ASSET_PREFLIGHT_MISSING");
 }));
+
+// Smoke A cer-runtime-muzle2ms-1wftsl: a base OpenAI recriou o produto a partir da foto enviada
+// como referência de edição. No modo editorial a base é só ambiente — o produto real é composto
+// exclusivamente pelo renderer.
+test("runGptCreativeEngine editorial: a foto do produto NÃO é enviada ao modelo de imagem (base só ambiente)", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()], review: [passingReview(), passingVisualScore()] });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro, renderEditorialCreative: async () => editorialRendererResult() }), baseInput({ experimentalEditorialMode: true, creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+  const imageCall = icaro.calls.find((call) => call.taskType === "image_generation");
+  assert.ok(imageCall, result.error);
+  assert.equal(imageCall.context?.referenceImageUrl, undefined);
+  assert.equal(result.generationMethod, "generation");
+}));
+
+test("runGptCreativeEngine padrão: a foto do produto continua indo como referência de edição (comportamento inalterado)", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()], review: [passingReview(), passingVisualScore()] });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+  const imageCall = icaro.calls.find((call) => call.taskType === "image_generation");
+  assert.equal(imageCall.context?.referenceImageUrl, "https://x/product-ref.jpg");
+  assert.equal(result.generationMethod, "edit");
+}));

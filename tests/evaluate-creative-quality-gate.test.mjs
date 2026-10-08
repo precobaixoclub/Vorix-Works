@@ -12,6 +12,8 @@ import {
   combineCreativeQualityIssues,
   evaluateCreativeQualityGate,
   evaluateDeterministicCreativeChecks,
+  isTextRegionInsideVerifiedLogo,
+  resolveVerifiedLogoRegions,
 } from "../dist/application/creative-engine/evaluate-creative-quality-gate.js";
 
 function basePlan(overrides = {}) {
@@ -748,4 +750,112 @@ test("checkAssetSafeAreaCompliance: product frame do Smoke A (borda direita em 9
   const issues = checkAssetSafeAreaCompliance(plan);
   assert.equal(issues.length, 1);
   assert.equal(issues[0].code, "CRITICAL_ASSET_CROP");
+});
+
+// ---------------------------------------------------------------------------------------------
+// Logo oficial: isenção ESPACIAL baseada em proveniência (Smoke A cer-runtime-muzle2ms-1wftsl,
+// "Rumo ao Altar" do wordmark da logo composta foi reprovado como UNAUTHORIZED_TEXT).
+// ---------------------------------------------------------------------------------------------
+
+const LOGO_URL = "https://api.vorixworks.com/uploads/qa-assets/editorial/logo.png";
+const LOGO_RECT = { xPct: 6.667, yPct: 6.222, widthPct: 27.778, heightPct: 4.741 };
+const LOGO_TEXT_REGION = { xPct: 11, yPct: 6.5, widthPct: 20, heightPct: 4 };
+const OUTSIDE_REGION = { xPct: 55, yPct: 70, widthPct: 25, heightPct: 5 };
+
+function logoGateInput(overrides = {}) {
+  return {
+    finalImageUrl: "https://x/final.jpg",
+    finalImageWidth: 1024,
+    finalImageHeight: 1280,
+    expectedAspectRatio: "4:5",
+    compositedAssetRoles: ["product_photo", "logo"],
+    context: baseContext({ assets: [{ url: LOGO_URL, role: "logo", description: "Logo oficial" }] }),
+    plan: basePlan({ assetPlacements: [{ role: "logo", url: LOGO_URL, rect: LOGO_RECT, frame: "none", treatment: "final rendered logo" }] }),
+    specialistId: "gpt-creative-director",
+    assetPixelEvidence: [
+      { role: "product_photo", visible: true, fidelityPass: true },
+      { role: "logo", visible: true, fidelityPass: true },
+    ],
+    ...overrides,
+  };
+}
+
+function visionReturning(unauthorizedTexts, extra = {}) {
+  const prompts = [];
+  return {
+    prompts,
+    request: async (request) => {
+      prompts.push(request.prompt);
+      return { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, unauthorizedTexts, ...extra }) };
+    },
+  };
+}
+
+test("logo A: texto DENTRO da logo oficial verificada é isentado (e registrado), sem whitelist de palavra", async () => {
+  const icaro = visionReturning([{ text: "Rumo ao Altar", region: LOGO_TEXT_REGION }]);
+  const exempted = [];
+  const result = await evaluateCreativeQualityGate(icaro, { ...logoGateInput(), onVerifiedLogoTextExempted: (item) => exempted.push(item) });
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  assert.deepEqual(exempted.map((item) => item.text), ["Rumo ao Altar"]);
+  assert.match(icaro.prompts[0], /"region"/, "com logo verificada a visão precisa devolver a região de cada texto");
+});
+
+test("logo B: o MESMO texto fora da região da logo continua UNAUTHORIZED_TEXT", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([{ text: "Rumo ao Altar", region: OUTSIDE_REGION }]), logoGateInput());
+  assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT" && /Rumo ao Altar/.test(issue.message)));
+});
+
+test("logo B2: texto sem região informada nunca é isentado (falha fechada)", async () => {
+  for (const item of ["Rumo ao Altar", { text: "Rumo ao Altar" }, { text: "Rumo ao Altar", region: { xPct: "x" } }]) {
+    const result = await evaluateCreativeQualityGate(visionReturning([item]), logoGateInput());
+    assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"), JSON.stringify(item));
+  }
+});
+
+test("logo B3: wordmark/logo falso inventado pela base fora da logo oficial continua reprovando", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([
+    { text: "Rumo ao Altar", region: LOGO_TEXT_REGION },
+    { text: "RUMO AO ALTAR", region: { xPct: 60, yPct: 20, widthPct: 30, heightPct: 6 } },
+  ]), logoGateInput());
+  assert.equal(result.issues.filter((issue) => issue.code === "UNAUTHORIZED_TEXT").length, 1);
+});
+
+test("logo C: bbox declarada como logo sem prova em pixel/proveniência válida NÃO isenta", async () => {
+  const cases = {
+    "sem prova em pixel": { assetPixelEvidence: undefined },
+    "logo não visível": { assetPixelEvidence: [{ role: "logo", visible: false, fidelityPass: false }] },
+    "fidelidade não comprovada": { assetPixelEvidence: [{ role: "logo", visible: true }] },
+    "logo não composta pelo renderer": { compositedAssetRoles: ["product_photo"], assetPixelEvidence: [{ role: "product_photo", visible: true, fidelityPass: true }] },
+    "placement aponta para outro asset": { plan: basePlan({ assetPlacements: [{ role: "logo", url: "https://evil.example/logo.png", rect: LOGO_RECT, frame: "none" }] }) },
+    "logo não fornecida no contexto": { context: baseContext({ assets: [] }) },
+  };
+  for (const [label, overrides] of Object.entries(cases)) {
+    const result = await evaluateCreativeQualityGate(visionReturning([{ text: "Rumo ao Altar", region: LOGO_TEXT_REGION }]), logoGateInput(overrides));
+    assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"), label);
+  }
+});
+
+test("logo D: logo real diferente da referência continua WRONG_LOGO", async () => {
+  const result = await evaluateCreativeQualityGate(
+    visionReturning([], { wrongLogo: true, reasoning: "símbolo diferente" }),
+    logoGateInput({ context: baseContext({ assets: [{ url: LOGO_URL, role: "logo", description: "Logo oficial" }] }) }),
+  );
+  assert.ok(result.issues.some((issue) => issue.code === "WRONG_LOGO"));
+});
+
+test("motor padrão (sem prova em pixel): prompt e parse de texto inalterados", async () => {
+  const icaro = visionReturning(["SAIBA MAIS"]);
+  const result = await evaluateCreativeQualityGate(icaro, { ...logoGateInput(), assetPixelEvidence: undefined, compositedAssetRoles: ["logo"] });
+  assert.doesNotMatch(icaro.prompts[0], /"region"/);
+  assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT" && /SAIBA MAIS/.test(issue.message)));
+});
+
+test("resolveVerifiedLogoRegions / isTextRegionInsideVerifiedLogo: geometria e tolerância", () => {
+  const regions = resolveVerifiedLogoRegions({ plan: logoGateInput().plan, context: logoGateInput().context, compositedAssetRoles: ["logo"], assetPixelEvidence: [{ role: "logo", visible: true, fidelityPass: true }] });
+  assert.deepEqual(regions, [LOGO_RECT]);
+  assert.equal(isTextRegionInsideVerifiedLogo(LOGO_TEXT_REGION, regions), true);
+  assert.equal(isTextRegionInsideVerifiedLogo({ xPct: 8, yPct: 5, widthPct: 25, heightPct: 6 }, regions), true, "estimativa um pouco maior que a logo ainda é a logo");
+  assert.equal(isTextRegionInsideVerifiedLogo({ xPct: 8, yPct: 20, widthPct: 30, heightPct: 20 }, regions), false, "headline logo abaixo não é a logo");
+  assert.equal(isTextRegionInsideVerifiedLogo({ xPct: 20, yPct: 6, widthPct: 40, heightPct: 5 }, regions), false, "texto que transborda muito a logo não é isentado");
+  assert.equal(isTextRegionInsideVerifiedLogo({ xPct: 10, yPct: 7, widthPct: 0, heightPct: 0 }, regions), false);
 });

@@ -832,7 +832,11 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     }
   }
 
-  const generationMethod: GenerationMethod = productAsset ? "edit" : "generation";
+  // Modo editorial: a base é SÓ ambiente — a foto real do produto nunca vai como entrada de edição
+  // do modelo de imagem (Smoke A cer-runtime-muzle2ms-1wftsl: a base recriou o relógio a partir da
+  // referência). O produto real é composto depois, exclusivamente pelo renderer.
+  const imageReferenceUrl = input.experimentalEditorialMode ? undefined : productAsset?.url;
+  const generationMethod: GenerationMethod = imageReferenceUrl ? "edit" : "generation";
   const repairRounds: CreativeRepairRound[] = [];
   let plan = initialPlan;
   let repairAttempt = 0;
@@ -895,7 +899,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     const { uri, response: imageResponse } = await requestGeneratedImage(deps.creativeBrain, {
       prompt: imagePrompt,
       format: context.format,
-      referenceImageUrl: productAsset?.url,
+      referenceImageUrl: imageReferenceUrl,
       creativeGuard,
       executionId: input.executionRunId,
       correlationId: input.creativeEngineRunId,

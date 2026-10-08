@@ -114,8 +114,71 @@ export type CreativeQualityIssue = {
 export type CreativeAssetPixelEvidence = {
   role: CreativePlanAssetRole;
   visible: boolean;
+  /** Fidelidade ao asset original (compositor editorial). Isenção de texto de logo exige `true`. */
+  fidelityPass?: boolean;
   reason?: string;
 };
+
+/** Margem (em pontos percentuais) tolerada ao redor da logo verificada — a visão estima regiões. */
+const VERIFIED_LOGO_REGION_TOLERANCE_PCT = 2.5;
+const VERIFIED_LOGO_MIN_TEXT_AREA_INSIDE = 0.6;
+
+/**
+ * Regiões FINAIS de logos oficiais que podem isentar texto (achado do Smoke A
+ * cer-runtime-muzle2ms-1wftsl: "Rumo ao Altar", o wordmark da logo oficial composta pelo renderer,
+ * foi reprovado como UNAUTHORIZED_TEXT). Nunca uma whitelist de palavras — só geometria com
+ * proveniência: a logo foi fornecida no contexto, foi composta pelo renderer, o placement é a
+ * geometria final renderizada apontando para o MESMO asset do contexto, e a prova em pixel diz que
+ * ela apareceu fiel ao original. Sem prova em pixel (motor padrão), nenhuma região é verificada.
+ */
+export function resolveVerifiedLogoRegions(input: {
+  plan: Pick<CreativePlan, "assetPlacements">;
+  context: Pick<CreativeContext, "assets">;
+  compositedAssetRoles: readonly CreativePlanAssetRole[];
+  assetPixelEvidence?: readonly CreativeAssetPixelEvidence[];
+}): CreativePlanRect[] {
+  if (!input.assetPixelEvidence || !input.compositedAssetRoles.includes("logo")) return [];
+  const evidence = input.assetPixelEvidence.find((item) => item.role === "logo");
+  if (!evidence?.visible || evidence.fidelityPass !== true) return [];
+  const logoUrls = new Set(input.context.assets.filter((asset) => asset.role === "logo").map((asset) => asset.url));
+  if (logoUrls.size === 0) return [];
+  return input.plan.assetPlacements.filter((placement) => placement.role === "logo" && logoUrls.has(placement.url)).map((placement) => placement.rect);
+}
+
+function intersectionArea(a: CreativePlanRect, b: CreativePlanRect): number {
+  const width = Math.min(a.xPct + a.widthPct, b.xPct + b.widthPct) - Math.max(a.xPct, b.xPct);
+  const height = Math.min(a.yPct + a.heightPct, b.yPct + b.heightPct) - Math.max(a.yPct, b.yPct);
+  return width > 0 && height > 0 ? width * height : 0;
+}
+
+/** Texto pertence à logo verificada quando seu centro está dentro da logo (com tolerância) e a
+ * maior parte da sua área também. */
+export function isTextRegionInsideVerifiedLogo(region: CreativePlanRect, logoRegions: readonly CreativePlanRect[]): boolean {
+  const area = region.widthPct * region.heightPct;
+  if (!(area > 0)) return false;
+  const centerX = region.xPct + region.widthPct / 2;
+  const centerY = region.yPct + region.heightPct / 2;
+  return logoRegions.some((logo) => {
+    const expanded = {
+      xPct: logo.xPct - VERIFIED_LOGO_REGION_TOLERANCE_PCT,
+      yPct: logo.yPct - VERIFIED_LOGO_REGION_TOLERANCE_PCT,
+      widthPct: logo.widthPct + VERIFIED_LOGO_REGION_TOLERANCE_PCT * 2,
+      heightPct: logo.heightPct + VERIFIED_LOGO_REGION_TOLERANCE_PCT * 2,
+    };
+    const centerInside = centerX >= expanded.xPct && centerX <= expanded.xPct + expanded.widthPct && centerY >= expanded.yPct && centerY <= expanded.yPct + expanded.heightPct;
+    return centerInside && intersectionArea(region, expanded) / area >= VERIFIED_LOGO_MIN_TEXT_AREA_INSIDE;
+  });
+}
+
+function parseDetectedText(raw: unknown): { text: string; region?: CreativePlanRect } | undefined {
+  if (typeof raw === "string") return raw.trim() ? { text: raw } : undefined;
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const record = raw as { text?: unknown; region?: unknown };
+  if (typeof record.text !== "string" || !record.text.trim()) return undefined;
+  const region = record.region as Record<string, unknown> | undefined;
+  const valid = region && ["xPct", "yPct", "widthPct", "heightPct"].every((key) => typeof region[key] === "number" && Number.isFinite(region[key] as number));
+  return valid ? { text: record.text, region: region as unknown as CreativePlanRect } : { text: record.text };
+}
 
 export type CreativeQualityGateResult = {
   verdict: "pass" | "fail";
@@ -420,6 +483,7 @@ function buildVisualIntegrityPrompt(
   brandColors: readonly string[] | undefined,
   allowedRenderedTexts: readonly string[],
   requiredRenderedFacts: readonly string[],
+  options: { withTextRegions?: boolean } = {},
 ): string {
   const colorsLine = brandColors && brandColors.length > 0
     ? `Paleta de cores oficial configurada para esta marca: ${brandColors.join(", ")}.`
@@ -439,7 +503,9 @@ function buildVisualIntegrityPrompt(
         ]
       : []),
     "Responda APENAS com JSON válido, sem markdown, no formato exato:",
-    '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "criticalAssetOccluded": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "unauthorizedTexts": ["..."], "duplicatedTexts": ["..."], "missingRequiredTexts": ["..."], "missingRequiredFacts": ["..."], "reasoning": "1-2 frases objetivas"}',
+    options.withTextRegions
+      ? '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "criticalAssetOccluded": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "unauthorizedTexts": [{"text": "...", "region": {"xPct": 0, "yPct": 0, "widthPct": 0, "heightPct": 0}}], "duplicatedTexts": ["..."], "missingRequiredTexts": ["..."], "missingRequiredFacts": ["..."], "reasoning": "1-2 frases objetivas"}'
+      : '{"productMismatch": true|false, "wrongLogo": true|false, "screenshotMischaracterized": true|false, "textIllegibleOrCut": true|false, "elementCutOff": true|false, "criticalOverlap": true|false, "criticalAssetOccluded": true|false, "compositionBroken": true|false, "colorPaletteViolated": true|false, "unauthorizedTexts": ["..."], "duplicatedTexts": ["..."], "missingRequiredTexts": ["..."], "missingRequiredFacts": ["..."], "reasoning": "1-2 frases objetivas"}',
     "REGRAS:",
     "- \"productMismatch\": true SOMENTE se havia uma foto de produto real de referência e o produto na peça final é claramente outro produto (nunca marque true sem uma referência real para comparar).",
     "- \"wrongLogo\": true SOMENTE se havia uma logo real de referência e a logo na peça final é visivelmente diferente (cores, proporções, símbolo) — nunca marque true sem uma referência real.",
@@ -450,7 +516,9 @@ function buildVisualIntegrityPrompt(
     "- \"criticalAssetOccluded\": true se o produto real, a logo real ou o screenshot real estão INTEIROS dentro do canvas (não cortados na borda — isso é `elementCutOff`), mas parcialmente COBERTOS por outro elemento a ponto de perder identidade/legibilidade (ex.: um badge grande desenhado por cima do centro do produto).",
     "- \"compositionBroken\": true se a composição está visivelmente quebrada — elementos deformados, pillarboxing (barras vazias nas laterais), ou artefatos visuais graves.",
     "- \"colorPaletteViolated\": true SOMENTE se uma paleta oficial foi informada acima E a peça final claramente NÃO usa essas cores (ex.: fundo e cores predominantes totalmente diferentes do pedido, nenhuma cor da paleta aparece de forma reconhecível). Sem paleta oficial informada, responda sempre false — nunca microgerencie tom/saturação exatos, só a ausência clara da paleta inteira.",
-    "- \"unauthorizedTexts\": liste CADA palavra/frase/rótulo/botão legível na peça que NÃO está na lista de textos autorizados acima — transcreva exatamente como está escrito na imagem. NUNCA inclua aqui o nome/wordmark que aparece DENTRO da logo colada (isso é a marca real, não texto gerado). NUNCA inclua um FRAGMENTO/LINHA/TRECHO de um texto autorizado — se o texto quebrou em várias linhas na composição (comum quando um texto longo tem que caber numa caixa), cada linha sozinha NÃO conta como não autorizada, só o texto INTEIRO conta como \"bateu\" com a lista. Lista vazia se todo texto visível bate (inteiro ou em fragmentos de um mesmo texto autorizado) com a lista autorizada.",
+    options.withTextRegions
+      ? "- \"unauthorizedTexts\": liste CADA palavra/frase/rótulo/botão legível na peça que NÃO está na lista de textos autorizados acima — transcreva exatamente como está escrito na imagem, INCLUSIVE texto que pareça nome de marca, wordmark ou logo (o sistema confere em código quais estão dentro da logo oficial verificada; não decida isso você). Para CADA item informe \"region\": o retângulo aproximado onde o texto aparece, em porcentagem do canvas (xPct/yPct = canto superior esquerdo, widthPct/heightPct = tamanho). NUNCA inclua um FRAGMENTO/LINHA/TRECHO de um texto autorizado — se o texto quebrou em várias linhas na composição, cada linha sozinha NÃO conta como não autorizada. Lista vazia se todo texto visível bate com a lista autorizada."
+      : "- \"unauthorizedTexts\": liste CADA palavra/frase/rótulo/botão legível na peça que NÃO está na lista de textos autorizados acima — transcreva exatamente como está escrito na imagem. NUNCA inclua aqui o nome/wordmark que aparece DENTRO da logo colada (isso é a marca real, não texto gerado). NUNCA inclua um FRAGMENTO/LINHA/TRECHO de um texto autorizado — se o texto quebrou em várias linhas na composição (comum quando um texto longo tem que caber numa caixa), cada linha sozinha NÃO conta como não autorizada, só o texto INTEIRO conta como \"bateu\" com a lista. Lista vazia se todo texto visível bate (inteiro ou em fragmentos de um mesmo texto autorizado) com a lista autorizada.",
     "- \"duplicatedTexts\": liste CADA texto autorizado que aparece MAIS DE UMA VEZ na peça final (ex.: o mesmo preço escrito duas vezes em lugares diferentes) — isso nunca é intencional. CONTA TAMBÉM uma ocorrência PARCIALMENTE visível — letras ou palavras de um texto autorizado vazando por trás ou ao redor de um cartão/caixa desenhado por cima, mesmo que a maior parte esteja coberta: se dá pra reconhecer QUE TEXTO é mesmo vendo só um pedaço, conta como uma 2ª ocorrência. Olhe com atenção especial perto das bordas de cartões/caixas de texto e em fundos decorativos/estampados, onde esse vazamento é mais fácil de passar despercebido. Lista vazia só quando cada texto autorizado aparece claramente uma única vez, sem nenhum traço reconhecível dele em outro lugar.",
     "- \"missingRequiredTexts\": liste CADA item da lista de textos autorizados que NÃO está legível/visível em nenhum lugar da peça final. Lista vazia se todos apareceram.",
     "- \"missingRequiredFacts\": dos FATOS COMERCIAIS CRÍTICOS listados acima (se houver), liste CADA um que não está claramente legível na peça final — este campo é sobre FATOS COMERCIAIS (preço, parcelamento, desconto), não sobre qualquer texto. Lista vazia se todos os fatos obrigatórios apareceram, ou se nenhum fato crítico foi listado.",
@@ -497,6 +565,10 @@ export async function checkCreativeVisualIntegrity(
     /** Rodada 4 (benchmark de qualidade criativa) — ver `CreativePlan.requiredRenderedFacts`.
      * Lista vazia (plano sem fatos obrigatórios, ou plano antigo) nunca gera checagem extra. */
     requiredRenderedFacts: readonly string[];
+    /** Regiões FINAIS de logos oficiais verificadas (`resolveVerifiedLogoRegions`). Quando presentes,
+     * a visão devolve a região de cada texto não autorizado e o código isenta só o que cai dentro. */
+    verifiedLogoRegions?: readonly CreativePlanRect[];
+    onVerifiedLogoTextExempted?: (exempted: { text: string; region: CreativePlanRect }) => void;
     /** Auditoria de custo — achado crítico: esta chamada de visão nunca entrava em NENHUM total
      * de custo do motor antes desta correção (`run-gpt-creative-engine.ts` só rastreava
      * plano/imagem). Opcional e best-effort, mesmo espírito do resto da função — nunca lançar por
@@ -514,13 +586,13 @@ export async function checkCreativeVisualIntegrity(
     // declarado nesta peça".
     const response = await icaro.request({
       taskType: "review",
-      prompt: buildVisualIntegrityPrompt(input.brandColors, input.allowedRenderedTexts, input.requiredRenderedFacts ?? []),
+      prompt: buildVisualIntegrityPrompt(input.brandColors, input.allowedRenderedTexts, input.requiredRenderedFacts ?? [], { withTextRegions: (input.verifiedLogoRegions?.length ?? 0) > 0 }),
       specialistId: input.specialistId,
       imageUrls,
       expectedOutput: "json",
       priority: "quality",
       temperature: 0.2,
-      maxTokens: 400,
+      maxTokens: (input.verifiedLogoRegions?.length ?? 0) > 0 ? 700 : 400,
       timeoutMs: 25_000,
     });
     input.onCost?.(response);
@@ -584,8 +656,18 @@ export async function checkCreativeVisualIntegrity(
     // `allowedRenderedTexts` (a fonte de verdade do plano) EM CÓDIGO, nunca só confiar no
     // julgamento livre da IA, é o que torna isto um hard failure objetivo de verdade.
     if (Array.isArray(parsed.unauthorizedTexts)) {
-      for (const item of parsed.unauthorizedTexts) {
-        if (typeof item !== "string" || !item.trim()) continue;
+      const verifiedLogoRegions = input.verifiedLogoRegions ?? [];
+      for (const raw of parsed.unauthorizedTexts) {
+        const detected = parseDetectedText(raw);
+        if (!detected) continue;
+        const item = detected.text;
+        // Isenção ESPACIAL decidida em código (nunca pelo julgamento da visão): só texto cuja região
+        // cai dentro de uma logo oficial verificada (proveniência + pixel). Mesmo texto fora dela,
+        // ou sem região informada, continua reprovando.
+        if (detected.region && verifiedLogoRegions.length > 0 && isTextRegionInsideVerifiedLogo(detected.region, verifiedLogoRegions)) {
+          input.onVerifiedLogoTextExempted?.({ text: item, region: detected.region });
+          continue;
+        }
         const placeholder = isPlaceholderLikeText(item);
         issues.push({
           code: placeholder ? "PLACEHOLDER_RENDERED" : "UNAUTHORIZED_TEXT",
@@ -741,6 +823,8 @@ export async function evaluateCreativeQualityGate(
      * `checkCreativeVisualIntegrity`/`checkProductionGuidelinesCompliance`. */
     onCost?: (response: IcaroAIResponse | undefined) => void;
     assetPixelEvidence?: readonly CreativeAssetPixelEvidence[];
+    /** Recebe cada texto isentado por estar DENTRO de uma logo oficial verificada (auditoria). */
+    onVerifiedLogoTextExempted?: (exempted: { text: string; region: CreativePlanRect }) => void;
   },
 ): Promise<CreativeQualityGateResult> {
   const deterministicIssues = evaluateDeterministicCreativeChecks({
@@ -772,6 +856,8 @@ export async function evaluateCreativeQualityGate(
     brandColors: input.context.brandColors,
     allowedRenderedTexts: input.plan.allowedRenderedTexts,
     requiredRenderedFacts: input.plan.requiredRenderedFacts,
+    verifiedLogoRegions: resolveVerifiedLogoRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence }),
+    onVerifiedLogoTextExempted: input.onVerifiedLogoTextExempted,
     onCost: input.onCost,
   });
   const productionGuidelinesIssues = await checkProductionGuidelinesCompliance(icaro, {

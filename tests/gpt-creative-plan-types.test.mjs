@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LAYOUT_PLAN_KINDS, TEXT_ZONE_KINDS, buildCreativePlanPrompt, buildImageGenerationPromptFromPlan, parseCreativePlan, diagnoseCreativePlanInvalidity, resolveEditorialProductAssetRequirement } from "../dist/shared/utils/gpt-creative-plan.types.js";
+import { LAYOUT_PLAN_KINDS, TEXT_ZONE_KINDS, buildCreativePlanPrompt, buildImageGenerationPromptFromPlan, parseCreativePlan, diagnoseCreativePlanInvalidity, resolveEditorialBrandLiterals, resolveEditorialProductAssetRequirement } from "../dist/shared/utils/gpt-creative-plan.types.js";
 
 function sampleContext(overrides = {}) {
   return {
@@ -1076,4 +1076,105 @@ test("buildImageGenerationPromptFromPlan editorial: texto de zona com geometria 
   const leaky = { ...plan, allowedRenderedTexts: plan.allowedRenderedTexts.filter((text) => text !== PRODUCT_OFFER_TEXTS.headline), headline: "Outro", visualDirection: `Cena elegante para ${PRODUCT_OFFER_TEXTS.headline}` };
   const prompt = buildImageGenerationPromptFromPlan(leaky, sampleContext(), { compositionMode: "editorial_experimental" });
   assert.ok(!prompt.includes(PRODUCT_OFFER_TEXTS.headline), prompt);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Prompt editorial de imagem (Smoke A cer-runtime-muzle2ms-1wftsl): marca vazou pela direção
+// visual ("caminhada organizada rumo ao altar") e a base recriou o produto.
+// ---------------------------------------------------------------------------------------------
+
+const SMOKE_TEXTS = {
+  headline: "Kit Noivos Sem Correria",
+  subheadline: "Organize presentes, lista de presentes e RSVP em um só lugar.",
+  cta: "Comprar agora",
+};
+
+function smokeEditorialPlan() {
+  return parseCreativePlan(samplePlanJson({
+    ...SMOKE_TEXTS,
+    allowedRenderedTexts: [SMOKE_TEXTS.headline, SMOKE_TEXTS.subheadline, SMOKE_TEXTS.cta, "R$ 149,00"],
+    requiredRenderedFacts: ["R$ 149,00"],
+    visualDirection: "Elegante e simbólica, evocando a ideia de uma caminhada organizada rumo ao altar",
+    compositionIntent: "Criar uma cena que simbolize a jornada, utilizando o produto real como foco central",
+    styleNotes: "Luz quente lateral, sensação de organização e romance",
+    artDirection: sampleArtDirection({
+      concept: "Produto centralizado em um caminho de pétalas, simbolizando a jornada",
+      visualFocus: "Relógio dourado no centro da composição",
+      atmosphere: "Romântica e organizada",
+      backgroundTreatment: "Fundo creme suave com pétalas de rosa espalhadas",
+      chromaticDirection: "Tons suaves com destaque dourado",
+      contrastStrategy: "Luz lateral quente com sombras suaves",
+    }),
+    layoutPlan: sampleLayoutPlan([
+      { kind: "hero", rect: { xPct: 20, yPct: 20, widthPct: 60, heightPct: 60 }, priority: 1, rationale: "Produto real ocupa o centro da composição" },
+      { kind: "negativeSpace", rect: { xPct: 0, yPct: 0, widthPct: 100, heightPct: 15 }, priority: 2, rationale: "Respiro no topo" },
+    ]),
+  }), { compositionMode: "editorial_experimental" });
+}
+
+function smokeEditorialContext(overrides = {}) {
+  return sampleContext({
+    brandName: "Marca",
+    confirmedFacts: ["Preço atual: R$ 149,00 BRL"],
+    assets: [
+      { url: "https://x/product.jpg", role: "product_photo", description: "Foto real controlada do produto fisico: relogio dourado com laco rosa" },
+      { url: "https://x/logo.png", role: "logo", description: "Logo oficial Rumo ao Altar. Usar somente no renderer deterministico, sem redesenhar." },
+    ],
+    ...overrides,
+  });
+}
+
+test("resolveEditorialBrandLiterals: nome conhecido, materiais de logo, descrição da logo e literais explícitos; placeholder ignorado", () => {
+  assert.deepEqual(resolveEditorialBrandLiterals(smokeEditorialContext()), ["Rumo ao Altar"]);
+  const literals = resolveEditorialBrandLiterals(smokeEditorialContext({
+    brandName: "Ateliê Lumière",
+    brandLiterals: ["Sem correria, só amor"],
+    brandMaterials: [{ id: "m1", name: "Lumière Noivas", type: "logo", priority: "automatic", source: "asset_library", url: "https://x/l.png" }],
+  }));
+  assert.deepEqual(literals.sort(), ["Ateliê Lumière", "Lumière Noivas", "Rumo ao Altar", "Sem correria, só amor"].sort());
+});
+
+test("prompt editorial: sem headline, subheadline, preço, CTA, marca, slogan nem texto da logo — mas com direção visual, clima, luz, ambiente e intenção", () => {
+  const plan = smokeEditorialPlan();
+  assert.ok(plan);
+  const prompt = buildImageGenerationPromptFromPlan(plan, smokeEditorialContext({ brandLiterals: ["Sem correria, só amor"] }), { compositionMode: "editorial_experimental" });
+  for (const forbidden of [SMOKE_TEXTS.headline, SMOKE_TEXTS.subheadline, SMOKE_TEXTS.cta, "149", /rumo\s+ao\s+altar/i, /sem correria, só amor/i]) {
+    if (forbidden instanceof RegExp) assert.doesNotMatch(prompt, forbidden);
+    else assert.ok(!prompt.includes(forbidden), `vazou: ${forbidden}`);
+  }
+  assert.match(prompt, /Visual direction: Elegante e simbólica, evocando a ideia de uma caminhada organizada the brand's theme\./);
+  assert.match(prompt, /Atmosphere: Romântica e organizada/);
+  assert.match(prompt, /Light\/contrast strategy: Luz lateral quente/);
+  assert.match(prompt, /Background\/environment treatment: Fundo creme suave/);
+  assert.match(prompt, /Composition intent: /);
+});
+
+test("prompt editorial product_offer: base é só ambiente — sem foco/conceito do produto e com guarda contra recriação", () => {
+  const prompt = buildImageGenerationPromptFromPlan(smokeEditorialPlan(), smokeEditorialContext(), { compositionMode: "editorial_experimental" });
+  assert.doesNotMatch(prompt, /Main visual focus|Scene concept/);
+  assert.doesNotMatch(prompt, /Relógio dourado/i);
+  assert.doesNotMatch(prompt, /\bproduto real\b/i);
+  assert.doesNotMatch(prompt, /preserve its shape, color, material/, "a instrução antiga descrevia o produto e induzia recriação");
+  assert.match(prompt, /BACKGROUND\/ENVIRONMENT ONLY/);
+  assert.match(prompt, /Do not recreate, imitate or reinterpret any supplied product/);
+  assert.match(prompt, /reserved empty area \(priority 1, x=20%-80%, y=20%-80%\): keep only a soft, uncluttered backdrop/);
+});
+
+test("prompt editorial sem product_photo: conceito e foco continuam (guarda é exclusiva do product_offer)", () => {
+  const prompt = buildImageGenerationPromptFromPlan(smokeEditorialPlan(), smokeEditorialContext({ assets: [] }), { compositionMode: "editorial_experimental" });
+  assert.match(prompt, /Scene concept: /);
+  assert.match(prompt, /Main visual focus: /);
+  assert.doesNotMatch(prompt, /BACKGROUND\/ENVIRONMENT ONLY/);
+});
+
+test("prompt do motor padrão não é afetado pela sanitização editorial de marca", () => {
+  const plan = parseCreativePlan(samplePlanJson({ visualDirection: "Cena rumo ao altar" }));
+  const prompt = buildImageGenerationPromptFromPlan(plan, smokeEditorialContext());
+  assert.match(prompt, /rumo ao altar/i);
+});
+
+test("prompt editorial: lista de proibições mantém o sentido literal (só a marca é removida)", () => {
+  const plan = { ...smokeEditorialPlan(), forbiddenElements: ["preco inventado", "CTA inventado", "logo falsa", "texto Rumo ao Altar desenhado"] };
+  const prompt = buildImageGenerationPromptFromPlan(plan, smokeEditorialContext(), { compositionMode: "editorial_experimental" });
+  assert.match(prompt, /Also avoid these visual elements: preco inventado, CTA inventado, logo falsa, texto the brand's theme desenhado\./);
 });

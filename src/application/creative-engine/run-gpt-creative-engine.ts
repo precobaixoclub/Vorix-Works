@@ -13,6 +13,7 @@ import {
   type CreativeContext,
   type CreativePlan,
   type CreativePlanAssetRole,
+  type CreativePlanParseOptions,
   type CreativePlanRect,
   type CreativePlanTextZone,
 } from "../../shared/utils/gpt-creative-plan.types.js";
@@ -42,7 +43,7 @@ import {
 } from "./resolve-actual-safe-area.js";
 import { neutralizeGhostTextZone } from "./neutralize-ghost-text.js";
 import { applyTextBudgetSimplification, degradeOptionalZonesOnUnresolvedOverlap, isLayoutOverdense } from "./manage-text-budget.js";
-import { isEditorialCompositionError, type RenderEditorialCreativeInput, type RenderEditorialCreativeResult } from "./editorial-composition.types.js";
+import { isEditorialCompositionError, type EditorialCreativeAssetBuffer, type RenderEditorialCreativeInput, type RenderEditorialCreativeResult } from "./editorial-composition.types.js";
 import { describeEditorialTextGaps, findEditorialRequiredTextsWithoutContent, resolveEditorialRequiredTexts } from "./editorial-text-contract.js";
 
 /**
@@ -98,6 +99,11 @@ export type GptCreativeEngineDeps = {
     fontScale?: number;
   }): Promise<{ buffer: Buffer; renderedZones: unknown[] }>;
   renderEditorialCreative?(input: RenderEditorialCreativeInput): Promise<RenderEditorialCreativeResult>;
+  /** Mesma decodificação/normalização que o renderer editorial usa (MIME por conteúdo, decode,
+   * orientação, asset vazio). Chamada ANTES de qualquer IA no modo editorial; lança
+   * `EditorialCompositionError` (PRODUCT_ASSET_DECODE_FAILED/EDITORIAL_ASSET_DECODE_FAILED/
+   * PRODUCT_ASSET_EMPTY). */
+  preflightEditorialAsset?(asset: EditorialCreativeAssetBuffer): Promise<{ detectedMime: string }>;
   computeAssetSuitability?(buffer: Buffer): Promise<AssetSuitabilityScore | undefined>;
   readImageDimensions(buffer: Buffer): Promise<{ width?: number; height?: number }>;
   /** ETAPA 3 (Rodada 4, benchmark de qualidade criativa) — medida determinística e gratuita do
@@ -308,6 +314,7 @@ async function requestCreativePlan(
   correlationId: string,
   track: (response: IcaroAIResponse | undefined) => void,
   chosenDirection?: ChosenCreativeDirection,
+  parseOptions: CreativePlanParseOptions = {},
 ): Promise<{ plan?: CreativePlan; response?: IcaroAIResponse; lastDiagnostic?: string; repeatedDiagnostic?: boolean }> {
   let lastResponse: IcaroAIResponse | undefined;
   let previousDiagnostic: string | undefined;
@@ -344,12 +351,12 @@ async function requestCreativePlan(
     let rawContent: string | undefined;
     try {
       rawContent = extractJson(String(response.content ?? ""), "GPT Creative Plan");
-      const plan = parseCreativePlan(rawContent);
+      const plan = parseCreativePlan(rawContent, parseOptions);
       if (plan) return { plan, response };
     } catch {
       // tenta de novo (ou desiste, se for a última tentativa)
     }
-    lastDiagnostic = rawContent !== undefined ? diagnoseCreativePlanInvalidity(rawContent) : "Ícaro não devolveu nenhum JSON reconhecível na resposta.";
+    lastDiagnostic = rawContent !== undefined ? diagnoseCreativePlanInvalidity(rawContent, parseOptions) : "Ícaro não devolveu nenhum JSON reconhecível na resposta.";
     repeatedDiagnostic = Boolean(lastDiagnostic && previousDiagnostic && lastDiagnostic === previousDiagnostic);
     previousDiagnostic = lastDiagnostic;
   }
@@ -676,12 +683,56 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     };
   }
 
+  // Preflight de assets editoriais ANTES de QUALQUER chamada de IA (achado do Smoke A
+  // execution-muyzgzli-th8xse: um product_photo inválido só era descoberto no renderer, depois do
+  // diretor e da geração de imagem pagos). Mesma decodificação do renderer (porta injetada, sem
+  // implementação paralela); os buffers baixados aqui são reaproveitados depois — sem download
+  // duplicado. Autorização editorial (tenant/workspace/trusted actor/allowlist) já aconteceu no
+  // handler do worker antes de chegar aqui.
+  // `let` declarado antes do preflight: `fail()` lê este valor e pode ser chamado antes da
+  // exploração de direções existir.
+  let chosenCreativeDirection: CreativeDirectionExploration | undefined;
+  const preflightedAssetBuffers = new Map<string, Buffer>();
+  if (input.experimentalEditorialMode) {
+    const editorialInputAssets = context.assets.filter((asset) => asset.role === "product_photo" || asset.role === "screenshot" || asset.role === "logo");
+    if (editorialInputAssets.length > 0 && !deps.preflightEditorialAsset) {
+      return fail(
+        "EDITORIAL_ASSET_PREFLIGHT_MISSING: experimentalEditorialMode=true exige preflightEditorialAsset injetado — assets editoriais nunca seguem para a IA sem validação de decode.",
+        "EDITORIAL_ASSET_PREFLIGHT_MISSING",
+      );
+    }
+    for (const asset of editorialInputAssets) {
+      let buffer: Buffer;
+      try {
+        buffer = await fetchAsBuffer(asset.url);
+      } catch (error) {
+        return fail(
+          `EDITORIAL_ASSET_DOWNLOAD_FAILED: falha ao baixar asset real "${asset.role}" antes de qualquer IA: ${error instanceof Error ? error.message : "erro desconhecido"}.`,
+          "EDITORIAL_ASSET_DOWNLOAD_FAILED",
+        );
+      }
+      try {
+        await deps.preflightEditorialAsset!({ role: asset.role, url: asset.url, buffer });
+      } catch (error) {
+        if (isEditorialCompositionError(error)) return fail(error.message, error.code);
+        return fail(
+          `EDITORIAL_ASSET_DECODE_FAILED: preflight do asset "${asset.role}" falhou: ${error instanceof Error ? error.message : "erro desconhecido"}.`,
+          asset.role === "product_photo" ? "PRODUCT_ASSET_DECODE_FAILED" : "EDITORIAL_ASSET_DECODE_FAILED",
+        );
+      }
+      preflightedAssetBuffers.set(asset.url, buffer);
+    }
+  }
+  async function loadAssetBuffer(url: string): Promise<Buffer> {
+    return preflightedAssetBuffers.get(url) ?? fetchAsBuffer(url);
+  }
+
   // Ponto 9 da auditoria "qualidade visual e direção de arte" — uma ÚNICA chamada de texto barata
   // ANTES do plano detalhado, pra ancorar o plano numa direção criativa concreta (e, via
   // `context.recentHistory`, evitar repetir o conceito visual de peças recentes — ponto 10). Best-
   // effort: `undefined` (chamada falhou/resposta incompleta) segue direto pro plano SEM âncora,
   // comportamento idêntico ao motor antes desta etapa existir.
-  const chosenCreativeDirection = budgetExceeded()
+  chosenCreativeDirection = budgetExceeded()
     ? undefined
     : await exploreCreativeDirections(deps.creativeBrain, context, {
         specialistId: SPECIALIST_ID,
@@ -702,8 +753,16 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     input.creativeEngineRunId,
     (response) => track("director", response),
     chosenDirectionAnchor,
+    // Modo editorial: geometria de textZones vinda do diretor é descartada (o renderer recalcula),
+    // então geometria inválida não rejeita o plano nem consome a 2ª tentativa do diretor.
+    { compositionMode: input.experimentalEditorialMode ? "editorial_experimental" : "standard" },
   );
   directorModel = planResponse?.model?.id;
+  if (initialPlan?.editorialTextZoneNormalization) {
+    warnings.push(
+      `EDITORIAL_PLAN_NORMALIZED: geometria de textZones do diretor descartada (o renderer editorial recalcula): ${initialPlan.editorialTextZoneNormalization.discardedGeometry.map((zone) => `${zone.kind} — ${zone.reason}`).join("; ")}.`,
+    );
+  }
   if (!initialPlan) {
     if (isProviderQuotaExhausted(planResponse)) {
       return fail("PROVIDER_QUOTA_EXHAUSTED: crédito/quota da OpenAI esgotado — não é possível gerar a peça até a conta ser regularizada.", "PROVIDER_QUOTA_EXHAUSTED");
@@ -724,7 +783,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
   let productRenderDecision: ProductRenderModeDecision | undefined;
   if (productAsset) {
     try {
-      const buffer = await fetchAsBuffer(productAsset.url);
+      const buffer = await loadAssetBuffer(productAsset.url);
       const suitability = await deps.computeAssetSuitability?.(buffer);
       productRenderDecision = resolveProductRenderMode({ hasReferenceImage: true, suitability });
     } catch (error) {
@@ -846,7 +905,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       const editorialAssets: { role: CreativePlanAssetRole; url: string; buffer: Buffer }[] = [];
       for (const asset of [productAsset, screenshotAsset, logoAsset].filter((candidate): candidate is NonNullable<typeof productAsset> => Boolean(candidate))) {
         try {
-          editorialAssets.push({ role: asset.role, url: asset.url, buffer: await fetchAsBuffer(asset.url) });
+          editorialAssets.push({ role: asset.role, url: asset.url, buffer: await loadAssetBuffer(asset.url) });
         } catch (error) {
           return fail(
             `EDITORIAL_ASSET_DOWNLOAD_FAILED: falha ao baixar asset real "${asset.role}" para composicao editorial: ${error instanceof Error ? error.message : "erro desconhecido"}.`,

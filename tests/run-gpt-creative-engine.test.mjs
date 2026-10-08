@@ -204,6 +204,7 @@ function baseDeps(overrides = {}) {
     renderTextZones: async ({ baseImageBuffer }) => ({ buffer: baseImageBuffer, renderedZones: [] }),
     computeAssetSuitability: async () => undefined,
     readImageDimensions: async () => ({ width: 1080, height: 1350 }),
+    preflightEditorialAsset: async () => ({ detectedMime: "image/jpeg" }),
     ...overrides,
   };
 }
@@ -1424,4 +1425,159 @@ test("runGptCreativeEngine editorial: asset indecodificável vira errorCode pró
   assert.equal(result.publishable, false);
   assert.equal(result.errorCode, "PRODUCT_ASSET_DECODE_FAILED");
   assert.match(result.error, /^PRODUCT_ASSET_DECODE_FAILED:/);
+}));
+
+// ---------------------------------------------------------------------------------------------
+// Smoke A de d27d82a (execution-muyzgzli-th8xse): CREATIVE_PLAN_INVALID por textZones com
+// geometria inválida, embora o renderer editorial descarte essa geometria.
+// ---------------------------------------------------------------------------------------------
+
+const INVALID_GEOMETRY_ZONES = [
+  { kind: "headline", text: "TODAS AS OFERTAS EM UM SÓ SITE", rect: { xPct: 60, yPct: 10, widthPct: 55, heightPct: 12 }, emphasis: "primary", renderedBy: "renderer" },
+  { kind: "subheadline", text: "Shopee + Mercado Livre", rect: { xPct: -4, yPct: 30, widthPct: 40, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer" },
+  { kind: "cta", text: "ACESSE AGORA", rect: { xPct: 10, yPct: 95, widthPct: 30, heightPct: 0 }, emphasis: "secondary", renderedBy: "renderer" },
+];
+
+test("runGptCreativeEngine editorial: textZones com geometria inválida são normalizados — 1 única chamada do diretor, renderer recebe a semântica", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({ textZones: INVALID_GEOMETRY_ZONES })],
+    image_generation: [imageResponse()],
+    review: [passingReview(), passingVisualScore()],
+  });
+  let rendererInput;
+  const result = await runGptCreativeEngine(baseDeps({
+    creativeBrain: icaro,
+    renderEditorialCreative: async (input) => {
+      rendererInput = input;
+      return editorialRendererResult();
+    },
+  }), baseInput({ experimentalEditorialMode: true, creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+
+  assert.equal(result.error, undefined, result.error);
+  assert.equal(result.publishable, true);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 1, "geometria irrelevante nunca deveria consumir a 2ª tentativa do diretor");
+  assert.equal(rendererInput.plan.headline, "TODAS AS OFERTAS EM UM SÓ SITE");
+  assert.equal(rendererInput.plan.subheadline, "Shopee + Mercado Livre");
+  assert.equal(rendererInput.plan.textZones.length, 0, "nenhuma geometria inválida chega ao renderer");
+  assert.deepEqual(rendererInput.plan.editorialTextZoneNormalization.discardedGeometry.map((zone) => zone.kind), ["headline", "subheadline", "cta"]);
+  assert.ok(result.warnings.some((warning) => /EDITORIAL_PLAN_NORMALIZED/.test(warning)));
+}));
+
+test("runGptCreativeEngine padrão: o MESMO plano com geometria inválida continua estrito (CREATIVE_PLAN_REPEAT_INVALID, 2 tentativas)", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse({ textZones: INVALID_GEOMETRY_ZONES }), planResponse({ textZones: INVALID_GEOMETRY_ZONES })],
+    image_generation: [imageResponse()],
+  });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput());
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.errorCode, "CREATIVE_PLAN_REPEAT_INVALID");
+  assert.match(result.error, /textZones/);
+  assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 2);
+  assert.equal(icaro.calls.some((call) => call.taskType === "image_generation"), false);
+}));
+
+test("runGptCreativeEngine editorial: erro semântico real do plano (headline ausente) continua CREATIVE_PLAN_INVALID", () => withFakeFetch(async () => {
+  const brokenPlan = { status: "completed", model: { id: "gpt-4o" }, content: JSON.stringify({ ...JSON.parse(creativePlanJson()), headline: undefined }), cost: { estimated: 0.01, currency: "USD" }, durationMs: 500 };
+  const icaro = fakeIcaro({ analysis: [brokenPlan, brokenPlan], image_generation: [imageResponse()] });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ experimentalEditorialMode: true, creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+
+  assert.equal(result.publishable, false);
+  assert.ok(["CREATIVE_PLAN_INVALID", "CREATIVE_PLAN_REPEAT_INVALID"].includes(result.errorCode), result.errorCode);
+  assert.match(result.error, /headline/);
+  assert.equal(icaro.calls.some((call) => call.taskType === "image_generation"), false);
+}));
+
+test("runGptCreativeEngine editorial: zona com kind desconhecido (semântica) continua rejeitando o plano", () => withFakeFetch(async () => {
+  const zones = [{ kind: "logo_text", text: "TODAS AS OFERTAS", rect: { xPct: 10, yPct: 10, widthPct: 30, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" }];
+  const icaro = fakeIcaro({ analysis: [planResponse({ textZones: zones }), planResponse({ textZones: zones })], image_generation: [imageResponse()] });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ experimentalEditorialMode: true, creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.errorCode, "CREATIVE_PLAN_REPEAT_INVALID");
+  assert.match(result.error, /semanticamente inválido/);
+}));
+
+// ---------------------------------------------------------------------------------------------
+// Preflight do product_photo ANTES de qualquer IA.
+// ---------------------------------------------------------------------------------------------
+
+for (const code of ["PRODUCT_ASSET_DECODE_FAILED", "PRODUCT_ASSET_EMPTY"]) {
+  test(`runGptCreativeEngine editorial: ${code} no preflight para ANTES do diretor — zero chamadas de IA, custo zero`, () => withFakeFetch(async () => {
+    const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()], review: [passingReview()], text_generation: [] });
+    let rendererCalled = false;
+    const preflighted = [];
+    const result = await runGptCreativeEngine(baseDeps({
+      creativeBrain: icaro,
+      preflightEditorialAsset: async (asset) => {
+        preflighted.push(asset.role);
+        if (asset.role === "product_photo") throw new EditorialCompositionError(code, "foto do produto inválida.");
+        return { detectedMime: "image/png" };
+      },
+      renderEditorialCreative: async () => {
+        rendererCalled = true;
+        return editorialRendererResult();
+      },
+    }), baseInput({ experimentalEditorialMode: true, creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+
+    assert.equal(result.publishable, false);
+    assert.equal(result.errorCode, code);
+    assert.deepEqual(preflighted, ["product_photo"]);
+    assert.equal(icaro.calls.length, 0, `nenhuma chamada de IA deveria acontecer: ${icaro.calls.map((call) => call.taskType).join(",")}`);
+    assert.equal(result.costBreakdown.total, 0);
+    assert.equal(result.estimatedCostUsd, 0);
+    assert.equal(rendererCalled, false);
+  }));
+}
+
+test("runGptCreativeEngine editorial: sem preflight injetado, falha fechado antes de qualquer IA", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()] });
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro, preflightEditorialAsset: undefined }), baseInput({ experimentalEditorialMode: true, creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+
+  assert.equal(result.errorCode, "EDITORIAL_ASSET_PREFLIGHT_MISSING");
+  assert.equal(icaro.calls.length, 0);
+}));
+
+test("runGptCreativeEngine editorial: download do asset falhando para antes de qualquer IA", async () => {
+  const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()] });
+  const previousFetch = global.fetch;
+  global.fetch = async () => ({ ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) });
+  try {
+    const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({ experimentalEditorialMode: true, creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+    assert.equal(result.errorCode, "EDITORIAL_ASSET_DOWNLOAD_FAILED");
+    assert.equal(icaro.calls.length, 0);
+  } finally {
+    global.fetch = previousFetch;
+  }
+});
+
+test("runGptCreativeEngine editorial: buffer do preflight é reaproveitado — product_photo baixado uma única vez", async () => {
+  const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()], review: [passingReview(), passingVisualScore()] });
+  const downloads = [];
+  const previousFetch = global.fetch;
+  global.fetch = async (url) => {
+    downloads.push(String(url));
+    return { ok: true, arrayBuffer: async () => new TextEncoder().encode("fake-image-bytes").buffer };
+  };
+  try {
+    let rendererInput;
+    await runGptCreativeEngine(baseDeps({
+      creativeBrain: icaro,
+      renderEditorialCreative: async (input) => {
+        rendererInput = input;
+        return editorialRendererResult();
+      },
+    }), baseInput({ experimentalEditorialMode: true, creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+    assert.equal(downloads.filter((url) => url === "https://x/product-ref.jpg").length, 1, downloads.join(", "));
+    assert.equal(rendererInput.assets.find((asset) => asset.role === "product_photo").buffer.toString(), "fake-image-bytes");
+  } finally {
+    global.fetch = previousFetch;
+  }
+});
+
+test("runGptCreativeEngine padrão: preflight editorial nunca roda fora do modo editorial", () => withFakeFetch(async () => {
+  let preflightCalls = 0;
+  const result = await runGptCreativeEngine(baseDeps({ preflightEditorialAsset: async () => { preflightCalls += 1; return { detectedMime: "image/jpeg" }; } }), baseInput({ creativeContext: contextWithProductReference({ confirmedFacts: [] }) }));
+  assert.equal(preflightCalls, 0);
+  assert.notEqual(result.errorCode, "EDITORIAL_ASSET_PREFLIGHT_MISSING");
 }));

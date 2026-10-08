@@ -893,3 +893,110 @@ test("diagnoseCreativePlanInvalidity: duas respostas com a MESMA causa estrutura
   const raw = JSON.stringify({ cta: "x" }); // sem headline
   assert.equal(diagnoseCreativePlanInvalidity(raw), diagnoseCreativePlanInvalidity(raw));
 });
+
+// ---------------------------------------------------------------------------------------------
+// Normalização editorial (Smoke A execution-muyzgzli-th8xse): geometria de textZones do diretor
+// é descartada no modo editorial; semântica continua estrita; modo padrão inalterado.
+// ---------------------------------------------------------------------------------------------
+
+const EDITORIAL = { compositionMode: "editorial_experimental" };
+
+function zone(kind, text, rect, extra = {}) {
+  return { kind, text, rect, emphasis: kind === "headline" ? "primary" : "secondary", renderedBy: "renderer", ...extra };
+}
+
+const PRODUCT_OFFER_TEXTS = {
+  headline: "Kit Noivos Sem Correria",
+  subheadline: "Organize presentes, lista de presentes e RSVP em um só lugar.",
+  cta: "Comprar agora",
+};
+
+function productOfferPlanJson(textZones) {
+  return samplePlanJson({
+    ...PRODUCT_OFFER_TEXTS,
+    allowedRenderedTexts: [PRODUCT_OFFER_TEXTS.headline, PRODUCT_OFFER_TEXTS.subheadline, PRODUCT_OFFER_TEXTS.cta, "R$ 149,00"],
+    requiredRenderedFacts: ["R$ 149,00"],
+    requiredElements: ["headline", "subheadline", "price", "cta", "logo"],
+    textZones,
+  });
+}
+
+test("parseCreativePlan editorial: headline com rect inválido é aceito — só a geometria é descartada", () => {
+  const raw = productOfferPlanJson([
+    zone("headline", PRODUCT_OFFER_TEXTS.headline, { xPct: 55, yPct: 10, widthPct: 60, heightPct: 15 }),
+    zone("subheadline", PRODUCT_OFFER_TEXTS.subheadline, { xPct: 8, yPct: 40, widthPct: 40, heightPct: 10 }),
+    zone("price", "R$ 149,00", { xPct: 8, yPct: 80, widthPct: 40, heightPct: 8 }),
+    zone("cta", PRODUCT_OFFER_TEXTS.cta, { xPct: 60, yPct: 80, widthPct: 30, heightPct: 8 }),
+  ]);
+
+  const plan = parseCreativePlan(raw, EDITORIAL);
+  assert.ok(plan, "plano editorial semanticamente válido deveria ser aceito");
+  assert.equal(plan.headline, PRODUCT_OFFER_TEXTS.headline);
+  assert.equal(plan.subheadline, PRODUCT_OFFER_TEXTS.subheadline);
+  assert.deepEqual(plan.requiredRenderedFacts, ["R$ 149,00"]);
+  assert.deepEqual(plan.textZones.map((item) => item.kind), ["subheadline", "price", "cta"]);
+  assert.deepEqual(plan.editorialTextZoneNormalization.discardedGeometry, [
+    { kind: "headline", text: PRODUCT_OFFER_TEXTS.headline, reason: 'rect inválido ({"xPct":55,"yPct":10,"widthPct":60,"heightPct":15})' },
+  ]);
+  assert.equal(diagnoseCreativePlanInvalidity(raw, EDITORIAL), undefined);
+});
+
+test("parseCreativePlan editorial: rects inválidos em headline/subheadline/preço/CTA não invalidam o plano", () => {
+  const raw = productOfferPlanJson([
+    zone("headline", PRODUCT_OFFER_TEXTS.headline, { xPct: -5, yPct: 10, widthPct: 40, heightPct: 15 }),
+    zone("subheadline", PRODUCT_OFFER_TEXTS.subheadline, { xPct: 8, yPct: 40, widthPct: 120, heightPct: 10 }),
+    zone("price", "R$ 149,00", { xPct: 8, yPct: 95, widthPct: 40, heightPct: 8 }),
+    zone("cta", PRODUCT_OFFER_TEXTS.cta, { xPct: 60, yPct: 80, widthPct: 30, heightPct: 0 }),
+  ]);
+
+  const plan = parseCreativePlan(raw, EDITORIAL);
+  assert.ok(plan);
+  assert.equal(plan.textZones.length, 0);
+  assert.deepEqual(plan.editorialTextZoneNormalization.discardedGeometry.map((item) => item.kind), ["headline", "subheadline", "price", "cta"]);
+});
+
+test("parseCreativePlan editorial: emphasis/renderedBy inválidos também são apresentação descartável", () => {
+  const raw = productOfferPlanJson([zone("headline", PRODUCT_OFFER_TEXTS.headline, { xPct: 8, yPct: 10, widthPct: 40, heightPct: 15 }, { emphasis: "huge", renderedBy: "designer" })]);
+  const plan = parseCreativePlan(raw, EDITORIAL);
+  assert.ok(plan);
+  assert.match(plan.editorialTextZoneNormalization.discardedGeometry[0].reason, /emphasis inválido/);
+});
+
+test("parseCreativePlan padrão: o mesmo plano com rect inválido continua rejeitado (contrato estrito intacto)", () => {
+  const raw = productOfferPlanJson([zone("headline", PRODUCT_OFFER_TEXTS.headline, { xPct: 55, yPct: 10, widthPct: 60, heightPct: 15 })]);
+  assert.equal(parseCreativePlan(raw), undefined);
+  assert.equal(parseCreativePlan(raw, { compositionMode: "standard" }), undefined);
+  assert.match(diagnoseCreativePlanInvalidity(raw), /textZones/);
+});
+
+test("parseCreativePlan editorial: plano válido sem nenhuma geometria inválida não ganha registro de normalização", () => {
+  const plan = parseCreativePlan(productOfferPlanJson([zone("headline", PRODUCT_OFFER_TEXTS.headline, { xPct: 8, yPct: 10, widthPct: 40, heightPct: 15 })]), EDITORIAL);
+  assert.ok(plan);
+  assert.equal(plan.editorialTextZoneNormalization, undefined);
+  assert.equal(plan.textZones.length, 1);
+});
+
+test("parseCreativePlan editorial: erros semânticos continuam rejeitando o plano", () => {
+  const validRect = { xPct: 8, yPct: 10, widthPct: 40, heightPct: 15 };
+  const cases = [
+    ["kind desconhecido", productOfferPlanJson([zone("logo_text", "Rumo ao Altar", validRect)])],
+    ["texto vazio", productOfferPlanJson([zone("headline", "   ", validRect)])],
+    ["item não-objeto", productOfferPlanJson(["headline"])],
+    ["textZones não-array", productOfferPlanJson({ headline: "x" })],
+    ["headline ausente", samplePlanJson({ headline: undefined, allowedRenderedTexts: ["ACESSE AGORA"] })],
+    ["fato obrigatório sem texto planejado", samplePlanJson({ requiredRenderedFacts: ["R$ 999,00"] })],
+    ["asset role inválido", samplePlanJson({ assetPlacements: [{ role: "mascote", url: "https://x/a.png", rect: validRect }] })],
+  ];
+  for (const [label, raw] of cases) {
+    assert.equal(parseCreativePlan(raw, EDITORIAL), undefined, label);
+    assert.ok(diagnoseCreativePlanInvalidity(raw, EDITORIAL), `${label}: deveria ter diagnóstico`);
+  }
+});
+
+test("buildImageGenerationPromptFromPlan editorial: texto de zona com geometria descartada nunca vaza para o prompt de imagem", () => {
+  const raw = productOfferPlanJson([zone("headline", PRODUCT_OFFER_TEXTS.headline, { xPct: 55, yPct: 10, widthPct: 60, heightPct: 15 })]);
+  const plan = parseCreativePlan(raw, EDITORIAL);
+  const leaky = { ...plan, allowedRenderedTexts: plan.allowedRenderedTexts.filter((text) => text !== PRODUCT_OFFER_TEXTS.headline), headline: "Outro", visualDirection: `Cena elegante para ${PRODUCT_OFFER_TEXTS.headline}` };
+  const prompt = buildImageGenerationPromptFromPlan(leaky, sampleContext(), { compositionMode: "editorial_experimental" });
+  assert.ok(!prompt.includes(PRODUCT_OFFER_TEXTS.headline), prompt);
+});

@@ -187,3 +187,56 @@ function user(id, status) {
 function membership(userId, tenantId, role) {
   return { id: `${userId}:${tenantId}`, userId, tenantId, role, createdAt: "2026-10-07T00:00:00.000Z", updatedAt: "2026-10-07T00:00:00.000Z" };
 }
+
+test("Creative Engine editorial experimental: tenant fora da allowlist nunca baixa nem faz preflight do product_photo", async () => {
+  const deps = trustedDeps();
+  let preflightCalls = 0;
+  let engineCalls = 0;
+  const downloads = [];
+  const previousFetch = global.fetch;
+  global.fetch = async (url) => {
+    downloads.push(String(url));
+    return { ok: true, arrayBuffer: async () => new ArrayBuffer(8) };
+  };
+  try {
+    const handler = new GptCreativeEngineVisualTaskHandler({
+      runtimeRepository: { getById: async () => ({ sourceContext: { preparedCommandId: "prepared-1" } }) },
+      preparedCommandRepository: {
+        getById: async () => ({
+          validatedInputs: {
+            brandName: "Marca B",
+            objective: "Tentar usar o workspace de QA",
+            creativeEngineCompositionMode: "editorial_experimental",
+            referenceAssets: JSON.stringify([{ url: "https://tenant-b.example/product.jpg", role: "product_photo" }]),
+          },
+        }),
+      },
+      executionRepository: deps.executionRepository,
+      workspaceRepository: deps.workspaceRepository,
+      userRepository: deps.userRepository,
+      membershipRepository: deps.membershipRepository,
+      editorialExperimentalEnabled: true,
+      editorialExperimentalQaAllowlist: ALLOWLIST,
+      preflightEditorialAsset: async () => {
+        preflightCalls += 1;
+        return { detectedMime: "image/jpeg" };
+      },
+      creativeBrain: { request: async () => { engineCalls += 1; return { content: "{}" }; } },
+    });
+
+    const result = await handler.execute({
+      task: { id: "task-1", runtimePlanId: "runtime-1", executionTaskId: "execution-task-1", capability: "visual_design", type: "visual_generation" },
+      inputs: {},
+      context: { executionRunId: "run-same-workspace-other-tenant", tenantId: "tenant-b", workspaceId: "workspace-qa", mode: "real" },
+      attempt: { id: "attempt-1", executionRunId: "run-same-workspace-other-tenant", taskRunId: "task-run-1", attemptNumber: 1, state: "running", startedAt: "2026-10-07T00:00:00.000Z", idempotencyKey: "idem", correlationId: "corr", traceId: "trace" },
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error.category, "policy_violation");
+    assert.equal(preflightCalls, 0);
+    assert.equal(engineCalls, 0);
+    assert.deepEqual(downloads, []);
+  } finally {
+    global.fetch = previousFetch;
+  }
+});

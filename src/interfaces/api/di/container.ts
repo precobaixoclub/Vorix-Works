@@ -143,7 +143,7 @@ import type { CreativeEngineRunRepositoryPort } from "../../../application/ports
 import { compositeLogoOntoImage } from "../../../infrastructure/media/logo-compositor.js";
 import { compositeScreenshotIntoDeviceMockup } from "../../../infrastructure/media/screenshot-mockup-compositor.js";
 import { renderCreativePlanTextZones } from "../../../infrastructure/rendering/render-creative-plan-text-zones.js";
-import { renderEditorialCreative } from "../../../infrastructure/rendering/editorial-creative-renderer.js";
+import { preflightEditorialAsset, renderEditorialCreative } from "../../../infrastructure/rendering/editorial-creative-renderer.js";
 import { computeAssetSuitabilityScore } from "../../../infrastructure/image-processing/product-background.js";
 import { computeRegionPixelStats, applyLocalBlur, applyLocalScrim, extractRegionBuffer } from "../../../infrastructure/image-processing/region-pixel-stats.js";
 import sharp from "sharp";
@@ -1042,6 +1042,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     compositeScreenshot: compositeScreenshotIntoDeviceMockup,
     renderTextZones: renderCreativePlanTextZones,
     renderEditorialCreative,
+    preflightEditorialAsset,
     computeAssetSuitability: computeAssetSuitabilityScore,
     readImageDimensions: readCreativeImageDimensions,
     computeRegionPixelStats,

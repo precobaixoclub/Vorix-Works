@@ -316,6 +316,11 @@ export type CreativePlan = {
   assetPlacements: CreativePlanAssetPlacement[];
   /** Zonas de texto decididas pelo plano — ver `CreativePlanTextZone`. */
   textZones: CreativePlanTextZone[];
+  /** Só no modo `editorial_experimental` (ver `normalizeEditorialTextZones`): zonas cuja
+   * semântica (kind + texto) era válida, mas cuja geometria/apresentação vinda do diretor era
+   * inválida. O renderer editorial recalcula toda a geometria, então só essa parte é descartada —
+   * o texto continua auditável e continua sendo removido do prompt de imagem. */
+  editorialTextZoneNormalization?: CreativePlanEditorialTextZoneNormalization;
   requiredElements: string[];
   forbiddenElements: string[];
   visualDensity: CreativePlanVisualDensity;
@@ -644,6 +649,55 @@ function parseAssetPlacements(value: unknown): CreativePlanAssetPlacement[] | un
   return result;
 }
 
+export type CreativePlanParseOptions = {
+  /** `editorial_experimental` ativa `normalizeEditorialTextZones`. Ausente/`standard` mantém o
+   * contrato estrito histórico (qualquer zona inválida rejeita o plano inteiro). */
+  compositionMode?: ImageGenerationPromptMode;
+};
+
+export type CreativePlanEditorialTextZoneNormalization = {
+  discardedGeometry: { kind: CreativePlanTextZoneKind; text: string; reason: string }[];
+};
+
+function describeTextZonePresentationProblem(record: Record<string, unknown>): string | undefined {
+  if (!isValidCreativePlanRect(record.rect)) return `rect inválido (${JSON.stringify(record.rect ?? null)})`;
+  if (!isCreativePlanTextZoneEmphasis(record.emphasis)) return `emphasis inválido (${JSON.stringify(record.emphasis ?? null)})`;
+  if (!isCreativePlanTextZoneRenderer(record.renderedBy)) return `renderedBy inválido (${JSON.stringify(record.renderedBy ?? null)})`;
+  return undefined;
+}
+
+/**
+ * Normalização editorial (achado do Smoke A execution-muyzgzli-th8xse: as 2 tentativas do diretor
+ * foram rejeitadas por `textZones` inválido, embora o renderer editorial nunca use essa geometria).
+ * No modo editorial o diretor é dono da SEMÂNTICA do texto (kind + texto) e o renderer é dono da
+ * GEOMETRIA (rect/emphasis/renderedBy/align/backing). Por isso:
+ * - semântica inválida (item não-objeto, kind desconhecido, texto vazio) continua rejeitando o
+ *   plano inteiro — exatamente como no modo padrão;
+ * - geometria/apresentação inválida descarta só a geometria daquela zona: a zona sai de
+ *   `textZones` e o texto fica registrado em `discardedGeometry` (nunca inventa retângulo, nunca
+ *   inventa texto).
+ */
+export function normalizeEditorialTextZones(value: unknown): { zones: CreativePlanTextZone[]; normalization?: CreativePlanEditorialTextZoneNormalization } | undefined {
+  if (value === undefined) return { zones: [] };
+  if (!Array.isArray(value)) return undefined;
+  const valid: unknown[] = [];
+  const discardedGeometry: CreativePlanEditorialTextZoneNormalization["discardedGeometry"] = [];
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) return undefined;
+    const record = item as Record<string, unknown>;
+    if (!isCreativePlanTextZoneKind(record.kind) || typeof record.text !== "string" || !record.text.trim()) return undefined;
+    const problem = describeTextZonePresentationProblem(record);
+    if (problem) {
+      discardedGeometry.push({ kind: record.kind, text: record.text, reason: problem });
+      continue;
+    }
+    valid.push(item);
+  }
+  const zones = parseTextZones(valid);
+  if (zones === undefined) return undefined;
+  return discardedGeometry.length > 0 ? { zones, normalization: { discardedGeometry } } : { zones };
+}
+
 function parseTextZones(value: unknown): CreativePlanTextZone[] | undefined {
   if (value === undefined) return [];
   if (!Array.isArray(value)) return undefined;
@@ -849,7 +903,13 @@ function parseRequiredRenderedFacts(value: unknown, allowedRenderedTexts: readon
  * `textZones` presentes MAS com algum item inválido (papel desconhecido, retângulo fora dos
  * limites, etc.) rejeitam o plano INTEIRO — nunca clampam ou descartam silenciosamente só o item
  * ruim, porque isso é exatamente como um asset acaba posicionado errado sem ninguém perceber. */
-export function parseCreativePlan(raw: string): CreativePlan | undefined {
+function parseTextZonesForMode(value: unknown, options: CreativePlanParseOptions): { zones: CreativePlanTextZone[]; normalization?: CreativePlanEditorialTextZoneNormalization } | undefined {
+  if (options.compositionMode === "editorial_experimental") return normalizeEditorialTextZones(value);
+  const zones = parseTextZones(value);
+  return zones === undefined ? undefined : { zones };
+}
+
+export function parseCreativePlan(raw: string, options: CreativePlanParseOptions = {}): CreativePlan | undefined {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (typeof parsed.headline !== "string" || typeof parsed.cta !== "string") return undefined;
@@ -863,8 +923,9 @@ export function parseCreativePlan(raw: string): CreativePlan | undefined {
 
     const assetPlacements = parseAssetPlacements(parsed.assetPlacements);
     if (assetPlacements === undefined) return undefined;
-    const textZones = parseTextZones(parsed.textZones);
-    if (textZones === undefined) return undefined;
+    const parsedTextZones = parseTextZonesForMode(parsed.textZones, options);
+    if (parsedTextZones === undefined) return undefined;
+    const textZones = parsedTextZones.zones;
     // Achado ao vivo em produção (auditoria "motor de geração de criativos"): campo NOVO e
     // deliberadamente estrito (rejeita o plano inteiro se ausente/malformado, nunca deriva
     // silenciosamente de headline/cta/textZones) — é a fonte de verdade que o quality gate usa
@@ -911,6 +972,7 @@ export function parseCreativePlan(raw: string): CreativePlan | undefined {
       assetUsage,
       assetPlacements,
       textZones,
+      ...(parsedTextZones.normalization ? { editorialTextZoneNormalization: parsedTextZones.normalization } : {}),
       requiredElements: toStringArray(parsed.requiredElements),
       forbiddenElements: toStringArray(parsed.forbiddenElements),
       visualDensity: isCreativePlanVisualDensity(parsed.visualDensity) ? parsed.visualDensity : "balanced",
@@ -933,7 +995,7 @@ export function parseCreativePlan(raw: string): CreativePlan | undefined {
  * ao Director um motivo CONCRETO na tentativa seguinte, em vez de uma re-pergunta cega. Nunca
  * lança — falha de parse devolve a causa mais genérica possível ("JSON malformado").
  */
-export function diagnoseCreativePlanInvalidity(raw: string): string | undefined {
+export function diagnoseCreativePlanInvalidity(raw: string, options: CreativePlanParseOptions = {}): string | undefined {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (typeof parsed.headline !== "string") return "campo \"headline\" ausente ou não é uma string.";
@@ -942,8 +1004,11 @@ export function diagnoseCreativePlanInvalidity(raw: string): string | undefined 
     const assetPlacements = parseAssetPlacements(parsed.assetPlacements);
     if (assetPlacements === undefined) return "campo \"assetPlacements\" inválido — algum item tem role/url/rect malformado, ou um retângulo fora dos limites do canvas (0-100) ou com largura/altura zero.";
 
-    const textZones = parseTextZones(parsed.textZones);
-    if (textZones === undefined) return "campo \"textZones\" inválido — algum item tem kind/rect/emphasis/renderedBy malformado, ou um retângulo fora dos limites do canvas ou com largura/altura zero.";
+    if (options.compositionMode === "editorial_experimental") {
+      if (normalizeEditorialTextZones(parsed.textZones) === undefined) return "campo \"textZones\" semanticamente inválido — algum item não é objeto, tem kind desconhecido ou texto vazio.";
+    } else if (parseTextZones(parsed.textZones) === undefined) {
+      return "campo \"textZones\" inválido — algum item tem kind/rect/emphasis/renderedBy malformado, ou um retângulo fora dos limites do canvas ou com largura/altura zero.";
+    }
 
     const allowedRenderedTexts = parseAllowedRenderedTexts(parsed.allowedRenderedTexts);
     if (allowedRenderedTexts === undefined) return "campo \"allowedRenderedTexts\" ausente, vazio, ou contém um item vazio/não-string.";
@@ -1023,6 +1088,9 @@ function stripCommercialTextForEditorialPrompt(value: string | undefined, plan: 
     plan.title,
     ...plan.allowedRenderedTexts,
     ...plan.textZones.map((zone) => zone.text),
+    // Zonas cuja geometria foi descartada pela normalização editorial continuam sendo texto
+    // comercial — nunca podem vazar para o prompt de imagem.
+    ...(plan.editorialTextZoneNormalization?.discardedGeometry ?? []).map((zone) => zone.text),
   ].filter((text): text is string => Boolean(text?.trim()));
   for (const text of [...new Set(forbiddenText)]) {
     sanitized = sanitized.replaceAll(text, "o elemento visual principal");

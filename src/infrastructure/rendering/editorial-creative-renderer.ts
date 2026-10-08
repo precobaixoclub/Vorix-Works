@@ -215,6 +215,14 @@ async function prepareAsset(asset: EditorialCreativeAssetBuffer): Promise<Prepar
   return { ...asset, detectedMime, png, href: pngDataUri(png), width, height };
 }
 
+/** Preflight de asset editorial — EXATAMENTE a mesma decodificação que o renderer aplica
+ * (`prepareAsset`), exposta para o motor validar antes de qualquer IA. Nunca uma segunda
+ * implementação: se o preflight passa, o renderer decodifica o mesmo buffer do mesmo jeito. */
+export async function preflightEditorialAsset(asset: EditorialCreativeAssetBuffer): Promise<{ detectedMime: DetectedImageMime; width: number; height: number }> {
+  const prepared = await prepareAsset(asset);
+  return { detectedMime: prepared.detectedMime, width: prepared.width, height: prepared.height };
+}
+
 function pickAccent(context: CreativeContext): string {
   // Acento só é usado como fundo de CTA/cor de preço sobre creme — exige contraste real com os dois.
   const hex = context.brandColors?.find((color) => isValidHexColor(color) && (computeContrastRatio(color, "#FFFFFF") ?? 0) >= 4.5);

@@ -1577,24 +1577,126 @@ export type DigitalSelectionSignals = {
   headlineChars: number;
   subheadlineChars: number;
   hasPrice: boolean;
-  /** Regiões reais do screenshot com detalhe suficiente para virar recorte ampliado. */
+  /** Regiões reais do screenshot com borda limpa e detalhe suficiente para virar recorte. */
   detailRegions: number;
+  /** Legibilidade da tela INTEIRA no tamanho em que ela aparece (`assessScreenshotLegibility`). */
+  legibility?: ScreenshotLegibility;
+  /** A copy cabe na faixa do FLOATING_PRODUCT sem encolher a headline além do limite. */
+  floatingCopyFits?: boolean;
   visualDensity?: string;
   primaryMassPct?: number;
 };
 
-/** Mesmo input → mesma variante. Ordem das regras = prioridade. */
+/**
+ * Mesmo input → mesma variante. Pergunta principal: a tela COMPLETA já é legível e forte como hero?
+ * Só quando NÃO é (informação some na redução, ou uma feature pequena concentra o conteúdo e perde
+ * detalhe) os recortes ampliados entram — achar regiões recortáveis sozinho nunca decide.
+ * Tela legível: FLOATING_PRODUCT quando a copy cabe na faixa dele; senão UI_HERO.
+ */
 export function selectDigitalServiceVariant(signals: DigitalSelectionSignals): { variant: DigitalServiceVariant; reasons: string[] } {
   if (signals.classification === "MOBILE") return { variant: "MOBILE_DEVICE", reasons: ["screenshot com proporção de celular: mockup de aparelho"] };
   if (signals.classification !== "DESKTOP") {
     return { variant: "FLOATING_PRODUCT", reasons: [`screenshot ${signals.classification} (nem celular nem desktop): superfície flutuante, inteira`] };
   }
-  if ((signals.primaryMassPct ?? 0) >= 60) return { variant: "UI_HERO", reasons: [`diretor pediu massa ${signals.primaryMassPct}% (>= 60): interface domina a peça`] };
-  if (signals.visualDensity === "clean") return { variant: "FLOATING_PRODUCT", reasons: ["densidade clean: produto flutuante com profundidade e respiro"] };
-  if (signals.detailRegions >= 2 && signals.headlineChars <= 56) {
-    return { variant: "UI_DETAIL_FOCUS", reasons: [`screenshot tem ${signals.detailRegions} regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício`] };
+  const legibility = signals.legibility;
+  const legibilityNote = legibility ? `escala hero ${legibility.heroScale}, retenção de borda no feed ${legibility.edgeRetentionAtFeed}` : "sem medida de legibilidade";
+  if (legibility && signals.detailRegions >= 1) {
+    if (!legibility.fullScreenLegible) {
+      return { variant: "UI_DETAIL_FOCUS", reasons: [`tela inteira não continua legível no tamanho do feed (${legibilityNote}; mínimo ${SCREENSHOT_LEGIBLE_EDGE_RETENTION}): recortes ampliados mostram o que some na redução`] };
+    }
+    if (legibility.smallFeatureCritical) {
+      return { variant: "UI_DETAIL_FOCUS", reasons: [`feature pequena concentra ${Math.round((legibility.featureEnergyShare ?? 0) * 100)}% do conteúdo em ${Math.round((legibility.featureAreaShare ?? 0) * 100)}% da tela e perde detalhe na redução (retenção ${legibility.featureEdgeRetention}): recorte ampliado explica`] };
+    }
   }
-  return { variant: "UI_HERO", reasons: ["interface sem regiões de detalhe destacáveis: tela inteira em destaque"] };
+  const legibleReason = legibility ? `tela inteira legível como hero (${legibilityNote}) — recortes não são necessários` : "tela inteira como hero";
+  if ((signals.primaryMassPct ?? 0) >= 60) return { variant: "UI_HERO", reasons: [legibleReason, `diretor pediu massa ${signals.primaryMassPct}% (>= 60): layout direto, interface domina`] };
+  if (signals.floatingCopyFits !== false) {
+    return { variant: "FLOATING_PRODUCT", reasons: [legibleReason, "copy cabe na faixa do produto flutuante sem encolher a headline: profundidade e respiro valorizam a interface completa"] };
+  }
+  return { variant: "UI_HERO", reasons: [legibleReason, "copy longa não cabe na faixa do produto flutuante sem encolher demais a headline: UI_HERO dá mais espaço à copy"] };
+}
+
+// ---------------------------------- legibilidade da tela inteira --------------------------------
+
+export type ScreenshotLegibility = {
+  /** Escala da tela inteira no hero (largura útil / largura da fonte). */
+  heroScale: number;
+  /** Escala efetiva no feed: hero × (largura de tela de celular / largura do canvas). */
+  feedScale: number;
+  /** Fração da energia de borda (gradiente local) que sobrevive à redução até o tamanho do feed. */
+  edgeRetentionAtFeed: number;
+  fullScreenLegible: boolean;
+  featureEnergyShare?: number;
+  featureAreaShare?: number;
+  featureEdgeRetention?: number;
+  smallFeatureCritical: boolean;
+};
+
+/** Largura útil da tela inteira no canvas de design 4:5 (1080 − 2 × margem da superfície). */
+export const SCREENSHOT_HERO_WIDTH_PX = 1024;
+/** O post 1080 aparece na largura de um celular (~390 pt) no feed. */
+export const FEED_VIEW_FACTOR = 390 / 1080;
+/** Legível = mais da metade do detalhe de borda sobrevive no tamanho em que a tela é vista. */
+export const SCREENSHOT_LEGIBLE_EDGE_RETENTION = 0.5;
+/** Feature pequena: as células mais ricas (10% da área) concentram a maior parte do conteúdo. */
+const SMALL_FEATURE_AREA_SHARE = 0.1;
+const SMALL_FEATURE_MIN_ENERGY_SHARE = 0.5;
+
+async function edgeMap(buffer: Buffer, width: number, height: number): Promise<Float32Array> {
+  const { data } = await sharp(buffer).flatten({ background: "#ffffff" }).resize(width, height, { fit: "fill" }).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const out = new Float32Array(width * height);
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = y * width + x;
+      out[index] = Math.abs(data[index + 1]! - data[index - 1]!) + Math.abs(data[index + width]! - data[index - width]!);
+    }
+  }
+  return out;
+}
+
+/** Mede se a tela COMPLETA continua legível no tamanho em que aparece (sem IA): compara a energia de
+ * borda da fonte com a da mesma tela reduzida ao tamanho do feed e ampliada de volta. Texto miúdo,
+ * tabela e gráfico denso perdem borda; títulos, cards e fotos sobrevivem. */
+export async function assessScreenshotLegibility(png: Buffer, sourceWidth: number, sourceHeight: number): Promise<ScreenshotLegibility> {
+  const heroScale = Math.min(1, SCREENSHOT_HERO_WIDTH_PX / sourceWidth);
+  const feedScale = heroScale * FEED_VIEW_FACTOR;
+  // Análise limitada a 1600 px de largura (mesma proporção de redução relativa).
+  const analysisWidth = Math.min(sourceWidth, 1600);
+  const analysisHeight = Math.round((analysisWidth * sourceHeight) / sourceWidth);
+  const reduced = await sharp(png).flatten({ background: "#ffffff" }).resize(Math.max(8, Math.round(sourceWidth * feedScale))).png().toBuffer();
+  const original = await edgeMap(png, analysisWidth, analysisHeight);
+  const survived = await edgeMap(reduced, analysisWidth, analysisHeight);
+  const cols = 16;
+  const rows = 10;
+  const cell0 = new Float64Array(cols * rows);
+  const cell1 = new Float64Array(cols * rows);
+  for (let y = 0; y < analysisHeight; y += 1) {
+    for (let x = 0; x < analysisWidth; x += 1) {
+      const c = Math.min(rows - 1, Math.floor((y / analysisHeight) * rows)) * cols + Math.min(cols - 1, Math.floor((x / analysisWidth) * cols));
+      cell0[c] += original[y * analysisWidth + x]!;
+      cell1[c] += survived[y * analysisWidth + x]!;
+    }
+  }
+  const total0 = cell0.reduce((sum, value) => sum + value, 0) || 1;
+  const total1 = cell1.reduce((sum, value) => sum + value, 0);
+  const edgeRetentionAtFeed = Number((total1 / total0).toFixed(3));
+  const order = [...cell0.keys()].sort((a, b) => cell0[b]! - cell0[a]!);
+  const top = order.slice(0, Math.max(1, Math.round(cols * rows * SMALL_FEATURE_AREA_SHARE)));
+  const top0 = top.reduce((sum, index) => sum + cell0[index]!, 0);
+  const top1 = top.reduce((sum, index) => sum + cell1[index]!, 0);
+  const featureEnergyShare = Number((top0 / total0).toFixed(3));
+  const featureEdgeRetention = Number((top0 > 0 ? top1 / top0 : 1).toFixed(3));
+  const fullScreenLegible = heroScale >= DESKTOP_SCREENSHOT_MIN_DISPLAY_SCALE && edgeRetentionAtFeed >= SCREENSHOT_LEGIBLE_EDGE_RETENTION;
+  return {
+    heroScale: Number(heroScale.toFixed(3)),
+    feedScale: Number(feedScale.toFixed(3)),
+    edgeRetentionAtFeed,
+    fullScreenLegible,
+    featureEnergyShare,
+    featureAreaShare: SMALL_FEATURE_AREA_SHARE,
+    featureEdgeRetention,
+    smallFeatureCritical: featureEnergyShare >= SMALL_FEATURE_MIN_ENERGY_SHARE && featureEdgeRetention < SCREENSHOT_LEGIBLE_EDGE_RETENTION,
+  };
 }
 
 // ---------------------------------- paleta e regiões do screenshot ------------------------------
@@ -1733,6 +1835,11 @@ const DETAIL_CROP_SETS: Record<"a" | "b", readonly CropSpec[]> = {
 
 // ---------------------------------- digital_service 4:5 (render) --------------------------------
 
+/** Faixa de copy do FLOATING_PRODUCT (mesmos números no layout e na seleção). */
+const FLOATING_COPY = { headWidth: 640, headMax: 54, subWidth: 560, depthReserve: 0.16 };
+/** A headline do floating pode encolher no máximo 20% do seu corpo antes de a seleção preferir UI_HERO. */
+const FLOATING_MIN_HEADLINE_RATIO = 0.8;
+
 /** Largura mínima exibida (espaço de design 1080) para o screenshot desktop continuar legível. */
 export const DESKTOP_SCREENSHOT_MIN_DISPLAY_SCALE = 0.4;
 const SHOT_RADIUS = 18;
@@ -1763,12 +1870,25 @@ async function renderDigitalServiceAdaptive(
   const autoCrops = await findScreenshotDetailRegions(screenshot.png, screenshot.width, screenshot.height, DETAIL_CROP_SETS.a);
   // Componente destacável = borda limpa (pontuação positiva) e detalhe ao menos perto da média da tela.
   const detailRegions = autoCrops.filter((item) => item.score > 0 && item.relativeScore >= DETAIL_REGION_MIN_RELATIVE_SCORE).length;
+  const legibility = classification === "DESKTOP" ? await assessScreenshotLegibility(screenshot.png, screenshot.width, screenshot.height) : undefined;
+  const floatingCopyFits = (() => {
+    const shotHeight = (W - 2 * EDGE) / aspect;
+    const shotY = H - EDGE - 24 - shotHeight;
+    const available = shotY - shotHeight * FLOATING_COPY.depthReserve - 20 - M;
+    const headFit = fitText(headline, FLOATING_COPY.headWidth, FLOATING_COPY.headMax * 1.06 * 3, { maxFontSize: FLOATING_COPY.headMax, minFontSize: 32, maxLines: 3, lineHeight: 1.06 });
+    const subFit = subheadline ? fitText(subheadline, FLOATING_COPY.subWidth, subheadline.length > 80 ? 96 : 70, { maxFontSize: subheadline.length > 80 ? 21 : 23, minFontSize: 17, maxLines: subheadline.length > 80 ? 3 : 2, lineHeight: 1.4 }) : undefined;
+    const logoH = logo ? logoSize(logo, 230, 40).height + 30 : 0;
+    const block = logoH + headFit.height + (subFit ? 18 + subFit.height : 0) + (price ? 16 + 60 : 0);
+    return headFit.fits && (subFit?.fits ?? true) && headFit.fontSize >= FLOATING_COPY.headMax * FLOATING_MIN_HEADLINE_RATIO && block <= available;
+  })();
   const selected = selectDigitalServiceVariant({
     classification,
     headlineChars: headline.length,
     subheadlineChars: subheadline?.length ?? 0,
     hasPrice: Boolean(price),
     detailRegions,
+    legibility,
+    floatingCopyFits,
     visualDensity: plan.visualDensity,
     primaryMassPct: plan.artDirection?.primaryMassPct,
   });
@@ -1907,9 +2027,9 @@ async function renderDigitalServiceAdaptive(
     // (profundidade só atrás dela) — sem chrome de navegador; copy compacta no alto.
     shot = shotAt(EDGE, 0, W - 2 * EDGE);
     shot.y = H - EDGE - 24 - shot.height;
-    const hs = headSpec(640, 54);
-    const ss = subSpec(560);
-    const areaBottom = shot.y - shot.height * 0.16 - 20;
+    const hs = headSpec(FLOATING_COPY.headWidth, FLOATING_COPY.headMax);
+    const ss = subSpec(FLOATING_COPY.subWidth);
+    const areaBottom = shot.y - shot.height * FLOATING_COPY.depthReserve - 20;
     const block = (logoBox ? logoBox.height + 30 : 0) + copyHeight(hs, ss);
     const copyTop = Math.round(M + Math.max(0, (areaBottom - M - block) / 2));
     logoRect = logoBox ? { x: M, y: copyTop, ...logoBox } : undefined;
@@ -2041,6 +2161,7 @@ async function renderDigitalServiceAdaptive(
         displayScale: Number(displayScale.toFixed(3)),
         displayWidthPx: shot.width,
         option,
+        ...(legibility ? { legibility, floatingCopyFits } : {}),
         palette: { dominant: toHex(paletteRgb.dominant), secondary: toHex(paletteRgb.secondary), accent: toHex(paletteRgb.accent) },
         ...(cropDiagnostics.length > 0 ? { crops: cropDiagnostics } : {}),
       },

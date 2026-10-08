@@ -4,6 +4,7 @@ import sharp from "sharp";
 import { readFile } from "node:fs/promises";
 import {
   analyzeEditorialBase,
+  assessScreenshotLegibility,
   classifyScreenshot,
   DESKTOP_SCREENSHOT_MIN_DISPLAY_SCALE,
   extractScreenshotPalette,
@@ -142,16 +143,80 @@ test("classifyScreenshot: pela proporção real, nunca força mobile", () => {
   assert.equal(classifyScreenshot(1280, 6000), "OTHER");
 });
 
-test("selectDigitalServiceVariant: desktop nunca vira celular; regras determinísticas", () => {
-  const base = { classification: "DESKTOP", headlineChars: 44, subheadlineChars: 72, hasPrice: false, detailRegions: 2 };
-  assert.equal(selectDigitalServiceVariant(base).variant, "UI_DETAIL_FOCUS");
-  assert.equal(selectDigitalServiceVariant({ ...base, detailRegions: 1 }).variant, "UI_HERO");
-  assert.equal(selectDigitalServiceVariant({ ...base, headlineChars: 70 }).variant, "UI_HERO");
-  assert.equal(selectDigitalServiceVariant({ ...base, visualDensity: "clean" }).variant, "FLOATING_PRODUCT");
+const LEGIBLE = { heroScale: 0.8, feedScale: 0.289, edgeRetentionAtFeed: 0.6, fullScreenLegible: true, featureEnergyShare: 0.25, featureAreaShare: 0.1, featureEdgeRetention: 0.5, smallFeatureCritical: false };
+
+test("selectDigitalServiceVariant: tela inteira legível prefere FLOATING/HERO; regiões recortáveis sozinhas nunca decidem", () => {
+  const base = { classification: "DESKTOP", headlineChars: 44, subheadlineChars: 72, hasPrice: false, detailRegions: 2, legibility: LEGIBLE, floatingCopyFits: true };
+  assert.equal(selectDigitalServiceVariant(base).variant, "FLOATING_PRODUCT");
+  assert.equal(selectDigitalServiceVariant({ ...base, floatingCopyFits: false }).variant, "UI_HERO");
   assert.equal(selectDigitalServiceVariant({ ...base, primaryMassPct: 65 }).variant, "UI_HERO");
+  assert.equal(selectDigitalServiceVariant({ ...base, legibility: { ...LEGIBLE, fullScreenLegible: false, edgeRetentionAtFeed: 0.3 } }).variant, "UI_DETAIL_FOCUS");
+  assert.equal(selectDigitalServiceVariant({ ...base, legibility: { ...LEGIBLE, smallFeatureCritical: true, featureEnergyShare: 0.9, featureEdgeRetention: 0.4 } }).variant, "UI_DETAIL_FOCUS");
+  assert.equal(selectDigitalServiceVariant({ ...base, detailRegions: 0, legibility: { ...LEGIBLE, fullScreenLegible: false } }).variant, "FLOATING_PRODUCT", "sem região recortável não há detalhe a mostrar");
   assert.equal(selectDigitalServiceVariant({ ...base, classification: "TABLET" }).variant, "FLOATING_PRODUCT");
   assert.equal(selectDigitalServiceVariant({ ...base, classification: "MOBILE" }).variant, "MOBILE_DEVICE");
   assert.deepEqual(selectDigitalServiceVariant(base), selectDigitalServiceVariant(base));
+});
+
+// Telas controladas (sintéticas, sem IA) para a matriz de generalização.
+const textRows = (n, x, y0, step, size) => Array.from({ length: n }, (_, i) => `<text x="${x}" y="${y0 + i * step}" font-size="${size}" fill="#333" font-family="sans-serif">Linha ${i} valor 1.234,56 status ativo cliente ${i * 7}</text>`).join("");
+const screen = (w, h, body) => sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#FAFAFA"/>${body}</svg>`)).png().toBuffer();
+const SCREENS = {
+  cleanLarge: () => screen(1280, 900, `<rect width="1280" height="70" fill="#1d1d2b"/><text x="80" y="200" font-size="56" fill="#111" font-family="sans-serif">Seu painel simples</text>` + [0, 1, 2].map((i) => `<rect x="${80 + i * 380}" y="280" width="340" height="420" rx="16" fill="#fff" stroke="#ddd"/><rect x="${80 + i * 380}" y="280" width="340" height="200" fill="${["#c77", "#7a9", "#79c"][i]}"/><text x="${100 + i * 380}" y="540" font-size="30" fill="#222" font-family="sans-serif">Plano ${i + 1}</text><rect x="${100 + i * 380}" y="620" width="300" height="50" rx="25" fill="#b66b77"/>`).join("")),
+  smallFeature: () => screen(1440, 900, `<rect width="1440" height="60" fill="#eee"/><text x="80" y="160" font-size="40" fill="#222" font-family="sans-serif">Configurações</text><rect x="980" y="560" width="300" height="200" rx="10" fill="#fff" stroke="#bbb"/>${textRows(14, 992, 580, 13, 9)}<polyline points="${Array.from({ length: 30 }, (_, i) => `${990 + i * 9},${740 - ((i * 37) % 50)}`).join(" ")}" stroke="#b66b77" fill="none" stroke-width="1.5"/>`),
+  denseDashboard: () => screen(1920, 1080, `<rect width="1920" height="40" fill="#222"/>` + [0, 1, 2, 3].map((c) => `<rect x="${20 + c * 475}" y="60" width="455" height="1000" fill="#fff" stroke="#ddd"/>${textRows(90, 30 + c * 475, 80, 11, 8)}`).join("")),
+};
+
+async function legibilityOf(buffer) {
+  const meta = await sharp(buffer).metadata();
+  return assessScreenshotLegibility(await sharp(buffer).ensureAlpha().png().toBuffer(), meta.width, meta.height);
+}
+
+test("assessScreenshotLegibility: tela real e limpa legíveis; densa e feature pequena não; determinística", async () => {
+  const real = await legibilityOf(DESKTOP_SHOT);
+  assert.deepEqual(real, await legibilityOf(DESKTOP_SHOT));
+  assert.equal(real.fullScreenLegible, true, JSON.stringify(real));
+  assert.equal(real.smallFeatureCritical, false);
+  assert.equal((await legibilityOf(await SCREENS.cleanLarge())).fullScreenLegible, true);
+  assert.equal((await legibilityOf(await SCREENS.denseDashboard())).fullScreenLegible, false);
+  const feature = await legibilityOf(await SCREENS.smallFeature());
+  assert.ok(!feature.fullScreenLegible || feature.smallFeatureCritical, JSON.stringify(feature));
+  assert.ok(feature.featureEnergyShare >= 0.5, "feature pequena concentra o conteúdo");
+});
+
+const LONG_COPY = {
+  headline: "Organize a lista de presentes, as confirmações de presença e todos os detalhes do grande dia num só lugar",
+  subheadline: "Convidados escolhem, presenteiam e confirmam presença no site do casal, sem planilha e sem mensagens perdidas.",
+  cta: "Criar meu site",
+};
+
+async function autoVariant(screenBuffer, copy = COPY_C) {
+  const result = await renderEditorialCreative({ baseImageBuffer: await lightBase(), context: context(), plan: plan(copy), assets: [{ role: "screenshot", url: "fixture://site.png", buffer: screenBuffer }, { role: "logo", url: "fixture://logo.png", buffer: LOGO }] });
+  assert.equal(result.geometry.valid, true, JSON.stringify(result.geometry.issues));
+  return result.composition;
+}
+
+test("matriz de seleção automática (sem override)", async () => {
+  // A) desktop grande e legível → FLOATING ou HERO
+  assert.ok(["FLOATING_PRODUCT", "UI_HERO"].includes((await autoVariant(await SCREENS.cleanLarge())).variant));
+  // B) feature pequena relevante → DETAIL
+  assert.equal((await autoVariant(await SCREENS.smallFeature())).variant, "UI_DETAIL_FOCUS");
+  // C) muito denso em escala reduzida → DETAIL
+  assert.equal((await autoVariant(await SCREENS.denseDashboard())).variant, "UI_DETAIL_FOCUS");
+  // D) limpo + copy longa → HERO
+  const longCopy = await autoVariant(await SCREENS.cleanLarge(), LONG_COPY);
+  assert.equal(longCopy.variant, "UI_HERO", JSON.stringify(longCopy.selectionReasons));
+  assert.equal(longCopy.screenshot.floatingCopyFits, false);
+  // E) limpo + copy curta → FLOATING
+  assert.equal((await autoVariant(await SCREENS.cleanLarge(), { headline: "Seu site de casamento", subheadline: "Lista, presentes e RSVP.", cta: "Criar meu site" })).variant, "FLOATING_PRODUCT");
+});
+
+test("screenshot real do Rumo ao Altar: automático NÃO é UI_DETAIL_FOCUS (tela inteira legível → FLOATING_PRODUCT)", async () => {
+  const composition = await autoVariant(DESKTOP_SHOT);
+  assert.notEqual(composition.variant, "UI_DETAIL_FOCUS");
+  assert.equal(composition.variant, "FLOATING_PRODUCT", JSON.stringify(composition.selectionReasons));
+  assert.equal(composition.screenshot.legibility.fullScreenLegible, true);
+  assert.equal(composition.screenshot.floatingCopyFits, true);
 });
 
 test("extractScreenshotPalette: acento vem da interface lisa (botões rosé), não das fotos", async () => {

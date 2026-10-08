@@ -184,6 +184,9 @@ export type EditorialScreenshotDiagnostics = {
   displayScale: number;
   displayWidthPx: number;
   option?: DigitalServiceOption;
+  /** Legibilidade da tela inteira medida para a seleção automática (sem IA). */
+  legibility?: { heroScale: number; feedScale: number; edgeRetentionAtFeed: number; fullScreenLegible: boolean; featureEnergyShare?: number; featureAreaShare?: number; featureEdgeRetention?: number; smallFeatureCritical: boolean };
+  floatingCopyFits?: boolean;
   /** Paleta aproximada extraída do screenshot (aplicada só ao fundo/superfícies). */
   palette?: { dominant: string; secondary: string; accent: string };
   crops?: EditorialScreenshotCrop[];

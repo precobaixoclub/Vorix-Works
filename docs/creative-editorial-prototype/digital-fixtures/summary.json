@@ -5,8 +5,9 @@
     "composition": {
       "variant": "UI_HERO",
       "selectionReasons": [
-        "QA_VARIANT_OVERRIDE=UI_HERO (fixture local; regra escolheria UI_DETAIL_FOCUS)",
-        "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
+        "QA_VARIANT_OVERRIDE=UI_HERO (fixture local; regra escolheria FLOATING_PRODUCT)",
+        "tela inteira legível como hero (escala hero 0.8, retenção de borda no feed 0.605) — recortes não são necessários",
+        "copy cabe na faixa do produto flutuante sem encolher a headline: profundidade e respiro valorizam a interface completa",
         "QA_VARIANT_OPTION=left"
       ],
       "logoTreatment": "MULTIPLY_ON_LIGHT",
@@ -25,6 +26,17 @@
         "displayScale": 0.8,
         "displayWidthPx": 1024,
         "option": "left",
+        "legibility": {
+          "heroScale": 0.8,
+          "feedScale": 0.289,
+          "edgeRetentionAtFeed": 0.605,
+          "fullScreenLegible": true,
+          "featureEnergyShare": 0.25,
+          "featureAreaShare": 0.1,
+          "featureEdgeRetention": 0.507,
+          "smallFeatureCritical": false
+        },
+        "floatingCopyFits": true,
         "palette": {
           "dominant": "#fbfbfb",
           "secondary": "#080808",
@@ -174,8 +186,9 @@
     "composition": {
       "variant": "UI_HERO",
       "selectionReasons": [
-        "QA_VARIANT_OVERRIDE=UI_HERO (fixture local; regra escolheria UI_DETAIL_FOCUS)",
-        "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
+        "QA_VARIANT_OVERRIDE=UI_HERO (fixture local; regra escolheria FLOATING_PRODUCT)",
+        "tela inteira legível como hero (escala hero 0.8, retenção de borda no feed 0.605) — recortes não são necessários",
+        "copy cabe na faixa do produto flutuante sem encolher a headline: profundidade e respiro valorizam a interface completa",
         "QA_VARIANT_OPTION=right"
       ],
       "logoTreatment": "MULTIPLY_ON_LIGHT",
@@ -194,6 +207,17 @@
         "displayScale": 0.8,
         "displayWidthPx": 1024,
         "option": "right",
+        "legibility": {
+          "heroScale": 0.8,
+          "feedScale": 0.289,
+          "edgeRetentionAtFeed": 0.605,
+          "fullScreenLegible": true,
+          "featureEnergyShare": 0.25,
+          "featureAreaShare": 0.1,
+          "featureEdgeRetention": 0.507,
+          "smallFeatureCritical": false
+        },
+        "floatingCopyFits": true,
         "palette": {
           "dominant": "#fbfbfb",
           "secondary": "#080808",
@@ -343,8 +367,9 @@
     "composition": {
       "variant": "UI_DETAIL_FOCUS",
       "selectionReasons": [
-        "QA_VARIANT_OVERRIDE=UI_DETAIL_FOCUS (fixture local; regra escolheria UI_DETAIL_FOCUS)",
-        "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
+        "QA_VARIANT_OVERRIDE=UI_DETAIL_FOCUS (fixture local; regra escolheria FLOATING_PRODUCT)",
+        "tela inteira legível como hero (escala hero 0.8, retenção de borda no feed 0.605) — recortes não são necessários",
+        "copy cabe na faixa do produto flutuante sem encolher a headline: profundidade e respiro valorizam a interface completa",
         "QA_VARIANT_OPTION=a",
         "recortes a: 352x308@448,264 (detalhe 1.53x a média); 316x104@72,156 (detalhe 1.12x a média)"
       ],
@@ -364,6 +389,17 @@
         "displayScale": 0.8,
         "displayWidthPx": 1024,
         "option": "a",
+        "legibility": {
+          "heroScale": 0.8,
+          "feedScale": 0.289,
+          "edgeRetentionAtFeed": 0.605,
+          "fullScreenLegible": true,
+          "featureEnergyShare": 0.25,
+          "featureAreaShare": 0.1,
+          "featureEdgeRetention": 0.507,
+          "smallFeatureCritical": false
+        },
+        "floatingCopyFits": true,
         "palette": {
           "dominant": "#fbfbfb",
           "secondary": "#080808",
@@ -601,8 +637,9 @@
     "composition": {
       "variant": "UI_DETAIL_FOCUS",
       "selectionReasons": [
-        "QA_VARIANT_OVERRIDE=UI_DETAIL_FOCUS (fixture local; regra escolheria UI_DETAIL_FOCUS)",
-        "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
+        "QA_VARIANT_OVERRIDE=UI_DETAIL_FOCUS (fixture local; regra escolheria FLOATING_PRODUCT)",
+        "tela inteira legível como hero (escala hero 0.8, retenção de borda no feed 0.605) — recortes não são necessários",
+        "copy cabe na faixa do produto flutuante sem encolher a headline: profundidade e respiro valorizam a interface completa",
         "QA_VARIANT_OPTION=b",
         "recortes b: 336x92@828,480 (detalhe 0.83x a média); 360x444@72,264 (detalhe 1.24x a média)"
       ],
@@ -622,6 +659,17 @@
         "displayScale": 0.8,
         "displayWidthPx": 1024,
         "option": "b",
+        "legibility": {
+          "heroScale": 0.8,
+          "feedScale": 0.289,
+          "edgeRetentionAtFeed": 0.605,
+          "fullScreenLegible": true,
+          "featureEnergyShare": 0.25,
+          "featureAreaShare": 0.1,
+          "featureEdgeRetention": 0.507,
+          "smallFeatureCritical": false
+        },
+        "floatingCopyFits": true,
         "palette": {
           "dominant": "#fbfbfb",
           "secondary": "#080808",
@@ -859,8 +907,9 @@
     "composition": {
       "variant": "FLOATING_PRODUCT",
       "selectionReasons": [
-        "QA_VARIANT_OVERRIDE=FLOATING_PRODUCT (fixture local; regra escolheria UI_DETAIL_FOCUS)",
-        "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
+        "QA_VARIANT_OVERRIDE=FLOATING_PRODUCT (fixture local; regra escolheria FLOATING_PRODUCT)",
+        "tela inteira legível como hero (escala hero 0.8, retenção de borda no feed 0.605) — recortes não são necessários",
+        "copy cabe na faixa do produto flutuante sem encolher a headline: profundidade e respiro valorizam a interface completa",
         "QA_VARIANT_OPTION=light"
       ],
       "logoTreatment": "MULTIPLY_ON_LIGHT",
@@ -879,6 +928,17 @@
         "displayScale": 0.8,
         "displayWidthPx": 1024,
         "option": "light",
+        "legibility": {
+          "heroScale": 0.8,
+          "feedScale": 0.289,
+          "edgeRetentionAtFeed": 0.605,
+          "fullScreenLegible": true,
+          "featureEnergyShare": 0.25,
+          "featureAreaShare": 0.1,
+          "featureEdgeRetention": 0.507,
+          "smallFeatureCritical": false
+        },
+        "floatingCopyFits": true,
         "palette": {
           "dominant": "#fbfbfb",
           "secondary": "#080808",
@@ -1028,8 +1088,9 @@
     "composition": {
       "variant": "FLOATING_PRODUCT",
       "selectionReasons": [
-        "QA_VARIANT_OVERRIDE=FLOATING_PRODUCT (fixture local; regra escolheria UI_DETAIL_FOCUS)",
-        "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
+        "QA_VARIANT_OVERRIDE=FLOATING_PRODUCT (fixture local; regra escolheria FLOATING_PRODUCT)",
+        "tela inteira legível como hero (escala hero 0.8, retenção de borda no feed 0.605) — recortes não são necessários",
+        "copy cabe na faixa do produto flutuante sem encolher a headline: profundidade e respiro valorizam a interface completa",
         "QA_VARIANT_OPTION=dark"
       ],
       "logoTreatment": "CHIP",
@@ -1048,6 +1109,17 @@
         "displayScale": 0.8,
         "displayWidthPx": 1024,
         "option": "dark",
+        "legibility": {
+          "heroScale": 0.8,
+          "feedScale": 0.289,
+          "edgeRetentionAtFeed": 0.605,
+          "fullScreenLegible": true,
+          "featureEnergyShare": 0.25,
+          "featureAreaShare": 0.1,
+          "featureEdgeRetention": 0.507,
+          "smallFeatureCritical": false
+        },
+        "floatingCopyFits": true,
         "palette": {
           "dominant": "#fbfbfb",
           "secondary": "#080808",
@@ -1195,68 +1267,43 @@
     "file": "/out/c/00-digital-auto.jpg",
     "family": "digital_service",
     "composition": {
-      "variant": "UI_DETAIL_FOCUS",
+      "variant": "FLOATING_PRODUCT",
       "selectionReasons": [
-        "screenshot tem 2 regiões reais de alto detalhe: interface + detalhes ampliados mostram o benefício",
-        "recortes a: 352x308@448,264 (detalhe 1.53x a média); 316x104@72,156 (detalhe 1.12x a média)"
+        "tela inteira legível como hero (escala hero 0.8, retenção de borda no feed 0.605) — recortes não são necessários",
+        "copy cabe na faixa do produto flutuante sem encolher a headline: profundidade e respiro valorizam a interface completa"
       ],
       "logoTreatment": "MULTIPLY_ON_LIGHT",
       "pageTone": "light",
-      "productVisualProminence": 0.635,
-      "largestEmptyBandPct": 0.03,
-      "contentCentroidOffset": 0.139,
-      "occupiedAreaRatio": 0.794,
+      "productVisualProminence": 0.506,
+      "largestEmptyBandPct": 0.104,
+      "contentCentroidOffset": 0.228,
+      "occupiedAreaRatio": 0.666,
       "screenshot": {
         "classification": "DESKTOP",
         "sourceWidth": 1280,
         "sourceHeight": 900,
         "aspect": 1.422,
-        "frame": "EDITORIAL_SURFACE",
+        "frame": "FLOATING_SCREEN",
         "fit": "contain",
         "displayScale": 0.8,
         "displayWidthPx": 1024,
-        "option": "a",
+        "option": "light",
+        "legibility": {
+          "heroScale": 0.8,
+          "feedScale": 0.289,
+          "edgeRetentionAtFeed": 0.605,
+          "fullScreenLegible": true,
+          "featureEnergyShare": 0.25,
+          "featureAreaShare": 0.1,
+          "featureEdgeRetention": 0.507,
+          "smallFeatureCritical": false
+        },
+        "floatingCopyFits": true,
         "palette": {
           "dominant": "#fbfbfb",
           "secondary": "#080808",
           "accent": "#b66b77"
-        },
-        "crops": [
-          {
-            "source": "SCREENSHOT_SOURCE",
-            "url": "fixture://site-demo-presentes.png",
-            "cropSourceRect": {
-              "x": 448,
-              "y": 264,
-              "width": 352,
-              "height": 308
-            },
-            "placedRect": {
-              "xPct": 60.741,
-              "yPct": 3.926,
-              "widthPct": 36.667,
-              "heightPct": 25.704
-            },
-            "zoomVsMain": 1.41
-          },
-          {
-            "source": "SCREENSHOT_SOURCE",
-            "url": "fixture://site-demo-presentes.png",
-            "cropSourceRect": {
-              "x": 72,
-              "y": 156,
-              "width": 316,
-              "height": 104
-            },
-            "placedRect": {
-              "xPct": 60.741,
-              "yPct": 31.111,
-              "widthPct": 36.667,
-              "heightPct": 9.63
-            },
-            "zoomVsMain": 1.57
-          }
-        ]
+        }
       }
     },
     "geometryValid": true,
@@ -1266,48 +1313,18 @@
         "role": "screenshot",
         "detectedMime": "image/png",
         "visible": true,
-        "informativePixelRatio": 0.4067,
+        "informativePixelRatio": 0.4098,
         "assetMatchRatio": 1,
-        "fidelityMeanAbsDiff": 5.04,
+        "fidelityMeanAbsDiff": 4.12,
         "fidelityPass": true
-      },
-      {
-        "role": "screenshot",
-        "detectedMime": "image/png",
-        "visible": true,
-        "informativePixelRatio": 0.7515,
-        "assetMatchRatio": 1,
-        "fidelityMeanAbsDiff": 5.59,
-        "fidelityPass": true,
-        "cropSourceRect": {
-          "x": 448,
-          "y": 264,
-          "width": 352,
-          "height": 308
-        }
-      },
-      {
-        "role": "screenshot",
-        "detectedMime": "image/png",
-        "visible": true,
-        "informativePixelRatio": 0.2228,
-        "assetMatchRatio": 1,
-        "fidelityMeanAbsDiff": 5.96,
-        "fidelityPass": true,
-        "cropSourceRect": {
-          "x": 72,
-          "y": 156,
-          "width": 316,
-          "height": 104
-        }
       },
       {
         "role": "logo",
         "detectedMime": "image/png",
         "visible": true,
-        "informativePixelRatio": 0.1897,
+        "informativePixelRatio": 0.2162,
         "assetMatchRatio": 1,
-        "fidelityMeanAbsDiff": 6.46,
+        "fidelityMeanAbsDiff": 7.44,
         "fidelityPass": true
       }
     ],
@@ -1317,9 +1334,9 @@
         "text": "Sua lista de presentes, linda e sem planilha",
         "rect": {
           "xPct": 5.185,
-          "yPct": 12.37,
-          "widthPct": 51.852,
-          "heightPct": 12.249
+          "yPct": 11.63,
+          "widthPct": 59.259,
+          "heightPct": 12.72
         },
         "emphasis": "primary",
         "renderedBy": "renderer",
@@ -1331,8 +1348,8 @@
         "text": "Convidados escolhem, presenteiam e confirmam presença no site do casal.",
         "rect": {
           "xPct": 5.185,
-          "yPct": 25.926,
-          "widthPct": 50,
+          "yPct": 25.704,
+          "widthPct": 51.852,
           "heightPct": 4.77
         },
         "emphasis": "secondary",
@@ -1344,8 +1361,8 @@
         "kind": "cta",
         "text": "Criar meu site",
         "rect": {
-          "xPct": 7.037,
-          "yPct": 32.815,
+          "xPct": 74.537,
+          "yPct": 26.148,
           "widthPct": 18.426,
           "heightPct": 4.296
         },
@@ -1364,12 +1381,12 @@
           "kind": "text",
           "rect": {
             "xPct": 5.185,
-            "yPct": 12.37,
-            "widthPct": 51.852,
-            "heightPct": 12.249
+            "yPct": 11.63,
+            "widthPct": 59.259,
+            "heightPct": 12.72
           },
           "text": "Sua lista de presentes, linda e sem planilha",
-          "fontSizePx": 52,
+          "fontSizePx": 54,
           "lineCount": 3
         },
         {
@@ -1377,8 +1394,8 @@
           "kind": "text",
           "rect": {
             "xPct": 5.185,
-            "yPct": 25.926,
-            "widthPct": 50,
+            "yPct": 25.704,
+            "widthPct": 51.852,
             "heightPct": 4.77
           },
           "text": "Convidados escolhem, presenteiam e confirmam presença no site do casal.",
@@ -1389,8 +1406,8 @@
           "id": "cta",
           "kind": "text",
           "rect": {
-            "xPct": 7.037,
-            "yPct": 32.815,
+            "xPct": 74.537,
+            "yPct": 26.148,
             "widthPct": 18.426,
             "heightPct": 4.296
           },
@@ -1406,31 +1423,9 @@
           "role": "screenshot",
           "rect": {
             "xPct": 2.593,
-            "yPct": 44.593,
+            "yPct": 42.815,
             "widthPct": 94.815,
             "heightPct": 53.333
-          }
-        },
-        {
-          "id": "screenshot",
-          "kind": "asset",
-          "role": "screenshot",
-          "rect": {
-            "xPct": 60.741,
-            "yPct": 3.926,
-            "widthPct": 36.667,
-            "heightPct": 25.704
-          }
-        },
-        {
-          "id": "screenshot",
-          "kind": "asset",
-          "role": "screenshot",
-          "rect": {
-            "xPct": 60.741,
-            "yPct": 31.111,
-            "widthPct": 36.667,
-            "heightPct": 9.63
           }
         },
         {
@@ -1439,7 +1434,7 @@
           "role": "logo",
           "rect": {
             "xPct": 5.185,
-            "yPct": 7.481,
+            "yPct": 6.444,
             "widthPct": 17.037,
             "heightPct": 2.963
           }

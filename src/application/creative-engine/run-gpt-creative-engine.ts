@@ -3,6 +3,7 @@ import type { IcaroAIResponse } from "../ai/icaro.types.js";
 import type { ObjectStoragePort } from "../ports/object-storage.port.js";
 import { extractJson } from "../../shared/utils/skill-parsing.js";
 import { extractCommercialFactsFromText } from "../../shared/utils/commercial-fact-normalizer.js";
+import { evaluateInstitutionalBaseAlpha, resolveEditorialFamilyFromContext, scanEditorialBaseText, type EditorialBaseAlphaCoverage, type EditorialBaseTextDiagnostic } from "./editorial-base-checks.js";
 import { describePtBrCopyWarnings, findPtBrMissingAccents } from "../../shared/utils/ptbr-copy-check.js";
 import {
   buildCreativePlanPrompt,
@@ -111,6 +112,8 @@ export type GptCreativeEngineDeps = {
   referenceAssetResolver?: ReferenceAssetResolverPort;
   computeAssetSuitability?(buffer: Buffer): Promise<AssetSuitabilityScore | undefined>;
   readImageDimensions(buffer: Buffer): Promise<{ width?: number; height?: number }>;
+  /** Cobertura de alfa da imagem base (modo editorial) — preflight antes do renderer. */
+  measureImageAlpha?(buffer: Buffer): Promise<EditorialBaseAlphaCoverage>;
   /** ETAPA 3 (Rodada 4, benchmark de qualidade criativa) — medida determinística e gratuita do
    * fundo real de uma região (ver `region-pixel-stats.ts`). Opcional e best-effort: `undefined`
    * (não injetado, ou falha de leitura) cai no tratamento mais conservador
@@ -182,6 +185,8 @@ export type CreativeEngineCostBreakdown = {
   /** Gate técnico (`checkCreativeVisualIntegrity` + `checkProductionGuidelinesCompliance`) — toda
    * rodada em que o gate técnico roda. */
   technicalQualityGate: number;
+  /** Modo editorial: leitura de texto da IMAGEM BASE (uma chamada leve de visão, só a base). */
+  baseTextScan?: number;
   /** Visual Quality Score — só roda depois que o gate técnico já passou, toda rodada em que isso
    * acontece. */
   visualQualityScore: number;
@@ -226,6 +231,12 @@ export type CreativeEngineArtifactProvenance = {
   assetVerification?: RenderEditorialCreativeResult["assetVerification"];
   /** Observabilidade da homologação: variante escolhida pelo compositor editorial e por quê (nunca muda comportamento). */
   editorialComposition?: { selectedVariant: string; variantSelectionReasons: string[]; diagnostics: RenderEditorialCreativeResult["composition"] };
+  /** Cobertura de alfa da base da IA (preflight editorial). */
+  baseAlphaCoverage?: EditorialBaseAlphaCoverage & { nonOpaqueRatio: number; requestedBackground?: string };
+  /** Leitura de texto da base da IA (antes do renderer). */
+  baseTextDiagnostic?: EditorialBaseTextDiagnostic;
+  /** Ledger de proveniência textual usado pelo gate. */
+  textProvenanceLedger?: unknown;
 };
 
 export type GptCreativeEngineResult = {
@@ -446,7 +457,7 @@ function buildGuardInputFromPlan(plan: CreativePlan, context: CreativeContext): 
 
 async function requestGeneratedImage(
   icaro: IcaroBrainPort,
-  input: { prompt: string; format: string; referenceImageUrl?: string; creativeGuard: CreativeEngineImageGuardInput; executionId: string; correlationId: string },
+  input: { prompt: string; format: string; referenceImageUrl?: string; creativeGuard: CreativeEngineImageGuardInput; executionId: string; correlationId: string; background?: "opaque" },
 ): Promise<{ uri?: string; response?: IcaroAIResponse }> {
   const response = await icaro.request({
     taskType: "image_generation",
@@ -460,6 +471,7 @@ async function requestGeneratedImage(
       imageAspectRatio: input.format,
       referenceImageUrl: input.referenceImageUrl,
       creativeGuard: input.creativeGuard,
+      ...(input.background ? { imageBackground: input.background } : {}),
     },
     expectedOutput: "json",
     priority: "quality",
@@ -639,6 +651,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     preCompositionAnalysis: 0,
     ghostTextNeutralization: 0,
     technicalQualityGate: 0,
+    baseTextScan: 0,
     visualQualityScore: 0,
     repairRoundsCost: 0,
     total: 0,
@@ -902,8 +915,13 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       );
     }
 
+    const editorialFamily = input.experimentalEditorialMode ? resolveEditorialFamilyFromContext(context) : undefined;
+    // Base institucional é a protagonista e precisa ser opaca (cenário B: 2 de 3 bases vieram como
+    // recorte com transparência sob background "auto").
+    const requestedBackground = editorialFamily === "premium_institutional" ? ("opaque" as const) : undefined;
     const imagePrompt = buildImageGenerationPromptFromPlan(planForGeneration, context, {
       compositionMode: input.experimentalEditorialMode ? "editorial_experimental" : "standard",
+      ...(editorialFamily ? { editorialFamily } : {}),
     });
     const creativeGuard = buildGuardInputFromPlan(plan, context);
 
@@ -916,6 +934,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       creativeGuard,
       executionId: input.executionRunId,
       correlationId: input.creativeEngineRunId,
+      ...(requestedBackground ? { background: requestedBackground } : {}),
     });
     track("imageGeneration", imageResponse);
     imageModel = imageResponse?.model?.id ?? imageModel;
@@ -959,6 +978,30 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
           { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds },
         );
       }
+
+      // Preflight de alfa ANTES do renderer: base institucional significativamente transparente
+      // falha fechada (sem preencher o buraco em silêncio e sem regenerar escondido).
+      let baseAlphaCoverage: CreativeEngineArtifactProvenance["baseAlphaCoverage"];
+      if (deps.measureImageAlpha) {
+        const coverage = await deps.measureImageAlpha(baseWithAssetsBuffer);
+        const alphaVerdict = evaluateInstitutionalBaseAlpha(coverage);
+        baseAlphaCoverage = { ...coverage, nonOpaqueRatio: alphaVerdict.nonOpaqueRatio, ...(requestedBackground ? { requestedBackground } : {}) };
+        if (editorialFamily === "premium_institutional" && !alphaVerdict.ok) {
+          return fail(
+            `INSTITUTIONAL_BASE_ALPHA_INVALID: ${alphaVerdict.reason}.`,
+            "INSTITUTIONAL_BASE_ALPHA_INVALID",
+            { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds, artifactProvenance: { compositionMode: "editorial_experimental", baseImage: baseImageArtifact, baseAlphaCoverage } as CreativeEngineArtifactProvenance },
+          );
+        }
+      } else if (editorialFamily === "premium_institutional") {
+        warnings.push("ALPHA_PREFLIGHT_UNAVAILABLE: medidor de alfa não injetado — base institucional não verificada.");
+      }
+
+      // Prova direta de texto da BASE (antes de qualquer texto/asset do renderer): uma chamada leve
+      // de visão só sobre a base. Alimenta o ledger de proveniência do gate.
+      const baseTextDiagnostic = baseImageArtifact
+        ? await scanEditorialBaseText(deps.creativeBrain, { baseImageUrl: baseImageArtifact.url, specialistId: SPECIALIST_ID, onCost: (response) => track("baseTextScan", response) })
+        : undefined;
 
       const editorialAssets: { role: CreativePlanAssetRole; url: string; buffer: Buffer }[] = [];
       for (const asset of [productAsset, screenshotAsset, logoAsset].filter((candidate): candidate is NonNullable<typeof productAsset> => Boolean(candidate))) {
@@ -1046,6 +1089,8 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         renderedGeometry: editorial.renderedGeometry,
         assetVerification: editorial.assetVerification,
         ...(editorial.composition ? { editorialComposition: { selectedVariant: editorial.composition.variant, variantSelectionReasons: editorial.composition.selectionReasons, diagnostics: editorial.composition } } : {}),
+        ...(baseAlphaCoverage ? { baseAlphaCoverage } : {}),
+        ...(baseTextDiagnostic ? { baseTextDiagnostic } : {}),
       };
       const qualityGate = await evaluateCreativeQualityGate(deps.creativeBrain, {
         finalImageUrl: uploaded.url,
@@ -1057,8 +1102,10 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         plan: planForGate,
         specialistId: SPECIALIST_ID,
         assetPixelEvidence: editorial.assetVerification ?? [],
+        ...(baseTextDiagnostic ? { baseTextDiagnostic } : {}),
         onCost: (response) => track("technicalQualityGate", response),
       });
+      if (qualityGate.textProvenanceLedger) artifactProvenance.textProvenanceLedger = qualityGate.textProvenanceLedger;
 
       if (qualityGate.verdict !== "pass") {
         return fail("CREATIVE_QUALITY_GATE_NOT_PASSED: o caminho editorial experimental gerou a peca, mas o Quality Gate tecnico reprovou.", "CREATIVE_QUALITY_GATE_NOT_PASSED", {

@@ -1253,7 +1253,7 @@ function buildEditorialPromptSanitizer(plan: CreativePlan, brandLiterals: readon
   return { sanitize, stripBrandLiterals };
 }
 
-function buildEditorialImageGenerationPromptFromPlan(plan: CreativePlan, context: CreativeContext): string {
+function buildEditorialImageGenerationPromptFromPlan(plan: CreativePlan, context: CreativeContext, editorialFamily?: "product_offer" | "premium_institutional" | "digital_service"): string {
   const hasProductPhoto = context.assets.some((asset) => asset.role === "product_photo");
   const { sanitize, stripBrandLiterals } = buildEditorialPromptSanitizer(plan, resolveEditorialBrandLiterals(context), { neutralizeProduct: hasProductPhoto });
   const visualLines = [
@@ -1316,6 +1316,11 @@ function buildEditorialImageGenerationPromptFromPlan(plan: CreativePlan, context
   if (plan.forbiddenElements.length > 0) {
     visualLines.push(`Also avoid these visual elements: ${plan.forbiddenElements.map(stripBrandLiterals).join(", ")}.`);
   }
+  if (editorialFamily === "premium_institutional") {
+    // Base institucional = protagonista visual (achado do cenário B: 2 de 3 bases vieram como recorte
+    // sobre transparência). Genérico, sem tema fixo.
+    visualLines.push("FULL-CANVAS IMAGE: one complete, continuous photographic scene that fills the entire canvas edge to edge, with a complete opaque background in every pixel. No transparent background, no transparent areas, no isolated cut-out subject, no sticker sheet, no asset sheet, no floating cut-out collage on transparency, no blank or empty regions.");
+  }
   visualLines.push("The final image must contain zero readable text. This includes decorative typography, placeholder words, labels, product names, brand names, numbers, currency, acronyms, pseudo-text, and fake UI strings.");
   return visualLines.join("\n");
 }
@@ -1336,8 +1341,8 @@ export function resolveEditorialProductAssetRequirement(plan: CreativePlan, cont
   };
 }
 
-export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: CreativeContext, options: { compositionMode?: ImageGenerationPromptMode } = {}): string {
-  if (options.compositionMode === "editorial_experimental") return buildEditorialImageGenerationPromptFromPlan(plan, context);
+export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: CreativeContext, options: { compositionMode?: ImageGenerationPromptMode; editorialFamily?: "product_offer" | "premium_institutional" | "digital_service" } = {}): string {
+  if (options.compositionMode === "editorial_experimental") return buildEditorialImageGenerationPromptFromPlan(plan, context, options.editorialFamily);
 
   const hasScreenshotAsset = context.assets.some((asset) => asset.role === "screenshot");
   const hasLogoAsset = context.assets.some((asset) => asset.role === "logo");

@@ -1575,7 +1575,10 @@ test("runGptCreativeEngine editorial: layoutPlan.kind=subheadline normaliza sem 
   assert.equal(result.publishable, true);
   assert.equal(icaro.calls.filter((call) => call.taskType === "analysis").length, 1, "kind recuperavel nao deveria consumir retry do diretor");
   assert.equal(icaro.calls.some((call) => call.taskType === "image_generation"), true, "image stage deveria ser alcancado");
-  assert.equal(icaro.calls.filter((call) => call.taskType === "review").length, 2, "quality gate tecnico e score visual deveriam rodar");
+  // Editorial: scan de texto da base (1 imagem: só a base) + quality gate tecnico + score visual.
+  const reviews = icaro.calls.filter((call) => call.taskType === "review");
+  assert.equal(reviews.length, 3, "scan da base, quality gate tecnico e score visual deveriam rodar");
+  assert.equal(reviews[0].imageUrls.length, 1, "primeira chamada de visao e o scan so da base");
   assert.ok(rendererInput, "renderer editorial deveria executar");
   assert.equal(rendererInput.plan.layoutPlan[2].kind, "support");
   assert.equal(rendererInput.plan.editorialLayoutPlanNormalization.normalizedKinds[0].invalidValue, "subheadline");

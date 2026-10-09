@@ -8,6 +8,7 @@ import sharp from "sharp";
 import { runGptCreativeEngine } from "../dist/application/creative-engine/run-gpt-creative-engine.js";
 import { preflightEditorialAsset, renderEditorialCreative } from "../dist/infrastructure/rendering/editorial-creative-renderer.js";
 import { createReferenceAssetResolver } from "../dist/application/assets/reference-asset-policy.js";
+import { measureImageAlphaCoverage } from "../dist/infrastructure/image-processing/image-alpha-coverage.js";
 
 // Storage gerenciado em memória: o resolver REAL (política de origem/posse) lê daqui pela chave —
 // nenhum fetch HTTP de reference asset. `currentFixtureAssets`/`currentDownloads` são trocados por
@@ -110,6 +111,7 @@ function fakeIcaro(scripts) {
 }
 
 const completed = (content, cost = 0.001) => ({ status: "completed", model: { id: "fake-model" }, content, cost: { estimated: cost, currency: "USD" }, durationMs: 10 });
+const cleanBaseScan = () => completed(JSON.stringify({ texts: [] }), 0.0004);
 const passingReview = () => completed(JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }), 0);
 const passingVisualScore = () => completed(JSON.stringify(Object.fromEntries(VISUAL_QUALITY_DIMENSION_KEYS.map((key) => [key, { score: 8, justification: `${key}: sólido.` }]))), 0);
 
@@ -146,6 +148,7 @@ function deps(icaro, stored) {
     renderEditorialCreative,
     preflightEditorialAsset,
     referenceAssetResolver,
+    measureImageAlpha: measureImageAlphaCoverage,
   };
 }
 
@@ -179,7 +182,7 @@ test("e2e editorial sem OpenAI: diretor com textZones geometricamente inválidos
     text_generation: [],
     analysis: [completed(directorPlanWithInvalidGeometry(), 0.003)],
     image_generation: [completed(JSON.stringify({ images: [{ uri: BASE_URL }] }), 0.08)],
-    review: [passingReview(), passingVisualScore()],
+    review: [cleanBaseScan(), passingReview(), passingVisualScore()],
   });
   const stored = [];
   const result = await withFixtureFetch({ [PRODUCT_URL]: PRODUCT_JPEG, [LOGO_URL]: LOGO_PNG, [BASE_URL]: BASE_PNG }, async (downloads) => {
@@ -216,6 +219,15 @@ test("e2e editorial sem OpenAI: diretor com textZones geometricamente inválidos
   assert.ok(composition.variantSelectionReasons.length > 0);
   assert.equal(composition.diagnostics.variant, composition.selectedVariant);
   assert.equal(result.qualityGate.verdict, "pass", JSON.stringify(result.qualityGate.issues));
+  // Prova de texto da base + ledger + alfa persistidos; product_offer não força fundo opaco.
+  assert.equal(result.artifactProvenance.baseTextDiagnostic.status, "AVAILABLE");
+  assert.equal(result.artifactProvenance.baseTextDiagnostic.target, "OPENAI_BASE");
+  assert.equal(icaro.calls.find((call) => call.taskType === "review").imageUrls.length, 1, "scan só da base");
+  assert.equal(result.artifactProvenance.textProvenanceLedger.baseTextStatus, "AVAILABLE");
+  assert.ok(result.artifactProvenance.textProvenanceLedger.entries.some((entry) => entry.sourceType === "RENDERER_TEXT" && entry.role === "cta"));
+  assert.equal(result.artifactProvenance.baseAlphaCoverage.hasAlphaChannel, false);
+  assert.ok(result.costBreakdown.baseTextScan > 0);
+  assert.equal(icaro.calls.find((call) => call.taskType === "image_generation").context.imageBackground, undefined);
   assert.ok(stored.some((item) => /editorial-base/.test(item.key)) && stored.some((item) => /editorial-final/.test(item.key)), "base e final persistidas");
 });
 
@@ -256,4 +268,70 @@ test("e2e editorial sem OpenAI: logo inválida também para antes de qualquer IA
 
   assert.equal(result.errorCode, "EDITORIAL_ASSET_DECODE_FAILED");
   assert.equal(icaro.calls.length, 0);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Base institucional opaca (cenário B: 2 de 3 bases vieram como recorte com transparência).
+// ---------------------------------------------------------------------------------------------
+
+const B_HEADLINE = "O casamento organizado como vocês sonharam";
+const B_SUB = "Site, lista de presentes e confirmação de presença em um só lugar.";
+const B_CTA = "Conheça o Rumo ao Altar";
+
+function institutionalDirectorPlan() {
+  const plan = JSON.parse(directorPlanWithInvalidGeometry());
+  return JSON.stringify({
+    ...plan,
+    objective: "Peça institucional premium da marca",
+    title: "Casamento organizado",
+    description: "Peça institucional premium sem venda direta",
+    headline: B_HEADLINE,
+    subheadline: B_SUB,
+    cta: B_CTA,
+    allowedRenderedTexts: [B_HEADLINE, B_SUB, B_CTA],
+    requiredRenderedFacts: [],
+    compositionIntent: "Cena editorial como protagonista e espaço para a copy",
+    assetUsage: { [LOGO_URL]: "logo oficial" },
+    assetPlacements: [],
+    textZones: plan.textZones.filter((zone) => zone.kind !== "price").map((zone) => ({ ...zone, text: zone.kind === "headline" ? B_HEADLINE : zone.kind === "subheadline" ? B_SUB : B_CTA })),
+    requiredElements: ["headline", "subheadline", "cta", "logo"],
+    artDirection: { ...plan.artDirection, concept: "Cena editorial de cerimônia ao entardecer", visualFocus: "Atmosfera da cerimônia ocupando a peça", elementHierarchy: ["cena", "headline", "cta", "logo"] },
+    layoutPlan: plan.layoutPlan.map((zone) => (zone.kind === "hero" ? { ...zone, rationale: "Cena editorial como foco principal" } : zone)),
+  });
+}
+
+function institutionalInput() {
+  return { ...input([{ url: LOGO_URL, role: "logo", description: "Logo oficial Rumo ao Altar" }]), creativeContext: { ...input([]).creativeContext, objective: "Institucional premium 4:5", assets: [{ url: LOGO_URL, role: "logo", description: "Logo oficial Rumo ao Altar" }], confirmedFacts: [] } };
+}
+
+test("e2e editorial institucional: pede fundo opaco + prompt full-canvas; base 46% transparente falha ANTES do renderer (INSTITUTIONAL_BASE_ALPHA_INVALID)", async () => {
+  const cutout = await sharp({ create: { width: 1024, height: 1280, channels: 4, background: { r: 230, g: 200, b: 160, alpha: 1 } } })
+    .composite([{ input: await sharp({ create: { width: 1024, height: 595, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer(), left: 0, top: 685, blend: "dest-in" }])
+    .png().toBuffer();
+  const icaro = fakeIcaro({ text_generation: [], analysis: [completed(institutionalDirectorPlan(), 0.003)], image_generation: [completed(JSON.stringify({ images: [{ uri: BASE_URL }] }), 0.07)], review: [] });
+  const stored = [];
+  const result = await withFixtureFetch({ [LOGO_URL]: LOGO_PNG, [BASE_URL]: cutout }, () => runGptCreativeEngine(deps(icaro, stored), institutionalInput()));
+
+  const imageCall = icaro.calls.find((call) => call.taskType === "image_generation");
+  assert.equal(imageCall.context.imageBackground, "opaque");
+  assert.match(imageCall.prompt, /FULL-CANVAS IMAGE/);
+  assert.match(imageCall.prompt, /no transparent background/i);
+  assert.equal(result.errorCode, "INSTITUTIONAL_BASE_ALPHA_INVALID", result.error);
+  assert.ok(result.artifactProvenance.baseAlphaCoverage.nonOpaqueRatio > 0.4);
+  assert.equal(result.artifactProvenance.baseAlphaCoverage.requestedBackground, "opaque");
+  assert.equal(icaro.calls.filter((call) => call.taskType === "review").length, 0, "nem scan nem gate depois de base inválida");
+  assert.equal(icaro.calls.filter((call) => call.taskType === "image_generation").length, 1, "sem regeneração automática");
+  assert.ok(!stored.some((item) => /editorial-final/.test(item.key)), "renderer não rodou");
+});
+
+test("e2e editorial institucional: base opaca segue para o renderer com alfa e scan registrados", async () => {
+  const opaque = await sharp({ create: { width: 1024, height: 1280, channels: 3, background: "#5A3A2E" } }).png().toBuffer();
+  const icaro = fakeIcaro({ text_generation: [], analysis: [completed(institutionalDirectorPlan(), 0.003)], image_generation: [completed(JSON.stringify({ images: [{ uri: BASE_URL }] }), 0.07)], review: [cleanBaseScan(), passingReview(), passingVisualScore()] });
+  const result = await withFixtureFetch({ [LOGO_URL]: LOGO_PNG, [BASE_URL]: opaque }, () => runGptCreativeEngine(deps(icaro, []), institutionalInput()));
+
+  assert.equal(result.error, undefined, result.error);
+  assert.equal(result.artifactProvenance.baseAlphaCoverage.nonOpaqueRatio, 0);
+  assert.equal(result.artifactProvenance.editorialComposition.diagnostics.baseAnalysis !== undefined, true);
+  assert.equal(result.artifactProvenance.baseTextDiagnostic.status, "AVAILABLE");
+  assert.ok(result.artifactProvenance.textProvenanceLedger.entries.some((entry) => entry.sourceType === "LOGO_ASSET" && entry.alternatives.includes("rumo ao altar")));
 });

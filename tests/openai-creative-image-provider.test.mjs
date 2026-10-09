@@ -124,3 +124,14 @@ test("OpenAiCreativeImageProvider: propaga falha do mediaProvider.generate() com
   const provider = new OpenAiCreativeImageProvider(media);
   await assert.rejects(() => provider.execute(baseRequest()), /falha simulada/);
 });
+
+test("OpenAiCreativeImageProvider: repassa background explícito (opaque) só quando o motor pede; sem pedido não envia nada", async () => {
+  const media = fakeMediaProvider();
+  const provider = new OpenAiCreativeImageProvider(media);
+  await provider.execute(baseRequest({ imageAspectRatio: "4:5", imageBackground: "opaque" }));
+  await provider.execute(baseRequest({ imageAspectRatio: "4:5" }));
+  await provider.execute(baseRequest({ imageAspectRatio: "4:5", imageBackground: "qualquer-coisa" }));
+  assert.equal(media.calls[0].params.background, "opaque");
+  assert.equal("background" in media.calls[1].params, false);
+  assert.equal("background" in media.calls[2].params, false);
+});

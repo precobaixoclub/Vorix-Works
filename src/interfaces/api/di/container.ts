@@ -145,6 +145,7 @@ import { compositeScreenshotIntoDeviceMockup } from "../../../infrastructure/med
 import { renderCreativePlanTextZones } from "../../../infrastructure/rendering/render-creative-plan-text-zones.js";
 import { createReferenceAssetResolver, type ReferenceAssetResolverPort } from "../../../application/assets/reference-asset-policy.js";
 import { preflightEditorialAsset, renderEditorialCreative } from "../../../infrastructure/rendering/editorial-creative-renderer.js";
+import { measureImageAlphaCoverage } from "../../../infrastructure/image-processing/image-alpha-coverage.js";
 import { computeAssetSuitabilityScore } from "../../../infrastructure/image-processing/product-background.js";
 import { computeRegionPixelStats, applyLocalBlur, applyLocalScrim, extractRegionBuffer } from "../../../infrastructure/image-processing/region-pixel-stats.js";
 import sharp from "sharp";
@@ -1063,6 +1064,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     referenceAssetResolver,
     computeAssetSuitability: computeAssetSuitabilityScore,
     readImageDimensions: readCreativeImageDimensions,
+    measureImageAlpha: measureImageAlphaCoverage,
     computeRegionPixelStats,
     applyLocalBlur,
     applyLocalScrim,

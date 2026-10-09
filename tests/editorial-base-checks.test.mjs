@@ -1,0 +1,88 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import sharp from "sharp";
+import {
+  evaluateInstitutionalBaseAlpha,
+  INSTITUTIONAL_BASE_MAX_NON_OPAQUE_RATIO,
+  resolveEditorialFamilyFromContext,
+  scanEditorialBaseText,
+} from "../dist/application/creative-engine/editorial-base-checks.js";
+import { measureImageAlphaCoverage } from "../dist/infrastructure/image-processing/image-alpha-coverage.js";
+import { buildImageGenerationPromptFromPlan } from "../dist/shared/utils/gpt-creative-plan.types.js";
+
+// Base OpenAI REAL do cenário B (execution-muzqmi4q-f7qx3f), pixel-idêntica: recorte com ~45% alfa 0.
+const B_BASE_CUTOUT = await readFile(new URL("./fixtures/editorial/scenario-b-openai-base.webp", import.meta.url));
+
+const context = (assets = [], confirmedFacts = []) => ({ brandName: "Marca", objective: "x", channel: "instagram", format: "4:5", ideaText: "", assets, confirmedFacts });
+
+test("resolveEditorialFamilyFromContext: mesma regra do renderer, decidida antes da base", () => {
+  assert.equal(resolveEditorialFamilyFromContext(context([{ url: "u", role: "screenshot" }])), "digital_service");
+  assert.equal(resolveEditorialFamilyFromContext(context([{ url: "u", role: "product_photo" }])), "product_offer");
+  assert.equal(resolveEditorialFamilyFromContext(context([], ["Preço atual: R$ 149,00"])), "product_offer");
+  assert.equal(resolveEditorialFamilyFromContext(context([{ url: "u", role: "logo" }])), "premium_institutional");
+});
+
+test("alfa institucional: opaca passa; borda/artefato pequeno passa; 10% e 46,5% falham", () => {
+  const coverage = (transparent, semi) => ({ hasAlphaChannel: true, transparentRatio: transparent, semiTransparentRatio: semi, opaqueRatio: 1 - transparent - semi });
+  assert.equal(INSTITUTIONAL_BASE_MAX_NON_OPAQUE_RATIO, 0.01);
+  assert.equal(evaluateInstitutionalBaseAlpha({ hasAlphaChannel: false, transparentRatio: 0, semiTransparentRatio: 0, opaqueRatio: 1 }).ok, true);
+  assert.equal(evaluateInstitutionalBaseAlpha(coverage(0.002, 0.005)).ok, true, "anel de antialias de borda");
+  assert.equal(evaluateInstitutionalBaseAlpha(coverage(0.1, 0)).ok, false);
+  const real = evaluateInstitutionalBaseAlpha(coverage(0.44, 0.025));
+  assert.equal(real.ok, false);
+  assert.match(real.reason, /46\.5% não opaca/);
+});
+
+test("measureImageAlphaCoverage: base real recortada de B é reprovada; JPEG opaco e PNG opaco passam", async () => {
+  const cutout = await measureImageAlphaCoverage(B_BASE_CUTOUT);
+  assert.equal(cutout.hasAlphaChannel, true);
+  assert.ok(cutout.transparentRatio > 0.4, JSON.stringify(cutout));
+  assert.equal(evaluateInstitutionalBaseAlpha(cutout).ok, false);
+  const jpeg = await sharp({ create: { width: 64, height: 80, channels: 3, background: "#806040" } }).jpeg().toBuffer();
+  assert.deepEqual(await measureImageAlphaCoverage(jpeg), { hasAlphaChannel: false, transparentRatio: 0, semiTransparentRatio: 0, opaqueRatio: 1 });
+  const opaquePng = await sharp({ create: { width: 64, height: 80, channels: 4, background: { r: 10, g: 20, b: 30, alpha: 1 } } }).png().toBuffer();
+  assert.equal(evaluateInstitutionalBaseAlpha(await measureImageAlphaCoverage(opaquePng)).ok, true);
+});
+
+function fakeVision(response) {
+  const calls = [];
+  return { calls, request: async (request) => { calls.push(request); if (response instanceof Error) throw response; return response; } };
+}
+
+test("scanEditorialBaseText: uma chamada leve só com a base; textos normalizados e bbox", async () => {
+  const icaro = fakeVision({ status: "completed", content: JSON.stringify({ texts: [{ text: "RUMO AO ALTAR", region: { xPct: 40, yPct: 10, widthPct: 20, heightPct: 4 } }, "Sale"] }), cost: { estimated: 0.0004 } });
+  const costs = [];
+  const scan = await scanEditorialBaseText(icaro, { baseImageUrl: "https://x/base.png", specialistId: "s", onCost: (response) => costs.push(response) });
+  assert.equal(icaro.calls.length, 1);
+  assert.deepEqual(icaro.calls[0].imageUrls, ["https://x/base.png"]);
+  assert.equal(scan.status, "AVAILABLE");
+  assert.equal(scan.target, "OPENAI_BASE");
+  assert.deepEqual(scan.texts.map((item) => item.normalizedText), ["rumo ao altar", "sale"]);
+  assert.deepEqual(scan.texts[0].bbox, { xPct: 40, yPct: 10, widthPct: 20, heightPct: 4 });
+  assert.equal(costs.length, 1);
+});
+
+test("scanEditorialBaseText: base sem texto = AVAILABLE vazio; falha/resposta inválida = NOT_AVAILABLE (nunca PASS falso)", async () => {
+  assert.deepEqual((await scanEditorialBaseText(fakeVision({ status: "completed", content: '{"texts": []}' }), { baseImageUrl: "u", specialistId: "s" })).texts, []);
+  for (const response of [{ status: "failed", content: "" }, { status: "completed", content: "isto não é json" }, { status: "completed", content: '{"outra": 1}' }, new Error("rede")]) {
+    const scan = await scanEditorialBaseText(fakeVision(response), { baseImageUrl: "u", specialistId: "s" });
+    assert.equal(scan.status, "NOT_AVAILABLE", JSON.stringify(response));
+  }
+});
+
+test("prompt editorial institucional pede imagem full-canvas opaca, sem recorte — genérico, só para institucional", () => {
+  const plan = {
+    objective: "x", angle: "x", targetAudience: "x", title: "", description: "", headline: "H", subheadline: "S", cta: "C",
+    visualDirection: "cena editorial", compositionIntent: "cena protagonista", assetUsage: {}, assetPlacements: [], textZones: [],
+    allowedRenderedTexts: ["H", "S", "C"], requiredRenderedFacts: [], requiredElements: [], forbiddenElements: [], visualDensity: "balanced", styleNotes: "", rationale: "",
+    artDirection: { concept: "c", visualFocus: "v", elementHierarchy: [], primaryMassPct: 50, contrastStrategy: "", chromaticDirection: "", atmosphere: "", backgroundTreatment: "", productTextRelationship: "", avoidedCliches: [], justifiedCliches: [] },
+    layoutPlan: [],
+  };
+  const institutional = buildImageGenerationPromptFromPlan(plan, context([{ url: "u", role: "logo" }]), { compositionMode: "editorial_experimental", editorialFamily: "premium_institutional" });
+  assert.match(institutional, /FULL-CANVAS IMAGE/);
+  for (const phrase of [/no transparent background/i, /no isolated cut-out/i, /no sticker sheet/i, /no asset sheet/i, /no floating cut-out collage/i]) assert.match(institutional, phrase);
+  assert.doesNotMatch(institutional, /casamento|wedding|Rumo ao Altar/i);
+  const offer = buildImageGenerationPromptFromPlan(plan, context([{ url: "u", role: "product_photo" }]), { compositionMode: "editorial_experimental", editorialFamily: "product_offer" });
+  assert.doesNotMatch(offer, /FULL-CANVAS IMAGE/);
+});

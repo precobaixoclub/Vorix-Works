@@ -90,6 +90,9 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
     // /v1/images/edits` (multipart, aceita uma imagem de entrada real) em vez de `/generations`
     // (só texto) — o modelo passa a enxergar o produto de verdade, não uma paráfrase dele.
     const referenceImageBuffer = Buffer.isBuffer(request.params.referenceImageBuffer) ? (request.params.referenceImageBuffer as Buffer) : undefined;
+    // `background` do gpt-image-1 ("opaque" | "transparent" | "auto"). Só enviado quando o
+    // chamador pede explicitamente — sem ele vale o padrão "auto" da OpenAI (comportamento anterior).
+    const background = request.params.background === "opaque" || request.params.background === "transparent" || request.params.background === "auto" ? request.params.background : undefined;
 
     try {
       const controller = new AbortController();
@@ -100,13 +103,13 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
             headers: { authorization: `Bearer ${apiKey}` },
             // Sem "content-type" de propósito — o `fetch`/`undici` calcula o boundary do
             // multipart automaticamente a partir do `FormData`; setar manualmente quebra o parse.
-            body: buildEditsFormData({ modelId: request.modelId, prompt, size, quality, referenceImageBuffer }),
+            body: buildEditsFormData({ modelId: request.modelId, prompt, size, quality, referenceImageBuffer, background }),
             signal: controller.signal,
           })
         : await this.httpClient(`${baseUrl}/v1/images/generations`, {
             method: "POST",
             headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-            body: JSON.stringify({ model: request.modelId, prompt, size, quality, n: 1 }),
+            body: JSON.stringify({ model: request.modelId, prompt, size, quality, n: 1, ...(background ? { background } : {}) }),
             signal: controller.signal,
           });
       clearTimeout(timeout);
@@ -164,13 +167,14 @@ export class OpenAiImageProviderAdapter implements AiMediaProviderAdapterPort {
   }
 }
 
-function buildEditsFormData(input: { modelId: string; prompt: string; size: string; quality: string; referenceImageBuffer: Buffer }): FormData {
+function buildEditsFormData(input: { modelId: string; prompt: string; size: string; quality: string; referenceImageBuffer: Buffer; background?: string }): FormData {
   const formData = new FormData();
   formData.append("model", input.modelId);
   formData.append("prompt", input.prompt);
   formData.append("size", input.size);
   formData.append("quality", input.quality);
   formData.append("n", "1");
+  if (input.background) formData.append("background", input.background);
   formData.append("image", new Blob([input.referenceImageBuffer], { type: "image/png" }), "reference.png");
   return formData;
 }

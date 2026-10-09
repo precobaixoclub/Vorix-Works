@@ -1228,3 +1228,84 @@ test("jitter: duplicidade legítima screenshot + CTA deslocado continua aceita (
   const twiceCta = await evaluateCreativeQualityGate(visionReturning([], duplicated(C_CTA, [CTA_REGION, jitteredCta])), cGateInput());
   assert.ok(twiceCta.issues.some((issue) => issue.code === "DUPLICATED_TEXT"), "duas ocorrências no mesmo CTA nunca se fundem");
 });
+
+// ---------------------------------------------------------------------------------------------
+// Ledger de proveniência textual (cenário B real execution-mv0ayw83-a0iw8l): a visão inventou 2×
+// "Rumo ao Altar" em posições que não existem; as ocorrências reais eram a logo e o CTA. A contagem
+// de texto conhecido passa a ser reconciliada com renderer + assets + diagnóstico da base.
+// ---------------------------------------------------------------------------------------------
+
+const CLEAN_BASE = { status: "AVAILABLE", texts: [] };
+const BRAND_CONTEXT = baseContext({ brandName: "Rumo ao Altar", assets: [{ url: LOGO_URL, role: "logo", description: "Logo oficial Rumo ao Altar" }] });
+const HALLUCINATED = { duplicatedTexts: [{ text: "Rumo ao Altar", occurrences: [{ region: { xPct: 44, yPct: 48, widthPct: 12, heightPct: 3 } }, { region: { xPct: 44, yPct: 5, widthPct: 12, heightPct: 3 } }] }] };
+
+function ledgerGateInput(overrides = {}) {
+  return realBGateInput({ context: BRAND_CONTEXT, baseTextDiagnostic: CLEAN_BASE, ...overrides });
+}
+
+test("ledger: B real — duplicidade inventada pela visão é reconciliada com logo + CTA (sem DUPLICATED_TEXT)", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([], HALLUCINATED), ledgerGateInput());
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  assert.ok(result.occurrenceDiagnostics.every((item) => item.decision === "allowed" && /LEDGER_RECONCILED/.test(item.reason)), JSON.stringify(result.occurrenceDiagnostics));
+  assert.match(result.occurrenceDiagnostics[0].reason, /RENDERER_TEXT\/cta \+ LOGO_ASSET\/logo|LOGO_ASSET\/logo \+ RENDERER_TEXT\/cta/);
+  const ledger = result.textProvenanceLedger;
+  assert.equal(ledger.baseTextStatus, "AVAILABLE");
+  assert.ok(ledger.entries.some((entry) => entry.sourceType === "RENDERER_TEXT" && entry.role === "cta" && entry.normalizedText === "conheça o rumo ao altar" && entry.deterministic));
+  assert.ok(ledger.entries.some((entry) => entry.sourceType === "LOGO_ASSET" && entry.alternatives.includes("rumo ao altar")));
+  assert.ok(!ledger.entries.some((entry) => entry.sourceType === "BASE_IMAGE"));
+});
+
+test("ledger: sem diagnóstico da base o ledger não reconcilia (falha fechada)", async () => {
+  for (const baseTextDiagnostic of [undefined, { status: "NOT_AVAILABLE", texts: [] }]) {
+    const result = await evaluateCreativeQualityGate(visionReturning([], HALLUCINATED), ledgerGateInput({ baseTextDiagnostic }));
+    assert.ok(result.issues.some((issue) => issue.code === "DUPLICATED_TEXT"), JSON.stringify(baseTextDiagnostic));
+    assert.match(result.issues[0].message, /sem diagnóstico de texto da base/);
+  }
+});
+
+test("ledger: base que já contém a marca NÃO é absorvida pelo ledger do renderer", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([], HALLUCINATED), ledgerGateInput({ baseTextDiagnostic: { status: "AVAILABLE", texts: [{ text: "Rumo ao Altar", normalizedText: "rumo ao altar", bbox: { xPct: 40, yPct: 10, widthPct: 20, heightPct: 4 } }] } }));
+  assert.ok(result.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+  assert.match(result.issues.find((issue) => issue.code === "DUPLICATED_TEXT").message, /imagem base já contém o texto/);
+  assert.ok(result.textProvenanceLedger.entries.some((entry) => entry.sourceType === "BASE_IMAGE" && entry.deterministic === false));
+});
+
+test("ledger: mais ocorrências do que origens explicáveis continua duplicidade", async () => {
+  const three = { duplicatedTexts: [{ text: "Rumo ao Altar", occurrences: [{ region: { xPct: 44, yPct: 48, widthPct: 12, heightPct: 3 } }, { region: { xPct: 44, yPct: 5, widthPct: 12, heightPct: 3 } }, { region: { xPct: 10, yPct: 30, widthPct: 12, heightPct: 3 } }] }] };
+  const result = await evaluateCreativeQualityGate(visionReturning([], three), ledgerGateInput());
+  assert.ok(result.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+  assert.match(result.issues[0].message, /3 ocorrências reportadas > 2 origens explicáveis/);
+});
+
+test("ledger: texto realmente desconhecido continua bloqueado (não é whitelist)", async () => {
+  const unauthorized = await evaluateCreativeQualityGate(visionReturning([{ text: "DESCONTO 90%", region: { xPct: 30, yPct: 20, widthPct: 30, heightPct: 5 } }]), ledgerGateInput());
+  assert.ok(unauthorized.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT" && /DESCONTO 90%/.test(issue.message)));
+  const duplicatedUnknown = await evaluateCreativeQualityGate(visionReturning([], { duplicatedTexts: [{ text: "PROMOÇÃO 70%", occurrences: [{ region: { xPct: 10, yPct: 10, widthPct: 20, heightPct: 4 } }, { region: { xPct: 50, yPct: 30, widthPct: 20, heightPct: 4 } }] }] }), ledgerGateInput());
+  assert.ok(duplicatedUnknown.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+  assert.match(duplicatedUnknown.issues[0].message, /texto sem origem no ledger/);
+});
+
+test("ledger: texto exato do CTA longe da zona continua UNAUTHORIZED (ledger só reconcilia contagem de duplicatas)", async () => {
+  const result = await evaluateCreativeQualityGate(ctaAt({ xPct: 36, yPct: 8, widthPct: 28, heightPct: 5 }), ledgerGateInput());
+  assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+});
+
+test("ledger: CTA com jitter continua MATCHED_RENDERED_CTA e agora com razão base_clean", async () => {
+  const result = await evaluateCreativeQualityGate(ctaAt(REAL_B.visionCta), ledgerGateInput());
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  assert.equal(result.textDiagnostics[0].matchDecision, "MATCHED_RENDERED_CTA");
+  assert.equal(result.textDiagnostics[0].reason, "exact_text_single_occurrence_base_clean_spatially_near");
+});
+
+test("ledger: screenshot + CTA continuam duas provenances distintas (dcc8599)", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([], duplicated("CRIAR MEU SITE", [SHOT_CTA_REGION, CTA_REGION])), cGateInput(undefined, { baseTextDiagnostic: CLEAN_BASE }));
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  assert.deepEqual(result.occurrenceDiagnostics.map((item) => item.provenance), ["VERIFIED_SCREENSHOT", "RENDERER_TEXT_ZONE"]);
+  assert.ok(result.textProvenanceLedger.entries.some((entry) => entry.sourceType === "SCREENSHOT_ASSET"));
+});
+
+test("ledger: logo sem prova em pixel não entra no ledger (não explica texto)", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([], HALLUCINATED), ledgerGateInput({ assetPixelEvidence: [{ role: "logo", visible: true, fidelityPass: false }] }));
+  assert.ok(!result.textProvenanceLedger.entries.some((entry) => entry.sourceType === "LOGO_ASSET"));
+  assert.ok(result.issues.some((issue) => issue.code === "DUPLICATED_TEXT"), "só o CTA explica 1 ocorrência; 2 reportadas");
+});

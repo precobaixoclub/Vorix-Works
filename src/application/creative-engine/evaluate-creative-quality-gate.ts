@@ -2,6 +2,7 @@ import type { IcaroBrainPort } from "../ai/icaro-brain.contract.js";
 import type { IcaroAIResponse } from "../ai/icaro.types.js";
 import { extractJson } from "../../shared/utils/skill-parsing.js";
 import type { CreativeContext, CreativePlan, CreativePlanAssetRole, CreativePlanRect } from "../../shared/utils/gpt-creative-plan.types.js";
+import { resolveEditorialBrandLiterals } from "../../shared/utils/gpt-creative-plan.types.js";
 import { COMMERCIAL_FACT_TYPE_LABELS_PT, extractCommercialFactsFromText } from "../../shared/utils/commercial-fact-normalizer.js";
 
 /**
@@ -255,6 +256,55 @@ function matchRenderedTextWithinJitter(detected: { text: string; region?: Creati
   return regions.find((zone) => normalizeRenderedText(zone.text) === normalized && measureRenderedTextProximity(detected.region!, zone.rect).near);
 }
 
+export function buildTextProvenanceLedger(input: {
+  plan: Pick<CreativePlan, "textZones" | "assetPlacements">;
+  context: CreativeContext;
+  renderedTextRegions?: readonly CreativeRenderedTextRegion[];
+  verifiedLogoRegions: readonly CreativePlanRect[];
+  verifiedScreenshotRegions: readonly CreativePlanRect[];
+  baseText?: CreativeBaseTextEvidence;
+}): TextProvenanceLedger {
+  const entries: TextProvenanceEntry[] = [];
+  (input.renderedTextRegions ?? []).forEach((zone, index) => {
+    entries.push({ sourceType: "RENDERER_TEXT", sourceId: `renderer:${zone.kind}:${index}`, normalizedText: normalizeRenderedText(zone.text), role: zone.kind, expectedBBox: zone.rect, deterministic: true, assetProvenance: "final_rendered_geometry" });
+  });
+  const brandLiterals = [...new Set(resolveEditorialBrandLiterals(input.context).map((literal) => normalizeRenderedText(literal)).filter(Boolean))];
+  input.verifiedLogoRegions.forEach((rect, index) => {
+    entries.push({ sourceType: "LOGO_ASSET", sourceId: `logo:${index}`, ...(brandLiterals.length > 0 ? { alternatives: brandLiterals } : {}), role: "logo", expectedBBox: rect, deterministic: true, assetProvenance: "context_asset+pixel_verified" });
+  });
+  input.verifiedScreenshotRegions.forEach((rect, index) => {
+    entries.push({ sourceType: "SCREENSHOT_ASSET", sourceId: `screenshot:${index}`, role: "screenshot", expectedBBox: rect, deterministic: true, assetProvenance: "context_asset+pixel_verified" });
+  });
+  input.plan.assetPlacements.filter((placement) => placement.role === "product_photo").forEach((placement, index) => {
+    entries.push({ sourceType: "PRODUCT_ASSET", sourceId: `product:${index}`, role: "product_photo", expectedBBox: placement.rect, deterministic: true, assetProvenance: "context_asset" });
+  });
+  if (input.baseText?.status === "AVAILABLE") {
+    input.baseText.texts.forEach((item, index) => {
+      entries.push({ sourceType: "BASE_IMAGE", sourceId: `base:${index}`, normalizedText: item.normalizedText, role: "base_image", ...(item.bbox ? { expectedBBox: item.bbox } : {}), deterministic: false, assetProvenance: "openai_base_scan" });
+    });
+  }
+  return { baseTextStatus: input.baseText?.status === "AVAILABLE" ? "AVAILABLE" : "NOT_AVAILABLE", entries };
+}
+
+/**
+ * Contagem de ocorrências de um texto CONHECIDO reconciliada com o ledger (achado do cenário B
+ * execution-mv0ayw83-a0iw8l: a visão "viu" 2× "Rumo ao Altar" em posições que não existem — as 2
+ * ocorrências reais eram a logo e o CTA). Só com diagnóstico da base disponível (senão falha
+ * fechada); texto presente na base nunca é absorvido; mais ocorrências do que origens explicáveis
+ * continua duplicidade. Não é whitelist: texto sem origem no ledger nunca reconcilia.
+ */
+export function reconcileOccurrencesWithLedger(normalizedText: string, reportedCount: number, ledger: TextProvenanceLedger | undefined): { reconciled: boolean; reason: string; explainedBy: string[] } {
+  if (!ledger || ledger.baseTextStatus !== "AVAILABLE") return { reconciled: false, reason: "sem diagnóstico de texto da base — ledger não reconcilia", explainedBy: [] };
+  const baseHits = ledger.entries.filter((entry) => entry.sourceType === "BASE_IMAGE" && entry.normalizedText && (entry.normalizedText.includes(normalizedText) || (entry.normalizedText.length >= 3 && normalizedText.includes(entry.normalizedText))));
+  if (baseHits.length > 0) return { reconciled: false, reason: "a imagem base já contém o texto (BASE_IMAGE) — ocorrência não determinística", explainedBy: baseHits.map((entry) => entry.sourceId) };
+  const explainers = ledger.entries.filter((entry) =>
+    (entry.sourceType === "RENDERER_TEXT" && entry.normalizedText !== undefined && (entry.normalizedText === normalizedText || entry.normalizedText.includes(normalizedText)))
+    || (entry.sourceType === "LOGO_ASSET" && (entry.alternatives ?? []).includes(normalizedText)));
+  if (explainers.length === 0) return { reconciled: false, reason: "texto sem origem no ledger", explainedBy: [] };
+  if (reportedCount > explainers.length) return { reconciled: false, reason: `${reportedCount} ocorrências reportadas > ${explainers.length} origens explicáveis`, explainedBy: explainers.map((entry) => entry.sourceId) };
+  return { reconciled: true, reason: `LEDGER_RECONCILED: ${reportedCount} ocorrência(s) explicadas por ${explainers.map((entry) => `${entry.sourceType}/${entry.role}`).join(" + ")}; base sem o texto`, explainedBy: explainers.map((entry) => entry.sourceId) };
+}
+
 /**
  * Duplicidade por OCORRÊNCIA. Cada ocorrência é classificada pela região + proveniência:
  * zona do renderer (texto equivalente dentro da bbox final), logo verificada, screenshot real
@@ -353,9 +403,39 @@ export type CreativeTextOccurrenceDiagnostic = {
 /** Texto desenhado na geometria FINAL do renderer — base da autorização regional. */
 export type CreativeRenderedTextRegion = { kind: string; text: string; rect: CreativePlanRect };
 
+/** Diagnóstico de texto da IMAGEM BASE (ver `scanEditorialBaseText`) no formato que o gate consome. */
+export type CreativeBaseTextEvidence = {
+  status: "AVAILABLE" | "NOT_AVAILABLE";
+  texts: readonly { text: string; normalizedText: string; bbox?: CreativePlanRect }[];
+};
+
+export type TextProvenanceSourceType = "RENDERER_TEXT" | "LOGO_ASSET" | "SCREENSHOT_ASSET" | "BASE_IMAGE" | "PRODUCT_ASSET";
+
+/** Uma origem conhecida de texto na peça, registrada ANTES da visão final. */
+export type TextProvenanceEntry = {
+  sourceType: TextProvenanceSourceType;
+  sourceId: string;
+  /** Texto exato (renderer/base). Assets com texto próprio desconhecido (screenshot/produto) não têm. */
+  normalizedText?: string;
+  /** Logo: literais da marca que a logo oficial pode conter (nome declarado da marca). */
+  alternatives?: string[];
+  role: string;
+  expectedBBox?: CreativePlanRect;
+  deterministic: boolean;
+  assetProvenance?: string;
+};
+
+/** Ledger de proveniência textual da peça: o renderer é autoridade sobre o que ele desenhou; assets
+ * soberanos têm proveniência própria; a base tem diagnóstico próprio. A visão final é evidência. */
+export type TextProvenanceLedger = {
+  baseTextStatus: "AVAILABLE" | "NOT_AVAILABLE";
+  entries: TextProvenanceEntry[];
+};
+
 export type CreativeQualityGateResult = {
   verdict: "pass" | "fail";
   issues: CreativeQualityIssue[];
+  textProvenanceLedger?: TextProvenanceLedger;
   textDiagnostics?: CreativeTextDiagnostic[];
   occurrenceDiagnostics?: CreativeTextOccurrenceDiagnostic[];
 };
@@ -759,6 +839,8 @@ export async function checkCreativeVisualIntegrity(
     /** Textos lidos na IMAGEM BASE (antes do renderer), quando houver diagnóstico. Uma frase presente
      * na base nunca entra na regra de alta confiança — a base pode ter gerado aquela ocorrência. */
     baseImageTexts?: readonly string[];
+    /** Ledger de proveniência textual (renderer + assets + base) — reconcilia contagem de duplicatas. */
+    textProvenanceLedger?: TextProvenanceLedger;
     /** Auditoria de custo — achado crítico: esta chamada de visão nunca entrava em NENHUM total
      * de custo do motor antes desta correção (`run-gpt-creative-engine.ts` só rastreava
      * plano/imagem). Opcional e best-effort, mesmo espírito do resto da função — nunca lançar por
@@ -975,11 +1057,23 @@ export async function checkCreativeVisualIntegrity(
           verifiedScreenshotRegions: input.verifiedScreenshotRegions ?? [],
         });
         if (!decision) return;
-        input.occurrenceDiagnostics?.push(...decision.occurrences);
-        if (decision.legitimate) return;
+        let ledgerReason: string | undefined;
+        if (!decision.legitimate) {
+          const reported = typeof raw === "object" && raw !== null && Array.isArray((raw as { occurrences?: unknown }).occurrences) ? Math.max(2, (raw as { occurrences: unknown[] }).occurrences.length) : 2;
+          const ledgerDecision = reconcileOccurrencesWithLedger(normalizeRenderedText(decision.text), reported, input.textProvenanceLedger);
+          if (ledgerDecision.reconciled) {
+            input.occurrenceDiagnostics?.push(...decision.occurrences.map((occurrence) => ({ ...occurrence, decision: "allowed" as const, reason: `${ledgerDecision.reason} (posição da visão: ${occurrence.reason})` })));
+            return;
+          }
+          ledgerReason = ledgerDecision.reason;
+          input.occurrenceDiagnostics?.push(...decision.occurrences.map((occurrence) => (occurrence.decision === "rejected" ? { ...occurrence, reason: `${occurrence.reason}; ledger: ${ledgerDecision.reason}` } : occurrence)));
+        } else {
+          input.occurrenceDiagnostics?.push(...decision.occurrences);
+          return;
+        }
         issues.push({
           code: "DUPLICATED_TEXT",
-          message: `O texto "${decision.text}" aparece mais de uma vez na peça final — provável texto fantasma do modelo de imagem não neutralizado antes da composição do renderer. Remova a duplicata.${decision.rejectedReason ? ` (${decision.rejectedReason})` : ""}`,
+          message: `O texto "${decision.text}" aparece mais de uma vez na peça final — provável texto fantasma do modelo de imagem não neutralizado antes da composição do renderer. Remova a duplicata.${decision.rejectedReason ? ` (${decision.rejectedReason})` : ""}${ledgerReason ? ` [ledger: ${ledgerReason}]` : ""}`,
           source: "vision",
         });
       });
@@ -1125,6 +1219,8 @@ export async function evaluateCreativeQualityGate(
     onVerifiedLogoTextExempted?: (exempted: { text: string; region: CreativePlanRect }) => void;
     /** Textos lidos na imagem base, quando houver diagnóstico (ver `checkCreativeVisualIntegrity`). */
     baseImageTexts?: readonly string[];
+    /** Diagnóstico de texto da base editorial (`scanEditorialBaseText`). */
+    baseTextDiagnostic?: CreativeBaseTextEvidence;
   },
 ): Promise<CreativeQualityGateResult> {
   const deterministicIssues = evaluateDeterministicCreativeChecks({
@@ -1149,6 +1245,13 @@ export async function evaluateCreativeQualityGate(
   const referenceScreenshotUrl = input.context.assets.find((asset) => asset.role === "screenshot")?.url;
   const textDiagnostics: CreativeTextDiagnostic[] = [];
   const occurrenceDiagnostics: CreativeTextOccurrenceDiagnostic[] = [];
+  const verifiedLogoRegions = resolveVerifiedLogoRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence });
+  const verifiedScreenshotRegions = resolveVerifiedScreenshotRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence });
+  const renderedTextRegions = input.assetPixelEvidence ? input.plan.textZones.map((zone) => ({ kind: zone.kind, text: zone.text, rect: zone.rect })) : undefined;
+  const textProvenanceLedger = input.assetPixelEvidence
+    ? buildTextProvenanceLedger({ plan: input.plan, context: input.context, renderedTextRegions, verifiedLogoRegions, verifiedScreenshotRegions, baseText: input.baseTextDiagnostic })
+    : undefined;
+  const baseImageTexts = input.baseImageTexts ?? (input.baseTextDiagnostic?.status === "AVAILABLE" ? input.baseTextDiagnostic.texts.map((item) => item.text) : undefined);
   const visualIssues = await checkCreativeVisualIntegrity(icaro, {
     finalImageUrl: input.finalImageUrl,
     referenceProductImageUrl,
@@ -1158,14 +1261,15 @@ export async function evaluateCreativeQualityGate(
     brandColors: input.context.brandColors,
     allowedRenderedTexts: input.plan.allowedRenderedTexts,
     requiredRenderedFacts: input.plan.requiredRenderedFacts,
-    verifiedLogoRegions: resolveVerifiedLogoRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence }),
+    verifiedLogoRegions,
     onVerifiedLogoTextExempted: input.onVerifiedLogoTextExempted,
     // Só com prova em pixel (modo editorial) as textZones do plano são a geometria FINAL renderizada.
-    ...(input.assetPixelEvidence ? { renderedTextRegions: input.plan.textZones.map((zone) => ({ kind: zone.kind, text: zone.text, rect: zone.rect })) } : {}),
-    verifiedScreenshotRegions: resolveVerifiedScreenshotRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence }),
+    ...(renderedTextRegions ? { renderedTextRegions } : {}),
+    verifiedScreenshotRegions,
     textDiagnostics,
     occurrenceDiagnostics,
-    baseImageTexts: input.baseImageTexts,
+    baseImageTexts,
+    textProvenanceLedger,
     onCost: input.onCost,
   });
   const productionGuidelinesIssues = await checkProductionGuidelinesCompliance(icaro, {
@@ -1190,5 +1294,6 @@ export async function evaluateCreativeQualityGate(
     ...result,
     ...(textDiagnostics.length > 0 ? { textDiagnostics } : {}),
     ...(occurrenceDiagnostics.length > 0 ? { occurrenceDiagnostics } : {}),
+    ...(textProvenanceLedger ? { textProvenanceLedger } : {}),
   };
 }

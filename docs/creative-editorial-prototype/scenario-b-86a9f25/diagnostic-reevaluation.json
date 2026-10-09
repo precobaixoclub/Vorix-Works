@@ -1,0 +1,180 @@
+{
+  "kind": "diagnostic_reevaluation",
+  "executionRunId": "execution-mv0ayw83-a0iw8l",
+  "creativeEngineRunId": "cer-runtime-mv0ayw58-3eja1z",
+  "source": "persisted artifacts + persisted structured vision detections + downloaded base (no new image, no OpenAI call)",
+  "openAiCalls": 0,
+  "replayedVisionRequests": 2,
+  "original": {
+    "verdict": "fail",
+    "issues": [
+      "DUPLICATED_TEXT"
+    ]
+  },
+  "textGate_realEvidence_baseScanNotAvailable": {
+    "verdict": "fail",
+    "issues": [
+      "DUPLICATED_TEXT: O texto \"rumo ao altar\" aparece mais de uma vez na peça final — provável texto fantasma do modelo de imagem não neutralizado antes da composição do renderer. Remova a duplicata. (dup-0-0: fora de qualquer zona do renderer, logo ou screenshot verificados) [ledger: sem diagnóstico de texto da base — ledger não reconcilia]"
+    ],
+    "occurrences": [
+      "dup-0-0 rejected: fora de qualquer zona do renderer, logo ou screenshot verificados; ledger: sem diagnóstico de texto da base — ledger não reconcilia",
+      "dup-0-1 rejected: fora de qualquer zona do renderer, logo ou screenshot verificados; ledger: sem diagnóstico de texto da base — ledger não reconcilia"
+    ],
+    "textMatches": [
+      "MATCHED_RENDERED_CTA: exact_text_single_occurrence_no_second_occurrence_in_final_spatially_near"
+    ],
+    "ledger": {
+      "baseTextStatus": "NOT_AVAILABLE",
+      "entries": [
+        {
+          "sourceType": "RENDERER_TEXT",
+          "sourceId": "renderer:headline:0",
+          "normalizedText": "o casamento organizado como vocês sonharam",
+          "role": "headline",
+          "expectedBBox": {
+            "xPct": 6.667,
+            "yPct": 70.074,
+            "widthPct": 86.667,
+            "heightPct": 10.169
+          },
+          "deterministic": true,
+          "assetProvenance": "final_rendered_geometry"
+        },
+        {
+          "sourceType": "RENDERER_TEXT",
+          "sourceId": "renderer:subheadline:1",
+          "normalizedText": "site lista de presentes e confirmação de presença em um só lugar",
+          "role": "subheadline",
+          "expectedBBox": {
+            "xPct": 12.037,
+            "yPct": 81.852,
+            "widthPct": 75.926,
+            "heightPct": 5.52
+          },
+          "deterministic": true,
+          "assetProvenance": "final_rendered_geometry"
+        },
+        {
+          "sourceType": "RENDERER_TEXT",
+          "sourceId": "renderer:cta:2",
+          "normalizedText": "conheça o rumo ao altar",
+          "role": "cta",
+          "expectedBBox": {
+            "xPct": 33.796,
+            "yPct": 89.926,
+            "widthPct": 32.5,
+            "heightPct": 4.741
+          },
+          "deterministic": true,
+          "assetProvenance": "final_rendered_geometry"
+        },
+        {
+          "sourceType": "LOGO_ASSET",
+          "sourceId": "logo:0",
+          "alternatives": [
+            "workspace de qa business",
+            "rumo ao altar"
+          ],
+          "role": "logo",
+          "expectedBBox": {
+            "xPct": 40.185,
+            "yPct": 64.148,
+            "widthPct": 19.63,
+            "heightPct": 3.407
+          },
+          "deterministic": true,
+          "assetProvenance": "context_asset+pixel_verified"
+        }
+      ]
+    }
+  },
+  "textGate_SIMULATED_cleanBaseScan": {
+    "verdict": "pass",
+    "issues": [],
+    "occurrences": [
+      "dup-0-0 allowed: LEDGER_RECONCILED: 2 ocorrência(s) explicadas por RENDERER_TEXT/cta + LOGO_ASSET/logo; base sem o texto (posição da visão: fora de qualquer zona do renderer, logo ou screenshot verificados)",
+      "dup-0-1 allowed: LEDGER_RECONCILED: 2 ocorrência(s) explicadas por RENDERER_TEXT/cta + LOGO_ASSET/logo; base sem o texto (posição da visão: fora de qualquer zona do renderer, logo ou screenshot verificados)"
+    ],
+    "textMatches": [
+      "MATCHED_RENDERED_CTA: exact_text_single_occurrence_base_clean_spatially_near"
+    ],
+    "ledger": {
+      "baseTextStatus": "AVAILABLE",
+      "entries": [
+        {
+          "sourceType": "RENDERER_TEXT",
+          "sourceId": "renderer:headline:0",
+          "normalizedText": "o casamento organizado como vocês sonharam",
+          "role": "headline",
+          "expectedBBox": {
+            "xPct": 6.667,
+            "yPct": 70.074,
+            "widthPct": 86.667,
+            "heightPct": 10.169
+          },
+          "deterministic": true,
+          "assetProvenance": "final_rendered_geometry"
+        },
+        {
+          "sourceType": "RENDERER_TEXT",
+          "sourceId": "renderer:subheadline:1",
+          "normalizedText": "site lista de presentes e confirmação de presença em um só lugar",
+          "role": "subheadline",
+          "expectedBBox": {
+            "xPct": 12.037,
+            "yPct": 81.852,
+            "widthPct": 75.926,
+            "heightPct": 5.52
+          },
+          "deterministic": true,
+          "assetProvenance": "final_rendered_geometry"
+        },
+        {
+          "sourceType": "RENDERER_TEXT",
+          "sourceId": "renderer:cta:2",
+          "normalizedText": "conheça o rumo ao altar",
+          "role": "cta",
+          "expectedBBox": {
+            "xPct": 33.796,
+            "yPct": 89.926,
+            "widthPct": 32.5,
+            "heightPct": 4.741
+          },
+          "deterministic": true,
+          "assetProvenance": "final_rendered_geometry"
+        },
+        {
+          "sourceType": "LOGO_ASSET",
+          "sourceId": "logo:0",
+          "alternatives": [
+            "workspace de qa business",
+            "rumo ao altar"
+          ],
+          "role": "logo",
+          "expectedBBox": {
+            "xPct": 40.185,
+            "yPct": 64.148,
+            "widthPct": 19.63,
+            "heightPct": 3.407
+          },
+          "deterministic": true,
+          "assetProvenance": "context_asset+pixel_verified"
+        }
+      ]
+    }
+  },
+  "alphaPreflight": {
+    "coverage": {
+      "hasAlphaChannel": true,
+      "transparentRatio": 0.438,
+      "semiTransparentRatio": 0.0513,
+      "opaqueRatio": 0.5106
+    },
+    "ok": false,
+    "nonOpaqueRatio": 0.4893,
+    "reason": "base institucional 48.9% não opaca (transparente 43.8%, semitransparente 5.1%; máximo 1%)",
+    "verdict": "FAIL (INSTITUTIONAL_BASE_ALPHA_INVALID)"
+  },
+  "publishable": false,
+  "note": "O B antigo NÃO é publicável: a base tem transparência significativa. Histórico original inalterado."
+}

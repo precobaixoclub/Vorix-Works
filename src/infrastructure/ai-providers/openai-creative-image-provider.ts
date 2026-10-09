@@ -105,6 +105,9 @@ export class OpenAiCreativeImageProvider implements AIProviderPort {
     // segue com geração só-texto em vez de travar a peça inteira por causa da referência.
     const referenceImageUrl = typeof request.context?.referenceImageUrl === "string" ? request.context.referenceImageUrl.trim() : undefined;
     const referenceImageBuffer = referenceImageUrl ? await fetchAsBuffer(referenceImageUrl).catch(() => undefined) : undefined;
+    // Fundo explícito só quando o motor pede (ex.: base institucional editorial = "opaque").
+    // Sem isso a OpenAI usa "auto" e pode devolver PNG com transparência (achado do cenário B).
+    const background = request.context?.imageBackground === "opaque" || request.context?.imageBackground === "transparent" || request.context?.imageBackground === "auto" ? request.context.imageBackground : undefined;
 
     const images: Array<{ uri: string; mimeType: string }> = [];
     for (let index = 0; index < imageCount; index += 1) {
@@ -114,7 +117,7 @@ export class OpenAiCreativeImageProvider implements AIProviderPort {
         prompt: finalPrompt,
         tenantId,
         workspaceId,
-        params: { size, quality, targetAspectRatio: imageAspectRatio, ...(referenceImageBuffer ? { referenceImageBuffer } : {}) },
+        params: { size, quality, targetAspectRatio: imageAspectRatio, ...(referenceImageBuffer ? { referenceImageBuffer } : {}), ...(background ? { background } : {}) },
         timeoutMs: request.timeoutMs,
       });
       if (!result.ok) {

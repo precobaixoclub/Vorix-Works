@@ -121,3 +121,13 @@ test("health(): sem API key configurada, continua reportando indisponível (regr
   assert.equal(health.ok, false);
   assert.match(health.safeMessage, /API key/);
 });
+
+test("generate(): background explícito vai no corpo de /images/generations; sem ele o corpo continua igual (regressão)", async () => {
+  const bodies = [];
+  const http = async (url, init) => { bodies.push(JSON.parse(init.body)); return jsonResponse(200, { data: [{ b64_json: Buffer.from("x").toString("base64") }] }); };
+  const adapter = makeAdapter(http);
+  await adapter.generate(baseRequest({ params: { size: "1024x1536", quality: "high", background: "opaque" } }));
+  await adapter.generate(baseRequest());
+  assert.equal(bodies[0].background, "opaque");
+  assert.equal("background" in bodies[1], false);
+});

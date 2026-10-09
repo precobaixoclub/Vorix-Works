@@ -210,6 +210,11 @@ test("e2e editorial sem OpenAI: diretor com textZones geometricamente inválidos
   const product = result.artifactProvenance.assetVerification.find((item) => item.role === "product_photo");
   assert.equal(product.detectedMime, "image/jpeg");
   assert.equal(product.visible, true, JSON.stringify(product));
+  // Observabilidade de homologação: variante escolhida e motivos persistidos no run.
+  const composition = result.artifactProvenance.editorialComposition;
+  assert.ok(["HERO_DOMINANT", "SPLIT_EDITORIAL", "OVERLAY_EDITORIAL"].includes(composition.selectedVariant), JSON.stringify(composition));
+  assert.ok(composition.variantSelectionReasons.length > 0);
+  assert.equal(composition.diagnostics.variant, composition.selectedVariant);
   assert.equal(result.qualityGate.verdict, "pass", JSON.stringify(result.qualityGate.issues));
   assert.ok(stored.some((item) => /editorial-base/.test(item.key)) && stored.some((item) => /editorial-final/.test(item.key)), "base e final persistidas");
 });

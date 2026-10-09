@@ -1,0 +1,62 @@
+{
+  "kind": "diagnostic_reevaluation",
+  "executionRunId": "execution-mv03bie3-i7op5z",
+  "creativeEngineRunId": "cer-runtime-mv03bibw-2a54hw",
+  "source": "persisted artifacts + persisted structured vision detections (no new image, no OpenAI call)",
+  "replayedVisionRequests": 1,
+  "openAiCalls": 0,
+  "original": {
+    "verdict": "fail",
+    "issues": [
+      "UNAUTHORIZED_TEXT"
+    ],
+    "textDiagnostics": [
+      {
+        "bbox": {
+          "xPct": 36,
+          "yPct": 85,
+          "widthPct": 28,
+          "heightPct": 5
+        },
+        "reason": "equivalente à zona cta, mas FORA da sua bbox final",
+        "decision": "rejected",
+        "detectedText": "CONHEÇA O RUMO AO ALTAR",
+        "normalizedDetected": "conheça o rumo ao altar",
+        "normalizedExpected": "conheça o rumo ao altar"
+      }
+    ]
+  },
+  "reevaluated": {
+    "verdict": "pass",
+    "issues": [],
+    "textDiagnostics": [
+      {
+        "detectedText": "CONHEÇA O RUMO AO ALTAR",
+        "bbox": {
+          "xPct": 36,
+          "yPct": 85,
+          "widthPct": 28,
+          "heightPct": 5
+        },
+        "normalizedExpected": "conheça o rumo ao altar",
+        "normalizedDetected": "conheça o rumo ao altar",
+        "occurrenceId": "text-0",
+        "expectedRole": "cta",
+        "expectedBBox": {
+          "xPct": 33.796,
+          "yPct": 89.926,
+          "widthPct": 32.5,
+          "heightPct": 4.741
+        },
+        "overlap": 0.015,
+        "centerDistance": 4.8,
+        "toleranceApplied": 4.741,
+        "matchedElement": "cta",
+        "decision": "authorized",
+        "matchDecision": "MATCHED_RENDERED_CTA",
+        "reason": "exact_text_single_occurrence_no_second_occurrence_in_final_spatially_near"
+      }
+    ]
+  },
+  "note": "O histórico original do run não foi alterado."
+}

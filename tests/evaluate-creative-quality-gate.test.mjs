@@ -14,6 +14,7 @@ import {
   evaluateDeterministicCreativeChecks,
   isTextRegionInsideVerifiedLogo,
   normalizeRenderedText,
+  measureRenderedTextProximity,
   resolveVerifiedLogoRegions,
 } from "../dist/application/creative-engine/evaluate-creative-quality-gate.js";
 
@@ -918,7 +919,8 @@ test("regional B: o MESMO texto do CTA fora da bbox do CTA continua UNAUTHORIZED
   const result = await evaluateCreativeQualityGate(visionReturning([{ text: "CONHEÇA O RUMO AO ALTAR", region: { xPct: 50, yPct: 20, widthPct: 30, heightPct: 5 } }]), regionalGateInput());
   assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
   const rejected = result.textDiagnostics.find((item) => item.decision === "rejected");
-  assert.match(rejected.reason, /FORA da sua bbox final/);
+  assert.match(rejected.reason, /bbox longe da zona final/);
+  assert.equal(rejected.matchDecision, "REJECTED");
   assert.equal(rejected.normalizedExpected, "conheça o rumo ao altar");
 });
 
@@ -1093,4 +1095,136 @@ test("duplicidade: diagnóstico de ocorrência é sanitizado", async () => {
     for (const key of Object.keys(item)) assert.ok(["occurrenceId", "normalizedText", "bbox", "matchedRegion", "provenance", "decision", "reason"].includes(key), key);
   }
   assert.doesNotMatch(JSON.stringify(result.occurrenceDiagnostics), /RAW/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Jitter espacial da visão (cenário B real execution-mv03bie3-i7op5z): CTA lido certo e em caixa
+// alta, mas a bbox estimada ficou ~1 altura de CTA acima da bbox FINAL. A geometria do renderer é a
+// verdade; a visão só localiza aproximadamente. Alta confiança só para texto INTEIRO, ocorrência
+// única no manifesto, sem outra ocorrência equivalente, base sem a frase e perto pela faixa de jitter.
+// ---------------------------------------------------------------------------------------------
+
+const REAL_B = {
+  headline: { xPct: 6.667, yPct: 70.074, widthPct: 86.667, heightPct: 10.169 },
+  subheadline: { xPct: 12.037, yPct: 81.852, widthPct: 75.926, heightPct: 5.52 },
+  cta: { xPct: 33.796, yPct: 89.926, widthPct: 32.5, heightPct: 4.741 },
+  logo: { xPct: 40.185, yPct: 64.148, widthPct: 19.63, heightPct: 3.407 },
+  visionCta: { xPct: 36, yPct: 85, widthPct: 28, heightPct: 5 },
+};
+const B_HEADLINE = "O casamento organizado como vocês sonharam";
+const B_SUB = "Site, lista de presentes e confirmação de presença em um só lugar.";
+
+function realBGateInput(overrides = {}) {
+  return {
+    ...logoGateInput(),
+    compositedAssetRoles: ["logo"],
+    assetPixelEvidence: [{ role: "logo", visible: true, fidelityPass: true }],
+    plan: basePlan({
+      headline: B_HEADLINE,
+      subheadline: B_SUB,
+      cta: B_CTA,
+      assetPlacements: [{ role: "logo", url: LOGO_URL, rect: REAL_B.logo, frame: "none" }],
+      textZones: [
+        { kind: "headline", text: B_HEADLINE, rect: REAL_B.headline, emphasis: "primary", renderedBy: "renderer" },
+        { kind: "subheadline", text: B_SUB, rect: REAL_B.subheadline, emphasis: "secondary", renderedBy: "renderer" },
+        { kind: "cta", text: B_CTA, rect: REAL_B.cta, emphasis: "secondary", renderedBy: "renderer" },
+      ],
+    }),
+    ...overrides,
+  };
+}
+const ctaAt = (region) => visionReturning([{ text: "CONHEÇA O RUMO AO ALTAR", region }]);
+
+test("jitter: medida de proximidade é proporcional à altura da zona", () => {
+  const near = measureRenderedTextProximity(REAL_B.visionCta, REAL_B.cta);
+  assert.equal(near.near, true, JSON.stringify(near));
+  assert.ok(near.overlap < 0.6, "pela regra estrita antiga (overlap) seria reprovado");
+  assert.equal(near.band, REAL_B.cta.heightPct);
+  const bigZone = { xPct: 6, yPct: 40, widthPct: 88, heightPct: 20 };
+  assert.equal(measureRenderedTextProximity({ xPct: 10, yPct: 25, widthPct: 80, heightPct: 12 }, bigZone).near, true, "zona grande tolera deslocamento proporcionalmente maior");
+  assert.equal(measureRenderedTextProximity({ xPct: 36, yPct: 75, widthPct: 28, heightPct: 5 }, REAL_B.cta).near, false, "o mesmo deslocamento absoluto não vale para uma zona pequena");
+});
+
+test("jitter B real: bbox deslocada como no run real → PASS como MATCHED_RENDERED_CTA", async () => {
+  const result = await evaluateCreativeQualityGate(ctaAt(REAL_B.visionCta), realBGateInput());
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  const diag = result.textDiagnostics.find((item) => item.matchDecision);
+  assert.equal(diag.matchDecision, "MATCHED_RENDERED_CTA");
+  assert.equal(diag.reason, "exact_text_single_occurrence_no_second_occurrence_in_final_spatially_near");
+  assert.equal(diag.expectedRole, "cta");
+  assert.deepEqual(diag.expectedBBox, REAL_B.cta);
+  for (const key of ["occurrenceId", "overlap", "centerDistance", "toleranceApplied"]) assert.ok(diag[key] !== undefined, key);
+});
+
+test("jitter B real com base diagnosticada limpa → razão base_clean", async () => {
+  const result = await evaluateCreativeQualityGate(ctaAt(REAL_B.visionCta), realBGateInput({ baseImageTexts: [] }));
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  assert.equal(result.textDiagnostics[0].reason, "exact_text_single_occurrence_base_clean_spatially_near");
+});
+
+test("jitter pequeno e moderado → PASS; limite aceitável → PASS; logo além do limite → FAIL", async () => {
+  for (const region of [
+    { xPct: 34.5, yPct: 90.2, widthPct: 31, heightPct: 4.3 },
+    { xPct: 35, yPct: 87.5, widthPct: 30, heightPct: 5 },
+    { xPct: 36, yPct: 84, widthPct: 28, heightPct: 4 },
+  ]) {
+    const result = await evaluateCreativeQualityGate(ctaAt(region), realBGateInput());
+    assert.equal(result.verdict, "pass", `${JSON.stringify(region)} ${JSON.stringify(result.issues)}`);
+  }
+  const beyond = await evaluateCreativeQualityGate(ctaAt({ xPct: 36, yPct: 82, widthPct: 28, heightPct: 4 }), realBGateInput());
+  assert.ok(beyond.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+  assert.match(beyond.textDiagnostics[0].reason, /bbox longe da zona final/);
+});
+
+test("jitter: texto exato longe da zona (topo da peça) continua UNAUTHORIZED_TEXT", async () => {
+  const result = await evaluateCreativeQualityGate(ctaAt({ xPct: 36, yPct: 8, widthPct: 28, heightPct: 5 }), realBGateInput());
+  assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+  assert.equal(result.textDiagnostics[0].matchDecision, "REJECTED");
+});
+
+test("jitter: duas ocorrências (uma perto do CTA + uma desconhecida) → FAIL, sem fundir", async () => {
+  const twoDetections = await evaluateCreativeQualityGate(visionReturning([
+    { text: "CONHEÇA O RUMO AO ALTAR", region: REAL_B.visionCta },
+    { text: "CONHEÇA O RUMO AO ALTAR", region: { xPct: 30, yPct: 20, widthPct: 30, heightPct: 5 } },
+  ]), realBGateInput());
+  assert.equal(twoDetections.issues.filter((issue) => issue.code === "UNAUTHORIZED_TEXT").length, 2);
+  assert.match(twoDetections.textDiagnostics[0].reason, /outra ocorrência equivalente/);
+  const duplicated = await evaluateCreativeQualityGate(visionReturning([{ text: "CONHEÇA O RUMO AO ALTAR", region: REAL_B.visionCta }], { duplicatedTexts: [{ text: B_CTA, occurrences: [{ region: REAL_B.visionCta }, { region: { xPct: 30, yPct: 20, widthPct: 30, heightPct: 5 } }] }] }), realBGateInput());
+  assert.ok(duplicated.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+  assert.ok(duplicated.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"), "a ocorrência perto do CTA não ganha alta confiança com duplicata não resolvida");
+});
+
+test("jitter: base que já contém a frase nunca usa a regra de alta confiança", async () => {
+  const result = await evaluateCreativeQualityGate(ctaAt(REAL_B.visionCta), realBGateInput({ baseImageTexts: ["Conheça o Rumo ao Altar"] }));
+  assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+  assert.match(result.textDiagnostics[0].reason, /a imagem base já contém a frase/);
+});
+
+test("jitter: manifesto com duas zonas do mesmo texto não é ocorrência única → FAIL", async () => {
+  const input = realBGateInput();
+  input.plan = { ...input.plan, textZones: [...input.plan.textZones, { kind: "badge", text: B_CTA, rect: { xPct: 10, yPct: 5, widthPct: 30, heightPct: 4 }, emphasis: "secondary", renderedBy: "renderer" }] };
+  const result = await evaluateCreativeQualityGate(ctaAt(REAL_B.visionCta), input);
+  assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+  assert.match(result.textDiagnostics[0].reason, /mais de uma zona/);
+});
+
+test("jitter: acento continua relevante e trecho parcial não ganha tolerância", async () => {
+  const noAccent = await evaluateCreativeQualityGate(visionReturning([{ text: "CONHECA O RUMO AO ALTAR", region: REAL_B.visionCta }]), realBGateInput());
+  assert.ok(noAccent.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+  const partial = await evaluateCreativeQualityGate(visionReturning([{ text: "Rumo ao Altar", region: { xPct: 45, yPct: 85.5, widthPct: 18, heightPct: 4 } }]), realBGateInput());
+  assert.ok(partial.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"), "marca dentro do CTA exige a bbox estrita do CTA");
+});
+
+test("jitter: ausência contraditória do CTA é reconciliada quando o casamento de alta confiança passa", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([{ text: "CONHEÇA O RUMO AO ALTAR", region: REAL_B.visionCta }], { missingRequiredTexts: [B_CTA] }), realBGateInput());
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  assert.ok(result.textDiagnostics.some((item) => item.decision === "missing_reconciled"));
+});
+
+test("jitter: duplicidade legítima screenshot + CTA deslocado continua aceita (uma ocorrência por zona)", async () => {
+  const jitteredCta = { xPct: 9.5, yPct: 82.5, widthPct: 18, heightPct: 3.8 };
+  const ok = await evaluateCreativeQualityGate(visionReturning([], duplicated(C_CTA, [SHOT_CTA_REGION, jitteredCta])), cGateInput());
+  assert.equal(ok.verdict, "pass", JSON.stringify(ok.issues));
+  const twiceCta = await evaluateCreativeQualityGate(visionReturning([], duplicated(C_CTA, [CTA_REGION, jitteredCta])), cGateInput());
+  assert.ok(twiceCta.issues.some((issue) => issue.code === "DUPLICATED_TEXT"), "duas ocorrências no mesmo CTA nunca se fundem");
 });

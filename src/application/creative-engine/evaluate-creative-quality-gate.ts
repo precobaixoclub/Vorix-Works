@@ -220,6 +220,42 @@ export function matchRenderedTextRegion(
 }
 
 /**
+ * A bbox da visão é uma ESTIMATIVA; a do renderer é a verdade. Para texto desenhado pelo renderer,
+ * a visão erra a posição em unidades da própria linha de texto (achado do cenário B
+ * execution-mv03bie3-i7op5z: CTA lido certo, bbox ~1 altura de CTA acima). A tolerância é uma faixa
+ * de UMA altura da própria zona em cada lado — proporcional ao elemento, nunca pixels absolutos —
+ * e a detecção precisa ter o centro dentro dessa faixa e a maior parte da área nela.
+ */
+export const RENDERED_TEXT_JITTER_BAND_IN_HEIGHTS = 1;
+
+export function measureRenderedTextProximity(detected: CreativePlanRect, expected: CreativePlanRect): { overlap: number; insideBand: number; centerInBand: boolean; centerDistance: number; band: number; near: boolean } {
+  const band = expected.heightPct * RENDERED_TEXT_JITTER_BAND_IN_HEIGHTS;
+  const expanded = { xPct: expected.xPct - band, yPct: expected.yPct - band, widthPct: expected.widthPct + 2 * band, heightPct: expected.heightPct + 2 * band };
+  const area = detected.widthPct * detected.heightPct;
+  const overlap = area > 0 ? intersectionArea(detected, expected) / area : 0;
+  const insideBand = area > 0 ? intersectionArea(detected, expanded) / area : 0;
+  const cx = detected.xPct + detected.widthPct / 2;
+  const cy = detected.yPct + detected.heightPct / 2;
+  const centerInBand = cx >= expanded.xPct && cx <= expanded.xPct + expanded.widthPct && cy >= expanded.yPct && cy <= expanded.yPct + expanded.heightPct;
+  const centerDistance = Math.hypot(cx - (expected.xPct + expected.widthPct / 2), cy - (expected.yPct + expected.heightPct / 2));
+  return {
+    overlap: Number(overlap.toFixed(3)),
+    insideBand: Number(insideBand.toFixed(3)),
+    centerInBand,
+    centerDistance: Number(centerDistance.toFixed(2)),
+    band: Number(band.toFixed(3)),
+    near: area > 0 && centerInBand && insideBand >= VERIFIED_LOGO_MIN_TEXT_AREA_INSIDE,
+  };
+}
+
+/** Zona cujo texto INTEIRO é equivalente ao detectado, perto o bastante pela faixa de jitter. */
+function matchRenderedTextWithinJitter(detected: { text: string; region?: CreativePlanRect }, regions: readonly CreativeRenderedTextRegion[]): CreativeRenderedTextRegion | undefined {
+  if (!detected.region) return undefined;
+  const normalized = normalizeRenderedText(detected.text);
+  return regions.find((zone) => normalizeRenderedText(zone.text) === normalized && measureRenderedTextProximity(detected.region!, zone.rect).near);
+}
+
+/**
  * Duplicidade por OCORRÊNCIA. Cada ocorrência é classificada pela região + proveniência:
  * zona do renderer (texto equivalente dentro da bbox final), logo verificada, screenshot real
  * verificado, ou desconhecida. O texto repetido só é legítimo quando TODA ocorrência tem origem
@@ -247,7 +283,7 @@ function resolveDuplicateOccurrences(
     const occurrenceId = `dup-${itemIndex}-${occurrenceIndex}`;
     const bbox = detected?.region;
     if (!bbox) return { occurrenceId, normalizedText, matchedRegion: "unknown", provenance: "UNVERIFIED", decision: "rejected", reason: "ocorrência sem região — sem prova espacial" };
-    const zone = matchRenderedTextRegion({ text, region: bbox }, regions.renderedTextRegions);
+    const zone = matchRenderedTextRegion({ text, region: bbox }, regions.renderedTextRegions) ?? matchRenderedTextWithinJitter({ text, region: bbox }, regions.renderedTextRegions);
     if (zone) {
       if (usedZones.has(zone)) return { occurrenceId, normalizedText, bbox, matchedRegion: zone.kind, provenance: "RENDERER_TEXT_ZONE", decision: "rejected", reason: `segunda ocorrência dentro da mesma zona ${zone.kind}` };
       usedZones.add(zone);
@@ -289,6 +325,17 @@ export type CreativeTextDiagnostic = {
   normalizedDetected: string;
   decision: "authorized" | "rejected" | "missing" | "missing_reconciled";
   reason: string;
+  /** Casamento de alta confiança com uma zona do renderer (jitter da visão), quando avaliado. */
+  occurrenceId?: string;
+  expectedRole?: string;
+  expectedBBox?: CreativePlanRect;
+  /** Fração da bbox detectada dentro da bbox FINAL esperada (estrita). */
+  overlap?: number;
+  /** Distância entre centros, em pontos percentuais do canvas. */
+  centerDistance?: number;
+  /** Faixa de tolerância aplicada em volta da bbox esperada (pontos percentuais por lado). */
+  toleranceApplied?: number;
+  matchDecision?: string;
 };
 
 /** Diagnóstico sanitizado de cada OCORRÊNCIA de um texto repetido: duplicidade é decidida por
@@ -709,6 +756,9 @@ export async function checkCreativeVisualIntegrity(
     textDiagnostics?: CreativeTextDiagnostic[];
     /** Coletor do diagnóstico de cada ocorrência de texto repetido. */
     occurrenceDiagnostics?: CreativeTextOccurrenceDiagnostic[];
+    /** Textos lidos na IMAGEM BASE (antes do renderer), quando houver diagnóstico. Uma frase presente
+     * na base nunca entra na regra de alta confiança — a base pode ter gerado aquela ocorrência. */
+    baseImageTexts?: readonly string[];
     /** Auditoria de custo — achado crítico: esta chamada de visão nunca entrava em NENHUM total
      * de custo do motor antes desta correção (`run-gpt-creative-engine.ts` só rastreava
      * plano/imagem). Opcional e best-effort, mesmo espírito do resto da função — nunca lançar por
@@ -800,7 +850,20 @@ export async function checkCreativeVisualIntegrity(
     if (Array.isArray(parsed.unauthorizedTexts)) {
       const verifiedLogoRegions = input.verifiedLogoRegions ?? [];
       const renderedTextRegions = input.renderedTextRegions ?? [];
+      const allDetections = parsed.unauthorizedTexts.map((raw) => parseDetectedText(raw));
+      // Textos repetidos que a visão reportou e que NÃO se resolvem como ocorrências legítimas.
+      const unresolvedDuplicates = new Set<string>();
+      if (Array.isArray(parsed.duplicatedTexts)) {
+        parsed.duplicatedTexts.forEach((raw, index) => {
+          const decision = resolveDuplicateOccurrences(raw, index, { renderedTextRegions, verifiedLogoRegions, verifiedScreenshotRegions: input.verifiedScreenshotRegions ?? [] });
+          if (decision && !decision.legitimate) unresolvedDuplicates.add(normalizeRenderedText(decision.text));
+        });
+      }
+      const baseTexts = (input.baseImageTexts ?? []).map((text) => normalizeRenderedText(text));
+      let detectionIndex = -1;
+      let pendingHighConfidence: (Partial<CreativeTextDiagnostic> & { failures: string[] }) | undefined;
       for (const raw of parsed.unauthorizedTexts) {
+        detectionIndex += 1;
         const detected = parseDetectedText(raw);
         if (!detected) continue;
         const item = detected.text;
@@ -813,6 +876,50 @@ export async function checkCreativeVisualIntegrity(
           authorizedZoneTexts.add(normalizeRenderedText(zone.text));
           input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: zone.kind, normalizedExpected: normalizeRenderedText(zone.text), normalizedDetected, decision: "authorized", reason: `equivalente dentro da bbox final da zona ${zone.kind}` });
           continue;
+        }
+        // Alta confiança para texto DETERMINÍSTICO do renderer (jitter da visão): texto inteiro
+        // equivalente + exatamente uma zona desse texto no manifesto final + nenhuma outra
+        // ocorrência equivalente reportada + base sem a frase + perto pela faixa de jitter.
+        const candidates = detected.region ? renderedTextRegions.filter((candidate) => normalizeRenderedText(candidate.text) === normalizedDetected) : [];
+        if (detected.region && candidates.length >= 1) {
+          const expectedZone = candidates[0]!;
+          const proximity = measureRenderedTextProximity(detected.region, expectedZone.rect);
+          const otherEquivalent = allDetections.some((other, otherIndex) => otherIndex !== detectionIndex && other !== undefined && normalizeRenderedText(other.text) === normalizedDetected);
+          const baseHasPhrase = baseTexts.some((text) => text.includes(normalizedDetected));
+          const failures = [
+            candidates.length !== 1 ? "manifesto final tem mais de uma zona com esse texto" : undefined,
+            otherEquivalent ? "visão reportou outra ocorrência equivalente" : undefined,
+            unresolvedDuplicates.has(normalizedDetected) ? "texto também reportado como duplicata não resolvida" : undefined,
+            baseHasPhrase ? "a imagem base já contém a frase" : undefined,
+            !proximity.near ? `bbox longe da zona final (centro a ${proximity.centerDistance} pt; faixa ${proximity.band} pt; ${Math.round(proximity.insideBand * 100)}% dentro da faixa)` : undefined,
+          ].filter((reason): reason is string => Boolean(reason));
+          const diagnosticBase = {
+            detectedText: item,
+            bbox: detected.region,
+            normalizedExpected: normalizeRenderedText(expectedZone.text),
+            normalizedDetected,
+            occurrenceId: `text-${detectionIndex}`,
+            expectedRole: expectedZone.kind,
+            expectedBBox: expectedZone.rect,
+            overlap: proximity.overlap,
+            centerDistance: proximity.centerDistance,
+            toleranceApplied: proximity.band,
+          };
+          if (failures.length === 0) {
+            authorizedZoneTexts.add(normalizedDetected);
+            input.textDiagnostics?.push({
+              ...diagnosticBase,
+              matchedElement: expectedZone.kind,
+              decision: "authorized",
+              matchDecision: `MATCHED_RENDERED_${expectedZone.kind.toUpperCase()}`,
+              reason: `exact_text_single_occurrence_${input.baseImageTexts ? "base_clean" : "no_second_occurrence_in_final"}_spatially_near`,
+            });
+            continue;
+          }
+          // Não casou na alta confiança: segue para logo/screenshot/rejeição com o motivo registrado.
+          pendingHighConfidence = { ...diagnosticBase, failures };
+        } else {
+          pendingHighConfidence = undefined;
         }
         // Isenção ESPACIAL da logo oficial verificada (proveniência + pixel). Mesmo texto fora dela,
         // ou sem região informada, continua reprovando.
@@ -838,9 +945,12 @@ export async function checkCreativeVisualIntegrity(
           decision: "rejected",
           reason: !detected.region
             ? "sem região informada pela visão — sem prova espacial"
-            : equivalentZone
-              ? `equivalente à zona ${equivalentZone.kind}, mas FORA da sua bbox final`
-              : "fora de qualquer zona autorizada e da logo verificada",
+            : pendingHighConfidence
+              ? `equivalente à zona ${pendingHighConfidence.expectedRole}, mas sem casamento de alta confiança: ${pendingHighConfidence.failures.join("; ")}`
+              : equivalentZone
+                ? `equivalente à zona ${equivalentZone.kind}, mas FORA da sua bbox final`
+                : "fora de qualquer zona autorizada e da logo verificada",
+          ...(pendingHighConfidence ? { occurrenceId: pendingHighConfidence.occurrenceId, expectedRole: pendingHighConfidence.expectedRole, expectedBBox: pendingHighConfidence.expectedBBox, overlap: pendingHighConfidence.overlap, centerDistance: pendingHighConfidence.centerDistance, toleranceApplied: pendingHighConfidence.toleranceApplied, matchDecision: "REJECTED" } : {}),
         });
         const placeholder = isPlaceholderLikeText(item);
         issues.push({
@@ -1013,6 +1123,8 @@ export async function evaluateCreativeQualityGate(
     assetPixelEvidence?: readonly CreativeAssetPixelEvidence[];
     /** Recebe cada texto isentado por estar DENTRO de uma logo oficial verificada (auditoria). */
     onVerifiedLogoTextExempted?: (exempted: { text: string; region: CreativePlanRect }) => void;
+    /** Textos lidos na imagem base, quando houver diagnóstico (ver `checkCreativeVisualIntegrity`). */
+    baseImageTexts?: readonly string[];
   },
 ): Promise<CreativeQualityGateResult> {
   const deterministicIssues = evaluateDeterministicCreativeChecks({
@@ -1053,6 +1165,7 @@ export async function evaluateCreativeQualityGate(
     verifiedScreenshotRegions: resolveVerifiedScreenshotRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence }),
     textDiagnostics,
     occurrenceDiagnostics,
+    baseImageTexts: input.baseImageTexts,
     onCost: input.onCost,
   });
   const productionGuidelinesIssues = await checkProductionGuidelinesCompliance(icaro, {

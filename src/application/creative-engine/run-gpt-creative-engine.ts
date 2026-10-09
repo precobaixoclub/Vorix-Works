@@ -224,6 +224,8 @@ export type CreativeEngineArtifactProvenance = {
   renderedGeometry?: RenderEditorialCreativeResult["renderedGeometry"];
   /** Prova em pixel de cada asset composto (ver `EditorialAssetVerification`). */
   assetVerification?: RenderEditorialCreativeResult["assetVerification"];
+  /** Observabilidade da homologação: variante escolhida pelo compositor editorial e por quê (nunca muda comportamento). */
+  editorialComposition?: { selectedVariant: string; variantSelectionReasons: string[]; diagnostics: RenderEditorialCreativeResult["composition"] };
 };
 
 export type GptCreativeEngineResult = {
@@ -1043,6 +1045,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         imagePromptSanitization: buildImagePromptSanitizationAudit(imagePrompt, planForGeneration, context),
         renderedGeometry: editorial.renderedGeometry,
         assetVerification: editorial.assetVerification,
+        ...(editorial.composition ? { editorialComposition: { selectedVariant: editorial.composition.variant, variantSelectionReasons: editorial.composition.selectionReasons, diagnostics: editorial.composition } } : {}),
       };
       const qualityGate = await evaluateCreativeQualityGate(deps.creativeBrain, {
         finalImageUrl: uploaded.url,

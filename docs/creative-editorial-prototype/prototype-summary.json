@@ -1,0 +1,39 @@
+{
+  "generatedAt": "2026-10-06",
+  "openAiCalls": 0,
+  "activeEngineModified": false,
+  "deployExecuted": false,
+  "overview": "00-overview.png",
+  "results": [
+    {
+      "scenario": "a-produto-preco-cta",
+      "current": "a-produto-preco-cta-current.png",
+      "editorial": "a-produto-preco-cta-editorial-refined-4x5.png",
+      "comparison": "a-produto-preco-cta-comparison.png",
+      "currentStory": "a-produto-preco-cta-current-9x16.png",
+      "editorialStory": "a-produto-preco-cta-editorial-refined-9x16.png",
+      "comparisonStory": "a-produto-preco-cta-comparison-9x16.png",
+      "note": "Produto fisico simulado com asset local de aliancas/relogio. O compositor preserva o asset original como produto quando fornecido; preco fixture nao e preco comercial real confirmado."
+    },
+    {
+      "scenario": "b-institucional-premium",
+      "current": "b-institucional-premium-current.png",
+      "editorial": "b-institucional-premium-editorial-refined-4x5.png",
+      "comparison": "b-institucional-premium-comparison.png",
+      "currentStory": "b-institucional-premium-current-9x16.png",
+      "editorialStory": "b-institucional-premium-editorial-refined-9x16.png",
+      "comparisonStory": "b-institucional-premium-comparison-9x16.png",
+      "note": "Usa fotografia contextual local sem chamada comercial de preco."
+    },
+    {
+      "scenario": "c-divulgacao-servico",
+      "current": "c-divulgacao-servico-current.png",
+      "editorial": "c-divulgacao-servico-editorial-refined-4x5.png",
+      "comparison": "c-divulgacao-servico-comparison.png",
+      "currentStory": "c-divulgacao-servico-current-9x16.png",
+      "editorialStory": "c-divulgacao-servico-editorial-refined-9x16.png",
+      "comparisonStory": "c-divulgacao-servico-comparison-9x16.png",
+      "note": "Usa screenshot local real/controlado do produto Rumo ao Altar com dados demonstrativos QA; nao apresenta UI inventada como captura real."
+    }
+  ]
+}

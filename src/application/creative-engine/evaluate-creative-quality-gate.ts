@@ -306,6 +306,68 @@ export function reconcileOccurrencesWithLedger(normalizedText: string, reportedC
 }
 
 /**
+ * VISION_ZONE_CONTRADICTION — só para adjudicar DUPLICIDADE de um texto já conhecido pelo ledger
+ * (achado do cenário B execution-mv1ipciu-jociy4: a visão leu o CTA "dentro" da zona onde o renderer
+ * desenhou OUTRO texto). Uma ocorrência rejeitada é retirada da contagem somente se TODAS valem:
+ * (A) a bbox cai numa zona do renderer pela regra estrita de região; (B) o texto detectado é
+ * diferente do texto daquela zona; (C) a zona vem da geometria final do renderer; (D) scan da base
+ * AVAILABLE; (E) a base não contém o texto; (F) o ledger tem origem legítima para o texto; (G) uma
+ * ocorrência legítima do mesmo texto já foi comprovada na própria lista; (H) nenhum asset soberano
+ * (logo/screenshot/produto) cobre aquela bbox. Nunca fabrica evidência positiva: sem a ocorrência
+ * legítima (G) nada muda. Texto desconhecido nunca entra aqui (F).
+ */
+function applyVisionZoneContradiction(
+  decision: { text: string; legitimate: boolean; rejectedReason?: string; occurrences: CreativeTextOccurrenceDiagnostic[] },
+  regions: { renderedTextRegions: readonly CreativeRenderedTextRegion[]; verifiedLogoRegions: readonly CreativePlanRect[]; verifiedScreenshotRegions: readonly CreativePlanRect[] },
+  ledger: TextProvenanceLedger | undefined,
+): { text: string; legitimate: boolean; rejectedReason?: string; occurrences: CreativeTextOccurrenceDiagnostic[]; remainingCount: number; contradictions: number } {
+  const unchanged = { ...decision, remainingCount: decision.occurrences.length, contradictions: 0 };
+  if (decision.legitimate || !ledger || ledger.baseTextStatus !== "AVAILABLE") return unchanged; // (D)
+  const detected = normalizeRenderedText(decision.text);
+  if (!detected) return unchanged;
+  const baseContains = ledger.entries.some((entry) => entry.sourceType === "BASE_IMAGE" && entry.normalizedText !== undefined && (entry.normalizedText.includes(detected) || (entry.normalizedText.length >= 3 && detected.includes(entry.normalizedText))));
+  if (baseContains) return unchanged; // (E)
+  const origin = ledger.entries.find((entry) =>
+    (entry.sourceType === "RENDERER_TEXT" && entry.normalizedText !== undefined && (entry.normalizedText === detected || entry.normalizedText.includes(detected)))
+    || (entry.sourceType === "LOGO_ASSET" && (entry.alternatives ?? []).includes(detected)));
+  if (!origin) return unchanged; // (F)
+  if (!decision.occurrences.some((occurrence) => occurrence.decision === "allowed")) return unchanged; // (G)
+  const sovereign = [
+    ...regions.verifiedLogoRegions,
+    ...regions.verifiedScreenshotRegions,
+    ...ledger.entries.filter((entry) => entry.sourceType === "PRODUCT_ASSET" && entry.expectedBBox).map((entry) => entry.expectedBBox!),
+  ];
+  let contradictions = 0;
+  const occurrences = decision.occurrences.map((occurrence): CreativeTextOccurrenceDiagnostic => {
+    if (occurrence.decision !== "rejected" || !occurrence.bbox) return occurrence;
+    if (sovereign.length > 0 && isTextRegionInsideVerifiedLogo(occurrence.bbox, sovereign)) return occurrence; // (H)
+    const zone = regions.renderedTextRegions.find((candidate) => isTextRegionInsideVerifiedLogo(occurrence.bbox!, [candidate.rect])); // (A)(C)
+    if (!zone) return occurrence;
+    const zoneText = normalizeRenderedText(zone.text);
+    if (zoneText === detected || zoneText.includes(detected)) return occurrence; // (B)
+    contradictions += 1;
+    return {
+      ...occurrence,
+      decision: "VISION_ZONE_CONTRADICTION",
+      ignoredForDuplicateCount: true,
+      conflictingRendererRole: zone.kind,
+      conflictingRendererText: zoneText,
+      conflictingRendererBBox: zone.rect,
+      expectedLedgerRole: origin.role,
+      expectedLedgerSourceId: origin.sourceId,
+      baseTextScanStatus: "AVAILABLE",
+      baseContainsDetectedText: false,
+      reason: `detected_text_conflicts_with_verified_${zone.kind}_zone_base_clean_and_legitimate_${origin.role}_exists (visão: ${occurrence.reason})`,
+    };
+  });
+  if (contradictions === 0) return unchanged;
+  const remaining = occurrences.filter((occurrence) => !occurrence.ignoredForDuplicateCount);
+  const legitimate = remaining.length <= 1 ? remaining.every((occurrence) => occurrence.decision === "allowed") : false;
+  const firstRejected = remaining.find((occurrence) => occurrence.decision === "rejected");
+  return { text: decision.text, legitimate, rejectedReason: firstRejected ? `${firstRejected.occurrenceId}: ${firstRejected.reason}` : undefined, occurrences, remainingCount: remaining.length, contradictions };
+}
+
+/**
  * Duplicidade por OCORRÊNCIA. Cada ocorrência é classificada pela região + proveniência:
  * zona do renderer (texto equivalente dentro da bbox final), logo verificada, screenshot real
  * verificado, ou desconhecida. O texto repetido só é legítimo quando TODA ocorrência tem origem
@@ -396,8 +458,17 @@ export type CreativeTextOccurrenceDiagnostic = {
   bbox?: CreativePlanRect;
   matchedRegion: string;
   provenance: "RENDERER_TEXT_ZONE" | "VERIFIED_LOGO" | "VERIFIED_SCREENSHOT" | "UNVERIFIED";
-  decision: "allowed" | "rejected";
+  decision: "allowed" | "rejected" | "VISION_ZONE_CONTRADICTION";
   reason: string;
+  /** VISION_ZONE_CONTRADICTION: a ocorrência continua registrada (auditoria), só não conta como duplicata. */
+  ignoredForDuplicateCount?: boolean;
+  conflictingRendererRole?: string;
+  conflictingRendererText?: string;
+  conflictingRendererBBox?: CreativePlanRect;
+  expectedLedgerRole?: string;
+  expectedLedgerSourceId?: string;
+  baseTextScanStatus?: "AVAILABLE" | "NOT_AVAILABLE";
+  baseContainsDetectedText?: boolean;
 };
 
 /** Texto desenhado na geometria FINAL do renderer — base da autorização regional. */
@@ -937,7 +1008,9 @@ export async function checkCreativeVisualIntegrity(
       const unresolvedDuplicates = new Set<string>();
       if (Array.isArray(parsed.duplicatedTexts)) {
         parsed.duplicatedTexts.forEach((raw, index) => {
-          const decision = resolveDuplicateOccurrences(raw, index, { renderedTextRegions, verifiedLogoRegions, verifiedScreenshotRegions: input.verifiedScreenshotRegions ?? [] });
+          const prepassRegions = { renderedTextRegions, verifiedLogoRegions, verifiedScreenshotRegions: input.verifiedScreenshotRegions ?? [] };
+          const resolved = resolveDuplicateOccurrences(raw, index, prepassRegions);
+          const decision = resolved ? applyVisionZoneContradiction(resolved, prepassRegions, input.textProvenanceLedger) : undefined;
           if (decision && !decision.legitimate) unresolvedDuplicates.add(normalizeRenderedText(decision.text));
         });
       }
@@ -1051,18 +1124,22 @@ export async function checkCreativeVisualIntegrity(
     // esse caso residual, nunca intencional.
     if (Array.isArray(parsed.duplicatedTexts)) {
       parsed.duplicatedTexts.forEach((raw, itemIndex) => {
-        const decision = resolveDuplicateOccurrences(raw, itemIndex, {
+        const duplicateRegions = {
           renderedTextRegions: input.renderedTextRegions ?? [],
           verifiedLogoRegions: input.verifiedLogoRegions ?? [],
           verifiedScreenshotRegions: input.verifiedScreenshotRegions ?? [],
-        });
-        if (!decision) return;
+        };
+        const resolved = resolveDuplicateOccurrences(raw, itemIndex, duplicateRegions);
+        if (!resolved) return;
+        const decision = applyVisionZoneContradiction(resolved, duplicateRegions, input.textProvenanceLedger);
         let ledgerReason: string | undefined;
         if (!decision.legitimate) {
-          const reported = typeof raw === "object" && raw !== null && Array.isArray((raw as { occurrences?: unknown }).occurrences) ? Math.max(2, (raw as { occurrences: unknown[] }).occurrences.length) : 2;
+          const rawCount = typeof raw === "object" && raw !== null && Array.isArray((raw as { occurrences?: unknown }).occurrences) ? Math.max(2, (raw as { occurrences: unknown[] }).occurrences.length) : 2;
+          // Ocorrências contraditórias saem da contagem; o resto segue a regra do ledger.
+          const reported = decision.contradictions > 0 ? decision.remainingCount : rawCount;
           const ledgerDecision = reconcileOccurrencesWithLedger(normalizeRenderedText(decision.text), reported, input.textProvenanceLedger);
           if (ledgerDecision.reconciled) {
-            input.occurrenceDiagnostics?.push(...decision.occurrences.map((occurrence) => ({ ...occurrence, decision: "allowed" as const, reason: `${ledgerDecision.reason} (posição da visão: ${occurrence.reason})` })));
+            input.occurrenceDiagnostics?.push(...decision.occurrences.map((occurrence) => (occurrence.ignoredForDuplicateCount ? occurrence : { ...occurrence, decision: "allowed" as const, reason: `${ledgerDecision.reason} (posição da visão: ${occurrence.reason})` })));
             return;
           }
           ledgerReason = ledgerDecision.reason;

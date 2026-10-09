@@ -1309,3 +1309,99 @@ test("ledger: logo sem prova em pixel não entra no ledger (não explica texto)"
   assert.ok(!result.textProvenanceLedger.entries.some((entry) => entry.sourceType === "LOGO_ASSET"));
   assert.ok(result.issues.some((issue) => issue.code === "DUPLICATED_TEXT"), "só o CTA explica 1 ocorrência; 2 reportadas");
 });
+
+// ---------------------------------------------------------------------------------------------
+// VISION_ZONE_CONTRADICTION (cenário B real execution-mv1ipciu-jociy4): a visão achou o CTA real
+// e mais uma "ocorrência" do CTA dentro da zona onde o renderer desenhou OUTRO texto (subheadline),
+// com a base limpa. Só vale para adjudicar duplicidade de texto com origem no ledger.
+// ---------------------------------------------------------------------------------------------
+
+const SUB_FALSE_REGION = { xPct: 14, yPct: 82.2, widthPct: 30, heightPct: 4.5 };
+const HEAD_FALSE_REGION = { xPct: 10, yPct: 72, widthPct: 40, heightPct: 6 };
+const REAL_CTA_REGION = { xPct: 34, yPct: 90, widthPct: 32, heightPct: 4.5 };
+const contradictions = (result) => result.occurrenceDiagnostics.filter((item) => item.decision === "VISION_ZONE_CONTRADICTION");
+
+test("zona A: CTA real + CTA falso sobre a subheadline, base limpa → PASS com diagnóstico", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([], duplicated(B_CTA, [REAL_CTA_REGION, SUB_FALSE_REGION])), ledgerGateInput());
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  const [flagged] = contradictions(result);
+  assert.ok(flagged, JSON.stringify(result.occurrenceDiagnostics));
+  assert.equal(flagged.ignoredForDuplicateCount, true);
+  assert.equal(flagged.normalizedText, "conheça o rumo ao altar");
+  assert.equal(flagged.conflictingRendererRole, "subheadline");
+  assert.equal(flagged.conflictingRendererText, "site lista de presentes e confirmação de presença em um só lugar");
+  assert.deepEqual(flagged.conflictingRendererBBox, REAL_B.subheadline);
+  assert.equal(flagged.expectedLedgerRole, "cta");
+  assert.ok(flagged.expectedLedgerSourceId);
+  assert.equal(flagged.baseTextScanStatus, "AVAILABLE");
+  assert.equal(flagged.baseContainsDetectedText, false);
+  assert.match(flagged.reason, /^detected_text_conflicts_with_verified_subheadline_zone_base_clean_and_legitimate_cta_exists/);
+  assert.ok(result.occurrenceDiagnostics.some((item) => item.decision === "allowed" && item.matchedRegion === "cta"));
+});
+
+test("zona B: CTA real + segunda ocorrência vinda da base → FAIL", async () => {
+  const base = { status: "AVAILABLE", texts: [{ text: B_CTA, normalizedText: "conheça o rumo ao altar", bbox: SUB_FALSE_REGION }] };
+  const result = await evaluateCreativeQualityGate(visionReturning([], duplicated(B_CTA, [REAL_CTA_REGION, SUB_FALSE_REGION])), ledgerGateInput({ baseTextDiagnostic: base }));
+  assert.ok(result.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+  assert.equal(contradictions(result).length, 0);
+});
+
+test("zona C: texto desconhecido sobre a subheadline → FAIL (não é whitelist)", async () => {
+  const dup = await evaluateCreativeQualityGate(visionReturning([], duplicated("DESCONTO 90%", [REAL_CTA_REGION, SUB_FALSE_REGION])), ledgerGateInput());
+  assert.ok(dup.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+  assert.equal(contradictions(dup).length, 0);
+  const unauthorized = await evaluateCreativeQualityGate(visionReturning([{ text: "DESCONTO 90%", region: SUB_FALSE_REGION }]), ledgerGateInput());
+  assert.ok(unauthorized.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+});
+
+test("zona D: só o CTA falso sobre a subheadline, CTA real não detectado → regras de texto obrigatório valem", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([{ text: B_CTA, region: SUB_FALSE_REGION }], { missingRequiredTexts: [B_CTA] }), ledgerGateInput());
+  assert.notEqual(result.verdict, "pass");
+  assert.ok(result.issues.some((issue) => issue.code === "MISSING_REQUIRED_TEXT" || issue.code === "UNAUTHORIZED_TEXT"), JSON.stringify(result.issues));
+});
+
+test("zona E: duas ocorrências falsas sem a legítima → nenhuma PASS fabricada", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([], duplicated(B_CTA, [SUB_FALSE_REGION, HEAD_FALSE_REGION])), ledgerGateInput());
+  assert.ok(result.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+  assert.equal(contradictions(result).length, 0);
+});
+
+test("zona F/G: logo + CTA e screenshot + CTA continuam PASS", async () => {
+  const logo = await evaluateCreativeQualityGate(visionReturning([], HALLUCINATED), ledgerGateInput());
+  assert.equal(logo.verdict, "pass", JSON.stringify(logo.issues));
+  assert.equal(contradictions(logo).length, 0);
+  const shot = await evaluateCreativeQualityGate(visionReturning([], duplicated(C_CTA, [SHOT_CTA_REGION, CTA_REGION])), cGateInput(undefined, { baseTextDiagnostic: CLEAN_BASE }));
+  assert.equal(shot.verdict, "pass", JSON.stringify(shot.issues));
+  assert.ok(shot.occurrenceDiagnostics.every((item) => item.reason.startsWith("ALLOWED_TWO_LEGITIMATE_OCCURRENCES")));
+});
+
+test("zona H: scan da base NOT_AVAILABLE desliga a regra", async () => {
+  for (const baseTextDiagnostic of [undefined, { status: "NOT_AVAILABLE", texts: [] }]) {
+    const result = await evaluateCreativeQualityGate(visionReturning([], duplicated(B_CTA, [REAL_CTA_REGION, SUB_FALSE_REGION])), ledgerGateInput({ baseTextDiagnostic }));
+    assert.ok(result.issues.some((issue) => issue.code === "DUPLICATED_TEXT"), JSON.stringify(baseTextDiagnostic));
+    assert.equal(contradictions(result).length, 0);
+  }
+});
+
+test("zona I/J: caixa alta equivalente → PASS; acentuação diferente → FAIL", async () => {
+  const upper = await evaluateCreativeQualityGate(visionReturning([], duplicated("CONHEÇA O RUMO AO ALTAR", [REAL_CTA_REGION, SUB_FALSE_REGION])), ledgerGateInput());
+  assert.equal(upper.verdict, "pass", JSON.stringify(upper.issues));
+  const noAccent = await evaluateCreativeQualityGate(visionReturning([], duplicated("CONHECA O RUMO AO ALTAR", [REAL_CTA_REGION, SUB_FALSE_REGION])), ledgerGateInput());
+  assert.ok(noAccent.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+  assert.equal(contradictions(noAccent).length, 0);
+});
+
+test("zona defensivo: asset soberano sobre a zona nunca vira contradição (a geometria já reprova)", async () => {
+  const input = ledgerGateInput();
+  input.plan = { ...input.plan, assetPlacements: [{ role: "logo", url: LOGO_URL, rect: REAL_B.subheadline, frame: "none" }] };
+  const result = await evaluateCreativeQualityGate(visionReturning([], duplicated(B_CTA, [REAL_CTA_REGION, SUB_FALSE_REGION])), input);
+  assert.notEqual(result.verdict, "pass");
+  assert.equal(contradictions(result).length, 0, JSON.stringify(result.occurrenceDiagnostics));
+});
+
+test("zona defensivo: base com trecho do texto sobre a zona (evidência independente) → FAIL", async () => {
+  const base = { status: "AVAILABLE", texts: [{ text: "Rumo ao Altar", normalizedText: "rumo ao altar", bbox: SUB_FALSE_REGION }] };
+  const result = await evaluateCreativeQualityGate(visionReturning([], duplicated(B_CTA, [REAL_CTA_REGION, SUB_FALSE_REGION])), ledgerGateInput({ baseTextDiagnostic: base }));
+  assert.ok(result.issues.some((issue) => issue.code === "DUPLICATED_TEXT"), JSON.stringify(result.issues));
+  assert.equal(contradictions(result).length, 0);
+});

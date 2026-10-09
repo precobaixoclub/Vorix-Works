@@ -1,0 +1,126 @@
+{
+  "kind": "DIAGNOSTIC_REEVALUATION (não altera o histórico do run)",
+  "executionId": "execution-mv1ipciu-jociy4",
+  "runtimeAtExecution": "344402e (= fce0164)",
+  "inputs": "persisted vision occurrences + final geometry ledger + pixel verification + base text scan (AVAILABLE, [])",
+  "openAiRealCalls": 0,
+  "fakeVisionCalls": 1,
+  "originalVerdict": "fail",
+  "originalIssues": [
+    "DUPLICATED_TEXT"
+  ],
+  "verdict": "pass",
+  "issues": [],
+  "falseOccurrence": [
+    "VISION_ZONE_CONTRADICTION"
+  ],
+  "effectiveDuplicateCount": 1,
+  "duplicatedTextCleared": true,
+  "otherGateIssues": [],
+  "occurrenceDiagnostics": [
+    {
+      "occurrenceId": "dup-0-0",
+      "normalizedText": "conheça o rumo ao altar",
+      "bbox": {
+        "xPct": 5,
+        "yPct": 85,
+        "widthPct": 20,
+        "heightPct": 5
+      },
+      "matchedRegion": "unknown",
+      "provenance": "UNVERIFIED",
+      "decision": "VISION_ZONE_CONTRADICTION",
+      "reason": "detected_text_conflicts_with_verified_headline_zone_base_clean_and_legitimate_cta_exists (visão: fora de qualquer zona do renderer, logo ou screenshot verificados)",
+      "ignoredForDuplicateCount": true,
+      "conflictingRendererRole": "headline",
+      "conflictingRendererText": "o casamento organizado como vocês sonharam",
+      "conflictingRendererBBox": {
+        "xPct": 9.259,
+        "yPct": 81.333,
+        "widthPct": 51.852,
+        "heightPct": 6.08
+      },
+      "expectedLedgerRole": "cta",
+      "expectedLedgerSourceId": "renderer:cta:2",
+      "baseTextScanStatus": "AVAILABLE",
+      "baseContainsDetectedText": false
+    },
+    {
+      "occurrenceId": "dup-0-1",
+      "normalizedText": "conheça o rumo ao altar",
+      "bbox": {
+        "xPct": 70,
+        "yPct": 90,
+        "widthPct": 25,
+        "heightPct": 5
+      },
+      "matchedRegion": "cta",
+      "provenance": "RENDERER_TEXT_ZONE",
+      "decision": "allowed",
+      "reason": "equivalente dentro da bbox final da zona cta"
+    }
+  ],
+  "textProvenanceLedger": {
+    "baseTextStatus": "AVAILABLE",
+    "entries": [
+      {
+        "sourceType": "RENDERER_TEXT",
+        "sourceId": "renderer:headline:0",
+        "normalizedText": "o casamento organizado como vocês sonharam",
+        "role": "headline",
+        "expectedBBox": {
+          "xPct": 9.259,
+          "yPct": 81.333,
+          "widthPct": 51.852,
+          "heightPct": 6.08
+        },
+        "deterministic": true,
+        "assetProvenance": "final_rendered_geometry"
+      },
+      {
+        "sourceType": "RENDERER_TEXT",
+        "sourceId": "renderer:subheadline:1",
+        "normalizedText": "site lista de presentes e confirmação de presença em um só lugar",
+        "role": "subheadline",
+        "expectedBBox": {
+          "xPct": 9.259,
+          "yPct": 88.444,
+          "widthPct": 48.148,
+          "heightPct": 3.366
+        },
+        "deterministic": true,
+        "assetProvenance": "final_rendered_geometry"
+      },
+      {
+        "sourceType": "RENDERER_TEXT",
+        "sourceId": "renderer:cta:2",
+        "normalizedText": "conheça o rumo ao altar",
+        "role": "cta",
+        "expectedBBox": {
+          "xPct": 66.852,
+          "yPct": 89.185,
+          "widthPct": 23.889,
+          "heightPct": 2.667
+        },
+        "deterministic": true,
+        "assetProvenance": "final_rendered_geometry"
+      },
+      {
+        "sourceType": "LOGO_ASSET",
+        "sourceId": "logo:0",
+        "alternatives": [
+          "rumo ao altar"
+        ],
+        "role": "logo",
+        "expectedBBox": {
+          "xPct": 77.13,
+          "yPct": 81.333,
+          "widthPct": 13.611,
+          "heightPct": 2.37
+        },
+        "deterministic": true,
+        "assetProvenance": "context_asset+pixel_verified"
+      }
+    ]
+  }
+}

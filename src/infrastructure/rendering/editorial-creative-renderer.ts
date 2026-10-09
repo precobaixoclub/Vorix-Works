@@ -1195,9 +1195,11 @@ async function analyzeBaseWithGrid(png: Buffer, backdrop = INSTITUTIONAL_BACKDRO
   const rows = AH / BASE_CELL;
   const cells = new Float64Array(cols * rows);
   let lumaSum = 0;
+  let flatPixels = 0;
   for (let y = 0; y < AH; y += 1) {
     for (let x = 0; x < AW; x += 1) {
       const gradient = Math.abs(at(x + 1, y) - at(x - 1, y)) + Math.abs(at(x, y + 1) - at(x, y - 1));
+      if (gradient <= 1) flatPixels += 1;
       cells[Math.floor(y / BASE_CELL) * cols + Math.floor(x / BASE_CELL)] += gradient;
       lumaSum += at(x, y);
     }
@@ -1237,9 +1239,14 @@ async function analyzeBaseWithGrid(png: Buffer, backdrop = INSTITUTIONAL_BACKDRO
   const seen = new Uint8Array(cells.length);
   let clusters = 0;
   const clusterSizes: number[] = [];
+  const clusterBoxes: { size: number; c0: number; c1: number; r0: number; r1: number }[] = [];
   for (let index = 0; index < cells.length; index += 1) {
     if (seen[index] || !high(cells[index]!)) continue;
     let size = 0;
+    let bc0 = cols;
+    let bc1 = -1;
+    let br0 = rows;
+    let br1 = -1;
     const stack = [index];
     seen[index] = 1;
     while (stack.length > 0) {
@@ -1247,6 +1254,10 @@ async function analyzeBaseWithGrid(png: Buffer, backdrop = INSTITUTIONAL_BACKDRO
       size += 1;
       const col = current % cols;
       const row = Math.floor(current / cols);
+      bc0 = Math.min(bc0, col);
+      bc1 = Math.max(bc1, col);
+      br0 = Math.min(br0, row);
+      br1 = Math.max(br1, row);
       for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
         const nc = col + dc;
         const nr = row + dr;
@@ -1261,6 +1272,7 @@ async function analyzeBaseWithGrid(png: Buffer, backdrop = INSTITUTIONAL_BACKDRO
     if (size >= 3) {
       clusters += 1;
       clusterSizes.push(size);
+      clusterBoxes.push({ size, c0: bc0, c1: bc1, r0: br0, r1: br1 });
     }
   }
   const rowQuiet = (row: number): boolean => {
@@ -1308,6 +1320,66 @@ async function analyzeBaseWithGrid(png: Buffer, backdrop = INSTITUTIONAL_BACKDRO
   }
   const transparentShare = transparent / (AW * AH);
   const backgroundSeparatorRatio = Math.min(1, border.reduce((sum, value) => sum + value, 0) / cells.length + transparentShare);
+  // Pouca borda NÃO basta para ser fundo de colagem: bokeh, céu, parede iluminada e profundidade de
+  // campo também são quietos localmente, mas mudam de cor/luz AO LONGO da região (gradiente de baixa
+  // frequência). Fundo separador real é quase uniforme em toda a extensão. Mede-se a variação global
+  // (p10–p90 das médias por célula) da região candidata opaca, e a variação local dentro das células.
+  const rgbGrid = await sharp(png).flatten({ background: backdrop }).resize(AW, AH, { fit: "fill" }).raw().toBuffer();
+  const cellStats = (index: number): { r: number; g: number; b: number; luma: number; lumaStd: number; alphaTransparent: number } => {
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let lumaSum2 = 0;
+    let lumaSq = 0;
+    let transparentPx = 0;
+    for (let y = row * BASE_CELL; y < (row + 1) * BASE_CELL; y += 1) {
+      for (let x = col * BASE_CELL; x < (col + 1) * BASE_CELL; x += 1) {
+        const p = (y * AW + x) * 3;
+        r += rgbGrid[p]!;
+        g += rgbGrid[p + 1]!;
+        b += rgbGrid[p + 2]!;
+        const luma = at(x, y);
+        lumaSum2 += luma;
+        lumaSq += luma * luma;
+        if (rgba[(y * AW + x) * 4 + 3]! < 128) transparentPx += 1;
+      }
+    }
+    const n = BASE_CELL * BASE_CELL;
+    const mean = lumaSum2 / n;
+    return { r: r / n, g: g / n, b: b / n, luma: mean, lumaStd: Math.sqrt(Math.max(0, lumaSq / n - mean * mean)), alphaTransparent: transparentPx / n };
+  };
+  const opaqueCandidates: ReturnType<typeof cellStats>[] = [];
+  for (let index = 0; index < cells.length; index += 1) {
+    if (!border[index]) continue;
+    const stats = cellStats(index);
+    if (stats.alphaTransparent < 0.5) opaqueCandidates.push(stats);
+  }
+  const spread = (values: number[]): number => {
+    if (values.length === 0) return 0;
+    const sortedValues = [...values].sort((a, b) => a - b);
+    return sortedValues[Math.floor(sortedValues.length * 0.9) - (sortedValues.length >= 10 ? 0 : 0)]! - sortedValues[Math.floor(sortedValues.length * 0.1)]!;
+  };
+  const separatorColorVariation = Math.max(
+    spread(opaqueCandidates.map((cell) => cell.luma)),
+    spread(opaqueCandidates.map((cell) => cell.r)),
+    spread(opaqueCandidates.map((cell) => cell.g)),
+    spread(opaqueCandidates.map((cell) => cell.b)),
+  );
+  const separatorLocalVariation = opaqueCandidates.length > 0 ? opaqueCandidates.reduce((sum, cell) => sum + cell.lumaStd, 0) / opaqueCandidates.length : 0;
+  // Confiança de fundo LISO: 1 até 8 níveis de variação global; 0 a partir de 32 (gradiente/luz
+  // fotográfica clara). Transparência é separação estrutural inequívoca e não entra nesta conta.
+  const separatorConfidence = opaqueCandidates.length === 0 ? 0 : clamp((32 - separatorColorVariation) / 24, 0, 1);
+  const opaqueCandidateShare = opaqueCandidates.length / cells.length;
+  const flatSeparatorRatio = Math.min(1, transparentShare + (separatorConfidence >= 0.6 ? opaqueCandidateShare : 0));
+  // Peças de colagem são PAINÉIS: preenchem o próprio retângulo (foto, card). Objetos de uma cena
+  // (flores, pessoas, móveis) têm contorno irregular e preenchem pouco o retângulo que os envolve.
+  const contentPanelCount = clusterBoxes.filter((box) => {
+    const width = box.c1 - box.c0 + 1;
+    const height = box.r1 - box.r0 + 1;
+    return width >= 2 && height >= 2 && box.size / (width * height) >= 0.6;
+  }).length;
   const detailCells = clusterSizes.reduce((sum, value) => sum + value, 0);
   const largestClusterShare = detailCells > 0 ? Math.max(...clusterSizes) / detailCells : 1;
   // Divisórias retas de ponta a ponta (grade de painéis): linha/coluna interna com borda forte em
@@ -1354,11 +1426,21 @@ async function analyzeBaseWithGrid(png: Buffer, backdrop = INSTITUTIONAL_BACKDRO
     meanLuma: Number((lumaSum / (AW * AH) / 255).toFixed(3)),
     transparentRatio: Number((transparent / (AW * AH)).toFixed(3)),
     backgroundSeparatorRatio: Number(backgroundSeparatorRatio.toFixed(3)),
+    flatSeparatorRatio: Number(flatSeparatorRatio.toFixed(3)),
+    separatorConfidence: Number(separatorConfidence.toFixed(3)),
+    separatorColorVariation: Number(separatorColorVariation.toFixed(1)),
+    separatorGradientScore: Number((separatorColorVariation / 255).toFixed(3)),
+    separatorLocalVariation: Number(separatorLocalVariation.toFixed(2)),
+    contentComponentCount: clusters,
+    contentPanelCount,
     largestClusterShare: Number(largestClusterShare.toFixed(3)),
     straightDividers,
     colorBuckets90,
+    flatPixelRatio: Number((flatPixels / (AW * AH)).toFixed(3)),
   };
-  analysis.visualClass = classifyEditorialBase(analysis);
+  const explained = explainEditorialBaseClass(analysis);
+  analysis.visualClass = explained.visualClass;
+  analysis.classificationReasons = explained.reasons;
   return { analysis, grid: { cols, rows, cells, quietThreshold, highThreshold } };
 }
 
@@ -1369,18 +1451,50 @@ async function analyzeBaseWithGrid(png: Buffer, backdrop = INSTITUTIONAL_BACKDRO
  * moldura) tem vários focos e continua sendo CENA ÚNICA (achado do cenário B execution-mv0m68op-4z3oek).
  */
 export function classifyEditorialBase(analysis: EditorialBaseAnalysis): EditorialBaseVisualClass {
-  const separator = analysis.backgroundSeparatorRatio ?? analysis.transparentRatio;
-  const pieces = analysis.detailClusters;
+  return explainEditorialBaseClass(analysis).visualClass;
+}
+
+/** Fundo separador mínimo (fração do canvas) para falar em peças separadas por fundo. */
+const SEPARATOR_MIN_RATIO = 0.2;
+
+export function explainEditorialBaseClass(analysis: EditorialBaseAnalysis): { visualClass: EditorialBaseVisualClass; reasons: string[] } {
+  const pieces = analysis.contentComponentCount ?? analysis.detailClusters;
+  const panels = analysis.contentPanelCount ?? pieces;
+  const transparent = analysis.transparentRatio;
+  const flatSeparator = analysis.flatSeparatorRatio ?? analysis.backgroundSeparatorRatio ?? transparent;
+  const confidence = analysis.separatorConfidence ?? 1;
+  const variation = analysis.separatorColorVariation ?? 0;
   // Arte chapada (poucos tons cobrem 90% dos pixels) vem antes: formas sobre fundo liso não são colagem de fotos.
-  if ((analysis.colorBuckets90 ?? 999) <= 24) return "ILLUSTRATION";
-  if (separator >= 0.2 && pieces >= 3) {
-    // Muitas peças pequenas soltas sobre transparência = folha de assets/stickers.
-    if (analysis.transparentRatio >= 0.2 && pieces >= 8 && (analysis.largestClusterShare ?? 1) < 0.25) return "ASSET_SHEET";
-    return "COLLAGE";
+  // Transparência separa peças sem ambiguidade (recortes, stickers, colagem sobre alfa).
+  if (transparent >= SEPARATOR_MIN_RATIO && pieces >= 3) {
+    if (pieces >= 8 && (analysis.largestClusterShare ?? 1) < 0.25) {
+      return { visualClass: "ASSET_SHEET", reasons: [`${Math.round(transparent * 100)}% transparente separando ${pieces} peças pequenas soltas`] };
+    }
+    return { visualClass: "COLLAGE", reasons: [`${Math.round(transparent * 100)}% transparente separando ${pieces} peças`] };
   }
-  if ((analysis.straightDividers ?? 0) >= 1 && pieces >= 2) return "MULTI_PANEL";
-  if (analysis.transparentRatio >= 0.2) return "OTHER";
-  return "SINGLE_SCENE_PHOTO";
+  // Poucos tons sozinhos não bastam (parede/céu em gradiente também têm poucos): arte chapada tem
+  // áreas EXATAMENTE planas; fotografia tem transição contínua e grão.
+  if ((analysis.colorBuckets90 ?? 999) <= 24 && (analysis.flatPixelRatio ?? 1) >= 0.5) {
+    return { visualClass: "ILLUSTRATION", reasons: [`poucos tons cobrem 90% da imagem (${analysis.colorBuckets90}) e ${Math.round((analysis.flatPixelRatio ?? 1) * 100)}% dos pixels são planos: arte chapada`] };
+  }
+  if ((analysis.straightDividers ?? 0) >= 1 && pieces >= 2) {
+    return { visualClass: "MULTI_PANEL", reasons: [`${analysis.straightDividers} divisória(s) reta(s) de ponta a ponta entre ${pieces} regiões de conteúdo`] };
+  }
+  // Fundo opaco só separa peças quando é LISO em toda a extensão (cor/luz quase constante) e as
+  // peças são painéis (preenchem o próprio retângulo) — não objetos soltos de uma mesma cena.
+  if (flatSeparator >= SEPARATOR_MIN_RATIO && panels >= 2) {
+    const reasons = [`fundo liso (variação global ${variation} níveis, confiança ${confidence}) cobre ${Math.round(flatSeparator * 100)}% e separa ${panels} painéis`];
+    if (panels >= 6 && (analysis.largestClusterShare ?? 1) < 0.25) return { visualClass: "ASSET_SHEET", reasons };
+    return { visualClass: "COLLAGE", reasons };
+  }
+  if (transparent >= SEPARATOR_MIN_RATIO) return { visualClass: "OTHER", reasons: [`${Math.round(transparent * 100)}% transparente sem peças separadas`] };
+  const reasons: string[] = ["cena espacialmente contínua"];
+  if ((analysis.backgroundSeparatorRatio ?? 0) >= SEPARATOR_MIN_RATIO && confidence < 0.6) {
+    reasons.push(`região de pouca borda (${Math.round((analysis.backgroundSeparatorRatio ?? 0) * 100)}%) tem gradiente fotográfico de cor/luz (variação global ${variation} níveis) — não é fundo separador`);
+  }
+  if (pieces >= 3 && panels < 2) reasons.push(`${pieces} focos de detalhe são objetos da cena (contorno irregular), não painéis (${panels})`);
+  if ((analysis.straightDividers ?? 0) === 0) reasons.push("sem divisórias retas");
+  return { visualClass: "SINGLE_SCENE_PHOTO", reasons };
 }
 
 /** Fração do detalhe da base (acima do limiar quieto) dentro de uma janela (frações 0..1). */

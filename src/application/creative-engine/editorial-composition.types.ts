@@ -160,14 +160,31 @@ export type EditorialBaseAnalysis = {
   meanLuma: number;
   /** Fração da base com alfa < 50% (colagem/recorte): aparece o fundo da peça, nunca o RGB escondido. */
   transparentRatio: number;
-  /** Fração do canvas que é fundo separador: transparente ou célula quieta ligada à borda. */
+  /** CANDIDATO a fundo separador: transparente + células de pouca borda ligadas à borda (auditoria). */
   backgroundSeparatorRatio?: number;
+  /** Fundo separador CONFIRMADO: transparente + candidato opaco só se for liso (confiança >= 0,6). */
+  flatSeparatorRatio?: number;
+  /** 0..1 — quão liso (cor/luz constante) é o candidato opaco em toda a extensão. */
+  separatorConfidence?: number;
+  /** Variação global (p10–p90 das médias por célula, 0–255) de luz/cor do candidato opaco. */
+  separatorColorVariation?: number;
+  /** Mesma variação normalizada (0..1): gradiente de baixa frequência. */
+  separatorGradientScore?: number;
+  /** Desvio médio de luz DENTRO de cada célula candidata (variação local). */
+  separatorLocalVariation?: number;
+  /** Agrupamentos de detalhe (objetos ou painéis). */
+  contentComponentCount?: number;
+  /** Agrupamentos que preenchem o próprio retângulo (painéis de colagem). */
+  contentPanelCount?: number;
+  classificationReasons?: string[];
   /** Maior agrupamento de detalhe / total de células de detalhe. */
   largestClusterShare?: number;
   /** Divisórias retas de ponta a ponta (painéis). */
   straightDividers?: number;
   /** Quantos tons quantizados cobrem 90% dos pixels (ilustração chapada tem poucos). */
   colorBuckets90?: number;
+  /** Pixels com gradiente ~0 (áreas exatamente planas, típicas de arte vetorial). */
+  flatPixelRatio?: number;
   visualClass?: EditorialBaseVisualClass;
 };
 

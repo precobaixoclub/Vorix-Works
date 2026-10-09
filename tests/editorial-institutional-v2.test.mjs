@@ -167,3 +167,104 @@ test("headline longa não estoura: linhas adaptam ao tamanho da copy", async () 
     assert.equal(result.geometry.valid, true, `${variant}: ${JSON.stringify(result.geometry.issues)}`);
   }
 });
+
+// ------------------------------------ separador semântico (bokeh × fundo de colagem) ------------
+// Achado do cenário B real execution-mv0uvicq-9ca5dd: fotografia única com fundo desfocado foi
+// classificada COLLAGE porque pouca borda era tratada como fundo separador.
+
+const FLOWERS_BASE = await readFile(new URL("./fixtures/editorial/scenario-b-4f4d604-base.webp", import.meta.url));
+
+async function analysisOf(buffer) {
+  return analyzeEditorialBase(await sharp(buffer).png().toBuffer());
+}
+
+async function withGrain(svg, sigma = 6) {
+  const base = sharp(Buffer.from(svg));
+  const meta = await base.metadata();
+  const noise = await sharp({ create: { width: meta.width, height: meta.height, channels: 3, background: "#808080", noise: { type: "gaussian", mean: 128, sigma } } }).png().toBuffer();
+  return sharp(Buffer.from(svg)).composite([{ input: noise, blend: "soft-light" }]).png().toBuffer();
+}
+
+const SUBJECT = await sharp(PRODUCT_PHOTO).resize(420, 420).png().toBuffer();
+
+const MATRIX = {
+  // A) foto única + bokeh: gradiente quente + círculos desfocados + objetos nítidos pequenos.
+  bokeh: async () => {
+    const bg = await withGrain(`<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1280"><defs><radialGradient id="g" cx="0.6" cy="0.35" r="0.9"><stop offset="0" stop-color="#E9C46A"/><stop offset="0.6" stop-color="#9C6B22"/><stop offset="1" stop-color="#3B2410"/></radialGradient><filter id="b"><feGaussianBlur stdDeviation="28"/></filter></defs><rect width="1024" height="1280" fill="url(#g)"/><g filter="url(#b)" opacity="0.8">${[[200, 240, 70], [760, 180, 90], [640, 760, 110], [180, 1000, 80], [880, 1100, 70]].map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#FFE4A0"/>`).join("")}</g></svg>`);
+    return sharp(bg).composite([{ input: await sharp(SUBJECT).resize(220, 220).png().toBuffer(), left: 160, top: 300 }, { input: await sharp(SUBJECT).resize(200, 200).png().toBuffer(), left: 640, top: 520 }, { input: await sharp(SUBJECT).resize(180, 180).png().toBuffer(), left: 300, top: 900 }]).png().toBuffer();
+  },
+  // B) foto única + céu suave: gradiente vertical azul + nuvens desfocadas + silhueta nítida embaixo.
+  sky: async () => withGrain(`<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1280"><defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1E4E8C"/><stop offset="0.7" stop-color="#8FB8E0"/><stop offset="1" stop-color="#F2D7B0"/></linearGradient><filter id="b"><feGaussianBlur stdDeviation="30"/></filter></defs><rect width="1024" height="1280" fill="url(#s)"/><g filter="url(#b)" opacity="0.6"><ellipse cx="300" cy="300" rx="220" ry="60" fill="#FFFFFF"/><ellipse cx="760" cy="520" rx="260" ry="70" fill="#FFFFFF"/></g><path d="M0 1280 L0 1060 L120 1060 L120 980 L260 980 L260 1100 L420 1100 L420 940 L560 940 L560 1040 L760 1040 L760 900 L900 900 L900 1080 L1024 1080 L1024 1280 Z" fill="#14213D"/>${Array.from({ length: 24 }, (_, i) => `<rect x="${140 + (i % 8) * 100}" y="${1000 + Math.floor(i / 8) * 60}" width="14" height="22" fill="#F4D58D"/>`).join("")}</svg>`),
+  // C) foto única + parede lisa iluminada (queda de luz) + um sujeito.
+  wall: async () => {
+    const wall = await withGrain(`<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1280"><defs><radialGradient id="w" cx="0.2" cy="0.15" r="1.2"><stop offset="0" stop-color="#EFE6D8"/><stop offset="1" stop-color="#9E8A72"/></radialGradient></defs><rect width="1024" height="1280" fill="url(#w)"/></svg>`);
+    return sharp(wall).composite([{ input: SUBJECT, left: 300, top: 560 }]).png().toBuffer();
+  },
+  // D) polaroides (foto + borda branca) sobre fundo liso.
+  polaroids: async () => {
+    const card = await sharp({ create: { width: 400, height: 470, channels: 3, background: "#FBF8F2" } }).composite([{ input: await sharp(SUBJECT).resize(360, 360).png().toBuffer(), left: 20, top: 20 }]).png().toBuffer();
+    return sharp({ create: { width: 1024, height: 1280, channels: 3, background: "#C9A27E" } }).composite([{ input: card, left: 60, top: 80 }, { input: card, left: 560, top: 140 }, { input: card, left: 80, top: 700 }, { input: card, left: 570, top: 740 }]).png().toBuffer();
+  },
+  // E) 4 cards isolados em canvas branco.
+  cards: async () => {
+    const card = await sharp(SUBJECT).resize(380, 300, { fit: "cover" }).png().toBuffer();
+    return sharp({ create: { width: 1024, height: 1280, channels: 3, background: "#FFFFFF" } }).composite([{ input: card, left: 70, top: 120 }, { input: card, left: 574, top: 120 }, { input: card, left: 70, top: 760 }, { input: card, left: 574, top: 760 }]).png().toBuffer();
+  },
+  // F) split screen vertical (duas fotos com calha estreita).
+  split: async () => {
+    const left = await sharp(PRODUCT_PHOTO).resize(506, 1280, { fit: "cover" }).png().toBuffer();
+    const right = await sharp(APPROVED_BASE).resize(506, 1280, { fit: "cover" }).png().toBuffer();
+    return sharp({ create: { width: 1024, height: 1280, channels: 3, background: "#FFFFFF" } }).composite([{ input: left, left: 0, top: 0 }, { input: right, left: 518, top: 0 }]).png().toBuffer();
+  },
+  // H) peças isoladas sobre transparência (stickers).
+  stickers: async () => {
+    const piece = await sharp(SUBJECT).resize(150, 150).png().toBuffer();
+    const composites = Array.from({ length: 12 }, (_, i) => ({ input: piece, left: 60 + (i % 4) * 240, top: 80 + Math.floor(i / 4) * 400 }));
+    return sharp({ create: { width: 1024, height: 1280, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).composite(composites).png().toBuffer();
+  },
+};
+
+test("matriz A–H: separador semântico distingue fundo fotográfico suave de fundo de colagem", async () => {
+  const expected = {
+    bokeh: ["SINGLE_SCENE_PHOTO"],
+    sky: ["SINGLE_SCENE_PHOTO"],
+    wall: ["SINGLE_SCENE_PHOTO"],
+    polaroids: ["COLLAGE", "ASSET_SHEET"],
+    cards: ["COLLAGE", "ASSET_SHEET"],
+    split: ["MULTI_PANEL"],
+    stickers: ["COLLAGE", "ASSET_SHEET"],
+  };
+  for (const [name, build] of Object.entries(MATRIX)) {
+    const analysis = await analysisOf(await build());
+    assert.ok(expected[name].includes(analysis.visualClass), `${name}: ${analysis.visualClass} ${JSON.stringify({ cand: analysis.backgroundSeparatorRatio, flat: analysis.flatSeparatorRatio, conf: analysis.separatorConfidence, variation: analysis.separatorColorVariation, panels: analysis.contentPanelCount, comps: analysis.contentComponentCount, div: analysis.straightDividers, reasons: analysis.classificationReasons })}`);
+    assert.ok(analysis.classificationReasons.length > 0);
+  }
+});
+
+test("bases reais: flores com bokeh e espelho = SINGLE_SCENE_PHOTO; polaroides e recorte = COLLAGE; produto rico = SINGLE_SCENE_PHOTO", async () => {
+  const flowers = await analysisOf(FLOWERS_BASE);
+  assert.equal(flowers.visualClass, "SINGLE_SCENE_PHOTO", JSON.stringify(flowers));
+  assert.ok(flowers.backgroundSeparatorRatio >= 0.2, "a região de pouca borda continua existindo (candidato)");
+  assert.ok(flowers.separatorConfidence < 0.6 && flowers.separatorColorVariation > 32, "mas tem gradiente fotográfico de cor/luz");
+  assert.equal(flowers.flatSeparatorRatio, 0);
+  assert.match(flowers.classificationReasons.join(" "), /gradiente fotográfico/);
+  assert.equal((await analysisOf(APPROVED_BASE)).visualClass, "SINGLE_SCENE_PHOTO");
+  assert.equal((await analysisOf(PRODUCT_PHOTO)).visualClass, "SINGLE_SCENE_PHOTO");
+  const polaroid = await analysisOf(POLAROID_COLLAGE);
+  assert.equal(polaroid.visualClass, "COLLAGE");
+  assert.match(polaroid.classificationReasons[0], /transparente/);
+});
+
+test("fundo separador liso de verdade continua com confiança alta", async () => {
+  const analysis = await analysisOf(await MATRIX.cards());
+  assert.ok(analysis.separatorConfidence >= 0.6, JSON.stringify(analysis));
+  assert.ok(analysis.flatSeparatorRatio >= 0.2);
+});
+
+test("automático na base real das flores: variante de cena única (nunca COLLAGE_EDITORIAL), geometria válida", async () => {
+  const result = await render(FLOWERS_BASE);
+  assert.equal(result.composition.baseVisualClass, "SINGLE_SCENE_PHOTO");
+  assert.ok(["PHOTO_DOMINANT_EDITORIAL", "ASYMMETRIC_LUXURY", "FULL_BLEED_STORY", "MINIMAL_PREMIUM"].includes(result.composition.variant), result.composition.variant);
+  assert.equal(result.geometry.valid, true, JSON.stringify(result.geometry.issues));
+  assert.equal(result.assetVerification.find((item) => item.role === "logo").fidelityPass, true);
+});

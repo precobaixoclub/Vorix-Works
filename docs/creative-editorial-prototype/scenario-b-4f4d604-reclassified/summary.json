@@ -1,0 +1,152 @@
+[
+  {
+    "file": "00-latest-b-auto-reclassified.jpg",
+    "variant": "MINIMAL_PREMIUM",
+    "baseVisualClass": "SINGLE_SCENE_PHOTO",
+    "selectionReasons": [
+      "SINGLE_SCENE_PHOTO: plano pede composição limpa (densidade clean) — menos elementos, tipografia contida"
+    ],
+    "classificationReasons": [
+      "cena espacialmente contínua",
+      "região de pouca borda (33%) tem gradiente fotográfico de cor/luz (variação global 48.4 níveis) — não é fundo separador",
+      "sem divisórias retas"
+    ],
+    "baseAnalysis": {
+      "visualDensity": 0.466,
+      "negativeSpaceRatio": 0.391,
+      "focalConcentration": 0.557,
+      "focalPoint": {
+        "xPct": 47.3,
+        "yPct": 49.4
+      },
+      "detailBox": {
+        "xPct": 0,
+        "yPct": 0,
+        "widthPct": 93.8,
+        "heightPct": 100
+      },
+      "detailClusters": 8,
+      "quietTopPct": 0,
+      "quietBottomPct": 0,
+      "meanLuma": 0.349,
+      "transparentRatio": 0,
+      "backgroundSeparatorRatio": 0.328,
+      "flatSeparatorRatio": 0,
+      "separatorConfidence": 0,
+      "separatorColorVariation": 48.4,
+      "separatorGradientScore": 0.19,
+      "separatorLocalVariation": 3.07,
+      "contentComponentCount": 8,
+      "contentPanelCount": 7,
+      "largestClusterShare": 0.275,
+      "straightDividers": 0,
+      "colorBuckets90": 26,
+      "flatPixelRatio": 0.081,
+      "visualClass": "SINGLE_SCENE_PHOTO",
+      "classificationReasons": [
+        "cena espacialmente contínua",
+        "região de pouca borda (33%) tem gradiente fotográfico de cor/luz (variação global 48.4 níveis) — não é fundo separador",
+        "sem divisórias retas"
+      ]
+    },
+    "baseFit": {
+      "strategy": "COVER_FOCAL_SAFE_CROP",
+      "cropLossPct": 0.145,
+      "detailRetainedPct": 0.866,
+      "reasons": [
+        "recorte editorial centrado no foco preserva o núcleo da cena (44%×65% da base); perda de área 15% (máx. 32%)"
+      ]
+    },
+    "logoTreatment": "LOGO_DIRECT_LIGHT",
+    "ctaTreatment": "TEXT_HAIRLINE",
+    "prominence": 0.567,
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.2383,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 7.24,
+        "fidelityPass": true
+      }
+    ]
+  },
+  {
+    "file": "01-latest-b-old-collage-reference.jpg",
+    "variant": "COLLAGE_EDITORIAL",
+    "baseVisualClass": "SINGLE_SCENE_PHOTO",
+    "selectionReasons": [
+      "QA_VARIANT_OVERRIDE=COLLAGE_EDITORIAL (fixture local; regra escolheria MINIMAL_PREMIUM)",
+      "SINGLE_SCENE_PHOTO: plano pede composição limpa (densidade clean) — menos elementos, tipografia contida"
+    ],
+    "classificationReasons": [
+      "cena espacialmente contínua",
+      "região de pouca borda (33%) tem gradiente fotográfico de cor/luz (variação global 48.4 níveis) — não é fundo separador",
+      "sem divisórias retas"
+    ],
+    "baseAnalysis": {
+      "visualDensity": 0.466,
+      "negativeSpaceRatio": 0.391,
+      "focalConcentration": 0.557,
+      "focalPoint": {
+        "xPct": 47.3,
+        "yPct": 49.4
+      },
+      "detailBox": {
+        "xPct": 0,
+        "yPct": 0,
+        "widthPct": 93.8,
+        "heightPct": 100
+      },
+      "detailClusters": 8,
+      "quietTopPct": 0,
+      "quietBottomPct": 0,
+      "meanLuma": 0.349,
+      "transparentRatio": 0,
+      "backgroundSeparatorRatio": 0.328,
+      "flatSeparatorRatio": 0,
+      "separatorConfidence": 0,
+      "separatorColorVariation": 48.4,
+      "separatorGradientScore": 0.19,
+      "separatorLocalVariation": 3.07,
+      "contentComponentCount": 8,
+      "contentPanelCount": 7,
+      "largestClusterShare": 0.275,
+      "straightDividers": 0,
+      "colorBuckets90": 26,
+      "flatPixelRatio": 0.081,
+      "visualClass": "SINGLE_SCENE_PHOTO",
+      "classificationReasons": [
+        "cena espacialmente contínua",
+        "região de pouca borda (33%) tem gradiente fotográfico de cor/luz (variação global 48.4 níveis) — não é fundo separador",
+        "sem divisórias retas"
+      ]
+    },
+    "baseFit": {
+      "strategy": "CONTAIN_WITH_BACKGROUND",
+      "cropLossPct": 0,
+      "detailRetainedPct": 1,
+      "reasons": [
+        "colagem: base inteira preservada (contain), sem recorte — cada foto da base continua visível"
+      ]
+    },
+    "logoTreatment": "CHIP",
+    "prominence": 0.307,
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.795,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 7.17,
+        "fidelityPass": true
+      }
+    ]
+  }
+]

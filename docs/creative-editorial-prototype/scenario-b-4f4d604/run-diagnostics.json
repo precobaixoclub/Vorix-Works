@@ -1,0 +1,400 @@
+{
+    "base": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv0uw8js-pwxnr8-editorial-base.jpg",
+    "cost": {
+        "total": 0.07349514999999998,
+        "director": 0.0013681499999999998,
+        "baseTextScan": 0.00014759999999999998,
+        "imageGeneration": 0.07073499999999999,
+        "repairRoundsCost": 0,
+        "visualQualityScore": 0.00047729999999999995,
+        "directionExploration": 0.0002745,
+        "technicalQualityGate": 0.0004925999999999999,
+        "preCompositionAnalysis": 0,
+        "ghostTextNeutralization": 0
+    },
+    "plan": {
+        "cta": "Conheça o Rumo ao Altar",
+        "sub": "Site, lista de presentes e confirmação de presença em um só lugar.",
+        "headline": "O casamento organizado como vocês sonharam",
+        "visualDensity": "clean"
+    },
+    "alpha": {
+        "opaqueRatio": 1,
+        "nonOpaqueRatio": 0,
+        "hasAlphaChannel": false,
+        "transparentRatio": 0,
+        "requestedBackground": "opaque",
+        "semiTransparentRatio": 0
+    },
+    "final": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv0uwbiz-omond4-editorial-final.jpg",
+    "ledger": {
+        "entries": [
+            {
+                "role": "headline",
+                "sourceId": "renderer:headline:0",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 6.667,
+                    "yPct": 70.074,
+                    "widthPct": 86.667,
+                    "heightPct": 10.169
+                },
+                "deterministic": true,
+                "normalizedText": "o casamento organizado como vocês sonharam",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "subheadline",
+                "sourceId": "renderer:subheadline:1",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 12.037,
+                    "yPct": 81.852,
+                    "widthPct": 75.926,
+                    "heightPct": 5.52
+                },
+                "deterministic": true,
+                "normalizedText": "site lista de presentes e confirmação de presença em um só lugar",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "cta",
+                "sourceId": "renderer:cta:2",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 33.796,
+                    "yPct": 89.926,
+                    "widthPct": 32.5,
+                    "heightPct": 4.741
+                },
+                "deterministic": true,
+                "normalizedText": "conheça o rumo ao altar",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "logo",
+                "sourceId": "logo:0",
+                "sourceType": "LOGO_ASSET",
+                "alternatives": [
+                    "rumo ao altar"
+                ],
+                "expectedBBox": {
+                    "xPct": 40.185,
+                    "yPct": 64.148,
+                    "widthPct": 19.63,
+                    "heightPct": 3.407
+                },
+                "deterministic": true,
+                "assetProvenance": "context_asset+pixel_verified"
+            }
+        ],
+        "baseTextStatus": "AVAILABLE"
+    },
+    "verify": [
+        {
+            "role": "logo",
+            "visible": true,
+            "detectedMime": "image/png",
+            "fidelityPass": true,
+            "assetMatchRatio": 1,
+            "fidelityMeanAbsDiff": 7.17,
+            "informativePixelRatio": 0.795
+        }
+    ],
+    "baseText": {
+        "texts": [
+        ],
+        "status": "AVAILABLE",
+        "target": "OPENAI_BASE",
+        "sourceArtifactUrl": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv0uw8js-pwxnr8-editorial-base.jpg"
+    },
+    "geometry": {
+        "family": "premium_institutional",
+        "source": "final_rendered_geometry",
+        "textBoxes": [
+            {
+                "id": "headline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 6.667,
+                    "yPct": 70.074,
+                    "widthPct": 86.667,
+                    "heightPct": 10.169
+                },
+                "text": "O casamento organizado como vocês sonharam",
+                "lineCount": 2,
+                "fontSizePx": 66
+            },
+            {
+                "id": "subheadline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 12.037,
+                    "yPct": 81.852,
+                    "widthPct": 75.926,
+                    "heightPct": 5.52
+                },
+                "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+                "lineCount": 2,
+                "fontSizePx": 27
+            },
+            {
+                "id": "cta",
+                "kind": "text",
+                "rect": {
+                    "xPct": 33.796,
+                    "yPct": 89.926,
+                    "widthPct": 32.5,
+                    "heightPct": 4.741
+                },
+                "text": "CONHEÇA O RUMO AO ALTAR",
+                "lineCount": 1,
+                "fontSizePx": 20
+            }
+        ],
+        "assetBoxes": [
+            {
+                "id": "logo",
+                "kind": "asset",
+                "rect": {
+                    "xPct": 40.185,
+                    "yPct": 64.148,
+                    "widthPct": 19.63,
+                    "heightPct": 3.407
+                },
+                "role": "logo"
+            }
+        ]
+    },
+    "composition": {
+        "diagnostics": {
+            "baseFit": {
+                "reasons": [
+                    "colagem: base inteira preservada (contain), sem recorte — cada foto da base continua visível"
+                ],
+                "strategy": "CONTAIN_WITH_BACKGROUND",
+                "cropLossPct": 0,
+                "detailRetainedPct": 1
+            },
+            "variant": "COLLAGE_EDITORIAL",
+            "pageTone": "dark",
+            "baseAnalysis": {
+                "meanLuma": 0.349,
+                "detailBox": {
+                    "xPct": 0,
+                    "yPct": 0,
+                    "widthPct": 93.8,
+                    "heightPct": 100
+                },
+                "focalPoint": {
+                    "xPct": 47.3,
+                    "yPct": 49.4
+                },
+                "quietTopPct": 0,
+                "visualClass": "COLLAGE",
+                "visualDensity": 0.466,
+                "colorBuckets90": 26,
+                "detailClusters": 8,
+                "quietBottomPct": 0,
+                "straightDividers": 0,
+                "transparentRatio": 0,
+                "focalConcentration": 0.557,
+                "negativeSpaceRatio": 0.391,
+                "largestClusterShare": 0.275,
+                "backgroundSeparatorRatio": 0.328
+            },
+            "logoTreatment": "CHIP",
+            "baseVisualClass": "COLLAGE",
+            "selectionReasons": [
+                "base COLLAGE: peças separadas por fundo (33% separador) — base inteira, sem recorte, texto em faixa própria"
+            ],
+            "occupiedAreaRatio": 0.49,
+            "largestEmptyBandPct": 0.03,
+            "contentCentroidOffset": 0.027,
+            "productVisualProminence": 0.307
+        },
+        "selectedVariant": "COLLAGE_EDITORIAL",
+        "variantSelectionReasons": [
+            "base COLLAGE: peças separadas por fundo (33% separador) — base inteira, sem recorte, texto em faixa própria"
+        ]
+    },
+    "quality_gate": {
+        "issues": [
+        ],
+        "verdict": "pass",
+        "textProvenanceLedger": {
+            "entries": [
+                {
+                    "role": "headline",
+                    "sourceId": "renderer:headline:0",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 6.667,
+                        "yPct": 70.074,
+                        "widthPct": 86.667,
+                        "heightPct": 10.169
+                    },
+                    "deterministic": true,
+                    "normalizedText": "o casamento organizado como vocês sonharam",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "subheadline",
+                    "sourceId": "renderer:subheadline:1",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 12.037,
+                        "yPct": 81.852,
+                        "widthPct": 75.926,
+                        "heightPct": 5.52
+                    },
+                    "deterministic": true,
+                    "normalizedText": "site lista de presentes e confirmação de presença em um só lugar",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "cta",
+                    "sourceId": "renderer:cta:2",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 33.796,
+                        "yPct": 89.926,
+                        "widthPct": 32.5,
+                        "heightPct": 4.741
+                    },
+                    "deterministic": true,
+                    "normalizedText": "conheça o rumo ao altar",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "logo",
+                    "sourceId": "logo:0",
+                    "sourceType": "LOGO_ASSET",
+                    "alternatives": [
+                        "rumo ao altar"
+                    ],
+                    "expectedBBox": {
+                        "xPct": 40.185,
+                        "yPct": 64.148,
+                        "widthPct": 19.63,
+                        "heightPct": 3.407
+                    },
+                    "deterministic": true,
+                    "assetProvenance": "context_asset+pixel_verified"
+                }
+            ],
+            "baseTextStatus": "AVAILABLE"
+        },
+        "occurrenceDiagnostics": [
+            {
+                "bbox": {
+                    "xPct": 40,
+                    "yPct": 43,
+                    "widthPct": 20,
+                    "heightPct": 5
+                },
+                "reason": "LEDGER_RECONCILED: 2 ocorrência(s) explicadas por RENDERER_TEXT/cta + LOGO_ASSET/logo; base sem o texto (posição da visão: fora de qualquer zona do renderer, logo ou screenshot verificados)",
+                "decision": "allowed",
+                "provenance": "UNVERIFIED",
+                "occurrenceId": "dup-0-0",
+                "matchedRegion": "unknown",
+                "normalizedText": "rumo ao altar"
+            },
+            {
+                "bbox": {
+                    "xPct": 40,
+                    "yPct": 80,
+                    "widthPct": 20,
+                    "heightPct": 5
+                },
+                "reason": "LEDGER_RECONCILED: 2 ocorrência(s) explicadas por RENDERER_TEXT/cta + LOGO_ASSET/logo; base sem o texto (posição da visão: fora de qualquer zona do renderer, logo ou screenshot verificados)",
+                "decision": "allowed",
+                "provenance": "UNVERIFIED",
+                "occurrenceId": "dup-0-1",
+                "matchedRegion": "unknown",
+                "normalizedText": "rumo ao altar"
+            }
+        ]
+    },
+    "visual_score": {
+        "dimensions": [
+            {
+                "key": "visualHierarchy",
+                "label": "hierarquia visual",
+                "score": 6,
+                "justification": "O headline compete visualmente com o hero, sem hierarquia clara entre eles."
+            },
+            {
+                "key": "compositionBalance",
+                "label": "equilíbrio da composição",
+                "score": 7,
+                "justification": "A composição é equilibrada, mas o texto poderia ser melhor integrado ao espaço negativo."
+            },
+            {
+                "key": "legibility",
+                "label": "legibilidade",
+                "score": 8,
+                "justification": "O texto é legível, mas o contraste poderia ser melhorado para maior clareza."
+            },
+            {
+                "key": "focusClarity",
+                "label": "clareza do foco principal",
+                "score": 5,
+                "justification": "As flores não ocupam 60% do canvas, perdendo protagonismo como foco principal."
+            },
+            {
+                "key": "canvasUsage",
+                "label": "aproveitamento do canvas",
+                "score": 6,
+                "justification": "O espaço negativo não é utilizado de forma otimizada, especialmente ao redor do texto."
+            },
+            {
+                "key": "colorCoherence",
+                "label": "coerência cromática",
+                "score": 9,
+                "justification": "A paleta de cores douradas e suaves é bem coerente e agradável."
+            },
+            {
+                "key": "backgroundQuality",
+                "label": "qualidade do fundo",
+                "score": 8,
+                "justification": "O fundo desfocado cria uma boa profundidade, mas poderia ser mais etéreo."
+            },
+            {
+                "key": "assetIntegration",
+                "label": "integração dos assets reais",
+                "score": 7,
+                "justification": "Os elementos estão bem integrados, mas o texto parece um pouco deslocado."
+            },
+            {
+                "key": "nonGenericLook",
+                "label": "aparência não genérica (não parece template automático)",
+                "score": 7,
+                "justification": "A peça tem um visual único, mas ainda lembra templates comuns."
+            },
+            {
+                "key": "visualCleanliness",
+                "label": "ausência de poluição visual",
+                "score": 8,
+                "justification": "A peça é limpa visualmente, sem elementos desnecessários."
+            },
+            {
+                "key": "commercialStrength",
+                "label": "força comercial",
+                "score": 6,
+                "justification": "A mensagem comercial é clara, mas poderia ser mais impactante visualmente."
+            },
+            {
+                "key": "artDirectionFidelity",
+                "label": "fidelidade à direção de arte planejada",
+                "score": 7,
+                "justification": "A direção de arte é seguida, mas a atmosfera mágica poderia ser mais acentuada."
+            }
+        ],
+        "overallScore": 7,
+        "belowThreshold": false,
+        "requiresRepair": false,
+        "weakDimensions": [
+        ]
+    }
+}

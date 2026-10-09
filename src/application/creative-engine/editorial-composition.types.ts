@@ -107,10 +107,19 @@ export type RenderEditorialCreativeInput = {
 export const PRODUCT_OFFER_VARIANTS = ["HERO_DOMINANT", "SPLIT_EDITORIAL", "OVERLAY_EDITORIAL"] as const;
 export type ProductOfferVariant = (typeof PRODUCT_OFFER_VARIANTS)[number];
 export type ProductOfferPriceTreatment = "INLINE_PRICE" | "COMMERCIAL_FOOTER";
-export type EditorialLogoTreatment = "DIRECT" | "MULTIPLY_ON_LIGHT" | "CHIP";
+export type EditorialLogoTreatment = "DIRECT" | "MULTIPLY_ON_LIGHT" | "CHIP" | "LOGO_DIRECT_LIGHT" | "LOGO_DIRECT_DARK" | "LOGO_SOFT_PLATE" | "LOGO_HAIRLINE_PLATE";
+
+/** Tratamento editorial do CTA (institucional). */
+export type EditorialCtaTreatment = "SOLID_PREMIUM" | "OUTLINE_EDITORIAL" | "TEXT_HAIRLINE" | "COMPACT_PILL";
+
+/** Classe visual da base da IA (decide se é cena única, colagem etc. — nunca pela contagem de focos). */
+export const EDITORIAL_BASE_VISUAL_CLASSES = ["SINGLE_SCENE_PHOTO", "COLLAGE", "MULTI_PANEL", "ASSET_SHEET", "ILLUSTRATION", "OTHER"] as const;
+export type EditorialBaseVisualClass = (typeof EDITORIAL_BASE_VISUAL_CLASSES)[number];
 
 /** Variantes internas da família premium_institutional (base da IA é a protagonista). */
-export const INSTITUTIONAL_VARIANTS = ["FULL_BLEED_EDITORIAL", "SPLIT_STORY", "COLLAGE_EDITORIAL"] as const;
+/** PHOTO_DOMINANT/ASYMMETRIC/FULL_BLEED_STORY/MINIMAL são as variantes de cena única; COLLAGE_EDITORIAL
+ * fica para bases realmente compostas de peças. FULL_BLEED_EDITORIAL/SPLIT_STORY são legado (só QA). */
+export const INSTITUTIONAL_VARIANTS = ["PHOTO_DOMINANT_EDITORIAL", "ASYMMETRIC_LUXURY", "FULL_BLEED_STORY", "MINIMAL_PREMIUM", "COLLAGE_EDITORIAL", "FULL_BLEED_EDITORIAL", "SPLIT_STORY"] as const;
 export type InstitutionalVariant = (typeof INSTITUTIONAL_VARIANTS)[number];
 
 /** Variantes internas da família digital_service. MOBILE_DEVICE = screenshot de celular no mockup. */
@@ -151,6 +160,15 @@ export type EditorialBaseAnalysis = {
   meanLuma: number;
   /** Fração da base com alfa < 50% (colagem/recorte): aparece o fundo da peça, nunca o RGB escondido. */
   transparentRatio: number;
+  /** Fração do canvas que é fundo separador: transparente ou célula quieta ligada à borda. */
+  backgroundSeparatorRatio?: number;
+  /** Maior agrupamento de detalhe / total de células de detalhe. */
+  largestClusterShare?: number;
+  /** Divisórias retas de ponta a ponta (painéis). */
+  straightDividers?: number;
+  /** Quantos tons quantizados cobrem 90% dos pixels (ilustração chapada tem poucos). */
+  colorBuckets90?: number;
+  visualClass?: EditorialBaseVisualClass;
 };
 
 export const SCREENSHOT_CLASSES = ["MOBILE", "DESKTOP", "TABLET", "OTHER"] as const;
@@ -208,6 +226,8 @@ export type EditorialCompositionDiagnostics = {
   /** Fração do canvas coberta por elementos. */
   occupiedAreaRatio: number;
   baseAnalysis?: EditorialBaseAnalysis;
+  baseVisualClass?: EditorialBaseVisualClass;
+  ctaTreatment?: EditorialCtaTreatment;
   baseFit?: EditorialBaseFit;
   screenshot?: EditorialScreenshotDiagnostics;
 };

@@ -1,0 +1,101 @@
+[
+ {
+  "file": "00-institutional-auto-v2.jpg",
+  "variant": "PHOTO_DOMINANT_EDITORIAL",
+  "baseClass": "SINGLE_SCENE_PHOTO",
+  "reasons": [
+   "SINGLE_SCENE_PHOTO: cena única sem faixa calma (topo 0%, base 0%) e foco central (49.7%) — foto protagonista grande, copy em faixa editorial assimétrica"
+  ],
+  "fit": "COVER_FOCAL_SAFE_CROP",
+  "crop": 0.215,
+  "logo": "LOGO_DIRECT_LIGHT",
+  "cta": "SOLID_PREMIUM",
+  "prominence": 0.673,
+  "emptyBand": 0.015,
+  "valid": true,
+  "issues": [],
+  "verify": [
+   "logo:true/true/8.1"
+  ]
+ },
+ {
+  "file": "01-photo-dominant-editorial.jpg",
+  "variant": "PHOTO_DOMINANT_EDITORIAL",
+  "baseClass": "SINGLE_SCENE_PHOTO",
+  "reasons": [
+   "QA_VARIANT_OVERRIDE=PHOTO_DOMINANT_EDITORIAL (fixture local; regra escolheria PHOTO_DOMINANT_EDITORIAL)",
+   "SINGLE_SCENE_PHOTO: cena única sem faixa calma (topo 0%, base 0%) e foco central (49.7%) — foto protagonista grande, copy em faixa editorial assimétrica"
+  ],
+  "fit": "COVER_FOCAL_SAFE_CROP",
+  "crop": 0.215,
+  "logo": "LOGO_DIRECT_LIGHT",
+  "cta": "SOLID_PREMIUM",
+  "prominence": 0.673,
+  "emptyBand": 0.015,
+  "valid": true,
+  "issues": [],
+  "verify": [
+   "logo:true/true/8.1"
+  ]
+ },
+ {
+  "file": "02-asymmetric-luxury.jpg",
+  "variant": "ASYMMETRIC_LUXURY",
+  "baseClass": "SINGLE_SCENE_PHOTO",
+  "reasons": [
+   "QA_VARIANT_OVERRIDE=ASYMMETRIC_LUXURY (fixture local; regra escolheria PHOTO_DOMINANT_EDITORIAL)",
+   "SINGLE_SCENE_PHOTO: cena única sem faixa calma (topo 0%, base 0%) e foco central (49.7%) — foto protagonista grande, copy em faixa editorial assimétrica"
+  ],
+  "fit": "COVER_FOCAL_SAFE_CROP",
+  "crop": 0.291,
+  "logo": "LOGO_SOFT_PLATE",
+  "cta": "TEXT_HAIRLINE",
+  "prominence": 0.627,
+  "emptyBand": 0,
+  "valid": true,
+  "issues": [],
+  "verify": [
+   "logo:true/true/6.78"
+  ]
+ },
+ {
+  "file": "03-full-bleed-story.jpg",
+  "variant": "FULL_BLEED_STORY",
+  "baseClass": "SINGLE_SCENE_PHOTO",
+  "reasons": [
+   "QA_VARIANT_OVERRIDE=FULL_BLEED_STORY (fixture local; regra escolheria PHOTO_DOMINANT_EDITORIAL)",
+   "SINGLE_SCENE_PHOTO: cena única sem faixa calma (topo 0%, base 0%) e foco central (49.7%) — foto protagonista grande, copy em faixa editorial assimétrica"
+  ],
+  "fit": "FULL_BLEED",
+  "crop": 0,
+  "logo": "LOGO_HAIRLINE_PLATE",
+  "cta": "OUTLINE_EDITORIAL",
+  "prominence": 1,
+  "emptyBand": 0,
+  "valid": true,
+  "issues": [],
+  "verify": [
+   "logo:true/true/7.1"
+  ]
+ },
+ {
+  "file": "04-minimal-premium.jpg",
+  "variant": "MINIMAL_PREMIUM",
+  "baseClass": "SINGLE_SCENE_PHOTO",
+  "reasons": [
+   "QA_VARIANT_OVERRIDE=MINIMAL_PREMIUM (fixture local; regra escolheria PHOTO_DOMINANT_EDITORIAL)",
+   "SINGLE_SCENE_PHOTO: cena única sem faixa calma (topo 0%, base 0%) e foco central (49.7%) — foto protagonista grande, copy em faixa editorial assimétrica"
+  ],
+  "fit": "COVER_FOCAL_SAFE_CROP",
+  "crop": 0.145,
+  "logo": "LOGO_DIRECT_LIGHT",
+  "cta": "TEXT_HAIRLINE",
+  "prominence": 0.567,
+  "emptyBand": 0.03,
+  "valid": true,
+  "issues": [],
+  "verify": [
+   "logo:true/true/7.35"
+  ]
+ }
+]

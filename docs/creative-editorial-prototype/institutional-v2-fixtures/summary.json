@@ -1,0 +1,611 @@
+[
+  {
+    "file": "00-institutional-auto-v2.jpg",
+    "composition": {
+      "variant": "PHOTO_DOMINANT_EDITORIAL",
+      "selectionReasons": [
+        "SINGLE_SCENE_PHOTO: cena única sem faixa calma (topo 0%, base 0%) e foco central (49.7%) — foto protagonista grande, copy em faixa editorial assimétrica"
+      ],
+      "logoTreatment": "LOGO_DIRECT_LIGHT",
+      "ctaTreatment": "SOLID_PREMIUM",
+      "pageTone": "light",
+      "productVisualProminence": 0.673,
+      "largestEmptyBandPct": 0.015,
+      "contentCentroidOffset": 0.094,
+      "occupiedAreaRatio": 0.781,
+      "baseAnalysis": {
+        "visualDensity": 0.84,
+        "negativeSpaceRatio": 0.075,
+        "focalConcentration": 0.384,
+        "focalPoint": {
+          "xPct": 49.7,
+          "yPct": 51.7
+        },
+        "detailBox": {
+          "xPct": 0,
+          "yPct": 0,
+          "widthPct": 100,
+          "heightPct": 100
+        },
+        "detailClusters": 5,
+        "quietTopPct": 0,
+        "quietBottomPct": 0,
+        "meanLuma": 0.349,
+        "transparentRatio": 0,
+        "backgroundSeparatorRatio": 0.006,
+        "largestClusterShare": 0.5,
+        "straightDividers": 0,
+        "colorBuckets90": 49,
+        "visualClass": "SINGLE_SCENE_PHOTO"
+      },
+      "baseVisualClass": "SINGLE_SCENE_PHOTO",
+      "baseFit": {
+        "strategy": "COVER_FOCAL_SAFE_CROP",
+        "cropLossPct": 0.215,
+        "detailRetainedPct": 0.844,
+        "reasons": [
+          "recorte editorial centrado no foco preserva o núcleo da cena (69%×45% da base); perda de área 22% (máx. 32%)"
+        ]
+      }
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.206,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 8.1,
+        "fidelityPass": true
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "premium_institutional",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 87.407,
+            "widthPct": 51.852,
+            "heightPct": 7.52
+          },
+          "text": "O casamento organizado como vocês sonharam",
+          "fontSizePx": 47,
+          "lineCount": 2
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 63.519,
+            "yPct": 83.778,
+            "widthPct": 30.556,
+            "heightPct": 5.68
+          },
+          "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+          "fontSizePx": 18,
+          "lineCount": 3
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 67.676,
+            "yPct": 91.111,
+            "widthPct": 21.778,
+            "heightPct": 3.852
+          },
+          "text": "CONHEÇA O RUMO AO ALTAR",
+          "fontSizePx": 17,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 78.704,
+            "yPct": 79.481,
+            "widthPct": 15.37,
+            "heightPct": 2.667
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "01-photo-dominant-editorial.jpg",
+    "composition": {
+      "variant": "PHOTO_DOMINANT_EDITORIAL",
+      "selectionReasons": [
+        "QA_VARIANT_OVERRIDE=PHOTO_DOMINANT_EDITORIAL (fixture local; regra escolheria PHOTO_DOMINANT_EDITORIAL)",
+        "SINGLE_SCENE_PHOTO: cena única sem faixa calma (topo 0%, base 0%) e foco central (49.7%) — foto protagonista grande, copy em faixa editorial assimétrica"
+      ],
+      "logoTreatment": "LOGO_DIRECT_LIGHT",
+      "ctaTreatment": "SOLID_PREMIUM",
+      "pageTone": "light",
+      "productVisualProminence": 0.673,
+      "largestEmptyBandPct": 0.015,
+      "contentCentroidOffset": 0.094,
+      "occupiedAreaRatio": 0.781,
+      "baseAnalysis": {
+        "visualDensity": 0.84,
+        "negativeSpaceRatio": 0.075,
+        "focalConcentration": 0.384,
+        "focalPoint": {
+          "xPct": 49.7,
+          "yPct": 51.7
+        },
+        "detailBox": {
+          "xPct": 0,
+          "yPct": 0,
+          "widthPct": 100,
+          "heightPct": 100
+        },
+        "detailClusters": 5,
+        "quietTopPct": 0,
+        "quietBottomPct": 0,
+        "meanLuma": 0.349,
+        "transparentRatio": 0,
+        "backgroundSeparatorRatio": 0.006,
+        "largestClusterShare": 0.5,
+        "straightDividers": 0,
+        "colorBuckets90": 49,
+        "visualClass": "SINGLE_SCENE_PHOTO"
+      },
+      "baseVisualClass": "SINGLE_SCENE_PHOTO",
+      "baseFit": {
+        "strategy": "COVER_FOCAL_SAFE_CROP",
+        "cropLossPct": 0.215,
+        "detailRetainedPct": 0.844,
+        "reasons": [
+          "recorte editorial centrado no foco preserva o núcleo da cena (69%×45% da base); perda de área 22% (máx. 32%)"
+        ]
+      }
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.206,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 8.1,
+        "fidelityPass": true
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "premium_institutional",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 87.407,
+            "widthPct": 51.852,
+            "heightPct": 7.52
+          },
+          "text": "O casamento organizado como vocês sonharam",
+          "fontSizePx": 47,
+          "lineCount": 2
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 63.519,
+            "yPct": 83.778,
+            "widthPct": 30.556,
+            "heightPct": 5.68
+          },
+          "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+          "fontSizePx": 18,
+          "lineCount": 3
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 67.676,
+            "yPct": 91.111,
+            "widthPct": 21.778,
+            "heightPct": 3.852
+          },
+          "text": "CONHEÇA O RUMO AO ALTAR",
+          "fontSizePx": 17,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 78.704,
+            "yPct": 79.481,
+            "widthPct": 15.37,
+            "heightPct": 2.667
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "02-asymmetric-luxury.jpg",
+    "composition": {
+      "variant": "ASYMMETRIC_LUXURY",
+      "selectionReasons": [
+        "QA_VARIANT_OVERRIDE=ASYMMETRIC_LUXURY (fixture local; regra escolheria PHOTO_DOMINANT_EDITORIAL)",
+        "SINGLE_SCENE_PHOTO: cena única sem faixa calma (topo 0%, base 0%) e foco central (49.7%) — foto protagonista grande, copy em faixa editorial assimétrica"
+      ],
+      "logoTreatment": "LOGO_SOFT_PLATE",
+      "ctaTreatment": "TEXT_HAIRLINE",
+      "pageTone": "dark",
+      "productVisualProminence": 0.627,
+      "largestEmptyBandPct": 0,
+      "contentCentroidOffset": 0.126,
+      "occupiedAreaRatio": 0.69,
+      "baseAnalysis": {
+        "visualDensity": 0.84,
+        "negativeSpaceRatio": 0.075,
+        "focalConcentration": 0.384,
+        "focalPoint": {
+          "xPct": 49.7,
+          "yPct": 51.7
+        },
+        "detailBox": {
+          "xPct": 0,
+          "yPct": 0,
+          "widthPct": 100,
+          "heightPct": 100
+        },
+        "detailClusters": 5,
+        "quietTopPct": 0,
+        "quietBottomPct": 0,
+        "meanLuma": 0.349,
+        "transparentRatio": 0,
+        "backgroundSeparatorRatio": 0.006,
+        "largestClusterShare": 0.5,
+        "straightDividers": 0,
+        "colorBuckets90": 49,
+        "visualClass": "SINGLE_SCENE_PHOTO"
+      },
+      "baseVisualClass": "SINGLE_SCENE_PHOTO",
+      "baseFit": {
+        "strategy": "COVER_FOCAL_SAFE_CROP",
+        "cropLossPct": 0.291,
+        "detailRetainedPct": 0.653,
+        "reasons": [
+          "recorte editorial centrado no foco preserva o núcleo da cena (69%×45% da base); perda de área 29% (máx. 32%)"
+        ]
+      }
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.8396,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 6.78,
+        "fidelityPass": true
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "premium_institutional",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 74.074,
+            "yPct": 69.185,
+            "widthPct": 20,
+            "heightPct": 11.52
+          },
+          "text": "O casamento organizado como vocês sonharam",
+          "fontSizePx": 36,
+          "lineCount": 4
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 74.074,
+            "yPct": 82.444,
+            "widthPct": 20,
+            "heightPct": 7.153
+          },
+          "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+          "fontSizePx": 17,
+          "lineCount": 4
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 74.074,
+            "yPct": 91.852,
+            "widthPct": 14.463,
+            "heightPct": 2.222
+          },
+          "text": "CONHEÇA O RUMO AO ALTAR",
+          "fontSizePx": 12,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 74.074,
+            "yPct": 5.185,
+            "widthPct": 15.37,
+            "heightPct": 2.667
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "03-full-bleed-story.jpg",
+    "composition": {
+      "variant": "FULL_BLEED_STORY",
+      "selectionReasons": [
+        "QA_VARIANT_OVERRIDE=FULL_BLEED_STORY (fixture local; regra escolheria PHOTO_DOMINANT_EDITORIAL)",
+        "SINGLE_SCENE_PHOTO: cena única sem faixa calma (topo 0%, base 0%) e foco central (49.7%) — foto protagonista grande, copy em faixa editorial assimétrica"
+      ],
+      "logoTreatment": "LOGO_HAIRLINE_PLATE",
+      "ctaTreatment": "OUTLINE_EDITORIAL",
+      "pageTone": "dark",
+      "productVisualProminence": 1,
+      "largestEmptyBandPct": 0,
+      "contentCentroidOffset": 0.052,
+      "occupiedAreaRatio": 1,
+      "baseAnalysis": {
+        "visualDensity": 0.84,
+        "negativeSpaceRatio": 0.075,
+        "focalConcentration": 0.384,
+        "focalPoint": {
+          "xPct": 49.7,
+          "yPct": 51.7
+        },
+        "detailBox": {
+          "xPct": 0,
+          "yPct": 0,
+          "widthPct": 100,
+          "heightPct": 100
+        },
+        "detailClusters": 5,
+        "quietTopPct": 0,
+        "quietBottomPct": 0,
+        "meanLuma": 0.349,
+        "transparentRatio": 0,
+        "backgroundSeparatorRatio": 0.006,
+        "largestClusterShare": 0.5,
+        "straightDividers": 0,
+        "colorBuckets90": 49,
+        "visualClass": "SINGLE_SCENE_PHOTO"
+      },
+      "baseVisualClass": "SINGLE_SCENE_PHOTO",
+      "baseFit": {
+        "strategy": "FULL_BLEED",
+        "cropLossPct": 0,
+        "detailRetainedPct": 1,
+        "reasons": [
+          "proporção da base já é a da área: imagem inteira"
+        ]
+      }
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.1918,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 7.1,
+        "fidelityPass": true
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "premium_institutional",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 69.111,
+            "widthPct": 64.815,
+            "heightPct": 14.4
+          },
+          "text": "O casamento organizado como vocês sonharam",
+          "fontSizePx": 60,
+          "lineCount": 3
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 84.815,
+            "widthPct": 51.852,
+            "heightPct": 4.207
+          },
+          "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+          "fontSizePx": 20,
+          "lineCount": 2
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 10.546,
+            "yPct": 91.259,
+            "widthPct": 21.778,
+            "heightPct": 4
+          },
+          "text": "CONHEÇA O RUMO AO ALTAR",
+          "fontSizePx": 17,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 5.926,
+            "yPct": 4.741,
+            "widthPct": 15.37,
+            "heightPct": 2.667
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "04-minimal-premium.jpg",
+    "composition": {
+      "variant": "MINIMAL_PREMIUM",
+      "selectionReasons": [
+        "QA_VARIANT_OVERRIDE=MINIMAL_PREMIUM (fixture local; regra escolheria PHOTO_DOMINANT_EDITORIAL)",
+        "SINGLE_SCENE_PHOTO: cena única sem faixa calma (topo 0%, base 0%) e foco central (49.7%) — foto protagonista grande, copy em faixa editorial assimétrica"
+      ],
+      "logoTreatment": "LOGO_DIRECT_LIGHT",
+      "ctaTreatment": "TEXT_HAIRLINE",
+      "pageTone": "light",
+      "productVisualProminence": 0.567,
+      "largestEmptyBandPct": 0.03,
+      "contentCentroidOffset": 0.052,
+      "occupiedAreaRatio": 0.651,
+      "baseAnalysis": {
+        "visualDensity": 0.84,
+        "negativeSpaceRatio": 0.075,
+        "focalConcentration": 0.384,
+        "focalPoint": {
+          "xPct": 49.7,
+          "yPct": 51.7
+        },
+        "detailBox": {
+          "xPct": 0,
+          "yPct": 0,
+          "widthPct": 100,
+          "heightPct": 100
+        },
+        "detailClusters": 5,
+        "quietTopPct": 0,
+        "quietBottomPct": 0,
+        "meanLuma": 0.349,
+        "transparentRatio": 0,
+        "backgroundSeparatorRatio": 0.006,
+        "largestClusterShare": 0.5,
+        "straightDividers": 0,
+        "colorBuckets90": 49,
+        "visualClass": "SINGLE_SCENE_PHOTO"
+      },
+      "baseVisualClass": "SINGLE_SCENE_PHOTO",
+      "baseFit": {
+        "strategy": "COVER_FOCAL_SAFE_CROP",
+        "cropLossPct": 0.145,
+        "detailRetainedPct": 0.892,
+        "reasons": [
+          "recorte editorial centrado no foco preserva o núcleo da cena (69%×45% da base); perda de área 15% (máx. 32%)"
+        ]
+      }
+    },
+    "geometryValid": true,
+    "issues": [],
+    "verification": [
+      {
+        "role": "logo",
+        "detectedMime": "image/png",
+        "visible": true,
+        "informativePixelRatio": 0.2404,
+        "assetMatchRatio": 1,
+        "fidelityMeanAbsDiff": 7.35,
+        "fidelityPass": true
+      }
+    ],
+    "renderedGeometry": {
+      "source": "final_rendered_geometry",
+      "family": "premium_institutional",
+      "textBoxes": [
+        {
+          "id": "headline",
+          "kind": "text",
+          "rect": {
+            "xPct": 9.259,
+            "yPct": 81.333,
+            "widthPct": 51.852,
+            "heightPct": 6.08
+          },
+          "text": "O casamento organizado como vocês sonharam",
+          "fontSizePx": 38,
+          "lineCount": 2
+        },
+        {
+          "id": "subheadline",
+          "kind": "text",
+          "rect": {
+            "xPct": 9.259,
+            "yPct": 88.444,
+            "widthPct": 48.148,
+            "heightPct": 3.366
+          },
+          "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+          "fontSizePx": 16,
+          "lineCount": 2
+        },
+        {
+          "id": "cta",
+          "kind": "text",
+          "rect": {
+            "xPct": 66.852,
+            "yPct": 89.185,
+            "widthPct": 18.352,
+            "heightPct": 1.926
+          },
+          "text": "CONHEÇA O RUMO AO ALTAR",
+          "fontSizePx": 15,
+          "lineCount": 1
+        }
+      ],
+      "assetBoxes": [
+        {
+          "id": "logo",
+          "kind": "asset",
+          "role": "logo",
+          "rect": {
+            "xPct": 77.13,
+            "yPct": 81.333,
+            "widthPct": 13.611,
+            "heightPct": 2.37
+          }
+        }
+      ]
+    }
+  }
+]

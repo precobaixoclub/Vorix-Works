@@ -7,6 +7,8 @@ import {
   EditorialCompositionError,
   type EditorialAssetVerification,
   type EditorialBaseAnalysis,
+  type EditorialBaseVisualClass,
+  type EditorialCtaTreatment,
   type EditorialBaseFit,
   type EditorialCompositionDiagnostics,
   type EditorialLogoTreatment,
@@ -1234,6 +1236,7 @@ async function analyzeBaseWithGrid(png: Buffer, backdrop = INSTITUTIONAL_BACKDRO
   // Agrupamentos de alto detalhe (vizinhança 4) com pelo menos 3 células.
   const seen = new Uint8Array(cells.length);
   let clusters = 0;
+  const clusterSizes: number[] = [];
   for (let index = 0; index < cells.length; index += 1) {
     if (seen[index] || !high(cells[index]!)) continue;
     let size = 0;
@@ -1255,7 +1258,10 @@ async function analyzeBaseWithGrid(png: Buffer, backdrop = INSTITUTIONAL_BACKDRO
         }
       }
     }
-    if (size >= 3) clusters += 1;
+    if (size >= 3) {
+      clusters += 1;
+      clusterSizes.push(size);
+    }
   }
   const rowQuiet = (row: number): boolean => {
     let sum = 0;
@@ -1274,6 +1280,64 @@ async function analyzeBaseWithGrid(png: Buffer, backdrop = INSTITUTIONAL_BACKDRO
   const topCount = Math.max(1, Math.ceil(sorted.length * 0.2));
   const topSum = sorted.slice(-topCount).reduce((sum, value) => sum + value, 0);
   const hasHigh = maxCol >= 0;
+  // Fundo separador: células quietas LIGADAS À BORDA (fundo liso em volta de peças) + transparência.
+  const border = new Uint8Array(cells.length);
+  const queue: number[] = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      if ((row === 0 || col === 0 || row === rows - 1 || col === cols - 1) && quiet(cells[row * cols + col]!)) {
+        border[row * cols + col] = 1;
+        queue.push(row * cols + col);
+      }
+    }
+  }
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    const col = current % cols;
+    const row = Math.floor(current / cols);
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const nc = col + dc;
+      const nr = row + dr;
+      if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+      const next = nr * cols + nc;
+      if (!border[next] && quiet(cells[next]!)) {
+        border[next] = 1;
+        queue.push(next);
+      }
+    }
+  }
+  const transparentShare = transparent / (AW * AH);
+  const backgroundSeparatorRatio = Math.min(1, border.reduce((sum, value) => sum + value, 0) / cells.length + transparentShare);
+  const detailCells = clusterSizes.reduce((sum, value) => sum + value, 0);
+  const largestClusterShare = detailCells > 0 ? Math.max(...clusterSizes) / detailCells : 1;
+  // Divisórias retas de ponta a ponta (grade de painéis): linha/coluna interna com borda forte em
+  // >= 90% da extensão. Fotografia contínua quase nunca tem isso.
+  let straightDividers = 0;
+  for (let y = Math.round(AH * 0.1); y < Math.round(AH * 0.9); y += 1) {
+    let strong = 0;
+    for (let x = 0; x < AW; x += 1) if (Math.abs(at(x, y + 1) - at(x, y - 1)) > 40) strong += 1;
+    if (strong >= AW * 0.9) { straightDividers += 1; y += 3; }
+  }
+  for (let x = Math.round(AW * 0.1); x < Math.round(AW * 0.9); x += 1) {
+    let strong = 0;
+    for (let y = 0; y < AH; y += 1) if (Math.abs(at(x + 1, y) - at(x - 1, y)) > 40) strong += 1;
+    if (strong >= AH * 0.9) { straightDividers += 1; x += 3; }
+  }
+  // Diversidade de tons: quantos tons (4 bits/canal) cobrem 90% dos pixels — arte chapada usa poucos.
+  const rgb = await sharp(png).flatten({ background: backdrop }).resize(64, 80, { fit: "fill" }).raw().toBuffer();
+  const bucketCounts = new Map<number, number>();
+  for (let index = 0; index + 2 < rgb.length; index += 3) {
+    const key = ((rgb[index]! >> 4) << 8) | ((rgb[index + 1]! >> 4) << 4) | (rgb[index + 2]! >> 4);
+    bucketCounts.set(key, (bucketCounts.get(key) ?? 0) + 1);
+  }
+  const sortedBuckets = [...bucketCounts.values()].sort((a, b) => b - a);
+  let covered = 0;
+  let colorBuckets90 = 0;
+  for (const count of sortedBuckets) {
+    if (covered >= (rgb.length / 3) * 0.9) break;
+    covered += count;
+    colorBuckets90 += 1;
+  }
   const analysis: EditorialBaseAnalysis = {
     visualDensity: Number(clamp(total / cells.length / 30, 0, 1).toFixed(3)),
     negativeSpaceRatio: Number((cells.filter(quiet).length / cells.length).toFixed(3)),
@@ -1289,8 +1353,34 @@ async function analyzeBaseWithGrid(png: Buffer, backdrop = INSTITUTIONAL_BACKDRO
     quietBottomPct: Number((quietBottom / rows).toFixed(3)),
     meanLuma: Number((lumaSum / (AW * AH) / 255).toFixed(3)),
     transparentRatio: Number((transparent / (AW * AH)).toFixed(3)),
+    backgroundSeparatorRatio: Number(backgroundSeparatorRatio.toFixed(3)),
+    largestClusterShare: Number(largestClusterShare.toFixed(3)),
+    straightDividers,
+    colorBuckets90,
   };
+  analysis.visualClass = classifyEditorialBase(analysis);
   return { analysis, grid: { cols, rows, cells, quietThreshold, highThreshold } };
+}
+
+/**
+ * Classe visual da base. Colagem/folha de assets = peças SEPARADAS por fundo (transparente ou liso
+ * ligado à borda); painéis = divisórias retas de ponta a ponta; ilustração = poucos tons chapados.
+ * A contagem de focos de detalhe sozinha nunca decide: uma fotografia única rica (flores, tecido,
+ * moldura) tem vários focos e continua sendo CENA ÚNICA (achado do cenário B execution-mv0m68op-4z3oek).
+ */
+export function classifyEditorialBase(analysis: EditorialBaseAnalysis): EditorialBaseVisualClass {
+  const separator = analysis.backgroundSeparatorRatio ?? analysis.transparentRatio;
+  const pieces = analysis.detailClusters;
+  // Arte chapada (poucos tons cobrem 90% dos pixels) vem antes: formas sobre fundo liso não são colagem de fotos.
+  if ((analysis.colorBuckets90 ?? 999) <= 24) return "ILLUSTRATION";
+  if (separator >= 0.2 && pieces >= 3) {
+    // Muitas peças pequenas soltas sobre transparência = folha de assets/stickers.
+    if (analysis.transparentRatio >= 0.2 && pieces >= 8 && (analysis.largestClusterShare ?? 1) < 0.25) return "ASSET_SHEET";
+    return "COLLAGE";
+  }
+  if ((analysis.straightDividers ?? 0) >= 1 && pieces >= 2) return "MULTI_PANEL";
+  if (analysis.transparentRatio >= 0.2) return "OTHER";
+  return "SINGLE_SCENE_PHOTO";
 }
 
 /** Fração do detalhe da base (acima do limiar quieto) dentro de uma janela (frações 0..1). */
@@ -1558,6 +1648,372 @@ async function renderInstitutionalAdaptive(
   const { window: _window, drawRect: _drawRect, ...baseFit } = fit;
   const metrics = compositionMetrics(boxes, canvas, baseRect, [baseRect]);
   return { svg, zones, assets, roles, verify, composition: { variant, selectionReasons: reasons, logoTreatment, pageTone: "dark", ...metrics, baseAnalysis: analysis, baseFit } };
+}
+
+// ---------------------------------- premium_institutional 4:5 (editorial v2) -------------------
+
+export type InstitutionalEditorialSignals = {
+  base: EditorialBaseAnalysis;
+  visualClass: EditorialBaseVisualClass;
+  headlineChars: number;
+  subheadlineChars: number;
+  hasSubheadline: boolean;
+  visualDensity?: string;
+};
+
+/** Mesmo input → mesma variante. Primeiro a CLASSE da base (peças separadas → colagem); para cena
+ * única, a forma da cena (faixa calma, foco deslocado) e a densidade pedida pelo plano decidem. */
+export function selectInstitutionalEditorialVariant(signals: InstitutionalEditorialSignals): { variant: InstitutionalVariant; reasons: string[] } {
+  const { base } = signals;
+  if (signals.visualClass === "COLLAGE" || signals.visualClass === "ASSET_SHEET" || signals.visualClass === "MULTI_PANEL") {
+    return { variant: "COLLAGE_EDITORIAL", reasons: [`base ${signals.visualClass}: peças separadas por fundo (${Math.round((base.backgroundSeparatorRatio ?? 0) * 100)}% separador) — base inteira, sem recorte, texto em faixa própria`] };
+  }
+  const quietBand = Math.max(base.quietTopPct, base.quietBottomPct);
+  if (quietBand >= 0.24 && signals.headlineChars <= 52) {
+    return { variant: "FULL_BLEED_STORY", reasons: [`${signals.visualClass}: faixa calma real de ${Math.round(quietBand * 100)}% ${base.quietBottomPct >= base.quietTopPct ? "embaixo" : "em cima"} — imagem em tela cheia, texto sobre a área calma`] };
+  }
+  if (signals.visualDensity === "clean" || (!signals.hasSubheadline && signals.headlineChars <= 32)) {
+    return { variant: "MINIMAL_PREMIUM", reasons: [`${signals.visualClass}: plano pede composição limpa (densidade ${signals.visualDensity ?? "n/d"}) — menos elementos, tipografia contida`] };
+  }
+  const offset = base.focalPoint.xPct - 50;
+  if (Math.abs(offset) >= 6) {
+    return { variant: "ASYMMETRIC_LUXURY", reasons: [`${signals.visualClass}: foco deslocado ${offset > 0 ? "à direita" : "à esquerda"} (${base.focalPoint.xPct}%) — foto deslocada para o lado do foco, copy no eixo oposto`] };
+  }
+  return { variant: "PHOTO_DOMINANT_EDITORIAL", reasons: [`${signals.visualClass}: cena única sem faixa calma (topo ${Math.round(base.quietTopPct * 100)}%, base ${Math.round(base.quietBottomPct * 100)}%) e foco central (${base.focalPoint.xPct}%) — foto protagonista grande, copy em faixa editorial assimétrica`] };
+}
+
+/** Núcleo da cena: região contígua mais rica em volta do foco que soma 35% do detalhe — o recorte
+ * editorial precisa contê-la inteira. Cresce um lado por vez, sempre na direção mais rica. */
+const CROP_CORE_DETAIL_SHARE = 0.35;
+/** Perda máxima de área num recorte editorial de cena única (o núcleo sempre preservado). */
+const EDITORIAL_CROP_MAX_LOSS = 0.32;
+
+function sceneCoreBox(analysis: EditorialBaseAnalysis, grid: BaseDetailGrid): { x: number; y: number; width: number; height: number } {
+  const excess = (col: number, row: number): number => Math.max(0, grid.cells[row * grid.cols + col]! - grid.quietThreshold);
+  let total = 0;
+  for (let row = 0; row < grid.rows; row += 1) for (let col = 0; col < grid.cols; col += 1) total += excess(col, row);
+  const fc = clamp(Math.floor((analysis.focalPoint.xPct / 100) * grid.cols), 0, grid.cols - 1);
+  const fr = clamp(Math.floor((analysis.focalPoint.yPct / 100) * grid.rows), 0, grid.rows - 1);
+  let c0 = fc;
+  let c1 = fc;
+  let r0 = fr;
+  let r1 = fr;
+  const sum = (): number => {
+    let value = 0;
+    for (let row = r0; row <= r1; row += 1) for (let col = c0; col <= c1; col += 1) value += excess(col, row);
+    return value;
+  };
+  const strip = (side: "left" | "right" | "top" | "bottom"): number => {
+    let value = 0;
+    if (side === "left" && c0 > 0) for (let row = r0; row <= r1; row += 1) value += excess(c0 - 1, row);
+    if (side === "right" && c1 < grid.cols - 1) for (let row = r0; row <= r1; row += 1) value += excess(c1 + 1, row);
+    if (side === "top" && r0 > 0) for (let col = c0; col <= c1; col += 1) value += excess(col, r0 - 1);
+    if (side === "bottom" && r1 < grid.rows - 1) for (let col = c0; col <= c1; col += 1) value += excess(col, r1 + 1);
+    return value;
+  };
+  let current = sum();
+  while (total > 0 && current < total * CROP_CORE_DETAIL_SHARE && (c0 > 0 || r0 > 0 || c1 < grid.cols - 1 || r1 < grid.rows - 1)) {
+    const sides = (["left", "right", "top", "bottom"] as const).filter((side) => (side === "left" ? c0 > 0 : side === "right" ? c1 < grid.cols - 1 : side === "top" ? r0 > 0 : r1 < grid.rows - 1));
+    // Por área: compara o ganho por célula (faixas verticais e horizontais têm tamanhos diferentes).
+    const best = sides.map((side) => ({ side, gain: strip(side) / (side === "left" || side === "right" ? r1 - r0 + 1 : c1 - c0 + 1) })).sort((a, b) => b.gain - a.gain)[0]!;
+    current += strip(best.side);
+    if (best.side === "left") c0 -= 1;
+    else if (best.side === "right") c1 += 1;
+    else if (best.side === "top") r0 -= 1;
+    else r1 += 1;
+  }
+  return { x: c0 / grid.cols, y: r0 / grid.rows, width: (c1 - c0 + 1) / grid.cols, height: (r1 - r0 + 1) / grid.rows };
+}
+
+/** Recorte editorial seguro para cena única: janela da proporção da área, centrada no foco, que
+ * contém o núcleo inteiro e perde no máximo 32% da área; senão a base entra inteira (contain) sobre a
+ * extensão desfocada dela mesma. Nunca deforma. */
+function planEditorialCrop(analysis: EditorialBaseAnalysis, grid: BaseDetailGrid, base: { width: number; height: number }, target: PxRect): BaseFitPlan {
+  const baseAspect = base.width / base.height;
+  const targetAspect = target.width / target.height;
+  const width = baseAspect > targetAspect ? targetAspect / baseAspect : 1;
+  const height = baseAspect > targetAspect ? 1 : baseAspect / targetAspect;
+  const core = sceneCoreBox(analysis, grid);
+  const centreX = clamp(analysis.focalPoint.xPct / 100, core.x + core.width / 2 - 0.5 + width / 2, core.x + core.width / 2 + 0.5 - width / 2);
+  const window = {
+    x: clamp(centreX - width / 2, Math.max(0, core.x + core.width - width), Math.min(1 - width, core.x)),
+    y: clamp(analysis.focalPoint.yPct / 100 - height / 2, Math.max(0, core.y + core.height - height), Math.min(1 - height, core.y)),
+    width,
+    height,
+  };
+  window.x = clamp(window.x, 0, 1 - width);
+  window.y = clamp(window.y, 0, 1 - height);
+  const loss = 1 - width * height;
+  const coreInside = core.x >= window.x - 1e-6 && core.y >= window.y - 1e-6 && core.x + core.width <= window.x + window.width + 1e-6 && core.y + core.height <= window.y + window.height + 1e-6;
+  if (loss <= 0.005) {
+    return { strategy: "FULL_BLEED", cropLossPct: 0, detailRetainedPct: 1, reasons: ["proporção da base já é a da área: imagem inteira"], window, drawRect: target };
+  }
+  if (coreInside && loss <= EDITORIAL_CROP_MAX_LOSS) {
+    return { strategy: "COVER_FOCAL_SAFE_CROP", cropLossPct: Number(loss.toFixed(3)), detailRetainedPct: Number(detailRetained(grid, window).toFixed(3)), reasons: [`recorte editorial centrado no foco preserva o núcleo da cena (${Math.round(core.width * 100)}%×${Math.round(core.height * 100)}% da base); perda de área ${Math.round(loss * 100)}% (máx. ${EDITORIAL_CROP_MAX_LOSS * 100}%)`], window, drawRect: target };
+  }
+  return { strategy: "CONTAIN_WITH_BACKGROUND", cropLossPct: 0, detailRetainedPct: 1, reasons: [`recorte cortaria o núcleo da cena ou perderia ${Math.round(loss * 100)}% da área: base inteira sobre a extensão dela mesma`], drawRect: fitAspectInto(target, baseAspect) };
+}
+
+/** Logo: direto quando o contraste/fidelidade permitem; placa suave integrada; chip só como último recurso. */
+function resolveInstitutionalLogoTreatment(logo: PreparedAsset, surface: "light" | "dark" | "photo"): EditorialLogoTreatment {
+  const hasOpaqueLightBox = logo.stats.borderOpaqueRatio > 0.9 && logo.stats.borderLuma > 228;
+  if (surface === "light") return "LOGO_DIRECT_LIGHT";
+  if (surface === "dark") return hasOpaqueLightBox || logo.stats.meanLuma < 120 ? "LOGO_SOFT_PLATE" : "LOGO_DIRECT_DARK";
+  return "LOGO_HAIRLINE_PLATE";
+}
+
+type InstitutionalCopyBlock = { spec: TextSpec; rect: PxRect; anchor: "start" | "end" };
+
+async function renderInstitutionalEditorial(
+  input: RenderEditorialCreativeInput,
+  canvas: Canvas,
+  logo: PreparedAsset | undefined,
+  base: { png: Buffer; width: number; height: number },
+  fontFaceCss: string,
+  boxes: EditorialGeometryBox[],
+  issues: EditorialGeometryIssue[],
+): Promise<FamilyRender> {
+  const W = canvas.width;
+  const H = canvas.height;
+  const M = 64;
+  const plan = input.plan;
+  const headline = plan.headline;
+  const subheadline = plan.subheadline?.trim() ? plan.subheadline : undefined;
+  const cta = plan.cta.trim() ? plan.cta : undefined;
+  const { analysis, grid } = await analyzeBaseWithGrid(base.png);
+  const visualClass = analysis.visualClass ?? classifyEditorialBase(analysis);
+  const selected = selectInstitutionalEditorialVariant({ base: analysis, visualClass, headlineChars: headline.length, subheadlineChars: subheadline?.length ?? 0, hasSubheadline: Boolean(subheadline), visualDensity: plan.visualDensity });
+  const override = input.qaVariantOverride && (INSTITUTIONAL_VARIANTS as readonly string[]).includes(input.qaVariantOverride) ? (input.qaVariantOverride as InstitutionalVariant) : undefined;
+  const variant = override ?? selected.variant;
+  const reasons = override ? [`QA_VARIANT_OVERRIDE=${override} (fixture local; regra escolheria ${selected.variant})`, ...selected.reasons] : [...selected.reasons];
+
+  if (variant === "COLLAGE_EDITORIAL" || variant === "FULL_BLEED_EDITORIAL" || variant === "SPLIT_STORY") {
+    const legacy = await renderInstitutionalAdaptive({ ...input, qaVariantOverride: variant }, canvas, logo, base, fontFaceCss, boxes, issues);
+    return legacy.composition ? { ...legacy, composition: { ...legacy.composition, variant, selectionReasons: reasons, baseVisualClass: visualClass, baseAnalysis: analysis } } : legacy;
+  }
+
+  // Paleta derivada da própria base (nunca um marrom genérico fixo).
+  const palette = await extractScreenshotPalette(base.png);
+  const lightSurface = mixRgb(palette.dominant, WHITE, 0.86);
+  const darkSurface = mixRgb(palette.dominant, BLACK, 0.86);
+  const surfaceTone: "light" | "dark" = variant === "ASYMMETRIC_LUXURY" ? "dark" : "light";
+  const surface = surfaceTone === "light" ? lightSurface : darkSurface;
+  const ink = surfaceTone === "light" ? toHex(mixRgb(darkSurface, BLACK, 0.35)) : toHex(mixRgb(lightSurface, WHITE, 0.4));
+  const muted = surfaceTone === "light" ? toHex(mixRgb(mixRgb(darkSurface, BLACK, 0.35), lightSurface, 0.32)) : toHex(mixRgb(lightSurface, darkSurface, 0.18));
+  const hairlineColor = toHex(mixRgb(palette.accent, surfaceTone === "light" ? BLACK : WHITE, 0.25));
+  const photoSurface = variant === "FULL_BLEED_STORY";
+  const logoTreatment = logo ? resolveInstitutionalLogoTreatment(logo, photoSurface ? "photo" : surfaceTone) : undefined;
+  const ctaTreatment: EditorialCtaTreatment = variant === "PHOTO_DOMINANT_EDITORIAL" ? "SOLID_PREMIUM" : variant === "FULL_BLEED_STORY" ? "OUTLINE_EDITORIAL" : "TEXT_HAIRLINE";
+  const logoBox = logo ? logoSize(logo, variant === "MINIMAL_PREMIUM" ? 190 : 220, variant === "MINIMAL_PREMIUM" ? 32 : 36) : undefined;
+
+  const headSpec = (width: number, max: number, lines: number, anchor: "start" | "end" = "start"): TextSpec => ({ id: "headline", text: headline, width, maxHeight: max * 1.08 * lines, maxFontSize: max, minFontSize: 30, maxLines: lines, lineHeight: 1.08, letterSpacing: -0.6, ...(anchor === "end" ? {} : {}) });
+  const subSpec = (width: number, max: number, lines: number): TextSpec | undefined => (subheadline ? { id: "subheadline", text: subheadline, width, maxHeight: max * 1.42 * lines, maxFontSize: max, minFontSize: 15, maxLines: lines, lineHeight: 1.42, letterSpacing: 0.15 } : undefined);
+  const CTA_TRACKING = 2.6;
+  const ctaFontFor = (maxWidth: number, preferred: number): number => {
+    let size = preferred;
+    while (cta && size > 12 && estimateLineWidth(cta.toUpperCase(), size, CTA_TRACKING) > maxWidth) size -= 1;
+    return size;
+  };
+  let ctaFont = variant === "MINIMAL_PREMIUM" ? 15 : 17;
+  let ctaTextWidth = cta ? estimateLineWidth(cta.toUpperCase(), ctaFont, CTA_TRACKING) : 0;
+
+  let photo: PxRect;
+  let logoRect: PxRect | undefined;
+  let head: InstitutionalCopyBlock;
+  let sub: InstitutionalCopyBlock | undefined;
+  let ctaRect: PxRect | undefined;
+  let scrim: { top: number } | undefined;
+  const decorations: string[] = [];
+
+  if (variant === "PHOTO_DOMINANT_EDITORIAL") {
+    // Foto protagonista quase de borda a borda; faixa editorial assimétrica: headline à esquerda,
+    // logo + subtítulo + CTA alinhados à direita.
+    const hs = headSpec(560, 50, headline.length > 44 ? 3 : 2);
+    const hf = measureSpec(hs);
+    const rightX = W - M;
+    const colW = 330;
+    const ss = subSpec(colW, 18, 3);
+    const sf = ss ? measureSpec(ss) : undefined;
+    const ctaH = 52;
+    const rightH = (logoBox ? logoBox.height + 22 : 0) + (sf ? sf.height + 22 : 0) + (cta ? ctaH : 0);
+    const bandH = Math.max(hf.height, rightH);
+    const bottom = H - M - 4;
+    const bandTop = bottom - bandH;
+    photo = { x: 40, y: 40, width: W - 80, height: Math.round(bandTop - 52 - 40) };
+    head = { spec: hs, rect: { x: M, y: Math.round(bottom - hf.height), width: 560, height: hf.height }, anchor: "start" };
+    let cursor = bottom - rightH;
+    logoRect = logoBox ? { x: rightX - logoBox.width, y: Math.round(cursor), ...logoBox } : undefined;
+    if (logoBox) cursor += logoBox.height + 22;
+    if (ss && sf) {
+      sub = { spec: ss, rect: { x: rightX - colW, y: Math.round(cursor), width: colW, height: sf.height }, anchor: "end" };
+      cursor += sf.height + 22;
+    }
+    if (cta) ctaRect = { x: rightX - (ctaTextWidth + 56), y: Math.round(cursor), width: ctaTextWidth + 56, height: ctaH };
+    decorations.push(`<line x1="${M}" y1="${bandTop - 26}" x2="${M + 96}" y2="${bandTop - 26}" stroke="${hairlineColor}" stroke-width="2"/>`);
+  } else if (variant === "ASYMMETRIC_LUXURY") {
+    // Foto deslocada para o lado do foco, altura quase total; copy em coluna estreita no eixo oposto,
+    // ancorada embaixo; fio vertical liga a marca à copy (espaço negativo intencional).
+    const photoW = 720;
+    const focusRight = analysis.focalPoint.xPct >= 50;
+    photo = { x: focusRight ? W - 40 - photoW : 40, y: 40, width: photoW, height: H - 80 };
+    const colX = focusRight ? M : photo.x + photo.width + 40;
+    const colW = focusRight ? photo.x - 40 - M : W - M - colX;
+    // Coluna estreita: corpo contido para nunca deixar artigo sozinho na 1ª linha.
+    const hs = headSpec(colW, 36, 5);
+    const hf = measureSpec(hs);
+    const ss = subSpec(colW, 17, 5);
+    const sf = ss ? measureSpec(ss) : undefined;
+    logoRect = logoBox ? { x: colX, y: M + 6, ...logoBox } : undefined;
+    const bottom = H - M - 6;
+    const ctaH = 40;
+    let cursor = bottom - (cta ? ctaH : 0) - (sf ? sf.height + 24 : 0) - hf.height - (cta ? 30 : 0);
+    head = { spec: hs, rect: { x: colX, y: Math.round(cursor), width: colW, height: hf.height }, anchor: "start" };
+    cursor += hf.height;
+    if (ss && sf) {
+      cursor += 24;
+      sub = { spec: ss, rect: { x: colX, y: Math.round(cursor), width: colW, height: sf.height }, anchor: "start" };
+      cursor += sf.height;
+    }
+    if (cta) {
+      ctaFont = ctaFontFor(colW, ctaFont);
+      ctaTextWidth = estimateLineWidth(cta.toUpperCase(), ctaFont, CTA_TRACKING);
+      ctaRect = { x: colX, y: Math.round(cursor + 30), width: Math.min(colW, ctaTextWidth + 4), height: ctaH };
+    }
+    const lineTop = (logoRect ? logoRect.y + logoRect.height : M) + 40;
+    const lineBottom = head.rect.y - 40;
+    if (lineBottom - lineTop > 60) decorations.push(`<line x1="${colX + 1}" y1="${lineTop}" x2="${colX + 1}" y2="${lineBottom}" stroke="${hairlineColor}" stroke-opacity="0.7" stroke-width="1.5"/>`);
+  } else if (variant === "FULL_BLEED_STORY") {
+    // Imagem em tela cheia; texto sobre a faixa comprovadamente calma (ou um véu discreto que não
+    // alcança o foco), alinhado à esquerda; CTA contornado.
+    photo = { x: 0, y: 0, width: W, height: H };
+    const textAtTop = analysis.quietTopPct > analysis.quietBottomPct;
+    const hs = headSpec(700, 60, 3);
+    const hf = measureSpec(hs);
+    const ss = subSpec(560, 20, 2);
+    const sf = ss ? measureSpec(ss) : undefined;
+    const ctaH = 54;
+    const blockH = hf.height + (sf ? 18 + sf.height : 0) + (cta ? 30 + ctaH : 0);
+    const top = textAtTop ? M + (logoBox ? logoBox.height + 40 : 0) : H - M - blockH;
+    head = { spec: hs, rect: { x: M, y: Math.round(top), width: 700, height: hf.height }, anchor: "start" };
+    let cursor = top + hf.height;
+    if (ss && sf) {
+      cursor += 18;
+      sub = { spec: ss, rect: { x: M, y: Math.round(cursor), width: 560, height: sf.height }, anchor: "start" };
+      cursor += sf.height;
+    }
+    if (cta) ctaRect = { x: M, y: Math.round(cursor + 30), width: ctaTextWidth + 56, height: ctaH };
+    logoRect = logoBox ? { x: textAtTop ? M : M, y: textAtTop ? M : M, ...logoBox } : undefined;
+    scrim = { top: textAtTop ? 0 : Math.max(H * (analysis.focalPoint.yPct / 100) + 40, top - 200) };
+    if (!textAtTop && scrim.top > top - 40) issues.push({ code: "MASK_VIOLATION", message: "Véu do texto alcançaria o foco da cena." });
+  } else {
+    // MINIMAL_PREMIUM: foto com margens generosas, tipografia contida, CTA só texto + fio.
+    const hs = headSpec(560, 38, headline.length > 44 ? 3 : 2);
+    const hf = measureSpec(hs);
+    const ss = subSpec(520, 16, 2);
+    const sf = ss ? measureSpec(ss) : undefined;
+    const photoH = 940;
+    const copyH = hf.height + (sf ? 14 + sf.height : 0);
+    const top = Math.round(Math.max(64, (H - (photoH + 48 + copyH)) / 2));
+    photo = { x: 100, y: top, width: W - 200, height: photoH };
+    const rowTop = photo.y + photo.height + 48;
+    head = { spec: hs, rect: { x: photo.x, y: Math.round(rowTop), width: 560, height: hf.height }, anchor: "start" };
+    let cursor = rowTop + hf.height;
+    if (ss && sf) {
+      cursor += 14;
+      sub = { spec: ss, rect: { x: photo.x, y: Math.round(cursor), width: 520, height: sf.height }, anchor: "start" };
+      cursor += sf.height;
+    }
+    const right = photo.x + photo.width;
+    logoRect = logoBox ? { x: right - logoBox.width, y: Math.round(rowTop), ...logoBox } : undefined;
+    if (cta) ctaRect = { x: right - ctaTextWidth - 4, y: Math.round(cursor - 36), width: ctaTextWidth + 4, height: 36 };
+  }
+
+  // Encaixe da foto: recorte editorial seguro (cena única) — nunca deforma.
+  const fit = planEditorialCrop(analysis, grid, base, photo);
+  const href = await baseWindowHref(base.png, base, fit.window);
+  const ambientHref = await buildSoftAmbient(base.png, canvas);
+  const photoTag = fit.strategy === "CONTAIN_WITH_BACKGROUND"
+    ? `${imageTag(undefined, ambientHref, photo, { opacity: 0.9 })}${imageTag(undefined, href, fit.drawRect, { preserveAspectRatio: "xMidYMid meet" })}`
+    : imageTag(undefined, href, photo, { preserveAspectRatio: "xMidYMid slice", clipId: "photoClip" });
+
+  const zones = buildTextZones(plan, undefined, { headline: head.rect, subheadline: sub?.rect, cta: ctaRect }, canvas);
+  const roles: CreativePlanAssetRole[] = [];
+  const assets: CreativePlan["assetPlacements"] = [];
+  const verify: AssetVerifySpec[] = [];
+  if (logo && logoRect) {
+    roles.push("logo");
+    assets.push(assetPlacement(logo, logoRect, canvas, `final rendered logo (${logoTreatment})`));
+    assetBox("logo", logoRect, canvas, boxes);
+    verify.push(verifySpec("logo", logoRect, { fit: "contain", ...(logoTreatment === "LOGO_DIRECT_LIGHT" ? { blend: "multiply" as const } : {}) }));
+  }
+  const plate = logo && logoRect && (logoTreatment === "LOGO_SOFT_PLATE" || logoTreatment === "LOGO_HAIRLINE_PLATE")
+    ? logoTreatment === "LOGO_SOFT_PLATE"
+      ? `<g filter="url(#plateShadow)"><rect x="${logoRect.x - 16}" y="${logoRect.y - 11}" width="${logoRect.width + 32}" height="${logoRect.height + 22}" rx="6" fill="${toHex(lightSurface)}"/></g>`
+      : `<rect x="${logoRect.x - 16}" y="${logoRect.y - 11}" width="${logoRect.width + 32}" height="${logoRect.height + 22}" rx="4" fill="#FFFFFF" fill-opacity="0.94" stroke="${toHex(darkSurface)}" stroke-opacity="0.25" stroke-width="1"/>`
+    : "";
+  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(logoTreatment === "LOGO_DIRECT_LIGHT" ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
+
+  const onPhoto = photoSurface;
+  const textInk = onPhoto ? "#FFF8F0" : ink;
+  const textMuted = onPhoto ? "#F2E6DA" : muted;
+  const renderCopy = (block: InstitutionalCopyBlock, fill: string, weight: number, embolden: number): string =>
+    renderTextBlock({ spec: block.spec, rect: block.rect, anchor: block.anchor }, fill, weight, embolden, canvas, boxes, issues);
+  const headSvg = renderCopy(head, textInk, 700, Number((measureSpec(head.spec).fontSize * 0.012).toFixed(2)));
+  const subSvg = sub ? renderCopy(sub, textMuted, 400, 0) : "";
+  let ctaSvg = "";
+  if (cta && ctaRect) {
+    // fitText não conta o tracking: a largura útil desconta o espaçamento entre letras.
+    const trackingAllowance = CTA_TRACKING * cta.length;
+    const ctaSpec: TextSpec = { id: "cta", text: cta, width: Math.max(40, (ctaTreatment === "TEXT_HAIRLINE" ? ctaRect.width : ctaRect.width - 40) - trackingAllowance), maxHeight: ctaRect.height, maxFontSize: ctaFont, minFontSize: 11, maxLines: 1, letterSpacing: CTA_TRACKING, uppercase: true };
+    if (ctaTreatment === "SOLID_PREMIUM") {
+      const fill = toHex(mixRgb(darkSurface, palette.accent, 0.18));
+      ctaSvg = `<rect x="${ctaRect.x}" y="${ctaRect.y}" width="${ctaRect.width}" height="${ctaRect.height}" rx="3" fill="${fill}"/>
+        ${renderTextBlock({ spec: ctaSpec, rect: { x: ctaRect.x + 20, y: ctaRect.y, width: ctaRect.width - 40, height: ctaRect.height }, anchor: "middle", valign: "center" }, toHex(lightSurface), 600, 0.25, canvas, boxes, issues)}`;
+    } else if (ctaTreatment === "OUTLINE_EDITORIAL") {
+      ctaSvg = `<rect x="${ctaRect.x}" y="${ctaRect.y}" width="${ctaRect.width}" height="${ctaRect.height}" rx="2" fill="#000000" fill-opacity="0.12" stroke="${textInk}" stroke-opacity="0.85" stroke-width="1.4"/>
+        ${renderTextBlock({ spec: ctaSpec, rect: { x: ctaRect.x + 20, y: ctaRect.y, width: ctaRect.width - 40, height: ctaRect.height }, anchor: "middle", valign: "center" }, textInk, 600, 0.25, canvas, boxes, issues)}`;
+    } else {
+      // Texto + fio: o CTA é tipografia editorial sublinhada, sem botão.
+      const lineY = ctaRect.y + ctaRect.height - 4;
+      ctaSvg = `${renderTextBlock({ spec: ctaSpec, rect: { x: ctaRect.x, y: ctaRect.y, width: ctaRect.width, height: ctaRect.height - 10 }, anchor: "start", valign: "center" }, textInk, 600, 0.25, canvas, boxes, issues)}
+        <line x1="${ctaRect.x}" y1="${lineY}" x2="${ctaRect.x + ctaRect.width}" y2="${lineY}" stroke="${hairlineColor}" stroke-width="2"/>`;
+    }
+  }
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    ${fontFaceCss}
+    <defs>
+      <clipPath id="photoClip"><rect x="${photo.x}" y="${photo.y}" width="${photo.width}" height="${photo.height}" rx="${photoSurface ? 0 : 3}"/></clipPath>
+      <radialGradient id="instGlow" cx="0.75" cy="0.15" r="0.9"><stop offset="0" stop-color="${toHex(palette.accent)}" stop-opacity="${surfaceTone === "light" ? 0.14 : 0.22}"/><stop offset="1" stop-color="${toHex(palette.accent)}" stop-opacity="0"/></radialGradient>
+      <linearGradient id="storyVeil" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${toHex(darkSurface)}" stop-opacity="0"/><stop offset="0.45" stop-color="${toHex(darkSurface)}" stop-opacity="0.6"/><stop offset="1" stop-color="${toHex(darkSurface)}" stop-opacity="0.9"/></linearGradient>
+      <filter id="photoShadow" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="16" stdDeviation="22" flood-color="#000000" flood-opacity="${surfaceTone === "light" ? 0.16 : 0.4}"/></filter>
+      <filter id="plateShadow" x="-20%" y="-40%" width="140%" height="200%"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.25"/></filter>
+    </defs>
+    <rect width="${W}" height="${H}" fill="${toHex(surface)}"/>
+    ${imageTag(undefined, ambientHref, { x: 0, y: 0, width: W, height: H }, { opacity: surfaceTone === "light" ? 0.16 : 0.22 })}
+    <rect width="${W}" height="${H}" fill="url(#instGlow)"/>
+    ${photoSurface ? "" : `<g filter="url(#photoShadow)"><rect x="${photo.x}" y="${photo.y}" width="${photo.width}" height="${photo.height}" rx="3" fill="${toHex(surface)}"/></g>`}
+    ${photoTag}
+    ${photoSurface ? "" : `<rect x="${photo.x + 0.5}" y="${photo.y + 0.5}" width="${photo.width - 1}" height="${photo.height - 1}" rx="3" fill="none" stroke="${surfaceTone === "light" ? "#000000" : "#FFFFFF"}" stroke-opacity="0.08" stroke-width="1"/>`}
+    ${scrim ? `<rect x="0" y="${Math.round(scrim.top)}" width="${W}" height="${Math.round(H - scrim.top)}" fill="url(#storyVeil)"/>` : ""}
+    ${decorations.join("")}
+    ${plate}
+    ${logoTag}
+    ${headSvg}
+    ${subSvg}
+    ${ctaSvg}
+  </svg>`;
+
+  const { window: _window, drawRect: _drawRect, ...baseFit } = fit;
+  const metrics = compositionMetrics(boxes, canvas, photo, [photo]);
+  return {
+    svg,
+    zones,
+    assets,
+    roles,
+    verify,
+    composition: { variant, selectionReasons: reasons, logoTreatment, ctaTreatment, pageTone: photoSurface ? "dark" : surfaceTone, ...metrics, baseAnalysis: analysis, baseVisualClass: visualClass, baseFit },
+  };
 }
 
 // ---------------------------------- digital_service 4:5 -----------------------------------------
@@ -2497,7 +2953,7 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
         ? await renderDigitalServiceAdaptive(input, canvas, price, logo, screenshot, base, baseHref, fontFaceCss, boxes, issues)
         : withMobileDiagnostics(await renderDigitalService(input, canvas, price, logo, screenshot, baseHref || (await blankFallback(canvas.width, canvas.height, "#1a1012")), fontFaceCss, boxes, issues), screenshot, canvas)
       : canvas.format === "4:5"
-        ? await renderInstitutionalAdaptive(input, canvas, logo, base, fontFaceCss, boxes, issues)
+        ? await renderInstitutionalEditorial(input, canvas, logo, base, fontFaceCss, boxes, issues)
         : await renderPremiumInstitutional(input, canvas, logo, baseHref, fontFaceCss, boxes, issues);
 
   // Contrato de texto ANTES de rasterizar: todo texto obrigatório precisa ter virado zona.

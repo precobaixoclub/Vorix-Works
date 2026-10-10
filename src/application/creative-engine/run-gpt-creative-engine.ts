@@ -1031,7 +1031,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       // Prova direta de texto da BASE (antes de qualquer texto/asset do renderer): uma chamada leve
       // de visão só sobre a base. Alimenta o ledger de proveniência do gate.
       const baseTextDiagnostic = baseImageArtifact
-        ? await scanEditorialBaseText(deps.creativeBrain, { baseImageUrl: baseImageArtifact.url, specialistId: SPECIALIST_ID, onCost: (response) => track("baseTextScan", response) })
+        ? await scanEditorialBaseText(deps.creativeBrain, { baseImageUrl: baseImageArtifact.url, baseImageBuffer: baseWithAssetsBuffer, specialistId: SPECIALIST_ID, onCost: (response) => track("baseTextScan", response) })
         : undefined;
 
       const editorialAssets: EditorialCreativeAssetBuffer[] = [];

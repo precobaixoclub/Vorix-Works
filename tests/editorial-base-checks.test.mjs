@@ -86,3 +86,21 @@ test("prompt editorial institucional pede imagem full-canvas opaca, sem recorte 
   const offer = buildImageGenerationPromptFromPlan(plan, context([{ url: "u", role: "product_photo" }]), { compositionMode: "editorial_experimental", editorialFamily: "product_offer" });
   assert.doesNotMatch(offer, /FULL-CANVAS IMAGE/);
 });
+
+test("scanEditorialBaseText: bytes da base vão como data URL com o MIME REAL (PNG gravado como .jpg); leitura vazia tem UMA nova tentativa", async () => {
+  const png = await sharp({ create: { width: 8, height: 8, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+  const responses = [{ status: "failed", content: "" }, { status: "completed", content: '{"texts": [{"text": "Gift List"}]}' }];
+  const calls = [];
+  const icaro = { request: async (request) => { calls.push(request); return responses.shift(); } };
+  const scan = await scanEditorialBaseText(icaro, { baseImageUrl: "https://x/base.jpg", baseImageBuffer: png, specialistId: "s" });
+  assert.equal(calls.length, 2, "uma nova tentativa depois da leitura vazia");
+  assert.match(calls[0].imageUrls[0], /^data:image\/png;base64,/);
+  assert.equal(scan.status, "AVAILABLE");
+  assert.equal(scan.sourceArtifactUrl, "https://x/base.jpg");
+  assert.deepEqual(scan.texts.map((item) => item.normalizedText), ["gift list"]);
+  // duas falhas seguidas continuam NOT_AVAILABLE (falha fechada), sem terceira chamada
+  const failing = { calls: 0, request: async () => { failing.calls += 1; return { status: "failed", content: "" }; } };
+  const failed = await scanEditorialBaseText(failing, { baseImageUrl: "u", baseImageBuffer: png, specialistId: "s" });
+  assert.equal(failed.status, "NOT_AVAILABLE");
+  assert.equal(failing.calls, 2);
+});

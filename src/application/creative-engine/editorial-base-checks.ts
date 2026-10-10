@@ -49,6 +49,18 @@ export type EditorialBaseTextDiagnostic = {
   reason?: string;
 };
 
+/** Data URL com o MIME REAL (pela assinatura dos bytes, nunca pela extensão do arquivo gravado). */
+function toImageDataUrl(buffer: Buffer): string | undefined {
+  const mime = buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    ? "image/png"
+    : buffer[0] === 0xff && buffer[1] === 0xd8
+      ? "image/jpeg"
+      : buffer.subarray(0, 4).toString("latin1") === "RIFF" && buffer.subarray(8, 12).toString("latin1") === "WEBP"
+        ? "image/webp"
+        : undefined;
+  return mime ? `data:${mime};base64,${buffer.toString("base64")}` : undefined;
+}
+
 function buildBaseTextScanPrompt(): string {
   return [
     "Você recebe UMA imagem gerada por IA que servirá de fundo para uma peça publicitária. Ainda não tem nenhum texto comercial composto por cima.",
@@ -67,23 +79,33 @@ function buildBaseTextScanPrompt(): string {
  */
 export async function scanEditorialBaseText(
   icaro: IcaroBrainPort,
-  input: { baseImageUrl: string; specialistId: string; onCost?: (response: IcaroAIResponse | undefined) => void },
+  input: { baseImageUrl: string; baseImageBuffer?: Buffer; specialistId: string; onCost?: (response: IcaroAIResponse | undefined) => void },
 ): Promise<EditorialBaseTextDiagnostic> {
   const unavailable = (reason: string): EditorialBaseTextDiagnostic => ({ status: "NOT_AVAILABLE", target: "OPENAI_BASE", sourceArtifactUrl: input.baseImageUrl, texts: [], reason });
   try {
-    const response = await icaro.request({
-      taskType: "review",
-      prompt: buildBaseTextScanPrompt(),
-      specialistId: input.specialistId,
-      imageUrls: [input.baseImageUrl],
-      expectedOutput: "json",
-      priority: "quality",
-      temperature: 0,
-      maxTokens: 400,
-      timeoutMs: 25_000,
-    });
-    input.onCost?.(response);
-    if (response.status !== "completed") return unavailable(`visão não concluiu (${response.status})`);
+    // Achado do benchmark final (bases digitais/oferta em PNG com alfa, gravadas como .jpg e lidas
+    // pela URL 1–2 s depois do upload): a visão devolvia conteúdo vazio de forma intermitente e o
+    // scan virava NOT_AVAILABLE, travando a reconciliação do ledger. Os bytes da base já estão em
+    // memória: vão como data URL com o MIME real, e uma leitura que não conclui tem UMA nova
+    // tentativa. Se ainda falhar, continua NOT_AVAILABLE (falha fechada).
+    const imageUrl = input.baseImageBuffer ? toImageDataUrl(input.baseImageBuffer) ?? input.baseImageUrl : input.baseImageUrl;
+    let response: IcaroAIResponse | undefined;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      response = await icaro.request({
+        taskType: "review",
+        prompt: buildBaseTextScanPrompt(),
+        specialistId: input.specialistId,
+        imageUrls: [imageUrl],
+        expectedOutput: "json",
+        priority: "quality",
+        temperature: 0,
+        maxTokens: 400,
+        timeoutMs: 25_000,
+      });
+      input.onCost?.(response);
+      if (response.status === "completed") break;
+    }
+    if (!response || response.status !== "completed") return unavailable(`visão não concluiu (${response?.status ?? "sem resposta"}) após 2 tentativas`);
     const parsed = JSON.parse(extractJson(String(response.content ?? ""), "Editorial base text scan")) as { texts?: unknown };
     if (!Array.isArray(parsed.texts)) return unavailable("resposta sem lista de textos");
     const texts = parsed.texts.flatMap((raw) => {

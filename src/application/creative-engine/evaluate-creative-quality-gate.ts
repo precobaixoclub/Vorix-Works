@@ -229,8 +229,17 @@ export function matchRenderedTextRegion(
  */
 export const RENDERED_TEXT_JITTER_BAND_IN_HEIGHTS = 1;
 
-export function measureRenderedTextProximity(detected: CreativePlanRect, expected: CreativePlanRect): { overlap: number; insideBand: number; centerInBand: boolean; centerDistance: number; band: number; near: boolean } {
-  const band = expected.heightPct * RENDERED_TEXT_JITTER_BAND_IN_HEIGHTS;
+/**
+ * Resolução de localização da visão, em pontos percentuais do canvas. Medida nos runs reais B/C:
+ * todas as bboxes devolvidas vêm numa grade de 5 pt (ex.: 70/85/20/5, 60/85/30/5, 5/85/20/5). Para
+ * zonas mais baixas que essa grade (CTA de 2,7%), uma faixa de "uma altura" fica menor que o erro de
+ * quantização do próprio sensor. Só é usada como piso da faixa quando a base foi escaneada e está
+ * limpa — sem isso a faixa continua proporcional à zona.
+ */
+export const VISION_BBOX_RESOLUTION_PCT = 5;
+
+export function measureRenderedTextProximity(detected: CreativePlanRect, expected: CreativePlanRect, minBand = 0): { overlap: number; insideBand: number; centerInBand: boolean; centerDistance: number; band: number; near: boolean } {
+  const band = Math.max(expected.heightPct * RENDERED_TEXT_JITTER_BAND_IN_HEIGHTS, minBand);
   const expanded = { xPct: expected.xPct - band, yPct: expected.yPct - band, widthPct: expected.widthPct + 2 * band, heightPct: expected.heightPct + 2 * band };
   const area = detected.widthPct * detected.heightPct;
   const overlap = area > 0 ? intersectionArea(detected, expected) / area : 0;
@@ -331,7 +340,14 @@ function applyVisionZoneContradiction(
     (entry.sourceType === "RENDERER_TEXT" && entry.normalizedText !== undefined && (entry.normalizedText === detected || entry.normalizedText.includes(detected)))
     || (entry.sourceType === "LOGO_ASSET" && (entry.alternatives ?? []).includes(detected)));
   if (!origin) return unchanged; // (F)
-  if (!decision.occurrences.some((occurrence) => occurrence.decision === "allowed")) return unchanged; // (G)
+  // (G) Ocorrência legítima: casada estritamente com a zona, ou — texto inteiro de UMA única zona —
+  // perto dela pela faixa com piso na resolução da visão (base escaneada e limpa, já verificado acima).
+  const ownZones = regions.renderedTextRegions.filter((zone) => normalizeRenderedText(zone.text) === detected);
+  const nearOwnZone = (occurrence: CreativeTextOccurrenceDiagnostic): boolean =>
+    ownZones.length === 1 && occurrence.bbox !== undefined && measureRenderedTextProximity(occurrence.bbox, ownZones[0]!.rect, VISION_BBOX_RESOLUTION_PCT).near;
+  const legitimateId = decision.occurrences.find((occurrence) => occurrence.decision === "allowed")?.occurrenceId
+    ?? decision.occurrences.find((occurrence) => occurrence.decision === "rejected" && nearOwnZone(occurrence))?.occurrenceId;
+  if (!legitimateId) return unchanged;
   const sovereign = [
     ...regions.verifiedLogoRegions,
     ...regions.verifiedScreenshotRegions,
@@ -340,6 +356,10 @@ function applyVisionZoneContradiction(
   let contradictions = 0;
   const occurrences = decision.occurrences.map((occurrence): CreativeTextOccurrenceDiagnostic => {
     if (occurrence.decision !== "rejected" || !occurrence.bbox) return occurrence;
+    if (occurrence.occurrenceId === legitimateId) {
+      // Legítima pela proximidade com piso de resolução: só vale como tal se houver contradição real.
+      return { ...occurrence, decision: "allowed", reason: `MATCHED_RENDERED_${ownZones[0]!.kind.toUpperCase()} pela faixa com piso na resolução da visão (visão: ${occurrence.reason})` };
+    }
     if (sovereign.length > 0 && isTextRegionInsideVerifiedLogo(occurrence.bbox, sovereign)) return occurrence; // (H)
     const zone = regions.renderedTextRegions.find((candidate) => isTextRegionInsideVerifiedLogo(occurrence.bbox!, [candidate.rect])); // (A)(C)
     if (!zone) return occurrence;
@@ -1071,14 +1091,18 @@ export async function checkCreativeVisualIntegrity(
         const candidates = detected.region ? renderedTextRegions.filter((candidate) => normalizeRenderedText(candidate.text) === normalizedDetected) : [];
         if (detected.region && candidates.length >= 1) {
           const expectedZone = candidates[0]!;
-          const proximity = measureRenderedTextProximity(detected.region, expectedZone.rect);
+          // Piso da faixa = resolução da visão, só com base escaneada (AVAILABLE) e sem a frase.
+          const ledgerBaseClean = input.textProvenanceLedger?.baseTextStatus === "AVAILABLE"
+            && !input.textProvenanceLedger.entries.some((entry) => entry.sourceType === "BASE_IMAGE" && entry.normalizedText !== undefined && entry.normalizedText.includes(normalizedDetected));
+          const proximity = measureRenderedTextProximity(detected.region, expectedZone.rect, ledgerBaseClean ? VISION_BBOX_RESOLUTION_PCT : 0);
           const otherEquivalent = allDetections.some((other, otherIndex) => otherIndex !== detectionIndex && other !== undefined && normalizeRenderedText(other.text) === normalizedDetected);
           const baseHasPhrase = baseTexts.some((text) => text.includes(normalizedDetected));
-          // Longe da zona, mas DENTRO de outra zona do renderer com texto diferente (base limpa, sem
-          // asset soberano): contradição de zona, não texto solto. As demais travas continuam valendo.
-          const contradiction = !proximity.near
-            ? findContradictingRendererZone(detected.region, normalizedDetected, { renderedTextRegions, verifiedLogoRegions, verifiedScreenshotRegions: input.verifiedScreenshotRegions ?? [] }, input.textProvenanceLedger)
-            : undefined;
+          // Ordem: perto pela faixa proporcional original (86a9f25) → casamento direto; senão, bbox
+          // DENTRO de outra zona do renderer com texto diferente (base limpa, sem asset soberano) →
+          // contradição de zona (autoriza o texto, nunca prova presença de texto obrigatório); senão,
+          // perto pelo piso de resolução da visão. As demais travas valem em todos os casos.
+          const strictlyNear = measureRenderedTextProximity(detected.region, expectedZone.rect).near;
+          const contradiction = strictlyNear ? undefined : findContradictingRendererZone(detected.region, normalizedDetected, { renderedTextRegions, verifiedLogoRegions, verifiedScreenshotRegions: input.verifiedScreenshotRegions ?? [] }, input.textProvenanceLedger);
           const failures = [
             candidates.length !== 1 ? "manifesto final tem mais de uma zona com esse texto" : undefined,
             otherEquivalent ? "visão reportou outra ocorrência equivalente" : undefined,

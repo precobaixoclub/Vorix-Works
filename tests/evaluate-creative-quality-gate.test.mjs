@@ -15,6 +15,7 @@ import {
   isTextRegionInsideVerifiedLogo,
   normalizeRenderedText,
   measureRenderedTextProximity,
+  VISION_BBOX_RESOLUTION_PCT,
   resolveVerifiedLogoRegions,
 } from "../dist/application/creative-engine/evaluate-creative-quality-gate.js";
 
@@ -1480,4 +1481,77 @@ test("zona texto: desconhecido, trecho parcial ou acento diferente dentro do sub
     const result = await evaluateCreativeQualityGate(visionReturning([{ text, region: B8.visionCta }]), b8GateInput());
     assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"), text);
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Resolução de localização da visão (cenário B real execution-mv2a2bp0-g974f2): CTA de 2,7% de altura,
+// bbox da visão na grade de 5 pt (60/85/30/5) — 59,9% dentro da faixa de "uma altura". Com base
+// escaneada e limpa, a faixa nunca é menor que a resolução do sensor; sem scan continua proporcional.
+// ---------------------------------------------------------------------------------------------
+
+const B9 = {
+  headline: { xPct: 9.259, yPct: 81.333, widthPct: 51.852, heightPct: 6.08 },
+  subheadline: { xPct: 9.259, yPct: 88.444, widthPct: 48.148, heightPct: 3.366 },
+  cta: { xPct: 66.852, yPct: 89.185, widthPct: 23.889, heightPct: 2.667 },
+  logo: { xPct: 77.13, yPct: 81.333, widthPct: 13.611, heightPct: 2.37 },
+  visionCta: { xPct: 60, yPct: 85, widthPct: 30, heightPct: 5 },
+};
+
+function b9GateInput(overrides = {}) {
+  const input = ledgerGateInput(overrides);
+  input.plan = {
+    ...input.plan,
+    assetPlacements: [{ role: "logo", url: LOGO_URL, rect: B9.logo, frame: "none" }],
+    textZones: [
+      { kind: "headline", text: B_HEADLINE, rect: B9.headline, emphasis: "primary", renderedBy: "renderer" },
+      { kind: "subheadline", text: B_SUB, rect: B9.subheadline, emphasis: "secondary", renderedBy: "renderer" },
+      { kind: "cta", text: B_CTA, rect: B9.cta, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+  };
+  return input;
+}
+
+test("resolução: piso da faixa é a resolução da visão só quando pedido; zona alta continua proporcional", () => {
+  assert.equal(VISION_BBOX_RESOLUTION_PCT, 5);
+  assert.equal(measureRenderedTextProximity(B9.visionCta, B9.cta).near, false, "sem piso: 59,9% dentro da faixa");
+  const floored = measureRenderedTextProximity(B9.visionCta, B9.cta, VISION_BBOX_RESOLUTION_PCT);
+  assert.equal(floored.near, true);
+  assert.equal(floored.band, 5);
+  assert.equal(measureRenderedTextProximity({ xPct: 10, yPct: 20, widthPct: 80, heightPct: 10 }, { xPct: 6, yPct: 25, widthPct: 88, heightPct: 12 }, VISION_BBOX_RESOLUTION_PCT).band, 12);
+});
+
+test("resolução: B real — CTA pequeno com bbox na grade de 5 pt e base limpa → PASS (MATCHED_RENDERED_CTA)", async () => {
+  const result = await evaluateCreativeQualityGate(ctaAt(B9.visionCta), b9GateInput());
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  const diag = result.textDiagnostics.find((item) => item.matchDecision);
+  assert.equal(diag.matchDecision, "MATCHED_RENDERED_CTA");
+  assert.equal(diag.toleranceApplied, 5);
+});
+
+test("resolução: sem scan da base, base com a frase, segunda leitura ou bbox realmente longe → FAIL", async () => {
+  for (const baseTextDiagnostic of [undefined, { status: "NOT_AVAILABLE", texts: [] }, { status: "AVAILABLE", texts: [{ text: B_CTA, normalizedText: "conheça o rumo ao altar", bbox: { xPct: 40, yPct: 10, widthPct: 20, heightPct: 4 } }] }]) {
+    const result = await evaluateCreativeQualityGate(ctaAt(B9.visionCta), b9GateInput({ baseTextDiagnostic }));
+    assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"), JSON.stringify(baseTextDiagnostic));
+  }
+  const twice = await evaluateCreativeQualityGate(visionReturning([{ text: B_CTA, region: B9.visionCta }, { text: B_CTA, region: { xPct: 60, yPct: 40, widthPct: 30, heightPct: 5 } }]), b9GateInput());
+  assert.ok(twice.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+  const far = await evaluateCreativeQualityGate(ctaAt({ xPct: 60, yPct: 75, widthPct: 30, heightPct: 5 }), b9GateInput());
+  assert.ok(far.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+});
+
+test("resolução duplicidade: CTA pequeno legítimo (grade de 5 pt) + leitura falsa no headline → PASS", async () => {
+  const falseInHeadline = { xPct: 10, yPct: 82, widthPct: 30, heightPct: 5 };
+  const result = await evaluateCreativeQualityGate(visionReturning([], duplicated(B_CTA, [B9.visionCta, falseInHeadline])), b9GateInput());
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  assert.deepEqual(result.occurrenceDiagnostics.map((item) => item.decision), ["allowed", "VISION_ZONE_CONTRADICTION"]);
+  assert.match(result.occurrenceDiagnostics[0].reason, /^MATCHED_RENDERED_CTA pela faixa com piso/);
+  assert.equal(result.occurrenceDiagnostics[1].conflictingRendererRole, "headline");
+});
+
+test("resolução duplicidade: sem scan da base, ou duas leituras perto do CTA, continua DUPLICATED_TEXT", async () => {
+  const falseInHeadline = { xPct: 10, yPct: 82, widthPct: 30, heightPct: 5 };
+  const noScan = await evaluateCreativeQualityGate(visionReturning([], duplicated(B_CTA, [B9.visionCta, falseInHeadline])), b9GateInput({ baseTextDiagnostic: { status: "NOT_AVAILABLE", texts: [] } }));
+  assert.ok(noScan.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
+  const twiceNear = await evaluateCreativeQualityGate(visionReturning([], duplicated(B_CTA, [B9.visionCta, { xPct: 62, yPct: 88, widthPct: 28, heightPct: 5 }])), b9GateInput());
+  assert.ok(twiceNear.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
 });

@@ -1,0 +1,41 @@
+{
+  "kind": "DIAGNOSTIC_REEVALUATION (não altera o histórico do run)",
+  "executionId": "execution-mv2a2bp0-g974f2",
+  "inputs": "persisted vision detections + final geometry ledger + pixel verification + base text scan",
+  "openAiRealCalls": 0,
+  "fakeVisionCalls": 1,
+  "originalVerdict": "fail",
+  "originalIssues": [
+    "UNAUTHORIZED_TEXT"
+  ],
+  "verdict": "pass",
+  "issues": [],
+  "textDiagnostics": [
+    {
+      "detectedText": "CONHEÇA O RUMO AO ALTAR",
+      "bbox": {
+        "xPct": 60,
+        "yPct": 85,
+        "widthPct": 30,
+        "heightPct": 5
+      },
+      "normalizedExpected": "conheça o rumo ao altar",
+      "normalizedDetected": "conheça o rumo ao altar",
+      "occurrenceId": "text-0",
+      "expectedRole": "cta",
+      "expectedBBox": {
+        "xPct": 66.852,
+        "yPct": 89.185,
+        "widthPct": 23.889,
+        "heightPct": 2.667
+      },
+      "overlap": 0.126,
+      "centerDistance": 4.85,
+      "toleranceApplied": 5,
+      "matchedElement": "cta",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_RENDERED_CTA",
+      "reason": "exact_text_single_occurrence_base_clean_spatially_near"
+    }
+  ]
+}

@@ -118,3 +118,13 @@ test("OpenAiIcaroTextProvider: 500 continua 'temporary', retryable (regressão)"
   assert.equal(error.kind, "temporary");
   assert.equal(error.retryable, true);
 });
+
+test("OpenAiIcaroTextProvider: recusa do modelo (refusal sem content) é reportada com o motivo, não como 'sem conteúdo'", async () => {
+  const provider = new OpenAiIcaroTextProvider({ getApiKey: async () => "sk-test" }, async () => jsonResponse(200, { choices: [{ message: { content: null, refusal: "I'm sorry, I can't assist with that." }, finish_reason: "stop" }] }));
+  await assert.rejects(
+    provider.execute({ taskType: "review", prompt: "x", model: "", temperature: 0, maxTokens: 100, timeoutMs: 5000, imageUrls: ["data:image/png;base64,AA=="] }),
+    (error) => /recusou a tarefa/.test(error.message) && /can't assist/.test(error.message) && error.retryable === false,
+  );
+  const empty = new OpenAiIcaroTextProvider({ getApiKey: async () => "sk-test" }, async () => jsonResponse(200, { choices: [{ message: { content: "" } }] }));
+  await assert.rejects(empty.execute({ taskType: "review", prompt: "x", model: "", temperature: 0, maxTokens: 100, timeoutMs: 5000 }), /não retornou conteúdo/);
+});

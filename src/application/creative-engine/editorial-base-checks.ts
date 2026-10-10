@@ -83,10 +83,10 @@ export async function scanEditorialBaseText(
 ): Promise<EditorialBaseTextDiagnostic> {
   const unavailable = (reason: string): EditorialBaseTextDiagnostic => ({ status: "NOT_AVAILABLE", target: "OPENAI_BASE", sourceArtifactUrl: input.baseImageUrl, texts: [], reason });
   try {
-    // Achado do benchmark final (bases digitais/oferta em PNG com alfa, gravadas como .jpg e lidas
-    // pela URL 1–2 s depois do upload): a visão devolvia conteúdo vazio de forma intermitente e o
-    // scan virava NOT_AVAILABLE, travando a reconciliação do ledger. Os bytes da base já estão em
-    // memória: vão como data URL com o MIME real, e uma leitura que não conclui tem UMA nova
+    // Achado do benchmark final: bases PNG com alfa levavam o gpt-4o a RECUSAR a leitura (campo
+    // `refusal`, sem conteúdo) e o scan virava NOT_AVAILABLE, travando a reconciliação do ledger. O
+    // motor manda a versão opaca da base (`flattenImageForVision`), já em memória, como data URL com
+    // o MIME real (nunca a URL gravada como .jpg); uma leitura que não conclui tem UMA nova
     // tentativa. Se ainda falhar, continua NOT_AVAILABLE (falha fechada).
     const imageUrl = input.baseImageBuffer ? toImageDataUrl(input.baseImageBuffer) ?? input.baseImageUrl : input.baseImageUrl;
     let response: IcaroAIResponse | undefined;

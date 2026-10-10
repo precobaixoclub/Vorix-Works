@@ -31,3 +31,15 @@ export async function measureImageAlphaCoverage(buffer: Buffer): Promise<ImageAl
     opaqueRatio: round((total - transparent - semi) / total),
   };
 }
+
+/**
+ * Versão OPACA de uma imagem para leitura por visão: transparência achatada sobre cinza neutro, em
+ * JPEG. Achado do benchmark final: bases PNG com alfa (recortes do modelo de imagem) levavam o
+ * gpt-4o a RECUSAR a leitura de texto ("I'm sorry, I can't assist with that.") de forma
+ * determinística; achatadas sobre cinza, a mesma base é lida normalmente. Pixels transparentes
+ * nunca aparecem na peça (o renderer desenha por cima), e texto da base só existe nos pixels opacos —
+ * a leitura continua sendo da mesma base. Imagem já opaca: só recodifica.
+ */
+export async function flattenImageForVision(buffer: Buffer): Promise<Buffer> {
+  return sharp(buffer).flatten({ background: "#808080" }).jpeg({ quality: 90 }).toBuffer();
+}

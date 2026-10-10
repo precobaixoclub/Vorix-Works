@@ -110,13 +110,16 @@ export class OpenAiIcaroTextProvider implements AIProviderPort {
       }
 
       const body = (await response.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
+        choices?: Array<{ message?: { content?: string; refusal?: string | null } }>;
         usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
         model?: string;
       };
       const content = body.choices?.[0]?.message?.content;
       if (!content) {
-        const error = new Error("OpenAI não retornou conteúdo para o Provider de texto do Ícaro.");
+        // Recusa do modelo (campo `refusal`) chega sem `content` — registrar o motivo real em vez de
+        // "sem conteúdo" (achado do benchmark final: o scan da base "falhava" por recusa).
+        const refusal = body.choices?.[0]?.message?.refusal;
+        const error = new Error(refusal ? `OpenAI recusou a tarefa no Provider de texto do Ícaro: ${refusal}` : "OpenAI não retornou conteúdo para o Provider de texto do Ícaro.");
         Object.assign(error, { kind: "provider_error", retryable: false });
         throw error;
       }

@@ -104,3 +104,18 @@ test("scanEditorialBaseText: bytes da base vão como data URL com o MIME REAL (P
   assert.equal(failed.status, "NOT_AVAILABLE");
   assert.equal(failing.calls, 2);
 });
+
+test("flattenImageForVision: base com alfa vira JPEG opaco sobre cinza neutro; pixels opacos (onde existe texto) preservados", async () => {
+  const { flattenImageForVision } = await import("../dist/infrastructure/image-processing/image-alpha-coverage.js");
+  const rgba = await sharp({ create: { width: 20, height: 10, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: await sharp({ create: { width: 10, height: 10, channels: 4, background: { r: 200, g: 30, b: 30, alpha: 1 } } }).png().toBuffer(), left: 0, top: 0 }])
+    .png().toBuffer();
+  const flat = await flattenImageForVision(rgba);
+  const meta = await sharp(flat).metadata();
+  assert.equal(meta.format, "jpeg");
+  assert.equal(meta.hasAlpha, false);
+  const { data, info } = await sharp(flat).raw().toBuffer({ resolveWithObject: true });
+  const px = (x, y) => Array.from(data.subarray((y * info.width + x) * info.channels, (y * info.width + x) * info.channels + 3));
+  assert.ok(Math.abs(px(15, 5)[0] - 128) < 8 && Math.abs(px(15, 5)[2] - 128) < 8, `transparente → cinza: ${px(15, 5)}`);
+  assert.ok(px(4, 5)[0] > 170 && px(4, 5)[1] < 70, `opaco preservado: ${px(4, 5)}`);
+});

@@ -121,6 +121,9 @@ export type GptCreativeEngineDeps = {
   readImageDimensions(buffer: Buffer): Promise<{ width?: number; height?: number }>;
   /** Cobertura de alfa da imagem base (modo editorial) — preflight antes do renderer. */
   measureImageAlpha?(buffer: Buffer): Promise<EditorialBaseAlphaCoverage>;
+  /** Versão opaca (transparência achatada) da base para a leitura de texto por visão — ver
+   * `flattenImageForVision`. Ausente = a base vai como está. */
+  flattenImageForVision?(buffer: Buffer): Promise<Buffer>;
   /** ETAPA 3 (Rodada 4, benchmark de qualidade criativa) — medida determinística e gratuita do
    * fundo real de uma região (ver `region-pixel-stats.ts`). Opcional e best-effort: `undefined`
    * (não injetado, ou falha de leitura) cai no tratamento mais conservador
@@ -1031,7 +1034,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       // Prova direta de texto da BASE (antes de qualquer texto/asset do renderer): uma chamada leve
       // de visão só sobre a base. Alimenta o ledger de proveniência do gate.
       const baseTextDiagnostic = baseImageArtifact
-        ? await scanEditorialBaseText(deps.creativeBrain, { baseImageUrl: baseImageArtifact.url, baseImageBuffer: baseWithAssetsBuffer, specialistId: SPECIALIST_ID, onCost: (response) => track("baseTextScan", response) })
+        ? await scanEditorialBaseText(deps.creativeBrain, { baseImageUrl: baseImageArtifact.url, baseImageBuffer: deps.flattenImageForVision ? await deps.flattenImageForVision(baseWithAssetsBuffer).catch(() => baseWithAssetsBuffer) : baseWithAssetsBuffer, specialistId: SPECIALIST_ID, onCost: (response) => track("baseTextScan", response) })
         : undefined;
 
       const editorialAssets: EditorialCreativeAssetBuffer[] = [];

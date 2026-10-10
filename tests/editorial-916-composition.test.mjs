@@ -7,6 +7,7 @@ import {
   storySafeInsets,
   isVerticalCanvas,
   checkEditorialSafeArea,
+  fitUppercaseCtaFont,
   VERTICAL_STORY_SAFE,
 } from "../dist/infrastructure/rendering/editorial-creative-renderer.js";
 
@@ -141,6 +142,14 @@ test("9:16 encaixe de texto: headline/sub/CTA curtos, médios e longos sem overf
       assert.ok(size("cta").fontSizePx >= 15, `${label}: CTA ${size("cta").fontSizePx}px`);
     }
   }
+});
+
+test("CTA em caixa alta: corpo cabe na largura útil contando maiúsculas e tracking; CTA curto mantém o corpo", () => {
+  assert.equal(fitUppercaseCtaFont("Comprar agora", 225, 23, 15, 2), 23);
+  assert.equal(fitUppercaseCtaFont("Criar meu site", 199, 18, 13, 2.4), 18);
+  const long = fitUppercaseCtaFont("Quero criar o site do meu casamento", 374, 23, 15, 2);
+  assert.ok(long < 23 && long >= 15, String(long));
+  assert.ok("QUERO CRIAR O SITE DO MEU CASAMENTO".length * long * 0.64 + 2 * 35 <= 374 || long === 15);
 });
 
 test("4:5 aprovado intocado: mesmos variantes, retângulos e fidelidade dos fixtures reais", async () => {

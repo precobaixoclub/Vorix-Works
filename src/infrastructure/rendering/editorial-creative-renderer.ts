@@ -299,11 +299,24 @@ function wrapText(text: string, maxChars: number): string[] {
   return lines;
 }
 
-function fitText(text: string, widthPx: number, maxHeightPx: number, options: { maxFontSize: number; minFontSize: number; maxLines: number; lineHeight?: number }): TextFit {
+/** Mesmo corpo e MESMO número de linhas (mesma altura/geometria), quebra mais estreita que não
+ * deixa uma palavra sozinha na última linha. Sem solução, mantém a quebra original. */
+function balanceLines(text: string, lines: string[], maxChars: number): string[] {
+  if (lines.length < 2 || lines[lines.length - 1]!.trim().includes(" ")) return lines;
+  for (let chars = maxChars - 1; chars >= Math.floor(maxChars * 0.6); chars -= 1) {
+    const candidate = wrapText(text, chars);
+    if (candidate.length !== lines.length) break;
+    if (candidate[candidate.length - 1]!.trim().includes(" ")) return candidate;
+  }
+  return lines;
+}
+
+function fitText(text: string, widthPx: number, maxHeightPx: number, options: { maxFontSize: number; minFontSize: number; maxLines: number; lineHeight?: number; balance?: boolean }): TextFit {
   const lineHeight = options.lineHeight ?? 1.08;
   for (let fontSize = options.maxFontSize; fontSize >= options.minFontSize; fontSize -= 1) {
     const maxChars = Math.max(5, Math.floor(widthPx / (fontSize * AVG_CHAR_WIDTH)));
-    const lines = wrapText(text, maxChars);
+    const wrapped = wrapText(text, maxChars);
+    const lines = options.balance ? balanceLines(text, wrapped, maxChars) : wrapped;
     const height = lines.length * fontSize * lineHeight;
     if (lines.length <= options.maxLines && height <= maxHeightPx) {
       return { lines, fontSize, lineHeight, height, fits: true };
@@ -338,6 +351,7 @@ type TextSvgInput = {
   /** Só existe Geist Regular no runtime (BOLD_FONT_BACKLOG): contorno da própria cor engrossa o
    * traço de forma controlada, sem trocar fonte nem fontconfig. Em px de traço. */
   embolden?: number;
+  balance?: boolean;
 };
 
 function textSvg(input: TextSvgInput, canvas: Canvas, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): string {
@@ -347,6 +361,7 @@ function textSvg(input: TextSvgInput, canvas: Canvas, boxes: EditorialGeometryBo
     minFontSize: input.minFontSize,
     maxLines: input.maxLines,
     lineHeight: input.lineHeight,
+    balance: input.balance,
   });
   const rectX = input.anchor === "middle" ? input.x - input.width / 2 : input.anchor === "end" ? input.x - input.width : input.x;
   let baseline = input.y;
@@ -622,6 +637,8 @@ type TextSpec = {
   lineHeight?: number;
   letterSpacing?: number;
   uppercase?: boolean;
+  /** Evita palavra órfã na última linha (mesma altura). */
+  balance?: boolean;
 };
 
 function measureSpec(spec: TextSpec): TextFit {
@@ -631,6 +648,17 @@ function measureSpec(spec: TextSpec): TextFit {
 /** Largura estimada de uma linha (mesma métrica do wrap, com folga para tracking). */
 function estimateLineWidth(text: string, fontSize: number, letterSpacing = 0): number {
   return Math.ceil(text.length * fontSize * 0.56 + Math.max(0, letterSpacing) * text.length);
+}
+
+/** Caixa alta da Geist ocupa ~0,62–0,64 em por caractere (a média 0,56 de `estimateLineWidth` vale
+ * para caixa mista). CTA em caixa alta com tracking: maior corpo que cabe na largura útil do botão —
+ * `fitText` estima por média de caracteres e não conta o tracking (CTA longo estourava a pílula). */
+const UPPERCASE_CHAR_WIDTH = 0.64;
+export function fitUppercaseCtaFont(text: string, innerWidth: number, maxFontSize: number, minFontSize: number, letterSpacing: number): number {
+  const upper = text.toUpperCase();
+  let size = maxFontSize;
+  while (size > minFontSize && upper.length * size * UPPERCASE_CHAR_WIDTH + Math.max(0, letterSpacing) * upper.length > innerWidth) size -= 1;
+  return size;
 }
 
 function fitAspectInto(area: PxRect, aspect: number): PxRect {
@@ -768,7 +796,10 @@ async function renderProductOfferAdaptive(
   const ctaFont = 23;
   const ctaH = 78;
   const ctaW = cta ? clamp(estimateLineWidth(cta.toUpperCase(), ctaFont, 2) + 88, 240, 430) : 0;
-  const ctaSpec = (pill: PxRect): TextSpec => ({ id: "cta", text: cta!, width: pill.width - 56, maxHeight: pill.height, maxFontSize: ctaFont, minFontSize: 15, maxLines: 1, letterSpacing: 2, uppercase: true });
+  const ctaSpec = (pill: PxRect): TextSpec => {
+    const size = fitUppercaseCtaFont(cta!, pill.width - 56, ctaFont, 15, 2);
+    return { id: "cta", text: cta!, width: pill.width - 56, maxHeight: pill.height, maxFontSize: size, minFontSize: Math.min(15, size), maxLines: 1, letterSpacing: 2, uppercase: true };
+  };
   // 9:16: topo/base de texto e logo dentro da safe area vertical; no 4:5 os mesmos valores de sempre.
   const vertical = isVerticalCanvas(canvas);
   const safe = storySafeInsets(canvas);
@@ -790,7 +821,7 @@ async function renderProductOfferAdaptive(
       const startX = Math.round((W - (priceW + gap + (cta ? ctaW : 0))) / 2);
       const priceRect = price ? { x: startX, y: rowTop, width: priceW, height: rowH } : undefined;
       const pill = cta ? { x: startX + priceW + gap, y: rowTop + Math.round((rowH - ctaH) / 2), width: ctaW, height: ctaH } : undefined;
-      const headTwo: TextSpec = { id: "headline", text: headline, width: 920, maxHeight: 176, maxFontSize: 82, minFontSize: 40, maxLines: 2, lineHeight: 1.04, letterSpacing: -0.4 };
+      const headTwo: TextSpec = { id: "headline", text: headline, width: 920, maxHeight: 176, maxFontSize: 82, minFontSize: 40, maxLines: 2, lineHeight: 1.04, letterSpacing: -0.4, balance: vertical };
       const headSpec = measureSpec(headTwo).fits ? headTwo : { ...headTwo, maxLines: 3, maxHeight: 210 };
       const headFit = measureSpec(headSpec);
       const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: 760, maxHeight: subheadline.length > 90 ? 120 : 84, maxFontSize: 28, minFontSize: 20, maxLines: subheadline.length > 90 ? 3 : 2, lineHeight: 1.38, letterSpacing: 0.2 } : undefined;
@@ -821,7 +852,7 @@ async function renderProductOfferAdaptive(
       const productRect = product ? fitAspectInto(productArea, photoAspect(0.64, 0.7)) : undefined;
       const colX = M;
       const colW = 304;
-      const headSpec: TextSpec = { id: "headline", text: headline, width: colW, maxHeight: 380, maxFontSize: 74, minFontSize: 38, maxLines: 5, lineHeight: 1.04, letterSpacing: -0.2 };
+      const headSpec: TextSpec = { id: "headline", text: headline, width: colW, maxHeight: 380, maxFontSize: 74, minFontSize: 38, maxLines: 5, lineHeight: 1.04, letterSpacing: -0.2, balance: vertical };
       const headFit = measureSpec(headSpec);
       const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: colW, maxHeight: 190, maxFontSize: 25, minFontSize: 19, maxLines: 6, lineHeight: 1.42, letterSpacing: 0.2 } : undefined;
       const subFit = subSpec ? measureSpec(subSpec) : undefined;
@@ -873,7 +904,7 @@ async function renderProductOfferAdaptive(
     const pill = cta ? { x: M + priceW + (price ? 40 : 0), y: rowTop + Math.round((rowH - ctaH) / 2), width: ctaW, height: ctaH } : undefined;
     const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: 780, maxHeight: 118, maxFontSize: 27, minFontSize: 19, maxLines: 3, lineHeight: 1.4, letterSpacing: 0.2 } : undefined;
     const subFit = subSpec ? measureSpec(subSpec) : undefined;
-    const headSpec: TextSpec = { id: "headline", text: headline, width: 900, maxHeight: 196, maxFontSize: 94, minFontSize: 48, maxLines: 2, lineHeight: 1.0, letterSpacing: -0.6 };
+    const headSpec: TextSpec = { id: "headline", text: headline, width: 900, maxHeight: 196, maxFontSize: 94, minFontSize: 48, maxLines: 2, lineHeight: 1.0, letterSpacing: -0.6, balance: vertical };
     const headFit = measureSpec(headSpec);
     const subRect = subFit ? { x: M, y: Math.round(rowTop - 42 - subFit.height), width: 780, height: subFit.height } : undefined;
     const headRect = { x: M, y: Math.round((subRect ? subRect.y - 20 : rowTop - 42) - headFit.height), width: 900, height: headFit.height };
@@ -1157,6 +1188,7 @@ function renderTextBlock(block: TextBlock, fill: string, weight: number, embolde
     lineHeight: block.spec.lineHeight,
     letterSpacing: block.spec.letterSpacing,
     uppercase: block.spec.uppercase,
+    balance: block.spec.balance,
     anchor,
     fill,
     weight,
@@ -1949,7 +1981,7 @@ async function renderInstitutionalEditorial(
       : logoSize(logo, variant === "MINIMAL_PREMIUM" ? 190 : 220, variant === "MINIMAL_PREMIUM" ? 32 : 36)
     : undefined;
 
-  const headSpec = (width: number, max: number, lines: number, anchor: "start" | "end" = "start"): TextSpec => ({ id: "headline", text: headline, width, maxHeight: max * 1.08 * lines, maxFontSize: max, minFontSize: 30, maxLines: lines, lineHeight: 1.08, letterSpacing: -0.6, ...(anchor === "end" ? {} : {}) });
+  const headSpec = (width: number, max: number, lines: number, anchor: "start" | "end" = "start"): TextSpec => ({ id: "headline", text: headline, width, maxHeight: max * 1.08 * lines, maxFontSize: max, minFontSize: 30, maxLines: lines, lineHeight: 1.08, letterSpacing: -0.6, balance: vertical, ...(anchor === "end" ? {} : {}) });
   const subSpec = (width: number, max: number, lines: number): TextSpec | undefined => (subheadline ? { id: "subheadline", text: subheadline, width, maxHeight: max * 1.42 * lines, maxFontSize: max, minFontSize: 15, maxLines: lines, lineHeight: 1.42, letterSpacing: 0.15 } : undefined);
   const CTA_TRACKING = 2.6;
   const ctaFontFor = (maxWidth: number, preferred: number): number => {
@@ -2645,7 +2677,7 @@ async function renderDigitalServiceAdaptive(
   const CTA_FONT = vertical ? V.ctaFont : 18;
   const ctaW = cta ? clamp(estimateLineWidth(cta.toUpperCase(), CTA_FONT, 2.4) + (vertical ? 80 : 64), 200, vertical ? 520 : 400) : 0;
   const shotAt = (x: number, y: number, width: number): PxRect => ({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(width / aspect) });
-  const headSpec = (width: number, max: number, lines = 3): TextSpec => ({ id: "headline", text: headline, width, maxHeight: max * 1.06 * lines, maxFontSize: max, minFontSize: 32, maxLines: lines, lineHeight: 1.06, letterSpacing: -0.5 });
+  const headSpec = (width: number, max: number, lines = 3): TextSpec => ({ id: "headline", text: headline, width, maxHeight: max * 1.06 * lines, maxFontSize: max, minFontSize: 32, maxLines: lines, lineHeight: 1.06, letterSpacing: -0.5, balance: vertical });
   const subSpec = (width: number): TextSpec | undefined =>
     !subheadline
       ? undefined
@@ -2868,7 +2900,7 @@ async function renderDigitalServiceAdaptive(
   const chip = logo && logoRect && logoTreatment === "CHIP" ? `<rect x="${logoRect.x - 12}" y="${logoRect.y - 8}" width="${logoRect.width + 24}" height="${logoRect.height + 16}" rx="12" fill="#FFF8F1" opacity="0.95"/>` : "";
   const renderBlock = (block: TextBlock, fill: string, weight: number, embolden: number): string => {
     const anchor = block.anchor ?? "start";
-    return textSvg({ id: block.spec.id, text: block.spec.text, x: anchor === "end" ? block.rect.x + block.rect.width : block.rect.x, y: 0, top: block.rect.y, width: block.spec.width, maxHeight: block.spec.maxHeight, maxFontSize: block.spec.maxFontSize, minFontSize: block.spec.minFontSize, maxLines: block.spec.maxLines, lineHeight: block.spec.lineHeight, letterSpacing: block.spec.letterSpacing, anchor, fill, weight, embolden }, canvas, boxes, issues);
+    return textSvg({ id: block.spec.id, text: block.spec.text, x: anchor === "end" ? block.rect.x + block.rect.width : block.rect.x, y: 0, top: block.rect.y, width: block.spec.width, maxHeight: block.spec.maxHeight, maxFontSize: block.spec.maxFontSize, minFontSize: block.spec.minFontSize, maxLines: block.spec.maxLines, lineHeight: block.spec.lineHeight, letterSpacing: block.spec.letterSpacing, balance: block.spec.balance, anchor, fill, weight, embolden }, canvas, boxes, issues);
   };
   const headSvg = renderBlock(head!, ink, 850, Number((measureSpec(head!.spec).fontSize * 0.024).toFixed(2)));
   const subSvg = sub ? renderBlock(sub, muted, 500, 0) : "";
@@ -2877,7 +2909,7 @@ async function renderDigitalServiceAdaptive(
   const ctaSvg = cta && pill
     ? `<g filter="url(#ctaLift)"><rect x="${pill.x}" y="${pill.y}" width="${pill.width}" height="${pill.height}" rx="${pill.height / 2}" fill="url(#ctaFill)"/></g>
       <rect x="${pill.x + 1}" y="${pill.y + 1}" width="${pill.width - 2}" height="${pill.height / 2}" rx="${pill.height / 2 - 1}" fill="#FFFFFF" opacity="${dark ? 0.12 : 0.1}"/>
-      ${renderTextBlock({ spec: { id: "cta", text: cta, width: pill.width - 40, maxHeight: pill.height, maxFontSize: CTA_FONT, minFontSize: 13, maxLines: 1, letterSpacing: 2.4, uppercase: true }, rect: ctaZoneRect(pill), anchor: "middle", valign: "center" }, ctaText, 800, 0.35, canvas, boxes, issues)}`
+      ${renderTextBlock({ spec: { id: "cta", text: cta, width: pill.width - 40, maxHeight: pill.height, maxFontSize: fitUppercaseCtaFont(cta, pill.width - 40, CTA_FONT, 13, 2.4), minFontSize: 13, maxLines: 1, letterSpacing: 2.4, uppercase: true }, rect: ctaZoneRect(pill), anchor: "middle", valign: "center" }, ctaText, 800, 0.35, canvas, boxes, issues)}`
     : "";
   const ctaFillA = dark ? "#FFF3EA" : toHex(mixRgb(accent, BLACK, 0.12));
   const ctaFillB = dark ? toHex(mixRgb(accent, WHITE, 0.7)) : toHex(mixRgb(accent, BLACK, 0.38));

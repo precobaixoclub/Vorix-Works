@@ -1,0 +1,27 @@
+[
+  {
+    "file": "a-9x16-HERO_DOMINANT.jpg",
+    "family": "product_offer",
+    "variant": "HERO_DOMINANT",
+    "logoTreatment": "CHIP",
+    "occupiedAreaRatio": 0.57,
+    "largestEmptyBandPct": 0.094,
+    "prominence": 0.437,
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "headline:82px/1l",
+      "subheadline:28px/1l",
+      "price:76px/1l",
+      "cta:23px/1l"
+    ],
+    "assets": [
+      "product_photo@5.9,17.3 88.1x49.6",
+      "logo@39.4,11.0 21.3x2.6"
+    ],
+    "verification": [
+      "product_photo:true/true/3.95",
+      "logo:true/true/2.03"
+    ]
+  }
+]

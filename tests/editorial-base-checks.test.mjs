@@ -66,7 +66,7 @@ test("scanEditorialBaseText: uma chamada leve só com a base; textos normalizado
 test("scanEditorialBaseText: base sem texto = AVAILABLE vazio; falha/resposta inválida = NOT_AVAILABLE (nunca PASS falso)", async () => {
   assert.deepEqual((await scanEditorialBaseText(fakeVision({ status: "completed", content: '{"texts": []}' }), { baseImageUrl: "u", specialistId: "s" })).texts, []);
   for (const response of [{ status: "failed", content: "" }, { status: "completed", content: "isto não é json" }, { status: "completed", content: '{"outra": 1}' }, new Error("rede")]) {
-    const scan = await scanEditorialBaseText(fakeVision(response), { baseImageUrl: "u", specialistId: "s" });
+    const scan = await scanEditorialBaseText(fakeVision(response), { baseImageUrl: "u", specialistId: "s", sleep: async () => {} });
     assert.equal(scan.status, "NOT_AVAILABLE", JSON.stringify(response));
   }
 });
@@ -87,22 +87,25 @@ test("prompt editorial institucional pede imagem full-canvas opaca, sem recorte 
   assert.doesNotMatch(offer, /FULL-CANVAS IMAGE/);
 });
 
-test("scanEditorialBaseText: bytes da base vão como data URL com o MIME REAL (PNG gravado como .jpg); leitura vazia tem UMA nova tentativa", async () => {
+test("scanEditorialBaseText: bytes da base vão como data URL com o MIME REAL (PNG gravado como .jpg); leitura que não conclui tem novas tentativas espaçadas", async () => {
   const png = await sharp({ create: { width: 8, height: 8, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
   const responses = [{ status: "failed", content: "" }, { status: "completed", content: '{"texts": [{"text": "Gift List"}]}' }];
   const calls = [];
+  const slept = [];
   const icaro = { request: async (request) => { calls.push(request); return responses.shift(); } };
-  const scan = await scanEditorialBaseText(icaro, { baseImageUrl: "https://x/base.jpg", baseImageBuffer: png, specialistId: "s" });
+  const scan = await scanEditorialBaseText(icaro, { baseImageUrl: "https://x/base.jpg", baseImageBuffer: png, specialistId: "s", sleep: async (ms) => { slept.push(ms); } });
   assert.equal(calls.length, 2, "uma nova tentativa depois da leitura vazia");
+  assert.deepEqual(slept, [15000], "espera antes da nova tentativa");
   assert.match(calls[0].imageUrls[0], /^data:image\/png;base64,/);
   assert.equal(scan.status, "AVAILABLE");
   assert.equal(scan.sourceArtifactUrl, "https://x/base.jpg");
   assert.deepEqual(scan.texts.map((item) => item.normalizedText), ["gift list"]);
-  // duas falhas seguidas continuam NOT_AVAILABLE (falha fechada), sem terceira chamada
-  const failing = { calls: 0, request: async () => { failing.calls += 1; return { status: "failed", content: "" }; } };
-  const failed = await scanEditorialBaseText(failing, { baseImageUrl: "u", baseImageBuffer: png, specialistId: "s" });
+  // três falhas seguidas continuam NOT_AVAILABLE (falha fechada), com o motivo da última
+  const failing = { calls: 0, request: async () => { failing.calls += 1; return { status: "failed", content: "", error: { message: "OpenAI recusou a tarefa" } }; } };
+  const failed = await scanEditorialBaseText(failing, { baseImageUrl: "u", baseImageBuffer: png, specialistId: "s", sleep: async () => {} });
   assert.equal(failed.status, "NOT_AVAILABLE");
-  assert.equal(failing.calls, 2);
+  assert.equal(failing.calls, 3);
+  assert.ok(failed.reason.includes("após 3 tentativa(s): OpenAI recusou a tarefa"), failed.reason);
 });
 
 test("flattenImageForVision: base com alfa vira JPEG opaco sobre cinza neutro; pixels opacos (onde existe texto) preservados", async () => {

@@ -49,6 +49,9 @@ export type EditorialBaseTextDiagnostic = {
   reason?: string;
 };
 
+/** Novas tentativas do scan da base (ms de espera antes de cada uma). */
+export const BASE_TEXT_SCAN_RETRY_DELAYS_MS: readonly number[] = [15_000, 30_000];
+
 /** Data URL com o MIME REAL (pela assinatura dos bytes, nunca pela extensão do arquivo gravado). */
 function toImageDataUrl(buffer: Buffer): string | undefined {
   const mime = buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
@@ -79,18 +82,32 @@ function buildBaseTextScanPrompt(): string {
  */
 export async function scanEditorialBaseText(
   icaro: IcaroBrainPort,
-  input: { baseImageUrl: string; baseImageBuffer?: Buffer; specialistId: string; onCost?: (response: IcaroAIResponse | undefined) => void },
+  input: {
+    baseImageUrl: string;
+    baseImageBuffer?: Buffer;
+    specialistId: string;
+    onCost?: (response: IcaroAIResponse | undefined) => void;
+    /** Espera antes de cada nova tentativa (ms). Padrão: imediata, +15 s, +30 s. */
+    retryDelaysMs?: readonly number[];
+    sleep?: (ms: number) => Promise<void>;
+  },
 ): Promise<EditorialBaseTextDiagnostic> {
   const unavailable = (reason: string): EditorialBaseTextDiagnostic => ({ status: "NOT_AVAILABLE", target: "OPENAI_BASE", sourceArtifactUrl: input.baseImageUrl, texts: [], reason });
   try {
     // Achado do benchmark final: bases PNG com alfa levavam o gpt-4o a RECUSAR a leitura (campo
     // `refusal`, sem conteúdo) e o scan virava NOT_AVAILABLE, travando a reconciliação do ledger. O
     // motor manda a versão opaca da base (`flattenImageForVision`), já em memória, como data URL com
-    // o MIME real (nunca a URL gravada como .jpg); uma leitura que não conclui tem UMA nova
-    // tentativa. Se ainda falhar, continua NOT_AVAILABLE (falha fechada).
+    // o MIME real (nunca a URL gravada como .jpg). A recusa acontece logo após a geração e some
+    // minutos depois (a mesma base achatada foi lida 15/15 fora da execução): até 2 novas
+    // tentativas espaçadas. Se ainda falhar, continua NOT_AVAILABLE (falha fechada), com o motivo.
     const imageUrl = input.baseImageBuffer ? toImageDataUrl(input.baseImageBuffer) ?? input.baseImageUrl : input.baseImageUrl;
+    const delays = input.retryDelaysMs ?? BASE_TEXT_SCAN_RETRY_DELAYS_MS;
+    const sleep = input.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     let response: IcaroAIResponse | undefined;
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
+    let attempts = 0;
+    for (const delay of [0, ...delays]) {
+      if (delay > 0) await sleep(delay);
+      attempts += 1;
       response = await icaro.request({
         taskType: "review",
         prompt: buildBaseTextScanPrompt(),
@@ -105,7 +122,7 @@ export async function scanEditorialBaseText(
       input.onCost?.(response);
       if (response.status === "completed") break;
     }
-    if (!response || response.status !== "completed") return unavailable(`visão não concluiu (${response?.status ?? "sem resposta"}) após 2 tentativas`);
+    if (!response || response.status !== "completed") return unavailable(`visão não concluiu (${response?.status ?? "sem resposta"}) após ${attempts} tentativa(s)${response?.error?.message ? `: ${response.error.message}` : ""}`);
     const parsed = JSON.parse(extractJson(String(response.content ?? ""), "Editorial base text scan")) as { texts?: unknown };
     if (!Array.isArray(parsed.texts)) return unavailable("resposta sem lista de textos");
     const texts = parsed.texts.flatMap((raw) => {

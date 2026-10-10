@@ -47,6 +47,26 @@ test("buildCreativeContext: mescla fatos de Reference Intelligence (imagem) com 
   assert.ok(context.confirmedFacts.some((fact) => fact.includes("R$ 34,90")));
 });
 
+test("buildCreativeContext: preço visível DENTRO de um screenshot nunca vira fato comercial confirmado (cenário C real)", async () => {
+  const extracted = [];
+  const deps = {
+    referenceIntelligenceExtractor: {
+      extract: async (urls) => {
+        extracted.push(...urls);
+        return { commercialFacts: { currentPrice: "R$ 79,90", previousPrice: undefined, discountPercent: undefined, promotion: undefined, shippingInfo: undefined, commercialConditions: [] } };
+      },
+    },
+  };
+  const shotOnly = await buildCreativeContext(deps, baseInput({ assets: [{ url: "https://x/lista-de-presentes.png", role: "screenshot", description: "" }] }));
+  assert.deepEqual(shotOnly.confirmedFacts, []);
+  assert.deepEqual(extracted, [], "screenshot não alimenta a extração de fatos comerciais");
+  const declared = await buildCreativeContext(deps, baseInput({ ideaText: "Plano anual por R$ 199,00.", assets: [{ url: "https://x/lista-de-presentes.png", role: "screenshot", description: "" }] }));
+  assert.ok(declared.confirmedFacts.some((fact) => fact.includes("R$ 199,00")), "preço declarado no pedido continua valendo");
+  const product = await buildCreativeContext(deps, baseInput({ assets: [{ url: "https://x/produto.png", role: "product_photo", description: "" }, { url: "https://x/lista.png", role: "screenshot", description: "" }] }));
+  assert.ok(product.confirmedFacts.some((fact) => fact.includes("R$ 79,90")));
+  assert.deepEqual(extracted, ["https://x/produto.png"], "só a foto de produto é enviada à extração");
+});
+
 test("buildCreativeContext: resolveBrandProfile popula posicionamento/negócio/público/produtos/identidade visual", async () => {
   const deps = {
     resolveBrandProfile: async () => ({

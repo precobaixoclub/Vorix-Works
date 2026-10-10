@@ -80,7 +80,11 @@ function formatConfirmedFacts(facts: CommercialFact[]): string[] {
 }
 
 export async function buildCreativeContext(deps: BuildCreativeContextDeps, input: BuildCreativeContextInput): Promise<CreativeContext> {
-  const referenceUrls = input.assets.filter((asset) => asset.role === "product_photo" || asset.role === "screenshot").map((asset) => asset.url);
+  // Fatos comerciais (preço/oferta) só vêm de FOTO DE PRODUTO. Texto dentro de um screenshot é
+  // conteúdo da interface (cenário C real execution-mv2aptkj-mjlqxq: o preço de um item da lista de
+  // presentes virou "preço atual" do serviço e foi desenhado em destaque). Preço de serviço digital
+  // só entra quando o próprio pedido o declara (textFacts).
+  const referenceUrls = input.assets.filter((asset) => asset.role === "product_photo").map((asset) => asset.url);
 
   let imageFacts: CommercialFact[] = [];
   if (deps.referenceIntelligenceExtractor && referenceUrls.length > 0) {

@@ -1,0 +1,454 @@
+{
+    "base": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2aqlli-t8qvhw-editorial-base.jpg",
+    "cost": {
+        "total": 0.07433704999999999,
+        "director": 0.0015767999999999997,
+        "baseTextScan": 0.00014759999999999998,
+        "imageGeneration": 0.07080499999999999,
+        "repairRoundsCost": 0,
+        "visualQualityScore": 0.00051435,
+        "directionExploration": 0.00027315,
+        "technicalQualityGate": 0.00102015,
+        "preCompositionAnalysis": 0,
+        "ghostTextNeutralization": 0
+    },
+    "plan": {
+        "cta": "Criar meu site",
+        "sub": "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+        "headline": "Sua lista de presentes, linda e sem planilha",
+        "visualDensity": "balanced"
+    },
+    "alpha": {
+        "opaqueRatio": 0.0854,
+        "nonOpaqueRatio": 0.9147,
+        "hasAlphaChannel": true,
+        "transparentRatio": 0.9043,
+        "semiTransparentRatio": 0.0104
+    },
+    "final": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2aqrij-ksvrzt-editorial-final.jpg",
+    "ledger": {
+        "entries": [
+            {
+                "role": "headline",
+                "sourceId": "renderer:headline:0",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 5.185,
+                    "yPct": 13.333,
+                    "widthPct": 57.407,
+                    "heightPct": 12.956
+                },
+                "deterministic": true,
+                "normalizedText": "sua lista de presentes linda e sem planilha",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "subheadline",
+                "sourceId": "renderer:subheadline:1",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 5.185,
+                    "yPct": 27.63,
+                    "widthPct": 51.852,
+                    "heightPct": 4.356
+                },
+                "deterministic": true,
+                "normalizedText": "site do casamento com lista de presentes e confirmação de presença em um só lugar",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "price",
+                "sourceId": "renderer:price:2",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 5.185,
+                    "yPct": 33.185,
+                    "widthPct": 38.889,
+                    "heightPct": 3.68
+                },
+                "deterministic": true,
+                "normalizedText": "r$ 79,90",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "cta",
+                "sourceId": "renderer:cta:3",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 74.537,
+                    "yPct": 32.519,
+                    "widthPct": 18.426,
+                    "heightPct": 4.296
+                },
+                "deterministic": true,
+                "normalizedText": "criar meu site",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "logo",
+                "sourceId": "logo:0",
+                "sourceType": "LOGO_ASSET",
+                "alternatives": [
+                    "rumo ao altar"
+                ],
+                "expectedBBox": {
+                    "xPct": 5.185,
+                    "yPct": 8.148,
+                    "widthPct": 17.037,
+                    "heightPct": 2.963
+                },
+                "deterministic": true,
+                "assetProvenance": "context_asset+pixel_verified"
+            },
+            {
+                "role": "screenshot",
+                "sourceId": "screenshot:0",
+                "sourceType": "SCREENSHOT_ASSET",
+                "expectedBBox": {
+                    "xPct": 2.593,
+                    "yPct": 44.593,
+                    "widthPct": 94.815,
+                    "heightPct": 53.333
+                },
+                "deterministic": true,
+                "assetProvenance": "context_asset+pixel_verified"
+            }
+        ],
+        "baseTextStatus": "AVAILABLE"
+    },
+    "verify": [
+        {
+            "role": "screenshot",
+            "visible": true,
+            "detectedMime": "image/png",
+            "fidelityPass": true,
+            "assetMatchRatio": 1,
+            "fidelityMeanAbsDiff": 5.04,
+            "informativePixelRatio": 0.4067
+        },
+        {
+            "role": "logo",
+            "visible": true,
+            "detectedMime": "image/png",
+            "fidelityPass": true,
+            "assetMatchRatio": 1,
+            "fidelityMeanAbsDiff": 6.33,
+            "informativePixelRatio": 0.2042
+        }
+    ],
+    "repairs": [
+    ],
+    "baseText": {
+        "texts": [
+        ],
+        "status": "AVAILABLE",
+        "target": "OPENAI_BASE",
+        "sourceArtifactUrl": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2aqlli-t8qvhw-editorial-base.jpg"
+    },
+    "geometry": {
+        "family": "digital_service",
+        "source": "final_rendered_geometry",
+        "textBoxes": [
+            {
+                "id": "headline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 5.185,
+                    "yPct": 13.333,
+                    "widthPct": 57.407,
+                    "heightPct": 12.956
+                },
+                "text": "Sua lista de presentes, linda e sem planilha",
+                "lineCount": 3,
+                "fontSizePx": 55
+            },
+            {
+                "id": "subheadline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 5.185,
+                    "yPct": 27.63,
+                    "widthPct": 51.852,
+                    "heightPct": 4.356
+                },
+                "text": "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+                "lineCount": 2,
+                "fontSizePx": 21
+            },
+            {
+                "id": "price",
+                "kind": "text",
+                "rect": {
+                    "xPct": 5.185,
+                    "yPct": 33.185,
+                    "widthPct": 38.889,
+                    "heightPct": 3.68
+                },
+                "text": "R$ 79,90",
+                "lineCount": 1,
+                "fontSizePx": 46
+            },
+            {
+                "id": "cta",
+                "kind": "text",
+                "rect": {
+                    "xPct": 74.537,
+                    "yPct": 32.519,
+                    "widthPct": 18.426,
+                    "heightPct": 4.296
+                },
+                "text": "CRIAR MEU SITE",
+                "lineCount": 1,
+                "fontSizePx": 18
+            }
+        ],
+        "assetBoxes": [
+            {
+                "id": "screenshot",
+                "kind": "asset",
+                "rect": {
+                    "xPct": 2.593,
+                    "yPct": 44.593,
+                    "widthPct": 94.815,
+                    "heightPct": 53.333
+                },
+                "role": "screenshot"
+            },
+            {
+                "id": "logo",
+                "kind": "asset",
+                "rect": {
+                    "xPct": 5.185,
+                    "yPct": 8.148,
+                    "widthPct": 17.037,
+                    "heightPct": 2.963
+                },
+                "role": "logo"
+            }
+        ]
+    },
+    "composition": {
+        "diagnostics": {
+            "variant": "UI_HERO",
+            "pageTone": "light",
+            "screenshot": {
+                "fit": "contain",
+                "frame": "EDITORIAL_SURFACE",
+                "aspect": 1.422,
+                "option": "left",
+                "palette": {
+                    "accent": "#b66b77",
+                    "dominant": "#fbfbfb",
+                    "secondary": "#080808"
+                },
+                "legibility": {
+                    "feedScale": 0.289,
+                    "heroScale": 0.8,
+                    "featureAreaShare": 0.1,
+                    "fullScreenLegible": true,
+                    "featureEnergyShare": 0.25,
+                    "edgeRetentionAtFeed": 0.605,
+                    "featureEdgeRetention": 0.507,
+                    "smallFeatureCritical": false
+                },
+                "sourceWidth": 1280,
+                "displayScale": 0.8,
+                "sourceHeight": 900,
+                "classification": "DESKTOP",
+                "displayWidthPx": 1024,
+                "floatingCopyFits": false
+            },
+            "logoTreatment": "MULTIPLY_ON_LIGHT",
+            "priceTreatment": "INLINE_PRICE",
+            "selectionReasons": [
+                "tela inteira legível como hero (escala hero 0.8, retenção de borda no feed 0.605) — recortes não são necessários",
+                "copy longa não cabe na faixa do produto flutuante sem encolher demais a headline: UI_HERO dá mais espaço à copy"
+            ],
+            "occupiedAreaRatio": 0.681,
+            "largestEmptyBandPct": 0.074,
+            "contentCentroidOffset": 0.252,
+            "productVisualProminence": 0.506
+        },
+        "selectedVariant": "UI_HERO",
+        "variantSelectionReasons": [
+            "tela inteira legível como hero (escala hero 0.8, retenção de borda no feed 0.605) — recortes não são necessários",
+            "copy longa não cabe na faixa do produto flutuante sem encolher demais a headline: UI_HERO dá mais espaço à copy"
+        ]
+    },
+    "quality_gate": {
+        "issues": [
+        ],
+        "verdict": "pass",
+        "textProvenanceLedger": {
+            "entries": [
+                {
+                    "role": "headline",
+                    "sourceId": "renderer:headline:0",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 5.185,
+                        "yPct": 13.333,
+                        "widthPct": 57.407,
+                        "heightPct": 12.956
+                    },
+                    "deterministic": true,
+                    "normalizedText": "sua lista de presentes linda e sem planilha",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "subheadline",
+                    "sourceId": "renderer:subheadline:1",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 5.185,
+                        "yPct": 27.63,
+                        "widthPct": 51.852,
+                        "heightPct": 4.356
+                    },
+                    "deterministic": true,
+                    "normalizedText": "site do casamento com lista de presentes e confirmação de presença em um só lugar",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "price",
+                    "sourceId": "renderer:price:2",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 5.185,
+                        "yPct": 33.185,
+                        "widthPct": 38.889,
+                        "heightPct": 3.68
+                    },
+                    "deterministic": true,
+                    "normalizedText": "r$ 79,90",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "cta",
+                    "sourceId": "renderer:cta:3",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 74.537,
+                        "yPct": 32.519,
+                        "widthPct": 18.426,
+                        "heightPct": 4.296
+                    },
+                    "deterministic": true,
+                    "normalizedText": "criar meu site",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "logo",
+                    "sourceId": "logo:0",
+                    "sourceType": "LOGO_ASSET",
+                    "alternatives": [
+                        "rumo ao altar"
+                    ],
+                    "expectedBBox": {
+                        "xPct": 5.185,
+                        "yPct": 8.148,
+                        "widthPct": 17.037,
+                        "heightPct": 2.963
+                    },
+                    "deterministic": true,
+                    "assetProvenance": "context_asset+pixel_verified"
+                },
+                {
+                    "role": "screenshot",
+                    "sourceId": "screenshot:0",
+                    "sourceType": "SCREENSHOT_ASSET",
+                    "expectedBBox": {
+                        "xPct": 2.593,
+                        "yPct": 44.593,
+                        "widthPct": 94.815,
+                        "heightPct": 53.333
+                    },
+                    "deterministic": true,
+                    "assetProvenance": "context_asset+pixel_verified"
+                }
+            ],
+            "baseTextStatus": "AVAILABLE"
+        }
+    },
+    "visual_score": {
+        "dimensions": [
+            {
+                "key": "visualHierarchy",
+                "label": "hierarquia visual",
+                "score": 6,
+                "justification": "A hierarquia visual não está clara; o headline compete com o screenshot pelo foco principal."
+            },
+            {
+                "key": "compositionBalance",
+                "label": "equilíbrio da composição",
+                "score": 7,
+                "justification": "A composição é equilibrada, mas o texto poderia ser melhor distribuído para evitar peso excessivo à esquerda."
+            },
+            {
+                "key": "legibility",
+                "label": "legibilidade",
+                "score": 8,
+                "justification": "A legibilidade é boa, mas o contraste do texto poderia ser ligeiramente melhorado para mais clareza."
+            },
+            {
+                "key": "focusClarity",
+                "label": "clareza do foco principal",
+                "score": 5,
+                "justification": "O foco principal deveria ser o screenshot, mas o headline atrai mais atenção."
+            },
+            {
+                "key": "canvasUsage",
+                "label": "aproveitamento do canvas",
+                "score": 6,
+                "justification": "O screenshot ocupa menos de 40% do canvas, não cumprindo o plano de direção de arte."
+            },
+            {
+                "key": "colorCoherence",
+                "label": "coerência cromática",
+                "score": 7,
+                "justification": "As cores são agradáveis, mas faltam os tons quentes e sutis do amanhecer descritos na direção cromática."
+            },
+            {
+                "key": "backgroundQuality",
+                "label": "qualidade do fundo",
+                "score": 6,
+                "justification": "O fundo é suave, mas não há evidência clara de cristais prismáticos dispersando a luz."
+            },
+            {
+                "key": "assetIntegration",
+                "label": "integração dos assets reais",
+                "score": 7,
+                "justification": "Os assets estão bem integrados, mas o texto poderia complementar melhor a interface sem sobrecarregar."
+            },
+            {
+                "key": "nonGenericLook",
+                "label": "aparência não genérica (não parece template automático)",
+                "score": 6,
+                "justification": "A peça tem um visual um pouco genérico, sem elementos únicos que a diferenciem de templates comuns."
+            },
+            {
+                "key": "visualCleanliness",
+                "label": "ausência de poluição visual",
+                "score": 8,
+                "justification": "A peça é visualmente limpa, mas a hierarquia poderia ser mais clara para evitar confusão."
+            },
+            {
+                "key": "commercialStrength",
+                "label": "força comercial",
+                "score": 7,
+                "justification": "A peça tem apelo comercial, mas o foco no produto poderia ser mais forte para aumentar a eficácia."
+            },
+            {
+                "key": "artDirectionFidelity",
+                "label": "fidelidade à direção de arte planejada",
+                "score": 5,
+                "justification": "A fidelidade à direção de arte planejada é mediana, faltando elementos como os cristais e a paleta de cores do amanhecer."
+            }
+        ],
+        "overallScore": 6.5,
+        "belowThreshold": false,
+        "requiresRepair": false,
+        "weakDimensions": [
+        ]
+    }
+}

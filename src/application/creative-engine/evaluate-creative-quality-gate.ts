@@ -368,6 +368,33 @@ function applyVisionZoneContradiction(
 }
 
 /**
+ * Zona do renderer que CONTRADIZ a localização dada pela visão para um texto determinístico: a bbox
+ * cai (regra estrita de região) numa zona cujo texto final é OUTRO, a base foi escaneada e não tem
+ * o texto, e nenhum asset soberano (logo/screenshot/produto) cobre a bbox. Nesse caso a única origem
+ * física possível do texto é a sua própria zona — a posição da visão é que está errada.
+ */
+function findContradictingRendererZone(
+  bbox: CreativePlanRect,
+  normalizedDetected: string,
+  regions: { renderedTextRegions: readonly CreativeRenderedTextRegion[]; verifiedLogoRegions: readonly CreativePlanRect[]; verifiedScreenshotRegions: readonly CreativePlanRect[] },
+  ledger: TextProvenanceLedger | undefined,
+): CreativeRenderedTextRegion | undefined {
+  if (!ledger || ledger.baseTextStatus !== "AVAILABLE" || !normalizedDetected) return undefined;
+  const baseContains = ledger.entries.some((entry) => entry.sourceType === "BASE_IMAGE" && entry.normalizedText !== undefined && (entry.normalizedText.includes(normalizedDetected) || (entry.normalizedText.length >= 3 && normalizedDetected.includes(entry.normalizedText))));
+  if (baseContains) return undefined;
+  const sovereign = [
+    ...regions.verifiedLogoRegions,
+    ...regions.verifiedScreenshotRegions,
+    ...ledger.entries.filter((entry) => entry.sourceType === "PRODUCT_ASSET" && entry.expectedBBox).map((entry) => entry.expectedBBox!),
+  ];
+  if (sovereign.length > 0 && isTextRegionInsideVerifiedLogo(bbox, sovereign)) return undefined;
+  return regions.renderedTextRegions.find((candidate) => {
+    const zoneText = normalizeRenderedText(candidate.text);
+    return zoneText !== normalizedDetected && !zoneText.includes(normalizedDetected) && isTextRegionInsideVerifiedLogo(bbox, [candidate.rect]);
+  });
+}
+
+/**
  * Duplicidade por OCORRÊNCIA. Cada ocorrência é classificada pela região + proveniência:
  * zona do renderer (texto equivalente dentro da bbox final), logo verificada, screenshot real
  * verificado, ou desconhecida. O texto repetido só é legítimo quando TODA ocorrência tem origem
@@ -448,6 +475,12 @@ export type CreativeTextDiagnostic = {
   /** Faixa de tolerância aplicada em volta da bbox esperada (pontos percentuais por lado). */
   toleranceApplied?: number;
   matchDecision?: string;
+  /** VISION_ZONE_CONTRADICTION: a visão pôs o texto numa zona onde o renderer desenhou OUTRO texto. */
+  conflictingRendererRole?: string;
+  conflictingRendererText?: string;
+  conflictingRendererBBox?: CreativePlanRect;
+  baseTextScanStatus?: "AVAILABLE" | "NOT_AVAILABLE";
+  baseContainsDetectedText?: boolean;
 };
 
 /** Diagnóstico sanitizado de cada OCORRÊNCIA de um texto repetido: duplicidade é decidida por
@@ -1041,12 +1074,17 @@ export async function checkCreativeVisualIntegrity(
           const proximity = measureRenderedTextProximity(detected.region, expectedZone.rect);
           const otherEquivalent = allDetections.some((other, otherIndex) => otherIndex !== detectionIndex && other !== undefined && normalizeRenderedText(other.text) === normalizedDetected);
           const baseHasPhrase = baseTexts.some((text) => text.includes(normalizedDetected));
+          // Longe da zona, mas DENTRO de outra zona do renderer com texto diferente (base limpa, sem
+          // asset soberano): contradição de zona, não texto solto. As demais travas continuam valendo.
+          const contradiction = !proximity.near
+            ? findContradictingRendererZone(detected.region, normalizedDetected, { renderedTextRegions, verifiedLogoRegions, verifiedScreenshotRegions: input.verifiedScreenshotRegions ?? [] }, input.textProvenanceLedger)
+            : undefined;
           const failures = [
             candidates.length !== 1 ? "manifesto final tem mais de uma zona com esse texto" : undefined,
             otherEquivalent ? "visão reportou outra ocorrência equivalente" : undefined,
             unresolvedDuplicates.has(normalizedDetected) ? "texto também reportado como duplicata não resolvida" : undefined,
             baseHasPhrase ? "a imagem base já contém a frase" : undefined,
-            !proximity.near ? `bbox longe da zona final (centro a ${proximity.centerDistance} pt; faixa ${proximity.band} pt; ${Math.round(proximity.insideBand * 100)}% dentro da faixa)` : undefined,
+            !proximity.near && !contradiction ? `bbox longe da zona final (centro a ${proximity.centerDistance} pt; faixa ${proximity.band} pt; ${Math.round(proximity.insideBand * 100)}% dentro da faixa)` : undefined,
           ].filter((reason): reason is string => Boolean(reason));
           const diagnosticBase = {
             detectedText: item,
@@ -1061,13 +1099,20 @@ export async function checkCreativeVisualIntegrity(
             toleranceApplied: proximity.band,
           };
           if (failures.length === 0) {
-            authorizedZoneTexts.add(normalizedDetected);
+            // Contradição de zona só retira a acusação de texto solto; nunca prova presença de texto
+            // obrigatório que a própria visão disse estar ausente.
+            if (!contradiction) authorizedZoneTexts.add(normalizedDetected);
             input.textDiagnostics?.push({
               ...diagnosticBase,
               matchedElement: expectedZone.kind,
               decision: "authorized",
-              matchDecision: `MATCHED_RENDERED_${expectedZone.kind.toUpperCase()}`,
-              reason: `exact_text_single_occurrence_${input.baseImageTexts ? "base_clean" : "no_second_occurrence_in_final"}_spatially_near`,
+              matchDecision: contradiction ? "VISION_ZONE_CONTRADICTION" : `MATCHED_RENDERED_${expectedZone.kind.toUpperCase()}`,
+              reason: contradiction
+                ? `detected_text_conflicts_with_verified_${contradiction.kind}_zone_base_clean_single_${expectedZone.kind}_origin`
+                : `exact_text_single_occurrence_${input.baseImageTexts ? "base_clean" : "no_second_occurrence_in_final"}_spatially_near`,
+              ...(contradiction
+                ? { conflictingRendererRole: contradiction.kind, conflictingRendererText: normalizeRenderedText(contradiction.text), conflictingRendererBBox: contradiction.rect, baseTextScanStatus: "AVAILABLE" as const, baseContainsDetectedText: false }
+                : {}),
             });
             continue;
           }

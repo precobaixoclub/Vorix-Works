@@ -1405,3 +1405,79 @@ test("zona defensivo: base com trecho do texto sobre a zona (evidência independ
   assert.ok(result.issues.some((issue) => issue.code === "DUPLICATED_TEXT"), JSON.stringify(result.issues));
   assert.equal(contradictions(result).length, 0);
 });
+
+// ---------------------------------------------------------------------------------------------
+// VISION_ZONE_CONTRADICTION no caminho de texto (cenário B real execution-mv29jftt-v4haee): a visão
+// leu o CTA exato, uma única vez, mas com bbox DENTRO da zona onde o renderer desenhou o subtítulo
+// (base limpa). A posição da visão é que está errada; texto solto/duplicado continua reprovando.
+// ---------------------------------------------------------------------------------------------
+
+const B8 = {
+  headline: { xPct: 5.926, yPct: 87.407, widthPct: 51.852, heightPct: 7.52 },
+  subheadline: { xPct: 63.519, yPct: 83.778, widthPct: 30.556, heightPct: 5.68 },
+  cta: { xPct: 63.056, yPct: 91.111, widthPct: 31.019, heightPct: 3.852 },
+  logo: { xPct: 78.704, yPct: 79.481, widthPct: 15.37, heightPct: 2.667 },
+  visionCta: { xPct: 70, yPct: 85, widthPct: 20, heightPct: 5 },
+};
+
+function b8GateInput(overrides = {}) {
+  const input = ledgerGateInput(overrides);
+  input.plan = {
+    ...input.plan,
+    assetPlacements: [{ role: "logo", url: LOGO_URL, rect: B8.logo, frame: "none" }],
+    textZones: [
+      { kind: "headline", text: B_HEADLINE, rect: B8.headline, emphasis: "primary", renderedBy: "renderer" },
+      { kind: "subheadline", text: B_SUB, rect: B8.subheadline, emphasis: "secondary", renderedBy: "renderer" },
+      { kind: "cta", text: B_CTA, rect: B8.cta, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+  };
+  return input;
+}
+
+test("zona texto: B real — CTA exato lido dentro da zona do subtítulo, base limpa → PASS com VISION_ZONE_CONTRADICTION", async () => {
+  const result = await evaluateCreativeQualityGate(ctaAt(B8.visionCta), b8GateInput());
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  const diag = result.textDiagnostics.find((item) => item.matchDecision);
+  assert.equal(diag.matchDecision, "VISION_ZONE_CONTRADICTION");
+  assert.equal(diag.decision, "authorized");
+  assert.equal(diag.expectedRole, "cta");
+  assert.equal(diag.conflictingRendererRole, "subheadline");
+  assert.equal(diag.baseTextScanStatus, "AVAILABLE");
+  assert.equal(diag.baseContainsDetectedText, false);
+  assert.match(diag.reason, /^detected_text_conflicts_with_verified_subheadline_zone_base_clean_single_cta_origin/);
+});
+
+test("zona texto: sem scan da base (ou NOT_AVAILABLE) a contradição não vale → UNAUTHORIZED_TEXT", async () => {
+  for (const baseTextDiagnostic of [undefined, { status: "NOT_AVAILABLE", texts: [] }]) {
+    const result = await evaluateCreativeQualityGate(ctaAt(B8.visionCta), b8GateInput({ baseTextDiagnostic }));
+    assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"), JSON.stringify(baseTextDiagnostic));
+  }
+});
+
+test("zona texto: base que contém a frase → UNAUTHORIZED_TEXT", async () => {
+  const base = { status: "AVAILABLE", texts: [{ text: B_CTA, normalizedText: "conheça o rumo ao altar", bbox: B8.visionCta }] };
+  const result = await evaluateCreativeQualityGate(ctaAt(B8.visionCta), b8GateInput({ baseTextDiagnostic: base }));
+  assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+});
+
+test("zona texto: contradição não fabrica presença — CTA dado como ausente continua MISSING_REQUIRED_TEXT", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([{ text: "CONHEÇA O RUMO AO ALTAR", region: B8.visionCta }], { missingRequiredTexts: [B_CTA] }), b8GateInput());
+  assert.ok(result.issues.some((issue) => issue.code === "MISSING_REQUIRED_TEXT"), JSON.stringify(result.issues));
+});
+
+test("zona texto: duas leituras do CTA (zona real + subtítulo) → FAIL; texto exato em área vazia → FAIL", async () => {
+  const twice = await evaluateCreativeQualityGate(visionReturning([
+    { text: "CONHEÇA O RUMO AO ALTAR", region: { xPct: 65, yPct: 91.5, widthPct: 25, heightPct: 3.5 } },
+    { text: "CONHEÇA O RUMO AO ALTAR", region: B8.visionCta },
+  ]), b8GateInput());
+  assert.ok(twice.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+  const empty = await evaluateCreativeQualityGate(ctaAt({ xPct: 40, yPct: 30, widthPct: 25, heightPct: 5 }), b8GateInput());
+  assert.ok(empty.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+});
+
+test("zona texto: desconhecido, trecho parcial ou acento diferente dentro do subtítulo → FAIL", async () => {
+  for (const text of ["DESCONTO 90%", "Rumo ao Altar", "CONHECA O RUMO AO ALTAR"]) {
+    const result = await evaluateCreativeQualityGate(visionReturning([{ text, region: B8.visionCta }]), b8GateInput());
+    assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"), text);
+  }
+});

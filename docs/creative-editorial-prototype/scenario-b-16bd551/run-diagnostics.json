@@ -1,0 +1,335 @@
+{
+    "base": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv29k44a-8tym3m-editorial-base.jpg",
+    "cost": {
+        "total": 0.07284424999999999,
+        "director": 0.0013544999999999998,
+        "baseTextScan": 0.00014759999999999998,
+        "imageGeneration": 0.07059499999999999,
+        "repairRoundsCost": 0,
+        "visualQualityScore": 0,
+        "directionExploration": 0.00027675,
+        "technicalQualityGate": 0.00047039999999999994,
+        "preCompositionAnalysis": 0,
+        "ghostTextNeutralization": 0
+    },
+    "plan": {
+        "cta": "Conheça o Rumo ao Altar",
+        "sub": "Site, lista de presentes e confirmação de presença em um só lugar.",
+        "headline": "O casamento organizado como vocês sonharam",
+        "visualDensity": "balanced"
+    },
+    "alpha": {
+        "opaqueRatio": 1,
+        "nonOpaqueRatio": 0,
+        "hasAlphaChannel": false,
+        "transparentRatio": 0,
+        "requestedBackground": "opaque",
+        "semiTransparentRatio": 0
+    },
+    "final": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv29k72q-u52pil-editorial-final.jpg",
+    "ledger": {
+        "entries": [
+            {
+                "role": "headline",
+                "sourceId": "renderer:headline:0",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 5.926,
+                    "yPct": 87.407,
+                    "widthPct": 51.852,
+                    "heightPct": 7.52
+                },
+                "deterministic": true,
+                "normalizedText": "o casamento organizado como vocês sonharam",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "subheadline",
+                "sourceId": "renderer:subheadline:1",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 63.519,
+                    "yPct": 83.778,
+                    "widthPct": 30.556,
+                    "heightPct": 5.68
+                },
+                "deterministic": true,
+                "normalizedText": "site lista de presentes e confirmação de presença em um só lugar",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "cta",
+                "sourceId": "renderer:cta:2",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 63.056,
+                    "yPct": 91.111,
+                    "widthPct": 31.019,
+                    "heightPct": 3.852
+                },
+                "deterministic": true,
+                "normalizedText": "conheça o rumo ao altar",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "logo",
+                "sourceId": "logo:0",
+                "sourceType": "LOGO_ASSET",
+                "alternatives": [
+                    "rumo ao altar"
+                ],
+                "expectedBBox": {
+                    "xPct": 78.704,
+                    "yPct": 79.481,
+                    "widthPct": 15.37,
+                    "heightPct": 2.667
+                },
+                "deterministic": true,
+                "assetProvenance": "context_asset+pixel_verified"
+            }
+        ],
+        "baseTextStatus": "AVAILABLE"
+    },
+    "verify": [
+        {
+            "role": "logo",
+            "visible": true,
+            "detectedMime": "image/png",
+            "fidelityPass": true,
+            "assetMatchRatio": 1,
+            "fidelityMeanAbsDiff": 8.74,
+            "informativePixelRatio": 0.2091
+        }
+    ],
+    "baseText": {
+        "texts": [
+        ],
+        "status": "AVAILABLE",
+        "target": "OPENAI_BASE",
+        "sourceArtifactUrl": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv29k44a-8tym3m-editorial-base.jpg"
+    },
+    "geometry": {
+        "family": "premium_institutional",
+        "source": "final_rendered_geometry",
+        "textBoxes": [
+            {
+                "id": "headline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 5.926,
+                    "yPct": 87.407,
+                    "widthPct": 51.852,
+                    "heightPct": 7.52
+                },
+                "text": "O casamento organizado como vocês sonharam",
+                "lineCount": 2,
+                "fontSizePx": 47
+            },
+            {
+                "id": "subheadline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 63.519,
+                    "yPct": 83.778,
+                    "widthPct": 30.556,
+                    "heightPct": 5.68
+                },
+                "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+                "lineCount": 3,
+                "fontSizePx": 18
+            },
+            {
+                "id": "cta",
+                "kind": "text",
+                "rect": {
+                    "xPct": 67.676,
+                    "yPct": 91.111,
+                    "widthPct": 21.778,
+                    "heightPct": 3.852
+                },
+                "text": "CONHEÇA O RUMO AO ALTAR",
+                "lineCount": 1,
+                "fontSizePx": 17
+            }
+        ],
+        "assetBoxes": [
+            {
+                "id": "logo",
+                "kind": "asset",
+                "rect": {
+                    "xPct": 78.704,
+                    "yPct": 79.481,
+                    "widthPct": 15.37,
+                    "heightPct": 2.667
+                },
+                "role": "logo"
+            }
+        ]
+    },
+    "composition": {
+        "diagnostics": {
+            "baseFit": {
+                "reasons": [
+                    "recorte editorial centrado no foco preserva o núcleo da cena (31%×50% da base); perda de área 22% (máx. 32%)"
+                ],
+                "strategy": "COVER_FOCAL_SAFE_CROP",
+                "cropLossPct": 0.215,
+                "detailRetainedPct": 0.863
+            },
+            "variant": "PHOTO_DOMINANT_EDITORIAL",
+            "pageTone": "light",
+            "baseAnalysis": {
+                "meanLuma": 0.59,
+                "detailBox": {
+                    "xPct": 0,
+                    "yPct": 5,
+                    "widthPct": 100,
+                    "heightPct": 95
+                },
+                "focalPoint": {
+                    "xPct": 48.8,
+                    "yPct": 51.1
+                },
+                "quietTopPct": 0,
+                "visualClass": "SINGLE_SCENE_PHOTO",
+                "visualDensity": 0.588,
+                "colorBuckets90": 66,
+                "detailClusters": 5,
+                "flatPixelRatio": 0.031,
+                "quietBottomPct": 0,
+                "straightDividers": 0,
+                "transparentRatio": 0,
+                "contentPanelCount": 1,
+                "flatSeparatorRatio": 0,
+                "focalConcentration": 0.416,
+                "negativeSpaceRatio": 0.081,
+                "largestClusterShare": 0.783,
+                "separatorConfidence": 0,
+                "classificationReasons": [
+                    "cena espacialmente contínua",
+                    "5 focos de detalhe são objetos da cena (contorno irregular), não painéis (1)",
+                    "sem divisórias retas"
+                ],
+                "contentComponentCount": 5,
+                "separatorGradientScore": 0.127,
+                "separatorColorVariation": 32.5,
+                "separatorLocalVariation": 3.32,
+                "backgroundSeparatorRatio": 0.006
+            },
+            "ctaTreatment": "SOLID_PREMIUM",
+            "logoTreatment": "LOGO_DIRECT_LIGHT",
+            "baseVisualClass": "SINGLE_SCENE_PHOTO",
+            "selectionReasons": [
+                "SINGLE_SCENE_PHOTO: cena única sem faixa calma (topo 0%, base 0%) e foco central (48.8%) — foto protagonista grande, copy em faixa editorial assimétrica"
+            ],
+            "occupiedAreaRatio": 0.781,
+            "largestEmptyBandPct": 0.015,
+            "contentCentroidOffset": 0.094,
+            "productVisualProminence": 0.673
+        },
+        "selectedVariant": "PHOTO_DOMINANT_EDITORIAL",
+        "variantSelectionReasons": [
+            "SINGLE_SCENE_PHOTO: cena única sem faixa calma (topo 0%, base 0%) e foco central (48.8%) — foto protagonista grande, copy em faixa editorial assimétrica"
+        ]
+    },
+    "quality_gate": {
+        "issues": [
+            {
+                "code": "UNAUTHORIZED_TEXT",
+                "source": "vision",
+                "message": "A peça contém texto não autorizado: \"CONHEÇA O RUMO AO ALTAR\" — não está na lista de textos permitidos do plano. Remova completamente."
+            }
+        ],
+        "verdict": "fail",
+        "textDiagnostics": [
+            {
+                "bbox": {
+                    "xPct": 70,
+                    "yPct": 85,
+                    "widthPct": 20,
+                    "heightPct": 5
+                },
+                "reason": "equivalente à zona cta, mas sem casamento de alta confiança: bbox longe da zona final (centro a 5.72 pt; faixa 3.852 pt; 55% dentro da faixa)",
+                "overlap": 0,
+                "decision": "rejected",
+                "detectedText": "CONHEÇA O RUMO AO ALTAR",
+                "expectedBBox": {
+                    "xPct": 63.056,
+                    "yPct": 91.111,
+                    "widthPct": 31.019,
+                    "heightPct": 3.852
+                },
+                "expectedRole": "cta",
+                "occurrenceId": "text-0",
+                "matchDecision": "REJECTED",
+                "centerDistance": 5.72,
+                "toleranceApplied": 3.852,
+                "normalizedDetected": "conheça o rumo ao altar",
+                "normalizedExpected": "conheça o rumo ao altar"
+            }
+        ],
+        "textProvenanceLedger": {
+            "entries": [
+                {
+                    "role": "headline",
+                    "sourceId": "renderer:headline:0",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 5.926,
+                        "yPct": 87.407,
+                        "widthPct": 51.852,
+                        "heightPct": 7.52
+                    },
+                    "deterministic": true,
+                    "normalizedText": "o casamento organizado como vocês sonharam",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "subheadline",
+                    "sourceId": "renderer:subheadline:1",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 63.519,
+                        "yPct": 83.778,
+                        "widthPct": 30.556,
+                        "heightPct": 5.68
+                    },
+                    "deterministic": true,
+                    "normalizedText": "site lista de presentes e confirmação de presença em um só lugar",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "cta",
+                    "sourceId": "renderer:cta:2",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 63.056,
+                        "yPct": 91.111,
+                        "widthPct": 31.019,
+                        "heightPct": 3.852
+                    },
+                    "deterministic": true,
+                    "normalizedText": "conheça o rumo ao altar",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "logo",
+                    "sourceId": "logo:0",
+                    "sourceType": "LOGO_ASSET",
+                    "alternatives": [
+                        "rumo ao altar"
+                    ],
+                    "expectedBBox": {
+                        "xPct": 78.704,
+                        "yPct": 79.481,
+                        "widthPct": 15.37,
+                        "heightPct": 2.667
+                    },
+                    "deterministic": true,
+                    "assetProvenance": "context_asset+pixel_verified"
+                }
+            ],
+            "baseTextStatus": "AVAILABLE"
+        }
+    }
+}

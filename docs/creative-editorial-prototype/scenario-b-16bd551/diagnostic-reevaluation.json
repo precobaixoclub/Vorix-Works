@@ -1,0 +1,51 @@
+{
+  "kind": "DIAGNOSTIC_REEVALUATION (não altera o histórico do run)",
+  "executionId": "execution-mv29jftt-v4haee",
+  "inputs": "persisted vision detections + final geometry ledger + pixel verification + base text scan",
+  "openAiRealCalls": 0,
+  "fakeVisionCalls": 1,
+  "originalVerdict": "fail",
+  "originalIssues": [
+    "UNAUTHORIZED_TEXT"
+  ],
+  "verdict": "pass",
+  "issues": [],
+  "textDiagnostics": [
+    {
+      "detectedText": "CONHEÇA O RUMO AO ALTAR",
+      "bbox": {
+        "xPct": 70,
+        "yPct": 85,
+        "widthPct": 20,
+        "heightPct": 5
+      },
+      "normalizedExpected": "conheça o rumo ao altar",
+      "normalizedDetected": "conheça o rumo ao altar",
+      "occurrenceId": "text-0",
+      "expectedRole": "cta",
+      "expectedBBox": {
+        "xPct": 63.056,
+        "yPct": 91.111,
+        "widthPct": 31.019,
+        "heightPct": 3.852
+      },
+      "overlap": 0,
+      "centerDistance": 5.72,
+      "toleranceApplied": 3.852,
+      "matchedElement": "cta",
+      "decision": "authorized",
+      "matchDecision": "VISION_ZONE_CONTRADICTION",
+      "reason": "detected_text_conflicts_with_verified_subheadline_zone_base_clean_single_cta_origin",
+      "conflictingRendererRole": "subheadline",
+      "conflictingRendererText": "site lista de presentes e confirmação de presença em um só lugar",
+      "conflictingRendererBBox": {
+        "xPct": 63.519,
+        "yPct": 83.778,
+        "widthPct": 30.556,
+        "heightPct": 5.68
+      },
+      "baseTextScanStatus": "AVAILABLE",
+      "baseContainsDetectedText": false
+    }
+  ]
+}

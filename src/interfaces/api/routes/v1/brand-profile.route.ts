@@ -1,11 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import type { CreativeBrandProfile } from "../../../../application/creative-engine/build-creative-context.js";
+import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
+import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
 
 export type BrandProfileRoutesDeps = {
   resolveBrandProfile(workspaceId: string): Promise<CreativeBrandProfile | undefined>;
   updateBrandProfile(workspaceId: string, patch: { positioning?: string; toneOfVoice?: string; businessDescription?: string; targetAudience?: string }): Promise<void>;
+  /** Isolamento multi-tenant: workspace de outro tenant = 404. */
+  workspaceRepository: WorkspaceRepositoryPort;
 };
 
 const WORKSPACE_QUERY_SCHEMA = {
@@ -35,15 +39,17 @@ const UPDATE_BODY_SCHEMA = {
  */
 export async function registerBrandProfileRoutes(app: FastifyInstance, deps: BrandProfileRoutesDeps): Promise<void> {
   app.get("/brand-profile", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    requirePermission(request, "asset:read");
+    const principal = requirePermission(request, "asset:read");
     const { workspaceId } = request.query as { workspaceId: string };
+    await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
     const profile = await deps.resolveBrandProfile(workspaceId);
     return successEnvelope(profile ?? null, request.id);
   });
 
   app.post("/brand-profile", { schema: { body: UPDATE_BODY_SCHEMA } }, async (request) => {
-    requirePermission(request, "asset:update");
+    const principal = requirePermission(request, "asset:update");
     const { workspaceId, ...patch } = request.body as { workspaceId: string } & Parameters<BrandProfileRoutesDeps["updateBrandProfile"]>[1];
+    await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
     await deps.updateBrandProfile(workspaceId, patch);
     const profile = await deps.resolveBrandProfile(workspaceId);
     return successEnvelope(profile ?? null, request.id);

@@ -1,11 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import type { ProductionSettingsRepositoryPort } from "../../../../application/ports/production-settings-repository.port.js";
+import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
 import { CREATIVE_FREEDOM_OPTIONS, DEFAULT_PRODUCTION_SETTINGS, TEXT_DENSITY_OPTIONS } from "../../../../shared/utils/production-settings.types.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
+import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
 
 export type ProductionSettingsRoutesDeps = {
   productionSettingsRepository: ProductionSettingsRepositoryPort;
+  /** Isolamento multi-tenant: workspace de outro tenant = 404 (antes desta correção a rota
+   * confiava no workspaceId recebido). */
+  workspaceRepository: WorkspaceRepositoryPort;
 };
 
 const WORKSPACE_QUERY_SCHEMA = {
@@ -39,15 +44,17 @@ const UPDATE_BODY_SCHEMA = {
  */
 export async function registerProductionSettingsRoutes(app: FastifyInstance, deps: ProductionSettingsRoutesDeps): Promise<void> {
   app.get("/production-settings", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
-    requirePermission(request, "asset:read");
+    const principal = requirePermission(request, "asset:read");
     const { workspaceId } = request.query as { workspaceId: string };
+    await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
     const existing = await deps.productionSettingsRepository.getByWorkspace(workspaceId);
     return successEnvelope(existing ?? { workspaceId, ...DEFAULT_PRODUCTION_SETTINGS }, request.id);
   });
 
   app.post("/production-settings", { schema: { body: UPDATE_BODY_SCHEMA } }, async (request) => {
-    requirePermission(request, "asset:update");
+    const principal = requirePermission(request, "asset:update");
     const { workspaceId, ...patch } = request.body as { workspaceId: string } & Parameters<ProductionSettingsRepositoryPort["upsert"]>[1];
+    await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
     const updated = await deps.productionSettingsRepository.upsert(workspaceId, patch);
     return successEnvelope(updated, request.id);
   });

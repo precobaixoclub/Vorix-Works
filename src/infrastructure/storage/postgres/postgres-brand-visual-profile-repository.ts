@@ -9,7 +9,7 @@ const defaultIdGenerator: BrandVisualProfileIdGenerator = (prefix) => `${prefix}
 type BrandVisualProfileRow = {
   id: string;
   workspace_id: string;
-  profile: Omit<BrandVisualProfile, "workspaceId" | "source" | "createdAt" | "updatedAt">;
+  profile: Omit<BrandVisualProfile, "id" | "workspaceId" | "source" | "createdAt" | "updatedAt">;
   source: BrandVisualProfile["source"];
   created_at: Date;
   updated_at: Date;
@@ -31,7 +31,7 @@ export class PostgresBrandVisualProfileRepository implements BrandVisualProfileR
   }
 
   async upsert(profile: BrandVisualProfile): Promise<BrandVisualProfile> {
-    const { workspaceId, source, createdAt, updatedAt, ...rest } = profile;
+    const { id: _id, workspaceId, source, createdAt, updatedAt, ...rest } = profile;
     const result = await this.pool.query<BrandVisualProfileRow>(
       `insert into brand_visual_profiles (id, workspace_id, profile, source, created_at, updated_at)
        values ($1, $2, $3::jsonb, $4, $5, $6)
@@ -45,6 +45,7 @@ export class PostgresBrandVisualProfileRepository implements BrandVisualProfileR
   private toDomain(row: BrandVisualProfileRow): BrandVisualProfile {
     return {
       ...row.profile,
+      id: row.id,
       workspaceId: row.workspace_id,
       source: row.source,
       createdAt: row.created_at.toISOString(),

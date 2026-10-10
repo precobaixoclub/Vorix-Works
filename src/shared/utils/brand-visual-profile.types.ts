@@ -9,6 +9,8 @@
  * `src/shared` não é uma Skill — importar daqui não viola ADR 0002.
  */
 
+import type { BrandIdentity } from "./brand-identity.js";
+
 export type BrandVisualProfileFoundation = {
   primaryColor: string;
   secondaryColor: string;
@@ -74,6 +76,8 @@ export type BrandVisualProfileLogo = {
 export type BrandVisualProfileSource = "bootstrap_conservative" | "bootstrap_from_logo" | "manual";
 
 export type BrandVisualProfile = {
+  /** Id da linha persistida (ausente num perfil ainda não gravado). */
+  id?: string;
   workspaceId: string;
   foundation: BrandVisualProfileFoundation;
   typography: BrandVisualProfileTypography;
@@ -85,6 +89,9 @@ export type BrandVisualProfile = {
   source: BrandVisualProfileSource;
   createdAt: string;
   updatedAt: string;
+  /** Identidade visual ESTRUTURADA configurada pelo usuário (`brand-identity.ts`). Ausente em perfis
+   * antigos/bootstrap — o motor criativo usa SYSTEM_DEFAULT nesse caso. */
+  identity?: BrandIdentity;
 };
 
 /**

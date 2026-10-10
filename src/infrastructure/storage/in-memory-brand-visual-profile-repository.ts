@@ -9,7 +9,7 @@ export class InMemoryBrandVisualProfileRepository implements BrandVisualProfileR
   }
 
   async upsert(profile: BrandVisualProfile): Promise<BrandVisualProfile> {
-    const stored = { ...profile };
+    const stored = { ...profile, id: profile.id ?? this.byWorkspace.get(profile.workspaceId)?.id ?? `brand-profile-${profile.workspaceId}` };
     this.byWorkspace.set(profile.workspaceId, stored);
     return stored;
   }

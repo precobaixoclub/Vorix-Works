@@ -204,6 +204,8 @@ import { buildIdentityRepositories } from "../../../infrastructure/storage/build
 import { buildPlatformRepositories } from "../../../infrastructure/storage/build-platform-repositories.js";
 import type { ApiConfig } from "../config/api-config.js";
 import { buildConservativeDefaultProfile, type BrandVisualProfile } from "../../../shared/utils/brand-visual-profile.types.js";
+import { BrandIdentityService } from "../../../application/brand/brand-identity-service.js";
+import { extractLogoPalette } from "../../../infrastructure/brand/extract-logo-palette.js";
 
 const DISABLED_AI_GATEWAY_CONFIG: ApiConfig["aiGateway"] = {
   enabled: false,
@@ -424,6 +426,8 @@ export type ApiContainer = {
    * (não só no bootstrap do tenant) porque é a Skill de design quem consome — barato depois da
    * primeira vez (só um `select`). */
   ensureBrandVisualProfile(workspaceId: string): Promise<BrandVisualProfile>;
+  /** Brand Profile estruturado (identidade visual por workspace) — API e motor criativo. */
+  brandIdentityService: BrandIdentityService;
   /** Migração "Prompt Persistente de Produção" (achado numa autorrevisão) — resolve o perfil de
    * marca real (Clara BrandContext/IdentityContext/BusinessContext/AudienceContext/ProductContext)
    * a partir do `workspaceId`, para o motor GPT e para prova de auditoria/teste. `undefined` =
@@ -922,6 +926,17 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // materials.ts`, que deve continuar puro/alheio a `AssetKind`): `kind: "logo"` sem `materialType`
   // próprio conta como "logo_principal" — nunca sobrescreve um `materialType` já definido
   // explicitamente (ex.: alguém marcou de propósito como "logo_secundaria").
+  // Brand Profile estruturado: logos só da Asset Library do próprio workspace; paleta sugerida lida
+  // do storage por CHAVE (nunca por HTTP).
+  const brandIdentityService = new BrandIdentityService({
+    brandVisualProfileRepository: repositories.brandVisualProfileRepository,
+    assetLibraryRepository: repositories.assetLibraryRepository,
+    resolveAssetUrl: (objectKey) => objectStorage.resolvePublicUrl(objectKey),
+    extractPalette: objectStorage.read
+      ? async (objectKey) => extractLogoPalette(await objectStorage.read!(objectKey, { maxBytes: 10 * 1024 * 1024 }))
+      : undefined,
+  });
+  const resolveBrandIdentity = (workspaceId: string) => brandIdentityService.resolveForCreative(workspaceId);
   const resolveBrandMaterials = async (workspaceId: string) => {
     const library = await repositories.assetLibraryRepository.getLibraryByWorkspace(workspaceId).catch(() => undefined);
     if (!library) return [];
@@ -1084,6 +1099,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     resolveProductionSettings,
     resolveBrandMaterials,
     resolveBrandProfile,
+    resolveBrandIdentity,
   };
   const createExecutionHandlerResolver = () =>
     buildExecutionHandlerResolver({
@@ -1613,6 +1629,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       valentina,
       ensureHouseTenantProfile,
       ensureBrandVisualProfile,
+      brandIdentityService,
       resolveBrandProfile,
       updateBrandProfile,
       clara,
@@ -1709,6 +1726,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     valentina,
     ensureHouseTenantProfile,
     ensureBrandVisualProfile,
+    brandIdentityService,
     resolveBrandProfile,
     updateBrandProfile,
     clara,

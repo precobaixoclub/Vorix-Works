@@ -276,6 +276,10 @@ test("renderer: perfis diferentes mudam a linguagem visual mas NUNCA textos, pro
       assert.ok(branded.assetVerification.every((item) => item.visible && item.fidelityPass), `${label}: ${JSON.stringify(branded.assetVerification)}`);
       assert.equal(branded.buffer.equals(plain.buffer), false, `${label}: a marca precisa mudar a peça`);
       assert.ok((branded.composition?.brandRules ?? []).length > 0, `${label}: regras de marca registradas`);
+      // Regra tipográfica registrada = aplicada de fato no texto desenhado (geometria final).
+      const head = branded.renderedGeometry.textBoxes.find((box) => box.id === "headline");
+      const caps = branded.composition.brandRules.some((rule) => rule.detail === "headline em caixa alta");
+      assert.equal(head.text === head.text.toLocaleUpperCase("pt-BR"), caps, `${label}: caixa alta registrada=${caps}, desenhada="${head.text}"`);
     }
   }
 });

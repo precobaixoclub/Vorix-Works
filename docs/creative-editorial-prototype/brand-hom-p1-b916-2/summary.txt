@@ -1,0 +1,16 @@
+format 9:16 facts [] error undefined
+plan {"cta":"Conheça o Rumo ao Altar","sub":"Site, lista de presentes e confirmação de presença em um só lugar.","allowed":["O casamento organizado como vocês sonharam","Site, lista de presentes e confirmação de presença em um só lugar.","Conheça o Rumo ao Altar"],"headline":"O casamento organizado como vocês sonharam","visualDensity":"clean"}
+gate pass []
+textDiag null
+occ null
+vscore 7.916666666666667 visualHierarchy=8 compositionBalance=7 legibility=9 focusClarity=8 canvasUsage=6 colorCoherence=9 backgroundQuality=8 assetIntegration=7 nonGenericLook=8 visualCleanliness=9 commercialStrength=7 artDirectionFidelity=9
+variant MINIMAL_PREMIUM ["SINGLE_SCENE_PHOTO: plano pede composição limpa (densidade clean) — menos elementos, tipografia contida"]
+class SINGLE_SCENE_PHOTO ["cena espacialmente contínua","região de pouca borda (34%) tem gradiente fotográfico de cor/luz (variação global 193.1 níveis) — não é fundo separador","sem divisórias retas"] fit {"reasons":["recorte editorial centrado no foco preserva o núcleo da cena (38%×25% da base); perda de área 12% (máx. 32%)"],"strategy":"COVER_FOCAL_SAFE_CROP","cropLossPct":0.119,"detailRetainedPct":0.994} logo BRAND_LOGO_VARIANT cta TEXT_HAIRLINE empty 0.094 prom 0.318
+alpha {"opaqueRatio":1,"nonOpaqueRatio":0,"hasAlphaChannel":false,"transparentRatio":0,"requestedBackground":"opaque","semiTransparentRatio":0}
+baseText {"texts":[],"status":"AVAILABLE","target":"OPENAI_BASE","sourceArtifactUrl":"https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2re8xa-y327jq-editorial-base.jpg"}
+verify [{"role":"logo","visible":true,"detectedMime":"image/png","fidelityPass":true,"assetMatchRatio":1,"fidelityMeanAbsDiff":4.17,"informativePixelRatio":0.2393}]
+text [["headline",56,2,{"xPct":8.889,"yPct":71.198,"widthPct":82.222,"heightPct":6.3}],["subheadline",23,2,{"xPct":8.889,"yPct":78.438,"widthPct":70.37,"heightPct":3.402}],["cta",19,1,{"xPct":8.889,"yPct":83.594,"widthPct":23.074,"heightPct":1.875}]]
+assets [["logo",{"xPct":8.889,"yPct":10.99,"widthPct":17.037,"heightPct":2.083}]]
+repairs [] cost 0.07409199999999998
+BASE https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2re8xa-y327jq-editorial-base.jpg
+FINAL https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2ree7d-x8kya7-editorial-final.jpg

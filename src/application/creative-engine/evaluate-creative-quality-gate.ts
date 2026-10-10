@@ -562,6 +562,8 @@ export type CreativeQualityGateResult = {
   textProvenanceLedger?: TextProvenanceLedger;
   textDiagnostics?: CreativeTextDiagnostic[];
   occurrenceDiagnostics?: CreativeTextOccurrenceDiagnostic[];
+  /** Veredito de paleta da visão superado pela paleta da marca comprovadamente aplicada pelo renderer. */
+  paletteDiagnostics?: { decision: "VISION_PALETTE_OVERRIDDEN_BY_RENDERER"; visionReasoning?: string }[];
 };
 
 const ASPECT_RATIO_TOLERANCE = 0.06;
@@ -894,7 +896,7 @@ function buildVisualIntegrityPrompt(
     "- \"criticalOverlap\": true se um elemento comercial (preço, CTA, badge) sobrepõe de forma destrutiva um rosto, o produto principal ou outro elemento essencial.",
     "- \"criticalAssetOccluded\": true se o produto real, a logo real ou o screenshot real estão INTEIROS dentro do canvas (não cortados na borda — isso é `elementCutOff`), mas parcialmente COBERTOS por outro elemento a ponto de perder identidade/legibilidade (ex.: um badge grande desenhado por cima do centro do produto).",
     "- \"compositionBroken\": true se a composição está visivelmente quebrada — elementos deformados, pillarboxing (barras vazias nas laterais), ou artefatos visuais graves.",
-    "- \"colorPaletteViolated\": true SOMENTE se uma paleta oficial foi informada acima E a peça final claramente NÃO usa essas cores (ex.: fundo e cores predominantes totalmente diferentes do pedido, nenhuma cor da paleta aparece de forma reconhecível). Sem paleta oficial informada, responda sempre false — nunca microgerencie tom/saturação exatos, só a ausência clara da paleta inteira.",
+    "- \"colorPaletteViolated\": avalie SÓ fundos/superfícies, botões e textos desenhados pela peça — IGNORE as cores do conteúdo de assets reais (screenshot de site/app, foto de produto, logo, fotografia), que são fiéis ao original e nunca podem ser recoloridos. true SOMENTE se uma paleta oficial foi informada acima E a peça final claramente NÃO usa essas cores (ex.: fundo e cores predominantes totalmente diferentes do pedido, nenhuma cor da paleta aparece de forma reconhecível). Sem paleta oficial informada, responda sempre false — nunca microgerencie tom/saturação exatos, só a ausência clara da paleta inteira.",
     options.withTextRegions
       ? "- \"unauthorizedTexts\": liste CADA palavra/frase/rótulo/botão legível na peça que NÃO está na lista de textos autorizados acima — transcreva exatamente como está escrito na imagem, INCLUSIVE texto que pareça nome de marca, wordmark ou logo (o sistema confere em código quais estão dentro da logo oficial ou do screenshot real verificados; não decida isso você). Isso inclui texto da interface dentro de um screenshot/tela de site. Inclua também texto que só difere de um autorizado em MAIÚSCULAS/minúsculas ou pontuação (ex.: botão em caixa alta) — o sistema confere a equivalência e a região em código. Para CADA item informe \"region\": o retângulo aproximado onde o texto aparece, em porcentagem do canvas (xPct/yPct = canto superior esquerdo, widthPct/heightPct = tamanho). NUNCA inclua um FRAGMENTO/LINHA/TRECHO de um texto autorizado — se o texto quebrou em várias linhas na composição, cada linha sozinha NÃO conta como não autorizada. Lista vazia se todo texto visível bate com a lista autorizada."
       : "- \"unauthorizedTexts\": liste CADA palavra/frase/rótulo/botão legível na peça que NÃO está na lista de textos autorizados acima — transcreva exatamente como está escrito na imagem. NUNCA inclua aqui o nome/wordmark que aparece DENTRO da logo colada (isso é a marca real, não texto gerado). NUNCA inclua um FRAGMENTO/LINHA/TRECHO de um texto autorizado — se o texto quebrou em várias linhas na composição (comum quando um texto longo tem que caber numa caixa), cada linha sozinha NÃO conta como não autorizada, só o texto INTEIRO conta como \"bateu\" com a lista. Lista vazia se todo texto visível bate (inteiro ou em fragmentos de um mesmo texto autorizado) com a lista autorizada.",
@@ -943,6 +945,13 @@ export async function checkCreativeVisualIntegrity(
     referenceScreenshotUrl?: string;
     specialistId: string;
     brandColors?: readonly string[];
+    /** Brand Profile: o renderer determinístico COMPROVOU ter aplicado a paleta estruturada da marca
+     * em todas as superfícies que desenha (fundo, destaque/CTA). Fato determinístico vence a visão:
+     * o veredito de paleta da visão vira diagnóstico, não reprovação (ela julga a imagem inteira,
+     * inclusive screenshot/produto reais, cujas cores nunca podem ser alteradas). */
+    brandPaletteRenderedDeterministically?: boolean;
+    /** Diagnóstico de paleta quando a visão discorda de uma paleta comprovadamente aplicada. */
+    paletteDiagnostics?: { decision: "VISION_PALETTE_OVERRIDDEN_BY_RENDERER"; visionReasoning?: string }[];
     allowedRenderedTexts: readonly string[];
     /** Rodada 4 (benchmark de qualidade criativa) — ver `CreativePlan.requiredRenderedFacts`.
      * Lista vazia (plano sem fatos obrigatórios, ou plano antigo) nunca gera checagem extra. */
@@ -1043,7 +1052,9 @@ export async function checkCreativeVisualIntegrity(
     // vindo da IA (alucinação, ou simplesmente não seguiu a instrução) nunca reprova por conta
     // própria, mesmo que a peça já teste isso deliberadamente.
     const hasBrandColors = Boolean(input.brandColors && input.brandColors.length > 0);
-    if (hasBrandColors && parsed.colorPaletteViolated === true) {
+    if (hasBrandColors && parsed.colorPaletteViolated === true && input.brandPaletteRenderedDeterministically) {
+      input.paletteDiagnostics?.push({ decision: "VISION_PALETTE_OVERRIDDEN_BY_RENDERER", visionReasoning: reasoning });
+    } else if (hasBrandColors && parsed.colorPaletteViolated === true) {
       issues.push({ code: "COLOR_PALETTE_VIOLATED", message: reasoning ?? "A peça final não usa a paleta de cores oficial configurada para a marca.", source: "vision" });
     }
     // Auditoria "motor de geração de criativos" — achado ao vivo: o modelo de imagem inventou
@@ -1384,6 +1395,8 @@ export async function evaluateCreativeQualityGate(
     baseImageTexts?: readonly string[];
     /** Diagnóstico de texto da base editorial (`scanEditorialBaseText`). */
     baseTextDiagnostic?: CreativeBaseTextEvidence;
+    /** Brand Profile: paleta estruturada aplicada deterministicamente pelo renderer (ver `checkCreativeVisualIntegrity`). */
+    brandPaletteRenderedDeterministically?: boolean;
   },
 ): Promise<CreativeQualityGateResult> {
   const deterministicIssues = evaluateDeterministicCreativeChecks({
@@ -1408,6 +1421,7 @@ export async function evaluateCreativeQualityGate(
   const referenceScreenshotUrl = input.context.assets.find((asset) => asset.role === "screenshot")?.url;
   const textDiagnostics: CreativeTextDiagnostic[] = [];
   const occurrenceDiagnostics: CreativeTextOccurrenceDiagnostic[] = [];
+  const paletteDiagnostics: NonNullable<CreativeQualityGateResult["paletteDiagnostics"]> = [];
   const verifiedLogoRegions = resolveVerifiedLogoRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence });
   const verifiedScreenshotRegions = resolveVerifiedScreenshotRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence });
   const renderedTextRegions = input.assetPixelEvidence ? input.plan.textZones.map((zone) => ({ kind: zone.kind, text: zone.text, rect: zone.rect })) : undefined;
@@ -1422,6 +1436,8 @@ export async function evaluateCreativeQualityGate(
     referenceScreenshotUrl,
     specialistId: input.specialistId,
     brandColors: input.context.brandColors,
+    brandPaletteRenderedDeterministically: input.brandPaletteRenderedDeterministically,
+    paletteDiagnostics,
     allowedRenderedTexts: input.plan.allowedRenderedTexts,
     requiredRenderedFacts: input.plan.requiredRenderedFacts,
     verifiedLogoRegions,
@@ -1457,6 +1473,7 @@ export async function evaluateCreativeQualityGate(
     ...result,
     ...(textDiagnostics.length > 0 ? { textDiagnostics } : {}),
     ...(occurrenceDiagnostics.length > 0 ? { occurrenceDiagnostics } : {}),
+    ...(paletteDiagnostics.length > 0 ? { paletteDiagnostics } : {}),
     ...(textProvenanceLedger ? { textProvenanceLedger } : {}),
   };
 }

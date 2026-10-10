@@ -1151,9 +1151,14 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         specialistId: SPECIALIST_ID,
         assetPixelEvidence: editorial.assetVerification ?? [],
         ...(baseTextDiagnostic ? { baseTextDiagnostic } : {}),
+        // Paleta da marca aplicada de forma determinística pelo renderer (superfícies + destaque).
+        brandPaletteRenderedDeterministically: Boolean(context.brandIdentity && editorial.composition?.brandRules?.some((rule) => rule.code === "BRAND_SURFACES") && editorial.composition.brandRules.some((rule) => rule.code === "BRAND_ACCENT")),
         onCost: (response) => track("technicalQualityGate", response),
       });
       if (qualityGate.textProvenanceLedger) artifactProvenance.textProvenanceLedger = qualityGate.textProvenanceLedger;
+      if (qualityGate.paletteDiagnostics && artifactProvenance.brandProfile) {
+        artifactProvenance.brandProfile.appliedBrandRules.push(...qualityGate.paletteDiagnostics.map((item) => ({ code: item.decision, detail: `paleta da marca aplicada pelo renderer; visão discordou: ${item.visionReasoning ?? "—"}`, outcome: "PROFILE_PREVAILED" as const })));
+      }
 
       if (qualityGate.verdict !== "pass") {
         return fail("CREATIVE_QUALITY_GATE_NOT_PASSED: o caminho editorial experimental gerou a peca, mas o Quality Gate tecnico reprovou.", "CREATIVE_QUALITY_GATE_NOT_PASSED", {

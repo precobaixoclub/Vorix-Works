@@ -1593,3 +1593,22 @@ test("logo 9:16: sem scan, base com a marca, longe da logo, texto não-literal o
   const twice = await evaluateCreativeQualityGate(visionReturning([{ text: "Rumo ao Altar", region: A916_VISION }, { text: "Rumo ao Altar", region: { xPct: 60, yPct: 30, widthPct: 20, heightPct: 5 } }]), a916GateInput());
   assert.ok(twice.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
 });
+
+// ---------------------------------------------------------------------------------------------
+// Brand Profile x paleta (homologação real execution-mv2rf3ac-br7a57): a visão julgou a "cor
+// predominante" da imagem inteira — dominada pelo screenshot REAL, que nunca pode ser recolorido —
+// apesar de o renderer ter aplicado deterministicamente a paleta da marca nas superfícies e no CTA.
+// ---------------------------------------------------------------------------------------------
+
+test("paleta: veredito da visão vira diagnóstico quando o renderer comprovou a paleta da marca; sem prova, reprova", async () => {
+  const vision = () => visionReturning([], { colorPaletteViolated: true, reasoning: "cores predominantes diferentes" });
+  const input = cGateInput(undefined, { context: { ...cGateInput().context, brandColors: ["#2340FF", "#7C3AED"] } });
+  const proven = await evaluateCreativeQualityGate(vision(), { ...input, brandPaletteRenderedDeterministically: true });
+  assert.equal(proven.verdict, "pass", JSON.stringify(proven.issues));
+  assert.deepEqual(proven.paletteDiagnostics.map((item) => item.decision), ["VISION_PALETTE_OVERRIDDEN_BY_RENDERER"]);
+  const unproven = await evaluateCreativeQualityGate(vision(), input);
+  assert.ok(unproven.issues.some((issue) => issue.code === "COLOR_PALETTE_VIOLATED"));
+  const prompts = [];
+  await evaluateCreativeQualityGate({ request: async (request) => { prompts.push(request.prompt); return { status: "completed", content: JSON.stringify({ unauthorizedTexts: [] }) }; } }, input);
+  assert.match(prompts[0], /IGNORE as cores do conteúdo de assets reais/);
+});

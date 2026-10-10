@@ -1,0 +1,624 @@
+{
+    "base": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yga58-kb581x-editorial-base.jpg",
+    "cost": {
+        "total": 0.07449265,
+        "director": 0.0017146499999999999,
+        "baseTextScan": 0.00014759999999999998,
+        "imageGeneration": 0.07123,
+        "repairRoundsCost": 0,
+        "visualQualityScore": 0.00048435,
+        "directionExploration": 0.00031545,
+        "technicalQualityGate": 0.0006005999999999999,
+        "preCompositionAnalysis": 0,
+        "ghostTextNeutralization": 0,
+        "screenshotTextInventory": 0
+    },
+    "plan": {
+        "cta": "Comprar agora",
+        "sub": "Presentes, lista e RSVP em um só lugar.",
+        "allowed": [
+            "Sem Correria",
+            "Presentes, lista e RSVP em um só lugar.",
+            "R$ 149,00",
+            "Comprar agora"
+        ],
+        "headline": "Sem Correria",
+        "visualDensity": "clean"
+    },
+    "alpha": {
+        "opaqueRatio": 0.0112,
+        "nonOpaqueRatio": 0.9888,
+        "hasAlphaChannel": true,
+        "transparentRatio": 0.986,
+        "semiTransparentRatio": 0.0028
+    },
+    "facts": [
+        "Preço atual: R$ 149,00 BRL"
+    ],
+    "final": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2ygdf8-7502nw-editorial-final.jpg",
+    "format": "4:5",
+    "ledger": {
+        "entries": [
+            {
+                "role": "headline",
+                "sourceId": "renderer:headline:0",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 7.407,
+                    "yPct": 73.63,
+                    "widthPct": 85.185,
+                    "heightPct": 6.317
+                },
+                "deterministic": true,
+                "normalizedText": "sem correria",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "subheadline",
+                "sourceId": "renderer:subheadline:1",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 14.815,
+                    "yPct": 81.556,
+                    "widthPct": 70.37,
+                    "heightPct": 2.862
+                },
+                "deterministic": true,
+                "normalizedText": "presentes lista e rsvp em um só lugar",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "price",
+                "sourceId": "renderer:price:2",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 17.13,
+                    "yPct": 88.741,
+                    "widthPct": 35.556,
+                    "heightPct": 6.519
+                },
+                "deterministic": true,
+                "normalizedText": "r$ 149,00",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "cta",
+                "sourceId": "renderer:cta:3",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 59.352,
+                    "yPct": 89.111,
+                    "widthPct": 20.926,
+                    "heightPct": 5.778
+                },
+                "deterministic": true,
+                "normalizedText": "comprar agora",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "logo",
+                "sourceId": "logo:0",
+                "sourceType": "LOGO_ASSET",
+                "alternatives": [
+                    "logo rumo ao altar (homologação brand profile)",
+                    "rumo ao altar"
+                ],
+                "expectedBBox": {
+                    "xPct": 39.352,
+                    "yPct": 4.296,
+                    "widthPct": 21.296,
+                    "heightPct": 3.704
+                },
+                "deterministic": true,
+                "assetProvenance": "context_asset+pixel_verified"
+            },
+            {
+                "role": "product_photo",
+                "sourceId": "product:0",
+                "sourceType": "PRODUCT_ASSET",
+                "expectedBBox": {
+                    "xPct": 12.315,
+                    "yPct": 10.519,
+                    "widthPct": 75.37,
+                    "heightPct": 60.296
+                },
+                "deterministic": true,
+                "assetProvenance": "context_asset"
+            }
+        ],
+        "baseTextStatus": "AVAILABLE"
+    },
+    "verify": [
+        {
+            "role": "product_photo",
+            "visible": true,
+            "detectedMime": "image/jpeg",
+            "fidelityPass": true,
+            "assetMatchRatio": 1,
+            "fidelityMeanAbsDiff": 3.56,
+            "informativePixelRatio": 0.9981
+        },
+        {
+            "role": "logo",
+            "visible": true,
+            "detectedMime": "image/png",
+            "fidelityPass": true,
+            "assetMatchRatio": 1,
+            "fidelityMeanAbsDiff": 5.91,
+            "informativePixelRatio": 0.1901
+        }
+    ],
+    "repairs": [
+    ],
+    "baseText": {
+        "texts": [
+        ],
+        "status": "AVAILABLE",
+        "target": "OPENAI_BASE",
+        "sourceArtifactUrl": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yga58-kb581x-editorial-base.jpg"
+    },
+    "geometry": {
+        "family": "product_offer",
+        "source": "final_rendered_geometry",
+        "textBoxes": [
+            {
+                "id": "headline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 7.407,
+                    "yPct": 73.63,
+                    "widthPct": 85.185,
+                    "heightPct": 6.317
+                },
+                "text": "Sem Correria",
+                "lineCount": 1,
+                "fontSizePx": 82
+            },
+            {
+                "id": "subheadline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 14.815,
+                    "yPct": 81.556,
+                    "widthPct": 70.37,
+                    "heightPct": 2.862
+                },
+                "text": "Presentes, lista e RSVP em um só lugar.",
+                "lineCount": 1,
+                "fontSizePx": 28
+            },
+            {
+                "id": "price",
+                "kind": "text",
+                "rect": {
+                    "xPct": 17.13,
+                    "yPct": 88.741,
+                    "widthPct": 35.556,
+                    "heightPct": 6.519
+                },
+                "text": "R$ 149,00",
+                "lineCount": 1,
+                "fontSizePx": 76
+            },
+            {
+                "id": "cta",
+                "kind": "text",
+                "rect": {
+                    "xPct": 59.352,
+                    "yPct": 89.111,
+                    "widthPct": 20.926,
+                    "heightPct": 5.778
+                },
+                "text": "Comprar agora",
+                "lineCount": 1,
+                "fontSizePx": 23
+            }
+        ],
+        "assetBoxes": [
+            {
+                "id": "product_photo",
+                "kind": "asset",
+                "rect": {
+                    "xPct": 12.315,
+                    "yPct": 10.519,
+                    "widthPct": 75.37,
+                    "heightPct": 60.296
+                },
+                "role": "product_photo"
+            },
+            {
+                "id": "logo",
+                "kind": "asset",
+                "rect": {
+                    "xPct": 39.352,
+                    "yPct": 4.296,
+                    "widthPct": 21.296,
+                    "heightPct": 3.704
+                },
+                "role": "logo"
+            }
+        ]
+    },
+    "composition": {
+        "diagnostics": {
+            "variant": "HERO_DOMINANT",
+            "pageTone": "light",
+            "brandLogo": {
+                "assetId": "asset-mv2ybbcs-cayr0z",
+                "surface": "light",
+                "variant": "PRIMARY"
+            },
+            "brandRules": [
+                {
+                    "code": "FORBIDDEN_PATTERN",
+                    "detail": "sem fundos escuros: OVERLAY_EDITORIAL → HERO_DOMINANT claro",
+                    "outcome": "APPLIED"
+                },
+                {
+                    "code": "BRAND_ACCENT",
+                    "detail": "destaque da marca #115E59 aplicado como #115e59",
+                    "outcome": "APPLIED"
+                },
+                {
+                    "code": "FORBIDDEN_PATTERN",
+                    "detail": "sem gradientes: CTA sólido, sem brilho decorativo (véu de legibilidade preservado)",
+                    "outcome": "APPLIED"
+                },
+                {
+                    "code": "BRAND_LOGO_VARIANT",
+                    "detail": "logo PRIMARY (asset-mv2ybbcs-cayr0z) escolhida para fundo light",
+                    "outcome": "APPLIED"
+                },
+                {
+                    "code": "BRAND_SHAPE",
+                    "detail": "cantos SHARP → raio do CTA 2 px",
+                    "outcome": "APPLIED"
+                }
+            ],
+            "logoTreatment": "BRAND_LOGO_VARIANT",
+            "priceTreatment": "COMMERCIAL_FOOTER",
+            "selectionReasons": [
+                "densidade clean + headline curta (<= 26) + foto de cena: produto domina e a copy usa a extensão desfocada da própria cena"
+            ],
+            "occupiedAreaRatio": 0.616,
+            "largestEmptyBandPct": 0.03,
+            "contentCentroidOffset": 0.027,
+            "productVisualProminence": 0.454
+        },
+        "selectedVariant": "HERO_DOMINANT",
+        "variantSelectionReasons": [
+            "densidade clean + headline curta (<= 26) + foto de cena: produto domina e a copy usa a extensão desfocada da própria cena"
+        ]
+    },
+    "brandProfile": {
+        "source": "BRAND_PROFILE",
+        "version": 9,
+        "identity": {
+            "logos": [
+                {
+                    "assetId": "asset-mv2ybbcs-cayr0z",
+                    "variant": "PRIMARY",
+                    "priority": 1,
+                    "provenance": "USER_CONFIGURED",
+                    "backgrounds": [
+                        "LIGHT"
+                    ]
+                }
+            ],
+            "shape": {
+                "lines": "NONE",
+                "shadow": "NONE",
+                "corners": "SHARP"
+            },
+            "style": {
+                "traits": [
+                    "MINIMAL"
+                ],
+                "primary": "CORPORATE"
+            },
+            "colors": [
+                {
+                    "hex": "#0F766E",
+                    "name": "verde-petróleo",
+                    "role": "PRIMARY",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#115E59",
+                    "name": "verde-petróleo profundo",
+                    "role": "ACCENT",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#FFFFFF",
+                    "name": "branco",
+                    "role": "NEUTRAL",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#111827",
+                    "name": "grafite",
+                    "role": "NEUTRAL",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#E5E7EB",
+                    "name": "cinza claro",
+                    "role": "SECONDARY",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#DC2626",
+                    "name": "vermelho",
+                    "role": "FORBIDDEN",
+                    "provenance": "USER_CONFIGURED"
+                }
+            ],
+            "density": "LOW",
+            "version": 9,
+            "contrast": "BALANCED",
+            "updatedAt": "2026-10-10T22:17:04.600Z",
+            "typography": {
+                "era": "MODERN",
+                "voice": "COMMERCIAL",
+                "family": "SANS",
+                "weight": "BOLD",
+                "construction": "NEUTRAL",
+                "headlineCase": "SENTENCE"
+            },
+            "imageStyles": [
+                "MINIMAL_BACKGROUND",
+                "STUDIO_PRODUCT"
+            ],
+            "schemaVersion": 1,
+            "fieldProvenance": {
+                "shape": "USER_CONFIGURED",
+                "style": "USER_CONFIGURED",
+                "density": "USER_CONFIGURED",
+                "contrast": "USER_CONFIGURED",
+                "typography": "USER_CONFIGURED",
+                "imageStyles": "USER_CONFIGURED",
+                "forbiddenPatterns": "USER_CONFIGURED",
+                "preferredPatterns": "USER_CONFIGURED",
+                "commercialIntensity": "USER_CONFIGURED"
+            },
+            "forbiddenPatterns": [
+                "NO_GRADIENTS",
+                "NO_DARK_BACKGROUNDS",
+                "NO_ALL_CAPS",
+                "NO_STRONG_SHADOWS"
+            ],
+            "preferredPatterns": [
+                "GENEROUS_WHITESPACE"
+            ],
+            "commercialIntensity": "MEDIUM"
+        },
+        "profileId": "brand-profile-mv2qy570-yefzhb",
+        "updatedAt": "2026-10-10T22:17:04.600Z",
+        "workspaceId": "workspace-mubz0k3k-v1mjb3",
+        "appliedBrandRules": [
+            {
+                "code": "BRAND_DENSITY",
+                "detail": "densidade da marca LOW → visualDensity clean (diretor: clean)",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "FORBIDDEN_PATTERN",
+                "detail": "sem fundos escuros: OVERLAY_EDITORIAL → HERO_DOMINANT claro",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "BRAND_ACCENT",
+                "detail": "destaque da marca #115E59 aplicado como #115e59",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "FORBIDDEN_PATTERN",
+                "detail": "sem gradientes: CTA sólido, sem brilho decorativo (véu de legibilidade preservado)",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "BRAND_LOGO_VARIANT",
+                "detail": "logo PRIMARY (asset-mv2ybbcs-cayr0z) escolhida para fundo light",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "BRAND_SHAPE",
+                "detail": "cantos SHARP → raio do CTA 2 px",
+                "outcome": "APPLIED"
+            }
+        ]
+    },
+    "quality_gate": {
+        "issues": [
+        ],
+        "verdict": "pass",
+        "textDiagnostics": [
+            {
+                "bbox": {
+                    "xPct": 40,
+                    "yPct": 5,
+                    "widthPct": 20,
+                    "heightPct": 5
+                },
+                "reason": "dentro da bbox final da logo oficial verificada (proveniência + pixel)",
+                "decision": "authorized",
+                "detectedText": "Rumo ao Altar",
+                "matchedElement": "logo",
+                "normalizedDetected": "rumo ao altar"
+            }
+        ],
+        "textProvenanceLedger": {
+            "entries": [
+                {
+                    "role": "headline",
+                    "sourceId": "renderer:headline:0",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 7.407,
+                        "yPct": 73.63,
+                        "widthPct": 85.185,
+                        "heightPct": 6.317
+                    },
+                    "deterministic": true,
+                    "normalizedText": "sem correria",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "subheadline",
+                    "sourceId": "renderer:subheadline:1",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 14.815,
+                        "yPct": 81.556,
+                        "widthPct": 70.37,
+                        "heightPct": 2.862
+                    },
+                    "deterministic": true,
+                    "normalizedText": "presentes lista e rsvp em um só lugar",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "price",
+                    "sourceId": "renderer:price:2",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 17.13,
+                        "yPct": 88.741,
+                        "widthPct": 35.556,
+                        "heightPct": 6.519
+                    },
+                    "deterministic": true,
+                    "normalizedText": "r$ 149,00",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "cta",
+                    "sourceId": "renderer:cta:3",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 59.352,
+                        "yPct": 89.111,
+                        "widthPct": 20.926,
+                        "heightPct": 5.778
+                    },
+                    "deterministic": true,
+                    "normalizedText": "comprar agora",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "logo",
+                    "sourceId": "logo:0",
+                    "sourceType": "LOGO_ASSET",
+                    "alternatives": [
+                        "logo rumo ao altar (homologação brand profile)",
+                        "rumo ao altar"
+                    ],
+                    "expectedBBox": {
+                        "xPct": 39.352,
+                        "yPct": 4.296,
+                        "widthPct": 21.296,
+                        "heightPct": 3.704
+                    },
+                    "deterministic": true,
+                    "assetProvenance": "context_asset+pixel_verified"
+                },
+                {
+                    "role": "product_photo",
+                    "sourceId": "product:0",
+                    "sourceType": "PRODUCT_ASSET",
+                    "expectedBBox": {
+                        "xPct": 12.315,
+                        "yPct": 10.519,
+                        "widthPct": 75.37,
+                        "heightPct": 60.296
+                    },
+                    "deterministic": true,
+                    "assetProvenance": "context_asset"
+                }
+            ],
+            "baseTextStatus": "AVAILABLE"
+        }
+    },
+    "visual_score": {
+        "dimensions": [
+            {
+                "key": "visualHierarchy",
+                "label": "hierarquia visual",
+                "score": 6,
+                "justification": "O headline e o preço competem visualmente, sem clara distinção de importância."
+            },
+            {
+                "key": "compositionBalance",
+                "label": "equilíbrio da composição",
+                "score": 7,
+                "justification": "A composição é equilibrada, mas o produto poderia ocupar mais espaço para maior impacto."
+            },
+            {
+                "key": "legibility",
+                "label": "legibilidade",
+                "score": 8,
+                "justification": "O texto é legível, mas a cor do subheadline poderia ter mais contraste."
+            },
+            {
+                "key": "focusClarity",
+                "label": "clareza do foco principal",
+                "score": 5,
+                "justification": "O foco no produto não é claro devido à presença de muitos elementos ao redor."
+            },
+            {
+                "key": "canvasUsage",
+                "label": "aproveitamento do canvas",
+                "score": 5,
+                "justification": "O produto ocupa menos de 50% do canvas, perdendo protagonismo."
+            },
+            {
+                "key": "colorCoherence",
+                "label": "coerência cromática",
+                "score": 6,
+                "justification": "As cores da marca são usadas, mas o fundo não reflete o amanhecer planejado."
+            },
+            {
+                "key": "backgroundQuality",
+                "label": "qualidade do fundo",
+                "score": 4,
+                "justification": "O fundo não representa um amanhecer e falta integração com o conceito planejado."
+            },
+            {
+                "key": "assetIntegration",
+                "label": "integração dos assets reais",
+                "score": 6,
+                "justification": "Os elementos estão bem integrados, mas o reflexo do amanhecer está ausente."
+            },
+            {
+                "key": "nonGenericLook",
+                "label": "aparência não genérica (não parece template automático)",
+                "score": 7,
+                "justification": "A peça tem personalidade, mas ainda parece um pouco genérica."
+            },
+            {
+                "key": "visualCleanliness",
+                "label": "ausência de poluição visual",
+                "score": 6,
+                "justification": "Há uma leve poluição visual devido aos elementos decorativos ao redor do produto."
+            },
+            {
+                "key": "commercialStrength",
+                "label": "força comercial",
+                "score": 7,
+                "justification": "A peça é comercialmente atraente, mas poderia destacar mais o produto."
+            },
+            {
+                "key": "artDirectionFidelity",
+                "label": "fidelidade à direção de arte planejada",
+                "score": 5,
+                "justification": "A fidelidade à direção de arte planejada é baixa, especialmente na representação do amanhecer."
+            }
+        ],
+        "overallScore": 6,
+        "belowThreshold": true,
+        "requiresRepair": false,
+        "weakDimensions": [
+        ]
+    }
+}

@@ -1,0 +1,16 @@
+format 4:5 facts ["Preço atual: R$ 149,00 BRL"] error undefined
+plan {"cta":"Comprar agora","sub":"Presentes, lista e RSVP em um só lugar.","allowed":["Sem Correria","Presentes, lista e RSVP em um só lugar.","R$ 149,00","Comprar agora"],"headline":"Sem Correria","visualDensity":"clean"}
+gate pass []
+textDiag [{"bbox":{"xPct":40,"yPct":5,"widthPct":20,"heightPct":5},"reason":"dentro da bbox final da logo oficial verificada (proveniência + pixel)","decision":"authorized","detectedText":"Rumo ao Altar","matchedElement":"logo","normalizedDetected":"rumo ao altar"}]
+occ null
+vscore 6 visualHierarchy=6 compositionBalance=7 legibility=8 focusClarity=5 canvasUsage=5 colorCoherence=6 backgroundQuality=4 assetIntegration=6 nonGenericLook=7 visualCleanliness=6 commercialStrength=7 artDirectionFidelity=5
+variant HERO_DOMINANT ["densidade clean + headline curta (<= 26) + foto de cena: produto domina e a copy usa a extensão desfocada da própria cena"]
+class undefined undefined fit undefined logo BRAND_LOGO_VARIANT cta undefined empty 0.03 prom 0.454
+alpha {"opaqueRatio":0.0112,"nonOpaqueRatio":0.9888,"hasAlphaChannel":true,"transparentRatio":0.986,"semiTransparentRatio":0.0028}
+baseText {"texts":[],"status":"AVAILABLE","target":"OPENAI_BASE","sourceArtifactUrl":"https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yga58-kb581x-editorial-base.jpg"}
+verify [{"role":"product_photo","visible":true,"detectedMime":"image/jpeg","fidelityPass":true,"assetMatchRatio":1,"fidelityMeanAbsDiff":3.56,"informativePixelRatio":0.9981},{"role":"logo","visible":true,"detectedMime":"image/png","fidelityPass":true,"assetMatchRatio":1,"fidelityMeanAbsDiff":5.91,"informativePixelRatio":0.1901}]
+text [["headline",82,1,{"xPct":7.407,"yPct":73.63,"widthPct":85.185,"heightPct":6.317}],["subheadline",28,1,{"xPct":14.815,"yPct":81.556,"widthPct":70.37,"heightPct":2.862}],["price",76,1,{"xPct":17.13,"yPct":88.741,"widthPct":35.556,"heightPct":6.519}],["cta",23,1,{"xPct":59.352,"yPct":89.111,"widthPct":20.926,"heightPct":5.778}]]
+assets [["product_photo",{"xPct":12.315,"yPct":10.519,"widthPct":75.37,"heightPct":60.296}],["logo",{"xPct":39.352,"yPct":4.296,"widthPct":21.296,"heightPct":3.704}]]
+repairs [] cost 0.07449265
+BASE https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yga58-kb581x-editorial-base.jpg
+FINAL https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2ygdf8-7502nw-editorial-final.jpg

@@ -1,0 +1,116 @@
+[
+ {
+  "id": "S1",
+  "ok": true,
+  "costUsd": 0.0698,
+  "usage": {
+   "input_tokens": 906,
+   "input_tokens_details": {
+    "image_tokens": 388,
+    "text_tokens": 518
+   },
+   "output_tokens": 1584,
+   "output_tokens_details": {
+    "image_tokens": 1584,
+    "text_tokens": 0
+   },
+   "total_tokens": 2490
+  },
+  "ms": 21845
+ },
+ {
+  "id": "S2",
+  "ok": true,
+  "costUsd": 0.0698,
+  "usage": {
+   "input_tokens": 908,
+   "input_tokens_details": {
+    "image_tokens": 388,
+    "text_tokens": 520
+   },
+   "output_tokens": 1584,
+   "output_tokens_details": {
+    "image_tokens": 1584,
+    "text_tokens": 0
+   },
+   "total_tokens": 2492
+  },
+  "ms": 21745
+ },
+ {
+  "id": "S3",
+  "ok": true,
+  "costUsd": 0.0678,
+  "usage": {
+   "input_tokens": 687,
+   "input_tokens_details": {
+    "image_tokens": 194,
+    "text_tokens": 493
+   },
+   "output_tokens": 1584,
+   "output_tokens_details": {
+    "image_tokens": 1584,
+    "text_tokens": 0
+   },
+   "total_tokens": 2271
+  },
+  "ms": 23198
+ },
+ {
+  "id": "S4",
+  "ok": true,
+  "costUsd": 0.0679,
+  "usage": {
+   "input_tokens": 716,
+   "input_tokens_details": {
+    "image_tokens": 194,
+    "text_tokens": 522
+   },
+   "output_tokens": 1584,
+   "output_tokens_details": {
+    "image_tokens": 1584,
+    "text_tokens": 0
+   },
+   "total_tokens": 2300
+  },
+  "ms": 22835
+ },
+ {
+  "id": "S5",
+  "ok": true,
+  "costUsd": 0.0712,
+  "usage": {
+   "input_tokens": 1055,
+   "input_tokens_details": {
+    "image_tokens": 517,
+    "text_tokens": 538
+   },
+   "output_tokens": 1584,
+   "output_tokens_details": {
+    "image_tokens": 1584,
+    "text_tokens": 0
+   },
+   "total_tokens": 2639
+  },
+  "ms": 18617
+ },
+ {
+  "id": "S6",
+  "ok": true,
+  "costUsd": 0.0714,
+  "usage": {
+   "input_tokens": 1093,
+   "input_tokens_details": {
+    "image_tokens": 517,
+    "text_tokens": 576
+   },
+   "output_tokens": 1584,
+   "output_tokens_details": {
+    "image_tokens": 1584,
+    "text_tokens": 0
+   },
+   "total_tokens": 2677
+  },
+  "ms": 22924
+ }
+]

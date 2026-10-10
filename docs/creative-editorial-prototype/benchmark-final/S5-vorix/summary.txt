@@ -1,0 +1,16 @@
+format 4:5 facts [] error undefined
+plan {"cta":"Criar meu site","sub":"Site do casamento com lista de presentes e confirmação de presença em um só lugar.","allowed":["Sua lista de presentes, linda e sem planilha","Site do casamento com lista de presentes e confirmação de presença em um só lugar.","Criar meu site"],"headline":"Sua lista de presentes, linda e sem planilha","visualDensity":"balanced"}
+gate pass []
+textDiag null
+occ null
+vscore 6.5 visualHierarchy=6 compositionBalance=7 legibility=8 focusClarity=5 canvasUsage=6 colorCoherence=7 backgroundQuality=6 assetIntegration=7 nonGenericLook=6 visualCleanliness=8 commercialStrength=7 artDirectionFidelity=5
+variant FLOATING_PRODUCT ["tela inteira legível como hero (escala hero 0.8, retenção de borda no feed 0.605) — recortes não são necessários","copy cabe na faixa do produto flutuante sem encolher a headline: profundidade e respiro valorizam a interface completa"]
+class undefined undefined fit undefined logo BRAND_LOGO_VARIANT cta undefined empty 0.104 prom 0.506
+alpha {"opaqueRatio":0.2356,"nonOpaqueRatio":0.7645,"hasAlphaChannel":true,"transparentRatio":0.7539,"semiTransparentRatio":0.0106}
+baseText {"texts":[],"reason":"visão não concluiu (failed) após 2 tentativas","status":"NOT_AVAILABLE","target":"OPENAI_BASE","sourceArtifactUrl":"https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2zzop4-l2tliz-editorial-base.jpg"}
+verify [{"role":"screenshot","visible":true,"detectedMime":"image/png","fidelityPass":true,"assetMatchRatio":1,"fidelityMeanAbsDiff":4.12,"informativePixelRatio":0.4098},{"role":"logo","visible":true,"detectedMime":"image/png","fidelityPass":true,"assetMatchRatio":1,"fidelityMeanAbsDiff":6.6,"informativePixelRatio":0.2109}]
+text [["headline",54,3,{"xPct":5.185,"yPct":11.852,"widthPct":59.259,"heightPct":12.72}],["subheadline",21,2,{"xPct":5.185,"yPct":25.926,"widthPct":51.852,"heightPct":4.356}],["cta",18,1,{"xPct":74.537,"yPct":26,"widthPct":18.426,"heightPct":4.296}]]
+assets [["screenshot",{"xPct":2.593,"yPct":42.815,"widthPct":94.815,"heightPct":53.333}],["logo",{"xPct":5.185,"yPct":6.667,"widthPct":17.037,"heightPct":2.963}]]
+repairs [] cost 0.07461095
+BASE https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2zzop4-l2tliz-editorial-base.jpg
+FINAL https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2zzwop-2w8eaf-editorial-final.jpg

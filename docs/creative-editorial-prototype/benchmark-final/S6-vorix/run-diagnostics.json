@@ -1,0 +1,916 @@
+{
+    "base": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2ylmhm-8qrsiu-editorial-base.jpg",
+    "cost": {
+        "total": 0.0746939,
+        "director": 0.0017212499999999997,
+        "baseTextScan": 0,
+        "imageGeneration": 0.071045,
+        "repairRoundsCost": 0,
+        "visualQualityScore": 0.00053505,
+        "directionExploration": 0.00031095,
+        "technicalQualityGate": 0.00108165,
+        "preCompositionAnalysis": 0,
+        "ghostTextNeutralization": 0,
+        "screenshotTextInventory": 0
+    },
+    "plan": {
+        "cta": "Criar meu site",
+        "sub": "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+        "allowed": [
+            "Sua lista de presentes, linda e sem planilha",
+            "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+            "Criar meu site"
+        ],
+        "headline": "Sua lista de presentes, linda e sem planilha",
+        "visualDensity": "clean"
+    },
+    "alpha": {
+        "opaqueRatio": 0.9144,
+        "nonOpaqueRatio": 0.0856,
+        "hasAlphaChannel": true,
+        "transparentRatio": 0.0719,
+        "semiTransparentRatio": 0.0137
+    },
+    "facts": [
+    ],
+    "final": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yltis-g2tcsp-editorial-final.jpg",
+    "format": "9:16",
+    "ledger": {
+        "entries": [
+            {
+                "role": "headline",
+                "sourceId": "renderer:headline:0",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 5.185,
+                    "yPct": 18.75,
+                    "widthPct": 86.667,
+                    "heightPct": 12.588
+                },
+                "deterministic": true,
+                "normalizedText": "sua lista de presentes linda e sem planilha",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "subheadline",
+                "sourceId": "renderer:subheadline:1",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 5.185,
+                    "yPct": 32.292,
+                    "widthPct": 79.63,
+                    "heightPct": 3.792
+                },
+                "deterministic": true,
+                "normalizedText": "site do casamento com lista de presentes e confirmação de presença em um só lugar",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "cta",
+                "sourceId": "renderer:cta:2",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 7.037,
+                    "yPct": 38.125,
+                    "widthPct": 22.13,
+                    "heightPct": 3.438
+                },
+                "deterministic": true,
+                "normalizedText": "criar meu site",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "logo",
+                "sourceId": "logo:0",
+                "sourceType": "LOGO_ASSET",
+                "alternatives": [
+                    "logo rumo ao altar (homologação brand profile)",
+                    "rumo ao altar"
+                ],
+                "expectedBBox": {
+                    "xPct": 5.185,
+                    "yPct": 14.583,
+                    "widthPct": 19.63,
+                    "heightPct": 2.396
+                },
+                "deterministic": true,
+                "assetProvenance": "context_asset+pixel_verified"
+            },
+            {
+                "role": "screenshot",
+                "sourceId": "screenshot:0",
+                "sourceType": "SCREENSHOT_ASSET",
+                "expectedBBox": {
+                    "xPct": 2.593,
+                    "yPct": 44.896,
+                    "widthPct": 94.815,
+                    "heightPct": 37.5
+                },
+                "deterministic": true,
+                "assetProvenance": "context_asset+pixel_verified"
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:0",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "demonstração rumo ao altar",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:1",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "você está navegando como convidado no site de um casal fictício",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:2",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "início do casal",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:3",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "voltar à demonstração",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:4",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "criar meu site",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:5",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "voltar ao site",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:6",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "lista de presentes",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:7",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "ana & bruno",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:8",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "cota para o noivo não esquecer a aliança",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:9",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "um investimento preventivo para a aliança chegar ao altar junto com o noivo",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:10",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "r$ 79,90",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:11",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "presentear",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 3
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:12",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "ajuda para a noiva não surtar",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:13",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "contribuição carinhosa para manter a serenidade até o último fornecedor chegar",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:14",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "r$ 59,90",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:15",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "vale ressaca dos noivos",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:16",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "água café e dignidade para o primeiro café da manhã de casados",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            },
+            {
+                "role": "screenshot_text",
+                "sourceId": "screenshot-text:17",
+                "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                "deterministic": false,
+                "normalizedText": "r$ 89,90",
+                "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                "occurrenceCount": 1
+            }
+        ],
+        "baseTextStatus": "NOT_AVAILABLE"
+    },
+    "verify": [
+        {
+            "role": "screenshot",
+            "visible": true,
+            "detectedMime": "image/png",
+            "fidelityPass": true,
+            "assetMatchRatio": 1,
+            "fidelityMeanAbsDiff": 5.68,
+            "informativePixelRatio": 0.4065
+        },
+        {
+            "role": "logo",
+            "visible": true,
+            "detectedMime": "image/png",
+            "fidelityPass": true,
+            "assetMatchRatio": 1,
+            "fidelityMeanAbsDiff": 6.07,
+            "informativePixelRatio": 0.2092
+        }
+    ],
+    "repairs": [
+    ],
+    "baseText": {
+        "texts": [
+        ],
+        "reason": "visão não concluiu (failed)",
+        "status": "NOT_AVAILABLE",
+        "target": "OPENAI_BASE",
+        "sourceArtifactUrl": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2ylmhm-8qrsiu-editorial-base.jpg"
+    },
+    "geometry": {
+        "family": "digital_service",
+        "source": "final_rendered_geometry",
+        "textBoxes": [
+            {
+                "id": "headline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 5.185,
+                    "yPct": 18.75,
+                    "widthPct": 86.667,
+                    "heightPct": 12.588
+                },
+                "text": "Sua lista de presentes, linda e sem planilha",
+                "lineCount": 3,
+                "fontSizePx": 76
+            },
+            {
+                "id": "subheadline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 5.185,
+                    "yPct": 32.292,
+                    "widthPct": 79.63,
+                    "heightPct": 3.792
+                },
+                "text": "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+                "lineCount": 2,
+                "fontSizePx": 26
+            },
+            {
+                "id": "cta",
+                "kind": "text",
+                "rect": {
+                    "xPct": 7.037,
+                    "yPct": 38.125,
+                    "widthPct": 22.13,
+                    "heightPct": 3.438
+                },
+                "text": "CRIAR MEU SITE",
+                "lineCount": 1,
+                "fontSizePx": 21
+            }
+        ],
+        "assetBoxes": [
+            {
+                "id": "screenshot",
+                "kind": "asset",
+                "rect": {
+                    "xPct": 2.593,
+                    "yPct": 44.896,
+                    "widthPct": 94.815,
+                    "heightPct": 37.5
+                },
+                "role": "screenshot"
+            },
+            {
+                "id": "logo",
+                "kind": "asset",
+                "rect": {
+                    "xPct": 5.185,
+                    "yPct": 14.583,
+                    "widthPct": 19.63,
+                    "heightPct": 2.396
+                },
+                "role": "logo"
+            }
+        ]
+    },
+    "composition": {
+        "diagnostics": {
+            "variant": "UI_HERO",
+            "pageTone": "light",
+            "brandLogo": {
+                "assetId": "asset-mv2ybbcs-cayr0z",
+                "surface": "light",
+                "variant": "PRIMARY"
+            },
+            "brandRules": [
+                {
+                    "code": "BRAND_SURFACES",
+                    "detail": "superfícies tingidas pela cor principal #6E2433",
+                    "outcome": "APPLIED"
+                },
+                {
+                    "code": "BRAND_LOGO_VARIANT",
+                    "detail": "logo PRIMARY (asset-mv2ybbcs-cayr0z) escolhida para fundo light",
+                    "outcome": "APPLIED"
+                },
+                {
+                    "code": "BRAND_TYPOGRAPHY",
+                    "detail": "headline serifada (DM Serif Display)",
+                    "outcome": "APPLIED"
+                },
+                {
+                    "code": "BRAND_SHAPE",
+                    "detail": "cantos SOFT → raio do CTA 10 px",
+                    "outcome": "APPLIED"
+                },
+                {
+                    "code": "BRAND_ACCENT",
+                    "detail": "destaque da marca #A8834B aplicado como #8f6f40",
+                    "outcome": "APPLIED"
+                }
+            ],
+            "screenshot": {
+                "fit": "contain",
+                "frame": "EDITORIAL_SURFACE",
+                "aspect": 1.422,
+                "option": "left",
+                "palette": {
+                    "accent": "#b66b77",
+                    "dominant": "#fbfbfb",
+                    "secondary": "#080808"
+                },
+                "legibility": {
+                    "feedScale": 0.289,
+                    "heroScale": 0.8,
+                    "featureAreaShare": 0.1,
+                    "fullScreenLegible": true,
+                    "featureEnergyShare": 0.25,
+                    "edgeRetentionAtFeed": 0.605,
+                    "featureEdgeRetention": 0.507,
+                    "smallFeatureCritical": false
+                },
+                "sourceWidth": 1280,
+                "displayScale": 0.8,
+                "sourceHeight": 900,
+                "classification": "DESKTOP",
+                "displayWidthPx": 1024,
+                "floatingCopyFits": true
+            },
+            "logoTreatment": "BRAND_LOGO_VARIANT",
+            "selectionReasons": [
+                "tela inteira legível como hero (escala hero 0.8, retenção de borda no feed 0.605) — recortes não são necessários",
+                "diretor pediu massa 60% (>= 60): layout direto, interface domina"
+            ],
+            "occupiedAreaRatio": 0.545,
+            "largestEmptyBandPct": 0.125,
+            "contentCentroidOffset": 0.127,
+            "productVisualProminence": 0.356
+        },
+        "selectedVariant": "UI_HERO",
+        "variantSelectionReasons": [
+            "tela inteira legível como hero (escala hero 0.8, retenção de borda no feed 0.605) — recortes não são necessários",
+            "diretor pediu massa 60% (>= 60): layout direto, interface domina"
+        ]
+    },
+    "brandProfile": {
+        "source": "BRAND_PROFILE",
+        "version": 14,
+        "identity": {
+            "logos": [
+                {
+                    "assetId": "asset-mv2ybbcs-cayr0z",
+                    "variant": "PRIMARY",
+                    "priority": 1,
+                    "provenance": "USER_CONFIGURED",
+                    "backgrounds": [
+                        "LIGHT"
+                    ]
+                }
+            ],
+            "notes": "Elegância discreta; nada de linguagem de liquidação.",
+            "shape": {
+                "lines": "HAIRLINE",
+                "shadow": "SUBTLE",
+                "corners": "SOFT"
+            },
+            "style": {
+                "traits": [
+                    "EDITORIAL"
+                ],
+                "primary": "PREMIUM"
+            },
+            "colors": [
+                {
+                    "hex": "#6E2433",
+                    "name": "vinho",
+                    "role": "PRIMARY",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#A8834B",
+                    "name": "dourado envelhecido",
+                    "role": "ACCENT",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#F4EDE3",
+                    "name": "marfim",
+                    "role": "NEUTRAL",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#24191A",
+                    "name": "café escuro",
+                    "role": "NEUTRAL",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#E10600",
+                    "name": "vermelho vivo",
+                    "role": "FORBIDDEN",
+                    "provenance": "USER_CONFIGURED"
+                }
+            ],
+            "density": "LOW",
+            "version": 14,
+            "contrast": "SOFT",
+            "updatedAt": "2026-10-10T22:21:19.192Z",
+            "typography": {
+                "era": "CLASSIC",
+                "voice": "EDITORIAL",
+                "family": "SERIF",
+                "weight": "REGULAR",
+                "headlineCase": "SENTENCE"
+            },
+            "imageStyles": [
+                "EDITORIAL_PHOTOGRAPHY"
+            ],
+            "schemaVersion": 1,
+            "fieldProvenance": {
+                "notes": "USER_CONFIGURED",
+                "shape": "USER_CONFIGURED",
+                "style": "USER_CONFIGURED",
+                "density": "USER_CONFIGURED",
+                "contrast": "USER_CONFIGURED",
+                "typography": "USER_CONFIGURED",
+                "imageStyles": "USER_CONFIGURED",
+                "forbiddenPatterns": "USER_CONFIGURED",
+                "preferredPatterns": "USER_CONFIGURED",
+                "commercialIntensity": "USER_CONFIGURED"
+            },
+            "forbiddenPatterns": [
+                "NO_STRONG_SHADOWS",
+                "NO_EMOJI"
+            ],
+            "preferredPatterns": [
+                "HAIRLINE_DIVIDERS",
+                "GENEROUS_WHITESPACE"
+            ],
+            "commercialIntensity": "LOW"
+        },
+        "profileId": "brand-profile-mv2qy570-yefzhb",
+        "updatedAt": "2026-10-10T22:21:19.192Z",
+        "workspaceId": "workspace-mubz0k3k-v1mjb3",
+        "appliedBrandRules": [
+            {
+                "code": "BRAND_DENSITY",
+                "detail": "densidade da marca LOW → visualDensity clean (diretor: clean)",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "BRAND_SURFACES",
+                "detail": "superfícies tingidas pela cor principal #6E2433",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "BRAND_LOGO_VARIANT",
+                "detail": "logo PRIMARY (asset-mv2ybbcs-cayr0z) escolhida para fundo light",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "BRAND_TYPOGRAPHY",
+                "detail": "headline serifada (DM Serif Display)",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "BRAND_SHAPE",
+                "detail": "cantos SOFT → raio do CTA 10 px",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "BRAND_ACCENT",
+                "detail": "destaque da marca #A8834B aplicado como #8f6f40",
+                "outcome": "APPLIED"
+            }
+        ]
+    },
+    "quality_gate": {
+        "issues": [
+        ],
+        "verdict": "pass",
+        "textProvenanceLedger": {
+            "entries": [
+                {
+                    "role": "headline",
+                    "sourceId": "renderer:headline:0",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 5.185,
+                        "yPct": 18.75,
+                        "widthPct": 86.667,
+                        "heightPct": 12.588
+                    },
+                    "deterministic": true,
+                    "normalizedText": "sua lista de presentes linda e sem planilha",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "subheadline",
+                    "sourceId": "renderer:subheadline:1",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 5.185,
+                        "yPct": 32.292,
+                        "widthPct": 79.63,
+                        "heightPct": 3.792
+                    },
+                    "deterministic": true,
+                    "normalizedText": "site do casamento com lista de presentes e confirmação de presença em um só lugar",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "cta",
+                    "sourceId": "renderer:cta:2",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 7.037,
+                        "yPct": 38.125,
+                        "widthPct": 22.13,
+                        "heightPct": 3.438
+                    },
+                    "deterministic": true,
+                    "normalizedText": "criar meu site",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "logo",
+                    "sourceId": "logo:0",
+                    "sourceType": "LOGO_ASSET",
+                    "alternatives": [
+                        "logo rumo ao altar (homologação brand profile)",
+                        "rumo ao altar"
+                    ],
+                    "expectedBBox": {
+                        "xPct": 5.185,
+                        "yPct": 14.583,
+                        "widthPct": 19.63,
+                        "heightPct": 2.396
+                    },
+                    "deterministic": true,
+                    "assetProvenance": "context_asset+pixel_verified"
+                },
+                {
+                    "role": "screenshot",
+                    "sourceId": "screenshot:0",
+                    "sourceType": "SCREENSHOT_ASSET",
+                    "expectedBBox": {
+                        "xPct": 2.593,
+                        "yPct": 44.896,
+                        "widthPct": 94.815,
+                        "heightPct": 37.5
+                    },
+                    "deterministic": true,
+                    "assetProvenance": "context_asset+pixel_verified"
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:0",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "demonstração rumo ao altar",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:1",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "você está navegando como convidado no site de um casal fictício",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:2",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "início do casal",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:3",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "voltar à demonstração",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:4",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "criar meu site",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:5",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "voltar ao site",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:6",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "lista de presentes",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:7",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "ana & bruno",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:8",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "cota para o noivo não esquecer a aliança",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:9",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "um investimento preventivo para a aliança chegar ao altar junto com o noivo",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:10",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "r$ 79,90",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:11",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "presentear",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 3
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:12",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "ajuda para a noiva não surtar",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:13",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "contribuição carinhosa para manter a serenidade até o último fornecedor chegar",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:14",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "r$ 59,90",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:15",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "vale ressaca dos noivos",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:16",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "água café e dignidade para o primeiro café da manhã de casados",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                },
+                {
+                    "role": "screenshot_text",
+                    "sourceId": "screenshot-text:17",
+                    "sourceType": "SCREENSHOT_TEXT_INVENTORY",
+                    "deterministic": false,
+                    "normalizedText": "r$ 89,90",
+                    "assetProvenance": "verified_screenshot_inventory:d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+                    "occurrenceCount": 1
+                }
+            ],
+            "baseTextStatus": "NOT_AVAILABLE"
+        },
+        "screenshotInventoryDecision": {
+            "reason": "inventário do screenshot verificado (sha256 d4b036f6c498…, 18 texto(s))",
+            "status": "USED"
+        }
+    },
+    "visual_score": {
+        "dimensions": [
+            {
+                "key": "visualHierarchy",
+                "label": "hierarquia visual",
+                "score": 6,
+                "justification": "A hierarquia entre o headline e o subheadline não é clara, competindo visualmente."
+            },
+            {
+                "key": "compositionBalance",
+                "label": "equilíbrio da composição",
+                "score": 7,
+                "justification": "O layout é equilibrado, mas o CTA poderia ter mais destaque para melhorar a composição."
+            },
+            {
+                "key": "legibility",
+                "label": "legibilidade",
+                "score": 8,
+                "justification": "O texto é legível, mas o contraste poderia ser melhorado para facilitar a leitura."
+            },
+            {
+                "key": "focusClarity",
+                "label": "clareza do foco principal",
+                "score": 5,
+                "justification": "A interface da lista de presentes não ocupa 60% do canvas, perdendo protagonismo."
+            },
+            {
+                "key": "canvasUsage",
+                "label": "aproveitamento do canvas",
+                "score": 6,
+                "justification": "O espaço disponível não é totalmente aproveitado, especialmente nas bordas."
+            },
+            {
+                "key": "colorCoherence",
+                "label": "coerência cromática",
+                "score": 7,
+                "justification": "As cores estão em harmonia, mas a paleta oficial não é totalmente respeitada."
+            },
+            {
+                "key": "backgroundQuality",
+                "label": "qualidade do fundo",
+                "score": 8,
+                "justification": "O fundo tem qualidade artística, mas poderia ter mais variação de textura."
+            },
+            {
+                "key": "assetIntegration",
+                "label": "integração dos assets reais",
+                "score": 7,
+                "justification": "Os assets estão bem integrados, mas a transição entre elementos poderia ser mais suave."
+            },
+            {
+                "key": "nonGenericLook",
+                "label": "aparência não genérica (não parece template automático)",
+                "score": 6,
+                "justification": "A peça tem um visual um pouco genérico, faltando elementos únicos."
+            },
+            {
+                "key": "visualCleanliness",
+                "label": "ausência de poluição visual",
+                "score": 7,
+                "justification": "A peça é limpa, mas o excesso de texto compromete a simplicidade visual."
+            },
+            {
+                "key": "commercialStrength",
+                "label": "força comercial",
+                "score": 6,
+                "justification": "A peça comunica bem, mas o CTA não é suficientemente atrativo."
+            },
+            {
+                "key": "artDirectionFidelity",
+                "label": "fidelidade à direção de arte planejada",
+                "score": 7,
+                "justification": "A direção de arte planejada é seguida, mas a interface não domina o canvas como pretendido."
+            }
+        ],
+        "overallScore": 6.666666666666667,
+        "belowThreshold": false,
+        "requiresRepair": false,
+        "weakDimensions": [
+        ]
+    }
+}

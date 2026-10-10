@@ -1,0 +1,569 @@
+{
+    "base": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yjh9r-5rr3ze-editorial-base.jpg",
+    "cost": {
+        "total": 0.07450965,
+        "director": 0.00155025,
+        "baseTextScan": 0.00019859999999999998,
+        "imageGeneration": 0.071385,
+        "repairRoundsCost": 0,
+        "visualQualityScore": 0.0005468999999999999,
+        "directionExploration": 0.00031545,
+        "technicalQualityGate": 0.0005134499999999999,
+        "preCompositionAnalysis": 0,
+        "ghostTextNeutralization": 0,
+        "screenshotTextInventory": 0
+    },
+    "plan": {
+        "cta": "Conheça o Rumo ao Altar",
+        "sub": "Site, lista de presentes e confirmação de presença em um só lugar.",
+        "allowed": [
+            "O casamento organizado como vocês sonharam",
+            "Site, lista de presentes e confirmação de presença em um só lugar.",
+            "Conheça o Rumo ao Altar"
+        ],
+        "headline": "O casamento organizado como vocês sonharam",
+        "visualDensity": "clean"
+    },
+    "alpha": {
+        "opaqueRatio": 1,
+        "nonOpaqueRatio": 0,
+        "hasAlphaChannel": false,
+        "transparentRatio": 0,
+        "requestedBackground": "opaque",
+        "semiTransparentRatio": 0
+    },
+    "facts": [
+    ],
+    "final": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yjkl7-cihut1-editorial-final.jpg",
+    "format": "9:16",
+    "ledger": {
+        "entries": [
+            {
+                "role": "headline",
+                "sourceId": "renderer:headline:0",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 8.889,
+                    "yPct": 71.198,
+                    "widthPct": 82.222,
+                    "heightPct": 6.3
+                },
+                "deterministic": true,
+                "normalizedText": "o casamento organizado como vocês sonharam",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "subheadline",
+                "sourceId": "renderer:subheadline:1",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 8.889,
+                    "yPct": 78.438,
+                    "widthPct": 70.37,
+                    "heightPct": 3.402
+                },
+                "deterministic": true,
+                "normalizedText": "site lista de presentes e confirmação de presença em um só lugar",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "cta",
+                "sourceId": "renderer:cta:2",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 8.889,
+                    "yPct": 83.594,
+                    "widthPct": 28.611,
+                    "heightPct": 2.396
+                },
+                "deterministic": true,
+                "normalizedText": "conheça o rumo ao altar",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "logo",
+                "sourceId": "logo:0",
+                "sourceType": "LOGO_ASSET",
+                "alternatives": [
+                    "logo rumo ao altar (homologação brand profile)",
+                    "rumo ao altar"
+                ],
+                "expectedBBox": {
+                    "xPct": 8.889,
+                    "yPct": 10.99,
+                    "widthPct": 17.037,
+                    "heightPct": 2.083
+                },
+                "deterministic": true,
+                "assetProvenance": "context_asset+pixel_verified"
+            }
+        ],
+        "baseTextStatus": "AVAILABLE"
+    },
+    "verify": [
+        {
+            "role": "logo",
+            "visible": true,
+            "detectedMime": "image/png",
+            "fidelityPass": true,
+            "assetMatchRatio": 1,
+            "fidelityMeanAbsDiff": 4.49,
+            "informativePixelRatio": 0.243
+        }
+    ],
+    "repairs": [
+    ],
+    "baseText": {
+        "texts": [
+        ],
+        "status": "AVAILABLE",
+        "target": "OPENAI_BASE",
+        "sourceArtifactUrl": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yjh9r-5rr3ze-editorial-base.jpg"
+    },
+    "geometry": {
+        "family": "premium_institutional",
+        "source": "final_rendered_geometry",
+        "textBoxes": [
+            {
+                "id": "headline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 8.889,
+                    "yPct": 71.198,
+                    "widthPct": 82.222,
+                    "heightPct": 6.3
+                },
+                "text": "O casamento organizado como vocês sonharam",
+                "lineCount": 2,
+                "fontSizePx": 56
+            },
+            {
+                "id": "subheadline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 8.889,
+                    "yPct": 78.438,
+                    "widthPct": 70.37,
+                    "heightPct": 3.402
+                },
+                "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+                "lineCount": 2,
+                "fontSizePx": 23
+            },
+            {
+                "id": "cta",
+                "kind": "text",
+                "rect": {
+                    "xPct": 8.889,
+                    "yPct": 83.594,
+                    "widthPct": 23.074,
+                    "heightPct": 1.875
+                },
+                "text": "Conheça o Rumo ao Altar",
+                "lineCount": 1,
+                "fontSizePx": 19
+            }
+        ],
+        "assetBoxes": [
+            {
+                "id": "logo",
+                "kind": "asset",
+                "rect": {
+                    "xPct": 8.889,
+                    "yPct": 10.99,
+                    "widthPct": 17.037,
+                    "heightPct": 2.083
+                },
+                "role": "logo"
+            }
+        ]
+    },
+    "composition": {
+        "diagnostics": {
+            "baseFit": {
+                "reasons": [
+                    "recorte editorial centrado no foco preserva o núcleo da cena (81%×30% da base); perda de área 12% (máx. 32%)"
+                ],
+                "strategy": "COVER_FOCAL_SAFE_CROP",
+                "cropLossPct": 0.119,
+                "detailRetainedPct": 1
+            },
+            "variant": "MINIMAL_PREMIUM",
+            "pageTone": "light",
+            "brandLogo": {
+                "assetId": "asset-mv2ybbcs-cayr0z",
+                "surface": "light",
+                "variant": "PRIMARY"
+            },
+            "brandRules": [
+                {
+                    "code": "BRAND_SURFACES",
+                    "detail": "superfícies da marca: clara #ffffff, escura #111827",
+                    "outcome": "APPLIED"
+                },
+                {
+                    "code": "BRAND_ACCENT",
+                    "detail": "destaque da marca #115E59 aplicado como #115e59",
+                    "outcome": "APPLIED"
+                },
+                {
+                    "code": "BRAND_LOGO_VARIANT",
+                    "detail": "logo PRIMARY (asset-mv2ybbcs-cayr0z) escolhida para fundo light",
+                    "outcome": "APPLIED"
+                },
+                {
+                    "code": "BRAND_ACCENT_MARK",
+                    "detail": "filete de destaque da marca acima da headline",
+                    "outcome": "APPLIED"
+                }
+            ],
+            "baseAnalysis": {
+                "meanLuma": 0.512,
+                "detailBox": {
+                    "xPct": 0,
+                    "yPct": 15,
+                    "widthPct": 100,
+                    "heightPct": 85
+                },
+                "focalPoint": {
+                    "xPct": 52.5,
+                    "yPct": 60.8
+                },
+                "quietTopPct": 0.15,
+                "visualClass": "SINGLE_SCENE_PHOTO",
+                "visualDensity": 0.492,
+                "colorBuckets90": 57,
+                "detailClusters": 10,
+                "flatPixelRatio": 0.082,
+                "quietBottomPct": 0,
+                "straightDividers": 0,
+                "transparentRatio": 0,
+                "contentPanelCount": 4,
+                "flatSeparatorRatio": 0,
+                "focalConcentration": 0.453,
+                "negativeSpaceRatio": 0.278,
+                "largestClusterShare": 0.271,
+                "separatorConfidence": 0,
+                "classificationReasons": [
+                    "cena espacialmente contínua",
+                    "região de pouca borda (25%) tem gradiente fotográfico de cor/luz (variação global 53.7 níveis) — não é fundo separador",
+                    "sem divisórias retas"
+                ],
+                "contentComponentCount": 10,
+                "separatorGradientScore": 0.211,
+                "separatorColorVariation": 53.7,
+                "separatorLocalVariation": 2.67,
+                "backgroundSeparatorRatio": 0.25
+            },
+            "ctaTreatment": "TEXT_HAIRLINE",
+            "logoTreatment": "BRAND_LOGO_VARIANT",
+            "baseVisualClass": "SINGLE_SCENE_PHOTO",
+            "selectionReasons": [
+                "SINGLE_SCENE_PHOTO: plano pede composição limpa (densidade clean) — menos elementos, tipografia contida"
+            ],
+            "occupiedAreaRatio": 0.448,
+            "largestEmptyBandPct": 0.094,
+            "contentCentroidOffset": 0.099,
+            "productVisualProminence": 0.318
+        },
+        "selectedVariant": "MINIMAL_PREMIUM",
+        "variantSelectionReasons": [
+            "SINGLE_SCENE_PHOTO: plano pede composição limpa (densidade clean) — menos elementos, tipografia contida"
+        ]
+    },
+    "brandProfile": {
+        "source": "BRAND_PROFILE",
+        "version": 12,
+        "identity": {
+            "logos": [
+                {
+                    "assetId": "asset-mv2ybbcs-cayr0z",
+                    "variant": "PRIMARY",
+                    "priority": 1,
+                    "provenance": "USER_CONFIGURED",
+                    "backgrounds": [
+                        "LIGHT"
+                    ]
+                }
+            ],
+            "shape": {
+                "lines": "NONE",
+                "shadow": "NONE",
+                "corners": "SHARP"
+            },
+            "style": {
+                "traits": [
+                    "MINIMAL"
+                ],
+                "primary": "CORPORATE"
+            },
+            "colors": [
+                {
+                    "hex": "#0F766E",
+                    "name": "verde-petróleo",
+                    "role": "PRIMARY",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#115E59",
+                    "name": "verde-petróleo profundo",
+                    "role": "ACCENT",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#FFFFFF",
+                    "name": "branco",
+                    "role": "NEUTRAL",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#111827",
+                    "name": "grafite",
+                    "role": "NEUTRAL",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#E5E7EB",
+                    "name": "cinza claro",
+                    "role": "SECONDARY",
+                    "provenance": "USER_CONFIGURED"
+                },
+                {
+                    "hex": "#DC2626",
+                    "name": "vermelho",
+                    "role": "FORBIDDEN",
+                    "provenance": "USER_CONFIGURED"
+                }
+            ],
+            "density": "LOW",
+            "version": 12,
+            "contrast": "BALANCED",
+            "updatedAt": "2026-10-10T22:19:40.955Z",
+            "typography": {
+                "era": "MODERN",
+                "voice": "COMMERCIAL",
+                "family": "SANS",
+                "weight": "BOLD",
+                "construction": "NEUTRAL",
+                "headlineCase": "SENTENCE"
+            },
+            "imageStyles": [
+                "MINIMAL_BACKGROUND",
+                "STUDIO_PRODUCT"
+            ],
+            "schemaVersion": 1,
+            "fieldProvenance": {
+                "shape": "USER_CONFIGURED",
+                "style": "USER_CONFIGURED",
+                "density": "USER_CONFIGURED",
+                "contrast": "USER_CONFIGURED",
+                "typography": "USER_CONFIGURED",
+                "imageStyles": "USER_CONFIGURED",
+                "forbiddenPatterns": "USER_CONFIGURED",
+                "preferredPatterns": "USER_CONFIGURED",
+                "commercialIntensity": "USER_CONFIGURED"
+            },
+            "forbiddenPatterns": [
+                "NO_GRADIENTS",
+                "NO_DARK_BACKGROUNDS",
+                "NO_ALL_CAPS",
+                "NO_STRONG_SHADOWS"
+            ],
+            "preferredPatterns": [
+                "GENEROUS_WHITESPACE"
+            ],
+            "commercialIntensity": "MEDIUM"
+        },
+        "profileId": "brand-profile-mv2qy570-yefzhb",
+        "updatedAt": "2026-10-10T22:19:40.955Z",
+        "workspaceId": "workspace-mubz0k3k-v1mjb3",
+        "appliedBrandRules": [
+            {
+                "code": "BRAND_DENSITY",
+                "detail": "densidade da marca LOW → visualDensity clean (diretor: clean)",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "BRAND_SURFACES",
+                "detail": "superfícies da marca: clara #ffffff, escura #111827",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "BRAND_ACCENT",
+                "detail": "destaque da marca #115E59 aplicado como #115e59",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "BRAND_LOGO_VARIANT",
+                "detail": "logo PRIMARY (asset-mv2ybbcs-cayr0z) escolhida para fundo light",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "BRAND_ACCENT_MARK",
+                "detail": "filete de destaque da marca acima da headline",
+                "outcome": "APPLIED"
+            },
+            {
+                "code": "VISION_PALETTE_OVERRIDDEN_BY_RENDERER",
+                "detail": "paleta da marca aplicada pelo renderer; visão discordou: A paleta de cores oficial não foi seguida, pois as cores predominantes não correspondem às fornecidas. Todos os textos autorizados estão presentes e legíveis.",
+                "outcome": "PROFILE_PREVAILED"
+            }
+        ]
+    },
+    "quality_gate": {
+        "issues": [
+        ],
+        "verdict": "pass",
+        "paletteDiagnostics": [
+            {
+                "decision": "VISION_PALETTE_OVERRIDDEN_BY_RENDERER",
+                "visionReasoning": "A paleta de cores oficial não foi seguida, pois as cores predominantes não correspondem às fornecidas. Todos os textos autorizados estão presentes e legíveis."
+            }
+        ],
+        "textProvenanceLedger": {
+            "entries": [
+                {
+                    "role": "headline",
+                    "sourceId": "renderer:headline:0",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 8.889,
+                        "yPct": 71.198,
+                        "widthPct": 82.222,
+                        "heightPct": 6.3
+                    },
+                    "deterministic": true,
+                    "normalizedText": "o casamento organizado como vocês sonharam",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "subheadline",
+                    "sourceId": "renderer:subheadline:1",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 8.889,
+                        "yPct": 78.438,
+                        "widthPct": 70.37,
+                        "heightPct": 3.402
+                    },
+                    "deterministic": true,
+                    "normalizedText": "site lista de presentes e confirmação de presença em um só lugar",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "cta",
+                    "sourceId": "renderer:cta:2",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 8.889,
+                        "yPct": 83.594,
+                        "widthPct": 28.611,
+                        "heightPct": 2.396
+                    },
+                    "deterministic": true,
+                    "normalizedText": "conheça o rumo ao altar",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "logo",
+                    "sourceId": "logo:0",
+                    "sourceType": "LOGO_ASSET",
+                    "alternatives": [
+                        "logo rumo ao altar (homologação brand profile)",
+                        "rumo ao altar"
+                    ],
+                    "expectedBBox": {
+                        "xPct": 8.889,
+                        "yPct": 10.99,
+                        "widthPct": 17.037,
+                        "heightPct": 2.083
+                    },
+                    "deterministic": true,
+                    "assetProvenance": "context_asset+pixel_verified"
+                }
+            ],
+            "baseTextStatus": "AVAILABLE"
+        }
+    },
+    "visual_score": {
+        "dimensions": [
+            {
+                "key": "visualHierarchy",
+                "label": "hierarquia visual",
+                "score": 7,
+                "justification": "A hierarquia é clara, mas o logo poderia ser mais destacado em relação ao CTA."
+            },
+            {
+                "key": "compositionBalance",
+                "label": "equilíbrio da composição",
+                "score": 8,
+                "justification": "A composição é bem equilibrada, com o véu e o texto distribuídos harmonicamente."
+            },
+            {
+                "key": "legibility",
+                "label": "legibilidade",
+                "score": 9,
+                "justification": "O texto é altamente legível, com boa escolha de fonte e contraste."
+            },
+            {
+                "key": "focusClarity",
+                "label": "clareza do foco principal",
+                "score": 6,
+                "justification": "O véu não ocupa os 40% do canvas conforme planejado, reduzindo seu protagonismo."
+            },
+            {
+                "key": "canvasUsage",
+                "label": "aproveitamento do canvas",
+                "score": 7,
+                "justification": "O espaço negativo é bem utilizado, mas o véu poderia ocupar mais espaço."
+            },
+            {
+                "key": "colorCoherence",
+                "label": "coerência cromática",
+                "score": 8,
+                "justification": "As cores são coerentes com a paleta, mas o verde poderia ser mais pronunciado."
+            },
+            {
+                "key": "backgroundQuality",
+                "label": "qualidade do fundo",
+                "score": 9,
+                "justification": "O fundo é de alta qualidade, com um pôr do sol bem capturado e flores silvestres visíveis."
+            },
+            {
+                "key": "assetIntegration",
+                "label": "integração dos assets reais",
+                "score": 8,
+                "justification": "Os elementos estão bem integrados, mas o logo parece um pouco deslocado."
+            },
+            {
+                "key": "nonGenericLook",
+                "label": "aparência não genérica (não parece template automático)",
+                "score": 7,
+                "justification": "A peça tem um visual único, mas ainda mantém algumas características de template."
+            },
+            {
+                "key": "visualCleanliness",
+                "label": "ausência de poluição visual",
+                "score": 9,
+                "justification": "A peça é visualmente limpa, sem elementos desnecessários."
+            },
+            {
+                "key": "commercialStrength",
+                "label": "força comercial",
+                "score": 7,
+                "justification": "A mensagem é clara, mas o logo poderia ser mais impactante para reforçar a marca."
+            },
+            {
+                "key": "artDirectionFidelity",
+                "label": "fidelidade à direção de arte planejada",
+                "score": 6,
+                "justification": "A direção de arte é seguida, mas o véu não tem o destaque planejado e o contraste poderia ser mais forte."
+            }
+        ],
+        "overallScore": 7.583333333333333,
+        "belowThreshold": false,
+        "requiresRepair": false,
+        "weakDimensions": [
+        ]
+    }
+}

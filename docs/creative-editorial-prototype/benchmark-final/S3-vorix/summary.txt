@@ -1,0 +1,16 @@
+format 4:5 facts [] error undefined
+plan {"cta":"Conheça o Rumo ao Altar","sub":"Site, lista de presentes e confirmação de presença em um só lugar.","allowed":["O casamento organizado como vocês sonharam","Site, lista de presentes e confirmação de presença em um só lugar.","Conheça o Rumo ao Altar"],"headline":"O casamento organizado como vocês sonharam","visualDensity":"clean"}
+gate pass []
+textDiag null
+occ null
+vscore 7.166666666666667 visualHierarchy=6 compositionBalance=7 legibility=8 focusClarity=5 canvasUsage=6 colorCoherence=9 backgroundQuality=7 assetIntegration=8 nonGenericLook=8 visualCleanliness=9 commercialStrength=7 artDirectionFidelity=6
+variant MINIMAL_PREMIUM ["SINGLE_SCENE_PHOTO: plano pede composição limpa (densidade clean) — menos elementos, tipografia contida"]
+class SINGLE_SCENE_PHOTO ["cena espacialmente contínua","sem divisórias retas"] fit {"reasons":["recorte editorial centrado no foco preserva o núcleo da cena (44%×50% da base); perda de área 15% (máx. 32%)"],"strategy":"COVER_FOCAL_SAFE_CROP","cropLossPct":0.145,"detailRetainedPct":0.924} logo BRAND_LOGO_VARIANT cta TEXT_HAIRLINE empty 0.03 prom 0.567
+alpha {"opaqueRatio":1,"nonOpaqueRatio":0,"hasAlphaChannel":false,"transparentRatio":0,"requestedBackground":"opaque","semiTransparentRatio":0}
+baseText {"texts":[],"status":"AVAILABLE","target":"OPENAI_BASE","sourceArtifactUrl":"https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yijyn-s3tvoh-editorial-base.jpg"}
+verify [{"role":"logo","visible":true,"detectedMime":"image/png","fidelityPass":true,"assetMatchRatio":1,"fidelityMeanAbsDiff":7.62,"informativePixelRatio":0.2404}]
+text [["headline",38,2,{"xPct":9.259,"yPct":81.333,"widthPct":51.852,"heightPct":6.08}],["subheadline",16,2,{"xPct":9.259,"yPct":88.444,"widthPct":48.148,"heightPct":3.366}],["cta",15,1,{"xPct":66.852,"yPct":89.185,"widthPct":18.352,"heightPct":1.926}]]
+assets [["logo",{"xPct":77.13,"yPct":81.333,"widthPct":13.611,"heightPct":2.37}]]
+repairs [] cost 0.074228
+BASE https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yijyn-s3tvoh-editorial-base.jpg
+FINAL https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yinfo-6nyc4k-editorial-final.jpg

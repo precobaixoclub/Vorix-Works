@@ -1,0 +1,309 @@
+{
+  "kind": "DIAGNOSTIC_REEVALUATION (não altera o histórico do run)",
+  "executionId": "execution-mv2yjtgn-mkllen",
+  "openAiRealCallsInGate": 0,
+  "mockedVisionCalls": 1,
+  "inventory": {
+    "assetSha256": "d4b036f6c498d7aa08979a170e7764dff4f78d728ef9d46609ded7faec87535c",
+    "cache": "MISS",
+    "model": "gpt-4o-2024-08-06",
+    "texts": 18,
+    "gateDecision": {
+      "status": "USED",
+      "reason": "inventário do screenshot verificado (sha256 d4b036f6c498…, 18 texto(s))"
+    }
+  },
+  "originalVerdict": "fail",
+  "originalIssues": [
+    "DUPLICATED_TEXT"
+  ],
+  "verdict": "pass",
+  "issues": [],
+  "SCREENSHOT_TEXT_PROVENANCE": "PASS",
+  "DUPLICATE_RECONCILIATION": "PASS",
+  "UNKNOWN_TEXT": "PASS",
+  "OTHER_GATE_ISSUES": [],
+  "textDiagnostics": [
+    {
+      "detectedText": "Rumo ao Altar",
+      "bbox": {
+        "xPct": 5,
+        "yPct": 5,
+        "widthPct": 10,
+        "heightPct": 5
+      },
+      "matchedElement": "logo",
+      "normalizedDetected": "rumo ao altar",
+      "decision": "authorized",
+      "reason": "dentro da bbox final da logo oficial verificada (proveniência + pixel)"
+    },
+    {
+      "detectedText": "Demonstração Rumo ao Altar",
+      "bbox": {
+        "xPct": 10,
+        "yPct": 20,
+        "widthPct": 20,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "demonstração rumo ao altar",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_TEXT_INVENTORY",
+      "reason": "texto existe no inventário do screenshot verificado (1 ocorrência(s); 1ª usada; sha256 d4b036f6c498…); posição da visão fora da região do screenshot"
+    },
+    {
+      "detectedText": "Você está navegando como convidado no site de um casal fictício.",
+      "bbox": {
+        "xPct": 10,
+        "yPct": 25,
+        "widthPct": 40,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "você está navegando como convidado no site de um casal fictício",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_TEXT_INVENTORY",
+      "reason": "texto existe no inventário do screenshot verificado (1 ocorrência(s); 1ª usada; sha256 d4b036f6c498…); posição da visão fora da região do screenshot"
+    },
+    {
+      "detectedText": "Voltar ao site",
+      "bbox": {
+        "xPct": 10,
+        "yPct": 30,
+        "widthPct": 15,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "voltar ao site",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_TEXT_INVENTORY",
+      "reason": "texto existe no inventário do screenshot verificado (1 ocorrência(s); 1ª usada; sha256 d4b036f6c498…); posição da visão fora da região do screenshot"
+    },
+    {
+      "detectedText": "Lista de presentes",
+      "bbox": {
+        "xPct": 10,
+        "yPct": 35,
+        "widthPct": 20,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "lista de presentes",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_TEXT_INVENTORY",
+      "reason": "texto existe no inventário do screenshot verificado (1 ocorrência(s); 1ª usada; sha256 d4b036f6c498…); posição da visão fora da região do screenshot"
+    },
+    {
+      "detectedText": "Ana & Bruno",
+      "bbox": {
+        "xPct": 10,
+        "yPct": 40,
+        "widthPct": 15,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "ana & bruno",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_REGION",
+      "reason": "dentro da bbox final do screenshot real verificado e presente no inventário do screenshot (1 ocorrência(s))"
+    },
+    {
+      "detectedText": "Cota para o noivo não esquecer a aliança",
+      "bbox": {
+        "xPct": 10,
+        "yPct": 45,
+        "widthPct": 30,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "cota para o noivo não esquecer a aliança",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_REGION",
+      "reason": "dentro da bbox final do screenshot real verificado e presente no inventário do screenshot (1 ocorrência(s))"
+    },
+    {
+      "detectedText": "Um investimento preventivo para a aliança chegar ao altar junto com o noivo.",
+      "bbox": {
+        "xPct": 10,
+        "yPct": 50,
+        "widthPct": 40,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "um investimento preventivo para a aliança chegar ao altar junto com o noivo",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_REGION",
+      "reason": "dentro da bbox final do screenshot real verificado e presente no inventário do screenshot (1 ocorrência(s))"
+    },
+    {
+      "detectedText": "R$ 79,90",
+      "bbox": {
+        "xPct": 10,
+        "yPct": 55,
+        "widthPct": 10,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "r$ 79,90",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_REGION",
+      "reason": "dentro da bbox final do screenshot real verificado e presente no inventário do screenshot (1 ocorrência(s))"
+    },
+    {
+      "detectedText": "Presentear",
+      "bbox": {
+        "xPct": 10,
+        "yPct": 60,
+        "widthPct": 15,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "presentear",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_REGION",
+      "reason": "dentro da bbox final do screenshot real verificado e presente no inventário do screenshot (3 ocorrência(s))"
+    },
+    {
+      "detectedText": "Ajuda para a noiva não surtar",
+      "bbox": {
+        "xPct": 50,
+        "yPct": 45,
+        "widthPct": 30,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "ajuda para a noiva não surtar",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_REGION",
+      "reason": "dentro da bbox final do screenshot real verificado e presente no inventário do screenshot (1 ocorrência(s))"
+    },
+    {
+      "detectedText": "Contribuição carinhosa para manter a serenidade até o último fornecedor chegar.",
+      "bbox": {
+        "xPct": 50,
+        "yPct": 50,
+        "widthPct": 40,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "contribuição carinhosa para manter a serenidade até o último fornecedor chegar",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_REGION",
+      "reason": "dentro da bbox final do screenshot real verificado e presente no inventário do screenshot (1 ocorrência(s))"
+    },
+    {
+      "detectedText": "R$ 59,90",
+      "bbox": {
+        "xPct": 50,
+        "yPct": 55,
+        "widthPct": 10,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "r$ 59,90",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_REGION",
+      "reason": "dentro da bbox final do screenshot real verificado e presente no inventário do screenshot (1 ocorrência(s))"
+    },
+    {
+      "detectedText": "Presentear",
+      "bbox": {
+        "xPct": 50,
+        "yPct": 60,
+        "widthPct": 15,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "presentear",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_REGION",
+      "reason": "dentro da bbox final do screenshot real verificado e presente no inventário do screenshot (3 ocorrência(s))"
+    },
+    {
+      "detectedText": "Vale ressaca dos noivos",
+      "bbox": {
+        "xPct": 90,
+        "yPct": 45,
+        "widthPct": 30,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "vale ressaca dos noivos",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_TEXT_INVENTORY",
+      "reason": "texto existe no inventário do screenshot verificado (1 ocorrência(s); 1ª usada; sha256 d4b036f6c498…); posição da visão fora da região do screenshot"
+    },
+    {
+      "detectedText": "Água, café e dignidade para o primeiro café da manhã de casados.",
+      "bbox": {
+        "xPct": 90,
+        "yPct": 50,
+        "widthPct": 40,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "água café e dignidade para o primeiro café da manhã de casados",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_TEXT_INVENTORY",
+      "reason": "texto existe no inventário do screenshot verificado (1 ocorrência(s); 1ª usada; sha256 d4b036f6c498…); posição da visão fora da região do screenshot"
+    },
+    {
+      "detectedText": "R$ 89,90",
+      "bbox": {
+        "xPct": 90,
+        "yPct": 55,
+        "widthPct": 10,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "r$ 89,90",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_REGION",
+      "reason": "dentro da bbox final do screenshot real verificado e presente no inventário do screenshot (1 ocorrência(s))"
+    },
+    {
+      "detectedText": "Presentear",
+      "bbox": {
+        "xPct": 90,
+        "yPct": 60,
+        "widthPct": 15,
+        "heightPct": 5
+      },
+      "matchedElement": "screenshot",
+      "normalizedDetected": "presentear",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_SCREENSHOT_REGION",
+      "reason": "dentro da bbox final do screenshot real verificado e presente no inventário do screenshot (3 ocorrência(s))"
+    }
+  ],
+  "occurrenceDiagnostics": [
+    {
+      "occurrenceId": "dup-0-0",
+      "normalizedText": "criar meu site",
+      "bbox": {
+        "xPct": 80,
+        "yPct": 5,
+        "widthPct": 15,
+        "heightPct": 5
+      },
+      "matchedRegion": "SCREENSHOT_TEXT_INVENTORY",
+      "provenance": "VERIFIED_SCREENSHOT_TEXT_INVENTORY",
+      "decision": "allowed",
+      "reason": "LEDGER_RECONCILED: 2 ocorrência(s) explicadas por RENDERER_TEXT/cta + SCREENSHOT_TEXT_INVENTORY/screenshot_text×1; base sem o texto (posição da visão: MATCHED_VERIFIED_SCREENSHOT_TEXT_INVENTORY: texto existe no screenshot verificado (1 ocorrência(s), sha256 d4b036f6c498…); bbox da visão fora da região do screenshot)"
+    },
+    {
+      "occurrenceId": "dup-0-1",
+      "normalizedText": "criar meu site",
+      "bbox": {
+        "xPct": 80,
+        "yPct": 15,
+        "widthPct": 15,
+        "heightPct": 5
+      },
+      "matchedRegion": "unknown",
+      "provenance": "UNVERIFIED",
+      "decision": "allowed",
+      "reason": "LEDGER_RECONCILED: 2 ocorrência(s) explicadas por RENDERER_TEXT/cta + SCREENSHOT_TEXT_INVENTORY/screenshot_text×1; base sem o texto (posição da visão: fora de qualquer zona do renderer, logo ou screenshot verificados; orçamento do inventário do screenshot esgotado (1 ocorrência(s) no screenshot))"
+    }
+  ]
+}

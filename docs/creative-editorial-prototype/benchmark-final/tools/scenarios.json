@@ -1,0 +1,128 @@
+[
+ {
+  "id": "S1",
+  "family": "PRODUCT_OFFER",
+  "format": "4:5",
+  "profile": "P3",
+  "texts": {
+   "headline": "Sem Correria",
+   "subheadline": "Presentes, lista e RSVP em um só lugar.",
+   "price": "R$ 149,00",
+   "cta": "Comprar agora"
+  },
+  "brief": "Peça de oferta de produto. Produto real: relógio físico dourado com laço rosa, almofada rosa e alianças. Composição limpa, produto como foco.",
+  "assets": [
+   {
+    "role": "product_photo",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/product-ring-reminder.jpg"
+   },
+   {
+    "role": "logo",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/logo-rumo-ao-altar.png"
+   }
+  ]
+ },
+ {
+  "id": "S2",
+  "family": "PRODUCT_OFFER",
+  "format": "9:16",
+  "profile": "P2",
+  "texts": {
+   "headline": "Sem Correria",
+   "subheadline": "Presentes, lista e RSVP em um só lugar.",
+   "price": "R$ 149,00",
+   "cta": "Comprar agora"
+  },
+  "brief": "Peça de oferta de produto para Stories. Produto real: relógio físico dourado com laço rosa, almofada rosa e alianças. Composição limpa, produto como foco.",
+  "assets": [
+   {
+    "role": "product_photo",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/product-ring-reminder.jpg"
+   },
+   {
+    "role": "logo",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/logo-rumo-ao-altar.png"
+   }
+  ]
+ },
+ {
+  "id": "S3",
+  "family": "PREMIUM_INSTITUTIONAL",
+  "format": "4:5",
+  "profile": "P1",
+  "texts": {
+   "headline": "O casamento organizado como vocês sonharam",
+   "subheadline": "Site, lista de presentes e confirmação de presença em um só lugar.",
+   "cta": "Conheça o Rumo ao Altar"
+  },
+  "brief": "Peça institucional premium de marca, sem venda direta, sem preço, sem oferta. Fotografia editorial real e atmosférica de casamento: luz dourada de fim de tarde, detalhes de cerimônia, flores, tecidos, profundidade de campo.",
+  "assets": [
+   {
+    "role": "logo",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/logo-rumo-ao-altar.png"
+   }
+  ]
+ },
+ {
+  "id": "S4",
+  "family": "PREMIUM_INSTITUTIONAL",
+  "format": "9:16",
+  "profile": "P3",
+  "texts": {
+   "headline": "O casamento organizado como vocês sonharam",
+   "subheadline": "Site, lista de presentes e confirmação de presença em um só lugar.",
+   "cta": "Conheça o Rumo ao Altar"
+  },
+  "brief": "Peça institucional premium de marca para Stories, sem venda direta, sem preço, sem oferta. Fotografia editorial real e atmosférica de casamento: luz dourada de fim de tarde, detalhes de cerimônia, flores, tecidos, profundidade de campo.",
+  "assets": [
+   {
+    "role": "logo",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/logo-rumo-ao-altar.png"
+   }
+  ]
+ },
+ {
+  "id": "S5",
+  "family": "SERVICE_DIGITAL",
+  "format": "4:5",
+  "profile": "P2",
+  "texts": {
+   "headline": "Sua lista de presentes, linda e sem planilha",
+   "subheadline": "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+   "cta": "Criar meu site"
+  },
+  "brief": "Peça de serviço digital mostrando a lista de presentes real do site do casamento (screenshot real fornecido, protagonista, fiel e legível, sem redesenho). Convite para o casal criar o próprio site. Sem preço em destaque, sem promoção.",
+  "assets": [
+   {
+    "role": "screenshot",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-scenario-c/screenshot-desktop-presentes.png"
+   },
+   {
+    "role": "logo",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-scenario-c/logo-rumo-ao-altar.png"
+   }
+  ]
+ },
+ {
+  "id": "S6",
+  "family": "SERVICE_DIGITAL",
+  "format": "9:16",
+  "profile": "P1",
+  "texts": {
+   "headline": "Sua lista de presentes, linda e sem planilha",
+   "subheadline": "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+   "cta": "Criar meu site"
+  },
+  "brief": "Peça de serviço digital para Stories mostrando a lista de presentes real do site do casamento (screenshot real fornecido, protagonista, fiel e legível, sem redesenho). Convite para o casal criar o próprio site. Sem preço em destaque, sem promoção.",
+  "assets": [
+   {
+    "role": "screenshot",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-scenario-c/screenshot-desktop-presentes.png"
+   },
+   {
+    "role": "logo",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-scenario-c/logo-rumo-ao-altar.png"
+   }
+  ]
+ }
+]

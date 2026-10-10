@@ -1,0 +1,16 @@
+format 9:16 facts ["Preço atual: R$ 149,00 BRL"] error undefined
+plan {"cta":"Comprar agora","sub":"Presentes, lista e RSVP em um só lugar.","allowed":["Sem Correria","Presentes, lista e RSVP em um só lugar.","R$ 149,00","Comprar agora"],"headline":"Sem Correria","visualDensity":"clean"}
+gate pass []
+textDiag [{"bbox":{"xPct":43,"yPct":10,"widthPct":14,"heightPct":4},"reason":"dentro da bbox final da logo oficial verificada (proveniência + pixel)","decision":"authorized","detectedText":"Rumo ao Altar","matchedElement":"logo","normalizedDetected":"rumo ao altar"}]
+occ null
+vscore 6.166666666666667 visualHierarchy=6 compositionBalance=7 legibility=8 focusClarity=5 canvasUsage=6 colorCoherence=7 backgroundQuality=6 assetIntegration=5 nonGenericLook=6 visualCleanliness=7 commercialStrength=6 artDirectionFidelity=5
+variant HERO_DOMINANT ["conteúdo equilibrado: produto e copy dividem a composição","9:16: split lateral vira empilhado (HERO_DOMINANT) — produto em largura total, copy embaixo"]
+class undefined undefined fit undefined logo BRAND_LOGO_VARIANT cta undefined empty 0.094 prom 0.437
+alpha {"opaqueRatio":0.0674,"nonOpaqueRatio":0.9327,"hasAlphaChannel":true,"transparentRatio":0.9186,"semiTransparentRatio":0.0141}
+baseText {"texts":[],"reason":"visão não concluiu (failed)","status":"NOT_AVAILABLE","target":"OPENAI_BASE","sourceArtifactUrl":"https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yhgj9-iqvql8-editorial-base.jpg"}
+verify [{"role":"product_photo","visible":true,"detectedMime":"image/jpeg","fidelityPass":true,"assetMatchRatio":1,"fidelityMeanAbsDiff":4.25,"informativePixelRatio":0.9989},{"role":"logo","visible":true,"detectedMime":"image/png","fidelityPass":true,"assetMatchRatio":1,"fidelityMeanAbsDiff":3.64,"informativePixelRatio":0.1901}]
+text [["headline",82,1,{"xPct":7.407,"yPct":70.781,"widthPct":85.185,"heightPct":4.442}],["subheadline",28,1,{"xPct":14.815,"yPct":76.354,"widthPct":70.37,"heightPct":2.013}],["price",76,1,{"xPct":17.13,"yPct":81.406,"widthPct":35.556,"heightPct":4.583}],["cta",23,1,{"xPct":59.352,"yPct":81.667,"widthPct":20.926,"heightPct":4.063}]]
+assets [["product_photo",{"xPct":5.926,"yPct":17.292,"widthPct":88.148,"heightPct":49.583}],["logo",{"xPct":39.352,"yPct":10.99,"widthPct":21.296,"heightPct":2.604}]]
+repairs [] cost 0.07478064999999999
+BASE https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yhgj9-iqvql8-editorial-base.jpg
+FINAL https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2yhk37-ee1cp1-editorial-final.jpg

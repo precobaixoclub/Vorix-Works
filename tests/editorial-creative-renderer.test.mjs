@@ -562,8 +562,9 @@ test("product_offer adaptativo: mesmo input produz exatamente a mesma peça", as
   assert.equal(first.buffer.equals(second.buffer), true);
 });
 
-test("product_offer 9:16 continua no layout anterior (fora do escopo desta rodada)", async () => {
+test("product_offer 9:16 usa o compositor adaptativo (composição vertical própria, nunca o template antigo)", async () => {
   const result = await renderEditorialCreative({ ...productOfferInput(), context: context({ format: "9:16", confirmedFacts: ["Preço atual: R$ 149,00"] }), baseImageBuffer: await studioBase(1080, 1920) });
-  assert.equal(result.composition, undefined);
+  assert.ok(["HERO_DOMINANT", "OVERLAY_EDITORIAL"].includes(result.composition?.variant), JSON.stringify(result.composition));
   assert.equal(result.geometry.valid, true, JSON.stringify(result.geometry.issues));
+  assert.ok(result.renderedTextZones.some((zone) => zone.text === "R$ 149,00"));
 });

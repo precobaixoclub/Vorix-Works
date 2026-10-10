@@ -1,0 +1,241 @@
+{
+ "plan": {
+  "cta": "Criar meu site",
+  "angle": "Mostrar a interface real da lista de presentes como protagonista, em um ambiente acolhedor e elegante.",
+  "title": "Sua lista de presentes, linda e sem planilha",
+  "headline": "Sua lista de presentes, linda e sem planilha",
+  "objective": "Promover o serviço digital de criação de sites de casamento da Rumo ao Altar, destacando a funcionalidade de lista de presentes.",
+  "rationale": "A peça precisa destacar a funcionalidade do site de forma elegante e prática, atraindo casais interessados em soluções digitais para casamento.",
+  "textZones": [
+   {
+    "kind": "headline",
+    "rect": {
+     "xPct": 5.185,
+     "yPct": 11.852,
+     "widthPct": 59.259,
+     "heightPct": 12.72
+    },
+    "text": "Sua lista de presentes, linda e sem planilha",
+    "align": "left",
+    "emphasis": "primary",
+    "renderedBy": "renderer",
+    "backingStyle": "none"
+   },
+   {
+    "kind": "subheadline",
+    "rect": {
+     "xPct": 5.185,
+     "yPct": 25.926,
+     "widthPct": 51.852,
+     "heightPct": 4.356
+    },
+    "text": "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+    "align": "left",
+    "emphasis": "secondary",
+    "renderedBy": "renderer",
+    "backingStyle": "none"
+   },
+   {
+    "kind": "cta",
+    "rect": {
+     "xPct": 74.537,
+     "yPct": 26,
+     "widthPct": 18.426,
+     "heightPct": 4.296
+    },
+    "text": "Criar meu site",
+    "align": "center",
+    "emphasis": "secondary",
+    "renderedBy": "renderer",
+    "backingStyle": "solid"
+   }
+  ],
+  "assetUsage": {
+   "https://api.vorixworks.com/uploads/qa-assets/editorial-scenario-c/logo-rumo-ao-altar.png": "logo",
+   "https://api.vorixworks.com/uploads/qa-assets/editorial-scenario-c/screenshot-desktop-presentes.png": "screenshot"
+  },
+  "layoutPlan": [
+   {
+    "kind": "hero",
+    "rect": {
+     "xPct": 25,
+     "yPct": 20,
+     "widthPct": 50,
+     "heightPct": 60
+    },
+    "priority": 1,
+    "rationale": "Interface real ocupa o centro da peça, sendo o foco principal."
+   },
+   {
+    "kind": "headline",
+    "rect": {
+     "xPct": 10,
+     "yPct": 5,
+     "widthPct": 80,
+     "heightPct": 10
+    },
+    "priority": 2,
+    "rationale": "Headline no topo para introduzir o tema."
+   },
+   {
+    "kind": "support",
+    "rect": {
+     "xPct": 10,
+     "yPct": 85,
+     "widthPct": 80,
+     "heightPct": 5
+    },
+    "priority": 3,
+    "rationale": "Subheadline abaixo da interface para reforçar a mensagem."
+   },
+   {
+    "kind": "cta",
+    "rect": {
+     "xPct": 35,
+     "yPct": 92,
+     "widthPct": 30,
+     "heightPct": 5
+    },
+    "priority": 4,
+    "rationale": "CTA centralizado na parte inferior para fácil acesso visual."
+   },
+   {
+    "kind": "logo",
+    "rect": {
+     "xPct": 85,
+     "yPct": 5,
+     "widthPct": 10,
+     "heightPct": 10
+    },
+    "priority": 5,
+    "rationale": "Logo no canto superior direito para identificação da marca."
+   },
+   {
+    "kind": "negativeSpace",
+    "rect": {
+     "xPct": 0,
+     "yPct": 0,
+     "widthPct": 100,
+     "heightPct": 100
+    },
+    "priority": 6,
+    "rationale": "Espaço negativo ao redor da interface para evitar poluição visual."
+   }
+  ],
+  "styleNotes": "A peça deve evocar uma sensação de elegância e praticidade, destacando a interface real do site.",
+  "description": "Apresentar a lista de presentes do site Rumo ao Altar em um cenário acolhedor, incentivando casais a criarem seu próprio site.",
+  "subheadline": "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+  "artDirection": {
+   "concept": "Interface destacada contra um fundo de luzes suaves e difusas.",
+   "atmosphere": "Intimista e elegante.",
+   "visualFocus": "Interface real da lista de presentes.",
+   "avoidedCliches": [
+    "smartphone inclinado",
+    "mockup 3D genérico"
+   ],
+   "primaryMassPct": 50,
+   "contrastStrategy": "Alto contraste entre a interface e o fundo difuso.",
+   "elementHierarchy": [
+    "screenshot",
+    "headline",
+    "subheadline",
+    "cta",
+    "logo"
+   ],
+   "justifiedCliches": [],
+   "chromaticDirection": "Tons quentes e suaves.",
+   "backgroundTreatment": "Luzes suaves e difusas em tons quentes.",
+   "productTextRelationship": "Texto posicionado em áreas de alto contraste para legibilidade."
+  },
+  "visualDensity": "balanced",
+  "targetAudience": "Noivos em fase de planejamento de casamento que buscam soluções práticas e elegantes.",
+  "assetPlacements": [
+   {
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-scenario-c/screenshot-desktop-presentes.png",
+    "rect": {
+     "xPct": 2.593,
+     "yPct": 42.815,
+     "widthPct": 94.815,
+     "heightPct": 53.333
+    },
+    "role": "screenshot",
+    "frame": "none",
+    "treatment": "final rendered screenshot (FLOATING_PRODUCT/light, inteiro, contain)"
+   },
+   {
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-scenario-c/logo-rumo-ao-altar.png",
+    "rect": {
+     "xPct": 5.185,
+     "yPct": 6.667,
+     "widthPct": 17.037,
+     "heightPct": 2.963
+    },
+    "role": "logo",
+    "frame": "none",
+    "treatment": "final rendered logo (MULTIPLY_ON_LIGHT)"
+   }
+  ],
+  "visualDirection": "Elegante e acolhedor, destacando a interface real contra um fundo suave e quente.",
+  "requiredElements": [
+   "logo",
+   "headline",
+   "cta",
+   "screenshot"
+  ],
+  "compositionIntent": "Criar uma peça visualmente atraente que destaque a interface do site, transmitindo uma sensação de elegância e praticidade.",
+  "forbiddenElements": [
+   "texto QA",
+   "placeholder",
+   "CTA desenhado pela IA",
+   "logo falsa",
+   "interface inventada",
+   "texto técnico",
+   "labels publicitários desenhados pela IA"
+  ],
+  "allowedRenderedTexts": [
+   "Sua lista de presentes, linda e sem planilha",
+   "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+   "Criar meu site"
+  ],
+  "requiredRenderedFacts": [],
+  "editorialLayoutPlanNormalization": {
+   "normalizedKinds": [
+    {
+     "field": "kind",
+     "index": 2,
+     "reason": "subheadline é conteúdo textual/comercial secundário; no layoutPlan editorial ele representa massa visual de apoio, não um tipo de texto renderizável.",
+     "invalidValue": "subheadline",
+     "normalizedTo": "support",
+     "allowedValues": [
+      "hero",
+      "headline",
+      "cta",
+      "logo",
+      "support",
+      "negativeSpace"
+     ]
+    }
+   ]
+  }
+ },
+ "context": {
+  "brandName": "Marca",
+  "objective": "Peça 4:5 de serviço digital para a Rumo ao Altar mostrando a lista de presentes real do site do casamento. Convite para o casal criar o próprio site. Sem preço em destaque, sem promoção.",
+  "channel": "instagram",
+  "format": "4:5",
+  "ideaText": "",
+  "assets": [
+   {
+    "role": "screenshot",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-scenario-c/screenshot-desktop-presentes.png",
+    "description": "Screenshot real da lista de presentes do site Rumo ao Altar (desktop). Usar somente no renderer determinístico, sem redesenhar nem inventar interface."
+   },
+   {
+    "role": "logo",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-scenario-c/logo-rumo-ao-altar.png",
+    "description": "Logo oficial Rumo ao Altar. Usar somente no renderer determinístico, sem redesenhar."
+   }
+  ],
+  "confirmedFacts": []
+ }
+}

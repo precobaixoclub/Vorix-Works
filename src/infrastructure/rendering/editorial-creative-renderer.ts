@@ -739,7 +739,7 @@ async function renderProductOfferAdaptive(
   const cta = plan.cta.trim() ? plan.cta : undefined;
   const productAspect = product ? product.width / product.height : 1;
   const productIsCutout = product ? product.stats.alphaCoverage < 0.95 : false;
-  const { variant, reasons } = selectProductOfferVariant({
+  const selectedOffer = selectProductOfferVariant({
     productAspect,
     productComplexity: product?.stats.lumaStdev ?? 0,
     productIsCutout,
@@ -750,6 +750,17 @@ async function renderProductOfferAdaptive(
     primaryMassPct: plan.artDirection?.primaryMassPct,
     visualDensity: plan.visualDensity,
   });
+  // Override só para fixtures locais de QA (mesmo contrato das outras famílias).
+  const offerOverride = input.qaVariantOverride && (["HERO_DOMINANT", "SPLIT_EDITORIAL", "OVERLAY_EDITORIAL"] as const).includes(input.qaVariantOverride as ProductOfferVariant) ? (input.qaVariantOverride as ProductOfferVariant) : undefined;
+  // 9:16: lado a lado num canvas estreito e alto deixa o produto pequeno e sobra vazio — o
+  // equivalente vertical do split é produto em cima + copy embaixo (HERO_DOMINANT).
+  const verticalOffer = isVerticalCanvas(canvas) && !offerOverride && selectedOffer.variant === "SPLIT_EDITORIAL";
+  const variant: ProductOfferVariant = offerOverride ?? (verticalOffer ? "HERO_DOMINANT" : selectedOffer.variant);
+  const reasons = offerOverride
+    ? [`QA_VARIANT_OVERRIDE=${offerOverride} (fixture local; regra escolheria ${selectedOffer.variant})`, ...selectedOffer.reasons]
+    : verticalOffer
+      ? [...selectedOffer.reasons, "9:16: split lateral vira empilhado (HERO_DOMINANT) — produto em largura total, copy embaixo"]
+      : selectedOffer.reasons;
   const tone: "light" | "dark" = variant === "OVERLAY_EDITORIAL" || backdrop.baseTone === "dark" ? "dark" : "light";
   const palette = productOfferPalette(tone, pickAccent(input.context));
   const priceTreatment: ProductOfferPriceTreatment = variant === "HERO_DOMINANT" || (variant === "SPLIT_EDITORIAL" && (price?.length ?? 0) > 10) ? "COMMERCIAL_FOOTER" : "INLINE_PRICE";
@@ -758,15 +769,20 @@ async function renderProductOfferAdaptive(
   const ctaH = 78;
   const ctaW = cta ? clamp(estimateLineWidth(cta.toUpperCase(), ctaFont, 2) + 88, 240, 430) : 0;
   const ctaSpec = (pill: PxRect): TextSpec => ({ id: "cta", text: cta!, width: pill.width - 56, maxHeight: pill.height, maxFontSize: ctaFont, minFontSize: 15, maxLines: 1, letterSpacing: 2, uppercase: true });
+  // 9:16: topo/base de texto e logo dentro da safe area vertical; no 4:5 os mesmos valores de sempre.
+  const vertical = isVerticalCanvas(canvas);
+  const safe = storySafeInsets(canvas);
+  const topEdge = (y: number): number => (vertical ? Math.max(y, safe.top) : y);
+  const bottomEdge = vertical ? H - safe.bottom : H - M;
   const photoAspect = (min: number, max: number): number => (productIsCutout ? productAspect : clamp(productAspect, min, max));
 
   const layout: ProductOfferLayout = (() => {
     if (variant === "HERO_DOMINANT") {
       const logoBox = logo ? logoSize(logo, 300, 50) : undefined;
-      const logoRect = logoBox ? { x: Math.round((W - logoBox.width) / 2), y: 58, ...logoBox } : undefined;
-      const top = logoRect ? logoRect.y + logoRect.height + 34 : M + 8;
+      const logoRect = logoBox ? { x: Math.round((W - logoBox.width) / 2), y: topEdge(58), ...logoBox } : undefined;
+      const top = logoRect ? logoRect.y + logoRect.height + 34 : topEdge(M + 8);
       const rowH = 88;
-      const rowTop = H - M - rowH;
+      const rowTop = bottomEdge - rowH;
       const priceSpec: TextSpec | undefined = price ? { id: "price", text: price, width: 600, maxHeight: rowH, maxFontSize: 76, minFontSize: 34, maxLines: 1, letterSpacing: 0 } : undefined;
       const priceFont = priceSpec ? measureSpec(priceSpec).fontSize : 0;
       const priceW = price ? Math.min(600, estimateLineWidth(price, priceFont)) : 0;
@@ -797,11 +813,11 @@ async function renderProductOfferAdaptive(
 
     if (variant === "SPLIT_EDITORIAL") {
       const logoBox = logo ? logoSize(logo, 260, 46) : undefined;
-      const logoRect = logoBox ? { x: M, y: 64, ...logoBox } : undefined;
+      const logoRect = logoBox ? { x: M, y: topEdge(64), ...logoBox } : undefined;
       const footer = priceTreatment === "COMMERCIAL_FOOTER";
       const rowH = 88;
-      const rowTop = H - M - rowH;
-      const productArea = { x: 400, y: M + 8, width: W - M - 400, height: (footer ? rowTop - 44 : H - M - 8) - (M + 8) };
+      const rowTop = bottomEdge - rowH;
+      const productArea = { x: 400, y: M + 8, width: W - M - 400, height: (footer ? rowTop - 44 : bottomEdge - 8) - (M + 8) };
       const productRect = product ? fitAspectInto(productArea, photoAspect(0.64, 0.7)) : undefined;
       const colX = M;
       const colW = 304;
@@ -815,7 +831,7 @@ async function renderProductOfferAdaptive(
       const colHeight = headFit.height + (subFit ? 26 + subFit.height : 0) + (!footer && priceFit ? 44 + priceFit.height : 0) + (inlinePill ? 24 + ctaH : 0);
       const centre = productRect ? productRect.y + productRect.height / 2 : H / 2;
       const minTop = (logoRect ? logoRect.y + logoRect.height : M) + 56;
-      const maxBottom = footer ? rowTop - 44 : H - M;
+      const maxBottom = footer ? rowTop - 44 : bottomEdge;
       const colTop = Math.round(clamp(centre - colHeight / 2, minTop, maxBottom - colHeight));
       const headRect = { x: colX, y: colTop, width: colW, height: headFit.height };
       const subRect = subFit ? { x: colX, y: headRect.y + headRect.height + 26, width: colW, height: subFit.height } : undefined;
@@ -847,9 +863,9 @@ async function renderProductOfferAdaptive(
 
     // OVERLAY_EDITORIAL
     const logoBox = logo ? logoSize(logo, 260, 46) : undefined;
-    const logoRect = logoBox ? { x: M + 8, y: 60, ...logoBox } : undefined;
+    const logoRect = logoBox ? { x: M + 8, y: topEdge(60), ...logoBox } : undefined;
     const rowH = 86;
-    const rowTop = H - M - rowH;
+    const rowTop = bottomEdge - rowH;
     const priceSpec: TextSpec | undefined = price ? { id: "price", text: price, width: 520, maxHeight: rowH, maxFontSize: 68, minFontSize: 32, maxLines: 1, letterSpacing: 0 } : undefined;
     const priceFont = priceSpec ? measureSpec(priceSpec).fontSize : 0;
     const priceW = price ? Math.min(520, estimateLineWidth(price, priceFont)) : 0;
@@ -1075,7 +1091,8 @@ async function renderDigitalService(input: RenderEditorialCreativeInput, canvas:
   const roles: CreativePlanAssetRole[] = [];
   const assets: CreativePlan["assetPlacements"] = [];
   const verify: AssetVerifySpec[] = [];
-  const logoRect = canvas.format === "9:16" ? { x: 152, y: 144, width: 292, height: 56 } : { x: 150, y: 116, width: 270, height: 52 };
+  // 9:16: logo abaixo da faixa superior da safe area vertical (UI do app no topo).
+  const logoRect = canvas.format === "9:16" ? { x: 152, y: 232, width: 292, height: 56 } : { x: 150, y: 116, width: 270, height: 52 };
   if (screenshot) {
     roles.push("screenshot");
     assets.push(assetPlacement(screenshot, screen, canvas, "final rendered screenshot inside device"));
@@ -1611,6 +1628,10 @@ async function renderInstitutionalAdaptive(
   const W = canvas.width;
   const H = canvas.height;
   const M = 64;
+  // 9:16: a pilha de texto/logo fica dentro da safe area vertical; no 4:5 os mesmos valores de sempre.
+  const legacySafe = storySafeInsets(canvas);
+  const textBottom = isVerticalCanvas(canvas) ? H - legacySafe.bottom : H - M - 8;
+  const textTop = isVerticalCanvas(canvas) ? Math.max(M + 8, legacySafe.top) : M + 8;
   const plan = input.plan;
   const headline = plan.headline;
   const subheadline = plan.subheadline?.trim() ? plan.subheadline : undefined;
@@ -1681,7 +1702,7 @@ async function renderInstitutionalAdaptive(
       : imageTag(undefined, href, area, { preserveAspectRatio: "xMidYMid slice" });
     const textAtTop = analysis.quietTopPct > analysis.quietBottomPct || (analysis.quietTopPct === analysis.quietBottomPct && analysis.focalPoint.yPct > 58);
     const column = stack(M + 8, W - 2 * M - 16, "start", 84, 3);
-    const top = textAtTop ? M + 8 : H - M - 8 - column.height;
+    const top = textAtTop ? textTop : textBottom - column.height;
     placed = column.place(top);
     const veilHeight = Math.round(column.height + 260);
     defsExtra += `<linearGradient id="instVeil" x1="0" y1="${textAtTop ? 1 : 0}" x2="0" y2="${textAtTop ? 0 : 1}"><stop offset="0" stop-color="${palette.scrim}" stop-opacity="0"/><stop offset="0.38" stop-color="${palette.scrim}" stop-opacity="0.58"/><stop offset="1" stop-color="${palette.scrim}" stop-opacity="0.86"/></linearGradient>`;
@@ -1689,7 +1710,7 @@ async function renderInstitutionalAdaptive(
     reasons.push(`texto ${textAtTop ? "no topo" : "embaixo"} (faixa quieta topo ${(analysis.quietTopPct * 100).toFixed(0)}% / base ${(analysis.quietBottomPct * 100).toFixed(0)}%, foco y=${analysis.focalPoint.yPct}%)`);
   } else if (variant === "SPLIT_STORY") {
     const column = stack(M + 8, W - 2 * M - 16, "start", 70, 3);
-    const panelBottom = H - M - 8 - column.height - 44;
+    const panelBottom = textBottom - column.height - 44;
     const area = { x: M, y: M, width: W - 2 * M, height: panelBottom - M };
     fit = planBaseFit(analysis, grid, base, area);
     baseRect = fit.strategy === "CONTAIN_WITH_BACKGROUND" ? fit.drawRect : area;
@@ -1706,7 +1727,7 @@ async function renderInstitutionalAdaptive(
     // COLLAGE_EDITORIAL: a base inteira vira a colagem (nenhum recorte), sobre a extensão desfocada
     // dela mesma; texto em faixa própria abaixo.
     const column = stack(M + 8, W - 2 * M - 16, "middle", 66, 2);
-    const printBottom = H - M - 8 - column.height - 46;
+    const printBottom = textBottom - column.height - 46;
     const area = { x: M + 24, y: M + 8, width: W - 2 * M - 48, height: printBottom - (M + 8) };
     fit = { ...planBaseFit(analysis, grid, base, area), strategy: "CONTAIN_WITH_BACKGROUND", cropLossPct: 0, detailRetainedPct: 1 };
     fit.reasons = ["colagem: base inteira preservada (contain), sem recorte — cada foto da base continua visível"];
@@ -1918,7 +1939,15 @@ async function renderInstitutionalEditorial(
   const photoSurface = variant === "FULL_BLEED_STORY";
   const logoTreatment = logo ? resolveInstitutionalLogoTreatment(logo, photoSurface ? "photo" : surfaceTone) : undefined;
   const ctaTreatment: EditorialCtaTreatment = variant === "PHOTO_DOMINANT_EDITORIAL" ? "SOLID_PREMIUM" : variant === "FULL_BLEED_STORY" ? "OUTLINE_EDITORIAL" : "TEXT_HAIRLINE";
-  const logoBox = logo ? logoSize(logo, variant === "MINIMAL_PREMIUM" ? 190 : 220, variant === "MINIMAL_PREMIUM" ? 32 : 36) : undefined;
+  // 9:16: mesma largura de 1080, ~570 px a mais de altura e exibição em tela cheia no telefone —
+  // composição vertical própria (nunca o 4:5 esticado), texto/logo dentro da safe area vertical.
+  const vertical = isVerticalCanvas(canvas);
+  const safe = storySafeInsets(canvas);
+  const logoBox = logo
+    ? vertical
+      ? logoSize(logo, variant === "MINIMAL_PREMIUM" ? 236 : 260, variant === "MINIMAL_PREMIUM" ? 40 : 44)
+      : logoSize(logo, variant === "MINIMAL_PREMIUM" ? 190 : 220, variant === "MINIMAL_PREMIUM" ? 32 : 36)
+    : undefined;
 
   const headSpec = (width: number, max: number, lines: number, anchor: "start" | "end" = "start"): TextSpec => ({ id: "headline", text: headline, width, maxHeight: max * 1.08 * lines, maxFontSize: max, minFontSize: 30, maxLines: lines, lineHeight: 1.08, letterSpacing: -0.6, ...(anchor === "end" ? {} : {}) });
   const subSpec = (width: number, max: number, lines: number): TextSpec | undefined => (subheadline ? { id: "subheadline", text: subheadline, width, maxHeight: max * 1.42 * lines, maxFontSize: max, minFontSize: 15, maxLines: lines, lineHeight: 1.42, letterSpacing: 0.15 } : undefined);
@@ -1928,7 +1957,7 @@ async function renderInstitutionalEditorial(
     while (cta && size > 12 && estimateLineWidth(cta.toUpperCase(), size, CTA_TRACKING) > maxWidth) size -= 1;
     return size;
   };
-  let ctaFont = variant === "MINIMAL_PREMIUM" ? 15 : 17;
+  let ctaFont = vertical ? (variant === "MINIMAL_PREMIUM" ? 19 : 21) : variant === "MINIMAL_PREMIUM" ? 15 : 17;
   let ctaTextWidth = cta ? estimateLineWidth(cta.toUpperCase(), ctaFont, CTA_TRACKING) : 0;
 
   let photo: PxRect;
@@ -1939,7 +1968,122 @@ async function renderInstitutionalEditorial(
   let scrim: { top: number } | undefined;
   const decorations: string[] = [];
 
-  if (variant === "PHOTO_DOMINANT_EDITORIAL") {
+  if (vertical && variant === "PHOTO_DOMINANT_EDITORIAL") {
+    // 9:16: foto quase de borda a borda no topo; bloco editorial empilhado ancorado na safe area da
+    // base — headline larga, subtítulo, e uma linha com CTA sólido (esquerda) + logo (direita).
+    const textW = W - 2 * M;
+    const hs = headSpec(textW, 64, 3);
+    const hf = measureSpec(hs);
+    const ss = subSpec(780, 24, 3);
+    const sf = ss ? measureSpec(ss) : undefined;
+    const ctaH = 64;
+    const rowH = Math.max(cta ? ctaH : 0, logoBox?.height ?? 0);
+    const bottom = H - safe.bottom;
+    const blockH = hf.height + (sf ? 24 + sf.height : 0) + (rowH > 0 ? 40 + rowH : 0);
+    const blockTop = bottom - blockH;
+    photo = { x: 40, y: 40, width: W - 80, height: Math.round(blockTop - 64 - 40) };
+    head = { spec: hs, rect: { x: M, y: Math.round(blockTop), width: textW, height: hf.height }, anchor: "start" };
+    let cursor = blockTop + hf.height;
+    if (ss && sf) {
+      cursor += 24;
+      sub = { spec: ss, rect: { x: M, y: Math.round(cursor), width: 780, height: sf.height }, anchor: "start" };
+      cursor += sf.height;
+    }
+    if (rowH > 0) {
+      const rowTop = cursor + 40;
+      if (cta) {
+        ctaFont = ctaFontFor(textW - (logoBox ? logoBox.width + 48 : 0) - 64, ctaFont);
+        ctaTextWidth = estimateLineWidth(cta.toUpperCase(), ctaFont, CTA_TRACKING);
+        ctaRect = { x: M, y: Math.round(rowTop + (rowH - ctaH) / 2), width: Math.round(ctaTextWidth + 64), height: ctaH };
+      }
+      logoRect = logoBox ? { x: W - M - logoBox.width, y: Math.round(rowTop + (rowH - logoBox.height) / 2), ...logoBox } : undefined;
+    }
+    decorations.push(`<line x1="${M}" y1="${blockTop - 30}" x2="${M + 112}" y2="${blockTop - 30}" stroke="${hairlineColor}" stroke-width="2"/>`);
+  } else if (vertical && variant === "ASYMMETRIC_LUXURY") {
+    // 9:16: foto alta deslocada para o lado do foco; na faixa oposta um fio vertical (espaço negativo
+    // intencional); bloco de marca + copy escuro embaixo, ancorado na safe area.
+    const photoW = 860;
+    const focusRight = analysis.focalPoint.xPct >= 50;
+    const textW = W - 2 * M;
+    const hs = headSpec(textW - 40, 56, 4);
+    const hf = measureSpec(hs);
+    const ss = subSpec(760, 22, 3);
+    const sf = ss ? measureSpec(ss) : undefined;
+    const ctaH = 48;
+    const bottom = H - safe.bottom;
+    const blockH = (logoBox ? logoBox.height + 34 : 0) + hf.height + (sf ? 24 + sf.height : 0) + (cta ? 34 + ctaH : 0);
+    const blockTop = bottom - blockH;
+    photo = { x: focusRight ? W - 40 - photoW : 40, y: 40, width: photoW, height: Math.round(blockTop - 60 - 40) };
+    let cursor = blockTop;
+    logoRect = logoBox ? { x: M, y: Math.round(cursor), ...logoBox } : undefined;
+    if (logoBox) cursor += logoBox.height + 34;
+    head = { spec: hs, rect: { x: M, y: Math.round(cursor), width: textW - 40, height: hf.height }, anchor: "start" };
+    cursor += hf.height;
+    if (ss && sf) {
+      cursor += 24;
+      sub = { spec: ss, rect: { x: M, y: Math.round(cursor), width: 760, height: sf.height }, anchor: "start" };
+      cursor += sf.height;
+    }
+    if (cta) {
+      ctaFont = ctaFontFor(textW, ctaFont);
+      ctaTextWidth = estimateLineWidth(cta.toUpperCase(), ctaFont, CTA_TRACKING);
+      ctaRect = { x: M, y: Math.round(cursor + 34), width: Math.min(textW, ctaTextWidth + 4), height: ctaH };
+    }
+    const lineX = focusRight ? Math.round(photo.x / 2) : Math.round((photo.x + photo.width + W) / 2);
+    const lineTop = safe.top;
+    const lineBottom = photo.y + photo.height - 40;
+    if (lineBottom - lineTop > 60) decorations.push(`<line x1="${lineX}" y1="${lineTop}" x2="${lineX}" y2="${lineBottom}" stroke="${hairlineColor}" stroke-opacity="0.7" stroke-width="1.5"/>`);
+  } else if (vertical && variant === "FULL_BLEED_STORY") {
+    // 9:16: imagem em tela cheia; texto sobre a faixa calma real, dentro da safe area vertical.
+    photo = { x: 0, y: 0, width: W, height: H };
+    const textAtTop = analysis.quietTopPct > analysis.quietBottomPct;
+    const hs = headSpec(900, 70, 3);
+    const hf = measureSpec(hs);
+    const ss = subSpec(760, 25, 3);
+    const sf = ss ? measureSpec(ss) : undefined;
+    const ctaH = 62;
+    const blockH = hf.height + (sf ? 22 + sf.height : 0) + (cta ? 36 + ctaH : 0);
+    const top = textAtTop ? safe.top + (logoBox ? logoBox.height + 48 : 0) : H - safe.bottom - blockH;
+    head = { spec: hs, rect: { x: M, y: Math.round(top), width: 900, height: hf.height }, anchor: "start" };
+    let cursor = top + hf.height;
+    if (ss && sf) {
+      cursor += 22;
+      sub = { spec: ss, rect: { x: M, y: Math.round(cursor), width: 760, height: sf.height }, anchor: "start" };
+      cursor += sf.height;
+    }
+    if (cta) ctaRect = { x: M, y: Math.round(cursor + 36), width: Math.round(ctaTextWidth + 64), height: ctaH };
+    logoRect = logoBox ? { x: M, y: safe.top, ...logoBox } : undefined;
+    scrim = { top: textAtTop ? 0 : Math.max(H * (analysis.focalPoint.yPct / 100) + 40, top - 240) };
+    if (!textAtTop && scrim.top > top - 40) issues.push({ code: "MASK_VIOLATION", message: "Véu do texto alcançaria o foco da cena." });
+  } else if (vertical) {
+    // 9:16 MINIMAL_PREMIUM: logo no topo da safe area, foto alta com margens generosas, copy
+    // empilhada embaixo (headline, subtítulo, CTA texto + fio) — tipografia contida, nada boiando.
+    const colX = 96;
+    const colW = W - 2 * colX;
+    const hs = headSpec(colW, 56, 3);
+    const hf = measureSpec(hs);
+    const ss = subSpec(760, 23, 3);
+    const sf = ss ? measureSpec(ss) : undefined;
+    const ctaH = 46;
+    const bottom = H - safe.bottom;
+    const copyH = hf.height + (sf ? 18 + sf.height : 0) + (cta ? 34 + ctaH : 0);
+    const copyTop = bottom - copyH;
+    logoRect = logoBox ? { x: colX, y: safe.top, ...logoBox } : undefined;
+    const photoTop = logoBox ? safe.top + logoBox.height + 44 : safe.top;
+    photo = { x: colX, y: Math.round(photoTop), width: colW, height: Math.round(copyTop - 56 - photoTop) };
+    head = { spec: hs, rect: { x: colX, y: Math.round(copyTop), width: colW, height: hf.height }, anchor: "start" };
+    let cursor = copyTop + hf.height;
+    if (ss && sf) {
+      cursor += 18;
+      sub = { spec: ss, rect: { x: colX, y: Math.round(cursor), width: 760, height: sf.height }, anchor: "start" };
+      cursor += sf.height;
+    }
+    if (cta) {
+      ctaFont = ctaFontFor(colW, ctaFont);
+      ctaTextWidth = estimateLineWidth(cta.toUpperCase(), ctaFont, CTA_TRACKING);
+      ctaRect = { x: colX, y: Math.round(cursor + 34), width: Math.round(ctaTextWidth + 4), height: ctaH };
+    }
+  } else if (variant === "PHOTO_DOMINANT_EDITORIAL") {
     // Foto protagonista quase de borda a borda; faixa editorial assimétrica: headline à esquerda,
     // logo + subtítulo + CTA alinhados à direita.
     const hs = headSpec(560, 50, headline.length > 44 ? 3 : 2);
@@ -2441,7 +2585,20 @@ async function renderDigitalServiceAdaptive(
   // Componente destacável = borda limpa (pontuação positiva) e detalhe ao menos perto da média da tela.
   const detailRegions = autoCrops.filter((item) => item.score > 0 && item.relativeScore >= DETAIL_REGION_MIN_RELATIVE_SCORE).length;
   const legibility = classification === "DESKTOP" ? await assessScreenshotLegibility(screenshot.png, screenshot.width, screenshot.height) : undefined;
-  const floatingCopyFits = (() => {
+  // 9:16: pilha vertical própria dentro da safe area (copy → profundidade → tela inteira); a tela
+  // desktop continua limitada pela largura, o ganho do vertical é respiro e tipografia maior.
+  const vertical = isVerticalCanvas(canvas);
+  const safe = storySafeInsets(canvas);
+  const V = { headWidth: W - 2 * M - 32, headMax: 76, subWidth: 860, ctaH: 66, ctaFont: 21, gap: 64 };
+  const floatingCopyFits = vertical ? (() => {
+    const shotHeight = (W - 2 * EDGE) / aspect;
+    const headFit = fitText(headline, V.headWidth, V.headMax * 1.06 * 3, { maxFontSize: V.headMax, minFontSize: 36, maxLines: 3, lineHeight: 1.06 });
+    const subFit = subheadline ? fitText(subheadline, V.subWidth, 3 * 26 * 1.4, { maxFontSize: 26, minFontSize: 19, maxLines: 3, lineHeight: 1.4 }) : undefined;
+    const logoH = logo ? logoSize(logo, 270, 46).height + 34 : 0;
+    const block = logoH + headFit.height + (subFit ? 20 + subFit.height : 0) + (price ? 18 + 64 : 0) + (cta ? 40 + V.ctaH : 0);
+    const available = H - safe.top - safe.bottom - V.gap - shotHeight * (1 + FLOATING_COPY.depthReserve);
+    return headFit.fits && (subFit?.fits ?? true) && headFit.fontSize >= V.headMax * FLOATING_MIN_HEADLINE_RATIO && block <= available;
+  })() : (() => {
     const shotHeight = (W - 2 * EDGE) / aspect;
     const shotY = H - EDGE - 24 - shotHeight;
     const available = shotY - shotHeight * FLOATING_COPY.depthReserve - 20 - M;
@@ -2483,13 +2640,18 @@ async function renderDigitalServiceAdaptive(
   const accentHex = toHex(dark ? mixRgb(accent, WHITE, 0.82) : mixRgb(accent, BLACK, 0.18));
   const ctaText = dark ? toHex(mixRgb(accent, BLACK, 0.75)) : "#FFF8F3";
   const logoTreatment = logo ? resolveLogoTreatment(logo, dark ? "dark" : "light") : undefined;
-  const logoBox = logo ? logoSize(logo, 230, 40) : undefined;
-  const CTA_H = 58;
-  const ctaW = cta ? clamp(estimateLineWidth(cta.toUpperCase(), 18, 2.4) + 64, 200, 400) : 0;
+  const logoBox = logo ? (vertical ? logoSize(logo, 270, 46) : logoSize(logo, 230, 40)) : undefined;
+  const CTA_H = vertical ? V.ctaH : 58;
+  const CTA_FONT = vertical ? V.ctaFont : 18;
+  const ctaW = cta ? clamp(estimateLineWidth(cta.toUpperCase(), CTA_FONT, 2.4) + (vertical ? 80 : 64), 200, vertical ? 520 : 400) : 0;
   const shotAt = (x: number, y: number, width: number): PxRect => ({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(width / aspect) });
   const headSpec = (width: number, max: number, lines = 3): TextSpec => ({ id: "headline", text: headline, width, maxHeight: max * 1.06 * lines, maxFontSize: max, minFontSize: 32, maxLines: lines, lineHeight: 1.06, letterSpacing: -0.5 });
   const subSpec = (width: number): TextSpec | undefined =>
-    subheadline ? { id: "subheadline", text: subheadline, width, maxHeight: subheadline.length > 80 ? 96 : 70, maxFontSize: subheadline.length > 80 ? 21 : 23, minFontSize: 17, maxLines: subheadline.length > 80 ? 3 : 2, lineHeight: 1.4, letterSpacing: 0.1 } : undefined;
+    !subheadline
+      ? undefined
+      : vertical
+        ? { id: "subheadline", text: subheadline, width, maxHeight: 3 * 26 * 1.4, maxFontSize: 26, minFontSize: 19, maxLines: 3, lineHeight: 1.4, letterSpacing: 0.1 }
+        : { id: "subheadline", text: subheadline, width, maxHeight: subheadline.length > 80 ? 96 : 70, maxFontSize: subheadline.length > 80 ? 21 : 23, minFontSize: 17, maxLines: subheadline.length > 80 ? 3 : 2, lineHeight: 1.4, letterSpacing: 0.1 };
   const priceSpec = (width: number): TextSpec | undefined => (price ? { id: "price", text: price, width, maxHeight: 60, maxFontSize: 46, minFontSize: 26, maxLines: 1 } : undefined);
 
   let shot: PxRect;
@@ -2501,6 +2663,8 @@ async function renderDigitalServiceAdaptive(
   const crops: { rect: SourceRect; placed: PxRect }[] = [];
   const connectors: string[] = [];
   let ghost = true;
+  /** Vertical: quanto as camadas de profundidade podem subir acima da tela (vão real até a copy). */
+  let floatingLift: number | undefined;
 
   /** Pilha de copy (headline → sub → preço) a partir de `top`; devolve o fundo. */
   const placeCopy = (x: number, top: number, hs: TextSpec, ss: TextSpec | undefined, anchor: "start" | "end" = "start"): number => {
@@ -2525,7 +2689,51 @@ async function renderDigitalServiceAdaptive(
   };
   const copyHeight = (hs: TextSpec, ss: TextSpec | undefined): number => measureSpec(hs).height + (ss ? 18 + measureSpec(ss).height : 0) + (price ? 16 + 60 : 0);
 
-  if (variant === "UI_HERO" && option === "left") {
+  if (vertical) {
+    // Pilha vertical centrada na safe area: [logo, headline, sub, preço, CTA] + [recortes] + tela.
+    const hs = headSpec(V.headWidth, V.headMax);
+    const ss = subSpec(V.subWidth);
+    const copyBlock = (logoBox ? logoBox.height + 34 : 0) + copyHeight(hs, ss) + (cta ? 40 + CTA_H : 0);
+    shot = shotAt(EDGE, 0, W - 2 * EDGE);
+    const depth = variant === "FLOATING_PRODUCT" ? shot.height * FLOATING_COPY.depthReserve : 0;
+    let detail: { rect: SourceRect; height: number; width: number }[] = [];
+    if (variant === "UI_DETAIL_FOCUS") {
+      ghost = false;
+      const found = option === "b"
+        ? await findScreenshotDetailRegions(screenshot.png, screenshot.width, screenshot.height, DETAIL_CROP_SETS.b, autoCrops.map((item) => item.rect))
+        : autoCrops;
+      // Recortes reais lado a lado, mesma altura, largura total disponível.
+      const gapX = 24;
+      const ratios = found.map((item) => item.rect.width / item.rect.height);
+      const rowH = Math.min(360, (W - 2 * EDGE - gapX * Math.max(0, found.length - 1)) / Math.max(0.1, ratios.reduce((sum, ratio) => sum + ratio, 0)));
+      detail = found.map((item, index) => ({ rect: item.rect, height: Math.round(rowH), width: Math.round(rowH * ratios[index]!) }));
+      reasons.push(`recortes ${option === "b" ? "b" : "a"}: ${found.map((item) => `${item.rect.width}x${item.rect.height}@${item.rect.x},${item.rect.y} (detalhe ${item.relativeScore}x a média)`).join("; ")}`);
+    }
+    const detailBlock = detail.length > 0 ? detail[0]!.height + 40 : 0;
+    const total = copyBlock + V.gap + depth + detailBlock + shot.height;
+    const shotFirst = variant === "UI_HERO" && option === "right";
+    // FLOATING: copy no topo da safe area e tela na base dela — as camadas de profundidade ocupam o
+    // vão entre as duas (nada boiando). Demais variantes: pilha centrada na safe area.
+    const free = Math.max(0, H - safe.bottom - safe.top - total);
+    const floating = variant === "FLOATING_PRODUCT";
+    const start = floating ? safe.top : safe.top + free / 2;
+    const copyTop = shotFirst ? start + shot.height + V.gap : start;
+    logoRect = logoBox ? { x: M, y: Math.round(copyTop), ...logoBox } : undefined;
+    const bottom = placeCopy(M, logoRect ? logoRect.y + logoRect.height + 34 : copyTop, hs, ss);
+    if (cta) pill = { x: M, y: Math.round(bottom + 40), width: ctaW, height: CTA_H };
+    let cursor = shotFirst ? start : copyTop + copyBlock + V.gap + depth + (floating ? free : 0);
+    if (floating) floatingLift = depth + free;
+    if (detail.length > 0) {
+      const rowW = detail.reduce((sum, item) => sum + item.width, 0) + 24 * (detail.length - 1);
+      let x = Math.round((W - rowW) / 2);
+      for (const item of detail) {
+        crops.push({ rect: item.rect, placed: { x, y: Math.round(cursor), width: item.width, height: item.height } });
+        x += item.width + 24;
+      }
+      cursor += detailBlock;
+    }
+    shot.y = Math.round(cursor);
+  } else if (variant === "UI_HERO" && option === "left") {
     // Copy alinhada à esquerda no alto, CTA ancorado à direita da copy; tela inteira embaixo.
     shot = shotAt(EDGE, 0, W - 2 * EDGE);
     shot.y = H - EDGE - shot.height;
@@ -2648,8 +2856,8 @@ async function renderDigitalServiceAdaptive(
     `<g transform="rotate(${rotate} ${cx} ${cy}) translate(${dx.toFixed(1)} ${dy.toFixed(1)})" opacity="${opacity}"><g filter="url(#layerShadow)"><rect x="${shot.x}" y="${shot.y}" width="${shot.width}" height="${shot.height}" rx="${SHOT_RADIUS}" fill="${fill}"/></g>${withImage ? `<clipPath id="ghostClip${rotate}"><rect x="${shot.x}" y="${shot.y}" width="${shot.width}" height="${shot.height}" rx="${SHOT_RADIUS}"/></clipPath><image href="${blurred}" x="${shot.x}" y="${shot.y}" width="${shot.width}" height="${shot.height}" preserveAspectRatio="none" opacity="0.45" clip-path="url(#ghostClip${rotate})"/>` : ""}</g>`;
   const ghostLayers = ghost
     ? variant === "FLOATING_PRODUCT"
-      ? card(-7, -shot.width * 0.06, -shot.height * 0.14, toHex(dark ? mixRgb(accent, BLACK, 0.55) : mixRgb(accent, WHITE, 0.55)), 0.9, false) +
-        card(-3.5, -shot.width * 0.03, -shot.height * 0.07, dark ? toHex(mixRgb(accent, BLACK, 0.72)) : "#FFFFFF", 0.9, false)
+      ? card(-7, -shot.width * 0.06, -(floatingLift !== undefined ? Math.min(floatingLift - 40, shot.height * 0.32) : shot.height * 0.14), toHex(dark ? mixRgb(accent, BLACK, 0.55) : mixRgb(accent, WHITE, 0.55)), 0.9, false) +
+        card(-3.5, -shot.width * 0.03, -(floatingLift !== undefined ? Math.min(floatingLift - 40, shot.height * 0.32) / 2 : shot.height * 0.07), dark ? toHex(mixRgb(accent, BLACK, 0.72)) : "#FFFFFF", 0.9, false)
       : card(option === "right" ? -2.2 : 2.2, 0, option === "right" ? 16 : -20, toHex(mixRgb(accent, WHITE, 0.6)), 0.7, false)
     : "";
   const shotTag = `<clipPath id="shotClip"><rect x="${shot.x}" y="${shot.y}" width="${shot.width}" height="${shot.height}" rx="${SHOT_RADIUS}"/></clipPath>
@@ -2669,7 +2877,7 @@ async function renderDigitalServiceAdaptive(
   const ctaSvg = cta && pill
     ? `<g filter="url(#ctaLift)"><rect x="${pill.x}" y="${pill.y}" width="${pill.width}" height="${pill.height}" rx="${pill.height / 2}" fill="url(#ctaFill)"/></g>
       <rect x="${pill.x + 1}" y="${pill.y + 1}" width="${pill.width - 2}" height="${pill.height / 2}" rx="${pill.height / 2 - 1}" fill="#FFFFFF" opacity="${dark ? 0.12 : 0.1}"/>
-      ${renderTextBlock({ spec: { id: "cta", text: cta, width: pill.width - 40, maxHeight: pill.height, maxFontSize: 18, minFontSize: 13, maxLines: 1, letterSpacing: 2.4, uppercase: true }, rect: ctaZoneRect(pill), anchor: "middle", valign: "center" }, ctaText, 800, 0.35, canvas, boxes, issues)}`
+      ${renderTextBlock({ spec: { id: "cta", text: cta, width: pill.width - 40, maxHeight: pill.height, maxFontSize: CTA_FONT, minFontSize: 13, maxLines: 1, letterSpacing: 2.4, uppercase: true }, rect: ctaZoneRect(pill), anchor: "middle", valign: "center" }, ctaText, 800, 0.35, canvas, boxes, issues)}`
     : "";
   const ctaFillA = dark ? "#FFF3EA" : toHex(mixRgb(accent, BLACK, 0.12));
   const ctaFillB = dark ? toHex(mixRgb(accent, WHITE, 0.7)) : toHex(mixRgb(accent, BLACK, 0.38));
@@ -2759,6 +2967,33 @@ function withMobileDiagnostics(rendered: FamilyRender, screenshot: PreparedAsset
   };
 }
 
+/**
+ * Safe area VERTICAL (9:16). Stories/Reels/Shorts sobrepõem a interface do app no topo (perfil,
+ * barra de progresso) e na base (resposta, legenda, ações): conteúdo CRÍTICO — texto, logo, CTA —
+ * fica dentro de uma faixa interna conservadora, sem copiar a UI de uma plataforma específica. A
+ * imagem/fundo pode ocupar as bordas (não é crítica); só texto e logo são verificados.
+ */
+export const VERTICAL_STORY_SAFE = { topPct: 11, bottomPct: 14, sidePct: 5 } as const;
+
+export function isVerticalCanvas(canvas: { width: number; height: number }): boolean {
+  return canvas.height / canvas.width >= 1.6;
+}
+
+export function storySafeInsets(canvas: { width: number; height: number }): { top: number; bottom: number; side: number } {
+  if (!isVerticalCanvas(canvas)) return { top: 0, bottom: 0, side: 0 };
+  return {
+    top: Math.round((canvas.height * VERTICAL_STORY_SAFE.topPct) / 100),
+    bottom: Math.round((canvas.height * VERTICAL_STORY_SAFE.bottomPct) / 100),
+    side: Math.round((canvas.width * VERTICAL_STORY_SAFE.sidePct) / 100),
+  };
+}
+
+function violatesStorySafeArea(rect: PxRect, canvas: Canvas): boolean {
+  const inset = storySafeInsets(canvas);
+  if (inset.top === 0) return false;
+  return rect.y < inset.top - 0.5 || rect.y + rect.height > canvas.height - inset.bottom + 0.5 || rect.x < inset.side - 0.5 || rect.x + rect.width > canvas.width - inset.side + 0.5;
+}
+
 function violatesSafeArea(rect: PxRect, canvas: Canvas): boolean {
   const marginX = (canvas.width * SAFE_AREA_MARGIN_PCT) / 100;
   const marginY = (canvas.height * SAFE_AREA_MARGIN_PCT) / 100;
@@ -2783,6 +3018,10 @@ export function checkEditorialSafeArea(boxes: readonly EditorialGeometryBox[], c
     const rect = boxPxRect(box, canvas);
     if (violatesSafeArea(rect, canvas)) {
       issues.push({ code: "SAFE_AREA_VIOLATION", message: `Componente "${box.id}" invade a margem de segurança de ${SAFE_AREA_MARGIN_PCT}% do canvas.` });
+    }
+    const critical = box.kind === "text" || box.role === "logo";
+    if (critical && violatesStorySafeArea(rect, canvas)) {
+      issues.push({ code: "SAFE_AREA_VIOLATION", message: `Componente "${box.id}" fora da safe area vertical (topo ${VERTICAL_STORY_SAFE.topPct}%, base ${VERTICAL_STORY_SAFE.bottomPct}%, laterais ${VERTICAL_STORY_SAFE.sidePct}%) — a interface do app cobriria texto/logo.` });
     }
     if (family === "product_offer" && box.role === "product_photo") {
       const shadow = productShadowExtent(rect);
@@ -3054,8 +3293,10 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
   const family = resolveFamily(prepared, price);
   const fontFaceCss = await buildEditorialFontFaceCss();
 
+  // Os três compositores adaptativos são paramétricos no canvas (W×H) e servem 4:5 e 9:16; os
+  // templates antigos de slots fixos ficam só como fallback de screenshot MOBILE no digital.
   const rendered = family === "product_offer"
-    ? canvas.format === "4:5"
+    ? true
       ? await renderProductOfferAdaptive(input, canvas, price, logo, product, {
           ambientHref: await buildAmbient(base.png, canvas),
           productAmbientHref: product ? await buildProductAmbient(product, canvas) : undefined,
@@ -3063,10 +3304,10 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
         }, fontFaceCss, boxes, issues)
       : await renderProductOffer(input, canvas, price, logo, product, await buildAmbient(base.png, canvas), fontFaceCss, boxes, issues)
     : family === "digital_service"
-      ? canvas.format === "4:5" && screenshot && classifyScreenshot(screenshot.width, screenshot.height) !== "MOBILE"
+      ? screenshot && classifyScreenshot(screenshot.width, screenshot.height) !== "MOBILE"
         ? await renderDigitalServiceAdaptive(input, canvas, price, logo, screenshot, base, baseHref, fontFaceCss, boxes, issues)
         : withMobileDiagnostics(await renderDigitalService(input, canvas, price, logo, screenshot, baseHref || (await blankFallback(canvas.width, canvas.height, "#1a1012")), fontFaceCss, boxes, issues), screenshot, canvas)
-      : canvas.format === "4:5"
+      : true
         ? await renderInstitutionalEditorial(input, canvas, logo, base, fontFaceCss, boxes, issues)
         : await renderPremiumInstitutional(input, canvas, logo, baseHref, fontFaceCss, boxes, issues);
 

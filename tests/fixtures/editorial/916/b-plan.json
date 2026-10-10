@@ -1,0 +1,223 @@
+{
+ "plan": {
+  "cta": "Conheça o Rumo ao Altar",
+  "angle": "Evocar a delicadeza e a magia do casamento, sugerindo organização e cuidado.",
+  "title": "Véu do Tempo",
+  "headline": "O casamento organizado como vocês sonharam",
+  "objective": "Criar uma peça publicitária institucional premium para a marca Rumo ao Altar, destacando a organização de casamentos.",
+  "rationale": "O uso do véu e da luz dourada cria uma conexão emocional com o público, destacando a promessa de um casamento dos sonhos.",
+  "textZones": [
+   {
+    "kind": "headline",
+    "rect": {
+     "xPct": 9.259,
+     "yPct": 81.333,
+     "widthPct": 51.852,
+     "heightPct": 6.08
+    },
+    "text": "O casamento organizado como vocês sonharam",
+    "align": "left",
+    "emphasis": "primary",
+    "renderedBy": "renderer",
+    "backingStyle": "none"
+   },
+   {
+    "kind": "subheadline",
+    "rect": {
+     "xPct": 9.259,
+     "yPct": 88.444,
+     "widthPct": 48.148,
+     "heightPct": 3.366
+    },
+    "text": "Site, lista de presentes e confirmação de presença em um só lugar.",
+    "align": "left",
+    "emphasis": "secondary",
+    "renderedBy": "renderer",
+    "backingStyle": "none"
+   },
+   {
+    "kind": "cta",
+    "rect": {
+     "xPct": 66.852,
+     "yPct": 89.185,
+     "widthPct": 23.889,
+     "heightPct": 2.667
+    },
+    "text": "Conheça o Rumo ao Altar",
+    "align": "center",
+    "emphasis": "secondary",
+    "renderedBy": "renderer",
+    "backingStyle": "solid"
+   }
+  ],
+  "assetUsage": {
+   "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/logo-rumo-ao-altar.png": "logo"
+  },
+  "layoutPlan": [
+   {
+    "kind": "hero",
+    "rect": {
+     "xPct": 10,
+     "yPct": 10,
+     "widthPct": 80,
+     "heightPct": 60
+    },
+    "priority": 1,
+    "rationale": "O véu ocupa a maior parte da composição, criando a atmosfera sonhadora."
+   },
+   {
+    "kind": "headline",
+    "rect": {
+     "xPct": 15,
+     "yPct": 75,
+     "widthPct": 70,
+     "heightPct": 10
+    },
+    "priority": 2,
+    "rationale": "Headline posicionada abaixo do véu, em espaço negativo."
+   },
+   {
+    "kind": "support",
+    "rect": {
+     "xPct": 15,
+     "yPct": 85,
+     "widthPct": 70,
+     "heightPct": 5
+    },
+    "priority": 3,
+    "rationale": "Subheadline logo abaixo da headline, mantendo continuidade visual."
+   },
+   {
+    "kind": "cta",
+    "rect": {
+     "xPct": 15,
+     "yPct": 90,
+     "widthPct": 70,
+     "heightPct": 5
+    },
+    "priority": 4,
+    "rationale": "CTA posicionado no final para chamar a ação."
+   },
+   {
+    "kind": "logo",
+    "rect": {
+     "xPct": 85,
+     "yPct": 5,
+     "widthPct": 10,
+     "heightPct": 10
+    },
+    "priority": 5,
+    "rationale": "Logo discreta no canto superior direito."
+   },
+   {
+    "kind": "negativeSpace",
+    "rect": {
+     "xPct": 0,
+     "yPct": 0,
+     "widthPct": 100,
+     "heightPct": 100
+    },
+    "priority": 6,
+    "rationale": "Espaço negativo amplo para destacar o texto e o véu."
+   }
+  ],
+  "styleNotes": "A peça deve transmitir elegância e organização, com um toque de magia.",
+  "description": "Um véu translúcido flutuando no ar, capturando a luz dourada do pôr do sol e revelando um cenário de casamento em segundo plano.",
+  "subheadline": "Site, lista de presentes e confirmação de presença em um só lugar.",
+  "artDirection": {
+   "concept": "Véu translúcido flutuando em luz dourada",
+   "atmosphere": "Romântica e mágica",
+   "visualFocus": "Véu e cenário de casamento em segundo plano",
+   "avoidedCliches": [
+    "smartphone inclinado",
+    "glow verde"
+   ],
+   "primaryMassPct": 40,
+   "contrastStrategy": "Alto contraste entre o véu iluminado e o fundo suave",
+   "elementHierarchy": [
+    "hero",
+    "headline",
+    "subheadline",
+    "cta",
+    "logo"
+   ],
+   "justifiedCliches": [],
+   "chromaticDirection": "Tons dourados e suaves",
+   "backgroundTreatment": "Cenário de casamento desfocado",
+   "productTextRelationship": "Texto posicionado em espaço negativo amplo"
+  },
+  "visualDensity": "clean",
+  "targetAudience": "Noivos em busca de soluções organizadas e elegantes para seu casamento.",
+  "assetPlacements": [
+   {
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/logo-rumo-ao-altar.png",
+    "rect": {
+     "xPct": 77.13,
+     "yPct": 81.333,
+     "widthPct": 13.611,
+     "heightPct": 2.37
+    },
+    "role": "logo",
+    "frame": "none",
+    "treatment": "final rendered logo (LOGO_DIRECT_LIGHT)"
+   }
+  ],
+  "visualDirection": "Atmosfera romântica e sonhadora, com foco em elementos de casamento.",
+  "requiredElements": [
+   "logo",
+   "headline",
+   "subheadline",
+   "cta"
+  ],
+  "compositionIntent": "Capturar a essência de um casamento de sonho através de uma imagem editorial.",
+  "forbiddenElements": [
+   "texto QA",
+   "placeholder",
+   "preço",
+   "CTA desenhado pela IA",
+   "logo falsa",
+   "texto técnico",
+   "labels publicitários desenhados pela IA"
+  ],
+  "allowedRenderedTexts": [
+   "O casamento organizado como vocês sonharam",
+   "Site, lista de presentes e confirmação de presença em um só lugar.",
+   "Conheça o Rumo ao Altar"
+  ],
+  "requiredRenderedFacts": [],
+  "editorialLayoutPlanNormalization": {
+   "normalizedKinds": [
+    {
+     "field": "kind",
+     "index": 2,
+     "reason": "subheadline é conteúdo textual/comercial secundário; no layoutPlan editorial ele representa massa visual de apoio, não um tipo de texto renderizável.",
+     "invalidValue": "subheadline",
+     "normalizedTo": "support",
+     "allowedValues": [
+      "hero",
+      "headline",
+      "cta",
+      "logo",
+      "support",
+      "negativeSpace"
+     ]
+    }
+   ]
+  }
+ },
+ "context": {
+  "brandName": "Marca",
+  "objective": "Peça institucional premium 4:5 para a marca Rumo ao Altar, que organiza o site do casamento dos noivos. Sem venda direta, sem preço, sem oferta.",
+  "channel": "instagram",
+  "format": "4:5",
+  "ideaText": "",
+  "assets": [
+   {
+    "role": "logo",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/logo-rumo-ao-altar.png",
+    "description": "Logo oficial Rumo ao Altar. Usar somente no renderer determinístico, sem redesenhar."
+   }
+  ],
+  "confirmedFacts": []
+ }
+}

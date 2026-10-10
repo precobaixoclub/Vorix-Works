@@ -1,0 +1,261 @@
+{
+ "plan": {
+  "cta": "Comprar agora",
+  "angle": "Enfatizar a transição do tempo, simbolizando tranquilidade e preparação para o grande dia.",
+  "title": "Tempo ao Seu Favor",
+  "headline": "Sem Correria",
+  "objective": "Criar uma peça publicitária para Instagram destacando um relógio dourado com laço rosa como presente ideal para casamentos.",
+  "rationale": "O design minimalista reforça a mensagem de tranquilidade e preparação, enquanto o foco no relógio simboliza o tempo ao lado dos noivos.",
+  "textZones": [
+   {
+    "kind": "headline",
+    "rect": {
+     "xPct": 5.926,
+     "yPct": 74.519,
+     "widthPct": 83.333,
+     "heightPct": 6.963
+    },
+    "text": "Sem Correria",
+    "align": "left",
+    "emphasis": "primary",
+    "renderedBy": "renderer",
+    "backingStyle": "none"
+   },
+   {
+    "kind": "subheadline",
+    "rect": {
+     "xPct": 5.926,
+     "yPct": 82.963,
+     "widthPct": 72.222,
+     "heightPct": 2.8
+    },
+    "text": "Presentes, lista e RSVP em um só lugar.",
+    "align": "left",
+    "emphasis": "secondary",
+    "renderedBy": "renderer",
+    "backingStyle": "none"
+   },
+   {
+    "kind": "price",
+    "rect": {
+     "xPct": 5.926,
+     "yPct": 88.889,
+     "widthPct": 31.759,
+     "heightPct": 6.37
+    },
+    "text": "R$ 149,00",
+    "align": "left",
+    "emphasis": "secondary",
+    "renderedBy": "renderer",
+    "backingStyle": "solid"
+   },
+   {
+    "kind": "cta",
+    "rect": {
+     "xPct": 43.981,
+     "yPct": 89.185,
+     "widthPct": 20.926,
+     "heightPct": 5.778
+    },
+    "text": "Comprar agora",
+    "align": "center",
+    "emphasis": "secondary",
+    "renderedBy": "renderer",
+    "backingStyle": "solid"
+   }
+  ],
+  "assetUsage": {
+   "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/logo-rumo-ao-altar.png": "logo oficial",
+   "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/product-ring-reminder.jpg": "produto real"
+  },
+  "layoutPlan": [
+   {
+    "kind": "hero",
+    "rect": {
+     "xPct": 25,
+     "yPct": 20,
+     "widthPct": 50,
+     "heightPct": 50
+    },
+    "priority": 1,
+    "rationale": "Produto real ocupa o centro, foco visual principal."
+   },
+   {
+    "kind": "headline",
+    "rect": {
+     "xPct": 10,
+     "yPct": 5,
+     "widthPct": 80,
+     "heightPct": 10
+    },
+    "priority": 2,
+    "rationale": "Headline no topo para chamar atenção."
+   },
+   {
+    "kind": "support",
+    "rect": {
+     "xPct": 10,
+     "yPct": 60,
+     "widthPct": 80,
+     "heightPct": 10
+    },
+    "priority": 3,
+    "rationale": "Subheadline abaixo do produto para complementar a mensagem."
+   },
+   {
+    "kind": "cta",
+    "rect": {
+     "xPct": 10,
+     "yPct": 75,
+     "widthPct": 80,
+     "heightPct": 10
+    },
+    "priority": 4,
+    "rationale": "CTA próximo à base para ação imediata."
+   },
+   {
+    "kind": "logo",
+    "rect": {
+     "xPct": 80,
+     "yPct": 90,
+     "widthPct": 15,
+     "heightPct": 5
+    },
+    "priority": 5,
+    "rationale": "Logo no canto inferior direito para identificação da marca."
+   },
+   {
+    "kind": "negativeSpace",
+    "rect": {
+     "xPct": 0,
+     "yPct": 0,
+     "widthPct": 100,
+     "heightPct": 100
+    },
+    "priority": 6,
+    "rationale": "Espaço negativo ao redor para manter a composição limpa."
+   }
+  ],
+  "styleNotes": "A peça deve transmitir uma sensação de calma e preparação, com um design minimalista que destaca o produto.",
+  "description": "Uma composição visual que destaca a importância do tempo na preparação para o casamento, com foco em um relógio dourado.",
+  "subheadline": "Presentes, lista e RSVP em um só lugar.",
+  "artDirection": {
+   "concept": "Relógio flutuando em um fundo que transita de seda suave para céu estrelado.",
+   "atmosphere": "Elegante e tranquilo.",
+   "visualFocus": "Relógio dourado com laço rosa no centro.",
+   "avoidedCliches": [
+    "mockup 3D genérico",
+    "gradiente neon decorativo"
+   ],
+   "primaryMassPct": 50,
+   "contrastStrategy": "Alto contraste entre o produto e o fundo.",
+   "elementHierarchy": [
+    "produto",
+    "headline",
+    "subheadline",
+    "cta",
+    "logo"
+   ],
+   "justifiedCliches": [],
+   "chromaticDirection": "Tons dourados e rosa, com fundo azul e preto.",
+   "backgroundTreatment": "Transição de seda suave para céu estrelado.",
+   "productTextRelationship": "Texto ao redor do produto, sem sobreposição."
+  },
+  "visualDensity": "clean",
+  "targetAudience": "Noivos e convidados de casamento.",
+  "assetPlacements": [
+   {
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/product-ring-reminder.jpg",
+    "rect": {
+     "xPct": 11.852,
+     "yPct": 10.074,
+     "widthPct": 76.296,
+     "heightPct": 61.037
+    },
+    "role": "product_photo",
+    "frame": "none",
+    "treatment": "final rendered product photo (OVERLAY_EDITORIAL)"
+   },
+   {
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/logo-rumo-ao-altar.png",
+    "rect": {
+     "xPct": 6.667,
+     "yPct": 4.444,
+     "widthPct": 19.63,
+     "heightPct": 3.407
+    },
+    "role": "logo",
+    "frame": "none",
+    "treatment": "final rendered logo (CHIP)"
+   }
+  ],
+  "visualDirection": "Minimalista e elegante, com foco no produto e uma transição de fundo que sugere passagem de tempo.",
+  "requiredElements": [
+   "logo",
+   "headline",
+   "cta",
+   "price"
+  ],
+  "compositionIntent": "Criar uma imagem que transmita calma e preparação, destacando o relógio como um presente perfeito.",
+  "forbiddenElements": [
+   "texto QA",
+   "captura QA real",
+   "placeholder",
+   "preco inventado",
+   "CTA inventado",
+   "logo falsa",
+   "texto tecnico",
+   "labels publicitarios desenhados pela IA"
+  ],
+  "allowedRenderedTexts": [
+   "Sem Correria",
+   "Presentes, lista e RSVP em um só lugar.",
+   "Comprar agora",
+   "R$ 149,00"
+  ],
+  "requiredRenderedFacts": [
+   "R$ 149,00"
+  ],
+  "editorialLayoutPlanNormalization": {
+   "normalizedKinds": [
+    {
+     "field": "kind",
+     "index": 2,
+     "reason": "subheadline é conteúdo textual/comercial secundário; no layoutPlan editorial ele representa massa visual de apoio, não um tipo de texto renderizável.",
+     "invalidValue": "subheadline",
+     "normalizedTo": "support",
+     "allowedValues": [
+      "hero",
+      "headline",
+      "cta",
+      "logo",
+      "support",
+      "negativeSpace"
+     ]
+    }
+   ]
+  }
+ },
+ "context": {
+  "brandName": "Marca",
+  "objective": "Arte product_offer 4:5 para Rumo ao Altar. Usar produto real fornecido. Fatos: Sem Correria; Presentes, lista e RSVP em um só lugar; R$ 149,00; Comprar agora.",
+  "channel": "instagram",
+  "format": "4:5",
+  "ideaText": "",
+  "assets": [
+   {
+    "role": "product_photo",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/product-ring-reminder.jpg",
+    "description": "Foto real controlada do produto fisico: relogio dourado com laco rosa, almofada rosa e aliancas. Usar como produto original, nao substituir por objeto inventado."
+   },
+   {
+    "role": "logo",
+    "url": "https://api.vorixworks.com/uploads/qa-assets/editorial-smoke-a-d27d82a/logo-rumo-ao-altar.png",
+    "description": "Logo oficial Rumo ao Altar. Usar somente no renderer deterministico, sem redesenhar."
+   }
+  ],
+  "confirmedFacts": [
+   "Preço atual: R$ 149,00 BRL"
+  ]
+ }
+}

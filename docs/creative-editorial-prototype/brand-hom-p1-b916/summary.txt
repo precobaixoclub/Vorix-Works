@@ -1,0 +1,16 @@
+format 9:16 facts [] error undefined
+plan {"cta":"Conheça o Rumo ao Altar","sub":"Site, lista de presentes e confirmação de presença em um só lugar.","allowed":["O casamento organizado como vocês sonharam","Site, lista de presentes e confirmação de presença em um só lugar.","Conheça o Rumo ao Altar"],"headline":"O casamento organizado como vocês sonharam","visualDensity":"clean"}
+gate fail [{"code":"COLOR_PALETTE_VIOLATED","source":"vision","message":"A paleta de cores oficial não foi seguida, pois o fundo é marrom em vez de rosa, branco ou dourado. O texto 'Rumo ao Altar' aparece duas vezes, o que não é intencional."}]
+textDiag null
+occ [{"bbox":{"xPct":43,"yPct":40,"widthPct":14,"heightPct":4},"reason":"LEDGER_RECONCILED: 2 ocorrência(s) explicadas por RENDERER_TEXT/cta + LOGO_ASSET/logo; base sem o texto (posição da visão: fora de qualquer zona do renderer, logo ou screenshot verificados)","decision":"allowed","provenance":"UNVERIFIED","occurrenceId":"dup-0-0","matchedRegion":"unknown","normalizedText":"rumo ao altar"},{"bbox":{"xPct":43,"yPct":85,"widthPct":14,"heightPct":4},"reason":"LEDGER_RECONCILED: 2 ocorrência(s) explicadas por RENDERER_TEXT/cta + LOGO_ASSET/logo; base sem o texto (posição da visão: equivalente dentro da bbox final da zona cta)","decision":"allowed","provenance":"RENDERER_TEXT_ZONE","occurrenceId":"dup-0-1","matchedRegion":"cta","normalizedText":"rumo ao altar"}]
+vscore null null
+variant COLLAGE_EDITORIAL ["base COLLAGE: peças separadas por fundo (27% separador) — base inteira, sem recorte, texto em faixa própria"]
+class COLLAGE ["fundo liso (variação global 16.4 níveis, confiança 0.652) cobre 27% e separa 4 painéis"] fit {"reasons":["colagem: base inteira preservada (contain), sem recorte — cada foto da base continua visível"],"strategy":"CONTAIN_WITH_BACKGROUND","cropLossPct":0,"detailRetainedPct":1} logo CHIP cta undefined empty 0.094 prom 0.341
+alpha {"opaqueRatio":1,"nonOpaqueRatio":0,"hasAlphaChannel":false,"transparentRatio":0,"requestedBackground":"opaque","semiTransparentRatio":0}
+baseText {"texts":[],"status":"AVAILABLE","target":"OPENAI_BASE","sourceArtifactUrl":"https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2qyzx4-hshyk1-editorial-base.jpg"}
+verify [{"role":"logo","visible":true,"detectedMime":"image/png","fidelityPass":true,"assetMatchRatio":1,"fidelityMeanAbsDiff":4.41,"informativePixelRatio":0.1795}]
+text [["headline",66,2,{"xPct":6.667,"yPct":68.698,"widthPct":86.667,"heightPct":7.15}],["subheadline",27,2,{"xPct":12.037,"yPct":76.979,"widthPct":75.926,"heightPct":3.881}],["cta",20,1,{"xPct":33.796,"yPct":82.656,"widthPct":32.5,"heightPct":3.333}]]
+assets [["logo",{"xPct":40.185,"yPct":64.531,"widthPct":19.63,"heightPct":2.396}]]
+repairs [] cost 0.07377764999999999
+BASE https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2qyzx4-hshyk1-editorial-base.jpg
+FINAL https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2qz2o1-ef3kq9-editorial-final.jpg

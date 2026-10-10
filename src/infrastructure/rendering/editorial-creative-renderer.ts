@@ -1788,9 +1788,9 @@ const INSTITUTIONAL_BACKDROP = "#1A0D10";
 const INSTITUTIONAL_DARK: InstitutionalPalette = { ink: "#FFF6EC", muted: "#F3E4D8", line: "#F3DDB8", veil: "#1A0D10", scrim: "#140A0C" };
 
 async function renderInstitutionalAdaptive(
-  input: RenderEditorialCreativeInput,
+  input: EditorialRenderInput,
   canvas: Canvas,
-  logo: PreparedAsset | undefined,
+  logoParam: PreparedAsset | undefined,
   base: { png: Buffer; width: number; height: number },
   fontFaceCss: string,
   boxes: EditorialGeometryBox[],
@@ -1819,15 +1819,33 @@ async function renderInstitutionalAdaptive(
   const override = input.qaVariantOverride && (INSTITUTIONAL_VARIANTS as readonly string[]).includes(input.qaVariantOverride) ? (input.qaVariantOverride as InstitutionalVariant) : undefined;
   const variant = override ?? selected.variant;
   const reasons = override ? [`QA_VARIANT_OVERRIDE=${override} (fixture local; regra escolheria ${selected.variant})`, ...selected.reasons] : selected.reasons;
-  const palette = INSTITUTIONAL_DARK;
-  const logoTreatment = logo ? resolveLogoTreatment(logo, "dark") : undefined;
+  // Brand Profile: as variantes legadas (colagem/full-bleed/split antigos) também vestem a marca —
+  // fundo/véus/texto pelos neutros e primária, fios e CTA no destaque, versão clara quando a marca
+  // proíbe fundos escuros, versão de logo pelo fundo. Sem marca: a paleta escura de sempre.
+  const legacySkin = input.brand?.skin;
+  const legacyLight = Boolean(legacySkin?.forceLight);
+  const brandDark = legacySkin ? legacySkin.darkNeutral ?? (legacySkin.primary ? toHex(mixRgb(brandHexToRgb(legacySkin.primary), BLACK, 0.78)) : INSTITUTIONAL_DARK.scrim) : undefined;
+  const brandLight = legacySkin ? legacySkin.lightNeutral ?? (legacySkin.primary ? toHex(mixRgb(brandHexToRgb(legacySkin.primary), WHITE, 0.9)) : "#F6F1EA") : undefined;
+  const palette: InstitutionalPalette = !legacySkin
+    ? INSTITUTIONAL_DARK
+    : legacyLight
+      ? { ink: brandDark!, muted: toHex(mixRgb(brandHexToRgb(brandDark!), brandHexToRgb(brandLight!), 0.32)), line: brandAccent(input, INSTITUTIONAL_DARK.line, brandLight!, 3), veil: brandLight!, scrim: brandLight! }
+      : { ink: brandLight!, muted: toHex(mixRgb(brandHexToRgb(brandLight!), brandHexToRgb(brandDark!), 0.18)), line: brandAccent(input, INSTITUTIONAL_DARK.line, brandDark!, 3), veil: brandDark!, scrim: brandDark! };
+  if (legacySkin) brandRule(input, "BRAND_SURFACES", `variante ${variant} com superfícies da marca (${legacyLight ? "clara — sem fundos escuros" : "escura"}): ${palette.scrim}`);
+  const backdrop = !legacySkin
+    ? { a: "#4A242B", b: "#26131A", c: INSTITUTIONAL_BACKDROP }
+    : { a: toHex(mixRgb(brandHexToRgb(palette.scrim), brandHexToRgb(legacySkin.primary ?? palette.scrim), 0.35)), b: palette.scrim, c: toHex(mixRgb(brandHexToRgb(palette.scrim), legacyLight ? WHITE : BLACK, 0.35)) };
+  const legacyLogo = brandLogoFor(input, logoParam, legacyLight ? "light" : "dark");
+  const logo = legacyLogo.logo;
+  const logoTreatment: EditorialLogoTreatment | undefined = logo ? (legacyLogo.variant ? "BRAND_LOGO_VARIANT" : resolveLogoTreatment(logo, legacyLight ? "light" : "dark")) : undefined;
+  const legacyLogoMultiply = logoTreatment === "MULTIPLY_ON_LIGHT" || (logoTreatment === "BRAND_LOGO_VARIANT" && logo !== undefined && brandLogoBlend(logo, legacyLight ? "light" : "dark") === "multiply");
   const ctaW = cta ? editorialCtaWidth(cta) : 0;
   const ambientHref = await buildSoftAmbient(base.png, canvas);
 
   // Pilha de texto medida (ritmo vertical fixo: nenhum vão maior que o previsto).
   const GAP = { logoToHead: 34, headToSub: 22, subToCta: 34 };
   const stack = (x: number, width: number, anchor: "start" | "middle", headMax: number, headLines: number) => {
-    const headSpec: TextSpec = { id: "headline", text: headline, width, maxHeight: headMax * 1.04 * headLines, maxFontSize: headMax, minFontSize: 36, maxLines: headLines, lineHeight: 1.04, letterSpacing: -0.4 };
+    const headSpec: TextSpec = { id: "headline", text: headline, width, maxHeight: headMax * 1.04 * headLines, maxFontSize: headMax, minFontSize: 36, maxLines: headLines, lineHeight: 1.04, letterSpacing: -0.4, ...brandHeadline(input) };
     const headFit = measureSpec(headSpec);
     const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: Math.min(width, 820), maxHeight: 132, maxFontSize: 27, minFontSize: 19, maxLines: 3, lineHeight: 1.38, letterSpacing: 0.2 } : undefined;
     const subFit = subSpec ? measureSpec(subSpec) : undefined;
@@ -1921,12 +1939,12 @@ async function renderInstitutionalAdaptive(
     roles.push("logo");
     assets.push(assetPlacement(logo, logoRect, canvas, `final rendered logo (${logoTreatment})`));
     assetBox("logo", logoRect, canvas, boxes);
-    verify.push(verifySpec("logo", logoRect, { fit: "contain", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { blend: "multiply" as const } : {}) }));
+    verify.push(verifySpec("logo", logoRect, { fit: "contain", ...(legacyLogoMultiply ? { blend: "multiply" as const } : {}) }));
   }
   const chip = logo && logoRect && logoTreatment === "CHIP"
     ? `<rect x="${logoRect.x - 12}" y="${logoRect.y - 8}" width="${logoRect.width + 24}" height="${logoRect.height + 16}" rx="${Math.min(14, (logoRect.height + 16) / 2)}" fill="#FFF8F1" opacity="0.94"/>`
     : "";
-  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
+  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(legacyLogoMultiply ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
   const headSvg = renderTextBlock(placed.head, palette.ink, 850, Number((measureSpec(placed.head.spec).fontSize * 0.022).toFixed(2)), canvas, boxes, issues);
   const subSvg = placed.sub ? renderTextBlock(placed.sub, palette.muted, 500, 0, canvas, boxes, issues) : "";
   const ctaSvg = cta && placed.pill ? editorialCtaSvg(cta, placed.pill, { line: palette.line, veil: palette.veil, veilOpacity: 0.35, text: palette.ink }, canvas, boxes, issues) : "";
@@ -1935,12 +1953,12 @@ async function renderInstitutionalAdaptive(
     ${fontFaceCss}
     <defs>
       ${defsExtra}
-      <radialGradient id="instBackdrop" cx="0.3" cy="0.2" r="1.1"><stop offset="0" stop-color="#4A242B"/><stop offset="0.55" stop-color="#26131A"/><stop offset="1" stop-color="${INSTITUTIONAL_BACKDROP}"/></radialGradient>
+      <radialGradient id="instBackdrop" cx="0.3" cy="0.2" r="1.1"><stop offset="0" stop-color="${backdrop.a}"/><stop offset="0.55" stop-color="${backdrop.b}"/><stop offset="1" stop-color="${backdrop.c}"/></radialGradient>
       <radialGradient id="instVignette" cx="0.5" cy="0.45" r="0.78"><stop offset="0.62" stop-color="#000000" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity="0.38"/></radialGradient>
     </defs>
     <rect width="${W}" height="${H}" fill="url(#instBackdrop)"/>
     ${analysis.transparentRatio > 0.02 ? imageTag(undefined, ambientHref, { x: 0, y: 0, width: W, height: H }, { opacity: 0.55 }) : ""}
-    ${variant === "FULL_BLEED_EDITORIAL" ? "" : `${imageTag(undefined, ambientHref, { x: 0, y: 0, width: W, height: H }, { opacity: 0.7 })}<rect width="${W}" height="${H}" fill="${palette.scrim}" opacity="0.5"/>`}
+    ${variant === "FULL_BLEED_EDITORIAL" ? "" : `${imageTag(undefined, ambientHref, { x: 0, y: 0, width: W, height: H }, { opacity: legacySkin ? 0.45 : 0.7 })}<rect width="${W}" height="${H}" fill="${palette.scrim}" opacity="${legacySkin ? 0.74 : 0.5}"/>`}
     ${baseLayer}
     ${veil}
     <rect width="${W}" height="${H}" fill="url(#instVignette)"/>
@@ -2107,7 +2125,6 @@ async function renderInstitutionalEditorial(
   if (variant === "COLLAGE_EDITORIAL" || variant === "FULL_BLEED_EDITORIAL" || variant === "SPLIT_STORY") {
     // Variantes legadas (colagem/full-bleed/split antigos): skin de marca parcial — só a logo padrão
     // e a geometria aprovada; registrado na provenance.
-    if (input.brand) brandRule(input, "BRAND_SKIN_PARTIAL", `variante legada ${variant}: cores/forma da marca não aplicadas`);
     const legacy = await renderInstitutionalAdaptive({ ...input, qaVariantOverride: variant }, canvas, logoParam, base, fontFaceCss, boxes, issues);
     return legacy.composition ? { ...legacy, composition: { ...legacy.composition, variant, selectionReasons: reasons, baseVisualClass: visualClass, baseAnalysis: analysis } } : legacy;
   }

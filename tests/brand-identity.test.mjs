@@ -346,3 +346,29 @@ function basePlan() {
     artDirection: { concept: "", visualFocus: "", atmosphere: "", backgroundTreatment: "", chromaticDirection: "", contrastStrategy: "", elementHierarchy: [], primaryMassPct: 50 },
   };
 }
+
+test("buildCreativeContext: com identidade, a paleta oficial (diretor/base/gate) vem dela, sem as proibidas; sem identidade, o legado", async () => {
+  const brand = creativeBrand(committed("P1"));
+  const legacy = { resolveBrandProfile: async () => ({ brandColors: ["#FF69B4", "#FFFFFF"] }) };
+  const withBrand = await buildCreativeContext({ ...legacy, resolveBrandIdentity: async () => ({ brand, skipped: [] }) }, contextInput({}));
+  assert.deepEqual(withBrand.brandColors, ["#6E2433", "#A8834B", "#F4EDE3", "#24191A"]);
+  assert.ok(!withBrand.brandColors.includes("#E10600"));
+  const without = await buildCreativeContext({ ...legacy, resolveBrandIdentity: async () => undefined }, contextInput({}));
+  assert.deepEqual(without.brandColors, ["#FF69B4", "#FFFFFF"]);
+});
+
+test("renderer: variante legada (colagem) também veste a marca — superfícies, destaque, logo; sem marca, idêntica", async () => {
+  const fx = await scenario("b");
+  const collageBase = await readFile(join(FX, "scenario-b-openai-base.webp"));
+  const plain = await renderEditorialCreative({ baseImageBuffer: collageBase, context: fx.context, plan: fx.plan, assets: fx.assets });
+  assert.equal(plain.composition.variant, "COLLAGE_EDITORIAL");
+  for (const profile of ["P1", "P3"]) {
+    const branded = await renderEditorialCreative({ baseImageBuffer: collageBase, context: { ...fx.context, brandIdentity: creativeBrand(committed(profile)) }, plan: fx.plan, assets: fx.assets });
+    assert.equal(branded.composition.variant, "COLLAGE_EDITORIAL");
+    assert.equal(branded.geometry.valid, true, JSON.stringify(branded.geometry.issues));
+    assert.ok(branded.composition.brandRules.some((rule) => rule.code === "BRAND_SURFACES"), JSON.stringify(branded.composition.brandRules));
+    assert.ok(!branded.composition.brandRules.some((rule) => rule.code === "BRAND_SKIN_PARTIAL"));
+    assert.ok(branded.assetVerification.every((item) => item.fidelityPass));
+    assert.equal(branded.buffer.equals(plain.buffer), false);
+  }
+});

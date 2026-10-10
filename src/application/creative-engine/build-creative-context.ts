@@ -1,4 +1,4 @@
-import { detectBrandRequestConflicts, type AppliedBrandRule, type CreativeBrandIdentity } from "../../shared/utils/brand-identity.js";
+import { detectBrandRequestConflicts, permittedBrandColors, type AppliedBrandRule, type CreativeBrandIdentity } from "../../shared/utils/brand-identity.js";
 import type { CreativeContext, CreativeContextAsset, CreativeContextBrandMaterial, CreativeContextHistoryEntry } from "../../shared/utils/gpt-creative-plan.types.js";
 import {
   commercialFactsFromReferenceIntelligence,
@@ -156,7 +156,9 @@ ${input.ideaText}`)]
     ideaText: input.ideaText,
     assets: [...input.assets, ...materialAssets],
     confirmedFacts,
-    brandColors: input.brandColors ?? brandProfile?.brandColors,
+    // Uma só fonte de paleta: com identidade estruturada, a paleta oficial (diretor, base e gate) são
+    // as cores PERMITIDAS dela — nunca as proibidas; sem identidade, o legado do perfil de marca.
+    brandColors: input.brandColors ?? (resolvedIdentity ? permittedBrandColors(resolvedIdentity.brand) : brandProfile?.brandColors),
     ...(resolvedIdentity ? { brandIdentity: resolvedIdentity.brand, appliedBrandRules } : {}),
     forbiddenElements: forbiddenElements.length > 0 ? forbiddenElements : undefined,
     audience: brandProfile?.targetAudience,

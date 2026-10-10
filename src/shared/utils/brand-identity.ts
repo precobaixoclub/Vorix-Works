@@ -384,6 +384,14 @@ function colorsByRole(identity: BrandIdentity, role: BrandColorRole): BrandColor
   return identity.colors.filter((color) => color.role === role);
 }
 
+/** Paleta oficial da identidade (papéis permitidos, na ordem de importância) — vira `brandColors`
+ * do contexto quando há identidade estruturada; cores PROIBIDAS nunca entram. `undefined` = sem cores. */
+export function permittedBrandColors(brand: CreativeBrandIdentity): string[] | undefined {
+  const order: BrandColorRole[] = ["PRIMARY", "SECONDARY", "ACCENT", "NEUTRAL"];
+  const colors = order.flatMap((role) => colorsByRole(brand.identity, role).map((color) => color.hex));
+  return colors.length > 0 ? colors : undefined;
+}
+
 /** Linhas (pt) para o diretor criativo — contexto estruturado resumido, nunca o JSON inteiro. */
 export function describeBrandIdentityForDirector(brand: CreativeBrandIdentity): string[] {
   const { identity } = brand;

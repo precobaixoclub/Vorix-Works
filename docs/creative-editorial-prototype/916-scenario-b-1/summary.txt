@@ -1,0 +1,16 @@
+format 9:16 facts [] error undefined
+plan {"cta":"Conheça o Rumo ao Altar","sub":"Site, lista de presentes e confirmação de presença em um só lugar.","allowed":["O casamento organizado como vocês sonharam","Site, lista de presentes e confirmação de presença em um só lugar.","Conheça o Rumo ao Altar"],"headline":"O casamento organizado como vocês sonharam","visualDensity":"balanced"}
+gate pass []
+textDiag null
+occ [{"bbox":{"xPct":2,"yPct":2,"widthPct":15,"heightPct":5},"reason":"LEDGER_RECONCILED: 2 ocorrência(s) explicadas por RENDERER_TEXT/cta + LOGO_ASSET/logo; base sem o texto (posição da visão: fora de qualquer zona do renderer, logo ou screenshot verificados)","decision":"allowed","provenance":"UNVERIFIED","occurrenceId":"dup-0-0","matchedRegion":"unknown","normalizedText":"rumo ao altar"},{"bbox":{"xPct":2,"yPct":90,"widthPct":15,"heightPct":5},"reason":"LEDGER_RECONCILED: 2 ocorrência(s) explicadas por RENDERER_TEXT/cta + LOGO_ASSET/logo; base sem o texto (posição da visão: fora de qualquer zona do renderer, logo ou screenshot verificados)","decision":"allowed","provenance":"UNVERIFIED","occurrenceId":"dup-0-1","matchedRegion":"unknown","normalizedText":"rumo ao altar"}]
+vscore 7.5 visualHierarchy=7 compositionBalance=8 legibility=9 focusClarity=6 canvasUsage=7 colorCoherence=8 backgroundQuality=7 assetIntegration=8 nonGenericLook=6 visualCleanliness=9 commercialStrength=7 artDirectionFidelity=8
+variant ASYMMETRIC_LUXURY ["SINGLE_SCENE_PHOTO: foco deslocado à direita (56.6%) — foto deslocada para o lado do foco, copy no eixo oposto"]
+class SINGLE_SCENE_PHOTO ["cena espacialmente contínua","sem divisórias retas"] fit {"reasons":["recorte editorial centrado no foco preserva o núcleo da cena (31%×40% da base); perda de área 23% (máx. 32%)"],"strategy":"COVER_FOCAL_SAFE_CROP","cropLossPct":0.226,"detailRetainedPct":0.842} logo LOGO_SOFT_PLATE cta TEXT_HAIRLINE empty 0.094 prom 0.491
+alpha {"opaqueRatio":1,"nonOpaqueRatio":0,"hasAlphaChannel":false,"transparentRatio":0,"requestedBackground":"opaque","semiTransparentRatio":0}
+baseText {"texts":[],"status":"AVAILABLE","target":"OPENAI_BASE","sourceArtifactUrl":"https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2j0i55-whopcz-editorial-base.jpg"}
+verify [{"role":"logo","visible":true,"detectedMime":"image/png","fidelityPass":true,"assetMatchRatio":1,"fidelityMeanAbsDiff":8.22,"informativePixelRatio":0.8549}]
+text [["headline",56,2,{"xPct":5.926,"yPct":70.938,"widthPct":84.444,"heightPct":6.3}],["subheadline",22,2,{"xPct":5.926,"yPct":78.49,"widthPct":70.37,"heightPct":3.254}],["cta",21,1,{"xPct":5.926,"yPct":83.49,"widthPct":25.481,"heightPct":1.979}]]
+assets [["logo",{"xPct":5.926,"yPct":66.875,"widthPct":18.704,"heightPct":2.292}]]
+repairs [] cost 0.07348949999999999
+BASE https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2j0i55-whopcz-editorial-base.jpg
+FINAL https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2j0m11-dp7trg-editorial-final.jpg

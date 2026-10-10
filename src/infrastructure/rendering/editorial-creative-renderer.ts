@@ -1892,6 +1892,17 @@ function sceneCoreBox(analysis: EditorialBaseAnalysis, grid: BaseDetailGrid): { 
   return { x: c0 / grid.cols, y: r0 / grid.rows, width: (c1 - c0 + 1) / grid.cols, height: (r1 - r0 + 1) / grid.rows };
 }
 
+/**
+ * 9:16: a base já chega na proporção vertical do formato (o provider corta para 9:16 antes de
+ * persistir — cenário B 9:16 real execution-mv2izuyj-j2kdf8: quadro 0,72 sobre base 0,56 cortou 23%
+ * da cena, pés e respiro das cabeças). Nos quadros emoldurados verticais a LARGURA segue a proporção
+ * real da base, limitando o recorte a VERTICAL_FRAME_MAX_CROP; base mais larga volta à largura máxima.
+ */
+const VERTICAL_FRAME_MAX_CROP = 0.12;
+function verticalFrameWidth(maxWidth: number, frameHeight: number, baseAspect: number, minWidth = 560): number {
+  return Math.round(clamp((frameHeight * baseAspect) / (1 - VERTICAL_FRAME_MAX_CROP), Math.min(minWidth, maxWidth), maxWidth));
+}
+
 /** Recorte editorial seguro para cena única: janela da proporção da área, centrada no foco, que
  * contém o núcleo inteiro e perde no máximo 32% da área; senão a base entra inteira (contain) sobre a
  * extensão desfocada dela mesma. Nunca deforma. */
@@ -2013,7 +2024,9 @@ async function renderInstitutionalEditorial(
     const bottom = H - safe.bottom;
     const blockH = hf.height + (sf ? 24 + sf.height : 0) + (rowH > 0 ? 40 + rowH : 0);
     const blockTop = bottom - blockH;
-    photo = { x: 40, y: 40, width: W - 80, height: Math.round(blockTop - 64 - 40) };
+    const pdH = Math.round(blockTop - 64 - 40);
+    const pdW = verticalFrameWidth(W - 80, pdH, base.width / base.height);
+    photo = { x: Math.round((W - pdW) / 2), y: 40, width: pdW, height: pdH };
     head = { spec: hs, rect: { x: M, y: Math.round(blockTop), width: textW, height: hf.height }, anchor: "start" };
     let cursor = blockTop + hf.height;
     if (ss && sf) {
@@ -2034,7 +2047,6 @@ async function renderInstitutionalEditorial(
   } else if (vertical && variant === "ASYMMETRIC_LUXURY") {
     // 9:16: foto alta deslocada para o lado do foco; na faixa oposta um fio vertical (espaço negativo
     // intencional); bloco de marca + copy escuro embaixo, ancorado na safe area.
-    const photoW = 860;
     const focusRight = analysis.focalPoint.xPct >= 50;
     const textW = W - 2 * M;
     const hs = headSpec(textW - 40, 56, 4);
@@ -2045,7 +2057,9 @@ async function renderInstitutionalEditorial(
     const bottom = H - safe.bottom;
     const blockH = (logoBox ? logoBox.height + 34 : 0) + hf.height + (sf ? 24 + sf.height : 0) + (cta ? 34 + ctaH : 0);
     const blockTop = bottom - blockH;
-    photo = { x: focusRight ? W - 40 - photoW : 40, y: 40, width: photoW, height: Math.round(blockTop - 60 - 40) };
+    const asH = Math.round(blockTop - 60 - 40);
+    const photoW = verticalFrameWidth(860, asH, base.width / base.height);
+    photo = { x: focusRight ? W - 40 - photoW : 40, y: 40, width: photoW, height: asH };
     let cursor = blockTop;
     logoRect = logoBox ? { x: M, y: Math.round(cursor), ...logoBox } : undefined;
     if (logoBox) cursor += logoBox.height + 34;
@@ -2102,7 +2116,8 @@ async function renderInstitutionalEditorial(
     const copyTop = bottom - copyH;
     logoRect = logoBox ? { x: colX, y: safe.top, ...logoBox } : undefined;
     const photoTop = logoBox ? safe.top + logoBox.height + 44 : safe.top;
-    photo = { x: colX, y: Math.round(photoTop), width: colW, height: Math.round(copyTop - 56 - photoTop) };
+    const mpH = Math.round(copyTop - 56 - photoTop);
+    photo = { x: colX, y: Math.round(photoTop), width: verticalFrameWidth(colW, mpH, base.width / base.height), height: mpH };
     head = { spec: hs, rect: { x: colX, y: Math.round(copyTop), width: colW, height: hf.height }, anchor: "start" };
     let cursor = copyTop + hf.height;
     if (ss && sf) {

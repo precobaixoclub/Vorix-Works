@@ -175,3 +175,16 @@ test("9:16 digital com screenshot de celular (mockup legado) também respeita a 
   assert.equal(result.geometry.valid, true, JSON.stringify(result.geometry.issues));
   assertInsideStorySafe(result, "mobile");
 });
+
+test("9:16 base vertical real (já cortada em 9:16 pelo provider): quadros emoldurados recortam no máximo 12% da cena", async () => {
+  // Cenário B 9:16 real execution-mv2izuyj-j2kdf8: quadro 0,72 sobre base 0,56 cortava 23% (pés e respiro das cabeças).
+  for (const variant of ["ASYMMETRIC_LUXURY", "MINIMAL_PREMIUM", "PHOTO_DOMINANT_EDITORIAL"]) {
+    const result = await render("b", "9:16", { variant, baseFile: "916/b916-real-base.webp" });
+    assert.equal(result.geometry.valid, true, `${variant}: ${JSON.stringify(result.geometry.issues)}`);
+    assert.equal(result.composition.baseFit.strategy, "COVER_FOCAL_SAFE_CROP", variant);
+    assert.ok(result.composition.baseFit.cropLossPct <= 0.121, `${variant}: recorte ${result.composition.baseFit.cropLossPct}`);
+    assertInsideStorySafe(result, variant);
+  }
+  const story = await render("b", "9:16", { variant: "FULL_BLEED_STORY", baseFile: "916/b916-real-base.webp" });
+  assert.equal(story.composition.baseFit.strategy, "FULL_BLEED", "base 9:16 em tela cheia: imagem inteira");
+});

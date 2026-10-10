@@ -268,6 +268,12 @@ export function commitBrandIdentity(validated: Extract<BrandIdentityValidation, 
   };
 }
 
+/** Identidade sem nenhuma escolha (tudo vazio) = SYSTEM_DEFAULT — "limpar identidade" na UI. */
+export function isEmptyBrandIdentity(identity: Pick<BrandIdentity, "colors" | "logos" | "imageStyles" | "forbiddenPatterns" | "preferredPatterns"> & Partial<BrandIdentity>): boolean {
+  return identity.colors.length === 0 && identity.logos.length === 0 && identity.imageStyles.length === 0 && identity.forbiddenPatterns.length === 0 && identity.preferredPatterns.length === 0
+    && !identity.style && !identity.density && !identity.contrast && !identity.typography && !identity.shape && !identity.commercialIntensity && !identity.notes;
+}
+
 // ----------------------------------------------------------------- cor -------------------------
 
 export type Rgb = { r: number; g: number; b: number };

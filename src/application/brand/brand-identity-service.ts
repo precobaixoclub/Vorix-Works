@@ -4,6 +4,7 @@ import { buildConservativeDefaultProfile, type BrandVisualProfile } from "../../
 import {
   commitBrandIdentity,
   describeColor,
+  isEmptyBrandIdentity,
   validateBrandIdentityInput,
   type AppliedBrandRule,
   type BrandColor,
@@ -85,7 +86,8 @@ export class BrandIdentityService {
   async resolveForCreative(workspaceId: string): Promise<{ brand: CreativeBrandIdentity; skipped: AppliedBrandRule[] } | undefined> {
     const profile = await this.deps.brandVisualProfileRepository.getByWorkspace(workspaceId);
     const identity = profile?.identity;
-    if (!profile || !identity) return undefined;
+    // Identidade vazia (limpa pelo usuário) = SYSTEM_DEFAULT: motor exatamente como sem perfil.
+    if (!profile || !identity || isEmptyBrandIdentity(identity)) return undefined;
     const assets = identity.logos.length > 0 ? await this.libraryAssets(workspaceId) : new Map();
     const skipped: AppliedBrandRule[] = [];
     const logos: CreativeBrandIdentity["logos"] = [];

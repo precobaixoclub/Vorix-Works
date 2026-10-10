@@ -222,6 +222,9 @@ test("API brand identity: logo de OUTRO workspace (mesmo tenant) é recusada; lo
   assert.equal(resolved.brand.version, 2);
   assert.equal(resolved.brand.workspaceId, ctx.workspaceA.id);
   assert.equal(await ctx.brandIdentityService.resolveForCreative(ctx.workspaceA2.id), undefined, "workspace sem identidade → SYSTEM_DEFAULT");
+  const cleared = await ctx.app.inject({ method: "PUT", url: "/brand-identity", payload: { workspaceId: ctx.workspaceA.id, identity: {} } });
+  assert.equal(cleared.json().data.identity.version, 3, "limpar também é uma versão auditável");
+  assert.equal(await ctx.brandIdentityService.resolveForCreative(ctx.workspaceA.id), undefined, "identidade vazia → SYSTEM_DEFAULT");
   await ctx.app.close();
 });
 

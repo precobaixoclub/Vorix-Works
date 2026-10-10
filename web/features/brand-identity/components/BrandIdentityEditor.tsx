@@ -3,6 +3,7 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/Button";
 import { Card, CardBody, CardHeader } from "@/components/Card";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { Input, Label, Select, SelectItem, Textarea } from "@/components/Field";
 import { Spinner } from "@/components/Spinner";
@@ -105,6 +106,7 @@ export function BrandIdentityEditor({ workspaceId, onGoToMaterials }: { workspac
   const [savedVersion, setSavedVersion] = useState<number | undefined>();
   const [suggestions, setSuggestions] = useState<BrandColorSuggestion[] | undefined>();
   const [suggesting, setSuggesting] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   useEffect(() => {
     if (!data) return;
@@ -115,11 +117,11 @@ export function BrandIdentityEditor({ workspaceId, onGoToMaterials }: { workspac
   const errors = validateIdentityDraft(draft);
   const set = (patch: Partial<BrandIdentityInput>): void => setDraft((current) => ({ ...current, ...patch }));
 
-  async function save() {
+  async function save(identity: BrandIdentityInput = draft) {
     setSaving(true);
     setSaveError(undefined);
     try {
-      const view = await saveBrandIdentity(workspaceId, draft);
+      const view = await saveBrandIdentity(workspaceId, identity);
       setSavedVersion(view.identity?.version);
       setSuggestions(undefined);
       await mutate(view, { revalidate: false });
@@ -298,9 +300,24 @@ export function BrandIdentityEditor({ workspaceId, onGoToMaterials }: { workspac
       ) : null}
       {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
       <div className="flex items-center gap-3">
-        <Button disabled={saving || errors.length > 0} onClick={() => void save()} title={errors.length > 0 ? "Corrija os itens acima para salvar." : undefined}>{saving ? "Salvando…" : "Salvar identidade"}</Button>
+        <Button disabled={saving || errors.length > 0} onClick={() => void save(draft)} title={errors.length > 0 ? "Corrija os itens acima para salvar." : undefined}>{saving ? "Salvando…" : "Salvar identidade"}</Button>
+        {data?.identity ? <Button variant="ghost" disabled={saving} onClick={() => setConfirmReset(true)}>Voltar ao padrão do Vorix</Button> : null}
         {savedVersion ? <span className="text-sm text-muted-foreground tabular-nums">Salvo — versão {savedVersion}. As próximas peças já usam esta identidade.</span> : null}
       </div>
+      <ConfirmDialog
+        open={confirmReset}
+        title="Voltar ao padrão do Vorix?"
+        description="A identidade visual desta marca será limpa (cores, logos, estilo e preferências). As próximas peças usam o estilo padrão; peças já geradas não mudam. A versão anterior continua registrada nas peças que a usaram."
+        confirmLabel="Limpar identidade"
+        variant="danger"
+        busy={saving}
+        onCancel={() => setConfirmReset(false)}
+        onConfirm={async () => {
+          setDraft(EMPTY_IDENTITY);
+          await save(EMPTY_IDENTITY);
+          setConfirmReset(false);
+        }}
+      />
     </div>
   );
 }

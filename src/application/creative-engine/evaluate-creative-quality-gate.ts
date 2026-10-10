@@ -1152,6 +1152,23 @@ export async function checkCreativeVisualIntegrity(
           input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "logo", normalizedDetected, decision: "authorized", reason: "dentro da bbox final da logo oficial verificada (proveniência + pixel)" });
           continue;
         }
+        // Logo verificada x resolução da visão (cenário A 9:16 execution-mv2ifqf0-vtl4ov: logo com 2,4%
+        // de altura, bbox da visão na grade de 5 pt fora da regra estrita). Só o literal EXATO da marca
+        // registrado no ledger, uma única leitura, base escaneada e sem o texto, perto da logo pela
+        // faixa com piso na resolução da visão.
+        const logoLedger = input.textProvenanceLedger;
+        const brandLiteral = logoLedger?.entries.some((entry) => entry.sourceType === "LOGO_ASSET" && (entry.alternatives ?? []).includes(normalizedDetected)) ?? false;
+        if (detected.region && brandLiteral && verifiedLogoRegions.length > 0 && logoLedger?.baseTextStatus === "AVAILABLE") {
+          const baseHasBrand = logoLedger.entries.some((entry) => entry.sourceType === "BASE_IMAGE" && entry.normalizedText !== undefined && entry.normalizedText.includes(normalizedDetected));
+          const otherReading = allDetections.some((other, otherIndex) => otherIndex !== detectionIndex && other !== undefined && normalizeRenderedText(other.text) === normalizedDetected);
+          const nearLogo = verifiedLogoRegions.find((rect) => measureRenderedTextProximity(detected.region!, rect, VISION_BBOX_RESOLUTION_PCT).near);
+          if (nearLogo && !baseHasBrand && !otherReading && !unresolvedDuplicates.has(normalizedDetected)) {
+            const proximity = measureRenderedTextProximity(detected.region, nearLogo, VISION_BBOX_RESOLUTION_PCT);
+            input.onVerifiedLogoTextExempted?.({ text: item, region: detected.region });
+            input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "logo", normalizedDetected, decision: "authorized", matchDecision: "MATCHED_VERIFIED_LOGO", expectedRole: "logo", expectedBBox: nearLogo, overlap: proximity.overlap, centerDistance: proximity.centerDistance, toleranceApplied: proximity.band, reason: "brand_literal_single_reading_base_clean_near_verified_logo_within_vision_resolution" });
+            continue;
+          }
+        }
         const verifiedScreenshotRegions = input.verifiedScreenshotRegions ?? [];
         if (detected.region && verifiedScreenshotRegions.length > 0 && isTextRegionInsideVerifiedLogo(detected.region, verifiedScreenshotRegions)) {
           input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "screenshot", normalizedDetected, decision: "authorized", reason: "dentro da bbox final do screenshot real verificado (proveniência + pixel)" });

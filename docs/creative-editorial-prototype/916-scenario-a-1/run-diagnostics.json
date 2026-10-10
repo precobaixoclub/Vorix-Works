@@ -1,0 +1,374 @@
+{
+    "base": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2igih6-unndvp-editorial-base.jpg",
+    "cost": {
+        "total": 0.07372565,
+        "director": 0.0015464999999999997,
+        "baseTextScan": 0.00019859999999999998,
+        "imageGeneration": 0.07106,
+        "repairRoundsCost": 0,
+        "visualQualityScore": 0,
+        "directionExploration": 0.0002823,
+        "technicalQualityGate": 0.0006382499999999999,
+        "preCompositionAnalysis": 0,
+        "ghostTextNeutralization": 0
+    },
+    "plan": {
+        "cta": "Comprar agora",
+        "sub": "Presentes, lista e RSVP em um só lugar.",
+        "allowed": [
+            "Sem Correria",
+            "Presentes, lista e RSVP em um só lugar.",
+            "Comprar agora",
+            "R$ 149,00"
+        ],
+        "headline": "Sem Correria",
+        "visualDensity": "clean"
+    },
+    "alpha": {
+        "opaqueRatio": 0,
+        "nonOpaqueRatio": 1,
+        "hasAlphaChannel": true,
+        "transparentRatio": 0.9998,
+        "semiTransparentRatio": 0.0002
+    },
+    "facts": [
+        "Preço atual: R$ 149,00 BRL"
+    ],
+    "final": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2igntb-2ncs3s-editorial-final.jpg",
+    "format": "9:16",
+    "ledger": {
+        "entries": [
+            {
+                "role": "headline",
+                "sourceId": "renderer:headline:0",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 5.926,
+                    "yPct": 71.406,
+                    "widthPct": 83.333,
+                    "heightPct": 4.896
+                },
+                "deterministic": true,
+                "normalizedText": "sem correria",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "subheadline",
+                "sourceId": "renderer:subheadline:1",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 5.926,
+                    "yPct": 77.344,
+                    "widthPct": 72.222,
+                    "heightPct": 1.969
+                },
+                "deterministic": true,
+                "normalizedText": "presentes lista e rsvp em um só lugar",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "price",
+                "sourceId": "renderer:price:2",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 5.926,
+                    "yPct": 81.51,
+                    "widthPct": 31.759,
+                    "heightPct": 4.479
+                },
+                "deterministic": true,
+                "normalizedText": "r$ 149,00",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "cta",
+                "sourceId": "renderer:cta:3",
+                "sourceType": "RENDERER_TEXT",
+                "expectedBBox": {
+                    "xPct": 43.981,
+                    "yPct": 81.719,
+                    "widthPct": 20.926,
+                    "heightPct": 4.063
+                },
+                "deterministic": true,
+                "normalizedText": "comprar agora",
+                "assetProvenance": "final_rendered_geometry"
+            },
+            {
+                "role": "logo",
+                "sourceId": "logo:0",
+                "sourceType": "LOGO_ASSET",
+                "alternatives": [
+                    "rumo ao altar"
+                ],
+                "expectedBBox": {
+                    "xPct": 6.667,
+                    "yPct": 10.99,
+                    "widthPct": 19.63,
+                    "heightPct": 2.396
+                },
+                "deterministic": true,
+                "assetProvenance": "context_asset+pixel_verified"
+            },
+            {
+                "role": "product_photo",
+                "sourceId": "product:0",
+                "sourceType": "PRODUCT_ASSET",
+                "expectedBBox": {
+                    "xPct": 5.926,
+                    "yPct": 17.188,
+                    "widthPct": 88.148,
+                    "heightPct": 49.583
+                },
+                "deterministic": true,
+                "assetProvenance": "context_asset"
+            }
+        ],
+        "baseTextStatus": "AVAILABLE"
+    },
+    "verify": [
+        {
+            "role": "product_photo",
+            "visible": true,
+            "detectedMime": "image/jpeg",
+            "fidelityPass": true,
+            "assetMatchRatio": 1,
+            "fidelityMeanAbsDiff": 2.58,
+            "informativePixelRatio": 0.8388
+        },
+        {
+            "role": "logo",
+            "visible": true,
+            "detectedMime": "image/png",
+            "fidelityPass": true,
+            "assetMatchRatio": 1,
+            "fidelityMeanAbsDiff": 8.99,
+            "informativePixelRatio": 0.1889
+        }
+    ],
+    "repairs": [
+    ],
+    "baseText": {
+        "texts": [
+        ],
+        "status": "AVAILABLE",
+        "target": "OPENAI_BASE",
+        "sourceArtifactUrl": "https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2igih6-unndvp-editorial-base.jpg"
+    },
+    "geometry": {
+        "family": "product_offer",
+        "source": "final_rendered_geometry",
+        "textBoxes": [
+            {
+                "id": "headline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 5.926,
+                    "yPct": 71.406,
+                    "widthPct": 83.333,
+                    "heightPct": 4.896
+                },
+                "text": "Sem Correria",
+                "lineCount": 1,
+                "fontSizePx": 94
+            },
+            {
+                "id": "subheadline",
+                "kind": "text",
+                "rect": {
+                    "xPct": 5.926,
+                    "yPct": 77.344,
+                    "widthPct": 72.222,
+                    "heightPct": 1.969
+                },
+                "text": "Presentes, lista e RSVP em um só lugar.",
+                "lineCount": 1,
+                "fontSizePx": 27
+            },
+            {
+                "id": "price",
+                "kind": "text",
+                "rect": {
+                    "xPct": 5.926,
+                    "yPct": 81.51,
+                    "widthPct": 31.759,
+                    "heightPct": 4.479
+                },
+                "text": "R$ 149,00",
+                "lineCount": 1,
+                "fontSizePx": 68
+            },
+            {
+                "id": "cta",
+                "kind": "text",
+                "rect": {
+                    "xPct": 43.981,
+                    "yPct": 81.719,
+                    "widthPct": 20.926,
+                    "heightPct": 4.063
+                },
+                "text": "COMPRAR AGORA",
+                "lineCount": 1,
+                "fontSizePx": 23
+            }
+        ],
+        "assetBoxes": [
+            {
+                "id": "product_photo",
+                "kind": "asset",
+                "rect": {
+                    "xPct": 5.926,
+                    "yPct": 17.188,
+                    "widthPct": 88.148,
+                    "heightPct": 49.583
+                },
+                "role": "product_photo"
+            },
+            {
+                "id": "logo",
+                "kind": "asset",
+                "rect": {
+                    "xPct": 6.667,
+                    "yPct": 10.99,
+                    "widthPct": 19.63,
+                    "heightPct": 2.396
+                },
+                "role": "logo"
+            }
+        ]
+    },
+    "composition": {
+        "diagnostics": {
+            "variant": "OVERLAY_EDITORIAL",
+            "pageTone": "dark",
+            "logoTreatment": "CHIP",
+            "priceTreatment": "INLINE_PRICE",
+            "selectionReasons": [
+                "densidade clean + headline curta (<= 26) + foto de cena: produto domina e a copy usa a extensão desfocada da própria cena"
+            ],
+            "occupiedAreaRatio": 0.567,
+            "largestEmptyBandPct": 0.094,
+            "contentCentroidOffset": 0.053,
+            "productVisualProminence": 0.437
+        },
+        "selectedVariant": "OVERLAY_EDITORIAL",
+        "variantSelectionReasons": [
+            "densidade clean + headline curta (<= 26) + foto de cena: produto domina e a copy usa a extensão desfocada da própria cena"
+        ]
+    },
+    "quality_gate": {
+        "issues": [
+            {
+                "code": "UNAUTHORIZED_TEXT",
+                "source": "vision",
+                "message": "A peça contém texto não autorizado: \"Rumo ao Altar\" — não está na lista de textos permitidos do plano. Remova completamente."
+            }
+        ],
+        "verdict": "fail",
+        "textDiagnostics": [
+            {
+                "bbox": {
+                    "xPct": 5,
+                    "yPct": 5,
+                    "widthPct": 20,
+                    "heightPct": 5
+                },
+                "reason": "fora de qualquer zona autorizada e da logo verificada",
+                "decision": "rejected",
+                "detectedText": "Rumo ao Altar",
+                "normalizedDetected": "rumo ao altar"
+            }
+        ],
+        "textProvenanceLedger": {
+            "entries": [
+                {
+                    "role": "headline",
+                    "sourceId": "renderer:headline:0",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 5.926,
+                        "yPct": 71.406,
+                        "widthPct": 83.333,
+                        "heightPct": 4.896
+                    },
+                    "deterministic": true,
+                    "normalizedText": "sem correria",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "subheadline",
+                    "sourceId": "renderer:subheadline:1",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 5.926,
+                        "yPct": 77.344,
+                        "widthPct": 72.222,
+                        "heightPct": 1.969
+                    },
+                    "deterministic": true,
+                    "normalizedText": "presentes lista e rsvp em um só lugar",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "price",
+                    "sourceId": "renderer:price:2",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 5.926,
+                        "yPct": 81.51,
+                        "widthPct": 31.759,
+                        "heightPct": 4.479
+                    },
+                    "deterministic": true,
+                    "normalizedText": "r$ 149,00",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "cta",
+                    "sourceId": "renderer:cta:3",
+                    "sourceType": "RENDERER_TEXT",
+                    "expectedBBox": {
+                        "xPct": 43.981,
+                        "yPct": 81.719,
+                        "widthPct": 20.926,
+                        "heightPct": 4.063
+                    },
+                    "deterministic": true,
+                    "normalizedText": "comprar agora",
+                    "assetProvenance": "final_rendered_geometry"
+                },
+                {
+                    "role": "logo",
+                    "sourceId": "logo:0",
+                    "sourceType": "LOGO_ASSET",
+                    "alternatives": [
+                        "rumo ao altar"
+                    ],
+                    "expectedBBox": {
+                        "xPct": 6.667,
+                        "yPct": 10.99,
+                        "widthPct": 19.63,
+                        "heightPct": 2.396
+                    },
+                    "deterministic": true,
+                    "assetProvenance": "context_asset+pixel_verified"
+                },
+                {
+                    "role": "product_photo",
+                    "sourceId": "product:0",
+                    "sourceType": "PRODUCT_ASSET",
+                    "expectedBBox": {
+                        "xPct": 5.926,
+                        "yPct": 17.188,
+                        "widthPct": 88.148,
+                        "heightPct": 49.583
+                    },
+                    "deterministic": true,
+                    "assetProvenance": "context_asset"
+                }
+            ],
+            "baseTextStatus": "AVAILABLE"
+        }
+    },
+    "visual_score": null
+}

@@ -1,0 +1,37 @@
+{
+  "kind": "DIAGNOSTIC_REEVALUATION (não altera o histórico do run)",
+  "executionId": "execution-mv2ifqf0-vtl4ov",
+  "openAiRealCalls": 0,
+  "originalVerdict": "fail",
+  "originalIssues": [
+    "UNAUTHORIZED_TEXT"
+  ],
+  "verdict": "pass",
+  "issues": [],
+  "textDiagnostics": [
+    {
+      "detectedText": "Rumo ao Altar",
+      "bbox": {
+        "xPct": 5,
+        "yPct": 5,
+        "widthPct": 20,
+        "heightPct": 5
+      },
+      "matchedElement": "logo",
+      "normalizedDetected": "rumo ao altar",
+      "decision": "authorized",
+      "matchDecision": "MATCHED_VERIFIED_LOGO",
+      "expectedRole": "logo",
+      "expectedBBox": {
+        "xPct": 6.667,
+        "yPct": 10.99,
+        "widthPct": 19.63,
+        "heightPct": 2.396
+      },
+      "overlap": 0,
+      "centerDistance": 4.92,
+      "toleranceApplied": 5,
+      "reason": "brand_literal_single_reading_base_clean_near_verified_logo_within_vision_resolution"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+format 9:16 facts ["Preço atual: R$ 149,00 BRL"] error undefined
+plan {"cta":"Comprar agora","sub":"Presentes, lista e RSVP em um só lugar.","allowed":["Sem Correria","Presentes, lista e RSVP em um só lugar.","Comprar agora","R$ 149,00"],"headline":"Sem Correria","visualDensity":"clean"}
+gate fail [{"code":"UNAUTHORIZED_TEXT","source":"vision","message":"A peça contém texto não autorizado: \"Rumo ao Altar\" — não está na lista de textos permitidos do plano. Remova completamente."}]
+textDiag [{"bbox":{"xPct":5,"yPct":5,"widthPct":20,"heightPct":5},"reason":"fora de qualquer zona autorizada e da logo verificada","decision":"rejected","detectedText":"Rumo ao Altar","normalizedDetected":"rumo ao altar"}]
+occ null
+vscore null null
+variant OVERLAY_EDITORIAL ["densidade clean + headline curta (<= 26) + foto de cena: produto domina e a copy usa a extensão desfocada da própria cena"]
+class undefined undefined fit undefined logo CHIP cta undefined empty 0.094 prom 0.437
+alpha {"opaqueRatio":0,"nonOpaqueRatio":1,"hasAlphaChannel":true,"transparentRatio":0.9998,"semiTransparentRatio":0.0002}
+baseText {"texts":[],"status":"AVAILABLE","target":"OPENAI_BASE","sourceArtifactUrl":"https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2igih6-unndvp-editorial-base.jpg"}
+verify [{"role":"product_photo","visible":true,"detectedMime":"image/jpeg","fidelityPass":true,"assetMatchRatio":1,"fidelityMeanAbsDiff":2.58,"informativePixelRatio":0.8388},{"role":"logo","visible":true,"detectedMime":"image/png","fidelityPass":true,"assetMatchRatio":1,"fidelityMeanAbsDiff":8.99,"informativePixelRatio":0.1889}]
+text [["headline",94,1,{"xPct":5.926,"yPct":71.406,"widthPct":83.333,"heightPct":4.896}],["subheadline",27,1,{"xPct":5.926,"yPct":77.344,"widthPct":72.222,"heightPct":1.969}],["price",68,1,{"xPct":5.926,"yPct":81.51,"widthPct":31.759,"heightPct":4.479}],["cta",23,1,{"xPct":43.981,"yPct":81.719,"widthPct":20.926,"heightPct":4.063}]]
+assets [["product_photo",{"xPct":5.926,"yPct":17.188,"widthPct":88.148,"heightPct":49.583}],["logo",{"xPct":6.667,"yPct":10.99,"widthPct":19.63,"heightPct":2.396}]]
+repairs [] cost 0.07372565
+BASE https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2igih6-unndvp-editorial-base.jpg
+FINAL https://api.vorixworks.com/uploads/gpt-creative-engine/tenant-mubz0jnu-mt0xzl/mv2igntb-2ncs3s-editorial-final.jpg

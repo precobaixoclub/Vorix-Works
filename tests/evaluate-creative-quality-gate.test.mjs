@@ -1555,3 +1555,41 @@ test("resolução duplicidade: sem scan da base, ou duas leituras perto do CTA, 
   const twiceNear = await evaluateCreativeQualityGate(visionReturning([], duplicated(B_CTA, [B9.visionCta, { xPct: 62, yPct: 88, widthPct: 28, heightPct: 5 }])), b9GateInput());
   assert.ok(twiceNear.issues.some((issue) => issue.code === "DUPLICATED_TEXT"));
 });
+
+// ---------------------------------------------------------------------------------------------
+// Logo verificada x resolução da visão (cenário A 9:16 real execution-mv2ifqf0-vtl4ov): a logo tem
+// 2,4% de altura no canvas vertical e a visão leu "Rumo ao Altar" na grade de 5 pt (5/5/20/5), fora
+// da regra estrita. Só o literal exato da marca, uma leitura, base escaneada e limpa, perto da logo.
+// ---------------------------------------------------------------------------------------------
+
+const A916_LOGO = { xPct: 6.667, yPct: 10.99, widthPct: 19.63, heightPct: 2.396 };
+const A916_VISION = { xPct: 5, yPct: 5, widthPct: 20, heightPct: 5 };
+function a916GateInput(overrides = {}) {
+  const input = ledgerGateInput(overrides);
+  input.plan = { ...input.plan, assetPlacements: [{ role: "logo", url: LOGO_URL, rect: A916_LOGO, frame: "none" }] };
+  return input;
+}
+
+test("logo 9:16: literal da marca na grade de 5 pt perto da logo verificada, base limpa → PASS (MATCHED_VERIFIED_LOGO)", async () => {
+  const result = await evaluateCreativeQualityGate(visionReturning([{ text: "Rumo ao Altar", region: A916_VISION }]), a916GateInput());
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  const diag = result.textDiagnostics.find((item) => item.matchDecision === "MATCHED_VERIFIED_LOGO");
+  assert.ok(diag, JSON.stringify(result.textDiagnostics));
+  assert.equal(diag.toleranceApplied, 5);
+  assert.equal(diag.reason, "brand_literal_single_reading_base_clean_near_verified_logo_within_vision_resolution");
+});
+
+test("logo 9:16: sem scan, base com a marca, longe da logo, texto não-literal ou duas leituras → UNAUTHORIZED_TEXT", async () => {
+  for (const baseTextDiagnostic of [undefined, { status: "NOT_AVAILABLE", texts: [] }, { status: "AVAILABLE", texts: [{ text: "Rumo ao Altar", normalizedText: "rumo ao altar", bbox: { xPct: 40, yPct: 50, widthPct: 20, heightPct: 4 } }] }]) {
+    const result = await evaluateCreativeQualityGate(visionReturning([{ text: "Rumo ao Altar", region: A916_VISION }]), a916GateInput({ baseTextDiagnostic }));
+    assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"), JSON.stringify(baseTextDiagnostic));
+  }
+  const far = await evaluateCreativeQualityGate(visionReturning([{ text: "Rumo ao Altar", region: { xPct: 5, yPct: 40, widthPct: 20, heightPct: 5 } }]), a916GateInput());
+  assert.ok(far.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+  for (const text of ["Promoção", "Rumo ao Altar Oficial", "Rumo"]) {
+    const result = await evaluateCreativeQualityGate(visionReturning([{ text, region: A916_VISION }]), a916GateInput());
+    assert.ok(result.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"), text);
+  }
+  const twice = await evaluateCreativeQualityGate(visionReturning([{ text: "Rumo ao Altar", region: A916_VISION }, { text: "Rumo ao Altar", region: { xPct: 60, yPct: 30, widthPct: 20, heightPct: 5 } }]), a916GateInput());
+  assert.ok(twice.issues.some((issue) => issue.code === "UNAUTHORIZED_TEXT"));
+});

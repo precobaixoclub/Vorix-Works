@@ -2,6 +2,8 @@ import { BRAND_DENSITY_TO_PLAN, type AppliedBrandRule, type BrandIdentity } from
 import type { IcaroBrainPort } from "../ai/icaro-brain.contract.js";
 import type { IcaroAIResponse } from "../ai/icaro.types.js";
 import type { ObjectStoragePort } from "../ports/object-storage.port.js";
+import type { ScreenshotTextInventoryStorePort } from "../ports/screenshot-text-inventory-store.port.js";
+import { resolveScreenshotTextInventory, type ScreenshotTextInventory } from "./screenshot-text-inventory.js";
 import { extractJson } from "../../shared/utils/skill-parsing.js";
 import { extractCommercialFactsFromText } from "../../shared/utils/commercial-fact-normalizer.js";
 import { evaluateInstitutionalBaseAlpha, resolveEditorialFamilyFromContext, scanEditorialBaseText, type EditorialBaseAlphaCoverage, type EditorialBaseTextDiagnostic } from "./editorial-base-checks.js";
@@ -91,6 +93,10 @@ export type GptCreativeEngineDeps = {
    * Bianca/Pedro/Lucas). Wiring real fica para o PR 6 (container.ts); aqui é só a porta. */
   creativeBrain: IcaroBrainPort;
   objectStorage: ObjectStoragePort;
+  /** Cache do SCREENSHOT_TEXT_INVENTORY (tenant + workspace + hash do asset). Injetado = o modo
+   * editorial lê o inventário do screenshot real antes do gate (uma leitura por arquivo novo);
+   * ausente = gate só com a regra espacial da região do screenshot (comportamento anterior). */
+  screenshotTextInventoryStore?: ScreenshotTextInventoryStorePort;
   /** Composição determinística (sharp) — injetada como porta, nunca importada de
    * `src/infrastructure` diretamente (camada de aplicação não depende de infraestrutura
    * concreta). `placement` vem sempre do `creative_plan.assetPlacements`. */
@@ -188,6 +194,8 @@ export type CreativeEngineCostBreakdown = {
   technicalQualityGate: number;
   /** Modo editorial: leitura de texto da IMAGEM BASE (uma chamada leve de visão, só a base). */
   baseTextScan?: number;
+  /** Modo editorial: leitura do texto do SCREENSHOT real (inventário; zero quando veio do cache). */
+  screenshotTextInventory?: number;
   /** Visual Quality Score — só roda depois que o gate técnico já passou, toda rodada em que isso
    * acontece. */
   visualQualityScore: number;
@@ -249,6 +257,8 @@ export type CreativeEngineArtifactProvenance = {
   baseTextDiagnostic?: EditorialBaseTextDiagnostic;
   /** Ledger de proveniência textual usado pelo gate. */
   textProvenanceLedger?: unknown;
+  /** SCREENSHOT_TEXT_INVENTORY do screenshot real (proveniência de texto; nunca fato comercial). */
+  screenshotTextInventory?: Omit<ScreenshotTextInventory, "texts"> & { textCount: number; texts: { normalizedText: string; occurrenceCount: number }[]; gateDecision?: { status: string; reason: string } };
 };
 
 export type GptCreativeEngineResult = {
@@ -664,6 +674,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     ghostTextNeutralization: 0,
     technicalQualityGate: 0,
     baseTextScan: 0,
+    screenshotTextInventory: 0,
     visualQualityScore: 0,
     repairRoundsCost: 0,
     total: 0,
@@ -1051,6 +1062,16 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         }
       }
 
+      // SCREENSHOT_TEXT_INVENTORY: o que existe de texto DENTRO do screenshot real, lido do próprio
+      // asset (cache por hash no mesmo tenant/workspace). Só proveniência para o gate — nunca fato.
+      const screenshotBufferForInventory = screenshotAsset ? editorialAssets.find((asset) => asset.role === "screenshot" && asset.url === screenshotAsset.url)?.buffer : undefined;
+      const screenshotTextInventory = screenshotAsset && screenshotBufferForInventory && deps.screenshotTextInventoryStore
+        ? await resolveScreenshotTextInventory(
+            { icaro: deps.creativeBrain, store: deps.screenshotTextInventoryStore, ...(deps.now ? { now: deps.now } : {}) },
+            { tenantId: input.tenantId, workspaceId: input.workspaceId, assetUrl: screenshotAsset.url, buffer: screenshotBufferForInventory, specialistId: SPECIALIST_ID, onCost: (response) => track("screenshotTextInventory", response) },
+          )
+        : undefined;
+
       let editorial: RenderEditorialCreativeResult;
       try {
         editorial = await deps.renderEditorialCreative({
@@ -1126,6 +1147,9 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         ...(editorial.composition ? { editorialComposition: { selectedVariant: editorial.composition.variant, variantSelectionReasons: editorial.composition.selectionReasons, diagnostics: editorial.composition } } : {}),
         ...(baseAlphaCoverage ? { baseAlphaCoverage } : {}),
         ...(baseTextDiagnostic ? { baseTextDiagnostic } : {}),
+        ...(screenshotTextInventory
+          ? { screenshotTextInventory: { ...screenshotTextInventory, textCount: screenshotTextInventory.texts.length, texts: screenshotTextInventory.texts.map((entry) => ({ normalizedText: entry.normalizedText, occurrenceCount: entry.occurrenceCount })) } }
+          : {}),
         ...(context.brandIdentity
           ? {
               brandProfile: {
@@ -1153,8 +1177,11 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         ...(baseTextDiagnostic ? { baseTextDiagnostic } : {}),
         // Paleta da marca aplicada de forma determinística pelo renderer (superfícies + destaque).
         brandPaletteRenderedDeterministically: Boolean(context.brandIdentity && editorial.composition?.brandRules?.some((rule) => rule.code === "BRAND_SURFACES") && editorial.composition.brandRules.some((rule) => rule.code === "BRAND_ACCENT")),
+        ...(screenshotTextInventory ? { screenshotTextInventory } : {}),
+        ownership: { tenantId: input.tenantId, workspaceId: input.workspaceId },
         onCost: (response) => track("technicalQualityGate", response),
       });
+      if (qualityGate.screenshotInventoryDecision && artifactProvenance.screenshotTextInventory) artifactProvenance.screenshotTextInventory.gateDecision = qualityGate.screenshotInventoryDecision;
       if (qualityGate.textProvenanceLedger) artifactProvenance.textProvenanceLedger = qualityGate.textProvenanceLedger;
       if (qualityGate.paletteDiagnostics && artifactProvenance.brandProfile) {
         artifactProvenance.brandProfile.appliedBrandRules.push(...qualityGate.paletteDiagnostics.map((item) => ({ code: item.decision, detail: `paleta da marca aplicada pelo renderer; visão discordou: ${item.visionReasoning ?? "—"}`, outcome: "PROFILE_PREVAILED" as const })));

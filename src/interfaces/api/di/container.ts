@@ -1071,6 +1071,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   const gptCreativeEngineDeps = {
     creativeBrain: creativeIcaro,
     objectStorage,
+    screenshotTextInventoryStore: repositories.screenshotTextInventoryStore,
     compositeLogo: compositeLogoOntoImage,
     compositeScreenshot: compositeScreenshotIntoDeviceMockup,
     renderTextZones: renderCreativePlanTextZones,

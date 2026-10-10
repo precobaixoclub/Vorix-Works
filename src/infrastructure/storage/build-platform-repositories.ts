@@ -3,6 +3,7 @@ import type { AiExecutionRepositoryPort } from "../../application/ports/ai-execu
 import type { AnalyticsRepositoryPort } from "../../application/ports/analytics-repository.port.js";
 import type { AssetLibraryRepositoryPort } from "../../application/ports/asset-library-repository.port.js";
 import type { BrandVisualProfileRepositoryPort } from "../../application/ports/brand-visual-profile-repository.port.js";
+import type { ScreenshotTextInventoryStorePort } from "../../application/ports/screenshot-text-inventory-store.port.js";
 import type { ProductionSettingsRepositoryPort } from "../../application/ports/production-settings-repository.port.js";
 import type { AssetMetadataSourcePort } from "../../application/ports/asset-metadata-source.port.js";
 import type { BriefingFieldValueRepositoryPort } from "../../application/ports/briefing-field-value-repository.port.js";
@@ -57,6 +58,7 @@ import { InMemoryAiExecutionRepository } from "./in-memory-ai-execution-reposito
 import { InMemoryAnalyticsRepository } from "./in-memory-analytics-repository.js";
 import { InMemoryAssetLibraryRepository } from "./in-memory-asset-library-repository.js";
 import { InMemoryBrandVisualProfileRepository } from "./in-memory-brand-visual-profile-repository.js";
+import { InMemoryScreenshotTextInventoryStore } from "./in-memory-screenshot-text-inventory-store.js";
 import { InMemoryProductionSettingsRepository } from "./in-memory-production-settings-repository.js";
 import { InMemoryContentGenerationHistoryRepository } from "./in-memory-content-generation-history-repository.js";
 import { InMemoryCreativeEngineRunRepository } from "./in-memory-creative-engine-run-repository.js";
@@ -102,6 +104,7 @@ import { PostgresAiExecutionRepository } from "./postgres/postgres-ai-execution-
 import { PostgresAnalyticsRepository } from "./postgres/postgres-analytics-repository.js";
 import { PostgresAssetLibraryRepository } from "./postgres/postgres-asset-library-repository.js";
 import { PostgresBrandVisualProfileRepository } from "./postgres/postgres-brand-visual-profile-repository.js";
+import { PostgresScreenshotTextInventoryStore } from "./postgres/postgres-screenshot-text-inventory-store.js";
 import { PostgresProductionSettingsRepository } from "./postgres/postgres-production-settings-repository.js";
 import { PostgresContentGenerationHistoryRepository } from "./postgres/postgres-content-generation-history-repository.js";
 import { PostgresCreativeEngineRunRepository } from "./postgres/postgres-creative-engine-run-repository.js";
@@ -160,6 +163,8 @@ export type PlatformRepositories = {
   workspaceRepository: WorkspaceRepositoryPort;
   assetLibraryRepository: AssetLibraryRepositoryPort;
   brandVisualProfileRepository: BrandVisualProfileRepositoryPort;
+  /** Cache do SCREENSHOT_TEXT_INVENTORY (Creative Engine, modo editorial). */
+  screenshotTextInventoryStore: ScreenshotTextInventoryStorePort;
   productionSettingsRepository: ProductionSettingsRepositoryPort;
   chatRepository: ChatRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
@@ -270,6 +275,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       workspaceRepository,
       assetLibraryRepository,
       brandVisualProfileRepository: new InMemoryBrandVisualProfileRepository(),
+      screenshotTextInventoryStore: new InMemoryScreenshotTextInventoryStore(),
       productionSettingsRepository: new InMemoryProductionSettingsRepository(),
       chatRepository: new InMemoryChatRepository(),
       conversationRepository: new InMemoryConversationRepository(),
@@ -331,6 +337,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     workspaceRepository,
     assetLibraryRepository,
     brandVisualProfileRepository: new PostgresBrandVisualProfileRepository(pool),
+    screenshotTextInventoryStore: new PostgresScreenshotTextInventoryStore(pool),
     productionSettingsRepository: new PostgresProductionSettingsRepository(pool),
     chatRepository: new PostgresChatRepository(pool),
     conversationRepository: new PostgresConversationRepository(pool),

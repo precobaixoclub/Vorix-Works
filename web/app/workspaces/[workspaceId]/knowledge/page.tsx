@@ -22,6 +22,7 @@ import { useAssets } from "@/features/assets/hooks";
 import type { Asset, AssetKind, AssetMaterialType } from "@/features/assets/types";
 import { EditBrandProfileModal } from "@/features/brand-profile/components/EditBrandProfileModal";
 import { useBrandProfile } from "@/features/brand-profile/hooks";
+import { BrandIdentityEditor } from "@/features/brand-identity/components/BrandIdentityEditor";
 import { ProductionSettingsPanel } from "@/features/production-settings/components/ProductionSettingsPanel";
 import { useProductionSettings } from "@/features/production-settings/hooks";
 
@@ -32,10 +33,11 @@ import { useProductionSettings } from "@/features/production-settings/hooks";
  * aba é só uma vitrine de UX sobre dados/rotas que já existiam — nenhuma fonte de verdade nova.
  */
 
-type TabId = "profile" | "guidelines" | "materials";
+type TabId = "profile" | "identity" | "guidelines" | "materials";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "profile", label: "Perfil da Marca" },
+  { id: "identity", label: "Identidade Visual" },
   { id: "guidelines", label: "Diretrizes Criativas" },
   { id: "materials", label: "Materiais" },
 ];
@@ -58,7 +60,7 @@ export default function KnowledgePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawTab = searchParams.get("tab");
-  const activeTab: TabId = rawTab === "guidelines" || rawTab === "materials" ? rawTab : "profile";
+  const activeTab: TabId = rawTab === "guidelines" || rawTab === "materials" || rawTab === "identity" ? rawTab : "profile";
 
   function setTab(tab: TabId) {
     router.replace(`/workspaces/${workspace.id}/knowledge?tab=${tab}`, { scroll: false });
@@ -70,6 +72,7 @@ export default function KnowledgePage() {
 
       <PageSubnav items={TABS.map((tab) => ({ value: tab.id, label: tab.label }))} value={activeTab} onValueChange={(value) => setTab(value as TabId)}>
         {activeTab === "profile" ? <BrandProfileTab workspaceId={workspace.id} onGoToTab={setTab} /> : null}
+        {activeTab === "identity" ? <BrandIdentityEditor workspaceId={workspace.id} onGoToMaterials={() => setTab("materials")} /> : null}
         {activeTab === "guidelines" ? <GuidelinesTab workspaceId={workspace.id} /> : null}
         {activeTab === "materials" ? <MaterialsTab workspaceId={workspace.id} /> : null}
       </PageSubnav>

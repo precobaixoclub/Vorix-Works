@@ -11,6 +11,7 @@
  * determinística (logo/screenshot).
  */
 
+import { describeBrandIdentityForDirector, describeBrandIdentityForImage, type AppliedBrandRule, type CreativeBrandIdentity } from "./brand-identity.js";
 import { computeCropSafeMarginPct } from "./image-crop-geometry.js";
 
 export const CREATIVE_PLAN_ASSET_ROLES = ["product_photo", "screenshot", "logo", "reference_style", "other"] as const;
@@ -75,6 +76,12 @@ export type CreativeContext = {
    * = nenhum fato comercial disponível, e o `creative_plan` não deve inventar nenhum. */
   confirmedFacts: string[];
   brandColors?: string[];
+  /** Brand Profile ESTRUTURADO do workspace (`brand-identity.ts`) — cores por papel, logos com
+   * variante/fundo, estilo, densidade, tipografia, forma, proibições, versão. Ausente =
+   * SYSTEM_DEFAULT (motor exatamente como antes). Nunca fonte de fato comercial. */
+  brandIdentity?: CreativeBrandIdentity;
+  /** Regras de marca aplicadas/conflitos resolvidos nesta execução (provenance auditável). */
+  appliedBrandRules?: AppliedBrandRule[];
   /** Elementos que o usuário pediu explicitamente para NÃO aparecer (ex.: "não usar 'Comente
    * QUERO'") — repassado ao GPT como restrição literal, nunca reinterpretado. */
   forbiddenElements?: string[];
@@ -437,6 +444,7 @@ export function buildWorkspaceContextLines(context: CreativeContext): string[] {
   }
   if (context.toneOfVoice) lines.push(`Tom de voz da marca: ${context.toneOfVoice}`);
   if (context.visualIdentityNotes) lines.push(`Identidade visual: ${context.visualIdentityNotes}`);
+  if (context.brandIdentity) lines.push(...describeBrandIdentityForDirector(context.brandIdentity));
   if (context.recentHistory && context.recentHistory.length > 0) {
     lines.push(
       "",
@@ -1313,6 +1321,9 @@ function buildEditorialImageGenerationPromptFromPlan(plan: CreativePlan, context
   if (context.brandColors && context.brandColors.length > 0) {
     visualLines.push(`Use this brand color direction only as non-textual color styling: ${context.brandColors.join(", ")}.`);
   }
+  // Brand Profile estruturado: só direção visual (estilo, paleta como clima, estilo de imagem,
+  // proibições) — nunca nome da marca, texto de logo, CTA, preço, headline ou claim.
+  if (context.brandIdentity) visualLines.push(...describeBrandIdentityForImage(context.brandIdentity).map(stripBrandLiterals));
   if (plan.forbiddenElements.length > 0) {
     visualLines.push(`Also avoid these visual elements: ${plan.forbiddenElements.map(stripBrandLiterals).join(", ")}.`);
   }

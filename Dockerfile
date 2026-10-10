@@ -32,6 +32,7 @@ COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/db ./db
 RUN mkdir -p /usr/local/share/fonts/vorix /etc/fonts/conf.d \
   && cp ./dist/infrastructure/rendering/assets/geist-regular.ttf /usr/local/share/fonts/vorix/GeistEditorial-Regular.ttf \
+  && cp ./dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf /usr/local/share/fonts/vorix/DMSerifDisplay-Regular.ttf \
   && printf '%s\n' \
     '<?xml version="1.0"?>' \
     '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">' \
@@ -44,7 +45,8 @@ RUN mkdir -p /usr/local/share/fonts/vorix /etc/fonts/conf.d \
     '</fontconfig>' \
     > /etc/fonts/conf.d/60-vorix-geist-editorial.conf \
   && fc-cache -f /usr/local/share/fonts/vorix \
-  && fc-match GeistEditorial | grep -i 'GeistEditorial-Regular.ttf'
+  && fc-match GeistEditorial | grep -i 'GeistEditorial-Regular.ttf' \
+  && fc-match "DM Serif Display" | grep -i 'DMSerifDisplay-Regular.ttf'
 
 EXPOSE 3000
 CMD ["node", "dist/interfaces/api/server.js"]

@@ -1,0 +1,496 @@
+[
+  {
+    "file": "a-4x5-NONE.jpg",
+    "variant": "OVERLAY_EDITORIAL",
+    "logoTreatment": "CHIP",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sem Correria",
+      "Presentes, lista e RSVP em um só lugar.",
+      "R$ 149,00",
+      "Comprar agora"
+    ],
+    "verification": [
+      "product_photo:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": []
+  },
+  {
+    "file": "a-4x5-P1.jpg",
+    "variant": "OVERLAY_EDITORIAL",
+    "logoTreatment": "CHIP",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sem Correria",
+      "Presentes, lista e RSVP em um só lugar.",
+      "R$ 149,00",
+      "Comprar agora"
+    ],
+    "verification": [
+      "product_photo:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_ACCENT: destaque da marca #A8834B aplicado como #a8834b",
+      "BRAND_TYPOGRAPHY: headline serifada (DM Serif Display)",
+      "BRAND_SHAPE: cantos SOFT → raio do CTA 10 px",
+      "BRAND_COMMERCIAL_INTENSITY: intensidade comercial baixa: preço com corpo 18% menor"
+    ]
+  },
+  {
+    "file": "a-4x5-P2.jpg",
+    "variant": "SPLIT_EDITORIAL",
+    "logoTreatment": "CHIP",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sem Correria",
+      "Presentes, lista e RSVP em um só lugar.",
+      "R$ 149,00",
+      "Comprar agora"
+    ],
+    "verification": [
+      "product_photo:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_ACCENT: destaque da marca #7C3AED aplicado como #9661f1",
+      "BRAND_TYPOGRAPHY: headline em caixa alta",
+      "BRAND_SHAPE: cantos PILL → raio do CTA 39 px"
+    ]
+  },
+  {
+    "file": "a-4x5-P3.jpg",
+    "variant": "HERO_DOMINANT",
+    "logoTreatment": "MULTIPLY_ON_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sem Correria",
+      "Presentes, lista e RSVP em um só lugar.",
+      "R$ 149,00",
+      "Comprar agora"
+    ],
+    "verification": [
+      "product_photo:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "FORBIDDEN_PATTERN: sem fundos escuros: OVERLAY_EDITORIAL → HERO_DOMINANT claro",
+      "BRAND_ACCENT: destaque da marca #115E59 aplicado como #115e59",
+      "FORBIDDEN_PATTERN: sem gradientes: CTA sólido, sem brilho decorativo (véu de legibilidade preservado)",
+      "BRAND_SHAPE: cantos SHARP → raio do CTA 2 px"
+    ]
+  },
+  {
+    "file": "a-9x16-NONE.jpg",
+    "variant": "OVERLAY_EDITORIAL",
+    "logoTreatment": "CHIP",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sem Correria",
+      "Presentes, lista e RSVP em um só lugar.",
+      "R$ 149,00",
+      "Comprar agora"
+    ],
+    "verification": [
+      "product_photo:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": []
+  },
+  {
+    "file": "a-9x16-P1.jpg",
+    "variant": "OVERLAY_EDITORIAL",
+    "logoTreatment": "CHIP",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sem Correria",
+      "Presentes, lista e RSVP em um só lugar.",
+      "R$ 149,00",
+      "Comprar agora"
+    ],
+    "verification": [
+      "product_photo:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_ACCENT: destaque da marca #A8834B aplicado como #a8834b",
+      "BRAND_TYPOGRAPHY: headline serifada (DM Serif Display)",
+      "BRAND_SHAPE: cantos SOFT → raio do CTA 10 px",
+      "BRAND_COMMERCIAL_INTENSITY: intensidade comercial baixa: preço com corpo 18% menor"
+    ]
+  },
+  {
+    "file": "a-9x16-P2.jpg",
+    "variant": "HERO_DOMINANT",
+    "logoTreatment": "CHIP",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sem Correria",
+      "Presentes, lista e RSVP em um só lugar.",
+      "R$ 149,00",
+      "Comprar agora"
+    ],
+    "verification": [
+      "product_photo:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_ACCENT: destaque da marca #7C3AED aplicado como #9661f1",
+      "BRAND_TYPOGRAPHY: headline em caixa alta",
+      "BRAND_SHAPE: cantos PILL → raio do CTA 39 px"
+    ]
+  },
+  {
+    "file": "a-9x16-P3.jpg",
+    "variant": "HERO_DOMINANT",
+    "logoTreatment": "MULTIPLY_ON_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sem Correria",
+      "Presentes, lista e RSVP em um só lugar.",
+      "R$ 149,00",
+      "Comprar agora"
+    ],
+    "verification": [
+      "product_photo:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "FORBIDDEN_PATTERN: sem fundos escuros: OVERLAY_EDITORIAL → HERO_DOMINANT claro",
+      "BRAND_ACCENT: destaque da marca #115E59 aplicado como #115e59",
+      "FORBIDDEN_PATTERN: sem gradientes: CTA sólido, sem brilho decorativo (véu de legibilidade preservado)",
+      "BRAND_SHAPE: cantos SHARP → raio do CTA 2 px"
+    ]
+  },
+  {
+    "file": "b-4x5-NONE.jpg",
+    "variant": "MINIMAL_PREMIUM",
+    "logoTreatment": "LOGO_DIRECT_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "O casamento organizado como vocês sonharam",
+      "Site, lista de presentes e confirmação de presença em um só lugar.",
+      "Conheça o Rumo ao Altar"
+    ],
+    "verification": [
+      "logo:true/true"
+    ],
+    "brandRules": []
+  },
+  {
+    "file": "b-4x5-P1.jpg",
+    "variant": "MINIMAL_PREMIUM",
+    "logoTreatment": "LOGO_DIRECT_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "O casamento organizado como vocês sonharam",
+      "Site, lista de presentes e confirmação de presença em um só lugar.",
+      "Conheça o Rumo ao Altar"
+    ],
+    "verification": [
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_SURFACES: superfícies da marca: clara #f4ede3, escura #24191a",
+      "BRAND_ACCENT: destaque da marca #A8834B aplicado como #a8834b",
+      "BRAND_TYPOGRAPHY: headline serifada (DM Serif Display)",
+      "BRAND_ACCENT_MARK: filete de destaque da marca acima da headline",
+      "BRAND_ACCENT: destaque da marca #A8834B aplicado como #7e6238"
+    ]
+  },
+  {
+    "file": "b-4x5-P2.jpg",
+    "variant": "PHOTO_DOMINANT_EDITORIAL",
+    "logoTreatment": "LOGO_DIRECT_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "O casamento organizado como vocês sonharam",
+      "Site, lista de presentes e confirmação de presença em um só lugar.",
+      "Conheça o Rumo ao Altar"
+    ],
+    "verification": [
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_SURFACES: superfícies da marca: clara #f3f5ff, escura #0b1020",
+      "BRAND_ACCENT: destaque da marca #7C3AED aplicado como #7c3aed",
+      "BRAND_TYPOGRAPHY: headline em caixa alta",
+      "BRAND_SHAPE: cantos PILL → raio do CTA 26 px"
+    ]
+  },
+  {
+    "file": "b-4x5-P3.jpg",
+    "variant": "MINIMAL_PREMIUM",
+    "logoTreatment": "LOGO_DIRECT_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "O casamento organizado como vocês sonharam",
+      "Site, lista de presentes e confirmação de presença em um só lugar.",
+      "Conheça o Rumo ao Altar"
+    ],
+    "verification": [
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_SURFACES: superfícies da marca: clara #ffffff, escura #111827",
+      "BRAND_ACCENT: destaque da marca #115E59 aplicado como #115e59",
+      "BRAND_ACCENT_MARK: filete de destaque da marca acima da headline"
+    ]
+  },
+  {
+    "file": "b-9x16-NONE.jpg",
+    "variant": "MINIMAL_PREMIUM",
+    "logoTreatment": "LOGO_DIRECT_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "O casamento organizado como vocês sonharam",
+      "Site, lista de presentes e confirmação de presença em um só lugar.",
+      "Conheça o Rumo ao Altar"
+    ],
+    "verification": [
+      "logo:true/true"
+    ],
+    "brandRules": []
+  },
+  {
+    "file": "b-9x16-P1.jpg",
+    "variant": "MINIMAL_PREMIUM",
+    "logoTreatment": "LOGO_DIRECT_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "O casamento organizado como vocês sonharam",
+      "Site, lista de presentes e confirmação de presença em um só lugar.",
+      "Conheça o Rumo ao Altar"
+    ],
+    "verification": [
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_SURFACES: superfícies da marca: clara #f4ede3, escura #24191a",
+      "BRAND_ACCENT: destaque da marca #A8834B aplicado como #a8834b",
+      "BRAND_TYPOGRAPHY: headline serifada (DM Serif Display)",
+      "BRAND_ACCENT_MARK: filete de destaque da marca acima da headline",
+      "BRAND_ACCENT: destaque da marca #A8834B aplicado como #7e6238"
+    ]
+  },
+  {
+    "file": "b-9x16-P2.jpg",
+    "variant": "PHOTO_DOMINANT_EDITORIAL",
+    "logoTreatment": "LOGO_DIRECT_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "O casamento organizado como vocês sonharam",
+      "Site, lista de presentes e confirmação de presença em um só lugar.",
+      "Conheça o Rumo ao Altar"
+    ],
+    "verification": [
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_SURFACES: superfícies da marca: clara #f3f5ff, escura #0b1020",
+      "BRAND_ACCENT: destaque da marca #7C3AED aplicado como #7c3aed",
+      "BRAND_TYPOGRAPHY: headline em caixa alta",
+      "BRAND_SHAPE: cantos PILL → raio do CTA 32 px"
+    ]
+  },
+  {
+    "file": "b-9x16-P3.jpg",
+    "variant": "MINIMAL_PREMIUM",
+    "logoTreatment": "LOGO_DIRECT_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "O casamento organizado como vocês sonharam",
+      "Site, lista de presentes e confirmação de presença em um só lugar.",
+      "Conheça o Rumo ao Altar"
+    ],
+    "verification": [
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_SURFACES: superfícies da marca: clara #ffffff, escura #111827",
+      "BRAND_ACCENT: destaque da marca #115E59 aplicado como #115e59",
+      "BRAND_ACCENT_MARK: filete de destaque da marca acima da headline"
+    ]
+  },
+  {
+    "file": "c-4x5-NONE.jpg",
+    "variant": "FLOATING_PRODUCT",
+    "logoTreatment": "MULTIPLY_ON_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sua lista de presentes, linda e sem planilha",
+      "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+      "Criar meu site"
+    ],
+    "verification": [
+      "screenshot:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": []
+  },
+  {
+    "file": "c-4x5-P1.jpg",
+    "variant": "FLOATING_PRODUCT",
+    "logoTreatment": "MULTIPLY_ON_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sua lista de presentes, linda e sem planilha",
+      "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+      "Criar meu site"
+    ],
+    "verification": [
+      "screenshot:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_SURFACES: superfícies tingidas pela cor principal #6E2433",
+      "BRAND_TYPOGRAPHY: headline serifada (DM Serif Display)",
+      "BRAND_SHAPE: cantos SOFT → raio do CTA 10 px",
+      "BRAND_ACCENT: destaque da marca #A8834B aplicado como #8f6f40"
+    ]
+  },
+  {
+    "file": "c-4x5-P2.jpg",
+    "variant": "FLOATING_PRODUCT",
+    "logoTreatment": "MULTIPLY_ON_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sua lista de presentes, linda e sem planilha",
+      "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+      "Criar meu site"
+    ],
+    "verification": [
+      "screenshot:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_SURFACES: superfícies tingidas pela cor principal #2340FF",
+      "BRAND_TYPOGRAPHY: headline em caixa alta",
+      "BRAND_SHAPE: cantos PILL → raio do CTA 29 px",
+      "BRAND_ACCENT: destaque da marca #7C3AED aplicado como #7c3aed"
+    ]
+  },
+  {
+    "file": "c-4x5-P3.jpg",
+    "variant": "FLOATING_PRODUCT",
+    "logoTreatment": "MULTIPLY_ON_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sua lista de presentes, linda e sem planilha",
+      "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+      "Criar meu site"
+    ],
+    "verification": [
+      "screenshot:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_SURFACES: superfícies tingidas pela cor principal #0F766E",
+      "BRAND_SHAPE: cantos SHARP → raio do CTA 2 px",
+      "BRAND_ACCENT: destaque da marca #115E59 aplicado como #115e59"
+    ]
+  },
+  {
+    "file": "c-9x16-NONE.jpg",
+    "variant": "FLOATING_PRODUCT",
+    "logoTreatment": "MULTIPLY_ON_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sua lista de presentes, linda e sem planilha",
+      "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+      "Criar meu site"
+    ],
+    "verification": [
+      "screenshot:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": []
+  },
+  {
+    "file": "c-9x16-P1.jpg",
+    "variant": "FLOATING_PRODUCT",
+    "logoTreatment": "MULTIPLY_ON_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sua lista de presentes, linda e sem planilha",
+      "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+      "Criar meu site"
+    ],
+    "verification": [
+      "screenshot:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_SURFACES: superfícies tingidas pela cor principal #6E2433",
+      "BRAND_TYPOGRAPHY: headline serifada (DM Serif Display)",
+      "BRAND_SHAPE: cantos SOFT → raio do CTA 10 px",
+      "BRAND_ACCENT: destaque da marca #A8834B aplicado como #8f6f40"
+    ]
+  },
+  {
+    "file": "c-9x16-P2.jpg",
+    "variant": "FLOATING_PRODUCT",
+    "logoTreatment": "MULTIPLY_ON_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sua lista de presentes, linda e sem planilha",
+      "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+      "Criar meu site"
+    ],
+    "verification": [
+      "screenshot:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_SURFACES: superfícies tingidas pela cor principal #2340FF",
+      "BRAND_TYPOGRAPHY: headline em caixa alta",
+      "BRAND_SHAPE: cantos PILL → raio do CTA 33 px",
+      "BRAND_ACCENT: destaque da marca #7C3AED aplicado como #7c3aed"
+    ]
+  },
+  {
+    "file": "c-9x16-P3.jpg",
+    "variant": "FLOATING_PRODUCT",
+    "logoTreatment": "MULTIPLY_ON_LIGHT",
+    "geometryValid": true,
+    "issues": [],
+    "texts": [
+      "Sua lista de presentes, linda e sem planilha",
+      "Site do casamento com lista de presentes e confirmação de presença em um só lugar.",
+      "Criar meu site"
+    ],
+    "verification": [
+      "screenshot:true/true",
+      "logo:true/true"
+    ],
+    "brandRules": [
+      "BRAND_SURFACES: superfícies tingidas pela cor principal #0F766E",
+      "BRAND_SHAPE: cantos SHARP → raio do CTA 2 px",
+      "BRAND_ACCENT: destaque da marca #115E59 aplicado como #115e59"
+    ]
+  }
+]

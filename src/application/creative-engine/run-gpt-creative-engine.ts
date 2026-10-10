@@ -1,3 +1,4 @@
+import { BRAND_DENSITY_TO_PLAN, type AppliedBrandRule, type BrandIdentity } from "../../shared/utils/brand-identity.js";
 import type { IcaroBrainPort } from "../ai/icaro-brain.contract.js";
 import type { IcaroAIResponse } from "../ai/icaro.types.js";
 import type { ObjectStoragePort } from "../ports/object-storage.port.js";
@@ -200,6 +201,17 @@ export type CreativeEngineCostBreakdown = {
 
 export type CreativeEngineArtifactProvenance = {
   compositionMode: "standard" | "editorial_experimental";
+  /** Qual Brand Profile gerou a peça (auditável): perfil, versão, regras aplicadas e snapshot da
+   * identidade usada. Ausente = SYSTEM_DEFAULT (workspace sem identidade estruturada). */
+  brandProfile?: {
+    source: "BRAND_PROFILE";
+    profileId: string;
+    workspaceId: string;
+    version: number;
+    updatedAt: string;
+    appliedBrandRules: AppliedBrandRule[];
+    identity: BrandIdentity;
+  };
   baseImage?: {
     url: string;
     width?: number;
@@ -908,7 +920,15 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     // (geometria final + TEXT_OVERFLOW/COLLISION/SAFE_AREA_VIOLATION). Simplificar sobre a
     // geometria declarada removia a subheadline exigida pelo plano (Smoke A) — não roda aqui.
     const densityPreflight = !input.experimentalEditorialMode && isLayoutOverdense(plan.textZones, plan.assetPlacements) ? applyTextBudgetSimplification(plan) : undefined;
-    const planForGeneration = densityPreflight?.plan ?? plan;
+    // Brand Profile: densidade da marca vira a densidade do plano (só no modo editorial — o renderer
+    // é quem a interpreta; as regras de legibilidade/geometria continuam soberanas).
+    const brandRules: AppliedBrandRule[] = [...(context.appliedBrandRules ?? [])];
+    const brandDensity = input.experimentalEditorialMode ? context.brandIdentity?.identity.density : undefined;
+    const planBeforeBrand = densityPreflight?.plan ?? plan;
+    const planForGeneration = brandDensity && planBeforeBrand.visualDensity !== BRAND_DENSITY_TO_PLAN[brandDensity]
+      ? { ...planBeforeBrand, visualDensity: BRAND_DENSITY_TO_PLAN[brandDensity] }
+      : planBeforeBrand;
+    if (brandDensity) brandRules.push({ code: "BRAND_DENSITY", detail: `densidade da marca ${brandDensity} → visualDensity ${planForGeneration.visualDensity} (diretor: ${planBeforeBrand.visualDensity})`, outcome: "APPLIED" });
     if (densityPreflight && densityPreflight.droppedZones.length > 0) {
       warnings.push(
         `ETAPA 3.3 — DENSITY_PREFLIGHT: layout denso detectado antes da geração (${plan.textZones.length} zona(s) de texto + ${plan.assetPlacements.length} asset(s)) — conteúdo OPCIONAL removido da arte: ${densityPreflight.droppedZones.map((zone) => zone.kind).join(", ")} (continua disponível só como legenda/descrição, nunca na peça).`,
@@ -1003,7 +1023,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         ? await scanEditorialBaseText(deps.creativeBrain, { baseImageUrl: baseImageArtifact.url, specialistId: SPECIALIST_ID, onCost: (response) => track("baseTextScan", response) })
         : undefined;
 
-      const editorialAssets: { role: CreativePlanAssetRole; url: string; buffer: Buffer }[] = [];
+      const editorialAssets: EditorialCreativeAssetBuffer[] = [];
       for (const asset of [productAsset, screenshotAsset, logoAsset].filter((candidate): candidate is NonNullable<typeof productAsset> => Boolean(candidate))) {
         try {
           editorialAssets.push({ role: asset.role, url: asset.url, buffer: await loadAssetBuffer(asset.url) });
@@ -1013,6 +1033,21 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
             "EDITORIAL_ASSET_DOWNLOAD_FAILED",
             { creativePlan: plan, finalImagePrompt: imagePrompt, repairRounds },
           );
+        }
+      }
+      // Versões de logo do Brand Profile (assets FORNECIDOS da biblioteca do workspace): o renderer
+      // escolhe a compatível com o fundo real. Falha ao baixar uma versão nunca derruba a peça —
+      // a logo padrão continua disponível; fica registrado.
+      for (const brandLogo of context.brandIdentity?.logos ?? []) {
+        if (editorialAssets.some((asset) => asset.url === brandLogo.url && !asset.brandLogo)) {
+          const index = editorialAssets.findIndex((asset) => asset.url === brandLogo.url);
+          editorialAssets[index] = { ...editorialAssets[index]!, brandLogo: { assetId: brandLogo.assetId, variant: brandLogo.variant, backgrounds: brandLogo.backgrounds, priority: brandLogo.priority } };
+          continue;
+        }
+        try {
+          editorialAssets.push({ role: "logo", url: brandLogo.url, buffer: await loadAssetBuffer(brandLogo.url), brandLogo: { assetId: brandLogo.assetId, variant: brandLogo.variant, backgrounds: brandLogo.backgrounds, priority: brandLogo.priority } });
+        } catch {
+          brandRules.push({ code: "LOGO_VARIANT_UNAVAILABLE", detail: `logo ${brandLogo.variant} (${brandLogo.assetId}) não pôde ser carregada`, outcome: "SKIPPED" });
         }
       }
 
@@ -1091,6 +1126,19 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         ...(editorial.composition ? { editorialComposition: { selectedVariant: editorial.composition.variant, variantSelectionReasons: editorial.composition.selectionReasons, diagnostics: editorial.composition } } : {}),
         ...(baseAlphaCoverage ? { baseAlphaCoverage } : {}),
         ...(baseTextDiagnostic ? { baseTextDiagnostic } : {}),
+        ...(context.brandIdentity
+          ? {
+              brandProfile: {
+                source: "BRAND_PROFILE" as const,
+                profileId: context.brandIdentity.profileId,
+                workspaceId: context.brandIdentity.workspaceId,
+                version: context.brandIdentity.version,
+                updatedAt: context.brandIdentity.updatedAt,
+                appliedBrandRules: [...brandRules, ...(editorial.composition?.brandRules ?? [])],
+                identity: context.brandIdentity.identity,
+              },
+            }
+          : {}),
       };
       const qualityGate = await evaluateCreativeQualityGate(deps.creativeBrain, {
         finalImageUrl: uploaded.url,

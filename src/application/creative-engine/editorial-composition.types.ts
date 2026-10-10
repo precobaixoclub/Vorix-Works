@@ -1,3 +1,4 @@
+import type { AppliedBrandRule, BrandLogoBackground, BrandLogoVariant } from "../../shared/utils/brand-identity.js";
 import type { CreativeContext, CreativePlan, CreativePlanAssetRole, CreativePlanTextZone } from "../../shared/utils/gpt-creative-plan.types.js";
 
 export const EDITORIAL_CREATIVE_FAMILIES = ["product_offer", "premium_institutional", "digital_service"] as const;
@@ -7,6 +8,9 @@ export type EditorialCreativeAssetBuffer = {
   role: CreativePlanAssetRole;
   url: string;
   buffer: Buffer;
+  /** Versão de logo do Brand Profile (asset FORNECIDO da biblioteca do workspace): o renderer
+   * escolhe pela compatibilidade com o fundo real. Ausente = logo padrão (comportamento antigo). */
+  brandLogo?: { assetId: string; variant: BrandLogoVariant; backgrounds: BrandLogoBackground[]; priority: number };
 };
 
 export type EditorialGeometryIssue = {
@@ -107,7 +111,7 @@ export type RenderEditorialCreativeInput = {
 export const PRODUCT_OFFER_VARIANTS = ["HERO_DOMINANT", "SPLIT_EDITORIAL", "OVERLAY_EDITORIAL"] as const;
 export type ProductOfferVariant = (typeof PRODUCT_OFFER_VARIANTS)[number];
 export type ProductOfferPriceTreatment = "INLINE_PRICE" | "COMMERCIAL_FOOTER";
-export type EditorialLogoTreatment = "DIRECT" | "MULTIPLY_ON_LIGHT" | "CHIP" | "LOGO_DIRECT_LIGHT" | "LOGO_DIRECT_DARK" | "LOGO_SOFT_PLATE" | "LOGO_HAIRLINE_PLATE";
+export type EditorialLogoTreatment = "DIRECT" | "MULTIPLY_ON_LIGHT" | "CHIP" | "LOGO_DIRECT_LIGHT" | "LOGO_DIRECT_DARK" | "LOGO_SOFT_PLATE" | "LOGO_HAIRLINE_PLATE" | "BRAND_LOGO_VARIANT";
 
 /** Tratamento editorial do CTA (institucional). */
 export type EditorialCtaTreatment = "SOLID_PREMIUM" | "OUTLINE_EDITORIAL" | "TEXT_HAIRLINE" | "COMPACT_PILL";
@@ -247,6 +251,10 @@ export type EditorialCompositionDiagnostics = {
   ctaTreatment?: EditorialCtaTreatment;
   baseFit?: EditorialBaseFit;
   screenshot?: EditorialScreenshotDiagnostics;
+  /** Brand Profile aplicado pelo renderer (cores, logo, CTA, forma, tipografia, proibições). */
+  brandRules?: AppliedBrandRule[];
+  /** Versão de logo do Brand Profile usada, quando houve uma compatível com o fundo. */
+  brandLogo?: { assetId: string; variant: BrandLogoVariant; surface: "light" | "dark" | "photo" };
 };
 
 export type RenderEditorialCreativeResult = {

@@ -1702,3 +1702,56 @@ test("runGptCreativeEngine padrão: a foto do produto continua indo como referê
   assert.equal(imageCall.context?.referenceImageUrl, "https://x/product-ref.jpg");
   assert.equal(result.generationMethod, "edit");
 }));
+
+test("runGptCreativeEngine editorial: Brand Profile entra no plano/renderer e fica na provenance (perfil, versão, regras); sem perfil não há brandProfile", () => withFakeFetch(async () => {
+  const identity = {
+    schemaVersion: 1, version: 7, updatedAt: "2026-10-10T12:00:00.000Z",
+    colors: [{ hex: "#0F766E", role: "PRIMARY", provenance: "USER_CONFIGURED" }, { hex: "#DC2626", role: "FORBIDDEN", provenance: "USER_CONFIGURED" }],
+    logos: [{ assetId: "asset-logo-light", variant: "LIGHT", backgrounds: ["DARK"], priority: 1, provenance: "USER_CONFIGURED" }],
+    density: "LOW", imageStyles: [], forbiddenPatterns: ["NO_GRADIENTS"], preferredPatterns: [], fieldProvenance: { density: "USER_CONFIGURED" },
+  };
+  const brandIdentity = { profileId: "brand-profile-9", workspaceId: "workspace-1", version: 7, updatedAt: identity.updatedAt, identity, logos: [{ ...identity.logos[0], url: "https://x/logo-light.png" }] };
+  const run = async (withBrand) => {
+    const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()], review: [passingReview(), passingVisualScore()] });
+    let rendererInput;
+    const result = await runGptCreativeEngine(baseDeps({
+      creativeBrain: icaro,
+      renderEditorialCreative: async (input) => {
+        rendererInput = input;
+        return editorialRendererResult({
+          renderedAssetPlacements: [
+            { role: "product_photo", url: "https://x/product-ref.jpg", rect: { xPct: 43.5, yPct: 6.2, widthPct: 50.7, heightPct: 64.6 }, frame: "none", treatment: "final rendered product photo" },
+            { role: "logo", url: "https://x/logo-light.png", rect: { xPct: 7, yPct: 5, widthPct: 14, heightPct: 5 }, frame: "none", treatment: "final rendered logo (BRAND_LOGO_VARIANT)" },
+          ],
+          compositedAssetRoles: ["product_photo", "logo"],
+          assetVerification: [
+            { role: "product_photo", detectedMime: "image/jpeg", visible: true, informativePixelRatio: 0.9, assetMatchRatio: 1, fidelityMeanAbsDiff: 7.5, fidelityPass: true },
+            { role: "logo", detectedMime: "image/png", visible: true, informativePixelRatio: 0.3, assetMatchRatio: 1, fidelityMeanAbsDiff: 9, fidelityPass: true },
+          ],
+          composition: { variant: "OVERLAY_EDITORIAL", selectionReasons: [], pageTone: "dark", productVisualProminence: 0.5, largestEmptyBandPct: 0.05, contentCentroidOffset: 0.1, occupiedAreaRatio: 0.6, brandRules: [{ code: "BRAND_ACCENT", detail: "x", outcome: "APPLIED" }] } });
+      },
+    }), baseInput({
+      experimentalEditorialMode: true,
+      creativeContext: contextWithProductReference({
+        assets: [{ url: "https://x/product-ref.jpg", role: "product_photo", description: "Produto real" }, { url: "https://x/logo.png", role: "logo", description: "Logo oficial" }],
+        confirmedFacts: ["Preco atual: R$ 149,00"],
+        ...(withBrand ? { brandIdentity, appliedBrandRules: [{ code: "FORBIDDEN_COLOR_REQUESTED", detail: "pedido menciona vermelho", outcome: "PROFILE_PREVAILED" }] } : {}),
+      }),
+    }));
+    return { result, rendererInput };
+  };
+  const branded = await run(true);
+  assert.equal(branded.result.error, undefined, branded.result.error);
+  assert.equal(branded.rendererInput.plan.visualDensity, "clean", "densidade LOW da marca → clean");
+  const brandLogo = branded.rendererInput.assets.find((asset) => asset.brandLogo);
+  assert.deepEqual(brandLogo.brandLogo, { assetId: "asset-logo-light", variant: "LIGHT", backgrounds: ["DARK"], priority: 1 });
+  const provenance = branded.result.artifactProvenance.brandProfile;
+  assert.equal(provenance.profileId, "brand-profile-9");
+  assert.equal(provenance.version, 7);
+  assert.equal(provenance.identity.colors.length, 2);
+  const codes = provenance.appliedBrandRules.map((rule) => rule.code);
+  assert.ok(codes.includes("FORBIDDEN_COLOR_REQUESTED") && codes.includes("BRAND_DENSITY") && codes.includes("BRAND_ACCENT"), codes.join(","));
+  const plain = await run(false);
+  assert.equal(plain.result.artifactProvenance.brandProfile, undefined);
+  assert.ok(!plain.rendererInput.assets.some((asset) => asset.brandLogo));
+}));

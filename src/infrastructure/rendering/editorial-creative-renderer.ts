@@ -46,6 +46,7 @@ import {
   resolveEditorialRequiredTexts,
 } from "../../application/creative-engine/editorial-text-contract.js";
 import { SAFE_AREA_MARGIN_PCT } from "../../application/creative-engine/evaluate-creative-quality-gate.js";
+import { contrastRatio, deriveBrandSkin, hexToRgb as brandHexToRgb, isNearForbiddenColor, selectBrandLogoForSurface, type AppliedBrandRule, type BrandSkin } from "../../shared/utils/brand-identity.js";
 import { computeContrastRatio, isValidHexColor } from "../../shared/utils/color-contrast.js";
 
 /** Espaço de design fixo por formato. Achado do Smoke A: as coordenadas das famílias foram
@@ -266,6 +267,95 @@ export async function preflightEditorialAsset(asset: EditorialCreativeAssetBuffe
   return { detectedMime: prepared.detectedMime, width: prepared.width, height: prepared.height };
 }
 
+// ---------------------------------- Brand Profile (skin determinística) --------------------------
+
+/** Serifada display (SIL OFL, `assets/OFL-DMSerifDisplay.txt`), registrada no fontconfig da imagem
+ * (Dockerfile) — usada só para rasterizar no servidor, nunca servida ao cliente. */
+export const SERIF_FONT_FAMILY = "DM Serif Display";
+
+type PreparedBrandLogo = PreparedAsset & { brandLogo: NonNullable<EditorialCreativeAssetBuffer["brandLogo"]> };
+type RendererBrand = { skin: BrandSkin; logos: PreparedBrandLogo[]; rules: AppliedBrandRule[]; logoUsed?: { assetId: string; variant: PreparedBrandLogo["brandLogo"]["variant"]; surface: "light" | "dark" | "photo" } };
+/** Entrada interna do renderer: a pública + a marca já resolvida (ausente = SYSTEM_DEFAULT). */
+type EditorialRenderInput = RenderEditorialCreativeInput & { brand?: RendererBrand };
+
+function brandRule(input: EditorialRenderInput, code: string, detail: string): void {
+  if (!input.brand) return;
+  if (!input.brand.rules.some((rule) => rule.code === code && rule.detail === detail)) input.brand.rules.push({ code, detail, outcome: "APPLIED" });
+}
+
+/** Escurece/clareia uma cor (mantendo o matiz) até atingir o contraste mínimo contra `against`. */
+function ensureContrast(hex: string, against: string, min: number): string {
+  const base = brandHexToRgb(hex);
+  const target = brandHexToRgb(against);
+  const towards = contrastRatio(BLACK, target) >= contrastRatio(WHITE, target) ? BLACK : WHITE;
+  for (let t = 0; t <= 1.0001; t += 0.05) {
+    const candidate = mixRgb(base, towards, t);
+    if (contrastRatio(candidate, target) >= min) return toHex(candidate);
+  }
+  return toHex(towards);
+}
+
+/** Cor de destaque da marca (ACCENT, senão PRIMARY) com contraste garantido contra a superfície;
+ * nunca uma cor perto de uma PROIBIDA. Sem Brand Profile, devolve o fallback intacto. */
+function brandAccent(input: EditorialRenderInput, fallback: string, against: string, min = 4.5): string {
+  const skin = input.brand?.skin;
+  if (!skin) return fallback;
+  let chosen = skin.accent ?? fallback;
+  if (isNearForbiddenColor(chosen, skin.forbidden)) {
+    const replacement = [skin.primary, skin.darkNeutral, "#2B2B2E"].find((hex) => hex && !isNearForbiddenColor(hex, skin.forbidden))!;
+    brandRule(input, "FORBIDDEN_COLOR_GUARD", `destaque ${chosen} perto de cor proibida → ${replacement}`);
+    chosen = replacement;
+  }
+  const adjusted = ensureContrast(chosen, against, min);
+  brandRule(input, "BRAND_ACCENT", `destaque da marca ${skin.accent ?? "—"} aplicado como ${adjusted}`);
+  return adjusted;
+}
+
+/** Superfície derivada da base/screenshot nunca pode cair perto de uma cor proibida. */
+function guardForbiddenSurface(input: EditorialRenderInput, rgb: Rgb, fallback: Rgb): Rgb {
+  const skin = input.brand?.skin;
+  if (!skin || !isNearForbiddenColor(toHex(rgb), skin.forbidden, 90)) return rgb;
+  brandRule(input, "FORBIDDEN_COLOR_GUARD", `superfície ${toHex(rgb)} perto de cor proibida → ${toHex(fallback)}`);
+  return fallback;
+}
+
+/** Raio do CTA pela linguagem de forma da marca (sem marca: o raio original do layout). */
+function brandCtaRadius(input: EditorialRenderInput, height: number, fallback: number): number {
+  const corners = input.brand?.skin.ctaCorners;
+  if (!corners) return fallback;
+  const radius = corners === "SHARP" ? 2 : corners === "SOFT" ? 10 : corners === "ROUNDED" ? Math.min(18, height / 2) : height / 2;
+  brandRule(input, "BRAND_SHAPE", `cantos ${corners} → raio do CTA ${Math.round(radius)} px`);
+  return radius;
+}
+
+/** Personalidade tipográfica da headline: família serifada/sans e caixa. */
+function brandHeadline(input: EditorialRenderInput): Partial<TextSpec> {
+  const skin = input.brand?.skin;
+  if (!skin) return {};
+  if (skin.headlineSerif) brandRule(input, "BRAND_TYPOGRAPHY", `headline serifada (${SERIF_FONT_FAMILY})`);
+  if (skin.headlineUppercase) brandRule(input, "BRAND_TYPOGRAPHY", "headline em caixa alta");
+  return { ...(skin.headlineSerif ? { fontFamily: SERIF_FONT_FAMILY } : {}), ...(skin.headlineUppercase ? { uppercase: true, capsAware: true } : {}) };
+}
+
+/** Versão FORNECIDA da logo compatível com o fundo real; senão a logo padrão e o tratamento antigo. */
+function brandLogoFor(input: EditorialRenderInput, fallback: PreparedAsset | undefined, surface: "light" | "dark" | "photo"): { logo: PreparedAsset | undefined; variant: boolean } {
+  const brand = input.brand;
+  if (!brand || brand.logos.length === 0) return { logo: fallback, variant: false };
+  const picked = selectBrandLogoForSurface(brand.logos.map((logo) => ({ ...logo.brandLogo, logo })), surface);
+  if (!picked) {
+    brandRule(input, "BRAND_LOGO_FALLBACK", `nenhuma versão de logo marcada para fundo ${surface}: tratamento permitido sobre a logo padrão`);
+    return { logo: fallback, variant: false };
+  }
+  brand.logoUsed = { assetId: picked.assetId, variant: picked.variant, surface };
+  brandRule(input, "BRAND_LOGO_VARIANT", `logo ${picked.variant} (${picked.assetId}) escolhida para fundo ${surface}`);
+  return { logo: picked.logo, variant: true };
+}
+
+/** Logo com caixa clara opaca precisa de multiply sobre fundo claro (sem placa); o resto vai direta. */
+function brandLogoBlend(logo: PreparedAsset, surface: "light" | "dark" | "photo"): "multiply" | undefined {
+  return surface === "light" && logo.stats.borderOpaqueRatio > 0.9 && logo.stats.borderLuma > 228 ? "multiply" : undefined;
+}
+
 function pickAccent(context: CreativeContext): string {
   // Acento só é usado como fundo de CTA/cor de preço sobre creme — exige contraste real com os dois.
   const hex = context.brandColors?.find((color) => isValidHexColor(color) && (computeContrastRatio(color, "#FFFFFF") ?? 0) >= 4.5);
@@ -311,10 +401,12 @@ function balanceLines(text: string, lines: string[], maxChars: number): string[]
   return lines;
 }
 
-function fitText(text: string, widthPx: number, maxHeightPx: number, options: { maxFontSize: number; minFontSize: number; maxLines: number; lineHeight?: number; balance?: boolean }): TextFit {
+function fitText(text: string, widthPx: number, maxHeightPx: number, options: { maxFontSize: number; minFontSize: number; maxLines: number; lineHeight?: number; balance?: boolean; capsAware?: boolean }): TextFit {
   const lineHeight = options.lineHeight ?? 1.08;
+  // Caixa alta da marca: letras ~16% mais largas que a média de caixa mista (headline estourava).
+  const charWidth = AVG_CHAR_WIDTH * (options.capsAware ? 1.16 : 1);
   for (let fontSize = options.maxFontSize; fontSize >= options.minFontSize; fontSize -= 1) {
-    const maxChars = Math.max(5, Math.floor(widthPx / (fontSize * AVG_CHAR_WIDTH)));
+    const maxChars = Math.max(5, Math.floor(widthPx / (fontSize * charWidth)));
     const wrapped = wrapText(text, maxChars);
     const lines = options.balance ? balanceLines(text, wrapped, maxChars) : wrapped;
     const height = lines.length * fontSize * lineHeight;
@@ -323,7 +415,7 @@ function fitText(text: string, widthPx: number, maxHeightPx: number, options: { 
     }
   }
   const fontSize = options.minFontSize;
-  const maxChars = Math.max(5, Math.floor(widthPx / (fontSize * AVG_CHAR_WIDTH)));
+  const maxChars = Math.max(5, Math.floor(widthPx / (fontSize * charWidth)));
   const lines = wrapText(text, maxChars).slice(0, options.maxLines);
   return { lines, fontSize, lineHeight, height: lines.length * fontSize * lineHeight, fits: false };
 }
@@ -352,6 +444,9 @@ type TextSvgInput = {
    * traço de forma controlada, sem trocar fonte nem fontconfig. Em px de traço. */
   embolden?: number;
   balance?: boolean;
+  /** Família da fonte deste bloco (Brand Profile: headline serifada). Ausente = Geist. */
+  fontFamily?: string;
+  capsAware?: boolean;
 };
 
 function textSvg(input: TextSvgInput, canvas: Canvas, boxes: EditorialGeometryBox[], issues: EditorialGeometryIssue[]): string {
@@ -362,6 +457,7 @@ function textSvg(input: TextSvgInput, canvas: Canvas, boxes: EditorialGeometryBo
     maxLines: input.maxLines,
     lineHeight: input.lineHeight,
     balance: input.balance,
+    capsAware: input.capsAware,
   });
   const rectX = input.anchor === "middle" ? input.x - input.width / 2 : input.anchor === "end" ? input.x - input.width : input.x;
   let baseline = input.y;
@@ -378,7 +474,8 @@ function textSvg(input: TextSvgInput, canvas: Canvas, boxes: EditorialGeometryBo
   if (!fit.fits) {
     issues.push({ code: "TEXT_OVERFLOW", message: `Texto "${input.id}" não coube no bloco editorial sem quebrar a hierarquia.` });
   }
-  return `<text x="${input.x}" y="${baseline}" fill="${input.fill}" font-family="${FONT_FAMILY}" font-size="${fit.fontSize}" font-weight="${input.weight ?? 800}" text-anchor="${input.anchor ?? "start"}" letter-spacing="${input.letterSpacing ?? 0}"${input.embolden ? ` stroke="${input.fill}" stroke-width="${input.embolden}" stroke-linejoin="round" paint-order="stroke"` : ""}>${fit.lines.map((line, index) => `<tspan x="${input.x}" dy="${index === 0 ? 0 : fit.fontSize * fit.lineHeight}">${xmlEscape(line)}</tspan>`).join("")}</text>`;
+  const fontStyle = input.fontFamily ? ` style="font-family:'${input.fontFamily}',${FONT_FAMILY}"` : "";
+  return `<text x="${input.x}" y="${baseline}" fill="${input.fill}" font-family="${FONT_FAMILY}"${fontStyle} font-size="${fit.fontSize}" font-weight="${input.weight ?? 800}" text-anchor="${input.anchor ?? "start"}" letter-spacing="${input.letterSpacing ?? 0}"${input.embolden ? ` stroke="${input.fill}" stroke-width="${input.embolden}" stroke-linejoin="round" paint-order="stroke"` : ""}>${fit.lines.map((line, index) => `<tspan x="${input.x}" dy="${index === 0 ? 0 : fit.fontSize * fit.lineHeight}">${xmlEscape(line)}</tspan>`).join("")}</text>`;
 }
 
 function assetBox(role: CreativePlanAssetRole, rect: PxRect, canvas: Canvas, boxes: EditorialGeometryBox[]): void {
@@ -620,6 +717,29 @@ type ProductOfferPalette = {
   hairline: string;
 };
 
+/** Paleta do product_offer pelos PAPÉIS da marca (neutros → página/tinta, destaque → preço/CTA),
+ * com contraste garantido; sem marca, a paleta original intacta. */
+function brandProductOfferPalette(input: EditorialRenderInput, palette: ProductOfferPalette): ProductOfferPalette {
+  const skin = input.brand?.skin;
+  if (!skin) return palette;
+  const page = palette.tone === "dark" ? skin.darkNeutral ?? palette.page : skin.lightNeutral ?? palette.page;
+  const ink = palette.tone === "dark" ? skin.lightNeutral ?? palette.ink : skin.darkNeutral ?? palette.ink;
+  const accent = brandAccent(input, palette.price, page, 4.5);
+  const ctaText = contrastRatio(brandHexToRgb(accent), WHITE) >= contrastRatio(brandHexToRgb(accent), brandHexToRgb(ink)) && contrastRatio(brandHexToRgb(accent), WHITE) >= 3.5 ? "#FFFFFF" : palette.tone === "dark" ? page : ink;
+  if (skin.flat) brandRule(input, "FORBIDDEN_PATTERN", "sem gradientes: CTA sólido, sem brilho decorativo (véu de legibilidade preservado)");
+  return {
+    ...palette,
+    page,
+    ink,
+    muted: toHex(mixRgb(brandHexToRgb(ink), brandHexToRgb(page), 0.3)),
+    price: accent,
+    ctaFill: accent,
+    ctaFillEnd: skin.flat ? accent : toHex(mixRgb(brandHexToRgb(accent), BLACK, 0.22)),
+    ctaText,
+    hairline: accent,
+  };
+}
+
 function productOfferPalette(tone: "light" | "dark", accent: string): ProductOfferPalette {
   return tone === "dark"
     ? { tone, page: "#120B0D", ink: "#FFF6EC", muted: "#E6D6CB", price: "#EBCB8B", ctaFill: "#EBCB8B", ctaFillEnd: "#C9A35E", ctaText: "#24160F", hairline: "#EBCB8B" }
@@ -639,6 +759,8 @@ type TextSpec = {
   uppercase?: boolean;
   /** Evita palavra órfã na última linha (mesma altura). */
   balance?: boolean;
+  fontFamily?: string;
+  capsAware?: boolean;
 };
 
 function measureSpec(spec: TextSpec): TextFit {
@@ -748,10 +870,10 @@ type ProductOfferLayout = {
 };
 
 async function renderProductOfferAdaptive(
-  input: RenderEditorialCreativeInput,
+  input: EditorialRenderInput,
   canvas: Canvas,
   price: string | undefined,
-  logo: PreparedAsset | undefined,
+  logoParam: PreparedAsset | undefined,
   product: PreparedAsset | undefined,
   backdrop: { ambientHref: string; productAmbientHref?: string; baseTone: "light" | "dark" },
   fontFaceCss: string,
@@ -761,6 +883,7 @@ async function renderProductOfferAdaptive(
   const W = canvas.width;
   const H = canvas.height;
   const M = 64;
+  let logo = logoParam;
   const plan = input.plan;
   const headline = plan.headline;
   const subheadline = plan.subheadline?.trim() ? plan.subheadline : undefined;
@@ -783,22 +906,28 @@ async function renderProductOfferAdaptive(
   // 9:16: lado a lado num canvas estreito e alto deixa o produto pequeno e sobra vazio — o
   // equivalente vertical do split é produto em cima + copy embaixo (HERO_DOMINANT).
   const verticalOffer = isVerticalCanvas(canvas) && !offerOverride && selectedOffer.variant === "SPLIT_EDITORIAL";
-  const variant: ProductOfferVariant = offerOverride ?? (verticalOffer ? "HERO_DOMINANT" : selectedOffer.variant);
+  // Brand Profile "sem fundos escuros": o OVERLAY (véu escuro sobre a cena) vira o HERO claro.
+  const brandForbidsDark = Boolean(input.brand?.skin.forceLight) && !offerOverride && (verticalOffer ? "HERO_DOMINANT" : selectedOffer.variant) === "OVERLAY_EDITORIAL";
+  if (brandForbidsDark) brandRule(input, "FORBIDDEN_PATTERN", "sem fundos escuros: OVERLAY_EDITORIAL → HERO_DOMINANT claro");
+  const variant: ProductOfferVariant = offerOverride ?? (brandForbidsDark || verticalOffer ? "HERO_DOMINANT" : selectedOffer.variant);
   const reasons = offerOverride
     ? [`QA_VARIANT_OVERRIDE=${offerOverride} (fixture local; regra escolheria ${selectedOffer.variant})`, ...selectedOffer.reasons]
     : verticalOffer
       ? [...selectedOffer.reasons, "9:16: split lateral vira empilhado (HERO_DOMINANT) — produto em largura total, copy embaixo"]
       : selectedOffer.reasons;
-  const tone: "light" | "dark" = variant === "OVERLAY_EDITORIAL" || backdrop.baseTone === "dark" ? "dark" : "light";
-  const palette = productOfferPalette(tone, pickAccent(input.context));
+  const tone: "light" | "dark" = variant === "OVERLAY_EDITORIAL" || (backdrop.baseTone === "dark" && !input.brand?.skin.forceLight) ? "dark" : "light";
+  const palette = brandProductOfferPalette(input, productOfferPalette(tone, pickAccent(input.context)));
   const priceTreatment: ProductOfferPriceTreatment = variant === "HERO_DOMINANT" || (variant === "SPLIT_EDITORIAL" && (price?.length ?? 0) > 10) ? "COMMERCIAL_FOOTER" : "INLINE_PRICE";
-  const logoTreatment = logo ? resolveLogoTreatment(logo, tone) : undefined;
+  const offerLogo = brandLogoFor(input, logo, tone);
+  logo = offerLogo.logo;
+  const logoTreatment: EditorialLogoTreatment | undefined = logo ? (offerLogo.variant ? "BRAND_LOGO_VARIANT" : resolveLogoTreatment(logo, tone)) : undefined;
+  const logoMultiply = logoTreatment === "MULTIPLY_ON_LIGHT" || (logoTreatment === "BRAND_LOGO_VARIANT" && logo !== undefined && brandLogoBlend(logo, tone) === "multiply");
   const ctaFont = 23;
   const ctaH = 78;
   const ctaW = cta ? clamp(estimateLineWidth(cta.toUpperCase(), ctaFont, 2) + 88, 240, 430) : 0;
   const ctaSpec = (pill: PxRect): TextSpec => {
     const size = fitUppercaseCtaFont(cta!, pill.width - 56, ctaFont, 15, 2);
-    return { id: "cta", text: cta!, width: pill.width - 56, maxHeight: pill.height, maxFontSize: size, minFontSize: Math.min(15, size), maxLines: 1, letterSpacing: 2, uppercase: true };
+    return { id: "cta", text: cta!, width: pill.width - 56, maxHeight: pill.height, maxFontSize: size, minFontSize: Math.min(15, size), maxLines: 1, letterSpacing: 2, uppercase: input.brand?.skin.ctaUppercase ?? true };
   };
   // 9:16: topo/base de texto e logo dentro da safe area vertical; no 4:5 os mesmos valores de sempre.
   const vertical = isVerticalCanvas(canvas);
@@ -821,7 +950,7 @@ async function renderProductOfferAdaptive(
       const startX = Math.round((W - (priceW + gap + (cta ? ctaW : 0))) / 2);
       const priceRect = price ? { x: startX, y: rowTop, width: priceW, height: rowH } : undefined;
       const pill = cta ? { x: startX + priceW + gap, y: rowTop + Math.round((rowH - ctaH) / 2), width: ctaW, height: ctaH } : undefined;
-      const headTwo: TextSpec = { id: "headline", text: headline, width: 920, maxHeight: 176, maxFontSize: 82, minFontSize: 40, maxLines: 2, lineHeight: 1.04, letterSpacing: -0.4, balance: vertical };
+      const headTwo: TextSpec = { id: "headline", text: headline, width: 920, maxHeight: 176, maxFontSize: 82, minFontSize: 40, maxLines: 2, lineHeight: 1.04, letterSpacing: -0.4, balance: vertical, ...brandHeadline(input) };
       const headSpec = measureSpec(headTwo).fits ? headTwo : { ...headTwo, maxLines: 3, maxHeight: 210 };
       const headFit = measureSpec(headSpec);
       const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: 760, maxHeight: subheadline.length > 90 ? 120 : 84, maxFontSize: 28, minFontSize: 20, maxLines: subheadline.length > 90 ? 3 : 2, lineHeight: 1.38, letterSpacing: 0.2 } : undefined;
@@ -852,7 +981,7 @@ async function renderProductOfferAdaptive(
       const productRect = product ? fitAspectInto(productArea, photoAspect(0.64, 0.7)) : undefined;
       const colX = M;
       const colW = 304;
-      const headSpec: TextSpec = { id: "headline", text: headline, width: colW, maxHeight: 380, maxFontSize: 74, minFontSize: 38, maxLines: 5, lineHeight: 1.04, letterSpacing: -0.2, balance: vertical };
+      const headSpec: TextSpec = { id: "headline", text: headline, width: colW, maxHeight: 380, maxFontSize: 74, minFontSize: 38, maxLines: 5, lineHeight: 1.04, letterSpacing: -0.2, balance: vertical, ...brandHeadline(input) };
       const headFit = measureSpec(headSpec);
       const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: colW, maxHeight: 190, maxFontSize: 25, minFontSize: 19, maxLines: 6, lineHeight: 1.42, letterSpacing: 0.2 } : undefined;
       const subFit = subSpec ? measureSpec(subSpec) : undefined;
@@ -904,7 +1033,7 @@ async function renderProductOfferAdaptive(
     const pill = cta ? { x: M + priceW + (price ? 40 : 0), y: rowTop + Math.round((rowH - ctaH) / 2), width: ctaW, height: ctaH } : undefined;
     const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: 780, maxHeight: 118, maxFontSize: 27, minFontSize: 19, maxLines: 3, lineHeight: 1.4, letterSpacing: 0.2 } : undefined;
     const subFit = subSpec ? measureSpec(subSpec) : undefined;
-    const headSpec: TextSpec = { id: "headline", text: headline, width: 900, maxHeight: 196, maxFontSize: 94, minFontSize: 48, maxLines: 2, lineHeight: 1.0, letterSpacing: -0.6, balance: vertical };
+    const headSpec: TextSpec = { id: "headline", text: headline, width: 900, maxHeight: 196, maxFontSize: 94, minFontSize: 48, maxLines: 2, lineHeight: 1.0, letterSpacing: -0.6, balance: vertical, ...brandHeadline(input) };
     const headFit = measureSpec(headSpec);
     const subRect = subFit ? { x: M, y: Math.round(rowTop - 42 - subFit.height), width: 780, height: subFit.height } : undefined;
     const headRect = { x: M, y: Math.round((subRect ? subRect.y - 20 : rowTop - 42) - headFit.height), width: 900, height: headFit.height };
@@ -945,7 +1074,7 @@ async function renderProductOfferAdaptive(
     roles.push("logo");
     assets.push(assetPlacement(logo, logoRect, canvas, `final rendered logo (${logoTreatment})`));
     assetBox("logo", logoRect, canvas, boxes);
-    verify.push(verifySpec("logo", logoRect, { fit: "contain", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { blend: "multiply" as const } : {}) }));
+    verify.push(verifySpec("logo", logoRect, { fit: "contain", ...(logoMultiply ? { blend: "multiply" as const } : {}) }));
   }
 
   const isDark = palette.tone === "dark";
@@ -955,18 +1084,22 @@ async function renderProductOfferAdaptive(
         ...(productFeather > 0 ? { maskId: "productFeather" } : {}),
       })
     : "";
-  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
+  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(logoMultiply ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
   const chip = logo && logoRect && logoTreatment === "CHIP"
     ? `<rect x="${logoRect.x - 14}" y="${logoRect.y - 10}" width="${logoRect.width + 28}" height="${logoRect.height + 20}" rx="${Math.min(18, (logoRect.height + 20) / 2)}" fill="#FFF8F1" opacity="0.96" filter="url(#softShadow)"/>`
     : "";
-  const glow = productRect
+  const glow = productRect && !input.brand?.skin.flat
     ? `<ellipse cx="${productRect.x + productRect.width / 2}" cy="${productRect.y + productRect.height * 0.48}" rx="${productRect.width * 0.75}" ry="${productRect.height * 0.7}" fill="url(#glow)"/>`
     : "";
   const cutoutShadow = product && productRect && productIsCutout
     ? `<ellipse cx="${productRect.x + productRect.width / 2}" cy="${productRect.y + productRect.height - 8}" rx="${productRect.width * 0.36}" ry="18" fill="#2A1A14" opacity="0.28" filter="url(#contactBlur)"/>`
     : "";
   const textFill = (id: TextSpec["id"]): string => (id === "headline" ? palette.ink : id === "subheadline" ? palette.muted : id === "price" ? palette.price : palette.ctaText);
-  const renderText = (block: { spec: TextSpec; rect: PxRect; anchor?: "start" | "middle"; valign?: "top" | "center" }, weight: number, embolden: (size: number) => number): string => {
+  const renderText = (blockIn: { spec: TextSpec; rect: PxRect; anchor?: "start" | "middle"; valign?: "top" | "center" }, weight: number, embolden: (size: number) => number): string => {
+    // Intensidade comercial BAIXA da marca: preço menos proeminente (nunca cria/omite o preço).
+    const lowCommercial = blockIn.spec.id === "price" && input.brand?.skin.commercialIntensity === "LOW";
+    if (lowCommercial) brandRule(input, "BRAND_COMMERCIAL_INTENSITY", "intensidade comercial baixa: preço com corpo 18% menor");
+    const block = lowCommercial ? { ...blockIn, spec: { ...blockIn.spec, maxFontSize: Math.round(blockIn.spec.maxFontSize * 0.82), minFontSize: Math.min(blockIn.spec.minFontSize, Math.round(blockIn.spec.maxFontSize * 0.82)) } } : blockIn;
     const fit = measureSpec(block.spec);
     const anchor = block.anchor ?? "start";
     return textSvg({
@@ -984,19 +1117,23 @@ async function renderProductOfferAdaptive(
       lineHeight: block.spec.lineHeight,
       letterSpacing: block.spec.letterSpacing,
       uppercase: block.spec.uppercase,
+      balance: block.spec.balance,
+      fontFamily: block.spec.fontFamily,
+      capsAware: block.spec.capsAware,
       anchor,
       fill: textFill(block.spec.id),
       weight,
-      embolden: embolden(fit.fontSize),
+      embolden: block.spec.fontFamily ? 0 : embolden(fit.fontSize),
     }, canvas, boxes, issues);
   };
 
+  const offerCtaRadius = layout.cta ? brandCtaRadius(input, layout.cta.pill.height, layout.cta.pill.height / 2) : 0;
   const headSvg = renderText(layout.head, 850, (size) => Number((size * 0.026).toFixed(2)));
   const subSvg = layout.sub ? renderText(layout.sub, 500, () => 0) : "";
   const priceSvg = layout.price ? renderText({ spec: layout.price.spec, rect: layout.price.rect, valign: layout.price.valign }, 850, (size) => Number((size * 0.024).toFixed(2))) : "";
   const ctaSvg = layout.cta
-    ? `<g filter="url(#ctaShadow)"><rect x="${layout.cta.pill.x}" y="${layout.cta.pill.y}" width="${layout.cta.pill.width}" height="${layout.cta.pill.height}" rx="${layout.cta.pill.height / 2}" fill="url(#ctaFill)"/></g>
-      <rect x="${layout.cta.pill.x + 1}" y="${layout.cta.pill.y + 1}" width="${layout.cta.pill.width - 2}" height="${layout.cta.pill.height - 2}" rx="${(layout.cta.pill.height - 2) / 2}" fill="none" stroke="#FFFFFF" stroke-opacity="${isDark ? 0.35 : 0.22}" stroke-width="1.5"/>
+    ? `<g${input.brand?.skin.shadow === "NONE" ? "" : ` filter="url(#ctaShadow)"`}><rect x="${layout.cta.pill.x}" y="${layout.cta.pill.y}" width="${layout.cta.pill.width}" height="${layout.cta.pill.height}" rx="${offerCtaRadius}" fill="url(#ctaFill)"/></g>
+      <rect x="${layout.cta.pill.x + 1}" y="${layout.cta.pill.y + 1}" width="${layout.cta.pill.width - 2}" height="${layout.cta.pill.height - 2}" rx="${Math.max(0, offerCtaRadius - 1)}" fill="none" stroke="#FFFFFF" stroke-opacity="${isDark ? 0.35 : 0.22}" stroke-width="1.5"/>
       ${renderText({ spec: layout.cta.spec, rect: { x: layout.cta.pill.x + 28, y: layout.cta.pill.y, width: layout.cta.pill.width - 56, height: layout.cta.pill.height }, anchor: "middle", valign: "center" }, 850, () => 0.4)}`
     : "";
   const hairline = layout.hairline ? `<line x1="${layout.hairline.x1}" y1="${layout.hairline.y}" x2="${layout.hairline.x2}" y2="${layout.hairline.y}" stroke="${palette.hairline}" stroke-opacity="0.7" stroke-width="2"/>` : "";
@@ -1189,10 +1326,12 @@ function renderTextBlock(block: TextBlock, fill: string, weight: number, embolde
     letterSpacing: block.spec.letterSpacing,
     uppercase: block.spec.uppercase,
     balance: block.spec.balance,
+    fontFamily: block.spec.fontFamily,
+    capsAware: block.spec.capsAware,
     anchor,
     fill,
     weight,
-    embolden,
+    embolden: block.spec.fontFamily ? 0 : embolden,
   }, canvas, boxes, issues);
 }
 
@@ -1943,9 +2082,9 @@ function resolveInstitutionalLogoTreatment(logo: PreparedAsset, surface: "light"
 type InstitutionalCopyBlock = { spec: TextSpec; rect: PxRect; anchor: "start" | "end" };
 
 async function renderInstitutionalEditorial(
-  input: RenderEditorialCreativeInput,
+  input: EditorialRenderInput,
   canvas: Canvas,
-  logo: PreparedAsset | undefined,
+  logoParam: PreparedAsset | undefined,
   base: { png: Buffer; width: number; height: number },
   fontFaceCss: string,
   boxes: EditorialGeometryBox[],
@@ -1966,21 +2105,38 @@ async function renderInstitutionalEditorial(
   const reasons = override ? [`QA_VARIANT_OVERRIDE=${override} (fixture local; regra escolheria ${selected.variant})`, ...selected.reasons] : [...selected.reasons];
 
   if (variant === "COLLAGE_EDITORIAL" || variant === "FULL_BLEED_EDITORIAL" || variant === "SPLIT_STORY") {
-    const legacy = await renderInstitutionalAdaptive({ ...input, qaVariantOverride: variant }, canvas, logo, base, fontFaceCss, boxes, issues);
+    // Variantes legadas (colagem/full-bleed/split antigos): skin de marca parcial — só a logo padrão
+    // e a geometria aprovada; registrado na provenance.
+    if (input.brand) brandRule(input, "BRAND_SKIN_PARTIAL", `variante legada ${variant}: cores/forma da marca não aplicadas`);
+    const legacy = await renderInstitutionalAdaptive({ ...input, qaVariantOverride: variant }, canvas, logoParam, base, fontFaceCss, boxes, issues);
     return legacy.composition ? { ...legacy, composition: { ...legacy.composition, variant, selectionReasons: reasons, baseVisualClass: visualClass, baseAnalysis: analysis } } : legacy;
   }
 
-  // Paleta derivada da própria base (nunca um marrom genérico fixo).
+  // Paleta derivada da própria base (nunca um marrom genérico fixo). Brand Profile: superfícies
+  // pelos neutros/primária da marca; nunca uma superfície perto de cor proibida.
   const palette = await extractScreenshotPalette(base.png);
-  const lightSurface = mixRgb(palette.dominant, WHITE, 0.86);
-  const darkSurface = mixRgb(palette.dominant, BLACK, 0.86);
-  const surfaceTone: "light" | "dark" = variant === "ASYMMETRIC_LUXURY" ? "dark" : "light";
+  const skin = input.brand?.skin;
+  const derivedLight = mixRgb(palette.dominant, WHITE, 0.86);
+  const derivedDark = mixRgb(palette.dominant, BLACK, 0.86);
+  const lightSurface = skin
+    ? guardForbiddenSurface(input, skin.lightNeutral ? brandHexToRgb(skin.lightNeutral) : skin.primary ? mixRgb(brandHexToRgb(skin.primary), WHITE, 0.9) : derivedLight, mixRgb(derivedLight, WHITE, 0.6))
+    : derivedLight;
+  const darkSurface = skin
+    ? guardForbiddenSurface(input, skin.darkNeutral ? brandHexToRgb(skin.darkNeutral) : skin.primary ? mixRgb(brandHexToRgb(skin.primary), BLACK, 0.8) : derivedDark, { r: 28, g: 27, b: 30 })
+    : derivedDark;
+  if (skin && (skin.lightNeutral || skin.darkNeutral || skin.primary)) brandRule(input, "BRAND_SURFACES", `superfícies da marca: clara ${toHex(lightSurface)}, escura ${toHex(darkSurface)}`);
+  const surfaceTone: "light" | "dark" = variant === "ASYMMETRIC_LUXURY" && !skin?.forceLight ? "dark" : "light";
+  if (variant === "ASYMMETRIC_LUXURY" && skin?.forceLight) brandRule(input, "FORBIDDEN_PATTERN", "sem fundos escuros: ASYMMETRIC_LUXURY em superfície clara");
   const surface = surfaceTone === "light" ? lightSurface : darkSurface;
   const ink = surfaceTone === "light" ? toHex(mixRgb(darkSurface, BLACK, 0.35)) : toHex(mixRgb(lightSurface, WHITE, 0.4));
   const muted = surfaceTone === "light" ? toHex(mixRgb(mixRgb(darkSurface, BLACK, 0.35), lightSurface, 0.32)) : toHex(mixRgb(lightSurface, darkSurface, 0.18));
-  const hairlineColor = toHex(mixRgb(palette.accent, surfaceTone === "light" ? BLACK : WHITE, 0.25));
+  const derivedHairline = toHex(mixRgb(palette.accent, surfaceTone === "light" ? BLACK : WHITE, 0.25));
+  const hairlineColor = skin ? brandAccent(input, derivedHairline, toHex(surfaceTone === "light" ? lightSurface : darkSurface), 3) : derivedHairline;
   const photoSurface = variant === "FULL_BLEED_STORY";
-  const logoTreatment = logo ? resolveInstitutionalLogoTreatment(logo, photoSurface ? "photo" : surfaceTone) : undefined;
+  const instLogo = brandLogoFor(input, logoParam, photoSurface ? "photo" : surfaceTone);
+  const logo = instLogo.logo;
+  const logoTreatment: EditorialLogoTreatment | undefined = logo ? (instLogo.variant ? "BRAND_LOGO_VARIANT" : resolveInstitutionalLogoTreatment(logo, photoSurface ? "photo" : surfaceTone)) : undefined;
+  const logoMultiply = logoTreatment === "LOGO_DIRECT_LIGHT" || (logoTreatment === "BRAND_LOGO_VARIANT" && logo !== undefined && brandLogoBlend(logo, photoSurface ? "photo" : surfaceTone) === "multiply");
   const ctaTreatment: EditorialCtaTreatment = variant === "PHOTO_DOMINANT_EDITORIAL" ? "SOLID_PREMIUM" : variant === "FULL_BLEED_STORY" ? "OUTLINE_EDITORIAL" : "TEXT_HAIRLINE";
   // 9:16: mesma largura de 1080, ~570 px a mais de altura e exibição em tela cheia no telefone —
   // composição vertical própria (nunca o 4:5 esticado), texto/logo dentro da safe area vertical.
@@ -1992,7 +2148,7 @@ async function renderInstitutionalEditorial(
       : logoSize(logo, variant === "MINIMAL_PREMIUM" ? 190 : 220, variant === "MINIMAL_PREMIUM" ? 32 : 36)
     : undefined;
 
-  const headSpec = (width: number, max: number, lines: number, anchor: "start" | "end" = "start"): TextSpec => ({ id: "headline", text: headline, width, maxHeight: max * 1.08 * lines, maxFontSize: max, minFontSize: 30, maxLines: lines, lineHeight: 1.08, letterSpacing: -0.6, balance: vertical, ...(anchor === "end" ? {} : {}) });
+  const headSpec = (width: number, max: number, lines: number, anchor: "start" | "end" = "start"): TextSpec => ({ id: "headline", text: headline, width, maxHeight: max * 1.08 * lines, maxFontSize: max, minFontSize: 30, maxLines: lines, lineHeight: 1.08, letterSpacing: -0.6, balance: vertical, ...brandHeadline(input), ...(anchor === "end" ? {} : {}) });
   const subSpec = (width: number, max: number, lines: number): TextSpec | undefined => (subheadline ? { id: "subheadline", text: subheadline, width, maxHeight: max * 1.42 * lines, maxFontSize: max, minFontSize: 15, maxLines: lines, lineHeight: 1.42, letterSpacing: 0.15 } : undefined);
   const CTA_TRACKING = 2.6;
   const ctaFontFor = (maxWidth: number, preferred: number): number => {
@@ -2249,38 +2405,49 @@ async function renderInstitutionalEditorial(
     roles.push("logo");
     assets.push(assetPlacement(logo, logoRect, canvas, `final rendered logo (${logoTreatment})`));
     assetBox("logo", logoRect, canvas, boxes);
-    verify.push(verifySpec("logo", logoRect, { fit: "contain", ...(logoTreatment === "LOGO_DIRECT_LIGHT" ? { blend: "multiply" as const } : {}) }));
+    verify.push(verifySpec("logo", logoRect, { fit: "contain", ...(logoMultiply ? { blend: "multiply" as const } : {}) }));
   }
   const plate = logo && logoRect && (logoTreatment === "LOGO_SOFT_PLATE" || logoTreatment === "LOGO_HAIRLINE_PLATE")
     ? logoTreatment === "LOGO_SOFT_PLATE"
       ? `<g filter="url(#plateShadow)"><rect x="${logoRect.x - 16}" y="${logoRect.y - 11}" width="${logoRect.width + 32}" height="${logoRect.height + 22}" rx="6" fill="${toHex(lightSurface)}"/></g>`
       : `<rect x="${logoRect.x - 16}" y="${logoRect.y - 11}" width="${logoRect.width + 32}" height="${logoRect.height + 22}" rx="4" fill="#FFFFFF" fill-opacity="0.94" stroke="${toHex(darkSurface)}" stroke-opacity="0.25" stroke-width="1"/>`
     : "";
-  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(logoTreatment === "LOGO_DIRECT_LIGHT" ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
+  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(logoMultiply ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
 
   const onPhoto = photoSurface;
   const textInk = onPhoto ? "#FFF8F0" : ink;
   const textMuted = onPhoto ? "#F2E6DA" : muted;
   const renderCopy = (block: InstitutionalCopyBlock, fill: string, weight: number, embolden: number): string =>
     renderTextBlock({ spec: block.spec, rect: block.rect, anchor: block.anchor }, fill, weight, embolden, canvas, boxes, issues);
+  // Brand Profile: filete curto na cor de destaque acima da headline (elemento recorrente da marca;
+  // decoração fora das caixas de texto — a PHOTO_DOMINANT já tem o seu fio próprio).
+  if (skin && variant !== "PHOTO_DOMINANT_EDITORIAL") {
+    const markY = head.rect.y - 22;
+    const markX = head.anchor === "end" ? head.rect.x + head.rect.width - 56 : head.rect.x;
+    decorations.push(`<rect x="${markX}" y="${markY}" width="56" height="3" fill="${onPhoto ? textInk : hairlineColor}"/>`);
+    brandRule(input, "BRAND_ACCENT_MARK", "filete de destaque da marca acima da headline");
+  }
   const headSvg = renderCopy(head, textInk, 700, Number((measureSpec(head.spec).fontSize * 0.012).toFixed(2)));
   const subSvg = sub ? renderCopy(sub, textMuted, 400, 0) : "";
   let ctaSvg = "";
   if (cta && ctaRect) {
     // fitText não conta o tracking: a largura útil desconta o espaçamento entre letras.
     const trackingAllowance = CTA_TRACKING * cta.length;
-    const ctaSpec: TextSpec = { id: "cta", text: cta, width: Math.max(40, (ctaTreatment === "TEXT_HAIRLINE" ? ctaRect.width : ctaRect.width - 40) - trackingAllowance), maxHeight: ctaRect.height, maxFontSize: ctaFont, minFontSize: 11, maxLines: 1, letterSpacing: CTA_TRACKING, uppercase: true };
+    const ctaSpec: TextSpec = { id: "cta", text: cta, width: Math.max(40, (ctaTreatment === "TEXT_HAIRLINE" ? ctaRect.width : ctaRect.width - 40) - trackingAllowance), maxHeight: ctaRect.height, maxFontSize: ctaFont, minFontSize: 11, maxLines: 1, letterSpacing: CTA_TRACKING, uppercase: skin?.ctaUppercase ?? true };
     if (ctaTreatment === "SOLID_PREMIUM") {
-      const fill = toHex(mixRgb(darkSurface, palette.accent, 0.18));
-      ctaSvg = `<rect x="${ctaRect.x}" y="${ctaRect.y}" width="${ctaRect.width}" height="${ctaRect.height}" rx="3" fill="${fill}"/>
+      const derivedFill = toHex(mixRgb(darkSurface, palette.accent, 0.18));
+      const fill = skin ? brandAccent(input, derivedFill, toHex(lightSurface), 4.5) : derivedFill;
+      ctaSvg = `<rect x="${ctaRect.x}" y="${ctaRect.y}" width="${ctaRect.width}" height="${ctaRect.height}" rx="${brandCtaRadius(input, ctaRect.height, 3)}" fill="${fill}"/>
         ${renderTextBlock({ spec: ctaSpec, rect: { x: ctaRect.x + 20, y: ctaRect.y, width: ctaRect.width - 40, height: ctaRect.height }, anchor: "middle", valign: "center" }, toHex(lightSurface), 600, 0.25, canvas, boxes, issues)}`;
     } else if (ctaTreatment === "OUTLINE_EDITORIAL") {
-      ctaSvg = `<rect x="${ctaRect.x}" y="${ctaRect.y}" width="${ctaRect.width}" height="${ctaRect.height}" rx="2" fill="#000000" fill-opacity="0.12" stroke="${textInk}" stroke-opacity="0.85" stroke-width="1.4"/>
+      ctaSvg = `<rect x="${ctaRect.x}" y="${ctaRect.y}" width="${ctaRect.width}" height="${ctaRect.height}" rx="${brandCtaRadius(input, ctaRect.height, 2)}" fill="#000000" fill-opacity="0.12" stroke="${textInk}" stroke-opacity="0.85" stroke-width="1.4"/>
         ${renderTextBlock({ spec: ctaSpec, rect: { x: ctaRect.x + 20, y: ctaRect.y, width: ctaRect.width - 40, height: ctaRect.height }, anchor: "middle", valign: "center" }, textInk, 600, 0.25, canvas, boxes, issues)}`;
     } else {
       // Texto + fio: o CTA é tipografia editorial sublinhada, sem botão.
       const lineY = ctaRect.y + ctaRect.height - 4;
-      ctaSvg = `${renderTextBlock({ spec: ctaSpec, rect: { x: ctaRect.x, y: ctaRect.y, width: ctaRect.width, height: ctaRect.height - 10 }, anchor: "start", valign: "center" }, textInk, 600, 0.25, canvas, boxes, issues)}
+      // Brand Profile: o texto do CTA editorial assume a cor de destaque da marca (contraste ≥ 4,5).
+      const hairlineCtaInk = skin && !onPhoto ? brandAccent(input, textInk, toHex(surfaceTone === "light" ? lightSurface : darkSurface), 4.5) : textInk;
+      ctaSvg = `${renderTextBlock({ spec: ctaSpec, rect: { x: ctaRect.x, y: ctaRect.y, width: ctaRect.width, height: ctaRect.height - 10 }, anchor: "start", valign: "center" }, hairlineCtaInk, 600, 0.25, canvas, boxes, issues)}
         <line x1="${ctaRect.x}" y1="${lineY}" x2="${ctaRect.x + ctaRect.width}" y2="${lineY}" stroke="${hairlineColor}" stroke-width="2"/>`;
     }
   }
@@ -2296,8 +2463,8 @@ async function renderInstitutionalEditorial(
     </defs>
     <rect width="${W}" height="${H}" fill="${toHex(surface)}"/>
     ${imageTag(undefined, ambientHref, { x: 0, y: 0, width: W, height: H }, { opacity: surfaceTone === "light" ? 0.16 : 0.22 })}
-    <rect width="${W}" height="${H}" fill="url(#instGlow)"/>
-    ${photoSurface ? "" : `<g filter="url(#photoShadow)"><rect x="${photo.x}" y="${photo.y}" width="${photo.width}" height="${photo.height}" rx="3" fill="${toHex(surface)}"/></g>`}
+    ${skin?.flat ? "" : `<rect width="${W}" height="${H}" fill="url(#instGlow)"/>`}
+    ${photoSurface ? "" : `<g${skin?.shadow === "NONE" ? "" : ` filter="url(#photoShadow)"`}><rect x="${photo.x}" y="${photo.y}" width="${photo.width}" height="${photo.height}" rx="3" fill="${toHex(surface)}"/></g>`}
     ${photoTag}
     ${photoSurface ? "" : `<rect x="${photo.x + 0.5}" y="${photo.y + 0.5}" width="${photo.width - 1}" height="${photo.height - 1}" rx="3" fill="none" stroke="${surfaceTone === "light" ? "#000000" : "#FFFFFF"}" stroke-opacity="0.08" stroke-width="1"/>`}
     ${scrim ? `<rect x="0" y="${Math.round(scrim.top)}" width="${W}" height="${Math.round(H - scrim.top)}" fill="url(#storyVeil)"/>` : ""}
@@ -2606,10 +2773,10 @@ export const DESKTOP_SCREENSHOT_MIN_DISPLAY_SCALE = 0.4;
 const SHOT_RADIUS = 18;
 
 async function renderDigitalServiceAdaptive(
-  input: RenderEditorialCreativeInput,
+  input: EditorialRenderInput,
   canvas: Canvas,
   price: string | undefined,
-  logo: PreparedAsset | undefined,
+  logoParam: PreparedAsset | undefined,
   screenshot: PreparedAsset,
   _base: { png: Buffer; width: number; height: number },
   _baseHref: string,
@@ -2641,7 +2808,7 @@ async function renderDigitalServiceAdaptive(
     const shotHeight = (W - 2 * EDGE) / aspect;
     const headFit = fitText(headline, V.headWidth, V.headMax * 1.06 * 3, { maxFontSize: V.headMax, minFontSize: 36, maxLines: 3, lineHeight: 1.06 });
     const subFit = subheadline ? fitText(subheadline, V.subWidth, 3 * 26 * 1.4, { maxFontSize: 26, minFontSize: 19, maxLines: 3, lineHeight: 1.4 }) : undefined;
-    const logoH = logo ? logoSize(logo, 270, 46).height + 34 : 0;
+    const logoH = logoParam ? logoSize(logoParam, 270, 46).height + 34 : 0;
     const block = logoH + headFit.height + (subFit ? 20 + subFit.height : 0) + (price ? 18 + 64 : 0) + (cta ? 40 + V.ctaH : 0);
     const available = H - safe.top - safe.bottom - V.gap - shotHeight * (1 + FLOATING_COPY.depthReserve);
     return headFit.fits && (subFit?.fits ?? true) && headFit.fontSize >= V.headMax * FLOATING_MIN_HEADLINE_RATIO && block <= available;
@@ -2651,7 +2818,7 @@ async function renderDigitalServiceAdaptive(
     const available = shotY - shotHeight * FLOATING_COPY.depthReserve - 20 - M;
     const headFit = fitText(headline, FLOATING_COPY.headWidth, FLOATING_COPY.headMax * 1.06 * 3, { maxFontSize: FLOATING_COPY.headMax, minFontSize: 32, maxLines: 3, lineHeight: 1.06 });
     const subFit = subheadline ? fitText(subheadline, FLOATING_COPY.subWidth, subheadline.length > 80 ? 96 : 70, { maxFontSize: subheadline.length > 80 ? 21 : 23, minFontSize: 17, maxLines: subheadline.length > 80 ? 3 : 2, lineHeight: 1.4 }) : undefined;
-    const logoH = logo ? logoSize(logo, 230, 40).height + 30 : 0;
+    const logoH = logoParam ? logoSize(logoParam, 230, 40).height + 30 : 0;
     const block = logoH + headFit.height + (subFit ? 18 + subFit.height : 0) + (price ? 16 + 60 : 0);
     return headFit.fits && (subFit?.fits ?? true) && headFit.fontSize >= FLOATING_COPY.headMax * FLOATING_MIN_HEADLINE_RATIO && block <= available;
   })();
@@ -2674,25 +2841,31 @@ async function renderDigitalServiceAdaptive(
   const defaultOption: DigitalServiceOption = variant === "UI_HERO" ? "left" : variant === "UI_DETAIL_FOCUS" ? "a" : "light";
   const option: DigitalServiceOption = input.qaVariantOption && allowedOptions[variant]?.includes(input.qaVariantOption) ? input.qaVariantOption : defaultOption;
   if (input.qaVariantOption && option === input.qaVariantOption) reasons.push(`QA_VARIANT_OPTION=${option}`);
-  const dark = variant === "FLOATING_PRODUCT" && option === "dark";
+  const skin = input.brand?.skin;
+  const dark = variant === "FLOATING_PRODUCT" && option === "dark" && !skin?.forceLight;
 
   // Superfícies derivadas da paleta do screenshot (nada neon): claro = tom do acento muito diluído;
   // escuro = acento afundado em quase preto.
-  const accent = paletteRgb.accent;
+  // Brand Profile: a cor da marca (primária) tinge as superfícies; sem marca, o acento da própria UI.
+  const accent = skin?.primary && !isNearForbiddenColor(skin.primary, skin.forbidden) ? brandHexToRgb(skin.primary) : guardForbiddenSurface(input, paletteRgb.accent, { r: 90, g: 90, b: 96 });
+  if (skin?.primary) brandRule(input, "BRAND_SURFACES", `superfícies tingidas pela cor principal ${skin.primary}`);
   const surface = dark
     ? { top: toHex(mixRgb(accent, BLACK, 0.86)), bottom: toHex(mixRgb(accent, BLACK, 0.93)), glowA: toHex(mixRgb(accent, WHITE, 0.1)), glowB: toHex(mixRgb(paletteRgb.secondary, accent, 0.5)) }
     : { top: toHex(mixRgb(accent, WHITE, 0.9)), bottom: toHex(mixRgb(accent, WHITE, 0.74)), glowA: toHex(mixRgb(accent, WHITE, 0.45)), glowB: toHex(mixRgb(paletteRgb.dominant, accent, 0.25)) };
-  const ink = dark ? "#FFF5EE" : "#1F1416";
+  const ink = dark ? "#FFF5EE" : skin?.darkNeutral ?? "#1F1416";
   const muted = dark ? "#E9D9D2" : "#5A4547";
   const accentHex = toHex(dark ? mixRgb(accent, WHITE, 0.82) : mixRgb(accent, BLACK, 0.18));
   const ctaText = dark ? toHex(mixRgb(accent, BLACK, 0.75)) : "#FFF8F3";
-  const logoTreatment = logo ? resolveLogoTreatment(logo, dark ? "dark" : "light") : undefined;
+  const digitalLogo = brandLogoFor(input, logoParam, dark ? "dark" : "light");
+  const logo = digitalLogo.logo;
+  const logoTreatment: EditorialLogoTreatment | undefined = logo ? (digitalLogo.variant ? "BRAND_LOGO_VARIANT" : resolveLogoTreatment(logo, dark ? "dark" : "light")) : undefined;
+  const logoMultiply = logoTreatment === "MULTIPLY_ON_LIGHT" || (logoTreatment === "BRAND_LOGO_VARIANT" && logo !== undefined && brandLogoBlend(logo, dark ? "dark" : "light") === "multiply");
   const logoBox = logo ? (vertical ? logoSize(logo, 270, 46) : logoSize(logo, 230, 40)) : undefined;
   const CTA_H = vertical ? V.ctaH : 58;
   const CTA_FONT = vertical ? V.ctaFont : 18;
   const ctaW = cta ? clamp(estimateLineWidth(cta.toUpperCase(), CTA_FONT, 2.4) + (vertical ? 80 : 64), 200, vertical ? 520 : 400) : 0;
   const shotAt = (x: number, y: number, width: number): PxRect => ({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(width / aspect) });
-  const headSpec = (width: number, max: number, lines = 3): TextSpec => ({ id: "headline", text: headline, width, maxHeight: max * 1.06 * lines, maxFontSize: max, minFontSize: 32, maxLines: lines, lineHeight: 1.06, letterSpacing: -0.5, balance: vertical });
+  const headSpec = (width: number, max: number, lines = 3): TextSpec => ({ id: "headline", text: headline, width, maxHeight: max * 1.06 * lines, maxFontSize: max, minFontSize: 32, maxLines: lines, lineHeight: 1.06, letterSpacing: -0.5, balance: vertical, ...brandHeadline(input) });
   const subSpec = (width: number): TextSpec | undefined =>
     !subheadline
       ? undefined
@@ -2891,7 +3064,7 @@ async function renderDigitalServiceAdaptive(
     roles.push("logo");
     assets.push(assetPlacement(logo, logoRect, canvas, `final rendered logo (${logoTreatment})`));
     assetBox("logo", logoRect, canvas, boxes);
-    verify.push(verifySpec("logo", logoRect, { fit: "contain", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { blend: "multiply" as const } : {}) }));
+    verify.push(verifySpec("logo", logoRect, { fit: "contain", ...(logoMultiply ? { blend: "multiply" as const } : {}) }));
   }
 
   // Camadas de profundidade derivadas do PRÓPRIO screenshot: desfocadas a ponto de não ter texto
@@ -2911,23 +3084,25 @@ async function renderDigitalServiceAdaptive(
     <g filter="url(#surfaceShadow)"><rect x="${shot.x}" y="${shot.y}" width="${shot.width}" height="${shot.height}" rx="${SHOT_RADIUS}" fill="#FFFFFF"/></g>
     ${imageTag(screenshot, "", shot, { preserveAspectRatio: "xMidYMid meet", clipId: "shotClip" })}
     <rect x="${shot.x + 0.5}" y="${shot.y + 0.5}" width="${shot.width - 1}" height="${shot.height - 1}" rx="${SHOT_RADIUS}" fill="none" stroke="${dark ? "#FFFFFF" : "#2A1A1C"}" stroke-opacity="${dark ? 0.18 : 0.1}" stroke-width="1"/>`;
-  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(logoTreatment === "MULTIPLY_ON_LIGHT" ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
+  const logoTag = logo && logoRect ? imageTag(logo, "", logoRect, { preserveAspectRatio: "xMidYMid meet", ...(logoMultiply ? { style: "mix-blend-mode:multiply" } : {}) }) : "";
   const chip = logo && logoRect && logoTreatment === "CHIP" ? `<rect x="${logoRect.x - 12}" y="${logoRect.y - 8}" width="${logoRect.width + 24}" height="${logoRect.height + 16}" rx="12" fill="#FFF8F1" opacity="0.95"/>` : "";
   const renderBlock = (block: TextBlock, fill: string, weight: number, embolden: number): string => {
     const anchor = block.anchor ?? "start";
-    return textSvg({ id: block.spec.id, text: block.spec.text, x: anchor === "end" ? block.rect.x + block.rect.width : block.rect.x, y: 0, top: block.rect.y, width: block.spec.width, maxHeight: block.spec.maxHeight, maxFontSize: block.spec.maxFontSize, minFontSize: block.spec.minFontSize, maxLines: block.spec.maxLines, lineHeight: block.spec.lineHeight, letterSpacing: block.spec.letterSpacing, balance: block.spec.balance, anchor, fill, weight, embolden }, canvas, boxes, issues);
+    return textSvg({ id: block.spec.id, text: block.spec.text, x: anchor === "end" ? block.rect.x + block.rect.width : block.rect.x, y: 0, top: block.rect.y, width: block.spec.width, maxHeight: block.spec.maxHeight, maxFontSize: block.spec.maxFontSize, minFontSize: block.spec.minFontSize, maxLines: block.spec.maxLines, lineHeight: block.spec.lineHeight, letterSpacing: block.spec.letterSpacing, balance: block.spec.balance, fontFamily: block.spec.fontFamily, capsAware: block.spec.capsAware, anchor, fill, weight, embolden: block.spec.fontFamily ? 0 : embolden }, canvas, boxes, issues);
   };
   const headSvg = renderBlock(head!, ink, 850, Number((measureSpec(head!.spec).fontSize * 0.024).toFixed(2)));
   const subSvg = sub ? renderBlock(sub, muted, 500, 0) : "";
   const priceSvg = priceBlock ? renderBlock(priceBlock, accentHex, 850, 0.8) : "";
   // CTA comercial: pílula baixa, cor da marca do próprio produto, caixa alta espaçada, brilho sutil.
+  const digitalCtaRadius = pill ? brandCtaRadius(input, pill.height, pill.height / 2) : 0;
   const ctaSvg = cta && pill
-    ? `<g filter="url(#ctaLift)"><rect x="${pill.x}" y="${pill.y}" width="${pill.width}" height="${pill.height}" rx="${pill.height / 2}" fill="url(#ctaFill)"/></g>
-      <rect x="${pill.x + 1}" y="${pill.y + 1}" width="${pill.width - 2}" height="${pill.height / 2}" rx="${pill.height / 2 - 1}" fill="#FFFFFF" opacity="${dark ? 0.12 : 0.1}"/>
-      ${renderTextBlock({ spec: { id: "cta", text: cta, width: pill.width - 40, maxHeight: pill.height, maxFontSize: fitUppercaseCtaFont(cta, pill.width - 40, CTA_FONT, 13, 2.4), minFontSize: 13, maxLines: 1, letterSpacing: 2.4, uppercase: true }, rect: ctaZoneRect(pill), anchor: "middle", valign: "center" }, ctaText, 800, 0.35, canvas, boxes, issues)}`
+    ? `<g${skin?.shadow === "NONE" ? "" : ` filter="url(#ctaLift)"`}><rect x="${pill.x}" y="${pill.y}" width="${pill.width}" height="${pill.height}" rx="${digitalCtaRadius}" fill="url(#ctaFill)"/></g>
+      ${skin?.flat ? "" : `<rect x="${pill.x + 1}" y="${pill.y + 1}" width="${pill.width - 2}" height="${pill.height / 2}" rx="${Math.max(0, digitalCtaRadius - 1)}" fill="#FFFFFF" opacity="${dark ? 0.12 : 0.1}"/>`}
+      ${renderTextBlock({ spec: { id: "cta", text: cta, width: pill.width - 40, maxHeight: pill.height, maxFontSize: fitUppercaseCtaFont(cta, pill.width - 40, CTA_FONT, 13, 2.4), minFontSize: 13, maxLines: 1, letterSpacing: 2.4, uppercase: skin?.ctaUppercase ?? true }, rect: ctaZoneRect(pill), anchor: "middle", valign: "center" }, ctaText, 800, 0.35, canvas, boxes, issues)}`
     : "";
-  const ctaFillA = dark ? "#FFF3EA" : toHex(mixRgb(accent, BLACK, 0.12));
-  const ctaFillB = dark ? toHex(mixRgb(accent, WHITE, 0.7)) : toHex(mixRgb(accent, BLACK, 0.38));
+  const brandCtaFill = skin && !dark ? brandAccent(input, toHex(mixRgb(accent, BLACK, 0.12)), "#FFFFFF", 4.5) : undefined;
+  const ctaFillA = brandCtaFill ?? (dark ? "#FFF3EA" : toHex(mixRgb(accent, BLACK, 0.12)));
+  const ctaFillB = brandCtaFill ? (skin?.flat ? brandCtaFill : toHex(mixRgb(brandHexToRgb(brandCtaFill), BLACK, 0.25))) : dark ? toHex(mixRgb(accent, WHITE, 0.7)) : toHex(mixRgb(accent, BLACK, 0.38));
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
     ${fontFaceCss}
@@ -2943,10 +3118,10 @@ async function renderDigitalServiceAdaptive(
       <filter id="softBlur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="14"/></filter>
       <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.05"/></feComponentTransfer></filter>
     </defs>
-    <rect width="${W}" height="${H}" fill="url(#digitalSurface)"/>
+    ${skin?.flat ? `<rect width="${W}" height="${H}" fill="${surface.top}"/>` : `<rect width="${W}" height="${H}" fill="url(#digitalSurface)"/>
     <ellipse cx="${cx}" cy="${cy}" rx="${shot.width * 0.7}" ry="${shot.height * 0.75}" fill="url(#shotGlow)"/>
     <ellipse cx="${variant === "UI_HERO" && option === "right" ? W * 0.18 : W * 0.86}" cy="${H * 0.12}" rx="${W * 0.55}" ry="${H * 0.32}" fill="url(#meshA)"/>
-    <ellipse cx="${W * 0.1}" cy="${H * 0.92}" rx="${W * 0.6}" ry="${H * 0.3}" fill="url(#meshB)"/>
+    <ellipse cx="${W * 0.1}" cy="${H * 0.92}" rx="${W * 0.6}" ry="${H * 0.3}" fill="url(#meshB)"/>`}
     <rect width="${W}" height="${H}" filter="url(#grain)" opacity="0.9"/>
     ${ghostLayers}
     ${shotTag}
@@ -3333,7 +3508,12 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
   const issues: EditorialGeometryIssue[] = [];
   const boxes: EditorialGeometryBox[] = [];
   const baseHref = pngDataUri(base.png);
-  const logo = firstAsset(prepared, "logo");
+  // Brand Profile: versões de logo fornecidas + skin. Logo padrão = a que não é versão da marca
+  // (logo da biblioteca/pedido); sem nenhuma, a primeira versão. Sem identidade: exatamente antes.
+  const brandLogos: PreparedBrandLogo[] = prepared.flatMap((asset, index) => (input.assets[index]?.brandLogo ? [{ ...asset, brandLogo: input.assets[index]!.brandLogo! }] : []));
+  const logo = prepared.find((asset, index) => asset.role === "logo" && !input.assets[index]?.brandLogo) ?? firstAsset(prepared, "logo");
+  const skin = deriveBrandSkin(input.context.brandIdentity);
+  const renderInput: EditorialRenderInput = skin ? { ...input, brand: { skin, logos: brandLogos, rules: [] } } : input;
   const product = firstAsset(prepared, "product_photo");
   const screenshot = firstAsset(prepared, "screenshot");
   const price = resolveEditorialConfirmedPrice(input.context);
@@ -3344,7 +3524,7 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
   // templates antigos de slots fixos ficam só como fallback de screenshot MOBILE no digital.
   const rendered = family === "product_offer"
     ? true
-      ? await renderProductOfferAdaptive(input, canvas, price, logo, product, {
+      ? await renderProductOfferAdaptive(renderInput, canvas, price, logo, product, {
           ambientHref: await buildAmbient(base.png, canvas),
           productAmbientHref: product ? await buildProductAmbient(product, canvas) : undefined,
           baseTone: await resolveBackgroundTone(base.png),
@@ -3352,10 +3532,10 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
       : await renderProductOffer(input, canvas, price, logo, product, await buildAmbient(base.png, canvas), fontFaceCss, boxes, issues)
     : family === "digital_service"
       ? screenshot && classifyScreenshot(screenshot.width, screenshot.height) !== "MOBILE"
-        ? await renderDigitalServiceAdaptive(input, canvas, price, logo, screenshot, base, baseHref, fontFaceCss, boxes, issues)
+        ? await renderDigitalServiceAdaptive(renderInput, canvas, price, logo, screenshot, base, baseHref, fontFaceCss, boxes, issues)
         : withMobileDiagnostics(await renderDigitalService(input, canvas, price, logo, screenshot, baseHref || (await blankFallback(canvas.width, canvas.height, "#1a1012")), fontFaceCss, boxes, issues), screenshot, canvas)
       : true
-        ? await renderInstitutionalEditorial(input, canvas, logo, base, fontFaceCss, boxes, issues)
+        ? await renderInstitutionalEditorial(renderInput, canvas, logo, base, fontFaceCss, boxes, issues)
         : await renderPremiumInstitutional(input, canvas, logo, baseHref, fontFaceCss, boxes, issues);
 
   // Contrato de texto ANTES de rasterizar: todo texto obrigatório precisa ter virado zona.
@@ -3386,7 +3566,9 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
     const final = await toRaw(sharp(buffer));
     const control = await toRaw(rasterize(withoutAssetImages(rendered.svg), canvas, output));
     for (const spec of rendered.verify) {
-      const sourceAsset = firstAsset(prepared, spec.role);
+      // Logo: a prova em pixel é contra a versão EFETIVAMENTE desenhada (versão da marca, quando usada).
+      const brandLogoUsed = spec.role === "logo" && renderInput.brand?.logoUsed ? brandLogos.find((item) => item.brandLogo.assetId === renderInput.brand!.logoUsed!.assetId) : undefined;
+      const sourceAsset = brandLogoUsed ?? (spec.role === "logo" ? logo : firstAsset(prepared, spec.role));
       if (!sourceAsset) continue;
       const asset = spec.crop ? await cropPreparedAsset(sourceAsset, spec.crop) : sourceAsset;
       const verification = { ...(await verifyAsset(spec, asset, final, control, canvas, output)), ...(spec.crop ? { cropSourceRect: spec.crop } : {}) };
@@ -3400,6 +3582,10 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
     }
   }
 
+  if (renderInput.brand && rendered.composition) {
+    rendered.composition.brandRules = [...renderInput.brand.rules];
+    if (renderInput.brand.logoUsed) rendered.composition.brandLogo = renderInput.brand.logoUsed;
+  }
   const textBoxes = boxes.filter((box) => box.kind === "text");
   const assetBoxes = boxes.filter((box) => box.kind === "asset");
   return {

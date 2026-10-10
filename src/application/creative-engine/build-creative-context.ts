@@ -1,3 +1,4 @@
+import { detectBrandRequestConflicts, type AppliedBrandRule, type CreativeBrandIdentity } from "../../shared/utils/brand-identity.js";
 import type { CreativeContext, CreativeContextAsset, CreativeContextBrandMaterial, CreativeContextHistoryEntry } from "../../shared/utils/gpt-creative-plan.types.js";
 import {
   commercialFactsFromReferenceIntelligence,
@@ -43,6 +44,8 @@ export type BuildCreativeContextDeps = {
   /** Porta estreita — devolve o perfil de marca já resolvido para o workspace, ou `undefined`
    * quando não há nenhum dado de marca cadastrado (nunca inventa um perfil). */
   resolveBrandProfile?(workspaceId: string): Promise<CreativeBrandProfile | undefined>;
+  /** Brand Profile ESTRUTURADO (identidade visual) do workspace — `undefined` = SYSTEM_DEFAULT. */
+  resolveBrandIdentity?(workspaceId: string): Promise<{ brand: CreativeBrandIdentity; skipped: AppliedBrandRule[] } | undefined>;
   /** Memória editorial — últimas peças aprovadas do workspace, para o GPT evitar repetir
    * headline/CTA/conceito recentes. */
   resolveRecentHistory?(workspaceId: string, limit?: number): Promise<CreativeContextHistoryEntry[]>;
@@ -101,6 +104,12 @@ export async function buildCreativeContext(deps: BuildCreativeContextDeps, input
   const confirmedFacts = formatConfirmedFacts(mergedFacts);
 
   const brandProfile = await deps.resolveBrandProfile?.(input.workspaceId).catch(() => undefined);
+  const resolvedIdentity = await deps.resolveBrandIdentity?.(input.workspaceId).catch(() => undefined);
+  // Conflito pedido x restrição explícita da marca: a marca prevalece e fica registrado.
+  const appliedBrandRules: AppliedBrandRule[] = resolvedIdentity
+    ? [...resolvedIdentity.skipped, ...detectBrandRequestConflicts(resolvedIdentity.brand, `${input.objective}
+${input.ideaText}`)]
+    : [];
   const recentHistory = await deps.resolveRecentHistory?.(input.workspaceId, 5).catch(() => []);
   const productionSettings = await deps.resolveProductionSettings?.(input.workspaceId).catch(() => undefined);
   const availableMaterials = (await deps.resolveBrandMaterials?.(input.workspaceId).catch(() => [])) ?? [];
@@ -148,6 +157,7 @@ export async function buildCreativeContext(deps: BuildCreativeContextDeps, input
     assets: [...input.assets, ...materialAssets],
     confirmedFacts,
     brandColors: input.brandColors ?? brandProfile?.brandColors,
+    ...(resolvedIdentity ? { brandIdentity: resolvedIdentity.brand, appliedBrandRules } : {}),
     forbiddenElements: forbiddenElements.length > 0 ? forbiddenElements : undefined,
     audience: brandProfile?.targetAudience,
     brandPositioning: brandProfile?.positioning,

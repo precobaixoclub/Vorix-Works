@@ -45,6 +45,10 @@ function buildExplorationPrompt(context: CreativeContext): string {
     recentConcepts.length > 0
       ? `Direções visuais JÁ USADAS recentemente por este workspace (NUNCA repita nenhuma delas nem proponha uma variação superficial em cima delas — busque algo genuinamente diferente): ${recentConcepts.map((concept) => `"${concept}"`).join("; ")}.`
       : "",
+    "As direções devem ser visuais e NÃO textuais: nunca proponha palavras, frases, preços, percentuais, etiquetas, UI text, slogans, tipografia decorativa ou luzes formando texto como parte da cena. Todo texto comercial será desenhado depois por renderer determinístico; se a ideia precisar de mensagem, descreva apenas espaço/ritmo/composição não textual para receber esse renderer.",
+    context.confirmedFacts.length > 0
+      ? `Fatos comerciais confirmados disponíveis (não invente nenhum outro): ${context.confirmedFacts.join("; ")}. Mesmo quando citar estes fatos, trate-os como conteúdo do renderer, nunca como texto desenhado pelo modelo de imagem.`
+      : "Nenhum fato comercial foi confirmado: não use preço, desconto, percentual, etiqueta comercial, cifra ou número de oferta em nenhuma direção criativa.",
     "Para cada direção, dê: um nome curto, a ideia visual central em 1-2 frases CONCRETAS (nunca \"visual moderno\"/\"alto impacto\" — descreva o que apareceria na tela), por que ela se encaixa no objetivo, e uma nota de originalidade de 0 a 10 (10 = nunca visto num anúncio antes, 0 = clichê batido de mercado).",
     "Depois escolha a MELHOR direção entre as propostas (o melhor equilíbrio entre originalidade e adequação real ao objetivo/produto) e explique o motivo em 1 frase objetiva.",
     "Responda APENAS com JSON válido, sem markdown, no formato exato:",

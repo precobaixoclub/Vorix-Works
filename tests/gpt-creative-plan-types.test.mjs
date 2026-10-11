@@ -522,6 +522,40 @@ test("buildImageGenerationPromptFromPlan: com TODOS os textos autorizados sendo 
 // deterministicamente a `renderedBy: "renderer"`, não só headline/subheadline (ver comentário em
 // `parseTextZones`). `"image_model"` nunca é o valor final de um plano parseado.
 
+test("buildImageGenerationPromptFromPlan: caminho padrao neutraliza prosa livre com texto/preco quando o renderer e dono de todo texto", () => {
+  const context = sampleContext({ confirmedFacts: [] });
+  const plan = parseCreativePlan(samplePlanJson({
+    headline: "Oferta limpa",
+    subheadline: undefined,
+    cta: "",
+    allowedRenderedTexts: ["Oferta limpa"],
+    visualDirection: "Espelhos refletindo produtos e precos com palavras flutuantes",
+    compositionIntent: "Texto integrado aos reflexos, sem sobreposicao direta",
+    artDirection: sampleArtDirection({
+      concept: "Luzes formando palavras de crescimento",
+      visualFocus: "Precos e numeros refletidos nos espelhos",
+      elementHierarchy: ["precos", "headline", "logo"],
+      productTextRelationship: "Texto integrado ao efeito espelhado",
+    }),
+    layoutPlan: [
+      { kind: "hero", rect: { xPct: 10, yPct: 20, widthPct: 80, heightPct: 50 }, priority: 1, rationale: "Espelhos com palavras e precos no centro" },
+      { kind: "headline", rect: { xPct: 10, yPct: 5, widthPct: 80, heightPct: 10 }, priority: 2, rationale: "Area da headline reservada" },
+    ],
+    textZones: [
+      { kind: "headline", text: "Oferta limpa", rect: { xPct: 10, yPct: 5, widthPct: 80, heightPct: 10 }, emphasis: "primary", renderedBy: "renderer" },
+    ],
+  }));
+
+  const imagePrompt = buildImageGenerationPromptFromPlan(plan, context);
+
+  assert.match(imagePrompt, /CONTRATO DE TEXTO DO MODELO DE IMAGEM/);
+  assert.match(imagePrompt, /area visual sem texto/);
+  assert.doesNotMatch(imagePrompt, /Espelhos refletindo produtos e precos/);
+  assert.doesNotMatch(imagePrompt, /palavras flutuantes/);
+  assert.doesNotMatch(imagePrompt, /Precos e numeros refletidos/);
+  assert.doesNotMatch(imagePrompt, /Texto integrado ao efeito espelhado/);
+});
+
 test("parseCreativePlan: TODO textZone SEMPRE vira renderedBy='renderer', mesmo que o JSON bruto peça 'image_model' para qualquer kind (trava determinística, não confia só no Director)", () => {
   const plan = parseCreativePlan(
     samplePlanJson({

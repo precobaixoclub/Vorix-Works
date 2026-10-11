@@ -1352,6 +1352,19 @@ export function resolveEditorialProductAssetRequirement(plan: CreativePlan, cont
   };
 }
 
+const STANDARD_IMAGE_TEXT_DIRECTIVE_PATTERN = /\b(?:texto|textos|palavra|palavras|tipografia|typography|headline|subheadline|cta|call to action|preco|precos|preço|preços|price|prices|desconto|descontos|discount|discounts|badge|url|label|labels|rotulo|rotulos|rótulo|rótulos|botao|botoes|botão|botões|button|buttons|numero|numeros|número|números|number|numbers|currency|moeda)\b/giu;
+
+function sanitizeStandardImagePromptFreeText(value: string | undefined, suppressImageModelText: boolean): string | undefined {
+  if (!value?.trim()) return undefined;
+  if (!suppressImageModelText) return value;
+  return value
+    .replace(/\b(?:R\$|BRL|USD|US\$)\s*\d[\d.,]*/gi, "forma abstrata sem numero")
+    .replace(/\b\d{1,3}(?:[.,]\d{2})\b/g, "forma abstrata sem numero")
+    .replace(STANDARD_IMAGE_TEXT_DIRECTIVE_PATTERN, "area visual sem texto")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: CreativeContext, options: { compositionMode?: ImageGenerationPromptMode; editorialFamily?: "product_offer" | "premium_institutional" | "digital_service" } = {}): string {
   if (options.compositionMode === "editorial_experimental") return buildEditorialImageGenerationPromptFromPlan(plan, context, options.editorialFamily);
 
@@ -1360,38 +1373,47 @@ export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: 
   const headlineZone = plan.textZones.find((zone) => zone.kind === "headline");
   const subheadlineZone = plan.textZones.find((zone) => zone.kind === "subheadline");
   const ctaZone = plan.textZones.find((zone) => zone.kind === "cta");
+  const rendererOwnedTexts = new Set(plan.textZones.filter((zone) => zone.renderedBy === "renderer").map((zone) => zone.text));
+  const modelDrawableAllowedTexts = plan.allowedRenderedTexts.filter((text) => !rendererOwnedTexts.has(text));
+  const imageModelTextSuppressed = modelDrawableAllowedTexts.length === 0;
+  const freeText = (value: string | undefined): string | undefined => sanitizeStandardImagePromptFreeText(value, imageModelTextSuppressed);
 
   const lines = [
     `Crie uma peça publicitária ${context.format} para "${context.brandName}".`,
-    `Direção visual: ${plan.visualDirection}`,
-    `Intenção de composição: ${plan.compositionIntent}`,
+    `Direção visual: ${freeText(plan.visualDirection) ?? plan.visualDirection}`,
+    `Intenção de composição: ${freeText(plan.compositionIntent) ?? plan.compositionIntent}`,
   ];
+  if (imageModelTextSuppressed) {
+    lines.push(
+      "CONTRATO DE TEXTO DO MODELO DE IMAGEM: o modelo de imagem NAO deve desenhar nenhuma palavra, numero, preco, porcentagem, rotulo, botao, marca, pseudo-texto ou tipografia decorativa. Interprete qualquer mencao textual no plano abaixo (headline, CTA, preco, palavras, etiquetas, produtos com preco, texto integrado etc.) apenas como intencao de layout para o renderer deterministico; represente tudo com formas, luz, objetos sem marca e areas limpas sem caracteres legiveis.",
+    );
+  }
   // Auditoria "qualidade visual e direção de arte" — achado ao vivo: `artDirection`/`layoutPlan`
   // (as decisões CONCRETAS de composição) eram validados no plano mas nunca chegavam ao prompt
   // que de fato gera os pixels — o modelo de imagem só via `visualDirection`/`compositionIntent`
   // (prosa livre), então a especificidade exigida no Director se perdia antes de virar imagem.
   const artDirection = plan.artDirection;
   lines.push(
-    `CONCEITO CRIATIVO DESTA PEÇA (siga literalmente, não reinterprete): ${artDirection.concept}`,
-    `Foco visual principal (o que o olho encontra primeiro, deve ocupar aproximadamente ${artDirection.primaryMassPct}% do canvas): ${artDirection.visualFocus}`,
-    `Hierarquia dos elementos, do mais para o menos importante: ${artDirection.elementHierarchy.join(" > ")}`,
-    `Estratégia de contraste principal: ${artDirection.contrastStrategy}`,
-    `Direção cromática: ${artDirection.chromaticDirection}`,
-    `Atmosfera: ${artDirection.atmosphere}`,
-    `Tratamento de fundo: ${artDirection.backgroundTreatment}`,
-    `Relação entre produto/screenshot e texto: ${artDirection.productTextRelationship}`,
+    `CONCEITO CRIATIVO DESTA PEÇA (siga literalmente, não reinterprete): ${freeText(artDirection.concept) ?? artDirection.concept}`,
+    `Foco visual principal (o que o olho encontra primeiro, deve ocupar aproximadamente ${artDirection.primaryMassPct}% do canvas): ${freeText(artDirection.visualFocus) ?? artDirection.visualFocus}`,
+    `Hierarquia dos elementos, do mais para o menos importante: ${artDirection.elementHierarchy.map((item) => freeText(item) ?? item).join(" > ")}`,
+    `Estratégia de contraste principal: ${freeText(artDirection.contrastStrategy) ?? artDirection.contrastStrategy}`,
+    `Direção cromática: ${freeText(artDirection.chromaticDirection) ?? artDirection.chromaticDirection}`,
+    `Atmosfera: ${freeText(artDirection.atmosphere) ?? artDirection.atmosphere}`,
+    `Tratamento de fundo: ${freeText(artDirection.backgroundTreatment) ?? artDirection.backgroundTreatment}`,
+    `Relação entre produto/screenshot e texto: ${freeText(artDirection.productTextRelationship) ?? artDirection.productTextRelationship}`,
   );
   if (artDirection.justifiedCliches.length > 0) {
-    lines.push(`Elementos visuais comuns usados NESTA peça, de propósito: ${artDirection.justifiedCliches.join("; ")}.`);
+    lines.push(`Elementos visuais comuns usados NESTA peça, de propósito: ${artDirection.justifiedCliches.map((item) => freeText(item) ?? item).join("; ")}.`);
   }
   if (artDirection.avoidedCliches.length > 0) {
-    lines.push(`NUNCA inclua (decisão consciente desta peça): ${artDirection.avoidedCliches.join(", ")}.`);
+    lines.push(`NUNCA inclua (decisão consciente desta peça): ${artDirection.avoidedCliches.map((item) => freeText(item) ?? item).join(", ")}.`);
   }
   if (plan.layoutPlan.length > 0) {
     const layoutLines = plan.layoutPlan
       .slice()
       .sort((a, b) => a.priority - b.priority)
-      .map((zone) => `${zone.kind} (prioridade ${zone.priority}, x=${zone.rect.xPct}%-${zone.rect.xPct + zone.rect.widthPct}%, y=${zone.rect.yPct}%-${zone.rect.yPct + zone.rect.heightPct}%): ${zone.rationale}`);
+      .map((zone) => `${zone.kind} (prioridade ${zone.priority}, x=${zone.rect.xPct}%-${zone.rect.xPct + zone.rect.widthPct}%, y=${zone.rect.yPct}%-${zone.rect.yPct + zone.rect.heightPct}%): ${freeText(zone.rationale) ?? zone.rationale}`);
     lines.push(`Mapa de composição — respeite esta distribuição de massa visual (zonas em ordem de prioridade):\n${layoutLines.join("\n")}`);
     const negativeSpaceZones = plan.layoutPlan.filter((zone) => zone.kind === "negativeSpace");
     if (negativeSpaceZones.length > 0) {
@@ -1416,17 +1438,15 @@ export function buildImageGenerationPromptFromPlan(plan: CreativePlan, context: 
   // (o modelo lê "X é permitido" como permissão pra desenhar X, mesmo já instruído a deixar a
   // área limpa) reapareceria por uma porta diferente. Só lista o que o PRÓPRIO modelo pode/deve
   // desenhar; textos do renderer são só referenciados de forma genérica, nunca citados.
-  const rendererOwnedTexts = new Set(plan.textZones.filter((zone) => zone.renderedBy === "renderer").map((zone) => zone.text));
-  const modelDrawableAllowedTexts = plan.allowedRenderedTexts.filter((text) => !rendererOwnedTexts.has(text));
   lines.push(
     modelDrawableAllowedTexts.length > 0
       ? `TEXTOS PERMITIDOS NESTA PEÇA — lista FECHADA e EXAUSTIVA de tudo que VOCÊ (modelo de imagem) pode desenhar como texto: ${modelDrawableAllowedTexts.map((text) => `"${text}"`).join(", ")}.${rendererOwnedTexts.size > 0 ? " Os demais textos autorizados desta peça já foram tratados nas instruções acima (áreas que você deve deixar limpas, desenhadas por um renderer separado depois) — não repita nenhum deles, nem uma versão aproximada." : ""} NUNCA escreva nenhuma outra palavra, frase, rótulo, botão, tag ou tipografia decorativa além do listado — nenhum texto adicional, mesmo que pareça combinar com o estilo da peça (ex.: "saiba mais", "compre agora", "oferta", ou qualquer paráfrase).`
       : "NUNCA escreva NENHUM texto além do que já foi instruído acima — todos os textos autorizados desta peça são desenhados por um renderer separado depois. Nenhuma palavra, frase, rótulo, botão, tag ou tipografia decorativa extra em qualquer lugar da composição.",
   );
-  if (plan.requiredElements.length > 0) lines.push(`Elementos obrigatórios na composição: ${plan.requiredElements.join(", ")}.`);
+  if (plan.requiredElements.length > 0) lines.push(`Elementos obrigatórios na composição: ${plan.requiredElements.map((item) => freeText(item) ?? item).join(", ")}.`);
   if (plan.forbiddenElements.length > 0) lines.push(`NUNCA incluir: ${plan.forbiddenElements.join(", ")}.`);
   lines.push(`Densidade visual desejada: ${plan.visualDensity}.`);
-  if (plan.styleNotes) lines.push(`Notas de estilo: ${plan.styleNotes}`);
+  if (plan.styleNotes) lines.push(`Notas de estilo: ${freeText(plan.styleNotes) ?? plan.styleNotes}`);
   // Achado ao vivo em produção: este prompt (o que de fato gera os pixels) nunca mencionava as
   // cores da marca — elas só chegavam indiretamente, se o plano tivesse escrito algo sobre cor em
   // `visualDirection`/`styleNotes` (texto livre, nem sempre explícito). Repetir aqui, no ponto

@@ -130,7 +130,7 @@ Custos: teto de US$ 0,60 por execução (`maxBudgetUsd`, o pipeline para antes d
 
 **Limitação de capacidade documentada (reproduzível):** o caso `CLI: LOCAL_PRODUCTION resolve assets
 visuais…` faz um render REAL de vídeo 1080×1920/30 fps, com no máximo 60 s por etapa do CLI. Ele passa no
-Windows de desenvolvimento (12,7 s isolado; suíte completa verde). No host de produção usado como gate
+Windows de desenvolvimento só quando roda ISOLADO (12,7 s no total; o `--continue` com todas as etapas e o render de 6 s leva 11,7 s). Na suíte completa, disputando CPU com dezenas de arquivos em paralelo (vários renderizando com ffmpeg), passa de 60 s também no Windows. No host de produção usado como gate
 (2 vCPUs compartilhadas com os serviços no ar), todo render de vídeo é cerca de 4,5× mais lento — medido nos
 próprios testes do adaptador: 4,9 s × 1,1 s, 13,7 s × 2,9 s e 16,0 s × 3,3 s. Mesmo isolado, a etapa leva
 75 s. O renderizador de vídeo é ferramenta do CLI local (não roda em API/worker de produção). O orçamento

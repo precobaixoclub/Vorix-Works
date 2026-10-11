@@ -1,3 +1,4 @@
+import { OBJECT_URL_TTL, signOwnedUrl } from "../../shared/utils/object-url-signing.js";
 import type { PublicationProviderAdapterPort, PublicationProviderAdapterPublishRequest, PublicationProviderStatusResult, PublicationReceiptVerificationResult } from "../../application/publication/publication-provider-adapter.port.js";
 import type { PublicationResolvedSecret } from "../../application/publication/publication-secret-resolver.js";
 import type { PublicationProviderCallResult, PublicationProviderDescriptor, PublicationReceipt } from "../../domain/publication/publication.model.js";
@@ -234,7 +235,7 @@ export class KwaiContentPostingProvider implements PublicationProviderAdapterPor
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.fetchTimeoutMs ?? 60_000);
     try {
-      const response = await this.httpClient(url, { signal: controller.signal });
+      const response = await this.httpClient(signOwnedUrl(url, OBJECT_URL_TTL.internalFetch), { signal: controller.signal });
       if (!response.ok) throw new KwaiApiError({ kind: "permanent_failure", errorCode: "KWAI_MEDIA_FETCH_FAILED", safeMessage: `Não foi possível baixar a mídia (${url}): HTTP ${response.status}.` }, response.status);
       return new Uint8Array(await response.arrayBuffer());
     } finally {

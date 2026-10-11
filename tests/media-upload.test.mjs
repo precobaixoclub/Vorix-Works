@@ -9,6 +9,7 @@ import { loadApiConfig } from "../dist/interfaces/api/config/api-config.js";
 import { resolvePublicUrl } from "../dist/infrastructure/storage/s3-object-storage.js";
 import { DisabledObjectStorage } from "../dist/infrastructure/storage/disabled-object-storage.js";
 import { LocalObjectStorage } from "../dist/infrastructure/storage/local-object-storage.js";
+import { signObjectKey } from "../dist/shared/utils/object-url-signing.js";
 
 class TestTokenAuthPort {
   async verifyToken(token) {
@@ -38,9 +39,12 @@ function buildMultipartBody(boundary, fieldName, filename, contentType, data) {
   return Buffer.concat([Buffer.from(head, "utf8"), Buffer.from(data), Buffer.from(tail, "utf8")]);
 }
 
+// workspace-1 pertence a tenant-1; qualquer outro workspace é desconhecido (404).
+const workspaceRepository = { getById: async (id) => (id === "workspace-1" ? { id, tenantId: "tenant-1", name: "W" } : undefined) };
+
 function buildTestApp(objectStorage) {
   const config = loadApiConfig({ AUTH_MODE: "noop", MEDIA_UPLOAD_MAX_BYTES: "5000000" });
-  return buildApp({ config, container: { authPort: new TestTokenAuthPort(), objectStorage } });
+  return buildApp({ config, container: { authPort: new TestTokenAuthPort(), objectStorage, workspaceRepository } });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -92,7 +96,7 @@ test("LocalObjectStorage: salva em disco e devolve URL pública codificada", asy
   }
 });
 
-test("GET /uploads/*: serve arquivo salvo no storage local", async () => {
+test("GET /uploads/*: privado — sem assinatura é 404; com URL assinada da chave serve o arquivo", async () => {
   const rootDir = await mkdtemp(join(tmpdir(), "zuno-upload-route-"));
   try {
     await writeFile(join(rootDir, "foto.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
@@ -106,9 +110,14 @@ test("GET /uploads/*: serve arquivo salvo no storage local", async () => {
     });
     const app = await buildApp({ config, container: { authPort: new TestTokenAuthPort() } });
 
-    const response = await app.inject({ method: "GET", url: "/uploads/foto.png" });
+    const unsigned = await app.inject({ method: "GET", url: "/uploads/foto.png" });
+    assert.equal(unsigned.statusCode, 404, "arquivo privado sem assinatura nunca é servido");
+
+    const signed = new URL(signObjectKey("foto.png", 600));
+    const response = await app.inject({ method: "GET", url: `${signed.pathname}${signed.search}` });
 
     assert.equal(response.statusCode, 200);
+    assert.match(response.headers["cache-control"], /private/);
     assert.match(response.headers["content-type"], /^image\/png/);
     assert.deepEqual(response.rawPayload, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
     await app.close();
@@ -141,6 +150,22 @@ test("POST /v1/publication-media/upload: sobe imagem válida e devolve URL públ
   assert.match(parsed.data.url, /^https:\/\/cdn\.test\//);
   assert.equal(objectStorage.puts.length, 1);
   assert.match(objectStorage.puts[0].key, /^tenant-1\/workspace-1\/.+\.jpg$/);
+});
+
+test("POST /v1/publication-media/upload: workspace que não é do tenant responde 404 e nada é gravado", async () => {
+  const objectStorage = new FakeObjectStorage();
+  const app = await buildTestApp(objectStorage);
+  const boundary = "----zunotestboundary";
+  const body = buildMultipartBody(boundary, "file", "foto.jpg", "image/jpeg", Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  const response = await app.inject({
+    method: "POST",
+    url: "/v1/publication-media/upload?workspaceId=workspace-of-other-tenant",
+    headers: { authorization: "Bearer tenant-1", "content-type": `multipart/form-data; boundary=${boundary}` },
+    payload: body,
+  });
+  assert.equal(response.statusCode, 404);
+  assert.equal(objectStorage.puts.length, 0);
+  await app.close();
 });
 
 test("POST /v1/publication-media/upload: tipo não suportado é rejeitado com 400", async () => {

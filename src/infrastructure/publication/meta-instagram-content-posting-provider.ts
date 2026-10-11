@@ -1,3 +1,4 @@
+import { signForExternalPublication } from "../../shared/utils/object-url-signing.js";
 import type { PublicationProviderAdapterPort, PublicationProviderAdapterPublishRequest, PublicationProviderStatusResult, PublicationReceiptVerificationResult } from "../../application/publication/publication-provider-adapter.port.js";
 import type { PublicationResolvedSecret } from "../../application/publication/publication-secret-resolver.js";
 import type { PublicationProviderCallResult, PublicationProviderDescriptor, PublicationReceipt } from "../../domain/publication/publication.model.js";
@@ -96,7 +97,14 @@ export class MetaContentPostingProvider implements PublicationProviderAdapterPor
   async publish(request: PublicationProviderAdapterPublishRequest): Promise<PublicationProviderCallResult> {
     const startedAt = Date.now();
     let accessToken = requireAccessToken(request.secret?.value);
-    const post = extractMetaPost(request.content, request.assets);
+    const extracted = extractMetaPost(request.content, request.assets);
+    // A Meta baixa a mídia pela URL: arquivos do nosso storage (privado) vão assinados (24 h).
+    const post: MetaPostContent = {
+      ...extracted,
+      imageUrls: extracted.imageUrls.map(signForExternalPublication),
+      ...(extracted.videoUrl ? { videoUrl: signForExternalPublication(extracted.videoUrl) } : {}),
+      ...(extracted.thumbnailUrl ? { thumbnailUrl: signForExternalPublication(extracted.thumbnailUrl) } : {}),
+    };
 
     if (!post.videoUrl && post.imageUrls.length === 0 && !post.caption.trim()) {
       this.recordCall(startedAt, "META_CONTENT_EMPTY");

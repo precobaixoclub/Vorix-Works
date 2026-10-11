@@ -23,6 +23,7 @@ import { registerInstagramDmWebhookRoutes } from "./routes/instagram-dm-webhook.
 import { registerBillingWebhookRoutes } from "./routes/billing-webhook.route.js";
 import { successEnvelope } from "./http/response-envelope.js";
 import { registerUploadedObjectRoutes } from "./routes/uploads.route.js";
+import { createObjectKeyReadAuthorizer, registerSignedObjectUrlResponses } from "./object-url-access.js";
 
 export type BuildAppOptions = {
   config?: ApiConfig;
@@ -55,7 +56,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(cookie);
   await app.register(multipart, { limits: { fileSize: config.objectStorage.maxUploadBytes, files: 1 } });
   if (config.objectStorage.enabled && config.objectStorage.driver === "local" && config.objectStorage.localDir) {
-    await registerUploadedObjectRoutes(app, { rootDir: config.objectStorage.localDir });
+    await registerUploadedObjectRoutes(app, { rootDir: config.objectStorage.localDir, publicObjects: container.publicObjectRepository });
+    if (config.objectStorage.publicBaseUrl) {
+      registerSignedObjectUrlResponses(app, {
+        publicBaseUrl: config.objectStorage.publicBaseUrl,
+        authorize: createObjectKeyReadAuthorizer({ workspaceRepository: container.workspaceRepository, qaTenantIds: (container.creativeEngineEditorialQaAllowlist ?? []).map((entry) => entry.tenantId) }),
+      });
+    }
   }
 
   registerSecurityHeadersMiddleware(app, { cookieSecure: config.cookieSecure });

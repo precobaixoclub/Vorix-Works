@@ -1,3 +1,8 @@
+import { randomBytes } from "node:crypto";
+/** Modelo das leituras de texto por visão do motor criativo (ver `visionTextBrain`). */
+export const VISION_TEXT_MODEL_ID = "gpt-4.1";
+import { configureObjectUrlSigning, deriveObjectUrlSigningKey } from "../../../shared/utils/object-url-signing.js";
+import type { PublicObjectRepositoryPort } from "../../../application/ports/public-object-repository.port.js";
 import { join } from "node:path";
 import type pg from "pg";
 import type { AiGatewayPort } from "../../../application/ports/ai-gateway.port.js";
@@ -280,6 +285,9 @@ export type ApiContainer = {
    * — um endpoint de auditoria futuro, um script de validação — possa consultar
    * `getByExecutionRunId`/`listByWorkspace` sem precisar de um cast. */
   creativeEngineRunRepository: CreativeEngineRunRepositoryPort;
+  /** Leitura de texto por visão do motor criativo (scan da base, inventário do screenshot) — ver
+   * `VISION_TEXT_MODEL_ID`. Exposta para diagnóstico operacional (estabilidade do scan). */
+  visionTextBrain: IcaroAIBrain;
   /** Sprint 10 — Runtime Engine (só leitura pela API; escrita só via `runtimeEngineHook`, chamado
    * internamente por `planning-engine.ts` quando um Planning fica `"ready"`/é superado). */
   runtimeRepository: RuntimeRepositoryPort;
@@ -388,6 +396,8 @@ export type ApiContainer = {
    * cliente SSE (`.start()` chamado pela própria rota) — nunca bloqueia o boot do container. */
   inboxRealtimeSubscriber?: InboxRealtimeSubscriber;
   objectStorage: ObjectStoragePort;
+  /** Objetos explicitamente públicos de `/uploads` (0140). */
+  publicObjectRepository: PublicObjectRepositoryPort;
   /** Redesign operacional (Conversas) — storage PRIVADO de mídia recebida via WhatsApp, distinto
    * de `objectStorage` acima (público). Ver `inbox-media-storage.port.ts`. */
   inboxMediaStorage: InboxMediaStoragePort;
@@ -641,6 +651,13 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   const objectStorage: ObjectStoragePort = (() => {
     const oss = config?.objectStorage;
     if (oss?.enabled && oss.driver === "local" && oss.localDir && oss.publicBaseUrl) {
+      // `/uploads` é servido por ESTA API e é privado por padrão: leitura só com URL assinada
+      // (escopo de uma chave, curta) — ver `object-url-signing.ts`. Chave derivada do segredo do
+      // servidor; sem segredo configurado (dev), chave aleatória por processo.
+      configureObjectUrlSigning({
+        publicBaseUrl: oss.publicBaseUrl,
+        signingKey: deriveObjectUrlSigningKey(process.env.OBJECT_URL_SIGNING_SECRET?.trim() || config?.jwtSecret || randomBytes(32).toString("hex")),
+      });
       return new LocalObjectStorage({
         rootDir: oss.localDir,
         publicBaseUrl: oss.publicBaseUrl,
@@ -895,6 +912,20 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     costLedger: creativeIcaroCostLedger,
     logger: creativeIcaroLogger,
   });
+  // Leitura de TEXTO por visão do motor criativo (scan da base da IA, inventário do screenshot):
+  // instância dedicada com `VISION_TEXT_MODEL_ID`, mesmo ledger/log de custo do motor. O gpt-4o
+  // (diretor/gate) recusa de forma sistemática transcrever texto de algumas bases; gpt-4.1 não.
+  const visionTextBrain = new IcaroAIBrain({
+    providers: [
+      new OpenAiIcaroTextProvider({
+        apiBaseUrl: config?.mediaProviders.openaiApiBaseUrl,
+        getApiKey: resolveMediaProviderKey(config?.mediaProviders.openaiApiKey, "ai-provider:openai"),
+        modelId: VISION_TEXT_MODEL_ID,
+      }),
+    ],
+    costLedger: creativeIcaroCostLedger,
+    logger: creativeIcaroLogger,
+  });
   // Módulo Instagram DM Automation (Fase 5) — instância DEDICADA de `OpenAiIcaroTextProvider`,
   // nunca `icaro`/`creativeIcaro` acima (mesmo raciocínio: nunca misturar custo/contexto entre
   // papéis). Chamada direta em `generateAiDmReply`, sem passar pelo `IcaroAIBrain` — não há
@@ -1070,6 +1101,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
   // `creativeEngineGptEnabled` está ligado).
   const gptCreativeEngineDeps = {
     creativeBrain: creativeIcaro,
+    visionTextBrain,
     objectStorage,
     screenshotTextInventoryStore: repositories.screenshotTextInventoryStore,
     compositeLogo: compositeLogoOntoImage,
@@ -1623,6 +1655,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       metaAdsOAuthService,
       instagramDmAiReplyProvider,
       objectStorage,
+      visionTextBrain,
       inboxMediaStorage,
       removeImageBackground,
       publicationQueue,
@@ -1720,6 +1753,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     metaAdsOAuthService,
     instagramDmAiReplyProvider,
     objectStorage,
+    visionTextBrain,
     inboxMediaStorage,
     removeImageBackground,
     publicationQueue,

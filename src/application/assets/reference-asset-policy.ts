@@ -110,9 +110,13 @@ function extractObjectKey(rawUrl: string, config: ReferenceAssetPolicyConfig): {
   if (url.protocol !== base.protocol) return { reason: `scheme_${url.protocol.replace(":", "") || "unknown"}` };
   if (url.username || url.password) return { reason: "credentials_in_url" };
   if (url.host !== base.host) return { reason: "external_host" };
-  if (url.search || url.hash) return { reason: "query_or_fragment" };
+  // `/uploads` é privado: a URL pode chegar ASSINADA (`?exp=&sig=`, ver `object-url-signing.ts`).
+  // A assinatura nunca decide posse — é descartada e a posse continua sendo decidida pela chave.
+  // Qualquer outra query, ou fragmento, continua recusado.
+  const queryKeys = [...url.searchParams.keys()];
+  if (url.hash || queryKeys.some((name) => name !== "exp" && name !== "sig")) return { reason: "query_or_fragment" };
   // Rejeita traversal ANTES da normalização do WHATWG URL (que resolve `..` silenciosamente).
-  const rawPath = trimmed.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "");
+  const rawPath = trimmed.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "").split("?")[0]!;
   if (/(^|\/|\\)\.\.?($|\/|\\)/.test(rawPath) || /%2e|%2f|%5c|%00|\\/i.test(rawPath)) return { reason: "path_traversal" };
   if (!url.pathname.startsWith(base.pathname)) return { reason: "outside_storage_base" };
   let key: string;

@@ -1,3 +1,4 @@
+import { signForExternalPublication } from "../../shared/utils/object-url-signing.js";
 import type { PublicationProviderAdapterPort, PublicationProviderAdapterPublishRequest, PublicationProviderStatusResult, PublicationReceiptVerificationResult } from "../../application/publication/publication-provider-adapter.port.js";
 import type { PublicationResolvedSecret } from "../../application/publication/publication-secret-resolver.js";
 import type { PublicationProviderCallResult, PublicationProviderDescriptor, PublicationReceipt } from "../../domain/publication/publication.model.js";
@@ -89,7 +90,13 @@ export class TikTokContentPostingProvider implements PublicationProviderAdapterP
   async publish(request: PublicationProviderAdapterPublishRequest): Promise<PublicationProviderCallResult> {
     const startedAt = Date.now();
     let accessToken = requireTikTokToken(request.secret?.value);
-    const post = extractTikTokPost(request.content, request.assets);
+    const extracted = extractTikTokPost(request.content, request.assets);
+    // PULL_FROM_URL: o TikTok baixa a mídia — arquivos do nosso storage (privado) vão assinados (24 h).
+    const post: TikTokPostContent = {
+      ...extracted,
+      photoUrls: extracted.photoUrls.map(signForExternalPublication),
+      ...(extracted.videoUrl ? { videoUrl: signForExternalPublication(extracted.videoUrl) } : {}),
+    };
 
     if (!post.videoUrl && post.photoUrls.length === 0) {
       this.recordCall(startedAt, "TIKTOK_MEDIA_MISSING");

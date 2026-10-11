@@ -1,3 +1,4 @@
+import { OBJECT_URL_TTL, signOwnedUrl, stripObjectUrlSignature } from "../../shared/utils/object-url-signing.js";
 import { BRAND_DENSITY_TO_PLAN, type AppliedBrandRule, type BrandIdentity } from "../../shared/utils/brand-identity.js";
 import type { IcaroBrainPort } from "../ai/icaro-brain.contract.js";
 import type { IcaroAIResponse } from "../ai/icaro.types.js";
@@ -70,8 +71,9 @@ import { describeReferenceAssetDecision, isReferenceAssetError, ReferenceAssetEr
  */
 
 export async function fetchAsBuffer(url: string): Promise<Buffer> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar ${url}`);
+  // `/uploads` é privado: arquivo do próprio storage só com URL assinada curta (ver object-url-signing).
+  const response = await fetch(signOwnedUrl(url, OBJECT_URL_TTL.internalFetch));
+  if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar ${stripObjectUrlSignature(url)}`);
   return Buffer.from(await response.arrayBuffer());
 }
 
@@ -92,6 +94,11 @@ export type GptCreativeEngineDeps = {
    * para o papel de diretor criativo — nunca a instância legada compartilhada com João/Maria/
    * Bianca/Pedro/Lucas). Wiring real fica para o PR 6 (container.ts); aqui é só a porta. */
   creativeBrain: IcaroBrainPort;
+  /** Leituras de TEXTO por visão (scan da base, inventário do screenshot). Achado do release
+   * hardening: o gpt-4o recusa de forma sistemática transcrever texto de certas bases ("I can't
+   * assist with that"), enquanto gpt-4.1/4.1-mini/4o-mini leem 12/12 as mesmas bases. Ausente =
+   * usa `creativeBrain` (comportamento anterior). */
+  visionTextBrain?: IcaroBrainPort;
   objectStorage: ObjectStoragePort;
   /** Cache do SCREENSHOT_TEXT_INVENTORY (tenant + workspace + hash do asset). Injetado = o modo
    * editorial lê o inventário do screenshot real antes do gate (uma leitura por arquivo novo);
@@ -1034,7 +1041,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       // Prova direta de texto da BASE (antes de qualquer texto/asset do renderer): uma chamada leve
       // de visão só sobre a base. Alimenta o ledger de proveniência do gate.
       const baseTextDiagnostic = baseImageArtifact
-        ? await scanEditorialBaseText(deps.creativeBrain, { baseImageUrl: baseImageArtifact.url, baseImageBuffer: deps.flattenImageForVision ? await deps.flattenImageForVision(baseWithAssetsBuffer).catch(() => baseWithAssetsBuffer) : baseWithAssetsBuffer, specialistId: SPECIALIST_ID, onCost: (response) => track("baseTextScan", response) })
+        ? await scanEditorialBaseText(deps.visionTextBrain ?? deps.creativeBrain, { baseImageUrl: baseImageArtifact.url, baseImageBuffer: deps.flattenImageForVision ? await deps.flattenImageForVision(baseWithAssetsBuffer).catch(() => baseWithAssetsBuffer) : baseWithAssetsBuffer, specialistId: SPECIALIST_ID, onCost: (response) => track("baseTextScan", response) })
         : undefined;
 
       const editorialAssets: EditorialCreativeAssetBuffer[] = [];
@@ -1070,7 +1077,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       const screenshotBufferForInventory = screenshotAsset ? editorialAssets.find((asset) => asset.role === "screenshot" && asset.url === screenshotAsset.url)?.buffer : undefined;
       const screenshotTextInventory = screenshotAsset && screenshotBufferForInventory && deps.screenshotTextInventoryStore
         ? await resolveScreenshotTextInventory(
-            { icaro: deps.creativeBrain, store: deps.screenshotTextInventoryStore, ...(deps.now ? { now: deps.now } : {}) },
+            { icaro: deps.visionTextBrain ?? deps.creativeBrain, store: deps.screenshotTextInventoryStore, ...(deps.now ? { now: deps.now } : {}) },
             { tenantId: input.tenantId, workspaceId: input.workspaceId, assetUrl: screenshotAsset.url, buffer: screenshotBufferForInventory, specialistId: SPECIALIST_ID, onCost: (response) => track("screenshotTextInventory", response) },
           )
         : undefined;

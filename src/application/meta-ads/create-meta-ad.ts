@@ -1,3 +1,4 @@
+import { signForExternalPublication } from "../../shared/utils/object-url-signing.js";
 import type { MetaAdSet } from "../ports/meta-ad-set-repository.port.js";
 import type { MetaAdRepositoryPort } from "../ports/meta-ad-repository.port.js";
 import type { MetaAdAccountRepositoryPort } from "../ports/meta-ad-account-repository.port.js";
@@ -60,7 +61,8 @@ export async function createMetaAd(deps: CreateMetaAdDeps, input: CreateMetaAdIn
     ...(input.creative.message ? { message: input.creative.message } : {}),
     ...(input.creative.headline ? { name: input.creative.headline } : {}),
     ...(input.creative.description ? { description: input.creative.description } : {}),
-    ...(input.creative.imageUrl ? { picture: input.creative.imageUrl } : {}),
+    // A Meta baixa a imagem do criativo pela URL: arquivo do nosso storage (privado) vai assinado (24 h).
+    ...(input.creative.imageUrl ? { picture: signForExternalPublication(input.creative.imageUrl) } : {}),
     ...(input.creative.callToActionType
       ? { call_to_action: { type: input.creative.callToActionType, value: { link: input.creative.link } } }
       : {}),

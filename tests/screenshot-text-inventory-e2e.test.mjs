@@ -76,7 +76,7 @@ function fakeIcaro(scripts) {
   return { calls, request: async (request) => { calls.push(request); const next = queues[request.taskType]?.shift(); if (!next) throw new Error(`fila vazia ${request.taskType}`); return next; } };
 }
 
-async function run(icaro, store) {
+async function run(icaro, store, visionTextBrain) {
   const previous = global.fetch;
   global.fetch = async (url) => {
     const body = FILES[String(url)];
@@ -86,6 +86,7 @@ async function run(icaro, store) {
   try {
     return await runGptCreativeEngine({
       creativeBrain: icaro,
+      ...(visionTextBrain ? { visionTextBrain } : {}),
       ...(store ? { screenshotTextInventoryStore: store } : {}),
       objectStorage: { put: async ({ key }) => ({ url: `https://qa.local/stored/${key.split("/").pop()}` }) },
       compositeLogo: async ({ imageBuffer }) => imageBuffer,
@@ -147,4 +148,16 @@ test("e2e P2-like sem store de inventário: comportamento anterior (a bbox errad
   assert.equal(result.artifactProvenance.screenshotTextInventory, undefined);
   const codes = result.qualityGate.issues.map((issue) => issue.code).sort();
   assert.deepEqual(codes, ["DUPLICATED_TEXT", "UNAUTHORIZED_TEXT", "UNAUTHORIZED_TEXT"]);
+});
+
+test("e2e: com visionTextBrain injetado, scan da base e inventário vão para ele; diretor/gate/score continuam no creativeBrain", async () => {
+  const creative = fakeIcaro({ analysis: [completed(directorPlan(), 0.003)], image_generation: [completed(JSON.stringify({ images: [{ uri: BASE_URL }] }), 0.08)], review: [p2LikeReview(), passingVisualScore()] });
+  const vision = fakeIcaro({ review: [completed(JSON.stringify({ texts: [] }), 0.0004), inventoryScan()] });
+  const result = await run(creative, new InMemoryScreenshotTextInventoryStore(), vision);
+  assert.equal(result.publishable, true, JSON.stringify(result.qualityGate?.issues));
+  assert.equal(vision.calls.length, 2, "base + inventário");
+  assert.deepEqual(vision.calls.map((call) => call.imageUrls.length), [1, 1]);
+  assert.equal(creative.calls.filter((call) => call.taskType === "review").length, 2, "gate + visual score");
+  assert.equal(result.artifactProvenance.baseTextDiagnostic.status, "AVAILABLE");
+  assert.equal(result.artifactProvenance.screenshotTextInventory.status, "AVAILABLE");
 });

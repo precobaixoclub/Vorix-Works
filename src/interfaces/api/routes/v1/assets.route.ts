@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { stripObjectUrlSignature } from "../../../../shared/utils/object-url-signing.js";
 import { randomUUID } from "node:crypto";
 import { assertReferenceAssetUrlAuthorized, isReferenceAssetError } from "../../../../application/assets/reference-asset-policy.js";
 import type { AssetLibraryRepositoryPort } from "../../../../application/ports/asset-library-repository.port.js";
@@ -290,6 +291,8 @@ export async function registerAssetsRoutes(app: FastifyInstance, deps: AssetsRou
     };
     await assertWorkspaceAccess(principal.tenantId, body.workspaceId);
     assertStorageRefAuthorized(body.storageRef, principal.tenantId, body.workspaceId);
+    // O cliente devolve a URL que recebeu ASSINADA: persistimos só a canônica (identificador, nunca credencial).
+    if (body.storageRef?.metadata?.url) body.storageRef = { ...body.storageRef, metadata: { ...body.storageRef.metadata, url: stripObjectUrlSignature(body.storageRef.metadata.url) } };
     const libraryId = await ensureLibraryId(body.workspaceId);
     const asset = await deps.assetLibraryRepository
       .registerAsset({

@@ -1,3 +1,4 @@
+import { OBJECT_URL_TTL, signOwnedUrl } from "../../../shared/utils/object-url-signing.js";
 import type { SatoriNode } from "./satori-node.js";
 import type { ComponentRenderResult } from "./price-block.js";
 
@@ -19,7 +20,7 @@ export type ProductHeroProps = {
 export function ProductHero(props: ProductHeroProps): ComponentRenderResult {
   const node: SatoriNode = {
     type: "img",
-    props: { style: { width: props.widthPx, height: props.heightPx, objectFit: "contain" }, src: props.imageUrl },
+    props: { style: { width: props.widthPx, height: props.heightPx, objectFit: "contain" }, src: signOwnedUrl(props.imageUrl, OBJECT_URL_TTL.internalFetch) },
   };
   return { node, maxFontSizePx: 0, textColor: "transparent", backgroundColor: "transparent", lineCount: 0 };
 }

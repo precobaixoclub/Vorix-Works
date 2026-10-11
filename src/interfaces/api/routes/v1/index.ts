@@ -8,6 +8,8 @@ import { registerAssetsRoutes } from "./assets.route.js";
 import { registerProductionSettingsRoutes } from "./production-settings.route.js";
 import { registerBrandProfileRoutes } from "./brand-profile.route.js";
 import { registerBrandIdentityRoutes } from "./brand-identity.route.js";
+import { registerFileRoutes } from "./files.route.js";
+import { createObjectKeyReadAuthorizer } from "../../object-url-access.js";
 import { registerAuthRoutes } from "./auth.route.js";
 import { registerBriefingRoutes } from "./briefings.route.js";
 import { registerConversationRoutes } from "./conversations.route.js";
@@ -507,6 +509,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   await registerPublicationMediaRoutes(app, {
     objectStorage: app.zunoContainer.objectStorage,
     maxUploadBytes: app.zunoConfig.objectStorage.maxUploadBytes,
+    workspaceRepository: app.zunoContainer.workspaceRepository,
   });
   await registerAssetsRoutes(app, {
     assetLibraryRepository: app.zunoContainer.assetLibraryRepository,
@@ -527,6 +530,12 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   await registerBrandIdentityRoutes(app, {
     brandIdentityService: app.zunoContainer.brandIdentityService,
     workspaceRepository: app.zunoContainer.workspaceRepository,
+  });
+  await registerFileRoutes(app, {
+    authorize: createObjectKeyReadAuthorizer({
+      workspaceRepository: app.zunoContainer.workspaceRepository,
+      qaTenantIds: (app.zunoContainer.creativeEngineEditorialQaAllowlist ?? []).map((entry) => entry.tenantId),
+    }),
   });
   await registerCredentialRoutes(app, {
     credentialGovernanceService: app.zunoContainer.credentialGovernanceService,

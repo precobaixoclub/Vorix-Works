@@ -1,3 +1,4 @@
+import { OBJECT_URL_TTL, signOwnedUrl, stripObjectUrlSignature } from "../../shared/utils/object-url-signing.js";
 import type { IcaroBrainPort } from "../ai/icaro-brain.contract.js";
 import type { ObjectStoragePort } from "../ports/object-storage.port.js";
 import { extractJson } from "../../shared/utils/skill-parsing.js";
@@ -29,8 +30,9 @@ import { evaluateGptPrototypeQualityGate, type GptPrototypeQualityGateResult } f
  */
 
 export async function fetchAsBuffer(url: string): Promise<Buffer> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar ${url}`);
+  // `/uploads` é privado: arquivo do próprio storage só com URL assinada curta (ver object-url-signing).
+  const response = await fetch(signOwnedUrl(url, OBJECT_URL_TTL.internalFetch));
+  if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar ${stripObjectUrlSignature(url)}`);
   return Buffer.from(await response.arrayBuffer());
 }
 

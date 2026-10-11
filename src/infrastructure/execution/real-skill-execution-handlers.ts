@@ -1,3 +1,4 @@
+import { OBJECT_URL_TTL, signOwnedUrl, stripObjectUrlSignature } from "../../shared/utils/object-url-signing.js";
 import type { ExecutionTaskHandlerPort, ExecutionTaskHandlerRequest, ExecutionTaskHandlerResult, ExecutionTaskInputs } from "../../application/execution/execution-handler.port.js";
 import { createDefaultExecutionContractRegistry, type ExecutionContract } from "../../application/execution/execution-contract-registry.js";
 import { mapExecutionCapabilityToSkillCapability } from "../../application/execution/capability-mapping.js";
@@ -539,8 +540,9 @@ function latestByUpdatedAt<TRecord extends { updatedAt: string }>(records?: TRec
 }
 
 async function fetchAsBuffer(url: string): Promise<Buffer> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar ${url}`);
+  // `/uploads` é privado: arquivo do próprio storage só com URL assinada curta (ver object-url-signing).
+  const response = await fetch(signOwnedUrl(url, OBJECT_URL_TTL.internalFetch));
+  if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar ${stripObjectUrlSignature(url)}`);
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
 }

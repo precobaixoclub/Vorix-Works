@@ -1,3 +1,4 @@
+import { OBJECT_URL_TTL, signOwnedUrl } from "../../shared/utils/object-url-signing.js";
 import { parseReferenceIntelligence, type ReferenceIntelligence } from "../../shared/utils/reference-intelligence.types.js";
 
 export type OpenAiReferenceIntelligenceExtractorConfig = {
@@ -80,7 +81,7 @@ export class OpenAiReferenceIntelligenceExtractor {
         { type: "text", text: EXTRACTION_INSTRUCTION },
         ...urls.flatMap((url, index): OpenAiChatContentBlock[] => [
           { type: "text", text: `Imagem ${index + 1}:` },
-          { type: "image_url", image_url: { url } },
+          { type: "image_url", image_url: { url: signOwnedUrl(url, OBJECT_URL_TTL.aiProvider) } },
         ]),
       ];
       const response = await this.httpClient(`${this.config.apiBaseUrl ?? DEFAULT_BASE_URL}/v1/chat/completions`, {

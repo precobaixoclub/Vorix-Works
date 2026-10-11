@@ -1,3 +1,4 @@
+import { OBJECT_URL_TTL, signOwnedUrl } from "../../shared/utils/object-url-signing.js";
 export type OpenAiVisionDescriberConfig = {
   apiBaseUrl?: string;
   getApiKey: () => Promise<string | undefined>;
@@ -38,7 +39,7 @@ export class OpenAiVisionDescriber {
               role: "user",
               content: [
                 { type: "text", text: instruction },
-                { type: "image_url", image_url: { url: imageUrl } },
+                { type: "image_url", image_url: { url: signOwnedUrl(imageUrl, OBJECT_URL_TTL.aiProvider) } },
               ],
             },
           ],

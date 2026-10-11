@@ -1,3 +1,4 @@
+import { OBJECT_URL_TTL, signOwnedUrl } from "../../shared/utils/object-url-signing.js";
 import type { PublicationProviderAdapterPort, PublicationProviderAdapterPublishRequest, PublicationProviderStatusResult, PublicationReceiptVerificationResult } from "../../application/publication/publication-provider-adapter.port.js";
 import type { PublicationResolvedSecret } from "../../application/publication/publication-secret-resolver.js";
 import type { PublicationProviderCallResult, PublicationProviderDescriptor, PublicationReceipt } from "../../domain/publication/publication.model.js";
@@ -176,7 +177,7 @@ export class YouTubeContentPostingProvider implements PublicationProviderAdapter
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.fetchTimeoutMs ?? 60_000);
     try {
-      const response = await this.httpClient(url, { signal: controller.signal });
+      const response = await this.httpClient(signOwnedUrl(url, OBJECT_URL_TTL.internalFetch), { signal: controller.signal });
       if (!response.ok) throw new YouTubeApiError({ kind: "permanent_failure", errorCode: "YOUTUBE_MEDIA_FETCH_FAILED", safeMessage: `Nao foi possivel baixar o video: HTTP ${response.status}.` }, response.status);
       const contentType = response.headers.get("content-type")?.split(";")[0] || "video/mp4";
       return { bytes: new Uint8Array(await response.arrayBuffer()), contentType };

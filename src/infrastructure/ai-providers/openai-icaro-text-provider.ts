@@ -1,3 +1,4 @@
+import { OBJECT_URL_TTL, signOwnedUrl } from "../../shared/utils/object-url-signing.js";
 import type { AIProviderPort, AIProviderProfile, AIProviderRequest, AIProviderResponse } from "../../application/ports/ai-provider.port.js";
 
 export type OpenAiIcaroTextProviderConfig = {
@@ -71,7 +72,7 @@ export class OpenAiIcaroTextProvider implements AIProviderPort {
       // multimodal, então isto não exige um provider novo. Usado por checagens de visão dentro de
       // uma análise de texto (ex.: Lucas comparando a imagem gerada com a de referência).
       const requestContent = request.imageUrls?.length
-        ? [{ type: "text", text: request.prompt }, ...request.imageUrls.map((url) => ({ type: "image_url", image_url: { url } }))]
+        ? [{ type: "text", text: request.prompt }, ...request.imageUrls.map((url) => ({ type: "image_url", image_url: { url: signOwnedUrl(url, OBJECT_URL_TTL.aiProvider) } }))]
         : request.prompt;
       const response = await this.httpClient(`${this.config.apiBaseUrl ?? DEFAULT_BASE_URL}/v1/chat/completions`, {
         method: "POST",

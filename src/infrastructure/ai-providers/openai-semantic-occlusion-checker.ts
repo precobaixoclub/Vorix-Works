@@ -1,3 +1,4 @@
+import { OBJECT_URL_TTL, signOwnedUrl } from "../../shared/utils/object-url-signing.js";
 import { SEMANTIC_OCCLUSION_PROMPT, parseSemanticOcclusionVerdict, type SemanticOcclusionVerdict } from "../../shared/utils/semantic-occlusion.types.js";
 
 export type OpenAiSemanticOcclusionCheckerConfig = {
@@ -47,7 +48,7 @@ export class OpenAiSemanticOcclusionChecker {
               role: "user",
               content: [
                 { type: "text", text: SEMANTIC_OCCLUSION_PROMPT },
-                { type: "image_url", image_url: { url: imageUrl } },
+                { type: "image_url", image_url: { url: signOwnedUrl(imageUrl, OBJECT_URL_TTL.aiProvider) } },
               ],
             },
           ],

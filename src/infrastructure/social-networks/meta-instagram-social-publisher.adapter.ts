@@ -1,3 +1,4 @@
+import { signForExternalPublication } from "../../shared/utils/object-url-signing.js";
 import type {
   SocialMediaType,
   SocialPostDraft,
@@ -185,7 +186,7 @@ export class MetaInstagramSocialPublisherAdapter implements SocialPublisherPort 
 
   private async createSingleImageContainer(imageUrl: string, caption: string): Promise<string> {
     const response = await this.graphPost(`${this.igUserId}/media`, {
-      image_url: imageUrl,
+      image_url: signForExternalPublication(imageUrl),
       caption,
     });
     return response.id as string;
@@ -195,7 +196,7 @@ export class MetaInstagramSocialPublisherAdapter implements SocialPublisherPort 
     const childIds: string[] = [];
     for (const imageUrl of imageUrls) {
       const child = await this.graphPost(`${this.igUserId}/media`, {
-        image_url: imageUrl,
+        image_url: signForExternalPublication(imageUrl),
         is_carousel_item: "true",
       });
       childIds.push(child.id as string);
@@ -211,10 +212,10 @@ export class MetaInstagramSocialPublisherAdapter implements SocialPublisherPort 
   private async createVideoContainer(videoUrl: string, caption: string, thumbnailUrl?: string): Promise<string> {
     const body: Record<string, string> = {
       media_type: "REELS",
-      video_url: videoUrl,
+      video_url: signForExternalPublication(videoUrl),
       caption,
     };
-    if (thumbnailUrl) body.cover_url = thumbnailUrl;
+    if (thumbnailUrl) body.cover_url = signForExternalPublication(thumbnailUrl);
     const response = await this.graphPost(`${this.igUserId}/media`, body);
     return response.id as string;
   }

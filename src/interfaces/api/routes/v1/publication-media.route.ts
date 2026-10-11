@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { ObjectStoragePort } from "../../../../application/ports/object-storage.port.js";
+import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
+import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
 import { NotImplementedError, ValidationError } from "../../http/app-error.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -24,6 +26,8 @@ function translateMediaUploadError(error: unknown): never {
 export type PublicationMediaRoutesDeps = {
   objectStorage: ObjectStoragePort;
   maxUploadBytes: number;
+  /** Sem ele, qualquer workspaceId do cliente entrava na chave; agora o workspace precisa ser do tenant (404). */
+  workspaceRepository?: WorkspaceRepositoryPort;
 };
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -48,6 +52,7 @@ export async function registerPublicationMediaRoutes(app: FastifyInstance, deps:
   app.post("/publication-media/upload", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "publication:create");
     const { workspaceId } = request.query as { workspaceId: string };
+    if (deps.workspaceRepository) await assertWorkspaceBelongsToTenant(deps.workspaceRepository, { tenantId: principal.tenantId, workspaceId });
 
     try {
       const file = await request.file({ limits: { fileSize: deps.maxUploadBytes } });

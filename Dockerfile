@@ -23,13 +23,16 @@ FROM node:20-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends fontconfig \
+  && apt-get install -y --no-install-recommends fontconfig ca-certificates curl xz-utils \
   && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/db ./db
+# FFmpeg oficial do runtime Linux (drawtext com harfbuzz, versão fixa + sha256) — o binário Linux do
+# pacote `ffmpeg-static` não tem o filtro drawtext que o renderizador de vídeo usa.
+RUN sh ./scripts/install-ffmpeg-linux.sh /opt/vorix/ffmpeg
 RUN mkdir -p /usr/local/share/fonts/vorix /etc/fonts/conf.d \
   && cp ./dist/infrastructure/rendering/assets/geist-regular.ttf /usr/local/share/fonts/vorix/GeistEditorial-Regular.ttf \
   && cp ./dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf /usr/local/share/fonts/vorix/DMSerifDisplay-Regular.ttf \

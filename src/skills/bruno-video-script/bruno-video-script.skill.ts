@@ -564,7 +564,23 @@ export function buildVanessaBriefing(script: BrunoVideoScriptCore, input: BrunoS
 
 function resolveTotalDuration(input: BrunoScriptRequestInput): number {
   if (input.desiredDurationSeconds && input.desiredDurationSeconds > 0) return Math.round(input.desiredDurationSeconds);
-  return 30;
+  return extractRequestedDurationSeconds(input.originalRequest) ?? 30;
+}
+
+/**
+ * Duração pedida EXPLICITAMENTE no texto do usuário ("vídeo de 6 segundos", "Reels de 15s",
+ * "1 minuto"). Achado do release hardening: nenhum ponto do fluxo preenchia
+ * `desiredDurationSeconds`, então "crie um vídeo para Reels de 6 segundos" saía com o padrão de
+ * 30 s (5× mais render e um vídeo diferente do pedido). Só aceita valores plausíveis para vídeo
+ * curto (3 s a 3 min); fora disso, ou sem menção, vale o padrão.
+ */
+export function extractRequestedDurationSeconds(text: string | undefined): number | undefined {
+  if (!text) return undefined;
+  const normalized = text.toLocaleLowerCase("pt-BR");
+  const seconds = normalized.match(/(\d{1,3})\s*(?:s|seg|segs|segundo|segundos)\b/);
+  const minutes = normalized.match(/(\d{1,2})\s*(?:min|mins|minuto|minutos)\b/);
+  const value = seconds ? Number(seconds[1]) : minutes ? Number(minutes[1]) * 60 : undefined;
+  return value !== undefined && value >= 3 && value <= 180 ? value : undefined;
 }
 
 function buildNarrativeStructure(strategy: BrunoJoaoStrategySummary): string {

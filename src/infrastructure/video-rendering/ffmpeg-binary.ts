@@ -18,7 +18,18 @@ const require = createRequire(import.meta.url);
  * nome do executável a partir de `os.platform()` real (não de `process.env.npm_config_platform`,
  * que o `ffmpeg-static/index.js` também usa e que também poderia ser adulterada).
  */
+/**
+ * FFmpeg oficial do runtime Linux (`scripts/install-ffmpeg-linux.sh`, versão fixa e sha256
+ * conferido). Caminho CONSTANTE — nunca vindo de variável de ambiente, mesma regra acima. Existe
+ * porque o binário Linux do `ffmpeg-static` não tem o filtro `drawtext` que o renderizador de vídeo
+ * exige (FFmpeg ≥ 6.1 precisa de libharfbuzz para ele).
+ */
+export const VETTED_LINUX_FFMPEG_PATH = "/opt/vorix/ffmpeg/ffmpeg";
+
 export function resolveFfmpegBinaryPath(): string {
+  if (osPlatform() === "linux" && existsSync(VETTED_LINUX_FFMPEG_PATH) && statSync(VETTED_LINUX_FFMPEG_PATH).isFile()) {
+    return VETTED_LINUX_FFMPEG_PATH;
+  }
   const packageJsonPath = require.resolve("ffmpeg-static/package.json");
   const packageDir = dirname(packageJsonPath);
   const executableName = osPlatform() === "win32" ? "ffmpeg.exe" : "ffmpeg";

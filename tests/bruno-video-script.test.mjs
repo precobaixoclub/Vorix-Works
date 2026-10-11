@@ -830,3 +830,14 @@ test("AGENCY FILM PIPELINE 2.0: Bruno emite log ShotPlanningCompleted em execuç
 
 
 
+
+test("Bruno: duração pedida explicitamente no texto vira a duração total do roteiro (sem pedido = 30 s)", async () => {
+  const { extractRequestedDurationSeconds } = await import("../dist/skills/bruno-video-script/bruno-video-script.skill.js");
+  assert.equal(extractRequestedDurationSeconds("crie um vídeo para Reels de 6 segundos sobre taxa zero"), 6);
+  assert.equal(extractRequestedDurationSeconds("Reels de 15s para o lançamento"), 15);
+  assert.equal(extractRequestedDurationSeconds("um vídeo de 1 minuto"), 60);
+  assert.equal(extractRequestedDurationSeconds("crie um vídeo para o Instagram"), undefined);
+  assert.equal(extractRequestedDurationSeconds("vídeo de 2 segundos"), undefined, "abaixo do mínimo plausível");
+  assert.equal(extractRequestedDurationSeconds("campanha de 30 minutos"), undefined, "acima do máximo de vídeo curto");
+  assert.equal(extractRequestedDurationSeconds("promoção 2026 com 50% off"), undefined);
+});

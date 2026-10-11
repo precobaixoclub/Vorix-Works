@@ -29,13 +29,35 @@ test("action-registry: toda ActionDefinition declara os campos exigidos pela se�
   }
 });
 
-test("action-registry: todo BlockerKind resolvível tem ao menos uma ação candidata (exceto os documentados como sem solução automática)", () => {
+// Cobertura do REGISTRY (contrato estático: alguma ação declara resolver o bloqueio) é diferente de
+// aplicabilidade NESTA máquina (`isApplicable`). Este teste antes exigia candidato aplicável e por
+// isso falhava no Linux: a única ação de `narration_invalid` é a síntese via Windows SAPI, que se
+// declara só-Windows de propósito (ver `narration-regeneration.action.ts`).
+test("action-registry: todo BlockerKind resolvível tem ao menos uma ação registrada que o resolve (exceto os documentados como sem solução automática)", () => {
   const knownWithoutAutomaticAction = new Set(["visual_asset_missing"]); // ver ADR/limitação: geração real de imagem exige julgamento criativo, não é uma ação mecânica registrada.
   for (const kind of BLOCKER_KINDS) {
     if (kind === "unknown" || knownWithoutAutomaticAction.has(kind)) continue;
-    const candidates = selectActionsForBlocker(blockerOf(kind), ACTION_REGISTRY, DEFAULT_ACTION_PRIORITY);
-    assert.ok(candidates.length > 0, `bloqueio "${kind}" não tem nenhuma ação candidata no registry`);
+    assert.ok(ACTION_REGISTRY.some((action) => action.resolves.includes(kind)), `bloqueio "${kind}" não tem nenhuma ação que o resolva no registry`);
   }
+});
+
+test("action-registry: fora as ações declaradamente dependentes de plataforma, todo bloqueio resolvível tem candidato aplicável aqui", () => {
+  const knownWithoutAutomaticAction = new Set(["visual_asset_missing"]);
+  const platformBound = new Map([["narration_regeneration", "win32"]]);
+  for (const kind of BLOCKER_KINDS) {
+    if (kind === "unknown" || knownWithoutAutomaticAction.has(kind)) continue;
+    const resolvers = ACTION_REGISTRY.filter((action) => action.resolves.includes(kind));
+    if (resolvers.every((action) => platformBound.has(action.id) && platformBound.get(action.id) !== process.platform)) continue;
+    const candidates = selectActionsForBlocker(blockerOf(kind), ACTION_REGISTRY, DEFAULT_ACTION_PRIORITY);
+    assert.ok(candidates.length > 0, `bloqueio "${kind}" não tem nenhuma ação candidata aplicável no registry`);
+  }
+});
+
+test("action-registry: narration_regeneration (Windows SAPI) é aplicável só no Windows — limitação explícita, nunca candidato silencioso em Linux", () => {
+  const narration = ACTION_REGISTRY.find((action) => action.id === "narration_regeneration");
+  assert.ok(narration.resolves.includes("narration_invalid"));
+  assert.equal(narration.isApplicable(blockerOf("narration_invalid")), process.platform === "win32");
+  assert.ok(narration.prerequisites.some((item) => /Windows/.test(item)));
 });
 
 test("action-registry: 'unknown' só resolve via gap_analysis (diagnóstico, nunca correção real)", () => {

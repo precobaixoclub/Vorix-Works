@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { InMemoryWorkspaceRepository } from "../dist/infrastructure/storage/in-memory-workspace-repository.js";
+import { InMemoryCreativeEngineEntitlementRepository } from "../dist/infrastructure/storage/in-memory-creative-engine-entitlement-repository.js";
 import {
   activateWorkspace,
   archiveWorkspace,
@@ -25,6 +26,20 @@ test("createWorkspace: fluxo válido cria com status active", async () => {
   const workspace = await createWorkspace(deps, { tenantId: "tenant-1", name: "Rumo ao Altar" });
   assert.equal(workspace.tenantId, "tenant-1");
   assert.equal(workspace.status, "active");
+});
+
+test("createWorkspace: provisiona creative_engine enabled quando entitlement repository está disponível", async () => {
+  const creativeEngineEntitlementRepository = new InMemoryCreativeEngineEntitlementRepository();
+  const deps = { ...makeDeps(), creativeEngineEntitlementRepository };
+  const workspace = await createWorkspace(deps, { tenantId: "tenant-creative-default", name: "Novo Workspace" });
+
+  const entitlement = await creativeEngineEntitlementRepository.getWorkspaceEntitlement({
+    tenantId: workspace.tenantId,
+    workspaceId: workspace.id,
+  });
+  assert.equal(entitlement?.enabled, true);
+  assert.equal(entitlement?.capability, "creative_engine");
+  assert.equal(entitlement?.reason, "workspace_provisioning_default_enabled_pre_launch");
 });
 
 test("listWorkspaces/getWorkspace: fluxo válido", async () => {

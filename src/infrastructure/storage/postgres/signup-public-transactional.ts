@@ -18,6 +18,7 @@ import { PostgresSubscriptionRepository } from "./postgres-subscription-reposito
 import { PostgresTenantMembershipRepository } from "./postgres-tenant-membership-repository.js";
 import { PostgresUserRepository } from "./postgres-user-repository.js";
 import { PostgresWorkspaceRepository } from "./postgres-workspace-repository.js";
+import { PostgresCreativeEngineEntitlementRepository } from "./postgres-creative-engine-entitlement-repository.js";
 
 /** Códigos aceitos em `input.planCode` — nunca FREE (não é oferecido publicamente, seção 1 do
  * pedido "aquisição self-service") nem ENTERPRISE ("fale conosco", nunca self-service). */
@@ -75,6 +76,7 @@ export async function signupPublicTransactional(
         auditLog: new PostgresAuditLogRepository(txPool),
         workspaceRepository: new PostgresWorkspaceRepository(txPool),
         platformBillingRepository: new PostgresPlatformBillingRepository(txPool),
+        creativeEngineEntitlementRepository: new PostgresCreativeEngineEntitlementRepository(txPool),
         passwordHasher: deps.passwordHasher,
         jwt: deps.jwt,
         accessTokenTtlSeconds: deps.accessTokenTtlSeconds,

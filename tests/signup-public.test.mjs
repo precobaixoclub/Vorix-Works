@@ -10,6 +10,7 @@ import { PostgresRefreshTokenRepository } from "../dist/infrastructure/storage/p
 import { PostgresAuditLogRepository } from "../dist/infrastructure/storage/postgres/postgres-audit-log-repository.js";
 import { PostgresWorkspaceRepository } from "../dist/infrastructure/storage/postgres/postgres-workspace-repository.js";
 import { PostgresPlatformBillingRepository } from "../dist/infrastructure/storage/postgres/postgres-platform-billing-repository.js";
+import { PostgresCreativeEngineEntitlementRepository } from "../dist/infrastructure/storage/postgres/postgres-creative-engine-entitlement-repository.js";
 import { BcryptPasswordHasher } from "../dist/infrastructure/auth/bcrypt-password-hasher.js";
 import { JsonWebTokenJwtAdapter } from "../dist/infrastructure/auth/jsonwebtoken-jwt-adapter.js";
 import { signupPublic } from "../dist/application/identity/index.js";
@@ -30,6 +31,7 @@ function makeDeps() {
     auditLog: new PostgresAuditLogRepository(db.pool, { idGenerator: () => nextId("audit") }),
     workspaceRepository: new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") }),
     platformBillingRepository: new PostgresPlatformBillingRepository(db.pool),
+    creativeEngineEntitlementRepository: new PostgresCreativeEngineEntitlementRepository(db.pool),
     passwordHasher: new BcryptPasswordHasher(),
     jwt: new JsonWebTokenJwtAdapter("test-secret"),
     accessTokenTtlSeconds: 900,
@@ -74,7 +76,7 @@ test("signupPublic: cria User + Membership + Workspace + tenant_billing FREE e d
   assert.equal(membership.rows[0].role, "admin");
   assert.equal(membership.rows[0].tenant_id, result.tenantId);
 
-  const workspaces = await db.pool.query("select name, kind, tenant_id from workspaces where tenant_id = $1", [result.tenantId]);
+  const workspaces = await db.pool.query("select id, name, kind, tenant_id from workspaces where tenant_id = $1", [result.tenantId]);
   assert.equal(workspaces.rows.length, 1);
   assert.equal(workspaces.rows[0].name, "Meu Primeiro Workspace");
   assert.equal(workspaces.rows[0].kind, "default");
@@ -84,6 +86,15 @@ test("signupPublic: cria User + Membership + Workspace + tenant_billing FREE e d
   assert.equal(billing.rows[0].plan_code, "FREE");
   assert.equal(billing.rows[0].subscription_status, "trial");
   assert.equal(Number(billing.rows[0].monthly_credits_quota), 50);
+
+  const entitlement = await db.pool.query(
+    "select enabled, capability, reason from creative_engine_workspace_entitlements where tenant_id = $1 and workspace_id = $2",
+    [result.tenantId, workspaces.rows[0].id],
+  );
+  assert.equal(entitlement.rows.length, 1);
+  assert.equal(entitlement.rows[0].enabled, true);
+  assert.equal(entitlement.rows[0].capability, "creative_engine");
+  assert.equal(entitlement.rows[0].reason, "workspace_provisioning_default_enabled_pre_launch");
 });
 
 test("signupPublic: workspaceName ausente cai no default 'Workspace de <name>'", async () => {

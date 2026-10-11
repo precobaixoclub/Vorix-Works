@@ -1,5 +1,7 @@
 import type { PlatformBillingRepositoryPort } from "../ports/platform-billing-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
+import type { CreativeEngineEntitlementRepositoryPort } from "../ports/creative-engine-entitlement-repository.port.js";
+import { provisionCreativeEngineForNewWorkspace } from "../workspace/workspace-use-cases.js";
 import type { IdentityUseCaseDeps } from "./identity-use-case-deps.js";
 import { login, type LoginUseCaseOutput } from "./login.usecase.js";
 import { registerUser } from "./register-user.usecase.js";
@@ -16,6 +18,7 @@ export type SignupPublicUseCaseInput = {
 export type SignupPublicDeps = IdentityUseCaseDeps & {
   workspaceRepository: WorkspaceRepositoryPort;
   platformBillingRepository: PlatformBillingRepositoryPort;
+  creativeEngineEntitlementRepository?: CreativeEngineEntitlementRepositoryPort;
   idGenerator: (prefix: string) => string;
   now: () => Date;
 };
@@ -57,11 +60,12 @@ export async function signupPublic(
     role: "admin",
   });
 
-  await deps.workspaceRepository.create({
+  const workspace = await deps.workspaceRepository.create({
     tenantId,
     name: workspaceName || `Workspace de ${name}`,
     kind: "default",
   });
+  await provisionCreativeEngineForNewWorkspace(deps, { tenantId, workspaceId: workspace.id });
 
   const nowIso = (deps.now?.() ?? new Date()).toISOString();
   await deps.platformBillingRepository.ensureTenantBilling({ tenantId, now: nowIso });

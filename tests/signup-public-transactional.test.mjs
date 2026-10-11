@@ -52,9 +52,18 @@ test("signupPublicTransactional: cria User + Membership + Workspace + tenant_bil
   const membership = await db.pool.query("select role from tenant_members where user_id = $1", [userRow.rows[0].id]);
   assert.equal(membership.rows.length, 1);
 
-  const workspaces = await db.pool.query("select name from workspaces where tenant_id = $1", [result.tenantId]);
+  const workspaces = await db.pool.query("select id, name from workspaces where tenant_id = $1", [result.tenantId]);
   assert.equal(workspaces.rows.length, 1);
   assert.equal(workspaces.rows[0].name, "Workspace Transacional");
+
+  const entitlement = await db.pool.query(
+    "select enabled, capability, reason from creative_engine_workspace_entitlements where tenant_id = $1 and workspace_id = $2",
+    [result.tenantId, workspaces.rows[0].id],
+  );
+  assert.equal(entitlement.rows.length, 1);
+  assert.equal(entitlement.rows[0].enabled, true);
+  assert.equal(entitlement.rows[0].capability, "creative_engine");
+  assert.equal(entitlement.rows[0].reason, "workspace_provisioning_default_enabled_pre_launch");
 
   const billing = await db.pool.query("select plan_code from tenant_billing where tenant_id = $1", [result.tenantId]);
   assert.equal(billing.rows.length, 1);

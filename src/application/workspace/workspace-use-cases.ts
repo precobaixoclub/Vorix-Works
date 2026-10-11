@@ -3,6 +3,7 @@ import type { Workspace, WorkspaceSettings, WorkspaceStatus } from "../../domain
 import { emptyMonthlyUsage, getPlatformPlan, periodOf } from "../../domain/platform-billing/index.js";
 import type { WorkspaceRepositoryPort } from "../ports/workspace-repository.port.js";
 import type { PlatformBillingRepositoryPort } from "../ports/platform-billing-repository.port.js";
+import type { CreativeEngineEntitlementRepositoryPort } from "../ports/creative-engine-entitlement-repository.port.js";
 
 /**
  * Casos de uso de Workspace — Sprint 03 (Fase 6). Camada `application`, sem nenhuma dependência
@@ -25,6 +26,7 @@ import type { PlatformBillingRepositoryPort } from "../ports/platform-billing-re
 export type WorkspaceUseCaseDeps = {
   workspaceRepository: WorkspaceRepositoryPort;
   platformBillingRepository?: PlatformBillingRepositoryPort;
+  creativeEngineEntitlementRepository?: CreativeEngineEntitlementRepositoryPort;
 };
 
 async function mustBelongToTenant(repository: WorkspaceRepositoryPort, id: string, tenantId: string): Promise<Workspace> {
@@ -36,6 +38,26 @@ async function mustBelongToTenant(repository: WorkspaceRepositoryPort, id: strin
 }
 
 export type CreateWorkspaceUseCaseInput = { tenantId: string; name: string; kind?: string };
+
+export function shouldAutoEnableCreativeEngineForNewWorkspace(_input: { tenantId: string; workspaceId: string; kind?: string }): boolean {
+  // Pré-lançamento: todo workspace novo elegível nasce com Creative Engine. A função centraliza a
+  // política para a futura matriz FREE/PRO/ADDON sem precisar mexer no fluxo de criação.
+  return true;
+}
+
+export async function provisionCreativeEngineForNewWorkspace(
+  deps: Pick<WorkspaceUseCaseDeps, "creativeEngineEntitlementRepository">,
+  input: { tenantId: string; workspaceId: string; kind?: string; actorUserId?: string },
+): Promise<void> {
+  if (!shouldAutoEnableCreativeEngineForNewWorkspace(input)) return;
+  await deps.creativeEngineEntitlementRepository?.setWorkspaceEntitlement({
+    tenantId: input.tenantId,
+    workspaceId: input.workspaceId,
+    enabled: true,
+    actorUserId: input.actorUserId ?? "system",
+    reason: "workspace_provisioning_default_enabled_pre_launch",
+  });
+}
 
 export async function createWorkspace(deps: WorkspaceUseCaseDeps, input: CreateWorkspaceUseCaseInput): Promise<Workspace> {
   if (!input.tenantId) throw new Error("WORKSPACE_VALIDATION_ERROR: tenantId é obrigatório.");
@@ -57,7 +79,18 @@ export async function createWorkspace(deps: WorkspaceUseCaseDeps, input: CreateW
     }
   }
 
-  return deps.workspaceRepository.create({ tenantId: input.tenantId, name, kind: input.kind?.trim() || undefined });
+  const workspace = await deps.workspaceRepository.create({ tenantId: input.tenantId, name, kind: input.kind?.trim() || undefined });
+  try {
+    await provisionCreativeEngineForNewWorkspace(deps, { tenantId: workspace.tenantId, workspaceId: workspace.id, kind: workspace.kind });
+  } catch (error) {
+    try {
+      await deps.workspaceRepository.archive(workspace.id);
+    } catch {
+      // O erro original de entitlement é o mais importante para o caller; arquivamento é compensação.
+    }
+    throw error;
+  }
+  return workspace;
 }
 
 export type ListWorkspacesUseCaseInput = { tenantId: string; status?: WorkspaceStatus };

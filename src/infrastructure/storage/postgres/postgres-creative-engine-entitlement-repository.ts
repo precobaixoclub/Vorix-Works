@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import {
   CREATIVE_ENGINE_CAPABILITY,
   type CreativeEngineEntitlementAuditEntry,
@@ -52,9 +52,9 @@ export class PostgresCreativeEngineEntitlementRepository implements CreativeEngi
   }
 
   async setGlobalEnabled(input: { enabled: boolean; actorUserId?: string; reason?: string }): Promise<CreativeEngineGlobalSettings> {
-    const client = await this.pool.connect();
+    const { client, ownsTransaction } = await this.acquireClient();
     try {
-      await client.query("begin");
+      if (ownsTransaction) await client.query("begin");
       const current = await client.query<GlobalSettingsRow>(
         "select enabled, updated_at, updated_by from creative_engine_global_settings where id = 'singleton' for update",
       );
@@ -72,13 +72,13 @@ export class PostgresCreativeEngineEntitlementRepository implements CreativeEngi
          values ($1, '__global__', '__global__', $2, $3, $4, $5, $6)`,
         [auditId(), CREATIVE_ENGINE_CAPABILITY, oldValue ?? null, input.enabled, input.actorUserId ?? null, input.reason ?? null],
       );
-      await client.query("commit");
+      if (ownsTransaction) await client.query("commit");
       return toGlobalSettings(result.rows[0]);
     } catch (error) {
-      await client.query("rollback");
+      if (ownsTransaction) await client.query("rollback");
       throw error;
     } finally {
-      client.release();
+      if (ownsTransaction) client.release();
     }
   }
 
@@ -92,9 +92,9 @@ export class PostgresCreativeEngineEntitlementRepository implements CreativeEngi
   }
 
   async setWorkspaceEntitlement(input: SetCreativeEngineWorkspaceEntitlementInput): Promise<CreativeEngineWorkspaceEntitlement> {
-    const client = await this.pool.connect();
+    const { client, ownsTransaction } = await this.acquireClient();
     try {
-      await client.query("begin");
+      if (ownsTransaction) await client.query("begin");
       const current = await client.query<EntitlementRow>(
         `select * from creative_engine_workspace_entitlements
          where tenant_id = $1 and workspace_id = $2 and capability = $3
@@ -129,13 +129,13 @@ export class PostgresCreativeEngineEntitlementRepository implements CreativeEngi
           input.reason ?? null,
         ],
       );
-      await client.query("commit");
+      if (ownsTransaction) await client.query("commit");
       return toEntitlement(result.rows[0]);
     } catch (error) {
-      await client.query("rollback");
+      if (ownsTransaction) await client.query("rollback");
       throw error;
     } finally {
-      client.release();
+      if (ownsTransaction) client.release();
     }
   }
 
@@ -177,6 +177,14 @@ export class PostgresCreativeEngineEntitlementRepository implements CreativeEngi
       params,
     );
     return result.rows.map(toAudit);
+  }
+
+  private async acquireClient(): Promise<{ client: PoolClient; ownsTransaction: boolean }> {
+    const maybeClient = this.pool as unknown as PoolClient & { release?: () => void };
+    if (typeof maybeClient.release === "function") {
+      return { client: maybeClient, ownsTransaction: false };
+    }
+    return { client: await this.pool.connect(), ownsTransaction: true };
   }
 }
 

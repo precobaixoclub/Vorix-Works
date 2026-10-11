@@ -263,3 +263,14 @@ test("classifyObjectKeyOwner: layout do storage → dono (workspace, tenant, QA,
   assert.equal(classifyObjectKeyOwner("random/file.png"), undefined);
   assert.equal(classifyObjectKeyOwner("assets/not-a-tenant/ws/a.png"), undefined);
 });
+
+test("Log de acesso nunca grava a assinatura nem tokens de query (sig/media_token/avatar_token/stream_token)", async () => {
+  const { redactSensitiveQuery, redactedRequestSerializer } = await import("../dist/interfaces/api/http/log-redaction.js");
+  assert.equal(redactSensitiveQuery("/uploads/a/b.png?exp=123&sig=AbC-_xyz"), "/uploads/a/b.png?exp=123&sig=[REDACTED]");
+  assert.equal(redactSensitiveQuery("/v1/inbox/media/m1?media_token=eyJ.abc.def"), "/v1/inbox/media/m1?media_token=[REDACTED]");
+  assert.equal(redactSensitiveQuery("/v1/inbox/stream?x=1&stream_token=t&y=2"), "/v1/inbox/stream?x=1&stream_token=[REDACTED]&y=2");
+  assert.equal(redactSensitiveQuery("/v1/assets?workspaceId=w"), "/v1/assets?workspaceId=w");
+  const serialized = redactedRequestSerializer({ method: "GET", url: "/uploads/k?exp=1&sig=SECRET", hostname: "h", ip: "1.2.3.4", socket: { remotePort: 9 } });
+  assert.ok(!JSON.stringify(serialized).includes("SECRET"));
+  assert.equal(serialized.method, "GET");
+});

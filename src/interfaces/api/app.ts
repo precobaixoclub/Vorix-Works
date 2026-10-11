@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { loadApiConfig, type ApiConfig } from "./config/api-config.js";
 import { registerErrorHandler } from "./http/error-handler.js";
+import { redactedRequestSerializer } from "./http/log-redaction.js";
 import { registerRequestContext } from "./middleware/request-context.js";
 import { registerAuthMiddleware } from "./middleware/auth.middleware.js";
 import { registerIdempotencyMiddleware } from "./middleware/idempotency.middleware.js";
@@ -40,7 +41,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const container = options.container ? { ...buildApiContainer(config), ...options.container } : buildApiContainer(config);
 
   const app = Fastify({
-    logger: { level: config.logLevel },
+    // URL do log de acesso sem credenciais de query (assinatura de arquivo, tokens escopados).
+    logger: { level: config.logLevel, serializers: { req: redactedRequestSerializer } },
     genReqId: () => randomUUID(),
   });
 

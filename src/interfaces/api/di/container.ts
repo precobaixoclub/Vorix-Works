@@ -145,6 +145,7 @@ import type { ExecutionFeatureFlags } from "../../../application/execution/featu
 import { assertCreativeEngineExclusivity, resolveCreativeEngineMode } from "../../../application/creative-engine/creative-engine-mode.js";
 import type { CreativeBrandProfile } from "../../../application/creative-engine/build-creative-context.js";
 import type { CreativeEngineRunRepositoryPort } from "../../../application/ports/creative-engine-run-repository.port.js";
+import type { CreativeEngineEntitlementRepositoryPort } from "../../../application/ports/creative-engine-entitlement-repository.port.js";
 import { compositeLogoOntoImage } from "../../../infrastructure/media/logo-compositor.js";
 import { compositeScreenshotIntoDeviceMockup } from "../../../infrastructure/media/screenshot-mockup-compositor.js";
 import { renderCreativePlanTextZones } from "../../../infrastructure/rendering/render-creative-plan-text-zones.js";
@@ -285,6 +286,8 @@ export type ApiContainer = {
    * — um endpoint de auditoria futuro, um script de validação — possa consultar
    * `getByExecutionRunId`/`listByWorkspace` sem precisar de um cast. */
   creativeEngineRunRepository: CreativeEngineRunRepositoryPort;
+  /** Gate comercial do Creative Engine por workspace, fail-closed. */
+  creativeEngineEntitlementRepository: CreativeEngineEntitlementRepositoryPort;
   /** Leitura de texto por visão do motor criativo (scan da base, inventário do screenshot) — ver
    * `VISION_TEXT_MODEL_ID`. Exposta para diagnóstico operacional (estabilidade do scan). */
   visionTextBrain: IcaroAIBrain;
@@ -1124,6 +1127,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     },
     referenceIntelligenceExtractor,
     creativeEngineRunRepository: repositories.creativeEngineRunRepository,
+    creativeEngineEntitlementRepository: repositories.creativeEngineEntitlementRepository,
     executionRepository: repositories.executionRepository,
     workspaceRepository: repositories.workspaceRepository,
     userRepository: identityRepositories?.userRepository,

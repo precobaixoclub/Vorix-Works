@@ -28,6 +28,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TablePagination, usePagination } from "@/components/ui/table-pagination";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useSortedRows } from "@/hooks/useSortedRows";
+import { useCreativeEngineWorkspaceStatus } from "@/features/creative-engine-entitlement/hooks";
 
 const CHANNELS: ProductionChannel[] = ["instagram", "facebook", "tiktok", "youtube"];
 const FORMATS: ProductionFormat[] = ["single_image", "carousel", "video"];
@@ -288,6 +289,8 @@ export default function ProductionLinePage() {
   // Fila operacional — dado real de `ExecutionRun`, nunca do tanque local.
   const { data: executionRuns, mutate: refreshRuns } = useExecutionRuns(workspace.id);
   const { data: productionSettings } = useProductionSettings(workspace.id);
+  const { data: creativeEngineStatus } = useCreativeEngineWorkspaceStatus(workspace.id);
+  const creativeEngineEnabled = creativeEngineStatus?.enabled === true;
   const [queueTab, setQueueTab] = useState<QueueTabId>("in_progress");
   const [queueSearch, setQueueSearch] = useState("");
   const [channelFilter, setChannelFilter] = useState<ProductionChannel | "all">("all");
@@ -445,6 +448,10 @@ export default function ProductionLinePage() {
   const currentQueueTabLabel = QUEUE_TABS.find((tab) => tab.id === queueTab)?.label ?? "";
 
   async function handleRetryFailed(run: ExecutionRun) {
+    if (!creativeEngineEnabled) {
+      setRetryError("Geracao visual ainda nao esta habilitada para este workspace.");
+      return;
+    }
     const record = getGenerationRecord(workspace.id, run.id);
     if (!record) return;
     setRetryingRunId(run.id);
@@ -533,6 +540,10 @@ export default function ProductionLinePage() {
    * Mesmo padrão do `handleRetryFailed` da fila (fire, registra, atualiza, muda de aba) — nunca
    * bloqueia a tela esperando o pipeline inteiro terminar. */
   async function triggerGeneration(blueprint: ContentBlueprint) {
+    if (!creativeEngineEnabled) {
+      setGenerateIdeaError("Geracao visual ainda nao esta habilitada para este workspace.");
+      return;
+    }
     const format = blueprint.format;
     if (format === "video") {
       setGenerateIdeaError("Vídeo ainda não pode ser gerado direto do planejamento — abra a ideia e ajuste o formato para imagem ou carrossel.");
@@ -708,6 +719,7 @@ export default function ProductionLinePage() {
         </Card>
 
         {generateIdeaError ? <p className="mb-3 text-sm text-danger">{generateIdeaError}</p> : null}
+        {!creativeEngineEnabled ? <p className="mb-3 text-sm text-muted-foreground">Geracao visual ainda nao esta habilitada para este workspace.</p> : null}
 
         {/* BLOCO 4 — lista: altura adaptativa + paginação colada no rodapé. */}
         <ListCard
@@ -779,7 +791,7 @@ export default function ProductionLinePage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap justify-end gap-1.5">
-                          <Button size="sm" variant="secondary" loading={generatingIdeaId === idea.id} disabled={generatingNow} onClick={() => triggerGeneration(idea)}>
+                          <Button size="sm" variant="secondary" loading={generatingIdeaId === idea.id} disabled={generatingNow || !creativeEngineEnabled} onClick={() => triggerGeneration(idea)}>
                             Gerar agora
                           </Button>
                           <Button size="sm" variant="secondary" onClick={() => openBlueprint(idea.id)}>Abrir</Button>
@@ -825,6 +837,7 @@ export default function ProductionLinePage() {
             onClose={() => (selectedBlueprint.id === draftIdea?.id ? discardDraftIdea() : setIdeaEditorOpen(false))}
             onSaveDraft={saveDraftIdea}
             onSaveAndGenerate={saveDraftIdeaAndGenerate}
+            creativeEngineEnabled={creativeEngineEnabled}
             onDiscardDraft={discardDraftIdea}
             onRemove={() => (selectedBlueprint.id === draftIdea?.id ? discardDraftIdea() : removeBlueprint(selectedBlueprint.id))}
           />
@@ -952,6 +965,7 @@ export default function ProductionLinePage() {
               run={run}
               onRetry={() => handleRetryFailed(run)}
               retrying={retryingRunId === run.id}
+              retryDisabled={!creativeEngineEnabled}
             />
           ))}
         </div>
@@ -972,11 +986,13 @@ function ProductionRunCard({
   run,
   onRetry,
   retrying,
+  retryDisabled,
 }: {
   workspaceId: string;
   run: ExecutionRun;
   onRetry: () => void;
   retrying: boolean;
+  retryDisabled: boolean;
 }) {
   const needsDetail = run.state === "completed" || run.state === "waiting_for_approval" || run.state === "failed";
   const { data: detail } = useExecutionRun(workspaceId, needsDetail ? run.id : undefined);
@@ -1007,7 +1023,7 @@ function ProductionRunCard({
             {expanded ? <p className="rounded-lg bg-danger-bg px-2.5 py-2 text-xs text-danger">{summary.failureMessage || "Motivo não informado pelo provedor."}</p> : null}
             <div className="flex flex-wrap gap-2 pt-1">
               {summary.record ? (
-                <Button className="min-h-8 px-3 py-1.5 text-xs" disabled={retrying} onClick={onRetry}>{retrying ? "Tentando…" : "Tentar novamente"}</Button>
+                <Button className="min-h-8 px-3 py-1.5 text-xs" disabled={retrying || retryDisabled} onClick={onRetry}>{retrying ? "Tentando…" : "Tentar novamente"}</Button>
               ) : null}
               <Button variant="secondary" className="min-h-8 px-3 py-1.5 text-xs" onClick={() => setExpanded((prev) => !prev)}>Detalhes</Button>
             </div>
@@ -1174,6 +1190,7 @@ function IdeaFormDialog({
   onClose,
   onSaveDraft,
   onSaveAndGenerate,
+  creativeEngineEnabled,
   onDiscardDraft,
   onRemove,
 }: {
@@ -1185,6 +1202,7 @@ function IdeaFormDialog({
   onClose: () => void;
   onSaveDraft: () => void;
   onSaveAndGenerate: () => void;
+  creativeEngineEnabled: boolean;
   onDiscardDraft: () => void;
   onRemove: () => void;
 }) {
@@ -1217,7 +1235,7 @@ function IdeaFormDialog({
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" onClick={onDiscardDraft}>Descartar</Button>
                 <Button variant="secondary" disabled={!canSaveDraft} onClick={onSaveDraft}>Salvar no planejamento</Button>
-                <Button disabled={!canSaveDraft} onClick={onSaveAndGenerate}>Salvar e gerar agora</Button>
+                <Button disabled={!canSaveDraft || !creativeEngineEnabled} onClick={onSaveAndGenerate}>Salvar e gerar agora</Button>
               </div>
             </div>
           ) : (

@@ -58,6 +58,7 @@ import { registerMetaPixelsRoutes } from "./meta-pixels.route.js";
 import { registerPublicationMediaRoutes } from "./publication-media.route.js";
 import { registerExecutionRunRoutes } from "./execution-runs.route.js";
 import { registerProductionRoutes } from "./production.route.js";
+import { registerCreativeEngineEntitlementRoutes } from "./creative-engine-entitlements.route.js";
 import { registerPublicationRoutes } from "./publications.route.js";
 import { registerWebhookRoutes } from "./webhooks.route.js";
 import { registerWorkspaceRoutes } from "./workspaces.route.js";
@@ -186,6 +187,12 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     imageDescriber: app.zunoContainer.imageDescriber,
     referenceIntelligenceExtractor: app.zunoContainer.referenceIntelligenceExtractor,
     qualityFeedback: app.zunoContainer.qualityFeedback,
+    creativeEngineEntitlementRepository: app.zunoContainer.creativeEngineEntitlementRepository,
+  });
+  await registerCreativeEngineEntitlementRoutes(app, {
+    workspaceRepository: app.zunoContainer.workspaceRepository,
+    creativeEngineEntitlementRepository: app.zunoContainer.creativeEngineEntitlementRepository,
+    featureFlags: app.zunoContainer.executionFeatureFlags,
   });
   await registerPublicationRoutes(app, {
     publicationRepository: app.zunoContainer.publicationRepository,

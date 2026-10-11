@@ -3,12 +3,14 @@ import { createExecution, decideExecutionGateUseCase, startExecution, type Execu
 import { generateVisualFromIdea, type GenerateVisualFromIdeaDeps } from "../../../../application/production/generate-visual-from-idea.js";
 import type { QualityFeedbackCategory, QualityFeedbackPort } from "../../../../application/quality-feedback/index.js";
 import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
-import { ForbiddenError, NotImplementedError } from "../../http/app-error.js";
+import { ForbiddenError, NotFoundError, NotImplementedError } from "../../http/app-error.js";
 import { describeReferenceAssetDecision, type ReferenceAssetResolverPort, type ReferenceAssetScope } from "../../../../application/assets/reference-asset-policy.js";
 import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 import { translateExecutionError } from "./execution-error-translator.js";
 import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
+import { canUseCreativeEngine } from "../../../../application/creative-engine/creative-engine-entitlement.js";
+import type { CreativeEngineEntitlementRepositoryPort } from "../../../../application/ports/creative-engine-entitlement-repository.port.js";
 
 // Motivos de rejeição estruturada da tela de Revisão (requisito "registrar o motivo sempre que
 // disponível, para usar nas próximas gerações") — subconjunto de `QUALITY_FEEDBACK_CATEGORIES`
@@ -89,6 +91,7 @@ export type ProductionRoutesDeps = GenerateVisualFromIdeaDeps &
     /** Política única de reference assets — sem ela, requisições com referências falham fechado. */
     referenceAssetResolver?: ReferenceAssetResolverPort;
     editorialQaAllowlist?: readonly { tenantId: string; workspaceId: string }[];
+    creativeEngineEntitlementRepository?: CreativeEngineEntitlementRepositoryPort;
   };
 
 /**
@@ -162,6 +165,33 @@ export async function registerProductionRoutes(app: FastifyInstance, deps: Produ
     // já envia essas URLs para a visão nesta mesma requisição. `qa-assets/` só para o
     // tenant/workspace da allowlist editorial, com a flag ligada e o modo editorial pedido.
     authorizeProductionReferenceAssets(body, principal.tenantId, deps, (line) => request.log.warn(line));
+
+    const qaBypassAllowed = body.creativeEngineCompositionMode === "editorial_experimental"
+      && deps.featureFlags?.creativeEngineEditorialExperimentalEnabled === true
+      && (deps.editorialQaAllowlist ?? []).some((entry) => entry.tenantId === principal.tenantId && entry.workspaceId === body.workspaceId);
+    const creativeEngineDecision = await canUseCreativeEngine(
+      {
+        workspaceRepository: deps.workspaceRepository,
+        entitlementRepository: deps.creativeEngineEntitlementRepository,
+        featureFlags: deps.featureFlags,
+      },
+      {
+        tenantId: principal.tenantId,
+        workspaceId: body.workspaceId,
+        actor: { userId: principal.userId, role: principal.role },
+        requiredPermission: "execution:create",
+        qaBypassAllowed,
+      },
+    );
+    if (!creativeEngineDecision.ok) {
+      request.log.warn(
+        { reason: creativeEngineDecision.code, tenantId: principal.tenantId, workspaceId: body.workspaceId },
+        "creative_engine_entitlement_denied",
+      );
+      if (creativeEngineDecision.httpStatus === 404) throw new NotFoundError("Workspace não encontrado.");
+      if (creativeEngineDecision.httpStatus === 503) throw new ForbiddenError("Geração visual indisponível para este workspace.", { code: creativeEngineDecision.code });
+      throw new ForbiddenError("Geração visual não está habilitada para este workspace.", { code: creativeEngineDecision.code });
+    }
 
     await deps.ensureHouseTenantProfile(principal.tenantId, body.workspaceId);
 

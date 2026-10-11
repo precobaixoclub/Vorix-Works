@@ -28,6 +28,7 @@ import { readProductionConfig, writeProductionConfig } from "@/features/producti
 import type { ContentBlueprint, ProductionAspectRatio, ProductionChannel, ProductionFormat, ReferenceAssetRole } from "@/features/production-line/types";
 import { useProductionSettings } from "@/features/production-settings/hooks";
 import { useTenantCredits } from "@/features/workspace/hooks";
+import { useCreativeEngineWorkspaceStatus } from "@/features/creative-engine-entitlement/hooks";
 
 type ComposerFormat = Exclude<ProductionFormat, "video">;
 type ContentTypeId = "publicacao" | "anuncio" | "story" | "carrossel";
@@ -95,6 +96,7 @@ export default function CreatePage() {
   const { data: productionSettings } = useProductionSettings(workspace.id);
   const { data: assets } = useAssets(workspace.id);
   const { data: credits } = useTenantCredits();
+  const { data: creativeEngineStatus } = useCreativeEngineWorkspaceStatus(workspace.id);
 
   const activeAssets = (assets ?? []).filter((asset) => asset.status === "active" && asset.storageRef?.metadata?.url);
   const hasLogo = activeAssets.some((asset) => asset.kind === "logo");
@@ -126,6 +128,7 @@ export default function CreatePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const busy = status !== "idle";
+  const creativeEngineEnabled = creativeEngineStatus?.enabled === true;
   const formDisabled = busy || savingToTank;
   const contentTypeId = CONTENT_TYPES.find((type) => type.format === format && type.aspectRatio === aspectRatio)?.id;
 
@@ -143,7 +146,7 @@ export default function CreatePage() {
   }, [busy]);
 
   const overLimit = ideaText.length > MAX_IDEA_TEXT_LENGTH;
-  const canGenerate = ideaText.trim().length > 0 && !overLimit && !busy && !savingToTank;
+  const canGenerate = creativeEngineEnabled && ideaText.trim().length > 0 && !overLimit && !busy && !savingToTank;
   const canSaveToTank = ideaText.trim().length > 0 && !overLimit && !busy && !savingToTank;
 
   function selectContentType(type: (typeof CONTENT_TYPES)[number]) {
@@ -187,6 +190,10 @@ export default function CreatePage() {
   }
 
   async function handleGenerate() {
+    if (!creativeEngineEnabled) {
+      setError("Geracao visual ainda nao esta habilitada para este workspace.");
+      return;
+    }
     setError(null);
     setStatus("generating");
 
@@ -604,6 +611,12 @@ export default function CreatePage() {
             <div className="rounded-xl bg-primary/10 px-4 py-3 text-sm text-primary">
               <p>{tankMessage}</p>
               <Link href={`/workspaces/${workspace.id}/production?mode=configure`} className="mt-1.5 inline-block font-medium underline">Ver planejamento →</Link>
+            </div>
+          ) : null}
+
+          {!creativeEngineEnabled ? (
+            <div className="rounded-xl bg-muted px-4 py-3 text-sm text-muted-foreground">
+              Geracao visual ainda nao esta habilitada para este workspace.
             </div>
           ) : null}
 

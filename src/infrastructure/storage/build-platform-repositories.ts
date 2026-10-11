@@ -21,6 +21,7 @@ import type { ExecutionRepositoryPort } from "../../application/ports/execution-
 import type { ExecutionTaskRepositoryPort } from "../../application/ports/execution-task-repository.port.js";
 import type { ContentGenerationHistoryPort } from "../../application/ports/content-generation-history.port.js";
 import type { CreativeEngineRunRepositoryPort } from "../../application/ports/creative-engine-run-repository.port.js";
+import type { CreativeEngineEntitlementRepositoryPort } from "../../application/ports/creative-engine-entitlement-repository.port.js";
 import type { MetaAdsCredentialRepositoryPort } from "../../application/ports/meta-ads-credential-repository.port.js";
 import type { MetaAdAccountRepositoryPort } from "../../application/ports/meta-ad-account-repository.port.js";
 import type { MetaAdCampaignRepositoryPort } from "../../application/ports/meta-ad-campaign-repository.port.js";
@@ -64,6 +65,7 @@ import { InMemoryPublicObjectRepository } from "./in-memory-public-object-reposi
 import { InMemoryProductionSettingsRepository } from "./in-memory-production-settings-repository.js";
 import { InMemoryContentGenerationHistoryRepository } from "./in-memory-content-generation-history-repository.js";
 import { InMemoryCreativeEngineRunRepository } from "./in-memory-creative-engine-run-repository.js";
+import { InMemoryCreativeEngineEntitlementRepository } from "./in-memory-creative-engine-entitlement-repository.js";
 import { InMemoryMetaAdsCredentialRepository } from "./in-memory-meta-ads-credential-repository.js";
 import { InMemoryMetaAdAccountRepository } from "./in-memory-meta-ad-account-repository.js";
 import { InMemoryMetaAdCampaignRepository } from "./in-memory-meta-ad-campaign-repository.js";
@@ -111,6 +113,7 @@ import { PostgresPublicObjectRepository } from "./postgres/postgres-public-objec
 import { PostgresProductionSettingsRepository } from "./postgres/postgres-production-settings-repository.js";
 import { PostgresContentGenerationHistoryRepository } from "./postgres/postgres-content-generation-history-repository.js";
 import { PostgresCreativeEngineRunRepository } from "./postgres/postgres-creative-engine-run-repository.js";
+import { PostgresCreativeEngineEntitlementRepository } from "./postgres/postgres-creative-engine-entitlement-repository.js";
 import { PostgresMetaAdsCredentialRepository } from "./postgres/postgres-meta-ads-credential-repository.js";
 import { PostgresMetaAdAccountRepository } from "./postgres/postgres-meta-ad-account-repository.js";
 import { PostgresMetaAdCampaignRepository } from "./postgres/postgres-meta-ad-campaign-repository.js";
@@ -214,6 +217,8 @@ export type PlatformRepositories = {
   /** Migração "GPT como motor criativo único" — prova auditável de qual motor produziu cada peça
    * (`db/migrations/0060_creative_engine_runs.sql`). */
   creativeEngineRunRepository: CreativeEngineRunRepositoryPort;
+  /** Commercial rollout gate do Creative Engine: workspace-level, default deny. */
+  creativeEngineEntitlementRepository: CreativeEngineEntitlementRepositoryPort;
   /** Módulo Meta Ads Manager (Fase 1) — deliberadamente separado do domínio de publicação, ver
    * `db/migrations/0069_meta_ads_credentials_accounts.sql`. */
   metaAdsCredentialRepository: MetaAdsCredentialRepositoryPort;
@@ -311,6 +316,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       contentGenerationHistoryRepository: new InMemoryContentGenerationHistoryRepository(),
       qualityFeedbackRepository: new InMemoryQualityFeedbackRepository(),
       creativeEngineRunRepository: new InMemoryCreativeEngineRunRepository(),
+      creativeEngineEntitlementRepository: new InMemoryCreativeEngineEntitlementRepository(),
       metaAdsCredentialRepository: new InMemoryMetaAdsCredentialRepository(),
       metaAdAccountRepository: new InMemoryMetaAdAccountRepository(),
       metaAdCampaignRepository: new InMemoryMetaAdCampaignRepository(),
@@ -374,6 +380,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     contentGenerationHistoryRepository: new PostgresContentGenerationHistoryRepository(pool),
     qualityFeedbackRepository: new PostgresQualityFeedbackRepository(pool),
     creativeEngineRunRepository: new PostgresCreativeEngineRunRepository(pool),
+    creativeEngineEntitlementRepository: new PostgresCreativeEngineEntitlementRepository(pool),
     metaAdsCredentialRepository: new PostgresMetaAdsCredentialRepository(pool),
     metaAdAccountRepository: new PostgresMetaAdAccountRepository(pool),
     metaAdCampaignRepository: new PostgresMetaAdCampaignRepository(pool),

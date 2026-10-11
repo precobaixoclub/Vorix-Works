@@ -16,6 +16,7 @@ import {
 import { recordGeneration } from "../generation-log";
 import { readProductionConfig, writeProductionConfig } from "../storage";
 import type { ContentBlueprint, ProductionAspectRatio, ProductionChannel, ProductionFormat } from "../types";
+import { useCreativeEngineWorkspaceStatus } from "@/features/creative-engine-entitlement/hooks";
 
 type PresetId = "publicacao" | "anuncio" | "story" | "carrossel";
 type ComposerFormat = Exclude<ProductionFormat, "video">;
@@ -46,6 +47,7 @@ function newId(prefix: string) {
 export function IdeaComposer({ workspaceId }: { workspaceId: string }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { data: creativeEngineStatus } = useCreativeEngineWorkspaceStatus(workspaceId);
 
   const [ideaText, setIdeaText] = useState("");
   const [format, setFormat] = useState<ComposerFormat>("single_image");
@@ -57,9 +59,10 @@ export function IdeaComposer({ workspaceId }: { workspaceId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const busy = status !== "idle";
+  const creativeEngineEnabled = creativeEngineStatus?.enabled === true;
   const activePreset = PRESETS.find((preset) => preset.format === format && preset.aspectRatio === aspectRatio)?.id;
   const overLimit = ideaText.length > MAX_IDEA_TEXT_LENGTH;
-  const canGenerate = ideaText.trim().length > 0 && !overLimit && !busy;
+  const canGenerate = creativeEngineEnabled && ideaText.trim().length > 0 && !overLimit && !busy;
 
   function applyPreset(preset: (typeof PRESETS)[number]) {
     setFormat(preset.format);
@@ -92,6 +95,10 @@ export function IdeaComposer({ workspaceId }: { workspaceId: string }) {
   }
 
   async function handleGenerate() {
+    if (!creativeEngineEnabled) {
+      setError("Geracao visual ainda nao esta habilitada para este workspace.");
+      return;
+    }
     setError(null);
     setStatus("generating");
 
@@ -264,6 +271,7 @@ export function IdeaComposer({ workspaceId }: { workspaceId: string }) {
         ) : null}
 
         {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
+        {!creativeEngineEnabled ? <p className="mt-3 text-sm text-ink-muted">Geracao visual ainda nao esta habilitada para este workspace.</p> : null}
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
           <p className="text-xs text-ink-faint">{ideaText.length}/{MAX_IDEA_TEXT_LENGTH} · chama a IA de verdade, gera custo real</p>

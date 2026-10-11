@@ -14,12 +14,14 @@ import type { ExecutionRepositoryPort } from "../../application/ports/execution-
 import type { TenantMembershipRepositoryPort } from "../../application/ports/tenant-membership-repository.port.js";
 import type { UserRepositoryPort } from "../../application/ports/user-repository.port.js";
 import type { WorkspaceRepositoryPort } from "../../application/ports/workspace-repository.port.js";
+import type { CreativeEngineEntitlementRepositoryPort } from "../../application/ports/creative-engine-entitlement-repository.port.js";
 import type { CreativeContextAsset } from "../../shared/utils/gpt-creative-plan.types.js";
 import { buildCreativeContext, type BuildCreativeContextDeps } from "../../application/creative-engine/build-creative-context.js";
 import { describeReferenceAssetDecision, ReferenceAssetError, type ReferenceAssetScope } from "../../application/assets/reference-asset-policy.js";
 import { runGptCreativeEngine, type GptCreativeEngineDeps } from "../../application/creative-engine/run-gpt-creative-engine.js";
 import { hasPermission, type TenantRole } from "../../domain/identity/identity.model.js";
 import type { ExecutionRun } from "../../domain/execution/execution.model.js";
+import { canUseCreativeEngine } from "../../application/creative-engine/creative-engine-entitlement.js";
 
 /**
  * Handlers de execução do motor GPT — migração "GPT como motor criativo único" (PR 6/9).
@@ -326,6 +328,7 @@ export type GptCreativeEngineVisualTaskHandlerDeps = GptCreativeEngineDeps &
     workspaceRepository?: WorkspaceRepositoryPort;
     userRepository?: UserRepositoryPort;
     membershipRepository?: TenantMembershipRepositoryPort;
+    creativeEngineEntitlementRepository?: CreativeEngineEntitlementRepositoryPort;
     /** Ausente em memória (in-memory) desativa a persistência auditável — nunca bloqueia a
      * geração; é sempre best-effort (nunca deve derrubar a execução por falha de escrita). */
     creativeEngineRunRepository?: CreativeEngineRunRepositoryPort;
@@ -399,6 +402,29 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
           return failure(error.code, error.message, "policy_violation");
         }
       }
+    }
+
+    if (!this.deps.workspaceRepository) {
+      return failure("CREATIVE_ENGINE_ENTITLEMENT_UNAVAILABLE", "Geracao visual indisponivel para este workspace.", "policy_violation");
+    }
+
+    const creativeEngineAuthorization = await canUseCreativeEngine(
+      {
+        workspaceRepository: this.deps.workspaceRepository,
+        entitlementRepository: this.deps.creativeEngineEntitlementRepository,
+        featureFlags: { creativeEngineGptEnabled: true },
+      },
+      {
+        tenantId: request.context.tenantId,
+        workspaceId: request.context.workspaceId,
+        qaBypassAllowed: editorialAuthorization.enabled,
+      },
+    );
+    if (!creativeEngineAuthorization.ok) {
+      console.warn(
+        `[gpt-creative-engine] commercial_authorization=denied reason=${creativeEngineAuthorization.code} runId=${request.context.executionRunId} tenantId=${request.context.tenantId} workspaceId=${request.context.workspaceId}`,
+      );
+      return failure(creativeEngineAuthorization.code, creativeEngineAuthorization.message, "policy_violation");
     }
 
     const creativeContext = await buildCreativeContext(this.deps, {

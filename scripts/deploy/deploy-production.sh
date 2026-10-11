@@ -122,7 +122,12 @@ fi
 
 # 8. health final
 READY=$(curl -s https://api.vorixworks.com/readyz | grep -o '"ready":[a-z]*' || true)
-WEB=$(curl -s -o /dev/null -w '%{http_code}' https://vorixworks.com/ || true)
+WEB="000"
+for _ in $(seq 1 12); do
+  WEB=$(curl -s -o /dev/null -w '%{http_code}' https://vorixworks.com/ || true)
+  [ "$WEB" = "200" ] && break
+  sleep 5
+done
 ERRORS=$(for service in $SERVICES; do docker logs --since 3m "zuno-$service-1" 2>&1; done | grep -icE 'fatal|uncaught|unhandled' || true)
 echo "READYZ $READY WEB $WEB LOG_ERRORS $ERRORS"
 [ "$READY" = '"ready":true' ] || rollback "readyz falhou"

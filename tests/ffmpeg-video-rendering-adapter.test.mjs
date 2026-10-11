@@ -8,7 +8,7 @@ import { deflateSync } from "node:zlib";
 import { FfmpegVideoRenderingAdapter } from "../dist/infrastructure/video-rendering/index.js";
 import { compileFfmpegArgs, escapeFfmpegPath, wrapOverlayText } from "../dist/infrastructure/video-rendering/timeline-to-filter-compiler.js";
 import { resolveVideoAssets } from "../dist/infrastructure/video-rendering/asset-resolver.js";
-import { resolveFfmpegBinaryPath } from "../dist/infrastructure/video-rendering/ffmpeg-binary.js";
+import { resolveFfmpegBinaryPath, VETTED_LINUX_FFMPEG_PATH } from "../dist/infrastructure/video-rendering/ffmpeg-binary.js";
 
 /**
  * "ffprobe-lite": o projeto não empacota ffprobe (só `ffmpeg-static`), então estes testes usam o
@@ -955,7 +955,9 @@ test("ffmpeg-binary nunca usa a variável de ambiente FFMPEG_BIN (ou similares) 
   try {
     const resolved = resolveFfmpegBinaryPath();
     assert.notEqual(resolved, "C:/nao-e-o-ffmpeg-real.exe");
-    assert.ok(resolved.toLowerCase().includes("ffmpeg-static"), `binário resolvido deveria vir do pacote ffmpeg-static, recebeu: ${resolved}`);
+    // Fontes aceitas: o pacote ffmpeg-static OU o FFmpeg oficial do runtime Linux num caminho CONSTANTE
+    // (`VETTED_LINUX_FFMPEG_PATH`, instalado por `scripts/install-ffmpeg-linux.sh`) — nunca a env var.
+    assert.ok(resolved.toLowerCase().includes("ffmpeg-static") || resolved === VETTED_LINUX_FFMPEG_PATH, `binário resolvido deveria vir do pacote ffmpeg-static ou do caminho fixo verificado, recebeu: ${resolved}`);
   } finally {
     delete process.env.FFMPEG_BIN;
   }

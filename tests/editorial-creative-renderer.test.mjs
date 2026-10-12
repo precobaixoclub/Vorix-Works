@@ -152,6 +152,33 @@ test("renderEditorialCreative: produto/oferta preserva produto e usa somente pre
   assert.ok(!result.renderedTextZones.some((zone) => zone.text === "R$ 999,00"));
 });
 
+test("renderEditorialCreative: familyOverride product_offer impede downgrade para institucional sem produto/preco", async () => {
+  const result = await renderEditorialCreative({
+    baseImageBuffer: await studioBase(1080, 1350),
+    context: context({ confirmedFacts: [] }),
+    plan: plan({
+      headline: "Preco Baixo Club",
+      subheadline: "Economia, confianca e ofertas selecionadas.",
+      cta: "Conhecer ofertas",
+      allowedRenderedTexts: ["Preco Baixo Club", "Economia, confianca e ofertas selecionadas.", "Conhecer ofertas"],
+      requiredElements: ["headline", "subheadline", "cta", "logo"],
+      artDirection: {
+        ...plan().artDirection,
+        elementHierarchy: ["oferta", "headline", "cta", "logo"],
+        primaryMassPct: 48,
+      },
+    }),
+    assets: [{ role: "logo", url: "memory://logo.png", buffer: REAL_LOGO_PNG }],
+    familyOverride: "product_offer",
+  });
+
+  assert.equal(result.family, "product_offer");
+  assert.equal(result.renderedGeometry.family, "product_offer");
+  assert.ok(["HERO_DOMINANT", "SPLIT_EDITORIAL", "OVERLAY_EDITORIAL"].includes(result.composition?.variant), `variant ${result.composition?.variant}`);
+  assert.notEqual(result.composition?.variant, "FULL_BLEED_STORY");
+  assert.equal(result.geometry.valid, true, JSON.stringify(result.geometry.issues));
+});
+
 test("renderEditorialCreative: fonte runtime bundled esta disponivel para acentos e R$", async () => {
   const font = await assertEditorialRuntimeFontAvailable();
 

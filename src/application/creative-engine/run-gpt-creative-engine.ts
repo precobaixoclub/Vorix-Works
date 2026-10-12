@@ -1112,6 +1112,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
           context,
           plan: planForGeneration,
           assets: editorialAssets,
+          ...(editorialFamily ? { familyOverride: editorialFamily } : {}),
         });
       } catch (error) {
         if (isEditorialCompositionError(error)) {

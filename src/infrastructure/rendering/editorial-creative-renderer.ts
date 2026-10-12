@@ -3534,7 +3534,7 @@ export async function renderEditorialCreative(input: RenderEditorialCreativeInpu
   const product = firstAsset(prepared, "product_photo");
   const screenshot = firstAsset(prepared, "screenshot");
   const price = resolveEditorialConfirmedPrice(input.context);
-  const family = resolveFamily(prepared, price);
+  const family = input.familyOverride ?? resolveFamily(prepared, price);
   const fontFaceCss = await buildEditorialFontFaceCss();
 
   // Os três compositores adaptativos são paramétricos no canvas (W×H) e servem 4:5 e 9:16; os

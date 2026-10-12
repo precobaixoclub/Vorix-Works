@@ -100,6 +100,8 @@ export type RenderEditorialCreativeInput = {
   context: CreativeContext;
   plan: CreativePlan;
   assets: readonly EditorialCreativeAssetBuffer[];
+  /** Familia ja aprovada pelo roteador do Creative Engine; sem override, fixtures preservam a inferencia historica. */
+  familyOverride?: EditorialCreativeFamily;
   /** SOMENTE QA/fixtures locais: força uma variante da família para comparar composições da mesma
    * base. Nunca preenchido pelo motor de produção; registrado nas razões de seleção. */
   qaVariantOverride?: EditorialCompositionVariant;

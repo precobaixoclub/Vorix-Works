@@ -726,6 +726,7 @@ function brandProductOfferPalette(input: EditorialRenderInput, palette: ProductO
   const ink = palette.tone === "dark" ? skin.lightNeutral ?? palette.ink : skin.darkNeutral ?? palette.ink;
   const accent = brandAccent(input, palette.price, page, 4.5);
   const ctaText = contrastRatio(brandHexToRgb(accent), WHITE) >= contrastRatio(brandHexToRgb(accent), brandHexToRgb(ink)) && contrastRatio(brandHexToRgb(accent), WHITE) >= 3.5 ? "#FFFFFF" : palette.tone === "dark" ? page : ink;
+  if (skin.lightNeutral || skin.darkNeutral || skin.primary) brandRule(input, "BRAND_SURFACES", `product_offer ${palette.tone}: superficie ${page}, texto ${ink}`);
   if (skin.flat) brandRule(input, "FORBIDDEN_PATTERN", "sem gradientes: CTA sólido, sem brilho decorativo (véu de legibilidade preservado)");
   return {
     ...palette,

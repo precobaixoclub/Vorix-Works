@@ -312,6 +312,24 @@ test("PostgresCreativeEngineRunRepository: artifactProvenance round-trip", async
   const repo = new PostgresCreativeEngineRunRepository(db.pool);
   const artifactProvenance = {
     compositionMode: "editorial_experimental",
+    brandProfileVersion: 7,
+    brandProfileSnapshot: {
+      schemaVersion: 1,
+      version: 7,
+      updatedAt: "2026-10-10T12:00:00.000Z",
+      colors: [
+        { hex: "#0F766E", role: "PRIMARY", provenance: "USER_CONFIGURED" },
+        { hex: "#FFFFFF", role: "NEUTRAL", provenance: "USER_CONFIGURED" },
+      ],
+      logos: [{ assetId: "asset-logo-light", variant: "LIGHT", backgrounds: ["DARK"], priority: 1, provenance: "USER_CONFIGURED" }],
+      density: "LOW",
+      contrast: "BALANCED",
+      commercialIntensity: "MEDIUM",
+      imageStyles: ["MINIMAL_BACKGROUND"],
+      forbiddenPatterns: ["NO_DARK_BACKGROUNDS"],
+      preferredPatterns: ["GENEROUS_WHITESPACE"],
+      fieldProvenance: { forbiddenPatterns: "USER_CONFIGURED" },
+    },
     baseImage: { url: "https://example.com/base.jpg", source: "ai_generated_pre_renderer", publishable: false },
     finalImage: { url: "https://example.com/final.jpg", source: "final_rendered_image", publishable: true },
     inputAssets: [{ role: "product_photo", url: "https://example.com/product.png", source: "input_asset" }],

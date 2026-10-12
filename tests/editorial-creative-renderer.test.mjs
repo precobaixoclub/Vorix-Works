@@ -487,7 +487,7 @@ function adaptivePlan(overrides = {}) {
 async function renderAdaptive(overrides = {}) {
   return renderEditorialCreative({
     baseImageBuffer: overrides.baseImageBuffer ?? await studioBase(),
-    context: context({ brandName: "Rumo ao Altar", confirmedFacts: [`Preço atual: ${overrides.price ?? "R$ 149,00"}`] }),
+    context: context({ brandName: "Rumo ao Altar", confirmedFacts: [`Preço atual: ${overrides.price ?? "R$ 149,00"}`], ...(overrides.context ?? {}) }),
     plan: adaptivePlan(overrides),
     assets: [
       { role: "product_photo", url: "fixture://product.jpg", buffer: overrides.product ?? REAL_PRODUCT_JPEG },
@@ -498,6 +498,43 @@ async function renderAdaptive(overrides = {}) {
 
 async function darkBase() {
   return sharp({ create: { width: 1024, height: 1280, channels: 3, background: "#1C110E" } }).jpeg().toBuffer();
+}
+
+async function darkPixelCoverage(buffer) {
+  const { data, info } = await sharp(buffer).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  let dark = 0;
+  const total = info.width * info.height;
+  for (let i = 0; i < data.length; i += info.channels) {
+    const luma = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
+    if (luma < 0.28) dark += 1;
+  }
+  return dark / total;
+}
+
+function forceLightBrandIdentity() {
+  return {
+    profileId: "brand-profile-test",
+    workspaceId: "workspace-test",
+    version: 1,
+    updatedAt: "2026-10-11T00:00:00.000Z",
+    logos: [],
+    identity: {
+      schemaVersion: 1,
+      version: 1,
+      updatedAt: "2026-10-11T00:00:00.000Z",
+      colors: [
+        { hex: "#0F766E", role: "PRIMARY", provenance: "USER_CONFIGURED" },
+        { hex: "#115E59", role: "ACCENT", provenance: "USER_CONFIGURED" },
+        { hex: "#FFFFFF", role: "NEUTRAL", provenance: "USER_CONFIGURED" },
+        { hex: "#111827", role: "NEUTRAL", provenance: "USER_CONFIGURED" },
+        { hex: "#DC2626", role: "FORBIDDEN", provenance: "USER_CONFIGURED" },
+      ],
+      imageStyles: ["MINIMAL_BACKGROUND"],
+      forbiddenPatterns: ["NO_DARK_BACKGROUNDS", "NO_GRADIENTS"],
+      preferredPatterns: ["GENEROUS_WHITESPACE"],
+      fieldProvenance: { imageStyles: "USER_CONFIGURED", forbiddenPatterns: "USER_CONFIGURED", preferredPatterns: "USER_CONFIGURED" },
+    },
+  };
 }
 
 function assertAdaptiveTechnicalPass(result, label) {
@@ -570,6 +607,22 @@ test("product_offer adaptativo: logo com caixa branca — multiply no claro (sem
   assert.equal(dark.composition.pageTone, "dark");
   assert.equal(dark.composition.logoTreatment, "CHIP");
   assertAdaptiveTechnicalPass(dark, "logo escuro");
+});
+
+test("product_offer adaptativo: Brand Profile registra superficies e respeita NO_DARK_BACKGROUNDS mesmo com base escura", async () => {
+  const result = await renderAdaptive({
+    baseImageBuffer: await darkBase(),
+    primaryMassPct: 65,
+    context: { brandIdentity: forceLightBrandIdentity(), brandColors: ["#0F766E", "#115E59", "#FFFFFF", "#111827"] },
+  });
+
+  assert.equal(result.composition.variant, "HERO_DOMINANT");
+  assert.equal(result.composition.pageTone, "light");
+  assert.ok(result.composition.brandRules.some((rule) => rule.code === "BRAND_SURFACES"), JSON.stringify(result.composition.brandRules));
+  assert.ok(result.composition.brandRules.some((rule) => rule.code === "BRAND_ACCENT"), JSON.stringify(result.composition.brandRules));
+  assert.ok(result.composition.brandRules.some((rule) => rule.code === "FORBIDDEN_PATTERN"), JSON.stringify(result.composition.brandRules));
+  assert.ok(await darkPixelCoverage(result.buffer) < 0.35, "HERO_DOMINANT + NO_DARK_BACKGROUNDS deve gerar canvas efetivamente claro");
+  assertAdaptiveTechnicalPass(result, "hero force light");
 });
 
 test("product_offer adaptativo: produto vertical/horizontal e logo compacta não quebram a composição", async () => {

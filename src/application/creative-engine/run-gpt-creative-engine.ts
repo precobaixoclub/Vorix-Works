@@ -78,6 +78,15 @@ export async function fetchAsBuffer(url: string): Promise<Buffer> {
   return Buffer.from(await response.arrayBuffer());
 }
 
+function resolveBrandSurfaceComplianceIssues(context: CreativeContext, editorial: RenderEditorialCreativeResult): CreativeQualityIssue[] {
+  const forbidsDarkBackgrounds = context.brandIdentity?.identity.forbiddenPatterns?.includes("NO_DARK_BACKGROUNDS") === true;
+  if (!forbidsDarkBackgrounds || editorial.composition?.pageTone !== "dark") return [];
+  return [{
+    code: "COLOR_PALETTE_VIOLATED",
+    message: "Brand Profile proibe fundos escuros (NO_DARK_BACKGROUNDS), mas o renderer selecionou uma superficie escura para a peca final.",
+  }];
+}
+
 export type CompositionStepKind = "screenshot_mockup" | "logo_overlay" | "text_zones" | "safe_area_adjustment" | "editorial_geometry_validation" | "editorial_composition";
 
 export type CompositionStep = {
@@ -231,6 +240,8 @@ export type CreativeEngineArtifactProvenance = {
   family?: ApprovedCreativeFamily;
   /** Qual Brand Profile gerou a peça (auditável): perfil, versão, regras aplicadas e snapshot da
    * identidade usada. Ausente = SYSTEM_DEFAULT (workspace sem identidade estruturada). */
+  brandProfileVersion?: number;
+  brandProfileSnapshot?: BrandIdentity;
   brandProfile?: {
     source: "BRAND_PROFILE";
     profileId: string;
@@ -1190,6 +1201,8 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
           : {}),
         ...(context.brandIdentity
           ? {
+              brandProfileVersion: context.brandIdentity.version,
+              brandProfileSnapshot: context.brandIdentity.identity,
               brandProfile: {
                 source: "BRAND_PROFILE" as const,
                 profileId: context.brandIdentity.profileId,
@@ -1202,7 +1215,14 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
             }
           : {}),
       };
-      const qualityGate = await evaluateCreativeQualityGate(deps.creativeBrain, {
+      const brandSurfaceComplianceIssues = resolveBrandSurfaceComplianceIssues(context, editorial);
+      const brandPaletteRenderedDeterministically = Boolean(
+        context.brandIdentity
+        && brandSurfaceComplianceIssues.length === 0
+        && editorial.composition?.brandRules?.some((rule) => rule.code === "BRAND_SURFACES")
+        && editorial.composition.brandRules.some((rule) => rule.code === "BRAND_ACCENT"),
+      );
+      const baseQualityGate = await evaluateCreativeQualityGate(deps.creativeBrain, {
         finalImageUrl: uploaded.url,
         finalImageWidth,
         finalImageHeight,
@@ -1213,12 +1233,15 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         specialistId: SPECIALIST_ID,
         assetPixelEvidence: editorial.assetVerification ?? [],
         ...(baseTextDiagnostic ? { baseTextDiagnostic } : {}),
-        // Paleta da marca aplicada de forma determinística pelo renderer (superfícies + destaque).
-        brandPaletteRenderedDeterministically: Boolean(context.brandIdentity && editorial.composition?.brandRules?.some((rule) => rule.code === "BRAND_SURFACES") && editorial.composition.brandRules.some((rule) => rule.code === "BRAND_ACCENT")),
+        // `BRAND_SURFACES` prova ownership/aplicação, não conformidade; padrões proibidos são checados acima.
+        brandPaletteRenderedDeterministically,
         ...(screenshotTextInventory ? { screenshotTextInventory } : {}),
         ownership: { tenantId: input.tenantId, workspaceId: input.workspaceId },
         onCost: (response) => track("technicalQualityGate", response),
       });
+      const qualityGate: CreativeQualityGateResult = brandSurfaceComplianceIssues.length > 0
+        ? { ...baseQualityGate, verdict: "fail", issues: [...baseQualityGate.issues, ...brandSurfaceComplianceIssues] }
+        : baseQualityGate;
       if (qualityGate.screenshotInventoryDecision && artifactProvenance.screenshotTextInventory) artifactProvenance.screenshotTextInventory.gateDecision = qualityGate.screenshotInventoryDecision;
       if (qualityGate.textProvenanceLedger) artifactProvenance.textProvenanceLedger = qualityGate.textProvenanceLedger;
       if (qualityGate.paletteDiagnostics && artifactProvenance.brandProfile) {

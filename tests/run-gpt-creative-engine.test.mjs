@@ -1333,6 +1333,27 @@ function editorialRendererResult(overrides = {}) {
   };
 }
 
+function brandIdentityForNoDark() {
+  const identity = {
+    schemaVersion: 1,
+    version: 3,
+    updatedAt: "2026-10-11T00:00:00.000Z",
+    colors: [
+      { hex: "#0F766E", role: "PRIMARY", provenance: "USER_CONFIGURED" },
+      { hex: "#115E59", role: "ACCENT", provenance: "USER_CONFIGURED" },
+      { hex: "#FFFFFF", role: "NEUTRAL", provenance: "USER_CONFIGURED" },
+      { hex: "#101010", role: "FORBIDDEN", provenance: "USER_CONFIGURED" },
+    ],
+    logos: [],
+    density: "LOW",
+    imageStyles: ["MINIMAL_BACKGROUND"],
+    forbiddenPatterns: ["NO_DARK_BACKGROUNDS"],
+    preferredPatterns: [],
+    fieldProvenance: { forbiddenPatterns: "USER_CONFIGURED" },
+  };
+  return { profileId: "brand-profile-no-dark", workspaceId: "workspace-1", version: 3, updatedAt: identity.updatedAt, identity, logos: [] };
+}
+
 test("runGptCreativeEngine editorial: product_photo declarado na bbox mas sem pixels reprova no gate (frame vazio do Smoke A)", () => withFakeFetch(async () => {
   const icaro = fakeIcaro({
     analysis: [planResponse()],
@@ -1352,6 +1373,82 @@ test("runGptCreativeEngine editorial: product_photo declarado na bbox mas sem pi
   assert.equal(result.errorCode, "CREATIVE_QUALITY_GATE_NOT_PASSED");
   assert.ok(result.qualityGate.issues.some((issue) => issue.code === "REQUIRED_ASSET_MISSING" && /product_photo/.test(issue.message)), JSON.stringify(result.qualityGate.issues));
   assert.equal(result.artifactProvenance.assetVerification[0].visible, false, "a prova reprovada precisa ficar persistida na proveniência");
+}));
+
+test("runGptCreativeEngine editorial: BRAND_SURFACES e ownership nao mascaram superficie escura proibida pelo Brand Profile", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({ analysis: [planResponse()], image_generation: [imageResponse()], review: [passingReview(), passingVisualScore()] });
+  const result = await runGptCreativeEngine(baseDeps({
+    creativeBrain: icaro,
+    renderEditorialCreative: async () => editorialRendererResult({
+      composition: {
+        variant: "HERO_DOMINANT",
+        selectionReasons: [],
+        pageTone: "dark",
+        productVisualProminence: 0.5,
+        largestEmptyBandPct: 0.05,
+        contentCentroidOffset: 0.1,
+        occupiedAreaRatio: 0.6,
+        brandRules: [
+          { code: "BRAND_SURFACES", detail: "renderer aplicou superficie escura", outcome: "APPLIED" },
+          { code: "BRAND_ACCENT", detail: "renderer aplicou acento", outcome: "APPLIED" },
+        ],
+      },
+    }),
+  }), baseInput({
+    experimentalEditorialMode: true,
+    creativeContext: contextWithProductReference({
+      confirmedFacts: [],
+      brandColors: ["#0F766E", "#115E59", "#FFFFFF"],
+      brandIdentity: brandIdentityForNoDark(),
+    }),
+  }));
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.errorCode, "CREATIVE_QUALITY_GATE_NOT_PASSED");
+  assert.ok(result.qualityGate.issues.some((issue) => issue.code === "COLOR_PALETTE_VIOLATED" && /NO_DARK_BACKGROUNDS/.test(issue.message)), JSON.stringify(result.qualityGate.issues));
+  assert.equal(result.qualityGate.paletteDiagnostics, undefined, "violacao deterministica nao deve virar override de visao");
+}));
+
+test("runGptCreativeEngine editorial: visao de paleta vira diagnostico quando superficies permitidas foram aplicadas deterministicamente", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse()],
+    image_generation: [imageResponse()],
+    review: [
+      { status: "completed", content: JSON.stringify({ spuriousTexts: [], plannedZonesClear: {}, regions: {} }) },
+      { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, colorPaletteViolated: true, reasoning: "imagem inteira parece escura" }) },
+      passingVisualScore(),
+    ],
+  });
+  const result = await runGptCreativeEngine(baseDeps({
+    creativeBrain: icaro,
+    renderEditorialCreative: async () => editorialRendererResult({
+      composition: {
+        variant: "HERO_DOMINANT",
+        selectionReasons: [],
+        pageTone: "light",
+        productVisualProminence: 0.5,
+        largestEmptyBandPct: 0.05,
+        contentCentroidOffset: 0.1,
+        occupiedAreaRatio: 0.6,
+        brandRules: [
+          { code: "BRAND_SURFACES", detail: "renderer aplicou superficie clara", outcome: "APPLIED" },
+          { code: "BRAND_ACCENT", detail: "renderer aplicou acento", outcome: "APPLIED" },
+        ],
+      },
+    }),
+  }), baseInput({
+    experimentalEditorialMode: true,
+    creativeContext: contextWithProductReference({
+      confirmedFacts: [],
+      brandColors: ["#0F766E", "#115E59", "#FFFFFF"],
+      brandIdentity: brandIdentityForNoDark(),
+    }),
+  }));
+
+  assert.equal(result.error, undefined, result.error);
+  assert.equal(result.publishable, true);
+  assert.deepEqual(result.qualityGate.paletteDiagnostics.map((item) => item.decision), ["VISION_PALETTE_OVERRIDDEN_BY_RENDERER"]);
+  assert.ok(result.artifactProvenance.brandProfile.appliedBrandRules.some((rule) => rule.code === "VISION_PALETTE_OVERRIDDEN_BY_RENDERER"));
 }));
 
 test("runGptCreativeEngine editorial: renderer sem prova em pixel nunca publica", () => withFakeFetch(async () => {
@@ -1749,6 +1846,8 @@ test("runGptCreativeEngine editorial: Brand Profile entra no plano/renderer e fi
   assert.equal(provenance.profileId, "brand-profile-9");
   assert.equal(provenance.version, 7);
   assert.equal(provenance.identity.colors.length, 2);
+  assert.equal(branded.result.artifactProvenance.brandProfileVersion, 7);
+  assert.deepEqual(branded.result.artifactProvenance.brandProfileSnapshot, identity);
   const codes = provenance.appliedBrandRules.map((rule) => rule.code);
   assert.ok(codes.includes("FORBIDDEN_COLOR_REQUESTED") && codes.includes("BRAND_DENSITY") && codes.includes("BRAND_ACCENT"), codes.join(","));
   const plain = await run(false);

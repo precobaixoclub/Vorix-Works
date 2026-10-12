@@ -52,6 +52,7 @@ import { applyTextBudgetSimplification, degradeOptionalZonesOnUnresolvedOverlap,
 import { isEditorialCompositionError, type EditorialCreativeAssetBuffer, type RenderEditorialCreativeInput, type RenderEditorialCreativeResult } from "./editorial-composition.types.js";
 import { describeEditorialTextGaps, findEditorialRequiredTextsWithoutContent, resolveEditorialRequiredTexts } from "./editorial-text-contract.js";
 import { describeReferenceAssetDecision, isReferenceAssetError, ReferenceAssetError, type ReferenceAssetResolverPort, type ReferenceAssetScope } from "../assets/reference-asset-policy.js";
+import type { ApprovedCreativeFamily, CreativeEnginePath } from "./creative-engine-routing.js";
 
 /**
  * Motor criativo GPT — migração "GPT como motor criativo único" (PR 5/9). Promove
@@ -169,6 +170,11 @@ export type GptCreativeEngineInput = {
   /** Caminho experimental: a IA gera a cena/foto, mas texto/preco/CTA/logo/produto/screenshot sao
    * renderizados pelo compositor editorial deterministico. Nunca e ligado por padrao. */
   experimentalEditorialMode?: boolean;
+  /** Observabilidade/roteamento do rollout: qual caminho de produto esta execucao usou. */
+  enginePath?: CreativeEnginePath;
+  engineVersion?: string;
+  deployedSha?: string;
+  requestedFamily?: ApprovedCreativeFamily;
   /** `true` só quando o worker comprovou homologação editorial (flag + allowlist + trusted actor) —
    * única condição em que o namespace SYSTEM_QA_ASSET (`qa-assets/`) é aceito. */
   qaReferenceAssetsAllowed?: boolean;
@@ -219,6 +225,10 @@ export type CreativeEngineCostBreakdown = {
 
 export type CreativeEngineArtifactProvenance = {
   compositionMode: "standard" | "editorial_experimental";
+  enginePath?: CreativeEnginePath;
+  engineVersion?: string;
+  deployedSha?: string;
+  family?: ApprovedCreativeFamily;
   /** Qual Brand Profile gerou a peça (auditável): perfil, versão, regras aplicadas e snapshot da
    * identidade usada. Ausente = SYSTEM_DEFAULT (workspace sem identidade estruturada). */
   brandProfile?: {
@@ -273,6 +283,10 @@ export type CreativeEngineArtifactProvenance = {
 
 export type GptCreativeEngineResult = {
   engineMode: "gpt";
+  enginePath?: CreativeEnginePath;
+  engineVersion?: string;
+  deployedSha?: string;
+  family?: ApprovedCreativeFamily;
   compositionMode?: "standard" | "editorial_experimental";
   directorModel?: string;
   imageModel?: string;
@@ -670,6 +684,10 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
   let latencyMs = 0;
   let directorModel: string | undefined;
   let imageModel: string | undefined;
+  const enginePath: CreativeEnginePath = input.enginePath ?? (input.experimentalEditorialMode ? "APPROVED_CREATIVE_ENGINE" : "LEGACY_STANDARD");
+  const engineVersion = input.engineVersion;
+  const deployedSha = input.deployedSha;
+  let family: ApprovedCreativeFamily | undefined = input.requestedFamily;
 
   // Auditoria de custo urgente — breakdown por etapa + teto de gasto por execução. `repairRoundsCost`
   // é sobreposição deliberada das outras categorias (ver `CreativeEngineCostBreakdown`);
@@ -719,6 +737,10 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
   function fail(error: string, errorCode: string, extra: Partial<GptCreativeEngineResult> = {}): GptCreativeEngineResult {
     return {
       engineMode: "gpt",
+      enginePath,
+      engineVersion,
+      deployedSha,
+      family,
       compositionMode: input.experimentalEditorialMode ? "editorial_experimental" : "standard",
       directorModel,
       imageModel,
@@ -956,7 +978,8 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       );
     }
 
-    const editorialFamily = input.experimentalEditorialMode ? resolveEditorialFamilyFromContext(context) : undefined;
+    const editorialFamily = input.experimentalEditorialMode ? (family ?? resolveEditorialFamilyFromContext(context)) : undefined;
+    if (editorialFamily) family = editorialFamily;
     // Base institucional é a protagonista e precisa ser opaca (cenário B: 2 de 3 bases vieram como
     // recorte com transparência sob background "auto").
     const requestedBackground = editorialFamily === "premium_institutional" ? ("opaque" as const) : undefined;
@@ -1141,6 +1164,10 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       };
       const artifactProvenance: CreativeEngineArtifactProvenance = {
         compositionMode: "editorial_experimental",
+        enginePath,
+        engineVersion,
+        deployedSha,
+        ...(family ? { family } : {}),
         baseImage: baseImageArtifact,
         finalImage: {
           url: uploaded.url,
@@ -1240,6 +1267,10 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
 
       return {
         engineMode: "gpt",
+        enginePath,
+        engineVersion,
+        deployedSha,
+        family,
         compositionMode: "editorial_experimental",
         directorModel,
         imageModel,
@@ -1662,6 +1693,10 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         if (!visualQualityScore || !visualQualityScore.requiresRepair) {
           return {
             engineMode: "gpt",
+            enginePath,
+            engineVersion,
+            deployedSha,
+            family,
             compositionMode: "standard",
             directorModel,
             imageModel,

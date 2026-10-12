@@ -19,6 +19,7 @@ import type { CreativeContextAsset } from "../../shared/utils/gpt-creative-plan.
 import { buildCreativeContext, type BuildCreativeContextDeps } from "../../application/creative-engine/build-creative-context.js";
 import { describeReferenceAssetDecision, ReferenceAssetError, type ReferenceAssetScope } from "../../application/assets/reference-asset-policy.js";
 import { runGptCreativeEngine, type GptCreativeEngineDeps } from "../../application/creative-engine/run-gpt-creative-engine.js";
+import { resolveCreativeEngineRouting } from "../../application/creative-engine/creative-engine-routing.js";
 import { hasPermission, type TenantRole } from "../../domain/identity/identity.model.js";
 import type { ExecutionRun } from "../../domain/execution/execution.model.js";
 import { canUseCreativeEngine } from "../../application/creative-engine/creative-engine-entitlement.js";
@@ -100,6 +101,10 @@ function isEditorialExperimentalRequested(validatedInputs: Record<string, string
     booleanLike(validatedInputs.experimentalEditorialCreativeEngine) ||
     booleanLike(validatedInputs.editorialCreativeEngine)
   );
+}
+
+function deployedSha(): string | undefined {
+  return process.env.PRODUCTION_SHA ?? process.env.DEPLOYED_SHA ?? process.env.GIT_SHA ?? process.env.COMMIT_SHA;
 }
 
 export type EditorialExperimentalQaAllowlistEntry = {
@@ -427,6 +432,21 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
       return failure(creativeEngineAuthorization.code, creativeEngineAuthorization.message, "policy_violation");
     }
 
+    const routing = editorialAuthorization.enabled
+      ? {
+          enginePath: "INTERNAL_TEST" as const,
+          compositionMode: "editorial_experimental" as const,
+          family: undefined,
+          reason: "explicit_editorial_qa_authorized",
+        }
+      : resolveCreativeEngineRouting({
+          validatedInputs,
+          assets,
+          entitlementEnabled: creativeEngineAuthorization.entitlementEnabled,
+          internalLegacyAllowed: this.deps.editorialExperimentalEnabled === true
+            && (this.deps.editorialExperimentalQaAllowlist ?? []).some((entry) => entry.tenantId === request.context.tenantId && entry.workspaceId === request.context.workspaceId),
+        });
+
     const creativeContext = await buildCreativeContext(this.deps, {
       workspaceId: request.context.workspaceId,
       brandName: stringValue(validatedInputs.brandName, "Marca"),
@@ -447,8 +467,12 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
       workspaceId: request.context.workspaceId,
       creativeContext,
       maxBudgetUsd: this.deps.maxBudgetUsd ?? DEFAULT_MAX_BUDGET_USD,
-      experimentalEditorialMode: editorialAuthorization.enabled,
+      experimentalEditorialMode: routing.compositionMode === "editorial_experimental",
       qaReferenceAssetsAllowed: editorialAuthorization.enabled,
+      enginePath: routing.enginePath,
+      requestedFamily: routing.family,
+      engineVersion: "approved-creative-engine-v1",
+      deployedSha: deployedSha(),
     });
 
     await this.persistRun(request, creativeEngineRunId, result).catch(() => undefined);
@@ -486,7 +510,12 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
       // por `quality_review` (task seguinte) e pela tela de revisão/relatório final.
       creativeEngine: {
         engineMode: "gpt",
+        enginePath: result.enginePath,
+        engineVersion: result.engineVersion,
+        deployedSha: result.deployedSha,
         compositionMode: result.compositionMode ?? "standard",
+        family: result.family,
+        routing,
         creativeEngineRunId,
         directorModel: result.directorModel,
         imageModel: result.imageModel,
@@ -521,6 +550,14 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
 
   private async persistRun(request: ExecutionTaskHandlerRequest, creativeEngineRunId: string, result: Awaited<ReturnType<typeof runGptCreativeEngine>>): Promise<void> {
     if (!this.deps.creativeEngineRunRepository) return;
+    const artifactProvenance = {
+      compositionMode: result.compositionMode ?? "standard",
+      enginePath: result.enginePath,
+      engineVersion: result.engineVersion,
+      deployedSha: result.deployedSha,
+      family: result.family,
+      ...(result.artifactProvenance && typeof result.artifactProvenance === "object" ? result.artifactProvenance : {}),
+    };
     await this.deps.creativeEngineRunRepository.create({
       id: creativeEngineRunId,
       tenantId: request.context.tenantId,
@@ -541,7 +578,7 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
       visualQualityScore: result.visualQualityScore,
       chosenCreativeDirection: result.chosenCreativeDirection,
       repairRounds: result.repairRounds,
-      artifactProvenance: result.artifactProvenance,
+      artifactProvenance,
       finalImageUrl: result.finalImageUrl,
       finalImageWidth: result.finalImageWidth,
       finalImageHeight: result.finalImageHeight,

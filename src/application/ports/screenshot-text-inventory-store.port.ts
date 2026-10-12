@@ -1,4 +1,4 @@
-import type { ScreenshotTextInventory } from "../creative-engine/screenshot-text-inventory.js";
+import type { AssetTextInventoryKind, ScreenshotTextInventory } from "../creative-engine/screenshot-text-inventory.js";
 
 /**
  * Cache persistente do inventário de texto de um screenshot verificado
@@ -8,6 +8,7 @@ import type { ScreenshotTextInventory } from "../creative-engine/screenshot-text
  * AVAILABLE são gravados — falha de leitura nunca vira cache.
  */
 export type ScreenshotTextInventoryStorePort = {
-  get(key: { tenantId: string; workspaceId: string; assetSha256: string; version: number }): Promise<ScreenshotTextInventory | undefined>;
+  /** `kind` ausente = "screenshot" (inventários gravados antes da 0142). */
+  get(key: { tenantId: string; workspaceId: string; assetSha256: string; version: number; kind?: AssetTextInventoryKind }): Promise<ScreenshotTextInventory | undefined>;
   save(inventory: ScreenshotTextInventory): Promise<void>;
 };

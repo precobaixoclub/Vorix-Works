@@ -105,10 +105,12 @@ async function run(icaro, store, visionTextBrain) {
   }
 }
 
+// Texto do PRÓPRIO arquivo da logo (VERIFIED_LOGO), lido depois do render — cache por hash.
+const logoScan = () => completed(JSON.stringify({ texts: ["Rumo ao Altar"] }), 0.0002);
 const scripts = (withInventory) => ({
   analysis: [completed(directorPlan(), 0.003)],
   image_generation: [completed(JSON.stringify({ images: [{ uri: BASE_URL }] }), 0.08)],
-  review: [completed(JSON.stringify({ texts: [] }), 0.0004), ...(withInventory ? [inventoryScan()] : []), p2LikeReview(), passingVisualScore()],
+  review: [completed(JSON.stringify({ texts: [] }), 0.0004), ...(withInventory ? [inventoryScan(), logoScan()] : []), p2LikeReview(), passingVisualScore()],
 });
 
 test("e2e P2-like sem OpenAI: inventário do screenshot absorve a bbox errada da visão; 2ª execução reaproveita o cache", async () => {
@@ -137,7 +139,8 @@ test("e2e P2-like sem OpenAI: inventário do screenshot absorve a bbox errada da
   const again = await run(second, store);
   assert.equal(again.publishable, true, JSON.stringify(again.qualityGate?.issues));
   assert.equal(again.artifactProvenance.screenshotTextInventory.cache, "HIT");
-  assert.equal(second.calls.filter((call) => call.taskType === "review").length, 3, "sem nova leitura do screenshot");
+  assert.equal(second.calls.filter((call) => call.taskType === "review").length, 3, "sem nova leitura do screenshot nem da logo");
+  assert.equal(again.artifactProvenance.logoTextInventories[0].cache, "HIT");
   assert.equal(again.costBreakdown.screenshotTextInventory, 0);
 });
 
@@ -152,11 +155,13 @@ test("e2e P2-like sem store de inventário: comportamento anterior (a bbox errad
 
 test("e2e: com visionTextBrain injetado, scan da base e inventário vão para ele; diretor/gate/score continuam no creativeBrain", async () => {
   const creative = fakeIcaro({ analysis: [completed(directorPlan(), 0.003)], image_generation: [completed(JSON.stringify({ images: [{ uri: BASE_URL }] }), 0.08)], review: [p2LikeReview(), passingVisualScore()] });
-  const vision = fakeIcaro({ review: [completed(JSON.stringify({ texts: [] }), 0.0004), inventoryScan()] });
+  const vision = fakeIcaro({ review: [completed(JSON.stringify({ texts: [] }), 0.0004), inventoryScan(), logoScan()] });
   const result = await run(creative, new InMemoryScreenshotTextInventoryStore(), vision);
   assert.equal(result.publishable, true, JSON.stringify(result.qualityGate?.issues));
-  assert.equal(vision.calls.length, 2, "base + inventário");
-  assert.deepEqual(vision.calls.map((call) => call.imageUrls.length), [1, 1]);
+  assert.equal(vision.calls.length, 3, "base + inventário do screenshot + texto da logo");
+  assert.deepEqual(vision.calls.map((call) => call.imageUrls.length), [1, 1, 1]);
+  assert.equal(result.artifactProvenance.logoTextInventories[0].source, "VERIFIED_LOGO");
+  assert.equal(result.artifactProvenance.logoInventoryGateDecision.status, "USED");
   assert.equal(creative.calls.filter((call) => call.taskType === "review").length, 2, "gate + visual score");
   assert.equal(result.artifactProvenance.baseTextDiagnostic.status, "AVAILABLE");
   assert.equal(result.artifactProvenance.screenshotTextInventory.status, "AVAILABLE");

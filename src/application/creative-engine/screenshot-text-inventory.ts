@@ -22,10 +22,19 @@ import { normalizeRenderedText } from "./evaluate-creative-quality-gate.js";
  */
 export const SCREENSHOT_TEXT_INVENTORY_VERSION = 1;
 
+/**
+ * Mesmo mecanismo para a LOGO oficial (achado do Smoke 1 execution-mv4ljbf3-5zfacb): a logo do
+ * Preço Baixo Club traz a tagline "OFERTAS • CUPONS • ECONOMIA" no próprio arquivo; a visão leu a
+ * frase sobre a logo desenhada e, como ela não é o nome da marca, o gate a tratou como texto não
+ * autorizado. O texto da logo é lido do PRÓPRIO asset, nunca da peça, e só autoriza ocorrência
+ * sobre a logo verificada — nunca vira headline, CTA, claim nem fato comercial.
+ */
+export type AssetTextInventoryKind = "screenshot" | "logo";
+
 export type ScreenshotTextInventoryEntry = { text: string; normalizedText: string; occurrenceCount: number };
 
 export type ScreenshotTextInventory = {
-  source: "VERIFIED_SCREENSHOT";
+  source: "VERIFIED_SCREENSHOT" | "VERIFIED_LOGO";
   inventorySource: "VISION_ASSET_SCAN";
   status: "AVAILABLE" | "NOT_AVAILABLE";
   tenantId: string;
@@ -45,6 +54,16 @@ export type ScreenshotTextInventory = {
 
 export function sha256Hex(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
+}
+
+function buildLogoTextInventoryPrompt(): string {
+  return [
+    "Você recebe a LOGO OFICIAL de uma marca (arquivo real, não gerado para esta peça).",
+    "Transcreva TODO texto legível dela, exatamente como aparece (mesma grafia, acentos e separadores; não traduza, não corrija): nome da marca, slogan, tagline, selos, domínio.",
+    "Um item por bloco visual de texto (o nome é um item; uma faixa de tagline é outro item).",
+    "Não invente: ícone, forma ou desenho que só lembra letras não conta.",
+    'Responda somente JSON: {"texts": ["...", "..."]}. Lista vazia se a logo não tiver texto legível.',
+  ].join("\n");
 }
 
 function buildScreenshotTextInventoryPrompt(): string {
@@ -76,10 +95,11 @@ export function aggregateScreenshotTexts(rawTexts: readonly string[]): Screensho
  * gate então não usa inventário (mantém só a regra espacial da região verificada). */
 export async function scanScreenshotTextInventory(
   icaro: IcaroBrainPort,
-  input: { tenantId: string; workspaceId: string; assetUrl: string; assetSha256: string; specialistId: string; scannedAt: string; onCost?: (response: IcaroAIResponse | undefined) => void },
+  input: { tenantId: string; workspaceId: string; assetUrl: string; assetSha256: string; specialistId: string; scannedAt: string; kind?: AssetTextInventoryKind; onCost?: (response: IcaroAIResponse | undefined) => void },
 ): Promise<ScreenshotTextInventory> {
+  const kind = input.kind ?? "screenshot";
   const base = {
-    source: "VERIFIED_SCREENSHOT" as const,
+    source: kind === "logo" ? ("VERIFIED_LOGO" as const) : ("VERIFIED_SCREENSHOT" as const),
     inventorySource: "VISION_ASSET_SCAN" as const,
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
@@ -91,7 +111,7 @@ export async function scanScreenshotTextInventory(
   try {
     const response = await icaro.request({
       taskType: "review",
-      prompt: buildScreenshotTextInventoryPrompt(),
+      prompt: kind === "logo" ? buildLogoTextInventoryPrompt() : buildScreenshotTextInventoryPrompt(),
       specialistId: input.specialistId,
       imageUrls: [input.assetUrl],
       expectedOutput: "json",
@@ -111,6 +131,8 @@ export async function scanScreenshotTextInventory(
     });
     const texts = aggregateScreenshotTexts(rawTexts);
     // Lista vazia de um screenshot com interface é leitura falha, não "sem texto": não autoriza nada.
+    // Uma logo só-símbolo é legítima: AVAILABLE e vazia (também não autoriza nada).
+    if (texts.length === 0 && kind === "logo") return { ...base, ...providerInfo, status: "AVAILABLE", texts: [] };
     if (texts.length === 0) return { ...base, ...providerInfo, status: "NOT_AVAILABLE", texts: [], reason: "nenhum texto lido no screenshot" };
     return { ...base, ...providerInfo, status: "AVAILABLE", texts };
   } catch (error) {
@@ -125,15 +147,17 @@ export async function scanScreenshotTextInventory(
  */
 export async function resolveScreenshotTextInventory(
   deps: { icaro: IcaroBrainPort; store?: ScreenshotTextInventoryStorePort; now?: () => Date },
-  input: { tenantId: string; workspaceId: string; assetUrl: string; buffer: Buffer; specialistId: string; onCost?: (response: IcaroAIResponse | undefined) => void },
+  input: { tenantId: string; workspaceId: string; assetUrl: string; buffer: Buffer; specialistId: string; kind?: AssetTextInventoryKind; onCost?: (response: IcaroAIResponse | undefined) => void },
 ): Promise<ScreenshotTextInventory> {
   const assetSha256 = sha256Hex(input.buffer);
-  const key = { tenantId: input.tenantId, workspaceId: input.workspaceId, assetSha256, version: SCREENSHOT_TEXT_INVENTORY_VERSION };
+  const kind = input.kind ?? "screenshot";
+  const expectedSource = kind === "logo" ? "VERIFIED_LOGO" : "VERIFIED_SCREENSHOT";
+  const key = { tenantId: input.tenantId, workspaceId: input.workspaceId, assetSha256, version: SCREENSHOT_TEXT_INVENTORY_VERSION, kind };
   const cached = await deps.store?.get(key).catch(() => undefined);
-  if (cached && cached.status === "AVAILABLE" && cached.tenantId === input.tenantId && cached.workspaceId === input.workspaceId && cached.assetSha256 === assetSha256) {
+  if (cached && cached.status === "AVAILABLE" && cached.source === expectedSource && cached.tenantId === input.tenantId && cached.workspaceId === input.workspaceId && cached.assetSha256 === assetSha256) {
     return { ...cached, assetUrl: input.assetUrl, cache: "HIT" };
   }
-  const scanned = await scanScreenshotTextInventory(deps.icaro, { ...key, assetUrl: input.assetUrl, specialistId: input.specialistId, scannedAt: (deps.now?.() ?? new Date()).toISOString(), onCost: input.onCost });
+  const scanned = await scanScreenshotTextInventory(deps.icaro, { ...key, assetUrl: input.assetUrl, specialistId: input.specialistId, scannedAt: (deps.now?.() ?? new Date()).toISOString(), kind, onCost: input.onCost });
   if (scanned.status === "AVAILABLE") await deps.store?.save(scanned).catch(() => undefined);
   return { ...scanned, cache: "MISS" };
 }

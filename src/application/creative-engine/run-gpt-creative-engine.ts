@@ -221,6 +221,8 @@ export type CreativeEngineCostBreakdown = {
   baseTextScan?: number;
   /** Modo editorial: leitura do texto do SCREENSHOT real (inventário; zero quando veio do cache). */
   screenshotTextInventory?: number;
+  /** Modo editorial: leitura do texto da(s) LOGO(s) oficial(is) desenhada(s) (zero quando do cache). */
+  logoTextInventory?: number;
   /** Visual Quality Score — só roda depois que o gate técnico já passou, toda rodada em que isso
    * acontece. */
   visualQualityScore: number;
@@ -290,6 +292,9 @@ export type CreativeEngineArtifactProvenance = {
   textProvenanceLedger?: unknown;
   /** SCREENSHOT_TEXT_INVENTORY do screenshot real (proveniência de texto; nunca fato comercial). */
   screenshotTextInventory?: Omit<ScreenshotTextInventory, "texts"> & { textCount: number; texts: { normalizedText: string; occurrenceCount: number }[]; gateDecision?: { status: string; reason: string } };
+  /** Texto da(s) logo(s) oficial(is) desenhada(s) (VERIFIED_LOGO_TEXT) — proveniência, nunca fato comercial. */
+  logoTextInventories?: (Omit<ScreenshotTextInventory, "texts"> & { textCount: number; texts: { normalizedText: string; occurrenceCount: number }[] })[];
+  logoInventoryGateDecision?: { status: string; reason: string };
 };
 
 export type GptCreativeEngineResult = {
@@ -714,6 +719,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
     technicalQualityGate: 0,
     baseTextScan: 0,
     screenshotTextInventory: 0,
+    logoTextInventory: 0,
     visualQualityScore: 0,
     repairRoundsCost: 0,
     total: 0,
@@ -1222,6 +1228,24 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         && editorial.composition?.brandRules?.some((rule) => rule.code === "BRAND_SURFACES")
         && editorial.composition.brandRules.some((rule) => rule.code === "BRAND_ACCENT"),
       );
+      // LOGO_TEXT_INVENTORY: texto impresso no PRÓPRIO arquivo de cada logo efetivamente desenhada
+      // (tagline/slogan), lido do asset (cache por hash no mesmo tenant/workspace). Só proveniência
+      // para o gate — a frase nunca vira headline, CTA, claim nem fato comercial.
+      const drawnLogoUrls = [...new Set(editorial.renderedAssetPlacements.filter((placement) => placement.role === "logo").map((placement) => placement.url))];
+      const logoTextInventories: ScreenshotTextInventory[] = [];
+      if (deps.screenshotTextInventoryStore) {
+        for (const url of drawnLogoUrls) {
+          const buffer = editorialAssets.find((asset) => asset.role === "logo" && asset.url === url)?.buffer;
+          if (!buffer) continue;
+          logoTextInventories.push(await resolveScreenshotTextInventory(
+            { icaro: deps.visionTextBrain ?? deps.creativeBrain, store: deps.screenshotTextInventoryStore, ...(deps.now ? { now: deps.now } : {}) },
+            { tenantId: input.tenantId, workspaceId: input.workspaceId, assetUrl: url, buffer, specialistId: SPECIALIST_ID, kind: "logo", onCost: (response) => track("logoTextInventory", response) },
+          ));
+        }
+      }
+      if (logoTextInventories.length > 0) {
+        artifactProvenance.logoTextInventories = logoTextInventories.map((inventory) => ({ ...inventory, textCount: inventory.texts.length, texts: inventory.texts.map((entry) => ({ normalizedText: entry.normalizedText, occurrenceCount: entry.occurrenceCount })) }));
+      }
       const baseQualityGate = await evaluateCreativeQualityGate(deps.creativeBrain, {
         finalImageUrl: uploaded.url,
         finalImageWidth,
@@ -1236,9 +1260,11 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         // `BRAND_SURFACES` prova ownership/aplicação, não conformidade; padrões proibidos são checados acima.
         brandPaletteRenderedDeterministically,
         ...(screenshotTextInventory ? { screenshotTextInventory } : {}),
+        ...(logoTextInventories.length > 0 ? { logoTextInventories } : {}),
         ownership: { tenantId: input.tenantId, workspaceId: input.workspaceId },
         onCost: (response) => track("technicalQualityGate", response),
       });
+      if (baseQualityGate.logoInventoryDecision) artifactProvenance.logoInventoryGateDecision = baseQualityGate.logoInventoryDecision;
       const qualityGate: CreativeQualityGateResult = brandSurfaceComplianceIssues.length > 0
         ? { ...baseQualityGate, verdict: "fail", issues: [...baseQualityGate.issues, ...brandSurfaceComplianceIssues] }
         : baseQualityGate;

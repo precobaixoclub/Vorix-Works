@@ -99,6 +99,9 @@ export type CreativeQualityIssueCode = (typeof CREATIVE_QUALITY_ISSUE_CODES)[num
 export type CreativeQualityIssue = {
   code: CreativeQualityIssueCode;
   message: string;
+  /** Detalhe estruturado e persistido (quais zonas/bboxes, quanto se sobrepõe, texto, origem e
+   * adjudicação) — nunca mais só o código. */
+  details?: Record<string, unknown>;
   /** Achado ao vivo em produção: `TEXT_ILLEGIBLE_OR_CUT`/`ELEMENT_CUT_OFF` podem vir de duas
    * origens bem diferentes — `checkSafeAreaCompliance` (determinístico, só sobre zonas de texto
    * já declaradas no plano, sempre sabe se a zona é `renderer` ou `image_model`) ou
@@ -153,6 +156,25 @@ export function resolveVerifiedLogoRegions(input: {
  * screenshot composto pelo renderer, apontando para o MESMO asset do contexto, visível e fiel ao
  * original em pixel. Mesmo texto fora dessa bbox continua não autorizado.
  */
+/**
+ * Regiões FINAIS do produto real (foto do cliente) composto pelo renderer, visível e fiel em pixel ao
+ * original. Texto IMPRESSO no próprio produto (rótulo, embalagem) lido pela visão dentro dessa região é
+ * do produto — preservado, nunca promovido a claim/fato comercial (fatos vêm só da copy do plano).
+ */
+export function resolveVerifiedProductRegions(input: {
+  plan: Pick<CreativePlan, "assetPlacements">;
+  context: Pick<CreativeContext, "assets">;
+  compositedAssetRoles: readonly CreativePlanAssetRole[];
+  assetPixelEvidence?: readonly CreativeAssetPixelEvidence[];
+}): CreativePlanRect[] {
+  if (!input.assetPixelEvidence || !input.compositedAssetRoles.includes("product_photo")) return [];
+  const evidence = input.assetPixelEvidence.find((item) => item.role === "product_photo");
+  if (!evidence?.visible || evidence.fidelityPass !== true) return [];
+  const urls = new Set(input.context.assets.filter((asset) => asset.role === "product_photo").map((asset) => asset.url));
+  if (urls.size === 0) return [];
+  return input.plan.assetPlacements.filter((placement) => placement.role === "product_photo" && urls.has(placement.url)).map((placement) => placement.rect);
+}
+
 export function resolveVerifiedScreenshotRegions(input: {
   plan: Pick<CreativePlan, "assetPlacements">;
   context: Pick<CreativeContext, "assets">;
@@ -191,6 +213,41 @@ export function resolveUsableScreenshotInventory(input: {
   }
   if (!input.context.assets.some((asset) => asset.role === "screenshot" && asset.url === inventory.assetUrl)) return { status: "NOT_USED", reason: "inventário não pertence ao screenshot desta peça" };
   return { usable: { assetSha256: inventory.assetSha256, assetUrl: inventory.assetUrl, texts: inventory.texts }, status: "USED", reason: `inventário do screenshot verificado (sha256 ${inventory.assetSha256.slice(0, 12)}…, ${inventory.texts.length} texto(s))` };
+}
+
+/**
+ * Inventário de texto da LOGO oficial (ver `screenshot-text-inventory.ts`, kind "logo") que o gate
+ * PODE usar: leitura AVAILABLE da logo; logo composta, visível e fiel em pixel (regiões verificadas não
+ * vazias); o inventário é de uma logo EFETIVAMENTE desenhada nesta peça (placement final) e do
+ * contexto; e do MESMO tenant/workspace. Vários arquivos de logo desenhados somam seus textos.
+ */
+export function resolveUsableLogoInventory(input: {
+  inventories?: readonly ScreenshotTextInventory[];
+  ownership?: { tenantId: string; workspaceId: string };
+  context: Pick<CreativeContext, "assets">;
+  plan: Pick<CreativePlan, "assetPlacements">;
+  verifiedLogoRegions: readonly CreativePlanRect[];
+}): { usable?: UsableScreenshotInventory; status: "USED" | "NOT_USED" | "ABSENT"; reason: string } {
+  const inventories = input.inventories ?? [];
+  if (inventories.length === 0) return { status: "ABSENT", reason: "sem inventário de texto da logo" };
+  if (input.verifiedLogoRegions.length === 0) return { status: "NOT_USED", reason: "logo sem fidelidade comprovada (ausente, invisível ou substituída) — inventário não autoriza" };
+  const drawn = new Set(input.plan.assetPlacements.filter((placement) => placement.role === "logo").map((placement) => placement.url));
+  const contextLogos = new Set(input.context.assets.filter((asset) => asset.role === "logo").map((asset) => asset.url));
+  const usable = inventories.filter((inventory) =>
+    inventory.status === "AVAILABLE"
+    && inventory.source === "VERIFIED_LOGO"
+    && input.ownership !== undefined
+    && inventory.tenantId === input.ownership.tenantId
+    && inventory.workspaceId === input.ownership.workspaceId
+    && drawn.has(inventory.assetUrl)
+    && contextLogos.has(inventory.assetUrl));
+  if (usable.length === 0) return { status: "NOT_USED", reason: "nenhum inventário de logo desenhada nesta peça, do mesmo tenant/workspace e disponível" };
+  const texts = usable.flatMap((inventory) => inventory.texts);
+  return {
+    usable: { assetSha256: usable.map((inventory) => inventory.assetSha256).join(","), assetUrl: usable[0]!.assetUrl, texts },
+    status: "USED",
+    reason: `inventário da logo verificada (${usable.map((inventory) => `sha256 ${inventory.assetSha256.slice(0, 12)}…`).join(", ")}; ${texts.length} texto(s))`,
+  };
 }
 
 function baseScanContains(ledger: TextProvenanceLedger | undefined, normalizedText: string): boolean {
@@ -305,12 +362,14 @@ export function buildTextProvenanceLedger(input: {
   baseText?: CreativeBaseTextEvidence;
   /** Só o inventário já validado (`resolveUsableScreenshotInventory`). */
   screenshotInventory?: UsableScreenshotInventory;
+  /** Só o inventário já validado (`resolveUsableLogoInventory`). */
+  logoInventory?: UsableScreenshotInventory;
 }): TextProvenanceLedger {
   const entries: TextProvenanceEntry[] = [];
   (input.renderedTextRegions ?? []).forEach((zone, index) => {
     entries.push({ sourceType: "RENDERER_TEXT", sourceId: `renderer:${zone.kind}:${index}`, normalizedText: normalizeRenderedText(zone.text), role: zone.kind, expectedBBox: zone.rect, deterministic: true, assetProvenance: "final_rendered_geometry" });
   });
-  const brandLiterals = [...new Set(resolveEditorialBrandLiterals(input.context).map((literal) => normalizeRenderedText(literal)).filter(Boolean))];
+  const brandLiterals = [...new Set([...resolveEditorialBrandLiterals(input.context), ...(input.logoInventory?.texts ?? []).map((entry) => entry.normalizedText)].map((literal) => normalizeRenderedText(literal)).filter(Boolean))];
   input.verifiedLogoRegions.forEach((rect, index) => {
     entries.push({ sourceType: "LOGO_ASSET", sourceId: `logo:${index}`, ...(brandLiterals.length > 0 ? { alternatives: brandLiterals } : {}), role: "logo", expectedBBox: rect, deterministic: true, assetProvenance: "context_asset+pixel_verified" });
   });
@@ -641,6 +700,8 @@ export type CreativeQualityGateResult = {
   paletteDiagnostics?: { decision: "VISION_PALETTE_OVERRIDDEN_BY_RENDERER"; visionReasoning?: string }[];
   /** Se o inventário de texto do screenshot foi usado nesta avaliação, e por quê. */
   screenshotInventoryDecision?: { status: "USED" | "NOT_USED"; reason: string };
+  /** Se o inventário de texto da logo foi usado nesta avaliação, e por quê. */
+  logoInventoryDecision?: { status: "USED" | "NOT_USED"; reason: string };
 };
 
 const ASPECT_RATIO_TOLERANCE = 0.06;
@@ -882,11 +943,28 @@ export function checkTextZoneCollisions(plan: CreativePlan): CreativeQualityIssu
     for (let j = i + 1; j < plan.textZones.length; j++) {
       const a = plan.textZones[i];
       const b = plan.textZones[j];
-      if (!rectsOverlap(a.rect, b.rect)) continue;
+      // Colisão SEMÂNTICA: o texto desenhado (`inkRect`, geometria final do renderer) de cada zona;
+      // sem ele, a reserva (`rect`). Uma reserva de coluna maior que o texto, encostando em outra,
+      // não é texto sobre texto.
+      const rectA = a.inkRect ?? a.rect;
+      const rectB = b.inkRect ?? b.rect;
+      if (!rectsOverlap(rectA, rectB)) continue;
+      const interW = Math.min(rectA.xPct + rectA.widthPct, rectB.xPct + rectB.widthPct) - Math.max(rectA.xPct, rectB.xPct);
+      const interH = Math.min(rectA.yPct + rectA.heightPct, rectB.yPct + rectB.heightPct) - Math.max(rectA.yPct, rectB.yPct);
+      const intersectionAreaPct2 = Number((Math.max(0, interW) * Math.max(0, interH)).toFixed(4));
       issues.push({
         code: "TEXT_ZONE_OVERLAPS_TEXT_ZONE",
-        message: `Zona de texto "${a.kind}" (x=${a.rect.xPct}%-${a.rect.xPct + a.rect.widthPct}%, y=${a.rect.yPct}%-${a.rect.yPct + a.rect.heightPct}%) se sobrepõe à zona de texto "${b.kind}" (x=${b.rect.xPct}%-${b.rect.xPct + b.rect.widthPct}%, y=${b.rect.yPct}%-${b.rect.yPct + b.rect.heightPct}%) — ajuste um dos dois retângulos para eles nunca se tocarem.`,
+        message: `Zona de texto "${a.kind}" (x=${rectA.xPct}%-${rectA.xPct + rectA.widthPct}%, y=${rectA.yPct}%-${rectA.yPct + rectA.heightPct}%) se sobrepõe à zona de texto "${b.kind}" (x=${rectB.xPct}%-${rectB.xPct + rectB.widthPct}%, y=${rectB.yPct}%-${rectB.yPct + rectB.heightPct}%) — ajuste um dos dois retângulos para eles nunca se tocarem.`,
         source: "safe_area",
+        details: {
+          issueType: "TEXT_ZONE_OVERLAPS_TEXT_ZONE",
+          zoneA: { id: a.kind, type: a.kind, text: a.text, bbox: a.rect, ...(a.inkRect ? { inkBBox: a.inkRect } : {}) },
+          zoneB: { id: b.kind, type: b.kind, text: b.text, bbox: b.rect, ...(b.inkRect ? { inkBBox: b.inkRect } : {}) },
+          geometry: a.inkRect || b.inkRect ? "ink_bounds" : "layout_reservation",
+          intersectionAreaPct2,
+          overlapRatioA: rectA.widthPct * rectA.heightPct > 0 ? Number((intersectionAreaPct2 / (rectA.widthPct * rectA.heightPct)).toFixed(4)) : 0,
+          overlapRatioB: rectB.widthPct * rectB.heightPct > 0 ? Number((intersectionAreaPct2 / (rectB.widthPct * rectB.heightPct)).toFixed(4)) : 0,
+        },
       });
     }
   }
@@ -1042,6 +1120,8 @@ export async function checkCreativeVisualIntegrity(
     renderedTextRegions?: readonly CreativeRenderedTextRegion[];
     /** Regiões FINAIS do screenshot real verificado (`resolveVerifiedScreenshotRegions`). */
     verifiedScreenshotRegions?: readonly CreativePlanRect[];
+    /** Regiões FINAIS do produto real verificado (`resolveVerifiedProductRegions`). */
+    verifiedProductRegions?: readonly CreativePlanRect[];
     /** Coletor do diagnóstico sanitizado de cada texto reportado pela visão. */
     textDiagnostics?: CreativeTextDiagnostic[];
     /** Coletor do diagnóstico de cada ocorrência de texto repetido. */
@@ -1053,6 +1133,8 @@ export async function checkCreativeVisualIntegrity(
     textProvenanceLedger?: TextProvenanceLedger;
     /** Inventário de texto do screenshot verificado, já validado (`resolveUsableScreenshotInventory`). */
     screenshotInventory?: UsableScreenshotInventory;
+    /** Inventário de texto da logo verificada, já validado (`resolveUsableLogoInventory`). */
+    logoInventory?: UsableScreenshotInventory;
     /** Auditoria de custo — achado crítico: esta chamada de visão nunca entrava em NENHUM total
      * de custo do motor antes desta correção (`run-gpt-creative-engine.ts` só rastreava
      * plano/imagem). Opcional e best-effort, mesmo espírito do resto da função — nunca lançar por
@@ -1163,6 +1245,7 @@ export async function checkCreativeVisualIntegrity(
       const screenshotRegionsForBudget = input.verifiedScreenshotRegions ?? [];
       const inventoryInRegion = new Map<string, number>();
       const inventoryOutOfRegionUsed = new Map<string, number>();
+      const logoInventoryUsed = new Map<string, number>();
       if (input.screenshotInventory && screenshotRegionsForBudget.length > 0) {
         for (const candidate of allDetections) {
           if (!candidate?.region || matchRenderedTextRegion(candidate, renderedTextRegions)) continue;
@@ -1256,6 +1339,31 @@ export async function checkCreativeVisualIntegrity(
           input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "logo", normalizedDetected, decision: "authorized", reason: "dentro da bbox final da logo oficial verificada (proveniência + pixel)" });
           continue;
         }
+        // Texto do PRÓPRIO arquivo da logo (tagline/slogan — inventário VERIFIED_LOGO, Smoke 1
+        // execution-mv4ljbf3-5zfacb): autoriza só a leitura que cai sobre a logo verificada ou junto
+        // dela pela faixa com piso na resolução da visão; orçamento = ocorrências no(s) arquivo(s) de
+        // logo desenhado(s); nunca quando a base escaneada contém o texto. Fora da logo: rejeitado.
+        let logoInventoryRejection: string | undefined;
+        if (detected.region && input.logoInventory && verifiedLogoRegions.length > 0) {
+          const logoMatch = matchScreenshotInventoryText(normalizedDetected, input.logoInventory);
+          if (logoMatch) {
+            const nearLogo = verifiedLogoRegions.find((rect) => isTextRegionInsideVerifiedLogo(detected.region!, [rect]) || measureRenderedTextProximity(detected.region!, rect, VISION_BBOX_RESOLUTION_PCT).near);
+            const used = logoInventoryUsed.get(normalizedDetected) ?? 0;
+            const baseHas = baseScanContains(input.textProvenanceLedger, normalizedDetected);
+            if (nearLogo && !baseHas && used < logoMatch.budget) {
+              logoInventoryUsed.set(normalizedDetected, used + 1);
+              const proximity = measureRenderedTextProximity(detected.region, nearLogo, VISION_BBOX_RESOLUTION_PCT);
+              input.onVerifiedLogoTextExempted?.({ text: item, region: detected.region });
+              input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "logo", normalizedDetected, decision: "authorized", matchDecision: "MATCHED_VERIFIED_LOGO_TEXT", expectedRole: "logo", expectedBBox: nearLogo, overlap: proximity.overlap, centerDistance: proximity.centerDistance, toleranceApplied: proximity.band, reason: `texto do próprio arquivo da logo verificada (VERIFIED_LOGO_TEXT, ${logoMatch.budget} ocorrência(s); sha256 ${input.logoInventory.assetSha256.slice(0, 12)}…), sobre/junto da logo desenhada` });
+              continue;
+            }
+            logoInventoryRejection = !nearLogo
+              ? "texto da logo oficial, mas FORA da região da logo desenhada (VERIFIED_LOGO_TEXT só vale sobre a logo)"
+              : baseHas
+                ? "texto da logo oficial, mas a imagem base escaneada também contém o texto"
+                : `texto da logo oficial, mas orçamento esgotado (${logoMatch.budget} ocorrência(s) no arquivo da logo)`;
+          }
+        }
         // Logo verificada x resolução da visão (cenário A 9:16 execution-mv2ifqf0-vtl4ov: logo com 2,4%
         // de altura, bbox da visão na grade de 5 pt fora da regra estrita). Só o literal EXATO da marca
         // registrado no ledger, uma única leitura, base escaneada e sem o texto, perto da logo pela
@@ -1272,6 +1380,13 @@ export async function checkCreativeVisualIntegrity(
             input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "logo", normalizedDetected, decision: "authorized", matchDecision: "MATCHED_VERIFIED_LOGO", expectedRole: "logo", expectedBBox: nearLogo, overlap: proximity.overlap, centerDistance: proximity.centerDistance, toleranceApplied: proximity.band, reason: "brand_literal_single_reading_base_clean_near_verified_logo_within_vision_resolution" });
             continue;
           }
+        }
+        // Texto impresso no PRÓPRIO produto real verificado (proveniência + pixel): só dentro da região
+        // final do produto; fora dela continua rejeitado.
+        const verifiedProductRegions = input.verifiedProductRegions ?? [];
+        if (detected.region && verifiedProductRegions.length > 0 && isTextRegionInsideVerifiedLogo(detected.region, verifiedProductRegions)) {
+          input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "product_photo", normalizedDetected, decision: "authorized", matchDecision: "MATCHED_VERIFIED_PRODUCT_REGION", reason: "texto impresso no produto real verificado (dentro da região final do produto; proveniência + pixel) — nunca fato comercial" });
+          continue;
         }
         const verifiedScreenshotRegions = input.verifiedScreenshotRegions ?? [];
         const inventoryMatch = input.screenshotInventory ? matchScreenshotInventoryText(normalizedDetected, input.screenshotInventory) : undefined;
@@ -1305,7 +1420,9 @@ export async function checkCreativeVisualIntegrity(
           normalizedExpected: equivalentZone ? normalizeRenderedText(equivalentZone.text) : undefined,
           normalizedDetected,
           decision: "rejected",
-          reason: insideScreenshot
+          reason: logoInventoryRejection
+            ? logoInventoryRejection
+            : insideScreenshot
             ? "dentro da bbox do screenshot, mas o texto não existe no inventário do screenshot verificado"
             : inventoryRejection
               ? `texto do screenshot verificado, mas ${inventoryRejection}`
@@ -1319,7 +1436,17 @@ export async function checkCreativeVisualIntegrity(
           ...(pendingHighConfidence ? { occurrenceId: pendingHighConfidence.occurrenceId, expectedRole: pendingHighConfidence.expectedRole, expectedBBox: pendingHighConfidence.expectedBBox, overlap: pendingHighConfidence.overlap, centerDistance: pendingHighConfidence.centerDistance, toleranceApplied: pendingHighConfidence.toleranceApplied, matchDecision: "REJECTED" } : {}),
         });
         const placeholder = isPlaceholderLikeText(item);
+        const lastDiagnostic = input.textDiagnostics?.at(-1);
         issues.push({
+          details: {
+            issueType: placeholder ? "PLACEHOLDER_RENDERED" : "UNAUTHORIZED_TEXT",
+            detectedText: item,
+            ...(detected.region ? { bbox: detected.region } : {}),
+            textSource: "UNVERIFIED",
+            adjudication: "rejected",
+            ...(lastDiagnostic?.reason ? { reason: lastDiagnostic.reason } : {}),
+            ...(input.logoInventory ? { logoInventoryAssetSha256: input.logoInventory.assetSha256 } : {}),
+          },
           code: placeholder ? "PLACEHOLDER_RENDERED" : "UNAUTHORIZED_TEXT",
           message: placeholder
             ? `A peça contém um placeholder/rótulo técnico renderizado como texto real: "${item}" — isso é nome de campo do plano, nunca conteúdo visual. Remova e substitua pelo texto autorizado correspondente.`
@@ -1513,6 +1640,8 @@ export async function evaluateCreativeQualityGate(
     brandPaletteRenderedDeterministically?: boolean;
     /** SCREENSHOT_TEXT_INVENTORY do screenshot desta peça (ver `screenshot-text-inventory.ts`). */
     screenshotTextInventory?: ScreenshotTextInventory;
+    /** Inventário(s) de texto da(s) logo(s) oficial(is) desenhada(s) nesta peça. */
+    logoTextInventories?: readonly ScreenshotTextInventory[];
     /** Dono da execução — o inventário só vale se for do MESMO tenant/workspace. */
     ownership?: { tenantId: string; workspaceId: string };
   },
@@ -1544,9 +1673,12 @@ export async function evaluateCreativeQualityGate(
   const verifiedScreenshotRegions = resolveVerifiedScreenshotRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence });
   const screenshotInventoryDecision = resolveUsableScreenshotInventory({ inventory: input.screenshotTextInventory, ownership: input.ownership, context: input.context, verifiedScreenshotRegions });
   const screenshotInventory = screenshotInventoryDecision.usable;
+  const verifiedProductRegions = resolveVerifiedProductRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence });
+  const logoInventoryDecision = resolveUsableLogoInventory({ inventories: input.logoTextInventories, ownership: input.ownership, context: input.context, plan: input.plan, verifiedLogoRegions });
+  const logoInventory = logoInventoryDecision.usable;
   const renderedTextRegions = input.assetPixelEvidence ? input.plan.textZones.map((zone) => ({ kind: zone.kind, text: zone.text, rect: zone.rect })) : undefined;
   const textProvenanceLedger = input.assetPixelEvidence
-    ? buildTextProvenanceLedger({ plan: input.plan, context: input.context, renderedTextRegions, verifiedLogoRegions, verifiedScreenshotRegions, baseText: input.baseTextDiagnostic, ...(screenshotInventory ? { screenshotInventory } : {}) })
+    ? buildTextProvenanceLedger({ plan: input.plan, context: input.context, renderedTextRegions, verifiedLogoRegions, verifiedScreenshotRegions, baseText: input.baseTextDiagnostic, ...(screenshotInventory ? { screenshotInventory } : {}), ...(logoInventory ? { logoInventory } : {}) })
     : undefined;
   const baseImageTexts = input.baseImageTexts ?? (input.baseTextDiagnostic?.status === "AVAILABLE" ? input.baseTextDiagnostic.texts.map((item) => item.text) : undefined);
   const visualIssues = await checkCreativeVisualIntegrity(icaro, {
@@ -1570,6 +1702,8 @@ export async function evaluateCreativeQualityGate(
     baseImageTexts,
     textProvenanceLedger,
     ...(screenshotInventory ? { screenshotInventory } : {}),
+    ...(logoInventory ? { logoInventory } : {}),
+    ...(verifiedProductRegions.length > 0 ? { verifiedProductRegions } : {}),
     onCost: input.onCost,
   });
   const productionGuidelinesIssues = await checkProductionGuidelinesCompliance(icaro, {
@@ -1597,5 +1731,6 @@ export async function evaluateCreativeQualityGate(
     ...(paletteDiagnostics.length > 0 ? { paletteDiagnostics } : {}),
     ...(textProvenanceLedger ? { textProvenanceLedger } : {}),
     ...(screenshotInventoryDecision.status !== "ABSENT" ? { screenshotInventoryDecision: { status: screenshotInventoryDecision.status, reason: screenshotInventoryDecision.reason } } : {}),
+    ...(logoInventoryDecision.status !== "ABSENT" ? { logoInventoryDecision: { status: logoInventoryDecision.status, reason: logoInventoryDecision.reason } } : {}),
   };
 }

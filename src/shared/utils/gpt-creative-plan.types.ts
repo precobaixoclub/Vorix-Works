@@ -188,6 +188,11 @@ export type CreativePlanTextZone = {
   kind: CreativePlanTextZoneKind;
   text: string;
   rect: CreativePlanRect;
+  /** Geometria FINAL do renderer: bounds do texto efetivamente desenhado (linhas medidas pela métrica
+   * conservadora do renderer, dentro de `rect`). `rect` é a reserva de layout (coluna/slot); a
+   * colisão texto×texto usa `inkRect` quando existe — uma reserva maior que o texto nunca vira
+   * "sobreposição" sozinha. Ausente = só a reserva é conhecida. */
+  inkRect?: CreativePlanRect;
   emphasis: CreativePlanTextZoneEmphasis;
   renderedBy: CreativePlanTextZoneRenderer;
   /** Alinhamento horizontal do texto dentro da zona — padrão `"center"` quando ausente (mesmo

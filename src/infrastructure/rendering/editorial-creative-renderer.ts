@@ -112,6 +112,8 @@ let cachedFontBuffer: Buffer | undefined;
  * diferem acima de `INFORMATIVE_DIFF`; o asset é considerado presente quando a grande maioria
  * desses pixels está mais perto do asset do que do frame vazio. */
 const INFORMATIVE_DIFF = 24;
+/** Vão mínimo (px) entre a coluna da headline e a coluna da direita no PHOTO_DOMINANT_EDITORIAL 4:5. */
+const PHOTO_DOMINANT_COLUMN_GAP = 32;
 const MIN_INFORMATIVE_RATIO = 0.01;
 const MIN_ASSET_MATCH_RATIO = 0.8;
 const MAX_FIDELITY_MEAN_ABS_DIFF = 22;
@@ -499,12 +501,18 @@ async function blankFallback(width: number, height: number, color: string): Prom
   return pngDataUri(buffer);
 }
 
-function buildTextZones(plan: CreativePlan, price: string | undefined, layout: { headline: PxRect; subheadline?: PxRect; cta?: PxRect; price?: PxRect }, canvas: Canvas): CreativePlanTextZone[] {
+function buildTextZones(
+  plan: CreativePlan,
+  price: string | undefined,
+  layout: { headline: PxRect; subheadline?: PxRect; cta?: PxRect; price?: PxRect },
+  canvas: Canvas,
+  ink?: { headline?: PxRect; subheadline?: PxRect },
+): CreativePlanTextZone[] {
   const zones: CreativePlanTextZone[] = [
-    { kind: "headline", text: plan.headline, rect: pctRect(layout.headline, canvas), emphasis: "primary", renderedBy: "renderer", backingStyle: "none", align: "left" },
+    { kind: "headline", text: plan.headline, rect: pctRect(layout.headline, canvas), ...(ink?.headline ? { inkRect: pctRect(ink.headline, canvas) } : {}), emphasis: "primary", renderedBy: "renderer", backingStyle: "none", align: "left" },
   ];
   if (plan.subheadline && layout.subheadline) {
-    zones.push({ kind: "subheadline", text: plan.subheadline, rect: pctRect(layout.subheadline, canvas), emphasis: "secondary", renderedBy: "renderer", backingStyle: "none", align: "left" });
+    zones.push({ kind: "subheadline", text: plan.subheadline, rect: pctRect(layout.subheadline, canvas), ...(ink?.subheadline ? { inkRect: pctRect(ink.subheadline, canvas) } : {}), emphasis: "secondary", renderedBy: "renderer", backingStyle: "none", align: "left" });
   }
   if (price && layout.price) {
     zones.push({ kind: "price", text: price, rect: pctRect(layout.price, canvas), emphasis: "secondary", renderedBy: "renderer", backingStyle: "solid", align: "left" });
@@ -766,6 +774,23 @@ type TextSpec = {
 
 function measureSpec(spec: TextSpec): TextFit {
   return fitText(spec.uppercase ? spec.text.toUpperCase() : spec.text, spec.width, spec.maxHeight, spec);
+}
+
+/** Largura média CONSERVADORA de glifo para bounds de tinta (acima da média real da Geist/DM Serif,
+ * ~0,55 em em caixa mista): o `inkRect` nunca fica menor que o texto desenhado. */
+const INK_CHAR_WIDTH = 0.62;
+const INK_CHAR_WIDTH_UPPERCASE = 0.68;
+
+/** Bounds do texto efetivamente desenhado dentro da reserva `rect` (linhas do mesmo `fitText` que
+ * o renderer usa para desenhar), alinhado pela âncora do bloco. Sempre contido em `rect`. */
+function estimateInkRect(spec: TextSpec, rect: PxRect, anchor: "start" | "middle" | "end"): PxRect {
+  const fit = measureSpec(spec);
+  const factor = spec.uppercase ? INK_CHAR_WIDTH_UPPERCASE : INK_CHAR_WIDTH;
+  const widest = Math.max(0, ...fit.lines.map((line) => Math.ceil(line.length * fit.fontSize * factor + Math.max(0, spec.letterSpacing ?? 0) * line.length)));
+  const width = Math.min(rect.width, widest);
+  const height = Math.min(rect.height, Math.ceil(fit.height));
+  const x = anchor === "end" ? rect.x + rect.width - width : anchor === "middle" ? Math.round(rect.x + (rect.width - width) / 2) : rect.x;
+  return { x, y: rect.y, width, height };
 }
 
 /** Largura estimada de uma linha (mesma métrica do wrap, com folga para tracking). */
@@ -2307,10 +2332,21 @@ async function renderInstitutionalEditorial(
   } else if (variant === "PHOTO_DOMINANT_EDITORIAL") {
     // Foto protagonista quase de borda a borda; faixa editorial assimétrica: headline à esquerda,
     // logo + subtítulo + CTA alinhados à direita.
-    const hs = headSpec(560, 50, headline.length > 44 ? 3 : 2);
-    const hf = measureSpec(hs);
     const rightX = W - M;
     const colW = 330;
+    // A coluna da headline nunca invade a coluna da direita (achado do Smoke 1
+    // execution-mv4ljbf3-5zfacb: CTA longo "ACESSE PRECOBAIXOCLUB.COM.BR" alinhado à direita
+    // começava 4 px DENTRO da coluna fixa de 560 px da headline → TEXT_ZONE_OVERLAPS_TEXT_ZONE).
+    // A largura reservada da headline termina antes do elemento mais à esquerda da coluna da
+    // direita (logo, subtítulo, CTA), com vão mínimo; a headline quebra dentro dessa largura real.
+    const rightColumnLeft = Math.min(
+      rightX - colW,
+      logoBox ? rightX - logoBox.width : rightX,
+      cta ? rightX - (ctaTextWidth + 56) : rightX,
+    );
+    const headW = Math.min(560, rightColumnLeft - PHOTO_DOMINANT_COLUMN_GAP - M);
+    const hs = headSpec(headW, 50, headline.length > 44 ? 3 : 2);
+    const hf = measureSpec(hs);
     const ss = subSpec(colW, 18, 3);
     const sf = ss ? measureSpec(ss) : undefined;
     const ctaH = 52;
@@ -2319,7 +2355,7 @@ async function renderInstitutionalEditorial(
     const bottom = H - M - 4;
     const bandTop = bottom - bandH;
     photo = { x: 40, y: 40, width: W - 80, height: Math.round(bandTop - 52 - 40) };
-    head = { spec: hs, rect: { x: M, y: Math.round(bottom - hf.height), width: 560, height: hf.height }, anchor: "start" };
+    head = { spec: hs, rect: { x: M, y: Math.round(bottom - hf.height), width: headW, height: hf.height }, anchor: "start" };
     let cursor = bottom - rightH;
     logoRect = logoBox ? { x: rightX - logoBox.width, y: Math.round(cursor), ...logoBox } : undefined;
     if (logoBox) cursor += logoBox.height + 22;
@@ -2415,7 +2451,10 @@ async function renderInstitutionalEditorial(
     ? `${imageTag(undefined, ambientHref, photo, { opacity: 0.9 })}${imageTag(undefined, href, fit.drawRect, { preserveAspectRatio: "xMidYMid meet" })}`
     : imageTag(undefined, href, photo, { preserveAspectRatio: "xMidYMid slice", clipId: "photoClip" });
 
-  const zones = buildTextZones(plan, undefined, { headline: head.rect, subheadline: sub?.rect, cta: ctaRect }, canvas);
+  const zones = buildTextZones(plan, undefined, { headline: head.rect, subheadline: sub?.rect, cta: ctaRect }, canvas, {
+    headline: estimateInkRect(head.spec, head.rect, head.anchor),
+    ...(sub ? { subheadline: estimateInkRect(sub.spec, sub.rect, sub.anchor) } : {}),
+  });
   const roles: CreativePlanAssetRole[] = [];
   const assets: CreativePlan["assetPlacements"] = [];
   const verify: AssetVerifySpec[] = [];

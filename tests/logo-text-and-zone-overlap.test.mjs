@@ -67,15 +67,29 @@ test("17A: texto do próprio arquivo da logo, lido sobre/junto da logo desenhada
   assert.equal(result.logoInventoryDecision.status, "USED");
 });
 
-test("17B: o MESMO texto da logo fora da região da logo → FAIL (e segunda ocorrência além do orçamento → FAIL)", async () => {
+test("17B: bbox da visão 0..1 é normalizada antes da adjudicação da logo", async () => {
+  const input = gateInput();
+  input.plan = { ...input.plan, assetPlacements: [{ role: "logo", url: LOGO_URL, rect: { xPct: 10, yPct: 5, widthPct: 20, heightPct: 5 }, frame: "none" }] };
+  const unit = await evaluateCreativeQualityGate(vision({ unauthorizedTexts: [{ text: "OFERTAS • CUPONS • ECONOMIA", region: { xPct: 0.1, yPct: 0.05, widthPct: 0.2, heightPct: 0.05 } }] }), input);
+  assert.equal(unit.verdict, "pass", JSON.stringify(unit.issues));
+  assert.equal(unit.textDiagnostics[0].rawCoordinateSystem, "UNIT_0_1");
+  assert.deepEqual(unit.textDiagnostics[0].rawBbox, { xPct: 0.1, yPct: 0.05, widthPct: 0.2, heightPct: 0.05 });
+  assert.deepEqual(unit.textDiagnostics[0].normalizedBboxPercent, { xPct: 10, yPct: 5, widthPct: 20, heightPct: 5 });
+
+  const percent = await evaluateCreativeQualityGate(vision({ unauthorizedTexts: [{ text: "OFERTAS • CUPONS • ECONOMIA", region: { xPct: 10, yPct: 5, widthPct: 20, heightPct: 5 } }] }), input);
+  assert.equal(percent.verdict, "pass", JSON.stringify(percent.issues));
+  assert.equal(percent.textDiagnostics[0].rawCoordinateSystem, "PERCENT_0_100");
+});
+
+test("17C: texto da logo com bbox errada passa apenas como VISION_BBOX_CONTRADICTION; segunda ocorrência além do orçamento → FAIL", async () => {
   const far = await evaluateCreativeQualityGate(vision({ unauthorizedTexts: [{ text: "OFERTAS • CUPONS • ECONOMIA", region: FAR }] }), gateInput());
-  assert.deepEqual(codes(far), ["UNAUTHORIZED_TEXT"]);
-  assert.match(far.issues[0].details.reason, /FORA da região da logo/);
+  assert.equal(far.verdict, "pass", JSON.stringify(far.issues));
+  assert.equal(far.textDiagnostics[0].matchDecision, "VISION_BBOX_CONTRADICTION");
   const twice = await evaluateCreativeQualityGate(vision({ unauthorizedTexts: [{ text: "OFERTAS • CUPONS • ECONOMIA", region: NEAR_LOGO_COARSE }, { text: "OFERTAS • CUPONS • ECONOMIA", region: { xPct: 85, yPct: 80, widthPct: 10, heightPct: 5 } }] }), gateInput());
   assert.deepEqual(codes(twice), ["UNAUTHORIZED_TEXT"], "1 ocorrência no arquivo da logo = 1 leitura legítima");
 });
 
-test("17A/B isolamento: inventário de outro workspace, de logo não desenhada, ou com logo sem fidelidade → não autoriza", async () => {
+test("17A/C isolamento: inventário de outro workspace, de logo não desenhada, ou com logo sem fidelidade → não autoriza", async () => {
   for (const overrides of [
     { logoTextInventories: [logoInventory(["OFERTAS • CUPONS • ECONOMIA"], { workspaceId: "workspace-b" })] },
     { logoTextInventories: [logoInventory(["OFERTAS • CUPONS • ECONOMIA"], { assetUrl: "https://x/outra-logo.png" })] },
@@ -87,7 +101,7 @@ test("17A/B isolamento: inventário de outro workspace, de logo não desenhada, 
   }
 });
 
-test("17C: texto impresso no produto real verificado, dentro da região do produto → allowed; fora dela → FAIL", async () => {
+test("17D: texto impresso no produto real verificado, dentro da região do produto → allowed; fora dela → FAIL", async () => {
   const input = gateInput({
     compositedAssetRoles: ["logo", "product_photo"],
     assetPixelEvidence: [{ role: "logo", visible: true, fidelityPass: true }, { role: "product_photo", visible: true, fidelityPass: true }],
@@ -104,7 +118,7 @@ test("17C: texto impresso no produto real verificado, dentro da região do produ
   assert.ok(codes(unverified).includes("UNAUTHORIZED_TEXT"));
 });
 
-test("17D: texto inventado pelo modelo na base (base escaneada contém, fora de qualquer asset) → FAIL", async () => {
+test("17E: texto inventado pelo modelo na base (base escaneada contém, fora de qualquer asset) → FAIL", async () => {
   const result = await evaluateCreativeQualityGate(vision({ unauthorizedTexts: [{ text: "SUPER PROMO", region: FAR }] }), gateInput({ baseTextDiagnostic: { status: "AVAILABLE", texts: [{ text: "SUPER PROMO", normalizedText: "super promo" }] } }));
   assert.deepEqual(codes(result), ["UNAUTHORIZED_TEXT"]);
   // mesmo uma frase da logo não é absorvida perto da logo se a base escaneada também a contém
@@ -112,20 +126,20 @@ test("17D: texto inventado pelo modelo na base (base escaneada contém, fora de 
   assert.ok(codes(baseHasLogoText).includes("UNAUTHORIZED_TEXT"));
 });
 
-test("17E: texto que o renderer NÃO desenhou, lido sobre uma zona do renderer → FAIL", async () => {
+test("17F: texto que o renderer NÃO desenhou, lido sobre uma zona do renderer → FAIL", async () => {
   const result = await evaluateCreativeQualityGate(vision({ unauthorizedTexts: [{ text: "Frete grátis hoje", region: { xPct: 8, yPct: 88, widthPct: 30, heightPct: 4 } }] }), gateInput());
   assert.deepEqual(codes(result), ["UNAUTHORIZED_TEXT"]);
   assert.equal(result.issues[0].details.detectedText, "Frete grátis hoje");
   assert.equal(result.issues[0].details.adjudication, "rejected");
 });
 
-test("17F: alucinação da visão contradita pela geometria do renderer (CTA lido dentro da zona da headline, base limpa) → adjudicada", async () => {
+test("17G: alucinação da visão contradita pela geometria do renderer (CTA lido dentro da zona da headline, base limpa) → adjudicada", async () => {
   const result = await evaluateCreativeQualityGate(vision({ unauthorizedTexts: [{ text: CTA, region: { xPct: 10, yPct: 88, widthPct: 30, heightPct: 4 } }] }), gateInput());
   assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
   assert.equal(result.textDiagnostics[0].matchDecision, "VISION_ZONE_CONTRADICTION");
 });
 
-test("17G: texto de asset (logo) nunca vira fato comercial", async () => {
+test("17H: texto de asset (logo) nunca vira fato comercial", async () => {
   const input = gateInput({ logoTextInventories: [logoInventory(["Loja Exemplo", "A partir de R$ 9,90"])] });
   input.plan = { ...input.plan, headline: "A partir de R$ 9,90", allowedRenderedTexts: ["A partir de R$ 9,90", CTA] };
   assert.ok(checkCommercialFactIntegrity(input.plan, input.context).some((issue) => issue.code === "INVENTED_COMMERCIAL_FACT"));

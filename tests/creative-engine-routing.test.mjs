@@ -14,12 +14,16 @@ test("routing: entitlement ON + product_offer normal usa APPROVED_CREATIVE_ENGIN
       offerOrSubject: "Criar uma peca de oferta premium destacando economia e confianca.",
       aspectRatio: "4:5",
     },
-    assets: [{ url: "https://api.vorixworks.com/uploads/assets/t/w/logo.jpg", role: "logo", description: "Logo" }],
+    assets: [
+      { url: "https://api.vorixworks.com/uploads/assets/t/w/logo.jpg", role: "logo", description: "Logo" },
+      { url: "https://api.vorixworks.com/uploads/assets/t/w/produto.jpg", role: "product_photo", description: "Produto real" },
+    ],
   });
 
   assert.equal(decision.enginePath, "APPROVED_CREATIVE_ENGINE");
   assert.equal(decision.compositionMode, "editorial_experimental");
   assert.equal(decision.family, "product_offer");
+  assert.equal(decision.familyEligibility.result, "PASS");
 });
 
 test("routing: entitlement ON + premium_institutional normal usa APPROVED_CREATIVE_ENGINE", () => {
@@ -100,7 +104,20 @@ test("routing: legacy standard explicito so existe para QA/teste interno autoriz
 });
 
 test("routing: inferencia de familia cobre as tres familias homologadas", () => {
-  assert.equal(inferApprovedCreativeFamily({ validatedInputs: { offerOrSubject: "Oferta com economia" }, assets: [] }), "product_offer");
+  assert.equal(inferApprovedCreativeFamily({ validatedInputs: { offerOrSubject: "Oferta com economia" }, assets: [] }), "premium_institutional");
+  assert.equal(inferApprovedCreativeFamily({ validatedInputs: { offerOrSubject: "Oferta com economia" }, assets: [{ role: "product_photo", url: "https://x/produto.png", description: "Produto real" }] }), "product_offer");
   assert.equal(inferApprovedCreativeFamily({ validatedInputs: { offerOrSubject: "Institucional premium de confianca" }, assets: [] }), "premium_institutional");
   assert.equal(inferApprovedCreativeFamily({ validatedInputs: { offerOrSubject: "Atendimento digital via WhatsApp" }, assets: [] }), "digital_service");
+});
+
+test("routing: product_offer explicito preserva familia e registra inelegibilidade sem asset", () => {
+  const decision = resolveCreativeEngineRouting({
+    entitlementEnabled: true,
+    validatedInputs: { creativeFamily: "product_offer", offerOrSubject: "Arte de oferta sem foto" },
+    assets: [],
+  });
+  assert.equal(decision.family, "product_offer");
+  assert.equal(decision.familySource, "EXPLICIT");
+  assert.equal(decision.familyEligibility.result, "FAIL");
+  assert.deepEqual(decision.familyEligibility.missingRequirements, ["product_photo"]);
 });

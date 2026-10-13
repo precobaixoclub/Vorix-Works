@@ -184,6 +184,8 @@ export type GptCreativeEngineInput = {
   engineVersion?: string;
   deployedSha?: string;
   requestedFamily?: ApprovedCreativeFamily;
+  requestedFamilySource?: "EXPLICIT" | "INFERRED";
+  familyEligibility?: { result: "PASS" | "FAIL"; reason: string; missingRequirements?: string[] };
   /** `true` só quando o worker comprovou homologação editorial (flag + allowlist + trusted actor) —
    * única condição em que o namespace SYSTEM_QA_ASSET (`qa-assets/`) é aceito. */
   qaReferenceAssetsAllowed?: boolean;
@@ -240,6 +242,8 @@ export type CreativeEngineArtifactProvenance = {
   engineVersion?: string;
   deployedSha?: string;
   family?: ApprovedCreativeFamily;
+  familySource?: "EXPLICIT" | "INFERRED";
+  familyEligibility?: { result: "PASS" | "FAIL"; reason: string; missingRequirements?: string[] };
   /** Qual Brand Profile gerou a peça (auditável): perfil, versão, regras aplicadas e snapshot da
    * identidade usada. Ausente = SYSTEM_DEFAULT (workspace sem identidade estruturada). */
   brandProfileVersion?: number;
@@ -303,6 +307,8 @@ export type GptCreativeEngineResult = {
   engineVersion?: string;
   deployedSha?: string;
   family?: ApprovedCreativeFamily;
+  familySource?: "EXPLICIT" | "INFERRED";
+  familyEligibility?: { result: "PASS" | "FAIL"; reason: string; missingRequirements?: string[] };
   compositionMode?: "standard" | "editorial_experimental";
   directorModel?: string;
   imageModel?: string;
@@ -704,6 +710,8 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
   const engineVersion = input.engineVersion;
   const deployedSha = input.deployedSha;
   let family: ApprovedCreativeFamily | undefined = input.requestedFamily;
+  const familySource = input.requestedFamily ? input.requestedFamilySource ?? "INFERRED" : undefined;
+  const familyEligibility = input.familyEligibility;
 
   // Auditoria de custo urgente — breakdown por etapa + teto de gasto por execução. `repairRoundsCost`
   // é sobreposição deliberada das outras categorias (ver `CreativeEngineCostBreakdown`);
@@ -758,6 +766,8 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
       engineVersion,
       deployedSha,
       family,
+      familySource,
+      familyEligibility,
       compositionMode: input.experimentalEditorialMode ? "editorial_experimental" : "standard",
       directorModel,
       imageModel,
@@ -811,6 +821,25 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         return fail(error.message, error.code);
       }
     }
+  }
+
+  if (input.experimentalEditorialMode && family === "product_offer" && familySource === "EXPLICIT" && !context.assets.some((asset) => asset.role === "product_photo")) {
+    return fail(
+      "PRODUCT_OFFER_INPUT_INSUFFICIENT: product_offer foi solicitado explicitamente, mas nenhum asset product_photo real foi fornecido. O motor nao inventa produto nem gera HERO_DOMINANT vazio.",
+      "PRODUCT_OFFER_INPUT_INSUFFICIENT",
+      {
+        artifactProvenance: {
+          compositionMode: "editorial_experimental",
+          enginePath,
+          engineVersion,
+          deployedSha,
+          family,
+          familySource,
+          familyEligibility: familyEligibility ?? { result: "FAIL", reason: "product_offer_requires_verified_product_asset", missingRequirements: ["product_photo"] },
+          inputAssets: context.assets.map((asset) => ({ role: asset.role, url: asset.url, source: "input_asset" as const })),
+        },
+      },
+    );
   }
 
   if (input.experimentalEditorialMode) {
@@ -1186,6 +1215,8 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         engineVersion,
         deployedSha,
         ...(family ? { family } : {}),
+        ...(familySource ? { familySource } : {}),
+        ...(familyEligibility ? { familyEligibility } : {}),
         baseImage: baseImageArtifact,
         finalImage: {
           url: uploaded.url,
@@ -1321,6 +1352,8 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         engineVersion,
         deployedSha,
         family,
+        familySource,
+        familyEligibility,
         compositionMode: "editorial_experimental",
         directorModel,
         imageModel,
@@ -1747,6 +1780,8 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
             engineVersion,
             deployedSha,
             family,
+            familySource,
+            familyEligibility,
             compositionMode: "standard",
             directorModel,
             imageModel,

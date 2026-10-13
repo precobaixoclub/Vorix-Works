@@ -17,6 +17,12 @@ export type CreativeEngineRoutingDecision = {
   enginePath: CreativeEnginePath;
   compositionMode: "standard" | "editorial_experimental";
   family?: ApprovedCreativeFamily;
+  familySource?: "EXPLICIT" | "INFERRED";
+  familyEligibility?: {
+    result: "PASS" | "FAIL";
+    reason: string;
+    missingRequirements?: string[];
+  };
   reason: string;
 };
 
@@ -34,6 +40,19 @@ function includesAny(text: string, needles: readonly string[]): boolean {
 function explicitlyRequestsLegacy(validatedInputs: Record<string, string>): boolean {
   return normalize(validatedInputs.creativeEngineMode) === "legacy_standard"
     || normalize(validatedInputs.internalCreativeEnginePath) === "legacy_standard";
+}
+
+export function explicitlyRequestsProductOffer(validatedInputs: Record<string, string>): boolean {
+  const directFields = [
+    validatedInputs.creativeFamily,
+    validatedInputs.family,
+    validatedInputs.contentFamily,
+    validatedInputs.requestedFamily,
+    validatedInputs.adFamily,
+  ].map(normalize);
+  if (directFields.some((value) => value === "product_offer" || value === "product offer" || value === "oferta de produto")) return true;
+  const freeText = normalize([validatedInputs.objective, validatedInputs.offerOrSubject].filter(Boolean).join("\n"));
+  return /\bproduct[_ -]?offer\b/.test(freeText);
 }
 
 export function inferApprovedCreativeFamily(input: Pick<CreativeEngineRoutingInput, "validatedInputs" | "assets">): ApprovedCreativeFamily {
@@ -56,7 +75,6 @@ export function inferApprovedCreativeFamily(input: Pick<CreativeEngineRoutingInp
   if (
     input.assets.some((asset) => asset.role === "product_photo")
     || textCommercialFacts.length > 0
-    || includesAny(text, ["oferta", "ofertas", "produto", "produtos", "preco", "economia", "desconto", "promocao", "compre"])
   ) {
     return "product_offer";
   }
@@ -65,12 +83,26 @@ export function inferApprovedCreativeFamily(input: Pick<CreativeEngineRoutingInp
 }
 
 export function resolveCreativeEngineRouting(input: CreativeEngineRoutingInput): CreativeEngineRoutingDecision {
+  const explicitProductOffer = explicitlyRequestsProductOffer(input.validatedInputs);
+  const resolvedFamily = explicitProductOffer ? "product_offer" : inferApprovedCreativeFamily(input);
+  const familySource = explicitProductOffer ? "EXPLICIT" : "INFERRED";
+  const productAssetEligible = input.assets.some((asset) => asset.role === "product_photo");
+  const familyEligibility = resolvedFamily === "product_offer"
+    ? {
+        result: productAssetEligible ? "PASS" as const : "FAIL" as const,
+        reason: productAssetEligible ? "verified_product_asset_present" : "product_offer_requires_verified_product_asset",
+        ...(productAssetEligible ? {} : { missingRequirements: ["product_photo"] }),
+      }
+    : { result: "PASS" as const, reason: "family_does_not_require_product_asset" };
+
   if (explicitlyRequestsLegacy(input.validatedInputs)) {
     if (!input.internalLegacyAllowed) {
       return {
         enginePath: "APPROVED_CREATIVE_ENGINE",
         compositionMode: "editorial_experimental",
-        family: inferApprovedCreativeFamily(input),
+        family: resolvedFamily,
+        familySource,
+        familyEligibility,
         reason: "legacy_standard_requested_but_not_authorized",
       };
     }
@@ -85,7 +117,9 @@ export function resolveCreativeEngineRouting(input: CreativeEngineRoutingInput):
     return {
       enginePath: "APPROVED_CREATIVE_ENGINE",
       compositionMode: "editorial_experimental",
-      family: inferApprovedCreativeFamily(input),
+      family: resolvedFamily,
+      familySource,
+      familyEligibility,
       reason: "creative_engine_entitlement_enabled_default",
     };
   }

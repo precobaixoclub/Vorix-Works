@@ -596,14 +596,91 @@ function resolveDuplicateOccurrences(
   return { text, legitimate: false, rejectedReason: `${rejected.occurrenceId}: ${rejected.reason}`, occurrences };
 }
 
-function parseDetectedText(raw: unknown): { text: string; region?: CreativePlanRect } | undefined {
+type VisionBboxCoordinateSystem = "UNIT_0_1" | "PERCENT_0_100" | "PIXEL" | "PROVIDER_INTERNAL_1000" | "UNKNOWN_PERCENT_ASSUMED";
+
+type ParsedDetectedText = {
+  text: string;
+  /** Normalized percent coordinates used by every spatial adjudication below. */
+  region?: CreativePlanRect;
+  rawBbox?: CreativePlanRect;
+  rawCoordinateSystem?: VisionBboxCoordinateSystem;
+  normalizedBboxPercent?: CreativePlanRect;
+};
+
+function readVisionRect(region: Record<string, unknown>): CreativePlanRect | undefined {
+  const x = typeof region.xPct === "number" ? region.xPct : region.x;
+  const y = typeof region.yPct === "number" ? region.yPct : region.y;
+  const width = typeof region.widthPct === "number" ? region.widthPct : region.width;
+  const height = typeof region.heightPct === "number" ? region.heightPct : region.height;
+  if ([x, y, width, height].every((value) => typeof value === "number" && Number.isFinite(value))) {
+    return { xPct: x as number, yPct: y as number, widthPct: width as number, heightPct: height as number };
+  }
+  return undefined;
+}
+
+function normalizeVisionBbox(raw: CreativePlanRect, imageSize?: { width?: number; height?: number }): { coordinateSystem: VisionBboxCoordinateSystem; normalized: CreativePlanRect } {
+  const values = [raw.xPct, raw.yPct, raw.widthPct, raw.heightPct];
+  const nonNegative = values.every((value) => value >= 0);
+  if (nonNegative && values.every((value) => value <= 1) && raw.xPct + raw.widthPct <= 1.25 && raw.yPct + raw.heightPct <= 1.25) {
+    return {
+      coordinateSystem: "UNIT_0_1",
+      normalized: { xPct: raw.xPct * 100, yPct: raw.yPct * 100, widthPct: raw.widthPct * 100, heightPct: raw.heightPct * 100 },
+    };
+  }
+  if (nonNegative && values.every((value) => value <= 100) && raw.xPct + raw.widthPct <= 125 && raw.yPct + raw.heightPct <= 125) {
+    return { coordinateSystem: "PERCENT_0_100", normalized: raw };
+  }
+  if (
+    nonNegative
+    && imageSize?.width
+    && imageSize.height
+    && raw.xPct + raw.widthPct <= imageSize.width * 1.1
+    && raw.yPct + raw.heightPct <= imageSize.height * 1.1
+  ) {
+    return {
+      coordinateSystem: "PIXEL",
+      normalized: {
+        xPct: (raw.xPct / imageSize.width) * 100,
+        yPct: (raw.yPct / imageSize.height) * 100,
+        widthPct: (raw.widthPct / imageSize.width) * 100,
+        heightPct: (raw.heightPct / imageSize.height) * 100,
+      },
+    };
+  }
+  if (nonNegative && values.every((value) => value <= 1000) && raw.xPct + raw.widthPct <= 1250 && raw.yPct + raw.heightPct <= 1250) {
+    return {
+      coordinateSystem: "PROVIDER_INTERNAL_1000",
+      normalized: { xPct: raw.xPct / 10, yPct: raw.yPct / 10, widthPct: raw.widthPct / 10, heightPct: raw.heightPct / 10 },
+    };
+  }
+  return { coordinateSystem: "UNKNOWN_PERCENT_ASSUMED", normalized: raw };
+}
+
+function parseDetectedText(raw: unknown, imageSize?: { width?: number; height?: number }): ParsedDetectedText | undefined {
   if (typeof raw === "string") return raw.trim() ? { text: raw } : undefined;
   if (typeof raw !== "object" || raw === null) return undefined;
   const record = raw as { text?: unknown; region?: unknown };
   if (typeof record.text !== "string" || !record.text.trim()) return undefined;
   const region = record.region as Record<string, unknown> | undefined;
-  const valid = region && ["xPct", "yPct", "widthPct", "heightPct"].every((key) => typeof region[key] === "number" && Number.isFinite(region[key] as number));
-  return valid ? { text: record.text, region: region as unknown as CreativePlanRect } : { text: record.text };
+  const rawBbox = region ? readVisionRect(region) : undefined;
+  if (!rawBbox) return { text: record.text };
+  const normalized = normalizeVisionBbox(rawBbox, imageSize);
+  return {
+    text: record.text,
+    region: normalized.normalized,
+    rawBbox,
+    rawCoordinateSystem: normalized.coordinateSystem,
+    normalizedBboxPercent: normalized.normalized,
+  };
+}
+
+function bboxDiagnostic(detected: ParsedDetectedText): Pick<CreativeTextDiagnostic, "bbox" | "rawBbox" | "rawCoordinateSystem" | "normalizedBboxPercent"> {
+  return {
+    ...(detected.region ? { bbox: detected.region } : {}),
+    ...(detected.rawBbox ? { rawBbox: detected.rawBbox } : {}),
+    ...(detected.rawCoordinateSystem ? { rawCoordinateSystem: detected.rawCoordinateSystem } : {}),
+    ...(detected.normalizedBboxPercent ? { normalizedBboxPercent: detected.normalizedBboxPercent } : {}),
+  };
 }
 
 /** Diagnóstico sanitizado de cada texto que a visão reportou (sem resposta bruta): diz se o texto
@@ -611,6 +688,9 @@ function parseDetectedText(raw: unknown): { text: string; region?: CreativePlanR
 export type CreativeTextDiagnostic = {
   detectedText: string;
   bbox?: CreativePlanRect;
+  rawBbox?: CreativePlanRect;
+  rawCoordinateSystem?: VisionBboxCoordinateSystem;
+  normalizedBboxPercent?: CreativePlanRect;
   matchedElement?: string;
   normalizedExpected?: string;
   normalizedDetected: string;
@@ -1019,14 +1099,21 @@ function buildVisualIntegrityPrompt(
   brandColors: readonly string[] | undefined,
   allowedRenderedTexts: readonly string[],
   requiredRenderedFacts: readonly string[],
-  options: { withTextRegions?: boolean } = {},
+  options: { withTextRegions?: boolean; colorPolicyInstructions?: readonly string[] } = {},
 ): string {
   const colorsLine = brandColors && brandColors.length > 0
     ? `Paleta de cores oficial configurada para esta marca: ${brandColors.join(", ")}.`
     : "Nenhuma paleta de cores oficial foi configurada para esta marca.";
+  const colorPolicy = options.colorPolicyInstructions?.map((line) => line.trim()).filter(Boolean) ?? [];
   return [
     "Avalie esta peça publicitária JÁ FINALIZADA (a imagem anexada) para defeitos GRAVES apenas — não julgue estética, apenas problemas objetivos que tornariam a peça inaceitável.",
     colorsLine,
+    ...(colorPolicy.length > 0
+      ? [
+          "Politica permanente de cor/estilo deste workspace tambem faz parte da avaliacao de paleta. Se ela permitir explicitamente fundos/superficies preto, grafite, verde muito escuro, azul quase preto, branco, amarelo/dourado ou outros papeis, trate essas opcoes como validas; nao marque violacao so porque a lista curta de cores acima nao cita todos os neutros permitidos.",
+          ...colorPolicy.map((line) => `- ${line}`),
+        ]
+      : []),
     // Auditoria "motor de geração de criativos" — achado ao vivo: um veredito booleano solto
     // ("tem texto inesperado? sim/não") não pegava de forma confiável casos reais óbvios ("TEXTO
     // DE DESTAQUE", "SAIBA MAIS" apareceram na peça e o veredito ainda saiu false). Dar à visão a
@@ -1088,6 +1175,15 @@ function isPlaceholderLikeText(text: string): boolean {
   return PLACEHOLDER_TEXT_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+const COLOR_POLICY_PATTERN = /\b(?:cor|cores|paleta|fundo|background|superf[ií]cie|preto|grafite|verde|amarelo|dourado|branco|azul|neon|escuro|claro|contraste)\b/i;
+
+function extractColorPolicyInstructions(context: CreativeContext): string[] {
+  return [context.productionInstructions, ...(context.behaviorPreferences ?? [])]
+    .flatMap((line) => (line ?? "").split(/\r?\n/))
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && COLOR_POLICY_PATTERN.test(line));
+}
+
 /** Chamada de visão best-effort, UMA chamada cobrindo todos os critérios juntos (deliberadamente
  * mais barato que o motor legado, que faz 1 chamada por critério) — falha ou resposta ilegível
  * nunca reprova por conta própria, só um veredito EXPLÍCITO de defeito grave gera issue. */
@@ -1095,11 +1191,15 @@ export async function checkCreativeVisualIntegrity(
   icaro: IcaroBrainPort,
   input: {
     finalImageUrl: string;
+    finalImageWidth?: number;
+    finalImageHeight?: number;
     referenceProductImageUrl?: string;
     referenceLogoUrl?: string;
     referenceScreenshotUrl?: string;
     specialistId: string;
     brandColors?: readonly string[];
+    /** Permanent color/style policy from the persisted run snapshot (productionInstructions). */
+    colorPolicyInstructions?: readonly string[];
     /** Brand Profile: o renderer determinístico COMPROVOU ter aplicado a paleta estruturada da marca
      * em todas as superfícies que desenha (fundo, destaque/CTA). Fato determinístico vence a visão:
      * o veredito de paleta da visão vira diagnóstico, não reprovação (ela julga a imagem inteira,
@@ -1153,7 +1253,7 @@ export async function checkCreativeVisualIntegrity(
     // declarado nesta peça".
     const response = await icaro.request({
       taskType: "review",
-      prompt: buildVisualIntegrityPrompt(input.brandColors, input.allowedRenderedTexts, input.requiredRenderedFacts ?? [], { withTextRegions }),
+      prompt: buildVisualIntegrityPrompt(input.brandColors, input.allowedRenderedTexts, input.requiredRenderedFacts ?? [], { withTextRegions, colorPolicyInstructions: input.colorPolicyInstructions }),
       specialistId: input.specialistId,
       imageUrls,
       expectedOutput: "json",
@@ -1228,7 +1328,8 @@ export async function checkCreativeVisualIntegrity(
     if (Array.isArray(parsed.unauthorizedTexts)) {
       const verifiedLogoRegions = input.verifiedLogoRegions ?? [];
       const renderedTextRegions = input.renderedTextRegions ?? [];
-      const allDetections = parsed.unauthorizedTexts.map((raw) => parseDetectedText(raw));
+      const imageSize = { width: input.finalImageWidth, height: input.finalImageHeight };
+      const allDetections = parsed.unauthorizedTexts.map((raw) => parseDetectedText(raw, imageSize));
       // Textos repetidos que a visão reportou e que NÃO se resolvem como ocorrências legítimas.
       const unresolvedDuplicates = new Set<string>();
       if (Array.isArray(parsed.duplicatedTexts)) {
@@ -1259,7 +1360,7 @@ export async function checkCreativeVisualIntegrity(
       let pendingHighConfidence: (Partial<CreativeTextDiagnostic> & { failures: string[] }) | undefined;
       for (const raw of parsed.unauthorizedTexts) {
         detectionIndex += 1;
-        const detected = parseDetectedText(raw);
+        const detected = parseDetectedText(raw, imageSize);
         if (!detected) continue;
         const item = detected.text;
         const normalizedDetected = normalizeRenderedText(item);
@@ -1269,7 +1370,7 @@ export async function checkCreativeVisualIntegrity(
         const zone = matchRenderedTextRegion(detected, renderedTextRegions);
         if (zone) {
           authorizedZoneTexts.add(normalizeRenderedText(zone.text));
-          input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: zone.kind, normalizedExpected: normalizeRenderedText(zone.text), normalizedDetected, decision: "authorized", reason: `equivalente dentro da bbox final da zona ${zone.kind}` });
+          input.textDiagnostics?.push({ detectedText: item, ...bboxDiagnostic(detected), matchedElement: zone.kind, normalizedExpected: normalizeRenderedText(zone.text), normalizedDetected, decision: "authorized", reason: `equivalente dentro da bbox final da zona ${zone.kind}` });
           continue;
         }
         // Alta confiança para texto DETERMINÍSTICO do renderer (jitter da visão): texto inteiro
@@ -1299,7 +1400,7 @@ export async function checkCreativeVisualIntegrity(
           ].filter((reason): reason is string => Boolean(reason));
           const diagnosticBase = {
             detectedText: item,
-            bbox: detected.region,
+            ...bboxDiagnostic(detected),
             normalizedExpected: normalizeRenderedText(expectedZone.text),
             normalizedDetected,
             occurrenceId: `text-${detectionIndex}`,
@@ -1336,7 +1437,7 @@ export async function checkCreativeVisualIntegrity(
         // ou sem região informada, continua reprovando.
         if (detected.region && verifiedLogoRegions.length > 0 && isTextRegionInsideVerifiedLogo(detected.region, verifiedLogoRegions)) {
           input.onVerifiedLogoTextExempted?.({ text: item, region: detected.region });
-          input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "logo", normalizedDetected, decision: "authorized", reason: "dentro da bbox final da logo oficial verificada (proveniência + pixel)" });
+          input.textDiagnostics?.push({ detectedText: item, ...bboxDiagnostic(detected), matchedElement: "logo", normalizedDetected, decision: "authorized", reason: "dentro da bbox final da logo oficial verificada (proveniência + pixel)" });
           continue;
         }
         // Texto do PRÓPRIO arquivo da logo (tagline/slogan — inventário VERIFIED_LOGO, Smoke 1
@@ -1350,15 +1451,41 @@ export async function checkCreativeVisualIntegrity(
             const nearLogo = verifiedLogoRegions.find((rect) => isTextRegionInsideVerifiedLogo(detected.region!, [rect]) || measureRenderedTextProximity(detected.region!, rect, VISION_BBOX_RESOLUTION_PCT).near);
             const used = logoInventoryUsed.get(normalizedDetected) ?? 0;
             const baseHas = baseScanContains(input.textProvenanceLedger, normalizedDetected);
+            const baseScanAvailable = input.textProvenanceLedger?.baseTextStatus === "AVAILABLE";
+            const rendererHasText = renderedTextRegions.some((region) => normalizeRenderedText(region.text) === normalizedDetected || normalizeRenderedText(region.text).includes(normalizedDetected));
+            const otherEquivalent = allDetections.some((other, otherIndex) => otherIndex !== detectionIndex && other !== undefined && normalizeRenderedText(other.text) === normalizedDetected);
             if (nearLogo && !baseHas && used < logoMatch.budget) {
               logoInventoryUsed.set(normalizedDetected, used + 1);
               const proximity = measureRenderedTextProximity(detected.region, nearLogo, VISION_BBOX_RESOLUTION_PCT);
               input.onVerifiedLogoTextExempted?.({ text: item, region: detected.region });
-              input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "logo", normalizedDetected, decision: "authorized", matchDecision: "MATCHED_VERIFIED_LOGO_TEXT", expectedRole: "logo", expectedBBox: nearLogo, overlap: proximity.overlap, centerDistance: proximity.centerDistance, toleranceApplied: proximity.band, reason: `texto do próprio arquivo da logo verificada (VERIFIED_LOGO_TEXT, ${logoMatch.budget} ocorrência(s); sha256 ${input.logoInventory.assetSha256.slice(0, 12)}…), sobre/junto da logo desenhada` });
+              input.textDiagnostics?.push({ detectedText: item, ...bboxDiagnostic(detected), matchedElement: "logo", normalizedDetected, decision: "authorized", matchDecision: "MATCHED_VERIFIED_LOGO_TEXT", expectedRole: "logo", expectedBBox: nearLogo, overlap: proximity.overlap, centerDistance: proximity.centerDistance, toleranceApplied: proximity.band, reason: `texto do próprio arquivo da logo verificada (VERIFIED_LOGO_TEXT, ${logoMatch.budget} ocorrência(s); sha256 ${input.logoInventory.assetSha256.slice(0, 12)}…), sobre/junto da logo desenhada` });
+              continue;
+            }
+            if (!nearLogo && baseScanAvailable && !baseHas && !rendererHasText && !otherEquivalent && !unresolvedDuplicates.has(normalizedDetected) && used < logoMatch.budget) {
+              logoInventoryUsed.set(normalizedDetected, used + 1);
+              const logoRegion = verifiedLogoRegions[0]!;
+              const proximity = measureRenderedTextProximity(detected.region, logoRegion, VISION_BBOX_RESOLUTION_PCT);
+              input.onVerifiedLogoTextExempted?.({ text: item, region: detected.region });
+              input.textDiagnostics?.push({
+                detectedText: item,
+                ...bboxDiagnostic(detected),
+                matchedElement: "logo",
+                normalizedDetected,
+                decision: "authorized",
+                matchDecision: "VISION_BBOX_CONTRADICTION",
+                expectedRole: "logo",
+                expectedBBox: logoRegion,
+                overlap: proximity.overlap,
+                centerDistance: proximity.centerDistance,
+                toleranceApplied: proximity.band,
+                baseTextScanStatus: "AVAILABLE",
+                baseContainsDetectedText: false,
+                reason: `VISION_BBOX_CONTRADICTION: texto existe no inventário da logo verificada (${logoMatch.budget} ocorrência(s); sha256 ${input.logoInventory.assetSha256.slice(0, 12)}…), a logo foi renderizada com bbox determinística e a base/renderer não contêm a frase; bbox da visão incompatível registrada como diagnóstico`,
+              });
               continue;
             }
             logoInventoryRejection = !nearLogo
-              ? "texto da logo oficial, mas FORA da região da logo desenhada (VERIFIED_LOGO_TEXT só vale sobre a logo)"
+              ? "texto da logo oficial, mas FORA da região da logo desenhada e sem condições suficientes para VISION_BBOX_CONTRADICTION"
               : baseHas
                 ? "texto da logo oficial, mas a imagem base escaneada também contém o texto"
                 : `texto da logo oficial, mas orçamento esgotado (${logoMatch.budget} ocorrência(s) no arquivo da logo)`;
@@ -1377,7 +1504,7 @@ export async function checkCreativeVisualIntegrity(
           if (nearLogo && !baseHasBrand && !otherReading && !unresolvedDuplicates.has(normalizedDetected)) {
             const proximity = measureRenderedTextProximity(detected.region, nearLogo, VISION_BBOX_RESOLUTION_PCT);
             input.onVerifiedLogoTextExempted?.({ text: item, region: detected.region });
-            input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "logo", normalizedDetected, decision: "authorized", matchDecision: "MATCHED_VERIFIED_LOGO", expectedRole: "logo", expectedBBox: nearLogo, overlap: proximity.overlap, centerDistance: proximity.centerDistance, toleranceApplied: proximity.band, reason: "brand_literal_single_reading_base_clean_near_verified_logo_within_vision_resolution" });
+            input.textDiagnostics?.push({ detectedText: item, ...bboxDiagnostic(detected), matchedElement: "logo", normalizedDetected, decision: "authorized", matchDecision: "MATCHED_VERIFIED_LOGO", expectedRole: "logo", expectedBBox: nearLogo, overlap: proximity.overlap, centerDistance: proximity.centerDistance, toleranceApplied: proximity.band, reason: "brand_literal_single_reading_base_clean_near_verified_logo_within_vision_resolution" });
             continue;
           }
         }
@@ -1385,14 +1512,14 @@ export async function checkCreativeVisualIntegrity(
         // final do produto; fora dela continua rejeitado.
         const verifiedProductRegions = input.verifiedProductRegions ?? [];
         if (detected.region && verifiedProductRegions.length > 0 && isTextRegionInsideVerifiedLogo(detected.region, verifiedProductRegions)) {
-          input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "product_photo", normalizedDetected, decision: "authorized", matchDecision: "MATCHED_VERIFIED_PRODUCT_REGION", reason: "texto impresso no produto real verificado (dentro da região final do produto; proveniência + pixel) — nunca fato comercial" });
+          input.textDiagnostics?.push({ detectedText: item, ...bboxDiagnostic(detected), matchedElement: "product_photo", normalizedDetected, decision: "authorized", matchDecision: "MATCHED_VERIFIED_PRODUCT_REGION", reason: "texto impresso no produto real verificado (dentro da região final do produto; proveniência + pixel) — nunca fato comercial" });
           continue;
         }
         const verifiedScreenshotRegions = input.verifiedScreenshotRegions ?? [];
         const inventoryMatch = input.screenshotInventory ? matchScreenshotInventoryText(normalizedDetected, input.screenshotInventory) : undefined;
         const insideScreenshot = Boolean(detected.region && verifiedScreenshotRegions.length > 0 && isTextRegionInsideVerifiedLogo(detected.region, verifiedScreenshotRegions));
         if (insideScreenshot && (!input.screenshotInventory || inventoryMatch)) {
-          input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "screenshot", normalizedDetected, decision: "authorized", ...(inventoryMatch ? { matchDecision: "MATCHED_VERIFIED_SCREENSHOT_REGION" } : {}), reason: inventoryMatch ? `dentro da bbox final do screenshot real verificado e presente no inventário do screenshot (${inventoryMatch.budget} ocorrência(s))` : "dentro da bbox final do screenshot real verificado (proveniência + pixel)" });
+          input.textDiagnostics?.push({ detectedText: item, ...bboxDiagnostic(detected), matchedElement: "screenshot", normalizedDetected, decision: "authorized", ...(inventoryMatch ? { matchDecision: "MATCHED_VERIFIED_SCREENSHOT_REGION" } : {}), reason: inventoryMatch ? `dentro da bbox final do screenshot real verificado e presente no inventário do screenshot (${inventoryMatch.budget} ocorrência(s))` : "dentro da bbox final do screenshot real verificado (proveniência + pixel)" });
           continue;
         }
         // Inventário do screenshot verificado (depois da região e da proveniência determinística):
@@ -1405,7 +1532,7 @@ export async function checkCreativeVisualIntegrity(
           const baseHas = baseScanContains(input.textProvenanceLedger, normalizedDetected);
           if (!baseHas && inRegion + used < inventoryMatch.budget) {
             inventoryOutOfRegionUsed.set(normalizedDetected, used + 1);
-            input.textDiagnostics?.push({ detectedText: item, bbox: detected.region, matchedElement: "screenshot", normalizedDetected, decision: "authorized", matchDecision: "MATCHED_VERIFIED_SCREENSHOT_TEXT_INVENTORY", reason: `texto existe no inventário do screenshot verificado (${inventoryMatch.budget} ocorrência(s); ${inRegion + used + 1}ª usada; sha256 ${input.screenshotInventory.assetSha256.slice(0, 12)}…); posição da visão ${detected.region ? "fora da região do screenshot" : "não informada"}` });
+            input.textDiagnostics?.push({ detectedText: item, ...bboxDiagnostic(detected), matchedElement: "screenshot", normalizedDetected, decision: "authorized", matchDecision: "MATCHED_VERIFIED_SCREENSHOT_TEXT_INVENTORY", reason: `texto existe no inventário do screenshot verificado (${inventoryMatch.budget} ocorrência(s); ${inRegion + used + 1}ª usada; sha256 ${input.screenshotInventory.assetSha256.slice(0, 12)}…); posição da visão ${detected.region ? "fora da região do screenshot" : "não informada"}` });
             continue;
           }
           inventoryRejection = baseHas ? "a imagem base escaneada contém o texto — o inventário do screenshot não o absorve" : `orçamento do inventário do screenshot esgotado (${inventoryMatch.budget} ocorrência(s) no screenshot)`;
@@ -1416,7 +1543,7 @@ export async function checkCreativeVisualIntegrity(
         });
         input.textDiagnostics?.push({
           detectedText: item,
-          bbox: detected.region,
+          ...bboxDiagnostic(detected),
           normalizedExpected: equivalentZone ? normalizeRenderedText(equivalentZone.text) : undefined,
           normalizedDetected,
           decision: "rejected",
@@ -1442,6 +1569,9 @@ export async function checkCreativeVisualIntegrity(
             issueType: placeholder ? "PLACEHOLDER_RENDERED" : "UNAUTHORIZED_TEXT",
             detectedText: item,
             ...(detected.region ? { bbox: detected.region } : {}),
+            ...(detected.rawBbox ? { rawBbox: detected.rawBbox } : {}),
+            ...(detected.rawCoordinateSystem ? { rawCoordinateSystem: detected.rawCoordinateSystem } : {}),
+            ...(detected.normalizedBboxPercent ? { normalizedBboxPercent: detected.normalizedBboxPercent } : {}),
             textSource: "UNVERIFIED",
             adjudication: "rejected",
             ...(lastDiagnostic?.reason ? { reason: lastDiagnostic.reason } : {}),
@@ -1683,11 +1813,14 @@ export async function evaluateCreativeQualityGate(
   const baseImageTexts = input.baseImageTexts ?? (input.baseTextDiagnostic?.status === "AVAILABLE" ? input.baseTextDiagnostic.texts.map((item) => item.text) : undefined);
   const visualIssues = await checkCreativeVisualIntegrity(icaro, {
     finalImageUrl: input.finalImageUrl,
+    finalImageWidth: input.finalImageWidth,
+    finalImageHeight: input.finalImageHeight,
     referenceProductImageUrl,
     referenceLogoUrl,
     referenceScreenshotUrl,
     specialistId: input.specialistId,
     brandColors: input.context.brandColors,
+    colorPolicyInstructions: extractColorPolicyInstructions(input.context),
     brandPaletteRenderedDeterministically: input.brandPaletteRenderedDeterministically,
     paletteDiagnostics,
     allowedRenderedTexts: input.plan.allowedRenderedTexts,

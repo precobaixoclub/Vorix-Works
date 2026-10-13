@@ -1307,6 +1307,27 @@ test("runGptCreativeEngine editorial experimental: product_offer sem asset real 
   assert.equal(icaro.calls.some((call) => call.taskType === "image_generation"), false);
 }));
 
+test("runGptCreativeEngine editorial experimental: product_offer explicito sem asset falha antes de qualquer OpenAI", () => withFakeFetch(async () => {
+  const icaro = fakeIcaro({
+    analysis: [planResponse()],
+    image_generation: [imageResponse()],
+  });
+
+  const result = await runGptCreativeEngine(baseDeps({ creativeBrain: icaro }), baseInput({
+    experimentalEditorialMode: true,
+    requestedFamily: "product_offer",
+    requestedFamilySource: "EXPLICIT",
+    familyEligibility: { result: "FAIL", reason: "product_offer_requires_verified_product_asset", missingRequirements: ["product_photo"] },
+    creativeContext: baseContext({ assets: [] }),
+  }));
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.errorCode, "PRODUCT_OFFER_INPUT_INSUFFICIENT");
+  assert.equal(icaro.calls.length, 0);
+  assert.equal(result.artifactProvenance.familySource, "EXPLICIT");
+  assert.deepEqual(result.artifactProvenance.familyEligibility.missingRequirements, ["product_photo"]);
+}));
+
 // ---------------------------------------------------------------------------------------------
 // Bloqueadores do Smoke A (cer-runtime-muyx4qzs-hoinur) no orquestrador editorial.
 // ---------------------------------------------------------------------------------------------

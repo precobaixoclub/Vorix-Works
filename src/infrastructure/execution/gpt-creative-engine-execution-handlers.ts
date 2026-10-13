@@ -437,6 +437,8 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
           enginePath: "INTERNAL_TEST" as const,
           compositionMode: "editorial_experimental" as const,
           family: undefined,
+          familySource: undefined,
+          familyEligibility: undefined,
           reason: "explicit_editorial_qa_authorized",
         }
       : resolveCreativeEngineRouting({
@@ -471,6 +473,8 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
       qaReferenceAssetsAllowed: editorialAuthorization.enabled,
       enginePath: routing.enginePath,
       requestedFamily: routing.family,
+      requestedFamilySource: routing.familySource,
+      familyEligibility: routing.familyEligibility,
       engineVersion: "approved-creative-engine-v1",
       deployedSha: deployedSha(),
     });

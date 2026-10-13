@@ -960,7 +960,7 @@ test("regional G: sem prova em pixel (motor padrão) não há autorização regi
 test("regional H: diagnóstico é sanitizado (só campos estruturados, sem resposta bruta da visão)", async () => {
   const result = await evaluateCreativeQualityGate(visionReturning([{ text: "CONHEÇA O RUMO AO ALTAR", region: CTA_UPPER_REGION }], { reasoning: "RAW" }), regionalGateInput());
   for (const item of result.textDiagnostics) {
-    for (const key of Object.keys(item)) assert.ok(["detectedText", "bbox", "matchedElement", "normalizedExpected", "normalizedDetected", "decision", "reason"].includes(key), key);
+    for (const key of Object.keys(item)) assert.ok(["detectedText", "bbox", "rawBbox", "rawCoordinateSystem", "normalizedBboxPercent", "matchedElement", "normalizedExpected", "normalizedDetected", "decision", "reason"].includes(key), key);
   }
   assert.doesNotMatch(JSON.stringify(result.textDiagnostics), /RAW/);
 });
@@ -1609,6 +1609,10 @@ test("paleta: veredito da visão vira diagnóstico quando o renderer comprovou a
   const unproven = await evaluateCreativeQualityGate(vision(), input);
   assert.ok(unproven.issues.some((issue) => issue.code === "COLOR_PALETTE_VIOLATED"));
   const prompts = [];
-  await evaluateCreativeQualityGate({ request: async (request) => { prompts.push(request.prompt); return { status: "completed", content: JSON.stringify({ unauthorizedTexts: [] }) }; } }, input);
+  await evaluateCreativeQualityGate({ request: async (request) => { prompts.push(request.prompt); return { status: "completed", content: JSON.stringify({ unauthorizedTexts: [] }) }; } }, {
+    ...input,
+    context: { ...input.context, productionInstructions: "Permitir fundo preto, grafite, verde muito escuro ou azul quase preto; usar verde neon como acento e branco no texto." },
+  });
   assert.match(prompts[0], /IGNORE as cores do conteúdo de assets reais/);
+  assert.match(prompts[0], /verde muito escuro/);
 });

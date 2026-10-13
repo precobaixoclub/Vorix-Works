@@ -1427,7 +1427,7 @@ test("runGptCreativeEngine editorial: BRAND_SURFACES e ownership nao mascaram su
   assert.equal(result.publishable, false);
   assert.equal(result.errorCode, "CREATIVE_QUALITY_GATE_NOT_PASSED");
   assert.ok(result.qualityGate.issues.some((issue) => issue.code === "COLOR_PALETTE_VIOLATED" && /NO_DARK_BACKGROUNDS/.test(issue.message)), JSON.stringify(result.qualityGate.issues));
-  assert.equal(result.qualityGate.paletteDiagnostics, undefined, "violacao deterministica nao deve virar override de visao");
+  assert.deepEqual(result.qualityGate.paletteDiagnostics.map((item) => item.decision), ["DETERMINISTIC_COLOR_FAILURE"], "violacao deterministica nao deve virar override de visao");
 }));
 
 test("runGptCreativeEngine editorial: visao de paleta vira diagnostico quando superficies permitidas foram aplicadas deterministicamente", () => withFakeFetch(async () => {
@@ -1468,8 +1468,8 @@ test("runGptCreativeEngine editorial: visao de paleta vira diagnostico quando su
 
   assert.equal(result.error, undefined, result.error);
   assert.equal(result.publishable, true);
-  assert.deepEqual(result.qualityGate.paletteDiagnostics.map((item) => item.decision), ["VISION_PALETTE_OVERRIDDEN_BY_RENDERER"]);
-  assert.ok(result.artifactProvenance.brandProfile.appliedBrandRules.some((rule) => rule.code === "VISION_PALETTE_OVERRIDDEN_BY_RENDERER"));
+  assert.deepEqual(result.qualityGate.paletteDiagnostics.map((item) => item.decision), ["VISION_COLOR_CONTRADICTION"]);
+  assert.ok(result.artifactProvenance.brandProfile.appliedBrandRules.some((rule) => rule.code === "VISION_COLOR_CONTRADICTION"));
 }));
 
 test("runGptCreativeEngine editorial: renderer sem prova em pixel nunca publica", () => withFakeFetch(async () => {

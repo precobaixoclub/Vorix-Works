@@ -777,11 +777,44 @@ export type CreativeQualityGateResult = {
   textDiagnostics?: CreativeTextDiagnostic[];
   occurrenceDiagnostics?: CreativeTextOccurrenceDiagnostic[];
   /** Veredito de paleta da visão superado pela paleta da marca comprovadamente aplicada pelo renderer. */
-  paletteDiagnostics?: { decision: "VISION_PALETTE_OVERRIDDEN_BY_RENDERER"; visionReasoning?: string }[];
+  paletteDiagnostics?: PaletteDiagnostic[];
+  rendererPaletteCompliance?: RendererPaletteCompliance;
+  productionRequirementDiagnostics?: ProductionRequirementDiagnostic[];
   /** Se o inventário de texto do screenshot foi usado nesta avaliação, e por quê. */
   screenshotInventoryDecision?: { status: "USED" | "NOT_USED"; reason: string };
   /** Se o inventário de texto da logo foi usado nesta avaliação, e por quê. */
   logoInventoryDecision?: { status: "USED" | "NOT_USED"; reason: string };
+};
+
+export type RendererPaletteCompliance = {
+  result: "PASS" | "FAIL" | "NOT_APPLICABLE";
+  source: "RENDERER";
+  rule: string;
+  expected?: string;
+  actual?: string;
+  offendingColor?: string;
+  offendingRegion?: string;
+  pixelCoverage?: number;
+  ownership?: "RENDERER" | "GENERATED_BASE" | "LOGO_ASSET" | "PRODUCT_ASSET" | "OTHER_VERIFIED_ASSET" | "UNKNOWN";
+  reason: string;
+};
+
+export type PaletteDiagnostic = {
+  decision: "VISION_COLOR_CONTRADICTION" | "VISION_PALETTE_OVERRIDDEN_BY_RENDERER" | "DETERMINISTIC_COLOR_FAILURE";
+  visionReasoning?: string;
+  rendererPaletteCompliance?: RendererPaletteCompliance;
+};
+
+export type ProductionRequirementDiagnostic = {
+  guidelineSource: "productionInstructions" | "behaviorPreferences" | "inferred";
+  guidelineText: string;
+  requirementType: "BRAND_VISIBLE" | "BRAND_PROMINENCE" | "SITE_VISIBLE" | "CTA_VISIBLE";
+  severity: "required" | "recommended";
+  result: "PASS" | "FAIL";
+  geometryEvidence?: Record<string, unknown>;
+  visionReasoning?: string;
+  adjudication: "DETERMINISTIC_PASS" | "DETERMINISTIC_FAIL" | "VISION_GUIDELINE_CONTRADICTION" | "VISION_CONFIRMED_FAILURE";
+  finalReason: string;
 };
 
 const ASPECT_RATIO_TOLERANCE = 0.06;
@@ -1184,6 +1217,157 @@ function extractColorPolicyInstructions(context: CreativeContext): string[] {
     .filter((line) => line.length > 0 && COLOR_POLICY_PATTERN.test(line));
 }
 
+const DARK_SURFACE_POLICY_RE = /base\s+predominante\s+fundo\s+(?:preto|grafite|verde muito escuro|azul quase preto)|use\s+como\s+base\s+predominante\s+fundo\s+(?:preto|grafite|verde muito escuro|azul quase preto)/i;
+const LIGHT_SURFACE_POLICY_RE = /fundo\s+(?:claro|branco|clean|limpo)|base\s+predominante\s+(?:clara|branca)|no_dark_backgrounds/i;
+const SITE_DOMAIN_RE = /\b(?:[a-z0-9-]+\.)+[a-z]{2,}\.br\b|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/i;
+
+function productionInstructionsText(context: CreativeContext): string {
+  return [context.productionInstructions, ...(context.behaviorPreferences ?? [])].filter(Boolean).join("\n");
+}
+
+export function resolveRendererPaletteCompliance(
+  context: CreativeContext,
+  input: { pageTone?: "light" | "dark"; pageColor?: string; rendererPaletteApplied?: boolean },
+): RendererPaletteCompliance {
+  const policy = productionInstructionsText(context);
+  const forbidsDarkBackgrounds = context.brandIdentity?.identity.forbiddenPatterns?.includes("NO_DARK_BACKGROUNDS") === true;
+  const requiresLightSurface = LIGHT_SURFACE_POLICY_RE.test(policy) || forbidsDarkBackgrounds;
+  if (requiresLightSurface) {
+    if (input.pageTone === "light") {
+      return {
+        result: "PASS",
+        source: "RENDERER",
+        rule: forbidsDarkBackgrounds ? "brand_profile_forbids_dark_backgrounds" : "production_instructions_allow_light_surface",
+        expected: "light",
+        actual: input.pageColor ?? "light",
+        offendingRegion: "renderer_page_surface",
+        pixelCoverage: 1,
+        ownership: "RENDERER",
+        reason: "Superficie principal controlada pelo renderer segue a politica persistida de fundo claro.",
+      };
+    }
+    if (input.pageTone === "dark") {
+      return {
+        result: "FAIL",
+        source: "RENDERER",
+        rule: forbidsDarkBackgrounds ? "brand_profile_forbids_dark_backgrounds" : "production_instructions_allow_light_surface",
+        expected: "light",
+        actual: input.pageColor ?? "dark",
+        offendingColor: input.pageColor ?? "dark_surface",
+        offendingRegion: "renderer_page_surface",
+        pixelCoverage: 1,
+        ownership: "RENDERER",
+        reason: "Superficie principal controlada pelo renderer ficou escura apesar da politica persistida exigir/permitir apenas fundo claro.",
+      };
+    }
+  }
+  if (!DARK_SURFACE_POLICY_RE.test(policy)) {
+    if (input.rendererPaletteApplied) {
+      return { result: "PASS", source: "RENDERER", rule: "renderer_brand_palette_applied", actual: input.pageColor ?? input.pageTone, ownership: "RENDERER", reason: "Renderer registrou aplicacao deterministica dos tokens de paleta da marca." };
+    }
+    return { result: "NOT_APPLICABLE", source: "RENDERER", rule: "no_explicit_renderer_surface_policy", reason: "Sem regra persistida verificavel para a superficie do renderer." };
+  }
+  if (input.pageTone === "dark") {
+    return {
+      result: "PASS",
+      source: "RENDERER",
+      rule: "production_instructions_require_dark_primary_surface",
+      expected: "preto/grafite/verde muito escuro/azul quase preto",
+      actual: input.pageColor ?? "dark",
+      offendingRegion: "renderer_page_surface",
+      pixelCoverage: 1,
+      ownership: "RENDERER",
+      reason: "Superficie principal controlada pelo renderer segue a politica escura persistida.",
+    };
+  }
+  return {
+    result: "FAIL",
+    source: "RENDERER",
+    rule: "production_instructions_require_dark_primary_surface",
+    expected: "preto/grafite/verde muito escuro/azul quase preto",
+    actual: input.pageColor ?? input.pageTone ?? "unknown",
+    offendingColor: input.pageColor ?? "light_surface",
+    offendingRegion: "renderer_page_surface",
+    pixelCoverage: 1,
+    ownership: "RENDERER",
+    reason: "Superficie principal controlada pelo renderer ficou clara apesar da politica persistida exigir base escura.",
+  };
+}
+
+function rectVisibleAreaPct(rect: CreativePlanRect | undefined): number {
+  return rect ? Number(((rect.widthPct * rect.heightPct) / 100).toFixed(3)) : 0;
+}
+
+function domainFromProductionInstructions(context: CreativeContext): string | undefined {
+  return productionInstructionsText(context).match(SITE_DOMAIN_RE)?.[0];
+}
+
+function planTexts(plan: CreativePlan): string[] {
+  return [plan.headline, plan.subheadline, plan.cta, plan.title, plan.description, ...plan.textZones.map((zone) => zone.text)].filter((text): text is string => Boolean(text?.trim()));
+}
+
+export function evaluateProductionRequirementsDeterministically(context: CreativeContext, plan: CreativePlan): ProductionRequirementDiagnostic[] {
+  const diagnostics: ProductionRequirementDiagnostic[] = [];
+  const instructionItems = [
+    ...(context.productionInstructions ? [{ source: "productionInstructions" as const, text: context.productionInstructions }] : []),
+    ...(context.behaviorPreferences ?? []).map((text) => ({ source: "behaviorPreferences" as const, text })),
+  ];
+  const instructions = instructionItems.map((item) => item.text).join("\n");
+  const logo = plan.assetPlacements.find((placement) => placement.role === "logo");
+  const ctaZone = plan.textZones.find((zone) => zone.kind === "cta" && zone.text.trim());
+  const urlZone = plan.textZones.find((zone) => zone.kind === "url" && zone.text.trim());
+  const domain = domainFromProductionInstructions(context);
+  const texts = planTexts(plan).join("\n");
+
+  if (/logo vis[ií]vel|utilize sempre a logo oficial|mantenha logo/i.test(instructions)) {
+    const matched = instructionItems.find((item) => /logo vis[ií]vel|utilize sempre a logo oficial|mantenha logo/i.test(item.text));
+    const area = rectVisibleAreaPct(logo?.rect);
+    const pass = Boolean(logo && area >= 0.25);
+    diagnostics.push({
+      guidelineSource: matched?.source ?? "inferred",
+      guidelineText: matched?.text ?? "Utilize sempre a logo oficial; mantenha logo dentro de area segura.",
+      requirementType: "BRAND_VISIBLE",
+      severity: "required",
+      result: pass ? "PASS" : "FAIL",
+      geometryEvidence: { areaPct: area, bbox: logo?.rect },
+      adjudication: pass ? "DETERMINISTIC_PASS" : "DETERMINISTIC_FAIL",
+      finalReason: pass ? "Logo oficial presente na geometria final." : "Logo oficial ausente ou pequena demais para cumprir presenca minima.",
+    });
+  }
+
+  if (/CTA precisa ser identificado rapidamente|CTA vis[ií]vel|bot[aã]o ou chamada/i.test(instructions)) {
+    const matched = instructionItems.find((item) => /CTA precisa ser identificado rapidamente|CTA vis[ií]vel|bot[aã]o ou chamada/i.test(item.text));
+    const pass = Boolean(ctaZone && rectVisibleAreaPct(ctaZone.rect) >= 0.5);
+    diagnostics.push({
+      guidelineSource: matched?.source ?? "inferred",
+      guidelineText: matched?.text ?? "O CTA precisa ser identificado rapidamente.",
+      requirementType: "CTA_VISIBLE",
+      severity: "required",
+      result: pass ? "PASS" : "FAIL",
+      geometryEvidence: { areaPct: rectVisibleAreaPct(ctaZone?.rect), bbox: ctaZone?.rect, text: ctaZone?.text },
+      adjudication: pass ? "DETERMINISTIC_PASS" : "DETERMINISTIC_FAIL",
+      finalReason: pass ? "CTA tem zona renderizada mensuravel." : "CTA ausente ou sem proeminencia minima.",
+    });
+  }
+
+  if (domain && /site|endere[cç]o|acessar|acesse/i.test(instructions)) {
+    const matched = instructionItems.find((item) => /site|endere[cç]o|acessar|acesse/i.test(item.text) && item.text.includes(domain));
+    const hasDomain = new RegExp(domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(texts);
+    diagnostics.push({
+      guidelineSource: matched?.source ?? "inferred",
+      guidelineText: matched?.text ?? `O usuario deve entender que deve acessar ${domain}; quando o endereco for exigido, ele deve ter destaque claro.`,
+      requirementType: "SITE_VISIBLE",
+      severity: "required",
+      result: hasDomain ? "PASS" : "FAIL",
+      geometryEvidence: { domain, urlZone: urlZone?.rect, textIncludesDomain: hasDomain },
+      adjudication: hasDomain ? "DETERMINISTIC_PASS" : "DETERMINISTIC_FAIL",
+      finalReason: hasDomain ? "Dominio autorizado presente no texto renderizado/planejado." : "Dominio autorizado ausente dos textos finais da peca.",
+    });
+  }
+
+  return diagnostics;
+}
+
 /** Chamada de visão best-effort, UMA chamada cobrindo todos os critérios juntos (deliberadamente
  * mais barato que o motor legado, que faz 1 chamada por critério) — falha ou resposta ilegível
  * nunca reprova por conta própria, só um veredito EXPLÍCITO de defeito grave gera issue. */
@@ -1200,13 +1384,15 @@ export async function checkCreativeVisualIntegrity(
     brandColors?: readonly string[];
     /** Permanent color/style policy from the persisted run snapshot (productionInstructions). */
     colorPolicyInstructions?: readonly string[];
+    /** Paleta das superficies controladas pelo renderer, decidida fora da visao final. */
+    rendererPaletteCompliance?: RendererPaletteCompliance;
     /** Brand Profile: o renderer determinístico COMPROVOU ter aplicado a paleta estruturada da marca
      * em todas as superfícies que desenha (fundo, destaque/CTA). Fato determinístico vence a visão:
      * o veredito de paleta da visão vira diagnóstico, não reprovação (ela julga a imagem inteira,
      * inclusive screenshot/produto reais, cujas cores nunca podem ser alteradas). */
     brandPaletteRenderedDeterministically?: boolean;
     /** Diagnóstico de paleta quando a visão discorda de uma paleta comprovadamente aplicada. */
-    paletteDiagnostics?: { decision: "VISION_PALETTE_OVERRIDDEN_BY_RENDERER"; visionReasoning?: string }[];
+    paletteDiagnostics?: PaletteDiagnostic[];
     allowedRenderedTexts: readonly string[];
     /** Rodada 4 (benchmark de qualidade criativa) — ver `CreativePlan.requiredRenderedFacts`.
      * Lista vazia (plano sem fatos obrigatórios, ou plano antigo) nunca gera checagem extra. */
@@ -1313,7 +1499,9 @@ export async function checkCreativeVisualIntegrity(
     // vindo da IA (alucinação, ou simplesmente não seguiu a instrução) nunca reprova por conta
     // própria, mesmo que a peça já teste isso deliberadamente.
     const hasBrandColors = Boolean(input.brandColors && input.brandColors.length > 0);
-    if (hasBrandColors && parsed.colorPaletteViolated === true && input.brandPaletteRenderedDeterministically) {
+    if (hasBrandColors && parsed.colorPaletteViolated === true && input.rendererPaletteCompliance?.result === "PASS") {
+      input.paletteDiagnostics?.push({ decision: "VISION_COLOR_CONTRADICTION", visionReasoning: reasoning, rendererPaletteCompliance: input.rendererPaletteCompliance });
+    } else if (hasBrandColors && parsed.colorPaletteViolated === true && input.brandPaletteRenderedDeterministically) {
       input.paletteDiagnostics?.push({ decision: "VISION_PALETTE_OVERRIDDEN_BY_RENDERER", visionReasoning: reasoning });
     } else if (hasBrandColors && parsed.colorPaletteViolated === true) {
       issues.push({ code: "COLOR_PALETTE_VIOLATED", message: reasoning ?? "A peça final não usa a paleta de cores oficial configurada para a marca.", source: "vision" });
@@ -1683,7 +1871,13 @@ const PRODUCTION_GUIDELINES_PROMPT_HEADER = [
  */
 export async function checkProductionGuidelinesCompliance(
   icaro: IcaroBrainPort,
-  input: { context: CreativeContext; plan: CreativePlan; specialistId: string; onCost?: (response: IcaroAIResponse | undefined) => void },
+  input: {
+    context: CreativeContext;
+    plan: CreativePlan;
+    specialistId: string;
+    deterministicDiagnostics?: readonly ProductionRequirementDiagnostic[];
+    onCost?: (response: IcaroAIResponse | undefined) => void;
+  },
 ): Promise<CreativeQualityIssue[]> {
   const guidelines = [input.context.productionInstructions?.trim(), ...(input.context.behaviorPreferences ?? [])].filter(
     (line): line is string => Boolean(line && line.trim()),
@@ -1725,9 +1919,27 @@ export async function checkProductionGuidelinesCompliance(
     };
     if (parsed.violatesGuidelines !== true) return [];
     const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : undefined;
+    const deterministicDiagnostics = input.deterministicDiagnostics ?? [];
+    const deterministicFailures = deterministicDiagnostics.filter((item) => item.result === "FAIL");
+    if (deterministicDiagnostics.length > 0 && deterministicFailures.length === 0) {
+      deterministicDiagnostics.forEach((item) => {
+        item.visionReasoning = reasoning;
+        item.adjudication = "VISION_GUIDELINE_CONTRADICTION";
+        item.finalReason = "Requisito verificavel foi satisfeito deterministicamente; a visao discordou de forma generica.";
+      });
+      return [];
+    }
     return [
       {
         code: "PRODUCTION_GUIDELINES_VIOLATED",
+        details: {
+          issueType: "PRODUCTION_REQUIREMENTS",
+          sourceEvaluator: "production_guidelines_vision",
+          rawVisionReason: reasoning,
+          deterministicEvidence: deterministicDiagnostics,
+          adjudication: deterministicFailures.length > 0 ? "DETERMINISTIC_FAIL" : "VISION_CONFIRMED_FAILURE",
+          finalReason: deterministicFailures.length > 0 ? deterministicFailures.map((item) => item.finalReason).join("; ") : reasoning,
+        },
         message: reasoning ?? "A peça contraria uma instrução permanente configurada para este workspace.",
       },
     ];
@@ -1768,6 +1980,8 @@ export async function evaluateCreativeQualityGate(
     baseTextDiagnostic?: CreativeBaseTextEvidence;
     /** Brand Profile: paleta estruturada aplicada deterministicamente pelo renderer (ver `checkCreativeVisualIntegrity`). */
     brandPaletteRenderedDeterministically?: boolean;
+    /** Conformidade deterministica dos tokens/superficie que pertencem ao renderer. */
+    rendererPaletteCompliance?: RendererPaletteCompliance;
     /** SCREENSHOT_TEXT_INVENTORY do screenshot desta peça (ver `screenshot-text-inventory.ts`). */
     screenshotTextInventory?: ScreenshotTextInventory;
     /** Inventário(s) de texto da(s) logo(s) oficial(is) desenhada(s) nesta peça. */
@@ -1799,6 +2013,40 @@ export async function evaluateCreativeQualityGate(
   const textDiagnostics: CreativeTextDiagnostic[] = [];
   const occurrenceDiagnostics: CreativeTextOccurrenceDiagnostic[] = [];
   const paletteDiagnostics: NonNullable<CreativeQualityGateResult["paletteDiagnostics"]> = [];
+  const rendererPaletteCompliance = input.rendererPaletteCompliance ?? resolveRendererPaletteCompliance(input.context, {});
+  const rendererPaletteIssues: CreativeQualityIssue[] = rendererPaletteCompliance.result === "FAIL"
+    ? [{
+        code: "COLOR_PALETTE_VIOLATED",
+        message: rendererPaletteCompliance.reason,
+        details: {
+          issueType: "COLOR_COMPLIANCE",
+          sourceEvaluator: "renderer_palette_compliance",
+          rawVisionReason: undefined,
+          deterministicEvidence: rendererPaletteCompliance,
+          adjudication: "DETERMINISTIC_FAIL",
+          finalReason: rendererPaletteCompliance.reason,
+        },
+      }]
+    : [];
+  if (rendererPaletteCompliance.result === "FAIL") {
+    paletteDiagnostics.push({ decision: "DETERMINISTIC_COLOR_FAILURE", rendererPaletteCompliance });
+  }
+  const productionRequirementDiagnostics = evaluateProductionRequirementsDeterministically(input.context, input.plan);
+  const productionRequirementIssues: CreativeQualityIssue[] = productionRequirementDiagnostics
+    .filter((item) => item.result === "FAIL")
+    .map((item) => ({
+      code: "PRODUCTION_GUIDELINES_VIOLATED",
+      message: item.finalReason,
+      details: {
+        issueType: "PRODUCTION_REQUIREMENTS",
+        sourceEvaluator: "deterministic_production_requirements",
+        guidelineText: item.guidelineText,
+        requirementType: item.requirementType,
+        geometryEvidence: item.geometryEvidence,
+        adjudication: item.adjudication,
+        finalReason: item.finalReason,
+      },
+    }));
   const verifiedLogoRegions = resolveVerifiedLogoRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence });
   const verifiedScreenshotRegions = resolveVerifiedScreenshotRegions({ plan: input.plan, context: input.context, compositedAssetRoles: input.compositedAssetRoles, assetPixelEvidence: input.assetPixelEvidence });
   const screenshotInventoryDecision = resolveUsableScreenshotInventory({ inventory: input.screenshotTextInventory, ownership: input.ownership, context: input.context, verifiedScreenshotRegions });
@@ -1821,6 +2069,7 @@ export async function evaluateCreativeQualityGate(
     specialistId: input.specialistId,
     brandColors: input.context.brandColors,
     colorPolicyInstructions: extractColorPolicyInstructions(input.context),
+    rendererPaletteCompliance,
     brandPaletteRenderedDeterministically: input.brandPaletteRenderedDeterministically,
     paletteDiagnostics,
     allowedRenderedTexts: input.plan.allowedRenderedTexts,
@@ -1843,6 +2092,7 @@ export async function evaluateCreativeQualityGate(
     context: input.context,
     plan: input.plan,
     specialistId: input.specialistId,
+    deterministicDiagnostics: productionRequirementDiagnostics,
     onCost: input.onCost,
   });
 
@@ -1854,7 +2104,9 @@ export async function evaluateCreativeQualityGate(
     assetPlacementOverlapIssues,
     textZoneCollisionIssues,
     overdenseLayoutIssues,
+    rendererPaletteIssues,
     visualIssues,
+    productionRequirementIssues,
     productionGuidelinesIssues,
   );
   return {
@@ -1862,6 +2114,8 @@ export async function evaluateCreativeQualityGate(
     ...(textDiagnostics.length > 0 ? { textDiagnostics } : {}),
     ...(occurrenceDiagnostics.length > 0 ? { occurrenceDiagnostics } : {}),
     ...(paletteDiagnostics.length > 0 ? { paletteDiagnostics } : {}),
+    ...(rendererPaletteCompliance.result !== "NOT_APPLICABLE" ? { rendererPaletteCompliance } : {}),
+    ...(productionRequirementDiagnostics.length > 0 ? { productionRequirementDiagnostics } : {}),
     ...(textProvenanceLedger ? { textProvenanceLedger } : {}),
     ...(screenshotInventoryDecision.status !== "ABSENT" ? { screenshotInventoryDecision: { status: screenshotInventoryDecision.status, reason: screenshotInventoryDecision.reason } } : {}),
     ...(logoInventoryDecision.status !== "ABSENT" ? { logoInventoryDecision: { status: logoInventoryDecision.status, reason: logoInventoryDecision.reason } } : {}),

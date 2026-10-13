@@ -29,6 +29,7 @@ import { resolveProductRenderMode, type AssetSuitabilityScore, type ProductRende
 import {
   evaluateCreativeQualityGate,
   rectsOverlap,
+  resolveRendererPaletteCompliance,
   type CreativeQualityGateResult,
   type CreativeQualityIssue,
 } from "./evaluate-creative-quality-gate.js";
@@ -1259,6 +1260,10 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         && editorial.composition?.brandRules?.some((rule) => rule.code === "BRAND_SURFACES")
         && editorial.composition.brandRules.some((rule) => rule.code === "BRAND_ACCENT"),
       );
+      const rendererPaletteCompliance = resolveRendererPaletteCompliance(context, {
+        pageTone: editorial.composition?.pageTone,
+        rendererPaletteApplied: brandPaletteRenderedDeterministically,
+      });
       // LOGO_TEXT_INVENTORY: texto impresso no PRÓPRIO arquivo de cada logo efetivamente desenhada
       // (tagline/slogan), lido do asset (cache por hash no mesmo tenant/workspace). Só proveniência
       // para o gate — a frase nunca vira headline, CTA, claim nem fato comercial.
@@ -1290,6 +1295,7 @@ export async function runGptCreativeEngine(deps: GptCreativeEngineDeps, input: G
         ...(baseTextDiagnostic ? { baseTextDiagnostic } : {}),
         // `BRAND_SURFACES` prova ownership/aplicação, não conformidade; padrões proibidos são checados acima.
         brandPaletteRenderedDeterministically,
+        rendererPaletteCompliance,
         ...(screenshotTextInventory ? { screenshotTextInventory } : {}),
         ...(logoTextInventories.length > 0 ? { logoTextInventories } : {}),
         ownership: { tenantId: input.tenantId, workspaceId: input.workspaceId },

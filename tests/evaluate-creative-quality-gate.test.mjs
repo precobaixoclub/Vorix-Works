@@ -465,6 +465,58 @@ test("evaluateCreativeQualityGate: peça que contraria uma diretriz permanente c
   assert.ok(result.issues.some((issue) => issue.code === "PRODUCTION_GUIDELINES_VIOLATED"));
 });
 
+test("evaluateCreativeQualityGate: guideline satisfeita deterministicamente vence reclamação genérica da visão", async () => {
+  const icaro = {
+    request: async ({ prompt }) => {
+      if (prompt.includes("INSTRUÇÕES PERMANENTES DESTE WORKSPACE")) {
+        return { status: "completed", content: JSON.stringify({ violatesGuidelines: true, reasoning: "Não destacou claramente o site e o CTA." }) };
+      }
+      return { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }) };
+    },
+  };
+  const plan = basePlan({
+    cta: "ACESSE AGORA - precobaixoclub.com.br",
+    textZones: [
+      { kind: "cta", text: "ACESSE AGORA - precobaixoclub.com.br", rect: { xPct: 10, yPct: 80, widthPct: 70, heightPct: 8 }, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+  });
+  const context = baseContext({ productionInstructions: "O CTA precisa ser identificado rapidamente. O usuario deve acessar precobaixoclub.com.br." });
+  const result = await evaluateCreativeQualityGate(icaro, {
+    finalImageUrl: "https://x/final.jpg",
+    finalImageWidth: 1080,
+    finalImageHeight: 1350,
+    expectedAspectRatio: "4:5",
+    compositedAssetRoles: [],
+    context,
+    plan,
+    specialistId: "gpt-creative-director",
+  });
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  assert.ok(result.productionRequirementDiagnostics.some((item) => item.adjudication === "VISION_GUIDELINE_CONTRADICTION"), JSON.stringify(result.productionRequirementDiagnostics));
+});
+
+test("evaluateCreativeQualityGate: guideline verificável ausente reprova por evidência determinística", async () => {
+  const icaro = {
+    request: async ({ prompt }) => {
+      if (prompt.includes("INSTRUÇÕES PERMANENTES DESTE WORKSPACE")) return { status: "completed", content: JSON.stringify({ violatesGuidelines: false }) };
+      return { status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false }) };
+    },
+  };
+  const context = baseContext({ productionInstructions: "O usuario deve acessar precobaixoclub.com.br." });
+  const result = await evaluateCreativeQualityGate(icaro, {
+    finalImageUrl: "https://x/final.jpg",
+    finalImageWidth: 1080,
+    finalImageHeight: 1350,
+    expectedAspectRatio: "4:5",
+    compositedAssetRoles: [],
+    context,
+    plan: basePlan({ cta: "ACESSE AGORA" }),
+    specialistId: "gpt-creative-director",
+  });
+  assert.equal(result.verdict, "fail");
+  assert.ok(result.issues.some((issue) => issue.code === "PRODUCTION_GUIDELINES_VIOLATED" && issue.details?.sourceEvaluator === "deterministic_production_requirements"), JSON.stringify(result.issues));
+});
+
 // Migração "Prompt Persistente de Produção + Materiais com Contexto para o GPT" — hard failure de
 // acabamento: achado ao vivo em produção, CTA/texto cortado na borda inferior de peças reais.
 // Determinístico, roda sobre a geometria já declarada no creative_plan, ANTES mesmo de compor a
@@ -1615,4 +1667,31 @@ test("paleta: veredito da visão vira diagnóstico quando o renderer comprovou a
   });
   assert.match(prompts[0], /IGNORE as cores do conteúdo de assets reais/);
   assert.match(prompts[0], /verde muito escuro/);
+});
+
+test("paleta: rendererPaletteCompliance PASS separa cor de texto e transforma acusação genérica da visão em diagnóstico", async () => {
+  const icaro = {
+    request: async () => ({ status: "completed", content: JSON.stringify({ productMismatch: false, wrongLogo: false, screenshotMischaracterized: false, textIllegibleOrCut: false, elementCutOff: false, criticalOverlap: false, compositionBroken: false, colorPaletteViolated: true, unauthorizedTexts: [], reasoning: "fundo claro e texto PreçoBaixoClub" }) }),
+  };
+  const result = await evaluateCreativeQualityGate(icaro, {
+    finalImageUrl: "https://x/final.jpg",
+    finalImageWidth: 1080,
+    finalImageHeight: 1350,
+    expectedAspectRatio: "4:5",
+    compositedAssetRoles: [],
+    context: baseContext({ brandColors: ["#0F766E", "#FFFFFF"], productionInstructions: "Usar fundo claro e limpo." }),
+    plan: basePlan({ allowedRenderedTexts: ["TODAS AS OFERTAS EM UM SÓ SITE", "ACESSE AGORA", "PreçoBaixoClub"] }),
+    specialistId: "gpt-creative-director",
+    rendererPaletteCompliance: {
+      result: "PASS",
+      source: "RENDERER",
+      rule: "production_instructions_allow_light_surface",
+      expected: "light",
+      actual: "light",
+      ownership: "RENDERER",
+      reason: "Superficie clara permitida.",
+    },
+  });
+  assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
+  assert.deepEqual(result.paletteDiagnostics.map((item) => item.decision), ["VISION_COLOR_CONTRADICTION"]);
 });

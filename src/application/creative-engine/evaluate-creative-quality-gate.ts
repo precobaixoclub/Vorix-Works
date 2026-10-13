@@ -366,8 +366,26 @@ export function buildTextProvenanceLedger(input: {
   logoInventory?: UsableScreenshotInventory;
 }): TextProvenanceLedger {
   const entries: TextProvenanceEntry[] = [];
+  const authorizedDomain = resolveAuthorizedSiteDomain(input.context);
   (input.renderedTextRegions ?? []).forEach((zone, index) => {
-    entries.push({ sourceType: "RENDERER_TEXT", sourceId: `renderer:${zone.kind}:${index}`, normalizedText: normalizeRenderedText(zone.text), role: zone.kind, expectedBBox: zone.rect, deterministic: true, assetProvenance: "final_rendered_geometry" });
+    const normalizedText = normalizeRenderedText(zone.text);
+    if (zone.kind === "url" && authorizedDomain && normalizedText === normalizeRenderedText(authorizedDomain.domain)) {
+      entries.push({
+        sourceType: "VERIFIED_DOMAIN",
+        sourceId: authorizedDomain.sourceId,
+        sourceField: authorizedDomain.sourceField,
+        normalizedText,
+        role: "site",
+        expectedBBox: zone.rect,
+        deterministic: true,
+        rendererAuthored: true,
+        authorized: true,
+        requirementSatisfied: "SITE_VISIBLE",
+        assetProvenance: "final_rendered_geometry",
+      });
+      return;
+    }
+    entries.push({ sourceType: "RENDERER_TEXT", sourceId: `renderer:${zone.kind}:${index}`, normalizedText, role: zone.kind, expectedBBox: zone.rect, deterministic: true, assetProvenance: "final_rendered_geometry" });
   });
   const brandLiterals = [...new Set([...resolveEditorialBrandLiterals(input.context), ...(input.logoInventory?.texts ?? []).map((entry) => entry.normalizedText)].map((literal) => normalizeRenderedText(literal)).filter(Boolean))];
   input.verifiedLogoRegions.forEach((rect, index) => {
@@ -402,7 +420,7 @@ export function reconcileOccurrencesWithLedger(normalizedText: string, reportedC
   const baseHits = ledger.entries.filter((entry) => entry.sourceType === "BASE_IMAGE" && entry.normalizedText && (entry.normalizedText.includes(normalizedText) || (entry.normalizedText.length >= 3 && normalizedText.includes(entry.normalizedText))));
   if (baseHits.length > 0) return { reconciled: false, reason: "a imagem base já contém o texto (BASE_IMAGE) — ocorrência não determinística", explainedBy: baseHits.map((entry) => entry.sourceId) };
   const explainers = ledger.entries.filter((entry) =>
-    (entry.sourceType === "RENDERER_TEXT" && entry.normalizedText !== undefined && (entry.normalizedText === normalizedText || entry.normalizedText.includes(normalizedText)))
+    ((entry.sourceType === "RENDERER_TEXT" || entry.sourceType === "VERIFIED_DOMAIN") && entry.normalizedText !== undefined && (entry.normalizedText === normalizedText || entry.normalizedText.includes(normalizedText)))
     || (entry.sourceType === "LOGO_ASSET" && (entry.alternatives ?? []).includes(normalizedText)));
   // Inventário do screenshot verificado: explica até `occurrenceCount` ocorrências (nunca ilimitado).
   const inventoryEntries = ledger.entries.filter((entry) => entry.sourceType === "SCREENSHOT_TEXT_INVENTORY" && entry.normalizedText);
@@ -440,7 +458,7 @@ function applyVisionZoneContradiction(
   const baseContains = ledger.entries.some((entry) => entry.sourceType === "BASE_IMAGE" && entry.normalizedText !== undefined && (entry.normalizedText.includes(detected) || (entry.normalizedText.length >= 3 && detected.includes(entry.normalizedText))));
   if (baseContains) return unchanged; // (E)
   const origin = ledger.entries.find((entry) =>
-    (entry.sourceType === "RENDERER_TEXT" && entry.normalizedText !== undefined && (entry.normalizedText === detected || entry.normalizedText.includes(detected)))
+    ((entry.sourceType === "RENDERER_TEXT" || entry.sourceType === "VERIFIED_DOMAIN") && entry.normalizedText !== undefined && (entry.normalizedText === detected || entry.normalizedText.includes(detected)))
     || (entry.sourceType === "LOGO_ASSET" && (entry.alternatives ?? []).includes(detected)));
   if (!origin) return unchanged; // (F)
   // (G) Ocorrência legítima: casada estritamente com a zona, ou — texto inteiro de UMA única zona —
@@ -745,7 +763,7 @@ export type CreativeBaseTextEvidence = {
   texts: readonly { text: string; normalizedText: string; bbox?: CreativePlanRect }[];
 };
 
-export type TextProvenanceSourceType = "RENDERER_TEXT" | "LOGO_ASSET" | "SCREENSHOT_ASSET" | "SCREENSHOT_TEXT_INVENTORY" | "BASE_IMAGE" | "PRODUCT_ASSET";
+export type TextProvenanceSourceType = "RENDERER_TEXT" | "VERIFIED_DOMAIN" | "LOGO_ASSET" | "SCREENSHOT_ASSET" | "SCREENSHOT_TEXT_INVENTORY" | "BASE_IMAGE" | "PRODUCT_ASSET";
 
 /** Uma origem conhecida de texto na peça, registrada ANTES da visão final. */
 export type TextProvenanceEntry = {
@@ -761,6 +779,10 @@ export type TextProvenanceEntry = {
   expectedBBox?: CreativePlanRect;
   deterministic: boolean;
   assetProvenance?: string;
+  rendererAuthored?: boolean;
+  authorized?: boolean;
+  sourceField?: string;
+  requirementSatisfied?: "SITE_VISIBLE";
 };
 
 /** Ledger de proveniência textual da peça: o renderer é autoridade sobre o que ele desenhou; assets
@@ -1220,9 +1242,40 @@ function extractColorPolicyInstructions(context: CreativeContext): string[] {
 const DARK_SURFACE_POLICY_RE = /base\s+predominante\s+fundo\s+(?:preto|grafite|verde muito escuro|azul quase preto)|use\s+como\s+base\s+predominante\s+fundo\s+(?:preto|grafite|verde muito escuro|azul quase preto)/i;
 const LIGHT_SURFACE_POLICY_RE = /fundo\s+(?:claro|branco|clean|limpo)|base\s+predominante\s+(?:clara|branca)|no_dark_backgrounds/i;
 const SITE_DOMAIN_RE = /\b(?:[a-z0-9-]+\.)+[a-z]{2,}\.br\b|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/i;
+const SITE_VISIBLE_POLICY_RE = /\b(?:site|endere[cç]o|dom[ií]nio|url|acessar|acesse)\b/i;
+const SITE_VISIBLE_MIN_TEXT_AREA_PCT = 0.12;
 
 function productionInstructionsText(context: CreativeContext): string {
   return [context.productionInstructions, ...(context.behaviorPreferences ?? [])].filter(Boolean).join("\n");
+}
+
+export type AuthorizedSiteDomain = {
+  domain: string;
+  source: "productionInstructions" | "behaviorPreferences";
+  sourceField: string;
+  sourceId: string;
+  requirement: "SITE_VISIBLE";
+};
+
+export function resolveAuthorizedSiteDomain(context: CreativeContext): AuthorizedSiteDomain | undefined {
+  const sources = [
+    ...(context.productionInstructions ? [{ source: "productionInstructions" as const, sourceField: "productionInstructions", text: context.productionInstructions }] : []),
+    ...(context.behaviorPreferences ?? []).map((text, index) => ({ source: "behaviorPreferences" as const, sourceField: `behaviorPreferences[${index}]`, text })),
+  ];
+  for (const item of sources) {
+    if (!SITE_VISIBLE_POLICY_RE.test(item.text)) continue;
+    const rawDomain = item.text.match(SITE_DOMAIN_RE)?.[0];
+    if (!rawDomain) continue;
+    const domain = rawDomain.toLowerCase().replace(/[.,;:!?)]$/g, "");
+    return {
+      domain,
+      source: item.source,
+      sourceField: item.sourceField,
+      sourceId: `${item.source}:${item.sourceField}:SITE_VISIBLE:${domain}`,
+      requirement: "SITE_VISIBLE",
+    };
+  }
+  return undefined;
 }
 
 export function resolveRendererPaletteCompliance(
@@ -1299,11 +1352,7 @@ function rectVisibleAreaPct(rect: CreativePlanRect | undefined): number {
 }
 
 function domainFromProductionInstructions(context: CreativeContext): string | undefined {
-  return productionInstructionsText(context).match(SITE_DOMAIN_RE)?.[0];
-}
-
-function planTexts(plan: CreativePlan): string[] {
-  return [plan.headline, plan.subheadline, plan.cta, plan.title, plan.description, ...plan.textZones.map((zone) => zone.text)].filter((text): text is string => Boolean(text?.trim()));
+  return resolveAuthorizedSiteDomain(context)?.domain;
 }
 
 export function evaluateProductionRequirementsDeterministically(context: CreativeContext, plan: CreativePlan): ProductionRequirementDiagnostic[] {
@@ -1315,9 +1364,11 @@ export function evaluateProductionRequirementsDeterministically(context: Creativ
   const instructions = instructionItems.map((item) => item.text).join("\n");
   const logo = plan.assetPlacements.find((placement) => placement.role === "logo");
   const ctaZone = plan.textZones.find((zone) => zone.kind === "cta" && zone.text.trim());
-  const urlZone = plan.textZones.find((zone) => zone.kind === "url" && zone.text.trim());
-  const domain = domainFromProductionInstructions(context);
-  const texts = planTexts(plan).join("\n");
+  const domainEvidence = resolveAuthorizedSiteDomain(context);
+  const domain = domainEvidence?.domain ?? domainFromProductionInstructions(context);
+  const domainPattern = domain ? new RegExp(domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i") : undefined;
+  const urlZone = domainPattern ? plan.textZones.find((zone) => domainPattern.test(zone.text) && rectVisibleAreaPct(zone.rect) >= SITE_VISIBLE_MIN_TEXT_AREA_PCT) : undefined;
+  const texts = urlZone?.text ?? "";
 
   if (/logo vis[ií]vel|utilize sempre a logo oficial|mantenha logo/i.test(instructions)) {
     const matched = instructionItems.find((item) => /logo vis[ií]vel|utilize sempre a logo oficial|mantenha logo/i.test(item.text));
@@ -1350,8 +1401,8 @@ export function evaluateProductionRequirementsDeterministically(context: Creativ
     });
   }
 
-  if (domain && /site|endere[cç]o|acessar|acesse/i.test(instructions)) {
-    const matched = instructionItems.find((item) => /site|endere[cç]o|acessar|acesse/i.test(item.text) && item.text.includes(domain));
+  if (domain && SITE_VISIBLE_POLICY_RE.test(instructions)) {
+    const matched = instructionItems.find((item) => SITE_VISIBLE_POLICY_RE.test(item.text) && item.text.toLowerCase().includes(domain));
     const hasDomain = new RegExp(domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(texts);
     diagnostics.push({
       guidelineSource: matched?.source ?? "inferred",
@@ -1359,7 +1410,7 @@ export function evaluateProductionRequirementsDeterministically(context: Creativ
       requirementType: "SITE_VISIBLE",
       severity: "required",
       result: hasDomain ? "PASS" : "FAIL",
-      geometryEvidence: { domain, urlZone: urlZone?.rect, textIncludesDomain: hasDomain },
+      geometryEvidence: { domain, domainSource: domainEvidence?.source, sourceField: domainEvidence?.sourceField, rendererZone: urlZone?.kind, urlZone: urlZone?.rect, textIncludesDomain: hasDomain, minAreaPct: SITE_VISIBLE_MIN_TEXT_AREA_PCT, areaPct: rectVisibleAreaPct(urlZone?.rect) },
       adjudication: hasDomain ? "DETERMINISTIC_PASS" : "DETERMINISTIC_FAIL",
       finalReason: hasDomain ? "Dominio autorizado presente no texto renderizado/planejado." : "Dominio autorizado ausente dos textos finais da peca.",
     });

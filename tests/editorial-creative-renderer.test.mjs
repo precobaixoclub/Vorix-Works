@@ -74,6 +74,13 @@ function box(result, id) {
   return [...result.renderedGeometry.textBoxes, ...result.renderedGeometry.assetBoxes].find((item) => item.id === id);
 }
 
+function boxesOverlap(a, b) {
+  return a.xPct < b.xPct + b.widthPct
+    && a.xPct + a.widthPct > b.xPct
+    && a.yPct < b.yPct + b.heightPct
+    && a.yPct + a.heightPct > b.yPct;
+}
+
 function plan(overrides = {}) {
   return {
     objective: "Criar uma arte comercial",
@@ -493,6 +500,7 @@ async function renderAdaptive(overrides = {}) {
       { role: "product_photo", url: "fixture://product.jpg", buffer: overrides.product ?? REAL_PRODUCT_JPEG },
       { role: "logo", url: "fixture://logo.png", buffer: overrides.logo ?? REAL_LOGO_PNG },
     ],
+    qaVariantOverride: overrides.qaVariantOverride,
   });
 }
 
@@ -580,6 +588,46 @@ test("product_offer adaptativo: tratamento de preço é adaptativo (inline vs ro
   assert.equal((await renderAdaptive()).composition.priceTreatment, "INLINE_PRICE");
   assert.equal((await renderAdaptive({ price: "R$ 12.499,90", headline: "Kit Noivos Premium" })).composition.priceTreatment, "COMMERCIAL_FOOTER");
   assert.equal((await renderAdaptive({ visualDensity: "clean", headline: "Sem Correria" })).composition.priceTreatment, "INLINE_PRICE");
+});
+
+test("product_offer adaptativo: SITE_VISIBLE renderiza dominio autorizado como zona url sem sobrepor CTA ou logo", async () => {
+  const result = await renderAdaptive({
+    cta: "Acesse o site",
+    context: { productionInstructions: "O endereco precobaixoclub.com.br deve aparecer no site da peca." },
+  });
+
+  const siteZone = result.renderedTextZones.find((zone) => zone.kind === "url");
+  assert.equal(siteZone?.text, "precobaixoclub.com.br");
+  const siteBox = box(result, "url");
+  assert.ok(siteBox, "caixa url ausente");
+  assert.ok(siteBox.rect.xPct >= 0 && siteBox.rect.yPct >= 0);
+  assert.ok(siteBox.rect.xPct + siteBox.rect.widthPct <= 100);
+  assert.ok(siteBox.rect.yPct + siteBox.rect.heightPct <= 100);
+  assert.ok(!boxesOverlap(siteBox.rect, box(result, "cta").rect), "url sobrepos CTA");
+  assert.ok(!boxesOverlap(siteBox.rect, box(result, "logo").rect), "url sobrepos logo");
+  assert.ok(!result.geometry.issues.some((issue) => ["COLLISION", "TEXT_OVERFLOW", "SAFE_AREA"].includes(issue.code)), JSON.stringify(result.geometry.issues));
+});
+
+test("product_offer adaptativo: nao cria zona SITE_VISIBLE sem dominio autorizado", async () => {
+  const result = await renderAdaptive({ cta: "Acesse o site" });
+  assert.equal(result.renderedTextZones.some((zone) => zone.kind === "url"), false);
+  assert.equal(Boolean(box(result, "url")), false);
+});
+
+test("product_offer adaptativo: dominio autorizado longo cabe no HERO_DOMINANT", async () => {
+  const result = await renderAdaptive({
+    qaVariantOverride: "HERO_DOMINANT",
+    primaryMassPct: 65,
+    cta: "Acesse o site",
+    context: { productionInstructions: "Mostrar a URL loja.super-promocoes.precobaixoclub.com.br na arte final." },
+  });
+
+  assert.equal(result.composition.variant, "HERO_DOMINANT");
+  assertAdaptiveTechnicalPass(result, "hero site visivel");
+  const siteBox = box(result, "url");
+  assert.ok(siteBox, "caixa url ausente");
+  assert.equal(result.renderedTextZones.find((zone) => zone.kind === "url")?.text, "loja.super-promocoes.precobaixoclub.com.br");
+  assert.ok(!boxesOverlap(siteBox.rect, box(result, "cta").rect), "url sobrepos CTA");
 });
 
 test("product_offer adaptativo: preços largos (R$ 12.499,90 e R$ 129.999,90) cabem em todas as variantes", async () => {

@@ -10,8 +10,10 @@ import {
   checkSafeAreaCompliance,
   checkTextZoneCollisions,
   combineCreativeQualityIssues,
+  buildTextProvenanceLedger,
   evaluateCreativeQualityGate,
   evaluateDeterministicCreativeChecks,
+  evaluateProductionRequirementsDeterministically,
   isTextRegionInsideVerifiedLogo,
   normalizeRenderedText,
   measureRenderedTextProximity,
@@ -1694,4 +1696,83 @@ test("paleta: rendererPaletteCompliance PASS separa cor de texto e transforma ac
   });
   assert.equal(result.verdict, "pass", JSON.stringify(result.issues));
   assert.deepEqual(result.paletteDiagnostics.map((item) => item.decision), ["VISION_COLOR_CONTRADICTION"]);
+});
+
+test("evaluateProductionRequirementsDeterministically: SITE_VISIBLE exige dominio em zona renderizada, nao CTA generico", () => {
+  const context = baseContext({ productionInstructions: "O endereco precobaixoclub.com.br deve aparecer no site da peca. CTA visivel." });
+  const genericCta = basePlan({
+    cta: "Acesse o site",
+    textZones: [
+      { kind: "cta", text: "Acesse o site", rect: { xPct: 8, yPct: 88, widthPct: 28, heightPct: 6 }, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+  });
+
+  const missing = evaluateProductionRequirementsDeterministically(context, genericCta).find((item) => item.requirementType === "SITE_VISIBLE");
+  assert.ok(missing);
+  assert.equal(missing.result, "FAIL");
+  assert.equal(missing.geometryEvidence.textIncludesDomain, false);
+
+  const renderedDomain = basePlan({
+    cta: "Acesse o site",
+    textZones: [
+      { kind: "cta", text: "Acesse o site", rect: { xPct: 8, yPct: 88, widthPct: 28, heightPct: 6 }, emphasis: "secondary", renderedBy: "renderer" },
+      { kind: "url", text: "precobaixoclub.com.br", rect: { xPct: 8, yPct: 84, widthPct: 64, heightPct: 3 }, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+  });
+  const satisfied = evaluateProductionRequirementsDeterministically(context, renderedDomain).find((item) => item.requirementType === "SITE_VISIBLE");
+  assert.ok(satisfied);
+  assert.equal(satisfied.result, "PASS");
+  assert.equal(satisfied.geometryEvidence.rendererZone, "url");
+  assert.equal(satisfied.geometryEvidence.domainSource, "productionInstructions");
+});
+
+test("evaluateProductionRequirementsDeterministically: dominio em descricao ou zona ilegivel nao satisfaz SITE_VISIBLE", () => {
+  const context = baseContext({ productionInstructions: "A URL PrecoBaixoClub.com.br precisa ficar visivel na peca." });
+  const descriptionOnly = basePlan({
+    description: "Acesse precobaixoclub.com.br",
+    cta: "Acesse o site",
+    textZones: [
+      { kind: "cta", text: "Acesse o site", rect: { xPct: 8, yPct: 88, widthPct: 28, heightPct: 6 }, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+  });
+  const missing = evaluateProductionRequirementsDeterministically(context, descriptionOnly).find((item) => item.requirementType === "SITE_VISIBLE");
+  assert.ok(missing);
+  assert.equal(missing.result, "FAIL");
+  assert.equal(missing.geometryEvidence.textIncludesDomain, false);
+
+  const tooSmall = basePlan({
+    cta: "Acesse o site",
+    textZones: [
+      { kind: "url", text: "precobaixoclub.com.br", rect: { xPct: 8, yPct: 84, widthPct: 10, heightPct: 1 }, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+  });
+  const illegible = evaluateProductionRequirementsDeterministically(context, tooSmall).find((item) => item.requirementType === "SITE_VISIBLE");
+  assert.ok(illegible);
+  assert.equal(illegible.result, "FAIL");
+  assert.equal(illegible.geometryEvidence.textIncludesDomain, false);
+  assert.equal(illegible.geometryEvidence.minAreaPct, 0.12);
+});
+
+test("buildTextProvenanceLedger: dominio autorizado vira VERIFIED_DOMAIN com autoria do renderer", () => {
+  const context = baseContext({ productionInstructions: "Mostre o site precobaixoclub.com.br de forma legivel." });
+  const ledger = buildTextProvenanceLedger({
+    plan: basePlan({ textZones: [] }),
+    context,
+    renderedTextRegions: [
+      { kind: "url", text: "precobaixoclub.com.br", rect: { xPct: 8, yPct: 84, widthPct: 64, heightPct: 3 }, emphasis: "secondary", renderedBy: "renderer" },
+      { kind: "cta", text: "Acesse o site", rect: { xPct: 8, yPct: 88, widthPct: 28, heightPct: 6 }, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+    verifiedLogoRegions: [],
+    verifiedScreenshotRegions: [],
+  });
+
+  const domain = ledger.entries.find((entry) => entry.sourceType === "VERIFIED_DOMAIN");
+  assert.ok(domain);
+  assert.equal(domain.role, "site");
+  assert.equal(domain.normalizedText, "precobaixoclub.com.br");
+  assert.equal(domain.rendererAuthored, true);
+  assert.equal(domain.authorized, true);
+  assert.equal(domain.requirementSatisfied, "SITE_VISIBLE");
+  assert.equal(domain.sourceField, "productionInstructions");
+  assert.ok(ledger.entries.some((entry) => entry.sourceType === "RENDERER_TEXT" && entry.normalizedText === "acesse o site"));
 });

@@ -45,7 +45,7 @@ import {
   resolveEditorialConfirmedPrice,
   resolveEditorialRequiredTexts,
 } from "../../application/creative-engine/editorial-text-contract.js";
-import { SAFE_AREA_MARGIN_PCT } from "../../application/creative-engine/evaluate-creative-quality-gate.js";
+import { resolveAuthorizedSiteDomain, SAFE_AREA_MARGIN_PCT } from "../../application/creative-engine/evaluate-creative-quality-gate.js";
 import { contrastRatio, deriveBrandSkin, hexToRgb as brandHexToRgb, isNearForbiddenColor, selectBrandLogoForSurface, type AppliedBrandRule, type BrandSkin } from "../../shared/utils/brand-identity.js";
 import { computeContrastRatio, isValidHexColor } from "../../shared/utils/color-contrast.js";
 
@@ -504,9 +504,10 @@ async function blankFallback(width: number, height: number, color: string): Prom
 function buildTextZones(
   plan: CreativePlan,
   price: string | undefined,
-  layout: { headline: PxRect; subheadline?: PxRect; cta?: PxRect; price?: PxRect },
+  layout: { headline: PxRect; subheadline?: PxRect; cta?: PxRect; price?: PxRect; site?: PxRect },
   canvas: Canvas,
   ink?: { headline?: PxRect; subheadline?: PxRect },
+  siteDomain?: string,
 ): CreativePlanTextZone[] {
   const zones: CreativePlanTextZone[] = [
     { kind: "headline", text: plan.headline, rect: pctRect(layout.headline, canvas), ...(ink?.headline ? { inkRect: pctRect(ink.headline, canvas) } : {}), emphasis: "primary", renderedBy: "renderer", backingStyle: "none", align: "left" },
@@ -519,6 +520,9 @@ function buildTextZones(
   }
   if (plan.cta.trim() && layout.cta) {
     zones.push({ kind: "cta", text: plan.cta, rect: pctRect(layout.cta, canvas), emphasis: "secondary", renderedBy: "renderer", backingStyle: "solid", align: "center" });
+  }
+  if (siteDomain && layout.site) {
+    zones.push({ kind: "url", text: siteDomain, rect: pctRect(layout.site, canvas), emphasis: "secondary", renderedBy: "renderer", backingStyle: "none", align: "center" });
   }
   return zones;
 }
@@ -603,9 +607,11 @@ async function renderProductOffer(input: RenderEditorialCreativeInput, canvas: C
   const ruleY = blockTop + headlineFit.height + layout.textGap / 2 - 2;
   const priceRect: PxRect = { x: layout.price.x, y: layout.price.y, width: layout.price.width, height: layout.price.height };
   const ctaRect: PxRect = { x: layout.cta.x, y: layout.cta.y, width: layout.cta.width, height: layout.cta.height };
+  const siteDomain = resolveAuthorizedSiteDomain(input.context)?.domain;
+  const siteRect: PxRect | undefined = siteDomain ? { x: 72, y: ctaRect.y - 42, width: canvas.width - 144, height: 30 } : undefined;
 
   if (rectsOverlap(headlineRect, photoRect)) issues.push({ code: "MASK_VIOLATION", message: "Headline de produto atravessa a fotografia." });
-  const zones = buildTextZones(input.plan, price, { headline: headlineRect, subheadline: subRect, cta: ctaRect, price: priceRect }, canvas);
+  const zones = buildTextZones(input.plan, price, { headline: headlineRect, subheadline: subRect, cta: ctaRect, price: priceRect, site: siteRect }, canvas, undefined, siteDomain);
   const roles: CreativePlanAssetRole[] = [];
   const assets: CreativePlan["assetPlacements"] = [];
   const verify: AssetVerifySpec[] = [];
@@ -667,6 +673,7 @@ async function renderProductOffer(input: RenderEditorialCreativeInput, canvas: C
     ${subRect && subheadlineText ? `<rect x="${column.x}" y="${ruleY}" width="56" height="4" rx="2" fill="#C9A35E"/>
     ${textSvg({ id: "subheadline", text: subheadlineText, x: subRect.x, y: 0, top: subRect.y, width: column.width, maxHeight: layout.subheadline.maxHeight, maxFontSize: layout.subheadline.maxFontSize, minFontSize: layout.subheadline.minFontSize, maxLines: layout.subheadline.maxLines, lineHeight: 1.3, fill: "#6B5254", weight: 500 }, canvas, boxes, issues)}` : ""}
     ${price ? textSvg({ id: "price", text: price, x: priceRect.x, y: 0, top: priceRect.y, valign: "center", width: priceRect.width, maxHeight: priceRect.height, maxFontSize: layout.price.maxFontSize, minFontSize: layout.price.minFontSize, maxLines: 1, fill: accent, weight: 850, letterSpacing: -0.5 }, canvas, boxes, issues) : ""}
+    ${siteDomain && siteRect ? textSvg({ id: "site", text: siteDomain, x: siteRect.x + siteRect.width / 2, y: 0, top: siteRect.y, valign: "center", width: siteRect.width, maxHeight: siteRect.height, maxFontSize: 24, minFontSize: 16, maxLines: 1, fill: "#6B5254", weight: 650, letterSpacing: 0.2, anchor: "middle" }, canvas, boxes, issues) : ""}
     ${input.plan.cta.trim() ? `<g filter="url(#ctaShadow)"><rect x="${ctaRect.x}" y="${ctaRect.y}" width="${ctaRect.width}" height="${ctaRect.height}" rx="${ctaRect.height / 2}" fill="url(#ctaFill)"/></g>
     ${textSvg({ id: "cta", text: input.plan.cta.toUpperCase(), x: ctaRect.x + ctaRect.width / 2, y: 0, top: ctaRect.y, valign: "center", width: ctaRect.width - 48, maxHeight: ctaRect.height, maxFontSize: layout.cta.maxFontSize, minFontSize: layout.cta.minFontSize, maxLines: 1, fill: "#FFF8F1", weight: 850, letterSpacing: 1.5, anchor: "middle" }, canvas, boxes, issues)}` : ""}
   </svg>`;
@@ -756,7 +763,7 @@ function productOfferPalette(tone: "light" | "dark", accent: string): ProductOff
 }
 
 type TextSpec = {
-  id: "headline" | "subheadline" | "price" | "cta";
+  id: "headline" | "subheadline" | "price" | "cta" | "url";
   text: string;
   width: number;
   maxHeight: number;
@@ -891,6 +898,7 @@ type ProductOfferLayout = {
   sub?: { spec: TextSpec; rect: PxRect; anchor: "start" | "middle" };
   price?: { spec: TextSpec; rect: PxRect; valign: "top" | "center" };
   cta?: { spec: TextSpec; pill: PxRect };
+  site?: { spec: TextSpec; rect: PxRect; anchor: "start" | "middle" };
   hairline?: { x1: number; x2: number; y: number };
   scrimTop?: number;
 };
@@ -914,6 +922,7 @@ async function renderProductOfferAdaptive(
   const headline = plan.headline;
   const subheadline = plan.subheadline?.trim() ? plan.subheadline : undefined;
   const cta = plan.cta.trim() ? plan.cta : undefined;
+  const siteDomain = resolveAuthorizedSiteDomain(input.context)?.domain;
   const productAspect = product ? product.width / product.height : 1;
   const productIsCutout = product ? product.stats.alphaCoverage < 0.95 : false;
   const selectedOffer = selectProductOfferVariant({
@@ -955,6 +964,9 @@ async function renderProductOfferAdaptive(
     const size = fitUppercaseCtaFont(cta!, pill.width - 56, ctaFont, 15, 2);
     return { id: "cta", text: cta!, width: pill.width - 56, maxHeight: pill.height, maxFontSize: size, minFontSize: Math.min(15, size), maxLines: 1, letterSpacing: 2, uppercase: input.brand?.skin.ctaUppercase ?? true };
   };
+  const siteSpec = (width: number, maxFontSize = 24): TextSpec | undefined => siteDomain
+    ? { id: "url", text: siteDomain, width, maxHeight: 32, maxFontSize, minFontSize: 15, maxLines: 1, letterSpacing: 0.2, capsAware: true }
+    : undefined;
   // 9:16: topo/base de texto e logo dentro da safe area vertical; no 4:5 os mesmos valores de sempre.
   const vertical = isVerticalCanvas(canvas);
   const safe = storySafeInsets(canvas);
@@ -976,6 +988,8 @@ async function renderProductOfferAdaptive(
       const startX = Math.round((W - (priceW + gap + (cta ? ctaW : 0))) / 2);
       const priceRect = price ? { x: startX, y: rowTop, width: priceW, height: rowH } : undefined;
       const pill = cta ? { x: startX + priceW + gap, y: rowTop + Math.round((rowH - ctaH) / 2), width: ctaW, height: ctaH } : undefined;
+      const heroSiteSpec = siteSpec(W - 2 * M, 24);
+      const heroSiteRect = heroSiteSpec ? { x: M, y: rowTop - 38, width: W - 2 * M, height: 32 } : undefined;
       const headTwo: TextSpec = { id: "headline", text: headline, width: 920, maxHeight: 176, maxFontSize: 82, minFontSize: 40, maxLines: 2, lineHeight: 1.04, letterSpacing: -0.4, balance: vertical, ...brandHeadline(input) };
       const headSpec = measureSpec(headTwo).fits ? headTwo : { ...headTwo, maxLines: 3, maxHeight: 210 };
       const headFit = measureSpec(headSpec);
@@ -993,14 +1007,15 @@ async function renderProductOfferAdaptive(
         sub: subSpec && subRect ? { spec: subSpec, rect: subRect, anchor: "middle" } : undefined,
         price: priceSpec && priceRect ? { spec: { ...priceSpec, width: priceW }, rect: priceRect, valign: "center" } : undefined,
         cta: pill ? { spec: ctaSpec(pill), pill } : undefined,
-        hairline: { x1: W / 2 - 90, x2: W / 2 + 90, y: rowTop - 30 },
+        site: heroSiteSpec && heroSiteRect ? { spec: heroSiteSpec, rect: heroSiteRect, anchor: "middle" } : undefined,
+        hairline: { x1: W / 2 - 90, x2: W / 2 + 90, y: heroSiteSpec ? rowTop - 56 : rowTop - 30 },
       };
     }
 
     if (variant === "SPLIT_EDITORIAL") {
       const logoBox = logo ? logoSize(logo, 260, 46) : undefined;
       const logoRect = logoBox ? { x: M, y: topEdge(64), ...logoBox } : undefined;
-      const footer = priceTreatment === "COMMERCIAL_FOOTER";
+      const footer = priceTreatment === "COMMERCIAL_FOOTER" || Boolean(siteDomain);
       const rowH = 88;
       const rowTop = bottomEdge - rowH;
       const productArea = { x: 400, y: M + 8, width: W - M - 400, height: (footer ? rowTop - 44 : bottomEdge - 8) - (M + 8) };
@@ -1043,7 +1058,8 @@ async function renderProductOfferAdaptive(
         sub: subSpec && subRect ? { spec: subSpec, rect: subRect, anchor: "start" } : undefined,
         price: priceSpec && priceRect ? { spec: { ...priceSpec, width: priceRect.width }, rect: priceRect, valign: footer ? "center" : "top" } : undefined,
         cta: pill ? { spec: ctaSpec(pill), pill } : undefined,
-        hairline: footer ? { x1: M, x2: W - M, y: rowTop - 24 } : undefined,
+        site: siteDomain ? { spec: siteSpec(W - 2 * M, 23)!, rect: { x: M, y: rowTop - 42, width: W - 2 * M, height: 32 }, anchor: "middle" } : undefined,
+        hairline: footer ? { x1: M, x2: W - M, y: siteDomain ? rowTop - 66 : rowTop - 24 } : undefined,
       };
     }
 
@@ -1057,6 +1073,8 @@ async function renderProductOfferAdaptive(
     const priceW = price ? Math.min(520, estimateLineWidth(price, priceFont)) : 0;
     const priceRect = price ? { x: M, y: rowTop, width: priceW, height: rowH } : undefined;
     const pill = cta ? { x: M + priceW + (price ? 40 : 0), y: rowTop + Math.round((rowH - ctaH) / 2), width: ctaW, height: ctaH } : undefined;
+    const overlaySiteSpec = siteSpec(W - 2 * M, 24);
+    const overlaySiteRect = overlaySiteSpec ? { x: M, y: rowTop - 34, width: W - 2 * M, height: 30 } : undefined;
     const subSpec: TextSpec | undefined = subheadline ? { id: "subheadline", text: subheadline, width: 780, maxHeight: 118, maxFontSize: 27, minFontSize: 19, maxLines: 3, lineHeight: 1.4, letterSpacing: 0.2 } : undefined;
     const subFit = subSpec ? measureSpec(subSpec) : undefined;
     const headSpec: TextSpec = { id: "headline", text: headline, width: 900, maxHeight: 196, maxFontSize: 94, minFontSize: 48, maxLines: 2, lineHeight: 1.0, letterSpacing: -0.6, balance: vertical, ...brandHeadline(input) };
@@ -1073,6 +1091,7 @@ async function renderProductOfferAdaptive(
       sub: subSpec && subRect ? { spec: subSpec, rect: subRect, anchor: "start" } : undefined,
       price: priceSpec && priceRect ? { spec: { ...priceSpec, width: priceW }, rect: priceRect, valign: "center" } : undefined,
       cta: pill ? { spec: ctaSpec(pill), pill } : undefined,
+      site: overlaySiteSpec && overlaySiteRect ? { spec: overlaySiteSpec, rect: overlaySiteRect, anchor: "middle" } : undefined,
       scrimTop: headRect.y - 170,
     };
   })();
@@ -1084,7 +1103,8 @@ async function renderProductOfferAdaptive(
     subheadline: layout.sub?.rect,
     price: layout.price?.rect,
     cta: layout.cta ? { x: layout.cta.pill.x + 28, y: layout.cta.pill.y, width: layout.cta.pill.width - 56, height: layout.cta.pill.height } : undefined,
-  }, canvas);
+    site: layout.site?.rect,
+  }, canvas, undefined, siteDomain);
 
   const roles: CreativePlanAssetRole[] = [];
   const assets: CreativePlan["assetPlacements"] = [];
@@ -1120,7 +1140,7 @@ async function renderProductOfferAdaptive(
   const cutoutShadow = product && productRect && productIsCutout
     ? `<ellipse cx="${productRect.x + productRect.width / 2}" cy="${productRect.y + productRect.height - 8}" rx="${productRect.width * 0.36}" ry="18" fill="#2A1A14" opacity="0.28" filter="url(#contactBlur)"/>`
     : "";
-  const textFill = (id: TextSpec["id"]): string => (id === "headline" ? palette.ink : id === "subheadline" ? palette.muted : id === "price" ? palette.price : palette.ctaText);
+  const textFill = (id: TextSpec["id"]): string => (id === "headline" ? palette.ink : id === "subheadline" || id === "url" ? palette.muted : id === "price" ? palette.price : palette.ctaText);
   const renderText = (blockIn: { spec: TextSpec; rect: PxRect; anchor?: "start" | "middle"; valign?: "top" | "center" }, weight: number, embolden: (size: number) => number): string => {
     // Intensidade comercial BAIXA da marca: preço menos proeminente (nunca cria/omite o preço).
     const lowCommercial = blockIn.spec.id === "price" && input.brand?.skin.commercialIntensity === "LOW";
@@ -1157,6 +1177,7 @@ async function renderProductOfferAdaptive(
   const headSvg = renderText(layout.head, 850, (size) => Number((size * 0.026).toFixed(2)));
   const subSvg = layout.sub ? renderText(layout.sub, 500, () => 0) : "";
   const priceSvg = layout.price ? renderText({ spec: layout.price.spec, rect: layout.price.rect, valign: layout.price.valign }, 850, (size) => Number((size * 0.024).toFixed(2))) : "";
+  const siteSvg = layout.site ? renderText(layout.site, 650, () => 0) : "";
   const ctaSvg = layout.cta
     ? `<g${input.brand?.skin.shadow === "NONE" ? "" : ` filter="url(#ctaShadow)"`}><rect x="${layout.cta.pill.x}" y="${layout.cta.pill.y}" width="${layout.cta.pill.width}" height="${layout.cta.pill.height}" rx="${offerCtaRadius}" fill="url(#ctaFill)"/></g>
       <rect x="${layout.cta.pill.x + 1}" y="${layout.cta.pill.y + 1}" width="${layout.cta.pill.width - 2}" height="${layout.cta.pill.height - 2}" rx="${Math.max(0, offerCtaRadius - 1)}" fill="none" stroke="#FFFFFF" stroke-opacity="${isDark ? 0.35 : 0.22}" stroke-width="1.5"/>
@@ -1222,6 +1243,7 @@ async function renderProductOfferAdaptive(
     ${headSvg}
     ${subSvg}
     ${priceSvg}
+    ${siteSvg}
     ${ctaSvg}
   </svg>`;
 

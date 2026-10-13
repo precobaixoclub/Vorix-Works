@@ -19,6 +19,7 @@ import {
   measureRenderedTextProximity,
   VISION_BBOX_RESOLUTION_PCT,
   resolveVerifiedLogoRegions,
+  resolveAuthorizedSiteDomain,
 } from "../dist/application/creative-engine/evaluate-creative-quality-gate.js";
 
 function basePlan(overrides = {}) {
@@ -1775,4 +1776,39 @@ test("buildTextProvenanceLedger: dominio autorizado vira VERIFIED_DOMAIN com aut
   assert.equal(domain.requirementSatisfied, "SITE_VISIBLE");
   assert.equal(domain.sourceField, "productionInstructions");
   assert.ok(ledger.entries.some((entry) => entry.sourceType === "RENDERER_TEXT" && entry.normalizedText === "acesse o site"));
+});
+
+test("evaluateProductionRequirementsDeterministically: sem politica de site o dominio nao e obrigatorio", () => {
+  const context = baseContext({ productionInstructions: "Utilize sempre a logo oficial. O CTA precisa ser identificado rapidamente." });
+  const plan = basePlan({
+    cta: "Comprar agora",
+    textZones: [
+      { kind: "cta", text: "Comprar agora", rect: { xPct: 8, yPct: 88, widthPct: 28, heightPct: 6 }, emphasis: "secondary", renderedBy: "renderer" },
+    ],
+  });
+
+  assert.equal(resolveAuthorizedSiteDomain(context), undefined);
+  const diagnostics = evaluateProductionRequirementsDeterministically(context, plan);
+  assert.equal(diagnostics.some((item) => item.requirementType === "SITE_VISIBLE"), false, JSON.stringify(diagnostics));
+  assert.equal(diagnostics.find((item) => item.requirementType === "CTA_VISIBLE")?.result, "PASS");
+});
+
+test("SITE_VISIBLE: dominio nao autorizado em zona url nao satisfaz o requisito nem vira VERIFIED_DOMAIN", () => {
+  const context = baseContext({ productionInstructions: "O endereco precobaixoclub.com.br deve aparecer no site da peca." });
+  const foreignZone = { kind: "url", text: "outrosite.com.br", rect: { xPct: 8, yPct: 84, widthPct: 64, heightPct: 3 }, emphasis: "secondary", renderedBy: "renderer" };
+
+  assert.equal(resolveAuthorizedSiteDomain(context)?.domain, "precobaixoclub.com.br");
+  const site = evaluateProductionRequirementsDeterministically(context, basePlan({ textZones: [foreignZone] })).find((item) => item.requirementType === "SITE_VISIBLE");
+  assert.ok(site);
+  assert.equal(site.result, "FAIL");
+  assert.equal(site.geometryEvidence.textIncludesDomain, false);
+
+  const ledger = buildTextProvenanceLedger({
+    plan: basePlan({ textZones: [] }),
+    context,
+    renderedTextRegions: [foreignZone],
+    verifiedLogoRegions: [],
+    verifiedScreenshotRegions: [],
+  });
+  assert.equal(ledger.entries.some((entry) => entry.sourceType === "VERIFIED_DOMAIN"), false);
 });

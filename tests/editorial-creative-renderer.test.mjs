@@ -614,6 +614,34 @@ test("product_offer adaptativo: nao cria zona SITE_VISIBLE sem dominio autorizad
   assert.equal(Boolean(box(result, "url")), false);
 });
 
+test("product_offer adaptativo: dominio citado so pelo plano nunca e renderizado como site", async () => {
+  const foreign = await renderAdaptive({ cta: "Acesse o site", subheadline: "Veja tambem outrosite.com.br" });
+  assert.equal(foreign.renderedTextZones.some((zone) => zone.kind === "url"), false);
+
+  const authorized = await renderAdaptive({
+    cta: "Acesse o site",
+    subheadline: "Veja tambem outrosite.com.br",
+    context: { productionInstructions: "O endereco precobaixoclub.com.br deve aparecer no site da peca." },
+  });
+  assert.deepEqual(authorized.renderedTextZones.filter((zone) => zone.kind === "url").map((zone) => zone.text), ["precobaixoclub.com.br"]);
+});
+
+test("product_offer adaptativo: as tres variantes renderizam o dominio autorizado sem colisao", async () => {
+  const cases = [
+    ["HERO_DOMINANT", { primaryMassPct: 65, headline: "Sem Correria" }],
+    ["SPLIT_EDITORIAL", {}],
+    ["OVERLAY_EDITORIAL", { visualDensity: "clean", headline: "Sem Correria" }],
+  ];
+  for (const [variant, overrides] of cases) {
+    const result = await renderAdaptive({ ...overrides, cta: "Acesse o site", context: { productionInstructions: "O endereco precobaixoclub.com.br deve aparecer no site da peca." } });
+    assert.equal(result.composition.variant, variant);
+    assertAdaptiveTechnicalPass(result, `${variant} site`);
+    const siteBox = box(result, "url");
+    assert.ok(siteBox, `${variant}: caixa url ausente`);
+    for (const id of ["cta", "logo", "headline"]) assert.ok(!boxesOverlap(siteBox.rect, box(result, id).rect), `${variant}: url sobrepos ${id}`);
+  }
+});
+
 test("product_offer adaptativo: dominio autorizado longo cabe no HERO_DOMINANT", async () => {
   const result = await renderAdaptive({
     qaVariantOverride: "HERO_DOMINANT",

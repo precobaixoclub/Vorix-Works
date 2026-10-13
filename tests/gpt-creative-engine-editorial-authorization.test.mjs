@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { loadApiConfig } from "../dist/interfaces/api/config/api-config.js";
 import {
   GptCreativeEngineVisualTaskHandler,
+  resolveCreativeBrandName,
   resolveTrustedEditorialExperimentalAuthorization,
 } from "../dist/infrastructure/execution/gpt-creative-engine-execution-handlers.js";
 
@@ -316,4 +317,12 @@ test("worker: qa-assets sem modo editorial (homologação não comprovada) é ne
   assert.equal(outcome.result.ok, false);
   assert.equal(outcome.result.error.code, "REFERENCE_ASSET_FORBIDDEN");
   assert.equal(outcome.engineCalls, 0);
+});
+
+test("Creative Engine: request normal sem brandName usa o nome do workspace, nunca o generico", () => {
+  assert.equal(resolveCreativeBrandName({ objective: "Peca institucional" }, "Lumen"), "Lumen");
+  assert.equal(resolveCreativeBrandName({ brandName: "  " }, " Preço Baixo Club "), "Preço Baixo Club");
+  assert.equal(resolveCreativeBrandName({ brandName: "Marca QA" }, "Lumen"), "Marca QA");
+  assert.equal(resolveCreativeBrandName({}, undefined), "Marca");
+  assert.equal(resolveCreativeBrandName({}, "   "), "Marca");
 });

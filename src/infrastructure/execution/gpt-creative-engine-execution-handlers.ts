@@ -85,6 +85,12 @@ function stringValue(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+/** Request normal de produção não traz `brandName`: o nome real do workspace é a marca (mesma
+ * regra de `updateBrandProfile`), nunca o genérico "Marca" quando o workspace tem nome. */
+export function resolveCreativeBrandName(validatedInputs: Record<string, unknown>, workspaceName: string | undefined): string {
+  return stringValue(validatedInputs.brandName, stringValue(workspaceName, "Marca"));
+}
+
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -449,9 +455,10 @@ export class GptCreativeEngineVisualTaskHandler implements ExecutionTaskHandlerP
             && (this.deps.editorialExperimentalQaAllowlist ?? []).some((entry) => entry.tenantId === request.context.tenantId && entry.workspaceId === request.context.workspaceId),
         });
 
+    const workspace = await this.deps.workspaceRepository.getById(request.context.workspaceId).catch(() => undefined);
     const creativeContext = await buildCreativeContext(this.deps, {
       workspaceId: request.context.workspaceId,
-      brandName: stringValue(validatedInputs.brandName, "Marca"),
+      brandName: resolveCreativeBrandName(validatedInputs, workspace?.name),
       objective: stringValue(validatedInputs.objective, "Criar peça visual atrativa."),
       channel: stringValue(validatedInputs.channel, "instagram"),
       // `aspectRatio` chega no PR 7 — até lá, cai para "4:5" (formato mais comum de feed).

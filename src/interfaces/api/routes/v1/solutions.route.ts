@@ -36,6 +36,8 @@ const SET_BODY_SCHEMA = {
     enabled: { type: "boolean" },
     source: { type: "string", enum: [...SOLUTION_ENTITLEMENT_SOURCES] },
     reason: { type: "string", maxLength: 500 },
+    // Limites comerciais da solução (ex.: Meetings: maxConcurrentRecordings). Só inteiros >= 0.
+    limits: { type: "object", additionalProperties: { type: "integer", minimum: 0 }, maxProperties: 20 },
   },
 } as const;
 
@@ -64,13 +66,14 @@ export async function registerSolutionRoutes(app: FastifyInstance, deps: Solutio
     if (!deps.solutionAccess) throw new AppError({ code: "SOLUTIONS_UNAVAILABLE", message: "Entitlement de soluções indisponível nesta configuração.", statusCode: 503 });
     const { tenantId, solutionKey } = request.params as { tenantId: string; solutionKey: string };
     if (!isSolutionKey(solutionKey)) throw new ValidationError(`Solução "${solutionKey}" não existe.`);
-    const body = request.body as { enabled: boolean; source: SolutionEntitlementSource; reason?: string };
+    const body = request.body as { enabled: boolean; source: SolutionEntitlementSource; limits?: Record<string, number>; reason?: string };
     try {
       const entitlement = await deps.solutionAccess.setEntitlement({
         tenantId,
         solutionKey,
         enabled: body.enabled,
         source: body.source,
+        ...(body.limits ? { limits: body.limits } : {}),
         reason: body.reason?.trim() || undefined,
         actorUserId: principal.userId,
       });

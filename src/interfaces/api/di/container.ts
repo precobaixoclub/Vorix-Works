@@ -140,6 +140,9 @@ import { StripeBillingProvider } from "../../../infrastructure/billing/stripe-bi
 import { MercadoPagoBillingProvider } from "../../../infrastructure/billing/mercadopago-billing-provider.js";
 import { CreditGatedAiGateway } from "../../../application/ai-gateway/credit-gated-ai-gateway.js";
 import { SolutionAccessService } from "../../../application/solutions/solution-access.service.js";
+import { limitsFromEntitlement, type MeetingUseCaseDeps } from "../../../application/meetings/meeting-use-cases.js";
+import { ObjectStorageMeetingMedia } from "../../../infrastructure/meetings/object-storage-meeting-media.js";
+import { PostgresMeetingRepository } from "../../../infrastructure/storage/postgres/postgres-meeting-repository.js";
 import { isSolutionKey, type SolutionKey } from "../../../domain/solutions/solution.model.js";
 import { PostgresSolutionEntitlementRepository } from "../../../infrastructure/storage/postgres/postgres-solution-entitlement-repository.js";
 import { DeterministicExecutionTaskHandler } from "../../../application/execution/deterministic-handlers.js";
@@ -312,6 +315,8 @@ export type ApiContainer = {
   /** Acesso por SOLUÇÃO (Vorix Conversas / Vorix Marketing / futuras) — só existe com identidade
    * real (Postgres). Ausente = guarda de solução desligado (dev/teste em memória). */
   solutionAccess?: SolutionAccessService;
+  /** Vorix Meetings — só com identidade real (Postgres). */
+  meetings?: MeetingUseCaseDeps & { maxUploadBytes: number };
   publicationProviders: readonly PublicationProviderPort[];
   publicationProviderAdapters: readonly PublicationProviderAdapterPort[];
   publicationProviderRegistry: PublicationProviderRegistry;
@@ -1593,6 +1598,17 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       repository: new PostgresSolutionEntitlementRepository(identityRepositories.pool),
       killSwitches: new Set<SolutionKey>((config.solutions?.killSwitches ?? []).filter(isSolutionKey)),
     });
+    // Vorix Meetings: repositório próprio, gravações no storage privado do Core, limites
+    // comerciais lidos do entitlement da solução `meetings`.
+    const meetings: MeetingUseCaseDeps & { maxUploadBytes: number } = {
+      repository: new PostgresMeetingRepository(identityRepositories.pool),
+      media: new ObjectStorageMeetingMedia(objectStorage),
+      limitsFor: async (tenantId) => limitsFromEntitlement((await solutionAccess.getEntitlement(tenantId, "meetings"))?.limits),
+      features: { realRecordingEnabled: config.meetings?.realRecordingEnabled ?? false },
+      idGenerator: (prefix) => `${prefix}-${Date.now().toString(36)}-${randomBytes(5).toString("hex")}`,
+      now: () => new Date(),
+      maxUploadBytes: config.meetings?.maxUploadBytes ?? 500 * 1024 * 1024,
+    };
 
     const mediaGenerationService = new MediaGenerationService({
       registry: aiMediaProviderRegistry,
@@ -1617,6 +1633,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       aiMediaProviderRegistry,
       mediaGenerationService,
       solutionAccess,
+      meetings,
       executionHandlers,
       executionFeatureFlags,
       referenceAssetResolver,

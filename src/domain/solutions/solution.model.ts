@@ -3,6 +3,7 @@
  *
  *   VORIX CORE (auth, tenant, workspace, usuários, RBAC, cobrança, créditos, auditoria)
  *      ├── conversations  — Vorix Conversas (atendimento, CRM comercial, propostas, automações)
+ *      ├── meetings       — Vorix Meetings (agenda, gravação, transcrição e análise de reuniões)
  *      ├── marketing      — Vorix Marketing (Creative Engine, produção, publicação, anúncios)
  *      └── futuras soluções (entram aqui, sem nova reorganização)
  *
@@ -22,7 +23,7 @@
  * continuam valendo por cima, cada um no seu lugar.
  */
 
-export const SOLUTION_KEYS = ["conversations", "marketing"] as const;
+export const SOLUTION_KEYS = ["conversations", "meetings", "marketing"] as const;
 export type SolutionKey = (typeof SOLUTION_KEYS)[number];
 
 /**
@@ -44,6 +45,9 @@ export type SolutionDefinition = {
 
 export const SOLUTIONS: Readonly<Record<SolutionKey, SolutionDefinition>> = Object.freeze({
   conversations: { key: "conversations", name: "Vorix Conversas", commercialAvailability: "public", defaultEntitlement: true },
+  // Meetings nasce INTERNA (sem site, sem preço, sem contratação) até passar gravação real,
+  // transcrição, concorrência e smoke controlado em produção. Contratável SEM Conversas.
+  meetings: { key: "meetings", name: "Vorix Meetings", commercialAvailability: "internal", defaultEntitlement: false },
   marketing: { key: "marketing", name: "Vorix Marketing", commercialAvailability: "internal", defaultEntitlement: false },
 });
 
@@ -61,11 +65,16 @@ export function listPublicSolutions(): SolutionDefinition[] {
 export const SOLUTION_ENTITLEMENT_SOURCES = ["subscription", "internal", "manual"] as const;
 export type SolutionEntitlementSource = (typeof SOLUTION_ENTITLEMENT_SOURCES)[number];
 
+/** Limites comerciais do entitlement (por solução; ex.: `maxConcurrentRecordings` do Meetings).
+ * Ausente = o default da própria solução. Só números — preço nunca mora aqui. */
+export type SolutionEntitlementLimits = Readonly<Record<string, number>>;
+
 export type SolutionEntitlement = {
   tenantId: string;
   solutionKey: SolutionKey;
   enabled: boolean;
   source: SolutionEntitlementSource;
+  limits?: SolutionEntitlementLimits;
   reason?: string;
   updatedBy?: string;
   createdAt: string;
@@ -151,14 +160,44 @@ export const MARKETING_ROUTE_PREFIXES: readonly string[] = [
 ];
 
 /**
- * Solução dona de um caminho `/v1/...`. `undefined` = Core/Conversas (não barrado aqui).
+ * Prefixos do Vorix Conversas. Conversas é pública e habilitada por padrão (nenhum cliente atual
+ * perde nada), mas uma conta só com Meetings tem Conversas DESABILITADO — e então estas rotas
+ * respondem 403 como qualquer outra solução. Equipes e membros do tenant são Core.
+ */
+export const CONVERSATIONS_ROUTE_PREFIXES: readonly string[] = [
+  "inbox",
+  "contacts",
+  "deals",
+  "pipelines",
+  "proposals",
+  "proposal-templates",
+  "tasks",
+  "products",
+  "automation-rules",
+  "commercial-suggestions",
+  "commercial-metrics",
+];
+
+/** Prefixos do Vorix Meetings — tudo sob `/v1/meetings` (Central, Agenda, gravações, bots). */
+export const MEETINGS_ROUTE_PREFIXES: readonly string[] = ["meetings"];
+
+const ROUTE_PREFIXES_BY_SOLUTION: ReadonlyArray<readonly [SolutionKey, readonly string[]]> = [
+  ["marketing", MARKETING_ROUTE_PREFIXES],
+  ["meetings", MEETINGS_ROUTE_PREFIXES],
+  ["conversations", CONVERSATIONS_ROUTE_PREFIXES],
+];
+
+/**
+ * Solução dona de um caminho `/v1/...`. `undefined` = Core (não barrado aqui).
  * Casa por segmento inteiro: `/v1/assets` e `/v1/assets/upload` são Marketing, `/v1/assetsx` não.
  */
 export function solutionForApiPath(path: string): SolutionKey | undefined {
   const clean = path.split("?")[0].replace(/^\/+/, "");
   const withoutVersion = clean.startsWith("v1/") ? clean.slice(3) : clean === "v1" ? "" : clean;
-  for (const prefix of MARKETING_ROUTE_PREFIXES) {
-    if (withoutVersion === prefix || withoutVersion.startsWith(`${prefix}/`)) return "marketing";
+  for (const [solution, prefixes] of ROUTE_PREFIXES_BY_SOLUTION) {
+    for (const prefix of prefixes) {
+      if (withoutVersion === prefix || withoutVersion.startsWith(`${prefix}/`)) return solution;
+    }
   }
   return undefined;
 }

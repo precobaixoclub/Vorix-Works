@@ -13,6 +13,8 @@ export type SolutionEntitlementRepositoryPort = {
     solutionKey: SolutionKey;
     enabled: boolean;
     source: SolutionEntitlementSource;
+    /** Limites comerciais; ausente = mantém os já gravados. */
+    limits?: Record<string, number>;
     reason?: string;
     actorUserId?: string;
   }): Promise<SolutionEntitlement>;

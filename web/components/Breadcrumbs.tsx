@@ -17,6 +17,7 @@ export type RouteLabelMap = Record<string, string>;
 type Crumb = { label: string; href?: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
+const VORIX_ID_RE = /^[a-z]+-[a-z0-9]{7,}-[a-z0-9]{5,}$/;
 
 function buildCrumbs(pathname: string, homeHref: string, routeLabels: RouteLabelMap): Crumb[] {
   const parts = pathname.split("/").filter(Boolean);
@@ -25,7 +26,7 @@ function buildCrumbs(pathname: string, homeHref: string, routeLabels: RouteLabel
 
   parts.forEach((part, i) => {
     currentPath += `/${part}`;
-    if (UUID_RE.test(part) || (homeHref !== "/" && homeHref.startsWith(currentPath))) return;
+    if (UUID_RE.test(part) || VORIX_ID_RE.test(part) || (homeHref !== "/" && homeHref.startsWith(currentPath))) return;
 
     const label = routeLabels[currentPath] ?? part.charAt(0).toUpperCase() + part.slice(1);
     const isLast = i === parts.length - 1;

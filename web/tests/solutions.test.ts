@@ -54,7 +54,7 @@ describe("resolveActiveSolution", () => {
 });
 
 describe("navegação por solução", () => {
-  const hrefsOf = (key: "conversations" | "marketing") => {
+  const hrefsOf = (key: "conversations" | "meetings" | "marketing") => {
     const nav = SOLUTION_NAVIGATION[key];
     return [nav.home, ...(nav.primaryAction ? [nav.primaryAction] : []), ...nav.sections.flatMap((section) => section.items), ...nav.backstage, ...nav.mobilePrimary, ...nav.mobileMenu.flatMap((section) => section.items)].map((item) => item.href);
   };
@@ -76,9 +76,25 @@ describe("navegação por solução", () => {
     }
   });
 
+  it("o menu do Meetings só tem telas do Meetings (nada do Conversas)", () => {
+    for (const href of hrefsOf("meetings")) {
+      if (settingsHrefs.includes(href)) continue;
+      expect(routeOwner(`${BASE}${href}`, BASE), href).toBe("meetings");
+    }
+  });
+
+  it("Meetings funciona sem Conversas: rotas do Conversas bloqueadas, Meetings livre", () => {
+    expect(routeOwner(`${BASE}/meetings/central/meeting-1`, BASE)).toBe("meetings");
+    expect(isRouteBlocked("conversations", ["meetings"])).toBe(true);
+    expect(isRouteBlocked("meetings", ["meetings"])).toBe(false);
+    expect(isRouteBlocked("meetings", ["conversations"])).toBe(true);
+    expect(resolveActiveSolution({ owner: "core", available: ["meetings"] })).toBe("meetings");
+  });
+
   it("a home de cada solução pertence à própria solução", () => {
     expect(routeOwner(`${BASE}${SOLUTION_HOME_PATH.conversations}`, BASE)).toBe("conversations");
     expect(routeOwner(`${BASE}${SOLUTION_HOME_PATH.marketing}`, BASE)).toBe("marketing");
+    expect(routeOwner(`${BASE}${SOLUTION_HOME_PATH.meetings}`, BASE)).toBe("meetings");
   });
 
   it("bastidor e rótulos de breadcrumb continuam resolvendo", () => {

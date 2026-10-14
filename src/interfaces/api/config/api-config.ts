@@ -120,6 +120,13 @@ export type ApiConfig = {
    * vírgula) desliga uma solução inteira para TODOS os tenants, inclusive acesso interno — é
    * conceito distinto de entitlement (por tenant, no banco) e de disponibilidade comercial
    * (no código). Opcional no tipo só para configs montadas à mão em teste. */
+  /** Vorix Meetings — gates de release do ambiente (o acesso por tenant é o entitlement `meetings`). */
+  meetings?: {
+    /** MEETINGS_REAL_RECORDING_ENABLED — gravação por bot. Padrão desligado. */
+    realRecordingEnabled: boolean;
+    /** MEETINGS_MAX_UPLOAD_BYTES — teto do upload manual de gravação (padrão 500 MB). */
+    maxUploadBytes: number;
+  };
   solutions?: {
     killSwitches: readonly string[];
   };
@@ -642,6 +649,10 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       wuzApiBaseUrl: inboxWuzApiBaseUrl,
       wuzApiAdminToken: inboxWuzApiAdminToken,
       rabbitMqUrl: inboxRabbitMqUrl,
+    },
+    meetings: {
+      realRecordingEnabled: env.MEETINGS_REAL_RECORDING_ENABLED?.trim() === "true",
+      maxUploadBytes: parsePositiveInt(env.MEETINGS_MAX_UPLOAD_BYTES) ?? 500 * 1024 * 1024,
     },
     solutions: {
       killSwitches: (env.SOLUTION_KILL_SWITCHES ?? "").split(",").map((item) => item.trim()).filter(Boolean),

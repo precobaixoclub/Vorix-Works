@@ -43,6 +43,8 @@ test("DISPONIBILIDADE COMERCIAL: só o Vorix Conversas é público; Marketing é
   assert.equal(SOLUTIONS.marketing.commercialAvailability, "internal");
   assert.equal(SOLUTIONS.marketing.defaultEntitlement, false, "Marketing é fail-closed");
   assert.equal(SOLUTIONS.conversations.defaultEntitlement, true, "nenhum cliente atual perde o Conversas por falta de linha");
+  assert.equal(SOLUTIONS.meetings.commercialAvailability, "internal", "Meetings nasce interno até a homologação");
+  assert.equal(SOLUTIONS.meetings.defaultEntitlement, false, "Meetings é fail-closed");
 });
 
 test("ACESSO: kill switch, entitlement e default são conceitos separados", () => {
@@ -65,7 +67,15 @@ test("ROTAS: classificação por solução — Marketing barrado, Core e Convers
   for (const path of ["/v1/assets", "/v1/assets/upload", "/v1/brand-profile", "/v1/brand-identity/suggest-from-logo", "/v1/production/ideas", "/v1/production/creative-engine/status", "/v1/publications", "/v1/publications/queue", "/v1/planning", "/v1/runtime", "/v1/execution-runs/abc", "/v1/schedules", "/v1/calendar", "/v1/analytics/overview?x=1", "/v1/meta-ads/campaigns", "/v1/tiktok/posts", "/v1/youtube/posts", "/v1/instagram/posts", "/v1/publication-providers/tiktok/oauth/status", "/v1/credentials", "/v1/conversations", "/v1/briefings", "/v1/production-settings", "/v1/providers"]) {
     assert.equal(solutionForApiPath(path), "marketing", path);
   }
-  for (const path of ["/v1/inbox/conversations", "/v1/inbox/stream", "/v1/contacts", "/v1/deals", "/v1/pipelines", "/v1/tasks", "/v1/proposals", "/v1/proposal-templates", "/v1/products", "/v1/automation-rules", "/v1/teams", "/v1/tenant-members", "/v1/commercial-metrics", "/v1/workspaces", "/v1/auth/login", "/v1/billing/overview", "/v1/onboarding", "/v1/notifications", "/v1/solutions", "/v1/admin/tenants", "/v1/health", "/v1/platform/plans", "/v1/public/proposals/x"]) {
+  // Conversas tem prefixos próprios: uma conta só com Meetings não acessa o Conversas pela API.
+  for (const path of ["/v1/inbox/conversations", "/v1/inbox/stream", "/v1/contacts", "/v1/deals", "/v1/pipelines", "/v1/tasks", "/v1/proposals", "/v1/proposal-templates", "/v1/products", "/v1/automation-rules", "/v1/commercial-metrics", "/v1/commercial-suggestions"]) {
+    assert.equal(solutionForApiPath(path), "conversations", path);
+  }
+  for (const path of ["/v1/meetings", "/v1/meetings/dashboard", "/v1/meetings/abc/recordings/r1/playback"]) {
+    assert.equal(solutionForApiPath(path), "meetings", path);
+  }
+  // Core: nunca barrado por solução.
+  for (const path of ["/v1/teams", "/v1/tenant-members", "/v1/workspaces", "/v1/auth/login", "/v1/billing/overview", "/v1/onboarding", "/v1/notifications", "/v1/solutions", "/v1/admin/tenants", "/v1/health", "/v1/platform/plans", "/v1/public/proposals/x", "/v1/meetingsx"]) {
     assert.equal(solutionForApiPath(path), undefined, path);
   }
   // Integração COMPARTILHADA: o login Meta também conecta o canal Instagram Direct do Conversas.
@@ -93,7 +103,7 @@ function makeService(options = {}) {
 test("ENTITLEMENT: tenant comum tem Conversas e NÃO tem Marketing; concessão interna libera e fica auditada", async () => {
   const service = makeService();
   const tenantId = "tenant-sol-1";
-  assert.deepEqual((await service.listAccess(tenantId)).map((a) => [a.key, a.enabled]), [["conversations", true], ["marketing", false]]);
+  assert.deepEqual((await service.listAccess(tenantId)).map((a) => [a.key, a.enabled]), [["conversations", true], ["meetings", false], ["marketing", false]]);
   assert.equal(await service.hasAccess(tenantId, "marketing"), false);
 
   await assert.rejects(() => service.setEntitlement({ tenantId, solutionKey: "marketing", enabled: true, source: "subscription" }), /SOLUTION_NOT_CONTRACTABLE/);
@@ -240,14 +250,14 @@ test("API: conceder solução é só de administrador da plataforma, e Marketing
   const commercial = await adminApp.inject({ method: "PUT", url: "/v1/admin/tenants/tenant-api-dono/solutions/marketing", payload: { enabled: true, source: "subscription" } });
   assert.equal(commercial.statusCode, 409);
   assert.equal(commercial.json().error.code, "SOLUTION_NOT_CONTRACTABLE");
-  const unknown = await adminApp.inject({ method: "PUT", url: "/v1/admin/tenants/tenant-api-dono/solutions/meetings", payload: { enabled: true, source: "internal" } });
+  const unknown = await adminApp.inject({ method: "PUT", url: "/v1/admin/tenants/tenant-api-dono/solutions/agenda-x", payload: { enabled: true, source: "internal" } });
   assert.equal(unknown.statusCode, 400);
 
   const granted = await adminApp.inject({ method: "PUT", url: "/v1/admin/tenants/tenant-api-dono/solutions/marketing", payload: { enabled: true, source: "internal", reason: "teste interno" } });
   assert.equal(granted.statusCode, 200);
   assert.equal(await service.hasAccess("tenant-api-dono", "marketing"), true);
   const listed = await adminApp.inject({ method: "GET", url: "/v1/admin/tenants/tenant-api-dono/solutions" });
-  assert.deepEqual(listed.json().data.solutions.map((s) => [s.key, s.enabled, s.commercialAvailability]), [["conversations", true, "public"], ["marketing", true, "internal"]]);
+  assert.deepEqual(listed.json().data.solutions.map((s) => [s.key, s.enabled, s.commercialAvailability]), [["conversations", true, "public"], ["meetings", false, "internal"], ["marketing", true, "internal"]]);
   await adminApp.close();
 });
 

@@ -41,7 +41,7 @@ export function BottomNav({ workspaceId }: { workspaceId: string }) {
 
   function isActive(href: string): boolean {
     const target = `${base}${href}`;
-    return href === "" ? pathname === base : pathname.startsWith(target);
+    return href === "" || href === navigation.home.href ? pathname === target : pathname.startsWith(target);
   }
 
   function renderSheetLink(item: WorkspaceNavItem) {

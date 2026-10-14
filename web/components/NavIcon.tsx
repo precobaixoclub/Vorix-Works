@@ -25,6 +25,8 @@ export type NavIconId =
   | "providers"
   | "governance"
   | "operations"
+  | "meetings"
+  | "recordings"
   | "menu";
 
 const GEAR_TEETH_ANGLES = [0, 60, 120, 180, 240, 300];
@@ -34,6 +36,20 @@ export function NavIcon({ id, className = "h-[18px] w-[18px]" }: { id: NavIconId
   const stroke = { stroke: "currentColor", strokeWidth: 1.3, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
 
   switch (id) {
+    case "meetings":
+      return (
+        <svg {...shared}>
+          <rect x="2" y="4" width="8.5" height="8" rx="1.4" {...stroke} />
+          <path d="M10.5 7l3.5-2v6l-3.5-2" {...stroke} />
+        </svg>
+      );
+    case "recordings":
+      return (
+        <svg {...shared}>
+          <circle cx="8" cy="8" r="5.7" {...stroke} />
+          <circle cx="8" cy="8" r="2.2" fill="currentColor" />
+        </svg>
+      );
     case "home":
       return (
         <svg {...shared}>

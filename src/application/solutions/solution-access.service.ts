@@ -53,6 +53,11 @@ export class SolutionAccessService {
     );
   }
 
+  /** Linha explícita do tenant para a solução (com os limites comerciais), se existir. */
+  async getEntitlement(tenantId: string, solutionKey: SolutionKey): Promise<SolutionEntitlement | undefined> {
+    return (await this.entitlementsOf(tenantId)).find((entry) => entry.solutionKey === solutionKey);
+  }
+
   async hasAccess(tenantId: string, solutionKey: SolutionKey): Promise<boolean> {
     return (await this.listAccess(tenantId)).some((access) => access.key === solutionKey && access.enabled);
   }
@@ -61,7 +66,7 @@ export class SolutionAccessService {
    * Concede/revoga uma solução para um tenant (ação de administrador da plataforma). Uma solução
    * que não é comercialmente pública só aceita `source: "internal"`.
    */
-  async setEntitlement(input: { tenantId: string; solutionKey: SolutionKey; enabled: boolean; source: SolutionEntitlementSource; reason?: string; actorUserId?: string }): Promise<SolutionEntitlement> {
+  async setEntitlement(input: { tenantId: string; solutionKey: SolutionKey; enabled: boolean; source: SolutionEntitlementSource; limits?: Record<string, number>; reason?: string; actorUserId?: string }): Promise<SolutionEntitlement> {
     assertGrantSourceAllowed(SOLUTIONS[input.solutionKey], input.source);
     const saved = await this.deps.repository.set(input);
     this.cache.delete(input.tenantId);

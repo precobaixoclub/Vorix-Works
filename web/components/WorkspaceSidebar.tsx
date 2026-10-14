@@ -32,7 +32,8 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
 
   function isItemActive(item: WorkspaceNavItem): boolean {
     const href = `${base}${item.href}`;
-    return item.href === "" ? pathname === base : pathname.startsWith(href);
+    // A home de cada solução só fica ativa nela mesma (`/meetings` é prefixo das outras telas do Meetings).
+    return item.href === "" || item.href === navigation.home.href ? pathname === href : pathname.startsWith(href);
   }
 
   function renderLink(item: WorkspaceNavItem) {

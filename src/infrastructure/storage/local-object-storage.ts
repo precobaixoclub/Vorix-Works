@@ -1,4 +1,4 @@
-import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import type { ObjectStoragePort, ObjectStoragePutInput } from "../../application/ports/object-storage.port.js";
 import { ReferenceAssetError } from "../../application/assets/reference-asset-policy.js";
@@ -25,6 +25,12 @@ export class LocalObjectStorage implements ObjectStoragePort {
     await mkdir(dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, input.body);
     return { url: `${this.config.publicBaseUrl.replace(/\/$/, "")}/${encodeKey(input.key)}` };
+  }
+
+  async putFile(input: { key: string; filePath: string; contentType: string }): Promise<void> {
+    const absolutePath = resolveObjectPath(this.rootDir, input.key);
+    await mkdir(dirname(absolutePath), { recursive: true });
+    await copyFile(input.filePath, absolutePath);
   }
 
   async delete(key: string): Promise<void> {

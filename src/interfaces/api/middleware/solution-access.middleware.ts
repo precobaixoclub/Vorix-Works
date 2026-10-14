@@ -4,9 +4,9 @@ import { SOLUTIONS, solutionForApiPath } from "../../../domain/solutions/solutio
 import { AppError } from "../http/app-error.js";
 
 /**
- * Guarda de SOLUÇÃO na API — o isolamento do Vorix Marketing não depende de esconder itens na
- * sidebar: toda rota classificada como Marketing (`solutionForApiPath`) responde 403 para um
- * tenant sem entitlement, antes de chegar ao handler.
+ * Guarda de SOLUÇÃO na API — o isolamento entre soluções não depende de esconder itens na
+ * sidebar: toda rota classificada numa solução (`solutionForApiPath`: Conversas, Meetings,
+ * Marketing) responde 403 para um tenant sem entitlement, antes de chegar ao handler.
  *
  * Um único ponto, por prefixo de URL, em vez de um `if` em cada uma das dezenas de rotas de
  * Marketing — nenhuma rota existente precisou ser editada, e uma rota nova de Marketing sob um

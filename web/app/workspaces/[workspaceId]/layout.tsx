@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
 import { BottomNav } from "@/components/BottomNav";
@@ -12,7 +13,7 @@ import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { WorkspaceTopBar } from "@/components/WorkspaceTopBar";
 import { canUseBackstage, isBackstagePath as isBackstageRoute } from "@/components/workspace-navigation";
 import { useSolutions } from "@/features/solutions/hooks";
-import { isRouteBlocked, routeOwner } from "@/lib/solutions";
+import { isRouteBlocked, routeOwner, SOLUTION_HOME_PATH } from "@/lib/solutions";
 import { useAuth } from "@/contexts/auth-context";
 import { SidebarProvider } from "@/contexts/sidebar-context";
 import { WorkspaceProvider } from "@/contexts/workspace-context";
@@ -40,6 +41,14 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const { state } = useAuth();
   const { data: workspace, isLoading, error } = useWorkspace(params.workspaceId);
   const { available: availableSolutions, isLoading: solutionsLoading } = useSolutions();
+
+  // Conta sem Conversas (ex.: só Meetings): a home do workspace é do Conversas, então vai para a
+  // home da primeira solução disponível. Hook antes de qualquer return antecipado.
+  const homeBase = `/workspaces/${params.workspaceId}`;
+  const shouldLeaveHome = !solutionsLoading && pathname === homeBase && availableSolutions.length > 0 && !availableSolutions.includes("conversations");
+  useEffect(() => {
+    if (shouldLeaveHome) router.replace(`${homeBase}${SOLUTION_HOME_PATH[availableSolutions[0]!]}`);
+  }, [shouldLeaveHome, homeBase, availableSolutions, router]);
 
   if (isLoading) {
     return (
@@ -70,8 +79,9 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const owner = routeOwner(pathname, base);
   const solutionPending = owner !== "core" && owner !== "conversations" && solutionsLoading;
   const solutionBlocked = !solutionsLoading && isRouteBlocked(owner, availableSolutions);
+  const redirectHome = solutionBlocked && pathname === base && availableSolutions.length > 0;
 
-  const content = solutionPending ? (
+  const content = solutionPending || redirectHome ? (
     <div className="flex min-h-[60dvh] items-center justify-center">
       <Spinner className="h-5 w-5 text-ink-muted" />
     </div>

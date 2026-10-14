@@ -26,7 +26,7 @@ export function useSolutions() {
 function readRemembered(): SolutionKey | undefined {
   try {
     const value = window.sessionStorage.getItem(REMEMBERED_SOLUTION_KEY);
-    return value === "conversations" || value === "marketing" ? value : undefined;
+    return value === "conversations" || value === "meetings" || value === "marketing" ? value : undefined;
   } catch {
     return undefined;
   }

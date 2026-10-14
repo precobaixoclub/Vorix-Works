@@ -1,3 +1,5 @@
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { ReferenceAssetError } from "../../application/assets/reference-asset-policy.js";
 import type { ObjectStoragePort, ObjectStoragePutInput } from "../../application/ports/object-storage.port.js";
@@ -56,6 +58,12 @@ export class S3ObjectStorage implements ObjectStoragePort {
       ...(this.config.acl ? { ACL: this.config.acl as "public-read" } : {}),
     }));
     return { url: resolvePublicUrl(this.config, input.key) };
+  }
+
+  async putFile(input: { key: string; filePath: string; contentType: string }): Promise<void> {
+    const { size } = await stat(input.filePath);
+    // Sem ACL: objeto privado mesmo quando o bucket usa `acl` público para mídia de publicação.
+    await this.client.send(new PutObjectCommand({ Bucket: this.config.bucket, Key: input.key, Body: createReadStream(input.filePath), ContentLength: size, ContentType: input.contentType }));
   }
 
   async delete(key: string): Promise<void> {

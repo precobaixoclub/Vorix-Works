@@ -24,4 +24,8 @@ export type ObjectStoragePort = {
    * nunca por HTTP. Lança `ReferenceAssetError` (NOT_FOUND/TOO_LARGE/INVALID); `maxBytes` é
    * checado antes de carregar o conteúdo inteiro em memória. Opcional para adapters de teste. */
   read?(key: string, options: { maxBytes: number }): Promise<Buffer>;
+  /** Grava a partir de um arquivo local em streaming (gravações de reunião: centenas de MB nunca
+   * passam inteiras pela memória da API). SEMPRE privado — sem ACL pública, mesmo que o adapter
+   * tenha uma configurada para `put`. Opcional para adapters de teste. */
+  putFile?(input: { key: string; filePath: string; contentType: string }): Promise<void>;
 };

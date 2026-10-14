@@ -48,9 +48,41 @@ export async function registerUploadedObjectRoutes(app: FastifyInstance, options
     if (!fileStat?.isFile()) throw notFound("NOT_FOUND");
 
     reply.header("Cache-Control", publicObject ? "public, max-age=3600" : "private, max-age=900");
+    reply.header("Accept-Ranges", "bytes");
     reply.type(contentTypeForKey(key));
+    // Range (um único intervalo): o player de áudio/vídeo navega pela gravação sem baixar tudo.
+    const range = parseSingleRange(request.headers.range, fileStat.size);
+    if (range === "unsatisfiable") {
+      reply.code(416).header("Content-Range", `bytes */${fileStat.size}`);
+      return reply.send();
+    }
+    if (range) {
+      reply.code(206).header("Content-Range", `bytes ${range.start}-${range.end}/${fileStat.size}`).header("Content-Length", String(range.end - range.start + 1));
+      return reply.send(createReadStream(realFile, { start: range.start, end: range.end }));
+    }
+    reply.header("Content-Length", String(fileStat.size));
     return reply.send(createReadStream(realFile));
   });
+}
+
+/** `bytes=a-b` | `bytes=a-` | `bytes=-n`. Múltiplos intervalos ou formato inválido = ignora (200 inteiro). */
+export function parseSingleRange(header: string | undefined, size: number): { start: number; end: number } | "unsatisfiable" | undefined {
+  if (!header) return undefined;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match || (match[1] === "" && match[2] === "")) return undefined;
+  let start: number;
+  let end: number;
+  if (match[1] === "") {
+    const suffix = Number(match[2]);
+    if (suffix === 0) return "unsatisfiable";
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] === "" ? size - 1 : Math.min(Number(match[2]), size - 1);
+  }
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start >= size || start > end) return "unsatisfiable";
+  return { start, end };
 }
 
 function contentTypeForKey(key: string): string {
@@ -61,6 +93,11 @@ function contentTypeForKey(key: string): string {
   if (lower.endsWith(".svg")) return "image/svg+xml";
   if (lower.endsWith(".mp4")) return "video/mp4";
   if (lower.endsWith(".mov")) return "video/quicktime";
+  if (lower.endsWith(".webm")) return "video/webm";
+  if (lower.endsWith(".mp3")) return "audio/mpeg";
+  if (lower.endsWith(".m4a")) return "audio/mp4";
+  if (lower.endsWith(".wav")) return "audio/wav";
+  if (lower.endsWith(".ogg") || lower.endsWith(".oga")) return "audio/ogg";
   if (lower.endsWith(".pdf")) return "application/pdf";
   if (lower.endsWith(".woff")) return "font/woff";
   if (lower.endsWith(".woff2")) return "font/woff2";

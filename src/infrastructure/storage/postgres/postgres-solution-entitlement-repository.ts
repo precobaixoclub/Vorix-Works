@@ -7,6 +7,7 @@ type Row = {
   solution_key: string;
   enabled: boolean;
   source: SolutionEntitlementSource;
+  limits: Record<string, number> | null;
   reason: string | null;
   updated_by: string | null;
   created_at: Date;
@@ -24,18 +25,19 @@ export class PostgresSolutionEntitlementRepository implements SolutionEntitlemen
     return result.rows.filter((row) => isSolutionKey(row.solution_key)).map(toDomain);
   }
 
-  async set(input: { tenantId: string; solutionKey: SolutionKey; enabled: boolean; source: SolutionEntitlementSource; reason?: string; actorUserId?: string }): Promise<SolutionEntitlement> {
+  async set(input: { tenantId: string; solutionKey: SolutionKey; enabled: boolean; source: SolutionEntitlementSource; limits?: Record<string, number>; reason?: string; actorUserId?: string }): Promise<SolutionEntitlement> {
     const client = await this.pool.connect();
     try {
       await client.query("begin");
       const previous = await client.query<{ enabled: boolean }>(`select enabled from solution_entitlements where tenant_id = $1 and solution_key = $2 for update`, [input.tenantId, input.solutionKey]);
       const saved = await client.query<Row>(
-        `insert into solution_entitlements (tenant_id, solution_key, enabled, source, reason, updated_by)
-         values ($1, $2, $3, $4, $5, $6)
+        `insert into solution_entitlements (tenant_id, solution_key, enabled, source, reason, updated_by, limits)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb)
          on conflict (tenant_id, solution_key) do update set
-           enabled = excluded.enabled, source = excluded.source, reason = excluded.reason, updated_by = excluded.updated_by, updated_at = now()
+           enabled = excluded.enabled, source = excluded.source, reason = excluded.reason, updated_by = excluded.updated_by,
+           limits = coalesce($7::jsonb, solution_entitlements.limits), updated_at = now()
          returning *`,
-        [input.tenantId, input.solutionKey, input.enabled, input.source, input.reason ?? null, input.actorUserId ?? null],
+        [input.tenantId, input.solutionKey, input.enabled, input.source, input.reason ?? null, input.actorUserId ?? null, input.limits ? JSON.stringify(input.limits) : null],
       );
       await client.query(
         `insert into solution_entitlement_audit_log (id, tenant_id, solution_key, old_enabled, new_enabled, source, actor_user_id, reason)
@@ -59,6 +61,7 @@ function toDomain(row: Row): SolutionEntitlement {
     solutionKey: row.solution_key as SolutionKey,
     enabled: row.enabled,
     source: row.source,
+    ...(row.limits ? { limits: row.limits } : {}),
     reason: row.reason ?? undefined,
     updatedBy: row.updated_by ?? undefined,
     createdAt: row.created_at.toISOString(),

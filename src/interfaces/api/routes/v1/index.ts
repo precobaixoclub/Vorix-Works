@@ -27,6 +27,7 @@ import { registerInstagramRoutes } from "./instagram.route.js";
 import { registerInboxRoutes } from "./inbox.route.js";
 import { registerNotificationRoutes } from "./notifications.route.js";
 import { registerSolutionRoutes } from "./solutions.route.js";
+import { registerMeetingRoutes } from "./meetings.route.js";
 import { registerInboxMetricsRoutes } from "./inbox-metrics.route.js";
 import { registerTeamsRoutes } from "./teams.route.js";
 import { registerTenantMembersRoutes } from "./tenant-members.route.js";
@@ -90,6 +91,10 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   // Soluções da plataforma (Core) — sempre registrada: é ela que diz ao frontend quais soluções
   // este tenant enxerga.
   await registerSolutionRoutes(app, { solutionAccess: app.zunoContainer.solutionAccess });
+  // Vorix Meetings — só com identidade real; o guarda de solução barra tenants sem `meetings`.
+  if (app.zunoContainer.meetings) {
+    await registerMeetingRoutes(app, { ...app.zunoContainer.meetings, workspaceRepository: app.zunoContainer.workspaceRepository });
+  }
   // Central de notificações in-app (réplica adaptada do CMDesk, pedido explícito do usuário) —
   // SEMPRE registrada (nunca atrás de um kill switch de módulo, ao contrário de `/v1/inbox/*`).
   await registerNotificationRoutes(app, {

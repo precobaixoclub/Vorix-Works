@@ -10,7 +10,7 @@
  * digite a URL na mão.
  */
 
-export type SolutionKey = "conversations" | "marketing";
+export type SolutionKey = "conversations" | "meetings" | "marketing";
 
 export type SolutionSummary = {
   key: SolutionKey;
@@ -21,12 +21,14 @@ export type SolutionSummary = {
 
 export const SOLUTION_SHORT_NAME: Record<SolutionKey, string> = {
   conversations: "Conversas",
+  meetings: "Meetings",
   marketing: "Marketing",
 };
 
 /** Para onde o seletor de soluções leva (caminho relativo ao workspace). */
 export const SOLUTION_HOME_PATH: Record<SolutionKey, string> = {
   conversations: "",
+  meetings: "/meetings",
   marketing: "/production",
 };
 
@@ -56,6 +58,9 @@ const MARKETING_SEGMENTS: ReadonlySet<string> = new Set([
   "operations",
 ]);
 
+/** Vorix Meetings: tudo sob `/meetings` (início, Central, gravações, detalhe). */
+const MEETINGS_SEGMENTS: ReadonlySet<string> = new Set(["meetings"]);
+
 const CONVERSATIONS_SEGMENTS: ReadonlySet<string> = new Set(["", "conversas", "kanban", "contacts", "deals", "tasks", "proposals", "results"]);
 
 /** Telas do Core (conta/workspace): não pertencem a uma solução — mantêm a que já estava ativa. */
@@ -68,6 +73,7 @@ export function routeOwner(pathname: string, workspaceBase: string): RouteOwner 
   if (!pathname.startsWith(workspaceBase)) return "core";
   const segment = pathname.slice(workspaceBase.length).split("/").filter(Boolean)[0] ?? "";
   if (MARKETING_SEGMENTS.has(segment)) return "marketing";
+  if (MEETINGS_SEGMENTS.has(segment)) return "meetings";
   if (CONVERSATIONS_SEGMENTS.has(segment)) return "conversations";
   if (CORE_SEGMENTS.has(segment)) return "core";
   return "core";

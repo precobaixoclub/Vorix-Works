@@ -8,7 +8,7 @@ import { TrackPageView } from "@/components/TrackPageView";
 
 export const metadata: Metadata = {
   title: "Empresa — Vorix",
-  description: "Por que o Vorix existe: eliminar rupturas entre criar, atender e vender para transformar contexto em ação.",
+  description: "Por que o Vorix existe: eliminar rupturas entre atender, negociar e vender para transformar contexto em ação.",
   openGraph: {
     title: "Empresa — Vorix",
     description: "Transforme contexto em ação.",
@@ -45,10 +45,10 @@ export default function EmpresaPage() {
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:py-24">
           <p className="font-mono text-sm font-semibold uppercase tracking-[0.28em] text-[#addb46]">Vorix</p>
           <h1 className="mt-5 max-w-4xl font-display text-4xl font-semibold sm:text-5xl lg:text-6xl">
-            Existimos para eliminar rupturas entre criar, atender e vender.
+            Existimos para eliminar rupturas entre atender, negociar e vender.
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
-            Marketing cria demanda. A demanda vira conversa. A conversa vira contato. O contato vira oportunidade. O contexto não deveria se perder nesse caminho.
+            O cliente chama. A conversa vira contato. O contato vira oportunidade. A oportunidade vira proposta. O contexto não deveria se perder nesse caminho.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link href="/signup">
@@ -68,10 +68,10 @@ export default function EmpresaPage() {
           </div>
           <div>
             <p className="font-display text-3xl font-semibold leading-tight text-white sm:text-4xl">
-              Eliminar as rupturas entre criar, atender e vender.
+              Eliminar as rupturas entre atender, negociar e vender.
             </p>
             <p className="mt-5 max-w-3xl text-base leading-8 text-slate-300">
-              Nossa missão é eliminar as rupturas entre criar, atender e vender, conectando marketing, conversas e gestão comercial em uma única operação inteligente — para transformar contexto em ação e ação em resultado.
+              Nossa missão é eliminar as rupturas entre atender, negociar e vender, conectando conversas, contatos e gestão comercial em uma única operação inteligente — para transformar contexto em ação e ação em resultado.
             </p>
           </div>
         </div>
@@ -82,12 +82,12 @@ export default function EmpresaPage() {
           <InstitutionBlock
             eyebrow="O problema"
             title="Operações crescem em sistemas separados."
-            body="Quando criação, atendimento e vendas ficam isolados, o time perde histórico, repete trabalho e deixa oportunidades sem próxima ação."
+            body="Quando atendimento e vendas ficam isolados, o time perde histórico, repete trabalho e deixa oportunidades sem próxima ação."
           />
           <InstitutionBlock
             eyebrow="Nossa visão"
             title="Um futuro sem contextos separados."
-            body="Acreditamos em empresas operando marketing, atendimento e vendas em uma mesma cadência, com informação conectada e decisões mais claras."
+            body="Acreditamos em empresas operando atendimento e vendas em uma mesma cadência, com informação conectada e decisões mais claras."
           />
         </div>
       </section>
@@ -113,7 +113,7 @@ export default function EmpresaPage() {
         <div className="mx-auto max-w-4xl px-4 py-16 text-center sm:px-6 lg:py-20">
           <p className="font-mono text-sm font-semibold uppercase tracking-[0.28em] text-[#addb46]">Vorix</p>
           <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">Transforme contexto em ação.</h2>
-          <p className="mx-auto mt-3 max-w-2xl text-slate-300">Crie. Atenda. Venda. Tudo conectado.</p>
+          <p className="mx-auto mt-3 max-w-2xl text-slate-300">Atenda. Negocie. Venda. Tudo conectado.</p>
           <Link href="/signup">
             <Button className="mt-7 bg-[#addb46] px-6 py-3 text-[#071009] hover:bg-[#c7f45b]">
               Testar por 7 dias <ArrowRight className="ml-2 h-4 w-4" />

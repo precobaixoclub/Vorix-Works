@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, CheckCircle2, Circle, MessageSquareText, Plus, Rocket, UsersRound, WalletCards } from "lucide-react";
+import { CheckCircle2, Circle, MessageSquareText, UsersRound, WalletCards } from "lucide-react";
 import { Button } from "@/components/Button";
 import { ErrorState } from "@/components/ErrorState";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -14,8 +14,6 @@ import { isTaskOverdue } from "@/features/crm/presentation";
 import { useInboxMetrics, useInboxModuleStatus } from "@/features/inbox/hooks";
 import { useOnboarding } from "@/features/onboarding/hooks";
 import type { OnboardingStep } from "@/features/onboarding/types";
-import { useUnifiedPublications } from "@/features/publication-history/hooks";
-import { derivePublicationStatus } from "@/features/publication-history/types";
 import { formatCurrencyCents, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { VorixIntelligencePanel } from "./vorix-intelligence-panel";
@@ -25,14 +23,12 @@ const CHECKLIST_ITEMS: ReadonlyArray<{ step: OnboardingStep; label: string }> = 
   { step: "commercial", label: "Comercial" },
   { step: "team", label: "Equipe" },
   { step: "channel", label: "Canal" },
-  { step: "brand", label: "Marca" },
 ];
 
-const ACTIVATION_ITEMS: ReadonlyArray<{ step: OnboardingStep; title: string; description: string; route: string; icon: typeof Rocket }> = [
+const ACTIVATION_ITEMS: ReadonlyArray<{ step: OnboardingStep; title: string; description: string; route: string; icon: typeof WalletCards }> = [
   { step: "channel", title: "Conectar canal", description: "Ative o primeiro WhatsApp de atendimento.", route: "conversas?tab=connections", icon: MessageSquareText },
   { step: "team", title: "Convidar equipe", description: "Traga quem vai operar vendas e atendimento.", route: "settings/users", icon: UsersRound },
   { step: "commercial", title: "Criar primeira oportunidade", description: "Abra a primeira oportunidade comercial.", route: "deals", icon: WalletCards },
-  { step: "brand", title: "Criar primeiro conteúdo", description: "Prepare a base de marketing do workspace.", route: "create", icon: Rocket },
 ];
 
 export default function WorkspaceHomePage() {
@@ -47,7 +43,6 @@ export default function WorkspaceHomePage() {
   const { data: inboxMetrics, isLoading: inboxLoading, error: inboxError, mutate: mutateInbox } = useInboxMetrics(workspace.id, { enabled: inboxEnabled });
   const { data: commercialMetrics, isLoading: commercialLoading, error: commercialError, mutate: mutateCommercial } = useCommercialMetrics(workspace.id);
   const { data: tasks, isLoading: tasksLoading, error: tasksError, mutate: mutateTasks } = useTasks(workspace.id, { status: "pending" });
-  const { data: publications, isLoading: publicationsLoading, error: publicationsError, mutate: mutatePublications } = useUnifiedPublications(workspace.id);
   const { data: onboarding, isLoading: onboardingLoading } = useOnboarding(workspace.id);
 
   const now = useMemo(() => new Date(), []);
@@ -55,10 +50,9 @@ export default function WorkspaceHomePage() {
   // esta página tinha sua PRÓPRIA terceira definição de "atrasada" (instante atual), diferente das
   // outras duas. Agora as três (aqui, Intelligence e Contact 360/Tarefas) usam `isTaskOverdue`.
   const overdueTasks = (tasks ?? []).filter((task) => isTaskOverdue(task, now));
-  const scheduledPublications = (publications ?? []).filter((post) => derivePublicationStatus(post) === "scheduled");
-  const loading = (inboxEnabled && inboxLoading) || commercialLoading || tasksLoading || publicationsLoading;
-  const error = (inboxEnabled && inboxError) || commercialError || tasksError || publicationsError;
-  const isFreshWorkspace = !loading && !error && (inboxMetrics?.backlogCount ?? 0) === 0 && (commercialMetrics?.openPipelineValueCents ?? 0) === 0 && overdueTasks.length === 0 && scheduledPublications.length === 0;
+  const loading = (inboxEnabled && inboxLoading) || commercialLoading || tasksLoading;
+  const error = (inboxEnabled && inboxError) || commercialError || tasksError;
+  const isFreshWorkspace = !loading && !error && (inboxMetrics?.backlogCount ?? 0) === 0 && (commercialMetrics?.openPipelineValueCents ?? 0) === 0 && overdueTasks.length === 0;
 
   const userName = state.status === "authenticated" ? state.user.name.split(" ")[0] : undefined;
   const greeting = `${greetingForHour(now)}, ${userName || "time"}.`;
@@ -92,14 +86,6 @@ export default function WorkspaceHomePage() {
       icon: CheckCircle2,
       tone: overdueTasks.length > 0 ? "critical" as const : "default" as const,
     },
-    {
-      label: "Conteúdos agendados",
-      value: publications ? String(scheduledPublications.length) : undefined,
-      hint: publications ? "Próximas publicações programadas" : undefined,
-      route: `/workspaces/${workspace.id}/calendar`,
-      icon: CalendarClock,
-      tone: "default" as const,
-    },
   ];
 
   return (
@@ -114,9 +100,9 @@ export default function WorkspaceHomePage() {
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">Aqui está o que precisa da sua atenção hoje em {workspace.name}.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => router.push(`/workspaces/${workspace.id}/conversas`)}>Abrir conversas</Button>
-          <Button onClick={() => router.push(`/workspaces/${workspace.id}/create`)}>
-            <Plus className="mr-2 h-4 w-4" /> Criar conteúdo
+          <Button variant="secondary" onClick={() => router.push(`/workspaces/${workspace.id}/deals`)}>Oportunidades</Button>
+          <Button onClick={() => router.push(`/workspaces/${workspace.id}/conversas`)}>
+            <MessageSquareText className="mr-2 h-4 w-4" /> Abrir conversas
           </Button>
         </div>
       </header>
@@ -125,11 +111,11 @@ export default function WorkspaceHomePage() {
 
       {error ? (
         <div className="mb-5">
-          <ErrorState error={error} onRetry={() => { void Promise.all([mutateInbox(), mutateCommercial(), mutateTasks(), mutatePublications()]); }} />
+          <ErrorState error={error} onRetry={() => { void Promise.all([mutateInbox(), mutateCommercial(), mutateTasks()]); }} />
         </div>
       ) : null}
 
-      <section className={cn("grid gap-3 sm:grid-cols-2", inboxEnabled ? "xl:grid-cols-4" : "xl:grid-cols-3")}>
+      <section className={cn("grid gap-3 sm:grid-cols-2", inboxEnabled ? "xl:grid-cols-3" : "xl:grid-cols-2")}>
         {kpis.map((kpi) => (
           <button
             key={kpi.label}
@@ -203,10 +189,10 @@ function OnboardingChecklist({
 function QuickActions({ workspaceId }: { workspaceId: string }) {
   const router = useRouter();
   const actions = [
-    { label: "Criar conteúdo", route: "create" },
     { label: "Abrir Conversas", route: "conversas" },
     { label: "Nova oportunidade", route: "deals" },
-    { label: "Publicar", route: "publish" },
+    { label: "Contatos", route: "contacts" },
+    { label: "Propostas", route: "proposals" },
   ];
   return (
     <section className="rounded-2xl border border-border/70 bg-card px-4 py-4 shadow-sm">

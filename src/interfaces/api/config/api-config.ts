@@ -116,6 +116,13 @@ export type ApiConfig = {
     wuzApiAdminToken?: string;
     rabbitMqUrl?: string;
   };
+  /** Soluções da plataforma (Core). `killSwitches` (`SOLUTION_KILL_SWITCHES`, lista separada por
+   * vírgula) desliga uma solução inteira para TODOS os tenants, inclusive acesso interno — é
+   * conceito distinto de entitlement (por tenant, no banco) e de disponibilidade comercial
+   * (no código). Opcional no tipo só para configs montadas à mão em teste. */
+  solutions?: {
+    killSwitches: readonly string[];
+  };
   execution: {
     realExecutionEnabled: boolean;
     realExecutionResearchEnabled: boolean;
@@ -635,6 +642,9 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       wuzApiBaseUrl: inboxWuzApiBaseUrl,
       wuzApiAdminToken: inboxWuzApiAdminToken,
       rabbitMqUrl: inboxRabbitMqUrl,
+    },
+    solutions: {
+      killSwitches: (env.SOLUTION_KILL_SWITCHES ?? "").split(",").map((item) => item.trim()).filter(Boolean),
     },
     objectStorage: {
       enabled: objectStorageEnabled,

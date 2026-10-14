@@ -6,10 +6,10 @@ import type { UnifiedPublication } from "./types";
 
 /** Junta os feeds reais de TikTok/Instagram/Facebook/YouTube numa lista só — mesma lógica que vivia
  * presa dentro de `publish/page.tsx`, agora reaproveitada pela tela de histórico. */
-export function useUnifiedPublications(workspaceId: string) {
-  const tiktok = useTikTokPosts(workspaceId);
-  const meta = useMetaPosts(workspaceId);
-  const youtube = useYouTubePosts(workspaceId);
+export function useUnifiedPublications(workspaceId: string, enabled = true) {
+  const tiktok = useTikTokPosts(workspaceId, enabled);
+  const meta = useMetaPosts(workspaceId, enabled);
+  const youtube = useYouTubePosts(workspaceId, enabled);
 
   const data = useMemo<UnifiedPublication[] | undefined>(() => {
     if (tiktok.data === undefined && meta.data === undefined && youtube.data === undefined) return undefined;
@@ -58,7 +58,7 @@ export function useUnifiedPublications(workspaceId: string) {
   }, [tiktok.data, meta.data, youtube.data]);
 
   const error = tiktok.error ?? meta.error ?? youtube.error;
-  const isLoading = data === undefined && !error;
+  const isLoading = enabled && data === undefined && !error;
 
   async function mutate() {
     await Promise.all([tiktok.mutate(), meta.mutate(), youtube.mutate()]);

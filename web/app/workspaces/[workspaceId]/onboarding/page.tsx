@@ -7,11 +7,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { Card, CardBody } from "@/components/Card";
 import { ErrorState } from "@/components/ErrorState";
-import { Input, Label, Select, SelectItem, Textarea } from "@/components/Field";
+import { Input, Label, Select, SelectItem } from "@/components/Field";
 import { Logo } from "@/components/Logo";
 import { Spinner } from "@/components/Spinner";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { apiClient } from "@/lib/api-client";
 import { updateWorkspace } from "@/features/workspace/api";
 import type { TenantRole } from "@/features/identity/types";
 import { getInboxConnectionQrCode } from "@/features/inbox/api";
@@ -46,7 +45,10 @@ const STEP_LABELS: Record<OnboardingStep, string> = {
   done: "Pronto",
 };
 
-const WIZARD_STEPS = ONBOARDING_STEPS.filter((step) => step !== "done");
+// O onboarding é do Vorix Conversas: o passo "brand" (Marca, do Vorix Marketing) saiu do wizard.
+// Ele continua existindo no tipo só para onboardings antigos que pararam nele.
+const WIZARD_STEPS = ONBOARDING_STEPS.filter((step) => step !== "done" && step !== "brand");
+const WIZARD_GOALS = ONBOARDING_GOALS.filter((goal) => goal !== "content");
 
 export default function OnboardingWizardPage() {
   const params = useParams<{ workspaceId: string }>();
@@ -90,7 +92,7 @@ export default function OnboardingWizardPage() {
     );
   }
 
-  const stepIndex = WIZARD_STEPS.indexOf(progress.currentStep === "done" ? "brand" : progress.currentStep);
+  const stepIndex = WIZARD_STEPS.indexOf(progress.currentStep === "done" || progress.currentStep === "brand" ? "commercial" : progress.currentStep);
   const stepNumber = Math.min(stepIndex + 1, WIZARD_STEPS.length);
 
   async function refresh() {
@@ -108,7 +110,7 @@ export default function OnboardingWizardPage() {
         ) : null}
         {progress.currentStep === "team" ? <TeamStep workspaceId={workspace.id} onAdvance={refresh} /> : null}
         {progress.currentStep === "commercial" ? <CommercialStep workspaceId={workspace.id} onAdvance={refresh} /> : null}
-        {progress.currentStep === "brand" ? <BrandStep workspaceId={workspace.id} onAdvance={refresh} /> : null}
+        {progress.currentStep === "brand" ? <LegacyBrandStep workspaceId={workspace.id} onAdvance={refresh} /> : null}
         {progress.currentStep === "done" ? <DoneStep progress={progress} onFinish={goHome} workspaceId={workspace.id} /> : null}
       </div>
     </div>
@@ -133,8 +135,8 @@ function WizardHeader({ stepNumber, totalSteps, onSaveAndExit }: { stepNumber: n
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
         <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${percent}%` }} />
       </div>
-      <div className="mt-3 hidden grid-cols-5 gap-2 text-[11px] font-medium text-muted-foreground sm:grid">
-        {["Empresa", "Canal", "Equipe", "Comercial", "Marca"].map((label, index) => (
+      <div className="mt-3 hidden grid-cols-4 gap-2 text-[11px] font-medium text-muted-foreground sm:grid">
+        {["Empresa", "Canal", "Equipe", "Comercial"].map((label, index) => (
           <span key={label} className={index + 1 <= stepNumber ? "text-foreground" : undefined}>{index + 1} {label}</span>
         ))}
       </div>
@@ -160,7 +162,7 @@ const GOAL_LABEL: Record<OnboardingGoal, string> = {
   content: "Gerar conteúdo",
   support: "Atender clientes",
   sales: "Organizar vendas",
-  all: "Tudo isso",
+  all: "Atender e vender",
 };
 
 function CompanyStep({ workspaceId, onAdvance }: { workspaceId: string; onAdvance: () => Promise<void> }) {
@@ -221,7 +223,7 @@ function CompanyStep({ workspaceId, onAdvance }: { workspaceId: string; onAdvanc
       <div>
         <Label htmlFor="company-goal">Objetivo principal</Label>
         <Select id="company-goal" value={goal} onValueChange={(v) => setGoal(v as OnboardingGoal)} placeholder="Selecione (opcional)">
-          {ONBOARDING_GOALS.map((value) => (
+          {WIZARD_GOALS.map((value) => (
             <SelectItem key={value} value={value}>{GOAL_LABEL[value]}</SelectItem>
           ))}
         </Select>
@@ -518,36 +520,35 @@ function CommercialStep({ workspaceId, onAdvance }: { workspaceId: string; onAdv
   );
 }
 
-function BrandStep({ workspaceId, onAdvance }: { workspaceId: string; onAdvance: () => Promise<void> }) {
-  const [description, setDescription] = useState("");
-  const [busy, setBusy] = useState(false);
+/** Onboarding antigo parado no passo "Marca": o passo não existe mais, então é pulado sozinho
+ * (nenhuma chamada ao Vorix Marketing) e o wizard segue para a conclusão. */
+function LegacyBrandStep({ workspaceId, onAdvance }: { workspaceId: string; onAdvance: () => Promise<void> }) {
+  const [failed, setFailed] = useState(false);
 
-  async function handleSubmit(skipped: boolean) {
-    setBusy(true);
-    try {
-      if (!skipped && description.trim()) {
-        await apiClient.post("/v1/brand-profile", { workspaceId, businessDescription: description.trim() });
-      }
-      await advanceOnboardingStep(workspaceId, "brand", skipped || !description.trim());
-      await onAdvance();
-    } catch (err) {
-      toast.error("Não foi possível salvar a marca", { description: err instanceof Error ? err.message : "Tente de novo." });
-    } finally {
-      setBusy(false);
-    }
+  useEffect(() => {
+    let cancelled = false;
+    advanceOnboardingStep(workspaceId, "brand", true)
+      .then(() => (cancelled ? undefined : onAdvance()))
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  if (failed) {
+    return (
+      <StepCard title="Não foi possível continuar" description="Tente de novo em instantes.">
+        <Button onClick={() => window.location.reload()} className="w-full">Tentar novamente</Button>
+      </StepCard>
+    );
   }
-
   return (
-    <StepCard title="Vamos ensinar sua marca ao Vorix" description="Só uma descrição curta por agora — o resto fica na Central de Marca, quando você quiser.">
-      <div>
-        <Label htmlFor="brand-description">Sobre o seu negócio</Label>
-        <Textarea id="brand-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Ex.: Ajudamos famílias a encontrar o imóvel certo na Zona Sul." />
-      </div>
-      <div className="flex flex-col gap-2">
-        <Button onClick={() => handleSubmit(false)} disabled={busy} className="w-full">Configurar agora</Button>
-        <Button variant="ghost" onClick={() => handleSubmit(true)} disabled={busy} className="w-full">Pular por enquanto</Button>
-      </div>
-    </StepCard>
+    <div className="flex min-h-[30dvh] items-center justify-center">
+      <Spinner className="h-5 w-5 text-muted-foreground" />
+    </div>
   );
 }
 
@@ -559,7 +560,6 @@ function DoneStep({ progress, onFinish, workspaceId }: { progress: { completedSt
       { step: "commercial" as const, label: "Comercial pronto" },
       { step: "team" as const, label: "Equipe convidada" },
       { step: "channel" as const, label: "WhatsApp conectado" },
-      { step: "brand" as const, label: "Marca configurada" },
     ],
     [],
   );

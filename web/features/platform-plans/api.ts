@@ -70,7 +70,7 @@ export function formatPlanPrice(plan: PublicPlan): string {
 /** Copy comercial pública orientada ao estágio da operação, sem alterar o catálogo ou a cobrança. */
 export function getPublicPlanTagline(plan: Pick<PublicPlan, "code" | "tagline">): string {
   if (plan.code === "START") return "Para pequenas operações começarem com tudo conectado.";
-  if (plan.code === "PRO") return "Para equipes que já operam marketing, atendimento e vendas.";
+  if (plan.code === "PRO") return "Para equipes que já operam atendimento e vendas todos os dias.";
   if (plan.code === "BUSINESS") return "Para operações maiores que precisam de mais equipe, canais e capacidade.";
   return plan.tagline;
 }

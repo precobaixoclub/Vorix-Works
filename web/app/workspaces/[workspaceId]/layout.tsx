@@ -1,15 +1,18 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
 import { BottomNav } from "@/components/BottomNav";
+import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Spinner } from "@/components/Spinner";
 import { WorkspaceReadOnlyBanner } from "@/components/WorkspaceReadOnlyBanner";
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { WorkspaceTopBar } from "@/components/WorkspaceTopBar";
-import { BACKSTAGE_NAV, canUseBackstage } from "@/components/workspace-navigation";
+import { canUseBackstage, isBackstagePath as isBackstageRoute } from "@/components/workspace-navigation";
+import { useSolutions } from "@/features/solutions/hooks";
+import { isRouteBlocked, routeOwner } from "@/lib/solutions";
 import { useAuth } from "@/contexts/auth-context";
 import { SidebarProvider } from "@/contexts/sidebar-context";
 import { WorkspaceProvider } from "@/contexts/workspace-context";
@@ -33,8 +36,10 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
 function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const params = useParams<{ workspaceId: string }>();
   const pathname = usePathname();
+  const router = useRouter();
   const { state } = useAuth();
   const { data: workspace, isLoading, error } = useWorkspace(params.workspaceId);
+  const { available: availableSolutions, isLoading: solutionsLoading } = useSolutions();
 
   if (isLoading) {
     return (
@@ -56,9 +61,29 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   }
 
   const base = `/workspaces/${workspace.id}`;
-  const isBackstagePath = BACKSTAGE_NAV.some((item) => pathname.startsWith(`${base}${item.href}`));
+  const isBackstagePath = isBackstageRoute(pathname, base);
   const canSeeBackstage = state.status === "authenticated" && canUseBackstage(state.role);
-  const content = isBackstagePath && !canSeeBackstage ? (
+
+  // Guarda de SOLUÇÃO: uma tela do Vorix Marketing não é renderizada para quem não tem a solução
+  // (nem enquanto a lista de soluções ainda carrega). A API barra do mesmo jeito (403) — isto só
+  // evita montar uma tela que não teria dado nenhum para mostrar.
+  const owner = routeOwner(pathname, base);
+  const solutionPending = owner !== "core" && owner !== "conversations" && solutionsLoading;
+  const solutionBlocked = !solutionsLoading && isRouteBlocked(owner, availableSolutions);
+
+  const content = solutionPending ? (
+    <div className="flex min-h-[60dvh] items-center justify-center">
+      <Spinner className="h-5 w-5 text-ink-muted" />
+    </div>
+  ) : solutionBlocked ? (
+    <main className="mx-auto flex min-h-[60dvh] max-w-3xl items-center justify-center px-3 py-10 sm:px-6" data-testid="solution-blocked">
+      <EmptyState
+        title="Página não disponível"
+        description="Esta área não faz parte do que está disponível para a sua conta."
+        action={<Button variant="secondary" onClick={() => router.push(base)}>Voltar para o início</Button>}
+      />
+    </main>
+  ) : isBackstagePath && !canSeeBackstage ? (
     <main className="mx-auto flex min-h-[60dvh] max-w-3xl items-center justify-center px-3 py-10 sm:px-6">
       <EmptyState title="Bastidor restrito" description="Esta área técnica fica disponível apenas para owner e admin do tenant." />
     </main>
@@ -104,7 +129,7 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 : "flex min-h-0 min-w-0 flex-1 flex-col md:min-h-dvh"
             }
           >
-            <WorkspaceTopBar workspaceId={workspace.id} name={workspace.name} status={workspace.status} hideBreadcrumb={isFocusPath} />
+            <WorkspaceTopBar workspaceId={workspace.id} name={workspace.name} status={workspace.status} hideBreadcrumb={isFocusPath || solutionBlocked || solutionPending} />
             <WorkspaceReadOnlyBanner workspaceId={workspace.id} />
             <div
               className={

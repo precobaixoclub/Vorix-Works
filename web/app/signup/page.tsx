@@ -63,9 +63,9 @@ function SignupForm() {
       <section className="hidden border-r border-border bg-muted/20 p-10 lg:flex lg:flex-col lg:justify-between">
         <Link href="/" aria-label="Vorix"><Logo className="h-11 w-auto text-foreground" /></Link>
         <div className="max-w-xl">
-          <p className="text-sm font-semibold uppercase tracking-wide text-primary">Do marketing à venda</p>
-          <h1 className="mt-4 text-5xl font-semibold tracking-tight">Entre em uma operação conectada por IA.</h1>
-          <p className="mt-4 text-muted-foreground">Crie a conta, passe pelo onboarding e comece pelo Command Center.</p>
+          <p className="text-sm font-semibold uppercase tracking-wide text-primary">Da conversa à venda</p>
+          <h1 className="mt-4 text-5xl font-semibold tracking-tight">Atendimento e vendas no mesmo fluxo.</h1>
+          <p className="mt-4 text-muted-foreground">Crie a conta, conecte seu canal e comece a atender.</p>
         </div>
       </section>
       <section className="flex items-center justify-center">

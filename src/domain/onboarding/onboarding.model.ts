@@ -31,9 +31,18 @@ export type WorkspaceOnboarding = {
   updatedAt: string;
 };
 
-/** Próxima etapa na sequência fixa do wizard — `"done"` não tem próxima (idempotente, fica nela). */
+/**
+ * Etapas que o wizard percorre HOJE — o onboarding atual é exclusivamente do Vorix Conversas.
+ * `"brand"` (identidade/marca) pertence ao Vorix Marketing e saiu da sequência: continua no
+ * vocabulário acima porque existe em linhas já gravadas (e na constraint do banco), e volta como
+ * onboarding COMPLEMENTAR quando o Marketing for contratável — na mesma conta, sem refazer este.
+ */
+export const ONBOARDING_WIZARD_STEPS: readonly OnboardingStep[] = ["company", "channel", "team", "commercial", "done"];
+
+/** Próxima etapa na sequência do wizard — `"done"` não tem próxima (idempotente, fica nela). Uma
+ * linha antiga parada em `"brand"` segue direto para `"done"`. */
 export function nextOnboardingStep(step: OnboardingStep): OnboardingStep {
-  const index = ONBOARDING_STEPS.indexOf(step);
-  const next = ONBOARDING_STEPS[index + 1];
-  return next ?? "done";
+  const index = ONBOARDING_WIZARD_STEPS.indexOf(step);
+  if (index < 0) return "done";
+  return ONBOARDING_WIZARD_STEPS[index + 1] ?? "done";
 }

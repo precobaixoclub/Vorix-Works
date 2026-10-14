@@ -46,7 +46,7 @@ describe("formatCapacityLine", () => {
 describe("getPublicPlanTagline", () => {
   it("descreve os planos pelo estágio da operação, sem restringir por nicho", () => {
     expect(getPublicPlanTagline({ code: "START", tagline: "tag antiga" })).toBe("Para pequenas operações começarem com tudo conectado.");
-    expect(getPublicPlanTagline({ code: "PRO", tagline: "tag antiga" })).toBe("Para equipes que já operam marketing, atendimento e vendas.");
+    expect(getPublicPlanTagline({ code: "PRO", tagline: "tag antiga" })).toBe("Para equipes que já operam atendimento e vendas todos os dias.");
     expect(getPublicPlanTagline({ code: "BUSINESS", tagline: "tag antiga" })).toBe("Para operações maiores que precisam de mais equipe, canais e capacidade.");
   });
 });

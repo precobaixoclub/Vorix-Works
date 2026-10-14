@@ -14,6 +14,7 @@ import { TIKTOK_RETURN_PATH_KEY } from "@/app/tiktok/callback/page";
 import { YOUTUBE_RETURN_PATH_KEY } from "@/app/youtube/callback/page";
 import { beginMetaOAuth, disconnectMetaAccount } from "@/features/meta/api";
 import { useMetaOAuthStatus } from "@/features/meta/hooks";
+import { useSolutions } from "@/features/solutions/hooks";
 import { beginMetaAdsOAuth, disconnectMetaAdsAccount } from "@/features/meta-ads/api";
 import { useMetaAdAccounts, useMetaAdsOAuthStatus } from "@/features/meta-ads/hooks";
 import { beginTikTokOAuth, disconnectTikTokAccount } from "@/features/tiktok/api";
@@ -27,17 +28,28 @@ type AccountRow = { id: string; label: string; detail?: string; status: string }
 export default function ConnectionsPage() {
   const workspace = useCurrentWorkspace();
   const [feedback, setFeedback] = useState<string | undefined>();
+  const { hasMarketing } = useSolutions();
 
+  // A conexão Meta é COMPARTILHADA (Core): é ela que liga o Instagram Direct do Vorix Conversas.
+  // TikTok, YouTube e Meta Ads são só do Vorix Marketing.
   return (
-    <SettingsShell active="integrations" title="Integrações" description="Redes de marketing que o Vorix usa para publicar e medir conteúdos. Canais de atendimento ficam em Conversas.">
+    <SettingsShell
+      active="integrations"
+      title="Integrações"
+      description={hasMarketing ? "Contas conectadas ao Vorix para atender, publicar e medir conteúdos. O WhatsApp fica em Conversas." : "Contas conectadas ao Vorix. O WhatsApp é conectado direto em Conversas."}
+    >
 
       {feedback ? <Card className="mb-6 border-primary/30 bg-primary/5 p-4"><p className="text-sm text-foreground">{feedback}</p></Card> : null}
 
       <div className="grid gap-4">
-        <MetaConnection workspaceId={workspace.id} onFeedback={setFeedback} />
-        <MetaAdsConnection workspaceId={workspace.id} onFeedback={setFeedback} />
-        <TikTokConnection workspaceId={workspace.id} onFeedback={setFeedback} />
-        <YouTubeConnection workspaceId={workspace.id} onFeedback={setFeedback} />
+        <MetaConnection workspaceId={workspace.id} onFeedback={setFeedback} hasMarketing={hasMarketing} />
+        {hasMarketing ? (
+          <>
+            <MetaAdsConnection workspaceId={workspace.id} onFeedback={setFeedback} />
+            <TikTokConnection workspaceId={workspace.id} onFeedback={setFeedback} />
+            <YouTubeConnection workspaceId={workspace.id} onFeedback={setFeedback} />
+          </>
+        ) : null}
       </div>
     </SettingsShell>
   );
@@ -89,7 +101,7 @@ function TikTokConnection({ workspaceId, onFeedback }: { workspaceId: string; on
   );
 }
 
-function MetaConnection({ workspaceId, onFeedback }: { workspaceId: string; onFeedback: (message: string | undefined) => void }) {
+function MetaConnection({ workspaceId, onFeedback, hasMarketing }: { workspaceId: string; onFeedback: (message: string | undefined) => void; hasMarketing: boolean }) {
   const { data: oauth, mutate } = useMetaOAuthStatus(workspaceId);
   const [busy, setBusy] = useState(false);
   const accounts = oauth?.accounts.filter((account) => account.status !== "revoked") ?? [];
@@ -125,7 +137,7 @@ function MetaConnection({ workspaceId, onFeedback }: { workspaceId: string; onFe
     <ConnectionCard
       icon={AtSign}
       name="Meta"
-      description="Um login conecta Instagram profissional e Página do Facebook quando ambos estão disponíveis."
+      description={hasMarketing ? "Um login conecta Instagram profissional e Página do Facebook quando ambos estão disponíveis." : "Um login conecta o Instagram profissional da empresa para atender o Direct em Conversas."}
       configured={oauth?.configured !== false}
       busy={busy}
       accounts={accounts.map((account) => ({
@@ -310,7 +322,7 @@ function ConnectionCard({ icon: Icon, name, description, configured, busy, accou
     : humanStatus === "connected"
       ? `${activeAccounts.length} conta${activeAccounts.length === 1 ? "" : "s"} conectada${activeAccounts.length === 1 ? "" : "s"}`
       : humanStatus === "needs_attention"
-        ? "Reconecte para voltar a publicar."
+        ? "Reconecte para voltar a usar esta conta."
         : "Nenhuma conta conectada.";
 
   return (
@@ -356,7 +368,7 @@ function ConnectionCard({ icon: Icon, name, description, configured, busy, accou
       <ConfirmDialog
         open={confirmTarget !== null}
         title={`Desconectar de ${name}?`}
-        description={`Isso desconecta "${confirmTarget?.label ?? ""}" de ${name}. Você vai precisar reconectar essa conta para voltar a publicar por ela.`}
+        description={`Isso desconecta "${confirmTarget?.label ?? ""}" de ${name}. Você vai precisar reconectar essa conta para voltar a usá-la.`}
         confirmLabel="Desconectar"
         variant="danger"
         busy={busy}

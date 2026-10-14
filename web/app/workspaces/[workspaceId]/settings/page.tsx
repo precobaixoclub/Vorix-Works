@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
+import { useSolutions } from "@/features/solutions/hooks";
 import { updateWorkspace } from "@/features/workspace/api";
 import { formatDateTime } from "@/lib/format";
 
@@ -24,6 +25,7 @@ export default function SettingsPage() {
   const workspace = useCurrentWorkspace();
   const router = useRouter();
   const { state } = useAuth();
+  const { hasMarketing } = useSolutions();
   const [name, setName] = useState(workspace.name);
   const [kind, setKind] = useState(workspace.kind ?? "");
   const [timezone, setTimezone] = useState(workspace.settings.timezone ?? "America/Sao_Paulo");
@@ -73,7 +75,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <SettingsShell active="general" title="Configurações" description="Tudo exatamente onde você espera: workspace, equipe, integrações, produtos, automações e cobrança.">
+    <SettingsShell active="general" title="Configurações" description="Tudo exatamente onde você espera: conta, equipe, integrações, cobrança e as preferências de cada solução.">
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.8fr)]">
         <Card>
           <CardHeader>
@@ -107,13 +109,16 @@ export default function SettingsPage() {
                   <SelectContent>{LANGUAGES.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
+              {/* Preferência do Vorix Marketing: só existe para contas com a solução. */}
+              {hasMarketing ? (
               <div>
-                <Label htmlFor="workspace-aspect">Formato padrão</Label>
+                <Label htmlFor="workspace-aspect">Formato padrão de conteúdo</Label>
                 <Select value={defaultAspectRatio} onValueChange={setDefaultAspectRatio}>
                   <SelectTrigger id="workspace-aspect"><SelectValue /></SelectTrigger>
                   <SelectContent>{ASPECT_RATIOS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
+              ) : null}
             </div>
             <div className="flex justify-end">
               <Button onClick={save} loading={busy} disabled={!name.trim() || busy}>Salvar alterações</Button>
@@ -149,6 +154,7 @@ export default function SettingsPage() {
             </CardBody>
           </Card>
 
+          {hasMarketing ? (
           <Card>
             <CardHeader>
               <div>
@@ -166,6 +172,7 @@ export default function SettingsPage() {
               ))}
             </CardBody>
           </Card>
+          ) : null}
         </div>
       </div>
     </SettingsShell>

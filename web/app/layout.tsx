@@ -13,11 +13,11 @@ const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], var
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://vorixworks.com"),
-  title: "Vorix — Marketing, atendimento e vendas conectados por IA",
-  description: "Transforme contexto em ação com o Vorix: marketing, conversas e gestão comercial conectados em uma única operação inteligente.",
+  title: "Vorix — Atendimento e vendas no mesmo fluxo",
+  description: "Transforme contexto em ação com o Vorix Conversas: atendimento, CRM e gestão comercial conectados em uma única operação.",
   openGraph: {
     title: "Vorix — Transforme contexto em ação",
-    description: "Marketing, atendimento e vendas conectados por IA.",
+    description: "Atendimento e vendas no mesmo fluxo.",
     url: "https://vorixworks.com",
     siteName: "Vorix",
     images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: "Vorix — Transforme contexto em ação" }],
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Vorix — Transforme contexto em ação",
-    description: "Marketing, atendimento e vendas conectados por IA.",
+    description: "Atendimento e vendas no mesmo fluxo.",
     images: ["/opengraph-image.png"],
   },
   other: {

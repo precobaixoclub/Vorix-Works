@@ -17,7 +17,7 @@ export function PublicFooter() {
         <div>
           <Logo className="h-12 w-auto text-foreground" />
           <p className="mt-3 text-sm font-semibold text-foreground">Transforme contexto em ação.</p>
-          <p className="mt-2 max-w-sm text-sm text-muted-foreground">Marketing, atendimento e vendas conectados por IA.</p>
+          <p className="mt-2 max-w-sm text-sm text-muted-foreground">Atendimento e vendas no mesmo fluxo.</p>
           <p className="mt-4 text-xs text-muted-foreground">© {new Date().getFullYear()} Vorix. Todos os direitos reservados.</p>
         </div>
         <FooterGroup title="Produto" links={[["/", "Visão geral"], ["/pricing", "Preços"], ["/signup", "Criar conta"]]} />

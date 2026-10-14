@@ -139,6 +139,9 @@ import { SandboxBillingProvider } from "../../../infrastructure/billing/sandbox-
 import { StripeBillingProvider } from "../../../infrastructure/billing/stripe-billing-provider.js";
 import { MercadoPagoBillingProvider } from "../../../infrastructure/billing/mercadopago-billing-provider.js";
 import { CreditGatedAiGateway } from "../../../application/ai-gateway/credit-gated-ai-gateway.js";
+import { SolutionAccessService } from "../../../application/solutions/solution-access.service.js";
+import { isSolutionKey, type SolutionKey } from "../../../domain/solutions/solution.model.js";
+import { PostgresSolutionEntitlementRepository } from "../../../infrastructure/storage/postgres/postgres-solution-entitlement-repository.js";
 import { DeterministicExecutionTaskHandler } from "../../../application/execution/deterministic-handlers.js";
 import type { ExecutionHandlerResolver } from "../../../application/execution/handler-resolver.js";
 import type { ExecutionFeatureFlags } from "../../../application/execution/feature-flags.js";
@@ -306,6 +309,9 @@ export type ApiContainer = {
   clock: ClockPort;
   notificationRepository: NotificationRepositoryPort;
   notificationRealtimePublisher: NotificationRealtimePublisherPort;
+  /** Acesso por SOLUÇÃO (Vorix Conversas / Vorix Marketing / futuras) — só existe com identidade
+   * real (Postgres). Ausente = guarda de solução desligado (dev/teste em memória). */
+  solutionAccess?: SolutionAccessService;
   publicationProviders: readonly PublicationProviderPort[];
   publicationProviderAdapters: readonly PublicationProviderAdapterPort[];
   publicationProviderRegistry: PublicationProviderRegistry;
@@ -1581,6 +1587,13 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       creditAccounting,
       now: () => new Date(),
     });
+    // Entitlement por solução (Core) — alimenta o guarda da API (`solution-access.middleware.ts`)
+    // e `GET /v1/solutions`. Kill switches vêm do ambiente; a concessão por tenant, do banco.
+    const solutionAccess = new SolutionAccessService({
+      repository: new PostgresSolutionEntitlementRepository(identityRepositories.pool),
+      killSwitches: new Set<SolutionKey>((config.solutions?.killSwitches ?? []).filter(isSolutionKey)),
+    });
+
     const mediaGenerationService = new MediaGenerationService({
       registry: aiMediaProviderRegistry,
       creditAccounting,
@@ -1603,6 +1616,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       aiMediaProviderAdapters,
       aiMediaProviderRegistry,
       mediaGenerationService,
+      solutionAccess,
       executionHandlers,
       executionFeatureFlags,
       referenceAssetResolver,

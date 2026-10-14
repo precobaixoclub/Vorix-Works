@@ -17,6 +17,7 @@ import { InMemoryAiRateLimiter } from "../dist/infrastructure/ai-gateway/in-memo
 import { InMemoryAiTelemetry } from "../dist/infrastructure/ai-gateway/in-memory-ai-telemetry.js";
 import { FakeAiModelProvider, fakeSuccess } from "../dist/infrastructure/ai/fake-ai-model-provider.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
+import { grantInternalMarketing } from "./helpers/solution-entitlements.mjs";
 
 /**
  * "Smoke test com FakeAiProvider" pedido na validação final da Sprint 08 — via `app.inject`
@@ -85,6 +86,8 @@ async function seedUserAndLogin(app, { email, tenantId }) {
     { userRepository, membershipRepository, passwordHasher: new BcryptPasswordHasher() },
     { email, password: "senha-forte-123", name: "Usuária", tenantId, role: "owner" },
   );
+  // Estas rotas são do Vorix Marketing: o tenant de teste recebe o acesso interno à solução.
+  await grantInternalMarketing(db.pool, tenantId);
   const login = await app.inject({ method: "POST", url: "/v1/auth/login", payload: { email, password: "senha-forte-123" } });
   return login.json().data.accessToken;
 }

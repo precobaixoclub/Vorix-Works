@@ -5,13 +5,20 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { NavIcon } from "@/components/NavIcon";
 import { useAuth } from "@/contexts/auth-context";
-import { BACKSTAGE_NAV, MOBILE_MENU_SECTIONS, PRIMARY_MOBILE_NAV, canUseBackstage, type WorkspaceNavItem } from "@/components/workspace-navigation";
+import { SOLUTION_NAVIGATION, canUseBackstage, type WorkspaceNavItem } from "@/components/workspace-navigation";
+import { useActiveSolution } from "@/features/solutions/hooks";
 
 export function BottomNav({ workspaceId }: { workspaceId: string }) {
   const pathname = usePathname();
   const { state } = useAuth();
-  const canSeeBackstage = state.status === "authenticated" && canUseBackstage(state.role);
   const base = `/workspaces/${workspaceId}`;
+  // Mesma regra da sidebar: só a navegação da solução ativa.
+  const { active } = useActiveSolution(pathname, base);
+  const navigation = SOLUTION_NAVIGATION[active];
+  const PRIMARY_MOBILE_NAV = navigation.mobilePrimary;
+  const MOBILE_MENU_SECTIONS = navigation.mobileMenu;
+  const BACKSTAGE_NAV = navigation.backstage;
+  const canSeeBackstage = state.status === "authenticated" && canUseBackstage(state.role) && BACKSTAGE_NAV.length > 0;
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {

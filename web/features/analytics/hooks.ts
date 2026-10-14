@@ -9,8 +9,8 @@ export function useAnalyticsMetrics() {
   return useSWR("analytics-metrics", listAnalyticsMetrics);
 }
 
-export function useAnalyticsProviders(workspaceId: string, period: string, timezone: string) {
-  return useSWR(["analytics-providers", workspaceId, period, timezone], () => getAnalyticsProviders(workspaceId, period, timezone));
+export function useAnalyticsProviders(workspaceId: string, period: string, timezone: string, enabled = true) {
+  return useSWR(enabled ? ["analytics-providers", workspaceId, period, timezone] : null, () => getAnalyticsProviders(workspaceId, period, timezone));
 }
 
 export function useAnalyticsCampaigns(workspaceId: string, period: string, timezone: string) {
@@ -21,8 +21,8 @@ export function useAnalyticsScheduling(workspaceId: string, period: string, time
   return useSWR(["analytics-scheduling", workspaceId, period, timezone], () => getAnalyticsScheduling(workspaceId, period, timezone));
 }
 
-export function useAnalyticsPublication(workspaceId: string, period: string, timezone: string) {
-  return useSWR(["analytics-publication", workspaceId, period, timezone], () => getAnalyticsPublication(workspaceId, period, timezone));
+export function useAnalyticsPublication(workspaceId: string, period: string, timezone: string, enabled = true) {
+  return useSWR(enabled ? ["analytics-publication", workspaceId, period, timezone] : null, () => getAnalyticsPublication(workspaceId, period, timezone));
 }
 
 export function useAnalyticsExecution(workspaceId: string, period: string, timezone: string) {
@@ -37,8 +37,8 @@ export function useAnalyticsInsights(workspaceId: string, period: string, timezo
   return useSWR(["analytics-insights", workspaceId, period, timezone], () => listAnalyticsInsights(workspaceId, period, timezone));
 }
 
-export function useAnalyticsAlerts(workspaceId: string, period: string, timezone: string) {
-  return useSWR(["analytics-alerts", workspaceId, period, timezone], () => listAnalyticsAlerts(workspaceId, period, timezone));
+export function useAnalyticsAlerts(workspaceId: string, period: string, timezone: string, enabled = true) {
+  return useSWR(enabled ? ["analytics-alerts", workspaceId, period, timezone] : null, () => listAnalyticsAlerts(workspaceId, period, timezone));
 }
 
 export function useAnalyticsDataQuality(workspaceId: string) {

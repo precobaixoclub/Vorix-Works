@@ -15,6 +15,7 @@ import { TenantSwitcher } from "@/features/auth/components/TenantSwitcher";
 import { useTenantCredits } from "@/features/workspace/hooks";
 import type { TenantCreditsSummary } from "@/features/workspace/types";
 import { useBillingOverview } from "@/features/billing/hooks";
+import { useSolutions } from "@/features/solutions/hooks";
 import type { BillingOverview } from "@/features/billing/types";
 import { StatusBadge } from "./StatusBadge";
 
@@ -38,6 +39,7 @@ export function WorkspaceTopBar({ workspaceId, name, status, hideBreadcrumb }: {
   const user = state.status === "authenticated" ? state.user : null;
   const { data: credits } = useTenantCredits();
   const { data: billing } = useBillingOverview();
+  const { available: availableSolutions } = useSolutions();
   const base = `/workspaces/${workspaceId}`;
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -96,7 +98,7 @@ export function WorkspaceTopBar({ workspaceId, name, status, hideBreadcrumb }: {
           </button>
         </div>
       </div>
-      {hideBreadcrumb ? null : <Breadcrumbs homeHref={base} routeLabels={buildRouteLabels(base)} />}
+      {hideBreadcrumb ? null : <Breadcrumbs homeHref={base} routeLabels={buildRouteLabels(base, availableSolutions)} />}
     </header>
   );
 }

@@ -39,7 +39,7 @@ export default function LoginPage() {
         <div className="max-w-xl">
           <p className="text-sm font-semibold uppercase tracking-wide text-primary">Bem-vindo de volta</p>
           <h1 className="mt-4 text-5xl font-semibold tracking-tight">Entre para continuar sua operação.</h1>
-          <p className="mt-4 text-muted-foreground">Marketing, atendimento, CRM e resultados no mesmo lugar.</p>
+          <p className="mt-4 text-muted-foreground">Atendimento, CRM e resultados no mesmo lugar.</p>
         </div>
       </section>
       <section className="flex items-center justify-center">

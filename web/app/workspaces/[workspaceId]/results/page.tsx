@@ -37,6 +37,7 @@ import type { CommercialMetricsReport } from "@/features/crm/types";
 import { useInboxMembers, useInboxMetrics } from "@/features/inbox/hooks";
 import type { InboxMetricsReport } from "@/features/inbox/types";
 import { useUnifiedPublications } from "@/features/publication-history/hooks";
+import { useSolutions } from "@/features/solutions/hooks";
 import { derivePublicationStatus, type PublicationNetwork, type UnifiedPublication } from "@/features/publication-history/types";
 
 type ResultsSection = "overview" | "marketing" | "attendance" | "commercial";
@@ -58,18 +59,24 @@ const CHANNELS: readonly { value: ChannelFilter; label: string }[] = [
   { value: "youtube", label: "YouTube Shorts" },
 ];
 
-const SECTION_ITEMS = [
+// Relatórios do Vorix Conversas. A seção de Marketing só entra para contas com a solução Marketing.
+const CONVERSATIONS_SECTION_ITEMS = [
   { value: "overview", label: "Visão geral", icon: LineChart },
-  { value: "marketing", label: "Marketing", icon: Megaphone },
   { value: "attendance", label: "Atendimento", icon: Headphones },
   { value: "commercial", label: "Comercial", icon: UsersRound },
 ];
+const MARKETING_SECTION_ITEM = { value: "marketing", label: "Marketing", icon: Megaphone };
+const CONVERSATIONS_CHANNELS: readonly ChannelFilter[] = ["all", "instagram", "facebook"];
 
 const TIMEZONE = "America/Sao_Paulo";
 
 export default function ResultsPage() {
   const workspace = useCurrentWorkspace();
-  const [section, setSection] = useState<ResultsSection>("overview");
+  const { hasMarketing } = useSolutions();
+  const [selectedSection, setSection] = useState<ResultsSection>("overview");
+  const section: ResultsSection = selectedSection === "marketing" && !hasMarketing ? "overview" : selectedSection;
+  const sectionItems = hasMarketing ? [CONVERSATIONS_SECTION_ITEMS[0], MARKETING_SECTION_ITEM, ...CONVERSATIONS_SECTION_ITEMS.slice(1)] : CONVERSATIONS_SECTION_ITEMS;
+  const channelOptions = hasMarketing ? CHANNELS : CHANNELS.filter((item) => CONVERSATIONS_CHANNELS.includes(item.value));
   const [periodChoice, setPeriodChoice] = useState<PeriodChoice>("last_30_days");
   const [dateFrom, setDateFrom] = useState(() => dateInput(addDays(new Date(), -29)));
   const [dateTo, setDateTo] = useState(() => dateInput(new Date()));
@@ -82,10 +89,11 @@ export default function ResultsPage() {
   const range = useMemo(() => dateRange(periodChoice, dateFrom, dateTo), [periodChoice, dateFrom, dateTo]);
   const { data: pipelines } = usePipelines(workspace.id);
   const members = useInboxMembers(workspace.id);
-  const publications = useUnifiedPublications(workspace.id);
-  const publicationAnalytics = useAnalyticsPublication(workspace.id, period, TIMEZONE);
-  const providerAnalytics = useAnalyticsProviders(workspace.id, period, TIMEZONE);
-  const alerts = useAnalyticsAlerts(workspace.id, period, TIMEZONE);
+  // Dados do Marketing: nenhuma chamada sai quando a conta não tem a solução.
+  const publications = useUnifiedPublications(workspace.id, hasMarketing);
+  const publicationAnalytics = useAnalyticsPublication(workspace.id, period, TIMEZONE, hasMarketing);
+  const providerAnalytics = useAnalyticsProviders(workspace.id, period, TIMEZONE, hasMarketing);
+  const alerts = useAnalyticsAlerts(workspace.id, period, TIMEZONE, hasMarketing);
 
   const commercialFilters = {
     dateFrom: range.from,
@@ -133,7 +141,7 @@ export default function ResultsPage() {
     <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title="Resultados"
-        description="Uma leitura integrada de marketing, atendimento e comercial, sempre a partir de dados reais."
+        description={hasMarketing ? "Uma leitura integrada de marketing, atendimento e comercial, sempre a partir de dados reais." : "Atendimento e comercial lado a lado, sempre a partir de dados reais."}
       />
 
       <FilterBar
@@ -159,7 +167,7 @@ export default function ResultsPage() {
           <Select value={channel} onValueChange={(value) => setChannel(value as ChannelFilter)}>
             <SelectTrigger id="results-channel"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {CHANNELS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+              {channelOptions.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -175,14 +183,14 @@ export default function ResultsPage() {
         <TeamPicker workspaceId={workspace.id} value={teamId} onValueChange={setTeamId} extraOption={{ value: "all", label: "Todas as equipes" }} className="w-[190px]" />
       </FilterBar>
 
-      <PageSubnav items={SECTION_ITEMS} value={section} onValueChange={(value) => setSection(value as ResultsSection)}>
+      <PageSubnav items={sectionItems} value={section} onValueChange={(value) => setSection(value as ResultsSection)}>
         {error && !loading ? <ErrorState error={error} onRetry={retryAll} /> : null}
         {section === "overview" ? (
           <OverviewSection
             loading={loading}
             attendance={attendance.data}
             commercial={commercial.data}
-            marketing={marketingSummary}
+            marketing={hasMarketing ? marketingSummary : undefined}
             publicationAnalytics={publicationAnalytics.data}
             alerts={alerts.data ?? []}
             onAlertAction={updateAlert}
@@ -222,7 +230,8 @@ function OverviewSection({
   loading: boolean;
   attendance?: InboxMetricsReport;
   commercial?: CommercialMetricsReport;
-  marketing: PublicationSummary;
+  /** Ausente = conta sem a solução Marketing: a visão geral mostra só atendimento e comercial. */
+  marketing?: PublicationSummary;
   publicationAnalytics?: AnalyticsQueryResult;
   alerts: readonly AnalyticsAlertOccurrence[];
   onAlertAction: (alert: AnalyticsAlertOccurrence, action: "acknowledge" | "resolve") => Promise<void>;
@@ -231,16 +240,20 @@ function OverviewSection({
   return (
     <div className="space-y-5">
       <StatsGrid>
-        <KpiCard label="Publicações" value={metricText(publicationAnalytics, "publication_completed_total", marketing.published)} hint={`${num(marketing.scheduled)} agendadas`} icon={<Megaphone className="h-4 w-4" />} />
+        {marketing ? <KpiCard label="Publicações" value={metricText(publicationAnalytics, "publication_completed_total", marketing.published)} hint={`${num(marketing.scheduled)} agendadas`} icon={<Megaphone className="h-4 w-4" />} /> : null}
         <KpiCard label="Atendimentos recebidos" value={definedNum(attendance?.receivedCount)} hint={`${definedNum(attendance?.resolvedCount)} resolvidos`} icon={<Headphones className="h-4 w-4" />} />
         <KpiCard label="Receita ganha" value={moneyFromCents(commercial?.wonValueCents)} hint={`${definedNum(commercial?.wonCount)} oportunidades ganhas`} accent="positive" icon={<CheckCircle2 className="h-4 w-4" />} />
-        <KpiCard label="Alertas ativos" value={num(alerts.filter((alert) => alert.status === "active").length)} accent={alerts.some((alert) => alert.status === "active") ? "negative" : "default"} icon={<Activity className="h-4 w-4" />} />
+        {marketing ? (
+          <KpiCard label="Alertas ativos" value={num(alerts.filter((alert) => alert.status === "active").length)} accent={alerts.some((alert) => alert.status === "active") ? "negative" : "default"} icon={<Activity className="h-4 w-4" />} />
+        ) : (
+          <KpiCard label="Pipeline aberto" value={moneyFromCents(commercial?.openPipelineValueCents)} hint="Oportunidades em andamento" icon={<Activity className="h-4 w-4" />} />
+        )}
       </StatsGrid>
 
-      <ChartCard title="Resultado por área" description="Comparação normalizada dos indicadores principais." empty={!attendance && !commercial && marketing.total === 0}>
+      <ChartCard title="Resultado por área" description="Comparação normalizada dos indicadores principais." empty={!attendance && !commercial && (marketing?.total ?? 0) === 0}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={[
-            { name: "Marketing", value: metricNumber(publicationAnalytics, "publication_completed_total") ?? marketing.published },
+            ...(marketing ? [{ name: "Marketing", value: metricNumber(publicationAnalytics, "publication_completed_total") ?? marketing.published }] : []),
             { name: "Atendimento", value: attendance?.resolvedCount ?? 0 },
             { name: "Comercial", value: commercial?.wonCount ?? 0 },
           ]}>
@@ -253,7 +266,7 @@ function OverviewSection({
         </ResponsiveContainer>
       </ChartCard>
 
-      <AlertsPanel alerts={alerts} onAlertAction={onAlertAction} />
+      {marketing ? <AlertsPanel alerts={alerts} onAlertAction={onAlertAction} /> : null}
     </div>
   );
 }

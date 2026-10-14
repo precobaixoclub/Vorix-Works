@@ -12,7 +12,15 @@ import { cn } from "@/lib/utils";
 
 export const revalidate = 300;
 
-const JOURNEY = ["Criar", "Publicar", "Conversar", "Vender", "Medir"] as const;
+// O site público apresenta SÓ o Vorix Conversas (única solução comercializada). Nada de outras
+// soluções aqui — nem como "em breve".
+const JOURNEY = ["Conversar", "Organizar", "Propor", "Vender", "Medir"] as const;
+
+const RESULT_SIGNALS: readonly { title: string; description: string }[] = [
+  { title: "Atendimento", description: "Conversas recebidas, resolvidas e tempo de resposta por pessoa e por equipe." },
+  { title: "Comercial", description: "Pipeline aberto, receita ganha e conversão por etapa, origem e responsável." },
+  { title: "Próxima ação", description: "Oportunidades paradas, tarefas atrasadas e propostas vistas sem resposta." },
+];
 
 const PRODUCT_SECTIONS: readonly ProductSection[] = [
   {
@@ -48,23 +56,6 @@ const PRODUCT_SECTIONS: readonly ProductSection[] = [
       width: 920,
       widths: [920],
       className: "bottom-5 left-5 hidden w-[42%] lg:block",
-    },
-  },
-  {
-    eyebrow: "Marketing + IA",
-    title: "Crie e organize conteúdo com IA sem sair da plataforma.",
-    description: "A tela de Criar e o planejamento de Produção mostram como a IA entra no fluxo real de marketing.",
-    label: "Criar conteúdo",
-    image: "marketing-criar",
-    width: 1120,
-    widths: [900, 1120],
-    aspect: "aspect-[1120/825]",
-    overlay: {
-      label: "Produção",
-      image: "producao",
-      width: 1120,
-      widths: [900, 1120],
-      className: "bottom-5 right-5 hidden w-[42%] lg:block",
     },
   },
 ];
@@ -105,10 +96,10 @@ export default async function RootPage() {
               <span className="text-sm font-medium text-slate-300">Transforme contexto em ação.</span>
             </div>
             <h1 className="mt-5 text-balance font-display text-4xl font-semibold sm:text-5xl lg:text-6xl">
-              Marketing, atendimento e vendas conectados por IA.
+              Atendimento e vendas no mesmo fluxo.
             </h1>
             <p className="mt-5 max-w-xl text-balance text-base leading-7 text-slate-300 sm:text-lg">
-              O Vorix conecta conteúdo, conversas, CRM e resultados para sua equipe transformar contexto em ação e ação em receita.
+              O Vorix Conversas conecta WhatsApp, Instagram, CRM, propostas e resultados para sua equipe transformar contexto em ação e ação em receita.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link href="/signup">
@@ -133,7 +124,7 @@ export default async function RootPage() {
             <p className="text-sm font-semibold uppercase text-[#addb46]">Veja o Vorix em operação</p>
             <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">O Vorix conecta toda a sua operação.</h2>
             <p className="mt-3 text-base leading-7 text-slate-300">
-              Marketing, conversas e vendas trabalhando no mesmo fluxo.
+              Conversas, contatos, oportunidades e propostas trabalhando no mesmo fluxo.
             </p>
           </div>
           <div className="mt-10 space-y-14">
@@ -152,18 +143,17 @@ export default async function RootPage() {
             <p className="text-sm font-semibold uppercase text-[#addb46]">Resultados</p>
             <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">Sinais úteis, no ritmo da operação.</h2>
             <p className="mt-4 text-slate-300">
-              O Command Center e Resultados destacam oportunidades e riscos operacionais no contexto certo: conversa, tarefa, proposta ou pipeline.
+              O Início e os Relatórios destacam oportunidades e riscos operacionais no contexto certo: conversa, tarefa, proposta ou pipeline.
             </p>
           </div>
-          <ProductBrowserFrame label="Resultados" className="shadow-2xl shadow-black/35">
-            <ProductShot
-              name="resultados"
-              alt="Tela real de Resultados do Vorix com métricas de marketing, atendimento, receita e alerta de analytics"
-              width={1120}
-              widths={[900, 1120]}
-              className="h-full w-full object-cover"
-            />
-          </ProductBrowserFrame>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {RESULT_SIGNALS.map((signal) => (
+              <div key={signal.title} className="rounded-xl border border-white/10 bg-white/[0.04] p-5">
+                <p className="font-semibold text-white">{signal.title}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-300">{signal.description}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -172,7 +162,7 @@ export default async function RootPage() {
           <div className="grid gap-8 lg:grid-cols-[0.7fr_1.3fr] lg:items-center">
             <div>
               <p className="text-sm font-semibold uppercase text-[#4f6b1a]">Jornada</p>
-              <h2 className="mt-3 font-display text-3xl font-semibold sm:text-4xl">Do conteúdo ao resultado, sem perder o fio.</h2>
+              <h2 className="mt-3 font-display text-3xl font-semibold sm:text-4xl">Da primeira conversa ao resultado, sem perder o fio.</h2>
             </div>
             <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
               <div className="grid min-w-[680px] grid-cols-5">
@@ -215,8 +205,8 @@ export default async function RootPage() {
       <section className="border-y border-white/10 bg-[#0b1019]">
         <div className="mx-auto max-w-4xl px-4 py-16 text-center sm:px-6 lg:py-20">
           <p className="font-mono text-sm font-semibold uppercase tracking-[0.28em] text-[#addb46]">Vorix</p>
-          <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">Crie. Atenda. Venda. Tudo conectado.</h2>
-          <p className="mx-auto mt-3 max-w-2xl text-slate-300">Transforme contexto em ação com marketing, conversas e vendas trabalhando no mesmo fluxo.</p>
+          <h2 className="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">Atenda. Negocie. Venda. Tudo conectado.</h2>
+          <p className="mx-auto mt-3 max-w-2xl text-slate-300">Transforme contexto em ação com atendimento e vendas trabalhando no mesmo fluxo.</p>
           <Link href="/signup">
             <Button className="mt-7 bg-[#addb46] px-6 py-3 text-[#071009] hover:bg-[#c7f45b]">Testar o Vorix por 7 dias</Button>
           </Link>
@@ -271,20 +261,20 @@ type ProductSection = {
 };
 
 function BrandMissionSection() {
-  const flow = ["Criar", "Atender", "Vender"];
+  const flow = ["Atender", "Negociar", "Vender"];
   return (
     <section className="border-y border-white/10 bg-[#0a0f18]">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-center lg:py-20">
         <div>
           <p className="font-mono text-sm font-semibold uppercase tracking-[0.26em] text-[#addb46]">Por que o Vorix existe</p>
           <h2 className="mt-4 max-w-2xl font-display text-3xl font-semibold text-white sm:text-4xl">
-            Criar, atender e vender não deveriam acontecer em mundos separados.
+            Atender, negociar e vender não deveriam acontecer em mundos separados.
           </h2>
           <p className="mt-5 max-w-2xl text-base leading-7 text-slate-300">
-            Empresas ainda operam marketing, atendimento e vendas como áreas isoladas. O resultado é perda de contexto, retrabalho e oportunidades esquecidas.
+            Empresas ainda operam atendimento e vendas em ferramentas isoladas. O resultado é perda de contexto, retrabalho e oportunidades esquecidas.
           </p>
           <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
-            O Vorix nasceu para eliminar essas rupturas: conectar criação, conversas e gestão comercial em uma operação inteligente.
+            O Vorix nasceu para eliminar essas rupturas: conectar conversas, contatos e gestão comercial em uma operação inteligente.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link href="#produto">
@@ -334,20 +324,17 @@ type ProductShotName =
   | "conversas-contexto"
   | "crm-kanban"
   | "deal-context"
-  | "marketing-criar"
   | "mobile-conversas"
-  | "mobile-deal"
-  | "producao"
-  | "resultados";
+  | "mobile-deal";
 
 function HeroProductVisual() {
   return (
     <div className="relative mx-auto w-full max-w-4xl" aria-label="Telas reais do Vorix">
       <div className="rounded-[1.35rem] border border-white/12 bg-white/[0.03] p-2 shadow-2xl shadow-black/40">
-        <ProductBrowserFrame label="Command Center" priority>
+        <ProductBrowserFrame label="Conversas" priority>
           <ProductShot
-            name="command-center"
-            alt="Tela real da Home do Vorix com Command Center, KPIs e resultados"
+            name="conversas"
+            alt="Tela real de Conversas do Vorix com a lista de atendimentos e a conversa aberta"
             width={1280}
             widths={[960, 1280]}
             className="h-full w-full object-cover"
@@ -493,15 +480,15 @@ function PlanSummary({ plan }: { plan: PublicPlan }) {
 }
 
 function journeyCopy(step: (typeof JOURNEY)[number]) {
-  if (step === "Criar") return "Briefing, marca e IA no mesmo ponto de partida.";
-  if (step === "Publicar") return "Conteúdo revisado segue para os canais certos.";
-  if (step === "Conversar") return "O retorno entra no atendimento com histórico.";
-  if (step === "Vender") return "Contato vira oportunidade, tarefa e proposta.";
+  if (step === "Conversar") return "WhatsApp e Instagram chegam na mesma caixa, com histórico.";
+  if (step === "Organizar") return "A conversa vira contato, oportunidade e tarefa.";
+  if (step === "Propor") return "A proposta sai da oportunidade e avisa quando é vista.";
+  if (step === "Vender") return "O pipeline mostra etapa, valor e próximo passo.";
   return "O time acompanha sinais e resultado sem perder contexto.";
 }
 
 function brandFlowCopy(step: string) {
-  if (step === "Criar") return "Marketing gera demanda com identidade e direção.";
   if (step === "Atender") return "Conversas preservam histórico e intenção.";
-  return "Oportunidades, tarefas e propostas avançam com contexto.";
+  if (step === "Negociar") return "Oportunidades, tarefas e propostas avançam com contexto.";
+  return "O time fecha sabendo tudo o que já foi combinado.";
 }

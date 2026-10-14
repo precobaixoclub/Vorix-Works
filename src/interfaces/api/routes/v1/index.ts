@@ -26,6 +26,7 @@ import { registerYouTubeRoutes } from "./youtube.route.js";
 import { registerInstagramRoutes } from "./instagram.route.js";
 import { registerInboxRoutes } from "./inbox.route.js";
 import { registerNotificationRoutes } from "./notifications.route.js";
+import { registerSolutionRoutes } from "./solutions.route.js";
 import { registerInboxMetricsRoutes } from "./inbox-metrics.route.js";
 import { registerTeamsRoutes } from "./teams.route.js";
 import { registerTenantMembersRoutes } from "./tenant-members.route.js";
@@ -86,6 +87,9 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     : undefined;
 
   await registerHealthRoutes(app);
+  // Soluções da plataforma (Core) — sempre registrada: é ela que diz ao frontend quais soluções
+  // este tenant enxerga.
+  await registerSolutionRoutes(app, { solutionAccess: app.zunoContainer.solutionAccess });
   // Central de notificações in-app (réplica adaptada do CMDesk, pedido explícito do usuário) —
   // SEMPRE registrada (nunca atrás de um kill switch de módulo, ao contrário de `/v1/inbox/*`).
   await registerNotificationRoutes(app, {

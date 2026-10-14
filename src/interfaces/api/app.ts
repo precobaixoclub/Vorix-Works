@@ -8,6 +8,7 @@ import { registerErrorHandler } from "./http/error-handler.js";
 import { redactedRequestSerializer } from "./http/log-redaction.js";
 import { registerRequestContext } from "./middleware/request-context.js";
 import { registerAuthMiddleware } from "./middleware/auth.middleware.js";
+import { registerSolutionAccessMiddleware } from "./middleware/solution-access.middleware.js";
 import { registerIdempotencyMiddleware } from "./middleware/idempotency.middleware.js";
 import { registerRateLimitMiddleware } from "./middleware/rate-limit.middleware.js";
 import { registerSecurityHeadersMiddleware } from "./middleware/security-headers.middleware.js";
@@ -86,6 +87,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   registerDiPlugin(app, container, config);
   registerRequestContext(app);
   registerAuthMiddleware(app, container.authPort);
+  // Depois da autenticação (precisa do principal): barra rotas do Vorix Marketing para tenant sem
+  // entitlement. Ver `solution-access.middleware.ts`.
+  registerSolutionAccessMiddleware(app, container.solutionAccess);
   registerRateLimitMiddleware(app, container.operationalRateLimiter);
   registerIdempotencyMiddleware(app);
   registerErrorHandler(app);

@@ -10,6 +10,7 @@ import { PostgresTenantMembershipRepository } from "../dist/infrastructure/stora
 import { BcryptPasswordHasher } from "../dist/infrastructure/auth/bcrypt-password-hasher.js";
 import { registerUser } from "../dist/application/identity/index.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
+import { grantInternalMarketing } from "./helpers/solution-entitlements.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "db", "migrations");
 
@@ -44,6 +45,8 @@ async function seedUserAndLogin(app, { email, tenantId, role = "owner" }) {
     { userRepository, membershipRepository, passwordHasher: new BcryptPasswordHasher() },
     { email, password: "senha-forte-123", name: "Usuária", tenantId, role },
   );
+  // Estas rotas são do Vorix Marketing: o tenant de teste recebe o acesso interno à solução.
+  await grantInternalMarketing(db.pool, tenantId);
   const login = await app.inject({ method: "POST", url: "/v1/auth/login", payload: { email, password: "senha-forte-123" } });
   return login.json().data.accessToken;
 }

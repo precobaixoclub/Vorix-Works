@@ -4,28 +4,25 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Logo } from "@/components/Logo";
+import { SolutionSwitcher } from "@/components/SolutionSwitcher";
 import { NavIcon } from "@/components/NavIcon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/auth-context";
 import { useSidebarState } from "@/contexts/sidebar-context";
 import { cn } from "@/lib/utils";
-import {
-  BACKSTAGE_NAV,
-  CREATE_NAV_ITEM,
-  HOME_NAV_ITEM,
-  MAIN_NAV_SECTIONS,
-  SETTINGS_NAV,
-  canUseBackstage,
-  type WorkspaceNavItem,
-} from "@/components/workspace-navigation";
+import { SETTINGS_NAV, SOLUTION_NAVIGATION, canUseBackstage, type WorkspaceNavItem } from "@/components/workspace-navigation";
+import { useActiveSolution } from "@/features/solutions/hooks";
 
 export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
   const pathname = usePathname();
   const { state } = useAuth();
   const { collapsed, toggle } = useSidebarState();
   const base = `/workspaces/${workspaceId}`;
-  const canSeeBackstage = state.status === "authenticated" && canUseBackstage(state.role);
+  // A navegação exibida é SÓ a da solução ativa (Conversas ou Marketing) — nunca as duas juntas.
+  const { active, solutions } = useActiveSolution(pathname, base);
+  const navigation = SOLUTION_NAVIGATION[active];
+  const BACKSTAGE_NAV = navigation.backstage;
+  const canSeeBackstage = state.status === "authenticated" && canUseBackstage(state.role) && BACKSTAGE_NAV.length > 0;
   const isBackstagePathActive = BACKSTAGE_NAV.some((item) => pathname.startsWith(`${base}${item.href}`));
   const [backstageOpen, setBackstageOpen] = useState(isBackstagePathActive);
 
@@ -75,47 +72,37 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
         collapsed ? "w-16 px-2" : "w-[264px] px-3",
       )}
     >
-      <Link
-        href={base}
-        className={cn("mb-3 flex min-w-0 items-center gap-2 rounded-lg py-1.5 text-foreground", collapsed ? "justify-center px-0" : "px-2")}
-        aria-label="Vorix"
-      >
-        <Logo className="h-8 w-auto shrink-0" />
-        {!collapsed ? (
-          <div className="min-w-0">
-            <p className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">AI Command</p>
-            <p className="truncate text-xs text-muted-foreground/80">Center</p>
-          </div>
-        ) : null}
-      </Link>
+      <SolutionSwitcher workspaceBase={base} active={active} solutions={solutions} collapsed={collapsed} />
 
-      {collapsed ? (
-        <Tooltip delayDuration={200}>
-          <TooltipTrigger asChild>
-            <Link
-              href={`${base}${CREATE_NAV_ITEM.href}`}
-              aria-label={CREATE_NAV_ITEM.label}
-              className="mb-3 flex h-9 w-full items-center justify-center rounded-md bg-primary text-primary-foreground shadow-none transition-colors hover:bg-primary/85 active:bg-primary/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 dark:bg-primary-glow dark:text-background dark:hover:bg-primary-glow/90"
-            >
-              <NavIcon id={CREATE_NAV_ITEM.icon} className="h-4 w-4" />
-            </Link>
-          </TooltipTrigger>
-          <TooltipContent side="right">{CREATE_NAV_ITEM.label}</TooltipContent>
-        </Tooltip>
-      ) : (
-        <Link
-          href={`${base}${CREATE_NAV_ITEM.href}`}
-          className="mb-3 flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-none transition-colors hover:bg-primary/85 active:bg-primary/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 dark:bg-primary-glow dark:text-background dark:hover:bg-primary-glow/90"
-        >
-          <NavIcon id={CREATE_NAV_ITEM.icon} className="h-4 w-4" />
-          <span>Novo conteúdo</span>
-        </Link>
-      )}
+      {navigation.primaryAction ? (
+        collapsed ? (
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <Link
+                href={`${base}${navigation.primaryAction.href}`}
+                aria-label={navigation.primaryAction.label}
+                className="mb-3 flex h-9 w-full items-center justify-center rounded-md bg-primary text-primary-foreground shadow-none transition-colors hover:bg-primary/85 active:bg-primary/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 dark:bg-primary-glow dark:text-background dark:hover:bg-primary-glow/90"
+              >
+                <NavIcon id={navigation.primaryAction.icon} className="h-4 w-4" />
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right">{navigation.primaryAction.label}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Link
+            href={`${base}${navigation.primaryAction.href}`}
+            className="mb-3 flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-none transition-colors hover:bg-primary/85 active:bg-primary/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 dark:bg-primary-glow dark:text-background dark:hover:bg-primary-glow/90"
+          >
+            <NavIcon id={navigation.primaryAction.icon} className="h-4 w-4" />
+            <span>{navigation.primaryAction.cta}</span>
+          </Link>
+        )
+      ) : null}
 
       <div className={cn("flex flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden", !collapsed && "pr-1")}>
-        <div className="flex flex-col gap-1">{renderLink(HOME_NAV_ITEM)}</div>
+        <div className="flex flex-col gap-1">{renderLink(navigation.home)}</div>
 
-        {MAIN_NAV_SECTIONS.map((section) => (
+        {navigation.sections.map((section) => (
           <div key={section.label} className="flex flex-col gap-1">
             {!collapsed ? (
               <p className="px-2.5 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/65">{section.label}</p>

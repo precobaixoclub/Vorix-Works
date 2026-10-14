@@ -5,7 +5,12 @@ import { join } from "node:path";
 import type { RecorderCaptureResult, RecorderRuntimePort } from "../../application/meetings/meeting-recorder.js";
 import { RecorderFailure } from "../../application/meetings/meeting-recorder.js";
 
-type BrowserLike = { newContext(options: Record<string, unknown>): Promise<ContextLike>; close(): Promise<void>; isConnected(): boolean };
+type BrowserLike = {
+  newContext(options: Record<string, unknown>): Promise<ContextLike>;
+  newBrowserCDPSession(): Promise<{ send(method: string): Promise<{ processInfo: { type: string; id: number }[] }>; detach(): Promise<void> }>;
+  close(): Promise<void>;
+  isConnected(): boolean;
+};
 type ContextLike = { newPage(): Promise<PageLike>; close(): Promise<void> };
 type LocatorLike = { count(): Promise<number>; first(): LocatorLike; click(options?: Record<string, unknown>): Promise<void>; isVisible(options?: Record<string, unknown>): Promise<boolean> };
 type PageLike = {
@@ -114,7 +119,15 @@ export class PlaywrightGoogleMeetRecorder implements RecorderRuntimePort {
           "--use-fake-ui-for-media-stream", `--window-size=${this.options.viewport.width},${this.options.viewport.height}`,
         ],
       });
-      const browserPid = Number((browser as unknown as { process?: () => { pid?: number } }).process?.()?.pid) || undefined;
+      const processSession = await browser.newBrowserCDPSession();
+      let browserPid: number | undefined;
+      try {
+        const processes = await processSession.send("SystemInfo.getProcessInfo");
+        browserPid = processes.processInfo.find((process) => process.type === "browser")?.id;
+      } finally {
+        await processSession.detach();
+      }
+      if (!browserPid || !Number.isInteger(browserPid)) throw new RecorderFailure("BROWSER_FAILED", "Não foi possível identificar o processo Chromium.");
       context = await browser.newContext({ storageState: JSON.parse(input.storageStateJson), viewport: this.options.viewport, locale: "pt-BR", permissions: [] });
       const page = await context.newPage();
       await input.onProcesses({ browserPid, display, audioSink, tempDir });

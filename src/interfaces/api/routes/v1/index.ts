@@ -30,6 +30,8 @@ import { registerSolutionRoutes } from "./solutions.route.js";
 import { registerMeetingRoutes } from "./meetings.route.js";
 import { registerMeetingAgendaRoutes } from "./meetings-agenda.route.js";
 import { registerMeetingsRecorderAdminRoutes } from "./meetings-recorder-admin.route.js";
+import { registerMeetingRecorderAccountRoutes } from "./meetings-recorder-accounts.route.js";
+import { newViewerToken } from "../../../../infrastructure/meetings/provisioning-link-auth.js";
 import { encryptSecret } from "../../../../infrastructure/crypto/secret-cipher.js";
 import { registerInboxMetricsRoutes } from "./inbox-metrics.route.js";
 import { registerTeamsRoutes } from "./teams.route.js";
@@ -97,6 +99,17 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   // Vorix Meetings — só com identidade real; o guarda de solução barra tenants sem `meetings`.
   if (app.zunoContainer.meetings) {
     await registerMeetingRoutes(app, { ...app.zunoContainer.meetings, workspaceRepository: app.zunoContainer.workspaceRepository });
+    // Contas de gravação do cliente (self-service). O navegador de login só existe com JWT_SECRET
+    // (cifra da sessão e assinatura do canal API → recorder).
+    await registerMeetingRecorderAccountRoutes(app, {
+      repository: app.zunoContainer.meetings.repository,
+      limitsFor: app.zunoContainer.meetings.limitsFor,
+      idGenerator: app.zunoContainer.meetings.idGenerator,
+      now: app.zunoContainer.meetings.now,
+      newViewerToken,
+      workspaceRepository: app.zunoContainer.workspaceRepository,
+      streamAvailable: Boolean(app.zunoConfig.jwtSecret),
+    });
   }
   if (app.zunoContainer.meetingsAgenda) {
     await registerMeetingAgendaRoutes(app, { ...app.zunoContainer.meetingsAgenda, workspaceRepository: app.zunoContainer.workspaceRepository });

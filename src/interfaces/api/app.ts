@@ -26,6 +26,7 @@ import { registerBillingWebhookRoutes } from "./routes/billing-webhook.route.js"
 import { successEnvelope } from "./http/response-envelope.js";
 import { registerUploadedObjectRoutes } from "./routes/uploads.route.js";
 import { createObjectKeyReadAuthorizer, registerSignedObjectUrlResponses } from "./object-url-access.js";
+import { attachProvisioningStreamProxy } from "./meetings-provisioning-stream.js";
 
 export type BuildAppOptions = {
   config?: ApiConfig;
@@ -155,6 +156,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }
 
   await app.register(registerV1Routes, { prefix: "/v1" });
+  // Relay WebSocket do navegador temporário de login das contas de gravação (Meetings).
+  if (container.meetings && config.jwtSecret) {
+    const stream = attachProvisioningStreamProxy(app.server, { repository: container.meetings.repository, authPort: container.authPort, canUseMeetings: (tenantId) => container.solutionAccess?.hasAccess(tenantId, "meetings") ?? Promise.resolve(false), masterSecret: config.jwtSecret, now: () => new Date() });
+    app.addHook("onClose", async () => { for (const client of stream.clients) client.terminate(); stream.close(); });
+  }
 
   registerPublicationScheduler(app, container, { enabled: config.publication.schedulerEnabled, intervalMs: config.publication.schedulerIntervalMs });
   registerMetaAdsSyncScheduler(app, container, { enabled: config.metaAds.syncSchedulerEnabled, intervalMs: config.metaAds.syncSchedulerIntervalMs });

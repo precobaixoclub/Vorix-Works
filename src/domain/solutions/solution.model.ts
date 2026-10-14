@@ -33,6 +33,45 @@ export type SolutionKey = (typeof SOLUTION_KEYS)[number];
  */
 export type SolutionCommercialAvailability = "public" | "internal";
 
+export type MeetingsCommercialReadiness = {
+  selfServiceProvisioning: "PASS" | "PARTIAL" | "FAIL";
+  customerDependsOnVorixOperator: boolean;
+  cliOnlyRequiredForCustomer: boolean;
+  recorderAccountTenantIsolation: "PASS" | "PARTIAL" | "FAIL";
+  identityConflictRuntimeCheck: "PASS" | "PARTIAL" | "FAIL";
+  sessionEncryption: "PASS" | "PARTIAL" | "FAIL";
+};
+
+/**
+ * Registro de RELEASE (decisão operacional), não resultado de teste calculado em runtime: só muda
+ * num commit explícito de liberação, com evidência da homologação Google/recorder real. Afeta
+ * apenas contratação/exibição comercial — nunca entitlement, RBAC, kill switch ou uso interno.
+ */
+export const MEETINGS_COMMERCIAL_READINESS: Readonly<MeetingsCommercialReadiness> = Object.freeze({
+  selfServiceProvisioning: "PARTIAL",
+  customerDependsOnVorixOperator: false,
+  cliOnlyRequiredForCustomer: false,
+  recorderAccountTenantIsolation: "PASS",
+  identityConflictRuntimeCheck: "PASS",
+  sessionEncryption: "PASS",
+});
+
+export function meetingsCommercialBlockers(readiness: MeetingsCommercialReadiness): string[] {
+  return [
+    readiness.selfServiceProvisioning !== "PASS" ? "SELF_SERVICE_PROVISIONING" : undefined,
+    readiness.customerDependsOnVorixOperator ? "CUSTOMER_DEPENDS_ON_VORIX_OPERATOR" : undefined,
+    readiness.cliOnlyRequiredForCustomer ? "CLI_ONLY_REQUIRED_FOR_CUSTOMER" : undefined,
+    readiness.recorderAccountTenantIsolation !== "PASS" ? "RECORDER_ACCOUNT_TENANT_ISOLATION" : undefined,
+    readiness.identityConflictRuntimeCheck !== "PASS" ? "IDENTITY_CONFLICT_RUNTIME_CHECK" : undefined,
+    readiness.sessionEncryption !== "PASS" ? "SESSION_ENCRYPTION" : undefined,
+  ].filter((value): value is string => Boolean(value));
+}
+
+export function isSolutionContractable(solution: SolutionDefinition): boolean {
+  return solution.commercialAvailability === "public" &&
+    (solution.key !== "meetings" || meetingsCommercialBlockers(MEETINGS_COMMERCIAL_READINESS).length === 0);
+}
+
 export type SolutionDefinition = {
   key: SolutionKey;
   name: string;
@@ -57,7 +96,7 @@ export function isSolutionKey(value: unknown): value is SolutionKey {
 
 /** Soluções que podem aparecer no site, em preços e em contratação. */
 export function listPublicSolutions(): SolutionDefinition[] {
-  return SOLUTION_KEYS.map((key) => SOLUTIONS[key]).filter((solution) => solution.commercialAvailability === "public");
+  return SOLUTION_KEYS.map((key) => SOLUTIONS[key]).filter(isSolutionContractable);
 }
 
 /** Origem de uma concessão. `internal` = desenvolvimento/homologação/testes — nunca é uma venda,
@@ -95,19 +134,21 @@ export type SolutionAccess = {
  */
 export function resolveSolutionAccess(input: { solution: SolutionDefinition; entitlement?: Pick<SolutionEntitlement, "enabled" | "source">; killSwitchOn: boolean }): SolutionAccess {
   const { solution, entitlement, killSwitchOn } = input;
+  // Entitlement é só a concessão do tenant (ou o default). Disponibilidade comercial NÃO entra aqui:
+  // ela é barrada na hora de conceder (`assertGrantSourceAllowed`), não na leitura do acesso.
   const entitled = entitlement ? entitlement.enabled : solution.defaultEntitlement;
   return {
     key: solution.key,
     name: solution.name,
     enabled: !killSwitchOn && entitled,
-    internal: solution.commercialAvailability === "internal",
+    internal: !isSolutionContractable(solution),
   };
 }
 
 /** Uma solução que não é pública só aceita concessão `internal` — é o que impede o mecanismo de
  * acesso interno de virar disponibilidade comercial por engano. */
 export function assertGrantSourceAllowed(solution: SolutionDefinition, source: SolutionEntitlementSource): void {
-  if (solution.commercialAvailability === "internal" && source !== "internal") {
+  if (!isSolutionContractable(solution) && source !== "internal") {
     throw new Error(`SOLUTION_NOT_CONTRACTABLE: "${solution.name}" não está disponível comercialmente — só aceita concessão interna.`);
   }
 }

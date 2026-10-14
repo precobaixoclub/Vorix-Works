@@ -72,6 +72,7 @@ const CREATE_BODY = {
     autoRecord: { type: "boolean" },
     joinBeforeMinutes: { type: "integer", minimum: 0, maximum: 30 },
     joinGraceMinutes: { type: "integer", minimum: 0, maximum: 60 },
+    humanJoinAccountEmail: { type: "string", maxLength: 254 },
     ...TIME_FIELDS,
   },
 } as const;

@@ -40,6 +40,7 @@ const MEETINGS_CENTRAL: WorkspaceNavItem = { href: "/meetings/central", label: "
 const MEETINGS_RECORDINGS: WorkspaceNavItem = { href: "/meetings/recordings", label: "Gravações", icon: "recordings" };
 const MEETINGS_AGENDA: WorkspaceNavItem = { href: "/meetings/agenda", label: "Agenda", icon: "calendar" };
 const MEETINGS_INTEGRATIONS: WorkspaceNavItem = { href: "/meetings/integrations", label: "Integrações", icon: "connections" };
+const MEETINGS_RECORDER_ACCOUNTS: WorkspaceNavItem = { href: "/meetings/recorder-accounts", label: "Contas de gravação", icon: "recordings" };
 
 const MARKETING_BACKSTAGE: readonly WorkspaceNavItem[] = [
   { href: "/planning", label: "Planejamento", icon: "planning" },
@@ -109,11 +110,11 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
     home: MEETINGS_HOME,
     sections: [
       { label: "REUNIÕES", items: [MEETINGS_AGENDA, MEETINGS_CENTRAL, MEETINGS_RECORDINGS] },
-      { label: "CONEXÕES", items: [MEETINGS_INTEGRATIONS] },
+      { label: "CONFIGURAÇÕES", items: [MEETINGS_INTEGRATIONS, MEETINGS_RECORDER_ACCOUNTS] },
     ],
     backstage: [],
     mobilePrimary: [MEETINGS_HOME, MEETINGS_AGENDA, MEETINGS_CENTRAL, MEETINGS_RECORDINGS],
-    mobileMenu: [{ label: "Conexões", items: [MEETINGS_INTEGRATIONS] }, { label: "Conta", items: [{ href: "/settings", label: "Configurações", icon: "settings" }] }],
+    mobileMenu: [{ label: "Configurações do Meetings", items: [MEETINGS_INTEGRATIONS, MEETINGS_RECORDER_ACCOUNTS] }, { label: "Conta", items: [{ href: "/settings", label: "Configurações", icon: "settings" }] }],
   },
   marketing: {
     home: MARKETING_HOME,

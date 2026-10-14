@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import { getMeeting, getMeetingsDashboard, getMeetingTranscript, listMeetings } from "./api";
+import { getMeeting, getMeetingsDashboard, getMeetingTranscript, getRecorderEligibility, getRecordingCapacity, listMeetings, listRecorderAccounts } from "./api";
 import { LIVE_MEETING_STATUSES, type MeetingListFilters } from "./types";
 
 /** Atualização sem reload: enquanto houver reunião andando (gravando/processando), a tela consulta
@@ -27,4 +27,19 @@ export function useMeeting(workspaceId: string, meetingId: string) {
 
 export function useMeetingTranscript(workspaceId: string, meetingId: string, enabled: boolean) {
   return useSWR(enabled ? ["meeting-transcript", workspaceId, meetingId] : null, () => getMeetingTranscript(workspaceId, meetingId));
+}
+
+/** Contas de gravação: atualiza sozinha enquanto há teste pendente ou conta gravando. */
+export function useRecorderAccounts(workspaceId: string, enabled = true) {
+  return useSWR(enabled ? ["meeting-recorder-accounts", workspaceId] : null, () => listRecorderAccounts(workspaceId), {
+    refreshInterval: (data) => (data?.accounts.some((account) => account.health === "pending_test" || account.status === "busy") ? LIVE_REFRESH_MS : 0),
+  });
+}
+
+export function useRecordingCapacity(workspaceId: string) {
+  return useSWR(["meeting-recording-capacity", workspaceId], () => getRecordingCapacity(workspaceId));
+}
+
+export function useRecorderEligibility(workspaceId: string, meetingId: string, enabled: boolean) {
+  return useSWR(enabled ? ["meeting-recorder-eligibility", workspaceId, meetingId] : null, () => getRecorderEligibility(workspaceId, meetingId));
 }

@@ -42,12 +42,18 @@ export async function requestRecorderBotHealthCheck(deps: RecorderBotAdminDeps, 
 }
 
 export async function disableRecorderBot(deps: RecorderBotAdminDeps, botId: string): Promise<RecorderBotAccount> {
+  const account = await deps.repository.getRecorderAccount({ accountId: botId });
+  if (account?.ownershipType === "customer_managed" && account.tenantId) {
+    const result = await deps.repository.setRecorderAccountEnabled({ accountId: botId, tenantId: account.tenantId, enabled: false });
+    if (!result || result === "busy") throw new Error("RECORDER_BOT_BUSY_OR_NOT_FOUND");
+    return result;
+  }
   const updated = await deps.repository.updateRecorderBotStatus({ botId, status: "disabled", lastError: undefined });
   if (!updated) throw new Error("RECORDER_BOT_BUSY_OR_NOT_FOUND");
   return updated;
 }
 
-function validateStorageState(value: unknown): string {
+export function validateStorageState(value: unknown): string {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("RECORDER_BOT_INVALID_STORAGE_STATE");
   const state = value as { cookies?: unknown; origins?: unknown };
   if (!Array.isArray(state.cookies)) throw new Error("RECORDER_BOT_INVALID_STORAGE_STATE");

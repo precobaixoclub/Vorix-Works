@@ -5,7 +5,11 @@ import type {
   MeetingRepositoryPort,
   NewMeeting,
   RecordingAdmission,
+  RecorderAccountListFilter,
+  RecorderAccountWithContext,
   RecorderJobContext,
+  RecorderProvisioningSession,
+  SkippedRecorderAccount,
   RecorderRunUpdate,
 } from "../../../application/ports/meeting-repository.port.js";
 import {
@@ -31,6 +35,8 @@ import {
   type MeetingStatus,
   type MeetingTranscriptSegment,
   type MeetingTranscriptSummary,
+  type HumanJoinIdentitySource,
+  normalizeGoogleEmail,
 } from "../../../domain/meetings/meeting.model.js";
 
 type MeetingRow = {
@@ -60,6 +66,10 @@ type MeetingRow = {
   duration_seconds: number | null;
   failure_code: string | null;
   failure_message: string | null;
+  human_join_account_email?: string | null;
+  human_join_identity_source?: HumanJoinIdentitySource | null;
+  excluded_recorder_emails?: string[] | null;
+  capture_strategy?: Meeting["captureStrategy"] | null;
   status_changed_at: Date;
   created_at: Date;
   updated_at: Date;
@@ -110,12 +120,15 @@ export class PostgresMeetingRepository implements MeetingRepositoryPort {
     await this.tx(async (client) => {
       await client.query(
         `insert into meetings (id, tenant_id, workspace_id, owner_user_id, created_by_user_id, title, description, source, status,
-           calendar_event_id, meeting_url, scheduled_start_at, scheduled_end_at, timezone, auto_record, join_before_minutes, join_grace_minutes)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+           calendar_event_id, meeting_url, scheduled_start_at, scheduled_end_at, timezone, auto_record, join_before_minutes, join_grace_minutes,
+           human_join_account_email, human_join_identity_source, excluded_recorder_emails, capture_strategy)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::text[],$21)`,
         [
           meeting.id, meeting.tenantId, meeting.workspaceId, meeting.ownerUserId, meeting.createdByUserId, meeting.title, meeting.description ?? null,
           meeting.source, meeting.status, meeting.calendarEventId ?? null, meeting.meetingUrl ?? null, meeting.scheduledStartAt ?? null,
           meeting.scheduledEndAt ?? null, meeting.timezone, meeting.autoRecord, meeting.joinBeforeMinutes ?? null, meeting.joinGraceMinutes ?? null,
+          normalizeGoogleEmail(meeting.humanJoinAccountEmail) ?? null, meeting.humanJoinIdentitySource ?? null,
+          meeting.excludedRecorderEmails ?? [], meeting.captureStrategy ?? "vorix_recorder",
         ],
       );
       for (const participant of meeting.participants) {
@@ -371,8 +384,8 @@ export class PostgresMeetingRepository implements MeetingRepositoryPort {
       // Serializa admissões do MESMO tenant (duas requisições/workers simultâneos nunca passam juntos
       // pelo limite). Lock transacional: liberado no commit/rollback, nada fica preso.
       await client.query(`select pg_advisory_xact_lock(hashtext($1))`, [`vorix:meetings:admission:${input.tenantId}`]);
-      const meeting = await client.query<{ status: MeetingStatus }>(
-        `select status from meetings where id = $1 and tenant_id = $2 and workspace_id = $3 and deleted_at is null for update`,
+      const meeting = await client.query<{ status: MeetingStatus; human_join_identity_source: string | null; human_join_account_email: string | null; excluded_recorder_emails: string[] | null; owner_user_id: string }>(
+        `select status, human_join_identity_source, human_join_account_email, excluded_recorder_emails, owner_user_id from meetings where id = $1 and tenant_id = $2 and workspace_id = $3 and deleted_at is null for update`,
         [input.meetingId, input.tenantId, input.workspaceId],
       );
       const status = meeting.rows[0]?.status;
@@ -387,18 +400,73 @@ export class PostgresMeetingRepository implements MeetingRepositoryPort {
         return { ok: false, reason: "CONCURRENCY_LIMIT_REACHED", activeRecordings, limit: input.maxConcurrentRecordings };
       }
 
-      // Reserva atômica: SKIP LOCKED garante que dois admissores simultâneos (de tenants diferentes)
-      // nunca peguem a mesma conta; o índice único em current_meeting_id é a segunda barreira.
+      // Identidade humana: a autoridade é o que está NO BANCO agora (não o que a tela mandou). Sem
+      // identidade conhecida não há como garantir que o gravador não seja a conta da pessoa.
+      if (!["explicit", "connected_account_confirmed"].includes(meeting.rows[0]!.human_join_identity_source ?? "")) return { ok: false, reason: "HUMAN_IDENTITY_REQUIRED", activeRecordings };
+      const ownExcluded = [...new Set([meeting.rows[0]!.human_join_account_email, ...(meeting.rows[0]!.excluded_recorder_emails ?? [])].map((email) => normalizeGoogleEmail(email)).filter((email): email is string => Boolean(email)))];
+      if (ownExcluded.length === 0) return { ok: false, reason: "HUMAN_IDENTITY_REQUIRED", activeRecordings };
+      // Contas que são a identidade humana de OUTRA reunião ativa do tenant também ficam de fora
+      // (a pessoa pode estar logada com ela em outra reunião neste momento).
+      const others = await client.query<{ email: string }>(
+        `select distinct lower(e) as email from meetings m, unnest(m.excluded_recorder_emails) as e
+         where m.tenant_id = $1 and m.id <> $2 and m.deleted_at is null and m.status = any($3::text[])
+           and m.human_join_identity_source in ('explicit','connected_account_confirmed')`,
+        [input.tenantId, input.meetingId, [...ACTIVE]],
+      );
+      const excluded = [...new Set([...ownExcluded, ...others.rows.map((row) => row.email)])];
+
+      // Contas do PRÓPRIO tenant, saudáveis e livres, que seriam elegíveis se não fossem identidade
+      // humana — viram auditoria RECORDER_ACCOUNT_SKIPPED_IDENTITY_CONFLICT (só o id).
+      const skippedRows = await client.query<{ id: string }>(
+        `select id from recorder_bot_accounts
+         where tenant_id = $1 and ownership_type = 'customer_managed' and removed_at is null and status = 'active'
+           and current_meeting_id is null and (encrypted_session_state is not null or credential_secret_ref is not null)
+           and (workspace_id is null or workspace_id = $3)
+           and lower(google_email) = any($2::text[]) order by id`,
+        [input.tenantId, excluded, input.workspaceId],
+      );
+      const skipped: SkippedRecorderAccount[] = skippedRows.rows.map((row) => ({ accountId: row.id, reason: "IDENTITY_CONFLICT" }));
+
+      // Reserva atômica: só contas do PRÓPRIO tenant, com o filtro de identidade DENTRO do SQL da
+      // reserva. SKIP LOCKED garante que duas admissões simultâneas nunca peguem a mesma conta; o
+      // índice único em current_meeting_id é a segunda barreira.
       const bot = await client.query<{ id: string }>(
         `update recorder_bot_accounts set status = 'busy', current_meeting_id = $1, current_tenant_id = $2, last_used_at = $3, last_error = null, updated_at = now()
-         where id = (select id from recorder_bot_accounts where status = 'active' and current_meeting_id is null
+         where id = (select id from recorder_bot_accounts
+                     where tenant_id = $2 and ownership_type = 'customer_managed' and removed_at is null
+                       and status = 'active' and current_meeting_id is null
+                       and (workspace_id is null or workspace_id = $5)
                        and (encrypted_session_state is not null or credential_secret_ref is not null)
+                       and lower(google_email) <> all($4::text[])
                      order by last_used_at nulls first, id for update skip locked limit 1)
          returning id`,
-        [input.meetingId, input.tenantId, input.now],
+        [input.meetingId, input.tenantId, input.now, excluded, input.workspaceId],
       );
       const botAccountId = bot.rows[0]?.id;
-      if (!botAccountId) return { ok: false, reason: "NO_BOT_AVAILABLE", activeRecordings };
+      if (!botAccountId) {
+        // Motivo PRECISO — cada um pede uma ação diferente do cliente.
+        const stats = await client.query<Record<string, string>>(
+          `select count(*) as connected,
+             count(*) filter (where status in ('active','busy') and (encrypted_session_state is not null or credential_secret_ref is not null)) as healthy,
+             count(*) filter (where status = 'busy') as busy,
+             count(*) filter (where status in ('reauth_required','invalid_session','error')) as invalid,
+             count(*) filter (where status in ('active','busy') and (encrypted_session_state is not null or credential_secret_ref is not null)
+                                and lower(google_email) <> all($2::text[])) as eligible_by_own
+           from recorder_bot_accounts where tenant_id = $1 and ownership_type = 'customer_managed' and removed_at is null
+             and (workspace_id is null or workspace_id = $3)`,
+          [input.tenantId, ownExcluded, input.workspaceId],
+        );
+        const row = stats.rows[0] ?? {};
+        const healthy = Number(row.healthy ?? 0);
+        // Conflito PERMANENTE: nenhuma conta saudável (livre ou ocupada) serve para esta reunião.
+        if (healthy > 0 && Number(row.eligible_by_own ?? 0) === 0) {
+          return { ok: false, reason: "RECORDER_ACCOUNT_IDENTITY_CONFLICT", activeRecordings, skipped };
+        }
+        if (healthy === 0 && Number(row.invalid ?? 0) > 0) {
+          return { ok: false, reason: "INVALID_RECORDER_SESSION", activeRecordings, invalidAccounts: Number(row.invalid) };
+        }
+        return { ok: false, reason: "NO_RECORDER_ACCOUNT_AVAILABLE", activeRecordings, connectedAccounts: Number(row.connected ?? 0), busyAccounts: Number(row.busy ?? 0) };
+      }
 
       await client.query(
         `update meetings set status = 'queued', bot_account_id = $3, status_changed_at = now(), updated_at = now(), failure_code = null, failure_message = null
@@ -415,19 +483,31 @@ export class PostgresMeetingRepository implements MeetingRepositoryPort {
          on conflict (tenant_id, period) do update set concurrent_peak = greatest(meeting_usage_monthly.concurrent_peak, excluded.concurrent_peak), updated_at = now()`,
         [input.tenantId, meetingUsagePeriod(input.now), activeRecordings + 1],
       );
-      return { ok: true, jobId, botAccountId, activeRecordings: activeRecordings + 1 };
+      await client.query(
+        `insert into meeting_audit_log (id, tenant_id, workspace_id, meeting_id, actor_user_id, action, details)
+         values ($1,$2,$3,$4,$5,'RECORDER_RESERVED',$6::jsonb)`,
+        [newId("maudit"), input.tenantId, input.workspaceId, input.meetingId, meeting.rows[0]!.owner_user_id, JSON.stringify({ recorderAccountId: botAccountId })],
+      );
+      return { ok: true, jobId, botAccountId, activeRecordings: activeRecordings + 1, skipped };
     });
   }
 
-  async releaseBot(input: { meetingId: string; healthy: boolean; invalidSession?: boolean; lastError?: string }): Promise<void> {
+  async releaseBot(input: { meetingId: string; healthy: boolean; invalidSession?: boolean; reauthRequired?: boolean; lastError?: string }): Promise<void> {
     await this.pool.query(
-      `update recorder_bot_accounts set
-         status = case when status = 'busy' then (case when $3 then 'invalid_session' when $2 then 'active' else 'error' end) else status end,
+      `with released as (update recorder_bot_accounts set
+         status = case when status = 'busy' then (case when $3 then (case when $6 then 'reauth_required' else 'invalid_session' end) when $2 then 'active' else 'error' end) else status end,
          consecutive_failures = case when $2 then 0 else consecutive_failures + 1 end,
          current_meeting_id = null, current_recording_id = null, current_tenant_id = null,
          last_error = $4, updated_at = now()
-       where current_meeting_id = $1`,
-      [input.meetingId, input.healthy, input.invalidSession ?? false, input.lastError?.slice(0, 2000) ?? null],
+       where current_meeting_id = $1 returning id)
+       insert into meeting_audit_log (id, tenant_id, workspace_id, meeting_id, actor_user_id, action, details)
+       select $5 || ':' || r.id || ':' || a.action, m.tenant_id, m.workspace_id, m.id, m.owner_user_id,
+         a.action, jsonb_build_object('recorderAccountId', r.id)
+       from released r join meetings m on m.id = $1
+       cross join lateral (select 'RECORDER_RELEASED' as action
+         union all select 'RECORDER_HEALTH_FAILED' where $3::boolean
+         union all select 'RECORDER_REAUTH_REQUIRED' where $3::boolean and $6::boolean) a`,
+      [input.meetingId, input.healthy, input.invalidSession ?? false, input.lastError?.slice(0, 2000) ?? null, newId("maudit"), input.reauthRequired ?? input.invalidSession ?? false],
     );
   }
 
@@ -575,23 +655,268 @@ export class PostgresMeetingRepository implements MeetingRepositoryPort {
              current_tenant_id = null, last_error = 'recorder interrompido', consecutive_failures = consecutive_failures + 1, updated_at = now()
            where id = $1 and current_meeting_id = $2`, [run.bot_account_id, run.meeting_id],
         );
+        await client.query(
+          `insert into meeting_audit_log (id, tenant_id, workspace_id, meeting_id, actor_user_id, action, details)
+           select $1, tenant_id, workspace_id, id, owner_user_id, 'RECORDER_RELEASED',
+             jsonb_build_object('recorderAccountId', $3::text, 'reason','RECORDER_INTERRUPTED') from meetings where id = $2`,
+          [newId("maudit"), run.meeting_id, run.bot_account_id],
+        );
       }
       return runs.rowCount ?? 0;
     });
   }
 
   async listRecorderBots(): Promise<RecorderBotAccount[]> {
-    const result = await this.pool.query<RecorderBotRow>(`select * from recorder_bot_accounts order by label, id`);
+    const result = await this.pool.query<RecorderBotRow>(`select * from recorder_bot_accounts where removed_at is null order by label, id`);
     return result.rows.map(toRecorderBot);
+  }
+
+  async listRecorderAccounts(filter: RecorderAccountListFilter): Promise<RecorderAccountWithContext[]> {
+    const params: unknown[] = [];
+    const conditions = [filter.includeRemoved ? "true" : "b.removed_at is null"];
+    if (filter.tenantId) {
+      params.push(filter.tenantId);
+      conditions.push(`b.tenant_id = $${params.length} and b.ownership_type = 'customer_managed'`);
+    }
+    if (filter.workspaceId) {
+      params.push(filter.workspaceId);
+      conditions.push(`(b.workspace_id is null or b.workspace_id = $${params.length})`);
+    }
+    const result = await this.pool.query<RecorderBotRow & { current_meeting_title: string | null; workspace_name: string | null }>(
+      `select b.*, m.title as current_meeting_title, w.name as workspace_name
+       from recorder_bot_accounts b
+       left join meetings m on m.id = b.current_meeting_id and m.tenant_id = b.current_tenant_id
+       left join workspaces w on w.id = b.workspace_id
+       where ${conditions.join(" and ")}
+       order by b.tenant_id nulls first, b.label, b.id`,
+      params,
+    );
+    return result.rows.map((row) => ({
+      ...toRecorderBot(row),
+      ...(row.current_meeting_title ? { currentMeetingTitle: row.current_meeting_title } : {}),
+      ...(row.workspace_name ? { workspaceName: row.workspace_name } : {}),
+    }));
+  }
+
+  async getRecorderAccount(input: { accountId: string; tenantId?: string }): Promise<RecorderBotAccount | undefined> {
+    const result = await this.pool.query<RecorderBotRow>(
+      `select * from recorder_bot_accounts where id = $1 and removed_at is null and ($2::text is null or (tenant_id = $2 and ownership_type = 'customer_managed'))`,
+      [input.accountId, input.tenantId ?? null],
+    );
+    return result.rows[0] ? toRecorderBot(result.rows[0]) : undefined;
+  }
+
+  async createRecorderAccount(input: { id: string; tenantId: string; workspaceId?: string; createdByUserId: string; label: string; googleEmail: string; displayName: string }): Promise<{ ok: true; account: RecorderBotAccount } | { ok: false; reason: "DUPLICATE_EMAIL" }> {
+    try {
+      const result = await this.pool.query<RecorderBotRow>(
+        `insert into recorder_bot_accounts (id, ownership_type, tenant_id, workspace_id, created_by_user_id, label, google_email, display_name, status)
+         values ($1, 'customer_managed', $2, $3, $4, $5, $6, $7, 'disabled') returning *`,
+        [input.id, input.tenantId, input.workspaceId ?? null, input.createdByUserId, input.label, input.googleEmail.trim().toLowerCase(), input.displayName],
+      );
+      return { ok: true, account: toRecorderBot(result.rows[0]!) };
+    } catch (error) {
+      if ((error as { code?: string }).code === "23505") return { ok: false, reason: "DUPLICATE_EMAIL" };
+      throw error;
+    }
+  }
+
+  async saveRecorderAccountSession(input: { accountId: string; tenantId: string; provisioningSessionId: string; workerId: string; encryptedSessionState?: string; status: RecorderBotStatus; health: Record<string, unknown>; checkedAt: Date; googleEmail?: string; lastError?: string }): Promise<RecorderBotAccount | undefined> {
+    return this.tx(async (client) => {
+      await client.query(`select id from recorder_bot_accounts where id = $1 and tenant_id = $2 for update`, [input.accountId, input.tenantId]);
+      const session = await client.query<ProvisioningRow>(
+        `select * from recorder_provisioning_sessions where id = $1 and tenant_id = $2 and recorder_account_id = $3
+           and worker_id = $4 and status = 'live' and expires_at > now() for update`,
+        [input.provisioningSessionId, input.tenantId, input.accountId, input.workerId],
+      );
+      const provisioning = session.rows[0];
+      if (!provisioning || (input.status === "active" && !input.encryptedSessionState)) return undefined;
+      const result = await client.query<RecorderBotRow>(
+        `update recorder_bot_accounts set encrypted_session_state = case when $3 = 'active' then $2 else encrypted_session_state end,
+           session_updated_at = case when $3 = 'active' then now() else session_updated_at end, status = $3, health = $4::jsonb,
+           last_health_check_at = $5, google_email = coalesce($6, google_email), last_error = $7,
+           consecutive_failures = 0, updated_at = now()
+         where id = $1 and tenant_id = $8 and removed_at is null and status <> 'busy' and current_meeting_id is null returning *`,
+        [input.accountId, input.status === "active" ? input.encryptedSessionState : null, input.status, JSON.stringify(input.health), input.checkedAt, input.status === "active" ? input.googleEmail?.trim().toLowerCase() ?? null : null, input.lastError?.slice(0, 2000) ?? null, input.tenantId],
+      );
+      if (!result.rows[0]) return undefined;
+      if (input.status === "active") await client.query(`update recorder_provisioning_sessions set status = 'completed', completed_at = now(), updated_at = now() where id = $1`, [input.provisioningSessionId]);
+      const action = input.status === "active" ? (provisioning.reconnect ? "RECORDER_RECONNECTED" : "RECORDER_CONNECTED") : "RECORDER_HEALTH_FAILED";
+      const actions = input.status === "reauth_required" ? [action, "RECORDER_REAUTH_REQUIRED"] : [action];
+      for (const event of actions) await client.query(
+        `insert into meeting_audit_log (id, tenant_id, workspace_id, actor_user_id, action, details) values ($1,$2,$3,$4,$5,$6::jsonb)`,
+        [newId("maudit"), input.tenantId, provisioning.workspace_id, provisioning.created_by_user_id, event, JSON.stringify({ recorderAccountId: input.accountId, sessionId: provisioning.id })],
+      );
+      return toRecorderBot(result.rows[0]);
+    });
+  }
+
+  async removeRecorderAccount(input: { tenantId: string; accountId: string; actorUserId: string }): Promise<"removed" | "busy" | "not_found"> {
+    return this.tx(async (client) => {
+      const current = await client.query<{ status: string; current_meeting_id: string | null }>(
+        `select status, current_meeting_id from recorder_bot_accounts where id = $1 and tenant_id = $2 and ownership_type = 'customer_managed' and removed_at is null for update`,
+        [input.accountId, input.tenantId],
+      );
+      const row = current.rows[0];
+      if (!row) return "not_found";
+      if (row.status === "busy" || row.current_meeting_id) return "busy";
+      // A sessão cifrada é APAGADA (não só escondida); o e-mail fica só para a auditoria.
+      await client.query(
+        `update recorder_bot_accounts set removed_at = now(), status = 'disabled', encrypted_session_state = null, credential_secret_ref = null,
+           session_updated_at = now(), updated_at = now() where id = $1`,
+        [input.accountId],
+      );
+      await client.query(
+        `update recorder_provisioning_sessions set status = 'cancelled', completed_at = now(), updated_at = now() where recorder_account_id = $1 and status in ('pending','starting','live')`,
+        [input.accountId],
+      );
+      return "removed";
+    });
+  }
+
+  async setRecorderAccountEnabled(input: { tenantId: string; accountId: string; enabled: boolean }): Promise<RecorderBotAccount | "busy" | undefined> {
+    return this.tx(async (client) => {
+      const current = await client.query<RecorderBotRow>(
+      `select * from recorder_bot_accounts where id = $1 and tenant_id = $2 and ownership_type = 'customer_managed'
+         and removed_at is null for update`, [input.accountId, input.tenantId],
+      );
+      if (!current.rows[0]) return undefined;
+      if (current.rows[0].status === "busy" || current.rows[0].current_meeting_id) return "busy";
+      if (!input.enabled) await client.query(
+      `update recorder_provisioning_sessions set status = 'cancelled', completed_at = now(), updated_at = now()
+       where recorder_account_id = $1 and status in ('pending','starting','live')`, [input.accountId],
+      );
+    // Desativar = fora da seleção. Reativar = `disabled` + teste pendente: só o teste devolve `active`.
+      const result = await client.query<RecorderBotRow>(
+      `update recorder_bot_accounts set status = 'disabled',
+         health = case when $3 then jsonb_build_object('status', 'pending', 'requestedAt', now()) else jsonb_build_object('status','disabled') end, updated_at = now()
+       where id = $1 and tenant_id = $2 and removed_at is null and status <> 'busy' returning *`,
+      [input.accountId, input.tenantId, input.enabled],
+      );
+      return result.rows[0] ? toRecorderBot(result.rows[0]) : "busy";
+    });
+  }
+
+  async countActiveRecordings(tenantId: string): Promise<number> {
+    const result = await this.pool.query<{ n: string }>(
+      `select count(*) as n from meetings where tenant_id = $1 and deleted_at is null and status = any($2::text[])`, [tenantId, [...ACTIVE]],
+    );
+    return Number(result.rows[0]?.n ?? 0);
+  }
+
+  async setHumanJoinIdentity(input: { tenantId: string; workspaceId: string; meetingId: string; humanJoinAccountEmail: string | null; source: HumanJoinIdentitySource | null; excludedRecorderEmails: string[] }): Promise<boolean> {
+    const result = await this.pool.query(
+      `update meetings set human_join_account_email = $4, human_join_identity_source = $5, excluded_recorder_emails = $6::text[], updated_at = now()
+       where id = $1 and tenant_id = $2 and workspace_id = $3 and deleted_at is null and status = 'scheduled'`,
+      [input.meetingId, input.tenantId, input.workspaceId, normalizeGoogleEmail(input.humanJoinAccountEmail) ?? null, input.source, input.excludedRecorderEmails],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async knownHumanGoogleEmails(input: { tenantId: string; userId: string }): Promise<{ connected: string[]; recentExplicit: string[] }> {
+    const result = await this.pool.query<{ email: string; kind: "connected" | "explicit" }>(
+      `select distinct lower(google_email) as email, 'connected' as kind from calendar_connections
+         where tenant_id = $1 and user_id = $2 and google_email is not null
+       union
+       select distinct lower(human_join_account_email), 'explicit' from meetings where tenant_id = $1 and created_by_user_id = $2
+         and human_join_identity_source = 'explicit' and human_join_account_email is not null and created_at > now() - interval '180 days'`,
+      [input.tenantId, input.userId],
+    );
+    const pick = (kind: string) => [...new Set(result.rows.filter((row) => row.kind === kind).map((row) => row.email))].sort();
+    return { connected: pick("connected"), recentExplicit: pick("explicit") };
+  }
+
+  async createProvisioningSession(input: { id: string; tenantId: string; workspaceId: string; recorderAccountId: string; createdByUserId: string; viewerTokenHash: string; expiresAt: Date }): Promise<RecorderProvisioningSession> {
+    return this.tx(async (client) => {
+      const account = await client.query<{ encrypted_session_state: string | null }>(
+        `select encrypted_session_state from recorder_bot_accounts where id = $1 and tenant_id = $2
+           and ownership_type = 'customer_managed' and removed_at is null and status <> 'busy'
+           and current_meeting_id is null and (workspace_id is null or workspace_id = $3) for update`,
+        [input.recorderAccountId, input.tenantId, input.workspaceId],
+      );
+      if (!account.rows[0]) throw new Error("RECORDER_ACCOUNT_UNAVAILABLE");
+      const reconnect = Boolean(account.rows[0].encrypted_session_state);
+      await client.query(
+        `update recorder_bot_accounts set status = case when encrypted_session_state is null then 'disabled' else 'reauth_required' end,
+           health = jsonb_build_object('status','provisioning'), updated_at = now() where id = $1`, [input.recorderAccountId],
+      );
+      // Uma sessão aberta por conta: a anterior (aba esquecida) é cancelada.
+      await client.query(
+        `update recorder_provisioning_sessions set status = 'cancelled', completed_at = now(), updated_at = now() where recorder_account_id = $1 and status in ('pending','starting','live')`,
+        [input.recorderAccountId],
+      );
+      const result = await client.query<ProvisioningRow>(
+        `insert into recorder_provisioning_sessions (id, tenant_id, workspace_id, recorder_account_id, created_by_user_id, viewer_token_hash, expires_at, reconnect)
+         values ($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
+        [input.id, input.tenantId, input.workspaceId, input.recorderAccountId, input.createdByUserId, input.viewerTokenHash, input.expiresAt, reconnect],
+      );
+      return toProvisioning(result.rows[0]!);
+    });
+  }
+
+  async getProvisioningSession(input: { sessionId: string; tenantId?: string }): Promise<RecorderProvisioningSession | undefined> {
+    const result = await this.pool.query<ProvisioningRow>(
+      `select * from recorder_provisioning_sessions where id = $1 and ($2::text is null or tenant_id = $2)`, [input.sessionId, input.tenantId ?? null],
+    );
+    return result.rows[0] ? toProvisioning(result.rows[0]) : undefined;
+  }
+
+  async findProvisioningSessionByViewerHash(viewerTokenHash: string): Promise<RecorderProvisioningSession | undefined> {
+    const result = await this.pool.query<ProvisioningRow>(`select * from recorder_provisioning_sessions where viewer_token_hash = $1`, [viewerTokenHash]);
+    return result.rows[0] ? toProvisioning(result.rows[0]) : undefined;
+  }
+
+  async consumeProvisioningViewer(input: { sessionId: string; viewerTokenHash: string; tenantId: string; userId: string; now: Date }): Promise<boolean> {
+    const result = await this.pool.query(
+      `update recorder_provisioning_sessions set viewer_consumed_at = $5, updated_at = now()
+       where id = $1 and viewer_token_hash = $2 and tenant_id = $3 and created_by_user_id = $4
+         and single_use = true and viewer_consumed_at is null and expires_at > $5
+         and status in ('pending','starting','live')`,
+      [input.sessionId, input.viewerTokenHash, input.tenantId, input.userId, input.now],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async claimProvisioningSession(input: { workerId: string; workerEndpoint: string; now: Date }): Promise<(RecorderProvisioningSession & { expectedGoogleEmail: string }) | undefined> {
+    const result = await this.pool.query<ProvisioningRow & { google_email: string }>(
+      `update recorder_provisioning_sessions s set status = 'starting', worker_id = $1, worker_endpoint = $2, updated_at = now()
+       from recorder_bot_accounts b
+       where s.id = (select id from recorder_provisioning_sessions where status = 'pending' and expires_at > $3
+                     order by created_at for update skip locked limit 1)
+         and s.status = 'pending' and b.id = s.recorder_account_id and b.tenant_id = s.tenant_id and b.removed_at is null
+         and b.current_meeting_id is null and b.status <> 'busy'
+       returning s.*, b.google_email`,
+      [input.workerId, input.workerEndpoint, input.now],
+    );
+    const row = result.rows[0];
+    return row ? { ...toProvisioning(row), expectedGoogleEmail: row.google_email } : undefined;
+  }
+
+  async updateProvisioningSession(input: { sessionId: string; status: RecorderProvisioningSession["status"]; workerId?: string; errorCode?: string; errorMessage?: string }): Promise<boolean> {
+    const result = await this.pool.query(
+      `update recorder_provisioning_sessions set status = $2, error_code = coalesce($4, error_code), error_message = coalesce($5, error_message),
+         completed_at = case when $2 in ('completed','failed','expired','cancelled') then coalesce(completed_at, now()) else completed_at end, updated_at = now()
+       where id = $1 and ($3::text is null or worker_id = $3) and status not in ('completed','failed','expired','cancelled')`,
+      [input.sessionId, input.status, input.workerId ?? null, input.errorCode ?? null, input.errorMessage?.slice(0, 500) ?? null],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async expireProvisioningSessions(now: Date): Promise<number> {
+    const result = await this.pool.query(
+      `update recorder_provisioning_sessions set status = 'expired', completed_at = now(), updated_at = now()
+       where status in ('pending','starting','live') and expires_at <= $1`, [now],
+    );
+    return result.rowCount ?? 0;
   }
 
   async getRecorderBotSession(botId: string): Promise<string | undefined> {
     const result = await this.pool.query<{ encrypted_session_state: string | null }>(
-      `select encrypted_session_state from recorder_bot_accounts where id = $1 and status <> 'busy'`, [botId],
+      `select encrypted_session_state from recorder_bot_accounts where id = $1 and status <> 'busy' and removed_at is null`, [botId],
     );
     return result.rows[0]?.encrypted_session_state ?? undefined;
   }
 
+  /** Pool interno (`vorix_managed`, preparado) — fallback administrativo, fora da seleção comercial. */
   async upsertRecorderBot(input: { id: string; label: string; googleEmail: string; displayName: string; encryptedSessionState?: string; status: RecorderBotStatus }): Promise<RecorderBotAccount> {
     const result = await this.pool.query<RecorderBotRow>(
       `insert into recorder_bot_accounts (id, label, google_email, display_name, encrypted_session_state, status, session_updated_at)
@@ -601,18 +926,23 @@ export class PostgresMeetingRepository implements MeetingRepositoryPort {
          encrypted_session_state = coalesce(excluded.encrypted_session_state, recorder_bot_accounts.encrypted_session_state),
          session_updated_at = case when excluded.encrypted_session_state is null then recorder_bot_accounts.session_updated_at else now() end,
          status = excluded.status, last_error = null, updated_at = now()
+       where recorder_bot_accounts.ownership_type = 'vorix_managed' and recorder_bot_accounts.status <> 'busy'
+         and recorder_bot_accounts.current_meeting_id is null
        returning *`,
       [input.id, input.label, input.googleEmail.toLowerCase(), input.displayName, input.encryptedSessionState ?? null, input.status],
     );
-    return toRecorderBot(result.rows[0]!);
+    if (!result.rows[0]) throw new Error("RECORDER_BOT_BUSY_OR_CUSTOMER_MANAGED");
+    return toRecorderBot(result.rows[0]);
   }
 
-  async updateRecorderBotStatus(input: { botId: string; status: RecorderBotStatus; health?: Record<string, unknown>; lastError?: string; checkedAt?: Date }): Promise<RecorderBotAccount | undefined> {
+  async updateRecorderBotStatus(input: { botId: string; status: RecorderBotStatus; health?: Record<string, unknown>; lastError?: string; checkedAt?: Date; expectedHealth?: { requestedAt?: string } }): Promise<RecorderBotAccount | undefined> {
     const result = await this.pool.query<RecorderBotRow>(
       `update recorder_bot_accounts set status = $2, health = coalesce($3::jsonb, health), last_error = $4,
          last_health_check_at = coalesce($5, last_health_check_at), updated_at = now()
-       where id = $1 and (status <> 'busy' or $2 = 'busy') returning *`,
-      [input.botId, input.status, input.health ? JSON.stringify(input.health) : null, input.lastError?.slice(0, 2000) ?? null, input.checkedAt ?? null],
+       where id = $1 and removed_at is null and (status <> 'busy' or $2 = 'busy')
+         and (not $6::boolean or (health->>'status' = 'pending' and ($7::text is null or health->>'requestedAt' = $7)))
+         and not exists (select 1 from recorder_provisioning_sessions s where s.recorder_account_id = $1 and s.status in ('pending','starting','live')) returning *`,
+      [input.botId, input.status, input.health ? JSON.stringify(input.health) : null, input.lastError?.slice(0, 2000) ?? null, input.checkedAt ?? null, Boolean(input.expectedHealth), input.expectedHealth?.requestedAt ?? null],
     );
     return result.rows[0] ? toRecorderBot(result.rows[0]) : undefined;
   }
@@ -973,6 +1303,10 @@ function toMeeting(row: MeetingRow): Meeting {
     ...(row.duration_seconds !== null ? { durationSeconds: row.duration_seconds } : {}),
     ...(row.failure_code ? { failureCode: row.failure_code } : {}),
     ...(row.failure_message ? { failureMessage: row.failure_message } : {}),
+    ...(row.human_join_account_email ? { humanJoinAccountEmail: row.human_join_account_email } : {}),
+    ...(row.human_join_identity_source ? { humanJoinIdentitySource: row.human_join_identity_source } : {}),
+    excludedRecorderEmails: row.excluded_recorder_emails ?? [],
+    captureStrategy: row.capture_strategy ?? "vorix_recorder",
     statusChangedAt: row.status_changed_at.toISOString(),
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
@@ -1002,6 +1336,10 @@ function toRecording(row: RecordingRow): MeetingRecording {
 
 type RecorderBotRow = {
   id: string;
+  ownership_type: RecorderBotAccount["ownershipType"];
+  tenant_id: string | null;
+  workspace_id: string | null;
+  created_by_user_id: string | null;
   label: string;
   google_email: string;
   display_name: string;
@@ -1020,9 +1358,51 @@ type RecorderBotRow = {
   updated_at: Date;
 };
 
+type ProvisioningRow = {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  recorder_account_id: string;
+  created_by_user_id: string;
+  single_use: boolean;
+  reconnect: boolean;
+  status: RecorderProvisioningSession["status"];
+  worker_id: string | null;
+  worker_endpoint: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  expires_at: Date;
+  completed_at: Date | null;
+  created_at: Date;
+};
+
+function toProvisioning(row: ProvisioningRow): RecorderProvisioningSession {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    workspaceId: row.workspace_id,
+    recorderAccountId: row.recorder_account_id,
+    createdByUserId: row.created_by_user_id,
+    singleUse: row.single_use,
+    reconnect: row.reconnect,
+    status: row.status,
+    ...(row.worker_id ? { workerId: row.worker_id } : {}),
+    ...(row.worker_endpoint ? { workerEndpoint: row.worker_endpoint } : {}),
+    ...(row.error_code ? { errorCode: row.error_code } : {}),
+    ...(row.error_message ? { errorMessage: row.error_message } : {}),
+    expiresAt: row.expires_at.toISOString(),
+    ...(row.completed_at ? { completedAt: row.completed_at.toISOString() } : {}),
+    createdAt: row.created_at.toISOString(),
+  };
+}
+
 function toRecorderBot(row: RecorderBotRow): RecorderBotAccount {
   return {
     id: row.id,
+    ownershipType: row.ownership_type ?? "vorix_managed",
+    ...(row.tenant_id ? { tenantId: row.tenant_id } : {}),
+    ...(row.workspace_id ? { workspaceId: row.workspace_id } : {}),
+    ...(row.created_by_user_id ? { createdByUserId: row.created_by_user_id } : {}),
     label: row.label,
     googleEmail: row.google_email,
     displayName: row.display_name,

@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { MeetingActionItem, MeetingDetail, MeetingListFilters, MeetingListItem, MeetingsDashboard, MeetingTranscriptSegment, RecordingRequestResult } from "./types";
+import type { MeetingActionItem, MeetingDetail, MeetingListFilters, MeetingListItem, MeetingsDashboard, MeetingTranscriptSegment, ProvisioningStart, RecorderAccount, RecorderEligibility, RecordingCapacity, RecordingRequestResult } from "./types";
 
 const q = encodeURIComponent;
 
@@ -33,6 +33,7 @@ export function createMeeting(input: {
   scheduledEndAt?: string;
   participants?: { name?: string; email?: string }[];
   recordNow?: boolean;
+  humanJoinAccountEmail?: string;
 }) {
   return apiClient.post<{ meeting: MeetingDetail; recording?: RecordingRequestResult }>("/v1/meetings", input);
 }
@@ -46,8 +47,50 @@ export function uploadMeetingRecording(workspaceId: string, file: File, title?: 
   return apiClient.upload<MeetingDetail>("/v1/meetings/uploads", form);
 }
 
-export function requestMeetingRecording(workspaceId: string, meetingId: string) {
-  return apiClient.post<RecordingRequestResult>(`/v1/meetings/${q(meetingId)}/recording`, { workspaceId });
+export function requestMeetingRecording(workspaceId: string, meetingId: string, humanJoinAccountEmail?: string) {
+  return apiClient.post<RecordingRequestResult>(`/v1/meetings/${q(meetingId)}/recording`, { workspaceId, ...(humanJoinAccountEmail?.trim() ? { humanJoinAccountEmail: humanJoinAccountEmail.trim() } : {}) });
+}
+
+export function setMeetingHumanIdentity(workspaceId: string, meetingId: string, humanJoinAccountEmail: string) {
+  return apiClient.put<MeetingDetail>(`/v1/meetings/${q(meetingId)}/human-identity`, { workspaceId, humanJoinAccountEmail });
+}
+
+export function getRecorderEligibility(workspaceId: string, meetingId: string) {
+  return apiClient.get<RecorderEligibility>(`/v1/meetings/${q(meetingId)}/recorder-eligibility?workspaceId=${q(workspaceId)}`);
+}
+
+// ── Contas de gravação (self-service) ──────────────────────────────────────────────────────────
+
+export function getRecordingCapacity(workspaceId: string) {
+  return apiClient.get<RecordingCapacity & { canManage: boolean; knownHumanEmails: string[] }>(`/v1/meetings/recording-capacity?workspaceId=${q(workspaceId)}`);
+}
+
+export function listRecorderAccounts(workspaceId: string) {
+  return apiClient.get<{ accounts: RecorderAccount[]; capacity: RecordingCapacity; selfServiceAvailable: boolean }>(`/v1/meetings/recorder-accounts?workspaceId=${q(workspaceId)}`);
+}
+
+export function connectRecorderAccount(workspaceId: string, input: { label: string; googleEmail: string }) {
+  return apiClient.post<ProvisioningStart>("/v1/meetings/recorder-accounts", { workspaceId, ...input });
+}
+
+export function reconnectRecorderAccount(workspaceId: string, accountId: string) {
+  return apiClient.post<ProvisioningStart>(`/v1/meetings/recorder-accounts/${q(accountId)}/reconnect`, { workspaceId });
+}
+
+export function testRecorderAccount(accountId: string) {
+  return apiClient.post<RecorderAccount>(`/v1/meetings/recorder-accounts/${q(accountId)}/test`, {});
+}
+
+export function disableRecorderAccount(accountId: string) {
+  return apiClient.post<RecorderAccount>(`/v1/meetings/recorder-accounts/${q(accountId)}/disable`, {});
+}
+
+export function removeRecorderAccount(accountId: string) {
+  return apiClient.delete<{ removed: boolean }>(`/v1/meetings/recorder-accounts/${q(accountId)}`);
+}
+
+export function cancelRecorderProvisioning(sessionId: string) {
+  return apiClient.post<{ cancelled: boolean }>(`/v1/meetings/recorder-provisioning/${q(sessionId)}/cancel`, {});
 }
 
 export function stopMeetingRecording(workspaceId: string, meetingId: string) {

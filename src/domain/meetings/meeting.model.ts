@@ -165,10 +165,130 @@ export type Meeting = {
   durationSeconds?: number;
   failureCode?: string;
   failureMessage?: string;
+  /** Conta Google com que a PESSOA entra nesta reunião (nunca é a conta de gravação). */
+  humanJoinAccountEmail?: string;
+  humanJoinIdentitySource?: HumanJoinIdentitySource;
+  /** Identidades humanas conhecidas que NUNCA podem gravar esta reunião (normalizadas). */
+  excludedRecorderEmails: string[];
+  captureStrategy: RecordingCaptureStrategy;
   statusChangedAt: string;
   createdAt: string;
   updatedAt: string;
 };
+
+// ---------------------------------------------------------------------------------------------
+// Identidade humana × conta de gravação.
+//
+// Regra: a conta Google usada por uma pessoa para entrar numa reunião NUNCA pode ser a conta de
+// gravação dessa mesma reunião (o Meet trata as duas como o mesmo participante). A validação vale
+// no agendamento (aviso) e, com autoridade, dentro da reserva atômica do recorder.
+// ---------------------------------------------------------------------------------------------
+
+export const HUMAN_JOIN_IDENTITY_SOURCES = ["explicit", "connected_account_confirmed", "inferred_organizer", "inferred_calendar_owner", "unknown"] as const;
+export type HumanJoinIdentitySource = (typeof HUMAN_JOIN_IDENTITY_SOURCES)[number];
+
+export function isConfirmedHumanIdentity(source: string | null | undefined): boolean {
+  return source === "explicit" || source === "connected_account_confirmed";
+}
+
+/** Only confirmed participation identities can exclude recorder accounts. */
+export function confirmedRecorderExclusions(meeting: Pick<Meeting, "humanJoinAccountEmail" | "humanJoinIdentitySource" | "excludedRecorderEmails">): string[] {
+  return isConfirmedHumanIdentity(meeting.humanJoinIdentitySource)
+    ? buildExcludedRecorderEmails({ humanJoinAccountEmail: meeting.humanJoinAccountEmail, extra: meeting.excludedRecorderEmails })
+    : [];
+}
+
+/** Estratégia de CAPTURA — independente de quem é dono da conta. Só `vorix_recorder` existe hoje. */
+export const RECORDING_CAPTURE_STRATEGIES = ["vorix_recorder", "google_native"] as const;
+export type RecordingCaptureStrategy = (typeof RECORDING_CAPTURE_STRATEGIES)[number];
+
+/** Quem conecta e administra a conta de gravação. Hoje só `customer_managed` entra na seleção;
+ * `vorix_managed` fica preparado (pool interno futuro), sem uso comercial. */
+export const RECORDER_ACCOUNT_OWNERSHIP_TYPES = ["customer_managed", "vorix_managed"] as const;
+export type RecorderAccountOwnershipType = (typeof RECORDER_ACCOUNT_OWNERSHIP_TYPES)[number];
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Normalização única de e-mail Google (trim + minúsculas). `undefined` quando não é e-mail. */
+export function normalizeGoogleEmail(raw: string | null | undefined): string | undefined {
+  const value = raw?.trim().toLowerCase();
+  return value && EMAIL_PATTERN.test(value) ? value : undefined;
+}
+
+/** Conjunto de exclusão de uma reunião: a identidade humana principal + outras conhecidas.
+ * NÃO inclui todos os convidados — só quem comprovadamente entra pelo lado humano. */
+export function buildExcludedRecorderEmails(input: { humanJoinAccountEmail?: string | null; extra?: readonly (string | null | undefined)[] }): string[] {
+  const set = new Set<string>();
+  for (const raw of [input.humanJoinAccountEmail, ...(input.extra ?? [])]) {
+    const email = normalizeGoogleEmail(raw);
+    if (email) set.add(email);
+  }
+  return [...set].sort();
+}
+
+/** E-mail que parece pessoal (domínio de consumo + nome sem marcação de gravação). Só gera AVISO —
+ * contas dedicadas são recomendadas, nunca obrigatórias. */
+export function looksLikePersonalGoogleAccount(email: string): boolean {
+  const normalized = normalizeGoogleEmail(email);
+  if (!normalized) return false;
+  const [local = ""] = normalized.split("@");
+  return !/(record|gravac|gravador|gravacao|bot|notetaker|notas)/.test(local);
+}
+
+export type RecordingCapacity = {
+  planCapacity: number;
+  tenantHealthyCapacity: number;
+  /** Healthy free accounts capped by the plan; active recordings are reported separately. */
+  tenantAvailableCapacity: number;
+  /** Limite comercial do plano (`maxConcurrentRecordings`). */
+  planLimit: number;
+  connectedAccounts: number;
+  /** Contas ativas com sessão saudável (livres ou ocupadas). */
+  healthyAccounts: number;
+  busyAccounts: number;
+  invalidAccounts: number;
+  /** min(plano, contas saudáveis) — quantas gravações simultâneas o tenant consegue de verdade. */
+  tenantEffectiveRecordingCapacity: number;
+  /** Gravações em andamento no tenant (consomem o plano). */
+  activeRecordings: number;
+  /** Quantas podem começar AGORA: min(plano − ativas, contas saudáveis livres). */
+  availableNow: number;
+  /** Contas a mais que o plano: ficam como reserva (substituem uma ocupada/inválida). */
+  reserveAccounts: number;
+  /** Faltam contas para usar todo o plano. */
+  missingAccountsForPlan: number;
+};
+
+export function computeRecordingCapacity(input: { planLimit: number; accounts: readonly Pick<RecorderBotAccount, "status" | "hasEncryptedSessionState">[]; activeRecordings: number }): RecordingCapacity {
+  const usable = input.accounts.filter((account) => account.hasEncryptedSessionState);
+  const healthy = usable.filter((account) => account.status === "active" || account.status === "busy");
+  const busy = healthy.filter((account) => account.status === "busy").length;
+  const free = healthy.length - busy;
+  const invalid = input.accounts.filter((account) => account.status === "reauth_required" || account.status === "invalid_session" || account.status === "error").length;
+  const effective = Math.min(input.planLimit, healthy.length);
+  return {
+    planCapacity: input.planLimit,
+    tenantHealthyCapacity: effective,
+    tenantAvailableCapacity: Math.min(input.planLimit, free),
+    planLimit: input.planLimit,
+    connectedAccounts: input.accounts.length,
+    healthyAccounts: healthy.length,
+    busyAccounts: busy,
+    invalidAccounts: invalid,
+    tenantEffectiveRecordingCapacity: effective,
+    activeRecordings: input.activeRecordings,
+    availableNow: Math.max(0, Math.min(input.planLimit - input.activeRecordings, free)),
+    reserveAccounts: Math.max(0, healthy.length - input.planLimit),
+    missingAccountsForPlan: Math.max(0, input.planLimit - healthy.length),
+  };
+}
+
+/** Capacidade para UMA reunião: contas saudáveis que não colidem com a identidade humana dela. */
+export function meetingEligibleRecorderCapacity(input: { capacity: RecordingCapacity; accounts: readonly Pick<RecorderBotAccount, "status" | "hasEncryptedSessionState" | "googleEmail">[]; excludedRecorderEmails: readonly string[] }): number {
+  const excluded = new Set(input.excludedRecorderEmails.map((email) => normalizeGoogleEmail(email)).filter(Boolean));
+  const eligible = input.accounts.filter((account) => account.hasEncryptedSessionState && account.status === "active" && !excluded.has(normalizeGoogleEmail(account.googleEmail)));
+  return Math.min(input.capacity.planLimit, eligible.length);
+}
 
 /** Linha da Central de Reuniões (consulta `meetings`, nunca só `calendar_events`). */
 export type MeetingListItem = Meeting & {
@@ -285,11 +405,23 @@ export type MeetingJob = {
   lockedUntil: string;
 };
 
-export const RECORDER_BOT_STATUSES = ["active", "busy", "invalid_session", "disabled", "error"] as const;
+export const RECORDER_BOT_STATUSES = ["active", "busy", "reauth_required", "invalid_session", "disabled", "error"] as const;
 export type RecorderBotStatus = (typeof RECORDER_BOT_STATUSES)[number];
 
+export function recorderHealthFailureStatus(reason?: string): RecorderBotStatus {
+  return ["redirect_login", "challenge", "session_expired", "login_required"].includes(reason ?? "")
+    ? "reauth_required"
+    : reason === "decrypt_failed" || reason === "session_missing" ? "invalid_session" : "error";
+}
+
+/** Conta Google de GRAVAÇÃO (não é um usuário do Vorix nem a identidade de uma pessoa). Hoje cada
+ * tenant conecta as próprias (`customer_managed`); `vorix_managed` fica preparado. */
 export type RecorderBotAccount = {
   id: string;
+  ownershipType: RecorderAccountOwnershipType;
+  tenantId?: string;
+  workspaceId?: string;
+  createdByUserId?: string;
   label: string;
   googleEmail: string;
   displayName: string;

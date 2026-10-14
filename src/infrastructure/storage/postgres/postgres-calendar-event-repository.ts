@@ -18,7 +18,7 @@ type Row = {
   google_account_id: string | null; google_calendar_id: string | null; google_event_id: string | null;
   google_etag: string | null; google_updated_at: Date | null; html_link: string | null;
   google_recurring_event_id: string | null; google_original_start_at: Date | null;
-  meet_link: string | null; wants_meet_link: boolean; sync_to_google: boolean;
+  meet_link: string | null; organizer_email?: string | null; wants_meet_link: boolean; sync_to_google: boolean;
   local_version: number; synced_version: number; conflict_remote: Record<string, unknown> | null;
   sync_state: string | null; last_sync_error: string | null; last_google_sync_at: Date | null;
   created_at: Date; updated_at: Date;
@@ -49,6 +49,7 @@ const GOOGLE_COLUMNS: ReadonlyArray<[keyof GoogleEventIdentity, string]> = [
   ["googleOriginalStartAt", "google_original_start_at"],
   ["htmlLink", "html_link"],
   ["meetLink", "meet_link"],
+  ["organizerEmail", "organizer_email"],
 ];
 
 function buildSets(patch: CalendarEventContentPatch, google: Partial<GoogleEventIdentity> | undefined, params: unknown[]): string[] {
@@ -99,8 +100,8 @@ export class PostgresCalendarEventRepository implements CalendarEventRepositoryP
          id, tenant_id, workspace_id, owner_user_id, title, description, location, start_at, end_at, timezone, all_day,
          attendees, related_entity_type, related_entity_id, source, wants_meet_link, sync_to_google, local_version, synced_version,
          sync_state, google_account_id, google_calendar_id, google_event_id, google_etag, google_updated_at,
-         google_recurring_event_id, google_original_start_at, html_link, meet_link, last_google_sync_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14,$15,$16,$17,$18,0,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
+         google_recurring_event_id, google_original_start_at, html_link, meet_link, last_google_sync_at, organizer_email)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14,$15,$16,$17,$18,0,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
        returning *`,
       [
         newId(), input.tenantId, input.workspaceId, input.ownerUserId, input.title, input.description ?? null, input.location ?? null,
@@ -109,7 +110,7 @@ export class PostgresCalendarEventRepository implements CalendarEventRepositoryP
         fromGoogle ? "ok" : input.syncToGoogle === false ? null : "pending",
         fromGoogle?.googleAccountId ?? null, fromGoogle?.googleCalendarId ?? null, fromGoogle?.googleEventId ?? null, fromGoogle?.googleEtag ?? null,
         fromGoogle?.googleUpdatedAt ?? null, fromGoogle?.googleRecurringEventId ?? null, fromGoogle?.googleOriginalStartAt ?? null,
-        fromGoogle?.htmlLink ?? null, fromGoogle?.meetLink ?? null, fromGoogle ? new Date() : null,
+        fromGoogle?.htmlLink ?? null, fromGoogle?.meetLink ?? null, fromGoogle ? new Date() : null, fromGoogle?.organizerEmail ?? null,
       ],
     );
     return toDomain(result.rows[0]!);
@@ -205,6 +206,7 @@ function toDomain(row: Row): CalendarEvent {
     status: row.status as CalendarEventStatus,
     source: row.source as CalendarEventSource,
     ...(row.meet_link ? { meetLink: row.meet_link } : {}),
+    ...(row.organizer_email ? { organizerEmail: row.organizer_email } : {}),
     wantsMeetLink: row.wants_meet_link,
     syncToGoogle: row.sync_to_google,
     ...(row.related_entity_type ? { relatedEntityType: row.related_entity_type as CalendarRelatedEntityType } : {}),

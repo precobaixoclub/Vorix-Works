@@ -13,6 +13,8 @@ import {
   reanalyzeMeeting,
   retranscribeMeeting,
   getMeeting,
+  getRecorderEligibility,
+  setMeetingHumanIdentity,
   getMeetingsDashboard,
   getMeetingTranscript,
   getRecordingPlaybackUrl,
@@ -84,7 +86,21 @@ const CREATE_BODY = {
     participants: PARTICIPANTS,
     /** "Gravar agora": cria a reunião e já pede a gravação (admissão no mesmo request). */
     recordNow: { type: "boolean" },
+    /** Conta Google com que a PESSOA entrará na reunião (nunca será a conta de gravação). */
+    humanJoinAccountEmail: { type: "string", maxLength: 254 },
   },
+} as const;
+const RECORD_BODY = {
+  type: "object",
+  required: ["workspaceId"],
+  additionalProperties: false,
+  properties: { workspaceId: { type: "string", minLength: 1 }, humanJoinAccountEmail: { type: "string", maxLength: 254 } },
+} as const;
+const IDENTITY_BODY = {
+  type: "object",
+  required: ["workspaceId", "humanJoinAccountEmail"],
+  additionalProperties: false,
+  properties: { workspaceId: { type: "string", minLength: 1 }, humanJoinAccountEmail: { type: "string", minLength: 3, maxLength: 254 } },
 } as const;
 const UPDATE_BODY = {
   type: "object",
@@ -134,7 +150,7 @@ export async function registerMeetingRoutes(app: FastifyInstance, deps: MeetingR
       const { recordNow, ...input } = body;
       const meeting = await createMeeting(deps, actor, input);
       // A reunião existe a partir daqui, aconteça o que acontecer com a gravação.
-      const recording = recordNow ? await requestRecording(deps, actorOf(request, "meeting:record"), { workspaceId: body.workspaceId, meetingId: meeting.id }) : undefined;
+      const recording = recordNow ? await requestRecording(deps, actorOf(request, "meeting:record"), { workspaceId: body.workspaceId, meetingId: meeting.id, ...(body.humanJoinAccountEmail ? { humanJoinAccountEmail: body.humanJoinAccountEmail } : {}) }) : undefined;
       reply.code(201);
       return successEnvelope({ meeting: recording?.ok ? await getMeeting(deps, actor, { workspaceId: body.workspaceId, meetingId: meeting.id }) : meeting, ...(recording ? { recording } : {}) }, request.id);
     } catch (error) {
@@ -230,12 +246,36 @@ export async function registerMeetingRoutes(app: FastifyInstance, deps: MeetingR
     }
   });
 
-  app.post("/meetings/:id/recording", { schema: { params: ID_PARAMS, body: WORKSPACE_QUERY }, config: { readOnlyGuard: true } }, async (request) => {
+  app.post("/meetings/:id/recording", { schema: { params: ID_PARAMS, body: RECORD_BODY }, config: { readOnlyGuard: true } }, async (request) => {
     const actor = actorOf(request, "meeting:record");
     const { id } = request.params as { id: string };
-    const { workspaceId } = request.body as { workspaceId: string };
+    const { workspaceId, humanJoinAccountEmail } = request.body as { workspaceId: string; humanJoinAccountEmail?: string };
     try {
-      return successEnvelope(await requestRecording(deps, actor, { workspaceId, meetingId: id }), request.id);
+      return successEnvelope(await requestRecording(deps, actor, { workspaceId, meetingId: id, ...(humanJoinAccountEmail ? { humanJoinAccountEmail } : {}) }), request.id);
+    } catch (error) {
+      translate(error);
+    }
+  });
+
+  /** Validação antecipada (agendamento): há conta de gravação que sirva para esta reunião? */
+  app.get("/meetings/:id/recorder-eligibility", { schema: { params: ID_PARAMS, querystring: WORKSPACE_QUERY } }, async (request) => {
+    const actor = actorOf(request, "meeting:read");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      return successEnvelope(await getRecorderEligibility(deps, actor, { workspaceId, meetingId: id }), request.id);
+    } catch (error) {
+      translate(error);
+    }
+  });
+
+  /** Corrigir a conta Google com que a pessoa entrará na reunião (antes da gravação começar). */
+  app.put("/meetings/:id/human-identity", { schema: { params: ID_PARAMS, body: IDENTITY_BODY }, config: { readOnlyGuard: true } }, async (request) => {
+    const actor = actorOf(request, "meeting:record");
+    const { id } = request.params as { id: string };
+    const { workspaceId, humanJoinAccountEmail } = request.body as { workspaceId: string; humanJoinAccountEmail: string };
+    try {
+      return successEnvelope(await setMeetingHumanIdentity(deps, actor, { workspaceId, meetingId: id, humanJoinAccountEmail }), request.id);
     } catch (error) {
       translate(error);
     }

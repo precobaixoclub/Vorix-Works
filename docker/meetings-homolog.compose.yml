@@ -1,0 +1,72 @@
+name: vorix-meetings-homolog
+
+# Exclusively local WSL2 acceptance testing. Uses the existing homologation PostgreSQL/network.
+# Credentials live in a protected file outside the repository. No production host or public router.
+x-runtime: &runtime
+  image: vorix-meetings-recorder:customer-managed-0148
+  env_file: ${MEETINGS_HOMOLOG_ROOT:-/root/vorix-homolog/customer-managed-20261014}/secrets/runtime.env
+  volumes:
+    - ${MEETINGS_HOMOLOG_ROOT:-/root/vorix-homolog/customer-managed-20261014}/storage:/data/objects
+  networks: [homolog]
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *runtime
+    container_name: vorix-homolog-api
+    entrypoint: ["node", "dist/interfaces/api/server.js"]
+    ports: ["127.0.0.1:3000:3000"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+
+  recorder-1:
+    <<: *runtime
+    container_name: vorix-recorder-1
+    environment:
+      MEETINGS_RECORDER_WORKER_ID: recorder-homolog-1
+      MEETINGS_PROVISIONING_PUBLIC_ENDPOINT: ws://vorix-recorder-1:7088
+    shm_size: 1gb
+
+  recorder-2:
+    <<: *runtime
+    container_name: vorix-recorder-2
+    environment:
+      MEETINGS_RECORDER_WORKER_ID: recorder-homolog-2
+      MEETINGS_PROVISIONING_PUBLIC_ENDPOINT: ws://vorix-recorder-2:7088
+    shm_size: 1gb
+
+  processing:
+    <<: *runtime
+    image: vorix-meetings-processing:customer-managed-0148
+    container_name: vorix-homolog-meetings-processing
+    entrypoint: ["node", "dist/interfaces/worker/meetings-worker.js"]
+    volumes:
+      - ${MEETINGS_HOMOLOG_ROOT:-/root/vorix-homolog/customer-managed-20261014}/storage:/data/objects
+      - ${MEETINGS_HOMOLOG_ROOT:-/root/vorix-homolog/customer-managed-20261014}/whisper-cache:/data/whisper-cache
+    environment:
+      MEETINGS_WHISPER_PYTHON: /opt/whisper/bin/python
+      MEETINGS_WORKER_ROLES: transcribe,analyze
+      MEETINGS_WORKER_ID: processing-homolog
+      MEETINGS_TRANSCRIPTION_LANGUAGE: pt
+    healthcheck:
+      disable: true
+
+  web:
+    image: vorix-meetings-web:customer-managed-0148
+    container_name: vorix-homolog-web
+    environment:
+      PORT: 3001
+      HOSTNAME: 0.0.0.0
+      API_INTERNAL_URL: http://api:3000
+    ports: ["127.0.0.1:3001:3001"]
+    networks: [homolog]
+    restart: unless-stopped
+
+networks:
+  homolog:
+    external: true
+    name: vorix-homolog

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * Captura a sessão Google de uma conta DEDICADA de gravação (bot do Vorix Meetings).
+ * Ferramenta INTERNA de homologação, suporte e diagnóstico do pool vorix_managed.
+ * Clientes conectam/reconectam contas em Meetings → Configurações → Contas de gravação.
+ * Este script nunca é requisito nem fluxo principal de provisionamento de clientes.
  *
  * Abre um Chromium VISÍVEL. Uma PESSOA faz o login da conta do bot (inclusive MFA/desafios — esta
  * ferramenta não automatiza, não contorna e não vê a senha). Quando o meet.google.com abre logado,

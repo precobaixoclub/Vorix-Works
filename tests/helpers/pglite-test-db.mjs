@@ -10,10 +10,12 @@ const { Pool } = pg;
  * exatamente como conversaria com um `DATABASE_URL` real — sem exigir nenhuma credencial do
  * Postgres real do desenvolvedor. Ver Relatório da Sprint 03 para o raciocínio completo.
  */
-export async function startTestPostgres({ port }) {
+export async function startTestPostgres(_options = {}) {
   const db = new PGlite();
-  const server = new PGLiteSocketServer({ db, port, host: "127.0.0.1", maxConnections: 10 });
+  // The OS assigns a free port, avoiding other test workers and local databases.
+  const server = new PGLiteSocketServer({ db, port: 0, host: "127.0.0.1", maxConnections: 10 });
   await server.start();
+  const port = Number(server.getServerConn().split(":").at(-1));
 
   const pool = new Pool({
     host: "127.0.0.1",

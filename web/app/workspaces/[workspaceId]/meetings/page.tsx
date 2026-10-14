@@ -13,7 +13,7 @@ import { StatsGrid } from "@/components/StatsGrid";
 import { Card } from "@/components/Card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { useMeetings, useMeetingsDashboard } from "@/features/meetings/hooks";
+import { useMeetings, useMeetingsDashboard, useRecordingCapacity } from "@/features/meetings/hooks";
 import { formatHours, meetingWhen } from "@/features/meetings/presentation";
 import { formatDateTime } from "@/lib/format";
 
@@ -25,6 +25,7 @@ export default function MeetingsHomePage() {
   const [dialog, setDialog] = useState<MeetingDialogKind | null>(null);
   const dashboard = useMeetingsDashboard(workspace.id);
   const recent = useMeetings(workspace.id, RECENT_FILTERS);
+  const capacity = useRecordingCapacity(workspace.id);
   const data = dashboard.data;
   const base = `/workspaces/${workspace.id}/meetings`;
 
@@ -49,6 +50,18 @@ export default function MeetingsHomePage() {
           {!data.realRecordingEnabled ? (
             <Card className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
               A gravação automática por bot ainda não está habilitada neste ambiente. Você já pode enviar gravações e registrar reuniões.
+            </Card>
+          ) : null}
+          {data.realRecordingEnabled && capacity.data && (capacity.data.connectedAccounts === 0 || capacity.data.missingAccountsForPlan > 0) ? (
+            <Card className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm" data-testid="recorder-onboarding">
+              <div className="min-w-0 space-y-1">
+                <p className="font-medium text-foreground">{capacity.data.connectedAccounts === 0 ? "Conecte suas contas de gravação" : "Conecte mais contas de gravação"}</p>
+                <p className="text-muted-foreground">
+                  Você possui {capacity.data.healthyAccounts} conta(s) de gravação saudáveis. Sua capacidade efetiva continua limitada
+                  pelo plano de {capacity.data.planCapacity} gravação(ões) simultânea(s) e pela disponibilidade dessas contas.
+                </p>
+              </div>
+              {capacity.data.canManage ? <Link href={`${base}/recorder-accounts`}><Button>Conectar conta de gravação</Button></Link> : <p className="text-xs text-muted-foreground">Peça a um administrador da empresa.</p>}
             </Card>
           ) : null}
           <StatsGrid>

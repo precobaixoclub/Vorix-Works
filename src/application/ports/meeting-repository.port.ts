@@ -17,6 +17,8 @@ import type {
   MeetingSource,
   MeetingStatus,
   MeetingTranscriptSegment,
+  HumanJoinIdentitySource,
+  RecordingCaptureStrategy,
 } from "../../domain/meetings/meeting.model.js";
 
 export type MeetingListFilter = {
@@ -38,15 +40,52 @@ export type MeetingListFilter = {
   offset: number;
 };
 
-export type NewMeeting = Omit<Meeting, "statusChangedAt" | "createdAt" | "updatedAt" | "botAccountId" | "botJoinedAt" | "recordingStartedAt" | "recordingEndedAt" | "durationSeconds" | "failureCode" | "failureMessage" | "autoRecordOutcome"> & {
+export type NewMeeting = Omit<Meeting, "statusChangedAt" | "createdAt" | "updatedAt" | "botAccountId" | "botJoinedAt" | "recordingStartedAt" | "recordingEndedAt" | "durationSeconds" | "failureCode" | "failureMessage" | "autoRecordOutcome" | "excludedRecorderEmails" | "captureStrategy"> & {
   participants: { name?: string; email?: string; role: "organizer" | "attendee"; userId?: string; contactId?: string }[];
+  excludedRecorderEmails?: string[];
+  captureStrategy?: RecordingCaptureStrategy;
 };
 
+/** Conta pulada na reserva por colidir com a identidade humana (só id + motivo; nunca segredo). */
+export type SkippedRecorderAccount = { accountId: string; reason: "IDENTITY_CONFLICT" };
+
 export type RecordingAdmission =
-  | { ok: true; jobId: string; botAccountId: string; activeRecordings: number }
+  | { ok: true; jobId: string; botAccountId: string; activeRecordings: number; skipped: SkippedRecorderAccount[] }
   | { ok: false; reason: "CONCURRENCY_LIMIT_REACHED"; activeRecordings: number; limit: number }
-  | { ok: false; reason: "NO_BOT_AVAILABLE"; activeRecordings: number }
+  /** Nenhuma conta saudável livre (todas ocupadas, ou nenhuma conectada). Transitório quando há
+   * contas ocupadas. */
+  | { ok: false; reason: "NO_RECORDER_ACCOUNT_AVAILABLE"; activeRecordings: number; connectedAccounts: number; busyAccounts: number }
+  /** Há conta saudável livre, mas TODAS são a identidade humana desta reunião (ou de outra reunião
+   * ativa do tenant). Permanente até o cliente conectar outra conta ou corrigir a identidade. */
+  | { ok: false; reason: "RECORDER_ACCOUNT_IDENTITY_CONFLICT"; activeRecordings: number; skipped: SkippedRecorderAccount[] }
+  /** Só há contas com sessão inválida/erro — precisam ser reconectadas. */
+  | { ok: false; reason: "INVALID_RECORDER_SESSION"; activeRecordings: number; invalidAccounts: number }
+  /** A reunião não tem identidade humana conhecida — sem ela não há como garantir que o gravador
+   * não seja a conta da própria pessoa. */
+  | { ok: false; reason: "HUMAN_IDENTITY_REQUIRED"; activeRecordings: number }
   | { ok: false; reason: "INVALID_STATE"; status: MeetingStatus };
+
+export type RecorderAccountListFilter = { tenantId?: string; workspaceId?: string; includeRemoved?: boolean };
+
+export type RecorderAccountWithContext = RecorderBotAccount & { currentMeetingTitle?: string; tenantName?: string; workspaceName?: string };
+
+export type RecorderProvisioningSession = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  recorderAccountId: string;
+  createdByUserId: string;
+  status: "pending" | "starting" | "live" | "completed" | "failed" | "expired" | "cancelled";
+  singleUse: boolean;
+  reconnect: boolean;
+  workerId?: string;
+  workerEndpoint?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  expiresAt: string;
+  completedAt?: string;
+  createdAt: string;
+};
 
 export type MeetingDashboard = {
   meetingsToday: number;
@@ -97,7 +136,7 @@ export type MeetingRepositoryPort = {
    */
   admitRecording(input: { tenantId: string; workspaceId: string; meetingId: string; maxConcurrentRecordings: number; now: Date }): Promise<RecordingAdmission>;
   /** Libera o bot de uma reunião (fim/falha/cancelamento). Idempotente. */
-  releaseBot(input: { meetingId: string; healthy: boolean; invalidSession?: boolean; lastError?: string }): Promise<void>;
+  releaseBot(input: { meetingId: string; healthy: boolean; invalidSession?: boolean; reauthRequired?: boolean; lastError?: string }): Promise<void>;
   getRecorderJobContext(input: { tenantId: string; workspaceId: string; meetingId: string; jobId: string }): Promise<RecorderJobContext | undefined>;
   createRecorderRun(input: Omit<RecorderRun, "startedAt" | "heartbeatAt">): Promise<RecorderRun>;
   updateRecorderRun(input: { runId: string; workerId: string; patch: RecorderRunUpdate }): Promise<boolean>;
@@ -105,10 +144,36 @@ export type MeetingRepositoryPort = {
   requestRecordingStop(input: { tenantId: string; workspaceId: string; meetingId: string; actorUserId: string }): Promise<boolean>;
   isRecordingStopRequested(input: { jobId: string }): Promise<boolean>;
   recoverOrphanRecorderRuns(input: { staleBefore: Date }): Promise<number>;
+  /** Pool interno (`vorix_managed`, preparado) + suporte da plataforma. */
   listRecorderBots(): Promise<RecorderBotAccount[]>;
+  // ── Contas de gravação do cliente (customer_managed) ──────────────────────────────────────
+  /** Sem `tenantId` = visão de suporte da plataforma (todas). Removidas ficam fora. */
+  listRecorderAccounts(filter: RecorderAccountListFilter): Promise<RecorderAccountWithContext[]>;
+  getRecorderAccount(input: { accountId: string; tenantId?: string }): Promise<RecorderBotAccount | undefined>;
+  createRecorderAccount(input: { id: string; tenantId: string; workspaceId?: string; createdByUserId: string; label: string; googleEmail: string; displayName: string }): Promise<{ ok: true; account: RecorderBotAccount } | { ok: false; reason: "DUPLICATE_EMAIL" }>;
+  /** Guarda a sessão (já cifrada) obtida no login self-service e o resultado do teste. Nunca em
+   * conta ocupada. `googleEmail` = e-mail confirmado na sessão (substitui o informado). */
+  saveRecorderAccountSession(input: { accountId: string; tenantId: string; provisioningSessionId: string; workerId: string; encryptedSessionState?: string; status: RecorderBotStatus; health: Record<string, unknown>; checkedAt: Date; googleEmail?: string; lastError?: string }): Promise<RecorderBotAccount | undefined>;
+  /** Remoção lógica: apaga a sessão cifrada e tira a conta da seleção. Recusa conta ocupada. */
+  removeRecorderAccount(input: { tenantId: string; accountId: string; actorUserId: string }): Promise<"removed" | "busy" | "not_found">;
+  setRecorderAccountEnabled(input: { tenantId: string; accountId: string; enabled: boolean }): Promise<RecorderBotAccount | "busy" | undefined>;
+  countActiveRecordings(tenantId: string): Promise<number>;
+  /** Identidade humana de uma reunião ainda não iniciada. */
+  setHumanJoinIdentity(input: { tenantId: string; workspaceId: string; meetingId: string; humanJoinAccountEmail: string | null; source: HumanJoinIdentitySource | null; excludedRecorderEmails: string[] }): Promise<boolean>;
+  /** Contas Google CONHECIDAS de quem usa o Vorix (conectadas na Agenda) — sugestões de identidade. */
+  knownHumanGoogleEmails(input: { tenantId: string; userId: string }): Promise<{ connected: string[]; recentExplicit: string[] }>;
+  // ── Provisionamento self-service ──────────────────────────────────────────────────────────
+  createProvisioningSession(input: { id: string; tenantId: string; workspaceId: string; recorderAccountId: string; createdByUserId: string; viewerTokenHash: string; expiresAt: Date }): Promise<RecorderProvisioningSession>;
+  getProvisioningSession(input: { sessionId: string; tenantId?: string }): Promise<RecorderProvisioningSession | undefined>;
+  findProvisioningSessionByViewerHash(viewerTokenHash: string): Promise<RecorderProvisioningSession | undefined>;
+  consumeProvisioningViewer(input: { sessionId: string; viewerTokenHash: string; tenantId: string; userId: string; now: Date }): Promise<boolean>;
+  /** Worker do recorder reivindica a próxima sessão pendente (SKIP LOCKED). */
+  claimProvisioningSession(input: { workerId: string; workerEndpoint: string; now: Date }): Promise<(RecorderProvisioningSession & { expectedGoogleEmail: string }) | undefined>;
+  updateProvisioningSession(input: { sessionId: string; status: RecorderProvisioningSession["status"]; workerId?: string; errorCode?: string; errorMessage?: string }): Promise<boolean>;
+  expireProvisioningSessions(now: Date): Promise<number>;
   getRecorderBotSession(botId: string): Promise<string | undefined>;
   upsertRecorderBot(input: { id: string; label: string; googleEmail: string; displayName: string; encryptedSessionState?: string; status: RecorderBotStatus }): Promise<RecorderBotAccount>;
-  updateRecorderBotStatus(input: { botId: string; status: RecorderBotStatus; health?: Record<string, unknown>; lastError?: string; checkedAt?: Date }): Promise<RecorderBotAccount | undefined>;
+  updateRecorderBotStatus(input: { botId: string; status: RecorderBotStatus; health?: Record<string, unknown>; lastError?: string; checkedAt?: Date; expectedHealth?: { requestedAt?: string } }): Promise<RecorderBotAccount | undefined>;
   dashboard(input: { tenantId: string; workspaceId: string; visibleToUserId?: string; todayStart: Date; todayEnd: Date; weekStart: Date; weekEnd: Date }): Promise<MeetingDashboard>;
   recordUsage(input: { tenantId: string; period: string; delta: Partial<{ recordingSeconds: number; meetingsRecorded: number; transcriptionSeconds: number; storageBytes: number; aiAnalyses: number; concurrentPeak: number; botWaitSeconds: number; admissionWaitSeconds: number; captureFailures: number; browserFailures: number; ffmpegFailures: number; bytesRecorded: number }> }): Promise<void>;
   /** Bytes de gravações disponíveis (não purgadas) do tenant — base do limite `maxStorageBytes`. */

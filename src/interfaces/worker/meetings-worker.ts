@@ -24,6 +24,7 @@ import { LocalObjectStorage } from "../../infrastructure/storage/local-object-st
 import { PostgresCalendarConnectionRepository } from "../../infrastructure/storage/postgres/postgres-calendar-connection-repository.js";
 import { PostgresCalendarEventRepository } from "../../infrastructure/storage/postgres/postgres-calendar-event-repository.js";
 import { PostgresMeetingRepository } from "../../infrastructure/storage/postgres/postgres-meeting-repository.js";
+import { PostgresNotificationRepository } from "../../infrastructure/storage/postgres/postgres-notification-repository.js";
 import { PostgresSolutionEntitlementRepository } from "../../infrastructure/storage/postgres/postgres-solution-entitlement-repository.js";
 import { S3ObjectStorage } from "../../infrastructure/storage/s3-object-storage.js";
 
@@ -84,6 +85,7 @@ async function main(): Promise<void> {
   const identity = buildIdentityRepositories({ databaseUrl, secretsMasterKey: jwtSecret });
   const pool = identity.pool;
   const repository = new PostgresMeetingRepository(pool);
+  const notifications = new PostgresNotificationRepository(pool);
   const storage = buildStorage();
   const media = new ObjectStorageMeetingMedia(storage ?? ({} as ObjectStoragePort));
   const solutions = new SolutionAccessService({ repository: new PostgresSolutionEntitlementRepository(pool) });
@@ -203,7 +205,13 @@ async function main(): Promise<void> {
 
   if (roles.has("scheduler")) {
     loop("scheduler", int(env.MEETINGS_SCHEDULER_INTERVAL_MS, 30_000), async () => {
-      const result = await evaluateAutoRecordings({ repository, now: () => new Date() }, {
+      const result = await evaluateAutoRecordings({
+        repository,
+        now: () => new Date(),
+        notify: async (notice) => {
+          await notifications.create({ tenantId: notice.tenantId, workspaceId: notice.workspaceId, userId: notice.userId, title: notice.title, body: notice.body, sourceType: "meeting", sourceId: notice.meetingId, sourceUrl: `/workspaces/${notice.workspaceId}/meetings/central/${notice.meetingId}` });
+        },
+      }, {
         defaults: { joinBeforeMinutes: int(env.MEETINGS_JOIN_BEFORE_MINUTES, 2), joinGraceMinutes: int(env.MEETINGS_JOIN_GRACE_MINUTES, 10) },
         realRecordingEnabled,
         limitsFor,

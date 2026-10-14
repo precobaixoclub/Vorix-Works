@@ -14,24 +14,32 @@ import { ApiError, apiClient } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+/** Visão de SUPORTE: contas de gravação de todos os tenants (customer_managed) e o pool interno
+ * preparado (vorix_managed). Nunca traz sessão, cookie ou referência a segredo. */
 type RecorderBot = {
   id: string;
   label: string;
   googleEmail: string;
-  displayName: string;
-  status: "active" | "busy" | "invalid_session" | "disabled" | "error";
-  hasEncryptedSessionState: boolean;
+  ownershipType: "customer_managed" | "vorix_managed";
+  tenantId?: string;
+  workspaceId?: string;
+  workspaceName?: string;
+  status: "active" | "busy" | "reauth_required" | "invalid_session" | "disabled" | "error";
+  health: "healthy" | "needs_reconnect" | "pending_test" | "never_connected" | "disabled" | "error";
+  connected: boolean;
   currentMeetingId?: string;
-  currentTenantId?: string;
+  currentMeetingTitle?: string;
   lastUsedAt?: string;
   lastHealthCheckAt?: string;
   lastError?: string;
-  health: { status?: string; reason?: string };
 };
+
+const OWNERSHIP_LABEL: Record<RecorderBot["ownershipType"], string> = { customer_managed: "Do cliente", vorix_managed: "Pool Vorix (preparado)" };
 
 const STATUS: Record<RecorderBot["status"], { label: string; tone: string }> = {
   active: { label: "Ativo", tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" },
   busy: { label: "Gravando", tone: "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300" },
+  reauth_required: { label: "Precisa reconectar", tone: "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200" },
   invalid_session: { label: "Sessão inválida", tone: "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200" },
   disabled: { label: "Desativado", tone: "bg-muted text-muted-foreground" },
   error: { label: "Erro", tone: "bg-destructive/10 text-destructive" },
@@ -41,14 +49,14 @@ const BASE = "/v1/admin/meetings/recorder-bots";
 const message = (error: unknown) => (error instanceof ApiError || error instanceof Error ? error.message : "Tente novamente.");
 
 /**
- * Pool de contas Google DEDICADAS à gravação (nunca a conta do cliente) — só administração da
- * plataforma. A sessão Google é obtida por uma pessoa fazendo login num navegador visível
- * (`scripts/meetings/capture-bot-session.mjs`); aqui ela só é enviada cifrada. Nenhuma senha
- * passa pelo Vorix. Um bot só fica Ativo depois que o recorder abre o meet.google.com com ele.
+ * Suporte da plataforma: todas as contas de gravação. As contas dos CLIENTES são conectadas por eles
+ * mesmos (Meetings → Configurações → Contas de gravação); aqui o suporte só enxerga dono, tenant,
+ * workspace, saúde e uso, e pode testar/desativar. O cadastro manual com arquivo de sessão é um
+ * fallback interno do pool `vorix_managed` (preparado, sem uso comercial).
  */
 export default function AdminMeetingsBotsPage() {
   const { data, error, mutate } = useSWR("admin-recorder-bots", () => apiClient.get<{ bots: RecorderBot[] }>(BASE), {
-    refreshInterval: (current) => (current?.bots.some((bot) => bot.health.status === "pending" || bot.status === "busy") ? 5000 : 0),
+    refreshInterval: (current) => (current?.bots.some((bot) => bot.health === "pending_test" || bot.status === "busy") ? 5000 : 0),
   });
   const [creating, setCreating] = useState(false);
   const [sessionFor, setSessionFor] = useState<RecorderBot | null>(null);
@@ -70,16 +78,17 @@ export default function AdminMeetingsBotsPage() {
   const bots = data?.bots ?? [];
   return (
     <main className="space-y-6 p-4 sm:p-8">
-      <PageHeader title="Bots de gravação" description="Contas Google dedicadas que entram nas reuniões como participantes visíveis." actions={<Button onClick={() => setCreating(true)}>Cadastrar bot</Button>} />
+      <PageHeader title="Contas de gravação (suporte)" description="Contas Google de gravação de todos os clientes, com dono, workspace, saúde e uso." actions={<Button variant="secondary" onClick={() => setCreating(true)}>Cadastrar no pool interno</Button>} />
       <Card className="p-4 text-sm text-muted-foreground">
-        Para obter a sessão: no host do recorder, rode <code className="rounded bg-muted px-1">node scripts/meetings/capture-bot-session.mjs --out sessao.json</code>, faça login na conta do bot no navegador que abrir (com MFA, se houver) e envie o arquivo em “Enviar sessão”. Depois clique em “Testar sessão”.
+        Os clientes conectam as próprias contas em Meetings → Configurações → Contas de gravação, fazendo login direto no Google. O suporte não precisa (nem deve) pedir senha ou arquivo de sessão a ninguém.
       </Card>
       {error ? <ErrorState error={error} onRetry={() => mutate()} /> : null}
       <Card className="p-0">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Bot</TableHead>
+              <TableHead>Conta</TableHead>
+              <TableHead>Dono</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Sessão</TableHead>
               <TableHead>Último teste</TableHead>
@@ -90,26 +99,31 @@ export default function AdminMeetingsBotsPage() {
           </TableHeader>
           <TableBody>
             {bots.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{data ? "Nenhum bot cadastrado." : "Carregando…"}</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">{data ? "Nenhuma conta de gravação." : "Carregando…"}</TableCell></TableRow>
             ) : (
               bots.map((bot) => (
                 <TableRow key={bot.id} data-testid="recorder-bot-row">
                   <TableCell>
                     <p className="font-medium text-foreground">{bot.label}</p>
-                    <p className="text-xs text-muted-foreground">{bot.googleEmail} · aparece como “{bot.displayName}”</p>
+                    <p className="text-xs text-muted-foreground">{bot.googleEmail}</p>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    <p className="font-medium text-foreground">{OWNERSHIP_LABEL[bot.ownershipType]}</p>
+                    {bot.tenantId ? <p>Tenant {bot.tenantId}</p> : null}
+                    {bot.workspaceId ? <p>{bot.workspaceName ?? bot.workspaceId}</p> : null}
                   </TableCell>
                   <TableCell>
                     <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", STATUS[bot.status].tone)}>{STATUS[bot.status].label}</span>
                     {bot.lastError ? <p className="mt-1 max-w-[220px] truncate text-xs text-destructive" title={bot.lastError}>{bot.lastError}</p> : null}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{bot.hasEncryptedSessionState ? "Cifrada" : "Não enviada"}{bot.health.status === "pending" ? " · teste na fila" : ""}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{bot.connected ? "Cifrada" : "Não conectada"}{bot.health === "pending_test" ? " · teste na fila" : ""}</TableCell>
                   <TableCell className="text-xs tabular-nums text-muted-foreground">{bot.lastHealthCheckAt ? formatDateTime(bot.lastHealthCheckAt) : "—"}</TableCell>
                   <TableCell className="text-xs tabular-nums text-muted-foreground">{bot.lastUsedAt ? formatDateTime(bot.lastUsedAt) : "—"}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{bot.currentMeetingId ?? "—"}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{bot.currentMeetingTitle ?? bot.currentMeetingId ?? "—"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      <Button variant="secondary" disabled={bot.status === "busy"} onClick={() => setSessionFor(bot)}>Enviar sessão</Button>
-                      <Button variant="secondary" disabled={busy === bot.id || bot.status === "busy" || !bot.hasEncryptedSessionState} onClick={() => act(bot.id, "health-check", "Teste de sessão pedido ao recorder.")}>Testar sessão</Button>
+                      {bot.ownershipType === "vorix_managed" ? <Button variant="secondary" disabled={bot.status === "busy"} onClick={() => setSessionFor(bot)}>Enviar sessão</Button> : null}
+                      <Button variant="secondary" disabled={busy === bot.id || bot.status === "busy" || !bot.connected} onClick={() => act(bot.id, "health-check", "Teste de sessão pedido ao recorder.")}>Testar sessão</Button>
                       <Button variant="secondary" disabled={busy === bot.id || bot.status === "busy" || bot.status === "disabled"} onClick={() => act(bot.id, "disable", "Bot desativado.")}>Desativar</Button>
                     </div>
                   </TableCell>

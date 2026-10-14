@@ -20,7 +20,7 @@ import { resolveCalendarConflict } from "./calendar-sync-use-cases.js";
 /** Ligação com a reunião, implementada pelo Meetings — a Agenda não importa o Meetings. */
 export type CalendarMeetingLinkPort = {
   /** "Gravar automaticamente": prepara a reunião agendada vinculada ao evento. */
-  createScheduledMeeting(input: { event: CalendarEvent; joinBeforeMinutes?: number; joinGraceMinutes?: number; meetingUrl?: string }): Promise<{ meetingId: string; recordingCapacityWarning?: string }>;
+  createScheduledMeeting(input: { event: CalendarEvent; joinBeforeMinutes?: number; joinGraceMinutes?: number; meetingUrl?: string; humanJoinAccountEmail?: string }): Promise<{ meetingId: string; recordingCapacityWarning?: string; recorderWarning?: { code: string; message: string } }>;
   /** Evento remarcado/editado: a reunião agendada acompanha (só enquanto ainda está agendada). */
   syncScheduledMeeting(event: CalendarEvent): Promise<void>;
   /** Evento cancelado: reunião agendada vinculada é cancelada. */
@@ -108,7 +108,7 @@ function cleanAttendees(attendees: readonly string[] | undefined): string[] {
   return list;
 }
 
-export type CalendarEventView = CalendarEvent & { meetingId?: string; recordingCapacityWarning?: string };
+export type CalendarEventView = CalendarEvent & { meetingId?: string; recordingCapacityWarning?: string; recorderWarning?: { code: string; message: string } };
 
 export async function listCalendarEvents(deps: CalendarUseCaseDeps, actor: CalendarActor, input: { workspaceId: string; from: string; to: string; status?: "pending" | "cancelled" | "done" | "all" }): Promise<CalendarEventView[]> {
   const from = new Date(input.from);
@@ -147,6 +147,8 @@ export type CreateCalendarEventInput = CalendarTimeInput & {
   autoRecord?: boolean;
   joinBeforeMinutes?: number;
   joinGraceMinutes?: number;
+  /** Conta Google com que a pessoa entrará na reunião (nunca será a conta de gravação). */
+  humanJoinAccountEmail?: string;
 };
 
 export async function createCalendarEvent(deps: CalendarUseCaseDeps, actor: CalendarActor, input: CreateCalendarEventInput): Promise<CalendarEventView> {
@@ -169,12 +171,13 @@ export async function createCalendarEvent(deps: CalendarUseCaseDeps, actor: Cale
   });
   await nudgeSync(deps, event);
   if (!input.autoRecord) return event;
-  const { meetingId, recordingCapacityWarning } = await deps.meetings.createScheduledMeeting({
+  const { meetingId, recordingCapacityWarning, recorderWarning } = await deps.meetings.createScheduledMeeting({
     event,
+    ...(input.humanJoinAccountEmail?.trim() ? { humanJoinAccountEmail: input.humanJoinAccountEmail } : {}),
     ...(input.joinBeforeMinutes !== undefined ? { joinBeforeMinutes: input.joinBeforeMinutes } : {}),
     ...(input.joinGraceMinutes !== undefined ? { joinGraceMinutes: input.joinGraceMinutes } : {}),
   });
-  return { ...event, meetingId, ...(recordingCapacityWarning ? { recordingCapacityWarning } : {}) };
+  return { ...event, meetingId, ...(recordingCapacityWarning ? { recordingCapacityWarning } : {}), ...(recorderWarning ? { recorderWarning } : {}) };
 }
 
 export type UpdateCalendarEventInput = Partial<CalendarTimeInput> & {

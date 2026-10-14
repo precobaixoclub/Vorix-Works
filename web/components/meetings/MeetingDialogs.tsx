@@ -1,13 +1,16 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { Button } from "@/components/Button";
 import { Input, Label, Textarea } from "@/components/Field";
 import { Modal } from "@/components/Modal";
+import { HumanIdentityField, announceRecordingRefusal, recorderAccountsHref } from "@/components/meetings/RecorderIdentity";
 import { createMeeting, uploadMeetingRecording } from "@/features/meetings/api";
+import { useRecordingCapacity } from "@/features/meetings/hooks";
 import { MEETING_UPLOAD_ACCEPT, type RecordingRequestResult } from "@/features/meetings/types";
 import { ApiError } from "@/lib/api-client";
 
@@ -23,10 +26,10 @@ function useRefreshMeetings() {
   return () => mutate((key) => Array.isArray(key) && typeof key[0] === "string" && key[0].startsWith("meeting"));
 }
 
-function announceRecording(result: RecordingRequestResult | undefined) {
+function announceRecording(result: RecordingRequestResult | undefined, workspaceId: string, navigate: (href: string) => void) {
   if (!result) return;
   if (result.ok) toast.success("Gravação na fila", { description: "O gravador vai entrar na reunião. Acompanhe o status na Central." });
-  else toast.warning("A reunião foi salva, mas a gravação não começou", { description: result.message });
+  else announceRecordingRefusal(result, workspaceId, navigate, "A reunião foi salva, mas a gravação não começou");
 }
 
 export function MeetingDialogs({ workspaceId, open, onClose }: { workspaceId: string; open: MeetingDialogKind | null; onClose: () => void }) {
@@ -40,15 +43,21 @@ export function MeetingDialogs({ workspaceId, open, onClose }: { workspaceId: st
 function RecordNowDialog({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const router = useRouter();
   const refresh = useRefreshMeetings();
+  const capacity = useRecordingCapacity(workspaceId);
   const [meetingUrl, setMeetingUrl] = useState("");
   const [title, setTitle] = useState("");
+  const [humanEmail, setHumanEmail] = useState("");
   const [busy, setBusy] = useState(false);
+  const suggestions = capacity.data?.knownHumanEmails ?? [];
+  useEffect(() => {
+    if (!humanEmail && suggestions.length === 1) setHumanEmail(suggestions[0]!);
+  }, [suggestions.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submit() {
     setBusy(true);
     try {
-      const result = await createMeeting({ workspaceId, source: "instant", meetingUrl, title: title || undefined, recordNow: true });
-      announceRecording(result.recording);
+      const result = await createMeeting({ workspaceId, source: "instant", meetingUrl, title: title || undefined, recordNow: true, humanJoinAccountEmail: humanEmail.trim() || undefined });
+      announceRecording(result.recording, workspaceId, (href) => router.push(href));
       await refresh();
       onClose();
       router.push(`/workspaces/${workspaceId}/meetings/central/${result.meeting.id}`);
@@ -70,10 +79,20 @@ function RecordNowDialog({ workspaceId, onClose }: { workspaceId: string; onClos
           <Label htmlFor="record-title">Título (opcional)</Label>
           <Input id="record-title" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} placeholder="Ex.: Reunião com cliente" />
         </div>
-        <p className="text-xs text-muted-foreground">Um gravador do Vorix pede para entrar na reunião. Quem organiza o Meet precisa admitir a entrada.</p>
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-foreground">Qual conta Google você utilizará para participar desta reunião?</p>
+          <HumanIdentityField id="record-human" value={humanEmail} onChange={setHumanEmail} suggestions={suggestions} />
+        </div>
+        <p className="text-xs text-muted-foreground">Conta usada para gravação: o Vorix escolhe automaticamente uma das contas de gravação conectadas, sempre diferente da sua. Quem organiza o Meet precisa admitir a entrada.</p>
+        {capacity.data && capacity.data.connectedAccounts === 0 ? (
+          <p className="rounded-lg border border-amber-300/60 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            Nenhuma conta de gravação conectada ainda.{" "}
+            {capacity.data.canManage ? <Link className="font-medium underline" href={recorderAccountsHref(workspaceId)}>Conectar conta de gravação</Link> : "Peça a um administrador para conectar uma."}
+          </p>
+        ) : null}
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
-          <Button onClick={submit} loading={busy} disabled={busy || !meetingUrl.trim()}>Gravar agora</Button>
+          <Button onClick={submit} loading={busy} disabled={busy || !meetingUrl.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(humanEmail.trim())}>Gravar agora</Button>
         </div>
       </div>
     </Modal>

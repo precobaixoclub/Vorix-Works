@@ -61,6 +61,8 @@ export type CalendarEvent = {
   status: CalendarEventStatus;
   source: CalendarEventSource;
   meetLink?: string;
+  /** Organizador no Google (eventos vindos do Google). */
+  organizerEmail?: string;
   wantsMeetLink: boolean;
   syncToGoogle: boolean;
   relatedEntityType?: CalendarRelatedEntityType;

@@ -5,7 +5,7 @@ import { rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { MeetingMediaStoragePort } from "./meeting-use-cases.js";
 import type { MeetingRepositoryPort } from "../ports/meeting-repository.port.js";
-import { meetingUsagePeriod, type MeetingJob, type RecorderRunState } from "../../domain/meetings/meeting.model.js";
+import { confirmedRecorderExclusions, isConfirmedHumanIdentity, meetingUsagePeriod, normalizeGoogleEmail, type MeetingJob, type RecorderRunState } from "../../domain/meetings/meeting.model.js";
 
 export type RecorderProcessSnapshot = {
   browserPid?: number;
@@ -77,7 +77,7 @@ export type RecorderJobOutcome = {
 };
 
 export class RecorderFailure extends Error {
-  constructor(readonly code: string, message: string, readonly invalidSession = false) {
+  constructor(readonly code: string, message: string, readonly invalidSession = false, readonly reauthRequired = invalidSession) {
     super(message);
   }
 }
@@ -102,14 +102,26 @@ export async function processNextRecorderJob(deps: RecorderWorkerDeps): Promise<
     const context = await deps.repository.getRecorderJobContext({ tenantId: job.tenantId, workspaceId: job.workspaceId, meetingId: job.meetingId, jobId: job.id });
     if (!context) throw new RecorderFailure("RECORDER_CONTEXT_INVALID", "Job, reuniao ou bot reservado nao foram encontrados.");
     if (!context.meeting.meetingUrl) throw new RecorderFailure("MEET_NOT_FOUND", "A reuniao nao possui link do Google Meet.");
-    if (!context.bot.encryptedSessionState) throw new RecorderFailure("BOT_SESSION_INVALID", "O bot reservado nao possui sessao Google provisionada.", true);
+    // Última barreira em RUNTIME: a conta reservada precisa ser do mesmo tenant e nunca a identidade
+    // humana da reunião (a identidade pode ter sido corrigida depois da reserva).
+    if (context.bot.ownershipType !== "customer_managed" || context.bot.tenantId !== job.tenantId) {
+      throw new RecorderFailure("RECORDER_ACCOUNT_TENANT_MISMATCH", "A conta de gravacao reservada nao pertence a este tenant.");
+    }
+    if (context.bot.workspaceId && context.bot.workspaceId !== job.workspaceId) throw new RecorderFailure("RECORDER_ACCOUNT_WORKSPACE_MISMATCH", "A conta de gravação está restrita a outro workspace.");
+    if (!isConfirmedHumanIdentity(context.meeting.humanJoinIdentitySource)) throw new RecorderFailure("HUMAN_IDENTITY_REQUIRED", "Confirme a conta Google que será usada para participar da reunião.");
+    const botEmail = normalizeGoogleEmail(context.bot.googleEmail);
+    if (botEmail && confirmedRecorderExclusions(context.meeting).includes(botEmail)) {
+      await deps.repository.audit({ tenantId: job.tenantId, workspaceId: job.workspaceId, meetingId: job.meetingId, actorUserId: context.meeting.ownerUserId, action: "RECORDER_ACCOUNT_SKIPPED_IDENTITY_CONFLICT", details: { recorderAccountId: context.bot.id, runtime: true } });
+      throw new RecorderFailure("RECORDER_ACCOUNT_IDENTITY_CONFLICT", "A conta de gravacao reservada e a mesma conta Google de quem participa da reuniao.");
+    }
+    if (!context.bot.encryptedSessionState) throw new RecorderFailure("BOT_SESSION_INVALID", "O bot reservado nao possui sessao Google provisionada.", true, false);
 
     let storageStateJson: string;
     try {
       storageStateJson = deps.decryptSession(context.bot.encryptedSessionState);
       JSON.parse(storageStateJson);
     } catch {
-      throw new RecorderFailure("BOT_SESSION_INVALID", "A sessao Google do bot nao pode ser descriptografada ou esta invalida.", true);
+      throw new RecorderFailure("BOT_SESSION_INVALID", "A sessao Google do bot nao pode ser descriptografada ou esta invalida.", true, false);
     }
 
     runId = deps.idGenerator("mrun");
@@ -189,7 +201,9 @@ export async function processNextRecorderJob(deps: RecorderWorkerDeps): Promise<
     }
     if (failure.code === "CANCELLED") await deps.repository.cancelJob({ jobId: job.id, workerId: deps.workerId });
     else await deps.repository.failJob({ jobId: job.id, workerId: deps.workerId, error: `${failure.code}: ${failure.message}`, retryDelayMs: 0, final: true });
-    await deps.repository.releaseBot({ meetingId: job.meetingId, healthy: failure.code === "CANCELLED", invalidSession: failure.invalidSession, ...(failure.code === "CANCELLED" ? {} : { lastError: `${failure.code}: ${failure.message}` }) });
+    // Conflito de identidade não é defeito da conta: ela volta saudável para o pool do tenant.
+    const accountHealthy = failure.code === "CANCELLED" || failure.code === "RECORDER_ACCOUNT_IDENTITY_CONFLICT";
+    await deps.repository.releaseBot({ meetingId: job.meetingId, healthy: accountHealthy, invalidSession: failure.invalidSession, reauthRequired: failure.reauthRequired, ...(failure.code === "CANCELLED" ? {} : { lastError: `${failure.code}: ${failure.message}` }) });
     if (failure.code !== "CANCELLED") await deps.repository.recordUsage({ tenantId: job.tenantId, period: meetingUsagePeriod(deps.now()), delta: { captureFailures: 1, ...(failure.code === "BROWSER_FAILED" ? { browserFailures: 1 } : {}), ...(failure.code === "CAPTURE_FAILED" ? { ffmpegFailures: 1 } : {}) } }).catch(() => undefined);
     await deps.repository.audit({ tenantId: job.tenantId, workspaceId: job.workspaceId, meetingId: job.meetingId, action: "recording.failed", details: { code: failure.code, error: failure.message.slice(0, 500), workerId: deps.workerId } }).catch(() => undefined);
     deps.log?.("recording failed", { jobId: job.id, meetingId: job.meetingId, code: failure.code, error: failure.message });

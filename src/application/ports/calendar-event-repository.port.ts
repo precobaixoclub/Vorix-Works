@@ -32,6 +32,8 @@ export type GoogleEventIdentity = {
   googleOriginalStartAt?: string;
   htmlLink?: string;
   meetLink?: string;
+  /** Organizador no Google — base da inferência da conta com que a pessoa entra na reunião. */
+  organizerEmail?: string;
 };
 
 export type CalendarEventContentPatch = {

@@ -39,6 +39,10 @@ export type Meeting = {
   durationSeconds?: number;
   failureCode?: string;
   failureMessage?: string;
+  /** Conta Google com que a PESSOA entra na reunião — nunca é a conta de gravação. */
+  humanJoinAccountEmail?: string;
+  humanJoinIdentitySource?: HumanJoinIdentitySource;
+  excludedRecorderEmails?: string[];
   statusChangedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -115,9 +119,101 @@ export type MeetingsDashboard = {
   realRecordingEnabled: boolean;
 };
 
+export type RecordingRefusalReason =
+  | "RECORDING_DISABLED"
+  | "MISSING_MEETING_URL"
+  | "CONCURRENCY_LIMIT_REACHED"
+  | "NO_RECORDER_ACCOUNT_AVAILABLE"
+  | "RECORDER_ACCOUNT_IDENTITY_CONFLICT"
+  | "INVALID_RECORDER_SESSION"
+  | "HUMAN_IDENTITY_REQUIRED"
+  | "INVALID_STATE";
+
 export type RecordingRequestResult =
   | { ok: true; status: MeetingStatus; botAccountId: string; jobId: string }
-  | { ok: false; reason: "RECORDING_DISABLED" | "MISSING_MEETING_URL" | "CONCURRENCY_LIMIT_REACHED" | "NO_BOT_AVAILABLE" | "INVALID_STATE"; message: string; limit?: number; activeRecordings?: number };
+  | { ok: false; reason: RecordingRefusalReason; message: string; limit?: number; activeRecordings?: number; connectedAccounts?: number; knownHumanEmails?: string[] };
+
+/** Recusas que pedem ação nas contas de gravação (CTA "Conectar outra conta de gravação"). */
+export const RECORDER_ACCOUNT_ACTION_REASONS: readonly RecordingRefusalReason[] = ["NO_RECORDER_ACCOUNT_AVAILABLE", "RECORDER_ACCOUNT_IDENTITY_CONFLICT", "INVALID_RECORDER_SESSION"];
+
+export type HumanJoinIdentitySource = "explicit" | "connected_account_confirmed" | "inferred_organizer" | "inferred_calendar_owner" | "unknown";
+
+export const HUMAN_IDENTITY_SOURCE_LABEL: Record<HumanJoinIdentitySource, string> = {
+  explicit: "Informada por você",
+  connected_account_confirmed: "Participação confirmada com sua conta conectada",
+  inferred_organizer: "Sugerida pelo organizador — confirme sua participação",
+  inferred_calendar_owner: "Sugerida pela agenda — confirme sua participação",
+  unknown: "Não identificada",
+};
+
+export type RecordingCapacity = {
+  planCapacity: number;
+  tenantHealthyCapacity: number;
+  tenantAvailableCapacity: number;
+  planLimit: number;
+  connectedAccounts: number;
+  healthyAccounts: number;
+  busyAccounts: number;
+  invalidAccounts: number;
+  tenantEffectiveRecordingCapacity: number;
+  activeRecordings: number;
+  availableNow: number;
+  reserveAccounts: number;
+  missingAccountsForPlan: number;
+};
+
+export type RecorderAccountStatus = "active" | "busy" | "reauth_required" | "invalid_session" | "disabled" | "error";
+
+export type RecorderAccount = {
+  id: string;
+  label: string;
+  googleEmail: string;
+  status: RecorderAccountStatus;
+  health: "healthy" | "needs_reconnect" | "pending_test" | "never_connected" | "disabled" | "error";
+  connected: boolean;
+  lastHealthCheckAt?: string;
+  lastUsedAt?: string;
+  currentMeetingId?: string;
+  currentMeetingTitle?: string;
+  lastError?: string;
+  personalAccountWarning: boolean;
+  isKnownHumanAccount: boolean;
+  createdAt: string;
+};
+
+export type ProvisioningSessionStatus = "pending" | "starting" | "live" | "completed" | "failed" | "expired" | "cancelled";
+
+export type ProvisioningStart = {
+  account: RecorderAccount;
+  session: { id: string; recorderAccountId: string; status: ProvisioningSessionStatus; expiresAt: string; errorCode?: string; errorMessage?: string };
+  viewerToken: string;
+  warnings: string[];
+  streamPath: string;
+};
+
+export type RecorderEligibility = {
+  planCapacity: number;
+  tenantHealthyCapacity: number;
+  tenantAvailableCapacity: number;
+  meetingEligibleCapacity: number;
+  humanIdentityKnown: boolean;
+  humanJoinAccountEmail?: string;
+  humanJoinIdentitySource?: HumanJoinIdentitySource;
+  meetingEligibleRecorderCapacity: number;
+  tenantEffectiveRecordingCapacity: number;
+  connectedAccounts: number;
+  warning?: { code: "HUMAN_IDENTITY_REQUIRED" | "RECORDER_ACCOUNT_IDENTITY_CONFLICT" | "NO_RECORDER_ACCOUNT_CONNECTED" | "INVALID_RECORDER_SESSION"; message: string };
+  knownHumanEmails: string[];
+};
+
+export const RECORDER_HEALTH_LABEL: Record<RecorderAccount["health"], string> = {
+  healthy: "Saudável",
+  needs_reconnect: "Precisa reconectar",
+  pending_test: "Teste em andamento",
+  never_connected: "Não conectada",
+  disabled: "Desativada",
+  error: "Com erro",
+};
 
 export type MeetingListFilters = {
   status?: MeetingStatus;

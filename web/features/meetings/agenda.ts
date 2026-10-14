@@ -30,6 +30,8 @@ export type CalendarEvent = {
   lastSyncError?: string;
   meetingId?: string;
   recordingCapacityWarning?: string;
+  /** Aviso do agendamento: identidade desconhecida/conflito/sem conta de gravação. */
+  recorderWarning?: { code: string; message: string };
 };
 
 export type GoogleCalendarStatus = {
@@ -57,6 +59,8 @@ export type CreateEventInput = EventTimeInput & {
   autoRecord?: boolean;
   joinBeforeMinutes?: number;
   joinGraceMinutes?: number;
+  /** Conta Google com que a pessoa entrará na reunião (nunca será a conta de gravação). */
+  humanJoinAccountEmail?: string;
 };
 
 const q = encodeURIComponent;

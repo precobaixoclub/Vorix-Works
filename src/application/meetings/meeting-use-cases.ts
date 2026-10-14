@@ -1,4 +1,10 @@
 import {
+  buildExcludedRecorderEmails,
+  computeRecordingCapacity,
+  confirmedRecorderExclusions,
+  isConfirmedHumanIdentity,
+  meetingEligibleRecorderCapacity,
+  normalizeGoogleEmail,
   isSupportedMeetingUpload,
   meetingUsagePeriod,
   parseGoogleMeetUrl,
@@ -11,7 +17,7 @@ import {
   type MeetingTranscriptSegment,
 } from "../../domain/meetings/meeting.model.js";
 import { hasPermission, type TenantRole } from "../../domain/identity/identity.model.js";
-import type { MeetingDashboard, MeetingRepositoryPort } from "../ports/meeting-repository.port.js";
+import type { MeetingDashboard, MeetingRepositoryPort, RecordingAdmission } from "../ports/meeting-repository.port.js";
 
 /**
  * Casos de uso do Vorix Meetings (Fase 1/2: reunião first-class, Central, upload, admissão de
@@ -80,6 +86,8 @@ export type CreateMeetingInput = {
   scheduledEndAt?: string;
   timezone?: string;
   participants?: { name?: string; email?: string }[];
+  /** Conta Google com que a PESSOA entrará na reunião (nunca será a conta de gravação). */
+  humanJoinAccountEmail?: string;
 };
 
 export async function createMeeting(deps: MeetingUseCaseDeps, actor: MeetingActor, input: CreateMeetingInput): Promise<MeetingDetail> {
@@ -97,6 +105,8 @@ export async function createMeeting(deps: MeetingUseCaseDeps, actor: MeetingActo
   if (participants.some((participant) => participant.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(participant.email))) {
     throw new MeetingError("MEETING_INVALID_INPUT", "Há um e-mail de participante inválido.");
   }
+  const humanJoinAccountEmail = input.humanJoinAccountEmail?.trim() ? normalizeGoogleEmail(input.humanJoinAccountEmail) : undefined;
+  if (input.humanJoinAccountEmail?.trim() && !humanJoinAccountEmail) throw new MeetingError("MEETING_INVALID_INPUT", "Informe um e-mail Google válido para a conta com que você participará da reunião.");
   const now = deps.now();
   return deps.repository.create({
     id: deps.idGenerator("meeting"),
@@ -113,6 +123,7 @@ export async function createMeeting(deps: MeetingUseCaseDeps, actor: MeetingActo
     ...(input.scheduledEndAt ? { scheduledEndAt: input.scheduledEndAt } : {}),
     timezone: input.timezone?.trim() || "America/Sao_Paulo",
     autoRecord: false,
+    ...(humanJoinAccountEmail ? { humanJoinAccountEmail, humanJoinIdentitySource: "explicit" as const, excludedRecorderEmails: buildExcludedRecorderEmails({ humanJoinAccountEmail }) } : {}),
     participants: participants.map((participant) => ({ ...participant, role: "attendee" as const })),
   });
 }
@@ -123,22 +134,78 @@ function defaultTitle(source: MeetingSource, now: Date): string {
   return `Reunião de ${when}`;
 }
 
+export type RecordingRefusalReason =
+  | "RECORDING_DISABLED"
+  | "MISSING_MEETING_URL"
+  | "CONCURRENCY_LIMIT_REACHED"
+  | "NO_RECORDER_ACCOUNT_AVAILABLE"
+  | "RECORDER_ACCOUNT_IDENTITY_CONFLICT"
+  | "INVALID_RECORDER_SESSION"
+  | "HUMAN_IDENTITY_REQUIRED"
+  | "INVALID_STATE";
+
 export type RecordingRequestResult =
   | { ok: true; status: MeetingStatus; botAccountId: string; jobId: string }
-  | { ok: false; reason: "RECORDING_DISABLED" | "MISSING_MEETING_URL" | "CONCURRENCY_LIMIT_REACHED" | "NO_BOT_AVAILABLE" | "INVALID_STATE"; message: string; limit?: number; activeRecordings?: number };
+  | { ok: false; reason: RecordingRefusalReason; message: string; limit?: number; activeRecordings?: number; connectedAccounts?: number; knownHumanEmails?: string[] };
+
+/** Mensagens das recusas da admissão (as mesmas para "Gravar agora" e para o agendador). */
+export function admissionRefusalMessage(admission: Exclude<RecordingAdmission, { ok: true }>): string {
+  switch (admission.reason) {
+    case "CONCURRENCY_LIMIT_REACHED":
+      return `Seu plano permite ${admission.limit} gravação(ões) simultânea(s) e todas estão em uso agora.`;
+    case "NO_RECORDER_ACCOUNT_AVAILABLE":
+      return admission.connectedAccounts === 0
+        ? "Nenhuma conta de gravação conectada. Conecte uma conta Google de gravação em Meetings → Configurações → Contas de gravação."
+        : "Todas as contas de gravação estão ocupadas agora. Tente novamente em instantes ou conecte outra conta de gravação.";
+    case "RECORDER_ACCOUNT_IDENTITY_CONFLICT":
+      return "A única conta de gravação disponível é a mesma conta Google que você usará para participar desta reunião. Conecte outra conta de gravação ou informe outra conta para participar.";
+    case "INVALID_RECORDER_SESSION":
+      return "As contas de gravação precisam ser reconectadas (a sessão do Google expirou). Reconecte em Meetings → Configurações → Contas de gravação.";
+    case "HUMAN_IDENTITY_REQUIRED":
+      return "Informe qual conta Google você utilizará para participar desta reunião — ela nunca pode ser a conta de gravação.";
+    case "INVALID_STATE":
+      return `Esta reunião não pode iniciar gravação no estado atual (${admission.status}).`;
+  }
+}
+
+/** Identidade humana EXPLÍCITA (a pessoa informou). Só antes da gravação começar. */
+async function applyExplicitHumanIdentity(deps: MeetingUseCaseDeps, actor: MeetingActor, meeting: MeetingDetail, rawEmail: string): Promise<void> {
+  const email = normalizeGoogleEmail(rawEmail);
+  if (!email) throw new MeetingError("MEETING_INVALID_INPUT", "Informe um e-mail Google válido para a conta com que você participará da reunião.");
+  const excludedRecorderEmails = buildExcludedRecorderEmails({ humanJoinAccountEmail: email });
+  const updated = await deps.repository.setHumanJoinIdentity({ tenantId: actor.tenantId, workspaceId: meeting.workspaceId, meetingId: meeting.id, humanJoinAccountEmail: email, source: "explicit", excludedRecorderEmails });
+  if (!updated) throw new MeetingError("MEETING_INVALID_INPUT", "A identidade só pode ser alterada antes de a gravação começar.");
+  await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: meeting.workspaceId, meetingId: meeting.id, actorUserId: actor.userId, action: "meeting.human_identity_set", details: { source: "explicit", previousSource: meeting.humanJoinIdentitySource ?? null } });
+}
 
 /**
  * Pede a gravação de uma reunião (manual ou "Gravar agora"). Admissão atômica: limite de
- * gravações simultâneas do plano + reserva de um bot livre. Nunca inicia "silenciosamente" acima
- * do limite — devolve o motivo explícito e audita.
+ * gravações simultâneas do plano + reserva de uma conta de gravação DO PRÓPRIO TENANT que não seja
+ * a identidade humana da reunião. Nunca inicia "silenciosamente" acima do limite — devolve o motivo
+ * explícito e audita.
  */
-export async function requestRecording(deps: MeetingUseCaseDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string }): Promise<RecordingRequestResult> {
-  const meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
+export async function requestRecording(deps: MeetingUseCaseDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string; humanJoinAccountEmail?: string }): Promise<RecordingRequestResult> {
+  let meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
   if (!deps.features.realRecordingEnabled) {
     await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, actorUserId: actor.userId, action: "recording.refused", details: { reason: "RECORDING_DISABLED" } });
     return { ok: false, reason: "RECORDING_DISABLED", message: "A gravação automática por bot ainda não está habilitada neste ambiente. A reunião foi salva." };
   }
   if (!meeting.meetingUrl) return { ok: false, reason: "MISSING_MEETING_URL", message: "Informe o link do Google Meet para gravar." };
+  // Estratégia de captura é independente de quem é dono da conta. Só o recorder do Vorix existe.
+  if (meeting.captureStrategy !== "vorix_recorder") return { ok: false, reason: "RECORDING_DISABLED", message: "Esta estratégia de captura ainda não está disponível." };
+  if (input.humanJoinAccountEmail?.trim()) {
+    await applyExplicitHumanIdentity(deps, actor, meeting, input.humanJoinAccountEmail);
+    meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
+  }
+  if (!isConfirmedHumanIdentity(meeting.humanJoinIdentitySource)) {
+    const known = await deps.repository.knownHumanGoogleEmails({ tenantId: actor.tenantId, userId: actor.userId });
+    return {
+      ok: false,
+      reason: "HUMAN_IDENTITY_REQUIRED",
+      knownHumanEmails: [...new Set([...known.connected, ...known.recentExplicit])].sort(),
+      message: meeting.humanJoinAccountEmail ? `Você participará desta reunião usando a conta ${meeting.humanJoinAccountEmail}? Confirme ou informe outra conta.` : "Qual conta Google você utilizará para participar desta reunião?",
+    };
+  }
 
   const limits = await deps.limitsFor(actor.tenantId);
   const admission = await deps.repository.admitRecording({
@@ -148,18 +215,91 @@ export async function requestRecording(deps: MeetingUseCaseDeps, actor: MeetingA
     maxConcurrentRecordings: limits.maxConcurrentRecordings,
     now: deps.now(),
   });
+  await auditSkippedRecorderAccounts(deps.repository, { tenantId: actor.tenantId, userId: actor.userId, workspaceId: input.workspaceId, meetingId: meeting.id, admission });
   if (admission.ok) {
     await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, actorUserId: actor.userId, action: "recording.admitted", details: { botAccountId: admission.botAccountId, activeRecordings: admission.activeRecordings } });
     return { ok: true, status: "queued", botAccountId: admission.botAccountId, jobId: admission.jobId };
   }
-  await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, actorUserId: actor.userId, action: "recording.refused", details: { ...admission } });
-  if (admission.reason === "CONCURRENCY_LIMIT_REACHED") {
-    return { ok: false, reason: admission.reason, limit: admission.limit, activeRecordings: admission.activeRecordings, message: `Seu plano permite ${admission.limit} gravação(ões) simultânea(s) e todas estão em uso agora.` };
-  }
-  if (admission.reason === "NO_BOT_AVAILABLE") {
-    return { ok: false, reason: admission.reason, activeRecordings: admission.activeRecordings, message: "Nenhum gravador disponível no momento. Tente novamente em instantes." };
-  }
-  return { ok: false, reason: "INVALID_STATE", message: `Esta reunião não pode iniciar gravação no estado atual (${admission.status}).` };
+  const { skipped: _skipped, ...refusal } = admission as typeof admission & { skipped?: unknown };
+  await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, actorUserId: actor.userId, action: "recording.refused", details: { ...refusal } });
+  const message = admissionRefusalMessage(admission);
+  if (admission.reason === "CONCURRENCY_LIMIT_REACHED") return { ok: false, reason: admission.reason, limit: admission.limit, activeRecordings: admission.activeRecordings, message };
+  if (admission.reason === "NO_RECORDER_ACCOUNT_AVAILABLE") return { ok: false, reason: admission.reason, activeRecordings: admission.activeRecordings, connectedAccounts: admission.connectedAccounts, message };
+  if (admission.reason === "INVALID_STATE") return { ok: false, reason: "INVALID_STATE", message };
+  return { ok: false, reason: admission.reason, activeRecordings: admission.activeRecordings, message };
+}
+
+/** Conta pulada por ser identidade humana: auditoria SEM segredo (só ids). */
+export async function auditSkippedRecorderAccounts(repository: MeetingRepositoryPort, input: { tenantId: string; userId?: string; workspaceId: string; meetingId: string; admission: RecordingAdmission }): Promise<void> {
+  const skipped = "skipped" in input.admission ? input.admission.skipped : [];
+  if (skipped.length === 0) return;
+  for (const item of skipped) await repository.audit({
+    tenantId: input.tenantId,
+    workspaceId: input.workspaceId,
+    meetingId: input.meetingId,
+    ...(input.userId ? { actorUserId: input.userId } : {}),
+    action: "RECORDER_ACCOUNT_SKIPPED_IDENTITY_CONFLICT",
+    details: { recorderAccountId: item.accountId },
+  });
+}
+
+/** Corrigir/informar a conta Google com que a PESSOA entra na reunião. */
+export async function setMeetingHumanIdentity(deps: MeetingUseCaseDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string; humanJoinAccountEmail: string }): Promise<MeetingDetail> {
+  const meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
+  await applyExplicitHumanIdentity(deps, actor, meeting, input.humanJoinAccountEmail);
+  return requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
+}
+
+export type RecorderEligibility = {
+  planCapacity: number;
+  tenantHealthyCapacity: number;
+  tenantAvailableCapacity: number;
+  meetingEligibleCapacity: number;
+  humanIdentityKnown: boolean;
+  humanJoinAccountEmail?: string;
+  humanJoinIdentitySource?: MeetingDetail["humanJoinIdentitySource"];
+  /** Contas saudáveis do tenant que podem gravar ESTA reunião (sem conflito de identidade). */
+  meetingEligibleRecorderCapacity: number;
+  tenantEffectiveRecordingCapacity: number;
+  connectedAccounts: number;
+  /** Aviso para o agendamento (com CTA "Conectar outra conta de gravação"). */
+  warning?: { code: "HUMAN_IDENTITY_REQUIRED" | "RECORDER_ACCOUNT_IDENTITY_CONFLICT" | "NO_RECORDER_ACCOUNT_CONNECTED" | "INVALID_RECORDER_SESSION"; message: string };
+  knownHumanEmails: string[];
+};
+
+/** Validação do AGENDAMENTO (aviso antecipado). A autoridade continua sendo a reserva atômica. */
+export async function getRecorderEligibility(deps: MeetingUseCaseDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string }): Promise<RecorderEligibility> {
+  const meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
+  return recorderEligibilityFor(deps.repository, deps.limitsFor, actor, meeting);
+}
+
+export async function recorderEligibilityFor(repository: MeetingRepositoryPort, limitsFor: (tenantId: string) => Promise<MeetingsLimits>, actor: { tenantId: string; userId: string }, meeting: Pick<MeetingDetail, "workspaceId" | "excludedRecorderEmails" | "humanJoinAccountEmail" | "humanJoinIdentitySource">): Promise<RecorderEligibility> {
+  const accounts = await repository.listRecorderAccounts({ tenantId: actor.tenantId });
+  const workspaceAccounts = accounts.filter((account) => !account.workspaceId || account.workspaceId === meeting.workspaceId);
+  const limits = await limitsFor(actor.tenantId);
+  const capacity = computeRecordingCapacity({ planLimit: limits.maxConcurrentRecordings, accounts, activeRecordings: await repository.countActiveRecordings(actor.tenantId) });
+  const eligible = meetingEligibleRecorderCapacity({ capacity, accounts: workspaceAccounts, excludedRecorderEmails: confirmedRecorderExclusions(meeting) });
+  const known = await repository.knownHumanGoogleEmails({ tenantId: actor.tenantId, userId: actor.userId });
+  const humanIdentityKnown = isConfirmedHumanIdentity(meeting.humanJoinIdentitySource);
+  let warning: RecorderEligibility["warning"];
+  if (accounts.length === 0) warning = { code: "NO_RECORDER_ACCOUNT_CONNECTED", message: "Nenhuma conta de gravação conectada. Conecte uma conta Google de gravação para gravar reuniões." };
+  else if (capacity.healthyAccounts === 0 && capacity.invalidAccounts > 0) warning = { code: "INVALID_RECORDER_SESSION", message: "As contas de gravação precisam ser reconectadas." };
+  else if (!humanIdentityKnown) warning = { code: "HUMAN_IDENTITY_REQUIRED", message: meeting.humanJoinAccountEmail ? `Você participará desta reunião usando a conta ${meeting.humanJoinAccountEmail}? Confirme ou informe outra conta.` : "Informe a conta Google que você usará para participar desta reunião. Sem ela a gravação automática não começa." };
+  else if (workspaceAccounts.some((account) => account.status === "active") && eligible === 0) warning = { code: "RECORDER_ACCOUNT_IDENTITY_CONFLICT", message: "A conta que você usará nesta reunião é a única conta de gravação disponível. Conecte outra conta de gravação." };
+  return {
+    planCapacity: capacity.planCapacity,
+    tenantHealthyCapacity: capacity.tenantHealthyCapacity,
+    tenantAvailableCapacity: capacity.tenantAvailableCapacity,
+    meetingEligibleCapacity: eligible,
+    humanIdentityKnown,
+    ...(meeting.humanJoinAccountEmail ? { humanJoinAccountEmail: meeting.humanJoinAccountEmail } : {}),
+    ...(meeting.humanJoinIdentitySource ? { humanJoinIdentitySource: meeting.humanJoinIdentitySource } : {}),
+    meetingEligibleRecorderCapacity: eligible,
+    tenantEffectiveRecordingCapacity: capacity.tenantEffectiveRecordingCapacity,
+    connectedAccounts: accounts.length,
+    ...(warning ? { warning } : {}),
+    knownHumanEmails: [...new Set([...known.connected, ...known.recentExplicit])].sort(),
+  };
 }
 
 export async function stopMeetingRecording(deps: MeetingUseCaseDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string }): Promise<{ stopRequested: true }> {

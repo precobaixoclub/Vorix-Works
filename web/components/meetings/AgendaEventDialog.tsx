@@ -1,13 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { HumanIdentityField, recorderAccountsHref } from "@/components/meetings/RecorderIdentity";
 import { Button } from "@/components/Button";
 import { Input, Label, Textarea } from "@/components/Field";
 import { Modal } from "@/components/Modal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { createAgendaEvent, updateAgendaEvent, type CalendarEvent } from "@/features/meetings/agenda";
+import { useRecordingCapacity } from "@/features/meetings/hooks";
 import { ApiError } from "@/lib/api-client";
 
 const TIMEZONES = ["America/Sao_Paulo", "America/Manaus", "America/Fortaleza", "America/Recife", "America/Cuiaba", "America/Rio_Branco", "America/Noronha", "UTC", "America/New_York", "Europe/Lisbon"];
@@ -57,7 +60,10 @@ export function AgendaEventDialog({
   const [createMeet, setCreateMeet] = useState(false);
   const [autoRecord, setAutoRecord] = useState(false);
   const [joinBefore, setJoinBefore] = useState("2");
+  const [humanEmail, setHumanEmail] = useState("");
   const [busy, setBusy] = useState(false);
+  const router = useRouter();
+  const capacity = useRecordingCapacity(workspaceId);
 
   async function submit() {
     setBusy(true);
@@ -77,9 +83,17 @@ export function AgendaEventDialog({
             createMeetLink: googleConnected && syncToGoogle && createMeet,
             autoRecord,
             ...(autoRecord ? { joinBeforeMinutes: Number(joinBefore) || 0 } : {}),
+            ...(autoRecord && humanEmail.trim() ? { humanJoinAccountEmail: humanEmail.trim() } : {}),
           });
       toast.success(event ? "Evento atualizado" : "Evento criado", googleConnected && saved.syncToGoogle ? { description: "Vai para o Google Calendar na próxima sincronização." } : undefined);
       if (saved.recordingCapacityWarning) toast.warning("Limite de gravações simultâneas", { description: saved.recordingCapacityWarning });
+      if (saved.recorderWarning) {
+        const needsAccounts = saved.recorderWarning.code !== "HUMAN_IDENTITY_REQUIRED";
+        toast.warning("Gravação automática pode não acontecer", {
+          description: saved.recorderWarning.message,
+          ...(needsAccounts ? { action: { label: "Conectar outra conta de gravação", onClick: () => router.push(recorderAccountsHref(workspaceId)) } } : {}),
+        });
+      }
       onSaved(saved);
     } catch (error) {
       toast.error("Não foi possível salvar", { description: error instanceof ApiError || error instanceof Error ? error.message : undefined });
@@ -156,7 +170,13 @@ export function AgendaEventDialog({
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Entrar</span>
                 <Input type="number" min={0} max={30} value={joinBefore} onChange={(e) => setJoinBefore(e.target.value)} className="h-8 w-16" aria-label="Minutos antes" />
-                <span>minuto(s) antes. O bot visível Vorix Recorder solicitará entrada; confirme o consentimento dos participantes.</span>
+                <span>minuto(s) antes. Uma conta de gravação conectada solicitará entrada; confirme o consentimento dos participantes.</span>
+              </div>
+            ) : null}
+            {autoRecord ? (
+              <div className="space-y-1">
+                <HumanIdentityField id="agenda-human" value={humanEmail} onChange={setHumanEmail} suggestions={capacity.data?.knownHumanEmails ?? []} />
+                <p className="text-xs text-muted-foreground">Em branco, o Vorix usa a sua conta do Google Agenda quando tiver certeza; se não tiver, a gravação automática só começa depois que você informar.</p>
               </div>
             ) : null}
           </div>

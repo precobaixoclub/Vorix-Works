@@ -181,7 +181,8 @@ export const PERMISSIONS = [
   "calendar_event:read",
   "calendar_event:write",
   // Vorix Meetings. `meeting:read` = reuniões que a pessoa organiza/criou/participa;
-  // `meeting:read_all` = todas do workspace (gestão). Bots de gravação são da PLATAFORMA (admin de plataforma), não do tenant.
+  // `meeting:read_all` = todas do workspace (gestão). `meeting:manage_recorder_accounts` = conectar/testar/remover as contas Google de GRAVAÇÃO do
+  // tenant (admin/owner). O admin de plataforma enxerga/administra todas pela área de suporte.
   "meeting:read",
   "meeting:read_all",
   "meeting:create",
@@ -189,6 +190,7 @@ export const PERMISSIONS = [
   "meeting:analyze",
   "meeting:delete",
   "meeting:manage_integrations",
+  "meeting:manage_recorder_accounts",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -225,7 +227,7 @@ const CRM_OPERATOR_PERMISSIONS: readonly Permission[] = ["contact:manage", "deal
 const CRM_ADMIN_PERMISSIONS: readonly Permission[] = ["tenant_member:manage", "team:manage", "automation:manage"];
 const MEETING_READ_PERMISSIONS: readonly Permission[] = ["meeting:read"];
 const MEETING_OPERATOR_PERMISSIONS: readonly Permission[] = ["meeting:create", "meeting:record", "meeting:analyze"];
-const MEETING_ADMIN_PERMISSIONS: readonly Permission[] = ["meeting:read_all", "meeting:delete", "meeting:manage_integrations"];
+const MEETING_ADMIN_PERMISSIONS: readonly Permission[] = ["meeting:read_all", "meeting:delete", "meeting:manage_integrations", "meeting:manage_recorder_accounts"];
 
 /**
  * Permissões mínimas pedidas na Fase 4 (Sprint 05). Gradiente deliberado para que RBAC seja

@@ -1,10 +1,13 @@
 import { writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
-import { decryptSecret } from "../../infrastructure/crypto/secret-cipher.js";
+import { recorderHealthFailureStatus } from "../../domain/meetings/meeting.model.js";
+import { decryptSecret, encryptSecret } from "../../infrastructure/crypto/secret-cipher.js";
 import { processNextRecorderJob, recoverOrphanRecorders } from "../../application/meetings/meeting-recorder.js";
 import type { ObjectStoragePort } from "../../application/ports/object-storage.port.js";
 import { ObjectStorageMeetingMedia } from "../../infrastructure/meetings/object-storage-meeting-media.js";
 import { GoogleMeetBotHealthChecker, PlaywrightGoogleMeetRecorder } from "../../infrastructure/meetings/playwright-google-meet-recorder.js";
+import { PlaywrightRemoteLoginBrowserFactory } from "../../infrastructure/meetings/playwright-remote-login-browser.js";
+import { RecorderProvisioningHost } from "../../infrastructure/meetings/recorder-provisioning-host.js";
 import { FfprobeRecordingFileValidator } from "../../infrastructure/meetings/recording-file-validator.js";
 import { buildIdentityRepositories } from "../../infrastructure/storage/build-identity-repositories.js";
 import { LocalObjectStorage } from "../../infrastructure/storage/local-object-storage.js";
@@ -83,9 +86,42 @@ async function main(): Promise<void> {
   void markHealthy();
   const healthTimer = setInterval(markHealthy, 15_000);
 
+  // Login SELF-SERVICE das contas de gravação dos clientes: laço PRÓPRIO, em paralelo às gravações.
+  const provisioningEnabled = env.MEETINGS_PROVISIONING_ENABLED?.trim() !== "false";
+  const provisioningPort = int(env.MEETINGS_PROVISIONING_PORT, 7088);
+  const provisioning = provisioningEnabled
+    ? new RecorderProvisioningHost({
+      repository,
+      browsers: new PlaywrightRemoteLoginBrowserFactory({
+        ...(env.MEETINGS_CHROMIUM_PATH?.trim() ? { chromiumExecutablePath: env.MEETINGS_CHROMIUM_PATH.trim() } : {}),
+        xvfbPath: env.MEETINGS_XVFB_PATH?.trim() || "Xvfb",
+      }),
+      healthCheck: healthChecker,
+      encryptSession: (plaintext: string) => encryptSecret(plaintext, secretsMasterKey),
+      workerId,
+      now: () => new Date(),
+      log,
+    }, {
+      port: provisioningPort,
+      host: env.MEETINGS_PROVISIONING_HOST?.trim() || "0.0.0.0",
+      publicEndpoint: env.MEETINGS_PROVISIONING_PUBLIC_ENDPOINT?.trim() || `ws://${hostname()}:${provisioningPort}`,
+      masterSecret: secretsMasterKey,
+      maxConcurrent: int(env.MEETINGS_PROVISIONING_MAX_CONCURRENT, 2),
+    })
+    : undefined;
+  let provisioningBusy = false;
+  const provisioningTimer = provisioning
+    ? setInterval(() => {
+      if (provisioningBusy || stopping) return;
+      provisioningBusy = true;
+      provisioning.tick().catch((error) => log("erro no provisionamento", { error: error instanceof Error ? error.message.slice(0, 200) : "erro" })).finally(() => { provisioningBusy = false; });
+    }, int(env.MEETINGS_PROVISIONING_POLL_MS, 2_000))
+    : undefined;
+  if (provisioning) await provisioning.start();
+
   process.on("SIGTERM", () => { stopping = true; });
   process.on("SIGINT", () => { stopping = true; });
-  log("iniciado", { workerId, leaseMs, maxRecordingDurationMinutes: deps.maxRecordingDurationMinutes });
+  log("iniciado", { workerId, leaseMs, maxRecordingDurationMinutes: deps.maxRecordingDurationMinutes, provisioning: provisioningEnabled ? provisioningPort : false });
   while (!stopping) {
     try {
       if (Date.now() - lastRecoveryAt > 30_000) {
@@ -96,16 +132,24 @@ async function main(): Promise<void> {
       if (Date.now() - lastHealthSweepAt > 10_000) {
         const pending = (await repository.listRecorderBots()).find((bot) => bot.status !== "busy" && bot.health.status === "pending");
         if (pending) {
+          const expectedHealth = { ...(typeof pending.health.requestedAt === "string" ? { requestedAt: pending.health.requestedAt } : {}) };
           const encrypted = await repository.getRecorderBotSession(pending.id);
           if (!encrypted) {
-            await repository.updateRecorderBotStatus({ botId: pending.id, status: "invalid_session", checkedAt: new Date(), lastError: "Sessao nao provisionada.", health: { status: "invalid", reason: "session_missing" } });
+            const updated = await repository.updateRecorderBotStatus({ botId: pending.id, expectedHealth, status: "invalid_session", checkedAt: new Date(), lastError: "Sessao nao provisionada.", health: { status: "invalid", reason: "session_missing" } });
+            if (updated && pending.tenantId) await repository.audit({ tenantId: pending.tenantId, ...(pending.workspaceId ? { workspaceId: pending.workspaceId } : {}), ...(pending.createdByUserId ? { actorUserId: pending.createdByUserId } : {}), action: "RECORDER_HEALTH_FAILED", details: { recorderAccountId: pending.id, reason: "session_missing" } });
           } else {
             try {
               const health = await healthChecker.check(decryptSecret(encrypted, secretsMasterKey));
-              await repository.updateRecorderBotStatus({ botId: pending.id, status: health.ok ? "active" : "invalid_session", checkedAt: new Date(), ...(health.ok ? {} : { lastError: health.reason ?? "health_check_failed" }), health: { status: health.ok ? "healthy" : "invalid", ...health.details, ...(health.reason ? { reason: health.reason } : {}) } });
+              const status = health.ok ? "active" : recorderHealthFailureStatus(health.reason);
+              const updated = await repository.updateRecorderBotStatus({ botId: pending.id, expectedHealth, status, checkedAt: new Date(), ...(health.ok ? {} : { lastError: health.reason ?? "health_check_failed" }), health: { status: health.ok ? "healthy" : "invalid", finalHost: health.details.finalHost, checkedAt: health.details.checkedAt, ...(health.reason ? { reason: health.reason } : {}) } });
+              if (updated && !health.ok && pending.tenantId) {
+                await repository.audit({ tenantId: pending.tenantId, ...(pending.workspaceId ? { workspaceId: pending.workspaceId } : {}), ...(pending.createdByUserId ? { actorUserId: pending.createdByUserId } : {}), action: "RECORDER_HEALTH_FAILED", details: { recorderAccountId: pending.id, reason: health.reason ?? "health_check_failed" } });
+                if (status === "reauth_required") await repository.audit({ tenantId: pending.tenantId, ...(pending.workspaceId ? { workspaceId: pending.workspaceId } : {}), ...(pending.createdByUserId ? { actorUserId: pending.createdByUserId } : {}), action: "RECORDER_REAUTH_REQUIRED", details: { recorderAccountId: pending.id } });
+              }
               log("health check do bot", { botId: pending.id, ok: health.ok, reason: health.reason });
             } catch (error) {
-              await repository.updateRecorderBotStatus({ botId: pending.id, status: "invalid_session", checkedAt: new Date(), lastError: "Falha ao descriptografar sessao.", health: { status: "invalid", reason: "decrypt_failed" } });
+              const updated = await repository.updateRecorderBotStatus({ botId: pending.id, expectedHealth, status: "invalid_session", checkedAt: new Date(), lastError: "Falha ao descriptografar sessao.", health: { status: "invalid", reason: "decrypt_failed" } });
+              if (updated && pending.tenantId) await repository.audit({ tenantId: pending.tenantId, ...(pending.workspaceId ? { workspaceId: pending.workspaceId } : {}), ...(pending.createdByUserId ? { actorUserId: pending.createdByUserId } : {}), action: "RECORDER_HEALTH_FAILED", details: { recorderAccountId: pending.id, reason: "decrypt_failed" } });
             }
           }
         }
@@ -121,6 +165,8 @@ async function main(): Promise<void> {
   }
   log("encerrando");
   clearInterval(healthTimer);
+  if (provisioningTimer) clearInterval(provisioningTimer);
+  await provisioning?.stop().catch(() => undefined);
   await identity.pool.end();
 }
 

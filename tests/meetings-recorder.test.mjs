@@ -51,9 +51,13 @@ async function queuedRecording(label, encryptedSessionState = encryptSecret(JSON
     ownerUserId: "owner-1", createdByUserId: "owner-1", title: label, source: "external_link",
     status: "scheduled", meetingUrl: "https://meet.google.com/abc-defg-hij", timezone: "America/Sao_Paulo",
     autoRecord: false, participants: [],
+    humanJoinAccountEmail: "pessoa@example.test", humanJoinIdentitySource: "explicit", excludedRecorderEmails: ["pessoa@example.test"],
   });
   const botId = nextId("bot");
-  await repo.upsertRecorderBot({ id: botId, label: `Bot ${label}`, googleEmail: `${botId}@example.test`, displayName: "Vorix Recorder", encryptedSessionState, status: "active" });
+  // Conta de gravação DO CLIENTE (customer_managed), do mesmo tenant da reunião.
+  const created = await repo.createRecorderAccount({ id: botId, tenantId: scope.tenantId, workspaceId: scope.workspaceId, createdByUserId: "owner-1", label: `Bot ${label}`, googleEmail: `${botId}@example.test`, displayName: "Vorix Recorder" });
+  assert.equal(created.ok, true);
+  await db.pool.query(`update recorder_bot_accounts set encrypted_session_state = $2, status = 'active', health = '{"status":"healthy"}' where id = $1`, [botId, encryptedSessionState]);
   const admission = await repo.admitRecording({ ...scope, meetingId: meeting.id, maxConcurrentRecordings: 1, now: new Date() });
   assert.equal(admission.ok, true);
   return { ...scope, meeting, botId, jobId: admission.jobId };
@@ -137,6 +141,16 @@ test("BOT SESSION INVALID: falha normalizada e bot sai do pool", async () => {
   assert.equal(bot.status, "invalid_session");
 });
 
+test("BOT SESSION EXPIRED: login exigido pede reconexão e registra a liberação da conta", async () => {
+  const queued = await queuedRecording("expired-session");
+  const outcome = await processNextRecorderJob(deps({ async capture() { throw new RecorderFailure("BOT_SESSION_INVALID", "Google solicita novo login.", true); } }, { async validate() { throw new Error("not called"); } }));
+  assert.equal(outcome.status, "failed");
+  const bot = (await repository().listRecorderBots()).find((item) => item.id === queued.botId);
+  assert.equal(bot.status, "reauth_required");
+  const audit = (await db.pool.query(`select action from meeting_audit_log where meeting_id = $1`, [queued.meeting.id])).rows.map((row) => row.action);
+  for (const action of ["RECORDER_RESERVED", "RECORDER_RELEASED", "RECORDER_HEALTH_FAILED", "RECORDER_REAUTH_REQUIRED"]) assert.ok(audit.includes(action));
+});
+
 test("ORPHAN RECOVERY: heartbeat vencido falha run/job e libera bot", async () => {
   const queued = await queuedRecording("orphan");
   const repo = repository();
@@ -151,19 +165,20 @@ test("ORPHAN RECOVERY: heartbeat vencido falha run/job e libera bot", async () =
 });
 
 test("AUTO RECORD: sem bot repete dentro da grace window e falha depois dela", async () => {
-  await db.pool.query(`update recorder_bot_accounts set status = 'disabled' where status <> 'busy'`);
-  const scope = await account("auto-retry");
+  // A única conta do tenant está OCUPADA (gravando outra reunião): transitório → tenta de novo.
+  const busy = await queuedRecording("auto-retry");
+  const scope = { tenantId: busy.tenantId, workspaceId: busy.workspaceId };
   const repo = repository();
   const now = new Date();
-  const meeting = await repo.create({ id: nextId("meeting"), tenantId: scope.tenantId, workspaceId: scope.workspaceId, ownerUserId: "owner-1", createdByUserId: "owner-1", title: "Auto", source: "calendar", status: "scheduled", meetingUrl: "https://meet.google.com/abc-defg-hij", scheduledStartAt: new Date(now.getTime() - 60_000).toISOString(), timezone: "America/Sao_Paulo", autoRecord: true, joinGraceMinutes: 5, participants: [] });
-  const input = { defaults: { joinBeforeMinutes: 2, joinGraceMinutes: 5 }, realRecordingEnabled: true, limitsFor: async () => ({ maxConcurrentRecordings: 1, monthlyRecordingMinutes: 600, meetingRetentionDays: 90, maxStorageBytes: 1_000_000 }), limit: 10 };
+  const meeting = await repo.create({ id: nextId("meeting"), tenantId: scope.tenantId, workspaceId: scope.workspaceId, ownerUserId: "owner-1", createdByUserId: "owner-1", title: "Auto", source: "calendar", status: "scheduled", meetingUrl: "https://meet.google.com/abc-defg-hij", scheduledStartAt: new Date(now.getTime() - 60_000).toISOString(), timezone: "America/Sao_Paulo", autoRecord: true, joinGraceMinutes: 5, humanJoinAccountEmail: "pessoa@example.test", humanJoinIdentitySource: "explicit", excludedRecorderEmails: ["pessoa@example.test"], participants: [] });
+  const input = { defaults: { joinBeforeMinutes: 2, joinGraceMinutes: 5 }, realRecordingEnabled: true, limitsFor: async () => ({ maxConcurrentRecordings: 2, monthlyRecordingMinutes: 600, meetingRetentionDays: 90, maxStorageBytes: 1_000_000 }), limit: 10 };
   const retry = await evaluateAutoRecordings({ repository: repo, now: () => now }, input);
-  assert.equal(retry.outcomes.NO_BOT_AVAILABLE_RETRYING, 1);
+  assert.equal(retry.outcomes.NO_RECORDER_ACCOUNT_AVAILABLE_RETRYING, 1);
   assert.equal((await repo.getDetail({ ...scope, meetingId: meeting.id })).status, "scheduled");
   const expired = await evaluateAutoRecordings({ repository: repo, now: () => new Date(now.getTime() + 10 * 60_000) }, input);
-  assert.equal(expired.outcomes.NO_BOT_AVAILABLE, 1);
+  assert.equal(expired.outcomes.NO_RECORDER_ACCOUNT_AVAILABLE, 1);
   const detail = await repo.getDetail({ ...scope, meetingId: meeting.id });
-  assert.deepEqual([detail.status, detail.failureCode, detail.autoRecordOutcome], ["failed", "NO_BOT_AVAILABLE", "NO_BOT_AVAILABLE"]);
+  assert.deepEqual([detail.status, detail.failureCode, detail.autoRecordOutcome], ["failed", "NO_RECORDER_ACCOUNT_AVAILABLE", "NO_RECORDER_ACCOUNT_AVAILABLE"]);
 });
 
 test("RBAC/ISOLATION USE CASE: stop so existe no tenant/workspace visivel", async () => {

@@ -27,6 +27,7 @@ export type GoogleCalendarEventPayload = {
   start?: { date?: string; dateTime?: string; timeZone?: string };
   end?: { date?: string; dateTime?: string; timeZone?: string };
   attendees?: Array<{ email: string }>;
+  organizer?: { email?: string; self?: boolean };
   htmlLink?: string;
   hangoutLink?: string;
   conferenceData?: { entryPoints?: Array<{ entryPointType?: string; uri?: string }>; createRequest?: unknown };
@@ -128,6 +129,7 @@ function identityOf(remote: GoogleCalendarEventPayload, connection: CalendarConn
     ...(original ? { googleOriginalStartAt: original } : {}),
     ...(remote.htmlLink ? { htmlLink: remote.htmlLink } : {}),
     ...(meetLink ? { meetLink } : {}),
+    ...(remote.organizer?.email ? { organizerEmail: remote.organizer.email.trim().toLowerCase() } : {}),
   };
 }
 

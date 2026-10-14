@@ -4,7 +4,11 @@ import { join } from "node:path";
 import type { CalendarMeetingLinkPort } from "../calendar/calendar-event-use-cases.js";
 import type { CalendarEvent } from "../../domain/calendar/calendar.model.js";
 import {
+  buildExcludedRecorderEmails,
+  isConfirmedHumanIdentity,
   meetingJobRetryDelayMs,
+  normalizeGoogleEmail,
+  type HumanJoinIdentitySource,
   meetingUsagePeriod,
   parseGoogleMeetUrl,
   type AutoRecordWindow,
@@ -17,7 +21,7 @@ import {
   type TranscriptionResult,
 } from "../../domain/meetings/meeting.model.js";
 import type { MeetingRepositoryPort } from "../ports/meeting-repository.port.js";
-import type { MeetingMediaStoragePort } from "./meeting-use-cases.js";
+import { auditSkippedRecorderAccounts, recorderEligibilityFor, type MeetingMediaStoragePort } from "./meeting-use-cases.js";
 
 /**
  * Processamento assíncrono do Vorix Meetings — roda no WORKER, nunca na API.
@@ -263,12 +267,24 @@ export async function purgeExpiredRecordings(deps: Pick<MeetingProcessingDeps, "
 }
 
 // ---------------------------------------------------------------------------------------------
-// Auto-gravação (preparação): identifica reuniões elegíveis; com a gravação real desligada,
-// registra RECORDING_DISABLED — nunca simula uma gravação.
+// Auto-gravação: com a gravação real desligada registra RECORDING_DISABLED (nunca simula). Sem
+// identidade humana conhecida não começa. Conta ocupada = tenta de novo dentro da janela de
+// tolerância; conflito de identidade é PERMANENTE (registra + avisa, sem retry infinito).
 // ---------------------------------------------------------------------------------------------
 
+/** Aviso in-app ao responsável (sino). Opcional: sem ele, só a auditoria registra. */
+export type MeetingOwnerNotifier = (input: { tenantId: string; workspaceId: string; userId: string; title: string; body: string; meetingId: string }) => Promise<void>;
+
+const SCHEDULER_NOTIFY: Partial<Record<string, { title: string; body: string }>> = {
+  HUMAN_IDENTITY_REQUIRED: { title: "Gravação automática não iniciada", body: "Informe a conta Google que você usa para participar da reunião — sem ela o Vorix não escolhe a conta de gravação." },
+  RECORDER_ACCOUNT_IDENTITY_CONFLICT: { title: "Gravação automática não iniciada", body: "A única conta de gravação disponível é a mesma conta Google com que você participa desta reunião. Conecte outra conta de gravação." },
+  INVALID_RECORDER_SESSION: { title: "Contas de gravação precisam ser reconectadas", body: "A sessão do Google das contas de gravação expirou. Reconecte em Meetings → Configurações → Contas de gravação." },
+  NO_RECORDER_ACCOUNT_AVAILABLE: { title: "Gravação automática não iniciada", body: "Nenhuma conta de gravação ficou disponível dentro da janela de entrada." },
+  CONCURRENCY_LIMIT_REACHED: { title: "Gravação automática não iniciada", body: "O limite de gravações simultâneas do seu plano estava em uso no horário da reunião." },
+};
+
 export async function evaluateAutoRecordings(
-  deps: Pick<MeetingProcessingDeps, "repository" | "now">,
+  deps: Pick<MeetingProcessingDeps, "repository" | "now"> & { notify?: MeetingOwnerNotifier },
   input: { defaults: AutoRecordWindow; realRecordingEnabled: boolean; limitsFor: (tenantId: string) => Promise<MeetingsLimits>; limit: number },
 ): Promise<{ evaluated: number; outcomes: Record<string, number> }> {
   const due = await deps.repository.listAutoRecordDue({ now: deps.now(), defaults: input.defaults, limit: input.limit });
@@ -277,27 +293,58 @@ export async function evaluateAutoRecordings(
     let outcome: string;
     if (!input.realRecordingEnabled) outcome = "RECORDING_DISABLED";
     else if (!meeting.meetingUrl || !parseGoogleMeetUrl(meeting.meetingUrl)) outcome = "MISSING_MEETING_URL";
+    else if (!isConfirmedHumanIdentity(meeting.humanJoinIdentitySource)) outcome = "HUMAN_IDENTITY_REQUIRED";
     else {
       const limits = await input.limitsFor(meeting.tenantId);
       const admission = await deps.repository.admitRecording({ tenantId: meeting.tenantId, workspaceId: meeting.workspaceId, meetingId: meeting.id, maxConcurrentRecordings: limits.maxConcurrentRecordings, now: deps.now() });
+      await auditSkippedRecorderAccounts(deps.repository, { tenantId: meeting.tenantId, userId: meeting.ownerUserId, workspaceId: meeting.workspaceId, meetingId: meeting.id, admission });
       outcome = admission.ok ? "QUEUED" : admission.reason;
-      if (!admission.ok && admission.reason === "NO_BOT_AVAILABLE") {
+      // Transitório: contas ocupadas (ou limite do plano em uso) liberam em minutos — tenta de novo
+      // enquanto a janela de tolerância da entrada não passar.
+      const transient = !admission.ok && (admission.reason === "CONCURRENCY_LIMIT_REACHED" || (admission.reason === "NO_RECORDER_ACCOUNT_AVAILABLE" && admission.busyAccounts > 0));
+      if (transient) {
         const graceMinutes = meeting.joinGraceMinutes ?? input.defaults.joinGraceMinutes;
         const deadline = meeting.scheduledStartAt ? Date.parse(meeting.scheduledStartAt) + graceMinutes * 60_000 : deps.now().getTime();
         if (deps.now().getTime() <= deadline) {
-          outcomes.NO_BOT_AVAILABLE_RETRYING = (outcomes.NO_BOT_AVAILABLE_RETRYING ?? 0) + 1;
-          await deps.repository.audit({ tenantId: meeting.tenantId, workspaceId: meeting.workspaceId, meetingId: meeting.id, action: "recording.waiting_for_bot", details: { trigger: "auto_record", retryUntil: new Date(deadline).toISOString() } });
+          outcomes[`${outcome}_RETRYING`] = (outcomes[`${outcome}_RETRYING`] ?? 0) + 1;
+          await deps.repository.audit({ tenantId: meeting.tenantId, workspaceId: meeting.workspaceId, meetingId: meeting.id, action: "recording.waiting_for_recorder_account", details: { trigger: "auto_record", reason: outcome, retryUntil: new Date(deadline).toISOString() } });
           continue;
         }
-        await deps.repository.transition({ tenantId: meeting.tenantId, meetingId: meeting.id, to: "failed", failureCode: "NO_BOT_AVAILABLE", failureMessage: "Nenhum gravador ficou disponivel dentro da janela de entrada." });
+        await deps.repository.transition({ tenantId: meeting.tenantId, meetingId: meeting.id, to: "failed", failureCode: outcome, failureMessage: "Nenhuma conta de gravacao ficou disponivel dentro da janela de entrada." });
       }
+      // Identidade ausente, conflito de identidade ou sessões inválidas: a reunião continua
+      // agendada — o responsável é avisado e pode corrigir e gravar manualmente.
     }
-    // Marca uma única vez (idempotente entre schedulers concorrentes).
+    // Marca uma única vez (idempotente entre schedulers concorrentes) — nada de retry infinito.
     if (!(await deps.repository.markAutoRecordEvaluated({ meetingId: meeting.id, outcome }))) continue;
     outcomes[outcome] = (outcomes[outcome] ?? 0) + 1;
     await deps.repository.audit({ tenantId: meeting.tenantId, workspaceId: meeting.workspaceId, meetingId: meeting.id, action: outcome === "QUEUED" ? "recording.admitted" : "recording.refused", details: { reason: outcome, trigger: "auto_record" } });
+    const notice = SCHEDULER_NOTIFY[outcome];
+    if (notice && deps.notify) {
+      await deps.notify({ tenantId: meeting.tenantId, workspaceId: meeting.workspaceId, userId: meeting.ownerUserId, title: notice.title, body: `${meeting.title}: ${notice.body}`, meetingId: meeting.id }).catch(() => undefined);
+    }
   }
   return { evaluated: Object.values(outcomes).reduce((sum, value) => sum + value, 0), outcomes };
+}
+
+/**
+ * A escolha explícita prevalece. Participação confirmada pelo fluxo também pode excluir contas;
+ * organizador e proprietário da agenda são sugestões que precisam de confirmação.
+ */
+export function inferHumanJoinIdentity(input: { explicit?: string; confirmedConnectedEmail?: string; organizerEmail?: string; ownerConnectedEmails: readonly string[]; eventFromGoogle: boolean }): { email?: string; source: HumanJoinIdentitySource; excluded: string[] } {
+  const connected = input.ownerConnectedEmails.map((email) => normalizeGoogleEmail(email)).filter((email): email is string => Boolean(email));
+  const explicit = normalizeGoogleEmail(input.explicit);
+  if (explicit) return { email: explicit, source: "explicit", excluded: buildExcludedRecorderEmails({ humanJoinAccountEmail: explicit }) };
+  const confirmed = normalizeGoogleEmail(input.confirmedConnectedEmail);
+  if (confirmed && connected.includes(confirmed)) return { email: confirmed, source: "connected_account_confirmed", excluded: [confirmed] };
+  const organizer = normalizeGoogleEmail(input.organizerEmail);
+  if (organizer && connected.includes(organizer)) {
+    return { email: organizer, source: "inferred_organizer", excluded: [] };
+  }
+  if (connected.length === 1) {
+    return { email: connected[0], source: "inferred_calendar_owner", excluded: [] };
+  }
+  return { source: "unknown", excluded: [] };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -307,13 +354,15 @@ export async function evaluateAutoRecordings(
 export class MeetingsCalendarLink implements CalendarMeetingLinkPort {
   constructor(private readonly deps: { repository: MeetingRepositoryPort; idGenerator: (prefix: string) => string; limitsFor?: (tenantId: string) => Promise<MeetingsLimits> }) {}
 
-  async createScheduledMeeting(input: { event: CalendarEvent; joinBeforeMinutes?: number; joinGraceMinutes?: number; meetingUrl?: string }): Promise<{ meetingId: string; recordingCapacityWarning?: string }> {
+  async createScheduledMeeting(input: { event: CalendarEvent; joinBeforeMinutes?: number; joinGraceMinutes?: number; meetingUrl?: string; humanJoinAccountEmail?: string }): Promise<{ meetingId: string; recordingCapacityWarning?: string; recorderWarning?: { code: string; message: string } }> {
     const { event } = input;
     const overlapping = this.deps.limitsFor
       ? await this.deps.repository.countOverlappingAutoRecordMeetings({ tenantId: event.tenantId, startAt: event.startAt, endAt: event.endAt })
       : 0;
     const limit = this.deps.limitsFor ? (await this.deps.limitsFor(event.tenantId)).maxConcurrentRecordings : undefined;
     const meetingUrl = parseGoogleMeetUrl(input.meetingUrl ?? event.meetLink ?? event.location ?? "");
+    const known = await this.deps.repository.knownHumanGoogleEmails({ tenantId: event.tenantId, userId: event.ownerUserId });
+    const identity = inferHumanJoinIdentity({ explicit: input.humanJoinAccountEmail, organizerEmail: event.organizerEmail, ownerConnectedEmails: known.connected, eventFromGoogle: event.source === "google" });
     const meeting = await this.deps.repository.create({
       id: this.deps.idGenerator("meeting"),
       tenantId: event.tenantId,
@@ -332,14 +381,22 @@ export class MeetingsCalendarLink implements CalendarMeetingLinkPort {
       autoRecord: true,
       ...(input.joinBeforeMinutes !== undefined ? { joinBeforeMinutes: input.joinBeforeMinutes } : {}),
       ...(input.joinGraceMinutes !== undefined ? { joinGraceMinutes: input.joinGraceMinutes } : {}),
+      ...(identity.email ? { humanJoinAccountEmail: identity.email } : {}),
+      humanJoinIdentitySource: identity.source,
+      excludedRecorderEmails: identity.excluded,
       participants: event.attendees.map((email) => ({ email, role: "attendee" as const })),
     });
+    // Validação do AGENDAMENTO (aviso; a reserva no horário é a autoridade).
+    const eligibility = this.deps.limitsFor
+      ? await recorderEligibilityFor(this.deps.repository, this.deps.limitsFor, { tenantId: event.tenantId, userId: event.ownerUserId }, meeting)
+      : undefined;
     const projected = overlapping + 1;
     return {
       meetingId: meeting.id,
       ...(limit !== undefined && projected > limit
         ? { recordingCapacityWarning: `Este horario tem ${projected} gravacoes automaticas sobrepostas, mas o plano permite ${limit}. A admissao no horario da reuniao sera a autoridade final.` }
         : {}),
+      ...(eligibility?.warning ? { recorderWarning: eligibility.warning } : {}),
     };
   }
 

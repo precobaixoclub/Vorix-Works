@@ -12,13 +12,14 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { StatusPill } from "@/components/meetings/MeetingsCentral";
+import { HumanIdentityDialog, RecorderIdentityPanel, announceRecordingRefusal } from "@/components/meetings/RecorderIdentity";
 import { PageHeader } from "@/components/PageHeader";
 import { PageSubnav } from "@/components/PageSubnav";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
 import { decideActionItem, deleteMeeting, getRecordingPlayback, reanalyzeMeeting, requestMeetingRecording, retranscribeMeeting, stopMeetingRecording } from "@/features/meetings/api";
-import { useMeeting, useMeetingTranscript } from "@/features/meetings/hooks";
+import { useMeeting, useMeetingTranscript, useRecordingCapacity } from "@/features/meetings/hooks";
 import { formatBytes, formatDuration, formatTimestamp, meetingDurationSeconds, meetingWhen } from "@/features/meetings/presentation";
 import { MEETING_SOURCE_LABEL, MEETING_STATUS_LABEL, TRANSCRIPT_STATUS_LABEL, type MeetingActionItem, type MeetingAnalysisView, type MeetingDetail, type MeetingRecording } from "@/features/meetings/types";
 import { ApiError } from "@/lib/api-client";
@@ -47,6 +48,8 @@ export default function MeetingDetailPage() {
   const [section, setSection] = useState<Section>("overview");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [askIdentity, setAskIdentity] = useState(false);
+  const capacity = useRecordingCapacity(workspace.id);
   const playerRef = useRef<HTMLMediaElement | null>(null);
   const transcriptReady = meeting?.transcript?.status === "completed";
   const transcript = useMeetingTranscript(workspace.id, params.meetingId, Boolean(transcriptReady));
@@ -61,13 +64,21 @@ export default function MeetingDetailPage() {
     void player.play().catch(() => undefined);
   }, []);
 
-  async function record() {
+  async function record(humanJoinAccountEmail?: string) {
     if (!meeting) return;
+    // Sem a conta com que a pessoa entra, pergunta antes (nunca adivinha a identidade).
+    if (!humanJoinAccountEmail && !["explicit", "connected_account_confirmed"].includes(meeting.humanJoinIdentitySource ?? "")) {
+      setAskIdentity(true);
+      return;
+    }
     setBusy(true);
     try {
-      const result = await requestMeetingRecording(workspace.id, meeting.id);
-      if (result.ok) toast.success("Gravação na fila", { description: "O gravador vai pedir para entrar na reunião." });
-      else toast.warning("A gravação não começou", { description: result.message });
+      const result = await requestMeetingRecording(workspace.id, meeting.id, humanJoinAccountEmail);
+      if (result.ok) {
+        toast.success("Gravação na fila", { description: "O gravador vai pedir para entrar na reunião." });
+        setAskIdentity(false);
+      } else if (result.reason === "HUMAN_IDENTITY_REQUIRED") setAskIdentity(true);
+      else announceRecordingRefusal(result, workspace.id, (href) => router.push(href));
       await mutate();
     } catch (cause) {
       toast.error("Não foi possível pedir a gravação", { description: cause instanceof ApiError || cause instanceof Error ? cause.message : undefined });
@@ -166,7 +177,7 @@ export default function MeetingDetailPage() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill status={meeting.status} />
-            {canRecord && meeting.status === "scheduled" && meeting.meetingUrl ? <Button onClick={record} loading={busy} disabled={busy}>Gravar reunião</Button> : null}
+            {canRecord && meeting.status === "scheduled" && meeting.meetingUrl ? <Button onClick={() => void record()} loading={busy} disabled={busy}>Gravar reunião</Button> : null}
             {canRecord && ["queued", "starting", "waiting_admission", "recording"].includes(meeting.status) ? <Button variant="secondary" onClick={stopRecording} loading={busy} disabled={busy}><Square className="h-4 w-4" aria-hidden="true" />Parar gravação</Button> : null}
             {canAnalyze && recording ? <Button variant="secondary" onClick={retranscribe} loading={busy} disabled={busy}>Retranscrever</Button> : null}
             {canAnalyze && transcriptReady ? <Button variant="secondary" onClick={reanalyze} loading={busy} disabled={busy}>Reanalisar IA</Button> : null}
@@ -178,6 +189,10 @@ export default function MeetingDetailPage() {
       {meeting.failureMessage && meeting.status === "failed" ? (
         <Card className="border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">{meeting.failureMessage}</Card>
       ) : null}
+
+      <RecorderIdentityPanel meeting={meeting} workspaceId={workspace.id} canEdit={canRecord} onChanged={async () => { await mutate(); }} />
+
+      {askIdentity ? <HumanIdentityDialog initial={meeting.humanJoinAccountEmail} suggestions={capacity.data?.knownHumanEmails ?? []} busy={busy} onSubmit={(email) => void record(email)} onClose={() => setAskIdentity(false)} /> : null}
 
       {["queued", "starting", "waiting_admission", "recording"].includes(meeting.status) ? <LiveRecordingPanel meeting={meeting} /> : null}
 

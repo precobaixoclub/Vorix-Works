@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { disableRecorderBot, provisionRecorderBot, requestRecorderBotHealthCheck, type RecorderBotAdminDeps } from "../../../../application/meetings/recorder-bot-admin.js";
+import { listAllRecorderAccountsForSupport } from "../../../../application/meetings/recorder-accounts.js";
 import { AppError } from "../../http/app-error.js";
 import { requirePlatformAdmin } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -26,7 +27,9 @@ const SESSION_BODY = {
 export async function registerMeetingsRecorderAdminRoutes(app: FastifyInstance, deps: RecorderBotAdminDeps): Promise<void> {
   app.get("/admin/meetings/recorder-bots", async (request) => {
     requirePlatformAdmin(request);
-    return successEnvelope({ bots: await deps.repository.listRecorderBots() }, request.id);
+    // Suporte da plataforma: todas as contas (do cliente e o pool interno preparado), com tenant,
+    // workspace, dono e uso atual. Nunca a sessão.
+    return successEnvelope({ bots: await listAllRecorderAccountsForSupport(deps) }, request.id);
   });
 
   app.post("/admin/meetings/recorder-bots", { schema: { body: BOT_BODY }, config: { readOnlyGuard: true } }, async (request, reply) => {
@@ -60,9 +63,13 @@ export async function registerMeetingsRecorderAdminRoutes(app: FastifyInstance, 
   });
 
   app.post("/admin/meetings/recorder-bots/:botId/disable", { schema: { params: BOT_PARAMS }, config: { readOnlyGuard: true } }, async (request) => {
-    requirePlatformAdmin(request);
+    const principal = requirePlatformAdmin(request);
     const { botId } = request.params as { botId: string };
-    try { return successEnvelope(await disableRecorderBot(deps, botId), request.id); }
+    try {
+      const bot = await disableRecorderBot(deps, botId);
+      if (bot.tenantId) await deps.repository.audit({ tenantId: bot.tenantId, ...(bot.workspaceId ? { workspaceId: bot.workspaceId } : {}), actorUserId: principal.userId, action: "RECORDER_DISABLED", details: { recorderAccountId: bot.id } });
+      return successEnvelope(bot, request.id);
+    }
     catch (error) { translate(error); }
   });
 }

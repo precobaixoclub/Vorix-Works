@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { SolutionAccessService } from "../../../../application/solutions/solution-access.service.js";
-import { isSolutionKey, SOLUTION_ENTITLEMENT_SOURCES, SOLUTION_KEYS, SOLUTIONS, type SolutionEntitlementSource } from "../../../../domain/solutions/solution.model.js";
+import { isSolutionContractable, isSolutionKey, SOLUTION_ENTITLEMENT_SOURCES, SOLUTION_KEYS, SOLUTIONS, type SolutionEntitlementSource } from "../../../../domain/solutions/solution.model.js";
 import { AppError, ValidationError } from "../../http/app-error.js";
 import { requirePlatformAdmin, requirePrincipal } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
@@ -46,7 +46,7 @@ export async function registerSolutionRoutes(app: FastifyInstance, deps: Solutio
     const principal = requirePrincipal(request);
     const access = deps.solutionAccess
       ? await deps.solutionAccess.listAccess(principal.tenantId)
-      : SOLUTION_KEYS.map((key) => ({ key, name: SOLUTIONS[key].name, enabled: true, internal: SOLUTIONS[key].commercialAvailability === "internal" }));
+      : SOLUTION_KEYS.map((key) => ({ key, name: SOLUTIONS[key].name, enabled: true, internal: !isSolutionContractable(SOLUTIONS[key]) }));
     return successEnvelope({ solutions: access.filter((solution) => solution.enabled).map(({ key, name, internal }) => ({ key, name, internal })) }, request.id);
   });
 
@@ -56,7 +56,7 @@ export async function registerSolutionRoutes(app: FastifyInstance, deps: Solutio
     const { tenantId } = request.params as { tenantId: string };
     const access = await deps.solutionAccess.listAccess(tenantId);
     return successEnvelope(
-      { solutions: access.map((solution) => ({ ...solution, commercialAvailability: SOLUTIONS[solution.key].commercialAvailability })) },
+      { solutions: access.map((solution) => ({ ...solution, commercialAvailability: isSolutionContractable(SOLUTIONS[solution.key]) ? "public" : "internal" })) },
       request.id,
     );
   });

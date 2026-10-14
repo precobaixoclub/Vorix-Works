@@ -355,16 +355,18 @@ test("GRAVAR AGORA: com a gravação real desligada a reunião é criada e o mot
   await app.close();
 });
 
-test("BOTS + CONCORRÊNCIA: limite do plano nunca é excedido, bot nunca é duplicado, sem bot = motivo explícito", async () => {
+test("CONTAS DE GRAVAÇÃO + CONCORRÊNCIA: limite do plano nunca é excedido, conta nunca é duplicada, sem conta = motivo explícito", async () => {
   const app = await buildTestApp({ realRecordingEnabled: true });
   const { tenantId, workspaceId } = await setupTenant("concorrencia");
-  const create = async () => (await app.inject({ method: "POST", url: "/v1/meetings", headers: auth(tenantId), payload: { workspaceId, source: "external_link", meetingUrl: "https://meet.google.com/abc-defg-hij" } })).json().data.meeting.id;
+  const create = async () => (await app.inject({ method: "POST", url: "/v1/meetings", headers: auth(tenantId), payload: { workspaceId, source: "external_link", meetingUrl: "https://meet.google.com/abc-defg-hij", humanJoinAccountEmail: "pessoa@empresa.test" } })).json().data.meeting.id;
   const record = async (meetingId) => (await app.inject({ method: "POST", url: `/v1/meetings/${meetingId}/recording`, headers: auth(tenantId), payload: { workspaceId } })).json().data;
 
   const m1 = await create();
-  assert.equal((await record(m1)).reason, "NO_BOT_AVAILABLE", "pool vazio: nada inicia");
+  const empty = await record(m1);
+  assert.equal(empty.reason, "NO_RECORDER_ACCOUNT_AVAILABLE", "nenhuma conta conectada: nada inicia");
+  assert.equal(empty.connectedAccounts, 0);
 
-  await db.pool.query(`insert into recorder_bot_accounts (id, label, google_email, encrypted_session_state, status) values ('bot-a', 'A', 'bot-a@vorix.test', 'test-session-a', 'active'), ('bot-b', 'B', 'bot-b@vorix.test', 'test-session-b', 'active'), ('bot-c', 'C', 'bot-c@vorix.test', null, 'disabled')`);
+  await db.pool.query(`insert into recorder_bot_accounts (id, ownership_type, tenant_id, workspace_id, label, google_email, encrypted_session_state, status) values ('bot-a', 'customer_managed', $1, $2, 'A', 'bot-a@vorix.test', 'test-session-a', 'active'), ('bot-b', 'customer_managed', $1, $2, 'B', 'bot-b@vorix.test', 'test-session-b', 'active'), ('bot-c', 'customer_managed', $1, $2, 'C', 'bot-c@vorix.test', null, 'disabled')`, [tenantId, workspaceId]);
   const first = await record(m1);
   assert.equal(first.ok, true);
   const m2 = await create();
@@ -379,10 +381,10 @@ test("BOTS + CONCORRÊNCIA: limite do plano nunca é excedido, bot nunca é dupl
   assert.notEqual(third.botAccountId, first.botAccountId, "bots distintos");
   const m3 = await create();
   const fourth = await record(m3);
-  assert.equal(fourth.reason, "NO_BOT_AVAILABLE", "bot desabilitado nunca é usado");
+  assert.equal(fourth.reason, "NO_RECORDER_ACCOUNT_AVAILABLE", "conta desabilitada nunca é usada; as saudáveis estão ocupadas");
   assert.equal((await record(m1)).reason, "INVALID_STATE", "reunião já na fila não é admitida de novo");
 
-  const bots = await db.pool.query(`select id, status, current_meeting_id from recorder_bot_accounts order by id`);
+  const bots = await db.pool.query(`select id, status, current_meeting_id from recorder_bot_accounts where tenant_id = $1 order by id`, [tenantId]);
   assert.deepEqual(bots.rows.map((row) => [row.id, row.status]), [["bot-a", "busy"], ["bot-b", "busy"], ["bot-c", "disabled"]]);
   assert.equal(new Set(bots.rows.filter((row) => row.current_meeting_id).map((row) => row.current_meeting_id)).size, 2);
   const jobs = await db.pool.query(`select count(*)::int as n from meeting_jobs where tenant_id = $1 and kind = 'record' and status = 'queued'`, [tenantId]);

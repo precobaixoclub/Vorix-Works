@@ -11,7 +11,7 @@ RUN npm run build
 FROM node:20-bookworm-slim
 
 ENV NODE_ENV=production \
-    MEETINGS_CHROMIUM_PATH=/usr/bin/chromium \
+    MEETINGS_CHROMIUM_PATH=/usr/bin/google-chrome-stable \
     MEETINGS_FFMPEG_PATH=/usr/bin/ffmpeg \
     MEETINGS_FFPROBE_PATH=/usr/bin/ffprobe \
     MEETINGS_XVFB_PATH=/usr/bin/Xvfb \
@@ -25,6 +25,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && useradd --create-home --uid 10001 recorder \
     && mkdir -p /app /tmp/pulse /tmp/vorix-recorder-displays \
     && chown -R recorder:recorder /app /tmp/pulse /tmp/vorix-recorder-displays
+
+# Official Chrome stable is a compatibility candidate for Google's supported-browser login.
+# Keep the distro Chromium available for diagnostics. Browser authentication remains unproven
+# until a user completes login; no stealth flags or security-check bypass are applied.
+ADD https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb /tmp/google-chrome-stable.deb
+RUN test "$(dpkg --print-architecture)" = amd64 \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends /tmp/google-chrome-stable.deb \
+    && google-chrome-stable --version \
+    && rm -f /tmp/google-chrome-stable.deb \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=build /app/package.json /app/package-lock.json ./

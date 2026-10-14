@@ -1,0 +1,4 @@
+import { ImageResponse } from "next/og";
+export function GET() {
+  return new ImageResponse(<div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", padding: "80px", background: "#080b11", color: "#f3f6fa", fontFamily: "sans-serif", border: "1px solid #26303d" }}><div style={{ display: "flex", fontSize: 30, color: "#addb46", letterSpacing: "4px", marginBottom: 38 }}>VORIX.</div><div style={{ display: "flex", fontSize: 69, fontWeight: 700, letterSpacing: "-2px" }}>Uma plataforma.</div><div style={{ display: "flex", fontSize: 69, fontWeight: 700, letterSpacing: "-2px", color: "#addb46" }}>Duas soluções.</div><div style={{ display: "flex", gap: 28, marginTop: 48, fontSize: 25, color: "#a3afc0" }}><span>Conversas · Atendimento e vendas</span><span style={{ color: "#b7a0ff" }}>Meetings · Reuniões inteligentes</span></div></div>, { width: 1200, height: 630 });
+}

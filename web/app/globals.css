@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./public-site.css";
 
 /* Tailwind v4 usa `prefers-color-scheme` por padrão pro variant `dark:`; o design system
  * (next-themes) precisa de switching por CLASSE (`.dark` na <html>) pra o toggle manual

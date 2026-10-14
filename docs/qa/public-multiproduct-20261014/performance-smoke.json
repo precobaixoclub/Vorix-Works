@@ -1,0 +1,23 @@
+{
+  "scope": "LOCAL_OPTIMIZED_BUILD_SINGLE_RUN",
+  "cls": 0,
+  "lcpMs": 600,
+  "scriptEncodedBytes": 265853,
+  "fontRequests": 4,
+  "heroImageElements": 0,
+  "heroVideoElements": 0,
+  "colors": {
+    "--public-bg": "#080b11",
+    "--public-text": "#f3f6fa",
+    "--public-muted": "#a3afc0",
+    "--public-green": "#addb46",
+    "--public-violet": "#b7a0ff"
+  },
+  "textContrast": {
+    "--public-text": 18.17,
+    "--public-muted": 8.86,
+    "--public-green": 12.19,
+    "--public-violet": 8.9
+  },
+  "capacitySimulator": "PASS"
+}

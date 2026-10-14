@@ -4,6 +4,7 @@ import { listPublicPlans } from "../../../../domain/platform-billing/index.js";
 import type { AddonDefinitionRepositoryPort, PlanVersionRepositoryPort } from "../../../../application/ports/plan-version-repository.port.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 import { ValidationError } from "../../http/app-error.js";
+import * as solutionCatalog from "../../../../domain/solutions/solution.model.js";
 
 export type PlatformPlansRoutesDeps = {
   planVersionRepository?: PlanVersionRepositoryPort;
@@ -47,8 +48,20 @@ function isHighlighted(planCode: string): boolean {
  */
 export async function registerPlatformPlansRoutes(app: FastifyInstance, deps: PlatformPlansRoutesDeps = {}): Promise<void> {
   app.get("/platform/plans", async (request) => {
+    // Public presentation can describe Meetings without promoting it for purchase.
+    // Commercial eligibility remains exclusively owned by the existing solution gate.
+    const { SOLUTIONS } = solutionCatalog;
+    // Older deployed domain modules have only the commercialAvailability flag. During a staged
+    // rollout, never promote Meetings without its readiness gate. Current modules use that gate.
+    const gate = (solutionCatalog as typeof solutionCatalog & {
+      isSolutionContractable?: (solution: (typeof SOLUTIONS)[keyof typeof SOLUTIONS]) => boolean;
+    }).isSolutionContractable;
+    const solutions = (["conversations", "meetings"] as const).map((key) => ({
+      key, name: SOLUTIONS[key].name,
+      contractable: gate ? gate(SOLUTIONS[key]) : key === "conversations" && SOLUTIONS[key].commercialAvailability === "public",
+    }));
     if (!deps.planVersionRepository) {
-      return successEnvelope({ plans: listPublicPlans(), addons: [] }, request.id);
+      return successEnvelope({ plans: listPublicPlans(), addons: [], solutions, priceSource: "legacy_development" }, request.id);
     }
     const active = await deps.planVersionRepository.listActivePlans();
     const plans: PublicPlanDto[] = active
@@ -76,7 +89,7 @@ export async function registerPlatformPlansRoutes(app: FastifyInstance, deps: Pl
           .map((addon) => ({ code: addon.code, name: addon.name, monthlyPriceUsd: addon.monthlyPriceUsd, currency: addon.currency, resource: addon.resource }))
       : [];
 
-    return successEnvelope({ plans, addons }, request.id);
+    return successEnvelope({ plans, addons, solutions, priceSource: "plan_versions" }, request.id);
   });
 
   const SIMULATE_BODY_SCHEMA = {

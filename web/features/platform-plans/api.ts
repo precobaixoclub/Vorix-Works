@@ -29,13 +29,17 @@ type Envelope<T> = { ok: true; data: T } | { ok: false; error: { code: string; m
  * pela compra real dentro do produto, nunca um valor hardcoded na página. */
 export type PublicCapacityAddon = { code: string; name: string; monthlyPriceUsd: number; currency: string; resource: "users" | "messaging_connections" };
 
-export async function fetchPublicCatalog(): Promise<{ plans: readonly PublicPlan[]; addons: readonly PublicCapacityAddon[] }> {
+export type PublicCommercialState = { key: "conversations" | "meetings"; name: string; contractable: boolean };
+export type PublicBillingCatalog = { plans: readonly PublicPlan[]; addons: readonly PublicCapacityAddon[]; solutions: readonly PublicCommercialState[]; priceSource: "plan_versions" | "legacy_development" | "unavailable" };
+
+export async function fetchPublicCatalog(): Promise<PublicBillingCatalog> {
   const response = await fetch(`${getApiBaseUrl()}/v1/platform/plans`, {
     method: "GET",
     // Cache no cliente: revalida a cada 5min. Landing muitas vezes é servida a usuários anônimos.
     next: { revalidate: 300 },
+    signal: AbortSignal.timeout(5000),
   });
-  const body = (await response.json().catch(() => undefined)) as Envelope<{ plans: Partial<PublicPlan>[]; addons: PublicCapacityAddon[] }> | undefined;
+  const body = (await response.json().catch(() => undefined)) as Envelope<{ plans: Partial<PublicPlan>[]; addons: PublicCapacityAddon[]; solutions?: PublicCommercialState[]; priceSource?: string }> | undefined;
   if (!body) throw new ApiError("INVALID_RESPONSE", "Resposta inválida da API de planos.", response.status, false);
   if (!body.ok) throw new ApiError(body.error.code, body.error.message, response.status, false);
   // Defensivo: numa janela de deploy (build do frontend rodando contra uma API ainda não
@@ -56,6 +60,8 @@ export async function fetchPublicCatalog(): Promise<{ plans: readonly PublicPlan
       trialDays: plan.trialDays ?? null,
     })),
     addons: body.data.addons ?? [],
+    solutions: (body.data.solutions ?? []).filter((solution) => ["conversations", "meetings"].includes(solution.key)).map((solution) => ({ ...solution, contractable: solution.contractable === true })),
+    priceSource: body.data.priceSource === "plan_versions" ? "plan_versions" : body.data.priceSource === "legacy_development" ? "legacy_development" : "unavailable",
   };
 }
 

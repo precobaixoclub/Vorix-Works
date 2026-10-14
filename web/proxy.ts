@@ -34,6 +34,10 @@ export function proxy(request: NextRequest) {
     pathname.startsWith("/product-shots/") ||
     pathname === "/empresa" ||
     pathname === "/pricing" ||
+    pathname === "/precos" ||
+    pathname === "/produtos/conversas" ||
+    pathname === "/produtos/meetings" ||
+    pathname === "/public-og" ||
     pathname === "/privacy" ||
     pathname === "/terms" ||
     pathname === "/data-deletion" ||

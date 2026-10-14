@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { MeetingDetail, MeetingListFilters, MeetingListItem, MeetingsDashboard, MeetingTranscriptSegment, RecordingRequestResult } from "./types";
+import type { MeetingActionItem, MeetingDetail, MeetingListFilters, MeetingListItem, MeetingsDashboard, MeetingTranscriptSegment, RecordingRequestResult } from "./types";
 
 const q = encodeURIComponent;
 
@@ -50,6 +50,10 @@ export function requestMeetingRecording(workspaceId: string, meetingId: string) 
   return apiClient.post<RecordingRequestResult>(`/v1/meetings/${q(meetingId)}/recording`, { workspaceId });
 }
 
+export function stopMeetingRecording(workspaceId: string, meetingId: string) {
+  return apiClient.post<{ stopRequested: true }>(`/v1/meetings/${q(meetingId)}/recording/stop`, { workspaceId });
+}
+
 export function updateMeeting(workspaceId: string, meetingId: string, patch: { title?: string; description?: string | null }) {
   return apiClient.patch<MeetingDetail>(`/v1/meetings/${q(meetingId)}`, { workspaceId, ...patch });
 }
@@ -60,6 +64,18 @@ export function deleteMeeting(workspaceId: string, meetingId: string) {
 
 export function getRecordingPlayback(workspaceId: string, meetingId: string, recordingId: string) {
   return apiClient.get<{ url: string; mimeType: string; expiresInSeconds: number }>(`/v1/meetings/${q(meetingId)}/recordings/${q(recordingId)}/playback?workspaceId=${q(workspaceId)}`);
+}
+
+export function retranscribeMeeting(workspaceId: string, meetingId: string) {
+  return apiClient.post<{ jobId: string; alreadyQueued: boolean }>(`/v1/meetings/${q(meetingId)}/retranscribe`, { workspaceId });
+}
+
+export function reanalyzeMeeting(workspaceId: string, meetingId: string) {
+  return apiClient.post<{ jobId: string; alreadyQueued: boolean }>(`/v1/meetings/${q(meetingId)}/reanalyze`, { workspaceId });
+}
+
+export function decideActionItem(workspaceId: string, meetingId: string, itemId: string, status: "confirmed" | "dismissed") {
+  return apiClient.patch<MeetingActionItem>(`/v1/meetings/${q(meetingId)}/action-items/${q(itemId)}`, { workspaceId, status });
 }
 
 export function getMeetingTranscript(workspaceId: string, meetingId: string) {

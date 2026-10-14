@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 /** Modelo das leituras de texto por visão do motor criativo (ver `visionTextBrain`). */
 export const VISION_TEXT_MODEL_ID = "gpt-4.1";
 import { configureObjectUrlSigning, deriveObjectUrlSigningKey } from "../../../shared/utils/object-url-signing.js";
@@ -142,6 +142,12 @@ import { CreditGatedAiGateway } from "../../../application/ai-gateway/credit-gat
 import { SolutionAccessService } from "../../../application/solutions/solution-access.service.js";
 import { limitsFromEntitlement, type MeetingUseCaseDeps } from "../../../application/meetings/meeting-use-cases.js";
 import { ObjectStorageMeetingMedia } from "../../../infrastructure/meetings/object-storage-meeting-media.js";
+import type { CalendarUseCaseDeps } from "../../../application/calendar/calendar-event-use-cases.js";
+import type { CalendarConnectionDeps } from "../../../application/calendar/calendar-connection-use-cases.js";
+import { MeetingsCalendarLink } from "../../../application/meetings/meeting-processing.js";
+import { GoogleCalendarOAuthService } from "../../../infrastructure/calendar/google-calendar-oauth-service.js";
+import { PostgresCalendarConnectionRepository } from "../../../infrastructure/storage/postgres/postgres-calendar-connection-repository.js";
+import { PostgresCalendarEventRepository } from "../../../infrastructure/storage/postgres/postgres-calendar-event-repository.js";
 import { PostgresMeetingRepository } from "../../../infrastructure/storage/postgres/postgres-meeting-repository.js";
 import { isSolutionKey, type SolutionKey } from "../../../domain/solutions/solution.model.js";
 import { PostgresSolutionEntitlementRepository } from "../../../infrastructure/storage/postgres/postgres-solution-entitlement-repository.js";
@@ -317,6 +323,8 @@ export type ApiContainer = {
   solutionAccess?: SolutionAccessService;
   /** Vorix Meetings — só com identidade real (Postgres). */
   meetings?: MeetingUseCaseDeps & { maxUploadBytes: number };
+  /** Agenda do Meetings + conexão Google Calendar (a sincronização roda no worker). */
+  meetingsAgenda?: { calendar: CalendarUseCaseDeps; connection: CalendarConnectionDeps };
   publicationProviders: readonly PublicationProviderPort[];
   publicationProviderAdapters: readonly PublicationProviderAdapterPort[];
   publicationProviderRegistry: PublicationProviderRegistry;
@@ -1609,6 +1617,26 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       now: () => new Date(),
       maxUploadBytes: config.meetings?.maxUploadBytes ?? 500 * 1024 * 1024,
     };
+    const calendarConnections = new PostgresCalendarConnectionRepository(identityRepositories.pool);
+    const meetingsAgenda = {
+      calendar: {
+        events: new PostgresCalendarEventRepository(identityRepositories.pool),
+        connections: calendarConnections,
+        meetings: new MeetingsCalendarLink({ repository: meetings.repository, idGenerator: meetings.idGenerator, limitsFor: meetings.limitsFor }),
+        now: () => new Date(),
+      },
+      connection: {
+        connections: calendarConnections,
+        auth: new GoogleCalendarOAuthService({
+          config: { enabled: config.calendar?.enabled ?? false, clientId: config.calendar?.clientId, clientSecret: config.calendar?.clientSecret, redirectUri: config.calendar?.redirectUri, scopes: config.calendar?.scopes ?? [] },
+          connectionRepository: calendarConnections,
+          secretManager,
+          // State OAuth assinado com chave DERIVADA do segredo do servidor (nunca o segredo cru).
+          stateSigningKey: createHmac("sha256", config.jwtSecret ?? randomBytes(32).toString("hex")).update("vorix:google-calendar-oauth-state:v1").digest(),
+        }),
+        now: () => new Date(),
+      },
+    };
 
     const mediaGenerationService = new MediaGenerationService({
       registry: aiMediaProviderRegistry,
@@ -1634,6 +1662,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       mediaGenerationService,
       solutionAccess,
       meetings,
+      meetingsAgenda,
       executionHandlers,
       executionFeatureFlags,
       referenceAssetResolver,

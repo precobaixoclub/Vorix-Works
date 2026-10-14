@@ -60,6 +60,10 @@ export type MeetingRecording = {
   mimeType: string;
   bytes: number;
   durationSeconds?: number;
+  videoCodec?: string;
+  audioCodec?: string;
+  width?: number;
+  height?: number;
   checksumSha256: string;
   originalFileName?: string;
   status: "available" | "purged" | "failed";
@@ -81,10 +85,24 @@ export type MeetingDetail = Meeting & {
   participants: { id: string; name?: string; email?: string; role: "organizer" | "attendee"; contactId?: string }[];
   recordings: MeetingRecording[];
   transcript?: { id: string; status: MeetingTranscriptStatus; language?: string; engine?: string; model?: string; segmentCount: number; processingMs?: number; attempts: number; lastError?: string; completedAt?: string };
-  latestAnalysis?: { id: string; status: "completed" | "failed" | "blocked_no_credits"; result?: MeetingAnalysisResult; creditsCharged: number; model?: string; error?: string; createdAt: string };
+  latestAnalysis?: MeetingAnalysisView;
+  lastCompletedAnalysis?: MeetingAnalysisView;
 };
 
-export type MeetingTranscriptSegment = { seq: number; startMs: number; endMs: number; speaker?: string; text: string };
+export type MeetingTranscriptSegment = { seq: number; startMs: number; endMs: number; speaker?: string; text: string; confidence?: number };
+
+export type MeetingActionItem = {
+  id: string;
+  type: "decision" | "task" | "next_step";
+  description: string;
+  assigneeName?: string;
+  dueDate?: string;
+  sourceTimestampMs?: number;
+  confidence?: number;
+  status: "suggested" | "confirmed" | "dismissed";
+};
+
+export type MeetingAnalysisView = { id: string; status: "completed" | "failed" | "blocked_no_credits"; result?: MeetingAnalysisResult; actionItems?: MeetingActionItem[]; creditsCharged: number; model?: string; error?: string; createdAt: string };
 
 export type MeetingsDashboard = {
   meetingsToday: number;

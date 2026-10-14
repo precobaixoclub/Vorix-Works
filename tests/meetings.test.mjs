@@ -364,7 +364,7 @@ test("BOTS + CONCORRÊNCIA: limite do plano nunca é excedido, bot nunca é dupl
   const m1 = await create();
   assert.equal((await record(m1)).reason, "NO_BOT_AVAILABLE", "pool vazio: nada inicia");
 
-  await db.pool.query(`insert into recorder_bot_accounts (id, label, google_email, status) values ('bot-a', 'A', 'bot-a@vorix.test', 'active'), ('bot-b', 'B', 'bot-b@vorix.test', 'active'), ('bot-c', 'C', 'bot-c@vorix.test', 'disabled')`);
+  await db.pool.query(`insert into recorder_bot_accounts (id, label, google_email, encrypted_session_state, status) values ('bot-a', 'A', 'bot-a@vorix.test', 'test-session-a', 'active'), ('bot-b', 'B', 'bot-b@vorix.test', 'test-session-b', 'active'), ('bot-c', 'C', 'bot-c@vorix.test', null, 'disabled')`);
   const first = await record(m1);
   assert.equal(first.ok, true);
   const m2 = await create();

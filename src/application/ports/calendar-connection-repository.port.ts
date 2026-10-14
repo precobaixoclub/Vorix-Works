@@ -1,4 +1,4 @@
-import type { CalendarConnection, GoogleCalendarConnectionStatus } from "../../domain/calendar/calendar.model.js";
+import type { CalendarConnection, CalendarSyncLogEntry, GoogleCalendarConnectionStatus } from "../../domain/calendar/calendar.model.js";
 
 export type UpsertCalendarConnectionInput = {
   tenantId: string;
@@ -17,15 +17,24 @@ export type UpdateCalendarConnectionInput = {
   autoSyncEnabled?: boolean;
   status?: GoogleCalendarConnectionStatus;
   lastErrorMessage?: string | null;
+  nextSyncAt?: string | null;
+  /** `true` zera falhas consecutivas; `false` soma uma. */
+  succeeded?: boolean;
 };
 
 export type CalendarConnectionRepositoryPort = {
   getByUser(input: { tenantId: string; workspaceId: string; userId: string }): Promise<CalendarConnection | undefined>;
   getById(id: string): Promise<CalendarConnection | undefined>;
-  /** 1 linha por `(tenantId, workspaceId, userId)` — chave de upsert. */
   upsert(input: UpsertCalendarConnectionInput): Promise<CalendarConnection>;
   update(id: string, input: UpdateCalendarConnectionInput): Promise<CalendarConnection>;
-  /** Contas `CONNECTED` + `autoSyncEnabled`, para o worker de sync periódico (~2min, ver
-   * `calendar.model.ts` sobre a decisão de nunca ter webhook/watch nesta rodada). */
-  listDueForSync(limit: number): Promise<CalendarConnection[]>;
+  /**
+   * Lock distribuído do sync: tenta pegar o lease da conta (atômico, no próprio registro). Só
+   * devolve a conexão se ESTE dono conseguiu o lease — outro processo sincronizando = `undefined`.
+   */
+  acquireSyncLease(connectionId: string, owner: string, leaseMs: number): Promise<CalendarConnection | undefined>;
+  releaseSyncLease(connectionId: string, owner: string): Promise<void>;
+  /** Contas conectadas cujo próximo sync já venceu e sem lease ativo. */
+  listDueForSync(limit: number, now: Date): Promise<CalendarConnection[]>;
+  log(entry: CalendarSyncLogEntry): Promise<void>;
+  listLog(input: { tenantId: string; connectionId: string; limit: number }): Promise<(CalendarSyncLogEntry & { createdAt: string })[]>;
 };

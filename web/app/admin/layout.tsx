@@ -75,6 +75,9 @@ function AdminShell({ children }: { children: ReactNode }) {
           <SidebarLink href="/admin/settings" active={isActive("/admin/settings")}>
             Configurações
           </SidebarLink>
+          <SidebarLink href="/admin/meetings-bots" active={isActive("/admin/meetings-bots")}>
+            Bots de gravação
+          </SidebarLink>
           <SidebarLink href="/admin/billing-provider" active={isActive("/admin/billing-provider")}>
             Mercado Pago
           </SidebarLink>
@@ -100,6 +103,9 @@ function AdminShell({ children }: { children: ReactNode }) {
           </SidebarLink>
           <SidebarLink href="/admin/settings" active={isActive("/admin/settings")}>
             Configurações (Anthropic)
+          </SidebarLink>
+          <SidebarLink href="/admin/meetings-bots" active={isActive("/admin/meetings-bots")}>
+            Bots de gravação
           </SidebarLink>
           <SidebarLink href="/admin/billing-provider" active={isActive("/admin/billing-provider")}>
             Mercado Pago (billing)

@@ -28,6 +28,9 @@ import { registerInboxRoutes } from "./inbox.route.js";
 import { registerNotificationRoutes } from "./notifications.route.js";
 import { registerSolutionRoutes } from "./solutions.route.js";
 import { registerMeetingRoutes } from "./meetings.route.js";
+import { registerMeetingAgendaRoutes } from "./meetings-agenda.route.js";
+import { registerMeetingsRecorderAdminRoutes } from "./meetings-recorder-admin.route.js";
+import { encryptSecret } from "../../../../infrastructure/crypto/secret-cipher.js";
 import { registerInboxMetricsRoutes } from "./inbox-metrics.route.js";
 import { registerTeamsRoutes } from "./teams.route.js";
 import { registerTenantMembersRoutes } from "./tenant-members.route.js";
@@ -94,6 +97,9 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   // Vorix Meetings — só com identidade real; o guarda de solução barra tenants sem `meetings`.
   if (app.zunoContainer.meetings) {
     await registerMeetingRoutes(app, { ...app.zunoContainer.meetings, workspaceRepository: app.zunoContainer.workspaceRepository });
+  }
+  if (app.zunoContainer.meetingsAgenda) {
+    await registerMeetingAgendaRoutes(app, { ...app.zunoContainer.meetingsAgenda, workspaceRepository: app.zunoContainer.workspaceRepository });
   }
   // Central de notificações in-app (réplica adaptada do CMDesk, pedido explícito do usuário) —
   // SEMPRE registrada (nunca atrás de um kill switch de módulo, ao contrário de `/v1/inbox/*`).
@@ -632,6 +638,14 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         now: () => new Date(),
       },
     });
+
+    if (app.zunoContainer.meetings && app.zunoConfig.jwtSecret) {
+      await registerMeetingsRecorderAdminRoutes(app, {
+        repository: app.zunoContainer.meetings.repository,
+        encryptSession: (plaintext) => encryptSecret(plaintext, app.zunoConfig.jwtSecret!),
+        now: () => new Date(),
+      });
+    }
 
     await registerAiProvidersRoutes(app, {
       aiProvidersRepository: identity.aiProvidersRepository,

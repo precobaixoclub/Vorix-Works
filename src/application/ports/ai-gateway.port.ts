@@ -33,6 +33,9 @@ export const AI_OPERATIONS = [
    * sempre com evidência literal + confiança, nunca executando nada sozinha — ver
    * `src/application/ports/commercial-copilot-generator.port.ts`. */
   "commercial_copilot_suggestions",
+  /** Vorix Meetings — análise estruturada de uma reunião a partir da transcrição (resumo, decisões,
+   * tarefas, próximos passos), sempre com evidência literal por item. */
+  "meeting_ai_analysis",
 ] as const;
 export type AiOperation = (typeof AI_OPERATIONS)[number];
 
@@ -41,7 +44,7 @@ export type AiOperation = (typeof AI_OPERATIONS)[number];
  * `infrastructure/ai-gateway/inbox-ai-responder-adapter.ts` chama `inbox_auto_reply`; o adapter em
  * `infrastructure/ai-gateway/commercial-copilot-generator-adapter.ts` chama
  * `commercial_copilot_suggestions`. */
-export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction", "inbox_auto_reply", "commercial_copilot_suggestions"];
+export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction", "inbox_auto_reply", "commercial_copilot_suggestions", "meeting_ai_analysis"];
 
 export type AiCapability = "structured_text" | "free_text" | "vision" | "image_generation" | "embeddings" | "tool_calling" | "streaming";
 

@@ -1,4 +1,5 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import { stat } from "node:fs/promises";
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { ReferenceAssetError } from "../../application/assets/reference-asset-policy.js";
@@ -64,6 +65,12 @@ export class S3ObjectStorage implements ObjectStoragePort {
     const { size } = await stat(input.filePath);
     // Sem ACL: objeto privado mesmo quando o bucket usa `acl` público para mídia de publicação.
     await this.client.send(new PutObjectCommand({ Bucket: this.config.bucket, Key: input.key, Body: createReadStream(input.filePath), ContentLength: size, ContentType: input.contentType }));
+  }
+
+  async getFile(input: { key: string; destinationPath: string }): Promise<void> {
+    const response = await this.client.send(new GetObjectCommand({ Bucket: this.config.bucket, Key: input.key }));
+    if (!response.Body) throw new Error("OBJECT_STORAGE_NOT_FOUND: objeto sem conteúdo.");
+    await pipeline(response.Body as NodeJS.ReadableStream, createWriteStream(input.destinationPath));
   }
 
   async delete(key: string): Promise<void> {

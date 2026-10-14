@@ -1,0 +1,4 @@
+# Worker de transcrição do Vorix Meetings (Python 3.10+). O áudio chega já convertido pelo ffmpeg
+# (WAV 16 kHz mono), então o PyAV do faster-whisper não é usado.
+faster-whisper==1.2.1
+numpy>=1.24

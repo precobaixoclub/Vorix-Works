@@ -25,6 +25,8 @@ export type MeetingMediaStoragePort = {
   isPrivateSigned(): boolean;
   putFile(input: { key: string; filePath: string; contentType: string }): Promise<void>;
   signedReadUrl(key: string, ttlSeconds: number): string | undefined;
+  /** Download em streaming para um arquivo local (worker). */
+  downloadToFile(key: string, destinationPath: string): Promise<void>;
   delete(key: string): Promise<void>;
 };
 
@@ -160,6 +162,14 @@ export async function requestRecording(deps: MeetingUseCaseDeps, actor: MeetingA
   return { ok: false, reason: "INVALID_STATE", message: `Esta reunião não pode iniciar gravação no estado atual (${admission.status}).` };
 }
 
+export async function stopMeetingRecording(deps: MeetingUseCaseDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string }): Promise<{ stopRequested: true }> {
+  const meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
+  const requested = await deps.repository.requestRecordingStop({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, actorUserId: actor.userId });
+  if (!requested) throw new MeetingError("MEETING_INVALID_INPUT", "Esta reuniao nao possui uma gravacao ativa para encerrar.");
+  await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, actorUserId: actor.userId, action: "recording.stop_requested" });
+  return { stopRequested: true };
+}
+
 export async function listMeetings(
   deps: MeetingUseCaseDeps,
   actor: MeetingActor,
@@ -247,7 +257,7 @@ export async function uploadMeetingRecording(
   const extension = input.file.fileName.toLowerCase().split(".").pop();
   const storageKey = `meetings/${actor.tenantId}/${input.workspaceId}/${meeting.id}/original-${deps.idGenerator("rec")}.${extension}`;
   await deps.media.putFile({ key: storageKey, filePath: input.file.tempFilePath, contentType: input.file.mimeType });
-  await deps.repository.addRecording({
+  const recording = await deps.repository.addRecording({
     id: deps.idGenerator("mrec"),
     meetingId: meeting.id,
     tenantId: actor.tenantId,
@@ -260,7 +270,7 @@ export async function uploadMeetingRecording(
     originalFileName: input.file.fileName.slice(0, 255),
   });
   await deps.repository.transition({ tenantId: actor.tenantId, meetingId: meeting.id, to: "processing" });
-  await deps.repository.enqueueTranscription({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id });
+  await deps.repository.enqueueTranscription({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, recordingId: recording.id });
   await deps.repository.recordUsage({ tenantId: actor.tenantId, period: meetingUsagePeriod(now), delta: { storageBytes: input.file.bytes } });
   await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, actorUserId: actor.userId, action: "recording.uploaded", details: { bytes: input.file.bytes, mimeType: input.file.mimeType } });
   return requireVisibleMeeting(deps, actor, input.workspaceId, meeting.id);
@@ -298,4 +308,45 @@ export async function getMeetingsDashboard(deps: MeetingUseCaseDeps, actor: Meet
 
 export function limitsFromEntitlement(raw: Readonly<Record<string, number>> | undefined): MeetingsLimits {
   return resolveMeetingsLimits(raw);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Reprocessamento (rodada 2) — sempre por ação explícita, com RBAC na rota.
+// ---------------------------------------------------------------------------------------------
+
+/** Retranscrever: novo job para a gravação mais recente. Idempotente enquanto houver um ativo, e o
+ * resultado SUBSTITUI os segmentos (não duplica). */
+export async function retranscribeMeeting(deps: MeetingUseCaseDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string }): Promise<{ jobId: string; alreadyQueued: boolean }> {
+  const meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
+  const recording = await deps.repository.latestRecording({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id });
+  if (!recording) throw new MeetingError("MEETING_INVALID_INPUT", "Esta reunião não tem gravação disponível para transcrever.");
+  const queued = await deps.repository.enqueueTranscription({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, recordingId: recording.id });
+  if (!queued.alreadyActive) {
+    await deps.repository.reopenForReprocessing({ tenantId: actor.tenantId, meetingId: meeting.id, status: "processing" });
+    await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, actorUserId: actor.userId, action: "transcript.requeued", details: { recordingId: recording.id } });
+  }
+  return { jobId: queued.jobId, alreadyQueued: queued.alreadyActive };
+}
+
+/** Reanalisar: nova análise por IA — consome crédito de novo quando executar de verdade. A análise
+ * anterior continua visível até a nova terminar. */
+export async function reanalyzeMeeting(deps: MeetingUseCaseDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string }): Promise<{ jobId: string; alreadyQueued: boolean }> {
+  const meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
+  if (meeting.transcript?.status !== "completed") throw new MeetingError("MEETING_INVALID_INPUT", "A transcrição precisa estar pronta para gerar a análise.");
+  const queued = await deps.repository.enqueueAnalysis({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id });
+  if (!queued.alreadyActive) {
+    await deps.repository.reopenForReprocessing({ tenantId: actor.tenantId, meetingId: meeting.id, status: "analyzing" });
+    await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, actorUserId: actor.userId, action: "analysis.requeued" });
+  }
+  return { jobId: queued.jobId, alreadyQueued: queued.alreadyActive };
+}
+
+/** Confirmar/descartar um item sugerido pela IA. Confirmar só registra a decisão humana — nada vira
+ * tarefa operacional automaticamente. */
+export async function decideMeetingActionItem(deps: MeetingUseCaseDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string; itemId: string; status: "confirmed" | "dismissed" }) {
+  await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
+  const item = await deps.repository.decideActionItem({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: input.meetingId, itemId: input.itemId, status: input.status, actorUserId: actor.userId });
+  if (!item) throw new MeetingError("MEETING_NOT_FOUND", "Item não encontrado.");
+  await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: input.meetingId, actorUserId: actor.userId, action: `action_item.${input.status}`, details: { itemId: item.id, type: item.type } });
+  return item;
 }

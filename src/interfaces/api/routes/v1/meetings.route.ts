@@ -8,7 +8,10 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
   createMeeting,
+  decideMeetingActionItem,
   deleteMeeting,
+  reanalyzeMeeting,
+  retranscribeMeeting,
   getMeeting,
   getMeetingsDashboard,
   getMeetingTranscript,
@@ -16,6 +19,7 @@ import {
   listMeetings,
   MeetingError,
   requestRecording,
+  stopMeetingRecording,
   updateMeeting,
   uploadMeetingRecording,
   type MeetingActor,
@@ -237,6 +241,17 @@ export async function registerMeetingRoutes(app: FastifyInstance, deps: MeetingR
     }
   });
 
+  app.post("/meetings/:id/recording/stop", { schema: { params: ID_PARAMS, body: WORKSPACE_QUERY }, config: { readOnlyGuard: true } }, async (request) => {
+    const actor = actorOf(request, "meeting:record");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.body as { workspaceId: string };
+    try {
+      return successEnvelope(await stopMeetingRecording(deps, actor, { workspaceId, meetingId: id }), request.id);
+    } catch (error) {
+      translate(error);
+    }
+  });
+
   app.get("/meetings/:id/recordings/:recordingId/playback", { schema: { params: RECORDING_PARAMS, querystring: WORKSPACE_QUERY } }, async (request) => {
     const actor = actorOf(request, "meeting:read");
     const { id, recordingId } = request.params as { id: string; recordingId: string };
@@ -247,6 +262,50 @@ export async function registerMeetingRoutes(app: FastifyInstance, deps: MeetingR
       translate(error);
     }
   });
+
+  // Reprocessamento: explícito, com RBAC (`meeting:analyze` = editor/admin/owner).
+  app.post("/meetings/:id/retranscribe", { schema: { params: ID_PARAMS, body: WORKSPACE_QUERY }, config: { readOnlyGuard: true } }, async (request) => {
+    const actor = actorOf(request, "meeting:analyze");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.body as { workspaceId: string };
+    try {
+      return successEnvelope(await retranscribeMeeting(deps, actor, { workspaceId, meetingId: id }), request.id);
+    } catch (error) {
+      translate(error);
+    }
+  });
+
+  app.post("/meetings/:id/reanalyze", { schema: { params: ID_PARAMS, body: WORKSPACE_QUERY }, config: { readOnlyGuard: true } }, async (request) => {
+    const actor = actorOf(request, "meeting:analyze");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.body as { workspaceId: string };
+    try {
+      return successEnvelope(await reanalyzeMeeting(deps, actor, { workspaceId, meetingId: id }), request.id);
+    } catch (error) {
+      translate(error);
+    }
+  });
+
+  app.patch(
+    "/meetings/:id/action-items/:itemId",
+    {
+      schema: {
+        params: { type: "object", required: ["id", "itemId"], properties: { id: { type: "string", minLength: 1 }, itemId: { type: "string", minLength: 1 } } },
+        body: { type: "object", required: ["workspaceId", "status"], additionalProperties: false, properties: { workspaceId: { type: "string", minLength: 1 }, status: { type: "string", enum: ["confirmed", "dismissed"] } } },
+      },
+      config: { readOnlyGuard: true },
+    },
+    async (request) => {
+      const actor = actorOf(request, "meeting:analyze");
+      const { id, itemId } = request.params as { id: string; itemId: string };
+      const { workspaceId, status } = request.body as { workspaceId: string; status: "confirmed" | "dismissed" };
+      try {
+        return successEnvelope(await decideMeetingActionItem(deps, actor, { workspaceId, meetingId: id, itemId, status }), request.id);
+      } catch (error) {
+        translate(error);
+      }
+    },
+  );
 
   app.get("/meetings/:id/transcript", { schema: { params: ID_PARAMS, querystring: WORKSPACE_QUERY } }, async (request) => {
     const actor = actorOf(request, "meeting:read");

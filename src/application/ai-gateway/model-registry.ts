@@ -49,6 +49,7 @@ export const OPERATION_REQUIRED_CAPABILITY: Record<AiOperation, AiCapability> = 
   embedding_generation: "embeddings",
   inbox_auto_reply: "free_text",
   commercial_copilot_suggestions: "structured_text",
+  meeting_ai_analysis: "structured_text",
 };
 
 const ANTHROPIC_PRICING_2026_01: AiPricingMetadata = {

@@ -33,6 +33,10 @@ export class LocalObjectStorage implements ObjectStoragePort {
     await copyFile(input.filePath, absolutePath);
   }
 
+  async getFile(input: { key: string; destinationPath: string }): Promise<void> {
+    await copyFile(resolveObjectPath(this.rootDir, input.key), input.destinationPath);
+  }
+
   async delete(key: string): Promise<void> {
     const absolutePath = resolveObjectPath(this.rootDir, key);
     await import("node:fs/promises").then((fs) => fs.rm(absolutePath, { force: true }));

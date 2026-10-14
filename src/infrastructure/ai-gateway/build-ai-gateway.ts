@@ -29,6 +29,7 @@ export type BuildAiGatewayOptions = {
      * populada por `api-config.ts`, nunca opcional. */
     commercialCopilotEnabled: boolean;
     anthropicCommercialCopilotModel: string;
+    anthropicMeetingAnalysisModel?: string;
   };
   executionRepository: AiExecutionRepositoryPort;
   telemetry?: AiTelemetryPort;
@@ -53,6 +54,8 @@ function buildBindings(aiConfig: BuildAiGatewayOptions["aiConfig"]): AiOperation
   const bindings: AiOperationModelBindings = {
     briefing_field_extraction: { provider: "anthropic", modelId: aiConfig.anthropicBriefingExtractionModel },
     commercial_copilot_suggestions: { provider: "anthropic", modelId: aiConfig.anthropicCommercialCopilotModel },
+    // Vorix Meetings: modelo próprio (MEETINGS_AI_MODEL), padrão o Haiku já ativo no registro.
+    meeting_ai_analysis: { provider: "anthropic", modelId: aiConfig.anthropicMeetingAnalysisModel ?? "claude-haiku-4-5-20251001" },
   };
   if (aiConfig.anthropicInboxAutoReplyModel) {
     bindings.inbox_auto_reply = { provider: "anthropic", modelId: aiConfig.anthropicInboxAutoReplyModel };

@@ -137,7 +137,11 @@ export function MeetingsCentral({ mode }: { mode: "all" | "recordings" }) {
                       <p className="truncate text-xs text-muted-foreground">{participantsSummary(item)}</p>
                     </TableCell>
                     <TableCell className="whitespace-nowrap tabular-nums">{formatDateTime(meetingWhen(item))}</TableCell>
-                    <TableCell className="tabular-nums">{formatDuration(meetingDurationSeconds(item))}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {item.status === "recording" && (item.recordingStartedAt ?? item.botJoinedAt)
+                        ? `~${formatDuration((Date.now() - Date.parse((item.recordingStartedAt ?? item.botJoinedAt)!)) / 1000)}`
+                        : formatDuration(meetingDurationSeconds(item))}
+                    </TableCell>
                     <TableCell><StatusPill status={item.status} /></TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">{MEETING_SOURCE_LABEL[item.source]}</TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">{item.ownerUserId === myUserId ? "Você" : item.ownerName ?? "—"}</TableCell>

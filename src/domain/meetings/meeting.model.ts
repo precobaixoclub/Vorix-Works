@@ -79,6 +79,10 @@ export type MeetingRecording = {
   mimeType: string;
   bytes: number;
   durationSeconds?: number;
+  videoCodec?: string;
+  audioCodec?: string;
+  width?: number;
+  height?: number;
   checksumSha256: string;
   originalFileName?: string;
   status: "available" | "purged" | "failed";
@@ -107,6 +111,7 @@ export type MeetingTranscriptSegment = {
   endMs: number;
   speaker?: string;
   text: string;
+  confidence?: number;
 };
 
 /** Resultado ESTRUTURADO da análise. Só o que aparece na reunião — a IA nunca inventa ação. */
@@ -125,6 +130,7 @@ export type MeetingAnalysis = {
   id: string;
   status: "completed" | "failed" | "blocked_no_credits";
   result?: MeetingAnalysisResult;
+  actionItems?: MeetingActionItem[];
   creditsCharged: number;
   model?: string;
   error?: string;
@@ -149,6 +155,9 @@ export type Meeting = {
   scheduledEndAt?: string;
   timezone: string;
   autoRecord: boolean;
+  joinBeforeMinutes?: number;
+  joinGraceMinutes?: number;
+  autoRecordOutcome?: string;
   botAccountId?: string;
   botJoinedAt?: string;
   recordingStartedAt?: string;
@@ -177,6 +186,8 @@ export type MeetingDetail = Meeting & {
   recordings: MeetingRecording[];
   transcript?: MeetingTranscriptSummary;
   latestAnalysis?: MeetingAnalysis;
+  /** Último resultado VÁLIDO — continua visível quando a análise mais nova foi bloqueada/falhou. */
+  lastCompletedAnalysis?: MeetingAnalysis;
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -252,3 +263,118 @@ export function parseGoogleMeetUrl(raw: string): string | undefined {
 export function meetingUsagePeriod(date: Date): string {
   return date.toISOString().slice(0, 7);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Fila de processamento (Postgres) — rodada 2.
+// ---------------------------------------------------------------------------------------------
+
+export const MEETING_JOB_KINDS = ["record", "transcribe", "analyze", "purge_media"] as const;
+export type MeetingJobKind = (typeof MEETING_JOB_KINDS)[number];
+
+/** Job reivindicado por um worker. `run_at` = próxima tentativa; lease = `lockedUntil`. */
+export type MeetingJob = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  meetingId: string;
+  recordingId?: string;
+  kind: MeetingJobKind;
+  attempts: number;
+  maxAttempts: number;
+  lockedBy: string;
+  lockedUntil: string;
+};
+
+export const RECORDER_BOT_STATUSES = ["active", "busy", "invalid_session", "disabled", "error"] as const;
+export type RecorderBotStatus = (typeof RECORDER_BOT_STATUSES)[number];
+
+export type RecorderBotAccount = {
+  id: string;
+  label: string;
+  googleEmail: string;
+  displayName: string;
+  status: RecorderBotStatus;
+  credentialSecretRef?: string;
+  hasEncryptedSessionState: boolean;
+  currentMeetingId?: string;
+  currentRecordingId?: string;
+  currentTenantId?: string;
+  lastUsedAt?: string;
+  lastHealthCheckAt?: string;
+  lastError?: string;
+  health: Record<string, unknown>;
+  consecutiveFailures: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const RECORDER_RUN_STATES = ["starting", "waiting_admission", "recording", "processing", "completed", "failed", "cancelled"] as const;
+export type RecorderRunState = (typeof RECORDER_RUN_STATES)[number];
+
+export type RecorderRun = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  meetingId: string;
+  recordingId?: string;
+  jobId: string;
+  botAccountId: string;
+  workerId: string;
+  state: RecorderRunState;
+  browserPid?: number;
+  ffmpegPid?: number;
+  display?: string;
+  audioSink?: string;
+  tempDir?: string;
+  startedAt: string;
+  heartbeatAt?: string;
+  actualJoinedAt?: string;
+  endedAt?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  ffmpegExitCode?: number;
+  browserExitReason?: string;
+  bytesProduced?: number;
+  durationSeconds?: number;
+  metrics: Record<string, unknown>;
+};
+
+/** Backoff entre tentativas de um job que falhou (30 s, 2 min, 8 min…, teto de 30 min). */
+export function meetingJobRetryDelayMs(attempts: number): number {
+  return Math.min(30 * 60_000, 30_000 * 4 ** Math.max(0, attempts - 1));
+}
+
+export type TranscriptionSegmentInput = { startMs: number; endMs: number; text: string; speaker?: string; confidence?: number };
+
+export type TranscriptionResult = {
+  language: string;
+  engine: string;
+  model: string;
+  durationSeconds: number;
+  processingMs: number;
+  segments: TranscriptionSegmentInput[];
+  /** Medições do processamento (RTF, memória, CPU) — base para dimensionar o worker. */
+  metrics: Record<string, number | string>;
+};
+
+// ---------------------------------------------------------------------------------------------
+// Itens estruturados da análise de IA. Nada vira tarefa real sem confirmação humana.
+// ---------------------------------------------------------------------------------------------
+
+export const MEETING_ACTION_ITEM_TYPES = ["decision", "task", "next_step"] as const;
+export type MeetingActionItemType = (typeof MEETING_ACTION_ITEM_TYPES)[number];
+
+export type MeetingActionItem = {
+  id: string;
+  analysisId: string;
+  type: MeetingActionItemType;
+  description: string;
+  assigneeName?: string;
+  dueDate?: string;
+  sourceTimestampMs?: number;
+  confidence?: number;
+  status: "suggested" | "confirmed" | "dismissed";
+};
+
+/** Janela de entrada do gravador (preparação de auto-gravação; padrões configuráveis no worker). */
+export type AutoRecordWindow = { joinBeforeMinutes: number; joinGraceMinutes: number };

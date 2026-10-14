@@ -1,121 +1,79 @@
-import type { CalendarConnection } from "../../domain/calendar/calendar.model.js";
+import type { CalendarConnection, CalendarSyncLogEntry } from "../../domain/calendar/calendar.model.js";
 import type { CalendarConnectionRepositoryPort } from "../ports/calendar-connection-repository.port.js";
-import { pushPendingSystemEventsForConnection, syncFullForConnection, syncIncrementalForConnection, type CalendarSyncApiPort, type CalendarSyncUseCaseDeps } from "./calendar-sync-use-cases.js";
 
-/** OAuth por usuário (seção 2 do relatório) — interface mínima local, mesmo racional de
- * `CalendarSyncOAuthPort`: nunca importa a classe concreta de `infrastructure/`. */
-export type CalendarOAuthPort = {
+/** OAuth do Google Calendar, implementado em `infrastructure/calendar` (injetado via DI). */
+export type GoogleCalendarAuthPort = {
   isConfigured(): boolean;
-  begin(input: { tenantId: string; workspaceId: string; userId: string }): { authorizationUrl: string; state: string };
+  begin(input: { tenantId: string; workspaceId: string; userId: string }): { authorizationUrl: string };
+  verifyState(state: string): { tenantId: string; workspaceId: string; userId: string };
   complete(input: { state: string; code: string }): Promise<CalendarConnection>;
   disconnect(input: { tenantId: string; workspaceId: string; userId: string }): Promise<void>;
-  getValidAccessToken(input: { tenantId: string; workspaceId: string; userId: string }): Promise<string | undefined>;
 };
 
-export type CalendarConnectionUseCaseDeps = CalendarSyncUseCaseDeps & {
-  calendarConnectionRepository?: CalendarConnectionRepositoryPort;
-  googleCalendarOAuthService?: CalendarOAuthPort;
-  googleCalendarApiClient?: CalendarSyncApiPort;
+export type CalendarConnectionDeps = {
+  connections: CalendarConnectionRepositoryPort;
+  auth: GoogleCalendarAuthPort;
+  now: () => Date;
 };
 
-function requireConnectionDeps(deps: CalendarConnectionUseCaseDeps): { calendarConnectionRepository: CalendarConnectionRepositoryPort; googleCalendarOAuthService: CalendarOAuthPort; googleCalendarApiClient: CalendarSyncApiPort } {
-  if (!deps.calendarConnectionRepository || !deps.googleCalendarOAuthService || !deps.googleCalendarApiClient) {
-    throw new Error("CALENDAR_SYNC_NOT_CONFIGURED: sincronização com Google Calendar não está disponível neste ambiente.");
-  }
-  return { calendarConnectionRepository: deps.calendarConnectionRepository, googleCalendarOAuthService: deps.googleCalendarOAuthService, googleCalendarApiClient: deps.googleCalendarApiClient };
+export type CalendarConnectionActor = { tenantId: string; userId: string };
+
+export type GoogleCalendarStatus = {
+  configured: boolean;
+  status: "not_connected" | "connected" | "reconnect_required" | "disconnected";
+  googleEmail?: string;
+  lastSyncedAt?: string;
+  lastErrorMessage?: string;
+  lastErrorAt?: string;
+  nextSyncAt?: string;
+};
+
+export async function getGoogleCalendarStatus(deps: CalendarConnectionDeps, actor: CalendarConnectionActor, input: { workspaceId: string }): Promise<GoogleCalendarStatus> {
+  const connection = await deps.connections.getByUser({ tenantId: actor.tenantId, workspaceId: input.workspaceId, userId: actor.userId });
+  const configured = deps.auth.isConfigured();
+  if (!connection) return { configured, status: "not_connected" };
+  return {
+    configured,
+    status: connection.status === "connected" ? "connected" : connection.status === "error" ? "reconnect_required" : "disconnected",
+    ...(connection.googleEmail ? { googleEmail: connection.googleEmail } : {}),
+    ...(connection.lastSyncedAt ? { lastSyncedAt: connection.lastSyncedAt } : {}),
+    ...(connection.lastErrorMessage ? { lastErrorMessage: connection.lastErrorMessage } : {}),
+    ...(connection.lastErrorAt ? { lastErrorAt: connection.lastErrorAt } : {}),
+    ...(connection.nextSyncAt ? { nextSyncAt: connection.nextSyncAt } : {}),
+  };
 }
 
-export type BeginCalendarOAuthInput = { tenantId: string; workspaceId: string; userId: string };
-
-export function beginCalendarOAuth(deps: CalendarConnectionUseCaseDeps, input: BeginCalendarOAuthInput): { authorizationUrl: string; state: string } {
-  const { googleCalendarOAuthService } = requireConnectionDeps(deps);
-  if (!googleCalendarOAuthService.isConfigured()) throw new Error("CALENDAR_OAUTH_NOT_CONFIGURED: integração com Google Calendar não está configurada neste ambiente.");
-  return googleCalendarOAuthService.begin(input);
+export function beginGoogleCalendarConnect(deps: CalendarConnectionDeps, actor: CalendarConnectionActor, input: { workspaceId: string }): { authorizationUrl: string } {
+  return deps.auth.begin({ tenantId: actor.tenantId, workspaceId: input.workspaceId, userId: actor.userId });
 }
 
-export type CompleteCalendarOAuthInput = { state: string; code: string };
-
-/** Pós-callback (seção 2.2 do relatório): carga completa + reenvio de pendências criadas antes da
- * conexão existir — tudo síncrono aqui (o próprio callback HTTP já é best-effort/redirect, sem
- * requisito de latência baixa como um endpoint de UI comum). */
-export async function completeCalendarOAuth(deps: CalendarConnectionUseCaseDeps, input: CompleteCalendarOAuthInput): Promise<CalendarConnection> {
-  const { googleCalendarOAuthService } = requireConnectionDeps(deps);
-  const connection = await googleCalendarOAuthService.complete(input);
-  await syncFullForConnection(deps, connection.id).catch(() => undefined);
-  await pushPendingSystemEventsForConnection(deps, connection.id).catch(() => undefined);
-  return connection;
+/** Conclui o OAuth. O `state` assinado precisa ser da MESMA pessoa logada (nunca conecta a conta
+ * Google de alguém na Agenda de outra pessoa). */
+export async function completeGoogleCalendarConnect(deps: CalendarConnectionDeps, actor: CalendarConnectionActor, input: { state: string; code: string }): Promise<GoogleCalendarStatus> {
+  const owner = deps.auth.verifyState(input.state);
+  if (owner.tenantId !== actor.tenantId || owner.userId !== actor.userId) throw new Error("CALENDAR_OAUTH_STATE_INVALID: esta autorização foi iniciada por outra conta.");
+  const connection = await deps.auth.complete(input);
+  await deps.connections.log({ tenantId: connection.tenantId, workspaceId: connection.workspaceId, connectionId: connection.id, direction: "auth", action: "connect", status: "ok" });
+  return getGoogleCalendarStatus(deps, actor, { workspaceId: owner.workspaceId });
 }
 
-export type GetCalendarConnectionStatusInput = { tenantId: string; workspaceId: string; userId: string };
-
-export type CalendarConnectionStatus = { connected: boolean; configured: boolean; connection?: CalendarConnection };
-
-export async function getCalendarConnectionStatus(deps: CalendarConnectionUseCaseDeps, input: GetCalendarConnectionStatusInput): Promise<CalendarConnectionStatus> {
-  const configured = deps.googleCalendarOAuthService?.isConfigured() ?? false;
-  if (!deps.calendarConnectionRepository) return { connected: false, configured };
-  const connection = await deps.calendarConnectionRepository.getByUser(input);
-  return { connected: connection?.status === "connected", configured, connection };
+export async function disconnectGoogleCalendar(deps: CalendarConnectionDeps, actor: CalendarConnectionActor, input: { workspaceId: string }): Promise<GoogleCalendarStatus> {
+  const owner = { tenantId: actor.tenantId, workspaceId: input.workspaceId, userId: actor.userId };
+  const connection = await deps.connections.getByUser(owner);
+  await deps.auth.disconnect(owner);
+  if (connection) await deps.connections.log({ tenantId: owner.tenantId, workspaceId: owner.workspaceId, connectionId: connection.id, direction: "auth", action: "disconnect", status: "ok" });
+  return getGoogleCalendarStatus(deps, actor, input);
 }
 
-export type ListGoogleCalendarsInput = { tenantId: string; workspaceId: string; userId: string };
-
-export async function listGoogleCalendars(deps: CalendarConnectionUseCaseDeps, input: ListGoogleCalendarsInput): Promise<{ id: string; summary: string; primary?: boolean }[]> {
-  const { googleCalendarOAuthService, googleCalendarApiClient } = requireConnectionDeps(deps);
-  const accessToken = await googleCalendarOAuthService.getValidAccessToken(input);
-  if (!accessToken) throw new Error("CALENDAR_NOT_CONNECTED: conecte sua conta Google antes de listar calendários.");
-  return googleCalendarApiClient.listCalendars({ accessToken });
+/** "Sincronizar agora": antecipa o próximo ciclo do worker (não sincroniza dentro da requisição). */
+export async function requestGoogleCalendarSync(deps: CalendarConnectionDeps, actor: CalendarConnectionActor, input: { workspaceId: string }): Promise<GoogleCalendarStatus> {
+  const connection = await deps.connections.getByUser({ tenantId: actor.tenantId, workspaceId: input.workspaceId, userId: actor.userId });
+  if (connection?.status === "connected") await deps.connections.update(connection.id, { nextSyncAt: deps.now().toISOString() });
+  return getGoogleCalendarStatus(deps, actor, input);
 }
 
-export type UpdateSelectedCalendarInput = { tenantId: string; workspaceId: string; userId: string; calendarId: string };
-
-/** Trocar o calendário selecionado reseta `syncToken` (seção 2.3 do relatório: obriga uma carga
- * completa do calendário novo, já que o token antigo é escopado ao calendário anterior). */
-export async function updateSelectedCalendar(deps: CalendarConnectionUseCaseDeps, input: UpdateSelectedCalendarInput): Promise<CalendarConnection> {
-  const { calendarConnectionRepository } = requireConnectionDeps(deps);
-  const connection = await calendarConnectionRepository.getByUser(input);
-  if (!connection) throw new Error("CALENDAR_NOT_CONNECTED: conecte sua conta Google antes de trocar o calendário.");
-  const updated = await calendarConnectionRepository.update(connection.id, { calendarId: input.calendarId, syncToken: null });
-  await syncFullForConnection(deps, connection.id).catch(() => undefined);
-  return updated;
-}
-
-export type SetAutoSyncInput = { tenantId: string; workspaceId: string; userId: string; autoSyncEnabled: boolean };
-
-export async function setCalendarAutoSync(deps: CalendarConnectionUseCaseDeps, input: SetAutoSyncInput): Promise<CalendarConnection> {
-  const { calendarConnectionRepository } = requireConnectionDeps(deps);
-  const connection = await calendarConnectionRepository.getByUser(input);
-  if (!connection) throw new Error("CALENDAR_NOT_CONNECTED: conecte sua conta Google antes de alterar a sincronização automática.");
-  return calendarConnectionRepository.update(connection.id, { autoSyncEnabled: input.autoSyncEnabled });
-}
-
-export type SyncCalendarNowInput = { tenantId: string; workspaceId: string; userId: string };
-
-export async function syncCalendarNow(deps: CalendarConnectionUseCaseDeps, input: SyncCalendarNowInput): Promise<CalendarConnection> {
-  const { calendarConnectionRepository } = requireConnectionDeps(deps);
-  const connection = await calendarConnectionRepository.getByUser(input);
-  if (!connection) throw new Error("CALENDAR_NOT_CONNECTED: conecte sua conta Google antes de sincronizar.");
-  await syncIncrementalForConnection(deps, connection.id);
-  await pushPendingSystemEventsForConnection(deps, connection.id).catch(() => undefined);
-  return (await calendarConnectionRepository.getById(connection.id))!;
-}
-
-export type DisconnectCalendarInput = { tenantId: string; workspaceId: string; userId: string };
-
-/** Nunca apaga `CalendarEvent`s já sincronizados — ficam "congelados" (seção 2.8 do relatório).
- * Novos eventos `system` simplesmente não encontram conta `connected` e ficam só locais. */
-export async function disconnectCalendar(deps: CalendarConnectionUseCaseDeps, input: DisconnectCalendarInput): Promise<void> {
-  const { googleCalendarOAuthService } = requireConnectionDeps(deps);
-  await googleCalendarOAuthService.disconnect(input);
-}
-
-/** Chamado pelo worker cron (~2min) — varre contas devidas e sincroniza (seção 2.3 do relatório).
- * Best-effort por conta: uma falha isolada nunca impede as demais. */
-export async function runDueCalendarSyncs(deps: CalendarConnectionUseCaseDeps, batchSize: number): Promise<{ checked: number }> {
-  const { calendarConnectionRepository } = requireConnectionDeps(deps);
-  const due = await calendarConnectionRepository.listDueForSync(batchSize);
-  for (const connection of due) {
-    await syncIncrementalForConnection(deps, connection.id).catch(() => undefined);
-    await pushPendingSystemEventsForConnection(deps, connection.id).catch(() => undefined);
-  }
-  return { checked: due.length };
+export async function listGoogleCalendarSyncLog(deps: CalendarConnectionDeps, actor: CalendarConnectionActor, input: { workspaceId: string; limit?: number }): Promise<(CalendarSyncLogEntry & { createdAt: string })[]> {
+  const connection = await deps.connections.getByUser({ tenantId: actor.tenantId, workspaceId: input.workspaceId, userId: actor.userId });
+  if (!connection) return [];
+  return deps.connections.listLog({ tenantId: actor.tenantId, connectionId: connection.id, limit: Math.min(Math.max(input.limit ?? 50, 1), 200) });
 }

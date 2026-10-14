@@ -52,3 +52,19 @@ export const COMMERCIAL_COPILOT_SUGGESTIONS_POLICY: AiPolicy = {
   sensitiveDataPolicy: "strict",
   providerFallbackAllowed: false,
 };
+
+/** Política de `meeting_ai_analysis` — Vorix Meetings. Entrada grande (transcrição inteira de uma
+ * reunião de até ~1h30), temperatura baixa (registro fiel, não criação), saída estruturada. Uma
+ * transcrição acima do limite FALHA com motivo explícito — nunca é truncada em silêncio (cortar o
+ * fim da reunião faria a análise omitir decisões sem avisar). */
+export const MEETING_AI_ANALYSIS_POLICY: AiPolicy = {
+  preferredCapability: "structured_text",
+  maxInputTokens: 60_000,
+  maxOutputTokens: 4_000,
+  timeoutMs: 90_000,
+  retryPolicy: DEFAULT_AI_RETRY_POLICY,
+  temperature: 0.1,
+  structuredOutputRequired: true,
+  sensitiveDataPolicy: "strict",
+  providerFallbackAllowed: false,
+};

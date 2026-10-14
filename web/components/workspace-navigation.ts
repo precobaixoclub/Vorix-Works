@@ -38,6 +38,8 @@ const CREATE_NAV_ITEM: WorkspaceNavItem = { href: "/create", label: "Criar", ico
 const MEETINGS_HOME: WorkspaceNavItem = { href: "/meetings", label: "Início", icon: "home" };
 const MEETINGS_CENTRAL: WorkspaceNavItem = { href: "/meetings/central", label: "Reuniões", icon: "meetings" };
 const MEETINGS_RECORDINGS: WorkspaceNavItem = { href: "/meetings/recordings", label: "Gravações", icon: "recordings" };
+const MEETINGS_AGENDA: WorkspaceNavItem = { href: "/meetings/agenda", label: "Agenda", icon: "calendar" };
+const MEETINGS_INTEGRATIONS: WorkspaceNavItem = { href: "/meetings/integrations", label: "Integrações", icon: "connections" };
 
 const MARKETING_BACKSTAGE: readonly WorkspaceNavItem[] = [
   { href: "/planning", label: "Planejamento", icon: "planning" },
@@ -103,13 +105,15 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
       },
     ],
   },
-  // Vorix Meetings — só o que já existe de verdade (Agenda e Integrações entram quando prontas).
   meetings: {
     home: MEETINGS_HOME,
-    sections: [{ label: "REUNIÕES", items: [MEETINGS_CENTRAL, MEETINGS_RECORDINGS] }],
+    sections: [
+      { label: "REUNIÕES", items: [MEETINGS_AGENDA, MEETINGS_CENTRAL, MEETINGS_RECORDINGS] },
+      { label: "CONEXÕES", items: [MEETINGS_INTEGRATIONS] },
+    ],
     backstage: [],
-    mobilePrimary: [MEETINGS_HOME, MEETINGS_CENTRAL, MEETINGS_RECORDINGS],
-    mobileMenu: [{ label: "Conta", items: [{ href: "/settings", label: "Configurações", icon: "settings" }] }],
+    mobilePrimary: [MEETINGS_HOME, MEETINGS_AGENDA, MEETINGS_CENTRAL, MEETINGS_RECORDINGS],
+    mobileMenu: [{ label: "Conexões", items: [MEETINGS_INTEGRATIONS] }, { label: "Conta", items: [{ href: "/settings", label: "Configurações", icon: "settings" }] }],
   },
   marketing: {
     home: MARKETING_HOME,

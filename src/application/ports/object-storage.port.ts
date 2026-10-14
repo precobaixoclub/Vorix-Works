@@ -28,4 +28,6 @@ export type ObjectStoragePort = {
    * passam inteiras pela memória da API). SEMPRE privado — sem ACL pública, mesmo que o adapter
    * tenha uma configurada para `put`. Opcional para adapters de teste. */
   putFile?(input: { key: string; filePath: string; contentType: string }): Promise<void>;
+  /** Copia o objeto para um arquivo local em streaming (worker de transcrição). */
+  getFile?(input: { key: string; destinationPath: string }): Promise<void>;
 };

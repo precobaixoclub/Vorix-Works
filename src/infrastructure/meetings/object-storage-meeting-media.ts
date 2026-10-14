@@ -24,6 +24,11 @@ export class ObjectStorageMeetingMedia implements MeetingMediaStoragePort {
     return signObjectKey(key, ttlSeconds);
   }
 
+  async downloadToFile(key: string, destinationPath: string): Promise<void> {
+    if (!this.storage.getFile) throw new Error("MEETING_STORAGE_UNAVAILABLE: storage sem leitura por arquivo.");
+    await this.storage.getFile({ key, destinationPath });
+  }
+
   async delete(key: string): Promise<void> {
     await this.storage.delete(key);
   }

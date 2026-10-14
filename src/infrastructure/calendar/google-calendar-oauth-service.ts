@@ -1,4 +1,5 @@
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import type { AccessTokenResult, CalendarSyncOAuthPort } from "../../application/calendar/calendar-sync-use-cases.js";
 import type { CalendarConnectionRepositoryPort } from "../../application/ports/calendar-connection-repository.port.js";
 import type { SecretManagerPort } from "../../application/ports/secret-manager.port.js";
 import type { CalendarConnection } from "../../domain/calendar/calendar.model.js";
@@ -16,25 +17,30 @@ export type GoogleCalendarOAuthConfig = {
 
 export type GoogleCalendarTokenSet = { accessToken: string; refreshToken?: string; scope?: string; expiresIn?: number };
 
-type PendingState = { state: string; tenantId: string; workspaceId: string; userId: string; expiresAt: string };
+/** Escopos mínimos: ler/escrever EVENTOS (não a lista de agendas) + e-mail da conta conectada. */
+export const GOOGLE_CALENDAR_REQUIRED_SCOPES = ["https://www.googleapis.com/auth/calendar.events", "openid", "email"] as const;
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
-/**
- * OAuth por USUÁRIO (nunca uma conta corporativa central — seção 0 do relatório do usuário,
- * diferença deliberada em relação ao padrão `<provider>:<tenantId>:<workspaceId>:<subjectId>` já
- * usado por YouTube/TikTok/Meta, que são por TENANT+WORKSPACE). Mesma pilha de armazenamento
- * (`SecretManagerPort` genérico, AES-256-GCM em repouso via `PostgresSecretManager`) — nunca um
- * secret store novo. Referência: `calendar:<tenantId>:<workspaceId>:<userId>`.
- */
-export class GoogleCalendarOAuthService {
-  private readonly states = new Map<string, PendingState>();
+/** Falha de refresh que exige reconexão (token revogado/inválido) — nunca uma falha transitória. */
+export class GoogleCalendarAuthRevokedError extends Error {}
 
+/**
+ * OAuth do Google Calendar POR USUÁRIO. Tokens no `SecretManagerPort` genérico do Core
+ * (AES-256-GCM em repouso), referência `calendar:<tenant>:<workspace>:<user>` — nunca um secret
+ * store novo.
+ *
+ * O `state` OAuth é ASSINADO (HMAC, comparação em tempo constante) e carrega quem pediu e quando
+ * expira — não depende de memória do processo, então funciona com várias réplicas da API e
+ * depois de um restart (o mapa em memória herdado do CMDesk não funcionava).
+ */
+export class GoogleCalendarOAuthService implements CalendarSyncOAuthPort {
   constructor(
     private readonly input: {
       config: GoogleCalendarOAuthConfig;
       connectionRepository: CalendarConnectionRepositoryPort;
       secretManager: SecretManagerPort;
+      stateSigningKey: Buffer;
       httpClient?: typeof fetch;
       now?: () => Date;
     },
@@ -45,72 +51,64 @@ export class GoogleCalendarOAuthService {
     return Boolean(enabled && clientId && clientSecret && redirectUri);
   }
 
-  begin(input: { tenantId: string; workspaceId: string; userId: string }): { authorizationUrl: string; state: string } {
+  begin(input: { tenantId: string; workspaceId: string; userId: string }): { authorizationUrl: string } {
     this.assertConfigured();
-    const now = this.now();
-    this.pruneExpiredStates(now);
-    const state = randomBytes(24).toString("base64url");
-    this.states.set(state, { state, tenantId: input.tenantId, workspaceId: input.workspaceId, userId: input.userId, expiresAt: new Date(now.getTime() + STATE_TTL_MS).toISOString() });
-
+    const payload = Buffer.from(JSON.stringify({ t: input.tenantId, w: input.workspaceId, u: input.userId, e: this.now().getTime() + STATE_TTL_MS, n: randomBytes(8).toString("hex") })).toString("base64url");
+    const state = `${payload}.${this.sign(payload)}`;
     const url = new URL(`${this.authBaseUrl()}/o/oauth2/v2/auth`);
     url.searchParams.set("client_id", this.input.config.clientId!);
     url.searchParams.set("redirect_uri", this.input.config.redirectUri!);
     url.searchParams.set("response_type", "code");
-    url.searchParams.set("scope", this.input.config.scopes.join(" "));
+    url.searchParams.set("scope", (this.input.config.scopes.length ? this.input.config.scopes : GOOGLE_CALENDAR_REQUIRED_SCOPES).join(" "));
     url.searchParams.set("state", state);
-    // access_type=offline + prompt=consent — garante refresh_token mesmo numa reconexão (seção
-    // 2.2 do relatório do usuário: sem isto, o Google só devolve refresh_token na PRIMEIRA vez).
+    // offline + consent: garante refresh_token também numa reconexão.
     url.searchParams.set("access_type", "offline");
     url.searchParams.set("prompt", "consent");
-    return { authorizationUrl: url.toString(), state };
+    url.searchParams.set("include_granted_scopes", "true");
+    return { authorizationUrl: url.toString() };
+  }
+
+  /** Valida o `state` e devolve quem iniciou o fluxo. O chamador confere que é a MESMA pessoa logada. */
+  verifyState(state: string): { tenantId: string; workspaceId: string; userId: string } {
+    const [payload, signature] = state.split(".");
+    if (!payload || !signature) throw new Error("CALENDAR_OAUTH_STATE_INVALID: state inválido.");
+    const expected = Buffer.from(this.sign(payload));
+    const given = Buffer.from(signature);
+    if (expected.length !== given.length || !timingSafeEqual(expected, given)) throw new Error("CALENDAR_OAUTH_STATE_INVALID: state inválido.");
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { t: string; w: string; u: string; e: number };
+    if (typeof data.e !== "number" || data.e < this.now().getTime()) throw new Error("CALENDAR_OAUTH_STATE_INVALID: state expirado — conecte de novo.");
+    return { tenantId: data.t, workspaceId: data.w, userId: data.u };
   }
 
   async complete(input: { state: string; code: string }): Promise<CalendarConnection> {
     this.assertConfigured();
-    const pending = this.states.get(input.state);
-    if (!pending || pending.expiresAt <= this.now().toISOString()) {
-      this.states.delete(input.state);
-      throw new Error("CALENDAR_OAUTH_STATE_INVALID: state OAuth inválido ou expirado.");
-    }
-    this.states.delete(input.state);
-
-    const tokens = await this.exchangeCode(input.code);
+    const owner = this.verifyState(input.state);
+    const tokens = await this.tokenRequest({ grant_type: "authorization_code", code: input.code, redirect_uri: this.input.config.redirectUri! });
+    if (!tokens.refreshToken) throw new Error("CALENDAR_OAUTH_NO_REFRESH_TOKEN: o Google não devolveu acesso offline — conecte de novo autorizando o acesso.");
     const profile = await this.fetchProfile(tokens.accessToken);
-
-    await this.persistTokens({ tenantId: pending.tenantId, workspaceId: pending.workspaceId, userId: pending.userId, tokens });
-    return this.input.connectionRepository.upsert({
-      tenantId: pending.tenantId,
-      workspaceId: pending.workspaceId,
-      userId: pending.userId,
-      googleEmail: profile.email,
-      status: "connected",
-    });
+    await this.persistTokens(owner, tokens);
+    return this.input.connectionRepository.upsert({ ...owner, ...(profile.email ? { googleEmail: profile.email } : {}), status: "connected" });
   }
 
-  /** Devolve um access token VÁLIDO, refrescando primeiro se necessário (nunca deixa o chamador
-   * lidar com expiração). `undefined` = sem conexão/tokens — chamador trata como "não conectado". */
-  async getValidAccessToken(input: { tenantId: string; workspaceId: string; userId: string }): Promise<string | undefined> {
-    if (!this.isConfigured()) return undefined;
+  /**
+   * Access token válido (renova com folga de 60 s). Refresh recusado pelo Google (`invalid_grant`,
+   * 400/401) = token revogado → `revoked` (a conexão precisa ser refeita). Rede/5xx = `transient`
+   * (tenta de novo no próximo ciclo, sem derrubar a conexão).
+   */
+  async getAccessToken(input: { tenantId: string; workspaceId: string; userId: string }): Promise<AccessTokenResult> {
+    if (!this.isConfigured()) return { ok: false, reason: "not_configured", message: "Google Calendar não está configurado neste servidor." };
     const secret = await this.input.secretManager.get(this.reference(input));
     const refreshToken = secret?.value.refreshToken;
-    if (!refreshToken) return undefined;
-
+    if (!refreshToken) return { ok: false, reason: "revoked", message: "Google Calendar precisa ser reconectado." };
     const expiresAt = secret?.expiresAt ? new Date(secret.expiresAt).getTime() : 0;
-    // Refresca com folga de 60s antes de expirar de verdade (mesmo racional do relatório, seção 2.2).
-    if (secret?.value.accessToken && expiresAt - this.now().getTime() > 60_000) {
-      return secret.value.accessToken;
-    }
-
+    if (secret?.value.accessToken && expiresAt - this.now().getTime() > 60_000) return { ok: true, accessToken: secret.value.accessToken };
     try {
       const tokens = await this.tokenRequest({ grant_type: "refresh_token", refresh_token: refreshToken });
-      await this.persistTokens({ ...input, tokens: { ...tokens, refreshToken: tokens.refreshToken ?? refreshToken } });
-      return tokens.accessToken;
+      await this.persistTokens(input, { ...tokens, refreshToken: tokens.refreshToken ?? refreshToken });
+      return { ok: true, accessToken: tokens.accessToken };
     } catch (error) {
-      const connection = await this.input.connectionRepository.getByUser(input);
-      if (connection) {
-        await this.input.connectionRepository.update(connection.id, { status: "error", lastErrorMessage: error instanceof Error ? error.message : "Falha ao renovar token." });
-      }
-      return undefined;
+      if (error instanceof GoogleCalendarAuthRevokedError) return { ok: false, reason: "revoked", message: "Google Calendar precisa ser reconectado." };
+      return { ok: false, reason: "transient", message: error instanceof Error ? error.message : "Falha ao renovar o acesso ao Google." };
     }
   }
 
@@ -119,28 +117,19 @@ export class GoogleCalendarOAuthService {
     const token = secret?.value.refreshToken ?? secret?.value.accessToken;
     if (token && this.isConfigured()) await this.revokeToken(token).catch(() => undefined);
     await this.input.secretManager.delete(this.reference(input));
-
     const connection = await this.input.connectionRepository.getByUser(input);
-    if (connection) {
-      await this.input.connectionRepository.update(connection.id, {
-        status: "disconnected",
-        syncToken: null,
-        lastErrorMessage: null,
-      });
-    }
+    if (connection) await this.input.connectionRepository.update(connection.id, { status: "disconnected", syncToken: null, lastErrorMessage: null, nextSyncAt: null });
   }
 
-  private async persistTokens(input: { tenantId: string; workspaceId: string; userId: string; tokens: GoogleCalendarTokenSet }): Promise<void> {
-    const now = this.now();
-    const expiresAt = input.tokens.expiresIn ? new Date(now.getTime() + input.tokens.expiresIn * 1000).toISOString() : undefined;
-    await this.input.secretManager.put(this.reference(input), {
-      value: definedStrings({ accessToken: input.tokens.accessToken, refreshToken: input.tokens.refreshToken }),
-      expiresAt,
-    });
+  private sign(payload: string): string {
+    return createHmac("sha256", this.input.stateSigningKey).update(`gcal-state:v1:${payload}`).digest("base64url");
   }
 
-  private async exchangeCode(code: string): Promise<GoogleCalendarTokenSet> {
-    return this.tokenRequest({ grant_type: "authorization_code", code, redirect_uri: this.input.config.redirectUri! });
+  private async persistTokens(owner: { tenantId: string; workspaceId: string; userId: string }, tokens: GoogleCalendarTokenSet): Promise<void> {
+    const expiresAt = tokens.expiresIn ? new Date(this.now().getTime() + tokens.expiresIn * 1000).toISOString() : undefined;
+    const value: Record<string, string> = { accessToken: tokens.accessToken };
+    if (tokens.refreshToken) value.refreshToken = tokens.refreshToken;
+    await this.input.secretManager.put(this.reference(owner), { value, ...(expiresAt ? { expiresAt } : {}) });
   }
 
   private async tokenRequest(fields: Record<string, string>): Promise<GoogleCalendarTokenSet> {
@@ -150,22 +139,22 @@ export class GoogleCalendarOAuthService {
       body: new URLSearchParams({ client_id: this.input.config.clientId!, client_secret: this.input.config.clientSecret!, ...fields }),
     });
     const json = (await safeJson(response)) as { access_token?: string; refresh_token?: string; scope?: string; expires_in?: number; error?: string; error_description?: string };
-    if (!response.ok || !json.access_token) throw new Error(`CALENDAR_OAUTH_TOKEN_FAILED: ${json.error_description ?? json.error ?? `HTTP ${response.status}`}`);
-    return { accessToken: json.access_token, refreshToken: json.refresh_token, scope: json.scope, expiresIn: json.expires_in };
+    if (!response.ok || !json.access_token) {
+      const message = `CALENDAR_OAUTH_TOKEN_FAILED: ${json.error_description ?? json.error ?? `HTTP ${response.status}`}`;
+      if (json.error === "invalid_grant" || response.status === 400 || response.status === 401) throw new GoogleCalendarAuthRevokedError(message);
+      throw new Error(message);
+    }
+    return { accessToken: json.access_token, ...(json.refresh_token ? { refreshToken: json.refresh_token } : {}), ...(json.scope ? { scope: json.scope } : {}), ...(json.expires_in ? { expiresIn: json.expires_in } : {}) };
   }
 
   private async fetchProfile(accessToken: string): Promise<{ email?: string }> {
     const response = await this.http()(`${this.userInfoBaseUrl()}/oauth2/v3/userinfo`, { headers: { Authorization: `Bearer ${accessToken}` } });
     const json = (await safeJson(response)) as { email?: string };
-    return { email: json.email };
+    return json.email ? { email: json.email } : {};
   }
 
   private async revokeToken(token: string): Promise<void> {
-    await this.http()(`${this.tokenBaseUrl()}/revoke`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ token }),
-    });
+    await this.http()(`${this.tokenBaseUrl()}/revoke`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token }) });
   }
 
   private reference(input: { tenantId: string; workspaceId: string; userId: string }): string {
@@ -173,14 +162,7 @@ export class GoogleCalendarOAuthService {
   }
 
   private assertConfigured(): void {
-    if (!this.isConfigured()) throw new Error("CALENDAR_OAUTH_NOT_CONFIGURED: defina GOOGLE_CALENDAR_CLIENT_ID, GOOGLE_CALENDAR_CLIENT_SECRET e GOOGLE_CALENDAR_OAUTH_REDIRECT_URI.");
-  }
-
-  private pruneExpiredStates(now: Date): void {
-    const nowIso = now.toISOString();
-    for (const [key, value] of this.states) {
-      if (value.expiresAt <= nowIso) this.states.delete(key);
-    }
+    if (!this.isConfigured()) throw new Error("CALENDAR_OAUTH_NOT_CONFIGURED: defina GOOGLE_CALENDAR_ENABLED, GOOGLE_CALENDAR_CLIENT_ID, GOOGLE_CALENDAR_CLIENT_SECRET e GOOGLE_CALENDAR_OAUTH_REDIRECT_URI.");
   }
 
   private authBaseUrl(): string {
@@ -202,16 +184,6 @@ export class GoogleCalendarOAuthService {
   private now(): Date {
     return this.input.now?.() ?? new Date();
   }
-}
-
-export const GOOGLE_CALENDAR_REQUIRED_SCOPES = [
-  "https://www.googleapis.com/auth/calendar.events",
-  "https://www.googleapis.com/auth/calendar.readonly",
-  "https://www.googleapis.com/auth/userinfo.email",
-] as const;
-
-function definedStrings(input: Record<string, string | undefined>): Record<string, string> {
-  return Object.fromEntries(Object.entries(input).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0));
 }
 
 async function safeJson(response: Response): Promise<Record<string, unknown>> {

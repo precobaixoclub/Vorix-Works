@@ -2,6 +2,14 @@ import { getBriefingSchema } from "../../domain/briefing/schema-registry.js";
 import type { BriefingType } from "../../domain/briefing/briefing.model.js";
 import type { AiOperation } from "../ports/ai-gateway.port.js";
 import type { PromptTemplate } from "./prompt-template.js";
+import { meetingAiAnalysisPromptV1, meetingTranscriptPlainText, type MeetingAiAnalysisPromptContext } from "./prompts/meeting-ai-analysis.v1.js";
+import {
+  applyMeetingAiAnalysisSemanticValidation,
+  validateMeetingAiAnalysisStructure,
+  MEETING_AI_ANALYSIS_RESULT_SCHEMA_VERSION,
+  MEETING_AI_ANALYSIS_TOOL_INPUT_SCHEMA,
+  type MeetingAiAnalysisResult,
+} from "./schemas/meeting-ai-analysis-result.v1.js";
 import { briefingFieldExtractionPromptV1, type BriefingFieldExtractionPromptContext } from "./prompts/briefing-field-extraction.v1.js";
 import { inboxAutoReplyPromptV1, type InboxAutoReplyPromptContext, type InboxAutoReplyPromptMessage } from "./prompts/inbox-auto-reply.v1.js";
 import {
@@ -96,7 +104,32 @@ function buildCommercialCopilotSuggestionsContext(input: Readonly<Record<string,
   };
 }
 
+function buildMeetingAiAnalysisContext(input: Readonly<Record<string, unknown>>): MeetingAiAnalysisPromptContext {
+  const rawSegments = Array.isArray(input.segments) ? (input.segments as unknown[]) : [];
+  return {
+    title: String(input.title ?? ""),
+    language: typeof input.language === "string" ? input.language : "pt",
+    segments: rawSegments
+      .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+      .map((entry) => ({ startMs: Number(entry.startMs) || 0, ...(typeof entry.speaker === "string" ? { speaker: entry.speaker } : {}), text: String(entry.text ?? "") })),
+  };
+}
+
 export const PROMPT_TEMPLATE_REGISTRY: Partial<Record<AiOperation, PromptTemplateRegistration>> = {
+  meeting_ai_analysis: {
+    template: meetingAiAnalysisPromptV1 as PromptTemplate<unknown>,
+    buildContext: (input) => buildMeetingAiAnalysisContext(input),
+    toolName: "submit_meeting_analysis",
+    toolDescription: "Envia o registro estruturado da reunião: resumo, tópicos, decisões, tarefas, próximos passos, riscos, objeções e perguntas em aberto — tudo com evidência literal da transcrição.",
+    toolInputSchema: MEETING_AI_ANALYSIS_TOOL_INPUT_SCHEMA,
+    outputSchemaRef: { id: "meeting-ai-analysis-result", version: MEETING_AI_ANALYSIS_RESULT_SCHEMA_VERSION },
+    validateStructure: (raw) => validateMeetingAiAnalysisStructure(raw),
+    validateSemantics: (structural, sanitizedInput) => {
+      const context = buildMeetingAiAnalysisContext(sanitizedInput);
+      const durationMs = typeof sanitizedInput.durationMs === "number" ? sanitizedInput.durationMs : Number.MAX_SAFE_INTEGER;
+      return applyMeetingAiAnalysisSemanticValidation({ structural: structural as MeetingAiAnalysisResult, transcriptText: meetingTranscriptPlainText(context.segments), durationMs });
+    },
+  },
   commercial_copilot_suggestions: {
     template: commercialCopilotSuggestionsPromptV1 as PromptTemplate<unknown>,
     buildContext: (input) => buildCommercialCopilotSuggestionsContext(input),

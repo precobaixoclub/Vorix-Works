@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { decryptSecret } from "../../infrastructure/crypto/secret-cipher.js";
 import { processNextRecorderJob, recoverOrphanRecorders } from "../../application/meetings/meeting-recorder.js";
@@ -75,6 +76,13 @@ async function main(): Promise<void> {
     log,
   };
 
+  // Sinal de saúde do container (HEALTHCHECK): timer PRÓPRIO, porque o laço fica bloqueado durante
+  // uma gravação inteira. Só atualiza se o banco responder — processo vivo sem banco não é saudável.
+  const healthFile = env.MEETINGS_RECORDER_HEALTH_FILE?.trim() || "/tmp/recorder-health";
+  const markHealthy = () => identity.pool.query("select 1").then(() => writeFile(healthFile, String(Date.now()))).catch(() => undefined);
+  void markHealthy();
+  const healthTimer = setInterval(markHealthy, 15_000);
+
   process.on("SIGTERM", () => { stopping = true; });
   process.on("SIGINT", () => { stopping = true; });
   log("iniciado", { workerId, leaseMs, maxRecordingDurationMinutes: deps.maxRecordingDurationMinutes });
@@ -112,6 +120,7 @@ async function main(): Promise<void> {
     }
   }
   log("encerrando");
+  clearInterval(healthTimer);
   await identity.pool.end();
 }
 

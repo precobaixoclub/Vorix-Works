@@ -34,7 +34,9 @@ COPY scripts/meetings/recorder-entrypoint.sh ./scripts/meetings/recorder-entrypo
 RUN chmod 0755 ./scripts/meetings/recorder-entrypoint.sh
 
 USER recorder
+# Saudável = o worker falou com o banco nos últimos 60 s (timer próprio, vale também durante uma
+# gravação longa) E o PulseAudio do container responde. Processo vivo sem banco/áudio não conta.
 HEALTHCHECK --interval=20s --timeout=5s --start-period=30s --retries=3 \
-  CMD pgrep -f "dist/interfaces/worker/meetings-recorder-worker.js" >/dev/null || exit 1
+  CMD sh -c 'test -f /tmp/recorder-health && [ $(( $(date +%s) - $(stat -c %Y /tmp/recorder-health) )) -lt 60 ] && pactl info >/dev/null 2>&1' || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/app/scripts/meetings/recorder-entrypoint.sh"]

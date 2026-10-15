@@ -40,7 +40,7 @@ WEB_TESTS = PASS — 94 testes, 13 arquivos
 WEB_BUILD = PASS
 BACKEND_RELEVANT_TESTS = PASS — 37 testes
 NEW_COMMIT_SHA = e8982d5f21a3b2a5b26dc184bf194690a3ebaf3d
-DEPLOYED = YES — revisão e1ce6b455c262c196e639ba7a0ae72ce45375f98
+DEPLOYED = YES — publicação inicial e1ce6b4; refinamento e configurador publicados em 8cf7ea8
 REMAINING_BLOCKERS = nenhum bloqueio da implementação do site;
                      Meetings/Suite dependem de liberação comercial e ofertas oficiais.
 ```

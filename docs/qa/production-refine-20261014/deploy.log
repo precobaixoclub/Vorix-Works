@@ -1,0 +1,496 @@
+DEPLOY 8cf7ea8bc611e32a581cc00d2fc42dc530d0281f target=all stamp=20261015014916
+PREFLIGHT_OK free=7344MB
+BACKUP code=deploy_backups/pre-8cf7ea8bc611e32a581cc00d2fc42dc530d0281f-20261015014916.tgz db=deploy_backups/db-pre-8cf7ea8bc611e32a581cc00d2fc42dc530d0281f-20261015014916.sql.gz env=/root/.env.zuno.pre-8cf7ea8bc611e32a581cc00d2fc42dc530d0281f-20261015014916
+ROLLBACK_TAG zuno-zuno-api:rollback-20261015014916
+ROLLBACK_TAG zuno-vorix-worker:rollback-20261015014916
+ROLLBACK_TAG zuno-zuno-web:rollback-20261015014916
+ENV before=d4717cfdf453 after=d4717cfdf453
+BUILD zuno-api
+ Image zuno-zuno-api Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 472B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 2.39kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.4s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:20-slim
+#5 DONE 0.2s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 125B done
+#6 DONE 0.0s
+
+#7 [deps 1/4] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#7 resolve docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 0.1s done
+#7 DONE 0.1s
+
+#8 [internal] load build context
+#8 transferring context: 9.55MB 0.6s done
+#8 DONE 0.7s
+
+#9 [deps 2/4] WORKDIR /app
+#9 CACHED
+
+#10 [deps 3/4] COPY package.json package-lock.json ./
+#10 DONE 0.1s
+
+#11 [deps 4/4] RUN npm ci
+#11 6.112 npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+#11 10.63 npm warn deprecated prom-client@15.1.3: prom-client has been replaced by @prometheus-io/client
+#11 11.25 npm warn deprecated source-map@0.8.0-beta.0: The work that was done in this beta branch won't be included in future versions
+#11 28.93 
+#11 28.93 added 415 packages, and audited 416 packages in 28s
+#11 28.93 
+#11 28.93 75 packages are looking for funding
+#11 28.93   run `npm fund` for details
+#11 29.37 
+#11 29.37 13 vulnerabilities (4 moderate, 9 high)
+#11 29.37 
+#11 29.37 To address issues that do not require attention, run:
+#11 29.37   npm audit fix
+#11 29.37 
+#11 29.37 To address all issues (including breaking changes), run:
+#11 29.37   npm audit fix --force
+#11 29.37 
+#11 29.37 Run `npm audit` for details.
+#11 29.40 npm notice
+#11 29.40 npm notice New major version of npm available! 10.8.2 -> 12.2.0
+#11 29.40 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#11 29.40 npm notice To update run: npm install -g npm@12.2.0
+#11 29.40 npm notice
+#11 DONE 31.0s
+
+#12 [build 3/8] COPY --from=deps /app/node_modules ./node_modules
+#12 DONE 8.4s
+
+#13 [build 4/8] COPY package.json package-lock.json tsconfig.json ./
+#13 DONE 0.4s
+
+#14 [build 5/8] COPY src ./src
+#14 DONE 0.8s
+
+#15 [build 6/8] COPY scripts ./scripts
+#15 DONE 0.2s
+
+#16 [build 7/8] COPY db ./db
+#16 DONE 0.1s
+
+#17 [build 8/8] RUN npm run build
+#17 1.392 
+#17 1.392 > zuno@1.0.0 build
+#17 1.392 > npm run build:clean && tsc -p tsconfig.json && npm run build:copy-skill-manifests && npm run build:copy-remotion-assets && npm run build:copy-rendering-assets
+#17 1.392 
+#17 1.638 
+#17 1.638 > zuno@1.0.0 build:clean
+#17 1.638 > node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+#17 1.638 
+#17 41.47 
+#17 41.47 > zuno@1.0.0 build:copy-skill-manifests
+#17 41.47 > node scripts/copy-skill-manifests.mjs
+#17 41.47 
+#17 41.54 [copy-skill-manifests] 14 manifesto(s) copiado(s) para dist/skills.
+#17 41.54   - dist/skills/ana-social-publishing/skill.manifest.json
+#17 41.54   - dist/skills/bianca-social-media-design/skill.manifest.json
+#17 41.54   - dist/skills/bruno-video-script/skill.manifest.json
+#17 41.54   - dist/skills/diego-video-editing/skill.manifest.json
+#17 41.54   - dist/skills/eduardo-editorial-planning/skill.manifest.json
+#17 41.54   - dist/skills/joao-marketing-strategy/skill.manifest.json
+#17 41.54   - dist/skills/lucas-quality-review/skill.manifest.json
+#17 41.54   - dist/skills/maria-copywriting/skill.manifest.json
+#17 41.54   - dist/skills/motion-design-engine/skill.manifest.json
+#17 41.54   - dist/skills/nora-video-narration/skill.manifest.json
+#17 41.54   - dist/skills/pedro-image-generation/skill.manifest.json
+#17 41.54   - dist/skills/rafa-video-rendering/skill.manifest.json
+#17 41.54   - dist/skills/sofia-art-direction/skill.manifest.json
+#17 41.54   - dist/skills/vanessa-video-direction/skill.manifest.json
+#17 41.79 
+#17 41.79 > zuno@1.0.0 build:copy-remotion-assets
+#17 41.79 > node scripts/copy-remotion-assets.mjs
+#17 41.79 
+#17 41.85 [copy-remotion-assets] 2 arquivo(s) .jsx copiado(s) para dist/infrastructure/motion-rendering/remotion.
+#17 41.85   - dist/infrastructure/motion-rendering/remotion/MotionSceneRenderer.jsx
+#17 41.86   - dist/infrastructure/motion-rendering/remotion/Root.jsx
+#17 42.07 
+#17 42.07 > zuno@1.0.0 build:copy-rendering-assets
+#17 42.07 > node scripts/copy-rendering-assets.mjs
+#17 42.07 
+#17 42.14 [copy-rendering-assets] 2 fonte(s) .ttf copiada(s) para dist/infrastructure/rendering/assets.
+#17 42.14   - dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf
+#17 42.14   - dist/infrastructure/rendering/assets/geist-regular.ttf
+#17 42.16 npm notice
+#17 42.16 npm notice New major version of npm available! 10.8.2 -> 12.2.0
+#17 42.16 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#17 42.16 npm notice To update run: npm install -g npm@12.2.0
+#17 42.16 npm notice
+#17 DONE 42.3s
+
+#18 [runtime  3/10] RUN apt-get update   && apt-get install -y --no-install-recommends fontconfig ca-certificates curl xz-utils   && rm -rf /var/lib/apt/lists/*
+#18 CACHED
+
+#19 [runtime  4/10] COPY package.json package-lock.json ./
+#19 CACHED
+
+#20 [runtime  5/10] RUN npm ci --omit=dev && npm cache clean --force
+#20 CACHED
+
+#21 [runtime  6/10] COPY --from=build /app/dist ./dist
+#21 CACHED
+
+#22 [runtime  7/10] COPY --from=build /app/scripts ./scripts
+#22 DONE 0.0s
+
+#23 [runtime  8/10] COPY --from=build /app/db ./db
+#23 DONE 0.0s
+
+#24 [runtime  9/10] RUN sh ./scripts/install-ffmpeg-linux.sh /opt/vorix/ffmpeg
+#24 1.159 /tmp/tmp.lDGhDLgzjc/ffmpeg.tar.xz: OK
+#24 6.475 FFmpeg instalado em /opt/vorix/ffmpeg/ffmpeg: ffmpeg version 7.0.2-Jellyfin Copyright (c) 2000-2024 the FFmpeg developers
+#24 DONE 6.6s
+
+#25 [runtime 10/10] RUN mkdir -p /usr/local/share/fonts/vorix /etc/fonts/conf.d   && cp ./dist/infrastructure/rendering/assets/geist-regular.ttf /usr/local/share/fonts/vorix/GeistEditorial-Regular.ttf   && cp ./dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf /usr/local/share/fonts/vorix/DMSerifDisplay-Regular.ttf   && printf '%s\n'     '<?xml version="1.0"?>'     '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">'     '<fontconfig>'     '  <dir>/usr/local/share/fonts/vorix</dir>'     '  <alias>'     '    <family>GeistEditorial</family>'     '    <prefer><family>Geist</family></prefer>'     '  </alias>'     '</fontconfig>'     > /etc/fonts/conf.d/60-vorix-geist-editorial.conf   && fc-cache -f /usr/local/share/fonts/vorix   && fc-match GeistEditorial | grep -i 'GeistEditorial-Regular.ttf'   && fc-match "DM Serif Display" | grep -i 'DMSerifDisplay-Regular.ttf'
+#25 2.464 GeistEditorial-Regular.ttf: "Geist" "Regular"
+#25 2.475 DMSerifDisplay-Regular.ttf: "DM Serif Display" "Regular"
+#25 DONE 2.5s
+
+#26 exporting to image
+#26 exporting layers
+#26 exporting layers 6.1s done
+#26 exporting manifest sha256:8d9136fd65014e9413d5206fcf5bf13fcf1c3249294fe97885fb57fe949b3326
+#26 exporting manifest sha256:8d9136fd65014e9413d5206fcf5bf13fcf1c3249294fe97885fb57fe949b3326 done
+#26 exporting config sha256:a0226c647475ff7156128596a401a362133b972e758de9bab1719119978e1789 done
+#26 exporting attestation manifest sha256:a4e27044eab544adc8b8741424acf3231d4c0832658230c3b129dbd058db76ee 0.0s done
+#26 exporting manifest list sha256:bf2e49b3ea8af93dcbc89ac375f8b3328f3cfa7406e3aeca6ccfa0dd4f81f509 done
+#26 naming to docker.io/library/zuno-zuno-api:latest done
+#26 unpacking to docker.io/library/zuno-zuno-api:latest
+#26 unpacking to docker.io/library/zuno-zuno-api:latest 0.9s done
+#26 DONE 7.0s
+
+#27 resolving provenance for metadata file
+#27 DONE 0.1s
+ Image zuno-zuno-api Built 
+BUILD vorix-worker
+ Image zuno-vorix-worker Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 488B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 2.39kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.1s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:20-slim
+#5 DONE 0.1s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 125B done
+#6 DONE 0.0s
+
+#7 [deps 1/4] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#7 resolve docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 0.0s done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 105.72kB 0.1s done
+#8 DONE 0.1s
+
+#9 [build 8/8] RUN npm run build
+#9 CACHED
+
+#10 [deps 3/4] COPY package.json package-lock.json ./
+#10 CACHED
+
+#11 [build 4/8] COPY package.json package-lock.json tsconfig.json ./
+#11 CACHED
+
+#12 [build 5/8] COPY src ./src
+#12 CACHED
+
+#13 [runtime  3/10] RUN apt-get update   && apt-get install -y --no-install-recommends fontconfig ca-certificates curl xz-utils   && rm -rf /var/lib/apt/lists/*
+#13 CACHED
+
+#14 [build 6/8] COPY scripts ./scripts
+#14 CACHED
+
+#15 [runtime  4/10] COPY package.json package-lock.json ./
+#15 CACHED
+
+#16 [build 7/8] COPY db ./db
+#16 CACHED
+
+#17 [runtime  9/10] RUN sh ./scripts/install-ffmpeg-linux.sh /opt/vorix/ffmpeg
+#17 CACHED
+
+#18 [runtime  5/10] RUN npm ci --omit=dev && npm cache clean --force
+#18 CACHED
+
+#19 [runtime  8/10] COPY --from=build /app/db ./db
+#19 CACHED
+
+#20 [runtime  6/10] COPY --from=build /app/dist ./dist
+#20 CACHED
+
+#21 [deps 4/4] RUN npm ci
+#21 CACHED
+
+#22 [build 3/8] COPY --from=deps /app/node_modules ./node_modules
+#22 CACHED
+
+#23 [runtime  7/10] COPY --from=build /app/scripts ./scripts
+#23 CACHED
+
+#24 [deps 2/4] WORKDIR /app
+#24 CACHED
+
+#25 [runtime 10/10] RUN mkdir -p /usr/local/share/fonts/vorix /etc/fonts/conf.d   && cp ./dist/infrastructure/rendering/assets/geist-regular.ttf /usr/local/share/fonts/vorix/GeistEditorial-Regular.ttf   && cp ./dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf /usr/local/share/fonts/vorix/DMSerifDisplay-Regular.ttf   && printf '%s\n'     '<?xml version="1.0"?>'     '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">'     '<fontconfig>'     '  <dir>/usr/local/share/fonts/vorix</dir>'     '  <alias>'     '    <family>GeistEditorial</family>'     '    <prefer><family>Geist</family></prefer>'     '  </alias>'     '</fontconfig>'     > /etc/fonts/conf.d/60-vorix-geist-editorial.conf   && fc-cache -f /usr/local/share/fonts/vorix   && fc-match GeistEditorial | grep -i 'GeistEditorial-Regular.ttf'   && fc-match "DM Serif Display" | grep -i 'DMSerifDisplay-Regular.ttf'
+#25 CACHED
+
+#26 exporting to image
+#26 exporting layers done
+#26 exporting manifest sha256:f528fa1f006c42a58c64c9ec3054d3d46b0f2103886e498aa1f1f048323139a6 0.0s done
+#26 exporting config sha256:aadbb7d263fbe1ff927f86868fb2304939b74b808a29747c9d22b7b980fc02b4 done
+#26 exporting attestation manifest sha256:ce6526b4f1192bd70f2d14f7a23d5ba40db53780c9c188fa59ba77caab6ce37e 0.0s done
+#26 exporting manifest list sha256:592d1b834249858ecaf7d713f3918aedcdfaf1d79ecfffc22ea9fa669c3f397b done
+#26 naming to docker.io/library/zuno-vorix-worker:latest done
+#26 unpacking to docker.io/library/zuno-vorix-worker:latest 0.0s done
+#26 DONE 0.1s
+
+#27 resolving provenance for metadata file
+#27 DONE 0.0s
+ Image zuno-vorix-worker Built 
+BUILD zuno-web
+ Image zuno-zuno-api Building 
+ Image zuno-zuno-web Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 930B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 984B done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.1s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:20-slim
+#5 DONE 0.1s
+
+#6 [internal] load .dockerignore
+#6 transferring context:
+#6 transferring context: 102B done
+#6 DONE 0.1s
+
+#7 [internal] load build context
+#7 DONE 0.0s
+
+#8 [deps 1/4] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#8 resolve docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#8 resolve docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 0.0s done
+#8 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 3.69MB 0.2s done
+#7 DONE 0.3s
+
+#9 [deps 4/4] RUN npm ci
+#9 CACHED
+
+#10 [deps 2/4] WORKDIR /app
+#10 CACHED
+
+#11 [deps 3/4] COPY package.json package-lock.json ./
+#11 CACHED
+
+#12 [build 3/5] COPY --from=deps /app/node_modules ./node_modules
+#12 CACHED
+
+#13 [build 4/5] COPY . .
+#13 DONE 0.2s
+
+#14 [build 5/5] RUN npm run build
+#14 0.840 
+#14 0.840 > zuno-web@0.1.0 build
+#14 0.840 > next build
+#14 0.840 
+#14 1.621 Attention: Next.js now collects completely anonymous telemetry regarding usage.
+#14 1.621 This information is used to shape Next.js' roadmap and prioritize features.
+#14 1.622 You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+#14 1.622 https://nextjs.org/telemetry
+#14 1.622 
+#14 1.696 ▲ Next.js 16.2.12 (Turbopack)
+#14 1.696 
+#14 1.862   Creating an optimized production build ...
+#14 36.22 ✓ Compiled successfully in 33.8s
+#14 36.24   Running TypeScript ...
+#14 72.41   Finished TypeScript in 36.2s ...
+#14 72.43   Collecting page data using 1 worker ...
+#14 73.95   Generating static pages using 1 worker (0/29) ...
+#14 74.55   Generating static pages using 1 worker (7/29) 
+#14 74.81   Generating static pages using 1 worker (14/29) 
+#14 75.31   Generating static pages using 1 worker (21/29) 
+#14 75.46 ✓ Generating static pages using 1 worker (29/29) in 1503ms
+#14 75.48   Finalizing page optimization ...
+#14 76.15 
+#14 76.16 Route (app)                                                 Revalidate  Expire
+#14 76.16 ┌ ○ /                                                               5m      1y
+#14 76.16 ├ ○ /_not-found
+#14 76.16 ├ ○ /admin
+#14 76.16 ├ ○ /admin/ai-providers
+#14 76.16 ├ ○ /admin/billing-provider
+#14 76.16 ├ ○ /admin/growth
+#14 76.16 ├ ○ /admin/meetings-bots
+#14 76.16 ├ ○ /admin/settings
+#14 76.16 ├ ○ /admin/tenants
+#14 76.16 ├ ƒ /admin/tenants/[tenantId]
+#14 76.16 ├ ○ /data-deletion
+#14 76.16 ├ ○ /empresa
+#14 76.16 ├ ○ /google-calendar/callback
+#14 76.16 ├ ○ /icon.svg
+#14 76.16 ├ ○ /instagram/callback
+#14 76.16 ├ ○ /login
+#14 76.16 ├ ○ /meta-ads/callback
+#14 76.16 ├ ○ /opengraph-image.png
+#14 76.16 ├ ƒ /p/[token]
+#14 76.16 ├ ○ /precos                                                         5m      1y
+#14 76.16 ├ ○ /pricing
+#14 76.16 ├ ○ /privacy
+#14 76.16 ├ ○ /produtos/conversas                                             5m      1y
+#14 76.16 ├ ○ /produtos/meetings                                              5m      1y
+#14 76.16 ├ ƒ /public-og
+#14 76.16 ├ ○ /signup
+#14 76.16 ├ ○ /terms
+#14 76.16 ├ ○ /tiktok/callback
+#14 76.16 ├ ○ /workspaces
+#14 76.16 ├ ƒ /workspaces/[workspaceId]
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/analytics
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/assets
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/calendar
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/campaigns
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/chat
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/chat/[conversationId]
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/connections
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/contacts
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/conversas
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/create
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/deals
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/execution
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/execution/[runId]
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/facebook
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/governance
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/instagram
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/kanban
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/knowledge
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/meetings
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/meetings/agenda
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/meetings/central
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/meetings/central/[meetingId]
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/meetings/integrations
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/meetings/recorder-accounts
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/meetings/recordings
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/meta-ads
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/onboarding
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/operations
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/planning
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/planning/[planningId]
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/production
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/proposals
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/providers
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/publications
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/publish
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/results
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/review
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/runtime
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/runtime/[runtimeId]
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/settings
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/settings/automations
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/settings/plano
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/settings/products
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/settings/teams
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/settings/users
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/tasks
+#14 76.16 ├ ƒ /workspaces/[workspaceId]/tiktok
+#14 76.16 └ ○ /youtube/callback
+#14 76.16 
+#14 76.16 
+#14 76.16 ƒ Proxy (Middleware)
+#14 76.16 
+#14 76.16 ○  (Static)   prerendered as static content
+#14 76.16 ƒ  (Dynamic)  server-rendered on demand
+#14 76.16 
+#14 76.31 npm notice
+#14 76.31 npm notice New major version of npm available! 10.8.2 -> 12.2.0
+#14 76.31 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#14 76.31 npm notice To update run: npm install -g npm@12.2.0
+#14 76.31 npm notice
+#14 DONE 76.5s
+
+#10 [deps 2/4] WORKDIR /app
+#10 CACHED
+
+#15 [runtime 3/5] COPY --from=build /app/.next/standalone ./
+#15 DONE 1.0s
+
+#16 [runtime 4/5] COPY --from=build /app/.next/static ./.next/static
+#16 DONE 0.1s
+
+#17 [runtime 5/5] COPY --from=build /app/public ./public
+#17 DONE 0.1s
+
+#18 exporting to image
+#18 exporting layers
+#18 exporting layers 3.8s done
+#18 exporting manifest sha256:cdd3d80f2aa22e800dd20dbd2e79d3254d1f29fc49d9591d247322a566a56e4a done
+#18 exporting config sha256:98820f7752bd424f19bbbd61f6ad7a78e2917d8a2c2775d216e1c5d8eb4ed911 done
+#18 exporting attestation manifest sha256:3a6c113e5e4dc543352ca5243e633f6a7b6a5e8a210100c2741ce8bef66be0f6 0.0s done
+#18 exporting manifest list sha256:dcb3d32c0c605a811dadd7aaf007a964d79ae47fb7719096de7a7e89f3233aea done
+#18 naming to docker.io/library/zuno-zuno-web:latest done
+#18 unpacking to docker.io/library/zuno-zuno-web:latest
+#18 unpacking to docker.io/library/zuno-zuno-web:latest 1.0s done
+#18 DONE 4.9s
+
+#19 resolving provenance for metadata file
+#19 DONE 0.0s
+ Image zuno-zuno-web Built 
+MIGRATIONS_BEFORE [migrate] 148 aplicada(s), 0 pendente(s).
+MIGRATIONS_AFTER [migrate] 148 aplicada(s), 0 pendente(s).
+ Container zuno-zuno-postgres-1 Running 
+ Container zuno-vorix-worker-1 Recreate 
+ Container zuno-zuno-api-1 Recreate 
+ Container zuno-vorix-worker-1 Recreated 
+ Container zuno-zuno-api-1 Recreated 
+ Container zuno-zuno-web-1 Recreate 
+ Container zuno-zuno-web-1 Recreated 
+ Container zuno-zuno-postgres-1 Waiting 
+ Container zuno-zuno-postgres-1 Waiting 
+ Container zuno-zuno-postgres-1 Healthy 
+ Container zuno-vorix-worker-1 Starting 
+ Container zuno-zuno-postgres-1 Healthy 
+ Container zuno-zuno-api-1 Starting 
+ Container zuno-vorix-worker-1 Started 
+ Container zuno-zuno-api-1 Started 
+ Container zuno-zuno-api-1 Waiting 
+ Container zuno-zuno-api-1 Healthy 
+ Container zuno-zuno-web-1 Starting 
+ Container zuno-zuno-web-1 Started 
+READYZ "ready":true WEB 200 LOG_ERRORS 0
+DEPLOYED 8cf7ea8bc611e32a581cc00d2fc42dc530d0281f
+DEPLOY_DONE

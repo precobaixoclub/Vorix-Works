@@ -1,0 +1,17 @@
+{
+  "checkedAt": "2026-10-15T01:54:06.764Z",
+  "base": "https://vorixworks.com",
+  "api": "https://api.vorixworks.com",
+  "routes": "PASS",
+  "desktop": "PASS",
+  "mobile": "PASS",
+  "pricingParity": "PASS",
+  "configurator": "PASS",
+  "officialConfiguredTotal": 188,
+  "additionalRecordingsPrice": "UNDEFINED",
+  "meetingsContractable": false,
+  "suiteCheckout": false,
+  "privateRoutes": "PASS",
+  "openGraph": "PASS",
+  "pageErrors": []
+}

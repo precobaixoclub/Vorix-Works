@@ -1,6 +1,6 @@
 # Vorix — refinamento premium do site + planos personalizáveis
 
-14/10/2026. Implementação e validação locais (build de produção em `localhost:3003`, API de preview `localhost:3002` com o catálogo oficial `plan_versions`). Nenhum deploy.
+14/10/2026. Implementação e validação locais concluídas, com publicação posterior em https://vorixworks.com às 22:54 aproximadamente. Revisão da aplicação: `8cf7ea8bc611e32a581cc00d2fc42dc530d0281f`. `main` e `feat/meetings-foundation` sincronizados no Git. [Relatório de produção](production-refinement-deploy-20261014.md).
 
 ## Auditoria do design anterior
 

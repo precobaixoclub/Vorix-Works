@@ -38,6 +38,7 @@ assets/media/review-artifacts/
 *.traineddata
 
 # Rascunhos/depuração manual — nunca devem ser versionados.
+/tmp/
 .tmp-*/
 tmp-*.txt
 tmp-*.json

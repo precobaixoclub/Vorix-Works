@@ -7,6 +7,8 @@ export type PublicProduct = {
   description: string;
   eyebrow: string;
   features: readonly string[];
+  /** Até 4 itens para os cards de preço — a lista completa fica nas páginas de produto. */
+  highlights: readonly string[];
   productHref: string;
   monthlyPrice: number | null;
   annualPrice: number | null;
@@ -28,18 +30,21 @@ const COPY = {
     name: "Vorix Conversas", eyebrow: "Atendimento & vendas",
     description: "Atendimento, oportunidades e propostas em um só lugar.",
     features: ["WhatsApp centralizado", "Funil de atendimento e vendas", "Oportunidades", "Propostas comerciais", "Contatos e tarefas", "Automações operacionais", "Relatórios de performance"],
+    highlights: ["WhatsApp, funil e propostas", "Contatos, tarefas e automações", "Usuários e números ajustáveis"],
     productHref: "/produtos/conversas",
   },
   meetings: {
     name: "Vorix Meetings", eyebrow: "Inteligência de reuniões",
     description: "Grave, transcreva e transforme reuniões em ação.",
     features: ["Agenda de reuniões", "Gravações centralizadas", "Transcrição automática", "Resumos com IA", "Tarefas e decisões extraídas", "Integração com Google Calendar"],
+    highlights: ["Agenda com Google Calendar", "Gravação, transcrição e resumo", "Gravações simultâneas conforme o plano"],
     productHref: "/produtos/meetings",
   },
   suite: {
     name: "Vorix Suite", eyebrow: "Sua operação conectada",
     description: "Conversas e Meetings na mesma experiência Vorix.",
     features: ["Tudo do Vorix Conversas", "Tudo do Vorix Meetings", "Uma única conta", "Uma única empresa e workspace", "Experiência integrada"],
+    highlights: ["Conversas + Meetings", "Uma conta, empresa e equipe", "Capacidade ajustada por produto"],
     productHref: "/precos#suite",
   },
 } as const;
@@ -62,7 +67,7 @@ export function buildPublicProductCatalog(billing: PublicBillingCatalog | null):
       currency: plan?.currency ?? "BRL", provisional: !plan, contractable, highlighted: key === "suite",
       badge: key === "suite" ? "Experiência integrada" : contractable ? "Disponível para sua equipe" : "Conheça a solução",
       cta: contractable ? { label: "Começar com Conversas", href: `/signup?plan=${encodeURIComponent(plan!.code)}` }
-        : { label: key === "meetings" ? "Conhecer Meetings" : key === "suite" ? "Falar sobre a Suite" : "Falar com o time", href: key === "meetings" ? COPY.meetings.productHref : PUBLIC_CONTACT },
+        : { label: key === "meetings" ? "Conhecer Meetings" : key === "suite" ? "Monte sua Suite" : "Falar com o time", href: key === "meetings" ? COPY.meetings.productHref : key === "suite" ? "#monte" : PUBLIC_CONTACT },
       plan, includes: key === "suite" ? ["conversations", "meetings"] : [key],
     };
   });
@@ -81,5 +86,7 @@ export const PUBLIC_FAQ = [
   ["O Meetings funciona sem Conversas?", "Sim, a arquitetura do Meetings é independente. Sua disponibilidade comercial e os critérios de integração com Google ainda estão em validação."],
   ["Como funciona a inteligência artificial?", "A IA ajuda a extrair informações e transformar contexto em ação. O uso de créditos e os recursos disponíveis dependem do plano e da operação."],
   ["Como funcionam as gravações simultâneas?", "No Meetings, a capacidade depende do plano e das contas de gravação saudáveis e disponíveis. Uma conta de gravação atende uma reunião por vez. A oferta comercial ainda está em validação."],
+  ["Como funciona o preço do Vorix?", "Você parte de um plano e ajusta a capacidade de cada produto. Em Conversas, usuários e números conectados; no Meetings, gravações simultâneas. Os valores de Conversas vêm do mesmo catálogo usado na contratação."],
+  ["Contas de gravação são cobradas como licença?", "Não. O que define a capacidade do Meetings são as gravações simultâneas do plano. As contas Google de gravação que você conecta são infraestrutura: uma conta a mais pode ficar como reserva."],
   ["Os dados da minha empresa ficam separados?", "O Vorix aplica isolamento por empresa e permissões de acesso por usuário. A equipe trabalha no contexto dos workspaces aos quais tem acesso."],
 ] as const;

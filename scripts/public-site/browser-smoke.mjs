@@ -27,7 +27,7 @@ try {
   assert.equal(await page.locator('main').getByText('Vorix Marketing',{exact:false}).count(),0);
   await page.screenshot({path:directory+'/desktop-1440.png',fullPage:true});
   await page.screenshot({path:directory+'/desktop-hero-1440.png'});
-  await page.locator('.public-product-grid').screenshot({path:directory+'/desktop-products.png',style:'.public-header {visibility:hidden !important}'});
+  await page.locator('#produtos').screenshot({path:directory+'/desktop-products.png',style:'.public-header {visibility:hidden !important}'});
   await page.locator('.public-pricing').screenshot({path:directory+'/desktop-pricing.png',style:'.public-header {visibility:hidden !important}'});
   await page.getByRole('tab',{name:'Vorix Meetings',exact:true}).click();
   await page.locator('.public-showcase-panel').getByText('Transcrição',{exact:true}).waitFor();
@@ -39,13 +39,22 @@ try {
   assert.equal(await page.locator('.public-product-menu a').count(),2);
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('.public-product-menu').count(),0);
-  await page.locator('a[href="#produtos"]').click();
-  await page.waitForURL('**/#produtos');
-  assert.equal(new URL(page.url()).hash,'#produtos');
+  await page.locator('.public-hero a[href="#monte"]').click();
+  await page.waitForURL('**/#monte');
+  assert.equal(new URL(page.url()).hash,'#monte');
   await page.locator('.public-faq-list summary').first().click();
   assert.notEqual(await page.locator('.public-faq-list details').first().getAttribute('open'),null);
   assert.equal(await page.locator('.public-price-card.meetings a').getAttribute('href'),'/produtos/meetings');
-  assert.match(await page.locator('.public-price-card.suite a').getAttribute('href'),/^mailto:/);
+  assert.equal(await page.locator('.public-price-card.suite a').getAttribute('href'),'#monte');
+  // Configurador: preço do simulador oficial, Meetings nunca vai para cadastro/checkout.
+  const configTotal=()=>page.locator('.public-config-total strong').innerText();
+  const initialTotal=await configTotal();
+  await page.getByRole('button',{name:'Aumentar usuários'}).click();
+  await page.waitForFunction(previous=>document.querySelector('.public-config-total strong')?.textContent!==previous,initialTotal);
+  await page.getByRole('checkbox',{name:/Vorix Meetings/}).check();
+  assert.equal(await page.locator('#config-summary-title').innerText(),'Suite Vorix');
+  assert.match(await page.locator('.public-config-actions a').first().getAttribute('href'),/^mailto:/);
+  results.configurator={initialTotal,afterUser:await configTotal()};
   assert.equal(await page.locator('.public-price-card.conversations a').getAttribute('href'),'/signup?plan='+startingPlan.code);
   assert.ok((await page.locator('.public-price-card.conversations .public-price').innerText()).includes(startingPlan.monthlyPriceUsd.toLocaleString('pt-BR')));
   await page.getByRole('button',{name:'Anual',exact:true}).click();
@@ -74,8 +83,8 @@ try {
   await mobilePage.screenshot({path:directory+'/mobile-390.png',fullPage:true});
   await mobilePage.screenshot({path:directory+'/mobile-hero-390.png'});
   await mobilePage.locator('.public-pricing').screenshot({path:directory+'/mobile-pricing.png',style:'.public-header {visibility:hidden !important}'});
-  await mobilePage.locator('.public-product-grid').screenshot({path:directory+'/mobile-products.png',style:'.public-header {visibility:hidden !important}'});
-  await mobilePage.locator('.public-how').first().screenshot({path:directory+'/mobile-steps.png',style:'.public-header {visibility:hidden !important}'});
+  await mobilePage.locator('#produtos').screenshot({path:directory+'/mobile-products.png',style:'.public-header {visibility:hidden !important}'});
+  await mobilePage.locator('#como-funciona').screenshot({path:directory+'/mobile-journey.png',style:'.public-header {visibility:hidden !important}'});
   await mobilePage.getByRole('button',{name:'Abrir menu',exact:true}).click();
   await mobilePage.getByRole('dialog').waitFor();
   await mobilePage.getByRole('dialog').getByRole('link',{name:'Vorix Meetings Reuniões inteligentes'}).click();

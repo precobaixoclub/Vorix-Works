@@ -1,6 +1,6 @@
 import { PublicHeader } from "@/components/public/PublicHeader";
 import { PublicFooter } from "@/components/public/PublicFooter";
-import { Hero, ProductsSection, HowItWorks, Differentials, FAQSection, FinalCTA } from "@/components/public/LandingSections";
+import { ComplementSection, FAQSection, FinalCTA, Hero, PlatformSection, ProblemSection, ProductsSection } from "@/components/public/LandingSections";
 import { PricingSection } from "@/components/public/PricingSection";
 import { TrackPageView } from "@/components/TrackPageView";
 import { getPublicProductCatalog } from "@/features/public-site/server";
@@ -13,7 +13,10 @@ export default async function RootPage() {
   const catalog = await getPublicProductCatalog();
   const startHref = catalog.products[0].cta.href;
   return <div className="public-site"><TrackPageView eventName="landing_view" /><PublicHeader startHref={startHref} />
-    <main id="conteudo"><Hero startHref={startHref} /><ProductsSection products={catalog.products} /><HowItWorks /><Differentials /><PricingSection products={catalog.products} /><FAQSection /><FinalCTA startHref={startHref} /></main>
+    <main id="conteudo">
+      {/* Narrativa: problema → plataforma → Conversas → Meetings → juntos → planos → CTA. */}
+      <Hero startHref={startHref} /><ProblemSection /><PlatformSection /><ProductsSection products={catalog.products} /><ComplementSection /><PricingSection catalog={catalog} /><FAQSection /><FinalCTA startHref={startHref} />
+    </main>
     <PublicFooter />
   </div>;
 }

@@ -29,9 +29,22 @@ try {
   assert.equal(results.heroImageElements,0);
   assert.equal(results.heroVideoElements,0);
   await page.goto(base+'/precos',{waitUntil:'domcontentloaded'});
-  await page.getByRole('button',{name:'Calcular',exact:true}).click();
-  await page.getByText('Para sua estrutura, recomendamos',{exact:true}).waitFor();
-  results.capacitySimulator='PASS';
+  // Configurador: o total responde ao ajuste usando o simulador oficial.
+  const total=page.locator('.public-config-total strong');
+  await total.waitFor();
+  const before=await total.innerText();
+  await page.locator('#monte').hover(); // a pessoa chega ao configurador
+  await page.waitForTimeout(800);
+  const started=Date.now();
+  await page.getByRole('button',{name:'Aumentar usuários'}).click();
+  await page.waitForFunction(previous=>document.querySelector('.public-config-total strong')?.textContent!==previous,before);
+  const firstMs=Date.now()-started;
+  const after=await total.innerText();
+  await page.waitForTimeout(800); // pré-busca das vizinhas
+  const secondStart=Date.now();
+  await page.getByRole('button',{name:'Aumentar usuários'}).click();
+  await page.waitForFunction(previous=>document.querySelector('.public-config-total strong')?.textContent!==previous,after);
+  results.configurator={before,after,firstUpdateMs:firstMs,nextUpdateMs:Date.now()-secondStart,afterSecond:await total.innerText()};
   await writeFile(directory+'/performance-smoke.json',JSON.stringify(results,null,2));
   console.log(JSON.stringify(results));
 } finally {await browser.close();}

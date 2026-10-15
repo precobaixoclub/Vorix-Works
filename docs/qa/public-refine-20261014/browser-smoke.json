@@ -1,0 +1,24 @@
+{
+  "configurator": {
+    "initialTotal": "R$ 149",
+    "afterUser": "R$ 335"
+  },
+  "desktop": "PASS",
+  "mobile": "PASS",
+  "tablet": "PASS",
+  "selector": "PASS",
+  "dropdown": "PASS",
+  "anchors": "PASS",
+  "faq": "PASS",
+  "pricingAndAnnualOfficial": "PASS",
+  "commercialBlocking": "PASS",
+  "footerRoutes": "PASS",
+  "loginSignup": "PASS",
+  "openGraph": "PASS",
+  "keyboardFocus": "PASS",
+  "reducedMotion": "PASS",
+  "authenticatedHeader": "PASS",
+  "privateRoutePreserved": "PASS",
+  "pageErrors": [],
+  "screenshots": "docs/qa/public-refine-20261014"
+}

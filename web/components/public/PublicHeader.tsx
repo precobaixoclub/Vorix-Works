@@ -12,7 +12,7 @@ const PRODUCTS = [
   { href: "/produtos/conversas", name: "Vorix Conversas", description: "Atendimento e vendas", Icon: MessageSquare, tone: "green" },
   { href: "/produtos/meetings", name: "Vorix Meetings", description: "Reuniões inteligentes", Icon: Video, tone: "violet" },
 ];
-const LINKS = [["/#solucoes", "Soluções"], ["/precos", "Preços"], ["/#recursos", "Recursos"], ["/#faq", "FAQ"]] as const;
+const LINKS = [["/#como-funciona", "Como funciona"], ["/#plataforma", "Plataforma"], ["/precos", "Preços"], ["/#faq", "FAQ"]] as const;
 
 export function PublicHeader({ startHref = "/signup" }: { startHref?: string }) {
   const [open, setOpen] = useState(false);

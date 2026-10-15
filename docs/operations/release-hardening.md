@@ -54,8 +54,8 @@ O script faz:
 2. marca as imagens atuais com `:rollback-<stamp>`;
 3. troca o código conferindo o hash do `.env`;
 4. **build sequencial** — o build conjunto web+api+worker estoura a memória do host, então nunca use `docker compose up --build` com os três;
-5. sobe os serviços;
-6. aplica migrations, abortando se houver `CHECKSUM DIVERGENTE`;
+5. valida e aplica migrations em processo temporário com a imagem nova, antes da troca dos serviços;
+6. sobe os serviços; erros de dump ou migrations abortam pelo exit code original, sem pipelines que ocultem falhas;
 7. confere health, `/readyz`, web 200 e logs.
 
 Se qualquer passo falhar, faz **rollback automático**. O log fica em `/var/log/vorix-deploy-<sha>-<stamp>.log`.

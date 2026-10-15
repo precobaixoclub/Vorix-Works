@@ -12,8 +12,8 @@
 #  4. troca do código pelo tarball do commit (o .env.zuno nunca é tocado; hash conferido);
 #  5. build SEQUENCIAL, um serviço por vez — o build conjunto (web + api + worker) estoura a memória
 #     do host (achado operacional);
-#  6. restart dos serviços com as imagens novas (`--no-build`);
-#  7. migrations: status (falha se houver divergência de checksum) → aplica pendentes (aditivas);
+#  6. migrations em processo temporário com a imagem nova; falhas impedem a troca dos serviços;
+#  7. restart dos serviços com as imagens novas (`--no-build`);
 #  8. health: containers healthy, /readyz, web 200, logs sem fatal/uncaught;
 #  9. se o health falhar: ROLLBACK automático para as imagens `:rollback-<stamp>` e código anterior.
 set -eu
@@ -53,8 +53,12 @@ mkdir -p deploy_backups
 ENV_BEFORE=$(md5sum .env.zuno | cut -c1-12)
 cp .env.zuno "/root/.env.zuno.pre-$SHA-$STAMP"
 tar -czf "deploy_backups/pre-$SHA-$STAMP.tgz" --exclude=./deploy_backups --exclude=./node_modules --exclude=./web/node_modules --exclude=./web/.next --exclude=./dist .
-docker exec zuno-zuno-postgres-1 sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' | gzip > "deploy_backups/db-pre-$SHA-$STAMP.sql.gz"
-[ "$(gzip -cd "deploy_backups/db-pre-$SHA-$STAMP.sql.gz" | head -c 64 | wc -c)" -gt 0 ] || { echo "BACKUP_DB_EMPTY"; echo DEPLOY_FAILED; exit 1; }
+umask 077
+DB_DUMP="deploy_backups/db-pre-$SHA-$STAMP.sql"
+docker exec zuno-zuno-postgres-1 sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' > "$DB_DUMP" || { echo "BACKUP_DB_FAILED"; echo DEPLOY_FAILED; exit 1; }
+[ -s "$DB_DUMP" ] || { echo "BACKUP_DB_EMPTY"; echo DEPLOY_FAILED; exit 1; }
+gzip "$DB_DUMP"
+gzip -t "$DB_DUMP.gz"
 echo "BACKUP code=deploy_backups/pre-$SHA-$STAMP.tgz db=deploy_backups/db-pre-$SHA-$STAMP.sql.gz env=/root/.env.zuno.pre-$SHA-$STAMP"
 
 # 3. imagens atuais → :rollback-<stamp>
@@ -92,7 +96,18 @@ for service in $SERVICES; do
   $COMPOSE build "$service" || rollback "build de $service falhou"
 done
 
-# 6. restart
+# 6. Valida/aplica migrations com a imagem nova ANTES de trocar processos ativos.
+# Saídas em arquivo preservam o exit code real: em /bin/sh, `cmd | tail` pode esconder falhas.
+if echo "$SERVICES" | grep -q zuno-api; then
+  MIGRATION_LOG="/var/log/vorix-migrations-$SHA-$STAMP.log"
+  $COMPOSE run --rm --no-deps zuno-api node scripts/migrate.mjs status > "$MIGRATION_LOG" 2>&1 || rollback "consulta de migrations falhou"
+  if grep -q "CHECKSUM DIVERGENTE" "$MIGRATION_LOG"; then rollback "divergência de checksum de migration"; fi
+  echo "MIGRATIONS_BEFORE $(tail -1 "$MIGRATION_LOG")"
+  $COMPOSE run --rm --no-deps zuno-api node scripts/migrate.mjs >> "$MIGRATION_LOG" 2>&1 || rollback "migration falhou; consultar $MIGRATION_LOG"
+  $COMPOSE run --rm --no-deps zuno-api node scripts/migrate.mjs status >> "$MIGRATION_LOG" 2>&1 || rollback "verificação final de migrations falhou"
+  echo "MIGRATIONS_AFTER $(tail -1 "$MIGRATION_LOG")"
+fi
+
 $COMPOSE up -d --no-build $SERVICES || rollback "restart falhou"
 
 # 8 (parcial). espera healthy antes de migrar
@@ -110,15 +125,6 @@ wait_healthy() {
   return 1
 }
 wait_healthy || rollback "containers não ficaram healthy"
-
-# 7. migrations (só com a API no ar; divergência de checksum aborta)
-if echo "$SERVICES" | grep -q zuno-api; then
-  STATUS=$(docker exec zuno-zuno-api-1 node scripts/migrate.mjs status 2>&1)
-  echo "MIGRATIONS_BEFORE $(echo "$STATUS" | tail -1)"
-  if echo "$STATUS" | grep -q "CHECKSUM DIVERGENTE"; then rollback "divergência de checksum de migration"; fi
-  docker exec zuno-zuno-api-1 node scripts/migrate.mjs 2>&1 | tail -3 || rollback "migration falhou"
-  echo "MIGRATIONS_AFTER $(docker exec zuno-zuno-api-1 node scripts/migrate.mjs status 2>&1 | tail -1)"
-fi
 
 # 8. health final
 READY=$(curl -s https://api.vorixworks.com/readyz | grep -o '"ready":[a-z]*' || true)

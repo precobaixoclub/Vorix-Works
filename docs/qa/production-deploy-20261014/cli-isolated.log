@@ -1,0 +1,68 @@
+debconf: delaying package configuration, since apt-utils is not installed
+/tmp/tmp.e9bfAn0Lfq/ffmpeg.tar.xz: OK
+FFmpeg instalado em /opt/vorix/ffmpeg/ffmpeg: ffmpeg version 7.0.2-Jellyfin Copyright (c) 2000-2024 the FFmpeg developers
+TAP version 13
+# Subtest: CLI: LOCAL_PRODUCTION é padrão, usa Developer Assisted Mode e Ana retorna local_ready sem publicar
+ok 1 - CLI: LOCAL_PRODUCTION é padrão, usa Developer Assisted Mode e Ana retorna local_ready sem publicar # SKIP test name does not match pattern
+  ---
+  duration_ms: 1.074966
+  ...
+# Subtest: CLI: --mode local-production gera ZIP, caption, hashtags, metadata e relatório no carrossel
+ok 2 - CLI: --mode local-production gera ZIP, caption, hashtags, metadata e relatório no carrossel # SKIP test name does not match pattern
+  ---
+  duration_ms: 0.109471
+  ...
+# Subtest: CLI: LOCAL_PRODUCTION executa pipeline de vídeo com Rafa em Developer Assisted Mode (ZUNO_VIDEO_RENDER_MODE=developer_assisted força o modo antigo)
+ok 3 - CLI: LOCAL_PRODUCTION executa pipeline de vídeo com Rafa em Developer Assisted Mode (ZUNO_VIDEO_RENDER_MODE=developer_assisted força o modo antigo) # SKIP test name does not match pattern
+  ---
+  duration_ms: 0.161588
+  ...
+# Subtest: CLI: LOCAL_PRODUCTION resolve assets visuais antes da renderização local automática
+ok 4 - CLI: LOCAL_PRODUCTION resolve assets visuais antes da renderização local automática
+  ---
+  duration_ms: 23349.49631
+  ...
+# Subtest: CLI: --continue antes do arquivo existir pausa de novo com a mesma instrução, sem avançar o workflow
+ok 5 - CLI: --continue antes do arquivo existir pausa de novo com a mesma instrução, sem avançar o workflow # SKIP test name does not match pattern
+  ---
+  duration_ms: 0.264903
+  ...
+# Subtest: CLI: --reject reprova a etapa humana e encerra o workflow sem publicar
+ok 6 - CLI: --reject reprova a etapa humana e encerra o workflow sem publicar # SKIP test name does not match pattern
+  ---
+  duration_ms: 0.108319
+  ...
+# Subtest: CLI: comando que exige capability sem Skill implementada falha imediatamente com mensagem consolidada, sem chamar nenhuma Skill
+ok 7 - CLI: comando que exige capability sem Skill implementada falha imediatamente com mensagem consolidada, sem chamar nenhuma Skill # SKIP test name does not match pattern
+  ---
+  duration_ms: 0.1328
+  ...
+# Subtest: CLI: sem argumentos imprime instruções de uso, incluindo --continue
+ok 8 - CLI: sem argumentos imprime instruções de uso, incluindo --continue # SKIP test name does not match pattern
+  ---
+  duration_ms: 0.241548
+  ...
+# Subtest: CLI: --rate registra avaliações em processos separados sem colidir (regressão de id entre invocações)
+ok 9 - CLI: --rate registra avaliações em processos separados sem colidir (regressão de id entre invocações) # SKIP test name does not match pattern
+  ---
+  duration_ms: 0.249465
+  ...
+# Subtest: CLI: duas execuções de workflow completamente diferentes nunca colidem no mesmo executionId (regressão do BUG-04)
+ok 10 - CLI: duas execuções de workflow completamente diferentes nunca colidem no mesmo executionId (regressão do BUG-04) # SKIP test name does not match pattern
+  ---
+  duration_ms: 0.291336
+  ...
+# Subtest: CLI: --comment aceita valores que começam com -- e a mensagem de erro cita a flag correta (regressão do BUG-05)
+ok 11 - CLI: --comment aceita valores que começam com -- e a mensagem de erro cita a flag correta (regressão do BUG-05) # SKIP test name does not match pattern
+  ---
+  duration_ms: 0.15816
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 10
+# todo 0
+# duration_ms 23426.678236

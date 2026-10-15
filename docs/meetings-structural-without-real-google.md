@@ -88,3 +88,5 @@ Estado final registrado em `structural-fixtures/evidence/final-metrics.json` e `
 Correção isolada de runtime já entregue: commit `a3359d4b71ceff37aa4230605edbba89bf06de90`, PID Chromium obtido via CDP. A nova cobertura de browser usa fixtures e não reabre a arquitetura.
 
 Etapa concluída sem Google real. Parada no limite definido pelo usuário; homologação real só será iniciada quando ele decidir.
+
+Atualização posterior de 14/10/2026: o usuário autorizou publicar a aplicação local em produção. API, telas e schema de Meetings foram implantados com as demais alterações da aplicação; recorders/processamento permanecem na homologação WSL2. Gravação real continua desabilitada em produção, sem contas de gravação ou sessões abertas. Esse deploy não aprova homologação Google ou liberação comercial. [Relatório de produção](production-deploy-20261014.md).

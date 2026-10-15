@@ -2,7 +2,7 @@
 
 14/10/2026, America/Sao_Paulo. Implementação e validação locais concluídas. Direção visual textual autorizada pelo usuário: dark corporativo, verde Vorix, azul/violeta, interfaces de produto, grids e iluminação discreta.
 
-Preview: http://localhost:3003. Escuta restrita a localhost. API de preview separada em localhost:3002; serviços anteriores de homologação preservados. Nenhum deploy público ou em produção.
+Produção: https://vorixworks.com. Publicação posterior autorizada pelo usuário em 14/10/2026, com API, worker e frontend atualizados. Preview local em http://localhost:3003; homologação preservada. [Relatório do deploy](production-deploy-20261014.md).
 
 ## Resultado solicitado
 
@@ -40,7 +40,7 @@ WEB_TESTS = PASS — 94 testes, 13 arquivos
 WEB_BUILD = PASS
 BACKEND_RELEVANT_TESTS = PASS — 37 testes
 NEW_COMMIT_SHA = e8982d5f21a3b2a5b26dc184bf194690a3ebaf3d
-DEPLOYED = NO
+DEPLOYED = YES — revisão e1ce6b455c262c196e639ba7a0ae72ce45375f98
 REMAINING_BLOCKERS = nenhum bloqueio da implementação do site;
                      Meetings/Suite dependem de liberação comercial e ofertas oficiais.
 ```
@@ -104,4 +104,4 @@ node scripts/public-site/performance-smoke.mjs
 
 Os scripts aceitam `VORIX_PUBLIC_BASE_URL`, `VORIX_PUBLIC_API_URL` e `VORIX_PUBLIC_EVIDENCE_DIR` e recusam hosts externos. O browser smoke permite `PUBLIC_SITE_BROWSER_PATH`; usa Chrome instalado por padrão. As credenciais de fixture presentes no smoke são públicas e fictícias, exclusivas da homologação local.
 
-Etapa encerrada. Nenhuma publicação comercial de Meetings/Suite ou implantação em produção foi realizada.
+Site publicado em produção após autorização posterior do usuário. Meetings/Suite continuam sem contratação comercial; nenhuma homologação Google real foi aprovada por esse deploy.

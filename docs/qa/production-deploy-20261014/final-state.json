@@ -1,0 +1,11 @@
+﻿{
+  "checkedAt": "2026-10-15T00:39:45.485Z",
+  "revision": "e1ce6b455c262c196e639ba7a0ae72ce45375f98",
+  "authMode": "jwt",
+  "cookieSecure": true,
+  "realRecordingEnabled": false,
+  "migrations": 148,
+  "meetings": 0,
+  "recorder_accounts": 0,
+  "open_provisioning_sessions": 0
+}

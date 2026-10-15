@@ -1,0 +1,16 @@
+{
+  "checkedAt": "2026-10-15T00:39:13.684Z",
+  "base": "https://vorixworks.com",
+  "api": "https://api.vorixworks.com",
+  "routes": "PASS",
+  "desktop": "PASS",
+  "mobile": "PASS",
+  "menusAndSelector": "PASS",
+  "pricingParity": "PASS",
+  "meetingsContractable": false,
+  "suiteCheckout": false,
+  "privateRoutes": "PASS",
+  "openGraph": "PASS",
+  "pageErrors": [],
+  "officialStartingPrice": 149
+}

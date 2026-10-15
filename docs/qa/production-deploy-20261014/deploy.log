@@ -1,0 +1,303 @@
+DEPLOY e1ce6b455c262c196e639ba7a0ae72ce45375f98 target=all stamp=20261015003723
+PREFLIGHT_OK free=7611MB
+BACKUP code=deploy_backups/pre-e1ce6b455c262c196e639ba7a0ae72ce45375f98-20261015003723.tgz db=deploy_backups/db-pre-e1ce6b455c262c196e639ba7a0ae72ce45375f98-20261015003723.sql.gz env=/root/.env.zuno.pre-e1ce6b455c262c196e639ba7a0ae72ce45375f98-20261015003723
+ROLLBACK_TAG zuno-zuno-api:rollback-20261015003723
+ROLLBACK_TAG zuno-vorix-worker:rollback-20261015003723
+ROLLBACK_TAG zuno-zuno-web:rollback-20261015003723
+ENV before=d4717cfdf453 after=d4717cfdf453
+BUILD zuno-api
+ Image zuno-zuno-api Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 472B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 2.39kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.2s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:20-slim
+#5 DONE 0.1s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 125B done
+#6 DONE 0.0s
+
+#7 [deps 1/4] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#7 resolve docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 0.0s done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 9.54MB 0.3s done
+#8 DONE 0.5s
+
+#9 [runtime  3/10] RUN apt-get update   && apt-get install -y --no-install-recommends fontconfig ca-certificates curl xz-utils   && rm -rf /var/lib/apt/lists/*
+#9 CACHED
+
+#10 [runtime  4/10] COPY package.json package-lock.json ./
+#10 CACHED
+
+#11 [runtime  6/10] COPY --from=build /app/dist ./dist
+#11 CACHED
+
+#12 [runtime  9/10] RUN sh ./scripts/install-ffmpeg-linux.sh /opt/vorix/ffmpeg
+#12 CACHED
+
+#13 [build 8/8] RUN npm run build
+#13 CACHED
+
+#14 [deps 4/4] RUN npm ci
+#14 CACHED
+
+#15 [build 4/8] COPY package.json package-lock.json tsconfig.json ./
+#15 CACHED
+
+#16 [runtime  8/10] COPY --from=build /app/db ./db
+#16 CACHED
+
+#17 [runtime  7/10] COPY --from=build /app/scripts ./scripts
+#17 CACHED
+
+#18 [deps 3/4] COPY package.json package-lock.json ./
+#18 CACHED
+
+#19 [build 3/8] COPY --from=deps /app/node_modules ./node_modules
+#19 CACHED
+
+#20 [deps 2/4] WORKDIR /app
+#20 CACHED
+
+#21 [build 7/8] COPY db ./db
+#21 CACHED
+
+#22 [runtime  5/10] RUN npm ci --omit=dev && npm cache clean --force
+#22 CACHED
+
+#23 [build 5/8] COPY src ./src
+#23 CACHED
+
+#24 [build 6/8] COPY scripts ./scripts
+#24 CACHED
+
+#25 [runtime 10/10] RUN mkdir -p /usr/local/share/fonts/vorix /etc/fonts/conf.d   && cp ./dist/infrastructure/rendering/assets/geist-regular.ttf /usr/local/share/fonts/vorix/GeistEditorial-Regular.ttf   && cp ./dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf /usr/local/share/fonts/vorix/DMSerifDisplay-Regular.ttf   && printf '%s\n'     '<?xml version="1.0"?>'     '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">'     '<fontconfig>'     '  <dir>/usr/local/share/fonts/vorix</dir>'     '  <alias>'     '    <family>GeistEditorial</family>'     '    <prefer><family>Geist</family></prefer>'     '  </alias>'     '</fontconfig>'     > /etc/fonts/conf.d/60-vorix-geist-editorial.conf   && fc-cache -f /usr/local/share/fonts/vorix   && fc-match GeistEditorial | grep -i 'GeistEditorial-Regular.ttf'   && fc-match "DM Serif Display" | grep -i 'DMSerifDisplay-Regular.ttf'
+#25 CACHED
+
+#26 exporting to image
+#26 exporting layers 0.0s done
+#26 exporting manifest sha256:6831d165675c8a9f28396842664a2b2aa28afea544c7385769dc558b788a1016 0.0s done
+#26 exporting config sha256:7b2f694d64b4040757f15fffa5f03ead5be0c6933c533df50c0db59e334f6f2d 0.0s done
+#26 exporting attestation manifest sha256:240b284c5954c8913ae5260f2574550a96a8d4b8036c5695274bf5e05bae900b 0.0s done
+#26 exporting manifest list sha256:37038281a30baaee5645d5c21c2ec34fa86e8261c1e17582207f0691df6a239d
+#26 exporting manifest list sha256:37038281a30baaee5645d5c21c2ec34fa86e8261c1e17582207f0691df6a239d 0.0s done
+#26 naming to docker.io/library/zuno-zuno-api:latest done
+#26 unpacking to docker.io/library/zuno-zuno-api:latest 0.0s done
+#26 DONE 0.2s
+
+#27 resolving provenance for metadata file
+#27 DONE 0.0s
+ Image zuno-zuno-api Built 
+BUILD vorix-worker
+ Image zuno-vorix-worker Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 488B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 2.39kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.1s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:20-slim
+#5 DONE 0.1s
+
+#6 [internal] load .dockerignore
+#6 transferring context:
+#6 transferring context: 125B done
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 DONE 0.0s
+
+#8 [deps 1/4] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#8 resolve docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 0.0s done
+#8 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 105.72kB 0.1s done
+#7 DONE 0.1s
+
+#9 [build 6/8] COPY scripts ./scripts
+#9 CACHED
+
+#10 [build 8/8] RUN npm run build
+#10 CACHED
+
+#11 [build 3/8] COPY --from=deps /app/node_modules ./node_modules
+#11 CACHED
+
+#12 [deps 3/4] COPY package.json package-lock.json ./
+#12 CACHED
+
+#13 [runtime  4/10] COPY package.json package-lock.json ./
+#13 CACHED
+
+#14 [build 4/8] COPY package.json package-lock.json tsconfig.json ./
+#14 CACHED
+
+#15 [build 5/8] COPY src ./src
+#15 CACHED
+
+#16 [runtime  9/10] RUN sh ./scripts/install-ffmpeg-linux.sh /opt/vorix/ffmpeg
+#16 CACHED
+
+#17 [deps 4/4] RUN npm ci
+#17 CACHED
+
+#18 [build 7/8] COPY db ./db
+#18 CACHED
+
+#19 [deps 2/4] WORKDIR /app
+#19 CACHED
+
+#20 [runtime  8/10] COPY --from=build /app/db ./db
+#20 CACHED
+
+#21 [runtime  5/10] RUN npm ci --omit=dev && npm cache clean --force
+#21 CACHED
+
+#22 [runtime  6/10] COPY --from=build /app/dist ./dist
+#22 CACHED
+
+#23 [runtime  3/10] RUN apt-get update   && apt-get install -y --no-install-recommends fontconfig ca-certificates curl xz-utils   && rm -rf /var/lib/apt/lists/*
+#23 CACHED
+
+#24 [runtime  7/10] COPY --from=build /app/scripts ./scripts
+#24 CACHED
+
+#25 [runtime 10/10] RUN mkdir -p /usr/local/share/fonts/vorix /etc/fonts/conf.d   && cp ./dist/infrastructure/rendering/assets/geist-regular.ttf /usr/local/share/fonts/vorix/GeistEditorial-Regular.ttf   && cp ./dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf /usr/local/share/fonts/vorix/DMSerifDisplay-Regular.ttf   && printf '%s\n'     '<?xml version="1.0"?>'     '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">'     '<fontconfig>'     '  <dir>/usr/local/share/fonts/vorix</dir>'     '  <alias>'     '    <family>GeistEditorial</family>'     '    <prefer><family>Geist</family></prefer>'     '  </alias>'     '</fontconfig>'     > /etc/fonts/conf.d/60-vorix-geist-editorial.conf   && fc-cache -f /usr/local/share/fonts/vorix   && fc-match GeistEditorial | grep -i 'GeistEditorial-Regular.ttf'   && fc-match "DM Serif Display" | grep -i 'DMSerifDisplay-Regular.ttf'
+#25 CACHED
+
+#26 exporting to image
+#26 exporting layers 0.0s done
+#26 exporting manifest sha256:3c4f90c1e02772de5f0da09892d4581de37b14e6de9cfd7b27af8bb6025bfaed done
+#26 exporting config sha256:19761361c7ab21bd3505120df317a689d756fdc647d1b2ba45a6ac92da7a5d0d 0.0s done
+#26 exporting attestation manifest sha256:804415174422c211ddc725f764a0b267190df1f72e0d516bf570f3def2800548 0.0s done
+#26 exporting manifest list sha256:6b6a4418dccb68c6f871fc1f118463629c0946c7e789a4b4031f064d57c332d7
+#26 exporting manifest list sha256:6b6a4418dccb68c6f871fc1f118463629c0946c7e789a4b4031f064d57c332d7 done
+#26 naming to docker.io/library/zuno-vorix-worker:latest done
+#26 unpacking to docker.io/library/zuno-vorix-worker:latest 0.0s done
+#26 DONE 0.1s
+
+#27 resolving provenance for metadata file
+#27 DONE 0.0s
+ Image zuno-vorix-worker Built 
+BUILD zuno-web
+ Image zuno-zuno-api Building 
+ Image zuno-zuno-web Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 930B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 984B done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.1s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:20-slim
+#5 DONE 0.1s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 102B done
+#6 DONE 0.0s
+
+#7 [deps 1/4] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#7 resolve docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 0.0s done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 28.63kB 0.0s done
+#8 DONE 0.1s
+
+#9 [build 5/5] RUN npm run build
+#9 CACHED
+
+#10 [runtime 3/5] COPY --from=build /app/.next/standalone ./
+#10 CACHED
+
+#11 [deps 2/4] WORKDIR /app
+#11 CACHED
+
+#12 [deps 4/4] RUN npm ci
+#12 CACHED
+
+#13 [runtime 4/5] COPY --from=build /app/.next/static ./.next/static
+#13 CACHED
+
+#14 [build 3/5] COPY --from=deps /app/node_modules ./node_modules
+#14 CACHED
+
+#15 [build 4/5] COPY . .
+#15 CACHED
+
+#16 [deps 3/4] COPY package.json package-lock.json ./
+#16 CACHED
+
+#17 [runtime 5/5] COPY --from=build /app/public ./public
+#17 CACHED
+
+#18 exporting to image
+#18 exporting layers done
+#18 exporting manifest sha256:baf106e796e4767e8f571ecc05a761fc86fd07640cf5e8ee174dcecd9de9dc78 done
+#18 exporting config sha256:52c2c3fce8ae5d683f4297d6c0b045793e3c518dffe88c9bcac3b7c242beaffb done
+#18 exporting attestation manifest sha256:6e18e28185d50b83e57f6fbf3081bb0637bf30f99b090cc1e5cced39bf332e4b 0.0s done
+#18 exporting manifest list sha256:f0ccb5cb0bfb2ffa2f9c11ec44e7fd4e55eb114a3d97a592b98e908828fca65e
+#18 exporting manifest list sha256:f0ccb5cb0bfb2ffa2f9c11ec44e7fd4e55eb114a3d97a592b98e908828fca65e done
+#18 naming to docker.io/library/zuno-zuno-web:latest done
+#18 unpacking to docker.io/library/zuno-zuno-web:latest 0.0s done
+#18 DONE 0.1s
+
+#19 resolving provenance for metadata file
+#19 DONE 0.0s
+ Image zuno-zuno-web Built 
+MIGRATIONS_BEFORE [migrate] 142 aplicada(s), 6 pendente(s).
+MIGRATIONS_AFTER [migrate] 148 aplicada(s), 0 pendente(s).
+ Container zuno-zuno-postgres-1 Running 
+ Container zuno-vorix-worker-1 Recreate 
+ Container zuno-zuno-api-1 Recreate 
+ Container zuno-vorix-worker-1 Recreated 
+ Container zuno-zuno-api-1 Recreated 
+ Container zuno-zuno-web-1 Recreate 
+ Container zuno-zuno-web-1 Recreated 
+ Container zuno-zuno-postgres-1 Waiting 
+ Container zuno-zuno-postgres-1 Waiting 
+ Container zuno-zuno-postgres-1 Healthy 
+ Container zuno-zuno-api-1 Starting 
+ Container zuno-zuno-postgres-1 Healthy 
+ Container zuno-vorix-worker-1 Starting 
+ Container zuno-vorix-worker-1 Started 
+ Container zuno-zuno-api-1 Started 
+ Container zuno-zuno-api-1 Waiting 
+ Container zuno-zuno-api-1 Healthy 
+ Container zuno-zuno-web-1 Starting 
+ Container zuno-zuno-web-1 Started 
+READYZ "ready":true WEB 200 LOG_ERRORS 0
+DEPLOYED e1ce6b455c262c196e639ba7a0ae72ce45375f98
+DEPLOY_DONE

@@ -1,0 +1,36 @@
+Unable to find image 'node:20.20.2-slim' locally
+20.20.2-slim: Pulling from library/node
+Digest: sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+Status: Downloaded newer image for node:20.20.2-slim
+OS=Debian GNU/Linux 12 (bookworm) NODE=v20.20.2 NPM=10.8.2 CPUS=12
+debconf: delaying package configuration, since apt-utils is not installed
+APT_OK
+STEP ffmpeg rc=0 secs=8
+/tmp/tmp.EY1n5ntLtf/ffmpeg.tar.xz: OK
+FFmpeg instalado em /opt/vorix/ffmpeg/ffmpeg: ffmpeg version 7.0.2-Jellyfin Copyright (c) 2000-2024 the FFmpeg developers
+STEP npm_ci rc=0 secs=16
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice
+STEP typecheck rc=0 secs=17
+> zuno@1.0.0 typecheck
+> tsc --noEmit
+
+STEP build rc=0 secs=18
+[copy-rendering-assets] 2 fonte(s) .ttf copiada(s) para dist/infrastructure/rendering/assets.
+  - dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf
+  - dist/infrastructure/rendering/assets/geist-regular.ttf
+FONT_OK
+STEP architecture rc=0 secs=20
+[check-runtime-isolation] OK — Runtime e o pipeline legado (Arthur/Helena/Caio/Skills) permanecem totalmente separados (1093 arquivos verificados).
+[check-execution-isolation] OK — Execution permanece isolado de Caio/Helena/Skills/AI/rede/publicação fora dos adaptadores de infrastructure.
+[check-publication-isolation] OK — Publication isolado de Execution/Helena/Skills/AI/providers reais.
+STEP npm_test rc=1 secs=769
+# tests 3567
+# pass 3564
+# fail 1
+# cancelled 0
+# skipped 2
+# todo 0
+not ok 624 - CLI: LOCAL_PRODUCTION resolve assets visuais antes da renderização local automática
+DONE local-20261014

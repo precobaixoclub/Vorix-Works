@@ -51,3 +51,5 @@ Fluxo self-service implementado e validado com banco PGlite, API/relay WebSocket
 Validação: suíte completa do backend com 3.563 testes aprovados, nenhuma falha e um teste externo inicialmente omitido; esse teste externo passou na execução separada com PostgreSQL real. Frontend com 87 testes aprovados. Verificações de tipos, contratos e isolamento arquitetural aprovadas.
 
 Nenhuma implantação ou homologação com contas Google reais foi realizada nesta revisão.
+
+Atualização posterior de 14/10/2026: após autorização explícita, API, frontend, worker de Conversas e migrations `0143`–`0148` foram publicados em produção. Recorders/processamento de Meetings permanecem no WSL2 de homologação; gravação real e contratação de Meetings continuam desabilitadas. [Relatório do deploy](production-deploy-20261014.md).

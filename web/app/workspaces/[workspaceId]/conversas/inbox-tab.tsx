@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -19,6 +19,8 @@ import {
   Mail,
   MailOpen,
   MessageCircle,
+  MessageSquarePlus,
+  StickyNote,
   Mic,
   MoreHorizontal,
   Paperclip,
@@ -55,6 +57,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { cn } from "@/lib/utils";
 import { canManageTenant, canOperateWorkspace, RBAC_COPY } from "@/lib/rbac";
 import {
+  addInboxConversationNote,
   addTagToConversation,
   cancelScheduledInboxMessage,
   assignInboxConversation,
@@ -95,6 +98,7 @@ import {
 } from "@/features/inbox/inbox-filters";
 import type { InboxAiFilter, InboxFilterSection, InboxFilterState, InboxPeriodFilter, InboxReadFilter } from "@/features/inbox/inbox-filters";
 import { CrmContextSection } from "./crm-panel";
+import { InboundAlertsToggle, NewConversationModal, QuickRepliesButton, QuickRepliesModal, useInboundAlerts, useQuickReplySuggestions } from "./inbox-essentials";
 import { ConversationMediaViewer, MessageMedia } from "./message-media";
 import { InboxAvatar } from "./inbox-avatar";
 
@@ -614,6 +618,9 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
   const { data: teams } = useTeams(workspaceId);
   const conversations = data?.conversations ?? [];
   const selectedConversation = conversations.find((conversation) => conversation.id === selectedConversationId);
+  // "Nova conversa": também abre por link (`?nova=<telefone>&nome=`), ex. a partir de Contatos.
+  const [newConversationOpen, setNewConversationOpen] = useState(() => searchParams.has("nova"));
+  const alerts = useInboundAlerts(conversations, selectedConversationId, conversationTitle);
 
   const filteredConversations = useMemo(() => {
     // Todas as dimensões combinam com AND (pedido explícito do usuário, seção 5: busca + canal +
@@ -698,6 +705,8 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
             members={members}
             teams={teams ?? []}
             onConversationChanged={() => mutate()}
+            onNewConversation={() => setNewConversationOpen(true)}
+            headerActions={<InboundAlertsToggle enabled={alerts.enabled} onToggle={() => void alerts.toggle()} />}
           />
         </div>
 
@@ -753,6 +762,33 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
           </div>
         </div>
       ) : null}
+
+      {newConversationOpen ? (
+        <NewConversationModal
+          workspaceId={workspaceId}
+          initialPhone={searchParams.get("nova") || undefined}
+          initialName={searchParams.get("nome") || undefined}
+          onClose={() => {
+            setNewConversationOpen(false);
+            if (searchParams.has("nova")) {
+              const nextParams = new URLSearchParams(searchParams.toString());
+              nextParams.delete("nova");
+              nextParams.delete("nome");
+              router.replace(nextParams.toString() ? `${pathname}?${nextParams.toString()}` : pathname);
+            }
+          }}
+          onStarted={async (conversationId) => {
+            setNewConversationOpen(false);
+            await mutate();
+            const nextParams = new URLSearchParams(searchParams.toString());
+            nextParams.delete("nova");
+            nextParams.delete("nome");
+            nextParams.set("conversation", conversationId);
+            router.push(`${pathname}?${nextParams.toString()}`);
+            setMobileView("conversation");
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -775,10 +811,14 @@ function ConversationListPane({
   members,
   teams,
   onConversationChanged,
+  onNewConversation,
+  headerActions,
 }: {
   workspaceId: string;
   conversations: InboxConversation[];
   totalConversations: number;
+  onNewConversation: () => void;
+  headerActions?: React.ReactNode;
   isLoading: boolean;
   error: unknown;
   onRetry: () => void;
@@ -806,8 +846,14 @@ function ConversationListPane({
             <p className="text-sm font-semibold text-foreground">Atendimento</p>
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">{totalConversations}</span>
           </div>
-          <AttendanceModuleToggle workspaceId={workspaceId} active="lista" />
+          <div className="flex shrink-0 items-center gap-1">
+            {headerActions}
+            <AttendanceModuleToggle workspaceId={workspaceId} active="lista" />
+          </div>
         </div>
+        <Button size="sm" className="w-full" onClick={onNewConversation}>
+          <MessageSquarePlus className="h-4 w-4" /> Nova conversa
+        </Button>
 
         <InboxFilterBar
           workspaceId={workspaceId}
@@ -833,7 +879,7 @@ function ConversationListPane({
           <div className="p-4">
             <EmptyState
               title={search ? "Nenhuma conversa encontrada" : "Nenhuma conversa"}
-              description={search ? "Ajuste a busca ou limpe os filtros para ver a fila completa." : "Conversas novas aparecem aqui automaticamente."}
+              description={search ? "Ajuste a busca ou limpe os filtros para ver a fila completa." : "Conversas novas aparecem aqui automaticamente. Para falar com alguém agora, use Nova conversa."}
             />
           </div>
         ) : (
@@ -1426,7 +1472,17 @@ export function ConversationTimelinePane({
   const role = state.status === "authenticated" ? state.role : undefined;
   const canOperate = canOperateWorkspace(role);
   const canDelete = canManageTenant(role);
-  const { data, isLoading, error, mutate } = useInboxConversationMessages(workspaceId, conversation.id);
+  // Histórico: começa nas 50 últimas; "Carregar mensagens anteriores" amplia de 50 em 50.
+  const [messageLimit, setMessageLimit] = useState(50);
+  useEffect(() => { setMessageLimit(50); }, [conversation.id]);
+  const { data, isLoading, error, mutate } = useInboxConversationMessages(workspaceId, conversation.id, messageLimit);
+  const hasOlderMessages = (data?.messages.length ?? 0) >= messageLimit && messageLimit < 500;
+  // Nota interna: mesmo campo de texto, mas vai só para a timeline da equipe.
+  const [composerMode, setComposerMode] = useState<"message" | "note">("message");
+  const [quickRepliesOpen, setQuickRepliesOpen] = useState(false);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottom = useRef(true);
+  const olderAnchor = useRef<{ height: number; top: number } | undefined>(undefined);
   const { data: eventsData, mutate: mutateEvents } = useInboxConversationEvents(workspaceId, conversation.id);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -1454,6 +1510,15 @@ export function ConversationTimelinePane({
   // voo ao mesmo tempo).
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const quickReplies = useQuickReplySuggestions(workspaceId, draft, (body) => {
+    setDraft(body);
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(body.length, body.length);
+    });
+  });
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const documentInputRef = useRef<HTMLInputElement | null>(null);
   const stickerInputRef = useRef<HTMLInputElement | null>(null);
@@ -1471,6 +1536,26 @@ export function ConversationTimelinePane({
   // o ID da mensagem aberta — o próprio `ConversationMediaViewer` nunca desmonta esta pane (é um
   // overlay renderizado como IRMÃO da área de scroll, nunca dentro dela), então filtros, scroll e
   // composer continuam exatamente como estavam quando o visualizador fecha (seção 11 do pedido).
+  // Abrir a conversa mostra a mensagem MAIS RECENTE; mensagem nova só puxa para baixo se a pessoa
+  // já estava no fim (nunca arranca quem está lendo o histórico); "anteriores" mantém a posição.
+  useEffect(() => { stickToBottom.current = true; }, [conversation.id]);
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    if (olderAnchor.current) {
+      element.scrollTop = element.scrollHeight - olderAnchor.current.height + olderAnchor.current.top;
+      olderAnchor.current = undefined;
+    } else if (stickToBottom.current) {
+      element.scrollTop = element.scrollHeight;
+    }
+  }, [timeline.length, conversation.id, isLoading]);
+
+  function loadOlderMessages() {
+    const element = scrollRef.current;
+    if (element) olderAnchor.current = { height: element.scrollHeight, top: element.scrollTop };
+    setMessageLimit((current) => Math.min(current + 50, 500));
+  }
+
   const mediaMessages = messages.filter((message) => message.type === "image" || message.type === "video");
   const [openMediaMessageId, setOpenMediaMessageId] = useState<string | undefined>(undefined);
 
@@ -1517,10 +1602,31 @@ export function ConversationTimelinePane({
     }
   }
 
+  async function handleAddNote() {
+    if (!canOperate) return;
+    const text = draft.trim();
+    if (!text) return;
+    setSending(true);
+    setSendError(undefined);
+    try {
+      await addInboxConversationNote(workspaceId, conversation.id, text);
+      setDraft((current) => (current.trim() === text ? "" : current));
+      stickToBottom.current = true;
+      await mutateEvents();
+      textareaRef.current?.focus();
+    } catch (cause) {
+      setSendError(cause instanceof Error ? cause.message : "Não foi possível salvar a nota.");
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function handleSend(bodyFromRetry?: string) {
     if (!canOperate) return;
+    if (!bodyFromRetry && composerMode === "note") return handleAddNote();
     const body = (bodyFromRetry ?? draft).trim();
     if (!body) return;
+    stickToBottom.current = true;
     // Retry de uma mensagem que falhou antes é sempre reenviada como mensagem normal — a citação
     // original (se houver) não é reconstruída aqui (edge case deliberadamente fora de escopo).
     const replyToMessageId = bodyFromRetry ? undefined : replyingTo?.id;
@@ -1758,8 +1864,20 @@ export function ConversationTimelinePane({
         onCancel={() => setDeleteConfirmOpen(false)}
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto px-3 py-4"
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+        }}
+      >
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-1">
+          {!isLoading && !error && hasOlderMessages ? (
+            <div className="flex justify-center pb-2">
+              <Button variant="secondary" size="sm" onClick={loadOlderMessages}>Carregar mensagens anteriores</Button>
+            </div>
+          ) : null}
           {isLoading ? (
             <MessageSkeleton />
           ) : error ? (
@@ -1815,7 +1933,29 @@ export function ConversationTimelinePane({
               <span className="min-w-0 flex-1">{attachError}</span>
             </div>
           ) : null}
-          {replyingTo ? (
+          {composerMode === "message" ? quickReplies.menu : null}
+          <div className="flex items-center gap-1 text-xs" role="tablist" aria-label="Tipo de envio">
+            {([["message", "Mensagem", Send], ["note", "Nota interna", StickyNote]] as const).map(([key, label, Icon]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={composerMode === key}
+                disabled={!canOperate}
+                onClick={() => { setComposerMode(key); textareaRef.current?.focus(); }}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium transition-colors",
+                  composerMode === key
+                    ? key === "note" ? "bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300" : "bg-primary/10 text-primary dark:text-primary-glow"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" /> {label}
+              </button>
+            ))}
+            {composerMode === "note" ? <span className="ml-1 text-muted-foreground">Só a equipe vê. O contato não recebe.</span> : null}
+          </div>
+          {replyingTo && composerMode === "message" ? (
             <div className="flex items-center gap-2 rounded-lg border-l-2 border-primary bg-muted/60 py-1.5 pl-2.5 pr-1.5 text-xs">
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-foreground">Respondendo</p>
@@ -1863,8 +2003,13 @@ export function ConversationTimelinePane({
              simples com ícones soltos") — os ícones (anexo/emoji/enviar-ou-microfone) ficam
              integrados ao mesmo container bordado do texto, em vez de cada um com sua própria
              borda/fundo flutuando ao lado. */}
-          <div className="flex items-end gap-0.5 rounded-2xl border border-border bg-background px-1.5 py-1.5 transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20">
-            <Popover>
+          <div className={cn(
+            "flex items-end gap-0.5 rounded-2xl border px-1.5 py-1.5 transition-colors focus-within:ring-1",
+            composerMode === "note"
+              ? "border-amber-300 bg-amber-50/70 focus-within:ring-amber-300/40 dark:border-amber-400/40 dark:bg-amber-400/5"
+              : "border-border bg-background focus-within:border-primary focus-within:ring-primary/20",
+          )}>
+            {composerMode === "message" ? <Popover>
               <PopoverTrigger asChild>
                 <span className="inline-flex">
                   <Button type="button" variant="ghost" size="icon" disabled={!canOperate || attaching} aria-label="Anexar arquivo">
@@ -1906,19 +2051,21 @@ export function ConversationTimelinePane({
                   Contato
                 </button>
               </PopoverContent>
-            </Popover>
+            </Popover> : null}
             <EmojiPickerButton disabled={!canOperate} onSelect={insertEmoji} />
+            {composerMode === "message" ? <QuickRepliesButton disabled={!canOperate} onOpen={() => setQuickRepliesOpen(true)} /> : null}
             <Textarea
               ref={textareaRef}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
+                if (composerMode === "message" && quickReplies.handleKeyDown(event)) return;
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   void handleSend();
                 }
               }}
-              placeholder={canOperate ? "Digite uma mensagem..." : "Seu papel permite visualizar, mas não operar esta conversa."}
+              placeholder={!canOperate ? "Seu papel permite visualizar, mas não operar esta conversa." : composerMode === "note" ? "Escreva uma nota para a equipe..." : "Digite uma mensagem ou / para respostas rápidas..."}
               className="max-h-36 min-h-[36px] flex-1 resize-none border-0 bg-transparent px-1.5 py-1.5 shadow-none focus:border-0 focus:ring-0"
               rows={1}
               // Nunca `|| sending` aqui (achado da causa raiz do bug de foco, pedido explícito do
@@ -1929,7 +2076,20 @@ export function ConversationTimelinePane({
               // anterior — é exatamente isso que deixa "já posso digitar a próxima" verdadeiro.
               disabled={!canOperate}
             />
-            {draft.trim() ? (
+            {draft.trim() && composerMode === "note" ? (
+              <GuardedButton
+                size="icon"
+                className="rounded-full bg-amber-500 text-white hover:bg-amber-600"
+                onClick={() => void handleAddNote()}
+                loading={sending}
+                disabled={sending || !draft.trim()}
+                allowed={canOperate}
+                blockedReason={RBAC_COPY.operateConversations}
+                aria-label="Salvar nota interna"
+              >
+                <StickyNote className="h-4 w-4" />
+              </GuardedButton>
+            ) : draft.trim() ? (
               <>
                 <GuardedButton
                   size="icon"
@@ -1957,9 +2117,9 @@ export function ConversationTimelinePane({
                   <Send className="h-4 w-4" />
                 </GuardedButton>
               </>
-            ) : (
+            ) : composerMode === "message" ? (
               <VoiceRecorderButton disabled={!canOperate || attaching} onSend={handleSendVoiceNote} />
-            )}
+            ) : null}
           </div>
         </div>
       </div>
@@ -1974,6 +2134,17 @@ export function ConversationTimelinePane({
         />
       ) : null}
 
+      {quickRepliesOpen ? (
+        <QuickRepliesModal
+          workspaceId={workspaceId}
+          onClose={() => setQuickRepliesOpen(false)}
+          onPick={(body) => {
+            setQuickRepliesOpen(false);
+            setDraft((current) => (current.trim() ? `${current.trimEnd()} ${body}` : body));
+            requestAnimationFrame(() => textareaRef.current?.focus());
+          }}
+        />
+      ) : null}
       {contactPickerOpen ? (
         <ContactPickerModal workspaceId={workspaceId} onClose={() => setContactPickerOpen(false)} onSelect={handleSendContact} />
       ) : null}
@@ -2815,6 +2986,19 @@ function MessageActionsMenu({
 }
 
 function EventPill({ event, currentUserId, members }: { event: InboxConversationEvent; currentUserId: string | undefined; members: readonly InboxTenantMember[] }) {
+  if (event.type === "note_added") {
+    const author = event.performedBy === currentUserId ? "Você" : members.find((member) => member.userId === event.performedBy)?.name ?? "Equipe";
+    return (
+      <div className="my-1 flex justify-center">
+        <div className="w-full max-w-xl rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100">
+          <p className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+            <StickyNote className="h-3 w-3" aria-hidden="true" /> Nota interna · {author} · {timeLabel(event.createdAt)}
+          </p>
+          <p className="whitespace-pre-wrap break-words">{typeof event.metadata?.text === "string" ? event.metadata.text : ""}</p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex justify-center py-1">
       <span className="rounded-full border border-border bg-card px-3 py-1 text-center text-[11px] text-muted-foreground shadow-sm">

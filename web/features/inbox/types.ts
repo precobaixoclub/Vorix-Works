@@ -7,6 +7,8 @@ export type MessagingConnectionStatus = "connecting" | "connected" | "reconnecti
 export type MessagingConnection = {
   id: string;
   displayName: string;
+  /** WhatsApp (wuzapi) ou Instagram — só WhatsApp permite iniciar conversa. */
+  provider?: MessagingProviderId;
   phoneNumber?: string;
   status: MessagingConnectionStatus;
   connectionHealth: "healthy" | "degraded" | "unknown";
@@ -170,7 +172,14 @@ export type InboxConversationEventType =
   // Fase 5 — únicos tipos com `performedBy: "ai"` (sentinela fixa, nunca um userId real).
   | "ai_response_sent"
   | "ai_response_failed"
-  | "ai_response_cancelled";
+  | "ai_response_cancelled"
+  | "ai_response_skipped_insufficient_credits"
+  | "kanban_phase_changed"
+  // Nota interna da equipe (`metadata.text`) — nunca enviada ao contato.
+  | "note_added";
+
+/** Resposta rápida — acionada no composer digitando "/atalho". */
+export type InboxQuickReply = { id: string; shortcut: string; body: string; createdBy?: string; createdAt: string; updatedAt: string };
 
 export type InboxConversationEvent = {
   id: string;

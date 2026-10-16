@@ -1,4 +1,5 @@
 import { apiClient } from "@/lib/api-client";
+import type { InboxQuickReply } from "./types";
 import type { ChannelDistributionMode, ChannelRoutingSnapshot, ConversationServiceTime, InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxMetricsReport, InboxModuleStatus, InboxStreamToken, InboxTag, InboxTagColor, InboxTenantMember, KanbanPhaseType, MessagingConnection, TeamKanbanPhase } from "./types";
 
 /** Fase 10 (Pre-Pilot Hardening) — sempre disponível, mesmo com o módulo desligado. */
@@ -48,8 +49,8 @@ export function listInboxConversations(workspaceId: string, filter?: InboxConver
   return apiClient.get<{ conversations: InboxConversation[] }>(`/v1/inbox/conversations?${query.toString()}`);
 }
 
-export function listInboxConversationMessages(workspaceId: string, conversationId: string): Promise<{ messages: InboxMessage[] }> {
-  const query = new URLSearchParams({ workspaceId });
+export function listInboxConversationMessages(workspaceId: string, conversationId: string, limit?: number): Promise<{ messages: InboxMessage[] }> {
+  const query = new URLSearchParams({ workspaceId, ...(limit ? { limit: String(limit) } : {}) });
   return apiClient.get<{ messages: InboxMessage[] }>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/messages?${query.toString()}`);
 }
 
@@ -288,4 +289,30 @@ export function moveConversationPhase(workspaceId: string, teamId: string, conve
 
 export function setConversationPinned(workspaceId: string, teamId: string, conversationId: string, pinned: boolean): Promise<InboxConversation> {
   return apiClient.patch<InboxConversation>(`/v1/inbox/teams/${encodeURIComponent(teamId)}/conversations/${encodeURIComponent(conversationId)}/pin`, { workspaceId, pinned });
+}
+
+/** "Nova conversa" — o atendente inicia o contato por WhatsApp (contato salvo OU telefone novo). */
+export function startInboxConversation(workspaceId: string, input: { connectionId: string; contactId?: string; phone?: string; name?: string; body: string }): Promise<{ conversationId: string; messageId: string; wasExisting: boolean }> {
+  return apiClient.post<{ conversationId: string; messageId: string; wasExisting: boolean }>("/v1/inbox/conversations", { workspaceId, ...input });
+}
+
+/** Nota interna — fica só na timeline da equipe, nunca é enviada ao contato. */
+export function addInboxConversationNote(workspaceId: string, conversationId: string, text: string): Promise<InboxConversationEvent> {
+  return apiClient.post<InboxConversationEvent>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/notes`, { workspaceId, text });
+}
+
+export function listInboxQuickReplies(workspaceId: string): Promise<InboxQuickReply[]> {
+  return apiClient.get<InboxQuickReply[]>(`/v1/inbox/quick-replies?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+export function createInboxQuickReply(workspaceId: string, input: { shortcut: string; body: string }): Promise<InboxQuickReply> {
+  return apiClient.post<InboxQuickReply>("/v1/inbox/quick-replies", { workspaceId, ...input });
+}
+
+export function updateInboxQuickReply(workspaceId: string, quickReplyId: string, input: { shortcut?: string; body?: string }): Promise<InboxQuickReply> {
+  return apiClient.patch<InboxQuickReply>(`/v1/inbox/quick-replies/${encodeURIComponent(quickReplyId)}`, { workspaceId, ...input });
+}
+
+export function deleteInboxQuickReply(workspaceId: string, quickReplyId: string): Promise<{ deleted: true }> {
+  return apiClient.delete<{ deleted: true }>(`/v1/inbox/quick-replies/${encodeURIComponent(quickReplyId)}?workspaceId=${encodeURIComponent(workspaceId)}`);
 }

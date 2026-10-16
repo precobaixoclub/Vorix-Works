@@ -39,6 +39,7 @@ import type { InboxConversationEventRepositoryPort } from "../../application/por
 import type { InboxMetricsRepositoryPort } from "../../application/ports/inbox-metrics-repository.port.js";
 import type { InboxIdentityLinkRepositoryPort } from "../../application/ports/inbox-identity-link-repository.port.js";
 import type { InboxTagRepositoryPort } from "../../application/ports/inbox-tag-repository.port.js";
+import type { InboxQuickReplyRepositoryPort } from "../../application/ports/inbox-quick-reply-repository.port.js";
 import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../application/ports/team-repository.port.js";
 import type { ChannelRoutingRepositoryPort } from "../../application/ports/channel-routing-repository.port.js";
 import type { QualityFeedbackRepositoryPort } from "../../application/quality-feedback/quality-feedback-repository.port.js";
@@ -132,10 +133,12 @@ import { PostgresInboxMetricsRepository } from "./postgres/postgres-inbox-metric
 import { InMemoryInboxMetricsRepository } from "./in-memory-inbox-metrics-repository.js";
 import { PostgresInboxIdentityLinkRepository } from "./postgres/postgres-inbox-identity-link-repository.js";
 import { PostgresInboxTagRepository } from "./postgres/postgres-inbox-tag-repository.js";
+import { PostgresInboxQuickReplyRepository } from "./postgres/postgres-inbox-quick-reply-repository.js";
 import { PostgresTeamRepository, PostgresTeamMembershipRepository } from "./postgres/postgres-team-repository.js";
 import { PostgresChannelRoutingRepository } from "./postgres/postgres-channel-routing-repository.js";
 import { InMemoryInboxIdentityLinkRepository } from "./in-memory-inbox-identity-link-repository.js";
 import { InMemoryInboxTagRepository } from "./in-memory-inbox-tag-repository.js";
+import { InMemoryInboxQuickReplyRepository } from "./in-memory-inbox-quick-reply-repository.js";
 import { PostgresQualityFeedbackRepository } from "./postgres/postgres-quality-feedback-repository.js";
 import { PostgresBriefingFieldValueRepository } from "./postgres/postgres-briefing-field-value-repository.js";
 import { PostgresBriefingQuestionRepository } from "./postgres/postgres-briefing-question-repository.js";
@@ -250,6 +253,7 @@ export type PlatformRepositories = {
   /** Bloco "etiquetas" (pedido explícito do usuário — ver `db/migrations/0129_inbox_tags.sql`) —
    * sempre presente nos dois drivers, mesmo racional de `inboxIdentityLinkRepository`. */
   inboxTagRepository: InboxTagRepositoryPort;
+  inboxQuickReplyRepository: InboxQuickReplyRepositoryPort;
   /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário, ver
    * `db/migrations/0123_team_routing.sql`) — `undefined` no driver `memory` (sem implementação
    * em memória ainda; `registerInboundMessage` trata a ausência como "sem roteamento
@@ -334,6 +338,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       inboxMetricsRepository: new InMemoryInboxMetricsRepository(),
       inboxIdentityLinkRepository: new InMemoryInboxIdentityLinkRepository(),
       inboxTagRepository: new InMemoryInboxTagRepository(),
+      inboxQuickReplyRepository: new InMemoryInboxQuickReplyRepository(),
       notificationRepository: new InMemoryNotificationRepository(),
     };
   }
@@ -398,6 +403,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     inboxMetricsRepository: new PostgresInboxMetricsRepository(pool),
     inboxIdentityLinkRepository: new PostgresInboxIdentityLinkRepository(pool),
     inboxTagRepository: new PostgresInboxTagRepository(pool),
+    inboxQuickReplyRepository: new PostgresInboxQuickReplyRepository(pool),
     // Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) —
     // MESMO pool que `messaging_connections`/`inbox_conversations` (o worker precisa deles em
     // tempo real ao registrar mensagem inbound, ver `registerInboundMessage`); a API também os

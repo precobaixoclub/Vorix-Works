@@ -6,6 +6,7 @@ import type { InboxConversationListFilter, InboxConversationRepositoryPort } fro
 import type { InboxMediaStoragePort } from "../../../../application/ports/inbox-media-storage.port.js";
 import type { InboxMessageRepositoryPort } from "../../../../application/ports/inbox-message-repository.port.js";
 import type { InboxTagRepositoryPort } from "../../../../application/ports/inbox-tag-repository.port.js";
+import type { InboxQuickReplyRepositoryPort } from "../../../../application/ports/inbox-quick-reply-repository.port.js";
 import type { InboxTagColor } from "../../../../domain/inbox/inbox.model.js";
 import type { MessagingConnectionRepositoryPort } from "../../../../application/ports/messaging-connection-repository.port.js";
 import type { MessagingProvider } from "../../../../application/ports/messaging-provider.port.js";
@@ -51,6 +52,12 @@ import {
   sendInboxContactCardMessage,
   sendInboxMediaMessage,
   sendInboxMessage,
+  startInboxConversation,
+  listInboxQuickReplies,
+  createInboxQuickReply,
+  updateInboxQuickReply,
+  deleteInboxQuickReply,
+  addConversationNote,
   setAiConversationEnabled,
   setConversationPinned,
   setConversationTeam,
@@ -91,6 +98,23 @@ const SEND_MESSAGE_BODY_SCHEMA = {
   required: ["workspaceId", "body"],
   properties: { workspaceId: { type: "string", minLength: 1 }, body: { type: "string", minLength: 1 }, replyToMessageId: { type: "string", minLength: 1 }, scheduledAt: { type: "string", format: "date-time" } },
 } as const;
+const START_CONVERSATION_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId", "connectionId", "body"],
+  properties: {
+    workspaceId: { type: "string", minLength: 1 },
+    connectionId: { type: "string", minLength: 1 },
+    contactId: { type: "string", minLength: 1 },
+    phone: { type: "string", minLength: 8, maxLength: 32 },
+    name: { type: "string", maxLength: 120 },
+    body: { type: "string", minLength: 1, maxLength: 4096 },
+  },
+  anyOf: [{ required: ["contactId"] }, { required: ["phone"] }],
+} as const;
+const QUICK_REPLY_CREATE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "shortcut", "body"], properties: { workspaceId: { type: "string", minLength: 1 }, shortcut: { type: "string", minLength: 1, maxLength: 60 }, body: { type: "string", minLength: 1, maxLength: 4096 } } } as const;
+const QUICK_REPLY_UPDATE_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, shortcut: { type: "string", minLength: 1, maxLength: 60 }, body: { type: "string", minLength: 1, maxLength: 4096 } } } as const;
+const QUICK_REPLY_PARAMS_SCHEMA = { type: "object", required: ["quickReplyId"], properties: { quickReplyId: { type: "string", minLength: 1 } } } as const;
+const NOTE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "text"], properties: { workspaceId: { type: "string", minLength: 1 }, text: { type: "string", minLength: 1, maxLength: 4000 } } } as const;
 const REACT_MESSAGE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "emoji"], properties: { workspaceId: { type: "string", minLength: 1 }, emoji: { type: "string" } } } as const;
 const MESSAGE_PARAMS_SCHEMA = { type: "object", required: ["id", "messageId"], properties: { id: { type: "string", minLength: 1 }, messageId: { type: "string", minLength: 1 } } } as const;
 const ASSIGN_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, assignedUserId: { type: "string" } } } as const;
@@ -232,6 +256,16 @@ const INBOX_ERROR_STATUS: Record<string, number> = {
   INBOX_MESSAGE_NOT_SCHEDULED: 409,
   // Bloco "excluir canal" (pedido explícito do usuário).
   INBOX_CONNECTION_HAS_PROPOSAL_DELIVERIES: 409,
+  // Bloco "nova conversa".
+  INBOX_START_CHANNEL_UNSUPPORTED: 422,
+  INBOX_INVALID_PHONE: 422,
+  INBOX_CONTACT_NOT_FOUND: 404,
+  // Respostas rápidas e notas internas.
+  INBOX_QUICK_REPLIES_NOT_CONFIGURED: 503,
+  INBOX_QUICK_REPLY_NOT_FOUND: 404,
+  INBOX_QUICK_REPLY_INVALID: 422,
+  INBOX_QUICK_REPLY_SHORTCUT_TAKEN: 409,
+  INBOX_NOTE_EMPTY: 422,
 };
 
 function rethrowInboxError(error: unknown): never {
@@ -297,6 +331,7 @@ export type InboxRoutesDeps = {
   /** Bloco "etiquetas" (pedido explícito do usuário) — `undefined` = módulo de etiquetas não
    * configurado neste processo; as rotas abaixo respondem 503 nesse caso. */
   tagRepository?: InboxTagRepositoryPort;
+  quickReplyRepository?: InboxQuickReplyRepositoryPort;
 };
 
 function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {
@@ -1055,6 +1090,81 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
       const conversation = await setAiConversationEnabled(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, aiEnabled, performedBy: principal.userId });
       publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
       return successEnvelope(conversation, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  // Respostas rápidas — qualquer atendente usa e cadastra (é ferramenta do dia a dia).
+  app.get("/inbox/quick-replies", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:read");
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      return successEnvelope(await listInboxQuickReplies(useCaseDeps, { tenantId: principal.tenantId, workspaceId }), request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.post("/inbox/quick-replies", { schema: { body: QUICK_REPLY_CREATE_BODY_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { workspaceId, shortcut, body } = request.body as { workspaceId: string; shortcut: string; body: string };
+    try {
+      const item = await createInboxQuickReply(useCaseDeps, { tenantId: principal.tenantId, workspaceId, shortcut, body, createdBy: principal.userId });
+      reply.status(201);
+      return successEnvelope(item, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.patch("/inbox/quick-replies/:quickReplyId", { schema: { params: QUICK_REPLY_PARAMS_SCHEMA, body: QUICK_REPLY_UPDATE_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { quickReplyId } = request.params as { quickReplyId: string };
+    const { workspaceId, shortcut, body } = request.body as { workspaceId: string; shortcut?: string; body?: string };
+    try {
+      return successEnvelope(await updateInboxQuickReply(useCaseDeps, { tenantId: principal.tenantId, workspaceId, quickReplyId, shortcut, body }), request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.delete("/inbox/quick-replies/:quickReplyId", { schema: { params: QUICK_REPLY_PARAMS_SCHEMA, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { quickReplyId } = request.params as { quickReplyId: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      await deleteInboxQuickReply(useCaseDeps, { tenantId: principal.tenantId, workspaceId, quickReplyId });
+      return successEnvelope({ deleted: true }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  // Nota interna — fica só na timeline da equipe, nunca é enviada ao contato.
+  app.post("/inbox/conversations/:id/notes", { schema: { params: ID_PARAMS_SCHEMA, body: NOTE_BODY_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { id } = request.params as { id: string };
+    const { workspaceId, text } = request.body as { workspaceId: string; text: string };
+    try {
+      const event = await addConversationNote(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, text, performedBy: principal.userId });
+      publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
+      reply.status(201);
+      return successEnvelope(event, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  // Bloco "nova conversa" — o atendente inicia o contato por WhatsApp (contato salvo ou telefone).
+  app.post("/inbox/conversations", { schema: { body: START_CONVERSATION_BODY_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { workspaceId, connectionId, contactId, phone, name, body } = request.body as { workspaceId: string; connectionId: string; contactId?: string; phone?: string; name?: string; body: string };
+    try {
+      const result = await startInboxConversation(useCaseDeps, { tenantId: principal.tenantId, workspaceId, connectionId, contactId, phone, name, body, startedByUserId: principal.userId });
+      publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: result.conversation.id });
+      reply.status(201);
+      return successEnvelope({ conversationId: result.conversation.id, messageId: result.message.id, wasExisting: result.wasExisting }, request.id);
     } catch (error) {
       rethrowInboxError(error);
     }

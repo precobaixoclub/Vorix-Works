@@ -1,4 +1,4 @@
-import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, InboxTag, InboxTagColor, MessagingConnection, MessagingConnectionStatus, MessagingProviderId } from "../../domain/inbox/inbox.model.js";
+import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, InboxQuickReply, InboxTag, InboxTagColor, MessagingConnection, MessagingConnectionStatus, MessagingProviderId } from "../../domain/inbox/inbox.model.js";
 import { INBOX_AI_ACTOR, MESSAGING_CONNECTION_TERMINAL_STATUSES, normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
 import type { KanbanPhaseType, TeamKanbanPhase } from "../../domain/identity/identity.model.js";
 import { KANBAN_PHASE_TYPES } from "../../domain/identity/identity.model.js";
@@ -14,6 +14,7 @@ import type { InboxMediaStoragePort } from "../ports/inbox-media-storage.port.js
 import type { InboxMessageRepositoryPort } from "../ports/inbox-message-repository.port.js";
 import type { InboxMetricsRecorder } from "../ports/inbox-metrics.port.js";
 import type { InboxTagRepositoryPort } from "../ports/inbox-tag-repository.port.js";
+import type { InboxQuickReplyRepositoryPort } from "../ports/inbox-quick-reply-repository.port.js";
 import type { MessagingConnectionRepositoryPort } from "../ports/messaging-connection-repository.port.js";
 import type { MessagingProvider, MessagingProviderErrorKind, NormalizedConnectionStatus } from "../ports/messaging-provider.port.js";
 import { MessagingProviderError } from "../ports/messaging-provider.port.js";
@@ -114,6 +115,7 @@ export type InboxUseCaseDeps = {
    * etiquetas não configurado neste processo; `listConversations` simplesmente não denormaliza
    * `tags` nesse caso (nunca bloqueia a listagem em si). */
   tagRepository?: InboxTagRepositoryPort;
+  quickReplyRepository?: InboxQuickReplyRepositoryPort;
 };
 
 const defaultIdGenerator = () => `wuzsess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -418,7 +420,8 @@ export type ListConversationMessagesInput = { tenantId: string; workspaceId: str
 
 export async function listConversationMessages(deps: InboxUseCaseDeps, input: ListConversationMessagesInput): Promise<InboxMessage[]> {
   await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
-  return deps.messageRepository.listByConversation(input);
+  // Teto de 500 por página: o histórico "carregar anteriores" cresce o limite, nunca sem fim.
+  return deps.messageRepository.listByConversation({ ...input, limit: Math.min(Math.max(Math.floor(input.limit ?? 50), 1), 500) });
 }
 
 export type MarkConversationReadInput = { tenantId: string; workspaceId: string; conversationId: string };
@@ -664,6 +667,68 @@ export async function setConversationTeam(deps: InboxUseCaseDeps, input: SetConv
 // de domínio claro (`INBOX_TAGS_NOT_CONFIGURED`) se chamadas sem ele configurado, nunca um erro
 // cru de `undefined`.
 // ------------------------------------------------------------------------------------------
+
+// ── Respostas rápidas ─────────────────────────────────────────────────────────────────────────
+
+function requireQuickReplyRepository(deps: InboxUseCaseDeps): InboxQuickReplyRepositoryPort {
+  if (!deps.quickReplyRepository) throw new Error("INBOX_QUICK_REPLIES_NOT_CONFIGURED: respostas rápidas não estão configuradas neste processo.");
+  return deps.quickReplyRepository;
+}
+
+/** Atalho sem a barra, sem espaços, minúsculo: "/Bom Dia" → "bom-dia". */
+function normalizeQuickReplyShortcut(raw: string): string {
+  const shortcut = raw.trim().replace(/^\/+/, "").toLowerCase().replace(/\s+/g, "-").replace(/[^\p{L}\p{N}_-]/gu, "");
+  if (!shortcut || shortcut.length > 40) throw new Error("INBOX_QUICK_REPLY_INVALID: o atalho precisa ter de 1 a 40 letras ou números.");
+  return shortcut;
+}
+
+function normalizeQuickReplyBody(raw: string): string {
+  const body = raw.trim();
+  if (!body || body.length > 4096) throw new Error("INBOX_QUICK_REPLY_INVALID: a mensagem precisa ter de 1 a 4096 caracteres.");
+  return body;
+}
+
+async function mustQuickReplyBelongToWorkspace(deps: InboxUseCaseDeps, id: string, tenantId: string, workspaceId: string): Promise<InboxQuickReply> {
+  const item = await requireQuickReplyRepository(deps).getById(id);
+  if (!item || item.tenantId !== tenantId || item.workspaceId !== workspaceId) throw new Error(`INBOX_QUICK_REPLY_NOT_FOUND: resposta rápida "${id}" não existe.`);
+  return item;
+}
+
+export async function listInboxQuickReplies(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string }): Promise<InboxQuickReply[]> {
+  const items = await requireQuickReplyRepository(deps).listByWorkspace(input.workspaceId);
+  return items.filter((item) => item.tenantId === input.tenantId);
+}
+
+export async function createInboxQuickReply(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string; shortcut: string; body: string; createdBy?: string }): Promise<InboxQuickReply> {
+  const workspace = await deps.workspaceRepository.getById(input.workspaceId);
+  if (!workspace || workspace.tenantId !== input.tenantId) throw new Error('INBOX_WORKSPACE_NOT_FOUND: workspace não existe.');
+  return requireQuickReplyRepository(deps).create({ tenantId: input.tenantId, workspaceId: input.workspaceId, shortcut: normalizeQuickReplyShortcut(input.shortcut), body: normalizeQuickReplyBody(input.body), createdBy: input.createdBy });
+}
+
+export async function updateInboxQuickReply(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string; quickReplyId: string; shortcut?: string; body?: string }): Promise<InboxQuickReply> {
+  await mustQuickReplyBelongToWorkspace(deps, input.quickReplyId, input.tenantId, input.workspaceId);
+  return requireQuickReplyRepository(deps).update(input.quickReplyId, {
+    ...(input.shortcut !== undefined ? { shortcut: normalizeQuickReplyShortcut(input.shortcut) } : {}),
+    ...(input.body !== undefined ? { body: normalizeQuickReplyBody(input.body) } : {}),
+  });
+}
+
+export async function deleteInboxQuickReply(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string; quickReplyId: string }): Promise<void> {
+  await mustQuickReplyBelongToWorkspace(deps, input.quickReplyId, input.tenantId, input.workspaceId);
+  await requireQuickReplyRepository(deps).delete(input.quickReplyId);
+}
+
+// ── Notas internas ────────────────────────────────────────────────────────────────────────────
+
+/** Nota interna: registro só da equipe na timeline (evento `note_added`) — NUNCA vira mensagem
+ * enviada ao contato, por construção (não passa por nenhuma fila/provider). */
+export async function addConversationNote(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string; conversationId: string; text: string; performedBy: string }): Promise<InboxConversationEvent> {
+  const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  const text = input.text.trim();
+  if (!text) throw new Error("INBOX_NOTE_EMPTY: a nota não pode ser vazia.");
+  if (text.length > 4000) throw new Error("INBOX_NOTE_EMPTY: a nota pode ter no máximo 4000 caracteres.");
+  return deps.conversationEventRepository.record({ tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, type: "note_added", performedBy: input.performedBy, metadata: { text } });
+}
 
 function requireTagRepository(deps: InboxUseCaseDeps): InboxTagRepositoryPort {
   if (!deps.tagRepository) throw new Error("INBOX_TAGS_NOT_CONFIGURED: módulo de etiquetas não está configurado neste processo.");
@@ -915,6 +980,84 @@ export async function sendInboxMessage(deps: InboxUseCaseDeps, input: SendInboxM
     return message;
   }
   return finishEnqueueingOutboundMessage(deps, { conversationId: conversation.id, connectionId: conversation.connectionId, message, sentByAi: input.sentByAi ?? false, tenantId: input.tenantId, workspaceId: input.workspaceId });
+}
+
+export type StartInboxConversationInput = {
+  tenantId: string;
+  workspaceId: string;
+  connectionId: string;
+  /** Um dos dois: contato já conhecido do WhatsApp neste workspace OU um telefone novo. */
+  contactId?: string;
+  phone?: string;
+  name?: string;
+  body: string;
+  startedByUserId: string;
+};
+
+/**
+ * "Nova conversa" — o atendente inicia o contato (antes só existia conversa criada por mensagem
+ * RECEBIDA). Usa EXATAMENTE o mesmo pivô de identidade da entrada (`normalizePhoneNumber` →
+ * `upsertByPhone` → `findOrCreate` por `(connectionId, telefone E.164)`), então a resposta do
+ * cliente cai nesta mesma conversa, nunca numa segunda. Conversa já existente é reaproveitada
+ * (reaberta se estava finalizada); quem inicia vira responsável se ainda não houver um.
+ */
+export async function startInboxConversation(deps: InboxUseCaseDeps, input: StartInboxConversationInput): Promise<{ conversation: InboxConversation; message: InboxMessage; wasExisting: boolean }> {
+  const body = input.body.trim();
+  if (!body) throw new Error("INBOX_MESSAGE_BODY_EMPTY: escreva a primeira mensagem.");
+  const connection = await mustConnectionBelongToTenantAndWorkspace(deps, input.connectionId, input.tenantId, input.workspaceId);
+  if (connection.provider !== "wuzapi") {
+    throw new Error("INBOX_START_CHANNEL_UNSUPPORTED: só é possível iniciar conversas por WhatsApp. No Instagram, a pessoa precisa mandar a primeira mensagem.");
+  }
+  if (connection.status !== "connected") {
+    throw new Error("INBOX_CONNECTION_NOT_READY: este número de WhatsApp não está conectado agora.");
+  }
+
+  let phoneNormalized: string;
+  let knownName = input.name?.trim() || undefined;
+  if (input.contactId) {
+    const contact = await deps.contactRepository.getById(input.contactId);
+    if (!contact || contact.tenantId !== input.tenantId || contact.workspaceId !== input.workspaceId || !contact.phoneNormalized) {
+      throw new Error("INBOX_CONTACT_NOT_FOUND: contato não encontrado neste workspace.");
+    }
+    phoneNormalized = contact.phoneNormalized;
+    knownName = knownName ?? contact.name;
+  } else {
+    const digits = (input.phone ?? "").replace(/\D/g, "");
+    if (digits.length < 10 || digits.length > 15) {
+      throw new Error("INBOX_INVALID_PHONE: informe o telefone com DDD (e o código do país, se não for do Brasil).");
+    }
+    // Número nacional brasileiro sem o 55 ("11 91234-5678") vira +55 — é o caso comum do atendente.
+    phoneNormalized = normalizePhoneNumber(digits.length <= 11 ? `55${digits}` : digits);
+  }
+
+  const contact = await deps.contactRepository.upsertByPhone({ tenantId: input.tenantId, workspaceId: input.workspaceId, phoneNormalized, name: knownName });
+  const found = await deps.conversationRepository.findOrCreate({
+    tenantId: input.tenantId,
+    workspaceId: input.workspaceId,
+    connectionId: connection.id,
+    chatType: "direct",
+    externalChatId: phoneNormalized,
+    contactId: contact.id,
+  });
+  // Segue fusões de identidade (mesma regra de todas as outras operações da Inbox).
+  let conversation = await mustConversationBelongToTenantAndWorkspace(deps, found.id, input.tenantId, input.workspaceId);
+  const wasExisting = found.createdAt !== found.updatedAt;
+  if (conversation.status === "resolved" || conversation.status === "archived") {
+    conversation = await transitionConversationStatus(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, performedBy: input.startedByUserId }, "open");
+  }
+  if (!conversation.assignedUserId) {
+    conversation = await deps.conversationRepository.assign(conversation.id, input.startedByUserId);
+    await deps.conversationEventRepository.record({
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+      conversationId: conversation.id,
+      type: "assigned",
+      performedBy: input.startedByUserId,
+      toUserId: input.startedByUserId,
+    });
+  }
+  const message = await sendInboxMessage(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, body, sentByUserId: input.startedByUserId });
+  return { conversation, message, wasExisting };
 }
 
 export async function cancelScheduledInboxMessage(

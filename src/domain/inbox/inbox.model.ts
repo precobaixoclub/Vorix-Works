@@ -378,6 +378,8 @@ export const INBOX_CONVERSATION_EVENT_TYPES = [
   // Bloco "kanban de atendimento" (réplica adaptada do CMDesk) — card movido de coluna/fase,
   // manual (drag) ou futuramente automático. `metadata`: `{fromPhaseId?, toPhaseId, toPhaseName}`.
   "kanban_phase_changed",
+  // Nota interna da equipe — só na timeline do Vorix, nunca enviada ao WhatsApp. `metadata.text`.
+  "note_added",
 ] as const;
 export type InboxConversationEventType = (typeof INBOX_CONVERSATION_EVENT_TYPES)[number];
 
@@ -453,6 +455,18 @@ export type InboxTag = {
   workspaceId: string;
   name: string;
   color: InboxTagColor;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Resposta rápida (mensagem pronta) — por WORKSPACE, acionada no composer digitando "/atalho". */
+export type InboxQuickReply = {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  shortcut: string;
+  body: string;
+  createdBy?: string;
   createdAt: string;
   updatedAt: string;
 };

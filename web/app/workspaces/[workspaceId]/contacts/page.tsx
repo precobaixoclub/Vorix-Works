@@ -531,7 +531,9 @@ function ContactDetailModal({
             </DetailBlock>
             <DetailBlock label="Ações contextuais">
               <div className="flex flex-wrap gap-2">
-                {primaryConversation ? <Button variant="secondary" onClick={() => router.push(`/workspaces/${workspaceId}/conversas?conversation=${primaryConversation.id}`)}>Enviar mensagem</Button> : null}
+                {primaryConversation
+                  ? <Button variant="secondary" onClick={() => router.push(`/workspaces/${workspaceId}/conversas?conversation=${primaryConversation.id}`)}>Enviar mensagem</Button>
+                  : <Button variant="secondary" onClick={() => router.push(`/workspaces/${workspaceId}/conversas?${new URLSearchParams({ nova: "", nome: contact.name ?? "" }).toString()}`)}>Iniciar conversa no WhatsApp</Button>}
                 <Button variant="secondary" onClick={() => setCreatingDeal(true)}>Criar oportunidade</Button>
                 <Button variant="secondary" onClick={() => setCreatingTask(true)}>Criar tarefa</Button>
                 <Button variant="secondary" onClick={requestCreateProposal}>Criar proposta</Button>

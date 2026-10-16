@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { getApiBaseUrl } from "@/lib/api-error";
-import { getChannelRouting, getConversationsServiceTime, getInboxMetrics, getInboxModuleStatus, listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers, listInboxTags, listKanbanPhases, mintInboxStreamToken } from "./api";
+import { getChannelRouting, getConversationsServiceTime, getInboxMetrics, getInboxModuleStatus, listInboxConnections, listInboxConversationEvents, listInboxConversationMessages, listInboxConversations, listInboxMembers, listInboxQuickReplies, listInboxTags, listKanbanPhases, mintInboxStreamToken } from "./api";
 import type { InboxConversationFilter } from "./types";
 
 /**
@@ -35,6 +35,10 @@ export function useKanbanPhases(workspaceId: string, teamId: string | undefined)
 
 /** Bloco "etiquetas" (pedido explícito do usuário) — taxonomia muda pouco, `refreshInterval`
  * mais espaçado que o de conversas (nunca precisa ser tempo real). */
+export function useInboxQuickReplies(workspaceId: string) {
+  return useSWR(["inbox-quick-replies", workspaceId], () => listInboxQuickReplies(workspaceId), { refreshInterval: 120_000 });
+}
+
 export function useInboxTags(workspaceId: string) {
   return useSWR(["inbox-tags", workspaceId], () => listInboxTags(workspaceId), { refreshInterval: 60_000 });
 }
@@ -58,8 +62,11 @@ export function useInboxConversations(workspaceId: string, filter: InboxConversa
   return useSWR(["inbox-conversations", workspaceId, filter, contactId], () => listInboxConversations(workspaceId, filter, contactId), { refreshInterval: 30_000 });
 }
 
-export function useInboxConversationMessages(workspaceId: string, conversationId: string | undefined) {
-  return useSWR(conversationId ? ["inbox-conversation-messages", workspaceId, conversationId] : null, () => listInboxConversationMessages(workspaceId, conversationId!), {
+/** `limit` cresce com "Carregar mensagens anteriores" (50 → 100 → ...): a mesma chave continua
+ * sendo revalidada pelo SSE/polling, sem gerenciar páginas separadas. */
+export function useInboxConversationMessages(workspaceId: string, conversationId: string | undefined, limit = 50) {
+  return useSWR(conversationId ? ["inbox-conversation-messages", workspaceId, conversationId, limit] : null, () => listInboxConversationMessages(workspaceId, conversationId!, limit), {
+    keepPreviousData: true,
     refreshInterval: 20_000,
   });
 }
@@ -77,6 +84,10 @@ export function useInboxConversationEvents(workspaceId: string, conversationId: 
 export function useInboxMembers(workspaceId: string) {
   return useSWR(workspaceId ? ["inbox-members", workspaceId] : null, () => listInboxMembers());
 }
+
+/** A chave das mensagens inclui o `limit` (histórico carregado); revalida qualquer página aberta. */
+const messagesKeyMatcher = (workspaceId: string, conversationId: string) => (key: unknown) =>
+  Array.isArray(key) && key[0] === "inbox-conversation-messages" && key[1] === workspaceId && key[2] === conversationId;
 
 const ALL_FILTERS = ["all", "mine", "unassigned", "unread", "urgent", "open", "pending", "resolved"] as const;
 
@@ -117,7 +128,7 @@ export function useInboxRealtime(workspaceId: string, conversationId: string | u
       }
       const currentConversationId = conversationIdRef.current;
       if (currentConversationId) {
-        void mutate(["inbox-conversation-messages", workspaceId, currentConversationId]);
+        void mutate(messagesKeyMatcher(workspaceId, currentConversationId));
         void mutate(["inbox-conversation-events", workspaceId, currentConversationId]);
       }
     }
@@ -155,7 +166,7 @@ export function useInboxRealtime(workspaceId: string, conversationId: string | u
             void mutate(["inbox-conversations", workspaceId, filterValue]);
           }
           if (payload.conversationId && payload.conversationId === conversationIdRef.current) {
-            void mutate(["inbox-conversation-messages", workspaceId, payload.conversationId]);
+            void mutate(messagesKeyMatcher(workspaceId, payload.conversationId));
             void mutate(["inbox-conversation-events", workspaceId, payload.conversationId]);
           }
         });

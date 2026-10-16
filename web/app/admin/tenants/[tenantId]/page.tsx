@@ -22,6 +22,7 @@ import {
   suspendTenant,
 } from "@/features/platform-admin/api";
 import { useTenantDetail } from "@/features/platform-admin/hooks";
+import { TenantSolutionsCard } from "@/components/admin/TenantSolutionsCard";
 import { PLATFORM_PLAN_CODES, type PlatformPlanCode } from "@/features/platform-admin/types";
 
 /**
@@ -123,6 +124,7 @@ export default function AdminTenantDetailPage() {
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <TenantSolutionsCard tenantId={tenantId} />
         <Card>
           <CardHeader>
             <div className="text-base font-semibold text-foreground">Ajustar créditos manualmente</div>

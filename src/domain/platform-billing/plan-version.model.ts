@@ -33,6 +33,10 @@ export type PlanVersion = {
   yearlyProviderPriceRef?: string;
 };
 
+/** Recurso de um adicional: limite de plano (Conversas/Core) ou capacidade de uma solução vendida
+ * como adicional — hoje só gravações simultâneas do Vorix Meetings (nunca contas de gravação). */
+export type AddonResource = import("./plan-entitlements.model.js").PlanLimitResource | "meetings_concurrent_recordings";
+
 export type AddonDefinition = {
   code: string;
   name: string;
@@ -46,7 +50,7 @@ export type AddonDefinition = {
   currency: string;
   /** Recurso que este addon incrementa (ex.: comprar "addon_extra_user" soma a `increment` no
    * limite de `users` calculado pelo `resolveEffectiveEntitlements`). */
-  resource: import("./plan-entitlements.model.js").PlanLimitResource;
+  resource: AddonResource;
   increment: number;
   active: boolean;
   createdAt: string;

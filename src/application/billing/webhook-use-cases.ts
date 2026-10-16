@@ -1,8 +1,11 @@
 import type { BillingProviderPort, BillingWebhookEvent, HandleWebhookInput } from "../ports/billing-provider.port.js";
 import type { BillingEventRepositoryPort, InvoiceRepositoryPort, PaymentWebhookEventRepositoryPort } from "../ports/billing-ops-repository.port.js";
-import type { PlanVersionRepositoryPort } from "../ports/plan-version-repository.port.js";
+import type { CheckoutIntentRepositoryPort } from "../ports/checkout-intent-repository.port.js";
+import type { AddonDefinitionRepositoryPort, PlanVersionRepositoryPort } from "../ports/plan-version-repository.port.js";
+import type { SolutionEntitlementRepositoryPort } from "../ports/solution-entitlement-repository.port.js";
 import type { PlatformBillingRepositoryPort } from "../ports/platform-billing-repository.port.js";
-import type { SubscriptionRepositoryPort } from "../ports/subscription-repository.port.js";
+import type { SubscriptionItemRepositoryPort, SubscriptionRepositoryPort } from "../ports/subscription-repository.port.js";
+import { syncMeetingsEntitlementFromSubscription } from "./meetings-offer.js";
 import { getPlatformPlan, type PlatformSubscriptionStatus } from "../../domain/platform-billing/platform-plan-catalog.js";
 import type { BillingInterval } from "../../domain/platform-billing/subscription.model.js";
 import { recordProductEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
@@ -19,6 +22,12 @@ export type WebhookUseCaseDeps = {
   /** Trial + Product Analytics — integração mínima. O webhook é a fonte de verdade (seção 12);
    * `checkout_completed`/`trial_converted`/`payment_failed` só nascem aqui, nunca no frontend. */
   productAnalytics?: ProductAnalyticsUseCaseDeps;
+  /** Contratação automática: o pedido do checkout (adicionais com quantidade) aplicado aqui, e o
+   * acesso às soluções vendidas como adicional (Vorix Meetings) derivado da assinatura. */
+  checkoutIntentRepository?: CheckoutIntentRepositoryPort;
+  subscriptionItemRepository?: SubscriptionItemRepositoryPort;
+  addonDefinitionRepository?: AddonDefinitionRepositoryPort;
+  solutionEntitlementRepository?: SolutionEntitlementRepositoryPort;
 };
 
 export type ProcessBillingWebhookResult =
@@ -114,7 +123,9 @@ async function handleCheckoutCompleted(deps: WebhookUseCaseDeps, event: BillingW
         billingInterval,
       });
 
+  await applyCheckoutIntent(deps, { tenantId, planVersionId, subscriptionId: subscription.id, providerSessionId: readString(event.data, "id") ?? event.providerSubscriptionId });
   await syncTenantBilling(deps, { tenantId, planVersionId, status: "active" });
+  await syncSolutionAccess(deps, tenantId);
   await deps.billingEventRepository.record({
     tenantId,
     subscriptionId: subscription.id,
@@ -127,6 +138,38 @@ async function handleCheckoutCompleted(deps: WebhookUseCaseDeps, event: BillingW
       await recordProductEvent(deps.productAnalytics, { eventName: "trial_converted", source: "server", tenantId });
     }
   }
+}
+
+/**
+ * Aplica o pedido do checkout à assinatura: cada adicional fica com EXATAMENTE a quantidade pedida
+ * (idempotente — o Mercado Pago reenvia a notificação da mesma assinatura várias vezes) e só então
+ * o pedido é marcado como concluído. Preço unitário congelado no pedido.
+ */
+async function applyCheckoutIntent(deps: WebhookUseCaseDeps, input: { tenantId: string; planVersionId: string; subscriptionId: string; providerSessionId?: string }): Promise<void> {
+  if (!deps.checkoutIntentRepository || !deps.subscriptionItemRepository) return;
+  const intent = await deps.checkoutIntentRepository.findPendingForCompletion({ tenantId: input.tenantId, planVersionId: input.planVersionId, ...(input.providerSessionId ? { providerSessionId: input.providerSessionId } : {}) });
+  if (!intent) return;
+  const existing = await deps.subscriptionItemRepository.listBySubscription(input.subscriptionId);
+  for (const item of intent.items) {
+    const current = existing.find((candidate) => candidate.addonCode === item.addonCode);
+    if (current) {
+      if (current.quantity !== item.quantity) await deps.subscriptionItemRepository.updateQuantity(current.id, item.quantity);
+    } else {
+      await deps.subscriptionItemRepository.create({ subscriptionId: input.subscriptionId, addonCode: item.addonCode, quantity: item.quantity, unitPriceUsd: item.unitPrice, currency: item.currency });
+    }
+  }
+  await deps.checkoutIntentRepository.markCompleted(intent.id);
+}
+
+/** Acesso às soluções vendidas como adicional, sempre recalculado a partir da assinatura. */
+async function syncSolutionAccess(deps: WebhookUseCaseDeps, tenantId: string): Promise<void> {
+  if (!deps.subscriptionItemRepository || !deps.addonDefinitionRepository || !deps.solutionEntitlementRepository) return;
+  await syncMeetingsEntitlementFromSubscription({
+    subscriptionRepository: deps.subscriptionRepository,
+    subscriptionItemRepository: deps.subscriptionItemRepository,
+    addonDefinitionRepository: deps.addonDefinitionRepository,
+    solutionEntitlementRepository: deps.solutionEntitlementRepository,
+  }, tenantId);
 }
 
 async function handleSubscriptionUpdated(deps: WebhookUseCaseDeps, event: BillingWebhookEvent, deleted: boolean): Promise<void> {
@@ -157,6 +200,7 @@ async function handleSubscriptionUpdated(deps: WebhookUseCaseDeps, event: Billin
   } else {
     await syncTenantBilling(deps, { tenantId: subscription.tenantId, planVersionId: subscription.planVersionId, status });
   }
+  await syncSolutionAccess(deps, subscription.tenantId);
   await deps.billingEventRepository.record({
     tenantId: subscription.tenantId,
     subscriptionId: updated.id,

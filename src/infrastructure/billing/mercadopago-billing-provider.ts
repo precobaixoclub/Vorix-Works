@@ -156,7 +156,11 @@ export class MercadoPagoBillingProvider implements BillingProviderPort {
       payer_email: input.customerEmail,
       back_url: input.successUrl,
       notification_url: notificationUrl,
-      auto_recurring: { frequency: 1, frequency_type: "months", transaction_amount: input.amount, currency_id: input.currency },
+      auto_recurring: {
+        frequency: 1, frequency_type: "months", transaction_amount: input.amount, currency_id: input.currency,
+        // Cartão cadastrado agora; 1ª cobrança só depois do período de teste.
+        ...(input.trialDays && input.trialDays > 0 ? { free_trial: { frequency: input.trialDays, frequency_type: "days" } } : {}),
+      },
       status: "pending",
     });
     if (!result.ok) return result;

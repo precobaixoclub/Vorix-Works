@@ -152,6 +152,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       billingEventRepository: identity.billingEventRepository,
       invoiceRepository: identity.invoiceRepository,
       productAnalytics: productAnalyticsDeps,
+      checkoutIntentRepository: identity.checkoutIntentRepository,
+      subscriptionItemRepository: identity.subscriptionItemRepository,
+      addonDefinitionRepository: identity.addonDefinitionRepository,
+      solutionEntitlementRepository: identity.solutionEntitlementRepository,
     });
   }
 

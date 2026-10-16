@@ -229,6 +229,7 @@
   "tests/billing-checkout-webhook.test.mjs",
   "tests/billing-webhook-route.test.mjs",
   "tests/billing-lifecycle.test.mjs",
+  "tests/billing-automatic-checkout.test.mjs",
   "tests/billing-lifecycle-route.test.mjs",
   "tests/billing-overview-route.test.mjs",
   "tests/messaging-provider-capabilities.test.mjs",

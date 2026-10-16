@@ -53,7 +53,8 @@ export class StripeBillingProvider implements BillingProviderPort {
     if (!this.client) return NOT_CONFIGURED;
     try {
       const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [{ price: input.providerPlanPriceRef, quantity: 1 }];
-      for (const addonPriceRef of input.addonPriceRefs ?? []) lineItems.push({ price: addonPriceRef, quantity: 1 });
+      if (input.addonItems?.length) for (const item of input.addonItems) lineItems.push({ price: item.priceRef, quantity: item.quantity });
+      else for (const addonPriceRef of input.addonPriceRefs ?? []) lineItems.push({ price: addonPriceRef, quantity: 1 });
 
       const session = await this.client.checkout.sessions.create({
         mode: "subscription",

@@ -1,3 +1,5 @@
+import type { CheckoutIntentRepositoryPort } from "../../../application/ports/checkout-intent-repository.port.js";
+import type { SolutionEntitlementRepositoryPort } from "../../../application/ports/solution-entitlement-repository.port.js";
 import { createHmac, randomBytes } from "node:crypto";
 /** Modelo das leituras de texto por visão do motor criativo (ver `visionTextBrain`). */
 export const VISION_TEXT_MODEL_ID = "gpt-4.1";
@@ -534,6 +536,8 @@ export type ApiContainer = {
     addonDefinitionRepository: AddonDefinitionRepositoryPort;
     subscriptionRepository: SubscriptionRepositoryPort;
     subscriptionItemRepository: SubscriptionItemRepositoryPort;
+    checkoutIntentRepository: CheckoutIntentRepositoryPort;
+    solutionEntitlementRepository: SolutionEntitlementRepositoryPort;
     subscriptionPendingChangeRepository: SubscriptionPendingChangeRepositoryPort;
     usageCounterRepository: UsageCounterRepositoryPort;
     paymentMethodRepository: PaymentMethodRepositoryPort;

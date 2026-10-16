@@ -32,6 +32,7 @@ function translateLifecycleError(error: unknown): never {
     }
     if (
       error.message.startsWith("ADDON_NOT_ALLOWED") ||
+      error.message.startsWith("MEETINGS_NOT_CONTRACTABLE") ||
       error.message.startsWith("ADDON_NOT_FOUND") ||
       error.message.startsWith("ADDON_INVALID_QUANTITY") ||
       error.message.endsWith("_NO_PROVIDER_SUBSCRIPTION")

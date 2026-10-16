@@ -446,6 +446,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       addonDefinitionRepository: identity.addonDefinitionRepository,
       subscriptionRepository: identity.subscriptionRepository,
       userRepository: identity.userRepository,
+      checkoutIntentRepository: identity.checkoutIntentRepository,
       appBaseUrl: app.zunoConfig.billing.appBaseUrl,
       productAnalytics: productAnalyticsDeps,
     });
@@ -469,6 +470,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       billingProvider: app.zunoContainer.billingProvider,
       billingEventRepository: identity.billingEventRepository,
       subscriptionPendingChangeRepository: identity.subscriptionPendingChangeRepository,
+      solutionEntitlementRepository: identity.solutionEntitlementRepository,
       productAnalytics: productAnalyticsDeps,
     });
     // Pricing/Capacity Etapa B — capacidade (usuários/números WhatsApp) self-service: estado,

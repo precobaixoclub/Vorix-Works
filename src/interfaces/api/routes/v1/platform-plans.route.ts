@@ -25,6 +25,17 @@ export type PublicPlanDto = {
   trialDays: number | null;
 };
 
+/** Oferta oficial do Vorix Meetings (catálogo de billing): base com 1 gravação simultânea + preço
+ * de cada gravação simultânea adicional. `contractable` segue o gate comercial. */
+export type PublicMeetingsOfferDto = {
+  currency: string;
+  baseMonthlyPrice: number;
+  baseYearlyPrice: number;
+  includedConcurrentRecordings: number;
+  additionalRecordingMonthlyPrice: number;
+  additionalRecordingYearlyPrice: number;
+};
+
 export type PublicCapacityAddonDto = { code: string; name: string; monthlyPriceUsd: number; currency: string; resource: "users" | "messaging_connections" };
 
 /** PRO como "Recomendado" é decisão de produto (seção 25/33 do pedido: nunca "Mais escolhido" sem
@@ -89,7 +100,19 @@ export async function registerPlatformPlansRoutes(app: FastifyInstance, deps: Pl
           .map((addon) => ({ code: addon.code, name: addon.name, monthlyPriceUsd: addon.monthlyPriceUsd, currency: addon.currency, resource: addon.resource }))
       : [];
 
-    return successEnvelope({ plans, addons, solutions, priceSource: "plan_versions" }, request.id);
+    const allActive = deps.addonDefinitionRepository ? await deps.addonDefinitionRepository.listActive() : [];
+    const meetingsBase = allActive.find((addon) => addon.code === "meetings_base");
+    const meetingsExtra = allActive.find((addon) => addon.code === "meetings_extra_recording");
+    const meetingsOffer: PublicMeetingsOfferDto | null = meetingsBase && meetingsExtra ? {
+      currency: meetingsBase.currency,
+      baseMonthlyPrice: meetingsBase.monthlyPriceUsd,
+      baseYearlyPrice: meetingsBase.yearlyPriceUsd,
+      includedConcurrentRecordings: meetingsBase.increment,
+      additionalRecordingMonthlyPrice: meetingsExtra.monthlyPriceUsd,
+      additionalRecordingYearlyPrice: meetingsExtra.yearlyPriceUsd,
+    } : null;
+
+    return successEnvelope({ plans, addons, solutions, meetingsOffer, priceSource: "plan_versions" }, request.id);
   });
 
   const SIMULATE_BODY_SCHEMA = {

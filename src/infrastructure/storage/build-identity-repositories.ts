@@ -1,3 +1,7 @@
+import type { CheckoutIntentRepositoryPort } from "../../application/ports/checkout-intent-repository.port.js";
+import type { SolutionEntitlementRepositoryPort } from "../../application/ports/solution-entitlement-repository.port.js";
+import { PostgresCheckoutIntentRepository } from "./postgres/postgres-checkout-intent-repository.js";
+import { PostgresSolutionEntitlementRepository } from "./postgres/postgres-solution-entitlement-repository.js";
 import pg from "pg";
 import type { AuditLogPort } from "../../application/ports/audit-log.port.js";
 import type { AiProvidersRepositoryPort } from "../../application/ports/ai-providers-repository.port.js";
@@ -124,6 +128,10 @@ export type IdentityRepositories = {
   addonDefinitionRepository: AddonDefinitionRepositoryPort;
   subscriptionRepository: SubscriptionRepositoryPort;
   subscriptionItemRepository: SubscriptionItemRepositoryPort;
+  /** Contratação automática — pedido do checkout aplicado pelo webhook. */
+  checkoutIntentRepository: CheckoutIntentRepositoryPort;
+  /** Acesso por solução (Core) — o webhook concede Meetings a partir da assinatura. */
+  solutionEntitlementRepository: SolutionEntitlementRepositoryPort;
   /** Pricing/Capacity Etapa B — reduções de capacidade agendadas pro fim do ciclo. */
   subscriptionPendingChangeRepository: SubscriptionPendingChangeRepositoryPort;
   usageCounterRepository: UsageCounterRepositoryPort;
@@ -176,6 +184,8 @@ export function buildIdentityRepositories(options: { databaseUrl: string; secret
     addonDefinitionRepository: new PostgresAddonDefinitionRepository(pool),
     subscriptionRepository: new PostgresSubscriptionRepository(pool),
     subscriptionItemRepository: new PostgresSubscriptionItemRepository(pool),
+    checkoutIntentRepository: new PostgresCheckoutIntentRepository(pool),
+    solutionEntitlementRepository: new PostgresSolutionEntitlementRepository(pool),
     subscriptionPendingChangeRepository: new PostgresSubscriptionPendingChangeRepository(pool),
     usageCounterRepository: new PostgresUsageCounterRepository(pool),
     paymentMethodRepository: new PostgresPaymentMethodRepository(pool),

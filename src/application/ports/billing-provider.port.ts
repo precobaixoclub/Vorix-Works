@@ -50,6 +50,8 @@ export type CreateCheckoutInput = {
   cancelUrl: string;
   trialDays?: number;
   addonPriceRefs?: readonly string[];
+  /** Adicionais com quantidade (preferido sobre `addonPriceRefs`, que é 1 unidade por referência). */
+  addonItems?: readonly { priceRef: string; quantity: number }[];
   amount?: number;
   currency?: string;
 };

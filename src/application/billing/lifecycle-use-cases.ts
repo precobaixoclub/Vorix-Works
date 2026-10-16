@@ -8,7 +8,9 @@ import { syncTenantBilling } from "./webhook-use-cases.js";
 import { recordProductEvent, type ProductAnalyticsUseCaseDeps } from "../product-analytics/product-analytics-use-cases.js";
 import type { BillingInterval } from "../../domain/platform-billing/subscription.model.js";
 import type { PlatformPlanCode } from "../../domain/platform-billing/platform-plan-catalog.js";
-import { PLAN_LIMIT_RESOURCES } from "../../domain/platform-billing/plan-entitlements.model.js";
+import { isPlanLimitResource, PLAN_LIMIT_RESOURCES } from "../../domain/platform-billing/plan-entitlements.model.js";
+import type { SolutionEntitlementRepositoryPort } from "../ports/solution-entitlement-repository.port.js";
+import { assertMeetingsSellable, isMeetingsAddonCode, syncMeetingsEntitlementFromSubscription } from "./meetings-offer.js";
 import { resolveCommercialCapacity } from "../../domain/platform-billing/capacity.model.js";
 
 export type LifecycleUseCaseDeps = EntitlementUseCaseDeps & {
@@ -20,7 +22,14 @@ export type LifecycleUseCaseDeps = EntitlementUseCaseDeps & {
   subscriptionPendingChangeRepository: SubscriptionPendingChangeRepositoryPort;
   /** Trial + Product Analytics — integração mínima, mesmo racional de `trial-use-cases.ts`. */
   productAnalytics?: ProductAnalyticsUseCaseDeps;
+  /** Acesso às soluções vendidas como adicional (Vorix Meetings), derivado da assinatura. */
+  solutionEntitlementRepository?: SolutionEntitlementRepositoryPort;
 };
+
+async function syncSolutionAccess(deps: LifecycleUseCaseDeps, tenantId: string): Promise<void> {
+  if (!deps.solutionEntitlementRepository) return;
+  await syncMeetingsEntitlementFromSubscription({ ...deps, solutionEntitlementRepository: deps.solutionEntitlementRepository }, tenantId);
+}
 
 /** Exportado para reuso por `capacity-use-cases.ts` (Pricing/Capacity Etapa B) — nunca duplicar
  * esta checagem. */
@@ -146,6 +155,8 @@ export async function purchaseAddon(deps: LifecycleUseCaseDeps, input: PurchaseA
   if (!addon || !addon.active) {
     throw new Error(`ADDON_NOT_FOUND: add-on "${input.addonCode}" não existe ou está inativo.`);
   }
+  // Vorix Meetings só é vendido quando o gate comercial permitir.
+  if (isMeetingsAddonCode(addon.code)) assertMeetingsSellable();
 
   // A DECISÃO "já existe item deste addon?" precisa ser atômica junto da escrita — só o incremento
   // sozinho não bastava (duas compras concorrentes do MESMO addon, nenhuma ainda tinha criado a
@@ -197,6 +208,7 @@ export async function purchaseAddon(deps: LifecycleUseCaseDeps, input: PurchaseA
     providerItemId,
   });
   await deps.billingEventRepository.record({ tenantId: input.tenantId, subscriptionId: subscription.id, eventType: "addon_purchased", payload: { addonCode: input.addonCode, quantityAdded: input.quantity, newQuantity: updated.quantity } });
+  if (isMeetingsAddonCode(addon.code)) await syncSolutionAccess(deps, input.tenantId);
 }
 
 /** Limite efetivo de um recurso SEM um determinado `SubscriptionItem` — usado pra validar remoção/
@@ -224,7 +236,7 @@ export async function removeAddon(deps: LifecycleUseCaseDeps, input: { tenantId:
 
   const planVersion = await deps.planVersionRepository.getById(subscription.planVersionId);
   const addon = await deps.addonDefinitionRepository.getByCode(item.addonCode);
-  if (addon) {
+  if (addon && isPlanLimitResource(addon.resource)) {
     const newLimit = await limitWithoutItem(deps, { planLimits: planVersion?.limits ?? {}, items, excludeItemAddonCode: item.addonCode, resource: addon.resource });
     if (newLimit !== null) {
       const { used } = await getLimit(deps, { tenantId: input.tenantId, resource: addon.resource as never });
@@ -251,6 +263,7 @@ export async function removeAddon(deps: LifecycleUseCaseDeps, input: { tenantId:
   }
   await deps.subscriptionItemRepository.delete(item.id);
   await deps.billingEventRepository.record({ tenantId: input.tenantId, subscriptionId: subscription.id, eventType: "addon_removed", payload: { addonCode: item.addonCode } });
+  if (isMeetingsAddonCode(item.addonCode)) await syncSolutionAccess(deps, input.tenantId);
 }
 
 /** Cancelamento self-service — SEMPRE efetivo só no fim do período já pago (nunca imediato): o

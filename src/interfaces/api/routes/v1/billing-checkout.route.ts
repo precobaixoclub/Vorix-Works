@@ -17,7 +17,11 @@ function translateCheckoutError(error: unknown): never {
       error.message.startsWith("CHECKOUT_PLAN_NOT_SELF_SERVICE") ||
       error.message.startsWith("CHECKOUT_ADDON_NOT_ALLOWED") ||
       error.message.startsWith("CHECKOUT_ADDON_NOT_FOUND") ||
-      error.message.startsWith("CHECKOUT_CUSTOMER_EMAIL_NOT_FOUND")
+      error.message.startsWith("CHECKOUT_CUSTOMER_EMAIL_NOT_FOUND") ||
+      error.message.startsWith("CHECKOUT_ADDON_INVALID_QUANTITY") ||
+      error.message.startsWith("CHECKOUT_MEETINGS_INVALID") ||
+      error.message.startsWith("CHECKOUT_CURRENCY_MISMATCH") ||
+      error.message.startsWith("MEETINGS_NOT_CONTRACTABLE")
     ) {
       throw new ValidationError(error.message);
     }
@@ -56,6 +60,15 @@ const CHECKOUT_BODY_SCHEMA = {
     planCode: { type: "string", enum: [...PLATFORM_PLAN_CODES] },
     billingInterval: { type: "string", enum: [...BILLING_INTERVALS] },
     addonCodes: { type: "array", items: { type: "string" } },
+    items: {
+      type: "array", maxItems: 20,
+      items: { type: "object", required: ["addonCode", "quantity"], additionalProperties: false, properties: { addonCode: { type: "string", minLength: 1, maxLength: 80 }, quantity: { type: "integer", minimum: 1, maximum: 1000 } } },
+    },
+    /** Configurador público: capacidade desejada; o servidor calcula os adicionais. */
+    capacity: {
+      type: "object", additionalProperties: false,
+      properties: { users: { type: "integer", minimum: 1, maximum: 10000 }, whatsappConnections: { type: "integer", minimum: 0, maximum: 1000 }, concurrentRecordings: { type: "integer", minimum: 0, maximum: 100 } },
+    },
     successPath: { type: "string", maxLength: 300 },
     cancelPath: { type: "string", maxLength: 300 },
   },
@@ -74,6 +87,8 @@ export async function registerBillingCheckoutRoutes(app: FastifyInstance, deps: 
       planCode: (typeof PLATFORM_PLAN_CODES)[number];
       billingInterval: (typeof BILLING_INTERVALS)[number];
       addonCodes?: string[];
+      items?: { addonCode: string; quantity: number }[];
+      capacity?: { users?: number; whatsappConnections?: number; concurrentRecordings?: number };
       successPath?: string;
       cancelPath?: string;
     };
@@ -84,8 +99,10 @@ export async function registerBillingCheckoutRoutes(app: FastifyInstance, deps: 
     }
     const customerEmail = user.email;
 
-    const successUrl = new URL(body.successPath ?? "/configuracoes/plano?checkout=sucesso", deps.appBaseUrl).toString();
-    const cancelUrl = new URL(body.cancelPath ?? "/configuracoes/plano?checkout=cancelado", deps.appBaseUrl).toString();
+    // Caminhos relativos e internos (nunca URL arbitrária do cliente). O padrão leva à plataforma.
+    const internalPath = (path: string | undefined, fallback: string) => (path && path.startsWith("/") && !path.startsWith("//") ? path : fallback);
+    const successUrl = new URL(internalPath(body.successPath, "/workspaces?checkout=sucesso"), deps.appBaseUrl).toString();
+    const cancelUrl = new URL(internalPath(body.cancelPath, "/workspaces?checkout=cancelado"), deps.appBaseUrl).toString();
 
     const result = await startCheckout(deps, {
       tenantId: principal.tenantId,
@@ -93,6 +110,8 @@ export async function registerBillingCheckoutRoutes(app: FastifyInstance, deps: 
       planCode: body.planCode,
       billingInterval: body.billingInterval,
       addonCodes: body.addonCodes,
+      items: body.items,
+      capacity: body.capacity,
       successUrl,
       cancelUrl,
     }).catch(translateCheckoutError);

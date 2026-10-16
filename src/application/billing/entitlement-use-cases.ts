@@ -3,7 +3,7 @@ import type { SubscriptionItemRepositoryPort, SubscriptionRepositoryPort } from 
 import type { PlatformBillingRepositoryPort } from "../ports/platform-billing-repository.port.js";
 import type { UsageCounterRepositoryPort } from "../ports/usage-counter-repository.port.js";
 import type { ResourceCounterPort } from "../ports/resource-counter.port.js";
-import type { PlanCapability, PlanLimitResource } from "../../domain/platform-billing/plan-entitlements.model.js";
+import { isPlanLimitResource, type PlanCapability, type PlanLimitResource } from "../../domain/platform-billing/plan-entitlements.model.js";
 import type { EffectiveEntitlements } from "../../domain/platform-billing/subscription.model.js";
 import { periodOf } from "../../domain/platform-billing/tenant-billing.model.js";
 import type { PlatformSubscriptionStatus } from "../../domain/platform-billing/platform-plan-catalog.js";
@@ -44,7 +44,7 @@ export async function resolveEffectiveEntitlements(deps: EntitlementUseCaseDeps,
     const limits = { ...planVersion.limits };
     for (const item of items) {
       const addon = await deps.addonDefinitionRepository.getByCode(item.addonCode);
-      if (!addon) continue;
+      if (!addon || !isPlanLimitResource(addon.resource)) continue; // gravações do Meetings não são limite de plano
       const current = limits[addon.resource];
       if (current !== null) limits[addon.resource] = current + addon.increment * item.quantity;
     }

@@ -28,6 +28,10 @@ export const PLAN_LIMIT_RESOURCES = [
 ] as const;
 export type PlanLimitResource = (typeof PLAN_LIMIT_RESOURCES)[number];
 
+export function isPlanLimitResource(value: string): value is PlanLimitResource {
+  return (PLAN_LIMIT_RESOURCES as readonly string[]).includes(value);
+}
+
 /** `true`/`false` por capability — sempre as 7 chaves presentes (nunca parcial), pra nunca haver
  * ambiguidade entre "não configurado" e "desligado". */
 export type PlanCapabilityMap = Record<PlanCapability, boolean>;

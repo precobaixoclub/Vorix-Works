@@ -2,7 +2,7 @@ import type { BillingProviderPort } from "../ports/billing-provider.port.js";
 import type { InvoiceRepositoryPort } from "../ports/billing-ops-repository.port.js";
 import type { EntitlementUseCaseDeps } from "./entitlement-use-cases.js";
 import { getLimit, resolveEffectiveEntitlements } from "./entitlement-use-cases.js";
-import { PLAN_LIMIT_RESOURCES, type PlanLimitResource } from "../../domain/platform-billing/plan-entitlements.model.js";
+import { isPlanLimitResource, PLAN_LIMIT_RESOURCES, type PlanLimitResource } from "../../domain/platform-billing/plan-entitlements.model.js";
 import type { PaymentMethodSnapshot } from "../ports/billing-provider.port.js";
 import type { Invoice } from "../../domain/platform-billing/billing-ops.model.js";
 import type { BillingInterval } from "../../domain/platform-billing/subscription.model.js";
@@ -77,6 +77,8 @@ export async function getBillingOverview(deps: BillingOverviewUseCaseDeps, tenan
   const purchasedCodes = new Set(addons.map((addon) => addon.addonCode));
   const allActiveAddons = await deps.addonDefinitionRepository.listActive();
   const availableAddons: BillingOverviewAvailableAddon[] = allActiveAddons
+    // Adicionais do Meetings não são vendidos por esta tela (a solução ainda não é contratável).
+    .filter((addon): addon is typeof addon & { resource: PlanLimitResource } => isPlanLimitResource(addon.resource))
     .filter((addon) => (planVersion?.allowedAddonCodes ?? []).includes(addon.code) && !purchasedCodes.has(addon.code))
     .map((addon) => ({ code: addon.code, name: addon.name, description: addon.description, monthlyPriceUsd: addon.monthlyPriceUsd, yearlyPriceUsd: addon.yearlyPriceUsd, resource: addon.resource, increment: addon.increment }));
 

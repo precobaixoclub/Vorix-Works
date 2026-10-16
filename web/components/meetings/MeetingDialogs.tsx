@@ -14,7 +14,7 @@ import { useRecordingCapacity } from "@/features/meetings/hooks";
 import { MEETING_UPLOAD_ACCEPT, type RecordingRequestResult } from "@/features/meetings/types";
 import { ApiError } from "@/lib/api-client";
 
-export type MeetingDialogKind = "record" | "upload" | "new";
+export type MeetingDialogKind = "record" | "upload" | "new" | "in_person";
 
 function errorMessage(error: unknown): string {
   return error instanceof ApiError || error instanceof Error ? error.message : "Tente novamente.";
@@ -36,7 +36,141 @@ export function MeetingDialogs({ workspaceId, open, onClose }: { workspaceId: st
   if (open === "record") return <RecordNowDialog workspaceId={workspaceId} onClose={onClose} />;
   if (open === "upload") return <UploadDialog workspaceId={workspaceId} onClose={onClose} />;
   if (open === "new") return <NewMeetingDialog workspaceId={workspaceId} onClose={onClose} />;
+  if (open === "in_person") return <InPersonRecordingDialog workspaceId={workspaceId} onClose={onClose} />;
   return null;
+}
+
+/** Formato que o navegador grava + extensão aceita pelo upload (Chrome/Firefox: webm/ogg; Safari: mp4). */
+function pickRecorderFormat(): { mimeType: string; extension: string; uploadType: string } | undefined {
+  if (typeof MediaRecorder === "undefined") return undefined;
+  const options = [
+    { mimeType: "audio/webm;codecs=opus", extension: "webm", uploadType: "audio/webm" },
+    { mimeType: "audio/webm", extension: "webm", uploadType: "audio/webm" },
+    { mimeType: "audio/ogg;codecs=opus", extension: "ogg", uploadType: "audio/ogg" },
+    { mimeType: "audio/mp4", extension: "m4a", uploadType: "audio/mp4" },
+  ];
+  return options.find((option) => MediaRecorder.isTypeSupported(option.mimeType));
+}
+
+/**
+ * "Gravar reunião presencial": grava pelo microfone do computador ou do celular, direto no
+ * navegador, e envia para a mesma esteira do upload (transcrição + resumo). Nada sai do aparelho
+ * antes de a pessoa clicar em "Parar e enviar".
+ */
+function InPersonRecordingDialog({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const router = useRouter();
+  const refresh = useRefreshMeetings();
+  const [title, setTitle] = useState("");
+  const [state, setState] = useState<"idle" | "recording" | "paused" | "uploading">("idle");
+  const [elapsed, setElapsed] = useState(0);
+  const [level, setLevel] = useState(0);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const format = typeof window === "undefined" ? undefined : pickRecorderFormat();
+
+  const cleanup = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    void audioContextRef.current?.close().catch(() => undefined);
+  };
+  useEffect(() => cleanup, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function start() {
+    if (!format) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      streamRef.current = stream;
+      const recorder = new MediaRecorder(stream, { mimeType: format.mimeType, audioBitsPerSecond: 64_000 });
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
+      recorder.start(10_000);
+      recorderRef.current = recorder;
+      // Medidor de volume: a pessoa vê que o microfone está captando.
+      const context = new AudioContext();
+      audioContextRef.current = context;
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 256;
+      context.createMediaStreamSource(stream).connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      timerRef.current = setInterval(() => {
+        analyser.getByteFrequencyData(data);
+        setLevel(Math.min(1, data.reduce((sum, value) => sum + value, 0) / data.length / 90));
+        if (recorderRef.current?.state === "recording") setElapsed((value) => value + 0.25);
+      }, 250);
+      setState("recording");
+    } catch {
+      toast.error("Não foi possível usar o microfone", { description: "Permita o acesso ao microfone no navegador e tente de novo." });
+    }
+  }
+
+  function togglePause() {
+    const recorder = recorderRef.current;
+    if (!recorder) return;
+    if (recorder.state === "recording") { recorder.pause(); setState("paused"); } else { recorder.resume(); setState("recording"); }
+  }
+
+  async function stopAndUpload() {
+    const recorder = recorderRef.current;
+    if (!recorder || !format) return;
+    setState("uploading");
+    await new Promise<void>((resolve) => { recorder.onstop = () => resolve(); recorder.stop(); });
+    cleanup();
+    const blob = new Blob(chunksRef.current, { type: format.uploadType });
+    const when = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const fileToSend = new File([blob], `reuniao-presencial-${Date.now()}.${format.extension}`, { type: format.uploadType });
+    try {
+      const meeting = await uploadMeetingRecording(workspaceId, fileToSend, title.trim() || `Reunião presencial ${when}`);
+      toast.success("Gravação enviada", { description: "A transcrição e o resumo saem em alguns minutos." });
+      await refresh();
+      onClose();
+      router.push(`/workspaces/${workspaceId}/meetings/central/${meeting.id}`);
+    } catch (error) {
+      // Nada se perde: a pessoa pode baixar o áudio e enviar depois.
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileToSend.name;
+      link.click();
+      toast.error("Não foi possível enviar — o áudio foi baixado no seu aparelho", { description: errorMessage(error) });
+      setState("idle");
+    }
+  }
+
+  const minutes = Math.floor(elapsed / 60);
+  const seconds = Math.floor(elapsed % 60);
+  return (
+    <Modal title="Gravar reunião presencial" onClose={() => { if (state === "idle") onClose(); }}>
+      <div className="space-y-4">
+        {!format ? <p className="text-sm text-destructive">Este navegador não consegue gravar áudio. Use o Chrome, o Edge, o Firefox ou o Safari atualizado.</p> : null}
+        <p className="text-sm text-muted-foreground">Grava pelo microfone deste computador ou celular. Deixe o aparelho perto de quem fala e avise os participantes que a reunião está sendo gravada.</p>
+        <div>
+          <Label htmlFor="in-person-title">Título (opcional)</Label>
+          <Input id="in-person-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Visita ao cliente" disabled={state === "uploading"} />
+        </div>
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-border/60 py-6">
+          <span className="font-mono text-3xl tabular-nums text-foreground" aria-live="polite">{String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}</span>
+          <div className="h-2 w-48 overflow-hidden rounded-full bg-muted" aria-hidden="true"><div className="h-full rounded-full bg-rose-500 transition-[width] duration-200" style={{ width: `${state === "recording" ? Math.max(4, level * 100) : 0}%` }} /></div>
+          <span className="text-xs text-muted-foreground">{state === "recording" ? "Gravando…" : state === "paused" ? "Pausado" : state === "uploading" ? "Enviando…" : "Pronto para gravar"}</span>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
+          {state === "idle" ? (
+            <>
+              <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+              <Button onClick={() => void start()} disabled={!format}>Começar a gravar</Button>
+            </>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={togglePause} disabled={state === "uploading"}>{state === "paused" ? "Continuar" : "Pausar"}</Button>
+              <Button onClick={() => void stopAndUpload()} loading={state === "uploading"} disabled={state === "uploading" || elapsed < 1}>Parar e enviar</Button>
+            </>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
 }
 
 /** "Gravar agora": link do Meet + título opcional. A reunião existe na hora, sem evento de Agenda. */

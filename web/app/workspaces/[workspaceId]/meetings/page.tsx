@@ -38,6 +38,7 @@ export default function MeetingsHomePage() {
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => setDialog("new")}>Nova reunião</Button>
             <Button variant="secondary" onClick={() => setDialog("upload")}>Enviar gravação</Button>
+            <Button variant="secondary" onClick={() => setDialog("in_person")}>Gravar presencial</Button>
             <Button onClick={() => setDialog("record")}>Gravar agora</Button>
           </div>
         }

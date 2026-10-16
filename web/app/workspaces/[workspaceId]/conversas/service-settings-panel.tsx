@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Clock, MessageSquareHeart, Plus, Tags, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, Clock, MessageSquareHeart, Plus, Tags, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { ErrorState } from "@/components/ErrorState";
@@ -13,8 +13,9 @@ import { useAuth } from "@/contexts/auth-context";
 import { canManageTenant } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { updateInboxServiceSettings } from "@/features/inbox/api";
-import { useInboxServiceSettings } from "@/features/inbox/hooks";
-import type { InboxConversation, InboxServiceSettings, ServiceWeekday } from "@/features/inbox/types";
+import { useInboxServiceSettings, useInboxTags } from "@/features/inbox/hooks";
+import { useTeams } from "@/features/identity/hooks";
+import type { InboxConversation, InboxServiceSettings, ServiceWeekday, TriageOption } from "@/features/inbox/types";
 
 const WEEKDAYS: readonly { key: ServiceWeekday; label: string }[] = [
   { key: "mon", label: "Segunda" }, { key: "tue", label: "Terça" }, { key: "wed", label: "Quarta" }, { key: "thu", label: "Quinta" },
@@ -77,6 +78,8 @@ export function ServiceSettingsPanel({ workspaceId }: { workspaceId: string }) {
         <h2 className="text-lg font-semibold text-foreground">Regras de atendimento</h2>
         <p className="text-sm text-muted-foreground">Valem para todas as conversas de WhatsApp deste workspace.{canEdit ? "" : " Só administradores podem alterar."}</p>
       </div>
+
+      <TriageSection workspaceId={workspaceId} draft={draft} canEdit={canEdit} set={set} />
 
       <Section icon={Clock} title="Horário de atendimento" description="Fora deste horário, o cliente recebe a mensagem de ausência (no máximo uma vez a cada 12 horas por conversa).">
         <div className="space-y-2">
@@ -172,6 +175,96 @@ export function ServiceSettingsPanel({ workspaceId }: { workspaceId: string }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Texto exatamente como o cliente vai receber (espelha `triageMenuText` do backend). */
+function triagePreview(greeting: string, options: readonly TriageOption[]): string {
+  return `${greeting}\n\n${options.map((option, index) => `${index + 1} - ${option.label || "…"}`).join("\n")}\n\nResponda com o número da opção.`;
+}
+
+function TriageSection({ workspaceId, draft, canEdit, set }: {
+  workspaceId: string;
+  draft: InboxServiceSettings;
+  canEdit: boolean;
+  set: <K extends keyof InboxServiceSettings>(key: K, value: InboxServiceSettings[K]) => void;
+}) {
+  const { data: teams } = useTeams(workspaceId);
+  const { data: tagsData } = useInboxTags(workspaceId);
+  const tags = tagsData?.tags ?? [];
+  const options = draft.triageOptions;
+  const setOptions = (next: TriageOption[]) => {
+    set("triageOptions", next);
+    if (!next.length) set("triageEnabled", false);
+  };
+  const update = (index: number, patch: Partial<TriageOption>) => setOptions(options.map((option, i) => (i === index ? { ...option, ...patch } : option)));
+  const move = (index: number, delta: number) => {
+    const target = index + delta;
+    if (target < 0 || target >= options.length) return;
+    const next = [...options];
+    [next[index], next[target]] = [next[target], next[index]];
+    setOptions(next);
+  };
+  const selectClass = "h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 disabled:bg-muted/50";
+
+  return (
+    <Section icon={Bot} title="Menu de triagem (chatbot)" description="Na primeira mensagem de um cliente sem atendente, o Vorix envia o menu. A opção escolhida leva a conversa para a equipe certa (e o rodízio da equipe escolhe o atendente). Se o cliente não escolher em 2 tentativas, a conversa segue para o atendimento normal.">
+      <ToggleRow label="Enviar menu de triagem para novos clientes" checked={draft.triageEnabled} disabled={!canEdit || options.length === 0} onChange={(value) => set("triageEnabled", value)} />
+      {options.length === 0 ? <p className="text-xs text-muted-foreground">Cadastre pelo menos uma opção para ligar o menu.</p> : null}
+      <div className="space-y-1.5">
+        <Label htmlFor="triage-greeting">Mensagem de abertura</Label>
+        <Textarea id="triage-greeting" rows={2} value={draft.triageGreeting} disabled={!canEdit} onChange={(event) => set("triageGreeting", event.target.value)} />
+      </div>
+      <div className="space-y-2">
+        {options.map((option, index) => (
+          <div key={option.id} className="space-y-2 rounded-lg border border-border/60 p-3">
+            <div className="flex items-center gap-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-sm font-semibold tabular-nums text-primary dark:text-primary-glow">{index + 1}</span>
+              <Input className="h-8" placeholder="Nome da opção (ex.: Vendas)" maxLength={40} value={option.label} disabled={!canEdit} onChange={(event) => update(index, { label: event.target.value })} aria-label={`Opção ${index + 1}: nome`} />
+              {canEdit ? (
+                <div className="flex shrink-0">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" disabled={index === 0} onClick={() => move(index, -1)} aria-label="Subir opção"><ArrowUp className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" disabled={index === options.length - 1} onClick={() => move(index, 1)} aria-label="Descer opção"><ArrowDown className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setOptions(options.filter((_, i) => i !== index))} aria-label={`Remover opção ${index + 1}`}><Trash2 className="h-3.5 w-3.5" /></Button>
+                </div>
+              ) : null}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="space-y-1 text-xs text-muted-foreground">
+                Encaminhar para a equipe
+                <select className={selectClass} value={option.teamId ?? ""} disabled={!canEdit} onChange={(event) => update(index, { teamId: event.target.value || undefined })}>
+                  <option value="">Atendimento geral (regra do canal)</option>
+                  {(teams ?? []).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs text-muted-foreground">
+                Aplicar etiqueta
+                <select className={selectClass} value={option.tagId ?? ""} disabled={!canEdit} onChange={(event) => update(index, { tagId: event.target.value || undefined })}>
+                  <option value="">Nenhuma</option>
+                  {tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                </select>
+              </label>
+            </div>
+            <Input className="h-8" placeholder={`Resposta ao escolher (padrão: "Certo! Já vamos te atender sobre …")`} value={option.reply ?? ""} disabled={!canEdit} onChange={(event) => update(index, { reply: event.target.value || undefined })} aria-label={`Opção ${index + 1}: resposta`} />
+          </div>
+        ))}
+        {canEdit && options.length < 9 ? (
+          <Button variant="secondary" size="sm" onClick={() => setOptions([...options, { id: `opt-${Date.now().toString(36)}`, label: "" }])}>
+            <Plus className="h-4 w-4" /> Adicionar opção
+          </Button>
+        ) : null}
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="triage-fallback">Mensagem quando o cliente não escolhe</Label>
+        <Input id="triage-fallback" value={draft.triageFallbackMessage} disabled={!canEdit} onChange={(event) => set("triageFallbackMessage", event.target.value)} />
+      </div>
+      {options.length ? (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-muted-foreground">Como o cliente vai receber</p>
+          <p className="max-w-sm whitespace-pre-wrap rounded-lg rounded-tl-none bg-muted px-3 py-2 text-sm text-foreground">{triagePreview(draft.triageGreeting, options)}</p>
+        </div>
+      ) : null}
+    </Section>
   );
 }
 

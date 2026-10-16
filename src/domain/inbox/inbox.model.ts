@@ -207,11 +207,16 @@ export type InboxConversation = {
   csatScore?: number;
   csatAnsweredAt?: string;
   lastAwayMessageAt?: string;
+  /** Menu de triagem (0152): aguardando escolha, concluída (com a opção) ou pulada. */
+  triageStatus?: InboxTriageStatus;
+  triageAttempts?: number;
+  triageOption?: string;
   createdAt: string;
   updatedAt: string;
 };
 
 export type InboxCsatStatus = "awaiting" | "answered" | "expired";
+export type InboxTriageStatus = "awaiting" | "completed" | "skipped";
 
 /** Campos de regras de atendimento atualizáveis; `null` limpa o campo. */
 export type InboxConversationServiceStatePatch = {
@@ -223,6 +228,9 @@ export type InboxConversationServiceStatePatch = {
   csatScore?: number | null;
   csatAnsweredAt?: string | null;
   lastAwayMessageAt?: string | null;
+  triageStatus?: InboxTriageStatus | null;
+  triageAttempts?: number;
+  triageOption?: string | null;
 };
 
 export const INBOX_MESSAGE_DIRECTIONS = ["inbound", "outbound"] as const;
@@ -408,6 +416,9 @@ export const INBOX_CONVERSATION_EVENT_TYPES = [
   // automática de ausência enviada fora do horário.
   "csat_answered",
   "away_message_sent",
+  // Menu de triagem: cliente escolheu (`metadata.option`) ou não escolheu após 2 tentativas.
+  "triage_completed",
+  "triage_skipped",
 ] as const;
 
 /** Ator das ações automáticas das regras de atendimento (reabrir por mensagem do cliente etc.). */

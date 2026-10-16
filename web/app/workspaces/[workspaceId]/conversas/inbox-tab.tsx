@@ -3093,6 +3093,12 @@ function ContactContextPane({
             <p className="text-muted-foreground">Status</p>
             <p className="mt-0.5 truncate font-medium text-foreground">{statusLabelFor(conversation.status)}</p>
           </div>
+          {conversation.triageStatus === "completed" && conversation.triageOption ? (
+            <div className="rounded-lg border border-border bg-muted/30 p-2">
+              <p className="text-muted-foreground">Escolha no menu</p>
+              <p className="mt-0.5 truncate font-medium text-foreground" title={conversation.triageOption}>{conversation.triageOption}</p>
+            </div>
+          ) : null}
           {conversation.closingReason ? (
             <div className="rounded-lg border border-border bg-muted/30 p-2">
               <p className="text-muted-foreground">Motivo do encerramento</p>
@@ -3260,6 +3266,10 @@ function eventLabel(event: InboxConversationEvent, currentUserId: string | undef
       return `Cliente avaliou o atendimento: ${typeof event.metadata?.score === "number" ? `${event.metadata.score}/5` : "nota registrada"}`;
     case "away_message_sent":
       return "Mensagem de ausência enviada (fora do horário)";
+    case "triage_completed":
+      return `Cliente escolheu "${typeof event.metadata?.option === "string" ? event.metadata.option : "opção"}" no menu${event.toUserId ? ` · encaminhada para ${agentLabel(event.toUserId, currentUserId, members)}` : ""}`;
+    case "triage_skipped":
+      return "Cliente não escolheu uma opção do menu · encaminhada para atendimento";
     case "ai_paused":
       return "IA pausada";
     case "ai_resumed":

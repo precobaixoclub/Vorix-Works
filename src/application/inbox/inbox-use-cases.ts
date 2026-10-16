@@ -16,7 +16,7 @@ import type { InboxMetricsRecorder } from "../ports/inbox-metrics.port.js";
 import type { InboxTagRepositoryPort } from "../ports/inbox-tag-repository.port.js";
 import type { InboxQuickReplyRepositoryPort } from "../ports/inbox-quick-reply-repository.port.js";
 import type { InboxServiceSettingsRepositoryPort } from "../ports/inbox-service-settings-repository.port.js";
-import { defaultInboxServiceSettings, isValidTimezone, isWithinBusinessHours, normalizeWeeklySchedule, parseCsatScore, type InboxServiceSettings } from "../../domain/inbox/service-settings.js";
+import { defaultInboxServiceSettings, isValidTimezone, isWithinBusinessHours, matchTriageOption, normalizeWeeklySchedule, parseCsatScore, triageMenuText, type InboxServiceSettings, type TriageOption } from "../../domain/inbox/service-settings.js";
 import type { MessagingConnectionRepositoryPort } from "../ports/messaging-connection-repository.port.js";
 import type { MessagingProvider, MessagingProviderErrorKind, NormalizedConnectionStatus } from "../ports/messaging-provider.port.js";
 import { MessagingProviderError } from "../ports/messaging-provider.port.js";
@@ -836,6 +836,10 @@ export async function closeConversation(deps: InboxUseCaseDeps, input: CloseConv
     csatRequestedAt: null,
     csatScore: null,
     csatAnsweredAt: null,
+    // Próximo contato sem responsável passa pela triagem de novo.
+    triageStatus: null,
+    triageAttempts: 0,
+    triageOption: null,
   });
   if (settings?.csatEnabled && conversation.chatType === "direct") {
     try {
@@ -902,15 +906,100 @@ export async function updateInboxServiceSettings(deps: InboxUseCaseDeps, input: 
     csatEnabled: input.csatEnabled ?? current.csatEnabled,
     csatMessage: text(input.csatMessage, current.csatMessage, "a mensagem da pesquisa"),
     csatThanksMessage: text(input.csatThanksMessage, current.csatThanksMessage, "o agradecimento"),
+    triageEnabled: false,
+    triageGreeting: text(input.triageGreeting, current.triageGreeting, "a saudação do menu"),
+    triageOptions: input.triageOptions !== undefined ? await normalizeTriageOptions(deps, input.tenantId, input.workspaceId, input.triageOptions) : current.triageOptions,
+    triageFallbackMessage: text(input.triageFallbackMessage, current.triageFallbackMessage, "a mensagem de encaminhamento"),
   };
+  next.triageEnabled = (input.triageEnabled ?? current.triageEnabled) && next.triageOptions.length > 0;
+  if ((input.triageEnabled ?? false) && !next.triageOptions.length) throw new Error("INBOX_SERVICE_SETTINGS_INVALID: cadastre pelo menos uma opção para ligar o menu de triagem.");
   return deps.serviceSettingsRepository!.upsert(next);
+}
+
+async function isTriageActive(deps: InboxUseCaseDeps, tenantId: string, workspaceId: string): Promise<boolean> {
+  try {
+    const settings = await loadServiceSettings(deps, tenantId, workspaceId);
+    return !!settings?.triageEnabled && settings.triageOptions.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function normalizeTriageOptions(deps: InboxUseCaseDeps, tenantId: string, workspaceId: string, raw: readonly TriageOption[]): Promise<TriageOption[]> {
+  if (raw.length > 9) throw new Error("INBOX_SERVICE_SETTINGS_INVALID: o menu pode ter no máximo 9 opções.");
+  const options: TriageOption[] = [];
+  for (const [index, option] of raw.entries()) {
+    const label = option.label?.trim();
+    if (!label || label.length > 40) throw new Error("INBOX_SERVICE_SETTINGS_INVALID: cada opção precisa de um nome com até 40 caracteres.");
+    const reply = option.reply?.trim() || undefined;
+    if (reply && reply.length > 1000) throw new Error("INBOX_SERVICE_SETTINGS_INVALID: a resposta da opção pode ter até 1000 caracteres.");
+    if (option.teamId) {
+      if (!deps.teamRepository || !deps.teamMembershipRepository) throw new Error("INBOX_SERVICE_SETTINGS_INVALID: equipes não estão disponíveis neste ambiente.");
+      await mustTeamBelongToTenantAndWorkspace(requireTeamDeps(deps), option.teamId, tenantId, workspaceId);
+    }
+    if (option.tagId) {
+      const tag = await deps.tagRepository?.getById(option.tagId);
+      if (!tag || tag.tenantId !== tenantId || tag.workspaceId !== workspaceId) throw new Error("INBOX_SERVICE_SETTINGS_INVALID: etiqueta da opção não existe.");
+    }
+    options.push({ id: option.id?.trim() || `opt-${index + 1}-${Date.now().toString(36)}`, label, ...(option.teamId ? { teamId: option.teamId } : {}), ...(option.tagId ? { tagId: option.tagId } : {}), ...(reply ? { reply } : {}) });
+  }
+  return options;
+}
+
+const MAX_TRIAGE_ATTEMPTS = 2;
+
+/** Triagem de UMA mensagem do cliente. Só roda em conversa direta, sem responsável. */
+async function runTriage(deps: InboxUseCaseDeps, settings: InboxServiceSettings, conversation: InboxConversation, body: string | undefined, ctx: { tenantId: string; workspaceId: string }): Promise<InboundServiceRulesResult["triage"]> {
+  const send = (text: string) => sendInboxMessage(deps, { ...ctx, conversationId: conversation.id, body: text, sentByAutomation: true });
+  const menu = triageMenuText(settings.triageGreeting, settings.triageOptions);
+  if (!conversation.triageStatus) {
+    await send(menu);
+    await deps.conversationRepository.updateServiceState(conversation.id, { triageStatus: "awaiting", triageAttempts: 0, triageOption: null });
+    return "menu_sent";
+  }
+  if (conversation.triageStatus !== "awaiting") return undefined;
+
+  const option = matchTriageOption(body, settings.triageOptions);
+  if (option) {
+    await deps.conversationRepository.updateServiceState(conversation.id, { triageStatus: "completed", triageOption: option.label });
+    let routed = conversation;
+    if (option.teamId && deps.teamRepository && deps.teamMembershipRepository) {
+      routed = await setConversationTeam(deps, { ...ctx, conversationId: conversation.id, teamId: option.teamId, performedBy: INBOX_SYSTEM_ACTOR });
+      const nextMember = await resolveNextTeamMember({ teamRepository: deps.teamRepository, teamMembershipRepository: deps.teamMembershipRepository }, { teamId: option.teamId }).catch(() => undefined);
+      if (nextMember) routed = await deps.conversationRepository.assign(conversation.id, nextMember.userId);
+    } else {
+      routed = await maybeRouteNewConversationToTeam(deps, conversation);
+    }
+    if (option.tagId && deps.tagRepository) await deps.tagRepository.attachToConversation(conversation.id, option.tagId).catch(() => undefined);
+    await deps.conversationEventRepository.record({ ...ctx, conversationId: conversation.id, type: "triage_completed", performedBy: INBOX_SYSTEM_ACTOR, toUserId: routed.assignedUserId, metadata: { option: option.label, ...(option.teamId ? { teamId: option.teamId } : {}) } });
+    await send(option.reply || `Certo! Já vamos te atender sobre "${option.label}".`).catch(() => undefined);
+    return "completed";
+  }
+
+  const attempts = (conversation.triageAttempts ?? 0) + 1;
+  if (attempts >= MAX_TRIAGE_ATTEMPTS) {
+    await deps.conversationRepository.updateServiceState(conversation.id, { triageStatus: "skipped", triageAttempts: attempts });
+    await maybeRouteNewConversationToTeam(deps, conversation);
+    await deps.conversationEventRepository.record({ ...ctx, conversationId: conversation.id, type: "triage_skipped", performedBy: INBOX_SYSTEM_ACTOR });
+    await send(settings.triageFallbackMessage).catch(() => undefined);
+    return "skipped";
+  }
+  await deps.conversationRepository.updateServiceState(conversation.id, { triageAttempts: attempts });
+  await send(`Não entendi sua resposta. ${menu}`);
+  return "invalid";
 }
 
 /** Janela para a nota do cliente valer, e intervalo mínimo entre duas mensagens de ausência. */
 const CSAT_ANSWER_WINDOW_MS = 48 * 60 * 60 * 1000;
 const AWAY_MESSAGE_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
-export type InboundServiceRulesResult = { csatAnswered: boolean; reopened: boolean; awayMessageSent: boolean };
+export type InboundServiceRulesResult = {
+  csatAnswered: boolean;
+  reopened: boolean;
+  awayMessageSent: boolean;
+  /** Menu de triagem tratou a mensagem: a IA não responde a ela. */
+  triage?: "menu_sent" | "invalid" | "completed" | "skipped";
+};
 
 /**
  * Roda depois de cada mensagem NOVA do cliente (worker), antes da IA:
@@ -949,6 +1038,15 @@ export async function applyInboundServiceRules(
   if (conversation.status === "resolved" || conversation.status === "archived") {
     conversation = await transitionConversationStatus(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, performedBy: INBOX_SYSTEM_ACTOR }, "open");
     result.reopened = true;
+  }
+
+  if (settings?.triageEnabled && settings.triageOptions.length && !conversation.assignedUserId && conversation.status === "open") {
+    try {
+      result.triage = await runTriage(deps, settings, conversation, message.type === "text" ? message.body : undefined, { tenantId: input.tenantId, workspaceId: input.workspaceId });
+      if (result.triage) conversation = (await deps.conversationRepository.getById(conversation.id)) ?? conversation;
+    } catch (error) {
+      console.warn("[inbox] falha no menu de triagem (best-effort):", error instanceof Error ? error.message : error);
+    }
   }
 
   if (settings?.awayEnabled && !isWithinBusinessHours(settings, now)) {
@@ -1555,7 +1653,11 @@ export async function registerInboundMessage(
   // quem pegou, até uma transferência manual explícita). `createdAt === updatedAt` é o MESMO sinal
   // já usado acima pra "conversa acabou de nascer agora" — nunca refaz em reentregas/mensagens
   // seguintes da mesma conversa.
-  if (!input.fromMe && conversation.createdAt === conversation.updatedAt && !conversation.currentTeamId && !conversation.assignedUserId) {
+  if (!input.fromMe && conversation.createdAt === conversation.updatedAt && !conversation.currentTeamId && !conversation.assignedUserId && !input.isGroup && !(await isTriageActive(deps, input.tenantId, input.workspaceId))) {
+    // Com o menu de triagem ligado, quem decide a equipe é a escolha do cliente (ver
+    // `applyInboundServiceRules`); o roteamento do canal vira o plano B da triagem.
+    conversation = await maybeRouteNewConversationToTeam(deps, conversation);
+  } else if (!input.fromMe && input.isGroup && conversation.createdAt === conversation.updatedAt && !conversation.currentTeamId && !conversation.assignedUserId) {
     conversation = await maybeRouteNewConversationToTeam(deps, conversation);
   }
   const resolvedBody = input.body && input.mentionedJids?.length

@@ -39,6 +39,7 @@ import {
   downloadInboundMediaAndAttach,
   maybeGenerateAiResponse,
   applyInboundServiceRules,
+  type InboundServiceRulesResult,
   processOutboundMessage,
   reconcileConnectionsHealth,
   reconcileOrphanedOutboundMessages,
@@ -800,13 +801,13 @@ async function main(): Promise<void> {
       applyInboundServiceRules(deps, { tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id, messageId: message.id })
         .catch((error) => {
           console.error("[inbox-worker] falha nas regras de atendimento:", error instanceof Error ? error.message : error);
-          return { csatAnswered: false, reopened: false, awayMessageSent: false };
+          return { csatAnswered: false, reopened: false, awayMessageSent: false } as InboundServiceRulesResult;
         })
         .then((rules) => {
-          if (rules.csatAnswered || rules.reopened || rules.awayMessageSent) {
+          if (rules.csatAnswered || rules.reopened || rules.awayMessageSent || rules.triage) {
             publishRealtimeNotification(channel, { type: "conversation.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
           }
-          if (rules.csatAnswered) return undefined;
+          if (rules.csatAnswered || rules.triage) return undefined;
           return maybeGenerateAiResponse(deps, { tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id, triggeringMessageId: message.id });
         })
         .then(() => publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id }))

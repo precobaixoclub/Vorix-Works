@@ -5,7 +5,7 @@ import type {
   InboxConversationListItem,
   InboxConversationRepositoryPort,
 } from "../../../application/ports/inbox-conversation-repository.port.js";
-import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType, MessagingProviderId, InboxConversationServiceStatePatch, InboxCsatStatus } from "../../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType, MessagingProviderId, InboxConversationServiceStatePatch, InboxCsatStatus, InboxTriageStatus } from "../../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -35,6 +35,9 @@ type Row = {
   csat_score: number | null;
   csat_answered_at: Date | null;
   last_away_message_at: Date | null;
+  triage_status: string | null;
+  triage_attempts: number | null;
+  triage_option: string | null;
   last_message_at: Date | null;
   unread_count: number;
   is_urgent: boolean;
@@ -285,6 +288,7 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     const columns: Record<keyof InboxConversationServiceStatePatch, string> = {
       closingReason: "closing_reason", closedAt: "closed_at", closedBy: "closed_by", csatStatus: "csat_status", csatRequestedAt: "csat_requested_at",
       csatScore: "csat_score", csatAnsweredAt: "csat_answered_at", lastAwayMessageAt: "last_away_message_at",
+      triageStatus: "triage_status", triageAttempts: "triage_attempts", triageOption: "triage_option",
     };
     const sets: string[] = [];
     const params: unknown[] = [id];
@@ -395,6 +399,9 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       csatScore: row.csat_score ?? undefined,
       csatAnsweredAt: row.csat_answered_at?.toISOString(),
       lastAwayMessageAt: row.last_away_message_at?.toISOString(),
+      triageStatus: (row.triage_status as InboxTriageStatus | null) ?? undefined,
+      triageAttempts: row.triage_attempts ?? 0,
+      triageOption: row.triage_option ?? undefined,
       lastMessageAt: row.last_message_at?.toISOString(),
       unreadCount: row.unread_count,
       isUrgent: row.is_urgent,

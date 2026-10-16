@@ -10,6 +10,9 @@ export type ServiceWeekday = (typeof SERVICE_WEEKDAYS)[number];
 export type ServiceInterval = { start: string; end: string };
 export type ServiceWeeklySchedule = Record<ServiceWeekday, ServiceInterval[]>;
 
+/** Opção do menu de triagem; a posição (1, 2, 3…) é o número que o cliente digita. */
+export type TriageOption = { id: string; label: string; teamId?: string; tagId?: string; reply?: string };
+
 export type InboxServiceSettings = {
   tenantId: string;
   workspaceId: string;
@@ -22,6 +25,10 @@ export type InboxServiceSettings = {
   csatEnabled: boolean;
   csatMessage: string;
   csatThanksMessage: string;
+  triageEnabled: boolean;
+  triageGreeting: string;
+  triageOptions: TriageOption[];
+  triageFallbackMessage: string;
   updatedAt?: string;
 };
 
@@ -40,6 +47,10 @@ export function defaultInboxServiceSettings(tenantId: string, workspaceId: strin
     csatEnabled: false,
     csatMessage: "Seu atendimento foi finalizado. Como você avalia o atendimento que recebeu? Responda com uma nota de 1 (ruim) a 5 (excelente).",
     csatThanksMessage: "Obrigado pela sua avaliação!",
+    triageEnabled: false,
+    triageGreeting: "Olá! Para te atender mais rápido, escolha uma opção:",
+    triageOptions: [],
+    triageFallbackMessage: "Tudo bem! Vamos te encaminhar para um atendente.",
   };
 }
 
@@ -102,4 +113,28 @@ export function parseCsatScore(body: string | undefined): number | undefined {
   if (stars >= 1 && stars <= 5 && text.replace(/⭐|★|\s|️/g, "") === "") return stars;
   const match = /^(?:nota\s*)?([1-5])(?:\s*(?:estrelas?|de\s*5|\/\s*5))?[\s.!]*$/.exec(text);
   return match ? Number(match[1]) : undefined;
+}
+
+/** Texto do menu enviado ao cliente. */
+export function triageMenuText(greeting: string, options: readonly TriageOption[]): string {
+  return `${greeting}\n\n${options.map((option, index) => `*${index + 1}* - ${option.label}`).join("\n")}\n\nResponda com o número da opção.`;
+}
+
+const fold = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+const KEYCAPS: Record<string, string> = { "1️⃣": "1", "2️⃣": "2", "3️⃣": "3", "4️⃣": "4", "5️⃣": "5", "6️⃣": "6", "7️⃣": "7", "8️⃣": "8", "9️⃣": "9" };
+
+/** Opção escolhida pelo cliente: o número ("2", "opção 2", "2️⃣") ou o nome ("suporte"). `undefined` = não entendeu. */
+export function matchTriageOption(body: string | undefined, options: readonly TriageOption[]): TriageOption | undefined {
+  if (!body || !options.length) return undefined;
+  let text = body.trim();
+  for (const [emoji, digit] of Object.entries(KEYCAPS)) text = text.split(emoji).join(digit);
+  const numeric = /^(?:op[cç][aã]o\s*)?(\d{1,2})[\s.)!-]*$/i.exec(text);
+  if (numeric) return options[Number(numeric[1]) - 1];
+  const folded = fold(text);
+  if (folded.length < 3) return undefined;
+  const hits = options.filter((option) => {
+    const label = fold(option.label);
+    return label.length > 0 && (folded === label || ` ${folded} `.includes(` ${label} `));
+  });
+  return hits.length === 1 ? hits[0] : undefined;
 }

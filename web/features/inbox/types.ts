@@ -115,6 +115,8 @@ export type InboxConversation = {
   closedBy?: string;
   csatStatus?: "awaiting" | "answered" | "expired";
   csatScore?: number;
+  triageStatus?: "awaiting" | "completed" | "skipped";
+  triageOption?: string;
 };
 
 /** Fase 4 — `open`/`pending`/`resolved` filtram por status normalizado (ver
@@ -184,7 +186,9 @@ export type InboxConversationEventType =
   // Nota interna da equipe (`metadata.text`) — nunca enviada ao contato.
   | "note_added"
   | "csat_answered"
-  | "away_message_sent";
+  | "away_message_sent"
+  | "triage_completed"
+  | "triage_skipped";
 
 /** Resposta rápida — acionada no composer digitando "/atalho". */
 export type InboxQuickReply = { id: string; shortcut: string; body: string; createdBy?: string; createdAt: string; updatedAt: string };
@@ -313,8 +317,15 @@ export type InboxServiceSettings = {
   csatEnabled: boolean;
   csatMessage: string;
   csatThanksMessage: string;
+  triageEnabled: boolean;
+  triageGreeting: string;
+  triageOptions: TriageOption[];
+  triageFallbackMessage: string;
   updatedAt?: string;
 };
+
+/** Opção do menu de triagem — a posição (1, 2, 3…) é o número que o cliente digita. */
+export type TriageOption = { id: string; label: string; teamId?: string; tagId?: string; reply?: string };
 
 /** Fase 10 (Pre-Pilot Hardening) — `GET /v1/inbox/status`, SEMPRE disponível (nunca 404, mesmo com
  * o módulo desligado). É assim que o frontend decide se chama qualquer outra rota `/v1/inbox/*`

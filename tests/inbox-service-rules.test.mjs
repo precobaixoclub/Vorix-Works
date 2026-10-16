@@ -15,6 +15,10 @@ import {
   applyInboundServiceRules, closeConversation, getInboxServiceSettings, registerInboundMessage, reopenConversation, startInboxConversation, updateInboxServiceSettings,
 } from "../dist/application/inbox/inbox-use-cases.js";
 import { isWithinBusinessHours, normalizeWeeklySchedule, parseCsatScore } from "../dist/domain/inbox/service-settings.js";
+import { PostgresTeamRepository, PostgresTeamMembershipRepository } from "../dist/infrastructure/storage/postgres/postgres-team-repository.js";
+import { PostgresInboxTagRepository } from "../dist/infrastructure/storage/postgres/postgres-inbox-tag-repository.js";
+import { addTeamMember, createTeam } from "../dist/application/identity/team-use-cases.js";
+import { matchTriageOption, triageMenuText } from "../dist/domain/inbox/service-settings.js";
 import { startTestPostgres } from "./helpers/pglite-test-db.mjs";
 
 /** Regras de atendimento (migration 0151): horário/ausência, motivos de encerramento, pesquisa de
@@ -31,7 +35,7 @@ before(async () => {
 });
 after(async () => { await db.stop(); });
 
-async function setup(tenantId) {
+async function setup(tenantId, startedBy = "agent-1") {
   const deps = {
     workspaceRepository: new PostgresWorkspaceRepository(db.pool, { idGenerator: () => nextId("workspace") }),
     connectionRepository: new PostgresMessagingConnectionRepository(db.pool),
@@ -40,6 +44,9 @@ async function setup(tenantId) {
     conversationEventRepository: new PostgresInboxConversationEventRepository(db.pool),
     messageRepository: new PostgresInboxMessageRepository(db.pool),
     serviceSettingsRepository: new PostgresInboxServiceSettingsRepository(db.pool),
+    teamRepository: new PostgresTeamRepository(db.pool),
+    teamMembershipRepository: new PostgresTeamMembershipRepository(db.pool),
+    tagRepository: new PostgresInboxTagRepository(db.pool),
     outboundQueue: { published: [], async publish(input) { this.published.push(input); } },
     providers: { wuzapi: { async sendText() { return { externalMessageId: "x" }; } } },
   };
@@ -47,7 +54,9 @@ async function setup(tenantId) {
   const connection = await deps.connectionRepository.create({ tenantId, workspaceId: workspace.id, provider: "wuzapi", displayName: "Conexão" });
   await deps.connectionRepository.updateStatus(connection.id, { status: "connected", externalSessionId: `sess-${connection.id}` });
   const phone = `+55119${String(++counter).padStart(8, "0")}`;
-  const { conversation } = await startInboxConversation(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, phone, body: "Olá", startedByUserId: "agent-1" });
+  const { conversation } = startedBy === null
+    ? { conversation: await deps.conversationRepository.findOrCreate({ tenantId, workspaceId: workspace.id, connectionId: connection.id, chatType: "direct", externalChatId: phone }) }
+    : await startInboxConversation(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, phone, body: "Olá", startedByUserId: startedBy });
   const inbound = async (body, externalMessageId = nextId("in")) => {
     const registered = await registerInboundMessage(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, chatId: `${phone.slice(1)}@s.whatsapp.net`, chatPhoneE164: phone, isGroup: false, fromMe: false, senderId: phone, externalMessageId, type: "text", body, occurredAt: new Date().toISOString() });
     return registered.message;
@@ -144,4 +153,61 @@ test("ausência: só fora do horário, no máximo uma a cada 12h", async () => {
   const second = await inbound("Alguém?");
   assert.equal((await applyInboundServiceRules(deps, { ...ctx, conversationId: conversation.id, messageId: second.id, now: new Date(sundayNight.getTime() + 60 * 60 * 1000) })).awayMessageSent, false);
   assert.equal((await outboundBodies()).filter((body) => body === "Estamos fora do horário.").length, 1);
+});
+
+test("triagem (domínio): número, emoji, 'opção 2' ou nome da opção; ambíguo/inválido não casa", () => {
+  const options = [{ id: "a", label: "Vendas" }, { id: "b", label: "Suporte técnico" }, { id: "c", label: "Financeiro" }];
+  for (const [text, label] of [["1", "Vendas"], ["2️⃣", "Suporte técnico"], ["opção 3", "Financeiro"], ["Vendas", "Vendas"], ["quero falar com o suporte tecnico", "Suporte técnico"], ["FINANCEIRO!", "Financeiro"]]) {
+    assert.equal(matchTriageOption(text, options)?.label, label, text);
+  }
+  for (const text of ["4", "0", "oi", "bom dia, tudo bem?", ""]) assert.equal(matchTriageOption(text, options), undefined, text);
+  assert.equal(triageMenuText("Escolha:", options), "Escolha:\n\n*1* - Vendas\n*2* - Suporte técnico\n*3* - Financeiro\n\nResponda com o número da opção.");
+});
+
+test("triagem: menu na 1ª mensagem, escolha leva para a equipe (com rodízio) + etiqueta e cala a IA", async () => {
+  const tenantId = "tenant-triage-1";
+  const { deps, conversation, inbound, outboundBodies, ctx } = await setup(tenantId, null);
+  const team = await createTeam(deps, { ...ctx, name: "Comercial" });
+  await addTeamMember(deps, { teamId: team.id, ...ctx, userId: "seller-1", role: "editor" });
+  const tag = await deps.tagRepository.create({ ...ctx, name: "Lead" });
+  await assert.rejects(updateInboxServiceSettings(deps, { ...ctx, triageEnabled: true, triageOptions: [] }), /INBOX_SERVICE_SETTINGS_INVALID/);
+  await assert.rejects(updateInboxServiceSettings(deps, { ...ctx, triageOptions: [{ label: "X", teamId: "team-de-outro" }] }), /TEAM_NOT_FOUND/);
+  await updateInboxServiceSettings(deps, { ...ctx, triageEnabled: true, triageOptions: [{ label: "Vendas", teamId: team.id, tagId: tag.id, reply: "Um vendedor já vai falar com você." }, { label: "Suporte" }] });
+
+  const hello = await inbound("Oi, bom dia");
+  assert.equal((await applyInboundServiceRules(deps, { ...ctx, conversationId: conversation.id, messageId: hello.id })).triage, "menu_sent");
+  assert.ok((await outboundBodies()).some((body) => body.includes("*1* - Vendas")));
+
+  const wrong = await inbound("qual o preço?");
+  assert.equal((await applyInboundServiceRules(deps, { ...ctx, conversationId: conversation.id, messageId: wrong.id })).triage, "invalid");
+
+  const choice = await inbound("1");
+  assert.equal((await applyInboundServiceRules(deps, { ...ctx, conversationId: conversation.id, messageId: choice.id })).triage, "completed");
+  const routed = await deps.conversationRepository.getById(conversation.id);
+  assert.equal(routed.currentTeamId, team.id);
+  assert.equal(routed.assignedUserId, "seller-1");
+  assert.equal(routed.triageStatus, "completed");
+  assert.equal(routed.triageOption, "Vendas");
+  assert.deepEqual((await deps.tagRepository.listTagsByConversationIds([conversation.id])).get(conversation.id)?.map((t) => t.name), ["Lead"]);
+  assert.ok((await outboundBodies()).includes("Um vendedor já vai falar com você."));
+
+  // Depois de atribuída, a triagem não interfere mais.
+  const after = await inbound("obrigado");
+  assert.equal((await applyInboundServiceRules(deps, { ...ctx, conversationId: conversation.id, messageId: after.id })).triage, undefined);
+});
+
+test("triagem: duas respostas inválidas encaminham sem opção; conversa já com responsável nunca recebe menu", async () => {
+  const unassigned = await setup("tenant-triage-2", null);
+  await updateInboxServiceSettings(unassigned.deps, { ...unassigned.ctx, triageEnabled: true, triageOptions: [{ label: "Vendas" }] });
+  for (const [text, expected] of [["oi", "menu_sent"], ["hã?", "invalid"], ["não sei", "skipped"]]) {
+    const message = await unassigned.inbound(text);
+    assert.equal((await applyInboundServiceRules(unassigned.deps, { ...unassigned.ctx, conversationId: unassigned.conversation.id, messageId: message.id })).triage, expected, text);
+  }
+  assert.equal((await unassigned.deps.conversationRepository.getById(unassigned.conversation.id)).triageStatus, "skipped");
+  assert.ok((await unassigned.outboundBodies()).includes("Tudo bem! Vamos te encaminhar para um atendente."));
+
+  const assigned = await setup("tenant-triage-3");
+  await updateInboxServiceSettings(assigned.deps, { ...assigned.ctx, triageEnabled: true, triageOptions: [{ label: "Vendas" }] });
+  const message = await assigned.inbound("oi");
+  assert.equal((await applyInboundServiceRules(assigned.deps, { ...assigned.ctx, conversationId: assigned.conversation.id, messageId: message.id })).triage, undefined);
 });

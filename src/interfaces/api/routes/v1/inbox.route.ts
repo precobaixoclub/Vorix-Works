@@ -133,6 +133,14 @@ const SERVICE_SETTINGS_BODY_SCHEMA = {
     csatEnabled: { type: "boolean" },
     csatMessage: { type: "string", maxLength: 1000 },
     csatThanksMessage: { type: "string", maxLength: 1000 },
+    triageEnabled: { type: "boolean" },
+    triageGreeting: { type: "string", maxLength: 1000 },
+    triageFallbackMessage: { type: "string", maxLength: 1000 },
+    triageOptions: {
+      type: "array",
+      maxItems: 9,
+      items: { type: "object", required: ["label"], properties: { id: { type: "string", maxLength: 80 }, label: { type: "string", maxLength: 40 }, teamId: { type: "string" }, tagId: { type: "string" }, reply: { type: "string", maxLength: 1000 } } },
+    },
   },
 } as const;
 const CLOSE_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, closingReason: { type: "string", maxLength: 80 } } } as const;

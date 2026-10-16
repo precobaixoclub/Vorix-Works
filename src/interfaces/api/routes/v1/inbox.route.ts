@@ -7,6 +7,7 @@ import type { InboxMediaStoragePort } from "../../../../application/ports/inbox-
 import type { InboxMessageRepositoryPort } from "../../../../application/ports/inbox-message-repository.port.js";
 import type { InboxTagRepositoryPort } from "../../../../application/ports/inbox-tag-repository.port.js";
 import type { InboxQuickReplyRepositoryPort } from "../../../../application/ports/inbox-quick-reply-repository.port.js";
+import type { InboxStickerRepositoryPort } from "../../../../application/ports/inbox-sticker-repository.port.js";
 import type { InboxServiceSettingsRepositoryPort } from "../../../../application/ports/inbox-service-settings-repository.port.js";
 import type { InboxTagColor } from "../../../../domain/inbox/inbox.model.js";
 import type { MessagingConnectionRepositoryPort } from "../../../../application/ports/messaging-connection-repository.port.js";
@@ -59,6 +60,11 @@ import {
   updateInboxQuickReply,
   deleteInboxQuickReply,
   addConversationNote,
+  saveStickerFromMessage,
+  listSavedStickers,
+  getSavedStickerFile,
+  sendSavedSticker,
+  deleteSavedSticker,
   getInboxServiceSettings,
   updateInboxServiceSettings,
   setAiConversationEnabled,
@@ -296,6 +302,11 @@ const INBOX_ERROR_STATUS: Record<string, number> = {
   INBOX_QUICK_REPLY_INVALID: 422,
   INBOX_QUICK_REPLY_SHORTCUT_TAKEN: 409,
   INBOX_NOTE_EMPTY: 422,
+  // Figurinhas salvas.
+  INBOX_STICKERS_NOT_CONFIGURED: 503,
+  INBOX_STICKER_NOT_FOUND: 404,
+  INBOX_STICKER_INVALID: 422,
+  INBOX_STICKER_NOT_READY: 409,
   INBOX_NOTE_TOO_LONG: 422,
   // Regras de atendimento.
   INBOX_SERVICE_SETTINGS_NOT_CONFIGURED: 503,
@@ -368,6 +379,7 @@ export type InboxRoutesDeps = {
    * configurado neste processo; as rotas abaixo respondem 503 nesse caso. */
   tagRepository?: InboxTagRepositoryPort;
   quickReplyRepository?: InboxQuickReplyRepositoryPort;
+  stickerRepository?: InboxStickerRepositoryPort;
   serviceSettingsRepository?: InboxServiceSettingsRepositoryPort;
 };
 
@@ -1149,6 +1161,69 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     try {
       // tenantId SEMPRE do token (vem por último: nada do corpo o sobrescreve).
       return successEnvelope(await updateInboxServiceSettings(useCaseDeps, { ...(changes as object), workspaceId, tenantId: principal.tenantId }), request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  // Figurinhas salvas da equipe (como no WhatsApp).
+  app.get("/inbox/stickers", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:read");
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      const stickers = await listSavedStickers(useCaseDeps, { tenantId: principal.tenantId, workspaceId });
+      return successEnvelope(stickers.map(({ id, mimeType, sizeBytes, createdAt }) => ({ id, mimeType, sizeBytes, createdAt })), request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.post("/inbox/stickers", { schema: { body: { type: "object", required: ["workspaceId", "messageId"], additionalProperties: false, properties: { workspaceId: { type: "string", minLength: 1 }, messageId: { type: "string", minLength: 1 } } } } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { workspaceId, messageId } = request.body as { workspaceId: string; messageId: string };
+    try {
+      const { sticker, created } = await saveStickerFromMessage(useCaseDeps, { tenantId: principal.tenantId, workspaceId, messageId, savedBy: principal.userId });
+      reply.status(created ? 201 : 200);
+      return successEnvelope({ id: sticker.id, mimeType: sticker.mimeType, sizeBytes: sticker.sizeBytes, createdAt: sticker.createdAt, alreadySaved: !created }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.get("/inbox/stickers/:stickerId/file", { schema: { params: { type: "object", required: ["stickerId"], properties: { stickerId: { type: "string", minLength: 1 } } }, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:read");
+    const { stickerId } = request.params as { stickerId: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      const file = await getSavedStickerFile(useCaseDeps, { tenantId: principal.tenantId, workspaceId, stickerId });
+      reply.header("Cache-Control", "private, max-age=31536000, immutable");
+      reply.type(file.mimeType);
+      return reply.send(file.body);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.delete("/inbox/stickers/:stickerId", { schema: { params: { type: "object", required: ["stickerId"], properties: { stickerId: { type: "string", minLength: 1 } } }, querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { stickerId } = request.params as { stickerId: string };
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      await deleteSavedSticker(useCaseDeps, { tenantId: principal.tenantId, workspaceId, stickerId });
+      return successEnvelope({ deleted: true }, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.post("/inbox/conversations/:id/stickers/:stickerId", { schema: { params: { type: "object", required: ["id", "stickerId"], properties: { id: { type: "string", minLength: 1 }, stickerId: { type: "string", minLength: 1 } } }, body: WORKSPACE_BODY_SCHEMA } }, async (request, reply) => {
+    const principal = requirePermission(request, "inbox:reply");
+    const { id, stickerId } = request.params as { id: string; stickerId: string };
+    const { workspaceId } = request.body as { workspaceId: string };
+    try {
+      const message = await sendSavedSticker(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, stickerId, sentByUserId: principal.userId });
+      reply.status(202);
+      return successEnvelope(message, request.id);
     } catch (error) {
       rethrowInboxError(error);
     }

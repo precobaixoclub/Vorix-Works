@@ -141,3 +141,37 @@ test("nova conversa: número com +código de país nunca recebe 55", async () =>
   const result = await startInboxConversation(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, phone: "+1 212 555 1234", body: "Hi", startedByUserId: "u" });
   assert.equal(result.conversation.externalChatId, "+12125551234");
 });
+
+test("figurinhas: salva a recebida (cópia própria, sem duplicar), envia em outra conversa e isola por workspace", async () => {
+  const { PostgresInboxStickerRepository } = await import("../dist/infrastructure/storage/postgres/postgres-inbox-sticker-repository.js");
+  const { saveStickerFromMessage, listSavedStickers, sendSavedSticker, deleteSavedSticker, getSavedStickerFile } = await import("../dist/application/inbox/inbox-use-cases.js");
+  const tenantId = "tenant-stickers";
+  const { deps, workspace, connection } = await setup(tenantId);
+  const files = new Map();
+  deps.inboxMediaStorage = { async put({ key, body, contentType }) { files.set(key, { body, contentType }); }, async get(key) { return files.get(key); }, async delete(key) { files.delete(key); }, async health() { return { ok: true }; } };
+  deps.stickerRepository = new PostgresInboxStickerRepository(db.pool);
+  const { conversation } = await startInboxConversation(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, phone: "11955554444", body: "Oi", startedByUserId: "u" });
+  await deps.inboxMediaStorage.put({ key: "inbound/sticker-1", body: Buffer.from("RIFF-webp-sticker"), contentType: "image/webp" });
+  const { message } = await deps.messageRepository.create({ tenantId, workspaceId: workspace.id, conversationId: conversation.id, connectionId: connection.id, direction: "inbound", type: "sticker", status: "delivered", externalMessageId: "ext-st-1", mediaStorageRef: { provider: "inbox-media", objectKey: "inbound/sticker-1" }, mimeType: "image/webp" });
+
+  const first = await saveStickerFromMessage(deps, { tenantId, workspaceId: workspace.id, messageId: message.id, savedBy: "u" });
+  const again = await saveStickerFromMessage(deps, { tenantId, workspaceId: workspace.id, messageId: message.id, savedBy: "u" });
+  assert.equal(first.created, true);
+  assert.equal(again.created, false);
+  assert.equal(again.sticker.id, first.sticker.id);
+  files.delete("inbound/sticker-1");
+  assert.equal((await getSavedStickerFile(deps, { tenantId, workspaceId: workspace.id, stickerId: first.sticker.id })).body.toString(), "RIFF-webp-sticker", "cópia própria: sobrevive à mídia original");
+
+  const { conversation: other } = await startInboxConversation(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, phone: "11955553333", body: "Olá", startedByUserId: "u" });
+  const sent = await sendSavedSticker(deps, { tenantId, workspaceId: workspace.id, conversationId: other.id, stickerId: first.sticker.id, sentByUserId: "u" });
+  assert.equal(sent.type, "sticker");
+  assert.equal(sent.direction, "outbound");
+
+  const foreign = await setup("tenant-stickers-2");
+  await assert.rejects(sendSavedSticker({ ...foreign.deps, inboxMediaStorage: deps.inboxMediaStorage, stickerRepository: deps.stickerRepository }, { tenantId: "tenant-stickers-2", workspaceId: foreign.workspace.id, conversationId: other.id, stickerId: first.sticker.id }), /INBOX_STICKER_NOT_FOUND/);
+  const text = (await deps.messageRepository.create({ tenantId, workspaceId: workspace.id, conversationId: conversation.id, connectionId: connection.id, direction: "inbound", type: "text", status: "delivered", externalMessageId: "ext-txt", body: "oi" })).message;
+  await assert.rejects(saveStickerFromMessage(deps, { tenantId, workspaceId: workspace.id, messageId: text.id }), /INBOX_STICKER_INVALID/);
+
+  await deleteSavedSticker(deps, { tenantId, workspaceId: workspace.id, stickerId: first.sticker.id });
+  assert.equal((await listSavedStickers(deps, { tenantId, workspaceId: workspace.id })).length, 0);
+});

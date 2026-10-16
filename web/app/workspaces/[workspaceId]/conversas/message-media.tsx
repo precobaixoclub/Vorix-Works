@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type React from "react";
-import { ChevronLeft, ChevronRight, Download, FileText, Pause, Play, UserRound, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Pause, Play, Star, UserRound, X } from "lucide-react";
+import { toast } from "sonner";
+import { useSWRConfig } from "swr";
+import { saveSticker, stickersKey } from "@/features/inbox/stickers";
 import { Button } from "@/components/Button";
 import { Spinner } from "@/components/Spinner";
 import { getApiBaseUrl } from "@/lib/api-error";
@@ -162,19 +165,6 @@ function ImageMedia({ workspaceId, message, onOpen }: { workspaceId: string; mes
   );
 }
 
-/** Dispara o download de verdade (pedido explícito do usuário: "preciso conseguir... salvar") —
- * `state.url` já é a URL do proxy autenticado (com `media_token` embutido na querystring), então um
- * `<a download>` programático funciona sem nenhuma chamada extra: o navegador refaz a MESMA
- * requisição que já carregou a prévia, só que salva em vez de exibir inline. */
-function downloadMediaUrl(url: string, fileName: string) {
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-}
-
 /** Bloco "figurinhas" (pedido explícito do usuário, com print: "quando é figurinha esta ficando
  * como mídia recebida... preciso conseguir ver, salvar e ainda enviar quando necessário") — sem
  * moldura/fundo de bolha (mesmo tratamento do WhatsApp: figurinha "flutua" sobre o fundo da
@@ -185,6 +175,20 @@ function downloadMediaUrl(url: string, fileName: string) {
  */
 function StickerMedia({ workspaceId, message }: { workspaceId: string; message: InboxMessage }) {
   const { state, load } = useMediaUrl(workspaceId, message);
+  const { mutate: mutateGlobal } = useSWRConfig();
+  const [saving, setSaving] = useState(false);
+  async function saveToCollection() {
+    setSaving(true);
+    try {
+      const result = await saveSticker(workspaceId, message.id);
+      toast.success(result.alreadySaved ? "Esta figurinha já estava salva" : "Figurinha salva", { description: "Use o botão de figurinhas no campo de mensagem para enviar." });
+      await mutateGlobal(stickersKey(workspaceId));
+    } catch (cause) {
+      toast.error("Não foi possível salvar a figurinha", { description: cause instanceof Error ? cause.message : undefined });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   useEffect(() => {
     void load();
@@ -204,13 +208,16 @@ function StickerMedia({ workspaceId, message }: { workspaceId: string; message: 
     <div className="group/sticker relative h-28 w-28">
       {/* eslint-disable-next-line @next/next/no-img-element -- mídia privada servida via proxy autenticado */}
       <img src={state.url} alt="Figurinha" loading="lazy" className="h-full w-full object-contain" />
+      {/* Como no WhatsApp: salva nas figurinhas da equipe para enviar depois (nunca abre em tela cheia). */}
       <button
         type="button"
-        onClick={() => downloadMediaUrl(state.url!, `figurinha-${message.id}.webp`)}
+        onClick={() => void saveToCollection()}
+        disabled={saving}
         aria-label="Salvar figurinha"
-        className="absolute bottom-0.5 right-0.5 rounded-full bg-black/50 p-1 text-white opacity-0 transition-opacity hover:bg-black/70 group-hover/sticker:opacity-100"
+        title="Salvar nas figurinhas"
+        className="absolute bottom-0.5 right-0.5 rounded-full bg-black/55 p-1 text-white opacity-0 transition-opacity hover:bg-black/75 focus-visible:opacity-100 group-hover/sticker:opacity-100 disabled:opacity-60"
       >
-        <Download className="h-3.5 w-3.5" />
+        <Star className="h-3.5 w-3.5" />
       </button>
     </div>
   );

@@ -315,6 +315,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       notificationRealtimePublisher: app.zunoContainer.notificationRealtimePublisher,
       tagRepository: app.zunoContainer.inboxTagRepository,
       quickReplyRepository: app.zunoContainer.inboxQuickReplyRepository,
+      stickerRepository: app.zunoContainer.inboxStickerRepository,
       serviceSettingsRepository: app.zunoContainer.inboxServiceSettingsRepository,
     };
     await registerInboxRoutes(app, sharedInboxDeps);

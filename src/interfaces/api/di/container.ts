@@ -41,6 +41,7 @@ import type { InboxConversationRepositoryPort } from "../../../application/ports
 import type { InboxMessageRepositoryPort } from "../../../application/ports/inbox-message-repository.port.js";
 import type { InboxTagRepositoryPort } from "../../../application/ports/inbox-tag-repository.port.js";
 import type { InboxQuickReplyRepositoryPort } from "../../../application/ports/inbox-quick-reply-repository.port.js";
+import type { InboxStickerRepositoryPort } from "../../../application/ports/inbox-sticker-repository.port.js";
 import type { InboxServiceSettingsRepositoryPort } from "../../../application/ports/inbox-service-settings-repository.port.js";
 import type { InboxConversationEventRepositoryPort } from "../../../application/ports/inbox-conversation-event-repository.port.js";
 import type { InboxMetricsRepositoryPort } from "../../../application/ports/inbox-metrics-repository.port.js";
@@ -405,6 +406,7 @@ export type ApiContainer = {
   /** Bloco "etiquetas" (pedido explícito do usuário) — ver `db/migrations/0129_inbox_tags.sql`. */
   inboxTagRepository: InboxTagRepositoryPort;
   inboxQuickReplyRepository: InboxQuickReplyRepositoryPort;
+  inboxStickerRepository: InboxStickerRepositoryPort;
   inboxServiceSettingsRepository: InboxServiceSettingsRepositoryPort;
   /** Fase 4 (Atendimento) — auditoria + timeline de eventos operacionais, ver `db/migrations/0084`. */
   inboxConversationEventRepository: InboxConversationEventRepositoryPort;

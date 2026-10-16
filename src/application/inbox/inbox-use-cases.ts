@@ -15,6 +15,8 @@ import type { InboxMessageRepositoryPort } from "../ports/inbox-message-reposito
 import type { InboxMetricsRecorder } from "../ports/inbox-metrics.port.js";
 import type { InboxTagRepositoryPort } from "../ports/inbox-tag-repository.port.js";
 import type { InboxQuickReplyRepositoryPort } from "../ports/inbox-quick-reply-repository.port.js";
+import type { InboxSavedSticker, InboxStickerRepositoryPort } from "../ports/inbox-sticker-repository.port.js";
+import { createHash } from "node:crypto";
 import type { InboxServiceSettingsRepositoryPort } from "../ports/inbox-service-settings-repository.port.js";
 import { defaultInboxServiceSettings, isValidTimezone, isWithinBusinessHours, matchTriageOption, normalizeWeeklySchedule, parseCsatScore, triageMenuText, type InboxServiceSettings, type TriageOption } from "../../domain/inbox/service-settings.js";
 import type { MessagingConnectionRepositoryPort } from "../ports/messaging-connection-repository.port.js";
@@ -118,6 +120,8 @@ export type InboxUseCaseDeps = {
    * `tags` nesse caso (nunca bloqueia a listagem em si). */
   tagRepository?: InboxTagRepositoryPort;
   quickReplyRepository?: InboxQuickReplyRepositoryPort;
+  /** Figurinhas salvas da equipe (opcional: sem ele, salvar/enviar figurinha fica indisponível). */
+  stickerRepository?: InboxStickerRepositoryPort;
   /** Regras de atendimento (horário/ausência, motivos de encerramento, pesquisa). `undefined` =
    * regras desligadas neste processo (finalizar continua funcionando como antes). */
   serviceSettingsRepository?: InboxServiceSettingsRepositoryPort;
@@ -1426,6 +1430,65 @@ export async function sendInboxMediaMessage(deps: InboxUseCaseDeps, input: SendI
     sentByUserId: input.sentByUserId,
   });
   return finishEnqueueingOutboundMessage(deps, { conversationId: conversation.id, connectionId: conversation.connectionId, message, sentByAi: false, tenantId: input.tenantId, workspaceId: input.workspaceId });
+}
+
+// ── Figurinhas salvas ─────────────────────────────────────────────────────────────────────────
+
+const MAX_SAVED_STICKER_BYTES = 1024 * 1024;
+
+function requireStickerDeps(deps: InboxUseCaseDeps): { stickers: InboxStickerRepositoryPort; storage: InboxMediaStoragePort } {
+  if (!deps.stickerRepository || !deps.inboxMediaStorage) throw new Error("INBOX_STICKERS_NOT_CONFIGURED: figurinhas salvas não estão disponíveis neste ambiente.");
+  return { stickers: deps.stickerRepository, storage: deps.inboxMediaStorage };
+}
+
+async function mustStickerBelongToWorkspace(deps: InboxUseCaseDeps, stickerId: string, tenantId: string, workspaceId: string): Promise<InboxSavedSticker> {
+  const sticker = await requireStickerDeps(deps).stickers.getById(stickerId);
+  if (!sticker || sticker.tenantId !== tenantId || sticker.workspaceId !== workspaceId) throw new Error(`INBOX_STICKER_NOT_FOUND: figurinha "${stickerId}" não existe.`);
+  return sticker;
+}
+
+/**
+ * "Salvar figurinha" (como no WhatsApp): copia a figurinha recebida (ou enviada) para a coleção da
+ * equipe neste workspace. A cópia tem chave própria no armazenamento: continua disponível mesmo se
+ * a conversa de origem for apagada. Mesma figurinha salva de novo não duplica.
+ */
+export async function saveStickerFromMessage(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string; messageId: string; savedBy?: string }): Promise<{ sticker: InboxSavedSticker; created: boolean }> {
+  const { stickers, storage } = requireStickerDeps(deps);
+  const message = await deps.messageRepository.getById(input.messageId);
+  if (!message || message.tenantId !== input.tenantId || message.workspaceId !== input.workspaceId) throw new Error(`INBOX_MESSAGE_NOT_FOUND: mensagem "${input.messageId}" não existe.`);
+  if (message.type !== "sticker") throw new Error("INBOX_STICKER_INVALID: só figurinhas podem ser salvas aqui.");
+  if (!message.mediaStorageRef) throw new Error("INBOX_STICKER_NOT_READY: a figurinha ainda está carregando. Tente de novo em instantes.");
+  const stored = await storage.get(message.mediaStorageRef.objectKey);
+  if (!stored) throw new Error("INBOX_STICKER_NOT_READY: a figurinha ainda está carregando. Tente de novo em instantes.");
+  if (stored.body.length > MAX_SAVED_STICKER_BYTES) throw new Error("INBOX_STICKER_INVALID: figurinha grande demais para salvar.");
+  const contentHash = createHash("sha256").update(stored.body).digest("hex");
+  const objectKey = `${input.tenantId}/${input.workspaceId}/stickers/${contentHash}`;
+  const mimeType = message.mimeType ?? stored.contentType ?? "image/webp";
+  await storage.put({ key: objectKey, body: stored.body, contentType: mimeType });
+  return stickers.save({ id: `sticker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, tenantId: input.tenantId, workspaceId: input.workspaceId, objectKey, mimeType, contentHash, sizeBytes: stored.body.length, ...(input.savedBy ? { createdBy: input.savedBy } : {}) });
+}
+
+export async function listSavedStickers(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string }): Promise<InboxSavedSticker[]> {
+  return requireStickerDeps(deps).stickers.listByWorkspace({ tenantId: input.tenantId, workspaceId: input.workspaceId, limit: 200 });
+}
+
+export async function getSavedStickerFile(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string; stickerId: string }): Promise<{ body: Buffer; mimeType: string }> {
+  const sticker = await mustStickerBelongToWorkspace(deps, input.stickerId, input.tenantId, input.workspaceId);
+  const stored = await requireStickerDeps(deps).storage.get(sticker.objectKey);
+  if (!stored) throw new Error(`INBOX_STICKER_NOT_FOUND: figurinha "${input.stickerId}" não existe.`);
+  return { body: stored.body, mimeType: sticker.mimeType };
+}
+
+/** Envia uma figurinha salva — mesmo caminho do envio de mídia (fila + WhatsApp). */
+export async function sendSavedSticker(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string; conversationId: string; stickerId: string; sentByUserId?: string }): Promise<InboxMessage> {
+  const file = await getSavedStickerFile(deps, input);
+  return sendInboxMediaMessage(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: input.conversationId, sentByUserId: input.sentByUserId, type: "sticker", body: file.body, mimeType: file.mimeType, fileName: "figurinha.webp" });
+}
+
+export async function deleteSavedSticker(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string; stickerId: string }): Promise<void> {
+  const sticker = await mustStickerBelongToWorkspace(deps, input.stickerId, input.tenantId, input.workspaceId);
+  await requireStickerDeps(deps).stickers.delete(sticker.id);
+  // O arquivo fica: mensagens já enviadas têm cópia própria; e a chave é por conteúdo (pode voltar a ser salva).
 }
 
 export type SendInboxContactCardMessageInput = {

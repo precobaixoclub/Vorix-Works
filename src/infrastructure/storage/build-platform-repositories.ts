@@ -40,6 +40,7 @@ import type { InboxMetricsRepositoryPort } from "../../application/ports/inbox-m
 import type { InboxIdentityLinkRepositoryPort } from "../../application/ports/inbox-identity-link-repository.port.js";
 import type { InboxTagRepositoryPort } from "../../application/ports/inbox-tag-repository.port.js";
 import type { InboxQuickReplyRepositoryPort } from "../../application/ports/inbox-quick-reply-repository.port.js";
+import type { InboxStickerRepositoryPort } from "../../application/ports/inbox-sticker-repository.port.js";
 import type { InboxServiceSettingsRepositoryPort } from "../../application/ports/inbox-service-settings-repository.port.js";
 import type { TeamRepositoryPort, TeamMembershipRepositoryPort } from "../../application/ports/team-repository.port.js";
 import type { ChannelRoutingRepositoryPort } from "../../application/ports/channel-routing-repository.port.js";
@@ -135,12 +136,14 @@ import { InMemoryInboxMetricsRepository } from "./in-memory-inbox-metrics-reposi
 import { PostgresInboxIdentityLinkRepository } from "./postgres/postgres-inbox-identity-link-repository.js";
 import { PostgresInboxTagRepository } from "./postgres/postgres-inbox-tag-repository.js";
 import { PostgresInboxQuickReplyRepository } from "./postgres/postgres-inbox-quick-reply-repository.js";
+import { PostgresInboxStickerRepository } from "./postgres/postgres-inbox-sticker-repository.js";
 import { PostgresInboxServiceSettingsRepository } from "./postgres/postgres-inbox-service-settings-repository.js";
 import { PostgresTeamRepository, PostgresTeamMembershipRepository } from "./postgres/postgres-team-repository.js";
 import { PostgresChannelRoutingRepository } from "./postgres/postgres-channel-routing-repository.js";
 import { InMemoryInboxIdentityLinkRepository } from "./in-memory-inbox-identity-link-repository.js";
 import { InMemoryInboxTagRepository } from "./in-memory-inbox-tag-repository.js";
 import { InMemoryInboxQuickReplyRepository } from "./in-memory-inbox-quick-reply-repository.js";
+import { InMemoryInboxStickerRepository } from "./in-memory-inbox-sticker-repository.js";
 import { InMemoryInboxServiceSettingsRepository } from "./in-memory-inbox-service-settings-repository.js";
 import { PostgresQualityFeedbackRepository } from "./postgres/postgres-quality-feedback-repository.js";
 import { PostgresBriefingFieldValueRepository } from "./postgres/postgres-briefing-field-value-repository.js";
@@ -257,6 +260,7 @@ export type PlatformRepositories = {
    * sempre presente nos dois drivers, mesmo racional de `inboxIdentityLinkRepository`. */
   inboxTagRepository: InboxTagRepositoryPort;
   inboxQuickReplyRepository: InboxQuickReplyRepositoryPort;
+  inboxStickerRepository: InboxStickerRepositoryPort;
   inboxServiceSettingsRepository: InboxServiceSettingsRepositoryPort;
   /** Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário, ver
    * `db/migrations/0123_team_routing.sql`) — `undefined` no driver `memory` (sem implementação
@@ -343,6 +347,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
       inboxIdentityLinkRepository: new InMemoryInboxIdentityLinkRepository(),
       inboxTagRepository: new InMemoryInboxTagRepository(),
       inboxQuickReplyRepository: new InMemoryInboxQuickReplyRepository(),
+      inboxStickerRepository: new InMemoryInboxStickerRepository(),
       inboxServiceSettingsRepository: new InMemoryInboxServiceSettingsRepository(),
       notificationRepository: new InMemoryNotificationRepository(),
     };
@@ -409,6 +414,7 @@ export function buildPlatformRepositories(options: { driver: PersistenceDriver; 
     inboxIdentityLinkRepository: new PostgresInboxIdentityLinkRepository(pool),
     inboxTagRepository: new PostgresInboxTagRepository(pool),
     inboxQuickReplyRepository: new PostgresInboxQuickReplyRepository(pool),
+    inboxStickerRepository: new PostgresInboxStickerRepository(pool),
     inboxServiceSettingsRepository: new PostgresInboxServiceSettingsRepository(pool),
     // Bloco "roteamento por equipe" (réplica adaptada do CMDesk, pedido explícito do usuário) —
     // MESMO pool que `messaging_connections`/`inbox_conversations` (o worker precisa deles em

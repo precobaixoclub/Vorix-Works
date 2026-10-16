@@ -3,10 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { Button } from "@/components/Button";
-import { Card, CardBody } from "@/components/Card";
-import { Input, Label } from "@/components/Field";
-import { Logo } from "@/components/Logo";
+import { AuthFallback, AuthField, AuthShell } from "@/components/public/AuthShell";
 import { useAuth } from "@/contexts/auth-context";
 import { listWorkspaces } from "@/features/workspace/api";
 import { ApiError } from "@/lib/api-client";
@@ -59,58 +56,22 @@ function SignupForm() {
   }
 
   return (
-    <main className="grid min-h-dvh bg-background px-4 py-8 text-foreground lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)] lg:p-0">
-      <section className="hidden border-r border-border bg-muted/20 p-10 lg:flex lg:flex-col lg:justify-between">
-        <Link href="/" aria-label="Vorix"><Logo className="h-11 w-auto text-foreground" /></Link>
-        <div className="max-w-xl">
-          <p className="text-sm font-semibold uppercase tracking-wide text-primary">Da conversa à venda</p>
-          <h1 className="mt-4 text-5xl font-semibold tracking-tight">Atendimento e vendas no mesmo fluxo.</h1>
-          <p className="mt-4 text-muted-foreground">Crie a conta, conecte seu canal e comece a atender.</p>
-        </div>
-      </section>
-      <section className="flex items-center justify-center">
-        <Card className="w-full max-w-sm">
-          <CardBody className="flex flex-col gap-5 py-8">
-            <div className="text-center">
-              <Logo className="mx-auto h-12 w-auto text-foreground lg:hidden" />
-              <h2 className="mt-4 text-xl font-semibold">Criar conta</h2>
-              {selectedPlan ? (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Plano <span className="font-medium text-foreground">{PLAN_LABEL[selectedPlan]}</span> · 7 dias de teste, sem cartão · <Link href="/pricing" className="text-primary hover:underline">Trocar</Link>
-                </p>
-              ) : (
-                <p className="mt-2 text-sm text-muted-foreground">Teste o Vorix por 7 dias, sem cartão.</p>
-              )}
-            </div>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="signup-name">Nome</Label>
-                <Input id="signup-name" type="text" autoComplete="name" required value={name} onChange={(event) => setName(event.target.value)} placeholder="Seu nome" autoFocus />
-              </div>
-              <div>
-                <Label htmlFor="signup-email">E-mail</Label>
-                <Input id="signup-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" />
-              </div>
-              <div>
-                <Label htmlFor="signup-password">Senha</Label>
-                <Input id="signup-password" type="password" autoComplete="new-password" required minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 8 caracteres" />
-              </div>
-              {error ? <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
-              <Button type="submit" className="w-full" disabled={submitting}>{submitting ? "Criando conta..." : "Criar conta"}</Button>
-            </form>
-            <p className="text-center text-xs text-muted-foreground">Já tem conta? <Link href="/login" className="font-medium text-primary hover:underline">Entrar</Link></p>
-          </CardBody>
-        </Card>
-      </section>
-    </main>
-  );
-}
-
-function AuthFallback({ label }: { label: string }) {
-  return (
-    <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-10">
-      <Card className="w-full max-w-sm"><CardBody className="flex flex-col items-center gap-3 py-8 text-center"><Logo className="h-14 w-auto text-foreground" /><p className="text-sm text-muted-foreground">{label}</p></CardBody></Card>
-    </main>
+    <AuthShell eyebrow="Comece agora" title="Crie sua conta Vorix." description="Comece com Conversas e ajuste usuários e números conforme sua operação cresce.">
+      <h2>Criar conta</h2>
+      {selectedPlan ? (
+        <p className="public-auth-sub">Plano <strong>{PLAN_LABEL[selectedPlan]}</strong> · 7 dias de teste, sem cartão · <Link href="/precos#monte">Trocar</Link></p>
+      ) : (
+        <p className="public-auth-sub">Teste o Vorix por 7 dias, sem cartão.</p>
+      )}
+      <form onSubmit={handleSubmit} className="public-auth-form">
+        <AuthField id="signup-name" label="Nome" type="text" autoComplete="name" required value={name} onChange={(event) => setName(event.target.value)} placeholder="Seu nome" autoFocus />
+        <AuthField id="signup-email" label="E-mail" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" />
+        <AuthField id="signup-password" label="Senha" type="password" autoComplete="new-password" required minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 8 caracteres" />
+        {error ? <p className="public-auth-error" role="alert">{error}</p> : null}
+        <button type="submit" className="public-button primary" disabled={submitting}>{submitting ? "Criando conta..." : "Criar conta"}</button>
+      </form>
+      <p className="public-auth-switch">Já tem conta? <Link href="/login">Entrar</Link></p>
+    </AuthShell>
   );
 }
 

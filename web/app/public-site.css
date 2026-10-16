@@ -2,7 +2,7 @@
   --public-bg: #080b11; --public-surface: #0f141e; --public-raised: #151c28;
   --public-border: #26303d; --public-text: #f3f6fa; --public-muted: #a3afc0;
   --public-green: #addb46; --public-violet: #b7a0ff; --public-blue: #75aeff;
-  --public-green-ink: #131b05; --public-glow: #addb4620;
+  --public-green-ink: #131b05; --public-glow: #addb4620; --public-danger: #ff6b5e;
   --public-accent: var(--public-green);
   color: var(--public-text); font-family: var(--font-sans), sans-serif;
 }
@@ -710,3 +710,56 @@
 .public-config-facts li { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.55; color: var(--public-muted); padding: 14px 16px; border: 1px dashed var(--public-border); border-radius: 12px; }
 .public-config-facts li > svg { flex-shrink: 0; margin-top: 3px; color: var(--public-muted); }
 .public-config-facts strong { color: var(--public-text); font-weight: 500; }
+
+/* Telas de acesso (entrar / criar conta) — mesma linguagem do site público. */
+.public-auth { position: relative; isolation: isolate; min-height: 100dvh; display: flex; flex-direction: column; background: radial-gradient(ellipse at 78% 35%,color-mix(in srgb,var(--public-blue) 8%,transparent),transparent 55%),radial-gradient(ellipse at 30% 75%,var(--public-glow),transparent 50%),var(--public-bg); }
+.public-auth-grid { position: absolute; z-index: -1; inset: 0; opacity: .14; background-image: linear-gradient(var(--public-border) 1px,transparent 1px),linear-gradient(90deg,var(--public-border) 1px,transparent 1px); background-size: 64px 64px; mask-image: radial-gradient(ellipse at 50% 40%,black,transparent 75%); }
+.public-auth-top { width: min(1240px,calc(100% - 80px)); margin-inline: auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 72px; }
+.public-auth-back { color: var(--public-muted); font-size: 14px; text-decoration: none; }
+.public-auth-back:hover { color: var(--public-text); }
+.public-auth-main { flex: 1; width: min(1240px,calc(100% - 80px)); margin-inline: auto; display: grid; grid-template-columns: minmax(0,1fr) minmax(360px,440px); gap: 80px; align-items: center; padding-block: 40px 72px; }
+.public-auth-intro h1 { font-size: clamp(36px,3.6vw,50px); line-height: 1.08; letter-spacing: -.04em; font-weight: 600; margin-top: 14px !important; max-width: 520px; }
+.public-auth-intro > p { color: color-mix(in srgb,var(--public-muted) 85%,var(--public-text)); font-size: 17px; line-height: 1.6; margin-top: 18px !important; max-width: 470px; }
+.public-auth-products { list-style: none; padding: 0; margin: 30px 0 0; display: flex; gap: 10px; flex-wrap: wrap; }
+.public-auth-products li { display: flex; align-items: center; gap: 11px; padding: 11px 15px 11px 13px; border: 1px solid color-mix(in srgb,var(--public-accent) 28%,var(--public-border)); border-radius: 12px; background: color-mix(in srgb,var(--public-accent) 6%,var(--public-surface)); }
+.public-auth-products li > svg { color: var(--public-accent); flex-shrink: 0; }
+.public-auth-products strong { display: block; font-size: 14px; }
+.public-auth-products small { display: block; font-size: 12px; color: var(--public-muted); margin-top: 2px; }
+.public-auth-intro > .public-auth-trust { display: flex; align-items: center; gap: 8px; margin-top: 26px !important; font-size: 13px; color: var(--public-muted); }
+.public-auth-trust svg { color: var(--public-green); flex-shrink: 0; }
+.public-auth-card { padding: 32px; border: 1px solid var(--public-border); border-radius: 18px; background: linear-gradient(180deg,var(--public-raised),var(--public-surface)); box-shadow: 0 30px 60px #0006; }
+.public-auth-card h2 { font-size: 24px; font-weight: 600; letter-spacing: -.02em; }
+.public-auth-sub { margin-top: 8px !important; font-size: 14px; line-height: 1.55; color: var(--public-muted); }
+.public-auth-sub strong { color: var(--public-text); font-weight: 600; }
+.public-auth-sub a,.public-auth-switch a { color: var(--public-green); font-weight: 600; text-decoration: none; }
+.public-auth-sub a:hover,.public-auth-switch a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.public-auth-form { display: grid; gap: 16px; margin-top: 24px; }
+.public-auth-field { display: grid; gap: 7px; }
+.public-auth-field label { font-size: 14px; font-weight: 500; }
+.public-auth-field input { height: 48px; width: 100%; padding: 0 14px; border: 1px solid var(--public-border); border-radius: 10px; background: var(--public-bg); color: var(--public-text); font: 15px var(--font-sans),sans-serif; transition: border-color .15s,box-shadow .15s; }
+.public-auth-field input::placeholder { color: color-mix(in srgb,var(--public-muted) 70%,var(--public-bg)); }
+.public-auth-field input:focus { outline: none; border-color: var(--public-green); box-shadow: 0 0 0 3px color-mix(in srgb,var(--public-green) 20%,transparent); }
+.public-auth-form .public-button { width: 100%; margin-top: 4px; cursor: pointer; font-family: inherit; }
+.public-auth-form .public-button:disabled { opacity: .7; cursor: wait; transform: none; }
+.public-auth-error { padding: 10px 12px; border-radius: 10px; font-size: 14px; line-height: 1.5; color: color-mix(in srgb,var(--public-danger) 55%,white); background: color-mix(in srgb,var(--public-danger) 12%,transparent); border: 1px solid color-mix(in srgb,var(--public-danger) 30%,transparent); }
+.public-auth-switch { margin-top: 22px !important; text-align: center; font-size: 14px; color: var(--public-muted); }
+.public-auth-loading { display: grid; place-items: center; grid-template-columns: 1fr; color: var(--public-muted); font-size: 15px; }
+@media (max-width: 880px) {
+  .public-auth-main { grid-template-columns: 1fr; gap: 32px; padding-block: 16px 48px; max-width: 520px; }
+  .public-auth-intro { text-align: center; }
+  .public-auth-intro h1,.public-auth-intro > p { margin-inline: auto; }
+  .public-auth-products,.public-auth-trust { justify-content: center; }
+  .public-auth-card { order: -1; }
+}
+@media (max-width: 600px) {
+  .public-auth-top,.public-auth-main { width: calc(100% - 32px); }
+  .public-auth-top { height: 64px; }
+  .public-auth-card { padding: 24px 20px; border-radius: 16px; }
+  .public-auth-intro h1 { font-size: 30px; }
+  .public-auth-intro > p { font-size: 15px; }
+  .public-auth-products { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; text-align: left; }
+  .public-auth-products li { padding: 10px 11px; gap: 9px; }
+  .public-auth-products strong { font-size: 13px; }
+  .public-auth-products small { font-size: 11px; }
+}
+@media (max-width: 359px) { .public-auth-products { grid-template-columns: 1fr; } }

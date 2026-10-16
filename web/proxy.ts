@@ -31,6 +31,8 @@ export function proxy(request: NextRequest) {
   // Páginas públicas exigidas por plataformas externas (Meta/TikTok/YouTube) e por visitantes.
   if (
     pathname.startsWith("/p/") ||
+    // Link compartilhado de reunião do Vorix Meetings (o token é a autorização).
+    pathname.startsWith("/r/") ||
     pathname.startsWith("/product-shots/") ||
     pathname === "/empresa" ||
     pathname === "/pricing" ||

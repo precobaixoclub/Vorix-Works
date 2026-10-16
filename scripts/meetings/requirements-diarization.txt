@@ -1,0 +1,3 @@
+# Opcional: separação de falantes (MEETINGS_DIARIZATION=pyannote). Exige token do Hugging Face com
+# acesso aceito a pyannote/speaker-diarization-3.1, na variável MEETINGS_HF_TOKEN do worker.
+pyannote.audio==3.3.2

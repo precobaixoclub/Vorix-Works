@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ClipboardList, FileText, Info, ListChecks, Sparkles, Square, UsersRound, Video } from "lucide-react";
+import { BarChart3, ClipboardList, FileText, Handshake, Info, ListChecks, MessageSquareText, Scissors, Search, Send, Share2, Sparkles, Square, UsersRound, Video } from "lucide-react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { Button } from "@/components/Button";
@@ -14,6 +14,9 @@ import { ErrorState } from "@/components/ErrorState";
 import { StatusPill } from "@/components/meetings/MeetingsCentral";
 import { HumanIdentityDialog, RecorderIdentityPanel, announceRecordingRefusal } from "@/components/meetings/RecorderIdentity";
 import { PageHeader } from "@/components/PageHeader";
+import { Input } from "@/components/Field";
+import { AskMeetingPanel, ClipsAndCommentsPanel, CreateCrmTaskButton, CrmPanel, FollowUpPanel, KeywordHitsPanel, PurgeMeetingDialog, SharePanel, SpeakersPanel, SummaryTemplateControl, TemplateSections } from "@/components/meetings/MeetingIntelligence";
+import { useMeetingInsights, type MeetingInsights } from "@/features/meetings/intelligence";
 import { PageSubnav } from "@/components/PageSubnav";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
@@ -26,15 +29,21 @@ import { ApiError } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type Section = "overview" | "recording" | "transcript" | "summary" | "participants" | "actions" | "technical";
+type Section = "overview" | "recording" | "transcript" | "summary" | "ask" | "speakers" | "actions" | "followup" | "crm" | "clips" | "share" | "participants" | "technical";
 
 const SECTIONS = [
   { value: "overview", label: "Visão geral", icon: Info },
-  { value: "recording", label: "Gravação", icon: Video },
-  { value: "transcript", label: "Transcrição", icon: FileText },
   { value: "summary", label: "Resumo IA", icon: Sparkles },
-  { value: "participants", label: "Participantes", icon: UsersRound },
+  { value: "transcript", label: "Transcrição", icon: FileText },
+  { value: "ask", label: "Pergunte à reunião", icon: MessageSquareText },
   { value: "actions", label: "Tarefas e decisões", icon: ListChecks },
+  { value: "followup", label: "Follow-up", icon: Send },
+  { value: "crm", label: "CRM", icon: Handshake },
+  { value: "speakers", label: "Falantes e análise", icon: BarChart3 },
+  { value: "clips", label: "Trechos e comentários", icon: Scissors },
+  { value: "share", label: "Compartilhar e exportar", icon: Share2 },
+  { value: "recording", label: "Gravação", icon: Video },
+  { value: "participants", label: "Participantes", icon: UsersRound },
   { value: "technical", label: "Informações técnicas", icon: ClipboardList },
 ];
 
@@ -49,6 +58,10 @@ export default function MeetingDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [askIdentity, setAskIdentity] = useState(false);
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [transcriptQuery, setTranscriptQuery] = useState("");
+  const insights = useMeetingInsights(workspace.id, params.meetingId);
+  const myUserId = state.status === "authenticated" ? state.user.id : undefined;
   const capacity = useRecordingCapacity(workspace.id);
   const playerRef = useRef<HTMLMediaElement | null>(null);
   const transcriptReady = meeting?.transcript?.status === "completed";
@@ -59,7 +72,11 @@ export default function MeetingDetailPage() {
 
   const seek = useCallback((ms: number) => {
     const player = playerRef.current;
-    if (!player) return;
+    if (!player) {
+      setSection("transcript");
+      return;
+    }
+    player.scrollIntoView({ behavior: "smooth", block: "center" });
     player.currentTime = ms / 1000;
     void player.play().catch(() => undefined);
   }, []);
@@ -137,7 +154,7 @@ export default function MeetingDetailPage() {
     try {
       const result = await reanalyzeMeeting(workspace.id, meeting.id);
       toast.success(result.alreadyQueued ? "Análise já estava na fila" : "Análise reenfileirada", { description: result.alreadyQueued ? undefined : "Uma nova execução consome crédito quando o worker processar." });
-      await mutate();
+      await Promise.all([mutate(), insights.mutate()]);
     } catch (cause) {
       toast.error("Não foi possível reanalisar", { description: cause instanceof ApiError || cause instanceof Error ? cause.message : undefined });
     } finally {
@@ -168,6 +185,12 @@ export default function MeetingDetailPage() {
   const recording = meeting.recordings.find((item) => item.status === "available");
   const latestAnalysis = meeting.latestAnalysis;
   const analysis = latestAnalysis?.result ? latestAnalysis : meeting.lastCompletedAnalysis?.result ? meeting.lastCompletedAnalysis : latestAnalysis;
+  const view = insights.data;
+  const speakerNames = new Map((view?.speakers ?? []).map((speaker) => [speaker.key, speaker.displayName]));
+  const refreshAll = async () => { await Promise.all([mutate(), insights.mutate()]); };
+  const insightsFallback = <Card className="p-5">{insights.error ? <ErrorState error={insights.error} onRetry={() => insights.mutate()} /> : <Skeleton className="h-24 rounded-lg" />}</Card>;
+  const query = transcriptQuery.trim().toLowerCase();
+  const visibleSegments = (transcript.data?.segments ?? []).filter((segment) => !query || segment.text.toLowerCase().includes(query) || (speakerNames.get(segment.speaker ?? "") ?? segment.speaker ?? "").toLowerCase().includes(query));
 
   return (
     <main className="mx-auto max-w-[1280px] space-y-6 px-3 py-5 sm:px-6 sm:py-8">
@@ -182,6 +205,7 @@ export default function MeetingDetailPage() {
             {canAnalyze && recording ? <Button variant="secondary" onClick={retranscribe} loading={busy} disabled={busy}>Retranscrever</Button> : null}
             {canAnalyze && transcriptReady ? <Button variant="secondary" onClick={reanalyze} loading={busy} disabled={busy}>Reanalisar IA</Button> : null}
             {canManage ? <Button variant="secondary" onClick={() => setConfirmDelete(true)} disabled={busy}>Excluir</Button> : null}
+            {canManage ? <Button variant="ghost" onClick={() => setPurgeOpen(true)} disabled={busy}>Excluir definitivamente</Button> : null}
           </div>
         }
       />
@@ -211,8 +235,15 @@ export default function MeetingDetailPage() {
             ) : null}
             {transcriptReady && transcript.error ? <ErrorState error={transcript.error} onRetry={() => transcript.mutate()} /> : null}
             {transcriptReady && transcript.data ? (
+              <div className="relative mb-3">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input className="pl-8" placeholder="Buscar na transcrição…" value={transcriptQuery} onChange={(event) => setTranscriptQuery(event.target.value)} aria-label="Buscar na transcrição" />
+                {query ? <p className="mt-1 text-xs text-muted-foreground">{visibleSegments.length} {visibleSegments.length === 1 ? "trecho encontrado" : "trechos encontrados"}</p> : null}
+              </div>
+            ) : null}
+            {transcriptReady && transcript.data ? (
               <ol className="space-y-1" data-testid="transcript-segments">
-                {transcript.data.segments.map((segment) => (
+                {visibleSegments.map((segment) => (
                   <li key={segment.seq}>
                     <button
                       type="button"
@@ -222,8 +253,8 @@ export default function MeetingDetailPage() {
                     >
                       <span className="w-14 shrink-0 tabular-nums text-xs text-primary dark:text-primary-glow">{formatTimestamp(segment.startMs)}</span>
                       <span className="min-w-0">
-                        {segment.speaker ? <span className="mr-1 font-medium text-foreground">{segment.speaker}:</span> : null}
-                        <span className="text-foreground/90">{segment.text}</span>
+                        {segment.speaker ? <span className="mr-1 font-medium text-foreground">{speakerNames.get(segment.speaker) ?? segment.speaker}:</span> : null}
+                        <span className="text-foreground/90"><Highlight text={segment.text} query={query} /></span>
                       </span>
                     </button>
                   </li>
@@ -243,12 +274,14 @@ export default function MeetingDetailPage() {
             ) : null}
             {latestAnalysis?.status === "failed" ? <p className="text-sm text-destructive">A análise falhou{latestAnalysis.error ? `: ${latestAnalysis.error}` : "."}</p> : null}
             {analysis?.id !== latestAnalysis?.id && analysis?.result ? <p className="text-xs text-muted-foreground">Mostrando a última análise concluída.</p> : null}
+            {view ? <SummaryTemplateControl workspaceId={workspace.id} meetingId={meeting.id} insights={view} canAnalyze={canAnalyze} transcriptReady={Boolean(transcriptReady)} onChanged={refreshAll} /> : null}
             {analysis?.result ? (
               <>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Resumo executivo</p>
                   <p className="mt-1 whitespace-pre-line text-sm text-foreground">{analysis.result.executiveSummary}</p>
                 </div>
+                <TemplateSections sections={analysis.result.templateSections} />
                 <BulletList title="Tópicos" items={analysis.result.topics} />
                 <BulletList title="Riscos" items={analysis.result.risks} />
                 <BulletList title="Objeções" items={analysis.result.objections} />
@@ -273,9 +306,28 @@ export default function MeetingDetailPage() {
             </ul>
           </Card>
         ) : null}
-        {section === "actions" ? <ActionItemsSection workspaceId={workspace.id} meetingId={meeting.id} analysis={analysis} canDecide={canAnalyze} onChanged={mutate} /> : null}
+        {section === "actions" ? <ActionItemsSection workspaceId={workspace.id} meetingId={meeting.id} analysis={analysis} canDecide={canAnalyze} onChanged={refreshAll} insights={view} /> : null}
+        {section === "ask" ? (view ? <AskMeetingPanel workspaceId={workspace.id} meetingId={meeting.id} initial={view.questions} aiAvailable={view.aiAvailable && Boolean(transcriptReady)} onSeek={seek} /> : insightsFallback) : null}
+        {section === "speakers" ? (view ? <div className="space-y-4"><SpeakersPanel workspaceId={workspace.id} meetingId={meeting.id} insights={view} participantNames={meeting.participants.map((participant) => participant.name ?? participant.email ?? "").filter(Boolean)} onChanged={refreshAll} onSeek={seek} /><KeywordHitsPanel workspaceId={workspace.id} insights={view} onSeek={seek} /></div> : insightsFallback) : null}
+        {section === "followup" ? (view ? <FollowUpPanel workspaceId={workspace.id} meetingId={meeting.id} insights={view} hasAnalysis={Boolean(analysis?.result)} canAct={canAnalyze} onChanged={refreshAll} /> : insightsFallback) : null}
+        {section === "crm" ? (view ? <CrmPanel workspaceId={workspace.id} meetingId={meeting.id} insights={view} canAct={canRecord} onChanged={refreshAll} /> : insightsFallback) : null}
+        {section === "clips" ? (view ? <ClipsAndCommentsPanel workspaceId={workspace.id} meetingId={meeting.id} insights={view} currentTimeMs={() => Math.floor((playerRef.current?.currentTime ?? 0) * 1000)} onSeek={seek} onChanged={refreshAll} memberName={(userId) => (userId === myUserId ? "Você" : "Equipe")} /> : insightsFallback) : null}
+        {section === "share" ? (view ? <SharePanel workspaceId={workspace.id} meetingId={meeting.id} insights={view} hasRecording={Boolean(recording)} canAct={canRecord} onChanged={refreshAll} /> : insightsFallback) : null}
         {section === "technical" ? <Technical meeting={meeting} /> : null}
       </PageSubnav>
+
+      {purgeOpen ? (
+        <PurgeMeetingDialog
+          workspaceId={workspace.id}
+          meetingId={meeting.id}
+          title={meeting.title}
+          onClose={() => setPurgeOpen(false)}
+          onPurged={() => {
+            void globalMutate((key) => Array.isArray(key) && typeof key[0] === "string" && key[0].startsWith("meeting"));
+            router.push(`/workspaces/${workspace.id}/meetings/central`);
+          }}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={confirmDelete}
@@ -406,12 +458,14 @@ function ActionItemsSection({
   analysis,
   canDecide,
   onChanged,
+  insights,
 }: {
   workspaceId: string;
   meetingId: string;
   analysis?: MeetingAnalysisView;
   canDecide: boolean;
   onChanged: () => Promise<unknown>;
+  insights?: MeetingInsights;
 }) {
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
   const items = analysis?.actionItems ?? [];
@@ -460,12 +514,15 @@ function ActionItemsSection({
                 {[item.assigneeName ? `Responsável: ${item.assigneeName}` : "", item.dueDate ? `Prazo: ${item.dueDate}` : "", item.confidence !== undefined ? `Confiança: ${Math.round(item.confidence * 100)}%` : ""].filter(Boolean).join(" · ") || "Aguardando decisão humana."}
               </p>
             </div>
-            {canDecide && item.status === "suggested" ? (
-              <div className="flex flex-wrap items-start gap-2 lg:justify-end">
-                <Button variant="secondary" size="sm" loading={busyItemId === item.id} disabled={Boolean(busyItemId)} onClick={() => decide(item, "confirmed")}>Confirmar</Button>
-                <Button variant="ghost" size="sm" disabled={Boolean(busyItemId)} onClick={() => decide(item, "dismissed")}>Dispensar</Button>
-              </div>
-            ) : null}
+            <div className="flex flex-wrap items-start gap-2 lg:justify-end">
+              {canDecide && insights?.crm.available && item.type !== "decision" && item.status !== "dismissed" ? <CreateCrmTaskButton workspaceId={workspaceId} meetingId={meetingId} itemId={item.id} taskId={insights.crmTasks[item.id]} onCreated={onChanged} /> : null}
+              {canDecide && item.status === "suggested" ? (
+                <>
+                  <Button variant="secondary" size="sm" loading={busyItemId === item.id} disabled={Boolean(busyItemId)} onClick={() => decide(item, "confirmed")}>Confirmar</Button>
+                  <Button variant="ghost" size="sm" disabled={Boolean(busyItemId)} onClick={() => decide(item, "dismissed")}>Dispensar</Button>
+                </>
+              ) : null}
+            </div>
           </li>
         ))}
       </ul>
@@ -500,6 +557,13 @@ function Technical({ meeting }: { meeting: MeetingDetail }) {
       </dl>
     </Card>
   );
+}
+
+function Highlight({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>;
+  const index = text.toLowerCase().indexOf(query);
+  if (index < 0) return <>{text}</>;
+  return <>{text.slice(0, index)}<mark className="rounded bg-amber-200/70 px-0.5 text-foreground dark:bg-amber-400/30">{text.slice(index, index + query.length)}</mark>{text.slice(index + query.length)}</>;
 }
 
 function BulletList({ title, items }: { title: string; items: string[] }) {

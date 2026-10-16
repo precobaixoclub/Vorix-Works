@@ -50,6 +50,8 @@ export const OPERATION_REQUIRED_CAPABILITY: Record<AiOperation, AiCapability> = 
   inbox_auto_reply: "free_text",
   commercial_copilot_suggestions: "structured_text",
   meeting_ai_analysis: "structured_text",
+  meeting_question_answer: "structured_text",
+  meeting_follow_up: "structured_text",
 };
 
 const ANTHROPIC_PRICING_2026_01: AiPricingMetadata = {

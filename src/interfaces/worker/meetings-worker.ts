@@ -6,7 +6,10 @@ import { syncConnection, type CalendarSyncDeps } from "../../application/calenda
 import { CreditGatedAiGateway } from "../../application/ai-gateway/credit-gated-ai-gateway.js";
 import { CreditAccountingService } from "../../application/ai-providers/credit-accounting.service.js";
 import { limitsFromEntitlement } from "../../application/meetings/meeting-use-cases.js";
-import { evaluateAutoRecordings, processNextMeetingJob, purgeExpiredRecordings, type MeetingProcessingDeps } from "../../application/meetings/meeting-processing.js";
+import { evaluateAutoRecordings, MeetingsCalendarLink, processNextMeetingJob, purgeExpiredRecordings, type MeetingProcessingDeps } from "../../application/meetings/meeting-processing.js";
+import { shouldAutoRecord } from "../../domain/meetings/meeting-intelligence.js";
+import { parseGoogleMeetUrl } from "../../domain/meetings/meeting.model.js";
+import { PostgresMeetingInsightsRepository } from "../../infrastructure/storage/postgres/postgres-meeting-insights-repository.js";
 import type { ObjectStoragePort } from "../../application/ports/object-storage.port.js";
 import { SolutionAccessService } from "../../application/solutions/solution-access.service.js";
 import type { MeetingJobKind } from "../../domain/meetings/meeting.model.js";
@@ -85,6 +88,7 @@ async function main(): Promise<void> {
   const identity = buildIdentityRepositories({ databaseUrl, secretsMasterKey: jwtSecret });
   const pool = identity.pool;
   const repository = new PostgresMeetingRepository(pool);
+  const insights = new PostgresMeetingInsightsRepository(pool);
   const notifications = new PostgresNotificationRepository(pool);
   const storage = buildStorage();
   const media = new ObjectStorageMeetingMedia(storage ?? ({} as ObjectStoragePort));
@@ -129,11 +133,13 @@ async function main(): Promise<void> {
             cpuThreads: int(env.MEETINGS_WHISPER_THREADS, 0),
             beamSize: int(env.MEETINGS_WHISPER_BEAM_SIZE, 5),
             ...(env.MEETINGS_WHISPER_CACHE_DIR?.trim() ? { modelCacheDir: env.MEETINGS_WHISPER_CACHE_DIR.trim() } : {}),
+            ...(env.MEETINGS_DIARIZATION?.trim() === "pyannote" ? { diarization: "pyannote" as const } : {}),
           }),
         }
       : {}),
     ...(analyzer ? { analyzer } : {}),
     analysisEnabled: env.MEETINGS_AI_ANALYSIS_ENABLED?.trim() !== "false",
+    insights,
     workerId,
     leaseMs,
     transcriptionTimeoutMs: int(env.MEETINGS_TRANSCRIPTION_TIMEOUT_MS, 3 * 60 * 60 * 1000),
@@ -186,6 +192,17 @@ async function main(): Promise<void> {
       intervalMs: int(env.GOOGLE_CALENDAR_SYNC_SCHEDULER_INTERVAL_MS, 120_000),
       leaseMs: int(env.GOOGLE_CALENDAR_SYNC_LEASE_MS, 5 * 60_000),
       fullSyncPastDays: int(env.GOOGLE_CALENDAR_FULL_SYNC_DAYS, 180),
+      // Regra de gravação automática da pessoa ("todas" / "só externas") para eventos novos do Google.
+      onRemoteEventCreated: async (event, connection) => {
+        if (Date.parse(event.startAt) <= Date.now()) return;
+        const { autoRecordMode } = await insights.getUserPreferences({ tenantId: event.tenantId, userId: event.ownerUserId });
+        const hasMeetLink = Boolean(parseGoogleMeetUrl(event.meetLink ?? event.location ?? ""));
+        if (!shouldAutoRecord(autoRecordMode, { hasMeetLink, ...(connection.googleEmail ? { ownerEmail: connection.googleEmail } : {}), participantEmails: event.attendees })) return;
+        const existing = await repository.meetingIdsForEvents({ tenantId: event.tenantId, eventIds: [event.id] });
+        if (existing[event.id]) return;
+        await new MeetingsCalendarLink({ repository, idGenerator, limitsFor }).createScheduledMeeting({ event });
+        log("auto-record rule → reunião agendada", { eventId: event.id, mode: autoRecordMode });
+      },
     };
     loop("calendar", 15_000, async () => {
       const due = await connections.listDueForSync(10, new Date());

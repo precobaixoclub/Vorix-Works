@@ -56,6 +56,8 @@ function buildBindings(aiConfig: BuildAiGatewayOptions["aiConfig"]): AiOperation
     commercial_copilot_suggestions: { provider: "anthropic", modelId: aiConfig.anthropicCommercialCopilotModel },
     // Vorix Meetings: modelo próprio (MEETINGS_AI_MODEL), padrão o Haiku já ativo no registro.
     meeting_ai_analysis: { provider: "anthropic", modelId: aiConfig.anthropicMeetingAnalysisModel ?? "claude-haiku-4-5-20251001" },
+    meeting_question_answer: { provider: "anthropic", modelId: aiConfig.anthropicMeetingAnalysisModel ?? "claude-haiku-4-5-20251001" },
+    meeting_follow_up: { provider: "anthropic", modelId: aiConfig.anthropicMeetingAnalysisModel ?? "claude-haiku-4-5-20251001" },
   };
   if (aiConfig.anthropicInboxAutoReplyModel) {
     bindings.inbox_auto_reply = { provider: "anthropic", modelId: aiConfig.anthropicInboxAutoReplyModel };

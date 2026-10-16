@@ -7,6 +7,13 @@ dimensionar o host do worker.
 Uso:
   python faster_whisper_transcribe.py --audio in.wav --output out.json --model small \
       [--language pt] [--compute-type int8] [--threads 0] [--beam-size 5] [--cache-dir DIR]
+      [--diarize pyannote] [--num-speakers N]
+
+Separação de falantes (opcional): com `--diarize pyannote`, roda o pipeline
+pyannote/speaker-diarization-3.1 (token do Hugging Face na variável de ambiente
+MEETINGS_HF_TOKEN — nunca por argumento) e marca cada segmento com o falante de maior
+sobreposição ("SPEAKER_00", "SPEAKER_01"…). Falha na separação NUNCA perde a transcrição: o
+resultado sai sem falantes e com `diarization_error` nas métricas.
 """
 
 import argparse
@@ -56,6 +63,27 @@ def read_wav(path):
     return np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
 
+def assign_speakers(audio_path, segments, num_speakers=None):
+    from pyannote.audio import Pipeline
+
+    token = os.environ.get("MEETINGS_HF_TOKEN") or None
+    pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=token)
+    options = {"num_speakers": num_speakers} if num_speakers else {}
+    diarization = pipeline(audio_path, **options)
+    turns = [(turn.start, turn.end, label) for turn, _, label in diarization.itertracks(yield_label=True)]
+    speakers = set()
+    for segment in segments:
+        overlap = {}
+        for start, end, label in turns:
+            shared = min(segment["end"], end) - max(segment["start"], start)
+            if shared > 0:
+                overlap[label] = overlap.get(label, 0) + shared
+        if overlap:
+            segment["speaker"] = max(overlap, key=overlap.get)
+            speakers.add(segment["speaker"])
+    return len(speakers)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--audio", required=True)
@@ -66,6 +94,8 @@ def main():
     parser.add_argument("--threads", type=int, default=0)
     parser.add_argument("--beam-size", type=int, default=5)
     parser.add_argument("--cache-dir", default=None)
+    parser.add_argument("--diarize", default=None, choices=["pyannote"])
+    parser.add_argument("--num-speakers", type=int, default=None)
     args = parser.parse_args()
 
     from faster_whisper import WhisperModel
@@ -80,6 +110,14 @@ def main():
         {"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text, "avg_logprob": s.avg_logprob, "no_speech_prob": s.no_speech_prob}
         for s in segments_iter
     ]
+    diarization_metrics = {}
+    if args.diarize == "pyannote" and segments:
+        diarize_started = time.time()
+        try:
+            diarization_metrics["speakers_detected"] = assign_speakers(args.audio, segments, args.num_speakers)
+        except Exception as error:  # noqa: BLE001 — a transcrição continua válida sem falantes
+            diarization_metrics["diarization_error"] = str(error)[:300]
+        diarization_metrics["diarization_seconds"] = round(time.time() - diarize_started, 2)
     finished = time.time()
     duration = float(info.duration)
     transcribe_seconds = finished - loaded
@@ -98,6 +136,7 @@ def main():
             "cpu_threads": args.threads or os.cpu_count() or 0,
             "compute_type": args.compute_type,
             "language_probability": round(float(info.language_probability), 4),
+            **diarization_metrics,
         },
     }
     with open(args.output, "w", encoding="utf-8") as handle:

@@ -18,6 +18,7 @@ import {
 } from "../../domain/meetings/meeting.model.js";
 import { hasPermission, type TenantRole } from "../../domain/identity/identity.model.js";
 import type { MeetingDashboard, MeetingRepositoryPort, RecordingAdmission } from "../ports/meeting-repository.port.js";
+import type { MeetingInsightsRepositoryPort } from "../ports/meeting-insights-repository.port.js";
 
 /**
  * Casos de uso do Vorix Meetings (Fase 1/2: reunião first-class, Central, upload, admissão de
@@ -51,7 +52,18 @@ export type MeetingUseCaseDeps = {
   features: MeetingsFeatures;
   idGenerator: (prefix: string) => string;
   now: () => Date;
+  /** Uso do mês para aplicar o limite de minutos do plano (opcional: sem ele, não limita). */
+  insights?: MeetingInsightsRepositoryPort;
 };
+
+/** Limite mensal de minutos do plano (`monthlyRecordingMinutes`, 0 = sem limite). */
+async function minutesQuotaReached(deps: MeetingUseCaseDeps, tenantId: string): Promise<number | undefined> {
+  if (!deps.insights) return undefined;
+  const limits = await deps.limitsFor(tenantId);
+  if (!limits.monthlyRecordingMinutes) return undefined;
+  const usage = await deps.insights.usageForPeriod({ tenantId, period: meetingUsagePeriod(deps.now()) });
+  return usage.transcriptionSeconds >= limits.monthlyRecordingMinutes * 60 ? limits.monthlyRecordingMinutes : undefined;
+}
 
 export type MeetingActor = { tenantId: string; userId: string; role: TenantRole };
 
@@ -68,7 +80,7 @@ function visibilityOf(actor: MeetingActor): string | undefined {
   return hasPermission(actor.role, "meeting:read_all") ? undefined : actor.userId;
 }
 
-async function requireVisibleMeeting(deps: MeetingUseCaseDeps, actor: MeetingActor, workspaceId: string, meetingId: string): Promise<MeetingDetail> {
+export async function requireVisibleMeeting(deps: MeetingUseCaseDeps, actor: MeetingActor, workspaceId: string, meetingId: string): Promise<MeetingDetail> {
   const meeting = await deps.repository.getDetail({ tenantId: actor.tenantId, workspaceId, meetingId });
   const visibleTo = visibilityOf(actor);
   const visible = meeting && (!visibleTo || meeting.ownerUserId === visibleTo || meeting.createdByUserId === visibleTo || meeting.participants.some((participant) => participant.userId === visibleTo));
@@ -142,6 +154,7 @@ export type RecordingRefusalReason =
   | "RECORDER_ACCOUNT_IDENTITY_CONFLICT"
   | "INVALID_RECORDER_SESSION"
   | "HUMAN_IDENTITY_REQUIRED"
+  | "MINUTES_QUOTA_REACHED"
   | "INVALID_STATE";
 
 export type RecordingRequestResult =
@@ -207,6 +220,11 @@ export async function requestRecording(deps: MeetingUseCaseDeps, actor: MeetingA
     };
   }
 
+  const quotaMinutes = await minutesQuotaReached(deps, actor.tenantId);
+  if (quotaMinutes !== undefined) {
+    await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, actorUserId: actor.userId, action: "recording.refused", details: { reason: "MINUTES_QUOTA_REACHED" } });
+    return { ok: false, reason: "MINUTES_QUOTA_REACHED", message: `Você usou os ${quotaMinutes} minutos de gravação do seu plano neste mês. Amplie o plano ou aguarde o próximo mês.` };
+  }
   const limits = await deps.limitsFor(actor.tenantId);
   const admission = await deps.repository.admitRecording({
     tenantId: actor.tenantId,
@@ -374,6 +392,8 @@ export async function uploadMeetingRecording(
     throw new MeetingError("MEETING_UNSUPPORTED_MEDIA", "Formato não suportado. Envie MP3, M4A, WAV, WEBM, OGG, MP4 ou MOV.");
   }
   if (input.file.bytes <= 0) throw new MeetingError("MEETING_INVALID_INPUT", "O arquivo está vazio.");
+  const quotaMinutes = await minutesQuotaReached(deps, actor.tenantId);
+  if (quotaMinutes !== undefined) throw new MeetingError("MEETING_STORAGE_LIMIT_REACHED", `Você usou os ${quotaMinutes} minutos de gravação do seu plano neste mês. Amplie o plano ou aguarde o próximo mês.`);
   const limits = await deps.limitsFor(actor.tenantId);
   const inUse = await deps.repository.storageBytesInUse(actor.tenantId);
   if (inUse + input.file.bytes > limits.maxStorageBytes) {

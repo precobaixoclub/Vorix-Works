@@ -10,6 +10,16 @@ import {
   MEETING_AI_ANALYSIS_TOOL_INPUT_SCHEMA,
   type MeetingAiAnalysisResult,
 } from "./schemas/meeting-ai-analysis-result.v1.js";
+import { meetingQuestionAnswerPromptV1, type MeetingQuestionAnswerPromptContext } from "./prompts/meeting-question-answer.v1.js";
+import { meetingFollowUpPromptV1, type MeetingFollowUpPromptContext } from "./prompts/meeting-follow-up.v1.js";
+import {
+  applyMeetingQuestionAnswerSemanticValidation,
+  validateMeetingQuestionAnswerStructure,
+  MEETING_QUESTION_ANSWER_RESULT_SCHEMA_VERSION,
+  MEETING_QUESTION_ANSWER_TOOL_INPUT_SCHEMA,
+  type MeetingQuestionAnswerResult,
+} from "./schemas/meeting-question-answer-result.v1.js";
+import { validateMeetingFollowUpStructure, MEETING_FOLLOW_UP_RESULT_SCHEMA_VERSION, MEETING_FOLLOW_UP_TOOL_INPUT_SCHEMA } from "./schemas/meeting-follow-up-result.v1.js";
 import { briefingFieldExtractionPromptV1, type BriefingFieldExtractionPromptContext } from "./prompts/briefing-field-extraction.v1.js";
 import { inboxAutoReplyPromptV1, type InboxAutoReplyPromptContext, type InboxAutoReplyPromptMessage } from "./prompts/inbox-auto-reply.v1.js";
 import {
@@ -104,18 +114,73 @@ function buildCommercialCopilotSuggestionsContext(input: Readonly<Record<string,
   };
 }
 
+function toSegments(raw: unknown): MeetingAiAnalysisPromptContext["segments"] {
+  return (Array.isArray(raw) ? (raw as unknown[]) : [])
+    .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+    .map((entry) => ({ startMs: Number(entry.startMs) || 0, ...(typeof entry.speaker === "string" ? { speaker: entry.speaker } : {}), text: String(entry.text ?? "") }));
+}
+
 function buildMeetingAiAnalysisContext(input: Readonly<Record<string, unknown>>): MeetingAiAnalysisPromptContext {
-  const rawSegments = Array.isArray(input.segments) ? (input.segments as unknown[]) : [];
+  const template = typeof input.template === "object" && input.template !== null ? (input.template as Record<string, unknown>) : undefined;
+  const sections = Array.isArray(template?.sections)
+    ? (template!.sections as unknown[]).filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null).map((entry) => ({ title: String(entry.title ?? ""), instruction: String(entry.instruction ?? "") }))
+    : [];
   return {
     title: String(input.title ?? ""),
     language: typeof input.language === "string" ? input.language : "pt",
-    segments: rawSegments
+    segments: toSegments(input.segments),
+    ...(template && sections.length ? { template: { label: String(template.label ?? ""), sections } } : {}),
+  };
+}
+
+function buildMeetingQuestionAnswerContext(input: Readonly<Record<string, unknown>>): MeetingQuestionAnswerPromptContext {
+  const sources = (Array.isArray(input.sources) ? (input.sources as unknown[]) : [])
+    .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+    .map((entry) => ({ meetingId: String(entry.meetingId ?? ""), title: String(entry.title ?? ""), ...(typeof entry.date === "string" ? { date: entry.date } : {}), segments: toSegments(entry.segments) }));
+  return { question: String(input.question ?? ""), language: typeof input.language === "string" ? input.language : "pt", sources };
+}
+
+function buildMeetingFollowUpContext(input: Readonly<Record<string, unknown>>): MeetingFollowUpPromptContext {
+  const strings = (raw: unknown) => (Array.isArray(raw) ? raw.map(String) : []);
+  return {
+    title: String(input.title ?? ""),
+    language: typeof input.language === "string" ? input.language : "pt",
+    ...(typeof input.recipientName === "string" ? { recipientName: input.recipientName } : {}),
+    ...(typeof input.senderName === "string" ? { senderName: input.senderName } : {}),
+    executiveSummary: String(input.executiveSummary ?? ""),
+    decisions: strings(input.decisions),
+    nextSteps: strings(input.nextSteps),
+    tasks: (Array.isArray(input.tasks) ? (input.tasks as unknown[]) : [])
       .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
-      .map((entry) => ({ startMs: Number(entry.startMs) || 0, ...(typeof entry.speaker === "string" ? { speaker: entry.speaker } : {}), text: String(entry.text ?? "") })),
+      .map((entry) => ({ description: String(entry.description ?? ""), ...(typeof entry.owner === "string" ? { owner: entry.owner } : {}), ...(typeof entry.dueDate === "string" ? { dueDate: entry.dueDate } : {}) })),
   };
 }
 
 export const PROMPT_TEMPLATE_REGISTRY: Partial<Record<AiOperation, PromptTemplateRegistration>> = {
+  meeting_question_answer: {
+    template: meetingQuestionAnswerPromptV1 as PromptTemplate<unknown>,
+    buildContext: (input) => buildMeetingQuestionAnswerContext(input),
+    toolName: "submit_meeting_answer",
+    toolDescription: "Envia a resposta à pergunta sobre a(s) reunião(ões), com citações literais das transcrições.",
+    toolInputSchema: MEETING_QUESTION_ANSWER_TOOL_INPUT_SCHEMA,
+    outputSchemaRef: { id: "meeting-question-answer-result", version: MEETING_QUESTION_ANSWER_RESULT_SCHEMA_VERSION },
+    validateStructure: (raw) => validateMeetingQuestionAnswerStructure(raw),
+    validateSemantics: (structural, sanitizedInput) => {
+      const context = buildMeetingQuestionAnswerContext(sanitizedInput);
+      const transcriptByMeeting = new Map(context.sources.map((source) => [source.meetingId, source.segments.map((segment) => segment.text).join(" ")]));
+      return applyMeetingQuestionAnswerSemanticValidation({ structural: structural as MeetingQuestionAnswerResult, transcriptByMeeting });
+    },
+  },
+  meeting_follow_up: {
+    template: meetingFollowUpPromptV1 as PromptTemplate<unknown>,
+    buildContext: (input) => buildMeetingFollowUpContext(input),
+    toolName: "submit_meeting_follow_up",
+    toolDescription: "Envia os rascunhos de follow-up da reunião: assunto e corpo do e-mail e a mensagem de WhatsApp.",
+    toolInputSchema: MEETING_FOLLOW_UP_TOOL_INPUT_SCHEMA,
+    outputSchemaRef: { id: "meeting-follow-up-result", version: MEETING_FOLLOW_UP_RESULT_SCHEMA_VERSION },
+    validateStructure: (raw) => validateMeetingFollowUpStructure(raw),
+    validateSemantics: (structural) => ({ valid: true, data: structural, warnings: [] }),
+  },
   meeting_ai_analysis: {
     template: meetingAiAnalysisPromptV1 as PromptTemplate<unknown>,
     buildContext: (input) => buildMeetingAiAnalysisContext(input),

@@ -12,6 +12,7 @@ import { FfprobeRecordingFileValidator } from "../../infrastructure/meetings/rec
 import { buildIdentityRepositories } from "../../infrastructure/storage/build-identity-repositories.js";
 import { LocalObjectStorage } from "../../infrastructure/storage/local-object-storage.js";
 import { PostgresMeetingRepository } from "../../infrastructure/storage/postgres/postgres-meeting-repository.js";
+import { PostgresMeetingInsightsRepository } from "../../infrastructure/storage/postgres/postgres-meeting-insights-repository.js";
 import { S3ObjectStorage } from "../../infrastructure/storage/s3-object-storage.js";
 
 const env = process.env;
@@ -63,8 +64,14 @@ async function main(): Promise<void> {
   });
   const validator = new FfprobeRecordingFileValidator(env.MEETINGS_FFPROBE_PATH?.trim() || "ffprobe", env.MEETINGS_FFMPEG_PATH?.trim() || "ffmpeg");
   const healthChecker = new GoogleMeetBotHealthChecker(env.MEETINGS_CHROMIUM_PATH?.trim() || undefined);
+  const insights = new PostgresMeetingInsightsRepository(identity.pool);
   const deps = {
     repository,
+    // Aviso de gravação no chat do Meet (configurável por conta em Meetings → Configurações).
+    consentMessageFor: async (tenantId: string) => {
+      const settings = await insights.getTenantSettings(tenantId);
+      return settings.consentNoticeEnabled ? settings.consentMessage : undefined;
+    },
     media: new ObjectStorageMeetingMedia(buildStorage()),
     runtime,
     validator,

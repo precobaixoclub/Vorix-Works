@@ -83,6 +83,9 @@ export type MeetingAnalysisResult = {
   risks: string[];
   objections: string[];
   openQuestions: string[];
+  /** Seções do modelo de resumo escolhido (vendas, 1:1…). */
+  templateSections?: { title: string; content: string }[];
+  template?: string;
 };
 
 export type MeetingDetail = Meeting & {

@@ -64,6 +64,8 @@ export type CalendarSyncDeps = {
   leaseMs: number;
   /** Janela da carga completa (sem syncToken). */
   fullSyncPastDays: number;
+  /** Regra de gravação automática da pessoa (Meetings) para eventos novos vindos do Google. */
+  onRemoteEventCreated?: (event: CalendarEvent, connection: CalendarConnection) => Promise<void>;
 };
 
 export type CalendarSyncReport = {
@@ -272,6 +274,7 @@ async function applyRemoteEvent(deps: CalendarSyncDeps, connection: CalendarConn
     });
     report.pulled += 1;
     await deps.connections.log({ ...base, eventId: created.id, direction: "pull", action: "create", status: "ok" });
+    if (deps.onRemoteEventCreated) await deps.onRemoteEventCreated(created, connection).catch(() => undefined);
     return;
   }
 

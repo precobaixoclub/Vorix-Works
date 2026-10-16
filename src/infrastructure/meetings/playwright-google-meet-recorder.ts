@@ -12,7 +12,7 @@ type BrowserLike = {
   isConnected(): boolean;
 };
 type ContextLike = { newPage(): Promise<PageLike>; close(): Promise<void> };
-type LocatorLike = { count(): Promise<number>; first(): LocatorLike; click(options?: Record<string, unknown>): Promise<void>; isVisible(options?: Record<string, unknown>): Promise<boolean> };
+type LocatorLike = { count(): Promise<number>; first(): LocatorLike; click(options?: Record<string, unknown>): Promise<void>; isVisible(options?: Record<string, unknown>): Promise<boolean>; fill?(value: string, options?: Record<string, unknown>): Promise<void>; press?(key: string, options?: Record<string, unknown>): Promise<void> };
 type PageLike = {
   goto(url: string, options?: Record<string, unknown>): Promise<unknown>;
   url(): string;
@@ -146,6 +146,7 @@ export class PlaywrightGoogleMeetRecorder implements RecorderRuntimePort {
       await input.onState("waiting_admission", new Date().toISOString());
       const joinedAt = await this.waitForAdmission(page, browser, input.shouldStop, input.admissionTimeoutMs);
       await input.onState("recording", joinedAt);
+      if (input.consentMessage) await this.postConsentNotice(page, input.consentMessage);
 
       ffmpeg = spawn(this.options.ffmpegPath, [
         "-hide_banner", "-loglevel", "warning", "-y",
@@ -234,6 +235,26 @@ export class PlaywrightGoogleMeetRecorder implements RecorderRuntimePort {
     ];
     for (const locator of candidates) {
       if (await locator.first().isVisible({ timeout: 700 }).catch(() => false)) await locator.first().click().catch(() => undefined);
+    }
+  }
+
+  /** Aviso no chat do Meet ("esta reunião está sendo gravada"). Best-effort: a gravação nunca
+   * falha por causa do aviso (o bot já aparece como participante visível). */
+  private async postConsentNotice(page: PageLike, message: string): Promise<void> {
+    try {
+      const chatButton = await firstVisible([
+        page.getByRole("button", { name: /chat with everyone|conversar com todos|chat com todos|mensagens na chamada|in-call messages/i }),
+        page.locator('button[aria-label*="hat"]'),
+      ]);
+      if (!chatButton) return;
+      await chatButton.click({ timeout: 5_000 });
+      const box = await firstVisible([page.locator("textarea"), page.getByRole("textbox", { name: /mensagem|message/i })]);
+      if (!box?.fill || !box.press) return;
+      await box.fill(message.slice(0, 500), { timeout: 5_000 });
+      await box.press("Enter", { timeout: 5_000 });
+      await chatButton.click({ timeout: 5_000 }).catch(() => undefined);
+    } catch {
+      // Interface do Meet mudou ou chat desativado pelo organizador: segue gravando.
     }
   }
 

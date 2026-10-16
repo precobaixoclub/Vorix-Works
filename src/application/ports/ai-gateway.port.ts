@@ -36,6 +36,10 @@ export const AI_OPERATIONS = [
   /** Vorix Meetings — análise estruturada de uma reunião a partir da transcrição (resumo, decisões,
    * tarefas, próximos passos), sempre com evidência literal por item. */
   "meeting_ai_analysis",
+  /** Vorix Meetings — "Pergunte à reunião": resposta com citação literal de uma ou várias reuniões. */
+  "meeting_question_answer",
+  /** Vorix Meetings — rascunho de follow-up (e-mail + WhatsApp) a partir da análise. */
+  "meeting_follow_up",
 ] as const;
 export type AiOperation = (typeof AI_OPERATIONS)[number];
 
@@ -44,7 +48,7 @@ export type AiOperation = (typeof AI_OPERATIONS)[number];
  * `infrastructure/ai-gateway/inbox-ai-responder-adapter.ts` chama `inbox_auto_reply`; o adapter em
  * `infrastructure/ai-gateway/commercial-copilot-generator-adapter.ts` chama
  * `commercial_copilot_suggestions`. */
-export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction", "inbox_auto_reply", "commercial_copilot_suggestions", "meeting_ai_analysis"];
+export const EXECUTABLE_AI_OPERATIONS: readonly AiOperation[] = ["briefing_field_extraction", "inbox_auto_reply", "commercial_copilot_suggestions", "meeting_ai_analysis", "meeting_question_answer", "meeting_follow_up"];
 
 export type AiCapability = "structured_text" | "free_text" | "vision" | "image_generation" | "embeddings" | "tool_calling" | "streaming";
 

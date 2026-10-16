@@ -8,6 +8,8 @@ export type MeetingAiAnalysisPromptContext = {
   title: string;
   language: string;
   segments: readonly MeetingAiAnalysisSegment[];
+  /** Modelo de resumo escolhido (vendas, 1:1…): seções extras em `templateSections`. */
+  template?: { label: string; sections: readonly { title: string; instruction: string }[] };
 };
 
 /**
@@ -24,7 +26,8 @@ Regras obrigatórias, sem exceção:
 5. Se a transcrição não tiver conteúdo para uma seção, devolva a lista vazia. Listas vazias são corretas.
 6. "confidence" entre 0 e 1 reflete o quão claramente o item foi dito.
 7. Escreva no idioma da transcrição.
-8. Devolva o resultado APENAS pela ferramenta disponibilizada.`;
+8. "templateSections": preencha UMA entrada por seção pedida no modelo de resumo (mesmo título), com o que foi dito. Se nada foi dito sobre a seção, escreva exatamente "Não mencionado na reunião.". Sem modelo pedido, devolva a lista vazia.
+9. Devolva o resultado APENAS pela ferramenta disponibilizada.`;
 
 export const MEETING_AI_ANALYSIS_PROMPT_HASH = createHash("sha256").update(STATIC_INSTRUCTIONS).digest("hex");
 
@@ -40,7 +43,12 @@ export const meetingAiAnalysisPromptV1: PromptTemplate<MeetingAiAnalysisPromptCo
   },
 
   buildUserInput(context) {
-    const lines = [`Reunião: ${context.title}`, `Idioma: ${context.language}`, "", "Transcrição (cada linha: [ms] falante: texto):"];
+    const lines = [`Reunião: ${context.title}`, `Idioma: ${context.language}`];
+    if (context.template?.sections.length) {
+      lines.push("", `Modelo de resumo: ${context.template.label}. Seções a preencher em "templateSections":`);
+      for (const section of context.template.sections) lines.push(`- ${section.title}: ${section.instruction}`);
+    }
+    lines.push("", "Transcrição (cada linha: [ms] falante: texto):");
     for (const segment of context.segments) lines.push(`[${segment.startMs}] ${segment.speaker ? `${segment.speaker}: ` : ""}${segment.text}`);
     return lines.join("\n");
   },

@@ -3,7 +3,6 @@ import type { MeetingAnalyzerOutput, MeetingAnalyzerPort } from "../../applicati
 import type { AiGatewayPort } from "../../application/ports/ai-gateway.port.js";
 import { MEETING_AI_ANALYSIS_POLICY } from "../../application/ai-gateway/policies.js";
 import type { MeetingAiAnalysisResult } from "../../application/ai-gateway/schemas/meeting-ai-analysis-result.v1.js";
-import type { MeetingTranscriptSegment } from "../../domain/meetings/meeting.model.js";
 
 /**
  * Único adapter de `MeetingAnalyzerPort`: traduz "analise esta reunião" num `AiRequest` real
@@ -14,7 +13,7 @@ import type { MeetingTranscriptSegment } from "../../domain/meetings/meeting.mod
 export class AiGatewayMeetingAnalyzer implements MeetingAnalyzerPort {
   constructor(private readonly aiGateway: AiGatewayPort) {}
 
-  async analyze(input: { tenantId: string; workspaceId: string; title: string; language: string; durationMs: number; segments: readonly MeetingTranscriptSegment[]; idempotencyKey: string }) {
+  async analyze(input: Parameters<MeetingAnalyzerPort["analyze"]>[0]) {
     const result = await this.aiGateway.execute({
       operation: "meeting_ai_analysis",
       tenantId: input.tenantId,
@@ -25,6 +24,7 @@ export class AiGatewayMeetingAnalyzer implements MeetingAnalyzerPort {
         language: input.language,
         durationMs: input.durationMs,
         segments: input.segments.map((segment) => ({ startMs: segment.startMs, ...(segment.speaker ? { speaker: segment.speaker } : {}), text: segment.text })),
+        ...(input.template ? { template: { label: input.template.label, sections: input.template.sections.map((section) => ({ title: section.title, instruction: section.instruction })) } } : {}),
       },
       outputSchema: { id: "meeting-ai-analysis-result", version: 1 },
       policy: MEETING_AI_ANALYSIS_POLICY,
@@ -41,6 +41,7 @@ export class AiGatewayMeetingAnalyzer implements MeetingAnalyzerPort {
       risks: output.risks,
       objections: output.objections,
       openQuestions: output.openQuestions,
+      templateSections: output.templateSections ?? [],
     };
     return { ok: true as const, output: mapped, model: result.data.model };
   }

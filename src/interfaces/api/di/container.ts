@@ -143,6 +143,7 @@ import { SandboxBillingProvider } from "../../../infrastructure/billing/sandbox-
 import { StripeBillingProvider } from "../../../infrastructure/billing/stripe-billing-provider.js";
 import { MercadoPagoBillingProvider } from "../../../infrastructure/billing/mercadopago-billing-provider.js";
 import { CreditGatedAiGateway } from "../../../application/ai-gateway/credit-gated-ai-gateway.js";
+import { PostgresMeetingInsightsRepository } from "../../../infrastructure/storage/postgres/postgres-meeting-insights-repository.js";
 import { SolutionAccessService } from "../../../application/solutions/solution-access.service.js";
 import { limitsFromEntitlement, type MeetingUseCaseDeps } from "../../../application/meetings/meeting-use-cases.js";
 import { ObjectStorageMeetingMedia } from "../../../infrastructure/meetings/object-storage-meeting-media.js";
@@ -1624,6 +1625,8 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       idGenerator: (prefix) => `${prefix}-${Date.now().toString(36)}-${randomBytes(5).toString("hex")}`,
       now: () => new Date(),
       maxUploadBytes: config.meetings?.maxUploadBytes ?? 500 * 1024 * 1024,
+      // Inteligência/colaboração (modelo de resumo, falantes, links, trechos…) + limite de minutos.
+      insights: new PostgresMeetingInsightsRepository(identityRepositories.pool),
     };
     const calendarConnections = new PostgresCalendarConnectionRepository(identityRepositories.pool);
     const meetingsAgenda = {

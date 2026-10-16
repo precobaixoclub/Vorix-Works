@@ -68,3 +68,30 @@ export const MEETING_AI_ANALYSIS_POLICY: AiPolicy = {
   sensitiveDataPolicy: "strict",
   providerFallbackAllowed: false,
 };
+
+/** "Pergunte à reunião": a entrada é a transcrição (ou os trechos mais relevantes de várias
+ * reuniões); resposta curta, fiel, com citação. Interativo: timeout menor que a análise. */
+export const MEETING_QUESTION_ANSWER_POLICY: AiPolicy = {
+  preferredCapability: "structured_text",
+  maxInputTokens: 60_000,
+  maxOutputTokens: 1_500,
+  timeoutMs: 60_000,
+  retryPolicy: DEFAULT_AI_RETRY_POLICY,
+  temperature: 0.1,
+  structuredOutputRequired: true,
+  sensitiveDataPolicy: "strict",
+  providerFallbackAllowed: false,
+};
+
+/** Follow-up: rascunho de e-mail e WhatsApp a partir da análise (entrada pequena). */
+export const MEETING_FOLLOW_UP_POLICY: AiPolicy = {
+  preferredCapability: "structured_text",
+  maxInputTokens: 8_000,
+  maxOutputTokens: 2_000,
+  timeoutMs: 45_000,
+  retryPolicy: DEFAULT_AI_RETRY_POLICY,
+  temperature: 0.4,
+  structuredOutputRequired: true,
+  sensitiveDataPolicy: "strict",
+  providerFallbackAllowed: false,
+};

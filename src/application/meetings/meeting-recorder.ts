@@ -34,6 +34,8 @@ export type RecorderRuntimePort = {
     maxDurationMinutes: number;
     admissionTimeoutMs: number;
     shouldStop: () => Promise<boolean>;
+    /** Aviso de gravação enviado no chat da reunião logo após a entrada (transparência/LGPD). */
+    consentMessage?: string;
     onState: (state: Extract<RecorderRunState, "waiting_admission" | "recording">, at: string) => Promise<void>;
     onProcesses: (snapshot: RecorderProcessSnapshot) => Promise<void>;
   }): Promise<RecorderCaptureResult>;
@@ -65,6 +67,8 @@ export type RecorderWorkerDeps = {
   admissionTimeoutMs: number;
   idGenerator: (prefix: string) => string;
   now: () => Date;
+  /** Aviso de gravação da conta (`meeting_tenant_settings`); `undefined` = sem aviso no chat. */
+  consentMessageFor?: (tenantId: string) => Promise<string | undefined>;
   shutdownRequested?: () => boolean;
   log?: (message: string, details?: Record<string, unknown>) => void;
 };
@@ -139,8 +143,10 @@ export async function processNextRecorderJob(deps: RecorderWorkerDeps): Promise<
       metrics: {},
     });
 
+    const consentMessage = deps.consentMessageFor ? await deps.consentMessageFor(job.tenantId).catch(() => undefined) : undefined;
     const capture = await deps.runtime.capture({
       recordingId,
+      ...(consentMessage ? { consentMessage } : {}),
       meetingUrl: context.meeting.meetingUrl,
       displayName: context.bot.displayName,
       storageStateJson,

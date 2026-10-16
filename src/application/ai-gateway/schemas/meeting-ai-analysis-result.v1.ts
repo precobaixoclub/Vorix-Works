@@ -40,6 +40,7 @@ const meetingAiAnalysisResultSchema = z
     risks: z.array(z.string().min(1).max(400)).max(20),
     objections: z.array(z.string().min(1).max(400)).max(20),
     openQuestions: z.array(z.string().min(1).max(400)).max(20),
+    templateSections: z.array(z.object({ title: z.string().min(1).max(120), content: z.string().min(1).max(2000) }).strict()).max(12).default([]),
     warnings: z.array(z.string()).max(20),
   })
   .strict();
@@ -63,7 +64,7 @@ const groundedItemJsonSchema = {
 export const MEETING_AI_ANALYSIS_TOOL_INPUT_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: ["schemaVersion", "executiveSummary", "topics", "decisions", "tasks", "nextSteps", "risks", "objections", "openQuestions", "warnings"],
+  required: ["schemaVersion", "executiveSummary", "topics", "decisions", "tasks", "nextSteps", "risks", "objections", "openQuestions", "templateSections", "warnings"],
   properties: {
     schemaVersion: { const: MEETING_AI_ANALYSIS_RESULT_SCHEMA_VERSION },
     executiveSummary: { type: "string", minLength: 1, maxLength: 3000, description: "Resumo executivo fiel ao que foi dito." },
@@ -86,6 +87,12 @@ export const MEETING_AI_ANALYSIS_TOOL_INPUT_SCHEMA: Record<string, unknown> = {
     risks: { type: "array", maxItems: 20, items: { type: "string", minLength: 1, maxLength: 400 } },
     objections: { type: "array", maxItems: 20, items: { type: "string", minLength: 1, maxLength: 400 } },
     openQuestions: { type: "array", maxItems: 20, items: { type: "string", minLength: 1, maxLength: 400 } },
+    templateSections: {
+      type: "array",
+      maxItems: 12,
+      description: "Uma entrada por seção do modelo de resumo pedido (vazio sem modelo).",
+      items: { type: "object", additionalProperties: false, required: ["title", "content"], properties: { title: { type: "string", minLength: 1, maxLength: 120 }, content: { type: "string", minLength: 1, maxLength: 2000 } } },
+    },
     warnings: { type: "array", maxItems: 20, items: { type: "string" } },
   },
 };

@@ -16,13 +16,15 @@ export type FasterWhisperConfig = {
   beamSize: number;
   /** Diretório de cache dos modelos (download na primeira execução). */
   modelCacheDir?: string;
+  /** Separação de falantes (MEETINGS_DIARIZATION=pyannote; token em MEETINGS_HF_TOKEN). */
+  diarization?: "pyannote";
 };
 
 type ScriptOutput = {
   language: string;
   duration_seconds: number;
   model: string;
-  segments: { start: number; end: number; text: string; avg_logprob?: number; no_speech_prob?: number }[];
+  segments: { start: number; end: number; text: string; speaker?: string; avg_logprob?: number; no_speech_prob?: number }[];
   metrics: Record<string, number | string>;
 };
 
@@ -46,6 +48,7 @@ export class FasterWhisperTranscriptionEngine implements TranscriptionEnginePort
       "--beam-size", String(this.config.beamSize),
       ...(input.language ? ["--language", input.language] : []),
       ...(this.config.modelCacheDir ? ["--cache-dir", this.config.modelCacheDir] : []),
+      ...(this.config.diarization ? ["--diarize", this.config.diarization] : []),
     ];
     const started = Date.now();
     await new Promise<void>((resolve, reject) => {
@@ -79,6 +82,7 @@ export class FasterWhisperTranscriptionEngine implements TranscriptionEnginePort
           startMs: Math.round(segment.start * 1000),
           endMs: Math.round(segment.end * 1000),
           text: segment.text.trim(),
+          ...(segment.speaker ? { speaker: segment.speaker } : {}),
           // Confiança = probabilidade média por token (exp do log-prob médio) — aproximação útil para
           // destacar trechos duvidosos; o Whisper não entrega uma confiança calibrada.
           ...(typeof segment.avg_logprob === "number" ? { confidence: Math.max(0, Math.min(1, Number(Math.exp(segment.avg_logprob).toFixed(4)))) } : {}),

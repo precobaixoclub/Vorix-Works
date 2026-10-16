@@ -21,6 +21,8 @@ import {
   type TranscriptionResult,
 } from "../../domain/meetings/meeting.model.js";
 import type { MeetingRepositoryPort } from "../ports/meeting-repository.port.js";
+import type { MeetingInsightsRepositoryPort } from "../ports/meeting-insights-repository.port.js";
+import { MEETING_TEMPLATE_DEFINITIONS, type MeetingSummaryTemplate } from "../../domain/meetings/meeting-intelligence.js";
 import { auditSkippedRecorderAccounts, recorderEligibilityFor, type MeetingMediaStoragePort } from "./meeting-use-cases.js";
 
 /**
@@ -45,6 +47,8 @@ export type TranscriptionEnginePort = {
 
 export type MeetingAnalyzerItem = { description: string; sourceTimestampMs: number | null; confidence: number };
 export type MeetingAnalyzerOutput = {
+  /** Seções do modelo de resumo (vendas, 1:1…); vazio no modelo geral. */
+  templateSections?: { title: string; content: string }[];
   executiveSummary: string;
   topics: string[];
   decisions: MeetingAnalyzerItem[];
@@ -64,6 +68,8 @@ export type MeetingAnalyzerPort = {
     language: string;
     durationMs: number;
     segments: readonly MeetingTranscriptSegment[];
+    /** Modelo de resumo escolhido para a reunião (seções extras). */
+    template?: { key: MeetingSummaryTemplate; label: string; sections: readonly { title: string; instruction: string }[] };
     /** Mesmo valor em todas as tentativas do MESMO job: nunca cobra duas vezes. */
     idempotencyKey: string;
   }): Promise<{ ok: true; output: MeetingAnalyzerOutput; model: string } | { ok: false; category: string; message: string; retryable: boolean }>;
@@ -77,6 +83,8 @@ export type MeetingProcessingDeps = {
   analyzer?: MeetingAnalyzerPort;
   /** `false` = transcrição não enfileira análise (ex.: IA desligada no ambiente). */
   analysisEnabled: boolean;
+  /** Modelo de resumo e nomes de falantes por reunião (opcional: sem ele, modelo geral). */
+  insights?: MeetingInsightsRepositoryPort;
   workerId: string;
   leaseMs: number;
   transcriptionTimeoutMs: number;
@@ -185,6 +193,12 @@ async function runAnalysis(deps: MeetingProcessingDeps, job: MeetingJob, leaseLo
   const transcript = await deps.repository.getTranscriptForAnalysis({ tenantId: job.tenantId, meetingId: job.meetingId });
   if (!transcript || transcript.status !== "completed" || transcript.segments.length === 0) throw new MeetingJobError("A transcrição não está pronta ou está vazia.", false);
   const durationMs = Math.max(...transcript.segments.map((segment) => segment.endMs));
+  const insights = deps.insights ? await deps.insights.getInsights({ tenantId: job.tenantId, meetingId: job.meetingId }) : undefined;
+  const templateKey = insights?.summaryTemplate ?? (deps.insights ? (await deps.insights.getUserPreferences({ tenantId: job.tenantId, userId: meeting.ownerUserId })).defaultTemplate : "general");
+  const templateDefinition = MEETING_TEMPLATE_DEFINITIONS[templateKey];
+  // Nomes dados aos falantes ("Falante 1" → "Ana") entram na análise: tarefas com o nome certo.
+  const speakerNames = deps.insights ? await deps.insights.listSpeakerNames({ tenantId: job.tenantId, meetingId: job.meetingId }) : new Map<string, string>();
+  const segmentsForAi = transcript.segments.map((segment) => (segment.speaker && speakerNames.has(segment.speaker) ? { ...segment, speaker: speakerNames.get(segment.speaker) } : segment));
 
   const outcome = await deps.analyzer.analyze({
     tenantId: job.tenantId,
@@ -192,7 +206,8 @@ async function runAnalysis(deps: MeetingProcessingDeps, job: MeetingJob, leaseLo
     title: meeting.title,
     language: meeting.transcript?.language ?? "pt",
     durationMs,
-    segments: transcript.segments,
+    segments: segmentsForAi,
+    ...(templateDefinition.sections.length ? { template: { key: templateDefinition.key, label: templateDefinition.label, sections: templateDefinition.sections } } : {}),
     idempotencyKey: `meeting_ai_analysis:${job.id}`,
   });
   if (leaseLost()) throw new LeaseLostError();
@@ -209,6 +224,8 @@ async function runAnalysis(deps: MeetingProcessingDeps, job: MeetingJob, leaseLo
       risks: output.risks,
       objections: output.objections,
       openQuestions: output.openQuestions,
+      template: templateKey,
+      ...(output.templateSections?.length ? { templateSections: output.templateSections } : {}),
     };
     const items = ITEM_TYPES.flatMap(([key, type]) =>
       (output[key] as (MeetingAnalyzerItem & { assigneeName?: string | null; dueDate?: string | null })[]).map((item) => ({

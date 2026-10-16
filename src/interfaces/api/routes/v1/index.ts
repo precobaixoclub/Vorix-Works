@@ -70,6 +70,9 @@ import { registerPublicationRoutes } from "./publications.route.js";
 import { registerWebhookRoutes } from "./webhooks.route.js";
 import { registerWorkspaceRoutes } from "./workspaces.route.js";
 import { registerGrowthDashboardRoutes } from "./growth-dashboard.route.js";
+import { registerMeetingIntelligenceRoutes, registerPublicMeetingRoutes } from "./meetings-intelligence.route.js";
+import { buildMeetingCrmBridge, buildMeetingMessagingBridge } from "../../meetings-bridges.js";
+import { AiGatewayMeetingIntelligence } from "../../../../infrastructure/ai-gateway/meeting-intelligence-ai-adapter.js";
 
 /**
  * Grupo de rotas `v1` — esqueleto de versionamento. Registrado sob o prefixo `/v1` (ver `app.ts`),
@@ -404,6 +407,26 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       automation: automationDeps,
       productAnalytics: productAnalyticsDeps,
     });
+    // Vorix Meetings — inteligência e colaboração. CRM e WhatsApp entram por ponte (o Meetings
+    // não importa `crm`/`inbox`); sem Conversas habilitado, o envio por WhatsApp fica indisponível.
+    if (app.zunoContainer.meetings?.insights) {
+      const meetingIntelligenceDeps = {
+        ...app.zunoContainer.meetings,
+        insights: app.zunoContainer.meetings.insights,
+        ai: new AiGatewayMeetingIntelligence(app.zunoContainer.aiGateway),
+        crm: buildMeetingCrmBridge({
+          contactRepository: identity.contactRepository,
+          contactIdentityRepository: identity.contactIdentityRepository,
+          dealRepository: identity.dealRepository,
+          taskRepository: identity.taskRepository,
+          timelineEventRepository: identity.timelineEventRepository,
+        }),
+        ...(sharedInboxDeps ? { messaging: buildMeetingMessagingBridge(sharedInboxDeps) } : {}),
+        publicAppUrl: app.zunoConfig.billing.appBaseUrl,
+      };
+      await registerMeetingIntelligenceRoutes(app, { ...meetingIntelligenceDeps, workspaceRepository: app.zunoContainer.workspaceRepository });
+      await registerPublicMeetingRoutes(app, meetingIntelligenceDeps);
+    }
     // CRM/Comercial (Fase 6) — Regras de automação (motor simples, gatilho + condições + ação).
     await registerAutomationRulesRoutes(app, automationDeps);
     // CRM/Comercial (Fase 5) — Copiloto Comercial (IA, via AI Gateway) + Pontuação de lead.

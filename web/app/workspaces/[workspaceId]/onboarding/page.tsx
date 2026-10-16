@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, Circle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
@@ -51,6 +51,11 @@ const WIZARD_STEPS = ONBOARDING_STEPS.filter((step) => step !== "done" && step !
 const WIZARD_GOALS = ONBOARDING_GOALS.filter((goal) => goal !== "content");
 
 export default function OnboardingWizardPage() {
+  // Volta do checkout feito no cadastro: confirma para a pessoa que o cartão foi aceito.
+  const checkoutParams = useSearchParams();
+  useEffect(() => {
+    if (checkoutParams.get("checkout") === "sucesso") toast.success("Cartão cadastrado", { description: "Sua assinatura é ativada assim que o pagamento for confirmado." });
+  }, [checkoutParams]);
   const params = useParams<{ workspaceId: string }>();
   const router = useRouter();
   const workspace = useCurrentWorkspace();

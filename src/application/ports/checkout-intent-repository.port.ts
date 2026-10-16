@@ -30,4 +30,6 @@ export type CheckoutIntentRepositoryPort = {
   findPendingForCompletion(input: { tenantId: string; planVersionId: string; providerSessionId?: string }): Promise<CheckoutIntent | undefined>;
   /** `true` só na primeira vez (idempotente sob reentrega de webhook). */
   markCompleted(id: string): Promise<boolean>;
+  /** Liga o pedido (criado ANTES do checkout) à sessão devolvida pelo gateway. */
+  attachSession(id: string, providerSessionId: string): Promise<void>;
 };

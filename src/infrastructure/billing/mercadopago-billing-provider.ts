@@ -157,7 +157,8 @@ export class MercadoPagoBillingProvider implements BillingProviderPort {
       back_url: input.successUrl,
       notification_url: notificationUrl,
       auto_recurring: {
-        frequency: 1, frequency_type: "months", transaction_amount: input.amount, currency_id: input.currency,
+        // Anual = cobrança a cada 12 meses (o valor já é o total do ciclo anual).
+        frequency: input.billingInterval === "yearly" ? 12 : 1, frequency_type: "months", transaction_amount: input.amount, currency_id: input.currency,
         // Cartão cadastrado agora; 1ª cobrança só depois do período de teste.
         ...(input.trialDays && input.trialDays > 0 ? { free_trial: { frequency: input.trialDays, frequency_type: "days" } } : {}),
       },
@@ -310,7 +311,13 @@ export class MercadoPagoBillingProvider implements BillingProviderPort {
       // Stripe historicamente chamou — nunca renomeado nesta rodada pra não quebrar o Stripe já
       // testado; o adapter é quem traduz o topic NATIVO do Mercado Pago pra esse vocabulário
       // comum, seção 21 do pedido: "somente adapter conhece semântica específica do provider").
-      const eventType = result.data.status === "cancelled" ? "customer.subscription.deleted" : metadata ? "checkout.session.completed" : "customer.subscription.updated";
+      // Só "authorized" (cartão aprovado pelo Mercado Pago) confirma a contratação. "pending" (a
+      // pessoa abriu o checkout mas não concluiu) nunca ativa nada; "paused" suspende.
+      const status = result.data.status;
+      if (status === "pending") {
+        return { ok: true, event: { providerEventId: `mercadopago-${topic}-${dataId}-pending`, eventType: "mercadopago.preapproval_pending", data: {} } };
+      }
+      const eventType = status === "cancelled" ? "customer.subscription.deleted" : status === "authorized" && metadata ? "checkout.session.completed" : "customer.subscription.updated";
       return {
         ok: true,
         event: {

@@ -67,7 +67,7 @@ const CHECKOUT_BODY_SCHEMA = {
     /** Configurador público: capacidade desejada; o servidor calcula os adicionais. */
     capacity: {
       type: "object", additionalProperties: false,
-      properties: { users: { type: "integer", minimum: 1, maximum: 10000 }, whatsappConnections: { type: "integer", minimum: 0, maximum: 1000 }, concurrentRecordings: { type: "integer", minimum: 0, maximum: 100 } },
+      properties: { users: { type: "integer", minimum: 1, maximum: 1000 }, whatsappConnections: { type: "integer", minimum: 0, maximum: 1000 }, concurrentRecordings: { type: "integer", minimum: 0, maximum: 100 } },
     },
     successPath: { type: "string", maxLength: 300 },
     cancelPath: { type: "string", maxLength: 300 },
@@ -100,9 +100,15 @@ export async function registerBillingCheckoutRoutes(app: FastifyInstance, deps: 
     const customerEmail = user.email;
 
     // Caminhos relativos e internos (nunca URL arbitrária do cliente). O padrão leva à plataforma.
-    const internalPath = (path: string | undefined, fallback: string) => (path && path.startsWith("/") && !path.startsWith("//") ? path : fallback);
-    const successUrl = new URL(internalPath(body.successPath, "/workspaces?checkout=sucesso"), deps.appBaseUrl).toString();
-    const cancelUrl = new URL(internalPath(body.cancelPath, "/workspaces?checkout=cancelado"), deps.appBaseUrl).toString();
+    // Só caminho interno do próprio site: sem "//", "\\", espaços ou controles (que o navegador
+    // transforma em outro domínio) — e o resultado precisa continuar no domínio do app.
+    const appOrigin = new URL(deps.appBaseUrl).origin;
+    const internalUrl = (path: string | undefined, fallback: string) => {
+      const candidate = path && /^\/(?![\/\\])[^\s\\]*$/.test(path) ? new URL(path, deps.appBaseUrl) : undefined;
+      return candidate && candidate.origin === appOrigin ? candidate.toString() : new URL(fallback, deps.appBaseUrl).toString();
+    };
+    const successUrl = internalUrl(body.successPath, "/workspaces?checkout=sucesso");
+    const cancelUrl = internalUrl(body.cancelPath, "/workspaces?checkout=cancelado");
 
     const result = await startCheckout(deps, {
       tenantId: principal.tenantId,

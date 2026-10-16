@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import { Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -25,6 +26,18 @@ export default function BillingSettingsPage() {
   const canManage = canManageBilling(state.status === "authenticated" ? state.role : undefined);
   const { data, error, isLoading, mutate } = useBillingOverview();
   const { data: plans } = useSWR("platform-plans", () => fetchPublicPlans());
+  const returnWorkspaceId = useParams<{ workspaceId: string }>().workspaceId;
+  // Volta do checkout (Mercado Pago/Stripe): avisa o resultado uma única vez.
+  const searchParams = useSearchParams();
+  const checkoutNotified = useRef(false);
+  useEffect(() => {
+    const result = searchParams.get("checkout");
+    if (!result || checkoutNotified.current) return;
+    checkoutNotified.current = true;
+    if (result === "sucesso") toast.success("Pagamento recebido", { description: "A assinatura é ativada assim que o gateway confirmar — em instantes." });
+    else if (result === "cancelado") toast.info("Pagamento não concluído", { description: "Nada foi cobrado. Use \"Cadastrar cartão\" quando quiser contratar." });
+    else if (result === "falhou") toast.error("Sua conta foi criada, mas o pagamento não abriu", { description: "Use \"Cadastrar cartão\" abaixo para concluir a contratação." });
+  }, [searchParams]);
   const [busy, setBusy] = useState(false);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const [confirmRemoveAddon, setConfirmRemoveAddon] = useState<{ subscriptionItemId: string; name: string } | null>(null);
@@ -47,7 +60,7 @@ export default function BillingSettingsPage() {
     if (!canManage) return;
     setBusy(true);
     try {
-      const { checkoutUrl } = await startCheckout({ planCode, billingInterval: interval });
+      const { checkoutUrl } = await startCheckout({ planCode, billingInterval: interval, successPath: `/workspaces/${returnWorkspaceId}/settings/plano?checkout=sucesso`, cancelPath: `/workspaces/${returnWorkspaceId}/settings/plano?checkout=cancelado` });
       window.location.href = checkoutUrl;
     } catch (err) {
       toast.error("Não foi possível iniciar o checkout", { description: err instanceof Error ? err.message : "Tente novamente." });
@@ -119,7 +132,7 @@ export default function BillingSettingsPage() {
       active="billing"
       title="Plano e cobrança"
       description="Plano atual, ciclo, uso e pagamento em uma visão clara."
-      actions={data.status && !data.virtual ? <GuardedButton variant="secondary" disabled={busy} onClick={openPortal} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>Gerenciar pagamento</GuardedButton> : undefined}
+      actions={data.status && !data.virtual && data.status !== "trial" && data.status !== "trial_expired" ? <GuardedButton variant="secondary" disabled={busy} onClick={openPortal} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>Gerenciar pagamento</GuardedButton> : undefined}
     >
       {data.readOnly ? (
         <Card className="mb-5 border-warning/50 bg-warning/5">
@@ -172,7 +185,15 @@ export default function BillingSettingsPage() {
             {data.paymentMethod ? (
               <p className="text-foreground">{data.paymentMethod.brand?.toUpperCase() ?? "Cartão"} final {data.paymentMethod.last4 ?? "—"}<span className="block text-xs text-muted-foreground">Vence {data.paymentMethod.expMonth}/{data.paymentMethod.expYear}</span></p>
             ) : <p className="text-muted-foreground">Nenhuma forma de pagamento cadastrada.</p>}
-            <GuardedButton variant="secondary" disabled={busy || data.virtual} onClick={openPortal} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>Gerenciar pagamento</GuardedButton>
+            {data.status === "trial" || data.status === "trial_expired" ? (
+              // Teste sem cartão: cadastrar o cartão AGORA mantém os dias de teste que restam.
+              <GuardedButton disabled={busy} onClick={() => void goToCheckout(data.planCode as PlatformPlanCode, interval)} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>
+                {data.status === "trial" ? "Cadastrar cartão" : "Cadastrar cartão e reativar"}
+              </GuardedButton>
+            ) : (
+              <GuardedButton variant="secondary" disabled={busy || data.virtual} onClick={openPortal} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>Gerenciar pagamento</GuardedButton>
+            )}
+            {data.status === "trial" ? <p className="text-xs text-muted-foreground">A primeira cobrança só acontece quando o teste terminar.</p> : null}
           </CardBody>
         </Card>
       </div>
@@ -209,7 +230,7 @@ export default function BillingSettingsPage() {
                 <GuardedButton variant="ghost" className="text-destructive hover:text-destructive" disabled={busy || data.readOnly} allowed={canManage} blockedReason={RBAC_COPY.manageBilling} onClick={() => setConfirmRemoveAddon({ subscriptionItemId: addon.subscriptionItemId, name: addon.name })}>Remover</GuardedButton>
               </div>
             ))}
-            {data.availableAddons.map((addon) => <AddonRow key={addon.code} addon={addon} interval={interval} busy={busy || data.readOnly} canManage={canManage} onPurchase={() => run(() => purchaseAddon({ addonCode: addon.code, quantity: 1, billingInterval: interval }), "Add-on adicionado.")} />)}
+            {data.availableAddons.map((addon) => <AddonRow key={addon.code} addon={addon} currency={currentPlan?.currency ?? "BRL"} interval={interval} busy={busy || data.readOnly} canManage={canManage} onPurchase={() => run(() => purchaseAddon({ addonCode: addon.code, quantity: 1, billingInterval: interval }), "Add-on adicionado.")} />)}
           </CardBody>
         </Card>
       ) : null}
@@ -462,7 +483,7 @@ function PlanCard({ plan, interval, isCurrent, busy, canManage, onChoose }: { pl
   );
 }
 
-function AddonRow({ addon, interval, busy, canManage, onPurchase }: { addon: BillingOverviewAvailableAddon; interval: BillingInterval; busy: boolean; canManage: boolean; onPurchase: () => void }) {
+function AddonRow({ addon, currency, interval, busy, canManage, onPurchase }: { addon: BillingOverviewAvailableAddon; currency: string; interval: BillingInterval; busy: boolean; canManage: boolean; onPurchase: () => void }) {
   const price = interval === "yearly" ? addon.yearlyPriceUsd : addon.monthlyPriceUsd;
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border px-3 py-2 text-sm">
@@ -470,12 +491,12 @@ function AddonRow({ addon, interval, busy, canManage, onPurchase }: { addon: Bil
         <p className="font-medium text-foreground">{addon.name}</p>
         <p className="truncate text-xs text-muted-foreground">{addon.description}</p>
       </div>
-      <GuardedButton variant="secondary" disabled={busy} onClick={onPurchase} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>Adicionar · US$ {price}</GuardedButton>
+      <GuardedButton variant="secondary" disabled={busy} onClick={onPurchase} allowed={canManage} blockedReason={RBAC_COPY.manageBilling}>Adicionar · {formatAmount(price, currency)}{interval === "yearly" ? "/ano" : "/mês"}</GuardedButton>
     </div>
   );
 }
 
 function cyclePrice(plan: PublicPlan, interval: BillingInterval): string {
-  if (interval === "yearly") return `US$ ${plan.monthlyPriceUsd}/mês (ciclo anual)`;
-  return `US$ ${plan.monthlyPriceUsd}/mês`;
+  if (interval === "yearly" && plan.yearlyPriceUsd > 0) return `${formatAmount(plan.yearlyPriceUsd, plan.currency)}/ano`;
+  return `${formatAmount(plan.monthlyPriceUsd, plan.currency)}/mês`;
 }

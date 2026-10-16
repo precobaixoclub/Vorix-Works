@@ -10,7 +10,7 @@ import type { BillingInterval } from "../../domain/platform-billing/subscription
 import type { PlatformPlanCode } from "../../domain/platform-billing/platform-plan-catalog.js";
 import { isPlanLimitResource, PLAN_LIMIT_RESOURCES } from "../../domain/platform-billing/plan-entitlements.model.js";
 import type { SolutionEntitlementRepositoryPort } from "../ports/solution-entitlement-repository.port.js";
-import { assertMeetingsSellable, isMeetingsAddonCode, syncMeetingsEntitlementFromSubscription } from "./meetings-offer.js";
+import { assertMeetingsSellable, isMeetingsAddonCode, syncMeetingsEntitlementFromSubscription, assertValidMeetingsItems, MEETINGS_BASE_ADDON, MEETINGS_EXTRA_RECORDING_ADDON } from "./meetings-offer.js";
 import { resolveCommercialCapacity } from "../../domain/platform-billing/capacity.model.js";
 
 export type LifecycleUseCaseDeps = EntitlementUseCaseDeps & {
@@ -155,8 +155,16 @@ export async function purchaseAddon(deps: LifecycleUseCaseDeps, input: PurchaseA
   if (!addon || !addon.active) {
     throw new Error(`ADDON_NOT_FOUND: add-on "${input.addonCode}" não existe ou está inativo.`);
   }
-  // Vorix Meetings só é vendido quando o gate comercial permitir.
-  if (isMeetingsAddonCode(addon.code)) assertMeetingsSellable();
+  // Vorix Meetings só é vendido quando o gate comercial permitir, e sempre "base (1) + extras".
+  if (isMeetingsAddonCode(addon.code)) {
+    assertMeetingsSellable();
+    const current = await deps.subscriptionItemRepository.listBySubscription(subscription.id);
+    const after = current.map((item) => ({ addonCode: item.addonCode, quantity: item.quantity }));
+    const same = after.find((item) => item.addonCode === addon.code);
+    if (same) same.quantity += input.quantity;
+    else after.push({ addonCode: addon.code, quantity: input.quantity });
+    assertValidMeetingsItems(after);
+  }
 
   // A DECISÃO "já existe item deste addon?" precisa ser atômica junto da escrita — só o incremento
   // sozinho não bastava (duas compras concorrentes do MESMO addon, nenhuma ainda tinha criado a
@@ -234,6 +242,9 @@ export async function removeAddon(deps: LifecycleUseCaseDeps, input: { tenantId:
     throw new Error("ADDON_ITEM_NOT_FOUND: este item de add-on não pertence à assinatura do tenant.");
   }
 
+  if (item.addonCode === MEETINGS_BASE_ADDON && items.some((candidate) => candidate.addonCode === MEETINGS_EXTRA_RECORDING_ADDON)) {
+    throw new Error("CHECKOUT_MEETINGS_INVALID: remova antes as gravações simultâneas adicionais do Vorix Meetings.");
+  }
   const planVersion = await deps.planVersionRepository.getById(subscription.planVersionId);
   const addon = await deps.addonDefinitionRepository.getByCode(item.addonCode);
   if (addon && isPlanLimitResource(addon.resource)) {

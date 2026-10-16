@@ -103,6 +103,9 @@ export async function startCheckout(deps: CheckoutUseCaseDeps, input: StartCheck
     throw new Error(`CHECKOUT_PLAN_VERSION_NOT_FOUND: nenhuma versão ativa cadastrada para o plano "${input.planCode}".`);
   }
 
+  if (input.capacity && ((input.items?.length ?? 0) > 0 || (input.addonCodes?.length ?? 0) > 0)) {
+    throw new Error("CHECKOUT_ADDON_INVALID_QUANTITY: envie a capacidade OU os adicionais, não os dois.");
+  }
   const activeAddons = input.capacity ? (await deps.addonDefinitionRepository.listActive()).filter((addon) => planVersion.allowedAddonCodes.includes(addon.code)) : [];
   const items = normalizeItems(input, input.capacity ? itemsForCapacity(planVersion, activeAddons, input.capacity) : []);
   if (items.some((item) => isMeetingsAddonCode(item.addonCode))) {
@@ -148,6 +151,21 @@ export async function startCheckout(deps: CheckoutUseCaseDeps, input: StartCheck
   // trial já vencido paga na hora; cliente novo recebe o teste do plano.
   const trialDays = isUnconvertedTrial ? remainingTrialDays(existing, now) : planVersion.trialDays ?? undefined;
 
+  // Pedido gravado ANTES de abrir o checkout: um pagamento nunca chega sem o pedido correspondente.
+  const intentId = deps.checkoutIntentRepository ? deps.idGenerator?.() ?? `chkint-${now.getTime().toString(36)}-${Math.random().toString(36).slice(2, 8)}` : undefined;
+  if (deps.checkoutIntentRepository && intentId) {
+    await deps.checkoutIntentRepository.createReplacingPending({
+      id: intentId,
+      tenantId: input.tenantId,
+      planVersionId: planVersion.id,
+      billingInterval: input.billingInterval,
+      items: intentItems,
+      amount,
+      currency: planVersion.currency,
+      provider: providerId,
+    });
+  }
+
   const result = await deps.billingProvider.createCheckout({
     tenantId: input.tenantId,
     planVersionId: planVersion.id,
@@ -166,19 +184,7 @@ export async function startCheckout(deps: CheckoutUseCaseDeps, input: StartCheck
   if (!result.ok) {
     throw new Error(`CHECKOUT_PROVIDER_ERROR(${result.kind}): ${result.message}`);
   }
-  if (deps.checkoutIntentRepository) {
-    await deps.checkoutIntentRepository.createReplacingPending({
-      id: deps.idGenerator?.() ?? `chkint-${now.getTime().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-      tenantId: input.tenantId,
-      planVersionId: planVersion.id,
-      billingInterval: input.billingInterval,
-      items: intentItems,
-      amount,
-      currency: planVersion.currency,
-      provider: providerId,
-      providerSessionId: result.providerSessionId,
-    });
-  }
+  if (deps.checkoutIntentRepository && intentId) await deps.checkoutIntentRepository.attachSession(intentId, result.providerSessionId);
   if (deps.productAnalytics) {
     await recordProductEvent(deps.productAnalytics, {
       eventName: "checkout_started",

@@ -193,3 +193,22 @@ test("handleWebhook: pagamento aprovado/rejeitado mapeia para invoice.payment_su
   assert.equal(result.ok, true);
   assert.equal(result.event.eventType, "invoice.payment_succeeded");
 });
+
+test("handleWebhook: preapproval PENDING (checkout aberto, cartão não aprovado) nunca vira contratação; paused vira atualização", async () => {
+  const secret = "test-webhook-secret";
+  for (const [status, expected] of [["pending", "mercadopago.preapproval_pending"], ["paused", "customer.subscription.updated"]]) {
+    const dataId = `preapproval-${status}`;
+    const { impl } = fakeFetch([{ body: { id: dataId, status, external_reference: JSON.stringify({ tenantId: "t", planVersionId: "pv", billingInterval: "monthly" }) } }]);
+    const provider = new MercadoPagoBillingProvider({ accessToken: "TEST-token", webhookSecret: secret, fetchImpl: impl });
+    const rawBody = Buffer.from(JSON.stringify({ type: "subscription_preapproval", data: { id: dataId } }));
+    const result = await provider.handleWebhook({ rawBody, signatureHeader: signManifest(secret, { dataId, ts: "1700000009" }) });
+    assert.equal(result.event.eventType, expected, status);
+  }
+});
+
+test("createCheckout anual cobra a cada 12 meses", async () => {
+  const bodies = [];
+  const provider = new MercadoPagoBillingProvider({ accessToken: "TEST-token", fetchImpl: async (url, init) => { bodies.push(JSON.parse(init.body)); return { ok: true, status: 200, json: async () => ({ id: "pre-y", init_point: "https://mp.test/y" }) }; } });
+  await provider.createCheckout({ tenantId: "t", planVersionId: "pv", providerPlanPriceRef: "", billingInterval: "yearly", customerEmail: "a@b.test", successUrl: "https://x.test/ok", cancelUrl: "https://x.test/no", amount: 1490, currency: "BRL" });
+  assert.deepEqual([bodies[0].auto_recurring.frequency, bodies[0].auto_recurring.frequency_type], [12, "months"]);
+});

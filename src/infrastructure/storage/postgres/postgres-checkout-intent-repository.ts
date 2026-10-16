@@ -59,17 +59,23 @@ export class PostgresCheckoutIntentRepository implements CheckoutIntentRepositor
 
   async findPendingForCompletion(input: { tenantId: string; planVersionId: string; providerSessionId?: string }): Promise<CheckoutIntent | undefined> {
     if (input.providerSessionId) {
+      // Sessão conhecida = SÓ o pedido dela (nunca o de outro checkout aberto depois). Já
+      // concluído ou substituído = nada a aplicar.
       const bySession = await this.pool.query<Row>(
-        `select * from billing_checkout_intents where tenant_id = $1 and provider_session_id = $2 and status = 'pending' limit 1`,
+        `select * from billing_checkout_intents where tenant_id = $1 and provider_session_id = $2 order by created_at desc limit 1`,
         [input.tenantId, input.providerSessionId],
       );
-      if (bySession.rows[0]) return toIntent(bySession.rows[0]);
+      if (bySession.rows[0]) return bySession.rows[0].status === "pending" ? toIntent(bySession.rows[0]) : undefined;
     }
     const latest = await this.pool.query<Row>(
       `select * from billing_checkout_intents where tenant_id = $1 and plan_version_id = $2 and status = 'pending' order by created_at desc limit 1`,
       [input.tenantId, input.planVersionId],
     );
     return latest.rows[0] ? toIntent(latest.rows[0]) : undefined;
+  }
+
+  async attachSession(id: string, providerSessionId: string): Promise<void> {
+    await this.pool.query(`update billing_checkout_intents set provider_session_id = $2 where id = $1`, [id, providerSessionId]);
   }
 
   async markCompleted(id: string): Promise<boolean> {

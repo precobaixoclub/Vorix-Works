@@ -174,3 +174,24 @@ test("MERCADO PAGO: checkout com teste envia free_trial em dias; sem teste, não
   assert.equal(calls[0].auto_recurring.transaction_amount, 345);
   assert.equal(calls[1].auto_recurring.free_trial, undefined);
 });
+
+test("WEBHOOK: pagar um checkout antigo (já substituído) nunca aplica o pedido do checkout novo", async () => {
+  const r = repos();
+  const tenantId = nextTenant("stale");
+  await r.platformBillingRepository.ensureTenantBilling({ tenantId, now: new Date().toISOString() });
+  const deps = { ...r, billingProvider: new SandboxBillingProvider() };
+  const first = await startCheckout(deps, checkoutInput(tenantId, { capacity: { users: 3 } }));
+  await startCheckout(deps, checkoutInput(tenantId, { capacity: { users: 8 } }));
+  const start = await r.planVersionRepository.getActiveVersion("START");
+  await processBillingWebhook(webhookDeps(), webhook({ id: `evt_stale_${tenantId}`, type: "checkout.session.completed", data: { id: first.providerSessionId, customer: "c", subscription: `sub_stale_${tenantId}`, metadata: { tenantId, planVersionId: start.id, billingInterval: "monthly" } } }));
+  const subscription = await r.subscriptionRepository.getActiveByTenant(tenantId);
+  const items = await r.subscriptionItemRepository.listBySubscription(subscription.id);
+  assert.equal(items.some((item) => item.quantity === 6), false, "o pedido de 8 usuários (checkout novo) não pode ser aplicado ao pagamento do antigo");
+});
+
+test("CHECKOUT: capacidade junto com adicionais avulsos é recusada", async () => {
+  const r = repos();
+  const tenantId = nextTenant("mix");
+  await r.platformBillingRepository.ensureTenantBilling({ tenantId, now: new Date().toISOString() });
+  await assert.rejects(startCheckout({ ...r, billingProvider: new SandboxBillingProvider() }, { ...checkoutInput(tenantId, { capacity: { users: 3 } }), items: [{ addonCode: "extra_user", quantity: 1 }] }), /CHECKOUT_ADDON_INVALID_QUANTITY/);
+});

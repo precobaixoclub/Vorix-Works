@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { AuthFallback, AuthField, AuthShell } from "@/components/public/AuthShell";
 import { useAuth } from "@/contexts/auth-context";
 import { startCheckout } from "@/features/billing/api";
+import { fetchPublicPlans } from "@/features/platform-plans/api";
 import { listWorkspaces } from "@/features/workspace/api";
 import { ApiError } from "@/lib/api-client";
 import { trackProductEvent } from "@/lib/product-events";
@@ -43,7 +44,12 @@ function SignupForm() {
   const selectedPlan = VALID_PLAN_CODES.includes(rawPlan as ValidPlanCode) ? (rawPlan as ValidPlanCode) : undefined;
   const capacity = capacityFrom(searchParams);
   const [name, setName] = useState("");
-  const [notice, setNotice] = useState<string | undefined>();
+  // Dias de teste REAIS do plano escolhido (o catálogo manda; nunca um número fixo na tela).
+  const [trialDays, setTrialDays] = useState<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (!selectedPlan) return;
+    fetchPublicPlans().then((plans) => setTrialDays(plans.find((plan) => plan.code === selectedPlan)?.trialDays ?? null)).catch(() => setTrialDays(undefined));
+  }, [selectedPlan]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -56,22 +62,28 @@ function SignupForm() {
     trackProductEvent("signup_started", selectedPlan ? { planKey: selectedPlan } : undefined);
     try {
       await signup({ email: email.trim(), password, name: name.trim() || nameFromEmail(email), planCode: selectedPlan });
+      const workspaces = await listWorkspaces().catch(() => []);
+      const workspaceId = workspaces[0]?.id;
       // Contratação self-service: quem escolheu um plano segue direto para o cartão, com exatamente
-      // a configuração montada no site. A cobrança só acontece depois do teste; nada é ativado aqui —
-      // só o webhook confirmado do provedor ativa a assinatura e os adicionais.
-      if (selectedPlan) {
+      // a configuração montada no site. Nada é ativado aqui — só o webhook confirmado do gateway.
+      if (selectedPlan && workspaceId) {
         try {
-          const { checkoutUrl } = await startCheckout({ planCode: selectedPlan, billingInterval: "monthly", capacity, successPath: "/workspaces?checkout=sucesso", cancelPath: "/workspaces?checkout=cancelado" });
+          const { checkoutUrl } = await startCheckout({
+            planCode: selectedPlan,
+            billingInterval: "monthly",
+            capacity,
+            successPath: `/workspaces/${workspaceId}/onboarding?checkout=sucesso`,
+            cancelPath: `/workspaces/${workspaceId}/settings/plano?checkout=cancelado`,
+          });
           window.location.assign(checkoutUrl);
           return;
         } catch {
-          // Conta criada e teste rodando: não prende a pessoa aqui. O cartão pode ser cadastrado
-          // depois em Configurações → Plano.
-          setNotice("Conta criada. Não conseguimos abrir o pagamento agora — você pode cadastrar o cartão depois em Configurações → Plano.");
+          // Conta criada e teste rodando: leva para Plano, onde há o botão "Cadastrar cartão".
+          router.push(`/workspaces/${workspaceId}/settings/plano?checkout=falhou`);
+          return;
         }
       }
-      const workspaces = await listWorkspaces().catch(() => []);
-      if (workspaces[0]) router.push(`/workspaces/${workspaces[0].id}/onboarding`);
+      if (workspaceId) router.push(`/workspaces/${workspaceId}/onboarding`);
       else router.push("/workspaces");
     } catch (err) {
       setError(err instanceof ApiError ? translateSignupError(err) : "Não foi possível criar a conta. Tente novamente.");
@@ -84,7 +96,7 @@ function SignupForm() {
     <AuthShell eyebrow="Comece agora" title="Crie sua conta Vorix." description="Comece com Conversas e ajuste usuários e números conforme sua operação cresce.">
       <h2>Criar conta</h2>
       {selectedPlan ? (
-        <p className="public-auth-sub">Plano <strong>{PLAN_LABEL[selectedPlan]}</strong>{capacitySummary(capacity)} · <Link href="/precos#monte">Trocar</Link><br />No próximo passo você cadastra o cartão. A primeira cobrança só acontece depois de 7 dias de teste.</p>
+        <p className="public-auth-sub">Plano <strong>{PLAN_LABEL[selectedPlan]}</strong>{capacitySummary(capacity)} · <Link href="/precos#monte">Trocar</Link><br />{trialDays ? `No próximo passo você cadastra o cartão. A primeira cobrança só acontece depois de ${trialDays} dias de teste.` : trialDays === null ? "No próximo passo você cadastra o cartão e a assinatura começa na hora." : "No próximo passo você cadastra o cartão."}</p>
       ) : (
         <p className="public-auth-sub">Teste o Vorix por 7 dias, sem cartão.</p>
       )}
@@ -93,7 +105,6 @@ function SignupForm() {
         <AuthField id="signup-email" label="E-mail" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" />
         <AuthField id="signup-password" label="Senha" type="password" autoComplete="new-password" required minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 8 caracteres" />
         {error ? <p className="public-auth-error" role="alert">{error}</p> : null}
-        {notice ? <p className="public-auth-sub" role="status">{notice}</p> : null}
         <button type="submit" className="public-button primary" disabled={submitting}>{submitting ? "Criando conta..." : selectedPlan ? "Criar conta e ir para o pagamento" : "Criar conta"}</button>
       </form>
       <p className="public-auth-switch">Já tem conta? <Link href="/login">Entrar</Link></p>

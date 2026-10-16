@@ -39,6 +39,7 @@ function mapProviderStatus(status: unknown): PlatformSubscriptionStatus {
     case "trialing":
       return "trial";
     case "active":
+    case "authorized": // Mercado Pago
       return "active";
     case "past_due":
     case "unpaid":

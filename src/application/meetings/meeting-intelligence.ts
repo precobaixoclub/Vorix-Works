@@ -73,6 +73,8 @@ export type MeetingCrmPort = {
 };
 
 export type MeetingMessagingPort = {
+  /** O tenant tem o Vorix Conversas liberado (o envio usa os números de lá). */
+  isAvailable(tenantId: string): Promise<boolean>;
   listWhatsAppChannels(input: { tenantId: string; workspaceId: string }): Promise<{ id: string; label: string }[]>;
   sendWhatsApp(input: { tenantId: string; workspaceId: string; connectionId: string; phone: string; contactName?: string; body: string; userId: string }): Promise<{ conversationId: string }>;
 };
@@ -152,7 +154,7 @@ export async function getMeetingInsights(deps: MeetingIntelligenceDeps, actor: M
     crm: { ...(contact ? { contact } : {}), ...(deal ? { deal } : {}), available: !!deps.crm, suggestions },
     crmTasks: Object.fromEntries(crmTasks),
     questions,
-    whatsAppAvailable: !!deps.messaging,
+    whatsAppAvailable: deps.messaging ? await deps.messaging.isAvailable(actor.tenantId).catch(() => false) : false,
     aiAvailable: !!deps.ai,
   };
 }
@@ -285,7 +287,7 @@ export async function generateMeetingFollowUp(deps: MeetingIntelligenceDeps, act
 }
 
 export async function sendMeetingFollowUpWhatsApp(deps: MeetingIntelligenceDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string; connectionId: string; phone?: string; contactId?: string; message: string }): Promise<{ conversationId: string }> {
-  if (!deps.messaging) throw new MeetingError("MEETING_STORAGE_UNAVAILABLE", "O Vorix Conversas não está disponível para esta conta.");
+  if (!deps.messaging || !(await deps.messaging.isAvailable(actor.tenantId))) throw new MeetingError("MEETING_STORAGE_UNAVAILABLE", "O Vorix Conversas não está disponível para esta conta.");
   const meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
   const body = cleanText(input.message, 4000);
   if (!body) throw new MeetingError("MEETING_INVALID_INPUT", "Escreva a mensagem.");
@@ -466,6 +468,11 @@ export async function createMeetingClip(deps: MeetingIntelligenceDeps, actor: Me
 
 export async function deleteMeetingClip(deps: MeetingIntelligenceDeps, actor: MeetingActor, input: { workspaceId: string; meetingId: string; clipId: string }): Promise<void> {
   const meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
+  // Mesma regra dos comentários: cada pessoa apaga o próprio trecho; gestão apaga qualquer um.
+  if (!hasPermission(actor.role, "meeting:read_all")) {
+    const clip = (await deps.insights.listClips({ tenantId: actor.tenantId, meetingId: meeting.id })).find((item) => item.id === input.clipId);
+    if (!clip || clip.createdBy !== actor.userId) throw new MeetingError("MEETING_NOT_FOUND", "Trecho não encontrado.");
+  }
   if (!(await deps.insights.deleteClip({ tenantId: actor.tenantId, meetingId: meeting.id, clipId: input.clipId }))) throw new MeetingError("MEETING_NOT_FOUND", "Trecho não encontrado.");
 }
 
@@ -578,7 +585,7 @@ export async function purgeMeetingPermanently(deps: MeetingIntelligenceDeps, act
   if (!hasPermission(actor.role, "meeting:delete")) throw new MeetingError("MEETING_NOT_FOUND", "Reunião não encontrada.");
   const meeting = await requireVisibleMeeting(deps, actor, input.workspaceId, input.meetingId);
   if (input.confirmTitle.trim() !== meeting.title.trim()) throw new MeetingError("MEETING_INVALID_INPUT", "Digite o título exato da reunião para confirmar a exclusão definitiva.");
-  if (["queued", "starting", "waiting_admission", "recording"].includes(meeting.status)) throw new MeetingError("MEETING_ACTIVE_CANNOT_DELETE", "Encerre a gravação antes de excluir.");
+  if (["queued", "starting", "waiting_admission", "recording", "processing", "transcribing", "analyzing"].includes(meeting.status)) throw new MeetingError("MEETING_ACTIVE_CANNOT_DELETE", "Aguarde a gravação terminar de ser processada antes de excluir definitivamente.");
   const keys = await deps.insights.mediaKeys({ tenantId: actor.tenantId, meetingId: meeting.id });
   for (const key of keys) await deps.media.delete(key).catch(() => undefined);
   // A auditoria fica (sem conteúdo da reunião): prova de que a exclusão foi feita e por quem.

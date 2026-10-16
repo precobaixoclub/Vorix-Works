@@ -51,6 +51,8 @@ export type MeetingIntelligenceRoutesDeps = MeetingIntelligenceDeps & {
   /** Zoom (gravações em nuvem) — só com o app OAuth do Zoom configurado. */
   zoom?: ZoomAuthPort & ZoomRecordingsPort;
   maxUploadBytes?: number;
+  /** MEETINGS_AI_ANALYSIS_ENABLED: sem IA, importações não enfileiram resumo. */
+  analysisEnabled?: boolean;
 };
 
 const WS = { workspaceId: { type: "string", minLength: 1 } } as const;
@@ -93,14 +95,14 @@ export async function registerMeetingIntelligenceRoutes(app: FastifyInstance, de
   });
 
   app.put("/meetings/:id/template", { schema: { params: ID_PARAMS, body: body(["template"], { template: { type: "string", enum: [...MEETING_SUMMARY_TEMPLATES] }, reanalyze: { type: "boolean" } }) }, config: { readOnlyGuard: true } }, async (request) => {
-    const actor = actorOf(request, "meeting:read");
+    const actor = actorOf(request, "meeting:create");
     const { id } = request.params as { id: string };
     const input = request.body as { workspaceId: string; template: string; reanalyze?: boolean };
     return successEnvelope(await run(() => setMeetingSummaryTemplate(deps, actor, { ...input, meetingId: id })), request.id);
   });
 
   app.put("/meetings/:id/speakers", { schema: { params: ID_PARAMS, body: body(["speakerKey", "displayName"], { speakerKey: { type: "string", minLength: 1, maxLength: 80 }, displayName: { type: "string", maxLength: 80 } }) }, config: { readOnlyGuard: true } }, async (request) => {
-    const actor = actorOf(request, "meeting:read");
+    const actor = actorOf(request, "meeting:create");
     const { id } = request.params as { id: string };
     const input = request.body as { workspaceId: string; speakerKey: string; displayName: string };
     await run(() => renameMeetingSpeaker(deps, actor, { ...input, meetingId: id }));
@@ -312,7 +314,7 @@ export async function registerMeetingIntelligenceRoutes(app: FastifyInstance, de
 
   // ── Zoom: conectar e importar gravações em nuvem ──
   const zoomUnavailable = () => new AppError({ code: "MEETING_STORAGE_UNAVAILABLE", message: "A integração com o Zoom não está configurada neste servidor.", statusCode: 503, recoverable: true });
-  const zoomDeps = () => ({ ...deps, zoomAuth: deps.zoom!, zoom: deps.zoom!, maxUploadBytes: deps.maxUploadBytes ?? 500 * 1024 * 1024, analysisEnabled: true });
+  const zoomDeps = () => ({ ...deps, zoomAuth: deps.zoom!, zoom: deps.zoom!, maxUploadBytes: deps.maxUploadBytes ?? 500 * 1024 * 1024, analysisEnabled: deps.analysisEnabled ?? true });
 
   app.get("/meetings/zoom/status", { schema: { querystring: WORKSPACE_QUERY } }, async (request) => {
     const actor = actorOf(request, "meeting:read");

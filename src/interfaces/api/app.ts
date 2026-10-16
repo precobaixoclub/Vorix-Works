@@ -55,6 +55,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     // Obrigatório para o cookie HttpOnly do refresh token (Sprint 05) atravessar a origem
     // diferente do frontend (`web/`, porta 3001) — sem isto o navegador nunca envia o cookie.
     credentials: true,
+    // Exportação de reunião: o navegador precisa ler o nome do arquivo.
+    exposedHeaders: ["Content-Disposition"],
   });
 
   await app.register(cookie);

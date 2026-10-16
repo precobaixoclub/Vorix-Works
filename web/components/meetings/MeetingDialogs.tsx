@@ -69,6 +69,16 @@ function InPersonRecordingDialog({ workspaceId, onClose }: { workspaceId: string
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  // Tempo REAL gravado (timers do navegador atrasam com a aba em segundo plano/tela bloqueada).
+  const recordedMsRef = useRef(0);
+  const segmentStartRef = useRef<number | null>(null);
+  const elapsedNow = () => (recordedMsRef.current + (segmentStartRef.current !== null ? performance.now() - segmentStartRef.current : 0)) / 1000;
+  useEffect(() => {
+    if (state !== "recording" && state !== "paused") return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [state]);
   const format = typeof window === "undefined" ? undefined : pickRecorderFormat();
 
   const cleanup = () => {
@@ -88,6 +98,8 @@ function InPersonRecordingDialog({ workspaceId, onClose }: { workspaceId: string
       recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
       recorder.start(10_000);
       recorderRef.current = recorder;
+      recordedMsRef.current = 0;
+      segmentStartRef.current = performance.now();
       // Medidor de volume: a pessoa vê que o microfone está captando.
       const context = new AudioContext();
       audioContextRef.current = context;
@@ -98,7 +110,7 @@ function InPersonRecordingDialog({ workspaceId, onClose }: { workspaceId: string
       timerRef.current = setInterval(() => {
         analyser.getByteFrequencyData(data);
         setLevel(Math.min(1, data.reduce((sum, value) => sum + value, 0) / data.length / 90));
-        if (recorderRef.current?.state === "recording") setElapsed((value) => value + 0.25);
+        setElapsed(elapsedNow());
       }, 250);
       setState("recording");
     } catch {
@@ -109,7 +121,16 @@ function InPersonRecordingDialog({ workspaceId, onClose }: { workspaceId: string
   function togglePause() {
     const recorder = recorderRef.current;
     if (!recorder) return;
-    if (recorder.state === "recording") { recorder.pause(); setState("paused"); } else { recorder.resume(); setState("recording"); }
+    if (recorder.state === "recording") {
+      recorder.pause();
+      if (segmentStartRef.current !== null) recordedMsRef.current += performance.now() - segmentStartRef.current;
+      segmentStartRef.current = null;
+      setState("paused");
+    } else {
+      recorder.resume();
+      segmentStartRef.current = performance.now();
+      setState("recording");
+    }
   }
 
   async function stopAndUpload() {
@@ -134,6 +155,10 @@ function InPersonRecordingDialog({ workspaceId, onClose }: { workspaceId: string
       link.href = url;
       link.download = fileToSend.name;
       link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5_000);
+      setElapsed(0);
+      recordedMsRef.current = 0;
+      segmentStartRef.current = null;
       toast.error("Não foi possível enviar — o áudio foi baixado no seu aparelho", { description: errorMessage(error) });
       setState("idle");
     }

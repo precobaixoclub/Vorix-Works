@@ -15,6 +15,18 @@ export default function SharedMeetingPage() {
   useEffect(() => {
     getSharedMeeting(params.token).then(setMeeting).catch(() => setError("Este link não existe mais ou expirou. Peça um novo link a quem compartilhou."));
   }, [params.token]);
+  // O endereço da gravação vale por pouco tempo: ao falhar (expirou), busca um novo e volta ao ponto.
+  async function renewRecording(element: HTMLMediaElement) {
+    const position = element.currentTime;
+    try {
+      const fresh = await getSharedMeeting(params.token);
+      if (!fresh.recording) return;
+      setMeeting((current) => (current ? { ...current, recording: fresh.recording } : current));
+      requestAnimationFrame(() => { element.currentTime = position; });
+    } catch {
+      setError("Este link não existe mais ou expirou. Peça um novo link a quem compartilhou.");
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -40,9 +52,9 @@ export default function SharedMeetingPage() {
             {meeting.recording ? (
               meeting.recording.mimeType.startsWith("video/")
                 // eslint-disable-next-line jsx-a11y/media-has-caption
-                ? <video src={meeting.recording.url} controls preload="metadata" className="w-full rounded-xl bg-black" />
+                ? <video key={meeting.recording.url} src={meeting.recording.url} controls preload="metadata" className="w-full rounded-xl bg-black" onError={(event) => void renewRecording(event.currentTarget)} />
                 // eslint-disable-next-line jsx-a11y/media-has-caption
-                : <audio src={meeting.recording.url} controls preload="metadata" className="w-full" />
+                : <audio key={meeting.recording.url} src={meeting.recording.url} controls preload="metadata" className="w-full" onError={(event) => void renewRecording(event.currentTarget)} />
             ) : null}
             {meeting.summary ? (
               <section className="space-y-4 rounded-xl border border-border/60 bg-card p-5">

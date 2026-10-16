@@ -96,6 +96,9 @@ export type MeetingInsightsRepositoryPort = {
   /** Importações de outras plataformas (Zoom): id externo → reunião do Vorix. */
   findExternalImports(input: { tenantId: string; provider: "zoom" | "google_meet"; externalIds: readonly string[] }): Promise<Map<string, string>>;
   recordExternalImport(input: { tenantId: string; provider: "zoom" | "google_meet"; externalId: string; meetingId: string }): Promise<void>;
+  /** Reserva atômica: `false` = outra importação já reservou este id externo. */
+  reserveExternalImport(input: { tenantId: string; provider: "zoom" | "google_meet"; externalId: string; meetingId: string }): Promise<boolean>;
+  releaseExternalImport(input: { tenantId: string; provider: "zoom" | "google_meet"; externalId: string }): Promise<void>;
 
   /** LGPD: chaves de mídia de uma reunião (para apagar do storage) e exclusão definitiva. */
   mediaKeys(input: { tenantId: string; meetingId: string }): Promise<string[]>;

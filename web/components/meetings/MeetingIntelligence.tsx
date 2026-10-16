@@ -167,7 +167,7 @@ export function TemplateSections({ sections }: { sections?: { title: string; con
 
 const minutes = (ms: number) => (ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`);
 
-export function SpeakersPanel({ workspaceId, meetingId, insights, participantNames, onChanged, onSeek }: { workspaceId: string; meetingId: string; insights: MeetingInsights; participantNames: string[]; onChanged: () => Promise<unknown>; onSeek: (ms: number) => void }) {
+export function SpeakersPanel({ workspaceId, meetingId, insights, participantNames, onChanged, onSeek, canEdit = true }: { workspaceId: string; meetingId: string; insights: MeetingInsights; participantNames: string[]; onChanged: () => Promise<unknown>; onSeek: (ms: number) => void; canEdit?: boolean }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [name, setName] = useState("");
   const { talk } = insights;
@@ -207,6 +207,8 @@ export function SpeakersPanel({ workspaceId, meetingId, insights, participantNam
                   <Button size="sm" type="submit"><Check className="h-3.5 w-3.5" /> Salvar</Button>
                   <Button size="sm" variant="ghost" type="button" onClick={() => setEditing(null)}>Cancelar</Button>
                 </form>
+              ) : !canEdit ? (
+                <span className="flex items-center gap-2 text-sm font-medium text-foreground"><UserRound className="h-4 w-4 text-muted-foreground" /> {speaker.displayName}</span>
               ) : (
                 <button type="button" className="flex items-center gap-2 text-sm font-medium text-foreground hover:underline" onClick={() => { setEditing(speaker.speaker); setName(insights.speakers.find((item) => item.key === speaker.speaker)?.renamed ? speaker.displayName : ""); }}>
                   <UserRound className="h-4 w-4 text-muted-foreground" /> {speaker.displayName} <span className="text-xs font-normal text-muted-foreground">(editar nome)</span>
@@ -548,7 +550,8 @@ export function SharePanel({ workspaceId, meetingId, insights, hasRecording, can
 
 // ── Trechos e comentários ────────────────────────────────────────────────────────────────────
 
-export function ClipsAndCommentsPanel({ workspaceId, meetingId, insights, currentTimeMs, onSeek, onChanged, memberName }: { workspaceId: string; meetingId: string; insights: MeetingInsights; currentTimeMs: () => number; onSeek: (ms: number) => void; onChanged: () => Promise<unknown>; memberName: (userId: string) => string }) {
+export function ClipsAndCommentsPanel({ workspaceId, meetingId, insights, currentTimeMs, onSeek, onChanged, memberName, myUserId, canManageAll = false }: { workspaceId: string; meetingId: string; insights: MeetingInsights; currentTimeMs: () => number; onSeek: (ms: number) => void; onChanged: () => Promise<unknown>; memberName: (userId: string) => string; myUserId?: string; canManageAll?: boolean }) {
+  const canDelete = (authorId: string) => canManageAll || authorId === myUserId;
   const [clipTitle, setClipTitle] = useState("");
   const [clipStart, setClipStart] = useState<number | null>(null);
   const [comment, setComment] = useState("");
@@ -588,7 +591,7 @@ export function ClipsAndCommentsPanel({ workspaceId, meetingId, insights, curren
           {insights.clips.map((clip) => (
             <li key={clip.id} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-muted/40">
               <button type="button" onClick={() => onSeek(clip.startMs)} className="min-w-0 text-left text-sm"><span className="tabular-nums text-primary dark:text-primary-glow">{formatTimestamp(clip.startMs)}–{formatTimestamp(clip.endMs)}</span> <span className="text-foreground">{clip.title}</span></button>
-              <Button size="icon" variant="ghost" className="h-7 w-7" aria-label={`Excluir trecho ${clip.title}`} onClick={async () => { try { await deleteClip(workspaceId, meetingId, clip.id); await onChanged(); } catch (cause) { toast.error("Não foi possível excluir", { description: errorText(cause) }); } }}><Trash2 className="h-3.5 w-3.5" /></Button>
+              {canDelete(clip.createdBy) ? <Button size="icon" variant="ghost" className="h-7 w-7" aria-label={`Excluir trecho ${clip.title}`} onClick={async () => { try { await deleteClip(workspaceId, meetingId, clip.id); await onChanged(); } catch (cause) { toast.error("Não foi possível excluir", { description: errorText(cause) }); } }}><Trash2 className="h-3.5 w-3.5" /></Button> : null}
             </li>
           ))}
         </ul>
@@ -605,7 +608,7 @@ export function ClipsAndCommentsPanel({ workspaceId, meetingId, insights, curren
             <li key={item.id} className="rounded-lg border border-border/60 p-2.5 text-sm">
               <div className="mb-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span>{memberName(item.userId)} · {new Date(item.createdAt).toLocaleString("pt-BR")}{item.atMs !== undefined ? <> · <button type="button" className="tabular-nums text-primary hover:underline dark:text-primary-glow" onClick={() => onSeek(item.atMs!)}>{formatTimestamp(item.atMs)}</button></> : null}</span>
-                <button type="button" aria-label="Excluir comentário" className="hover:text-foreground" onClick={async () => { try { await deleteComment(workspaceId, meetingId, item.id); await onChanged(); } catch (cause) { toast.error("Não foi possível excluir", { description: errorText(cause) }); } }}><Trash2 className="h-3.5 w-3.5" /></button>
+                {canDelete(item.userId) ? <button type="button" aria-label="Excluir comentário" className="hover:text-foreground" onClick={async () => { try { await deleteComment(workspaceId, meetingId, item.id); await onChanged(); } catch (cause) { toast.error("Não foi possível excluir", { description: errorText(cause) }); } }}><Trash2 className="h-3.5 w-3.5" /></button> : null}
               </div>
               <p className="whitespace-pre-line text-foreground">{item.text}</p>
             </li>

@@ -422,14 +422,15 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
           taskRepository: identity.taskRepository,
           timelineEventRepository: identity.timelineEventRepository,
         }),
-        ...(sharedInboxDeps ? { messaging: buildMeetingMessagingBridge(sharedInboxDeps) } : {}),
+        ...(sharedInboxDeps ? { messaging: buildMeetingMessagingBridge(sharedInboxDeps, async (tenantId) => (await app.zunoContainer.solutionAccess?.hasAccess(tenantId, "conversations")) ?? false) } : {}),
         publicAppUrl: app.zunoConfig.billing.appBaseUrl,
       };
       await registerMeetingIntelligenceRoutes(app, {
         ...meetingIntelligenceDeps,
         workspaceRepository: app.zunoContainer.workspaceRepository,
         ...(app.zunoContainer.meetings.zoom ? { zoom: app.zunoContainer.meetings.zoom } : {}),
-        ...(app.zunoContainer.meetingsAgenda ? { nativeImport: { meet: new GoogleMeetTranscriptClient(), tokens: app.zunoContainer.meetingsAgenda.connection.auth, analysisEnabled: true } } : {}),
+        analysisEnabled: app.zunoConfig.meetings?.aiAnalysisEnabled ?? true,
+        ...(app.zunoContainer.meetingsAgenda ? { nativeImport: { meet: new GoogleMeetTranscriptClient(), tokens: app.zunoContainer.meetingsAgenda.connection.auth, analysisEnabled: app.zunoConfig.meetings?.aiAnalysisEnabled ?? true } } : {}),
       });
       await registerPublicMeetingRoutes(app, meetingIntelligenceDeps);
     }

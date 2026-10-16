@@ -66,8 +66,9 @@ export function buildMeetingCrmBridge(deps: {
   };
 }
 
-export function buildMeetingMessagingBridge(inboxDeps: InboxUseCaseDeps): MeetingMessagingPort {
+export function buildMeetingMessagingBridge(inboxDeps: InboxUseCaseDeps, hasConversations: (tenantId: string) => Promise<boolean>): MeetingMessagingPort {
   return {
+    isAvailable: hasConversations,
     async listWhatsAppChannels({ tenantId, workspaceId }) {
       const connections = await inboxDeps.connectionRepository.listByWorkspace({ tenantId, workspaceId });
       return connections.filter((connection) => connection.provider === "wuzapi" && connection.status === "connected").map((connection) => ({ id: connection.id, label: `${connection.displayName}${connection.phoneNumber ? ` · ${connection.phoneNumber}` : ""}` }));

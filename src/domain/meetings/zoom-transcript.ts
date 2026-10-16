@@ -5,11 +5,12 @@
 
 export type ZoomTranscriptSegment = { startMs: number; endMs: number; text: string; speaker?: string };
 
-const TIME = /(\d{1,2}):(\d{2}):(\d{2})[.,](\d{3})/;
+// WebVTT aceita "HH:MM:SS.mmm" e também "MM:SS.mmm".
+const TIME = /(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{3})/;
 const toMs = (value: string) => {
   const match = TIME.exec(value);
   if (!match) return undefined;
-  return ((Number(match[1]) * 60 + Number(match[2])) * 60 + Number(match[3])) * 1000 + Number(match[4]);
+  return ((Number(match[1] ?? 0) * 60 + Number(match[2])) * 60 + Number(match[3])) * 1000 + Number(match[4]);
 };
 
 export function parseZoomVtt(vtt: string): ZoomTranscriptSegment[] {

@@ -126,6 +126,8 @@ export type ApiConfig = {
     realRecordingEnabled: boolean;
     /** MEETINGS_MAX_UPLOAD_BYTES — teto do upload manual de gravação (padrão 500 MB). */
     maxUploadBytes: number;
+    /** MEETINGS_AI_ANALYSIS_ENABLED — resumo por IA das reuniões (padrão ligado). */
+    aiAnalysisEnabled: boolean;
     /** Zoom (importar gravações em nuvem): ZOOM_ENABLED + app OAuth do Zoom Marketplace. */
     zoom: { enabled: boolean; clientId?: string; clientSecret?: string; redirectUri?: string };
   };
@@ -655,6 +657,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     meetings: {
       realRecordingEnabled: env.MEETINGS_REAL_RECORDING_ENABLED?.trim() === "true",
       maxUploadBytes: parsePositiveInt(env.MEETINGS_MAX_UPLOAD_BYTES) ?? 500 * 1024 * 1024,
+      aiAnalysisEnabled: env.MEETINGS_AI_ANALYSIS_ENABLED?.trim() !== "false",
       zoom: {
         enabled: env.ZOOM_ENABLED?.trim() === "true",
         ...(env.ZOOM_CLIENT_ID?.trim() ? { clientId: env.ZOOM_CLIENT_ID.trim() } : {}),

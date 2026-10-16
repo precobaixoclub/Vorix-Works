@@ -20,7 +20,7 @@ export type GoogleMeetNativeTranscript = {
 };
 
 export type GoogleMeetTranscriptPort = {
-  findTranscript(input: { accessToken: string; meetingCode: string; notBefore?: string }): Promise<GoogleMeetNativeTranscript | { unavailable: "no_access" | "not_found" | "not_ready"; message: string }>;
+  findTranscript(input: { accessToken: string; meetingCode: string; notBefore?: string; notAfter?: string; around?: string }): Promise<GoogleMeetNativeTranscript | { unavailable: "no_access" | "not_found" | "not_ready"; message: string }>;
 };
 
 export type GoogleAccessTokenPort = {
@@ -46,13 +46,16 @@ export async function importNativeTranscript(deps: MeetNativeImportDeps, input: 
   const meetUrl = meeting.meetingUrl ? parseGoogleMeetUrl(meeting.meetingUrl) : undefined;
   if (!meetUrl) return { status: "not_eligible", message: "Esta reunião não tem link do Google Meet." };
   if (meeting.transcript?.status === "completed" || meeting.transcript?.status === "running") return { status: "not_eligible", message: "Esta reunião já tem transcrição." };
-  if (["queued", "starting", "waiting_admission", "recording"].includes(meeting.status)) return { status: "not_eligible", message: "A reunião está sendo gravada pelo Vorix agora." };
+  if (meeting.status !== "scheduled") return { status: "not_eligible", message: meeting.status === "failed" || meeting.status === "cancelled" ? "Esta reunião foi encerrada sem gravação; envie o arquivo da gravação para gerar o resumo." : "A reunião está sendo gravada ou processada pelo Vorix agora." };
 
   const token = await deps.tokens.getAccessToken({ tenantId: input.tenantId, workspaceId: input.workspaceId, userId: meeting.ownerUserId });
   if (!token.ok) return { status: "not_connected", message: "O responsável pela reunião precisa conectar o Google em Meetings → Integrações." };
   const meetingCode = meetUrl.split("/").pop()!;
-  const notBefore = meeting.scheduledStartAt ? new Date(Date.parse(meeting.scheduledStartAt) - 6 * 60 * 60 * 1000).toISOString() : undefined;
-  const found = await deps.meet.findTranscript({ accessToken: token.accessToken, meetingCode, ...(notBefore ? { notBefore } : {}) });
+  // Reunião recorrente usa o MESMO código do Meet toda semana: só vale a ocorrência perto do horário.
+  const start = meeting.scheduledStartAt ? Date.parse(meeting.scheduledStartAt) : undefined;
+  const end = meeting.scheduledEndAt ? Date.parse(meeting.scheduledEndAt) : start !== undefined ? start + 60 * 60 * 1000 : undefined;
+  const window = start !== undefined && end !== undefined ? { notBefore: new Date(start - 2 * 60 * 60 * 1000).toISOString(), notAfter: new Date(end + 6 * 60 * 60 * 1000).toISOString(), around: new Date(start).toISOString() } : {};
+  const found = await deps.meet.findTranscript({ accessToken: token.accessToken, meetingCode, ...window });
   if ("unavailable" in found) return { status: found.unavailable, message: found.message };
   if (!found.entries.length) return { status: "not_found", message: "A transcrição do Google Meet desta reunião está vazia." };
 

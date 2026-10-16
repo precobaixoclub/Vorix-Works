@@ -243,6 +243,13 @@ async function main(): Promise<void> {
         realRecordingEnabled,
         limitsFor,
         limit: 50,
+        // Limite mensal de minutos do plano também vale para a gravação automática.
+        minutesQuotaReached: async (tenantId) => {
+          const limits = await limitsFor(tenantId);
+          if (!limits.monthlyRecordingMinutes) return false;
+          const usage = await insights.usageForPeriod({ tenantId, period: new Date().toISOString().slice(0, 7) });
+          return usage.transcriptionSeconds >= limits.monthlyRecordingMinutes * 60;
+        },
       });
       if (result.evaluated) log("auto-gravação avaliada", result.outcomes);
     });

@@ -92,7 +92,7 @@ async function setup(label, { limits } = {}) {
   const insights = new PostgresMeetingInsightsRepository(db.pool);
   const ai = fakeAi();
   const crm = fakeCrm();
-  const messaging = { sent: [], async listWhatsAppChannels() { return [{ id: "conn-1", label: "Comercial" }]; }, async sendWhatsApp(input) { messaging.sent.push(input); return { conversationId: "conv-1" }; } };
+  const messaging = { sent: [], async isAvailable() { return true; }, async listWhatsAppChannels() { return [{ id: "conn-1", label: "Comercial" }]; }, async sendWhatsApp(input) { messaging.sent.push(input); return { conversationId: "conv-1" }; } };
   const deps = {
     repository, insights, ai, crm, messaging,
     media: new ObjectStorageMeetingMedia(storage()),
@@ -428,4 +428,54 @@ test("Zoom: lê o VTT com nomes; importa a gravação usando a transcrição do 
 
   const listed = await listZoomRecordings(deps, ctx.actor, { workspaceId: ctx.workspaceId });
   assert.deepEqual(listed.map((item) => [item.uuid, item.hasTranscript, item.importedMeetingId]), [["uuid-with-vtt", true, withVtt.id], ["uuid-audio-only", false, audioOnly.id]]);
+});
+
+test("revisão: trecho só é apagado por quem criou; LGPD apaga perguntas entre reuniões que citam a reunião; Meet recorrente pega a ocorrência certa", async () => {
+  const { deleteMeetingClip } = await import("../dist/application/meetings/meeting-intelligence.js");
+  const { GoogleMeetTranscriptClient } = await import("../dist/infrastructure/meetings/google-meet-transcript-client.js");
+  const ctx = await setup("review");
+  const { meeting } = await meetingWithAnalysis(ctx);
+  const clip = await createMeetingClip(ctx.deps, ctx.actor, { workspaceId: ctx.workspaceId, meetingId: meeting.id, startMs: 0, endMs: 5000, title: "Abertura" });
+  const editor = { tenantId: ctx.tenantId, userId: "editor-2", role: "editor" };
+  await db.pool.query("insert into meeting_participants (id, meeting_id, tenant_id, role, user_id) values ($1, $2, $3, 'attendee', 'editor-2')", [nextId("mp"), meeting.id, ctx.tenantId]).catch(() => undefined);
+  await assert.rejects(deleteMeetingClip(ctx.deps, editor, { workspaceId: ctx.workspaceId, meetingId: meeting.id, clipId: clip.id }), /MEETING_NOT_FOUND/);
+
+  await askMeetings(ctx.deps, ctx.actor, { workspaceId: ctx.workspaceId, question: "o que falaram do concorrente acme?" });
+  await purgeMeetingPermanently(ctx.deps, ctx.actor, { workspaceId: ctx.workspaceId, meetingId: meeting.id, confirmTitle: meeting.title });
+  const left = await db.pool.query("select count(*)::int as n from meeting_questions where tenant_id = $1 and answer::text like '%' || $2 || '%'", [ctx.tenantId, meeting.id]);
+  assert.equal(left.rows[0].n, 0, "nenhuma citação literal da reunião apagada sobra em outras perguntas");
+
+  const week = 7 * 86_400_000;
+  const base = Date.parse("2026-10-01T13:00:00Z");
+  const records = [0, 1, 2].map((n) => ({ name: `conferenceRecords/w${n}`, startTime: new Date(base + n * week).toISOString(), endTime: new Date(base + n * week + 1_800_000).toISOString() }));
+  const fakeFetch = async (url) => {
+    const json = (body) => ({ ok: true, status: 200, json: async () => body });
+    if (url.includes("/conferenceRecords?")) return json({ conferenceRecords: records });
+    const match = /conferenceRecords\/(w\d)\/transcripts$/.exec(url);
+    if (match) return json({ transcripts: [{ name: `conferenceRecords/${match[1]}/transcripts/t`, state: "FILE_GENERATED" }] });
+    if (url.includes("/entries")) return json({ transcriptEntries: [{ text: url.includes("w1") ? "semana 1" : "outra semana", startTime: new Date(base + week + 5000).toISOString() }] });
+    return json({});
+  };
+  const found = await new GoogleMeetTranscriptClient({ apiBaseUrl: "https://meet.test/v2", httpClient: fakeFetch }).findTranscript({ accessToken: "t", meetingCode: "abc-defg-hij", notBefore: new Date(base + week - 7_200_000).toISOString(), notAfter: new Date(base + week + 3 * 3_600_000).toISOString(), around: new Date(base + week).toISOString() });
+  assert.equal(found.conferenceRecord, "conferenceRecords/w1");
+});
+
+test("revisão: importação do Zoom respeita o limite de minutos e não duplica com dois cliques", async () => {
+  const { importZoomRecording } = await import("../dist/application/meetings/zoom-import.js");
+  const quotaCtx = await setup("zoom-quota", { limits: { monthlyRecordingMinutes: 1 } });
+  await meetingWithAnalysis(quotaCtx);
+  const zoom = {
+    async getAccessToken() { return { ok: true, accessToken: "zt" }; },
+    async getMeetingRecordings() { return { uuid: "u1", topic: "Call", recording_files: [{ file_type: "M4A", download_url: "https://zoom.test/a.m4a", status: "completed" }] }; },
+    async downloadToFile({ targetPath }) { await new Promise((resolve) => setTimeout(resolve, 20)); await writeFile(targetPath, Buffer.from("A")); return 1; },
+    async downloadText() { return ""; },
+  };
+  await assert.rejects(importZoomRecording({ ...quotaCtx.deps, zoomAuth: zoom, zoom, maxUploadBytes: 1000, analysisEnabled: true }, quotaCtx.actor, { workspaceId: quotaCtx.workspaceId, meetingUuid: "u1" }), /minutos de gravação/);
+
+  const ctx = await setup("zoom-twice");
+  const deps = { ...ctx.deps, zoomAuth: zoom, zoom, maxUploadBytes: 1000, analysisEnabled: false };
+  const results = await Promise.allSettled([1, 2].map(() => importZoomRecording(deps, ctx.actor, { workspaceId: ctx.workspaceId, meetingUuid: "u1" })));
+  const meetings = await db.pool.query("select count(*)::int as n from meetings where tenant_id = $1 and deleted_at is null", [ctx.tenantId]);
+  assert.equal(meetings.rows[0].n, 1, "dois cliques simultâneos criam UMA reunião");
+  assert.ok(results.some((result) => result.status === "fulfilled"));
 });

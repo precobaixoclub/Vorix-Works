@@ -302,7 +302,7 @@ const SCHEDULER_NOTIFY: Partial<Record<string, { title: string; body: string }>>
 
 export async function evaluateAutoRecordings(
   deps: Pick<MeetingProcessingDeps, "repository" | "now"> & { notify?: MeetingOwnerNotifier },
-  input: { defaults: AutoRecordWindow; realRecordingEnabled: boolean; limitsFor: (tenantId: string) => Promise<MeetingsLimits>; limit: number },
+  input: { defaults: AutoRecordWindow; realRecordingEnabled: boolean; limitsFor: (tenantId: string) => Promise<MeetingsLimits>; limit: number; minutesQuotaReached?: (tenantId: string) => Promise<boolean> },
 ): Promise<{ evaluated: number; outcomes: Record<string, number> }> {
   const due = await deps.repository.listAutoRecordDue({ now: deps.now(), defaults: input.defaults, limit: input.limit });
   const outcomes: Record<string, number> = {};
@@ -311,6 +311,7 @@ export async function evaluateAutoRecordings(
     if (!input.realRecordingEnabled) outcome = "RECORDING_DISABLED";
     else if (!meeting.meetingUrl || !parseGoogleMeetUrl(meeting.meetingUrl)) outcome = "MISSING_MEETING_URL";
     else if (!isConfirmedHumanIdentity(meeting.humanJoinIdentitySource)) outcome = "HUMAN_IDENTITY_REQUIRED";
+    else if (input.minutesQuotaReached && (await input.minutesQuotaReached(meeting.tenantId))) outcome = "MINUTES_QUOTA_REACHED";
     else {
       const limits = await input.limitsFor(meeting.tenantId);
       const admission = await deps.repository.admitRecording({ tenantId: meeting.tenantId, workspaceId: meeting.workspaceId, meetingId: meeting.id, maxConcurrentRecordings: limits.maxConcurrentRecordings, now: deps.now() });

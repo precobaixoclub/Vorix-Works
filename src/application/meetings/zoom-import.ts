@@ -85,6 +85,11 @@ export async function importZoomRecording(deps: ZoomImportDeps, actor: MeetingAc
   if (!deps.media.isPrivateSigned()) throw new MeetingError("MEETING_STORAGE_UNAVAILABLE", "O armazenamento privado de gravações não está configurado neste servidor.");
   const already = (await deps.insights.findExternalImports({ tenantId: actor.tenantId, provider: "zoom", externalIds: [input.meetingUuid] })).get(input.meetingUuid);
   if (already) return requireVisibleMeeting(deps, actor, input.workspaceId, already);
+  const minutesLimit = (await deps.limitsFor(actor.tenantId)).monthlyRecordingMinutes;
+  if (minutesLimit) {
+    const usage = await deps.insights.usageForPeriod({ tenantId: actor.tenantId, period: meetingUsagePeriod(deps.now()) });
+    if (usage.transcriptionSeconds >= minutesLimit * 60) throw new MeetingError("MEETING_STORAGE_LIMIT_REACHED", `Você usou os ${minutesLimit} minutos de gravação do seu plano neste mês. Amplie o plano ou aguarde o próximo mês.`);
+  }
   const accessToken = await tokenFor(deps, actor, input.workspaceId);
   const zoomMeeting = await deps.zoom.getMeetingRecordings({ accessToken, meetingUuid: input.meetingUuid });
   if (!zoomMeeting) throw new MeetingError("MEETING_NOT_FOUND", "Gravação não encontrada no Zoom (pode ter sido apagada).");
@@ -107,8 +112,17 @@ export async function importZoomRecording(deps: ZoomImportDeps, actor: MeetingAc
     const zoomSegments = transcriptFile?.download_url ? parseZoomVtt(await deps.zoom.downloadText({ accessToken, downloadUrl: transcriptFile.download_url }).catch(() => "")) : [];
 
     const now = deps.now();
+    const meetingId = deps.idGenerator("meeting");
+    // Reserva ANTES de criar: dois cliques (ou duas abas) nunca importam a mesma gravação duas vezes.
+    const reserved = await deps.insights.reserveExternalImport({ tenantId: actor.tenantId, provider: "zoom", externalId: input.meetingUuid, meetingId });
+    if (!reserved) {
+      const winner = (await deps.insights.findExternalImports({ tenantId: actor.tenantId, provider: "zoom", externalIds: [input.meetingUuid] })).get(input.meetingUuid);
+      if (winner) return requireVisibleMeeting(deps, actor, input.workspaceId, winner);
+      throw new MeetingError("MEETING_INVALID_INPUT", "Esta gravação já está sendo importada. Aguarde alguns instantes.");
+    }
+    try {
     const meeting = await deps.repository.create({
-      id: deps.idGenerator("meeting"),
+      id: meetingId,
       tenantId: actor.tenantId,
       workspaceId: input.workspaceId,
       ownerUserId: actor.userId,
@@ -122,7 +136,6 @@ export async function importZoomRecording(deps: ZoomImportDeps, actor: MeetingAc
       autoRecord: false,
       participants: [],
     });
-    await deps.insights.recordExternalImport({ tenantId: actor.tenantId, provider: "zoom", externalId: input.meetingUuid, meetingId: meeting.id });
     const storageKey = `meetings/${actor.tenantId}/${input.workspaceId}/${meeting.id}/zoom-${deps.idGenerator("rec")}.${extension}`;
     await deps.media.putFile({ key: storageKey, filePath, contentType: mimeType });
     const recording = await deps.repository.addRecording({ id: deps.idGenerator("mrec"), meetingId: meeting.id, tenantId: actor.tenantId, workspaceId: input.workspaceId, kind: "original", storageKey, mimeType, bytes, checksumSha256: sha256, originalFileName: `zoom-${input.meetingUuid.slice(0, 40)}.${extension}` });
@@ -144,6 +157,12 @@ export async function importZoomRecording(deps: ZoomImportDeps, actor: MeetingAc
     await deps.repository.recordUsage({ tenantId: actor.tenantId, period: meetingUsagePeriod(now), delta: { storageBytes: bytes } });
     await deps.repository.audit({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId: meeting.id, actorUserId: actor.userId, action: "recording.imported_zoom", details: { bytes, zoomTranscript: zoomSegments.length > 0 } });
     return requireVisibleMeeting(deps, actor, input.workspaceId, meeting.id);
+    } catch (error) {
+      // Falhou no meio: desfaz (reunião pela metade + reserva), para a próxima tentativa funcionar.
+      await deps.insights.purgeMeetingPermanently({ tenantId: actor.tenantId, workspaceId: input.workspaceId, meetingId }).catch(() => undefined);
+      await deps.insights.releaseExternalImport({ tenantId: actor.tenantId, provider: "zoom", externalId: input.meetingUuid }).catch(() => undefined);
+      throw error;
+    }
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }

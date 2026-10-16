@@ -131,7 +131,8 @@ create table if not exists meeting_external_imports (
   tenant_id    text not null,
   provider     text not null check (provider in ('zoom', 'google_meet')),
   external_id  text not null,
-  meeting_id   text not null references meetings (id) on delete cascade,
+  -- Sem FK: a reserva é gravada ANTES de a reunião existir (evita importação duplicada).
+  meeting_id   text not null,
   created_at   timestamptz not null default now(),
   primary key (tenant_id, provider, external_id)
 );

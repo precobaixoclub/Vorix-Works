@@ -19,12 +19,18 @@ export class GoogleMeetApiError extends Error {
 export class GoogleMeetTranscriptClient implements GoogleMeetTranscriptPort {
   constructor(private readonly input: { apiBaseUrl?: string; httpClient?: typeof fetch } = {}) {}
 
-  async findTranscript(input: { accessToken: string; meetingCode: string; notBefore?: string }): Promise<GoogleMeetNativeTranscript | { unavailable: "no_access" | "not_found" | "not_ready"; message: string }> {
-    let records: ConferenceRecord[];
+  async findTranscript(input: { accessToken: string; meetingCode: string; notBefore?: string; notAfter?: string; around?: string }): Promise<GoogleMeetNativeTranscript | { unavailable: "no_access" | "not_found" | "not_ready"; message: string }> {
+    const records: ConferenceRecord[] = [];
     try {
-      const url = new URL(`${this.base()}/conferenceRecords`);
-      url.searchParams.set("filter", `space.meeting_code = "${input.meetingCode}"`);
-      records = (await this.get<{ conferenceRecords?: ConferenceRecord[] }>(url, input.accessToken)).conferenceRecords ?? [];
+      let pageToken: string | undefined;
+      do {
+        const url = new URL(`${this.base()}/conferenceRecords`);
+        url.searchParams.set("filter", `space.meeting_code = "${input.meetingCode}"`);
+        if (pageToken) url.searchParams.set("pageToken", pageToken);
+        const page = await this.get<{ conferenceRecords?: ConferenceRecord[]; nextPageToken?: string }>(url, input.accessToken);
+        records.push(...(page.conferenceRecords ?? []));
+        pageToken = page.nextPageToken;
+      } while (pageToken && records.length < 500);
     } catch (error) {
       if (error instanceof GoogleMeetApiError && (error.status === 401 || error.status === 403)) {
         return { unavailable: "no_access", message: "Reconecte o Google em Meetings → Integrações para permitir a leitura das transcrições do Meet." };
@@ -32,9 +38,12 @@ export class GoogleMeetTranscriptClient implements GoogleMeetTranscriptPort {
       throw error;
     }
     const notBefore = input.notBefore ? Date.parse(input.notBefore) : 0;
+    const notAfter = input.notAfter ? Date.parse(input.notAfter) : Number.POSITIVE_INFINITY;
+    const around = input.around ? Date.parse(input.around) : undefined;
     const candidates = records
-      .filter((record) => record.endTime && Date.parse(record.endTime) >= notBefore)
-      .sort((a, b) => Date.parse(b.startTime ?? "") - Date.parse(a.startTime ?? ""));
+      .filter((record) => record.endTime && Date.parse(record.endTime) >= notBefore && Date.parse(record.startTime ?? record.endTime) <= notAfter)
+      // Reunião recorrente: a ocorrência mais próxima do horário agendado primeiro.
+      .sort((a, b) => (around !== undefined ? Math.abs(Date.parse(a.startTime ?? "") - around) - Math.abs(Date.parse(b.startTime ?? "") - around) : Date.parse(b.startTime ?? "") - Date.parse(a.startTime ?? "")));
     if (!candidates.length) return { unavailable: records.length ? "not_ready" : "not_found", message: records.length ? "A reunião ainda não terminou no Google Meet." : "O Google Meet não tem registro desta reunião para a sua conta." };
 
     for (const record of candidates) {

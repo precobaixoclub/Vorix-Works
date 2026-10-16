@@ -56,7 +56,7 @@ export class PostgresMeetingInsightsRepository implements MeetingInsightsReposit
     const patch = input.patch;
     await this.pool.query(
       `insert into meeting_insights (meeting_id, tenant_id, workspace_id, summary_template, crm_contact_id, crm_deal_id, follow_up, follow_up_generated_at)
-       values ($1, $2, $3, coalesce($4, 'general'), $5, $6, $7::jsonb, case when $7::jsonb is null then null else now() end)
+       values ($1, $2, $3, coalesce($4, (select p.default_template from meetings m join meeting_user_preferences p on p.tenant_id = m.tenant_id and p.user_id = m.owner_user_id where m.id = $1), 'general'), $5, $6, $7::jsonb, case when $7::jsonb is null then null else now() end)
        on conflict (meeting_id) do update set
          summary_template = coalesce($4, meeting_insights.summary_template),
          crm_contact_id = case when $8 then $5 else meeting_insights.crm_contact_id end,
@@ -130,9 +130,10 @@ export class PostgresMeetingInsightsRepository implements MeetingInsightsReposit
     // Contexto: o trecho encontrado + 2 antes e 2 depois.
     const result = await this.pool.query<{ meeting_id: string; title: string; scheduled_start_at: Date | null; seq: number; start_ms: number; end_ms: number; speaker: string | null; text: string }>(
       `with hit as (select * from unnest($2::text[], $3::int[]) as h(meeting_id, seq))
-       select distinct s.meeting_id, m.title, m.scheduled_start_at, s.seq, s.start_ms, s.end_ms, s.speaker, s.text
+       select distinct s.meeting_id, m.title, m.scheduled_start_at, s.seq, s.start_ms, s.end_ms, coalesce(n.display_name, s.speaker) as speaker, s.text
        from hit join meeting_transcript_segments s on s.meeting_id = hit.meeting_id and s.seq between hit.seq - 2 and hit.seq + 2
        join meetings m on m.id = s.meeting_id
+       left join meeting_speaker_names n on n.meeting_id = s.meeting_id and n.speaker_key = s.speaker
        where s.tenant_id = $1
        order by s.meeting_id, s.seq`,
       [input.tenantId, hits.rows.map((row) => row.meeting_id), hits.rows.map((row) => row.seq)],
@@ -334,6 +335,15 @@ export class PostgresMeetingInsightsRepository implements MeetingInsightsReposit
     return new Map(result.rows.map((row) => [row.external_id, row.meeting_id]));
   }
 
+  async reserveExternalImport(input: { tenantId: string; provider: "zoom" | "google_meet"; externalId: string; meetingId: string }): Promise<boolean> {
+    const result = await this.pool.query("insert into meeting_external_imports (tenant_id, provider, external_id, meeting_id) values ($1, $2, $3, $4) on conflict (tenant_id, provider, external_id) do nothing", [input.tenantId, input.provider, input.externalId, input.meetingId]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async releaseExternalImport(input: { tenantId: string; provider: "zoom" | "google_meet"; externalId: string }): Promise<void> {
+    await this.pool.query("delete from meeting_external_imports where tenant_id = $1 and provider = $2 and external_id = $3", [input.tenantId, input.provider, input.externalId]);
+  }
+
   async recordExternalImport(input: { tenantId: string; provider: "zoom" | "google_meet"; externalId: string; meetingId: string }): Promise<void> {
     await this.pool.query("insert into meeting_external_imports (tenant_id, provider, external_id, meeting_id) values ($1, $2, $3, $4) on conflict (tenant_id, provider, external_id) do update set meeting_id = excluded.meeting_id", [input.tenantId, input.provider, input.externalId, input.meetingId]);
   }
@@ -348,7 +358,8 @@ export class PostgresMeetingInsightsRepository implements MeetingInsightsReposit
     try {
       await client.query("begin");
       await client.query("update meeting_jobs set status = 'cancelled' where tenant_id = $1 and meeting_id = $2 and status in ('queued', 'running')", [input.tenantId, input.meetingId]);
-      await client.query("delete from meeting_questions where tenant_id = $1 and meeting_id = $2", [input.tenantId, input.meetingId]);
+      await client.query("delete from meeting_questions where tenant_id = $1 and (meeting_id = $2 or answer::text like '%' || $2 || '%')", [input.tenantId, input.meetingId]);
+      await client.query("delete from meeting_external_imports where tenant_id = $1 and meeting_id = $2", [input.tenantId, input.meetingId]);
       const deleted = await client.query("delete from meetings where tenant_id = $1 and workspace_id = $2 and id = $3", [input.tenantId, input.workspaceId, input.meetingId]);
       await client.query("commit");
       return (deleted.rowCount ?? 0) > 0;

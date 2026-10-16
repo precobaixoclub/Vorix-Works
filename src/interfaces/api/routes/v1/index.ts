@@ -73,6 +73,7 @@ import { registerGrowthDashboardRoutes } from "./growth-dashboard.route.js";
 import { registerMeetingIntelligenceRoutes, registerPublicMeetingRoutes } from "./meetings-intelligence.route.js";
 import { buildMeetingCrmBridge, buildMeetingMessagingBridge } from "../../meetings-bridges.js";
 import { AiGatewayMeetingIntelligence } from "../../../../infrastructure/ai-gateway/meeting-intelligence-ai-adapter.js";
+import { GoogleMeetTranscriptClient } from "../../../../infrastructure/meetings/google-meet-transcript-client.js";
 
 /**
  * Grupo de rotas `v1` — esqueleto de versionamento. Registrado sob o prefixo `/v1` (ver `app.ts`),
@@ -424,7 +425,12 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         ...(sharedInboxDeps ? { messaging: buildMeetingMessagingBridge(sharedInboxDeps) } : {}),
         publicAppUrl: app.zunoConfig.billing.appBaseUrl,
       };
-      await registerMeetingIntelligenceRoutes(app, { ...meetingIntelligenceDeps, workspaceRepository: app.zunoContainer.workspaceRepository });
+      await registerMeetingIntelligenceRoutes(app, {
+        ...meetingIntelligenceDeps,
+        workspaceRepository: app.zunoContainer.workspaceRepository,
+        ...(app.zunoContainer.meetings.zoom ? { zoom: app.zunoContainer.meetings.zoom } : {}),
+        ...(app.zunoContainer.meetingsAgenda ? { nativeImport: { meet: new GoogleMeetTranscriptClient(), tokens: app.zunoContainer.meetingsAgenda.connection.auth, analysisEnabled: true } } : {}),
+      });
       await registerPublicMeetingRoutes(app, meetingIntelligenceDeps);
     }
     // CRM/Comercial (Fase 6) — Regras de automação (motor simples, gatilho + condições + ação).

@@ -74,6 +74,7 @@ export const saveKeywordTracker = (workspaceId: string, input: { trackerId?: str
 export const deleteKeywordTracker = (workspaceId: string, trackerId: string) => apiClient.delete<{ deleted: true }>(`/v1/meetings/keyword-trackers/${q(trackerId)}?workspaceId=${q(workspaceId)}`);
 export const getMeetingPreferences = () => apiClient.get<MeetingPreferences>("/v1/meetings/preferences");
 export const updateMeetingPreferences = (input: Partial<{ autoRecordMode: AutoRecordMode; defaultTemplate: SummaryTemplateKey; consentNoticeEnabled: boolean; consentMessage: string }>) => apiClient.put<MeetingPreferences>("/v1/meetings/preferences", input);
+export const importGoogleMeetTranscript = (workspaceId: string, meetingId: string) => apiClient.post<{ status: string; segments?: number; message?: string }>(`${base(meetingId)}/import-google-transcript`, { workspaceId });
 export const getMeetingsUsage = () => apiClient.get<MeetingsUsage>("/v1/meetings/usage");
 
 /** Exportação Markdown: baixa o arquivo com a sessão do usuário (o endpoint devolve texto, não JSON). */

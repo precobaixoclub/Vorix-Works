@@ -144,6 +144,7 @@ import { StripeBillingProvider } from "../../../infrastructure/billing/stripe-bi
 import { MercadoPagoBillingProvider } from "../../../infrastructure/billing/mercadopago-billing-provider.js";
 import { CreditGatedAiGateway } from "../../../application/ai-gateway/credit-gated-ai-gateway.js";
 import { PostgresMeetingInsightsRepository } from "../../../infrastructure/storage/postgres/postgres-meeting-insights-repository.js";
+import { ZoomIntegration } from "../../../infrastructure/meetings/zoom-integration.js";
 import { SolutionAccessService } from "../../../application/solutions/solution-access.service.js";
 import { limitsFromEntitlement, type MeetingUseCaseDeps } from "../../../application/meetings/meeting-use-cases.js";
 import { ObjectStorageMeetingMedia } from "../../../infrastructure/meetings/object-storage-meeting-media.js";
@@ -327,7 +328,7 @@ export type ApiContainer = {
    * real (Postgres). Ausente = guarda de solução desligado (dev/teste em memória). */
   solutionAccess?: SolutionAccessService;
   /** Vorix Meetings — só com identidade real (Postgres). */
-  meetings?: MeetingUseCaseDeps & { maxUploadBytes: number };
+  meetings?: MeetingUseCaseDeps & { maxUploadBytes: number; zoom?: ZoomIntegration };
   /** Agenda do Meetings + conexão Google Calendar (a sincronização roda no worker). */
   meetingsAgenda?: { calendar: CalendarUseCaseDeps; connection: CalendarConnectionDeps };
   publicationProviders: readonly PublicationProviderPort[];
@@ -1617,7 +1618,7 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
     });
     // Vorix Meetings: repositório próprio, gravações no storage privado do Core, limites
     // comerciais lidos do entitlement da solução `meetings`.
-    const meetings: MeetingUseCaseDeps & { maxUploadBytes: number } = {
+    const meetings: MeetingUseCaseDeps & { maxUploadBytes: number; zoom?: ZoomIntegration } = {
       repository: new PostgresMeetingRepository(identityRepositories.pool),
       media: new ObjectStorageMeetingMedia(objectStorage),
       limitsFor: async (tenantId) => limitsFromEntitlement((await solutionAccess.getEntitlement(tenantId, "meetings"))?.limits),
@@ -1627,6 +1628,16 @@ export function buildApiContainer(config?: ApiConfig): ApiContainer {
       maxUploadBytes: config.meetings?.maxUploadBytes ?? 500 * 1024 * 1024,
       // Inteligência/colaboração (modelo de resumo, falantes, links, trechos…) + limite de minutos.
       insights: new PostgresMeetingInsightsRepository(identityRepositories.pool),
+      // Zoom (gravações em nuvem): só com o app OAuth configurado.
+      ...(config.meetings?.zoom.enabled
+        ? {
+            zoom: new ZoomIntegration({
+              config: config.meetings.zoom,
+              secretManager,
+              stateSigningKey: createHmac("sha256", config.jwtSecret ?? randomBytes(32).toString("hex")).update("vorix:zoom-oauth-state:v1").digest(),
+            }),
+          }
+        : {}),
     };
     const calendarConnections = new PostgresCalendarConnectionRepository(identityRepositories.pool);
     const meetingsAgenda = {

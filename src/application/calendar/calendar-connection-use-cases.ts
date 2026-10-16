@@ -8,6 +8,9 @@ export type GoogleCalendarAuthPort = {
   verifyState(state: string): { tenantId: string; workspaceId: string; userId: string };
   complete(input: { state: string; code: string }): Promise<CalendarConnection>;
   disconnect(input: { tenantId: string; workspaceId: string; userId: string }): Promise<void>;
+  /** Token de acesso do Google da pessoa (renovado quando preciso) — usado também pelo Meetings
+   * para ler a transcrição nativa do Google Meet. */
+  getAccessToken(input: { tenantId: string; workspaceId: string; userId: string }): Promise<{ ok: true; accessToken: string } | { ok: false; reason: string; message: string }>;
 };
 
 export type CalendarConnectionDeps = {

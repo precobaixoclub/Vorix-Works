@@ -301,6 +301,43 @@ export class PostgresMeetingInsightsRepository implements MeetingInsightsReposit
     return { recordingSeconds: Number(row?.recording_seconds ?? 0), transcriptionSeconds: Number(row?.transcription_seconds ?? 0), aiAnalyses: row?.ai_analyses ?? 0, storageBytes: Number(row?.storage_bytes ?? 0) };
   }
 
+  async listNativeImportCandidates(input: { now: Date; limit: number }): Promise<{ tenantId: string; workspaceId: string; meetingId: string }[]> {
+    const result = await this.pool.query<{ tenant_id: string; workspace_id: string; id: string }>(
+      `select m.tenant_id, m.workspace_id, m.id
+       from meetings m left join meeting_native_imports i on i.meeting_id = m.id
+       where m.deleted_at is null and m.status = 'scheduled' and m.meeting_url like 'https://meet.google.com/%'
+         and coalesce(m.scheduled_end_at, m.scheduled_start_at + interval '1 hour') between $1::timestamptz - interval '48 hours' and $1::timestamptz - interval '10 minutes'
+         and not exists (select 1 from meeting_transcripts t where t.meeting_id = m.id and t.status in ('running', 'completed'))
+         and not exists (select 1 from meeting_recordings r where r.meeting_id = m.id)
+         and (i.meeting_id is null or (i.status not in ('imported', 'not_eligible') and i.last_attempt_at < $1::timestamptz - interval '30 minutes' and i.attempts < 96))
+       order by m.scheduled_start_at desc
+       limit $2`,
+      [input.now, input.limit],
+    );
+    return result.rows.map((row) => ({ tenantId: row.tenant_id, workspaceId: row.workspace_id, meetingId: row.id }));
+  }
+
+  async recordNativeImportAttempt(input: { tenantId: string; meetingId: string; status: string; error?: string }): Promise<void> {
+    await this.pool.query(
+      `insert into meeting_native_imports (meeting_id, tenant_id, attempts, status, last_error, last_attempt_at) values ($1, $2, 1, $3, $4, now())
+       on conflict (meeting_id) do update set attempts = meeting_native_imports.attempts + 1, status = excluded.status, last_error = excluded.last_error, last_attempt_at = now()`,
+      [input.meetingId, input.tenantId, input.status, input.error ?? null],
+    );
+  }
+
+  async findExternalImports(input: { tenantId: string; provider: "zoom" | "google_meet"; externalIds: readonly string[] }): Promise<Map<string, string>> {
+    if (!input.externalIds.length) return new Map();
+    const result = await this.pool.query<{ external_id: string; meeting_id: string }>(
+      "select i.external_id, i.meeting_id from meeting_external_imports i join meetings m on m.id = i.meeting_id where i.tenant_id = $1 and i.provider = $2 and i.external_id = any($3::text[]) and m.deleted_at is null",
+      [input.tenantId, input.provider, [...input.externalIds]],
+    );
+    return new Map(result.rows.map((row) => [row.external_id, row.meeting_id]));
+  }
+
+  async recordExternalImport(input: { tenantId: string; provider: "zoom" | "google_meet"; externalId: string; meetingId: string }): Promise<void> {
+    await this.pool.query("insert into meeting_external_imports (tenant_id, provider, external_id, meeting_id) values ($1, $2, $3, $4) on conflict (tenant_id, provider, external_id) do update set meeting_id = excluded.meeting_id", [input.tenantId, input.provider, input.externalId, input.meetingId]);
+  }
+
   async mediaKeys(input: { tenantId: string; meetingId: string }): Promise<string[]> {
     const result = await this.pool.query<{ storage_key: string }>("select storage_key from meeting_recordings where tenant_id = $1 and meeting_id = $2 and status <> 'purged'", [input.tenantId, input.meetingId]);
     return result.rows.map((row) => row.storage_key);

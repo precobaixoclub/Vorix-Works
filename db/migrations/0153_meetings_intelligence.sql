@@ -115,3 +115,23 @@ values
   ('meeting_question_answer', 'Vorix Meetings — pergunte à reunião', 'text_generation', 1, 'anthropic', 'claude-haiku-4-5-20251001'),
   ('meeting_follow_up', 'Vorix Meetings — follow-up por e-mail e WhatsApp', 'text_generation', 1, 'anthropic', 'claude-haiku-4-5-20251001')
 on conflict (code) do nothing;
+
+-- Importação da transcrição NATIVA do Google Meet (sem robô): controle de tentativas do agendador.
+create table if not exists meeting_native_imports (
+  meeting_id       text primary key references meetings (id) on delete cascade,
+  tenant_id        text not null,
+  attempts         integer not null default 0,
+  status           text not null,
+  last_error       text,
+  last_attempt_at  timestamptz not null default now()
+);
+
+-- Gravações importadas de outras plataformas (Zoom): evita importar a mesma duas vezes.
+create table if not exists meeting_external_imports (
+  tenant_id    text not null,
+  provider     text not null check (provider in ('zoom', 'google_meet')),
+  external_id  text not null,
+  meeting_id   text not null references meetings (id) on delete cascade,
+  created_at   timestamptz not null default now(),
+  primary key (tenant_id, provider, external_id)
+);

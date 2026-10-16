@@ -89,6 +89,14 @@ export type MeetingInsightsRepositoryPort = {
   /** Uso do mês (minutos de gravação/transcrição) para aplicar o limite do plano. */
   usageForPeriod(input: { tenantId: string; period: string }): Promise<{ recordingSeconds: number; transcriptionSeconds: number; aiAnalyses: number; storageBytes: number }>;
 
+  /** Importação nativa do Google Meet: reuniões que terminaram sem transcrição (agendador). */
+  listNativeImportCandidates(input: { now: Date; limit: number }): Promise<{ tenantId: string; workspaceId: string; meetingId: string }[]>;
+  recordNativeImportAttempt(input: { tenantId: string; meetingId: string; status: string; error?: string }): Promise<void>;
+
+  /** Importações de outras plataformas (Zoom): id externo → reunião do Vorix. */
+  findExternalImports(input: { tenantId: string; provider: "zoom" | "google_meet"; externalIds: readonly string[] }): Promise<Map<string, string>>;
+  recordExternalImport(input: { tenantId: string; provider: "zoom" | "google_meet"; externalId: string; meetingId: string }): Promise<void>;
+
   /** LGPD: chaves de mídia de uma reunião (para apagar do storage) e exclusão definitiva. */
   mediaKeys(input: { tenantId: string; meetingId: string }): Promise<string[]>;
   purgeMeetingPermanently(input: { tenantId: string; workspaceId: string; meetingId: string }): Promise<boolean>;

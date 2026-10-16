@@ -10,6 +10,8 @@ import { evaluateAutoRecordings, MeetingsCalendarLink, processNextMeetingJob, pu
 import { shouldAutoRecord } from "../../domain/meetings/meeting-intelligence.js";
 import { parseGoogleMeetUrl } from "../../domain/meetings/meeting.model.js";
 import { PostgresMeetingInsightsRepository } from "../../infrastructure/storage/postgres/postgres-meeting-insights-repository.js";
+import { importDueNativeTranscripts } from "../../application/meetings/meet-native-import.js";
+import { GoogleMeetTranscriptClient } from "../../infrastructure/meetings/google-meet-transcript-client.js";
 import type { ObjectStoragePort } from "../../application/ports/object-storage.port.js";
 import { SolutionAccessService } from "../../application/solutions/solution-access.service.js";
 import type { MeetingJobKind } from "../../domain/meetings/meeting.model.js";
@@ -204,6 +206,14 @@ async function main(): Promise<void> {
         log("auto-record rule → reunião agendada", { eventId: event.id, mode: autoRecordMode });
       },
     };
+    // Transcrição NATIVA do Google Meet (sem robô): reuniões com Meet que terminaram sem gravação.
+    if (env.MEETINGS_GOOGLE_NATIVE_IMPORT_ENABLED?.trim() !== "false") {
+      const nativeImportDeps = { repository, insights, meet: new GoogleMeetTranscriptClient(), tokens: oauth, analysisEnabled: env.MEETINGS_AI_ANALYSIS_ENABLED?.trim() !== "false", now: () => new Date() };
+      loop("native-import", int(env.MEETINGS_GOOGLE_NATIVE_IMPORT_INTERVAL_MS, 5 * 60_000), async () => {
+        const outcomes = await importDueNativeTranscripts(nativeImportDeps, { limit: 20 });
+        if (Object.keys(outcomes).length) log("google meet native import", outcomes);
+      });
+    }
     loop("calendar", 15_000, async () => {
       const due = await connections.listDueForSync(10, new Date());
       for (const connection of due) {

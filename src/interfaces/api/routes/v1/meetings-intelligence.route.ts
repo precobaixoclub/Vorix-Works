@@ -29,6 +29,8 @@ import {
   type MeetingIntelligenceDeps,
 } from "../../../../application/meetings/meeting-intelligence.js";
 import { MeetingError, type MeetingActor } from "../../../../application/meetings/meeting-use-cases.js";
+import { importNativeTranscriptForActor, type GoogleAccessTokenPort, type GoogleMeetTranscriptPort } from "../../../../application/meetings/meet-native-import.js";
+import { getZoomStatus, importZoomRecording, listZoomRecordings, type ZoomAuthPort, type ZoomRecordingsPort } from "../../../../application/meetings/zoom-import.js";
 import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
 import { AUTO_RECORD_MODES, MEETING_SUMMARY_TEMPLATES, type AutoRecordMode } from "../../../../domain/meetings/meeting-intelligence.js";
 import { AppError, NotFoundError } from "../../http/app-error.js";
@@ -42,7 +44,14 @@ import { assertWorkspaceBelongsToTenant } from "./workspace-ownership.js";
  * preferências, uso e exclusão definitiva). `/v1/meetings/*` passa pelo guarda da solução; o link
  * público fica em `/v1/public/meetings/:token` (sem login: o token é a autorização).
  */
-export type MeetingIntelligenceRoutesDeps = MeetingIntelligenceDeps & { workspaceRepository: WorkspaceRepositoryPort };
+export type MeetingIntelligenceRoutesDeps = MeetingIntelligenceDeps & {
+  workspaceRepository: WorkspaceRepositoryPort;
+  /** Importação da transcrição nativa do Google Meet (só com Google Calendar configurado). */
+  nativeImport?: { meet: GoogleMeetTranscriptPort; tokens: GoogleAccessTokenPort; analysisEnabled: boolean };
+  /** Zoom (gravações em nuvem) — só com o app OAuth do Zoom configurado. */
+  zoom?: ZoomAuthPort & ZoomRecordingsPort;
+  maxUploadBytes?: number;
+};
 
 const WS = { workspaceId: { type: "string", minLength: 1 } } as const;
 const WORKSPACE_QUERY = { type: "object", required: ["workspaceId"], properties: WS } as const;
@@ -289,6 +298,75 @@ export async function registerMeetingIntelligenceRoutes(app: FastifyInstance, de
   app.get("/meetings/usage", async (request) => {
     const actor = actorOf(request, "meeting:read");
     return successEnvelope(await run(() => getMeetingsUsage(deps, actor)), request.id);
+  });
+
+  // ── Transcrição nativa do Google Meet (sem robô) ──
+  app.post("/meetings/:id/import-google-transcript", { schema: { params: ID_PARAMS, body: body([], {}) }, config: { readOnlyGuard: true } }, async (request) => {
+    const actor = actorOf(request, "meeting:create");
+    const { id } = request.params as { id: string };
+    const { workspaceId } = request.body as { workspaceId: string };
+    if (!deps.nativeImport) throw new AppError({ code: "MEETING_STORAGE_UNAVAILABLE", message: "A integração com o Google não está configurada neste servidor.", statusCode: 503, recoverable: true });
+    const nativeImport = deps.nativeImport;
+    return successEnvelope(await run(() => importNativeTranscriptForActor({ repository: deps.repository, insights: deps.insights, meet: nativeImport.meet, tokens: nativeImport.tokens, analysisEnabled: nativeImport.analysisEnabled, now: deps.now }, actor, { workspaceId, meetingId: id })), request.id);
+  });
+
+  // ── Zoom: conectar e importar gravações em nuvem ──
+  const zoomUnavailable = () => new AppError({ code: "MEETING_STORAGE_UNAVAILABLE", message: "A integração com o Zoom não está configurada neste servidor.", statusCode: 503, recoverable: true });
+  const zoomDeps = () => ({ ...deps, zoomAuth: deps.zoom!, zoom: deps.zoom!, maxUploadBytes: deps.maxUploadBytes ?? 500 * 1024 * 1024, analysisEnabled: true });
+
+  app.get("/meetings/zoom/status", { schema: { querystring: WORKSPACE_QUERY } }, async (request) => {
+    const actor = actorOf(request, "meeting:read");
+    const { workspaceId } = request.query as { workspaceId: string };
+    if (!deps.zoom) return successEnvelope({ configured: false, connected: false }, request.id);
+    return successEnvelope(await getZoomStatus({ zoomAuth: deps.zoom }, actor, { workspaceId }), request.id);
+  });
+
+  app.post("/meetings/zoom/connect", { schema: { body: body([], {}) }, config: { readOnlyGuard: true } }, async (request) => {
+    const actor = actorOf(request, "meeting:create");
+    const { workspaceId } = request.body as { workspaceId: string };
+    if (!deps.zoom?.isConfigured()) throw zoomUnavailable();
+    await ownWorkspace(actor, workspaceId);
+    return successEnvelope(deps.zoom.begin({ tenantId: actor.tenantId, workspaceId, userId: actor.userId }), request.id);
+  });
+
+  app.post("/meetings/zoom/callback", { schema: { body: { type: "object", required: ["code", "state"], additionalProperties: false, properties: { code: { type: "string", minLength: 1, maxLength: 2000 }, state: { type: "string", minLength: 1, maxLength: 2000 } } } }, config: { readOnlyGuard: true } }, async (request) => {
+    const actor = actorOf(request, "meeting:create");
+    if (!deps.zoom) throw zoomUnavailable();
+    const { code, state } = request.body as { code: string; state: string };
+    let ownerOfState: { tenantId: string; userId: string; workspaceId: string };
+    try {
+      ownerOfState = deps.zoom.verifyState(state);
+    } catch (error) {
+      throw new AppError({ code: "MEETING_INVALID_INPUT", message: error instanceof Error ? error.message.replace(/^[A-Z_]+:\s*/, "") : "Autorização inválida.", statusCode: 400, recoverable: false });
+    }
+    // A autorização só vale para quem a iniciou.
+    if (ownerOfState.tenantId !== actor.tenantId || ownerOfState.userId !== actor.userId) throw new NotFoundError("Autorização não encontrada.");
+    const result = await deps.zoom.complete({ code, state });
+    return successEnvelope({ connected: true, workspaceId: ownerOfState.workspaceId, ...result }, request.id);
+  });
+
+  app.post("/meetings/zoom/disconnect", { schema: { body: body([], {}) }, config: { readOnlyGuard: true } }, async (request) => {
+    const actor = actorOf(request, "meeting:read");
+    const { workspaceId } = request.body as { workspaceId: string };
+    if (!deps.zoom) throw zoomUnavailable();
+    await deps.zoom.disconnect({ tenantId: actor.tenantId, workspaceId, userId: actor.userId });
+    return successEnvelope({ disconnected: true }, request.id);
+  });
+
+  app.get("/meetings/zoom/recordings", { schema: { querystring: { type: "object", required: ["workspaceId"], properties: { ...WS, days: { type: "integer", minimum: 1, maximum: 90 } } } } }, async (request) => {
+    const actor = actorOf(request, "meeting:create");
+    const { workspaceId, days } = request.query as { workspaceId: string; days?: number };
+    if (!deps.zoom) throw zoomUnavailable();
+    return successEnvelope(await run(() => listZoomRecordings(zoomDeps(), actor, { workspaceId, ...(days ? { days } : {}) })), request.id);
+  });
+
+  app.post("/meetings/zoom/import", { schema: { body: body(["meetingUuid"], { meetingUuid: { type: "string", minLength: 1, maxLength: 200 } }) }, config: { readOnlyGuard: true } }, async (request, reply) => {
+    const actor = actorOf(request, "meeting:create");
+    const { workspaceId, meetingUuid } = request.body as { workspaceId: string; meetingUuid: string };
+    if (!deps.zoom) throw zoomUnavailable();
+    await ownWorkspace(actor, workspaceId);
+    reply.status(201);
+    return successEnvelope(await run(() => importZoomRecording(zoomDeps(), actor, { workspaceId, meetingUuid })), request.id);
   });
 
   // ── LGPD ──

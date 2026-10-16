@@ -331,3 +331,101 @@ test("exclusão definitiva (LGPD) apaga a reunião e a mídia, exigindo o títul
   const audit = await db.pool.query("select count(*)::int as n from meeting_audit_log where tenant_id = $1 and action = 'meeting.purged_permanently'", [ctx.tenantId]);
   assert.equal(audit.rows[0].n, 1);
 });
+
+test("Google Meet nativo: cliente lê registro, transcrição e nomes; agendador importa e gera análise", async () => {
+  const { GoogleMeetTranscriptClient } = await import("../dist/infrastructure/meetings/google-meet-transcript-client.js");
+  const { importDueNativeTranscripts, importNativeTranscriptForActor } = await import("../dist/application/meetings/meet-native-import.js");
+  const base = "https://meet.test/v2";
+  const t0 = Date.now() - 60 * 60_000;
+  const at = (seconds) => new Date(t0 + seconds * 1000).toISOString();
+  const calls = [];
+  const fakeFetch = async (url) => {
+    calls.push(url);
+    const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
+    if (url.includes("/conferenceRecords?")) {
+      assert.match(decodeURIComponent(url.replaceAll("+", " ")), /space\.meeting_code = "abc-defg-hij"/);
+      return json({ conferenceRecords: [{ name: "conferenceRecords/r1", startTime: at(0), endTime: at(1800) }] });
+    }
+    if (url.endsWith("/conferenceRecords/r1/transcripts")) return json({ transcripts: [{ name: "conferenceRecords/r1/transcripts/t1", state: "FILE_GENERATED" }] });
+    if (url.includes("/transcripts/t1/entries")) return json({ transcriptEntries: [
+      { participant: "conferenceRecords/r1/participants/p1", text: "Bom dia, vamos falar do orçamento.", languageCode: "pt-BR", startTime: at(5), endTime: at(9) },
+      { participant: "conferenceRecords/r1/participants/p2", text: "Temos cinquenta mil reais.", startTime: at(10), endTime: at(14) },
+    ] });
+    if (url.endsWith("/participants/p1")) return json({ signedinUser: { displayName: "Ana Vendas" } });
+    if (url.endsWith("/participants/p2")) return json({}, 404);
+    return json({}, 404);
+  };
+  const client = new GoogleMeetTranscriptClient({ apiBaseUrl: base, httpClient: fakeFetch });
+  const found = await client.findTranscript({ accessToken: "tok", meetingCode: "abc-defg-hij" });
+  assert.equal(found.entries.length, 2);
+  assert.deepEqual(found.entries.map((entry) => [entry.startMs, entry.speaker]), [[5000, "Ana Vendas"], [10_000, "Participante 1"]]);
+  assert.equal(found.language, "pt");
+  const denied = await new GoogleMeetTranscriptClient({ apiBaseUrl: base, httpClient: async () => ({ ok: false, status: 403, json: async () => ({ error: { message: "insufficient scopes" } }) }) }).findTranscript({ accessToken: "tok", meetingCode: "abc-defg-hij" });
+  assert.equal(denied.unavailable, "no_access");
+
+  const ctx = await setup("native");
+  await db.pool.query(`update meeting_jobs set status = 'cancelled' where status in ('queued', 'running')`);
+  const ended = new Date(Date.now() - 30 * 60_000);
+  const meeting = await ctx.deps.repository.create({ id: nextId("meeting"), tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, ownerUserId: "owner-1", createdByUserId: "owner-1", title: "Call nativa", source: "external_link", status: "scheduled", meetingUrl: "https://meet.google.com/abc-defg-hij", scheduledStartAt: new Date(ended.getTime() - 30 * 60_000).toISOString(), scheduledEndAt: ended.toISOString(), timezone: "America/Sao_Paulo", autoRecord: false, participants: [] });
+  const nativeDeps = { repository: ctx.deps.repository, insights: ctx.deps.insights, meet: client, tokens: { async getAccessToken() { return { ok: true, accessToken: "tok" }; } }, analysisEnabled: true, now: () => new Date() };
+
+  const outcomes = await importDueNativeTranscripts(nativeDeps, { limit: 10 });
+  assert.equal(outcomes.imported, 1, JSON.stringify(outcomes) + JSON.stringify((await db.pool.query("select * from meeting_native_imports")).rows));
+  const detail = await ctx.deps.repository.getDetail({ tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, meetingId: meeting.id });
+  assert.equal(detail.transcript.status, "completed");
+  assert.equal(detail.transcript.engine, "google-meet");
+  assert.equal(detail.status, "analyzing");
+  const segments = await ctx.deps.repository.getTranscriptSegments({ tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, meetingId: meeting.id });
+  assert.equal(segments[0].speaker, "Ana Vendas");
+  assert.deepEqual(await importDueNativeTranscripts(nativeDeps, { limit: 10 }), {}, "não importa de novo");
+  await assert.rejects(importNativeTranscriptForActor(nativeDeps, ctx.actor, { workspaceId: ctx.workspaceId, meetingId: meeting.id }), /já tem transcrição/);
+
+  const disconnected = await ctx.deps.repository.create({ id: nextId("meeting"), tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, ownerUserId: "owner-1", createdByUserId: "owner-1", title: "Sem Google", source: "external_link", status: "scheduled", meetingUrl: "https://meet.google.com/xyz-abcd-efg", timezone: "America/Sao_Paulo", autoRecord: false, participants: [] });
+  const outcome = await importNativeTranscriptForActor({ ...nativeDeps, tokens: { async getAccessToken() { return { ok: false, reason: "revoked", message: "x" }; } } }, ctx.actor, { workspaceId: ctx.workspaceId, meetingId: disconnected.id });
+  assert.equal(outcome.status, "not_connected");
+});
+
+test("Zoom: lê o VTT com nomes; importa a gravação usando a transcrição do Zoom (ou enfileira a nossa) e nunca duplica", async () => {
+  const { parseZoomVtt } = await import("../dist/domain/meetings/zoom-transcript.js");
+  const { importZoomRecording, listZoomRecordings } = await import("../dist/application/meetings/zoom-import.js");
+  const vtt = "WEBVTT\n\n1\n00:00:01.000 --> 00:00:04.500\nAna Lima: Bom dia a todos.\n\n2\n00:00:05.000 --> 00:00:09.000\nBruno: Vamos falar do contrato.\n\n3\n00:00:10.000 --> 00:00:12.000\nTexto sem nome\n";
+  assert.deepEqual(parseZoomVtt(vtt), [
+    { startMs: 1000, endMs: 4500, speaker: "Ana Lima", text: "Bom dia a todos." },
+    { startMs: 5000, endMs: 9000, speaker: "Bruno", text: "Vamos falar do contrato." },
+    { startMs: 10_000, endMs: 12_000, text: "Texto sem nome" },
+  ]);
+
+  const ctx = await setup("zoom");
+  await db.pool.query(`update meeting_jobs set status = 'cancelled' where status in ('queued', 'running')`);
+  const recordings = {
+    "uuid-with-vtt": { uuid: "uuid-with-vtt", topic: "Kickoff com cliente", start_time: new Date().toISOString(), duration: 30, recording_files: [{ file_type: "M4A", download_url: "https://zoom.test/a.m4a", status: "completed", file_size: 10 }, { file_type: "TRANSCRIPT", download_url: "https://zoom.test/t.vtt", status: "completed" }] },
+    "uuid-audio-only": { uuid: "uuid-audio-only", topic: "Daily", start_time: new Date().toISOString(), duration: 15, recording_files: [{ file_type: "MP4", recording_type: "shared_screen_with_speaker_view", download_url: "https://zoom.test/v.mp4", status: "completed", file_size: 10 }] },
+  };
+  const zoom = {
+    async getAccessToken() { return { ok: true, accessToken: "zt" }; },
+    async listRecordings() { return Object.values(recordings); },
+    async getMeetingRecordings({ meetingUuid }) { return recordings[meetingUuid]; },
+    async downloadToFile({ targetPath }) { await writeFile(targetPath, Buffer.from("ZOOM-AUDIO")); return 10; },
+    async downloadText() { return vtt; },
+  };
+  const deps = { ...ctx.deps, zoomAuth: zoom, zoom, maxUploadBytes: 1_000_000, analysisEnabled: true };
+
+  const withVtt = await importZoomRecording(deps, ctx.actor, { workspaceId: ctx.workspaceId, meetingUuid: "uuid-with-vtt" });
+  assert.equal(withVtt.title, "Kickoff com cliente");
+  assert.equal(withVtt.transcript.status, "completed");
+  assert.equal(withVtt.transcript.engine, "zoom");
+  assert.equal(withVtt.status, "analyzing");
+  assert.equal(withVtt.recordings[0].mimeType, "audio/mp4");
+  const segments = await ctx.deps.repository.getTranscriptSegments({ tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, meetingId: withVtt.id });
+  assert.equal(segments[0].speaker, "Ana Lima");
+
+  const again = await importZoomRecording(deps, ctx.actor, { workspaceId: ctx.workspaceId, meetingUuid: "uuid-with-vtt" });
+  assert.equal(again.id, withVtt.id, "importar de novo devolve a mesma reunião");
+
+  const audioOnly = await importZoomRecording(deps, ctx.actor, { workspaceId: ctx.workspaceId, meetingUuid: "uuid-audio-only" });
+  assert.equal(audioOnly.recordings[0].mimeType, "video/mp4");
+  assert.equal(audioOnly.transcript.status, "queued", "sem transcrição do Zoom, entra na transcrição do Vorix");
+
+  const listed = await listZoomRecordings(deps, ctx.actor, { workspaceId: ctx.workspaceId });
+  assert.deepEqual(listed.map((item) => [item.uuid, item.hasTranscript, item.importedMeetingId]), [["uuid-with-vtt", true, withVtt.id], ["uuid-audio-only", false, audioOnly.id]]);
+});

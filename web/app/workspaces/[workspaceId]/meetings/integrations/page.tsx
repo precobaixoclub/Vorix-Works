@@ -20,6 +20,7 @@ import {
   useGoogleSyncLog,
 } from "@/features/meetings/agenda";
 import { ApiError } from "@/lib/api-client";
+import { ZoomIntegrationCard } from "@/components/meetings/ZoomIntegrationCard";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -70,7 +71,7 @@ export default function MeetingsIntegrationsPage() {
   const data = status.data;
   return (
     <main className="mx-auto max-w-[1100px] space-y-6 px-3 py-5 sm:px-6 sm:py-8">
-      <PageHeader title="Integrações" description="Conecte a sua agenda para as reuniões aparecerem aqui e no Google ao mesmo tempo." />
+      <PageHeader title="Integrações" description="Conecte a sua agenda e as suas plataformas de reunião. Com o Google conectado, o Vorix também importa a transcrição nativa do Google Meet (contas Google Workspace com transcrição ligada) — sem robô." />
       {status.error ? <ErrorState error={status.error} onRetry={() => status.mutate()} /> : null}
       {!data && !status.error ? <Skeleton className="h-36 rounded-xl" /> : null}
       {data ? (
@@ -130,6 +131,7 @@ export default function MeetingsIntegrationsPage() {
         onConfirm={() => act(() => disconnectGoogleCalendar(workspace.id), "Google Calendar desconectado")}
         onCancel={() => setConfirmDisconnect(false)}
       />
+      <ZoomIntegrationCard workspaceId={workspace.id} canWrite={canWrite} />
     </main>
   );
 }

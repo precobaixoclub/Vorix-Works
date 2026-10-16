@@ -16,7 +16,7 @@ import { HumanIdentityDialog, RecorderIdentityPanel, announceRecordingRefusal } 
 import { PageHeader } from "@/components/PageHeader";
 import { Input } from "@/components/Field";
 import { AskMeetingPanel, ClipsAndCommentsPanel, CreateCrmTaskButton, CrmPanel, FollowUpPanel, KeywordHitsPanel, PurgeMeetingDialog, SharePanel, SpeakersPanel, SummaryTemplateControl, TemplateSections } from "@/components/meetings/MeetingIntelligence";
-import { useMeetingInsights, type MeetingInsights } from "@/features/meetings/intelligence";
+import { importGoogleMeetTranscript, useMeetingInsights, type MeetingInsights } from "@/features/meetings/intelligence";
 import { PageSubnav } from "@/components/PageSubnav";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
@@ -148,6 +148,22 @@ export default function MeetingDetailPage() {
     }
   }
 
+  /** Sem robô: lê a transcrição que o próprio Google Meet gerou (Google Workspace com transcrição ligada). */
+  async function importFromGoogleMeet() {
+    if (!meeting) return;
+    setBusy(true);
+    try {
+      const result = await importGoogleMeetTranscript(workspace.id, meeting.id);
+      if (result.status === "imported") toast.success("Transcrição do Google Meet importada", { description: "O resumo por IA está sendo gerado." });
+      else toast.info("Ainda não foi possível importar", { description: result.message });
+      await refreshAll();
+    } catch (cause) {
+      toast.error("Não foi possível importar", { description: cause instanceof ApiError || cause instanceof Error ? cause.message : undefined });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function reanalyze() {
     if (!meeting) return;
     setBusy(true);
@@ -202,6 +218,7 @@ export default function MeetingDetailPage() {
             <StatusPill status={meeting.status} />
             {canRecord && meeting.status === "scheduled" && meeting.meetingUrl ? <Button onClick={() => void record()} loading={busy} disabled={busy}>Gravar reunião</Button> : null}
             {canRecord && ["queued", "starting", "waiting_admission", "recording"].includes(meeting.status) ? <Button variant="secondary" onClick={stopRecording} loading={busy} disabled={busy}><Square className="h-4 w-4" aria-hidden="true" />Parar gravação</Button> : null}
+            {canRecord && meeting.meetingUrl && !meeting.transcript && !recording && !["queued", "starting", "waiting_admission", "recording"].includes(meeting.status) ? <Button variant="secondary" onClick={() => void importFromGoogleMeet()} loading={busy} disabled={busy}>Importar transcrição do Meet</Button> : null}
             {canAnalyze && recording ? <Button variant="secondary" onClick={retranscribe} loading={busy} disabled={busy}>Retranscrever</Button> : null}
             {canAnalyze && transcriptReady ? <Button variant="secondary" onClick={reanalyze} loading={busy} disabled={busy}>Reanalisar IA</Button> : null}
             {canManage ? <Button variant="secondary" onClick={() => setConfirmDelete(true)} disabled={busy}>Excluir</Button> : null}

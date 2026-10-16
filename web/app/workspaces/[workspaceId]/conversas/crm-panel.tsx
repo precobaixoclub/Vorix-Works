@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { BriefcaseBusiness, FileText } from "lucide-react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/Button";
@@ -15,7 +14,6 @@ import { RescheduleTaskPopover } from "@/components/crm/RescheduleTaskPopover";
 import { ErrorState } from "@/components/ErrorState";
 import { Input } from "@/components/Field";
 import { GuardedButton } from "@/components/GuardedButton";
-import { SearchableCombo } from "@/components/SearchableCombo";
 import { Spinner } from "@/components/Spinner";
 import { userLabel } from "@/components/UserPicker";
 import { toast } from "sonner";
@@ -160,7 +158,6 @@ function LinkedCrmSection({
   const openProposal = (proposals ?? []).find((proposal) => proposal.id === openProposalId);
   const [actionError, setActionError] = useState<string | undefined>();
   const [newTag, setNewTag] = useState("");
-  const [ownerInput, setOwnerInput] = useState("");
   const [generatingSuggestions, setGeneratingSuggestions] = useState(false);
   const [resolvingSuggestionId, setResolvingSuggestionId] = useState<string | undefined>();
 
@@ -172,12 +169,6 @@ function LinkedCrmSection({
     }
     setCreatingProposal(true);
   }
-
-  useEffect(() => {
-    if (contact?.ownerUserId) setOwnerInput(contact.ownerUserId);
-  }, [contact?.ownerUserId]);
-
-  const memberOptions = members.map((member) => ({ id: member.userId, label: `${member.name} · ${member.email}` }));
 
   async function handleGenerateSuggestions() {
     if (!canOperate) return;
@@ -222,12 +213,6 @@ function LinkedCrmSection({
     await mutateContact();
   }
 
-  async function handleChangeOwner() {
-    if (!canOperate || !ownerInput.trim()) return;
-    await updateContact(contactId, workspaceId, { ownerUserId: ownerInput.trim() });
-    await mutateContact();
-  }
-
   async function handleCompleteNextTask(task: Task) {
     if (!canOperate) return;
     setCompletingTaskId(task.id);
@@ -262,15 +247,7 @@ function LinkedCrmSection({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">COMERCIAL</h3>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
-          <GuardedButton
-            size="sm"
-            onClick={() => setCreatingDeal(true)}
-            allowed={canOperate}
-            blockedReason={RBAC_COPY.operateConversations}
-          >
-            <BriefcaseBusiness className="mr-1.5 h-4 w-4" />
-            Criar oportunidade
-          </GuardedButton>
+          {/* Criar oportunidade fica no cabeçalho da conversa (`CreateOpportunityButton`) — aqui é só leitura. */}
           {/* Jornada Comercial Fase 5, item 9 — a seção fica enxuta (Negócio atual/Próxima ação/
            * Proposta atual), mas precisa de UMA saída pro contexto completo: o Contact 360. */}
           <Button variant="ghost" size="sm" onClick={() => router.push(`/workspaces/${workspaceId}/contacts?contactId=${contactId}`)}>Abrir cliente</Button>
@@ -299,21 +276,6 @@ function LinkedCrmSection({
       <div>
         <p className="text-[11px] text-muted-foreground">Responsável</p>
         <p className="text-sm text-foreground">{ownerLabel(contact.ownerUserId, members)}</p>
-        <div className="mt-1 flex gap-1.5">
-          <SearchableCombo
-            items={memberOptions}
-            value={ownerInput}
-            onValueChange={setOwnerInput}
-            placeholder="Escolher responsável"
-            searchPlaceholder="Buscar por nome ou email..."
-            emptyText="Nenhum membro encontrado."
-            disabled={!canOperate}
-            className="min-w-0 flex-1"
-          />
-          <GuardedButton variant="secondary" onClick={handleChangeOwner} disabled={!ownerInput.trim()} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
-            Definir
-          </GuardedButton>
-        </div>
       </div>
 
       <div>
@@ -333,22 +295,9 @@ function LinkedCrmSection({
       <div>
         <p className="mb-1 text-[11px] text-muted-foreground">Oportunidade atual</p>
         {!currentDeal ? (
-          // Achado real (print do usuário: "criar uma oportunidade através de uma conversa não
-          // está intuitivo... ou até mesmo gerar uma proposta e fazer tudo junto") — duas opções
-          // claras lado a lado em vez de escondidas em seções diferentes: só a oportunidade (pra
-          // quem só quer registrar o lead agora) ou oportunidade + proposta num fluxo só
-          // (`requestCreateProposal` já encadeia os dois modais — nunca duplicado aqui).
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">Nenhuma oportunidade aberta.</p>
-            <GuardedButton className="w-full" onClick={() => setCreatingDeal(true)} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
-              <BriefcaseBusiness className="h-4 w-4" />
-              Criar oportunidade
-            </GuardedButton>
-            <GuardedButton variant="secondary" className="w-full" onClick={requestCreateProposal} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
-              <FileText className="h-4 w-4" />
-              Criar oportunidade e gerar proposta
-            </GuardedButton>
-          </div>
+          // Pedido do usuário: uma única ação "Criar oportunidade", no cabeçalho da conversa (fora
+          // de Detalhes); depois de criada o sistema pergunta se já quer gerar a proposta.
+          <p className="text-xs text-muted-foreground">Nenhuma oportunidade aberta. Use "Criar oportunidade" no topo da conversa.</p>
         ) : openDeals.length === 1 ? (
           <div className="space-y-2 rounded-lg border border-border/70 bg-muted/30 p-2.5">
             <div className="flex items-center justify-between gap-2">
@@ -364,7 +313,6 @@ function LinkedCrmSection({
             </p>
             <div className="flex flex-wrap gap-1.5 pt-1">
               <Button variant="secondary" size="sm" onClick={() => setOpenDealId(currentDeal.id)}>Abrir oportunidade</Button>
-              <Button variant="secondary" size="sm" onClick={requestCreateProposal}>Gerar proposta</Button>
             </div>
           </div>
         ) : (
@@ -444,17 +392,7 @@ function LinkedCrmSection({
       <div>
         <p className="mb-1 text-[11px] text-muted-foreground">Proposta</p>
         {!currentProposal ? (
-          <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">Nenhuma proposta ativa.</p>
-            <GuardedButton variant="secondary" className="w-full" onClick={requestCreateProposal} allowed={canOperate} blockedReason={RBAC_COPY.operateConversations}>
-              <FileText className="h-4 w-4" />
-              Gerar proposta
-            </GuardedButton>
-            {/* Mesmo esclarecimento pedido pelo usuário — o clique acima resolve os dois passos
-               sozinho quando ainda não existe negócio, nunca deixa a pessoa procurando onde
-               criar a oportunidade primeiro. */}
-            {dealChoice.mode === "none" ? <p className="text-[11px] text-muted-foreground">Sem oportunidade aberta ainda — ela é criada automaticamente antes da proposta.</p> : null}
-          </div>
+          <p className="text-xs text-muted-foreground">Nenhuma proposta ativa.</p>
         ) : (
           <div className="space-y-2 rounded-lg border border-border/70 bg-muted/30 p-2.5">
             <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-medium text-foreground">{currentProposal.title}</p><p className="text-xs font-semibold tabular-nums text-foreground">{formatCurrencyCents(currentProposal.totalCents, currentProposal.currency)}</p></div><Badge variant="secondary">{currentProposal.status === "viewed" ? "Visualizada" : currentProposal.status === "sent" ? "Enviada" : currentProposal.status === "accepted" ? "Aceita" : currentProposal.status === "rejected" ? "Recusada" : "Rascunho"}</Badge></div>

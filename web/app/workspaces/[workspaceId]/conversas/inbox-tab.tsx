@@ -99,6 +99,8 @@ import {
 import type { InboxAiFilter, InboxFilterSection, InboxFilterState, InboxPeriodFilter, InboxReadFilter } from "@/features/inbox/inbox-filters";
 import { CrmContextSection } from "./crm-panel";
 import { CloseConversationModal, csatLabel } from "./service-settings-panel";
+import { StickerPickerButton } from "./sticker-picker";
+import { CreateOpportunityButton } from "./create-opportunity-button";
 import { InboundAlertsToggle, NewConversationModal, QuickRepliesButton, QuickRepliesModal, useInboundAlerts, useQuickReplySuggestions } from "./inbox-essentials";
 import { ConversationMediaViewer, MessageMedia } from "./message-media";
 import { InboxAvatar } from "./inbox-avatar";
@@ -1828,6 +1830,7 @@ export function ConversationTimelinePane({
             >
               {isResolved ? "Reabrir" : "Finalizar"}
             </GuardedButton>
+            <CreateOpportunityButton workspaceId={workspaceId} conversation={conversation} canOperate={canOperate} onConversationChanged={onConversationChanged} />
           </div>
 
           <TagPicker workspaceId={workspaceId} conversation={conversation} onChanged={refreshThread} />
@@ -2067,6 +2070,7 @@ export function ConversationTimelinePane({
               </PopoverContent>
             </Popover> : null}
             <EmojiPickerButton disabled={!canOperate} onSelect={insertEmoji} />
+            {composerMode === "message" ? <StickerPickerButton workspaceId={workspaceId} conversationId={conversation.id} disabled={!canOperate || attaching} onSent={refreshThread} /> : null}
             {composerMode === "message" ? <QuickRepliesButton disabled={!canOperate} onOpen={() => setQuickRepliesOpen(true)} /> : null}
             <Textarea
               ref={textareaRef}
@@ -2247,7 +2251,33 @@ function ConversationActionsMenu({
           <p className="mt-1 text-xs text-muted-foreground">Comandos secundarios ficam aqui para manter a conversa limpa.</p>
         </div>
 
-        <div className="space-y-2">
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-foreground">Transferir atendimento para</p>
+          <div className="flex gap-2">
+            <SearchableCombo
+              items={transferOptions}
+              value={transferTarget}
+              onValueChange={onTransferTargetChange}
+              placeholder="Atendente"
+              searchPlaceholder="Buscar membro..."
+              emptyText="Nenhum outro membro."
+              disabled={!canOperate || Boolean(busyAction)}
+              className="min-w-0 flex-1"
+            />
+            <GuardedButton
+              variant="secondary"
+              allowed={canOperate}
+              blockedReason={RBAC_COPY.operateConversations}
+              disabled={Boolean(busyAction) || !transferTarget}
+              loading={busyAction === "transfer"}
+              onClick={() => onRunAction("transfer", () => transferInboxConversation(workspaceId, conversation.id, transferTarget))}
+            >
+              OK
+            </GuardedButton>
+          </div>
+        </div>
+
+        <div className="space-y-2 border-t border-border pt-3">
           <GuardedButton
             variant="secondary"
             className="w-full justify-start"
@@ -2275,31 +2305,6 @@ function ConversationActionsMenu({
           </Button>
         </div>
 
-        <div className="border-t border-border pt-3">
-          <p className="mb-1.5 text-xs font-medium text-foreground">Transferir para</p>
-          <div className="flex gap-2">
-            <SearchableCombo
-              items={transferOptions}
-              value={transferTarget}
-              onValueChange={onTransferTargetChange}
-              placeholder="Atendente"
-              searchPlaceholder="Buscar membro..."
-              emptyText="Nenhum outro membro."
-              disabled={!canOperate || Boolean(busyAction)}
-              className="min-w-0 flex-1"
-            />
-            <GuardedButton
-              variant="secondary"
-              allowed={canOperate}
-              blockedReason={RBAC_COPY.operateConversations}
-              disabled={Boolean(busyAction) || !transferTarget}
-              loading={busyAction === "transfer"}
-              onClick={() => onRunAction("transfer", () => transferInboxConversation(workspaceId, conversation.id, transferTarget))}
-            >
-              OK
-            </GuardedButton>
-          </div>
-        </div>
 
         {teams.length > 0 ? (
           <div className="border-t border-border pt-3">

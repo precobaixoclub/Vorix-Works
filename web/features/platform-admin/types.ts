@@ -43,6 +43,8 @@ export type TenantAiUsageMonthly = {
 };
 
 export type TenantAdminOverview = {
+  displayName?: string;
+  ownerEmail?: string;
   tenantId: string;
   billing: TenantBilling;
   currentPeriod: string;

@@ -88,6 +88,9 @@ export type TenantAiUsageMonthly = {
 /** Vista consolidada para o painel admin \u2014 um Tenant + billing + consumo do m\u00eas corrente. */
 export type TenantAdminOverview = {
   tenantId: string;
+  /** Nome da conta (1º workspace) e e-mail do dono — para o admin reconhecer a conta na lista. */
+  displayName?: string;
+  ownerEmail?: string;
   billing: TenantBilling;
   currentPeriod: string;
   currentUsage: TenantAiUsageMonthly;

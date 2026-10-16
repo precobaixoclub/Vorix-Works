@@ -92,8 +92,13 @@ export async function listTenantsOverview(
       const quotaUsagePercent = billing.monthlyCreditsQuota > 0
         ? Math.min(100, (usage.creditsConsumed / billing.monthlyCreditsQuota) * 100)
         : 0;
+      const [workspaces, members] = await Promise.all([deps.workspaceRepository.listByTenant(billing.tenantId).catch(() => []), deps.membershipRepository.listByTenant(billing.tenantId).catch(() => [])]);
+      const owner = members.find((member) => member.role === "owner") ?? members[0];
+      const ownerUser = owner ? await deps.userRepository.getById(owner.userId).catch(() => undefined) : undefined;
       return {
         tenantId: billing.tenantId,
+        ...(workspaces[0]?.name ? { displayName: workspaces[0].name } : {}),
+        ...(ownerUser?.email ? { ownerEmail: ownerUser.email } : {}),
         billing,
         currentPeriod: period,
         currentUsage: usage,

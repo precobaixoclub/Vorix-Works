@@ -160,8 +160,9 @@ export default function AdminTenantsPage() {
                 <TableRow key={row.tenantId}>
                   <TableCell>
                     <Link href={`/admin/tenants/${encodeURIComponent(row.tenantId)}`} className="font-medium text-primary hover:underline">
-                      {row.tenantId}
+                      {row.displayName ?? row.tenantId}
                     </Link>
+                    <span className="block text-xs text-muted-foreground">{[row.ownerEmail, row.displayName ? row.tenantId : undefined].filter(Boolean).join(" · ")}</span>
                   </TableCell>
                   <TableCell>
                     <PlanBadge code={row.billing.planCode} />

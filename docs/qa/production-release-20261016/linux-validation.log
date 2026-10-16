@@ -1,0 +1,2869 @@
+
+> zuno@1.0.0 typecheck
+> tsc --noEmit
+
+npm notice
+npm notice New major version of npm available! 10.8.2 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice
+
+> zuno@1.0.0 architecture:check
+> npm run build && node scripts/verify-skills-discovery.mjs && node scripts/check-legacy-chat-imports.mjs && node scripts/check-contract-drift.mjs && node scripts/check-ai-stack-isolation.mjs && node scripts/check-inbox-conversation-isolation.mjs && node scripts/check-crm-isolation.mjs && node scripts/check-planning-isolation.mjs && node scripts/check-runtime-isolation.mjs && node scripts/check-execution-isolation.mjs && node scripts/check-publication-isolation.mjs
+
+
+> zuno@1.0.0 build
+> npm run build:clean && tsc -p tsconfig.json && npm run build:copy-skill-manifests && npm run build:copy-remotion-assets && npm run build:copy-rendering-assets
+
+
+> zuno@1.0.0 build:clean
+> node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+
+
+> zuno@1.0.0 build:copy-skill-manifests
+> node scripts/copy-skill-manifests.mjs
+
+[copy-skill-manifests] 14 manifesto(s) copiado(s) para dist/skills.
+  - dist/skills/ana-social-publishing/skill.manifest.json
+  - dist/skills/bianca-social-media-design/skill.manifest.json
+  - dist/skills/bruno-video-script/skill.manifest.json
+  - dist/skills/diego-video-editing/skill.manifest.json
+  - dist/skills/eduardo-editorial-planning/skill.manifest.json
+  - dist/skills/joao-marketing-strategy/skill.manifest.json
+  - dist/skills/lucas-quality-review/skill.manifest.json
+  - dist/skills/maria-copywriting/skill.manifest.json
+  - dist/skills/motion-design-engine/skill.manifest.json
+  - dist/skills/nora-video-narration/skill.manifest.json
+  - dist/skills/pedro-image-generation/skill.manifest.json
+  - dist/skills/rafa-video-rendering/skill.manifest.json
+  - dist/skills/sofia-art-direction/skill.manifest.json
+  - dist/skills/vanessa-video-direction/skill.manifest.json
+
+> zuno@1.0.0 build:copy-remotion-assets
+> node scripts/copy-remotion-assets.mjs
+
+[copy-remotion-assets] 2 arquivo(s) .jsx copiado(s) para dist/infrastructure/motion-rendering/remotion.
+  - dist/infrastructure/motion-rendering/remotion/MotionSceneRenderer.jsx
+  - dist/infrastructure/motion-rendering/remotion/Root.jsx
+
+> zuno@1.0.0 build:copy-rendering-assets
+> node scripts/copy-rendering-assets.mjs
+
+[copy-rendering-assets] 2 fonte(s) .ttf copiada(s) para dist/infrastructure/rendering/assets.
+  - dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf
+  - dist/infrastructure/rendering/assets/geist-regular.ttf
+[verify-skills-discovery] 14 Skill(s) descoberta(s) em dist/skills.
+  - ana-social-publishing: estado=READY, capabilities=social_publishing
+  - bianca-social-media-design: estado=READY, capabilities=social_media_design
+  - bruno-video-script: estado=READY, capabilities=video_script
+  - diego-video-editing: estado=READY, capabilities=video_editing
+  - eduardo-editorial-planning: estado=READY, capabilities=editorial_planning
+  - joao-marketing-strategy: estado=READY, capabilities=marketing_strategy, strategy
+  - lucas-quality-review: estado=READY, capabilities=quality_review
+  - maria-copywriting: estado=READY, capabilities=copywriting
+  - motion-design-engine: estado=DISABLED, capabilities=motion_design
+  - nora-video-narration: estado=READY, capabilities=video_narration
+  - pedro-image-generation: estado=READY, capabilities=image_generation
+  - rafa-video-rendering: estado=READY, capabilities=video_rendering
+  - sofia-art-direction: estado=READY, capabilities=art_direction
+  - vanessa-video-direction: estado=READY, capabilities=video_direction
+[verify-skills-discovery] capability "editorial_planning" -> eduardo-editorial-planning (OK)
+[verify-skills-discovery] capability "copywriting" -> maria-copywriting (OK)
+[verify-skills-discovery] capability "strategy" -> joao-marketing-strategy (OK)
+[verify-skills-discovery] capability "marketing_strategy" -> joao-marketing-strategy (OK)
+[verify-skills-discovery] capability "art_direction" -> sofia-art-direction (OK)
+[verify-skills-discovery] capability "social_media_design" -> bianca-social-media-design (OK)
+[verify-skills-discovery] capability "image_generation" -> pedro-image-generation (OK)
+[verify-skills-discovery] capability "quality_review" -> lucas-quality-review (OK)
+[verify-skills-discovery] capability "social_publishing" -> ana-social-publishing (OK)
+[verify-skills-discovery] capability "video_script" -> bruno-video-script (OK)
+[verify-skills-discovery] capability "video_direction" -> vanessa-video-direction (OK)
+[verify-skills-discovery] capability "video_editing" -> diego-video-editing (OK)
+[verify-skills-discovery] capability "video_narration" -> nora-video-narration (OK)
+[verify-skills-discovery] capability "video_rendering" -> rafa-video-rendering (OK)
+
+[verify-skills-discovery] Descoberta real de Skills validada com sucesso.
+[check-legacy-chat-imports] OK — nenhum consumidor novo do Chat legado (1119 arquivos verificados).
+[check-contract-drift] OK — BriefingType (6 valor(es))
+[check-contract-drift] OK — BriefingStatus (6 valor(es))
+[check-contract-drift] OK — BriefingSource (7 valor(es))
+[check-contract-drift] OK — BriefingAnswerType (5 valor(es))
+[check-contract-drift] OK — PreparedCommandStatus (2 valor(es))
+[check-contract-drift] OK — ConversationState (7 valor(es))
+[check-contract-drift] OK — BriefingReadiness (10 campo(s))
+[check-contract-drift] OK — BriefingQuestionDto (6 campo(s))
+[check-contract-drift] OK — BriefingSummaryDto (8 campo(s))
+[check-contract-drift] OK — PreparedCommandSummaryDto (6 campo(s))
+[check-contract-drift] OK — PlanningStatus (4 valor(es))
+[check-contract-drift] OK — GraphType (1 valor(es))
+[check-contract-drift] OK — ValidationIssueSeverity (2 valor(es))
+[check-contract-drift] OK — ExecutionCapability (7 valor(es))
+[check-contract-drift] OK — TaskType (8 valor(es))
+[check-contract-drift] OK — TaskStatus (1 valor(es))
+[check-contract-drift] OK — PlanningEdgeKind (1 valor(es))
+[check-contract-drift] OK — PlanningArtifactType (5 valor(es))
+[check-contract-drift] OK — PlanningArtifactStatus (1 valor(es))
+[check-contract-drift] OK — ValidationReport (3 campo(s))
+[check-contract-drift] OK — Planning (17 campo(s))
+[check-contract-drift] OK — ExecutionTask (12 campo(s))
+[check-contract-drift] OK — TaskOutputPort (3 campo(s))
+[check-contract-drift] OK — TaskOutputContract (2 campo(s))
+[check-contract-drift] OK — TaskInputPort (4 campo(s))
+[check-contract-drift] OK — TaskInputContract (2 campo(s))
+[check-contract-drift] OK — PlanningNode (5 campo(s))
+[check-contract-drift] OK — PlanningEdge (6 campo(s))
+[check-contract-drift] OK — ExecutionGraph (5 campo(s))
+[check-contract-drift] OK — ArtifactContract (3 campo(s))
+[check-contract-drift] OK — PlanningArtifact (6 campo(s))
+[check-contract-drift] OK — PlanningDecision (6 campo(s))
+[check-contract-drift] OK — RuntimeState (5 valor(es))
+[check-contract-drift] OK — RuntimeValidationIssueSeverity (2 valor(es))
+[check-contract-drift] OK — RuntimeTaskStatus (1 valor(es))
+[check-contract-drift] OK — RuntimeArtifactStatus (1 valor(es))
+[check-contract-drift] OK — RuntimeSourceContext (6 campo(s))
+[check-contract-drift] OK — RuntimeValidationIssue (4 campo(s))
+[check-contract-drift] OK — RuntimeValidationReport (3 campo(s))
+[check-contract-drift] OK — RuntimePlan (13 campo(s))
+[check-contract-drift] OK — RuntimeTask (7 campo(s))
+[check-contract-drift] OK — RuntimeTaskOutputPort (7 campo(s))
+[check-contract-drift] OK — RuntimeTaskInputPort (8 campo(s))
+[check-contract-drift] OK — RuntimeBinding (7 campo(s))
+[check-contract-drift] OK — ArtifactSchema (3 campo(s))
+[check-contract-drift] OK — RuntimeArtifact (6 campo(s))
+[check-contract-drift] OK — RuntimeContext (4 campo(s))
+[check-contract-drift] OK — RuntimeDetail (6 campo(s))
+[check-contract-drift] OK — RuntimeBindingsView (3 campo(s))
+
+[check-contract-drift] 49 contrato(s) verificados — backend e frontend consistentes.
+[check-ai-stack-isolation] OK — Ícaro e AI Gateway permanecem arquiteturalmente separados (1119 arquivos verificados).
+[check-inbox-conversation-isolation] OK — inbox e conversation/chat permanecem arquiteturalmente separados (1119 arquivos verificados).
+[check-crm-isolation] OK — crm permanece arquiteturalmente separado de inbox/instagram-dm (1119 arquivos verificados).
+[check-planning-isolation] OK — Planning e o pipeline legado (Arthur/Helena/Caio/Skills) permanecem totalmente separados (1119 arquivos verificados).
+[check-runtime-isolation] OK — Runtime e o pipeline legado (Arthur/Helena/Caio/Skills) permanecem totalmente separados (1119 arquivos verificados).
+[check-execution-isolation] OK — Execution permanece isolado de Caio/Helena/Skills/AI/rede/publicação fora dos adaptadores de infrastructure.
+[check-publication-isolation] OK — Publication isolado de Execution/Helena/Skills/AI/providers reais.
+Release validation files: 56
+TAP version 13
+# Subtest: Smoke (FakeAiProvider, app Fastify real via app.inject): campanha incompleta aciona a IA de ponta a ponta e devolve aiAssisted
+ok 1 - Smoke (FakeAiProvider, app Fastify real via app.inject): campanha incompleta aciona a IA de ponta a ponta e devolve aiAssisted
+  ---
+  duration_ms: 16198.715327
+  ...
+# Subtest: Smoke (Gateway desligado, app Fastify real): comportamento idêntico à Sprint 07 — sem campos de IA
+ok 2 - Smoke (Gateway desligado, app Fastify real): comportamento idêntico à Sprint 07 — sem campos de IA
+  ---
+  duration_ms: 4125.309548
+  ...
+# Subtest: AiGateway: caminho feliz — resultado validado, execução persistida como succeeded, telemetria registrada, traceId == id persistido
+ok 3 - AiGateway: caminho feliz — resultado validado, execução persistida como succeeded, telemetria registrada, traceId == id persistido
+  ---
+  duration_ms: 9.324411
+  ...
+# Subtest: AiGateway: saída estrutural inválida vira invalid_output, nunca é retentada
+ok 4 - AiGateway: saída estrutural inválida vira invalid_output, nunca é retentada
+  ---
+  duration_ms: 1.527361
+  ...
+# Subtest: AiGateway: timeout (retentável) seguido de sucesso — retryCount registrado corretamente
+ok 5 - AiGateway: timeout (retentável) seguido de sucesso — retryCount registrado corretamente
+  ---
+  duration_ms: 152.711031
+  ...
+# Subtest: AiGateway: falha não-retentável (authentication_failed) nunca tenta de novo
+ok 6 - AiGateway: falha não-retentável (authentication_failed) nunca tenta de novo
+  ---
+  duration_ms: 0.694437
+  ...
+# Subtest: AiGateway: content_blocked nunca é retentado
+ok 7 - AiGateway: content_blocked nunca é retentado
+  ---
+  duration_ms: 0.550227
+  ...
+# Subtest: AiGateway: rate limit bloqueia ANTES de qualquer chamada ao provider
+ok 8 - AiGateway: rate limit bloqueia ANTES de qualquer chamada ao provider
+  ---
+  duration_ms: 0.441481
+  ...
+# Subtest: AiGateway: circuit breaker aberto depois de falhas consecutivas passa a bloquear sem chamar o provider
+ok 9 - AiGateway: circuit breaker aberto depois de falhas consecutivas passa a bloquear sem chamar o provider
+  ---
+  duration_ms: 183.677315
+  ...
+# Subtest: AiGateway: provider não configurado (sem credencial) nunca é chamado
+ok 10 - AiGateway: provider não configurado (sem credencial) nunca é chamado
+  ---
+  duration_ms: 0.581524
+  ...
+# Subtest: AiGateway: sanitização roda DENTRO do Gateway antes do provider — input desproporcionalmente grande é rejeitado sem nenhuma chamada real
+ok 11 - AiGateway: sanitização roda DENTRO do Gateway antes do provider — input desproporcionalmente grande é rejeitado sem nenhuma chamada real
+  ---
+  duration_ms: 0.953383
+  ...
+# Subtest: Model Registry: nenhum alias implícito — modelId sempre explícito e versionado
+ok 12 - Model Registry: nenhum alias implícito — modelId sempre explícito e versionado
+  ---
+  duration_ms: 1.829005
+  ...
+# Subtest: Model Registry: listActiveEntriesForCapability só devolve entradas ativas com a capability
+ok 13 - Model Registry: listActiveEntriesForCapability só devolve entradas ativas com a capability
+  ---
+  duration_ms: 0.222425
+  ...
+# Subtest: AiModelRouter: operação não suportada devolve not_configured
+ok 14 - AiModelRouter: operação não suportada devolve not_configured
+  ---
+  duration_ms: 0.40606
+  ...
+# Subtest: AiModelRouter: capability da política incompatível com a operação é invalid_request
+ok 15 - AiModelRouter: capability da política incompatível com a operação é invalid_request
+  ---
+  duration_ms: 0.231353
+  ...
+# Subtest: AiModelRouter: provider ausente (sem binding configurado) devolve not_configured
+ok 16 - AiModelRouter: provider ausente (sem binding configurado) devolve not_configured
+  ---
+  duration_ms: 0.220406
+  ...
+# Subtest: AiModelRouter: provider configurado mas não presente na lista de providers devolve not_configured
+ok 17 - AiModelRouter: provider configurado mas não presente na lista de providers devolve not_configured
+  ---
+  duration_ms: 0.178605
+  ...
+# Subtest: AiModelRouter: circuit breaker aberto devolve provider_unavailable (retryable)
+ok 18 - AiModelRouter: circuit breaker aberto devolve provider_unavailable (retryable)
+  ---
+  duration_ms: 0.346878
+  ...
+# Subtest: AiModelRouter: binding para modelo fora do allowedModels é policy_violation
+ok 19 - AiModelRouter: binding para modelo fora do allowedModels é policy_violation
+  ---
+  duration_ms: 0.223548
+  ...
+# Subtest: AiModelRouter: caminho feliz devolve exatamente um candidato
+ok 20 - AiModelRouter: caminho feliz devolve exatamente um candidato
+  ---
+  duration_ms: 0.373555
+  ...
+# Subtest: Structured output: resposta válida passa na validação estrutural
+ok 21 - Structured output: resposta válida passa na validação estrutural
+  ---
+  duration_ms: 2.872608
+  ...
+# Subtest: Structured output: JSON com formato errado (não é objeto) falha estruturalmente
+ok 22 - Structured output: JSON com formato errado (não é objeto) falha estruturalmente
+  ---
+  duration_ms: 0.814528
+  ...
+# Subtest: Structured output: schemaVersion inválida falha estruturalmente
+ok 23 - Structured output: schemaVersion inválida falha estruturalmente
+  ---
+  duration_ms: 0.489101
+  ...
+# Subtest: Structured output: campo desconhecido no objeto (Zod strict) falha estruturalmente
+ok 24 - Structured output: campo desconhecido no objeto (Zod strict) falha estruturalmente
+  ---
+  duration_ms: 0.469043
+  ...
+# Subtest: Structured output: candidate com propriedade extra (Zod strict no nível do candidato) falha estruturalmente
+ok 25 - Structured output: candidate com propriedade extra (Zod strict no nível do candidato) falha estruturalmente
+  ---
+  duration_ms: 0.472962
+  ...
+# Subtest: Structured output: confidence fora de [0,1] falha estruturalmente
+ok 26 - Structured output: confidence fora de [0,1] falha estruturalmente
+  ---
+  duration_ms: 0.485733
+  ...
+# Subtest: Structured output: rationaleCode fora do enum fechado falha estruturalmente
+ok 27 - Structured output: rationaleCode fora do enum fechado falha estruturalmente
+  ---
+  duration_ms: 0.446426
+  ...
+# Subtest: Semântica: campo desconhecido no schema ativo é descartado (não invalida o lote inteiro)
+ok 28 - Semântica: campo desconhecido no schema ativo é descartado (não invalida o lote inteiro)
+  ---
+  duration_ms: 0.564682
+  ...
+# Subtest: Semântica: acceptedValue inválido para campo enum é descartado
+ok 29 - Semântica: acceptedValue inválido para campo enum é descartado
+  ---
+  duration_ms: 0.410595
+  ...
+# Subtest: Semântica: evidence que não aparece no texto original (alucinação) é descartada
+ok 30 - Semântica: evidence que não aparece no texto original (alucinação) é descartada
+  ---
+  duration_ms: 0.54972
+  ...
+# Subtest: Semântica: quando NADA sobra depois de filtrar, ainda é 'valid' (só um turno sem novidade) — nunca bloqueia o fluxo
+ok 31 - Semântica: quando NADA sobra depois de filtrar, ainda é 'valid' (só um turno sem novidade) — nunca bloqueia o fluxo
+  ---
+  duration_ms: 1.205086
+  ...
+# Subtest: Semântica: ambiguidade explícita nunca é tratada como erro — sobrevive à validação
+ok 32 - Semântica: ambiguidade explícita nunca é tratada como erro — sobrevive à validação
+  ---
+  duration_ms: 0.445724
+  ...
+# Subtest: Sanitizer: remove campos sensíveis por nome (senha, token, storageRef...)
+ok 33 - Sanitizer: remove campos sensíveis por nome (senha, token, storageRef...)
+  ---
+  duration_ms: 0.686761
+  ...
+# Subtest: Sanitizer: isola workspace — um workspaceId diferente do esperado é removido com alerta
+ok 34 - Sanitizer: isola workspace — um workspaceId diferente do esperado é removido com alerta
+  ---
+  duration_ms: 0.231471
+  ...
+# Subtest: Sanitizer: NUNCA trunca — input acima do limite é rejeitado inteiro
+ok 35 - Sanitizer: NUNCA trunca — input acima do limite é rejeitado inteiro
+  ---
+  duration_ms: 0.184359
+  ...
+# Subtest: Sanitizer: nada sobra depois de remover tudo sensível é rejeitado
+ok 36 - Sanitizer: nada sobra depois de remover tudo sensível é rejeitado
+  ---
+  duration_ms: 0.204698
+  ...
+# Subtest: Post-render check: detecta padrão de vazamento (bearer token) mesmo depois da sanitização de entrada
+ok 37 - Post-render check: detecta padrão de vazamento (bearer token) mesmo depois da sanitização de entrada
+  ---
+  duration_ms: 0.479493
+  ...
+# Subtest: Post-render check: prompt renderizado gigante é rejeitado mesmo com input sanitizado pequeno
+ok 38 - Post-render check: prompt renderizado gigante é rejeitado mesmo com input sanitizado pequeno
+  ---
+  duration_ms: 0.184834
+  ...
+# Subtest: AiCostCalculator: usa pricing versionado do Model Registry, considera tokens em cache
+ok 39 - AiCostCalculator: usa pricing versionado do Model Registry, considera tokens em cache
+  ---
+  duration_ms: 0.295469
+  ...
+# Subtest: AiUsage: providerReported=false quando o provider não informa tokens
+ok 40 - AiUsage: providerReported=false quando o provider não informa tokens
+  ---
+  duration_ms: 0.258364
+  ...
+# Subtest: Retry policy: só timeout/rate_limited/provider_unavailable são retentáveis por padrão
+ok 41 - Retry policy: só timeout/rate_limited/provider_unavailable são retentáveis por padrão
+  ---
+  duration_ms: 0.194766
+  ...
+# Subtest: Retry policy: backoff cresce com o número de tentativas
+ok 42 - Retry policy: backoff cresce com o número de tentativas
+  ---
+  duration_ms: 0.196137
+  ...
+# Subtest: Circuit breaker: abre depois do limiar de falhas consecutivas e bloqueia; sucesso fecha de novo
+ok 43 - Circuit breaker: abre depois do limiar de falhas consecutivas e bloqueia; sucesso fecha de novo
+  ---
+  duration_ms: 0.483455
+  ...
+# Subtest: Circuit breaker: half_open depois do cooldown, mas falha nele reabre imediatamente
+ok 44 - Circuit breaker: half_open depois do cooldown, mas falha nele reabre imediatamente
+  ---
+  duration_ms: 0.351261
+  ...
+# Subtest: Rate limiter: bloqueia depois do limite na janela, libera fora dela
+ok 45 - Rate limiter: bloqueia depois do limite na janela, libera fora dela
+  ---
+  duration_ms: 0.446177
+  ...
+# Subtest: AiExtractionDecision: feature desligada nunca chama IA, mesmo com lacunas
+ok 46 - AiExtractionDecision: feature desligada nunca chama IA, mesmo com lacunas
+  ---
+  duration_ms: 0.211435
+  ...
+# Subtest: AiExtractionDecision: extração determinística suficiente (nada faltando) não chama IA
+ok 47 - AiExtractionDecision: extração determinística suficiente (nada faltando) não chama IA
+  ---
+  duration_ms: 0.154919
+  ...
+# Subtest: AiExtractionDecision: NÃO é restrita a campo obrigatório faltante — ambiguidade e opcional de alto impacto também acionam
+ok 48 - AiExtractionDecision: NÃO é restrita a campo obrigatório faltante — ambiguidade e opcional de alto impacto também acionam
+  ---
+  duration_ms: 0.221453
+  ...
+# Subtest: CATÁLOGO: Meetings tem preço oficial (R$147 com 1 simultânea, +R$67 por adicional) e entra nos planos pagos
+ok 49 - CATÁLOGO: Meetings tem preço oficial (R$147 com 1 simultânea, +R$67 por adicional) e entra nos planos pagos
+  ---
+  duration_ms: 12767.167112
+  ...
+# Subtest: CHECKOUT: capacidade do configurador vira plano + adicionais com quantidade, 7 dias de teste e pedido gravado
+ok 50 - CHECKOUT: capacidade do configurador vira plano + adicionais com quantidade, 7 dias de teste e pedido gravado
+  ---
+  duration_ms: 65.941543
+  ...
+# Subtest: CHECKOUT: quem acabou de criar a conta (trial) mantém os dias que restam; trial vencido paga na hora
+ok 51 - CHECKOUT: quem acabou de criar a conta (trial) mantém os dias que restam; trial vencido paga na hora
+  ---
+  duration_ms: 36.214089
+  ...
+# Subtest: MEETINGS: checkout e compra de adicional bloqueados enquanto o gate comercial estiver fechado
+ok 52 - MEETINGS: checkout e compra de adicional bloqueados enquanto o gate comercial estiver fechado
+  ---
+  duration_ms: 45.416044
+  ...
+# Subtest: WEBHOOK: aplica exatamente o pedido (quantidades), é idempotente sob reenvio e libera a capacidade
+ok 53 - WEBHOOK: aplica exatamente o pedido (quantidades), é idempotente sob reenvio e libera a capacidade
+  ---
+  duration_ms: 114.532793
+  ...
+# Subtest: WEBHOOK + MEETINGS: assinatura com Meetings libera o acesso com as gravações simultâneas; cancelamento revoga; concessão interna intocada
+ok 54 - WEBHOOK + MEETINGS: assinatura com Meetings libera o acesso com as gravações simultâneas; cancelamento revoga; concessão interna intocada
+  ---
+  duration_ms: 123.130709
+  ...
+# Subtest: MERCADO PAGO: checkout com teste envia free_trial em dias; sem teste, não envia
+ok 55 - MERCADO PAGO: checkout com teste envia free_trial em dias; sem teste, não envia
+  ---
+  duration_ms: 1.367124
+  ...
+# Subtest: WEBHOOK: pagar um checkout antigo (já substituído) nunca aplica o pedido do checkout novo
+ok 56 - WEBHOOK: pagar um checkout antigo (já substituído) nunca aplica o pedido do checkout novo
+  ---
+  duration_ms: 83.896791
+  ...
+# Subtest: CHECKOUT: capacidade junto com adicionais avulsos é recusada
+ok 57 - CHECKOUT: capacidade junto com adicionais avulsos é recusada
+  ---
+  duration_ms: 6.403172
+  ...
+# Subtest: startCheckout: devolve URL de checkout e NUNCA cria uma Subscription
+ok 58 - startCheckout: devolve URL de checkout e NUNCA cria uma Subscription
+  ---
+  duration_ms: 12538.174047
+  ...
+# Subtest: startCheckout: plano ENTERPRISE não é self-service
+ok 59 - startCheckout: plano ENTERPRISE não é self-service
+  ---
+  duration_ms: 1.496269
+  ...
+# Subtest: startCheckout: tenant já com assinatura ativa não pode iniciar novo checkout
+ok 60 - startCheckout: tenant já com assinatura ativa não pode iniciar novo checkout
+  ---
+  duration_ms: 11.018142
+  ...
+# Subtest: startCheckout: add-on fora do plano é rejeitado
+ok 61 - startCheckout: add-on fora do plano é rejeitado
+  ---
+  duration_ms: 5.093353
+  ...
+# Subtest: webhook checkout.session.completed: cria a Subscription real e recalcula tenant_billing a partir dela
+ok 62 - webhook checkout.session.completed: cria a Subscription real e recalcula tenant_billing a partir dela
+  ---
+  duration_ms: 29.773853
+  ...
+# Subtest: webhook: reentrega do MESMO evento nunca reaplica o efeito colateral (idempotência)
+ok 63 - webhook: reentrega do MESMO evento nunca reaplica o efeito colateral (idempotência)
+  ---
+  duration_ms: 21.701613
+  ...
+# Subtest: webhook: tipo de evento desconhecido é ignorado sem erro
+ok 64 - webhook: tipo de evento desconhecido é ignorado sem erro
+  ---
+  duration_ms: 3.953993
+  ...
+# Subtest: webhook customer.subscription.deleted: cancela SEM apagar nada, e uma reentrega não regride o estado
+ok 65 - webhook customer.subscription.deleted: cancela SEM apagar nada, e uma reentrega não regride o estado
+  ---
+  duration_ms: 64.603615
+  ...
+# Subtest: webhook invoice.payment_failed: marca past_due e registra a fatura, sem apagar nada
+ok 66 - webhook invoice.payment_failed: marca past_due e registra a fatura, sem apagar nada
+  ---
+  duration_ms: 66.820165
+  ...
+# Subtest: Migrations 0103-0109 aplicam sem erro; catálogo de planos e add-ons semeado
+ok 67 - Migrations 0103-0109 aplicam sem erro; catálogo de planos e add-ons semeado
+  ---
+  duration_ms: 12420.463381
+  ...
+# Subtest: Entitlements: tenant sem Subscription resolve como virtual, a partir de tenant_billing.plan_code (FREE)
+ok 68 - Entitlements: tenant sem Subscription resolve como virtual, a partir de tenant_billing.plan_code (FREE)
+  ---
+  duration_ms: 31.659681
+  ...
+# Subtest: Entitlements: uma Subscription real (PRO) muda virtual para false e usa os limites do PlanVersion dela
+ok 69 - Entitlements: uma Subscription real (PRO) muda virtual para false e usa os limites do PlanVersion dela
+  ---
+  duration_ms: 40.455701
+  ...
+# Subtest: Entitlements: add-on de usuário soma sobre o limite base do plano
+ok 70 - Entitlements: add-on de usuário soma sobre o limite base do plano
+  ---
+  duration_ms: 17.604301
+  ...
+# Subtest: Limite: assertWithinLimit lança USAGE_LIMIT_REACHED quando o uso real atinge o teto do plano
+ok 71 - Limite: assertWithinLimit lança USAGE_LIMIT_REACHED quando o uso real atinge o teto do plano
+  ---
+  duration_ms: 100.683464
+  ...
+# Subtest: Versionamento: publicar uma nova versão nunca sobrescreve nem afeta quem já está na anterior
+ok 72 - Versionamento: publicar uma nova versão nunca sobrescreve nem afeta quem já está na anterior
+  ---
+  duration_ms: 8.007575
+  ...
+# Subtest: Webhook de pagamento: registrar o mesmo (provider, providerEventId) duas vezes é idempotente
+ok 73 - Webhook de pagamento: registrar o mesmo (provider, providerEventId) duas vezes é idempotente
+  ---
+  duration_ms: 9.65539
+  ...
+# Subtest: ResourceCounterPort: conta usuários e workspaces reais do tenant (nunca uma lista paginada)
+ok 74 - ResourceCounterPort: conta usuários e workspaces reais do tenant (nunca uma lista paginada)
+  ---
+  duration_ms: 28.209151
+  ...
+# Subtest: SandboxBillingProvider cumpre o contrato do BillingProviderPort sem nenhuma chamada externa
+ok 75 - SandboxBillingProvider cumpre o contrato do BillingProviderPort sem nenhuma chamada externa
+  ---
+  duration_ms: 1.610296
+  ...
+# Subtest: POST /v1/billing/cancel + /v1/billing/reactivate: ciclo completo via HTTP
+ok 76 - POST /v1/billing/cancel + /v1/billing/reactivate: ciclo completo via HTTP
+  ---
+  duration_ms: 13441.75156
+  ...
+# Subtest: GET /v1/billing/downgrade-preview + POST /v1/billing/change-plan: downgrade com overage responde 409 com detalhe
+ok 77 - GET /v1/billing/downgrade-preview + POST /v1/billing/change-plan: downgrade com overage responde 409 com detalhe
+  ---
+  duration_ms: 2656.382823
+  ...
+# Subtest: POST /v1/billing/addons: compra e remove um add-on via HTTP
+ok 78 - POST /v1/billing/addons: compra e remove um add-on via HTTP
+  ---
+  duration_ms: 1916.19962
+  ...
+# Subtest: changePlan: upgrade START -> PRO troca o planVersionId e recalcula tenant_billing
+ok 79 - changePlan: upgrade START -> PRO troca o planVersionId e recalcula tenant_billing
+  ---
+  duration_ms: 10550.918212
+  ...
+# Subtest: changePlan: downgrade bloqueado quando o uso atual excede o novo teto (nenhuma chamada ao gateway, nenhum dado apagado)
+ok 80 - changePlan: downgrade bloqueado quando o uso atual excede o novo teto (nenhuma chamada ao gateway, nenhum dado apagado)
+  ---
+  duration_ms: 308.078383
+  ...
+# Subtest: addons: comprar soma sobre o limite base; remover volta ao limite original
+ok 81 - addons: comprar soma sobre o limite base; remover volta ao limite original
+  ---
+  duration_ms: 94.460303
+  ...
+# Subtest: addons: add-on fora da lista permitida do plano é rejeitado
+ok 82 - addons: add-on fora da lista permitida do plano é rejeitado
+  ---
+  duration_ms: 57.018429
+  ...
+# Subtest: cancelSubscriptionSelfService: sempre cancel_at_period_end, nunca cancelamento imediato
+ok 83 - cancelSubscriptionSelfService: sempre cancel_at_period_end, nunca cancelamento imediato
+  ---
+  duration_ms: 24.208031
+  ...
+# Subtest: reactivateSubscription: desfaz o cancel_at_period_end enquanto a assinatura ainda não terminou
+ok 84 - reactivateSubscription: desfaz o cancel_at_period_end enquanto a assinatura ainda não terminou
+  ---
+  duration_ms: 79.657808
+  ...
+# Subtest: reactivateSubscription: rejeita quando a assinatura não está agendada para cancelamento
+ok 85 - reactivateSubscription: rejeita quando a assinatura não está agendada para cancelamento
+  ---
+  duration_ms: 10.853046
+  ...
+# Subtest: modo somente-leitura: assinatura past_due bloqueia assertCanUse/assertWithinLimit, mas nunca apaga nem esconde o estado real
+ok 86 - modo somente-leitura: assinatura past_due bloqueia assertCanUse/assertWithinLimit, mas nunca apaga nem esconde o estado real
+  ---
+  duration_ms: 86.56062
+  ...
+# Subtest: GET /v1/billing/overview: tenant virtual (sem Subscription real) devolve o FREE com consumo real
+ok 87 - GET /v1/billing/overview: tenant virtual (sem Subscription real) devolve o FREE com consumo real
+  ---
+  duration_ms: 13257.668258
+  ...
+# Subtest: GET /v1/billing/overview: assinante real PRO com add-on mostra plano, add-ons e forma de pagamento sandbox
+ok 88 - GET /v1/billing/overview: assinante real PRO com add-on mostra plano, add-ons e forma de pagamento sandbox
+  ---
+  duration_ms: 2539.242889
+  ...
+# Subtest: POST /v1/billing/portal: sem providerCustomerId responde 400 com mensagem clara
+ok 89 - POST /v1/billing/portal: sem providerCustomerId responde 400 com mensagem clara
+  ---
+  duration_ms: 1908.098254
+  ...
+# Subtest: get(): singleton sempre existe (migração 0134), sem nenhuma credencial configurada
+ok 90 - get(): singleton sempre existe (migração 0134), sem nenhuma credencial configurada
+  ---
+  duration_ms: 8401.289793
+  ...
+# Subtest: update(): grava access token/webhook secret criptografados, expõe só last4; notification URL fica em claro (não é segredo)
+ok 91 - update(): grava access token/webhook secret criptografados, expõe só last4; notification URL fica em claro (não é segredo)
+  ---
+  duration_ms: 12.77347
+  ...
+# Subtest: update(): undefined mantém o valor atual; string vazia remove
+ok 92 - update(): undefined mantém o valor atual; string vazia remove
+  ---
+  duration_ms: 10.055933
+  ...
+# Subtest: updateBillingProviderSettings: rejeita Notification URL que não comece com https://
+ok 93 - updateBillingProviderSettings: rejeita Notification URL que não comece com https://
+  ---
+  duration_ms: 1.06995
+  ...
+# Subtest: getBillingProviderSettings: nunca devolve os segredos em claro, só has*/last4
+ok 94 - getBillingProviderSettings: nunca devolve os segredos em claro, só has*/last4
+  ---
+  duration_ms: 6.943138
+  ...
+# Subtest: MercadoPagoBillingProvider: credencial vinda de closure é cacheada por TTL, nunca reconsultada a cada chamada de API
+ok 95 - MercadoPagoBillingProvider: credencial vinda de closure é cacheada por TTL, nunca reconsultada a cada chamada de API
+  ---
+  duration_ms: 0.800629
+  ...
+# Subtest: MercadoPagoBillingProvider: credencial vinda de string fixa (env, comportamento histórico) funciona sem nenhuma chamada assíncrona extra
+ok 96 - MercadoPagoBillingProvider: credencial vinda de string fixa (env, comportamento histórico) funciona sem nenhuma chamada assíncrona extra
+  ---
+  duration_ms: 0.339056
+  ...
+# Subtest: POST /webhooks/billing/sandbox: checkout.session.completed ativa a Subscription real; reentrega responde 200 sem reaplicar
+ok 97 - POST /webhooks/billing/sandbox: checkout.session.completed ativa a Subscription real; reentrega responde 200 sem reaplicar
+  ---
+  duration_ms: 11790.824614
+  ...
+# Subtest: POST /webhooks/billing/sandbox: rota fica FORA do prefixo /v1
+ok 98 - POST /webhooks/billing/sandbox: rota fica FORA do prefixo /v1
+  ---
+  duration_ms: 1251.632499
+  ...
+# Subtest: Vincular um inbox_contact (WhatsApp) a um Contact do CRM aparece em InboxContact.crmContactId e na listagem de conversas
+ok 99 - Vincular um inbox_contact (WhatsApp) a um Contact do CRM aparece em InboxContact.crmContactId e na listagem de conversas
+  ---
+  duration_ms: 9917.777021
+  ...
+# Subtest: Negócios filtrados por contactId retornam só os negócios daquele contato
+ok 100 - Negócios filtrados por contactId retornam só os negócios daquele contato
+  ---
+  duration_ms: 80.011397
+  ...
+# Subtest: Ponte automática: conversa direta com sinal mínimo de mensagens cria e vincula um Contact do CRM automaticamente
+ok 101 - Ponte automática: conversa direta com sinal mínimo de mensagens cria e vincula um Contact do CRM automaticamente
+  ---
+  duration_ms: 87.14192
+  ...
+# Subtest: Ponte automática: NUNCA dispara antes do sinal mínimo de mensagens (evita virar lixo por uma mensagem isolada)
+ok 102 - Ponte automática: NUNCA dispara antes do sinal mínimo de mensagens (evita virar lixo por uma mensagem isolada)
+  ---
+  duration_ms: 25.97716
+  ...
+# Subtest: Ponte automática: idempotente — chamar duas vezes para o mesmo InboxContact nunca cria um segundo Contact
+ok 103 - Ponte automática: idempotente — chamar duas vezes para o mesmo InboxContact nunca cria um segundo Contact
+  ---
+  duration_ms: 73.635738
+  ...
+# [commercial-bridge] corrida detectada ao vincular InboxContact "contact-mvaylqif-x4s3kw" — identidade já pertencia ao Contact "contact-mvaylqk8-4a63o5"; usando o vencedor da corrida, Contact "contact-mvaylqkf-xlxo6m" fica órfão (sem identidade, nunca fundido automaticamente).
+# Subtest: Ponte automática: simula uma corrida concorrente (duas chamadas em paralelo) — só um Contact sobrevive, nunca duas identidades divergentes
+ok 104 - Ponte automática: simula uma corrida concorrente (duas chamadas em paralelo) — só um Contact sobrevive, nunca duas identidades divergentes
+  ---
+  duration_ms: 123.121304
+  ...
+# Subtest: Ponte automática: contato de GRUPO nunca é chamado (grupo nunca tem InboxContact) — checagem estrutural do gatilho
+ok 105 - Ponte automática: contato de GRUPO nunca é chamado (grupo nunca tem InboxContact) — checagem estrutural do gatilho
+  ---
+  duration_ms: 57.901118
+  ...
+# Subtest: Ponte automática: multi-tenant — mesmo número de telefone em tenants diferentes nunca se cruza
+ok 106 - Ponte automática: multi-tenant — mesmo número de telefone em tenants diferentes nunca se cruza
+  ---
+  duration_ms: 118.270495
+  ...
+# Subtest: Inbound com IA ativa gera exatamente uma resposta, que passa pela fila outbound (nunca chama o provider diretamente)
+ok 107 - Inbound com IA ativa gera exatamente uma resposta, que passa pela fila outbound (nunca chama o provider diretamente)
+  ---
+  duration_ms: 10403.444105
+  ...
+# Subtest: Inbound com IA pausada não gera nenhuma resposta
+ok 108 - Inbound com IA pausada não gera nenhuma resposta
+  ---
+  duration_ms: 98.06535
+  ...
+# Subtest: Conversa assumida por humano (mesmo sem take-over, atribuição direta) nunca gera resposta de IA
+ok 109 - Conversa assumida por humano (mesmo sem take-over, atribuição direta) nunca gera resposta de IA
+  ---
+  duration_ms: 125.088742
+  ...
+# Subtest: CRÍTICO: humano assume ENQUANTO a IA está gerando — a resposta é descartada e nunca entra na outbound queue
+ok 110 - CRÍTICO: humano assume ENQUANTO a IA está gerando — a resposta é descartada e nunca entra na outbound queue
+  ---
+  duration_ms: 361.301297
+  ...
+# Subtest: Evento inbound DUPLICADO (reentrega) nunca gera duas respostas de IA
+ok 111 - Evento inbound DUPLICADO (reentrega) nunca gera duas respostas de IA
+  ---
+  duration_ms: 214.947248
+  ...
+# Subtest: CONCORRÊNCIA: duas mensagens simultâneas na mesma conversa nunca disparam gerações de IA em paralelo
+ok 112 - CONCORRÊNCIA: duas mensagens simultâneas na mesma conversa nunca disparam gerações de IA em paralelo
+  ---
+  duration_ms: 419.784778
+  ...
+# Subtest: Restart/reentrega: duas invocações concorrentes de maybeGenerateAiResponse para a MESMA mensagem já persistida nunca duplicam a resposta
+ok 113 - Restart/reentrega: duas invocações concorrentes de maybeGenerateAiResponse para a MESMA mensagem já persistida nunca duplicam a resposta
+  ---
+  duration_ms: 317.615325
+  ...
+# Subtest: Provider de IA indisponível (timeout/falha) nunca derruba a Inbox — mensagem fica disponível para atendimento manual
+ok 114 - Provider de IA indisponível (timeout/falha) nunca derruba a Inbox — mensagem fica disponível para atendimento manual
+  ---
+  duration_ms: 77.737951
+  ...
+# Subtest: Reativação da IA não responde retroativamente ao backlog acumulado durante a pausa — só mensagens novas
+ok 115 - Reativação da IA não responde retroativamente ao backlog acumulado durante a pausa — só mensagens novas
+  ---
+  duration_ms: 310.278198
+  ...
+# Subtest: Isolamento cross-tenant: a IA só recebe contexto do MESMO tenant/workspace/conversa — nunca mistura conversas de tenants diferentes
+ok 116 - Isolamento cross-tenant: a IA só recebe contexto do MESMO tenant/workspace/conversa — nunca mistura conversas de tenants diferentes
+  ---
+  duration_ms: 360.767978
+  ...
+# Subtest: RBAC: viewer (só inbox:read) recebe 403 ao tentar assumir/transferir/finalizar/reabrir uma conversa
+ok 117 - RBAC: viewer (só inbox:read) recebe 403 ao tentar assumir/transferir/finalizar/reabrir uma conversa
+  ---
+  duration_ms: 2058.958652
+  ...
+# Subtest: RBAC: editor (inbox:assign, sem inbox:delete_conversations) recebe 403 ao tentar excluir uma conversa/grupo
+ok 118 - RBAC: editor (inbox:assign, sem inbox:delete_conversations) recebe 403 ao tentar excluir uma conversa/grupo
+  ---
+  duration_ms: 741.310035
+  ...
+# Subtest: RBAC: admin (inbox:delete_conversations) exclui uma conversa/grupo com sucesso — some da listagem
+ok 119 - RBAC: admin (inbox:delete_conversations) exclui uma conversa/grupo com sucesso — some da listagem
+  ---
+  duration_ms: 654.104332
+  ...
+# Subtest: Isolamento cross-tenant: DELETE numa conversa de OUTRO tenant responde 404, nunca 403 — não revela existência
+ok 120 - Isolamento cross-tenant: DELETE numa conversa de OUTRO tenant responde 404, nunca 403 — não revela existência
+  ---
+  duration_ms: 883.011827
+  ...
+# Subtest: RBAC: editor (inbox:assign) consegue assumir, transferir, finalizar e reabrir com sucesso
+ok 121 - RBAC: editor (inbox:assign) consegue assumir, transferir, finalizar e reabrir com sucesso
+  ---
+  duration_ms: 411.96886
+  ...
+# Subtest: RBAC: viewer recebe 403 em /unread e /urgent; editor (inbox:reply) consegue marcar não lida e urgente com sucesso
+ok 122 - RBAC: viewer recebe 403 em /unread e /urgent; editor (inbox:reply) consegue marcar não lida e urgente com sucesso
+  ---
+  duration_ms: 967.228653
+  ...
+# Subtest: Isolamento cross-tenant: POST /unread e /urgent numa conversa de OUTRO tenant respondem 404, nunca 403
+ok 123 - Isolamento cross-tenant: POST /unread e /urgent numa conversa de OUTRO tenant respondem 404, nunca 403
+  ---
+  duration_ms: 1194.941401
+  ...
+# Subtest: RBAC: 3 pontinhos de mensagem — viewer recebe 403 em DELETE/react; editor (inbox:reply) exclui e reage com sucesso
+ok 124 - RBAC: 3 pontinhos de mensagem — viewer recebe 403 em DELETE/react; editor (inbox:reply) exclui e reage com sucesso
+  ---
+  duration_ms: 1814.00615
+  ...
+# Subtest: Isolamento cross-tenant: DELETE/react numa mensagem de OUTRO tenant respondem 404, nunca 403
+ok 125 - Isolamento cross-tenant: DELETE/react numa mensagem de OUTRO tenant respondem 404, nunca 403
+  ---
+  duration_ms: 1375.096589
+  ...
+# Subtest: POST /messages com replyToMessageId responde 202 e a mensagem criada carrega o snapshot da citação
+ok 126 - POST /messages com replyToMessageId responde 202 e a mensagem criada carrega o snapshot da citação
+  ---
+  duration_ms: 518.478029
+  ...
+# Subtest: Concorrência via HTTP: duas requisições de take-over simultâneas na mesma conversa — só uma retorna 200, a outra 409
+ok 127 - Concorrência via HTTP: duas requisições de take-over simultâneas na mesma conversa — só uma retorna 200, a outra 409
+  ---
+  duration_ms: 691.593415
+  ...
+# Subtest: SSE: ações operacionais publicam notificação realtime com tenantId/workspaceId/conversationId corretos
+ok 128 - SSE: ações operacionais publicam notificação realtime com tenantId/workspaceId/conversationId corretos
+  ---
+  duration_ms: 525.250906
+  ...
+# Subtest: Isolamento cross-tenant via HTTP: principal de um tenant não enxerga nem opera conversa de outro tenant (404, nunca 403 — não revela existência)
+ok 129 - Isolamento cross-tenant via HTTP: principal de um tenant não enxerga nem opera conversa de outro tenant (404, nunca 403 — não revela existência)
+  ---
+  duration_ms: 761.853502
+  ...
+# Subtest: RBAC: GET /inbox/members exige inbox:assign — viewer recebe 403, editor recebe a lista
+ok 130 - RBAC: GET /inbox/members exige inbox:assign — viewer recebe 403, editor recebe a lista
+  ---
+  duration_ms: 1896.40999
+  ...
+# Subtest: Isolamento cross-tenant: GET /inbox/members nunca lista membros de outro tenant
+ok 131 - Isolamento cross-tenant: GET /inbox/members nunca lista membros de outro tenant
+  ---
+  duration_ms: 519.157956
+  ...
+# Subtest: GET /inbox/members sem membershipRepository/userRepository configurados (ex.: AUTH_MODE=noop puro) responde lista vazia, nunca erro
+ok 132 - GET /inbox/members sem membershipRepository/userRepository configurados (ex.: AUTH_MODE=noop puro) responde lista vazia, nunca erro
+  ---
+  duration_ms: 308.382063
+  ...
+# Subtest: Migration 0084 aplica sem erro; tabela inbox_conversation_events existe
+ok 133 - Migration 0084 aplica sem erro; tabela inbox_conversation_events existe
+  ---
+  duration_ms: 10319.130746
+  ...
+# Subtest: takeOverConversation: assume conversa sem responsável e pausa a IA atomicamente, registrando took_over + ai_paused
+ok 134 - takeOverConversation: assume conversa sem responsável e pausa a IA atomicamente, registrando took_over + ai_paused
+  ---
+  duration_ms: 78.417817
+  ...
+# Subtest: takeOverConversation: quando a IA já estava pausada, registra só took_over (sem ai_paused redundante)
+ok 135 - takeOverConversation: quando a IA já estava pausada, registra só took_over (sem ai_paused redundante)
+  ---
+  duration_ms: 20.824556
+  ...
+# Subtest: takeOverConversation: reclique do MESMO atendente é no-op — não gera evento duplicado
+ok 136 - takeOverConversation: reclique do MESMO atendente é no-op — não gera evento duplicado
+  ---
+  duration_ms: 46.355284
+  ...
+# Subtest: CONCORRÊNCIA (requisito crítico): dois atendentes assumindo a mesma conversa ao mesmo tempo — exatamente um vence, o outro recebe 409/erro claro
+ok 137 - CONCORRÊNCIA (requisito crítico): dois atendentes assumindo a mesma conversa ao mesmo tempo — exatamente um vence, o outro recebe 409/erro claro
+  ---
+  duration_ms: 31.86704
+  ...
+# Subtest: CONCORRÊNCIA: IA nunca fica ligada numa conversa já assumida, mesmo sob disputa — nenhuma janela de IA+humano juntos
+ok 138 - CONCORRÊNCIA: IA nunca fica ligada numa conversa já assumida, mesmo sob disputa — nenhuma janela de IA+humano juntos
+  ---
+  duration_ms: 56.577971
+  ...
+# Subtest: transferConversation: transfere atomicamente e registra fromUserId/toUserId/performedBy
+ok 139 - transferConversation: transfere atomicamente e registra fromUserId/toUserId/performedBy
+  ---
+  duration_ms: 36.717133
+  ...
+# Subtest: transferConversation: CONCORRÊNCIA — duas transferências simultâneas da mesma conversa, exatamente uma vence, a outra recebe conflito claro
+ok 140 - transferConversation: CONCORRÊNCIA — duas transferências simultâneas da mesma conversa, exatamente uma vence, a outra recebe conflito claro
+  ---
+  duration_ms: 87.73432
+  ...
+# Subtest: transferConversation: não pode transferir uma conversa sem responsável
+ok 141 - transferConversation: não pode transferir uma conversa sem responsável
+  ---
+  duration_ms: 16.437554
+  ...
+# Subtest: assignConversation: remoção de responsável registra evento unassigned
+ok 142 - assignConversation: remoção de responsável registra evento unassigned
+  ---
+  duration_ms: 50.267466
+  ...
+# Subtest: closeConversation / reopenConversation: transições de status registradas e idempotentes
+ok 143 - closeConversation / reopenConversation: transições de status registradas e idempotentes
+  ---
+  duration_ms: 34.867516
+  ...
+# Subtest: setAiConversationEnabled: pausar/reativar registra ai_paused/ai_resumed e é idempotente
+ok 144 - setAiConversationEnabled: pausar/reativar registra ai_paused/ai_resumed e é idempotente
+  ---
+  duration_ms: 29.522066
+  ...
+# Subtest: Filtros: open/pending/resolved/unassigned/mine/unread retornam exatamente o subconjunto esperado
+ok 145 - Filtros: open/pending/resolved/unassigned/mine/unread retornam exatamente o subconjunto esperado
+  ---
+  duration_ms: 88.701065
+  ...
+# Subtest: Isolamento cross-tenant: take-over/transfer/eventos de um tenant nunca vazam nem afetam outro
+ok 146 - Isolamento cross-tenant: take-over/transfer/eventos de um tenant nunca vazam nem afetam outro
+  ---
+  duration_ms: 63.84921
+  ...
+# Subtest: reconcilePendingContactPictures: contato criado ANTES do deploy da feature ganha foto retroativamente, sem precisar de mensagem nova
+ok 147 - reconcilePendingContactPictures: contato criado ANTES do deploy da feature ganha foto retroativamente, sem precisar de mensagem nova
+  ---
+  duration_ms: 10084.882586
+  ...
+# Subtest: reconcilePendingGroupPictures: grupo criado ANTES do deploy da feature ganha foto retroativamente
+ok 148 - reconcilePendingGroupPictures: grupo criado ANTES do deploy da feature ganha foto retroativamente
+  ---
+  duration_ms: 22.170205
+  ...
+# Subtest: reconcilePendingContactPictures/reconcilePendingGroupPictures: sem provider.getProfilePicture ou sem storage, nunca lança — scanned:0
+ok 149 - reconcilePendingContactPictures/reconcilePendingGroupPictures: sem provider.getProfilePicture ou sem storage, nunca lança — scanned:0
+  ---
+  duration_ms: 1.019896
+  ...
+# Subtest: InboxIdentityLinkRepository: upsert é idempotente por (workspaceId, lid) e confidence nunca desce
+ok 150 - InboxIdentityLinkRepository: upsert é idempotente por (workspaceId, lid) e confidence nunca desce
+  ---
+  duration_ms: 11404.824283
+  ...
+# Subtest: registerInboundMessage: LID visto com Alt, depois sem Alt, ainda resolve pro MESMO telefone via link persistido
+ok 151 - registerInboundMessage: LID visto com Alt, depois sem Alt, ainda resolve pro MESMO telefone via link persistido
+  ---
+  duration_ms: 183.315316
+  ...
+# [inbox] CONFLITO DE IDENTIDADE: alias whatsapp_pn/whatsapp_lid já pertence a outro contato no workspace "workspace-fixed-3" — nunca fundido automaticamente. telefone="+5511966665555". Revisar manualmente.
+# Subtest: MERGE_AUTOMATICO: LID sem Alt cria contato/conversa separados; Alt chega depois; reconcileMergeableIdentities funde os dois em um só, preservando histórico e auditando o merge
+ok 152 - MERGE_AUTOMATICO: LID sem Alt cria contato/conversa separados; Alt chega depois; reconcileMergeableIdentities funde os dois em um só, preservando histórico e auditando o merge
+  ---
+  duration_ms: 298.636364
+  ...
+# [inbox] CONFLITO DE IDENTIDADE: alias whatsapp_pn/whatsapp_lid já pertence a outro contato no workspace "workspace-fixed-4" — nunca fundido automaticamente. telefone="+5511955554444". Revisar manualmente.
+# Subtest: MERGE_CONCORRENCIA: duas rodadas de reconcileMergeableIdentities em paralelo pro mesmo LID nunca lançam nem fundem em duplicidade
+ok 153 - MERGE_CONCORRENCIA: duas rodadas de reconcileMergeableIdentities em paralelo pro mesmo LID nunca lançam nem fundem em duplicidade
+  ---
+  duration_ms: 216.558523
+  ...
+# Subtest: reconcileUnresolvedLidContacts: completa whatsapp_pn de um contato já correto sem decidir merge nenhum
+ok 154 - reconcileUnresolvedLidContacts: completa whatsapp_pn de um contato já correto sem decidir merge nenhum
+  ---
+  duration_ms: 21.860677
+  ...
+# [inbox] CONFLITO DE IDENTIDADE: alias whatsapp_pn/whatsapp_lid já pertence a outro contato no workspace "workspace-fixed-6" — nunca fundido automaticamente. telefone="+5511933332222". Revisar manualmente.
+# Subtest: MERGE_TOMBSTONE_REDIRECT: ação contra a conversa PERDEDORA (ex.: alguém com ela aberta na tela no momento do merge) resolve transparente pra vencedora, nunca perdida
+ok 155 - MERGE_TOMBSTONE_REDIRECT: ação contra a conversa PERDEDORA (ex.: alguém com ela aberta na tela no momento do merge) resolve transparente pra vencedora, nunca perdida
+  ---
+  duration_ms: 197.205574
+  ...
+# [inbox] CONFLITO DE IDENTIDADE: alias whatsapp_pn/whatsapp_lid já pertence a outro contato no workspace "workspace-fixed-7" — nunca fundido automaticamente. telefone="+5511922221111". Revisar manualmente.
+# Subtest: MERGE_PRESERVA_VINCULO_CRM: contact_id (vínculo manual com o CRM) do contato PERDEDOR sobrevive ao merge quando o vencedor ainda não tinha nenhum
+ok 156 - MERGE_PRESERVA_VINCULO_CRM: contact_id (vínculo manual com o CRM) do contato PERDEDOR sobrevive ao merge quando o vencedor ainda não tinha nenhum
+  ---
+  duration_ms: 260.506669
+  ...
+# [inbox] mensagem "msg-1" do tipo "image" sem mediaKey — provável Canal/Newsletter do WhatsApp (mídia não criptografada por destinatário, o endpoint de download do WuzAPI exige mediaKey). Mídia não pôde ser baixada; isto NÃO é um erro transitório, não adianta reprocessar sem uma chave real.
+# [inbox] mensagem "msg-2" do tipo "image" com mediaKey mas SEM directPath — o download do WuzAPI vai falhar com "no url present" (whatsmeow.Client.Download() exige directPath, nunca usa a url). Mídia não pôde ser baixada.
+# Subtest: downloadInboundMediaAndAttach: sem mediaKey nunca tenta a chamada ao provider — reason=no_media_key_unsupported_source
+ok 157 - downloadInboundMediaAndAttach: sem mediaKey nunca tenta a chamada ao provider — reason=no_media_key_unsupported_source
+  ---
+  duration_ms: 3.036437
+  ...
+# Subtest: downloadInboundMediaAndAttach: com mediaKey MAS SEM directPath, nunca tenta a chamada ao provider — reason=no_direct_path
+ok 158 - downloadInboundMediaAndAttach: com mediaKey MAS SEM directPath, nunca tenta a chamada ao provider — reason=no_direct_path
+  ---
+  duration_ms: 0.63363
+  ...
+# Subtest: downloadInboundMediaAndAttach: com mediaKey e directPath presentes, segue o caminho normal (chama o provider com DirectPath)
+ok 159 - downloadInboundMediaAndAttach: com mediaKey e directPath presentes, segue o caminho normal (chama o provider com DirectPath)
+  ---
+  duration_ms: 0.522967
+  ...
+# Subtest: downloadInboundMediaAndAttach: retry de mídia (bloco novo) — o ref bruto é gravado MESMO quando o download falha (nunca perde a chance de tentar de novo depois)
+ok 160 - downloadInboundMediaAndAttach: retry de mídia (bloco novo) — o ref bruto é gravado MESMO quando o download falha (nunca perde a chance de tentar de novo depois)
+  ---
+  duration_ms: 0.311661
+  ...
+# Subtest: IMAGE_OUTBOUND: sendInboxMediaMessage grava cópia própria + processOutboundMessage envia como data URI base64
+ok 161 - IMAGE_OUTBOUND: sendInboxMediaMessage grava cópia própria + processOutboundMessage envia como data URI base64
+  ---
+  duration_ms: 12111.232314
+  ...
+# Subtest: STICKER_OUTBOUND: sendInboxMediaMessage(type: sticker) grava cópia própria + processOutboundMessage chama provider.sendSticker (nunca sendImage)
+ok 162 - STICKER_OUTBOUND: sendInboxMediaMessage(type: sticker) grava cópia própria + processOutboundMessage chama provider.sendSticker (nunca sendImage)
+  ---
+  duration_ms: 62.97184
+  ...
+# Subtest: DOCUMENT_OUTBOUND: fileName é repassado ao provider
+ok 163 - DOCUMENT_OUTBOUND: fileName é repassado ao provider
+  ---
+  duration_ms: 67.539104
+  ...
+# Subtest: AUDIO_OUTBOUND: sem InboxMediaStoragePort configurado, sendInboxMediaMessage nunca finge sucesso
+ok 164 - AUDIO_OUTBOUND: sem InboxMediaStoragePort configurado, sendInboxMediaMessage nunca finge sucesso
+  ---
+  duration_ms: 14.978271
+  ...
+# Subtest: CONTACT_OUTBOUND: sendInboxContactCardMessage monta vcard e enfileira sem storage; processOutboundMessage chama provider.sendContact
+ok 165 - CONTACT_OUTBOUND: sendInboxContactCardMessage monta vcard e enfileira sem storage; processOutboundMessage chama provider.sendContact
+  ---
+  duration_ms: 70.816874
+  ...
+# Subtest: CONTACT_OUTBOUND: nome vazio é rejeitado explicitamente — nunca envia um cartão sem nome
+ok 166 - CONTACT_OUTBOUND: nome vazio é rejeitado explicitamente — nunca envia um cartão sem nome
+  ---
+  duration_ms: 18.30908
+  ...
+# Subtest: parseRangeHeader: sem header Range devolve undefined (corpo inteiro)
+ok 167 - parseRangeHeader: sem header Range devolve undefined (corpo inteiro)
+  ---
+  duration_ms: 2.646011
+  ...
+# Subtest: parseRangeHeader: bytes=0-499 (início do arquivo)
+ok 168 - parseRangeHeader: bytes=0-499 (início do arquivo)
+  ---
+  duration_ms: 1.217818
+  ...
+# Subtest: parseRangeHeader: bytes=500- (do meio até o fim)
+ok 169 - parseRangeHeader: bytes=500- (do meio até o fim)
+  ---
+  duration_ms: 0.333322
+  ...
+# Subtest: parseRangeHeader: bytes=-500 (últimos 500 bytes)
+ok 170 - parseRangeHeader: bytes=-500 (últimos 500 bytes)
+  ---
+  duration_ms: 0.269058
+  ...
+# Subtest: parseRangeHeader: range fora dos limites do arquivo nunca lança — cai pro corpo inteiro
+ok 171 - parseRangeHeader: range fora dos limites do arquivo nunca lança — cai pro corpo inteiro
+  ---
+  duration_ms: 0.214922
+  ...
+# Subtest: parseRangeHeader: start > end é inválido
+ok 172 - parseRangeHeader: start > end é inválido
+  ---
+  duration_ms: 0.204696
+  ...
+# Subtest: parseRangeHeader: header malformado nunca lança
+ok 173 - parseRangeHeader: header malformado nunca lança
+  ---
+  duration_ms: 0.192586
+  ...
+# Subtest: sanitizeContentDispositionFileName: remove aspas e quebras de linha (nunca quebra o header HTTP)
+ok 174 - sanitizeContentDispositionFileName: remove aspas e quebras de linha (nunca quebra o header HTTP)
+  ---
+  duration_ms: 0.269755
+  ...
+# Subtest: sanitizeContentDispositionFileName: nome vazio cai no fallback
+ok 175 - sanitizeContentDispositionFileName: nome vazio cai no fallback
+  ---
+  duration_ms: 0.328041
+  ...
+# Subtest: sanitizeContentDispositionFileName: trunca nomes absurdamente longos
+ok 176 - sanitizeContentDispositionFileName: trunca nomes absurdamente longos
+  ---
+  duration_ms: 0.253931
+  ...
+# Subtest: reconcilePendingMediaDownloads: mensagem que falhou na primeira tentativa é baixada com sucesso na reconciliação
+ok 177 - reconcilePendingMediaDownloads: mensagem que falhou na primeira tentativa é baixada com sucesso na reconciliação
+  ---
+  duration_ms: 12224.115275
+  ...
+# Subtest: reconcilePendingMediaDownloads: download falha de novo (WuzAPI ainda indisponível) — mensagem continua candidata pra próxima rodada, nunca lança
+ok 178 - reconcilePendingMediaDownloads: download falha de novo (WuzAPI ainda indisponível) — mensagem continua candidata pra próxima rodada, nunca lança
+  ---
+  duration_ms: 54.032399
+  ...
+# Subtest: reconcilePendingMediaDownloads: sem provider.downloadMedia ou sem storage, nunca lança — scanned:0
+ok 179 - reconcilePendingMediaDownloads: sem provider.downloadMedia ou sem storage, nunca lança — scanned:0
+  ---
+  duration_ms: 0.99133
+  ...
+# Subtest: REPLY: sendInboxMessage com replyToMessageId grava snapshot de quotedMessage e monta ContextInfo real pro provider
+ok 180 - REPLY: sendInboxMessage com replyToMessageId grava snapshot de quotedMessage e monta ContextInfo real pro provider
+  ---
+  duration_ms: 12539.334646
+  ...
+# Subtest: REPLY: mensagem-alvo sem externalMessageId (ainda não confirmada pelo WhatsApp) nunca finge uma citação — lança erro claro
+ok 181 - REPLY: mensagem-alvo sem externalMessageId (ainda não confirmada pelo WhatsApp) nunca finge uma citação — lança erro claro
+  ---
+  duration_ms: 70.533038
+  ...
+# Subtest: DELETE: mensagem OUTBOUND já enviada tenta revogar de verdade no WhatsApp (best-effort) e sempre remove localmente
+ok 182 - DELETE: mensagem OUTBOUND já enviada tenta revogar de verdade no WhatsApp (best-effort) e sempre remove localmente
+  ---
+  duration_ms: 105.27607
+  ...
+# Subtest: DELETE: forEveryone=false ("Apagar só para mim") NUNCA tenta revogar no WhatsApp, mesmo numa OUTBOUND revogável — escolha explícita do usuário
+ok 183 - DELETE: forEveryone=false ("Apagar só para mim") NUNCA tenta revogar no WhatsApp, mesmo numa OUTBOUND revogável — escolha explícita do usuário
+  ---
+  duration_ms: 88.178775
+  ...
+# Subtest: DELETE: mensagem INBOUND (de um contato) NUNCA tenta revogar no WhatsApp — só remove localmente (limitação real do protocolo)
+ok 184 - DELETE: mensagem INBOUND (de um contato) NUNCA tenta revogar no WhatsApp — só remove localmente (limitação real do protocolo)
+  ---
+  duration_ms: 104.747309
+  ...
+# Subtest: DELETE: mensagem de outra conversa/tenant nunca é encontrada — lança, nunca apaga por engano
+ok 185 - DELETE: mensagem de outra conversa/tenant nunca é encontrada — lança, nunca apaga por engano
+  ---
+  duration_ms: 110.659967
+  ...
+# Subtest: REACT: atendente reagindo a uma mensagem chama o provider PRIMEIRO e só persiste localmente se der certo
+ok 186 - REACT: atendente reagindo a uma mensagem chama o provider PRIMEIRO e só persiste localmente se der certo
+  ---
+  duration_ms: 78.43105
+  ...
+# Subtest: REACT: reagindo à mensagem de um PARTICIPANTE de GRUPO (não a própria) inclui participantJid; reagindo à PRÓPRIA marca fromMe
+ok 187 - REACT: reagindo à mensagem de um PARTICIPANTE de GRUPO (não a própria) inclui participantJid; reagindo à PRÓPRIA marca fromMe
+  ---
+  duration_ms: 114.052061
+  ...
+# Subtest: REACT: mensagem ainda sem externalMessageId (queued, nunca enviada) nunca finge uma reação — lança erro claro
+ok 188 - REACT: mensagem ainda sem externalMessageId (queued, nunca enviada) nunca finge uma reação — lança erro claro
+  ---
+  duration_ms: 91.43698
+  ...
+# Subtest: Migrations: banco LIMPO aplica 0001 até a última migration sem erro
+ok 189 - Migrations: banco LIMPO aplica 0001 até a última migration sem erro
+  ---
+  duration_ms: 11688.647728
+  ...
+# Subtest: Migrations: banco JÁ EXISTENTE (parado em 0083) continua aplicando 0084+ sem depender de nenhum estado manual
+ok 190 - Migrations: banco JÁ EXISTENTE (parado em 0083) continua aplicando 0084+ sem depender de nenhum estado manual
+  ---
+  duration_ms: 5740.762791
+  ...
+# Subtest: fluxo normal: sendInboxMessage publica com sucesso, marca outboundPublishedAt, e a reconciliação nunca a toca de novo
+ok 191 - fluxo normal: sendInboxMessage publica com sucesso, marca outboundPublishedAt, e a reconciliação nunca a toca de novo
+  ---
+  duration_ms: 10231.835246
+  ...
+# Subtest: CENÁRIO REAL DO BUG: publish falha após o commit (RabbitMQ off) → mensagem fica órfã → broker volta → reconciliador recupera → worker envia (queued→sending→sent)
+ok 192 - CENÁRIO REAL DO BUG: publish falha após o commit (RabbitMQ off) → mensagem fica órfã → broker volta → reconciliador recupera → worker envia (queued→sending→sent)
+  ---
+  duration_ms: 60.634023
+  ...
+# Subtest: idempotência: reconciliador republica uma mensagem que JÁ estava no broker (falso positivo) — duas entregas chegam ao worker, só uma chama o provider
+ok 193 - idempotência: reconciliador republica uma mensagem que JÁ estava no broker (falso positivo) — duas entregas chegam ao worker, só uma chama o provider
+  ---
+  duration_ms: 40.653442
+  ...
+# Subtest: reconciliador chamado repetidamente é idempotente — segunda chamada não encontra mais a mensagem já reconciliada
+ok 194 - reconciliador chamado repetidamente é idempotente — segunda chamada não encontra mais a mensagem já reconciliada
+  ---
+  duration_ms: 63.39713
+  ...
+# Subtest: duas instâncias reconciliando a MESMA mensagem simultaneamente — nenhuma trava, nenhum crash, downstream continua protegido por CAS
+ok 195 - duas instâncias reconciliando a MESMA mensagem simultaneamente — nenhuma trava, nenhum crash, downstream continua protegido por CAS
+  ---
+  duration_ms: 50.231029
+  ...
+# Subtest: mensagem 'sending' não é republicada indevidamente pelo reconciliador
+ok 196 - mensagem 'sending' não é republicada indevidamente pelo reconciliador
+  ---
+  duration_ms: 56.119722
+  ...
+# Subtest: mensagem 'sent' nunca volta para queued nem é tocada pelo reconciliador
+ok 197 - mensagem 'sent' nunca volta para queued nem é tocada pelo reconciliador
+  ---
+  duration_ms: 32.329472
+  ...
+# Subtest: mensagem 'failed' (terminal) nunca é recuperada indevidamente pelo reconciliador
+ok 198 - mensagem 'failed' (terminal) nunca é recuperada indevidamente pelo reconciliador
+  ---
+  duration_ms: 50.044723
+  ...
+# Subtest: aging: mensagem recém-criada e ainda dentro da janela de graça NUNCA é reconciliada prematuramente
+ok 199 - aging: mensagem recém-criada e ainda dentro da janela de graça NUNCA é reconciliada prematuramente
+  ---
+  duration_ms: 24.865642
+  ...
+# Subtest: restart do worker: reconciliação ao subir encontra e recupera órfãs de ANTES do restart, sem depender de nenhum evento futuro
+ok 200 - restart do worker: reconciliação ao subir encontra e recupera órfãs de ANTES do restart, sem depender de nenhum evento futuro
+  ---
+  duration_ms: 23.514556
+  ...
+# Subtest: isolamento cross-tenant: reconciliação de múltiplos tenants nunca mistura tenantId/workspaceId/connectionId
+ok 201 - isolamento cross-tenant: reconciliação de múltiplos tenants nunca mistura tenantId/workspaceId/connectionId
+  ---
+  duration_ms: 59.458964
+  ...
+# Subtest: pause: reconciliador republica normalmente, mas o worker pausado NUNCA chama o provider nem esgota o retry budget
+ok 202 - pause: reconciliador republica normalmente, mas o worker pausado NUNCA chama o provider nem esgota o retry budget
+  ---
+  duration_ms: 35.79083
+  ...
+# Subtest: métricas: incOutboundPublishFailed/incOutboundReconciled/incOutboundReconcileFailed disparam nos momentos certos
+ok 203 - métricas: incOutboundPublishFailed/incOutboundReconciled/incOutboundReconcileFailed disparam nos momentos certos
+  ---
+  duration_ms: 70.440459
+  ...
+# Subtest: Migrations 0080-0083 e 0115 aplicam sem erro; tabelas do módulo Conversas existem
+ok 204 - Migrations 0080-0083 e 0115 aplicam sem erro; tabelas do módulo Conversas existem
+  ---
+  duration_ms: 10124.037257
+  ...
+# Subtest: PostgresMessagingConnectionRepository: create()/updateStatus()/getById() round trip
+ok 205 - PostgresMessagingConnectionRepository: create()/updateStatus()/getById() round trip
+  ---
+  duration_ms: 15.871365
+  ...
+# Subtest: PostgresInboxContactRepository: upsertByPhone() nunca duplica pelo mesmo (workspace, telefone)
+ok 206 - PostgresInboxContactRepository: upsertByPhone() nunca duplica pelo mesmo (workspace, telefone)
+  ---
+  duration_ms: 9.677056
+  ...
+# Subtest: PostgresInboxConversationRepository: findOrCreate() é idempotente por (connectionId, externalChatId) — chave canônica pós-correção
+ok 207 - PostgresInboxConversationRepository: findOrCreate() é idempotente por (connectionId, externalChatId) — chave canônica pós-correção
+  ---
+  duration_ms: 13.611392
+  ...
+# Subtest: PostgresInboxConversationRepository: conversa de GRUPO nunca ganha contactId — grupo não é um Contact do CRM
+ok 208 - PostgresInboxConversationRepository: conversa de GRUPO nunca ganha contactId — grupo não é um Contact do CRM
+  ---
+  duration_ms: 32.098773
+  ...
+# Subtest: PostgresInboxMessageRepository: create() com o mesmo (connectionId, externalMessageId) é idempotente — reentrega de evento nunca duplica mensagem
+ok 209 - PostgresInboxMessageRepository: create() com o mesmo (connectionId, externalMessageId) é idempotente — reentrega de evento nunca duplica mensagem
+  ---
+  duration_ms: 23.819958
+  ...
+# Subtest: PostgresInboxMessageRepository: findByExternalId() acha sem inserir — base da idempotência de self-echo
+ok 210 - PostgresInboxMessageRepository: findByExternalId() acha sem inserir — base da idempotência de self-echo
+  ---
+  duration_ms: 15.395492
+  ...
+# Subtest: PostgresInboxMessageRepository: mensagens outbound sem externalMessageId (queued) não colidem entre si
+ok 211 - PostgresInboxMessageRepository: mensagens outbound sem externalMessageId (queued) não colidem entre si
+  ---
+  duration_ms: 16.932191
+  ...
+# Subtest: Isolamento multi-tenant: listByWorkspace() nunca mistura conexões/conversas de tenants diferentes
+ok 212 - Isolamento multi-tenant: listByWorkspace() nunca mistura conexões/conversas de tenants diferentes
+  ---
+  duration_ms: 66.21783
+  ...
+# Subtest: registerInboundMessage: reentrega do mesmo evento NÃO incrementa unread_count de novo (achado ao vivo, spike Fase 2)
+ok 213 - registerInboundMessage: reentrega do mesmo evento NÃO incrementa unread_count de novo (achado ao vivo, spike Fase 2)
+  ---
+  duration_ms: 98.960246
+  ...
+# Subtest: DIRECT_CONVERSATION_IDENTITY: inbound + outbound (self-echo) + inbound de novo ficam na MESMA conversa
+ok 214 - DIRECT_CONVERSATION_IDENTITY: inbound + outbound (self-echo) + inbound de novo ficam na MESMA conversa
+  ---
+  duration_ms: 39.279312
+  ...
+# Subtest: GROUP_CONVERSATION_IDENTITY + GROUP_PARTICIPANT_ATTRIBUTION: 3 participantes + resposta do Vorix + repetição ficam em UMA InboxConversation, com remetente correto por mensagem
+ok 215 - GROUP_CONVERSATION_IDENTITY + GROUP_PARTICIPANT_ATTRIBUTION: 3 participantes + resposta do Vorix + repetição ficam em UMA InboxConversation, com remetente correto por mensagem
+  ---
+  duration_ms: 58.021138
+  ...
+# Subtest: CONCURRENT_GROUP_MESSAGES: dois participantes mandando ao mesmo tempo no mesmo grupo nunca criam duas conversas
+ok 216 - CONCURRENT_GROUP_MESSAGES: dois participantes mandando ao mesmo tempo no mesmo grupo nunca criam duas conversas
+  ---
+  duration_ms: 19.92585
+  ...
+# Subtest: PHONE_IDENTITY_CANONICAL: LID com RecipientAlt real vira contato keyed por TELEFONE, com o LID gravado como alias
+ok 217 - PHONE_IDENTITY_CANONICAL: LID com RecipientAlt real vira contato keyed por TELEFONE, com o LID gravado como alias
+  ---
+  duration_ms: 15.911573
+  ...
+# Subtest: PHONE_IDENTITY_CANONICAL: LID SEM alt não inventa telefone — pivô degradado documentado
+ok 218 - PHONE_IDENTITY_CANONICAL: LID SEM alt não inventa telefone — pivô degradado documentado
+  ---
+  duration_ms: 13.709921
+  ...
+# [inbox] CONFLITO DE IDENTIDADE: alias whatsapp_pn/whatsapp_lid já pertence a outro contato no workspace "workspace-fixed-16" — nunca fundido automaticamente. telefone="+5511922223333". Revisar manualmente.
+# Subtest: LID_PHONE_ALIAS_RESOLUTION: mesmo alias LID em telefones DIFERENTES nunca funde automaticamente — registra conflito e segue sem o alias
+ok 219 - LID_PHONE_ALIAS_RESOLUTION: mesmo alias LID em telefones DIFERENTES nunca funde automaticamente — registra conflito e segue sem o alias
+  ---
+  duration_ms: 35.337299
+  ...
+# Subtest: GROUP_METADATA: syncGroupMetadata preenche groupName/participantCount reais via MessagingProvider.getGroupInfo
+ok 220 - GROUP_METADATA: syncGroupMetadata preenche groupName/participantCount reais via MessagingProvider.getGroupInfo
+  ---
+  duration_ms: 15.397175
+  ...
+# Subtest: GROUP_METADATA: provider sem getGroupInfo (ex. FakeMessagingProvider) nunca lança — synced:false
+ok 221 - GROUP_METADATA: provider sem getGroupInfo (ex. FakeMessagingProvider) nunca lança — synced:false
+  ---
+  duration_ms: 7.118661
+  ...
+# Subtest: GROUP_METADATA: Canal/Newsletter do WhatsApp (@newsletter, chatType também "group" de propósito) NUNCA chama getGroupInfo — achado ao vivo em produção (WuzAPI trava/500 pra JID de newsletter)
+ok 222 - GROUP_METADATA: Canal/Newsletter do WhatsApp (@newsletter, chatType também "group" de propósito) NUNCA chama getGroupInfo — achado ao vivo em produção (WuzAPI trava/500 pra JID de newsletter)
+  ---
+  duration_ms: 8.603791
+  ...
+# Subtest: DELETE_CONVERSATION: exclusão de uma conversa (grupo ou direta) é PERMANENTE e cascateia mensagens/eventos de verdade (FK real, não in-memory)
+ok 223 - DELETE_CONVERSATION: exclusão de uma conversa (grupo ou direta) é PERMANENTE e cascateia mensagens/eventos de verdade (FK real, não in-memory)
+  ---
+  duration_ms: 30.95551
+  ...
+# Subtest: DELETE_CONVERSATION: excluir uma conversa que já não existe (duplo clique/retry) nunca lança — idempotente
+ok 224 - DELETE_CONVERSATION: excluir uma conversa que já não existe (duplo clique/retry) nunca lança — idempotente
+  ---
+  duration_ms: 29.761743
+  ...
+# Subtest: UNREAD_URGENT: markUnread reaproveita unread_count (>= 1, nunca reduz uma contagem real maior); markRead sempre zera
+ok 225 - UNREAD_URGENT: markUnread reaproveita unread_count (>= 1, nunca reduz uma contagem real maior); markRead sempre zera
+  ---
+  duration_ms: 31.87883
+  ...
+# Subtest: UNREAD_URGENT: setUrgent liga/desliga a flag e o filtro 'urgent' reflete o estado atual
+ok 226 - UNREAD_URGENT: setUrgent liga/desliga a flag e o filtro 'urgent' reflete o estado atual
+  ---
+  duration_ms: 24.486979
+  ...
+# Subtest: FOTOS: syncContactProfilePicture baixa e grava a foto de perfil real, nunca refaz se já sincronizada
+ok 227 - FOTOS: syncContactProfilePicture baixa e grava a foto de perfil real, nunca refaz se já sincronizada
+  ---
+  duration_ms: 44.026638
+  ...
+# Subtest: FOTOS: syncGroupPicture baixa e grava a foto do grupo, nunca chama pra Canal/Newsletter
+ok 228 - FOTOS: syncGroupPicture baixa e grava a foto do grupo, nunca chama pra Canal/Newsletter
+  ---
+  duration_ms: 19.195719
+  ...
+# Subtest: FOTOS: pessoa/grupo sem foto de perfil (provider devolve undefined) nunca lança, synced:false
+ok 229 - FOTOS: pessoa/grupo sem foto de perfil (provider devolve undefined) nunca lança, synced:false
+  ---
+  duration_ms: 10.736004
+  ...
+# Subtest: mapWuzApiEvent: extendedTextMessage com contextInfo.quotedMessage extrai stanzaID/participant/corpo/tipo da mensagem citada
+ok 230 - mapWuzApiEvent: extendedTextMessage com contextInfo.quotedMessage extrai stanzaID/participant/corpo/tipo da mensagem citada
+  ---
+  duration_ms: 9718.953924
+  ...
+# Subtest: mapWuzApiEvent: contextInfo.quotedMessage de mídia usa caption como quotedBody e o tipo real (não 'text')
+ok 231 - mapWuzApiEvent: contextInfo.quotedMessage de mídia usa caption como quotedBody e o tipo real (não 'text')
+  ---
+  duration_ms: 0.360492
+  ...
+# Subtest: mapWuzApiEvent: sem contextInfo (mensagem normal, não é resposta), campos de citação ficam undefined
+ok 232 - mapWuzApiEvent: sem contextInfo (mensagem normal, não é resposta), campos de citação ficam undefined
+  ---
+  duration_ms: 0.191698
+  ...
+# Subtest: mapWuzApiEvent: contextInfo.mentionedJID vira mentionedJids (array de JIDs crus, ainda não resolvidos)
+ok 233 - mapWuzApiEvent: contextInfo.mentionedJID vira mentionedJids (array de JIDs crus, ainda não resolvidos)
+  ---
+  duration_ms: 0.657633
+  ...
+# Subtest: mapWuzApiEvent: reactionMessage vira MessageReactionReceived (nunca message.inbound) com key.ID/text/sender
+ok 234 - mapWuzApiEvent: reactionMessage vira MessageReactionReceived (nunca message.inbound) com key.ID/text/sender
+  ---
+  duration_ms: 0.290952
+  ...
+# Subtest: mapWuzApiEvent: reactionMessage com text vazio (remoção de reação) ainda mapeia, emoji fica string vazia
+ok 235 - mapWuzApiEvent: reactionMessage com text vazio (remoção de reação) ainda mapeia, emoji fica string vazia
+  ---
+  duration_ms: 0.171582
+  ...
+# Subtest: registerInboundMessage: mensagem com mentionedJids substitui o placeholder @<dígitos> pelo nome real do contato já conhecido
+ok 236 - registerInboundMessage: mensagem com mentionedJids substitui o placeholder @<dígitos> pelo nome real do contato já conhecido
+  ---
+  duration_ms: 35.959736
+  ...
+# Subtest: registerInboundMessage: menção a JID sem contato conhecido cai pro telefone normalizado, nunca quebra a mensagem
+ok 237 - registerInboundMessage: menção a JID sem contato conhecido cai pro telefone normalizado, nunca quebra a mensagem
+  ---
+  duration_ms: 17.27922
+  ...
+# Subtest: registerInboundMessage: mensagem-resposta grava um snapshot de quotedMessage (externalMessageId/senderId/body/type), nunca resolvido de novo depois
+ok 238 - registerInboundMessage: mensagem-resposta grava um snapshot de quotedMessage (externalMessageId/senderId/body/type), nunca resolvido de novo depois
+  ---
+  duration_ms: 19.966984
+  ...
+# Subtest: registerInboundMessage: mensagem sem contextInfo nenhum grava quotedMessage undefined (caso comum, não é erro)
+ok 239 - registerInboundMessage: mensagem sem contextInfo nenhum grava quotedMessage undefined (caso comum, não é erro)
+  ---
+  duration_ms: 14.573258
+  ...
+# Subtest: applyMessageReaction (Postgres): aplica reação numa mensagem existente via externalMessageId, retorna dados pra notificação realtime
+ok 240 - applyMessageReaction (Postgres): aplica reação numa mensagem existente via externalMessageId, retorna dados pra notificação realtime
+  ---
+  duration_ms: 20.626863
+  ...
+# Subtest: applyMessageReaction (Postgres): o mesmo reactorId reagindo de novo SUBSTITUI a reação anterior (nunca duplica)
+ok 241 - applyMessageReaction (Postgres): o mesmo reactorId reagindo de novo SUBSTITUI a reação anterior (nunca duplica)
+  ---
+  duration_ms: 53.538545
+  ...
+# Subtest: applyMessageReaction (Postgres): emoji vazio (remoção) tira a reação do reactorId, sem afetar reações de outras pessoas
+ok 242 - applyMessageReaction (Postgres): emoji vazio (remoção) tira a reação do reactorId, sem afetar reações de outras pessoas
+  ---
+  duration_ms: 71.699449
+  ...
+# Subtest: applyMessageReaction (Postgres): mensagem-alvo não encontrada (ex.: fora de retenção) retorna applied:false, nunca lança
+ok 243 - applyMessageReaction (Postgres): mensagem-alvo não encontrada (ex.: fora de retenção) retorna applied:false, nunca lança
+  ---
+  duration_ms: 5.952567
+  ...
+# Subtest: InMemoryInboxMessageRepository.setReaction: mesmo comportamento upsert-por-reactorId do Postgres, sem banco nenhum
+ok 244 - InMemoryInboxMessageRepository.setReaction: mesmo comportamento upsert-por-reactorId do Postgres, sem banco nenhum
+  ---
+  duration_ms: 2.347871
+  ...
+# Subtest: Lock de IA abandonado (lease expirado) é recuperado — nunca trava a conversa para sempre
+ok 245 - Lock de IA abandonado (lease expirado) é recuperado — nunca trava a conversa para sempre
+  ---
+  duration_ms: 9320.874617
+  ...
+# Subtest: CONCORRÊNCIA: dois processos nunca recuperam o MESMO lock abandonado simultaneamente
+ok 246 - CONCORRÊNCIA: dois processos nunca recuperam o MESMO lock abandonado simultaneamente
+  ---
+  duration_ms: 48.792543
+  ...
+# Subtest: Claim de mensagem abandonado (lease expirado) é recuperado pelo drenador de IA
+ok 247 - Claim de mensagem abandonado (lease expirado) é recuperado pelo drenador de IA
+  ---
+  duration_ms: 125.236805
+  ...
+# Subtest: Circuit breaker: WuzAPI indisponível abre o circuito, e enquanto aberto o outbound permanece QUEUED (nunca perdido)
+ok 248 - Circuit breaker: WuzAPI indisponível abre o circuito, e enquanto aberto o outbound permanece QUEUED (nunca perdido)
+  ---
+  duration_ms: 73.61077
+  ...
+# Subtest: Circuit breaker: recupera (half-open → closed) depois do cooldown, com sucesso real
+ok 249 - Circuit breaker: recupera (half-open → closed) depois do cooldown, com sucesso real
+  ---
+  duration_ms: 145.188709
+  ...
+# Subtest: Rate limiting: limite atingido nunca perde a mensagem — permanece QUEUED para processamento posterior
+ok 250 - Rate limiting: limite atingido nunca perde a mensagem — permanece QUEUED para processamento posterior
+  ---
+  duration_ms: 54.387264
+  ...
+# Subtest: Falha de envio grava failureCategory correspondente ao MessagingProviderErrorKind (diagnóstico sem reabrir logs)
+ok 251 - Falha de envio grava failureCategory correspondente ao MessagingProviderErrorKind (diagnóstico sem reabrir logs)
+  ---
+  duration_ms: 34.716562
+  ...
+# Subtest: Monitor de saúde: sucesso marca healthy e limpa erro anterior; falha transitória marca gateway_unavailable sem tocar em status
+ok 252 - Monitor de saúde: sucesso marca healthy e limpa erro anterior; falha transitória marca gateway_unavailable sem tocar em status
+  ---
+  duration_ms: 96.514597
+  ...
+# Subtest: Monitor de saúde nunca checa (nem toca) conexões em status terminal — logout/revogação não pode entrar em loop
+ok 253 - Monitor de saúde nunca checa (nem toca) conexões em status terminal — logout/revogação não pode entrar em loop
+  ---
+  duration_ms: 56.569551
+  ...
+# Subtest: Monitor de saúde: "logged_out" bruto do provider NUNCA vira terminal para um canal que ainda nem pareou — mantém "connecting"
+ok 254 - Monitor de saúde: "logged_out" bruto do provider NUNCA vira terminal para um canal que ainda nem pareou — mantém "connecting"
+  ---
+  duration_ms: 91.960231
+  ...
+# Subtest: Monitor de saúde: "logged_out" bruto É respeitado normalmente quando a conexão JÁ pareou antes (tem phoneNumber)
+ok 255 - Monitor de saúde: "logged_out" bruto É respeitado normalmente quando a conexão JÁ pareou antes (tem phoneNumber)
+  ---
+  duration_ms: 29.352956
+  ...
+# Subtest: "Atualizar status" (manual): mesma proteção do monitor periódico — nunca marca terminal um canal que ainda nem pareou
+ok 256 - "Atualizar status" (manual): mesma proteção do monitor periódico — nunca marca terminal um canal que ainda nem pareou
+  ---
+  duration_ms: 10.683693
+  ...
+# Subtest: Crédito insuficiente: IA não gera resposta, evento distinto registrado, conversa disponível para humano
+ok 257 - Crédito insuficiente: IA não gera resposta, evento distinto registrado, conversa disponível para humano
+  ---
+  duration_ms: 193.545787
+  ...
+# Subtest: Billing real: tenant sem billing configurado nunca chama o provider de IA (nunca gera resposta sem crédito verificável)
+ok 258 - Billing real: tenant sem billing configurado nunca chama o provider de IA (nunca gera resposta sem crédito verificável)
+  ---
+  duration_ms: 7.562183
+  ...
+# Subtest: Billing real: com crédito suficiente, a IA responde e o consumo é registrado uma única vez
+ok 259 - Billing real: com crédito suficiente, a IA responde e o consumo é registrado uma única vez
+  ---
+  duration_ms: 79.992174
+  ...
+# Subtest: Idempotência financeira: CreditAccountingService.recordSuccess chamado duas vezes com a MESMA chave cobra exatamente uma vez
+ok 260 - Idempotência financeira: CreditAccountingService.recordSuccess chamado duas vezes com a MESMA chave cobra exatamente uma vez
+  ---
+  duration_ms: 26.974913
+  ...
+# Subtest: Idempotência financeira: reprocessamento via AiGatewayInboxResponder (mesma chave) nunca cobra duas vezes, mesmo gerando de novo
+ok 261 - Idempotência financeira: reprocessamento via AiGatewayInboxResponder (mesma chave) nunca cobra duas vezes, mesmo gerando de novo
+  ---
+  duration_ms: 87.583965
+  ...
+# Subtest: Isolamento cross-tenant: circuit breaker de um tenant nunca abre o de outro, mesmo com o MESMO target
+ok 262 - Isolamento cross-tenant: circuit breaker de um tenant nunca abre o de outro, mesmo com o MESMO target
+  ---
+  duration_ms: 9.174328
+  ...
+# Subtest: Isolamento cross-tenant: rate limiter de um tenant nunca consome a cota de outro, mesmo com o MESMO connectionId
+ok 263 - Isolamento cross-tenant: rate limiter de um tenant nunca consome a cota de outro, mesmo com o MESMO connectionId
+  ---
+  duration_ms: 8.029571
+  ...
+# Subtest: Métricas: fluxo completo (inbound, outbound, falha, IA) chama os contadores esperados
+ok 264 - Métricas: fluxo completo (inbound, outbound, falha, IA) chama os contadores esperados
+  ---
+  duration_ms: 191.981748
+  ...
+# Subtest: Claim atômico: tryMarkSending só permite UMA execução concorrente reivindicar a mesma mensagem queued
+ok 265 - Claim atômico: tryMarkSending só permite UMA execução concorrente reivindicar a mesma mensagem queued
+  ---
+  duration_ms: 82.022961
+  ...
+# [inbox] mensagem "inboxmsg-mvaymnuf-3su9n5" travada em "sending" — possível crash do worker durante um envio anterior. Requer reconciliação manual (verificar no WhatsApp se a mensagem já foi entregue).
+# Subtest: Crash simulado: mensagem travada em 'sending' (crash entre sendText e markSent) NUNCA é reenviada numa redelivery
+ok 266 - Crash simulado: mensagem travada em 'sending' (crash entre sendText e markSent) NUNCA é reenviada numa redelivery
+  ---
+  duration_ms: 21.996847
+  ...
+# Subtest: Falha transitória capturada normalmente (sem crash) continua reprocessando via a escada de retry, sem regressão
+ok 267 - Falha transitória capturada normalmente (sem crash) continua reprocessando via a escada de retry, sem regressão
+  ---
+  duration_ms: 77.708714
+  ...
+# Subtest: markSent recusa transicionar uma mensagem que ainda não passou pelo claim (ainda 'queued')
+ok 268 - markSent recusa transicionar uma mensagem que ainda não passou pelo claim (ainda 'queued')
+  ---
+  duration_ms: 24.733052
+  ...
+# Subtest: Kill switch de outbound pausado lança MessagingProviderError com kind 'operator_paused' (nunca 'transient')
+ok 269 - Kill switch de outbound pausado lança MessagingProviderError com kind 'operator_paused' (nunca 'transient')
+  ---
+  duration_ms: 76.956054
+  ...
+# Subtest: applyConnectionStateChanged nunca reverte um estado terminal (logged_out) por um evento de fila atrasado
+ok 270 - applyConnectionStateChanged nunca reverte um estado terminal (logged_out) por um evento de fila atrasado
+  ---
+  duration_ms: 16.397645
+  ...
+# Subtest: applyConnectionStateChanged aplica normalmente transições que NÃO partem de um estado terminal
+ok 271 - applyConnectionStateChanged aplica normalmente transições que NÃO partem de um estado terminal
+  ---
+  duration_ms: 19.430133
+  ...
+# Subtest: sendInboxMessage com scheduledAt no futuro: persiste queued com scheduledAt, NUNCA publica na fila
+ok 272 - sendInboxMessage com scheduledAt no futuro: persiste queued com scheduledAt, NUNCA publica na fila
+  ---
+  duration_ms: 9241.666714
+  ...
+# Subtest: sendInboxMessage rejeita scheduledAt no passado
+ok 273 - sendInboxMessage rejeita scheduledAt no passado
+  ---
+  duration_ms: 18.449411
+  ...
+# Subtest: sendInboxMessage rejeita scheduledAt inválido (string não-data)
+ok 274 - sendInboxMessage rejeita scheduledAt inválido (string não-data)
+  ---
+  duration_ms: 15.949627
+  ...
+# Subtest: dispatchDueScheduledMessages libera só quem já venceu, nunca quem ainda está no futuro
+ok 275 - dispatchDueScheduledMessages libera só quem já venceu, nunca quem ainda está no futuro
+  ---
+  duration_ms: 581.676143
+  ...
+# Subtest: CONCORRÊNCIA: dois dispatchers rodando ao mesmo tempo nunca despacham a MESMA mensagem duas vezes
+ok 276 - CONCORRÊNCIA: dois dispatchers rodando ao mesmo tempo nunca despacham a MESMA mensagem duas vezes
+  ---
+  duration_ms: 572.653907
+  ...
+# Subtest: cancelScheduledInboxMessage remove uma mensagem ainda agendada
+ok 277 - cancelScheduledInboxMessage remove uma mensagem ainda agendada
+  ---
+  duration_ms: 112.442844
+  ...
+# Subtest: cancelScheduledInboxMessage rejeita mensagem que não está mais agendada (já enviada/nunca agendada)
+ok 278 - cancelScheduledInboxMessage rejeita mensagem que não está mais agendada (já enviada/nunca agendada)
+  ---
+  duration_ms: 81.925127
+  ...
+# Subtest: cancelScheduledInboxMessage rejeita mensagem de outra conversa/tenant (isolamento)
+ok 279 - cancelScheduledInboxMessage rejeita mensagem de outra conversa/tenant (isolamento)
+  ---
+  duration_ms: 97.121605
+  ...
+# Subtest: IDOR: conexão de outro tenant — GET qr / POST refresh-status / POST disconnect nunca funcionam com um connectionId real de outro tenant
+ok 280 - IDOR: conexão de outro tenant — GET qr / POST refresh-status / POST disconnect nunca funcionam com um connectionId real de outro tenant
+  ---
+  duration_ms: 3200.708512
+  ...
+# Subtest: IDOR: mensagens/eventos de uma conversa de outro tenant nunca são lidos (GET messages, GET events)
+ok 281 - IDOR: mensagens/eventos de uma conversa de outro tenant nunca são lidos (GET messages, GET events)
+  ---
+  duration_ms: 1527.74132
+  ...
+# Subtest: IDOR: nenhuma ação de escrita numa conversa de outro tenant tem efeito (read, assign, ai, send, close, reopen)
+ok 282 - IDOR: nenhuma ação de escrita numa conversa de outro tenant tem efeito (read, assign, ai, send, close, reopen)
+  ---
+  duration_ms: 686.556055
+  ...
+# Subtest: SSE: shouldDeliverInboxNotification isola estritamente por tenant E workspace
+ok 283 - SSE: shouldDeliverInboxNotification isola estritamente por tenant E workspace
+  ---
+  duration_ms: 0.647481
+  ...
+# Subtest: SSE: múltiplos assinantes simultâneos de tenants diferentes nunca recebem a notificação um do outro
+ok 284 - SSE: múltiplos assinantes simultâneos de tenants diferentes nunca recebem a notificação um do outro
+  ---
+  duration_ms: 0.258342
+  ...
+# Subtest: Kill switch: INBOX_OUTBOUND_SEND_PAUSED nunca envia ao provider, mensagem permanece queued para reprocessamento
+ok 285 - Kill switch: INBOX_OUTBOUND_SEND_PAUSED nunca envia ao provider, mensagem permanece queued para reprocessamento
+  ---
+  duration_ms: 236.741987
+  ...
+# Subtest: domínio: horário por fuso, validação de intervalos e leitura da nota
+ok 286 - domínio: horário por fuso, validação de intervalos e leitura da nota
+  ---
+  duration_ms: 9306.393427
+  ...
+# Subtest: configurações: padrões, validação e motivo obrigatório só com motivos cadastrados
+ok 287 - configurações: padrões, validação e motivo obrigatório só com motivos cadastrados
+  ---
+  duration_ms: 108.887361
+  ...
+# Subtest: finalizar: exige motivo quando configurado, grava quem/quando/motivo e envia a pesquisa
+ok 288 - finalizar: exige motivo quando configurado, grava quem/quando/motivo e envia a pesquisa
+  ---
+  duration_ms: 140.587932
+  ...
+# Subtest: pesquisa: nota do cliente é gravada, agradece e NÃO reabre; texto comum reabre e expira a pesquisa
+ok 289 - pesquisa: nota do cliente é gravada, agradece e NÃO reabre; texto comum reabre e expira a pesquisa
+  ---
+  duration_ms: 302.489664
+  ...
+# Subtest: cliente escrevendo numa conversa finalizada (sem pesquisa) reabre a conversa
+ok 290 - cliente escrevendo numa conversa finalizada (sem pesquisa) reabre a conversa
+  ---
+  duration_ms: 112.619829
+  ...
+# Subtest: ausência: só fora do horário, no máximo uma a cada 12h
+ok 291 - ausência: só fora do horário, no máximo uma a cada 12h
+  ---
+  duration_ms: 194.477295
+  ...
+# Subtest: triagem (domínio): número, emoji, 'opção 2' ou nome da opção; ambíguo/inválido não casa
+ok 292 - triagem (domínio): número, emoji, 'opção 2' ou nome da opção; ambíguo/inválido não casa
+  ---
+  duration_ms: 2.212225
+  ...
+# Subtest: triagem: menu na 1ª mensagem, escolha leva para a equipe (com rodízio) + etiqueta e cala a IA
+ok 293 - triagem: menu na 1ª mensagem, escolha leva para a equipe (com rodízio) + etiqueta e cala a IA
+  ---
+  duration_ms: 244.538783
+  ...
+# Subtest: triagem: duas respostas inválidas encaminham sem opção; conversa já com responsável nunca recebe menu
+ok 294 - triagem: duas respostas inválidas encaminham sem opção; conversa já com responsável nunca recebe menu
+  ---
+  duration_ms: 216.469974
+  ...
+# Subtest: triagem: duas mensagens simultâneas mandam o menu uma vez; equipe apagada cai na regra do canal
+ok 295 - triagem: duas mensagens simultâneas mandam o menu uma vez; equipe apagada cai na regra do canal
+  ---
+  duration_ms: 531.404754
+  ...
+# Subtest: triagem não atinge conversas que já existiam antes de ser ligada
+ok 296 - triagem não atinge conversas que já existiam antes de ser ligada
+  ---
+  duration_ms: 94.739314
+  ...
+# Subtest: nova conversa por telefone nacional: cria contato + conversa no pivô E.164, atribui a quem iniciou e enfileira a 1ª mensagem
+ok 297 - nova conversa por telefone nacional: cria contato + conversa no pivô E.164, atribui a quem iniciou e enfileira a 1ª mensagem
+  ---
+  duration_ms: 8114.445432
+  ...
+# Subtest: nova conversa com contato já existente reaproveita a conversa e reabre se estava finalizada
+ok 298 - nova conversa com contato já existente reaproveita a conversa e reabre se estava finalizada
+  ---
+  duration_ms: 78.672602
+  ...
+# Subtest: nova conversa: rejeita telefone inválido, canal desconectado, Instagram e contato de outro workspace
+ok 299 - nova conversa: rejeita telefone inválido, canal desconectado, Instagram e contato de outro workspace
+  ---
+  duration_ms: 51.001623
+  ...
+# Subtest: respostas rápidas: normaliza atalho, impede duplicado sem diferenciar maiúsculas e isola por workspace
+ok 300 - respostas rápidas: normaliza atalho, impede duplicado sem diferenciar maiúsculas e isola por workspace
+  ---
+  duration_ms: 86.54537
+  ...
+# Subtest: nota interna vira evento da timeline e nunca é enviada ao contato
+ok 301 - nota interna vira evento da timeline e nunca é enviada ao contato
+  ---
+  duration_ms: 74.795872
+  ...
+# Subtest: nova conversa: número com +código de país nunca recebe 55
+ok 302 - nova conversa: número com +código de país nunca recebe 55
+  ---
+  duration_ms: 39.974356
+  ...
+# Subtest: GET /v1/inbox/status responde 200 com enabled:true quando o módulo está ligado
+ok 303 - GET /v1/inbox/status responde 200 com enabled:true quando o módulo está ligado
+  ---
+  duration_ms: 2483.490843
+  ...
+# Subtest: GET /v1/inbox/status responde 200 com enabled:false quando o módulo está desligado — NUNCA 404
+ok 304 - GET /v1/inbox/status responde 200 com enabled:false quando o módulo está desligado — NUNCA 404
+  ---
+  duration_ms: 676.448039
+  ...
+# Subtest: GET /v1/inbox/status exige autenticação (401 sem token)
+ok 305 - GET /v1/inbox/status exige autenticação (401 sem token)
+  ---
+  duration_ms: 499.46256
+  ...
+# Subtest: POST /v1/inbox/stream-token emite um token de escopo único, autenticado normalmente por header
+ok 306 - POST /v1/inbox/stream-token emite um token de escopo único, autenticado normalmente por header
+  ---
+  duration_ms: 641.271164
+  ...
+# Subtest: POST /v1/inbox/stream-token exige autenticação (401 sem token)
+ok 307 - POST /v1/inbox/stream-token exige autenticação (401 sem token)
+  ---
+  duration_ms: 560.566528
+  ...
+# Subtest: GET /v1/inbox/stream com o access token NORMAL na querystring (?stream_token=) é rejeitado — nunca mais aceita o token de sessão ali
+ok 308 - GET /v1/inbox/stream com o access token NORMAL na querystring (?stream_token=) é rejeitado — nunca mais aceita o token de sessão ali
+  ---
+  duration_ms: 626.079656
+  ...
+# Subtest: GET /v1/inbox/stream com um stream_token EXPIRADO é rejeitado
+ok 309 - GET /v1/inbox/stream com um stream_token EXPIRADO é rejeitado
+  ---
+  duration_ms: 779.598635
+  ...
+# Subtest: GET /v1/inbox/stream sem nenhum token é rejeitado
+ok 310 - GET /v1/inbox/stream sem nenhum token é rejeitado
+  ---
+  duration_ms: 1050.374887
+  ...
+# Subtest: um stream_token válido (purpose=inbox_stream) usado via header Authorization em OUTRA rota é rejeitado — nunca autoriza mais nada além do stream
+ok 311 - um stream_token válido (purpose=inbox_stream) usado via header Authorization em OUTRA rota é rejeitado — nunca autoriza mais nada além do stream
+  ---
+  duration_ms: 683.778718
+  ...
+# Subtest: um stream_token válido usado via header Authorization NA PRÓPRIA rota de stream (em vez de querystring) também é rejeitado — só a querystring é aceita
+ok 312 - um stream_token válido usado via header Authorization NA PRÓPRIA rota de stream (em vez de querystring) também é rejeitado — só a querystring é aceita
+  ---
+  duration_ms: 670.211273
+  ...
+# Subtest: isPrincipalAuthorizedForRequest: matriz completa de decisão
+ok 313 - isPrincipalAuthorizedForRequest: matriz completa de decisão
+  ---
+  duration_ms: 0.676795
+  ...
+# Subtest: POST /v1/inbox/media-token exige autenticação (401 sem token)
+ok 314 - POST /v1/inbox/media-token exige autenticação (401 sem token)
+  ---
+  duration_ms: 402.932642
+  ...
+# Subtest: POST /v1/inbox/media-token para mensagem inexistente responde 404 (nunca vaza existência)
+ok 315 - POST /v1/inbox/media-token para mensagem inexistente responde 404 (nunca vaza existência)
+  ---
+  duration_ms: 615.782495
+  ...
+# Subtest: POST /v1/inbox/media-token emite token escopado (purpose=inbox_media + messageId) e GET /inbox/media/:id serve os bytes reais
+ok 316 - POST /v1/inbox/media-token emite token escopado (purpose=inbox_media + messageId) e GET /inbox/media/:id serve os bytes reais
+  ---
+  duration_ms: 1475.61014
+  ...
+# Subtest: GET /inbox/media/:id com media_token válido para OUTRA mensagem é rejeitado (401)
+ok 317 - GET /inbox/media/:id com media_token válido para OUTRA mensagem é rejeitado (401)
+  ---
+  duration_ms: 1213.999477
+  ...
+# Subtest: GET /inbox/media/:id de mensagem de OUTRO tenant responde 404 (IDOR)
+ok 318 - GET /inbox/media/:id de mensagem de OUTRO tenant responde 404 (IDOR)
+  ---
+  duration_ms: 1007.824735
+  ...
+# Subtest: GET /inbox/media/:id sem storage de mídia configurado (DisabledInboxMediaStorage, o padrão) responde 404, nunca 500
+ok 319 - GET /inbox/media/:id sem storage de mídia configurado (DisabledInboxMediaStorage, o padrão) responde 404, nunca 500
+  ---
+  duration_ms: 606.254985
+  ...
+# Subtest: POST /v1/inbox/avatar-token emite token escopado (purpose=inbox_avatar) e GET /inbox/avatars/:kind/:id serve os bytes reais
+ok 320 - POST /v1/inbox/avatar-token emite token escopado (purpose=inbox_avatar) e GET /inbox/avatars/:kind/:id serve os bytes reais
+  ---
+  duration_ms: 673.882068
+  ...
+# Subtest: GET /inbox/avatars/:kind/:id com avatar_token válido para OUTRO alvo é rejeitado (401)
+ok 321 - GET /inbox/avatars/:kind/:id com avatar_token válido para OUTRO alvo é rejeitado (401)
+  ---
+  duration_ms: 559.733377
+  ...
+# Subtest: POST /v1/inbox/avatar-token para contato de OUTRO tenant responde 404 (nunca vaza existência)
+ok 322 - POST /v1/inbox/avatar-token para contato de OUTRO tenant responde 404 (nunca vaza existência)
+  ---
+  duration_ms: 549.258712
+  ...
+# Subtest: GET /inbox/avatars/:kind/:id sem storage de mídia configurado responde 404, nunca 500
+ok 323 - GET /inbox/avatars/:kind/:id sem storage de mídia configurado responde 404, nunca 500
+  ---
+  duration_ms: 635.760018
+  ...
+# Subtest: CRUD: criar/listar/editar/excluir etiqueta, nome único (case-insensitive) por workspace
+ok 324 - CRUD: criar/listar/editar/excluir etiqueta, nome único (case-insensitive) por workspace
+  ---
+  duration_ms: 8695.318044
+  ...
+# Subtest: CRUD: nome vazio (ou só espaços) é rejeitado, tanto na criação quanto na edição
+ok 325 - CRUD: nome vazio (ou só espaços) é rejeitado, tanto na criação quanto na edição
+  ---
+  duration_ms: 44.339977
+  ...
+# Subtest: CRUD: renomear pra um nome já usado por OUTRA etiqueta é rejeitado (nunca um erro cru de banco); renomear pra si mesma (mesmo nome, outro case) funciona
+ok 326 - CRUD: renomear pra um nome já usado por OUTRA etiqueta é rejeitado (nunca um erro cru de banco); renomear pra si mesma (mesmo nome, outro case) funciona
+  ---
+  duration_ms: 19.881553
+  ...
+# Subtest: ISOLAMENTO: etiqueta de outro workspace/tenant nunca é encontrada (404, nunca vaza existência)
+ok 327 - ISOLAMENTO: etiqueta de outro workspace/tenant nunca é encontrada (404, nunca vaza existência)
+  ---
+  duration_ms: 14.847942
+  ...
+# Subtest: CONVERSA: aceita MAIS DE UMA etiqueta por conversa; attach é idempotente; detach some sozinho
+ok 328 - CONVERSA: aceita MAIS DE UMA etiqueta por conversa; attach é idempotente; detach some sozinho
+  ---
+  duration_ms: 138.362696
+  ...
+# Subtest: EXCLUSÃO DE ETIQUETA: excluir a etiqueta remove ela de TODA conversa que a tinha, sem apagar a conversa
+ok 329 - EXCLUSÃO DE ETIQUETA: excluir a etiqueta remove ela de TODA conversa que a tinha, sem apagar a conversa
+  ---
+  duration_ms: 66.074647
+  ...
+# Subtest: SEM MÓDULO CONFIGURADO: listConversations sem tagRepository nunca lança e nunca preenche `tags` (comportamento anterior preservado)
+ok 330 - SEM MÓDULO CONFIGURADO: listConversations sem tagRepository nunca lança e nunca preenche `tags` (comportamento anterior preservado)
+  ---
+  duration_ms: 28.026236
+  ...
+# Subtest: worker com CONVERSATIONS_MODULE_ENABLED=false: permanece vivo (sem restart loop), heartbeat fresco, GET /status reflete disabled, encerra limpo com SIGTERM
+ok 331 - worker com CONVERSATIONS_MODULE_ENABLED=false: permanece vivo (sem restart loop), heartbeat fresco, GET /status reflete disabled, encerra limpo com SIGTERM
+  ---
+  duration_ms: 3200.617804
+  ...
+# Subtest: Migrations 0076-0079 aplicam sem erro; tabelas do módulo Instagram DM existem
+ok 332 - Migrations 0076-0079 aplicam sem erro; tabelas do módulo Instagram DM existem
+  ---
+  duration_ms: 9701.459693
+  ...
+# Subtest: PostgresInstagramDmAccountRouteRepository: upsert por instagramBusinessAccountId nunca duplica; reconectar noutro workspace atualiza a rota
+ok 333 - PostgresInstagramDmAccountRouteRepository: upsert por instagramBusinessAccountId nunca duplica; reconectar noutro workspace atualiza a rota
+  ---
+  duration_ms: 23.560164
+  ...
+# Subtest: Rota de conta Instagram: apagar o workspace apaga a rota em cascata (FK → workspaces)
+ok 334 - Rota de conta Instagram: apagar o workspace apaga a rota em cascata (FK → workspaces)
+  ---
+  duration_ms: 122.482944
+  ...
+# Subtest: GET /webhooks/instagram: handshake com verify_token errado responde 403 sem derrubar o processo (regressão do crash de produção)
+ok 335 - GET /webhooks/instagram: handshake com verify_token errado responde 403 sem derrubar o processo (regressão do crash de produção)
+  ---
+  duration_ms: 1528.069534
+  ...
+# Subtest: GET /webhooks/instagram: handshake com verify_token correto ecoa o challenge como texto puro
+ok 336 - GET /webhooks/instagram: handshake com verify_token correto ecoa o challenge como texto puro
+  ---
+  duration_ms: 579.847256
+  ...
+# Subtest: POST /webhooks/instagram: sem META_APP_SECRET configurado, responde 503 sem crashar
+ok 337 - POST /webhooks/instagram: sem META_APP_SECRET configurado, responde 503 sem crashar
+  ---
+  duration_ms: 413.978833
+  ...
+# Subtest: POST /webhooks/instagram: assinatura ausente/errada responde 401 sem crashar; assinatura válida responde 200
+ok 338 - POST /webhooks/instagram: assinatura ausente/errada responde 401 sem crashar; assinatura válida responde 200
+  ---
+  duration_ms: 371.867097
+  ...
+# Subtest: verifyMetaWebhookSignature: aceita HMAC-SHA256 válido sobre os bytes crus, rejeita corpo alterado ou segredo errado
+ok 339 - verifyMetaWebhookSignature: aceita HMAC-SHA256 válido sobre os bytes crus, rejeita corpo alterado ou segredo errado
+  ---
+  duration_ms: 9094.613393
+  ...
+# Subtest: receiveInstagramDmWebhook: conta sem rota conhecida é ignorada silenciosamente, nunca lança erro
+ok 340 - receiveInstagramDmWebhook: conta sem rota conhecida é ignorada silenciosamente, nunca lança erro
+  ---
+  duration_ms: 10.16079
+  ...
+# Subtest: receiveInstagramDmWebhook: mensagem is_echo (própria mensagem ecoada) nunca é reprocessada
+ok 341 - receiveInstagramDmWebhook: mensagem is_echo (própria mensagem ecoada) nunca é reprocessada
+  ---
+  duration_ms: 61.170522
+  ...
+# Subtest: receiveInstagramDmWebhook: nova mensagem cria/reencontra a conexão Instagram (idempotente) e registra a conversa/mensagem inbound via o mesmo pipeline do WhatsApp
+ok 342 - receiveInstagramDmWebhook: nova mensagem cria/reencontra a conexão Instagram (idempotente) e registra a conversa/mensagem inbound via o mesmo pipeline do WhatsApp
+  ---
+  duration_ms: 123.369888
+  ...
+# Subtest: receiveInstagramDmWebhook: evento sem sender/text/mid é pulado sem lançar
+ok 343 - receiveInstagramDmWebhook: evento sem sender/text/mid é pulado sem lançar
+  ---
+  duration_ms: 8.584121
+  ...
+# Subtest: FASES_PADRAO: listKanbanPhases cria as 3 fases padrão na primeira vez, idempotente depois
+ok 344 - FASES_PADRAO: listKanbanPhases cria as 3 fases padrão na primeira vez, idempotente depois
+  ---
+  duration_ms: 9683.420274
+  ...
+# Subtest: FASE_CRUD: criar, editar (isDefaultFirst desmarca a anterior), e o erro claro pra fase de outra equipe
+ok 345 - FASE_CRUD: criar, editar (isDefaultFirst desmarca a anterior), e o erro claro pra fase de outra equipe
+  ---
+  duration_ms: 204.700771
+  ...
+# Subtest: FASE_DELETE: bloqueia excluir a última fase; migra cards pro fallback; herda isDefaultFirst; reindexa
+ok 346 - FASE_DELETE: bloqueia excluir a última fase; migra cards pro fallback; herda isDefaultFirst; reindexa
+  ---
+  duration_ms: 690.348121
+  ...
+# Subtest: FASE_DELETE_CRONOMETRO: fallback PAUSED faz o cronômetro parar — nunca preso no phaseType RUNNING da fase excluída
+ok 347 - FASE_DELETE_CRONOMETRO: fallback PAUSED faz o cronômetro parar — nunca preso no phaseType RUNNING da fase excluída
+  ---
+  duration_ms: 312.42942
+  ...
+# Subtest: FECHAR/REABRIR: resolver a conversa fecha o cronômetro do kanban; reabrir reabre na MESMA fase
+ok 348 - FECHAR/REABRIR: resolver a conversa fecha o cronômetro do kanban; reabrir reabre na MESMA fase
+  ---
+  duration_ms: 213.135418
+  ...
+# Subtest: FASE_REORDER: substituição total, duas passadas nunca violam a constraint única de order_index
+ok 349 - FASE_REORDER: substituição total, duas passadas nunca violam a constraint única de order_index
+  ---
+  duration_ms: 75.042004
+  ...
+# Subtest: MOVER_CARD: fecha a entrada aberta e abre uma nova; snapshot de phaseType; conversa fora da equipe é rejeitada
+ok 350 - MOVER_CARD: fecha a entrada aberta e abre uma nova; snapshot de phaseType; conversa fora da equipe é rejeitada
+  ---
+  duration_ms: 327.90661
+  ...
+# Subtest: MOVER_CARD_CONCORRENCIA: duas chamadas simultâneas pro MESMO card nunca deixam duas entradas abertas (lock real)
+ok 351 - MOVER_CARD_CONCORRENCIA: duas chamadas simultâneas pro MESMO card nunca deixam duas entradas abertas (lock real)
+  ---
+  duration_ms: 464.714649
+  ...
+# Subtest: ENSURE_PHASE_STATES: conversa recém-roteada (sem currentPhaseId) ganha a fase padrão e uma entrada de tempo aberta; idempotente
+ok 352 - ENSURE_PHASE_STATES: conversa recém-roteada (sem currentPhaseId) ganha a fase padrão e uma entrada de tempo aberta; idempotente
+  ---
+  duration_ms: 217.801176
+  ...
+# Subtest: SERVICE_TIME: RUNNING soma tempo fechado + isRunning true; PAUSED nunca soma, isRunning false
+ok 353 - SERVICE_TIME: RUNNING soma tempo fechado + isRunning true; PAUSED nunca soma, isRunning false
+  ---
+  duration_ms: 586.805036
+  ...
+# Subtest: PIN: fixar/desafixar grava pinnedAt coerente, sem exigir equipe/fase nenhuma
+ok 354 - PIN: fixar/desafixar grava pinnedAt coerente, sem exigir equipe/fase nenhuma
+  ---
+  duration_ms: 32.592869
+  ...
+# Subtest: KANBAN_NAO_CONFIGURADO: deps sem teamKanbanPhaseRepository/conversationTimeEntryRepository nunca lançam erro genérico — erro de domínio claro
+ok 355 - KANBAN_NAO_CONFIGURADO: deps sem teamKanbanPhaseRepository/conversationTimeEntryRepository nunca lançam erro genérico — erro de domínio claro
+  ---
+  duration_ms: 4.236831
+  ...
+# Subtest: ATRIBUICAO_MANUAL_DE_EQUIPE: setConversationTeam coloca uma conversa existente numa equipe (achado de suporte: sem isto o Kanban ficava vazio pra sempre sem roteamento por canal configurado)
+ok 356 - ATRIBUICAO_MANUAL_DE_EQUIPE: setConversationTeam coloca uma conversa existente numa equipe (achado de suporte: sem isto o Kanban ficava vazio pra sempre sem roteamento por canal configurado)
+  ---
+  duration_ms: 173.639419
+  ...
+# Subtest: FUSO: horário de parede no fuso do evento vira o instante UTC certo; dia inteiro usa a meia-noite local
+ok 357 - FUSO: horário de parede no fuso do evento vira o instante UTC certo; dia inteiro usa a meia-noite local
+  ---
+  duration_ms: 10923.656793
+  ...
+# Subtest: AGENDA CRUD: criar, listar, editar, concluir (terminal) e cancelar
+ok 358 - AGENDA CRUD: criar, listar, editar, concluir (terminal) e cancelar
+  ---
+  duration_ms: 2068.529104
+  ...
+# Subtest: AGENDA RBAC + isolamento: viewer não cria; editor vê só os seus; outro tenant/workspace não enxerga
+ok 359 - AGENDA RBAC + isolamento: viewer não cria; editor vê só os seus; outro tenant/workspace não enxerga
+  ---
+  duration_ms: 899.077177
+  ...
+# Subtest: AGENDA sem Conversas + GRAVAR AUTOMATICAMENTE: prepara a reunião agendada vinculada (sem gravar)
+ok 360 - AGENDA sem Conversas + GRAVAR AUTOMATICAMENTE: prepara a reunião agendada vinculada (sem gravar)
+  ---
+  duration_ms: 549.457514
+  ...
+# Subtest: GOOGLE OAUTH: state assinado (sem memória), connect, refresh, revogado e disconnect
+ok 361 - GOOGLE OAUTH: state assinado (sem memória), connect, refresh, revogado e disconnect
+  ---
+  duration_ms: 53.154835
+  ...
+# Subtest: GOOGLE PULL: eventos, dia inteiro e OCORRÊNCIAS de recorrência como linhas próprias (sem colapsar no mestre)
+ok 362 - GOOGLE PULL: eventos, dia inteiro e OCORRÊNCIAS de recorrência como linhas próprias (sem colapsar no mestre)
+  ---
+  duration_ms: 100.399111
+  ...
+# Subtest: GOOGLE PUSH + MEET + ANTI-ECO: evento local vai para o Google uma vez e o pull seguinte não gera loop
+ok 363 - GOOGLE PUSH + MEET + ANTI-ECO: evento local vai para o Google uma vez e o pull seguinte não gera loop
+  ---
+  duration_ms: 111.189311
+  ...
+# Subtest: GOOGLE CONFLITO: os dois lados mudaram → nada é sobrescrito; resolução explícita (manter Vorix / aceitar Google)
+ok 364 - GOOGLE CONFLITO: os dois lados mudaram → nada é sobrescrito; resolução explícita (manter Vorix / aceitar Google)
+  ---
+  duration_ms: 133.4182
+  ...
+# Subtest: GOOGLE 412 no push: mudança no Google entre o pull e o push vira conflito (If-Match)
+ok 365 - GOOGLE 412 no push: mudança no Google entre o pull e o push vira conflito (If-Match)
+  ---
+  duration_ms: 72.088974
+  ...
+# Subtest: GOOGLE estado TERMINAL: concluído no Vorix não volta a confirmado nem é cancelado por pull
+ok 366 - GOOGLE estado TERMINAL: concluído no Vorix não volta a confirmado nem é cancelado por pull
+  ---
+  duration_ms: 141.962919
+  ...
+# Subtest: GOOGLE sync token expirado (410): refaz a carga completa sem duplicar
+ok 367 - GOOGLE sync token expirado (410): refaz a carga completa sem duplicar
+  ---
+  duration_ms: 67.257299
+  ...
+# Subtest: GOOGLE token revogado → conexão em ERRO ('precisa ser reconectado'); falha transitória mantém conectada com backoff
+ok 368 - GOOGLE token revogado → conexão em ERRO ('precisa ser reconectado'); falha transitória mantém conectada com backoff
+  ---
+  duration_ms: 62.976323
+  ...
+# Subtest: LOCK DISTRIBUÍDO: dois processos nunca sincronizam a mesma conta; lease vencido libera para outro
+ok 369 - LOCK DISTRIBUÍDO: dois processos nunca sincronizam a mesma conta; lease vencido libera para outro
+  ---
+  duration_ms: 336.970259
+  ...
+# Subtest: domínio: estatísticas de fala, monólogo, perguntas, palavras monitoradas e regra de gravação automática
+ok 370 - domínio: estatísticas de fala, monólogo, perguntas, palavras monitoradas e regra de gravação automática
+  ---
+  duration_ms: 11020.970023
+  ...
+# Subtest: IA: citação sem trecho literal é descartada em 'pergunte à reunião'; modelo de resumo aceita seções
+ok 371 - IA: citação sem trecho literal é descartada em 'pergunte à reunião'; modelo de resumo aceita seções
+  ---
+  duration_ms: 62.507719
+  ...
+# Subtest: modelo de resumo de vendas vai para a análise com os nomes dos falantes; painel mostra falantes e estatísticas
+ok 372 - modelo de resumo de vendas vai para a análise com os nomes dos falantes; painel mostra falantes e estatísticas
+  ---
+  duration_ms: 717.829549
+  ...
+# Subtest: pergunte à reunião (uma e todas), follow-up e envio por WhatsApp
+ok 373 - pergunte à reunião (uma e todas), follow-up e envio por WhatsApp
+  ---
+  duration_ms: 320.514825
+  ...
+# Subtest: CRM: vincula contato + oportunidade e a tarefa da reunião vira tarefa real (uma vez só)
+ok 374 - CRM: vincula contato + oportunidade e a tarefa da reunião vira tarefa real (uma vez só)
+  ---
+  duration_ms: 325.900971
+  ...
+# Subtest: link público: token só existe na criação, respeita o que foi liberado, expira e pode ser revogado
+ok 375 - link público: token só existe na criação, respeita o que foi liberado, expira e pode ser revogado
+  ---
+  duration_ms: 290.33594
+  ...
+# Subtest: exportação Markdown, trechos, comentários, palavras monitoradas e preferências
+ok 376 - exportação Markdown, trechos, comentários, palavras monitoradas e preferências
+  ---
+  duration_ms: 262.903848
+  ...
+# Subtest: limite mensal de minutos recusa upload e gravação; uso aparece no painel
+ok 377 - limite mensal de minutos recusa upload e gravação; uso aparece no painel
+  ---
+  duration_ms: 147.222649
+  ...
+# Subtest: exclusão definitiva (LGPD) apaga a reunião e a mídia, exigindo o título exato
+ok 378 - exclusão definitiva (LGPD) apaga a reunião e a mídia, exigindo o título exato
+  ---
+  duration_ms: 185.041263
+  ...
+# Subtest: Google Meet nativo: cliente lê registro, transcrição e nomes; agendador importa e gera análise
+ok 379 - Google Meet nativo: cliente lê registro, transcrição e nomes; agendador importa e gera análise
+  ---
+  duration_ms: 146.281032
+  ...
+# Subtest: Zoom: lê o VTT com nomes; importa a gravação usando a transcrição do Zoom (ou enfileira a nossa) e nunca duplica
+ok 380 - Zoom: lê o VTT com nomes; importa a gravação usando a transcrição do Zoom (ou enfileira a nossa) e nunca duplica
+  ---
+  duration_ms: 163.29294
+  ...
+# Subtest: revisão: trecho só é apagado por quem criou; LGPD apaga perguntas entre reuniões que citam a reunião; Meet recorrente pega a ocorrência certa
+ok 381 - revisão: trecho só é apagado por quem criou; LGPD apaga perguntas entre reuniões que citam a reunião; Meet recorrente pega a ocorrência certa
+  ---
+  duration_ms: 380.379766
+  ...
+# Subtest: revisão: importação do Zoom respeita o limite de minutos e não duplica com dois cliques
+ok 382 - revisão: importação do Zoom respeita o limite de minutos e não duplica com dois cliques
+  ---
+  duration_ms: 195.388573
+  ...
+# Subtest: FILA: worker morre depois do claim → lease expira → outro worker recupera; o antigo não grava mais nada
+ok 383 - FILA: worker morre depois do claim → lease expira → outro worker recupera; o antigo não grava mais nada
+  ---
+  duration_ms: 11667.822327
+  ...
+# Subtest: FILA: tentativas esgotadas por crashes viram FAILED — nunca fica travado para sempre
+ok 384 - FILA: tentativas esgotadas por crashes viram FAILED — nunca fica travado para sempre
+  ---
+  duration_ms: 246.103226
+  ...
+# Subtest: IDEMPOTÊNCIA: uma gravação nunca tem duas transcrições ativas ao mesmo tempo
+ok 385 - IDEMPOTÊNCIA: uma gravação nunca tem duas transcrições ativas ao mesmo tempo
+  ---
+  duration_ms: 84.12895
+  ...
+# Subtest: TRANSCRIÇÃO: segmentos com timestamp/confiança, pesquisáveis; retranscrever SUBSTITUI (sem duplicar); enfileira a análise
+ok 386 - TRANSCRIÇÃO: segmentos com timestamp/confiança, pesquisáveis; retranscrever SUBSTITUI (sem duplicar); enfileira a análise
+  ---
+  duration_ms: 217.367193
+  ...
+# Subtest: TRANSCRIÇÃO: gravação removida = falha definitiva explícita (sem tentar de novo); falha transitória volta para a fila
+ok 387 - TRANSCRIÇÃO: gravação removida = falha definitiva explícita (sem tentar de novo); falha transitória volta para a fila
+  ---
+  duration_ms: 98.642266
+  ...
+# Subtest: IA + CRÉDITOS: com saldo → 1 chamada, crédito consumido pelo catálogo central, itens estruturados persistidos
+ok 388 - IA + CRÉDITOS: com saldo → 1 chamada, crédito consumido pelo catálogo central, itens estruturados persistidos
+  ---
+  duration_ms: 298.227752
+  ...
+# Subtest: IA SEM CRÉDITOS: zero chamadas ao provider, BLOCKED_NO_CREDITS, transcrição e análise anterior preservadas
+ok 389 - IA SEM CRÉDITOS: zero chamadas ao provider, BLOCKED_NO_CREDITS, transcrição e análise anterior preservadas
+  ---
+  duration_ms: 286.83689
+  ...
+# Subtest: IA com provider fora do ar: nenhum crédito cobrado, tenta de novo com backoff e, esgotado, registra a falha
+ok 390 - IA com provider fora do ar: nenhum crédito cobrado, tenta de novo com backoff e, esgotado, registra a falha
+  ---
+  duration_ms: 152.4653
+  ...
+# Subtest: IA anti-alucinação: item sem trecho literal da transcrição é descartado; timestamp fora da reunião é removido
+ok 391 - IA anti-alucinação: item sem trecho literal da transcrição é descartado; timestamp fora da reunião é removido
+  ---
+  duration_ms: 6.580749
+  ...
+# Subtest: RETENÇÃO: arquivo vencido removido; metadados, transcrição e auditoria preservados; respeita meetingRetentionDays do plano
+ok 392 - RETENÇÃO: arquivo vencido removido; metadados, transcrição e auditoria preservados; respeita meetingRetentionDays do plano
+  ---
+  duration_ms: 64.759053
+  ...
+# Subtest: AUTO-GRAVAÇÃO (preparação): reunião elegível na janela → RECORDING_DISABLED uma única vez; fora da janela não é tocada
+ok 393 - AUTO-GRAVAÇÃO (preparação): reunião elegível na janela → RECORDING_DISABLED uma única vez; fora da janela não é tocada
+  ---
+  duration_ms: 47.944634
+  ...
+# Subtest: DOMÍNIO: normalização de e-mail, exclusão só de identidades humanas e capacidade efetiva
+ok 394 - DOMÍNIO: normalização de e-mail, exclusão só de identidades humanas e capacidade efetiva
+  ---
+  duration_ms: 7696.093278
+  ...
+# Subtest: RBAC: só admin/owner gerenciam contas de gravação
+ok 395 - RBAC: só admin/owner gerenciam contas de gravação
+  ---
+  duration_ms: 0.762347
+  ...
+# Subtest: INFERÊNCIA: organizador conhecido, dono da agenda, explícito vence — convidados nunca entram
+ok 396 - INFERÊNCIA: organizador conhecido, dono da agenda, explícito vence — convidados nunca entram
+  ---
+  duration_ms: 0.779153
+  ...
+# Subtest: ISOLAMENTO: a conta de um tenant nunca grava reunião de outro tenant
+ok 397 - ISOLAMENTO: a conta de um tenant nunca grava reunião de outro tenant
+  ---
+  duration_ms: 270.407211
+  ...
+# Subtest: IDENTIDADE: a conta humana da reunião nunca é escolhida como gravador (normalização incluída)
+ok 398 - IDENTIDADE: a conta humana da reunião nunca é escolhida como gravador (normalização incluída)
+  ---
+  duration_ms: 154.507989
+  ...
+# Subtest: IDENTIDADE: conta que é a pessoa de OUTRA reunião ativa do tenant fica fora (transitório)
+ok 399 - IDENTIDADE: conta que é a pessoa de OUTRA reunião ativa do tenant fica fora (transitório)
+  ---
+  duration_ms: 167.072427
+  ...
+# Subtest: MOTIVOS: identidade obrigatória, sessão inválida, contas ocupadas, limite do plano
+ok 400 - MOTIVOS: identidade obrigatória, sessão inválida, contas ocupadas, limite do plano
+  ---
+  duration_ms: 309.340328
+  ...
+# Subtest: RUNTIME: identidade corrigida depois da reserva é barrada no recorder e a conta volta saudável
+ok 401 - RUNTIME: identidade corrigida depois da reserva é barrada no recorder e a conta volta saudável
+  ---
+  duration_ms: 283.098464
+  ...
+# Subtest: AGENDADOR: sem identidade não inicia; conflito permanente não repete e avisa o responsável
+ok 402 - AGENDADOR: sem identidade não inicia; conflito permanente não repete e avisa o responsável
+  ---
+  duration_ms: 292.877524
+  ...
+# Subtest: API GRAVAR AGORA: pergunta a conta Google da pessoa, depois grava com outra conta
+ok 403 - API GRAVAR AGORA: pergunta a conta Google da pessoa, depois grava com outra conta
+  ---
+  duration_ms: 2605.808738
+  ...
+# Subtest: API CONTAS: RBAC, conectar (só hash do token no banco), duplicado, isolamento, remover apaga a sessão
+ok 404 - API CONTAS: RBAC, conectar (só hash do token no banco), duplicado, isolamento, remover apaga a sessão
+  ---
+  duration_ms: 2086.478165
+  ...
+# Subtest: SELF-SERVICE: login pelo navegador remoto ativa a conta; senha/MFA nunca são persistidos nem logados
+ok 405 - SELF-SERVICE: login pelo navegador remoto ativa a conta; senha/MFA nunca são persistidos nem logados
+  ---
+  duration_ms: 932.816851
+  ...
+# Subtest: SELF-SERVICE: entrar com OUTRA conta Google falha sem guardar sessão; token inválido é recusado
+ok 406 - SELF-SERVICE: entrar com OUTRA conta Google falha sem guardar sessão; token inválido é recusado
+  ---
+  duration_ms: 741.100755
+  ...
+# Subtest: CANAL: token API→worker assinado por sessão e com validade; entradas inválidas descartadas
+ok 407 - CANAL: token API→worker assinado por sessão e com validade; entradas inválidas descartadas
+  ---
+  duration_ms: 1.085349
+  ...
+# Subtest: CAPACIDADE CONTEXTUAL: plano 3, quatro saudáveis, uma ocupada e conflito na reunião
+ok 408 - CAPACIDADE CONTEXTUAL: plano 3, quatro saudáveis, uma ocupada e conflito na reunião
+  ---
+  duration_ms: 0.424529
+  ...
+# Subtest: POOL TENANT: conta compartilhada atende outro workspace; restrição e cross-tenant são respeitados
+ok 409 - POOL TENANT: conta compartilhada atende outro workspace; restrição e cross-tenant são respeitados
+  ---
+  duration_ms: 122.590837
+  ...
+# Subtest: BANCO: duas reuniões ou execuções ativas não podem usar a mesma conta, mesmo com status adulterado
+ok 410 - BANCO: duas reuniões ou execuções ativas não podem usar a mesma conta, mesmo com status adulterado
+  ---
+  duration_ms: 144.013523
+  ...
+# Subtest: IDENTIDADE INFERIDA: sugere confirmação; escolha explícita vence e não exclui organizador
+ok 411 - IDENTIDADE INFERIDA: sugere confirmação; escolha explícita vence e não exclui organizador
+  ---
+  duration_ms: 653.498907
+  ...
+# Subtest: RECONEXÃO: health check falho preserva sessão anterior, REAUTH exclui capacidade e sucesso reativa
+ok 412 - RECONEXÃO: health check falho preserva sessão anterior, REAUTH exclui capacidade e sucesso reativa
+  ---
+  duration_ms: 152.167393
+  ...
+# Subtest: PROVISIONAMENTO: cancelar durante health check impede atualização tardia da sessão
+ok 413 - PROVISIONAMENTO: cancelar durante health check impede atualização tardia da sessão
+  ---
+  duration_ms: 124.189954
+  ...
+# Subtest: DESATIVAÇÃO: cancela reconexão e impede health check antigo de reativar a conta
+ok 414 - DESATIVAÇÃO: cancela reconexão e impede health check antigo de reativar a conta
+  ---
+  duration_ms: 149.494794
+  ...
+# Subtest: PROVISIONAMENTO: expiração e abandono fecham navegador e descartam estado incompleto
+ok 415 - PROVISIONAMENTO: expiração e abandono fecham navegador e descartam estado incompleto
+  ---
+  duration_ms: 121.717019
+  ...
+# Subtest: VIEWER: mesmo com token vazado, outro tenant/usuário não abre navegador; token tem uso único
+ok 416 - VIEWER: mesmo com token vazado, outro tenant/usuário não abre navegador; token tem uso único
+  ---
+  duration_ms: 622.344062
+  ...
+# Subtest: COMERCIAL: cada blocker impede contratação; mudar apenas public não libera Meetings
+ok 417 - COMERCIAL: cada blocker impede contratação; mudar apenas public não libera Meetings
+  ---
+  duration_ms: 1.081614
+  ...
+# Subtest: CONCORRÊNCIA REAL: N admissões paralelas nunca duplicam conta nem passam do plano
+ok 418 - CONCORRÊNCIA REAL: N admissões paralelas nunca duplicam conta nem passam do plano # SKIP defina VORIX_REAL_PG_URL (Postgres real, banco descartável)
+  ---
+  duration_ms: 0.230819
+  ...
+# Subtest: BOT MODEL: storageState e cifrado, nunca persistido em texto puro, e exige health check antes de ACTIVE
+ok 419 - BOT MODEL: storageState e cifrado, nunca persistido em texto puro, e exige health check antes de ACTIVE
+  ---
+  duration_ms: 10821.788438
+  ...
+# Subtest: RECORDER: captura validada vai para storage e reutiliza o job de transcricao
+ok 420 - RECORDER: captura validada vai para storage e reutiliza o job de transcricao
+  ---
+  duration_ms: 282.303329
+  ...
+# Subtest: CANCEL: antes da admissao cancela job/reuniao e libera bot saudavel
+ok 421 - CANCEL: antes da admissao cancela job/reuniao e libera bot saudavel
+  ---
+  duration_ms: 141.649457
+  ...
+# Subtest: BOT SESSION INVALID: falha normalizada e bot sai do pool
+ok 422 - BOT SESSION INVALID: falha normalizada e bot sai do pool
+  ---
+  duration_ms: 76.300972
+  ...
+# Subtest: BOT SESSION EXPIRED: login exigido pede reconexão e registra a liberação da conta
+ok 423 - BOT SESSION EXPIRED: login exigido pede reconexão e registra a liberação da conta
+  ---
+  duration_ms: 112.033124
+  ...
+# Subtest: ORPHAN RECOVERY: heartbeat vencido falha run/job e libera bot
+ok 424 - ORPHAN RECOVERY: heartbeat vencido falha run/job e libera bot
+  ---
+  duration_ms: 155.715374
+  ...
+# Subtest: AUTO RECORD: sem bot repete dentro da grace window e falha depois dela
+ok 425 - AUTO RECORD: sem bot repete dentro da grace window e falha depois dela
+  ---
+  duration_ms: 137.141796
+  ...
+# Subtest: RBAC/ISOLATION USE CASE: stop so existe no tenant/workspace visivel
+ok 426 - RBAC/ISOLATION USE CASE: stop so existe no tenant/workspace visivel
+  ---
+  duration_ms: 91.196915
+  ...
+# Subtest: SELF-SERVICE UI + JWT real + WebSocket + PostgreSQL: fixtures sem Google real
+ok 427 - SELF-SERVICE UI + JWT real + WebSocket + PostgreSQL: fixtures sem Google real # SKIP
+  ---
+  duration_ms: 2.871611
+  ...
+# Subtest: MODELO: estado terminal protegido, link do Meet, formatos e limites comerciais
+ok 428 - MODELO: estado terminal protegido, link do Meet, formatos e limites comerciais
+  ---
+  duration_ms: 10804.224444
+  ...
+# Subtest: PLAYER: Range de um intervalo para navegar na gravação
+ok 429 - PLAYER: Range de um intervalo para navegar na gravação
+  ---
+  duration_ms: 0.834712
+  ...
+# Subtest: MIGRATION: aditiva — limites no entitlement e custo da análise no catálogo central de créditos
+ok 430 - MIGRATION: aditiva — limites no entitlement e custo da análise no catálogo central de créditos
+  ---
+  duration_ms: 46.541379
+  ...
+# Subtest: ENTITLEMENT: sem a solução Meetings a API responde 403; com concessão, 200
+ok 431 - ENTITLEMENT: sem a solução Meetings a API responde 403; com concessão, 200
+  ---
+  duration_ms: 2031.517301
+  ...
+# Subtest: STANDALONE: conta só com Meetings (Conversas desligado) usa o Meetings e não acessa o Conversas
+ok 432 - STANDALONE: conta só com Meetings (Conversas desligado) usa o Meetings e não acessa o Conversas
+  ---
+  duration_ms: 1493.546937
+  ...
+# Subtest: CENTRAL: reunião manual, link avulso e upload aparecem — sem nenhum evento de Agenda
+ok 433 - CENTRAL: reunião manual, link avulso e upload aparecem — sem nenhum evento de Agenda
+  ---
+  duration_ms: 1033.036642
+  ...
+# Subtest: CENTRAL: filtros por origem, gravação e busca no título E na transcrição
+ok 434 - CENTRAL: filtros por origem, gravação e busca no título E na transcrição
+  ---
+  duration_ms: 1152.952435
+  ...
+# Subtest: UPLOAD: arquivo no storage privado com checksum; reprodução só por URL assinada curta e auditada
+ok 435 - UPLOAD: arquivo no storage privado com checksum; reprodução só por URL assinada curta e auditada
+  ---
+  duration_ms: 1221.396477
+  ...
+# Subtest: UPLOAD: formato não suportado (415), acima do limite (413) e sem workspace (400) — nada é gravado
+ok 436 - UPLOAD: formato não suportado (415), acima do limite (413) e sem workspace (400) — nada é gravado
+  ---
+  duration_ms: 912.265838
+  ...
+# Subtest: UPLOAD: limite de armazenamento do plano é respeitado
+ok 437 - UPLOAD: limite de armazenamento do plano é respeitado
+  ---
+  duration_ms: 1123.187352
+  ...
+# Subtest: RBAC: viewer não cria; editor vê só as próprias; admin vê todas; editor não exclui
+ok 438 - RBAC: viewer não cria; editor vê só as próprias; admin vê todas; editor não exclui
+  ---
+  duration_ms: 680.854597
+  ...
+# Subtest: ISOLAMENTO: tenant B não vê, não reproduz, não transcreve e não grava reunião do tenant A
+ok 439 - ISOLAMENTO: tenant B não vê, não reproduz, não transcreve e não grava reunião do tenant A
+  ---
+  duration_ms: 637.732661
+  ...
+# Subtest: GRAVAR AGORA: com a gravação real desligada a reunião é criada e o motivo é explícito (nunca finge gravar)
+ok 440 - GRAVAR AGORA: com a gravação real desligada a reunião é criada e o motivo é explícito (nunca finge gravar)
+  ---
+  duration_ms: 375.616333
+  ...
+# Subtest: CONTAS DE GRAVAÇÃO + CONCORRÊNCIA: limite do plano nunca é excedido, conta nunca é duplicada, sem conta = motivo explícito
+ok 441 - CONTAS DE GRAVAÇÃO + CONCORRÊNCIA: limite do plano nunca é excedido, conta nunca é duplicada, sem conta = motivo explícito
+  ---
+  duration_ms: 640.413565
+  ...
+# Subtest: DASHBOARD: contadores da home do Meetings
+ok 442 - DASHBOARD: contadores da home do Meetings
+  ---
+  duration_ms: 381.607176
+  ...
+# Subtest: MercadoPagoBillingProvider sem credenciais devolve not_configured em todo método, nunca lança
+ok 443 - MercadoPagoBillingProvider sem credenciais devolve not_configured em todo método, nunca lança
+  ---
+  duration_ms: 2.760712
+  ...
+# Subtest: createCheckout: cria preapproval com auto_recurring.transaction_amount do chamador, nunca recalcula, e devolve init_point
+ok 444 - createCheckout: cria preapproval com auto_recurring.transaction_amount do chamador, nunca recalcula, e devolve init_point
+  ---
+  duration_ms: 0.929411
+  ...
+# Subtest: createCheckout: sem amount/currency do chamador falha explicitamente, nunca cobra um valor inventado
+ok 445 - createCheckout: sem amount/currency do chamador falha explicitamente, nunca cobra um valor inventado
+  ---
+  duration_ms: 0.527783
+  ...
+# Subtest: changeSubscription/addSubscriptionItem/removeSubscriptionItem/updateSubscriptionItemQuantity: todos convergem para PUT /preapproval/{id} com o total recalculado pelo chamador
+ok 446 - changeSubscription/addSubscriptionItem/removeSubscriptionItem/updateSubscriptionItemQuantity: todos convergem para PUT /preapproval/{id} com o total recalculado pelo chamador
+  ---
+  duration_ms: 1.024384
+  ...
+# Subtest: cancelSubscription: atPeriodEnd:true é rejeitado (Mercado Pago não agenda nativamente — o chamador usa subscription_pending_changes); atPeriodEnd:false cancela de verdade
+ok 447 - cancelSubscription: atPeriodEnd:true é rejeitado (Mercado Pago não agenda nativamente — o chamador usa subscription_pending_changes); atPeriodEnd:false cancela de verdade
+  ---
+  duration_ms: 0.409102
+  ...
+# Subtest: resumeSubscription: PUT status=authorized
+ok 448 - resumeSubscription: PUT status=authorized
+  ---
+  duration_ms: 0.35341
+  ...
+# Subtest: getPaymentMethod: nunca inventa um cartão — devolve undefined explicitamente
+ok 449 - getPaymentMethod: nunca inventa um cartão — devolve undefined explicitamente
+  ---
+  duration_ms: 0.366893
+  ...
+# Subtest: createCustomerPortal: falha explícita — Mercado Pago não tem portal hospedado equivalente ao Stripe
+ok 450 - createCustomerPortal: falha explícita — Mercado Pago não tem portal hospedado equivalente ao Stripe
+  ---
+  duration_ms: 1.395801
+  ...
+# Subtest: handleWebhook: assinatura x-signature válida (manifest id/ts + HMAC-SHA256) é aceita; inválida é rejeitada
+ok 451 - handleWebhook: assinatura x-signature válida (manifest id/ts + HMAC-SHA256) é aceita; inválida é rejeitada
+  ---
+  duration_ms: 2.619507
+  ...
+# Subtest: handleWebhook: preapproval cancelled mapeia para customer.subscription.deleted (vocabulário canônico já usado pelo Stripe)
+ok 452 - handleWebhook: preapproval cancelled mapeia para customer.subscription.deleted (vocabulário canônico já usado pelo Stripe)
+  ---
+  duration_ms: 0.601986
+  ...
+# Subtest: handleWebhook: pagamento aprovado/rejeitado mapeia para invoice.payment_succeeded/failed
+ok 453 - handleWebhook: pagamento aprovado/rejeitado mapeia para invoice.payment_succeeded/failed
+  ---
+  duration_ms: 0.541441
+  ...
+# Subtest: handleWebhook: preapproval PENDING (checkout aberto, cartão não aprovado) nunca vira contratação; paused vira atualização
+ok 454 - handleWebhook: preapproval PENDING (checkout aberto, cartão não aprovado) nunca vira contratação; paused vira atualização
+  ---
+  duration_ms: 0.672888
+  ...
+# Subtest: createCheckout anual cobra a cada 12 meses
+ok 455 - createCheckout anual cobra a cada 12 meses
+  ---
+  duration_ms: 0.515246
+  ...
+# Subtest: cancelSubscriptionSelfService (provider sem cancelamento nativo): agenda via subscription_pending_changes, nunca chama cancelSubscription na hora
+ok 456 - cancelSubscriptionSelfService (provider sem cancelamento nativo): agenda via subscription_pending_changes, nunca chama cancelSubscription na hora
+  ---
+  duration_ms: 10793.722543
+  ...
+# Subtest: reactivateSubscription ANTES do vencimento: cancela a pendência, nunca chama resumeSubscription no provider (nada foi cancelado lá ainda)
+ok 457 - reactivateSubscription ANTES do vencimento: cancela a pendência, nunca chama resumeSubscription no provider (nada foi cancelado lá ainda)
+  ---
+  duration_ms: 69.935723
+  ...
+# Subtest: scheduler (applyDuePendingCapacityChanges): cancelamento vencido chama cancelSubscription(atPeriodEnd:false) no provider, marca Subscription cancelled e reverte tenant_billing pro FREE
+ok 458 - scheduler (applyDuePendingCapacityChanges): cancelamento vencido chama cancelSubscription(atPeriodEnd:false) no provider, marca Subscription cancelled e reverte tenant_billing pro FREE
+  ---
+  duration_ms: 32.471443
+  ...
+# Subtest: reactivateSubscription DEPOIS do cancelamento efetivo: nunca finge reutilizar a subscription, exige checkout novo
+ok 459 - reactivateSubscription DEPOIS do cancelamento efetivo: nunca finge reutilizar a subscription, exige checkout novo
+  ---
+  duration_ms: 62.57914
+  ...
+# Subtest: purchaseAddon (provider sem catálogo nativo): amount/currency do total projetado são calculados via capacity.model.ts e passados ao provider
+ok 460 - purchaseAddon (provider sem catálogo nativo): amount/currency do total projetado são calculados via capacity.model.ts e passados ao provider
+  ---
+  duration_ms: 49.575577
+  ...
+# Subtest: applyCapacityChange: redução agendada, ao ser aplicada pelo scheduler, também passa amount/currency recalculado ao provider
+ok 461 - applyCapacityChange: redução agendada, ao ser aplicada pelo scheduler, também passa amount/currency recalculado ao provider
+  ---
+  duration_ms: 66.26814
+  ...
+# Subtest: CRIAR/LISTAR: notificação criada aparece em listActive; realtimePublisher é chamado (best-effort)
+ok 462 - CRIAR/LISTAR: notificação criada aparece em listActive; realtimePublisher é chamado (best-effort)
+  ---
+  duration_ms: 11530.858931
+  ...
+# Subtest: DISMISS: readAt e dismissedAt sempre setados JUNTOS; some da lista ativa mas continua no histórico
+ok 463 - DISMISS: readAt e dismissedAt sempre setados JUNTOS; some da lista ativa mas continua no histórico
+  ---
+  duration_ms: 16.170667
+  ...
+# Subtest: ISOLAMENTO: dismiss/list nunca vazam entre tenant/workspace/usuário diferentes
+ok 464 - ISOLAMENTO: dismiss/list nunca vazam entre tenant/workspace/usuário diferentes
+  ---
+  duration_ms: 10.380715
+  ...
+# Subtest: DISMISS_ALL: marca todas as ativas do usuário; devolve a contagem; idempotente (nunca conta de novo)
+ok 465 - DISMISS_ALL: marca todas as ativas do usuário; devolve a contagem; idempotente (nunca conta de novo)
+  ---
+  duration_ms: 10.586422
+  ...
+# Subtest: NOTIFY_BEST_EFFORT: nunca lança sem notificationRepository configurado (módulo desligado)
+ok 466 - NOTIFY_BEST_EFFORT: nunca lança sem notificationRepository configurado (módulo desligado)
+  ---
+  duration_ms: 0.569208
+  ...
+# Subtest: NOTIFY_BEST_EFFORT: com repositório configurado, cria de fato (assíncrono, best-effort)
+ok 467 - NOTIFY_BEST_EFFORT: com repositório configurado, cria de fato (assíncrono, best-effort)
+  ---
+  duration_ms: 22.01696
+  ...
+# Subtest: GATILHO_ATRIBUICAO: assignConversation notifica o NOVO responsável, nunca quem executou a ação
+ok 468 - GATILHO_ATRIBUICAO: assignConversation notifica o NOVO responsável, nunca quem executou a ação
+  ---
+  duration_ms: 124.463615
+  ...
+# Subtest: GATILHO_ATRIBUICAO: sem notificationRepository nos deps, assignConversation continua funcionando normalmente
+ok 469 - GATILHO_ATRIBUICAO: sem notificationRepository nos deps, assignConversation continua funcionando normalmente
+  ---
+  duration_ms: 34.788978
+  ...
+# Subtest: Pricing math: catálogo real tem os 3 planos aprovados em BRL com a capacidade aprovada
+ok 470 - Pricing math: catálogo real tem os 3 planos aprovados em BRL com a capacidade aprovada
+  ---
+  duration_ms: 10158.640771
+  ...
+# Subtest: Pricing math: cenários da seção 41 do pedido, calculados contra o catálogo real
+ok 471 - Pricing math: cenários da seção 41 do pedido, calculados contra o catálogo real
+  ---
+  duration_ms: 48.534194
+  ...
+# Subtest: Pricing math: crossovers da seção 42 do pedido
+ok 472 - Pricing math: crossovers da seção 42 do pedido
+  ---
+  duration_ms: 7.864475
+  ...
+# Subtest: Catalog validation: START -> PRO -> BUSINESS passa a validação de coerência (nunca pacote mais caro que a alternativa avulsa)
+ok 473 - Catalog validation: START -> PRO -> BUSINESS passa a validação de coerência (nunca pacote mais caro que a alternativa avulsa)
+  ---
+  duration_ms: 7.018474
+  ...
+# Subtest: purchaseAddon: segunda compra do MESMO addon soma quantidade, nunca cria um segundo item
+ok 474 - purchaseAddon: segunda compra do MESMO addon soma quantidade, nunca cria um segundo item
+  ---
+  duration_ms: 82.971645
+  ...
+# Subtest: purchaseAddon: duas compras concorrentes do mesmo addon nunca se perdem uma na outra (incremento atômico)
+ok 475 - purchaseAddon: duas compras concorrentes do mesmo addon nunca se perdem uma na outra (incremento atômico)
+  ---
+  duration_ms: 31.041439
+  ...
+# Subtest: previewCapacityChange: nunca cria SubscriptionItem nem muda a assinatura
+ok 476 - previewCapacityChange: nunca cria SubscriptionItem nem muda a assinatura
+  ---
+  duration_ms: 72.894911
+  ...
+# Subtest: applyCapacityChange: aumento de usuários é imediato (compra o addon na hora)
+ok 477 - applyCapacityChange: aumento de usuários é imediato (compra o addon na hora)
+  ---
+  duration_ms: 150.622861
+  ...
+# Subtest: applyCapacityChange: redução NUNCA é imediata — agenda pro fim do ciclo, scheduler aplica depois
+ok 478 - applyCapacityChange: redução NUNCA é imediata — agenda pro fim do ciclo, scheduler aplica depois
+  ---
+  duration_ms: 168.769757
+  ...
+# Subtest: applyCapacityChange: cancelar uma redução pendente preserva a capacidade atual
+ok 479 - applyCapacityChange: cancelar uma redução pendente preserva a capacidade atual
+  ---
+  duration_ms: 107.706163
+  ...
+# Subtest: applyCapacityChange: reduzir abaixo do uso ativo é rejeitado, nunca desativa usuário/conexão sozinho
+ok 480 - applyCapacityChange: reduzir abaixo do uso ativo é rejeitado, nunca desativa usuário/conexão sozinho
+  ---
+  duration_ms: 91.206659
+  ...
+# Subtest: applyCapacityChange: não permite reduzir abaixo da capacidade incluída no plano (isso é downgrade de plano, não de addon)
+ok 481 - applyCapacityChange: não permite reduzir abaixo da capacidade incluída no plano (isso é downgrade de plano, não de addon)
+  ---
+  duration_ms: 14.127768
+  ...
+# Subtest: Capacidade: isolamento cross-tenant — mudanças de um tenant nunca aparecem em outro
+ok 482 - Capacidade: isolamento cross-tenant — mudanças de um tenant nunca aparecem em outro
+  ---
+  duration_ms: 159.887094
+  ...
+# Subtest: CRÍTICO: GET /v1/platform/plans devolve exatamente o preço/moeda da MESMA plan_version usada no checkout
+ok 483 - CRÍTICO: GET /v1/platform/plans devolve exatamente o preço/moeda da MESMA plan_version usada no checkout
+  ---
+  duration_ms: 2895.658191
+  ...
+# Subtest: CRÍTICO: FREE e ENTERPRISE nunca aparecem no catálogo público, mesmo lendo do banco agora
+ok 484 - CRÍTICO: FREE e ENTERPRISE nunca aparecem no catálogo público, mesmo lendo do banco agora
+  ---
+  duration_ms: 1060.774814
+  ...
+# Subtest: POST /v1/platform/plans/simulate: simulador público (sem auth) recomenda o mesmo plano que o cálculo interno
+ok 485 - POST /v1/platform/plans/simulate: simulador público (sem auth) recomenda o mesmo plano que o cálculo interno
+  ---
+  duration_ms: 861.139948
+  ...
+# Subtest: resolveCommercialCapacity: expõe includedUsers/additionalUsers/totalUsers e o equivalente para números, sem duplicar o vocabulário de limits
+ok 486 - resolveCommercialCapacity: expõe includedUsers/additionalUsers/totalUsers e o equivalente para números, sem duplicar o vocabulário de limits
+  ---
+  duration_ms: 41.932416
+  ...
+# Subtest: public pricing exposes existing eligibility without publishing internal products or modifying prices
+ok 487 - public pricing exposes existing eligibility without publishing internal products or modifying prices
+  ---
+  duration_ms: 387.553644
+  ...
+# Subtest: development fallback is identified and cannot impersonate the official billing source
+ok 488 - development fallback is identified and cannot impersonate the official billing source
+  ---
+  duration_ms: 86.232548
+  ...
+# Subtest: POST /v1/auth/signup com planCode=PRO e TRIAL_ENABLED=true: cria Subscription real de trial, 7 dias
+ok 489 - POST /v1/auth/signup com planCode=PRO e TRIAL_ENABLED=true: cria Subscription real de trial, 7 dias
+  ---
+  duration_ms: 13643.792573
+  ...
+# Subtest: POST /v1/auth/signup sem planCode: comportamento antigo preservado, nenhuma Subscription real criada
+ok 490 - POST /v1/auth/signup sem planCode: comportamento antigo preservado, nenhuma Subscription real criada
+  ---
+  duration_ms: 1948.354936
+  ...
+# Subtest: POST /v1/auth/signup com planCode=PRO mas TRIAL_ENABLED=false (padrão): conta é criada normalmente, sem travar
+ok 491 - POST /v1/auth/signup com planCode=PRO mas TRIAL_ENABLED=false (padrão): conta é criada normalmente, sem travar
+  ---
+  duration_ms: 1417.485879
+  ...
+# Subtest: POST /v1/auth/signup: planCode inválido (ex. FREE) é rejeitado pelo schema, nunca aceito
+ok 492 - POST /v1/auth/signup: planCode inválido (ex. FREE) é rejeitado pelo schema, nunca aceito
+  ---
+  duration_ms: 584.877194
+  ...
+# Subtest: POST /v1/auth/signup: duplo cadastro com o mesmo email nunca duplica Subscription
+ok 493 - POST /v1/auth/signup: duplo cadastro com o mesmo email nunca duplica Subscription
+  ---
+  duration_ms: 1767.941862
+  ...
+# Subtest: POST /v1/contacts: tenant com trial_expired é bloqueado com 402, dado nenhum é apagado
+ok 494 - POST /v1/contacts: tenant com trial_expired é bloqueado com 402, dado nenhum é apagado
+  ---
+  duration_ms: 1574.619315
+  ...
+# Subtest: POST /v1/contacts: tenant com Subscription active continua criando normalmente
+ok 495 - POST /v1/contacts: tenant com Subscription active continua criando normalmente
+  ---
+  duration_ms: 2002.004625
+  ...
+# Subtest: POST /v1/billing/reactivate: continua funcionando mesmo com o tenant em modo somente-leitura (rota não tem o guard)
+ok 496 - POST /v1/billing/reactivate: continua funcionando mesmo com o tenant em modo somente-leitura (rota não tem o guard)
+  ---
+  duration_ms: 1492.385232
+  ...
+# Subtest: signupPublicTransactional: cria User + Membership + Workspace + tenant_billing FREE numa única transação
+ok 497 - signupPublicTransactional: cria User + Membership + Workspace + tenant_billing FREE numa única transação
+  ---
+  duration_ms: 9618.438852
+  ...
+# Subtest: signupPublicTransactional: falha depois de User/Membership/Workspace gravados desfaz TUDO (não deixa tenant órfão)
+ok 498 - signupPublicTransactional: falha depois de User/Membership/Workspace gravados desfaz TUDO (não deixa tenant órfão)
+  ---
+  duration_ms: 525.671631
+  ...
+# Subtest: signupPublicTransactional: sempre libera a conexão do pool (sucesso e falha)
+ok 499 - signupPublicTransactional: sempre libera a conexão do pool (sucesso e falha)
+  ---
+  duration_ms: 1258.005856
+  ...
+# Subtest: signupPublic: cria User + Membership + Workspace + tenant_billing FREE e devolve tokens
+ok 500 - signupPublic: cria User + Membership + Workspace + tenant_billing FREE e devolve tokens
+  ---
+  duration_ms: 9732.073101
+  ...
+# Subtest: signupPublic: workspaceName ausente cai no default 'Workspace de <name>'
+ok 501 - signupPublic: workspaceName ausente cai no default 'Workspace de <name>'
+  ---
+  duration_ms: 1204.185391
+  ...
+# Subtest: signupPublic: email duplicado lança SIGNUP_EMAIL_ALREADY_REGISTERED e não cria nada
+ok 502 - signupPublic: email duplicado lança SIGNUP_EMAIL_ALREADY_REGISTERED e não cria nada
+  ---
+  duration_ms: 941.80364
+  ...
+# Subtest: signupPublic: senha curta lança IDENTITY_VALIDATION_ERROR
+ok 503 - signupPublic: senha curta lança IDENTITY_VALIDATION_ERROR
+  ---
+  duration_ms: 4.023141
+  ...
+# Subtest: signupPublic: cada cadastro gera tenantId distinto
+ok 504 - signupPublic: cada cadastro gera tenantId distinto
+  ---
+  duration_ms: 2373.966371
+  ...
+# Subtest: DISPONIBILIDADE COMERCIAL: só o Vorix Conversas é público; Marketing é interno
+ok 505 - DISPONIBILIDADE COMERCIAL: só o Vorix Conversas é público; Marketing é interno
+  ---
+  duration_ms: 6929.876234
+  ...
+# Subtest: ACESSO: kill switch, entitlement e default são conceitos separados
+ok 506 - ACESSO: kill switch, entitlement e default são conceitos separados
+  ---
+  duration_ms: 0.535915
+  ...
+# Subtest: CONCESSÃO: solução não comercial só aceita origem interna
+ok 507 - CONCESSÃO: solução não comercial só aceita origem interna
+  ---
+  duration_ms: 0.68723
+  ...
+# Subtest: ROTAS: classificação por solução — Marketing barrado, Core e Conversas livres
+ok 508 - ROTAS: classificação por solução — Marketing barrado, Core e Conversas livres
+  ---
+  duration_ms: 0.845007
+  ...
+# Subtest: ONBOARDING: o wizard é só do Conversas — a etapa de marca (Marketing) saiu da sequência
+ok 509 - ONBOARDING: o wizard é só do Conversas — a etapa de marca (Marketing) saiu da sequência
+  ---
+  duration_ms: 0.294225
+  ...
+# Subtest: ENTITLEMENT: tenant comum tem Conversas e NÃO tem Marketing; concessão interna libera e fica auditada
+ok 510 - ENTITLEMENT: tenant comum tem Conversas e NÃO tem Marketing; concessão interna libera e fica auditada
+  ---
+  duration_ms: 28.059192
+  ...
+# Subtest: KILL SWITCH: desliga a solução para todos, inclusive quem tem concessão interna
+ok 511 - KILL SWITCH: desliga a solução para todos, inclusive quem tem concessão interna
+  ---
+  duration_ms: 34.352976
+  ...
+# Subtest: CACHE: uma concessão nova vale imediatamente no mesmo processo
+ok 512 - CACHE: uma concessão nova vale imediatamente no mesmo processo
+  ---
+  duration_ms: 8.222729
+  ...
+# Subtest: MIGRATION: quem já usa o Creative Engine mantém acesso interno ao Marketing; ninguém mais ganha
+ok 513 - MIGRATION: quem já usa o Creative Engine mantém acesso interno ao Marketing; ninguém mais ganha
+  ---
+  duration_ms: 14.954528
+  ...
+# Subtest: API: usuário comum (até owner) recebe 403 em TODA rota de Marketing — não é só a sidebar
+ok 514 - API: usuário comum (até owner) recebe 403 em TODA rota de Marketing — não é só a sidebar
+  ---
+  duration_ms: 1025.12328
+  ...
+# Subtest: API: Conversas e Core seguem funcionando para o mesmo usuário comum
+ok 515 - API: Conversas e Core seguem funcionando para o mesmo usuário comum
+  ---
+  duration_ms: 602.135064
+  ...
+# Subtest: API: tenant com concessão INTERNA acessa o Marketing e vê as duas soluções
+ok 516 - API: tenant com concessão INTERNA acessa o Marketing e vê as duas soluções
+  ---
+  duration_ms: 688.132874
+  ...
+# Subtest: API: o guarda de solução não substitui o RBAC — viewer interno continua barrado pelo papel
+ok 517 - API: o guarda de solução não substitui o RBAC — viewer interno continua barrado pelo papel
+  ---
+  duration_ms: 518.207447
+  ...
+# Subtest: API: conceder solução é só de administrador da plataforma, e Marketing recusa origem comercial
+ok 518 - API: conceder solução é só de administrador da plataforma, e Marketing recusa origem comercial
+  ---
+  duration_ms: 699.963785
+  ...
+# Subtest: API: requisição sem autenticação não é decidida pelo guarda (webhooks/callbacks seguem com a própria rota)
+ok 519 - API: requisição sem autenticação não é decidida pelo guarda (webhooks/callbacks seguem com a própria rota)
+  ---
+  duration_ms: 192.239996
+  ...
+# Subtest: ROUND_ROBIN_AGENTE: gira circularmente entre membros elegíveis do nível, ignora quem não participa, e cada nível tem ponteiro independente
+ok 520 - ROUND_ROBIN_AGENTE: gira circularmente entre membros elegíveis do nível, ignora quem não participa, e cada nível tem ponteiro independente
+  ---
+  duration_ms: 7435.928653
+  ...
+# Subtest: ROUND_ROBIN_AGENTE: roundRobinEnabled=false sempre devolve o principal, nunca avança o ponteiro
+ok 521 - ROUND_ROBIN_AGENTE: roundRobinEnabled=false sempre devolve o principal, nunca avança o ponteiro
+  ---
+  duration_ms: 53.110172
+  ...
+# Subtest: ROUND_ROBIN_AGENTE: ninguém participando do rodízio cai pro principal, sem avançar ponteiro
+ok 522 - ROUND_ROBIN_AGENTE: ninguém participando do rodízio cai pro principal, sem avançar ponteiro
+  ---
+  duration_ms: 15.498607
+  ...
+# Subtest: PRINCIPAL_DO_NIVEL: primeiro membro do nível vira principal automaticamente; setPrincipal desmarca o anterior; remover o principal promove substituto
+ok 523 - PRINCIPAL_DO_NIVEL: primeiro membro do nível vira principal automaticamente; setPrincipal desmarca o anterior; remover o principal promove substituto
+  ---
+  duration_ms: 35.272396
+  ...
+# Subtest: PRINCIPAL_DO_NIVEL: mudar de nível some do nível antigo (promove substituto lá) e vira principal automático do nível novo se for o primeiro
+ok 524 - PRINCIPAL_DO_NIVEL: mudar de nível some do nível antigo (promove substituto lá) e vira principal automático do nível novo se for o primeiro
+  ---
+  duration_ms: 19.680259
+  ...
+# Subtest: PRINCIPAL_DO_NIVEL: mover o principal de um nível pra outro nível que JÁ TEM principal nunca cria dois principais no destino (achado de revisão)
+ok 525 - PRINCIPAL_DO_NIVEL: mover o principal de um nível pra outro nível que JÁ TEM principal nunca cria dois principais no destino (achado de revisão)
+  ---
+  duration_ms: 34.614525
+  ...
+# Subtest: CHANNEL_ROUTING: distribuição DEFAULT sempre devolve a mesma equipe; ROUND_ROBIN gira entre as equipes vinculadas
+ok 526 - CHANNEL_ROUTING: distribuição DEFAULT sempre devolve a mesma equipe; ROUND_ROBIN gira entre as equipes vinculadas
+  ---
+  duration_ms: 58.49615
+  ...
+# Subtest: CHANNEL_ROUTING: replaceLinkedTeams é substituição TOTAL — remove quem não está na nova lista
+ok 527 - CHANNEL_ROUTING: replaceLinkedTeams é substituição TOTAL — remove quem não está na nova lista
+  ---
+  duration_ms: 19.352821
+  ...
+# Subtest: INTEGRACAO: conversa NOVA num canal roteado ganha currentTeamId + assignedUserId automaticamente (round-robin de equipe + round-robin de agente encadeados)
+ok 528 - INTEGRACAO: conversa NOVA num canal roteado ganha currentTeamId + assignedUserId automaticamente (round-robin de equipe + round-robin de agente encadeados)
+  ---
+  duration_ms: 68.698552
+  ...
+# Subtest: INTEGRACAO: canal sem roteamento configurado (sem channelRoutingRepository nos deps) nunca lança — conversa fica sem equipe, comportamento anterior preservado
+ok 529 - INTEGRACAO: canal sem roteamento configurado (sem channelRoutingRepository nos deps) nunca lança — conversa fica sem equipe, comportamento anterior preservado
+  ---
+  duration_ms: 14.703602
+  ...
+# Subtest: DELETE_GUARD (achado de revisão): excluir uma equipe que é a padrão de roteamento de um canal é bloqueado com erro claro, nunca um erro cru de FK
+ok 530 - DELETE_GUARD (achado de revisão): excluir uma equipe que é a padrão de roteamento de um canal é bloqueado com erro claro, nunca um erro cru de FK
+  ---
+  duration_ms: 51.578126
+  ...
+# Subtest: DELETE_GUARD (achado de revisão): excluir uma equipe que só tem conversas HISTÓRICAS roteadas pra ela nunca é bloqueado — current_team_id só fica null
+ok 531 - DELETE_GUARD (achado de revisão): excluir uma equipe que só tem conversas HISTÓRICAS roteadas pra ela nunca é bloqueado — current_team_id só fica null
+  ---
+  duration_ms: 53.048228
+  ...
+# Subtest: startTrial: cria uma Subscription real em status trial, com trialStart/trialEnd calculados a partir de PlanVersion.trialDays (7 do PRO desde a migration 0131), nunca hardcoded
+ok 532 - startTrial: cria uma Subscription real em status trial, com trialStart/trialEnd calculados a partir de PlanVersion.trialDays (7 do PRO desde a migration 0131), nunca hardcoded
+  ---
+  duration_ms: 5646.127147
+  ...
+# Subtest: startTrial: idempotente — chamar duas vezes devolve a MESMA Subscription, nunca cria duas
+ok 533 - startTrial: idempotente — chamar duas vezes devolve a MESMA Subscription, nunca cria duas
+  ---
+  duration_ms: 15.063511
+  ...
+# Subtest: startTrial: rejeita quando já existe assinatura real ativa (paga)
+ok 534 - startTrial: rejeita quando já existe assinatura real ativa (paga)
+  ---
+  duration_ms: 6.825457
+  ...
+# Subtest: startTrial: FREE não oferece trial (trialDays null) — rejeita com mensagem clara, nunca hardcoded 'plano X'
+ok 535 - startTrial: FREE não oferece trial (trialDays null) — rejeita com mensagem clara, nunca hardcoded 'plano X'
+  ---
+  duration_ms: 5.282652
+  ...
+# Subtest: startTrial: TRIAL_ENABLED é um kill switch independente de PlanVersion.trialDays
+ok 536 - startTrial: TRIAL_ENABLED é um kill switch independente de PlanVersion.trialDays
+  ---
+  duration_ms: 3.033565
+  ...
+# Subtest: Entitlements durante trial: usa os limites do PlanVersion normalmente, sem regra paralela — nunca readOnly enquanto o trial está ativo
+ok 537 - Entitlements durante trial: usa os limites do PlanVersion normalmente, sem regra paralela — nunca readOnly enquanto o trial está ativo
+  ---
+  duration_ms: 44.22669
+  ...
+# Subtest: expireTrials: transiciona trial vencido pra trial_expired sem apagar nada, e o modo somente-leitura JÁ EXISTENTE passa a se aplicar (nenhuma regra nova em entitlements)
+ok 538 - expireTrials: transiciona trial vencido pra trial_expired sem apagar nada, e o modo somente-leitura JÁ EXISTENTE passa a se aplicar (nenhuma regra nova em entitlements)
+  ---
+  duration_ms: 35.223225
+  ...
+# Subtest: Conversão trial -> pago: startCheckout é permitido pra quem está em trial (não bloqueia como 'já assinado'), e o webhook confirmado reusa a MESMA Subscription emitindo trial_converted
+ok 539 - Conversão trial -> pago: startCheckout é permitido pra quem está em trial (não bloqueia como 'já assinado'), e o webhook confirmado reusa a MESMA Subscription emitindo trial_converted
+  ---
+  duration_ms: 31.534071
+  ...
+# Subtest: Conversão trial -> pago: um trial JÁ VENCIDO (trial_expired) também pode ir a checkout normalmente
+ok 540 - Conversão trial -> pago: um trial JÁ VENCIDO (trial_expired) também pode ir a checkout normalmente
+  ---
+  duration_ms: 13.867372
+  ...
+# Subtest: startCheckout: tenant já PAGO (active) continua bloqueado de ir a um novo checkout (regressão)
+ok 541 - startCheckout: tenant já PAGO (active) continua bloqueado de ir a um novo checkout (regressão)
+  ---
+  duration_ms: 7.009009
+  ...
+1..541
+# tests 541
+# suites 0
+# pass 539
+# fail 0
+# cancelled 0
+# skipped 2
+# todo 0
+# duration_ms 166217.530364

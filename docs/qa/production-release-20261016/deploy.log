@@ -1,0 +1,753 @@
+DEPLOY e650eb1b3e6a6d262d2e373ac5152c3aed3055c2 target=all stamp=20261016124706
+PREFLIGHT_OK free=5140MB
+BACKUP code=deploy_backups/pre-e650eb1b3e6a6d262d2e373ac5152c3aed3055c2-20261016124706.tgz db=deploy_backups/db-pre-e650eb1b3e6a6d262d2e373ac5152c3aed3055c2-20261016124706.sql.gz env=/root/.env.zuno.pre-e650eb1b3e6a6d262d2e373ac5152c3aed3055c2-20261016124706
+ROLLBACK_TAG zuno-zuno-api:rollback-20261016124706
+ROLLBACK_TAG zuno-vorix-worker:rollback-20261016124706
+ROLLBACK_TAG zuno-zuno-web:rollback-20261016124706
+ENV before=d4717cfdf453 after=d4717cfdf453
+BUILD zuno-api
+ Image zuno-zuno-api Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 472B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 2.39kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.2s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:20-slim
+#5 DONE 0.1s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 125B done
+#6 DONE 0.0s
+
+#7 [deps 1/4] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#7 resolve docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 0.0s done
+#7 DONE 0.3s
+
+#8 [internal] load build context
+#8 ...
+
+#9 [deps 2/4] WORKDIR /app
+#9 DONE 0.2s
+
+#8 [internal] load build context
+#8 transferring context: 9.87MB 0.7s done
+#8 DONE 0.7s
+
+#10 [deps 3/4] COPY package.json package-lock.json ./
+#10 DONE 0.1s
+
+#11 [deps 4/4] RUN npm ci
+#11 ...
+
+#12 [runtime  3/10] RUN apt-get update   && apt-get install -y --no-install-recommends fontconfig ca-certificates curl xz-utils   && rm -rf /var/lib/apt/lists/*
+#12 0.722 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#12 0.750 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#12 0.750 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
+#12 0.910 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8790 kB]
+#12 1.241 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
+#12 1.542 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [353 kB]
+#12 3.049 Fetched 9391 kB in 2s (4019 kB/s)
+#12 3.049 Reading package lists...
+#12 4.075 Reading package lists...
+#12 4.886 Building dependency tree...
+#12 5.221 Reading state information...
+#12 5.784 The following additional packages will be installed:
+#12 5.787   fontconfig-config fonts-dejavu-core libbrotli1 libcurl4 libexpat1
+#12 5.788   libfontconfig1 libfreetype6 libgssapi-krb5-2 libk5crypto3 libkeyutils1
+#12 5.789   libkrb5-3 libkrb5support0 libldap-2.5-0 liblzma5 libnghttp2-14 libpng16-16
+#12 5.792   libpsl5 librtmp1 libsasl2-2 libsasl2-modules-db libssh2-1 libssl3 openssl
+#12 5.801 Suggested packages:
+#12 5.801   krb5-doc krb5-user
+#12 5.801 Recommended packages:
+#12 5.801   krb5-locales libldap-common publicsuffix libsasl2-modules
+#12 6.190 The following NEW packages will be installed:
+#12 6.194   ca-certificates curl fontconfig fontconfig-config fonts-dejavu-core
+#12 6.194   libbrotli1 libcurl4 libexpat1 libfontconfig1 libfreetype6 libgssapi-krb5-2
+#12 6.194   libk5crypto3 libkeyutils1 libkrb5-3 libkrb5support0 libldap-2.5-0
+#12 6.195   libnghttp2-14 libpng16-16 libpsl5 librtmp1 libsasl2-2 libsasl2-modules-db
+#12 6.199   libssh2-1 libssl3 openssl xz-utils
+#12 6.207 The following packages will be upgraded:
+#12 6.212   liblzma5
+#12 6.292 1 upgraded, 26 newly installed, 0 to remove and 14 not upgraded.
+#12 6.292 Need to get 9522 kB of archives.
+#12 6.292 After this operation, 22.5 MB of additional disk space will be used.
+#12 6.292 Get:1 http://deb.debian.org/debian-security bookworm-security/main amd64 liblzma5 amd64 5.4.1-1+deb12u2 [206 kB]
+#12 6.304 Get:2 http://deb.debian.org/debian-security bookworm-security/main amd64 libssl3 amd64 3.0.22-1~deb12u1 [2039 kB]
+#12 6.330 Get:3 http://deb.debian.org/debian-security bookworm-security/main amd64 openssl amd64 3.0.22-1~deb12u1 [1442 kB]
+#12 6.344 Get:4 http://deb.debian.org/debian-security bookworm-security/main amd64 ca-certificates all 20250419~deb12u1 [162 kB]
+#12 6.350 Get:5 http://deb.debian.org/debian-security bookworm-security/main amd64 xz-utils amd64 5.4.1-1+deb12u2 [471 kB]
+#12 6.356 Get:6 http://deb.debian.org/debian bookworm/main amd64 libbrotli1 amd64 1.0.9-2+b6 [275 kB]
+#12 6.361 Get:7 http://deb.debian.org/debian bookworm/main amd64 libkrb5support0 amd64 1.20.1-2+deb12u5 [33.2 kB]
+#12 6.365 Get:8 http://deb.debian.org/debian bookworm/main amd64 libk5crypto3 amd64 1.20.1-2+deb12u5 [79.7 kB]
+#12 6.366 Get:9 http://deb.debian.org/debian bookworm/main amd64 libkeyutils1 amd64 1.6.3-2 [8808 B]
+#12 6.371 Get:10 http://deb.debian.org/debian bookworm/main amd64 libkrb5-3 amd64 1.20.1-2+deb12u5 [332 kB]
+#12 6.377 Get:11 http://deb.debian.org/debian bookworm/main amd64 libgssapi-krb5-2 amd64 1.20.1-2+deb12u5 [135 kB]
+#12 6.382 Get:12 http://deb.debian.org/debian bookworm/main amd64 libsasl2-modules-db amd64 2.1.28+dfsg-10 [20.3 kB]
+#12 6.388 Get:13 http://deb.debian.org/debian bookworm/main amd64 libsasl2-2 amd64 2.1.28+dfsg-10 [59.7 kB]
+#12 6.388 Get:14 http://deb.debian.org/debian bookworm/main amd64 libldap-2.5-0 amd64 2.5.13+dfsg-5 [183 kB]
+#12 6.390 Get:15 http://deb.debian.org/debian bookworm/main amd64 libnghttp2-14 amd64 1.52.0-1+deb12u3 [72.4 kB]
+#12 6.394 Get:16 http://deb.debian.org/debian bookworm/main amd64 libpsl5 amd64 0.21.2-1 [58.7 kB]
+#12 6.398 Get:17 http://deb.debian.org/debian bookworm/main amd64 librtmp1 amd64 2.4+20151223.gitfa8646d.1-2+b2 [60.8 kB]
+#12 6.398 Get:18 http://deb.debian.org/debian-security bookworm-security/main amd64 libssh2-1 amd64 1.10.0-3+deb12u1 [176 kB]
+#12 6.402 Get:19 http://deb.debian.org/debian bookworm/main amd64 libcurl4 amd64 7.88.1-10+deb12u15 [392 kB]
+#12 6.413 Get:20 http://deb.debian.org/debian bookworm/main amd64 curl amd64 7.88.1-10+deb12u15 [316 kB]
+#12 6.416 Get:21 http://deb.debian.org/debian-security bookworm-security/main amd64 libexpat1 amd64 2.5.0-1+deb12u4 [106 kB]
+#12 6.416 Get:22 http://deb.debian.org/debian-security bookworm-security/main amd64 libpng16-16 amd64 1.6.39-2+deb12u6 [277 kB]
+#12 6.423 Get:23 http://deb.debian.org/debian bookworm/main amd64 libfreetype6 amd64 2.12.1+dfsg-5+deb12u4 [398 kB]
+#12 6.424 Get:24 http://deb.debian.org/debian bookworm/main amd64 fonts-dejavu-core all 2.37-6 [1068 kB]
+#12 6.434 Get:25 http://deb.debian.org/debian bookworm/main amd64 fontconfig-config amd64 2.14.1-4 [315 kB]
+#12 6.439 Get:26 http://deb.debian.org/debian bookworm/main amd64 libfontconfig1 amd64 2.14.1-4 [386 kB]
+#12 6.443 Get:27 http://deb.debian.org/debian bookworm/main amd64 fontconfig amd64 2.14.1-4 [449 kB]
+#12 6.800 debconf: delaying package configuration, since apt-utils is not installed
+#12 6.853 Fetched 9522 kB in 0s (50.0 MB/s)
+#12 6.904 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 6096 files and directories currently installed.)
+#12 6.946 Preparing to unpack .../liblzma5_5.4.1-1+deb12u2_amd64.deb ...
+#12 6.978 Unpacking liblzma5:amd64 (5.4.1-1+deb12u2) over (5.4.1-1) ...
+#12 7.071 Setting up liblzma5:amd64 (5.4.1-1+deb12u2) ...
+#12 7.113 Selecting previously unselected package libssl3:amd64.
+#12 7.113 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 6096 files and directories currently installed.)
+#12 7.120 Preparing to unpack .../00-libssl3_3.0.22-1~deb12u1_amd64.deb ...
+#12 7.124 Unpacking libssl3:amd64 (3.0.22-1~deb12u1) ...
+#12 7.356 Selecting previously unselected package openssl.
+#12 7.356 Preparing to unpack .../01-openssl_3.0.22-1~deb12u1_amd64.deb ...
+#12 7.359 Unpacking openssl (3.0.22-1~deb12u1) ...
+#12 7.517 Selecting previously unselected package ca-certificates.
+#12 7.517 Preparing to unpack .../02-ca-certificates_20250419~deb12u1_all.deb ...
+#12 7.520 Unpacking ca-certificates (20250419~deb12u1) ...
+#12 7.580 Selecting previously unselected package xz-utils.
+#12 7.580 Preparing to unpack .../03-xz-utils_5.4.1-1+deb12u2_amd64.deb ...
+#12 7.581 Unpacking xz-utils (5.4.1-1+deb12u2) ...
+#12 7.658 Selecting previously unselected package libbrotli1:amd64.
+#12 7.658 Preparing to unpack .../04-libbrotli1_1.0.9-2+b6_amd64.deb ...
+#12 7.660 Unpacking libbrotli1:amd64 (1.0.9-2+b6) ...
+#12 7.729 Selecting previously unselected package libkrb5support0:amd64.
+#12 7.729 Preparing to unpack .../05-libkrb5support0_1.20.1-2+deb12u5_amd64.deb ...
+#12 7.730 Unpacking libkrb5support0:amd64 (1.20.1-2+deb12u5) ...
+#12 7.772 Selecting previously unselected package libk5crypto3:amd64.
+#12 7.772 Preparing to unpack .../06-libk5crypto3_1.20.1-2+deb12u5_amd64.deb ...
+#12 7.775 Unpacking libk5crypto3:amd64 (1.20.1-2+deb12u5) ...
+#12 7.814 Selecting previously unselected package libkeyutils1:amd64.
+#12 7.815 Preparing to unpack .../07-libkeyutils1_1.6.3-2_amd64.deb ...
+#12 7.818 Unpacking libkeyutils1:amd64 (1.6.3-2) ...
+#12 7.846 Selecting previously unselected package libkrb5-3:amd64.
+#12 7.849 Preparing to unpack .../08-libkrb5-3_1.20.1-2+deb12u5_amd64.deb ...
+#12 7.851 Unpacking libkrb5-3:amd64 (1.20.1-2+deb12u5) ...
+#12 7.930 Selecting previously unselected package libgssapi-krb5-2:amd64.
+#12 7.931 Preparing to unpack .../09-libgssapi-krb5-2_1.20.1-2+deb12u5_amd64.deb ...
+#12 7.933 Unpacking libgssapi-krb5-2:amd64 (1.20.1-2+deb12u5) ...
+#12 7.976 Selecting previously unselected package libsasl2-modules-db:amd64.
+#12 7.977 Preparing to unpack .../10-libsasl2-modules-db_2.1.28+dfsg-10_amd64.deb ...
+#12 7.979 Unpacking libsasl2-modules-db:amd64 (2.1.28+dfsg-10) ...
+#12 8.005 Selecting previously unselected package libsasl2-2:amd64.
+#12 8.007 Preparing to unpack .../11-libsasl2-2_2.1.28+dfsg-10_amd64.deb ...
+#12 8.009 Unpacking libsasl2-2:amd64 (2.1.28+dfsg-10) ...
+#12 8.047 Selecting previously unselected package libldap-2.5-0:amd64.
+#12 8.048 Preparing to unpack .../12-libldap-2.5-0_2.5.13+dfsg-5_amd64.deb ...
+#12 8.049 Unpacking libldap-2.5-0:amd64 (2.5.13+dfsg-5) ...
+#12 8.101 Selecting previously unselected package libnghttp2-14:amd64.
+#12 8.101 Preparing to unpack .../13-libnghttp2-14_1.52.0-1+deb12u3_amd64.deb ...
+#12 8.103 Unpacking libnghttp2-14:amd64 (1.52.0-1+deb12u3) ...
+#12 8.144 Selecting previously unselected package libpsl5:amd64.
+#12 8.144 Preparing to unpack .../14-libpsl5_0.21.2-1_amd64.deb ...
+#12 8.146 Unpacking libpsl5:amd64 (0.21.2-1) ...
+#12 8.179 Selecting previously unselected package librtmp1:amd64.
+#12 8.179 Preparing to unpack .../15-librtmp1_2.4+20151223.gitfa8646d.1-2+b2_amd64.deb ...
+#12 8.184 Unpacking librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2+b2) ...
+#12 8.226 Selecting previously unselected package libssh2-1:amd64.
+#12 8.226 Preparing to unpack .../16-libssh2-1_1.10.0-3+deb12u1_amd64.deb ...
+#12 8.229 Unpacking libssh2-1:amd64 (1.10.0-3+deb12u1) ...
+#12 8.289 Selecting previously unselected package libcurl4:amd64.
+#12 8.294 Preparing to unpack .../17-libcurl4_7.88.1-10+deb12u15_amd64.deb ...
+#12 8.300 Unpacking libcurl4:amd64 (7.88.1-10+deb12u15) ...
+#12 8.384 Selecting previously unselected package curl.
+#12 8.386 Preparing to unpack .../18-curl_7.88.1-10+deb12u15_amd64.deb ...
+#12 8.391 Unpacking curl (7.88.1-10+deb12u15) ...
+#12 8.456 Selecting previously unselected package libexpat1:amd64.
+#12 8.459 Preparing to unpack .../19-libexpat1_2.5.0-1+deb12u4_amd64.deb ...
+#12 8.461 Unpacking libexpat1:amd64 (2.5.0-1+deb12u4) ...
+#12 8.500 Selecting previously unselected package libpng16-16:amd64.
+#12 8.502 Preparing to unpack .../20-libpng16-16_1.6.39-2+deb12u6_amd64.deb ...
+#12 8.504 Unpacking libpng16-16:amd64 (1.6.39-2+deb12u6) ...
+#12 8.560 Selecting previously unselected package libfreetype6:amd64.
+#12 8.562 Preparing to unpack .../21-libfreetype6_2.12.1+dfsg-5+deb12u4_amd64.deb ...
+#12 8.566 Unpacking libfreetype6:amd64 (2.12.1+dfsg-5+deb12u4) ...
+#12 8.652 Selecting previously unselected package fonts-dejavu-core.
+#12 8.652 Preparing to unpack .../22-fonts-dejavu-core_2.37-6_all.deb ...
+#12 8.656 Unpacking fonts-dejavu-core (2.37-6) ...
+#12 8.835 Selecting previously unselected package fontconfig-config.
+#12 8.836 Preparing to unpack .../23-fontconfig-config_2.14.1-4_amd64.deb ...
+#12 8.995 Unpacking fontconfig-config (2.14.1-4) ...
+#12 9.052 Selecting previously unselected package libfontconfig1:amd64.
+#12 9.052 Preparing to unpack .../24-libfontconfig1_2.14.1-4_amd64.deb ...
+#12 9.054 Unpacking libfontconfig1:amd64 (2.14.1-4) ...
+#12 9.110 Selecting previously unselected package fontconfig.
+#12 9.110 Preparing to unpack .../25-fontconfig_2.14.1-4_amd64.deb ...
+#12 9.123 Unpacking fontconfig (2.14.1-4) ...
+#12 9.215 Setting up libexpat1:amd64 (2.5.0-1+deb12u4) ...
+#12 9.220 Setting up libkeyutils1:amd64 (1.6.3-2) ...
+#12 9.224 Setting up libpsl5:amd64 (0.21.2-1) ...
+#12 9.226 Setting up libbrotli1:amd64 (1.0.9-2+b6) ...
+#12 9.233 Setting up libssl3:amd64 (3.0.22-1~deb12u1) ...
+#12 9.238 Setting up libnghttp2-14:amd64 (1.52.0-1+deb12u3) ...
+#12 9.241 Setting up libkrb5support0:amd64 (1.20.1-2+deb12u5) ...
+#12 9.245 Setting up libsasl2-modules-db:amd64 (2.1.28+dfsg-10) ...
+#12 9.248 Setting up librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2+b2) ...
+#12 9.251 Setting up xz-utils (5.4.1-1+deb12u2) ...
+#12 9.263 update-alternatives: using /usr/bin/xz to provide /usr/bin/lzma (lzma) in auto mode
+#12 9.265 update-alternatives: warning: skip creation of /usr/share/man/man1/lzma.1.gz because associated file /usr/share/man/man1/xz.1.gz (of link group lzma) doesn't exist
+#12 9.265 update-alternatives: warning: skip creation of /usr/share/man/man1/unlzma.1.gz because associated file /usr/share/man/man1/unxz.1.gz (of link group lzma) doesn't exist
+#12 9.265 update-alternatives: warning: skip creation of /usr/share/man/man1/lzcat.1.gz because associated file /usr/share/man/man1/xzcat.1.gz (of link group lzma) doesn't exist
+#12 9.266 update-alternatives: warning: skip creation of /usr/share/man/man1/lzmore.1.gz because associated file /usr/share/man/man1/xzmore.1.gz (of link group lzma) doesn't exist
+#12 9.266 update-alternatives: warning: skip creation of /usr/share/man/man1/lzless.1.gz because associated file /usr/share/man/man1/xzless.1.gz (of link group lzma) doesn't exist
+#12 9.266 update-alternatives: warning: skip creation of /usr/share/man/man1/lzdiff.1.gz because associated file /usr/share/man/man1/xzdiff.1.gz (of link group lzma) doesn't exist
+#12 9.268 update-alternatives: warning: skip creation of /usr/share/man/man1/lzcmp.1.gz because associated file /usr/share/man/man1/xzcmp.1.gz (of link group lzma) doesn't exist
+#12 9.268 update-alternatives: warning: skip creation of /usr/share/man/man1/lzgrep.1.gz because associated file /usr/share/man/man1/xzgrep.1.gz (of link group lzma) doesn't exist
+#12 9.268 update-alternatives: warning: skip creation of /usr/share/man/man1/lzegrep.1.gz because associated file /usr/share/man/man1/xzegrep.1.gz (of link group lzma) doesn't exist
+#12 9.268 update-alternatives: warning: skip creation of /usr/share/man/man1/lzfgrep.1.gz because associated file /usr/share/man/man1/xzfgrep.1.gz (of link group lzma) doesn't exist
+#12 9.275 Setting up libpng16-16:amd64 (1.6.39-2+deb12u6) ...
+#12 9.284 Setting up fonts-dejavu-core (2.37-6) ...
+#12 9.299 Setting up libk5crypto3:amd64 (1.20.1-2+deb12u5) ...
+#12 9.303 Setting up libsasl2-2:amd64 (2.1.28+dfsg-10) ...
+#12 9.306 Setting up libssh2-1:amd64 (1.10.0-3+deb12u1) ...
+#12 9.309 Setting up libkrb5-3:amd64 (1.20.1-2+deb12u5) ...
+#12 9.327 Setting up openssl (3.0.22-1~deb12u1) ...
+#12 9.342 Setting up fontconfig-config (2.14.1-4) ...
+#12 9.528 debconf: unable to initialize frontend: Dialog
+#12 9.528 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#12 9.528 debconf: falling back to frontend: Readline
+#12 9.528 debconf: unable to initialize frontend: Readline
+#12 9.528 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC contains: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.36.0 /usr/local/share/perl/5.36.0 /usr/lib/x86_64-linux-gnu/perl5/5.36 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.36 /usr/share/perl/5.36 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 7.)
+#12 9.528 debconf: falling back to frontend: Teletype
+#12 9.857 Setting up libldap-2.5-0:amd64 (2.5.13+dfsg-5) ...
+#12 9.863 Setting up ca-certificates (20250419~deb12u1) ...
+#12 10.04 debconf: unable to initialize frontend: Dialog
+#12 10.04 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#12 10.04 debconf: falling back to frontend: Readline
+#12 10.04 debconf: unable to initialize frontend: Readline
+#12 10.04 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC contains: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.36.0 /usr/local/share/perl/5.36.0 /usr/lib/x86_64-linux-gnu/perl5/5.36 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.36 /usr/share/perl/5.36 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 7.)
+#12 10.04 debconf: falling back to frontend: Teletype
+#12 10.99 Updating certificates in /etc/ssl/certs...
+#12 12.24 150 added, 0 removed; done.
+#12 12.28 Setting up libfreetype6:amd64 (2.12.1+dfsg-5+deb12u4) ...
+#12 12.28 Setting up libgssapi-krb5-2:amd64 (1.20.1-2+deb12u5) ...
+#12 12.29 Setting up libcurl4:amd64 (7.88.1-10+deb12u15) ...
+#12 12.30 Setting up curl (7.88.1-10+deb12u15) ...
+#12 12.31 Setting up libfontconfig1:amd64 (2.14.1-4) ...
+#12 12.31 Setting up fontconfig (2.14.1-4) ...
+#12 12.31 Regenerating fonts cache... done.
+#12 14.36 Processing triggers for libc-bin (2.36-9+deb12u13) ...
+#12 14.42 Processing triggers for ca-certificates (20250419~deb12u1) ...
+#12 14.42 Updating certificates in /etc/ssl/certs...
+#12 15.20 0 added, 0 removed; done.
+#12 15.20 Running hooks in /etc/ca-certificates/update.d...
+#12 15.20 done.
+#12 DONE 15.5s
+
+#11 [deps 4/4] RUN npm ci
+#11 7.696 npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+#11 11.87 npm warn deprecated source-map@0.8.0-beta.0: The work that was done in this beta branch won't be included in future versions
+#11 12.55 npm warn deprecated prom-client@15.1.3: prom-client has been replaced by @prometheus-io/client
+#11 ...
+
+#13 [runtime  4/10] COPY package.json package-lock.json ./
+#13 DONE 0.1s
+
+#14 [runtime  5/10] RUN npm ci --omit=dev && npm cache clean --force
+#14 6.309 npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+#14 11.77 npm warn deprecated source-map@0.8.0-beta.0: The work that was done in this beta branch won't be included in future versions
+#14 12.73 npm warn deprecated prom-client@15.1.3: prom-client has been replaced by @prometheus-io/client
+#14 ...
+
+#11 [deps 4/4] RUN npm ci
+#11 33.20 
+#11 33.20 added 415 packages, and audited 416 packages in 33s
+#11 33.20 
+#11 33.20 75 packages are looking for funding
+#11 33.20   run `npm fund` for details
+#11 33.26 
+#11 33.26 13 vulnerabilities (4 moderate, 9 high)
+#11 33.26 
+#11 33.26 To address issues that do not require attention, run:
+#11 33.26   npm audit fix
+#11 33.26 
+#11 33.26 To address all issues (including breaking changes), run:
+#11 33.26   npm audit fix --force
+#11 33.26 
+#11 33.26 Run `npm audit` for details.
+#11 33.26 npm notice
+#11 33.26 npm notice New major version of npm available! 10.8.2 -> 12.2.0
+#11 33.26 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#11 33.26 npm notice To update run: npm install -g npm@12.2.0
+#11 33.26 npm notice
+#11 DONE 33.8s
+
+#14 [runtime  5/10] RUN npm ci --omit=dev && npm cache clean --force
+#14 31.83 
+#14 31.83 added 400 packages, and audited 401 packages in 31s
+#14 31.83 
+#14 31.83 75 packages are looking for funding
+#14 31.83   run `npm fund` for details
+#14 31.89 npm notice
+#14 31.89 npm notice New major version of npm available! 10.8.2 -> 12.2.0
+#14 31.89 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#14 31.89 npm notice To update run: npm install -g npm@12.2.0
+#14 31.89 npm notice
+#14 31.89 
+#14 31.89 13 vulnerabilities (4 moderate, 9 high)
+#14 31.89 
+#14 31.89 To address issues that do not require attention, run:
+#14 31.89   npm audit fix
+#14 31.89 
+#14 31.89 To address all issues (including breaking changes), run:
+#14 31.89   npm audit fix --force
+#14 31.89 
+#14 31.89 Run `npm audit` for details.
+#14 32.20 npm warn using --force Recommended protections disabled.
+#14 DONE 33.7s
+
+#15 [build 3/8] COPY --from=deps /app/node_modules ./node_modules
+#15 DONE 6.6s
+
+#16 [build 4/8] COPY package.json package-lock.json tsconfig.json ./
+#16 DONE 0.4s
+
+#17 [build 5/8] COPY src ./src
+#17 DONE 0.5s
+
+#18 [build 6/8] COPY scripts ./scripts
+#18 DONE 0.1s
+
+#19 [build 7/8] COPY db ./db
+#19 DONE 0.1s
+
+#20 [build 8/8] RUN npm run build
+#20 1.047 
+#20 1.047 > zuno@1.0.0 build
+#20 1.047 > npm run build:clean && tsc -p tsconfig.json && npm run build:copy-skill-manifests && npm run build:copy-remotion-assets && npm run build:copy-rendering-assets
+#20 1.047 
+#20 1.408 
+#20 1.408 > zuno@1.0.0 build:clean
+#20 1.408 > node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+#20 1.408 
+#20 44.11 
+#20 44.11 > zuno@1.0.0 build:copy-skill-manifests
+#20 44.11 > node scripts/copy-skill-manifests.mjs
+#20 44.11 
+#20 44.18 [copy-skill-manifests] 14 manifesto(s) copiado(s) para dist/skills.
+#20 44.18   - dist/skills/ana-social-publishing/skill.manifest.json
+#20 44.18   - dist/skills/bianca-social-media-design/skill.manifest.json
+#20 44.18   - dist/skills/bruno-video-script/skill.manifest.json
+#20 44.18   - dist/skills/diego-video-editing/skill.manifest.json
+#20 44.18   - dist/skills/eduardo-editorial-planning/skill.manifest.json
+#20 44.18   - dist/skills/joao-marketing-strategy/skill.manifest.json
+#20 44.18   - dist/skills/lucas-quality-review/skill.manifest.json
+#20 44.18   - dist/skills/maria-copywriting/skill.manifest.json
+#20 44.18   - dist/skills/motion-design-engine/skill.manifest.json
+#20 44.18   - dist/skills/nora-video-narration/skill.manifest.json
+#20 44.18   - dist/skills/pedro-image-generation/skill.manifest.json
+#20 44.18   - dist/skills/rafa-video-rendering/skill.manifest.json
+#20 44.18   - dist/skills/sofia-art-direction/skill.manifest.json
+#20 44.18   - dist/skills/vanessa-video-direction/skill.manifest.json
+#20 44.38 
+#20 44.38 > zuno@1.0.0 build:copy-remotion-assets
+#20 44.38 > node scripts/copy-remotion-assets.mjs
+#20 44.38 
+#20 44.44 [copy-remotion-assets] 2 arquivo(s) .jsx copiado(s) para dist/infrastructure/motion-rendering/remotion.
+#20 44.44   - dist/infrastructure/motion-rendering/remotion/MotionSceneRenderer.jsx
+#20 44.44   - dist/infrastructure/motion-rendering/remotion/Root.jsx
+#20 44.63 
+#20 44.63 > zuno@1.0.0 build:copy-rendering-assets
+#20 44.63 > node scripts/copy-rendering-assets.mjs
+#20 44.63 
+#20 44.69 [copy-rendering-assets] 2 fonte(s) .ttf copiada(s) para dist/infrastructure/rendering/assets.
+#20 44.69   - dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf
+#20 44.69   - dist/infrastructure/rendering/assets/geist-regular.ttf
+#20 44.71 npm notice
+#20 44.71 npm notice New major version of npm available! 10.8.2 -> 12.2.0
+#20 44.71 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#20 44.71 npm notice To update run: npm install -g npm@12.2.0
+#20 44.71 npm notice
+#20 DONE 44.8s
+
+#21 [runtime  6/10] COPY --from=build /app/dist ./dist
+#21 DONE 1.1s
+
+#22 [runtime  7/10] COPY --from=build /app/scripts ./scripts
+#22 DONE 0.1s
+
+#23 [runtime  8/10] COPY --from=build /app/db ./db
+#23 DONE 0.0s
+
+#24 [runtime  9/10] RUN sh ./scripts/install-ffmpeg-linux.sh /opt/vorix/ffmpeg
+#24 1.139 /tmp/tmp.Sc67Gcqhv9/ffmpeg.tar.xz: OK
+#24 6.319 FFmpeg instalado em /opt/vorix/ffmpeg/ffmpeg: ffmpeg version 7.0.2-Jellyfin Copyright (c) 2000-2024 the FFmpeg developers
+#24 DONE 6.5s
+
+#25 [runtime 10/10] RUN mkdir -p /usr/local/share/fonts/vorix /etc/fonts/conf.d   && cp ./dist/infrastructure/rendering/assets/geist-regular.ttf /usr/local/share/fonts/vorix/GeistEditorial-Regular.ttf   && cp ./dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf /usr/local/share/fonts/vorix/DMSerifDisplay-Regular.ttf   && printf '%s\n'     '<?xml version="1.0"?>'     '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">'     '<fontconfig>'     '  <dir>/usr/local/share/fonts/vorix</dir>'     '  <alias>'     '    <family>GeistEditorial</family>'     '    <prefer><family>Geist</family></prefer>'     '  </alias>'     '</fontconfig>'     > /etc/fonts/conf.d/60-vorix-geist-editorial.conf   && fc-cache -f /usr/local/share/fonts/vorix   && fc-match GeistEditorial | grep -i 'GeistEditorial-Regular.ttf'   && fc-match "DM Serif Display" | grep -i 'DMSerifDisplay-Regular.ttf'
+#25 2.266 GeistEditorial-Regular.ttf: "Geist" "Regular"
+#25 2.276 DMSerifDisplay-Regular.ttf: "DM Serif Display" "Regular"
+#25 DONE 2.3s
+
+#26 exporting to image
+#26 exporting layers
+#26 exporting layers 64.1s done
+#26 exporting manifest sha256:aaaaf03c2900a7510923d1cf2b9c7d07138d6a289179c2e0a1029f5988723e65 0.1s done
+#26 exporting config sha256:a310fffcf918d464a96fdfbb95493064a08a7aaa3da454c4e5055420e9e1ba99 0.0s done
+#26 exporting attestation manifest sha256:ac63ee0e1c84c3d8be4417723cecad79658091ae139e38b5ad04ba5ea6ac4ff6
+#26 exporting attestation manifest sha256:ac63ee0e1c84c3d8be4417723cecad79658091ae139e38b5ad04ba5ea6ac4ff6 0.0s done
+#26 exporting manifest list sha256:847a4062096d163519390868da577e6fcfa48c9c4ab143c4d360b8d68c50174e 0.0s done
+#26 naming to docker.io/library/zuno-zuno-api:latest done
+#26 unpacking to docker.io/library/zuno-zuno-api:latest
+#26 unpacking to docker.io/library/zuno-zuno-api:latest 14.7s done
+#26 DONE 79.0s
+
+#27 resolving provenance for metadata file
+#27 DONE 0.2s
+ Image zuno-zuno-api Built 
+BUILD vorix-worker
+ Image zuno-vorix-worker Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 488B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 2.39kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.1s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:20-slim
+#5 DONE 0.1s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 125B done
+#6 DONE 0.0s
+
+#7 [deps 1/4] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#7 resolve docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 0.0s done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 108.15kB 0.2s done
+#8 DONE 0.2s
+
+#9 [runtime  5/10] RUN npm ci --omit=dev && npm cache clean --force
+#9 CACHED
+
+#10 [build 8/8] RUN npm run build
+#10 CACHED
+
+#11 [runtime  7/10] COPY --from=build /app/scripts ./scripts
+#11 CACHED
+
+#12 [runtime  8/10] COPY --from=build /app/db ./db
+#12 CACHED
+
+#13 [runtime  9/10] RUN sh ./scripts/install-ffmpeg-linux.sh /opt/vorix/ffmpeg
+#13 CACHED
+
+#14 [build 3/8] COPY --from=deps /app/node_modules ./node_modules
+#14 CACHED
+
+#15 [build 7/8] COPY db ./db
+#15 CACHED
+
+#16 [build 6/8] COPY scripts ./scripts
+#16 CACHED
+
+#17 [runtime  6/10] COPY --from=build /app/dist ./dist
+#17 CACHED
+
+#18 [runtime  3/10] RUN apt-get update   && apt-get install -y --no-install-recommends fontconfig ca-certificates curl xz-utils   && rm -rf /var/lib/apt/lists/*
+#18 CACHED
+
+#19 [build 5/8] COPY src ./src
+#19 CACHED
+
+#20 [deps 4/4] RUN npm ci
+#20 CACHED
+
+#21 [deps 2/4] WORKDIR /app
+#21 CACHED
+
+#22 [runtime  4/10] COPY package.json package-lock.json ./
+#22 CACHED
+
+#23 [build 4/8] COPY package.json package-lock.json tsconfig.json ./
+#23 CACHED
+
+#24 [deps 3/4] COPY package.json package-lock.json ./
+#24 CACHED
+
+#25 [runtime 10/10] RUN mkdir -p /usr/local/share/fonts/vorix /etc/fonts/conf.d   && cp ./dist/infrastructure/rendering/assets/geist-regular.ttf /usr/local/share/fonts/vorix/GeistEditorial-Regular.ttf   && cp ./dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf /usr/local/share/fonts/vorix/DMSerifDisplay-Regular.ttf   && printf '%s\n'     '<?xml version="1.0"?>'     '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">'     '<fontconfig>'     '  <dir>/usr/local/share/fonts/vorix</dir>'     '  <alias>'     '    <family>GeistEditorial</family>'     '    <prefer><family>Geist</family></prefer>'     '  </alias>'     '</fontconfig>'     > /etc/fonts/conf.d/60-vorix-geist-editorial.conf   && fc-cache -f /usr/local/share/fonts/vorix   && fc-match GeistEditorial | grep -i 'GeistEditorial-Regular.ttf'   && fc-match "DM Serif Display" | grep -i 'DMSerifDisplay-Regular.ttf'
+#25 CACHED
+
+#26 exporting to image
+#26 exporting layers 0.0s done
+#26 exporting manifest sha256:0b5fe203acf99bffa665c4898aa3d0351db4004dacd8fe0a54a66efcd5602962 0.0s done
+#26 exporting config sha256:d6cca819a30814735302f319a5ff5b86623b09b6154680d262059711aa8a1adf done
+#26 exporting attestation manifest sha256:eb0c99687e0bc2962920221ca73836ed798db285bb201559a0ba71aee0729db3 0.0s done
+#26 exporting manifest list sha256:69bb964bd43ac27e4ce6c97647de752f6bffaf0be867ab7844f054a3990b49f6 done
+#26 naming to docker.io/library/zuno-vorix-worker:latest done
+#26 unpacking to docker.io/library/zuno-vorix-worker:latest 0.0s done
+#26 DONE 0.1s
+
+#27 resolving provenance for metadata file
+#27 DONE 0.0s
+ Image zuno-vorix-worker Built 
+BUILD zuno-web
+ Image zuno-zuno-api Building 
+ Image zuno-zuno-web Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 930B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 984B done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.1s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:20-slim
+#5 DONE 0.1s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 102B done
+#6 DONE 0.0s
+
+#7 [deps 1/4] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#7 resolve docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 0.0s done
+#7 ...
+
+#8 [internal] load build context
+#8 transferring context: 3.89MB 0.2s done
+#8 DONE 0.2s
+
+#7 [deps 1/4] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#7 DONE 0.7s
+
+#9 [deps 2/4] WORKDIR /app
+#9 DONE 0.1s
+
+#10 [deps 3/4] COPY package.json package-lock.json ./
+#10 DONE 0.0s
+
+#11 [deps 4/4] RUN npm ci
+#11 28.28 
+#11 28.28 added 206 packages, and audited 207 packages in 28s
+#11 28.28 
+#11 28.28 32 packages are looking for funding
+#11 28.28   run `npm fund` for details
+#11 28.48 
+#11 28.48 8 vulnerabilities (1 moderate, 4 high, 3 critical)
+#11 28.48 
+#11 28.48 To address issues that do not require attention, run:
+#11 28.48   npm audit fix
+#11 28.48 
+#11 28.48 To address all issues (including breaking changes), run:
+#11 28.48   npm audit fix --force
+#11 28.48 
+#11 28.48 Run `npm audit` for details.
+#11 28.48 npm notice
+#11 28.48 npm notice New major version of npm available! 10.8.2 -> 12.2.0
+#11 28.48 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#11 28.48 npm notice To update run: npm install -g npm@12.2.0
+#11 28.48 npm notice
+#11 DONE 28.8s
+
+#12 [build 3/5] COPY --from=deps /app/node_modules ./node_modules
+#12 DONE 6.9s
+
+#13 [build 4/5] COPY . .
+#13 DONE 0.5s
+
+#14 [build 5/5] RUN npm run build
+#14 0.944 
+#14 0.944 > zuno-web@0.1.0 build
+#14 0.944 > next build
+#14 0.944 
+#14 1.648 Attention: Next.js now collects completely anonymous telemetry regarding usage.
+#14 1.649 This information is used to shape Next.js' roadmap and prioritize features.
+#14 1.650 You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+#14 1.650 https://nextjs.org/telemetry
+#14 1.650 
+#14 1.701 ▲ Next.js 16.2.12 (Turbopack)
+#14 1.702 
+#14 1.952   Creating an optimized production build ...
+#14 48.93 ✓ Compiled successfully in 47s
+#14 48.95   Running TypeScript ...
+#14 89.24   Finished TypeScript in 40s ...
+#14 89.25   Collecting page data using 1 worker ...
+#14 90.91   Generating static pages using 1 worker (0/30) ...
+#14 91.48   Generating static pages using 1 worker (7/30) 
+#14 91.76   Generating static pages using 1 worker (14/30) 
+#14 92.41   Generating static pages using 1 worker (22/30) 
+#14 92.57 ✓ Generating static pages using 1 worker (30/30) in 1662ms
+#14 92.58   Finalizing page optimization ...
+#14 93.43 
+#14 93.44 Route (app)                                                          Revalidate  Expire
+#14 93.44 ┌ ○ /                                                                        5m      1y
+#14 93.44 ├ ○ /_not-found
+#14 93.44 ├ ○ /admin
+#14 93.44 ├ ○ /admin/ai-providers
+#14 93.44 ├ ○ /admin/billing-provider
+#14 93.44 ├ ○ /admin/growth
+#14 93.44 ├ ○ /admin/meetings-bots
+#14 93.44 ├ ○ /admin/settings
+#14 93.44 ├ ○ /admin/tenants
+#14 93.44 ├ ƒ /admin/tenants/[tenantId]
+#14 93.44 ├ ○ /data-deletion
+#14 93.44 ├ ○ /empresa
+#14 93.44 ├ ○ /google-calendar/callback
+#14 93.44 ├ ○ /icon.svg
+#14 93.44 ├ ○ /instagram/callback
+#14 93.44 ├ ○ /login
+#14 93.44 ├ ○ /meta-ads/callback
+#14 93.44 ├ ○ /opengraph-image.png
+#14 93.44 ├ ƒ /p/[token]
+#14 93.44 ├ ○ /precos                                                                  5m      1y
+#14 93.44 ├ ○ /pricing
+#14 93.44 ├ ○ /privacy
+#14 93.44 ├ ○ /produtos/conversas                                                      5m      1y
+#14 93.44 ├ ○ /produtos/meetings                                                       5m      1y
+#14 93.44 ├ ƒ /public-og
+#14 93.44 ├ ƒ /r/[token]
+#14 93.44 ├ ○ /signup
+#14 93.44 ├ ○ /terms
+#14 93.44 ├ ○ /tiktok/callback
+#14 93.44 ├ ○ /workspaces
+#14 93.44 ├ ƒ /workspaces/[workspaceId]
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/analytics
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/assets
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/calendar
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/campaigns
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/chat
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/chat/[conversationId]
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/connections
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/contacts
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/conversas
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/create
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/deals
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/execution
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/execution/[runId]
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/facebook
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/governance
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/instagram
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/kanban
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/knowledge
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/meetings
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/meetings/agenda
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/meetings/ask
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/meetings/central
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/meetings/central/[meetingId]
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/meetings/central/[meetingId]/imprimir
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/meetings/integrations
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/meetings/recorder-accounts
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/meetings/recordings
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/meetings/settings
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/meta-ads
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/onboarding
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/operations
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/planning
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/planning/[planningId]
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/production
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/proposals
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/providers
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/publications
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/publish
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/results
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/review
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/runtime
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/runtime/[runtimeId]
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/settings
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/settings/automations
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/settings/plano
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/settings/products
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/settings/teams
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/settings/users
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/tasks
+#14 93.44 ├ ƒ /workspaces/[workspaceId]/tiktok
+#14 93.44 ├ ○ /youtube/callback
+#14 93.44 └ ○ /zoom/callback
+#14 93.44 
+#14 93.44 
+#14 93.44 ƒ Proxy (Middleware)
+#14 93.44 
+#14 93.44 ○  (Static)   prerendered as static content
+#14 93.44 ƒ  (Dynamic)  server-rendered on demand
+#14 93.44 
+#14 93.59 npm notice
+#14 93.59 npm notice New major version of npm available! 10.8.2 -> 12.2.0
+#14 93.59 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#14 93.59 npm notice To update run: npm install -g npm@12.2.0
+#14 93.59 npm notice
+#14 DONE 93.7s
+
+#15 [runtime 3/5] COPY --from=build /app/.next/standalone ./
+#15 DONE 0.7s
+
+#16 [runtime 4/5] COPY --from=build /app/.next/static ./.next/static
+#16 DONE 0.3s
+
+#17 [runtime 5/5] COPY --from=build /app/public ./public
+#17 DONE 0.0s
+
+#18 exporting to image
+#18 exporting layers
+#18 exporting layers 3.8s done
+#18 exporting manifest sha256:88e34234ccdc1f161df5a8408d58810148dd096b17440bcb67269948c3e76d2e 0.0s done
+#18 exporting config sha256:5dccd554524b89725e6c80f821b3a21f51e214039c34ef73e5cc45ee12d0d213 0.0s done
+#18 exporting attestation manifest sha256:52293a767b3f80f483ac4e7d9f3aeabf07e7581b9c78cf2c7a9eed69b3a832e7 0.0s done
+#18 exporting manifest list sha256:1a12820be63fc2beb7092e5cb385e4e558969161c8383048053a28fd5fc77d7f 0.0s done
+#18 naming to docker.io/library/zuno-zuno-web:latest done
+#18 unpacking to docker.io/library/zuno-zuno-web:latest
+#18 unpacking to docker.io/library/zuno-zuno-web:latest 1.2s done
+#18 DONE 5.1s
+
+#19 resolving provenance for metadata file
+#19 DONE 0.2s
+ Image zuno-zuno-web Built 
+MIGRATIONS_BEFORE [migrate] 149 aplicada(s), 4 pendente(s).
+MIGRATIONS_AFTER [migrate] 153 aplicada(s), 0 pendente(s).
+ Container zuno-zuno-postgres-1 Running 
+ Container zuno-vorix-worker-1 Recreate 
+ Container zuno-zuno-api-1 Recreate 
+ Container zuno-vorix-worker-1 Recreated 
+ Container zuno-zuno-api-1 Recreated 
+ Container zuno-zuno-web-1 Recreate 
+ Container zuno-zuno-web-1 Recreated 
+ Container zuno-zuno-postgres-1 Waiting 
+ Container zuno-zuno-postgres-1 Waiting 
+ Container zuno-zuno-postgres-1 Healthy 
+ Container zuno-vorix-worker-1 Starting 
+ Container zuno-zuno-postgres-1 Healthy 
+ Container zuno-zuno-api-1 Starting 
+ Container zuno-vorix-worker-1 Started 
+ Container zuno-zuno-api-1 Started 
+ Container zuno-zuno-api-1 Waiting 
+ Container zuno-zuno-api-1 Healthy 
+ Container zuno-zuno-web-1 Starting 
+ Container zuno-zuno-web-1 Started 
+READYZ "ready":true WEB 200 LOG_ERRORS 0
+DEPLOYED e650eb1b3e6a6d262d2e373ac5152c3aed3055c2
+DEPLOY_DONE

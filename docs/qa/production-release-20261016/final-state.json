@@ -1,0 +1,19 @@
+﻿{
+  "checkedAt": "2026-10-16T12:57:29.440Z",
+  "revision": "e650eb1b3e6a6d262d2e373ac5152c3aed3055c2",
+  "migrationCount": 153,
+  "lastMigration": "0153_meetings_intelligence",
+  "tables": {
+    "quick_replies": "inbox_quick_replies",
+    "service_settings": "inbox_service_settings",
+    "insights": "meeting_insights",
+    "shares": "meeting_shares",
+    "native_imports": "meeting_native_imports",
+    "external_imports": "meeting_external_imports"
+  },
+  "authMode": "jwt",
+  "cookieSecure": true,
+  "realRecordingEnabled": false,
+  "googleCalendarEnabledInEnvironment": false,
+  "zoomEnabledInEnvironment": false
+}

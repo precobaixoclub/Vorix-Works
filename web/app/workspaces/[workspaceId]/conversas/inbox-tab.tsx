@@ -714,6 +714,7 @@ export function InboxTab({ workspaceId }: { workspaceId: string }) {
         <div className={cn("min-h-0 min-w-0", mobileView === "conversation" ? "block" : "hidden md:block")}>
           {selectedConversation ? (
             <ConversationTimelinePane
+              key={selectedConversation.id}
               workspaceId={workspaceId}
               conversation={selectedConversation}
               currentUserId={currentUserId}
@@ -1482,7 +1483,7 @@ export function ConversationTimelinePane({
   const [composerMode, setComposerMode] = useState<"message" | "note">("message");
   const [quickRepliesOpen, setQuickRepliesOpen] = useState(false);
   // Finalizar com motivo (quando o workspace cadastrou motivos de encerramento).
-  const { data: serviceSettings } = useInboxServiceSettings(workspaceId);
+  const { data: serviceSettings, isLoading: serviceSettingsLoading } = useInboxServiceSettings(workspaceId);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottom = useRef(true);
@@ -1552,7 +1553,9 @@ export function ConversationTimelinePane({
     } else if (stickToBottom.current) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [timeline.length, conversation.id, isLoading]);
+  // Depende da ÚLTIMA entrada (não da contagem): com o histórico cheio, cada mensagem nova empurra a
+  // mais antiga para fora e o total não muda.
+  }, [timeline.length, timeline[timeline.length - 1]?.at, conversation.id, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function loadOlderMessages() {
     const element = scrollRef.current;
@@ -1813,7 +1816,8 @@ export function ConversationTimelinePane({
               allowed={canOperate}
               blockedReason={RBAC_COPY.operateConversations}
               loading={busyAction === "status"}
-              disabled={Boolean(busyAction)}
+              // Espera as regras carregarem: o motivo pode ser obrigatório.
+              disabled={Boolean(busyAction) || (!isResolved && serviceSettingsLoading)}
               onClick={() => {
                 if (!isResolved && serviceSettings?.closingReasons.length) {
                   setCloseDialogOpen(true);

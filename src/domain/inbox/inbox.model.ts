@@ -211,6 +211,7 @@ export type InboxConversation = {
   triageStatus?: InboxTriageStatus;
   triageAttempts?: number;
   triageOption?: string;
+  triageMenuSentAt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -231,7 +232,15 @@ export type InboxConversationServiceStatePatch = {
   triageStatus?: InboxTriageStatus | null;
   triageAttempts?: number;
   triageOption?: string | null;
+  triageMenuSentAt?: string | null;
 };
+
+/** Condição para uma atualização ATÔMICA das regras de atendimento (duas mensagens seguidas do
+ * cliente nunca disparam o menu ou a ausência duas vezes). */
+export type InboxServiceStateGuard =
+  | { kind: "triage_unset" }
+  | { kind: "triage_awaiting" }
+  | { kind: "away_due"; cutoff: string };
 
 export const INBOX_MESSAGE_DIRECTIONS = ["inbound", "outbound"] as const;
 export type InboxMessageDirection = (typeof INBOX_MESSAGE_DIRECTIONS)[number];

@@ -808,6 +808,7 @@ async function main(): Promise<void> {
             publishRealtimeNotification(channel, { type: "conversation.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
           }
           if (rules.csatAnswered || rules.triage) return undefined;
+          // (inclui "waiting": mensagem picada logo depois do menu — a IA não responde a ela)
           return maybeGenerateAiResponse(deps, { tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id, triggeringMessageId: message.id });
         })
         .then(() => publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id }))

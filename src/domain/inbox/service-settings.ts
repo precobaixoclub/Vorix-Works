@@ -29,6 +29,8 @@ export type InboxServiceSettings = {
   triageGreeting: string;
   triageOptions: TriageOption[];
   triageFallbackMessage: string;
+  /** Quando a triagem foi ligada: conversas anteriores não recebem o menu. */
+  triageEnabledAt?: string;
   updatedAt?: string;
 };
 

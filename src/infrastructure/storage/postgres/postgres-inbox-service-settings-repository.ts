@@ -18,6 +18,7 @@ type Row = {
   triage_greeting: string;
   triage_options: TriageOption[];
   triage_fallback_message: string;
+  triage_enabled_at: Date | null;
   updated_at: Date;
 };
 
@@ -31,19 +32,19 @@ export class PostgresInboxServiceSettingsRepository implements InboxServiceSetti
 
   async upsert(settings: InboxServiceSettings): Promise<InboxServiceSettings> {
     const result = await this.pool.query<Row>(
-      `insert into inbox_service_settings (workspace_id, tenant_id, timezone, business_hours, away_enabled, away_message, closing_reasons, require_closing_reason, csat_enabled, csat_message, csat_thanks_message, triage_enabled, triage_greeting, triage_options, triage_fallback_message, updated_at)
-       values ($1, $2, $3, $4::jsonb, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14::jsonb, $15, now())
+      `insert into inbox_service_settings (workspace_id, tenant_id, timezone, business_hours, away_enabled, away_message, closing_reasons, require_closing_reason, csat_enabled, csat_message, csat_thanks_message, triage_enabled, triage_greeting, triage_options, triage_fallback_message, triage_enabled_at, updated_at)
+       values ($1, $2, $3, $4::jsonb, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14::jsonb, $15, $16, now())
        on conflict (workspace_id) do update set
          timezone = excluded.timezone, business_hours = excluded.business_hours, away_enabled = excluded.away_enabled,
          away_message = excluded.away_message, closing_reasons = excluded.closing_reasons, require_closing_reason = excluded.require_closing_reason,
          csat_enabled = excluded.csat_enabled, csat_message = excluded.csat_message, csat_thanks_message = excluded.csat_thanks_message,
          triage_enabled = excluded.triage_enabled, triage_greeting = excluded.triage_greeting, triage_options = excluded.triage_options,
-         triage_fallback_message = excluded.triage_fallback_message, updated_at = now()
+         triage_fallback_message = excluded.triage_fallback_message, triage_enabled_at = excluded.triage_enabled_at, updated_at = now()
        returning *`,
       [
         settings.workspaceId, settings.tenantId, settings.timezone, JSON.stringify(settings.businessHours), settings.awayEnabled, settings.awayMessage,
         JSON.stringify(settings.closingReasons), settings.requireClosingReason, settings.csatEnabled, settings.csatMessage, settings.csatThanksMessage,
-        settings.triageEnabled, settings.triageGreeting, JSON.stringify(settings.triageOptions), settings.triageFallbackMessage,
+        settings.triageEnabled, settings.triageGreeting, JSON.stringify(settings.triageOptions), settings.triageFallbackMessage, settings.triageEnabledAt ?? null,
       ],
     );
     return this.toDomain(result.rows[0]!);
@@ -66,6 +67,7 @@ export class PostgresInboxServiceSettingsRepository implements InboxServiceSetti
       triageGreeting: row.triage_greeting,
       triageOptions: row.triage_options ?? [],
       triageFallbackMessage: row.triage_fallback_message,
+      ...(row.triage_enabled_at ? { triageEnabledAt: row.triage_enabled_at.toISOString() } : {}),
       updatedAt: row.updated_at.toISOString(),
     };
   }

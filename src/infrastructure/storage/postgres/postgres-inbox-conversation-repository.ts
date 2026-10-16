@@ -5,7 +5,7 @@ import type {
   InboxConversationListItem,
   InboxConversationRepositoryPort,
 } from "../../../application/ports/inbox-conversation-repository.port.js";
-import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType, MessagingProviderId, InboxConversationServiceStatePatch, InboxCsatStatus, InboxTriageStatus } from "../../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType, MessagingProviderId, InboxConversationServiceStatePatch, InboxCsatStatus, InboxServiceStateGuard, InboxTriageStatus } from "../../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -38,6 +38,7 @@ type Row = {
   triage_status: string | null;
   triage_attempts: number | null;
   triage_option: string | null;
+  triage_menu_sent_at: Date | null;
   last_message_at: Date | null;
   unread_count: number;
   is_urgent: boolean;
@@ -284,11 +285,35 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     return this.toDomain(row);
   }
 
+  async updateServiceStateIf(id: string, guard: InboxServiceStateGuard, patch: InboxConversationServiceStatePatch): Promise<InboxConversation | undefined> {
+    const columns: Record<keyof InboxConversationServiceStatePatch, string> = {
+      closingReason: "closing_reason", closedAt: "closed_at", closedBy: "closed_by", csatStatus: "csat_status", csatRequestedAt: "csat_requested_at",
+      csatScore: "csat_score", csatAnsweredAt: "csat_answered_at", lastAwayMessageAt: "last_away_message_at",
+      triageStatus: "triage_status", triageAttempts: "triage_attempts", triageOption: "triage_option", triageMenuSentAt: "triage_menu_sent_at",
+    };
+    const params: unknown[] = [id];
+    const sets: string[] = [];
+    for (const [key, column] of Object.entries(columns) as [keyof InboxConversationServiceStatePatch, string][]) {
+      if (patch[key] === undefined) continue;
+      params.push(patch[key]);
+      sets.push(`${column} = $${params.length}`);
+    }
+    let condition: string;
+    if (guard.kind === "triage_unset") condition = "triage_status is null";
+    else if (guard.kind === "triage_awaiting") condition = "triage_status = 'awaiting'";
+    else {
+      params.push(guard.cutoff);
+      condition = `(last_away_message_at is null or last_away_message_at < $${params.length}::timestamptz)`;
+    }
+    const result = await this.pool.query<Row>(`update inbox_conversations set ${sets.join(", ")} where id = $1 and ${condition} returning *`, params);
+    return result.rows[0] ? this.toDomain(result.rows[0]) : undefined;
+  }
+
   async updateServiceState(id: string, patch: InboxConversationServiceStatePatch): Promise<InboxConversation> {
     const columns: Record<keyof InboxConversationServiceStatePatch, string> = {
       closingReason: "closing_reason", closedAt: "closed_at", closedBy: "closed_by", csatStatus: "csat_status", csatRequestedAt: "csat_requested_at",
       csatScore: "csat_score", csatAnsweredAt: "csat_answered_at", lastAwayMessageAt: "last_away_message_at",
-      triageStatus: "triage_status", triageAttempts: "triage_attempts", triageOption: "triage_option",
+      triageStatus: "triage_status", triageAttempts: "triage_attempts", triageOption: "triage_option", triageMenuSentAt: "triage_menu_sent_at",
     };
     const sets: string[] = [];
     const params: unknown[] = [id];
@@ -402,6 +427,7 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       triageStatus: (row.triage_status as InboxTriageStatus | null) ?? undefined,
       triageAttempts: row.triage_attempts ?? 0,
       triageOption: row.triage_option ?? undefined,
+      triageMenuSentAt: row.triage_menu_sent_at?.toISOString(),
       lastMessageAt: row.last_message_at?.toISOString(),
       unreadCount: row.unread_count,
       isUrgent: row.is_urgent,

@@ -1,4 +1,4 @@
-import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType, InboxTag, MessagingProviderId, InboxConversationServiceStatePatch } from "../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType, InboxTag, MessagingProviderId, InboxConversationServiceStatePatch, InboxServiceStateGuard } from "../../domain/inbox/inbox.model.js";
 
 /** Módulo Conversas (Fase 1/4). Ver `db/migrations/0082_inbox_conversations.sql` e
  * `db/migrations/0115_inbox_canonical_chat_identity.sql` (identidade canônica de chat). */
@@ -120,6 +120,8 @@ export type InboxConversationRepositoryPort = {
   setPinned(id: string, pinned: boolean): Promise<InboxConversation>;
   setStatus(id: string, status: InboxConversationStatus): Promise<InboxConversation>;
   updateServiceState(id: string, patch: InboxConversationServiceStatePatch): Promise<InboxConversation>;
+  /** Atualiza só se a condição ainda valer; `undefined` = outro processo chegou antes. */
+  updateServiceStateIf(id: string, guard: InboxServiceStateGuard, patch: InboxConversationServiceStatePatch): Promise<InboxConversation | undefined>;
   /** "Assumir conversa" desliga a IA só aqui — nunca globalmente. `reason` (Fase 5) é gravado
    * junto quando `aiEnabled` é `false`; ignorado (sempre limpo para `null`) quando `aiEnabled` é
    * `true` — não faz sentido ter um "motivo de pausa" numa conversa com IA ativa. */

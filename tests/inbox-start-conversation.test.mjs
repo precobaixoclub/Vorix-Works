@@ -134,3 +134,10 @@ test("nota interna vira evento da timeline e nunca é enviada ao contato", async
   assert.ok(events.some((event) => event.type === "note_added"));
   await assert.rejects(addConversationNote(deps, { tenantId, workspaceId: workspace.id, conversationId: conversation.id, text: "   ", performedBy: "u" }), /INBOX_NOTE_EMPTY/);
 });
+
+test("nova conversa: número com +código de país nunca recebe 55", async () => {
+  const tenantId = "tenant-start-intl";
+  const { deps, workspace, connection } = await setup(tenantId);
+  const result = await startInboxConversation(deps, { tenantId, workspaceId: workspace.id, connectionId: connection.id, phone: "+1 212 555 1234", body: "Hi", startedByUserId: "u" });
+  assert.equal(result.conversation.externalChatId, "+12125551234");
+});

@@ -122,6 +122,7 @@ const INTERVAL_SCHEMA = { type: "object", required: ["start", "end"], properties
 const SERVICE_SETTINGS_BODY_SCHEMA = {
   type: "object",
   required: ["workspaceId"],
+  additionalProperties: false,
   properties: {
     workspaceId: { type: "string", minLength: 1 },
     timezone: { type: "string", minLength: 1, maxLength: 64 },
@@ -295,6 +296,7 @@ const INBOX_ERROR_STATUS: Record<string, number> = {
   INBOX_QUICK_REPLY_INVALID: 422,
   INBOX_QUICK_REPLY_SHORTCUT_TAKEN: 409,
   INBOX_NOTE_EMPTY: 422,
+  INBOX_NOTE_TOO_LONG: 422,
   // Regras de atendimento.
   INBOX_SERVICE_SETTINGS_NOT_CONFIGURED: 503,
   INBOX_SERVICE_SETTINGS_INVALID: 422,
@@ -1145,7 +1147,8 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     const principal = requirePermission(request, "inbox:manage_connections");
     const { workspaceId, ...changes } = request.body as { workspaceId: string } & Record<string, unknown>;
     try {
-      return successEnvelope(await updateInboxServiceSettings(useCaseDeps, { tenantId: principal.tenantId, workspaceId, ...(changes as object) }), request.id);
+      // tenantId SEMPRE do token (vem por último: nada do corpo o sobrescreve).
+      return successEnvelope(await updateInboxServiceSettings(useCaseDeps, { ...(changes as object), workspaceId, tenantId: principal.tenantId }), request.id);
     } catch (error) {
       rethrowInboxError(error);
     }

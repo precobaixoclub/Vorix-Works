@@ -1,5 +1,5 @@
 import type { InboxUseCaseDeps } from "../inbox/inbox-use-cases.js";
-import { registerInboundMessage } from "../inbox/inbox-use-cases.js";
+import { registerInboundMessage, applyInboundServiceRules } from "../inbox/inbox-use-cases.js";
 import type { InstagramDmAccountRouteRepositoryPort } from "../ports/instagram-dm-account-route-repository.port.js";
 import { ensureInstagramMessagingConnection } from "./ensure-instagram-messaging-connection.js";
 
@@ -93,7 +93,7 @@ export async function receiveInstagramDmWebhook(deps: ReceiveInstagramDmWebhookD
       }
 
       const occurredAt = messaging.timestamp ? new Date(messaging.timestamp).toISOString() : new Date().toISOString();
-      const { conversation } = await registerInboundMessage(deps, {
+      const { conversation, message, wasCreated } = await registerInboundMessage(deps, {
         tenantId: route.tenantId,
         workspaceId: route.workspaceId,
         connectionId: connection.id,
@@ -106,6 +106,8 @@ export async function receiveInstagramDmWebhook(deps: ReceiveInstagramDmWebhookD
         body: text,
         occurredAt,
       });
+      // Regras de atendimento: no Instagram só reabre a conversa finalizada (sem mensagens automáticas).
+      if (wasCreated) await applyInboundServiceRules(deps, { tenantId: route.tenantId, workspaceId: route.workspaceId, conversationId: conversation.id, messageId: message.id }).catch(() => undefined);
       processed++;
       updatedConversations.push({ tenantId: route.tenantId, workspaceId: route.workspaceId, conversationId: conversation.id });
     }

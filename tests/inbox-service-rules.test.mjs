@@ -155,6 +155,10 @@ test("ausência: só fora do horário, no máximo uma a cada 12h", async () => {
   assert.equal((await outboundBodies()).filter((body) => body === "Estamos fora do horário.").length, 1);
 });
 
+/** A triagem só vale para conversas criadas depois de ligada; nos testes a conversa já existe. */
+const enabledBefore = (ctx) => db.pool.query("update inbox_service_settings set triage_enabled_at = now() - interval '1 day' where workspace_id = $1", [ctx.workspaceId]);
+const menuSentEarlier = (conversationId) => db.pool.query("update inbox_conversations set triage_menu_sent_at = now() - interval '1 minute' where id = $1 and triage_menu_sent_at is not null", [conversationId]);
+
 test("triagem (domínio): número, emoji, 'opção 2' ou nome da opção; ambíguo/inválido não casa", () => {
   const options = [{ id: "a", label: "Vendas" }, { id: "b", label: "Suporte técnico" }, { id: "c", label: "Financeiro" }];
   for (const [text, label] of [["1", "Vendas"], ["2️⃣", "Suporte técnico"], ["opção 3", "Financeiro"], ["Vendas", "Vendas"], ["quero falar com o suporte tecnico", "Suporte técnico"], ["FINANCEIRO!", "Financeiro"]]) {
@@ -171,13 +175,18 @@ test("triagem: menu na 1ª mensagem, escolha leva para a equipe (com rodízio) +
   await addTeamMember(deps, { teamId: team.id, ...ctx, userId: "seller-1", role: "editor" });
   const tag = await deps.tagRepository.create({ ...ctx, name: "Lead" });
   await assert.rejects(updateInboxServiceSettings(deps, { ...ctx, triageEnabled: true, triageOptions: [] }), /INBOX_SERVICE_SETTINGS_INVALID/);
-  await assert.rejects(updateInboxServiceSettings(deps, { ...ctx, triageOptions: [{ label: "X", teamId: "team-de-outro" }] }), /TEAM_NOT_FOUND/);
+  const foreign = await updateInboxServiceSettings(deps, { ...ctx, triageOptions: [{ label: "X", teamId: "team-de-outro" }] });
+  assert.equal(foreign.triageOptions[0].teamId, undefined, "equipe de outro workspace é descartada");
   await updateInboxServiceSettings(deps, { ...ctx, triageEnabled: true, triageOptions: [{ label: "Vendas", teamId: team.id, tagId: tag.id, reply: "Um vendedor já vai falar com você." }, { label: "Suporte" }] });
+  await enabledBefore(ctx);
 
   const hello = await inbound("Oi, bom dia");
   assert.equal((await applyInboundServiceRules(deps, { ...ctx, conversationId: conversation.id, messageId: hello.id })).triage, "menu_sent");
   assert.ok((await outboundBodies()).some((body) => body.includes("*1* - Vendas")));
 
+  const quick = await inbound("tudo bem?");
+  assert.equal((await applyInboundServiceRules(deps, { ...ctx, conversationId: conversation.id, messageId: quick.id })).triage, "waiting", "mensagem picada logo depois do menu não gasta tentativa");
+  await menuSentEarlier(conversation.id);
   const wrong = await inbound("qual o preço?");
   assert.equal((await applyInboundServiceRules(deps, { ...ctx, conversationId: conversation.id, messageId: wrong.id })).triage, "invalid");
 
@@ -199,7 +208,9 @@ test("triagem: menu na 1ª mensagem, escolha leva para a equipe (com rodízio) +
 test("triagem: duas respostas inválidas encaminham sem opção; conversa já com responsável nunca recebe menu", async () => {
   const unassigned = await setup("tenant-triage-2", null);
   await updateInboxServiceSettings(unassigned.deps, { ...unassigned.ctx, triageEnabled: true, triageOptions: [{ label: "Vendas" }] });
+  await enabledBefore(unassigned.ctx);
   for (const [text, expected] of [["oi", "menu_sent"], ["hã?", "invalid"], ["não sei", "skipped"]]) {
+    await menuSentEarlier(unassigned.conversation.id);
     const message = await unassigned.inbound(text);
     assert.equal((await applyInboundServiceRules(unassigned.deps, { ...unassigned.ctx, conversationId: unassigned.conversation.id, messageId: message.id })).triage, expected, text);
   }
@@ -210,4 +221,35 @@ test("triagem: duas respostas inválidas encaminham sem opção; conversa já co
   await updateInboxServiceSettings(assigned.deps, { ...assigned.ctx, triageEnabled: true, triageOptions: [{ label: "Vendas" }] });
   const message = await assigned.inbound("oi");
   assert.equal((await applyInboundServiceRules(assigned.deps, { ...assigned.ctx, conversationId: assigned.conversation.id, messageId: message.id })).triage, undefined);
+});
+
+test("triagem: duas mensagens simultâneas mandam o menu uma vez; equipe apagada cai na regra do canal", async () => {
+  const ctx0 = await setup("tenant-triage-race", null);
+  await updateInboxServiceSettings(ctx0.deps, { ...ctx0.ctx, triageEnabled: true, triageOptions: [{ label: "Vendas" }] });
+  await enabledBefore(ctx0.ctx);
+  const [a, b] = [await ctx0.inbound("Oi"), await ctx0.inbound("tudo bem?")];
+  const results = await Promise.all([a, b].map((message) => applyInboundServiceRules(ctx0.deps, { ...ctx0.ctx, conversationId: ctx0.conversation.id, messageId: message.id })));
+  assert.deepEqual(results.map((r) => r.triage).sort(), ["menu_sent", "waiting"]);
+  assert.equal((await ctx0.outboundBodies()).filter((body) => body.includes("*1* - Vendas")).length, 1);
+
+  const ctx1 = await setup("tenant-triage-deleted", null);
+  const team = await createTeam(ctx1.deps, { ...ctx1.ctx, name: "Temporária" });
+  await updateInboxServiceSettings(ctx1.deps, { ...ctx1.ctx, triageEnabled: true, triageOptions: [{ label: "Vendas", teamId: team.id }] });
+  await enabledBefore(ctx1.ctx);
+  await db.pool.query("delete from teams where id = $1", [team.id]);
+  const saved = await updateInboxServiceSettings(ctx1.deps, { ...ctx1.ctx, triageOptions: [{ label: "Vendas", teamId: team.id }] });
+  assert.equal(saved.triageOptions[0].teamId, undefined, "equipe apagada não trava o salvar");
+  await db.pool.query("update inbox_service_settings set triage_options = $2::jsonb where workspace_id = $1", [ctx1.ctx.workspaceId, JSON.stringify([{ id: "o1", label: "Vendas", teamId: team.id }])]);
+  await applyInboundServiceRules(ctx1.deps, { ...ctx1.ctx, conversationId: ctx1.conversation.id, messageId: (await ctx1.inbound("oi")).id });
+  await menuSentEarlier(ctx1.conversation.id);
+  const done = await applyInboundServiceRules(ctx1.deps, { ...ctx1.ctx, conversationId: ctx1.conversation.id, messageId: (await ctx1.inbound("1")).id });
+  assert.equal(done.triage, "completed");
+  assert.ok((await ctx1.outboundBodies()).some((body) => body.includes("Já vamos te atender")), "o cliente recebe a confirmação mesmo com a equipe apagada");
+});
+
+test("triagem não atinge conversas que já existiam antes de ser ligada", async () => {
+  const ctx = await setup("tenant-triage-old", null);
+  await updateInboxServiceSettings(ctx.deps, { ...ctx.ctx, triageEnabled: true, triageOptions: [{ label: "Vendas" }] });
+  const result = await applyInboundServiceRules(ctx.deps, { ...ctx.ctx, conversationId: ctx.conversation.id, messageId: (await ctx.inbound("oi")).id });
+  assert.equal(result.triage, undefined);
 });

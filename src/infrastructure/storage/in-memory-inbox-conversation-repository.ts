@@ -7,7 +7,7 @@ import type {
 import type { InboxContactRepositoryPort } from "../../application/ports/inbox-contact-repository.port.js";
 import type { InboxMessageRepositoryPort } from "../../application/ports/inbox-message-repository.port.js";
 import type { MessagingConnectionRepositoryPort } from "../../application/ports/messaging-connection-repository.port.js";
-import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxConversationServiceStatePatch } from "../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxConversationServiceStatePatch, InboxServiceStateGuard } from "../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -232,6 +232,13 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     const updated = { ...existing, isPinned: pinned, pinnedAt: pinned ? new Date().toISOString() : undefined, updatedAt: new Date().toISOString() };
     this.rows.set(id, updated);
     return updated;
+  }
+
+  async updateServiceStateIf(id: string, guard: InboxServiceStateGuard, patch: InboxConversationServiceStatePatch): Promise<InboxConversation | undefined> {
+    const existing = this.rows.get(id);
+    if (!existing) return undefined;
+    const ok = guard.kind === "triage_unset" ? !existing.triageStatus : guard.kind === "triage_awaiting" ? existing.triageStatus === "awaiting" : !existing.lastAwayMessageAt || existing.lastAwayMessageAt < guard.cutoff;
+    return ok ? this.updateServiceState(id, patch) : undefined;
   }
 
   async updateServiceState(id: string, patch: InboxConversationServiceStatePatch): Promise<InboxConversation> {

@@ -226,12 +226,17 @@ export function useQuickReplySuggestions(workspaceId: string, draft: string, onP
       setActive((current) => (current + (event.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length);
       return true;
     }
+    // Teclado de composição (acentos, japonês…) ou Shift+Enter: nunca escolhe uma sugestão.
+    if (event.nativeEvent.isComposing || event.shiftKey) return false;
     if (event.key === "Enter" || event.key === "Tab") {
       event.preventDefault();
       onPick(matches[active]?.body ?? "");
       return true;
     }
     if (event.key === "Escape") {
+      // Fecha só as sugestões (nunca o painel/drawer em volta).
+      event.preventDefault();
+      event.stopPropagation();
       setDismissedFor(draft);
       return true;
     }

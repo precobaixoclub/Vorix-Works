@@ -9,6 +9,9 @@ alter table inbox_service_settings add column if not exists triage_fallback_mess
 alter table inbox_conversations add column if not exists triage_status text;
 alter table inbox_conversations add column if not exists triage_attempts smallint not null default 0;
 alter table inbox_conversations add column if not exists triage_option text;
+alter table inbox_conversations add column if not exists triage_menu_sent_at timestamptz;
+-- Só conversas criadas DEPOIS de ligar a triagem recebem o menu (as em andamento seguem como estão).
+alter table inbox_service_settings add column if not exists triage_enabled_at timestamptz;
 
 alter table inbox_conversations drop constraint if exists inbox_conversations_triage_status_check;
 alter table inbox_conversations add constraint inbox_conversations_triage_status_check

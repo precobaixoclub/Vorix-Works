@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { InboxQuickReply } from "./types";
+import type { InboxQuickReply, InboxServiceSettings } from "./types";
 import type { ChannelDistributionMode, ChannelRoutingSnapshot, ConversationServiceTime, InboxConversation, InboxConversationEvent, InboxConversationFilter, InboxMessage, InboxMetricsReport, InboxModuleStatus, InboxStreamToken, InboxTag, InboxTagColor, InboxTenantMember, KanbanPhaseType, MessagingConnection, TeamKanbanPhase } from "./types";
 
 /** Fase 10 (Pre-Pilot Hardening) — sempre disponível, mesmo com o módulo desligado. */
@@ -123,8 +123,8 @@ export function setInboxConversationTeam(workspaceId: string, conversationId: st
   return apiClient.post<InboxConversation>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/team`, { workspaceId, teamId });
 }
 
-export function closeInboxConversation(workspaceId: string, conversationId: string): Promise<InboxConversation> {
-  return apiClient.post<InboxConversation>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/close`, { workspaceId });
+export function closeInboxConversation(workspaceId: string, conversationId: string, closingReason?: string): Promise<InboxConversation> {
+  return apiClient.post<InboxConversation>(`/v1/inbox/conversations/${encodeURIComponent(conversationId)}/close`, { workspaceId, ...(closingReason ? { closingReason } : {}) });
 }
 
 export function reopenInboxConversation(workspaceId: string, conversationId: string): Promise<InboxConversation> {
@@ -315,4 +315,12 @@ export function updateInboxQuickReply(workspaceId: string, quickReplyId: string,
 
 export function deleteInboxQuickReply(workspaceId: string, quickReplyId: string): Promise<{ deleted: true }> {
   return apiClient.delete<{ deleted: true }>(`/v1/inbox/quick-replies/${encodeURIComponent(quickReplyId)}?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+export function getInboxServiceSettings(workspaceId: string): Promise<InboxServiceSettings> {
+  return apiClient.get<InboxServiceSettings>(`/v1/inbox/service-settings?workspaceId=${encodeURIComponent(workspaceId)}`);
+}
+
+export function updateInboxServiceSettings(workspaceId: string, changes: Partial<InboxServiceSettings>): Promise<InboxServiceSettings> {
+  return apiClient.put<InboxServiceSettings>("/v1/inbox/service-settings", { workspaceId, ...changes });
 }

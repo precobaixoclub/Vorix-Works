@@ -38,6 +38,7 @@ import {
   dispatchDueScheduledMessages,
   downloadInboundMediaAndAttach,
   maybeGenerateAiResponse,
+  applyInboundServiceRules,
   processOutboundMessage,
   reconcileConnectionsHealth,
   reconcileOrphanedOutboundMessages,
@@ -596,6 +597,7 @@ async function main(): Promise<void> {
     channelRoutingRepository: repositories.channelRoutingRepository,
     teamRepository: repositories.teamRepository,
     teamMembershipRepository: repositories.teamMembershipRepository,
+    serviceSettingsRepository: repositories.inboxServiceSettingsRepository,
   };
   if (config.resilience.outboundSendPaused) {
     console.warn("[inbox-worker] INBOX_OUTBOUND_SEND_PAUSED=true — kill switch de emergência ATIVO: nenhuma mensagem outbound será enviada ao WuzAPI (permanecem queued). Inbound/IA/humano continuam funcionando normalmente.");
@@ -793,7 +795,20 @@ async function main(): Promise<void> {
     // (o próprio número mandou por fora do Vorix) é registrado como `outbound`; a IA nunca deve
     // "responder" à própria mensagem do operador.
     if (wasCreated && message.direction === "inbound") {
-      maybeGenerateAiResponse(deps, { tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id, triggeringMessageId: message.id })
+      // Regras de atendimento ANTES da IA: nota da pesquisa (a IA não responde a ela), reabrir
+      // conversa finalizada e mensagem de ausência. Falha nas regras nunca impede a IA.
+      applyInboundServiceRules(deps, { tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id, messageId: message.id })
+        .catch((error) => {
+          console.error("[inbox-worker] falha nas regras de atendimento:", error instanceof Error ? error.message : error);
+          return { csatAnswered: false, reopened: false, awayMessageSent: false };
+        })
+        .then((rules) => {
+          if (rules.csatAnswered || rules.reopened || rules.awayMessageSent) {
+            publishRealtimeNotification(channel, { type: "conversation.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id });
+          }
+          if (rules.csatAnswered) return undefined;
+          return maybeGenerateAiResponse(deps, { tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id, triggeringMessageId: message.id });
+        })
         .then(() => publishRealtimeNotification(channel, { type: "message.updated", tenantId: event.tenantId, workspaceId: event.workspaceId, conversationId: conversation.id }))
         .catch((error) => {
           console.error("[inbox-worker] falha ao processar resposta automática de IA:", error instanceof Error ? error.message : error);

@@ -7,7 +7,7 @@ import type {
 import type { InboxContactRepositoryPort } from "../../application/ports/inbox-contact-repository.port.js";
 import type { InboxMessageRepositoryPort } from "../../application/ports/inbox-message-repository.port.js";
 import type { MessagingConnectionRepositoryPort } from "../../application/ports/messaging-connection-repository.port.js";
-import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus, InboxMediaStorageRef } from "../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxConversationServiceStatePatch } from "../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -230,6 +230,18 @@ export class InMemoryInboxConversationRepository implements InboxConversationRep
     const existing = this.rows.get(id);
     if (!existing) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
     const updated = { ...existing, isPinned: pinned, pinnedAt: pinned ? new Date().toISOString() : undefined, updatedAt: new Date().toISOString() };
+    this.rows.set(id, updated);
+    return updated;
+  }
+
+  async updateServiceState(id: string, patch: InboxConversationServiceStatePatch): Promise<InboxConversation> {
+    const existing = this.rows.get(id);
+    if (!existing) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
+    const updated: InboxConversation = { ...existing };
+    for (const [key, value] of Object.entries(patch) as [keyof InboxConversationServiceStatePatch, unknown][]) {
+      if (value === undefined) continue;
+      (updated as Record<string, unknown>)[key] = value === null ? undefined : value;
+    }
     this.rows.set(id, updated);
     return updated;
   }

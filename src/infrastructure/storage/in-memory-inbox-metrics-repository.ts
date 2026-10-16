@@ -16,6 +16,11 @@ export class InMemoryInboxMetricsRepository implements InboxMetricsRepositoryPor
       aiResolvedMessageCount: 0,
       humanResolvedMessageCount: 0,
       volumeByAgent: [],
+      csatAverage: undefined,
+      csatResponses: 0,
+      csatRequested: 0,
+      csatByAgent: [],
+      closingReasons: [],
     };
   }
 }

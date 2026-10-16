@@ -263,5 +263,6 @@
   "tests/growth-dashboard.test.mjs",
   "tests/solutions.test.mjs",
   "tests/public-product-catalog.test.mjs",
-  "tests/inbox-start-conversation.test.mjs"
+  "tests/inbox-start-conversation.test.mjs",
+  "tests/inbox-service-rules.test.mjs"
 ]

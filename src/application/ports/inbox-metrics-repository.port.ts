@@ -31,6 +31,13 @@ export type InboxMetricsReport = {
   aiResolvedMessageCount: number;
   humanResolvedMessageCount: number;
   volumeByAgent: readonly InboxAgentVolume[];
+  /** Pesquisa de satisfação (1–5) respondida no período; média `undefined` sem respostas. */
+  csatAverage?: number;
+  csatResponses: number;
+  csatRequested: number;
+  csatByAgent: readonly { userId: string; average: number; responses: number }[];
+  /** Encerramentos por motivo no período ("Sem motivo" quando não informado). */
+  closingReasons: readonly { reason: string; count: number }[];
 };
 
 export type InboxMetricsRepositoryPort = {

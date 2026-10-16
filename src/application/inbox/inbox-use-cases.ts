@@ -1,5 +1,5 @@
 import type { InboxContact, InboxConversation, InboxConversationEvent, InboxMessage, InboxQuickReply, InboxTag, InboxTagColor, MessagingConnection, MessagingConnectionStatus, MessagingProviderId } from "../../domain/inbox/inbox.model.js";
-import { INBOX_AI_ACTOR, MESSAGING_CONNECTION_TERMINAL_STATUSES, normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
+import { INBOX_AI_ACTOR, INBOX_SYSTEM_ACTOR, MESSAGING_CONNECTION_TERMINAL_STATUSES, normalizePhoneNumber } from "../../domain/inbox/inbox.model.js";
 import type { KanbanPhaseType, TeamKanbanPhase } from "../../domain/identity/identity.model.js";
 import { KANBAN_PHASE_TYPES } from "../../domain/identity/identity.model.js";
 import type { OperationalCircuitBreaker, OperationalRateLimiter } from "../operations/operational-services.js";
@@ -15,6 +15,8 @@ import type { InboxMessageRepositoryPort } from "../ports/inbox-message-reposito
 import type { InboxMetricsRecorder } from "../ports/inbox-metrics.port.js";
 import type { InboxTagRepositoryPort } from "../ports/inbox-tag-repository.port.js";
 import type { InboxQuickReplyRepositoryPort } from "../ports/inbox-quick-reply-repository.port.js";
+import type { InboxServiceSettingsRepositoryPort } from "../ports/inbox-service-settings-repository.port.js";
+import { defaultInboxServiceSettings, isValidTimezone, isWithinBusinessHours, normalizeWeeklySchedule, parseCsatScore, type InboxServiceSettings } from "../../domain/inbox/service-settings.js";
 import type { MessagingConnectionRepositoryPort } from "../ports/messaging-connection-repository.port.js";
 import type { MessagingProvider, MessagingProviderErrorKind, NormalizedConnectionStatus } from "../ports/messaging-provider.port.js";
 import { MessagingProviderError } from "../ports/messaging-provider.port.js";
@@ -116,6 +118,9 @@ export type InboxUseCaseDeps = {
    * `tags` nesse caso (nunca bloqueia a listagem em si). */
   tagRepository?: InboxTagRepositoryPort;
   quickReplyRepository?: InboxQuickReplyRepositoryPort;
+  /** Regras de atendimento (horário/ausência, motivos de encerramento, pesquisa). `undefined` =
+   * regras desligadas neste processo (finalizar continua funcionando como antes). */
+  serviceSettingsRepository?: InboxServiceSettingsRepositoryPort;
 };
 
 const defaultIdGenerator = () => `wuzsess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -807,25 +812,166 @@ export async function removeTagFromConversation(deps: InboxUseCaseDeps, input: T
   await requireTagRepository(deps).detachFromConversation(conversation.id, input.tagId);
 }
 
-export type CloseConversationInput = { tenantId: string; workspaceId: string; conversationId: string; performedBy: string };
+export type CloseConversationInput = { tenantId: string; workspaceId: string; conversationId: string; performedBy: string; closingReason?: string };
 
 /** Finalizar atendimento — status vira `resolved` ("Finalizada" na UI). Idempotente: já
- * finalizada, não faz nada (nunca duplica evento de histórico). */
+ * finalizada, não faz nada (nunca duplica evento de histórico). Registra o motivo (obrigatório
+ * quando o workspace exige) e, com a pesquisa ligada, pergunta a nota ao cliente — falha no envio
+ * da pesquisa NUNCA impede a finalização. */
 export async function closeConversation(deps: InboxUseCaseDeps, input: CloseConversationInput): Promise<InboxConversation> {
-  return transitionConversationStatus(deps, input, "resolved");
+  const current = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  if (current.status === "resolved") return current;
+  const settings = await loadServiceSettings(deps, input.tenantId, input.workspaceId);
+  const reason = input.closingReason?.trim() || undefined;
+  if (settings && settings.closingReasons.length) {
+    if (!reason && settings.requireClosingReason) throw new Error("INBOX_CLOSING_REASON_REQUIRED: escolha o motivo do encerramento.");
+    if (reason && !settings.closingReasons.includes(reason)) throw new Error("INBOX_CLOSING_REASON_INVALID: motivo de encerramento não cadastrado.");
+  }
+  await transitionConversationStatus(deps, input, "resolved", reason ? { closingReason: reason } : undefined);
+  let conversation = await deps.conversationRepository.updateServiceState(current.id, {
+    closingReason: reason ?? null,
+    closedAt: new Date().toISOString(),
+    closedBy: input.performedBy,
+    csatStatus: null,
+    csatRequestedAt: null,
+    csatScore: null,
+    csatAnsweredAt: null,
+  });
+  if (settings?.csatEnabled && conversation.chatType === "direct") {
+    try {
+      await sendInboxMessage(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, body: settings.csatMessage, sentByAutomation: true });
+      conversation = await deps.conversationRepository.updateServiceState(conversation.id, { csatStatus: "awaiting", csatRequestedAt: new Date().toISOString() });
+    } catch {
+      // Canal desconectado/fila indisponível: a conversa fica finalizada, só sem pesquisa.
+    }
+  }
+  return conversation;
 }
 
 export type ReopenConversationInput = { tenantId: string; workspaceId: string; conversationId: string; performedBy: string };
 
 /** Reabrir uma conversa finalizada — só faz sentido a partir de `resolved`; volta pra `open`. */
 export async function reopenConversation(deps: InboxUseCaseDeps, input: ReopenConversationInput): Promise<InboxConversation> {
-  return transitionConversationStatus(deps, input, "open");
+  const conversation = await transitionConversationStatus(deps, input, "open");
+  // Reaberta à mão: uma pesquisa ainda pendente deixa de valer (a próxima resposta é conversa normal).
+  return conversation.csatStatus === "awaiting" ? deps.conversationRepository.updateServiceState(conversation.id, { csatStatus: "expired" }) : conversation;
+}
+
+// ── Regras de atendimento ─────────────────────────────────────────────────────────────────────
+
+async function loadServiceSettings(deps: InboxUseCaseDeps, tenantId: string, workspaceId: string): Promise<InboxServiceSettings | undefined> {
+  if (!deps.serviceSettingsRepository) return undefined;
+  const saved = await deps.serviceSettingsRepository.get(workspaceId);
+  if (saved && saved.tenantId !== tenantId) return undefined;
+  return saved ?? defaultInboxServiceSettings(tenantId, workspaceId);
+}
+
+export async function getInboxServiceSettings(deps: InboxUseCaseDeps, input: { tenantId: string; workspaceId: string }): Promise<InboxServiceSettings> {
+  if (!deps.serviceSettingsRepository) throw new Error("INBOX_SERVICE_SETTINGS_NOT_CONFIGURED: regras de atendimento não estão configuradas neste processo.");
+  const workspace = await deps.workspaceRepository.getById(input.workspaceId);
+  if (!workspace || workspace.tenantId !== input.tenantId) throw new Error("INBOX_WORKSPACE_NOT_FOUND: workspace não existe.");
+  return (await loadServiceSettings(deps, input.tenantId, input.workspaceId))!;
+}
+
+export type UpdateInboxServiceSettingsInput = { tenantId: string; workspaceId: string } & Partial<Omit<InboxServiceSettings, "tenantId" | "workspaceId" | "updatedAt">>;
+
+export async function updateInboxServiceSettings(deps: InboxUseCaseDeps, input: UpdateInboxServiceSettingsInput): Promise<InboxServiceSettings> {
+  const current = await getInboxServiceSettings(deps, input);
+  const text = (value: string | undefined, fallback: string, label: string, max = 1000) => {
+    if (value === undefined) return fallback;
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.length > max) throw new Error(`INBOX_SERVICE_SETTINGS_INVALID: ${label} precisa ter de 1 a ${max} caracteres.`);
+    return trimmed;
+  };
+  const timezone = input.timezone ?? current.timezone;
+  if (!isValidTimezone(timezone)) throw new Error("INBOX_SERVICE_SETTINGS_INVALID: fuso horário inválido.");
+  let closingReasons = current.closingReasons;
+  if (input.closingReasons !== undefined) {
+    closingReasons = [...new Set(input.closingReasons.map((reason) => reason.trim()).filter(Boolean))];
+    if (closingReasons.length > 30 || closingReasons.some((reason) => reason.length > 80)) throw new Error("INBOX_SERVICE_SETTINGS_INVALID: até 30 motivos, cada um com até 80 caracteres.");
+  }
+  const next: InboxServiceSettings = {
+    tenantId: input.tenantId,
+    workspaceId: input.workspaceId,
+    timezone,
+    businessHours: input.businessHours ? normalizeWeeklySchedule(input.businessHours) : current.businessHours,
+    awayEnabled: input.awayEnabled ?? current.awayEnabled,
+    awayMessage: text(input.awayMessage, current.awayMessage, "a mensagem de ausência"),
+    closingReasons,
+    requireClosingReason: (input.requireClosingReason ?? current.requireClosingReason) && closingReasons.length > 0,
+    csatEnabled: input.csatEnabled ?? current.csatEnabled,
+    csatMessage: text(input.csatMessage, current.csatMessage, "a mensagem da pesquisa"),
+    csatThanksMessage: text(input.csatThanksMessage, current.csatThanksMessage, "o agradecimento"),
+  };
+  return deps.serviceSettingsRepository!.upsert(next);
+}
+
+/** Janela para a nota do cliente valer, e intervalo mínimo entre duas mensagens de ausência. */
+const CSAT_ANSWER_WINDOW_MS = 48 * 60 * 60 * 1000;
+const AWAY_MESSAGE_COOLDOWN_MS = 12 * 60 * 60 * 1000;
+
+export type InboundServiceRulesResult = { csatAnswered: boolean; reopened: boolean; awayMessageSent: boolean };
+
+/**
+ * Roda depois de cada mensagem NOVA do cliente (worker), antes da IA:
+ * 1. Pesquisa pendente + resposta é uma nota 1–5 → grava, agradece e NÃO reabre (a IA também não responde).
+ * 2. Conversa finalizada/arquivada recebendo mensagem → reabre (o cliente voltou a falar).
+ * 3. Fora do horário de atendimento (com ausência ligada) → mensagem de ausência, no máximo 1 a cada 12h.
+ */
+export async function applyInboundServiceRules(
+  deps: InboxUseCaseDeps,
+  input: { tenantId: string; workspaceId: string; conversationId: string; messageId: string; now?: Date },
+): Promise<InboundServiceRulesResult> {
+  const result: InboundServiceRulesResult = { csatAnswered: false, reopened: false, awayMessageSent: false };
+  const now = input.now ?? new Date();
+  let conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
+  const message = await deps.messageRepository.getById(input.messageId);
+  if (!message || message.direction !== "inbound" || conversation.chatType !== "direct") return result;
+  const settings = await loadServiceSettings(deps, input.tenantId, input.workspaceId);
+
+  if (conversation.csatStatus === "awaiting") {
+    const requestedAt = conversation.csatRequestedAt ? Date.parse(conversation.csatRequestedAt) : 0;
+    const score = message.type === "text" && now.getTime() - requestedAt <= CSAT_ANSWER_WINDOW_MS ? parseCsatScore(message.body) : undefined;
+    if (score !== undefined) {
+      await deps.conversationRepository.updateServiceState(conversation.id, { csatStatus: "answered", csatScore: score, csatAnsweredAt: now.toISOString() });
+      await deps.conversationEventRepository.record({ tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, type: "csat_answered", performedBy: INBOX_SYSTEM_ACTOR, metadata: { score } });
+      // A nota não é "o cliente voltou a falar": não conta como não lida.
+      await deps.conversationRepository.markRead(conversation.id);
+      if (settings?.csatThanksMessage) {
+        await sendInboxMessage(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, body: settings.csatThanksMessage, sentByAutomation: true }).catch(() => undefined);
+      }
+      result.csatAnswered = true;
+      return result;
+    }
+    conversation = await deps.conversationRepository.updateServiceState(conversation.id, { csatStatus: "expired" });
+  }
+
+  if (conversation.status === "resolved" || conversation.status === "archived") {
+    conversation = await transitionConversationStatus(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, performedBy: INBOX_SYSTEM_ACTOR }, "open");
+    result.reopened = true;
+  }
+
+  if (settings?.awayEnabled && !isWithinBusinessHours(settings, now)) {
+    const last = conversation.lastAwayMessageAt ? Date.parse(conversation.lastAwayMessageAt) : 0;
+    if (now.getTime() - last >= AWAY_MESSAGE_COOLDOWN_MS) {
+      try {
+        await sendInboxMessage(deps, { tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, body: settings.awayMessage, sentByAutomation: true });
+        await deps.conversationRepository.updateServiceState(conversation.id, { lastAwayMessageAt: now.toISOString() });
+        await deps.conversationEventRepository.record({ tenantId: input.tenantId, workspaceId: input.workspaceId, conversationId: conversation.id, type: "away_message_sent", performedBy: INBOX_SYSTEM_ACTOR });
+        result.awayMessageSent = true;
+      } catch {
+        // Canal fora do ar: a mensagem do cliente já está registrada; só não houve ausência.
+      }
+    }
+  }
+  return result;
 }
 
 async function transitionConversationStatus(
   deps: InboxUseCaseDeps,
   input: { tenantId: string; workspaceId: string; conversationId: string; performedBy: string },
   toStatus: InboxConversation["status"],
+  eventMetadata?: Record<string, unknown>,
 ): Promise<InboxConversation> {
   const conversation = await mustConversationBelongToTenantAndWorkspace(deps, input.conversationId, input.tenantId, input.workspaceId);
   if (conversation.status === toStatus) return conversation;
@@ -838,6 +984,7 @@ async function transitionConversationStatus(
     performedBy: input.performedBy,
     fromStatus: conversation.status,
     toStatus,
+    ...(eventMetadata ? { metadata: eventMetadata } : {}),
   });
 
   // Kanban (achado de revisão) — sair do quadro (resolvida/arquivada) precisa fechar o cronômetro
@@ -908,6 +1055,8 @@ export type SendInboxMessageInput = {
   body: string;
   sentByUserId?: string;
   sentByAi?: boolean;
+  /** Mensagem automática das regras de atendimento (ausência, pesquisa, agradecimento). */
+  sentByAutomation?: boolean;
   /** Bloco "responder mensagem específica" (pedido explícito do usuário em produção: "clicar para
    * reponder uma mensagem especifica") — id (do Vorix, nunca o `externalMessageId` do WhatsApp) da
    * mensagem sendo respondida, quando presente. */
@@ -973,13 +1122,15 @@ export async function sendInboxMessage(deps: InboxUseCaseDeps, input: SendInboxM
     scheduledAt: scheduledAt?.toISOString(),
     sentByUserId: input.sentByUserId,
     sentByAi: input.sentByAi ?? false,
+    sentByAutomation: input.sentByAutomation ?? false,
     quotedMessage,
   });
   if (scheduledAt) {
     await deps.conversationRepository.markLastMessage(conversation.id, { lastMessageAt: message.createdAt, incrementUnread: false });
     return message;
   }
-  return finishEnqueueingOutboundMessage(deps, { conversationId: conversation.id, connectionId: conversation.connectionId, message, sentByAi: input.sentByAi ?? false, tenantId: input.tenantId, workspaceId: input.workspaceId });
+  // Automação não conta como "a equipe respondeu" (mesma regra da IA no funil de ativação).
+  return finishEnqueueingOutboundMessage(deps, { conversationId: conversation.id, connectionId: conversation.connectionId, message, sentByAi: (input.sentByAi ?? false) || (input.sentByAutomation ?? false), tenantId: input.tenantId, workspaceId: input.workspaceId });
 }
 
 export type StartInboxConversationInput = {

@@ -197,8 +197,32 @@ export type InboxConversation = {
   mergeStatus?: "merged";
   mergedIntoConversationId?: string;
   mergedAt?: string;
+  /** Regras de atendimento (0151): motivo/quem/quando finalizou, pesquisa de satisfação e a última
+   * mensagem de ausência enviada (evita repetir a cada mensagem fora do horário). */
+  closingReason?: string;
+  closedAt?: string;
+  closedBy?: string;
+  csatStatus?: InboxCsatStatus;
+  csatRequestedAt?: string;
+  csatScore?: number;
+  csatAnsweredAt?: string;
+  lastAwayMessageAt?: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type InboxCsatStatus = "awaiting" | "answered" | "expired";
+
+/** Campos de regras de atendimento atualizáveis; `null` limpa o campo. */
+export type InboxConversationServiceStatePatch = {
+  closingReason?: string | null;
+  closedAt?: string | null;
+  closedBy?: string | null;
+  csatStatus?: InboxCsatStatus | null;
+  csatRequestedAt?: string | null;
+  csatScore?: number | null;
+  csatAnsweredAt?: string | null;
+  lastAwayMessageAt?: string | null;
 };
 
 export const INBOX_MESSAGE_DIRECTIONS = ["inbound", "outbound"] as const;
@@ -380,7 +404,14 @@ export const INBOX_CONVERSATION_EVENT_TYPES = [
   "kanban_phase_changed",
   // Nota interna da equipe — só na timeline do Vorix, nunca enviada ao WhatsApp. `metadata.text`.
   "note_added",
+  // Regras de atendimento (0151): cliente respondeu a pesquisa (`metadata.score`) e mensagem
+  // automática de ausência enviada fora do horário.
+  "csat_answered",
+  "away_message_sent",
 ] as const;
+
+/** Ator das ações automáticas das regras de atendimento (reabrir por mensagem do cliente etc.). */
+export const INBOX_SYSTEM_ACTOR = "system";
 export type InboxConversationEventType = (typeof INBOX_CONVERSATION_EVENT_TYPES)[number];
 
 /** Sentinela fixa de `performedBy` para os 3 eventos de IA da Fase 5 — nunca um userId real. */

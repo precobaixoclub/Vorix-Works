@@ -10,10 +10,12 @@ import { useInboxConnections, useInboxModuleStatus } from "@/features/inbox/hook
 import { ConnectionsTab } from "./connections-tab";
 import { ConversasHeader } from "./conversas-header";
 import { InboxTab } from "./inbox-tab";
+import { ServiceSettingsPanel } from "./service-settings-panel";
 
 const TABS = [
   { key: "inbox", label: "Inbox" },
   { key: "connections", label: "Canais" },
+  { key: "settings", label: "Regras" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -73,6 +75,10 @@ export default function ConversasPage() {
           ) : (
             <InboxTab workspaceId={workspace.id} />
           )
+        ) : activeTab === "settings" ? (
+          <div className="h-full overflow-y-auto p-3 sm:p-6">
+            <ServiceSettingsPanel workspaceId={workspace.id} />
+          </div>
         ) : (
           <div className="h-full overflow-y-auto p-3 sm:p-6">
             <ConnectionsTab workspaceId={workspace.id} />

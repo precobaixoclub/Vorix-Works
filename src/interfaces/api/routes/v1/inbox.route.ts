@@ -7,6 +7,7 @@ import type { InboxMediaStoragePort } from "../../../../application/ports/inbox-
 import type { InboxMessageRepositoryPort } from "../../../../application/ports/inbox-message-repository.port.js";
 import type { InboxTagRepositoryPort } from "../../../../application/ports/inbox-tag-repository.port.js";
 import type { InboxQuickReplyRepositoryPort } from "../../../../application/ports/inbox-quick-reply-repository.port.js";
+import type { InboxServiceSettingsRepositoryPort } from "../../../../application/ports/inbox-service-settings-repository.port.js";
 import type { InboxTagColor } from "../../../../domain/inbox/inbox.model.js";
 import type { MessagingConnectionRepositoryPort } from "../../../../application/ports/messaging-connection-repository.port.js";
 import type { MessagingProvider } from "../../../../application/ports/messaging-provider.port.js";
@@ -58,6 +59,8 @@ import {
   updateInboxQuickReply,
   deleteInboxQuickReply,
   addConversationNote,
+  getInboxServiceSettings,
+  updateInboxServiceSettings,
   setAiConversationEnabled,
   setConversationPinned,
   setConversationTeam,
@@ -115,6 +118,24 @@ const QUICK_REPLY_CREATE_BODY_SCHEMA = { type: "object", required: ["workspaceId
 const QUICK_REPLY_UPDATE_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, shortcut: { type: "string", minLength: 1, maxLength: 60 }, body: { type: "string", minLength: 1, maxLength: 4096 } } } as const;
 const QUICK_REPLY_PARAMS_SCHEMA = { type: "object", required: ["quickReplyId"], properties: { quickReplyId: { type: "string", minLength: 1 } } } as const;
 const NOTE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "text"], properties: { workspaceId: { type: "string", minLength: 1 }, text: { type: "string", minLength: 1, maxLength: 4000 } } } as const;
+const INTERVAL_SCHEMA = { type: "object", required: ["start", "end"], properties: { start: { type: "string" }, end: { type: "string" } } } as const;
+const SERVICE_SETTINGS_BODY_SCHEMA = {
+  type: "object",
+  required: ["workspaceId"],
+  properties: {
+    workspaceId: { type: "string", minLength: 1 },
+    timezone: { type: "string", minLength: 1, maxLength: 64 },
+    businessHours: { type: "object", properties: Object.fromEntries(["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((day) => [day, { type: "array", maxItems: 4, items: INTERVAL_SCHEMA }])) },
+    awayEnabled: { type: "boolean" },
+    awayMessage: { type: "string", maxLength: 1000 },
+    closingReasons: { type: "array", maxItems: 30, items: { type: "string", maxLength: 80 } },
+    requireClosingReason: { type: "boolean" },
+    csatEnabled: { type: "boolean" },
+    csatMessage: { type: "string", maxLength: 1000 },
+    csatThanksMessage: { type: "string", maxLength: 1000 },
+  },
+} as const;
+const CLOSE_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, closingReason: { type: "string", maxLength: 80 } } } as const;
 const REACT_MESSAGE_BODY_SCHEMA = { type: "object", required: ["workspaceId", "emoji"], properties: { workspaceId: { type: "string", minLength: 1 }, emoji: { type: "string" } } } as const;
 const MESSAGE_PARAMS_SCHEMA = { type: "object", required: ["id", "messageId"], properties: { id: { type: "string", minLength: 1 }, messageId: { type: "string", minLength: 1 } } } as const;
 const ASSIGN_BODY_SCHEMA = { type: "object", required: ["workspaceId"], properties: { workspaceId: { type: "string", minLength: 1 }, assignedUserId: { type: "string" } } } as const;
@@ -266,6 +287,11 @@ const INBOX_ERROR_STATUS: Record<string, number> = {
   INBOX_QUICK_REPLY_INVALID: 422,
   INBOX_QUICK_REPLY_SHORTCUT_TAKEN: 409,
   INBOX_NOTE_EMPTY: 422,
+  // Regras de atendimento.
+  INBOX_SERVICE_SETTINGS_NOT_CONFIGURED: 503,
+  INBOX_SERVICE_SETTINGS_INVALID: 422,
+  INBOX_CLOSING_REASON_REQUIRED: 422,
+  INBOX_CLOSING_REASON_INVALID: 422,
 };
 
 function rethrowInboxError(error: unknown): never {
@@ -332,6 +358,7 @@ export type InboxRoutesDeps = {
    * configurado neste processo; as rotas abaixo respondem 503 nesse caso. */
   tagRepository?: InboxTagRepositoryPort;
   quickReplyRepository?: InboxQuickReplyRepositoryPort;
+  serviceSettingsRepository?: InboxServiceSettingsRepositoryPort;
 };
 
 function toUseCaseDeps(deps: InboxRoutesDeps): InboxUseCaseDeps {
@@ -1040,12 +1067,12 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
     }
   });
 
-  app.post("/inbox/conversations/:id/close", { schema: { params: ID_PARAMS_SCHEMA, body: WORKSPACE_BODY_SCHEMA } }, async (request) => {
+  app.post("/inbox/conversations/:id/close", { schema: { params: ID_PARAMS_SCHEMA, body: CLOSE_BODY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "inbox:assign");
     const { id } = request.params as { id: string };
-    const { workspaceId } = request.body as { workspaceId: string };
+    const { workspaceId, closingReason } = request.body as { workspaceId: string; closingReason?: string };
     try {
-      const conversation = await closeConversation(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, performedBy: principal.userId });
+      const conversation = await closeConversation(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, performedBy: principal.userId, closingReason });
       publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
       return successEnvelope(conversation, request.id);
     } catch (error) {
@@ -1090,6 +1117,27 @@ export async function registerInboxRoutes(app: FastifyInstance, deps: InboxRoute
       const conversation = await setAiConversationEnabled(useCaseDeps, { tenantId: principal.tenantId, workspaceId, conversationId: id, aiEnabled, performedBy: principal.userId });
       publishConversationUpdated(deps, { tenantId: principal.tenantId, workspaceId, conversationId: id });
       return successEnvelope(conversation, request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  // Regras de atendimento — qualquer atendente lê (o "Finalizar" precisa dos motivos); só admin altera.
+  app.get("/inbox/service-settings", { schema: { querystring: WORKSPACE_QUERY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:read");
+    const { workspaceId } = request.query as { workspaceId: string };
+    try {
+      return successEnvelope(await getInboxServiceSettings(useCaseDeps, { tenantId: principal.tenantId, workspaceId }), request.id);
+    } catch (error) {
+      rethrowInboxError(error);
+    }
+  });
+
+  app.put("/inbox/service-settings", { schema: { body: SERVICE_SETTINGS_BODY_SCHEMA } }, async (request) => {
+    const principal = requirePermission(request, "inbox:manage_connections");
+    const { workspaceId, ...changes } = request.body as { workspaceId: string } & Record<string, unknown>;
+    try {
+      return successEnvelope(await updateInboxServiceSettings(useCaseDeps, { tenantId: principal.tenantId, workspaceId, ...(changes as object) }), request.id);
     } catch (error) {
       rethrowInboxError(error);
     }

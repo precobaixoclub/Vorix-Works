@@ -85,7 +85,42 @@ export class PostgresInboxMetricsRepository implements InboxMetricsRepositoryPor
     );
     const volumeByAgent: InboxAgentVolume[] = volumeByAgentResult.rows.map((row) => ({ userId: row.sent_by_user_id, messageCount: Number(row.count) }));
 
+    const periodParams = [tenantId, workspaceId, filter.dateFrom ?? null, filter.dateTo ?? null];
+    const csatResult = await this.pool.query<{ average: string | null; responses: string; requested: string }>(
+      `select avg(csat_score) filter (where csat_status = 'answered') as average,
+              count(*) filter (where csat_status = 'answered') as responses,
+              count(*) filter (where csat_requested_at is not null) as requested
+       from inbox_conversations
+       where tenant_id = $1 and workspace_id = $2 and closed_at is not null
+         and ($3::timestamptz is null or closed_at >= $3)
+         and ($4::timestamptz is null or closed_at <= $4)`,
+      periodParams,
+    );
+    const csatByAgentResult = await this.pool.query<{ closed_by: string; average: string; responses: string }>(
+      `select closed_by, avg(csat_score) as average, count(*) as responses
+       from inbox_conversations
+       where tenant_id = $1 and workspace_id = $2 and csat_status = 'answered' and closed_by is not null
+         and ($3::timestamptz is null or closed_at >= $3)
+         and ($4::timestamptz is null or closed_at <= $4)
+       group by closed_by order by responses desc limit 20`,
+      periodParams,
+    );
+    const closingReasonsResult = await this.pool.query<{ reason: string; count: string }>(
+      `select coalesce(closing_reason, 'Sem motivo') as reason, count(*) as count
+       from inbox_conversations
+       where tenant_id = $1 and workspace_id = $2 and closed_at is not null
+         and ($3::timestamptz is null or closed_at >= $3)
+         and ($4::timestamptz is null or closed_at <= $4)
+       group by 1 order by count desc limit 30`,
+      periodParams,
+    );
+
     return {
+      csatAverage: csatResult.rows[0]?.average != null ? Number(csatResult.rows[0].average) : undefined,
+      csatResponses: Number(csatResult.rows[0]?.responses ?? 0),
+      csatRequested: Number(csatResult.rows[0]?.requested ?? 0),
+      csatByAgent: csatByAgentResult.rows.map((row) => ({ userId: row.closed_by, average: Number(row.average), responses: Number(row.responses) })),
+      closingReasons: closingReasonsResult.rows.map((row) => ({ reason: row.reason, count: Number(row.count) })),
       receivedCount: Number(receivedResult.rows[0]?.count ?? 0),
       openCount,
       pendingCount,

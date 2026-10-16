@@ -356,7 +356,41 @@ function AttendanceSection({ loading, report, members }: { loading: boolean; rep
         <KpiCard label="1ª resposta média" value={seconds(report.avgFirstResponseSeconds)} />
         <KpiCard label="Tempo médio" value={seconds(report.avgHandleTimeSeconds)} hint="Quando o backend expõe carimbo de resolução." />
         <KpiCard label="Respostas por IA" value={num(report.aiResolvedMessageCount)} hint={`${num(report.humanResolvedMessageCount)} por humanos`} />
+        <KpiCard
+          label="Satisfação (CSAT)"
+          value={report.csatAverage === undefined ? "—" : `${report.csatAverage.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} / 5`}
+          hint={report.csatRequested ? `${num(report.csatResponses ?? 0)} de ${num(report.csatRequested)} avaliaram` : "Ative a pesquisa em Conversas → Regras"}
+        />
       </StatsGrid>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ChartCard title="Motivos de encerramento" description="Por que os atendimentos foram finalizados no período." empty={!report.closingReasons?.length}>
+          <div className="space-y-4">
+            {(report.closingReasons ?? []).map((item) => (
+              <div key={item.reason} className="space-y-1.5">
+                <div className="flex justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate font-medium text-foreground">{item.reason}</span>
+                  <span className="tabular-nums text-muted-foreground">{num(item.count)}</span>
+                </div>
+                <ProportionBar value={item.count} max={Math.max(...(report.closingReasons ?? []).map((row) => row.count), 1)} />
+              </div>
+            ))}
+          </div>
+        </ChartCard>
+        <ChartCard title="Satisfação por responsável" description="Nota média (1 a 5) dada pelos clientes a quem finalizou o atendimento." empty={!report.csatByAgent?.length}>
+          <div className="space-y-4">
+            {(report.csatByAgent ?? []).map((item) => (
+              <div key={item.userId} className="space-y-1.5">
+                <div className="flex justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate font-medium text-foreground">{userLabel(item.userId, members)}</span>
+                  <span className="tabular-nums text-muted-foreground">{item.average.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} · {num(item.responses)} {item.responses === 1 ? "avaliação" : "avaliações"}</span>
+                </div>
+                <ProportionBar value={item.average} max={5} />
+              </div>
+            ))}
+          </div>
+        </ChartCard>
+      </div>
 
       <ChartCard title="Volume por responsável" description="Mensagens agrupadas por membro do atendimento." empty={report.volumeByAgent.length === 0}>
         <div className="space-y-4">

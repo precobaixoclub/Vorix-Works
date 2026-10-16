@@ -82,7 +82,7 @@ import {
   transferInboxConversation,
   updateInboxTag,
 } from "@/features/inbox/api";
-import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime, useInboxTags } from "@/features/inbox/hooks";
+import { useInboxConversationEvents, useInboxConversationMessages, useInboxConversations, useInboxMembers, useInboxRealtime, useInboxServiceSettings, useInboxTags } from "@/features/inbox/hooks";
 import { useTeams } from "@/features/identity/hooks";
 import { INBOX_TAG_COLORS } from "@/features/inbox/types";
 import type { InboxConversation, InboxConversationEvent, InboxConversationStatus, InboxMediaStorageRef, InboxMessage, InboxTag, InboxTagColor, InboxTenantMember, MessagingProviderId, TeamKanbanPhase } from "@/features/inbox/types";
@@ -98,6 +98,7 @@ import {
 } from "@/features/inbox/inbox-filters";
 import type { InboxAiFilter, InboxFilterSection, InboxFilterState, InboxPeriodFilter, InboxReadFilter } from "@/features/inbox/inbox-filters";
 import { CrmContextSection } from "./crm-panel";
+import { CloseConversationModal, csatLabel } from "./service-settings-panel";
 import { InboundAlertsToggle, NewConversationModal, QuickRepliesButton, QuickRepliesModal, useInboundAlerts, useQuickReplySuggestions } from "./inbox-essentials";
 import { ConversationMediaViewer, MessageMedia } from "./message-media";
 import { InboxAvatar } from "./inbox-avatar";
@@ -1480,6 +1481,9 @@ export function ConversationTimelinePane({
   // Nota interna: mesmo campo de texto, mas vai só para a timeline da equipe.
   const [composerMode, setComposerMode] = useState<"message" | "note">("message");
   const [quickRepliesOpen, setQuickRepliesOpen] = useState(false);
+  // Finalizar com motivo (quando o workspace cadastrou motivos de encerramento).
+  const { data: serviceSettings } = useInboxServiceSettings(workspaceId);
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottom = useRef(true);
   const olderAnchor = useRef<{ height: number; top: number } | undefined>(undefined);
@@ -1810,7 +1814,13 @@ export function ConversationTimelinePane({
               blockedReason={RBAC_COPY.operateConversations}
               loading={busyAction === "status"}
               disabled={Boolean(busyAction)}
-              onClick={() => runAction("status", () => (isResolved ? reopenInboxConversation(workspaceId, conversation.id) : closeInboxConversation(workspaceId, conversation.id)))}
+              onClick={() => {
+                if (!isResolved && serviceSettings?.closingReasons.length) {
+                  setCloseDialogOpen(true);
+                  return;
+                }
+                void runAction("status", () => (isResolved ? reopenInboxConversation(workspaceId, conversation.id) : closeInboxConversation(workspaceId, conversation.id)));
+              }}
             >
               {isResolved ? "Reabrir" : "Finalizar"}
             </GuardedButton>
@@ -2134,6 +2144,19 @@ export function ConversationTimelinePane({
         />
       ) : null}
 
+      {closeDialogOpen && serviceSettings ? (
+        <CloseConversationModal
+          reasons={serviceSettings.closingReasons}
+          required={serviceSettings.requireClosingReason}
+          csatEnabled={serviceSettings.csatEnabled && conversation.chatType === "direct"}
+          busy={busyAction === "status"}
+          onCancel={() => setCloseDialogOpen(false)}
+          onConfirm={async (reason) => {
+            await runAction("status", () => closeInboxConversation(workspaceId, conversation.id, reason));
+            setCloseDialogOpen(false);
+          }}
+        />
+      ) : null}
       {quickRepliesOpen ? (
         <QuickRepliesModal
           workspaceId={workspaceId}
@@ -3070,6 +3093,18 @@ function ContactContextPane({
             <p className="text-muted-foreground">Status</p>
             <p className="mt-0.5 truncate font-medium text-foreground">{statusLabelFor(conversation.status)}</p>
           </div>
+          {conversation.closingReason ? (
+            <div className="rounded-lg border border-border bg-muted/30 p-2">
+              <p className="text-muted-foreground">Motivo do encerramento</p>
+              <p className="mt-0.5 truncate font-medium text-foreground" title={conversation.closingReason}>{conversation.closingReason}</p>
+            </div>
+          ) : null}
+          {conversation.csatStatus ? (
+            <div className="rounded-lg border border-border bg-muted/30 p-2">
+              <p className="text-muted-foreground">Avaliação do cliente</p>
+              <p className="mt-0.5 truncate font-medium text-foreground">{csatLabel(conversation)}</p>
+            </div>
+          ) : null}
         </div>
 
         {conversation.chatType === "direct" && conversation.crmContactId ? (
@@ -3216,8 +3251,15 @@ function eventLabel(event: InboxConversationEvent, currentUserId: string | undef
       return `${by} liberou o atendimento`;
     case "transferred":
       return `${by} transferiu para ${agentLabel(event.toUserId, currentUserId, members)}`;
-    case "status_changed":
-      return event.toStatus === "resolved" ? `${by} finalizou o atendimento` : `${by} mudou para ${event.toStatus ? statusLabelFor(event.toStatus) : "--"}`;
+    case "status_changed": {
+      if (event.performedBy === "system" && event.toStatus === "open") return "Cliente voltou a escrever · conversa reaberta";
+      const reason = typeof event.metadata?.closingReason === "string" ? ` · ${event.metadata.closingReason}` : "";
+      return event.toStatus === "resolved" ? `${by} finalizou o atendimento${reason}` : `${by} mudou para ${event.toStatus ? statusLabelFor(event.toStatus) : "--"}`;
+    }
+    case "csat_answered":
+      return `Cliente avaliou o atendimento: ${typeof event.metadata?.score === "number" ? `${event.metadata.score}/5` : "nota registrada"}`;
+    case "away_message_sent":
+      return "Mensagem de ausência enviada (fora do horário)";
     case "ai_paused":
       return "IA pausada";
     case "ai_resumed":

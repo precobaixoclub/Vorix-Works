@@ -109,6 +109,12 @@ export type InboxConversation = {
   /** Bloco "etiquetas" — denormalizado pela listagem. `undefined` = ambiente que ainda não
    * atualizou o backend; `[]` = módulo configurado, sem etiquetas nesta conversa. */
   tags?: InboxTag[];
+  /** Regras de atendimento: motivo/quem/quando finalizou e pesquisa de satisfação (nota 1–5). */
+  closingReason?: string;
+  closedAt?: string;
+  closedBy?: string;
+  csatStatus?: "awaiting" | "answered" | "expired";
+  csatScore?: number;
 };
 
 /** Fase 4 — `open`/`pending`/`resolved` filtram por status normalizado (ver
@@ -176,7 +182,9 @@ export type InboxConversationEventType =
   | "ai_response_skipped_insufficient_credits"
   | "kanban_phase_changed"
   // Nota interna da equipe (`metadata.text`) — nunca enviada ao contato.
-  | "note_added";
+  | "note_added"
+  | "csat_answered"
+  | "away_message_sent";
 
 /** Resposta rápida — acionada no composer digitando "/atalho". */
 export type InboxQuickReply = { id: string; shortcut: string; body: string; createdBy?: string; createdAt: string; updatedAt: string };
@@ -285,6 +293,27 @@ export type InboxMetricsReport = {
   aiResolvedMessageCount: number;
   humanResolvedMessageCount: number;
   volumeByAgent: readonly InboxAgentVolume[];
+  csatAverage?: number;
+  csatResponses?: number;
+  csatRequested?: number;
+  csatByAgent?: readonly { userId: string; average: number; responses: number }[];
+  closingReasons?: readonly { reason: string; count: number }[];
+};
+
+export type ServiceWeekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+export type ServiceInterval = { start: string; end: string };
+/** Regras de atendimento do workspace: horário + ausência, motivos de encerramento e pesquisa. */
+export type InboxServiceSettings = {
+  timezone: string;
+  businessHours: Record<ServiceWeekday, ServiceInterval[]>;
+  awayEnabled: boolean;
+  awayMessage: string;
+  closingReasons: string[];
+  requireClosingReason: boolean;
+  csatEnabled: boolean;
+  csatMessage: string;
+  csatThanksMessage: string;
+  updatedAt?: string;
 };
 
 /** Fase 10 (Pre-Pilot Hardening) — `GET /v1/inbox/status`, SEMPRE disponível (nunca 404, mesmo com

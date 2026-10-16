@@ -5,7 +5,7 @@ import type {
   InboxConversationListItem,
   InboxConversationRepositoryPort,
 } from "../../../application/ports/inbox-conversation-repository.port.js";
-import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType, MessagingProviderId } from "../../../domain/inbox/inbox.model.js";
+import type { InboxAiPauseReason, InboxChatType, InboxConversation, InboxConversationStatus, InboxMediaStorageRef, InboxMessageDirection, InboxMessageType, MessagingProviderId, InboxConversationServiceStatePatch, InboxCsatStatus } from "../../../domain/inbox/inbox.model.js";
 
 const idGenerator = () => `inboxconv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -27,6 +27,14 @@ type Row = {
   current_phase_id: string | null;
   is_pinned: boolean;
   pinned_at: Date | null;
+  closing_reason: string | null;
+  closed_at: Date | null;
+  closed_by: string | null;
+  csat_status: string | null;
+  csat_requested_at: Date | null;
+  csat_score: number | null;
+  csat_answered_at: Date | null;
+  last_away_message_at: Date | null;
   last_message_at: Date | null;
   unread_count: number;
   is_urgent: boolean;
@@ -273,6 +281,27 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
     return this.toDomain(row);
   }
 
+  async updateServiceState(id: string, patch: InboxConversationServiceStatePatch): Promise<InboxConversation> {
+    const columns: Record<keyof InboxConversationServiceStatePatch, string> = {
+      closingReason: "closing_reason", closedAt: "closed_at", closedBy: "closed_by", csatStatus: "csat_status", csatRequestedAt: "csat_requested_at",
+      csatScore: "csat_score", csatAnsweredAt: "csat_answered_at", lastAwayMessageAt: "last_away_message_at",
+    };
+    const sets: string[] = [];
+    const params: unknown[] = [id];
+    for (const [key, column] of Object.entries(columns) as [keyof InboxConversationServiceStatePatch, string][]) {
+      if (patch[key] === undefined) continue;
+      params.push(patch[key]);
+      sets.push(`${column} = $${params.length}`);
+    }
+    const result = await this.pool.query<Row>(
+      sets.length ? `update inbox_conversations set ${sets.join(", ")} where id = $1 returning *` : "select * from inbox_conversations where id = $1",
+      params,
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error(`INBOX_CONVERSATION_NOT_FOUND: conversa "${id}" não existe.`);
+    return this.toDomain(row);
+  }
+
   async setStatus(id: string, status: InboxConversationStatus): Promise<InboxConversation> {
     const result = await this.pool.query<Row>(
       "update inbox_conversations set status = $2, updated_at = now() where id = $1 returning *",
@@ -358,6 +387,14 @@ export class PostgresInboxConversationRepository implements InboxConversationRep
       currentPhaseId: row.current_phase_id ?? undefined,
       isPinned: row.is_pinned,
       pinnedAt: row.pinned_at?.toISOString(),
+      closingReason: row.closing_reason ?? undefined,
+      closedAt: row.closed_at?.toISOString(),
+      closedBy: row.closed_by ?? undefined,
+      csatStatus: (row.csat_status as InboxCsatStatus | null) ?? undefined,
+      csatRequestedAt: row.csat_requested_at?.toISOString(),
+      csatScore: row.csat_score ?? undefined,
+      csatAnsweredAt: row.csat_answered_at?.toISOString(),
+      lastAwayMessageAt: row.last_away_message_at?.toISOString(),
       lastMessageAt: row.last_message_at?.toISOString(),
       unreadCount: row.unread_count,
       isUrgent: row.is_urgent,

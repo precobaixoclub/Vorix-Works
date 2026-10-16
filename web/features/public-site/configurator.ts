@@ -1,5 +1,5 @@
 import type { CapacityRecommendationOption, PublicPlan } from "@/features/platform-plans/api";
-import { PUBLIC_CONTACT, PUBLIC_REFERENCE_PRICES, type PublicProductCatalog } from "./catalog";
+import { PUBLIC_REFERENCE_PRICES, type PublicProductCatalog } from "./catalog";
 
 /**
  * "Monte seu Vorix" — lógica pura do configurador público (sem DOM, sem fetch).
@@ -11,8 +11,9 @@ import { PUBLIC_CONTACT, PUBLIC_REFERENCE_PRICES, type PublicProductCatalog } fr
  * - Meetings: gravações simultâneas (nunca "bots" nem contas de gravação — contas conectadas são
  *   infraestrutura operacional e podem sobrar como reserva, sem virar cobrança).
  *
- * Meetings e Suite ainda NÃO são contratáveis: o configurador mostra referência provisória e leva
- * para conversa com o time, nunca para checkout.
+ * Contratação 100% self-service: "Contratar agora" leva ao cadastro e, em seguida, ao pagamento com
+ * cartão (7 dias de teste) com exatamente esta configuração — ninguém precisa aprovar. Meetings tem
+ * preço oficial no catálogo, mas só é vendido quando o gate comercial abrir.
  */
 
 export const CONFIGURATOR_LIMITS = Object.freeze({
@@ -21,11 +22,6 @@ export const CONFIGURATOR_LIMITS = Object.freeze({
   recordings: { min: 1, max: 10 },
 });
 
-/** Decisões comerciais ainda em aberto — centralizadas aqui, nunca valores inventados na UI. */
-export const PENDING_COMMERCIAL_PRICES = Object.freeze({
-  /** Preço por gravação simultânea adicional do Meetings: ainda não definido. */
-  meetingsAdditionalConcurrentRecording: null as number | null,
-});
 
 export type ConfiguratorField = keyof typeof CONFIGURATOR_LIMITS;
 
@@ -98,7 +94,7 @@ export type Quote = {
   /** Alguma linha ainda não tem valor comercial. */
   hasUndefinedAmounts: boolean;
   contractable: boolean;
-  primaryCta: { label: string; href: string };
+  primaryCta: { label: string; href: string; disabled?: boolean };
   secondaryCta: { label: string; href: string } | null;
   notes: string[];
 };
@@ -107,7 +103,7 @@ const plural = (count: number, singular: string, pluralForm: string) => `${count
 
 export function composeQuote(input: {
   state: ConfiguratorState;
-  catalog: Pick<PublicProductCatalog, "products" | "plans">;
+  catalog: Pick<PublicProductCatalog, "products" | "plans"> & { billing?: PublicProductCatalog["billing"] };
   conversationsQuote: CapacityRecommendationOption | null;
   quoteFailed?: boolean;
 }): Quote {
@@ -133,12 +129,14 @@ export function composeQuote(input: {
       lines.push({ product: "conversations", label: "Vorix Conversas", amount: null, provisional: false });
     }
   }
+  const offer = input.catalog.billing?.meetingsOffer ?? null;
   if (state.meetings) {
     summary.push({ product: "meetings", name: "Vorix Meetings", details: [plural(state.recordings, "gravação simultânea", "gravações simultâneas")] });
-    lines.push({ product: "meetings", label: "Meetings · 1 gravação simultânea", amount: meetingsProduct?.monthlyPrice ?? PUBLIC_REFERENCE_PRICES.meetings, provisional: true });
+    // Preço oficial do catálogo (base com 1 simultânea + cada adicional); referência só sem catálogo.
+    lines.push({ product: "meetings", label: "Meetings · 1 gravação simultânea", amount: offer?.baseMonthlyPrice ?? meetingsProduct?.monthlyPrice ?? PUBLIC_REFERENCE_PRICES.meetings, provisional: !offer });
     if (state.recordings > 1) {
-      const unit = PENDING_COMMERCIAL_PRICES.meetingsAdditionalConcurrentRecording;
-      lines.push({ product: "meetings", label: `+ ${plural(state.recordings - 1, "gravação simultânea", "gravações simultâneas")}`, amount: unit === null ? null : unit * (state.recordings - 1), provisional: true });
+      const extra = state.recordings - 1;
+      lines.push({ product: "meetings", label: `+ ${plural(extra, "gravação simultânea", "gravações simultâneas")}`, amount: offer ? offer.additionalRecordingMonthlyPrice * extra : null, provisional: !offer });
     }
   }
 
@@ -149,29 +147,33 @@ export function composeQuote(input: {
   const contractable = (!state.conversations || conversationsContractable) && (!state.meetings || meetingsContractable) && !hasUndefinedAmounts && !!(!state.conversations || quote);
 
   const title: Quote["title"] = state.conversations && state.meetings ? "Suite Vorix" : state.meetings ? "Vorix Meetings" : "Vorix Conversas";
-  const contactHref = buildContactHref(title, summary);
+  const trialDays = plan?.trialDays ?? null;
   const notes: string[] = [];
-  if (input.quoteFailed && state.conversations) notes.push("Não conseguimos calcular Conversas agora. Fale com o time para confirmar os valores.");
-  if (state.meetings) notes.push("Meetings está em validação para liberação comercial. O valor é uma referência provisória, sem contratação disponível.");
-  if (state.meetings && state.recordings > 1 && PENDING_COMMERCIAL_PRICES.meetingsAdditionalConcurrentRecording === null) notes.push("O valor de gravações simultâneas adicionais será definido na oferta comercial.");
-  if (state.conversations && quote && (quote.additionalUsers > 0 || quote.additionalWhatsappConnections > 0) && contractable) notes.push("Usuários e números adicionais são confirmados em Configurações → Plano, logo após criar sua conta.");
+  if (input.quoteFailed && state.conversations) notes.push("Não conseguimos calcular o valor agora. Tente de novo em instantes.");
+  if (state.meetings && !meetingsContractable) notes.push("O Vorix Meetings estará disponível para contratação em breve.");
+  if (contractable) notes.push(trialDays ? `Você cadastra o cartão no próximo passo. A primeira cobrança só acontece depois de ${trialDays} dias de teste.` : "Você cadastra o cartão no próximo passo.");
 
   let primaryCta: Quote["primaryCta"];
   let secondaryCta: Quote["secondaryCta"] = null;
-  if (contractable && state.conversations && !state.meetings && quote) {
-    primaryCta = { label: `Continuar com o plano ${plan?.name ?? quote.planCode}`, href: `/signup?plan=${encodeURIComponent(quote.planCode)}` };
+  if (contractable && quote && state.conversations) {
+    primaryCta = { label: "Contratar agora", href: signupHref(quote.planCode, state, state.meetings) };
+  } else if (state.meetings && !meetingsContractable) {
+    primaryCta = { label: "Meetings disponível em breve", href: "", disabled: true };
+    if (state.conversations && conversationsContractable && quote) secondaryCta = { label: "Contratar só Conversas agora", href: signupHref(quote.planCode, state, false) };
+  } else if (state.meetings && !state.conversations) {
+    // Meetings sem Conversas: contratação própria chega junto da liberação comercial.
+    primaryCta = { label: "Contratação do Meetings em breve", href: "", disabled: true };
   } else {
-    primaryCta = { label: state.meetings ? "Falar com o time sobre esta configuração" : "Falar com o time", href: contactHref };
-    if (state.meetings && state.conversations && conversationsContractable && quote) {
-      secondaryCta = { label: "Começar agora só com Conversas", href: `/signup?plan=${encodeURIComponent(quote.planCode)}` };
-    }
+    primaryCta = { label: input.quoteFailed ? "Valor indisponível no momento" : "Calculando…", href: "", disabled: true };
   }
   return { title, summary, lines, currency, knownTotal, totalIsOfficial, hasUndefinedAmounts, contractable, primaryCta, secondaryCta, notes };
 }
 
-function buildContactHref(title: string, summary: Quote["summary"]): string {
-  const body = [`Olá! Quero conversar sobre esta configuração do Vorix (${title}):`, ...summary.map((item) => `- ${item.name}: ${item.details.join(", ")}`)].join("\n");
-  return `${PUBLIC_CONTACT}?subject=${encodeURIComponent(`Configuração ${title}`)}&body=${encodeURIComponent(body)}`;
+/** Cadastro → pagamento com esta configuração (o servidor traduz em plano + adicionais). */
+function signupHref(planCode: string, state: ConfiguratorState, withMeetings: boolean): string {
+  const params = new URLSearchParams({ plan: planCode, users: String(state.users), numbers: String(state.numbers) });
+  if (withMeetings) params.set("recordings", String(state.recordings));
+  return `/signup?${params.toString()}`;
 }
 
 export function formatMoney(value: number, currency: string): string {

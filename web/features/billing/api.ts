@@ -8,7 +8,9 @@ export async function fetchBillingOverview(): Promise<BillingOverview> {
   return apiClient.get<BillingOverview>("/v1/billing/overview");
 }
 
-export async function startCheckout(input: { planCode: PlatformPlanCode; billingInterval: BillingInterval }): Promise<{ checkoutUrl: string; providerSessionId: string }> {
+/** `capacity`: o que a pessoa configurou no site (usuários, números, gravações simultâneas) — o
+ * servidor traduz em plano + adicionais e cobra pelo catálogo oficial. */
+export async function startCheckout(input: { planCode: PlatformPlanCode; billingInterval: BillingInterval; capacity?: { users?: number; whatsappConnections?: number; concurrentRecordings?: number }; successPath?: string; cancelPath?: string }): Promise<{ checkoutUrl: string; providerSessionId: string }> {
   return apiClient.post("/v1/billing/checkout", input);
 }
 

@@ -30,7 +30,10 @@ type Envelope<T> = { ok: true; data: T } | { ok: false; error: { code: string; m
 export type PublicCapacityAddon = { code: string; name: string; monthlyPriceUsd: number; currency: string; resource: "users" | "messaging_connections" };
 
 export type PublicCommercialState = { key: "conversations" | "meetings"; name: string; contractable: boolean };
-export type PublicBillingCatalog = { plans: readonly PublicPlan[]; addons: readonly PublicCapacityAddon[]; solutions: readonly PublicCommercialState[]; priceSource: "plan_versions" | "legacy_development" | "unavailable" };
+/** Oferta oficial do Vorix Meetings (catálogo de billing): base com 1 gravação simultânea + preço
+ * de cada gravação simultânea adicional. */
+export type PublicMeetingsOffer = { currency: string; baseMonthlyPrice: number; baseYearlyPrice: number; includedConcurrentRecordings: number; additionalRecordingMonthlyPrice: number; additionalRecordingYearlyPrice: number };
+export type PublicBillingCatalog = { plans: readonly PublicPlan[]; addons: readonly PublicCapacityAddon[]; solutions: readonly PublicCommercialState[]; meetingsOffer?: PublicMeetingsOffer | null; priceSource: "plan_versions" | "legacy_development" | "unavailable" };
 
 export async function fetchPublicCatalog(): Promise<PublicBillingCatalog> {
   const response = await fetch(`${getApiBaseUrl()}/v1/platform/plans`, {
@@ -39,7 +42,7 @@ export async function fetchPublicCatalog(): Promise<PublicBillingCatalog> {
     next: { revalidate: 300 },
     signal: AbortSignal.timeout(5000),
   });
-  const body = (await response.json().catch(() => undefined)) as Envelope<{ plans: Partial<PublicPlan>[]; addons: PublicCapacityAddon[]; solutions?: PublicCommercialState[]; priceSource?: string }> | undefined;
+  const body = (await response.json().catch(() => undefined)) as Envelope<{ plans: Partial<PublicPlan>[]; addons: PublicCapacityAddon[]; solutions?: PublicCommercialState[]; meetingsOffer?: PublicMeetingsOffer | null; priceSource?: string }> | undefined;
   if (!body) throw new ApiError("INVALID_RESPONSE", "Resposta inválida da API de planos.", response.status, false);
   if (!body.ok) throw new ApiError(body.error.code, body.error.message, response.status, false);
   // Defensivo: numa janela de deploy (build do frontend rodando contra uma API ainda não
@@ -59,7 +62,8 @@ export async function fetchPublicCatalog(): Promise<PublicBillingCatalog> {
       highlighted: plan.highlighted ?? false,
       trialDays: plan.trialDays ?? null,
     })),
-    addons: body.data.addons ?? [],
+    addons: (body.data.addons ?? []).filter((addon) => addon.resource === "users" || addon.resource === "messaging_connections"),
+    meetingsOffer: body.data.meetingsOffer ?? null,
     solutions: (body.data.solutions ?? []).filter((solution) => ["conversations", "meetings"].includes(solution.key)).map((solution) => ({ ...solution, contractable: solution.contractable === true })),
     priceSource: body.data.priceSource === "plan_versions" ? "plan_versions" : body.data.priceSource === "legacy_development" ? "legacy_development" : "unavailable",
   };

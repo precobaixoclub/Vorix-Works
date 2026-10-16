@@ -12,9 +12,10 @@ import {
 
 /**
  * "Monte seu Vorix". Conversas: cotação do simulador OFICIAL (mesma conta do checkout), com cache
- * e debounce para o total responder na hora. Meetings: referência provisória, sem checkout.
+ * e debounce para o total responder na hora. Meetings: preço oficial do catálogo. "Contratar agora"
+ * leva ao cadastro e ao pagamento com cartão com exatamente esta configuração.
  */
-export function PlanConfigurator({ catalog }: { catalog: Pick<PublicProductCatalog, "products" | "plans"> }) {
+export function PlanConfigurator({ catalog }: { catalog: Pick<PublicProductCatalog, "products" | "plans"> & { billing?: PublicProductCatalog["billing"] } }) {
   const startPlan = catalog.plans[0] ?? null;
   const [state, setState] = useState<ConfiguratorState>(() => initialConfiguratorState(startPlan));
   const { quote: conversationsQuote, failed, loading, warm } = useConversationsQuote(state, startPlan ? includedPlanQuote(startPlan) : null, catalog.plans.length > 0);
@@ -22,13 +23,14 @@ export function PlanConfigurator({ catalog }: { catalog: Pick<PublicProductCatal
   const total = quote.knownTotal === null ? null : formatMoney(quote.knownTotal, quote.currency);
   const { controlsRef, summaryRef, showBar } = useMobileBar();
   const totalCaption = quote.hasUndefinedAmounts ? "+ valores a definir" : quote.totalIsOfficial ? "por mês" : "por mês · estimativa";
+  const meetingsContractable = catalog.products.find(product => product.key === "meetings")?.contractable === true;
 
   return <div className="public-configurator" id="monte" onPointerEnter={warm} onFocus={warm}>
     <div className="public-config-controls" ref={controlsRef}>
       <fieldset className="public-config-products">
         <legend>Escolha as soluções</legend>
         <ProductToggle product="conversations" checked={state.conversations} onChange={() => setState(current => toggleProduct(current, "conversations"))} title="Vorix Conversas" caption="Atendimento e vendas" />
-        <ProductToggle product="meetings" checked={state.meetings} onChange={() => setState(current => toggleProduct(current, "meetings"))} title="Vorix Meetings" caption="Em validação comercial" />
+        <ProductToggle product="meetings" checked={state.meetings} onChange={() => setState(current => toggleProduct(current, "meetings"))} title="Vorix Meetings" caption={meetingsContractable ? "Gravação e inteligência de reuniões" : "Disponível em breve"} />
       </fieldset>
 
       {state.conversations ? <section className="public-config-group conversations" aria-labelledby="config-conversations">
@@ -54,8 +56,8 @@ export function PlanConfigurator({ catalog }: { catalog: Pick<PublicProductCatal
       <ul className="public-config-summary-list">{quote.summary.map(item => <li key={item.product} className={item.product}><strong>{item.name}</strong><span>{item.details.join(" · ")}</span></li>)}</ul>
       <div className={"public-config-total" + (loading ? " is-updating" : "")} aria-live="polite" aria-atomic="true">
         <small>Total mensal</small>
-        <strong>{total ?? "Sob consulta"}</strong>
-        <span>{total ? totalCaption : "Fale com o time para confirmar"}</span>
+        <strong>{total ?? "—"}</strong>
+        <span>{total ? totalCaption : "Valor indisponível no momento"}</span>
       </div>
       <details className="public-config-breakdown">
         <summary>Ver composição do preço</summary>
@@ -63,14 +65,16 @@ export function PlanConfigurator({ catalog }: { catalog: Pick<PublicProductCatal
       </details>
       {quote.notes.length ? <ul className="public-config-notes">{quote.notes.map(note => <li key={note}>{note}</li>)}</ul> : null}
       <div className="public-config-actions">
-        <Link href={quote.primaryCta.href} className="public-button primary">{quote.primaryCta.label}<ArrowUpRight size={16} aria-hidden="true" /></Link>
+        {quote.primaryCta.disabled
+          ? <button type="button" className="public-button primary" disabled>{quote.primaryCta.label}</button>
+          : <Link href={quote.primaryCta.href} className="public-button primary">{quote.primaryCta.label}<ArrowUpRight size={16} aria-hidden="true" /></Link>}
         {quote.secondaryCta ? <Link href={quote.secondaryCta.href} className="public-button secondary">{quote.secondaryCta.label}</Link> : null}
       </div>
     </aside>
 
     {/* Mobile: o total e o próximo passo nunca ficam escondidos enquanto a pessoa ajusta. */}
     <div className={"public-config-bar" + (showBar ? " is-visible" : "")} aria-hidden="true">
-      <span><small>{quote.title}</small><strong>{total ?? "Sob consulta"}</strong>{total ? <em>{quote.hasUndefinedAmounts ? "+ a definir" : "/mês"}</em> : null}</span>
+      <span><small>{quote.title}</small><strong>{total ?? "—"}</strong>{total ? <em>{quote.hasUndefinedAmounts ? "+ a definir" : "/mês"}</em> : null}</span>
       <a href="#config-summary-title" tabIndex={-1}>Ver resumo</a>
     </div>
   </div>;
@@ -98,7 +102,7 @@ function Stepper({ field, label, hint, value, onStep, onChange }: { field: Confi
         onKeyDown={event => { if (event.key === "ArrowUp" || event.key === "ArrowDown") { event.preventDefault(); onStep(field, event.key === "ArrowUp" ? 1 : -1); } }} />
       <button type="button" onClick={() => onStep(field, 1)} disabled={value >= max} aria-label={`Aumentar ${label.toLowerCase()}`}><Plus size={15} aria-hidden="true" /></button>
     </div>
-    {value >= max ? <p className="public-stepper-limit">Precisa de mais? Fale com o time.</p> : null}
+    {value >= max ? <p className="public-stepper-limit">Limite desta simulação. Depois de contratar, você amplia em Configurações → Plano.</p> : null}
   </div>;
 }
 

@@ -56,18 +56,28 @@ export function buildPublicProductCatalog(billing: PublicBillingCatalog | null):
   const plans = official ? (billing?.plans ?? []).filter(plan => plan.code !== "FREE" && Number.isFinite(plan.monthlyPriceUsd) && plan.monthlyPriceUsd > 0 && !!plan.currency).sort((a, b) => a.monthlyPriceUsd - b.monthlyPriceUsd) : [];
   const start = plans[0] ?? null;
   const eligible = (key: "conversations" | "meetings") => billing?.solutions.find(solution => solution.key === key)?.contractable === true;
-  // No product-specific Meetings or bundle offer exists in billing yet. A future official offer
-  // must supply both price and acquisition route before its purchase CTA can be enabled centrally.
+  const meetingsOffer = official ? billing?.meetingsOffer ?? null : null;
+  const conversationsContractable = eligible("conversations") && !!start;
+  // Meetings só é vendável com preço oficial no catálogo E o gate comercial aberto (gravação em
+  // produção). Suite = Conversas + Meetings, cobrada pela soma das partes (sem preço próprio).
+  const meetingsContractable = eligible("meetings") && !!meetingsOffer;
   const products: PublicProduct[] = (["conversations", "meetings", "suite"] as const).map(key => {
     const plan = key === "conversations" ? start : null;
-    const contractable = key === "conversations" && eligible("conversations") && !!plan;
+    const contractable = key === "conversations" ? conversationsContractable : key === "meetings" ? meetingsContractable : conversationsContractable && meetingsContractable;
+    const monthlyPrice = key === "conversations" ? plan?.monthlyPriceUsd ?? (official ? PUBLIC_REFERENCE_PRICES.conversations : null)
+      : key === "meetings" ? meetingsOffer?.baseMonthlyPrice ?? PUBLIC_REFERENCE_PRICES.meetings
+      : start && meetingsOffer ? start.monthlyPriceUsd + meetingsOffer.baseMonthlyPrice : PUBLIC_REFERENCE_PRICES.suite;
+    const provisional = key === "conversations" ? !plan : key === "meetings" ? !meetingsOffer : !(start && meetingsOffer);
     return {
-      key, ...COPY[key], monthlyPrice: plan?.monthlyPriceUsd ?? (key !== "conversations" || official ? PUBLIC_REFERENCE_PRICES[key] : null),
+      key, ...COPY[key], monthlyPrice,
       annualPrice: plan && Number.isFinite(plan.yearlyPriceUsd) && plan.yearlyPriceUsd > 0 ? plan.yearlyPriceUsd : null,
-      currency: plan?.currency ?? "BRL", provisional: !plan, contractable, highlighted: key === "suite",
-      badge: key === "suite" ? "Experiência integrada" : contractable ? "Disponível para sua equipe" : "Conheça a solução",
-      cta: contractable ? { label: "Começar com Conversas", href: `/signup?plan=${encodeURIComponent(plan!.code)}` }
-        : { label: key === "meetings" ? "Conhecer Meetings" : key === "suite" ? "Monte sua Suite" : "Falar com o time", href: key === "meetings" ? COPY.meetings.productHref : key === "suite" ? "#monte" : PUBLIC_CONTACT },
+      currency: plan?.currency ?? meetingsOffer?.currency ?? "BRL", provisional, contractable, highlighted: key === "suite",
+      badge: key === "suite" ? "Experiência integrada" : contractable ? "Disponível para sua equipe" : key === "meetings" ? "Disponível em breve" : "Conheça a solução",
+      cta: key === "conversations"
+        ? (contractable ? { label: "Contratar Conversas", href: `/signup?plan=${encodeURIComponent(plan!.code)}` } : { label: "Falar com o time", href: PUBLIC_CONTACT })
+        : key === "meetings"
+          ? (contractable ? { label: "Contratar Meetings", href: "#monte" } : { label: "Conhecer Meetings", href: COPY.meetings.productHref })
+          : { label: "Monte sua Suite", href: "#monte" },
       plan, includes: key === "suite" ? ["conversations", "meetings"] : [key],
     };
   });

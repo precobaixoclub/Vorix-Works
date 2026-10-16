@@ -26,6 +26,14 @@ describe("public commercial catalog", () => {
     const promoted = { ...billing, solutions: billing.solutions.map(solution => ({ ...solution, contractable: true })) };
     expect(buildPublicProductCatalog(promoted).products.slice(1).every(product => !product.contractable)).toBe(true);
   });
+  it("prices Meetings and Suite from the official offer and sells them only when the gate opens", () => {
+    const meetingsOffer = { currency: "BRL", baseMonthlyPrice: 147, baseYearlyPrice: 1470, includedConcurrentRecordings: 1, additionalRecordingMonthlyPrice: 67, additionalRecordingYearlyPrice: 670 };
+    const gated = buildPublicProductCatalog({ ...billing, meetingsOffer }).products;
+    expect([gated[1].monthlyPrice, gated[2].monthlyPrice]).toEqual([147, 149 + 147]);
+    expect(gated.slice(1).every(product => !product.contractable && !product.provisional)).toBe(true);
+    const open = buildPublicProductCatalog({ ...billing, meetingsOffer, solutions: billing.solutions.map(solution => ({ ...solution, contractable: true })) }).products;
+    expect(open.every(product => product.contractable)).toBe(true);
+  });
   it("fails closed without commercial metadata, catalog or official prices", () => {
     for (const input of [null, { ...billing, solutions: [] }, { ...billing, priceSource: "unavailable" as const }, { ...billing, plans: [] }]) {
       expect(buildPublicProductCatalog(input).products.every(product => !product.contractable)).toBe(true);

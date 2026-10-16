@@ -648,6 +648,7 @@
 .public-config-notes li { font-size: 13px; line-height: 1.5; color: var(--public-muted); padding-left: 12px; border-left: 2px solid var(--public-border); }
 .public-config-actions { display: grid; gap: 10px; margin-top: 20px; }
 .public-config-actions .public-button { width: 100%; }
+.public-config-actions .public-button:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
 .public-config-bar { display: none; }
 
 /* CTA final */

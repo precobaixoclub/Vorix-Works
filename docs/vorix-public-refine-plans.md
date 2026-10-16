@@ -4,6 +4,8 @@
 
 ## Auditoria do design anterior
 
+Atualização posterior de 15/10/2026: login/cadastro e checkout com a capacidade escolhida foram publicados; a migration `0149` definiu os preços de Meetings no catálogo, preservando a contratação bloqueada. O configurador agora encaminha Conversas diretamente ao cadastro, sem contato comercial. [Deploy e limites de validação](production-deploy-20261015.md).
+
 | Decisão | Elemento | Motivo |
 |---|---|---|
 | KEEP | Paleta, tokens `--public-*`, tipografia, header com dropdown, showcase com abas, FAQ, footer, metadata/OG | Direção aprovada e funcionando. |

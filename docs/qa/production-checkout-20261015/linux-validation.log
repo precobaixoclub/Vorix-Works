@@ -1,0 +1,749 @@
+
+> zuno@1.0.0 typecheck
+> tsc --noEmit
+
+npm notice
+npm notice New major version of npm available! 10.8.2 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice
+
+> zuno@1.0.0 architecture:check
+> npm run build && node scripts/verify-skills-discovery.mjs && node scripts/check-legacy-chat-imports.mjs && node scripts/check-contract-drift.mjs && node scripts/check-ai-stack-isolation.mjs && node scripts/check-inbox-conversation-isolation.mjs && node scripts/check-crm-isolation.mjs && node scripts/check-planning-isolation.mjs && node scripts/check-runtime-isolation.mjs && node scripts/check-execution-isolation.mjs && node scripts/check-publication-isolation.mjs
+
+
+> zuno@1.0.0 build
+> npm run build:clean && tsc -p tsconfig.json && npm run build:copy-skill-manifests && npm run build:copy-remotion-assets && npm run build:copy-rendering-assets
+
+
+> zuno@1.0.0 build:clean
+> node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+
+
+> zuno@1.0.0 build:copy-skill-manifests
+> node scripts/copy-skill-manifests.mjs
+
+[copy-skill-manifests] 14 manifesto(s) copiado(s) para dist/skills.
+  - dist/skills/ana-social-publishing/skill.manifest.json
+  - dist/skills/bianca-social-media-design/skill.manifest.json
+  - dist/skills/bruno-video-script/skill.manifest.json
+  - dist/skills/diego-video-editing/skill.manifest.json
+  - dist/skills/eduardo-editorial-planning/skill.manifest.json
+  - dist/skills/joao-marketing-strategy/skill.manifest.json
+  - dist/skills/lucas-quality-review/skill.manifest.json
+  - dist/skills/maria-copywriting/skill.manifest.json
+  - dist/skills/motion-design-engine/skill.manifest.json
+  - dist/skills/nora-video-narration/skill.manifest.json
+  - dist/skills/pedro-image-generation/skill.manifest.json
+  - dist/skills/rafa-video-rendering/skill.manifest.json
+  - dist/skills/sofia-art-direction/skill.manifest.json
+  - dist/skills/vanessa-video-direction/skill.manifest.json
+
+> zuno@1.0.0 build:copy-remotion-assets
+> node scripts/copy-remotion-assets.mjs
+
+[copy-remotion-assets] 2 arquivo(s) .jsx copiado(s) para dist/infrastructure/motion-rendering/remotion.
+  - dist/infrastructure/motion-rendering/remotion/MotionSceneRenderer.jsx
+  - dist/infrastructure/motion-rendering/remotion/Root.jsx
+
+> zuno@1.0.0 build:copy-rendering-assets
+> node scripts/copy-rendering-assets.mjs
+
+[copy-rendering-assets] 2 fonte(s) .ttf copiada(s) para dist/infrastructure/rendering/assets.
+  - dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf
+  - dist/infrastructure/rendering/assets/geist-regular.ttf
+[verify-skills-discovery] 14 Skill(s) descoberta(s) em dist/skills.
+  - ana-social-publishing: estado=READY, capabilities=social_publishing
+  - bianca-social-media-design: estado=READY, capabilities=social_media_design
+  - bruno-video-script: estado=READY, capabilities=video_script
+  - diego-video-editing: estado=READY, capabilities=video_editing
+  - eduardo-editorial-planning: estado=READY, capabilities=editorial_planning
+  - joao-marketing-strategy: estado=READY, capabilities=marketing_strategy, strategy
+  - lucas-quality-review: estado=READY, capabilities=quality_review
+  - maria-copywriting: estado=READY, capabilities=copywriting
+  - motion-design-engine: estado=DISABLED, capabilities=motion_design
+  - nora-video-narration: estado=READY, capabilities=video_narration
+  - pedro-image-generation: estado=READY, capabilities=image_generation
+  - rafa-video-rendering: estado=READY, capabilities=video_rendering
+  - sofia-art-direction: estado=READY, capabilities=art_direction
+  - vanessa-video-direction: estado=READY, capabilities=video_direction
+[verify-skills-discovery] capability "editorial_planning" -> eduardo-editorial-planning (OK)
+[verify-skills-discovery] capability "copywriting" -> maria-copywriting (OK)
+[verify-skills-discovery] capability "strategy" -> joao-marketing-strategy (OK)
+[verify-skills-discovery] capability "marketing_strategy" -> joao-marketing-strategy (OK)
+[verify-skills-discovery] capability "art_direction" -> sofia-art-direction (OK)
+[verify-skills-discovery] capability "social_media_design" -> bianca-social-media-design (OK)
+[verify-skills-discovery] capability "image_generation" -> pedro-image-generation (OK)
+[verify-skills-discovery] capability "quality_review" -> lucas-quality-review (OK)
+[verify-skills-discovery] capability "social_publishing" -> ana-social-publishing (OK)
+[verify-skills-discovery] capability "video_script" -> bruno-video-script (OK)
+[verify-skills-discovery] capability "video_direction" -> vanessa-video-direction (OK)
+[verify-skills-discovery] capability "video_editing" -> diego-video-editing (OK)
+[verify-skills-discovery] capability "video_narration" -> nora-video-narration (OK)
+[verify-skills-discovery] capability "video_rendering" -> rafa-video-rendering (OK)
+
+[verify-skills-discovery] Descoberta real de Skills validada com sucesso.
+[check-legacy-chat-imports] OK — nenhum consumidor novo do Chat legado (1096 arquivos verificados).
+[check-contract-drift] OK — BriefingType (6 valor(es))
+[check-contract-drift] OK — BriefingStatus (6 valor(es))
+[check-contract-drift] OK — BriefingSource (7 valor(es))
+[check-contract-drift] OK — BriefingAnswerType (5 valor(es))
+[check-contract-drift] OK — PreparedCommandStatus (2 valor(es))
+[check-contract-drift] OK — ConversationState (7 valor(es))
+[check-contract-drift] OK — BriefingReadiness (10 campo(s))
+[check-contract-drift] OK — BriefingQuestionDto (6 campo(s))
+[check-contract-drift] OK — BriefingSummaryDto (8 campo(s))
+[check-contract-drift] OK — PreparedCommandSummaryDto (6 campo(s))
+[check-contract-drift] OK — PlanningStatus (4 valor(es))
+[check-contract-drift] OK — GraphType (1 valor(es))
+[check-contract-drift] OK — ValidationIssueSeverity (2 valor(es))
+[check-contract-drift] OK — ExecutionCapability (7 valor(es))
+[check-contract-drift] OK — TaskType (8 valor(es))
+[check-contract-drift] OK — TaskStatus (1 valor(es))
+[check-contract-drift] OK — PlanningEdgeKind (1 valor(es))
+[check-contract-drift] OK — PlanningArtifactType (5 valor(es))
+[check-contract-drift] OK — PlanningArtifactStatus (1 valor(es))
+[check-contract-drift] OK — ValidationReport (3 campo(s))
+[check-contract-drift] OK — Planning (17 campo(s))
+[check-contract-drift] OK — ExecutionTask (12 campo(s))
+[check-contract-drift] OK — TaskOutputPort (3 campo(s))
+[check-contract-drift] OK — TaskOutputContract (2 campo(s))
+[check-contract-drift] OK — TaskInputPort (4 campo(s))
+[check-contract-drift] OK — TaskInputContract (2 campo(s))
+[check-contract-drift] OK — PlanningNode (5 campo(s))
+[check-contract-drift] OK — PlanningEdge (6 campo(s))
+[check-contract-drift] OK — ExecutionGraph (5 campo(s))
+[check-contract-drift] OK — ArtifactContract (3 campo(s))
+[check-contract-drift] OK — PlanningArtifact (6 campo(s))
+[check-contract-drift] OK — PlanningDecision (6 campo(s))
+[check-contract-drift] OK — RuntimeState (5 valor(es))
+[check-contract-drift] OK — RuntimeValidationIssueSeverity (2 valor(es))
+[check-contract-drift] OK — RuntimeTaskStatus (1 valor(es))
+[check-contract-drift] OK — RuntimeArtifactStatus (1 valor(es))
+[check-contract-drift] OK — RuntimeSourceContext (6 campo(s))
+[check-contract-drift] OK — RuntimeValidationIssue (4 campo(s))
+[check-contract-drift] OK — RuntimeValidationReport (3 campo(s))
+[check-contract-drift] OK — RuntimePlan (13 campo(s))
+[check-contract-drift] OK — RuntimeTask (7 campo(s))
+[check-contract-drift] OK — RuntimeTaskOutputPort (7 campo(s))
+[check-contract-drift] OK — RuntimeTaskInputPort (8 campo(s))
+[check-contract-drift] OK — RuntimeBinding (7 campo(s))
+[check-contract-drift] OK — ArtifactSchema (3 campo(s))
+[check-contract-drift] OK — RuntimeArtifact (6 campo(s))
+[check-contract-drift] OK — RuntimeContext (4 campo(s))
+[check-contract-drift] OK — RuntimeDetail (6 campo(s))
+[check-contract-drift] OK — RuntimeBindingsView (3 campo(s))
+
+[check-contract-drift] 49 contrato(s) verificados — backend e frontend consistentes.
+[check-ai-stack-isolation] OK — Ícaro e AI Gateway permanecem arquiteturalmente separados (1096 arquivos verificados).
+[check-inbox-conversation-isolation] OK — inbox e conversation/chat permanecem arquiteturalmente separados (1096 arquivos verificados).
+[check-crm-isolation] OK — crm permanece arquiteturalmente separado de inbox/instagram-dm (1096 arquivos verificados).
+[check-planning-isolation] OK — Planning e o pipeline legado (Arthur/Helena/Caio/Skills) permanecem totalmente separados (1096 arquivos verificados).
+[check-runtime-isolation] OK — Runtime e o pipeline legado (Arthur/Helena/Caio/Skills) permanecem totalmente separados (1096 arquivos verificados).
+[check-execution-isolation] OK — Execution permanece isolado de Caio/Helena/Skills/AI/rede/publicação fora dos adaptadores de infrastructure.
+[check-publication-isolation] OK — Publication isolado de Execution/Helena/Skills/AI/providers reais.
+TAP version 13
+# Subtest: CATÁLOGO: Meetings tem preço oficial (R$147 com 1 simultânea, +R$67 por adicional) e entra nos planos pagos
+ok 1 - CATÁLOGO: Meetings tem preço oficial (R$147 com 1 simultânea, +R$67 por adicional) e entra nos planos pagos
+  ---
+  duration_ms: 12105.29976
+  ...
+# Subtest: CHECKOUT: capacidade do configurador vira plano + adicionais com quantidade, 7 dias de teste e pedido gravado
+ok 2 - CHECKOUT: capacidade do configurador vira plano + adicionais com quantidade, 7 dias de teste e pedido gravado
+  ---
+  duration_ms: 68.876001
+  ...
+# Subtest: CHECKOUT: quem acabou de criar a conta (trial) mantém os dias que restam; trial vencido paga na hora
+ok 3 - CHECKOUT: quem acabou de criar a conta (trial) mantém os dias que restam; trial vencido paga na hora
+  ---
+  duration_ms: 38.445542
+  ...
+# Subtest: MEETINGS: checkout e compra de adicional bloqueados enquanto o gate comercial estiver fechado
+ok 4 - MEETINGS: checkout e compra de adicional bloqueados enquanto o gate comercial estiver fechado
+  ---
+  duration_ms: 21.21128
+  ...
+# Subtest: WEBHOOK: aplica exatamente o pedido (quantidades), é idempotente sob reenvio e libera a capacidade
+ok 5 - WEBHOOK: aplica exatamente o pedido (quantidades), é idempotente sob reenvio e libera a capacidade
+  ---
+  duration_ms: 91.882518
+  ...
+# Subtest: WEBHOOK + MEETINGS: assinatura com Meetings libera o acesso com as gravações simultâneas; cancelamento revoga; concessão interna intocada
+ok 6 - WEBHOOK + MEETINGS: assinatura com Meetings libera o acesso com as gravações simultâneas; cancelamento revoga; concessão interna intocada
+  ---
+  duration_ms: 107.61139
+  ...
+# Subtest: MERCADO PAGO: checkout com teste envia free_trial em dias; sem teste, não envia
+ok 7 - MERCADO PAGO: checkout com teste envia free_trial em dias; sem teste, não envia
+  ---
+  duration_ms: 23.182739
+  ...
+# Subtest: startCheckout: devolve URL de checkout e NUNCA cria uma Subscription
+ok 8 - startCheckout: devolve URL de checkout e NUNCA cria uma Subscription
+  ---
+  duration_ms: 11801.68152
+  ...
+# Subtest: startCheckout: plano ENTERPRISE não é self-service
+ok 9 - startCheckout: plano ENTERPRISE não é self-service
+  ---
+  duration_ms: 10.451329
+  ...
+# Subtest: startCheckout: tenant já com assinatura ativa não pode iniciar novo checkout
+ok 10 - startCheckout: tenant já com assinatura ativa não pode iniciar novo checkout
+  ---
+  duration_ms: 9.694211
+  ...
+# Subtest: startCheckout: add-on fora do plano é rejeitado
+ok 11 - startCheckout: add-on fora do plano é rejeitado
+  ---
+  duration_ms: 4.775978
+  ...
+# Subtest: webhook checkout.session.completed: cria a Subscription real e recalcula tenant_billing a partir dela
+ok 12 - webhook checkout.session.completed: cria a Subscription real e recalcula tenant_billing a partir dela
+  ---
+  duration_ms: 24.78822
+  ...
+# Subtest: webhook: reentrega do MESMO evento nunca reaplica o efeito colateral (idempotência)
+ok 13 - webhook: reentrega do MESMO evento nunca reaplica o efeito colateral (idempotência)
+  ---
+  duration_ms: 20.558255
+  ...
+# Subtest: webhook: tipo de evento desconhecido é ignorado sem erro
+ok 14 - webhook: tipo de evento desconhecido é ignorado sem erro
+  ---
+  duration_ms: 4.116117
+  ...
+# Subtest: webhook customer.subscription.deleted: cancela SEM apagar nada, e uma reentrega não regride o estado
+ok 15 - webhook customer.subscription.deleted: cancela SEM apagar nada, e uma reentrega não regride o estado
+  ---
+  duration_ms: 61.914696
+  ...
+# Subtest: webhook invoice.payment_failed: marca past_due e registra a fatura, sem apagar nada
+ok 16 - webhook invoice.payment_failed: marca past_due e registra a fatura, sem apagar nada
+  ---
+  duration_ms: 80.398992
+  ...
+# Subtest: Migrations 0103-0109 aplicam sem erro; catálogo de planos e add-ons semeado
+ok 17 - Migrations 0103-0109 aplicam sem erro; catálogo de planos e add-ons semeado
+  ---
+  duration_ms: 11822.557397
+  ...
+# Subtest: Entitlements: tenant sem Subscription resolve como virtual, a partir de tenant_billing.plan_code (FREE)
+ok 18 - Entitlements: tenant sem Subscription resolve como virtual, a partir de tenant_billing.plan_code (FREE)
+  ---
+  duration_ms: 35.483798
+  ...
+# Subtest: Entitlements: uma Subscription real (PRO) muda virtual para false e usa os limites do PlanVersion dela
+ok 19 - Entitlements: uma Subscription real (PRO) muda virtual para false e usa os limites do PlanVersion dela
+  ---
+  duration_ms: 12.472651
+  ...
+# Subtest: Entitlements: add-on de usuário soma sobre o limite base do plano
+ok 20 - Entitlements: add-on de usuário soma sobre o limite base do plano
+  ---
+  duration_ms: 17.553043
+  ...
+# Subtest: Limite: assertWithinLimit lança USAGE_LIMIT_REACHED quando o uso real atinge o teto do plano
+ok 21 - Limite: assertWithinLimit lança USAGE_LIMIT_REACHED quando o uso real atinge o teto do plano
+  ---
+  duration_ms: 97.947983
+  ...
+# Subtest: Versionamento: publicar uma nova versão nunca sobrescreve nem afeta quem já está na anterior
+ok 22 - Versionamento: publicar uma nova versão nunca sobrescreve nem afeta quem já está na anterior
+  ---
+  duration_ms: 36.625586
+  ...
+# Subtest: Webhook de pagamento: registrar o mesmo (provider, providerEventId) duas vezes é idempotente
+ok 23 - Webhook de pagamento: registrar o mesmo (provider, providerEventId) duas vezes é idempotente
+  ---
+  duration_ms: 7.369548
+  ...
+# Subtest: ResourceCounterPort: conta usuários e workspaces reais do tenant (nunca uma lista paginada)
+ok 24 - ResourceCounterPort: conta usuários e workspaces reais do tenant (nunca uma lista paginada)
+  ---
+  duration_ms: 35.765926
+  ...
+# Subtest: SandboxBillingProvider cumpre o contrato do BillingProviderPort sem nenhuma chamada externa
+ok 25 - SandboxBillingProvider cumpre o contrato do BillingProviderPort sem nenhuma chamada externa
+  ---
+  duration_ms: 1.952652
+  ...
+# Subtest: POST /v1/billing/cancel + /v1/billing/reactivate: ciclo completo via HTTP
+ok 26 - POST /v1/billing/cancel + /v1/billing/reactivate: ciclo completo via HTTP
+  ---
+  duration_ms: 15675.610113
+  ...
+# Subtest: GET /v1/billing/downgrade-preview + POST /v1/billing/change-plan: downgrade com overage responde 409 com detalhe
+ok 27 - GET /v1/billing/downgrade-preview + POST /v1/billing/change-plan: downgrade com overage responde 409 com detalhe
+  ---
+  duration_ms: 3102.859852
+  ...
+# Subtest: POST /v1/billing/addons: compra e remove um add-on via HTTP
+ok 28 - POST /v1/billing/addons: compra e remove um add-on via HTTP
+  ---
+  duration_ms: 1409.337167
+  ...
+# Subtest: changePlan: upgrade START -> PRO troca o planVersionId e recalcula tenant_billing
+ok 29 - changePlan: upgrade START -> PRO troca o planVersionId e recalcula tenant_billing
+  ---
+  duration_ms: 10128.426198
+  ...
+# Subtest: changePlan: downgrade bloqueado quando o uso atual excede o novo teto (nenhuma chamada ao gateway, nenhum dado apagado)
+ok 30 - changePlan: downgrade bloqueado quando o uso atual excede o novo teto (nenhuma chamada ao gateway, nenhum dado apagado)
+  ---
+  duration_ms: 190.421455
+  ...
+# Subtest: addons: comprar soma sobre o limite base; remover volta ao limite original
+ok 31 - addons: comprar soma sobre o limite base; remover volta ao limite original
+  ---
+  duration_ms: 70.956321
+  ...
+# Subtest: addons: add-on fora da lista permitida do plano é rejeitado
+ok 32 - addons: add-on fora da lista permitida do plano é rejeitado
+  ---
+  duration_ms: 8.117392
+  ...
+# Subtest: cancelSubscriptionSelfService: sempre cancel_at_period_end, nunca cancelamento imediato
+ok 33 - cancelSubscriptionSelfService: sempre cancel_at_period_end, nunca cancelamento imediato
+  ---
+  duration_ms: 12.409624
+  ...
+# Subtest: reactivateSubscription: desfaz o cancel_at_period_end enquanto a assinatura ainda não terminou
+ok 34 - reactivateSubscription: desfaz o cancel_at_period_end enquanto a assinatura ainda não terminou
+  ---
+  duration_ms: 16.950315
+  ...
+# Subtest: reactivateSubscription: rejeita quando a assinatura não está agendada para cancelamento
+ok 35 - reactivateSubscription: rejeita quando a assinatura não está agendada para cancelamento
+  ---
+  duration_ms: 5.59951
+  ...
+# Subtest: modo somente-leitura: assinatura past_due bloqueia assertCanUse/assertWithinLimit, mas nunca apaga nem esconde o estado real
+ok 36 - modo somente-leitura: assinatura past_due bloqueia assertCanUse/assertWithinLimit, mas nunca apaga nem esconde o estado real
+  ---
+  duration_ms: 37.983123
+  ...
+# Subtest: GET /v1/billing/overview: tenant virtual (sem Subscription real) devolve o FREE com consumo real
+ok 37 - GET /v1/billing/overview: tenant virtual (sem Subscription real) devolve o FREE com consumo real
+  ---
+  duration_ms: 11969.373381
+  ...
+# Subtest: GET /v1/billing/overview: assinante real PRO com add-on mostra plano, add-ons e forma de pagamento sandbox
+ok 38 - GET /v1/billing/overview: assinante real PRO com add-on mostra plano, add-ons e forma de pagamento sandbox
+  ---
+  duration_ms: 5107.252925
+  ...
+# Subtest: POST /v1/billing/portal: sem providerCustomerId responde 400 com mensagem clara
+ok 39 - POST /v1/billing/portal: sem providerCustomerId responde 400 com mensagem clara
+  ---
+  duration_ms: 1937.637321
+  ...
+# Subtest: get(): singleton sempre existe (migração 0134), sem nenhuma credencial configurada
+ok 40 - get(): singleton sempre existe (migração 0134), sem nenhuma credencial configurada
+  ---
+  duration_ms: 10041.090322
+  ...
+# Subtest: update(): grava access token/webhook secret criptografados, expõe só last4; notification URL fica em claro (não é segredo)
+ok 41 - update(): grava access token/webhook secret criptografados, expõe só last4; notification URL fica em claro (não é segredo)
+  ---
+  duration_ms: 9.175263
+  ...
+# Subtest: update(): undefined mantém o valor atual; string vazia remove
+ok 42 - update(): undefined mantém o valor atual; string vazia remove
+  ---
+  duration_ms: 11.451193
+  ...
+# Subtest: updateBillingProviderSettings: rejeita Notification URL que não comece com https://
+ok 43 - updateBillingProviderSettings: rejeita Notification URL que não comece com https://
+  ---
+  duration_ms: 1.818225
+  ...
+# Subtest: getBillingProviderSettings: nunca devolve os segredos em claro, só has*/last4
+ok 44 - getBillingProviderSettings: nunca devolve os segredos em claro, só has*/last4
+  ---
+  duration_ms: 15.472508
+  ...
+# Subtest: MercadoPagoBillingProvider: credencial vinda de closure é cacheada por TTL, nunca reconsultada a cada chamada de API
+ok 45 - MercadoPagoBillingProvider: credencial vinda de closure é cacheada por TTL, nunca reconsultada a cada chamada de API
+  ---
+  duration_ms: 0.792483
+  ...
+# Subtest: MercadoPagoBillingProvider: credencial vinda de string fixa (env, comportamento histórico) funciona sem nenhuma chamada assíncrona extra
+ok 46 - MercadoPagoBillingProvider: credencial vinda de string fixa (env, comportamento histórico) funciona sem nenhuma chamada assíncrona extra
+  ---
+  duration_ms: 0.280887
+  ...
+# Subtest: POST /webhooks/billing/sandbox: checkout.session.completed ativa a Subscription real; reentrega responde 200 sem reaplicar
+ok 47 - POST /webhooks/billing/sandbox: checkout.session.completed ativa a Subscription real; reentrega responde 200 sem reaplicar
+  ---
+  duration_ms: 12720.134559
+  ...
+# Subtest: POST /webhooks/billing/sandbox: rota fica FORA do prefixo /v1
+ok 48 - POST /webhooks/billing/sandbox: rota fica FORA do prefixo /v1
+  ---
+  duration_ms: 986.55187
+  ...
+# Subtest: MercadoPagoBillingProvider sem credenciais devolve not_configured em todo método, nunca lança
+ok 49 - MercadoPagoBillingProvider sem credenciais devolve not_configured em todo método, nunca lança
+  ---
+  duration_ms: 2.10956
+  ...
+# Subtest: createCheckout: cria preapproval com auto_recurring.transaction_amount do chamador, nunca recalcula, e devolve init_point
+ok 50 - createCheckout: cria preapproval com auto_recurring.transaction_amount do chamador, nunca recalcula, e devolve init_point
+  ---
+  duration_ms: 0.707895
+  ...
+# Subtest: createCheckout: sem amount/currency do chamador falha explicitamente, nunca cobra um valor inventado
+ok 51 - createCheckout: sem amount/currency do chamador falha explicitamente, nunca cobra um valor inventado
+  ---
+  duration_ms: 0.250879
+  ...
+# Subtest: changeSubscription/addSubscriptionItem/removeSubscriptionItem/updateSubscriptionItemQuantity: todos convergem para PUT /preapproval/{id} com o total recalculado pelo chamador
+ok 52 - changeSubscription/addSubscriptionItem/removeSubscriptionItem/updateSubscriptionItemQuantity: todos convergem para PUT /preapproval/{id} com o total recalculado pelo chamador
+  ---
+  duration_ms: 0.972477
+  ...
+# Subtest: cancelSubscription: atPeriodEnd:true é rejeitado (Mercado Pago não agenda nativamente — o chamador usa subscription_pending_changes); atPeriodEnd:false cancela de verdade
+ok 53 - cancelSubscription: atPeriodEnd:true é rejeitado (Mercado Pago não agenda nativamente — o chamador usa subscription_pending_changes); atPeriodEnd:false cancela de verdade
+  ---
+  duration_ms: 0.446704
+  ...
+# Subtest: resumeSubscription: PUT status=authorized
+ok 54 - resumeSubscription: PUT status=authorized
+  ---
+  duration_ms: 0.341019
+  ...
+# Subtest: getPaymentMethod: nunca inventa um cartão — devolve undefined explicitamente
+ok 55 - getPaymentMethod: nunca inventa um cartão — devolve undefined explicitamente
+  ---
+  duration_ms: 0.328421
+  ...
+# Subtest: createCustomerPortal: falha explícita — Mercado Pago não tem portal hospedado equivalente ao Stripe
+ok 56 - createCustomerPortal: falha explícita — Mercado Pago não tem portal hospedado equivalente ao Stripe
+  ---
+  duration_ms: 0.247246
+  ...
+# Subtest: handleWebhook: assinatura x-signature válida (manifest id/ts + HMAC-SHA256) é aceita; inválida é rejeitada
+ok 57 - handleWebhook: assinatura x-signature válida (manifest id/ts + HMAC-SHA256) é aceita; inválida é rejeitada
+  ---
+  duration_ms: 2.532539
+  ...
+# Subtest: handleWebhook: preapproval cancelled mapeia para customer.subscription.deleted (vocabulário canônico já usado pelo Stripe)
+ok 58 - handleWebhook: preapproval cancelled mapeia para customer.subscription.deleted (vocabulário canônico já usado pelo Stripe)
+  ---
+  duration_ms: 0.833297
+  ...
+# Subtest: handleWebhook: pagamento aprovado/rejeitado mapeia para invoice.payment_succeeded/failed
+ok 59 - handleWebhook: pagamento aprovado/rejeitado mapeia para invoice.payment_succeeded/failed
+  ---
+  duration_ms: 0.352921
+  ...
+# Subtest: Pricing math: catálogo real tem os 3 planos aprovados em BRL com a capacidade aprovada
+ok 60 - Pricing math: catálogo real tem os 3 planos aprovados em BRL com a capacidade aprovada
+  ---
+  duration_ms: 10592.838564
+  ...
+# Subtest: Pricing math: cenários da seção 41 do pedido, calculados contra o catálogo real
+ok 61 - Pricing math: cenários da seção 41 do pedido, calculados contra o catálogo real
+  ---
+  duration_ms: 18.137361
+  ...
+# Subtest: Pricing math: crossovers da seção 42 do pedido
+ok 62 - Pricing math: crossovers da seção 42 do pedido
+  ---
+  duration_ms: 9.994129
+  ...
+# Subtest: Catalog validation: START -> PRO -> BUSINESS passa a validação de coerência (nunca pacote mais caro que a alternativa avulsa)
+ok 63 - Catalog validation: START -> PRO -> BUSINESS passa a validação de coerência (nunca pacote mais caro que a alternativa avulsa)
+  ---
+  duration_ms: 9.680044
+  ...
+# Subtest: purchaseAddon: segunda compra do MESMO addon soma quantidade, nunca cria um segundo item
+ok 64 - purchaseAddon: segunda compra do MESMO addon soma quantidade, nunca cria um segundo item
+  ---
+  duration_ms: 85.440995
+  ...
+# Subtest: purchaseAddon: duas compras concorrentes do mesmo addon nunca se perdem uma na outra (incremento atômico)
+ok 65 - purchaseAddon: duas compras concorrentes do mesmo addon nunca se perdem uma na outra (incremento atômico)
+  ---
+  duration_ms: 91.833042
+  ...
+# Subtest: previewCapacityChange: nunca cria SubscriptionItem nem muda a assinatura
+ok 66 - previewCapacityChange: nunca cria SubscriptionItem nem muda a assinatura
+  ---
+  duration_ms: 63.975816
+  ...
+# Subtest: applyCapacityChange: aumento de usuários é imediato (compra o addon na hora)
+ok 67 - applyCapacityChange: aumento de usuários é imediato (compra o addon na hora)
+  ---
+  duration_ms: 104.116288
+  ...
+# Subtest: applyCapacityChange: redução NUNCA é imediata — agenda pro fim do ciclo, scheduler aplica depois
+ok 68 - applyCapacityChange: redução NUNCA é imediata — agenda pro fim do ciclo, scheduler aplica depois
+  ---
+  duration_ms: 294.894545
+  ...
+# Subtest: applyCapacityChange: cancelar uma redução pendente preserva a capacidade atual
+ok 69 - applyCapacityChange: cancelar uma redução pendente preserva a capacidade atual
+  ---
+  duration_ms: 301.397019
+  ...
+# Subtest: applyCapacityChange: reduzir abaixo do uso ativo é rejeitado, nunca desativa usuário/conexão sozinho
+ok 70 - applyCapacityChange: reduzir abaixo do uso ativo é rejeitado, nunca desativa usuário/conexão sozinho
+  ---
+  duration_ms: 218.682546
+  ...
+# Subtest: applyCapacityChange: não permite reduzir abaixo da capacidade incluída no plano (isso é downgrade de plano, não de addon)
+ok 71 - applyCapacityChange: não permite reduzir abaixo da capacidade incluída no plano (isso é downgrade de plano, não de addon)
+  ---
+  duration_ms: 14.681945
+  ...
+# Subtest: Capacidade: isolamento cross-tenant — mudanças de um tenant nunca aparecem em outro
+ok 72 - Capacidade: isolamento cross-tenant — mudanças de um tenant nunca aparecem em outro
+  ---
+  duration_ms: 209.669995
+  ...
+# Subtest: CRÍTICO: GET /v1/platform/plans devolve exatamente o preço/moeda da MESMA plan_version usada no checkout
+ok 73 - CRÍTICO: GET /v1/platform/plans devolve exatamente o preço/moeda da MESMA plan_version usada no checkout
+  ---
+  duration_ms: 2013.176858
+  ...
+# Subtest: CRÍTICO: FREE e ENTERPRISE nunca aparecem no catálogo público, mesmo lendo do banco agora
+ok 74 - CRÍTICO: FREE e ENTERPRISE nunca aparecem no catálogo público, mesmo lendo do banco agora
+  ---
+  duration_ms: 899.77419
+  ...
+# Subtest: POST /v1/platform/plans/simulate: simulador público (sem auth) recomenda o mesmo plano que o cálculo interno
+ok 75 - POST /v1/platform/plans/simulate: simulador público (sem auth) recomenda o mesmo plano que o cálculo interno
+  ---
+  duration_ms: 786.381753
+  ...
+# Subtest: resolveCommercialCapacity: expõe includedUsers/additionalUsers/totalUsers e o equivalente para números, sem duplicar o vocabulário de limits
+ok 76 - resolveCommercialCapacity: expõe includedUsers/additionalUsers/totalUsers e o equivalente para números, sem duplicar o vocabulário de limits
+  ---
+  duration_ms: 55.871459
+  ...
+# Subtest: public pricing exposes existing eligibility without publishing internal products or modifying prices
+ok 77 - public pricing exposes existing eligibility without publishing internal products or modifying prices
+  ---
+  duration_ms: 170.598084
+  ...
+# Subtest: development fallback is identified and cannot impersonate the official billing source
+ok 78 - development fallback is identified and cannot impersonate the official billing source
+  ---
+  duration_ms: 39.225039
+  ...
+# Subtest: POST /v1/auth/signup com planCode=PRO e TRIAL_ENABLED=true: cria Subscription real de trial, 7 dias
+ok 79 - POST /v1/auth/signup com planCode=PRO e TRIAL_ENABLED=true: cria Subscription real de trial, 7 dias
+  ---
+  duration_ms: 14301.638994
+  ...
+# Subtest: POST /v1/auth/signup sem planCode: comportamento antigo preservado, nenhuma Subscription real criada
+ok 80 - POST /v1/auth/signup sem planCode: comportamento antigo preservado, nenhuma Subscription real criada
+  ---
+  duration_ms: 2489.424323
+  ...
+# Subtest: POST /v1/auth/signup com planCode=PRO mas TRIAL_ENABLED=false (padrão): conta é criada normalmente, sem travar
+ok 81 - POST /v1/auth/signup com planCode=PRO mas TRIAL_ENABLED=false (padrão): conta é criada normalmente, sem travar
+  ---
+  duration_ms: 1409.810388
+  ...
+# Subtest: POST /v1/auth/signup: planCode inválido (ex. FREE) é rejeitado pelo schema, nunca aceito
+ok 82 - POST /v1/auth/signup: planCode inválido (ex. FREE) é rejeitado pelo schema, nunca aceito
+  ---
+  duration_ms: 543.00413
+  ...
+# Subtest: POST /v1/auth/signup: duplo cadastro com o mesmo email nunca duplica Subscription
+ok 83 - POST /v1/auth/signup: duplo cadastro com o mesmo email nunca duplica Subscription
+  ---
+  duration_ms: 1664.659219
+  ...
+# Subtest: POST /v1/contacts: tenant com trial_expired é bloqueado com 402, dado nenhum é apagado
+ok 84 - POST /v1/contacts: tenant com trial_expired é bloqueado com 402, dado nenhum é apagado
+  ---
+  duration_ms: 1549.190038
+  ...
+# Subtest: POST /v1/contacts: tenant com Subscription active continua criando normalmente
+ok 85 - POST /v1/contacts: tenant com Subscription active continua criando normalmente
+  ---
+  duration_ms: 1603.428535
+  ...
+# Subtest: POST /v1/billing/reactivate: continua funcionando mesmo com o tenant em modo somente-leitura (rota não tem o guard)
+ok 86 - POST /v1/billing/reactivate: continua funcionando mesmo com o tenant em modo somente-leitura (rota não tem o guard)
+  ---
+  duration_ms: 1124.913852
+  ...
+# Subtest: signupPublicTransactional: cria User + Membership + Workspace + tenant_billing FREE numa única transação
+ok 87 - signupPublicTransactional: cria User + Membership + Workspace + tenant_billing FREE numa única transação
+  ---
+  duration_ms: 9963.518504
+  ...
+# Subtest: signupPublicTransactional: falha depois de User/Membership/Workspace gravados desfaz TUDO (não deixa tenant órfão)
+ok 88 - signupPublicTransactional: falha depois de User/Membership/Workspace gravados desfaz TUDO (não deixa tenant órfão)
+  ---
+  duration_ms: 512.19454
+  ...
+# Subtest: signupPublicTransactional: sempre libera a conexão do pool (sucesso e falha)
+ok 89 - signupPublicTransactional: sempre libera a conexão do pool (sucesso e falha)
+  ---
+  duration_ms: 1221.673287
+  ...
+# Subtest: signupPublic: cria User + Membership + Workspace + tenant_billing FREE e devolve tokens
+ok 90 - signupPublic: cria User + Membership + Workspace + tenant_billing FREE e devolve tokens
+  ---
+  duration_ms: 8028.276191
+  ...
+# Subtest: signupPublic: workspaceName ausente cai no default 'Workspace de <name>'
+ok 91 - signupPublic: workspaceName ausente cai no default 'Workspace de <name>'
+  ---
+  duration_ms: 1054.080618
+  ...
+# Subtest: signupPublic: email duplicado lança SIGNUP_EMAIL_ALREADY_REGISTERED e não cria nada
+ok 92 - signupPublic: email duplicado lança SIGNUP_EMAIL_ALREADY_REGISTERED e não cria nada
+  ---
+  duration_ms: 931.746873
+  ...
+# Subtest: signupPublic: senha curta lança IDENTITY_VALIDATION_ERROR
+ok 93 - signupPublic: senha curta lança IDENTITY_VALIDATION_ERROR
+  ---
+  duration_ms: 2.32854
+  ...
+# Subtest: signupPublic: cada cadastro gera tenantId distinto
+ok 94 - signupPublic: cada cadastro gera tenantId distinto
+  ---
+  duration_ms: 1507.059038
+  ...
+# Subtest: DISPONIBILIDADE COMERCIAL: só o Vorix Conversas é público; Marketing é interno
+ok 95 - DISPONIBILIDADE COMERCIAL: só o Vorix Conversas é público; Marketing é interno
+  ---
+  duration_ms: 6244.103536
+  ...
+# Subtest: ACESSO: kill switch, entitlement e default são conceitos separados
+ok 96 - ACESSO: kill switch, entitlement e default são conceitos separados
+  ---
+  duration_ms: 9.791312
+  ...
+# Subtest: CONCESSÃO: solução não comercial só aceita origem interna
+ok 97 - CONCESSÃO: solução não comercial só aceita origem interna
+  ---
+  duration_ms: 0.627824
+  ...
+# Subtest: ROTAS: classificação por solução — Marketing barrado, Core e Conversas livres
+ok 98 - ROTAS: classificação por solução — Marketing barrado, Core e Conversas livres
+  ---
+  duration_ms: 0.669141
+  ...
+# Subtest: ONBOARDING: o wizard é só do Conversas — a etapa de marca (Marketing) saiu da sequência
+ok 99 - ONBOARDING: o wizard é só do Conversas — a etapa de marca (Marketing) saiu da sequência
+  ---
+  duration_ms: 0.17107
+  ...
+# Subtest: ENTITLEMENT: tenant comum tem Conversas e NÃO tem Marketing; concessão interna libera e fica auditada
+ok 100 - ENTITLEMENT: tenant comum tem Conversas e NÃO tem Marketing; concessão interna libera e fica auditada
+  ---
+  duration_ms: 21.474859
+  ...
+# Subtest: KILL SWITCH: desliga a solução para todos, inclusive quem tem concessão interna
+ok 101 - KILL SWITCH: desliga a solução para todos, inclusive quem tem concessão interna
+  ---
+  duration_ms: 6.370789
+  ...
+# Subtest: CACHE: uma concessão nova vale imediatamente no mesmo processo
+ok 102 - CACHE: uma concessão nova vale imediatamente no mesmo processo
+  ---
+  duration_ms: 5.875138
+  ...
+# Subtest: MIGRATION: quem já usa o Creative Engine mantém acesso interno ao Marketing; ninguém mais ganha
+ok 103 - MIGRATION: quem já usa o Creative Engine mantém acesso interno ao Marketing; ninguém mais ganha
+  ---
+  duration_ms: 10.970848
+  ...
+# Subtest: API: usuário comum (até owner) recebe 403 em TODA rota de Marketing — não é só a sidebar
+ok 104 - API: usuário comum (até owner) recebe 403 em TODA rota de Marketing — não é só a sidebar
+  ---
+  duration_ms: 694.015788
+  ...
+# Subtest: API: Conversas e Core seguem funcionando para o mesmo usuário comum
+ok 105 - API: Conversas e Core seguem funcionando para o mesmo usuário comum
+  ---
+  duration_ms: 358.553065
+  ...
+# Subtest: API: tenant com concessão INTERNA acessa o Marketing e vê as duas soluções
+ok 106 - API: tenant com concessão INTERNA acessa o Marketing e vê as duas soluções
+  ---
+  duration_ms: 236.482912
+  ...
+# Subtest: API: o guarda de solução não substitui o RBAC — viewer interno continua barrado pelo papel
+ok 107 - API: o guarda de solução não substitui o RBAC — viewer interno continua barrado pelo papel
+  ---
+  duration_ms: 231.310018
+  ...
+# Subtest: API: conceder solução é só de administrador da plataforma, e Marketing recusa origem comercial
+ok 108 - API: conceder solução é só de administrador da plataforma, e Marketing recusa origem comercial
+  ---
+  duration_ms: 353.399586
+  ...
+# Subtest: API: requisição sem autenticação não é decidida pelo guarda (webhooks/callbacks seguem com a própria rota)
+ok 109 - API: requisição sem autenticação não é decidida pelo guarda (webhooks/callbacks seguem com a própria rota)
+  ---
+  duration_ms: 140.448393
+  ...
+# Subtest: startTrial: cria uma Subscription real em status trial, com trialStart/trialEnd calculados a partir de PlanVersion.trialDays (7 do PRO desde a migration 0131), nunca hardcoded
+ok 110 - startTrial: cria uma Subscription real em status trial, com trialStart/trialEnd calculados a partir de PlanVersion.trialDays (7 do PRO desde a migration 0131), nunca hardcoded
+  ---
+  duration_ms: 5379.876147
+  ...
+# Subtest: startTrial: idempotente — chamar duas vezes devolve a MESMA Subscription, nunca cria duas
+ok 111 - startTrial: idempotente — chamar duas vezes devolve a MESMA Subscription, nunca cria duas
+  ---
+  duration_ms: 50.087242
+  ...
+# Subtest: startTrial: rejeita quando já existe assinatura real ativa (paga)
+ok 112 - startTrial: rejeita quando já existe assinatura real ativa (paga)
+  ---
+  duration_ms: 5.345933
+  ...
+# Subtest: startTrial: FREE não oferece trial (trialDays null) — rejeita com mensagem clara, nunca hardcoded 'plano X'
+ok 113 - startTrial: FREE não oferece trial (trialDays null) — rejeita com mensagem clara, nunca hardcoded 'plano X'
+  ---
+  duration_ms: 4.359241
+  ...
+# Subtest: startTrial: TRIAL_ENABLED é um kill switch independente de PlanVersion.trialDays
+ok 114 - startTrial: TRIAL_ENABLED é um kill switch independente de PlanVersion.trialDays
+  ---
+  duration_ms: 2.044422
+  ...
+# Subtest: Entitlements durante trial: usa os limites do PlanVersion normalmente, sem regra paralela — nunca readOnly enquanto o trial está ativo
+ok 115 - Entitlements durante trial: usa os limites do PlanVersion normalmente, sem regra paralela — nunca readOnly enquanto o trial está ativo
+  ---
+  duration_ms: 29.471738
+  ...
+# Subtest: expireTrials: transiciona trial vencido pra trial_expired sem apagar nada, e o modo somente-leitura JÁ EXISTENTE passa a se aplicar (nenhuma regra nova em entitlements)
+ok 116 - expireTrials: transiciona trial vencido pra trial_expired sem apagar nada, e o modo somente-leitura JÁ EXISTENTE passa a se aplicar (nenhuma regra nova em entitlements)
+  ---
+  duration_ms: 27.370874
+  ...
+# Subtest: Conversão trial -> pago: startCheckout é permitido pra quem está em trial (não bloqueia como 'já assinado'), e o webhook confirmado reusa a MESMA Subscription emitindo trial_converted
+ok 117 - Conversão trial -> pago: startCheckout é permitido pra quem está em trial (não bloqueia como 'já assinado'), e o webhook confirmado reusa a MESMA Subscription emitindo trial_converted
+  ---
+  duration_ms: 26.937029
+  ...
+# Subtest: Conversão trial -> pago: um trial JÁ VENCIDO (trial_expired) também pode ir a checkout normalmente
+ok 118 - Conversão trial -> pago: um trial JÁ VENCIDO (trial_expired) também pode ir a checkout normalmente
+  ---
+  duration_ms: 11.212141
+  ...
+# Subtest: startCheckout: tenant já PAGO (active) continua bloqueado de ir a um novo checkout (regressão)
+ok 119 - startCheckout: tenant já PAGO (active) continua bloqueado de ir a um novo checkout (regressão)
+  ---
+  duration_ms: 4.493905
+  ...
+1..119
+# tests 119
+# suites 0
+# pass 119
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 51347.349506

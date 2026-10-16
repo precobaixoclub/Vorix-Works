@@ -1,0 +1,537 @@
+DEPLOY 3af6255f242823d8ebc80ddb0958e7024e62f812 target=api stamp=20261016015518
+PREFLIGHT_OK free=6752MB
+BACKUP code=deploy_backups/pre-3af6255f242823d8ebc80ddb0958e7024e62f812-20261016015518.tgz db=deploy_backups/db-pre-3af6255f242823d8ebc80ddb0958e7024e62f812-20261016015518.sql.gz env=/root/.env.zuno.pre-3af6255f242823d8ebc80ddb0958e7024e62f812-20261016015518
+ROLLBACK_TAG zuno-zuno-api:rollback-20261016015518
+ROLLBACK_TAG zuno-vorix-worker:rollback-20261016015518
+ENV before=d4717cfdf453 after=d4717cfdf453
+BUILD zuno-api
+ Image zuno-zuno-api Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 472B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 2.39kB 0.0s done
+#2 DONE 0.1s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.4s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:20-slim
+#5 DONE 0.3s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 125B done
+#6 DONE 0.0s
+
+#7 [deps 1/4] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#7 resolve docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 0.1s done
+#7 DONE 0.1s
+
+#8 [internal] load build context
+#8 transferring context: 9.57MB 1.0s done
+#8 DONE 1.2s
+
+#7 [deps 1/4] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#7 DONE 0.3s
+
+#9 [deps 2/4] WORKDIR /app
+#9 DONE 0.1s
+
+#10 [runtime  3/10] RUN apt-get update   && apt-get install -y --no-install-recommends fontconfig ca-certificates curl xz-utils   && rm -rf /var/lib/apt/lists/*
+#10 ...
+
+#11 [deps 3/4] COPY package.json package-lock.json ./
+#11 DONE 0.2s
+
+#12 [deps 4/4] RUN npm ci
+#12 ...
+
+#10 [runtime  3/10] RUN apt-get update   && apt-get install -y --no-install-recommends fontconfig ca-certificates curl xz-utils   && rm -rf /var/lib/apt/lists/*
+#10 1.081 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#10 1.122 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#10 1.122 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
+#10 1.505 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8790 kB]
+#10 1.917 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
+#10 2.066 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [353 kB]
+#10 4.144 Fetched 9392 kB in 3s (3056 kB/s)
+#10 4.144 Reading package lists...
+#10 5.501 Reading package lists...
+#10 6.625 Building dependency tree...
+#10 6.941 Reading state information...
+#10 7.422 The following additional packages will be installed:
+#10 7.424   fontconfig-config fonts-dejavu-core libbrotli1 libcurl4 libexpat1
+#10 7.425   libfontconfig1 libfreetype6 libgssapi-krb5-2 libk5crypto3 libkeyutils1
+#10 7.427   libkrb5-3 libkrb5support0 libldap-2.5-0 liblzma5 libnghttp2-14 libpng16-16
+#10 7.429   libpsl5 librtmp1 libsasl2-2 libsasl2-modules-db libssh2-1 libssl3 openssl
+#10 7.434 Suggested packages:
+#10 7.434   krb5-doc krb5-user
+#10 7.434 Recommended packages:
+#10 7.434   krb5-locales libldap-common publicsuffix libsasl2-modules
+#10 7.719 The following NEW packages will be installed:
+#10 7.719   ca-certificates curl fontconfig fontconfig-config fonts-dejavu-core
+#10 7.720   libbrotli1 libcurl4 libexpat1 libfontconfig1 libfreetype6 libgssapi-krb5-2
+#10 7.720   libk5crypto3 libkeyutils1 libkrb5-3 libkrb5support0 libldap-2.5-0
+#10 7.723   libnghttp2-14 libpng16-16 libpsl5 librtmp1 libsasl2-2 libsasl2-modules-db
+#10 7.723   libssh2-1 libssl3 openssl xz-utils
+#10 7.724 The following packages will be upgraded:
+#10 7.726   liblzma5
+#10 7.771 1 upgraded, 26 newly installed, 0 to remove and 14 not upgraded.
+#10 7.771 Need to get 9522 kB of archives.
+#10 7.771 After this operation, 22.5 MB of additional disk space will be used.
+#10 7.771 Get:1 http://deb.debian.org/debian-security bookworm-security/main amd64 liblzma5 amd64 5.4.1-1+deb12u2 [206 kB]
+#10 7.782 Get:2 http://deb.debian.org/debian-security bookworm-security/main amd64 libssl3 amd64 3.0.22-1~deb12u1 [2039 kB]
+#10 7.827 Get:3 http://deb.debian.org/debian-security bookworm-security/main amd64 openssl amd64 3.0.22-1~deb12u1 [1442 kB]
+#10 7.848 Get:4 http://deb.debian.org/debian-security bookworm-security/main amd64 ca-certificates all 20250419~deb12u1 [162 kB]
+#10 7.850 Get:5 http://deb.debian.org/debian-security bookworm-security/main amd64 xz-utils amd64 5.4.1-1+deb12u2 [471 kB]
+#10 7.859 Get:6 http://deb.debian.org/debian bookworm/main amd64 libbrotli1 amd64 1.0.9-2+b6 [275 kB]
+#10 7.869 Get:7 http://deb.debian.org/debian bookworm/main amd64 libkrb5support0 amd64 1.20.1-2+deb12u5 [33.2 kB]
+#10 7.872 Get:8 http://deb.debian.org/debian bookworm/main amd64 libk5crypto3 amd64 1.20.1-2+deb12u5 [79.7 kB]
+#10 7.873 Get:9 http://deb.debian.org/debian bookworm/main amd64 libkeyutils1 amd64 1.6.3-2 [8808 B]
+#10 7.875 Get:10 http://deb.debian.org/debian bookworm/main amd64 libkrb5-3 amd64 1.20.1-2+deb12u5 [332 kB]
+#10 7.885 Get:11 http://deb.debian.org/debian bookworm/main amd64 libgssapi-krb5-2 amd64 1.20.1-2+deb12u5 [135 kB]
+#10 7.885 Get:12 http://deb.debian.org/debian bookworm/main amd64 libsasl2-modules-db amd64 2.1.28+dfsg-10 [20.3 kB]
+#10 7.888 Get:13 http://deb.debian.org/debian bookworm/main amd64 libsasl2-2 amd64 2.1.28+dfsg-10 [59.7 kB]
+#10 7.890 Get:14 http://deb.debian.org/debian bookworm/main amd64 libldap-2.5-0 amd64 2.5.13+dfsg-5 [183 kB]
+#10 7.893 Get:15 http://deb.debian.org/debian bookworm/main amd64 libnghttp2-14 amd64 1.52.0-1+deb12u3 [72.4 kB]
+#10 7.893 Get:16 http://deb.debian.org/debian bookworm/main amd64 libpsl5 amd64 0.21.2-1 [58.7 kB]
+#10 7.897 Get:17 http://deb.debian.org/debian bookworm/main amd64 librtmp1 amd64 2.4+20151223.gitfa8646d.1-2+b2 [60.8 kB]
+#10 7.899 Get:18 http://deb.debian.org/debian-security bookworm-security/main amd64 libssh2-1 amd64 1.10.0-3+deb12u1 [176 kB]
+#10 7.903 Get:19 http://deb.debian.org/debian bookworm/main amd64 libcurl4 amd64 7.88.1-10+deb12u15 [392 kB]
+#10 7.907 Get:20 http://deb.debian.org/debian bookworm/main amd64 curl amd64 7.88.1-10+deb12u15 [316 kB]
+#10 7.911 Get:21 http://deb.debian.org/debian-security bookworm-security/main amd64 libexpat1 amd64 2.5.0-1+deb12u4 [106 kB]
+#10 7.914 Get:22 http://deb.debian.org/debian-security bookworm-security/main amd64 libpng16-16 amd64 1.6.39-2+deb12u6 [277 kB]
+#10 7.915 Get:23 http://deb.debian.org/debian bookworm/main amd64 libfreetype6 amd64 2.12.1+dfsg-5+deb12u4 [398 kB]
+#10 7.921 Get:24 http://deb.debian.org/debian bookworm/main amd64 fonts-dejavu-core all 2.37-6 [1068 kB]
+#10 7.932 Get:25 http://deb.debian.org/debian bookworm/main amd64 fontconfig-config amd64 2.14.1-4 [315 kB]
+#10 7.932 Get:26 http://deb.debian.org/debian bookworm/main amd64 libfontconfig1 amd64 2.14.1-4 [386 kB]
+#10 7.937 Get:27 http://deb.debian.org/debian bookworm/main amd64 fontconfig amd64 2.14.1-4 [449 kB]
+#10 8.282 debconf: delaying package configuration, since apt-utils is not installed
+#10 8.363 Fetched 9522 kB in 0s (49.4 MB/s)
+#10 8.429 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 6096 files and directories currently installed.)
+#10 8.476 Preparing to unpack .../liblzma5_5.4.1-1+deb12u2_amd64.deb ...
+#10 8.485 Unpacking liblzma5:amd64 (5.4.1-1+deb12u2) over (5.4.1-1) ...
+#10 8.551 Setting up liblzma5:amd64 (5.4.1-1+deb12u2) ...
+#10 8.606 Selecting previously unselected package libssl3:amd64.
+#10 8.606 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 6096 files and directories currently installed.)
+#10 8.624 Preparing to unpack .../00-libssl3_3.0.22-1~deb12u1_amd64.deb ...
+#10 8.626 Unpacking libssl3:amd64 (3.0.22-1~deb12u1) ...
+#10 8.846 Selecting previously unselected package openssl.
+#10 8.850 Preparing to unpack .../01-openssl_3.0.22-1~deb12u1_amd64.deb ...
+#10 8.854 Unpacking openssl (3.0.22-1~deb12u1) ...
+#10 9.111 Selecting previously unselected package ca-certificates.
+#10 9.112 Preparing to unpack .../02-ca-certificates_20250419~deb12u1_all.deb ...
+#10 9.116 Unpacking ca-certificates (20250419~deb12u1) ...
+#10 9.205 Selecting previously unselected package xz-utils.
+#10 9.207 Preparing to unpack .../03-xz-utils_5.4.1-1+deb12u2_amd64.deb ...
+#10 9.210 Unpacking xz-utils (5.4.1-1+deb12u2) ...
+#10 9.323 Selecting previously unselected package libbrotli1:amd64.
+#10 9.324 Preparing to unpack .../04-libbrotli1_1.0.9-2+b6_amd64.deb ...
+#10 9.326 Unpacking libbrotli1:amd64 (1.0.9-2+b6) ...
+#10 9.424 Selecting previously unselected package libkrb5support0:amd64.
+#10 9.424 Preparing to unpack .../05-libkrb5support0_1.20.1-2+deb12u5_amd64.deb ...
+#10 9.426 Unpacking libkrb5support0:amd64 (1.20.1-2+deb12u5) ...
+#10 9.466 Selecting previously unselected package libk5crypto3:amd64.
+#10 9.467 Preparing to unpack .../06-libk5crypto3_1.20.1-2+deb12u5_amd64.deb ...
+#10 9.470 Unpacking libk5crypto3:amd64 (1.20.1-2+deb12u5) ...
+#10 9.522 Selecting previously unselected package libkeyutils1:amd64.
+#10 9.522 Preparing to unpack .../07-libkeyutils1_1.6.3-2_amd64.deb ...
+#10 9.524 Unpacking libkeyutils1:amd64 (1.6.3-2) ...
+#10 9.570 Selecting previously unselected package libkrb5-3:amd64.
+#10 9.573 Preparing to unpack .../08-libkrb5-3_1.20.1-2+deb12u5_amd64.deb ...
+#10 9.575 Unpacking libkrb5-3:amd64 (1.20.1-2+deb12u5) ...
+#10 9.674 Selecting previously unselected package libgssapi-krb5-2:amd64.
+#10 9.676 Preparing to unpack .../09-libgssapi-krb5-2_1.20.1-2+deb12u5_amd64.deb ...
+#10 9.682 Unpacking libgssapi-krb5-2:amd64 (1.20.1-2+deb12u5) ...
+#10 9.750 Selecting previously unselected package libsasl2-modules-db:amd64.
+#10 9.754 Preparing to unpack .../10-libsasl2-modules-db_2.1.28+dfsg-10_amd64.deb ...
+#10 9.758 Unpacking libsasl2-modules-db:amd64 (2.1.28+dfsg-10) ...
+#10 9.815 Selecting previously unselected package libsasl2-2:amd64.
+#10 9.817 Preparing to unpack .../11-libsasl2-2_2.1.28+dfsg-10_amd64.deb ...
+#10 9.821 Unpacking libsasl2-2:amd64 (2.1.28+dfsg-10) ...
+#10 9.868 Selecting previously unselected package libldap-2.5-0:amd64.
+#10 9.871 Preparing to unpack .../12-libldap-2.5-0_2.5.13+dfsg-5_amd64.deb ...
+#10 9.874 Unpacking libldap-2.5-0:amd64 (2.5.13+dfsg-5) ...
+#10 9.972 Selecting previously unselected package libnghttp2-14:amd64.
+#10 9.979 Preparing to unpack .../13-libnghttp2-14_1.52.0-1+deb12u3_amd64.deb ...
+#10 9.985 Unpacking libnghttp2-14:amd64 (1.52.0-1+deb12u3) ...
+#10 10.05 Selecting previously unselected package libpsl5:amd64.
+#10 10.05 Preparing to unpack .../14-libpsl5_0.21.2-1_amd64.deb ...
+#10 10.05 Unpacking libpsl5:amd64 (0.21.2-1) ...
+#10 10.11 Selecting previously unselected package librtmp1:amd64.
+#10 10.11 Preparing to unpack .../15-librtmp1_2.4+20151223.gitfa8646d.1-2+b2_amd64.deb ...
+#10 10.12 Unpacking librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2+b2) ...
+#10 10.17 Selecting previously unselected package libssh2-1:amd64.
+#10 10.17 Preparing to unpack .../16-libssh2-1_1.10.0-3+deb12u1_amd64.deb ...
+#10 10.18 Unpacking libssh2-1:amd64 (1.10.0-3+deb12u1) ...
+#10 10.24 Selecting previously unselected package libcurl4:amd64.
+#10 10.24 Preparing to unpack .../17-libcurl4_7.88.1-10+deb12u15_amd64.deb ...
+#10 10.24 Unpacking libcurl4:amd64 (7.88.1-10+deb12u15) ...
+#10 10.32 Selecting previously unselected package curl.
+#10 10.32 Preparing to unpack .../18-curl_7.88.1-10+deb12u15_amd64.deb ...
+#10 10.33 Unpacking curl (7.88.1-10+deb12u15) ...
+#10 10.40 Selecting previously unselected package libexpat1:amd64.
+#10 10.41 Preparing to unpack .../19-libexpat1_2.5.0-1+deb12u4_amd64.deb ...
+#10 10.41 Unpacking libexpat1:amd64 (2.5.0-1+deb12u4) ...
+#10 10.47 Selecting previously unselected package libpng16-16:amd64.
+#10 10.47 Preparing to unpack .../20-libpng16-16_1.6.39-2+deb12u6_amd64.deb ...
+#10 10.48 Unpacking libpng16-16:amd64 (1.6.39-2+deb12u6) ...
+#10 10.54 Selecting previously unselected package libfreetype6:amd64.
+#10 10.54 Preparing to unpack .../21-libfreetype6_2.12.1+dfsg-5+deb12u4_amd64.deb ...
+#10 10.54 Unpacking libfreetype6:amd64 (2.12.1+dfsg-5+deb12u4) ...
+#10 10.66 Selecting previously unselected package fonts-dejavu-core.
+#10 10.66 Preparing to unpack .../22-fonts-dejavu-core_2.37-6_all.deb ...
+#10 10.66 Unpacking fonts-dejavu-core (2.37-6) ...
+#10 10.94 Selecting previously unselected package fontconfig-config.
+#10 10.95 Preparing to unpack .../23-fontconfig-config_2.14.1-4_amd64.deb ...
+#10 11.23 Unpacking fontconfig-config (2.14.1-4) ...
+#10 11.36 Selecting previously unselected package libfontconfig1:amd64.
+#10 11.36 Preparing to unpack .../24-libfontconfig1_2.14.1-4_amd64.deb ...
+#10 11.37 Unpacking libfontconfig1:amd64 (2.14.1-4) ...
+#10 11.48 Selecting previously unselected package fontconfig.
+#10 11.48 Preparing to unpack .../25-fontconfig_2.14.1-4_amd64.deb ...
+#10 11.49 Unpacking fontconfig (2.14.1-4) ...
+#10 11.66 Setting up libexpat1:amd64 (2.5.0-1+deb12u4) ...
+#10 11.67 Setting up libkeyutils1:amd64 (1.6.3-2) ...
+#10 11.67 Setting up libpsl5:amd64 (0.21.2-1) ...
+#10 11.68 Setting up libbrotli1:amd64 (1.0.9-2+b6) ...
+#10 11.69 Setting up libssl3:amd64 (3.0.22-1~deb12u1) ...
+#10 11.71 Setting up libnghttp2-14:amd64 (1.52.0-1+deb12u3) ...
+#10 11.71 Setting up libkrb5support0:amd64 (1.20.1-2+deb12u5) ...
+#10 11.72 Setting up libsasl2-modules-db:amd64 (2.1.28+dfsg-10) ...
+#10 11.72 Setting up librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2+b2) ...
+#10 11.73 Setting up xz-utils (5.4.1-1+deb12u2) ...
+#10 11.75 update-alternatives: using /usr/bin/xz to provide /usr/bin/lzma (lzma) in auto mode
+#10 11.75 update-alternatives: warning: skip creation of /usr/share/man/man1/lzma.1.gz because associated file /usr/share/man/man1/xz.1.gz (of link group lzma) doesn't exist
+#10 11.76 update-alternatives: warning: skip creation of /usr/share/man/man1/unlzma.1.gz because associated file /usr/share/man/man1/unxz.1.gz (of link group lzma) doesn't exist
+#10 11.76 update-alternatives: warning: skip creation of /usr/share/man/man1/lzcat.1.gz because associated file /usr/share/man/man1/xzcat.1.gz (of link group lzma) doesn't exist
+#10 11.76 update-alternatives: warning: skip creation of /usr/share/man/man1/lzmore.1.gz because associated file /usr/share/man/man1/xzmore.1.gz (of link group lzma) doesn't exist
+#10 11.76 update-alternatives: warning: skip creation of /usr/share/man/man1/lzless.1.gz because associated file /usr/share/man/man1/xzless.1.gz (of link group lzma) doesn't exist
+#10 11.76 update-alternatives: warning: skip creation of /usr/share/man/man1/lzdiff.1.gz because associated file /usr/share/man/man1/xzdiff.1.gz (of link group lzma) doesn't exist
+#10 11.76 update-alternatives: warning: skip creation of /usr/share/man/man1/lzcmp.1.gz because associated file /usr/share/man/man1/xzcmp.1.gz (of link group lzma) doesn't exist
+#10 11.76 update-alternatives: warning: skip creation of /usr/share/man/man1/lzgrep.1.gz because associated file /usr/share/man/man1/xzgrep.1.gz (of link group lzma) doesn't exist
+#10 11.76 update-alternatives: warning: skip creation of /usr/share/man/man1/lzegrep.1.gz because associated file /usr/share/man/man1/xzegrep.1.gz (of link group lzma) doesn't exist
+#10 11.76 update-alternatives: warning: skip creation of /usr/share/man/man1/lzfgrep.1.gz because associated file /usr/share/man/man1/xzfgrep.1.gz (of link group lzma) doesn't exist
+#10 11.77 Setting up libpng16-16:amd64 (1.6.39-2+deb12u6) ...
+#10 11.78 Setting up fonts-dejavu-core (2.37-6) ...
+#10 11.83 Setting up libk5crypto3:amd64 (1.20.1-2+deb12u5) ...
+#10 11.84 Setting up libsasl2-2:amd64 (2.1.28+dfsg-10) ...
+#10 11.85 Setting up libssh2-1:amd64 (1.10.0-3+deb12u1) ...
+#10 11.86 Setting up libkrb5-3:amd64 (1.20.1-2+deb12u5) ...
+#10 11.87 Setting up openssl (3.0.22-1~deb12u1) ...
+#10 11.88 Setting up fontconfig-config (2.14.1-4) ...
+#10 12.03 debconf: unable to initialize frontend: Dialog
+#10 12.03 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#10 12.03 debconf: falling back to frontend: Readline
+#10 12.03 debconf: unable to initialize frontend: Readline
+#10 12.03 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC contains: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.36.0 /usr/local/share/perl/5.36.0 /usr/lib/x86_64-linux-gnu/perl5/5.36 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.36 /usr/share/perl/5.36 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 7.)
+#10 12.03 debconf: falling back to frontend: Teletype
+#10 12.30 Setting up libldap-2.5-0:amd64 (2.5.13+dfsg-5) ...
+#10 12.31 Setting up ca-certificates (20250419~deb12u1) ...
+#10 12.45 debconf: unable to initialize frontend: Dialog
+#10 12.45 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#10 12.45 debconf: falling back to frontend: Readline
+#10 12.45 debconf: unable to initialize frontend: Readline
+#10 12.45 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC contains: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.36.0 /usr/local/share/perl/5.36.0 /usr/lib/x86_64-linux-gnu/perl5/5.36 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.36 /usr/share/perl/5.36 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 7.)
+#10 12.45 debconf: falling back to frontend: Teletype
+#10 13.43 Updating certificates in /etc/ssl/certs...
+#10 15.34 150 added, 0 removed; done.
+#10 15.42 Setting up libfreetype6:amd64 (2.12.1+dfsg-5+deb12u4) ...
+#10 15.42 Setting up libgssapi-krb5-2:amd64 (1.20.1-2+deb12u5) ...
+#10 15.44 Setting up libcurl4:amd64 (7.88.1-10+deb12u15) ...
+#10 15.45 Setting up curl (7.88.1-10+deb12u15) ...
+#10 15.45 Setting up libfontconfig1:amd64 (2.14.1-4) ...
+#10 15.46 Setting up fontconfig (2.14.1-4) ...
+#10 15.48 Regenerating fonts cache... done.
+#10 17.53 Processing triggers for libc-bin (2.36-9+deb12u13) ...
+#10 17.59 Processing triggers for ca-certificates (20250419~deb12u1) ...
+#10 17.60 Updating certificates in /etc/ssl/certs...
+#10 19.55 0 added, 0 removed; done.
+#10 19.55 Running hooks in /etc/ca-certificates/update.d...
+#10 19.56 done.
+#10 ...
+
+#12 [deps 4/4] RUN npm ci
+#12 9.333 npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+#12 14.55 npm warn deprecated source-map@0.8.0-beta.0: The work that was done in this beta branch won't be included in future versions
+#12 15.32 npm warn deprecated prom-client@15.1.3: prom-client has been replaced by @prometheus-io/client
+#12 ...
+
+#10 [runtime  3/10] RUN apt-get update   && apt-get install -y --no-install-recommends fontconfig ca-certificates curl xz-utils   && rm -rf /var/lib/apt/lists/*
+#10 DONE 20.0s
+
+#13 [runtime  4/10] COPY package.json package-lock.json ./
+#13 DONE 0.2s
+
+#12 [deps 4/4] RUN npm ci
+#12 ...
+
+#14 [runtime  5/10] RUN npm ci --omit=dev && npm cache clean --force
+#14 9.058 npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+#14 16.61 npm warn deprecated source-map@0.8.0-beta.0: The work that was done in this beta branch won't be included in future versions
+#14 16.62 npm warn deprecated prom-client@15.1.3: prom-client has been replaced by @prometheus-io/client
+#14 ...
+
+#12 [deps 4/4] RUN npm ci
+#12 45.53 
+#12 45.53 added 415 packages, and audited 416 packages in 44s
+#12 45.53 
+#12 45.53 75 packages are looking for funding
+#12 45.53   run `npm fund` for details
+#12 45.61 
+#12 45.61 13 vulnerabilities (4 moderate, 9 high)
+#12 45.61 
+#12 45.61 To address issues that do not require attention, run:
+#12 45.61   npm audit fix
+#12 45.61 
+#12 45.61 To address all issues (including breaking changes), run:
+#12 45.61   npm audit fix --force
+#12 45.61 
+#12 45.61 Run `npm audit` for details.
+#12 45.62 npm notice
+#12 45.62 npm notice New major version of npm available! 10.8.2 -> 12.2.0
+#12 45.62 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#12 45.62 npm notice To update run: npm install -g npm@12.2.0
+#12 45.62 npm notice
+#12 DONE 46.0s
+
+#14 [runtime  5/10] RUN npm ci --omit=dev && npm cache clean --force
+#14 40.51 
+#14 40.51 added 400 packages, and audited 401 packages in 40s
+#14 40.51 
+#14 40.51 75 packages are looking for funding
+#14 40.51   run `npm fund` for details
+#14 40.56 
+#14 40.56 13 vulnerabilities (4 moderate, 9 high)
+#14 40.56 
+#14 40.56 To address issues that do not require attention, run:
+#14 40.56   npm audit fix
+#14 40.56 
+#14 40.56 To address all issues (including breaking changes), run:
+#14 40.56   npm audit fix --force
+#14 40.56 
+#14 40.56 Run `npm audit` for details.
+#14 40.56 npm notice
+#14 40.56 npm notice New major version of npm available! 10.8.2 -> 12.2.0
+#14 40.56 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#14 40.56 npm notice To update run: npm install -g npm@12.2.0
+#14 40.56 npm notice
+#14 40.80 npm warn using --force Recommended protections disabled.
+#14 DONE 41.9s
+
+#15 [build 3/8] COPY --from=deps /app/node_modules ./node_modules
+#15 DONE 5.2s
+
+#16 [build 4/8] COPY package.json package-lock.json tsconfig.json ./
+#16 DONE 0.3s
+
+#17 [build 5/8] COPY src ./src
+#17 DONE 0.8s
+
+#18 [build 6/8] COPY scripts ./scripts
+#18 DONE 0.1s
+
+#19 [build 7/8] COPY db ./db
+#19 DONE 0.1s
+
+#20 [build 8/8] RUN npm run build
+#20 0.889 
+#20 0.889 > zuno@1.0.0 build
+#20 0.889 > npm run build:clean && tsc -p tsconfig.json && npm run build:copy-skill-manifests && npm run build:copy-remotion-assets && npm run build:copy-rendering-assets
+#20 0.889 
+#20 1.107 
+#20 1.107 > zuno@1.0.0 build:clean
+#20 1.107 > node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+#20 1.107 
+#20 47.04 
+#20 47.04 > zuno@1.0.0 build:copy-skill-manifests
+#20 47.04 > node scripts/copy-skill-manifests.mjs
+#20 47.04 
+#20 47.12 [copy-skill-manifests] 14 manifesto(s) copiado(s) para dist/skills.
+#20 47.12   - dist/skills/ana-social-publishing/skill.manifest.json
+#20 47.12   - dist/skills/bianca-social-media-design/skill.manifest.json
+#20 47.12   - dist/skills/bruno-video-script/skill.manifest.json
+#20 47.12   - dist/skills/diego-video-editing/skill.manifest.json
+#20 47.12   - dist/skills/eduardo-editorial-planning/skill.manifest.json
+#20 47.12   - dist/skills/joao-marketing-strategy/skill.manifest.json
+#20 47.12   - dist/skills/lucas-quality-review/skill.manifest.json
+#20 47.12   - dist/skills/maria-copywriting/skill.manifest.json
+#20 47.12   - dist/skills/motion-design-engine/skill.manifest.json
+#20 47.12   - dist/skills/nora-video-narration/skill.manifest.json
+#20 47.13   - dist/skills/pedro-image-generation/skill.manifest.json
+#20 47.13   - dist/skills/rafa-video-rendering/skill.manifest.json
+#20 47.13   - dist/skills/sofia-art-direction/skill.manifest.json
+#20 47.13   - dist/skills/vanessa-video-direction/skill.manifest.json
+#20 47.34 
+#20 47.34 > zuno@1.0.0 build:copy-remotion-assets
+#20 47.34 > node scripts/copy-remotion-assets.mjs
+#20 47.34 
+#20 47.42 [copy-remotion-assets] 2 arquivo(s) .jsx copiado(s) para dist/infrastructure/motion-rendering/remotion.
+#20 47.42   - dist/infrastructure/motion-rendering/remotion/MotionSceneRenderer.jsx
+#20 47.42   - dist/infrastructure/motion-rendering/remotion/Root.jsx
+#20 47.64 
+#20 47.64 > zuno@1.0.0 build:copy-rendering-assets
+#20 47.64 > node scripts/copy-rendering-assets.mjs
+#20 47.64 
+#20 47.74 [copy-rendering-assets] 2 fonte(s) .ttf copiada(s) para dist/infrastructure/rendering/assets.
+#20 47.74   - dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf
+#20 47.74   - dist/infrastructure/rendering/assets/geist-regular.ttf
+#20 47.77 npm notice
+#20 47.77 npm notice New major version of npm available! 10.8.2 -> 12.2.0
+#20 47.77 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#20 47.77 npm notice To update run: npm install -g npm@12.2.0
+#20 47.77 npm notice
+#20 DONE 47.9s
+
+#21 [runtime  6/10] COPY --from=build /app/dist ./dist
+#21 DONE 0.5s
+
+#22 [runtime  7/10] COPY --from=build /app/scripts ./scripts
+#22 DONE 0.0s
+
+#23 [runtime  8/10] COPY --from=build /app/db ./db
+#23 DONE 0.1s
+
+#24 [runtime  9/10] RUN sh ./scripts/install-ffmpeg-linux.sh /opt/vorix/ffmpeg
+#24 1.888 /tmp/tmp.Jdlwsr4WH2/ffmpeg.tar.xz: OK
+#24 7.996 FFmpeg instalado em /opt/vorix/ffmpeg/ffmpeg: ffmpeg version 7.0.2-Jellyfin Copyright (c) 2000-2024 the FFmpeg developers
+#24 DONE 8.2s
+
+#25 [runtime 10/10] RUN mkdir -p /usr/local/share/fonts/vorix /etc/fonts/conf.d   && cp ./dist/infrastructure/rendering/assets/geist-regular.ttf /usr/local/share/fonts/vorix/GeistEditorial-Regular.ttf   && cp ./dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf /usr/local/share/fonts/vorix/DMSerifDisplay-Regular.ttf   && printf '%s\n'     '<?xml version="1.0"?>'     '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">'     '<fontconfig>'     '  <dir>/usr/local/share/fonts/vorix</dir>'     '  <alias>'     '    <family>GeistEditorial</family>'     '    <prefer><family>Geist</family></prefer>'     '  </alias>'     '</fontconfig>'     > /etc/fonts/conf.d/60-vorix-geist-editorial.conf   && fc-cache -f /usr/local/share/fonts/vorix   && fc-match GeistEditorial | grep -i 'GeistEditorial-Regular.ttf'   && fc-match "DM Serif Display" | grep -i 'DMSerifDisplay-Regular.ttf'
+#25 2.284 GeistEditorial-Regular.ttf: "Geist" "Regular"
+#25 2.295 DMSerifDisplay-Regular.ttf: "DM Serif Display" "Regular"
+#25 DONE 2.3s
+
+#26 exporting to image
+#26 exporting layers
+#26 exporting layers 50.0s done
+#26 exporting manifest sha256:6995addf0cd535cde067f8034f8c472a3f1765678234833ec535b987310b7d8c done
+#26 exporting config sha256:687db4fbc9176dc249ca7d667a5df340ff682c9717b96cda74b3e53ca3418c0d done
+#26 exporting attestation manifest sha256:17df4d065efef5f00f71d9b5146b4521c70a0da6eae58a7a9a740ee1ce462257 0.0s done
+#26 exporting manifest list sha256:6b44ae61d25d1281db8916d70ad4857d9e5fe17ce67010a0b57b3e11366ff255 done
+#26 naming to docker.io/library/zuno-zuno-api:latest done
+#26 unpacking to docker.io/library/zuno-zuno-api:latest
+#26 unpacking to docker.io/library/zuno-zuno-api:latest 10.6s done
+#26 DONE 60.7s
+
+#27 resolving provenance for metadata file
+#27 DONE 0.2s
+ Image zuno-zuno-api Built 
+BUILD vorix-worker
+ Image zuno-vorix-worker Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 488B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 2.39kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.1s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:20-slim
+#5 DONE 0.1s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 125B done
+#6 DONE 0.2s
+
+#7 [deps 1/4] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#7 resolve docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 0.0s done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 106.04kB 0.2s done
+#8 DONE 0.3s
+
+#9 [deps 3/4] COPY package.json package-lock.json ./
+#9 CACHED
+
+#10 [build 8/8] RUN npm run build
+#10 CACHED
+
+#11 [deps 4/4] RUN npm ci
+#11 CACHED
+
+#12 [runtime  9/10] RUN sh ./scripts/install-ffmpeg-linux.sh /opt/vorix/ffmpeg
+#12 CACHED
+
+#13 [build 4/8] COPY package.json package-lock.json tsconfig.json ./
+#13 CACHED
+
+#14 [runtime  6/10] COPY --from=build /app/dist ./dist
+#14 CACHED
+
+#15 [runtime  3/10] RUN apt-get update   && apt-get install -y --no-install-recommends fontconfig ca-certificates curl xz-utils   && rm -rf /var/lib/apt/lists/*
+#15 CACHED
+
+#16 [runtime  5/10] RUN npm ci --omit=dev && npm cache clean --force
+#16 CACHED
+
+#17 [build 7/8] COPY db ./db
+#17 CACHED
+
+#18 [build 5/8] COPY src ./src
+#18 CACHED
+
+#19 [runtime  7/10] COPY --from=build /app/scripts ./scripts
+#19 CACHED
+
+#20 [runtime  4/10] COPY package.json package-lock.json ./
+#20 CACHED
+
+#21 [build 6/8] COPY scripts ./scripts
+#21 CACHED
+
+#22 [runtime  8/10] COPY --from=build /app/db ./db
+#22 CACHED
+
+#23 [build 3/8] COPY --from=deps /app/node_modules ./node_modules
+#23 CACHED
+
+#24 [deps 2/4] WORKDIR /app
+#24 CACHED
+
+#25 [runtime 10/10] RUN mkdir -p /usr/local/share/fonts/vorix /etc/fonts/conf.d   && cp ./dist/infrastructure/rendering/assets/geist-regular.ttf /usr/local/share/fonts/vorix/GeistEditorial-Regular.ttf   && cp ./dist/infrastructure/rendering/assets/dm-serif-display-regular.ttf /usr/local/share/fonts/vorix/DMSerifDisplay-Regular.ttf   && printf '%s\n'     '<?xml version="1.0"?>'     '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">'     '<fontconfig>'     '  <dir>/usr/local/share/fonts/vorix</dir>'     '  <alias>'     '    <family>GeistEditorial</family>'     '    <prefer><family>Geist</family></prefer>'     '  </alias>'     '</fontconfig>'     > /etc/fonts/conf.d/60-vorix-geist-editorial.conf   && fc-cache -f /usr/local/share/fonts/vorix   && fc-match GeistEditorial | grep -i 'GeistEditorial-Regular.ttf'   && fc-match "DM Serif Display" | grep -i 'DMSerifDisplay-Regular.ttf'
+#25 CACHED
+
+#26 exporting to image
+#26 exporting layers 0.0s done
+#26 exporting manifest sha256:3ab9c8832391aab1c97816b7fc9fd5849aee14347d2df0b8205e9d64e5de2d97 0.0s done
+#26 exporting config sha256:3f0f70ce3dd0a9262a7e0a44d6cb2c0a60f71510f57637baeb87ebed2906cf36 done
+#26 exporting attestation manifest sha256:02d83f18931a07f5a548fd66422fbcaa163e8ae85bc6eb5c0265fdcce8f0c2cb 0.0s done
+#26 exporting manifest list sha256:651ee9a4ce2c45393d38baa56d38c021c07da57c9db3c8bbd1998760440b6ab8 done
+#26 naming to docker.io/library/zuno-vorix-worker:latest done
+#26 unpacking to docker.io/library/zuno-vorix-worker:latest 0.0s done
+#26 DONE 0.2s
+
+#27 resolving provenance for metadata file
+#27 DONE 0.0s
+ Image zuno-vorix-worker Built 
+MIGRATIONS_BEFORE [migrate] 148 aplicada(s), 1 pendente(s).
+MIGRATIONS_AFTER [migrate] 149 aplicada(s), 0 pendente(s).
+ Container zuno-zuno-postgres-1 Running 
+ Container zuno-vorix-worker-1 Recreate 
+ Container zuno-zuno-api-1 Recreate 
+ Container zuno-vorix-worker-1 Recreated 
+ Container zuno-zuno-api-1 Recreated 
+ Container zuno-zuno-postgres-1 Waiting 
+ Container zuno-zuno-postgres-1 Waiting 
+ Container zuno-zuno-postgres-1 Healthy 
+ Container zuno-vorix-worker-1 Starting 
+ Container zuno-zuno-postgres-1 Healthy 
+ Container zuno-zuno-api-1 Starting 
+ Container zuno-vorix-worker-1 Started 
+ Container zuno-zuno-api-1 Started 
+READYZ "ready":true WEB 200 LOG_ERRORS 0
+DEPLOYED 3af6255f242823d8ebc80ddb0958e7024e62f812
+DEPLOY_DONE

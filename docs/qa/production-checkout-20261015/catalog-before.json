@@ -1,0 +1,72 @@
+{
+  "plans": [
+    {
+      "code": "START",
+      "name": "Start",
+      "tagline": "Para consultores e influenciadores",
+      "monthlyPriceUsd": 149,
+      "yearlyPriceUsd": 1490,
+      "currency": "BRL",
+      "includedUsers": 2,
+      "includedWhatsappConnections": 1,
+      "monthlyCreditsQuota": 500,
+      "highlighted": false,
+      "trialDays": 7
+    },
+    {
+      "code": "PRO",
+      "name": "Pro",
+      "tagline": "Para agências em operação",
+      "monthlyPriceUsd": 299,
+      "yearlyPriceUsd": 2990,
+      "currency": "BRL",
+      "includedUsers": 5,
+      "includedWhatsappConnections": 2,
+      "monthlyCreditsQuota": 2500,
+      "highlighted": true,
+      "trialDays": 7
+    },
+    {
+      "code": "BUSINESS",
+      "name": "Business",
+      "tagline": "Para operações multi-marca",
+      "monthlyPriceUsd": 599,
+      "yearlyPriceUsd": 5990,
+      "currency": "BRL",
+      "includedUsers": 10,
+      "includedWhatsappConnections": 5,
+      "monthlyCreditsQuota": 10000,
+      "highlighted": false,
+      "trialDays": 7
+    }
+  ],
+  "addons": [
+    {
+      "code": "extra_user",
+      "name": "+1 usuário",
+      "monthlyPriceUsd": 39,
+      "currency": "BRL",
+      "resource": "users"
+    },
+    {
+      "code": "extra_whatsapp_connection",
+      "name": "+1 conexão de WhatsApp",
+      "monthlyPriceUsd": 79,
+      "currency": "BRL",
+      "resource": "messaging_connections"
+    }
+  ],
+  "solutions": [
+    {
+      "key": "conversations",
+      "name": "Vorix Conversas",
+      "contractable": true
+    },
+    {
+      "key": "meetings",
+      "name": "Vorix Meetings",
+      "contractable": false
+    }
+  ],
+  "priceSource": "plan_versions"
+}

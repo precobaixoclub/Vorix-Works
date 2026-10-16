@@ -1,0 +1,17 @@
+{
+  "checkedAt": "2026-10-16T02:04:26.489Z",
+  "base": "https://vorixworks.com",
+  "api": "https://api.vorixworks.com",
+  "publicRoutes": "PASS",
+  "authScreens": "PASS",
+  "mobile": "PASS",
+  "configurator": "PASS",
+  "capacityHandoff": "PASS",
+  "configuredTotal": 188,
+  "suiteTotalForTwoRecordings": 402,
+  "meetingsContractable": false,
+  "anonymousCheckoutDenied": true,
+  "realCheckoutCreated": false,
+  "realPaymentExecuted": false,
+  "pageErrors": []
+}

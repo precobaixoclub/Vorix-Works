@@ -1,0 +1,10 @@
+﻿{
+  "checkedAt": "2026-10-16T02:06:09.958Z",
+  "revision": "3af6255f242823d8ebc80ddb0958e7024e62f812",
+  "migrationCount": 149,
+  "lastMigration": "0149_billing_meetings_offer_and_checkout_intents",
+  "checkout_intents": "billing_checkout_intents",
+  "authMode": "jwt",
+  "cookieSecure": true,
+  "realRecordingEnabled": false
+}

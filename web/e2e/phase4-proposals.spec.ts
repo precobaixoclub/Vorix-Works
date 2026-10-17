@@ -111,17 +111,16 @@ test("gerencia modelos dentro de Propostas", async ({ page }) => {
 });
 
 test("pagina publica e legivel e recusa com motivo", async ({ page }) => {
-  const proposal = { id: "public-phase4", title: "Proposta Mobile", status: "viewed", currency: "BRL", items: [{ name: "Implantacao", quantity: 1, unitPriceCents: 250000, subtotalCents: 250000 }], discountCents: 0, totalCents: 250000, validUntil: "2026-12-31", conditions: "Pagamento na entrega", viewCount: 2, customerName: "Cliente Mobile", customerCompany: "Empresa Mobile", issuerName: "Vorix QA", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const proposal = { id: "public-phase4", version: 1, superseded: false, declineReasons: ["Preço", "Prazo", "Outro"], subtotalCents: 250000, title: "Proposta Mobile", status: "viewed", currency: "BRL", items: [{ name: "Implantacao", quantity: 1, unitPriceCents: 250000, subtotalCents: 250000 }], discountCents: 0, totalCents: 250000, validUntil: "2026-12-31", conditions: "Pagamento na entrega", viewCount: 2, customerName: "Cliente Mobile", customerCompany: "Empresa Mobile", issuerName: "Vorix QA", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   let rejection: any;
   await page.route("**/v1/public/proposals/**", async (route) => { const path = new URL(route.request().url()).pathname; if (path.endsWith("/reject")) { rejection = route.request().postDataJSON(); proposal.status = "rejected"; } return route.fulfill({ json: { ok: true, data: proposal } }); });
   await page.goto("/p/token-phase4");
-  await expect(page.getByText("Cliente: Cliente Mobile · Empresa Mobile")).toBeVisible();
-  await page.getByRole("button", { name: "Recusar", exact: true }).click();
-  await page.getByLabel("Motivo").click();
-  await page.getByRole("option", { name: /Pre.o/, exact: true }).click();
+  await expect(page.getByText("Para Cliente Mobile · Empresa Mobile")).toBeVisible();
+  await page.getByRole("button", { name: "Recusar proposta", exact: true }).click();
+  await page.getByRole("button", { name: /Pre.o/, exact: true }).click();
   await page.getByLabel(/Coment.rio \(opcional\)/).fill("Preciso renegociar");
   await page.getByRole("button", { name: "Confirmar recusa" }).click();
-  expect(rejection).toEqual({ reason: "price", comment: "Preciso renegociar" });
+  expect(rejection).toEqual({ reason: "Preço", comment: "Preciso renegociar" });
   await expect(page.getByText(/Voc. recusou esta proposta\./)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

@@ -4,44 +4,38 @@ import { useState } from "react";
 import { Button } from "@/components/Button";
 import { Label, Textarea } from "@/components/Field";
 import { Modal } from "@/components/Modal";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useCurrentWorkspace } from "@/contexts/workspace-context";
+import { useReasons } from "@/features/sales/hooks";
+import { cn } from "@/lib/utils";
 
-const LOSS_REASONS = ["Sem orçamento", "Concorrente", "Sem timing", "Sem fit", "Não respondeu"];
+const FALLBACK_REASONS = ["Preço", "Concorrente", "Sem orçamento", "Sem retorno", "Projeto adiado", "Produto não atende", "Decisão interna", "Outro"];
 
-/** Jornada Comercial Fase 2, item 22 — motivo de perda continua obrigatório em qualquer lugar que
- * mova um negócio para "Perdido" (nunca expõe o erro de backend cru como fluxo principal). Extraído
- * do Kanban de Negócios (`deals/page.tsx`) para ser reusado também no Contact 360, que antes só
- * bloqueava a ação com um toast mandando o usuário voltar pro Kanban. */
+/** Motivo de perda obrigatório em qualquer lugar que mova uma oportunidade para "Perdido". Os
+ * motivos são os configurados pela empresa (Configurações › Regras comerciais); a observação vai
+ * separada — nunca concatenada ao motivo (senão a análise de perdas fragmentaria as categorias). */
 export function LossReasonModal({
   onClose,
   onConfirm,
   busy,
 }: {
   onClose: () => void;
-  onConfirm: (reason: string) => void | Promise<void>;
+  onConfirm: (reason: string, comment?: string) => void | Promise<void>;
   busy?: boolean;
 }) {
+  const workspace = useCurrentWorkspace();
+  const { data: reasons } = useReasons(workspace.id, "lost");
+  const options = reasons && reasons.length ? reasons.map((reason) => reason.label) : FALLBACK_REASONS;
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
-
-  async function handleConfirm() {
-    if (!reason.trim()) return;
-    const combined = notes.trim() ? `${reason.trim()} — ${notes.trim()}` : reason.trim();
-    await onConfirm(combined);
-  }
 
   return (
     <Modal title="Motivo da perda" onClose={onClose}>
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">Escolha o motivo principal. Isso alimenta o histórico comercial sem expor erro técnico ao operador.</p>
-        <div>
-          <Label htmlFor="loss-reason">Motivo</Label>
-          <Select value={reason} onValueChange={setReason}>
-            <SelectTrigger id="loss-reason"><SelectValue placeholder="Selecionar motivo" /></SelectTrigger>
-            <SelectContent>
-              {LOSS_REASONS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
-            </SelectContent>
-          </Select>
+        <p className="text-sm text-muted-foreground">Escolha o motivo principal — ele alimenta a análise de perdas.</p>
+        <div className="flex flex-wrap gap-2">
+          {options.map((item) => (
+            <button key={item} type="button" onClick={() => setReason(item)} className={cn("rounded-full border px-3 py-1.5 text-sm", reason === item ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>{item}</button>
+          ))}
         </div>
         <div>
           <Label htmlFor="loss-notes">Observação opcional</Label>
@@ -49,7 +43,7 @@ export function LossReasonModal({
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
-          <Button variant="danger" onClick={handleConfirm} loading={busy} disabled={!reason.trim()}>Confirmar perda</Button>
+          <Button variant="danger" onClick={() => onConfirm(reason, notes.trim() || undefined)} loading={busy} disabled={!reason}>Confirmar perda</Button>
         </div>
       </div>
     </Modal>

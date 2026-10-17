@@ -23,6 +23,10 @@ export const PROPOSAL_STATUS_LABEL: Record<ProposalStatus, string> = {
   accepted: "Aceita",
   rejected: "Recusada",
   expired: "Expirada",
+  pending_approval: "Aguardando aprovação",
+  approved: "Aprovada para envio",
+  cancelled: "Cancelada",
+  superseded: "Substituída",
 };
 
 export function centsFromCurrencyInput(value: string): number {

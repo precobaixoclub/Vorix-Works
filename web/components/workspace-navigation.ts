@@ -76,7 +76,10 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
       },
       {
         label: "RESULTADOS",
-        items: [{ href: "/results", label: "Relatórios", icon: "results" }],
+        items: [
+          { href: "/performance", label: "Desempenho", icon: "analytics" },
+          { href: "/results", label: "Relatórios", icon: "results" },
+        ],
       },
     ],
     backstage: [],
@@ -96,6 +99,7 @@ export const SOLUTION_NAVIGATION: Readonly<Record<SolutionKey, SolutionNavigatio
         items: [
           { href: "/tasks", label: "Tarefas", icon: "tasks" },
           { href: "/proposals", label: "Propostas", icon: "proposals" },
+          { href: "/performance", label: "Desempenho", icon: "analytics" },
         ],
       },
       {

@@ -26,6 +26,14 @@ const TRIGGER_LABEL: Record<AutomationTrigger, string> = {
   contact_created: "Contato criado",
   proposal_accepted: "Proposta aceita",
   proposal_rejected: "Proposta recusada",
+  deal_created: "Oportunidade criada",
+  deal_won: "Oportunidade ganha",
+  deal_lost: "Oportunidade perdida",
+  proposal_sent: "Proposta enviada",
+  proposal_viewed: "Proposta aberta pelo cliente",
+  approval_requested: "Aprovação comercial solicitada",
+  approval_decided: "Aprovação comercial decidida",
+  goal_reached: "Meta atingida",
 };
 
 const ACTION_LABEL: Record<AutomationActionType, string> = {

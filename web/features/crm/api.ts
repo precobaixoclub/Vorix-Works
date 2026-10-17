@@ -135,8 +135,8 @@ export function updateDeal(dealId: string, workspaceId: string, patch: Partial<O
   return apiClient.patch<Deal>(`/v1/deals/${encodeURIComponent(dealId)}`, { workspaceId, ...patch });
 }
 
-export function moveDealStage(dealId: string, workspaceId: string, stageId: string, lossReason?: string): Promise<Deal> {
-  return apiClient.post<Deal>(`/v1/deals/${encodeURIComponent(dealId)}/move-stage`, { workspaceId, stageId, lossReason });
+export function moveDealStage(dealId: string, workspaceId: string, stageId: string, lossReason?: string, lossComment?: string): Promise<Deal> {
+  return apiClient.post<Deal>(`/v1/deals/${encodeURIComponent(dealId)}/move-stage`, { workspaceId, stageId, lossReason, lossComment: lossComment || undefined });
 }
 
 export function getDealTimeline(dealId: string, workspaceId: string): Promise<TimelineEvent[]> {
@@ -184,7 +184,20 @@ export function cancelTask(taskId: string, workspaceId: string): Promise<Task> {
   return apiClient.post<Task>(`/v1/tasks/${encodeURIComponent(taskId)}/cancel`, { workspaceId });
 }
 
-export type CreateProductInput = { workspaceId: string; name: string; description?: string; priceCents: number; currency?: string };
+export type CreateProductInput = {
+  workspaceId: string;
+  name: string;
+  description?: string;
+  priceCents: number;
+  currency?: string;
+  code?: string | null;
+  category?: string | null;
+  itemType?: "product" | "service";
+  unit?: string | null;
+  billingType?: Product["billingType"];
+  costCents?: number | null;
+  minimumPriceCents?: number | null;
+};
 
 export function listProducts(workspaceId: string, params?: { search?: string; activeOnly?: boolean }): Promise<Product[]> {
   const query = new URLSearchParams({ workspaceId });
@@ -251,6 +264,8 @@ export type ProposalTemplateInput = {
   defaultItems: ReadonlyArray<{ productId?: string; name: string; quantity: number; unitPriceCents: number; subtotalCents?: number }>;
   defaultConditions?: string;
   defaultValidDays: number;
+  defaultIntroduction?: string;
+  defaultTerms?: string;
   active?: boolean;
 };
 

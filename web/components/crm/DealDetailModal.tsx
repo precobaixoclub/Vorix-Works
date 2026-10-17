@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ClipboardCheck, FileText, History, Info, MoveRight, Pencil } from "lucide-react";
+import { ClipboardCheck, FileText, Handshake, History, Info, MoveRight, Package, Pencil, RotateCcw, Trophy, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { RescheduleTaskPopover } from "@/components/crm/RescheduleTaskPopover";
@@ -24,8 +24,13 @@ import type { Contact, Deal, Pipeline, PipelineStage, Proposal, Task } from "@/f
 import type { Team } from "@/features/identity/types";
 import { formatCurrencyCents, formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { CloseDealModal, DealCockpitStats, DealNegotiation, DealOverview, DealProducts } from "@/components/sales/DealCockpit";
+import { DealProposalsPanel } from "@/components/sales/DealProposalsPanel";
+import { DealCustomFieldsBlock, DealParticipantsBlock } from "@/components/sales/DealDataBlocks";
+import { loseDeal, reopenDeal, winDeal } from "@/features/sales/api";
+import { useCompetitors, useInvalidateSales, useReasons } from "@/features/sales/hooks";
 
-type Section = "summary" | "activities" | "proposals" | "timeline";
+type Section = "overview" | "products" | "negotiation" | "summary" | "activities" | "proposals" | "timeline";
 
 export function DealDetailModal({
   open,
@@ -67,7 +72,13 @@ export function DealDetailModal({
    * Contact 360 (não faz sentido "abrir" o contato que já está aberto). */
   onOpenContact?: (contactId: string) => void;
 }) {
-  const [section, setSection] = useState<Section>("summary");
+  const [section, setSection] = useState<Section>("overview");
+  const [closing, setClosing] = useState<"won" | "lost">();
+  const invalidateSales = useInvalidateSales(workspaceId);
+  const { data: wonReasons } = useReasons(workspaceId, "won");
+  const { data: lostReasons } = useReasons(workspaceId, "lost");
+  const { data: competitors } = useCompetitors(workspaceId);
+  const status = deal?.status ?? (stages.find((item) => item.id === deal?.stageId)?.isWon ? "won" : stages.find((item) => item.id === deal?.stageId)?.isLost ? "lost" : "open");
   const [editing, setEditing] = useState(false);
   // Jornada Comercial Fase 3, item 18 — criação de tarefa a partir do negócio é SEMPRE inline
   // (nunca navega pra outra tela); `dealId` nunca é ambíguo aqui (é sempre ESTE negócio).
@@ -117,18 +128,49 @@ export function DealDetailModal({
         }
         eyebrow="Oportunidade"
         avatar={<DealAvatar title={deal.title} stage={stage} />}
-        headerExtra={<StatusBadge status={stage?.isWon ? "won" : stage?.isLost ? "lost" : "open"} />}
+        headerExtra={
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={status === "cancelled" ? "cancelled" : status} />
+            {status === "open" ? (
+              <>
+                <Button size="sm" onClick={() => setClosing("won")}><Trophy className="mr-1.5 h-4 w-4" />Ganha</Button>
+                <Button size="sm" variant="secondary" onClick={() => setClosing("lost")}><XCircle className="mr-1.5 h-4 w-4" />Perdida</Button>
+              </>
+            ) : (
+              <Button size="sm" variant="secondary" onClick={async () => {
+                try {
+                  await reopenDeal(deal.id, workspaceId);
+                  await Promise.all([invalidateSales(), onChanged()]);
+                  toast.success("Oportunidade reaberta.");
+                } catch (cause) {
+                  toast.error("Não foi possível reabrir", { description: cause instanceof Error ? cause.message : undefined });
+                }
+              }}><RotateCcw className="mr-1.5 h-4 w-4" />Reabrir</Button>
+            )}
+          </div>
+        }
         sections={[
-          { value: "summary", label: "Resumo", icon: Info },
-          { value: "activities", label: "Atividades", icon: ClipboardCheck, badge: dealTasks.length || undefined },
+          { value: "overview", label: "Visão geral", icon: Info },
+          { value: "products", label: "Produtos", icon: Package },
+          { value: "negotiation", label: "Negociação", icon: Handshake },
           { value: "proposals", label: "Propostas", icon: FileText, badge: dealProposals.length || undefined },
-          { value: "timeline", label: "Timeline", icon: History },
+          { value: "summary", label: "Dados", icon: Pencil },
+          { value: "activities", label: "Atividades", icon: ClipboardCheck, badge: dealTasks.length || undefined },
+          { value: "timeline", label: "Histórico", icon: History },
         ]}
         value={section}
         onValueChange={(value) => setSection(value as Section)}
         widthStorageKey="deal-detail-modal-width"
         defaultWidthPercent={72}
       >
+        {section === "overview" ? (
+          <div className="space-y-6">
+            <DealCockpitStats workspaceId={workspaceId} deal={deal} />
+            <DealOverview workspaceId={workspaceId} deal={deal} onGoToProducts={() => setSection("products")} onGoToNegotiation={() => setSection("negotiation")} />
+          </div>
+        ) : null}
+        {section === "products" ? <DealProducts workspaceId={workspaceId} deal={deal} /> : null}
+        {section === "negotiation" ? <DealNegotiation workspaceId={workspaceId} deal={deal} /> : null}
         {section === "summary" ? (
           <DealSummary
             deal={deal}
@@ -148,14 +190,41 @@ export function DealDetailModal({
             onCompleteTask={handleCompleteTask}
             onTaskRescheduled={onChanged}
             onViewAllTasks={() => setSection("activities")}
-            onCreateProposal={() => setCreatingProposal(true)}
+            onCreateProposal={() => setSection("proposals")}
             onOpenConversation={onOpenConversation ? () => onOpenConversation(deal) : undefined}
           />
         ) : null}
+        {section === "summary" ? (
+          <div className="mt-7 space-y-7">
+            <DealCustomFieldsBlock workspaceId={workspaceId} deal={deal} onSaved={onChanged} />
+            <DealParticipantsBlock workspaceId={workspaceId} deal={deal} />
+          </div>
+        ) : null}
         {section === "activities" ? <DealActivities tasks={dealTasks} members={members} /> : null}
-        {section === "proposals" ? <DealProposals proposals={dealProposals} onCreate={() => setCreatingProposal(true)} onOpen={setOpenProposalId} /> : null}
+        {section === "proposals" ? <DealProposalsPanel workspaceId={workspaceId} deal={deal} proposals={dealProposals} onChanged={onChanged} onMarkLost={() => setClosing("lost")} /> : null}
         {section === "timeline" ? <DealTimeline dealId={deal.id} workspaceId={workspaceId} /> : null}
       </DetailModal>
+
+      {closing ? (
+        <CloseDealModal
+          mode={closing}
+          deal={deal}
+          reasons={(closing === "won" ? wonReasons : lostReasons) ?? []}
+          competitors={competitors ?? []}
+          onClose={() => setClosing(undefined)}
+          onConfirm={async (input) => {
+            try {
+              if (closing === "won") await winDeal(deal.id, { workspaceId, wonReason: input.reason, comment: input.comment, finalValueCents: input.finalValueCents });
+              else await loseDeal(deal.id, { workspaceId, lossReason: input.reason ?? "", competitorId: input.competitorId, competitorName: input.competitorName, comment: input.comment });
+              setClosing(undefined);
+              await Promise.all([invalidateSales(), onChanged()]);
+              toast.success(closing === "won" ? "Venda registrada! 🎉" : "Oportunidade marcada como perdida.");
+            } catch (cause) {
+              toast.error("Não foi possível fechar", { description: cause instanceof Error ? cause.message : undefined });
+            }
+          }}
+        />
+      ) : null}
 
       {editing ? (
         <EditDealModal
@@ -341,26 +410,6 @@ function DealActivities({ tasks, members }: { tasks: readonly Task[]; members: r
   );
 }
 
-function DealProposals({ proposals, onCreate, onOpen }: { proposals: readonly Proposal[]; onCreate: () => void; onOpen: (id: string) => void }) {
-  return (
-    <div className="space-y-2">
-      <div className="flex justify-end"><Button size="sm" onClick={onCreate}>+ Nova proposta</Button></div>
-      {proposals.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma proposta vinculada a esta oportunidade.</p> : null}
-      {proposals.map((proposal) => (
-        <button type="button" onClick={() => onOpen(proposal.id)} key={proposal.id} className="block w-full rounded-xl border border-border/70 bg-card px-3 py-3 text-left hover:border-primary/40">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-medium text-foreground">{proposal.title}</p>
-            <StatusBadge status={proposal.status} />
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {formatCurrencyCents(proposal.totalCents, proposal.currency)} · {PROPOSAL_STATUS_LABEL[proposal.status]} · validade {formatDate(proposal.validUntil)}{proposal.viewCount ? ` · ${proposal.viewCount} visualização${proposal.viewCount === 1 ? "" : "ões"}` : ""}
-          </p>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function DealTimeline({ dealId, workspaceId }: { dealId: string; workspaceId: string }) {
   const { data, isLoading, error, mutate } = useDealTimeline(dealId, workspaceId);
   if (isLoading) return <TimelineSkeleton />;
@@ -417,7 +466,7 @@ function EditDealModal({
     try {
       await updateDeal(deal.id, workspaceId, {
         title: title.trim(),
-        valueCents: centsFromCurrencyInput(value),
+        valueCents: deal.valueMode === "calculated" ? undefined : centsFromCurrencyInput(value),
         origin: origin.trim() || undefined,
         expectedCloseDate: expectedCloseDate || undefined,
         ownerUserId: ownerUserId || undefined,
@@ -443,8 +492,8 @@ function EditDealModal({
           <Input id="edit-deal-title" value={title} onChange={(event) => setTitle(event.target.value)} />
         </div>
         <div>
-          <Label htmlFor="edit-deal-value">Valor</Label>
-          <Input id="edit-deal-value" value={value} onChange={(event) => setValue(event.target.value)} inputMode="decimal" />
+          <Label htmlFor="edit-deal-value">{deal.valueMode === "calculated" ? "Valor (calculado pelos produtos)" : "Valor"}</Label>
+          <Input id="edit-deal-value" value={value} disabled={deal.valueMode === "calculated"} onChange={(event) => setValue(event.target.value)} inputMode="decimal" />
         </div>
         <div>
           <Label htmlFor="edit-deal-origin">Origem</Label>

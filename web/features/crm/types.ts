@@ -79,8 +79,15 @@ export type PipelineStage = {
   position: number;
   isWon: boolean;
   isLost: boolean;
+  /** Sales Engine — probabilidade padrão (0–100), alerta de parada e campos exigidos para entrar. */
+  probability?: number;
+  staleAfterDays?: number;
+  requiredFields?: readonly string[];
   createdAt: string;
 };
+
+export type DealStatus = "open" | "won" | "lost" | "cancelled";
+export type ForecastCategory = "pipeline" | "best_case" | "commit" | "closed" | "omitted";
 
 export type Deal = {
   id: string;
@@ -102,6 +109,29 @@ export type Deal = {
   createdAt: string;
   updatedAt: string;
   lastStageChangedAt: string;
+  // Sales Engine (opcionais para compatibilidade com respostas antigas em cache).
+  status?: DealStatus;
+  valueMode?: "manual" | "calculated";
+  probability?: number;
+  forecastCategory?: ForecastCategory;
+  priceBookId?: string;
+  discountCents?: number;
+  contractMonths?: number;
+  customFields?: Readonly<Record<string, unknown>>;
+  closedAt?: string;
+  closedByUserId?: string;
+  creditedOwnerUserId?: string;
+  wonReason?: string;
+  closeComment?: string;
+  competitorId?: string;
+  wonProposalId?: string;
+  finalValueCents?: number;
+  finalCostCents?: number;
+  finalGrossProfitCents?: number;
+  finalMarginBp?: number;
+  finalMrrCents?: number;
+  finalArrCents?: number;
+  finalTcvCents?: number;
 };
 
 export type DealStageSummary = {
@@ -137,12 +167,26 @@ export type Product = {
   workspaceId: string;
   name: string;
   description?: string;
+  /** Preço de tabela (nome histórico). */
   priceCents: number;
   currency: string;
   active: boolean;
   createdAt: string;
   updatedAt: string;
+  listPriceCents?: number;
+  code?: string;
+  category?: string;
+  itemType?: "product" | "service";
+  unit?: string;
+  billingType?: BillingType;
+  /** Só vem para quem pode ver custo. */
+  costCents?: number;
+  minimumPriceCents?: number;
+  commissionType?: "percent" | "fixed";
+  commissionValue?: number;
 };
+
+export type BillingType = "one_time" | "monthly" | "quarterly" | "annual" | "per_unit" | "per_hour" | "custom";
 
 export type ProposalItem = {
   productId?: string;
@@ -150,9 +194,16 @@ export type ProposalItem = {
   quantity: number;
   unitPriceCents: number;
   subtotalCents: number;
+  variantId?: string;
+  description?: string;
+  billingType?: BillingType;
+  listPriceCents?: number;
+  minimumPriceCents?: number;
+  unitCostCents?: number;
+  discountCents?: number;
 };
 
-export type ProposalStatus = "draft" | "sent" | "viewed" | "accepted" | "rejected" | "expired";
+export type ProposalStatus = "draft" | "pending_approval" | "approved" | "sent" | "viewed" | "accepted" | "rejected" | "expired" | "cancelled" | "superseded";
 
 export type ProposalTemplate = {
   id: string;
@@ -163,6 +214,8 @@ export type ProposalTemplate = {
   defaultItems: readonly ProposalItem[];
   defaultConditions?: string;
   defaultValidDays: number;
+  defaultIntroduction?: string;
+  defaultTerms?: string;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -196,6 +249,18 @@ export type Proposal = {
   issuerName?: string;
   createdAt: string;
   updatedAt: string;
+  number?: string;
+  version?: number;
+  rootProposalId?: string;
+  supersededByProposalId?: string;
+  introduction?: string;
+  notes?: string;
+  terms?: string;
+  listTotalCents?: number;
+  sentChannel?: string;
+  sentByUserId?: string;
+  totalViewSeconds?: number;
+  acceptedVersion?: number;
 };
 
 export type ProposalWithToken = Proposal & { publicToken: string };
@@ -238,7 +303,7 @@ export type CommercialMetricsReport = {
   revenueByOrigin: readonly OriginRevenue[];
 };
 
-export type AutomationTrigger = "deal_stage_changed" | "contact_created" | "proposal_accepted" | "proposal_rejected";
+export type AutomationTrigger = "deal_stage_changed" | "contact_created" | "proposal_accepted" | "proposal_rejected" | "deal_created" | "deal_won" | "deal_lost" | "proposal_sent" | "proposal_viewed" | "approval_requested" | "approval_decided" | "goal_reached";
 export type AutomationConditionField = "pipelineId" | "stageId" | "origin" | "tag";
 export type AutomationActionType = "create_task" | "add_tag" | "assign_owner" | "assign_owner_least_loaded_in_team" | "move_deal_stage";
 

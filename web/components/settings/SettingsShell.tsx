@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Boxes, CreditCard, Palette, PlugZap, Settings, UsersRound, Workflow } from "lucide-react";
+import { Boxes, CreditCard, Palette, PlugZap, Scale, Settings, Target, UsersRound, Workflow } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { PageSubnav } from "@/components/PageSubnav";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -18,6 +18,8 @@ const SETTINGS_SECTIONS: ReadonlyArray<{ value: string; label: string; href: str
   { value: "integrations", label: "Integrações", href: "/connections", icon: PlugZap, group: GLOBAL_GROUP },
   { value: "billing", label: "Plano e cobrança", href: "/settings/plano", icon: CreditCard, group: GLOBAL_GROUP },
   { value: "products", label: "Produtos", href: "/settings/products", icon: Boxes, group: "Vorix Conversas", solution: "conversations" },
+  { value: "commercial", label: "Regras comerciais", href: "/settings/commercial", icon: Scale, group: "Vorix Conversas", solution: "conversations" },
+  { value: "goals", label: "Metas", href: "/settings/goals", icon: Target, group: "Vorix Conversas", solution: "conversations" },
   { value: "automations", label: "Automações", href: "/settings/automations", icon: Workflow, group: "Vorix Conversas", solution: "conversations" },
   { value: "brand", label: "Marca", href: "/knowledge", icon: Palette, group: "Vorix Marketing", solution: "marketing" },
 ];
@@ -72,6 +74,8 @@ function activeFromPath(pathname: string): string | undefined {
   if (pathname.endsWith("/connections")) return "integrations";
   if (pathname.endsWith("/settings/products")) return "products";
   if (pathname.endsWith("/settings/automations")) return "automations";
+  if (pathname.endsWith("/settings/commercial")) return "commercial";
+  if (pathname.endsWith("/settings/goals")) return "goals";
   if (pathname.endsWith("/settings/plano")) return "billing";
   if (pathname.endsWith("/settings")) return "general";
   return undefined;

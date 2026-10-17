@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -101,6 +101,8 @@ import { CrmContextSection } from "./crm-panel";
 import { CloseConversationModal, csatLabel } from "./service-settings-panel";
 import { StickerPickerButton } from "./sticker-picker";
 import { CreateOpportunityButton } from "./create-opportunity-button";
+import { ProposalMessageCard } from "./proposal-card";
+import { useConversationProposals } from "@/features/sales/hooks";
 import { InboundAlertsToggle, NewConversationModal, QuickRepliesButton, QuickRepliesModal, useInboundAlerts, useQuickReplySuggestions } from "./inbox-essentials";
 import { ConversationMediaViewer, MessageMedia } from "./message-media";
 import { InboxAvatar } from "./inbox-avatar";
@@ -1536,6 +1538,9 @@ export function ConversationTimelinePane({
     ...messages.map((message): TimelineEntry => ({ kind: "message", at: message.sentAt ?? message.createdAt, message })),
     ...events.map((event): TimelineEntry => ({ kind: "event", at: event.createdAt, event })),
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  // Sales Engine — proposta enviada pelo WhatsApp aparece como cartão junto da própria mensagem.
+  const { data: conversationProposals } = useConversationProposals(workspaceId, conversation.chatType === "group" ? undefined : conversation.id);
+  const proposalByMessage = new Map((conversationProposals ?? []).map((item) => [item.inboxMessageId, item]));
 
   // Bloco "visualizador de mídia" (pedido explícito do usuário: "navegar entre outras fotos e
   // vídeos da MESMA conversa... ordem cronológica") — `messages` já vem em ordem cronológica (ver
@@ -1904,8 +1909,8 @@ export function ConversationTimelinePane({
           ) : (
             timeline.map((entry) =>
               entry.kind === "message" ? (
+                <Fragment key={`msg-${entry.message.id}`}>
                 <MessageBubble
-                  key={`msg-${entry.message.id}`}
                   workspaceId={workspaceId}
                   conversationId={conversation.id}
                   message={entry.message}
@@ -1919,6 +1924,8 @@ export function ConversationTimelinePane({
                   onCancelScheduled={handleCancelScheduled}
                   onOpenMedia={setOpenMediaMessageId}
                 />
+                {proposalByMessage.get(entry.message.id) ? <ProposalMessageCard proposal={proposalByMessage.get(entry.message.id)!} onOpen={onOpenContext} /> : null}
+                </Fragment>
               ) : (
                 <EventPill key={`evt-${entry.event.id}`} event={entry.event} currentUserId={currentUserId} members={members} />
               ),

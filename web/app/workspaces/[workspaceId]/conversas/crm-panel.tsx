@@ -512,9 +512,9 @@ function LinkedCrmSection({
       {lossPrompt ? (
         <LossReasonModal
           onClose={() => setLossPrompt(undefined)}
-          onConfirm={async (reason) => {
+          onConfirm={async (reason, comment) => {
             if (!lossPrompt) return;
-            await moveDealStage(lossPrompt.deal.id, workspaceId, lossPrompt.stage.id, reason);
+            await moveDealStage(lossPrompt.deal.id, workspaceId, lossPrompt.stage.id, reason, comment);
             await mutateDeals();
             setLossPrompt(undefined);
           }}

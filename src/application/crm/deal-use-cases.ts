@@ -106,7 +106,7 @@ export async function updateDeal(deps: DealUseCaseDeps, input: { dealId: string;
  * Mover pra uma etapa `isLost` exige `lossReason` (auditoria, seção "nunca perdido silenciosamente");
  * mover pra uma etapa aberta comum limpa `wonAt`/`lostAt`/`lossReason` — reabrir é permitido.
  */
-export async function moveDealStage(deps: DealUseCaseDeps, input: { dealId: string; tenantId: string; workspaceId: string; targetStageId: string; lossReason?: string; actorUserId?: string }): Promise<Deal> {
+export async function moveDealStage(deps: DealUseCaseDeps, input: { dealId: string; tenantId: string; workspaceId: string; targetStageId: string; lossReason?: string; lossComment?: string; actorUserId?: string }): Promise<Deal> {
   const deal = await mustDealBelongToTenantAndWorkspace(deps, input.dealId, input.tenantId, input.workspaceId);
   const targetStage = await deps.pipelineStageRepository.getById(input.targetStageId);
   if (!targetStage || targetStage.pipelineId !== deal.pipelineId) {
@@ -133,7 +133,7 @@ export async function moveDealStage(deps: DealUseCaseDeps, input: { dealId: stri
     wonAt: targetStage.isWon ? now : null,
     lostAt: targetStage.isLost ? now : null,
   });
-  const updated = deps.sales ? await syncClosureWithStage(deps.sales, moved, targetStage, input.actorUserId, input.lossReason?.trim()) : moved;
+  const updated = deps.sales ? await syncClosureWithStage(deps.sales, moved, targetStage, input.actorUserId, input.lossReason?.trim(), input.lossComment?.trim()) : moved;
   await deps.timelineEventRepository.record({
     tenantId: deal.tenantId,
     workspaceId: deal.workspaceId,

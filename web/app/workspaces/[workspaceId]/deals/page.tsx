@@ -11,7 +11,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FilterBar } from "@/components/FilterBar";
 import { Input, Label } from "@/components/Field";
-import { Modal } from "@/components/Modal";
 import { SearchableCombo } from "@/components/SearchableCombo";
 import { TeamPicker, teamLabel } from "@/components/TeamPicker";
 import { UserPicker, userInitials, userLabel } from "@/components/UserPicker";
@@ -21,9 +20,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
-import { createDeal, moveDealStage } from "@/features/crm/api";
+import { moveDealStage } from "@/features/crm/api";
+import { QuickCreateDealModal } from "@/components/crm/QuickCreateDealModal";
 import { useContacts, useDeals, usePipelines, usePipelineStages, useProposals, useTasks } from "@/features/crm/hooks";
-import { centsFromCurrencyInput, nextPendingTask, TASK_TYPE_LABEL } from "@/features/crm/presentation";
+import { nextPendingTask, TASK_TYPE_LABEL } from "@/features/crm/presentation";
 import type { Contact, Deal, PipelineStage, Task } from "@/features/crm/types";
 import { useTeams } from "@/features/identity/hooks";
 import type { Team } from "@/features/identity/types";
@@ -151,14 +151,7 @@ function DealsView() {
   }, [mobileStageId, orderedStages]);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [title, setTitle] = useState("");
   const [contactId, setContactId] = useState(searchParams.get("contactId") ?? "");
-  const [valueReais, setValueReais] = useState("");
-  const [createOrigin, setCreateOrigin] = useState("");
-  const [createOwnerUserId, setCreateOwnerUserId] = useState("");
-  const [createTeamId, setCreateTeamId] = useState("");
-  const [expectedCloseDate, setExpectedCloseDate] = useState("");
-  const [busy, setBusy] = useState(false);
 
   const [hoveredStageId, setHoveredStageId] = useState<string | undefined>();
   const [movingDealId, setMovingDealId] = useState<string | undefined>();
@@ -185,33 +178,6 @@ function DealsView() {
     await Promise.all([mutateDeals(), mutateTasks()]);
   }
 
-  async function handleCreate() {
-    if (!pipelineId || orderedStages.length === 0) return;
-    setBusy(true);
-    try {
-      await createDeal({
-        workspaceId: workspace.id,
-        pipelineId,
-        stageId: orderedStages[0].id,
-        contactId: contactId || undefined,
-        title: title.trim(),
-        valueCents: centsFromCurrencyInput(valueReais),
-        ownerUserId: createOwnerUserId || undefined,
-        teamId: createTeamId || undefined,
-        origin: createOrigin.trim() || undefined,
-        expectedCloseDate: expectedCloseDate || undefined,
-      });
-      setCreateOpen(false);
-      resetCreateForm();
-      await refresh();
-      toast.success("Oportunidade criada.");
-    } catch (cause) {
-      toast.error("Não foi possível criar a oportunidade", { description: cause instanceof Error ? cause.message : "Tente novamente." });
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function requestMoveDeal(deal: Deal, targetStage: PipelineStage) {
     setHoveredStageId(undefined);
     if (movingDealId) return;
@@ -222,7 +188,7 @@ function DealsView() {
     void performMoveDeal(deal, targetStage);
   }
 
-  async function performMoveDeal(deal: Deal, targetStage: PipelineStage, lossReasonValue?: string) {
+  async function performMoveDeal(deal: Deal, targetStage: PipelineStage, lossReasonValue?: string, lossComment?: string) {
     const previousDeals = deals;
     const movedAt = new Date().toISOString();
     setMovingDealId(deal.id);
@@ -231,7 +197,7 @@ function DealsView() {
       { revalidate: false },
     );
     try {
-      await moveDealStage(deal.id, workspace.id, targetStage.id, lossReasonValue);
+      await moveDealStage(deal.id, workspace.id, targetStage.id, lossReasonValue, lossComment);
       await refresh();
       if (targetStage.isWon) toast.success("Oportunidade ganha 🎉");
     } catch (cause) {
@@ -265,20 +231,14 @@ function DealsView() {
     }
   }
 
-  async function confirmLossReason(reason: string) {
+  async function confirmLossReason(reason: string, comment?: string) {
     if (!lossPrompt) return;
-    await performMoveDeal(lossPrompt.deal, lossPrompt.stage, reason);
+    await performMoveDeal(lossPrompt.deal, lossPrompt.stage, reason, comment);
     setLossPrompt(undefined);
   }
 
   function resetCreateForm() {
-    setTitle("");
     setContactId("");
-    setValueReais("");
-    setCreateOrigin("");
-    setCreateOwnerUserId("");
-    setCreateTeamId("");
-    setExpectedCloseDate("");
   }
 
   function renderDeal(deal: Deal) {
@@ -440,42 +400,18 @@ function DealsView() {
       ) : null}
 
       {createOpen ? (
-        <Modal title="Nova oportunidade" onClose={() => { setCreateOpen(false); resetCreateForm(); }} maxWidthClass="sm:max-w-2xl">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <Label htmlFor="deal-title">Titulo</Label>
-              <Input id="deal-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ex.: Plano Pro anual" />
-            </div>
-            <div>
-              <Label>Contato</Label>
-              <SearchableCombo items={contactOptions} value={contactId} onValueChange={setContactId} placeholder="Selecionar contato" extraOption={{ value: "", label: "Sem contato" }} />
-            </div>
-            <div>
-              <Label htmlFor="deal-value">Valor</Label>
-              <Input id="deal-value" value={valueReais} onChange={(event) => setValueReais(event.target.value)} placeholder="0,00" inputMode="decimal" />
-            </div>
-            <div>
-              <Label>Responsável</Label>
-              <UserPicker workspaceId={workspace.id} value={createOwnerUserId} onValueChange={setCreateOwnerUserId} extraOption={{ value: "", label: "Sem responsável" }} />
-            </div>
-            <div>
-              <Label>Equipe</Label>
-              <TeamPicker workspaceId={workspace.id} value={createTeamId} onValueChange={setCreateTeamId} extraOption={{ value: "", label: "Sem equipe" }} />
-            </div>
-            <div>
-              <Label htmlFor="deal-origin">Origem</Label>
-              <Input id="deal-origin" value={createOrigin} onChange={(event) => setCreateOrigin(event.target.value)} placeholder="Ex.: whatsapp, indicação" />
-            </div>
-            <div>
-              <Label htmlFor="deal-close">Previsão de fechamento</Label>
-              <Input id="deal-close" type="date" value={expectedCloseDate} onChange={(event) => setExpectedCloseDate(event.target.value)} />
-            </div>
-          </div>
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => { setCreateOpen(false); resetCreateForm(); }} disabled={busy}>Cancelar</Button>
-            <Button onClick={handleCreate} loading={busy} disabled={!title.trim() || busy}>Criar</Button>
-          </div>
-        </Modal>
+        <QuickCreateDealModal
+          workspaceId={workspace.id}
+          contactId={contactId || undefined}
+          onClose={() => { setCreateOpen(false); resetCreateForm(); }}
+          onCreated={async (deal) => {
+            setCreateOpen(false);
+            resetCreateForm();
+            await refresh();
+            setSelectedDealId(deal.id);
+            toast.success("Oportunidade criada.");
+          }}
+        />
       ) : null}
 
       {lossPrompt ? (

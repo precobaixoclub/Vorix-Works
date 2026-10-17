@@ -637,7 +637,7 @@ export async function cancelDeal(deps: SalesEngineDeps, actor: SalesActor, input
 
 /** Chamado por `moveDealStage` (Kanban): entrar numa etapa de ganho/perda fecha com snapshot;
  * voltar para etapa aberta reabre. Mantém o status consistente com a coluna, sem segundo caminho. */
-export async function syncClosureWithStage(deps: SalesEngineDeps & { onDealWon?: DealClosedHook }, deal: Deal, stage: PipelineStage, actorUserId: string | undefined, lossReason?: string): Promise<Deal> {
+export async function syncClosureWithStage(deps: SalesEngineDeps & { onDealWon?: DealClosedHook }, deal: Deal, stage: PipelineStage, actorUserId: string | undefined, lossReason?: string, lossComment?: string): Promise<Deal> {
   if (stage.isWon && deal.status !== "won") {
     const won = await deps.dealRepository.setClosure(deal.id, await buildWonClosure(deps, deal, actorUserId, {}));
     await deps.timelineEventRepository.record({ tenantId: deal.tenantId, workspaceId: deal.workspaceId, entityType: "deal", entityId: deal.id, eventType: "deal_won", actorType: actorUserId ? "user" : "system", actorId: actorUserId, payload: { finalValueCents: won.finalValueCents, via: "stage" } });
@@ -646,7 +646,7 @@ export async function syncClosureWithStage(deps: SalesEngineDeps & { onDealWon?:
     return won;
   }
   if (stage.isLost && deal.status !== "lost") {
-    const lost = await deps.dealRepository.setClosure(deal.id, { ...REOPEN_CLOSURE, status: "lost", forecastCategory: "omitted", closedAt: new Date().toISOString(), closedByUserId: actorUserId ?? null, creditedOwnerUserId: deal.ownerUserId ?? null, creditedTeamId: deal.teamId ?? null, lossReason: lossReason ?? deal.lossReason ?? null, finalValueCents: deal.valueCents });
+    const lost = await deps.dealRepository.setClosure(deal.id, { ...REOPEN_CLOSURE, status: "lost", forecastCategory: "omitted", closedAt: new Date().toISOString(), closedByUserId: actorUserId ?? null, creditedOwnerUserId: deal.ownerUserId ?? null, creditedTeamId: deal.teamId ?? null, lossReason: lossReason ?? deal.lossReason ?? null, closeComment: lossComment || null, finalValueCents: deal.valueCents });
     await fireDealAutomation(deps, lost, "deal_lost");
     return lost;
   }

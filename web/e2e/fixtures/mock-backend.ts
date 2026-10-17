@@ -110,6 +110,7 @@ export async function mockConversasBackend(page: Page) {
         campaignIds: [], integrations: [], members: [], settings: {},
       });
     }
+    if (path === "/v1/solutions") return fulfillJson(route, { solutions: [{ key: "conversations", name: "Conversas", internal: false }] });
     if (path === "/v1/inbox/status") return fulfillJson(route, { enabled: true });
     if (path === "/v1/inbox/conversations") return fulfillJson(route, { conversations: CONVERSATIONS });
     if (path === "/v1/inbox/members") return fulfillJson(route, { members: [{ userId: "user-qa", email: "qa@vorix.dev", name: "QA Reviewer", role: "owner" }] });

@@ -61,7 +61,7 @@ const MARKETING_SEGMENTS: ReadonlySet<string> = new Set([
 /** Vorix Meetings: tudo sob `/meetings` (início, Central, gravações, detalhe). */
 const MEETINGS_SEGMENTS: ReadonlySet<string> = new Set(["meetings"]);
 
-const CONVERSATIONS_SEGMENTS: ReadonlySet<string> = new Set(["", "conversas", "kanban", "contacts", "deals", "tasks", "proposals", "results"]);
+const CONVERSATIONS_SEGMENTS: ReadonlySet<string> = new Set(["", "conversas", "kanban", "contacts", "deals", "tasks", "proposals", "results", "performance"]);
 
 /** Telas do Core (conta/workspace): não pertencem a uma solução — mantêm a que já estava ativa. */
 const CORE_SEGMENTS: ReadonlySet<string> = new Set(["settings", "connections", "onboarding"]);

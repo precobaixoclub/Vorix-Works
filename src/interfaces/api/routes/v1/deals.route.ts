@@ -91,6 +91,7 @@ const MOVE_STAGE_BODY_SCHEMA = {
     workspaceId: { type: "string", minLength: 1 },
     stageId: { type: "string", minLength: 1 },
     lossReason: { type: "string", minLength: 1, maxLength: 400 },
+    lossComment: { type: "string", maxLength: 2000 },
   },
 } as const;
 
@@ -160,9 +161,9 @@ export async function registerDealsRoutes(app: FastifyInstance, deps: DealUseCas
   app.post("/deals/:id/move-stage", { schema: { params: ID_PARAMS_SCHEMA, body: MOVE_STAGE_BODY_SCHEMA } }, async (request) => {
     const principal = requirePermission(request, "deal:manage");
     const { id } = request.params as { id: string };
-    const { workspaceId, stageId, lossReason } = request.body as { workspaceId: string; stageId: string; lossReason?: string };
+    const { workspaceId, stageId, lossReason, lossComment } = request.body as { workspaceId: string; stageId: string; lossReason?: string; lossComment?: string };
     try {
-      const deal = await moveDealStage(deps, { dealId: id, tenantId: principal.tenantId, workspaceId, targetStageId: stageId, lossReason, actorUserId: principal.userId });
+      const deal = await moveDealStage(deps, { dealId: id, tenantId: principal.tenantId, workspaceId, targetStageId: stageId, lossReason, lossComment, actorUserId: principal.userId });
       return successEnvelope(deal, request.id);
     } catch (error) {
       translateDealError(error);

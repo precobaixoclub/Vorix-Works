@@ -105,6 +105,7 @@ export default function OnboardingWizardPage() {
   }
 
   return (
+    <div className="vorix-backdrop min-h-dvh">
     <div className="mx-auto flex min-h-dvh max-w-2xl flex-col px-4 py-8 sm:py-12">
       <WizardHeader stepNumber={stepNumber} totalSteps={WIZARD_STEPS.length} onSaveAndExit={goHome} />
 
@@ -118,6 +119,7 @@ export default function OnboardingWizardPage() {
         {progress.currentStep === "brand" ? <LegacyBrandStep workspaceId={workspace.id} onAdvance={refresh} /> : null}
         {progress.currentStep === "done" ? <DoneStep progress={progress} onFinish={goHome} workspaceId={workspace.id} /> : null}
       </div>
+    </div>
     </div>
   );
 }
@@ -138,7 +140,7 @@ function WizardHeader({ stepNumber, totalSteps, onSaveAndExit }: { stepNumber: n
         </div>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${percent}%` }} />
+        <div className="h-full rounded-full bg-primary shadow-[var(--shadow-glow-primary)] transition-all" style={{ width: `${percent}%` }} />
       </div>
       <div className="mt-3 hidden grid-cols-4 gap-2 text-[11px] font-medium text-muted-foreground sm:grid">
         {["Empresa", "Canal", "Equipe", "Comercial"].map((label, index) => (
@@ -151,10 +153,10 @@ function WizardHeader({ stepNumber, totalSteps, onSaveAndExit }: { stepNumber: n
 
 function StepCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden shadow-[var(--shadow-md)]">
       <CardBody className="space-y-5 p-6 sm:p-7">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">{title}</h1>
+          <h1 className="vorix-display text-2xl font-semibold text-foreground">{title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         </div>
         {children}

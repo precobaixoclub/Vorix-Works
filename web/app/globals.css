@@ -75,8 +75,38 @@
   --color-chart-5: hsl(var(--chart-5));
   --color-chart-6: hsl(var(--chart-6));
 
+  /* Vorix Design System 2.0 — hierarquia de superfícies, texto, acento por solução, IA, glow,
+   * sombra, raio e movimento. Valores crus em `:root`/`.dark`; aqui só o mapeamento p/ utilitários. */
+  --color-surface-1: hsl(var(--surface-1));
+  --color-surface-2: hsl(var(--surface-2));
+  --color-surface-3: hsl(var(--surface-3));
+  --color-surface-elevated: hsl(var(--surface-elevated));
+  --color-text-secondary: hsl(var(--text-secondary));
+  --color-text-disabled: hsl(var(--text-disabled));
+  --color-solution: hsl(var(--solution-accent));
+  --color-solution-foreground: hsl(var(--solution-accent-foreground));
+  --color-meetings: hsl(var(--meetings));
+  --color-info: hsl(var(--info));
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
   --radius-lg: 0.625rem;
   --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+
+  --shadow-xs: 0 1px 2px hsl(var(--shadow-color) / 0.25);
+  --shadow-sm: 0 2px 8px hsl(var(--shadow-color) / 0.28);
+  --shadow-md: 0 10px 30px -8px hsl(var(--shadow-color) / 0.45);
+  --shadow-lg: 0 24px 60px -12px hsl(var(--shadow-color) / 0.6);
+  --shadow-glow-primary: 0 4px 22px hsl(var(--primary) / 0.22);
+  --shadow-glow-ai: 0 4px 24px hsl(var(--ai) / 0.22);
+  --shadow-glow-solution: 0 4px 22px hsl(var(--solution-accent) / 0.2);
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 320ms;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-display: "Instrument Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -134,6 +164,18 @@
 
   /* Paleta de gráficos (claro) — chart-1 segue a marca (`--primary`); 2-6 são os tons 500 padrão
    * do vocabulário fechado (emerald/sky/violet/amber/rose), mesmas cores usadas em `HubAccent`. */
+  --surface-1: 0 0% 100%;
+  --surface-2: 240 14% 97%;
+  --surface-3: 240 12% 94%;
+  --surface-elevated: 0 0% 100%;
+  --text-secondary: 240 6% 32%;
+  --text-disabled: 240 5% 66%;
+  --meetings: 258 86% 58%;
+  --info: 214 90% 52%;
+  --solution-accent: var(--primary);
+  --solution-accent-foreground: var(--primary-foreground);
+  --shadow-color: 240 20% 40%;
+
   --chart-1: var(--primary);
   --chart-2: 160 84% 39%;
   --chart-3: 199 89% 48%;
@@ -143,58 +185,88 @@
 }
 
 .dark {
-  --primary: 81 61% 26%;
-  --primary-glow: 77 66% 61%;
-  --primary-foreground: 0 0% 100%;
-  --ai: 258 92% 72%;
-  --ai-glow: 202 100% 70%;
-  --ai-foreground: 240 9% 7%;
-  --ai-soft: 258 65% 16%;
+  /* Verde Vorix sólido (mesmo do site/CTA) com tinta escura — CTA primário, ativo, positivo. */
+  --primary: 79 67% 57%;
+  --primary-glow: 79 70% 64%;
+  --primary-foreground: 81 69% 6%;
+  /* IA e Meetings: violeta → azul elétrico (mesmos tons do site). */
+  --ai: 254 100% 81%;
+  --ai-glow: 215 100% 73%;
+  --ai-foreground: 248 40% 10%;
+  --ai-soft: 250 45% 14%;
+  --meetings: 254 100% 81%;
+  --info: 215 100% 73%;
 
-  --background: 225 24% 7%;
-  --foreground: 240 13% 95%;
+  /* Superfícies: grafite/preto azulado, nunca preto puro. */
+  --background: 222 36% 5%;
+  --foreground: 216 38% 97%;
+  --surface-1: 221 33% 9%;
+  --surface-2: 219 31% 12%;
+  --surface-3: 218 26% 16%;
+  --surface-elevated: 219 30% 13%;
 
-  --card: 225 18% 11%;
-  --card-foreground: 240 13% 95%;
+  --card: 221 33% 9%;
+  --card-foreground: 216 38% 97%;
 
-  --popover: 225 18% 11%;
-  --popover-foreground: 240 13% 95%;
+  --popover: 219 30% 13%;
+  --popover-foreground: 216 38% 97%;
 
-  --secondary: 225 16% 14%;
-  --secondary-foreground: 240 13% 95%;
+  --secondary: 219 31% 12%;
+  --secondary-foreground: 216 38% 97%;
 
-  --muted: 225 16% 14%;
-  --muted-foreground: 240 6% 67%;
+  --muted: 219 28% 14%;
+  /* Texto: primário / secundário / muted / desabilitado — contraste AA sobre surface-1. */
+  --muted-foreground: 215 17% 70%;
+  --text-secondary: 215 22% 82%;
+  --text-disabled: 216 12% 45%;
 
-  --accent: 225 16% 14%;
-  --accent-foreground: 240 13% 95%;
+  --accent: 219 28% 16%;
+  --accent-foreground: 216 38% 97%;
 
-  --success: 137 59% 64%;
-  --success-foreground: 240 9% 7%;
-  --warning: 42 71% 66%;
-  --warning-foreground: 240 9% 7%;
-  --destructive: 2 76% 66%;
-  --destructive-foreground: 240 9% 7%;
+  --success: 145 58% 58%;
+  --success-foreground: 150 60% 7%;
+  --warning: 40 92% 64%;
+  --warning-foreground: 35 70% 8%;
+  --destructive: 4 100% 68%;
+  --destructive-foreground: 0 60% 8%;
 
-  --border: 225 13% 20%;
-  --input: 225 13% 20%;
-  --ring: 77 66% 61%;
+  /* Bordas finas e discretas. */
+  --border: 215 23% 19%;
+  --input: 215 22% 22%;
+  --ring: 79 67% 57%;
 
-  --ink-faint: 240 5% 46%;
+  --ink-faint: 216 12% 50%;
   --brand: 79 67% 57%;
-  --accent-hover: 78 71% 70%;
-  --accent-soft: 84 32% 15%;
+  --accent-hover: 79 70% 64%;
+  --accent-soft: 80 40% 13%;
 
-  /* Paleta de gráficos (escuro) — chart-1 usa `--primary-glow` (verde sólido de 26% de
-   * luminosidade some no fundo escuro, mesmo motivo do `dark:bg-primary-glow` do resto do
-   * sistema); 2-6 usam os tons 400 (mais claros que o light, mesma lógica de `--success`/
-   * `--warning`/`--destructive` acima). */
-  --chart-1: var(--primary-glow);
+  --solution-accent: var(--primary);
+  --solution-accent-foreground: var(--primary-foreground);
+  --shadow-color: 225 60% 2%;
+
+  --chart-1: var(--primary);
   --chart-2: 158 64% 52%;
-  --chart-3: 199 89% 64%;
-  --chart-4: 255 92% 76%;
+  --chart-3: 215 100% 73%;
+  --chart-4: 254 100% 81%;
   --chart-5: 43 96% 63%;
   --chart-6: 351 95% 71%;
+}
+
+/* Sotaque por solução — mesma marca, só o acento muda (Conversas verde · Meetings violeta/azul). */
+[data-solution="meetings"] {
+  /* No Meetings o CTA primário, o foco e o ativo seguem o violeta (sucesso continua verde em
+   * --success; a marca Vorix — logo — continua verde). */
+  --primary: var(--meetings);
+  --primary-glow: var(--ai-glow);
+  --primary-foreground: 0 0% 100%;
+  --solution-accent: var(--meetings);
+  --solution-accent-foreground: 0 0% 100%;
+  --ring: var(--meetings);
+}
+.dark[data-solution="meetings"],
+.dark [data-solution="meetings"] {
+  --primary-foreground: var(--ai-foreground);
+  --solution-accent-foreground: var(--ai-foreground);
 }
 
 /* Escala tipográfica reduzida do painel — só dentro do shell (`.app-shell`), páginas públicas
@@ -237,3 +309,49 @@ svg {
 ::selection {
   background: var(--color-accent-soft);
 }
+
+/* ---------------------------------------------------------------------------------------------
+ * Vorix Design System 2.0 — utilitários de identidade. Uso pontual (nunca em toda superfície):
+ * fundo decorado em login/home/empty states, superfície de IA, glass só em topbar/popovers.
+ * ------------------------------------------------------------------------------------------- */
+.vorix-backdrop {
+  background-color: hsl(var(--background));
+  background-image:
+    radial-gradient(ellipse 60% 45% at 85% 0%, hsl(var(--solution-accent) / 0.09), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 0% 100%, hsl(var(--ai-glow) / 0.06), transparent 60%);
+}
+.vorix-grid {
+  background-image: linear-gradient(hsl(var(--border) / 0.5) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--border) / 0.5) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at center, black 20%, transparent 75%);
+}
+.vorix-glass {
+  background: hsl(var(--background) / 0.78);
+  backdrop-filter: saturate(140%) blur(12px);
+}
+.vorix-ai-surface {
+  position: relative;
+  background:
+    linear-gradient(135deg, hsl(var(--ai) / 0.09), hsl(var(--ai-glow) / 0.05)) padding-box,
+    linear-gradient(135deg, hsl(var(--ai) / 0.45), hsl(var(--ai-glow) / 0.25)) border-box;
+  border: 1px solid transparent;
+}
+.vorix-ai-text {
+  background: linear-gradient(100deg, hsl(var(--ai)), hsl(var(--ai-glow)));
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+.vorix-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+/* Shimmer discreto p/ "IA analisando/gerando" — sem spinner genérico. */
+@keyframes vorix-ai-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.vorix-ai-shimmer {
+  background: linear-gradient(90deg, hsl(var(--ai) / 0.08) 25%, hsl(var(--ai-glow) / 0.22) 50%, hsl(var(--ai) / 0.08) 75%);
+  background-size: 200% 100%;
+  animation: vorix-ai-shimmer 1.6s var(--ease-standard) infinite;
+}
+@keyframes vorix-live { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.vorix-live-dot { animation: vorix-live 2s ease-in-out infinite; }

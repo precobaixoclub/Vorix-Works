@@ -50,7 +50,7 @@ export function BriefingPanel({
                 <li
                   key={field.fieldKey}
                   className={`rounded-full px-2.5 py-1 text-xs ${
-                    field.requiresConfirmation && !field.confirmedByUser ? "bg-amber-100 text-amber-900" : "bg-surface-sunken text-ink"
+                    field.requiresConfirmation && !field.confirmedByUser ? "bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200" : "bg-surface-sunken text-ink"
                   }`}
                 >
                   <span className="font-medium">{field.label}:</span> {field.value}

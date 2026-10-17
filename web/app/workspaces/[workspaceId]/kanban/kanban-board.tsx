@@ -16,7 +16,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Clock, Pin, Plus, Settings2, X } from "lucide-react";
+import { Clock, KanbanSquare, Pin, Plus, Settings2, X } from "lucide-react";
 import { Button } from "@/components/Button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Dialog, DialogClose, DialogOverlay, DialogPortal, DialogTitle } from "@/components/ui/dialog";
@@ -328,7 +328,7 @@ export function KanbanBoard({ workspaceId, teamId, teams }: { workspaceId: strin
   if (phases.length === 0) {
     return (
       <EmptyState
-        icon={<span aria-hidden="true">🗂️</span>}
+        icon={<KanbanSquare className="h-5 w-5" />}
         title="Sem fases configuradas"
         description="Esta equipe ainda não tem fases no quadro. Configure as colunas para começar."
         action={

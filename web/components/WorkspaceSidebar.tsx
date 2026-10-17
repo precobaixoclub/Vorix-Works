@@ -45,11 +45,11 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
         aria-current={isActive ? "page" : undefined}
         aria-label={collapsed ? item.label : undefined}
         className={cn(
-          "group flex h-8 w-full min-w-0 items-center gap-2 rounded-md text-[13px] font-medium transition-colors duration-150 active:bg-muted/70",
+          "group relative flex h-8 w-full min-w-0 items-center gap-2.5 rounded-md text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
           collapsed ? "justify-center px-0" : "px-2.5",
           isActive
-            ? "bg-primary/10 text-primary ring-1 ring-primary/15 dark:text-primary-glow dark:ring-primary-glow/20"
-            : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+            ? "bg-solution/10 text-foreground before:absolute before:left-0 before:top-1.5 before:h-5 before:w-[3px] before:rounded-full before:bg-solution [&_svg]:text-solution"
+            : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
         )}
       >
         <NavIcon id={item.icon} className="h-4 w-4 shrink-0" />
@@ -69,7 +69,7 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
   return (
     <nav
       className={cn(
-        "app-shell sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-border bg-card/95 py-3 transition-[width] duration-150 md:flex",
+        "app-shell sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-border/70 bg-surface-1 bg-gradient-to-b from-solution/[0.05] via-transparent to-transparent py-3 transition-[width] duration-200 ease-[var(--ease-standard)] md:flex",
         collapsed ? "w-16 px-2" : "w-[264px] px-3",
       )}
     >
@@ -82,7 +82,7 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
               <Link
                 href={`${base}${navigation.primaryAction.href}`}
                 aria-label={navigation.primaryAction.label}
-                className="mb-3 flex h-9 w-full items-center justify-center rounded-md bg-primary text-primary-foreground shadow-none transition-colors hover:bg-primary/85 active:bg-primary/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 dark:bg-primary-glow dark:text-background dark:hover:bg-primary-glow/90"
+                className="mb-3 flex h-9 w-full items-center justify-center rounded-md bg-solution text-solution-foreground transition-[background-color,box-shadow] hover:bg-solution/90 hover:shadow-[var(--shadow-glow-solution)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
               >
                 <NavIcon id={navigation.primaryAction.icon} className="h-4 w-4" />
               </Link>
@@ -92,7 +92,7 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
         ) : (
           <Link
             href={`${base}${navigation.primaryAction.href}`}
-            className="mb-3 flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-none transition-colors hover:bg-primary/85 active:bg-primary/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 dark:bg-primary-glow dark:text-background dark:hover:bg-primary-glow/90"
+            className="mb-3 flex h-9 w-full items-center justify-center gap-2 rounded-md bg-solution px-3 text-sm font-semibold text-solution-foreground transition-[background-color,box-shadow] hover:bg-solution/90 hover:shadow-[var(--shadow-glow-solution)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
           >
             <NavIcon id={navigation.primaryAction.icon} className="h-4 w-4" />
             <span>{navigation.primaryAction.cta}</span>
@@ -106,13 +106,13 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
         {navigation.sections.map((section) => (
           <div key={section.label} className="flex flex-col gap-1">
             {!collapsed ? (
-              <p className="px-2.5 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/65">{section.label}</p>
+              <p className="px-2.5 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-disabled">{section.label}</p>
             ) : null}
             {section.items.map(renderLink)}
           </div>
         ))}
 
-        <div className="mt-1 border-t border-border pt-3">{SETTINGS_NAV.map(renderLink)}</div>
+        <div className="mt-1 border-t border-border/70 pt-3">{SETTINGS_NAV.map(renderLink)}</div>
 
         {canSeeBackstage ? (
           <div className="mt-1 border-t border-border pt-3">
@@ -132,7 +132,7 @@ export function WorkspaceSidebar({ workspaceId }: { workspaceId: string }) {
         ) : null}
       </div>
 
-      <div className={cn("mt-2 border-t border-border pt-2", collapsed ? "flex justify-center" : "flex justify-end")}>
+      <div className={cn("mt-2 border-t border-border/70 pt-2", collapsed ? "flex justify-center" : "flex justify-end")}>
         <Tooltip delayDuration={200}>
           <TooltipTrigger asChild>
             <button

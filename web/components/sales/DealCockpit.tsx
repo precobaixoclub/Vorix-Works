@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock, Sparkles, Target, Trash2, TrendingUp } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Target, Trash2, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/Button";
 import { DetailBlock } from "@/components/DetailModal";
@@ -21,6 +21,7 @@ import { priceFromDiscount } from "@/features/sales/preview";
 import type { DealAiInsights, DealCommercialSummary, DealItem } from "@/features/sales/types";
 import { formatCurrencyCents, formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { AIInsightCard, AiLoading, VorixAiIcon } from "@/components/vorix/ai";
 
 const errorMessage = (cause: unknown) => (cause instanceof Error ? cause.message : "Tente novamente.");
 
@@ -170,7 +171,7 @@ function GoalAndInsights({ workspaceId, deal, summary }: { workspaceId: string; 
 
       <DetailBlock
         label="Inteligência comercial"
-        action={insights?.aiAvailable && deal.status === "open" ? <Button variant="ghost" size="sm" onClick={handleGenerate} loading={generating}><Sparkles className="mr-1.5 h-4 w-4" />{ai ? "Atualizar análise" : "Analisar com IA"}</Button> : undefined}
+        action={insights?.aiAvailable && deal.status === "open" ? <Button variant="ai" size="sm" onClick={handleGenerate} disabled={generating}><VorixAiIcon className="h-4 w-4 text-current" />{ai ? "Atualizar análise" : "Analisar com IA"}</Button> : undefined}
       >
         <div className="space-y-3">
           {insights?.risks.length ? (
@@ -184,14 +185,13 @@ function GoalAndInsights({ workspaceId, deal, summary }: { workspaceId: string; 
             </ul>
           ) : <p className="flex items-center gap-2 text-sm text-muted-foreground"><CheckCircle2 className="h-4 w-4 text-emerald-500" /> Nenhum risco identificado nos dados.</p>}
           {insights?.explanations.length ? <ul className="space-y-1 text-sm text-muted-foreground">{insights.explanations.map((text) => <li key={text} className="flex gap-2"><TrendingUp className="mt-0.5 h-4 w-4 shrink-0" />{text}</li>)}</ul> : null}
-          {ai ? (
-            <div className="space-y-2 rounded-xl border border-ai/30 bg-ai-soft p-3 dark:bg-ai/10">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-ai">Análise de IA · {formatDateTime(ai.generatedAt)}</p>
-              {ai.summary ? <p className="text-sm text-foreground">{ai.summary}</p> : <p className="text-sm text-muted-foreground">Sem dados suficientes para um resumo confiável.</p>}
-              {ai.risks.map((risk) => <p key={risk.title} className="text-sm"><span className="font-medium">Risco:</span> {risk.title} <span className="text-xs italic text-muted-foreground">“{risk.evidence}”</span></p>)}
-              {ai.nextActions.map((action) => <p key={action.title} className="text-sm"><span className="font-medium">Sugestão:</span> {action.title} — <span className="text-muted-foreground">{action.rationale}</span></p>)}
-              <p className="text-[11px] text-muted-foreground">Sugestões da IA nunca são executadas sozinhas; números vêm do sistema.</p>
-            </div>
+          {generating ? <AiLoading kind="analyzing" detail="conversa, propostas e atividades" /> : null}
+          {ai && !generating ? (
+            <AIInsightCard title="Análise da oportunidade" meta={formatDateTime(ai.generatedAt)} footnote="Sugestões da IA nunca são executadas sozinhas; os números vêm do sistema.">
+              {ai.summary ? <p className="text-foreground">{ai.summary}</p> : <p className="text-muted-foreground">Sem dados suficientes para um resumo confiável.</p>}
+              {ai.risks.map((risk) => <p key={risk.title}><span className="font-medium text-foreground">Risco:</span> {risk.title} <span className="text-xs italic text-muted-foreground">“{risk.evidence}”</span></p>)}
+              {ai.nextActions.map((action) => <p key={action.title}><span className="font-medium text-foreground">Sugestão:</span> {action.title} — <span className="text-muted-foreground">{action.rationale}</span></p>)}
+            </AIInsightCard>
           ) : null}
         </div>
       </DetailBlock>

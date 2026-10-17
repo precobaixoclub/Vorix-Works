@@ -173,6 +173,16 @@ export function isBackstagePath(pathname: string, base: string): boolean {
 
 /** Rótulos de breadcrumb SÓ das soluções a que a conta tem acesso — uma URL do Marketing aberta
  * por quem não tem a solução não ganha nem o nome da tela no breadcrumb. */
+const SETTINGS_SUBPAGE_LABELS: Record<string, string> = {
+  users: "Usuários",
+  teams: "Equipes",
+  plano: "Plano e cobrança",
+  products: "Produtos",
+  commercial: "Regras comerciais",
+  goals: "Metas",
+  automations: "Automações",
+};
+
 export function buildRouteLabels(base: string, available: readonly SolutionKey[]): Record<string, string> {
   const labels: Record<string, string> = {};
   const add = (item: WorkspaceNavItem) => {
@@ -186,5 +196,7 @@ export function buildRouteLabels(base: string, available: readonly SolutionKey[]
     navigation.backstage.forEach(add);
   }
   SETTINGS_NAV.forEach(add);
+  // Subpáginas de configurações não estão na sidebar — sem isto o breadcrumb mostraria o slug ("Users").
+  for (const [slug, label] of Object.entries(SETTINGS_SUBPAGE_LABELS)) labels[`${base}/settings/${slug}`] ??= label;
   return labels;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, MessagesSquare, Video } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Logo } from "@/components/Logo";
@@ -27,13 +27,17 @@ export function SolutionSwitcher({ workspaceBase, active, solutions, collapsed }
       {!collapsed ? (
         <div className="min-w-0 flex-1 text-left">
           <p className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Vorix</p>
-          <p className="truncate text-sm font-semibold text-foreground" data-testid="active-solution-name">{SOLUTION_SHORT_NAME[active]}</p>
+          <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-foreground" data-testid="active-solution-name">
+            <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-solution shadow-[var(--shadow-glow-solution)]" />
+            {SOLUTION_SHORT_NAME[active]}
+          </p>
         </div>
       ) : null}
     </>
   );
 
   const className = cn("mb-3 flex w-full min-w-0 items-center gap-2 rounded-lg py-1.5 text-foreground", collapsed ? "justify-center px-0" : "px-2");
+  const icon = (key: SolutionKey) => (key === "meetings" ? <Video className="h-4 w-4" /> : <MessagesSquare className="h-4 w-4" />);
 
   if (!canSwitch) {
     return (
@@ -46,7 +50,7 @@ export function SolutionSwitcher({ workspaceBase, active, solutions, collapsed }
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" className={cn(className, "transition-colors hover:bg-muted/70")} aria-label={`Solução ativa: Vorix ${SOLUTION_SHORT_NAME[active]}. Trocar de solução`} data-testid="solution-switcher">
+        <button type="button" className={cn(className, "border border-transparent transition-colors hover:border-border/70 hover:bg-surface-2")} aria-label={`Solução ativa: Vorix ${SOLUTION_SHORT_NAME[active]}. Trocar de solução`} data-testid="solution-switcher">
           {label}
           {!collapsed ? <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
         </button>
@@ -61,17 +65,19 @@ export function SolutionSwitcher({ workspaceBase, active, solutions, collapsed }
               setOpen(false);
               router.push(`${workspaceBase}${SOLUTION_HOME_PATH[solution.key]}`);
             }}
+            data-solution={solution.key}
             className={cn(
-              "flex h-9 w-full items-center justify-between gap-2 rounded-md px-2 text-sm transition-colors hover:bg-muted/70",
-              solution.key === active ? "font-semibold text-foreground" : "text-muted-foreground",
+              "flex h-10 w-full items-center justify-between gap-2 rounded-md px-2 text-sm transition-colors hover:bg-surface-2",
+              solution.key === active ? "bg-solution/10 font-semibold text-foreground" : "text-muted-foreground",
             )}
             data-testid={`solution-option-${solution.key}`}
           >
             <span className="flex min-w-0 items-center gap-2">
-              <span className="truncate">{SOLUTION_SHORT_NAME[solution.key]}</span>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-solution/25 bg-solution/10 text-solution">{icon(solution.key)}</span>
+              <span className="truncate">Vorix {SOLUTION_SHORT_NAME[solution.key]}</span>
               {solution.internal ? <span className="rounded border border-border px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Interno</span> : null}
             </span>
-            {solution.key === active ? <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" /> : null}
+            {solution.key === active ? <Check className="h-4 w-4 shrink-0 text-solution" aria-hidden="true" /> : null}
           </button>
         ))}
       </PopoverContent>

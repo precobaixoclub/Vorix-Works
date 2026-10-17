@@ -1,4 +1,5 @@
 import { type ReactNode } from 'react';
+import { MetricCard } from "@/components/vorix/cards";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
@@ -79,29 +80,9 @@ interface KpiCardProps {
   icon?: ReactNode;
 }
 
+/** Mesmo padrão do `MetricCard` (Vorix DS 2.0) — mantido com a API antiga p/ não mexer nas telas. */
 export function KpiCard({ label, value, hint, accent = 'default', icon }: KpiCardProps) {
-  return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {label}
-          </p>
-          {icon && <span className="text-muted-foreground">{icon}</span>}
-        </div>
-        <p
-          className={cn(
-            'mt-2 text-2xl font-bold tabular-nums tracking-tight',
-            accent === 'positive' && 'text-emerald-600 dark:text-primary-glow',
-            accent === 'negative' && 'text-destructive',
-          )}
-        >
-          {value}
-        </p>
-        {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
-      </CardContent>
-    </Card>
-  );
+  return <MetricCard label={label} value={value} hint={hint} icon={icon} accent={accent === 'positive' ? 'positive' : accent === 'negative' ? 'negative' : 'neutral'} />;
 }
 
 interface ChartCardProps {
@@ -148,11 +129,11 @@ export function ChartCard({
   );
 }
 
-/** Loading padrão do projeto (spinner), na altura do bloco. */
+/** Loading padrão (Vorix DS 2.0): skeleton na altura do bloco — nunca spinner grande. */
 export function DashboardLoading({ height = 280 }: { height?: number }) {
   return (
-    <div className="flex items-center justify-center" style={{ height }}>
-      <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full" />
+    <div className="flex flex-col justify-end gap-2 p-1" style={{ height }} aria-busy="true" aria-label="Carregando">
+      {[55, 80, 40, 95, 70].map((width) => <div key={width} className="h-3 animate-pulse rounded bg-muted" style={{ width: `${width}%` }} />)}
     </div>
   );
 }

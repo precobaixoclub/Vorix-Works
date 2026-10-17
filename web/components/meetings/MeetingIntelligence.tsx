@@ -291,7 +291,7 @@ export function FollowUpPanel({ workspaceId, meetingId, insights, hasAnalysis, c
           <Label htmlFor="follow-up-recipient">Para quem (opcional)</Label>
           <Input id="follow-up-recipient" value={recipientName} onChange={(event) => setRecipientName(event.target.value)} placeholder="Nome do cliente" maxLength={80} />
         </div>
-        <Button onClick={() => void generate()} loading={busy} disabled={busy || !hasAnalysis || !canAct || !insights.aiAvailable}><Sparkles className="h-4 w-4" /> {draft ? "Gerar de novo" : "Gerar follow-up"}</Button>
+        <Button variant="ai" onClick={() => void generate()} loading={busy} disabled={busy || !hasAnalysis || !canAct || !insights.aiAvailable}><Sparkles className="h-4 w-4" /> {draft ? "Gerar de novo" : "Gerar follow-up"}</Button>
       </div>
       {draft ? (
         <div className="grid gap-4 lg:grid-cols-2">

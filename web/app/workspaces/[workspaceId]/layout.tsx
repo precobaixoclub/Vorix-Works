@@ -12,7 +12,7 @@ import { WorkspaceReadOnlyBanner } from "@/components/WorkspaceReadOnlyBanner";
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { WorkspaceTopBar } from "@/components/WorkspaceTopBar";
 import { canUseBackstage, isBackstagePath as isBackstageRoute } from "@/components/workspace-navigation";
-import { useSolutions } from "@/features/solutions/hooks";
+import { useActiveSolution, useSolutions } from "@/features/solutions/hooks";
 import { isRouteBlocked, routeOwner, SOLUTION_HOME_PATH } from "@/lib/solutions";
 import { useAuth } from "@/contexts/auth-context";
 import { SidebarProvider } from "@/contexts/sidebar-context";
@@ -45,6 +45,13 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   // Conta sem Conversas (ex.: só Meetings): a home do workspace é do Conversas, então vai para a
   // home da primeira solução disponível. Hook antes de qualquer return antecipado.
   const homeBase = `/workspaces/${params.workspaceId}`;
+  // Vorix DS 2.0 — acento da solução ativa (Conversas verde · Meetings violeta) em toda a área.
+  const { active: activeSolution } = useActiveSolution(pathname, homeBase);
+  // Também no <html>: popovers/modais (portais do Radix) ficam fora deste layout e precisam herdar o acento.
+  useEffect(() => {
+    document.documentElement.dataset.solution = activeSolution;
+    return () => { delete document.documentElement.dataset.solution; };
+  }, [activeSolution]);
   const shouldLeaveHome = !solutionsLoading && pathname === homeBase && availableSolutions.length > 0 && !availableSolutions.includes("conversations");
   useEffect(() => {
     if (shouldLeaveHome) router.replace(`${homeBase}${SOLUTION_HOME_PATH[availableSolutions[0]!]}`);
@@ -124,7 +131,7 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   return (
     <WorkspaceProvider workspace={workspace}>
       <SidebarProvider>
-        <div className="flex min-h-dvh min-w-0 flex-col md:flex-row">
+        <div data-solution={activeSolution} className="flex min-h-dvh min-w-0 flex-col bg-background md:flex-row">
           <WorkspaceSidebar workspaceId={workspace.id} />
           <div
             className={

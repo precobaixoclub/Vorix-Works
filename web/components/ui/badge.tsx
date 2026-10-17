@@ -4,17 +4,21 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring/40",
   {
     variants: {
       variant: {
         default:
-          "border-transparent bg-primary text-primary-foreground hover:bg-primary/80",
+          "border-primary/25 bg-primary/12 text-primary dark:text-primary",
         secondary:
           "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
         destructive:
-          "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
-        outline: "text-foreground",
+          "border-destructive/25 bg-destructive/12 text-destructive",
+        outline: "border-border text-text-secondary",
+        success: "border-success/25 bg-success/12 text-success",
+        warning: "border-warning/25 bg-warning/12 text-warning",
+        ai: "border-ai/30 bg-ai/12 text-ai",
+        recording: "border-destructive/30 bg-destructive/12 text-destructive",
         // Variantes semânticas compartilhadas — pra distinguir dois estados que NÃO são
         // hierarquia (nenhum é "mais importante"), só categorias diferentes (ex.: atendimento
         // humano vs. IA ativa numa conversa). Nunca espalhar `bg-sky-50`/`bg-violet-50` direto

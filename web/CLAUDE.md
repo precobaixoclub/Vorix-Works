@@ -1,5 +1,12 @@
 # web/ — Design system
 
+> **Vorix Design System 2.0** (dark-first, acento por solução, linguagem de IA) está por cima do
+> sistema abaixo — leia `docs/design-system-2/README.md` antes de mexer em UI. O diff do DS 2.0
+> mora nos primitivos de `components/ui/` (exceção deliberada à regra "nunca edite `ui/**`":
+> re-aplique o diff se rodar `shadcn add` de novo) e nos componentes de `components/vorix/`
+> (`ai.tsx`, `cards.tsx`). Tema padrão agora é `dark`. IA = `VorixAiIcon`/`AIInsightCard`/
+> `Button variant="ai"`; nunca outro ícone ou cor para IA.
+
 Este projeto adotou o **SaaS Panel Design System** (`bittencourtthulio/saas-panel-design-system`).
 Antes de construir ou restilizar qualquer UI aqui, carregue a skill `saas-panel-design-system`
 (instalada em `.claude/skills/`, se presente na sessão) e siga os padrões dela.

@@ -48,7 +48,7 @@ async function mockPublic(page: Page, state: { current: Record<string, unknown>;
 test("cliente aceita a proposta vendo o resumo antes de confirmar (sem login)", async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
-  const state = { current: publicProposal(), calls: [] as string[] };
+  const state: { current: Record<string, unknown>; calls: string[] } = { current: publicProposal(), calls: [] };
   await mockPublic(page, state);
   await page.goto("/p/token-qa");
   await expect(page.getByRole("heading", { name: "Plano Enterprise" })).toBeVisible();
@@ -70,7 +70,7 @@ test("cliente aceita a proposta vendo o resumo antes de confirmar (sem login)", 
 test("cliente recusa escolhendo um motivo configurado", async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
-  const state = { current: publicProposal(), calls: [] as string[] };
+  const state: { current: Record<string, unknown>; calls: string[] } = { current: publicProposal(), calls: [] };
   await mockPublic(page, state);
   await page.goto("/p/token-qa");
   await page.getByRole("button", { name: "Recusar proposta" }).click();

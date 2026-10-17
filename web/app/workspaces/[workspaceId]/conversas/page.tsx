@@ -1,5 +1,6 @@
 "use client";
 
+import { MessagesSquare, PlugZap } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
@@ -47,7 +48,7 @@ export default function ConversasPage() {
     return (
       <div className="flex h-full items-center justify-center px-4">
         <EmptyState
-          icon={<span aria-hidden="true">💬</span>}
+          icon={<MessagesSquare className="h-5 w-5" />}
           title="Atendimento por canais indisponível"
           description="O atendimento por canais está temporariamente indisponível neste ambiente."
           action={<Button variant="secondary" onClick={() => router.push(`/workspaces/${workspace.id}`)}>Voltar para Início</Button>}
@@ -66,7 +67,7 @@ export default function ConversasPage() {
             // conectar" — destaque central, nunca escondido atrás de uma lista vazia genérica.
             <div className="flex h-full items-center justify-center px-4">
               <EmptyState
-                icon={<span aria-hidden="true">🔌</span>}
+                icon={<PlugZap className="h-5 w-5" />}
                 title="Nenhum canal conectado ainda"
                 description="Para começar a atender pelo WhatsApp, conecte um número e escaneie o QR Code."
                 action={<Button onClick={() => setActiveTab("connections")}>Conectar canal</Button>}

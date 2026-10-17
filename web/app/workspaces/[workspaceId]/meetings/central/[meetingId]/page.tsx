@@ -18,6 +18,7 @@ import { Input } from "@/components/Field";
 import { AskMeetingPanel, ClipsAndCommentsPanel, CreateCrmTaskButton, CrmPanel, FollowUpPanel, KeywordHitsPanel, PurgeMeetingDialog, SharePanel, SpeakersPanel, SummaryTemplateControl, TemplateSections } from "@/components/meetings/MeetingIntelligence";
 import { importGoogleMeetTranscript, useMeetingInsights, type MeetingInsights } from "@/features/meetings/intelligence";
 import { PageSubnav } from "@/components/PageSubnav";
+import { AIInsightCard } from "@/components/vorix/ai";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { useCurrentWorkspace } from "@/contexts/workspace-context";
@@ -284,7 +285,7 @@ export default function MeetingDetailPage() {
           <Card className="space-y-4 p-5">
             {!analysis ? <p className="text-sm text-muted-foreground">O resumo por IA é gerado depois que a transcrição fica pronta.</p> : null}
             {latestAnalysis?.status === "blocked_no_credits" ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/35 bg-warning/10 p-3 text-sm text-foreground">
                 <span>Sem créditos de IA para uma nova análise. A gravação e a transcrição continuam disponíveis.</span>
                 <Link href={`/workspaces/${workspace.id}/settings/plano`} className="font-medium underline">Ver créditos</Link>
               </div>
@@ -293,17 +294,19 @@ export default function MeetingDetailPage() {
             {analysis?.id !== latestAnalysis?.id && analysis?.result ? <p className="text-xs text-muted-foreground">Mostrando a última análise concluída.</p> : null}
             {view ? <SummaryTemplateControl workspaceId={workspace.id} meetingId={meeting.id} insights={view} canAnalyze={canAnalyze} transcriptReady={Boolean(transcriptReady)} onChanged={refreshAll} /> : null}
             {analysis?.result ? (
-              <>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Resumo executivo</p>
-                  <p className="mt-1 whitespace-pre-line text-sm text-foreground">{analysis.result.executiveSummary}</p>
+              <AIInsightCard title="Resumo da reunião" meta={formatDateTime(analysis.createdAt)} footnote="Gerado pela IA a partir da transcrição — revise antes de compartilhar.">
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Resumo executivo</p>
+                    <p className="mt-1 whitespace-pre-line text-sm text-foreground">{analysis.result.executiveSummary}</p>
+                  </div>
+                  <TemplateSections sections={analysis.result.templateSections} />
+                  <BulletList title="Tópicos" items={analysis.result.topics} />
+                  <BulletList title="Riscos" items={analysis.result.risks} />
+                  <BulletList title="Objeções" items={analysis.result.objections} />
+                  <BulletList title="Perguntas em aberto" items={analysis.result.openQuestions} />
                 </div>
-                <TemplateSections sections={analysis.result.templateSections} />
-                <BulletList title="Tópicos" items={analysis.result.topics} />
-                <BulletList title="Riscos" items={analysis.result.risks} />
-                <BulletList title="Objeções" items={analysis.result.objections} />
-                <BulletList title="Perguntas em aberto" items={analysis.result.openQuestions} />
-              </>
+              </AIInsightCard>
             ) : null}
           </Card>
         ) : null}

@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api-error";
+import { CloudOff, Lock, TriangleAlert } from "lucide-react";
 import { Button } from "./Button";
 import { EmptyState } from "./EmptyState";
 
@@ -15,7 +16,7 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
   if (statusCode === 401 || statusCode === 403) {
     return (
       <EmptyState
-        icon={<span aria-hidden="true">🔒</span>}
+        icon={<Lock className="h-5 w-5" />}
         title="Sem permissão"
         description="Você não tem permissão para ver este conteúdo. Se acha que isso é um engano, peça a quem administra este workspace para revisar seu papel."
       />
@@ -25,7 +26,7 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
   if (statusCode === 0) {
     return (
       <EmptyState
-        icon={<span aria-hidden="true">⚠️</span>}
+        icon={<CloudOff className="h-5 w-5" />}
         title="Indisponível no momento"
         description="Não foi possível conectar à API do Vorix. Verifique sua conexão e tente novamente."
         action={onRetry ? <Button variant="secondary" onClick={onRetry}>Tentar de novo</Button> : undefined}
@@ -35,7 +36,7 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
 
   return (
     <EmptyState
-      icon={<span aria-hidden="true">⚠️</span>}
+      icon={<TriangleAlert className="h-5 w-5" />}
       title="Não foi possível carregar"
       description={isApiError ? error.message : "Ocorreu um erro inesperado. Tente novamente em instantes."}
       action={onRetry ? <Button variant="secondary" onClick={onRetry}>Tentar de novo</Button> : undefined}

@@ -2775,7 +2775,7 @@ function MessageBubble({
               : isOutbound
                 ? failed
                   ? "border border-destructive/40 bg-destructive/10 text-foreground"
-                  : "bg-primary text-primary-foreground dark:bg-primary-glow dark:text-background"
+                  : "bg-primary text-primary-foreground dark:bg-solution/[0.14] dark:text-foreground dark:ring-1 dark:ring-inset dark:ring-solution/25"
                 : "bg-muted/70 text-foreground dark:bg-muted/40",
           )}
         >

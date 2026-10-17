@@ -1,5 +1,6 @@
 "use client";
 
+import { KanbanSquare } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/Button";
@@ -59,7 +60,7 @@ export default function KanbanPage() {
     return (
       <div className="flex h-full items-center justify-center px-4">
         <EmptyState
-          icon={<span aria-hidden="true">🗂️</span>}
+          icon={<KanbanSquare className="h-5 w-5" />}
           title="Kanban de atendimento indisponível"
           description="O atendimento por canais está temporariamente indisponível neste ambiente."
           action={<Button variant="secondary" onClick={() => router.push(`/workspaces/${workspace.id}`)}>Voltar para Início</Button>}
@@ -80,7 +81,7 @@ export default function KanbanPage() {
     return (
       <div className="p-3 sm:p-6">
         <EmptyState
-          icon={<span aria-hidden="true">🗂️</span>}
+          icon={<KanbanSquare className="h-5 w-5" />}
           title="Nenhuma equipe cadastrada"
           description="Crie uma equipe em Configurações → Equipes para começar a organizar o atendimento em fases."
           action={<Button variant="secondary" onClick={() => router.push(`/workspaces/${workspace.id}/settings/teams`)}>Ir para Equipes</Button>}

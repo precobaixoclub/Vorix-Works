@@ -8,13 +8,14 @@ import { Button as ShadcnButton, type ButtonProps as ShadcnButtonProps } from "@
  * vocabulário antigo pro novo; toda tela existente herda o visual do design system sem mudar
  * uma linha própria.
  */
-type LegacyVariant = "primary" | "secondary" | "ghost" | "danger";
+type LegacyVariant = "primary" | "secondary" | "ghost" | "danger" | "ai";
 
 const VARIANT_MAP: Record<LegacyVariant, ShadcnButtonProps["variant"]> = {
   primary: "default",
   secondary: "outline",
   ghost: "ghost",
   danger: "destructive",
+  ai: "ai",
 };
 
 export type ButtonProps = Omit<ShadcnButtonProps, "variant"> & {

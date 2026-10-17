@@ -10,7 +10,7 @@ import { Toaster } from "@/components/ui/sonner";
  * `TooltipProvider` ancestral) e toasts (`sonner`, usado por `ReportTable`/telas novas). */
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
       <TooltipProvider delayDuration={200}>
         {children}
         <Toaster position="top-right" />

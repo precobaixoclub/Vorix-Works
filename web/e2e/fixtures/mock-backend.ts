@@ -114,10 +114,10 @@ export async function mockConversasBackend(page: Page) {
     if (path === "/v1/inbox/status") return fulfillJson(route, { enabled: true });
     if (path === "/v1/inbox/conversations") return fulfillJson(route, { conversations: CONVERSATIONS });
     if (path === "/v1/inbox/members") return fulfillJson(route, { members: [{ userId: "user-qa", email: "qa@vorix.dev", name: "QA Reviewer", role: "owner" }] });
-    if (path === "/v1/inbox/connections") return fulfillJson(route, { connections: [] });
+    if (path === "/v1/inbox/connections") return fulfillJson(route, { connections: [{ id: "conn-1", displayName: "WhatsApp QA", provider: "wuzapi", phoneNumber: "+5511999990000", status: "connected", connectionHealth: "healthy" }] });
     if (/\/v1\/inbox\/conversations\/[^/]+\/messages$/.test(path)) {
       const conversationId = path.split("/")[4];
-      return fulfillJson(route, { messages: messagesFor(conversationId) });
+      return fulfillJson(route, { messages: messagesFor(conversationId).map((message) => ({ reactions: [], ...message })) });
     }
     if (/\/v1\/inbox\/conversations\/[^/]+\/events$/.test(path)) return fulfillJson(route, { events: [] });
     if (path === "/v1/inbox/media-token" && method === "POST") {

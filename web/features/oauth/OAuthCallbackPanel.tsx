@@ -20,7 +20,7 @@ export function OAuthCallbackPanel({
   return (
     <main className="mx-auto flex max-w-lg flex-col items-center px-3 py-12 sm:px-6 sm:py-20">
       <Card className="flex w-full flex-col items-center gap-4 p-5 text-center sm:p-8">
-        {state === "loading" || state === "success" ? <Spinner /> : <span className="flex h-11 w-11 items-center justify-center rounded-full bg-red-50 text-lg text-red-600">!</span>}
+        {state === "loading" || state === "success" ? <Spinner /> : <span className="flex h-11 w-11 items-center justify-center rounded-full bg-destructive/10 text-lg text-destructive">!</span>}
         <div>
           <h1 className="text-lg font-semibold text-ink">{state === "error" ? "Não foi possível concluir a conexão" : state === "success" ? "Conexão concluída" : "Conectando"}</h1>
           <p className="mt-2 text-sm text-ink-muted">{message}</p>

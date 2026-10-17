@@ -288,7 +288,7 @@ export type CommercialSuggestion = {
  * NUNCA pode quebrar a ação de negócio que o disparou — falha de automação é sempre contida e
  * registrada, nunca propagada (ver `evaluateAutomationTrigger`).
  */
-export const AUTOMATION_TRIGGERS = ["deal_stage_changed", "contact_created", "proposal_accepted", "proposal_rejected"] as const;
+export const AUTOMATION_TRIGGERS = ["deal_stage_changed", "contact_created", "proposal_accepted", "proposal_rejected", "deal_created", "deal_won", "deal_lost", "proposal_sent", "proposal_viewed", "approval_requested", "approval_decided", "goal_reached"] as const;
 export type AutomationTrigger = (typeof AUTOMATION_TRIGGERS)[number];
 
 export const AUTOMATION_CONDITION_FIELDS = ["pipelineId", "stageId", "origin", "tag"] as const;
@@ -352,6 +352,15 @@ export type ProposalItem = {
   quantity: number;
   unitPriceCents: number;
   subtotalCents: number;
+  // Sales Engine — snapshot comercial copiado da oportunidade na geração (nunca referência viva).
+  variantId?: string;
+  description?: string;
+  billingType?: BillingType;
+  listPriceCents?: number;
+  minimumPriceCents?: number;
+  /** Interno — nunca exposto no link público. */
+  unitCostCents?: number;
+  discountCents?: number;
 };
 
 export type ProposalTemplate = {
@@ -363,12 +372,16 @@ export type ProposalTemplate = {
   defaultItems: readonly ProposalItem[];
   defaultConditions?: string;
   defaultValidDays: number;
+  defaultIntroduction?: string;
+  defaultTerms?: string;
   active: boolean;
   createdAt: string;
   updatedAt: string;
 };
 
-export const PROPOSAL_STATUSES = ["draft", "sent", "viewed", "accepted", "rejected", "expired"] as const;
+/** `rejected` = recusada pelo CLIENTE (DECLINED); `pending_approval`/`approved` = aprovação comercial
+ * interna antes do envio; `superseded` = substituída por versão mais nova efetivamente enviada. */
+export const PROPOSAL_STATUSES = ["draft", "pending_approval", "approved", "sent", "viewed", "accepted", "rejected", "expired", "cancelled", "superseded"] as const;
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
 
 export type Proposal = {
@@ -396,4 +409,63 @@ export type Proposal = {
   rejectionComment?: string;
   createdAt: string;
   updatedAt: string;
+  // Sales Engine — versionamento (PROP-AAAA-NNN vN), conteúdo, envio e aceite auditado.
+  number?: string;
+  version: number;
+  rootProposalId: string;
+  supersedesProposalId?: string;
+  supersededByProposalId?: string;
+  supersededAt?: string;
+  cancelledAt?: string;
+  introduction?: string;
+  notes?: string;
+  terms?: string;
+  listTotalCents?: number;
+  createdByUserId?: string;
+  sentByUserId?: string;
+  sentChannel?: string;
+  sentConversationId?: string;
+  sentMessageId?: string;
+  /** Tempo aproximado de leitura (heartbeats da página pública) — nunca precisão inventada. */
+  totalViewSeconds: number;
+  acceptedContentHash?: string;
+  acceptedVersion?: number;
+};
+
+export const PROPOSAL_EVENT_TYPES = [
+  "created", "approval_requested", "approved", "rejected_internally", "sent", "delivered", "whatsapp_read", "whatsapp_failed",
+  "viewed", "downloaded", "accepted", "declined", "expired", "superseded", "cancelled", "reminder_sent", "follow_up_task_created",
+] as const;
+export type ProposalEventType = (typeof PROPOSAL_EVENT_TYPES)[number];
+
+export type ProposalEvent = {
+  id: string;
+  proposalId: string;
+  eventType: ProposalEventType;
+  recipientId?: string;
+  occurredAt: string;
+  payload: Readonly<Record<string, unknown>>;
+};
+
+export type ProposalRecipient = {
+  id: string;
+  proposalId: string;
+  contactId?: string;
+  name: string;
+  viewCount: number;
+  firstViewedAt?: string;
+  lastViewedAt?: string;
+  revokedAt?: string;
+  createdAt: string;
+};
+
+export type ProposalDelivery = {
+  id: string;
+  proposalId: string;
+  conversationId: string;
+  inboxMessageId?: string;
+  status: "pending" | "queued" | "failed";
+  errorMessage?: string;
+  createdAt: string;
+  queuedAt?: string;
 };

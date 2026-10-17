@@ -50,6 +50,10 @@ export async function createDeal(deps: DealUseCaseDeps, input: { tenantId: strin
   if (deps.productAnalytics) {
     await recordFirstEvent(deps.productAnalytics, { eventName: "first_deal_created", source: "server", tenantId: deal.tenantId, workspaceId: deal.workspaceId });
   }
+  if (deps.automation) {
+    const contact = deal.contactId ? await deps.automation.contactRepository.getById(deal.contactId) : undefined;
+    await evaluateAutomationTrigger(deps.automation, { tenantId: deal.tenantId, workspaceId: deal.workspaceId, trigger: "deal_created", deal, contact });
+  }
   return deal;
 }
 

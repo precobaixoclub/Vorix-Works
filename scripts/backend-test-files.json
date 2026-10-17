@@ -221,6 +221,7 @@
   "tests/crm-fundacao.test.mjs",
   "tests/crm-pipelines-deals.test.mjs",
   "tests/sales-engine.test.mjs",
+  "tests/sales-engine-proposals.test.mjs",
   "tests/crm-execucao-comercial.test.mjs",
   "tests/crm-conversas-integration.test.mjs",
   "tests/crm-inteligencia.test.mjs",

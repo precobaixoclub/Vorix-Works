@@ -6,6 +6,8 @@ export type ProposalTemplateValues = {
   defaultItems: readonly ProposalItem[];
   defaultConditions?: string;
   defaultValidDays: number;
+  defaultIntroduction?: string;
+  defaultTerms?: string;
   active?: boolean;
 };
 

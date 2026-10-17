@@ -18,6 +18,7 @@ import { registerV1Routes } from "./routes/v1/index.js";
 import { registerPublicationScheduler } from "./scheduler/publication-scheduler.js";
 import { registerMetaAdsSyncScheduler } from "./scheduler/meta-ads-sync-scheduler.js";
 import { registerTrialExpirationScheduler } from "./scheduler/trial-expiration-scheduler.js";
+import { registerProposalFollowUpScheduler } from "./scheduler/proposal-follow-up-scheduler.js";
 import { registerCapacityChangeScheduler } from "./scheduler/capacity-change-scheduler.js";
 import { registerVersionRoute } from "./routes/version.route.js";
 import { registerWebhookReceiverRoutes } from "./routes/webhook-receiver.route.js";
@@ -171,6 +172,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   registerPublicationScheduler(app, container, { enabled: config.publication.schedulerEnabled, intervalMs: config.publication.schedulerIntervalMs });
   registerMetaAdsSyncScheduler(app, container, { enabled: config.metaAds.syncSchedulerEnabled, intervalMs: config.metaAds.syncSchedulerIntervalMs });
   registerTrialExpirationScheduler(app, container, { enabled: config.billing.trialEnabled, intervalMs: config.billing.trialExpirationCheckIntervalMs });
+  // Sales Engine — follow-up de propostas (tarefa/alerta ao vendedor; nunca mensagem automática ao cliente).
+  registerProposalFollowUpScheduler(app, container, { enabled: process.env.ZUNO_PROPOSAL_FOLLOW_UPS !== "false", intervalMs: 15 * 60 * 1000 });
   // Pricing/Capacity Etapa B — aplica reduções de capacidade agendadas pro fim do ciclo. Mesma
   // cadência da varredura de trial (não precisa de env var própria — nunca é urgente ao minuto).
   registerCapacityChangeScheduler(app, container, { intervalMs: config.billing.trialExpirationCheckIntervalMs });

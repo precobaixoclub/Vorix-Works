@@ -45,6 +45,7 @@ import { registerCommercialSuggestionsRoutes } from "./commercial-suggestions.ro
 import { registerAutomationRulesRoutes } from "./automation-rules.route.js";
 import { registerCommercialMetricsRoutes } from "./commercial-metrics.route.js";
 import { registerSalesEngineRoutes } from "./sales-engine.route.js";
+import { proposalAcceptanceHandler, proposalApprovalGate, proposalBuyerEventHandler, proposalMessageTemplates, renderProposalMessage } from "../../../../application/sales/proposal-sales-use-cases.js";
 import { registerBillingEntitlementsRoutes } from "./billing-entitlements.route.js";
 import { registerReadOnlyGuard } from "../../http/read-only-guard.js";
 import { registerAdminPlanVersionsRoutes } from "./admin-plan-versions.route.js";
@@ -386,6 +387,13 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       contactRepository: identity.contactRepository,
       notification: { notificationRepository: app.zunoContainer.notificationRepository, realtimePublisher: app.zunoContainer.notificationRealtimePublisher },
       automation: automationDeps,
+      proposalRepository: identity.proposalRepository,
+    };
+    // Proposta como parte da negociação: gate de aprovação no envio, alertas ao vendedor e o
+    // efeito configurável do aceite (padrão: só sinaliza; ganho automático se o tenant quiser).
+    const proposalSalesHooks = {
+      approvalGate: proposalApprovalGate(salesDeps),
+      onBuyerEvent: proposalBuyerEventHandler(salesDeps),
     };
     await registerDealsRoutes(app, {
       dealRepository: identity.dealRepository,
@@ -400,23 +408,25 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     // CRM/Comercial (Fase 3) — Tarefas, Catálogo de produtos, Propostas (com link público).
     await registerTasksRoutes(app, { taskRepository: identity.taskRepository, timelineEventRepository: identity.timelineEventRepository });
     await registerProductsRoutes(app, { productRepository: identity.productRepository, salesConfigRepository: identity.salesConfigRepository });
-    await registerProposalsRoutes(app, {
+    const proposalUseCaseDeps = {
       proposalRepository: identity.proposalRepository,
       timelineEventRepository: identity.timelineEventRepository,
       contactRepository: identity.contactRepository,
       dealRepository: identity.dealRepository,
       automation: automationDeps,
       productAnalytics: productAnalyticsDeps,
+      ...proposalSalesHooks,
+    };
+    await registerProposalsRoutes(app, {
+      ...proposalUseCaseDeps,
       delivery: sharedInboxDeps ? {
-        proposalRepository: identity.proposalRepository,
-        timelineEventRepository: identity.timelineEventRepository,
-        contactRepository: identity.contactRepository,
-        dealRepository: identity.dealRepository,
-        automation: automationDeps,
-        productAnalytics: productAnalyticsDeps,
+        ...proposalUseCaseDeps,
         inbox: sharedInboxDeps,
         appBaseUrl: app.zunoConfig.billing.appBaseUrl,
+        messageTemplates: (tenantId: string, workspaceId: string) => proposalMessageTemplates(salesDeps, tenantId, workspaceId),
+        renderMessage: renderProposalMessage,
       } : undefined,
+      sales: { ...salesDeps, proposalRepository: identity.proposalRepository, proposalTemplateRepository: identity.proposalTemplateRepository, proposal: proposalUseCaseDeps },
     });
     await registerProposalTemplatesRoutes(app, { proposalTemplateRepository: identity.proposalTemplateRepository });
     await registerPublicProposalsRoutes(app, {
@@ -429,6 +439,9 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       // Fase 6 — dispara `proposal_accepted`/`proposal_rejected` ao responder ao link público.
       automation: automationDeps,
       productAnalytics: productAnalyticsDeps,
+      salesConfigRepository: identity.salesConfigRepository,
+      onBuyerEvent: proposalSalesHooks.onBuyerEvent,
+      acceptanceHandler: proposalAcceptanceHandler(salesDeps),
     });
     // Vorix Meetings — inteligência e colaboração. CRM e WhatsApp entram por ponte (o Meetings
     // não importa `crm`/`inbox`); sem Conversas habilitado, o envio por WhatsApp fica indisponível.

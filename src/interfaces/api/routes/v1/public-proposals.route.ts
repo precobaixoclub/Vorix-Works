@@ -3,19 +3,24 @@ import {
   acceptPublicProposal,
   applyProposalAcceptanceToDeal,
   getPublicProposal,
+  publicProposalContent,
+  recordPublicProposalDownload,
+  recordPublicProposalEngagement,
   rejectPublicProposal,
 } from "../../../../application/crm/proposal-use-cases.js";
 import type { ProposalDealLinkDeps, ProposalUseCaseDeps } from "../../../../application/crm/proposal-use-cases.js";
 import type { WorkspaceRepositoryPort } from "../../../../application/ports/workspace-repository.port.js";
+import type { SalesConfigRepositoryPort } from "../../../../application/ports/sales-engine-repository.port.js";
+import { DEFAULT_CLOSE_REASONS } from "../../../../domain/sales/sales.model.js";
 import type { Proposal } from "../../../../domain/crm/crm.model.js";
 import { NotFoundError, ValidationError } from "../../http/app-error.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 
-const TOKEN_PARAMS_SCHEMA = { type: "object", required: ["token"], properties: { token: { type: "string", minLength: 1 } } } as const;
+const TOKEN_PARAMS_SCHEMA = { type: "object", required: ["token"], properties: { token: { type: "string", minLength: 1, maxLength: 200 } } } as const;
 
 function translatePublicProposalError(error: unknown): never {
   if (error instanceof Error && error.message.startsWith("PROPOSAL_NOT_FOUND")) throw new NotFoundError(error.message);
-  if (error instanceof Error && (error.message.startsWith("PROPOSAL_EXPIRED") || error.message.startsWith("PROPOSAL_ALREADY_RESPONDED") || error.message.startsWith("PROPOSAL_LINK_REVOKED"))) {
+  if (error instanceof Error && (error.message.startsWith("PROPOSAL_EXPIRED") || error.message.startsWith("PROPOSAL_ALREADY_RESPONDED") || error.message.startsWith("PROPOSAL_LINK_REVOKED") || error.message.startsWith("PROPOSAL_SUPERSEDED"))) {
     throw new ValidationError(error.message);
   }
   throw error;
@@ -24,18 +29,29 @@ function translatePublicProposalError(error: unknown): never {
 /**
  * Rota PÚBLICA (sem `requirePermission`/`requirePrincipal`) — o próprio token da URL é a
  * autenticação, mesmo racional do link de proposta que qualquer lead recebe por WhatsApp/e-mail.
- * Vive dentro de `/v1` normalmente (não precisa do isolamento de content-type cru do webhook do
- * Meta) — a ausência de chamada a `requirePermission` é o que a torna pública, não o prefixo.
+ * O payload é uma lista FECHADA de campos (nunca a entidade inteira): custo, mínimo, hash do token,
+ * dados de auditoria e ids internos jamais saem daqui.
  */
-type PublicProposalRoutesDeps = ProposalUseCaseDeps & ProposalDealLinkDeps & { workspaceRepository: WorkspaceRepositoryPort };
+type PublicProposalRoutesDeps = ProposalUseCaseDeps & ProposalDealLinkDeps & { workspaceRepository: WorkspaceRepositoryPort; salesConfigRepository?: SalesConfigRepositoryPort };
 
 async function publicPayload(deps: PublicProposalRoutesDeps, proposal: Proposal) {
-  const [contact, workspace] = await Promise.all([
+  const [contact, workspace, reasons] = await Promise.all([
     proposal.contactId && deps.contactRepository ? deps.contactRepository.getById(proposal.contactId) : undefined,
     deps.workspaceRepository.getById(proposal.workspaceId),
+    deps.salesConfigRepository ? deps.salesConfigRepository.listCloseReasons({ tenantId: proposal.tenantId, workspaceId: proposal.workspaceId, kind: "proposal_decline" }) : Promise.resolve([]),
   ]);
-  const { publicTokenHash: _secretHash, ...safeProposal } = proposal;
-  return { ...safeProposal, customerName: contact?.name, customerCompany: contact?.company, issuerName: workspace?.name };
+  return {
+    ...publicProposalContent(proposal),
+    status: proposal.status,
+    sentAt: proposal.sentAt,
+    respondedAt: proposal.respondedAt,
+    rejectionReason: proposal.rejectionReason,
+    superseded: proposal.status === "superseded",
+    customerName: contact?.name,
+    customerCompany: contact?.company,
+    issuerName: workspace?.name,
+    declineReasons: reasons.length > 0 ? reasons.map((reason) => reason.label) : [...DEFAULT_CLOSE_REASONS.proposal_decline],
+  };
 }
 
 export async function registerPublicProposalsRoutes(app: FastifyInstance, deps: PublicProposalRoutesDeps): Promise<void> {
@@ -53,29 +69,26 @@ export async function registerPublicProposalsRoutes(app: FastifyInstance, deps: 
     const { token } = request.params as { token: string };
     let proposal: Proposal;
     try {
-      proposal = await acceptPublicProposal(deps, token);
+      // Aceite comercial (não é assinatura eletrônica): guarda hash do conteúdo aceito, versão,
+      // hash do IP (nunca o IP puro) e user-agent truncado. Idempotente (duplo clique = 1 aceite).
+      proposal = await acceptPublicProposal(deps, token, { ip: request.ip, userAgent: request.headers["user-agent"] });
     } catch (error) {
       translatePublicProposalError(error);
     }
     try {
-      // Item 33 do pedido — dois passos separados (nunca uma transação cruzando os dois
-      // repositórios); `acceptPublicProposal` já persistiu `status=accepted` quando chegamos
-      // aqui, então uma falha nesta segunda chamada NUNCA deveria virar um 500 genérico pro
-      // cliente que já aceitou de verdade — o aceite continua registrado (idempotente, ver
-      // `respondToPublicProposal`), só o Deal não avançou. Logamos com contexto suficiente pra
-      // reconciliação manual (mesmo padrão de best-effort de `notifyBestEffort`); um segundo
-      // clique em "Aceitar" já corrige sozinho (`applyProposalAcceptanceToDeal` é idempotente).
+      // Aceite já persistido; uma falha aqui (efeito sobre a oportunidade) nunca vira 500 para o
+      // cliente que aceitou de verdade — fica logado para reconciliação (idempotente ao repetir).
       await applyProposalAcceptanceToDeal(deps, proposal);
     } catch (error) {
       console.error(
-        `[public-proposals] Proposal "${proposal.id}" (deal "${proposal.dealId ?? "nenhum"}") foi aceita, mas mover o negócio para Ganho falhou — requer reconciliação manual ou novo clique em "Aceitar".`,
+        `[public-proposals] Proposal "${proposal.id}" (deal "${proposal.dealId ?? "nenhum"}") foi aceita, mas o efeito na oportunidade falhou — requer reconciliação manual ou novo clique em "Aceitar".`,
         error instanceof Error ? error.message : error,
       );
     }
     return successEnvelope(await publicPayload(deps, proposal), request.id);
   });
 
-  app.post("/public/proposals/:token/reject", { schema: { params: TOKEN_PARAMS_SCHEMA, body: { type: "object", additionalProperties: false, properties: { reason: { type: "string", enum: ["price", "deadline", "scope", "other"] }, comment: { type: "string", maxLength: 1000 } } } } }, async (request) => {
+  app.post("/public/proposals/:token/reject", { schema: { params: TOKEN_PARAMS_SCHEMA, body: { type: "object", additionalProperties: false, properties: { reason: { type: "string", maxLength: 120 }, comment: { type: "string", maxLength: 1000 } } } } }, async (request) => {
     const { token } = request.params as { token: string };
     try {
       const proposal = await rejectPublicProposal(deps, token, request.body as { reason?: string; comment?: string });
@@ -83,5 +96,28 @@ export async function registerPublicProposalsRoutes(app: FastifyInstance, deps: 
     } catch (error) {
       translatePublicProposalError(error);
     }
+  });
+
+  /** Heartbeat de leitura (≤60s por chamada) — tempo aproximado, nunca precisão inventada. */
+  app.post("/public/proposals/:token/engagement", { schema: { params: TOKEN_PARAMS_SCHEMA, body: { type: "object", required: ["seconds"], additionalProperties: false, properties: { seconds: { type: "integer", minimum: 1, maximum: 60 } } } } }, async (request, reply) => {
+    const { token } = request.params as { token: string };
+    try {
+      await recordPublicProposalEngagement(deps, token, (request.body as { seconds: number }).seconds);
+    } catch (error) {
+      translatePublicProposalError(error);
+    }
+    reply.code(204);
+    return null;
+  });
+
+  app.post("/public/proposals/:token/download", { schema: { params: TOKEN_PARAMS_SCHEMA } }, async (request, reply) => {
+    const { token } = request.params as { token: string };
+    try {
+      await recordPublicProposalDownload(deps, token);
+    } catch (error) {
+      translatePublicProposalError(error);
+    }
+    reply.code(204);
+    return null;
   });
 }

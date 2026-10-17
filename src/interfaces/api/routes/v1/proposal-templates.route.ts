@@ -6,7 +6,7 @@ import { requirePermission } from "../../http/require-principal.js";
 import { successEnvelope } from "../../http/response-envelope.js";
 
 const ITEM = { type: "object", required: ["name", "quantity", "unitPriceCents"], additionalProperties: false, properties: { productId: { type: "string" }, name: { type: "string", minLength: 1, maxLength: 200 }, quantity: { type: "integer", minimum: 1 }, unitPriceCents: { type: "integer", minimum: 0 }, subtotalCents: { type: "integer", minimum: 0 } } } as const;
-const VALUES = { name: { type: "string", minLength: 1, maxLength: 120 }, defaultTitle: { type: "string", minLength: 1, maxLength: 200 }, defaultItems: { type: "array", items: ITEM, minItems: 1, maxItems: 100 }, defaultConditions: { type: "string", maxLength: 4000 }, defaultValidDays: { type: "integer", minimum: 1, maximum: 3650 }, active: { type: "boolean" } } as const;
+const VALUES = { name: { type: "string", minLength: 1, maxLength: 120 }, defaultTitle: { type: "string", minLength: 1, maxLength: 200 }, defaultItems: { type: "array", items: ITEM, minItems: 1, maxItems: 100 }, defaultConditions: { type: "string", maxLength: 4000 }, defaultValidDays: { type: "integer", minimum: 1, maximum: 3650 }, defaultIntroduction: { type: "string", maxLength: 4000 }, defaultTerms: { type: "string", maxLength: 8000 }, active: { type: "boolean" } } as const;
 const ID = { type: "object", required: ["id"], properties: { id: { type: "string", minLength: 1 } } } as const;
 
 function translate(error: unknown): never {

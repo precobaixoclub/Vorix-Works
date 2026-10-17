@@ -7,6 +7,7 @@ import type { ContactRepositoryPort } from "../ports/contact-repository.port.js"
 import type { TenantMembershipRepositoryPort } from "../ports/tenant-membership-repository.port.js";
 import type { TeamMembershipRepositoryPort } from "../ports/team-repository.port.js";
 import type { CommercialApprovalRepositoryPort, DealItemRepositoryPort, SalesCatalogRepositoryPort, SalesConfigRepositoryPort } from "../ports/sales-engine-repository.port.js";
+import type { ProposalRepositoryPort } from "../ports/proposal-repository.port.js";
 import type { NotificationUseCaseDeps } from "../notification/notification-use-cases.js";
 import type { AutomationUseCaseDeps } from "../crm/automation-use-cases.js";
 import { hasPermission, type TenantRole } from "../../domain/identity/identity.model.js";
@@ -32,6 +33,8 @@ export type SalesEngineDeps = {
   contactRepository?: ContactRepositoryPort;
   notification?: Partial<NotificationUseCaseDeps>;
   automation?: AutomationUseCaseDeps;
+  /** Propostas aguardando aprovação reagem à decisão do gestor (mesmos termos apenas). */
+  proposalRepository?: ProposalRepositoryPort;
 };
 
 /** Quem está agindo — sempre vindo do JWT (nunca do corpo da requisição). */

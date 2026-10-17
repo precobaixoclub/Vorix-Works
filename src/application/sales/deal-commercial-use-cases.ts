@@ -15,7 +15,10 @@ import {
 import type { CommercialApprovalRequest, DealItem } from "../../domain/sales/sales.model.js";
 import type { CreateDealItemInput } from "../ports/sales-engine-repository.port.js";
 import { notifyBestEffort } from "../notification/notification-use-cases.js";
+import { evaluateAutomationTrigger } from "../crm/automation-use-cases.js";
+import type { AutomationTrigger } from "../../domain/crm/crm.model.js";
 import { resolveProductPricing } from "./catalog-use-cases.js";
+import { applyApprovalDecisionToProposals } from "./proposal-sales-use-cases.js";
 import {
   listManagerUserIds,
   loadCommercialSettings,
@@ -92,6 +95,17 @@ async function recalculateDealValue(deps: SalesEngineDeps, deal: Deal): Promise<
 
 function assertDealOpen(deal: Deal): void {
   if (deal.status !== "open") throw new Error(`DEAL_CLOSED: oportunidade ${deal.status === "won" ? "ganha" : deal.status === "lost" ? "perdida" : "cancelada"} não pode ter os termos alterados — reabra antes.`);
+}
+
+/** Mesmo motor de automações do CRM (nunca um segundo motor) — falha nunca derruba o fluxo. */
+export async function fireDealAutomation(deps: SalesEngineDeps, deal: Deal, trigger: AutomationTrigger): Promise<void> {
+  if (!deps.automation) return;
+  try {
+    const contact = deal.contactId ? await deps.automation.contactRepository.getById(deal.contactId) : undefined;
+    await evaluateAutomationTrigger(deps.automation, { tenantId: deal.tenantId, workspaceId: deal.workspaceId, trigger, deal, contact });
+  } catch (error) {
+    console.warn("[sales] automação falhou (best-effort):", error instanceof Error ? error.message : error);
+  }
 }
 
 async function recordDealEvent(deps: SalesEngineDeps, deal: Deal, eventType: string, actor: SalesActor | undefined, payload: Record<string, unknown>): Promise<void> {
@@ -403,6 +417,7 @@ export async function requestCommercialApproval(deps: SalesEngineDeps, actor: Sa
   });
   if (created) {
     await recordDealEvent(deps, deal, "deal_approval_requested", actor, { approvalId: request.id, reasons: request.reasons, requestedTotalCents: totals.totalCents });
+    await fireDealAutomation(deps, deal, "approval_requested");
     for (const userId of await listManagerUserIds(deps, deal.tenantId)) {
       if (userId === actor.userId) continue;
       notifyBestEffort(deps.notification, {
@@ -445,8 +460,12 @@ export async function decideCommercialApproval(deps: SalesEngineDeps, actor: Sal
     approvedValueCents: input.decision === "approved" ? Number(request.snapshot.requestedTotalCents ?? 0) : undefined,
   });
   if (!decided) throw new Error(`APPROVAL_ALREADY_DECIDED: este pedido já está "${request.status}".`);
+  await applyApprovalDecisionToProposals(deps, { tenantId: request.tenantId, workspaceId: request.workspaceId, dealId: request.dealId, termsFingerprint: request.termsFingerprint, approved: input.decision === "approved", approvalId: request.id });
   const deal = await deps.dealRepository.getById(request.dealId);
-  if (deal) await recordDealEvent(deps, deal, input.decision === "approved" ? "deal_approval_approved" : "deal_approval_rejected", actor, { approvalId: request.id, reason: decided.decisionReason, approvedValueCents: decided.approvedValueCents });
+  if (deal) {
+    await recordDealEvent(deps, deal, input.decision === "approved" ? "deal_approval_approved" : "deal_approval_rejected", actor, { approvalId: request.id, reason: decided.decisionReason, approvedValueCents: decided.approvedValueCents });
+    await fireDealAutomation(deps, deal, "approval_decided");
+  }
   notifyBestEffort(deps.notification, {
     tenantId: request.tenantId, workspaceId: request.workspaceId, userId: request.requestedByUserId,
     title: input.decision === "approved" ? "Condição comercial aprovada" : "Condição comercial recusada",
@@ -556,6 +575,7 @@ export async function winDeal(deps: SalesEngineDeps & { onDealWon?: DealClosedHo
   const moved = await moveToTerminalStage(deps, deal, "won");
   const won = await deps.dealRepository.setClosure(moved.id, closure);
   await recordDealEvent(deps, won, "deal_won", actor, { finalValueCents: closure.finalValueCents, finalMarginBp: closure.finalMarginBp, wonReason: closure.wonReason, proposalId: closure.wonProposalId, creditedOwnerUserId: closure.creditedOwnerUserId });
+  await fireDealAutomation(deps, won, "deal_won");
   await deps.onDealWon?.(won).catch(() => undefined);
   return won;
 }
@@ -581,6 +601,7 @@ export async function loseDeal(deps: SalesEngineDeps, actor: SalesActor, input: 
     finalArrCents: null, finalTcvCents: null, finalSnapshot: null,
   });
   await recordDealEvent(deps, lost, "deal_lost", actor, { lossReason: reason, competitorId, valueCents: deal.valueCents });
+  await fireDealAutomation(deps, lost, "deal_lost");
   return lost;
 }
 
@@ -620,11 +641,14 @@ export async function syncClosureWithStage(deps: SalesEngineDeps & { onDealWon?:
   if (stage.isWon && deal.status !== "won") {
     const won = await deps.dealRepository.setClosure(deal.id, await buildWonClosure(deps, deal, actorUserId, {}));
     await deps.timelineEventRepository.record({ tenantId: deal.tenantId, workspaceId: deal.workspaceId, entityType: "deal", entityId: deal.id, eventType: "deal_won", actorType: actorUserId ? "user" : "system", actorId: actorUserId, payload: { finalValueCents: won.finalValueCents, via: "stage" } });
+    await fireDealAutomation(deps, won, "deal_won");
     await deps.onDealWon?.(won).catch(() => undefined);
     return won;
   }
   if (stage.isLost && deal.status !== "lost") {
-    return deps.dealRepository.setClosure(deal.id, { ...REOPEN_CLOSURE, status: "lost", forecastCategory: "omitted", closedAt: new Date().toISOString(), closedByUserId: actorUserId ?? null, creditedOwnerUserId: deal.ownerUserId ?? null, creditedTeamId: deal.teamId ?? null, lossReason: lossReason ?? deal.lossReason ?? null, finalValueCents: deal.valueCents });
+    const lost = await deps.dealRepository.setClosure(deal.id, { ...REOPEN_CLOSURE, status: "lost", forecastCategory: "omitted", closedAt: new Date().toISOString(), closedByUserId: actorUserId ?? null, creditedOwnerUserId: deal.ownerUserId ?? null, creditedTeamId: deal.teamId ?? null, lossReason: lossReason ?? deal.lossReason ?? null, finalValueCents: deal.valueCents });
+    await fireDealAutomation(deps, lost, "deal_lost");
+    return lost;
   }
   if (!stage.isWon && !stage.isLost && deal.status !== "open") return deps.dealRepository.setClosure(deal.id, REOPEN_CLOSURE);
   return deal;

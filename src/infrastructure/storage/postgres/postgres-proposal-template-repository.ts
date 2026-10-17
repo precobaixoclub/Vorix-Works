@@ -11,6 +11,8 @@ type Row = {
   default_items: ProposalItem[];
   default_conditions: string | null;
   default_valid_days: number;
+  default_introduction: string | null;
+  default_terms: string | null;
   active: boolean;
   created_at: Date;
   updated_at: Date;
@@ -28,6 +30,8 @@ function toDomain(row: Row): ProposalTemplate {
     defaultItems: row.default_items ?? [],
     defaultConditions: row.default_conditions ?? undefined,
     defaultValidDays: row.default_valid_days,
+    defaultIntroduction: row.default_introduction ?? undefined,
+    defaultTerms: row.default_terms ?? undefined,
     active: row.active,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
@@ -40,9 +44,9 @@ export class PostgresProposalTemplateRepository implements ProposalTemplateRepos
   async create(input: ProposalTemplateValues & { tenantId: string; workspaceId: string }): Promise<ProposalTemplate> {
     const result = await this.pool.query<Row>(
       `insert into proposal_templates
-         (id, tenant_id, workspace_id, name, default_title, default_items, default_conditions, default_valid_days, active)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
-      [id(), input.tenantId, input.workspaceId, input.name, input.defaultTitle, JSON.stringify(input.defaultItems), input.defaultConditions ?? null, input.defaultValidDays, input.active ?? true],
+         (id, tenant_id, workspace_id, name, default_title, default_items, default_conditions, default_valid_days, active, default_introduction, default_terms)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *`,
+      [id(), input.tenantId, input.workspaceId, input.name, input.defaultTitle, JSON.stringify(input.defaultItems), input.defaultConditions ?? null, input.defaultValidDays, input.active ?? true, input.defaultIntroduction ?? null, input.defaultTerms ?? null],
     );
     return toDomain(result.rows[0]);
   }
@@ -66,9 +70,9 @@ export class PostgresProposalTemplateRepository implements ProposalTemplateRepos
     if (!existing) throw new Error(`PROPOSAL_TEMPLATE_NOT_FOUND: modelo "${templateId}" não existe.`);
     const result = await this.pool.query<Row>(
       `update proposal_templates set name=$2, default_title=$3, default_items=$4,
-       default_conditions=$5, default_valid_days=$6, active=$7, updated_at=now()
+       default_conditions=$5, default_valid_days=$6, active=$7, default_introduction=$8, default_terms=$9, updated_at=now()
        where id=$1 returning *`,
-      [templateId, patch.name ?? existing.name, patch.defaultTitle ?? existing.defaultTitle, JSON.stringify(patch.defaultItems ?? existing.defaultItems), patch.defaultConditions !== undefined ? patch.defaultConditions : existing.defaultConditions ?? null, patch.defaultValidDays ?? existing.defaultValidDays, patch.active ?? existing.active],
+      [templateId, patch.name ?? existing.name, patch.defaultTitle ?? existing.defaultTitle, JSON.stringify(patch.defaultItems ?? existing.defaultItems), patch.defaultConditions !== undefined ? patch.defaultConditions : existing.defaultConditions ?? null, patch.defaultValidDays ?? existing.defaultValidDays, patch.active ?? existing.active, patch.defaultIntroduction !== undefined ? patch.defaultIntroduction : existing.defaultIntroduction ?? null, patch.defaultTerms !== undefined ? patch.defaultTerms : existing.defaultTerms ?? null],
     );
     return toDomain(result.rows[0]);
   }

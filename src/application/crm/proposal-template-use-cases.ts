@@ -44,6 +44,8 @@ export async function duplicateProposalTemplate(deps: ProposalTemplateUseCaseDep
     defaultItems: source.defaultItems,
     defaultConditions: source.defaultConditions,
     defaultValidDays: source.defaultValidDays,
+    defaultIntroduction: source.defaultIntroduction,
+    defaultTerms: source.defaultTerms,
     active: true,
   });
 }

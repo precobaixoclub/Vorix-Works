@@ -64,7 +64,9 @@ test("Fase 4 registra primeira/ultima abertura e quantidade sem dados invasivos"
   assert.equal(second.viewedAt, first.viewedAt);
   assert.ok(second.lastViewedAt);
   const columns = await db.pool.query("select column_name from information_schema.columns where table_name='proposal_views'");
-  assert.deepEqual(columns.rows.map((row) => row.column_name).sort(), ["id", "proposal_id", "viewed_at"]);
+  // Sales Engine (0156): `recipient_id` só referencia o destinatário do link (id interno) — continua
+  // sem IP, user-agent ou fingerprint.
+  assert.deepEqual(columns.rows.map((row) => row.column_name).sort(), ["id", "proposal_id", "recipient_id", "viewed_at"]);
 });
 
 test("Fase 4 lista propostas pelo status solicitado", async () => {
